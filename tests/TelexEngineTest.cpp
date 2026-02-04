@@ -130,6 +130,13 @@ TEST_F(TelexEngineTest, Horn_UO_AutoTransform_WAfterConsonant) {
     EXPECT_EQ(engine_->Peek(), L"hươn");
 }
 
+TEST_F(TelexEngineTest, Horn_UA_UndoCircumflex) {
+    // giuaaw → giưa (w on u, undo circumflex on a)
+    // When 'w' applies horn to 'u' and 'â' follows, undo the circumflex
+    TypeString(*engine_, L"giuaaw");
+    EXPECT_EQ(engine_->Peek(), L"giưa");
+}
+
 TEST_F(TelexEngineTest, Horn_UO_ChainedW) {
     // uow → uơ, then second w applies horn to 'u' → ươ
     TypeString(*engine_, L"uoww");
@@ -558,6 +565,13 @@ TEST_F(TelexEngineTest, Escape_Horn_OW) {
     TypeString(*engine_, L"oww");
     EXPECT_EQ(engine_->Peek(), L"ow");
 }
+
+TEST_F(TelexEngineTest, Word_Giua_WithTone)  {
+    // giữa = g + i + ữ + a (ữ = u with horn and tilde)
+    TypeString(*engine_, L"giuawx");
+    EXPECT_EQ(engine_->Peek(), L"giữa");
+}
+
 
 // ============================================================================
 // EDGE CASES

@@ -178,47 +178,64 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
 
     // 1. Check for 'w' modifier (ă, ơ, ư)
     if (lower == L'w') {
-        // First pass: find unmodified vowel to apply modifier
-        decltype(states_.rbegin()) lastModifiedIt = states_.rend();
+        // Search backwards - apply to first u/o found, or first 'a' if no u/o
+        // Skip 'a' initially to prioritize u/o (giuaw → giưa, not giuă)
+        decltype(states_.rbegin()) firstBreveCandidate = states_.rend();
+        decltype(states_.rbegin()) escapeIt = states_.rend();
+        decltype(states_.rbegin()) circumflexAIt = states_.rend();
 
         for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
             if (!it->IsVowel()) continue;
 
             wchar_t base = it->base;
-            Modifier newMod = Modifier::None;
 
-            if (base == L'a') {
-                newMod = Modifier::Breve;  // ă
-            } else if (base == L'o' || base == L'u') {
-                newMod = Modifier::Horn;   // ơ, ư
-            }
-
-            if (newMod != Modifier::None) {
-                if (it->mod == newMod) {
-                    // Remember first vowel with same modifier (for escape)
-                    if (lastModifiedIt == states_.rend()) {
-                        lastModifiedIt = it;
+            if (base == L'o' || base == L'u') {
+                if (it->mod == Modifier::Horn) {
+                    // Already has Horn - candidate for escape
+                    if (escapeIt == states_.rend()) escapeIt = it;
+                    continue;
+                }
+                if (it->mod == Modifier::None) {
+                    // Found unmodified u/o - apply Horn immediately
+                    it->mod = Modifier::Horn;
+                    // Special case: undo circumflex on 'â' after 'u' (giuaaw → giưa)
+                    if (base == L'u' && circumflexAIt != states_.rend()) {
+                        circumflexAIt->mod = Modifier::None;
                     }
-                    continue;  // Keep looking for unmodified vowel
+                    return true;
                 }
-                if (it->mod != Modifier::None) {
-                    continue;  // Has different modifier, skip
+            } else if (base == L'a') {
+                if (it->mod == Modifier::Breve) {
+                    // Already has Breve - candidate for escape
+                    if (escapeIt == states_.rend()) escapeIt = it;
+                } else if (it->mod == Modifier::None) {
+                    // Remember first unmodified 'a', but keep looking for u/o
+                    if (firstBreveCandidate == states_.rend()) {
+                        firstBreveCandidate = it;
+                    }
+                } else if (it->mod == Modifier::Circumflex) {
+                    // Track â for special case (giuaaw → giưa)
+                    if (circumflexAIt == states_.rend()) {
+                        circumflexAIt = it;
+                    }
                 }
-                // Found unmodified vowel - apply modifier
-                it->mod = newMod;
-                return true;
             }
         }
 
-        // No unmodified vowel found - check if we should escape
-        if (lastModifiedIt != states_.rend()) {
-            // Escape: clear modifier and add 'w' as character
-            lastModifiedIt->mod = Modifier::None;
+        // No unmodified u/o found - try 'a' for Breve
+        if (firstBreveCandidate != states_.rend()) {
+            firstBreveCandidate->mod = Modifier::Breve;
+            return true;
+        }
+
+        // No unmodified vowel - try escape
+        if (escapeIt != states_.rend()) {
+            escapeIt->mod = Modifier::None;
             ProcessChar(c);
             return true;
         }
 
-        // No applicable vowel at all - add 'w' as character
+        // No applicable vowel - add 'w' as character
         return false;
     }
 
