@@ -1,0 +1,40 @@
+# ===== Build artifacts =====
+/build/
+/_build/
+/out/
+/bin/
+/lib/
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+
+# ===== IDE / Editor =====
+.vs/
+.vscode/
+.idea/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== AI / Agent / Tooling =====
+.agent/
+.agents/
+.claude/
+_bmad/
+_bmad-output/
+
+# ===== Logs =====
+*.log
+
+# ===== Temporary / Backup =====
+*.tmp
+*.bak
+*~
+
+# ===== Testing artifacts =====
+/Testing/Temporary/
+/Testing/Cache/
+
+# ===== Optional: external deps build =====
+/extern/**/build/

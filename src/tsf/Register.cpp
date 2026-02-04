@@ -1,0 +1,179 @@
+// NexusKey - TSF DLL Registration
+// SPDX-License-Identifier: GPL-3.0-only
+
+#include "stdafx.h"
+#include "Globals.h"
+#include <strsafe.h>
+
+namespace NextKey {
+namespace TSF {
+
+// Registry helper functions
+
+static HRESULT RegisterCLSID() {
+    wchar_t szModule[MAX_PATH];
+    if (!GetModuleFileNameW(g_hInstance, szModule, MAX_PATH)) {
+        return E_FAIL;
+    }
+
+    wchar_t szKey[256];
+    StringCchPrintfW(szKey, 256, L"CLSID\\{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+        CLSID_TextService.Data1, CLSID_TextService.Data2, CLSID_TextService.Data3,
+        CLSID_TextService.Data4[0], CLSID_TextService.Data4[1],
+        CLSID_TextService.Data4[2], CLSID_TextService.Data4[3],
+        CLSID_TextService.Data4[4], CLSID_TextService.Data4[5],
+        CLSID_TextService.Data4[6], CLSID_TextService.Data4[7]);
+
+    HKEY hKey;
+    DWORD dwDisp;
+    LSTATUS ls = RegCreateKeyExW(HKEY_CLASSES_ROOT, szKey, 0, nullptr, 
+        REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, &dwDisp);
+    if (ls != ERROR_SUCCESS) return E_FAIL;
+
+    RegSetValueExW(hKey, nullptr, 0, REG_SZ, 
+        (const BYTE*)TEXT_SERVICE_DESCRIPTION, 
+        (lstrlenW(TEXT_SERVICE_DESCRIPTION) + 1) * sizeof(wchar_t));
+    RegCloseKey(hKey);
+
+    // Register InprocServer32
+    wchar_t szInproc[300];
+    StringCchPrintfW(szInproc, 300, L"%s\\InprocServer32", szKey);
+
+    ls = RegCreateKeyExW(HKEY_CLASSES_ROOT, szInproc, 0, nullptr,
+        REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, &dwDisp);
+    if (ls != ERROR_SUCCESS) return E_FAIL;
+
+    RegSetValueExW(hKey, nullptr, 0, REG_SZ, 
+        (const BYTE*)szModule, (lstrlenW(szModule) + 1) * sizeof(wchar_t));
+
+    const wchar_t* szThreadingModel = L"Apartment";
+    RegSetValueExW(hKey, L"ThreadingModel", 0, REG_SZ,
+        (const BYTE*)szThreadingModel, (lstrlenW(szThreadingModel) + 1) * sizeof(wchar_t));
+    RegCloseKey(hKey);
+
+    return S_OK;
+}
+
+static HRESULT UnregisterCLSID() {
+    wchar_t szKey[256];
+    StringCchPrintfW(szKey, 256, L"CLSID\\{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}\\InprocServer32",
+        CLSID_TextService.Data1, CLSID_TextService.Data2, CLSID_TextService.Data3,
+        CLSID_TextService.Data4[0], CLSID_TextService.Data4[1],
+        CLSID_TextService.Data4[2], CLSID_TextService.Data4[3],
+        CLSID_TextService.Data4[4], CLSID_TextService.Data4[5],
+        CLSID_TextService.Data4[6], CLSID_TextService.Data4[7]);
+
+    RegDeleteKeyW(HKEY_CLASSES_ROOT, szKey);
+
+    StringCchPrintfW(szKey, 256, L"CLSID\\{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+        CLSID_TextService.Data1, CLSID_TextService.Data2, CLSID_TextService.Data3,
+        CLSID_TextService.Data4[0], CLSID_TextService.Data4[1],
+        CLSID_TextService.Data4[2], CLSID_TextService.Data4[3],
+        CLSID_TextService.Data4[4], CLSID_TextService.Data4[5],
+        CLSID_TextService.Data4[6], CLSID_TextService.Data4[7]);
+
+    RegDeleteKeyW(HKEY_CLASSES_ROOT, szKey);
+
+    return S_OK;
+}
+
+static HRESULT RegisterTIP() {
+    ITfInputProcessorProfiles* pProfiles = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr,
+        CLSCTX_INPROC_SERVER, IID_ITfInputProcessorProfiles, (void**)&pProfiles);
+    if (FAILED(hr)) return hr;
+
+    hr = pProfiles->Register(CLSID_TextService);
+    if (FAILED(hr)) {
+        pProfiles->Release();
+        return hr;
+    }
+
+    hr = pProfiles->AddLanguageProfile(
+        CLSID_TextService,
+        TEXTSERVICE_LANGID,
+        GUID_Profile,
+        TEXT_SERVICE_DESCRIPTION,
+        static_cast<ULONG>(wcslen(TEXT_SERVICE_DESCRIPTION)),
+        nullptr, 0,
+        TEXTSERVICE_ICON_INDEX
+    );
+
+    pProfiles->Release();
+    return hr;
+}
+
+static HRESULT UnregisterTIP() {
+    ITfInputProcessorProfiles* pProfiles = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr,
+        CLSCTX_INPROC_SERVER, IID_ITfInputProcessorProfiles, (void**)&pProfiles);
+    if (FAILED(hr)) return hr;
+
+    hr = pProfiles->Unregister(CLSID_TextService);
+    pProfiles->Release();
+    return hr;
+}
+
+static HRESULT RegisterCategory() {
+    ITfCategoryMgr* pCategoryMgr = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_TF_CategoryMgr, nullptr,
+        CLSCTX_INPROC_SERVER, IID_ITfCategoryMgr, (void**)&pCategoryMgr);
+    if (FAILED(hr)) return hr;
+
+    // Register as keyboard TIP
+    hr = pCategoryMgr->RegisterCategory(
+        CLSID_TextService,
+        GUID_TFCAT_TIP_KEYBOARD,
+        CLSID_TextService
+    );
+
+    pCategoryMgr->Release();
+    return hr;
+}
+
+static HRESULT UnregisterCategory() {
+    ITfCategoryMgr* pCategoryMgr = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_TF_CategoryMgr, nullptr,
+        CLSCTX_INPROC_SERVER, IID_ITfCategoryMgr, (void**)&pCategoryMgr);
+    if (FAILED(hr)) return hr;
+
+    hr = pCategoryMgr->UnregisterCategory(
+        CLSID_TextService,
+        GUID_TFCAT_TIP_KEYBOARD,
+        CLSID_TextService
+    );
+
+    pCategoryMgr->Release();
+    return hr;
+}
+
+}  // namespace TSF
+}  // namespace NextKey
+
+// DLL exports for registration
+extern "C" {
+
+STDAPI DllRegisterServer() {
+    using namespace NextKey::TSF;
+
+    HRESULT hr = RegisterCLSID();
+    if (FAILED(hr)) return hr;
+
+    hr = RegisterTIP();
+    if (FAILED(hr)) return hr;
+
+    hr = RegisterCategory();
+    return hr;
+}
+
+STDAPI DllUnregisterServer() {
+    using namespace NextKey::TSF;
+
+    UnregisterCategory();
+    UnregisterTIP();
+    UnregisterCLSID();
+
+    return S_OK;
+}
+
+}  // extern "C"

@@ -1,0 +1,36 @@
+// NexusKey - Input Engine Interface
+// SPDX-License-Identifier: GPL-3.0-only
+
+#pragma once
+
+#include <string>
+#include <cstdint>
+
+namespace NextKey {
+
+/// Abstract interface for input method engines (Telex, VNI, etc.)
+/// NFR7: No global state - all state is instance-based
+class IInputEngine {
+public:
+    virtual ~IInputEngine() = default;
+
+    /// Push a character to the engine for processing
+    virtual void PushChar(wchar_t c) = 0;
+
+    /// Handle backspace - remove last character
+    virtual void Backspace() = 0;
+
+    /// Get current composition (without committing)
+    virtual std::wstring Peek() const = 0;
+
+    /// Commit composition and get final text, then reset state
+    virtual std::wstring Commit() = 0;
+
+    /// Reset engine state (clear composition)
+    virtual void Reset() = 0;
+
+    /// Get number of characters in current composition
+    virtual size_t Count() const = 0;
+};
+
+}  // namespace NextKey

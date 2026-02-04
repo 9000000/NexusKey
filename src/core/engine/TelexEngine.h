@@ -1,0 +1,113 @@
+// NexusKey - Telex Engine Header
+// SPDX-License-Identifier: GPL-3.0-only
+
+#pragma once
+
+#include "IInputEngine.h"
+#include "../TypingConfig.h"
+#include <vector>
+#include <string>
+
+namespace NextKey {
+namespace Telex {
+
+/// Modifier type for Vietnamese vowels
+enum class Modifier : uint8_t {
+    None,       // a e i o u y
+    Circumflex, // â ê ô
+    Breve,      // ă
+    Horn        // ơ ư
+};
+
+/// Tone type for Vietnamese
+enum class Tone : uint8_t {
+    None,   // no tone
+    Acute,  // sắc (s)
+    Grave,  // huyền (f)
+    Hook,   // hỏi (r)
+    Tilde,  // ngã (x)
+    Dot     // nặng (j)
+};
+
+/// Internal state for each character - THE CORE ABSTRACTION
+/// IME converts keys into STATE; letters are merely a consequence.
+struct CharState {
+    wchar_t base = 0;               // Base letter (lowercase): a e i o u y d or consonant
+    Modifier mod = Modifier::None;  // Vowel modifier
+    Tone tone = Tone::None;         // Tone mark
+    bool isUpper = false;           // Preserve original case
+
+    bool IsVowel() const {
+        return base == L'a' || base == L'e' || base == L'i' ||
+               base == L'o' || base == L'u' || base == L'y';
+    }
+    bool CanHaveMod() const {
+        // a -> â, ă; e -> ê; o -> ô, ơ; u -> ư
+        return base == L'a' || base == L'e' || base == L'o' || base == L'u';
+    }
+    bool IsD() const { return base == L'd'; }
+    bool IsEmpty() const { return base == 0; }
+};
+
+/// Telex engine states
+enum class TelexStates {
+    Valid,       // Valid Vietnamese word
+    Invalid,     // Not a valid Vietnamese word
+    Committed    // After commit
+};
+
+/// Telex input method engine - STATE-BASED ARCHITECTURE
+///
+/// Key principle: IME tracks STATE, not precomposed Unicode.
+/// Unicode is only produced when Peek() or Commit() is called.
+///
+/// This makes:
+/// - Backspace clean (clear tone → clear mod → clear base)
+/// - Escape clean (retype tone/mod to clear)
+/// - No reverse maps needed
+/// - TSF composition state always in sync
+class TelexEngine : public IInputEngine {
+public:
+    explicit TelexEngine(const TypingConfig& config);
+    ~TelexEngine() override = default;
+
+    TelexEngine(const TelexEngine&) = delete;
+    TelexEngine& operator=(const TelexEngine&) = delete;
+
+    // IInputEngine implementation
+    void PushChar(wchar_t c) override;
+    void Backspace() override;
+    std::wstring Peek() const override;
+    std::wstring Commit() override;
+    void Reset() override;
+    size_t Count() const override;
+
+    TelexStates GetState() const { return state_; }
+
+private:
+    // Input processing
+    bool ProcessTone(wchar_t c);      // s, f, r, x, j
+    bool ProcessModifier(wchar_t c);  // w, aa, ee, oo, dd
+    void ProcessChar(wchar_t c);      // Regular character
+
+    // Find target for tone/modifier application
+    size_t FindToneTarget() const;
+
+    // Auto ươ: convert 'uơ' to 'ươ' when followed by another character
+    void ApplyAutoUO();
+
+    // Compose single CharState to Unicode
+    static wchar_t Compose(const CharState& s);
+
+    // Compose all states to string
+    std::wstring ComposeAll() const;
+
+    // State
+    std::vector<CharState> states_;   // Internal state buffer
+    std::vector<wchar_t> rawInput_;   // Raw keys for escape
+    TypingConfig config_;
+    TelexStates state_ = TelexStates::Valid;
+};
+
+}  // namespace Telex
+}  // namespace NextKey
