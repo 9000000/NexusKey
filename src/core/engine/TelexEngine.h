@@ -96,6 +96,10 @@ private:
     // Auto ươ: convert 'uơ' to 'ươ' when followed by another character
     void ApplyAutoUO();
 
+    // Move tone to horn vowel when horn modifier is added
+    // Example: "cuả" + w → "cửa" (tone moves from a to ư)
+    void RelocateToneToHornVowel();
+
     // Compose single CharState to Unicode
     static wchar_t Compose(const CharState& s);
 

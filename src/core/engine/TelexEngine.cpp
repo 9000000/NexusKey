@@ -178,43 +178,63 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
 
     // 1. Check for 'w' modifier (ă, ơ, ư)
     if (lower == L'w') {
-        // Search backwards - apply to first u/o found, or first 'a' if no u/o
-        // Skip 'a' initially to prioritize u/o (giuaw → giưa, not giuă)
+        // Vietnamese 'w' rules:
+        // - "ua" + w → "ưa" (horn on u) - e.g., được, mưa
+        // - "oa" + w → "oă" (breve on a) - e.g., hoặc, toàn
+        // - "u" alone + w → "ư" (horn)
+        // - "o" alone + w → "ơ" (horn)
+        // - "a" alone + w → "ă" (breve)
+
         decltype(states_.rbegin()) firstBreveCandidate = states_.rend();
+        decltype(states_.rbegin()) firstHornCandidate = states_.rend();
         decltype(states_.rbegin()) escapeIt = states_.rend();
         decltype(states_.rbegin()) circumflexAIt = states_.rend();
+        bool hasOA = false;  // Track if we have "oa" pattern (o followed by a)
+        bool hasUA = false;  // Track if we have "ua" pattern (u followed by a)
 
+        // First pass: analyze the vowel pattern
+        for (size_t i = 0; i + 1 < states_.size(); ++i) {
+            if (states_[i].IsVowel() && states_[i+1].IsVowel()) {
+                if (states_[i].base == L'o' && states_[i+1].base == L'a') {
+                    hasOA = true;
+                }
+                if (states_[i].base == L'u' && states_[i+1].base == L'a') {
+                    hasUA = true;
+                }
+            }
+        }
+
+        // Second pass: find candidates
         for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
             if (!it->IsVowel()) continue;
 
             wchar_t base = it->base;
 
-            if (base == L'o' || base == L'u') {
+            if (base == L'u') {
                 if (it->mod == Modifier::Horn) {
-                    // Already has Horn - candidate for escape
                     if (escapeIt == states_.rend()) escapeIt = it;
-                    continue;
-                }
-                if (it->mod == Modifier::None) {
-                    // Found unmodified u/o - apply Horn immediately
-                    it->mod = Modifier::Horn;
-                    // Special case: undo circumflex on 'â' after 'u' (giuaaw → giưa)
-                    if (base == L'u' && circumflexAIt != states_.rend()) {
-                        circumflexAIt->mod = Modifier::None;
+                } else if (it->mod == Modifier::None) {
+                    if (firstHornCandidate == states_.rend()) {
+                        firstHornCandidate = it;
                     }
-                    return true;
+                }
+            } else if (base == L'o') {
+                if (it->mod == Modifier::Horn) {
+                    if (escapeIt == states_.rend()) escapeIt = it;
+                } else if (it->mod == Modifier::None) {
+                    // Only consider 'o' for horn if NOT in "oa" pattern
+                    if (!hasOA && firstHornCandidate == states_.rend()) {
+                        firstHornCandidate = it;
+                    }
                 }
             } else if (base == L'a') {
                 if (it->mod == Modifier::Breve) {
-                    // Already has Breve - candidate for escape
                     if (escapeIt == states_.rend()) escapeIt = it;
                 } else if (it->mod == Modifier::None) {
-                    // Remember first unmodified 'a', but keep looking for u/o
                     if (firstBreveCandidate == states_.rend()) {
                         firstBreveCandidate = it;
                     }
                 } else if (it->mod == Modifier::Circumflex) {
-                    // Track â for special case (giuaaw → giưa)
                     if (circumflexAIt == states_.rend()) {
                         circumflexAIt = it;
                     }
@@ -222,13 +242,42 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
             }
         }
 
-        // No unmodified u/o found - try 'a' for Breve
+        // Apply based on pattern:
+        // 1. "ua" pattern: apply horn to 'u'
+        if (hasUA && firstHornCandidate != states_.rend() && firstHornCandidate->base == L'u') {
+            firstHornCandidate->mod = Modifier::Horn;
+            if (circumflexAIt != states_.rend()) {
+                circumflexAIt->mod = Modifier::None;
+            }
+            // Re-evaluate tone placement after adding horn
+            RelocateToneToHornVowel();
+            return true;
+        }
+
+        // 2. "oa" pattern: apply breve to 'a'
+        if (hasOA && firstBreveCandidate != states_.rend()) {
+            firstBreveCandidate->mod = Modifier::Breve;
+            return true;
+        }
+
+        // 3. Standalone 'u' or 'o': apply horn
+        if (firstHornCandidate != states_.rend()) {
+            firstHornCandidate->mod = Modifier::Horn;
+            if (firstHornCandidate->base == L'u' && circumflexAIt != states_.rend()) {
+                circumflexAIt->mod = Modifier::None;
+            }
+            // Re-evaluate tone placement after adding horn
+            RelocateToneToHornVowel();
+            return true;
+        }
+
+        // 4. Standalone 'a': apply breve
         if (firstBreveCandidate != states_.rend()) {
             firstBreveCandidate->mod = Modifier::Breve;
             return true;
         }
 
-        // No unmodified vowel - try escape
+        // 5. Escape: clear existing modifier
         if (escapeIt != states_.rend()) {
             escapeIt->mod = Modifier::None;
             ProcessChar(c);
@@ -302,6 +351,36 @@ void TelexEngine::ApplyAutoUO() {
     }
 }
 
+void TelexEngine::RelocateToneToHornVowel() {
+    // After a horn modifier is applied (creating ư or ơ), the tone should
+    // move to the horn vowel if there's a tone on another vowel.
+    // Example: "cuả" + w → "cửa" (tone moves from a to ư)
+
+    // Find if there's a horn vowel
+    size_t hornIdx = SIZE_MAX;
+    size_t tonedIdx = SIZE_MAX;
+
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (states_[i].IsVowel()) {
+            if (states_[i].mod == Modifier::Horn) {
+                hornIdx = i;
+            }
+            if (states_[i].tone != Tone::None) {
+                tonedIdx = i;
+            }
+        }
+    }
+
+    // If we have a horn vowel and a different vowel has the tone, move the tone
+    if (hornIdx != SIZE_MAX && tonedIdx != SIZE_MAX && hornIdx != tonedIdx) {
+        // Only move if the toned vowel doesn't have a modifier (plain vowel)
+        if (states_[tonedIdx].mod == Modifier::None) {
+            states_[hornIdx].tone = states_[tonedIdx].tone;
+            states_[tonedIdx].tone = Tone::None;
+        }
+    }
+}
+
 size_t TelexEngine::FindToneTarget() const {
     // Vietnamese tone placement rules:
     // 1. If word has ơ, ư (horn vowels) - tone goes on the LAST horn vowel
@@ -365,14 +444,20 @@ size_t TelexEngine::FindToneTarget() const {
             if ((firstVowel == L'u' || firstVowel == L'i') && (lastVowel == L'i' || lastVowel == L'u')) {
                 return prevIdx;
             }
+            // ua, uê, uâ - tone on FIRST vowel (u)
+            // của = c + ủ + a, mùa = m + ù + a
+            if (firstVowel == L'u' && (lastVowel == L'a' || lastVowel == L'e')) {
+                return prevIdx;
+            }
 
             // Rising diphthongs: tone on SECOND vowel
-            // oa, oe, oă
+            // oa, oe - tone on second vowel (a/e)
+            // hoà = h + o + à, xoè = x + o + è
             if (firstVowel == L'o' && (lastVowel == L'a' || lastVowel == L'e')) {
                 return lastIdx;
             }
-            // ua, uê, uy, uâ
-            if (firstVowel == L'u' && (lastVowel == L'a' || lastVowel == L'e' || lastVowel == L'y')) {
+            // uy - tone on second vowel (y)
+            if (firstVowel == L'u' && lastVowel == L'y') {
                 return lastIdx;
             }
         }

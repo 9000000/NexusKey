@@ -11,6 +11,29 @@
 namespace NextKey {
 namespace TSF {
 
+// Helper function to check if a key is punctuation/number that should trigger commit
+static bool IsPunctuationKey(UINT vkCode) {
+    // Number keys (0-9)
+    if (vkCode >= 0x30 && vkCode <= 0x39) return true;
+
+    // Numpad keys
+    if (vkCode >= VK_NUMPAD0 && vkCode <= VK_DIVIDE) return true;
+
+    // OEM keys (punctuation on US keyboard)
+    // VK_OEM_1 (;:), VK_OEM_PLUS (=+), VK_OEM_COMMA (,<), VK_OEM_MINUS (-_)
+    // VK_OEM_PERIOD (.>), VK_OEM_2 (/?), VK_OEM_3 (`~), VK_OEM_4 ([{)
+    // VK_OEM_5 (\|), VK_OEM_6 (]}), VK_OEM_7 ('")
+    if (vkCode >= VK_OEM_1 && vkCode <= VK_OEM_3) return true;
+    if (vkCode >= VK_OEM_4 && vkCode <= VK_OEM_8) return true;
+    if (vkCode == VK_OEM_PLUS || vkCode == VK_OEM_COMMA ||
+        vkCode == VK_OEM_MINUS || vkCode == VK_OEM_PERIOD) return true;
+
+    // Tab key
+    if (vkCode == VK_TAB) return true;
+
+    return false;
+}
+
 KeyEventSink::KeyEventSink(TextService* pTextService, EngineController* pEngineController)
     : pTextService_(pTextService), pEngineController_(pEngineController) {
 }
@@ -119,8 +142,17 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
         return S_OK;
     }
 
+    // Check if this is a punctuation/number key that should trigger commit
+    // These keys should commit composition and pass through to the app
+    bool isPunctuation = IsPunctuationKey(static_cast<UINT>(wParam));
+    if (isPunctuation && pEngineController_->HasEngineBuffer()) {
+        pEngineController_->Commit(pContext);
+        *pfEaten = FALSE;  // Let punctuation pass through
+        return S_OK;
+    }
+
     bool wantKey = pEngineController_->WantKey(static_cast<UINT>(wParam), true);
-    
+
     // Non-handled keys -> commit and pass through
     if (!wantKey && pEngineController_->HasEngineBuffer()) {
         pEngineController_->Commit(pContext);

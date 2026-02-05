@@ -41,8 +41,19 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
         return true;
     }
 
-    // 3. We handle Space and Backspace ONLY if we have internal content.
-    if (vkCode == VK_SPACE || vkCode == VK_BACK) {
+    // 3. We handle Backspace ONLY if we have internal content.
+    if (vkCode == VK_BACK) {
+        return engineHasComp;
+    }
+
+    // 4. Space handling depends on the app
+    if (vkCode == VK_SPACE) {
+        if (IsScintillaApp()) {
+            // For Scintilla apps: don't claim space, let it trigger commit via "non-handled key" path
+            // and pass through naturally
+            return false;
+        }
+        // For other apps: claim space if we have composition
         return engineHasComp;
     }
 
@@ -75,12 +86,13 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         return true;
     }
 
-    // 2. Handle Space (only if we have content, as decided by WantKey)
+    // 2. Handle Space (only reaches here for non-Scintilla apps, as decided by WantKey)
     if (vkCode == VK_SPACE) {
+        // For non-Scintilla apps: append space to committed text
         CommitWithChar(pContext, L' ');
-        return true;
+        return true;  // Eat space
     }
-    
+
     // 3. Check if character key (A-Z)
     if (vkCode >= 0x41 && vkCode <= 0x5A) {
         bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -178,6 +190,34 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
 void EngineController::Reset() {
     engine_->Reset();
     compositionMgr_.TerminateComposition();
+}
+
+bool EngineController::IsScintillaApp() const {
+    // Get the foreground window and check if it's a Scintilla-based app
+    HWND hwnd = GetForegroundWindow();
+    if (hwnd == nullptr) return false;
+
+    // Check window class name
+    wchar_t className[256] = {0};
+    if (GetClassNameW(hwnd, className, 256) > 0) {
+        // Notepad++ main window class
+        if (wcsstr(className, L"Notepad++") != nullptr) {
+            return true;
+        }
+    }
+
+    // Also check child windows for Scintilla class
+    HWND hwndFocus = GetFocus();
+    if (hwndFocus != nullptr) {
+        if (GetClassNameW(hwndFocus, className, 256) > 0) {
+            // Scintilla edit control class
+            if (wcsstr(className, L"Scintilla") != nullptr) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 }  // namespace TSF

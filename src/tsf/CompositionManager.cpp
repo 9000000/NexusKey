@@ -58,7 +58,7 @@ bool CompositionManager::StartComposition(ITfContext* pContext, TfEditCookie ec,
         return false;
     }
 
-    // Get insertion point
+    // Get insertion interface
     ITfInsertAtSelection* pInsertAtSelection = nullptr;
     hr = pContext->QueryInterface(IID_ITfInsertAtSelection, (void**)&pInsertAtSelection);
     if (FAILED(hr) || pInsertAtSelection == nullptr) {
@@ -67,7 +67,7 @@ bool CompositionManager::StartComposition(ITfContext* pContext, TfEditCookie ec,
         return false;
     }
 
-    // Insert empty range at selection
+    // Query insertion point (TF_IAS_QUERYONLY)
     ITfRange* pRange = nullptr;
     hr = pInsertAtSelection->InsertTextAtSelection(ec, TF_IAS_QUERYONLY, nullptr, 0, &pRange);
     pInsertAtSelection->Release();
@@ -89,10 +89,18 @@ bool CompositionManager::StartComposition(ITfContext* pContext, TfEditCookie ec,
         return false;
     }
 
-    // Store composition (range is managed by composition)
+    // Store composition
     pComposition_ = pComposition;
-    pContext_ = pContext;  // Store context for cursor manipulation
-    pRange->Release();  // We'll get range from composition when needed
+    pContext_ = pContext;
+
+    // Set selection to the insertion range (VietType pattern - helps apps properly track insertion point)
+    TF_SELECTION sel;
+    sel.range = pRange;
+    sel.style.ase = TF_AE_NONE;
+    sel.style.fInterimChar = FALSE;
+    pContext->SetSelection(ec, 1, &sel);
+
+    pRange->Release();
     *ppComposition = pComposition;
 
     TSF_LOG(L"StartComposition: SUCCESS");
@@ -113,7 +121,8 @@ bool CompositionManager::SetCompositionText(TfEditCookie ec, const std::wstring&
         return false;
     }
 
-    // Replace all text in the composition range
+    // Set text in the composition range (use TF_ST_CORRECTION for proper text handling)
+    // This flag helps prevent the composition from overwriting adjacent text
     hr = pRange->SetText(ec, TF_ST_CORRECTION, text.c_str(), static_cast<LONG>(text.length()));
 
     if (FAILED(hr)) {
@@ -122,8 +131,9 @@ bool CompositionManager::SetCompositionText(TfEditCookie ec, const std::wstring&
         return false;
     }
 
-    // Apply invisible display attribute
-    ApplyDisplayAttribute(ec, pRange);
+    // Skip display attribute - some apps (like Notepad++ with Scintilla) don't handle it well
+    // and it can cause visual overlay issues
+    // ApplyDisplayAttribute(ec, pRange);
 
     // Sync cursor
     MoveCaretToEnd(ec);
@@ -138,19 +148,18 @@ void CompositionManager::EndComposition(TfEditCookie ec) {
     if (pComposition_ == nullptr) return;
 
     TSF_LOG(L"EndComposition: Finalizing and releasing to app");
-    
+
     ITfRange* pRange = nullptr;
     if (SUCCEEDED(pComposition_->GetRange(&pRange)) && pRange) {
-        // 1. Clear display attributes BEFORE ending
+        // Clear display attributes BEFORE ending
         ClearDisplayAttribute(ec, pRange);
-        
-        // 2. Set selection to end (this explicitly "hands off" the caret to the app)
-        MoveCaretToEnd(ec);
-        
         pRange->Release();
     }
 
-    // 3. Inform TSF that the composition is finished
+    // Note: Don't call MoveCaretToEnd here - it's already called in SetCompositionText
+    // Calling it again can interfere with cursor positioning in some apps (like Notepad++)
+
+    // Inform TSF that the composition is finished
     pComposition_->EndComposition(ec);
     pComposition_->Release();
     pComposition_ = nullptr;

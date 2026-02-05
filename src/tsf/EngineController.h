@@ -57,6 +57,9 @@ public:
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
 
+    /// Check if current app is Scintilla-based (Notepad++, etc.)
+    bool IsScintillaApp() const;
+
     std::unique_ptr<TelexEngineAdapter> engine_;
     CompositionManager compositionMgr_;
     TypingConfig config_;
