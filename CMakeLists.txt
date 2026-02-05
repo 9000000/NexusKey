@@ -17,18 +17,25 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/engine
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tsf
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
 )
 
-# Core Library (Engine + Shared State)
+# Core Library (Engine + Shared State + Config)
 add_library(NextKeyCore STATIC
     src/core/SharedStateManager.cpp
     src/core/SharedStateManager.h
     src/core/SharedState.h
     src/core/TypingConfig.h
+    src/core/config/ConfigManager.cpp
+    src/core/config/ConfigManager.h
     src/core/engine/TelexEngine.cpp
     src/core/engine/TelexEngine.h
     src/core/engine/TelexEngineAdapter.cpp
     src/core/engine/TelexEngineAdapter.h
+    src/core/engine/VniEngine.cpp
+    src/core/engine/VniEngine.h
+    src/core/engine/EngineFactory.cpp
+    src/core/engine/EngineFactory.h
     src/core/engine/KeyTranslator.cpp
     src/core/engine/KeyTranslator.h
     src/core/engine/Telex.h
@@ -93,6 +100,9 @@ enable_testing()
 
 add_executable(NextKeyTests
     tests/TelexEngineTest.cpp
+    tests/ConfigManagerTest.cpp
+    tests/VniEngineTest.cpp
+    tests/EngineFactoryTest.cpp
 )
 target_link_libraries(NextKeyTests PRIVATE NextKeyCore GTest::gtest_main)
 

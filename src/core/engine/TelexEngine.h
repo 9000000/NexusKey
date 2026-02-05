@@ -68,6 +68,7 @@ enum class TelexStates {
 /// - TSF composition state always in sync
 class TelexEngine : public IInputEngine {
 public:
+    TelexEngine() : TelexEngine(TypingConfig{}) {}
     explicit TelexEngine(const TypingConfig& config);
     ~TelexEngine() override = default;
 

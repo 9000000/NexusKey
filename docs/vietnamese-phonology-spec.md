@@ -103,13 +103,14 @@ The 'w' key can produce different results depending on context. This section def
 | Priority | Condition | Pattern | Action | Result |
 |----------|-----------|---------|--------|--------|
 | **1** | Has "ua" vowel pair | `u` followed by `a` | Apply Horn to `u` | ưa |
-| **2** | Has "oa" vowel pair | `o` followed by `a` | Apply Breve to `a` | oă |
-| **3** | Has plain `u` (no horn) | Standalone `u` | Apply Horn to `u` | ư |
-| **4** | Has plain `o` (no horn), NOT in "oa" | Standalone `o` | Apply Horn to `o` | ơ |
-| **5** | Has plain `a` (no modifier) | Standalone `a` | Apply Breve to `a` | ă |
-| **6** | Has existing horn (ư or ơ) | - | Clear modifier, add 'w' | Escape |
-| **7** | Has existing breve (ă) | - | Clear modifier, add 'w' | Escape |
-| **8** | No applicable vowel | - | Add literal 'w' | w |
+| **2** | Has "uo" vowel pair | `u` followed by `o` | Apply Horn to `o` | uơ (→ ươ via AutoUO) |
+| **3** | Has "oa" vowel pair | `o` followed by `a` | Apply Breve to `a` | oă |
+| **4** | Has plain `u` (no horn) | Standalone `u` | Apply Horn to `u` | ư |
+| **5** | Has plain `o` (no horn), NOT in "oa" | Standalone `o` | Apply Horn to `o` | ơ |
+| **6** | Has plain `a` (no modifier), NO horn exists | Standalone `a` | Apply Breve to `a` | ă |
+| **7** | Has existing horn (ư or ơ) | - | Clear modifier, add 'w' | Escape |
+| **8** | Has existing breve (ă) | - | Clear modifier, add 'w' | Escape |
+| **9** | No applicable vowel | - | Add literal 'w' | w |
 
 ### 4.2 Special Case: Auto-ươ Transformation
 
@@ -359,3 +360,4 @@ Toned vowels are in the Vietnamese Extended block: U+1EA0 - U+1EF9
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-04 | AI + Phat | Initial specification |
+| 1.1 | 2026-02-05 | AI + Phat | Added P2 "uo" pattern, fixed P6 escape condition |

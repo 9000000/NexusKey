@@ -4,7 +4,8 @@
 #pragma once
 
 #include "stdafx.h"
-#include "core/engine/TelexEngineAdapter.h"
+#include "core/engine/IInputEngine.h"
+#include "core/TypingConfig.h"
 #include "CompositionManager.h"
 #include "EditSession.h"
 #include <memory>
@@ -43,16 +44,19 @@ public:
     void Reset();
 
     /// Check if there's pending composition (for Ctrl shortcuts)
-    bool HasComposition() const { return engine_->HasComposition(); }
+    bool HasComposition() const { return engine_->Count() > 0; }
 
     /// Check if TSF composition is active
     bool IsComposing() const { return compositionMgr_.IsComposing(); }
 
     /// Check if engine has buffer (for sync check)
-    bool HasEngineBuffer() const { return engine_->HasComposition(); }
+    bool HasEngineBuffer() const { return engine_->Count() > 0; }
 
     /// Reset only engine buffer (for sync recovery)
     void ResetEngine() { engine_->Reset(); }
+
+    /// Switch input method at word boundary
+    void SwitchInputMethod(InputMethod method);
 
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
@@ -60,9 +64,10 @@ private:
     /// Check if current app is Scintilla-based (Notepad++, etc.)
     bool IsScintillaApp() const;
 
-    std::unique_ptr<TelexEngineAdapter> engine_;
+    std::unique_ptr<IInputEngine> engine_;
     CompositionManager compositionMgr_;
     TypingConfig config_;
+    InputMethod currentMethod_ = InputMethod::Telex;
     TfClientId clientId_ = TF_CLIENTID_NULL;
 };
 

@@ -5,6 +5,7 @@
 #include "EngineController.h"
 #include "CompositionEditSession.h"
 #include "Define.h"
+#include "core/engine/EngineFactory.h"
 
 namespace NextKey {
 namespace TSF {
@@ -14,10 +15,11 @@ EngineController::EngineController() {
     config_.inputMethod = InputMethod::Telex;
     config_.spellCheckEnabled = false;
     config_.optimizeLevel = 0;
+    currentMethod_ = InputMethod::Telex;
     
-    engine_ = std::make_unique<TelexEngineAdapter>(config_);
+    engine_ = EngineFactory::Create(config_);
     compositionMgr_.SetEngineController(this);
-    TSF_LOG(L"EngineController initialized");
+    TSF_LOG(L"EngineController initialized with Telex engine");
 }
 
 EngineController::~EngineController() {
@@ -34,7 +36,7 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
         return false;
     }
 
-    bool engineHasComp = engine_->HasComposition();
+    bool engineHasComp = engine_->Count() > 0;
 
     // 2. We want A-Z keys for Telex processing
     if (vkCode >= 0x41 && vkCode <= 0x5A) {
@@ -96,49 +98,48 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
     // 3. Check if character key (A-Z)
     if (vkCode >= 0x41 && vkCode <= 0x5A) {
         bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        wchar_t ch = static_cast<wchar_t>(vkCode);
+        if (!shift) ch = towlower(ch);
+        
+        TSF_LOG(L"HandleKey: pushing char '%c'", ch);
+        engine_->PushChar(ch);
+        
+        std::wstring composition = engine_->Peek();
+        TSF_LOG(L"HandleKey: got composition, starting/updating");
 
-        TSF_LOG(L"HandleKey: A-Z key detected");
+        if (!compositionMgr_.IsComposing()) {
+            // Start new composition
+            TSF_LOG(L"HandleKey: Starting new composition");
+            auto* pSession = new StartCompositionEditSession(pContext, &compositionMgr_, composition);
+            RequestEditSession(pContext, pSession);
+            pSession->Release();
 
-        if (engine_->ProcessKeyDown(vkCode, shift)) {
-            std::wstring composition = engine_->GetComposition();
-            TSF_LOG(L"HandleKey: got composition, starting/updating");
-
+            // If composition failed to start, reset engine to stay in sync
             if (!compositionMgr_.IsComposing()) {
-                // Start new composition
-                TSF_LOG(L"HandleKey: Starting new composition");
-                auto* pSession = new StartCompositionEditSession(pContext, &compositionMgr_, composition);
-                RequestEditSession(pContext, pSession);
-                pSession->Release();
-
-                // If composition failed to start, reset engine to stay in sync
-                if (!compositionMgr_.IsComposing()) {
-                    TSF_LOG(L"HandleKey: Composition failed, resetting engine");
-                    engine_->Reset();
-                    return false;  // Let the key pass through
-                }
-            } else {
-                // Update existing composition
-                TSF_LOG(L"HandleKey: Updating composition");
-                auto* pSession = new UpdateCompositionEditSession(pContext, &compositionMgr_, composition);
-                RequestEditSession(pContext, pSession);
-                pSession->Release();
+                TSF_LOG(L"HandleKey: Composition failed, resetting engine");
+                engine_->Reset();
+                return false;  // Let the key pass through
             }
-
-            TSF_LOG(L"Key processed, composition updated");
-            return true;
         } else {
-            TSF_LOG(L"HandleKey: ProcessKeyDown returned false");
+            // Update existing composition
+            TSF_LOG(L"HandleKey: Updating composition");
+            auto* pSession = new UpdateCompositionEditSession(pContext, &compositionMgr_, composition);
+            RequestEditSession(pContext, pSession);
+            pSession->Release();
         }
+
+        TSF_LOG(L"Key processed, composition updated");
+        return true;
     }
 
     return false;
 }
 
 void EngineController::ProcessBackspace(ITfContext* pContext) {
-    engine_->ProcessBackspace();
+    engine_->Backspace();
 
-    if (engine_->HasComposition()) {
-        std::wstring composition = engine_->GetComposition();
+    if (engine_->Count() > 0) {
+        std::wstring composition = engine_->Peek();
         auto* pSession = new UpdateCompositionEditSession(pContext, &compositionMgr_, composition);
         RequestEditSession(pContext, pSession);
         pSession->Release();
@@ -190,6 +191,21 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
 void EngineController::Reset() {
     engine_->Reset();
     compositionMgr_.TerminateComposition();
+}
+
+void EngineController::SwitchInputMethod(InputMethod method) {
+    if (method == currentMethod_) return;
+    
+    // Commit any pending composition before switching
+    if (engine_->Count() > 0) {
+        engine_->Commit();
+    }
+    
+    // Create new engine
+    currentMethod_ = method;
+    engine_ = EngineFactory::Create(method);
+    
+    TSF_LOG(L"Switched to %s engine", method == InputMethod::VNI ? L"VNI" : L"Telex");
 }
 
 bool EngineController::IsScintillaApp() const {
