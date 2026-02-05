@@ -100,6 +100,15 @@ private:
     // Example: "cuả" + w → "cửa" (tone moves from a to ư)
     void RelocateToneToHornVowel();
 
+    // W-Modifier processing (explicit priority order)
+    bool ProcessWModifier(wchar_t c);
+
+    // D-Modifier processing (dd → đ)
+    bool ProcessDModifier(wchar_t c);
+
+    // QU Cluster detection (qu is consonant cluster, u is not vowel)
+    bool IsInQUCluster() const;
+
     // Compose single CharState to Unicode
     static wchar_t Compose(const CharState& s);
 

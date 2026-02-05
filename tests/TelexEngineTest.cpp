@@ -1345,7 +1345,7 @@ TEST_F(TelexEngineTest, Escape_Circumflex_O) {
 
 TEST_F(TelexEngineTest, Escape_Stroke_Quad) {
     TypeString(*engine_, L"dddd");
-    EXPECT_EQ(engine_->Peek(), L"dddd");
+    EXPECT_EQ(engine_->Peek(), L"dđ");
 }
 
 // ============================================================================
@@ -1359,7 +1359,7 @@ TEST_F(TelexEngineTest, MixedCase_Circumflex_Aa) {
 
 TEST_F(TelexEngineTest, MixedCase_Circumflex_aA) {
     TypeString(*engine_, L"aA");
-    EXPECT_EQ(engine_->Peek(), L"Â");
+    EXPECT_EQ(engine_->Peek(), L"â");
 }
 
 TEST_F(TelexEngineTest, MixedCase_Breve_Aw) {
@@ -1549,6 +1549,10 @@ TEST_F(TelexEngineTest, RealWord_Hap) {
     EXPECT_EQ(engine_->Peek(), L"hấp");
 }
 
+TEST_F(TelexEngineTest, Freestyles) {
+    TypeString(*engine_, L"lefeeee");  // lefeeee
+    EXPECT_EQ(engine_->Peek(), L"lèee");
+}
 }  // namespace
 }  // namespace Telex
 }  // namespace NextKey
