@@ -1,0 +1,163 @@
+/* Shared Dropdown Component CSS
+   Used by: appoverrides, excludedapps
+   Import after theme.css: @import url("../shared/dropdown.css");
+*/
+
+/* ============================================
+   RUNNING APPS DROPDOWN
+   Autocomplete dropdown for app selection
+   ============================================ */
+.running-apps-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 180px;
+    overflow: scroll-indicator;
+    overflow-x: hidden;
+    vertical-scrollbar: pink-scroll-indicator;
+    background: var(--bg-card-solid-dark);
+    border: 1px solid var(--border-card);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+    pointer-events: none;
+}
+
+.running-apps-dropdown.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.dropdown-item {
+    display: block;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: var(--bg-card-solid);
+    cursor: pointer;
+    transition: background 0.15s ease;
+    border-bottom: 1px solid var(--border-row-light);
+    /* Prevent text overflow */
+    max-width: 100%;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.dropdown-item:hover {
+    background: var(--bg-primary-hover);
+}
+
+.dropdown-item.highlighted {
+    background: var(--color-primary-light);
+}
+
+.dropdown-empty {
+    padding: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: var(--bg-card-solid);
+    text-align: center;
+    font-style: italic;
+}
+
+/* ============================================
+   APP LIST - Common list styling
+   ============================================ */
+.app-list {
+    display: block;
+    flex: 1;
+    min-height: 40px;
+    overflow: scroll-indicator;
+    vertical-scrollbar: pink-scroll-indicator;
+    padding-right: 10px;
+}
+
+.app-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 4px;
+    min-height: 36px;
+    gap: 8px;
+    border-bottom: 1px solid var(--border-row-light);
+}
+
+.app-item:hover {
+    background: var(--bg-primary-hover);
+}
+
+.app-item.selected {
+    background: var(--color-primary-medium);
+}
+
+.app-item-name {
+    flex: 1;
+    min-width: 0;
+    /* CRITICAL: Allow flex item to shrink below content width */
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: default;
+}
+
+.app-item-delete {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 4px;
+    color: var(--color-danger);
+    font-size: 14px;
+    opacity: 0.7;
+    transition: all 0.15s ease;
+}
+
+.app-item-delete:hover {
+    background: var(--color-danger-light);
+    opacity: 1;
+}
+
+/* ============================================
+   LIST HEADER - Column alignment
+   ============================================ */
+.list-header {
+    display: flex;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--border-medium);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    gap: 8px;
+}
+
+.list-col-name {
+    flex: 1;
+    min-width: 0;
+    max-width: 120px;
+    /* Match .app-item-name */
+}
+
+.list-col-action {
+    width: 32px;
+}

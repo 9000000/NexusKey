@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Công cụ chuyển mã</title>
+    <link rel="stylesheet" href="convert-tool.css">
+    <script src="convert-tool.js"></script>
+</head>
+
+<body>
+    <div class="container" id="main-container">
+        <!-- Title Bar -->
+        <div class="title-bar">
+            <span class="title-text">Công cụ chuyển mã</span>
+            <button class="btn-close" id="btn-close" title="Đóng">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
+                    fill="rgba(240,23,23,1)">
+                    <path
+                        d="M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 10.5858L9.17157 7.75736L7.75736 9.17157L10.5858 12L7.75736 14.8284L9.17157 16.2426L12 13.4142L14.8284 16.2426L16.2426 14.8284L13.4142 12L16.2426 9.17157L14.8284 7.75736L12 10.5858Z">
+                    </path>
+                </svg>
+            </button>
+        </div>
+
+        <div class="content-section">
+            <!-- Section 1: Tùy chọn chung -->
+            <div class="settings-card">
+                <div class="card-title">Tùy chọn chung</div>
+                <div class="options-grid">
+                    <!-- Column 1 -->
+                    <div class="option-column">
+                        <div class="option-row">
+                            <span class="option-label">Chuyển sang chữ HOA</span>
+                            <div class="toggle-switch-small" id="toggle-all-caps">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-toggle-all-caps" value="0">
+                        </div>
+                        <div class="option-row">
+                            <span class="option-label">Chuyển sang chữ thường</span>
+                            <div class="toggle-switch-small" id="toggle-non-caps">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-toggle-non-caps" value="0">
+                        </div>
+                        <div class="option-row">
+                            <span class="option-label">Loại bỏ dấu câu</span>
+                            <div class="toggle-switch-small" id="toggle-remove-mark">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-toggle-remove-mark" value="0">
+                        </div>
+                        <div class="option-row">
+                            <span class="option-label">Tự động dán + bôi đen</span>
+                            <div class="toggle-switch-small" id="toggle-auto-paste">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-toggle-auto-paste" value="0">
+                        </div>
+                    </div>
+                    <!-- Column 2 -->
+                    <div class="option-column">
+                        <div class="option-row">
+                            <span class="option-label">Đặt chữ Hoa đầu câu</span>
+                            <div class="toggle-switch-small" id="toggle-caps-first">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-toggle-caps-first" value="0">
+                        </div>
+                        <div class="option-row">
+                            <span class="option-label">Đặt chữ Hoa Sau Mỗi Từ</span>
+                            <div class="toggle-switch-small" id="toggle-caps-each">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-toggle-caps-each" value="0">
+                        </div>
+                        <div class="option-row">
+                            <span class="option-label">Thông báo khi chuyển xong</span>
+                            <div class="toggle-switch-small" id="toggle-alert">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-toggle-alert" value="0">
+                        </div>
+                        <div class="option-row" id="row-sequential"
+                            title="Nhấn phím chuyển nhiều lần để cycle qua từng option. Chỉ khả dụng khi 'Tự động dán + bôi đen' bật.">
+                            <span class="option-label">Convert tuần tự</span>
+                            <div class="toggle-switch-small" id="toggle-sequential">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-toggle-sequential" value="0">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 2: Lựa chọn -->
+            <div class="settings-card">
+                <div class="card-title">Lựa chọn</div>
+
+                <!-- Radio: Clipboard / Chọn file -->
+                <div class="radio-group" id="radio-source-type">
+                    <label class="radio-item">
+                        <input type="radio" name="source-type" id="radio-clipboard" value="clipboard" checked>
+                        <span class="radio-label">Chuyển mã trong Clipboard</span>
+                    </label>
+                    <label class="radio-item">
+                        <input type="radio" name="source-type" id="radio-file" value="file">
+                        <span class="radio-label">Chọn file</span>
+                    </label>
+                </div>
+                <input type="hidden" id="val-source-type" value="clipboard">
+
+                <!-- File Selection Section (Hidden by default) -->
+                <div class="file-selection-section" id="file-selection-area">
+                    <div class="file-row">
+                        <span class="file-label">File nguồn</span>
+                        <div class="file-input-group">
+                            <input type="text" class="file-path-display" id="source-file-path" readonly
+                                placeholder="Chưa chọn file...">
+                            <button class="btn-browse" id="btn-browse-source" title="Chọn file nguồn">...</button>
+                        </div>
+                    </div>
+                    <div class="file-row">
+                        <span class="file-label">File đích</span>
+                        <div class="file-input-group">
+                            <input type="text" class="file-path-display" id="dest-file-path" readonly
+                                placeholder="Chưa chọn file...">
+                            <button class="btn-browse" id="btn-browse-dest" title="Chọn file đích">...</button>
+                        </div>
+                    </div>
+                </div>
+
+                <input type="hidden" id="val-source-file" value="">
+                <input type="hidden" id="val-dest-file" value="">
+                <input type="hidden" id="val-ui-mode" value="clipboard">
+
+                <!-- Hotkey row -->
+                <div class="hotkey-section">
+                    <span class="hotkey-label">Phím chuyển mã nhanh:</span>
+                    <div class="hotkey-row">
+                        <div class="hotkey-item">
+                            <span class="key-label">Ctrl</span>
+                            <div class="toggle-switch-small" id="hotkey-ctrl">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-hotkey-ctrl" value="0">
+                        </div>
+                        <div class="hotkey-item">
+                            <span class="key-label">Alt</span>
+                            <div class="toggle-switch-small" id="hotkey-alt">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-hotkey-alt" value="0">
+                        </div>
+                        <div class="hotkey-item">
+                            <span class="key-label">Win</span>
+                            <div class="toggle-switch-small" id="hotkey-win">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-hotkey-win" value="0">
+                        </div>
+                        <div class="hotkey-item">
+                            <span class="key-label">Shift</span>
+                            <div class="toggle-switch-small" id="hotkey-shift">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-hotkey-shift" value="0">
+                        </div>
+                        <input type="text" class="hotkey-input" id="hotkey-char" maxlength="5" placeholder="~">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 3: Bảng mã -->
+            <div class="settings-card">
+                <div class="card-title">Bảng mã</div>
+                <div class="encoding-row">
+                    <div class="encoding-item">
+                        <span class="encoding-label">Nguồn</span>
+                        <select class="encoding-dropdown" id="source-encoding">
+                            <option value="0">Unicode</option>
+                            <option value="1">TCVN3 (ABC)</option>
+                            <option value="2">VNI Windows</option>
+                            <option value="3">Unicode Compound</option>
+                            <option value="4">Vietnamese Locale</option>
+                        </select>
+                    </div>
+                    <button class="btn-swap" id="btn-swap" title="Đảo bảng mã">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"
+                            fill="currentColor">
+                            <path
+                                d="M16.05 12.05L21 17L16.05 21.95L14.636 20.536L17.172 18H4V16H17.172L14.636 13.464L16.05 12.05ZM7.95 11.95L9.364 10.536L6.828 8H20V6H6.828L9.364 3.464L7.95 2.05L3 7L7.95 11.95Z">
+                            </path>
+                        </svg>
+                    </button>
+                    <div class="encoding-item">
+                        <span class="encoding-label">Đích</span>
+                        <select class="encoding-dropdown" id="dest-encoding">
+                            <option value="0">Unicode</option>
+                            <option value="1">TCVN3 (ABC)</option>
+                            <option value="2">VNI Windows</option>
+                            <option value="3">Unicode Compound</option>
+                            <option value="4">Vietnamese Locale</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer: Convert Button -->
+            <div class="footer-section">
+                <button class="btn-convert" id="btn-convert">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18"
+                        fill="currentColor">
+                        <path
+                            d="M5.463 4.43301C7.27756 2.86067 9.59899 1.99666 12 2.00001C17.523 2.00001 22 6.47701 22 12C22 14.136 21.33 16.116 20.19 17.74L17 12H20C20.0001 10.4316 19.5392 8.89781 18.6747 7.58927C17.8101 6.28072 16.5799 5.25517 15.1372 4.64013C13.6944 4.0251 12.1027 3.84771 10.56 4.13003C9.0172 4.41234 7.59145 5.14191 6.46 6.22801L5.463 4.43301ZM18.537 19.567C16.7224 21.1393 14.401 22.0034 12 22C6.477 22 2 17.523 2 12C2 9.86401 2.67 7.88401 3.81 6.26001L7 12H4C3.99987 13.5684 4.46075 15.1022 5.32534 16.4108C6.18992 17.7193 7.42007 18.7449 8.86282 19.3599C10.3056 19.9749 11.8973 20.1523 13.44 19.87C14.9828 19.5877 16.4085 18.8581 17.54 17.772L18.537 19.567Z">
+                        </path>
+                    </svg>
+                    <span>Chuyển mã</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Hidden inputs for C++ -->
+        <input type="hidden" id="val-action" value="">
+    </div>
+</body>
+
+</html>

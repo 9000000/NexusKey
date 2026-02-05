@@ -236,5 +236,25 @@ bool EngineController::IsScintillaApp() const {
     return false;
 }
 
+bool EngineController::CheckConfigEvent() {
+    // Initialize event if not already done
+    if (!configEvent_.IsValid()) {
+        configEvent_.Initialize();
+    }
+
+    // Non-blocking check for signal
+    if (!configEvent_.Wait(0)) {
+        return false;  // No signal
+    }
+
+    // Config changed - reload
+    TSF_LOG(L"Config event received, reloading config");
+    
+    // TODO: Load from ConfigManager when Core writes to shared location
+    // For now, just log - actual config sharing requires SharedState or file polling
+    
+    return true;
+}
+
 }  // namespace TSF
 }  // namespace NextKey

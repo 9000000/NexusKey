@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cấu hình ứng dụng</title>
+    <link rel="stylesheet" href="appoverrides.css">
+    <script src="../shared/utils.js"></script>
+    <script src="appoverrides.js"></script>
+</head>
+
+<body>
+    <div class="container" id="main-container">
+        <!-- Title Bar -->
+        <div class="title-bar">
+            <span class="title-text">Cấu hình ứng dụng</span>
+            <button class="btn-close" id="btn-close" title="Đóng">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
+                    fill="rgba(240,23,23,1)">
+                    <path
+                        d="M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 10.5858L9.17157 7.75736L7.75736 9.17157L10.5858 12L7.75736 14.8284L9.17157 16.2426L12 13.4142L14.8284 16.2426L16.2426 14.8284L13.4142 12L16.2426 9.17157L14.8284 7.75736L12 10.5858Z">
+                    </path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Main Content Section -->
+        <div class="content-section">
+            <!-- Input Card -->
+            <div class="settings-card input-card">
+                <div class="setting-row">
+                    <span class="setting-label">Ứng dụng</span>
+                    <div class="input-container">
+                        <input type="text" class="setting-input" id="app-name" placeholder="vd: myapp.exe"
+                            autocomplete="off">
+                        <div class="running-apps-dropdown" id="running-apps-dropdown">
+                            <!-- Items populated by JS -->
+                        </div>
+                    </div>
+                    <button class="btn-refresh" id="btn-refresh" title="Làm mới danh sách">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="16"
+                            height="16">
+                            <path
+                                d="M5.46257 4.43262C7.21556 2.91688 9.5007 2 12 2C17.5228 2 22 6.47715 22 12C22 14.1361 21.3302 16.1158 20.1892 17.7406L17 12H20C20 7.58172 16.4183 4 12 4C9.84982 4 7.89777 4.84827 6.46023 6.22842L5.46257 4.43262ZM18.5374 19.5674C16.7844 21.0831 14.4993 22 12 22C6.47715 22 2 17.5228 2 12C2 9.86386 2.66979 7.88416 3.8108 6.25944L7 12H4C4 16.4183 7.58172 20 12 20C14.1502 20 16.1022 19.1517 17.5398 17.7716L18.5374 19.5674Z">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label">Xử lý đặc biệt</span>
+                    <select class="setting-select" id="behavior-type">
+                        <option value="0">Không (mặc định)</option>
+                        <option value="1">Bỏ qua kiểm tra IME</option>
+                        <option value="2">Qt/Electron</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label">Ép clipboard</span>
+                    <select class="setting-select" id="clipboard-method">
+                        <option value="-1">Không (mặc định)</option>
+                        <option value="0">Ctrl+V</option>
+                        <option value="1">Shift+Insert</option>
+                    </select>
+                </div>
+                <div class="button-row">
+                    <button class="btn-action btn-primary" id="btn-add">+ Thêm</button>
+                    <button class="btn-action btn-secondary" id="btn-pick-window">🎯 Chọn cửa sổ</button>
+                </div>
+            </div>
+
+            <!-- List Card -->
+            <div class="settings-card list-card">
+                <div class="list-header">
+                    <span class="list-col-name">Ứng dụng</span>
+                    <span class="list-col-behavior">Xử lý</span>
+                    <span class="list-col-clipboard">Clipboard</span>
+                    <span class="list-col-action"></span>
+                </div>
+                <div class="app-list" id="app-list">
+                    <!-- Items inserted by C++ -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Hidden inputs for C++ -->
+        <input type="hidden" id="val-action" value="">
+        <input type="hidden" id="val-app-name" value="">
+        <input type="hidden" id="val-behavior-type" value="0">
+        <input type="hidden" id="val-clipboard-method" value="-1">
+    </div>
+</body>
+
+</html>

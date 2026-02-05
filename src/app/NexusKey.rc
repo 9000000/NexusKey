@@ -1,0 +1,14 @@
+// NexusKey - Resource File
+// SPDX-License-Identifier: GPL-3.0-only
+
+#include <windows.h>
+
+// Icon IDs
+#define IDI_APP         101
+#define IDI_VIET_ON     102
+#define IDI_VIET_OFF    103
+
+// Icons
+IDI_APP         ICON    "resources/icon.ico"
+IDI_VIET_ON     ICON    "resources/StatusViet.ico"
+IDI_VIET_OFF    ICON    "resources/StatusEng.ico"

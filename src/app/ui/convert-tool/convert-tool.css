@@ -1,0 +1,497 @@
+/* Convert Tool Dialog - Glass UI for Sciter */
+@import url("../shared/theme.css");
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: var(--font-family);
+    font-weight: 500;
+}
+
+html,
+body {
+    background: transparent;
+    color: var(--text-primary);
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+}
+
+/* Container - Fixed size, blur-friendly */
+.container {
+    width: 420px;
+    height: auto;
+    background: var(--bg-glass);
+    border-radius: 8px;
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+}
+
+/* Title Bar */
+.title-bar {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 36px;
+    line-height: 36px;
+    padding: 0 12px;
+    text-align: left;
+    background: var(--bg-title-bar);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.title-text {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-primary);
+    letter-spacing: 0.5px;
+}
+
+/* Close Button in Title Bar */
+.btn-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    right: 8px;
+    top: 6px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+    outline: none;
+    border-radius: 50%;
+    transition: background 0.2s ease;
+}
+
+.btn-close:hover {
+    background: var(--color-danger-light);
+}
+
+.btn-close svg {
+    width: 24px;
+    height: 24px;
+    pointer-events: none;
+}
+
+.btn-close svg path {
+    pointer-events: none;
+}
+
+/* Content Section */
+.content-section {
+    padding: 12px 16px;
+}
+
+/* Settings Card */
+.settings-card {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-card);
+}
+
+.card-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-primary);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Options Grid - 2 columns */
+.options-grid {
+    display: flex;
+    gap: 16px;
+}
+
+.option-column {
+    flex: 1;
+}
+
+.option-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+    gap: 8px;
+}
+
+.option-label {
+    font-size: 12px;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+/* =============================================
+   Toggle Switch Small - EXACT COPY from settings.css
+   ============================================= */
+.toggle-switch-small {
+    display: inline-block !important;
+    width: 40px;
+    min-width: 40px;
+    height: 20px;
+    min-height: 20px;
+    border-radius: 10px;
+    background-color: var(--toggle-off-bg);
+    position: relative;
+    cursor: pointer;
+    vertical-align: middle;
+    flex-shrink: 0;
+    transition: background-color 0.3s ease;
+}
+
+/* ON state */
+.toggle-switch-small.checked {
+    background-color: var(--toggle-on-bg);
+}
+
+/* I label on left side (visible when checked/ON) */
+.toggle-label-i {
+    display: block;
+    position: absolute;
+    left: 6px;
+    top: 0;
+    height: 20px;
+    line-height: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--toggle-label-on);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 1;
+}
+
+/* O label on right side (visible when unchecked/OFF) */
+.toggle-label-o {
+    display: block;
+    position: absolute;
+    right: 5px;
+    top: 0;
+    height: 20px;
+    line-height: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--toggle-label-off);
+    opacity: 1;
+    transition: opacity 0.3s ease;
+    z-index: 1;
+}
+
+/* When checked: show I, hide O */
+.toggle-switch-small.checked .toggle-label-i {
+    opacity: 1;
+}
+
+.toggle-switch-small.checked .toggle-label-o {
+    opacity: 0;
+}
+
+/* Oval thumb */
+.toggle-thumb-small {
+    width: 22px;
+    height: 16px;
+    border-radius: 8px;
+    background-color: var(--toggle-thumb-bg);
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: left 0.3s ease;
+    z-index: 2;
+}
+
+.toggle-switch-small.checked .toggle-thumb-small {
+    left: 16px;
+}
+
+/* Disabled state for toggle */
+.toggle-switch-small.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Disabled option row */
+.option-row.disabled {
+    opacity: 0.5;
+}
+
+.option-row.disabled .option-label {
+    color: var(--text-secondary);
+}
+
+/* Radio Group */
+.radio-group {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 10px;
+}
+
+.radio-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+/* Custom Radio Button - High DPI friendly (Sciter stock icons) */
+.radio-item input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    min-height: 18px;
+    margin: 0;
+    cursor: pointer;
+    foreground-image: url(icon:radio-off);
+    foreground-repeat: no-repeat;
+    foreground-size: contain;
+    fill: var(--text-secondary);
+    transition: fill 0.2s ease;
+}
+
+.radio-item input[type="radio"]:hover {
+    fill: var(--color-primary);
+}
+
+.radio-item input[type="radio"]:checked {
+    foreground-image: url(icon:radio-on);
+    fill: var(--color-primary);
+}
+
+/* Cleanup after dot replacement */
+.radio-item input[type="radio"]:checked::after {
+    display: none;
+}
+
+.radio-label {
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+/* Hotkey Section */
+.hotkey-section {
+    padding-top: 8px;
+    border-top: 1px solid var(--border-light);
+}
+
+.hotkey-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: block;
+    margin-bottom: 6px;
+}
+
+.hotkey-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hotkey-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.key-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-width: 28px;
+}
+
+.hotkey-input {
+    width: 48px;
+    height: 20px;
+    border: 1px solid var(--border-input);
+    border-radius: 4px;
+    text-align: center;
+    font-size: 12px;
+    background: var(--bg-card-solid);
+    color: var(--text-primary);
+    outline: none;
+}
+
+.hotkey-input:focus {
+    border-color: var(--color-primary);
+}
+
+/* File Selection Section */
+.file-selection-section {
+    display: none;
+    /* Hidden by default (clipboard mode) */
+    padding-top: 6px;
+    border-top: 1px solid var(--border-light);
+    margin-bottom: 2px;
+}
+
+.file-row {
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.file-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    width: 55px;
+}
+
+.file-input-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    width: calc(100% - 63px);
+    /* 55px label + 8px gap */
+}
+
+.file-path-display {
+    width: calc(100% - 40px);
+    /* 32px button + 8px gap */
+    height: 28px;
+    border: 1px solid var(--border-input);
+    border-radius: 4px;
+    font-size: 12px;
+    padding: 0 10px;
+    background: var(--bg-card-solid);
+    color: var(--text-primary);
+    outline: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.btn-browse {
+    width: 32px;
+    height: 28px;
+    flex-shrink: 0;
+    border: none;
+    background: var(--color-primary-light);
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    color: var(--color-primary);
+    transition: all 0.2s;
+}
+
+.btn-browse:hover {
+    background: var(--color-primary);
+    color: white;
+}
+
+/* Mode toggling */
+.mode-file .file-selection-section {
+    display: block !important;
+}
+
+
+/* Encoding Row */
+.encoding-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.encoding-item {
+    flex: 1;
+}
+
+.encoding-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: block;
+    margin-bottom: 4px;
+}
+
+.encoding-dropdown {
+    width: 100%;
+    height: 28px;
+    border: 1px solid var(--border-input);
+    border-radius: 6px;
+    font-size: 13px;
+    padding: 0 8px;
+    background: var(--bg-card-solid);
+    color: var(--text-primary);
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.btn-swap {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: var(--color-primary-light);
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-primary);
+    margin-top: 14px;
+    flex-shrink: 0;
+}
+
+.btn-swap:hover {
+    background: var(--color-primary);
+    color: white;
+}
+
+.btn-swap svg {
+    pointer-events: none;
+}
+
+/* Footer */
+.footer-section {
+    padding-top: 8px;
+}
+
+/* Convert Button - Primary action */
+.btn-convert {
+    width: 100%;
+    height: 36px;
+    background: var(--color-primary);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    /* Inline layout for icon + text */
+    text-align: center;
+    vertical-align: middle;
+    line-height: 36px;
+    padding: 0;
+}
+
+.btn-convert:hover {
+    background: var(--color-primary-hover);
+}
+
+.btn-convert svg {
+    pointer-events: none;
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
+    margin-right: 6px;
+    display: inline-block;
+}
+
+.btn-convert span {
+    vertical-align: middle;
+    display: inline;
+}
+
+/* Hide hidden inputs */
+input[type="hidden"] {
+    display: none;
+}

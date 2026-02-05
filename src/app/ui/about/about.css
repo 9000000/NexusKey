@@ -1,0 +1,172 @@
+@import url("../shared/theme.css");
+
+html {
+    background: transparent;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    /* More transparent background - handled by container in C++ */
+    background: transparent;
+    font-family: var(--font-family);
+    border-radius: 10px;
+    border: 1px solid var(--border-light);
+}
+
+.container {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    padding: 12px 16px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Close button - matches main dialog */
+.btn-close {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    z-index: 100;
+}
+
+.btn-close:hover {
+    background: var(--color-danger-light);
+}
+
+.btn-close svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Header section */
+.header {
+    text-align: center;
+    margin-bottom: 12px;
+    padding-top: 2px;
+}
+
+.app-logo {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 4px;
+    border-radius: 12px;
+}
+
+.app-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin: 0 0 4px 0;
+    letter-spacing: 0.3px;
+}
+
+.app-tagline {
+    font-size: 12px;
+    color: var(--text-light);
+    margin: 0;
+}
+
+/* Credits section - nicer styling */
+.credits-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border-card);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+}
+
+.credit-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    gap: 8px;
+    border-bottom: 1px solid var(--border-row);
+}
+
+.credit-row:last-child {
+    border-bottom: none;
+}
+
+.credit-label {
+    color: var(--text-light);
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.credit-value {
+    color: var(--text-dark);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+/* Repo buttons - centered and larger */
+.buttons-section {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.btn-repo {
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-width: 120px;
+}
+
+.btn-primary {
+    background: var(--color-primary);
+    color: white;
+    border: none;
+}
+
+.btn-primary:hover {
+    background: var(--color-primary-hover);
+}
+
+.btn-secondary {
+    background: transparent;
+    color: var(--text-primary);
+    border: 1px solid var(--text-secondary);
+}
+
+.btn-secondary:hover {
+    background: var(--bg-hover);
+    border-color: var(--text-light);
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    margin-top: auto;
+}
+
+.footer p {
+    margin: 0;
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-style: italic;
+}

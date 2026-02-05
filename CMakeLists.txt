@@ -25,6 +25,8 @@ add_library(NextKeyCore STATIC
     src/core/SharedStateManager.cpp
     src/core/SharedStateManager.h
     src/core/SharedState.h
+    src/core/ConfigEvent.cpp
+    src/core/ConfigEvent.h
     src/core/TypingConfig.h
     src/core/config/ConfigManager.cpp
     src/core/config/ConfigManager.h
@@ -73,16 +75,27 @@ set_target_properties(NextKeyTSF PROPERTIES
     LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/src/tsf/NextKeyTSF.def\""
 )
 
-# Core App (EXE)
-add_executable(NextKeyApp
+# Core App (EXE) - Win32 GUI application with Sciter UI
+add_executable(NextKeyApp WIN32
     src/app/main.cpp
+    src/app/TrayIcon.h
+    src/app/TrayIcon.cpp
+    src/app/SettingsDialog.h
+    src/app/SettingsDialog.cpp
+    src/app/resource.h
+    src/app/NexusKey.rc
+    extern/sciter/include/sciter-main.cpp
 )
+target_include_directories(NextKeyApp PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/include
+)
+target_compile_definitions(NextKeyApp PRIVATE SKIP_MAIN)
 target_link_libraries(NextKeyApp PRIVATE NextKeyCore)
 
 # Link Windows libraries
 if(WIN32)
     target_link_libraries(NextKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid)
-    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32)
+    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi)
 endif()
 
 # ============================================================================
@@ -103,6 +116,7 @@ add_executable(NextKeyTests
     tests/ConfigManagerTest.cpp
     tests/VniEngineTest.cpp
     tests/EngineFactoryTest.cpp
+    tests/ConfigEventTest.cpp
 )
 target_link_libraries(NextKeyTests PRIVATE NextKeyCore GTest::gtest_main)
 

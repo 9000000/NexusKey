@@ -6,6 +6,7 @@
 #include "stdafx.h"
 #include "core/engine/IInputEngine.h"
 #include "core/TypingConfig.h"
+#include "core/ConfigEvent.h"
 #include "CompositionManager.h"
 #include "EditSession.h"
 #include <memory>
@@ -58,6 +59,10 @@ public:
     /// Switch input method at word boundary
     void SwitchInputMethod(InputMethod method);
 
+    /// Check for config changes (call periodically, e.g., on focus)
+    /// Returns true if config was reloaded
+    bool CheckConfigEvent();
+
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
 
@@ -69,6 +74,7 @@ private:
     TypingConfig config_;
     InputMethod currentMethod_ = InputMethod::Telex;
     TfClientId clientId_ = TF_CLIENTID_NULL;
+    ConfigEvent configEvent_;  // For detecting config changes
 };
 
 }  // namespace TSF
