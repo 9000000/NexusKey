@@ -82,6 +82,11 @@ add_executable(NextKeyApp WIN32
     src/app/TrayIcon.cpp
     src/app/SettingsDialog.h
     src/app/SettingsDialog.cpp
+    src/app/SciterArchive.h
+    src/app/SciterArchive.cpp
+    src/app/helpers/ScaleHelper.h
+    src/app/helpers/SciterHelper.h
+    src/app/helpers/SciterHelper.cpp
     src/app/resource.h
     src/app/NexusKey.rc
     extern/sciter/include/sciter-main.cpp
@@ -96,6 +101,32 @@ target_link_libraries(NextKeyApp PRIVATE NextKeyCore)
 if(WIN32)
     target_link_libraries(NextKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid)
     target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi)
+endif()
+
+# ============================================================================
+# Sciter UI Resources
+# Always copy UI files to output directory (works for both Debug and Release)
+# For Release with embedded resources, set SCITER_USE_PACKFOLDER manually
+# ============================================================================
+
+# Copy UI files to output directory after each build
+add_custom_command(TARGET NextKeyApp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/app/ui"
+        "$<TARGET_FILE_DIR:NextKeyApp>/ui"
+    COMMENT "Copying UI files to output directory"
+)
+
+# Optional: For Release builds with embedded resources
+# 1. Run packfolder.exe manually: packfolder.exe src/app/ui src/app/resources.cpp -v resources
+# 2. Add -DSCITER_USE_PACKFOLDER=ON to cmake configure
+# 3. Rebuild
+option(SCITER_USE_PACKFOLDER "Use packfolder embedded resources instead of file copy" OFF)
+if(SCITER_USE_PACKFOLDER)
+    target_compile_definitions(NextKeyApp PRIVATE SCITER_USE_PACKFOLDER)
+    message(STATUS "Sciter: Using packfolder embedded resources")
+else()
+    message(STATUS "Sciter: Using file copy mode (ui/ folder next to exe)")
 endif()
 
 # ============================================================================

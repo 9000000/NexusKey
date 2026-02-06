@@ -592,7 +592,7 @@ void TelexEngine::Reset() {
     state_ = TelexStates::Valid;
 }
 
-size_t TelexEngine::Count() const {
+size_t TelexEngine::Count() const noexcept {
     return states_.size();
 }
 

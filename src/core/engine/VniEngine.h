@@ -35,9 +35,9 @@ struct CharState {
     Modifier mod = Modifier::None;
     Tone tone = Tone::None;
     bool isUpper = false;
-    
-    bool IsVowel() const;
-    bool IsD() const { return base == L'd'; }
+
+    [[nodiscard]] bool IsVowel() const noexcept;
+    [[nodiscard]] constexpr bool IsD() const noexcept { return base == L'd'; }
 };
 
 /// VNI Input Method Engine
@@ -50,10 +50,10 @@ public:
     // IInputEngine interface
     void PushChar(wchar_t c) override;
     void Backspace() override;
-    std::wstring Peek() const override;
-    std::wstring Commit() override;
+    [[nodiscard]] std::wstring Peek() const override;
+    [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
-    size_t Count() const override;
+    [[nodiscard]] size_t Count() const noexcept override;
     
 private:
     // Processing

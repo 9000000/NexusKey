@@ -101,7 +101,7 @@ bool SharedStateManager::Open() {
 #endif
 }
 
-SharedState SharedStateManager::Read() const {
+SharedState SharedStateManager::Read() const noexcept {
     SharedState state{};
 #ifdef _WIN32
     if (pImpl_->pState && pImpl_->pState->IsValid()) {
@@ -111,7 +111,7 @@ SharedState SharedStateManager::Read() const {
     return state;
 }
 
-void SharedStateManager::Write(const SharedState& state) {
+void SharedStateManager::Write(const SharedState& state) noexcept {
 #ifdef _WIN32
     if (pImpl_->pState && pImpl_->isOwner) {
         *pImpl_->pState = state;
@@ -119,7 +119,7 @@ void SharedStateManager::Write(const SharedState& state) {
 #endif
 }
 
-bool SharedStateManager::IsConnected() const {
+bool SharedStateManager::IsConnected() const noexcept {
 #ifdef _WIN32
     return pImpl_->pState != nullptr && pImpl_->pState->IsValid();
 #else

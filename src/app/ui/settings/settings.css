@@ -1,5 +1,5 @@
 /* NexusKey Settings - Glassmorphism UI for Sciter */
-@import url("../shared/theme.css");
+/* Note: theme.css is loaded via <link> tag in HTML for Sciter compatibility */
 
 * {
     margin: 0;
@@ -48,6 +48,7 @@ body {
     background: var(--bg-title-bar);
     border-bottom: 1px solid var(--border-light);
     cursor: default;
+    z-index: 100;  /* Stay above floated sections */
 }
 
 .title-text {

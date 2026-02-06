@@ -142,7 +142,7 @@ wchar_t ToUpperVietnamese(wchar_t ch) {
 // CharState Implementation
 //=============================================================================
 
-bool CharState::IsVowel() const {
+bool CharState::IsVowel() const noexcept {
     return IsVowelChar(base);
 }
 
@@ -180,9 +180,9 @@ void VniEngine::Backspace() {
 
 std::wstring VniEngine::Peek() const {
     std::wstring result;
+    result.reserve(states_.size());
     for (const auto& s : states_) {
-        wchar_t ch = const_cast<VniEngine*>(this)->ComposeChar(s);
-        result += ch;
+        result += ComposeChar(s);
     }
     return result;
 }
@@ -198,7 +198,7 @@ void VniEngine::Reset() {
     rawInput_.clear();
 }
 
-size_t VniEngine::Count() const {
+size_t VniEngine::Count() const noexcept {
     return states_.size();
 }
 

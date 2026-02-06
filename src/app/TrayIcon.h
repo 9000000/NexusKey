@@ -6,6 +6,7 @@
 #include <Windows.h>
 #include <shellapi.h>
 #include <functional>
+#include <utility>
 
 namespace NextKey {
 
@@ -30,22 +31,22 @@ public:
     TrayIcon& operator=(const TrayIcon&) = delete;
 
     /// Initialize tray icon with message window
-    bool Create(HINSTANCE hInstance);
+    [[nodiscard]] bool Create(HINSTANCE hInstance);
 
     /// Destroy tray icon
-    void Destroy();
+    void Destroy() noexcept;
 
     /// Set Vietnamese mode indicator (changes icon)
-    void SetVietnameseMode(bool enabled);
+    void SetVietnameseMode(bool enabled) noexcept;
 
     /// Set callback for menu actions
-    void SetMenuCallback(MenuCallback callback) { menuCallback_ = callback; }
+    void SetMenuCallback(MenuCallback callback) noexcept { menuCallback_ = std::move(callback); }
 
     /// Process window messages (call from message loop)
-    bool ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+    [[nodiscard]] bool ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept;
 
     /// Get the hidden message window handle
-    HWND GetMessageWindow() const { return hwndMessage_; }
+    [[nodiscard]] HWND GetMessageWindow() const noexcept { return hwndMessage_; }
 
 private:
     void ShowContextMenu();

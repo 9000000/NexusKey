@@ -3,10 +3,12 @@
 
 #include "TrayIcon.h"
 #include "SettingsDialog.h"
+#include "SciterArchive.h"
 #include "core/SharedStateManager.h"
 #include "core/TypingConfig.h"
 #include <Windows.h>
 #include <string>
+#include <atomic>
 
 // Sciter initialization
 #include "sciter-x.h"
@@ -16,10 +18,10 @@ using namespace NextKey;
 // Forward declarations
 void OnMenuCommand(TrayMenuId id);
 void SpawnSettingsSubprocess();
-int RunSettingsSubprocess();
+[[noreturn]] void RunSettingsSubprocess();
 
-// Global state
-static bool g_running = true;
+// Global state (atomic for thread-safety with future async operations)
+static std::atomic<bool> g_running{true};
 static TrayIcon g_trayIcon;
 static SharedStateManager g_sharedState;
 static HINSTANCE g_hInstance = nullptr;
@@ -32,7 +34,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // to avoid memory/assertion issues on close
     // ═══════════════════════════════════════════════════════════
     if (lpCmdLine && wcsstr(lpCmdLine, L"--settings") != nullptr) {
-        return RunSettingsSubprocess();
+        RunSettingsSubprocess();  // [[noreturn]] - never returns
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -60,7 +62,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Win32 message loop
     MSG msg;
-    while (g_running && GetMessageW(&msg, nullptr, 0, 0)) {
+    while (g_running.load(std::memory_order_relaxed) && GetMessageW(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
@@ -88,7 +90,7 @@ void OnMenuCommand(TrayMenuId id) {
             break;
 
         case TrayMenuId::Exit:
-            g_running = false;
+            g_running.store(false, std::memory_order_relaxed);
             PostQuitMessage(0);
             break;
     }
@@ -123,13 +125,16 @@ void SpawnSettingsSubprocess() {
     }
 }
 
-int RunSettingsSubprocess() {
+[[noreturn]] void RunSettingsSubprocess() {
     OutputDebugStringW(L"NexusKey: Running settings subprocess\n");
 
     // Initialize Sciter
     SciterSetOption(nullptr, SCITER_SET_DEBUG_MODE, TRUE);
-    SciterSetOption(nullptr, SCITER_SET_SCRIPT_RUNTIME_FEATURES, 
+    SciterSetOption(nullptr, SCITER_SET_SCRIPT_RUNTIME_FEATURES,
         ALLOW_FILE_IO | ALLOW_SOCKET_IO | ALLOW_EVAL | ALLOW_SYSINFO);
+
+    // Bind packed resources (Release builds only, no-op in Debug)
+    BindSciterResources();
 
     // Create and show dialog
     SettingsDialog dialog;
@@ -142,12 +147,14 @@ int RunSettingsSubprocess() {
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
-        
+
         if (!IsWindow(dialog.get_hwnd())) break;
     }
 
-    // Clean exit - ExitProcess avoids Sciter assertion failures
+    // INTENTIONAL: ExitProcess() is required here because Sciter's internal
+    // cleanup triggers assertion failures on normal process exit. This is a
+    // known Sciter issue. Since this is a subprocess with no shared state
+    // to flush, ExitProcess() is safe and avoids the assertion.
     OutputDebugStringW(L"NexusKey: Settings subprocess exiting\n");
     ExitProcess(0);
-    return 0;
 }

@@ -37,16 +37,16 @@ struct CharState {
     Tone tone = Tone::None;         // Tone mark
     bool isUpper = false;           // Preserve original case
 
-    bool IsVowel() const {
+    [[nodiscard]] constexpr bool IsVowel() const noexcept {
         return base == L'a' || base == L'e' || base == L'i' ||
                base == L'o' || base == L'u' || base == L'y';
     }
-    bool CanHaveMod() const {
+    [[nodiscard]] constexpr bool CanHaveMod() const noexcept {
         // a -> â, ă; e -> ê; o -> ô, ơ; u -> ư
         return base == L'a' || base == L'e' || base == L'o' || base == L'u';
     }
-    bool IsD() const { return base == L'd'; }
-    bool IsEmpty() const { return base == 0; }
+    [[nodiscard]] constexpr bool IsD() const noexcept { return base == L'd'; }
+    [[nodiscard]] constexpr bool IsEmpty() const noexcept { return base == 0; }
 };
 
 /// Telex engine states
@@ -78,12 +78,12 @@ public:
     // IInputEngine implementation
     void PushChar(wchar_t c) override;
     void Backspace() override;
-    std::wstring Peek() const override;
-    std::wstring Commit() override;
+    [[nodiscard]] std::wstring Peek() const override;
+    [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
-    size_t Count() const override;
+    [[nodiscard]] size_t Count() const noexcept override;
 
-    TelexStates GetState() const { return state_; }
+    [[nodiscard]] TelexStates GetState() const noexcept { return state_; }
 
 private:
     // Input processing

@@ -15,17 +15,17 @@ namespace NextKey {
 class ConfigManager {
 public:
     /// Load config from file, returns nullopt if file doesn't exist or is invalid
-    static std::optional<TypingConfig> LoadFromFile(const std::wstring& path);
-    
+    [[nodiscard]] static std::optional<TypingConfig> LoadFromFile(const std::wstring& path);
+
     /// Save config to file, returns true on success
-    static bool SaveToFile(const std::wstring& path, const TypingConfig& config);
-    
+    [[nodiscard]] static bool SaveToFile(const std::wstring& path, const TypingConfig& config);
+
     /// Get the config file path (exe dir or %APPDATA% fallback)
-    static std::wstring GetConfigPath();
-    
+    [[nodiscard]] static std::wstring GetConfigPath();
+
     /// Load config with automatic path resolution
     /// Returns compiled defaults if no config file found
-    static TypingConfig LoadOrDefault();
+    [[nodiscard]] static TypingConfig LoadOrDefault();
     
 private:
     static std::wstring GetExeDirectory();

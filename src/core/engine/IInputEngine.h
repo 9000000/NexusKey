@@ -21,16 +21,16 @@ public:
     virtual void Backspace() = 0;
 
     /// Get current composition (without committing)
-    virtual std::wstring Peek() const = 0;
+    [[nodiscard]] virtual std::wstring Peek() const = 0;
 
     /// Commit composition and get final text, then reset state
-    virtual std::wstring Commit() = 0;
+    [[nodiscard]] virtual std::wstring Commit() = 0;
 
     /// Reset engine state (clear composition)
     virtual void Reset() = 0;
 
     /// Get number of characters in current composition
-    virtual size_t Count() const = 0;
+    [[nodiscard]] virtual size_t Count() const = 0;
 };
 
 }  // namespace NextKey

@@ -76,7 +76,7 @@ bool TrayIcon::Create(HINSTANCE hInstance) {
     return true;
 }
 
-void TrayIcon::Destroy() {
+void TrayIcon::Destroy() noexcept {
     if (nid_.hWnd) {
         Shell_NotifyIconW(NIM_DELETE, &nid_);
         ZeroMemory(&nid_, sizeof(nid_));
@@ -87,7 +87,7 @@ void TrayIcon::Destroy() {
     }
 }
 
-void TrayIcon::SetVietnameseMode(bool enabled) {
+void TrayIcon::SetVietnameseMode(bool enabled) noexcept {
     vietnameseMode_ = enabled;
     
     // Update icon based on mode
@@ -145,7 +145,7 @@ void TrayIcon::ShowContextMenu() {
     PostMessageW(hwndMessage_, WM_NULL, 0, 0);
 }
 
-bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept {
     UNREFERENCED_PARAMETER(wParam);
     if (msg == WM_TRAYICON && hwnd == hwndMessage_) {
         switch (LOWORD(lParam)) {

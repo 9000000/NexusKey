@@ -196,9 +196,9 @@ void EngineController::Reset() {
 void EngineController::SwitchInputMethod(InputMethod method) {
     if (method == currentMethod_) return;
     
-    // Commit any pending composition before switching
+    // Commit any pending composition before switching (discard text)
     if (engine_->Count() > 0) {
-        engine_->Commit();
+        (void)engine_->Commit();
     }
     
     // Create new engine

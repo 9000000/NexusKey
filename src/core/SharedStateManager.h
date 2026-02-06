@@ -22,19 +22,19 @@ public:
     SharedStateManager& operator=(SharedStateManager&&) noexcept;
 
     /// Create shared memory (Core side)
-    bool Create();
+    [[nodiscard]] bool Create();
 
     /// Open existing shared memory (Engine side)
-    bool Open();
+    [[nodiscard]] bool Open();
 
     /// Read current state (validates magic before returning)
-    SharedState Read() const;
+    [[nodiscard]] SharedState Read() const noexcept;
 
     /// Write state (Core side only)
-    void Write(const SharedState& state);
+    void Write(const SharedState& state) noexcept;
 
     /// Check if connected to valid shared memory
-    bool IsConnected() const;
+    [[nodiscard]] bool IsConnected() const noexcept;
 
 private:
     struct Impl;

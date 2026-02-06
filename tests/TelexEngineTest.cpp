@@ -486,7 +486,7 @@ TEST_F(TelexEngineTest, Reset_ClearsAllState) {
 
 TEST_F(TelexEngineTest, AfterCommit_CanTypeNewWord) {
     TypeString(*engine_, L"xin");
-    engine_->Commit();
+    (void)engine_->Commit();  // Discard result, testing post-commit behavior
     TypeString(*engine_, L"chaof");
     
     EXPECT_EQ(engine_->Peek(), L"chào");

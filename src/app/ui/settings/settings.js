@@ -2,6 +2,9 @@
 // Handles div-based toggles with hidden inputs for VALUE_CHANGED events
 
 document.on("ready", function () {
+    // Enable blur-behind effect (Sciter built-in)
+    // "dark" = dark tint, "source-auto" = automatic blur source
+    Window.this.blurBehind = "dark source-auto";
 
     initializeToggles();
     initializeAdvancedPanel();
@@ -81,7 +84,7 @@ function initializeToggles() {
             const id = this.id;
             const newState = !isChecked;
 
-            // Show-advanced toggle: update container class and force sync layout
+            // Show-advanced toggle: update container class (like OpenKey)
             if (id === "show-advanced") {
                 const container = document.getElementById("main-container");
                 if (container) {
@@ -90,10 +93,10 @@ function initializeToggles() {
                     else container.classList.remove("expanded");
 
                     // 2. FORCE SYNC LAYOUT - Official Sciter method
-                    // Window.this.update() calculates layout synchronously
-                    // "Positions of elements should be known after the call"
+                    // This calculates layout synchronously before C++ reads DOM measurements
                     Window.this.update();
                 }
+                // Note: C++ will resize via VALUE_CHANGED on val-show-advanced
             }
 
             // Update the hidden input to fire VALUE_CHANGED
