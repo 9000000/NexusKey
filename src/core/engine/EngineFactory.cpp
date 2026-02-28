@@ -8,17 +8,20 @@
 namespace NextKey {
 
 std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) {
-    return Create(config.inputMethod);
+    switch (config.inputMethod) {
+        case InputMethod::VNI:
+            return std::make_unique<Vni::VniEngine>(config);
+        case InputMethod::SimpleTelex:
+        case InputMethod::Telex:
+        default:
+            return std::make_unique<Telex::TelexEngine>(config);
+    }
 }
 
 std::unique_ptr<IInputEngine> EngineFactory::Create(InputMethod method) {
-    switch (method) {
-        case InputMethod::VNI:
-            return std::make_unique<Vni::VniEngine>();
-        case InputMethod::Telex:
-        default:
-            return std::make_unique<Telex::TelexEngine>();
-    }
+    TypingConfig config;
+    config.inputMethod = method;
+    return Create(config);
 }
 
 }  // namespace NextKey

@@ -15,7 +15,10 @@ void enableWindowBlur(HWND hwnd, BlurMode mode) noexcept {
 
     const bool isBlur = (mode == BlurMode::Blur);
 
-    // 1. Apply SetWindowCompositionAttribute for blur effect (undocumented API)
+    // 1. Set WS_EX_LAYERED to allow alpha/blur composition
+    SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+
+    // 2. Apply SetWindowCompositionAttribute for blur effect (undocumented API)
     HMODULE hUser = GetModuleHandle(L"user32.dll");
     if (hUser) {
         using SetWindowCompositionAttributeFn = BOOL(WINAPI*)(HWND, WindowCompositionAttribData*);
@@ -25,10 +28,11 @@ void enableWindowBlur(HWND hwnd, BlurMode mode) noexcept {
         if (SetWindowCompositionAttribute) {
             AccentPolicy policy{};
             if (isBlur) {
-                // Try AcrylicBlurBehind first (Windows 10 1803+), fallback to BlurBehind
-                policy.AccentState = static_cast<int>(AccentState::AcrylicBlurBehind);
-                policy.AccentFlags = 2;  // Enable blur behind
-                policy.GradientColor = 0x01000000;  // ABGR: very slight tint
+                // Use BlurBehind (3) - most stable across Win10/11 versions
+                // (AcrylicBlurBehind=4 has compatibility issues)
+                policy.AccentState = static_cast<int>(AccentState::BlurBehind);
+                policy.AccentFlags = 0;
+                policy.GradientColor = 0;
             } else {
                 policy.AccentState = static_cast<int>(AccentState::Disabled);
             }
@@ -42,7 +46,7 @@ void enableWindowBlur(HWND hwnd, BlurMode mode) noexcept {
         }
     }
 
-    // 2. Enable rounded corners on Windows 11
+    // 3. Enable rounded corners on Windows 11
     int cornerPreference = DwmConstants::DWMWCP_ROUND;
     DwmSetWindowAttribute(hwnd, DwmConstants::DWMWA_WINDOW_CORNER_PREFERENCE,
                           &cornerPreference, sizeof(cornerPreference));

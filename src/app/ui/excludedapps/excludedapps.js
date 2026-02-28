@@ -4,8 +4,8 @@
 var dropdownController = null;
 
 document.ready = function () {
+    initSubDialog(".app-list");
     initExcludedAppsDialog();
-    initializeScrollbarResize(".app-list");
 };
 
 function initExcludedAppsDialog() {
@@ -210,11 +210,4 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Called from C++ to set background opacity
-function setBackgroundOpacity(value) {
-    var opacity = value / 100;
-    document.documentElement.style.setProperty(
-        "--bg-glass",
-        "rgba(255, 255, 255, " + opacity + ")"
-    );
-}
+// setBackgroundOpacity is provided by shared/utils.js

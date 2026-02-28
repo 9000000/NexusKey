@@ -7,8 +7,10 @@
 #include "core/engine/IInputEngine.h"
 #include "core/TypingConfig.h"
 #include "core/ConfigEvent.h"
+#include "core/SharedStateManager.h"
 #include "CompositionManager.h"
 #include "EditSession.h"
+#include "LanguageBarButton.h"
 #include <memory>
 
 namespace NextKey {
@@ -63,18 +65,45 @@ public:
     /// Returns true if config was reloaded
     bool CheckConfigEvent();
 
+    /// Check if engine is enabled (app is running)
+    [[nodiscard]] bool IsEnabled() const noexcept { return engineEnabled_; }
+
+    /// Check if Vietnamese mode is active
+    [[nodiscard]] bool IsVietnameseMode() const noexcept { return vietnameseMode_; }
+
+    /// Toggle Vietnamese/English mode (atomic flag + icon refresh)
+    void ToggleVietnameseMode();
+
+    /// Initialize language bar button (call after SetClientId/SetCategoryMgr)
+    bool InitLanguageBar(ITfThreadMgr* pThreadMgr);
+
+    /// Cleanup language bar button
+    void UninitLanguageBar();
+
+    /// Re-read flags from SharedState (call on focus)
+    void RefreshFlags();
+
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
 
     /// Check if current app is Scintilla-based (Notepad++, etc.)
     bool IsScintillaApp() const;
 
+    /// Apply config from SharedState
+    void ApplySharedState(const SharedState& state);
+
     std::unique_ptr<IInputEngine> engine_;
     CompositionManager compositionMgr_;
     TypingConfig config_;
     InputMethod currentMethod_ = InputMethod::Telex;
     TfClientId clientId_ = TF_CLIENTID_NULL;
-    ConfigEvent configEvent_;  // For detecting config changes
+    ConfigEvent configEvent_;       // For detecting config changes
+    SharedStateManager sharedState_; // For reading config from App
+    uint32_t lastEpoch_ = 0;        // Last seen config epoch
+    bool engineEnabled_ = true;     // ENGINE_ENABLED flag from SharedState
+    bool vietnameseMode_ = true;    // VIETNAMESE_MODE flag from SharedState
+    uint8_t autoCapState_ = 0;      // 0=idle, 1=after-punct, 2=capitalize-next
+    LanguageBarButton* langBarButton_ = nullptr;  // Owned, Release'd in UninitLanguageBar
 };
 
 }  // namespace TSF

@@ -98,6 +98,11 @@ IFACEMETHODIMP_(ULONG) KeyEventSink::Release() {
 IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
     if (fForeground) {
         TSF_LOG(L"OnSetFocus: foreground");
+        // Re-read SharedState on focus to pick up ENGINE_ENABLED/VIETNAMESE_MODE changes
+        if (pEngineController_) {
+            pEngineController_->CheckConfigEvent();
+            pEngineController_->RefreshFlags();
+        }
     } else {
         TSF_LOG(L"OnSetFocus: background");
     }

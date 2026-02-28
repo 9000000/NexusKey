@@ -64,6 +64,8 @@ private:
     // Character composition
     wchar_t ComposeChar(const CharState& state) const;
     CharState* FindToneTarget();
+    CharState* FindToneTargetClassic();
+    CharState* FindToneTargetModern();
     
     // State
     std::vector<CharState> states_;

@@ -1,15 +1,12 @@
-// NexusKey - Telex Engine Implementation V2 (Table-Driven Architecture)
+// NexusKey - Telex Engine Implementation V3 (Optimized Table-Driven)
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// REWRITE: Cleaner, more maintainable, table-driven architecture
-// - Explicit priority rules
-// - QU/GI cluster handling
-// - Proper case preservation
-// - Easy to extend and debug
+// V3 changes: flat constexpr arrays for O(1) Compose(), stack-allocated
+// FindToneTarget(), bounded ApplyAutoUO(), pre-reserved buffers.
 
 #include "TelexEngine.h"
+#include "VietnameseTables.h"
 #include <algorithm>
-#include <map>
 
 namespace NextKey {
 namespace Telex {
@@ -17,80 +14,7 @@ namespace Telex {
 namespace {
 
 //=============================================================================
-// RULE TABLES - Separating RULES from LOGIC
-//=============================================================================
-
-// Table 1: (base, modifier) → modified base
-struct BaseModKey {
-    wchar_t base;
-    Modifier mod;
-    bool operator<(const BaseModKey& o) const {
-        return std::tie(base, mod) < std::tie(o.base, o.mod);
-    }
-};
-
-const std::map<BaseModKey, wchar_t> kBaseModTable = {
-    // Circumflex: â ê ô
-    {{L'a', Modifier::Circumflex}, L'â'},
-    {{L'e', Modifier::Circumflex}, L'ê'},
-    {{L'o', Modifier::Circumflex}, L'ô'},
-    // Breve: ă
-    {{L'a', Modifier::Breve}, L'ă'},
-    // Horn: ơ ư
-    {{L'o', Modifier::Horn}, L'ơ'},
-    {{L'u', Modifier::Horn}, L'ư'},
-};
-
-// Table 2: (char, tone) → toned char (complete 60 entries)
-struct ToneKey {
-    wchar_t ch;
-    Tone tone;
-    bool operator<(const ToneKey& o) const {
-        return std::tie(ch, tone) < std::tie(o.ch, o.tone);
-    }
-};
-
-const std::map<ToneKey, wchar_t> kToneTable = {
-    // a
-    {{L'a', Tone::Acute}, L'á'}, {{L'a', Tone::Grave}, L'à'},
-    {{L'a', Tone::Hook}, L'ả'}, {{L'a', Tone::Tilde}, L'ã'}, {{L'a', Tone::Dot}, L'ạ'},
-    // â
-    {{L'â', Tone::Acute}, L'ấ'}, {{L'â', Tone::Grave}, L'ầ'},
-    {{L'â', Tone::Hook}, L'ẩ'}, {{L'â', Tone::Tilde}, L'ẫ'}, {{L'â', Tone::Dot}, L'ậ'},
-    // ă
-    {{L'ă', Tone::Acute}, L'ắ'}, {{L'ă', Tone::Grave}, L'ằ'},
-    {{L'ă', Tone::Hook}, L'ẳ'}, {{L'ă', Tone::Tilde}, L'ẵ'}, {{L'ă', Tone::Dot}, L'ặ'},
-    // e
-    {{L'e', Tone::Acute}, L'é'}, {{L'e', Tone::Grave}, L'è'},
-    {{L'e', Tone::Hook}, L'ẻ'}, {{L'e', Tone::Tilde}, L'ẽ'}, {{L'e', Tone::Dot}, L'ẹ'},
-    // ê
-    {{L'ê', Tone::Acute}, L'ế'}, {{L'ê', Tone::Grave}, L'ề'},
-    {{L'ê', Tone::Hook}, L'ể'}, {{L'ê', Tone::Tilde}, L'ễ'}, {{L'ê', Tone::Dot}, L'ệ'},
-    // i
-    {{L'i', Tone::Acute}, L'í'}, {{L'i', Tone::Grave}, L'ì'},
-    {{L'i', Tone::Hook}, L'ỉ'}, {{L'i', Tone::Tilde}, L'ĩ'}, {{L'i', Tone::Dot}, L'ị'},
-    // o
-    {{L'o', Tone::Acute}, L'ó'}, {{L'o', Tone::Grave}, L'ò'},
-    {{L'o', Tone::Hook}, L'ỏ'}, {{L'o', Tone::Tilde}, L'õ'}, {{L'o', Tone::Dot}, L'ọ'},
-    // ô
-    {{L'ô', Tone::Acute}, L'ố'}, {{L'ô', Tone::Grave}, L'ồ'},
-    {{L'ô', Tone::Hook}, L'ổ'}, {{L'ô', Tone::Tilde}, L'ỗ'}, {{L'ô', Tone::Dot}, L'ộ'},
-    // ơ
-    {{L'ơ', Tone::Acute}, L'ớ'}, {{L'ơ', Tone::Grave}, L'ờ'},
-    {{L'ơ', Tone::Hook}, L'ở'}, {{L'ơ', Tone::Tilde}, L'ỡ'}, {{L'ơ', Tone::Dot}, L'ợ'},
-    // u
-    {{L'u', Tone::Acute}, L'ú'}, {{L'u', Tone::Grave}, L'ù'},
-    {{L'u', Tone::Hook}, L'ủ'}, {{L'u', Tone::Tilde}, L'ũ'}, {{L'u', Tone::Dot}, L'ụ'},
-    // ư
-    {{L'ư', Tone::Acute}, L'ứ'}, {{L'ư', Tone::Grave}, L'ừ'},
-    {{L'ư', Tone::Hook}, L'ử'}, {{L'ư', Tone::Tilde}, L'ữ'}, {{L'ư', Tone::Dot}, L'ự'},
-    // y
-    {{L'y', Tone::Acute}, L'ý'}, {{L'y', Tone::Grave}, L'ỳ'},
-    {{L'y', Tone::Hook}, L'ỷ'}, {{L'y', Tone::Tilde}, L'ỹ'}, {{L'y', Tone::Dot}, L'ỵ'},
-};
-
-//=============================================================================
-// HELPER FUNCTIONS
+// Telex-specific helpers (tone key mapping etc.)
 //=============================================================================
 
 bool IsToneKey(wchar_t c) {
@@ -116,27 +40,26 @@ bool IsVowelChar(wchar_t c) {
            lower == L'o' || lower == L'u' || lower == L'y';
 }
 
-// Vietnamese-aware uppercase conversion
-wchar_t ToUpperVietnamese(wchar_t ch) {
-    // Latin-1 Supplement
-    if (ch >= 0x00E0 && ch <= 0x00F6) return ch - 0x20;
-    if (ch >= 0x00F8 && ch <= 0x00FE) return ch - 0x20;
-
-    // Latin Extended-A
-    if (ch == L'ă') return L'Ă';
-    if (ch == L'đ') return L'Đ';
-
-    // Latin Extended-B
-    if (ch == L'ơ') return L'Ơ';
-    if (ch == L'ư') return L'Ư';
-
-    // Vietnamese toned vowels (Latin Extended Additional)
-    if (ch >= 0x1EA0 && ch <= 0x1EF9) {
-        if (ch & 1) return ch - 1;  // Odd → Even
-        return ch;
+/// Map Modifier enum to flat array column index (Circumflex=0, Breve=1, Horn=2)
+constexpr int ModifierIndex(Modifier mod) {
+    switch (mod) {
+        case Modifier::Circumflex: return 0;
+        case Modifier::Breve:      return 1;
+        case Modifier::Horn:       return 2;
+        default:                   return -1;
     }
+}
 
-    return towupper(ch);
+/// Map Tone enum to flat array column index (Acute=0 .. Dot=4)
+constexpr int ToneIndex(Tone tone) {
+    switch (tone) {
+        case Tone::Acute: return 0;
+        case Tone::Grave: return 1;
+        case Tone::Hook:  return 2;
+        case Tone::Tilde: return 3;
+        case Tone::Dot:   return 4;
+        default:          return -1;
+    }
 }
 
 }  // namespace
@@ -146,6 +69,8 @@ wchar_t ToUpperVietnamese(wchar_t ch) {
 //=============================================================================
 
 TelexEngine::TelexEngine(const TypingConfig& config) : config_(config) {
+    states_.reserve(8);
+    rawInput_.reserve(12);
     Reset();
 }
 
@@ -157,6 +82,8 @@ void TelexEngine::PushChar(wchar_t c) {
     rawInput_.push_back(c);
 
     // 1. Try tone keys (s, f, r, x, j)
+    // Note: allowZwjf is for spell-check validation only (accept "ja" as valid).
+    // Tone/modifier behavior of z/w/j/f is always standard Telex.
     if (IsToneKey(c) && !states_.empty()) {
         if (ProcessTone(c)) {
             ApplyAutoUO();
@@ -227,7 +154,6 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                 }
                 // Apply circumflex - PRESERVE FIRST LETTER CASE
                 last.mod = Modifier::Circumflex;
-                // Don't update isUpper - keep original case
                 return true;
             }
         }
@@ -251,6 +177,18 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         return false;  // Let 'w' be added as regular character
     }
 
+    // Simple Telex: 'w' only acts as modifier when preceded by a/o/u vowel
+    if (config_.inputMethod == InputMethod::SimpleTelex) {
+        bool hasVowelContext = false;
+        for (const auto& s : states_) {
+            if (s.IsVowel() && (s.base == L'a' || s.base == L'o' || s.base == L'u')) {
+                hasVowelContext = true;
+                break;
+            }
+        }
+        if (!hasVowelContext) return false;  // Let PushChar add 'w' as literal
+    }
+
     // PRIORITY ORDER for 'w':
     // P1: "ua" pattern → apply horn to 'u' (mưa, được)
     // P2: "uo" pattern → apply horn to 'o' (uơ → later AutoUO makes ươ)
@@ -267,7 +205,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 
     for (size_t i = 0; i < states_.size(); ++i) {
         if (!states_[i].IsVowel()) continue;
-        
+
         wchar_t base = states_[i].base;
         Modifier mod = states_[i].mod;
 
@@ -297,7 +235,6 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
     // P1: "ua" pattern → horn on 'u' (mưa, được, thưa)
     if (hasUA && uIdx != SIZE_MAX) {
         states_[uIdx].mod = Modifier::Horn;
-        // Clear circumflex on 'a' if present
         if (aIdx != SIZE_MAX && states_[aIdx].mod == Modifier::Circumflex) {
             states_[aIdx].mod = Modifier::None;
         }
@@ -336,7 +273,6 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
     }
 
     // P6: Standalone 'a' → breve (BUT only if no horn vowel exists)
-    // If horn vowel exists, let P7 escape handle it  
     if (aIdx != SIZE_MAX && states_[aIdx].mod == Modifier::None && hornedIdx == SIZE_MAX) {
         states_[aIdx].mod = Modifier::Breve;
         return true;
@@ -362,16 +298,12 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 //-----------------------------------------------------------------------------
 
 bool TelexEngine::ProcessDModifier(wchar_t c) {
-    // Search for any 'd' in the word
     for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
         if (it->IsD()) {
             if (it->mod == Modifier::None) {
-                // Apply đ - PRESERVE FIRST LETTER CASE
                 it->mod = Modifier::Breve;
-                // Keep original isUpper from when 'd' was first typed
                 return true;
             } else if (it->mod == Modifier::Breve) {
-                // Escape: đ + d → dd
                 it->mod = Modifier::None;
                 ProcessChar(c);
                 return true;
@@ -386,13 +318,10 @@ bool TelexEngine::ProcessDModifier(wchar_t c) {
 //-----------------------------------------------------------------------------
 
 bool TelexEngine::IsInQUCluster() const {
-    // Check if we have "qu" pattern (q followed by u)
-    // In this case, 'u' is part of consonant cluster, not a vowel
     if (states_.size() < 2) return false;
-    
+
     for (size_t i = 0; i + 1 < states_.size(); ++i) {
         if (states_[i].base == L'q' && states_[i+1].base == L'u') {
-            // Found "qu" cluster - 'w' should not apply to 'u'
             return true;
         }
     }
@@ -413,15 +342,17 @@ void TelexEngine::ProcessChar(wchar_t c) {
 }
 
 //-----------------------------------------------------------------------------
-// Auto ươ Transformation
+// Auto ươ Transformation — O(1) bounded scan
 //-----------------------------------------------------------------------------
 
 void TelexEngine::ApplyAutoUO() {
     // Pattern: 'u' (no horn) + 'ơ' (has horn) + [any char]
-    // Result: Convert 'u' to 'ư'
+    // Only need to check the last 3 positions
     if (states_.size() < 3) return;
 
-    for (size_t i = 0; i + 2 < states_.size(); ++i) {
+    // Scan backward, bounded to last 4 positions
+    size_t start = (states_.size() > 4) ? states_.size() - 4 : 0;
+    for (size_t i = start; i + 2 < states_.size(); ++i) {
         if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
             states_[i+1].base == L'o' && states_[i+1].mod == Modifier::Horn) {
             states_[i].mod = Modifier::Horn;
@@ -434,7 +365,6 @@ void TelexEngine::ApplyAutoUO() {
 //-----------------------------------------------------------------------------
 
 void TelexEngine::RelocateToneToHornVowel() {
-    // Example: "cuả" + w → "cửa" (tone moves from a to ư)
     size_t hornIdx = SIZE_MAX;
     size_t tonedIdx = SIZE_MAX;
 
@@ -454,39 +384,44 @@ void TelexEngine::RelocateToneToHornVowel() {
 }
 
 //-----------------------------------------------------------------------------
-// Tone Target Finding - EXPLICIT PRIORITY
+// Tone Target Finding — stack-allocated, no heap alloc
 //-----------------------------------------------------------------------------
 
 size_t TelexEngine::FindToneTarget() const {
-    std::vector<size_t> vowelIndices;
-    for (size_t i = 0; i < states_.size(); ++i) {
+    return config_.modernOrtho ? FindToneTargetModern() : FindToneTargetClassic();
+}
+
+size_t TelexEngine::FindToneTargetClassic() const {
+    size_t vowels[8];
+    size_t vowelCount = 0;
+    for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
         if (states_[i].IsVowel()) {
-            vowelIndices.push_back(i);
+            vowels[vowelCount++] = i;
         }
     }
 
-    if (vowelIndices.empty()) return SIZE_MAX;
+    if (vowelCount == 0) return SIZE_MAX;
 
     // Priority 1: Horn vowels (last one for ươ)
     size_t lastHornIdx = SIZE_MAX;
-    for (size_t idx : vowelIndices) {
-        if (states_[idx].mod == Modifier::Horn) {
-            lastHornIdx = idx;
+    for (size_t k = 0; k < vowelCount; ++k) {
+        if (states_[vowels[k]].mod == Modifier::Horn) {
+            lastHornIdx = vowels[k];
         }
     }
     if (lastHornIdx != SIZE_MAX) return lastHornIdx;
 
     // Priority 2: Modified vowels (â, ê, ô, ă)
-    for (size_t idx : vowelIndices) {
-        if (states_[idx].mod != Modifier::None) {
-            return idx;
+    for (size_t k = 0; k < vowelCount; ++k) {
+        if (states_[vowels[k]].mod != Modifier::None) {
+            return vowels[k];
         }
     }
 
     // Priority 3: Diphthong rules
-    if (vowelIndices.size() >= 2) {
-        size_t lastIdx = vowelIndices.back();
-        size_t prevIdx = vowelIndices[vowelIndices.size() - 2];
+    if (vowelCount >= 2) {
+        size_t lastIdx = vowels[vowelCount - 1];
+        size_t prevIdx = vowels[vowelCount - 2];
 
         if (lastIdx == prevIdx + 1) {
             wchar_t first = states_[prevIdx].base;
@@ -499,18 +434,96 @@ size_t TelexEngine::FindToneTarget() const {
             if ((first == L'u' || first == L'i') && (last == L'i' || last == L'u')) return prevIdx;
             if (first == L'u' && (last == L'a' || last == L'e')) return prevIdx;
 
+            // Classic: oa, oe → tone on FIRST (old-style: hòa, xòe)
+            if (first == L'o' && (last == L'a' || last == L'e')) return prevIdx;
+
             // Rising diphthongs: tone on SECOND
-            if (first == L'o' && (last == L'a' || last == L'e')) return lastIdx;
             if (first == L'u' && last == L'y') return lastIdx;
         }
     }
 
     // Default: rightmost vowel
-    return vowelIndices.back();
+    return vowels[vowelCount - 1];
+}
+
+size_t TelexEngine::FindToneTargetModern() const {
+    size_t vowels[8];
+    size_t vowelCount = 0;
+    for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
+        if (states_[i].IsVowel()) {
+            vowels[vowelCount++] = i;
+        }
+    }
+
+    if (vowelCount == 0) return SIZE_MAX;
+
+    // Priority 1: Horn vowels (last one for ươ)
+    size_t lastHornIdx = SIZE_MAX;
+    for (size_t k = 0; k < vowelCount; ++k) {
+        if (states_[vowels[k]].mod == Modifier::Horn) {
+            lastHornIdx = vowels[k];
+        }
+    }
+    if (lastHornIdx != SIZE_MAX) return lastHornIdx;
+
+    // Priority 2: Modified vowels (â, ê, ô, ă)
+    for (size_t k = 0; k < vowelCount; ++k) {
+        if (states_[vowels[k]].mod != Modifier::None) {
+            return vowels[k];
+        }
+    }
+
+    // Priority 3: Diphthong rules (MODERN placement)
+    if (vowelCount >= 2) {
+        size_t lastIdx = vowels[vowelCount - 1];
+        size_t prevIdx = vowels[vowelCount - 2];
+
+        if (lastIdx == prevIdx + 1) {
+            wchar_t first = states_[prevIdx].base;
+            wchar_t last = states_[lastIdx].base;
+
+            // Triphthongs: check 3-vowel patterns (tone on MIDDLE)
+            if (vowelCount >= 3) {
+                size_t midIdx = vowels[vowelCount - 2];
+                size_t firstIdx = vowels[vowelCount - 3];
+                if (midIdx == firstIdx + 1 && lastIdx == midIdx + 1) {
+                    wchar_t v1 = states_[firstIdx].base;
+                    wchar_t v2 = states_[midIdx].base;
+                    wchar_t v3 = states_[lastIdx].base;
+                    // oai, oeo, uya, uyu
+                    if ((v1 == L'o' && v2 == L'a' && v3 == L'i') ||
+                        (v1 == L'o' && v2 == L'e' && v3 == L'o') ||
+                        (v1 == L'u' && v2 == L'y' && v3 == L'a') ||
+                        (v1 == L'u' && v2 == L'y' && v3 == L'u')) {
+                        return midIdx;
+                    }
+                }
+            }
+
+            // Falling diphthongs: tone on FIRST
+            if (first == L'a' && (last == L'i' || last == L'o' || last == L'u' || last == L'y')) return prevIdx;
+            if (first == L'e' && (last == L'i' || last == L'o' || last == L'u')) return prevIdx;
+            if (first == L'o' && (last == L'i' || last == L'u')) return prevIdx;
+            if ((first == L'u' || first == L'i') && (last == L'i' || last == L'u')) return prevIdx;
+
+            // MODERN: "ua", "ue" → tone on SECOND (differs from classic)
+            if (first == L'u' && (last == L'a' || last == L'e')) return lastIdx;
+
+            // Rising diphthongs: tone on SECOND (same as classic)
+            if (first == L'o' && (last == L'a' || last == L'e')) return lastIdx;
+            if (first == L'u' && last == L'y') return lastIdx;
+
+            // "uo" → tone on SECOND
+            if (first == L'u' && last == L'o') return lastIdx;
+        }
+    }
+
+    // Default: rightmost vowel
+    return vowels[vowelCount - 1];
 }
 
 //-----------------------------------------------------------------------------
-// Composition (State → Unicode)
+// Composition (State → Unicode) — O(1) flat array lookups
 //-----------------------------------------------------------------------------
 
 wchar_t TelexEngine::Compose(const CharState& s) {
@@ -523,19 +536,22 @@ wchar_t TelexEngine::Compose(const CharState& s) {
         return s.isUpper ? L'Đ' : L'đ';
     }
 
-    // Step 1: Apply modifier
+    // Step 1: Apply modifier — O(1) array lookup
     if (s.mod != Modifier::None && s.IsVowel()) {
-        auto it = kBaseModTable.find({s.base, s.mod});
-        if (it != kBaseModTable.end()) {
-            ch = it->second;
+        int bi = VowelBaseIndex(s.base);
+        int mi = ModifierIndex(s.mod);
+        if (bi >= 0 && mi >= 0) {
+            wchar_t modified = kModifiedVowel[bi][mi];
+            if (modified) ch = modified;
         }
     }
 
-    // Step 2: Apply tone
+    // Step 2: Apply tone — O(1) array lookup
     if (s.tone != Tone::None) {
-        auto it = kToneTable.find({ch, s.tone});
-        if (it != kToneTable.end()) {
-            ch = it->second;
+        int ti = ToneBaseIndex(ch);
+        int si = ToneIndex(s.tone);
+        if (ti >= 0 && si >= 0) {
+            ch = kTonedVowel[ti][si];
         }
     }
 

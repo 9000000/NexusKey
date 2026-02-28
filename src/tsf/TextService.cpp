@@ -78,12 +78,22 @@ IFACEMETHODIMP TextService::Activate(ITfThreadMgr* pThreadMgr, TfClientId tfClie
         return E_FAIL;
     }
 
+    // Initialize language bar button (V/E toggle icon in system tray)
+    if (!engineController_->InitLanguageBar(pThreadMgr)) {
+        TSF_LOG(L"Warning: Language bar button failed to initialize");
+        // Non-fatal — typing still works without the icon
+    }
+
     TSF_LOG(L"TextService activated successfully");
     return S_OK;
 }
 
 IFACEMETHODIMP TextService::Deactivate() {
     TSF_LOG(L"TextService::Deactivate");
+
+    if (engineController_) {
+        engineController_->UninitLanguageBar();
+    }
 
     if (keyEventSink_) {
         keyEventSink_->Unadvise();

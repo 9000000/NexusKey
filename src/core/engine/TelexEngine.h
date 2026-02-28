@@ -93,6 +93,8 @@ private:
 
     // Find target for tone/modifier application
     size_t FindToneTarget() const;
+    size_t FindToneTargetClassic() const;
+    size_t FindToneTargetModern() const;
 
     // Auto ươ: convert 'uơ' to 'ươ' when followed by another character
     void ApplyAutoUO();

@@ -400,8 +400,8 @@ body {
     appearance: none;
     -webkit-appearance: none;
 
-    /* Fixed width to ensure "Simple Telex X" is never truncated */
-    width: 150px;
+    /* Fixed width to ensure "Simple Telex" is never truncated */
+    width: 130px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

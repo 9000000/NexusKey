@@ -29,5 +29,10 @@ DEFINE_GUID(GUID_Profile,
 const GUID GUID_DisplayAttribute_Input =
     { 0xe5b5e9f1, 0x7a3b, 0x4c2d, { 0x9e, 0x8f, 0x1a, 0x2b, 0x3c, 0x4d, 0x5e, 0x6f } };
 
+// {2C77A81E-41CC-4178-A3A7-5F8A987568E1}
+// Standard TSF input mode indicator — Windows shows this in the modern input indicator tray
+const GUID GUID_LangBarItem_Toggle =
+    { 0x2c77a81e, 0x41cc, 0x4178, { 0xa3, 0xa7, 0x5f, 0x8a, 0x98, 0x75, 0x68, 0xe1 } };
+
 }  // namespace TSF
 }  // namespace NextKey

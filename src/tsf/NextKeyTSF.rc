@@ -1,0 +1,7 @@
+// NexusKey TSF DLL - Resources
+// SPDX-License-Identifier: GPL-3.0-only
+
+#include "resource.h"
+
+IDI_VIET_ON  ICON "../app/resources/StatusViet.ico"
+IDI_VIET_OFF ICON "../app/resources/StatusEng.ico"

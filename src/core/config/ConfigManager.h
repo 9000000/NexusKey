@@ -5,7 +5,10 @@
 
 #include <string>
 #include <optional>
+#include <unordered_map>
+#include <vector>
 #include "core/TypingConfig.h"
+#include "core/UIConfig.h"
 
 namespace NextKey {
 
@@ -26,7 +29,38 @@ public:
     /// Load config with automatic path resolution
     /// Returns compiled defaults if no config file found
     [[nodiscard]] static TypingConfig LoadOrDefault();
-    
+
+    /// Load UI config from file, returns nullopt if not found
+    [[nodiscard]] static std::optional<UIConfig> LoadUIConfig(const std::wstring& path);
+
+    /// Save UI config to file (merges with existing config)
+    [[nodiscard]] static bool SaveUIConfig(const std::wstring& path, const UIConfig& config);
+
+    /// Load UI config with automatic path resolution
+    [[nodiscard]] static UIConfig LoadUIConfigOrDefault();
+
+    /// Load hotkey config from file
+    [[nodiscard]] static std::optional<HotkeyConfig> LoadHotkeyConfig(const std::wstring& path);
+
+    /// Save hotkey config to file (merges with existing config)
+    [[nodiscard]] static bool SaveHotkeyConfig(const std::wstring& path, const HotkeyConfig& config);
+
+    /// Load hotkey config with automatic path resolution
+    [[nodiscard]] static HotkeyConfig LoadHotkeyConfigOrDefault();
+
+    /// Load excluded apps list from config
+    [[nodiscard]] static std::vector<std::wstring> LoadExcludedApps(const std::wstring& path);
+
+    /// Save excluded apps list to config (merges with existing)
+    [[nodiscard]] static bool SaveExcludedApps(const std::wstring& path, const std::vector<std::wstring>& apps);
+
+    /// Load per-app smart switch data (exe name → vietnamese mode)
+    [[nodiscard]] static std::unordered_map<std::wstring, bool> LoadSmartSwitchData(const std::wstring& path);
+
+    /// Save per-app smart switch data
+    [[nodiscard]] static bool SaveSmartSwitchData(const std::wstring& path,
+                                                   const std::unordered_map<std::wstring, bool>& data);
+
 private:
     static std::wstring GetExeDirectory();
     static std::wstring GetAppDataDirectory();

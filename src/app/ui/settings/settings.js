@@ -84,26 +84,22 @@ function initializeToggles() {
             const id = this.id;
             const newState = !isChecked;
 
-            // Show-advanced toggle: update container class (like OpenKey)
+            // Show-advanced toggle: update container class
             if (id === "show-advanced") {
                 const container = document.getElementById("main-container");
                 if (container) {
-                    // 1. Update expanded class
                     if (newState) container.classList.add("expanded");
                     else container.classList.remove("expanded");
 
-                    // 2. FORCE SYNC LAYOUT - Official Sciter method
-                    // This calculates layout synchronously before C++ reads DOM measurements
+                    // Force sync layout before C++ measures DOM
                     Window.this.update();
                 }
-                // Note: C++ will resize via VALUE_CHANGED on val-show-advanced
             }
 
             // Update the hidden input to fire VALUE_CHANGED
             const hiddenInput = document.getElementById("val-" + id);
             if (hiddenInput) {
                 hiddenInput.value = newState ? "1" : "0";
-                // Trigger change event for C++ to catch
                 hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
             }
 
@@ -141,9 +137,8 @@ function initializeTabPanels() {
     });
 }
 
-// Note: Advanced settings toggle is now handled by the toggle-switch-small #show-advanced
-// The toggle click handler in initializeToggles() will dispatch val-show-advanced change
-// C++ will handle the expand/collapse logic
+// Note: Advanced settings toggle uses div-based toggle with hidden input
+// JS updates container class and hidden input, C++ catches VALUE_CHANGED
 
 // Toggle advanced settings panel expansion
 function toggleAdvancedSettings() {
@@ -352,11 +347,16 @@ function setBackgroundOpacity(value) {
         valueLabel.textContent = value + "%";
         hiddenInput.value = value.toString();
 
-        // Apply background directly on container
+        // Apply background directly on container (respect dark/light mode)
         var opacity = value / 100;
         var container = document.getElementById("main-container");
         if (container) {
-            container.style.backgroundColor = "rgba(255, 255, 255, " + opacity + ")";
+            var isDark = document.body.classList.contains("dark");
+            if (isDark) {
+                container.style.backgroundColor = "rgba(18, 20, 28, " + (opacity * 0.9) + ")";
+            } else {
+                container.style.backgroundColor = "rgba(255, 255, 255, " + opacity + ")";
+            }
         }
     }
 }

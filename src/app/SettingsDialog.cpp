@@ -2,16 +2,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SettingsDialog.h"
+#include "SubprocessHelper.h"
 #include "helpers/ScaleHelper.h"
 #include "helpers/SciterHelper.h"
 #include "core/config/ConfigManager.h"
+#include "core/UIConfig.h"
 #include "core/ConfigEvent.h"
+#include "core/SharedConstants.h"
+#include "core/SharedStateManager.h"
 #include "sciter-x-dom.hpp"
 #include "sciter-x-host-callback.h"
 #include <dwmapi.h>
 #include <commctrl.h>
 #include <windowsx.h>
+#include <memory>
 #include <vector>
+#include <algorithm>
 
 using namespace sciter::dom;  // For ELEMENT_AREAS enum (CONTENT_BOX, etc.)
 
@@ -40,8 +46,6 @@ static std::string toNarrowString(const std::wstring& wide) {
 // Base window dimensions (before DPI scaling)
 constexpr int BASE_WIDTH_COLLAPSED = 350;
 constexpr int BASE_HEIGHT_COLLAPSED = 460;  // Match OpenKey height
-constexpr int BASE_WIDTH_EXPANDED = 750;
-constexpr int BASE_HEIGHT_EXPANDED = 500;
 
 // Static dialog instance for SubclassProc access
 static SettingsDialog* s_instance = nullptr;
@@ -112,8 +116,7 @@ SettingsDialog::SettingsDialog()
     int y = (screenHeight - winHeight) / 2;
     SetWindowPos(get_hwnd(), HWND_NOTOPMOST, x, y, 0, 0, SWP_NOSIZE);
 
-    // 7. Apply DWM dark mode and rounded corners
-    // (blur is handled by Sciter via Window.this.blurBehind in JS)
+    // 7. Apply DWM dark mode, rounded corners, and Windows API blur
     HWND hwnd = get_hwnd();
     if (hwnd) {
         BOOL darkMode = TRUE;
@@ -123,6 +126,9 @@ SettingsDialog::SettingsDialog()
         int cornerPreference = DwmConstants::DWMWCP_ROUND;
         DwmSetWindowAttribute(hwnd, DwmConstants::DWMWA_WINDOW_CORNER_PREFERENCE,
                               &cornerPreference, sizeof(cornerPreference));
+
+        // Enable Windows API blur effect (more beautiful than Sciter's native blur)
+        SciterHelper::enableWindowBlur(hwnd, BlurMode::Blur);
     }
 
     // 8. Subclass for window dragging and close
@@ -210,9 +216,13 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     UNREFERENCED_PARAMETER(uIdSubclass);
     UNREFERENCED_PARAMETER(dwRefData);
 
-    // WM_CLOSE: MUST use DestroyWindow, not PostQuitMessage
-    // (PostQuitMessage causes Sciter assertion failures)
+    // WM_CLOSE: flush deferred save, then destroy
+    // (MUST use DestroyWindow, not PostQuitMessage — Sciter assertion failures)
     if (msg == WM_CLOSE) {
+        if (s_instance && s_instance->configDirty_) {
+            KillTimer(hwnd, TIMER_DEFERRED_SAVE);
+            s_instance->saveToToml();
+        }
         DestroyWindow(hwnd);
         return 0;
     }
@@ -222,12 +232,39 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
+    // Handle V/E mode change notification from main process
+    if (msg == WM_NEXUSKEY_MODE_CHANGED) {
+        if (s_instance) {
+            bool vietnamese = (wParam != 0);
+            s_instance->vietnameseMode_ = vietnamese;
+            s_instance->setToggleState(L"toggle-language", vietnamese);
+        }
+        return 0;
+    }
+
     // Handle timer for window resize after CSS transition
     if (msg == WM_TIMER && wParam == TIMER_RESIZE_WINDOW) {
         KillTimer(hwnd, TIMER_RESIZE_WINDOW);
         if (s_instance) {
             s_instance->recalcWindowSize();
         }
+        return 0;
+    }
+
+    // Handle deferred TOML save timer (30s after last settings change)
+    if (msg == WM_TIMER && wParam == TIMER_DEFERRED_SAVE) {
+        KillTimer(hwnd, TIMER_DEFERRED_SAVE);
+        if (s_instance && s_instance->configDirty_) {
+            s_instance->saveToToml();
+        }
+        return 0;
+    }
+
+    // Deferred: open excluded apps dialog as subprocess
+    // (must be a separate process — Sciter SOM assertion fires if a sciter::window
+    //  is destroyed while the Sciter runtime is still active in this process)
+    if (msg == WM_NEXUSKEY_OPEN_EXCLUDED) {
+        SpawnSubprocess(L"NexusKey - Excluded Apps", L"--excludedapps");
         return 0;
     }
 
@@ -243,6 +280,14 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     }
 
     return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+void SettingsDialog::SetVietnameseMode(bool vietnamese) {
+    vietnameseMode_ = vietnamese;
+    // Update toggle UI if window already exists (post-construction call)
+    if (get_hwnd()) {
+        setToggleState(L"toggle-language", vietnamese);
+    }
 }
 
 void SettingsDialog::Show() {
@@ -281,22 +326,35 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
         }
     }
 
-    // Handle VALUE_CHANGED events from inputs/dropdowns (like OpenKey)
+    // Handle VALUE_CHANGED events (includes behavior:check native toggles)
+    // behavior:check fires "change" which maps to VALUE_CHANGED
     else if (params.cmd == VALUE_CHANGED) {
         sciter::dom::element el(params.heTarget);
         std::wstring id = el.get_attribute("id");
 
         if (id.empty()) return sciter::window::handle_event(he, params);
 
-        // Handle expand state change - check first for priority
+        // Handle expand state change
         if (id == L"val-show-advanced" || id == L"val-expand-state") {
             sciter::value val = el.get_value();
             std::wstring strVal = val.is_string() ? val.get<std::wstring>() : L"0";
             bool expanded = (strVal == L"1");
 
             isExpanded_ = expanded;
-            // Use 10ms timer like OpenKey - JS already called Window.this.update()
+            saveUISettings();
             SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 10, NULL);
+            return true;
+        }
+
+        // Handle background opacity change
+        if (id == L"val-bg-opacity") {
+            sciter::value val = el.get_value();
+            int opacity = 80;
+            if (val.is_int()) opacity = val.get<int>();
+            else if (val.is_string()) opacity = _wtoi(val.get<std::wstring>().c_str());
+
+            backgroundOpacity_ = static_cast<uint8_t>(std::clamp(opacity, 0, 100));
+            saveUISettings();
             return true;
         }
 
@@ -322,7 +380,13 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
         if (id == L"switch-key-char") {
             sciter::value val = el.get_value();
             if (val.is_string()) {
-                switchKeyChar_ = val.get<std::wstring>();
+                std::wstring raw = val.get<std::wstring>();
+                // JS displays space as "Space" — convert back to actual space char
+                if (raw == L"Space" || raw == L"space") {
+                    switchKeyChar_ = L" ";
+                } else {
+                    switchKeyChar_ = raw;
+                }
                 saveSettings();
             }
             return true;
@@ -346,35 +410,48 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
 void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     // Map toggle IDs to settings
     if (id == L"toggle-language") {
-        // V/E toggle: 0 = Vietnamese, 1 = English
-        // This is handled differently - just notify change
-        if (onSettingsChanged_) onSettingsChanged_();
+        // V/E toggle: send to main process via cross-process message
+        // value=true means Vietnamese ON (checked), value=false means English
+        vietnameseMode_ = value;
+        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        if (trayWnd) {
+            PostMessageW(trayWnd, WM_NEXUSKEY_SET_MODE, value ? 1 : 0, 0);
+        }
+        return;  // V/E mode is not a persistent config setting
     }
     else if (id == L"beep-sound") {
-        beepSound_ = value;
+        config_.beepOnSwitch = value;
     }
     else if (id == L"smart-switch") {
-        smartSwitch_ = value;
+        config_.smartSwitch = value;
     }
     else if (id == L"exclude-apps") {
-        excludeApps_ = value;
+        config_.excludeApps = value;
     }
     else if (id == L"spell-check") {
-        spellCheck_ = value;
+        config_.spellCheckEnabled = value;
     }
     else if (id == L"key-ctrl") {
-        keyCtrl_ = value;
+        hotkeyConfig_.ctrl = value;
     }
     else if (id == L"key-alt") {
-        keyAlt_ = value;
+        hotkeyConfig_.alt = value;
     }
     else if (id == L"key-win") {
-        keyWin_ = value;
+        hotkeyConfig_.win = value;
     }
     else if (id == L"key-shift") {
-        keyShift_ = value;
+        hotkeyConfig_.shift = value;
     }
-    // Add more toggle handlers as needed...
+    else if (id == L"modern-ortho") {
+        config_.modernOrtho = value;
+    }
+    else if (id == L"auto-caps") {
+        config_.autoCaps = value;
+    }
+    else if (id == L"allow-zwjf") {
+        config_.allowZwjf = value;
+    }
 
     saveSettings();
     if (onSettingsChanged_) onSettingsChanged_();
@@ -382,10 +459,10 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
 
 void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
     if (id == L"input-type") {
-        currentMethod_ = value;
+        config_.inputMethod = static_cast<InputMethod>(value);
     }
     else if (id == L"bang-ma") {
-        codeTable_ = value;
+        config_.codeTable = static_cast<CodeTable>(value);
     }
     // Add more dropdown handlers as needed...
 
@@ -393,15 +470,11 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
     if (onSettingsChanged_) onSettingsChanged_();
 }
 
-void SettingsDialog::handleExpandStateChange(bool expanded) {
-    isExpanded_ = expanded;
-    // Use timer to resize after CSS transition completes
-    SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 50, NULL);
-}
-
 void SettingsDialog::handleButtonClick(const std::wstring& id) {
     if (id == L"btn-excluded-apps") {
-        // TODO: Open excluded apps dialog
+        // Defer dialog creation — creating a Sciter window inside handle_event causes reentrancy issues
+        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_EXCLUDED, 0, 0);
+        return;
     }
     else if (id == L"btn-macro-table") {
         // TODO: Open macro table dialog
@@ -441,35 +514,9 @@ void SettingsDialog::togglePin() {
             pinBtn.set_attribute("class", L"btn-pin");
         }
     }
-}
 
-void SettingsDialog::resizeWindow(bool expanded) {
-    HWND hwnd = get_hwnd();
-    if (!hwnd) return;
-
-    // Get scaled dimensions based on DPI
-    int baseWidth = expanded ? BASE_WIDTH_EXPANDED : BASE_WIDTH_COLLAPSED;
-    int baseHeight = expanded ? BASE_HEIGHT_EXPANDED : BASE_HEIGHT_COLLAPSED;
-    int newWidth, newHeight;
-    ScaleHelper::getScaledSize(baseWidth, baseHeight, newWidth, newHeight);
-
-    // Get current position to keep window centered
-    RECT rc;
-    GetWindowRect(hwnd, &rc);
-    int currentX = rc.left;
-    int currentY = rc.top;
-    int currentWidth = rc.right - rc.left;
-
-    // Calculate new X to keep window centered
-    int deltaWidth = newWidth - currentWidth;
-    int newX = currentX - deltaWidth / 2;
-
-    // Ensure window stays on screen
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    if (newX < 0) newX = 0;
-    if (newX + newWidth > screenWidth) newX = screenWidth - newWidth;
-
-    SetWindowPos(hwnd, NULL, newX, currentY, newWidth, newHeight, SWP_NOZORDER);
+    // Save pinned state
+    saveUISettings();
 }
 
 void SettingsDialog::recalcWindowSize() {
@@ -575,36 +622,71 @@ void SettingsDialog::initializeUI() {
     // Dark theme is set via class="dark" on body in HTML
 
     // Set input method dropdown
-    setDropdownValue(L"input-type", currentMethod_);
+    setDropdownValue(L"input-type", static_cast<int>(config_.inputMethod));
 
     // Set code table dropdown
-    setDropdownValue(L"bang-ma", codeTable_);
+    setDropdownValue(L"bang-ma", static_cast<int>(config_.codeTable));
+
+    // Set V/E toggle state (synced with main process)
+    setToggleState(L"toggle-language", vietnameseMode_);
 
     // Set toggle states
-    setToggleState(L"beep-sound", beepSound_);
-    setToggleState(L"smart-switch", smartSwitch_);
-    setToggleState(L"exclude-apps", excludeApps_);
-    setToggleState(L"spell-check", spellCheck_);
-    setToggleState(L"key-ctrl", keyCtrl_);
-    setToggleState(L"key-alt", keyAlt_);
-    setToggleState(L"key-win", keyWin_);
-    setToggleState(L"key-shift", keyShift_);
+    setToggleState(L"beep-sound", config_.beepOnSwitch);
+    setToggleState(L"smart-switch", config_.smartSwitch);
+    setToggleState(L"exclude-apps", config_.excludeApps);
+    setToggleState(L"spell-check", config_.spellCheckEnabled);
+    setToggleState(L"modern-ortho", config_.modernOrtho);
+    setToggleState(L"auto-caps", config_.autoCaps);
+    setToggleState(L"allow-zwjf", config_.allowZwjf);
+    setToggleState(L"key-ctrl", hotkeyConfig_.ctrl);
+    setToggleState(L"key-alt", hotkeyConfig_.alt);
+    setToggleState(L"key-win", hotkeyConfig_.win);
+    setToggleState(L"key-shift", hotkeyConfig_.shift);
 
-    // Set switch key character
+    // Set switch key character (display "Space" for space char)
     sciter::dom::element switchKeyInput = root.find_first("#switch-key-char");
     if (switchKeyInput.is_valid()) {
-        switchKeyInput.set_value(sciter::value(switchKeyChar_.c_str()));
+        std::wstring display = (switchKeyChar_ == L" ") ? L"Space" : switchKeyChar_;
+        switchKeyInput.set_value(sciter::value(display.c_str()));
+    }
+
+    // Set advanced toggle state
+    setToggleState(L"show-advanced", isExpanded_);
+
+    // Set expanded state on container
+    if (isExpanded_) {
+        sciter::dom::element container = root.find_first("#main-container");
+        if (container.is_valid()) {
+            std::wstring cls = container.get_attribute("class");
+            if (cls.find(L"expanded") == std::wstring::npos) {
+                container.set_attribute("class", (cls + L" expanded").c_str());
+            }
+        }
+        // Resize window for expanded state
+        SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 50, NULL);
+    }
+
+    // Set background opacity (call JS function)
+    call_function("setBackgroundOpacity", sciter::value(static_cast<int>(backgroundOpacity_)));
+
+    // Apply pinned state if saved
+    if (isPinned_) {
+        SetWindowPos(get_hwnd(), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        sciter::dom::element pinBtn = root.find_first("#btn-pin");
+        if (pinBtn.is_valid()) {
+            pinBtn.set_attribute("class", L"btn-pin pinned");
+        }
     }
 }
 
 void SettingsDialog::onInputMethodChange(int method) {
-    currentMethod_ = method;
+    config_.inputMethod = static_cast<InputMethod>(method);
     saveSettings();
     if (onSettingsChanged_) onSettingsChanged_();
 }
 
 void SettingsDialog::onSpellCheckChange(bool enabled) {
-    spellCheck_ = enabled;
+    config_.spellCheckEnabled = enabled;
     saveSettings();
     if (onSettingsChanged_) onSettingsChanged_();
 }
@@ -623,37 +705,69 @@ void SettingsDialog::onClose() {
 }
 
 void SettingsDialog::loadSettings() {
-    auto config = ConfigManager::LoadOrDefault();
-    currentMethod_ = (config.inputMethod == InputMethod::VNI) ? 1 : 0;
-    spellCheck_ = config.spellCheckEnabled;
+    // Load typing config
+    config_ = ConfigManager::LoadOrDefault();
 
-    // TODO: Load more settings from config/registry
-    // For now, use defaults
-    beepSound_ = false;
-    smartSwitch_ = false;
-    excludeApps_ = false;
-    keyCtrl_ = false;
-    keyAlt_ = false;
-    keyWin_ = false;
-    keyShift_ = false;
-    switchKeyChar_ = L"~";
-    codeTable_ = 0;
+    // Load UI config
+    auto uiConfig = ConfigManager::LoadUIConfigOrDefault();
+    isExpanded_ = uiConfig.showAdvanced;
+    backgroundOpacity_ = uiConfig.backgroundOpacity;
+    isPinned_ = uiConfig.pinned;
+
+    // Load hotkey config
+    hotkeyConfig_ = ConfigManager::LoadHotkeyConfigOrDefault();
+    switchKeyChar_ = (hotkeyConfig_.key != 0) ? std::wstring(1, hotkeyConfig_.key) : L"";
 }
 
 void SettingsDialog::saveSettings() {
-    TypingConfig config;
-    config.inputMethod = (currentMethod_ == 1) ? InputMethod::VNI : InputMethod::Telex;
-    config.spellCheckEnabled = spellCheck_;
+    syncToSharedState();      // Immediate — DLL sees changes now
+    configDirty_ = true;
+    // Reset deferred save timer (30s from last change)
+    SetTimer(get_hwnd(), TIMER_DEFERRED_SAVE, DEFERRED_SAVE_DELAY_MS, NULL);
+}
 
-    std::wstring path = ConfigManager::GetConfigPath();
-    if (!ConfigManager::SaveToFile(path, config)) {
-        OutputDebugStringW(L"NexusKey: Failed to save config file\n");
+void SettingsDialog::syncToSharedState() {
+    // Update SharedState so DLL picks up changes immediately
+    SharedStateManager sharedState;
+    if (sharedState.OpenReadWrite()) {
+        SharedState state = sharedState.Read();
+        if (state.IsValid()) {
+            state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
+            state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
+            state.featureFlags = EncodeFeatureFlags(config_);
+            sharedState.Write(state);  // Write() auto-manages epoch via seqlock
+        }
     }
 
     // Signal Engine that config has changed
     ConfigEvent event;
     if (event.Initialize()) {
         event.Signal();
+    }
+}
+
+void SettingsDialog::saveToToml() {
+    std::wstring path = ConfigManager::GetConfigPath();
+    if (!ConfigManager::SaveToFile(path, config_)) {
+        OutputDebugStringW(L"NexusKey: Failed to save config file\n");
+    }
+
+    // Save hotkey config (sync switchKeyChar_ → hotkeyConfig_.key)
+    hotkeyConfig_.key = switchKeyChar_.empty() ? 0 : switchKeyChar_[0];
+    (void)ConfigManager::SaveHotkeyConfig(path, hotkeyConfig_);
+
+    configDirty_ = false;
+}
+
+void SettingsDialog::saveUISettings() {
+    UIConfig uiConfig;
+    uiConfig.showAdvanced = isExpanded_;
+    uiConfig.backgroundOpacity = backgroundOpacity_;
+    uiConfig.pinned = isPinned_;
+
+    std::wstring path = ConfigManager::GetConfigPath();
+    if (!ConfigManager::SaveUIConfig(path, uiConfig)) {
+        OutputDebugStringW(L"NexusKey: Failed to save UI config\n");
     }
 }
 

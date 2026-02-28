@@ -2,6 +2,32 @@
 // Reusable functions for all Sciter dialogs
 
 // ============================================
+// SUBDIALOG INIT - Common setup for subdialog windows
+// ============================================
+
+// Common subdialog initialization (blur + dark theme + scrollbar)
+function initSubDialog(scrollSelector) {
+    Window.this.blurBehind = "dark source-auto";
+    document.body.classList.add("dark");
+    if (scrollSelector) initializeScrollbarResize(scrollSelector);
+}
+
+// Set background opacity (called from C++ via call_function)
+// Shared between all dialogs that use frosted glass effect
+function setBackgroundOpacity(value) {
+    var opacity = value / 100;
+    var container = document.getElementById("main-container");
+    if (container) {
+        var isDark = document.body.classList.contains("dark");
+        if (isDark) {
+            container.style.backgroundColor = "rgba(18, 20, 28, " + (opacity * 0.9) + ")";
+        } else {
+            container.style.backgroundColor = "rgba(255, 255, 255, " + opacity + ")";
+        }
+    }
+}
+
+// ============================================
 // SCROLLBAR RESIZE - Thin when idle, normal when scrolling
 // Sciter approach: Find scrollbar element and style directly
 // ============================================

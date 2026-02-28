@@ -11,15 +11,36 @@ namespace NextKey {
 namespace TSF {
 
 EngineController::EngineController() {
-    // Use compiled defaults (FR8 - engine autonomy)
-    config_.inputMethod = InputMethod::Telex;
-    config_.spellCheckEnabled = false;
-    config_.optimizeLevel = 0;
-    currentMethod_ = InputMethod::Telex;
-    
-    engine_ = EngineFactory::Create(config_);
+    // Try to open SharedState from main app (read-write for flag toggling)
+    if (sharedState_.OpenReadWrite()) {
+        SharedState state = sharedState_.Read();
+        if (state.IsValid()) {
+            // Apply config from SharedState
+            ApplySharedState(state);
+            lastEpoch_ = state.epoch;
+            TSF_LOG(L"EngineController initialized from SharedState (epoch=%u, method=%d)",
+                    state.epoch, state.inputMethod);
+        } else {
+            // SharedState invalid, use defaults
+            config_.inputMethod = InputMethod::Telex;
+            config_.spellCheckEnabled = false;
+            config_.optimizeLevel = 0;
+            currentMethod_ = InputMethod::Telex;
+            engine_ = EngineFactory::Create(config_);
+            TSF_LOG(L"EngineController: SharedState invalid, using defaults");
+        }
+    } else {
+        // SharedState not available = EXE not running → disabled
+        config_.inputMethod = InputMethod::Telex;
+        config_.spellCheckEnabled = false;
+        config_.optimizeLevel = 0;
+        currentMethod_ = InputMethod::Telex;
+        engine_ = EngineFactory::Create(config_);
+        engineEnabled_ = false;
+        TSF_LOG(L"EngineController: SharedState not available, engine disabled");
+    }
+
     compositionMgr_.SetEngineController(this);
-    TSF_LOG(L"EngineController initialized with Telex engine");
 }
 
 EngineController::~EngineController() {
@@ -27,6 +48,42 @@ EngineController::~EngineController() {
 }
 
 bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
+    // 0. Check if engine should process keys
+    if (sharedState_.IsConnected()) {
+        // Read flags directly from shared memory (live, zero-copy)
+        uint32_t flags = sharedState_.ReadFlags();
+        if (!(flags & SharedFlags::ENGINE_ENABLED)) return false;
+
+        // Detect V/E mode changes (e.g. from EXE hotkey) and refresh icon
+        bool newVietnameseMode = (flags & SharedFlags::VIETNAMESE_MODE) != 0;
+        if (newVietnameseMode != vietnameseMode_) {
+            vietnameseMode_ = newVietnameseMode;
+            if (langBarButton_) langBarButton_->Refresh();
+        }
+
+        if (!vietnameseMode_) return false;
+    } else {
+        // SharedState not available = EXE not running → pass all keys through
+        return false;
+    }
+
+    // Auto-caps state machine: track sentence-ending punctuation
+    if (config_.autoCaps) {
+        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && shift) || (vkCode == '1' && shift)) {
+            // '.', '?', '!'
+            autoCapState_ = 1;
+        } else if (vkCode == VK_SPACE && autoCapState_ == 1) {
+            autoCapState_ = 2;
+        } else if (vkCode == VK_RETURN) {
+            autoCapState_ = 2;
+        } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
+            // Letter key — don't reset, HandleKey will consume it
+        } else {
+            autoCapState_ = 0;
+        }
+    }
+
     // 1. NEVER intercept if any modifier (except Shift) is down.
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
@@ -100,7 +157,13 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         wchar_t ch = static_cast<wchar_t>(vkCode);
         if (!shift) ch = towlower(ch);
-        
+
+        // Auto-capitalize first letter after sentence-ending punctuation
+        if (config_.autoCaps && autoCapState_ == 2 && engine_->Count() == 0) {
+            ch = towupper(ch);
+            autoCapState_ = 0;
+        }
+
         TSF_LOG(L"HandleKey: pushing char '%c'", ch);
         engine_->PushChar(ch);
         
@@ -191,6 +254,7 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
 void EngineController::Reset() {
     engine_->Reset();
     compositionMgr_.TerminateComposition();
+    autoCapState_ = 0;
 }
 
 void EngineController::SwitchInputMethod(InputMethod method) {
@@ -247,13 +311,136 @@ bool EngineController::CheckConfigEvent() {
         return false;  // No signal
     }
 
-    // Config changed - reload
-    TSF_LOG(L"Config event received, reloading config");
-    
-    // TODO: Load from ConfigManager when Core writes to shared location
-    // For now, just log - actual config sharing requires SharedState or file polling
-    
+    // Config changed - read from SharedState
+    TSF_LOG(L"Config event received, checking SharedState");
+
+    if (!sharedState_.IsConnected()) {
+        // Try to open SharedState if not connected
+        if (!sharedState_.OpenReadWrite()) {
+            TSF_LOG(L"CheckConfigEvent: SharedState not available");
+            return false;
+        }
+    }
+
+    SharedState state = sharedState_.Read();
+    if (!state.IsValid()) {
+        TSF_LOG(L"CheckConfigEvent: SharedState invalid");
+        return false;
+    }
+
+    // Check if epoch changed (config actually updated)
+    if (state.epoch == lastEpoch_) {
+        TSF_LOG(L"CheckConfigEvent: epoch unchanged, skipping reload");
+        return false;
+    }
+
+    // Apply new config
+    TSF_LOG(L"Config changed: epoch %u -> %u", lastEpoch_, state.epoch);
+    lastEpoch_ = state.epoch;
+    ApplySharedState(state);
+
     return true;
+}
+
+void EngineController::RefreshFlags() {
+    if (!sharedState_.IsConnected()) {
+        // Try to reconnect (EXE may have restarted)
+        if (!sharedState_.OpenReadWrite()) {
+            engineEnabled_ = false;
+            return;
+        }
+        TSF_LOG(L"Reconnected to SharedState");
+    }
+
+    SharedState state = sharedState_.Read();
+    if (state.IsValid()) {
+        bool wasEnabled = engineEnabled_;
+        bool wasVietnamese = vietnameseMode_;
+        engineEnabled_ = (state.flags & SharedFlags::ENGINE_ENABLED) != 0;
+        vietnameseMode_ = (state.flags & SharedFlags::VIETNAMESE_MODE) != 0;
+
+        if (!wasEnabled && engineEnabled_) {
+            TSF_LOG(L"Engine re-enabled (app started)");
+            ApplySharedState(state);
+        } else if (wasEnabled && !engineEnabled_) {
+            TSF_LOG(L"Engine disabled (app exited)");
+        }
+
+        // Refresh icon if Vietnamese mode changed (e.g. EXE hotkey toggled while bg)
+        if (wasVietnamese != vietnameseMode_ && langBarButton_) {
+            langBarButton_->Refresh();
+        }
+    } else {
+        engineEnabled_ = false;
+    }
+}
+
+void EngineController::ApplySharedState(const SharedState& state) {
+    // Update runtime flags
+    engineEnabled_ = (state.flags & SharedFlags::ENGINE_ENABLED) != 0;
+    vietnameseMode_ = (state.flags & SharedFlags::VIETNAMESE_MODE) != 0;
+
+    // Update config from SharedState
+    InputMethod newMethod = static_cast<InputMethod>(state.inputMethod);
+    config_.inputMethod = newMethod;
+    config_.spellCheckEnabled = state.spellCheck != 0;
+    config_.optimizeLevel = state.optimizeLevel;
+    DecodeFeatureFlags(state.featureFlags, config_);
+
+    // Recreate engine with updated config (engine stores a copy of TypingConfig,
+    // so we must recreate it whenever any config field changes)
+    // Commit any pending composition before recreating
+    if (engine_ && engine_->Count() > 0) {
+        (void)engine_->Commit();
+    }
+
+    currentMethod_ = newMethod;
+    engine_ = EngineFactory::Create(config_);
+    TSF_LOG(L"Engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
+            newMethod == InputMethod::VNI ? L"VNI" : L"Telex",
+            config_.modernOrtho ? 1 : 0, config_.allowZwjf ? 1 : 0);
+}
+
+void EngineController::ToggleVietnameseMode() {
+    sharedState_.ToggleFlag(SharedFlags::VIETNAMESE_MODE);
+    vietnameseMode_ = !vietnameseMode_;
+    if (langBarButton_) {
+        langBarButton_->Refresh();
+    }
+    TSF_LOG(L"ToggleVietnameseMode: now %s", vietnameseMode_ ? L"Vietnamese" : L"English");
+}
+
+bool EngineController::InitLanguageBar(ITfThreadMgr* pThreadMgr) {
+    if (!pThreadMgr) return false;
+
+    ITfLangBarItemMgr* pLangBarItemMgr = nullptr;
+    HRESULT hr = pThreadMgr->QueryInterface(
+        IID_ITfLangBarItemMgr, reinterpret_cast<void**>(&pLangBarItemMgr));
+    if (FAILED(hr) || !pLangBarItemMgr) {
+        TSF_LOG(L"InitLanguageBar: failed to get ITfLangBarItemMgr");
+        return false;
+    }
+
+    langBarButton_ = new LanguageBarButton();
+    if (!langBarButton_->Initialize(this, pLangBarItemMgr)) {
+        TSF_LOG(L"InitLanguageBar: button initialization failed");
+        langBarButton_->Release();
+        langBarButton_ = nullptr;
+        pLangBarItemMgr->Release();
+        return false;
+    }
+
+    pLangBarItemMgr->Release();
+    TSF_LOG(L"InitLanguageBar: success");
+    return true;
+}
+
+void EngineController::UninitLanguageBar() {
+    if (langBarButton_) {
+        langBarButton_->Uninitialize();
+        langBarButton_->Release();
+        langBarButton_ = nullptr;
+    }
 }
 
 }  // namespace TSF

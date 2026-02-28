@@ -12,6 +12,7 @@
 #endif
 
 #include "sciter-x-window.hpp"
+#include "core/TypingConfig.h"
 #include <functional>
 #include <string>
 
@@ -28,6 +29,9 @@ public:
 
     /// Show the settings dialog (blocks until closed)
     void Show();
+
+    /// Set Vietnamese mode state (updates toggle UI if window exists)
+    void SetVietnameseMode(bool vietnamese);
 
     /// Set callback for settings changes
     void SetOnSettingsChanged(SettingsChangedCallback callback) { onSettingsChanged_ = callback; }
@@ -60,14 +64,21 @@ public:
     SOM_PASSPORT_END
 
 private:
+    static constexpr UINT_PTR TIMER_DEFERRED_SAVE = 1002;
+    static constexpr DWORD DEFERRED_SAVE_DELAY_MS = 30000;  // 30 seconds
+
     void loadSettings();
-    void saveSettings();
+    void saveSettings();       // Immediate SharedState + deferred TOML
+    void syncToSharedState();  // Immediate: SharedState + ConfigEvent
+    void saveToToml();         // Deferred: TOML file write
+    void saveUISettings();
     void initializeUI();
+
+    bool configDirty_ = false;
 
     // Event handlers for specific settings
     void handleToggleChange(const std::wstring& id, bool value);
     void handleDropdownChange(const std::wstring& id, int value);
-    void handleExpandStateChange(bool expanded);
     void handleButtonClick(const std::wstring& id);
 
     // Window control
@@ -76,7 +87,6 @@ private:
     // UI helpers
     void setToggleState(const std::wstring& id, bool checked);
     void setDropdownValue(const std::wstring& id, int value);
-    void resizeWindow(bool expanded);
     void recalcWindowSize();  // Measure DOM and resize window to fit content
 
     // Subclass procedure for window dragging and close
@@ -87,20 +97,16 @@ private:
     SettingsChangedCallback onSettingsChanged_;
 
     // Settings state
-    int currentMethod_ = 0;      // 0=Telex, 1=VNI, 2=SimpleTelex1, 3=SimpleTelex2
-    int codeTable_ = 0;          // 0=Unicode, 1=TCVN3, etc.
-    bool spellCheck_ = false;
-    bool beepSound_ = false;
-    bool smartSwitch_ = false;
-    bool excludeApps_ = false;
+    TypingConfig config_;          // Typing config (inputMethod, spellCheck, features, etc.)
+    HotkeyConfig hotkeyConfig_;    // Hotkey modifiers + key
+    bool vietnameseMode_ = true;   // V/E mode (synced with main process, not persisted)
     bool isExpanded_ = false;
     bool isPinned_ = false;
 
-    // Switch keys
-    bool keyCtrl_ = false;
-    bool keyAlt_ = false;
-    bool keyWin_ = false;
-    bool keyShift_ = false;
+    // UI settings (saved to config)
+    uint8_t backgroundOpacity_ = 80;  // 0-100
+
+    // Switch key display string (HotkeyConfig.key is wchar_t, UI needs wstring)
     std::wstring switchKeyChar_ = L"~";
 
     // UI base path for file system loading (Debug mode)

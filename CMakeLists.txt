@@ -21,30 +21,43 @@ include_directories(
 )
 
 # Core Library (Engine + Shared State + Config)
-add_library(NextKeyCore STATIC
-    src/core/SharedStateManager.cpp
-    src/core/SharedStateManager.h
+set(NEXTKEY_CORE_SOURCES
+    src/core/Debug.h
     src/core/SharedState.h
-    src/core/ConfigEvent.cpp
-    src/core/ConfigEvent.h
+    src/core/SharedConstants.h
     src/core/TypingConfig.h
-    src/core/config/ConfigManager.cpp
-    src/core/config/ConfigManager.h
     src/core/engine/TelexEngine.cpp
     src/core/engine/TelexEngine.h
-    src/core/engine/TelexEngineAdapter.cpp
-    src/core/engine/TelexEngineAdapter.h
     src/core/engine/VniEngine.cpp
     src/core/engine/VniEngine.h
     src/core/engine/EngineFactory.cpp
     src/core/engine/EngineFactory.h
-    src/core/engine/KeyTranslator.cpp
-    src/core/engine/KeyTranslator.h
     src/core/engine/Telex.h
     src/core/engine/TelexMaps.h
     src/core/engine/TelexData.h
     src/core/engine/IInputEngine.h
 )
+
+# Windows-only sources (require Windows.h)
+if(WIN32)
+    list(APPEND NEXTKEY_CORE_SOURCES
+        src/core/SharedStateManager.cpp
+        src/core/SharedStateManager.h
+        src/core/SmartSwitchManager.cpp
+        src/core/SmartSwitchManager.h
+        src/core/SmartSwitchState.h
+        src/core/ConfigEvent.cpp
+        src/core/ConfigEvent.h
+        src/core/config/ConfigManager.cpp
+        src/core/config/ConfigManager.h
+        src/core/engine/TelexEngineAdapter.cpp
+        src/core/engine/TelexEngineAdapter.h
+        src/core/engine/KeyTranslator.cpp
+        src/core/engine/KeyTranslator.h
+    )
+endif()
+
+add_library(NextKeyCore STATIC ${NEXTKEY_CORE_SOURCES})
 
 # TSF DLL (TIP)
 add_library(NextKeyTSF SHARED
@@ -65,9 +78,13 @@ add_library(NextKeyTSF SHARED
     src/tsf/dllmain.cpp
     src/tsf/EditSession.h
     src/tsf/CompositionEditSession.h
+    src/tsf/LanguageBarButton.h
+    src/tsf/LanguageBarButton.cpp
     src/tsf/DisplayAttribute.h
     src/tsf/ComUtils.h
     src/tsf/Define.h
+    src/tsf/resource.h
+    src/tsf/NextKeyTSF.rc
     src/tsf/NextKeyTSF.def
 )
 target_link_libraries(NextKeyTSF PRIVATE NextKeyCore)
@@ -82,9 +99,19 @@ add_executable(NextKeyApp WIN32
     src/app/TrayIcon.cpp
     src/app/SettingsDialog.h
     src/app/SettingsDialog.cpp
+    src/app/ExcludedAppsDialog.h
+    src/app/ExcludedAppsDialog.cpp
+    src/app/SciterSubDialog.h
+    src/app/SciterSubDialog.cpp
+    src/app/SubDialogConfig.h
+    src/app/SubprocessHelper.h
     src/app/SciterArchive.h
     src/app/SciterArchive.cpp
     src/app/helpers/ScaleHelper.h
+    src/app/HookEngine.h
+    src/app/HookEngine.cpp
+    src/app/HotkeyManager.h
+    src/app/HotkeyManager.cpp
     src/app/helpers/SciterHelper.h
     src/app/helpers/SciterHelper.cpp
     src/app/resource.h
@@ -94,40 +121,85 @@ add_executable(NextKeyApp WIN32
 target_include_directories(NextKeyApp PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/include
 )
-target_compile_definitions(NextKeyApp PRIVATE SKIP_MAIN)
+target_compile_definitions(NextKeyApp PRIVATE SKIP_MAIN NEXUSKEY_HOOK_ENGINE)
 target_link_libraries(NextKeyApp PRIVATE NextKeyCore)
+set_target_properties(NextKeyApp PROPERTIES OUTPUT_NAME "NexusKey")
 
 # Link Windows libraries
 if(WIN32)
-    target_link_libraries(NextKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid)
-    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi)
+    target_link_libraries(NextKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid shell32)
+    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid)
+
+    # Copy sciter.dll to output directory
+    add_custom_command(TARGET NextKeyApp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/bin/sciter.dll"
+            "$<TARGET_FILE_DIR:NextKeyApp>/sciter.dll"
+        COMMENT "Copying sciter.dll to output directory"
+    )
+
+
 endif()
 
 # ============================================================================
 # Sciter UI Resources
-# Always copy UI files to output directory (works for both Debug and Release)
-# For Release with embedded resources, set SCITER_USE_PACKFOLDER manually
+# Release: Embed UI files into exe using packfolder
+# Debug: Copy UI files to output directory for easy editing
 # ============================================================================
 
-# Copy UI files to output directory after each build
-add_custom_command(TARGET NextKeyApp POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/app/ui"
-        "$<TARGET_FILE_DIR:NextKeyApp>/ui"
-    COMMENT "Copying UI files to output directory"
-)
+# Packfolder is included in extern/sciter/bin/
+set(PACKFOLDER_EXE "${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/bin/packfolder.exe")
 
-# Optional: For Release builds with embedded resources
-# 1. Run packfolder.exe manually: packfolder.exe src/app/ui src/app/resources.cpp -v resources
-# 2. Add -DSCITER_USE_PACKFOLDER=ON to cmake configure
-# 3. Rebuild
-option(SCITER_USE_PACKFOLDER "Use packfolder embedded resources instead of file copy" OFF)
-if(SCITER_USE_PACKFOLDER)
-    target_compile_definitions(NextKeyApp PRIVATE SCITER_USE_PACKFOLDER)
-    message(STATUS "Sciter: Using packfolder embedded resources")
+# Check if packfolder exists
+if(EXISTS "${PACKFOLDER_EXE}")
+    set(PACKFOLDER_AVAILABLE TRUE)
+    message(STATUS "Sciter: packfolder.exe found at ${PACKFOLDER_EXE}")
 else()
-    message(STATUS "Sciter: Using file copy mode (ui/ folder next to exe)")
+    set(PACKFOLDER_AVAILABLE FALSE)
+    message(STATUS "Sciter: packfolder.exe not found, using file copy mode")
 endif()
+
+# Generate resources.cpp from UI files (run before build if UI changed)
+set(RESOURCES_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/app/resources.cpp")
+set(UI_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/app/ui")
+
+if(PACKFOLDER_AVAILABLE)
+    # Custom command to generate resources.cpp
+    add_custom_command(
+        OUTPUT "${RESOURCES_CPP}"
+        COMMAND "${PACKFOLDER_EXE}" "${UI_SOURCE_DIR}" "${RESOURCES_CPP}" -v resources
+        DEPENDS ${UI_SOURCE_DIR}/settings/settings.html
+                ${UI_SOURCE_DIR}/settings/settings.css
+                ${UI_SOURCE_DIR}/settings/settings.js
+                ${UI_SOURCE_DIR}/excludedapps/excludedapps.html
+                ${UI_SOURCE_DIR}/excludedapps/excludedapps.css
+                ${UI_SOURCE_DIR}/excludedapps/excludedapps.js
+                ${UI_SOURCE_DIR}/shared/utils.js
+                ${UI_SOURCE_DIR}/shared/theme.css
+                ${UI_SOURCE_DIR}/shared/dropdown.css
+        COMMENT "Packing UI resources into resources.cpp"
+        VERBATIM
+    )
+
+    # Custom target to ensure resources are generated
+    add_custom_target(PackUIResources DEPENDS "${RESOURCES_CPP}")
+    add_dependencies(NextKeyApp PackUIResources)
+
+    # Enable packfolder for Release, file copy for Debug
+    target_compile_definitions(NextKeyApp PRIVATE
+        $<$<CONFIG:Release>:SCITER_USE_PACKFOLDER>
+        $<$<CONFIG:RelWithDebInfo>:SCITER_USE_PACKFOLDER>
+    )
+    message(STATUS "Sciter: Release=embedded resources, Debug=file copy")
+endif()
+
+# Always copy UI files for Debug builds (allows live editing)
+add_custom_command(TARGET NextKeyApp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Debug>,copy_directory,true>
+        "${UI_SOURCE_DIR}"
+        "$<TARGET_FILE_DIR:NextKeyApp>/ui"
+    COMMENT "Copying UI files (Debug only)"
+)
 
 # ============================================================================
 # Testing with Google Test (vendored in extern/)
@@ -142,14 +214,30 @@ add_subdirectory(extern/googletest EXCLUDE_FROM_ALL)
 
 enable_testing()
 
-add_executable(NextKeyTests
+# Tests are excluded from ALL - build explicitly with --target NextKeyTests
+set(NEXTKEY_TEST_SOURCES
     tests/TelexEngineTest.cpp
-    tests/ConfigManagerTest.cpp
     tests/VniEngineTest.cpp
     tests/EngineFactoryTest.cpp
-    tests/ConfigEventTest.cpp
+    tests/SharedStateTest.cpp
+    tests/FeatureOptionsTest.cpp
 )
+
+# Windows-only tests (require ConfigManager, ConfigEvent)
+if(WIN32)
+    list(APPEND NEXTKEY_TEST_SOURCES
+        tests/ConfigManagerTest.cpp
+        tests/ConfigEventTest.cpp
+    )
+endif()
+
+add_executable(NextKeyTests EXCLUDE_FROM_ALL ${NEXTKEY_TEST_SOURCES})
 target_link_libraries(NextKeyTests PRIVATE NextKeyCore GTest::gtest_main)
+
+# Put tests in separate directory
+set_target_properties(NextKeyTests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
+)
 
 include(GoogleTest)
 gtest_discover_tests(NextKeyTests)

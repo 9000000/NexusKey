@@ -10,13 +10,15 @@
 namespace NextKey {
 
 static constexpr const wchar_t* SHARED_MEM_NAME = L"Local\\NexusKeySharedState";
+static constexpr int SEQLOCK_MAX_RETRIES = 3;
 
 struct SharedStateManager::Impl {
 #ifdef _WIN32
     HANDLE hMapping = nullptr;
-    SharedState* pState = nullptr;
+    volatile SharedState* pState = nullptr;  // volatile: mapped across processes
 #endif
     bool isOwner = false;
+    bool isWritable = false;  // true for Create() and OpenReadWrite()
 };
 
 SharedStateManager::SharedStateManager() : pImpl_(std::make_unique<Impl>()) {}
@@ -24,7 +26,7 @@ SharedStateManager::SharedStateManager() : pImpl_(std::make_unique<Impl>()) {}
 SharedStateManager::~SharedStateManager() {
 #ifdef _WIN32
     if (pImpl_->pState) {
-        UnmapViewOfFile(pImpl_->pState);
+        UnmapViewOfFile(const_cast<SharedState*>(pImpl_->pState));
     }
     if (pImpl_->hMapping) {
         CloseHandle(pImpl_->hMapping);
@@ -50,7 +52,7 @@ bool SharedStateManager::Create() {
         return false;
     }
 
-    pImpl_->pState = static_cast<SharedState*>(
+    pImpl_->pState = static_cast<volatile SharedState*>(
         MapViewOfFile(pImpl_->hMapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedState))
     );
 
@@ -60,12 +62,11 @@ bool SharedStateManager::Create() {
         return false;
     }
 
-    // Initialize with magic
-    pImpl_->pState->magic = SharedState::MAGIC_VALUE;
-    pImpl_->pState->epoch = 0;
-    pImpl_->pState->flags = SharedFlags::ENGINE_ENABLED;
-    pImpl_->pState->reserved = 0;
+    // Initialize with defaults (epoch starts at 0 = even = stable)
+    auto* p = const_cast<SharedState*>(pImpl_->pState);
+    p->InitDefaults();
     pImpl_->isOwner = true;
+    pImpl_->isWritable = true;
 
     return true;
 #else
@@ -85,7 +86,7 @@ bool SharedStateManager::Open() {
         return false;
     }
 
-    pImpl_->pState = static_cast<SharedState*>(
+    pImpl_->pState = static_cast<volatile SharedState*>(
         MapViewOfFile(pImpl_->hMapping, FILE_MAP_READ, 0, 0, sizeof(SharedState))
     );
 
@@ -95,7 +96,36 @@ bool SharedStateManager::Open() {
         return false;
     }
 
-    return pImpl_->pState->IsValid();
+    return pImpl_->pState->magic == SharedState::MAGIC_VALUE;
+#else
+    return false;
+#endif
+}
+
+bool SharedStateManager::OpenReadWrite() {
+#ifdef _WIN32
+    pImpl_->hMapping = OpenFileMappingW(
+        FILE_MAP_ALL_ACCESS,
+        FALSE,
+        SHARED_MEM_NAME
+    );
+
+    if (!pImpl_->hMapping) {
+        return false;
+    }
+
+    pImpl_->pState = static_cast<volatile SharedState*>(
+        MapViewOfFile(pImpl_->hMapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedState))
+    );
+
+    if (!pImpl_->pState) {
+        CloseHandle(pImpl_->hMapping);
+        pImpl_->hMapping = nullptr;
+        return false;
+    }
+
+    pImpl_->isWritable = true;
+    return pImpl_->pState->magic == SharedState::MAGIC_VALUE;
 #else
     return false;
 #endif
@@ -104,24 +134,87 @@ bool SharedStateManager::Open() {
 SharedState SharedStateManager::Read() const noexcept {
     SharedState state{};
 #ifdef _WIN32
-    if (pImpl_->pState && pImpl_->pState->IsValid()) {
-        state = *pImpl_->pState;
+    if (!pImpl_->pState || pImpl_->pState->magic != SharedState::MAGIC_VALUE) {
+        return state;
     }
+
+    // Seqlock read: retry if epoch is odd (write in progress) or changed during copy
+    for (int i = 0; i < SEQLOCK_MAX_RETRIES; ++i) {
+        uint32_t before = pImpl_->pState->epoch;
+        MemoryBarrier();
+
+        // Copy the entire struct
+        state = *const_cast<const SharedState*>(pImpl_->pState);
+
+        MemoryBarrier();
+        uint32_t after = pImpl_->pState->epoch;
+
+        // Stable if epoch didn't change and is even (not mid-write)
+        if (before == after && (before & 1) == 0) {
+            return state;
+        }
+        // Yield and retry
+        YieldProcessor();
+    }
+
+    // Fallback: return whatever we got (best-effort after retries)
 #endif
     return state;
 }
 
 void SharedStateManager::Write(const SharedState& state) noexcept {
 #ifdef _WIN32
-    if (pImpl_->pState && pImpl_->isOwner) {
-        *pImpl_->pState = state;
+    if (!pImpl_->pState || !pImpl_->isWritable) {
+        return;
     }
+
+    auto* p = const_cast<SharedState*>(pImpl_->pState);
+
+    // Seqlock write protocol:
+    //   epoch 0(even) → 1(odd=writing) → copy data → 2(even=done)
+    // Callers should NOT modify epoch — Write() auto-increments it.
+    uint32_t seq = p->epoch + 1;  // Now odd = writing
+    p->epoch = seq;
+    MemoryBarrier();
+
+    // Copy all data fields (epoch is managed by seqlock, not caller)
+    p->magic = state.magic;
+    p->structVersion = state.structVersion;
+    p->structSize = state.structSize;
+    p->flags = state.flags;
+    p->inputMethod = state.inputMethod;
+    p->spellCheck = state.spellCheck;
+    p->optimizeLevel = state.optimizeLevel;
+    p->featureFlags = state.featureFlags;
+
+    MemoryBarrier();
+    p->epoch = seq + 1;  // Now even = done
+#endif
+}
+
+uint32_t SharedStateManager::ReadFlags() const noexcept {
+#ifdef _WIN32
+    if (pImpl_->pState && pImpl_->pState->magic == SharedState::MAGIC_VALUE) {
+        // Single 32-bit read is atomic on x86 — no seqlock needed
+        return pImpl_->pState->flags;
+    }
+#endif
+    return 0;
+}
+
+void SharedStateManager::ToggleFlag(uint32_t flagBit) noexcept {
+#ifdef _WIN32
+    if (!pImpl_->pState || pImpl_->pState->magic != SharedState::MAGIC_VALUE) return;
+
+    // Atomic 32-bit XOR — safe for concurrent DLL/EXE access
+    auto* flagsAddr = &(const_cast<SharedState*>(pImpl_->pState)->flags);
+    InterlockedXor(reinterpret_cast<volatile LONG*>(flagsAddr), static_cast<LONG>(flagBit));
 #endif
 }
 
 bool SharedStateManager::IsConnected() const noexcept {
 #ifdef _WIN32
-    return pImpl_->pState != nullptr && pImpl_->pState->IsValid();
+    return pImpl_->pState != nullptr && pImpl_->pState->magic == SharedState::MAGIC_VALUE;
 #else
     return false;
 #endif

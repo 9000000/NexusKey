@@ -1,6 +1,5 @@
 /* Excluded Apps Dialog Styles - Based on Macro Dialog */
-@import url("../shared/theme.css");
-@import url("../shared/dropdown.css");
+/* theme.css and dropdown.css loaded via <link> in HTML (Sciter @import is unreliable) */
 
 * {
     margin: 0;

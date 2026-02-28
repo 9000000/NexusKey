@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "core/SharedConstants.h"
 #include <Windows.h>
 #include <shellapi.h>
 #include <functional>
@@ -14,39 +15,47 @@ namespace NextKey {
 enum class TrayMenuId : UINT {
     Settings = 1001,
     About = 1002,
-    Exit = 1003
+    Exit = 1003,
+    ToggleMode = 1004
 };
 
-/// Callback types for tray events
+/// Callback type for tray events
 using MenuCallback = std::function<void(TrayMenuId)>;
 
-/// System tray icon manager
+/// Callback for settings dialog requesting a specific V/E mode
+using ModeRequestCallback = std::function<void(bool vietnamese)>;
+
+/// System tray icon manager — always visible, shows V/E state
 class TrayIcon {
 public:
     TrayIcon();
     ~TrayIcon();
 
-    // Non-copyable
     TrayIcon(const TrayIcon&) = delete;
     TrayIcon& operator=(const TrayIcon&) = delete;
 
-    /// Initialize tray icon with message window
+    /// Initialize and add tray icon
     [[nodiscard]] bool Create(HINSTANCE hInstance);
 
     /// Destroy tray icon
     void Destroy() noexcept;
 
-    /// Set Vietnamese mode indicator (changes icon)
+    /// Update icon to reflect Vietnamese/English mode
     void SetVietnameseMode(bool enabled) noexcept;
 
-    /// Set callback for menu actions
+    /// Set callback for menu/click actions
     void SetMenuCallback(MenuCallback callback) noexcept { menuCallback_ = std::move(callback); }
 
-    /// Process window messages (call from message loop)
+    /// Set callback for settings dialog mode requests (cross-process)
+    void SetModeRequestCallback(ModeRequestCallback callback) noexcept { modeRequestCallback_ = std::move(callback); }
+
+    /// Process window messages (call from WndProc)
     [[nodiscard]] bool ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept;
 
-    /// Get the hidden message window handle
+    /// Get the hidden message window handle (for timers/hotkeys)
     [[nodiscard]] HWND GetMessageWindow() const noexcept { return hwndMessage_; }
+
+    [[nodiscard]] bool IsVietnameseMode() const noexcept { return vietnameseMode_; }
 
 private:
     void ShowContextMenu();
@@ -55,8 +64,9 @@ private:
     HWND hwndMessage_ = nullptr;
     NOTIFYICONDATAW nid_ = {};
     bool vietnameseMode_ = true;
+    bool toggledByClick_ = false;        // Single-click toggled — undo if double-click follows
     MenuCallback menuCallback_;
-
+    ModeRequestCallback modeRequestCallback_;
     static constexpr UINT WM_TRAYICON = WM_USER + 1;
 };
 

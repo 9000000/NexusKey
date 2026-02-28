@@ -673,23 +673,23 @@ TEST_F(TelexEngineTest, Triphthong_UYE_Dot) {
 // ============================================================================
 
 TEST_F(TelexEngineTest, RisingDiphthong_OA_Grave) {
-    TypeString(*engine_, L"oaf");  // oà
-    EXPECT_EQ(engine_->Peek(), L"oà");
+    TypeString(*engine_, L"oaf");  // òa (classic: tone on first)
+    EXPECT_EQ(engine_->Peek(), L"òa");
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_OA_Acute) {
-    TypeString(*engine_, L"oas");  // oá
-    EXPECT_EQ(engine_->Peek(), L"oá");
+    TypeString(*engine_, L"oas");  // óa (classic: tone on first)
+    EXPECT_EQ(engine_->Peek(), L"óa");
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_OE_Tilde) {
-    TypeString(*engine_, L"oex");  // oẽ (xoẽ)
-    EXPECT_EQ(engine_->Peek(), L"oẽ");
+    TypeString(*engine_, L"oex");  // õe (classic: tone on first)
+    EXPECT_EQ(engine_->Peek(), L"õe");
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_OE_Grave) {
-    TypeString(*engine_, L"oef");  // oè (xòe)
-    EXPECT_EQ(engine_->Peek(), L"oè");
+    TypeString(*engine_, L"oef");  // òe (classic: tone on first)
+    EXPECT_EQ(engine_->Peek(), L"òe");
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_UY_Grave) {
@@ -698,8 +698,8 @@ TEST_F(TelexEngineTest, RisingDiphthong_UY_Grave) {
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_Hoa) {
-    TypeString(*engine_, L"hoaf");  // hoà
-    EXPECT_EQ(engine_->Peek(), L"hoà");
+    TypeString(*engine_, L"hoaf");  // hòa (classic: tone on first)
+    EXPECT_EQ(engine_->Peek(), L"hòa");
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_Quy) {
@@ -815,8 +815,8 @@ TEST_F(TelexEngineTest, TonePriority_3_Falling_AO) {
 }
 
 TEST_F(TelexEngineTest, TonePriority_3_Rising_OA) {
-    TypeString(*engine_, L"hoas");  // hoá
-    EXPECT_EQ(engine_->Peek(), L"hoá");
+    TypeString(*engine_, L"hoas");  // hóa (classic: tone on first)
+    EXPECT_EQ(engine_->Peek(), L"hóa");
 }
 
 TEST_F(TelexEngineTest, TonePriority_4_Default) {
@@ -1432,7 +1432,7 @@ TEST_F(TelexEngineTest, FallingDiphthong_UI_Dot) {
 
 TEST_F(TelexEngineTest, RisingDiphthong_OA_Hook) {
     TypeString(*engine_, L"oar");
-    EXPECT_EQ(engine_->Peek(), L"oả");
+    EXPECT_EQ(engine_->Peek(), L"ỏa");
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_UY_Acute) {
@@ -1553,6 +1553,95 @@ TEST_F(TelexEngineTest, Freestyles) {
     TypeString(*engine_, L"lefeeee");  // lefeeee
     EXPECT_EQ(engine_->Peek(), L"lèee");
 }
+
+TEST_F(TelexEngineTest, TestUych) {
+    TypeString(*engine_, L"huychj");  // lefeeee
+    EXPECT_EQ(engine_->Peek(), L"huỵch");
+}
+// ============================================================================
+// SIMPLE TELEX TESTS
+// Simple Telex: standalone 'w' is literal, 'w' after a/o/u vowel is modifier
+// ============================================================================
+
+class SimpleTelexTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.inputMethod = InputMethod::SimpleTelex;
+        config_.spellCheckEnabled = false;
+        config_.optimizeLevel = 0;
+        engine_ = std::make_unique<TelexEngine>(config_);
+    }
+
+    TypingConfig config_;
+    std::unique_ptr<TelexEngine> engine_;
+};
+
+TEST_F(SimpleTelexTest, W_Standalone_IsLiteral) {
+    TypeString(*engine_, L"w");
+    EXPECT_EQ(engine_->Peek(), L"w");
+}
+
+TEST_F(SimpleTelexTest, W_AfterConsonant_IsLiteral) {
+    TypeString(*engine_, L"tw");
+    EXPECT_EQ(engine_->Peek(), L"tw");
+}
+
+TEST_F(SimpleTelexTest, W_AfterU_IsModifier) {
+    TypeString(*engine_, L"uw");
+    EXPECT_EQ(engine_->Peek(), L"ư");
+}
+
+TEST_F(SimpleTelexTest, W_AfterO_IsModifier) {
+    TypeString(*engine_, L"ow");
+    EXPECT_EQ(engine_->Peek(), L"ơ");
+}
+
+TEST_F(SimpleTelexTest, W_AfterA_IsBruve) {
+    TypeString(*engine_, L"aw");
+    EXPECT_EQ(engine_->Peek(), L"ă");
+}
+
+TEST_F(SimpleTelexTest, W_InMua_IsModifier) {
+    TypeString(*engine_, L"muaw");
+    EXPECT_EQ(engine_->Peek(), L"mưa");
+}
+
+TEST_F(SimpleTelexTest, W_InDuoc_IsModifier) {
+    TypeString(*engine_, L"dduowcj");
+    EXPECT_EQ(engine_->Peek(), L"được");
+}
+
+TEST_F(SimpleTelexTest, W_AfterI_IsLiteral) {
+    // 'i' is a vowel but not a/o/u, so 'w' should be literal
+    TypeString(*engine_, L"iw");
+    EXPECT_EQ(engine_->Peek(), L"iw");
+}
+
+TEST_F(SimpleTelexTest, W_AfterE_IsLiteral) {
+    TypeString(*engine_, L"ew");
+    EXPECT_EQ(engine_->Peek(), L"ew");
+}
+
+TEST_F(SimpleTelexTest, Circumflex_StillWorks) {
+    TypeString(*engine_, L"aa");
+    EXPECT_EQ(engine_->Peek(), L"â");
+}
+
+TEST_F(SimpleTelexTest, Tone_StillWorks) {
+    TypeString(*engine_, L"as");
+    EXPECT_EQ(engine_->Peek(), L"á");
+}
+
+TEST_F(SimpleTelexTest, DD_StillWorks) {
+    TypeString(*engine_, L"dd");
+    EXPECT_EQ(engine_->Peek(), L"đ");
+}
+
+TEST_F(SimpleTelexTest, RealWord_Duong) {
+    TypeString(*engine_, L"dduowng");
+    EXPECT_EQ(engine_->Peek(), L"đương");
+}
+
 }  // namespace
 }  // namespace Telex
 }  // namespace NextKey
