@@ -81,27 +81,47 @@ TelexEngine::TelexEngine(const TypingConfig& config) : config_(config) {
 void TelexEngine::PushChar(wchar_t c) {
     rawInput_.push_back(c);
 
-    // 1. Try tone keys (s, f, r, x, j)
-    // Note: allowZwjf is for spell-check validation only (accept "ja" as valid).
-    // Tone/modifier behavior of z/w/j/f is always standard Telex.
-    if (IsToneKey(c) && !states_.empty()) {
-        if (ProcessTone(c)) {
-            ApplyAutoUO();
+    // 1a. 'z' key — clear existing tone (if any)
+    if (towlower(c) == L'z' && !states_.empty()) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            ProcessChar(c);
+            UpdateSpellState();
+            return;
+        }
+        if (ProcessClearTone()) {
+            UpdateSpellState();
             return;
         }
     }
 
-    // 2. Try modifier keys (w, aa, ee, oo, dd)
-    if (!states_.empty()) {
-        if (ProcessModifier(c)) {
-            ApplyAutoUO();
+    // 1b. Try tone keys (s, f, r, x, j) — gated by spell check
+    if (IsToneKey(c) && !states_.empty()) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            ProcessChar(c);
+            UpdateSpellState();
             return;
         }
+        if (ProcessTone(c)) {
+            ApplyAutoUO();
+            UpdateSpellState();
+            return;
+        }
+    }
+
+    // 2. Try modifier keys (w, [], aa, ee, oo, dd)
+    // Modifiers are NOT gated by spell check — they can transform invalid
+    // sequences into valid ones (e.g., "uo" → "ươ", "ie" → "iê")
+    // Brackets and standalone 'w' can insert new chars, so try even on empty states
+    if (ProcessModifier(c)) {
+        ApplyAutoUO();
+        UpdateSpellState();
+        return;
     }
 
     // 3. Regular character
     ProcessChar(c);
     ApplyAutoUO();
+    UpdateSpellState();
 }
 
 //-----------------------------------------------------------------------------
@@ -130,11 +150,46 @@ bool TelexEngine::ProcessTone(wchar_t c) {
 }
 
 //-----------------------------------------------------------------------------
-// Modifier Processing (W, AA, EE, OO, DD) - TABLE-DRIVEN
+// Clear Tone (z key) — remove any existing tone
+//-----------------------------------------------------------------------------
+
+bool TelexEngine::ProcessClearTone() {
+    size_t targetIdx = FindToneTarget();
+    if (targetIdx == SIZE_MAX) return false;
+
+    CharState& target = states_[targetIdx];
+    if (target.tone == Tone::None) return false;
+
+    target.tone = Tone::None;
+    return true;
+}
+
+//-----------------------------------------------------------------------------
+// Modifier Processing (W, [], AA, EE, OO, DD) - TABLE-DRIVEN
 //-----------------------------------------------------------------------------
 
 bool TelexEngine::ProcessModifier(wchar_t c) {
     wchar_t lower = towlower(c);
+
+    // Handle bracket keys: [ → ơ, ] → ư (full Telex only)
+    if (config_.inputMethod != InputMethod::SimpleTelex) {
+        if (c == L'[') {
+            // [ → insert 'ơ' (o with horn)
+            CharState s;
+            s.base = L'o';
+            s.mod = Modifier::Horn;
+            states_.push_back(s);
+            return true;
+        }
+        if (c == L']') {
+            // ] → insert 'ư' (u with horn)
+            CharState s;
+            s.base = L'u';
+            s.mod = Modifier::Horn;
+            states_.push_back(s);
+            return true;
+        }
+    }
 
     // Handle 'w' modifier
     if (lower == L'w') {
@@ -142,7 +197,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
     }
 
     // Handle double vowel → circumflex (aa→â, ee→ê, oo→ô)
-    if (IsVowelChar(c)) {
+    if (IsVowelChar(c) && !states_.empty()) {
         CharState& last = states_.back();
         if (last.IsVowel() && last.base == lower) {
             if (lower == L'a' || lower == L'e' || lower == L'o') {
@@ -255,7 +310,28 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         return true;
     }
 
-    // P4: Standalone 'u' → horn
+    // P4: Escape - clear existing modifier and add 'w' as literal
+    // Must be before standalone applications (P5-P7) so that second 'w'
+    // escapes the first modification (e.g., "uoww" → "uow", not "ươ")
+    if (hornedIdx != SIZE_MAX) {
+        states_[hornedIdx].mod = Modifier::None;
+        // Undo AutoUO: if we cleared horn on 'o' and the preceding char is ư,
+        // that ư was auto-applied — clear it too
+        if (states_[hornedIdx].base == L'o' && hornedIdx > 0 &&
+            states_[hornedIdx - 1].base == L'u' &&
+            states_[hornedIdx - 1].mod == Modifier::Horn) {
+            states_[hornedIdx - 1].mod = Modifier::None;
+        }
+        ProcessChar(c);
+        return true;
+    }
+    if (brevedIdx != SIZE_MAX) {
+        states_[brevedIdx].mod = Modifier::None;
+        ProcessChar(c);
+        return true;
+    }
+
+    // P5: Standalone 'u' → horn
     if (uIdx != SIZE_MAX) {
         states_[uIdx].mod = Modifier::Horn;
         if (aIdx != SIZE_MAX && states_[aIdx].mod == Modifier::Circumflex) {
@@ -265,28 +341,26 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         return true;
     }
 
-    // P5: Standalone 'o' (not in oa pattern) → horn
+    // P6: Standalone 'o' (not in oa pattern) → horn
     if (oIdx != SIZE_MAX && !hasOA) {
         states_[oIdx].mod = Modifier::Horn;
         RelocateToneToHornVowel();
         return true;
     }
 
-    // P6: Standalone 'a' → breve (BUT only if no horn vowel exists)
-    if (aIdx != SIZE_MAX && states_[aIdx].mod == Modifier::None && hornedIdx == SIZE_MAX) {
+    // P7: Standalone 'a' → breve
+    if (aIdx != SIZE_MAX && states_[aIdx].mod == Modifier::None) {
         states_[aIdx].mod = Modifier::Breve;
         return true;
     }
 
-    // P7: Escape - clear existing modifier and add 'w' as literal
-    if (hornedIdx != SIZE_MAX) {
-        states_[hornedIdx].mod = Modifier::None;
-        ProcessChar(c);
-        return true;
-    }
-    if (brevedIdx != SIZE_MAX) {
-        states_[brevedIdx].mod = Modifier::None;
-        ProcessChar(c);
+    // P8: Full Telex only — standalone 'w' with no modifiable vowel → insert ư
+    if (config_.inputMethod != InputMethod::SimpleTelex) {
+        CharState s;
+        s.base = L'u';
+        s.mod = Modifier::Horn;
+        s.isUpper = iswupper(c);
+        states_.push_back(s);
         return true;
     }
 
@@ -580,16 +654,10 @@ std::wstring TelexEngine::ComposeAll() const {
 void TelexEngine::Backspace() {
     if (states_.empty()) return;
 
-    CharState& last = states_.back();
-    if (last.tone != Tone::None) {
-        last.tone = Tone::None;
-    } else if (last.mod != Modifier::None) {
-        last.mod = Modifier::None;
-    } else {
-        states_.pop_back();
-    }
+    states_.pop_back();
 
     if (!rawInput_.empty()) rawInput_.pop_back();
+    UpdateSpellState();
 }
 
 std::wstring TelexEngine::Peek() const {
@@ -606,10 +674,24 @@ void TelexEngine::Reset() {
     states_.clear();
     rawInput_.clear();
     state_ = TelexStates::Valid;
+    spellCheckDisabled_ = false;
 }
 
 size_t TelexEngine::Count() const noexcept {
     return states_.size();
+}
+
+//-----------------------------------------------------------------------------
+// Spell Check State Update
+//-----------------------------------------------------------------------------
+
+void TelexEngine::UpdateSpellState() {
+    if (!config_.spellCheckEnabled || states_.empty()) {
+        spellCheckDisabled_ = false;
+        return;
+    }
+    auto result = SpellCheck::Validate(states_.data(), states_.size());
+    spellCheckDisabled_ = (result == SpellCheck::Result::Invalid);
 }
 
 }  // namespace Telex

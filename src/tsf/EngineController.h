@@ -5,9 +5,9 @@
 
 #include "stdafx.h"
 #include "core/engine/IInputEngine.h"
-#include "core/TypingConfig.h"
-#include "core/ConfigEvent.h"
-#include "core/SharedStateManager.h"
+#include "core/config/TypingConfig.h"
+#include "core/config/ConfigEvent.h"
+#include "core/ipc/SharedStateManager.h"
 #include "CompositionManager.h"
 #include "EditSession.h"
 #include "LanguageBarButton.h"

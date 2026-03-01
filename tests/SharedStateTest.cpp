@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>
-#include "core/SharedState.h"
-#include "core/TypingConfig.h"
+#include "core/ipc/SharedState.h"
+#include "core/config/TypingConfig.h"
 
 namespace NextKey {
 namespace {

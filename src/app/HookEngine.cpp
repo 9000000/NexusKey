@@ -4,7 +4,7 @@
 #include "HookEngine.h"
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
-#include "core/SharedStateManager.h"
+#include "core/ipc/SharedStateManager.h"
 #include "core/Debug.h"
 #include <algorithm>
 #include <cstdio>

@@ -4,7 +4,8 @@
 #pragma once
 
 #include "IInputEngine.h"
-#include "core/TypingConfig.h"
+#include "SpellChecker.h"
+#include "core/config/TypingConfig.h"
 #include <vector>
 
 namespace NextKey {
@@ -67,10 +68,14 @@ private:
     CharState* FindToneTargetClassic();
     CharState* FindToneTargetModern();
     
+    // Spell check
+    void UpdateSpellState();
+
     // State
     std::vector<CharState> states_;
     std::wstring rawInput_;
     TypingConfig config_;
+    bool spellCheckDisabled_ = false;
 };
 
 }  // namespace Vni

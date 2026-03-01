@@ -4,7 +4,8 @@
 #pragma once
 
 #include "IInputEngine.h"
-#include "../TypingConfig.h"
+#include "SpellChecker.h"
+#include "core/config/TypingConfig.h"
 #include <vector>
 #include <string>
 
@@ -62,7 +63,7 @@ enum class TelexStates {
 /// Unicode is only produced when Peek() or Commit() is called.
 ///
 /// This makes:
-/// - Backspace clean (clear tone → clear mod → clear base)
+/// - Backspace clean (pop entire char state)
 /// - Escape clean (retype tone/mod to clear)
 /// - No reverse maps needed
 /// - TSF composition state always in sync
@@ -88,7 +89,8 @@ public:
 private:
     // Input processing
     bool ProcessTone(wchar_t c);      // s, f, r, x, j
-    bool ProcessModifier(wchar_t c);  // w, aa, ee, oo, dd
+    bool ProcessClearTone();          // z — remove existing tone
+    bool ProcessModifier(wchar_t c);  // w, [], aa, ee, oo, dd
     void ProcessChar(wchar_t c);      // Regular character
 
     // Find target for tone/modifier application
@@ -118,11 +120,15 @@ private:
     // Compose all states to string
     std::wstring ComposeAll() const;
 
+    // Spell check: validate syllable structure after each keystroke
+    void UpdateSpellState();
+
     // State
     std::vector<CharState> states_;   // Internal state buffer
     std::vector<wchar_t> rawInput_;   // Raw keys for escape
     TypingConfig config_;
     TelexStates state_ = TelexStates::Valid;
+    bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
 };
 
 }  // namespace Telex

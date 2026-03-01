@@ -9,8 +9,8 @@
 #include <gtest/gtest.h>
 #include "core/engine/TelexEngine.h"
 #include "core/engine/VniEngine.h"
-#include "core/TypingConfig.h"
-#include "core/SharedState.h"
+#include "core/config/TypingConfig.h"
+#include "core/ipc/SharedState.h"
 #ifdef _WIN32
 #include "core/config/ConfigManager.h"
 #include <fstream>
@@ -703,20 +703,21 @@ TEST_F(TelexZwjfTest, J_StillActsAsTone_InWord) {
 // --- W as initial consonant, still acts as modifier after vowel ---
 
 TEST_F(TelexZwjfTest, W_AsInitialConsonant) {
+    // Full Telex: standalone 'w' → ư
     TypeString(*engine_, L"w");
-    EXPECT_EQ(engine_->Peek(), L"w");
+    EXPECT_EQ(engine_->Peek(), L"ư");
 }
 
 TEST_F(TelexZwjfTest, W_InitialThenVowel) {
-    // "wa" → w is regular char, a is vowel
+    // "wa" → ư + a → "ưa"
     TypeString(*engine_, L"wa");
-    EXPECT_EQ(engine_->Peek(), L"wa");
+    EXPECT_EQ(engine_->Peek(), L"ưa");
 }
 
 TEST_F(TelexZwjfTest, W_InitialWord_Was) {
-    // "was" → w(consonant) + a(vowel) + s(acute) → "wá"
+    // "was" → ư + a + s(acute) → "ứa" (tone on ư as horn vowel)
     TypeString(*engine_, L"was");
-    EXPECT_EQ(engine_->Peek(), L"wá");
+    EXPECT_EQ(engine_->Peek(), L"ứa");
 }
 
 TEST_F(TelexZwjfTest, W_StillActsAsModifier_Horn) {
@@ -732,9 +733,9 @@ TEST_F(TelexZwjfTest, W_StillActsAsModifier_InWord) {
 }
 
 TEST_F(TelexZwjfTest, W_InitialWord_WithTone) {
-    // "waf" → w(consonant) + a(vowel) + f(grave) → "wà"
+    // "waf" → ư + a + f(grave) → "ừa" (tone on ư as horn vowel)
     TypeString(*engine_, L"waf");
-    EXPECT_EQ(engine_->Peek(), L"wà");
+    EXPECT_EQ(engine_->Peek(), L"ừa");
 }
 
 // --- Z as initial consonant ---
@@ -764,11 +765,10 @@ TEST_F(TelexZwjfTest, Word_Fan_NoTone) {
 }
 
 TEST_F(TelexZwjfTest, Word_Wifi_FActsAsTone) {
-    // "wifi": w(char) + i(vowel) + f(grave tone on i) + i(char) → "wìi"
-    // This is expected Telex behavior: 'f' is ALWAYS a tone key after a vowel.
-    // English words containing f/j after vowels cannot be typed literally in Telex.
+    // "wifi": w→ư, i(vowel), f(grave) → tone on ư (horn priority), i(char) → "ừii"
+    // Full Telex: 'w' → ư, 'f' is a tone key, horn vowel gets priority
     TypeString(*engine_, L"wifi");
-    EXPECT_EQ(engine_->Peek(), L"wìi");
+    EXPECT_EQ(engine_->Peek(), L"ừii");
 }
 
 TEST_F(TelexZwjfTest, Word_Jazz_NoTone) {

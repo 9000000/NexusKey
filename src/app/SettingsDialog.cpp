@@ -7,9 +7,9 @@
 #include "helpers/SciterHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/UIConfig.h"
-#include "core/ConfigEvent.h"
-#include "core/SharedConstants.h"
-#include "core/SharedStateManager.h"
+#include "core/config/ConfigEvent.h"
+#include "core/ipc/SharedConstants.h"
+#include "core/ipc/SharedStateManager.h"
 #include "sciter-x-dom.hpp"
 #include "sciter-x-host-callback.h"
 #include <dwmapi.h>

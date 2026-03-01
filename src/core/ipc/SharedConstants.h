@@ -3,6 +3,8 @@
 
 #pragma once
 
+#ifdef _WIN32
+
 #include <Windows.h>
 
 namespace NextKey {
@@ -16,3 +18,5 @@ constexpr UINT WM_NEXUSKEY_MODE_CHANGED = WM_USER + 101;  // Main → Settings: 
 constexpr UINT WM_NEXUSKEY_OPEN_EXCLUDED = WM_USER + 102;  // Deferred: open excluded apps dialog
 
 }  // namespace NextKey
+
+#endif  // _WIN32

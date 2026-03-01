@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>
-#include "core/ConfigEvent.h"
+#include "core/config/ConfigEvent.h"
 #include <thread>
 #include <chrono>
 

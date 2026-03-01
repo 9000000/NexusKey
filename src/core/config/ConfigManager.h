@@ -7,7 +7,7 @@
 #include <optional>
 #include <unordered_map>
 #include <vector>
-#include "core/TypingConfig.h"
+#include "TypingConfig.h"
 #include "core/UIConfig.h"
 
 namespace NextKey {

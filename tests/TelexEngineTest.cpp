@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 #include "core/engine/TelexEngine.h"
-#include "core/TypingConfig.h"
+#include "core/config/TypingConfig.h"
 
 namespace NextKey {
 namespace Telex {
@@ -133,14 +133,14 @@ TEST_F(TelexEngineTest, Horn_UO_AutoTransform_WAfterConsonant) {
 TEST_F(TelexEngineTest, Horn_UA_UndoCircumflex) {
     // giuaaw → giưa (w on u, undo circumflex on a)
     // When 'w' applies horn to 'u' and 'â' follows, undo the circumflex
-    TypeString(*engine_, L"giuaaw");
+    TypeString(*engine_, L"giuaaw"); 
     EXPECT_EQ(engine_->Peek(), L"giưa");
 }
 
 TEST_F(TelexEngineTest, Horn_UO_ChainedW) {
     // uow → uơ, then second w applies horn to 'u' → ươ
     TypeString(*engine_, L"uoww");
-    EXPECT_EQ(engine_->Peek(), L"ươ");
+    EXPECT_EQ(engine_->Peek(), L"uow");  // uow -> ươ
 }
 
 // ============================================================================
@@ -377,9 +377,10 @@ TEST_F(TelexEngineTest, Word_Huo) {
 }
 
 TEST_F(TelexEngineTest, Word_Huo_WithSecondW) {
-    // hươ: second w applies horn to 'u'
+    // huow + w: second w escapes horn on 'o', result is "huow"
+    // To type "hương", use "huowng" (AutoUO applies when next char comes)
     TypeString(*engine_, L"huoww");
-    EXPECT_EQ(engine_->Peek(), L"hươ");
+    EXPECT_EQ(engine_->Peek(), L"huow");
 }
 
 TEST_F(TelexEngineTest, Word_Hoc) {
@@ -424,10 +425,7 @@ TEST_F(TelexEngineTest, Backspace_RemovesLastCharacter) {
 
 TEST_F(TelexEngineTest, Backspace_AfterCircumflex) {
     TypeString(*engine_, L"aa");  // → â (single state with circumflex)
-    engine_->Backspace();         // First backspace removes modifier → a
-    EXPECT_EQ(engine_->Peek(), L"a");
-    EXPECT_EQ(engine_->Count(), 1u);
-    engine_->Backspace();         // Second backspace removes base
+    engine_->Backspace();         // Removes entire â
     EXPECT_EQ(engine_->Count(), 0u);
 }
 
@@ -438,19 +436,13 @@ TEST_F(TelexEngineTest, Backspace_OnEmptyBuffer) {
 
 TEST_F(TelexEngineTest, Backspace_AfterTone) {
     TypeString(*engine_, L"as");  // → á (single state with acute tone)
-    engine_->Backspace();         // First backspace removes tone → a
-    EXPECT_EQ(engine_->Peek(), L"a");
-    engine_->Backspace();         // Second backspace removes base
+    engine_->Backspace();         // Removes entire á
     EXPECT_EQ(engine_->Count(), 0u);
 }
 
 TEST_F(TelexEngineTest, Backspace_AfterModifierAndTone) {
     TypeString(*engine_, L"aas"); // → ấ (â with acute)
-    engine_->Backspace();         // Removes tone → â
-    EXPECT_EQ(engine_->Peek(), L"â");
-    engine_->Backspace();         // Removes modifier → a
-    EXPECT_EQ(engine_->Peek(), L"a");
-    engine_->Backspace();         // Removes base
+    engine_->Backspace();         // Removes entire ấ
     EXPECT_EQ(engine_->Count(), 0u);
 }
 
@@ -590,8 +582,9 @@ TEST_F(TelexEngineTest, EdgeCase_PlainConsonants) {
 }
 
 TEST_F(TelexEngineTest, EdgeCase_WWithoutVowel) {
+    // Full Telex: standalone 'w' → ư
     TypeString(*engine_, L"w");
-    EXPECT_EQ(engine_->Peek(), L"w");
+    EXPECT_EQ(engine_->Peek(), L"ư");
 }
 
 TEST_F(TelexEngineTest, RemoveTone_WithTone) {
@@ -1558,6 +1551,96 @@ TEST_F(TelexEngineTest, TestUych) {
     TypeString(*engine_, L"huychj");  // lefeeee
     EXPECT_EQ(engine_->Peek(), L"huỵch");
 }
+// ============================================================================
+// Z KEY — CLEAR TONE TESTS
+// ============================================================================
+
+TEST_F(TelexEngineTest, Z_ClearsTone_Acute) {
+    TypeString(*engine_, L"asz");  // á → z clears tone → a
+    EXPECT_EQ(engine_->Peek(), L"a");
+}
+
+TEST_F(TelexEngineTest, Z_ClearsTone_Grave) {
+    TypeString(*engine_, L"afz");  // à → z → a
+    EXPECT_EQ(engine_->Peek(), L"a");
+}
+
+TEST_F(TelexEngineTest, Z_ClearsTone_InWord) {
+    TypeString(*engine_, L"basngz");  // bá + ng → z clears tone → "bang"
+    EXPECT_EQ(engine_->Peek(), L"bang");
+}
+
+TEST_F(TelexEngineTest, Z_NoTone_AsRegularChar) {
+    // No tone to clear → z is added as regular character
+    TypeString(*engine_, L"az");
+    EXPECT_EQ(engine_->Peek(), L"az");
+}
+
+TEST_F(TelexEngineTest, Z_Standalone) {
+    TypeString(*engine_, L"z");
+    EXPECT_EQ(engine_->Peek(), L"z");
+}
+
+// ============================================================================
+// BRACKET KEYS [ ] — ơ ư TESTS
+// ============================================================================
+
+TEST_F(TelexEngineTest, Bracket_Open_Inserts_Oi) {
+    TypeString(*engine_, L"[");
+    EXPECT_EQ(engine_->Peek(), L"ơ");
+}
+
+TEST_F(TelexEngineTest, Bracket_Close_Inserts_Ui) {
+    TypeString(*engine_, L"]");
+    EXPECT_EQ(engine_->Peek(), L"ư");
+}
+
+TEST_F(TelexEngineTest, Bracket_InWord) {
+    TypeString(*engine_, L"th[");
+    EXPECT_EQ(engine_->Peek(), L"thơ");
+}
+
+TEST_F(TelexEngineTest, Bracket_Close_InWord) {
+    TypeString(*engine_, L"th]");
+    EXPECT_EQ(engine_->Peek(), L"thư");
+}
+
+TEST_F(TelexEngineTest, W_Standalone_ProducesUHorn) {
+    TypeString(*engine_, L"w");
+    EXPECT_EQ(engine_->Peek(), L"ư");
+}
+
+TEST_F(TelexEngineTest, W_AfterConsonant_ProducesUHorn) {
+    // "tw" → t + ư
+    TypeString(*engine_, L"tw");
+    EXPECT_EQ(engine_->Peek(), L"tư");
+}
+
+// ============================================================================
+// BACKSPACE — DELETE WHOLE CHARACTER TESTS
+// ============================================================================
+
+TEST_F(TelexEngineTest, Backspace_DeletesWholeChar) {
+    TypeString(*engine_, L"bas");  // bá
+    EXPECT_EQ(engine_->Peek(), L"bá");
+    engine_->Backspace();  // removes á entirely
+    EXPECT_EQ(engine_->Peek(), L"b");
+    EXPECT_EQ(engine_->Count(), 1u);
+}
+
+TEST_F(TelexEngineTest, Backspace_DeletesModifiedChar) {
+    TypeString(*engine_, L"baa");  // bâ
+    EXPECT_EQ(engine_->Peek(), L"bâ");
+    engine_->Backspace();  // removes â entirely
+    EXPECT_EQ(engine_->Peek(), L"b");
+}
+
+TEST_F(TelexEngineTest, Backspace_DeletesBracketChar) {
+    TypeString(*engine_, L"th[");  // thơ
+    engine_->Backspace();  // removes ơ
+    EXPECT_EQ(engine_->Peek(), L"th");
+}
+
 // ============================================================================
 // SIMPLE TELEX TESTS
 // Simple Telex: standalone 'w' is literal, 'w' after a/o/u vowel is modifier

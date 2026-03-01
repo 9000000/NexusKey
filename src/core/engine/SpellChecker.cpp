@@ -1,0 +1,561 @@
+// NexusKey - Vietnamese Spell Checker Implementation
+// SPDX-License-Identifier: GPL-3.0-only
+//
+// Vietnamese syllable structure: [C₁] + V + [C₂]
+// Uses greedy consonant matching and binary-searched vowel nucleus table.
+
+#include "SpellChecker.h"
+#include "TelexEngine.h"
+#include "VniEngine.h"
+#include <algorithm>
+#include <cwctype>
+
+namespace NextKey {
+namespace SpellCheck {
+
+namespace {
+
+//=============================================================================
+// Vowel nucleus encoding
+//=============================================================================
+
+// Encode a single vowel slot: (base_index << 2) | mod_ordinal
+// base: a=0, e=1, i=2, o=3, u=4, y=5
+// mod:  None=0, Circumflex=1, Breve=2, Horn=3
+
+constexpr uint8_t VowelSlot(uint8_t base, uint8_t mod) {
+    return static_cast<uint8_t>((base << 2) | mod);
+}
+
+// Base indices for encoding
+constexpr uint8_t kA = 0, kE = 1, kI = 2, kO = 3, kU = 4, kY = 5;
+// Modifier ordinals for encoding
+constexpr uint8_t kNone = 0, kCirc = 1, kBrev = 2, kHorn = 3;
+
+constexpr uint8_t BaseIndex(wchar_t base) {
+    switch (base) {
+        case L'a': return kA;
+        case L'e': return kE;
+        case L'i': return kI;
+        case L'o': return kO;
+        case L'u': return kU;
+        case L'y': return kY;
+        default:   return 0xFF;
+    }
+}
+
+// Pack 1-3 vowel slots into a uint32_t key with length prefix
+// Top byte encodes slot count to prevent Key1/Key2/Key3 collisions
+constexpr uint32_t Key1(uint8_t s0) {
+    return (1u << 24) | static_cast<uint32_t>(s0);
+}
+constexpr uint32_t Key2(uint8_t s0, uint8_t s1) {
+    return (2u << 24) | (static_cast<uint32_t>(s0) << 8) | s1;
+}
+constexpr uint32_t Key3(uint8_t s0, uint8_t s1, uint8_t s2) {
+    return (3u << 24) | (static_cast<uint32_t>(s0) << 16) | (static_cast<uint32_t>(s1) << 8) | s2;
+}
+
+//=============================================================================
+// Vowel nucleus table
+//=============================================================================
+
+// Each entry: { key, canHaveEndConsonant }
+struct VowelEntry {
+    uint32_t key;
+    bool canEnd;  // Can be followed by a final consonant?
+};
+
+// Sorted by key for binary search
+constexpr VowelEntry kVowelTable[] = {
+    // === Single vowels (can have end consonant) ===
+    { Key1(VowelSlot(kA, kNone)), true },   // a
+    { Key1(VowelSlot(kA, kCirc)), true },   // â
+    { Key1(VowelSlot(kA, kBrev)), true },   // ă
+    { Key1(VowelSlot(kE, kNone)), true },   // e
+    { Key1(VowelSlot(kE, kCirc)), true },   // ê
+    { Key1(VowelSlot(kI, kNone)), true },   // i
+    { Key1(VowelSlot(kO, kNone)), true },   // o
+    { Key1(VowelSlot(kO, kCirc)), true },   // ô
+    { Key1(VowelSlot(kO, kHorn)), true },   // ơ
+    { Key1(VowelSlot(kU, kNone)), true },   // u
+    { Key1(VowelSlot(kU, kHorn)), true },   // ư
+    { Key1(VowelSlot(kY, kNone)), true },   // y
+
+    // === Double vowels WITHOUT end consonant ===
+    { Key2(VowelSlot(kA, kNone), VowelSlot(kI, kNone)), false },  // ai
+    { Key2(VowelSlot(kA, kNone), VowelSlot(kO, kNone)), false },  // ao
+    { Key2(VowelSlot(kA, kNone), VowelSlot(kU, kNone)), false },  // au
+    { Key2(VowelSlot(kA, kNone), VowelSlot(kY, kNone)), false },  // ay
+    { Key2(VowelSlot(kA, kCirc), VowelSlot(kU, kNone)), false },  // âu
+    { Key2(VowelSlot(kA, kCirc), VowelSlot(kY, kNone)), false },  // ây
+    { Key2(VowelSlot(kE, kNone), VowelSlot(kO, kNone)), false },  // eo
+    { Key2(VowelSlot(kE, kCirc), VowelSlot(kU, kNone)), false },  // êu
+    { Key2(VowelSlot(kI, kNone), VowelSlot(kA, kNone)), false },  // ia
+    { Key2(VowelSlot(kI, kNone), VowelSlot(kU, kNone)), false },  // iu
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kA, kNone)), true },   // oa (can have end: loan, hoàn)
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kI, kNone)), false },  // oi
+    { Key2(VowelSlot(kO, kCirc), VowelSlot(kI, kNone)), false },  // ôi
+    { Key2(VowelSlot(kO, kHorn), VowelSlot(kI, kNone)), false },  // ơi
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kA, kNone)), false },  // ua
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kI, kNone)), false },  // ui
+    { Key2(VowelSlot(kU, kHorn), VowelSlot(kA, kNone)), false },  // ưa
+    { Key2(VowelSlot(kU, kHorn), VowelSlot(kI, kNone)), false },  // ưi
+    { Key2(VowelSlot(kU, kHorn), VowelSlot(kU, kNone)), false },  // ưu
+
+    // === Double vowels WITH end consonant ===
+    { Key2(VowelSlot(kI, kNone), VowelSlot(kE, kCirc)), true },   // iê
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kA, kBrev)), true },   // oă
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kE, kNone)), true },   // oe
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kO, kNone)), true },   // oo
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kA, kCirc)), true },   // uâ
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kE, kCirc)), true },   // uê
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kO, kCirc)), true },   // uô
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kY, kNone)), true },   // uy
+    { Key2(VowelSlot(kU, kHorn), VowelSlot(kO, kHorn)), true },   // ươ
+    { Key2(VowelSlot(kY, kNone), VowelSlot(kE, kCirc)), true },   // yê
+
+    // === Triple vowels WITHOUT end consonant ===
+    { Key3(VowelSlot(kI, kNone), VowelSlot(kE, kCirc), VowelSlot(kU, kNone)), false },  // iêu
+    { Key3(VowelSlot(kO, kNone), VowelSlot(kA, kNone), VowelSlot(kI, kNone)), false },  // oai
+    { Key3(VowelSlot(kO, kNone), VowelSlot(kA, kNone), VowelSlot(kY, kNone)), false },  // oay
+    { Key3(VowelSlot(kO, kNone), VowelSlot(kE, kNone), VowelSlot(kO, kNone)), false },  // oeo
+    { Key3(VowelSlot(kU, kNone), VowelSlot(kA, kCirc), VowelSlot(kY, kNone)), false },  // uây
+    { Key3(VowelSlot(kU, kNone), VowelSlot(kO, kCirc), VowelSlot(kI, kNone)), false },  // uôi
+    { Key3(VowelSlot(kU, kHorn), VowelSlot(kO, kHorn), VowelSlot(kI, kNone)), false },  // ươi
+    { Key3(VowelSlot(kU, kHorn), VowelSlot(kO, kHorn), VowelSlot(kU, kNone)), false },  // ươu
+
+    // === Triple vowels WITH end consonant ===
+    { Key3(VowelSlot(kU, kNone), VowelSlot(kY, kNone), VowelSlot(kE, kCirc)), true },   // uyê
+
+    // === yêu is triple no-end ===
+    { Key3(VowelSlot(kY, kNone), VowelSlot(kE, kCirc), VowelSlot(kU, kNone)), false },  // yêu
+};
+
+constexpr size_t kVowelTableSize = sizeof(kVowelTable) / sizeof(kVowelTable[0]);
+
+// Linear search the vowel table for exact match (~50 entries, fast enough)
+const VowelEntry* FindVowel(uint32_t key) {
+    for (size_t i = 0; i < kVowelTableSize; ++i) {
+        if (kVowelTable[i].key == key) return &kVowelTable[i];
+    }
+    return nullptr;
+}
+
+// Check if key is a prefix of any entry in the vowel table
+bool IsVowelPrefix(uint32_t key, int numSlots) {
+    // Extract the slot byte from the key (strip length prefix)
+    uint8_t keySlot0 = static_cast<uint8_t>(key & 0xFF);
+    if (numSlots == 2) keySlot0 = static_cast<uint8_t>((key >> 8) & 0xFF);
+
+    for (size_t i = 0; i < kVowelTableSize; ++i) {
+        uint32_t entryKey = kVowelTable[i].key;
+        uint8_t entryLen = static_cast<uint8_t>(entryKey >> 24);
+
+        if (numSlots == 1 && entryLen >= 2) {
+            // Check if first slot of 2+ entry matches our 1-slot key
+            uint8_t entryFirst;
+            if (entryLen == 2) entryFirst = static_cast<uint8_t>((entryKey >> 8) & 0xFF);
+            else entryFirst = static_cast<uint8_t>((entryKey >> 16) & 0xFF);  // 3-slot
+            if (entryFirst == keySlot0) return true;
+        } else if (numSlots == 2 && entryLen == 3) {
+            // Check if first 2 slots of 3-slot entry match our 2-slot key
+            uint16_t entryFirst2 = static_cast<uint16_t>((entryKey >> 8) & 0xFFFF);
+            uint16_t keySlots = static_cast<uint16_t>(key & 0xFFFF);  // strip length prefix
+            if (entryFirst2 == keySlots) return true;
+        }
+    }
+    return false;
+}
+
+//=============================================================================
+// Initial consonant validation
+//=============================================================================
+
+// Valid initial consonants (greedy match 3→2→1):
+// 3-char: ngh
+// 2-char: ch, gh, gi, kh, ng, nh, ph, qu, th, tr
+// 1-char: b, c, d, g, h, k, l, m, n, p, q, r, s, t, v, x
+// đ: represented as d with mod != None
+
+template<typename CharStateT>
+size_t ParseInitialConsonant(const CharStateT* states, size_t count) {
+    if (count == 0) return 0;
+
+    // Check đ (d with modifier)
+    if (states[0].IsD() && states[0].mod != decltype(states[0].mod){}) {
+        return 1;  // đ is a single consonant
+    }
+
+    wchar_t c0 = states[0].base;
+    if (states[0].IsVowel()) return 0;  // Vowel, no initial consonant
+
+    // Try 3-char: ngh
+    if (count >= 3 && c0 == L'n' && states[1].base == L'g' && states[2].base == L'h' &&
+        !states[1].IsVowel() && !states[2].IsVowel()) {
+        return 3;
+    }
+
+    // Try 2-char consonants
+    if (count >= 2 && !states[1].IsVowel() && !states[1].IsD()) {
+        wchar_t c1 = states[1].base;
+        if ((c0 == L'c' && c1 == L'h') ||
+            (c0 == L'g' && c1 == L'h') ||
+            (c0 == L'g' && c1 == L'i') ||
+            (c0 == L'k' && c1 == L'h') ||
+            (c0 == L'n' && c1 == L'g') ||
+            (c0 == L'n' && c1 == L'h') ||
+            (c0 == L'p' && c1 == L'h') ||
+            (c0 == L'q' && c1 == L'u') ||
+            (c0 == L't' && c1 == L'h') ||
+            (c0 == L't' && c1 == L'r')) {
+            return 2;
+        }
+    }
+
+    // Try 2-char: "gi" where second char is vowel 'i' — special case
+    // "gi" is a consonant cluster when followed by another vowel
+    // But "gi" alone can also be consonant g + vowel i
+    // Handle at call site with dual decomposition
+    if (count >= 2 && c0 == L'g' && states[1].base == L'i' && states[1].IsVowel()) {
+        // This is ambiguous — caller handles gi/qu decomposition
+        // For now, don't consume the 'i' as consonant here
+    }
+
+    // Try 1-char consonants
+    if (c0 == L'b' || c0 == L'c' || c0 == L'd' || c0 == L'g' || c0 == L'h' ||
+        c0 == L'k' || c0 == L'l' || c0 == L'm' || c0 == L'n' || c0 == L'p' ||
+        c0 == L'q' || c0 == L'r' || c0 == L's' || c0 == L't' || c0 == L'v' ||
+        c0 == L'x') {
+        return 1;
+    }
+
+    return 0;  // Not a valid consonant
+}
+
+//=============================================================================
+// Final consonant validation
+//=============================================================================
+
+// Valid final consonants: c, ch, m, n, ng, nh, p, t
+// Returns number of states consumed, 0 if no valid final consonant
+
+template<typename CharStateT>
+size_t ParseFinalConsonant(const CharStateT* states, size_t count) {
+    if (count == 0) return 0;
+
+    wchar_t c0 = states[0].base;
+    if (states[0].IsVowel()) return 0;
+
+    // Try 2-char finals
+    if (count >= 2 && !states[1].IsVowel()) {
+        wchar_t c1 = states[1].base;
+        if ((c0 == L'c' && c1 == L'h') ||
+            (c0 == L'n' && c1 == L'g') ||
+            (c0 == L'n' && c1 == L'h')) {
+            return 2;
+        }
+    }
+
+    // Try 1-char finals
+    if (c0 == L'c' || c0 == L'm' || c0 == L'n' || c0 == L'p' || c0 == L't') {
+        return 1;
+    }
+
+    return 0;
+}
+
+// Check if final consonant is a "stop" final (c, ch, p, t)
+// Stop finals only allow Acute and Dot tones
+template<typename CharStateT>
+bool IsStopFinal(const CharStateT* states, size_t finalLen) {
+    if (finalLen == 0) return false;
+    wchar_t c0 = states[0].base;
+    if (c0 == L'p' || c0 == L't') return true;
+    if (c0 == L'c') return true;  // c and ch are both stops
+    return false;
+}
+
+//=============================================================================
+// Tone extraction
+//=============================================================================
+
+template<typename CharStateT>
+auto GetTone(const CharStateT* states, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        if (states[i].tone != decltype(states[i].tone){}) {
+            return states[i].tone;
+        }
+    }
+    return decltype(states[0].tone){};  // None
+}
+
+//=============================================================================
+// Modifier ordinal extraction (works for both Telex and VNI modifier enums)
+//=============================================================================
+
+template<typename ModT>
+uint8_t ModOrdinal(ModT mod) {
+    // Both Telex::Modifier and Vni::Modifier have:
+    // None=0, Circumflex=1, Breve=2, Horn=3
+    // Vni also has Stroke=4 but that's only for đ
+    auto val = static_cast<uint8_t>(mod);
+    if (val > 3) return 0;  // Stroke → treat as None for vowel encoding
+    return val;
+}
+
+//=============================================================================
+// Core validation (single decomposition attempt)
+//=============================================================================
+
+template<typename CharStateT>
+Result ValidateDecomposition(const CharStateT* states, size_t count,
+                             size_t initialLen) {
+    size_t pos = initialLen;
+    size_t remaining = count - pos;
+
+    // All chars consumed by consonant → ValidPrefix (awaiting vowel)
+    if (remaining == 0) {
+        return Result::ValidPrefix;
+    }
+
+    // Parse vowel nucleus
+    size_t vowelStart = pos;
+    size_t vowelLen = 0;
+    while (pos < count && states[pos].IsVowel()) {
+        ++vowelLen;
+        ++pos;
+    }
+
+    if (vowelLen == 0) {
+        // After initial consonant, next char must be a vowel
+        // Check if it could be a valid 2/3-char consonant prefix
+        // e.g., "th" → valid prefix, "bk" → invalid
+        return Result::Invalid;
+    }
+
+    // Encode vowel slots
+    uint32_t vowelKey = 0;
+    const CharStateT* vowelStates = &states[vowelStart];
+
+    if (vowelLen == 1) {
+        uint8_t bi = BaseIndex(vowelStates[0].base);
+        if (bi == 0xFF) return Result::Invalid;
+        uint8_t mi = ModOrdinal(vowelStates[0].mod);
+        vowelKey = Key1(VowelSlot(bi, mi));
+    } else if (vowelLen == 2) {
+        uint8_t b0 = BaseIndex(vowelStates[0].base);
+        uint8_t b1 = BaseIndex(vowelStates[1].base);
+        if (b0 == 0xFF || b1 == 0xFF) return Result::Invalid;
+        vowelKey = Key2(VowelSlot(b0, ModOrdinal(vowelStates[0].mod)),
+                        VowelSlot(b1, ModOrdinal(vowelStates[1].mod)));
+    } else if (vowelLen == 3) {
+        uint8_t b0 = BaseIndex(vowelStates[0].base);
+        uint8_t b1 = BaseIndex(vowelStates[1].base);
+        uint8_t b2 = BaseIndex(vowelStates[2].base);
+        if (b0 == 0xFF || b1 == 0xFF || b2 == 0xFF) return Result::Invalid;
+        vowelKey = Key3(VowelSlot(b0, ModOrdinal(vowelStates[0].mod)),
+                        VowelSlot(b1, ModOrdinal(vowelStates[1].mod)),
+                        VowelSlot(b2, ModOrdinal(vowelStates[2].mod)));
+    } else {
+        // 4+ consecutive vowels → invalid
+        return Result::Invalid;
+    }
+
+    // Look up vowel in table
+    const VowelEntry* entry = FindVowel(vowelKey);
+
+    if (!entry) {
+        // Not an exact match — check if prefix of a valid combo
+        if (vowelLen <= 2 && IsVowelPrefix(vowelKey, static_cast<int>(vowelLen))) {
+            // Could still become valid with more vowels
+            if (pos == count) return Result::ValidPrefix;
+        }
+        return Result::Invalid;
+    }
+
+    // Vowel found — check what follows
+    remaining = count - pos;
+
+    if (remaining == 0) {
+        // No final consonant — always valid
+        return Result::Valid;
+    }
+
+    // Try to parse final consonant
+    if (!entry->canEnd) {
+        // This vowel nucleus cannot have a final consonant
+        return Result::Invalid;
+    }
+
+    size_t finalLen = ParseFinalConsonant(&states[pos], remaining);
+    if (finalLen == 0) {
+        // What follows isn't a valid final consonant
+        return Result::Invalid;
+    }
+
+    if (pos + finalLen < count) {
+        // Extra characters after final consonant
+        return Result::Invalid;
+    }
+
+    // Check tone restriction for stop finals
+    if (IsStopFinal(&states[pos], finalLen)) {
+        auto tone = GetTone(states, count);
+        // Stop finals (c, ch, p, t) only allow None, Acute, Dot
+        using ToneT = decltype(tone);
+        if (tone != ToneT{}) {  // Not None
+            // Acute is value 1, Dot is value 5 in both enums
+            auto toneVal = static_cast<uint8_t>(tone);
+            if (toneVal != 1 && toneVal != 5) {
+                return Result::Invalid;
+            }
+        }
+    }
+
+    return Result::Valid;
+}
+
+//=============================================================================
+// Check if sequence is a valid consonant-only prefix
+//=============================================================================
+
+template<typename CharStateT>
+bool IsValidConsonantPrefix(const CharStateT* states, size_t count) {
+    if (count == 0) return true;
+
+    // Single consonant — always a valid prefix
+    if (count == 1 && !states[0].IsVowel()) return true;
+
+    // Check for valid 2-char initial consonant prefixes
+    if (count == 2) {
+        wchar_t c0 = states[0].base, c1 = states[1].base;
+        if (!states[0].IsVowel() && !states[1].IsVowel()) {
+            // Valid 2-char initials
+            if ((c0 == L'c' && c1 == L'h') || (c0 == L'g' && c1 == L'h') ||
+                (c0 == L'k' && c1 == L'h') || (c0 == L'n' && c1 == L'g') ||
+                (c0 == L'n' && c1 == L'h') || (c0 == L'p' && c1 == L'h') ||
+                (c0 == L't' && c1 == L'h') || (c0 == L't' && c1 == L'r')) {
+                return true;
+            }
+            // "ng" prefix of "ngh"
+            if (c0 == L'n' && c1 == L'g') return true;
+            return false;  // "bk", "bl" etc. are invalid
+        }
+    }
+
+    // Check for "ngh" prefix
+    if (count == 3 && states[0].base == L'n' && states[1].base == L'g' && states[2].base == L'h' &&
+        !states[0].IsVowel() && !states[1].IsVowel() && !states[2].IsVowel()) {
+        return true;
+    }
+
+    return false;
+}
+
+//=============================================================================
+// Main validation with gi/qu dual decomposition
+//=============================================================================
+
+template<typename CharStateT>
+Result ValidateImpl(const CharStateT* states, size_t count) {
+    if (count == 0) return Result::ValidPrefix;
+
+    // First, try standard decomposition
+    size_t initialLen = ParseInitialConsonant(states, count);
+
+    // Check for invalid consonant sequences
+    if (initialLen == 0 && !states[0].IsVowel()) {
+        // Not a valid initial consonant and not a vowel
+        // Check if it could be đ
+        if (states[0].IsD() && states[0].mod == decltype(states[0].mod){}) {
+            // Plain 'd' is a valid consonant
+            initialLen = 1;
+        } else {
+            return Result::Invalid;
+        }
+    }
+
+    // Special: if only consonants consumed and no vowels follow, check prefix validity
+    if (initialLen > 0 && initialLen == count) {
+        if (IsValidConsonantPrefix(states, count)) {
+            return Result::ValidPrefix;
+        }
+        return Result::Invalid;
+    }
+
+    // After initial consonant, if next char is not a vowel, it might be invalid
+    if (initialLen > 0 && initialLen < count && !states[initialLen].IsVowel()) {
+        // Check if the first chars form a valid consonant-only prefix
+        if (IsValidConsonantPrefix(states, count)) {
+            return Result::ValidPrefix;
+        }
+        return Result::Invalid;
+    }
+
+    Result result = ValidateDecomposition(states, count, initialLen);
+
+    // Handle gi/qu dual decomposition
+    // "gi" + vowel → try C₁="gi" (2-char consonant) + V=rest
+    //            AND C₁="g" (1-char consonant) + V="i"+rest
+    if (count >= 2 && states[0].base == L'g' && states[1].base == L'i' && states[1].IsVowel()) {
+        // Decomposition 1: g + i... (initialLen=1, vowel starts at 1)
+        Result r1 = ValidateDecomposition(states, count, 1);
+
+        // Decomposition 2: gi + ... (initialLen=2, vowel starts at 2)
+        if (count > 2 && states[2].IsVowel()) {
+            Result r2 = ValidateDecomposition(states, count, 2);
+            // Return most permissive
+            if (r2 == Result::Valid || r1 == Result::Valid) {
+                result = Result::Valid;
+            } else if (r2 == Result::ValidPrefix || r1 == Result::ValidPrefix) {
+                result = Result::ValidPrefix;
+            }
+        } else if (count == 2) {
+            // "gi" alone: g + vowel_i → valid (e.g., the word "gì")
+            r1 = ValidateDecomposition(states, count, 1);
+            if (r1 == Result::Valid) result = Result::Valid;
+            else if (r1 == Result::ValidPrefix && result != Result::Valid) result = Result::ValidPrefix;
+        } else {
+            // "gi" + consonant: try g + i + consonant
+            if (r1 == Result::Valid) result = Result::Valid;
+            else if (r1 == Result::ValidPrefix && result != Result::Valid) result = Result::ValidPrefix;
+        }
+
+        // Override initial result with best
+        return result;
+    }
+
+    // "qu" + vowel → try C₁="qu" (2-char) + V=rest
+    if (count >= 2 && states[0].base == L'q' && states[1].base == L'u') {
+        if (count > 2 && states[2].IsVowel()) {
+            Result r2 = ValidateDecomposition(states, count, 2);
+            if (r2 == Result::Valid) return Result::Valid;
+            if (r2 == Result::ValidPrefix && result != Result::Valid) return Result::ValidPrefix;
+        } else if (count == 2) {
+            // "qu" alone → valid prefix
+            return Result::ValidPrefix;
+        }
+        return result;
+    }
+
+    return result;
+}
+
+}  // namespace
+
+//=============================================================================
+// Template instantiations
+//=============================================================================
+
+template<typename CharStateT>
+Result Validate(const CharStateT* states, size_t count) noexcept {
+    return ValidateImpl(states, count);
+}
+
+// Explicit instantiations for both engine types
+template Result Validate<Telex::CharState>(const Telex::CharState* states, size_t count) noexcept;
+template Result Validate<Vni::CharState>(const Vni::CharState* states, size_t count) noexcept;
+
+}  // namespace SpellCheck
+}  // namespace NextKey

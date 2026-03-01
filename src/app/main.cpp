@@ -5,16 +5,16 @@
 #include "SettingsDialog.h"
 #include "ExcludedAppsDialog.h"
 #include "SubprocessHelper.h"
-#include "core/TypingConfig.h"
+#include "core/config/TypingConfig.h"
 #include "core/config/ConfigManager.h"
 #include "core/Debug.h"
 
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "HookEngine.h"
-#include "core/SharedStateManager.h"
+#include "core/ipc/SharedStateManager.h"
 #else
 #include "HotkeyManager.h"
-#include "core/SharedStateManager.h"
+#include "core/ipc/SharedStateManager.h"
 #include "tsf/Globals.h"
 #endif
 

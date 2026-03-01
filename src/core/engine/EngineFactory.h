@@ -4,7 +4,7 @@
 #pragma once
 
 #include "IInputEngine.h"
-#include "core/TypingConfig.h"
+#include "core/config/TypingConfig.h"
 #include <memory>
 
 namespace NextKey {

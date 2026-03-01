@@ -52,7 +52,7 @@ The IME is **system infrastructure**, not an application. Users expect typing to
 │         ▼                    ▼                    ▼              │
 │  ┌─────────────┐      ┌─────────────┐      ┌─────────────┐      │
 │  │ config.toml │      │ Named Event │      │ SharedState │      │
-│  │ (on disk)   │      │ (signal)    │      │ (16 bytes)  │      │
+│  │ (on disk)   │      │ (signal)    │      │ (56 bytes)  │      │
 │  └─────────────┘      └─────────────┘      └─────────────┘      │
 │         │                    │                    │              │
 │         └────────────────────┼────────────────────┘              │
@@ -136,17 +136,28 @@ smart_switch = true
 ### 3.4 Shared Memory Structure
 
 ```c
-// ~16 bytes total - signals only, no data
-#pragma pack(push, 1)
+// 56 bytes total - signals and config snapshot
 struct SharedState {
+    // Header (12 bytes)
     uint32_t magic;           // 'NKEY' = 0x59454B4E
-    uint32_t config_epoch;    // Incremented on config change
-    uint8_t  core_alive;      // 1 = Core is running
-    uint8_t  pending_update;  // 1 = New config waiting at boundary
-    uint8_t  ui_request;      // 0=none, 1=open settings, 2=show notification
-    uint8_t  reserved[5];     // Future use
+    uint32_t structVersion;   // Struct layout version (increment on change)
+    uint32_t structSize;      // sizeof(SharedState) for forward compat
+
+    // Synchronization (4 bytes)
+    uint32_t epoch;           // Seqlock counter (even=stable, odd=writing)
+
+    // Runtime flags (4 bytes)
+    uint32_t flags;           // Bitmask: VIETNAMESE_MODE, ENGINE_ENABLED, SPELL_CHECK
+
+    // Config data (4 bytes)
+    uint8_t  inputMethod;     // 0=Telex, 1=VNI, 2=SimpleTelex
+    uint8_t  spellCheck;      // Spell check enabled
+    uint8_t  optimizeLevel;   // Optimization level
+    uint8_t  featureFlags;    // Bitmask: MODERN_ORTHO, AUTO_CAPS, ALLOW_ZWJF
+
+    // Reserved (32 bytes)
+    uint8_t  reserved[32];    // Future expansion
 };
-#pragma pack(pop)
 ```
 
 ---
@@ -540,7 +551,7 @@ Everything else stays local to the engine.
 | Value | Meaning |
 |-------|---------|
 | `0x59454B4E` | 'NKEY' - SharedState magic |
-| `16` | SharedState size (bytes) |
+| `56` | SharedState size (bytes) |
 
 ---
 

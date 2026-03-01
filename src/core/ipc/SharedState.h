@@ -4,7 +4,7 @@
 #pragma once
 
 #include <cstdint>
-#include "TypingConfig.h"
+#include "config/TypingConfig.h"
 
 namespace NextKey {
 

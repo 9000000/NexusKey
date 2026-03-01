@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "core/SharedConstants.h"
+#include "core/ipc/SharedConstants.h"
 #include <Windows.h>
 #include <shellapi.h>
 #include <functional>

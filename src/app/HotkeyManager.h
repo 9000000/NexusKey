@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "core/TypingConfig.h"
+#include "core/config/TypingConfig.h"
 #include <Windows.h>
 
 namespace NextKey {

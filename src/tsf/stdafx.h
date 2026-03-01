@@ -19,7 +19,6 @@
 
 // NextKey namespace forward declarations
 namespace NextKey {
-class TelexEngineAdapter;
 class SharedStateManager;
 struct TypingConfig;
 }

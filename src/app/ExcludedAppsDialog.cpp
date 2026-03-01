@@ -3,7 +3,7 @@
 
 #include "ExcludedAppsDialog.h"
 #include "core/config/ConfigManager.h"
-#include "core/ConfigEvent.h"
+#include "core/config/ConfigEvent.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <vector>

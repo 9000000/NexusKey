@@ -84,18 +84,32 @@ VniEngine::VniEngine(const TypingConfig& config) : config_(config) {
 void VniEngine::PushChar(wchar_t c) {
     rawInput_ += c;
 
-    // Try tone keys first (1-5)
+    // 1. Try tone keys (1-5) — gated by spell check
     if (IsToneKey(c)) {
-        if (ProcessTone(c)) return;
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            ProcessChar(c);
+            UpdateSpellState();
+            return;
+        }
+        if (ProcessTone(c)) {
+            UpdateSpellState();
+            return;
+        }
     }
 
-    // Try modifier keys (6-9)
+    // 2. Try modifier keys (6-9)
+    // Modifiers are NOT gated by spell check — they can transform invalid
+    // sequences into valid ones (e.g., vowel modifiers create valid nuclei)
     if (IsModifierKey(c)) {
-        if (ProcessModifier(c)) return;
+        if (ProcessModifier(c)) {
+            UpdateSpellState();
+            return;
+        }
     }
 
     // Regular character
     ProcessChar(c);
+    UpdateSpellState();
 }
 
 void VniEngine::Backspace() {
@@ -105,6 +119,7 @@ void VniEngine::Backspace() {
     if (!rawInput_.empty()) {
         rawInput_.pop_back();
     }
+    UpdateSpellState();
 }
 
 std::wstring VniEngine::Peek() const {
@@ -125,6 +140,7 @@ std::wstring VniEngine::Commit() {
 void VniEngine::Reset() {
     states_.clear();
     rawInput_.clear();
+    spellCheckDisabled_ = false;
 }
 
 size_t VniEngine::Count() const noexcept {
@@ -405,6 +421,19 @@ wchar_t VniEngine::ComposeChar(const CharState& state) const {
     }
 
     return result;
+}
+
+//-----------------------------------------------------------------------------
+// Spell Check State Update
+//-----------------------------------------------------------------------------
+
+void VniEngine::UpdateSpellState() {
+    if (!config_.spellCheckEnabled || states_.empty()) {
+        spellCheckDisabled_ = false;
+        return;
+    }
+    auto result = SpellCheck::Validate(states_.data(), states_.size());
+    spellCheckDisabled_ = (result == SpellCheck::Result::Invalid);
 }
 
 }  // namespace Vni

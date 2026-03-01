@@ -12,7 +12,7 @@
 #endif
 
 #include "sciter-x-window.hpp"
-#include "core/TypingConfig.h"
+#include "core/config/TypingConfig.h"
 #include <functional>
 #include <string>
 

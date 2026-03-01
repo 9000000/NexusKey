@@ -10,13 +10,10 @@
 ### 1.1 Namespace Hierarchy
 
 ```cpp
-// REQUIRED: All code MUST be under NextKey namespace
+// REQUIRED: All code MUST be under NextKey namespace (flat, no sub-namespaces)
 namespace NextKey {
-namespace Core { ... }    // SharedState, ConfigManager
-namespace Engine { ... }  // IInputEngine, TelexEngine
-namespace TSF { ... }     // TextService, KeyEventSink
-namespace Hook { ... }    // KeyboardHook (Phase 5)
-namespace UI { ... }      // TrayIcon, Settings
+// SharedState, ConfigManager, TelexEngine, VniEngine, EngineFactory, etc.
+// Sub-namespaces: SharedFlags, FeatureFlags (constants only)
 }
 ```
 
@@ -34,7 +31,7 @@ namespace UI { ... }      // TrayIcon, Settings
 #include <memory>             // STL headers
 #include <string>
 
-#include "NextKey/Core/...>"  // Project headers
+#include "core/engine/..."    // Project headers (relative to src/)
 ```
 
 ### 1.3 No `using namespace` in Headers

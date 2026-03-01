@@ -20,44 +20,47 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
 )
 
-# Core Library (Engine + Shared State + Config)
-set(NEXTKEY_CORE_SOURCES
-    src/core/Debug.h
-    src/core/SharedState.h
-    src/core/SharedConstants.h
-    src/core/TypingConfig.h
+# Engine Library (pure C++17, zero platform dependencies)
+set(NEXTKEY_ENGINE_SOURCES
+    src/core/config/TypingConfig.h
     src/core/engine/TelexEngine.cpp
     src/core/engine/TelexEngine.h
     src/core/engine/VniEngine.cpp
     src/core/engine/VniEngine.h
     src/core/engine/EngineFactory.cpp
     src/core/engine/EngineFactory.h
-    src/core/engine/Telex.h
-    src/core/engine/TelexMaps.h
-    src/core/engine/TelexData.h
     src/core/engine/IInputEngine.h
+    src/core/engine/VietnameseTables.h
+    src/core/engine/SpellChecker.cpp
+    src/core/engine/SpellChecker.h
+)
+
+add_library(NextKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
+
+# Core Library (platform layer: SharedState, Config, Debug)
+set(NEXTKEY_CORE_SOURCES
+    src/core/Debug.h
+    src/core/ipc/SharedState.h
+    src/core/ipc/SharedConstants.h
 )
 
 # Windows-only sources (require Windows.h)
 if(WIN32)
     list(APPEND NEXTKEY_CORE_SOURCES
-        src/core/SharedStateManager.cpp
-        src/core/SharedStateManager.h
+        src/core/ipc/SharedStateManager.cpp
+        src/core/ipc/SharedStateManager.h
         src/core/SmartSwitchManager.cpp
         src/core/SmartSwitchManager.h
         src/core/SmartSwitchState.h
-        src/core/ConfigEvent.cpp
-        src/core/ConfigEvent.h
+        src/core/config/ConfigEvent.cpp
+        src/core/config/ConfigEvent.h
         src/core/config/ConfigManager.cpp
         src/core/config/ConfigManager.h
-        src/core/engine/TelexEngineAdapter.cpp
-        src/core/engine/TelexEngineAdapter.h
-        src/core/engine/KeyTranslator.cpp
-        src/core/engine/KeyTranslator.h
     )
 endif()
 
 add_library(NextKeyCore STATIC ${NEXTKEY_CORE_SOURCES})
+target_link_libraries(NextKeyCore PUBLIC NextKeyEngine)
 
 # TSF DLL (TIP)
 add_library(NextKeyTSF SHARED
@@ -221,6 +224,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/EngineFactoryTest.cpp
     tests/SharedStateTest.cpp
     tests/FeatureOptionsTest.cpp
+    tests/SpellCheckerTest.cpp
 )
 
 # Windows-only tests (require ConfigManager, ConfigEvent)

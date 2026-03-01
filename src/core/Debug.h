@@ -3,13 +3,15 @@
 
 #pragma once
 
-#include <Windows.h>
 #include <cstdio>
 
 namespace NextKey {
 
 // Debug logging - compiles out in Release builds unless NEXTKEY_DEBUG is defined
 #if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
+
+#ifdef _WIN32
+#include <Windows.h>
 
 inline void DebugLog(const wchar_t* format, ...) {
     wchar_t buffer[1024];
@@ -19,6 +21,11 @@ inline void DebugLog(const wchar_t* format, ...) {
     va_end(args);
     OutputDebugStringW(buffer);
 }
+#else
+inline void DebugLog(const wchar_t* /*format*/, ...) {
+    // No-op on non-Windows platforms
+}
+#endif  // _WIN32
 
 #define NEXTKEY_LOG(fmt, ...) ::NextKey::DebugLog(L"NexusKey: " fmt L"\n", ##__VA_ARGS__)
 
