@@ -143,6 +143,25 @@ TEST_F(TelexEngineTest, Horn_UO_ChainedW) {
     EXPECT_EQ(engine_->Peek(), L"ươ");
 }
 
+TEST_F(TelexEngineTest, Horn_UO_CircumflexThenW) {
+    // luoow → l + u + ô (from oo) + w → lươ (w replaces circumflex with horn)
+    TypeString(*engine_, L"luoow");
+    EXPECT_EQ(engine_->Peek(), L"lươ");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_ToneRelocate) {
+    // trưrơw: tone typed before diphthong complete → relocates to ơ
+    // t-r-u-w-r-o-w → trư + hook → trử + o + w → trưở (not trửơ)
+    TypeString(*engine_, L"truwrow");
+    EXPECT_EQ(engine_->Peek(), L"trưở");
+}
+
+TEST_F(TelexEngineTest, Horn_O_CircumflexToHorn) {
+    // loow → l + ô (from oo) + w → lơ (w replaces circumflex with horn)
+    TypeString(*engine_, L"loow");
+    EXPECT_EQ(engine_->Peek(), L"lơ");
+}
+
 // ============================================================================
 // STROKE TESTS (dd→đ)
 // ============================================================================
@@ -609,6 +628,44 @@ TEST_F(TelexEngineTest, Word_Cua) {
 TEST_F(TelexEngineTest, Word_Hoac) {
     TypeString(*engine_, L"hoacwj");
     EXPECT_EQ(engine_->Peek(), L"hoặc");
+}
+
+// GI consonant cluster: 'i' is part of consonant, tone goes on real vowel
+TEST_F(TelexEngineTest, Word_Giac_ToneOnA) {
+    TypeString(*engine_, L"giacs");  // giác — tone on 'a', not 'i'
+    EXPECT_EQ(engine_->Peek(), L"giác");
+}
+
+TEST_F(TelexEngineTest, Word_Gian_ToneOnA) {
+    TypeString(*engine_, L"gianf");  // giàn — tone on 'a'
+    EXPECT_EQ(engine_->Peek(), L"giàn");
+}
+
+TEST_F(TelexEngineTest, Word_Gieo_ToneOnE) {
+    TypeString(*engine_, L"gieos");  // giéo — tone on 'e'
+    EXPECT_EQ(engine_->Peek(), L"giéo");
+}
+
+// UA diphthong: tone on first vowel (u)
+TEST_F(TelexEngineTest, Word_Ua_ToneOnU) {
+    TypeString(*engine_, L"uar");  // ủa — tone on 'u', not 'a'
+    EXPECT_EQ(engine_->Peek(), L"ủa");
+}
+
+TEST_F(TelexEngineTest, Word_Mua_ToneOnU) {
+    TypeString(*engine_, L"muaf");  // mùa — tone on 'u'
+    EXPECT_EQ(engine_->Peek(), L"mùa");
+}
+
+// QU consonant cluster: 'u' is part of consonant, tone goes on real vowel
+TEST_F(TelexEngineTest, Word_Quan_ToneOnA) {
+    TypeString(*engine_, L"quans");  // quán — tone on 'a', not 'u'
+    EXPECT_EQ(engine_->Peek(), L"quán");
+}
+
+TEST_F(TelexEngineTest, Word_Que_ToneOnE) {
+    TypeString(*engine_, L"queer");  // quê with hỏi → quể
+    EXPECT_EQ(engine_->Peek(), L"quể");
 }
 
 // ============================================================================

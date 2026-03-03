@@ -55,19 +55,13 @@ public:
     /// Save excluded apps list to config (merges with existing)
     [[nodiscard]] static bool SaveExcludedApps(const std::wstring& path, const std::vector<std::wstring>& apps);
 
-    /// Load per-app smart switch data (exe name → vietnamese mode)
-    [[nodiscard]] static std::unordered_map<std::wstring, bool> LoadSmartSwitchData(const std::wstring& path);
-
-    /// Save per-app smart switch data
-    [[nodiscard]] static bool SaveSmartSwitchData(const std::wstring& path,
-                                                   const std::unordered_map<std::wstring, bool>& data);
-
     /// Load per-app code table data (exe name → CodeTable value)
     [[nodiscard]] static std::unordered_map<std::wstring, uint8_t> LoadPerAppCodeTable(const std::wstring& path);
 
-    /// Save per-app code table data
+    /// Save per-app code table data (only entries differing from globalDefault)
     [[nodiscard]] static bool SavePerAppCodeTable(const std::wstring& path,
-                                                   const std::unordered_map<std::wstring, uint8_t>& data);
+                                                   const std::unordered_map<std::wstring, uint8_t>& data,
+                                                   uint8_t globalDefault);
 
     /// Load system config from file
     [[nodiscard]] static std::optional<SystemConfig> LoadSystemConfig(const std::wstring& path);

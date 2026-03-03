@@ -23,11 +23,11 @@ MacroTableDialog::MacroTableDialog(HWND parent)
 }
 
 void MacroTableDialog::onBeforeClose() {
-    // Save to config file
-    std::wstring path = ConfigManager::GetConfigPath();
-    (void)ConfigManager::SaveMacros(path, macros_);
+    persistAndSignal();
+}
 
-    // Signal config event so engine reloads
+void MacroTableDialog::persistAndSignal() {
+    (void)ConfigManager::SaveMacros(ConfigManager::GetConfigPath(), macros_);
     ConfigEvent event;
     if (event.Initialize()) {
         event.Signal();
@@ -108,11 +108,13 @@ void MacroTableDialog::populateList() {
 void MacroTableDialog::addMacro(const std::wstring& name, const std::wstring& content) {
     macros_[name] = content;
     populateList();
+    persistAndSignal();
 }
 
 void MacroTableDialog::removeMacro(const std::wstring& name) {
     macros_.erase(name);
     populateList();
+    persistAndSignal();
 }
 
 }  // namespace NextKey

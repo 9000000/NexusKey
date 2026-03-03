@@ -681,11 +681,15 @@ input[type="hidden"] {
 
 /* Fix Check Update button layout */
 #btn-check-update {
-    padding: 4px 8px;
+    padding: 0px 8px;
     font-size: 11px;
     white-space: nowrap;
     margin-right: 6px;
     min-width: auto;
+    height: 20px;
+    line-height: 20px;
+    box-sizing: border-box;
+    vertical-align: middle;
 }
 
 /* ============================================

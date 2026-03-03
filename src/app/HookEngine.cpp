@@ -89,13 +89,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     autoCapState_ = 0;
     engine_ = EngineFactory::Create(config);
 
-    // Load per-app mode data if smart switch enabled
+    // Create shared memory for smart switch (RAM-only, no TOML persistence)
     if (smartSwitch_) {
-        appModeMap_ = ConfigManager::LoadSmartSwitchData(ConfigManager::GetConfigPath());
-        // Create shared memory and populate from TOML data
-        if (smartSwitchMgr_.Create()) {
-            smartSwitchMgr_.LoadFromMap(appModeMap_);
-        }
+        (void)smartSwitchMgr_.Create();
     }
 
     // Load per-app code table data
@@ -149,13 +145,10 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
 
 void HookEngine::Stop() {
     HOOK_LOG(L"=== HookEngine::Stop ===");
-    // Persist smart switch data to disk on exit
-    if (smartSwitch_ && !appModeMap_.empty()) {
-        (void)ConfigManager::SaveSmartSwitchData(ConfigManager::GetConfigPath(), appModeMap_);
-    }
-    // Persist per-app code table data
+    // Persist per-app code table data (only entries differing from global)
     if (rememberCodeTable_ && !appCodeTableMap_.empty()) {
-        (void)ConfigManager::SavePerAppCodeTable(ConfigManager::GetConfigPath(), appCodeTableMap_);
+        (void)ConfigManager::SavePerAppCodeTable(
+            ConfigManager::GetConfigPath(), appCodeTableMap_, static_cast<uint8_t>(currentCodeTable_));
     }
     if (keyboardHook_) {
         UnhookWindowsHookEx(keyboardHook_);
@@ -226,9 +219,9 @@ void HookEngine::SetCodeTable(CodeTable ct) {
         if (!targetExe.empty()) {
             appCodeTableMap_[targetExe] = static_cast<uint8_t>(ct);
             HOOK_LOG(L"  SetCodeTable: %d for '%s'", static_cast<int>(ct), targetExe.c_str());
-            // Persist immediately so the change survives restart
+            // Persist immediately (only entries differing from global)
             (void)ConfigManager::SavePerAppCodeTable(
-                ConfigManager::GetConfigPath(), appCodeTableMap_);
+                ConfigManager::GetConfigPath(), appCodeTableMap_, static_cast<uint8_t>(currentCodeTable_));
         }
     }
 }
@@ -529,9 +522,16 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 3d. Macro expansion on commit trigger
     if (macroEnabled_ && !tempMacroOff_ && IsCommitTrigger(vkCode) && !rawMacroBuffer_.empty()) {
         // Lookup with lowercase key (macros are stored lowercase)
+        // Try raw input first ("url" typed as u-r-l), then composed output
+        // ("url" typed as u-r-r-l where second r escapes tone → shows "url")
         std::wstring lowerKey = rawMacroBuffer_;
         for (auto& c : lowerKey) c = towlower(c);
         auto it = macroTable_.find(lowerKey);
+        if (it == macroTable_.end() && !previousComposition_.empty()) {
+            lowerKey = previousComposition_;
+            for (auto& c : lowerKey) c = towlower(c);
+            it = macroTable_.find(lowerKey);
+        }
         if (it != macroTable_.end()) {
             size_t bsCount;
             if (!previousComposition_.empty()) {

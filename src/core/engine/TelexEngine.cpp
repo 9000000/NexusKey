@@ -349,7 +349,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
             else if (mod == Modifier::None) uIdx = i;
         } else if (base == L'o') {
             if (mod == Modifier::Horn) hornedIdx = i;
-            else if (mod == Modifier::None) oIdx = i;
+            else if (mod == Modifier::None || mod == Modifier::Circumflex) oIdx = i;
         } else if (base == L'a') {
             if (mod == Modifier::Breve) brevedIdx = i;
             else if (mod == Modifier::None || mod == Modifier::Circumflex) aIdx = i;
@@ -380,7 +380,13 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 
     // P2: "uo" pattern → horn on 'o' (uơ, will become ươ via AutoUO)
     if (hasUO && oIdx != SIZE_MAX) {
+        // When replacing circumflex (e.g., "luoow" → ô→ơ), also horn the 'u'
+        // since no future char will trigger AutoUO
+        bool wasCircumflex = states_[oIdx].mod == Modifier::Circumflex;
         states_[oIdx].mod = Modifier::Horn;
+        if (wasCircumflex && uIdx != SIZE_MAX && states_[uIdx].mod == Modifier::None) {
+            states_[uIdx].mod = Modifier::Horn;
+        }
         RelocateToneToHornVowel();
         return true;
     }
@@ -436,7 +442,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         return true;
     }
 
-    // P6: Standalone 'o' (not in oa pattern) → horn
+    // P6: Standalone 'o' (not in oa pattern) → horn (replaces circumflex: ô→ơ)
     if (oIdx != SIZE_MAX && !hasOA) {
         states_[oIdx].mod = Modifier::Horn;
         RelocateToneToHornVowel();
@@ -565,7 +571,9 @@ void TelexEngine::RelocateToneToHornVowel() {
     }
 
     if (hornIdx != SIZE_MAX && tonedIdx != SIZE_MAX && hornIdx != tonedIdx) {
-        if (states_[tonedIdx].mod == Modifier::None) {
+        // Allow relocation from unmodified vowels and from horn vowels
+        // (handles "ươ" diphthong: tone moves from ư to ơ)
+        if (states_[tonedIdx].mod == Modifier::None || states_[tonedIdx].mod == Modifier::Horn) {
             states_[hornIdx].tone = states_[tonedIdx].tone;
             states_[tonedIdx].tone = Tone::None;
         }
@@ -581,10 +589,23 @@ size_t TelexEngine::FindToneTarget() const {
 }
 
 size_t TelexEngine::FindToneTargetClassic() const {
+    // Helper: detect "gi" consonant cluster (g + i + another vowel)
+    auto isGICluster = [&](size_t i) -> bool {
+        if (i == 0 || states_[i].base != L'i') return false;
+        if (states_[i - 1].base != L'g') return false;
+        // 'i' is part of "gi" cluster only if next char is a vowel
+        return i + 1 < states_.size() && states_[i + 1].IsVowel();
+    };
+
+    // Helper: detect "qu" consonant cluster (q + u)
+    auto isQUCluster = [&](size_t i) -> bool {
+        return i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q';
+    };
+
     size_t vowels[8];
     size_t vowelCount = 0;
     for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
-        if (states_[i].IsVowel()) {
+        if (states_[i].IsVowel() && !isGICluster(i) && !isQUCluster(i)) {
             vowels[vowelCount++] = i;
         }
     }
@@ -637,10 +658,23 @@ size_t TelexEngine::FindToneTargetClassic() const {
 }
 
 size_t TelexEngine::FindToneTargetModern() const {
+    // Helper: detect "gi" consonant cluster (g + i + another vowel)
+    auto isGICluster = [&](size_t i) -> bool {
+        if (i == 0 || states_[i].base != L'i') return false;
+        if (states_[i - 1].base != L'g') return false;
+        // 'i' is part of "gi" cluster only if next char is a vowel
+        return i + 1 < states_.size() && states_[i + 1].IsVowel();
+    };
+
+    // Helper: detect "qu" consonant cluster (q + u)
+    auto isQUCluster = [&](size_t i) -> bool {
+        return i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q';
+    };
+
     size_t vowels[8];
     size_t vowelCount = 0;
     for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
-        if (states_[i].IsVowel()) {
+        if (states_[i].IsVowel() && !isGICluster(i) && !isQUCluster(i)) {
             vowels[vowelCount++] = i;
         }
     }
@@ -697,8 +731,10 @@ size_t TelexEngine::FindToneTargetModern() const {
             if (first == L'o' && (last == L'i' || last == L'u')) return prevIdx;
             if ((first == L'u' || first == L'i') && (last == L'i' || last == L'u')) return prevIdx;
 
-            // MODERN: "ua", "ue" → tone on SECOND (differs from classic)
-            if (first == L'u' && (last == L'a' || last == L'e')) return lastIdx;
+            // "ua" → tone on FIRST (same as classic: mùa, lụa, chùa)
+            if (first == L'u' && last == L'a') return prevIdx;
+            // "ue" → tone on SECOND (modern: thuế)
+            if (first == L'u' && last == L'e') return lastIdx;
 
             // Rising diphthongs: tone on SECOND (same as classic)
             if (first == L'o' && (last == L'a' || last == L'e')) return lastIdx;

@@ -403,44 +403,6 @@ bool ConfigManager::SaveExcludedApps(const std::wstring& path, const std::vector
     }
 }
 
-std::unordered_map<std::wstring, bool> ConfigManager::LoadSmartSwitchData(const std::wstring& path) {
-    std::unordered_map<std::wstring, bool> data;
-    try {
-        std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
-
-        if (auto section = table["smart_switch_data"].as_table()) {
-            for (auto& [key, val] : *section) {
-                data[Utf8ToWide(std::string(key.str()))] = val.value_or(true);
-            }
-        }
-    } catch (...) {}
-    return data;
-}
-
-bool ConfigManager::SaveSmartSwitchData(const std::wstring& path,
-                                         const std::unordered_map<std::wstring, bool>& data) {
-    try {
-        toml::table tbl;
-        std::string utf8Path = WideToUtf8(path);
-
-        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
-
-        toml::table section;
-        for (auto& [exe, vietnamese] : data) {
-            section.insert_or_assign(WideToUtf8(exe), vietnamese);
-        }
-        tbl.insert_or_assign("smart_switch_data", std::move(section));
-
-        std::ofstream file(utf8Path);
-        if (!file.is_open()) return false;
-        file << tbl;
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
 std::unordered_map<std::wstring, uint8_t> ConfigManager::LoadPerAppCodeTable(const std::wstring& path) {
     std::unordered_map<std::wstring, uint8_t> data;
     try {
@@ -460,7 +422,8 @@ std::unordered_map<std::wstring, uint8_t> ConfigManager::LoadPerAppCodeTable(con
 }
 
 bool ConfigManager::SavePerAppCodeTable(const std::wstring& path,
-                                         const std::unordered_map<std::wstring, uint8_t>& data) {
+                                         const std::unordered_map<std::wstring, uint8_t>& data,
+                                         uint8_t globalDefault) {
     try {
         toml::table tbl;
         std::string utf8Path = WideToUtf8(path);
@@ -469,7 +432,10 @@ bool ConfigManager::SavePerAppCodeTable(const std::wstring& path,
 
         toml::table section;
         for (auto& [exe, codeTable] : data) {
-            section.insert_or_assign(WideToUtf8(exe), static_cast<int64_t>(codeTable));
+            // Only persist entries that differ from global setting
+            if (codeTable != globalDefault) {
+                section.insert_or_assign(WideToUtf8(exe), static_cast<int64_t>(codeTable));
+            }
         }
         tbl.insert_or_assign("per_app_code_table", std::move(section));
 

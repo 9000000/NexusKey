@@ -307,10 +307,10 @@ TEST_F(TelexModernOrthoTest, UA_Acute_Classic_ToneOnFirst) {
     EXPECT_EQ(classic_->Peek(), L"úa");
 }
 
-TEST_F(TelexModernOrthoTest, UA_Acute_Modern_ToneOnSecond) {
-    // Modern: "ua" + s → "uá" (tone on a)
+TEST_F(TelexModernOrthoTest, UA_Acute_Modern_ToneOnFirst) {
+    // "ua" diphthong: tone on FIRST vowel (same as classic: úa)
     TypeString(*modern_, L"uas");
-    EXPECT_EQ(modern_->Peek(), L"uá");
+    EXPECT_EQ(modern_->Peek(), L"úa");
 }
 
 TEST_F(TelexModernOrthoTest, UA_Grave_Classic_ToneOnFirst) {
@@ -318,9 +318,10 @@ TEST_F(TelexModernOrthoTest, UA_Grave_Classic_ToneOnFirst) {
     EXPECT_EQ(classic_->Peek(), L"ùa");
 }
 
-TEST_F(TelexModernOrthoTest, UA_Grave_Modern_ToneOnSecond) {
+TEST_F(TelexModernOrthoTest, UA_Grave_Modern_ToneOnFirst) {
+    // "ua" diphthong: tone on FIRST vowel (same as classic: ùa)
     TypeString(*modern_, L"uaf");
-    EXPECT_EQ(modern_->Peek(), L"uà");
+    EXPECT_EQ(modern_->Peek(), L"ùa");
 }
 
 TEST_F(TelexModernOrthoTest, Mua_Classic) {
@@ -329,8 +330,9 @@ TEST_F(TelexModernOrthoTest, Mua_Classic) {
 }
 
 TEST_F(TelexModernOrthoTest, Mua_Modern) {
+    // "ua" diphthong: tone on FIRST vowel (same as classic: mùa)
     TypeString(*modern_, L"muaf");
-    EXPECT_EQ(modern_->Peek(), L"muà");
+    EXPECT_EQ(modern_->Peek(), L"mùa");
 }
 
 // --- Key difference: "ue" diphthong ---
@@ -483,9 +485,9 @@ TEST_F(TelexModernOrthoTest, Word_Qua_Modern) {
 }
 
 TEST_F(TelexModernOrthoTest, Word_Cua_Modern) {
-    // Modern: "cua" + f → "cuà" (tone on a)
+    // "ua" diphthong: tone on FIRST vowel (same as classic: cùa, mùa)
     TypeString(*modern_, L"cuaf");
-    EXPECT_EQ(modern_->Peek(), L"cuà");
+    EXPECT_EQ(modern_->Peek(), L"cùa");
 }
 
 TEST_F(TelexModernOrthoTest, Word_Cua_Classic) {
@@ -495,8 +497,9 @@ TEST_F(TelexModernOrthoTest, Word_Cua_Classic) {
 }
 
 TEST_F(TelexModernOrthoTest, Word_Thua_Modern) {
+    // "ua" diphthong: tone on FIRST vowel (same as classic: thúa)
     TypeString(*modern_, L"thuas");
-    EXPECT_EQ(modern_->Peek(), L"thuá");
+    EXPECT_EQ(modern_->Peek(), L"thúa");
 }
 
 TEST_F(TelexModernOrthoTest, Word_Thua_Classic) {
@@ -539,10 +542,10 @@ TEST_F(VniModernOrthoTest, UA_Classic_ToneOnFirst) {
     EXPECT_EQ(classic_->Peek(), L"úa");
 }
 
-TEST_F(VniModernOrthoTest, UA_Modern_ToneOnSecond) {
-    // VNI modern: diphthong-aware → tone on 'a'
+TEST_F(VniModernOrthoTest, UA_Modern_ToneOnFirst) {
+    // "ua" diphthong: tone on FIRST vowel (same as classic: úa)
     TypeString(*modern_, L"ua1");
-    EXPECT_EQ(modern_->Peek(), L"uá");
+    EXPECT_EQ(modern_->Peek(), L"úa");
 }
 
 TEST_F(VniModernOrthoTest, OA_Classic_ToneOnFirst) {
@@ -599,13 +602,15 @@ TEST_F(VniModernOrthoTest, Triphthong_OAI_Modern_ToneOnMiddle) {
 }
 
 TEST_F(VniModernOrthoTest, Word_Mua_Modern) {
+    // "ua" diphthong: tone on FIRST vowel (same as classic: mùa)
     TypeString(*modern_, L"mua2");
-    EXPECT_EQ(modern_->Peek(), L"muà");
+    EXPECT_EQ(modern_->Peek(), L"mùa");
 }
 
 TEST_F(VniModernOrthoTest, Word_Cua_Modern) {
+    // "ua" diphthong: tone on FIRST vowel (same as classic: cùa)
     TypeString(*modern_, L"cua2");
-    EXPECT_EQ(modern_->Peek(), L"cuà");
+    EXPECT_EQ(modern_->Peek(), L"cùa");
 }
 
 // ============================================================================
@@ -882,8 +887,8 @@ TEST(FeatureOptionsFactory, TelexEngine_ModernOrtho_ViaConfig) {
 
     Telex::TelexEngine engine(config);
     TypeString(engine, L"uas");
-    // Modern: tone on 'a'
-    EXPECT_EQ(engine.Peek(), L"uá");
+    // "ua" diphthong: tone on FIRST vowel (same as classic: úa)
+    EXPECT_EQ(engine.Peek(), L"úa");
 }
 
 TEST(FeatureOptionsFactory, TelexEngine_ClassicOrtho_ViaConfig) {

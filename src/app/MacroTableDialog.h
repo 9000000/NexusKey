@@ -24,6 +24,7 @@ private:
     void populateList();
     void addMacro(const std::wstring& name, const std::wstring& content);
     void removeMacro(const std::wstring& name);
+    void persistAndSignal();
 
     std::unordered_map<std::wstring, std::wstring> macros_;
 };

@@ -319,11 +319,24 @@ CharState* VniEngine::FindToneTarget() {
 }
 
 CharState* VniEngine::FindToneTargetClassic() {
+    // Helper: detect "gi" consonant cluster (g + i + another vowel)
+    auto isGICluster = [&](size_t i) -> bool {
+        if (i == 0 || states_[i].base != L'i') return false;
+        if (states_[i - 1].base != L'g') return false;
+        // 'i' is part of "gi" cluster only if next char is a vowel
+        return i + 1 < states_.size() && states_[i + 1].IsVowel();
+    };
+
+    // Helper: detect "qu" consonant cluster (q + u)
+    auto isQUCluster = [&](size_t i) -> bool {
+        return i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q';
+    };
+
     // Collect vowel indices
     size_t vowelIndices[8];
     size_t vowelCount = 0;
     for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
-        if (states_[i].IsVowel()) {
+        if (states_[i].IsVowel() && !isGICluster(i) && !isQUCluster(i)) {
             vowelIndices[vowelCount++] = i;
         }
     }
@@ -375,11 +388,24 @@ CharState* VniEngine::FindToneTargetClassic() {
 }
 
 CharState* VniEngine::FindToneTargetModern() {
+    // Helper: detect "gi" consonant cluster (g + i + another vowel)
+    auto isGICluster = [&](size_t i) -> bool {
+        if (i == 0 || states_[i].base != L'i') return false;
+        if (states_[i - 1].base != L'g') return false;
+        // 'i' is part of "gi" cluster only if next char is a vowel
+        return i + 1 < states_.size() && states_[i + 1].IsVowel();
+    };
+
+    // Helper: detect "qu" consonant cluster (q + u)
+    auto isQUCluster = [&](size_t i) -> bool {
+        return i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q';
+    };
+
     // Collect vowel indices
     size_t vowelIndices[8];
     size_t vowelCount = 0;
     for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
-        if (states_[i].IsVowel()) {
+        if (states_[i].IsVowel() && !isGICluster(i) && !isQUCluster(i)) {
             vowelIndices[vowelCount++] = i;
         }
     }
@@ -434,8 +460,10 @@ CharState* VniEngine::FindToneTargetModern() {
             if (first == L'o' && (last == L'i' || last == L'u')) return &states_[prevIdx];
             if ((first == L'u' || first == L'i') && (last == L'i' || last == L'u')) return &states_[prevIdx];
 
-            // MODERN: "ua", "ue" → tone on SECOND
-            if (first == L'u' && (last == L'a' || last == L'e')) return &states_[lastIdx];
+            // "ua" → tone on FIRST (same as classic: mùa, lụa, chùa)
+            if (first == L'u' && last == L'a') return &states_[prevIdx];
+            // "ue" → tone on SECOND (modern: thuế)
+            if (first == L'u' && last == L'e') return &states_[lastIdx];
 
             // Rising diphthongs: tone on SECOND
             if (first == L'o' && (last == L'a' || last == L'e')) return &states_[lastIdx];

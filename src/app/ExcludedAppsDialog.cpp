@@ -24,18 +24,17 @@ ExcludedAppsDialog::ExcludedAppsDialog(HWND parent)
 }
 
 void ExcludedAppsDialog::onBeforeClose() {
-    // Save to config file
-    std::wstring path = ConfigManager::GetConfigPath();
-    (void)ConfigManager::SaveExcludedApps(path, appList_);
+    persistAndSignal();
+    if (onChanged_) {
+        onChanged_();
+    }
+}
 
-    // Signal config event so HookEngine reloads
+void ExcludedAppsDialog::persistAndSignal() {
+    (void)ConfigManager::SaveExcludedApps(ConfigManager::GetConfigPath(), appList_);
     ConfigEvent event;
     if (event.Initialize()) {
         event.Signal();
-    }
-
-    if (onChanged_) {
-        onChanged_();
     }
 }
 
@@ -134,6 +133,7 @@ void ExcludedAppsDialog::addApp(const std::wstring& name) {
     appList_.push_back(lower);
     call_function("addAppToList", sciter::value(lower.c_str()));
     call_function("forceRefresh");
+    persistAndSignal();
 }
 
 void ExcludedAppsDialog::removeApp(const std::wstring& name) {
@@ -144,6 +144,7 @@ void ExcludedAppsDialog::removeApp(const std::wstring& name) {
     if (it != appList_.end()) {
         appList_.erase(it);
         call_function("removeAppFromList", sciter::value(lower.c_str()));
+        persistAndSignal();
     }
 }
 

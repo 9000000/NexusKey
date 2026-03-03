@@ -31,6 +31,7 @@ private:
     void populateList();
     void addApp(const std::wstring& name);
     void removeApp(const std::wstring& name);
+    void persistAndSignal();
     std::vector<std::wstring> getRunningApps();
 
     std::vector<std::wstring> appList_;
