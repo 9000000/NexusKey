@@ -13,6 +13,8 @@
 
 #include "sciter-x-window.hpp"
 #include "core/config/TypingConfig.h"
+#include "core/SystemConfig.h"
+#include "UpdateChecker.h"
 #include <functional>
 #include <string>
 
@@ -72,6 +74,7 @@ private:
     void syncToSharedState();  // Immediate: SharedState + ConfigEvent
     void saveToToml();         // Deferred: TOML file write
     void saveUISettings();
+    void saveSystemSettings();  // Immediate TOML write for system settings
     void initializeUI();
 
     bool configDirty_ = false;
@@ -89,6 +92,15 @@ private:
     void setDropdownValue(const std::wstring& id, int value);
     void recalcWindowSize();  // Measure DOM and resize window to fit content
 
+    // Icon customization helpers
+    void notifyIconChanged();           // Post WM_NEXUSKEY_ICON_CHANGED to main process
+    void openColorPicker(bool forVietnamese);  // Open Windows ChooseColor dialog
+    void updateColorSwatches();         // Update btn-color-v/e background colors
+
+    // Update helpers
+    void startUpdateCheck();            // Spawn background thread to check for updates
+    void startUpdate(const UpdateInfo& info);  // Download + launch updater + exit
+
     // Subclass procedure for window dragging and close
     static LRESULT CALLBACK SubclassProc(HWND hwnd, UINT msg, WPARAM wParam,
                                          LPARAM lParam, UINT_PTR uIdSubclass,
@@ -99,6 +111,7 @@ private:
     // Settings state
     TypingConfig config_;          // Typing config (inputMethod, spellCheck, features, etc.)
     HotkeyConfig hotkeyConfig_;    // Hotkey modifiers + key
+    SystemConfig systemConfig_;    // System settings (startup, admin, show on startup)
     bool vietnameseMode_ = true;   // V/E mode (synced with main process, not persisted)
     bool isExpanded_ = false;
     bool isPinned_ = false;
@@ -111,6 +124,9 @@ private:
 
     // UI base path for file system loading (Debug mode)
     std::wstring uiBasePath_;
+
+    // Cached update info (from background check)
+    UpdateInfo cachedUpdateInfo_;
 };
 
 }  // namespace NextKey

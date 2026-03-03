@@ -140,7 +140,7 @@ TEST_F(TelexEngineTest, Horn_UA_UndoCircumflex) {
 TEST_F(TelexEngineTest, Horn_UO_ChainedW) {
     // uow → uơ, then second w applies horn to 'u' → ươ
     TypeString(*engine_, L"uoww");
-    EXPECT_EQ(engine_->Peek(), L"uow");  // uow -> ươ
+    EXPECT_EQ(engine_->Peek(), L"ươ");
 }
 
 // ============================================================================
@@ -377,10 +377,14 @@ TEST_F(TelexEngineTest, Word_Huo) {
 }
 
 TEST_F(TelexEngineTest, Word_Huo_WithSecondW) {
-    // huow + w: second w escapes horn on 'o', result is "huow"
-    // To type "hương", use "huowng" (AutoUO applies when next char comes)
+    // hươ: second w applies horn to 'u'
     TypeString(*engine_, L"huoww");
-    EXPECT_EQ(engine_->Peek(), L"huow");
+    EXPECT_EQ(engine_->Peek(), L"hươ");
+}
+
+TEST_F(TelexEngineTest, Word_Quo) {
+    TypeString(*engine_, L"quow");
+    EXPECT_EQ(engine_->Peek(), L"quơ");
 }
 
 TEST_F(TelexEngineTest, Word_Hoc) {
@@ -763,6 +767,49 @@ TEST_F(TelexEngineTest, WPriority_6_Escape_O) {
 TEST_F(TelexEngineTest, WPriority_6_Escape_A) {
     TypeString(*engine_, L"aww");
     EXPECT_EQ(engine_->Peek(), L"aw");
+}
+
+TEST_F(TelexEngineTest, WW_Standalone_Escape) {
+    // ww → w (P8 synthetic ư removed entirely)
+    TypeString(*engine_, L"ww");
+    EXPECT_EQ(engine_->Peek(), L"w");
+}
+
+TEST_F(TelexEngineTest, BWW_Standalone_Escape) {
+    // bww → bw (P8 synthetic ư after consonant removed)
+    TypeString(*engine_, L"bww");
+    EXPECT_EQ(engine_->Peek(), L"bw");
+}
+
+TEST_F(TelexEngineTest, UWW_RealU_Escape) {
+    // uww → uw (real 'u' keeps base, only clears horn)
+    TypeString(*engine_, L"uww");
+    EXPECT_EQ(engine_->Peek(), L"uw");
+}
+
+TEST_F(TelexEngineTest, Window_SyntheticNotErased) {
+    // "window" → synthetic ư from first 'w' should NOT be erased by second 'w'
+    // (only immediate ww escapes the synthetic ư)
+    TypeString(*engine_, L"window");
+    // First 'w' → ư, then 'i','n','d','o' → ưindo
+    // Second 'w' → regular P4 escape (not synthetic erase) → uindow + w
+    EXPECT_EQ(engine_->Peek(), L"uindow");
+}
+
+TEST_F(TelexEngineTest, Tone_IA_Diphthong_Classic) {
+    // ia diphthong: tone on first vowel (classic)
+    TypeString(*engine_, L"nghiax");
+    EXPECT_EQ(engine_->Peek(), L"nghĩa");
+}
+
+TEST_F(TelexEngineTest, Tone_IA_Diphthong_Mia) {
+    TypeString(*engine_, L"mias");
+    EXPECT_EQ(engine_->Peek(), L"mía");
+}
+
+TEST_F(TelexEngineTest, Tone_IA_Diphthong_Kia) {
+    TypeString(*engine_, L"kiaf");
+    EXPECT_EQ(engine_->Peek(), L"kìa");
 }
 
 // ============================================================================
@@ -1452,6 +1499,11 @@ TEST_F(TelexEngineTest, RealWord_Gia) {
     EXPECT_EQ(engine_->Peek(), L"gia");
 }
 
+TEST_F(TelexEngineTest, RealWord_Nghia) {
+    TypeString(*engine_, L"nghiax");  // nghĩa
+    EXPECT_EQ(engine_->Peek(), L"nghĩa");
+}
+
 TEST_F(TelexEngineTest, RealWord_Dinh) {
     TypeString(*engine_, L"ddinh");  // định → wait đình?
     EXPECT_EQ(engine_->Peek(), L"đinh");
@@ -1723,6 +1775,215 @@ TEST_F(SimpleTelexTest, DD_StillWorks) {
 TEST_F(SimpleTelexTest, RealWord_Duong) {
     TypeString(*engine_, L"dduowng");
     EXPECT_EQ(engine_->Peek(), L"đương");
+}
+
+// ============================================================================
+// AUTO-RESTORE TESTS
+// When autoRestoreEnabled + spellCheckEnabled, invalid words return raw keys
+// ============================================================================
+
+class AutoRestoreTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.inputMethod = InputMethod::Telex;
+        config_.spellCheckEnabled = true;
+        config_.autoRestoreEnabled = true;
+        config_.optimizeLevel = 0;
+        engine_ = std::make_unique<TelexEngine>(config_);
+    }
+
+    TypingConfig config_;
+    std::unique_ptr<TelexEngine> engine_;
+};
+
+TEST_F(AutoRestoreTest, InvalidWord_ReturnsRaw) {
+    // "basl" → engine composes "bál" but word is invalid → return raw "basl"
+    TypeString(*engine_, L"basl");
+    EXPECT_EQ(engine_->Commit(), L"basl");
+}
+
+TEST_F(AutoRestoreTest, ValidWord_ReturnsComposed) {
+    // "bas" → "bá" is valid Vietnamese → return composed
+    TypeString(*engine_, L"bas");
+    EXPECT_EQ(engine_->Commit(), L"bá");
+}
+
+TEST_F(AutoRestoreTest, NoModifications_ReturnsAsIs) {
+    // "hello" → raw == composed (no Vietnamese mods) → return as-is
+    TypeString(*engine_, L"hello");
+    std::wstring result = engine_->Commit();
+    EXPECT_EQ(result, L"hello");
+}
+
+TEST_F(AutoRestoreTest, Disabled_ReturnsComposed) {
+    // autoRestore OFF → return composed even if invalid
+    config_.autoRestoreEnabled = false;
+    engine_ = std::make_unique<TelexEngine>(config_);
+
+    TypeString(*engine_, L"basl");
+    // With autoRestore off, returns composed text regardless
+    std::wstring result = engine_->Commit();
+    EXPECT_NE(result, L"basl");  // Should be composed, not raw
+}
+
+TEST_F(AutoRestoreTest, SpellCheckOff_ReturnsComposed) {
+    // spellCheck OFF → no validity info, return composed
+    config_.spellCheckEnabled = false;
+    engine_ = std::make_unique<TelexEngine>(config_);
+
+    TypeString(*engine_, L"basl");
+    std::wstring result = engine_->Commit();
+    // Without spell check, engine doesn't know it's invalid
+    EXPECT_NE(result, L"basl");
+}
+
+TEST_F(AutoRestoreTest, CommitResetsState) {
+    // After commit, engine state is clean
+    TypeString(*engine_, L"basl");
+    (void)engine_->Commit();
+    EXPECT_EQ(engine_->Count(), 0u);
+}
+
+TEST_F(AutoRestoreTest, EscapedTone_NoDuplicate) {
+    // "musst" → 's' applied acute, second 's' escaped → composed "must" (ASCII)
+    // Auto-restore should NOT fire (composed is pure ASCII, no diacritics)
+    TypeString(*engine_, L"musst");
+    EXPECT_EQ(engine_->Peek(), L"must");
+    EXPECT_EQ(engine_->Commit(), L"must");  // NOT "musst"
+}
+
+TEST_F(AutoRestoreTest, EscapedTone_WithDiacritics_Restores) {
+    // "gôgle" has diacritics → auto-restore returns raw "google"
+    TypeString(*engine_, L"google");
+    EXPECT_EQ(engine_->Commit(), L"google");
+}
+
+TEST_F(AutoRestoreTest, EscapedTone_RemovesConsumedFromRaw) {
+    // With freeMarking, 'r' applies as tone even after invalid "us" prefix.
+    // u-s-s-e-r → composed "usẻ" (invalid Vietnamese)
+    // First 's' was consumed as tone (applied acute to 'u'), second 's' escaped it.
+    // Auto-restore should give "user" (4 chars), NOT "usser" (5 chars).
+    config_.freeMarking = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"usser");
+    EXPECT_EQ(engine_->Peek(), L"us\x1EBB");  // usẻ
+    EXPECT_EQ(engine_->Commit(), L"user");
+}
+
+TEST_F(AutoRestoreTest, EscapedTone_NoFreeMarking_LiteralFallback) {
+    // Without freeMarking, spell check gates 'r' as literal after invalid "us".
+    // u-s-s-e-r → composed "user" (all ASCII, no diacritics)
+    // No auto-restore needed (raw matches composed after escape fix).
+    TypeString(*engine_, L"usser");
+    EXPECT_EQ(engine_->Peek(), L"user");
+    EXPECT_EQ(engine_->Commit(), L"user");
+}
+
+TEST_F(AutoRestoreTest, EscapedTone_BackspaceAfterEscape) {
+    // u-s-s then backspace: removes literal 's', leaves 'u' with no tone
+    TypeString(*engine_, L"uss");
+    EXPECT_EQ(engine_->Peek(), L"us");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"u");
+}
+
+TEST_F(AutoRestoreTest, BackspaceCircumflex_RawInSync) {
+    // "windoo[BS]ows" — circumflex 'oo' adds to rawInput_ without new state,
+    // backspace must trim rawInput_ correctly so auto-restore gives "windows"
+    TypeString(*engine_, L"windoo");
+    engine_->Backspace();  // removes 'ô', trims raw to "wind" (not "windo")
+    TypeString(*engine_, L"ows");
+    // Composed has ư from first 'w' → has diacritics → auto-restore fires
+    EXPECT_EQ(engine_->Commit(), L"windows");
+}
+
+TEST_F(AutoRestoreTest, DiacriticsInvalid_Restores) {
+    // "basl" → composed "bál" has diacritics + invalid → return raw "basl"
+    engine_->Reset();
+    TypeString(*engine_, L"basl");
+    EXPECT_EQ(engine_->Commit(), L"basl");
+}
+
+TEST_F(AutoRestoreTest, FinalK_DakLak_Valid) {
+    // "ddawsk" → "Đắk" — 'k' is a valid final consonant (minority-language proper nouns)
+    // Should return composed text, NOT raw restore
+    engine_->Reset();
+    TypeString(*engine_, L"ddawsk");
+    EXPECT_EQ(engine_->Commit(), L"đắk");
+}
+
+TEST_F(AutoRestoreTest, FinalK_Lak_Valid) {
+    // "lawsk" → "lắk"
+    engine_->Reset();
+    TypeString(*engine_, L"lawsk");
+    EXPECT_EQ(engine_->Commit(), L"lắk");
+}
+
+// ============================================================================
+// TEMP OFF SPELL CHECK TESTS
+// Solo Ctrl tap temporarily disables spell check for current word
+// ============================================================================
+
+class TempOffSpellTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.inputMethod = InputMethod::Telex;
+        config_.spellCheckEnabled = true;
+        config_.autoRestoreEnabled = true;
+        config_.tempOffSpellByCtrl = true;
+        config_.optimizeLevel = 0;
+        engine_ = std::make_unique<TelexEngine>(config_);
+    }
+
+    TypingConfig config_;
+    std::unique_ptr<TelexEngine> engine_;
+};
+
+TEST_F(TempOffSpellTest, ToggleAllowsToneOnInvalid) {
+    // Type invalid syllable "gooex" → spell check blocks tone keys
+    TypeString(*engine_, L"gooex");
+    // Tone key 's' should be blocked (added as literal) because spell check says invalid
+    std::wstring beforeToggle = engine_->Peek();
+
+    // Reset and try again with temp spell off
+    engine_->Reset();
+    TypeString(*engine_, L"gooex");
+    engine_->ToggleTempSpellOff();  // Simulate Ctrl tap
+    // Now push a tone key — should apply as tone, not literal
+    engine_->PushChar(L's');
+    std::wstring afterToggle = engine_->Peek();
+
+    // After toggle, tone 's' should apply (not be added as literal 's')
+    // The composed result should NOT end with 's' as a literal character
+    EXPECT_NE(afterToggle, beforeToggle + L"s");
+}
+
+TEST_F(TempOffSpellTest, ResetsOnCommit) {
+    // Toggle temp spell off, then reset — tempSpellOff should be cleared
+    TypeString(*engine_, L"abc");
+    engine_->ToggleTempSpellOff();
+    engine_->Reset();
+
+    // After reset, spell check should be active again
+    // Type invalid syllable — tone should be blocked again
+    TypeString(*engine_, L"gooex");
+    engine_->PushChar(L's');
+    std::wstring result = engine_->Peek();
+    // 's' should be literal (blocked by spell check) since temp off was reset
+    EXPECT_TRUE(result.back() == L's' || result.find(L"s") != std::wstring::npos);
+}
+
+TEST_F(TempOffSpellTest, NoAutoRestore) {
+    // With tempSpellOff active, Commit() should return composed text (not raw)
+    // even though the word is invalid
+    TypeString(*engine_, L"gooex");
+    engine_->ToggleTempSpellOff();
+    engine_->PushChar(L's');  // Tone applies because spell check bypassed
+
+    std::wstring composed = engine_->Peek();
+    std::wstring committed = engine_->Commit();
+    // Commit should return composed (not auto-restore to raw)
+    EXPECT_EQ(committed, composed);
 }
 
 }  // namespace

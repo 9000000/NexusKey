@@ -1,9 +1,10 @@
 // Convert Tool Dialog JavaScript
 // Uses Sciter patterns from settings.js
 
-document.on("ready", function () {
+document.ready = function () {
+    initSubDialog();  // blur + dark + scrollbar + i18n
     initConvertToolDialog();
-});
+};
 
 function initConvertToolDialog() {
     initializeToggles();

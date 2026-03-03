@@ -74,6 +74,12 @@ public:
     /// Toggle Vietnamese/English mode (atomic flag + icon refresh)
     void ToggleVietnameseMode();
 
+    /// Get current code table
+    [[nodiscard]] CodeTable GetCodeTable() const noexcept { return config_.codeTable; }
+
+    /// Set code table (updates config, no persistence yet)
+    void SetCodeTable(CodeTable ct) noexcept { config_.codeTable = ct; }
+
     /// Initialize language bar button (call after SetClientId/SetCategoryMgr)
     bool InitLanguageBar(ITfThreadMgr* pThreadMgr);
 

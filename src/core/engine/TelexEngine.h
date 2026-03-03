@@ -37,6 +37,9 @@ struct CharState {
     Modifier mod = Modifier::None;  // Vowel modifier
     Tone tone = Tone::None;         // Tone mark
     bool isUpper = false;           // Preserve original case
+    bool synthetic = false;         // True if created by P8 standalone 'w' (not a real keystroke)
+    size_t rawIdx = 0;              // rawInput_ index when this state was created (for backspace sync)
+    size_t toneRawIdx = SIZE_MAX;   // rawInput_ index of consumed tone key (for escape removal)
 
     [[nodiscard]] constexpr bool IsVowel() const noexcept {
         return base == L'a' || base == L'e' || base == L'i' ||
@@ -83,6 +86,7 @@ public:
     [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
     [[nodiscard]] size_t Count() const noexcept override;
+    void ToggleTempSpellOff() override;
 
     [[nodiscard]] TelexStates GetState() const noexcept { return state_; }
 
@@ -120,6 +124,9 @@ private:
     // Compose all states to string
     std::wstring ComposeAll() const;
 
+    // Remove consumed raw entry and adjust all indices
+    void EraseConsumedRaw(size_t idx);
+
     // Spell check: validate syllable structure after each keystroke
     void UpdateSpellState();
 
@@ -129,6 +136,7 @@ private:
     TypingConfig config_;
     TelexStates state_ = TelexStates::Valid;
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
+    bool tempSpellOff_ = false;       // true when user toggled temp spell bypass via Ctrl
 };
 
 }  // namespace Telex

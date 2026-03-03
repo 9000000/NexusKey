@@ -104,4 +104,29 @@ inline wchar_t ToUpperVietnamese(wchar_t ch) {
     return towupper(ch);
 }
 
+//=============================================================================
+// Vietnamese-aware lowercase conversion (shared)
+//=============================================================================
+
+inline wchar_t ToLowerVietnamese(wchar_t ch) {
+    // Latin-1 Supplement
+    if (ch >= 0x00C0 && ch <= 0x00D6) return ch + 0x20;
+    if (ch >= 0x00D8 && ch <= 0x00DE) return ch + 0x20;
+
+    // Latin Extended-A
+    if (ch == L'\x0102') return L'\x0103';  // Ă → ă
+    if (ch == L'\x0110') return L'\x0111';  // Đ → đ
+
+    // Latin Extended-B
+    if (ch == L'\x01A0') return L'\x01A1';  // Ơ → ơ
+    if (ch == L'\x01AF') return L'\x01B0';  // Ư → ư
+
+    // Vietnamese toned vowels (Latin Extended Additional: 0x1EA0–0x1EF9)
+    if (ch >= 0x1EA0 && ch <= 0x1EF9) {
+        if (!(ch & 1)) return ch + 1;  // Even (uppercase) → Odd (lowercase)
+    }
+
+    return towlower(ch);
+}
+
 }  // namespace NextKey

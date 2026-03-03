@@ -1,4 +1,4 @@
-@import url("../shared/theme.css");
+/* theme.css loaded via HTML <link> (Sciter @import is unreliable) */
 
 html {
     background: transparent;
@@ -28,6 +28,11 @@ body {
     position: relative;
     display: flex;
     flex-direction: column;
+    background: var(--bg-glass);
+}
+
+input[type="hidden"] {
+    display: none;
 }
 
 /* Close button - matches main dialog */

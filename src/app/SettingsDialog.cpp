@@ -2,10 +2,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SettingsDialog.h"
+#include "resource.h"
+#include "StartupHelper.h"
 #include "SubprocessHelper.h"
+#include "UpdateChecker.h"
+#include "core/Version.h"
 #include "helpers/ScaleHelper.h"
 #include "helpers/SciterHelper.h"
 #include "core/config/ConfigManager.h"
+#include "core/Strings.h"
 #include "core/UIConfig.h"
 #include "core/config/ConfigEvent.h"
 #include "core/ipc/SharedConstants.h"
@@ -13,11 +18,13 @@
 #include "sciter-x-dom.hpp"
 #include "sciter-x-host-callback.h"
 #include <dwmapi.h>
+#include <commdlg.h>
 #include <commctrl.h>
 #include <windowsx.h>
 #include <memory>
 #include <vector>
 #include <algorithm>
+#include <thread>
 
 using namespace sciter::dom;  // For ELEMENT_AREAS enum (CONTENT_BOX, etc.)
 
@@ -84,11 +91,22 @@ SettingsDialog::SettingsDialog()
         return;
     }
 
+    // 2b. Set UI language (before scripts run)
+    if (GetLanguage() == Language::English) {
+        sciter::dom::element root = get_root();
+        root.set_attribute("lang", L"en");
+    }
+
     // 3. Show window
     expand();
 
-    // 4. Set title (used for FindWindow single-instance check)
+    // 4. Set title and app icon (taskbar shows IDI_APP = icon.ico, not status icons)
     SetWindowTextW(get_hwnd(), L"NexusKey Settings");
+    HICON appIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP));
+    if (appIcon) {
+        SendMessageW(get_hwnd(), WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(appIcon));
+        SendMessageW(get_hwnd(), WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(appIcon));
+    }
 
     // 5. Auto-fit window to content size (like OpenKey)
     // Sciter renders at native DPI, DOM measurements are already in screen pixels
@@ -116,11 +134,18 @@ SettingsDialog::SettingsDialog()
     int y = (screenHeight - winHeight) / 2;
     SetWindowPos(get_hwnd(), HWND_NOTOPMOST, x, y, 0, 0, SWP_NOSIZE);
 
-    // 7. Apply DWM dark mode, rounded corners, and Windows API blur
+    // 7. Apply theme-aware DWM mode, rounded corners, and Windows API blur
     HWND hwnd = get_hwnd();
     if (hwnd) {
-        BOOL darkMode = TRUE;
-        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+        bool dark = SciterHelper::IsWindowsDarkMode();
+        SciterHelper::SetWindowDarkMode(hwnd, dark);
+
+        // Set body class based on detected theme (get_root() = <html>, need <body>)
+        sciter::dom::element htmlRoot(get_root());
+        sciter::dom::element body = htmlRoot.find_first("body");
+        if (body.is_valid()) {
+            body.set_attribute("class", dark ? L"dark" : L"");
+        }
 
         // Enable rounded corners on Windows 11
         int cornerPreference = DwmConstants::DWMWCP_ROUND;
@@ -216,9 +241,12 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     UNREFERENCED_PARAMETER(uIdSubclass);
     UNREFERENCED_PARAMETER(dwRefData);
 
-    // WM_CLOSE: flush deferred save, then destroy
+    // WM_CLOSE: terminate child subdialogs, flush deferred save, then destroy
     // (MUST use DestroyWindow, not PostQuitMessage — Sciter assertion failures)
     if (msg == WM_CLOSE) {
+        // Terminate any subdialogs we spawned (they run as separate processes)
+        TerminateAllSubprocesses();
+
         if (s_instance && s_instance->configDirty_) {
             KillTimer(hwnd, TIMER_DEFERRED_SAVE);
             s_instance->saveToToml();
@@ -238,6 +266,32 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
             bool vietnamese = (wParam != 0);
             s_instance->vietnameseMode_ = vietnamese;
             s_instance->setToggleState(L"toggle-language", vietnamese);
+        }
+        return 0;
+    }
+
+    // Handle update check result from background thread
+    if (msg == WM_NEXUSKEY_UPDATE_RESULT) {
+        if (s_instance) {
+            if (wParam == 1) {
+                // Update available — show dialog
+                if (UpdateChecker::ShowUpdateDialog(hwnd, s_instance->cachedUpdateInfo_)) {
+                    s_instance->startUpdate(s_instance->cachedUpdateInfo_);
+                }
+            } else if (wParam == 0) {
+                UpdateChecker::ShowUpToDateMessage(hwnd);
+            } else {
+                UpdateChecker::ShowCheckFailedMessage(hwnd);
+            }
+        }
+        return 0;
+    }
+
+    // Handle config changed from tray menu — reload TOML and refresh UI
+    if (msg == WM_NEXUSKEY_CONFIG_CHANGED) {
+        if (s_instance) {
+            s_instance->loadSettings();
+            s_instance->initializeUI();
         }
         return 0;
     }
@@ -266,6 +320,42 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     if (msg == WM_NEXUSKEY_OPEN_EXCLUDED) {
         SpawnSubprocess(L"NexusKey - Excluded Apps", L"--excludedapps");
         return 0;
+    }
+
+    if (msg == WM_NEXUSKEY_OPEN_MACRO) {
+        SpawnSubprocess(L"NexusKey - Macro Table", L"--macro");
+        return 0;
+    }
+
+    // Real-time theme switch: Windows broadcasts this when user changes theme
+    if (msg == WM_SETTINGCHANGE && lParam) {
+        if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
+            if (s_instance) {
+                bool dark = SciterHelper::IsWindowsDarkMode();
+                SciterHelper::SetWindowDarkMode(hwnd, dark);
+
+                // Toggle body.dark class (get_root() = <html>, need <body>)
+                sciter::dom::element htmlRoot(s_instance->get_root());
+                sciter::dom::element body = htmlRoot.find_first("body");
+                if (body.is_valid()) {
+                    body.set_attribute("class", dark ? L"dark" : L"");
+                }
+
+                // Update container background opacity for new theme
+                sciter::dom::element container = htmlRoot.find_first("#main-container");
+                if (container.is_valid()) {
+                    double opacity = s_instance->backgroundOpacity_ / 100.0;
+                    wchar_t bgColor[64];
+                    if (dark) {
+                        swprintf_s(bgColor, L"rgba(18, 20, 28, %.2f)", opacity * 0.9);
+                    } else {
+                        swprintf_s(bgColor, L"rgba(255, 255, 255, %.2f)", opacity);
+                    }
+                    container.set_style_attribute("background-color", bgColor);
+                }
+            }
+        }
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
     // Window dragging via title bar area
@@ -452,6 +542,80 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"allow-zwjf") {
         config_.allowZwjf = value;
     }
+    else if (id == L"restore-key") {
+        config_.autoRestoreEnabled = value;
+    }
+    else if (id == L"remember-code") {
+        config_.rememberCodeTable = value;
+    }
+    else if (id == L"temp-off-spell") {
+        config_.tempOffSpellByCtrl = value;
+    }
+    else if (id == L"temp-off-openkey") {
+        config_.tempOffByAlt = value;
+    }
+    else if (id == L"free-marking") {
+        config_.freeMarking = value;
+    }
+    else if (id == L"use-macro") {
+        config_.macroEnabled = value;
+    }
+    else if (id == L"macro-english") {
+        config_.macroInEnglish = value;
+    }
+    else if (id == L"quick-telex") {
+        config_.quickConsonant = value;
+    }
+    else if (id == L"quick-start") {
+        config_.quickStartConsonant = value;
+    }
+    else if (id == L"quick-end") {
+        config_.quickEndConsonant = value;
+    }
+    else if (id == L"temp-off-macro") {
+        config_.tempOffMacroByEsc = value;
+    }
+    // System settings — immediate save, no deferred/SharedState
+    else if (id == L"run-startup") {
+        systemConfig_.runAtStartup = value;
+        RegisterRunOnStartup(value, systemConfig_.runAsAdmin);
+        saveSystemSettings();
+        return;
+    }
+    else if (id == L"run-admin") {
+        systemConfig_.runAsAdmin = value;
+        // Re-register with new admin mode if startup is enabled
+        if (systemConfig_.runAtStartup) {
+            RegisterRunOnStartup(true, value);
+        }
+        saveSystemSettings();
+        return;
+    }
+    else if (id == L"show-on-startup") {
+        systemConfig_.showOnStartup = value;
+        saveSystemSettings();
+        return;
+    }
+    else if (id == L"desktop-shortcut") {
+        systemConfig_.desktopShortcut = value;
+        SetDesktopShortcut(value);
+        saveSystemSettings();
+        return;
+    }
+    else if (id == L"english-ui") {
+        systemConfig_.language = value ? 1 : 0;
+        SetLanguage(value ? Language::English : Language::Vietnamese);
+        saveSystemSettings();
+        // JS already switched lang attribute + called applyTranslations()
+        // Notify main process to update language for tray menu / toasts
+        notifyIconChanged();
+        return;
+    }
+    else if (id == L"check-update") {
+        systemConfig_.autoCheckUpdate = value;
+        saveSystemSettings();
+        return;
+    }
 
     saveSettings();
     if (onSettingsChanged_) onSettingsChanged_();
@@ -464,7 +628,12 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
     else if (id == L"bang-ma") {
         config_.codeTable = static_cast<CodeTable>(value);
     }
-    // Add more dropdown handlers as needed...
+    else if (id == L"modern-icon") {
+        systemConfig_.iconStyle = static_cast<uint8_t>(value);
+        saveSystemSettings();
+        notifyIconChanged();
+        return;  // System setting, not typing config
+    }
 
     saveSettings();
     if (onSettingsChanged_) onSettingsChanged_();
@@ -477,7 +646,24 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         return;
     }
     else if (id == L"btn-macro-table") {
-        // TODO: Open macro table dialog
+        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_MACRO, 0, 0);
+        return;
+    }
+    else if (id == L"btn-color-v") {
+        openColorPicker(true);
+        return;
+    }
+    else if (id == L"btn-color-e") {
+        openColorPicker(false);
+        return;
+    }
+    else if (id == L"btn-reset-colors") {
+        systemConfig_.customColorV = 0;
+        systemConfig_.customColorE = 0;
+        updateColorSwatches();
+        saveSystemSettings();
+        notifyIconChanged();
+        return;
     }
     else if (id == L"btn-app-overrides") {
         // TODO: Open app overrides dialog
@@ -486,12 +672,12 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         // TODO: Reset all settings to defaults
     }
     else if (id == L"btn-check-update") {
-        // TODO: Check for updates
+        startUpdateCheck();
+        return;
     }
     else if (id == L"btn-open-log-folder") {
         // TODO: Open log folder in explorer
     }
-    // Add more button handlers as needed...
 }
 
 void SettingsDialog::togglePin() {
@@ -619,8 +805,6 @@ void SettingsDialog::initializeUI() {
     sciter::dom::element root = get_root();
     if (!root.is_valid()) return;
 
-    // Dark theme is set via class="dark" on body in HTML
-
     // Set input method dropdown
     setDropdownValue(L"input-type", static_cast<int>(config_.inputMethod));
 
@@ -638,10 +822,56 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"modern-ortho", config_.modernOrtho);
     setToggleState(L"auto-caps", config_.autoCaps);
     setToggleState(L"allow-zwjf", config_.allowZwjf);
+    setToggleState(L"restore-key", config_.autoRestoreEnabled);
+    setToggleState(L"remember-code", config_.rememberCodeTable);
+    setToggleState(L"temp-off-spell", config_.tempOffSpellByCtrl);
+    setToggleState(L"temp-off-openkey", config_.tempOffByAlt);
+    setToggleState(L"free-marking", config_.freeMarking);
+    setToggleState(L"use-macro", config_.macroEnabled);
+    setToggleState(L"macro-english", config_.macroInEnglish);
+    setToggleState(L"quick-telex", config_.quickConsonant);
+    setToggleState(L"quick-start", config_.quickStartConsonant);
+    setToggleState(L"quick-end", config_.quickEndConsonant);
+    setToggleState(L"temp-off-macro", config_.tempOffMacroByEsc);
     setToggleState(L"key-ctrl", hotkeyConfig_.ctrl);
     setToggleState(L"key-alt", hotkeyConfig_.alt);
     setToggleState(L"key-win", hotkeyConfig_.win);
     setToggleState(L"key-shift", hotkeyConfig_.shift);
+
+    // System settings toggles
+    setToggleState(L"run-startup", systemConfig_.runAtStartup);
+    setToggleState(L"run-admin", systemConfig_.runAsAdmin);
+    setToggleState(L"show-on-startup", systemConfig_.showOnStartup);
+    setToggleState(L"desktop-shortcut", systemConfig_.desktopShortcut);
+    setToggleState(L"english-ui", systemConfig_.language == 1);
+
+    // Auto-check update toggle
+    setToggleState(L"check-update", systemConfig_.autoCheckUpdate);
+
+    // Version number display
+    {
+        sciter::dom::element verSpan = root.find_first("#app-version-number");
+        if (verSpan.is_valid()) {
+            verSpan.set_text(NEXUSKEY_VERSION_WSTR);
+        }
+        // Also update title bar version
+        sciter::dom::element titleText = root.find_first(".title-text");
+        if (titleText.is_valid()) {
+            titleText.set_text(L"NexusKey v" NEXUSKEY_VERSION_WSTR);
+        }
+    }
+
+    // Icon style dropdown
+    setDropdownValue(L"modern-icon", static_cast<int>(systemConfig_.iconStyle));
+
+    // Color swatches: set initial background colors + show custom row if needed
+    updateColorSwatches();
+    if (systemConfig_.iconStyle == 3) {
+        sciter::dom::element colorRow = root.find_first("#custom-color-row");
+        if (colorRow.is_valid()) {
+            colorRow.set_style_attribute("display", L"flex");
+        }
+    }
 
     // Set switch key character (display "Space" for space char)
     sciter::dom::element switchKeyInput = root.find_first("#switch-key-char");
@@ -666,8 +896,51 @@ void SettingsDialog::initializeUI() {
         SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 50, NULL);
     }
 
-    // Set background opacity (call JS function)
-    call_function("setBackgroundOpacity", sciter::value(static_cast<int>(backgroundOpacity_)));
+    // Set background opacity — update slider UI + apply CSS
+    {
+        // 1. Update hidden input value (so JS slider reads the correct value)
+        sciter::dom::element hiddenInput = root.find_first("#val-bg-opacity");
+        if (hiddenInput.is_valid()) {
+            hiddenInput.set_value(sciter::value(static_cast<int>(backgroundOpacity_)));
+        }
+
+        // 2. Update slider thumb, fill, and label directly from C++
+        wchar_t pctStr[8];
+        swprintf_s(pctStr, L"%d%%", static_cast<int>(backgroundOpacity_));
+
+        sciter::dom::element thumb = root.find_first("#bg-opacity-thumb");
+        if (thumb.is_valid()) {
+            wchar_t leftStr[8];
+            swprintf_s(leftStr, L"%d%%", static_cast<int>(backgroundOpacity_));
+            thumb.set_style_attribute("left", leftStr);
+        }
+
+        sciter::dom::element fill = root.find_first("#bg-opacity-fill");
+        if (fill.is_valid()) {
+            wchar_t widthStr[8];
+            swprintf_s(widthStr, L"%d%%", static_cast<int>(backgroundOpacity_));
+            fill.set_style_attribute("width", widthStr);
+        }
+
+        sciter::dom::element valueLabel = root.find_first("#bg-opacity-value");
+        if (valueLabel.is_valid()) {
+            valueLabel.set_text(pctStr);
+        }
+
+        // 3. Apply CSS background color
+        bool dark = SciterHelper::IsWindowsDarkMode();
+        double opacity = backgroundOpacity_ / 100.0;
+        sciter::dom::element container = root.find_first("#main-container");
+        if (container.is_valid()) {
+            wchar_t bgColor[64];
+            if (dark) {
+                swprintf_s(bgColor, L"rgba(18, 20, 28, %.2f)", opacity * 0.9);
+            } else {
+                swprintf_s(bgColor, L"rgba(255, 255, 255, %.2f)", opacity);
+            }
+            container.set_style_attribute("background-color", bgColor);
+        }
+    }
 
     // Apply pinned state if saved
     if (isPinned_) {
@@ -717,6 +990,9 @@ void SettingsDialog::loadSettings() {
     // Load hotkey config
     hotkeyConfig_ = ConfigManager::LoadHotkeyConfigOrDefault();
     switchKeyChar_ = (hotkeyConfig_.key != 0) ? std::wstring(1, hotkeyConfig_.key) : L"";
+
+    // Load system config
+    systemConfig_ = ConfigManager::LoadSystemConfigOrDefault();
 }
 
 void SettingsDialog::saveSettings() {
@@ -734,7 +1010,8 @@ void SettingsDialog::syncToSharedState() {
         if (state.IsValid()) {
             state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
             state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
-            state.featureFlags = EncodeFeatureFlags(config_);
+            state.codeTable = static_cast<uint8_t>(config_.codeTable);
+            state.SetFeatureFlags(EncodeFeatureFlags(config_));
             sharedState.Write(state);  // Write() auto-manages epoch via seqlock
         }
     }
@@ -769,6 +1046,140 @@ void SettingsDialog::saveUISettings() {
     if (!ConfigManager::SaveUIConfig(path, uiConfig)) {
         OutputDebugStringW(L"NexusKey: Failed to save UI config\n");
     }
+}
+
+void SettingsDialog::saveSystemSettings() {
+    std::wstring path = ConfigManager::GetConfigPath();
+    if (!ConfigManager::SaveSystemConfig(path, systemConfig_)) {
+        OutputDebugStringW(L"NexusKey: Failed to save system config\n");
+    }
+}
+
+void SettingsDialog::notifyIconChanged() {
+    // Notify main process to re-read icon config
+    HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+    if (trayWnd) {
+        PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
+    }
+}
+
+void SettingsDialog::openColorPicker(bool forVietnamese) {
+    COLORREF current = static_cast<COLORREF>(
+        forVietnamese ? systemConfig_.GetEffectiveColorV() : systemConfig_.GetEffectiveColorE());
+
+    static COLORREF custColors[16] = {};
+
+    CHOOSECOLORW cc = {};
+    cc.lStructSize = sizeof(cc);
+    cc.hwndOwner = get_hwnd();
+    cc.lpCustColors = custColors;
+    cc.rgbResult = current;
+    cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+
+    if (ChooseColorW(&cc)) {
+        if (forVietnamese) {
+            systemConfig_.customColorV = static_cast<uint32_t>(cc.rgbResult);
+        } else {
+            systemConfig_.customColorE = static_cast<uint32_t>(cc.rgbResult);
+        }
+
+        updateColorSwatches();
+        saveSystemSettings();
+        notifyIconChanged();
+    }
+}
+
+void SettingsDialog::updateColorSwatches() {
+    sciter::dom::element root = get_root();
+
+    // Get effective colors (default if 0)
+    COLORREF colorV = static_cast<COLORREF>(systemConfig_.GetEffectiveColorV());
+    COLORREF colorE = static_cast<COLORREF>(systemConfig_.GetEffectiveColorE());
+
+    // COLORREF is BGR, CSS needs RGB
+    auto setSwatchColor = [&](const char* selector, COLORREF color) {
+        sciter::dom::element btn = root.find_first(selector);
+        if (btn.is_valid()) {
+            wchar_t css[64];
+            swprintf_s(css, L"rgb(%d,%d,%d)",
+                GetRValue(color), GetGValue(color), GetBValue(color));
+            btn.set_style_attribute("background-color", css);
+        }
+    };
+
+    setSwatchColor("#btn-color-v", colorV);
+    setSwatchColor("#btn-color-e", colorE);
+}
+
+void SettingsDialog::startUpdateCheck() {
+    HWND hwnd = get_hwnd();
+    if (!hwnd) return;
+
+    std::thread([hwnd]() {
+        auto info = UpdateChecker::CheckForUpdate();
+        WPARAM result;
+        if (info.available) {
+            result = 1;
+            if (s_instance) {
+                s_instance->cachedUpdateInfo_ = std::move(info);
+            }
+        } else if (info.checkSucceeded) {
+            result = 0;  // up-to-date
+        } else {
+            result = 2;  // network/parse error
+        }
+        PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, 0);
+    }).detach();
+}
+
+void SettingsDialog::startUpdate(const UpdateInfo& info) {
+    HWND hwnd = get_hwnd();
+    if (!hwnd || info.downloadUrl.empty()) return;
+
+    // Download ZIP to %TEMP% on a background thread, then launch updater
+    std::wstring downloadUrl = info.downloadUrl;
+
+    std::thread([hwnd, downloadUrl]() {
+        // Build temp path
+        wchar_t tempDir[MAX_PATH] = {};
+        GetTempPathW(MAX_PATH, tempDir);
+        std::wstring zipPath = std::wstring(tempDir) + L"NexusKey_update.zip";
+
+        // Download
+        bool ok = UpdateChecker::DownloadFile(downloadUrl, zipPath);
+        if (!ok) {
+            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, 2, 0);  // Show failed
+            return;
+        }
+
+        // Launch updater: NexusKey.exe --install-update <zip>
+        wchar_t exePath[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+
+        std::wstring cmdLine = L"\"";
+        cmdLine += exePath;
+        cmdLine += L"\" --install-update \"";
+        cmdLine += zipPath;
+        cmdLine += L"\"";
+
+        STARTUPINFOW si = { sizeof(si) };
+        PROCESS_INFORMATION pi = {};
+
+        // Use raw CreateProcessW — NOT tracked (must survive parent exit)
+        if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+        }
+
+        // Signal main process to exit
+        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        if (trayWnd) {
+            PostMessageW(trayWnd, WM_CLOSE, 0, 0);
+        }
+
+        // Close self
+        PostMessageW(hwnd, WM_CLOSE, 0, 0);
+    }).detach();
 }
 
 }  // namespace NextKey

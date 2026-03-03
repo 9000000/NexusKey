@@ -5,11 +5,13 @@
 // SUBDIALOG INIT - Common setup for subdialog windows
 // ============================================
 
-// Common subdialog initialization (blur + dark theme + scrollbar)
+// Common subdialog initialization (blur + theme + scrollbar + i18n)
+// Theme is set by C++ via body class before JS runs; JS reads it here.
 function initSubDialog(scrollSelector) {
-    Window.this.blurBehind = "dark source-auto";
-    document.body.classList.add("dark");
+    var isDark = document.body.classList.contains("dark");
+    Window.this.blurBehind = (isDark ? "dark" : "light") + " source-auto";
     if (scrollSelector) initializeScrollbarResize(scrollSelector);
+    if (typeof applyTranslations === "function") applyTranslations();
 }
 
 // Set background opacity (called from C++ via call_function)
@@ -166,9 +168,11 @@ function createRunningAppsDropdown(options) {
         // Show message if no apps
         if (filtered.length === 0) {
             if (runningAppsLoaded && runningApps.length === 0) {
-                dropdown.innerHTML = '<div class="dropdown-empty">Không tìm thấy ứng dụng nào</div>';
+                var msg = (typeof t === "function" && t("no_apps_found")) || "Không tìm thấy ứng dụng nào";
+                dropdown.innerHTML = '<div class="dropdown-empty">' + msg + '</div>';
             } else if (query !== "") {
-                dropdown.innerHTML = '<div class="dropdown-empty">Không có kết quả phù hợp</div>';
+                var msg = (typeof t === "function" && t("no_matching")) || "Không có kết quả phù hợp";
+                dropdown.innerHTML = '<div class="dropdown-empty">' + msg + '</div>';
             } else {
                 hide();
                 return;

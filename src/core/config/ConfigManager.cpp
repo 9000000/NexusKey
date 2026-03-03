@@ -76,6 +76,17 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.modernOrtho = (*features)["modern_ortho"].value_or(false);
             config.autoCaps = (*features)["auto_caps"].value_or(false);
             config.allowZwjf = (*features)["allow_zwjf"].value_or(true);
+            config.autoRestoreEnabled = (*features)["auto_restore"].value_or(false);
+            config.freeMarking = (*features)["free_marking"].value_or(false);
+            config.tempOffSpellByCtrl = (*features)["temp_off_spell_ctrl"].value_or(false);
+            config.tempOffByAlt = (*features)["temp_off_by_alt"].value_or(false);
+            config.rememberCodeTable = (*features)["remember_code_table"].value_or(false);
+            config.macroEnabled = (*features)["macro_enabled"].value_or(false);
+            config.macroInEnglish = (*features)["macro_in_english"].value_or(false);
+            config.quickConsonant = (*features)["quick_consonant"].value_or(false);
+            config.quickStartConsonant = (*features)["quick_start_consonant"].value_or(false);
+            config.quickEndConsonant = (*features)["quick_end_consonant"].value_or(false);
+            config.tempOffMacroByEsc = (*features)["temp_off_macro_esc"].value_or(false);
         }
         
         return config;
@@ -118,6 +129,17 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("modern_ortho", config.modernOrtho);
         features.insert_or_assign("auto_caps", config.autoCaps);
         features.insert_or_assign("allow_zwjf", config.allowZwjf);
+        features.insert_or_assign("auto_restore", config.autoRestoreEnabled);
+        features.insert_or_assign("free_marking", config.freeMarking);
+        features.insert_or_assign("temp_off_spell_ctrl", config.tempOffSpellByCtrl);
+        features.insert_or_assign("temp_off_by_alt", config.tempOffByAlt);
+        features.insert_or_assign("remember_code_table", config.rememberCodeTable);
+        features.insert_or_assign("macro_enabled", config.macroEnabled);
+        features.insert_or_assign("macro_in_english", config.macroInEnglish);
+        features.insert_or_assign("quick_consonant", config.quickConsonant);
+        features.insert_or_assign("quick_start_consonant", config.quickStartConsonant);
+        features.insert_or_assign("quick_end_consonant", config.quickEndConsonant);
+        features.insert_or_assign("temp_off_macro_esc", config.tempOffMacroByEsc);
         tbl.insert_or_assign("features", std::move(features));
 
         // Write to file
@@ -409,6 +431,245 @@ bool ConfigManager::SaveSmartSwitchData(const std::wstring& path,
             section.insert_or_assign(WideToUtf8(exe), vietnamese);
         }
         tbl.insert_or_assign("smart_switch_data", std::move(section));
+
+        std::ofstream file(utf8Path);
+        if (!file.is_open()) return false;
+        file << tbl;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+std::unordered_map<std::wstring, uint8_t> ConfigManager::LoadPerAppCodeTable(const std::wstring& path) {
+    std::unordered_map<std::wstring, uint8_t> data;
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = toml::parse_file(utf8Path);
+
+        if (auto section = table["per_app_code_table"].as_table()) {
+            for (auto& [key, val] : *section) {
+                auto v = val.value_or(0);
+                if (v >= 0 && v <= 4) {
+                    data[Utf8ToWide(std::string(key.str()))] = static_cast<uint8_t>(v);
+                }
+            }
+        }
+    } catch (...) {}
+    return data;
+}
+
+bool ConfigManager::SavePerAppCodeTable(const std::wstring& path,
+                                         const std::unordered_map<std::wstring, uint8_t>& data) {
+    try {
+        toml::table tbl;
+        std::string utf8Path = WideToUtf8(path);
+
+        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
+
+        toml::table section;
+        for (auto& [exe, codeTable] : data) {
+            section.insert_or_assign(WideToUtf8(exe), static_cast<int64_t>(codeTable));
+        }
+        tbl.insert_or_assign("per_app_code_table", std::move(section));
+
+        std::ofstream file(utf8Path);
+        if (!file.is_open()) return false;
+        file << tbl;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+std::optional<SystemConfig> ConfigManager::LoadSystemConfig(const std::wstring& path) {
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = toml::parse_file(utf8Path);
+
+        SystemConfig config;
+
+        if (auto system = table["system"].as_table()) {
+            config.runAtStartup = (*system)["run_at_startup"].value_or(false);
+            config.runAsAdmin = (*system)["run_as_admin"].value_or(false);
+            config.showOnStartup = (*system)["show_on_startup"].value_or(false);
+            config.desktopShortcut = (*system)["desktop_shortcut"].value_or(false);
+            config.language = static_cast<uint8_t>((*system)["language"].value_or(0));
+            config.iconStyle = static_cast<uint8_t>((*system)["icon_style"].value_or(0));
+            config.customColorV = static_cast<uint32_t>((*system)["custom_color_v"].value_or(int64_t(0)));
+            config.customColorE = static_cast<uint32_t>((*system)["custom_color_e"].value_or(int64_t(0)));
+            config.autoCheckUpdate = (*system)["auto_check_update"].value_or(true);
+        }
+
+        return config;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+bool ConfigManager::SaveSystemConfig(const std::wstring& path, const SystemConfig& config) {
+    try {
+        toml::table tbl;
+        std::string utf8Path = WideToUtf8(path);
+
+        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
+
+        toml::table system;
+        system.insert_or_assign("run_at_startup", config.runAtStartup);
+        system.insert_or_assign("run_as_admin", config.runAsAdmin);
+        system.insert_or_assign("show_on_startup", config.showOnStartup);
+        system.insert_or_assign("desktop_shortcut", config.desktopShortcut);
+        system.insert_or_assign("language", static_cast<int64_t>(config.language));
+        system.insert_or_assign("icon_style", static_cast<int64_t>(config.iconStyle));
+        system.insert_or_assign("custom_color_v", static_cast<int64_t>(config.customColorV));
+        system.insert_or_assign("custom_color_e", static_cast<int64_t>(config.customColorE));
+        system.insert_or_assign("auto_check_update", config.autoCheckUpdate);
+        tbl.insert_or_assign("system", std::move(system));
+
+        std::ofstream file(utf8Path);
+        if (!file.is_open()) return false;
+        file << tbl;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+SystemConfig ConfigManager::LoadSystemConfigOrDefault() {
+    std::wstring configPath = GetConfigPath();
+    auto config = LoadSystemConfig(configPath);
+    if (config) {
+        return *config;
+    }
+    return SystemConfig{};
+}
+
+std::optional<ConvertConfig> ConfigManager::LoadConvertConfig(const std::wstring& path) {
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = toml::parse_file(utf8Path);
+
+        ConvertConfig config;
+
+        if (auto convert = table["convert"].as_table()) {
+            config.allCaps = (*convert)["all_caps"].value_or(false);
+            config.allLower = (*convert)["all_lower"].value_or(false);
+            config.capsFirst = (*convert)["caps_first"].value_or(false);
+            config.capsEach = (*convert)["caps_each"].value_or(false);
+            config.removeMark = (*convert)["remove_mark"].value_or(false);
+            config.alertDone = (*convert)["alert_done"].value_or(false);
+            config.autoPaste = (*convert)["auto_paste"].value_or(false);
+            config.sequential = (*convert)["sequential"].value_or(false);
+            config.sourceEncoding = static_cast<uint8_t>(
+                (*convert)["source_encoding"].value_or(0));
+            config.destEncoding = static_cast<uint8_t>(
+                (*convert)["dest_encoding"].value_or(0));
+
+            // Nested [convert.hotkey] table
+            if (auto hk = (*convert)["hotkey"].as_table()) {
+                config.hotkey.ctrl = (*hk)["ctrl"].value_or(false);
+                config.hotkey.shift = (*hk)["shift"].value_or(false);
+                config.hotkey.alt = (*hk)["alt"].value_or(false);
+                config.hotkey.win = (*hk)["win"].value_or(false);
+
+                auto keyStr = (*hk)["key"].value_or<std::string>("");
+                if (!keyStr.empty()) {
+                    auto wideKey = Utf8ToWide(keyStr);
+                    config.hotkey.key = wideKey.empty() ? 0 : towupper(wideKey[0]);
+                }
+            }
+        }
+
+        return config;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+bool ConfigManager::SaveConvertConfig(const std::wstring& path, const ConvertConfig& config) {
+    try {
+        toml::table tbl;
+        std::string utf8Path = WideToUtf8(path);
+
+        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
+
+        toml::table convert;
+        convert.insert_or_assign("all_caps", config.allCaps);
+        convert.insert_or_assign("all_lower", config.allLower);
+        convert.insert_or_assign("caps_first", config.capsFirst);
+        convert.insert_or_assign("caps_each", config.capsEach);
+        convert.insert_or_assign("remove_mark", config.removeMark);
+        convert.insert_or_assign("alert_done", config.alertDone);
+        convert.insert_or_assign("auto_paste", config.autoPaste);
+        convert.insert_or_assign("sequential", config.sequential);
+        convert.insert_or_assign("source_encoding", static_cast<int64_t>(config.sourceEncoding));
+        convert.insert_or_assign("dest_encoding", static_cast<int64_t>(config.destEncoding));
+
+        toml::table hotkey;
+        hotkey.insert_or_assign("ctrl", config.hotkey.ctrl);
+        hotkey.insert_or_assign("shift", config.hotkey.shift);
+        hotkey.insert_or_assign("alt", config.hotkey.alt);
+        hotkey.insert_or_assign("win", config.hotkey.win);
+
+        if (config.hotkey.key != 0) {
+            char keyStr[2] = { static_cast<char>(config.hotkey.key), 0 };
+            hotkey.insert_or_assign("key", std::string(keyStr));
+        } else {
+            hotkey.insert_or_assign("key", "");
+        }
+
+        convert.insert_or_assign("hotkey", std::move(hotkey));
+        tbl.insert_or_assign("convert", std::move(convert));
+
+        std::ofstream file(utf8Path);
+        if (!file.is_open()) return false;
+        file << tbl;
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+ConvertConfig ConfigManager::LoadConvertConfigOrDefault() {
+    std::wstring configPath = GetConfigPath();
+    auto config = LoadConvertConfig(configPath);
+    if (config) {
+        return *config;
+    }
+    return ConvertConfig{};
+}
+
+std::unordered_map<std::wstring, std::wstring> ConfigManager::LoadMacros(const std::wstring& path) {
+    std::unordered_map<std::wstring, std::wstring> data;
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = toml::parse_file(utf8Path);
+
+        if (auto section = table["macros"].as_table()) {
+            for (auto& [key, val] : *section) {
+                auto str = val.value<std::string>();
+                if (str) {
+                    data[Utf8ToWide(std::string(key.str()))] = Utf8ToWide(*str);
+                }
+            }
+        }
+    } catch (...) {}
+    return data;
+}
+
+bool ConfigManager::SaveMacros(const std::wstring& path,
+                                const std::unordered_map<std::wstring, std::wstring>& macros) {
+    try {
+        toml::table tbl;
+        std::string utf8Path = WideToUtf8(path);
+
+        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
+
+        toml::table section;
+        for (auto& [key, value] : macros) {
+            section.insert_or_assign(WideToUtf8(key), WideToUtf8(value));
+        }
+        tbl.insert_or_assign("macros", std::move(section));
 
         std::ofstream file(utf8Path);
         if (!file.is_open()) return false;

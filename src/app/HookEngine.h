@@ -7,6 +7,7 @@
 #pragma once
 
 #include "core/engine/IInputEngine.h"
+#include "core/engine/CodeTableConverter.h"
 #include "core/config/TypingConfig.h"
 #include "core/config/ConfigEvent.h"
 #include "core/SmartSwitchManager.h"
@@ -16,6 +17,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace NextKey {
 
@@ -44,8 +46,23 @@ public:
     /// Set callback for mode changes (to update tray icon)
     void SetModeChangeCallback(ModeChangeCallback callback) { modeChangeCallback_ = std::move(callback); }
 
+    /// Set callback for quick-convert hotkey
+    void SetConvertCallback(std::function<void()> callback) { convertCallback_ = std::move(callback); }
+
+    /// Set callback for config reload (notifies main to update QuickConvert etc.)
+    void SetConfigReloadCallback(std::function<void()> callback) { configReloadCallback_ = std::move(callback); }
+
+    /// Update the convert hotkey config (called on config reload)
+    void SetConvertHotkey(const HotkeyConfig& hotkey);
+
     /// Check for config changes and reload if needed
     bool CheckConfigEvent();
+
+    /// Change code table (commits pending composition, updates per-app map)
+    void SetCodeTable(CodeTable ct);
+
+    /// Get effective code table (checks per-app map when rememberCodeTable is on)
+    [[nodiscard]] CodeTable GetCodeTable() const noexcept;
 
     [[nodiscard]] bool IsVietnameseMode() const noexcept { return vietnameseMode_; }
     [[nodiscard]] bool IsRunning() const noexcept { return keyboardHook_ != nullptr; }
@@ -67,7 +84,7 @@ private:
     // Input engine interaction
     void HandleAlphaKey(DWORD vkCode);
     void HandleBackspace();
-    void CommitComposition();
+    bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
 
     // Output — multi-method: PostMessage for Win32 controls, SendInput for others
@@ -79,12 +96,19 @@ private:
     // Hotkey detection (absorbed from HotkeyManager)
     void TrackModifier(DWORD vkCode, bool isDown);
     bool CheckHotkeyMatch() const;
+    bool CheckConvertHotkeyMatch() const;
 
     // Commit trigger check
     static bool IsCommitTrigger(DWORD vkCode);
 
+    // Re-inject a key after auto-restore replacement
+    void InjectKey(DWORD vkCode);
+
     // Browser detection for Chrome autocomplete fix
     static bool IsBrowserLike(HWND hwnd);
+
+    // Qt/Electron detection — skip U+202F to avoid first-word delay
+    static bool IsQtElectronApp(HWND hwnd);
 
     // Smart switch: get foreground app exe name
     static std::wstring GetForegroundExeName();
@@ -94,19 +118,39 @@ private:
     std::unique_ptr<IInputEngine> engine_;
     InputMethod currentMethod_ = InputMethod::Telex;
     std::wstring previousComposition_;  // What's currently displayed in the app
+    std::vector<uint8_t> previousEncodedWidths_;  // Output unit count per Unicode char (for non-Unicode code tables)
     bool vietnameseMode_ = true;
     bool sending_ = false;  // True while SendInput is in progress (skip re-entrant hook calls)
     bool beepOnSwitch_ = false;
     bool smartSwitch_ = false;
     bool excludeApps_ = false;
     bool autoCaps_ = false;
+    bool tempOffSpellByCtrl_ = false;
+    bool tempOffByAlt_ = false;
+    bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word
+    int altTapCount_ = 0;              // 0 or 1 (waiting for second tap)
+    DWORD lastAltReleaseTime_ = 0;     // GetTickCount() of first Alt release
+    static constexpr DWORD DOUBLE_ALT_TIMEOUT_MS = 400;
     int autoCapState_ = 0;  // 0=normal, 1=after punct, 2=after punct+space
     std::set<std::wstring> excludedAppSet_;  // sorted, O(log n) lookup
     bool isExcludedApp_ = false;  // cached: is current foreground app excluded?
+    bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron apps (prevents first-word delay)
     bool modeBeforeExclude_ = true;  // Vietnamese mode before entering excluded app
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode (for TOML save)
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode
     std::wstring currentExe_;  // Currently focused app
+    std::wstring previousExe_;  // Previously focused app (for tray menu context)
+    bool rememberCodeTable_ = false;
+    CodeTable currentCodeTable_ = CodeTable::Unicode;
+    std::unordered_map<std::wstring, uint8_t> appCodeTableMap_;  // exe → CodeTable value
+
+    // Macro expansion
+    bool macroEnabled_ = false;
+    bool macroInEnglish_ = false;
+    bool tempOffMacroByEsc_ = false;  // Config: Esc can temp-disable macro
+    bool tempMacroOff_ = false;       // Runtime: macro disabled for current word
+    std::unordered_map<std::wstring, std::wstring> macroTable_;
+    std::wstring rawMacroBuffer_;
 
     // Hooks
     HHOOK keyboardHook_ = nullptr;
@@ -115,6 +159,8 @@ private:
     // Hotkey state
     HotkeyConfig hotkeyConfig_{};
     BYTE hotkeyVk_ = 0;  // Pre-computed VK code for hotkeyConfig_.key
+    HotkeyConfig convertHotkeyConfig_{};
+    BYTE convertHotkeyVk_ = 0;  // Pre-computed VK for convert hotkey
     bool modCtrlDown_ = false;
     bool modShiftDown_ = false;
     bool modAltDown_ = false;
@@ -124,8 +170,10 @@ private:
     // Config reload
     ConfigEvent configEvent_;
 
-    // Callback
+    // Callbacks
     ModeChangeCallback modeChangeCallback_;
+    std::function<void()> convertCallback_;
+    std::function<void()> configReloadCallback_;
 
     // Singleton for static callback dispatch
     static HookEngine* s_instance;

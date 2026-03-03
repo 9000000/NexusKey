@@ -1,8 +1,8 @@
 // Macro Dialog JavaScript
 
 document.ready = function () {
+    initSubDialog(".macro-list");
     initMacroDialog();
-    initializeScrollbarResize(".macro-list");
 };
 
 function initMacroDialog() {
@@ -108,16 +108,16 @@ function selectMacroItem(element, name, content) {
     document.getElementById("macro-name").value = name;
     document.getElementById("macro-content").value = content;
 
-    // Change button text to "Sửa"
-    document.getElementById("btn-add").textContent = "+ Sửa";
+    // Change button text to "Edit"
+    document.getElementById("btn-add").textContent = t("m.edit") || "+ Sửa";
 }
 
 function updateAddButtonText() {
     // This will be called by C++ after checking if macro exists
     var btnAdd = document.getElementById("btn-add");
     if (btnAdd) {
-        // Default to "Thêm", C++ will change to "Sửa" if macro exists
-        btnAdd.textContent = "+ Thêm";
+        // Default to "Add", C++ will change to "Edit" if macro exists
+        btnAdd.textContent = t("add") || "+ Thêm";
     }
 }
 
@@ -164,11 +164,4 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Called from C++ to set background opacity
-function setBackgroundOpacity(value) {
-    var opacity = value / 100;
-    document.documentElement.style.setProperty(
-        "--bg-glass",
-        "rgba(255, 255, 255, " + opacity + ")"
-    );
-}
+// setBackgroundOpacity is provided by shared/utils.js

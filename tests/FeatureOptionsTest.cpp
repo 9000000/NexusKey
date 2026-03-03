@@ -56,47 +56,47 @@ class FeatureFlagsTest : public ::testing::Test {};
 TEST_F(FeatureFlagsTest, InitDefaults_FeatureFlagsAllowZwjf) {
     SharedState state{};
     state.InitDefaults();
-    EXPECT_EQ(state.featureFlags, FeatureFlags::ALLOW_ZWJF);
+    EXPECT_EQ(state.GetFeatureFlags(), FeatureFlags::ALLOW_ZWJF);
 }
 
 TEST_F(FeatureFlagsTest, Encode_ModernOrtho) {
     SharedState state{};
     state.InitDefaults();
-    state.featureFlags |= FeatureFlags::MODERN_ORTHO;
+    state.SetFeatureFlags(state.GetFeatureFlags() | FeatureFlags::MODERN_ORTHO);
 
-    EXPECT_TRUE(state.featureFlags & FeatureFlags::MODERN_ORTHO);
-    EXPECT_FALSE(state.featureFlags & FeatureFlags::AUTO_CAPS);
-    EXPECT_TRUE(state.featureFlags & FeatureFlags::ALLOW_ZWJF);  // Default ON
+    EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::MODERN_ORTHO);
+    EXPECT_FALSE(state.GetFeatureFlags() & FeatureFlags::AUTO_CAPS);
+    EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::ALLOW_ZWJF);  // Default ON
 }
 
 TEST_F(FeatureFlagsTest, Encode_AutoCaps) {
     SharedState state{};
     state.InitDefaults();
-    state.featureFlags |= FeatureFlags::AUTO_CAPS;
+    state.SetFeatureFlags(state.GetFeatureFlags() | FeatureFlags::AUTO_CAPS);
 
-    EXPECT_FALSE(state.featureFlags & FeatureFlags::MODERN_ORTHO);
-    EXPECT_TRUE(state.featureFlags & FeatureFlags::AUTO_CAPS);
-    EXPECT_TRUE(state.featureFlags & FeatureFlags::ALLOW_ZWJF);  // Default ON
+    EXPECT_FALSE(state.GetFeatureFlags() & FeatureFlags::MODERN_ORTHO);
+    EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::AUTO_CAPS);
+    EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::ALLOW_ZWJF);  // Default ON
 }
 
 TEST_F(FeatureFlagsTest, Encode_AllFlags) {
     SharedState state{};
     state.InitDefaults();
-    state.featureFlags = FeatureFlags::MODERN_ORTHO | FeatureFlags::AUTO_CAPS | FeatureFlags::ALLOW_ZWJF;
+    state.SetFeatureFlags(FeatureFlags::MODERN_ORTHO | FeatureFlags::AUTO_CAPS | FeatureFlags::ALLOW_ZWJF);
 
-    EXPECT_TRUE(state.featureFlags & FeatureFlags::MODERN_ORTHO);
-    EXPECT_TRUE(state.featureFlags & FeatureFlags::AUTO_CAPS);
-    EXPECT_TRUE(state.featureFlags & FeatureFlags::ALLOW_ZWJF);
-    EXPECT_EQ(state.featureFlags, 0x07);
+    EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::MODERN_ORTHO);
+    EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::AUTO_CAPS);
+    EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::ALLOW_ZWJF);
+    EXPECT_EQ(state.GetFeatureFlags(), 0x07);
 }
 
 TEST_F(FeatureFlagsTest, Decode_ToConfig) {
     SharedState state{};
     state.InitDefaults();
-    state.featureFlags = FeatureFlags::MODERN_ORTHO | FeatureFlags::ALLOW_ZWJF;
+    state.SetFeatureFlags(FeatureFlags::MODERN_ORTHO | FeatureFlags::ALLOW_ZWJF);
 
     TypingConfig config;
-    DecodeFeatureFlags(state.featureFlags, config);
+    DecodeFeatureFlags(state.GetFeatureFlags(), config);
 
     EXPECT_TRUE(config.modernOrtho);
     EXPECT_FALSE(config.autoCaps);
@@ -112,11 +112,11 @@ TEST_F(FeatureFlagsTest, RoundTrip_ConfigToStateToConfig) {
 
     SharedState state{};
     state.InitDefaults();
-    state.featureFlags = EncodeFeatureFlags(original);
+    state.SetFeatureFlags(EncodeFeatureFlags(original));
 
     // Decode
     TypingConfig decoded;
-    DecodeFeatureFlags(state.featureFlags, decoded);
+    DecodeFeatureFlags(state.GetFeatureFlags(), decoded);
 
     EXPECT_EQ(original.modernOrtho, decoded.modernOrtho);
     EXPECT_EQ(original.autoCaps, decoded.autoCaps);
@@ -782,10 +782,94 @@ TEST_F(TelexZwjfTest, Word_Zone_NoTone) {
 }
 
 // ============================================================================
-// NOTE: allowZwjf is for spell-check validation only (accept "ja" as valid
-// Vietnamese). It does NOT change z/w/j/f tone/modifier behavior in the engine.
-// TelexZwjfTest above already covers the standard Telex behavior.
+// allowZwjf — Spell Check: accept z/j/w/f as valid initial consonants
 // ============================================================================
+// allowZwjf controls spell check validation ONLY:
+//   z/j ≡ gi, w ≡ qu, f ≡ ph as initial consonants
+// It does NOT change z/w/j/f tone/modifier behavior in the engine.
+
+// Direct spell checker tests (bypassing engine)
+TEST(SpellCheckZwjfTest, Z_Invalid_WithoutFlag) {
+    // "zá" (z + á): z is not a valid initial consonant → Invalid
+    Telex::CharState states[] = {
+        {L'z', Telex::Modifier::None, Telex::Tone::None, false},
+        {L'a', Telex::Modifier::None, Telex::Tone::Acute, true},
+    };
+    auto result = SpellCheck::Validate(states, 2, false);
+    EXPECT_EQ(result, SpellCheck::Result::Invalid);
+}
+
+TEST(SpellCheckZwjfTest, Z_Valid_WithFlag) {
+    // "zá" with allowZwjf: z accepted as initial consonant (≡gi) → Valid
+    Telex::CharState states[] = {
+        {L'z', Telex::Modifier::None, Telex::Tone::None, false},
+        {L'a', Telex::Modifier::None, Telex::Tone::Acute, true},
+    };
+    auto result = SpellCheck::Validate(states, 2, true);
+    EXPECT_EQ(result, SpellCheck::Result::Valid);
+}
+
+TEST(SpellCheckZwjfTest, F_Invalid_WithoutFlag) {
+    Telex::CharState states[] = {
+        {L'f', Telex::Modifier::None, Telex::Tone::None, false},
+        {L'a', Telex::Modifier::None, Telex::Tone::None, true},
+        {L'n', Telex::Modifier::None, Telex::Tone::None, false},
+    };
+    auto result = SpellCheck::Validate(states, 3, false);
+    EXPECT_EQ(result, SpellCheck::Result::Invalid);
+}
+
+TEST(SpellCheckZwjfTest, F_Valid_WithFlag) {
+    // "fan" with allowZwjf: f ≡ ph → Valid (a vowel, n final)
+    Telex::CharState states[] = {
+        {L'f', Telex::Modifier::None, Telex::Tone::None, false},
+        {L'a', Telex::Modifier::None, Telex::Tone::None, true},
+        {L'n', Telex::Modifier::None, Telex::Tone::None, false},
+    };
+    auto result = SpellCheck::Validate(states, 3, true);
+    EXPECT_EQ(result, SpellCheck::Result::Valid);
+}
+
+TEST(SpellCheckZwjfTest, W_Valid_WithFlag) {
+    // "wen" with allowZwjf: w ≡ qu → Valid (e vowel, n final)
+    Telex::CharState states[] = {
+        {L'w', Telex::Modifier::None, Telex::Tone::None, false},
+        {L'e', Telex::Modifier::None, Telex::Tone::None, true},
+        {L'n', Telex::Modifier::None, Telex::Tone::None, false},
+    };
+    auto result = SpellCheck::Validate(states, 3, true);
+    EXPECT_EQ(result, SpellCheck::Result::Valid);
+}
+
+TEST(SpellCheckZwjfTest, J_Valid_WithFlag) {
+    // "já" with allowZwjf: j ≡ gi → Valid (a vowel + acute tone)
+    Telex::CharState states[] = {
+        {L'j', Telex::Modifier::None, Telex::Tone::None, false},
+        {L'a', Telex::Modifier::None, Telex::Tone::Acute, true},
+    };
+    auto result = SpellCheck::Validate(states, 2, true);
+    EXPECT_EQ(result, SpellCheck::Result::Valid);
+}
+
+TEST(SpellCheckZwjfTest, Z_ValidPrefix_WithFlag) {
+    // "z" alone with allowZwjf: valid prefix (waiting for vowel)
+    Telex::CharState states[] = {
+        {L'z', Telex::Modifier::None, Telex::Tone::None, false},
+    };
+    auto result = SpellCheck::Validate(states, 1, true);
+    EXPECT_EQ(result, SpellCheck::Result::ValidPrefix);
+}
+
+TEST(SpellCheckZwjfTest, StandardConsonants_StillWork) {
+    // "bán" — standard consonant, always valid
+    Telex::CharState states[] = {
+        {L'b', Telex::Modifier::None, Telex::Tone::None, false},
+        {L'a', Telex::Modifier::None, Telex::Tone::Acute, true},
+        {L'n', Telex::Modifier::None, Telex::Tone::None, false},
+    };
+    auto result = SpellCheck::Validate(states, 3, false);
+    EXPECT_EQ(result, SpellCheck::Result::Valid);
+}
 
 // ============================================================================
 // Engine Created via Factory Respects modernOrtho

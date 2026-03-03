@@ -8,6 +8,7 @@
 #include "Define.h"
 #include "ComUtils.h"
 #include "resource.h"
+#include "core/Strings.h"
 #include <strsafe.h>
 #include <shellapi.h>
 
@@ -17,6 +18,14 @@ namespace TSF {
 // Menu item IDs for right-click context menu
 static constexpr UINT MENU_ID_SETTINGS = 1;
 static constexpr UINT MENU_ID_ABOUT = 2;
+
+// Code table submenu IDs (10-14 = CodeTable enum values + offset)
+static constexpr UINT MENU_ID_CODETABLE_BASE = 10;
+static constexpr UINT MENU_ID_CT_UNICODE  = 10;
+static constexpr UINT MENU_ID_CT_TCVN3    = 11;
+static constexpr UINT MENU_ID_CT_VNI      = 12;
+static constexpr UINT MENU_ID_CT_COMPOUND = 13;
+static constexpr UINT MENU_ID_CT_CP1258   = 14;
 
 // Cookie for ITfSource sink identification
 static constexpr DWORD LANGBAR_SINK_COOKIE = 0x4E4B4C42;  // 'NKLB'
@@ -91,7 +100,7 @@ IFACEMETHODIMP LanguageBarButton::GetTooltipString(BSTR* pbstrToolTip) {
 
     bool vietnamese = controller_ && controller_->IsVietnameseMode();
     *pbstrToolTip = SysAllocString(
-        vietnamese ? L"NexusKey - Ti\x1ebfng Vi\x1ec7t" : L"NexusKey - English");
+        vietnamese ? S(StringId::TIP_VIETNAMESE) : S(StringId::TIP_ENGLISH));
 
     return *pbstrToolTip ? S_OK : E_OUTOFMEMORY;
 }
@@ -114,6 +123,26 @@ IFACEMETHODIMP LanguageBarButton::OnClick(TfLBIClick click, POINT pt, const RECT
         // Show context menu
         HMENU hMenu = CreatePopupMenu();
         if (!hMenu) return E_FAIL;
+
+        // Code Table submenu
+        if (controller_) {
+            HMENU hCodeTableMenu = CreatePopupMenu();
+            if (hCodeTableMenu) {
+                CodeTable currentCT = controller_->GetCodeTable();
+                auto addItem = [&](CodeTable ct, UINT id, const wchar_t* label) {
+                    UINT flags = MF_STRING | (currentCT == ct ? MF_CHECKED : 0);
+                    AppendMenuW(hCodeTableMenu, flags, id, label);
+                };
+                addItem(CodeTable::Unicode,         MENU_ID_CT_UNICODE,  L"Unicode");
+                addItem(CodeTable::TCVN3,           MENU_ID_CT_TCVN3,    L"TCVN3 (ABC)");
+                addItem(CodeTable::VNIWindows,      MENU_ID_CT_VNI,      L"VNI Windows");
+                addItem(CodeTable::UnicodeCompound, MENU_ID_CT_COMPOUND, L"Unicode Compound");
+                addItem(CodeTable::VietnameseLocale,MENU_ID_CT_CP1258,   L"CP 1258");
+
+                AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hCodeTableMenu), L"Code Table");
+                AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+            }
+        }
 
         AppendMenuW(hMenu, MF_STRING, MENU_ID_SETTINGS, L"Settings...");
         AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
@@ -139,6 +168,25 @@ IFACEMETHODIMP LanguageBarButton::OnClick(TfLBIClick click, POINT pt, const RECT
 IFACEMETHODIMP LanguageBarButton::InitMenu(ITfMenu* pMenu) {
     if (pMenu == nullptr) return E_INVALIDARG;
 
+    // Code Table submenu
+    if (controller_) {
+        ITfMenu* pSubMenu = nullptr;
+        pMenu->AddMenuItem(0, TF_LBMENUF_SUBMENU, nullptr, nullptr, L"Code Table", 10, &pSubMenu);
+        if (pSubMenu) {
+            CodeTable currentCT = controller_->GetCodeTable();
+            auto addItem = [&](CodeTable ct, UINT id, const wchar_t* label, ULONG len) {
+                DWORD flags = (currentCT == ct) ? TF_LBMENUF_CHECKED : 0;
+                pSubMenu->AddMenuItem(id, flags, nullptr, nullptr, label, len, nullptr);
+            };
+            addItem(CodeTable::Unicode,         MENU_ID_CT_UNICODE,  L"Unicode", 7);
+            addItem(CodeTable::TCVN3,           MENU_ID_CT_TCVN3,    L"TCVN3 (ABC)", 11);
+            addItem(CodeTable::VNIWindows,      MENU_ID_CT_VNI,      L"VNI Windows", 11);
+            addItem(CodeTable::UnicodeCompound, MENU_ID_CT_COMPOUND, L"Unicode Compound", 17);
+            addItem(CodeTable::VietnameseLocale,MENU_ID_CT_CP1258,   L"CP 1258", 7);
+        }
+        pMenu->AddMenuItem(0, TF_LBMENUF_SEPARATOR, nullptr, nullptr, L"", 0, nullptr);
+    }
+
     pMenu->AddMenuItem(MENU_ID_SETTINGS, 0, nullptr, nullptr, L"Settings...", 12, nullptr);
     pMenu->AddMenuItem(0, TF_LBMENUF_SEPARATOR, nullptr, nullptr, L"", 0, nullptr);
     pMenu->AddMenuItem(MENU_ID_ABOUT, 0, nullptr, nullptr, L"About NexusKey", 15, nullptr);
@@ -147,6 +195,16 @@ IFACEMETHODIMP LanguageBarButton::InitMenu(ITfMenu* pMenu) {
 }
 
 IFACEMETHODIMP LanguageBarButton::OnMenuSelect(UINT wID) {
+    // Code table menu items (10-14)
+    if (wID >= MENU_ID_CT_UNICODE && wID <= MENU_ID_CT_CP1258) {
+        if (controller_) {
+            auto ct = static_cast<CodeTable>(wID - MENU_ID_CODETABLE_BASE);
+            controller_->SetCodeTable(ct);
+            TSF_LOG(L"LanguageBarButton: code table → %u", wID - MENU_ID_CODETABLE_BASE);
+        }
+        return S_OK;
+    }
+
     switch (wID) {
         case MENU_ID_SETTINGS: {
             // Launch EXE with --settings flag
@@ -167,11 +225,8 @@ IFACEMETHODIMP LanguageBarButton::OnMenuSelect(UINT wID) {
 
         case MENU_ID_ABOUT:
             MessageBoxW(nullptr,
-                L"NexusKey Vietnamese Input\n"
-                L"Version 1.0.0\n\n"
-                L"A modern Vietnamese typing solution for Windows.\n\n"
-                L"SPDX-License-Identifier: GPL-3.0-only",
-                L"About NexusKey",
+                S(StringId::ABOUT_BODY),
+                S(StringId::ABOUT_TITLE),
                 MB_ICONINFORMATION);
             break;
     }

@@ -5,6 +5,7 @@
 #include "helpers/ScaleHelper.h"
 #include "helpers/SciterHelper.h"
 #include "core/config/ConfigManager.h"
+#include "core/Strings.h"
 #include "sciter-x-dom.hpp"
 #include "sciter-x-host-callback.h"
 #include <dwmapi.h>
@@ -50,6 +51,22 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         return;
     }
 
+    // Set theme class + language (before scripts run)
+    {
+        sciter::dom::element htmlRoot(get_root());
+        // Dark class goes on <body> (CSS targets body.dark), lang goes on <html>
+        sciter::dom::element body = htmlRoot.find_first("body");
+        if (body.is_valid() && SciterHelper::IsWindowsDarkMode()) {
+            body.set_attribute("class", L"dark");
+        }
+        if (GetLanguage() == Language::English) {
+            htmlRoot.set_attribute("lang", L"en");
+            // Re-apply translations: initSubDialog() already ran during load()
+            // when lang was still "vi". Now that lang="en" is set, re-run.
+            call_function("applyTranslations");
+        }
+    }
+
     // Show window
     expand();
 
@@ -88,11 +105,11 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
                      x, y, 0, 0, SWP_NOSIZE);
     }
 
-    // DWM dark mode + rounded corners + blur
+    // Theme-aware DWM mode + rounded corners + blur
     HWND hwnd = get_hwnd();
     if (hwnd) {
-        BOOL darkMode = TRUE;
-        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+        bool dark = SciterHelper::IsWindowsDarkMode();
+        SciterHelper::SetWindowDarkMode(hwnd, dark);
 
         int cornerPreference = DwmConstants::DWMWCP_ROUND;
         DwmSetWindowAttribute(hwnd, DwmConstants::DWMWA_WINDOW_CORNER_PREFERENCE,
@@ -104,10 +121,22 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
     // Subclass for dragging and close
     SetWindowSubclass(get_hwnd(), SubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
-    // Apply background opacity from UIConfig
+    // Apply background opacity from UIConfig (via DOM, not call_function)
     if (config_.applyBackgroundOpacity) {
         auto uiConfig = ConfigManager::LoadUIConfigOrDefault();
-        call_function("setBackgroundOpacity", sciter::value(static_cast<int>(uiConfig.backgroundOpacity)));
+        bool isDark = SciterHelper::IsWindowsDarkMode();
+        double opacity = uiConfig.backgroundOpacity / 100.0;
+        sciter::dom::element rootEl2(get_root());
+        sciter::dom::element mainContainer = rootEl2.find_first("#main-container");
+        if (mainContainer.is_valid()) {
+            wchar_t bgColor[64];
+            if (isDark) {
+                swprintf_s(bgColor, L"rgba(18, 20, 28, %.2f)", opacity * 0.9);
+            } else {
+                swprintf_s(bgColor, L"rgba(255, 255, 255, %.2f)", opacity);
+            }
+            mainContainer.set_style_attribute("background-color", bgColor);
+        }
     }
 }
 
@@ -193,6 +222,41 @@ LRESULT CALLBACK SciterSubDialog::SubclassProc(
     if (msg == WM_DESTROY) {
         RemoveWindowSubclass(hwnd, SubclassProc, 1);
         return 0;
+    }
+
+    // Real-time theme switch (like OpenKey — pure DOM manipulation, no call_function)
+    if (msg == WM_SETTINGCHANGE && lParam) {
+        if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
+            if (s_instance) {
+                bool dark = SciterHelper::IsWindowsDarkMode();
+                SciterHelper::SetWindowDarkMode(hwnd, dark);
+
+                // Toggle body.dark class (get_root() = <html>, need <body>)
+                sciter::dom::element htmlRoot(s_instance->get_root());
+                sciter::dom::element body = htmlRoot.find_first("body");
+                if (body.is_valid()) {
+                    body.set_attribute("class", dark ? L"dark" : L"");
+                }
+
+                // Update container background opacity for new theme
+                if (s_instance->config_.applyBackgroundOpacity) {
+                    auto uiConfig = ConfigManager::LoadUIConfigOrDefault();
+                    double opacity = uiConfig.backgroundOpacity / 100.0;
+                    sciter::dom::element root = s_instance->get_root();
+                    sciter::dom::element container = root.find_first("#main-container");
+                    if (container.is_valid()) {
+                        wchar_t bgColor[64];
+                        if (dark) {
+                            swprintf_s(bgColor, L"rgba(18, 20, 28, %.2f)", opacity * 0.9);
+                        } else {
+                            swprintf_s(bgColor, L"rgba(255, 255, 255, %.2f)", opacity);
+                        }
+                        container.set_style_attribute("background-color", bgColor);
+                    }
+                }
+            }
+        }
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
     // Window dragging via title bar

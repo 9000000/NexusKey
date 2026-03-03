@@ -6,6 +6,9 @@ document.on("ready", function () {
     // "dark" = dark tint, "source-auto" = automatic blur source
     Window.this.blurBehind = "dark source-auto";
 
+    // Apply i18n translations
+    if (typeof applyTranslations === "function") applyTranslations();
+
     initializeToggles();
     initializeAdvancedPanel();
     initializeOpacitySlider();
@@ -83,6 +86,12 @@ function initializeToggles() {
 
             const id = this.id;
             const newState = !isChecked;
+
+            // English UI toggle: switch language immediately in JS
+            if (id === "english-ui") {
+                document.documentElement.setAttribute("lang", newState ? "en" : "vi");
+                applyTranslations();
+            }
 
             // Show-advanced toggle: update container class
             if (id === "show-advanced") {

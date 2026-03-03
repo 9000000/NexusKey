@@ -1,5 +1,5 @@
 /* Convert Tool Dialog - Glass UI for Sciter */
-@import url("../shared/theme.css");
+/* theme.css loaded via HTML <link> (Sciter @import is unreliable) */
 
 * {
     margin: 0;

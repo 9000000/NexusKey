@@ -55,7 +55,8 @@ public:
     [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
     [[nodiscard]] size_t Count() const noexcept override;
-    
+    void ToggleTempSpellOff() override;
+
 private:
     // Processing
     bool ProcessModifier(wchar_t c);
@@ -76,6 +77,7 @@ private:
     std::wstring rawInput_;
     TypingConfig config_;
     bool spellCheckDisabled_ = false;
+    bool tempSpellOff_ = false;       // true when user toggled temp spell bypass via Ctrl
 };
 
 }  // namespace Vni

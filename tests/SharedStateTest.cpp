@@ -30,7 +30,7 @@ TEST_F(SharedStateTest, InitDefaults_SetsDefaultValues) {
     EXPECT_EQ(state.inputMethod, 0);  // Telex
     EXPECT_EQ(state.spellCheck, 0);
     EXPECT_EQ(state.optimizeLevel, 0);
-    EXPECT_EQ(state.featureFlags, FeatureFlags::ALLOW_ZWJF);  // Default: tone keys enabled
+    EXPECT_EQ(state.GetFeatureFlags(), FeatureFlags::ALLOW_ZWJF);  // Default: tone keys enabled
 }
 
 TEST_F(SharedStateTest, InitDefaults_SetsVersioning) {

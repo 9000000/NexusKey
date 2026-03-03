@@ -33,6 +33,8 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/VietnameseTables.h
     src/core/engine/SpellChecker.cpp
     src/core/engine/SpellChecker.h
+    src/core/engine/CodeTableConverter.cpp
+    src/core/engine/CodeTableConverter.h
 )
 
 add_library(NextKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
@@ -40,6 +42,8 @@ add_library(NextKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
 # Core Library (platform layer: SharedState, Config, Debug)
 set(NEXTKEY_CORE_SOURCES
     src/core/Debug.h
+    src/core/Strings.h
+    src/core/Strings.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
 )
@@ -104,6 +108,16 @@ add_executable(NextKeyApp WIN32
     src/app/SettingsDialog.cpp
     src/app/ExcludedAppsDialog.h
     src/app/ExcludedAppsDialog.cpp
+    src/app/MacroTableDialog.h
+    src/app/MacroTableDialog.cpp
+    src/app/ConvertToolDialog.h
+    src/app/ConvertToolDialog.cpp
+    src/app/AboutDialog.h
+    src/app/AboutDialog.cpp
+    src/app/QuickConvert.h
+    src/app/QuickConvert.cpp
+    src/app/ToastPopup.h
+    src/app/ToastPopup.cpp
     src/app/SciterSubDialog.h
     src/app/SciterSubDialog.cpp
     src/app/SubDialogConfig.h
@@ -115,10 +129,15 @@ add_executable(NextKeyApp WIN32
     src/app/HookEngine.cpp
     src/app/HotkeyManager.h
     src/app/HotkeyManager.cpp
+    src/app/UpdateChecker.h
+    src/app/UpdateChecker.cpp
+    src/app/UpdateInstaller.h
+    src/app/UpdateInstaller.cpp
     src/app/helpers/SciterHelper.h
     src/app/helpers/SciterHelper.cpp
     src/app/resource.h
     src/app/NexusKey.rc
+    src/core/Version.h
     extern/sciter/include/sciter-main.cpp
 )
 target_include_directories(NextKeyApp PRIVATE 
@@ -131,7 +150,7 @@ set_target_properties(NextKeyApp PROPERTIES OUTPUT_NAME "NexusKey")
 # Link Windows libraries
 if(WIN32)
     target_link_libraries(NextKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid shell32)
-    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid)
+    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32)
 
     # Copy sciter.dll to output directory
     add_custom_command(TARGET NextKeyApp POST_BUILD
@@ -177,7 +196,20 @@ if(PACKFOLDER_AVAILABLE)
                 ${UI_SOURCE_DIR}/excludedapps/excludedapps.html
                 ${UI_SOURCE_DIR}/excludedapps/excludedapps.css
                 ${UI_SOURCE_DIR}/excludedapps/excludedapps.js
+                ${UI_SOURCE_DIR}/macro/macro.html
+                ${UI_SOURCE_DIR}/macro/macro.css
+                ${UI_SOURCE_DIR}/macro/macro.js
+                ${UI_SOURCE_DIR}/appoverrides/appoverrides.html
+                ${UI_SOURCE_DIR}/appoverrides/appoverrides.css
+                ${UI_SOURCE_DIR}/appoverrides/appoverrides.js
+                ${UI_SOURCE_DIR}/convert-tool/convert-tool.html
+                ${UI_SOURCE_DIR}/convert-tool/convert-tool.css
+                ${UI_SOURCE_DIR}/convert-tool/convert-tool.js
+                ${UI_SOURCE_DIR}/about/about.html
+                ${UI_SOURCE_DIR}/about/about.css
                 ${UI_SOURCE_DIR}/shared/utils.js
+                ${UI_SOURCE_DIR}/shared/strings.js
+                ${UI_SOURCE_DIR}/shared/i18n.js
                 ${UI_SOURCE_DIR}/shared/theme.css
                 ${UI_SOURCE_DIR}/shared/dropdown.css
         COMMENT "Packing UI resources into resources.cpp"
@@ -225,6 +257,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/SharedStateTest.cpp
     tests/FeatureOptionsTest.cpp
     tests/SpellCheckerTest.cpp
+    tests/CodeTableConverterTest.cpp
 )
 
 # Windows-only tests (require ConfigManager, ConfigEvent)

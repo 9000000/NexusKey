@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookEngine.h"
+#include "core/engine/CodeTableConverter.h"
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
 #include "core/ipc/SharedStateManager.h"
@@ -77,6 +78,14 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     smartSwitch_ = config.smartSwitch;
     excludeApps_ = config.excludeApps;
     autoCaps_ = config.autoCaps;
+    tempOffSpellByCtrl_ = config.tempOffSpellByCtrl;
+    tempOffByAlt_ = config.tempOffByAlt;
+    macroEnabled_ = config.macroEnabled;
+    macroInEnglish_ = config.macroInEnglish;
+    tempOffMacroByEsc_ = config.tempOffMacroByEsc;
+    if (macroEnabled_) {
+        macroTable_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
+    }
     autoCapState_ = 0;
     engine_ = EngineFactory::Create(config);
 
@@ -87,6 +96,13 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
         if (smartSwitchMgr_.Create()) {
             smartSwitchMgr_.LoadFromMap(appModeMap_);
         }
+    }
+
+    // Load per-app code table data
+    rememberCodeTable_ = config.rememberCodeTable;
+    currentCodeTable_ = config.codeTable;
+    if (rememberCodeTable_) {
+        appCodeTableMap_ = ConfigManager::LoadPerAppCodeTable(ConfigManager::GetConfigPath());
     }
 
     // Load excluded apps list
@@ -136,6 +152,10 @@ void HookEngine::Stop() {
     // Persist smart switch data to disk on exit
     if (smartSwitch_ && !appModeMap_.empty()) {
         (void)ConfigManager::SaveSmartSwitchData(ConfigManager::GetConfigPath(), appModeMap_);
+    }
+    // Persist per-app code table data
+    if (rememberCodeTable_ && !appCodeTableMap_.empty()) {
+        (void)ConfigManager::SavePerAppCodeTable(ConfigManager::GetConfigPath(), appCodeTableMap_);
     }
     if (keyboardHook_) {
         UnhookWindowsHookEx(keyboardHook_);
@@ -189,6 +209,46 @@ void HookEngine::ToggleVietnameseMode() {
     }
 }
 
+void HookEngine::SetCodeTable(CodeTable ct) {
+    // Commit any pending composition before switching
+    if (ct != currentCodeTable_ && engine_->Count() > 0) {
+        CommitComposition();
+    }
+
+    currentCodeTable_ = ct;
+
+    // Always update per-app map — the map is authoritative when rememberCodeTable_ is on.
+    // Use the target app: when called from the tray menu, currentExe_ may point to
+    // explorer.exe (shell gets focus on tray click). Fall back to previousExe_ which
+    // is the app the user was actually working in.
+    if (rememberCodeTable_) {
+        const std::wstring& targetExe = !previousExe_.empty() ? previousExe_ : currentExe_;
+        if (!targetExe.empty()) {
+            appCodeTableMap_[targetExe] = static_cast<uint8_t>(ct);
+            HOOK_LOG(L"  SetCodeTable: %d for '%s'", static_cast<int>(ct), targetExe.c_str());
+            // Persist immediately so the change survives restart
+            (void)ConfigManager::SavePerAppCodeTable(
+                ConfigManager::GetConfigPath(), appCodeTableMap_);
+        }
+    }
+}
+
+CodeTable HookEngine::GetCodeTable() const noexcept {
+    // When per-app code table is enabled, the map is authoritative.
+    // Prefer previousExe_ — when the user right-clicks the tray, currentExe_ changes
+    // to explorer.exe (shell), but previousExe_ is the app they were actually using.
+    if (rememberCodeTable_) {
+        auto lookup = [&](const std::wstring& exe) -> const uint8_t* {
+            if (exe.empty()) return nullptr;
+            auto it = appCodeTableMap_.find(exe);
+            return it != appCodeTableMap_.end() ? &it->second : nullptr;
+        };
+        if (auto* v = lookup(previousExe_)) return static_cast<CodeTable>(*v);
+        if (auto* v = lookup(currentExe_)) return static_cast<CodeTable>(*v);
+    }
+    return currentCodeTable_;
+}
+
 bool HookEngine::CheckConfigEvent() {
     if (!configEvent_.IsValid()) {
         configEvent_.Initialize();
@@ -211,9 +271,9 @@ bool HookEngine::CheckConfigEvent() {
         if (state.IsValid()) {
             config.inputMethod = static_cast<InputMethod>(state.inputMethod);
             config.spellCheckEnabled = state.spellCheck != 0;
-            DecodeFeatureFlags(state.featureFlags, config);
-            NEXTKEY_LOG(L"HookEngine: read SharedState (epoch=%u, featureFlags=0x%02X)",
-                        state.epoch, state.featureFlags);
+            DecodeFeatureFlags(state.GetFeatureFlags(), config);
+            NEXTKEY_LOG(L"HookEngine: read SharedState (epoch=%u, featureFlags=0x%04X)",
+                        state.epoch, state.GetFeatureFlags());
         }
     }
 
@@ -230,6 +290,25 @@ bool HookEngine::CheckConfigEvent() {
     smartSwitch_ = config.smartSwitch;
     excludeApps_ = config.excludeApps;
     autoCaps_ = config.autoCaps;
+    tempOffSpellByCtrl_ = config.tempOffSpellByCtrl;
+    tempOffByAlt_ = config.tempOffByAlt;
+    macroEnabled_ = config.macroEnabled;
+    macroInEnglish_ = config.macroInEnglish;
+    tempOffMacroByEsc_ = config.tempOffMacroByEsc;
+    if (macroEnabled_) {
+        macroTable_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
+    } else {
+        macroTable_.clear();
+    }
+
+    // Update per-app code table: explicit change in Settings applies globally
+    rememberCodeTable_ = config.rememberCodeTable;
+    if (config.codeTable != currentCodeTable_) {
+        // User explicitly changed code table — clear all per-app overrides
+        // so every app uses the new setting going forward
+        appCodeTableMap_.clear();
+    }
+    currentCodeTable_ = config.codeTable;
 
     // Reload excluded apps list
     if (excludeApps_) {
@@ -254,6 +333,17 @@ bool HookEngine::CheckConfigEvent() {
                 hotkeyVk_ = LOBYTE(vkResult);
             }
         }
+    }
+
+    // Reload convert hotkey config
+    auto convertConfigOpt = ConfigManager::LoadConvertConfig(ConfigManager::GetConfigPath());
+    if (convertConfigOpt) {
+        SetConvertHotkey(convertConfigOpt->hotkey);
+    }
+
+    // Notify main process to update QuickConvert config etc.
+    if (configReloadCallback_) {
+        configReloadCallback_();
     }
 
     return true;
@@ -312,6 +402,10 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, D
     }
 }
 
+// Forward declarations for file-scope helpers used in ProcessKeyDown
+static bool UsePostMessage(HWND hwnd);
+static HWND GetInputTarget();
+
 // ═══════════════════════════════════════════════════════════
 // Core Processing
 // ═══════════════════════════════════════════════════════════
@@ -338,10 +432,69 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return true;  // Eat the hotkey
     }
 
+    // 2b. Check convert hotkey (modifier+key variant)
+    if (convertHotkeyVk_ != 0 && vkCode == convertHotkeyVk_ && CheckConvertHotkeyMatch()) {
+        HOOK_LOG(L"  CONVERT HOTKEY match (modifier+key): vk=0x%02X", vkCode);
+        if (engine_->Count() > 0) {
+            CommitComposition();
+        }
+        if (convertCallback_) {
+            convertCallback_();
+        }
+        return true;  // Eat the hotkey
+    }
+
     // Non-modifier key pressed — invalidate modifier-only hotkey combo
     otherKeyPressed_ = true;
+    altTapCount_ = 0;  // Break double-Alt tap chain
 
-    // 3. Auto-caps state machine (runs even in English mode for tracking)
+    // 3. English mode fast path — skip Vietnamese-only processing
+    if (!vietnameseMode_) {
+        if (macroEnabled_ && macroInEnglish_) {
+            // Track macro keys and handle expansion in English mode
+            if (vkCode >= 0x41 && vkCode <= 0x5A) {
+                bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                rawMacroBuffer_ += shift ? static_cast<wchar_t>(vkCode)
+                                         : towlower(static_cast<wchar_t>(vkCode));
+            } else if (tempOffMacroByEsc_ && vkCode == VK_ESCAPE && rawMacroBuffer_.empty()) {
+                tempMacroOff_ = true;
+                return false;
+            } else if (IsCommitTrigger(vkCode) && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
+                std::wstring lowerKey = rawMacroBuffer_;
+                for (auto& c : lowerKey) c = towlower(c);
+                auto it = macroTable_.find(lowerKey);
+                if (it != macroTable_.end()) {
+                    SendBackspaces(rawMacroBuffer_.size());
+                    std::wstring expansion = it->second;
+                    if (autoCaps_ && !rawMacroBuffer_.empty()) {
+                        bool allUpper = true, firstUpper = iswupper(rawMacroBuffer_[0]);
+                        for (auto c : rawMacroBuffer_) {
+                            if (!iswupper(c)) { allUpper = false; break; }
+                        }
+                        if (allUpper && rawMacroBuffer_.size() > 1) {
+                            for (auto& c : expansion) c = towupper(c);
+                        } else if (firstUpper && !expansion.empty()) {
+                            expansion[0] = towupper(expansion[0]);
+                        }
+                    }
+                    HWND target = GetInputTarget();
+                    bool usePost = target && UsePostMessage(target);
+                    SendCharEvents(target, expansion, usePost);
+                    rawMacroBuffer_.clear();
+                    return false;
+                }
+            } else if (vkCode == VK_BACK && !rawMacroBuffer_.empty()) {
+                rawMacroBuffer_.pop_back();
+            } else if (!(vkCode >= 0x41 && vkCode <= 0x5A)) {
+                rawMacroBuffer_.clear();
+                tempMacroOff_ = false;
+            }
+        }
+        HOOK_LOG(L"  skip: Vietnamese mode OFF");
+        return false;
+    }
+
+    // 3a. Auto-caps state machine (Vietnamese mode only)
     if (autoCaps_) {
         bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         // '.', '?', '!'
@@ -358,10 +511,77 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
     }
 
-    // 4. Skip if Vietnamese mode is off
-    if (!vietnameseMode_) {
-        HOOK_LOG(L"  skip: Vietnamese mode OFF");
-        return false;
+    // 3b. Macro: track raw alpha keys
+    if (macroEnabled_ && vkCode >= 0x41 && vkCode <= 0x5A) {
+        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        rawMacroBuffer_ += shift ? static_cast<wchar_t>(vkCode)
+                                 : towlower(static_cast<wchar_t>(vkCode));
+    }
+
+    // 3c. Temp off macro by Esc: press Esc with no pending text → skip macro for next word
+    if (tempOffMacroByEsc_ && macroEnabled_ && vkCode == VK_ESCAPE
+        && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
+        tempMacroOff_ = true;
+        HOOK_LOG(L"  tempMacroOff: enabled by Esc");
+        return false;  // Let Esc pass through
+    }
+
+    // 3d. Macro expansion on commit trigger
+    if (macroEnabled_ && !tempMacroOff_ && IsCommitTrigger(vkCode) && !rawMacroBuffer_.empty()) {
+        // Lookup with lowercase key (macros are stored lowercase)
+        std::wstring lowerKey = rawMacroBuffer_;
+        for (auto& c : lowerKey) c = towlower(c);
+        auto it = macroTable_.find(lowerKey);
+        if (it != macroTable_.end()) {
+            size_t bsCount;
+            if (!previousComposition_.empty()) {
+                if (currentCodeTable_ != CodeTable::Unicode) {
+                    bsCount = 0;
+                    for (auto w : previousEncodedWidths_) bsCount += w;
+                } else {
+                    bsCount = previousComposition_.size();
+                }
+            } else {
+                bsCount = rawMacroBuffer_.size();
+            }
+            SendBackspaces(bsCount);
+
+            // Auto-capitalize expansion to match typed case pattern
+            std::wstring expansion = it->second;
+            if (autoCaps_ && !rawMacroBuffer_.empty()) {
+                bool allUpper = true, firstUpper = iswupper(rawMacroBuffer_[0]);
+                for (auto c : rawMacroBuffer_) {
+                    if (!iswupper(c)) { allUpper = false; break; }
+                }
+                if (allUpper && rawMacroBuffer_.size() > 1) {
+                    for (auto& c : expansion) c = towupper(c);
+                } else if (firstUpper && !expansion.empty()) {
+                    expansion[0] = towupper(expansion[0]);
+                }
+            }
+
+            HWND target = GetInputTarget();
+            bool usePost = target && UsePostMessage(target);
+            SendCharEvents(target, expansion, usePost);
+            engine_->Reset();
+            previousComposition_.clear();
+            previousEncodedWidths_.clear();
+            rawMacroBuffer_.clear();
+            return false;  // Let trigger key pass through
+        }
+    }
+
+    // 4b. Temp-off bypass: Vietnamese mode is ON but temporarily disabled for current word
+    if (tempEngineOff_) {
+        if (IsCommitTrigger(vkCode)) {
+            tempEngineOff_ = false;
+            HOOK_LOG(L"  tempEngineOff: reset on commit trigger vk=0x%02X", vkCode);
+        } else if (vkCode == VK_BACK && engine_->Count() == 0) {
+            tempEngineOff_ = false;
+            HOOK_LOG(L"  tempEngineOff: reset on backspace (engine empty)");
+        }
+        HOOK_LOG(L"  skip: tempEngineOff_ active=%d", tempEngineOff_ ? 1 : 0);
+        return false;  // Pass through as English
     }
 
     // 5. Skip if Ctrl/Alt/Win is down (allow shortcuts to pass through)
@@ -371,9 +591,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 
     if (ctrl || alt || win) {
         HOOK_LOG(L"  skip: modifier held (ctrl=%d alt=%d win=%d)", ctrl, alt, win);
-        // Commit pending composition before letting shortcut through
+        // Reset (don't auto-restore) — shortcuts like Ctrl+A/C/Z change text state
+        // in unpredictable ways; sending replacement backspaces would interfere.
         if (engine_->Count() > 0) {
-            CommitComposition();
+            ResetComposition();
         }
         return false;
     }
@@ -385,8 +606,23 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return true;  // Eat the original keystroke
     }
 
+    // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư)
+    if (currentMethod_ == InputMethod::Telex &&
+        (vkCode == VK_OEM_4 || vkCode == VK_OEM_6)) {
+        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        if (!shift) {
+            wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
+            engine_->PushChar(ch);
+            std::wstring composition = engine_->Peek();
+            HOOK_LOG(L"  bracket '%c' → Peek()='%s'", ch, composition.c_str());
+            ReplaceComposition(composition);
+            return true;  // Eat the original keystroke
+        }
+    }
+
     // 7. Backspace → engine backspace if we have content
     if (vkCode == VK_BACK && engine_->Count() > 0) {
+        if (macroEnabled_ && !rawMacroBuffer_.empty()) rawMacroBuffer_.pop_back();
         HOOK_LOG(L"  backspace (engine count=%zu)", engine_->Count());
         HandleBackspace();
         return true;  // Eat backspace
@@ -395,14 +631,25 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 8. Commit triggers: space, enter, tab, punctuation, numbers, escape, arrows
     if (IsCommitTrigger(vkCode) && engine_->Count() > 0) {
         HOOK_LOG(L"  commit trigger vk=0x%02X", vkCode);
-        CommitComposition();
-        return false;  // Let the trigger key pass through
+        bool restored = CommitComposition();
+        if (restored) {
+            // Auto-restore changed text — re-inject trigger key after replacement
+            // to guarantee correct ordering (replacement before trigger)
+            HOOK_LOG(L"  re-inject trigger vk=0x%02X after auto-restore", vkCode);
+            InjectKey(vkCode);
+            return true;  // Eat original trigger
+        }
+        return false;  // Normal commit, let trigger pass through
     }
 
     // 9. Any other key with pending composition → commit and pass through
     if (engine_->Count() > 0) {
         HOOK_LOG(L"  other key vk=0x%02X with pending composition → commit", vkCode);
-        CommitComposition();
+        bool restored = CommitComposition();
+        if (restored) {
+            InjectKey(vkCode);
+            return true;
+        }
     }
 
     return false;
@@ -424,6 +671,46 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             }
             ToggleVietnameseMode();
         }
+
+        // Modifier-only convert hotkey
+        if (convertHotkeyVk_ == 0 && !otherKeyPressed_ && CheckConvertHotkeyMatch()) {
+            HOOK_LOG(L"  CONVERT HOTKEY match (modifier-only release): vk=0x%02X", vkCode);
+            if (engine_->Count() > 0) {
+                CommitComposition();
+            }
+            if (convertCallback_) {
+                convertCallback_();
+            }
+        }
+
+        // Temp off spell check: solo Ctrl tap (press + release, no other key)
+        if (tempOffSpellByCtrl_ &&
+            (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL) &&
+            !otherKeyPressed_ && !modShiftDown_ && !modAltDown_ && !modWinDown_) {
+            engine_->ToggleTempSpellOff();
+            HOOK_LOG(L"  temp off spell check toggled");
+        }
+
+        // Double-Alt tap: temporarily disable Vietnamese for current word
+        if (tempOffByAlt_ &&
+            (vkCode == VK_LMENU || vkCode == VK_RMENU) &&
+            !otherKeyPressed_ && !modCtrlDown_ && !modShiftDown_ && !modWinDown_) {
+            DWORD now = GetTickCount();
+            if (altTapCount_ == 1 && (now - lastAltReleaseTime_) < DOUBLE_ALT_TIMEOUT_MS) {
+                if (engine_->Count() > 0) {
+                    CommitComposition();
+                }
+                tempEngineOff_ = !tempEngineOff_;
+                altTapCount_ = 0;
+                HOOK_LOG(L"  DOUBLE-ALT: tempEngineOff_ = %d", tempEngineOff_ ? 1 : 0);
+            } else {
+                altTapCount_ = 1;
+                lastAltReleaseTime_ = now;
+            }
+        } else if (vkCode == VK_LMENU || vkCode == VK_RMENU) {
+            altTapCount_ = 0;  // Contaminated Alt release
+        }
+
         TrackModifier(vkCode, false);
     }
 
@@ -464,17 +751,37 @@ void HookEngine::HandleBackspace() {
     } else {
         // Engine empty — delete all displayed characters
         if (!previousComposition_.empty()) {
-            SendBackspaces(previousComposition_.size());
+            size_t bsCount = previousComposition_.size();
+            if (currentCodeTable_ != CodeTable::Unicode) {
+                bsCount = 0;
+                for (auto w : previousEncodedWidths_) bsCount += w;
+            }
+            SendBackspaces(bsCount);
             previousComposition_.clear();
+            previousEncodedWidths_.clear();
         }
     }
 }
 
-void HookEngine::CommitComposition() {
+bool HookEngine::CommitComposition() {
     HOOK_LOG(L"  CommitComposition (count=%zu, prev='%s')", engine_->Count(), previousComposition_.c_str());
-    (void)engine_->Commit();
+    std::wstring committed = engine_->Commit();
+
+    bool restored = false;
+    // Auto-restore: if Commit() returned different text than what's on screen,
+    // replace the displayed text (e.g., "gôgle" → "google")
+    if (!previousComposition_.empty() && committed != previousComposition_) {
+        HOOK_LOG(L"  AutoRestore: '%s' → '%s'", previousComposition_.c_str(), committed.c_str());
+        ReplaceComposition(committed);
+        restored = true;
+    }
+
     engine_->Reset();
     previousComposition_.clear();
+    previousEncodedWidths_.clear();
+    rawMacroBuffer_.clear();
+    tempMacroOff_ = false;
+    return restored;
 }
 
 void HookEngine::ResetComposition() {
@@ -483,6 +790,9 @@ void HookEngine::ResetComposition() {
         engine_->Reset();
     }
     previousComposition_.clear();
+    previousEncodedWidths_.clear();
+    rawMacroBuffer_.clear();
+    tempMacroOff_ = false;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -604,6 +914,52 @@ bool HookEngine::IsBrowserLike(HWND hwnd) {
     return result;
 }
 
+bool HookEngine::IsQtElectronApp(HWND hwnd) {
+    HWND root = GetAncestor(hwnd, GA_ROOT);
+    if (root) hwnd = root;
+
+    wchar_t className[64] = {};
+    GetClassNameW(hwnd, className, 64);
+
+    // Qt apps: Qt5QWindowIcon, Qt6QWindowIcon, QWidget, etc.
+    if (wcsstr(className, L"Qt5") || wcsstr(className, L"Qt6") ||
+        wcsstr(className, L"QWidget")) {
+        return true;
+    }
+
+    // Electron apps use Chrome_WidgetWin but are NOT actual browsers
+    if (wcsstr(className, L"Chrome_WidgetWin")) {
+        // Exclude real browsers — they NEED U+202F for autocomplete fix
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (!pid) return false;
+
+        HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!hProc) return false;
+
+        wchar_t exePath[MAX_PATH] = {};
+        DWORD size = MAX_PATH;
+        bool isElectron = true;  // Assume Electron unless proven browser
+        if (QueryFullProcessImageNameW(hProc, 0, exePath, &size)) {
+            const wchar_t* filename = wcsrchr(exePath, L'\\');
+            filename = filename ? filename + 1 : exePath;
+
+            if (_wcsnicmp(filename, L"chrome", 6) == 0 ||
+                _wcsnicmp(filename, L"msedge", 6) == 0 ||
+                _wcsnicmp(filename, L"firefox", 7) == 0 ||
+                _wcsnicmp(filename, L"brave", 5) == 0 ||
+                _wcsnicmp(filename, L"opera", 5) == 0 ||
+                _wcsnicmp(filename, L"vivaldi", 7) == 0) {
+                isElectron = false;
+            }
+        }
+        CloseHandle(hProc);
+        return isElectron;
+    }
+
+    return false;
+}
+
 std::wstring HookEngine::GetForegroundExeName() {
     HWND fg = GetForegroundWindow();
     if (!fg) return {};
@@ -630,10 +986,15 @@ std::wstring HookEngine::GetForegroundExeName() {
 
 void HookEngine::OnFocusChanged() {
     ResetComposition();
+    tempEngineOff_ = false;
     CheckConfigEvent();
 
-    // Skip focus tracking entirely if neither feature needs it
-    if (!smartSwitch_ && !excludeApps_) return;
+    // Detect Qt/Electron apps — skip U+202F to avoid first-word delay
+    HWND fg = GetForegroundWindow();
+    skipEmptyChar_ = fg && IsQtElectronApp(fg);
+
+    // Skip focus tracking entirely if no feature needs it
+    if (!smartSwitch_ && !excludeApps_ && !rememberCodeTable_) return;
 
     bool wasExcluded = isExcludedApp_;
 
@@ -643,7 +1004,15 @@ void HookEngine::OnFocusChanged() {
         smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
     }
 
-    // Get new app
+    // Save previous app's code table
+    if (rememberCodeTable_ && !currentExe_.empty() && !wasExcluded) {
+        appCodeTableMap_[currentExe_] = static_cast<uint8_t>(currentCodeTable_);
+    }
+
+    // Get new app (save previous for tray menu context)
+    if (!currentExe_.empty()) {
+        previousExe_ = currentExe_;
+    }
     currentExe_ = GetForegroundExeName();
     if (currentExe_.empty()) return;
 
@@ -666,7 +1035,23 @@ void HookEngine::OnFocusChanged() {
                 modeChangeCallback_(false);
             }
         }
-        return;  // Skip smart switch restore for excluded apps
+        return;  // Skip smart switch restore and code table restore for excluded apps
+    }
+
+    // Restore code table for new app
+    if (rememberCodeTable_) {
+        auto it = appCodeTableMap_.find(currentExe_);
+        if (it != appCodeTableMap_.end()) {
+            auto restored = static_cast<CodeTable>(it->second);
+            if (restored != currentCodeTable_) {
+                currentCodeTable_ = restored;
+                HOOK_LOG(L"  RememberCode: restored codeTable=%d for '%s'",
+                         static_cast<int>(currentCodeTable_), currentExe_.c_str());
+            }
+        } else {
+            // First time seeing this app — record current code table
+            appCodeTableMap_[currentExe_] = static_cast<uint8_t>(currentCodeTable_);
+        }
     }
 
     // Smart switch: restore mode for new app
@@ -711,13 +1096,112 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
 
     bool usePost = UsePostMessage(target);
 
-    // Find common prefix — only replace what actually changed
+    // Find common prefix at Unicode level — only replace what actually changed
     size_t commonLen = 0;
     size_t minLen = (std::min)(previousComposition_.size(), newText.size());
     while (commonLen < minLen && previousComposition_[commonLen] == newText[commonLen]) {
         commonLen++;
     }
 
+    // ── Non-Unicode code table path ──
+    if (currentCodeTable_ != CodeTable::Unicode) {
+        // Calculate backspace count from encoded widths of chars being replaced
+        size_t backspaceCount = 0;
+        for (size_t i = commonLen; i < previousEncodedWidths_.size(); ++i) {
+            backspaceCount += previousEncodedWidths_[i];
+        }
+
+        // Convert new chars to encoded form
+        std::wstring encodedToSend;
+        std::vector<uint8_t> newWidths;
+        for (size_t i = commonLen; i < newText.size(); ++i) {
+            auto enc = CodeTableConverter::ConvertChar(newText[i], currentCodeTable_);
+            encodedToSend += enc.units[0];
+            if (enc.count == 2) encodedToSend += enc.units[1];
+            newWidths.push_back(enc.count);
+        }
+
+        HOOK_LOG(L"  ReplaceComposition[encoded]: prev='%s' new='%s' common=%zu BS=%zu encodedLen=%zu method=%s",
+                 previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
+                 encodedToSend.size(), usePost ? L"PostMessage" : L"SendInput");
+
+        if (usePost) {
+            if (backspaceCount > 0) {
+                SendBackspaceEvents(target, backspaceCount, true);
+            }
+            if (!encodedToSend.empty()) {
+                SendCharEvents(target, encodedToSend, true);
+            }
+        } else {
+            bool needEmpty = (backspaceCount > 0 && !skipEmptyChar_);
+            size_t bsTotal = backspaceCount + (needEmpty ? 1 : 0);  // +1 for U+202F
+
+            size_t totalEvents = (needEmpty ? 2 : 0) + bsTotal * 2 + encodedToSend.size() * 2;
+            if (totalEvents == 0) {
+                previousComposition_ = newText;
+                return;
+            }
+
+            std::vector<INPUT> events(totalEvents);
+            size_t idx = 0;
+            WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
+
+            // 1. U+202F word-boundary breaker
+            if (needEmpty) {
+                events[idx].type = INPUT_KEYBOARD;
+                events[idx].ki.wScan = 0x202F;
+                events[idx].ki.dwFlags = KEYEVENTF_UNICODE;
+                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+                idx++;
+                events[idx].type = INPUT_KEYBOARD;
+                events[idx].ki.wScan = 0x202F;
+                events[idx].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+                idx++;
+            }
+
+            // 2. Backspaces
+            for (size_t i = 0; i < bsTotal; ++i) {
+                events[idx].type = INPUT_KEYBOARD;
+                events[idx].ki.wVk = VK_BACK;
+                events[idx].ki.wScan = bsScan;
+                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+                idx++;
+                events[idx].type = INPUT_KEYBOARD;
+                events[idx].ki.wVk = VK_BACK;
+                events[idx].ki.wScan = bsScan;
+                events[idx].ki.dwFlags = KEYEVENTF_KEYUP;
+                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+                idx++;
+            }
+
+            // 3. Encoded characters
+            for (wchar_t ch : encodedToSend) {
+                events[idx].type = INPUT_KEYBOARD;
+                events[idx].ki.wScan = ch;
+                events[idx].ki.dwFlags = KEYEVENTF_UNICODE;
+                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+                idx++;
+                events[idx].type = INPUT_KEYBOARD;
+                events[idx].ki.wScan = ch;
+                events[idx].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+                idx++;
+            }
+
+            sending_ = true;
+            SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
+            sending_ = false;
+        }
+
+        // Update widths: keep [0..commonLen), append newWidths
+        previousEncodedWidths_.resize(commonLen);
+        previousEncodedWidths_.insert(previousEncodedWidths_.end(), newWidths.begin(), newWidths.end());
+        previousComposition_ = newText;
+        return;
+    }
+
+    // ── Unicode path (fast path, zero overhead) ──
     size_t backspaceCount = previousComposition_.size() - commonLen;
     std::wstring toSend = newText.substr(commonLen);
 
@@ -735,7 +1219,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
         }
     } else {
         // SendInput path: batch everything into ONE SendInput call for atomicity + speed
-        bool needEmpty = (backspaceCount > 0);
+        bool needEmpty = (backspaceCount > 0 && !skipEmptyChar_);
         if (needEmpty) backspaceCount++;  // +1 to also delete the U+202F
 
         size_t totalEvents = (needEmpty ? 2 : 0) + backspaceCount * 2 + toSend.size() * 2;
@@ -855,9 +1339,57 @@ bool HookEngine::CheckHotkeyMatch() const {
     return true;
 }
 
+bool HookEngine::CheckConvertHotkeyMatch() const {
+    // No convert hotkey configured
+    if (!convertHotkeyConfig_.ctrl && !convertHotkeyConfig_.shift &&
+        !convertHotkeyConfig_.alt && !convertHotkeyConfig_.win && convertHotkeyConfig_.key == 0) {
+        return false;
+    }
+
+    bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
+
+    if (convertHotkeyConfig_.ctrl != ctrl) return false;
+    if (convertHotkeyConfig_.alt != alt) return false;
+    if (convertHotkeyConfig_.shift != shift) return false;
+    if (convertHotkeyConfig_.win != win) return false;
+
+    return true;
+}
+
+void HookEngine::SetConvertHotkey(const HotkeyConfig& hotkey) {
+    convertHotkeyConfig_ = hotkey;
+    convertHotkeyVk_ = 0;
+    if (convertHotkeyConfig_.key != 0) {
+        SHORT vkResult = VkKeyScanW(convertHotkeyConfig_.key);
+        if (vkResult != -1) {
+            convertHotkeyVk_ = LOBYTE(vkResult);
+        }
+    }
+}
+
 // ═══════════════════════════════════════════════════════════
 // Commit Trigger Check
 // ═══════════════════════════════════════════════════════════
+
+void HookEngine::InjectKey(DWORD vkCode) {
+    WORD scan = static_cast<WORD>(MapVirtualKeyW(vkCode, MAPVK_VK_TO_VSC));
+    INPUT inputs[2] = {};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = static_cast<WORD>(vkCode);
+    inputs[0].ki.wScan = scan;
+    inputs[0].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+    inputs[1].type = INPUT_KEYBOARD;
+    inputs[1].ki.wVk = static_cast<WORD>(vkCode);
+    inputs[1].ki.wScan = scan;
+    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[1].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+    sending_ = true;
+    SendInput(2, inputs, sizeof(INPUT));
+    sending_ = false;
+}
 
 bool HookEngine::IsCommitTrigger(DWORD vkCode) {
     // Space, Enter, Escape

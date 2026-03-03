@@ -7,8 +7,68 @@
 
 #pragma comment(lib, "dwmapi.lib")
 
+// Undocumented uxtheme.dll APIs for dark mode support
+enum class PreferredAppMode { Default = 0, AllowDark = 1, ForceDark = 2, ForceLight = 3 };
+using fnSetPreferredAppMode = PreferredAppMode(WINAPI*)(PreferredAppMode);
+using fnAllowDarkModeForWindow = bool(WINAPI*)(HWND, bool);
+using fnRefreshImmersiveColorPolicyState = void(WINAPI*)();
+
 namespace NextKey {
 namespace SciterHelper {
+
+bool IsWindowsDarkMode() noexcept {
+    HKEY hKey;
+    DWORD value = 1;  // Default: light mode (safe fallback)
+    DWORD size = sizeof(value);
+
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        RegQueryValueExW(hKey, L"AppsUseLightTheme", nullptr, nullptr,
+                         reinterpret_cast<LPBYTE>(&value), &size);
+        RegCloseKey(hKey);
+    }
+
+    return value == 0;
+}
+
+void ApplyDarkModeForApp() noexcept {
+    HMODULE hUxTheme = LoadLibraryW(L"uxtheme.dll");
+    if (!hUxTheme) return;
+
+    // Ordinal 135: SetPreferredAppMode (Windows 1903+)
+    auto setMode = reinterpret_cast<fnSetPreferredAppMode>(
+        GetProcAddress(hUxTheme, MAKEINTRESOURCEA(135)));
+
+    // Ordinal 104: RefreshImmersiveColorPolicyState
+    auto refresh = reinterpret_cast<fnRefreshImmersiveColorPolicyState>(
+        GetProcAddress(hUxTheme, MAKEINTRESOURCEA(104)));
+
+    if (setMode) {
+        setMode(PreferredAppMode::AllowDark);
+    }
+    if (refresh) {
+        refresh();
+    }
+}
+
+void SetWindowDarkMode(HWND hwnd, bool dark) noexcept {
+    if (!hwnd) return;
+
+    // DWM dark title bar
+    BOOL darkMode = dark ? TRUE : FALSE;
+    DwmSetWindowAttribute(hwnd, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &darkMode, sizeof(darkMode));
+
+    // uxtheme per-window dark mode (for context menus, scrollbars)
+    HMODULE hUxTheme = GetModuleHandleW(L"uxtheme.dll");
+    if (hUxTheme) {
+        auto allowDark = reinterpret_cast<fnAllowDarkModeForWindow>(
+            GetProcAddress(hUxTheme, MAKEINTRESOURCEA(133)));
+        if (allowDark) {
+            allowDark(hwnd, dark);
+        }
+    }
+}
 
 void enableWindowBlur(HWND hwnd, BlurMode mode) noexcept {
     if (!hwnd) return;

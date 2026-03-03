@@ -4,8 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bảng gõ tắt</title>
+    <title data-i18n="m.title">Bảng gõ tắt</title>
+    <link rel="stylesheet" href="../shared/theme.css">
     <link rel="stylesheet" href="macro.css">
+    <script src="../shared/strings.js"></script>
+    <script src="../shared/i18n.js"></script>
     <script src="../shared/utils.js"></script>
     <script src="macro.js"></script>
 </head>
@@ -14,8 +17,8 @@
     <div class="container" id="main-container">
         <!-- Title Bar -->
         <div class="title-bar">
-            <span class="title-text">Bảng gõ tắt</span>
-            <button class="btn-close" id="btn-close" title="Đóng">
+            <span class="title-text" data-i18n="m.title">Bảng gõ tắt</span>
+            <button class="btn-close" id="btn-close" title="Đóng" data-i18n-title="close">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
                     fill="rgba(240,23,23,1)">
                     <path
@@ -30,24 +33,24 @@
             <!-- Input Card -->
             <div class="settings-card">
                 <div class="setting-row">
-                    <span class="setting-label">Từ gõ tắt</span>
-                    <input type="text" class="setting-input" id="macro-name" placeholder="vd: btw">
+                    <span class="setting-label" data-i18n="m.shortcut">Từ gõ tắt</span>
+                    <input type="text" class="setting-input" id="macro-name" placeholder="vd: btw" data-i18n-ph="m.shortcut_ph">
                 </div>
                 <div class="setting-row">
-                    <span class="setting-label">Nội dung đầy đủ</span>
-                    <input type="text" class="setting-input" id="macro-content" placeholder="vd: by the way">
+                    <span class="setting-label" data-i18n="m.content">Nội dung đầy đủ</span>
+                    <input type="text" class="setting-input" id="macro-content" placeholder="vd: by the way" data-i18n-ph="m.content_ph">
                 </div>
                 <div class="button-row">
-                    <button class="btn-action btn-primary" id="btn-add">+ Thêm</button>
-                    <button class="btn-action btn-danger" id="btn-delete">- Xóa</button>
+                    <button class="btn-action btn-primary" id="btn-add" data-i18n="add">+ Thêm</button>
+                    <button class="btn-action btn-danger" id="btn-delete" data-i18n="delete">- Xóa</button>
                 </div>
             </div>
 
             <!-- List Card -->
             <div class="settings-card">
                 <div class="list-header">
-                    <span class="list-col-name">Từ gõ tắt</span>
-                    <span class="list-col-content">Nội dung đầy đủ</span>
+                    <span class="list-col-name" data-i18n="m.shortcut">Từ gõ tắt</span>
+                    <span class="list-col-content" data-i18n="m.content">Nội dung đầy đủ</span>
                 </div>
                 <div class="macro-list" id="macro-list">
                     <!-- Items inserted by C++ -->
@@ -56,8 +59,8 @@
 
             <!-- Footer Buttons -->
             <div class="button-row footer-row">
-                <button class="btn-action btn-secondary" id="btn-import">Nạp từ file...</button>
-                <button class="btn-action btn-secondary" id="btn-export">Xuất ra file...</button>
+                <button class="btn-action btn-secondary" id="btn-import" data-i18n="m.import">Nạp từ file...</button>
+                <button class="btn-action btn-secondary" id="btn-export" data-i18n="m.export">Xuất ra file...</button>
             </div>
         </div>
 

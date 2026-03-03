@@ -7,18 +7,20 @@
     <title>NexusKey Settings</title>
     <link rel="stylesheet" href="../shared/theme.css">
     <link rel="stylesheet" href="settings.css">
+    <script src="../shared/strings.js"></script>
+    <script src="../shared/i18n.js"></script>
     <script src="../shared/utils.js"></script>
     <script src="settings.js"></script>
 </head>
 
-<body class="dark">
+<body>
 
     <div class="container" id="main-container">
         <!-- Title Bar - spans full width, close button at right corner -->
         <div class="title-bar">
             <span class="title-text">NexusKey vX.X.X</span>
             <!-- Pin Button -->
-            <button class="btn-pin" id="btn-pin" title="Ghim lên trên">
+            <button class="btn-pin" id="btn-pin" title="Ghim lên trên" data-i18n-title="s.pin">
                 <!-- Unpinned icon (shown by default) -->
                 <svg class="icon-unpin" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 256 256">
                     <path
@@ -32,7 +34,7 @@
                     </path>
                 </svg>
             </button>
-            <button class="btn-close" id="btn-close" title="Đóng">
+            <button class="btn-close" id="btn-close" title="Đóng" data-i18n-title="close">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
                     fill="rgba(240,23,23,1)">
                     <path
@@ -66,7 +68,7 @@
             <div class="settings-card">
                 <!-- 1. Bảng mã (Code Table) -->
                 <div class="setting-row group-last">
-                    <span class="setting-label">Bảng mã</span>
+                    <span class="setting-label" data-i18n="s.code_table">Bảng mã</span>
                     <select class="setting-dropdown" id="bang-ma">
                         <option value="0">Unicode</option>
                         <option value="1">TCVN3 (ABC)</option>
@@ -78,7 +80,7 @@
 
                 <!-- 2. Phím Chuyển (Switch Key) - 2 rows layout -->
                 <div class="setting-row setting-row-vertical group-last">
-                    <span class="setting-label">Phím Chuyển</span>
+                    <span class="setting-label" data-i18n="s.switch_key">Phím Chuyển</span>
                     <div class="switch-key-container">
                         <!-- Row 1: Ctrl Alt -->
                         <div class="switch-key-row">
@@ -122,16 +124,16 @@
                                 <input type="hidden" id="val-key-shift" value="0">
                             </div>
                             <input type="text" class="switch-key-input" id="switch-key-char" maxlength="7"
-                                placeholder="~" title="Phím chuyển">
+                                placeholder="~" title="Phím chuyển" data-i18n-title="s.switch_key_title">
                         </div>
                     </div>
                 </div>
 
                 <!-- 3. Kêu Beep -->
                 <div class="setting-row">
-                    <span class="setting-label">Kêu Beep</span>
+                    <span class="setting-label" data-i18n="s.beep">Kêu Beep</span>
                     <div class="toggle-switch-small" id="beep-sound"
-                        data-tooltip="Phát âm thanh khi chuyển đổi ngôn ngữ">
+                        data-tooltip="Phát âm thanh khi chuyển đổi ngôn ngữ" data-i18n-tooltip="s.beep_tooltip">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
                         <div class="toggle-thumb-small"></div>
@@ -141,9 +143,9 @@
 
                 <!-- 4. Loại trừ ứng dụng thông minh -->
                 <div class="setting-row">
-                    <span class="setting-label">Loại trừ ứng dụng thông minh</span>
+                    <span class="setting-label" data-i18n="s.smart_switch">Loại trừ ứng dụng thông minh</span>
                     <div class="toggle-switch-small" id="smart-switch"
-                        data-tooltip="Tự động ghi nhớ chế độ gõ cho từng ứng dụng">
+                        data-tooltip="Tự động ghi nhớ chế độ gõ cho từng ứng dụng" data-i18n-tooltip="s.smart_switch_tooltip">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
                         <div class="toggle-thumb-small"></div>
@@ -153,10 +155,10 @@
 
                 <!-- 4b. Excluded Apps - Toggle + Button on same row -->
                 <div class="setting-row">
-                    <span class="setting-label">Bật loại trừ ứng dụng</span>
-                    <button class="btn-action" id="btn-excluded-apps" style="margin-right: 8px;">Danh sách</button>
+                    <span class="setting-label" data-i18n="s.enable_exclude">Bật loại trừ ứng dụng</span>
+                    <button class="btn-action" id="btn-excluded-apps" style="margin-right: 8px;" data-i18n="s.list">Danh sách</button>
                     <div class="toggle-switch-small" id="exclude-apps"
-                        data-tooltip="Chỉ gõ tiếng Anh cho các ứng dụng trong danh sách">
+                        data-tooltip="Chỉ gõ tiếng Anh cho các ứng dụng trong danh sách" data-i18n-tooltip="s.exclude_tooltip">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
                         <div class="toggle-thumb-small"></div>
@@ -166,7 +168,7 @@
 
                 <!-- 5. Cài đặt nâng cao - toggle switch -->
                 <div class="setting-row" id="row-advanced">
-                    <span class="setting-label">Cài đặt nâng cao</span>
+                    <span class="setting-label" data-i18n="s.advanced">Cài đặt nâng cao</span>
                     <div class="toggle-switch-small" id="show-advanced">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
@@ -181,11 +183,10 @@
         <div class="advanced-section" id="advanced-section">
             <!-- Tab Header (horizontal tabs at top) -->
             <div class="tab-header">
-                <div class="tab-item active" data-tab="1">Bộ gõ</div>
-                <div class="tab-item" data-tab="2">Gõ tắt</div>
-                <div class="tab-item" data-tab="3">Hệ thống</div>
-                <div class="tab-item" data-tab="4">Debug</div>
-                <div class="tab-item" data-tab="5">Thông tin</div>
+                <div class="tab-item active" data-tab="1" data-i18n="s.tab_input">Bộ gõ</div>
+                <div class="tab-item" data-tab="2" data-i18n="s.tab_macro">Gõ tắt</div>
+                <div class="tab-item" data-tab="3" data-i18n="s.tab_system">Hệ thống</div>
+                <div class="tab-item" data-tab="4" data-i18n="s.tab_about">Thông tin</div>
             </div>
 
             <!-- Tab Content Area (below tabs) -->
@@ -196,7 +197,7 @@
                         <!-- NHẬP LIỆU CƠ BẢN -->
                         <!-- 1. Modern diacritics (oà, uý) -->
                         <div class="setting-row">
-                            <span class="setting-label">Đặt dấu oà, uý (thay vì òa, úy)</span>
+                            <span class="setting-label" data-i18n="s.modern_ortho">Đặt dấu oà, uý (thay vì òa, úy)</span>
                             <div class="toggle-switch-small" id="modern-ortho">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -206,7 +207,7 @@
                         </div>
                         <!-- 2. Auto capitalize -->
                         <div class="setting-row">
-                            <span class="setting-label">Viết hoa chữ cái đầu câu</span>
+                            <span class="setting-label" data-i18n="s.auto_caps">Viết hoa chữ cái đầu câu</span>
                             <div class="toggle-switch-small" id="auto-caps">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -216,7 +217,7 @@
                         </div>
                         <!-- 3. Allow ZWJF consonants -->
                         <div class="setting-row group-last">
-                            <span class="setting-label">Cho phép "z w j f" làm phụ âm đầu</span>
+                            <span class="setting-label" data-i18n="s.allow_zwjf">Cho phép "z w j f" làm phụ âm đầu</span>
                             <div class="toggle-switch-small" id="allow-zwjf">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -227,7 +228,7 @@
                         <!-- KIỂM TRA CHÍNH TẢ -->
                         <!-- 4. Spell check -->
                         <div class="setting-row">
-                            <span class="setting-label">Kiểm tra chính tả</span>
+                            <span class="setting-label" data-i18n="s.spell_check">Kiểm tra chính tả</span>
                             <div class="toggle-switch-small" id="spell-check">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -237,7 +238,7 @@
                         </div>
                         <!-- 5. Restore key on wrong word -->
                         <div class="setting-row">
-                            <span class="setting-label">Tự khôi phục phím với từ sai</span>
+                            <span class="setting-label" data-i18n="s.restore_key">Tự khôi phục phím với từ sai</span>
                             <div class="toggle-switch-small" id="restore-key">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -247,9 +248,9 @@
                         </div>
                         <!-- 6. Temp disable spell with Ctrl -->
                         <div class="setting-row group-last">
-                            <span class="setting-label">Tạm tắt chính tả bằng phím Ctrl</span>
+                            <span class="setting-label" data-i18n="s.temp_off_spell">Tạm tắt chính tả bằng phím Ctrl</span>
                             <div class="toggle-switch-small tooltip-top" id="temp-off-spell"
-                                data-tooltip="Giữ Ctrl khi gõ để tạm bỏ qua kiểm tra chính tả">
+                                data-tooltip="Giữ Ctrl khi gõ để tạm bỏ qua kiểm tra chính tả" data-i18n-tooltip="s.temp_off_spell_tooltip">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -257,20 +258,20 @@
                             <input type="hidden" id="val-temp-off-spell" value="0">
                         </div>
                         <!-- TƯƠNG THÍCH -->
-                        <!-- 7. Browser/Excel fix -->
+                        <!-- 7. Free marking -->
                         <div class="setting-row">
-                            <span class="setting-label">Sửa lỗi gợi ý (trình duyệt, Excel)</span>
-                            <div class="toggle-switch-small" id="fix-recommend"
-                                data-tooltip="Chèn ký tự rỗng để tắt gợi ý autocomplete khi gõ. Tắt nếu gặp lỗi trên Google Sheets.">
+                            <span class="setting-label" data-i18n="s.free_marking">Gõ dấu tự do</span>
+                            <div class="toggle-switch-small" id="free-marking"
+                                data-tooltip="Cho phép bỏ dấu tự do không cần đúng chính tả (ví dụ: tiens → tiến)" data-i18n-tooltip="s.free_marking_tooltip">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
                             </div>
-                            <input type="hidden" id="val-fix-recommend" value="0">
+                            <input type="hidden" id="val-free-marking" value="0">
                         </div>
                         <!-- 8. Remember code table per app -->
                         <div class="setting-row">
-                            <span class="setting-label">Tự ghi nhớ bảng mã theo ứng dụng</span>
+                            <span class="setting-label" data-i18n="s.remember_code">Tự ghi nhớ bảng mã theo ứng dụng</span>
                             <div class="toggle-switch-small" id="remember-code">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -280,9 +281,9 @@
                         </div>
                         <!-- 9. Temp disable NexusKey with Alt -->
                         <div class="setting-row">
-                            <span class="setting-label">Tạm tắt NexusKey bằng phím Alt</span>
+                            <span class="setting-label" data-i18n="s.temp_off_alt">Tạm tắt NexusKey bằng phím Alt</span>
                             <div class="toggle-switch-small tooltip-top" id="temp-off-openkey"
-                                data-tooltip="Nhấn đúp Alt để tạm tắt bộ gõ tiếng Việt (tránh xung đột với menu ứng dụng)">
+                                data-tooltip="Nhấn đúp Alt để tạm tắt bộ gõ tiếng Việt (tránh xung đột với menu ứng dụng)" data-i18n-tooltip="s.temp_off_alt_tooltip">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -297,7 +298,7 @@
                     <div class="tab-body">
                         <!-- 1. Enable Macro -->
                         <div class="setting-row">
-                            <span class="setting-label">Cho phép gõ tắt</span>
+                            <span class="setting-label" data-i18n="s.enable_macro">Cho phép gõ tắt</span>
                             <div class="toggle-switch-small" id="use-macro">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -307,7 +308,7 @@
                         </div>
                         <!-- 2. Macro in English mode -->
                         <div class="setting-row">
-                            <span class="setting-label">Gõ tắt cả khi tắt gõ tiếng Việt</span>
+                            <span class="setting-label" data-i18n="s.macro_english">Gõ tắt cả khi tắt gõ tiếng Việt</span>
                             <div class="toggle-switch-small" id="macro-english">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -317,7 +318,7 @@
                         </div>
                         <!-- 3. Auto caps macro -->
                         <div class="setting-row group-last">
-                            <span class="setting-label">Tự động viết hoa theo phím tắt</span>
+                            <span class="setting-label" data-i18n="s.auto_caps_macro">Tự động viết hoa theo phím tắt</span>
                             <div class="toggle-switch-small" id="auto-caps-macro">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -327,7 +328,7 @@
                         </div>
                         <!-- 4. Quick Telex -->
                         <div class="setting-row">
-                            <span class="setting-label"
+                            <span class="setting-label" data-i18n="s.quick_telex"
                                 title="cc=ch, gg=gi, kk=kh, nn=ng, qq=qu, pp=ph, tt=th, uu=ươ">Gõ nhanh (cc=ch, gg=gi,
                                 nn=ng,...)</span>
                             <div class="toggle-switch-small" id="quick-telex">
@@ -339,7 +340,7 @@
                         </div>
                         <!-- 5. Quick start consonant -->
                         <div class="setting-row">
-                            <span class="setting-label" title="f→ph, j→gi, w→qu">Gõ tắt phụ âm đầu: f→ph, j→gi,
+                            <span class="setting-label" data-i18n="s.quick_start" title="f→ph, j→gi, w→qu">Gõ tắt phụ âm đầu: f→ph, j→gi,
                                 w→qu</span>
                             <div class="toggle-switch-small" id="quick-start">
                                 <span class="toggle-label-i">I</span>
@@ -350,7 +351,7 @@
                         </div>
                         <!-- 6. Quick end consonant -->
                         <div class="setting-row">
-                            <span class="setting-label" title="g→ng, h→nh, k→ch">Gõ tắt phụ âm cuối: g→ng, h→nh,
+                            <span class="setting-label" data-i18n="s.quick_end" title="g→ng, h→nh, k→ch">Gõ tắt phụ âm cuối: g→ng, h→nh,
                                 k→ch</span>
                             <div class="toggle-switch-small" id="quick-end">
                                 <span class="toggle-label-i">I</span>
@@ -361,9 +362,9 @@
                         </div>
                         <!-- 7. Temporarily skip macro with ESC -->
                         <div class="setting-row group-last">
-                            <span class="setting-label">Tạm bỏ qua gõ tắt bằng phím Esc</span>
+                            <span class="setting-label" data-i18n="s.temp_off_macro">Tạm bỏ qua gõ tắt bằng phím Esc</span>
                             <div class="toggle-switch-small tooltip-top" id="temp-off-macro"
-                                data-tooltip="Nhấn Esc trước khi gõ để bỏ qua gõ tắt cho từ tiếp theo">
+                                data-tooltip="Nhấn Esc trước khi gõ để bỏ qua gõ tắt cho từ tiếp theo" data-i18n-tooltip="s.temp_off_macro_tooltip">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -372,7 +373,7 @@
                         </div>
                         <!-- Button to open Macro Table dialog -->
                         <div class="setting-row" style="justify-content: flex-start; padding-top: 8px;">
-                            <button class="btn-action" id="btn-macro-table">Bảng gõ tắt...</button>
+                            <button class="btn-action" id="btn-macro-table" data-i18n="s.macro_table_btn">Bảng gõ tắt...</button>
                         </div>
                     </div>
                 </div>
@@ -383,7 +384,7 @@
                         <!-- KHỞI ĐỘNG & QUYỀN -->
                         <!-- 1. Khởi động cùng Windows -->
                         <div class="setting-row">
-                            <span class="setting-label">Khởi động cùng Windows</span>
+                            <span class="setting-label" data-i18n="s.run_startup">Khởi động cùng Windows</span>
                             <div class="toggle-switch-small" id="run-startup">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -393,7 +394,7 @@
                         </div>
                         <!-- 2. Bật bảng này khi khởi động -->
                         <div class="setting-row">
-                            <span class="setting-label">Bật bảng này khi khởi động</span>
+                            <span class="setting-label" data-i18n="s.show_startup">Bật bảng này khi khởi động</span>
                             <div class="toggle-switch-small" id="show-on-startup">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -403,7 +404,7 @@
                         </div>
                         <!-- 3. Chạy với quyền Admin -->
                         <div class="setting-row">
-                            <span class="setting-label">Chạy với quyền Admin</span>
+                            <span class="setting-label" data-i18n="s.run_admin">Chạy với quyền Admin</span>
                             <div class="toggle-switch-small" id="run-admin">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -413,7 +414,7 @@
                         </div>
                         <!-- 4. Tạo biểu tượng trên Desktop -->
                         <div class="setting-row group-last">
-                            <span class="setting-label">Tạo biểu tượng trên Desktop</span>
+                            <span class="setting-label" data-i18n="s.desktop_shortcut">Tạo biểu tượng trên Desktop</span>
                             <div class="toggle-switch-small" id="desktop-shortcut">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -422,9 +423,20 @@
                             <input type="hidden" id="val-desktop-shortcut" value="0">
                         </div>
                         <!-- GIAO DIỆN -->
-                        <!-- 5. Độ trong suốt nền -->
+                        <!-- 5. Giao diện tiếng Anh -->
                         <div class="setting-row">
-                            <span class="setting-label">Độ trong suốt nền</span>
+                            <span class="setting-label" data-i18n="s.english_ui">Giao diện tiếng Anh</span>
+                            <div class="toggle-switch-small" id="english-ui"
+                                data-tooltip="Chuyển giao diện, menu, thông báo sang tiếng Anh" data-i18n-tooltip="s.english_ui_tooltip">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-english-ui" value="0">
+                        </div>
+                        <!-- 6. Độ trong suốt nền -->
+                        <div class="setting-row">
+                            <span class="setting-label" data-i18n="s.bg_opacity">Độ trong suốt nền</span>
                             <div class="slider-container">
                                 <div class="custom-slider" id="bg-opacity-slider">
                                     <div class="slider-track">
@@ -437,8 +449,8 @@
                             <input type="hidden" id="val-bg-opacity" value="80">
                         </div>
                         <!-- 6. Tuỳ chỉnh icon -->
-                        <div class="setting-row group-last">
-                            <span class="setting-label">Tuỳ chỉnh icon</span>
+                        <div class="setting-row">
+                            <span class="setting-label" data-i18n="s.icon_style">Tuỳ chỉnh icon</span>
                             <select class="setting-dropdown-small" id="modern-icon">
                                 <option value="0">Color</option>
                                 <option value="1">Dark Mode</option>
@@ -448,90 +460,39 @@
                         </div>
                         <!-- 6b. Custom icon colors (hidden by default, shown when Custom selected) -->
                         <div class="setting-row custom-color-row" id="custom-color-row" style="display:none">
-                            <span class="setting-label">Màu icon tùy chỉnh</span>
+                            <span class="setting-label" data-i18n="s.custom_colors">Màu icon tùy chỉnh</span>
                             <div class="color-picker-group">
                                 <label class="color-picker-label">V:</label>
-                                <button class="color-swatch" id="btn-color-v" title="Chọn màu V"></button>
+                                <button class="color-swatch" id="btn-color-v" title="Chọn màu V" data-i18n-title="s.color_v"></button>
                                 <label class="color-picker-label">E:</label>
-                                <button class="color-swatch" id="btn-color-e" title="Chọn màu E"></button>
+                                <button class="color-swatch" id="btn-color-e" title="Chọn màu E" data-i18n-title="s.color_e"></button>
                                 <button class="btn-action btn-small" id="btn-reset-colors">Reset</button>
                             </div>
                         </div>
-                        <!-- TƯƠNG THÍCH -->
-                        <!-- 7. Hỗ trợ ứng dụng Metro -->
-                        <div class="setting-row">
-                            <span class="setting-label">Hỗ trợ ứng dụng Metro</span>
-                            <div class="toggle-switch-small" id="metro-support"
-                                data-tooltip="Hỗ trợ gõ tiếng Việt trong ứng dụng UWP/Metro">
-                                <span class="toggle-label-i">I</span>
-                                <span class="toggle-label-o">O</span>
-                                <div class="toggle-thumb-small"></div>
-                            </div>
-                            <input type="hidden" id="val-metro-support" value="0">
-                        </div>
-                        <!-- 8. Sửa lỗi trên Chromium -->
-                        <div class="setting-row">
-                            <span class="setting-label">Sửa lỗi trên Chromium</span>
-                            <div class="toggle-switch-small" id="chromium-fix"
-                                data-tooltip="Tính năng thử nghiệm: Tắt nếu lỗi trên Google Sheets.">
-                                <span class="toggle-label-i">I</span>
-                                <span class="toggle-label-o">O</span>
-                                <div class="toggle-thumb-small"></div>
-                            </div>
-                            <input type="hidden" id="val-chromium-fix" value="0">
-                        </div>
-                        <!-- 10. App Overrides (unified per-app config) -->
-                        <div class="setting-row">
-                            <span class="setting-label">Cấu hình ứng dụng</span>
-                            <button class="btn-action" id="btn-app-overrides">Quản lý</button>
-                        </div>
                     </div>
                 </div>
 
-                <!-- Tab 4: Debug -->
+                <!-- Tab 4: Thông tin (About) -->
                 <div class="tab-panel" id="tab-panel-4">
-                    <div class="tab-body">
-                        <!-- 1. Reset Settings -->
-                        <div class="setting-row">
-                            <span class="setting-label">Đặt lại cài đặt</span>
-                            <button class="btn-action btn-danger" id="btn-reset-settings">Reset</button>
-                        </div>
-                        <!-- 2. Performance Logging (Debug) -->
-                        <div class="setting-row">
-                            <span class="setting-label">Ghi log hiệu suất (Debug)</span>
-                            <button class="btn-action" id="btn-open-log-folder" style="margin-right: 8px;">Mở thư
-                                mục</button>
-                            <div class="toggle-switch-small" id="perf-log"
-                                data-tooltip="Ghi log thời gian xử lý phím. Dùng để debug lag.">
-                                <span class="toggle-label-i">I</span>
-                                <span class="toggle-label-o">O</span>
-                                <div class="toggle-thumb-small"></div>
-                            </div>
-                            <input type="hidden" id="val-perf-log" value="0">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Tab 5: Thông tin (About) -->
-                <div class="tab-panel" id="tab-panel-5">
                     <div class="tab-body about-content">
                         <p class="app-name">NexusKey</p>
-                        <p class="app-tagline">Bộ gõ Tiếng Việt giao diện hiện đại</p>
-                        <p class="app-version">Phiên bản: X.X.X (Sciter Edition)</p>
-                        <p class="app-author">Phát triển & Thiết kế UI: <strong>PhatMT97</strong></p>
-                        <p class="app-origin">Nguồn gốc: Dự án được fork từ mã nguồn OpenKey của tác giả <strong>Mai Vũ
+                        <p class="app-tagline" data-i18n="s.tagline">Bộ gõ Tiếng Việt giao diện hiện đại</p>
+                        <p class="app-version"><span data-i18n="s.version_label">Phiên bản:</span> <span id="app-version-number">X.X.X</span> (Sciter Edition)</p>
+                        <p class="app-author"><span data-i18n="s.dev_label">Phát triển & Thiết kế UI:</span> <strong>PhatMT97</strong></p>
+                        <p class="app-origin"><span data-i18n="s.origin_label">Nguồn gốc:</span> <span data-i18n="s.origin_text">Dự án được lấy cảm hứng từ mã nguồn OpenKey của tác giả
+                            <strong>Mai Vũ
                                 Tuyên</strong>,
-                            nhằm mục tiêu cải tiến giao diện, sửa lỗi và thêm các tính năng mới.</p>
-                        <p class="app-license">NexusKey là phần mềm mã nguồn mở, miễn phí và phi lợi nhuận.</p>
+                            nhằm mục tiêu cải tiến giao diện, sửa lỗi và thêm các tính năng mới.</span></p>
+                        <p class="app-license" data-i18n="s.license">NexusKey là phần mềm mã nguồn mở, miễn phí và phi lợi nhuận.</p>
                     </div>
                     <!-- Update Section - Separate Card -->
                     <div class="update-card">
                         <div class="setting-row">
-                            <span class="setting-label">Tự động kiểm tra cập nhật</span>
-                            <button class="btn-action" id="btn-check-update"><span class="btn-text">Kiểm tra
+                            <span class="setting-label" data-i18n="s.auto_update">Tự động kiểm tra cập nhật</span>
+                            <button class="btn-action" id="btn-check-update"><span class="btn-text" data-i18n="s.check_now">Kiểm tra
                                     ngay</span></button>
                             <div class="toggle-switch-small" id="check-update"
-                                data-tooltip="Kiểm tra phiên bản mới khi khởi động">
+                                data-tooltip="Kiểm tra phiên bản mới khi khởi động" data-i18n-tooltip="s.update_tooltip">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="update-thumb-white" id="update-toggle-thumb"></div>

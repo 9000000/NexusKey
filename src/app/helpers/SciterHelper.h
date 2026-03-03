@@ -53,6 +53,25 @@ namespace TitleBarDefaults {
 namespace SciterHelper {
 
     /**
+     * Detect Windows app theme via registry (AppsUseLightTheme).
+     * @return true if dark mode is active, false for light mode
+     */
+    [[nodiscard]] bool IsWindowsDarkMode() noexcept;
+
+    /**
+     * Apply dark mode for the entire app process using undocumented uxtheme APIs.
+     * Call once at startup. Enables dark context menus, scrollbars, etc.
+     */
+    void ApplyDarkModeForApp() noexcept;
+
+    /**
+     * Set dark mode for a specific window (DWM title bar + uxtheme controls).
+     * @param hwnd Window handle
+     * @param dark true for dark mode, false for light mode
+     */
+    void SetWindowDarkMode(HWND hwnd, bool dark) noexcept;
+
+    /**
      * Enable DWM blur/acrylic effect on a window.
      *
      * @param hwnd Window handle

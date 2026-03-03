@@ -9,6 +9,7 @@
 #include <vector>
 #include "TypingConfig.h"
 #include "core/UIConfig.h"
+#include "core/SystemConfig.h"
 
 namespace NextKey {
 
@@ -60,6 +61,38 @@ public:
     /// Save per-app smart switch data
     [[nodiscard]] static bool SaveSmartSwitchData(const std::wstring& path,
                                                    const std::unordered_map<std::wstring, bool>& data);
+
+    /// Load per-app code table data (exe name → CodeTable value)
+    [[nodiscard]] static std::unordered_map<std::wstring, uint8_t> LoadPerAppCodeTable(const std::wstring& path);
+
+    /// Save per-app code table data
+    [[nodiscard]] static bool SavePerAppCodeTable(const std::wstring& path,
+                                                   const std::unordered_map<std::wstring, uint8_t>& data);
+
+    /// Load system config from file
+    [[nodiscard]] static std::optional<SystemConfig> LoadSystemConfig(const std::wstring& path);
+
+    /// Save system config to file (merges with existing config)
+    [[nodiscard]] static bool SaveSystemConfig(const std::wstring& path, const SystemConfig& config);
+
+    /// Load system config with automatic path resolution
+    [[nodiscard]] static SystemConfig LoadSystemConfigOrDefault();
+
+    /// Load convert config from file
+    [[nodiscard]] static std::optional<ConvertConfig> LoadConvertConfig(const std::wstring& path);
+
+    /// Save convert config to file (merges with existing config)
+    [[nodiscard]] static bool SaveConvertConfig(const std::wstring& path, const ConvertConfig& config);
+
+    /// Load convert config with automatic path resolution
+    [[nodiscard]] static ConvertConfig LoadConvertConfigOrDefault();
+
+    /// Load macro table (shorthand → expansion) from config
+    [[nodiscard]] static std::unordered_map<std::wstring, std::wstring> LoadMacros(const std::wstring& path);
+
+    /// Save macro table to config (merges with existing)
+    [[nodiscard]] static bool SaveMacros(const std::wstring& path,
+                                          const std::unordered_map<std::wstring, std::wstring>& macros);
 
 private:
     static std::wstring GetExeDirectory();

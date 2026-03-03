@@ -16,6 +16,11 @@ namespace NextKey {
 constexpr UINT WM_NEXUSKEY_SET_MODE = WM_USER + 100;      // Settings → Main: set mode (wParam: 1=Vietnamese, 0=English)
 constexpr UINT WM_NEXUSKEY_MODE_CHANGED = WM_USER + 101;  // Main → Settings: mode changed (wParam: 1=Vietnamese, 0=English)
 constexpr UINT WM_NEXUSKEY_OPEN_EXCLUDED = WM_USER + 102;  // Deferred: open excluded apps dialog
+constexpr UINT WM_NEXUSKEY_OPEN_MACRO = WM_USER + 103;    // Deferred: open macro table dialog
+constexpr UINT WM_NEXUSKEY_ICON_CHANGED = WM_USER + 104;  // Settings → Main: icon style/color changed, re-read config
+constexpr UINT WM_NEXUSKEY_CONFIG_CHANGED = WM_USER + 105;  // Main → Settings: config changed from tray menu, re-read TOML
+constexpr UINT WM_NEXUSKEY_UPDATE_RESULT = WM_USER + 106;    // Settings: update check result (wParam: 0=up-to-date, 1=available, 2=failed)
+constexpr UINT WM_NEXUSKEY_UPDATE_AVAILABLE = WM_USER + 107; // Main: auto-check found update (lParam: UpdateInfo*)
 
 }  // namespace NextKey
 

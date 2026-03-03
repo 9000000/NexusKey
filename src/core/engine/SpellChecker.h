@@ -26,8 +26,10 @@ enum class Result : uint8_t {
 /// Template works with both Telex::CharState and Vni::CharState.
 /// Both have: base (wchar_t), mod (enum with None/Circumflex/Breve/Horn),
 ///            IsVowel(), IsD(), tone (enum with None/Acute/Grave/Hook/Tilde/Dot)
+/// @param allowZwjf When true, accept z/j/w/f as valid initial consonants
+///                  (z/j≡gi, w≡qu, f≡ph)
 template<typename CharStateT>
-Result Validate(const CharStateT* states, size_t count) noexcept;
+Result Validate(const CharStateT* states, size_t count, bool allowZwjf = false) noexcept;
 
 }  // namespace SpellCheck
 }  // namespace NextKey

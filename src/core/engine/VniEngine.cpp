@@ -84,9 +84,40 @@ VniEngine::VniEngine(const TypingConfig& config) : config_(config) {
 void VniEngine::PushChar(wchar_t c) {
     rawInput_ += c;
 
+    // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
+    if (config_.quickStartConsonant && states_.empty()) {
+        wchar_t lower = towlower(c);
+        wchar_t first = 0, second = 0;
+        if (lower == L'f') { first = L'p'; second = L'h'; }
+        else if (lower == L'j') { first = L'g'; second = L'i'; }
+        else if (lower == L'w') { first = L'q'; second = L'u'; }
+        if (first) {
+            bool upper = iswupper(c);
+            ProcessChar(upper ? towupper(first) : first);
+            ProcessChar(second);
+            UpdateSpellState();
+            return;
+        }
+    }
+
+    // 0b. Quick consonant: cc→ch, gg→gi, nn→ng
+    if (config_.quickConsonant && !states_.empty()) {
+        wchar_t lower = towlower(c);
+        const CharState& last = states_.back();
+        if (!last.IsVowel() && !last.IsD()) {
+            wchar_t replacement = 0;
+            if (last.base == L'c' && lower == L'c') replacement = L'h';
+            else if (last.base == L'g' && lower == L'g') replacement = L'i';
+            else if (last.base == L'n' && lower == L'n') replacement = L'g';
+            if (replacement) {
+                c = iswupper(c) ? towupper(replacement) : replacement;
+            }
+        }
+    }
+
     // 1. Try tone keys (1-5) — gated by spell check
     if (IsToneKey(c)) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_ && !config_.freeMarking) {
             ProcessChar(c);
             UpdateSpellState();
             return;
@@ -102,6 +133,21 @@ void VniEngine::PushChar(wchar_t c) {
     // sequences into valid ones (e.g., vowel modifiers create valid nuclei)
     if (IsModifierKey(c)) {
         if (ProcessModifier(c)) {
+            UpdateSpellState();
+            return;
+        }
+    }
+
+    // 2b. Quick end consonant: g→ng, h→nh, k→ch (after vowel)
+    if (config_.quickEndConsonant && !states_.empty() && states_.back().IsVowel()) {
+        wchar_t lower = towlower(c);
+        wchar_t first = 0, second = 0;
+        if (lower == L'g') { first = L'n'; second = L'g'; }
+        else if (lower == L'h') { first = L'n'; second = L'h'; }
+        else if (lower == L'k') { first = L'c'; second = L'h'; }
+        if (first) {
+            ProcessChar(first);
+            ProcessChar(second);
             UpdateSpellState();
             return;
         }
@@ -132,15 +178,45 @@ std::wstring VniEngine::Peek() const {
 }
 
 std::wstring VniEngine::Commit() {
-    std::wstring result = Peek();
+    std::wstring composed = Peek();
+
+    // When tempSpellOff_ is active, user intentionally bypassed spell check —
+    // skip auto-restore entirely and return composed text as-is
+    if (config_.spellCheckEnabled && config_.autoRestoreEnabled &&
+        spellCheckDisabled_ && !tempSpellOff_) {
+        std::wstring raw = rawInput_;
+        if (raw != composed) {
+            bool hasDiacritics = false;
+            for (wchar_t ch : composed) {
+                if (ch > 0x7F) { hasDiacritics = true; break; }
+            }
+            // Restore raw when:
+            // 1. Composed has diacritics (e.g., "gôgle" → "google")
+            // 2. Same length but different content (escaped modifiers changed letters)
+            // Skip when raw is longer than composed (escape duplicates, e.g., "musst" → keep "must")
+            if (hasDiacritics || raw.length() <= composed.length()) {
+                Reset();
+                return raw;
+            }
+        }
+    }
+
     Reset();
-    return result;
+    return composed;
 }
 
 void VniEngine::Reset() {
     states_.clear();
     rawInput_.clear();
     spellCheckDisabled_ = false;
+    tempSpellOff_ = false;
+}
+
+void VniEngine::ToggleTempSpellOff() {
+    tempSpellOff_ = !tempSpellOff_;
+    if (tempSpellOff_) {
+        spellCheckDisabled_ = false;
+    }
 }
 
 size_t VniEngine::Count() const noexcept {
@@ -432,7 +508,11 @@ void VniEngine::UpdateSpellState() {
         spellCheckDisabled_ = false;
         return;
     }
-    auto result = SpellCheck::Validate(states_.data(), states_.size());
+    if (tempSpellOff_) {
+        spellCheckDisabled_ = false;
+        return;
+    }
+    auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
     spellCheckDisabled_ = (result == SpellCheck::Result::Invalid);
 }
 

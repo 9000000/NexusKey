@@ -81,9 +81,40 @@ TelexEngine::TelexEngine(const TypingConfig& config) : config_(config) {
 void TelexEngine::PushChar(wchar_t c) {
     rawInput_.push_back(c);
 
+    // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
+    if (config_.quickStartConsonant && states_.empty()) {
+        wchar_t lower = towlower(c);
+        wchar_t first = 0, second = 0;
+        if (lower == L'f') { first = L'p'; second = L'h'; }
+        else if (lower == L'j') { first = L'g'; second = L'i'; }
+        else if (lower == L'w') { first = L'q'; second = L'u'; }
+        if (first) {
+            bool upper = iswupper(c);
+            ProcessChar(upper ? towupper(first) : first);
+            ProcessChar(second);
+            UpdateSpellState();
+            return;
+        }
+    }
+
+    // 0b. Quick consonant: cc→ch, gg→gi, nn→ng
+    if (config_.quickConsonant && !states_.empty()) {
+        wchar_t lower = towlower(c);
+        const CharState& last = states_.back();
+        if (!last.IsVowel() && !last.IsD()) {
+            wchar_t replacement = 0;
+            if (last.base == L'c' && lower == L'c') replacement = L'h';
+            else if (last.base == L'g' && lower == L'g') replacement = L'i';
+            else if (last.base == L'n' && lower == L'n') replacement = L'g';
+            if (replacement) {
+                c = iswupper(c) ? towupper(replacement) : replacement;
+            }
+        }
+    }
+
     // 1a. 'z' key — clear existing tone (if any)
     if (towlower(c) == L'z' && !states_.empty()) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_ && !config_.freeMarking) {
             ProcessChar(c);
             UpdateSpellState();
             return;
@@ -96,7 +127,7 @@ void TelexEngine::PushChar(wchar_t c) {
 
     // 1b. Try tone keys (s, f, r, x, j) — gated by spell check
     if (IsToneKey(c) && !states_.empty()) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_ && !config_.freeMarking) {
             ProcessChar(c);
             UpdateSpellState();
             return;
@@ -116,6 +147,21 @@ void TelexEngine::PushChar(wchar_t c) {
         ApplyAutoUO();
         UpdateSpellState();
         return;
+    }
+
+    // 2b. Quick end consonant: g→ng, h→nh, k→ch (after vowel)
+    if (config_.quickEndConsonant && !states_.empty() && states_.back().IsVowel()) {
+        wchar_t lower = towlower(c);
+        wchar_t first = 0, second = 0;
+        if (lower == L'g') { first = L'n'; second = L'g'; }
+        else if (lower == L'h') { first = L'n'; second = L'h'; }
+        else if (lower == L'k') { first = L'c'; second = L'h'; }
+        if (first) {
+            ProcessChar(first);
+            ProcessChar(second);
+            UpdateSpellState();
+            return;
+        }
     }
 
     // 3. Regular character
@@ -140,12 +186,19 @@ bool TelexEngine::ProcessTone(wchar_t c) {
     // Escape: same tone → clear tone and add key as character
     if (target.tone == newTone) {
         target.tone = Tone::None;
+        // Remove consumed first-tone entry from rawInput_ so auto-restore
+        // gives "user" instead of "usser" for u-s-s-e-r
+        if (target.toneRawIdx != SIZE_MAX) {
+            EraseConsumedRaw(target.toneRawIdx);
+        }
+        target.toneRawIdx = SIZE_MAX;
         ProcessChar(c);
         return true;
     }
 
     // Apply or replace tone
     target.tone = newTone;
+    target.toneRawIdx = rawInput_.size() - 1;
     return true;
 }
 
@@ -161,6 +214,7 @@ bool TelexEngine::ProcessClearTone() {
     if (target.tone == Tone::None) return false;
 
     target.tone = Tone::None;
+    target.toneRawIdx = SIZE_MAX;
     return true;
 }
 
@@ -178,6 +232,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
             CharState s;
             s.base = L'o';
             s.mod = Modifier::Horn;
+            s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
             states_.push_back(s);
             return true;
         }
@@ -186,6 +241,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
             CharState s;
             s.base = L'u';
             s.mod = Modifier::Horn;
+            s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
             states_.push_back(s);
             return true;
         }
@@ -212,6 +268,26 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                 return true;
             }
         }
+
+        // Free marking: backward scan for circumflex across intervening consonants
+        // e.g., "tiéng" + 'e' → find 'é' across 'n','g' → apply circumflex → "tiếng"
+        if (config_.freeMarking && (lower == L'a' || lower == L'e' || lower == L'o')) {
+            for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
+                if (it->IsVowel() && it->base == lower) {
+                    if (it->mod == Modifier::Circumflex) {
+                        // Escape: already has circumflex → remove it, add char
+                        it->mod = Modifier::None;
+                        ProcessChar(c);
+                        return true;
+                    }
+                    if (it->mod == Modifier::None) {
+                        it->mod = Modifier::Circumflex;
+                        return true;
+                    }
+                    break;  // Found a matching vowel but can't modify → stop
+                }
+            }
+        }
     }
 
     // Handle dd → đ
@@ -227,11 +303,6 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
 //-----------------------------------------------------------------------------
 
 bool TelexEngine::ProcessWModifier(wchar_t c) {
-    // Check if 'w' should be ignored (QU cluster)
-    if (IsInQUCluster()) {
-        return false;  // Let 'w' be added as regular character
-    }
-
     // Simple Telex: 'w' only acts as modifier when preceded by a/o/u vowel
     if (config_.inputMethod == InputMethod::SimpleTelex) {
         bool hasVowelContext = false;
@@ -244,22 +315,31 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         if (!hasVowelContext) return false;  // Let PushChar add 'w' as literal
     }
 
+    // Check if 'u' at position i is part of QU consonant cluster
+    // QU-cluster 'u' should not be treated as a modifiable vowel
+    auto isQUClusterU = [this](size_t i) -> bool {
+        return i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q';
+    };
+
     // PRIORITY ORDER for 'w':
     // P1: "ua" pattern → apply horn to 'u' (mưa, được)
     // P2: "uo" pattern → apply horn to 'o' (uơ → later AutoUO makes ươ)
     // P3: "oa" pattern → apply breve to 'a' (hoặc)
-    // P4: Standalone 'u' → horn
-    // P5: Standalone 'o' (not in oa/uo) → horn
-    // P6: Standalone 'a' → breve
-    // P7: Escape - if already have horn/breve, second 'w' clears it
+    // P4: Escape - if already have horn/breve, second 'w' clears it
+    // P5: Standalone 'u' → horn
+    // P6: Standalone 'o' (not in oa/uo) → horn
+    // P7: Standalone 'a' → breve
 
-    // Analyze current state
+    // Analyze current state (skip QU-cluster 'u' for modification targets)
     bool hasUA = false, hasOA = false, hasUO = false;
     size_t uIdx = SIZE_MAX, oIdx = SIZE_MAX, aIdx = SIZE_MAX;
     size_t hornedIdx = SIZE_MAX, brevedIdx = SIZE_MAX;
 
     for (size_t i = 0; i < states_.size(); ++i) {
         if (!states_[i].IsVowel()) continue;
+
+        // Skip 'u' in QU cluster — it's a consonant, not modifiable
+        if (isQUClusterU(i)) continue;
 
         wchar_t base = states_[i].base;
         Modifier mod = states_[i].mod;
@@ -276,9 +356,10 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         }
     }
 
-    // Detect vowel patterns
+    // Detect vowel patterns (skip QU-cluster 'u')
     for (size_t i = 0; i + 1 < states_.size(); ++i) {
         if (states_[i].IsVowel() && states_[i+1].IsVowel()) {
+            if (isQUClusterU(i)) continue;
             wchar_t first = states_[i].base;
             wchar_t second = states_[i+1].base;
             if (first == L'u' && second == L'a') hasUA = true;
@@ -312,8 +393,22 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 
     // P4: Escape - clear existing modifier and add 'w' as literal
     // Must be before standalone applications (P5-P7) so that second 'w'
-    // escapes the first modification (e.g., "uoww" → "uow", not "ươ")
-    if (hornedIdx != SIZE_MAX) {
+    // escapes the first modification.
+    // Exception: when horned 'o' has an unmodified 'u' companion,
+    // skip escape so P5 applies horn to u (e.g., "uoww" → "ươ", "huoww" → "hươ")
+    bool canPromoteUO = (hornedIdx != SIZE_MAX &&
+        states_[hornedIdx].base == L'o' && uIdx != SIZE_MAX);
+
+    if (hornedIdx != SIZE_MAX && !canPromoteUO) {
+        // Special case: P8-synthesized ư (ww → w escape)
+        // Only erase when synthetic ư is the last state (immediate ww sequence).
+        // If other chars were typed after the synthetic ư (e.g., "window"),
+        // it's now part of a word — do regular escape instead.
+        if (states_[hornedIdx].synthetic && hornedIdx == states_.size() - 1) {
+            states_.erase(states_.begin() + static_cast<ptrdiff_t>(hornedIdx));
+            ProcessChar(c);
+            return true;
+        }
         states_[hornedIdx].mod = Modifier::None;
         // Undo AutoUO: if we cleared horn on 'o' and the preceding char is ư,
         // that ư was auto-applied — clear it too
@@ -355,11 +450,14 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
     }
 
     // P8: Full Telex only — standalone 'w' with no modifiable vowel → insert ư
-    if (config_.inputMethod != InputMethod::SimpleTelex) {
+    // In QU cluster, don't insert standalone ư (let 'w' be literal: "quew" → "quew")
+    if (config_.inputMethod != InputMethod::SimpleTelex && !IsInQUCluster()) {
         CharState s;
         s.base = L'u';
         s.mod = Modifier::Horn;
         s.isUpper = iswupper(c);
+        s.synthetic = true;  // Mark as P8-synthesized (ww escape removes it entirely)
+        s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
         states_.push_back(s);
         return true;
     }
@@ -403,6 +501,20 @@ bool TelexEngine::IsInQUCluster() const {
 }
 
 //-----------------------------------------------------------------------------
+// Remove Consumed Raw Entry (for tone escape auto-restore fix)
+//-----------------------------------------------------------------------------
+
+void TelexEngine::EraseConsumedRaw(size_t idx) {
+    if (idx >= rawInput_.size()) return;
+    rawInput_.erase(rawInput_.begin() + static_cast<ptrdiff_t>(idx));
+    // Adjust all indices that reference positions after the erased entry
+    for (auto& s : states_) {
+        if (s.rawIdx > idx) s.rawIdx--;
+        if (s.toneRawIdx != SIZE_MAX && s.toneRawIdx > idx) s.toneRawIdx--;
+    }
+}
+
+//-----------------------------------------------------------------------------
 // Character Processing
 //-----------------------------------------------------------------------------
 
@@ -412,6 +524,7 @@ void TelexEngine::ProcessChar(wchar_t c) {
     s.isUpper = iswupper(c);
     s.mod = Modifier::None;
     s.tone = Tone::None;
+    s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
     states_.push_back(s);
 }
 
@@ -429,6 +542,8 @@ void TelexEngine::ApplyAutoUO() {
     for (size_t i = start; i + 2 < states_.size(); ++i) {
         if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
             states_[i+1].base == L'o' && states_[i+1].mod == Modifier::Horn) {
+            // Skip QU cluster: don't auto-horn 'u' when preceded by 'q'
+            if (i > 0 && states_[i - 1].base == L'q') continue;
             states_[i].mod = Modifier::Horn;
         }
     }
@@ -504,6 +619,7 @@ size_t TelexEngine::FindToneTargetClassic() const {
             // Falling diphthongs: tone on FIRST
             if (first == L'a' && (last == L'i' || last == L'o' || last == L'u' || last == L'y')) return prevIdx;
             if (first == L'e' && (last == L'i' || last == L'o' || last == L'u')) return prevIdx;
+            if (first == L'i' && last == L'a') return prevIdx;  // nghĩa, mía, kìa
             if (first == L'o' && (last == L'i' || last == L'u')) return prevIdx;
             if ((first == L'u' || first == L'i') && (last == L'i' || last == L'u')) return prevIdx;
             if (first == L'u' && (last == L'a' || last == L'e')) return prevIdx;
@@ -577,6 +693,7 @@ size_t TelexEngine::FindToneTargetModern() const {
             // Falling diphthongs: tone on FIRST
             if (first == L'a' && (last == L'i' || last == L'o' || last == L'u' || last == L'y')) return prevIdx;
             if (first == L'e' && (last == L'i' || last == L'o' || last == L'u')) return prevIdx;
+            if (first == L'i' && last == L'a') return prevIdx;  // nghĩa, mía, kìa
             if (first == L'o' && (last == L'i' || last == L'u')) return prevIdx;
             if ((first == L'u' || first == L'i') && (last == L'i' || last == L'u')) return prevIdx;
 
@@ -654,9 +771,14 @@ std::wstring TelexEngine::ComposeAll() const {
 void TelexEngine::Backspace() {
     if (states_.empty()) return;
 
+    // Trim rawInput_ to the position when this state was created.
+    // This correctly handles modifier keys (circumflex, tone) that add to rawInput_
+    // without creating new states — backspace removes all associated raw entries.
+    size_t rawTarget = states_.back().rawIdx;
     states_.pop_back();
-
-    if (!rawInput_.empty()) rawInput_.pop_back();
+    if (rawInput_.size() > rawTarget) {
+        rawInput_.resize(rawTarget);
+    }
     UpdateSpellState();
 }
 
@@ -665,9 +787,32 @@ std::wstring TelexEngine::Peek() const {
 }
 
 std::wstring TelexEngine::Commit() {
-    std::wstring result = ComposeAll();
+    std::wstring composed = ComposeAll();
+
+    // When tempSpellOff_ is active, user intentionally bypassed spell check —
+    // skip auto-restore entirely and return composed text as-is
+    if (config_.spellCheckEnabled && config_.autoRestoreEnabled &&
+        spellCheckDisabled_ && !tempSpellOff_) {
+        std::wstring raw(rawInput_.begin(), rawInput_.end());
+        if (raw != composed) {
+            // Check if composed has Vietnamese diacritics (non-ASCII chars)
+            bool hasDiacritics = false;
+            for (wchar_t ch : composed) {
+                if (ch > 0x7F) { hasDiacritics = true; break; }
+            }
+            // Restore raw when:
+            // 1. Composed has diacritics (e.g., "gôgle" → "google")
+            // 2. Same length but different content (P8 w→ư→u, e.g., "uindow" → "window")
+            // Skip when raw is longer than composed (escape duplicates, e.g., "musst" → keep "must")
+            if (hasDiacritics || raw.length() <= composed.length()) {
+                Reset();
+                return raw;
+            }
+        }
+    }
+
     Reset();
-    return result;
+    return composed;
 }
 
 void TelexEngine::Reset() {
@@ -675,6 +820,14 @@ void TelexEngine::Reset() {
     rawInput_.clear();
     state_ = TelexStates::Valid;
     spellCheckDisabled_ = false;
+    tempSpellOff_ = false;
+}
+
+void TelexEngine::ToggleTempSpellOff() {
+    tempSpellOff_ = !tempSpellOff_;
+    if (tempSpellOff_) {
+        spellCheckDisabled_ = false;
+    }
 }
 
 size_t TelexEngine::Count() const noexcept {
@@ -690,7 +843,11 @@ void TelexEngine::UpdateSpellState() {
         spellCheckDisabled_ = false;
         return;
     }
-    auto result = SpellCheck::Validate(states_.data(), states_.size());
+    if (tempSpellOff_) {
+        spellCheckDisabled_ = false;
+        return;
+    }
+    auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
     spellCheckDisabled_ = (result == SpellCheck::Result::Invalid);
 }
 

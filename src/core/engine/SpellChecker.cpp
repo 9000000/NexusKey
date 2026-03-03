@@ -179,7 +179,7 @@ bool IsVowelPrefix(uint32_t key, int numSlots) {
 // đ: represented as d with mod != None
 
 template<typename CharStateT>
-size_t ParseInitialConsonant(const CharStateT* states, size_t count) {
+size_t ParseInitialConsonant(const CharStateT* states, size_t count, bool allowZwjf = false) {
     if (count == 0) return 0;
 
     // Check đ (d with modifier)
@@ -226,7 +226,9 @@ size_t ParseInitialConsonant(const CharStateT* states, size_t count) {
     if (c0 == L'b' || c0 == L'c' || c0 == L'd' || c0 == L'g' || c0 == L'h' ||
         c0 == L'k' || c0 == L'l' || c0 == L'm' || c0 == L'n' || c0 == L'p' ||
         c0 == L'q' || c0 == L'r' || c0 == L's' || c0 == L't' || c0 == L'v' ||
-        c0 == L'x') {
+        c0 == L'x' ||
+        // allowZwjf: z/j≡gi, w≡qu, f≡ph as valid initial consonants
+        (allowZwjf && (c0 == L'z' || c0 == L'j' || c0 == L'w' || c0 == L'f'))) {
         return 1;
     }
 
@@ -237,7 +239,8 @@ size_t ParseInitialConsonant(const CharStateT* states, size_t count) {
 // Final consonant validation
 //=============================================================================
 
-// Valid final consonants: c, ch, m, n, ng, nh, p, t
+// Valid final consonants: c, ch, k, m, n, ng, nh, p, t
+// ('k' for minority-language proper nouns: Đắk Lắk, Đắk Nông, etc.)
 // Returns number of states consumed, 0 if no valid final consonant
 
 template<typename CharStateT>
@@ -257,22 +260,22 @@ size_t ParseFinalConsonant(const CharStateT* states, size_t count) {
         }
     }
 
-    // Try 1-char finals
-    if (c0 == L'c' || c0 == L'm' || c0 == L'n' || c0 == L'p' || c0 == L't') {
+    // Try 1-char finals (k = same stop as c, used in minority-language proper nouns)
+    if (c0 == L'c' || c0 == L'k' || c0 == L'm' || c0 == L'n' || c0 == L'p' || c0 == L't') {
         return 1;
     }
 
     return 0;
 }
 
-// Check if final consonant is a "stop" final (c, ch, p, t)
+// Check if final consonant is a "stop" final (c, ch, k, p, t)
 // Stop finals only allow Acute and Dot tones
 template<typename CharStateT>
 bool IsStopFinal(const CharStateT* states, size_t finalLen) {
     if (finalLen == 0) return false;
     wchar_t c0 = states[0].base;
     if (c0 == L'p' || c0 == L't') return true;
-    if (c0 == L'c') return true;  // c and ch are both stops
+    if (c0 == L'c' || c0 == L'k') return true;  // c, ch, k are all stops
     return false;
 }
 
@@ -421,11 +424,24 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
 //=============================================================================
 
 template<typename CharStateT>
-bool IsValidConsonantPrefix(const CharStateT* states, size_t count) {
+bool IsValidConsonantPrefix(const CharStateT* states, size_t count, bool allowZwjf = false) {
     if (count == 0) return true;
 
-    // Single consonant — always a valid prefix
-    if (count == 1 && !states[0].IsVowel()) return true;
+    // Single consonant — always a valid prefix (including z/j/w/f when allowZwjf)
+    if (count == 1 && !states[0].IsVowel()) {
+        wchar_t c0 = states[0].base;
+        // Standard consonants
+        if (c0 == L'b' || c0 == L'c' || c0 == L'd' || c0 == L'g' || c0 == L'h' ||
+            c0 == L'k' || c0 == L'l' || c0 == L'm' || c0 == L'n' || c0 == L'p' ||
+            c0 == L'q' || c0 == L'r' || c0 == L's' || c0 == L't' || c0 == L'v' ||
+            c0 == L'x' ||
+            (allowZwjf && (c0 == L'z' || c0 == L'j' || c0 == L'w' || c0 == L'f'))) {
+            return true;
+        }
+        // đ
+        if (states[0].IsD() && states[0].mod != decltype(states[0].mod){}) return true;
+        return false;
+    }
 
     // Check for valid 2-char initial consonant prefixes
     if (count == 2) {
@@ -458,11 +474,11 @@ bool IsValidConsonantPrefix(const CharStateT* states, size_t count) {
 //=============================================================================
 
 template<typename CharStateT>
-Result ValidateImpl(const CharStateT* states, size_t count) {
+Result ValidateImpl(const CharStateT* states, size_t count, bool allowZwjf = false) {
     if (count == 0) return Result::ValidPrefix;
 
     // First, try standard decomposition
-    size_t initialLen = ParseInitialConsonant(states, count);
+    size_t initialLen = ParseInitialConsonant(states, count, allowZwjf);
 
     // Check for invalid consonant sequences
     if (initialLen == 0 && !states[0].IsVowel()) {
@@ -478,7 +494,7 @@ Result ValidateImpl(const CharStateT* states, size_t count) {
 
     // Special: if only consonants consumed and no vowels follow, check prefix validity
     if (initialLen > 0 && initialLen == count) {
-        if (IsValidConsonantPrefix(states, count)) {
+        if (IsValidConsonantPrefix(states, count, allowZwjf)) {
             return Result::ValidPrefix;
         }
         return Result::Invalid;
@@ -487,7 +503,7 @@ Result ValidateImpl(const CharStateT* states, size_t count) {
     // After initial consonant, if next char is not a vowel, it might be invalid
     if (initialLen > 0 && initialLen < count && !states[initialLen].IsVowel()) {
         // Check if the first chars form a valid consonant-only prefix
-        if (IsValidConsonantPrefix(states, count)) {
+        if (IsValidConsonantPrefix(states, count, allowZwjf)) {
             return Result::ValidPrefix;
         }
         return Result::Invalid;
@@ -549,13 +565,13 @@ Result ValidateImpl(const CharStateT* states, size_t count) {
 //=============================================================================
 
 template<typename CharStateT>
-Result Validate(const CharStateT* states, size_t count) noexcept {
-    return ValidateImpl(states, count);
+Result Validate(const CharStateT* states, size_t count, bool allowZwjf) noexcept {
+    return ValidateImpl(states, count, allowZwjf);
 }
 
 // Explicit instantiations for both engine types
-template Result Validate<Telex::CharState>(const Telex::CharState* states, size_t count) noexcept;
-template Result Validate<Vni::CharState>(const Vni::CharState* states, size_t count) noexcept;
+template Result Validate<Telex::CharState>(const Telex::CharState* states, size_t count, bool allowZwjf) noexcept;
+template Result Validate<Vni::CharState>(const Vni::CharState* states, size_t count, bool allowZwjf) noexcept;
 
 }  // namespace SpellCheck
 }  // namespace NextKey

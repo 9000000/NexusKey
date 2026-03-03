@@ -4,13 +4,23 @@
 #include "TrayIcon.h"
 #include "SettingsDialog.h"
 #include "ExcludedAppsDialog.h"
+#include "MacroTableDialog.h"
+#include "ConvertToolDialog.h"
+#include "AboutDialog.h"
 #include "SubprocessHelper.h"
+#include "UpdateChecker.h"
+#include "UpdateInstaller.h"
+#include "core/Version.h"
 #include "core/config/TypingConfig.h"
 #include "core/config/ConfigManager.h"
+#include "core/config/ConfigEvent.h"
+#include "core/ipc/SharedState.h"
+#include "core/Strings.h"
 #include "core/Debug.h"
 
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "HookEngine.h"
+#include "QuickConvert.h"
 #include "core/ipc/SharedStateManager.h"
 #else
 #include "HotkeyManager.h"
@@ -20,11 +30,18 @@
 
 #include <Windows.h>
 #include <ole2.h>
+#include <memory>
 #include <string>
 #include <vector>
 #include <atomic>
+#include <thread>
 
 #pragma comment(lib, "ole32.lib")
+
+// Require Common Controls v6 for TaskDialog / TaskDialogIndirect
+#pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' " \
+    "version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+
 
 #ifndef NEXUSKEY_HOOK_ENGINE
 // TSF Registration functions (only needed for TSF mode)
@@ -316,39 +333,9 @@ using namespace NextKey;
 void SpawnSettingsSubprocess();
 [[noreturn]] void RunSettingsSubprocess();
 [[noreturn]] void RunExcludedAppsSubprocess();
-void CloseAllNexusKeyWindows();
-
-// Callback for EnumWindows - closes windows belonging to our executable
-static BOOL CALLBACK CloseNexusKeyWindowsProc(HWND hwnd, LPARAM lParam) {
-    const wchar_t* ourExePath = reinterpret_cast<const wchar_t*>(lParam);
-
-    // Get the process that owns this window
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    if (pid == 0) return TRUE;
-
-    // Open process to get its executable path
-    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!hProcess) return TRUE;
-
-    wchar_t processPath[MAX_PATH];
-    DWORD pathLen = MAX_PATH;
-    BOOL gotPath = QueryFullProcessImageNameW(hProcess, 0, processPath, &pathLen);
-    CloseHandle(hProcess);
-
-    if (gotPath && _wcsicmp(processPath, ourExePath) == 0) {
-        // This window belongs to our executable - close it
-        PostMessageW(hwnd, WM_CLOSE, 0, 0);
-    }
-    return TRUE;  // Continue enumeration
-}
-
-void CloseAllNexusKeyWindows() {
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    EnumWindows(CloseNexusKeyWindowsProc, reinterpret_cast<LPARAM>(exePath));
-}
-
+[[noreturn]] void RunMacroSubprocess();
+[[noreturn]] void RunConvertToolSubprocess();
+[[noreturn]] void RunAboutSubprocess();
 // Global state
 static std::atomic<bool> g_running{true};
 static TrayIcon g_trayIcon;
@@ -356,6 +343,7 @@ static HINSTANCE g_hInstance = nullptr;
 
 #ifdef NEXUSKEY_HOOK_ENGINE
 static HookEngine g_hookEngine;
+static std::unique_ptr<QuickConvert> g_quickConvert;
 static SharedStateManager g_sharedState;  // Shared memory for Settings subprocess IPC
 #else
 static SharedStateManager g_sharedState;
@@ -411,6 +399,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     }
 #endif
 
+    // Self-update installer mode (MUST be before Sciter dialog routes — sciter.dll not loaded yet)
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--install-update") != nullptr) {
+        const wchar_t* arg = wcsstr(lpCmdLine, L"--install-update");
+        arg += 16;  // Skip "--install-update"
+        // Skip whitespace
+        while (*arg == L' ' || *arg == L'\t') arg++;
+        // Strip surrounding quotes if present
+        std::wstring zipPath(arg);
+        if (zipPath.size() >= 2 && zipPath.front() == L'"' && zipPath.back() == L'"') {
+            zipPath = zipPath.substr(1, zipPath.size() - 2);
+        }
+        if (!zipPath.empty()) {
+            RunUpdateInstaller(zipPath);  // [[noreturn]]
+        }
+        return 1;  // Missing zip path
+    }
+
     // Settings subprocess (Sciter dialog)
     if (lpCmdLine && wcsstr(lpCmdLine, L"--settings") != nullptr) {
         RunSettingsSubprocess();  // [[noreturn]] - never returns
@@ -421,6 +426,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         RunExcludedAppsSubprocess();  // [[noreturn]] - never returns
     }
 
+    // Macro Table subprocess (Sciter dialog)
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--macro") != nullptr) {
+        RunMacroSubprocess();  // [[noreturn]] - never returns
+    }
+
+    // Convert Tool subprocess (Sciter dialog)
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--convert") != nullptr) {
+        RunConvertToolSubprocess();  // [[noreturn]] - never returns
+    }
+
+    // About subprocess (Sciter dialog)
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--about") != nullptr) {
+        RunAboutSubprocess();  // [[noreturn]] - never returns
+    }
+
     // ═══════════════════════════════════════════════════════════
     // Main Process
     // ═══════════════════════════════════════════════════════════
@@ -428,6 +448,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Load config
     auto config = ConfigManager::LoadOrDefault();
     auto hotkeyConfig = ConfigManager::LoadHotkeyConfigOrDefault();
+
+    // Initialize UI language from system config
+    auto systemConfig = ConfigManager::LoadSystemConfigOrDefault();
+    SetLanguage(static_cast<Language>(systemConfig.language));
+
+    // Clean up leftover files from a previous update
+    CleanupOldUpdateFiles();
 
 #ifdef NEXUSKEY_HOOK_ENGINE
     // ═══════════════════════════════════════════════════════════
@@ -442,7 +469,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
         state.spellCheck = config.spellCheckEnabled ? 1 : 0;
         state.optimizeLevel = config.optimizeLevel;
-        state.featureFlags = EncodeFeatureFlags(config);
+        state.codeTable = static_cast<uint8_t>(config.codeTable);
+        state.SetFeatureFlags(EncodeFeatureFlags(config));
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created for HookEngine mode");
     }
@@ -471,6 +499,43 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     });
 
+    // Wire menu state getter — reads from SharedState only (no TOML).
+    // SharedState is updated immediately by Settings dialog.
+    g_trayIcon.SetMenuStateGetter([]() -> TrayMenuState {
+        SharedState state = g_sharedState.Read();
+        uint16_t ff = state.GetFeatureFlags();
+        return {
+            g_hookEngine.IsVietnameseMode(),
+            state.spellCheck != 0,
+            (ff & FeatureFlags::SMART_SWITCH) != 0,
+            (ff & FeatureFlags::MACRO_ENABLED) != 0,
+            state.inputMethod,
+            static_cast<CodeTable>(state.codeTable)
+        };
+    });
+
+    // Load convert config and create QuickConvert
+    {
+        auto convertConfig = ConfigManager::LoadConvertConfigOrDefault();
+        g_quickConvert = std::make_unique<QuickConvert>(convertConfig);
+
+        // Wire convert hotkey to HookEngine
+        g_hookEngine.SetConvertHotkey(convertConfig.hotkey);
+        g_hookEngine.SetConvertCallback([]() {
+            if (g_quickConvert) {
+                g_quickConvert->Execute();
+            }
+        });
+
+        // Reload QuickConvert config when HookEngine detects config change
+        g_hookEngine.SetConfigReloadCallback([]() {
+            if (g_quickConvert) {
+                auto cc = ConfigManager::LoadConvertConfigOrDefault();
+                g_quickConvert->UpdateConfig(cc);
+            }
+        });
+    }
+
     // Start keyboard hook engine
     if (!g_hookEngine.Start(hInstance, config, hotkeyConfig)) {
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"NexusKey", MB_ICONERROR);
@@ -478,6 +543,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     }
 
     NEXTKEY_LOG(L"HookEngine started, entering message loop");
+
+    // Apply system config (icon style, show-on-startup)
+    g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE);
+    if (systemConfig.showOnStartup) {
+        SpawnSettingsSubprocess();
+    }
+
+    // Auto-check for updates on startup (background thread, 3s delay)
+    if (systemConfig.autoCheckUpdate) {
+        std::thread([]() {
+            Sleep(3000);
+            auto info = UpdateChecker::CheckForUpdate();
+            if (info.available) {
+                HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                if (trayWnd) {
+                    PostMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                                 reinterpret_cast<LPARAM>(new UpdateInfo(std::move(info))));
+                }
+            }
+        }).detach();
+    }
 
     MSG msg;
     while (g_running.load(std::memory_order_relaxed) && GetMessageW(&msg, nullptr, 0, 0)) {
@@ -536,7 +622,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
         state.spellCheck = config.spellCheckEnabled ? 1 : 0;
         state.optimizeLevel = config.optimizeLevel;
-        state.featureFlags = EncodeFeatureFlags(config);
+        state.codeTable = static_cast<uint8_t>(config.codeTable);
+        state.SetFeatureFlags(EncodeFeatureFlags(config));
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created and initialized");
     }
@@ -548,6 +635,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         return 1;
     }
     g_trayIcon.SetMenuCallback(OnMenuCommand);
+
+    // Wire menu state getter — reads from SharedState only (no TOML).
+    // SharedState is updated immediately by Settings dialog.
+    g_trayIcon.SetMenuStateGetter([]() -> TrayMenuState {
+        SharedState state = g_sharedState.Read();
+        uint16_t ff = state.GetFeatureFlags();
+        return {
+            (state.flags & SharedFlags::VIETNAMESE_MODE) != 0,
+            state.spellCheck != 0,
+            (ff & FeatureFlags::SMART_SWITCH) != 0,
+            (ff & FeatureFlags::MACRO_ENABLED) != 0,
+            state.inputMethod,
+            static_cast<CodeTable>(state.codeTable)
+        };
+    });
 
     // Poll SharedState flags every 250ms to sync icon V/E state
     SetTimer(g_trayIcon.GetMessageWindow(), TIMER_ID_ICON_POLL, 250, IconPollTimerProc);
@@ -563,6 +665,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     }
 
     NEXTKEY_LOG(L"Tray icon created, entering message loop");
+
+    // Apply system config (icon style, show-on-startup)
+    g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE);
+    if (systemConfig.showOnStartup) {
+        SpawnSettingsSubprocess();
+    }
+
+    // Auto-check for updates on startup (background thread, 3s delay)
+    if (systemConfig.autoCheckUpdate) {
+        std::thread([]() {
+            Sleep(3000);
+            auto info = UpdateChecker::CheckForUpdate();
+            if (info.available) {
+                HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                if (trayWnd) {
+                    PostMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                                 reinterpret_cast<LPARAM>(new UpdateInfo(std::move(info))));
+                }
+            }
+        }).detach();
+    }
 
     MSG msg;
     while (g_running.load(std::memory_order_relaxed) && GetMessageW(&msg, nullptr, 0, 0)) {
@@ -591,6 +714,38 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     return 0;
 }
 
+/// Save config to TOML + sync SharedState + signal ConfigEvent.
+/// Used by tray menu toggle handlers to propagate changes.
+static void ApplyConfigChange(const TypingConfig& config) {
+    // 1. Save to TOML
+    (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
+
+    // 2. Sync to SharedState
+    SharedStateManager sm;
+    if (sm.OpenReadWrite()) {
+        SharedState state = sm.Read();
+        if (state.IsValid()) {
+            state.inputMethod = static_cast<uint8_t>(config.inputMethod);
+            state.spellCheck = config.spellCheckEnabled ? 1 : 0;
+            state.codeTable = static_cast<uint8_t>(config.codeTable);
+            state.SetFeatureFlags(EncodeFeatureFlags(config));
+            sm.Write(state);
+        }
+    }
+
+    // 3. Signal engine to pick up changes
+    ConfigEvent event;
+    if (event.Initialize()) {
+        event.Signal();
+    }
+
+    // 4. Notify Settings dialog (if open) to refresh UI
+    HWND settingsWnd = FindWindowW(nullptr, L"NexusKey Settings");
+    if (settingsWnd) {
+        PostMessageW(settingsWnd, WM_NEXUSKEY_CONFIG_CHANGED, 0, 0);
+    }
+}
+
 void OnMenuCommand(TrayMenuId id) {
     switch (id) {
         case TrayMenuId::Settings:
@@ -598,12 +753,7 @@ void OnMenuCommand(TrayMenuId id) {
             break;
 
         case TrayMenuId::About:
-            MessageBoxW(nullptr,
-                L"NexusKey Vietnamese Input\n"
-                L"Version 1.0.0\n\n"
-                L"A modern Vietnamese typing solution for Windows.\n\n"
-                L"SPDX-License-Identifier: GPL-3.0-only",
-                L"About NexusKey", MB_ICONINFORMATION);
+            SpawnSubprocess(L"NexusKey - About", L"--about");
             break;
 
         case TrayMenuId::ToggleMode:
@@ -618,11 +768,93 @@ void OnMenuCommand(TrayMenuId id) {
 #endif
             break;
 
+        case TrayMenuId::SpellCheck: {
+            auto config = ConfigManager::LoadOrDefault();
+            config.spellCheckEnabled = !config.spellCheckEnabled;
+            ApplyConfigChange(config);
+            break;
+        }
+
+        case TrayMenuId::SmartSwitch: {
+            auto config = ConfigManager::LoadOrDefault();
+            config.smartSwitch = !config.smartSwitch;
+            ApplyConfigChange(config);
+            break;
+        }
+
+        case TrayMenuId::MacroEnabled: {
+            auto config = ConfigManager::LoadOrDefault();
+            config.macroEnabled = !config.macroEnabled;
+            ApplyConfigChange(config);
+            break;
+        }
+
+        case TrayMenuId::MacroTable:
+            SpawnSubprocess(L"NexusKey - Macro Table", L"--macro");
+            break;
+
+        case TrayMenuId::ConvertTool:
+            SpawnSubprocess(L"NexusKey - Convert Tool", L"--convert");
+            break;
+
+#ifdef NEXUSKEY_HOOK_ENGINE
+        case TrayMenuId::QuickConvert:
+            if (g_quickConvert) {
+                g_quickConvert->Execute();
+            }
+            break;
+#endif
+
+        case TrayMenuId::InputTelex:
+        case TrayMenuId::InputVNI:
+        case TrayMenuId::InputSimpleTelex: {
+            auto config = ConfigManager::LoadOrDefault();
+            int method = static_cast<int>(id) - static_cast<int>(TrayMenuId::InputTelex);
+            config.inputMethod = static_cast<InputMethod>(method);
+            ApplyConfigChange(config);
+            break;
+        }
+
         case TrayMenuId::Exit:
-            CloseAllNexusKeyWindows();
+            TerminateAllSubprocesses();
             g_running.store(false, std::memory_order_relaxed);
             PostQuitMessage(0);
             break;
+
+        default: {
+            // Code table menu items (1010-1014)
+            auto rawId = static_cast<UINT>(id);
+            if (rawId >= static_cast<UINT>(TrayMenuId::CodeTableUnicode) &&
+                rawId <= static_cast<UINT>(TrayMenuId::CodeTableCP1258)) {
+                auto ct = static_cast<CodeTable>(rawId - static_cast<UINT>(TrayMenuId::CodeTableUnicode));
+#ifdef NEXUSKEY_HOOK_ENGINE
+                g_hookEngine.SetCodeTable(ct);
+#endif
+                // Update SharedState immediately (source of truth at runtime)
+                {
+                    SharedState state = g_sharedState.Read();
+                    if (state.IsValid()) {
+                        state.codeTable = static_cast<uint8_t>(ct);
+                        g_sharedState.Write(state);
+                    }
+                }
+
+                // Persist to TOML for next startup (no ConfigEvent — SetCodeTable()
+                // already updated runtime state. ConfigEvent would cause
+                // CheckConfigEvent() to clear appCodeTableMap_ on race.)
+                auto config = ConfigManager::LoadOrDefault();
+                config.codeTable = ct;
+                (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
+
+                // Notify Settings dialog to refresh UI
+                HWND settingsWnd = FindWindowW(nullptr, L"NexusKey Settings");
+                if (settingsWnd) {
+                    PostMessageW(settingsWnd, WM_NEXUSKEY_CONFIG_CHANGED, 0, 0);
+                }
+                NEXTKEY_LOG(L"Code table changed via tray menu: %d", static_cast<int>(ct));
+            }
+            break;
+        }
     }
 }
 
@@ -660,7 +892,7 @@ void SpawnSettingsSubprocess() {
 
     if (CreateProcessW(nullptr, cmdLine, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
         CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
+        TrackChildProcess(pi.hProcess);  // Track for cleanup on exit
         NEXTKEY_LOG(L"Settings subprocess spawned successfully");
     } else {
         DWORD err = GetLastError();
@@ -718,5 +950,44 @@ void SpawnSettingsSubprocess() {
     dialog.Show();
 
     NEXTKEY_LOG(L"Excluded apps subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunMacroSubprocess() {
+    NEXTKEY_LOG(L"Running macro table subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    MacroTableDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"Macro table subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunConvertToolSubprocess() {
+    NEXTKEY_LOG(L"Running convert tool subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    ConvertToolDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"Convert tool subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunAboutSubprocess() {
+    NEXTKEY_LOG(L"Running about subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    AboutDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"About subprocess exiting");
     ExitProcess(0);
 }

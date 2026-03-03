@@ -185,7 +185,8 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->inputMethod = state.inputMethod;
     p->spellCheck = state.spellCheck;
     p->optimizeLevel = state.optimizeLevel;
-    p->featureFlags = state.featureFlags;
+    p->featureFlags[0] = state.featureFlags[0];
+    p->featureFlags[1] = state.featureFlags[1];
 
     MemoryBarrier();
     p->epoch = seq + 1;  // Now even = done

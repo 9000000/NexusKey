@@ -1,5 +1,5 @@
-/* Macro Dialog Styles - Copied from Settings Dialog */
-@import url("../shared/theme.css");
+/* Macro Dialog Styles */
+/* theme.css loaded via <link> in HTML (Sciter @import is unreliable) */
 
 * {
     margin: 0;

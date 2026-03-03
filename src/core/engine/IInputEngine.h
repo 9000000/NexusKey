@@ -31,6 +31,9 @@ public:
 
     /// Get number of characters in current composition
     [[nodiscard]] virtual size_t Count() const = 0;
+
+    /// Toggle temporary spell check bypass for current word
+    virtual void ToggleTempSpellOff() = 0;
 };
 
 }  // namespace NextKey

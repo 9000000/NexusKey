@@ -1,6 +1,5 @@
 /* App Overrides Dialog Styles - Unified per-app config */
-@import url("../shared/theme.css");
-@import url("../shared/dropdown.css");
+/* theme.css + dropdown.css loaded via HTML <link> (Sciter @import is unreliable) */
 
 * {
     margin: 0;

@@ -2,6 +2,7 @@
 // Handles dropdown selection and C++ communication
 
 document.ready = function () {
+    initSubDialog(".app-list");  // blur + dark + scrollbar + i18n
     initRunningAppsDropdown();
     initButtons();
     initEventDelegation();
@@ -82,7 +83,7 @@ function setRunningApps(apps) {
     if (!apps || apps.length === 0) {
         var empty = document.createElement("div");
         empty.className = "dropdown-empty";
-        empty.textContent = "Không có ứng dụng nào đang chạy";
+        empty.textContent = (typeof t === "function" && t("no_running_apps")) || "Không có ứng dụng nào đang chạy";
         dropdown.appendChild(empty);
         return;
     }

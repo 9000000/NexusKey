@@ -44,9 +44,40 @@ struct TypingConfig {
     bool modernOrtho = false;   // Modern tone placement (oà, uý)
     bool autoCaps = false;      // Auto-capitalize first letter of sentence
     bool allowZwjf = true;      // z/w/j/f act as tone/modifier keys (normal Vietnamese)
+    bool autoRestoreEnabled = false;  // Restore raw keys when word is invalid
+    bool freeMarking = false;         // Apply tones/marks freely without strict spell check gating
+    bool tempOffSpellByCtrl = false;  // Solo Ctrl tap temporarily disables spell check for current word
+    bool tempOffByAlt = false;        // Double-Alt tap temporarily disables Vietnamese for current word
+    bool rememberCodeTable = false;   // Auto-remember code table per application
+    bool macroEnabled = false;         // Allow macro/shorthand expansion
+    bool macroInEnglish = false;       // Allow macros even when Vietnamese mode is off
+    bool quickConsonant = false;       // Quick typing: cc→ch, gg→gi, nn→ng
+    bool quickStartConsonant = false;  // Quick start consonant: f→ph, j→gi, w→qu
+    bool quickEndConsonant = false;    // Quick end consonant: g→ng, h→nh, k→ch
+    bool tempOffMacroByEsc = false;    // Esc temporarily disables macro for next word
 
     // Default constructor for compiled defaults (FR8 - engine autonomy)
     TypingConfig() = default;
+};
+
+/// Configuration for quick-convert hotkey feature
+struct ConvertConfig {
+    // Toggle options (which conversions are enabled)
+    bool allCaps = false;         // Chuyển sang chữ HOA
+    bool allLower = false;        // Chuyển sang chữ thường
+    bool capsFirst = false;       // Đặt chữ Hoa đầu câu
+    bool capsEach = false;        // Đặt chữ Hoa Sau Mỗi Từ
+    bool removeMark = false;      // Loại bỏ dấu câu
+    bool alertDone = false;       // Thông báo khi chuyển xong
+    bool autoPaste = false;       // Tự động dán + bôi đen
+    bool sequential = false;      // Convert tuần tự
+
+    // Encoding conversion
+    uint8_t sourceEncoding = 0;   // CodeTable enum value
+    uint8_t destEncoding = 0;     // CodeTable enum value
+
+    // Hotkey for quick-convert
+    HotkeyConfig hotkey{};
 };
 
 }  // namespace NextKey
