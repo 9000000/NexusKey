@@ -3,7 +3,7 @@
 
 #include "ExcludedAppsDialog.h"
 #include "core/config/ConfigManager.h"
-#include "core/config/ConfigEvent.h"
+#include "helpers/AppHelpers.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <vector>
@@ -32,10 +32,7 @@ void ExcludedAppsDialog::onBeforeClose() {
 
 void ExcludedAppsDialog::persistAndSignal() {
     (void)ConfigManager::SaveExcludedApps(ConfigManager::GetConfigPath(), appList_);
-    ConfigEvent event;
-    if (event.Initialize()) {
-        event.Signal();
-    }
+    SignalConfigChange();
 }
 
 bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
@@ -121,9 +118,7 @@ void ExcludedAppsDialog::populateList() {
 }
 
 void ExcludedAppsDialog::addApp(const std::wstring& name) {
-    // Lowercase for consistent matching
-    std::wstring lower = name;
-    for (auto& c : lower) c = towlower(c);
+    std::wstring lower = ToLowerAscii(name);
 
     // Check for duplicates
     for (auto& existing : appList_) {
@@ -137,8 +132,7 @@ void ExcludedAppsDialog::addApp(const std::wstring& name) {
 }
 
 void ExcludedAppsDialog::removeApp(const std::wstring& name) {
-    std::wstring lower = name;
-    for (auto& c : lower) c = towlower(c);
+    std::wstring lower = ToLowerAscii(name);
 
     auto it = std::find(appList_.begin(), appList_.end(), lower);
     if (it != appList_.end()) {
@@ -158,9 +152,7 @@ std::vector<std::wstring> ExcludedAppsDialog::getRunningApps() {
 
     if (Process32FirstW(snapshot, &pe)) {
         do {
-            std::wstring name = pe.szExeFile;
-            // Lowercase for consistent matching
-            for (auto& c : name) c = towlower(c);
+            std::wstring name = ToLowerAscii(pe.szExeFile);
 
             // Skip system processes
             if (name == L"system" || name == L"system idle process" ||

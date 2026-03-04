@@ -4,7 +4,8 @@
 #include "ConvertToolDialog.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/config/ConfigManager.h"
-#include "core/config/ConfigEvent.h"
+#include "helpers/AppHelpers.h"
+#include "core/Strings.h"
 #include "sciter-x-dom.hpp"
 #include <windows.h>
 #include <vector>
@@ -309,18 +310,18 @@ void ConvertToolDialog::doConvert() {
     if (sourceType == L"file") {
         std::wstring srcPath = getHiddenValue("#val-source-file");
         if (srcPath.empty()) {
-            MessageBoxW(get_hwnd(), L"Chưa chọn file nguồn.", L"NexusKey", MB_OK | MB_ICONWARNING);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_NO_SOURCE_FILE), L"NexusKey", MB_OK | MB_ICONWARNING);
             return;
         }
         input = readFileContent(srcPath, srcTable);
         if (input.empty()) {
-            MessageBoxW(get_hwnd(), L"Không thể đọc file nguồn.", L"NexusKey", MB_OK | MB_ICONERROR);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_READ_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
             return;
         }
     } else {
         input = readClipboardText();
         if (input.empty()) {
-            MessageBoxW(get_hwnd(), L"Clipboard trống.", L"NexusKey", MB_OK | MB_ICONWARNING);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
             return;
         }
     }
@@ -349,23 +350,23 @@ void ConvertToolDialog::doConvert() {
     if (sourceType == L"file") {
         std::wstring dstPath = getHiddenValue("#val-dest-file");
         if (dstPath.empty()) {
-            MessageBoxW(get_hwnd(), L"Chưa chọn file đích.", L"NexusKey", MB_OK | MB_ICONWARNING);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_NO_DEST_FILE), L"NexusKey", MB_OK | MB_ICONWARNING);
             return;
         }
         if (!writeFileContent(dstPath, output, dstTable)) {
-            MessageBoxW(get_hwnd(), L"Không thể ghi file đích.", L"NexusKey", MB_OK | MB_ICONERROR);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
             return;
         }
     } else {
         if (!writeClipboardText(output)) {
-            MessageBoxW(get_hwnd(), L"Không thể ghi vào clipboard.", L"NexusKey", MB_OK | MB_ICONERROR);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
             return;
         }
     }
 
     // 8. Alert on completion
     if (alertDone) {
-        MessageBoxW(get_hwnd(), L"Chuyển mã thành công!", L"NexusKey", MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(get_hwnd(), S(StringId::CONVERT_SUCCESS), L"NexusKey", MB_OK | MB_ICONINFORMATION);
     }
 }
 
@@ -375,12 +376,7 @@ void ConvertToolDialog::doConvert() {
 
 void ConvertToolDialog::saveConvertConfig() {
     (void)ConfigManager::SaveConvertConfig(ConfigManager::GetConfigPath(), config_);
-
-    // Signal HookEngine to reload convert config + hotkey
-    ConfigEvent event;
-    if (event.Initialize()) {
-        event.Signal();
-    }
+    SignalConfigChange();
 }
 
 void ConvertToolDialog::setToggleUI(const char* toggleId, const char* hiddenId, bool value) {

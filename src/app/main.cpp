@@ -558,8 +558,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             if (info.available) {
                 HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
                 if (trayWnd) {
-                    PostMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
-                                 reinterpret_cast<LPARAM>(new UpdateInfo(std::move(info))));
+                    auto* pInfo = new (std::nothrow) UpdateInfo(std::move(info));
+                    if (pInfo) {
+                        // SendMessage ensures synchronous delivery — handler deletes pInfo
+                        SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                                     reinterpret_cast<LPARAM>(pInfo));
+                    }
                 }
             }
         }).detach();
@@ -680,8 +684,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             if (info.available) {
                 HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
                 if (trayWnd) {
-                    PostMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
-                                 reinterpret_cast<LPARAM>(new UpdateInfo(std::move(info))));
+                    auto* pInfo = new (std::nothrow) UpdateInfo(std::move(info));
+                    if (pInfo) {
+                        // SendMessage ensures synchronous delivery — handler deletes pInfo
+                        SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                                     reinterpret_cast<LPARAM>(pInfo));
+                    }
                 }
             }
         }).detach();

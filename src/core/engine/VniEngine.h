@@ -68,6 +68,7 @@ private:
     CharState* FindToneTarget();
     CharState* FindToneTargetClassic();
     CharState* FindToneTargetModern();
+    CharState* FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs);
     
     // Spell check
     void UpdateSpellState();

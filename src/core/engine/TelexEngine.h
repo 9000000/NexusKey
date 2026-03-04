@@ -101,6 +101,7 @@ private:
     size_t FindToneTarget() const;
     size_t FindToneTargetClassic() const;
     size_t FindToneTargetModern() const;
+    size_t FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs) const;
 
     // Auto ươ: convert 'uơ' to 'ươ' when followed by another character
     void ApplyAutoUO();

@@ -38,6 +38,13 @@ static const wchar_t* const kVietnamese[] = {
     L"Không thể kiểm tra cập nhật.",                 // UPDATE_FAILED
     L"Đang tải cập nhật...",                         // UPDATE_DOWNLOADING
     L"Xem thay đổi",                                // UPDATE_CHANGELOG
+    L"Chưa chọn file nguồn.",                       // CONVERT_NO_SOURCE_FILE
+    L"Không thể đọc file nguồn.",                    // CONVERT_READ_ERROR
+    L"Clipboard trống.",                             // CONVERT_CLIPBOARD_EMPTY
+    L"Chưa chọn file đích.",                         // CONVERT_NO_DEST_FILE
+    L"Không thể ghi file đích.",                     // CONVERT_WRITE_ERROR
+    L"Không thể ghi vào clipboard.",                 // CONVERT_CLIPBOARD_WRITE_ERROR
+    L"Chuyển mã thành công!",                        // CONVERT_SUCCESS
 };
 
 // English string table
@@ -70,6 +77,13 @@ static const wchar_t* const kEnglish[] = {
     L"Unable to check for updates.",                 // UPDATE_FAILED
     L"Downloading update...",                        // UPDATE_DOWNLOADING
     L"View changelog",                               // UPDATE_CHANGELOG
+    L"No source file selected.",                     // CONVERT_NO_SOURCE_FILE
+    L"Cannot read source file.",                     // CONVERT_READ_ERROR
+    L"Clipboard is empty.",                          // CONVERT_CLIPBOARD_EMPTY
+    L"No destination file selected.",                // CONVERT_NO_DEST_FILE
+    L"Cannot write destination file.",               // CONVERT_WRITE_ERROR
+    L"Cannot write to clipboard.",                   // CONVERT_CLIPBOARD_WRITE_ERROR
+    L"Conversion successful!",                       // CONVERT_SUCCESS
 };
 
 static_assert(sizeof(kVietnamese) / sizeof(kVietnamese[0]) == static_cast<size_t>(StringId::_COUNT),

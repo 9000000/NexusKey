@@ -79,6 +79,57 @@ constexpr int ToneBaseIndex(wchar_t ch) {
 }
 
 //=============================================================================
+// Diphthong Tone Placement — shared between Telex and VNI engines
+// Table[first_vowel][second_vowel] → 0=no rule, 1=FIRST, 2=SECOND
+// Vowel index: a=0, e=1, i=2, o=3, u=4, y=5
+//=============================================================================
+
+/// Map base vowel to diphthong table index
+constexpr int DiphthongVowelIndex(wchar_t base) {
+    switch (base) {
+        case L'a': return 0;
+        case L'e': return 1;
+        case L'i': return 2;
+        case L'o': return 3;
+        case L'u': return 4;
+        case L'y': return 5;
+        default:   return -1;
+    }
+}
+
+/// Classic placement: oa, oe → tone on FIRST (old-style: hòa, xòe)
+constexpr uint8_t kDiphthongClassic[6][6] = {
+    //          a  e  i  o  u  y
+    /* a */ {   0, 0, 1, 1, 1, 1 },  // ai, ao, au, ay
+    /* e */ {   0, 0, 1, 1, 1, 0 },  // ei, eo, eu
+    /* i */ {   1, 0, 1, 0, 1, 0 },  // ia, ii, iu
+    /* o */ {   1, 1, 1, 0, 1, 0 },  // oa=FIRST, oe=FIRST, oi, ou
+    /* u */ {   1, 1, 1, 0, 1, 2 },  // ua, ue, ui, uu, uy=SECOND
+    /* y */ {   0, 0, 0, 0, 0, 0 },
+};
+
+/// Modern placement: oa, oe, ue → tone on SECOND (new-style: hóa, xoé, thuế)
+constexpr uint8_t kDiphthongModern[6][6] = {
+    //          a  e  i  o  u  y
+    /* a */ {   0, 0, 1, 1, 1, 1 },  // (same as classic)
+    /* e */ {   0, 0, 1, 1, 1, 0 },  // (same as classic)
+    /* i */ {   1, 0, 1, 0, 1, 0 },  // (same as classic)
+    /* o */ {   2, 2, 1, 0, 1, 0 },  // oa=SECOND, oe=SECOND (modern)
+    /* u */ {   1, 2, 1, 2, 1, 2 },  // ue=SECOND, uo=SECOND, uy=SECOND (modern)
+    /* y */ {   0, 0, 0, 0, 0, 0 },
+};
+
+/// Triphthong patterns (Modern only): tone on MIDDLE vowel
+struct TriphthongPattern { wchar_t v1, v2, v3; };
+constexpr TriphthongPattern kTriphthongs[] = {
+    {L'o', L'a', L'i'},   // oai
+    {L'o', L'e', L'o'},   // oeo
+    {L'u', L'y', L'a'},   // uya
+    {L'u', L'y', L'u'},   // uyu
+};
+constexpr size_t kTriphthongCount = sizeof(kTriphthongs) / sizeof(kTriphthongs[0]);
+
+//=============================================================================
 // Vietnamese-aware uppercase conversion (shared)
 //=============================================================================
 

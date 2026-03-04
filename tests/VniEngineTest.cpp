@@ -3,23 +3,20 @@
 
 #include <gtest/gtest.h>
 #include "core/engine/VniEngine.h"
+#include "TestHelper.h"
 
 namespace NextKey {
 namespace Vni {
 namespace {
+
+using Testing::TypeString;
 
 class VniEngineTest : public ::testing::Test {
 protected:
     void SetUp() override {
         engine_ = std::make_unique<VniEngine>();
     }
-    
-    void TypeString(VniEngine& engine, const std::wstring& input) {
-        for (wchar_t c : input) {
-            engine.PushChar(c);
-        }
-    }
-    
+
     std::unique_ptr<VniEngine> engine_;
 };
 

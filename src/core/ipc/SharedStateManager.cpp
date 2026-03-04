@@ -187,6 +187,7 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->optimizeLevel = state.optimizeLevel;
     p->featureFlags[0] = state.featureFlags[0];
     p->featureFlags[1] = state.featureFlags[1];
+    p->codeTable = state.codeTable;
 
     MemoryBarrier();
     p->epoch = seq + 1;  // Now even = done

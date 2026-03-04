@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookEngine.h"
+#include "helpers/AppHelpers.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
@@ -29,7 +30,7 @@ static void OpenHookLog() {
     auto pos = logPath.find_last_of(L"\\/");
     if (pos != std::wstring::npos) logPath = logPath.substr(0, pos + 1);
     logPath += L"NexusKey_hook.log";
-    g_hookLog = _wfopen(logPath.c_str(), L"w");
+    (void)_wfopen_s(&g_hookLog, logPath.c_str(), L"w");
     if (g_hookLog) setvbuf(g_hookLog, nullptr, _IOFBF, 8192);  // 8KB buffer
 }
 
@@ -453,8 +454,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                 tempMacroOff_ = true;
                 return false;
             } else if (IsCommitTrigger(vkCode) && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
-                std::wstring lowerKey = rawMacroBuffer_;
-                for (auto& c : lowerKey) c = towlower(c);
+                std::wstring lowerKey = ToLowerAscii(rawMacroBuffer_);
                 auto it = macroTable_.find(lowerKey);
                 if (it != macroTable_.end()) {
                     SendBackspaces(rawMacroBuffer_.size());
@@ -524,12 +524,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // Lookup with lowercase key (macros are stored lowercase)
         // Try raw input first ("url" typed as u-r-l), then composed output
         // ("url" typed as u-r-r-l where second r escapes tone → shows "url")
-        std::wstring lowerKey = rawMacroBuffer_;
-        for (auto& c : lowerKey) c = towlower(c);
+        std::wstring lowerKey = ToLowerAscii(rawMacroBuffer_);
         auto it = macroTable_.find(lowerKey);
         if (it == macroTable_.end() && !previousComposition_.empty()) {
-            lowerKey = previousComposition_;
-            for (auto& c : lowerKey) c = towlower(c);
+            lowerKey = ToLowerAscii(previousComposition_);
             it = macroTable_.find(lowerKey);
         }
         if (it != macroTable_.end()) {
@@ -976,9 +974,7 @@ std::wstring HookEngine::GetForegroundExeName() {
     std::wstring result;
     if (QueryFullProcessImageNameW(hProc, 0, exePath, &size)) {
         const wchar_t* filename = wcsrchr(exePath, L'\\');
-        result = filename ? filename + 1 : exePath;
-        // Lowercase for consistent map keys
-        for (auto& c : result) c = towlower(c);
+        result = ToLowerAscii(filename ? filename + 1 : exePath);
     }
     CloseHandle(hProc);
     return result;

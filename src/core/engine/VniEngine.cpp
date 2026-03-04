@@ -4,8 +4,8 @@
 // Uses shared VietnameseTables.h for O(1) flat array composition lookups.
 
 #include "VniEngine.h"
+#include "EngineHelpers.h"
 #include "VietnameseTables.h"
-#include <algorithm>
 
 namespace NextKey {
 namespace Vni {
@@ -185,19 +185,9 @@ std::wstring VniEngine::Commit() {
     if (config_.spellCheckEnabled && config_.autoRestoreEnabled &&
         spellCheckDisabled_ && !tempSpellOff_) {
         std::wstring raw = rawInput_;
-        if (raw != composed) {
-            bool hasDiacritics = false;
-            for (wchar_t ch : composed) {
-                if (ch > 0x7F) { hasDiacritics = true; break; }
-            }
-            // Restore raw when:
-            // 1. Composed has diacritics (e.g., "gôgle" → "google")
-            // 2. Same length but different content (escaped modifiers changed letters)
-            // Skip when raw is longer than composed (escape duplicates, e.g., "musst" → keep "must")
-            if (hasDiacritics || raw.length() <= composed.length()) {
-                Reset();
-                return raw;
-            }
+        if (ShouldAutoRestore(raw, composed)) {
+            Reset();
+            return raw;
         }
     }
 
@@ -319,95 +309,25 @@ CharState* VniEngine::FindToneTarget() {
 }
 
 CharState* VniEngine::FindToneTargetClassic() {
-    // Helper: detect "gi" consonant cluster (g + i + another vowel)
-    auto isGICluster = [&](size_t i) -> bool {
-        if (i == 0 || states_[i].base != L'i') return false;
-        if (states_[i - 1].base != L'g') return false;
-        // 'i' is part of "gi" cluster only if next char is a vowel
-        return i + 1 < states_.size() && states_[i + 1].IsVowel();
-    };
-
-    // Helper: detect "qu" consonant cluster (q + u)
-    auto isQUCluster = [&](size_t i) -> bool {
-        return i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q';
-    };
-
-    // Collect vowel indices
-    size_t vowelIndices[8];
-    size_t vowelCount = 0;
-    for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
-        if (states_[i].IsVowel() && !isGICluster(i) && !isQUCluster(i)) {
-            vowelIndices[vowelCount++] = i;
-        }
-    }
-
-    if (vowelCount == 0) return nullptr;
-
-    // Priority 1: Horn vowels
-    size_t lastHornIdx = SIZE_MAX;
-    for (size_t k = 0; k < vowelCount; ++k) {
-        if (states_[vowelIndices[k]].mod == Modifier::Horn) {
-            lastHornIdx = vowelIndices[k];
-        }
-    }
-    if (lastHornIdx != SIZE_MAX) return &states_[lastHornIdx];
-
-    // Priority 2: Modified vowels (â, ê, ô, ă)
-    for (size_t k = 0; k < vowelCount; ++k) {
-        if (states_[vowelIndices[k]].mod != Modifier::None) {
-            return &states_[vowelIndices[k]];
-        }
-    }
-
-    // Priority 3: Diphthong rules (classic — same as TelexEngine classic)
-    if (vowelCount >= 2) {
-        size_t lastIdx = vowelIndices[vowelCount - 1];
-        size_t prevIdx = vowelIndices[vowelCount - 2];
-
-        if (lastIdx == prevIdx + 1) {
-            wchar_t first = states_[prevIdx].base;
-            wchar_t last = states_[lastIdx].base;
-
-            // Falling diphthongs: tone on FIRST
-            if (first == L'a' && (last == L'i' || last == L'o' || last == L'u' || last == L'y')) return &states_[prevIdx];
-            if (first == L'e' && (last == L'i' || last == L'o' || last == L'u')) return &states_[prevIdx];
-            if (first == L'o' && (last == L'i' || last == L'u')) return &states_[prevIdx];
-            if ((first == L'u' || first == L'i') && (last == L'i' || last == L'u')) return &states_[prevIdx];
-            if (first == L'u' && (last == L'a' || last == L'e')) return &states_[prevIdx];
-
-            // Classic: oa, oe → tone on FIRST (old-style: hòa, xòe)
-            if (first == L'o' && (last == L'a' || last == L'e')) return &states_[prevIdx];
-
-            // Rising diphthongs: tone on SECOND
-            if (first == L'u' && last == L'y') return &states_[lastIdx];
-        }
-    }
-
-    // Default: rightmost vowel
-    return &states_[vowelIndices[vowelCount - 1]];
+    return FindToneTargetImpl(kDiphthongClassic, false);
 }
 
 CharState* VniEngine::FindToneTargetModern() {
-    // Helper: detect "gi" consonant cluster (g + i + another vowel)
-    auto isGICluster = [&](size_t i) -> bool {
-        if (i == 0 || states_[i].base != L'i') return false;
-        if (states_[i - 1].base != L'g') return false;
-        // 'i' is part of "gi" cluster only if next char is a vowel
-        return i + 1 < states_.size() && states_[i + 1].IsVowel();
-    };
+    return FindToneTargetImpl(kDiphthongModern, true);
+}
 
-    // Helper: detect "qu" consonant cluster (q + u)
-    auto isQUCluster = [&](size_t i) -> bool {
-        return i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q';
-    };
-
-    // Collect vowel indices
-    size_t vowelIndices[8];
+CharState* VniEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs) {
+    // Collect vowel positions, skipping "gi" and "qu" consonant clusters
+    size_t vowels[8];
     size_t vowelCount = 0;
     for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
-        if (states_[i].IsVowel() && !isGICluster(i) && !isQUCluster(i)) {
-            vowelIndices[vowelCount++] = i;
-        }
+        if (!states_[i].IsVowel()) continue;
+        // "gi" cluster: g + i + another vowel → 'i' acts as consonant
+        if (i > 0 && states_[i].base == L'i' && states_[i - 1].base == L'g'
+            && i + 1 < states_.size() && states_[i + 1].IsVowel()) continue;
+        // "qu" cluster: q + u → 'u' acts as consonant
+        if (i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q') continue;
+        vowels[vowelCount++] = i;
     }
 
     if (vowelCount == 0) return nullptr;
@@ -415,67 +335,49 @@ CharState* VniEngine::FindToneTargetModern() {
     // Priority 1: Horn vowels (last one for ươ)
     size_t lastHornIdx = SIZE_MAX;
     for (size_t k = 0; k < vowelCount; ++k) {
-        if (states_[vowelIndices[k]].mod == Modifier::Horn) {
-            lastHornIdx = vowelIndices[k];
-        }
+        if (states_[vowels[k]].mod == Modifier::Horn) lastHornIdx = vowels[k];
     }
     if (lastHornIdx != SIZE_MAX) return &states_[lastHornIdx];
 
-    // Priority 2: Modified vowels (â, ê, ô, ă)
+    // Priority 2: Other modified vowels (â, ê, ô, ă)
     for (size_t k = 0; k < vowelCount; ++k) {
-        if (states_[vowelIndices[k]].mod != Modifier::None) {
-            return &states_[vowelIndices[k]];
-        }
+        if (states_[vowels[k]].mod != Modifier::None) return &states_[vowels[k]];
     }
 
-    // Priority 3: Diphthong rules (MODERN placement)
+    // Priority 3: Diphthong/triphthong rules
     if (vowelCount >= 2) {
-        size_t lastIdx = vowelIndices[vowelCount - 1];
-        size_t prevIdx = vowelIndices[vowelCount - 2];
+        size_t lastIdx = vowels[vowelCount - 1];
+        size_t prevIdx = vowels[vowelCount - 2];
 
         if (lastIdx == prevIdx + 1) {
-            wchar_t first = states_[prevIdx].base;
-            wchar_t last = states_[lastIdx].base;
-
-            // Triphthongs: tone on MIDDLE
-            if (vowelCount >= 3) {
-                size_t midIdx = vowelIndices[vowelCount - 2];
-                size_t firstVIdx = vowelIndices[vowelCount - 3];
+            // Triphthongs (Modern only): tone on MIDDLE vowel
+            if (checkTriphthongs && vowelCount >= 3) {
+                size_t midIdx = vowels[vowelCount - 2];
+                size_t firstVIdx = vowels[vowelCount - 3];
                 if (midIdx == firstVIdx + 1 && lastIdx == midIdx + 1) {
                     wchar_t v1 = states_[firstVIdx].base;
                     wchar_t v2 = states_[midIdx].base;
                     wchar_t v3 = states_[lastIdx].base;
-                    if ((v1 == L'o' && v2 == L'a' && v3 == L'i') ||
-                        (v1 == L'o' && v2 == L'e' && v3 == L'o') ||
-                        (v1 == L'u' && v2 == L'y' && v3 == L'a') ||
-                        (v1 == L'u' && v2 == L'y' && v3 == L'u')) {
-                        return &states_[midIdx];
+                    for (size_t t = 0; t < kTriphthongCount; ++t) {
+                        if (kTriphthongs[t].v1 == v1 && kTriphthongs[t].v2 == v2 && kTriphthongs[t].v3 == v3)
+                            return &states_[midIdx];
                     }
                 }
             }
 
-            // Falling diphthongs: tone on FIRST
-            if (first == L'a' && (last == L'i' || last == L'o' || last == L'u' || last == L'y')) return &states_[prevIdx];
-            if (first == L'e' && (last == L'i' || last == L'o' || last == L'u')) return &states_[prevIdx];
-            if (first == L'o' && (last == L'i' || last == L'u')) return &states_[prevIdx];
-            if ((first == L'u' || first == L'i') && (last == L'i' || last == L'u')) return &states_[prevIdx];
-
-            // "ua" → tone on FIRST (same as classic: mùa, lụa, chùa)
-            if (first == L'u' && last == L'a') return &states_[prevIdx];
-            // "ue" → tone on SECOND (modern: thuế)
-            if (first == L'u' && last == L'e') return &states_[lastIdx];
-
-            // Rising diphthongs: tone on SECOND
-            if (first == L'o' && (last == L'a' || last == L'e')) return &states_[lastIdx];
-            if (first == L'u' && last == L'y') return &states_[lastIdx];
-
-            // "uo" → tone on SECOND
-            if (first == L'u' && last == L'o') return &states_[lastIdx];
+            // Diphthong table lookup
+            int fi = DiphthongVowelIndex(states_[prevIdx].base);
+            int li = DiphthongVowelIndex(states_[lastIdx].base);
+            if (fi >= 0 && li >= 0) {
+                uint8_t rule = table[fi][li];
+                if (rule == 1) return &states_[prevIdx];   // tone on FIRST
+                if (rule == 2) return &states_[lastIdx];    // tone on SECOND
+            }
         }
     }
 
     // Default: rightmost vowel
-    return &states_[vowelIndices[vowelCount - 1]];
+    return &states_[vowels[vowelCount - 1]];
 }
 
 //-----------------------------------------------------------------------------
@@ -532,16 +434,7 @@ wchar_t VniEngine::ComposeChar(const CharState& state) const {
 //-----------------------------------------------------------------------------
 
 void VniEngine::UpdateSpellState() {
-    if (!config_.spellCheckEnabled || states_.empty()) {
-        spellCheckDisabled_ = false;
-        return;
-    }
-    if (tempSpellOff_) {
-        spellCheckDisabled_ = false;
-        return;
-    }
-    auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
-    spellCheckDisabled_ = (result == SpellCheck::Result::Invalid);
+    UpdateSpellCheck(states_.data(), states_.size(), config_, tempSpellOff_, spellCheckDisabled_);
 }
 
 }  // namespace Vni

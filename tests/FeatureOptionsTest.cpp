@@ -11,6 +11,7 @@
 #include "core/engine/VniEngine.h"
 #include "core/config/TypingConfig.h"
 #include "core/ipc/SharedState.h"
+#include "TestHelper.h"
 #ifdef _WIN32
 #include "core/config/ConfigManager.h"
 #include <fstream>
@@ -20,21 +21,7 @@
 namespace NextKey {
 namespace {
 
-// ============================================================================
-// Helper
-// ============================================================================
-
-void TypeString(Telex::TelexEngine& engine, const wchar_t* input) {
-    for (const wchar_t* p = input; *p; ++p) {
-        engine.PushChar(*p);
-    }
-}
-
-void TypeString(Vni::VniEngine& engine, const wchar_t* input) {
-    for (const wchar_t* p = input; *p; ++p) {
-        engine.PushChar(*p);
-    }
-}
+using Testing::TypeString;
 
 // ============================================================================
 // TypingConfig Defaults

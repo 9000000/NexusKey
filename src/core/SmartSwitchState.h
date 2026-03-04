@@ -48,11 +48,11 @@ struct SmartSwitchState {
     }
 };
 
-/// FNV-1a hash for exe names (case-insensitive via pre-lowered input)
+/// FNV-1a hash for exe names (case-insensitive: lowercases each char before hashing)
 inline uint32_t FnvHash(const wchar_t* str) noexcept {
     uint32_t hash = 2166136261u;  // FNV offset basis
     while (*str) {
-        hash ^= static_cast<uint32_t>(*str);
+        hash ^= static_cast<uint32_t>(towlower(*str));
         hash *= 16777619u;  // FNV prime
         ++str;
     }

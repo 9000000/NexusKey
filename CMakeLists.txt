@@ -7,7 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Windows specific configurations
 if(MSVC)
     add_compile_options(/W4 /WX /permissive- /utf-8)
-    add_definitions(-DUNICODE -D_UNICODE -D_CRT_SECURE_NO_WARNINGS)
+    add_definitions(-DUNICODE -D_UNICODE)
+    # Linker security flags: ASLR, DEP, High-Entropy ASLR
+    add_link_options(/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA)
 endif()
 
 # Global Include Directories
@@ -79,8 +81,6 @@ add_library(NextKeyTSF SHARED
     src/tsf/CompositionManager.cpp
     src/tsf/EngineController.h
     src/tsf/EngineController.cpp
-    src/tsf/KeyHandler.h
-    src/tsf/KeyHandler.cpp
     src/tsf/Register.cpp
     src/tsf/dllmain.cpp
     src/tsf/EditSession.h

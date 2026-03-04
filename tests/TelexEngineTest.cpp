@@ -5,17 +5,13 @@
 #include <gtest/gtest.h>
 #include "core/engine/TelexEngine.h"
 #include "core/config/TypingConfig.h"
+#include "TestHelper.h"
 
 namespace NextKey {
 namespace Telex {
 namespace {
 
-// Helper function to type a string into the engine
-void TypeString(TelexEngine& engine, const wchar_t* input) {
-    for (const wchar_t* p = input; *p; ++p) {
-        engine.PushChar(*p);
-    }
-}
+using Testing::TypeString;
 
 class TelexEngineTest : public ::testing::Test {
 protected:

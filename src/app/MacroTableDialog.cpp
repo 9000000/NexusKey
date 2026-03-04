@@ -3,7 +3,7 @@
 
 #include "MacroTableDialog.h"
 #include "core/config/ConfigManager.h"
-#include "core/config/ConfigEvent.h"
+#include "helpers/AppHelpers.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <vector>
@@ -28,10 +28,7 @@ void MacroTableDialog::onBeforeClose() {
 
 void MacroTableDialog::persistAndSignal() {
     (void)ConfigManager::SaveMacros(ConfigManager::GetConfigPath(), macros_);
-    ConfigEvent event;
-    if (event.Initialize()) {
-        event.Signal();
-    }
+    SignalConfigChange();
 }
 
 bool MacroTableDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {

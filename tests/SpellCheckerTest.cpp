@@ -8,6 +8,7 @@
 #include "core/engine/TelexEngine.h"
 #include "core/engine/VniEngine.h"
 #include "core/config/TypingConfig.h"
+#include "TestHelper.h"
 
 namespace NextKey {
 namespace {
@@ -263,17 +264,7 @@ TEST_F(SpellCheckerGiQuTest, Gian_Valid) {
 // Engine Integration Tests — TelexEngine with spellCheck ON
 //=============================================================================
 
-void TypeString(Telex::TelexEngine& engine, const wchar_t* input) {
-    for (const wchar_t* p = input; *p; ++p) {
-        engine.PushChar(*p);
-    }
-}
-
-void TypeString(Vni::VniEngine& engine, const wchar_t* input) {
-    for (const wchar_t* p = input; *p; ++p) {
-        engine.PushChar(*p);
-    }
-}
+using Testing::TypeString;
 
 class TelexSpellCheckTest : public ::testing::Test {
 protected:
