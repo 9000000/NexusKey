@@ -81,12 +81,15 @@ inline bool SetRegistryStartup() noexcept {
 
 /// Create a scheduled task to run at logon with highest privileges (UAC prompt)
 inline bool CreateScheduledTaskElevated() noexcept {
-    std::wstring exePath = GetQuotedExePath();
+    wchar_t path[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, path, MAX_PATH);
 
-    // Build command: schtasks /create /sc onlogon /tn NexusKey /rl highest /tr "\"path\"" /f
+    // schtasks /tr needs escaped inner quotes for paths with spaces:
+    //   /tr "\"D:\Phan Mem\NexusKey.exe\""
+    std::wstring taskCmd = L"/create /sc onlogon /tn " + std::wstring(STARTUP_TASK_NAME) +
+                           L" /rl highest /tr \"\\\"" + path + L"\\\"\" /f";
     wchar_t args[1024];
-    swprintf_s(args, L"/create /sc onlogon /tn %s /rl highest /tr %s /f",
-               STARTUP_TASK_NAME, exePath.c_str());
+    swprintf_s(args, L"%s", taskCmd.c_str());
 
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
     sei.lpVerb = L"runas";
