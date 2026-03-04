@@ -102,46 +102,55 @@ set_target_properties(NextKeyTSF PROPERTIES
 # Core App (EXE) - Win32 GUI application with Sciter UI
 add_executable(NextKeyApp WIN32
     src/app/main.cpp
-    src/app/TrayIcon.h
-    src/app/TrayIcon.cpp
-    src/app/SettingsDialog.h
-    src/app/SettingsDialog.cpp
-    src/app/ExcludedAppsDialog.h
-    src/app/ExcludedAppsDialog.cpp
-    src/app/MacroTableDialog.h
-    src/app/MacroTableDialog.cpp
-    src/app/ConvertToolDialog.h
-    src/app/ConvertToolDialog.cpp
-    src/app/AboutDialog.h
-    src/app/AboutDialog.cpp
-    src/app/QuickConvert.h
-    src/app/QuickConvert.cpp
-    src/app/ToastPopup.h
-    src/app/ToastPopup.cpp
-    src/app/SciterSubDialog.h
-    src/app/SciterSubDialog.cpp
-    src/app/SubDialogConfig.h
-    src/app/SubprocessHelper.h
-    src/app/SciterArchive.h
-    src/app/SciterArchive.cpp
-    src/app/helpers/ScaleHelper.h
-    src/app/HookEngine.h
-    src/app/HookEngine.cpp
-    src/app/HotkeyManager.h
-    src/app/HotkeyManager.cpp
-    src/app/UpdateChecker.h
-    src/app/UpdateChecker.cpp
-    src/app/UpdateInstaller.h
-    src/app/UpdateInstaller.cpp
-    src/app/helpers/SciterHelper.h
-    src/app/helpers/SciterHelper.cpp
     src/app/resource.h
     src/app/NexusKey.rc
+    # dialogs/
+    src/app/dialogs/SciterSubDialog.h
+    src/app/dialogs/SciterSubDialog.cpp
+    src/app/dialogs/SubDialogConfig.h
+    src/app/dialogs/SettingsDialog.h
+    src/app/dialogs/SettingsDialog.cpp
+    src/app/dialogs/ExcludedAppsDialog.h
+    src/app/dialogs/ExcludedAppsDialog.cpp
+    src/app/dialogs/MacroTableDialog.h
+    src/app/dialogs/MacroTableDialog.cpp
+    src/app/dialogs/ConvertToolDialog.h
+    src/app/dialogs/ConvertToolDialog.cpp
+    src/app/dialogs/AboutDialog.h
+    src/app/dialogs/AboutDialog.cpp
+    # system/
+    src/app/system/TrayIcon.h
+    src/app/system/TrayIcon.cpp
+    src/app/system/HookEngine.h
+    src/app/system/HookEngine.cpp
+    src/app/system/HotkeyManager.h
+    src/app/system/HotkeyManager.cpp
+    src/app/system/QuickConvert.h
+    src/app/system/QuickConvert.cpp
+    src/app/system/ToastPopup.h
+    src/app/system/ToastPopup.cpp
+    src/app/system/UpdateChecker.h
+    src/app/system/UpdateChecker.cpp
+    src/app/system/UpdateInstaller.h
+    src/app/system/UpdateInstaller.cpp
+    src/app/system/StartupHelper.h
+    src/app/system/SubprocessHelper.h
+    # sciter/
+    src/app/sciter/SciterArchive.h
+    src/app/sciter/SciterArchive.cpp
+    src/app/sciter/SciterHelper.h
+    src/app/sciter/SciterHelper.cpp
+    src/app/sciter/ScaleHelper.h
+    # other
     src/core/Version.h
     extern/sciter/include/sciter-main.cpp
 )
-target_include_directories(NextKeyApp PRIVATE 
+target_include_directories(NextKeyApp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app/dialogs
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app/sciter
 )
 target_compile_definitions(NextKeyApp PRIVATE SKIP_MAIN NEXUSKEY_HOOK_ENGINE)
 target_link_libraries(NextKeyApp PRIVATE NextKeyCore)

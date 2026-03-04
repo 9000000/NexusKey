@@ -4,7 +4,7 @@
 #include "TrayIcon.h"
 #include "resource.h"
 #include "UpdateChecker.h"
-#include "helpers/SciterHelper.h"
+#include "sciter/SciterHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include <strsafe.h>

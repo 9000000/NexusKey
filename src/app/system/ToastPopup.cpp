@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ToastPopup.h"
-#include "helpers/SciterHelper.h"
+#include "sciter/SciterHelper.h"
 #include "resource.h"
 #include <shellapi.h>
 

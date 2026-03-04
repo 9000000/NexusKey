@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SciterSubDialog.h"
-#include "helpers/ScaleHelper.h"
-#include "helpers/SciterHelper.h"
+#include "sciter/ScaleHelper.h"
+#include "sciter/SciterHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include "sciter-x-dom.hpp"

@@ -6,8 +6,8 @@
 
 #pragma once
 
-#include "SciterArchive.h"
-#include "helpers/SciterHelper.h"
+#include "sciter/SciterArchive.h"
+#include "sciter/SciterHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include "sciter-x.h"

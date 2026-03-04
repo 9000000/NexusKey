@@ -10,7 +10,7 @@
 
 #ifdef SCITER_USE_PACKFOLDER
 // Include packfolder-generated resources (Release only)
-#include "resources.cpp"
+#include "../resources.cpp"
 #endif
 
 namespace NextKey {

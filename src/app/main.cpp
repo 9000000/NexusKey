@@ -1,15 +1,15 @@
 // NexusKey - Core Application Entry Point
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "TrayIcon.h"
-#include "SettingsDialog.h"
-#include "ExcludedAppsDialog.h"
-#include "MacroTableDialog.h"
-#include "ConvertToolDialog.h"
-#include "AboutDialog.h"
-#include "SubprocessHelper.h"
-#include "UpdateChecker.h"
-#include "UpdateInstaller.h"
+#include "system/TrayIcon.h"
+#include "dialogs/SettingsDialog.h"
+#include "dialogs/ExcludedAppsDialog.h"
+#include "dialogs/MacroTableDialog.h"
+#include "dialogs/ConvertToolDialog.h"
+#include "dialogs/AboutDialog.h"
+#include "system/SubprocessHelper.h"
+#include "system/UpdateChecker.h"
+#include "system/UpdateInstaller.h"
 #include "core/Version.h"
 #include "core/config/TypingConfig.h"
 #include "core/config/ConfigManager.h"
@@ -19,11 +19,11 @@
 #include "core/Debug.h"
 
 #ifdef NEXUSKEY_HOOK_ENGINE
-#include "HookEngine.h"
-#include "QuickConvert.h"
+#include "system/HookEngine.h"
+#include "system/QuickConvert.h"
 #include "core/ipc/SharedStateManager.h"
 #else
-#include "HotkeyManager.h"
+#include "system/HotkeyManager.h"
 #include "core/ipc/SharedStateManager.h"
 #include "tsf/Globals.h"
 #endif

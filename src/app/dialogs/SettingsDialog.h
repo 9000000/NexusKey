@@ -14,7 +14,7 @@
 #include "sciter-x-window.hpp"
 #include "core/config/TypingConfig.h"
 #include "core/SystemConfig.h"
-#include "UpdateChecker.h"
+#include "system/UpdateChecker.h"
 #include <functional>
 #include <string>
 
