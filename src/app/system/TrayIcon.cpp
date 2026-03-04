@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "TrayIcon.h"
-#include "resource.h"
+#include "../resource.h"
 #include "UpdateChecker.h"
 #include "sciter/SciterHelper.h"
 #include "core/config/ConfigManager.h"

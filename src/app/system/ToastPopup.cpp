@@ -3,7 +3,7 @@
 
 #include "ToastPopup.h"
 #include "sciter/SciterHelper.h"
-#include "resource.h"
+#include "../resource.h"
 #include <shellapi.h>
 
 #pragma comment(lib, "shell32.lib")

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SettingsDialog.h"
-#include "resource.h"
+#include "../resource.h"
 #include "system/StartupHelper.h"
 #include "system/SubprocessHelper.h"
 #include "system/UpdateChecker.h"
