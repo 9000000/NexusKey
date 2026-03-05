@@ -1,0 +1,107 @@
+// NexusKey - Subprocess Runner Functions
+// SPDX-License-Identifier: GPL-3.0-only
+
+#include "SubprocessRunners.h"
+#include "SubprocessHelper.h"
+#include "dialogs/SettingsDialog.h"
+#include "dialogs/ExcludedAppsDialog.h"
+#include "dialogs/MacroTableDialog.h"
+#include "dialogs/ConvertToolDialog.h"
+#include "dialogs/AboutDialog.h"
+#include "core/Debug.h"
+
+#include <Windows.h>
+
+namespace NextKey {
+
+[[noreturn]] void RunSettingsSubprocess() {
+    NEXTKEY_LOG(L"Running settings subprocess");
+
+    InitSciterSubprocess();
+    NEXTKEY_LOG(L"Sciter initialized, creating dialog...");
+
+    // Parse initial V/E mode from command line (--mode 0 or --mode 1)
+    bool initialVietnamese = true;
+    const wchar_t* cmdLine = GetCommandLineW();
+    const wchar_t* modeArg = wcsstr(cmdLine, L"--mode ");
+    if (modeArg) {
+        initialVietnamese = (modeArg[7] != L'0');
+    }
+
+    // Create and show dialog
+    SettingsDialog dialog;
+    dialog.SetVietnameseMode(initialVietnamese);
+    dialog.SetOnSettingsChanged([]() {
+        NEXTKEY_LOG(L"Settings changed");
+    });
+
+    // Message loop
+    MSG msg;
+    while (GetMessageW(&msg, nullptr, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+
+        if (!IsWindow(dialog.get_hwnd())) break;
+    }
+
+    // INTENTIONAL: ExitProcess() is required here because Sciter's internal
+    // cleanup triggers assertion failures on normal process exit. This is a
+    // known Sciter issue. Since this is a subprocess with no shared state
+    // to flush, ExitProcess() is safe and avoids the assertion.
+    NEXTKEY_LOG(L"Settings subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunExcludedAppsSubprocess() {
+    NEXTKEY_LOG(L"Running excluded apps subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    ExcludedAppsDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"Excluded apps subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunMacroSubprocess() {
+    NEXTKEY_LOG(L"Running macro table subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    MacroTableDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"Macro table subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunConvertToolSubprocess() {
+    NEXTKEY_LOG(L"Running convert tool subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    ConvertToolDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"Convert tool subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunAboutSubprocess() {
+    NEXTKEY_LOG(L"Running about subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    AboutDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"About subprocess exiting");
+    ExitProcess(0);
+}
+
+}  // namespace NextKey

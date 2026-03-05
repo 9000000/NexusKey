@@ -1960,6 +1960,21 @@ TEST_F(AutoRestoreTest, FinalK_Lak_Valid) {
     EXPECT_EQ(engine_->Commit(), L"lắk");
 }
 
+TEST_F(AutoRestoreTest, ValidPrefix_AtCommit_Restores) {
+    // "user" → 's' becomes tone on 'u', 'r' becomes tone on 'e' → "úẻ"
+    // During typing: ValidPrefix (could add modifier later)
+    // At commit: incomplete word → auto-restore to "user"
+    TypeString(*engine_, L"user");
+    EXPECT_EQ(engine_->Commit(), L"user");
+}
+
+TEST_F(AutoRestoreTest, ValidPrefix_AtCommit_English) {
+    // "enter" → 'r' becomes tone on 'e' → "ẻnte" + ...
+    // English word should be restored
+    TypeString(*engine_, L"enter");
+    EXPECT_EQ(engine_->Commit(), L"enter");
+}
+
 // ============================================================================
 // TEMP OFF SPELL CHECK TESTS
 // Solo Ctrl tap temporarily disables spell check for current word

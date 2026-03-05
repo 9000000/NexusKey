@@ -550,6 +550,13 @@ TEST_F(SmartAccentTelexTest, ToneAppliedOnValidPrefix_Tiens) {
     EXPECT_EQ(engine.Peek(), L"tién");
 }
 
+TEST_F(SmartAccentTelexTest, ToneAppliedOnValidPrefix_Chiems) {
+    // "chiem" is ValidPrefix (could become chiêm/chiếm) → 's' applies tone
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"chiems");
+    EXPECT_EQ(engine.Peek(), L"chiém");
+}
+
 TEST_F(SmartAccentTelexTest, ToneBlockedOnInvalidSyllable_Bls) {
     // "bl" is invalid consonant cluster → 's' is literal
     Telex::TelexEngine engine(config_);

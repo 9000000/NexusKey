@@ -189,12 +189,23 @@ std::wstring VniEngine::Commit() {
 
     // When tempSpellOff_ is active, user intentionally bypassed spell check —
     // skip auto-restore entirely and return composed text as-is
-    if (config_.spellCheckEnabled && config_.autoRestoreEnabled &&
-        spellCheckDisabled_ && !tempSpellOff_) {
-        std::wstring raw = rawInput_;
-        if (ShouldAutoRestore(raw, composed)) {
-            Reset();
-            return raw;
+    if (config_.spellCheckEnabled && config_.autoRestoreEnabled && !tempSpellOff_) {
+        bool shouldRestore = spellCheckDisabled_;  // Already known Invalid
+
+        // Also restore ValidPrefix at commit time — incomplete words like "úẻ"
+        // (from typing "user") are ValidPrefix during typing (allowing future
+        // modifiers) but should auto-restore when the user commits.
+        if (!shouldRestore && !states_.empty()) {
+            auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
+            shouldRestore = (result == SpellCheck::Result::ValidPrefix);
+        }
+
+        if (shouldRestore) {
+            std::wstring raw = rawInput_;
+            if (ShouldAutoRestore(raw, composed)) {
+                Reset();
+                return raw;
+            }
         }
     }
 

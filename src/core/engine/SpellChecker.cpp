@@ -375,6 +375,56 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
             // Could still become valid with more vowels
             if (pos == count) return Result::ValidPrefix;
         }
+
+        // Check if adding a modifier to any vowel slot would produce a valid nucleus.
+        // e.g., "ie" (i/None + e/None) → "iê" (i/None + e/Circ) with future modifier key.
+        // If the modified version is valid AND remaining chars form valid finals → ValidPrefix.
+        if (vowelLen >= 1 && vowelLen <= 3) {
+            for (size_t vi = 0; vi < vowelLen; ++vi) {
+                uint8_t bi = BaseIndex(vowelStates[vi].base);
+                if (bi == 0xFF) continue;
+                uint8_t origMod = ModOrdinal(vowelStates[vi].mod);
+                if (origMod != kNone) continue;  // Already has a modifier
+
+                // Try each modifier (Circumflex, Breve, Horn)
+                for (uint8_t tryMod = 1; tryMod <= 3; ++tryMod) {
+                    uint32_t tryKey = 0;
+                    if (vowelLen == 1) {
+                        tryKey = Key1(VowelSlot(bi, tryMod));
+                    } else if (vowelLen == 2) {
+                        uint8_t b0 = BaseIndex(vowelStates[0].base);
+                        uint8_t b1 = BaseIndex(vowelStates[1].base);
+                        uint8_t m0 = (vi == 0) ? tryMod : ModOrdinal(vowelStates[0].mod);
+                        uint8_t m1 = (vi == 1) ? tryMod : ModOrdinal(vowelStates[1].mod);
+                        tryKey = Key2(VowelSlot(b0, m0), VowelSlot(b1, m1));
+                    } else {
+                        uint8_t b0 = BaseIndex(vowelStates[0].base);
+                        uint8_t b1 = BaseIndex(vowelStates[1].base);
+                        uint8_t b2 = BaseIndex(vowelStates[2].base);
+                        uint8_t m0 = (vi == 0) ? tryMod : ModOrdinal(vowelStates[0].mod);
+                        uint8_t m1 = (vi == 1) ? tryMod : ModOrdinal(vowelStates[1].mod);
+                        uint8_t m2 = (vi == 2) ? tryMod : ModOrdinal(vowelStates[2].mod);
+                        tryKey = Key3(VowelSlot(b0, m0), VowelSlot(b1, m1), VowelSlot(b2, m2));
+                    }
+
+                    const VowelEntry* tryEntry = FindVowel(tryKey);
+                    if (tryEntry) {
+                        // Check if remaining chars after vowels are valid
+                        size_t finalRemaining = count - pos;
+                        if (finalRemaining == 0) {
+                            return Result::ValidPrefix;
+                        }
+                        if (tryEntry->canEnd) {
+                            size_t finalLen = ParseFinalConsonant(&states[pos], finalRemaining);
+                            if (finalLen == finalRemaining) {
+                                return Result::ValidPrefix;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         return Result::Invalid;
     }
 

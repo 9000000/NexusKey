@@ -180,6 +180,10 @@ void HookEngine::ToggleVietnameseMode() {
         CommitComposition();
     }
 
+    // Cancel backspace-into-committed-word (replay in wrong mode would be wrong)
+    commitUndoState_ = 0;
+    lastCommittedHistory_.clear();
+
     vietnameseMode_ = !vietnameseMode_;
     NEXTKEY_LOG(L"HookEngine: mode = %s", vietnameseMode_ ? L"Vietnamese" : L"English");
 
@@ -447,6 +451,38 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     otherKeyPressed_ = true;
     altTapCount_ = 0;  // Break double-Alt tap chain
 
+    // 2c. Backspace-into-committed-word state machine
+    if (commitUndoState_ == 1 && vkCode == VK_BACK && engine_->Count() == 0) {
+        // Just committed, backspace deletes the commit trigger (space/etc.)
+        commitUndoState_ = 2;
+        HOOK_LOG(L"  commit-undo: BS after commit → state 2 (ready to replay)");
+        return false;  // Let backspace pass through to delete the space
+    }
+    if (commitUndoState_ == 2 && engine_->Count() == 0 && vietnameseMode_) {
+        if (vkCode >= 0x41 && vkCode <= 0x5A) {
+            // Alpha key → replay saved chars, then process the new key
+            HOOK_LOG(L"  commit-undo: replaying + alpha '%c'", static_cast<char>(vkCode));
+            ReplayCommittedChars();
+            HandleAlphaKey(vkCode);
+            return true;
+        }
+        if (vkCode == VK_BACK) {
+            // Backspace → replay saved chars, then backspace into the word
+            HOOK_LOG(L"  commit-undo: replaying + backspace");
+            ReplayCommittedChars();
+            HandleBackspace();
+            return true;
+        }
+        // Any other key → cancel commit-undo
+        commitUndoState_ = 0;
+        lastCommittedHistory_.clear();
+    }
+    if (commitUndoState_ == 1) {
+        // Non-backspace key after commit → cancel undo opportunity
+        commitUndoState_ = 0;
+        lastCommittedHistory_.clear();
+    }
+
     // 3. English mode fast path — skip Vietnamese-only processing
     if (!vietnameseMode_) {
         if (macroEnabled_ && macroInEnglish_) {
@@ -615,6 +651,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         if (!shift) {
             wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
+            inputHistory_.push_back(ch);
             engine_->PushChar(ch);
             std::wstring composition = engine_->Peek();
             HOOK_LOG(L"  bracket '%c' → Peek()='%s'", ch, composition.c_str());
@@ -635,6 +672,11 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     if (IsCommitTrigger(vkCode) && engine_->Count() > 0) {
         HOOK_LOG(L"  commit trigger vk=0x%02X", vkCode);
         bool restored = CommitComposition();
+        // Enable backspace-into-word only for space/enter (natural word boundaries)
+        if (!restored && (vkCode == VK_SPACE || vkCode == VK_RETURN) &&
+            !lastCommittedHistory_.empty()) {
+            commitUndoState_ = 1;
+        }
         if (restored) {
             // Auto-restore changed text — re-inject trigger key after replacement
             // to guarantee correct ordering (replacement before trigger)
@@ -737,6 +779,7 @@ void HookEngine::HandleAlphaKey(DWORD vkCode) {
         autoCapState_ = 0;
     }
 
+    inputHistory_.push_back(ch);
     engine_->PushChar(ch);
     std::wstring composition = engine_->Peek();
 
@@ -748,6 +791,7 @@ void HookEngine::HandleAlphaKey(DWORD vkCode) {
 }
 
 void HookEngine::HandleBackspace() {
+    inputHistory_.push_back(kBackspaceMarker);
     engine_->Backspace();
 
     if (engine_->Count() > 0) {
@@ -781,9 +825,16 @@ bool HookEngine::CommitComposition() {
         restored = true;
     }
 
+    // Save state for backspace-into-committed-word replay.
+    // commitUndoState_ is set to 1 by the caller only for space/enter triggers.
+    lastCommittedHistory_ = inputHistory_;
+    lastCommittedText_ = restored ? committed : previousComposition_;
+    lastCommittedWidths_ = previousEncodedWidths_;
+
     engine_->Reset();
     previousComposition_.clear();
     previousEncodedWidths_.clear();
+    inputHistory_.clear();
     rawMacroBuffer_.clear();
     tempMacroOff_ = false;
     return restored;
@@ -796,8 +847,39 @@ void HookEngine::ResetComposition() {
     }
     previousComposition_.clear();
     previousEncodedWidths_.clear();
+    inputHistory_.clear();
     rawMacroBuffer_.clear();
     tempMacroOff_ = false;
+    commitUndoState_ = 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Backspace-into-committed-word: replay saved chars
+// ═══════════════════════════════════════════════════════════
+
+void HookEngine::ReplayCommittedChars() {
+    HOOK_LOG(L"  ReplayCommittedChars: replaying %zu keystrokes, restoring prev='%s'",
+             lastCommittedHistory_.size(), lastCommittedText_.c_str());
+
+    // Replay exact user keystrokes (including backspaces) to reproduce engine state
+    for (wchar_t ch : lastCommittedHistory_) {
+        if (ch == kBackspaceMarker) {
+            engine_->Backspace();
+        } else {
+            engine_->PushChar(ch);
+        }
+    }
+    inputHistory_ = lastCommittedHistory_;
+
+    // Restore screen state so ReplaceComposition can diff correctly
+    previousComposition_ = lastCommittedText_;
+    previousEncodedWidths_ = lastCommittedWidths_;
+
+    // Clear saved state (only one level of undo)
+    lastCommittedHistory_.clear();
+    lastCommittedText_.clear();
+    lastCommittedWidths_.clear();
+    commitUndoState_ = 0;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -885,38 +967,14 @@ void HookEngine::SendCharEvents(HWND target, const std::wstring& text, bool useP
     }
 }
 
-bool HookEngine::IsBrowserLike(HWND hwnd) {
-    HWND fg = hwnd;
-    // Walk up to the top-level window if needed
-    HWND parent = GetAncestor(fg, GA_ROOT);
-    if (parent) fg = parent;
-
-    DWORD pid = 0;
-    GetWindowThreadProcessId(fg, &pid);
-    if (!pid) return false;
-
-    HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!hProc) return false;
-
-    wchar_t exePath[MAX_PATH] = {};
-    DWORD size = MAX_PATH;
-    bool result = false;
-    if (QueryFullProcessImageNameW(hProc, 0, exePath, &size)) {
-        // Extract filename from path
-        const wchar_t* filename = wcsrchr(exePath, L'\\');
-        filename = filename ? filename + 1 : exePath;
-
-        if (_wcsnicmp(filename, L"chrome", 6) == 0 ||
-            _wcsnicmp(filename, L"msedge", 6) == 0 ||
-            _wcsnicmp(filename, L"firefox", 7) == 0 ||
-            _wcsnicmp(filename, L"brave", 5) == 0 ||
-            _wcsnicmp(filename, L"opera", 5) == 0 ||
-            _wcsnicmp(filename, L"vivaldi", 7) == 0) {
-            result = true;
-        }
-    }
-    CloseHandle(hProc);
-    return result;
+/// Check if a filename (without path) is a known browser executable.
+static bool IsBrowserExeName(const wchar_t* filename) {
+    return _wcsnicmp(filename, L"chrome", 6) == 0 ||
+           _wcsnicmp(filename, L"msedge", 6) == 0 ||
+           _wcsnicmp(filename, L"firefox", 7) == 0 ||
+           _wcsnicmp(filename, L"brave", 5) == 0 ||
+           _wcsnicmp(filename, L"opera", 5) == 0 ||
+           _wcsnicmp(filename, L"vivaldi", 7) == 0;
 }
 
 bool HookEngine::IsQtElectronApp(HWND hwnd) {
@@ -948,13 +1006,7 @@ bool HookEngine::IsQtElectronApp(HWND hwnd) {
         if (QueryFullProcessImageNameW(hProc, 0, exePath, &size)) {
             const wchar_t* filename = wcsrchr(exePath, L'\\');
             filename = filename ? filename + 1 : exePath;
-
-            if (_wcsnicmp(filename, L"chrome", 6) == 0 ||
-                _wcsnicmp(filename, L"msedge", 6) == 0 ||
-                _wcsnicmp(filename, L"firefox", 7) == 0 ||
-                _wcsnicmp(filename, L"brave", 5) == 0 ||
-                _wcsnicmp(filename, L"opera", 5) == 0 ||
-                _wcsnicmp(filename, L"vivaldi", 7) == 0) {
+            if (IsBrowserExeName(filename)) {
                 isElectron = false;
             }
         }

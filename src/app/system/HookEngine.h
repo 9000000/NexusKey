@@ -99,14 +99,14 @@ private:
     bool CheckHotkeyMatch() const;
     bool CheckConvertHotkeyMatch() const;
 
+    // Backspace-into-committed-word: replay saved chars to restore engine state
+    void ReplayCommittedChars();
+
     // Commit trigger check
     static bool IsCommitTrigger(DWORD vkCode);
 
     // Re-inject a key after auto-restore replacement
     void InjectKey(DWORD vkCode);
-
-    // Browser detection for Chrome autocomplete fix
-    static bool IsBrowserLike(HWND hwnd);
 
     // Qt/Electron detection — skip U+202F to avoid first-word delay
     static bool IsQtElectronApp(HWND hwnd);
@@ -144,6 +144,17 @@ private:
     bool rememberCodeTable_ = false;
     CodeTable currentCodeTable_ = CodeTable::Unicode;
     std::unordered_map<std::wstring, uint8_t> appCodeTableMap_;  // exe → CodeTable value
+
+    // Backspace-into-committed-word (re-enter composition after commit + backspace)
+    // inputHistory_ records exact user keystrokes (including backspace as '\b')
+    // so replay produces identical engine state. This differs from engine's rawInput_
+    // which mutates on escape sequences (EraseConsumedRaw).
+    static constexpr wchar_t kBackspaceMarker = L'\b';
+    std::vector<wchar_t> inputHistory_;         // User keystrokes for current composition
+    std::vector<wchar_t> lastCommittedHistory_; // Saved on commit for replay
+    std::wstring lastCommittedText_;            // What was on screen when committed
+    std::vector<uint8_t> lastCommittedWidths_;  // Encoded widths for non-Unicode code tables
+    uint8_t commitUndoState_ = 0;               // 0=none, 1=just committed, 2=BS received (ready to replay)
 
     // Macro expansion
     bool macroEnabled_ = false;

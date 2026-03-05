@@ -135,6 +135,10 @@ add_executable(NextKeyApp WIN32
     src/app/system/UpdateInstaller.cpp
     src/app/system/StartupHelper.h
     src/app/system/SubprocessHelper.h
+    src/app/system/SubprocessRunners.h
+    src/app/system/SubprocessRunners.cpp
+    src/app/system/TsfRegistration.h
+    src/app/system/TsfRegistration.cpp
     # sciter/
     src/app/sciter/SciterArchive.h
     src/app/sciter/SciterArchive.cpp
