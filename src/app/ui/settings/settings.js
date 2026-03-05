@@ -77,7 +77,7 @@ function initializeToggles() {
         toggle.onclick = function (evt) {
             const isChecked = this.classList.contains("checked");
 
-            // Toggle the visual state
+            // Toggle the visual state immediately
             if (isChecked) {
                 this.classList.remove("checked");
             } else {
