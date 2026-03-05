@@ -56,7 +56,7 @@ static void HookLog(const wchar_t* format, ...) {
 #define HOOK_LOG(...) ((void)0)
 #endif
 
-HookEngine* HookEngine::s_instance = nullptr;
+std::atomic<HookEngine*> HookEngine::s_instance{nullptr};
 
 HookEngine::HookEngine() = default;
 
@@ -348,7 +348,8 @@ bool HookEngine::CheckConfigEvent() {
 // ═══════════════════════════════════════════════════════════
 
 LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (nCode == HC_ACTION && s_instance) {
+    HookEngine* self = s_instance.load(std::memory_order_relaxed);
+    if (nCode == HC_ACTION && self) {
         auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
         // Skip our own injected events (dwExtraInfo magic number — primary method)
@@ -359,7 +360,7 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
         }
 
         // Skip events while we're sending (safety backup)
-        if (s_instance->sending_) {
+        if (self->sending_) {
             HOOK_LOG(L"  PASSTHRU (sending_): vk=0x%02X scan=0x%04X flags=0x%08X",
                      pKey->vkCode, pKey->scanCode, pKey->flags);
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -373,12 +374,12 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
                  isDown ? L"DOWN" : (isUp ? L"UP" : L"OTHER"));
 
         if (isDown) {
-            if (s_instance->ProcessKeyDown(pKey->vkCode, pKey->scanCode, pKey->flags)) {
+            if (self->ProcessKeyDown(pKey->vkCode, pKey->scanCode, pKey->flags)) {
                 HOOK_LOG(L"  → EATEN (key-down vk=0x%02X)", pKey->vkCode);
                 return 1;  // Eat the keystroke
             }
         } else if (isUp) {
-            if (s_instance->ProcessKeyUp(pKey->vkCode, pKey->flags)) {
+            if (self->ProcessKeyUp(pKey->vkCode, pKey->flags)) {
                 return 1;  // Eat the keystroke
             }
         }
@@ -388,11 +389,12 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
 }
 
 void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD) {
-    if (s_instance) {
+    HookEngine* self = s_instance.load(std::memory_order_relaxed);
+    if (self) {
         HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
-                 s_instance->engine_->Count(), s_instance->previousComposition_.c_str());
-        s_instance->autoCapState_ = 0;
-        s_instance->OnFocusChanged();
+                 self->engine_->Count(), self->previousComposition_.c_str());
+        self->autoCapState_ = 0;
+        self->OnFocusChanged();
     }
 }
 

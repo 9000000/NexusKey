@@ -1,0 +1,86 @@
+/* Shared Toggle Switch Small Component */
+/* Used by: settings, convert-tool */
+
+.toggle-switch-small {
+    display: inline-block !important;
+    width: 40px;
+    min-width: 40px;
+    height: 20px;
+    min-height: 20px;
+    border-radius: 10px;
+    background-color: var(--toggle-off-bg);
+    position: relative;
+    cursor: pointer;
+    vertical-align: middle;
+    flex-shrink: 0;
+    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ON state */
+.toggle-switch-small.checked {
+    background-color: var(--toggle-on-bg);
+}
+
+/* I label on left side (visible when checked/ON - thumb moves right) */
+.toggle-label-i {
+    display: block;
+    position: absolute;
+    left: 6px;
+    top: 0;
+    height: 20px;
+    line-height: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--toggle-label-on);
+    opacity: 0;
+    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+}
+
+/* O label on right side (visible when unchecked/OFF - thumb on left) */
+.toggle-label-o {
+    display: block;
+    position: absolute;
+    right: 5px;
+    top: 0;
+    height: 20px;
+    line-height: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--toggle-label-off);
+    opacity: 1;
+    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+}
+
+/* When checked: show I, hide O */
+.toggle-switch-small.checked .toggle-label-i {
+    opacity: 1;
+}
+
+.toggle-switch-small.checked .toggle-label-o {
+    opacity: 0;
+}
+
+/* Oval thumb */
+.toggle-thumb-small {
+    width: 22px;
+    height: 16px;
+    border-radius: 8px;
+    background-color: var(--toggle-thumb-bg);
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 2;
+}
+
+.toggle-switch-small.checked .toggle-thumb-small {
+    left: 16px;
+}
+
+/* Disabled state */
+.toggle-switch-small.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}

@@ -1,24 +1,5 @@
 /* NexusKey Settings - Glassmorphism UI for Sciter */
-/* Note: theme.css is loaded via <link> tag in HTML for Sciter compatibility */
-
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: var(--font-family);
-    font-weight: 500;
-}
-
-html,
-body {
-    background: transparent;
-    color: var(--text-primary);
-    overflow: hidden;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-}
+/* base.css + toggle.css loaded via <link> in HTML */
 
 /* Main Container with glass effect */
 .container {
@@ -303,85 +284,6 @@ body {
     opacity: 1;
 }
 
-/* Small Toggle for settings rows - I/O labels on background */
-.toggle-switch-small {
-    display: inline-block !important;
-    width: 40px;
-    min-width: 40px;
-    height: 20px;
-    min-height: 20px;
-    border-radius: 10px;
-    background-color: var(--toggle-off-bg);
-    position: relative;
-    cursor: pointer;
-    vertical-align: middle;
-    flex-shrink: 0;
-    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* ON state - darker pink/red */
-.toggle-switch-small.checked {
-    background-color: var(--toggle-on-bg);
-}
-
-/* I label on left side (visible when checked/ON - thumb moves right) */
-.toggle-label-i {
-    display: block;
-    position: absolute;
-    left: 6px;
-    top: 0;
-    height: 20px;
-    line-height: 20px;
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--toggle-label-on);
-    opacity: 0;
-    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 1;
-}
-
-/* O label on right side (visible when unchecked/OFF - thumb on left) */
-.toggle-label-o {
-    display: block;
-    position: absolute;
-    right: 5px;
-    top: 0;
-    height: 20px;
-    line-height: 20px;
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--toggle-label-off);
-    opacity: 1;
-    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 1;
-}
-
-/* When checked: show I, hide O */
-.toggle-switch-small.checked .toggle-label-i {
-    opacity: 1;
-}
-
-.toggle-switch-small.checked .toggle-label-o {
-    opacity: 0;
-}
-
-/* Oval thumb - longer/more oval shape */
-.toggle-thumb-small {
-    width: 22px;
-    height: 16px;
-    border-radius: 8px;
-    background-color: var(--toggle-thumb-bg);
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 2;
-}
-
-.toggle-switch-small.checked .toggle-thumb-small {
-    left: 16px;
-}
-
 /* Input Type Dropdown in Header - premium style */
 .input-type-dropdown {
     display: inline-block;
@@ -578,13 +480,6 @@ body {
     height: 26px;
     appearance: none;
     -webkit-appearance: none;
-}
-
-/* (Removed: Clickable row and arrow icon styles - now using toggle switch) */
-
-/* Hide hidden inputs */
-input[type="hidden"] {
-    display: none;
 }
 
 /* Action button style */

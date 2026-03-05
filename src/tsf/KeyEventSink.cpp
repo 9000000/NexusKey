@@ -86,11 +86,11 @@ IFACEMETHODIMP KeyEventSink::QueryInterface(REFIID riid, void** ppvObj) {
 }
 
 IFACEMETHODIMP_(ULONG) KeyEventSink::AddRef() {
-    return ++refCount_;
+    return InterlockedIncrement(&refCount_);
 }
 
 IFACEMETHODIMP_(ULONG) KeyEventSink::Release() {
-    ULONG count = --refCount_;
+    ULONG count = InterlockedDecrement(&refCount_);
     if (count == 0) delete this;
     return count;
 }

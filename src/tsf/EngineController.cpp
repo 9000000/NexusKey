@@ -405,7 +405,8 @@ void EngineController::ApplySharedState(const SharedState& state) {
 
 void EngineController::ToggleVietnameseMode() {
     sharedState_.ToggleFlag(SharedFlags::VIETNAMESE_MODE);
-    vietnameseMode_ = !vietnameseMode_;
+    // Read back actual flag to stay in sync (avoids TOCTOU with EXE toggling)
+    vietnameseMode_ = (sharedState_.ReadFlags() & SharedFlags::VIETNAMESE_MODE) != 0;
     if (langBarButton_) {
         langBarButton_->Refresh();
     }

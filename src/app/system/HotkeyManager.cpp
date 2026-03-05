@@ -7,7 +7,7 @@
 
 namespace NextKey {
 
-HotkeyManager* HotkeyManager::s_instance = nullptr;
+std::atomic<HotkeyManager*> HotkeyManager::s_instance{nullptr};
 
 static constexpr int HOTKEY_ID = 1;
 
@@ -88,8 +88,9 @@ void HotkeyManager::InstallKeyboardHook(HINSTANCE hInstance) {
 }
 
 LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (nCode == HC_ACTION && s_instance) {
-        auto& self = *s_instance;
+    HotkeyManager* inst = s_instance.load(std::memory_order_relaxed);
+    if (nCode == HC_ACTION && inst) {
+        auto& self = *inst;
         auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
         bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
         bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
@@ -143,7 +144,8 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
         }
     }
 
-    return CallNextHookEx(s_instance ? s_instance->keyboardHook_ : nullptr, nCode, wParam, lParam);
+    HotkeyManager* inst2 = s_instance.load(std::memory_order_relaxed);
+    return CallNextHookEx(inst2 ? inst2->keyboardHook_ : nullptr, nCode, wParam, lParam);
 }
 
 }  // namespace NextKey

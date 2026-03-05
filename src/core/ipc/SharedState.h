@@ -104,6 +104,9 @@ struct SharedState {
     }
 };
 
+// Ensure SharedState layout is stable across EXE and DLL builds
+static_assert(sizeof(SharedState) == 56, "SharedState size changed — update structVersion");
+
 /// Encode TypingConfig feature bools → uint16_t bitmask
 [[nodiscard]] inline uint16_t EncodeFeatureFlags(const TypingConfig& config) noexcept {
     uint16_t flags = 0;

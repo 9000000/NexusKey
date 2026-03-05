@@ -27,9 +27,9 @@ public:
         return E_NOINTERFACE;
     }
 
-    IFACEMETHODIMP_(ULONG) AddRef() override { return ++refCount_; }
+    IFACEMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refCount_); }
     IFACEMETHODIMP_(ULONG) Release() override {
-        ULONG count = --refCount_;
+        ULONG count = InterlockedDecrement(&refCount_);
         if (count == 0) delete this;
         return count;
     }
@@ -79,53 +79,6 @@ private:
     ULONG refCount_;
 };
 
-/// Provider that returns our invisible display attribute
-class DisplayAttributeProvider : public ITfDisplayAttributeProvider {
-public:
-    DisplayAttributeProvider() : refCount_(1) {}
-
-    // IUnknown
-    IFACEMETHODIMP QueryInterface(REFIID riid, void** ppvObj) override {
-        if (ppvObj == nullptr) return E_INVALIDARG;
-        *ppvObj = nullptr;
-
-        if (IsEqualIID(riid, IID_IUnknown) || IsEqualIID(riid, IID_ITfDisplayAttributeProvider)) {
-            *ppvObj = static_cast<ITfDisplayAttributeProvider*>(this);
-            AddRef();
-            return S_OK;
-        }
-        return E_NOINTERFACE;
-    }
-
-    IFACEMETHODIMP_(ULONG) AddRef() override { return ++refCount_; }
-    IFACEMETHODIMP_(ULONG) Release() override {
-        ULONG count = --refCount_;
-        if (count == 0) delete this;
-        return count;
-    }
-
-    // ITfDisplayAttributeProvider
-    IFACEMETHODIMP EnumDisplayAttributeInfo(IEnumTfDisplayAttributeInfo** ppEnum) override {
-        // We only have one attribute, return simple enumerator
-        if (ppEnum == nullptr) return E_INVALIDARG;
-        *ppEnum = nullptr;
-        return E_NOTIMPL;  // Simple implementation - apps will query by GUID
-    }
-
-    IFACEMETHODIMP GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttributeInfo** ppInfo) override {
-        if (ppInfo == nullptr) return E_INVALIDARG;
-        *ppInfo = nullptr;
-
-        if (IsEqualGUID(guid, GUID_DisplayAttribute_Input)) {
-            *ppInfo = new DisplayAttributeInfo();
-            return S_OK;
-        }
-        return E_INVALIDARG;
-    }
-
-private:
-    ULONG refCount_;
-};
 
 }  // namespace TSF
 }  // namespace NextKey

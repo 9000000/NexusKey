@@ -1,0 +1,26 @@
+/* Shared Base Reset - Used by all dialogs */
+/* Load after theme.css, before dialog-specific CSS */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: var(--font-family);
+    font-weight: 500;
+}
+
+html,
+body {
+    background: transparent;
+    color: var(--text-primary);
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+/* Hide hidden inputs */
+input[type="hidden"] {
+    display: none;
+}

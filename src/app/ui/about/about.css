@@ -1,20 +1,6 @@
-/* theme.css loaded via HTML <link> (Sciter @import is unreliable) */
-
-html {
-    background: transparent;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-}
+/* base.css loaded via <link> in HTML */
 
 body {
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    /* More transparent background - handled by container in C++ */
-    background: transparent;
     font-family: var(--font-family);
     border-radius: 10px;
     border: 1px solid var(--border-light);
@@ -29,10 +15,6 @@ body {
     display: flex;
     flex-direction: column;
     background: var(--bg-glass);
-}
-
-input[type="hidden"] {
-    display: none;
 }
 
 /* Close button - matches main dialog */

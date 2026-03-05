@@ -5,6 +5,7 @@
 
 #include "core/config/TypingConfig.h"
 #include <Windows.h>
+#include <atomic>
 
 namespace NextKey {
 
@@ -41,7 +42,7 @@ private:
     bool modWinDown_ = false;
     bool otherKeyPressed_ = false;
 
-    static HotkeyManager* s_instance;
+    static std::atomic<HotkeyManager*> s_instance;
 };
 
 }  // namespace NextKey

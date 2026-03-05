@@ -22,6 +22,7 @@ namespace {
 std::string WideToUtf8(const std::wstring& wstr) {
     if (wstr.empty()) return {};
     int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return {};
     std::string result(len - 1, 0);
     WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, result.data(), len, nullptr, nullptr);
     return result;
@@ -30,9 +31,23 @@ std::string WideToUtf8(const std::wstring& wstr) {
 std::wstring Utf8ToWide(const std::string& str) {
     if (str.empty()) return {};
     int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+    if (len <= 0) return {};
     std::wstring result(len - 1, 0);
     MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, result.data(), len);
     return result;
+}
+
+/// Load existing TOML file or return empty table (for merge-and-save pattern)
+toml::table LoadExistingToml(const std::string& utf8Path) {
+    try { return toml::parse_file(utf8Path); } catch (...) { return {}; }
+}
+
+/// Write TOML table to file
+bool WriteToml(const std::string& utf8Path, const toml::table& tbl) {
+    std::ofstream file(utf8Path);
+    if (!file.is_open()) return false;
+    file << tbl;
+    return true;
 }
 
 }  // namespace
@@ -99,17 +114,9 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
 
 bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& config) {
     try {
-        // First, load existing config to preserve other sections (like [ui])
-        toml::table tbl;
         std::string utf8Path = WideToUtf8(path);
+        auto tbl = LoadExistingToml(utf8Path);
 
-        try {
-            tbl = toml::parse_file(utf8Path);
-        } catch (...) {
-            // File doesn't exist or is invalid, start fresh
-        }
-
-        // Update [input] section
         toml::table input;
         const char* methodStr = "telex";
         if (config.inputMethod == InputMethod::VNI) methodStr = "vni";
@@ -140,12 +147,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("temp_off_macro_esc", config.tempOffMacroByEsc);
         tbl.insert_or_assign("features", std::move(features));
 
-        // Write to file
-        std::ofstream file(utf8Path);
-        if (!file.is_open()) return false;
-
-        file << tbl;
-        return true;
+        return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;
     }
@@ -250,17 +252,9 @@ std::optional<UIConfig> ConfigManager::LoadUIConfig(const std::wstring& path) {
 
 bool ConfigManager::SaveUIConfig(const std::wstring& path, const UIConfig& config) {
     try {
-        // First, load existing config to preserve other sections
-        toml::table tbl;
         std::string utf8Path = WideToUtf8(path);
+        auto tbl = LoadExistingToml(utf8Path);
 
-        try {
-            tbl = toml::parse_file(utf8Path);
-        } catch (...) {
-            // File doesn't exist or is invalid, start fresh
-        }
-
-        // Update [ui] section
         toml::table ui;
         ui.insert_or_assign("show_advanced", config.showAdvanced);
         ui.insert_or_assign("background_opacity", static_cast<int64_t>(config.backgroundOpacity));
@@ -268,12 +262,7 @@ bool ConfigManager::SaveUIConfig(const std::wstring& path, const UIConfig& confi
         ui.insert_or_assign("pinned", config.pinned);
         tbl.insert_or_assign("ui", std::move(ui));
 
-        // Write to file
-        std::ofstream file(utf8Path);
-        if (!file.is_open()) return false;
-
-        file << tbl;
-        return true;
+        return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;
     }
@@ -318,12 +307,8 @@ std::optional<HotkeyConfig> ConfigManager::LoadHotkeyConfig(const std::wstring& 
 
 bool ConfigManager::SaveHotkeyConfig(const std::wstring& path, const HotkeyConfig& config) {
     try {
-        toml::table tbl;
         std::string utf8Path = WideToUtf8(path);
-
-        try {
-            tbl = toml::parse_file(utf8Path);
-        } catch (...) {}
+        auto tbl = LoadExistingToml(utf8Path);
 
         toml::table hotkey;
         hotkey.insert_or_assign("ctrl", config.ctrl);
@@ -332,18 +317,15 @@ bool ConfigManager::SaveHotkeyConfig(const std::wstring& path, const HotkeyConfi
         hotkey.insert_or_assign("win", config.win);
 
         if (config.key != 0) {
-            char keyStr[2] = { static_cast<char>(config.key), 0 };
-            hotkey.insert_or_assign("key", std::string(keyStr));
+            std::wstring wkey(1, config.key);
+            hotkey.insert_or_assign("key", WideToUtf8(wkey));
         } else {
             hotkey.insert_or_assign("key", "");
         }
 
         tbl.insert_or_assign("hotkey", std::move(hotkey));
 
-        std::ofstream file(utf8Path);
-        if (!file.is_open()) return false;
-        file << tbl;
-        return true;
+        return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;
     }
@@ -379,10 +361,8 @@ std::vector<std::wstring> ConfigManager::LoadExcludedApps(const std::wstring& pa
 
 bool ConfigManager::SaveExcludedApps(const std::wstring& path, const std::vector<std::wstring>& apps) {
     try {
-        toml::table tbl;
         std::string utf8Path = WideToUtf8(path);
-
-        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
+        auto tbl = LoadExistingToml(utf8Path);
 
         toml::array arr;
         for (auto& app : apps) {
@@ -392,10 +372,7 @@ bool ConfigManager::SaveExcludedApps(const std::wstring& path, const std::vector
         section.insert_or_assign("list", std::move(arr));
         tbl.insert_or_assign("excluded_apps", std::move(section));
 
-        std::ofstream file(utf8Path);
-        if (!file.is_open()) return false;
-        file << tbl;
-        return true;
+        return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;
     }
@@ -423,10 +400,8 @@ bool ConfigManager::SavePerAppCodeTable(const std::wstring& path,
                                          const std::unordered_map<std::wstring, uint8_t>& data,
                                          uint8_t globalDefault) {
     try {
-        toml::table tbl;
         std::string utf8Path = WideToUtf8(path);
-
-        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
+        auto tbl = LoadExistingToml(utf8Path);
 
         toml::table section;
         for (auto& [exe, codeTable] : data) {
@@ -437,10 +412,7 @@ bool ConfigManager::SavePerAppCodeTable(const std::wstring& path,
         }
         tbl.insert_or_assign("per_app_code_table", std::move(section));
 
-        std::ofstream file(utf8Path);
-        if (!file.is_open()) return false;
-        file << tbl;
-        return true;
+        return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;
     }
@@ -473,10 +445,8 @@ std::optional<SystemConfig> ConfigManager::LoadSystemConfig(const std::wstring& 
 
 bool ConfigManager::SaveSystemConfig(const std::wstring& path, const SystemConfig& config) {
     try {
-        toml::table tbl;
         std::string utf8Path = WideToUtf8(path);
-
-        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
+        auto tbl = LoadExistingToml(utf8Path);
 
         toml::table system;
         system.insert_or_assign("run_at_startup", config.runAtStartup);
@@ -490,10 +460,7 @@ bool ConfigManager::SaveSystemConfig(const std::wstring& path, const SystemConfi
         system.insert_or_assign("auto_check_update", config.autoCheckUpdate);
         tbl.insert_or_assign("system", std::move(system));
 
-        std::ofstream file(utf8Path);
-        if (!file.is_open()) return false;
-        file << tbl;
-        return true;
+        return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;
     }
@@ -552,10 +519,8 @@ std::optional<ConvertConfig> ConfigManager::LoadConvertConfig(const std::wstring
 
 bool ConfigManager::SaveConvertConfig(const std::wstring& path, const ConvertConfig& config) {
     try {
-        toml::table tbl;
         std::string utf8Path = WideToUtf8(path);
-
-        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
+        auto tbl = LoadExistingToml(utf8Path);
 
         toml::table convert;
         convert.insert_or_assign("all_caps", config.allCaps);
@@ -576,8 +541,8 @@ bool ConfigManager::SaveConvertConfig(const std::wstring& path, const ConvertCon
         hotkey.insert_or_assign("win", config.hotkey.win);
 
         if (config.hotkey.key != 0) {
-            char keyStr[2] = { static_cast<char>(config.hotkey.key), 0 };
-            hotkey.insert_or_assign("key", std::string(keyStr));
+            std::wstring wkey(1, config.hotkey.key);
+            hotkey.insert_or_assign("key", WideToUtf8(wkey));
         } else {
             hotkey.insert_or_assign("key", "");
         }
@@ -585,10 +550,7 @@ bool ConfigManager::SaveConvertConfig(const std::wstring& path, const ConvertCon
         convert.insert_or_assign("hotkey", std::move(hotkey));
         tbl.insert_or_assign("convert", std::move(convert));
 
-        std::ofstream file(utf8Path);
-        if (!file.is_open()) return false;
-        file << tbl;
-        return true;
+        return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;
     }
@@ -624,10 +586,8 @@ std::unordered_map<std::wstring, std::wstring> ConfigManager::LoadMacros(const s
 bool ConfigManager::SaveMacros(const std::wstring& path,
                                 const std::unordered_map<std::wstring, std::wstring>& macros) {
     try {
-        toml::table tbl;
         std::string utf8Path = WideToUtf8(path);
-
-        try { tbl = toml::parse_file(utf8Path); } catch (...) {}
+        auto tbl = LoadExistingToml(utf8Path);
 
         toml::table section;
         for (auto& [key, value] : macros) {
@@ -635,10 +595,7 @@ bool ConfigManager::SaveMacros(const std::wstring& path,
         }
         tbl.insert_or_assign("macros", std::move(section));
 
-        std::ofstream file(utf8Path);
-        if (!file.is_open()) return false;
-        file << tbl;
-        return true;
+        return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;
     }

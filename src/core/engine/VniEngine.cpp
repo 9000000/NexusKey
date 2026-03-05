@@ -93,8 +93,9 @@ void VniEngine::PushChar(wchar_t c) {
         else if (lower == L'w') { first = L'q'; second = L'u'; }
         if (first) {
             bool upper = iswupper(c);
-            ProcessChar(upper ? towupper(first) : first);
-            ProcessChar(second);
+            size_t ri = rawInput_.size() - 1;
+            ProcessChar(upper ? towupper(first) : first, ri);
+            ProcessChar(second, rawInput_.size());
             UpdateSpellState();
             return;
         }
@@ -118,7 +119,7 @@ void VniEngine::PushChar(wchar_t c) {
     // 1. Try tone keys (1-5) — gated by spell check
     if (IsToneKey(c)) {
         if (config_.spellCheckEnabled && spellCheckDisabled_) {
-            ProcessChar(c);
+            ProcessChar(c, rawInput_.size() - 1);
             UpdateSpellState();
             return;
         }
@@ -146,24 +147,30 @@ void VniEngine::PushChar(wchar_t c) {
         else if (lower == L'h') { first = L'n'; second = L'h'; }
         else if (lower == L'k') { first = L'c'; second = L'h'; }
         if (first) {
-            ProcessChar(first);
-            ProcessChar(second);
+            size_t ri = rawInput_.size() - 1;
+            ProcessChar(first, ri);
+            ProcessChar(second, rawInput_.size());
             UpdateSpellState();
             return;
         }
     }
 
     // Regular character
-    ProcessChar(c);
+    ProcessChar(c, rawInput_.size() - 1);
     UpdateSpellState();
 }
 
 void VniEngine::Backspace() {
-    if (!states_.empty()) {
-        states_.pop_back();
-    }
-    if (!rawInput_.empty()) {
-        rawInput_.pop_back();
+    if (states_.empty()) return;
+
+    // Trim rawInput_ to the position when this state was created.
+    // This correctly handles quick consonants (f→ph) where one raw key
+    // produces multiple states, and modifier/tone keys that modify
+    // existing states without creating new ones.
+    size_t rawTarget = states_.back().rawIdx;
+    states_.pop_back();
+    if (rawInput_.size() > rawTarget) {
+        rawInput_.resize(rawTarget);
     }
     UpdateSpellState();
 }
@@ -237,7 +244,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
                     return true;
                 } else if (it->mod == Modifier::Stroke) {
                     it->mod = Modifier::None;
-                    ProcessChar(c);
+                    ProcessChar(c, rawInput_.size() - 1);
                     return true;
                 }
             }
@@ -271,7 +278,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
                 return true;
             } else if (it->mod == targetMod) {
                 it->mod = Modifier::None;
-                ProcessChar(c);
+                ProcessChar(c, rawInput_.size() - 1);
                 return true;
             }
         }
@@ -296,7 +303,7 @@ bool VniEngine::ProcessTone(wchar_t c) {
         return true;
     } else if (target->tone == newTone) {
         target->tone = Tone::None;
-        ProcessChar(c);
+        ProcessChar(c, rawInput_.size() - 1);
         return true;
     } else {
         target->tone = newTone;
@@ -384,10 +391,11 @@ CharState* VniEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTr
 // Character Processing
 //-----------------------------------------------------------------------------
 
-void VniEngine::ProcessChar(wchar_t c) {
+void VniEngine::ProcessChar(wchar_t c, size_t rawIdx) {
     CharState state;
     state.base = towlower(c);
     state.isUpper = iswupper(c);
+    state.rawIdx = rawIdx;
     states_.push_back(state);
 }
 

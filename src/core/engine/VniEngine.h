@@ -36,6 +36,7 @@ struct CharState {
     Modifier mod = Modifier::None;
     Tone tone = Tone::None;
     bool isUpper = false;
+    size_t rawIdx = 0;  // rawInput_ index when this state was created (for backspace sync)
 
     [[nodiscard]] bool IsVowel() const noexcept;
     [[nodiscard]] constexpr bool IsD() const noexcept { return base == L'd'; }
@@ -61,7 +62,7 @@ private:
     // Processing
     bool ProcessModifier(wchar_t c);
     bool ProcessTone(wchar_t c);
-    void ProcessChar(wchar_t c);
+    void ProcessChar(wchar_t c, size_t rawIdx);
     
     // Character composition
     wchar_t ComposeChar(const CharState& state) const;

@@ -1,0 +1,254 @@
+/* Shared Sub-Dialog Styles */
+/* Used by: macro, excludedapps, appoverrides */
+/* Provides: container, title-bar, close button, content-section, buttons */
+
+/* Main Container - Fills window */
+.container {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    background: var(--bg-glass);
+    border-radius: 8px;
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Title Bar */
+.title-bar {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 36px;
+    line-height: 36px;
+    padding: 0 12px;
+    box-sizing: border-box;
+    font-size: 14px;
+    background: var(--bg-title-bar);
+    border-bottom: 1px solid var(--border-light);
+    cursor: default;
+}
+
+.title-text {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-primary);
+    letter-spacing: 0.5px;
+    line-height: 36px;
+}
+
+/* Close Button */
+.btn-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    right: 8px;
+    top: 6px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+    outline: none;
+    border-radius: 50%;
+    transition: background 0.2s ease;
+}
+
+.btn-close:hover {
+    background: var(--color-danger-light);
+}
+
+.btn-close:focus {
+    outline: none;
+    border: none;
+}
+
+.btn-close svg {
+    width: 24px;
+    height: 24px;
+    pointer-events: none;
+}
+
+.btn-close svg path {
+    pointer-events: none;
+}
+
+/* Content Section */
+.content-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 12px;
+    box-sizing: border-box;
+    font-size: 14px;
+    overflow: visible;
+}
+
+/* Settings Card */
+.settings-card {
+    background: var(--bg-card);
+    border-radius: 8px;
+    border: 1px solid var(--border-card);
+    padding: 10px;
+    margin-bottom: 8px;
+    overflow: visible;
+    flex-shrink: 0;
+}
+
+.settings-card.list-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 60px;
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+}
+
+/* Setting Row */
+.setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    gap: 8px;
+    min-height: 32px;
+}
+
+.setting-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    flex-shrink: 1;
+    min-width: 70px;
+    max-width: 90px;
+}
+
+/* Input Field */
+.setting-input {
+    flex: 1;
+    display: inline-block;
+    box-sizing: border-box !important;
+    height: 28px !important;
+    min-height: 28px !important;
+    max-height: 28px !important;
+    padding: 0 8px !important;
+    font-size: 13px;
+    line-height: 26px !important;
+    border: 1px solid var(--border-input);
+    border-radius: 4px;
+    outline: none !important;
+    background: var(--bg-card-solid);
+    color: var(--text-primary);
+    margin: 0;
+    vertical-align: middle;
+    overflow: hidden !important;
+}
+
+.setting-input:focus {
+    border: 1px solid var(--color-primary);
+    outline: none !important;
+}
+
+/* Input Container - for dropdown positioning */
+.input-container {
+    flex: 1;
+    position: relative;
+    display: block;
+}
+
+.input-container .setting-input {
+    width: 100%;
+}
+
+/* Refresh Button */
+.btn-refresh {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin-left: 6px;
+    border: 1px solid var(--border-input);
+    border-radius: 4px;
+    background: var(--bg-card-solid);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.btn-refresh:hover {
+    background: var(--bg-primary-hover);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.btn-refresh svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Button Row */
+.button-row {
+    display: flex;
+    gap: 6px;
+    padding-top: 6px;
+}
+
+.footer-row {
+    margin-top: 4px;
+    flex-shrink: 0;
+}
+
+/* Buttons - flexible width */
+.btn-action {
+    flex: 1;
+    padding: 8px 8px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    outline: none;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.btn-primary {
+    background: var(--color-primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--color-primary-hover);
+}
+
+.btn-danger {
+    background: var(--color-danger);
+    color: white;
+}
+
+.btn-danger:hover {
+    background: var(--color-danger-hover);
+}
+
+.btn-secondary {
+    background: transparent;
+    color: var(--color-primary);
+    border: 1px solid var(--color-primary);
+}
+
+.btn-secondary:hover {
+    background: var(--color-primary);
+    color: white;
+}

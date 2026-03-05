@@ -35,11 +35,11 @@ public:
     }
 
     IFACEMETHODIMP_(ULONG) AddRef() override {
-        return ++refCount_;
+        return InterlockedIncrement(&refCount_);
     }
 
     IFACEMETHODIMP_(ULONG) Release() override {
-        ULONG count = --refCount_;
+        ULONG count = InterlockedDecrement(&refCount_);
         if (count == 0) delete this;
         return count;
     }

@@ -44,11 +44,11 @@ IFACEMETHODIMP TextService::QueryInterface(REFIID riid, void** ppvObj) {
 }
 
 IFACEMETHODIMP_(ULONG) TextService::AddRef() {
-    return ++refCount_;
+    return InterlockedIncrement(&refCount_);
 }
 
 IFACEMETHODIMP_(ULONG) TextService::Release() {
-    ULONG count = --refCount_;
+    ULONG count = InterlockedDecrement(&refCount_);
     if (count == 0) {
         delete this;
     }

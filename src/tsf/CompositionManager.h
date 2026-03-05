@@ -18,8 +18,8 @@ public:
 
     // IUnknown
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppvObj) override;
-    IFACEMETHODIMP_(ULONG) AddRef() override { return ++refCount_; }
-    IFACEMETHODIMP_(ULONG) Release() override { return --refCount_; }
+    IFACEMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refCount_); }
+    IFACEMETHODIMP_(ULONG) Release() override { return InterlockedDecrement(&refCount_); }
 
     // ITfCompositionSink
     IFACEMETHODIMP OnCompositionTerminated(TfEditCookie ec, ITfComposition* pComposition) override;

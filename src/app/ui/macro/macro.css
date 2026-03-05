@@ -1,121 +1,15 @@
 /* Macro Dialog Styles */
-/* theme.css loaded via <link> in HTML (Sciter @import is unreliable) */
+/* base.css + subdialog.css loaded via <link> in HTML */
 
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: var(--font-family);
-}
-
-html,
-body {
-    background: transparent;
-    color: var(--text-primary);
-    overflow: hidden;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-}
-
-/* Main Container - Fills window (window size controlled by C++ ScaleHelper) */
-.container {
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    background: var(--bg-glass);
-    border-radius: 8px;
-    box-shadow: var(--shadow-card);
-    overflow: hidden;
-    font-size: 14px;
-    display: flex;
-    flex-direction: column;
-}
-
-/* Title Bar */
-.title-bar {
-    display: block;
-    position: relative;
-    width: 100%;
-    height: 36px;
-    line-height: 36px;
-    padding: 0 12px;
-    box-sizing: border-box;
-    font-size: 14px;
-    background: var(--bg-title-bar);
-    border-bottom: 1px solid var(--border-light);
-    cursor: default;
-}
-
-.title-text {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--color-primary);
-    letter-spacing: 0.5px;
-    line-height: 36px;
-}
-
-/* Close Button */
-.btn-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: absolute;
-    right: 8px;
-    top: 6px;
-    width: 24px;
-    height: 24px;
-    border: none;
-    background: none;
-    cursor: pointer;
-    padding: 0;
-    outline: none;
-    border-radius: 50%;
-    transition: background 0.2s ease;
-}
-
-.btn-close:hover {
-    background: var(--color-danger-light);
-}
-
-.btn-close:focus {
-    outline: none;
-    border: none;
-}
-
-.btn-close svg {
-    width: 24px;
-    height: 24px;
-    pointer-events: none;
-}
-
-.btn-close svg path {
-    pointer-events: none;
-}
-
-/* Content Section - Fills remaining space below title bar */
+/* Content Section override - smaller padding */
 .content-section {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    width: 100%;
     padding: 10px;
-    box-sizing: border-box;
-    font-size: 14px;
-    overflow: visible;
     min-height: 0;
 }
 
-/* Settings Card - first one (input) is fixed size */
+/* Settings Card override - solid background for macro */
 .settings-card {
     background: var(--bg-card-solid);
-    border-radius: 8px;
-    border: 1px solid var(--border-card);
-    padding: 10px;
-    margin-bottom: 8px;
-    overflow: visible;
-    flex-shrink: 0;
 }
 
 /* Second settings-card (list) - fixed height container */
@@ -127,66 +21,8 @@ body {
     overflow: hidden;
 }
 
-/* Setting Row - Flexible height for wrapping */
-.setting-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 4px 0;
-    gap: 8px;
-    min-height: 32px;
-}
-
-.setting-label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-primary);
-    flex-shrink: 1;
-    min-width: 70px;
-    max-width: 90px;
-}
-
-/* Input Field - Fixed dimensions to prevent text jumping */
-/* NOTE: !important needed to override Sciter's std-edit from master-base.css (height: 1.4em) */
-.setting-input {
-    flex: 1;
-    display: inline-block;
-    box-sizing: border-box !important;
-    height: 28px !important;
-    min-height: 28px !important;
-    max-height: 28px !important;
-    padding: 0 8px !important;
-    font-size: 13px;
-    line-height: 26px !important;
-    /* height - 2px border */
-    border: 1px solid var(--border-input);
-    border-radius: 4px;
-    outline: none !important;
-    background: var(--bg-card-solid);
-    color: var(--text-primary);
-    margin: 0;
-    font-rendering-mode: snap-pixel;
-    vertical-align: middle;
-    overflow: hidden !important;
-}
-
-/* Use box-shadow for focus instead of border change to prevent layout shift */
-.setting-input:focus {
-    border: 1px solid var(--color-primary);
-    /* Keep same border width */
-    outline: none !important;
-}
-
-/* Button Row - buttons share space equally */
-.button-row {
-    display: flex;
-    gap: 6px;
-    padding-top: 6px;
-}
-
+/* Footer row override */
 .footer-row {
-    margin-top: 4px;
-    flex-shrink: 0;
     width: 100%;
 }
 
@@ -194,52 +30,6 @@ body {
 .footer-row .btn-action {
     font-size: 11px;
     padding: 6px 4px;
-}
-
-/* Buttons - flexible width */
-.btn-action {
-    flex: 1;
-    padding: 8px 8px;
-    font-size: 12px;
-    font-weight: 500;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: none;
-    outline: none;
-    text-align: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.btn-primary {
-    background: var(--color-primary);
-    color: white;
-}
-
-.btn-primary:hover {
-    background: var(--color-primary-hover);
-}
-
-.btn-danger {
-    background: var(--color-danger);
-    color: white;
-}
-
-.btn-danger:hover {
-    background: var(--color-danger-hover);
-}
-
-.btn-secondary {
-    background: transparent;
-    color: var(--color-primary);
-    border: 1px solid var(--color-primary);
-}
-
-.btn-secondary:hover {
-    background: var(--color-primary);
-    color: white;
 }
 
 /* List Header */
@@ -308,7 +98,3 @@ body {
     line-height: 1.3;
 }
 
-/* Hidden inputs */
-input[type="hidden"] {
-    display: none;
-}

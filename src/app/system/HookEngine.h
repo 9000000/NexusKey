@@ -13,6 +13,7 @@
 #include "core/SmartSwitchManager.h"
 #include <Windows.h>
 #include <functional>
+#include <atomic>
 #include <memory>
 #include <set>
 #include <string>
@@ -120,7 +121,7 @@ private:
     std::wstring previousComposition_;  // What's currently displayed in the app
     std::vector<uint8_t> previousEncodedWidths_;  // Output unit count per Unicode char (for non-Unicode code tables)
     bool vietnameseMode_ = true;
-    bool sending_ = false;  // True while SendInput is in progress (skip re-entrant hook calls)
+    std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
     bool beepOnSwitch_ = false;
     bool smartSwitch_ = false;
     bool excludeApps_ = false;
@@ -175,8 +176,8 @@ private:
     std::function<void()> convertCallback_;
     std::function<void()> configReloadCallback_;
 
-    // Singleton for static callback dispatch
-    static HookEngine* s_instance;
+    // Singleton for static callback dispatch (read from hook callback thread)
+    static std::atomic<HookEngine*> s_instance;
 };
 
 }  // namespace NextKey
