@@ -7,6 +7,8 @@
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <vector>
+#include <fstream>
+#include <commdlg.h>
 
 using namespace sciter::dom;
 
@@ -76,6 +78,10 @@ bool MacroTableDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) 
                     if (!macroName.empty()) {
                         removeMacro(macroName);
                     }
+                } else if (action == L"import") {
+                    importMacros();
+                } else if (action == L"export") {
+                    exportMacros();
                 } else if (action == L"close") {
                     PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
                 }
@@ -112,6 +118,106 @@ void MacroTableDialog::removeMacro(const std::wstring& name) {
     macros_.erase(name);
     populateList();
     persistAndSignal();
+}
+
+void MacroTableDialog::importMacros() {
+    OPENFILENAME ofn = {};
+    WCHAR szFile[MAX_PATH] = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = get_hwnd();
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"Text file (*.txt)\0*.txt\0All (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+    if (!GetOpenFileNameW(&ofn)) return;
+
+    int msgboxID = MessageBoxW(
+        get_hwnd(),
+        L"B\u1EA1n c\u00F3 mu\u1ED1n gi\u1EEF l\u1EA1i d\u1EEF li\u1EC7u hi\u1EC7n t\u1EA1i kh\u00F4ng?",
+        L"D\u1EEF li\u1EC7u g\u00F5 t\u1EAFt",
+        MB_ICONEXCLAMATION | MB_YESNO
+    );
+
+    bool append = (msgboxID == IDYES);
+    if (!append) {
+        macros_.clear();
+    }
+
+    // Read UTF-8 file
+    std::ifstream infile(szFile);
+    if (!infile.is_open()) return;
+
+    std::string line;
+    bool firstLine = true;
+    while (std::getline(infile, line)) {
+        // Skip header/comment lines
+        if (firstLine) { firstLine = false; if (!line.empty() && line[0] == ';') continue; }
+        if (line.empty() || line[0] == ';') continue;
+
+        // Split on first ':'
+        auto pos = line.find(':');
+        if (pos == std::string::npos || pos == 0) continue;
+
+        std::string key = line.substr(0, pos);
+        std::string value = line.substr(pos + 1);
+        if (value.empty()) continue;
+
+        // Convert UTF-8 to wstring
+        int keyLen = MultiByteToWideChar(CP_UTF8, 0, key.c_str(), -1, nullptr, 0);
+        int valLen = MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, nullptr, 0);
+        if (keyLen <= 0 || valLen <= 0) continue;
+
+        std::wstring wKey(keyLen - 1, L'\0');
+        std::wstring wVal(valLen - 1, L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, key.c_str(), -1, wKey.data(), keyLen);
+        MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, wVal.data(), valLen);
+
+        macros_[wKey] = wVal;
+    }
+
+    populateList();
+    persistAndSignal();
+}
+
+void MacroTableDialog::exportMacros() {
+    OPENFILENAME ofn = {};
+    WCHAR szFile[MAX_PATH] = L"NexusKeyMacro";
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = get_hwnd();
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"Text file (*.txt)\0*.txt\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrDefExt = L"txt";
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+
+    if (!GetSaveFileNameW(&ofn)) return;
+
+    // Sort entries for consistent output
+    std::vector<std::pair<std::wstring, std::wstring>> sorted(macros_.begin(), macros_.end());
+    std::sort(sorted.begin(), sorted.end());
+
+    std::ofstream outfile(szFile);
+    if (!outfile.is_open()) return;
+
+    // Write OpenKey-compatible header
+    outfile << ";Compatible OpenKey Macro Data file*** version=1 ***\n";
+
+    for (auto& [key, value] : sorted) {
+        // Convert wstring to UTF-8
+        int keyLen = WideCharToMultiByte(CP_UTF8, 0, key.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        int valLen = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        if (keyLen <= 0 || valLen <= 0) continue;
+
+        std::string u8Key(keyLen - 1, '\0');
+        std::string u8Val(valLen - 1, '\0');
+        WideCharToMultiByte(CP_UTF8, 0, key.c_str(), -1, u8Key.data(), keyLen, nullptr, nullptr);
+        WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, u8Val.data(), valLen, nullptr, nullptr);
+
+        outfile << u8Key << ":" << u8Val << "\n";
+    }
 }
 
 }  // namespace NextKey

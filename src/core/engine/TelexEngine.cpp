@@ -114,7 +114,7 @@ void TelexEngine::PushChar(wchar_t c) {
 
     // 1a. 'z' key — clear existing tone (if any)
     if (towlower(c) == L'z' && !states_.empty()) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_ && !config_.freeMarking) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
             ProcessChar(c);
             UpdateSpellState();
             return;
@@ -127,7 +127,7 @@ void TelexEngine::PushChar(wchar_t c) {
 
     // 1b. Try tone keys (s, f, r, x, j) — gated by spell check
     if (IsToneKey(c) && !states_.empty()) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_ && !config_.freeMarking) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
             ProcessChar(c);
             UpdateSpellState();
             return;
@@ -271,7 +271,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
 
         // Free marking: backward scan for circumflex across intervening consonants
         // e.g., "tiéng" + 'e' → find 'é' across 'n','g' → apply circumflex → "tiếng"
-        if (config_.freeMarking && (lower == L'a' || lower == L'e' || lower == L'o')) {
+        if (!spellCheckDisabled_ && (lower == L'a' || lower == L'e' || lower == L'o')) {
             for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
                 if (it->IsVowel() && it->base == lower) {
                     if (it->mod == Modifier::Circumflex) {
@@ -378,7 +378,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         return true;
     }
 
-    // P2: "uo" pattern → horn on 'o' (uơ, will become ươ via AutoUO)
+    // P2: "uo" pattern → horn on 'o' (uơ → later AutoUO makes ươ when next char typed)
     if (hasUO && oIdx != SIZE_MAX) {
         // When replacing circumflex (e.g., "luoow" → ô→ơ), also horn the 'u'
         // since no future char will trigger AutoUO

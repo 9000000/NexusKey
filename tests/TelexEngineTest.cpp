@@ -1911,20 +1911,8 @@ TEST_F(AutoRestoreTest, EscapedTone_WithDiacritics_Restores) {
     EXPECT_EQ(engine_->Commit(), L"google");
 }
 
-TEST_F(AutoRestoreTest, EscapedTone_RemovesConsumedFromRaw) {
-    // With freeMarking, 'r' applies as tone even after invalid "us" prefix.
-    // u-s-s-e-r → composed "usẻ" (invalid Vietnamese)
-    // First 's' was consumed as tone (applied acute to 'u'), second 's' escaped it.
-    // Auto-restore should give "user" (4 chars), NOT "usser" (5 chars).
-    config_.freeMarking = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
-    TypeString(*engine_, L"usser");
-    EXPECT_EQ(engine_->Peek(), L"us\x1EBB");  // usẻ
-    EXPECT_EQ(engine_->Commit(), L"user");
-}
-
-TEST_F(AutoRestoreTest, EscapedTone_NoFreeMarking_LiteralFallback) {
-    // Without freeMarking, spell check gates 'r' as literal after invalid "us".
+TEST_F(AutoRestoreTest, EscapedTone_SpellCheckGatesInvalid) {
+    // Spell check gates 'r' as literal after invalid "us" prefix.
     // u-s-s-e-r → composed "user" (all ASCII, no diacritics)
     // No auto-restore needed (raw matches composed after escape fix).
     TypeString(*engine_, L"usser");

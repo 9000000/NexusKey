@@ -368,11 +368,26 @@ void TrayIcon::ShowContextMenu() {
 }
 
 bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept {
+    // Deferred V/E mode sync from hook callback or tray click (PostMessage pattern)
+    if (msg == WM_NEXUSKEY_TRAY_MODE_SYNC && hwnd == hwndMessage_) {
+        SetVietnameseMode(wParam != 0);
+        // Also notify settings subprocess (if open)
+        HWND settingsWnd = FindWindowW(nullptr, L"NexusKey Settings");
+        if (settingsWnd) {
+            PostMessageW(settingsWnd, WM_NEXUSKEY_MODE_CHANGED, wParam, 0);
+        }
+        return true;
+    }
+
     // Settings dialog requesting a specific V/E mode (cross-process)
     if (msg == WM_NEXUSKEY_SET_MODE && hwnd == hwndMessage_) {
+        bool vietnamese = (wParam != 0);
         if (modeRequestCallback_) {
-            modeRequestCallback_(wParam != 0);
+            modeRequestCallback_(vietnamese);
         }
+        // Update icon directly (callback may post deferred update,
+        // but ensure immediate visual sync)
+        SetVietnameseMode(vietnamese);
         return true;
     }
 
@@ -448,6 +463,11 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             ShowContextMenu();
             return true;
         case WM_LBUTTONUP:
+            // After double-click, Windows sends a trailing WM_LBUTTONUP — skip it
+            if (ignoreNextLButtonUp_) {
+                ignoreNextLButtonUp_ = false;
+                return true;
+            }
             // Toggle immediately (no delay)
             toggledByClick_ = true;
             if (menuCallback_) {
@@ -460,6 +480,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 menuCallback_(TrayMenuId::ToggleMode);  // Undo
             }
             toggledByClick_ = false;
+            ignoreNextLButtonUp_ = true;  // Suppress trailing WM_LBUTTONUP
             if (menuCallback_) {
                 menuCallback_(TrayMenuId::Settings);
             }
@@ -468,6 +489,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     // Any non-left-button event clears the toggle tracking
     toggledByClick_ = false;
+    ignoreNextLButtonUp_ = false;
     return false;
 }
 

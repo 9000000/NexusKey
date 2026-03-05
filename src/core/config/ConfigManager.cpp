@@ -77,7 +77,6 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.autoCaps = (*features)["auto_caps"].value_or(false);
             config.allowZwjf = (*features)["allow_zwjf"].value_or(true);
             config.autoRestoreEnabled = (*features)["auto_restore"].value_or(false);
-            config.freeMarking = (*features)["free_marking"].value_or(false);
             config.tempOffSpellByCtrl = (*features)["temp_off_spell_ctrl"].value_or(false);
             config.tempOffByAlt = (*features)["temp_off_by_alt"].value_or(false);
             config.rememberCodeTable = (*features)["remember_code_table"].value_or(false);
@@ -130,7 +129,6 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("auto_caps", config.autoCaps);
         features.insert_or_assign("allow_zwjf", config.allowZwjf);
         features.insert_or_assign("auto_restore", config.autoRestoreEnabled);
-        features.insert_or_assign("free_marking", config.freeMarking);
         features.insert_or_assign("temp_off_spell_ctrl", config.tempOffSpellByCtrl);
         features.insert_or_assign("temp_off_by_alt", config.tempOffByAlt);
         features.insert_or_assign("remember_code_table", config.rememberCodeTable);

@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <vector>
 #include <TlHelp32.h>
+#include <Psapi.h>
+
+#pragma comment(lib, "psapi.lib")
 
 using namespace sciter::dom;
 
@@ -70,25 +73,13 @@ bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params
                         addApp(appName);
                     }
                 } else if (action == L"add-current") {
-                    auto apps = getRunningApps();
-                    sciter::value arr;
-                    for (auto& app : apps) {
-                        arr.append(sciter::value(app.c_str()));
-                    }
-                    call_function("setRunningApps", arr);
+                    startWindowPicking();
                 } else if (action == L"delete") {
                     if (!appName.empty()) {
                         removeApp(appName);
                     }
                 } else if (action == L"close") {
                     PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
-                } else if (action == L"get-running-apps") {
-                    auto apps = getRunningApps();
-                    sciter::value arr;
-                    for (auto& app : apps) {
-                        arr.append(sciter::value(app.c_str()));
-                    }
-                    call_function("setRunningApps", arr);
                 }
 
                 // Clear the action value to allow re-triggering
@@ -107,14 +98,6 @@ void ExcludedAppsDialog::populateList() {
         call_function("addAppToList", sciter::value(app.c_str()));
     }
     call_function("forceRefresh");
-
-    // Also load running apps for the dropdown
-    auto running = getRunningApps();
-    sciter::value arr;
-    for (auto& app : running) {
-        arr.append(sciter::value(app.c_str()));
-    }
-    call_function("setRunningApps", arr);
 }
 
 void ExcludedAppsDialog::addApp(const std::wstring& name) {
@@ -178,6 +161,103 @@ std::vector<std::wstring> ExcludedAppsDialog::getRunningApps() {
     CloseHandle(snapshot);
     std::sort(apps.begin(), apps.end());
     return apps;
+}
+
+void ExcludedAppsDialog::startWindowPicking() {
+    isPickingWindow_ = true;
+    SetCapture(get_hwnd());
+
+    // Save original arrow cursor before replacing
+    HCURSOR hOriginalArrow = LoadCursor(nullptr, IDC_ARROW);
+    savedArrowCursor_ = CopyCursor(hOriginalArrow);
+
+    // Replace system arrow cursor with crosshair globally
+    HCURSOR hCross = LoadCursor(nullptr, IDC_CROSS);
+    SetSystemCursor(CopyCursor(hCross), OCR_NORMAL);
+}
+
+void ExcludedAppsDialog::stopWindowPicking() {
+    isPickingWindow_ = false;
+    ReleaseCapture();
+
+    // Restore original arrow cursor
+    if (savedArrowCursor_) {
+        SetSystemCursor(savedArrowCursor_, OCR_NORMAL);
+        savedArrowCursor_ = nullptr;  // SetSystemCursor takes ownership
+    }
+
+    SetForegroundWindow(get_hwnd());
+}
+
+std::wstring ExcludedAppsDialog::getExeNameFromWindow(HWND hwnd) {
+    if (!hwnd) return L"";
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(hwnd, &processId);
+    if (processId == 0) return L"";
+
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+                                  FALSE, processId);
+    if (!hProcess) return L"";
+
+    WCHAR exePath[MAX_PATH] = {};
+    GetProcessImageFileNameW(hProcess, exePath, MAX_PATH);
+    CloseHandle(hProcess);
+
+    if (wcslen(exePath) == 0) return L"";
+
+    // Extract filename from device path (e.g. \Device\HarddiskVolume3\...\app.exe)
+    const WCHAR* filename = wcsrchr(exePath, L'\\');
+    if (filename) filename++;
+    else filename = exePath;
+
+    return ToLowerAscii(filename);
+}
+
+LRESULT ExcludedAppsDialog::onCustomMessage(HWND hwnd, UINT msg,
+                                             WPARAM wParam, LPARAM lParam) {
+    // Window Picker: show crosshair cursor continuously
+    if (msg == WM_SETCURSOR && isPickingWindow_) {
+        SetCursor(LoadCursor(nullptr, IDC_CROSS));
+        return TRUE;
+    }
+
+    // Window Picker: click to capture target window
+    if (msg == WM_LBUTTONUP && isPickingWindow_) {
+        POINT pt;
+        GetCursorPos(&pt);
+        HWND targetWnd = WindowFromPoint(pt);
+
+        if (targetWnd) {
+            targetWnd = GetAncestor(targetWnd, GA_ROOT);
+        }
+
+        if (targetWnd && targetWnd != hwnd) {
+            std::wstring exeName = getExeNameFromWindow(targetWnd);
+            if (!exeName.empty()) {
+                if (exeName == L"nexuskey.exe") {
+                    stopWindowPicking();
+                    MessageBoxW(get_hwnd(),
+                        L"Không thể thêm NexusKey vào danh sách loại trừ.",
+                        L"NexusKey", MB_OK | MB_ICONWARNING);
+                } else {
+                    stopWindowPicking();
+                    addApp(exeName);
+                }
+                return 0;
+            }
+        }
+        stopWindowPicking();
+        return 0;
+    }
+
+    // Window Picker: ESC to cancel
+    if (msg == WM_KEYDOWN && wParam == VK_ESCAPE && isPickingWindow_) {
+        stopWindowPicking();
+        return 0;
+    }
+
+    return -1;  // Unhandled
 }
 
 }  // namespace NextKey

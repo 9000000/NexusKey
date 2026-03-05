@@ -43,6 +43,10 @@ public:
     /// Requires OpenReadWrite() or Create()
     void ToggleFlag(uint32_t flagBit) noexcept;
 
+    /// Set or clear a flag bit atomically (safe for concurrent access)
+    /// Requires OpenReadWrite() or Create()
+    void SetOrClearFlag(uint32_t flagBit, bool set) noexcept;
+
     /// Check if connected to valid shared memory
     [[nodiscard]] bool IsConnected() const noexcept;
 

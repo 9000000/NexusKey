@@ -164,18 +164,6 @@ function toggleAdvancedSettings() {
 
         }
 
-        // IMMEDIATE synchronous force reflow on toggles
-        // Do it as fast as possible to minimize visible flash
-        const toggles = document.querySelectorAll(".toggle-switch, .toggle-switch-small");
-        toggles.forEach(function (toggle) {
-            toggle.style.display = "none";
-        });
-        // Force synchronous reflow by reading offsetHeight
-        container.offsetHeight;
-        toggles.forEach(function (toggle) {
-            toggle.style.display = "";
-        });
-
         // Notify C++ to resize window
         const hiddenInput = document.getElementById("val-expand-state");
         if (hiddenInput) {

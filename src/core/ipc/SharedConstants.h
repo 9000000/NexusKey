@@ -21,6 +21,7 @@ constexpr UINT WM_NEXUSKEY_ICON_CHANGED = WM_USER + 104;  // Settings → Main: 
 constexpr UINT WM_NEXUSKEY_CONFIG_CHANGED = WM_USER + 105;  // Main → Settings: config changed from tray menu, re-read TOML
 constexpr UINT WM_NEXUSKEY_UPDATE_RESULT = WM_USER + 106;    // Settings: update check result (wParam: 0=up-to-date, 1=available, 2=failed)
 constexpr UINT WM_NEXUSKEY_UPDATE_AVAILABLE = WM_USER + 107; // Main: auto-check found update (lParam: UpdateInfo*)
+constexpr UINT WM_NEXUSKEY_TRAY_MODE_SYNC = WM_USER + 108;  // Deferred: sync tray icon V/E mode (wParam: 1=Vietnamese, 0=English)
 
 }  // namespace NextKey
 

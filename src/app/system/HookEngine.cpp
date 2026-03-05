@@ -405,6 +405,9 @@ static HWND GetInputTarget();
 // ═══════════════════════════════════════════════════════════
 
 bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*/) {
+    // 0. Check for config changes from Settings subprocess
+    CheckConfigEvent();
+
     // 1. Track modifiers for hotkey detection
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
                        vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
@@ -721,8 +724,10 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
 
 void HookEngine::HandleAlphaKey(DWORD vkCode) {
     bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+    bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
     wchar_t ch = static_cast<wchar_t>(vkCode);
-    if (!shift) ch = towlower(ch);
+    if (!upper) ch = towlower(ch);
 
     // Auto-capitalize first letter after sentence-ending punctuation
     if (autoCaps_ && autoCapState_ == 2 && engine_->Count() == 0) {

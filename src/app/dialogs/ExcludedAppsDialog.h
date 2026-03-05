@@ -8,6 +8,10 @@
 #include <string>
 #include <vector>
 
+#ifndef OCR_NORMAL
+#define OCR_NORMAL 32512
+#endif
+
 namespace NextKey {
 
 /// Callback when excluded apps list changes
@@ -26,6 +30,7 @@ public:
 
 protected:
     void onBeforeClose() override;
+    LRESULT onCustomMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) override;
 
 private:
     void populateList();
@@ -34,8 +39,15 @@ private:
     void persistAndSignal();
     std::vector<std::wstring> getRunningApps();
 
+    void startWindowPicking();
+    void stopWindowPicking();
+    std::wstring getExeNameFromWindow(HWND hwnd);
+
     std::vector<std::wstring> appList_;
     ExcludedAppsChangedCallback onChanged_;
+
+    bool isPickingWindow_ = false;
+    HCURSOR savedArrowCursor_ = nullptr;
 };
 
 }  // namespace NextKey

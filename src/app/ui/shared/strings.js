@@ -42,8 +42,6 @@ var STRINGS = {
         "s.restore_key": "Auto-restore keys on wrong word",
         "s.temp_off_spell": "Disable spell check with Ctrl",
         "s.temp_off_spell_tooltip": "Hold Ctrl while typing to skip spell check",
-        "s.free_marking": "Free marking",
-        "s.free_marking_tooltip": "Allow free diacritics without correct spelling (e.g., tiens \u2192 ti\u1EBFn)",
         "s.remember_code": "Remember code table per app",
         "s.temp_off_alt": "Disable NexusKey with Alt",
         "s.temp_off_alt_tooltip": "Double-tap Alt to disable Vietnamese input (avoid app menu conflicts)",

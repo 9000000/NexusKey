@@ -117,7 +117,7 @@ void VniEngine::PushChar(wchar_t c) {
 
     // 1. Try tone keys (1-5) — gated by spell check
     if (IsToneKey(c)) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_ && !config_.freeMarking) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
             ProcessChar(c);
             UpdateSpellState();
             return;

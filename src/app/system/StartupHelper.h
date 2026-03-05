@@ -87,7 +87,7 @@ inline bool CreateScheduledTaskElevated() noexcept {
     // schtasks /tr needs escaped inner quotes for paths with spaces:
     //   /tr "\"D:\Phan Mem\NexusKey.exe\""
     std::wstring taskCmd = L"/create /sc onlogon /tn " + std::wstring(STARTUP_TASK_NAME) +
-                           L" /rl highest /tr \"\\\"" + path + L"\\\"\" /f";
+                           L" /rl highest /delay 0000:05 /tr \"\\\"" + path + L"\\\"\" /f";
     wchar_t args[1024];
     swprintf_s(args, L"%s", taskCmd.c_str());
 
@@ -104,7 +104,10 @@ inline bool CreateScheduledTaskElevated() noexcept {
 
     if (sei.hProcess) {
         WaitForSingleObject(sei.hProcess, 5000);
+        DWORD exitCode = 1;
+        GetExitCodeProcess(sei.hProcess, &exitCode);
         CloseHandle(sei.hProcess);
+        return exitCode == 0;
     }
     return true;
 }

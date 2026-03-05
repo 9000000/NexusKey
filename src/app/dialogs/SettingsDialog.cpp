@@ -12,9 +12,7 @@
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include "core/UIConfig.h"
-#include "core/config/ConfigEvent.h"
 #include "core/ipc/SharedConstants.h"
-#include "core/ipc/SharedStateManager.h"
 #include "sciter-x-dom.hpp"
 #include "sciter-x-host-callback.h"
 #include <dwmapi.h>
@@ -64,6 +62,10 @@ SettingsDialog::SettingsDialog()
 
     // Load current settings first
     loadSettings();
+
+    // Open IPC handles once (reused for every toggle save)
+    (void)sharedState_.OpenReadWrite();
+    (void)configEvent_.Initialize();
 
     // ═══════════════════════════════════════════════════════════
     // ORDER IS CRITICAL - Do not rearrange these steps!
@@ -265,7 +267,8 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         if (s_instance) {
             bool vietnamese = (wParam != 0);
             s_instance->vietnameseMode_ = vietnamese;
-            s_instance->setToggleState(L"toggle-language", vietnamese);
+            // CSS: checked=E, unchecked=V — invert for correct display
+            s_instance->setToggleState(L"toggle-language", !vietnamese);
         }
         return 0;
     }
@@ -375,8 +378,9 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
 void SettingsDialog::SetVietnameseMode(bool vietnamese) {
     vietnameseMode_ = vietnamese;
     // Update toggle UI if window already exists (post-construction call)
+    // CSS: checked=E, unchecked=V — invert for correct display
     if (get_hwnd()) {
-        setToggleState(L"toggle-language", vietnamese);
+        setToggleState(L"toggle-language", !vietnamese);
     }
 }
 
@@ -424,13 +428,11 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
 
         if (id.empty()) return sciter::window::handle_event(he, params);
 
-        // Handle expand state change
-        if (id == L"val-show-advanced" || id == L"val-expand-state") {
+        // Handle expand state change (from val-expand-state hidden input)
+        if (id == L"val-expand-state") {
             sciter::value val = el.get_value();
             std::wstring strVal = val.is_string() ? val.get<std::wstring>() : L"0";
-            bool expanded = (strVal == L"1");
-
-            isExpanded_ = expanded;
+            isExpanded_ = (strVal == L"1");
             saveUISettings();
             SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 10, NULL);
             return true;
@@ -482,7 +484,7 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
             return true;
         }
 
-        // Handle other toggle changes (val-* hidden inputs)
+        // Handle toggle changes (val-* hidden inputs fired by JS)
         if (id.find(L"val-") == 0) {
             std::wstring settingId = id.substr(4);  // Remove "val-" prefix
             sciter::value val = el.get_value();
@@ -501,11 +503,11 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     // Map toggle IDs to settings
     if (id == L"toggle-language") {
         // V/E toggle: send to main process via cross-process message
-        // value=true means Vietnamese ON (checked), value=false means English
-        vietnameseMode_ = value;
+        // CSS: checked=E (thumb right), unchecked=V (thumb left) — invert
+        vietnameseMode_ = !value;
         HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
         if (trayWnd) {
-            PostMessageW(trayWnd, WM_NEXUSKEY_SET_MODE, value ? 1 : 0, 0);
+            PostMessageW(trayWnd, WM_NEXUSKEY_SET_MODE, vietnameseMode_ ? 1 : 0, 0);
         }
         return;  // V/E mode is not a persistent config setting
     }
@@ -554,9 +556,6 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"temp-off-openkey") {
         config_.tempOffByAlt = value;
     }
-    else if (id == L"free-marking") {
-        config_.freeMarking = value;
-    }
     else if (id == L"use-macro") {
         config_.macroEnabled = value;
     }
@@ -574,6 +573,13 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     }
     else if (id == L"temp-off-macro") {
         config_.tempOffMacroByEsc = value;
+    }
+    // Show-advanced toggle: UI-only setting (expand/collapse panel)
+    else if (id == L"show-advanced") {
+        isExpanded_ = value;
+        saveUISettings();
+        SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 10, NULL);
+        return;
     }
     // System settings — immediate save, no deferred/SharedState
     else if (id == L"run-startup") {
@@ -805,6 +811,9 @@ void SettingsDialog::initializeUI() {
     sciter::dom::element root = get_root();
     if (!root.is_valid()) return;
 
+    // Defer rendering — batch all DOM mutations into one repaint
+    root.update(true);
+
     // Set input method dropdown
     setDropdownValue(L"input-type", static_cast<int>(config_.inputMethod));
 
@@ -812,7 +821,8 @@ void SettingsDialog::initializeUI() {
     setDropdownValue(L"bang-ma", static_cast<int>(config_.codeTable));
 
     // Set V/E toggle state (synced with main process)
-    setToggleState(L"toggle-language", vietnameseMode_);
+    // CSS: unchecked=V (thumb left), checked=E (thumb right) — invert for correct display
+    setToggleState(L"toggle-language", !vietnameseMode_);
 
     // Set toggle states
     setToggleState(L"beep-sound", config_.beepOnSwitch);
@@ -826,7 +836,6 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"remember-code", config_.rememberCodeTable);
     setToggleState(L"temp-off-spell", config_.tempOffSpellByCtrl);
     setToggleState(L"temp-off-openkey", config_.tempOffByAlt);
-    setToggleState(L"free-marking", config_.freeMarking);
     setToggleState(L"use-macro", config_.macroEnabled);
     setToggleState(L"macro-english", config_.macroInEnglish);
     setToggleState(L"quick-telex", config_.quickConsonant);
@@ -950,6 +959,9 @@ void SettingsDialog::initializeUI() {
             pinBtn.set_attribute("class", L"btn-pin pinned");
         }
     }
+
+    // Flush all batched DOM mutations in one repaint
+    root.update(false);
 }
 
 void SettingsDialog::onInputMethodChange(int method) {
@@ -968,6 +980,11 @@ void SettingsDialog::onExpandChange(bool expanded) {
     isExpanded_ = expanded;
     // Set timer to resize window after CSS transition completes
     SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 50, NULL);
+}
+
+void SettingsDialog::onToggleChange(sciter::string id, bool checked) {
+    // Direct SOM call from JS — bypasses Sciter DOM event dispatch entirely
+    handleToggleChange(std::wstring(id.c_str()), checked);
 }
 
 void SettingsDialog::onClose() {
@@ -996,30 +1013,28 @@ void SettingsDialog::loadSettings() {
 }
 
 void SettingsDialog::saveSettings() {
-    syncToSharedState();      // Immediate — DLL sees changes now
+    syncToSharedState();      // Immediate — engine sees changes now
     configDirty_ = true;
     // Reset deferred save timer (30s from last change)
     SetTimer(get_hwnd(), TIMER_DEFERRED_SAVE, DEFERRED_SAVE_DELAY_MS, NULL);
 }
 
 void SettingsDialog::syncToSharedState() {
-    // Update SharedState so DLL picks up changes immediately
-    SharedStateManager sharedState;
-    if (sharedState.OpenReadWrite()) {
-        SharedState state = sharedState.Read();
+    // Update SharedState so DLL picks up changes immediately (cached handles)
+    if (sharedState_.IsConnected()) {
+        SharedState state = sharedState_.Read();
         if (state.IsValid()) {
             state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
             state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
-            sharedState.Write(state);  // Write() auto-manages epoch via seqlock
+            sharedState_.Write(state);
         }
     }
 
-    // Signal Engine that config has changed
-    ConfigEvent event;
-    if (event.Initialize()) {
-        event.Signal();
+    // Signal Engine that config has changed (cached handle)
+    if (configEvent_.IsValid()) {
+        configEvent_.Signal();
     }
 }
 

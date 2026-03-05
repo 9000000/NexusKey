@@ -530,67 +530,48 @@ TEST_F(SpellCheckerEdgeTest, FinalK_StopTone_Grave_Invalid) {
 }
 
 //=============================================================================
-// Free Marking Tests — Telex engine with spellCheck ON + freeMarking ON
+// Smart Accent Tests — spellCheck ON, accents gated by spell validity
 //=============================================================================
 
-class TelexFreeMarkingTest : public ::testing::Test {
+class SmartAccentTelexTest : public ::testing::Test {
 protected:
     void SetUp() override {
         config_.inputMethod = InputMethod::Telex;
         config_.spellCheckEnabled = true;
-        config_.freeMarking = true;
     }
 
     TypingConfig config_;
 };
 
-TEST_F(TelexFreeMarkingTest, ToneAppliedOnInvalidSyllable_Tiens) {
-    // "tien" is invalid (ie without circumflex) → with freeMarking, 's' still applies tone
-    // t-i-e-n-s → tone on 'e' (rightmost in diphthong) → tiến
+TEST_F(SmartAccentTelexTest, ToneAppliedOnValidPrefix_Tiens) {
+    // "tien" is ValidPrefix (could become tiên/tiến) → 's' applies tone
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"tiens");
     EXPECT_EQ(engine.Peek(), L"tién");
 }
 
-TEST_F(TelexFreeMarkingTest, ToneAppliedOnInvalidSyllable_Bls) {
-    // "bl" is invalid consonant cluster → with freeMarking, 's' still applies as literal
-    // (no vowels to apply tone to, ProcessTone fails → falls through to ProcessChar)
+TEST_F(SmartAccentTelexTest, ToneBlockedOnInvalidSyllable_Bls) {
+    // "bl" is invalid consonant cluster → 's' is literal
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"bls");
     EXPECT_EQ(engine.Peek(), L"bls");
 }
 
-TEST_F(TelexFreeMarkingTest, ToneAppliedOnInvalidSyllable_Blas) {
-    // "bla" is invalid → with freeMarking, 's' applies tone to 'a' → "blá"
+TEST_F(SmartAccentTelexTest, ToneBlockedOnInvalidSyllable_Blas) {
+    // "bla" is invalid → 's' blocked by spell check → literal
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"blas");
-    EXPECT_EQ(engine.Peek(), L"blá");
+    EXPECT_EQ(engine.Peek(), L"blas");
 }
 
-TEST_F(TelexFreeMarkingTest, ValidSyllable_StillWorks) {
-    // "ba" + 's' → "bá" (valid syllable, works same as without freeMarking)
+TEST_F(SmartAccentTelexTest, ValidSyllable_StillWorks) {
+    // "ba" + 's' → "bá" (valid syllable, tone applies)
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"bas");
     EXPECT_EQ(engine.Peek(), L"bá");
 }
 
-TEST_F(TelexFreeMarkingTest, ClearTone_Z_BypassesGate) {
-    // With freeMarking, 'z' should clear tone even on invalid syllable
-    Telex::TelexEngine engine(config_);
-    TypeString(engine, L"blas");  // "blá"
-    engine.PushChar(L'z');        // clear tone → "bla"
-    EXPECT_EQ(engine.Peek(), L"bla");
-}
-
-TEST_F(TelexFreeMarkingTest, FreeMarkingOff_ToneBlocked) {
-    // Verify original behavior: freeMarking OFF → tone blocked on invalid syllable
-    config_.freeMarking = false;
-    Telex::TelexEngine engine(config_);
-    TypeString(engine, L"blas");
-    EXPECT_EQ(engine.Peek(), L"blas");  // 's' treated as literal, not tone
-}
-
-TEST_F(TelexFreeMarkingTest, BackwardCircumflex_TiensE) {
+TEST_F(SmartAccentTelexTest, BackwardCircumflex_TiensE) {
     // "tiens" → "tién", then 'e' → backward scan finds 'é' → circumflex → "tiến"
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"tiens");
@@ -599,9 +580,9 @@ TEST_F(TelexFreeMarkingTest, BackwardCircumflex_TiensE) {
     EXPECT_EQ(engine.Peek(), L"tiến");
 }
 
-TEST_F(TelexFreeMarkingTest, BackwardCircumflex_Tiensge) {
+TEST_F(SmartAccentTelexTest, BackwardCircumflex_Tiensge) {
     // Full flow: "tiensge" → "tiếng"
-    // t-i-e-n-s → "tién" (tone applied freely)
+    // t-i-e-n-s → "tién" (tone applied on valid prefix)
     // g → "tiéng"
     // e → backward scan finds 'é' → circumflex → "tiếng"
     Telex::TelexEngine engine(config_);
@@ -609,67 +590,47 @@ TEST_F(TelexFreeMarkingTest, BackwardCircumflex_Tiensge) {
     EXPECT_EQ(engine.Peek(), L"tiếng");
 }
 
-TEST_F(TelexFreeMarkingTest, BackwardCircumflex_NotTriggeredWithoutFreeMarking) {
-    // Without freeMarking, backward scan should not work
-    config_.freeMarking = false;
-    Telex::TelexEngine engine(config_);
-    TypeString(engine, L"tiensge");
-    // Spell check blocks tone 's', so all letters are literal
-    EXPECT_EQ(engine.Peek(), L"tiensge");
-}
-
-TEST_F(TelexFreeMarkingTest, WModifier_HornOnU_AcrossConsonants) {
-    // 'w' already scans all states — should find 'u' even after consonants
-    // "munsw" → m-u-n-s(tone on u)-w(horn on u) → "mứn" with horn
-    // Actually: "mus" → "mú", then "w" → horn on u → "mứ"... wait
-    // Simpler: "munw" → "mưn" (w finds 'u' across 'n')
+TEST_F(SmartAccentTelexTest, WModifier_HornOnU_AcrossConsonants) {
+    // "munw" → 'w' finds 'u' across 'n' → mưn
+    // Modifiers are NOT gated by spell check
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"munw");
-    // ProcessWModifier scans all states, finds u → applies horn → ư
     EXPECT_EQ(engine.Peek(), L"mưn");
 }
 
-TEST_F(TelexFreeMarkingTest, WModifier_HornOnO_AcrossConsonants) {
+TEST_F(SmartAccentTelexTest, WModifier_HornOnO_AcrossConsonants) {
     // "honw" → 'w' finds 'o' across 'n' → hơn
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"honw");
     EXPECT_EQ(engine.Peek(), L"hơn");
 }
 
-TEST_F(TelexFreeMarkingTest, WModifier_BreveOnA_AcrossConsonants) {
+TEST_F(SmartAccentTelexTest, WModifier_BreveOnA_AcrossConsonants) {
     // "hanw" → 'w' finds 'a' across 'n' → hăn
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"hanw");
     EXPECT_EQ(engine.Peek(), L"hăn");
 }
+
 //=============================================================================
-// Free Marking Tests — VNI engine with spellCheck ON + freeMarking ON
+// Smart Accent Tests — VNI engine with spellCheck ON
 //=============================================================================
 
-class VniFreeMarkingTest : public ::testing::Test {
+class SmartAccentVniTest : public ::testing::Test {
 protected:
     void SetUp() override {
         config_.inputMethod = InputMethod::VNI;
         config_.spellCheckEnabled = true;
-        config_.freeMarking = true;
     }
 
     TypingConfig config_;
 };
 
-TEST_F(VniFreeMarkingTest, ToneAppliedOnInvalidSyllable_Bla1) {
-    // "bla" is invalid → with freeMarking, '1' applies acute tone to 'a' → "blá"
+TEST_F(SmartAccentVniTest, ToneBlockedOnInvalidSyllable_Bla1) {
+    // "bla" is invalid → '1' tone blocked by spell check → literal
     Vni::VniEngine engine(config_);
     TypeString(engine, L"bla1");
-    EXPECT_EQ(engine.Peek(), L"blá");
-}
-
-TEST_F(VniFreeMarkingTest, FreeMarkingOff_ToneBlocked) {
-    // Verify original behavior: freeMarking OFF → tone blocked
-    config_.freeMarking = false;
-    Vni::VniEngine engine(config_);
-    TypeString(engine, L"bla1");
-    EXPECT_EQ(engine.Peek(), L"bla1");  // '1' treated as literal
+    EXPECT_EQ(engine.Peek(), L"bla1");
 }
 
 }  // namespace

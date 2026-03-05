@@ -45,7 +45,6 @@ struct TypingConfig {
     bool autoCaps = false;      // Auto-capitalize first letter of sentence
     bool allowZwjf = true;      // z/w/j/f act as tone/modifier keys (normal Vietnamese)
     bool autoRestoreEnabled = false;  // Restore raw keys when word is invalid
-    bool freeMarking = false;         // Apply tones/marks freely without strict spell check gating
     bool tempOffSpellByCtrl = false;  // Solo Ctrl tap temporarily disables spell check for current word
     bool tempOffByAlt = false;        // Double-Alt tap temporarily disables Vietnamese for current word
     bool rememberCodeTable = false;   // Auto-remember code table per application

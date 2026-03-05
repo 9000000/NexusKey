@@ -14,6 +14,8 @@
 #include "sciter-x-window.hpp"
 #include "core/config/TypingConfig.h"
 #include "core/SystemConfig.h"
+#include "core/ipc/SharedStateManager.h"
+#include "core/config/ConfigEvent.h"
 #include "system/UpdateChecker.h"
 #include <functional>
 #include <string>
@@ -53,6 +55,7 @@ public:
     void onInputMethodChange(int method);  // 0=Telex, 1=VNI
     void onSpellCheckChange(bool enabled);
     void onExpandChange(bool expanded);
+    void onToggleChange(sciter::string id, bool checked);  // Direct toggle → C++ (bypasses DOM events)
     void onClose();
 
     // SOM passport for JavaScript binding
@@ -61,6 +64,7 @@ public:
             SOM_FUNC(onInputMethodChange),
             SOM_FUNC(onSpellCheckChange),
             SOM_FUNC(onExpandChange),
+            SOM_FUNC(onToggleChange),
             SOM_FUNC(onClose)
         )
     SOM_PASSPORT_END
@@ -74,7 +78,7 @@ private:
     void syncToSharedState();  // Immediate: SharedState + ConfigEvent
     void saveToToml();         // Deferred: TOML file write
     void saveUISettings();
-    void saveSystemSettings();  // Immediate TOML write for system settings
+    void saveSystemSettings();
     void initializeUI();
 
     bool configDirty_ = false;
@@ -127,6 +131,10 @@ private:
 
     // Cached update info (from background check)
     UpdateInfo cachedUpdateInfo_;
+
+    // Cached IPC handles (opened once, reused for every toggle)
+    SharedStateManager sharedState_;
+    ConfigEvent configEvent_;
 };
 
 }  // namespace NextKey

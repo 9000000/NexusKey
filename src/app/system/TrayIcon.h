@@ -106,6 +106,7 @@ private:
     NOTIFYICONDATAW nid_ = {};
     bool vietnameseMode_ = true;
     bool toggledByClick_ = false;        // Single-click toggled — undo if double-click follows
+    bool ignoreNextLButtonUp_ = false;   // Suppress WM_LBUTTONUP after WM_LBUTTONDBLCLK
     MenuCallback menuCallback_;
     ModeRequestCallback modeRequestCallback_;
     MenuStateGetter menuStateGetter_;

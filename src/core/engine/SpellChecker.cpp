@@ -111,6 +111,7 @@ constexpr VowelEntry kVowelTable[] = {
     { Key2(VowelSlot(kU, kNone), VowelSlot(kA, kCirc)), true },   // uâ
     { Key2(VowelSlot(kU, kNone), VowelSlot(kE, kCirc)), true },   // uê
     { Key2(VowelSlot(kU, kNone), VowelSlot(kO, kCirc)), true },   // uô
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kO, kHorn)), true },   // uơ (huơ, quơ — horn only on o)
     { Key2(VowelSlot(kU, kNone), VowelSlot(kY, kNone)), true },   // uy
     { Key2(VowelSlot(kU, kHorn), VowelSlot(kO, kHorn)), true },   // ươ
     { Key2(VowelSlot(kY, kNone), VowelSlot(kE, kCirc)), true },   // yê

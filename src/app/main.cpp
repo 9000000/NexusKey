@@ -482,13 +482,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     }
     g_trayIcon.SetMenuCallback(OnMenuCommand);
 
-    // Wire mode change callback: HookEngine → tray icon + settings dialog
+    // Wire mode change callback: HookEngine → defer icon update via PostMessage
+    // IMPORTANT: This runs inside LowLevelKeyboardProc (300ms timeout).
+    // Only do fast work here: write SharedState + PostMessage. No GDI/Shell_NotifyIcon.
     g_hookEngine.SetModeChangeCallback([](bool vietnamese) {
-        g_trayIcon.SetVietnameseMode(vietnamese);
-        // Notify settings dialog (if open) of mode change
-        HWND settingsWnd = FindWindowW(nullptr, L"NexusKey Settings");
-        if (settingsWnd) {
-            PostMessageW(settingsWnd, WM_NEXUSKEY_MODE_CHANGED, vietnamese ? 1 : 0, 0);
+        g_sharedState.SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, vietnamese);
+        HWND trayWnd = g_trayIcon.GetMessageWindow();
+        if (trayWnd) {
+            PostMessageW(trayWnd, WM_NEXUSKEY_TRAY_MODE_SYNC, vietnamese ? 1 : 0, 0);
         }
     });
 
@@ -640,6 +641,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     }
     g_trayIcon.SetMenuCallback(OnMenuCommand);
 
+    // Wire settings dialog → TSF mode set (cross-process)
+    // Settings sends WM_NEXUSKEY_SET_MODE → update SharedState + icon immediately
+    g_trayIcon.SetModeRequestCallback([](bool vietnamese) {
+        g_sharedState.SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, vietnamese);
+        g_trayIcon.SetVietnameseMode(vietnamese);
+    });
+
     // Wire menu state getter — reads from SharedState only (no TOML).
     // SharedState is updated immediately by Settings dialog.
     g_trayIcon.SetMenuStateGetter([]() -> TrayMenuState {
@@ -656,6 +664,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     });
 
     // Poll SharedState flags every 250ms to sync icon V/E state
+    // (catches changes from DLL side, e.g. LanguageBarButton click)
     SetTimer(g_trayIcon.GetMessageWindow(), TIMER_ID_ICON_POLL, 250, IconPollTimerProc);
 
     // Internal Hotkey

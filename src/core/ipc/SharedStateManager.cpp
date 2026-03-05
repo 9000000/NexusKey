@@ -214,6 +214,20 @@ void SharedStateManager::ToggleFlag(uint32_t flagBit) noexcept {
 #endif
 }
 
+void SharedStateManager::SetOrClearFlag(uint32_t flagBit, bool set) noexcept {
+#ifdef _WIN32
+    if (!pImpl_->pState || pImpl_->pState->magic != SharedState::MAGIC_VALUE) return;
+
+    auto* flagsAddr = reinterpret_cast<volatile LONG*>(
+        &(const_cast<SharedState*>(pImpl_->pState)->flags));
+    if (set) {
+        InterlockedOr(flagsAddr, static_cast<LONG>(flagBit));
+    } else {
+        InterlockedAnd(flagsAddr, ~static_cast<LONG>(flagBit));
+    }
+#endif
+}
+
 bool SharedStateManager::IsConnected() const noexcept {
 #ifdef _WIN32
     return pImpl_->pState != nullptr && pImpl_->pState->magic == SharedState::MAGIC_VALUE;

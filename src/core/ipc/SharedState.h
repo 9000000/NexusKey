@@ -25,7 +25,7 @@ namespace FeatureFlags {
     constexpr uint16_t TEMP_OFF_SPELL_CTRL  = 0x0010;
     constexpr uint16_t REMEMBER_CODE_TABLE  = 0x0020;
     constexpr uint16_t TEMP_OFF_BY_ALT      = 0x0040;
-    constexpr uint16_t FREE_MARKING         = 0x0080;
+    constexpr uint16_t BEEP_ON_SWITCH      = 0x0080;
     // Byte 1 (bits 8-15)
     constexpr uint16_t MACRO_ENABLED        = 0x0100;
     constexpr uint16_t MACRO_IN_ENGLISH     = 0x0200;
@@ -114,7 +114,7 @@ struct SharedState {
     if (config.tempOffSpellByCtrl) flags |= FeatureFlags::TEMP_OFF_SPELL_CTRL;
     if (config.tempOffByAlt)       flags |= FeatureFlags::TEMP_OFF_BY_ALT;
     if (config.rememberCodeTable)  flags |= FeatureFlags::REMEMBER_CODE_TABLE;
-    if (config.freeMarking)        flags |= FeatureFlags::FREE_MARKING;
+    if (config.beepOnSwitch)       flags |= FeatureFlags::BEEP_ON_SWITCH;
     if (config.macroEnabled)       flags |= FeatureFlags::MACRO_ENABLED;
     if (config.macroInEnglish)     flags |= FeatureFlags::MACRO_IN_ENGLISH;
     if (config.quickConsonant)     flags |= FeatureFlags::QUICK_CONSONANT;
@@ -135,7 +135,7 @@ inline void DecodeFeatureFlags(uint16_t flags, TypingConfig& config) noexcept {
     config.tempOffSpellByCtrl = (flags & FeatureFlags::TEMP_OFF_SPELL_CTRL) != 0;
     config.tempOffByAlt       = (flags & FeatureFlags::TEMP_OFF_BY_ALT) != 0;
     config.rememberCodeTable  = (flags & FeatureFlags::REMEMBER_CODE_TABLE) != 0;
-    config.freeMarking        = (flags & FeatureFlags::FREE_MARKING) != 0;
+    config.beepOnSwitch       = (flags & FeatureFlags::BEEP_ON_SWITCH) != 0;
     config.macroEnabled       = (flags & FeatureFlags::MACRO_ENABLED) != 0;
     config.macroInEnglish     = (flags & FeatureFlags::MACRO_IN_ENGLISH) != 0;
     config.quickConsonant     = (flags & FeatureFlags::QUICK_CONSONANT) != 0;
