@@ -12,10 +12,10 @@
 #include <InputScope.h>
 
 // GUID_PROP_INPUTSCOPE is declared in InputScope.h but not defined in uuid.lib.
-// Define it here to avoid linking msctf.lib (not always available).
+// Use a constexpr inline GUID to avoid DEFINE_GUID/INITGUID issues.
 // {1713DD5A-68E7-4A5B-9AF6-592A595C778D}
-DEFINE_GUID(NEXUSKEY_GUID_PROP_INPUTSCOPE,
-    0x1713DD5A, 0x68E7, 0x4A5B, 0x9A, 0xF6, 0x59, 0x2A, 0x59, 0x5C, 0x77, 0x8D);
+static const GUID kGuidPropInputScope =
+    { 0x1713DD5A, 0x68E7, 0x4A5B, { 0x9A, 0xF6, 0x59, 0x2A, 0x59, 0x5C, 0x77, 0x8D } };
 
 namespace NextKey {
 namespace TSF {
@@ -55,7 +55,7 @@ public:
 
         // 2. Check input scopes (password, PIN, email, etc.)
         ITfReadOnlyProperty* pProp = nullptr;
-        hr = pContext_->GetAppProperty(NEXUSKEY_GUID_PROP_INPUTSCOPE, &pProp);
+        hr = pContext_->GetAppProperty(kGuidPropInputScope, &pProp);
         if (FAILED(hr) || !pProp) return S_OK;
 
         // Get selection to query input scope at cursor position
