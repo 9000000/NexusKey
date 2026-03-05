@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Functions for registering/unregistering the TSF input method DLL,
-// and diagnostic output. Only used in TSF mode (not NEXUSKEY_HOOK_ENGINE).
+// and diagnostic output. Used by EXE to manage DLL registration
+// when user enables/disables TSF apps feature.
 
 #pragma once
-
-#ifndef NEXUSKEY_HOOK_ENGINE
 
 #include <string>
 
@@ -34,5 +33,3 @@ bool UnregisterTsfElevated();
 void RunDiagnostics();
 
 }  // namespace NextKey
-
-#endif  // !NEXUSKEY_HOOK_ENGINE

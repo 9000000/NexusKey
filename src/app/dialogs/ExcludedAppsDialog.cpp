@@ -78,6 +78,13 @@ bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params
                     if (!appName.empty()) {
                         removeApp(appName);
                     }
+                } else if (action == L"get-running-apps") {
+                    auto apps = getRunningApps();
+                    sciter::value arr;
+                    for (size_t i = 0; i < apps.size(); ++i) {
+                        arr.set_item(static_cast<int>(i), sciter::value(apps[i].c_str()));
+                    }
+                    call_function("setRunningApps", arr);
                 } else if (action == L"close") {
                     PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
                 }

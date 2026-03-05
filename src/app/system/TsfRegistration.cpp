@@ -1,8 +1,6 @@
 // NexusKey - TSF Registration & Diagnostics
 // SPDX-License-Identifier: GPL-3.0-only
 
-#ifndef NEXUSKEY_HOOK_ENGINE
-
 #include "TsfRegistration.h"
 #include "core/ipc/SharedState.h"
 #include "core/ipc/SharedStateManager.h"
@@ -280,5 +278,3 @@ void RunDiagnostics() {
 }
 
 }  // namespace NextKey
-
-#endif  // !NEXUSKEY_HOOK_ENGINE

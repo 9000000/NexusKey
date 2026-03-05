@@ -14,12 +14,13 @@
 #include "core/Strings.h"
 #include "core/Debug.h"
 
+#include "system/TsfRegistration.h"
+
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "system/HookEngine.h"
 #include "system/QuickConvert.h"
 #include "core/ipc/SharedStateManager.h"
 #else
-#include "system/TsfRegistration.h"
 #include "system/HotkeyManager.h"
 #include "core/ipc/SharedStateManager.h"
 #endif
@@ -77,7 +78,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Command-line Router
     // ═══════════════════════════════════════════════════════════
 
-#ifndef NEXUSKEY_HOOK_ENGINE
     // TSF Registration (runs elevated, then exits)
     if (lpCmdLine && wcsstr(lpCmdLine, L"--register-tsf") != nullptr) {
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -99,7 +99,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         RunDiagnostics();
         return 0;
     }
-#endif
 
     // Self-update installer mode (MUST be before Sciter dialog routes — sciter.dll not loaded yet)
     if (lpCmdLine && wcsstr(lpCmdLine, L"--install-update") != nullptr) {

@@ -5,6 +5,7 @@
 #include "../resource.h"
 #include "system/StartupHelper.h"
 #include "system/SubprocessHelper.h"
+#include "system/TsfRegistration.h"
 #include "system/UpdateChecker.h"
 #include "core/Version.h"
 #include "sciter/ScaleHelper.h"
@@ -527,6 +528,20 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     }
     else if (id == L"tsf-apps") {
         config_.tsfApps = value;
+        // Register/unregister TSF DLL when toggle changes
+        if (value) {
+            if (!IsTsfRegistered()) {
+                if (!RegisterTsf()) {
+                    RegisterTsfElevated();  // Retry with admin elevation
+                }
+            }
+        } else {
+            if (IsTsfRegistered()) {
+                if (!UnregisterTsf()) {
+                    UnregisterTsfElevated();
+                }
+            }
+        }
     }
     else if (id == L"spell-check") {
         config_.spellCheckEnabled = value;

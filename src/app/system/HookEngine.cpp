@@ -340,6 +340,11 @@ bool HookEngine::CheckConfigEvent() {
         }
     } else {
         tsfAppSet_.clear();
+    }
+    // Re-evaluate TSF app status for current foreground app
+    if (tsfApps_ && !isExcludedApp_ && !tsfAppSet_.empty() && !currentExe_.empty()) {
+        isTsfApp_ = tsfAppSet_.count(currentExe_) > 0;
+    } else {
         isTsfApp_ = false;
     }
 
