@@ -63,7 +63,7 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
 
     if (!pContext) return;
 
-    auto* pSession = new InputScopeCheckSession(pContext, clientId_, &contextBlocked_);
+    auto* pSession = new InputScopeCheckSession(pContext, &contextBlocked_);
     HRESULT hrSession = S_OK;
     HRESULT hr = pContext->RequestEditSession(
         clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);

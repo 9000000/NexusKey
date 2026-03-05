@@ -12,7 +12,7 @@
 #include <InputScope.h>
 
 // GUID_PROP_INPUTSCOPE is declared in InputScope.h but not defined in uuid.lib.
-// Use a constexpr inline GUID to avoid DEFINE_GUID/INITGUID issues.
+// Use a static const GUID to avoid DEFINE_GUID/INITGUID linker issues.
 // {1713DD5A-68E7-4A5B-9AF6-592A595C778D}
 static const GUID kGuidPropInputScope =
     { 0x1713DD5A, 0x68E7, 0x4A5B, { 0x9A, 0xF6, 0x59, 0x2A, 0x59, 0x5C, 0x77, 0x8D } };
@@ -24,8 +24,8 @@ namespace TSF {
 /// Result is written to the bool* passed at construction.
 class InputScopeCheckSession : public EditSession {
 public:
-    InputScopeCheckSession(ITfContext* pContext, TfClientId clientId, bool* pBlocked)
-        : EditSession(pContext), clientId_(clientId), pBlocked_(pBlocked) {}
+    InputScopeCheckSession(ITfContext* pContext, bool* pBlocked)
+        : EditSession(pContext), pBlocked_(pBlocked) {}
 
     IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
         if (!pContext_ || !pBlocked_) return E_FAIL;
@@ -116,7 +116,6 @@ public:
     }
 
 private:
-    TfClientId clientId_;
     bool* pBlocked_;
 };
 
