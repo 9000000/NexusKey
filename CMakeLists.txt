@@ -85,6 +85,7 @@ add_library(NextKeyTSF SHARED
     src/tsf/dllmain.cpp
     src/tsf/EditSession.h
     src/tsf/CompositionEditSession.h
+    src/tsf/InputScopeChecker.h
     src/tsf/LanguageBarButton.h
     src/tsf/LanguageBarButton.cpp
     src/tsf/DisplayAttribute.h
@@ -112,6 +113,8 @@ add_executable(NextKeyApp WIN32
     src/app/dialogs/SettingsDialog.cpp
     src/app/dialogs/ExcludedAppsDialog.h
     src/app/dialogs/ExcludedAppsDialog.cpp
+    src/app/dialogs/TsfAppsDialog.h
+    src/app/dialogs/TsfAppsDialog.cpp
     src/app/dialogs/MacroTableDialog.h
     src/app/dialogs/MacroTableDialog.cpp
     src/app/dialogs/ConvertToolDialog.h
@@ -209,6 +212,9 @@ if(PACKFOLDER_AVAILABLE)
                 ${UI_SOURCE_DIR}/excludedapps/excludedapps.html
                 ${UI_SOURCE_DIR}/excludedapps/excludedapps.css
                 ${UI_SOURCE_DIR}/excludedapps/excludedapps.js
+                ${UI_SOURCE_DIR}/tsfapps/tsfapps.html
+                ${UI_SOURCE_DIR}/tsfapps/tsfapps.css
+                ${UI_SOURCE_DIR}/tsfapps/tsfapps.js
                 ${UI_SOURCE_DIR}/macro/macro.html
                 ${UI_SOURCE_DIR}/macro/macro.css
                 ${UI_SOURCE_DIR}/macro/macro.js

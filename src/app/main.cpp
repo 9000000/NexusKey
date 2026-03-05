@@ -125,6 +125,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     if (lpCmdLine && wcsstr(lpCmdLine, L"--excludedapps") != nullptr) {
         RunExcludedAppsSubprocess();  // [[noreturn]]
     }
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--tsfapps") != nullptr) {
+        RunTsfAppsSubprocess();  // [[noreturn]]
+    }
     if (lpCmdLine && wcsstr(lpCmdLine, L"--macro") != nullptr) {
         RunMacroSubprocess();  // [[noreturn]]
     }

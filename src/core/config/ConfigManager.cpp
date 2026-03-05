@@ -85,6 +85,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.beepOnSwitch = (*features)["beep_on_switch"].value_or(false);
             config.smartSwitch = (*features)["smart_switch"].value_or(false);
             config.excludeApps = (*features)["exclude_apps"].value_or(false);
+            config.tsfApps = (*features)["tsf_apps"].value_or(false);
             config.optimizeLevel = static_cast<uint8_t>(
                 (*features)["optimize_level"].value_or(0)
             );
@@ -131,6 +132,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("beep_on_switch", config.beepOnSwitch);
         features.insert_or_assign("smart_switch", config.smartSwitch);
         features.insert_or_assign("exclude_apps", config.excludeApps);
+        features.insert_or_assign("tsf_apps", config.tsfApps);
         features.insert_or_assign("optimize_level", static_cast<int64_t>(config.optimizeLevel));
         features.insert_or_assign("modern_ortho", config.modernOrtho);
         features.insert_or_assign("auto_caps", config.autoCaps);
@@ -371,6 +373,44 @@ bool ConfigManager::SaveExcludedApps(const std::wstring& path, const std::vector
         toml::table section;
         section.insert_or_assign("list", std::move(arr));
         tbl.insert_or_assign("excluded_apps", std::move(section));
+
+        return WriteToml(utf8Path, tbl);
+    } catch (...) {
+        return false;
+    }
+}
+
+std::vector<std::wstring> ConfigManager::LoadTsfApps(const std::wstring& path) {
+    std::vector<std::wstring> apps;
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = toml::parse_file(utf8Path);
+
+        if (auto section = table["tsf_apps"].as_table()) {
+            if (auto arr = (*section)["list"].as_array()) {
+                for (auto& item : *arr) {
+                    if (auto str = item.value<std::string>()) {
+                        apps.push_back(Utf8ToWide(*str));
+                    }
+                }
+            }
+        }
+    } catch (...) {}
+    return apps;
+}
+
+bool ConfigManager::SaveTsfApps(const std::wstring& path, const std::vector<std::wstring>& apps) {
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto tbl = LoadExistingToml(utf8Path);
+
+        toml::array arr;
+        for (auto& app : apps) {
+            arr.push_back(WideToUtf8(app));
+        }
+        toml::table section;
+        section.insert_or_assign("list", std::move(arr));
+        tbl.insert_or_assign("tsf_apps", std::move(section));
 
         return WriteToml(utf8Path, tbl);
     } catch (...) {

@@ -55,6 +55,12 @@ public:
     /// Save excluded apps list to config (merges with existing)
     [[nodiscard]] static bool SaveExcludedApps(const std::wstring& path, const std::vector<std::wstring>& apps);
 
+    /// Load TSF apps list from config (apps that use TSF engine instead of hook)
+    [[nodiscard]] static std::vector<std::wstring> LoadTsfApps(const std::wstring& path);
+
+    /// Save TSF apps list to config (merges with existing)
+    [[nodiscard]] static bool SaveTsfApps(const std::wstring& path, const std::vector<std::wstring>& apps);
+
     /// Load per-app code table data (exe name → CodeTable value)
     [[nodiscard]] static std::unordered_map<std::wstring, uint8_t> LoadPerAppCodeTable(const std::wstring& path);
 

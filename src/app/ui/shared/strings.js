@@ -12,6 +12,7 @@ var STRINGS = {
         "refresh_list": "Refresh list",
         "pick_window": "\uD83C\uDFAF Pick window",
         "excluded_apps_title": "Excluded Apps",
+        "tsf_apps_title": "TSF Apps",
         "no_apps_found": "No applications found",
         "no_matching": "No matching results",
         "no_running_apps": "No running applications",
@@ -28,6 +29,8 @@ var STRINGS = {
         "s.enable_exclude": "Enable app exclusion",
         "s.list": "List",
         "s.exclude_tooltip": "Type only English for listed apps",
+        "s.enable_tsf": "Use TSF for apps",
+        "s.tsf_tooltip": "Use TSF engine instead of hook for listed apps",
         "s.advanced": "Advanced settings",
         "s.tab_input": "Input",
         "s.tab_macro": "Macro",
@@ -94,6 +97,10 @@ var STRINGS = {
         // ── Excluded Apps dialog ──
         "ea.app_ph": "e.g.: notepad.exe",
         "ea.excluded_list": "Excluded applications",
+
+        // ── TSF Apps dialog ──
+        "tsf.app_ph": "e.g.: notepad.exe",
+        "tsf.app_list": "TSF applications",
 
         // ── Convert Tool dialog ──
         "ct.title": "Convert Tool",

@@ -40,6 +40,7 @@ struct TypingConfig {
     bool beepOnSwitch = false;
     bool smartSwitch = false;
     bool excludeApps = false;  // Exclude apps feature toggle
+    bool tsfApps = false;      // Use TSF engine for listed apps (skip hook)
     uint8_t optimizeLevel = 0;  // 0 = off, 1 = basic, 2 = aggressive
     bool modernOrtho = false;   // Modern tone placement (oà, uý)
     bool autoCaps = false;      // Auto-capitalize first letter of sentence

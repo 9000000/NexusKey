@@ -10,6 +10,7 @@ namespace NextKey {
 
 [[noreturn]] void RunSettingsSubprocess();
 [[noreturn]] void RunExcludedAppsSubprocess();
+[[noreturn]] void RunTsfAppsSubprocess();
 [[noreturn]] void RunMacroSubprocess();
 [[noreturn]] void RunConvertToolSubprocess();
 [[noreturn]] void RunAboutSubprocess();

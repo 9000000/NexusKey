@@ -112,6 +112,13 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
 IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM /*lParam*/, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
 
+    // Check if this context blocks input (password, PIN, email fields)
+    pEngineController_->CheckContextBlocked(pContext);
+    if (pEngineController_->IsContextBlocked()) {
+        *pfEaten = FALSE;
+        return S_OK;
+    }
+
     // Safety check: recover if composition terminated without us knowing
     bool isComposing = pEngineController_->IsComposing();
     bool hasBuffer = pEngineController_->HasEngineBuffer();
@@ -167,9 +174,17 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
     return S_OK;
 }
 
-IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL* pfEaten) {
+IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LPARAM /*lParam*/, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
-    *pfEaten = FALSE;  // We don't handle key up
+    // Eat keyup for A-Z and Backspace during active composition
+    // (prevents apps from seeing keyup without corresponding keydown)
+    // Do NOT call WantKey() here — it has side effects (auto-cap state machine)
+    if (pEngineController_->IsComposing()) {
+        UINT vk = static_cast<UINT>(wParam);
+        *pfEaten = (vk >= 0x41 && vk <= 0x5A) || vk == VK_BACK ? TRUE : FALSE;
+    } else {
+        *pfEaten = FALSE;
+    }
     return S_OK;
 }
 
@@ -196,9 +211,14 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
     return S_OK;
 }
 
-IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM /*wParam*/, LPARAM /*lParam*/, BOOL* pfEaten) {
+IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LPARAM /*lParam*/, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
-    *pfEaten = FALSE;
+    if (pEngineController_->IsComposing()) {
+        UINT vk = static_cast<UINT>(wParam);
+        *pfEaten = (vk >= 0x41 && vk <= 0x5A) || vk == VK_BACK ? TRUE : FALSE;
+    } else {
+        *pfEaten = FALSE;
+    }
     return S_OK;
 }
 

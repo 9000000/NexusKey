@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "EngineController.h"
 #include "CompositionEditSession.h"
+#include "InputScopeChecker.h"
 #include "Define.h"
 #include "core/engine/EngineFactory.h"
 
@@ -44,7 +45,38 @@ EngineController::EngineController() {
 }
 
 EngineController::~EngineController() {
+    if (lastContext_) {
+        lastContext_->Release();
+        lastContext_ = nullptr;
+    }
     TSF_LOG(L"EngineController destroyed");
+}
+
+void EngineController::CheckContextBlocked(ITfContext* pContext) {
+    if (pContext == lastContext_) return;  // Same context, use cached result
+
+    // Release old context, AddRef new one (safe identity comparison)
+    if (lastContext_) lastContext_->Release();
+    lastContext_ = pContext;
+    if (lastContext_) lastContext_->AddRef();
+    contextBlocked_ = false;
+
+    if (!pContext) return;
+
+    auto* pSession = new InputScopeCheckSession(pContext, clientId_, &contextBlocked_);
+    HRESULT hrSession = S_OK;
+    HRESULT hr = pContext->RequestEditSession(
+        clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
+    pSession->Release();
+
+    if (FAILED(hr) || FAILED(hrSession)) {
+        // If we can't check, assume not blocked
+        contextBlocked_ = false;
+    }
+
+    if (contextBlocked_) {
+        TSF_LOG(L"Context blocked (password/PIN/email field)");
+    }
 }
 
 bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {

@@ -78,6 +78,7 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     beepOnSwitch_ = config.beepOnSwitch;
     smartSwitch_ = config.smartSwitch;
     excludeApps_ = config.excludeApps;
+    tsfApps_ = config.tsfApps;
     autoCaps_ = config.autoCaps;
     tempOffSpellByCtrl_ = config.tempOffSpellByCtrl;
     tempOffByAlt_ = config.tempOffByAlt;
@@ -108,6 +109,15 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
         excludedAppSet_.clear();
         for (auto& app : apps) {
             excludedAppSet_.insert(std::move(app));
+        }
+    }
+
+    // Load TSF apps list (apps that use TSF engine instead of hook)
+    if (tsfApps_) {
+        auto apps = ConfigManager::LoadTsfApps(ConfigManager::GetConfigPath());
+        tsfAppSet_.clear();
+        for (auto& app : apps) {
+            tsfAppSet_.insert(std::move(app));
         }
     }
 
@@ -287,6 +297,7 @@ bool HookEngine::CheckConfigEvent() {
     beepOnSwitch_ = config.beepOnSwitch;
     smartSwitch_ = config.smartSwitch;
     excludeApps_ = config.excludeApps;
+    tsfApps_ = config.tsfApps;
     autoCaps_ = config.autoCaps;
     tempOffSpellByCtrl_ = config.tempOffSpellByCtrl;
     tempOffByAlt_ = config.tempOffByAlt;
@@ -318,6 +329,18 @@ bool HookEngine::CheckConfigEvent() {
     } else {
         excludedAppSet_.clear();
         isExcludedApp_ = false;
+    }
+
+    // Reload TSF apps list
+    if (tsfApps_) {
+        auto apps = ConfigManager::LoadTsfApps(ConfigManager::GetConfigPath());
+        tsfAppSet_.clear();
+        for (auto& app : apps) {
+            tsfAppSet_.insert(std::move(app));
+        }
+    } else {
+        tsfAppSet_.clear();
+        isTsfApp_ = false;
     }
 
     // Reload hotkey config
@@ -413,6 +436,9 @@ static HWND GetInputTarget();
 bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*/) {
     // 0. Check for config changes from Settings subprocess
     CheckConfigEvent();
+
+    // 0b. TSF app — let TSF DLL handle all input, hook does nothing
+    if (isTsfApp_) return false;
 
     // 1. Track modifiers for hotkey detection
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
@@ -701,6 +727,9 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 }
 
 bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
+    // TSF app — let TSF DLL handle all input
+    if (isTsfApp_) return false;
+
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
                        vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
                        vkCode == VK_LMENU || vkCode == VK_RMENU ||
@@ -1049,18 +1078,19 @@ void HookEngine::OnFocusChanged() {
     skipEmptyChar_ = fg && IsQtElectronApp(fg);
 
     // Skip focus tracking entirely if no feature needs it
-    if (!smartSwitch_ && !excludeApps_ && !rememberCodeTable_) return;
+    if (!smartSwitch_ && !excludeApps_ && !tsfApps_ && !rememberCodeTable_) return;
 
     bool wasExcluded = isExcludedApp_;
+    bool wasTsfApp = isTsfApp_;
 
-    // Save mode for previous app (smart switch, skip excluded apps)
-    if (smartSwitch_ && !currentExe_.empty() && !wasExcluded) {
+    // Save mode for previous app (smart switch, skip excluded/TSF apps)
+    if (smartSwitch_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
         appModeMap_[currentExe_] = vietnameseMode_;
         smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
     }
 
     // Save previous app's code table
-    if (rememberCodeTable_ && !currentExe_.empty() && !wasExcluded) {
+    if (rememberCodeTable_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
         appCodeTableMap_[currentExe_] = static_cast<uint8_t>(currentCodeTable_);
     }
 
@@ -1078,6 +1108,14 @@ void HookEngine::OnFocusChanged() {
         isExcludedApp_ = false;
     }
 
+    // Check TSF apps (hook passthrough — let TSF DLL handle input)
+    // Excluded apps take priority — if both, treat as excluded (force English)
+    if (!isExcludedApp_ && tsfApps_ && !tsfAppSet_.empty()) {
+        isTsfApp_ = tsfAppSet_.count(currentExe_) > 0;
+    } else {
+        isTsfApp_ = false;
+    }
+
     if (isExcludedApp_) {
         // Entering excluded app — save mode before forcing English
         if (!wasExcluded) {
@@ -1091,6 +1129,12 @@ void HookEngine::OnFocusChanged() {
             }
         }
         return;  // Skip smart switch restore and code table restore for excluded apps
+    }
+
+    // TSF app — hook is passive, skip smart switch/code table restore
+    if (isTsfApp_) {
+        HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough", currentExe_.c_str());
+        return;
     }
 
     // Restore code table for new app

@@ -325,6 +325,11 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
+    if (msg == WM_NEXUSKEY_OPEN_TSFAPPS) {
+        SpawnSubprocess(L"NexusKey - TSF Apps", L"--tsfapps");
+        return 0;
+    }
+
     if (msg == WM_NEXUSKEY_OPEN_MACRO) {
         SpawnSubprocess(L"NexusKey - Macro Table", L"--macro");
         return 0;
@@ -520,6 +525,9 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"exclude-apps") {
         config_.excludeApps = value;
     }
+    else if (id == L"tsf-apps") {
+        config_.tsfApps = value;
+    }
     else if (id == L"spell-check") {
         config_.spellCheckEnabled = value;
     }
@@ -649,6 +657,10 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
     if (id == L"btn-excluded-apps") {
         // Defer dialog creation — creating a Sciter window inside handle_event causes reentrancy issues
         PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_EXCLUDED, 0, 0);
+        return;
+    }
+    else if (id == L"btn-tsf-apps") {
+        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_TSFAPPS, 0, 0);
         return;
     }
     else if (id == L"btn-macro-table") {
@@ -828,6 +840,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"beep-sound", config_.beepOnSwitch);
     setToggleState(L"smart-switch", config_.smartSwitch);
     setToggleState(L"exclude-apps", config_.excludeApps);
+    setToggleState(L"tsf-apps", config_.tsfApps);
     setToggleState(L"spell-check", config_.spellCheckEnabled);
     setToggleState(L"modern-ortho", config_.modernOrtho);
     setToggleState(L"auto-caps", config_.autoCaps);

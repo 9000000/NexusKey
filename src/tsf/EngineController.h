@@ -12,6 +12,7 @@
 #include "EditSession.h"
 #include "LanguageBarButton.h"
 #include <memory>
+#include <msctf.h>
 
 namespace NextKey {
 namespace TSF {
@@ -89,6 +90,13 @@ public:
     /// Re-read flags from SharedState (call on focus)
     void RefreshFlags();
 
+    /// Check if context is blocked (password, PIN, etc.) and cache result.
+    /// Call from OnTestKeyDown when context changes.
+    void CheckContextBlocked(ITfContext* pContext);
+
+    /// Whether current context blocks Vietnamese input
+    [[nodiscard]] bool IsContextBlocked() const noexcept { return contextBlocked_; }
+
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
 
@@ -110,6 +118,8 @@ private:
     bool vietnameseMode_ = true;    // VIETNAMESE_MODE flag from SharedState
     uint8_t autoCapState_ = 0;      // 0=idle, 1=after-punct, 2=capitalize-next
     LanguageBarButton* langBarButton_ = nullptr;  // Owned, Release'd in UninitLanguageBar
+    ITfContext* lastContext_ = nullptr;   // Last seen context (AddRef'd for safe identity comparison)
+    bool contextBlocked_ = false;        // True if current context blocks input (password, etc.)
 };
 
 }  // namespace TSF

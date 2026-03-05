@@ -125,6 +125,7 @@ private:
     bool beepOnSwitch_ = false;
     bool smartSwitch_ = false;
     bool excludeApps_ = false;
+    bool tsfApps_ = false;
     bool autoCaps_ = false;
     bool tempOffSpellByCtrl_ = false;
     bool tempOffByAlt_ = false;
@@ -135,6 +136,8 @@ private:
     int autoCapState_ = 0;  // 0=normal, 1=after punct, 2=after punct+space
     std::set<std::wstring> excludedAppSet_;  // sorted, O(log n) lookup
     bool isExcludedApp_ = false;  // cached: is current foreground app excluded?
+    std::set<std::wstring> tsfAppSet_;      // apps that should use TSF engine instead of hook
+    bool isTsfApp_ = false;       // cached: is current foreground app in TSF list?
     bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron apps (prevents first-word delay)
     bool modeBeforeExclude_ = true;  // Vietnamese mode before entering excluded app
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode (for TOML save)

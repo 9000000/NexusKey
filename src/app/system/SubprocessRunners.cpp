@@ -5,6 +5,7 @@
 #include "SubprocessHelper.h"
 #include "dialogs/SettingsDialog.h"
 #include "dialogs/ExcludedAppsDialog.h"
+#include "dialogs/TsfAppsDialog.h"
 #include "dialogs/MacroTableDialog.h"
 #include "dialogs/ConvertToolDialog.h"
 #include "dialogs/AboutDialog.h"
@@ -62,6 +63,19 @@ namespace NextKey {
     dialog.Show();
 
     NEXTKEY_LOG(L"Excluded apps subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunTsfAppsSubprocess() {
+    NEXTKEY_LOG(L"Running TSF apps subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    TsfAppsDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"TSF apps subprocess exiting");
     ExitProcess(0);
 }
 

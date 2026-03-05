@@ -25,6 +25,9 @@ jobs:
       - name: Build NexusKey
         run: cmake --build build --config Release --target NextKeyApp
 
+      - name: Build TSF DLL
+        run: cmake --build build --config Release --target NextKeyTSF
+
       - name: Build tests
         run: cmake --build build --config Release --target NextKeyTests
 
@@ -37,4 +40,5 @@ jobs:
           name: NexusKey-x64
           path: |
             build/Release/NexusKey.exe
+            build/Release/NextKeyTSF.dll
             build/Release/sciter.dll

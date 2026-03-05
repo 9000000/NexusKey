@@ -17,6 +17,7 @@ NexusKey is a Vietnamese keyboard input application for Windows, inspired by [Op
 - **Auto-capitalization** — Capitalize first letter after sentence-ending punctuation
 - **Quick consonants** — Double-tap consonants for common Vietnamese pairs
 - **Exclude apps** — Disable Vietnamese input in specific applications
+- **TSF engine per app** — Use TSF input method instead of keyboard hook for selected apps
 - **Per-app code table** — Different code tables for different applications
 - **Auto-update** — Built-in update checker and installer
 - **Tone placement** — Modern (new-style) and classic (old-style) options

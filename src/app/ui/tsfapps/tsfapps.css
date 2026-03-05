@@ -1,0 +1,51 @@
+/* TSF Apps Dialog Styles */
+/* base.css + subdialog.css + dropdown.css loaded via <link> in HTML */
+
+/* Content Section override - min-height for dropdown space */
+.content-section {
+    min-height: 300px;
+}
+
+/* Settings Card override - z-index for dropdown layering */
+.settings-card {
+    position: relative;
+    z-index: 100;
+}
+
+/* Setting Row override - z-index for dropdown */
+.setting-row {
+    position: relative;
+    z-index: 10;
+}
+
+/* List Header */
+.list-header {
+    display: flex;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-medium);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.list-col-name {
+    flex: 1;
+}
+
+.list-col-action {
+    width: 32px;
+}
+
+/* Ensure scrollbar appears when content overflows */
+.app-list {
+    overflow-y: scroll;
+    height: *;
+    /* Sciter's way of saying take remaining height */
+}
+
+.app-item {
+    padding: 10px 4px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
