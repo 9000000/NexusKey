@@ -168,19 +168,6 @@
                     <input type="hidden" id="val-exclude-apps" value="0">
                 </div>
 
-                <!-- 4c. TSF Apps - Button + Toggle on same row -->
-                <div class="setting-row">
-                    <span class="setting-label" data-i18n="s.enable_tsf">Dùng TSF cho ứng dụng</span>
-                    <button class="btn-action" id="btn-tsf-apps" style="margin-right: 8px;" data-i18n="s.list">Danh sách</button>
-                    <div class="toggle-switch-small" id="tsf-apps"
-                        data-tooltip="Sử dụng TSF engine thay vì hook cho các ứng dụng trong danh sách" data-i18n-tooltip="s.tsf_tooltip">
-                        <span class="toggle-label-i">I</span>
-                        <span class="toggle-label-o">O</span>
-                        <div class="toggle-thumb-small"></div>
-                    </div>
-                    <input type="hidden" id="val-tsf-apps" value="0">
-                </div>
-
                 <!-- 5. Cài đặt nâng cao - toggle switch -->
                 <div class="setting-row" id="row-advanced">
                     <span class="setting-label" data-i18n="s.advanced">Cài đặt nâng cao</span>
@@ -293,6 +280,18 @@
                                 <div class="toggle-thumb-small"></div>
                             </div>
                             <input type="hidden" id="val-temp-off-openkey" value="0">
+                        </div>
+                        <!-- 10. TSF Apps - Button + Toggle on same row -->
+                        <div class="setting-row">
+                            <span class="setting-label" data-i18n="s.enable_tsf">Dùng TSF cho ứng dụng</span>
+                            <button class="btn-action" id="btn-tsf-apps" style="margin-right: 8px;" data-i18n="s.list">Danh sách</button>
+                            <div class="toggle-switch-small" id="tsf-apps"
+                                data-tooltip="Sử dụng TSF engine thay vì hook cho các ứng dụng trong danh sách" data-i18n-tooltip="s.tsf_tooltip">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-tsf-apps" value="0">
                         </div>
                     </div>
                 </div>
