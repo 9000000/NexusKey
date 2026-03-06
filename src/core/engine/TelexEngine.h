@@ -110,6 +110,10 @@ private:
     // Example: "cuả" + w → "cửa" (tone moves from a to ư)
     void RelocateToneToHornVowel();
 
+    // Move tone to correct target after modifier changes priority
+    // Example: "chuanr" + a → tone moves from u to â (circumflex has higher priority)
+    void RelocateToneToTarget();
+
     // W-Modifier processing (explicit priority order)
     bool ProcessWModifier(wchar_t c);
 

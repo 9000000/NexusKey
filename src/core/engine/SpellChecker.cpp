@@ -309,6 +309,43 @@ uint8_t ModOrdinal(ModT mod) {
 }
 
 //=============================================================================
+// Try modified vowels — check if adding a modifier to any unmodified vowel
+// slot would produce a valid nucleus satisfying the predicate.
+//=============================================================================
+
+uint32_t BuildModifiedKey(const uint8_t* bases, const uint8_t* mods,
+                          size_t vowelLen, size_t vi, uint8_t tryMod) {
+    auto slot = [&](size_t i) -> uint8_t {
+        return VowelSlot(bases[i], (i == vi) ? tryMod : mods[i]);
+    };
+    if (vowelLen == 1) return Key1(slot(0));
+    if (vowelLen == 2) return Key2(slot(0), slot(1));
+    return Key3(slot(0), slot(1), slot(2));
+}
+
+template<typename CharStateT, typename Pred>
+bool TryModifiedVowels(const CharStateT* vowelStates, size_t vowelLen, Pred pred) {
+    if (vowelLen < 1 || vowelLen > 3) return false;
+
+    uint8_t bases[3], mods[3];
+    for (size_t i = 0; i < vowelLen; ++i) {
+        bases[i] = BaseIndex(vowelStates[i].base);
+        if (bases[i] == 0xFF) return false;
+        mods[i] = ModOrdinal(vowelStates[i].mod);
+    }
+
+    for (size_t vi = 0; vi < vowelLen; ++vi) {
+        if (mods[vi] != kNone) continue;
+        for (uint8_t tryMod = 1; tryMod <= 3; ++tryMod) {
+            uint32_t tryKey = BuildModifiedKey(bases, mods, vowelLen, vi, tryMod);
+            const VowelEntry* tryEntry = FindVowel(tryKey);
+            if (tryEntry && pred(tryEntry)) return true;
+        }
+    }
+    return false;
+}
+
+//=============================================================================
 // Core validation (single decomposition attempt)
 //=============================================================================
 
@@ -378,52 +415,16 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
 
         // Check if adding a modifier to any vowel slot would produce a valid nucleus.
         // e.g., "ie" (i/None + e/None) → "iê" (i/None + e/Circ) with future modifier key.
-        // If the modified version is valid AND remaining chars form valid finals → ValidPrefix.
-        if (vowelLen >= 1 && vowelLen <= 3) {
-            for (size_t vi = 0; vi < vowelLen; ++vi) {
-                uint8_t bi = BaseIndex(vowelStates[vi].base);
-                if (bi == 0xFF) continue;
-                uint8_t origMod = ModOrdinal(vowelStates[vi].mod);
-                if (origMod != kNone) continue;  // Already has a modifier
-
-                // Try each modifier (Circumflex, Breve, Horn)
-                for (uint8_t tryMod = 1; tryMod <= 3; ++tryMod) {
-                    uint32_t tryKey = 0;
-                    if (vowelLen == 1) {
-                        tryKey = Key1(VowelSlot(bi, tryMod));
-                    } else if (vowelLen == 2) {
-                        uint8_t b0 = BaseIndex(vowelStates[0].base);
-                        uint8_t b1 = BaseIndex(vowelStates[1].base);
-                        uint8_t m0 = (vi == 0) ? tryMod : ModOrdinal(vowelStates[0].mod);
-                        uint8_t m1 = (vi == 1) ? tryMod : ModOrdinal(vowelStates[1].mod);
-                        tryKey = Key2(VowelSlot(b0, m0), VowelSlot(b1, m1));
-                    } else {
-                        uint8_t b0 = BaseIndex(vowelStates[0].base);
-                        uint8_t b1 = BaseIndex(vowelStates[1].base);
-                        uint8_t b2 = BaseIndex(vowelStates[2].base);
-                        uint8_t m0 = (vi == 0) ? tryMod : ModOrdinal(vowelStates[0].mod);
-                        uint8_t m1 = (vi == 1) ? tryMod : ModOrdinal(vowelStates[1].mod);
-                        uint8_t m2 = (vi == 2) ? tryMod : ModOrdinal(vowelStates[2].mod);
-                        tryKey = Key3(VowelSlot(b0, m0), VowelSlot(b1, m1), VowelSlot(b2, m2));
-                    }
-
-                    const VowelEntry* tryEntry = FindVowel(tryKey);
-                    if (tryEntry) {
-                        // Check if remaining chars after vowels are valid
-                        size_t finalRemaining = count - pos;
-                        if (finalRemaining == 0) {
-                            return Result::ValidPrefix;
-                        }
-                        if (tryEntry->canEnd) {
-                            size_t finalLen = ParseFinalConsonant(&states[pos], finalRemaining);
-                            if (finalLen == finalRemaining) {
-                                return Result::ValidPrefix;
-                            }
-                        }
-                    }
-                }
+        size_t finalRemaining = count - pos;
+        bool found = TryModifiedVowels(vowelStates, vowelLen, [&](const VowelEntry* e) {
+            if (finalRemaining == 0) return true;
+            if (e->canEnd) {
+                size_t finalLen = ParseFinalConsonant(&states[pos], finalRemaining);
+                return finalLen == finalRemaining;
             }
-        }
+            return false;
+        });
+        if (found) return Result::ValidPrefix;
 
         return Result::Invalid;
     }
@@ -438,7 +439,15 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
 
     // Try to parse final consonant
     if (!entry->canEnd) {
-        // This vowel nucleus cannot have a final consonant
+        // This vowel nucleus cannot have a final consonant as-is.
+        // But a future modifier might change it to one that can.
+        // e.g., "ua" (canEnd=false) → "uâ" (canEnd=true) for chuẩn, tuấn, luật
+        bool canEndWithMod = TryModifiedVowels(vowelStates, vowelLen, [&](const VowelEntry* e) {
+            if (!e->canEnd) return false;
+            size_t finalLen = ParseFinalConsonant(&states[pos], remaining);
+            return finalLen == remaining;
+        });
+        if (canEndWithMod) return Result::ValidPrefix;
         return Result::Invalid;
     }
 

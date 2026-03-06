@@ -5,6 +5,7 @@
 #include "core/Version.h"
 #include "core/Strings.h"
 
+#include <ole2.h>
 #include <urlmon.h>
 #include <CommCtrl.h>
 #include <ShlObj.h>

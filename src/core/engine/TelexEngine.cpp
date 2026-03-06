@@ -282,6 +282,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                     }
                     if (it->mod == Modifier::None) {
                         it->mod = Modifier::Circumflex;
+                        RelocateToneToTarget();
                         return true;
                     }
                     break;  // Found a matching vowel but can't modify → stop
@@ -578,6 +579,31 @@ void TelexEngine::RelocateToneToHornVowel() {
             states_[tonedIdx].tone = Tone::None;
         }
     }
+}
+
+//-----------------------------------------------------------------------------
+// Tone Relocation (after any modifier changes priority)
+//-----------------------------------------------------------------------------
+
+void TelexEngine::RelocateToneToTarget() {
+    // Find where the tone currently is
+    size_t tonedIdx = SIZE_MAX;
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (states_[i].IsVowel() && states_[i].tone != Tone::None) {
+            tonedIdx = i;
+            break;
+        }
+    }
+    if (tonedIdx == SIZE_MAX) return;
+
+    // Find where the tone should be now (modifier may have changed priority)
+    size_t targetIdx = FindToneTarget();
+    if (targetIdx == SIZE_MAX || targetIdx == tonedIdx) return;
+
+    states_[targetIdx].tone = states_[tonedIdx].tone;
+    states_[targetIdx].toneRawIdx = states_[tonedIdx].toneRawIdx;
+    states_[tonedIdx].tone = Tone::None;
+    states_[tonedIdx].toneRawIdx = SIZE_MAX;
 }
 
 //-----------------------------------------------------------------------------

@@ -10,7 +10,6 @@
 #include <Windows.h>
 #include <ShlObj.h>
 #include <shellapi.h>
-#include <shobjidl.h>
 #include <string>
 
 namespace NextKey {
@@ -41,29 +40,8 @@ inline void RemoveRegistryStartup() noexcept {
     }
 }
 
-/// Remove the scheduled task (requires elevation for /rl highest tasks)
-inline void RemoveScheduledTask() noexcept {
-    // Build command: schtasks /delete /tn NexusKey /f
-    wchar_t args[256];
-    swprintf_s(args, L"/delete /tn %s /f", STARTUP_TASK_NAME);
-
-    SHELLEXECUTEINFOW sei = { sizeof(sei) };
-    sei.lpVerb = L"runas";
-    sei.lpFile = L"schtasks";
-    sei.lpParameters = args;
-    sei.nShow = SW_HIDE;
-    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-
-    if (ShellExecuteExW(&sei)) {
-        if (sei.hProcess) {
-            WaitForSingleObject(sei.hProcess, 5000);
-            CloseHandle(sei.hProcess);
-        }
-    }
-}
-
 /// Set the registry startup entry (HKCU\...\Run)
-inline bool SetRegistryStartup() noexcept {
+[[nodiscard]] inline bool SetRegistryStartup() noexcept {
     HKEY hKey = nullptr;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, STARTUP_REG_KEY, 0, KEY_SET_VALUE, &hKey) != ERROR_SUCCESS) {
         return false;
@@ -79,18 +57,8 @@ inline bool SetRegistryStartup() noexcept {
     return status == ERROR_SUCCESS;
 }
 
-/// Create a scheduled task to run at logon with highest privileges (UAC prompt)
-inline bool CreateScheduledTaskElevated() noexcept {
-    wchar_t path[MAX_PATH] = {};
-    GetModuleFileNameW(nullptr, path, MAX_PATH);
-
-    // schtasks /tr needs escaped inner quotes for paths with spaces:
-    //   /tr "\"D:\Phan Mem\NexusKey.exe\""
-    std::wstring taskCmd = L"/create /sc onlogon /tn " + std::wstring(STARTUP_TASK_NAME) +
-                           L" /rl highest /delay 0000:05 /tr \"\\\"" + path + L"\\\"\" /f";
-    wchar_t args[1024];
-    swprintf_s(args, L"%s", taskCmd.c_str());
-
+/// Run schtasks.exe elevated (UAC prompt) and return success/failure
+[[nodiscard]] inline bool RunSchtasksElevated(const wchar_t* args, DWORD timeoutMs = 5000) noexcept {
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
     sei.lpVerb = L"runas";
     sei.lpFile = L"schtasks";
@@ -98,18 +66,36 @@ inline bool CreateScheduledTaskElevated() noexcept {
     sei.nShow = SW_HIDE;
     sei.fMask = SEE_MASK_NOCLOSEPROCESS;
 
-    if (!ShellExecuteExW(&sei)) {
-        return false;
-    }
+    if (!ShellExecuteExW(&sei)) return false;
 
     if (sei.hProcess) {
-        WaitForSingleObject(sei.hProcess, 5000);
+        WaitForSingleObject(sei.hProcess, timeoutMs);
         DWORD exitCode = 1;
         GetExitCodeProcess(sei.hProcess, &exitCode);
         CloseHandle(sei.hProcess);
         return exitCode == 0;
     }
     return true;
+}
+
+/// Remove the scheduled task (requires elevation for /rl highest tasks)
+inline void RemoveScheduledTask() noexcept {
+    std::wstring args = L"/delete /tn " + std::wstring(STARTUP_TASK_NAME) + L" /f";
+    (void)RunSchtasksElevated(args.c_str());
+}
+
+/// Create a scheduled task to run at logon with highest privileges (UAC prompt)
+[[nodiscard]] inline bool CreateScheduledTaskElevated() noexcept {
+    wchar_t path[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, path, MAX_PATH);
+
+    // /it = interactive token: run in user's desktop session (required for tray icon)
+    // /delay 0000:05 = 5s delay after logon (wait for Explorer shell)
+    // /tr needs escaped inner quotes for paths with spaces
+    std::wstring args = L"/create /sc onlogon /tn " + std::wstring(STARTUP_TASK_NAME) +
+                        L" /rl highest /it /delay 0000:05 /tr \"\\\"" + path + L"\\\"\" /f";
+
+    return RunSchtasksElevated(args.c_str());
 }
 
 /// Register or unregister run-on-startup.
@@ -133,7 +119,7 @@ inline void RegisterRunOnStartup(bool enable, bool asAdmin) {
     } else {
         // Normal registry startup, remove any elevated task
         RemoveScheduledTask();
-        SetRegistryStartup();
+        (void)SetRegistryStartup();
     }
 }
 

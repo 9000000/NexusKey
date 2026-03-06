@@ -1,15 +1,17 @@
 // NexusKey - TSF Registration & Diagnostics
 // SPDX-License-Identifier: GPL-3.0-only
 
+// Windows/COM headers MUST come first — <msctf.h> includes <comcat.h>
+// which requires COM base types from <ole2.h>/<objbase.h>
+#include <Windows.h>
+#include <ole2.h>
+#include <msctf.h>
+
 #include "TsfRegistration.h"
 #include "core/ipc/SharedState.h"
 #include "core/ipc/SharedStateManager.h"
 #include "core/Debug.h"
 #include "tsf/Globals.h"
-
-#include <Windows.h>
-#include <ole2.h>
-#include <msctf.h>
 #include <vector>
 
 namespace NextKey {

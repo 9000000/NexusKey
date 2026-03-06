@@ -433,6 +433,28 @@ TEST_F(TelexEngineTest, Word_Duoc) {
 }
 
 // ============================================================================
+// TONE RELOCATION AFTER CIRCUMFLEX TESTS
+// ============================================================================
+
+TEST_F(TelexEngineTest, ToneRelocate_ChuanRA_ToneMovesToCircumflex) {
+    // "chuanra": tone 'r' first (on 'u'), then 'a' adds circumflex → tone moves to 'â'
+    TypeString(*engine_, L"chuanra");
+    EXPECT_EQ(engine_->Peek(), L"chuẩn");
+}
+
+TEST_F(TelexEngineTest, ToneRelocate_TuanFA_ToneMovesToCircumflex) {
+    // "tuanfa": tone 'f' first (on 'u'), then 'a' adds circumflex → tone moves to 'â'
+    TypeString(*engine_, L"tuanfa");
+    EXPECT_EQ(engine_->Peek(), L"tuần");
+}
+
+TEST_F(TelexEngineTest, ToneRelocate_LuatJA_ToneMovesToCircumflex) {
+    // "luatja": tone 'j' first (on 'u'), then 'a' adds circumflex → tone moves to 'â'
+    TypeString(*engine_, L"luatja");
+    EXPECT_EQ(engine_->Peek(), L"luật");
+}
+
+// ============================================================================
 // BACKSPACE TESTS
 // ============================================================================
 
@@ -1973,6 +1995,26 @@ TEST_F(AutoRestoreTest, ValidPrefix_AtCommit_English) {
     // English word should be restored
     TypeString(*engine_, L"enter");
     EXPECT_EQ(engine_->Commit(), L"enter");
+}
+
+TEST_F(AutoRestoreTest, FreeCircumflex_ChuanAR_ProducesChuẩn) {
+    // "chuanar": "chuan" has vowel "ua" (canEnd=false), but "uâ" (canEnd=true)
+    // allows 'n' as final consonant → spell check should stay ValidPrefix,
+    // allowing free-marking circumflex (second 'a') and tone 'r' (hỏi)
+    TypeString(*engine_, L"chuanar");
+    EXPECT_EQ(engine_->Commit(), L"chuẩn");
+}
+
+TEST_F(AutoRestoreTest, FreeCircumflex_TuanAF_ProducesTuần) {
+    // Similar case: "tuanaf" → "tuần"
+    TypeString(*engine_, L"tuanaf");
+    EXPECT_EQ(engine_->Commit(), L"tuần");
+}
+
+TEST_F(AutoRestoreTest, FreeCircumflex_LuatAJ_ProducesLuật) {
+    // "luataj" → "luật"
+    TypeString(*engine_, L"luataj");
+    EXPECT_EQ(engine_->Commit(), L"luật");
 }
 
 // ============================================================================

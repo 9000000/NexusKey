@@ -78,18 +78,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Command-line Router
     // ═══════════════════════════════════════════════════════════
 
-    // TSF Registration (runs elevated, then exits)
-    if (lpCmdLine && wcsstr(lpCmdLine, L"--register-tsf") != nullptr) {
+    // TSF Unregistration (runs elevated, then exits)
+    // NOTE: Must check --unregister-tsf BEFORE --register-tsf
+    // because "--register-tsf" is a substring of "--unregister-tsf"
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--unregister-tsf") != nullptr) {
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        bool ok = RegisterTsf();
+        bool ok = UnregisterTsf();
         CoUninitialize();
         return ok ? 0 : 1;
     }
 
-    // TSF Unregistration (runs elevated, then exits)
-    if (lpCmdLine && wcsstr(lpCmdLine, L"--unregister-tsf") != nullptr) {
+    // TSF Registration (runs elevated, then exits)
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--register-tsf") != nullptr) {
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        bool ok = UnregisterTsf();
+        bool ok = RegisterTsf();
         CoUninitialize();
         return ok ? 0 : 1;
     }
