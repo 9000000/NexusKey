@@ -342,10 +342,14 @@ bool HookEngine::CheckConfigEvent() {
         tsfAppSet_.clear();
     }
     // Re-evaluate TSF app status for current foreground app
+    bool wasTsfApp = isTsfApp_;
     if (tsfApps_ && !isExcludedApp_ && !tsfAppSet_.empty() && !currentExe_.empty()) {
         isTsfApp_ = tsfAppSet_.count(currentExe_) > 0;
     } else {
         isTsfApp_ = false;
+    }
+    if (isTsfApp_ != wasTsfApp && tsfActiveCallback_) {
+        tsfActiveCallback_(isTsfApp_);
     }
 
     // Reload hotkey config
