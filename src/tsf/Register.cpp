@@ -98,6 +98,18 @@ static HRESULT RegisterTIP() {
         nullptr, 0,
         TEXTSERVICE_ICON_INDEX
     );
+    if (FAILED(hr)) {
+        pProfiles->Release();
+        return hr;
+    }
+
+    // Enable the profile so it appears in the language bar / input indicator
+    hr = pProfiles->EnableLanguageProfile(
+        CLSID_TextService,
+        TEXTSERVICE_LANGID,
+        GUID_Profile,
+        TRUE
+    );
 
     pProfiles->Release();
     return hr;
@@ -160,10 +172,19 @@ STDAPI DllRegisterServer() {
     if (FAILED(hr)) return hr;
 
     hr = RegisterTIP();
-    if (FAILED(hr)) return hr;
+    if (FAILED(hr)) {
+        UnregisterCLSID();  // Clean up partial state
+        return hr;
+    }
 
     hr = RegisterCategory();
-    return hr;
+    if (FAILED(hr)) {
+        UnregisterTIP();
+        UnregisterCLSID();
+        return hr;
+    }
+
+    return S_OK;
 }
 
 STDAPI DllUnregisterServer() {

@@ -529,18 +529,20 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"tsf-apps") {
         config_.tsfApps = value;
         // Register/unregister TSF DLL when toggle changes
+        // Always attempt full registration (not guarded by IsTsfRegistered) because
+        // a previous partial failure could leave CLSID in registry but TIP profile missing.
         if (value) {
-            if (!IsTsfRegistered()) {
-                bool ok = RegisterTsf();
-                if (!ok) {
-                    ok = RegisterTsfElevated();
-                }
-                if (!ok) {
-                    // Registration failed — revert toggle
-                    config_.tsfApps = false;
-                    setToggleState(L"tsf-apps", false);
-                    return;  // Don't save broken state
-                }
+            bool ok = RegisterTsf();
+            if (!ok) {
+                ok = RegisterTsfElevated();
+            }
+            if (!ok || !IsTsfRegistered()) {
+                config_.tsfApps = false;
+                setToggleState(L"tsf-apps", false);
+                MessageBoxW(get_hwnd(),
+                    L"Không thể đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
+                    L"NexusKey", MB_OK | MB_ICONWARNING);
+                return;  // Don't save broken state
             }
         } else {
             if (IsTsfRegistered()) {
@@ -548,10 +550,12 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                 if (!ok) {
                     ok = UnregisterTsfElevated();
                 }
-                if (!ok) {
-                    // Unregistration failed — revert toggle
+                if (!ok && IsTsfRegistered()) {
                     config_.tsfApps = true;
                     setToggleState(L"tsf-apps", true);
+                    MessageBoxW(get_hwnd(),
+                        L"Không thể gỡ đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
+                        L"NexusKey", MB_OK | MB_ICONWARNING);
                     return;  // Don't save broken state
                 }
             }

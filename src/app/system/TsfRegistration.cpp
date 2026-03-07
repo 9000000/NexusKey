@@ -44,11 +44,13 @@ bool IsTsfRegistered() {
 
 bool RegisterTsf() {
     std::wstring dllPath = GetTsfDllPath();
-    NEXTKEY_LOG(L"RegisterTsf: loading DLL from '%s'", dllPath.c_str());
+    OutputDebugStringW((L"RegisterTsf: DLL path = " + dllPath + L"\n").c_str());
 
     HMODULE hDll = LoadLibraryW(dllPath.c_str());
     if (!hDll) {
-        NEXTKEY_LOG(L"RegisterTsf: failed to load NextKeyTSF.dll (error: %lu)", GetLastError());
+        wchar_t buf[128];
+        swprintf_s(buf, L"RegisterTsf: LoadLibrary failed, error=%lu\n", GetLastError());
+        OutputDebugStringW(buf);
         return false;
     }
 
@@ -60,13 +62,11 @@ bool RegisterTsf() {
     if (pRegister) {
         HRESULT hr = pRegister();
         success = SUCCEEDED(hr);
-        if (success) {
-            NEXTKEY_LOG(L"RegisterTsf: DllRegisterServer succeeded");
-        } else {
-            NEXTKEY_LOG(L"RegisterTsf: DllRegisterServer failed (hr: 0x%08X)", hr);
-        }
+        wchar_t buf[128];
+        swprintf_s(buf, L"RegisterTsf: DllRegisterServer hr=0x%08X\n", hr);
+        OutputDebugStringW(buf);
     } else {
-        NEXTKEY_LOG(L"RegisterTsf: DllRegisterServer export not found");
+        OutputDebugStringW(L"RegisterTsf: DllRegisterServer export not found\n");
     }
 
     FreeLibrary(hDll);
@@ -104,7 +104,7 @@ bool UnregisterTsf() {
 bool RegisterTsfElevated() {
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    NEXTKEY_LOG(L"RegisterTsfElevated: launching '%s --register-tsf' with elevation", exePath);
+    OutputDebugStringW(L"RegisterTsfElevated: requesting elevation\n");
 
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
     sei.lpVerb = L"runas";
@@ -119,10 +119,14 @@ bool RegisterTsfElevated() {
             CloseHandle(sei.hProcess);
         }
         bool registered = IsTsfRegistered();
-        NEXTKEY_LOG(L"RegisterTsfElevated: %s", registered ? L"succeeded" : L"failed");
+        OutputDebugStringW(registered
+            ? L"RegisterTsfElevated: succeeded\n"
+            : L"RegisterTsfElevated: failed\n");
         return registered;
     }
-    NEXTKEY_LOG(L"RegisterTsfElevated: ShellExecuteExW failed (error: %lu)", GetLastError());
+    wchar_t buf[128];
+    swprintf_s(buf, L"RegisterTsfElevated: ShellExecuteEx failed, error=%lu\n", GetLastError());
+    OutputDebugStringW(buf);
     return false;
 }
 
