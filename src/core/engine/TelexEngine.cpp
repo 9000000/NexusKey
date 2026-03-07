@@ -97,7 +97,7 @@ void TelexEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 0b. Quick consonant: cc→ch, gg→gi, nn→ng
+    // 0b. Quick consonant: cc→ch, gg→gi, nn→ng, kk→kh, qq→qu, pp→ph, tt→th
     if (config_.quickConsonant && !states_.empty()) {
         wchar_t lower = towlower(c);
         const CharState& last = states_.back();
@@ -106,9 +106,26 @@ void TelexEngine::PushChar(wchar_t c) {
             if (last.base == L'c' && lower == L'c') replacement = L'h';
             else if (last.base == L'g' && lower == L'g') replacement = L'i';
             else if (last.base == L'n' && lower == L'n') replacement = L'g';
+            else if (last.base == L'k' && lower == L'k') replacement = L'h';
+            else if (last.base == L'q' && lower == L'q') replacement = L'u';
+            else if (last.base == L'p' && lower == L'p') replacement = L'h';
+            else if (last.base == L't' && lower == L't') replacement = L'h';
             if (replacement) {
                 c = iswupper(c) ? towupper(replacement) : replacement;
             }
+        }
+        // uu→ươ: apply horn to existing 'u', then insert 'ơ'
+        else if (last.IsVowel() && last.base == L'u' && last.mod == Modifier::None && lower == L'u') {
+            bool upper = iswupper(c);
+            states_.back().mod = Modifier::Horn;  // u→ư
+            CharState s;
+            s.base = L'o';
+            s.mod = Modifier::Horn;  // ơ
+            s.isUpper = upper;
+            s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
+            states_.push_back(s);
+            UpdateSpellState();
+            return;
         }
     }
 
