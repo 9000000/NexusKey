@@ -13,6 +13,7 @@ namespace SharedFlags {
     constexpr uint32_t VIETNAMESE_MODE = 0x0001;
     constexpr uint32_t ENGINE_ENABLED  = 0x0002;
     constexpr uint32_t SPELL_CHECK     = 0x0004;
+    constexpr uint32_t TSF_ACTIVE      = 0x0008;  // Foreground app uses TSF engine (hook sets, DLL reads)
 }
 
 // Feature flag bit definitions (uint16_t stored as featureFlags[2] little-endian)

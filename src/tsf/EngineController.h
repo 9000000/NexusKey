@@ -115,6 +115,7 @@ private:
     SharedStateManager sharedState_; // For reading config from App
     uint32_t lastEpoch_ = 0;        // Last seen config epoch
     bool engineEnabled_ = true;     // ENGINE_ENABLED flag from SharedState
+    bool tsfActive_ = false;        // TSF_ACTIVE flag from SharedState (foreground app in TSF list)
     bool vietnameseMode_ = true;    // VIETNAMESE_MODE flag from SharedState
     uint8_t autoCapState_ = 0;      // 0=idle, 1=after-punct, 2=capitalize-next
     LanguageBarButton* langBarButton_ = nullptr;  // Owned, Release'd in UninitLanguageBar

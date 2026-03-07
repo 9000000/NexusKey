@@ -188,6 +188,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     });
 
+    // Wire TSF active callback: HookEngine → SharedState flag for DLL
+    g_hookEngine.SetTsfActiveCallback([](bool active) {
+        g_sharedState.SetOrClearFlag(SharedFlags::TSF_ACTIVE, active);
+    });
+
     // Wire settings dialog → HookEngine mode set (cross-process)
     g_trayIcon.SetModeRequestCallback([](bool vietnamese) {
         if (g_hookEngine.IsVietnameseMode() != vietnamese) {
@@ -312,13 +317,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     } else {
         SharedState state;
         state.InitDefaults();
+        // TSF-only mode: DLL is the only engine, always active
+        state.flags |= SharedFlags::TSF_ACTIVE;
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
         state.spellCheck = config.spellCheckEnabled ? 1 : 0;
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
         g_sharedState.Write(state);
-        NEXTKEY_LOG(L"SharedState created and initialized");
+        NEXTKEY_LOG(L"SharedState created and initialized (TSF_ACTIVE=1, TSF-only mode)");
     }
 
     // Tray Icon

@@ -53,6 +53,9 @@ public:
     /// Set callback for config reload (notifies main to update QuickConvert etc.)
     void SetConfigReloadCallback(std::function<void()> callback) { configReloadCallback_ = std::move(callback); }
 
+    /// Set callback for TSF active state changes (foreground app is/isn't in TSF list)
+    void SetTsfActiveCallback(std::function<void(bool)> callback) { tsfActiveCallback_ = std::move(callback); }
+
     /// Update the convert hotkey config (called on config reload)
     void SetConvertHotkey(const HotkeyConfig& hotkey);
 
@@ -189,6 +192,7 @@ private:
     ModeChangeCallback modeChangeCallback_;
     std::function<void()> convertCallback_;
     std::function<void()> configReloadCallback_;
+    std::function<void(bool)> tsfActiveCallback_;
 
     // Singleton for static callback dispatch (read from hook callback thread)
     static std::atomic<HookEngine*> s_instance;

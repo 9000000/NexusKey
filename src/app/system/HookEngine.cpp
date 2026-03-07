@@ -1121,6 +1121,12 @@ void HookEngine::OnFocusChanged() {
         isTsfApp_ = false;
     }
 
+    // Notify SharedState when TSF active state changes (DLL reads this flag)
+    if (isTsfApp_ != wasTsfApp && tsfActiveCallback_) {
+        HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s", wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
+        tsfActiveCallback_(isTsfApp_);
+    }
+
     if (isExcludedApp_) {
         // Entering excluded app — save mode before forcing English
         if (!wasExcluded) {

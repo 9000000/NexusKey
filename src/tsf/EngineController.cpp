@@ -86,6 +86,15 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
         uint32_t flags = sharedState_.ReadFlags();
         if (!(flags & SharedFlags::ENGINE_ENABLED)) return false;
 
+        // [Checkpoint: TSF_ACTIVE] Only process keys when foreground app is in TSF list
+        // EXE sets this flag on foreground change — prevents double-processing with hook
+        bool newTsfActive = (flags & SharedFlags::TSF_ACTIVE) != 0;
+        if (newTsfActive != tsfActive_) {
+            tsfActive_ = newTsfActive;
+            TSF_LOG(L"[Checkpoint] TSF_ACTIVE: %s", tsfActive_ ? L"ON (processing keys)" : L"OFF (passthrough)");
+        }
+        if (!tsfActive_) return false;
+
         // Detect V/E mode changes (e.g. from EXE hotkey) and refresh icon
         bool newVietnameseMode = (flags & SharedFlags::VIETNAMESE_MODE) != 0;
         if (newVietnameseMode != vietnameseMode_) {

@@ -855,6 +855,8 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"beep-sound", config_.beepOnSwitch);
     setToggleState(L"smart-switch", config_.smartSwitch);
     setToggleState(L"exclude-apps", config_.excludeApps);
+    // Sync TSF toggle with actual DLL registration state (not just saved config)
+    config_.tsfApps = IsTsfRegistered();
     setToggleState(L"tsf-apps", config_.tsfApps);
     setToggleState(L"spell-check", config_.spellCheckEnabled);
     setToggleState(L"modern-ortho", config_.modernOrtho);
