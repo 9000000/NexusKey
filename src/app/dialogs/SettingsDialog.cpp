@@ -531,14 +531,28 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         // Register/unregister TSF DLL when toggle changes
         if (value) {
             if (!IsTsfRegistered()) {
-                if (!RegisterTsf()) {
-                    RegisterTsfElevated();  // Retry with admin elevation
+                bool ok = RegisterTsf();
+                if (!ok) {
+                    ok = RegisterTsfElevated();
+                }
+                if (!ok) {
+                    // Registration failed — revert toggle
+                    config_.tsfApps = false;
+                    setToggleState(L"tsf-apps", false);
+                    return;  // Don't save broken state
                 }
             }
         } else {
             if (IsTsfRegistered()) {
-                if (!UnregisterTsf()) {
-                    UnregisterTsfElevated();
+                bool ok = UnregisterTsf();
+                if (!ok) {
+                    ok = UnregisterTsfElevated();
+                }
+                if (!ok) {
+                    // Unregistration failed — revert toggle
+                    config_.tsfApps = true;
+                    setToggleState(L"tsf-apps", true);
+                    return;  // Don't save broken state
                 }
             }
         }

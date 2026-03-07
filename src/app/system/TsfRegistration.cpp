@@ -44,10 +44,11 @@ bool IsTsfRegistered() {
 
 bool RegisterTsf() {
     std::wstring dllPath = GetTsfDllPath();
+    NEXTKEY_LOG(L"RegisterTsf: loading DLL from '%s'", dllPath.c_str());
 
     HMODULE hDll = LoadLibraryW(dllPath.c_str());
     if (!hDll) {
-        NEXTKEY_LOG(L"Failed to load NextKeyTSF.dll (error: %lu)", GetLastError());
+        NEXTKEY_LOG(L"RegisterTsf: failed to load NextKeyTSF.dll (error: %lu)", GetLastError());
         return false;
     }
 
@@ -60,10 +61,12 @@ bool RegisterTsf() {
         HRESULT hr = pRegister();
         success = SUCCEEDED(hr);
         if (success) {
-            NEXTKEY_LOG(L"TSF registered successfully");
+            NEXTKEY_LOG(L"RegisterTsf: DllRegisterServer succeeded");
         } else {
-            NEXTKEY_LOG(L"TSF registration failed (hr: 0x%08X)", hr);
+            NEXTKEY_LOG(L"RegisterTsf: DllRegisterServer failed (hr: 0x%08X)", hr);
         }
+    } else {
+        NEXTKEY_LOG(L"RegisterTsf: DllRegisterServer export not found");
     }
 
     FreeLibrary(hDll);
@@ -101,6 +104,7 @@ bool UnregisterTsf() {
 bool RegisterTsfElevated() {
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    NEXTKEY_LOG(L"RegisterTsfElevated: launching '%s --register-tsf' with elevation", exePath);
 
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
     sei.lpVerb = L"runas";
@@ -114,8 +118,11 @@ bool RegisterTsfElevated() {
             WaitForSingleObject(sei.hProcess, 10000);
             CloseHandle(sei.hProcess);
         }
-        return IsTsfRegistered();
+        bool registered = IsTsfRegistered();
+        NEXTKEY_LOG(L"RegisterTsfElevated: %s", registered ? L"succeeded" : L"failed");
+        return registered;
     }
+    NEXTKEY_LOG(L"RegisterTsfElevated: ShellExecuteExW failed (error: %lu)", GetLastError());
     return false;
 }
 
