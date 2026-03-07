@@ -78,7 +78,7 @@ bool UnregisterTsf() {
 
     HMODULE hDll = LoadLibraryW(dllPath.c_str());
     if (!hDll) {
-        NEXTKEY_LOG(L"Failed to load NextKeyTSF.dll for unregister");
+        OutputDebugStringW(L"UnregisterTsf: LoadLibrary failed\n");
         return false;
     }
 
@@ -86,19 +86,19 @@ bool UnregisterTsf() {
         GetProcAddress(hDll, "DllUnregisterServer")
     );
 
-    bool success = false;
     if (pUnregister) {
-        HRESULT hr = pUnregister();
-        success = SUCCEEDED(hr);
-        if (success) {
-            NEXTKEY_LOG(L"TSF unregistered successfully");
-        } else {
-            NEXTKEY_LOG(L"TSF unregister failed (hr: 0x%08X)", hr);
-        }
+        pUnregister();
     }
 
     FreeLibrary(hDll);
-    return success;
+
+    // Don't trust DllUnregisterServer return value — it always returns S_OK.
+    // Check actual registry state instead.
+    bool gone = !IsTsfRegistered();
+    OutputDebugStringW(gone
+        ? L"UnregisterTsf: succeeded\n"
+        : L"UnregisterTsf: CLSID still in registry (needs elevation)\n");
+    return gone;
 }
 
 bool RegisterTsfElevated() {

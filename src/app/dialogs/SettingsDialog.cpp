@@ -546,11 +546,13 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
             }
         } else {
             if (IsTsfRegistered()) {
-                bool ok = UnregisterTsf();
-                if (!ok) {
-                    ok = UnregisterTsfElevated();
+                UnregisterTsf();
+                // Verify actual state — DllUnregisterServer may return S_OK
+                // even when it can't delete HKLM keys without admin
+                if (IsTsfRegistered()) {
+                    UnregisterTsfElevated();
                 }
-                if (!ok && IsTsfRegistered()) {
+                if (IsTsfRegistered()) {
                     config_.tsfApps = true;
                     setToggleState(L"tsf-apps", true);
                     MessageBoxW(get_hwnd(),
