@@ -217,7 +217,7 @@ std::wstring VniEngine::Commit() {
             shouldRestore = (result == SpellCheck::Result::ValidPrefix);
         }
 
-        if (shouldRestore) {
+        if (shouldRestore && !HasStrokeD(states_.data(), states_.size())) {
             std::wstring raw = rawInput_;
             if (ShouldAutoRestore(raw, composed)) {
                 Reset();

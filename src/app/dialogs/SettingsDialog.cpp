@@ -544,6 +544,10 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                     L"NexusKey", MB_OK | MB_ICONWARNING);
                 return;  // Don't save broken state
             }
+            MessageBoxW(get_hwnd(),
+                L"Đã đăng ký TSF thành công.\n"
+                L"Cần khởi động lại các ứng dụng đang mở để thay đổi có hiệu lực.",
+                L"NexusKey", MB_OK | MB_ICONINFORMATION);
         } else {
             if (IsTsfRegistered()) {
                 UnregisterTsf();
@@ -560,6 +564,10 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                         L"NexusKey", MB_OK | MB_ICONWARNING);
                     return;  // Don't save broken state
                 }
+                MessageBoxW(get_hwnd(),
+                    L"Đã gỡ đăng ký TSF thành công.\n"
+                    L"Cần khởi động lại các ứng dụng đang mở để thay đổi có hiệu lực.",
+                    L"NexusKey", MB_OK | MB_ICONINFORMATION);
             }
         }
     }

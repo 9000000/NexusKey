@@ -41,4 +41,17 @@ inline bool ShouldAutoRestore(const std::wstring& raw, const std::wstring& compo
     return raw.length() <= composed.length();
 }
 
+/// Check if any state contains đ (d with modifier).
+/// When user typed dd→đ, they clearly intended the stroke — skip auto-restore
+/// so abbreviations like "đt" are not reverted to "ddt".
+template<typename CharStateT>
+inline bool HasStrokeD(const CharStateT* states, size_t count) noexcept {
+    for (size_t i = 0; i < count; ++i) {
+        if (states[i].IsD() && states[i].mod != decltype(states[i].mod){}) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace NextKey

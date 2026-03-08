@@ -792,7 +792,7 @@ std::wstring TelexEngine::Commit() {
             shouldRestore = (result == SpellCheck::Result::ValidPrefix);
         }
 
-        if (shouldRestore) {
+        if (shouldRestore && !HasStrokeD(states_.data(), states_.size())) {
             std::wstring raw(rawInput_.begin(), rawInput_.end());
             if (ShouldAutoRestore(raw, composed)) {
                 Reset();

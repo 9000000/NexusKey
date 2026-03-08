@@ -2018,6 +2018,51 @@ TEST_F(AutoRestoreTest, FreeCircumflex_LuatAJ_ProducesLuật) {
 }
 
 // ============================================================================
+// QUICK CONSONANT + AUTO-RESTORE TESTS
+// ============================================================================
+
+TEST_F(AutoRestoreTest, QuickConsonant_KK_Khuya_Valid) {
+    // "kkuya" → kk→kh, so "khuya" — valid Vietnamese word
+    // Should NOT auto-restore to "kkuya"
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"kkuya");
+    EXPECT_EQ(engine_->Commit(), L"khuya");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_TT_Thuy_Valid) {
+    // "ttuys" → tt→th, so "thuýs" wait no: "thuys" → "thuý"
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"ttuys");
+    EXPECT_EQ(engine_->Commit(), L"thuý");
+}
+
+// ============================================================================
+// STROKE-D ABBREVIATION TESTS (đ + consonant should not auto-restore)
+// ============================================================================
+
+TEST_F(AutoRestoreTest, StrokeD_Abbreviation_DT_KeepsComposed) {
+    // "ddt" → "đt" — abbreviation for "điện thoại"
+    // Should keep composed "đt", NOT restore to "ddt"
+    TypeString(*engine_, L"ddt");
+    EXPECT_EQ(engine_->Commit(), L"đt");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_Abbreviation_DH_KeepsComposed) {
+    // "ddh" → "đh" — abbreviation for "đại học"
+    TypeString(*engine_, L"ddh");
+    EXPECT_EQ(engine_->Commit(), L"đh");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_ValidWord_StillComposed) {
+    // "ddeef" → "đề" — valid Vietnamese syllable with đ
+    // Should still return composed (was already working)
+    TypeString(*engine_, L"ddeef");
+    EXPECT_EQ(engine_->Commit(), L"đề");
+}
+
+// ============================================================================
 // TEMP OFF SPELL CHECK TESTS
 // Solo Ctrl tap temporarily disables spell check for current word
 // ============================================================================
