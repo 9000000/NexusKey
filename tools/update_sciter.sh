@@ -53,9 +53,10 @@ echo "Copying binaries..."
 
 # Find and copy packfolder.exe and sciter.dll
 find "$EXTRACTED_DIR/bin" -name "packfolder.exe" -exec cp {} "$EXTERN_SCITER_DIR/bin/" \;
-find "$EXTRACTED_DIR/bin/windows/x64" -name "sciter.dll" -exec cp {} "$EXTERN_SCITER_DIR/bin/" \;
+find "$EXTRACTED_DIR/bin/windows.d2d/x64" -name "sciter.dll" -exec cp {} "$EXTERN_SCITER_DIR/bin/" \;
 
 # Clean up
 rm -rf "$TMP_DIR"
 
 echo "Sciter SDK updated to $LATEST_TAG successfully."
+exit 0

@@ -79,7 +79,7 @@ var STRINGS = {
         // Tab 4: About
         "s.tagline": "Modern Vietnamese Input Method",
         "s.version_label": "Version:",
-        "s.dev_label": "Development & UI Design:",
+        "s.dev_label": "Author:",
         "s.origin_label": "Origin:",
         "s.origin_text": "Project inspired by OpenKey source code by Mai V\u0169 Tuy\u00EAn, aiming to improve the UI, fix bugs, and add new features.",
         "s.license": "NexusKey is open-source, free, and non-profit software.",

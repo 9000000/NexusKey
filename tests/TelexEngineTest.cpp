@@ -1498,8 +1498,9 @@ TEST_F(TelexEngineTest, Escape_Circumflex_O) {
 }
 
 TEST_F(TelexEngineTest, Escape_Stroke_Quad) {
+    // dddd: dd→đ, d→escape(đ→d+d), d→literal (user rejected đ)
     TypeString(*engine_, L"dddd");
-    EXPECT_EQ(engine_->Peek(), L"dđ");
+    EXPECT_EQ(engine_->Peek(), L"ddd");
 }
 
 // ============================================================================
@@ -2224,11 +2225,16 @@ TEST_F(AutoRestoreTest, StrokeD_ValidWord_StillComposed) {
 }
 
 TEST_F(AutoRestoreTest, StrokeD_NonConsecutive_Download_Restores) {
-    // "download" — the final 'd' converts initial 'd' to đ via free marking,
-    // but since the d's are non-consecutive in raw input, auto-restore should
-    // return "download" instead of "đơnloa"
+    // "download" — non-consecutive d's, auto-restore should return "download"
     TypeString(*engine_, L"download");
     EXPECT_EQ(engine_->Commit(), L"download");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_NonInitial_Add_Restores) {
+    // "add" — dd is non-initial (index 1), đ can only be at index 0,
+    // so the second 'd' is literal → "add" auto-restores
+    TypeString(*engine_, L"add");
+    EXPECT_EQ(engine_->Commit(), L"add");
 }
 
 // ============================================================================

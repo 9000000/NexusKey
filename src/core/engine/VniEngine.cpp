@@ -206,6 +206,7 @@ void VniEngine::PushChar(wchar_t c) {
 
 void VniEngine::Backspace() {
     if (states_.empty()) return;
+    dModifierEscaped_ = false;  // Allow đ re-trigger after user edits
 
     // Check if we're undoing a quick consonant expansion
     if (quickConsonantIdx_ != SIZE_MAX && states_.size() - 1 == quickConsonantIdx_) {
@@ -283,6 +284,7 @@ void VniEngine::Reset() {
     quickConsonantEscaped_ = false;
     quickConsonantIdx_ = SIZE_MAX;
     lastQuickConsonantKey_ = 0;
+    dModifierEscaped_ = false;
 }
 
 void VniEngine::ToggleTempSpellOff() {
@@ -311,18 +313,19 @@ bool VniEngine::ProcessModifier(wchar_t c) {
         default: return false;
     }
 
-    // Handle đ specially (key 9)
+    // Handle đ specially (key 9) — Vietnamese đ only at syllable start
     if (targetMod == Modifier::Stroke) {
-        for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
-            if (it->IsD()) {
-                if (it->mod == Modifier::None) {
-                    it->mod = Modifier::Stroke;
-                    return true;
-                } else if (it->mod == Modifier::Stroke) {
-                    it->mod = Modifier::None;
-                    ProcessChar(c, rawInput_.size() - 1);
-                    return true;
-                }
+        if (dModifierEscaped_) return false;  // User already escaped đ→d
+        if (!states_.empty() && states_[0].IsD()) {
+            CharState& first = states_[0];
+            if (first.mod == Modifier::None) {
+                first.mod = Modifier::Stroke;
+                return true;
+            } else if (first.mod == Modifier::Stroke) {
+                first.mod = Modifier::None;
+                dModifierEscaped_ = true;  // Lock: user intentionally removed đ
+                ProcessChar(c, rawInput_.size() - 1);
+                return true;
             }
         }
         return false;

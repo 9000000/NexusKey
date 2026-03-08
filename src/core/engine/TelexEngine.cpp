@@ -536,17 +536,18 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 //-----------------------------------------------------------------------------
 
 bool TelexEngine::ProcessDModifier(wchar_t c) {
-    for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
-        if (it->IsD()) {
-            if (it->mod == Modifier::None) {
-                it->mod = Modifier::Breve;
-                return true;
-            } else if (it->mod == Modifier::Breve) {
-                it->mod = Modifier::None;
-                ProcessChar(c);
-                return true;
-            }
-        }
+    // Vietnamese đ only appears at the start of a syllable — only modify d at index 0.
+    if (dModifierEscaped_) return false;  // User already escaped đ→d, don't re-trigger
+    if (states_.empty() || !states_[0].IsD()) return false;
+    CharState& first = states_[0];
+    if (first.mod == Modifier::None) {
+        first.mod = Modifier::Breve;
+        return true;
+    } else if (first.mod == Modifier::Breve) {
+        first.mod = Modifier::None;
+        dModifierEscaped_ = true;  // Lock: user intentionally removed đ
+        ProcessChar(c);
+        return true;
     }
     return false;
 }
@@ -800,6 +801,7 @@ std::wstring TelexEngine::ComposeAll() const {
 
 void TelexEngine::Backspace() {
     if (states_.empty()) return;
+    dModifierEscaped_ = false;  // Allow đ re-trigger after user edits
 
     // Check if we're undoing a quick consonant expansion
     if (quickConsonantIdx_ != SIZE_MAX && states_.size() - 1 == quickConsonantIdx_) {
@@ -873,6 +875,7 @@ void TelexEngine::Reset() {
     quickConsonantEscaped_ = false;
     quickConsonantIdx_ = SIZE_MAX;
     lastQuickConsonantKey_ = 0;
+    dModifierEscaped_ = false;
 }
 
 void TelexEngine::ToggleTempSpellOff() {

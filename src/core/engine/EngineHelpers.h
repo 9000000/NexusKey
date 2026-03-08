@@ -8,7 +8,6 @@
 
 #include "SpellChecker.h"
 #include "core/config/TypingConfig.h"
-#include <cwctype>
 #include <string>
 
 namespace NextKey {
@@ -49,9 +48,10 @@ inline bool ShouldAutoRestore(const std::wstring& raw, const std::wstring& compo
 template<typename RawT>
 inline bool HasIntentionalStrokeD(const RawT& rawInput) noexcept {
     for (size_t i = 0; i + 1 < rawInput.size(); ++i) {
-        if (towlower(rawInput[i]) == L'd') {
-            wchar_t next = towlower(rawInput[i + 1]);
-            if (next == L'd' || next == L'9') return true;
+        wchar_t ch = rawInput[i];
+        if (ch == L'd' || ch == L'D') {
+            wchar_t next = rawInput[i + 1];
+            if (next == L'd' || next == L'D' || next == L'9') return true;
         }
     }
     return false;
