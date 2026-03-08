@@ -124,6 +124,7 @@ constexpr VowelEntry kVowelTable[] = {
     { Key3(VowelSlot(kU, kNone), VowelSlot(kA, kCirc), VowelSlot(kY, kNone)), false },  // uây
     { Key3(VowelSlot(kU, kNone), VowelSlot(kO, kCirc), VowelSlot(kI, kNone)), false },  // uôi
     { Key3(VowelSlot(kU, kNone), VowelSlot(kY, kNone), VowelSlot(kA, kNone)), false },  // uya (khuya)
+    { Key3(VowelSlot(kU, kNone), VowelSlot(kY, kNone), VowelSlot(kU, kNone)), false },  // uyu (khuỷu)
     { Key3(VowelSlot(kU, kHorn), VowelSlot(kO, kHorn), VowelSlot(kI, kNone)), false },  // ươi
     { Key3(VowelSlot(kU, kHorn), VowelSlot(kO, kHorn), VowelSlot(kU, kNone)), false },  // ươu
 

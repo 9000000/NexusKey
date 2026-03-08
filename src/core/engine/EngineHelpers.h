@@ -54,4 +54,15 @@ inline bool HasStrokeD(const CharStateT* states, size_t count) noexcept {
     return false;
 }
 
+/// Undo ươ pair: if 'o' at oIndex has a modifier and preceding 'u' also has one,
+/// clear the u's modifier. Handles: ươ→uô (horn undo), uu→ươ backspace, w escape.
+/// Works with both Telex and Vni CharState.
+template<typename CharStateT>
+inline void UndoHornU(CharStateT* states, size_t oIndex) noexcept {
+    if (oIndex > 0 && states[oIndex].base == L'o' && states[oIndex].HasModifier() &&
+        states[oIndex - 1].base == L'u' && states[oIndex - 1].HasModifier()) {
+        states[oIndex - 1].mod = {};  // Clear to None (value-initialized enum = 0)
+    }
+}
+
 }  // namespace NextKey

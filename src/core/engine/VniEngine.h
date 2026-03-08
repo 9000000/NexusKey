@@ -80,7 +80,10 @@ private:
     std::wstring rawInput_;
     TypingConfig config_;
     bool spellCheckDisabled_ = false;
-    bool tempSpellOff_ = false;       // true when user toggled temp spell bypass via Ctrl
+    bool tempSpellOff_ = false;          // true when user toggled temp spell bypass via Ctrl
+    bool quickConsonantOnly_ = false;    // true when buffer is only quick consonant expansion
+    bool quickConsonantEscaped_ = false; // true after backspace undoes quick consonant
+    size_t quickConsonantIdx_ = SIZE_MAX; // states_ index of quick consonant result char
 };
 
 }  // namespace Vni

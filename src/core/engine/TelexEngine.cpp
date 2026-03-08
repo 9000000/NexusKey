@@ -80,6 +80,7 @@ TelexEngine::TelexEngine(const TypingConfig& config) : config_(config) {
 
 void TelexEngine::PushChar(wchar_t c) {
     rawInput_.push_back(c);
+    quickConsonantOnly_ = false;  // Any new char clears the flag
 
     // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
     if (config_.quickStartConsonant && states_.empty()) {
@@ -98,7 +99,10 @@ void TelexEngine::PushChar(wchar_t c) {
     }
 
     // 0b. Quick consonant: cc→ch, gg→gi, nn→ng, kk→kh, qq→qu, pp→ph, tt→th
-    if (config_.quickConsonant && !states_.empty()) {
+    // Skip if backspace just undid a quick consonant (let user type the literal)
+    bool quickEscaped = quickConsonantEscaped_;
+    quickConsonantEscaped_ = false;
+    if (config_.quickConsonant && !states_.empty() && !quickEscaped) {
         wchar_t lower = towlower(c);
         const CharState& last = states_.back();
         if (!last.IsVowel() && !last.IsD()) {
@@ -112,6 +116,8 @@ void TelexEngine::PushChar(wchar_t c) {
             else if (last.base == L't' && lower == L't') replacement = L'h';
             if (replacement) {
                 c = iswupper(c) ? towupper(replacement) : replacement;
+                if (states_.size() == 1) quickConsonantOnly_ = true;
+                quickConsonantIdx_ = states_.size();  // Index of the char about to be added
             }
         }
         // uu→ươ: apply horn to existing 'u', then insert 'ơ'
@@ -124,6 +130,8 @@ void TelexEngine::PushChar(wchar_t c) {
             s.isUpper = upper;
             s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
             states_.push_back(s);
+            quickConsonantIdx_ = states_.size() - 1;  // Index of the ơ just added
+            if (states_.size() == 2) quickConsonantOnly_ = true;
             UpdateSpellState();
             return;
         }
@@ -272,25 +280,38 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
     // Handle double vowel → circumflex (aa→â, ee→ê, oo→ô)
     if (IsVowelChar(c) && !states_.empty()) {
         CharState& last = states_.back();
-        if (last.IsVowel() && last.base == lower) {
-            if (lower == L'a' || lower == L'e' || lower == L'o') {
-                // Escape: already has circumflex
-                if (last.mod == Modifier::Circumflex) {
-                    last.mod = Modifier::None;
-                    ProcessChar(c);
-                    return true;
-                }
-                // Apply circumflex - PRESERVE FIRST LETTER CASE
-                last.mod = Modifier::Circumflex;
+        bool isCircumflexBase = (lower == L'a' || lower == L'e' || lower == L'o');
+
+        if (last.IsVowel() && last.base == lower && isCircumflexBase) {
+            // Guard: don't apply circumflex if last 3 vowels form a triphthong
+            // e.g., "ngoeo" + 'o' → consume but don't modify (triphthong complete)
+            size_t n = states_.size();
+            if (n >= 3 && states_[n - 3].IsVowel() && states_[n - 2].IsVowel() &&
+                IsTriphthong(states_[n - 3].base, states_[n - 2].base, last.base)) {
+                return true;  // Consume keystroke, no state change
+            }
+            // Escape: already has circumflex
+            if (last.mod == Modifier::Circumflex) {
+                last.mod = Modifier::None;
+                ProcessChar(c);
                 return true;
             }
+            // Apply circumflex - PRESERVE FIRST LETTER CASE
+            last.mod = Modifier::Circumflex;
+            return true;
         }
 
         // Free marking: backward scan for circumflex across intervening consonants
         // e.g., "tiéng" + 'e' → find 'é' across 'n','g' → apply circumflex → "tiếng"
-        if (!spellCheckDisabled_ && (lower == L'a' || lower == L'e' || lower == L'o')) {
+        // Stop if we cross a different vowel (don't jump across vowel clusters)
+        if (!spellCheckDisabled_ && isCircumflexBase) {
+            bool crossedVowel = false;  // Crossed a non-matching vowel
             for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
+                if (it->IsVowel() && it->base != lower) { crossedVowel = true; continue; }
                 if (it->IsVowel() && it->base == lower) {
+                    // Don't apply/escape circumflex across vowel clusters (e.g., "oeo" + 'o')
+                    // But DO allow horn undo (e.g., "cươi" + 'o' → "cuôi")
+                    if (crossedVowel && it->mod != Modifier::Horn) break;
                     if (it->mod == Modifier::Circumflex) {
                         // Escape: already has circumflex → remove it, add char
                         it->mod = Modifier::None;
@@ -301,7 +322,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                         // Undo horn: ươ → uô (e.g., "cươi" + 'o' → "cuôi")
                         auto oIndex = static_cast<size_t>(states_.rend() - it - 1);
                         it->mod = Modifier::Circumflex;
-                        UndoAutoUO(oIndex);
+                        UndoHornU(states_.data(),oIndex);
                         RelocateToneToTarget();
                         return true;
                     }
@@ -442,7 +463,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
             return true;
         }
         states_[hornedIdx].mod = Modifier::None;
-        UndoAutoUO(hornedIdx);
+        UndoHornU(states_.data(),hornedIdx);
         ProcessChar(c);
         return true;
     }
@@ -575,14 +596,6 @@ void TelexEngine::ApplyAutoUO() {
     }
 }
 
-void TelexEngine::UndoAutoUO(size_t oIndex) {
-    if (states_[oIndex].base == L'o' && oIndex > 0 &&
-        states_[oIndex - 1].base == L'u' &&
-        states_[oIndex - 1].mod == Modifier::Horn) {
-        states_[oIndex - 1].mod = Modifier::None;
-    }
-}
-
 //-----------------------------------------------------------------------------
 // Tone Relocation (after horn applied)
 //-----------------------------------------------------------------------------
@@ -691,10 +704,8 @@ size_t TelexEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTrip
                     wchar_t v1 = states_[firstVIdx].base;
                     wchar_t v2 = states_[midIdx].base;
                     wchar_t v3 = states_[lastIdx].base;
-                    for (size_t t = 0; t < kTriphthongCount; ++t) {
-                        if (kTriphthongs[t].v1 == v1 && kTriphthongs[t].v2 == v2 && kTriphthongs[t].v3 == v3)
-                            return midIdx;
-                    }
+                    if (IsTriphthong(v1, v2, v3))
+                        return midIdx;
                 }
             }
 
@@ -771,6 +782,14 @@ std::wstring TelexEngine::ComposeAll() const {
 void TelexEngine::Backspace() {
     if (states_.empty()) return;
 
+    // Check if we're undoing a quick consonant expansion
+    if (quickConsonantIdx_ != SIZE_MAX && states_.size() - 1 == quickConsonantIdx_) {
+        quickConsonantEscaped_ = true;
+        // For uu→ươ: also undo the horn on the preceding 'u'
+        UndoHornU(states_.data(),states_.size() - 1);
+    }
+    quickConsonantIdx_ = SIZE_MAX;
+
     // Trim rawInput_ to the position when this state was created.
     // This correctly handles modifier keys (circumflex, tone) that add to rawInput_
     // without creating new states — backspace removes all associated raw entries.
@@ -802,6 +821,9 @@ std::wstring TelexEngine::Commit() {
             shouldRestore = (result == SpellCheck::Result::ValidPrefix);
         }
 
+        // Quick consonant alone (gg, uu) — always restore even if spell check says Valid
+        if (quickConsonantOnly_) shouldRestore = true;
+
         if (shouldRestore && !HasStrokeD(states_.data(), states_.size())) {
             std::wstring raw(rawInput_.begin(), rawInput_.end());
             if (ShouldAutoRestore(raw, composed)) {
@@ -821,6 +843,9 @@ void TelexEngine::Reset() {
     state_ = TelexStates::Valid;
     spellCheckDisabled_ = false;
     tempSpellOff_ = false;
+    quickConsonantOnly_ = false;
+    quickConsonantEscaped_ = false;
+    quickConsonantIdx_ = SIZE_MAX;
 }
 
 void TelexEngine::ToggleTempSpellOff() {

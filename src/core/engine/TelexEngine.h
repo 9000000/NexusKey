@@ -107,9 +107,6 @@ private:
     // Auto ươ: convert 'uơ' to 'ươ' when followed by another character
     void ApplyAutoUO();
 
-    // Undo AutoUO: if 'ơ' at given index has a preceding 'ư', clear the ư's horn
-    void UndoAutoUO(size_t oIndex);
-
     // Move tone to horn vowel when horn modifier is added
     // Example: "cuả" + w → "cửa" (tone moves from a to ư)
     void RelocateToneToHornVowel();
@@ -146,6 +143,9 @@ private:
     TelexStates state_ = TelexStates::Valid;
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
     bool tempSpellOff_ = false;       // true when user toggled temp spell bypass via Ctrl
+    bool quickConsonantOnly_ = false;    // true when buffer is only quick consonant expansion
+    bool quickConsonantEscaped_ = false; // true after backspace undoes quick consonant
+    size_t quickConsonantIdx_ = SIZE_MAX; // states_ index of quick consonant result char
 };
 
 }  // namespace Telex

@@ -83,6 +83,7 @@ VniEngine::VniEngine(const TypingConfig& config) : config_(config) {
 
 void VniEngine::PushChar(wchar_t c) {
     rawInput_ += c;
+    quickConsonantOnly_ = false;  // Any new char clears the flag
 
     // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
     if (config_.quickStartConsonant && states_.empty()) {
@@ -102,7 +103,10 @@ void VniEngine::PushChar(wchar_t c) {
     }
 
     // 0b. Quick consonant: cc→ch, gg→gi, nn→ng, kk→kh, qq→qu, pp→ph, tt→th
-    if (config_.quickConsonant && !states_.empty()) {
+    // Skip if backspace just undid a quick consonant (let user type the literal)
+    bool quickEscaped = quickConsonantEscaped_;
+    quickConsonantEscaped_ = false;
+    if (config_.quickConsonant && !states_.empty() && !quickEscaped) {
         wchar_t lower = towlower(c);
         const CharState& last = states_.back();
         if (!last.IsVowel() && !last.IsD()) {
@@ -116,6 +120,8 @@ void VniEngine::PushChar(wchar_t c) {
             else if (last.base == L't' && lower == L't') replacement = L'h';
             if (replacement) {
                 c = iswupper(c) ? towupper(replacement) : replacement;
+                if (states_.size() == 1) quickConsonantOnly_ = true;
+                quickConsonantIdx_ = states_.size();
             }
         }
         // uu→ươ: apply horn to existing 'u', then insert 'ơ'
@@ -128,6 +134,8 @@ void VniEngine::PushChar(wchar_t c) {
             s.isUpper = upper;
             s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
             states_.push_back(s);
+            quickConsonantIdx_ = states_.size() - 1;
+            if (states_.size() == 2) quickConsonantOnly_ = true;
             UpdateSpellState();
             return;
         }
@@ -180,6 +188,13 @@ void VniEngine::PushChar(wchar_t c) {
 void VniEngine::Backspace() {
     if (states_.empty()) return;
 
+    // Check if we're undoing a quick consonant expansion
+    if (quickConsonantIdx_ != SIZE_MAX && states_.size() - 1 == quickConsonantIdx_) {
+        quickConsonantEscaped_ = true;
+        UndoHornU(states_.data(), states_.size() - 1);
+    }
+    quickConsonantIdx_ = SIZE_MAX;
+
     // Trim rawInput_ to the position when this state was created.
     // This correctly handles quick consonants (f→ph) where one raw key
     // produces multiple states, and modifier/tone keys that modify
@@ -217,6 +232,9 @@ std::wstring VniEngine::Commit() {
             shouldRestore = (result == SpellCheck::Result::ValidPrefix);
         }
 
+        // Quick consonant alone (gg, uu) — always restore even if spell check says Valid
+        if (quickConsonantOnly_) shouldRestore = true;
+
         if (shouldRestore && !HasStrokeD(states_.data(), states_.size())) {
             std::wstring raw = rawInput_;
             if (ShouldAutoRestore(raw, composed)) {
@@ -235,6 +253,9 @@ void VniEngine::Reset() {
     rawInput_.clear();
     spellCheckDisabled_ = false;
     tempSpellOff_ = false;
+    quickConsonantOnly_ = false;
+    quickConsonantEscaped_ = false;
+    quickConsonantIdx_ = SIZE_MAX;
 }
 
 void VniEngine::ToggleTempSpellOff() {

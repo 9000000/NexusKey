@@ -105,7 +105,7 @@ constexpr uint8_t kDiphthongClassic[6][6] = {
     /* i */ {   1, 0, 1, 0, 1, 0 },  // ia, ii, iu
     /* o */ {   1, 1, 1, 0, 1, 0 },  // oa=FIRST, oe=FIRST, oi, ou
     /* u */ {   1, 1, 1, 0, 1, 2 },  // ua, ue, ui, uu, uy=SECOND
-    /* y */ {   0, 0, 0, 0, 0, 0 },
+    /* y */ {   0, 0, 0, 0, 1, 0 },  // yu=FIRST (khuỷu)
 };
 
 /// Modern placement: oa, oe, ue → tone on SECOND (new-style: hóa, xoé, thuế)
@@ -116,7 +116,7 @@ constexpr uint8_t kDiphthongModern[6][6] = {
     /* i */ {   1, 0, 1, 0, 1, 0 },  // (same as classic)
     /* o */ {   2, 2, 1, 0, 1, 0 },  // oa=SECOND, oe=SECOND (modern)
     /* u */ {   1, 2, 1, 2, 1, 2 },  // ue=SECOND, uo=SECOND, uy=SECOND (modern)
-    /* y */ {   0, 0, 0, 0, 0, 0 },
+    /* y */ {   0, 0, 0, 0, 1, 0 },  // yu=FIRST (khuỷu)
 };
 
 /// Triphthong patterns (Modern only): tone on MIDDLE vowel
@@ -128,6 +128,15 @@ constexpr TriphthongPattern kTriphthongs[] = {
     {L'u', L'y', L'u'},   // uyu
 };
 constexpr size_t kTriphthongCount = sizeof(kTriphthongs) / sizeof(kTriphthongs[0]);
+
+/// Check if three vowel bases form a triphthong
+[[nodiscard]] constexpr bool IsTriphthong(wchar_t v1, wchar_t v2, wchar_t v3) noexcept {
+    // 4 entries — flat comparison is faster than loop, no branch misprediction
+    return (v1 == L'o' && v2 == L'a' && v3 == L'i') ||  // oai
+           (v1 == L'o' && v2 == L'e' && v3 == L'o') ||  // oeo
+           (v1 == L'u' && v2 == L'y' && v3 == L'a') ||  // uya
+           (v1 == L'u' && v2 == L'y' && v3 == L'u');     // uyu
+}
 
 //=============================================================================
 // Vietnamese-aware uppercase conversion (shared)

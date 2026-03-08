@@ -231,6 +231,61 @@ TEST_F(VniEngineTest, Reset_ClearsState) {
     EXPECT_EQ(engine_->Peek(), L"");
 }
 
+// ============================================================================
+// QUICK CONSONANT + AUTO-RESTORE TESTS
+// ============================================================================
+
+class VniQuickConsonantTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.spellCheckEnabled = true;
+        config_.autoRestoreEnabled = true;
+        config_.quickConsonant = true;
+        engine_ = std::make_unique<VniEngine>(config_);
+    }
+
+    TypingConfig config_;
+    std::unique_ptr<VniEngine> engine_;
+};
+
+TEST_F(VniQuickConsonantTest, GG_Alone_Restores) {
+    TypeString(*engine_, L"gg");
+    EXPECT_EQ(engine_->Commit(), L"gg");
+}
+
+TEST_F(VniQuickConsonantTest, CC_Alone_Restores) {
+    TypeString(*engine_, L"cc");
+    EXPECT_EQ(engine_->Commit(), L"cc");
+}
+
+TEST_F(VniQuickConsonantTest, UU_Alone_Restores) {
+    TypeString(*engine_, L"uu");
+    EXPECT_EQ(engine_->Commit(), L"uu");
+}
+
+TEST_F(VniQuickConsonantTest, GG_WithVowel_Keeps) {
+    TypeString(*engine_, L"gga");
+    EXPECT_EQ(engine_->Commit(), L"gia");
+}
+
+TEST_F(VniQuickConsonantTest, PP_Backspace_Escape) {
+    TypeString(*engine_, L"app");
+    EXPECT_EQ(engine_->Peek(), L"aph");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"ap");
+    engine_->PushChar(L'p');
+    EXPECT_EQ(engine_->Peek(), L"app");
+}
+
+TEST_F(VniQuickConsonantTest, UU_Backspace_Escape) {
+    TypeString(*engine_, L"uu");
+    EXPECT_EQ(engine_->Peek(), L"ươ");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"u");
+    engine_->PushChar(L'u');
+    EXPECT_EQ(engine_->Peek(), L"uu");
+}
+
 }  // namespace
 }  // namespace Vni
 }  // namespace NextKey

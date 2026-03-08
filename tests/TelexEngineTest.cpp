@@ -403,6 +403,31 @@ TEST_F(TelexEngineTest, Word_Cuoiwo_UndoHorn) {
     EXPECT_EQ(engine_->Peek(), L"cuôi");
 }
 
+TEST_F(TelexEngineTest, Word_Kkhuyur_Produces_Khuỷu) {
+    // kk→kh, uyu triphthong, r→hook tone
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"kkuyur");
+    EXPECT_EQ(engine_->Peek(), L"khuỷu");
+}
+
+TEST_F(TelexEngineTest, Word_Ngoeoof_Produces_Ngoèo) {
+    // oeo triphthong: 4th 'o' should NOT apply circumflex to 3rd 'o'
+    // ngoeo + o → ngoeoo (literal), then f → ngoèo
+    TypeString(*engine_, L"ngoeoof");
+    EXPECT_EQ(engine_->Peek(), L"ngoèo");
+}
+
+TEST_F(TelexEngineTest, Triphthong_OEO_ExtraO_Consumed) {
+    // ngoeo + o: triphthong oeo complete, extra 'o' consumed (no-op)
+    TypeString(*engine_, L"ngoeo");
+    EXPECT_EQ(engine_->Peek(), L"ngoeo");
+    EXPECT_EQ(engine_->Count(), 5);
+    engine_->PushChar(L'o');
+    EXPECT_EQ(engine_->Count(), 5);  // No new state added
+    EXPECT_EQ(engine_->Peek(), L"ngoeo");
+}
+
 TEST_F(TelexEngineTest, Word_Quo) {
     TypeString(*engine_, L"quow");
     EXPECT_EQ(engine_->Peek(), L"quơ");
@@ -2042,6 +2067,73 @@ TEST_F(AutoRestoreTest, QuickConsonant_TT_Thuy_Valid) {
     engine_ = std::make_unique<TelexEngine>(config_);
     TypeString(*engine_, L"ttuys");
     EXPECT_EQ(engine_->Commit(), L"thuý");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_GG_Alone_Restores) {
+    // "gg" alone → "gi" composed, but invalid on commit → restore to "gg"
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"gg");
+    EXPECT_EQ(engine_->Commit(), L"gg");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_CC_Alone_Restores) {
+    // "cc" alone → "ch" composed, invalid on commit → restore to "cc"
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"cc");
+    EXPECT_EQ(engine_->Commit(), L"cc");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_UU_Alone_Restores) {
+    // "uu" alone → "ươ" composed, invalid on commit → restore to "uu"
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"uu");
+    EXPECT_EQ(engine_->Commit(), L"uu");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_GG_WithVowel_Keeps) {
+    // "ggia" → "gia" — valid Vietnamese word, keep composed
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"gga");
+    EXPECT_EQ(engine_->Commit(), L"gia");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_PP_Backspace_Escape) {
+    // "app" → "aph", backspace → "ap", then 'p' → "app" (not "aph")
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"app");
+    EXPECT_EQ(engine_->Peek(), L"aph");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"ap");
+    engine_->PushChar(L'p');
+    EXPECT_EQ(engine_->Peek(), L"app");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_GG_Backspace_Escape) {
+    // "agg" → "agi", backspace → "ag", then 'g' → "agg"
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"agg");
+    EXPECT_EQ(engine_->Peek(), L"agi");
+    engine_->Backspace();
+    engine_->PushChar(L'g');
+    EXPECT_EQ(engine_->Peek(), L"agg");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_UU_Backspace_Escape) {
+    // "uu" → "ươ", backspace → "u", then 'u' → "uu"
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"uu");
+    EXPECT_EQ(engine_->Peek(), L"ươ");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"u");
+    engine_->PushChar(L'u');
+    EXPECT_EQ(engine_->Peek(), L"uu");
 }
 
 // ============================================================================
