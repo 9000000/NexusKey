@@ -411,6 +411,14 @@ TEST_F(TelexEngineTest, Word_Kkhuyur_Produces_Khuỷu) {
     EXPECT_EQ(engine_->Peek(), L"khuỷu");
 }
 
+TEST_F(TelexEngineTest, Triphthong_UYU_ExtraU_NotExpandedToUO) {
+    // khuyu + u: triphthong uyu complete, extra 'u' should NOT trigger uu→ươ
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"kkuyuu");
+    EXPECT_EQ(engine_->Peek(), L"khuyuu");
+}
+
 TEST_F(TelexEngineTest, Word_Ngoeoof_Produces_Ngoèo) {
     // oeo triphthong: 4th 'o' should NOT apply circumflex to 3rd 'o'
     // ngoeo + o → ngoeoo (literal), then f → ngoèo
@@ -2093,6 +2101,24 @@ TEST_F(AutoRestoreTest, QuickConsonant_UU_Alone_Restores) {
     EXPECT_EQ(engine_->Commit(), L"uu");
 }
 
+TEST_F(AutoRestoreTest, QuickConsonant_GG_Alone_Restores_NoSpellCheck) {
+    // "gg" alone → "gi" composed, restore even with spell check disabled
+    config_.quickConsonant = true;
+    config_.spellCheckEnabled = false;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"gg");
+    EXPECT_EQ(engine_->Commit(), L"gg");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_UU_Alone_Restores_NoSpellCheck) {
+    // "uu" alone → "ươ" composed, restore even with spell check disabled
+    config_.quickConsonant = true;
+    config_.spellCheckEnabled = false;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"uu");
+    EXPECT_EQ(engine_->Commit(), L"uu");
+}
+
 TEST_F(AutoRestoreTest, QuickConsonant_GG_WithVowel_Keeps) {
     // "ggia" → "gia" — valid Vietnamese word, keep composed
     config_.quickConsonant = true;
@@ -2134,6 +2160,43 @@ TEST_F(AutoRestoreTest, QuickConsonant_UU_Backspace_Escape) {
     EXPECT_EQ(engine_->Peek(), L"u");
     engine_->PushChar(L'u');
     EXPECT_EQ(engine_->Peek(), L"uu");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_UUUU_NoConsecutiveRetrigger) {
+    // "uuuu" → uu→ươ, then uu should NOT re-trigger → "ươuu"
+    config_.quickConsonant = true;
+    config_.spellCheckEnabled = false;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"uuuu");
+    EXPECT_EQ(engine_->Peek(), L"ươuu");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_CCCC_NoConsecutiveRetrigger) {
+    // "cccc" → cc→ch, then cc should NOT re-trigger → "chcc"
+    config_.quickConsonant = true;
+    config_.spellCheckEnabled = false;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"cccc");
+    EXPECT_EQ(engine_->Peek(), L"chcc");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_UU_DifferentChar_ReAllows) {
+    // "uuauuu" → uu→ươ, a (clears suppression), uu→ươ, u → "ươaươu"
+    config_.quickConsonant = true;
+    config_.spellCheckEnabled = false;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"uuauuu");
+    EXPECT_EQ(engine_->Peek(), L"ươaươu");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_CC_DifferentChar_ReAllows) {
+    // "ccaccc" → cc→ch, a (clears suppression), cc→ch, c (suppressed) → "chachc"
+    // Note: after "cha", next "cc" fires as quick consonant again, then last c is suppressed
+    config_.quickConsonant = true;
+    config_.spellCheckEnabled = false;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"ccaccc");
+    EXPECT_EQ(engine_->Peek(), L"chachc");
 }
 
 // ============================================================================

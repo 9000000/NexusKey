@@ -84,6 +84,7 @@ private:
     bool quickConsonantOnly_ = false;    // true when buffer is only quick consonant expansion
     bool quickConsonantEscaped_ = false; // true after backspace undoes quick consonant
     size_t quickConsonantIdx_ = SIZE_MAX; // states_ index of quick consonant result char
+    wchar_t lastQuickConsonantKey_ = 0;  // key that triggered last quick consonant (suppresses consecutive re-trigger)
 };
 
 }  // namespace Vni

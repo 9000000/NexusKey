@@ -106,8 +106,19 @@ void VniEngine::PushChar(wchar_t c) {
     // Skip if backspace just undid a quick consonant (let user type the literal)
     bool quickEscaped = quickConsonantEscaped_;
     quickConsonantEscaped_ = false;
+
+    // Suppress consecutive re-triggering: after cc→ch, skip quick consonant
+    // while the user keeps pressing the same key (e.g., cccc → chcc, not chch)
+    wchar_t lower = towlower(c);
+    if (lastQuickConsonantKey_ != 0) {
+        if (lower == lastQuickConsonantKey_) {
+            quickEscaped = true;  // Reuse escape flag to skip quick consonant
+        } else {
+            lastQuickConsonantKey_ = 0;  // Different key, allow future expansions
+        }
+    }
+
     if (config_.quickConsonant && !states_.empty() && !quickEscaped) {
-        wchar_t lower = towlower(c);
         const CharState& last = states_.back();
         if (!last.IsVowel() && !last.IsD()) {
             wchar_t replacement = 0;
@@ -122,22 +133,31 @@ void VniEngine::PushChar(wchar_t c) {
                 c = iswupper(c) ? towupper(replacement) : replacement;
                 if (states_.size() == 1) quickConsonantOnly_ = true;
                 quickConsonantIdx_ = states_.size();
+                lastQuickConsonantKey_ = lower;  // Suppress re-trigger on consecutive same key
             }
         }
         // uu→ươ: apply horn to existing 'u', then insert 'ơ'
+        // Guard: don't expand if last 3 vowels form a triphthong (e.g., khuyu + u)
         else if (last.IsVowel() && last.base == L'u' && last.mod == Modifier::None && lower == L'u') {
-            bool upper = iswupper(c);
-            states_.back().mod = Modifier::Horn;  // u→ư
-            CharState s;
-            s.base = L'o';
-            s.mod = Modifier::Horn;  // ơ
-            s.isUpper = upper;
-            s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
-            states_.push_back(s);
-            quickConsonantIdx_ = states_.size() - 1;
-            if (states_.size() == 2) quickConsonantOnly_ = true;
-            UpdateSpellState();
-            return;
+            size_t n = states_.size();
+            bool triphthong = n >= 3 && states_[n - 3].IsVowel() && states_[n - 2].IsVowel() &&
+                              IsTriphthong(states_[n - 3].base, states_[n - 2].base, last.base);
+            if (!triphthong) {
+                bool upper = iswupper(c);
+                states_.back().mod = Modifier::Horn;  // u→ư
+                CharState s;
+                s.base = L'o';
+                s.mod = Modifier::Horn;  // ơ
+                s.isUpper = upper;
+                s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
+                states_.push_back(s);
+                quickConsonantIdx_ = states_.size() - 1;
+                if (states_.size() == 2) quickConsonantOnly_ = true;
+                lastQuickConsonantKey_ = lower;  // Suppress re-trigger on consecutive same key
+                UpdateSpellState();
+                return;
+            }
+            // Triphthong — fall through to normal processing
         }
     }
 
@@ -194,6 +214,7 @@ void VniEngine::Backspace() {
         UndoHornU(states_.data(), states_.size() - 1);
     }
     quickConsonantIdx_ = SIZE_MAX;
+    lastQuickConsonantKey_ = 0;
 
     // Trim rawInput_ to the position when this state was created.
     // This correctly handles quick consonants (f→ph) where one raw key
@@ -219,6 +240,15 @@ std::wstring VniEngine::Peek() const {
 std::wstring VniEngine::Commit() {
     std::wstring composed = Peek();
 
+    // Quick consonant alone (gg, uu) — always restore regardless of spell check setting
+    if (quickConsonantOnly_) {
+        std::wstring raw = rawInput_;
+        if (ShouldAutoRestore(raw, composed)) {
+            Reset();
+            return raw;
+        }
+    }
+
     // When tempSpellOff_ is active, user intentionally bypassed spell check —
     // skip auto-restore entirely and return composed text as-is
     if (config_.spellCheckEnabled && config_.autoRestoreEnabled && !tempSpellOff_) {
@@ -231,9 +261,6 @@ std::wstring VniEngine::Commit() {
             auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
             shouldRestore = (result == SpellCheck::Result::ValidPrefix);
         }
-
-        // Quick consonant alone (gg, uu) — always restore even if spell check says Valid
-        if (quickConsonantOnly_) shouldRestore = true;
 
         if (shouldRestore && !HasStrokeD(states_.data(), states_.size())) {
             std::wstring raw = rawInput_;
@@ -256,6 +283,7 @@ void VniEngine::Reset() {
     quickConsonantOnly_ = false;
     quickConsonantEscaped_ = false;
     quickConsonantIdx_ = SIZE_MAX;
+    lastQuickConsonantKey_ = 0;
 }
 
 void VniEngine::ToggleTempSpellOff() {
