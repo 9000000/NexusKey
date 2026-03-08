@@ -2223,6 +2223,14 @@ TEST_F(AutoRestoreTest, StrokeD_ValidWord_StillComposed) {
     EXPECT_EQ(engine_->Commit(), L"đề");
 }
 
+TEST_F(AutoRestoreTest, StrokeD_NonConsecutive_Download_Restores) {
+    // "download" — the final 'd' converts initial 'd' to đ via free marking,
+    // but since the d's are non-consecutive in raw input, auto-restore should
+    // return "download" instead of "đơnloa"
+    TypeString(*engine_, L"download");
+    EXPECT_EQ(engine_->Commit(), L"download");
+}
+
 // ============================================================================
 // TEMP OFF SPELL CHECK TESTS
 // Solo Ctrl tap temporarily disables spell check for current word

@@ -186,7 +186,6 @@ void VniEngine::PushChar(wchar_t c) {
 
     // 2b. Quick end consonant: g→ng, h→nh, k→ch (after vowel)
     if (config_.quickEndConsonant && !states_.empty() && states_.back().IsVowel()) {
-        wchar_t lower = towlower(c);
         wchar_t first = 0, second = 0;
         if (lower == L'g') { first = L'n'; second = L'g'; }
         else if (lower == L'h') { first = L'n'; second = L'h'; }
@@ -262,7 +261,7 @@ std::wstring VniEngine::Commit() {
             shouldRestore = (result == SpellCheck::Result::ValidPrefix);
         }
 
-        if (shouldRestore && !HasStrokeD(states_.data(), states_.size())) {
+        if (shouldRestore && !HasIntentionalStrokeD(rawInput_)) {
             std::wstring raw = rawInput_;
             if (ShouldAutoRestore(raw, composed)) {
                 Reset();

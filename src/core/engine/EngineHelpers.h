@@ -8,6 +8,7 @@
 
 #include "SpellChecker.h"
 #include "core/config/TypingConfig.h"
+#include <cwctype>
 #include <string>
 
 namespace NextKey {
@@ -41,14 +42,16 @@ inline bool ShouldAutoRestore(const std::wstring& raw, const std::wstring& compo
     return raw.length() <= composed.length();
 }
 
-/// Check if any state contains đ (d with modifier).
-/// When user typed dd→đ, they clearly intended the stroke — skip auto-restore
-/// so abbreviations like "đt" are not reverted to "ddt".
-template<typename CharStateT>
-inline bool HasStrokeD(const CharStateT* states, size_t count) noexcept {
-    for (size_t i = 0; i < count; ++i) {
-        if (states[i].IsD() && states[i].HasModifier()) {
-            return true;
+/// Check if the user intentionally typed đ by looking for the stroke pattern in raw input.
+/// Telex: consecutive "dd" (e.g., "ddt"→"đt").  VNI: "d" followed by "9" (e.g., "d9t"→"đt").
+/// This protects abbreviations from auto-restore, while allowing words like "download"
+/// (non-consecutive d's) to be restored correctly.
+template<typename RawT>
+inline bool HasIntentionalStrokeD(const RawT& rawInput) noexcept {
+    for (size_t i = 0; i + 1 < rawInput.size(); ++i) {
+        if (towlower(rawInput[i]) == L'd') {
+            wchar_t next = towlower(rawInput[i + 1]);
+            if (next == L'd' || next == L'9') return true;
         }
     }
     return false;
