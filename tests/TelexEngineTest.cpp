@@ -397,6 +397,12 @@ TEST_F(TelexEngineTest, Word_Huo_WithSecondW) {
     EXPECT_EQ(engine_->Peek(), L"hươ");
 }
 
+TEST_F(TelexEngineTest, Word_Cuoiwo_UndoHorn) {
+    // cươi + o → cuôi: typing 'o' undoes the horn (ươ→uô)
+    TypeString(*engine_, L"cuoiwo");
+    EXPECT_EQ(engine_->Peek(), L"cuôi");
+}
+
 TEST_F(TelexEngineTest, Word_Quo) {
     TypeString(*engine_, L"quow");
     EXPECT_EQ(engine_->Peek(), L"quơ");

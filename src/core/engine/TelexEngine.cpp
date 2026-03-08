@@ -297,6 +297,14 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                         ProcessChar(c);
                         return true;
                     }
+                    if (it->mod == Modifier::Horn && lower == L'o') {
+                        // Undo horn: ươ → uô (e.g., "cươi" + 'o' → "cuôi")
+                        auto oIndex = static_cast<size_t>(states_.rend() - it - 1);
+                        it->mod = Modifier::Circumflex;
+                        UndoAutoUO(oIndex);
+                        RelocateToneToTarget();
+                        return true;
+                    }
                     if (it->mod == Modifier::None) {
                         it->mod = Modifier::Circumflex;
                         RelocateToneToTarget();
@@ -434,13 +442,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
             return true;
         }
         states_[hornedIdx].mod = Modifier::None;
-        // Undo AutoUO: if we cleared horn on 'o' and the preceding char is ư,
-        // that ư was auto-applied — clear it too
-        if (states_[hornedIdx].base == L'o' && hornedIdx > 0 &&
-            states_[hornedIdx - 1].base == L'u' &&
-            states_[hornedIdx - 1].mod == Modifier::Horn) {
-            states_[hornedIdx - 1].mod = Modifier::None;
-        }
+        UndoAutoUO(hornedIdx);
         ProcessChar(c);
         return true;
     }
@@ -570,6 +572,14 @@ void TelexEngine::ApplyAutoUO() {
             if (i > 0 && states_[i - 1].base == L'q') continue;
             states_[i].mod = Modifier::Horn;
         }
+    }
+}
+
+void TelexEngine::UndoAutoUO(size_t oIndex) {
+    if (states_[oIndex].base == L'o' && oIndex > 0 &&
+        states_[oIndex - 1].base == L'u' &&
+        states_[oIndex - 1].mod == Modifier::Horn) {
+        states_[oIndex - 1].mod = Modifier::None;
     }
 }
 

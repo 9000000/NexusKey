@@ -47,7 +47,7 @@ inline bool ShouldAutoRestore(const std::wstring& raw, const std::wstring& compo
 template<typename CharStateT>
 inline bool HasStrokeD(const CharStateT* states, size_t count) noexcept {
     for (size_t i = 0; i < count; ++i) {
-        if (states[i].IsD() && states[i].mod != decltype(states[i].mod){}) {
+        if (states[i].IsD() && states[i].HasModifier()) {
             return true;
         }
     }

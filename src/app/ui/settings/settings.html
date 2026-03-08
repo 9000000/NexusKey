@@ -132,10 +132,10 @@
                 </div>
 
                 <!-- 3. Kêu Beep -->
-                <div class="setting-row">
+                <div class="setting-row"
+                    data-tooltip="Phát âm thanh khi chuyển đổi ngôn ngữ" data-i18n-tooltip="s.beep_tooltip">
                     <span class="setting-label" data-i18n="s.beep">Kêu Beep</span>
-                    <div class="toggle-switch-small" id="beep-sound"
-                        data-tooltip="Phát âm thanh khi chuyển đổi ngôn ngữ" data-i18n-tooltip="s.beep_tooltip">
+                    <div class="toggle-switch-small" id="beep-sound">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
                         <div class="toggle-thumb-small"></div>
@@ -144,10 +144,10 @@
                 </div>
 
                 <!-- 4. Loại trừ ứng dụng thông minh -->
-                <div class="setting-row">
+                <div class="setting-row"
+                    data-tooltip="Tự động ghi nhớ chế độ gõ cho từng ứng dụng" data-i18n-tooltip="s.smart_switch_tooltip">
                     <span class="setting-label" data-i18n="s.smart_switch">Loại trừ ứng dụng thông minh</span>
-                    <div class="toggle-switch-small" id="smart-switch"
-                        data-tooltip="Tự động ghi nhớ chế độ gõ cho từng ứng dụng" data-i18n-tooltip="s.smart_switch_tooltip">
+                    <div class="toggle-switch-small" id="smart-switch">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
                         <div class="toggle-thumb-small"></div>
@@ -156,11 +156,11 @@
                 </div>
 
                 <!-- 4b. Excluded Apps - Toggle + Button on same row -->
-                <div class="setting-row">
+                <div class="setting-row"
+                    data-tooltip="Chỉ gõ tiếng Anh cho các ứng dụng trong danh sách" data-i18n-tooltip="s.exclude_tooltip">
                     <span class="setting-label" data-i18n="s.enable_exclude">Bật loại trừ ứng dụng</span>
                     <button class="btn-action" id="btn-excluded-apps" style="margin-right: 8px;" data-i18n="s.list">Danh sách</button>
-                    <div class="toggle-switch-small" id="exclude-apps"
-                        data-tooltip="Chỉ gõ tiếng Anh cho các ứng dụng trong danh sách" data-i18n-tooltip="s.exclude_tooltip">
+                    <div class="toggle-switch-small" id="exclude-apps">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
                         <div class="toggle-thumb-small"></div>
@@ -249,10 +249,10 @@
                             <input type="hidden" id="val-restore-key" value="0">
                         </div>
                         <!-- 6. Temp disable spell with Ctrl -->
-                        <div class="setting-row group-last">
+                        <div class="setting-row group-last" id="row-temp-off-spell"
+                            data-tooltip="Giữ Ctrl khi gõ để tạm bỏ qua kiểm tra chính tả" data-i18n-tooltip="s.temp_off_spell_tooltip">
                             <span class="setting-label" data-i18n="s.temp_off_spell">Tạm tắt chính tả bằng phím Ctrl</span>
-                            <div class="toggle-switch-small tooltip-top" id="temp-off-spell"
-                                data-tooltip="Giữ Ctrl khi gõ để tạm bỏ qua kiểm tra chính tả" data-i18n-tooltip="s.temp_off_spell_tooltip">
+                            <div class="toggle-switch-small" id="temp-off-spell">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -271,10 +271,10 @@
                             <input type="hidden" id="val-remember-code" value="0">
                         </div>
                         <!-- 9. Temp disable NexusKey with Alt -->
-                        <div class="setting-row">
+                        <div class="setting-row" id="row-temp-off-openkey"
+                            data-tooltip="Nhấn đúp Alt để tạm tắt bộ gõ tiếng Việt (tránh xung đột với menu ứng dụng)" data-i18n-tooltip="s.temp_off_alt_tooltip">
                             <span class="setting-label" data-i18n="s.temp_off_alt">Tạm tắt NexusKey bằng phím Alt</span>
-                            <div class="toggle-switch-small tooltip-top" id="temp-off-openkey"
-                                data-tooltip="Nhấn đúp Alt để tạm tắt bộ gõ tiếng Việt (tránh xung đột với menu ứng dụng)" data-i18n-tooltip="s.temp_off_alt_tooltip">
+                            <div class="toggle-switch-small" id="temp-off-openkey">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -282,11 +282,11 @@
                             <input type="hidden" id="val-temp-off-openkey" value="0">
                         </div>
                         <!-- 10. TSF Apps - Button + Toggle on same row -->
-                        <div class="setting-row">
+                        <div class="setting-row" id="row-tsf-apps"
+                            data-tooltip="Sử dụng TSF engine thay vì hook cho các ứng dụng trong danh sách" data-i18n-tooltip="s.tsf_tooltip">
                             <span class="setting-label" data-i18n="s.enable_tsf">Dùng TSF cho ứng dụng</span>
                             <button class="btn-action" id="btn-tsf-apps" style="margin-right: 8px;" data-i18n="s.list">Danh sách</button>
-                            <div class="toggle-switch-small" id="tsf-apps"
-                                data-tooltip="Sử dụng TSF engine thay vì hook cho các ứng dụng trong danh sách" data-i18n-tooltip="s.tsf_tooltip">
+                            <div class="toggle-switch-small" id="tsf-apps">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -330,10 +330,10 @@
                             <input type="hidden" id="val-auto-caps-macro" value="0">
                         </div>
                         <!-- 4. Quick Telex -->
-                        <div class="setting-row">
-                            <span class="setting-label" data-i18n="s.quick_telex"
-                                data-tooltip="cc=ch, gg=gi, kk=kh, nn=ng, qq=qu, pp=ph, tt=th, uu=ươ"
-                                data-i18n-tooltip="s.quick_telex_tooltip">Gõ nhanh phụ âm kép</span>
+                        <div class="setting-row"
+                            data-tooltip="cc=ch, gg=gi, kk=kh, nn=ng, qq=qu, pp=ph, tt=th, uu=ươ"
+                            data-i18n-tooltip="s.quick_telex_tooltip">
+                            <span class="setting-label" data-i18n="s.quick_telex">Gõ nhanh phụ âm kép</span>
                             <div class="toggle-switch-small" id="quick-telex">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -342,10 +342,10 @@
                             <input type="hidden" id="val-quick-telex" value="0">
                         </div>
                         <!-- 5. Quick start consonant -->
-                        <div class="setting-row">
-                            <span class="setting-label" data-i18n="s.quick_start"
-                                data-tooltip="f→ph, j→gi, w→qu"
-                                data-i18n-tooltip="s.quick_start_tooltip">Gõ tắt phụ âm đầu</span>
+                        <div class="setting-row"
+                            data-tooltip="f→ph, j→gi, w→qu"
+                            data-i18n-tooltip="s.quick_start_tooltip">
+                            <span class="setting-label" data-i18n="s.quick_start">Gõ tắt phụ âm đầu</span>
                             <div class="toggle-switch-small" id="quick-start">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -354,10 +354,10 @@
                             <input type="hidden" id="val-quick-start" value="0">
                         </div>
                         <!-- 6. Quick end consonant -->
-                        <div class="setting-row">
-                            <span class="setting-label" data-i18n="s.quick_end"
-                                data-tooltip="g→ng, h→nh, k→ch"
-                                data-i18n-tooltip="s.quick_end_tooltip">Gõ tắt phụ âm cuối</span>
+                        <div class="setting-row"
+                            data-tooltip="g→ng, h→nh, k→ch"
+                            data-i18n-tooltip="s.quick_end_tooltip">
+                            <span class="setting-label" data-i18n="s.quick_end">Gõ tắt phụ âm cuối</span>
                             <div class="toggle-switch-small" id="quick-end">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
@@ -366,10 +366,10 @@
                             <input type="hidden" id="val-quick-end" value="0">
                         </div>
                         <!-- 7. Temporarily skip macro with ESC -->
-                        <div class="setting-row group-last">
+                        <div class="setting-row group-last" id="row-temp-off-macro"
+                            data-tooltip="Nhấn Esc trước khi gõ để bỏ qua gõ tắt cho từ tiếp theo" data-i18n-tooltip="s.temp_off_macro_tooltip">
                             <span class="setting-label" data-i18n="s.temp_off_macro">Tạm bỏ qua gõ tắt bằng phím Esc</span>
-                            <div class="toggle-switch-small tooltip-top" id="temp-off-macro"
-                                data-tooltip="Nhấn Esc trước khi gõ để bỏ qua gõ tắt cho từ tiếp theo" data-i18n-tooltip="s.temp_off_macro_tooltip">
+                            <div class="toggle-switch-small" id="temp-off-macro">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -429,10 +429,10 @@
                         </div>
                         <!-- GIAO DIỆN -->
                         <!-- 5. Giao diện tiếng Anh -->
-                        <div class="setting-row">
+                        <div class="setting-row"
+                            data-tooltip="Chuyển giao diện, menu, thông báo sang tiếng Anh" data-i18n-tooltip="s.english_ui_tooltip">
                             <span class="setting-label" data-i18n="s.english_ui">Giao diện tiếng Anh</span>
-                            <div class="toggle-switch-small" id="english-ui"
-                                data-tooltip="Chuyển giao diện, menu, thông báo sang tiếng Anh" data-i18n-tooltip="s.english_ui_tooltip">
+                            <div class="toggle-switch-small" id="english-ui">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -492,12 +492,12 @@
                     </div>
                     <!-- Update Section - Separate Card -->
                     <div class="update-card">
-                        <div class="setting-row">
+                        <div class="setting-row" id="row-check-update"
+                            data-tooltip="Kiểm tra phiên bản mới khi khởi động" data-i18n-tooltip="s.update_tooltip">
                             <span class="setting-label" data-i18n="s.auto_update">Tự động kiểm tra cập nhật</span>
                             <button class="btn-action" id="btn-check-update"><span class="btn-text" data-i18n="s.check_now">Kiểm tra
                                     ngay</span></button>
-                            <div class="toggle-switch-small" id="check-update"
-                                data-tooltip="Kiểm tra phiên bản mới khi khởi động" data-i18n-tooltip="s.update_tooltip">
+                            <div class="toggle-switch-small" id="check-update">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="update-thumb-white" id="update-toggle-thumb"></div>

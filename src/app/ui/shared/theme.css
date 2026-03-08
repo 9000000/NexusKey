@@ -272,10 +272,14 @@ body.dark select option:checked {
    TOOLTIP-TOP: For elements near bottom of panel
    Using ID selectors for Sciter compatibility
    ============================================ */
-#temp-off-spell:hover::after,
-#temp-off-openkey:hover::after,
-#use-clipboard:hover::after {
-    top: -40px;
+#row-temp-off-spell:hover::after,
+#row-temp-off-openkey:hover::after,
+#use-clipboard:hover::after,
+#row-tsf-apps:hover::after,
+#row-check-update:hover::after,
+#row-temp-off-macro:hover::after {
+    top: auto;
+    bottom: calc(100% + 6px);
 }
 
 @keyframes tooltipFadeIn {

@@ -50,6 +50,7 @@ struct CharState {
         return base == L'a' || base == L'e' || base == L'o' || base == L'u';
     }
     [[nodiscard]] constexpr bool IsD() const noexcept { return base == L'd'; }
+    [[nodiscard]] constexpr bool HasModifier() const noexcept { return mod != Modifier::None; }
     [[nodiscard]] constexpr bool IsEmpty() const noexcept { return base == 0; }
 };
 
@@ -105,6 +106,9 @@ private:
 
     // Auto ươ: convert 'uơ' to 'ươ' when followed by another character
     void ApplyAutoUO();
+
+    // Undo AutoUO: if 'ơ' at given index has a preceding 'ư', clear the ư's horn
+    void UndoAutoUO(size_t oIndex);
 
     // Move tone to horn vowel when horn modifier is added
     // Example: "cuả" + w → "cửa" (tone moves from a to ư)
