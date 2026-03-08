@@ -111,22 +111,7 @@ SettingsDialog::SettingsDialog()
         SendMessageW(get_hwnd(), WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(appIcon));
     }
 
-    // 5. Auto-fit window to content size (like OpenKey)
-    // Sciter renders at native DPI, DOM measurements are already in screen pixels
-    sciter::dom::element rootEl = get_root();
-    sciter::dom::element container = rootEl.find_first(".container");
-    if (container.is_valid()) {
-        RECT contentRect = container.get_location(CONTENT_BOX);
-        double dpiScale = ScaleHelper::getDpiScale();
-
-        // Scale minimum constraints, not DOM measurements
-        int contentWidth = (std::max)(contentRect.right - contentRect.left, static_cast<LONG>(BASE_WIDTH_COLLAPSED * dpiScale));
-        int contentHeight = (std::max)(contentRect.bottom - contentRect.top, static_cast<LONG>(200 * dpiScale));
-
-        SetWindowPos(get_hwnd(), NULL, 0, 0, contentWidth, contentHeight, SWP_NOMOVE | SWP_NOZORDER);
-    }
-
-    // 6. Center window on screen
+    // 5. Center window on screen (window auto-sizes via CSS max-content)
     RECT rc;
     GetWindowRect(get_hwnd(), &rc);
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);

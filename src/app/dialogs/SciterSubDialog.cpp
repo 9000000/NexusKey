@@ -77,10 +77,8 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
     sciter::dom::element rootEl = get_root();
     sciter::dom::element container = rootEl.find_first(".container");
     if (container.is_valid()) {
-        double dpiScale = ScaleHelper::getDpiScale();
-        int width = static_cast<int>(config_.baseWidth * dpiScale);
-        int height = static_cast<int>(config_.baseHeight * dpiScale);
-        SetWindowPos(get_hwnd(), NULL, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER);
+        // Window auto-sizes based on CSS width/height: max-content
+        // and transparent OS window mode natively handles sizing
     }
 
     // Center on parent or screen
