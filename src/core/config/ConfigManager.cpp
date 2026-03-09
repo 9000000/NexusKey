@@ -531,6 +531,7 @@ std::optional<ConvertConfig> ConfigManager::LoadConvertConfig(const std::wstring
             config.alertDone = (*convert)["alert_done"].value_or(false);
             config.autoPaste = (*convert)["auto_paste"].value_or(false);
             config.sequential = (*convert)["sequential"].value_or(false);
+            config.enableLog = (*convert)["enable_log"].value_or(false);
             config.sourceEncoding = static_cast<uint8_t>(
                 (*convert)["source_encoding"].value_or(0));
             config.destEncoding = static_cast<uint8_t>(
@@ -571,6 +572,7 @@ bool ConfigManager::SaveConvertConfig(const std::wstring& path, const ConvertCon
         convert.insert_or_assign("alert_done", config.alertDone);
         convert.insert_or_assign("auto_paste", config.autoPaste);
         convert.insert_or_assign("sequential", config.sequential);
+        convert.insert_or_assign("enable_log", config.enableLog);
         convert.insert_or_assign("source_encoding", static_cast<int64_t>(config.sourceEncoding));
         convert.insert_or_assign("dest_encoding", static_cast<int64_t>(config.destEncoding));
 

@@ -36,6 +36,7 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
         setToggleUI("#toggle-alert", "#val-toggle-alert", config_.alertDone);
         setToggleUI("#toggle-auto-paste", "#val-toggle-auto-paste", config_.autoPaste);
         setToggleUI("#toggle-sequential", "#val-toggle-sequential", config_.sequential);
+        setToggleUI("#toggle-enable-log", "#val-toggle-enable-log", config_.enableLog);
 
         // Set encoding dropdowns
         setDropdownUI("#source-encoding", config_.sourceEncoding);
@@ -98,6 +99,7 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
         else if (id == L"val-toggle-alert") { config_.alertDone = getToggleValue("#val-toggle-alert"); needSave = true; }
         else if (id == L"val-toggle-auto-paste") { config_.autoPaste = getToggleValue("#val-toggle-auto-paste"); needSave = true; }
         else if (id == L"val-toggle-sequential") { config_.sequential = getToggleValue("#val-toggle-sequential"); needSave = true; }
+        else if (id == L"val-toggle-enable-log") { config_.enableLog = getToggleValue("#val-toggle-enable-log"); needSave = true; }
         // Encoding dropdowns
         else if (id == L"source-encoding") { config_.sourceEncoding = static_cast<uint8_t>(getDropdownValue("#source-encoding")); needSave = true; }
         else if (id == L"dest-encoding") { config_.destEncoding = static_cast<uint8_t>(getDropdownValue("#dest-encoding")); needSave = true; }

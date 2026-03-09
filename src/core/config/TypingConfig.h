@@ -71,6 +71,7 @@ struct ConvertConfig {
     bool alertDone = false;       // Thông báo khi chuyển xong
     bool autoPaste = false;       // Tự động dán + bôi đen
     bool sequential = false;      // Convert tuần tự
+    bool enableLog = false;       // Bật/tắt log debug
 
     // Encoding conversion
     uint8_t sourceEncoding = 0;   // CodeTable enum value

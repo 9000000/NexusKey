@@ -6,9 +6,16 @@
 #include "core/config/TypingConfig.h"
 #include <string>
 #include <vector>
+#include <atomic>
 #include <Windows.h>
 
 namespace NextKey {
+
+struct SelectionAnchor {
+    DWORD start = 0;
+    DWORD end = 0;
+    bool valid = false;
+};
 
 /// Quick-convert engine: copy → convert → paste → re-select → toast.
 /// Runs headless in the main process, triggered by HookEngine hotkey callback.
@@ -30,10 +37,16 @@ private:
     static void SimulatePaste();
 
     // Wait for modifier keys to be released (prevent interference)
-    static void WaitForModifiersRelease();
+    bool WaitForModifiersRelease(int maxWaitMs = 500);
 
-    // Re-select pasted text (Shift+Left × N)
-    static void ReselectText(size_t charCount);
+    // Wait for clipboard to have Unicode text
+    bool WaitForClipboardUnicode(int maxWaitMs, int checkIntervalMs = 10);
+
+    // Get exact cursor/selection position (EM_GETSEL for Edit/RichEdit)
+    SelectionAnchor GetSelectionAnchor(HWND hwnd);
+
+    // Re-select pasted text (EM_SETSEL or Shift+Left fallback)
+    bool TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLength, int originalSelLength);
 
     // Apply a single conversion option to text
     [[nodiscard]] std::wstring ApplyConversion(const std::wstring& input, int optionIndex) const;
@@ -47,18 +60,21 @@ private:
     // Sequential state
     struct SequentialState {
         std::wstring originText;       // Original text before any conversion
+        SelectionAnchor anchor;        // Starting anchor of the selection
         HWND window = nullptr;         // Window where selection was made
         int currentIndex = 0;          // Current position in enabled options cycle
         DWORD lastConvertTime = 0;     // For timeout-based reset
         size_t contentHash = 0;        // Hash of converted text for change detection
     };
     static constexpr DWORD SEQUENTIAL_TIMEOUT_MS = 5000;
+    static constexpr int RESELECT_CUTOFF = 5000;
 
-    [[nodiscard]] bool IsNewSelection(const std::wstring& clipText) const;
+    [[nodiscard]] bool IsNewSelection(const std::wstring& clipText, HWND targetHwnd, const SelectionAnchor& anchor) const;
     void ResetSequentialState();
 
     ConvertConfig config_;
     SequentialState seqState_;
+    std::atomic<bool> isRunning_{false};
 };
 
 }  // namespace NextKey

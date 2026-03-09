@@ -5,7 +5,46 @@
 #include "ToastPopup.h"
 #include "HookEngine.h"
 #include "core/engine/CodeTableConverter.h"
+#include "core/Debug.h"
 #include <functional>
+#include <thread>
+
+#include <cstdio>
+#include <cstdarg>
+
+void QuickConvertLogToFile(const wchar_t* format, ...) {
+    wchar_t exePath[MAX_PATH];
+    if (GetModuleFileNameW(nullptr, exePath, MAX_PATH) > 0) {
+        std::wstring logPath(exePath);
+        size_t lastSlash = logPath.find_last_of(L"\\/");
+        if (lastSlash != std::wstring::npos) {
+            logPath = logPath.substr(0, lastSlash + 1) + L"nexuskey_quick_convert.log";
+            
+            FILE* file = nullptr;
+            if (_wfopen_s(&file, logPath.c_str(), L"a, ccs=UTF-8") == 0 && file) {
+            SYSTEMTIME st;
+            GetLocalTime(&st);
+            fwprintf(file, L"[%04d-%02d-%02d %02d:%02d:%02d.%03d] QC: ", 
+                     st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+            
+            va_list args;
+            va_start(args, format);
+            vfwprintf(file, format, args);
+            va_end(args);
+            
+            fwprintf(file, L"\n");
+            fclose(file);
+        }
+    }
+    }
+}
+
+#define QC_LOG(fmt, ...) \
+    do { \
+        if (config_.enableLog) { \
+            QuickConvertLogToFile(fmt, ##__VA_ARGS__); \
+        } \
+    } while(0)
 
 namespace NextKey {
 
@@ -33,18 +72,61 @@ void QuickConvert::UpdateConfig(const ConvertConfig& config) {
 // ═══════════════════════════════════════════════════════════
 
 void QuickConvert::Execute() {
-    // 1. Wait for modifier keys to be released
-    WaitForModifiersRelease();
+    QC_LOG(L"--- User pressed hotkey ---");
 
-    // 2. Save current clipboard content
-    std::wstring savedClipboard = ReadClipboard();
+    // Prevent clipboard corruption if the user somehow triggers multiple overlapping events
+    bool expected = false;
+    if (!isRunning_.compare_exchange_strong(expected, true)) {
+        QC_LOG(L"QuickConvert already running, ignoring overlapped execution");
+        return;
+    }
 
-    // 3. Simulate Ctrl+C to copy selection
+    // Run in a separate detached thread to avoid blocking the global Windows keyboard hook
+    std::thread([this]() {
+        struct AutoReset {
+            std::atomic<bool>& flag;
+            ~AutoReset() { flag = false; }
+        } resetter{isRunning_};
+
+        QC_LOG(L"=== QuickConvert::Execute started ===");
+
+        // 1a. Capture state IMMEDIATELY before waiting for modifiers 
+        // We must fetch the anchor while the target window still firmly holds the selection
+        HWND currentWindow = GetForegroundWindow();
+        SelectionAnchor anchor = GetSelectionAnchor(currentWindow);
+        QC_LOG(L"Anchor valid: %d, start: %u, end: %u", anchor.valid, anchor.start, anchor.end);
+
+        // 1b. Wait for modifier keys to be released
+        // This safely pauses the background thread without freezing OS input.
+        // We wait up to 500ms (matching OpenKey) for the user to lift their fingers.
+        if (!WaitForModifiersRelease(500)) {
+            QC_LOG(L"Modifiers not fully released, proceeding anyway to maintain speed.");
+        }
+
+        // 2. Save current clipboard content
+        std::wstring savedClipboard = ReadClipboard();
+
+    // 3. Clear clipboard before copy to reliably wait for new data
+    if (OpenClipboard(nullptr)) {
+        EmptyClipboard();
+        CloseClipboard();
+    }
+
+    // 4. Simulate Ctrl+C to copy selection
     SimulateCopy();
-    Sleep(100);  // Wait for clipboard to update
+    
+    if (!WaitForClipboardUnicode(500)) {
+        QC_LOG(L"Clipboard wait timeout, no text copied.");
+        if (!savedClipboard.empty()) {
+            WriteClipboard(savedClipboard);
+        }
+        return;
+    }
 
-    // 4. Read clipboard text (the selection)
+    // 5. Read clipboard text (the selection)
     std::wstring clipText = ReadClipboard();
+    QC_LOG(L"Copied text length: %zu", clipText.size());
+
     if (clipText.empty()) {
         // Nothing selected — restore clipboard and bail
         if (!savedClipboard.empty()) {
@@ -53,9 +135,10 @@ void QuickConvert::Execute() {
         return;
     }
 
-    // 5. Determine enabled options
+    // 6. Determine enabled options
     auto enabledOptions = GetEnabledOptions();
     if (enabledOptions.empty()) {
+        QC_LOG(L"No conversions enabled");
         // No conversions enabled — restore and bail
         WriteClipboard(savedClipboard);
         return;
@@ -66,17 +149,19 @@ void QuickConvert::Execute() {
 
     if (config_.sequential && config_.autoPaste) {
         // Sequential mode: cycle through enabled options on repeated presses
-        HWND currentWindow = GetForegroundWindow();
         DWORD now = GetTickCount();
 
-        if (IsNewSelection(clipText)) {
+        if (IsNewSelection(clipText, currentWindow, anchor)) {
             // New selection: start fresh cycle
+            QC_LOG(L"Starting new sequential cycle");
             seqState_.originText = clipText;
+            seqState_.anchor = anchor;
             seqState_.window = currentWindow;
             seqState_.currentIndex = 0;
             seqState_.contentHash = std::hash<std::wstring>{}(clipText);
         } else {
             // Same selection: advance to next option
+            QC_LOG(L"Continuing sequential cycle");
             seqState_.currentIndex++;
             if (seqState_.currentIndex >= static_cast<int>(enabledOptions.size())) {
                 // Wrap back to original text
@@ -90,10 +175,12 @@ void QuickConvert::Execute() {
             // Show original text
             result = seqState_.originText;
             toastMsg = L"\x2192 G\x1ED1" L"c";  // → Gốc
+            QC_LOG(L"Restoring original text");
         } else {
             int optIdx = enabledOptions[seqState_.currentIndex];
             result = ApplyConversion(seqState_.originText, optIdx);
             toastMsg = GetOptionName(optIdx);
+            QC_LOG(L"Applied conversion option %d", optIdx);
         }
 
         // Update hash for next comparison
@@ -135,32 +222,43 @@ void QuickConvert::Execute() {
         }
     }
 
-    // 6. Check if anything changed
+    // 7. Check if anything changed
     if (result == clipText) {
+        QC_LOG(L"Result same as clip text, no action needed");
         // No change — restore original clipboard
         WriteClipboard(savedClipboard);
         return;
     }
 
     if (config_.autoPaste) {
-        // 7a. Write converted text to clipboard and paste it
+        QC_LOG(L"Pasting converted text (length: %zu)", result.size());
+        // 8a. Write converted text to clipboard and paste it
         WriteClipboard(result);
-        SimulatePaste();
-        Sleep(50);  // Wait for paste to complete
 
-        // 8. Re-select pasted text
-        ReselectText(result.size());
+        SimulatePaste();
+        
+        // Wait for paste operation to finish (some apps take a bit longer)
+        Sleep(50);
+
+        // 9. Re-select pasted text
+        QC_LOG(L"Reselecting pasted text");
+        TryReselect(currentWindow, anchor, static_cast<int>(result.size()), static_cast<int>(clipText.size()));
 
         // Don't restore clipboard — user expects converted text to stay
     } else {
-        // 7b. Just write to clipboard (no paste)
+        QC_LOG(L"Writing to clipboard only");
+        // 8b. Just write to clipboard (no paste)
         WriteClipboard(result);
     }
 
-    // 9. Toast notification — show which conversion was applied
+    // 10. Toast notification — show which conversion was applied
     if (config_.alertDone && toastMsg) {
-        ToastPopup::Show(toastMsg, 800);
+        std::wstring msg(toastMsg);
+        std::thread([msg]() {
+            ToastPopup::Show(msg, 800);
+        }).detach();
     }
+    }).detach();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -218,6 +316,10 @@ void QuickConvert::SimulateCopy() {
     inputs[0].type = INPUT_KEYBOARD;
     inputs[0].ki.wVk = VK_CONTROL;
     inputs[0].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    SendInput(1, &inputs[0], sizeof(INPUT));
+    
+    // CRITICAL: Prevent "c" being typed instead of copied by giving OS time to register Ctrl state
+    Sleep(20);
 
     // C down
     inputs[1].type = INPUT_KEYBOARD;
@@ -229,14 +331,16 @@ void QuickConvert::SimulateCopy() {
     inputs[2].ki.wVk = 'C';
     inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
     inputs[2].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    SendInput(2, &inputs[1], sizeof(INPUT));
+
+    Sleep(10);
 
     // Ctrl up
     inputs[3].type = INPUT_KEYBOARD;
     inputs[3].ki.wVk = VK_CONTROL;
     inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
     inputs[3].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
-
-    SendInput(4, inputs, sizeof(INPUT));
+    SendInput(1, &inputs[3], sizeof(INPUT));
 }
 
 void QuickConvert::SimulatePaste() {
@@ -246,6 +350,10 @@ void QuickConvert::SimulatePaste() {
     inputs[0].type = INPUT_KEYBOARD;
     inputs[0].ki.wVk = VK_CONTROL;
     inputs[0].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    SendInput(1, &inputs[0], sizeof(INPUT));
+
+    // CRITICAL: Prevent "v" being typed instead of pasted
+    Sleep(20);
 
     // V down
     inputs[1].type = INPUT_KEYBOARD;
@@ -257,33 +365,138 @@ void QuickConvert::SimulatePaste() {
     inputs[2].ki.wVk = 'V';
     inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
     inputs[2].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    SendInput(2, &inputs[1], sizeof(INPUT));
+
+    Sleep(10);
 
     // Ctrl up
     inputs[3].type = INPUT_KEYBOARD;
     inputs[3].ki.wVk = VK_CONTROL;
     inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
     inputs[3].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
-
-    SendInput(4, inputs, sizeof(INPUT));
+    SendInput(1, &inputs[3], sizeof(INPUT));
 }
 
-void QuickConvert::WaitForModifiersRelease() {
-    // Spin until all modifier keys are released (max ~500ms)
-    for (int i = 0; i < 100; ++i) {
+bool QuickConvert::WaitForModifiersRelease(int maxWaitMs) {
+    // Spin until all modifier keys are released
+    int elapsedMs = 0;
+    while (elapsedMs < maxWaitMs) {
         bool anyDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
                        (GetAsyncKeyState(VK_SHIFT) & 0x8000) ||
                        (GetAsyncKeyState(VK_MENU) & 0x8000) ||
                        (GetAsyncKeyState(VK_LWIN) & 0x8000) ||
                        (GetAsyncKeyState(VK_RWIN) & 0x8000);
-        if (!anyDown) break;
+        if (!anyDown) return true;
         Sleep(5);
+        elapsedMs += 5;
     }
+    return false;
 }
 
-void QuickConvert::ReselectText(size_t charCount) {
-    if (charCount == 0) return;
+bool QuickConvert::WaitForClipboardUnicode(int maxWaitMs, int checkIntervalMs) {
+    if (maxWaitMs <= 0) return false;
+    
+    int elapsedMs = 0;
+    while (elapsedMs < maxWaitMs) {
+        if (IsClipboardFormatAvailable(CF_UNICODETEXT)) {
+            return true;
+        }
+        Sleep(checkIntervalMs);
+        elapsedMs += checkIntervalMs;
+    }
+    return false;
+}
 
-    // Send Shift+Left × charCount to re-select the pasted text
+static HWND getFocusedControl(HWND foregroundWnd) {
+    DWORD foregroundThread = GetWindowThreadProcessId(foregroundWnd, nullptr);
+    DWORD currentThread = GetCurrentThreadId();
+    HWND focusWnd = nullptr;
+    
+    if (foregroundThread != currentThread) {
+        AttachThreadInput(currentThread, foregroundThread, TRUE);
+        focusWnd = GetFocus();
+        AttachThreadInput(currentThread, foregroundThread, FALSE);
+    } else {
+        focusWnd = GetFocus();
+    }
+    
+    return focusWnd ? focusWnd : foregroundWnd;
+}
+
+SelectionAnchor QuickConvert::GetSelectionAnchor(HWND hwnd) {
+    SelectionAnchor anchor;
+    if (!hwnd) return anchor;
+
+    HWND targetCtrl = getFocusedControl(hwnd);
+    if (!targetCtrl) return anchor;
+
+    DWORD start = 0, end = 0;
+    DWORD_PTR dummy = 0;
+    // CRITICAL: Use SendMessageTimeoutW to prevent 3-second hangs if targetCtrl is unresponsive
+    LRESULT lResult = SendMessageTimeoutW(targetCtrl, EM_GETSEL, reinterpret_cast<WPARAM>(&start), reinterpret_cast<LPARAM>(&end), SMTO_ABORTIFHUNG | SMTO_NORMAL, 50, &dummy);
+    
+    // If end > start, the control successfully returned a selection range
+    if (lResult != 0 && end > start) {
+        anchor.start = start;
+        anchor.end = end;
+        anchor.valid = true;
+    }
+    return anchor;
+}
+
+bool QuickConvert::TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLength, int originalSelLength) {
+    if (pastedLength <= 0) return true;
+
+    // Check if should skip EM_SETSEL (RichEdit controls can behave badly with raw EM_SETSEL if active, but we'll try)
+    bool skipEmSetsel = false;
+    HWND targetCtrl = getFocusedControl(hwnd);
+    if (targetCtrl) {
+        wchar_t className[64] = {0};
+        GetClassNameW(targetCtrl, className, 64);
+        skipEmSetsel = (wcsstr(className, L"RichEdit") != nullptr ||
+                        wcsstr(className, L"RICHEDIT") != nullptr ||
+                        wcsstr(className, L"_WwG") != nullptr);
+    }
+
+    if (anchor.valid && targetCtrl && !skipEmSetsel) {
+        // Poll: wait for selection to collapse (paste committed)
+        // Max 160ms (8 × 20ms)
+        for (int i = 0; i < 8; i++) {
+            Sleep(20);
+            
+            DWORD s = 0, e = 0;
+            DWORD_PTR dummy = 0;
+            SendMessageTimeoutW(targetCtrl, EM_GETSEL, reinterpret_cast<WPARAM>(&s), reinterpret_cast<LPARAM>(&e), SMTO_ABORTIFHUNG | SMTO_NORMAL, 50, &dummy);
+            
+            if (s == e) {  // Selection collapsed → paste done!
+                // Use actual caret position (e) which accounts for Unicode normalization
+                if (e >= anchor.start) {
+                    SendMessageTimeoutW(targetCtrl, EM_SETSEL, anchor.start, e, SMTO_ABORTIFHUNG | SMTO_NORMAL, 50, &dummy);
+                    QC_LOG(L"Reselected using EM_SETSEL dynamic caret (%u to %u)", anchor.start, e);
+                    return true;
+                }
+                // Fallback using calculated length
+                DWORD fallbackEnd = anchor.start + pastedLength;
+                SendMessageTimeoutW(targetCtrl, EM_SETSEL, anchor.start, fallbackEnd, SMTO_ABORTIFHUNG | SMTO_NORMAL, 50, &dummy);
+                QC_LOG(L"Reselected using EM_SETSEL fallback length (%u to %u)", anchor.start, fallbackEnd);
+                return true;
+            }
+        }
+        
+        QC_LOG(L"Tier 1 (EM_SETSEL) failed - paste did not settle in time");
+        // If EM_SETSEL was supposed to work but timed out, do NOT fall through to Shift+Left
+        // because the app might still be processing the paste and keystrokes would corrupt it.
+        return false;
+    }
+
+    // TIER 2: Generic apps using Keystrokes (Shift + Left × N)
+    int keystrokeLength = (originalSelLength > 0) ? originalSelLength : pastedLength;
+    QC_LOG(L"Reselecting using Shift+Left fallback (length: %d)", keystrokeLength);
+    
+    // Safety limit to prevent locking up the OS
+    if (keystrokeLength > 5000) keystrokeLength = 5000;
+    
+    size_t charCount = static_cast<size_t>(keystrokeLength);
     // Batch into groups to avoid SendInput limits
     constexpr size_t BATCH = 32;
 
@@ -318,7 +531,13 @@ void QuickConvert::ReselectText(size_t charCount) {
 
         SendInput(static_cast<UINT>(inputCount), inputs.data(), sizeof(INPUT));
         sent += batchSize;
+        
+        if (sent < charCount) {
+            Sleep(5);
+        }
     }
+
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -389,22 +608,39 @@ std::vector<int> QuickConvert::GetEnabledOptions() const {
 // Sequential state management
 // ═══════════════════════════════════════════════════════════
 
-bool QuickConvert::IsNewSelection(const std::wstring& clipText) const {
-    HWND currentWindow = GetForegroundWindow();
+bool QuickConvert::IsNewSelection(const std::wstring& clipText, HWND targetHwnd, const SelectionAnchor& anchor) const {
     DWORD now = GetTickCount();
 
-    // New if: different window, timed out, or content doesn't match expected
-    if (currentWindow != seqState_.window) return true;
-    if ((now - seqState_.lastConvertTime) > SEQUENTIAL_TIMEOUT_MS) return true;
-    if (seqState_.originText.empty()) return true;
+    if ((now - seqState_.lastConvertTime) > SEQUENTIAL_TIMEOUT_MS) {
+        QC_LOG(L"IsNewSelection: Timeout");
+        return true;
+    }
 
-    // Check if clipText matches what we last wrote (continuing cycle)
-    // or matches the original (user re-selected)
+    if (targetHwnd != seqState_.window) {
+        QC_LOG(L"IsNewSelection: Different window");
+        return true;
+    }
+    
+    if (anchor.valid && seqState_.anchor.valid) {
+        if (anchor.start != seqState_.anchor.start) {
+            QC_LOG(L"IsNewSelection: Different selection anchor");
+            return true;
+        }
+    }
+
+    if (clipText == seqState_.originText) {
+        QC_LOG(L"IsNewSelection: Matched origin text");
+        return false;
+    }
+    
     size_t clipHash = std::hash<std::wstring>{}(clipText);
-    if (clipHash == seqState_.contentHash) return false;  // Matches our last output
-    if (clipText == seqState_.originText) return false;    // Matches original
+    if (clipHash == seqState_.contentHash) {
+        QC_LOG(L"IsNewSelection: Matched last output");
+        return false;
+    }
 
-    return true;  // Different text = new selection
+    QC_LOG(L"IsNewSelection: Content changed");
+    return true;
 }
 
 void QuickConvert::ResetSequentialState() {

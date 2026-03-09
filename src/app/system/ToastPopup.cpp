@@ -96,6 +96,15 @@ void ToastPopup::Show(const std::wstring& message, DWORD durationMs) {
     UpdateWindow(hwnd);
 
     SetTimer(hwnd, TIMER_DISMISS, durationMs, nullptr);
+    
+    // Since this might be called from a short-lived worker thread (like QuickConvert),
+    // we must pump messages until the window is destroyed (timer fires).
+    MSG msg;
+    while (GetMessageW(&msg, nullptr, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+        if (!IsWindow(hwnd)) break;
+    }
 }
 
 static void PaintToast(HWND hwnd, HDC hdc, bool dark) {
@@ -222,6 +231,7 @@ LRESULT CALLBACK ToastPopup::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
             delete msgStr;
             RemovePropW(hwnd, L"msg");
             RemovePropW(hwnd, L"dark");
+            PostQuitMessage(0); // Break the message loop in Show()
             return 0;
         }
 
