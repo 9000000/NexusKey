@@ -267,6 +267,16 @@ std::wstring VniEngine::Peek() const {
 std::wstring VniEngine::Commit() {
     std::wstring composed = Peek();
 
+    // Single quick-start consonant alone (f->ph, j->gi, w->qu) — always restore
+    // This allows "j " -> "j " instead of "gi ", since "gi" is a valid word and wouldn't auto-restore naturally.
+    if (quickStartKey_ != 0 && rawInput_.size() == 1) {
+        std::wstring raw = rawInput_;
+        if (ShouldAutoRestore(raw, composed)) {
+            Reset();
+            return raw;
+        }
+    }
+
     // Quick consonant alone (gg, uu) — always restore regardless of spell check setting
     if (quickConsonantOnly_) {
         std::wstring raw = rawInput_;

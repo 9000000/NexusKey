@@ -864,6 +864,16 @@ std::wstring TelexEngine::Peek() const {
 std::wstring TelexEngine::Commit() {
     std::wstring composed = ComposeAll();
 
+    // Single quick-start consonant alone (f->ph, j->gi, w->qu) — always restore
+    // This allows "j " -> "j " instead of "gi ", since "gi" is a valid word and wouldn't auto-restore naturally.
+    if (quickStartKey_ != 0 && rawInput_.size() == 1) {
+        std::wstring raw(rawInput_.begin(), rawInput_.end());
+        if (ShouldAutoRestore(raw, composed)) {
+            Reset();
+            return raw;
+        }
+    }
+
     // Quick consonant alone (gg, uu) — always restore regardless of spell check setting
     if (quickConsonantOnly_) {
         std::wstring raw(rawInput_.begin(), rawInput_.end());
