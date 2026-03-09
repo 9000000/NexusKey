@@ -80,13 +80,14 @@ private:
     static void CALLBACK WinEventProc(HWINEVENTHOOK hHook, DWORD event, HWND hwnd,
                                        LONG idObject, LONG idChild,
                                        DWORD dwEventThread, DWORD dwmsEventTime);
+    static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
 
     // Core processing
     bool ProcessKeyDown(DWORD vkCode, DWORD scanCode, DWORD flags);
     bool ProcessKeyUp(DWORD vkCode, DWORD flags);
 
     // Input engine interaction
-    void HandleAlphaKey(DWORD vkCode);
+    bool HandleAlphaKey(DWORD vkCode);  // Returns true if keystroke should be eaten
     void HandleBackspace();
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
@@ -172,6 +173,7 @@ private:
 
     // Hooks
     HHOOK keyboardHook_ = nullptr;
+    HHOOK mouseHook_ = nullptr;
     HWINEVENTHOOK focusHook_ = nullptr;
 
     // Hotkey state

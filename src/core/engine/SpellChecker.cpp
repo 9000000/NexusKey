@@ -464,6 +464,15 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
         return Result::Invalid;
     }
 
+    // 'k' as final consonant is non-standard Vietnamese — only appears in
+    // minority-language proper nouns (Đắk Lắk, Đắk Nông). Restrict to ắ vowel
+    // to prevent English words like "hook"→"hôk", "book"→"bôk" from passing.
+    if (finalLen == 1 && states[pos].base == L'k') {
+        bool validK = (vowelLen == 1 && vowelStates[0].base == L'a' &&
+                       ModOrdinal(vowelStates[0].mod) == kBrev);
+        if (!validK) return Result::Invalid;
+    }
+
     // Check tone restriction for stop finals
     if (IsStopFinal(&states[pos], finalLen)) {
         auto tone = GetTone(states, count);

@@ -93,8 +93,24 @@ void TelexEngine::PushChar(wchar_t c) {
             bool upper = iswupper(c);
             ProcessChar(upper ? towupper(first) : first);
             ProcessChar(second);
+            quickStartKey_ = c;  // Remember original key for undo
             UpdateSpellState();
             return;
+        }
+    }
+
+    // 0a-cont. Undo quick start consonant if next char is not a vowel
+    // e.g., f→ph, then 't' → undo to "ft" (not "pht")
+    if (quickStartKey_ != 0) {
+        wchar_t savedKey = quickStartKey_;
+        quickStartKey_ = 0;  // Clear before any further processing
+        if (!IsVowelChar(c)) {
+            states_.clear();
+            rawInput_.clear();
+            rawInput_.push_back(savedKey);
+            ProcessChar(savedKey);
+            rawInput_.push_back(c);
+            // Fall through to normal processing below
         }
     }
 
@@ -320,37 +336,43 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
             return true;
         }
 
-        // Free marking: backward scan for circumflex across intervening consonants
-        // e.g., "tiéng" + 'e' → find 'é' across 'n','g' → apply circumflex → "tiếng"
-        // Stop if we cross a different vowel (don't jump across vowel clusters)
+        // Free marking: backward scan for circumflex across intervening chars
+        // e.g., "tieng" + 'e' → "tiêng", "cau" + 'a' → "câu", "chieu" + 'e' → "chiêu"
+        // Crosses consonants freely; crosses vowels only with spell-check validation
         if (!spellCheckDisabled_ && isCircumflexBase) {
-            bool crossedVowel = false;  // Crossed a non-matching vowel
+            bool needsValidation = false;  // True when crossing vowels
             for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
-                if (it->IsVowel() && it->base != lower) { crossedVowel = true; continue; }
+                if (it->IsVowel() && it->base != lower) { needsValidation = true; continue; }
                 if (it->IsVowel() && it->base == lower) {
-                    // Don't apply/escape circumflex across vowel clusters (e.g., "oeo" + 'o')
-                    // But DO allow horn undo (e.g., "cươi" + 'o' → "cuôi")
-                    if (crossedVowel && it->mod != Modifier::Horn) break;
+                    // Reject cross-vowel if: no spell check, or unsupported modifier
+                    // Horn undo (ươ→uô) always allowed across vowels
+                    if (needsValidation && it->mod != Modifier::Horn &&
+                        (!config_.spellCheckEnabled ||
+                         (it->mod != Modifier::None && it->mod != Modifier::Circumflex))) break;
                     if (it->mod == Modifier::Circumflex) {
-                        // Escape: already has circumflex → remove it, add char
                         it->mod = Modifier::None;
                         ProcessChar(c);
                         return true;
                     }
                     if (it->mod == Modifier::Horn && lower == L'o') {
-                        // Undo horn: ươ → uô (e.g., "cươi" + 'o' → "cuôi")
                         auto oIndex = static_cast<size_t>(states_.rend() - it - 1);
                         it->mod = Modifier::Circumflex;
-                        UndoHornU(states_.data(),oIndex);
+                        UndoHornU(states_.data(), oIndex);
                         RelocateToneToTarget();
                         return true;
                     }
                     if (it->mod == Modifier::None) {
                         it->mod = Modifier::Circumflex;
+                        if (needsValidation && SpellCheck::Validate(
+                                states_.data(), states_.size(), config_.allowZwjf)
+                                == SpellCheck::Result::Invalid) {
+                            it->mod = Modifier::None;
+                            break;
+                        }
                         RelocateToneToTarget();
                         return true;
                     }
-                    break;  // Found a matching vowel but can't modify → stop
+                    break;
                 }
             }
         }
@@ -803,6 +825,18 @@ void TelexEngine::Backspace() {
     if (states_.empty()) return;
     dModifierEscaped_ = false;  // Allow đ re-trigger after user edits
 
+    // Undo quick start consonant: ph→f, gi→j, qu→w (collapse both chars to original)
+    if (quickStartKey_ != 0 && states_.size() == 2) {
+        states_.clear();
+        rawInput_.clear();
+        rawInput_.push_back(quickStartKey_);
+        ProcessChar(quickStartKey_);
+        quickStartKey_ = 0;
+        UpdateSpellState();
+        return;
+    }
+    quickStartKey_ = 0;
+
     // Check if we're undoing a quick consonant expansion
     if (quickConsonantIdx_ != SIZE_MAX && states_.size() - 1 == quickConsonantIdx_) {
         quickConsonantEscaped_ = true;
@@ -876,6 +910,7 @@ void TelexEngine::Reset() {
     quickConsonantIdx_ = SIZE_MAX;
     lastQuickConsonantKey_ = 0;
     dModifierEscaped_ = false;
+    quickStartKey_ = 0;
 }
 
 void TelexEngine::ToggleTempSpellOff() {

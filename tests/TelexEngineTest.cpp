@@ -1973,6 +1973,26 @@ TEST_F(AutoRestoreTest, EscapedTone_WithDiacritics_Restores) {
     EXPECT_EQ(engine_->Commit(), L"google");
 }
 
+TEST_F(AutoRestoreTest, EnglishWord_Hook_Restores) {
+    // "hook" → engine composes "hôk" (oo→ô) but 'k' final after 'ô' is invalid
+    // → auto-restore returns raw "hook"
+    TypeString(*engine_, L"hook");
+    EXPECT_EQ(engine_->Peek(), L"hôk");
+    EXPECT_EQ(engine_->Commit(), L"hook");
+}
+
+TEST_F(AutoRestoreTest, EnglishWord_Book_Restores) {
+    // "book" → "bôk" → invalid → restore to "book"
+    TypeString(*engine_, L"book");
+    EXPECT_EQ(engine_->Commit(), L"book");
+}
+
+TEST_F(AutoRestoreTest, EnglishWord_Look_Restores) {
+    // "look" → "lôk" → invalid → restore to "look"
+    TypeString(*engine_, L"look");
+    EXPECT_EQ(engine_->Commit(), L"look");
+}
+
 TEST_F(AutoRestoreTest, EscapedTone_SpellCheckGatesInvalid) {
     // Spell check gates 'r' as literal after invalid "us" prefix.
     // u-s-s-e-r → composed "user" (all ASCII, no diacritics)
@@ -2055,6 +2075,50 @@ TEST_F(AutoRestoreTest, FreeCircumflex_LuatAJ_ProducesLuật) {
     // "luataj" → "luật"
     TypeString(*engine_, L"luataj");
     EXPECT_EQ(engine_->Commit(), L"luật");
+}
+
+// --- Cross-vowel free marking: circumflex across intervening vowels ---
+
+TEST_F(AutoRestoreTest, FreeCircumflex_CrossVowel_Chieue_Chiêu) {
+    // "chieue" → 'e' crosses 'u' to circumflex first 'e' → "chiêu"
+    TypeString(*engine_, L"chieue");
+    EXPECT_EQ(engine_->Peek(), L"chiêu");
+}
+
+TEST_F(AutoRestoreTest, FreeCircumflex_CrossVowel_Chieuef_Chiều) {
+    // "chieuef" → circumflex + tone → "chiều"
+    TypeString(*engine_, L"chieuef");
+    EXPECT_EQ(engine_->Commit(), L"chiều");
+}
+
+TEST_F(AutoRestoreTest, FreeCircumflex_CrossVowel_Caua_Câu) {
+    // "caua" → 'a' crosses 'u' to circumflex first 'a' → "câu"
+    TypeString(*engine_, L"caua");
+    EXPECT_EQ(engine_->Peek(), L"câu");
+}
+
+TEST_F(AutoRestoreTest, FreeCircumflex_CrossVowel_Cauas_Cấu) {
+    // "cauas" → circumflex + tone → "cấu"
+    TypeString(*engine_, L"cauas");
+    EXPECT_EQ(engine_->Commit(), L"cấu");
+}
+
+TEST_F(AutoRestoreTest, FreeCircumflex_CrossVowel_Maya_Mây) {
+    // "maya" → 'a' crosses 'y' to circumflex first 'a' → "mây"
+    TypeString(*engine_, L"maya");
+    EXPECT_EQ(engine_->Peek(), L"mây");
+}
+
+TEST_F(AutoRestoreTest, FreeCircumflex_CrossVowel_Mayas_Mấy) {
+    // "mayas" → circumflex + tone → "mấy"
+    TypeString(*engine_, L"mayas");
+    EXPECT_EQ(engine_->Commit(), L"mấy");
+}
+
+TEST_F(AutoRestoreTest, FreeCircumflex_CrossVowel_Invalid_Oao) {
+    // "oao" → circumflex would give "ôao" (invalid) → spell check rejects → no circumflex
+    TypeString(*engine_, L"oao");
+    EXPECT_EQ(engine_->Peek(), L"oao");
 }
 
 // ============================================================================
@@ -2198,6 +2262,100 @@ TEST_F(AutoRestoreTest, QuickConsonant_CC_DifferentChar_ReAllows) {
     engine_ = std::make_unique<TelexEngine>(config_);
     TypeString(*engine_, L"ccaccc");
     EXPECT_EQ(engine_->Peek(), L"chachc");
+}
+
+// ============================================================================
+// QUICK START CONSONANT TESTS (f→ph, j→gi, w→qu at word start)
+// ============================================================================
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_F_ProducesPh) {
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_->PushChar(L'f');
+    EXPECT_EQ(engine_->Peek(), L"ph");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_F_Backspace_RestoresF) {
+    // f→ph, backspace→f (not p)
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_->PushChar(L'f');
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"f");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_F_Vowel_KeepsExpansion) {
+    // f+a → pha (expansion confirmed by vowel)
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"fa");
+    EXPECT_EQ(engine_->Peek(), L"pha");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_F_Consonant_UndoesExpansion) {
+    // f+t → ft (not pht, expansion undone by non-vowel)
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"ft");
+    EXPECT_EQ(engine_->Peek(), L"ft");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_J_Backspace_RestoresJ) {
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_->PushChar(L'j');
+    EXPECT_EQ(engine_->Peek(), L"gi");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"j");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_W_Backspace_RestoresW) {
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_->PushChar(L'w');
+    EXPECT_EQ(engine_->Peek(), L"qu");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"w");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_J_Consonant_UndoesExpansion) {
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"jt");
+    EXPECT_EQ(engine_->Peek(), L"jt");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_W_Consonant_UndoesExpansion) {
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"wt");
+    EXPECT_EQ(engine_->Peek(), L"wt");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_F_UpperCase_Backspace) {
+    // F→Ph, backspace→F
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_->PushChar(L'F');
+    EXPECT_EQ(engine_->Peek(), L"Ph");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"F");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_F_Vowel_Backspace_KeepsPh) {
+    // f+a→pha, backspace→ph (expansion already confirmed, not undone)
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"fa");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"ph");
+}
+
+TEST_F(AutoRestoreTest, QuickStartConsonant_F_FullWord_Phan) {
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"fan");
+    EXPECT_EQ(engine_->Commit(), L"phan");
 }
 
 // ============================================================================

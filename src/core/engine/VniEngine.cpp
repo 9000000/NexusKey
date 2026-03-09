@@ -97,8 +97,23 @@ void VniEngine::PushChar(wchar_t c) {
             size_t ri = rawInput_.size() - 1;
             ProcessChar(upper ? towupper(first) : first, ri);
             ProcessChar(second, rawInput_.size());
+            quickStartKey_ = c;  // Remember original key for undo
             UpdateSpellState();
             return;
+        }
+    }
+
+    // 0a-cont. Undo quick start consonant if next char is not a vowel
+    if (quickStartKey_ != 0) {
+        wchar_t savedKey = quickStartKey_;
+        quickStartKey_ = 0;
+        if (!IsVowelChar(c)) {
+            states_.clear();
+            rawInput_.clear();
+            rawInput_ += savedKey;
+            ProcessChar(savedKey, 0);
+            rawInput_ += c;
+            // Fall through to normal processing below
         }
     }
 
@@ -208,6 +223,18 @@ void VniEngine::Backspace() {
     if (states_.empty()) return;
     dModifierEscaped_ = false;  // Allow đ re-trigger after user edits
 
+    // Undo quick start consonant: ph→f, gi→j, qu→w (collapse both chars to original)
+    if (quickStartKey_ != 0 && states_.size() == 2) {
+        states_.clear();
+        rawInput_.clear();
+        rawInput_ += quickStartKey_;
+        ProcessChar(quickStartKey_, 0);
+        quickStartKey_ = 0;
+        UpdateSpellState();
+        return;
+    }
+    quickStartKey_ = 0;
+
     // Check if we're undoing a quick consonant expansion
     if (quickConsonantIdx_ != SIZE_MAX && states_.size() - 1 == quickConsonantIdx_) {
         quickConsonantEscaped_ = true;
@@ -285,6 +312,7 @@ void VniEngine::Reset() {
     quickConsonantIdx_ = SIZE_MAX;
     lastQuickConsonantKey_ = 0;
     dModifierEscaped_ = false;
+    quickStartKey_ = 0;
 }
 
 void VniEngine::ToggleTempSpellOff() {

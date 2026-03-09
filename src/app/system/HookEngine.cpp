@@ -141,6 +141,10 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
         return false;
     }
 
+    // Install mouse hook to reset composition on left click
+    // (handles focus changes within same window, e.g. YouTube video → comment box)
+    mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, hInstance, 0);
+
     // Install focus change hook to reset composition on window switch
     focusHook_ = SetWinEventHook(
         EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
@@ -164,6 +168,10 @@ void HookEngine::Stop() {
     if (keyboardHook_) {
         UnhookWindowsHookEx(keyboardHook_);
         keyboardHook_ = nullptr;
+    }
+    if (mouseHook_) {
+        UnhookWindowsHookEx(mouseHook_);
+        mouseHook_ = nullptr;
     }
     if (focusHook_) {
         UnhookWinEvent(focusHook_);
@@ -434,6 +442,18 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, D
     }
 }
 
+LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode == HC_ACTION && wParam == WM_LBUTTONDOWN) {
+        HookEngine* self = s_instance.load(std::memory_order_relaxed);
+        if (self && self->engine_->Count() > 0) {
+            HOOK_LOG(L"MOUSE click — resetting composition (engine count=%zu, prev='%s')",
+                     self->engine_->Count(), self->previousComposition_.c_str());
+            self->ResetComposition();
+        }
+    }
+    return CallNextHookEx(nullptr, nCode, wParam, lParam);
+}
+
 // Forward declarations for file-scope helpers used in ProcessKeyDown
 static bool UsePostMessage(HWND hwnd);
 static HWND GetInputTarget();
@@ -676,8 +696,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 6. A-Z keys → process with engine
     if (vkCode >= 0x41 && vkCode <= 0x5A) {
         HOOK_LOG(L"  alpha key '%c' → HandleAlphaKey", static_cast<char>(vkCode));
-        HandleAlphaKey(vkCode);
-        return true;  // Eat the original keystroke
+        return HandleAlphaKey(vkCode);
     }
 
     // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư)
@@ -804,16 +823,19 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
 // Input Engine Interaction
 // ═══════════════════════════════════════════════════════════
 
-void HookEngine::HandleAlphaKey(DWORD vkCode) {
+bool HookEngine::HandleAlphaKey(DWORD vkCode) {
     bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
     bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
     bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
-    wchar_t ch = static_cast<wchar_t>(vkCode);
-    if (!upper) ch = towlower(ch);
+    wchar_t originalCh = static_cast<wchar_t>(vkCode);
+    if (!upper) originalCh = towlower(originalCh);
+    wchar_t ch = originalCh;
 
     // Auto-capitalize first letter after sentence-ending punctuation
+    bool autoCapped = false;
     if (autoCaps_ && autoCapState_ == 2 && engine_->Count() == 0) {
         ch = towupper(ch);
+        autoCapped = (ch != originalCh);
         autoCapState_ = 0;
     }
 
@@ -825,7 +847,24 @@ void HookEngine::HandleAlphaKey(DWORD vkCode) {
              ch, composition.c_str(), composition.size(), engine_->Count(),
              previousComposition_.c_str(), previousComposition_.size());
 
+    // No-transformation passthrough: if the engine just appended the typed character
+    // unchanged (no tone, no modifier, no vowel merge), let the original keystroke
+    // pass through. Preserves browser hotkeys (F=fullscreen, M=mute on YouTube, etc.)
+    // and reduces SendInput overhead for plain consonant sequences.
+    // Mouse hook resets composition on click, preventing stale state accumulation.
+    // Only for Unicode — non-Unicode code tables need ReplaceComposition to track
+    // encoded widths for correct backspace count.
+    if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
+        composition.size() == previousComposition_.size() + 1 &&
+        composition.back() == originalCh &&
+        composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
+        HOOK_LOG(L"  HandleAlphaKey: passthrough '%c' (no transformation)", originalCh);
+        previousComposition_ = composition;
+        return false;
+    }
+
     ReplaceComposition(composition);
+    return true;
 }
 
 void HookEngine::HandleBackspace() {

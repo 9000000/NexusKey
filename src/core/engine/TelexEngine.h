@@ -148,6 +148,7 @@ private:
     size_t quickConsonantIdx_ = SIZE_MAX; // states_ index of quick consonant result char
     wchar_t lastQuickConsonantKey_ = 0;  // key that triggered last quick consonant (suppresses consecutive re-trigger)
     bool dModifierEscaped_ = false;      // true after đ→d escape (ddd), prevents re-triggering
+    wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
 };
 
 }  // namespace Telex

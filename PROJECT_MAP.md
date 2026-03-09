@@ -195,6 +195,74 @@ NexusKey/
 
 ---
 
+## TelexEngine Internal Architecture
+
+> Read this section before debugging any diacritics/tone bug in `TelexEngine.cpp`.
+
+### PushChar() Processing Pipeline
+
+```
+PushChar(c)
+  ├─ 0a. Quick start consonant (f→ph, j→gi, w→qu) — word start only
+  ├─ 0b. Quick consonant (cc→ch, gg→gi, nn→ng, ...) — after consonant
+  ├─ 1a. 'z' key → clear existing tone
+  ├─ 1b. Tone keys (s,f,r,x,j) → ProcessTone() → FindToneTarget()
+  ├─ 2a. Modifier keys → ProcessModifier()
+  │       ├─ Brackets: [ → ơ, ] → ư
+  │       ├─ 'w' → ProcessWModifier() (horn/breve, 8 priority levels)
+  │       ├─ Double vowel → circumflex (aa→â, ee→ê, oo→ô)
+  │       │       ├─ Direct: last char matches (e.g., "a" + 'a' → "â")
+  │       │       └─ Free marking: backward scan across intervening chars
+  │       │               (e.g., "tieng" + 'e' → "tiêng")
+  │       │               Crosses consonants freely; crosses vowels only
+  │       │               when spell check validates the result
+  │       └─ dd → đ (ProcessDModifier)
+  ├─ 2b. Quick end consonant (g→ng, h→nh, k→ch) — after vowel
+  └─ 3.  Regular character → ProcessChar()
+  Then: ApplyAutoUO() + UpdateSpellState()
+```
+
+### Tone Placement Priority (FindToneTargetImpl)
+
+```
+FindToneTarget()
+  ├─ P1: Horn vowel (ư, ơ) — last one wins (for ươ pair)
+  ├─ P2: Modified vowel (â, ê, ô, ă) — first one found
+  ├─ P3: Diphthong/triphthong table lookup
+  │       ├─ Triphthong (modern only): tone on MIDDLE vowel (oai, uyu, ...)
+  │       └─ Diphthong: kDiphthongClassic or kDiphthongModern table
+  │           rule=1 → first vowel, rule=2 → second vowel
+  └─ P4: Default → rightmost vowel
+  Special: "gi" cluster ('i' skipped), "qu" cluster ('u' skipped)
+```
+
+### Modifier Application Priority (ProcessWModifier)
+
+```
+ProcessWModifier()
+  P1: "ua" → horn on 'u' (mưa)     P5: standalone 'u' → horn
+  P2: "uo" → horn on 'o' (ươ)      P6: standalone 'o' → horn
+  P3: "oa" → breve on 'a' (hoặc)   P7: standalone 'a' → breve
+  P4: Escape (clear horn/breve)     P8: no target → insert 'ư'
+```
+
+### Key Interactions Between Subsystems
+
+| Action | Triggers | Why it matters |
+|---|---|---|
+| Circumflex applied | → `RelocateToneToTarget()` | Tone may need to move to newly-modified vowel |
+| Horn applied | → `RelocateToneToHornVowel()` | Horn vowels have highest tone priority |
+| Any char after ơ | → `ApplyAutoUO()` | Auto-horns preceding 'u' (u+ơ → ư+ơ) |
+| Every PushChar/Backspace | → `UpdateSpellState()` | Sets `spellCheckDisabled_` if invalid syllable |
+| `spellCheckDisabled_` = true | Tone keys become literal chars | Free marking blocked, tone blocked |
+| Free marking crosses vowels | → `SpellCheck::Validate()` | Tentative apply + validate, undo if invalid |
+
+### State Model (CharState)
+
+Each character in the buffer is a `CharState` with: `base` (lowercase letter), `mod` (None/Circumflex/Breve/Horn), `tone` (None/Acute/Grave/Hook/Tilde/Dot), `isUpper`, `rawIdx`, `toneRawIdx`. Composition (`Compose()`) combines base+mod+tone into a single Unicode character via flat array lookups in `VietnameseTables.h`.
+
+---
+
 ## Largest Files (by code complexity)
 
 | File | Size | Notes |

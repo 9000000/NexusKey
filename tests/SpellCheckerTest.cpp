@@ -529,6 +529,16 @@ TEST_F(SpellCheckerEdgeTest, FinalK_StopTone_Grave_Invalid) {
     EXPECT_EQ(V({T(L'b'), TMT(L'a', Telex::Modifier::Breve, Telex::Tone::Grave), T(L'k')}), Result::Invalid);
 }
 
+TEST_F(SpellCheckerEdgeTest, FinalK_NonBreveVowel_Invalid) {
+    // hôk — 'k' final only valid after ắ vowel, not ô → invalid
+    EXPECT_EQ(V({T(L'h'), TM(L'o', Telex::Modifier::Circumflex), T(L'k')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerEdgeTest, FinalK_PlainA_Invalid) {
+    // bak — 'k' final after plain 'a' (no breve) → invalid
+    EXPECT_EQ(V({T(L'b'), T(L'a'), T(L'k')}), Result::Invalid);
+}
+
 //=============================================================================
 // Smart Accent Tests — spellCheck ON, accents gated by spell validity
 //=============================================================================
