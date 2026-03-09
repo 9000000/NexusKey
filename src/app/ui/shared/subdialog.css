@@ -7,8 +7,8 @@ html {
 }
 
 body {
-    width: max-content;
-    height: max-content;
+    width: 100vw;
+    height: 100vh;
     margin: 0;
     padding: 0;
     overflow: hidden;
@@ -16,8 +16,8 @@ body {
 
 /* Main Container - Fills window */
 .container {
-    width: max-content;
-    height: max-content;
+    width: 100vw;
+    height: 100vh;
     padding: 0;
     background: var(--bg-glass);
     border-radius: 8px;
