@@ -798,6 +798,78 @@ TEST_F(TelexEngineTest, RisingDiphthong_OE_Tilde) {
     EXPECT_EQ(engine_->Peek(), L"õe");
 }
 
+// ============================================================================
+// CODA-AWARE RISING DIPHTHONG TESTS (oa, oe with coda)
+// ============================================================================
+
+TEST_F(TelexEngineTest, CodaAware_OAN_Grave_NormalOrder) {
+    TypeString(*engine_, L"hoanf");  // hoàn (coda 'n' -> tone ALWAYS on second vowel 'a')
+    EXPECT_EQ(engine_->Peek(), L"hoàn");
+}
+
+TEST_F(TelexEngineTest, CodaAware_OAN_Grave_EarlyTone) {
+    TypeString(*engine_, L"hofan");  // h-o-f -> hò, a -> hòa, n -> hoàn (tone relocates to 'a')
+    EXPECT_EQ(engine_->Peek(), L"hoàn");
+}
+
+TEST_F(TelexEngineTest, CodaAware_OAC_Acute_NormalOrder) {
+    TypeString(*engine_, L"hoacs");  // hoác
+    EXPECT_EQ(engine_->Peek(), L"hoác");
+}
+
+TEST_F(TelexEngineTest, CodaAware_OAC_Acute_EarlyTone) {
+    TypeString(*engine_, L"hosac");  // h-o-s -> hó, a -> hóa, c -> hoác
+    EXPECT_EQ(engine_->Peek(), L"hoác");
+}
+
+TEST_F(TelexEngineTest, CodaAware_OET_Dot_NormalOrder) {
+    TypeString(*engine_, L"xoetj");  // xoẹt
+    EXPECT_EQ(engine_->Peek(), L"xoẹt");
+}
+
+TEST_F(TelexEngineTest, CodaAware_OET_Dot_EarlyTone) {
+    TypeString(*engine_, L"xojet");  // x-o-j -> xọ, e -> xọe, t -> xoẹt
+    EXPECT_EQ(engine_->Peek(), L"xoẹt");
+}
+
+TEST_F(TelexEngineTest, CodaAware_NoCoda_StaysOnFirst) {
+    TypeString(*engine_, L"hoaf");  // hòa (no coda -> stays on FIRST per classic rule)
+    EXPECT_EQ(engine_->Peek(), L"hòa");
+}
+
+TEST_F(TelexEngineTest, CodaAware_NoCoda_EarlyTone_StaysOnFirst) {
+    TypeString(*engine_, L"hofa");  // h-o-f -> hò, a -> hòa (no relocation needed)
+    EXPECT_EQ(engine_->Peek(), L"hòa");
+}
+
+// ============================================================================
+// MODERN ORTHOGRAPHY TESTS (modernOrtho = true)
+// ============================================================================
+
+TEST_F(TelexEngineTest, ModernOrtho_NoCoda_MovesToSecond) {
+    config_.modernOrtho = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    
+    TypeString(*engine_, L"hoaf");  // hoà (modern rule -> tone on 'a')
+    EXPECT_EQ(engine_->Peek(), L"hoà");
+}
+
+TEST_F(TelexEngineTest, ModernOrtho_NoCoda_EarlyTone_RelocatesToSecond) {
+    config_.modernOrtho = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    
+    TypeString(*engine_, L"hofa");  // h-o-f -> hò, a -> hoà (relocates because modern rule puts tone on SECOND)
+    EXPECT_EQ(engine_->Peek(), L"hoà");
+}
+
+TEST_F(TelexEngineTest, ModernOrtho_WithCoda_StaysOnSecond) {
+    config_.modernOrtho = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    
+    TypeString(*engine_, L"hoanf");  // hoàn
+    EXPECT_EQ(engine_->Peek(), L"hoàn");
+}
+
 TEST_F(TelexEngineTest, RisingDiphthong_OE_Grave) {
     TypeString(*engine_, L"oef");  // òe (classic: tone on first)
     EXPECT_EQ(engine_->Peek(), L"òe");

@@ -97,13 +97,14 @@ constexpr int DiphthongVowelIndex(wchar_t base) {
     }
 }
 
-/// Classic placement: oa, oe → tone on FIRST (old-style: hòa, xòe)
+/// Classic placement: oa, oe → coda-aware (hòa without coda, hoàn with coda)
+/// Rule: 0=none, 1=FIRST, 2=SECOND, 3=FIRST-without-coda/SECOND-with-coda
 constexpr uint8_t kDiphthongClassic[6][6] = {
     //          a  e  i  o  u  y
     /* a */ {   0, 0, 1, 1, 1, 1 },  // ai, ao, au, ay
     /* e */ {   0, 0, 1, 1, 1, 0 },  // ei, eo, eu
     /* i */ {   1, 0, 1, 0, 1, 0 },  // ia, ii, iu
-    /* o */ {   1, 1, 1, 0, 1, 0 },  // oa=FIRST, oe=FIRST, oi, ou
+    /* o */ {   3, 3, 1, 0, 1, 0 },  // oa=CODA_AWARE, oe=CODA_AWARE, oi, ou
     /* u */ {   1, 1, 1, 0, 1, 2 },  // ua, ue, ui, uu, uy=SECOND
     /* y */ {   0, 0, 0, 0, 1, 0 },  // yu=FIRST (khuỷu)
 };

@@ -226,6 +226,7 @@ void TelexEngine::PushChar(wchar_t c) {
 
     // 3. Regular character
     ProcessChar(c);
+    RelocateToneToTarget();
     ApplyAutoUO();
     UpdateSpellState();
 }
@@ -756,6 +757,12 @@ size_t TelexEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTrip
             int li = DiphthongVowelIndex(states_[lastIdx].base);
             if (fi >= 0 && li >= 0) {
                 uint8_t rule = table[fi][li];
+                
+                // Rule 3: Rising diphthongs (oa, oe) - SECOND with coda, FIRST without
+                if (rule == 3) {
+                    rule = (lastIdx + 1 < states_.size()) ? 2 : 1;
+                }
+                
                 if (rule == 1) return prevIdx;   // tone on FIRST
                 if (rule == 2) return lastIdx;    // tone on SECOND
             }

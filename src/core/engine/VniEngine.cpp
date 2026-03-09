@@ -216,6 +216,7 @@ void VniEngine::PushChar(wchar_t c) {
 
     // Regular character
     ProcessChar(c, rawInput_.size() - 1);
+    RelocateToneToTarget();
     UpdateSpellState();
 }
 
@@ -494,6 +495,12 @@ CharState* VniEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTr
             int li = DiphthongVowelIndex(states_[lastIdx].base);
             if (fi >= 0 && li >= 0) {
                 uint8_t rule = table[fi][li];
+                
+                // Rule 3: Rising diphthongs (oa, oe) - SECOND with coda, FIRST without
+                if (rule == 3) {
+                    rule = (lastIdx + 1 < states_.size()) ? 2 : 1;
+                }
+                
                 if (rule == 1) return &states_[prevIdx];   // tone on FIRST
                 if (rule == 2) return &states_[lastIdx];    // tone on SECOND
             }
@@ -557,6 +564,24 @@ wchar_t VniEngine::ComposeChar(const CharState& state) const {
 //-----------------------------------------------------------------------------
 // Spell Check State Update
 //-----------------------------------------------------------------------------
+
+void VniEngine::RelocateToneToTarget() {
+    CharState* toned = nullptr;
+    for (auto& s : states_) {
+        // Only relocate if tone exists
+        if (s.IsVowel() && s.tone != Tone::None) { 
+            toned = &s; 
+            break; 
+        }
+    }
+    if (!toned) return;
+    
+    CharState* target = FindToneTarget();
+    if (!target || target == toned) return;
+    
+    target->tone = toned->tone;
+    toned->tone = Tone::None;
+}
 
 void VniEngine::UpdateSpellState() {
     UpdateSpellCheck(states_.data(), states_.size(), config_, tempSpellOff_, spellCheckDisabled_);

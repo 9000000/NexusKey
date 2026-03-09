@@ -230,8 +230,10 @@ FindToneTarget()
   ├─ P2: Modified vowel (â, ê, ô, ă) — first one found
   ├─ P3: Diphthong/triphthong table lookup
   │       ├─ Triphthong (modern only): tone on MIDDLE vowel (oai, uyu, ...)
-  │       └─ Diphthong: kDiphthongClassic or kDiphthongModern table
-  │           rule=1 → first vowel, rule=2 → second vowel
+  │       └─ Diphthong: kDiphthongClassic/Modern in VietnameseTables.h
+  │           rule=1 → first vowel
+  │           rule=2 → second vowel
+  │           rule=3 → coda-aware (SECOND if coda exists, ELSE FIRST)
   └─ P4: Default → rightmost vowel
   Special: "gi" cluster ('i' skipped), "qu" cluster ('u' skipped)
 ```
@@ -251,6 +253,7 @@ ProcessWModifier()
 | Action | Triggers | Why it matters |
 |---|---|---|
 | Circumflex applied | → `RelocateToneToTarget()` | Tone may need to move to newly-modified vowel |
+| Regular char added | → `RelocateToneToTarget()` | Tone relocates when a new vowel forms a diphthong/coda (e.g. hofa -> hoà) |
 | Horn applied | → `RelocateToneToHornVowel()` | Horn vowels have highest tone priority |
 | Any char after ơ | → `ApplyAutoUO()` | Auto-horns preceding 'u' (u+ơ → ư+ơ) |
 | Every PushChar/Backspace | → `UpdateSpellState()` | Sets `spellCheckDisabled_` if invalid syllable |

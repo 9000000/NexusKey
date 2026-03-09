@@ -150,6 +150,25 @@ TEST_F(VniEngineTest, Combined_A8_Dot) {
 }
 
 // ============================================================================
+// CODA-AWARE RISING DIPHTHONG TESTS (oa, oe with coda)
+// ============================================================================
+
+TEST_F(VniEngineTest, CodaAware_OAN_Grave_NormalOrder) {
+    TypeString(*engine_, L"hoan2");  // hoàn (coda 'n' -> tone ALWAYS on second vowel 'a')
+    EXPECT_EQ(engine_->Peek(), L"hoàn");
+}
+
+TEST_F(VniEngineTest, CodaAware_OAN_Grave_EarlyTone) {
+    TypeString(*engine_, L"ho2an");  // h-o-2 -> hò, a -> hòa, n -> hoàn (tone relocates to 'a')
+    EXPECT_EQ(engine_->Peek(), L"hoàn");
+}
+
+TEST_F(VniEngineTest, CodaAware_OET_Dot_EarlyTone) {
+    TypeString(*engine_, L"xo5et");  // x-o-5 -> xọ, e -> xọe, t -> xoẹt
+    EXPECT_EQ(engine_->Peek(), L"xoẹt");
+}
+
+// ============================================================================
 // WORD TESTS
 // ============================================================================
 
