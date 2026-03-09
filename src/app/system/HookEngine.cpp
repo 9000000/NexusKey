@@ -990,6 +990,36 @@ static HWND GetInputTarget() {
     return fg;
 }
 
+// ═══════════════════════════════════════════════════════════
+// SendInput Event Helpers
+// ═══════════════════════════════════════════════════════════
+
+static void AppendUnicodeEvent(std::vector<INPUT>& events, WORD wScan) {
+    INPUT inDown = {};
+    inDown.type = INPUT_KEYBOARD;
+    inDown.ki.wScan = wScan;
+    inDown.ki.dwFlags = KEYEVENTF_UNICODE;
+    inDown.ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    events.push_back(inDown);
+
+    INPUT inUp = inDown;
+    inUp.ki.dwFlags |= KEYEVENTF_KEYUP;
+    events.push_back(inUp);
+}
+
+static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
+    INPUT inDown = {};
+    inDown.type = INPUT_KEYBOARD;
+    inDown.ki.wVk = wVk;
+    inDown.ki.wScan = wScan;
+    inDown.ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    events.push_back(inDown);
+
+    INPUT inUp = inDown;
+    inUp.ki.dwFlags |= KEYEVENTF_KEYUP;
+    events.push_back(inUp);
+}
+
 void HookEngine::SendBackspaceEvents(HWND target, size_t count, bool usePost) {
     if (usePost) {
         WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
@@ -1002,17 +1032,10 @@ void HookEngine::SendBackspaceEvents(HWND target, size_t count, bool usePost) {
     } else {
         // Batch all backspace events into a single SendInput call
         WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-        std::vector<INPUT> events(count * 2);
+        std::vector<INPUT> events;
+        events.reserve(count * 2);
         for (size_t i = 0; i < count; ++i) {
-            events[i * 2].type = INPUT_KEYBOARD;
-            events[i * 2].ki.wVk = VK_BACK;
-            events[i * 2].ki.wScan = bsScan;
-            events[i * 2].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            events[i * 2 + 1].type = INPUT_KEYBOARD;
-            events[i * 2 + 1].ki.wVk = VK_BACK;
-            events[i * 2 + 1].ki.wScan = bsScan;
-            events[i * 2 + 1].ki.dwFlags = KEYEVENTF_KEYUP;
-            events[i * 2 + 1].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+            AppendVkEvent(events, VK_BACK, bsScan);
         }
         sending_ = true;
         SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
@@ -1027,16 +1050,10 @@ void HookEngine::SendCharEvents(HWND target, const std::wstring& text, bool useP
         }
     } else {
         // Batch all character events into a single SendInput call
-        std::vector<INPUT> events(text.size() * 2);
-        for (size_t i = 0; i < text.size(); ++i) {
-            events[i * 2].type = INPUT_KEYBOARD;
-            events[i * 2].ki.wScan = text[i];
-            events[i * 2].ki.dwFlags = KEYEVENTF_UNICODE;
-            events[i * 2].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            events[i * 2 + 1].type = INPUT_KEYBOARD;
-            events[i * 2 + 1].ki.wScan = text[i];
-            events[i * 2 + 1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-            events[i * 2 + 1].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+        std::vector<INPUT> events;
+        events.reserve(text.size() * 2);
+        for (wchar_t ch : text) {
+            AppendUnicodeEvent(events, ch);
         }
         sending_ = true;
         SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
@@ -1094,6 +1111,23 @@ bool HookEngine::IsQtElectronApp(HWND hwnd) {
     return false;
 }
 
+bool HookEngine::IsConsoleApp(HWND hwnd) {
+    HWND root = GetAncestor(hwnd, GA_ROOT);
+    if (root) hwnd = root;
+
+    wchar_t className[64] = {};
+    GetClassNameW(hwnd, className, 64);
+
+    if (_wcsicmp(className, L"ConsoleWindowClass") == 0) return true;
+    if (_wcsicmp(className, L"CASCADIA_HOSTING_WINDOW_CLASS") == 0) return true; // Windows Terminal
+    if (_wcsicmp(className, L"tty") == 0) return true; // Cygwin/MSYS
+    if (_wcsicmp(className, L"mintty") == 0) return true; // Git Bash
+    if (_wcsicmp(className, L"PuTTY") == 0) return true; // PuTTY
+
+    // Electron apps (e.g. VS Code terminal) are handled by IsQtElectronApp.
+    return false;
+}
+
 std::wstring HookEngine::GetForegroundExeName() {
     HWND fg = GetForegroundWindow();
     if (!fg) return {};
@@ -1121,9 +1155,10 @@ void HookEngine::OnFocusChanged() {
     tempEngineOff_ = false;
     CheckConfigEvent();
 
-    // Detect Qt/Electron apps — skip U+202F to avoid first-word delay
+    // Detect Qt/Electron apps and Console apps — skip U+202F to avoid delay/corruption
     HWND fg = GetForegroundWindow();
-    skipEmptyChar_ = fg && IsQtElectronApp(fg);
+    isConsoleApp_ = fg && IsConsoleApp(fg);
+    skipEmptyChar_ = fg && (IsQtElectronApp(fg) || isConsoleApp_);
 
     // Skip focus tracking entirely if no feature needs it
     if (!smartSwitch_ && !excludeApps_ && !tsfApps_ && !rememberCodeTable_) return;
@@ -1289,62 +1324,50 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
             bool needEmpty = (backspaceCount > 0 && !skipEmptyChar_);
             size_t bsTotal = backspaceCount + (needEmpty ? 1 : 0);  // +1 for U+202F
 
-            size_t totalEvents = (needEmpty ? 2 : 0) + bsTotal * 2 + encodedToSend.size() * 2;
-            if (totalEvents == 0) {
-                previousComposition_ = newText;
-                return;
+            if (bsTotal > 0 || !encodedToSend.empty()) {
+                std::vector<INPUT> bsEvents;
+                std::vector<INPUT> charEvents;
+                WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
+
+                if (bsTotal > 0) {
+                    bsEvents.reserve(bsTotal * 2 + (needEmpty ? 2 : 0));
+                    // 1. U+202F word-boundary breaker
+                    if (needEmpty) {
+                        AppendUnicodeEvent(bsEvents, 0x202F);
+                    }
+                    // 2. Backspaces
+                    for (size_t i = 0; i < bsTotal; ++i) {
+                        AppendVkEvent(bsEvents, VK_BACK, bsScan);
+                    }
+                }
+
+                // 3. Encoded characters
+                if (!encodedToSend.empty()) {
+                    charEvents.reserve(encodedToSend.size() * 2);
+                    for (wchar_t ch : encodedToSend) {
+                        AppendUnicodeEvent(charEvents, ch);
+                    }
+                }
+
+                sending_ = true;
+                if (isConsoleApp_) {
+                    // Split SendInput for console apps to prevent character swallowing
+                    if (!bsEvents.empty()) {
+                        SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                        Sleep(2);
+                    }
+                    if (!charEvents.empty()) {
+                        SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
+                    }
+                } else {
+                    // Batch SendInput for GUI apps to preserve atomicity and prevent text flickering
+                    bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
+                    if (!bsEvents.empty()) {
+                        SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                    }
+                }
+                sending_ = false;
             }
-
-            std::vector<INPUT> events(totalEvents);
-            size_t idx = 0;
-            WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-
-            // 1. U+202F word-boundary breaker
-            if (needEmpty) {
-                events[idx].type = INPUT_KEYBOARD;
-                events[idx].ki.wScan = 0x202F;
-                events[idx].ki.dwFlags = KEYEVENTF_UNICODE;
-                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-                idx++;
-                events[idx].type = INPUT_KEYBOARD;
-                events[idx].ki.wScan = 0x202F;
-                events[idx].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-                idx++;
-            }
-
-            // 2. Backspaces
-            for (size_t i = 0; i < bsTotal; ++i) {
-                events[idx].type = INPUT_KEYBOARD;
-                events[idx].ki.wVk = VK_BACK;
-                events[idx].ki.wScan = bsScan;
-                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-                idx++;
-                events[idx].type = INPUT_KEYBOARD;
-                events[idx].ki.wVk = VK_BACK;
-                events[idx].ki.wScan = bsScan;
-                events[idx].ki.dwFlags = KEYEVENTF_KEYUP;
-                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-                idx++;
-            }
-
-            // 3. Encoded characters
-            for (wchar_t ch : encodedToSend) {
-                events[idx].type = INPUT_KEYBOARD;
-                events[idx].ki.wScan = ch;
-                events[idx].ki.dwFlags = KEYEVENTF_UNICODE;
-                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-                idx++;
-                events[idx].type = INPUT_KEYBOARD;
-                events[idx].ki.wScan = ch;
-                events[idx].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-                events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-                idx++;
-            }
-
-            sending_ = true;
-            SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
-            sending_ = false;
         }
 
         // Update widths: keep [0..commonLen), append newWidths
@@ -1371,66 +1394,57 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
             SendCharEvents(target, toSend, true);
         }
     } else {
-        // SendInput path: batch everything into ONE SendInput call for atomicity + speed
+        // SendInput path: separate backspaces and character injection into TWO SendInput calls.
+        // Batching them into ONE call causes terminal emulators (conhost, Windows Terminal, node.js CLI) 
+        // to process them out of order or drop characters, leading to "nuốt chữ" (swallowed letters).
         bool needEmpty = (backspaceCount > 0 && !skipEmptyChar_);
         if (needEmpty) backspaceCount++;  // +1 to also delete the U+202F
+        
+        if (backspaceCount > 0 || !toSend.empty()) {
+            std::vector<INPUT> bsEvents;
+            std::vector<INPUT> charEvents;
+            WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
 
-        size_t totalEvents = (needEmpty ? 2 : 0) + backspaceCount * 2 + toSend.size() * 2;
-        if (totalEvents == 0) {
-            previousComposition_ = newText;
-            return;
+            if (backspaceCount > 0) {
+                bsEvents.reserve((needEmpty ? 2 : 0) + backspaceCount * 2);
+                // 1. U+202F to break autocomplete word boundary
+                if (needEmpty) {
+                    AppendUnicodeEvent(bsEvents, 0x202F);
+                }
+
+                // 2. Backspaces (including one for U+202F)
+                for (size_t i = 0; i < backspaceCount; ++i) {
+                    AppendVkEvent(bsEvents, VK_BACK, bsScan);
+                }
+            }
+
+            // 3. New characters
+            if (!toSend.empty()) {
+                charEvents.reserve(toSend.size() * 2);
+                for (wchar_t ch : toSend) {
+                    AppendUnicodeEvent(charEvents, ch);
+                }
+            }
+
+            sending_ = true;
+            if (isConsoleApp_) {
+                // Split SendInput for console apps to prevent character swallowing
+                if (!bsEvents.empty()) {
+                    SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                    Sleep(2);
+                }
+                if (!charEvents.empty()) {
+                    SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
+                }
+            } else {
+                // Batch SendInput for GUI apps to preserve atomicity and prevent text flickering
+                bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
+                if (!bsEvents.empty()) {
+                    SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                }
+            }
+            sending_ = false;
         }
-
-        std::vector<INPUT> events(totalEvents);
-        size_t idx = 0;
-        WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-
-        // 1. U+202F to break autocomplete word boundary
-        if (needEmpty) {
-            events[idx].type = INPUT_KEYBOARD;
-            events[idx].ki.wScan = 0x202F;
-            events[idx].ki.dwFlags = KEYEVENTF_UNICODE;
-            events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            idx++;
-            events[idx].type = INPUT_KEYBOARD;
-            events[idx].ki.wScan = 0x202F;
-            events[idx].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-            events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            idx++;
-        }
-
-        // 2. Backspaces (including one for U+202F)
-        for (size_t i = 0; i < backspaceCount; ++i) {
-            events[idx].type = INPUT_KEYBOARD;
-            events[idx].ki.wVk = VK_BACK;
-            events[idx].ki.wScan = bsScan;
-            events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            idx++;
-            events[idx].type = INPUT_KEYBOARD;
-            events[idx].ki.wVk = VK_BACK;
-            events[idx].ki.wScan = bsScan;
-            events[idx].ki.dwFlags = KEYEVENTF_KEYUP;
-            events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            idx++;
-        }
-
-        // 3. New characters
-        for (wchar_t ch : toSend) {
-            events[idx].type = INPUT_KEYBOARD;
-            events[idx].ki.wScan = ch;
-            events[idx].ki.dwFlags = KEYEVENTF_UNICODE;
-            events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            idx++;
-            events[idx].type = INPUT_KEYBOARD;
-            events[idx].ki.wScan = ch;
-            events[idx].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-            events[idx].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            idx++;
-        }
-
-        sending_ = true;
-        SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
-        sending_ = false;
     }
 
     previousComposition_ = newText;

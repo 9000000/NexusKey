@@ -115,6 +115,9 @@ private:
     // Qt/Electron detection — skip U+202F to avoid first-word delay
     static bool IsQtElectronApp(HWND hwnd);
 
+    // Console detection — skip U+202F and add Sleep(2) before character injection
+    static bool IsConsoleApp(HWND hwnd);
+
     // Smart switch: get foreground app exe name
     static std::wstring GetForegroundExeName();
     void OnFocusChanged();
@@ -142,7 +145,8 @@ private:
     bool isExcludedApp_ = false;  // cached: is current foreground app excluded?
     std::set<std::wstring> tsfAppSet_;      // apps that should use TSF engine instead of hook
     bool isTsfApp_ = false;       // cached: is current foreground app in TSF list?
-    bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron apps (prevents first-word delay)
+    bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?
+    bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
     bool modeBeforeExclude_ = true;  // Vietnamese mode before entering excluded app
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode (for TOML save)
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode
