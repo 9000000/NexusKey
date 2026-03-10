@@ -12,7 +12,7 @@ namespace NextKey {
 /// Displays a brief notification near the cursor, auto-dismisses.
 class ToastPopup {
 public:
-    static void Show(const std::wstring& message, DWORD durationMs = 800);
+    static void Show(const std::wstring& message, DWORD durationMs = 1500);
 
 private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);

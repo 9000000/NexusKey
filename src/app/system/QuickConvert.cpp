@@ -255,7 +255,7 @@ void QuickConvert::Execute() {
     if (config_.alertDone && toastMsg) {
         std::wstring msg(toastMsg);
         std::thread([msg]() {
-            ToastPopup::Show(msg, 800);
+            ToastPopup::Show(msg, 1500);
         }).detach();
     }
     }).detach();
