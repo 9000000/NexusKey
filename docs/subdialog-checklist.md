@@ -63,6 +63,7 @@ Reference implementation: `ExcludedAppsDialog` / `MacroTableDialog`
       true                                // applyBackgroundOpacity
   })
   ```
+- [ ] *Window Initialization Note:* The base `SciterSubDialog` constructs the window at `x=-10000, y=-10000`, applies DWM attributes (dark mode, blur), calls `expand()` invisibly, and lastly calls `SetWindowPos()` to center it. This eliminates any white flash on load.
 - [ ] Load data from `ConfigManager` in constructor
 - [ ] Call `populateList()` after loading data
 - [ ] `handle_event()`: handle `BUTTON_CLICK` (btn-close) + `VALUE_CHANGED` (#val-action)
@@ -108,3 +109,4 @@ Reference implementation: `ExcludedAppsDialog` / `MacroTableDialog`
 4. **`on_event()` instead of `handle_event()`** → `sciter::window` base class skips `on_event()`.
 5. **`type="module"` on scripts** → Sciter module system differs from browser ES modules.
 6. **`call_function()` in constructor** → JS may not be loaded yet. OK after `populateList()` since HTML is loaded by then.
+7. **White Flash on Focus Loss** → Sciter subdialogs run in their own process. When they open, the parent `SettingsDialog` loses focus. If you subclass a dialog, ensure you suppress `WM_NCACTIVATE` to avoid the parent window flashing its native inactive border.

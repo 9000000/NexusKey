@@ -415,6 +415,20 @@ html { background: transparent; opacity: 1; }
 // ❌ Sai: backdrop-filter: blur()
 ```
 
+### Window Initialization & Border Flashing
+
+```cpp
+// ✅ Đúng: Expand window *sau* khi áp dụng DWM attributes và CSS theme
+HWND hwnd = get_hwnd();
+SciterHelper::SetWindowDarkMode(hwnd, dark); // DWMWA_BORDER_COLOR = NONE
+// ... apply body.dark ...
+expand(); // Render UI với dark theme + blur ngay từ frame đầu tiên
+SetWindowPos(hwnd, ...); // Di chuyển từ tọa độ offscreen (-10000) vào giữa màn hình
+
+// ✅ Đúng: Chặn nhấp nháy viền trắng khi mở subdialog (mất focus)
+if (msg == WM_NCACTIVATE) return TRUE; 
+```
+
 ### TOML = Shared State Database
 
 ```
