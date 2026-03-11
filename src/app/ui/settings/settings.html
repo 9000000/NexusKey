@@ -71,6 +71,7 @@
                 <!-- 1. Bảng mã (Code Table) -->
                 <div class="setting-row group-last">
                     <span class="setting-label" data-i18n="s.code_table">Bảng mã</span>
+                    <div class="spacer" style="width: *"></div>
                     <select class="setting-dropdown" id="bang-ma">
                         <option value="0">Unicode</option>
                         <option value="1">TCVN3 (ABC)</option>
@@ -88,7 +89,8 @@
                         <div class="switch-key-row">
                             <div class="switch-key-item">
                                 <span class="switch-key-label">Ctrl</span>
-                                <div class="toggle-switch-small" id="key-ctrl">
+                                <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="key-ctrl">
                                     <span class="toggle-label-i">I</span>
                                     <span class="toggle-label-o">O</span>
                                     <div class="toggle-thumb-small"></div>
@@ -97,7 +99,8 @@
                             </div>
                             <div class="switch-key-item">
                                 <span class="switch-key-label">Alt</span>
-                                <div class="toggle-switch-small" id="key-alt">
+                                <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="key-alt">
                                     <span class="toggle-label-i">I</span>
                                     <span class="toggle-label-o">O</span>
                                     <div class="toggle-thumb-small"></div>
@@ -109,7 +112,8 @@
                         <div class="switch-key-row">
                             <div class="switch-key-item">
                                 <span class="switch-key-label">Win</span>
-                                <div class="toggle-switch-small" id="key-win">
+                                <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="key-win">
                                     <span class="toggle-label-i">I</span>
                                     <span class="toggle-label-o">O</span>
                                     <div class="toggle-thumb-small"></div>
@@ -118,7 +122,8 @@
                             </div>
                             <div class="switch-key-item">
                                 <span class="switch-key-label">Shift</span>
-                                <div class="toggle-switch-small" id="key-shift">
+                                <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="key-shift">
                                     <span class="toggle-label-i">I</span>
                                     <span class="toggle-label-o">O</span>
                                     <div class="toggle-thumb-small"></div>
@@ -132,9 +137,10 @@
                 </div>
 
                 <!-- 3. Kêu Beep -->
-                <div class="setting-row" data-tooltip="Phát âm thanh khi chuyển đổi ngôn ngữ"
-                    data-i18n-tooltip="s.beep_tooltip">
+                <div class="setting-row">
                     <span class="setting-label" data-i18n="s.beep">Kêu Beep</span>
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-beep_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                    <div class="spacer" style="width: *"></div>
                     <div class="toggle-switch-small" id="beep-sound">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
@@ -144,9 +150,10 @@
                 </div>
 
                 <!-- 4. Loại trừ ứng dụng thông minh -->
-                <div class="setting-row" data-tooltip="Tự động ghi nhớ chế độ gõ cho từng ứng dụng"
-                    data-i18n-tooltip="s.smart_switch_tooltip">
+                <div class="setting-row">
                     <span class="setting-label" data-i18n="s.smart_switch">Loại trừ ứng dụng thông minh</span>
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-smart_switch_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                    <div class="spacer" style="width: *"></div>
                     <div class="toggle-switch-small" id="smart-switch">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
@@ -156,11 +163,13 @@
                 </div>
 
                 <!-- 4b. Excluded Apps - Toggle + Button on same row -->
-                <div class="setting-row" data-tooltip="Chỉ gõ tiếng Anh cho các ứng dụng trong danh sách"
-                    data-i18n-tooltip="s.exclude_tooltip">
+                <div class="setting-row">
                     <span class="setting-label" data-i18n="s.enable_exclude">Bật loại trừ ứng dụng</span>
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-exclude_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                    <div class="spacer" style="width: *"></div>
                     <button class="btn-action" id="btn-excluded-apps" style="margin-right: 8px;" data-i18n="s.list">Danh
                         sách</button>
+                    <div class="spacer" style="width: *"></div>
                     <div class="toggle-switch-small" id="exclude-apps">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
@@ -172,6 +181,7 @@
                 <!-- 5. Cài đặt nâng cao - toggle switch -->
                 <div class="setting-row" id="row-advanced">
                     <span class="setting-label" data-i18n="s.advanced">Cài đặt nâng cao</span>
+                    <div class="spacer" style="width: *"></div>
                     <div class="toggle-switch-small" id="show-advanced">
                         <span class="toggle-label-i">I</span>
                         <span class="toggle-label-o">O</span>
@@ -202,7 +212,8 @@
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.modern_ortho">Đặt dấu oà, uý (thay vì òa,
                                 úy)</span>
-                            <div class="toggle-switch-small" id="modern-ortho">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="modern-ortho">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -212,7 +223,8 @@
                         <!-- 2. Auto capitalize -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.auto_caps">Viết hoa chữ cái đầu câu</span>
-                            <div class="toggle-switch-small" id="auto-caps">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="auto-caps">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -223,7 +235,8 @@
                         <div class="setting-row group-last">
                             <span class="setting-label" data-i18n="s.allow_zwjf">Cho phép "z w j f" làm phụ âm
                                 đầu</span>
-                            <div class="toggle-switch-small" id="allow-zwjf">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="allow-zwjf">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -234,7 +247,8 @@
                         <!-- 4. Spell check -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.spell_check">Kiểm tra chính tả</span>
-                            <div class="toggle-switch-small" id="spell-check">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="spell-check">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -244,7 +258,8 @@
                         <!-- 5. Restore key on wrong word -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.restore_key">Tự khôi phục phím với từ sai</span>
-                            <div class="toggle-switch-small" id="restore-key">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="restore-key">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -252,12 +267,12 @@
                             <input type="hidden" id="val-restore-key" value="0">
                         </div>
                         <!-- 6. Temp disable spell with Ctrl -->
-                        <div class="setting-row group-last" id="row-temp-off-spell"
-                            data-tooltip="Giữ Ctrl khi gõ để tạm bỏ qua kiểm tra chính tả"
-                            data-i18n-tooltip="s.temp_off_spell_tooltip">
+                        <div class="setting-row group-last" id="row-temp-off-spell">
                             <span class="setting-label" data-i18n="s.temp_off_spell">Tạm tắt chính tả bằng phím
                                 Ctrl</span>
-                            <div class="toggle-switch-small" id="temp-off-spell">
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-temp_off_spell_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="temp-off-spell">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -269,7 +284,8 @@
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.remember_code">Tự ghi nhớ bảng mã theo ứng
                                 dụng</span>
-                            <div class="toggle-switch-small" id="remember-code">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="remember-code">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -277,11 +293,11 @@
                             <input type="hidden" id="val-remember-code" value="0">
                         </div>
                         <!-- 9. Temp disable NexusKey with Alt -->
-                        <div class="setting-row" id="row-temp-off-openkey"
-                            data-tooltip="Nhấn đúp Alt để tạm tắt bộ gõ tiếng Việt (tránh xung đột với menu ứng dụng)"
-                            data-i18n-tooltip="s.temp_off_alt_tooltip">
+                        <div class="setting-row" id="row-temp-off-openkey">
                             <span class="setting-label" data-i18n="s.temp_off_alt">Tạm tắt NexusKey bằng phím Alt</span>
-                            <div class="toggle-switch-small" id="temp-off-openkey">
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-temp_off_alt_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="temp-off-openkey">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -289,13 +305,13 @@
                             <input type="hidden" id="val-temp-off-openkey" value="0">
                         </div>
                         <!-- 10. TSF Apps - Button + Toggle on same row -->
-                        <div class="setting-row" id="row-tsf-apps"
-                            data-tooltip="Sử dụng TSF engine thay vì hook cho các ứng dụng trong danh sách"
-                            data-i18n-tooltip="s.tsf_tooltip">
+                        <div class="setting-row" id="row-tsf-apps">
                             <span class="setting-label" data-i18n="s.enable_tsf">Dùng TSF cho ứng dụng</span>
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-tsf_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
                             <button class="btn-action" id="btn-tsf-apps" style="margin-right: 8px;"
                                 data-i18n="s.list">Danh sách</button>
-                            <div class="toggle-switch-small" id="tsf-apps">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="tsf-apps">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -311,7 +327,8 @@
                         <!-- 1. Enable Macro -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.enable_macro">Cho phép gõ tắt</span>
-                            <div class="toggle-switch-small" id="use-macro">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="use-macro">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -322,7 +339,8 @@
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.macro_english">Gõ tắt cả khi tắt gõ tiếng
                                 Việt</span>
-                            <div class="toggle-switch-small" id="macro-english">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="macro-english">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -333,7 +351,8 @@
                         <div class="setting-row group-last">
                             <span class="setting-label" data-i18n="s.auto_caps_macro">Tự động viết hoa theo phím
                                 tắt</span>
-                            <div class="toggle-switch-small" id="auto-caps-macro">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="auto-caps-macro">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -341,10 +360,11 @@
                             <input type="hidden" id="val-auto-caps-macro" value="0">
                         </div>
                         <!-- 4. Quick Telex -->
-                        <div class="setting-row" data-tooltip="cc=ch, gg=gi, kk=kh, nn=ng, qq=qu, pp=ph, tt=th, uu=ươ"
-                            data-i18n-tooltip="s.quick_telex_tooltip">
+                        <div class="setting-row">
                             <span class="setting-label" data-i18n="s.quick_telex">Gõ nhanh phụ âm kép</span>
-                            <div class="toggle-switch-small" id="quick-telex">
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-quick_telex_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="quick-telex">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -352,10 +372,11 @@
                             <input type="hidden" id="val-quick-telex" value="0">
                         </div>
                         <!-- 5. Quick start consonant -->
-                        <div class="setting-row" data-tooltip="f→ph, j→gi, w→qu"
-                            data-i18n-tooltip="s.quick_start_tooltip">
+                        <div class="setting-row">
                             <span class="setting-label" data-i18n="s.quick_start">Gõ tắt phụ âm đầu</span>
-                            <div class="toggle-switch-small" id="quick-start">
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-quick_start_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="quick-start">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -363,10 +384,11 @@
                             <input type="hidden" id="val-quick-start" value="0">
                         </div>
                         <!-- 6. Quick end consonant -->
-                        <div class="setting-row" data-tooltip="g→ng, h→nh, k→ch"
-                            data-i18n-tooltip="s.quick_end_tooltip">
+                        <div class="setting-row">
                             <span class="setting-label" data-i18n="s.quick_end">Gõ tắt phụ âm cuối</span>
-                            <div class="toggle-switch-small" id="quick-end">
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-quick_end_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="quick-end">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -374,12 +396,12 @@
                             <input type="hidden" id="val-quick-end" value="0">
                         </div>
                         <!-- 7. Temporarily skip macro with ESC -->
-                        <div class="setting-row group-last" id="row-temp-off-macro"
-                            data-tooltip="Nhấn Esc trước khi gõ để bỏ qua gõ tắt cho từ tiếp theo"
-                            data-i18n-tooltip="s.temp_off_macro_tooltip">
+                        <div class="setting-row group-last" id="row-temp-off-macro">
                             <span class="setting-label" data-i18n="s.temp_off_macro">Tạm bỏ qua gõ tắt bằng phím
                                 Esc</span>
-                            <div class="toggle-switch-small" id="temp-off-macro">
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-temp_off_macro_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="temp-off-macro">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -387,9 +409,9 @@
                             <input type="hidden" id="val-temp-off-macro" value="0">
                         </div>
                         <!-- Button to open Macro Table dialog -->
-                        <div class="setting-row" style="justify-content: flex-start; padding-top: 8px;">
-                            <button class="btn-action" id="btn-macro-table" data-i18n="s.macro_table_btn">Bảng gõ
-                                tắt...</button>
+                        <div class="setting-row" style="padding-top: 8px;">
+                            <button class="btn-action" id="btn-macro-table" data-i18n="s.macro_table_btn"
+                                style="margin-left: 0;">Bảng gõ tắt...</button>
                         </div>
                     </div>
                 </div>
@@ -401,7 +423,8 @@
                         <!-- 1. Khởi động cùng Windows -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.run_startup">Khởi động cùng Windows</span>
-                            <div class="toggle-switch-small" id="run-startup">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="run-startup">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -411,7 +434,8 @@
                         <!-- 2. Bật bảng này khi khởi động -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.show_startup">Bật bảng này khi khởi động</span>
-                            <div class="toggle-switch-small" id="show-on-startup">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="show-on-startup">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -421,7 +445,8 @@
                         <!-- 3. Chạy với quyền Admin -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.run_admin">Chạy với quyền Admin</span>
-                            <div class="toggle-switch-small" id="run-admin">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="run-admin">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -432,7 +457,8 @@
                         <div class="setting-row group-last">
                             <span class="setting-label" data-i18n="s.desktop_shortcut">Tạo biểu tượng trên
                                 Desktop</span>
-                            <div class="toggle-switch-small" id="desktop-shortcut">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="desktop-shortcut">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -441,10 +467,11 @@
                         </div>
                         <!-- GIAO DIỆN -->
                         <!-- 5. Giao diện tiếng Anh -->
-                        <div class="setting-row" data-tooltip="Chuyển giao diện, menu, thông báo sang tiếng Anh"
-                            data-i18n-tooltip="s.english_ui_tooltip">
+                        <div class="setting-row">
                             <span class="setting-label" data-i18n="s.english_ui">Giao diện tiếng Anh</span>
-                            <div class="toggle-switch-small" id="english-ui">
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-english_ui_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="english-ui">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="toggle-thumb-small"></div>
@@ -454,7 +481,8 @@
                         <!-- 6. Độ đục nền -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.bg_opacity">Độ đục nền</span>
-                            <div class="slider-container">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="slider-container">
                                 <div class="custom-slider" id="bg-opacity-slider">
                                     <div class="slider-track">
                                         <div class="slider-fill" id="bg-opacity-fill"></div>
@@ -468,7 +496,8 @@
                         <!-- 6. Tuỳ chỉnh icon -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.icon_style">Tuỳ chỉnh icon</span>
-                            <select class="setting-dropdown-small" id="modern-icon">
+                            <div class="spacer" style="width: *"></div>
+                    <select class="setting-dropdown-small" id="modern-icon">
                                 <option value="0">Color</option>
                                 <option value="1">Dark Mode</option>
                                 <option value="2">Light Mode</option>
@@ -509,13 +538,14 @@
                     </div>
                     <!-- Update Section - Separate Card -->
                     <div class="update-card">
-                        <div class="setting-row" id="row-check-update"
-                            data-tooltip="Kiểm tra phiên bản mới khi khởi động" data-i18n-tooltip="s.update_tooltip">
+                        <div class="setting-row" id="row-check-update">
                             <span class="setting-label" data-i18n="s.auto_update">Tự động kiểm tra cập nhật</span>
+                                <button class="btn-info" style="behavior: clickable;" data-target="s-update_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 256 256" style="pointer-events: none;"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg></button>
                             <button class="btn-action" id="btn-check-update"><span class="btn-text"
                                     data-i18n="s.check_now">Kiểm tra
                                     ngay</span></button>
-                            <div class="toggle-switch-small" id="check-update">
+                            <div class="spacer" style="width: *"></div>
+                    <div class="toggle-switch-small" id="check-update">
                                 <span class="toggle-label-i">I</span>
                                 <span class="toggle-label-o">O</span>
                                 <div class="update-thumb-white" id="update-toggle-thumb"></div>

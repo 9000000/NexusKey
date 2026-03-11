@@ -394,7 +394,7 @@
     font-size: 14px;
     font-weight: 500;
     color: var(--text-primary);
-    width: *;
+    width: max-content;
     /* Replaces flex: 1 */
 }
 
@@ -480,7 +480,7 @@
 
 /* Action button style */
 .btn-action {
-    padding: 8px 16px;
+    padding: 4px 11px;
     font-size: 12px;
     font-weight: 500;
     color: var(--color-primary);
@@ -863,4 +863,35 @@
     color: var(--text-secondary);
     min-width: 40px;
     text-align: right;
+}
+
+/* Info Button Styling */
+.btn-info {
+    padding: 0;
+    margin: 0;
+    margin-left: 6px;
+    margin-right: 6px;
+    background: transparent;
+    border: none;
+    width: 14px;
+    height: 14px;
+    vertical-align: middle;
+    cursor: pointer;
+    border-radius: 50%;
+    /* Just in case for hover effect shape */
+}
+
+.btn-info>svg {
+    width: 14px;
+    height: 14px;
+    fill: var(--text-primary);
+    /* Default bright color */
+    transition: fill 0.2s ease, transform 0.2s ease;
+}
+
+.btn-info:hover>svg {
+    fill: var(--color-primary);
+    /* Highlight color on hover */
+    transform: scale(1.15);
+    /* Slight zoom effect */
 }
