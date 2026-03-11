@@ -216,16 +216,18 @@ body.dark select option:checked {
 }
 
 /* ============================================
-   CUSTOM TOOLTIP - Shared Glassmorphism Style
+   CUSTOM TOOLTIP
    Use data-tooltip attribute (NOT title) to avoid native tooltip!
-   NOTE: Sciter has limited ::before/::after support, so no arrow
+   Tooltip rendering is handled by JS (see utils.js → initCustomTooltips)
+   which uses .js-tooltip with position:fixed to avoid stacking context bugs.
    ============================================ */
-[data-tooltip] {
-    position: relative;
+
+/* Hide Sciter's native ::before arrow which renders as a black bar */
+[data-tooltip]:hover::before {
+    display: none !important;
 }
 
-/* STACKING FIX: Ensure hovered element and its tooltip are on top of other elements.
-   We elevate the z-index of common container rows to avoid tooltips being covered by subsequent rows. */
+/* STACKING FIX: Ensure hovered rows are raised visually */
 [data-tooltip]:hover,
 .setting-row:hover,
 .option-row:hover,
@@ -237,56 +239,7 @@ body.dark select option:checked {
 .option-row,
 .switch-key-item {
     position: relative;
-    z-index: auto; /* Allow natural browser stacking for non-hovered rows */
-}
-
-/* Default: Tooltip appears BELOW element */
-/* Default: Tooltip appears BELOW element */
-[data-tooltip]:hover::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    top: calc(100% + 6px);
-    right: 16px;
-    /* Anchor closely to right edge to prevent right-clipping, but with padding */
-    padding: 10px 14px;
-    background-color: #1a1a24 !important;
-    /* Solid dark background for maximum legibility */
-    color: #ffffff;
-    font-size: 13px;
-    font-weight: 500;
-    line-height: 1.5;
-    border-radius: 8px;
-    white-space: normal;
-    min-width: 150px;
-    max-width: 250px;
-    text-align: left;
-    z-index: 9999;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-    pointer-events: none;
-    text-decoration: none !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    opacity: 1 !important;
-}
-
-/* Hide arrow - Sciter renders it as a black bar */
-[data-tooltip]:hover::before {
-    display: none !important;
-}
-
-/* ============================================
-   TOOLTIP-TOP: For elements near bottom of panel
-   Using ID selectors for Sciter compatibility
-   ============================================ */
-.tooltip-upwards [data-tooltip]:hover::after {
-    top: auto !important;
-    bottom: calc(100% + 6px) !important;
-    background-color: #1a1a24 !important;
-    color: #ffffff !important;
-    font-size: 13px !important;
-    border-radius: 8px !important;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4) !important;
-    padding: 10px 14px !important;
-    opacity: 1 !important;
+    z-index: auto;
 }
 
 @keyframes tooltipFadeIn {
@@ -371,4 +324,30 @@ body.dark select option:checked {
 .scrollbar-normal::-webkit-scrollbar-track {
     background: rgba(0, 0, 0, 0.03);
     border-radius: 3px;
+}
+
+/* ============================================
+   JS-BASED TOOLTIP STYLES
+   Uses position:fixed to escape all stacking contexts.
+   Background is always solid dark regardless of parent z-index.
+   ============================================ */
+.js-tooltip {
+    position: fixed;
+    /* escape all stacking contexts — no more transparency bugs */
+    background-color: rgba(26, 26, 36, 0.96);
+    /* 96% opacity - 4% more transparent than solid */
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.5;
+    border-radius: 8px;
+    padding: 10px 14px;
+    white-space: normal;
+    min-width: 150px;
+    max-width: 250px;
+    text-align: left;
+    z-index: 999999;
+    pointer-events: none;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }

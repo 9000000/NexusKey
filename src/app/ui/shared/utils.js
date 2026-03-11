@@ -335,3 +335,83 @@ function createRunningAppsDropdown(options) {
         }
     };
 }
+
+// ============================================================
+// JS-BASED TOOLTIP FOR SCITER
+// Uses position:fixed to escape ALL stacking contexts — no more
+// transparent-background issues regardless of parent z-index.
+// ============================================================
+var activeTooltipEl = null;
+var activeAnchorEl = null;
+
+function initCustomTooltips() {
+    var elements = document.querySelectorAll("[data-tooltip]");
+    for (var i = 0; i < elements.length; i++) {
+        var el = elements[i];
+        if (el.hasAttribute("data-tooltip-bound")) continue;
+        el.setAttribute("data-tooltip-bound", "true");
+
+        (function(target) {
+            target.addEventListener("mouseenter", function() { showTooltip(target); });
+            target.addEventListener("mouseleave", function() { hideTooltip(); });
+            target.addEventListener("click",      function() { hideTooltip(); });
+        })(el);
+    }
+}
+
+function showTooltip(element) {
+    if (activeAnchorEl === element) return;
+    hideTooltip();
+
+    var text = element.getAttribute("data-tooltip");
+    if (!text) return;
+
+    activeAnchorEl = element;
+
+    // Create tooltip div — appended to body, position:fixed so it floats
+    // above ALL Sciter stacking contexts (no more z-index transparency bugs)
+    activeTooltipEl = document.createElement("div");
+    activeTooltipEl.className = "js-tooltip";
+    activeTooltipEl.textContent = text;
+    document.body.appendChild(activeTooltipEl);
+
+    // Position using viewport coordinates (compatible with position:fixed)
+    var rect = element.getBoundingClientRect();
+    var tw   = activeTooltipEl.offsetWidth  || 220;
+    var th   = activeTooltipEl.offsetHeight || 60;
+    var ww   = document.body.clientWidth    || 380;
+
+    // Check if inside a .tooltip-upwards ancestor → show above
+    var isUpward = false;
+    var p = element.parentElement;
+    while (p && p !== document.body) {
+        if (p.classList && p.classList.contains("tooltip-upwards")) { isUpward = true; break; }
+        p = p.parentElement;
+    }
+
+    var top  = isUpward ? (rect.top - th - 6) : (rect.bottom + 6);
+    var left = rect.right - tw;
+    if (left < 10) left = 10;
+    if (left + tw > ww - 10) left = ww - tw - 10;
+
+    activeTooltipEl.style.top  = top  + "px";
+    activeTooltipEl.style.left = left + "px";
+    activeTooltipEl.style.opacity = "1";
+}
+
+function hideTooltip() {
+    if (activeTooltipEl && activeTooltipEl.parentElement) {
+        activeTooltipEl.parentElement.removeChild(activeTooltipEl);
+    }
+    activeTooltipEl = null;
+    activeAnchorEl  = null;
+}
+
+// Auto-init when DOM is ready
+if (typeof document !== "undefined") {
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initCustomTooltips);
+    } else {
+        initCustomTooltips();
+    }
+}
