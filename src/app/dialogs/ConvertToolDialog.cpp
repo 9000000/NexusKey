@@ -54,6 +54,15 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
             setHotkeyCharUI(keyStr);
         }
 
+        // Sync sequential toggle enabled/disabled state from the actual autoPaste value.
+        // JS initializeToggles() runs before DOCUMENT_COMPLETE, so it cannot see the real
+        // registry value yet. We call the JS function directly after all toggles are set.
+        {
+            sciter::dom::element root2 = get_root();
+            sciter::value autoPasteArg(config_.autoPaste);
+            root2.call_function("updateSequentialToggleState", autoPasteArg);
+        }
+
         return true;
     }
 
