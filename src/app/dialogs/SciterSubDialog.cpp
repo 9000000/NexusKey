@@ -299,6 +299,12 @@ LRESULT CALLBACK SciterSubDialog::SubclassProc(
         return result;
     }
 
+    // Suppress the default Windows non-client border redraw when the window loses focus
+    // Returning TRUE without passing to DefSubclassProc stops Windows from drawing the white inactive border
+    if (msg == WM_NCACTIVATE) {
+        return TRUE;
+    }
+
     // Let subclass handle custom messages
     if (s_instance) {
         LRESULT customResult = s_instance->onCustomMessage(hwnd, msg, wParam, lParam);

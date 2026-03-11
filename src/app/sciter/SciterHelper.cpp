@@ -59,6 +59,10 @@ void SetWindowDarkMode(HWND hwnd, bool dark) noexcept {
     BOOL darkMode = dark ? TRUE : FALSE;
     DwmSetWindowAttribute(hwnd, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &darkMode, sizeof(darkMode));
 
+    // Disable the 1px DWM window border that flashes white when focus is lost to a subdialog
+    COLORREF borderColor = 0xFFFFFFFE; // DWMWA_COLOR_NONE
+    DwmSetWindowAttribute(hwnd, 34 /*DWMWA_BORDER_COLOR*/, &borderColor, sizeof(borderColor));
+
     // uxtheme per-window dark mode (for context menus, scrollbars)
     HMODULE hUxTheme = GetModuleHandleW(L"uxtheme.dll");
     if (hUxTheme) {

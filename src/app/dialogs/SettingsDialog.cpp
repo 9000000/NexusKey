@@ -377,6 +377,12 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return result;
     }
 
+    // Suppress the default Windows non-client border redraw when the window loses focus
+    // Returning TRUE without passing to DefSubclassProc stops Windows from drawing the white inactive border
+    if (msg == WM_NCACTIVATE) {
+        return TRUE;
+    }
+
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
