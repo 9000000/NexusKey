@@ -143,6 +143,32 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Main Process
     // ═══════════════════════════════════════════════════════════
 
+    // Ensure only one background instance of NexusKey runs at a time.
+    // We check this AFTER subprocess routing so settings/macro dialogs 
+    // can spawn freely, but a second background process cannot.
+    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\NexusKey_Main_Mutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        // Another background instance is already running.
+        // If the user has "show on startup" configured, popup the settings dialog of the 
+        // existing instance to indicate the app is active. Otherwise, strictly silent.
+        auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
+        if (sysConfig.showOnStartup) {
+            HWND existingTrayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+            if (existingTrayWnd) {
+                PostMessageW(existingTrayWnd, WM_NEXUSKEY_SHOW_SETTINGS, 0, 0);
+                
+                HWND existingSettings = FindWindowW(nullptr, L"NexusKey Settings");
+                if (existingSettings) {
+                    SetForegroundWindow(existingSettings);
+                }
+            }
+        }
+        
+        NEXTKEY_LOG(L"Another instance is already running. Exiting.");
+        CloseHandle(hMutex);
+        return 0;
+    }
+
     // Load config
     auto config = ConfigManager::LoadOrDefault();
     auto hotkeyConfig = ConfigManager::LoadHotkeyConfigOrDefault();

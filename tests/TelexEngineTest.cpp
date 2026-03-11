@@ -65,6 +65,22 @@ TEST_F(TelexEngineTest, Circumflex_WithPrefix) {
     EXPECT_EQ(engine_->Peek(), L"cô");
 }
 
+TEST_F(TelexEngineTest, Circumflex_AcrossVowel_A) {
+    TypeString(*engine_, L"ddaua");
+    EXPECT_EQ(engine_->Peek(), L"đâu");
+}
+
+TEST_F(TelexEngineTest, Circumflex_AcrossVowel_O) {
+    TypeString(*engine_, L"uoio");
+    EXPECT_EQ(engine_->Peek(), L"uôi");
+}
+
+TEST_F(TelexEngineTest, Circumflex_AcrossVowel_E) {
+    TypeString(*engine_, L"ieue");
+    EXPECT_EQ(engine_->Peek(), L"iêu");
+}
+
+
 // ============================================================================
 // BREVE TESTS (aw→ă)
 // ============================================================================
@@ -434,6 +450,16 @@ TEST_F(TelexEngineTest, Triphthong_OEO_ExtraO_Consumed) {
     engine_->PushChar(L'o');
     EXPECT_EQ(engine_->Count(), 5);  // No new state added
     EXPECT_EQ(engine_->Peek(), L"ngoeo");
+}
+
+TEST_F(TelexEngineTest, Triphthong_OAO_ExtraO_Consumed) {
+    // ngoao + o: triphthong oao complete, extra 'o' consumed (no-op)
+    TypeString(*engine_, L"ngoao");
+    EXPECT_EQ(engine_->Peek(), L"ngoao");
+    EXPECT_EQ(engine_->Count(), 5);
+    engine_->PushChar(L'o');
+    EXPECT_EQ(engine_->Count(), 5);  // No new state added
+    EXPECT_EQ(engine_->Peek(), L"ngoao");
 }
 
 TEST_F(TelexEngineTest, Word_Quo) {
@@ -1878,6 +1904,78 @@ TEST_F(TelexEngineTest, Backspace_DeletesBracketChar) {
     TypeString(*engine_, L"th[");  // thơ
     engine_->Backspace();  // removes ơ
     EXPECT_EQ(engine_->Peek(), L"th");
+}
+
+// ============================================================================
+// ENGLISH PROTECTION TESTS (spell check ENABLED)
+// Tests that impossible Vietnamese patterns suppress diacritics.
+// ============================================================================
+
+class EnglishProtectionTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.spellCheckEnabled = true;
+        config_.optimizeLevel = 0;
+        engine_ = std::make_unique<TelexEngine>(config_);
+    }
+    TypingConfig config_;
+    std::unique_ptr<TelexEngine> engine_;
+};
+
+TEST_F(EnglishProtectionTest, HardReject_DR_Cluster) {
+    // "drive" starts with "dr" → impossible in Vietnamese
+    // Note: "dropdown" starts with "dd" which is a Vietnamese modifier (đ);
+    // using "drive" instead to test pure start cluster detection
+    TypeString(*engine_, L"drive");
+    EXPECT_EQ(engine_->Peek(), L"drive");
+}
+
+TEST_F(EnglishProtectionTest, HardReject_CL_Cluster) {
+    // "clear" starts with "cl" → impossible in Vietnamese  
+    TypeString(*engine_, L"clear");
+    EXPECT_EQ(engine_->Peek(), L"clear");
+}
+
+TEST_F(EnglishProtectionTest, HardReject_SP_Cluster) {
+    // "sport" starts with "sp" → impossible in Vietnamese
+    TypeString(*engine_, L"sport");
+    EXPECT_EQ(engine_->Peek(), L"sport");
+}
+
+TEST_F(EnglishProtectionTest, HardReject_BR_Cluster) {
+    // "brown" starts with "br" → impossible in Vietnamese.
+    // The 'w' should be treated as literal, not as an 'ow'rightarrow'ơ' modifier.
+    TypeString(*engine_, L"brown");
+    EXPECT_EQ(engine_->Peek(), L"brown");
+}
+
+TEST_F(EnglishProtectionTest, ValidVietnamese_Thuong) {
+    // "thương" is valid Vietnamese → should still compose
+    TypeString(*engine_, L"thuowng");
+    EXPECT_EQ(engine_->Peek(), L"thương");
+}
+
+TEST_F(EnglishProtectionTest, ValidVietnamese_Yeu) {
+    // "yêu" is valid Vietnamese y-sequence
+    TypeString(*engine_, L"yeeu");
+    EXPECT_EQ(engine_->Peek(), L"yêu");
+}
+
+TEST_F(EnglishProtectionTest, ValidVietnamese_Dau) {
+    // Regular Vietnamese word should still work
+    TypeString(*engine_, L"ddaua");
+    EXPECT_EQ(engine_->Peek(), L"đâu");
+}
+
+TEST_F(EnglishProtectionTest, Backspace_ResetsProtection) {
+    // Type "dr" → HardEnglish, backspace twice → Unknown, then "a" is normal
+    TypeString(*engine_, L"dr");
+    EXPECT_EQ(engine_->Peek(), L"dr");
+    engine_->Backspace();
+    engine_->Backspace();
+    TypeString(*engine_, L"das");
+    // "da" + "s" = "dá" (Vietnamese, bias reset)
+    EXPECT_EQ(engine_->Peek(), L"dá");
 }
 
 // ============================================================================

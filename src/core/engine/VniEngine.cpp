@@ -176,24 +176,45 @@ void VniEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 1. Try tone keys (1-5) — gated by spell check
+    // 1. Try tone keys (1-5) — gated by spell check + English protection
     if (IsToneKey(c)) {
         if (config_.spellCheckEnabled && spellCheckDisabled_) {
             ProcessChar(c, rawInput_.size() - 1);
             UpdateSpellState();
             return;
         }
+        // English Protection: skip tone if HardEnglish, defer if SoftEnglish
+        if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::HardEnglish) {
+            ProcessChar(c, rawInput_.size() - 1);
+            UpdateSpellState();
+            return;
+        }
+        if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::SoftEnglish) {
+            if (!UpdateToneInsistence(c, engProt_)) {
+                ProcessChar(c, rawInput_.size() - 1);
+                UpdateSpellState();
+                return;
+            }
+            // User insisted (same key twice) — fall through to apply tone
+        }
         if (ProcessTone(c)) {
+            engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
             UpdateSpellState();
             return;
         }
     }
 
     // 2. Try modifier keys (6-9)
-    // Modifiers are NOT gated by spell check — they can transform invalid
-    // sequences into valid ones (e.g., vowel modifiers create valid nuclei)
+    // Modifiers can transform invalid sequences into valid ones
+    // However, if we're clearly in an English word, skip modifiers
     if (IsModifierKey(c)) {
-        if (ProcessModifier(c)) {
+        if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::HardEnglish) {
+            // Don't try modifiers — treat as literal
+        } else if (ProcessModifier(c)) {
+            if (engProt_.bias == LanguageBias::HardEnglish ||
+                engProt_.bias == LanguageBias::SoftEnglish) {
+                engProt_.bias = LanguageBias::Vietnamese;
+            }
             UpdateSpellState();
             return;
         }
@@ -218,6 +239,11 @@ void VniEngine::PushChar(wchar_t c) {
     ProcessChar(c, rawInput_.size() - 1);
     RelocateToneToTarget();
     UpdateSpellState();
+
+    // English Protection: re-evaluate bias after adding character
+    if (config_.spellCheckEnabled) {
+        CheckEnglishBias(states_.data(), states_.size(), engProt_);
+    }
 }
 
 void VniEngine::Backspace() {
@@ -254,6 +280,16 @@ void VniEngine::Backspace() {
         rawInput_.resize(rawTarget);
     }
     UpdateSpellState();
+
+    // English Protection: recalculate bias after backspace
+    if (config_.spellCheckEnabled) {
+        if (states_.size() < 2) {
+            engProt_.Reset();
+        } else {
+            engProt_.Reset();
+            CheckEnglishBias(states_.data(), states_.size(), engProt_);
+        }
+    }
 }
 
 std::wstring VniEngine::Peek() const {
@@ -324,6 +360,7 @@ void VniEngine::Reset() {
     lastQuickConsonantKey_ = 0;
     dModifierEscaped_ = false;
     quickStartKey_ = 0;
+    engProt_.Reset();
 }
 
 void VniEngine::ToggleTempSpellOff() {

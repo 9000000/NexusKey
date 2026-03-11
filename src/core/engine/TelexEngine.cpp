@@ -186,14 +186,29 @@ void TelexEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 1b. Try tone keys (s, f, r, x, j) — gated by spell check
+    // 1b. Try tone keys (s, f, r, x, j) — gated by spell check + English protection
     if (IsToneKey(c) && !states_.empty()) {
         if (config_.spellCheckEnabled && spellCheckDisabled_) {
             ProcessChar(c);
             UpdateSpellState();
             return;
         }
+        // English Protection: skip tone if HardEnglish, defer if SoftEnglish
+        if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::HardEnglish) {
+            ProcessChar(c);
+            UpdateSpellState();
+            return;
+        }
+        if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::SoftEnglish) {
+            if (!UpdateToneInsistence(c, engProt_)) {
+                ProcessChar(c);
+                UpdateSpellState();
+                return;
+            }
+            // User insisted (same key twice) — fall through to apply tone
+        }
         if (ProcessTone(c)) {
+            engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
             ApplyAutoUO();
             UpdateSpellState();
             return;
@@ -201,10 +216,16 @@ void TelexEngine::PushChar(wchar_t c) {
     }
 
     // 2. Try modifier keys (w, [], aa, ee, oo, dd)
-    // Modifiers are NOT gated by spell check — they can transform invalid
-    // sequences into valid ones (e.g., "uo" → "ươ", "ie" → "iê")
-    // Brackets and standalone 'w' can insert new chars, so try even on empty states
-    if (ProcessModifier(c)) {
+    // Modifiers can transform invalid sequences into valid ones (uo -> ươ).
+    // However, if we're clearly in an English word (Tier 1 Hard Protect),
+    // skip modifiers and treat them as literal keys (e.g. 'brown' -> 'w' is literal).
+    if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::HardEnglish) {
+        // Don't try modifiers — treat as literal
+    } else if (ProcessModifier(c)) {
+        if (engProt_.bias == LanguageBias::HardEnglish || 
+            engProt_.bias == LanguageBias::SoftEnglish) {
+            engProt_.bias = LanguageBias::Vietnamese;  // Modifier applied → VN intent
+        }
         ApplyAutoUO();
         UpdateSpellState();
         return;
@@ -229,6 +250,11 @@ void TelexEngine::PushChar(wchar_t c) {
     RelocateToneToTarget();
     ApplyAutoUO();
     UpdateSpellState();
+
+    // English Protection: re-evaluate bias after adding character
+    if (config_.spellCheckEnabled) {
+        CheckEnglishBias(states_.data(), states_.size(), engProt_);
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -339,17 +365,25 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
 
         // Free marking: backward scan for circumflex across intervening chars
         // e.g., "tieng" + 'e' → "tiêng", "cau" + 'a' → "câu", "chieu" + 'e' → "chiêu"
-        // Crosses consonants freely; crosses vowels only with spell-check validation
-        if (!spellCheckDisabled_ && isCircumflexBase) {
+        // Crosses consonants freely; crosses vowels only with spell-check validation (if enabled)
+        if (isCircumflexBase) {
+            // GUARD: don't apply cross-vowel circumflex if it completes a contiguous triphthong
+            // e.g., "ngoe" + 'o' -> forms "o e o" triphthong, so let it be "ngoeo" instead of "ngôe"
+            size_t n = states_.size();
+            if (n >= 2 && states_[n - 1].IsVowel() && states_[n - 2].IsVowel() &&
+                IsTriphthong(states_[n - 2].base, states_[n - 1].base, lower)) {
+                return false; 
+            }
+
             bool needsValidation = false;  // True when crossing vowels
             for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
                 if (it->IsVowel() && it->base != lower) { needsValidation = true; continue; }
                 if (it->IsVowel() && it->base == lower) {
-                    // Reject cross-vowel if: no spell check, or unsupported modifier
+                    // Reject cross-vowel if: unsupported modifier
                     // Horn undo (ươ→uô) always allowed across vowels
                     if (needsValidation && it->mod != Modifier::Horn &&
-                        (!config_.spellCheckEnabled ||
-                         (it->mod != Modifier::None && it->mod != Modifier::Circumflex))) break;
+                         (it->mod != Modifier::None && it->mod != Modifier::Circumflex)) break;
+                    
                     if (it->mod == Modifier::Circumflex) {
                         it->mod = Modifier::None;
                         ProcessChar(c);
@@ -364,7 +398,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                     }
                     if (it->mod == Modifier::None) {
                         it->mod = Modifier::Circumflex;
-                        if (needsValidation && SpellCheck::Validate(
+                        if (needsValidation && config_.spellCheckEnabled && SpellCheck::Validate(
                                 states_.data(), states_.size(), config_.allowZwjf)
                                 == SpellCheck::Result::Invalid) {
                             it->mod = Modifier::None;
@@ -862,6 +896,16 @@ void TelexEngine::Backspace() {
         rawInput_.resize(rawTarget);
     }
     UpdateSpellState();
+
+    // English Protection: recalculate bias after backspace
+    if (config_.spellCheckEnabled) {
+        if (states_.size() < 2) {
+            engProt_.Reset();
+        } else {
+            engProt_.Reset();
+            CheckEnglishBias(states_.data(), states_.size(), engProt_);
+        }
+    }
 }
 
 std::wstring TelexEngine::Peek() const {
@@ -928,6 +972,7 @@ void TelexEngine::Reset() {
     lastQuickConsonantKey_ = 0;
     dModifierEscaped_ = false;
     quickStartKey_ = 0;
+    engProt_.Reset();
 }
 
 void TelexEngine::ToggleTempSpellOff() {

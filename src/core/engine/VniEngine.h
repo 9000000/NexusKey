@@ -5,6 +5,7 @@
 
 #include "IInputEngine.h"
 #include "SpellChecker.h"
+#include "EnglishProtection.h"
 #include "core/config/TypingConfig.h"
 #include <vector>
 
@@ -88,6 +89,7 @@ private:
     wchar_t lastQuickConsonantKey_ = 0;  // key that triggered last quick consonant (suppresses consecutive re-trigger)
     bool dModifierEscaped_ = false;      // true after đ→d escape (d99), prevents re-triggering
     wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
+    EnglishProtectionState engProt_;     // 3-tier English protection state
 };
 
 }  // namespace Vni

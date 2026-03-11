@@ -127,16 +127,20 @@ constexpr TriphthongPattern kTriphthongs[] = {
     {L'o', L'e', L'o'},   // oeo
     {L'u', L'y', L'a'},   // uya
     {L'u', L'y', L'u'},   // uyu
+    {L'o', L'a', L'o'},   // oao
+    {L'o', L'a', L'y'},   // oay
 };
 constexpr size_t kTriphthongCount = sizeof(kTriphthongs) / sizeof(kTriphthongs[0]);
 
 /// Check if three vowel bases form a triphthong
 [[nodiscard]] constexpr bool IsTriphthong(wchar_t v1, wchar_t v2, wchar_t v3) noexcept {
-    // 4 entries — flat comparison is faster than loop, no branch misprediction
+    // Flat comparison is faster than loop, no branch misprediction
     return (v1 == L'o' && v2 == L'a' && v3 == L'i') ||  // oai
            (v1 == L'o' && v2 == L'e' && v3 == L'o') ||  // oeo
            (v1 == L'u' && v2 == L'y' && v3 == L'a') ||  // uya
-           (v1 == L'u' && v2 == L'y' && v3 == L'u');     // uyu
+           (v1 == L'u' && v2 == L'y' && v3 == L'u') ||  // uyu
+           (v1 == L'o' && v2 == L'a' && v3 == L'o') ||  // oao
+           (v1 == L'o' && v2 == L'a' && v3 == L'y');    // oay
 }
 
 //=============================================================================

@@ -291,10 +291,11 @@ TEST_F(TelexSpellCheckTest, InvalidSyllable_ToneBlocked) {
 }
 
 TEST_F(TelexSpellCheckTest, InvalidSyllable_ModifierNotBlocked) {
-    // Modifiers are NOT gated — in full Telex, standalone 'w' → ư
+    // With English Protection, "bl" is HardEnglish, so modifiers are blocked
+    // and treated as literal characters.
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"blw");
-    EXPECT_EQ(engine.Peek(), L"blư");
+    EXPECT_EQ(engine.Peek(), L"blw");
 }
 
 TEST_F(TelexSpellCheckTest, DD_NotBlocked) {
@@ -371,11 +372,11 @@ TEST_F(TelexSpellCheckTest, ValidWord_Duoc) {
 }
 
 TEST_F(TelexSpellCheckTest, CircumflexModifier_NotGated) {
-    // Modifiers are not gated by spell check.
-    // "bl" (invalid) + "a" → "bla" + "a" → circumflex applied to 'a' → "blâ"
+    // With English Protection, "bl" is HardEnglish, so modifiers are blocked
+    // "bl" (invalid) + "a" → "bla" + "a" → 'aa' modifier blocked → "blaa"
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"blaa");
-    EXPECT_EQ(engine.Peek(), L"blâ");
+    EXPECT_EQ(engine.Peek(), L"blaa");
 }
 
 //=============================================================================

@@ -447,6 +447,14 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return true;
     }
 
+    // Another instance tried to start and requests to show Settings
+    if (msg == WM_NEXUSKEY_SHOW_SETTINGS && hwnd == hwndMessage_) {
+        if (menuCallback_) {
+            menuCallback_(TrayMenuId::Settings);
+        }
+        return true;
+    }
+
     // WM_HOTKEY is handled by the caller's WndProc, not here
     if (msg == WM_HOTKEY && hwnd == hwndMessage_) {
         if (menuCallback_) {
