@@ -182,8 +182,8 @@ body.dark {
 
 /* Sciter specific popup style override */
 body.dark popup {
-    background-color: rgba(30, 33, 41, 0.6) !important;
-    /* increased transparency (0.9 -> 0.6) */
+    background-color: rgba(26, 26, 36, 0.98) !important;
+    /* solid dark background for legibility */
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2) !important;
     color: #F9FAFB !important;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.8) !important;
@@ -230,26 +230,27 @@ body.dark select option:checked {
 .setting-row:hover,
 .option-row:hover,
 .switch-key-item:hover {
-    z-index: 999;
+    z-index: 99999 !important;
 }
 
 .setting-row,
 .option-row,
 .switch-key-item {
     position: relative;
-    z-index: 1;
+    z-index: auto; /* Allow natural browser stacking for non-hovered rows */
 }
 
+/* Default: Tooltip appears BELOW element */
 /* Default: Tooltip appears BELOW element */
 [data-tooltip]:hover::after {
     content: attr(data-tooltip);
     position: absolute;
     top: calc(100% + 6px);
-    right: 0;
-    /* Align right edge of tooltip with right edge of icon; tooltip expands leftward */
+    right: 16px;
+    /* Anchor closely to right edge to prevent right-clipping, but with padding */
     padding: 10px 14px;
-    background: rgba(30, 30, 40, 0.95);
-    /* Increase opacity */
+    background-color: #1a1a24 !important;
+    /* Solid dark background for maximum legibility */
     color: #ffffff;
     font-size: 13px;
     font-weight: 500;
@@ -264,6 +265,7 @@ body.dark select option:checked {
     pointer-events: none;
     text-decoration: none !important;
     border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    opacity: 1 !important;
 }
 
 /* Hide arrow - Sciter renders it as a black bar */
@@ -275,18 +277,16 @@ body.dark select option:checked {
    TOOLTIP-TOP: For elements near bottom of panel
    Using ID selectors for Sciter compatibility
    ============================================ */
-#row-temp-off-spell .btn-info:hover::after,
-#row-temp-off-openkey .btn-info:hover::after,
-#use-clipboard .btn-info:hover::after,
-#row-tsf-apps .btn-info:hover::after,
-#row-check-update .btn-info:hover::after,
-#row-temp-off-macro .btn-info:hover::after,
-#row-english-ui .btn-info:hover::after,
-#row-quick-telex .btn-info:hover::after,
-#row-quick-start .btn-info:hover::after,
-#row-quick-end .btn-info:hover::after {
-    top: auto;
-    bottom: calc(100% + 6px);
+.tooltip-upwards [data-tooltip]:hover::after {
+    top: auto !important;
+    bottom: calc(100% + 6px) !important;
+    background-color: #1a1a24 !important;
+    color: #ffffff !important;
+    font-size: 13px !important;
+    border-radius: 8px !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4) !important;
+    padding: 10px 14px !important;
+    opacity: 1 !important;
 }
 
 @keyframes tooltipFadeIn {
