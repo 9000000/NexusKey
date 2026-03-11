@@ -210,6 +210,8 @@ void VniEngine::PushChar(wchar_t c) {
     if (IsModifierKey(c)) {
         if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::HardEnglish) {
             // Don't try modifiers — treat as literal
+        } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            // PREVENT modifier application if sequence is already structurally invalid.
         } else if (ProcessModifier(c)) {
             if (engProt_.bias == LanguageBias::HardEnglish ||
                 engProt_.bias == LanguageBias::SoftEnglish) {

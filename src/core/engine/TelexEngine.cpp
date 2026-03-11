@@ -221,6 +221,9 @@ void TelexEngine::PushChar(wchar_t c) {
     // skip modifiers and treat them as literal keys (e.g. 'brown' -> 'w' is literal).
     if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::HardEnglish) {
         // Don't try modifiers — treat as literal
+    } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
+        // PREVENT modifier application if sequence is already structurally invalid.
+        // Treating 'w' or 'e' as literal instead of modifiers.
     } else if (ProcessModifier(c)) {
         if (engProt_.bias == LanguageBias::HardEnglish || 
             engProt_.bias == LanguageBias::SoftEnglish) {
