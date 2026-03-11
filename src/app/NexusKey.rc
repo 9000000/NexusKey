@@ -15,14 +15,14 @@
 
 // Icons — Color (default)
 IDI_APP              ICON    "resources/icon.ico"
-IDI_VIET_ON          ICON    "resources/StatusViet.ico"
-IDI_VIET_OFF         ICON    "resources/StatusEng.ico"
+IDI_VIET_ON          ICON    "resources/status/StatusViet.ico"
+IDI_VIET_OFF         ICON    "resources/status/StatusEng.ico"
 // Icons — White (for dark taskbar)
-IDI_VIET_ON_WHITE    ICON    "resources/StatusViet10.ico"
-IDI_VIET_OFF_WHITE   ICON    "resources/StatusEng10.ico"
+IDI_VIET_ON_WHITE    ICON    "resources/status/StatusViet10.ico"
+IDI_VIET_OFF_WHITE   ICON    "resources/status/StatusEng10.ico"
 // Icons — Black (for light taskbar)
-IDI_VIET_ON_BLACK    ICON    "resources/StatusVietBlack.ico"
-IDI_VIET_OFF_BLACK   ICON    "resources/StatusEngBlack.ico"
+IDI_VIET_ON_BLACK    ICON    "resources/status/StatusVietBlack.ico"
+IDI_VIET_OFF_BLACK   ICON    "resources/status/StatusEngBlack.ico"
 
 // Version Information
 VS_VERSION_INFO VERSIONINFO

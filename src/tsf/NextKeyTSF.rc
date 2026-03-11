@@ -3,5 +3,5 @@
 
 #include "resource.h"
 
-IDI_VIET_ON  ICON "../app/resources/StatusViet.ico"
-IDI_VIET_OFF ICON "../app/resources/StatusEng.ico"
+IDI_VIET_ON  ICON "../app/resources/status/StatusViet.ico"
+IDI_VIET_OFF ICON "../app/resources/status/StatusEng.ico"
