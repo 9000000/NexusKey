@@ -246,21 +246,24 @@ body.dark select option:checked {
     position: absolute;
     top: calc(100% + 6px);
     right: 0;
-    padding: 8px 12px;
+    /* Align right edge of tooltip with right edge of icon; tooltip expands leftward */
+    padding: 10px 14px;
     background: rgba(30, 30, 40, 0.95);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 1.4;
-    border-radius: 6px;
+    /* Increase opacity */
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.5;
+    border-radius: 8px;
     white-space: normal;
-    max-width: 220px;
+    min-width: 150px;
+    max-width: 250px;
     text-align: left;
     z-index: 9999;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
     pointer-events: none;
     text-decoration: none !important;
-    border: none !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 /* Hide arrow - Sciter renders it as a black bar */
@@ -272,12 +275,16 @@ body.dark select option:checked {
    TOOLTIP-TOP: For elements near bottom of panel
    Using ID selectors for Sciter compatibility
    ============================================ */
-#row-temp-off-spell:hover::after,
-#row-temp-off-openkey:hover::after,
-#use-clipboard:hover::after,
-#row-tsf-apps:hover::after,
-#row-check-update:hover::after,
-#row-temp-off-macro:hover::after {
+#row-temp-off-spell .btn-info:hover::after,
+#row-temp-off-openkey .btn-info:hover::after,
+#use-clipboard .btn-info:hover::after,
+#row-tsf-apps .btn-info:hover::after,
+#row-check-update .btn-info:hover::after,
+#row-temp-off-macro .btn-info:hover::after,
+#row-english-ui .btn-info:hover::after,
+#row-quick-telex .btn-info:hover::after,
+#row-quick-start .btn-info:hover::after,
+#row-quick-end .btn-info:hover::after {
     top: auto;
     bottom: calc(100% + 6px);
 }

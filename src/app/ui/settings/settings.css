@@ -878,6 +878,8 @@
     vertical-align: middle;
     cursor: pointer;
     border-radius: 50%;
+    position: static !important;
+    /* Force tooltip anchor to fall back to the parent .setting-row */
     /* Just in case for hover effect shape */
 }
 
