@@ -26,7 +26,7 @@ namespace NextKey {
 SciterSubDialog* SciterSubDialog::s_instance = nullptr;
 
 SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
-    : sciter::window(SW_POPUP, RECT{0, 0, config.baseWidth, config.baseHeight})
+    : sciter::window(SW_POPUP, RECT{-10000, -10000, -10000 + config.baseWidth, -10000 + config.baseHeight})
     , config_(config) {
 
     s_instance = this;
@@ -81,28 +81,6 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         // and transparent OS window mode natively handles sizing
     }
 
-    // Center on parent or screen
-    RECT rc;
-    GetWindowRect(get_hwnd(), &rc);
-    int winWidth = rc.right - rc.left;
-    int winHeight = rc.bottom - rc.top;
-
-    if (config_.parentHwnd) {
-        RECT parentRect;
-        GetWindowRect(config_.parentHwnd, &parentRect);
-        int px = parentRect.left + (parentRect.right - parentRect.left - winWidth) / 2;
-        int py = parentRect.top + (parentRect.bottom - parentRect.top - winHeight) / 2;
-        SetWindowPos(get_hwnd(), config_.topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
-                     px, py, 0, 0, SWP_NOSIZE);
-    } else {
-        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-        int x = (screenWidth - winWidth) / 2;
-        int y = (screenHeight - winHeight) / 2;
-        SetWindowPos(get_hwnd(), config_.topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
-                     x, y, 0, 0, SWP_NOSIZE);
-    }
-
     // Theme-aware DWM mode + rounded corners + blur
     HWND hwnd = get_hwnd();
     if (hwnd) {
@@ -118,6 +96,24 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
 
     // Subclass for dragging and close
     SetWindowSubclass(get_hwnd(), SubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+
+    if (hwnd) {
+        bool dark = SciterHelper::IsWindowsDarkMode();
+        SciterHelper::SetWindowDarkMode(hwnd, dark);
+
+        // Subdialog body class parsing
+        sciter::dom::element htmlRoot(get_root());
+        sciter::dom::element body = htmlRoot.find_first("body");
+        if (body.is_valid()) {
+            body.set_attribute("class", dark ? L"dark" : L"");
+        }
+
+        int cornerPreference = DwmConstants::DWMWCP_ROUND;
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                              &cornerPreference, sizeof(cornerPreference));
+
+        SciterHelper::enableWindowBlur(hwnd, BlurMode::Blur);
+    }
 
     // Apply background opacity from UIConfig (via DOM, not call_function)
     if (config_.applyBackgroundOpacity) {
@@ -136,6 +132,42 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
             mainContainer.set_style_attribute("background-color", bgColor);
         }
     }
+
+    // Temporarily disable DWM transitions (animations) to avoid seeing the window jump
+    // DWMWA_TRANSITIONS_FORCEDISABLE = 3
+    BOOL disableTransitions = TRUE;
+    DwmSetWindowAttribute(get_hwnd(), 3, &disableTransitions, sizeof(disableTransitions));
+
+    // Expand (show) the window offscreen first.
+    // This is REQUIRED so that DWM Composition and Sciter rendering state become active.
+    // Without this, the background stays solid black instead of blurred/transparent.
+    expand();
+
+    // Finally, move the initialized window onscreen (it was created at -10000, -10000)
+    RECT rc;
+    GetWindowRect(get_hwnd(), &rc);
+    int winWidth = rc.right - rc.left;
+    int winHeight = rc.bottom - rc.top;
+
+    if (config_.parentHwnd) {
+        RECT parentRect;
+        GetWindowRect(config_.parentHwnd, &parentRect);
+        int px = parentRect.left + (parentRect.right - parentRect.left - winWidth) / 2;
+        int py = parentRect.top + (parentRect.bottom - parentRect.top - winHeight) / 2;
+        SetWindowPos(get_hwnd(), config_.topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+                     px, py, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+    } else {
+        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        int x = (screenWidth - winWidth) / 2;
+        int y = (screenHeight - winHeight) / 2;
+        SetWindowPos(get_hwnd(), config_.topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+                     x, y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+    }
+
+    // Re-enable DWM transitions
+    disableTransitions = FALSE;
+    DwmSetWindowAttribute(get_hwnd(), 3, &disableTransitions, sizeof(disableTransitions));
 }
 
 SciterSubDialog::~SciterSubDialog() {

@@ -57,7 +57,7 @@ constexpr int BASE_HEIGHT_COLLAPSED = 460;  // Match OpenKey height
 static SettingsDialog* s_instance = nullptr;
 
 SettingsDialog::SettingsDialog()
-    : sciter::window(SW_POPUP, RECT{0, 0, BASE_WIDTH_COLLAPSED, BASE_HEIGHT_COLLAPSED}) {
+    : sciter::window(SW_POPUP, RECT{-10000, -10000, -10000 + BASE_WIDTH_COLLAPSED, -10000 + BASE_HEIGHT_COLLAPSED}) {
 
     s_instance = this;
 
@@ -111,18 +111,18 @@ SettingsDialog::SettingsDialog()
         SendMessageW(get_hwnd(), WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(appIcon));
     }
 
-    // 5. Center window on screen (window auto-sizes via CSS max-content)
-    RECT rc;
-    GetWindowRect(get_hwnd(), &rc);
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-    int winWidth = rc.right - rc.left;
-    int winHeight = rc.bottom - rc.top;
-    int x = (screenWidth - winWidth) / 2;
-    int y = (screenHeight - winHeight) / 2;
-    SetWindowPos(get_hwnd(), HWND_NOTOPMOST, x, y, 0, 0, SWP_NOSIZE);
+    // 8. Subclass for window dragging and close
+    SetWindowSubclass(get_hwnd(), SubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
-    // 7. Apply theme-aware DWM mode, rounded corners, and Windows API blur
+    // 9. Initialize UI with loaded settings
+    initializeUI();
+
+    // 10. Temporarily disable DWM transitions (animations) to avoid seeing the window jump
+    // DWMWA_TRANSITIONS_FORCEDISABLE = 3 in dwmapi.h
+    BOOL disableTransitions = TRUE;
+    DwmSetWindowAttribute(get_hwnd(), 3, &disableTransitions, sizeof(disableTransitions));
+
+    // 11. Apply theme-aware DWM mode and Windows API blur
     HWND hwnd = get_hwnd();
     if (hwnd) {
         bool dark = SciterHelper::IsWindowsDarkMode();
@@ -137,18 +137,32 @@ SettingsDialog::SettingsDialog()
 
         // Enable rounded corners on Windows 11
         int cornerPreference = DwmConstants::DWMWCP_ROUND;
-        DwmSetWindowAttribute(hwnd, DwmConstants::DWMWA_WINDOW_CORNER_PREFERENCE,
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
                               &cornerPreference, sizeof(cornerPreference));
 
         // Enable Windows API blur effect (more beautiful than Sciter's native blur)
         SciterHelper::enableWindowBlur(hwnd, BlurMode::Blur);
     }
 
-    // 8. Subclass for window dragging and close
-    SetWindowSubclass(get_hwnd(), SubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+    // 12. Expand (show) the window offscreen first.
+    // This is REQUIRED so that DWM Composition and Sciter rendering state become active.
+    // Without this, the background stays solid black instead of blurred/transparent.
+    expand();
 
-    // 9. Initialize UI with loaded settings
-    initializeUI();
+    // 13. Finally, move the initialized, rendered, and themed window onscreen
+    RECT rc;
+    GetWindowRect(get_hwnd(), &rc);
+    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+    int winWidth = rc.right - rc.left;
+    int winHeight = rc.bottom - rc.top;
+    int x = (screenWidth - winWidth) / 2;
+    int y = (screenHeight - winHeight) / 2;
+    SetWindowPos(get_hwnd(), HWND_NOTOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+
+    // Re-enable DWM transitions for subsequent show/hide animations
+    disableTransitions = FALSE;
+    DwmSetWindowAttribute(get_hwnd(), 3, &disableTransitions, sizeof(disableTransitions));
 }
 
 SettingsDialog::~SettingsDialog() {
