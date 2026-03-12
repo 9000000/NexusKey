@@ -45,13 +45,10 @@ Instead of simply popping the converted state (`h`), we:
 **The Fix:** We exposed `HasActiveQuickConsonant()` on the engine interface.
 ```cpp
 // In HookEngine::CommitComposition
+// CRITICAL: We MUST check this before engine_->Commit(), as Commit() resets the engine.
 lastCommittedWasQuickConsonant_ = engine_->HasActiveQuickConsonant();
 
-// In HookEngine::ProcessKeyDown
-if (!restored && (vkCode == VK_SPACE || vkCode == VK_RETURN) &&
-    !lastCommittedHistory_.empty() && !lastCommittedWasQuickConsonant_) {
-    commitUndoState_ = 1; // Only enable rehydration if it WASN'T a quick consonant
-}
+std::wstring committed = engine_->Commit();
 ```
 If the word ended in a quick consonant, we disable `commitUndoState_`. Double-backspace then drops through to standard OS character deletion, naturally resolving `aph` to `ap`!
 
