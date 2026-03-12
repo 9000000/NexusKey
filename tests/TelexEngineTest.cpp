@@ -2393,38 +2393,40 @@ TEST_F(AutoRestoreTest, QuickConsonant_GG_WithVowel_Keeps) {
 }
 
 TEST_F(AutoRestoreTest, QuickConsonant_PP_Backspace_Escape) {
-    // "app" → "aph", backspace → "ap", then 'p' → "app" (not "aph")
+    // "app" → "aph"; backspace now restores in-place → "app" (not "ap")
+    // The escape flag still prevents the next 'p' from re-triggering quick consonant.
     config_.quickConsonant = true;
     engine_ = std::make_unique<TelexEngine>(config_);
     TypeString(*engine_, L"app");
     EXPECT_EQ(engine_->Peek(), L"aph");
     engine_->Backspace();
-    EXPECT_EQ(engine_->Peek(), L"ap");
-    engine_->PushChar(L'p');
-    EXPECT_EQ(engine_->Peek(), L"app");
+    EXPECT_EQ(engine_->Peek(), L"app");   // restored in-place
+    engine_->PushChar(L'p');               // escape consumed → literal 'p', no re-trigger
+    EXPECT_EQ(engine_->Peek(), L"appp");
 }
 
 TEST_F(AutoRestoreTest, QuickConsonant_GG_Backspace_Escape) {
-    // "agg" → "agi", backspace → "ag", then 'g' → "agg"
+    // "agg" → "agi"; backspace restores in-place → "agg"
     config_.quickConsonant = true;
     engine_ = std::make_unique<TelexEngine>(config_);
     TypeString(*engine_, L"agg");
     EXPECT_EQ(engine_->Peek(), L"agi");
     engine_->Backspace();
-    engine_->PushChar(L'g');
-    EXPECT_EQ(engine_->Peek(), L"agg");
+    EXPECT_EQ(engine_->Peek(), L"agg");   // restored in-place
+    engine_->PushChar(L'g');               // escape consumed, literal 'g' added
+    EXPECT_EQ(engine_->Peek(), L"aggg");
 }
 
 TEST_F(AutoRestoreTest, QuickConsonant_UU_Backspace_Escape) {
-    // "uu" → "ươ", backspace → "u", then 'u' → "uu"
+    // "uu" → "ươ"; backspace restores in-place → "uu"
     config_.quickConsonant = true;
     engine_ = std::make_unique<TelexEngine>(config_);
     TypeString(*engine_, L"uu");
     EXPECT_EQ(engine_->Peek(), L"ươ");
     engine_->Backspace();
-    EXPECT_EQ(engine_->Peek(), L"u");
-    engine_->PushChar(L'u');
-    EXPECT_EQ(engine_->Peek(), L"uu");
+    EXPECT_EQ(engine_->Peek(), L"uu");    // restored in-place
+    engine_->PushChar(L'u');               // escape consumed, literal 'u', no uu→ươ
+    EXPECT_EQ(engine_->Peek(), L"uuu");
 }
 
 TEST_F(AutoRestoreTest, QuickConsonant_UUUU_NoConsecutiveRetrigger) {
@@ -2462,6 +2464,49 @@ TEST_F(AutoRestoreTest, QuickConsonant_CC_DifferentChar_ReAllows) {
     engine_ = std::make_unique<TelexEngine>(config_);
     TypeString(*engine_, L"ccaccc");
     EXPECT_EQ(engine_->Peek(), L"chachc");
+}
+
+// --- Bug regression: quick consonant in word body must not be auto-restored ---
+// Reported: "rienn" typed while quickConsonant + autoRestore both on
+// → AutoRestore was reverting "rieng" back to "rienn" (wrong)
+
+TEST_F(AutoRestoreTest, QuickConsonant_NN_Word_NotRestored) {
+    // Bug: "rienn" → "rieng" (nn→ng), commit should keep "rieng", NOT revert to "rienn"
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"rienn");
+    EXPECT_EQ(engine_->Commit(), L"rieng");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_PP_Word_NotRestored) {
+    // "ppuong" → "phuong" — not a standard tone-marked word but user chose it
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"ppuong");
+    EXPECT_EQ(engine_->Commit(), L"phuong");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_CC_Word_NotRestored) {
+    // "ccuong" → "chuong" — same pattern
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"ccuong");
+    EXPECT_EQ(engine_->Commit(), L"chuong");
+}
+
+TEST_F(AutoRestoreTest, QuickConsonant_NN_Backspace_ThenCommit_Restores) {
+    // "rienn" → "rieng", user presses backspace (rejecting ng→nn), then spaces
+    // After backspace quick consonant is cleared → next commit of "rien" is fine
+    // This validates backspace properly clears the active quick consonant guard
+    config_.quickConsonant = true;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"rienn");            // → "rieng"
+    EXPECT_EQ(engine_->Peek(), L"rieng");
+    engine_->Backspace();                       // revert: "rieng" → "rien"
+    EXPECT_EQ(engine_->Peek(), L"rienn");
+    // quickConsonantIdx_ is now SIZE_MAX → auto-restore allowed again
+    // "rien" = ValidPrefix → should restore to raw "rien"
+    EXPECT_EQ(engine_->Commit(), L"rienn");
 }
 
 // ============================================================================

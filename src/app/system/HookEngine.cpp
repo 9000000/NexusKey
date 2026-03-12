@@ -726,9 +726,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     if (IsCommitTrigger(vkCode) && engine_->Count() > 0) {
         HOOK_LOG(L"  commit trigger vk=0x%02X", vkCode);
         bool restored = CommitComposition();
-        // Enable backspace-into-word only for space/enter (natural word boundaries)
+        // Enable backspace-into-word only for space/enter (natural word boundaries),
+        // and ONLY if the word didn't end in an active quick consonant.
         if (!restored && (vkCode == VK_SPACE || vkCode == VK_RETURN) &&
-            !lastCommittedHistory_.empty()) {
+            !lastCommittedHistory_.empty() && !lastCommittedWasQuickConsonant_) {
             commitUndoState_ = 1;
         }
         if (restored) {
@@ -904,6 +905,11 @@ bool HookEngine::CommitComposition() {
 
     // Save state for backspace-into-committed-word replay.
     // commitUndoState_ is set to 1 by the caller only for space/enter triggers.
+    // However, if the word ended in an active quick consonant (e.g., rienn -> rieng),
+    // we set a flag so the caller doesn't enable commit undo. This ensures that
+    // backspacing into a committed quick consonant just acts like a normal OS
+    // backspace (e.g., aph + space + BS + BS -> ap, bypassing the engine rehydration).
+    lastCommittedWasQuickConsonant_ = engine_->HasActiveQuickConsonant();
     lastCommittedHistory_ = inputHistory_;
     lastCommittedText_ = restored ? committed : previousComposition_;
     lastCommittedWidths_ = previousEncodedWidths_;

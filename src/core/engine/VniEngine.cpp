@@ -264,18 +264,37 @@ void VniEngine::Backspace() {
     }
     quickStartKey_ = 0;
 
-    // Check if we're undoing a quick consonant expansion
+    // Undo quick consonant expansion — restore original key in-place.
+    // e.g., "aph" + BS → "app" (not "ap"), "rieng" + BS → "rienn".
     if (quickConsonantIdx_ != SIZE_MAX && states_.size() - 1 == quickConsonantIdx_) {
         quickConsonantEscaped_ = true;
         UndoHornU(states_.data(), states_.size() - 1);
+
+        wchar_t originalKey = lastQuickConsonantKey_;
+        quickConsonantIdx_ = SIZE_MAX;
+        lastQuickConsonantKey_ = 0;
+
+        states_.pop_back();
+        // rawInput_ still holds the original triggering key — don't trim it.
+        if (originalKey != 0) {
+            ProcessChar(originalKey, rawInput_.size() - 1);
+        }
+
+        UpdateSpellState();
+        if (config_.spellCheckEnabled) {
+            if (states_.size() < 2) {
+                engProt_.Reset();
+            } else {
+                engProt_.Reset();
+                CheckEnglishBias(states_.data(), states_.size(), engProt_);
+            }
+        }
+        return;
     }
     quickConsonantIdx_ = SIZE_MAX;
     lastQuickConsonantKey_ = 0;
 
     // Trim rawInput_ to the position when this state was created.
-    // This correctly handles quick consonants (f→ph) where one raw key
-    // produces multiple states, and modifier/tone keys that modify
-    // existing states without creating new ones.
     size_t rawTarget = states_.back().rawIdx;
     states_.pop_back();
     if (rawInput_.size() > rawTarget) {
@@ -325,9 +344,17 @@ std::wstring VniEngine::Commit() {
         }
     }
 
-    // When tempSpellOff_ is active, user intentionally bypassed spell check —
-    // skip auto-restore entirely and return composed text as-is
-    if (config_.spellCheckEnabled && config_.autoRestoreEnabled && !tempSpellOff_) {
+    // Guard: skip auto-restore when any of these are true:
+    //  - spell check / auto-restore not enabled
+    //  - user toggled temp spell bypass for this word
+    //  - an active quick consonant (nn→ng, cc→ch, etc.) was applied — user did
+    //    this intentionally; restoring would undo the conversion they wanted.
+    //    (quickConsonantIdx_ is SIZE_MAX when no quick consonant is active)
+    bool skipAutoRestore = !config_.spellCheckEnabled
+                        || !config_.autoRestoreEnabled
+                        || tempSpellOff_
+                        || quickConsonantIdx_ != SIZE_MAX;
+    if (!skipAutoRestore) {
         bool shouldRestore = spellCheckDisabled_;  // Already known Invalid
 
         // Also restore ValidPrefix at commit time — incomplete words like "úẻ"
@@ -365,16 +392,7 @@ void VniEngine::Reset() {
     engProt_.Reset();
 }
 
-void VniEngine::ToggleTempSpellOff() {
-    tempSpellOff_ = !tempSpellOff_;
-    if (tempSpellOff_) {
-        spellCheckDisabled_ = false;
-    }
-}
 
-size_t VniEngine::Count() const noexcept {
-    return states_.size();
-}
 
 //-----------------------------------------------------------------------------
 // Modifier Processing (6, 7, 8, 9)

@@ -87,9 +87,12 @@ public:
     [[nodiscard]] std::wstring Peek() const override;
     [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
-    [[nodiscard]] size_t Count() const noexcept override;
-    void ToggleTempSpellOff() override;
-
+    [[nodiscard]] size_t Count() const override { return states_.size(); }
+    void ToggleTempSpellOff() override {
+        tempSpellOff_ = !tempSpellOff_;
+        if (tempSpellOff_) spellCheckDisabled_ = false;
+    }
+    [[nodiscard]] bool HasActiveQuickConsonant() const override { return quickConsonantIdx_ != SIZE_MAX; }
     [[nodiscard]] TelexStates GetState() const noexcept { return state_; }
 
 private:

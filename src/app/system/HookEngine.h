@@ -165,6 +165,7 @@ private:
     std::vector<wchar_t> lastCommittedHistory_; // Saved on commit for replay
     std::wstring lastCommittedText_;            // What was on screen when committed
     std::vector<uint8_t> lastCommittedWidths_;  // Encoded widths for non-Unicode code tables
+    bool lastCommittedWasQuickConsonant_ = false;
     uint8_t commitUndoState_ = 0;               // 0=none, 1=just committed, 2=BS received (ready to replay)
 
     // Macro expansion

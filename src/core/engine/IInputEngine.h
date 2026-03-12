@@ -34,6 +34,9 @@ public:
 
     /// Toggle temporary spell check bypass for current word
     virtual void ToggleTempSpellOff() = 0;
+
+    /// Check if a quick consonant expansion (e.g., nn->ng, cc->ch) is currently active
+    [[nodiscard]] virtual bool HasActiveQuickConsonant() const = 0;
 };
 
 }  // namespace NextKey

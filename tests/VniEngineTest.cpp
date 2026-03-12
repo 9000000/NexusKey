@@ -291,18 +291,18 @@ TEST_F(VniQuickConsonantTest, PP_Backspace_Escape) {
     TypeString(*engine_, L"app");
     EXPECT_EQ(engine_->Peek(), L"aph");
     engine_->Backspace();
-    EXPECT_EQ(engine_->Peek(), L"ap");
-    engine_->PushChar(L'p');
-    EXPECT_EQ(engine_->Peek(), L"app");
+    EXPECT_EQ(engine_->Peek(), L"app");   // restored in-place
+    engine_->PushChar(L'p');               // escape consumed, literal 'p'
+    EXPECT_EQ(engine_->Peek(), L"appp");
 }
 
 TEST_F(VniQuickConsonantTest, UU_Backspace_Escape) {
     TypeString(*engine_, L"uu");
     EXPECT_EQ(engine_->Peek(), L"ươ");
     engine_->Backspace();
-    EXPECT_EQ(engine_->Peek(), L"u");
-    engine_->PushChar(L'u');
-    EXPECT_EQ(engine_->Peek(), L"uu");
+    EXPECT_EQ(engine_->Peek(), L"uu");    // restored in-place
+    engine_->PushChar(L'u');               // escape consumed, literal 'u'
+    EXPECT_EQ(engine_->Peek(), L"uuu");
 }
 
 }  // namespace
