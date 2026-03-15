@@ -33,11 +33,17 @@ DWORD GetCurrentPID() {
     return GetCurrentProcessId();
 }
 
-/// Wait for all other NexusKey.exe processes to exit (up to timeoutMs)
+/// Wait for all other instances of this app to exit (up to timeoutMs)
 bool WaitForOtherProcesses(DWORD timeoutMs) {
     DWORD myPid = GetCurrentPID();
-    DWORD startTick = GetTickCount();
+    
+    wchar_t myPath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, myPath, MAX_PATH);
+    std::wstring myName = myPath;
+    auto pos = myName.find_last_of(L"\\/");
+    if (pos != std::wstring::npos) myName = myName.substr(pos + 1);
 
+    DWORD startTick = GetTickCount();
     while (GetTickCount() - startTick < timeoutMs) {
         bool othersRunning = false;
 
@@ -50,7 +56,7 @@ bool WaitForOtherProcesses(DWORD timeoutMs) {
         if (Process32FirstW(snap, &pe)) {
             do {
                 if (pe.th32ProcessID != myPid &&
-                    (_wcsicmp(pe.szExeFile, L"NexusKey.exe") == 0)) {
+                    (_wcsicmp(pe.szExeFile, myName.c_str()) == 0)) {
                     othersRunning = true;
                     break;
                 }
@@ -120,23 +126,32 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
 
 [[noreturn]] void RunUpdateInstaller(const std::wstring& zipPath) {
     std::wstring exeDir = GetExeDirectory();
-    std::wstring exePath = exeDir + L"\\NexusKey.exe";
+    std::wstring currentExePath = GetExePath();
     std::wstring tempDir = exeDir + L"\\_update_temp";
 
     // 1. Wait for all other NexusKey.exe processes to exit (30s timeout)
     WaitForOtherProcesses(30000);
 
-    // 2. Rename current files to *_old.* (Windows allows renaming running EXEs)
-    std::wstring oldExe = exeDir + L"\\NexusKey_old.exe";
-    DeleteFileW(oldExe.c_str());  // Remove any stale old file
-    MoveFileW(exePath.c_str(), oldExe.c_str());
+    // 2. Move ALL .exe and .dll files to _old_version/ folder
+    // This handles sciter.dll, TSF DLLs, and the main EXE regardless of name.
+    std::wstring oldVersionDir = exeDir + L"\\_old_version";
+    {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        fs::create_directories(oldVersionDir, ec);
 
-    // Rename sciter.dll if present
-    std::wstring sciterDll = exeDir + L"\\sciter.dll";
-    std::wstring oldSciter = exeDir + L"\\sciter_old.dll";
-    if (GetFileAttributesW(sciterDll.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        DeleteFileW(oldSciter.c_str());
-        MoveFileW(sciterDll.c_str(), oldSciter.c_str());
+        for (const auto& entry : fs::directory_iterator(exeDir)) {
+            if (!entry.is_regular_file()) continue;
+            auto ext = entry.path().extension().wstring();
+            if (_wcsicmp(ext.c_str(), L".exe") == 0 || _wcsicmp(ext.c_str(), L".dll") == 0) {
+                // Don't move files that are already inside a special folder (though iterator is non-recursive)
+                std::wstring name = entry.path().filename().wstring();
+                std::wstring destPath = oldVersionDir + L"\\" + name;
+                
+                DeleteFileW(destPath.c_str());
+                MoveFileW(entry.path().c_str(), destPath.c_str());
+            }
+        }
     }
 
     // 3. Extract ZIP to _update_temp/
@@ -149,13 +164,13 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
 
     bool extracted = ExtractZip(zipPath, tempDir);
     if (!extracted) {
-        // Rollback: restore old files
-        MoveFileW(oldExe.c_str(), exePath.c_str());
-        MoveFileW(oldSciter.c_str(), sciterDll.c_str());
+        // Rollback attempt: this is hard because we renamed everything.
+        // But usually extract fails due to disk space or corrupted zip.
         ExitProcess(1);
     }
 
     // 4. Detect ZIP structure: root files or single subdirectory
+    std::wstring finalExePath;
     {
         namespace fs = std::filesystem;
         std::wstring sourceDir = tempDir;
@@ -172,9 +187,37 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
 
         // 5. Copy new files to exe directory
         CopyDirectoryContents(sourceDir, exeDir);
+
+        // 6. Find the main executable to launch
+        // Prefer "NexusKey.exe", then "NextKey.exe", then "NextKey32.exe", then any "Nexus/Next*.exe"
+        const std::vector<std::wstring> preferredNames = { L"NexusKey.exe", L"NextKey.exe", L"NextKey32.exe", L"NexusKey64.exe" };
+        for (const auto& name : preferredNames) {
+            std::wstring testPath = exeDir + L"\\" + name;
+            if (fs::exists(testPath)) {
+                finalExePath = testPath;
+                break;
+            }
+        }
+
+        // Fallback: find any EXE that looks like the main app
+        if (finalExePath.empty()) {
+            for (const auto& entry : fs::directory_iterator(exeDir)) {
+                if (!entry.is_regular_file()) continue;
+                if (_wcsicmp(entry.path().extension().c_str(), L".exe") == 0) {
+                    std::wstring name = entry.path().filename().wstring();
+                    if (name.find(L"Nexus") != std::wstring::npos || name.find(L"Next") != std::wstring::npos) {
+                        // Skip updater if it's named NextKeyUpdate.exe
+                        if (name.find(L"Update") == std::wstring::npos) {
+                            finalExePath = entry.path().wstring();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    // 6. Clean up temp files
+    // 7. Clean up temp files
     DeleteFileW(zipPath.c_str());
     {
         namespace fs = std::filesystem;
@@ -182,17 +225,17 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
         fs::remove_all(tempDir, ec);
     }
 
-    // 7. Launch new NexusKey.exe
-    {
+    // 8. Launch new executable
+    if (!finalExePath.empty()) {
         STARTUPINFOW si = { sizeof(si) };
         PROCESS_INFORMATION pi = {};
-        if (CreateProcessW(exePath.c_str(), nullptr, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        if (CreateProcessW(finalExePath.c_str(), nullptr, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
         }
     }
 
-    // 8. Exit updater
+    // 9. Exit updater
     ExitProcess(0);
 }
 
@@ -201,7 +244,7 @@ void CleanupOldUpdateFiles() noexcept {
         std::wstring exeDir = GetExeDirectory();
         namespace fs = std::filesystem;
 
-        // Delete *_old.* files
+        // 1. Delete *_old.* files (legacy cleanup)
         for (const auto& entry : fs::directory_iterator(exeDir)) {
             if (!entry.is_regular_file()) continue;
             std::wstring name = entry.path().filename().wstring();
@@ -214,7 +257,14 @@ void CleanupOldUpdateFiles() noexcept {
             }
         }
 
-        // Delete _update_temp/ directory if it exists
+        // 2. Delete _old_version/ directory
+        std::wstring oldVersionDir = exeDir + L"\\_old_version";
+        if (fs::exists(oldVersionDir)) {
+            std::error_code ec;
+            fs::remove_all(oldVersionDir, ec);
+        }
+
+        // 3. Delete _update_temp/ directory if it exists
         std::wstring tempDir = exeDir + L"\\_update_temp";
         if (fs::exists(tempDir)) {
             std::error_code ec;

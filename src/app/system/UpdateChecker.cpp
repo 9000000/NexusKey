@@ -126,13 +126,9 @@ std::string UpdateChecker::FindAssetUrl(const std::string& json, const std::stri
     }
     if (pos == std::string::npos) return {};
 
-    // Search for browser_download_url near this asset entry
-    // Look backwards and forwards within 500 chars for the URL
-    size_t searchStart = (pos > 500) ? pos - 500 : 0;
-    size_t searchEnd = (std::min)(pos + 500, json.size());
-    std::string region = json.substr(searchStart, searchEnd - searchStart);
-
-    return ExtractJsonString(region, "browser_download_url");
+    // Search for browser_download_url starting from the asset name position
+    // GitHub API usually puts browser_download_url after the name in the asset object.
+    return ExtractJsonString(json.substr(pos), "browser_download_url");
 }
 
 uint32_t UpdateChecker::ParseVersion(const std::wstring& versionStr) noexcept {
