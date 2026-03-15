@@ -100,9 +100,9 @@ SettingsDialog::SettingsDialog()
         root.set_attribute("lang", L"en");
     }
 
-    // 3. Show window
+    // 3. Show window offscreen to initialize DWM and Sciter rendering state
+    // (Required for transparency/blur to work correctly)
     expand();
-
     // 4. Set title and app icon (taskbar shows IDI_APP = icon.ico, not status icons)
     SetWindowTextW(get_hwnd(), L"NexusKey Settings");
     HICON appIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP));
@@ -785,35 +785,22 @@ void SettingsDialog::recalcWindowSize() {
     int COMPACT_WIDTH = static_cast<int>(BASE_WIDTH_COLLAPSED * dpiScale);
     int ADVANCED_WIDTH = static_cast<int>(400 * dpiScale);
 
-    // Measure title bar and compact section
-    sciter::dom::element title = rootEl.find_first(".title-bar");
-    sciter::dom::element compact = rootEl.find_first(".compact-section");
-
-    int titleHeight = 0;
-    int compactHeight = 0;
-
-    if (title.is_valid()) {
-        RECT r = title.get_location(BORDER_BOX);
-        titleHeight = r.bottom - r.top;
-    }
-    if (compact.is_valid()) {
-        RECT r = compact.get_location(MARGIN_BOX);
-        compactHeight = r.bottom - r.top;
-    }
-
+    // Use the #main-container as the source of truth for total height
+    sciter::dom::element container = rootEl.find_first("#main-container");
+    
     int newWidth = COMPACT_WIDTH;
-    int newHeight = titleHeight + compactHeight;
+    int newHeight = static_cast<int>(BASE_HEIGHT_COLLAPSED * dpiScale);
+
+    if (container.is_valid()) {
+        RECT r = container.get_location(MARGIN_BOX);
+        int h = r.bottom - r.top;
+        if (h > 100) { // Safety: Only resize if we got a sensible height
+            newHeight = h;
+        }
+    }
 
     if (isExpanded_) {
         newWidth = COMPACT_WIDTH + ADVANCED_WIDTH;
-
-        // Measure advanced section
-        sciter::dom::element advanced = rootEl.find_first(".advanced-section");
-        if (advanced.is_valid()) {
-            RECT r = advanced.get_location(MARGIN_BOX);
-            int advancedHeight = r.bottom - r.top;
-            newHeight = (std::max)(newHeight, titleHeight + advancedHeight);
-        }
     }
 
     // Keep window position, just resize
@@ -966,6 +953,9 @@ void SettingsDialog::initializeUI() {
         }
         // Resize window for expanded state
         SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 50, NULL);
+    } else {
+        // Also resize for compact state to avoid extra bottom space
+        SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 10, NULL);
     }
 
     // Set background opacity — update slider UI + apply CSS
