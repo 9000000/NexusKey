@@ -6,6 +6,7 @@
 #include "system/SubprocessRunners.h"
 #include "system/UpdateChecker.h"
 #include "system/UpdateInstaller.h"
+#include "system/ToastPopup.h"
 #include "core/Version.h"
 #include "core/config/TypingConfig.h"
 #include "core/config/ConfigManager.h"
@@ -177,8 +178,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     auto systemConfig = ConfigManager::LoadSystemConfigOrDefault();
     SetLanguage(static_cast<Language>(systemConfig.language));
 
-    // Clean up leftover files from a previous update
-    CleanupOldUpdateFiles();
+    // Clean up leftover files from a previous update.
+    // If files were cleaned up, it means we just finished an update.
+    if (CleanupOldUpdateFiles()) {
+        ToastPopup::Show(L"Cập nhật thành công!");
+    }
 
 #ifdef NEXUSKEY_HOOK_ENGINE
     // ═══════════════════════════════════════════════════════════

@@ -239,7 +239,8 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
     ExitProcess(0);
 }
 
-void CleanupOldUpdateFiles() noexcept {
+bool CleanupOldUpdateFiles() noexcept {
+    bool cleaned = false;
     try {
         std::wstring exeDir = GetExeDirectory();
         namespace fs = std::filesystem;
@@ -253,7 +254,9 @@ void CleanupOldUpdateFiles() noexcept {
             auto stem = entry.path().stem().wstring();
             if (stem.size() >= 4 && stem.substr(stem.size() - 4) == L"_old") {
                 std::error_code ec;
-                fs::remove(entry.path(), ec);
+                if (fs::remove(entry.path(), ec)) {
+                    cleaned = true;
+                }
             }
         }
 
@@ -261,7 +264,9 @@ void CleanupOldUpdateFiles() noexcept {
         std::wstring oldVersionDir = exeDir + L"\\_old_version";
         if (fs::exists(oldVersionDir)) {
             std::error_code ec;
-            fs::remove_all(oldVersionDir, ec);
+            if (fs::remove_all(oldVersionDir, ec) > 0) {
+                cleaned = true;
+            }
         }
 
         // 3. Delete _update_temp/ directory if it exists
@@ -273,6 +278,7 @@ void CleanupOldUpdateFiles() noexcept {
     } catch (...) {
         // Cleanup is best-effort
     }
+    return cleaned;
 }
 
 }  // namespace NextKey

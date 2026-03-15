@@ -18,7 +18,7 @@ namespace NextKey {
 [[noreturn]] void RunUpdateInstaller(const std::wstring& zipPath);
 
 /// Clean up leftover files from a previous update (*_old.*, _update_temp/).
-/// Called on normal startup. Safe to call even if no update was performed.
-void CleanupOldUpdateFiles() noexcept;
+/// Returns true if any files were actually cleaned up.
+bool CleanupOldUpdateFiles() noexcept;
 
 }  // namespace NextKey
