@@ -229,7 +229,11 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
     if (!finalExePath.empty()) {
         STARTUPINFOW si = { sizeof(si) };
         PROCESS_INFORMATION pi = {};
-        if (CreateProcessW(finalExePath.c_str(), nullptr, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        
+        // Quote the path for CreateProcessW cmdline
+        std::wstring cmdLine = L"\"" + finalExePath + L"\"";
+        
+        if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, exeDir.c_str(), &si, &pi)) {
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
         }

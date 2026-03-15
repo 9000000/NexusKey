@@ -181,7 +181,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Clean up leftover files from a previous update.
     // If files were cleaned up, it means we just finished an update.
     if (CleanupOldUpdateFiles()) {
-        ToastPopup::Show(L"Cập nhật thành công!");
+        MessageBoxW(nullptr, L"Cập nhật thành công!", L"NexusKey", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
     }
 
 #ifdef NEXUSKEY_HOOK_ENGINE
