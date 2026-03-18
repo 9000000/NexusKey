@@ -6,7 +6,7 @@
 //   TIER 2: Soft bias for ambiguous patterns (y + vowel)
 //   TIER 3: User override via same-key insistence
 //
-// Only active when spellCheckEnabled = true.
+// Always active (independent of spell check setting).
 // All functions are constexpr/inline — zero runtime overhead.
 
 #pragma once

@@ -26,7 +26,7 @@ inline constexpr uint32_t DEFAULT_ICON_COLOR_E = 0x00DAAF2F;  // BGR
 struct SystemConfig {
     bool runAtStartup = false;     // Register to run on Windows logon
     bool runAsAdmin = false;       // Run with elevated privileges (Task Scheduler)
-    bool showOnStartup = false;    // Open settings dialog on app startup
+    bool showOnStartup = true;     // Open settings dialog on app startup
     bool desktopShortcut = false;  // Desktop shortcut exists
 
     // UI language (0=Vietnamese, 1=English)

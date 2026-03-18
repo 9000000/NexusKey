@@ -7,6 +7,7 @@
 #pragma once
 
 #include "SpellChecker.h"
+#include "EnglishProtection.h"
 #include "core/config/TypingConfig.h"
 #include <string>
 
@@ -65,6 +66,18 @@ inline void UndoHornU(CharStateT* states, size_t oIndex) noexcept {
     if (oIndex > 0 && states[oIndex].base == L'o' && states[oIndex].HasModifier() &&
         states[oIndex - 1].base == L'u' && states[oIndex - 1].HasModifier()) {
         states[oIndex - 1].mod = {};  // Clear to None (value-initialized enum = 0)
+    }
+}
+
+/// Recalculate English protection bias after backspace.
+/// Resets bias and re-checks from scratch with current states.
+/// Call after Backspace() modifies the state buffer.
+template<typename CharStateT>
+inline void RecalcEnglishBias(const CharStateT* states, size_t count,
+                              EnglishProtectionState& engProt) noexcept {
+    engProt.Reset();
+    if (count >= 2) {
+        CheckEnglishBias(states, count, engProt);
     }
 }
 

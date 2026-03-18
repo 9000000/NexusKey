@@ -200,7 +200,7 @@ void HookEngine::ToggleVietnameseMode() {
 
     // Cancel backspace-into-committed-word (replay in wrong mode would be wrong)
     commitUndoState_ = 0;
-    lastCommittedHistory_.clear();
+    commitStack_.clear();
 
     vietnameseMode_ = !vietnameseMode_;
     NEXTKEY_LOG(L"HookEngine: mode = %s", vietnameseMode_ ? L"Vietnamese" : L"English");
@@ -507,8 +507,12 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     altTapCount_ = 0;  // Break double-Alt tap chain
 
     // 2c. Backspace-into-committed-word state machine
+    // Supports multi-word backward: stack holds up to kMaxCommitStack committed words.
+    // State 1 (ready): set after commit with space/enter, or when engine becomes empty
+    //                   after backspace with stack non-empty.
+    // State 2 (replay): BS in state 1 deletes the space; next alpha/BS triggers replay.
     if (commitUndoState_ == 1 && vkCode == VK_BACK && engine_->Count() == 0) {
-        // Just committed, backspace deletes the commit trigger (space/etc.)
+        // Backspace deletes the commit trigger (space/etc.)
         commitUndoState_ = 2;
         HOOK_LOG(L"  commit-undo: BS after commit → state 2 (ready to replay)");
         return false;  // Let backspace pass through to delete the space
@@ -530,12 +534,11 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
         // Any other key → cancel commit-undo
         commitUndoState_ = 0;
-        lastCommittedHistory_.clear();
     }
     if (commitUndoState_ == 1) {
         // Non-backspace key after commit → cancel undo opportunity
+        // (stack preserved — HandleBackspace re-enters state 1 if engine becomes empty)
         commitUndoState_ = 0;
-        lastCommittedHistory_.clear();
     }
 
     // 3. English mode fast path — skip Vietnamese-only processing
@@ -727,9 +730,9 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         HOOK_LOG(L"  commit trigger vk=0x%02X", vkCode);
         bool restored = CommitComposition();
         // Enable backspace-into-word only for space/enter (natural word boundaries),
-        // and ONLY if the word didn't end in an active quick consonant.
-        if (!restored && (vkCode == VK_SPACE || vkCode == VK_RETURN) &&
-            !lastCommittedHistory_.empty() && !lastCommittedWasQuickConsonant_) {
+        // and ONLY if a new entry was just pushed to the stack (implies: not auto-restored,
+        // not quick consonant, not empty history).
+        if (pushedToStack_ && (vkCode == VK_SPACE || vkCode == VK_RETURN)) {
             commitUndoState_ = 1;
         }
         if (restored) {
@@ -887,20 +890,23 @@ void HookEngine::HandleBackspace() {
             previousComposition_.clear();
             previousEncodedWidths_.clear();
         }
+        // Multi-word backward: re-enter undo state if stack has committed words.
+        // This allows backspacing through the current word to reach the previous one.
+        if (!commitStack_.empty()) {
+            commitUndoState_ = 1;
+            HOOK_LOG(L"  HandleBackspace: engine empty, stack has %zu entries → state 1",
+                     commitStack_.size());
+        }
     }
 }
 
 bool HookEngine::CommitComposition() {
     HOOK_LOG(L"  CommitComposition (count=%zu, prev='%s')", engine_->Count(), previousComposition_.c_str());
 
-    // Save state for backspace-into-committed-word replay.
-    // commitUndoState_ is set to 1 by the caller only for space/enter triggers.
-    // However, if the word ended in an active quick consonant (e.g., rienn -> rieng),
-    // we set a flag so the caller doesn't enable commit undo. This ensures that
-    // backspacing into a committed quick consonant just acts like a normal OS
-    // backspace (e.g., aph + space + BS + BS -> ap, bypassing the engine rehydration).
-    // CRITICAL: We MUST check this before engine_->Commit(), as Commit() resets the engine.
-    lastCommittedWasQuickConsonant_ = engine_->HasActiveQuickConsonant();
+    // Check quick consonant BEFORE Commit() resets the engine.
+    // Words ending in active quick consonant (e.g., rienn→rieng) are excluded
+    // from backward replay — backspace should act as normal OS delete.
+    bool wasQuickConsonant = engine_->HasActiveQuickConsonant();
 
     std::wstring committed = engine_->Commit();
 
@@ -913,9 +919,22 @@ bool HookEngine::CommitComposition() {
         restored = true;
     }
 
-    lastCommittedHistory_ = inputHistory_;
-    lastCommittedText_ = restored ? committed : previousComposition_;
-    lastCommittedWidths_ = previousEncodedWidths_;
+    // Push to commit stack for multi-word backward replay.
+    // Skip if: auto-restored (word was English), quick consonant active, or empty history.
+    pushedToStack_ = false;
+    if (!restored && !wasQuickConsonant && !inputHistory_.empty()) {
+        CommitEntry entry;
+        entry.history = inputHistory_;
+        entry.text = previousComposition_;
+        entry.widths = previousEncodedWidths_;
+        commitStack_.push_back(std::move(entry));
+        // Cap stack size
+        if (commitStack_.size() > kMaxCommitStack) {
+            commitStack_.erase(commitStack_.begin());
+        }
+        pushedToStack_ = true;
+        HOOK_LOG(L"  CommitComposition: pushed to stack (size=%zu)", commitStack_.size());
+    }
 
     engine_->Reset();
     previousComposition_.clear();
@@ -937,34 +956,48 @@ void HookEngine::ResetComposition() {
     rawMacroBuffer_.clear();
     tempMacroOff_ = false;
     commitUndoState_ = 0;
+    commitStack_.clear();
 }
 
 // ═══════════════════════════════════════════════════════════
-// Backspace-into-committed-word: replay saved chars
+// Backspace-into-committed-word: replay saved chars from stack
 // ═══════════════════════════════════════════════════════════
 
 void HookEngine::ReplayCommittedChars() {
-    HOOK_LOG(L"  ReplayCommittedChars: replaying %zu keystrokes, restoring prev='%s'",
-             lastCommittedHistory_.size(), lastCommittedText_.c_str());
+    if (commitStack_.empty()) {
+        HOOK_LOG(L"  ReplayCommittedChars: stack empty, nothing to replay");
+        commitUndoState_ = 0;
+        return;
+    }
+
+    // Pop the most recently committed word from the stack
+    CommitEntry entry = std::move(commitStack_.back());
+    commitStack_.pop_back();
+
+    HOOK_LOG(L"  ReplayCommittedChars: replaying %zu keystrokes, restoring prev='%s' (stack=%zu remaining)",
+             entry.history.size(), entry.text.c_str(), commitStack_.size());
+
+    // Seed inputHistory_ with the replayed word's keystrokes so that if the user
+    // edits and re-commits this word, the new stack entry contains the full history
+    // (not just the editing delta). Otherwise a second replay attempt would be wrong.
+    inputHistory_ = entry.history;
 
     // Replay exact user keystrokes (including backspaces) to reproduce engine state
-    for (wchar_t ch : lastCommittedHistory_) {
+    for (wchar_t ch : entry.history) {
         if (ch == kBackspaceMarker) {
             engine_->Backspace();
         } else {
             engine_->PushChar(ch);
         }
     }
-    inputHistory_ = lastCommittedHistory_;
+    inputHistory_ = std::move(entry.history);
 
     // Restore screen state so ReplaceComposition can diff correctly
-    previousComposition_ = lastCommittedText_;
-    previousEncodedWidths_ = lastCommittedWidths_;
+    previousComposition_ = std::move(entry.text);
+    previousEncodedWidths_ = std::move(entry.widths);
 
-    // Clear saved state (only one level of undo)
-    lastCommittedHistory_.clear();
-    lastCommittedText_.clear();
-    lastCommittedWidths_.clear();
+    // Reset undo state — HandleBackspace will re-enter state 1 if engine becomes
+    // empty again and stack still has entries (enabling multi-word backward).
     commitUndoState_ = 0;
 }
 

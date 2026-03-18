@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(NextKey LANGUAGES CXX)
+project(NexusKey VERSION 2.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -92,12 +92,12 @@ add_library(NextKeyTSF SHARED
     src/tsf/ComUtils.h
     src/tsf/Define.h
     src/tsf/resource.h
-    src/tsf/NextKeyTSF.rc
-    src/tsf/NextKeyTSF.def
+    src/tsf/NexusKeyTSF.rc
+    src/tsf/NexusKeyTSF.def
 )
 target_link_libraries(NextKeyTSF PRIVATE NextKeyCore)
 set_target_properties(NextKeyTSF PROPERTIES 
-    LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/src/tsf/NextKeyTSF.def\""
+    LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/src/tsf/NexusKeyTSF.def\""
 )
 
 # Core App (EXE) - Win32 GUI application with Sciter UI

@@ -161,11 +161,17 @@ private:
     // so replay produces identical engine state. This differs from engine's rawInput_
     // which mutates on escape sequences (EraseConsumedRaw).
     static constexpr wchar_t kBackspaceMarker = L'\b';
+    static constexpr size_t kMaxCommitStack = 3;  // Max words to remember for backward
+
+    struct CommitEntry {
+        std::vector<wchar_t> history;   // User keystrokes for replay
+        std::wstring text;              // What was on screen when committed
+        std::vector<uint8_t> widths;    // Encoded widths for non-Unicode code tables
+    };
+
     std::vector<wchar_t> inputHistory_;         // User keystrokes for current composition
-    std::vector<wchar_t> lastCommittedHistory_; // Saved on commit for replay
-    std::wstring lastCommittedText_;            // What was on screen when committed
-    std::vector<uint8_t> lastCommittedWidths_;  // Encoded widths for non-Unicode code tables
-    bool lastCommittedWasQuickConsonant_ = false;
+    std::vector<CommitEntry> commitStack_;       // Stack of committed words (LIFO, max kMaxCommitStack)
+    bool pushedToStack_ = false;                 // True if last CommitComposition pushed to stack
     uint8_t commitUndoState_ = 0;               // 0=none, 1=just committed, 2=BS received (ready to replay)
 
     // Macro expansion

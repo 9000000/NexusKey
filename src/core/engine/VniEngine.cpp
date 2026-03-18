@@ -183,13 +183,20 @@ void VniEngine::PushChar(wchar_t c) {
             UpdateSpellState();
             return;
         }
-        // English Protection: skip tone if HardEnglish, defer if SoftEnglish
-        if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::HardEnglish) {
+        // Tone escape: user pressed same tone key twice → treat rest of word as literal.
+        if (toneEscaped_) {
             ProcessChar(c, rawInput_.size() - 1);
             UpdateSpellState();
             return;
         }
-        if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::SoftEnglish) {
+        // English Protection: skip tone if HardEnglish, defer if SoftEnglish
+        // (always active — independent of spell check setting)
+        if (engProt_.bias == LanguageBias::HardEnglish) {
+            ProcessChar(c, rawInput_.size() - 1);
+            UpdateSpellState();
+            return;
+        }
+        if (engProt_.bias == LanguageBias::SoftEnglish) {
             if (!UpdateToneInsistence(c, engProt_)) {
                 ProcessChar(c, rawInput_.size() - 1);
                 UpdateSpellState();
@@ -198,7 +205,12 @@ void VniEngine::PushChar(wchar_t c) {
             // User insisted (same key twice) — fall through to apply tone
         }
         if (ProcessTone(c)) {
-            engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
+            if (!toneEscaped_) {
+                engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
+            } else {
+                // Tone escaped (e.g., 11) → user is canceling Vietnamese.
+                RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+            }
             UpdateSpellState();
             return;
         }
@@ -208,7 +220,7 @@ void VniEngine::PushChar(wchar_t c) {
     // Modifiers can transform invalid sequences into valid ones
     // However, if we're clearly in an English word, skip modifiers
     if (IsModifierKey(c)) {
-        if (config_.spellCheckEnabled && engProt_.bias == LanguageBias::HardEnglish) {
+        if (toneEscaped_ || engProt_.bias == LanguageBias::HardEnglish) {
             // Don't try modifiers — treat as literal
         } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // PREVENT modifier application if sequence is already structurally invalid.
@@ -243,14 +255,14 @@ void VniEngine::PushChar(wchar_t c) {
     UpdateSpellState();
 
     // English Protection: re-evaluate bias after adding character
-    if (config_.spellCheckEnabled) {
-        CheckEnglishBias(states_.data(), states_.size(), engProt_);
-    }
+    // (always active — independent of spell check setting)
+    CheckEnglishBias(states_.data(), states_.size(), engProt_);
 }
 
 void VniEngine::Backspace() {
     if (states_.empty()) return;
     dModifierEscaped_ = false;  // Allow đ re-trigger after user edits
+    toneEscaped_ = false;       // Allow Vietnamese re-trigger after user edits
 
     // Undo quick start consonant: ph→f, gi→j, qu→w (collapse both chars to original)
     if (quickStartKey_ != 0 && states_.size() == 2) {
@@ -281,14 +293,7 @@ void VniEngine::Backspace() {
         }
 
         UpdateSpellState();
-        if (config_.spellCheckEnabled) {
-            if (states_.size() < 2) {
-                engProt_.Reset();
-            } else {
-                engProt_.Reset();
-                CheckEnglishBias(states_.data(), states_.size(), engProt_);
-            }
-        }
+        RecalcEnglishBias(states_.data(), states_.size(), engProt_);
         return;
     }
     quickConsonantIdx_ = SIZE_MAX;
@@ -303,14 +308,7 @@ void VniEngine::Backspace() {
     UpdateSpellState();
 
     // English Protection: recalculate bias after backspace
-    if (config_.spellCheckEnabled) {
-        if (states_.size() < 2) {
-            engProt_.Reset();
-        } else {
-            engProt_.Reset();
-            CheckEnglishBias(states_.data(), states_.size(), engProt_);
-        }
-    }
+    RecalcEnglishBias(states_.data(), states_.size(), engProt_);
 }
 
 std::wstring VniEngine::Peek() const {
@@ -388,6 +386,7 @@ void VniEngine::Reset() {
     quickConsonantIdx_ = SIZE_MAX;
     lastQuickConsonantKey_ = 0;
     dModifierEscaped_ = false;
+    toneEscaped_ = false;
     quickStartKey_ = 0;
     engProt_.Reset();
 }
@@ -473,12 +472,14 @@ bool VniEngine::ProcessTone(wchar_t c) {
     CharState* target = FindToneTarget();
     if (!target) return false;
 
+    toneEscaped_ = false;
     if (target->tone == Tone::None) {
         target->tone = newTone;
         return true;
     } else if (target->tone == newTone) {
         target->tone = Tone::None;
         ProcessChar(c, rawInput_.size() - 1);
+        toneEscaped_ = true;  // Signal caller: user canceled tone
         return true;
     } else {
         target->tone = newTone;

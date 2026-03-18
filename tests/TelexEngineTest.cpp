@@ -2009,6 +2009,127 @@ TEST_F(EnglishProtectionTest, SoftReject_Vietnamese) {
 }
 
 // ============================================================================
+// ENGLISH DETECTION WITHOUT SPELL CHECK
+// English detection is always active, even when spell check is OFF.
+// ============================================================================
+
+class EnglishDetectionNoSpellCheckTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.spellCheckEnabled = false;  // Spell check OFF
+        config_.optimizeLevel = 0;
+        engine_ = std::make_unique<TelexEngine>(config_);
+    }
+    TypingConfig config_;
+    std::unique_ptr<TelexEngine> engine_;
+};
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_FL_Cluster_BlocksTone) {
+    // "fl" is impossible in Vietnamese → HardEnglish → tone keys literal
+    TypeString(*engine_, L"flas");
+    EXPECT_EQ(engine_->Peek(), L"flas");  // 's' NOT applied as tone
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_CL_Cluster_BlocksTone) {
+    TypeString(*engine_, L"clas");
+    EXPECT_EQ(engine_->Peek(), L"clas");  // 's' NOT applied as tone
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_BR_Cluster_BlocksModifier) {
+    // "br" is HardEnglish → 'w' should be literal, not modifier
+    TypeString(*engine_, L"brown");
+    EXPECT_EQ(engine_->Peek(), L"brown");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_SP_Cluster_BlocksTone) {
+    TypeString(*engine_, L"spas");
+    EXPECT_EQ(engine_->Peek(), L"spas");  // 's' literal
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, ValidVietnamese_StillComposes) {
+    // "thương" should still compose even without spell check
+    TypeString(*engine_, L"thuowng");
+    EXPECT_EQ(engine_->Peek(), L"thương");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, ValidVietnamese_Dau) {
+    // ddaauf: dd→đ, aa→â, u, f→Grave on â → đầu
+    TypeString(*engine_, L"ddaauf");
+    EXPECT_EQ(engine_->Peek(), L"đầu");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, Backspace_ResetsProtection) {
+    // Type "dr" → HardEnglish, backspace twice → Unknown, then compose works
+    TypeString(*engine_, L"dr");
+    EXPECT_EQ(engine_->Peek(), L"dr");
+    engine_->Backspace();
+    engine_->Backspace();
+    TypeString(*engine_, L"as");
+    EXPECT_EQ(engine_->Peek(), L"á");  // Tone applied normally
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, ToneEscape_DashboardNoMangle) {
+    // "dashboard": d-a-s-s-h-b-o-a-r-d
+    // After 'ss' escape, all subsequent tones/modifiers should be blocked
+    engine_->PushChar(L'd');
+    EXPECT_EQ(engine_->Peek(), L"d");
+    engine_->PushChar(L'a');
+    EXPECT_EQ(engine_->Peek(), L"da");
+    engine_->PushChar(L's');  // Tone: Acute on 'a'
+    EXPECT_EQ(engine_->Peek(), L"dá");
+    engine_->PushChar(L's');  // Escape: remove tone
+    std::wstring after_ss = engine_->Peek();
+    // After escape: states = [d, a, s], toneEscaped_ = true
+    EXPECT_EQ(after_ss, L"das");
+    engine_->PushChar(L'h');
+    EXPECT_EQ(engine_->Peek(), L"dash");
+    engine_->PushChar(L'b');
+    EXPECT_EQ(engine_->Peek(), L"dashb");
+    engine_->PushChar(L'o');
+    EXPECT_EQ(engine_->Peek(), L"dashbo");
+    engine_->PushChar(L'a');  // Should NOT trigger aa→â modifier
+    EXPECT_EQ(engine_->Peek(), L"dashboa");
+    engine_->PushChar(L'r');  // Should NOT apply as tone
+    EXPECT_EQ(engine_->Peek(), L"dashboar");
+    engine_->PushChar(L'd');  // Should NOT trigger dd→đ modifier
+    EXPECT_EQ(engine_->Peek(), L"dashboard");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, ToneEscape_BlocksSubsequentTones) {
+    // After 'ss' escape, all subsequent tone keys are literal
+    TypeString(*engine_, L"das");  // d-a-s: tone on 'a'
+    EXPECT_EQ(engine_->Peek(), L"dá");  // Tone applied
+    engine_->PushChar(L's');  // Escape: ss → clear tone, set toneEscaped_
+    // After escape: 's' was consumed by the tone escape mechanism.
+    // Engine has [d, a, s] states. Peek = "das"
+    std::wstring afterEscape = engine_->Peek();
+    EXPECT_EQ(afterEscape.substr(0, 2), L"da");  // At least "da" preserved
+    // Now type 'r' — should NOT apply as Hook tone
+    engine_->PushChar(L'r');
+    std::wstring withR = engine_->Peek();
+    // 'r' should be literal, not a tone mark
+    EXPECT_TRUE(withR.back() == L'r');
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, ToneEscape_BackspaceClearsFlag) {
+    // After escape, backspace should allow Vietnamese again
+    TypeString(*engine_, L"das");
+    engine_->PushChar(L's');  // Escape
+    engine_->Backspace();     // Undo escape
+    engine_->Backspace();     // Remove 'a' (now just 'd')
+    engine_->PushChar(L'a');
+    engine_->PushChar(L's');  // Should apply tone again
+    EXPECT_EQ(engine_->Peek(), L"dá");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_GL_Cluster_BlocksModifier) {
+    // "gl" is impossible in Vietnamese → HardEnglish
+    // The 'o' + 'w' should NOT produce 'ơ' (modifier blocked)
+    TypeString(*engine_, L"glow");
+    EXPECT_EQ(engine_->Peek(), L"glow");
+}
+
+// ============================================================================
 // SIMPLE TELEX TESTS
 // Simple Telex: standalone 'w' is literal, 'w' after a/o/u vowel is modifier
 // ============================================================================
