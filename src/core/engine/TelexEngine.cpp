@@ -188,32 +188,23 @@ void TelexEngine::PushChar(wchar_t c) {
 
     // 1b. Try tone keys (s, f, r, x, j) — gated by spell check + English protection
     if (IsToneKey(c) && !states_.empty()) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_) {
-            ProcessChar(c);
-            UpdateSpellState();
-            return;
-        }
-        // Tone escape: user pressed same tone key twice (e.g., ss) → treat rest of word as literal.
-        // This is the user's explicit signal to stop Vietnamese composition.
-        if (toneEscaped_) {
-            ProcessChar(c);
-            UpdateSpellState();
-            return;
-        }
-        // English Protection: skip tone if HardEnglish, defer if SoftEnglish
-        // (always active — independent of spell check setting)
-        if (engProt_.bias == LanguageBias::HardEnglish) {
-            ProcessChar(c);
-            UpdateSpellState();
-            return;
-        }
+        // All "treat as literal" paths share the same two operations.
+        auto asLiteral = [&] { ProcessChar(c); UpdateSpellState(); };
+
+        if (config_.spellCheckEnabled && spellCheckDisabled_)  { asLiteral(); return; }
+        // Tone escape: user pressed same tone key twice (e.g., ss) — blocks Vietnamese.
+        if (toneEscaped_)                                       { asLiteral(); return; }
+        // English Protection: always active, independent of spell check.
+        if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
         if (engProt_.bias == LanguageBias::SoftEnglish) {
-            if (!UpdateToneInsistence(c, engProt_)) {
-                ProcessChar(c);
-                UpdateSpellState();
-                return;
-            }
+            if (!UpdateToneInsistence(c, engProt_))              { asLiteral(); return; }
             // User insisted (same key twice) — fall through to apply tone
+        }
+        // Structural hard-English: V+C+V pattern is impossible in Vietnamese syllables.
+        // Catches "manager"/"danger" type words even without spell check.
+        if (IsHardEnglishToneContext(states_.data(), states_.size(), c)) {
+            engProt_.bias = LanguageBias::HardEnglish;
+            asLiteral(); return;
         }
         if (ProcessTone(c)) {
             if (!toneEscaped_) {
@@ -554,16 +545,19 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         if (states_[hornedIdx].synthetic && hornedIdx == states_.size() - 1) {
             states_.erase(states_.begin() + static_cast<ptrdiff_t>(hornedIdx));
             ProcessChar(c);
+            toneEscaped_ = true;  // User canceled modifier → treat rest as English
             return true;
         }
         states_[hornedIdx].mod = Modifier::None;
         UndoHornU(states_.data(),hornedIdx);
         ProcessChar(c);
+        toneEscaped_ = true;  // User canceled modifier → treat rest as English
         return true;
     }
     if (brevedIdx != SIZE_MAX) {
         states_[brevedIdx].mod = Modifier::None;
         ProcessChar(c);
+        toneEscaped_ = true;  // User canceled modifier → treat rest as English
         return true;
     }
 
@@ -621,6 +615,7 @@ bool TelexEngine::ProcessDModifier(wchar_t c) {
     } else if (first.mod == Modifier::Breve) {
         first.mod = Modifier::None;
         dModifierEscaped_ = true;  // Lock: user intentionally removed đ
+        toneEscaped_ = true;       // Block further modifiers/tones — word is English
         ProcessChar(c);
         return true;
     }

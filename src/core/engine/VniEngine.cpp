@@ -178,30 +178,16 @@ void VniEngine::PushChar(wchar_t c) {
 
     // 1. Try tone keys (1-5) — gated by spell check + English protection
     if (IsToneKey(c)) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_) {
-            ProcessChar(c, rawInput_.size() - 1);
-            UpdateSpellState();
-            return;
-        }
-        // Tone escape: user pressed same tone key twice → treat rest of word as literal.
-        if (toneEscaped_) {
-            ProcessChar(c, rawInput_.size() - 1);
-            UpdateSpellState();
-            return;
-        }
-        // English Protection: skip tone if HardEnglish, defer if SoftEnglish
-        // (always active — independent of spell check setting)
-        if (engProt_.bias == LanguageBias::HardEnglish) {
-            ProcessChar(c, rawInput_.size() - 1);
-            UpdateSpellState();
-            return;
-        }
+        // All "treat as literal" paths share the same two operations.
+        auto asLiteral = [&] { ProcessChar(c, rawInput_.size() - 1); UpdateSpellState(); };
+
+        if (config_.spellCheckEnabled && spellCheckDisabled_)  { asLiteral(); return; }
+        // Tone escape: user pressed same tone key twice — blocks Vietnamese.
+        if (toneEscaped_)                                       { asLiteral(); return; }
+        // English Protection: always active, independent of spell check.
+        if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
         if (engProt_.bias == LanguageBias::SoftEnglish) {
-            if (!UpdateToneInsistence(c, engProt_)) {
-                ProcessChar(c, rawInput_.size() - 1);
-                UpdateSpellState();
-                return;
-            }
+            if (!UpdateToneInsistence(c, engProt_))              { asLiteral(); return; }
             // User insisted (same key twice) — fall through to apply tone
         }
         if (ProcessTone(c)) {
@@ -419,6 +405,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
             } else if (first.mod == Modifier::Stroke) {
                 first.mod = Modifier::None;
                 dModifierEscaped_ = true;  // Lock: user intentionally removed đ
+                toneEscaped_ = true;       // Block further modifiers/tones — word is English
                 ProcessChar(c, rawInput_.size() - 1);
                 return true;
             }
@@ -452,6 +439,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
                 return true;
             } else if (it->mod == targetMod) {
                 it->mod = Modifier::None;
+                toneEscaped_ = true;  // User canceled modifier → treat rest as English
                 ProcessChar(c, rawInput_.size() - 1);
                 return true;
             }

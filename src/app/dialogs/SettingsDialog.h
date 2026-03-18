@@ -117,6 +117,7 @@ private:
     HotkeyConfig hotkeyConfig_;    // Hotkey modifiers + key
     SystemConfig systemConfig_;    // System settings (startup, admin, show on startup)
     bool vietnameseMode_ = true;   // V/E mode (synced with main process, not persisted)
+    bool modeSyncPending_ = false; // Coalescing flag: deferred toggle-language DOM update in flight
     bool isExpanded_ = false;
     bool isPinned_ = false;
 

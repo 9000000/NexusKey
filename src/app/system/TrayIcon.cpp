@@ -368,14 +368,11 @@ void TrayIcon::ShowContextMenu() {
 }
 
 bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept {
-    // Deferred V/E mode sync from hook callback or tray click (PostMessage pattern)
+    // Deferred V/E mode sync from hook callback or tray click (PostMessage pattern).
+    // Settings notification is posted directly from modeChangeCallback_ (1 hop) —
+    // no FindWindow needed here.
     if (msg == WM_NEXUSKEY_TRAY_MODE_SYNC && hwnd == hwndMessage_) {
         SetVietnameseMode(wParam != 0);
-        // Also notify settings subprocess (if open)
-        HWND settingsWnd = FindWindowW(nullptr, L"NexusKey Settings");
-        if (settingsWnd) {
-            PostMessageW(settingsWnd, WM_NEXUSKEY_MODE_CHANGED, wParam, 0);
-        }
         return true;
     }
 

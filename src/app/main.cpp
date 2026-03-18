@@ -61,6 +61,16 @@ static HotkeyManager g_hotkeyManager;
 // Forward declaration
 void OnMenuCommand(TrayMenuId id);
 
+// Settings window helpers — search by title (subprocess may or may not be open)
+static HWND GetSettingsHwnd() noexcept {
+    return FindWindowW(nullptr, L"NexusKey Settings");
+}
+static void NotifySettingsMode(bool vietnamese) noexcept {
+    if (HWND h = GetSettingsHwnd()) {
+        PostMessageW(h, WM_NEXUSKEY_MODE_CHANGED, vietnamese ? 1 : 0, 0);
+    }
+}
+
 #ifndef NEXUSKEY_HOOK_ENGINE
 // V/E icon sync: 250ms poll of SharedState flags (atomic read, no IPC)
 static constexpr UINT_PTR TIMER_ID_ICON_POLL = 100;
@@ -158,7 +168,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             if (existingTrayWnd) {
                 PostMessageW(existingTrayWnd, WM_NEXUSKEY_SHOW_SETTINGS, 0, 0);
                 
-                HWND existingSettings = FindWindowW(nullptr, L"NexusKey Settings");
+                HWND existingSettings = GetSettingsHwnd();
                 if (existingSettings) {
                     SetForegroundWindow(existingSettings);
                 }
@@ -212,10 +222,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Wire mode change callback: HookEngine → defer icon update via PostMessage
     g_hookEngine.SetModeChangeCallback([](bool vietnamese) {
         g_sharedState.SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, vietnamese);
+        WPARAM wp = vietnamese ? 1 : 0;
         HWND trayWnd = g_trayIcon.GetMessageWindow();
         if (trayWnd) {
-            PostMessageW(trayWnd, WM_NEXUSKEY_TRAY_MODE_SYNC, vietnamese ? 1 : 0, 0);
+            PostMessageW(trayWnd, WM_NEXUSKEY_TRAY_MODE_SYNC, wp, 0);
         }
+        // Notify settings dialog directly (1 hop instead of 2 via TRAY_MODE_SYNC).
+        // This keeps the toggle in sync with the tray icon even on rapid clicks.
+        NotifySettingsMode(vietnamese);
     });
 
     // Wire TSF active callback: HookEngine → SharedState flag for DLL
@@ -478,8 +492,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
     }
 
     // 4. Notify Settings dialog (if open) to refresh UI
-    HWND settingsWnd = FindWindowW(nullptr, L"NexusKey Settings");
-    if (settingsWnd) {
+    if (HWND settingsWnd = GetSettingsHwnd()) {
         PostMessageW(settingsWnd, WM_NEXUSKEY_CONFIG_CHANGED, 0, 0);
     }
 }
@@ -581,8 +594,7 @@ void OnMenuCommand(TrayMenuId id) {
                 (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
 
                 // Notify Settings dialog to refresh UI
-                HWND settingsWnd = FindWindowW(nullptr, L"NexusKey Settings");
-                if (settingsWnd) {
+                if (HWND settingsWnd = GetSettingsHwnd()) {
                     PostMessageW(settingsWnd, WM_NEXUSKEY_CONFIG_CHANGED, 0, 0);
                 }
                 NEXTKEY_LOG(L"Code table changed via tray menu: %d", static_cast<int>(ct));
@@ -594,12 +606,11 @@ void OnMenuCommand(TrayMenuId id) {
 
 void SpawnSettingsSubprocess() {
     // Check if already open (single-instance)
-    HWND existing = FindWindowW(nullptr, L"NexusKey Settings");
+    HWND existing = GetSettingsHwnd();
     if (existing) {
         SetForegroundWindow(existing);
 #ifdef NEXUSKEY_HOOK_ENGINE
-        PostMessageW(existing, WM_NEXUSKEY_MODE_CHANGED,
-                     g_hookEngine.IsVietnameseMode() ? 1 : 0, 0);
+        NotifySettingsMode(g_hookEngine.IsVietnameseMode());
 #endif
         return;
     }

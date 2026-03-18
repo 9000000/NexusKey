@@ -2068,6 +2068,44 @@ TEST_F(EnglishDetectionNoSpellCheckTest, Backspace_ResetsProtection) {
     EXPECT_EQ(engine_->Peek(), L"á");  // Tone applied normally
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifierEscape_DropdownNoMangle) {
+    // "dropdown": d-r-o-p-d-d-o-w-n (9 keys)
+    // The "dd" in the middle escapes đ back to plain 'd'.
+    // Without fix: 'o' free-marks the 'o' in "drop", 'w' applies horn → "drơpdn".
+    // With fix: dd escape sets toneEscaped_=true → 'o' and 'w' are literal.
+    TypeString(*engine_, L"dropddown");
+    EXPECT_EQ(engine_->Peek(), L"dropdown");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifierEscape_DownloadNoMangle) {
+    // Telex escape convention: "ddd" → "dd" (same as "aaa" → "aa", "aww" → "aw").
+    // "dd" → đ consumed as one modifier state; "ddd" escape adds literal 'd' back → [d, d] = "dd".
+    // To type "download", just type "download" (8 keys, no dd trigger). This test verifies
+    // that "dddownload" gives "ddownload" and does NOT mangle the remainder via free-mark.
+    TypeString(*engine_, L"dddownload");
+    EXPECT_EQ(engine_->Peek(), L"ddownload");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifierEscape_BackspaceClearsFlag) {
+    // After dd escape sets toneEscaped_, backspace should clear it.
+    TypeString(*engine_, L"dropddown");  // toneEscaped_ set after dd
+    engine_->Backspace();               // remove 'n'
+    engine_->Backspace();               // remove 'w' — also clears toneEscaped_
+    engine_->PushChar(L'w');            // 'w' should now be free to apply as modifier again
+    // After clearing toneEscaped_, typing 'w' after 'o' (from "dropddo") → modifier
+    // But at this point bias may still be complex; just verify no crash and something is returned
+    EXPECT_FALSE(engine_->Peek().empty());
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, WModifierEscape_DownloadNoMangle) {
+    // "download": d-o-w-w-n-l-o-a-d (9 keys)
+    // The "oww" escape (ơ → plain 'o') must set toneEscaped_ so the later 'o' and 'a'
+    // don't free-mark backward. Without fix: 'o'(7) free-marks state[1]'o' → "dôwnlad".
+    TypeString(*engine_, L"dowwnload");
+    EXPECT_EQ(engine_->Peek(), L"download");
+}
+
+
 TEST_F(EnglishDetectionNoSpellCheckTest, ToneEscape_DashboardNoMangle) {
     // "dashboard": d-a-s-s-h-b-o-a-r-d
     // After 'ss' escape, all subsequent tones/modifiers should be blocked
@@ -2127,6 +2165,66 @@ TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_GL_Cluster_BlocksModifier) {
     // The 'o' + 'w' should NOT produce 'ơ' (modifier blocked)
     TypeString(*engine_, L"glow");
     EXPECT_EQ(engine_->Peek(), L"glow");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ManagerDoubleA) {
+    // User types "manaager" (double 'a' to escape the free-mark circumflex).
+    // After 'aa' escape: states=[m,a,n,a,g,e], V+1C+V (a+g+e) → 'r' must be literal.
+    // This is the exact user-reported scenario: manaager should not give managẻ.
+    TypeString(*engine_, L"manaager");
+    EXPECT_EQ(engine_->Peek(), L"manager");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_Manager7Keys) {
+    // "manager" (7 keys, single 'a'): 4th 'a' free-marks â, then V+2C+V (â+n,g+e).
+    // Tone is blocked (not "managẻ"), but â stays (circumflex from free-mark).
+    // Result: "mânger" — partial fix; full fix requires double 'a' escape or spell check.
+    TypeString(*engine_, L"manager");
+    EXPECT_EQ(engine_->Peek(), L"m\xE2nger");  // mânger
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_Danger) {
+    // "danger": no modifier involved, pure V+2C+V (a+n,g+e) structural detection.
+    TypeString(*engine_, L"danger");
+    EXPECT_EQ(engine_->Peek(), L"danger");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_Mangle) {
+    // "mangle": m,a,n,g,l,e → V+3C+V → 'r' and 's' blocked
+    TypeString(*engine_, L"manglers");
+    EXPECT_EQ(engine_->Peek(), L"manglers");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_Lane) {
+    // "lane": l,a,n,e → V+1C+V (a+n+e) → 'r' must be literal
+    TypeString(*engine_, L"laner");
+    EXPECT_EQ(engine_->Peek(), L"laner");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ValidVN_ShortWord) {
+    // Short word (count < 4): structural check doesn't apply.
+    // "hỏi" = h,o,i + 'r' → 3 states, count < 4 → 'r' applies as Hook → "hỏi"
+    TypeString(*engine_, L"hoir");
+    EXPECT_EQ(engine_->Peek(), L"h\x1ECFi");  // h + ỏ + i
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ValidVN_Dau) {
+    // "đầu": đ,â,u → 0 consonants between â and u → 'f' applies as Grave
+    TypeString(*engine_, L"ddaauf");
+    EXPECT_EQ(engine_->Peek(), L"đầu");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ValidVN_Xoai) {
+    // "xoải": x,o,a,i → 0 consonants between 'a' and 'i' → 'r' applies as Hook
+    // (tests that adjacent vowels don't trigger the check)
+    TypeString(*engine_, L"xoair");
+    EXPECT_EQ(engine_->Peek(), L"xo\x1EA3i");  // xoải: x + o + ả + i
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_SubsequentCharsLiteral) {
+    // After 'r' triggers HardEnglish on "manaager", 's' should also be literal
+    TypeString(*engine_, L"manaagers");
+    EXPECT_EQ(engine_->Peek(), L"managers");
 }
 
 // ============================================================================

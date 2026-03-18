@@ -34,6 +34,9 @@ namespace NextKey {
 // Timer IDs for async operations
 #define TIMER_RESIZE_WINDOW 1001
 
+// Private self-posted message for coalescing rapid V/E mode changes
+static constexpr UINT WM_SETTINGS_MODE_SYNC = WM_APP + 1;
+
 // DWM constants for dark mode
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
@@ -262,13 +265,29 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
-    // Handle V/E mode change notification from main process
+    // Handle V/E mode change notification from main process.
+    // Coalesce rapid messages: update the flag immediately but defer the
+    // DOM update so N rapid tray clicks produce one toggle repaint, not N.
     if (msg == WM_NEXUSKEY_MODE_CHANGED) {
         if (s_instance) {
-            bool vietnamese = (wParam != 0);
-            s_instance->vietnameseMode_ = vietnamese;
+            s_instance->vietnameseMode_ = (wParam != 0);
+            if (!s_instance->modeSyncPending_) {
+                s_instance->modeSyncPending_ = true;
+                PostMessageW(hwnd, WM_SETTINGS_MODE_SYNC, 0, 0);
+            }
+        }
+        return 0;
+    }
+
+    // Deferred toggle update: runs after all queued MODE_CHANGED are consumed.
+    if (msg == WM_SETTINGS_MODE_SYNC) {
+        if (s_instance) {
+            s_instance->modeSyncPending_ = false;
             // CSS: checked=E, unchecked=V — invert for correct display
-            s_instance->setToggleState(L"toggle-language", !vietnamese);
+            s_instance->setToggleState(L"toggle-language", !s_instance->vietnameseMode_);
+            // Force repaint — Sciter only repaints on mouse events by default,
+            // so the DOM change is invisible until the cursor moves over the window.
+            InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
     }
@@ -813,6 +832,12 @@ void SettingsDialog::setToggleState(const std::wstring& id, bool checked) {
     sciter::dom::element toggle = root.find_first(("[id='" + idStr + "']").c_str());
 
     if (toggle.is_valid()) {
+        // Suppress CSS transition for programmatic (non-user) updates so rapid
+        // tray-icon clicks snap the toggle instantly without animation lag.
+        // Clearing the inline style afterward restores the stylesheet transition
+        // for the next user-initiated click.
+        toggle.set_style_attribute("transition", L"none");
+
         // Div-based toggles use CSS class "checked" for styling
         std::wstring cls = toggle.get_attribute("class");
         std::wstring baseClass;
@@ -836,6 +861,9 @@ void SettingsDialog::setToggleState(const std::wstring& id, bool checked) {
         } else {
             toggle.set_attribute("class", baseClass.c_str());
         }
+
+        // Restore transition so user-click animation still works
+        toggle.set_style_attribute("transition", L"");
     }
 
     // Also update the hidden input value

@@ -148,6 +148,37 @@ inline bool UpdateToneInsistence(wchar_t toneKey,
 }
 
 // =============================================================================
+// Pre-Tone Hard English Context Check
+// =============================================================================
+
+/// Detect structural impossibility: vowel + 1+ consonant(s) + terminal vowel.
+/// Vietnamese syllables NEVER have a consonant between two vowels within the
+/// nucleus (onset glide 'u' is pre-nucleus; coda consonant is post-nucleus).
+/// Any pattern V + C...C + V at the tail is impossible Vietnamese.
+/// Catches English words like "manager" (â+n,g+e+r) and "danger" (a+n,g+e+r)
+/// even when bias==Vietnamese (set by a free-mark modifier) or Unknown.
+///
+/// Call BEFORE ProcessTone() to gate hard-end tone keys (r, x, z, f).
+/// Template works with both Telex::CharState and Vni::CharState (VniEngine
+/// doesn't need to call this since VNI tone keys are digits 1-5, not letters).
+template<typename CharStateT>
+[[nodiscard]] inline bool IsHardEnglishToneContext(
+        const CharStateT* states, size_t count, wchar_t toneKey) noexcept {
+    if (!IsHardEnglishEnd(toneKey)) return false;
+    if (count < 4) return false;  // Need at least: onset + prev_V + C + last_V
+    if (!states[count - 1].IsVowel()) return false;  // Tone target must be vowel
+    // Scan backwards: count consonants between last vowel and the previous vowel.
+    int consonants = 0;
+    for (int i = (int)count - 2; i >= 0; --i) {
+        if (states[i].IsVowel()) {
+            return consonants >= 1;
+        }
+        ++consonants;
+    }
+    return false;  // No previous vowel found — no V+C+V pattern
+}
+
+// =============================================================================
 // Combined Bias Check — runs Tier 1 + Tier 2
 // =============================================================================
 

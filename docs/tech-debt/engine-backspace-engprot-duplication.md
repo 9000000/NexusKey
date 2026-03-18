@@ -1,4 +1,7 @@
-# Tech Debt: English Protection Recalculation Duplication
+# ~~Tech Debt: English Protection Recalculation Duplication~~ RESOLVED
+
+> **Resolved 2026-03-18**: Extracted into `RecalcEnglishBias<>()` template in
+> `src/core/engine/EngineHelpers.h`. All 6 duplicate blocks replaced.
 
 ## Location
 - `src/core/engine/TelexEngine.cpp` — `Backspace()` (3 copies)
