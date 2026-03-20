@@ -171,6 +171,10 @@ template<typename CharStateT>
     int consonants = 0;
     for (int i = (int)count - 2; i >= 0; --i) {
         if (states[i].IsVowel()) {
+            // Modified vowel (ê, â, ô...) with exactly one coda consonant = Vietnamese nucleus.
+            // E.g., {h,i,ê,n,e}: ê+n+e is plausible nucleus+coda+typo, not English V+C+V.
+            // Two or more consonants (e.g., â+n+g+e = "manager") stays blocked.
+            if (states[i].HasModifier() && consonants == 1) return false;
             return consonants >= 1;
         }
         ++consonants;

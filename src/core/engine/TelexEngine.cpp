@@ -361,14 +361,16 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                 IsTriphthong(states_[n - 3].base, states_[n - 2].base, last.base)) {
                 return true;  // Consume keystroke, no state change
             }
-            // Escape: already has circumflex
+            // Escape: already has circumflex (adjacent case — last char, no coda possible)
             if (last.mod == Modifier::Circumflex) {
                 last.mod = Modifier::None;
+                last.adjDoubled = false;
                 ProcessChar(c);
                 return true;
             }
             // Apply circumflex - PRESERVE FIRST LETTER CASE
             last.mod = Modifier::Circumflex;
+            last.adjDoubled = true;  // Track: applied by adjacent key-doubling
             return true;
         }
 
@@ -394,8 +396,20 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                          (it->mod != Modifier::None && it->mod != Modifier::Circumflex)) break;
                     
                     if (it->mod == Modifier::Circumflex) {
+                        // Proximity guard: if circumflex was applied by adjacent doubling (ee→ê),
+                        // only escape when no coda consonant follows (e.g. "hiên"+'e' → keep ê).
+                        // Free-mark circumflex escapes regardless (e.g. "mâna"+'a' → "mana").
+                        if (it->adjDoubled) {
+                            bool hasCoda = false;
+                            for (auto jt = it.base(); jt != states_.end(); ++jt) {
+                                if (!jt->IsVowel()) { hasCoda = true; break; }
+                            }
+                            if (hasCoda) break;  // Fall through: key added as literal by PushChar
+                        }
                         it->mod = Modifier::None;
+                        it->adjDoubled = false;
                         ProcessChar(c);
+                        toneEscaped_ = true;  // User canceled modifier → treat rest as English
                         return true;
                     }
                     if (it->mod == Modifier::Horn && lower == L'o') {

@@ -39,6 +39,7 @@ struct CharState {
     Tone tone = Tone::None;         // Tone mark
     bool isUpper = false;           // Preserve original case
     bool synthetic = false;         // True if created by P8 standalone 'w' (not a real keystroke)
+    bool adjDoubled = false;        // True if circumflex was applied by adjacent doubling (ee→ê)
     size_t rawIdx = 0;              // rawInput_ index when this state was created (for backspace sync)
     size_t toneRawIdx = SIZE_MAX;   // rawInput_ index of consumed tone key (for escape removal)
 

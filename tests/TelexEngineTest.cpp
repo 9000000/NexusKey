@@ -2175,6 +2175,15 @@ TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ManagerDoubleA) {
     EXPECT_EQ(engine_->Peek(), L"manager");
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, CircumflexEscape_AdjDoubled_WithCoda_ToneStillApplies) {
+    // h+i+e+e+n+e+r (7 keys): user fat-fingers extra 'e' before tone 'r'.
+    // double-ee → ê (adjDoubled=true), 'n' coda, extra 'e' should NOT escape ê
+    // because ê was applied by adjacent doubling and has a coda consonant after it.
+    // Result: "hiểne" (1 backspace from "hiển") — vs old buggy "hiener".
+    TypeString(*engine_, L"hieener");
+    EXPECT_EQ(engine_->Peek(), L"hi\x1EC3ne");  // hiểne: h+i+ể+n+e
+}
+
 TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_Manager7Keys) {
     // "manager" (7 keys, single 'a'): 4th 'a' free-marks â, then V+2C+V (â+n,g+e).
     // Tone is blocked (not "managẻ"), but â stays (circumflex from free-mark).
