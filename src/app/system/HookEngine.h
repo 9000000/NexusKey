@@ -87,7 +87,7 @@ private:
     bool ProcessKeyUp(DWORD vkCode, DWORD flags);
 
     // Input engine interaction
-    bool HandleAlphaKey(DWORD vkCode);  // Returns true if keystroke should be eaten
+    [[nodiscard]] bool HandleAlphaKey(DWORD vkCode);  // Returns true if keystroke should be eaten
     void HandleBackspace();
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
@@ -129,6 +129,7 @@ private:
     std::vector<uint8_t> previousEncodedWidths_;  // Output unit count per Unicode char (for non-Unicode code tables)
     bool vietnameseMode_ = true;
     std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
+    int synthEventsPending_ = 0;  // Count of synthetic INPUT structs sent but not yet processed by hook
     bool beepOnSwitch_ = false;
     bool smartSwitch_ = false;
     bool excludeApps_ = false;
@@ -162,6 +163,15 @@ private:
     // which mutates on escape sequences (EraseConsumedRaw).
     static constexpr wchar_t kBackspaceMarker = L'\b';
     static constexpr size_t kMaxCommitStack = 3;  // Max words to remember for backward
+    // Auto-expire the Ready state after this many ms — cheap insurance against any
+    // cursor-movement event that bypasses ResetComposition (e.g. future edge cases).
+    static constexpr DWORD kCommitUndoTimeoutMs = 4000;
+
+    enum class CommitUndoState : uint8_t {
+        Idle   = 0,  // No pending undo
+        Ready  = 1,  // Just committed with Space/Enter — waiting for first BS
+        Primed = 2,  // Space deleted — next Alpha/BS triggers replay
+    };
 
     struct CommitEntry {
         std::vector<wchar_t> history;   // User keystrokes for replay
@@ -172,7 +182,8 @@ private:
     std::vector<wchar_t> inputHistory_;         // User keystrokes for current composition
     std::vector<CommitEntry> commitStack_;       // Stack of committed words (LIFO, max kMaxCommitStack)
     bool pushedToStack_ = false;                 // True if last CommitComposition pushed to stack
-    uint8_t commitUndoState_ = 0;               // 0=none, 1=just committed, 2=BS received (ready to replay)
+    CommitUndoState commitUndoState_ = CommitUndoState::Idle;
+    DWORD commitReadyTime_ = 0;                 // GetTickCount() when entering Ready state
 
     // Macro expansion
     bool macroEnabled_ = false;

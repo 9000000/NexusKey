@@ -199,7 +199,7 @@ void HookEngine::ToggleVietnameseMode() {
     }
 
     // Cancel backspace-into-committed-word (replay in wrong mode would be wrong)
-    commitUndoState_ = 0;
+    commitUndoState_ = CommitUndoState::Idle;
     commitStack_.clear();
 
     vietnameseMode_ = !vietnameseMode_;
@@ -400,6 +400,7 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
         if (pKey->dwExtraInfo == NEXUSKEY_EXTRA_INFO) {
             HOOK_LOG(L"  PASSTHRU (dwExtraInfo=NK): vk=0x%02X scan=0x%04X flags=0x%08X",
                      pKey->vkCode, pKey->scanCode, pKey->flags);
+            if (self->synthEventsPending_ > 0) --self->synthEventsPending_;
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
 
@@ -445,9 +446,13 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, D
 LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode == HC_ACTION && wParam == WM_LBUTTONDOWN) {
         HookEngine* self = s_instance.load(std::memory_order_relaxed);
-        if (self && self->engine_->Count() > 0) {
+        if (self) {
             HOOK_LOG(L"MOUSE click — resetting composition (engine count=%zu, prev='%s')",
                      self->engine_->Count(), self->previousComposition_.c_str());
+            // Always reset, even when engine is idle: commitUndoState_ and commitStack_
+            // may hold a previously committed word. If not cleared here, a click elsewhere
+            // followed by Backspace triggers ReplayCommittedChars() at the new cursor
+            // position — identical to the Ctrl+A bug.
             self->ResetComposition();
         }
     }
@@ -508,22 +513,32 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 
     // 2c. Backspace-into-committed-word state machine
     // Supports multi-word backward: stack holds up to kMaxCommitStack committed words.
-    // State 1 (ready): set after commit with space/enter, or when engine becomes empty
-    //                   after backspace with stack non-empty.
-    // State 2 (replay): BS in state 1 deletes the space; next alpha/BS triggers replay.
-    if (commitUndoState_ == 1 && vkCode == VK_BACK && engine_->Count() == 0) {
+    // Ready:  set after commit with space/enter, or when engine empties after BS with stack non-empty.
+    // Primed: BS in Ready deletes the space; next alpha/BS triggers replay.
+    //
+    // Auto-expire Ready after kCommitUndoTimeoutMs: cheap insurance against any cursor-movement
+    // event that bypasses ResetComposition (e.g. external text change, rare edge cases).
+    if (commitUndoState_ == CommitUndoState::Ready &&
+        (GetTickCount() - commitReadyTime_) > kCommitUndoTimeoutMs) {
+        HOOK_LOG(L"  commit-undo: Ready state expired after %u ms → Idle",
+                 GetTickCount() - commitReadyTime_);
+        commitUndoState_ = CommitUndoState::Idle;
+        commitStack_.clear();
+    }
+    if (commitUndoState_ == CommitUndoState::Ready && vkCode == VK_BACK && engine_->Count() == 0) {
         // Backspace deletes the commit trigger (space/etc.)
-        commitUndoState_ = 2;
+        commitUndoState_ = CommitUndoState::Primed;
         HOOK_LOG(L"  commit-undo: BS after commit → state 2 (ready to replay)");
         return false;  // Let backspace pass through to delete the space
     }
-    if (commitUndoState_ == 2 && engine_->Count() == 0 && vietnameseMode_) {
+    if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vietnameseMode_) {
         if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            // Alpha key → replay saved chars, then process the new key
+            // Alpha key → replay saved chars, then process the new key.
+            // MUST return HandleAlphaKey's value: if it triggers passthrough (return false),
+            // the original key must reach the app — ignoring it would swallow the keystroke.
             HOOK_LOG(L"  commit-undo: replaying + alpha '%c'", static_cast<char>(vkCode));
             ReplayCommittedChars();
-            HandleAlphaKey(vkCode);
-            return true;
+            return HandleAlphaKey(vkCode);
         }
         if (vkCode == VK_BACK) {
             // Backspace → replay saved chars, then backspace into the word
@@ -533,12 +548,12 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             return true;
         }
         // Any other key → cancel commit-undo
-        commitUndoState_ = 0;
+        commitUndoState_ = CommitUndoState::Idle;
     }
-    if (commitUndoState_ == 1) {
+    if (commitUndoState_ == CommitUndoState::Ready) {
         // Non-backspace key after commit → cancel undo opportunity
         // (stack preserved — HandleBackspace re-enters state 1 if engine becomes empty)
-        commitUndoState_ = 0;
+        commitUndoState_ = CommitUndoState::Idle;
     }
 
     // 3. English mode fast path — skip Vietnamese-only processing
@@ -573,6 +588,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                     bool usePost = target && UsePostMessage(target);
                     SendCharEvents(target, expansion, usePost);
                     rawMacroBuffer_.clear();
+                    if (synthEventsPending_ > 0) {
+                        InjectKey(vkCode);
+                        return true;
+                    }
                     return false;
                 }
             } else if (vkCode == VK_BACK && !rawMacroBuffer_.empty()) {
@@ -664,6 +683,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             previousComposition_.clear();
             previousEncodedWidths_.clear();
             rawMacroBuffer_.clear();
+            if (synthEventsPending_ > 0) {
+                InjectKey(vkCode);
+                return true;
+            }
             return false;  // Let trigger key pass through
         }
     }
@@ -688,11 +711,12 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 
     if (ctrl || alt || win) {
         HOOK_LOG(L"  skip: modifier held (ctrl=%d alt=%d win=%d)", ctrl, alt, win);
-        // Reset (don't auto-restore) — shortcuts like Ctrl+A/C/Z change text state
-        // in unpredictable ways; sending replacement backspaces would interfere.
-        if (engine_->Count() > 0) {
-            ResetComposition();
-        }
+        // Always reset — shortcuts like Ctrl+A/C/Z change text state in unpredictable ways.
+        // Must also reset when engine is idle (count==0): commitUndoState_ and commitStack_
+        // may hold a previously committed word. If not cleared, a Backspace after Ctrl+A
+        // triggers ReplayCommittedChars() into the wrong cursor position → garbage output.
+        // ResetComposition() guards engine_->Reset() internally on count==0, so this is safe.
+        ResetComposition();
         return false;
     }
 
@@ -733,23 +757,28 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // and ONLY if a new entry was just pushed to the stack (implies: not auto-restored,
         // not quick consonant, not empty history).
         if (pushedToStack_ && (vkCode == VK_SPACE || vkCode == VK_RETURN)) {
-            commitUndoState_ = 1;
+            commitUndoState_ = CommitUndoState::Ready;
+            commitReadyTime_ = GetTickCount();
         }
-        if (restored) {
-            // Auto-restore changed text — re-inject trigger key after replacement
-            // to guarantee correct ordering (replacement before trigger)
-            HOOK_LOG(L"  re-inject trigger vk=0x%02X after auto-restore", vkCode);
+        if (restored || synthEventsPending_ > 0) {
+            // Re-inject trigger AFTER all pending synthetic events so that:
+            //   (a) auto-restore replacement arrives before the trigger, and
+            //   (b) in-flight correction synthetics (e.g. from ee→ê mid-word) arrive
+            //       before the trigger — preventing the trigger from slipping ahead of
+            //       those backspaces/chars and causing corrupt output ("lỗiêhiênr").
+            HOOK_LOG(L"  re-inject trigger vk=0x%02X (restored=%d synthPending=%d)",
+                     vkCode, restored ? 1 : 0, synthEventsPending_);
             InjectKey(vkCode);
             return true;  // Eat original trigger
         }
-        return false;  // Normal commit, let trigger pass through
+        return false;  // No pending synthetics, safe to pass through
     }
 
     // 9. Any other key with pending composition → commit and pass through
     if (engine_->Count() > 0) {
         HOOK_LOG(L"  other key vk=0x%02X with pending composition → commit", vkCode);
         bool restored = CommitComposition();
-        if (restored) {
+        if (restored || synthEventsPending_ > 0) {
             InjectKey(vkCode);
             return true;
         }
@@ -807,6 +836,13 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                     CommitComposition();
                 }
                 tempEngineOff_ = !tempEngineOff_;
+                // Clear commit-undo state on both enable and disable: modifier-only
+                // key sequences (Alt presses) bypass the state machine at line 515-543
+                // and bypass otherKeyPressed_, so commitUndoState_ can remain at 1
+                // from the last committed word. If not cleared, Backspace after
+                // double-Alt → ReplayCommittedChars() at the wrong cursor position.
+                commitUndoState_ = CommitUndoState::Idle;
+                commitStack_.clear();
                 altTapCount_ = 0;
                 HOOK_LOG(L"  DOUBLE-ALT: tempEngineOff_ = %d", tempEngineOff_ ? 1 : 0);
             } else {
@@ -858,7 +894,12 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
     // Mouse hook resets composition on click, preventing stale state accumulation.
     // Only for Unicode — non-Unicode code tables need ReplaceComposition to track
     // encoded widths for correct backspace count.
+    // Passthrough only when no synthetic events are in flight.
+    // If synthEventsPending_ > 0, the app hasn't processed our previous SendInput yet.
+    // Allowing passthrough here would let the real key arrive at the app BEFORE those
+    // synthetic events (which may include backspaces), corrupting the displayed text.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
+        synthEventsPending_ == 0 &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
         composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
@@ -893,7 +934,8 @@ void HookEngine::HandleBackspace() {
         // Multi-word backward: re-enter undo state if stack has committed words.
         // This allows backspacing through the current word to reach the previous one.
         if (!commitStack_.empty()) {
-            commitUndoState_ = 1;
+            commitUndoState_ = CommitUndoState::Ready;
+            commitReadyTime_ = GetTickCount();
             HOOK_LOG(L"  HandleBackspace: engine empty, stack has %zu entries → state 1",
                      commitStack_.size());
         }
@@ -955,8 +997,9 @@ void HookEngine::ResetComposition() {
     inputHistory_.clear();
     rawMacroBuffer_.clear();
     tempMacroOff_ = false;
-    commitUndoState_ = 0;
+    commitUndoState_ = CommitUndoState::Idle;
     commitStack_.clear();
+    synthEventsPending_ = 0;  // Pending synthetics from old context are irrelevant after reset
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -966,7 +1009,7 @@ void HookEngine::ResetComposition() {
 void HookEngine::ReplayCommittedChars() {
     if (commitStack_.empty()) {
         HOOK_LOG(L"  ReplayCommittedChars: stack empty, nothing to replay");
-        commitUndoState_ = 0;
+        commitUndoState_ = CommitUndoState::Idle;
         return;
     }
 
@@ -977,11 +1020,6 @@ void HookEngine::ReplayCommittedChars() {
     HOOK_LOG(L"  ReplayCommittedChars: replaying %zu keystrokes, restoring prev='%s' (stack=%zu remaining)",
              entry.history.size(), entry.text.c_str(), commitStack_.size());
 
-    // Seed inputHistory_ with the replayed word's keystrokes so that if the user
-    // edits and re-commits this word, the new stack entry contains the full history
-    // (not just the editing delta). Otherwise a second replay attempt would be wrong.
-    inputHistory_ = entry.history;
-
     // Replay exact user keystrokes (including backspaces) to reproduce engine state
     for (wchar_t ch : entry.history) {
         if (ch == kBackspaceMarker) {
@@ -990,6 +1028,9 @@ void HookEngine::ReplayCommittedChars() {
             engine_->PushChar(ch);
         }
     }
+    // Seed inputHistory_ with the replayed word's keystrokes so that if the user
+    // edits and re-commits this word, the new stack entry contains the full history
+    // (not just the editing delta). Otherwise a second replay attempt would be wrong.
     inputHistory_ = std::move(entry.history);
 
     // Restore screen state so ReplaceComposition can diff correctly
@@ -998,7 +1039,7 @@ void HookEngine::ReplayCommittedChars() {
 
     // Reset undo state — HandleBackspace will re-enter state 1 if engine becomes
     // empty again and stack still has entries (enabling multi-word backward).
-    commitUndoState_ = 0;
+    commitUndoState_ = CommitUndoState::Idle;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1080,7 +1121,8 @@ void HookEngine::SendBackspaceEvents(HWND target, size_t count, bool usePost) {
             AppendVkEvent(events, VK_BACK, bsScan);
         }
         sending_ = true;
-        SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
+        UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
+        synthEventsPending_ += static_cast<int>(sent);
         sending_ = false;
     }
 }
@@ -1098,7 +1140,8 @@ void HookEngine::SendCharEvents(HWND target, const std::wstring& text, bool useP
             AppendUnicodeEvent(events, ch);
         }
         sending_ = true;
-        SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
+        UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
+        synthEventsPending_ += static_cast<int>(sent);
         sending_ = false;
     }
 }
@@ -1395,17 +1438,20 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                 if (isConsoleApp_) {
                     // Split SendInput for console apps to prevent character swallowing
                     if (!bsEvents.empty()) {
-                        SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                        UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                        synthEventsPending_ += static_cast<int>(sent);
                         Sleep(2);
                     }
                     if (!charEvents.empty()) {
-                        SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
+                        UINT sent = SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
+                        synthEventsPending_ += static_cast<int>(sent);
                     }
                 } else {
                     // Batch SendInput for GUI apps to preserve atomicity and prevent text flickering
                     bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
                     if (!bsEvents.empty()) {
-                        SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                        UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                        synthEventsPending_ += static_cast<int>(sent);
                     }
                 }
                 sending_ = false;
@@ -1472,17 +1518,20 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
             if (isConsoleApp_) {
                 // Split SendInput for console apps to prevent character swallowing
                 if (!bsEvents.empty()) {
-                    SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                    UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                    synthEventsPending_ += static_cast<int>(sent);
                     Sleep(2);
                 }
                 if (!charEvents.empty()) {
-                    SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
+                    UINT sent = SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
+                    synthEventsPending_ += static_cast<int>(sent);
                 }
             } else {
                 // Batch SendInput for GUI apps to preserve atomicity and prevent text flickering
                 bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
                 if (!bsEvents.empty()) {
-                    SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                    UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+                    synthEventsPending_ += static_cast<int>(sent);
                 }
             }
             sending_ = false;
@@ -1596,7 +1645,8 @@ void HookEngine::InjectKey(DWORD vkCode) {
     inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
     inputs[1].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
     sending_ = true;
-    SendInput(2, inputs, sizeof(INPUT));
+    UINT sent = SendInput(2, inputs, sizeof(INPUT));
+    synthEventsPending_ += static_cast<int>(sent);
     sending_ = false;
 }
 
