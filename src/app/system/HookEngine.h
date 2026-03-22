@@ -130,6 +130,7 @@ private:
     bool vietnameseMode_ = true;
     std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
     int synthEventsPending_ = 0;  // Count of synthetic INPUT structs sent but not yet processed by hook
+    bool hadSynthInWord_ = false;  // True if any synthetic event was sent for the current word (blocks passthrough mixing)
     bool beepOnSwitch_ = false;
     bool smartSwitch_ = false;
     bool excludeApps_ = false;

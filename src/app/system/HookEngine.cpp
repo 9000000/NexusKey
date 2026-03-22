@@ -894,12 +894,13 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
     // Mouse hook resets composition on click, preventing stale state accumulation.
     // Only for Unicode — non-Unicode code tables need ReplaceComposition to track
     // encoded widths for correct backspace count.
-    // Passthrough only when no synthetic events are in flight.
-    // If synthEventsPending_ > 0, the app hasn't processed our previous SendInput yet.
-    // Allowing passthrough here would let the real key arrive at the app BEFORE those
-    // synthetic events (which may include backspaces), corrupting the displayed text.
+    // Passthrough only when no synthetic events are in flight AND no synths were sent
+    // earlier in this word. The second guard prevents mixing physical and synthetic events
+    // in the same word: Electron/Chromium processes physical WM_KEYDOWN and synthetic
+    // VK_PACKET(KEYEVENTF_UNICODE) on different internal paths, so interleaving them
+    // mid-word can cause occasional out-of-order processing ("nuốt chữ") under CPU load.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
-        synthEventsPending_ == 0 &&
+        synthEventsPending_ == 0 && !hadSynthInWord_ &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
         composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
@@ -984,6 +985,7 @@ bool HookEngine::CommitComposition() {
     inputHistory_.clear();
     rawMacroBuffer_.clear();
     tempMacroOff_ = false;
+    hadSynthInWord_ = false;
     return restored;
 }
 
@@ -1000,6 +1002,7 @@ void HookEngine::ResetComposition() {
     commitUndoState_ = CommitUndoState::Idle;
     commitStack_.clear();
     synthEventsPending_ = 0;  // Pending synthetics from old context are irrelevant after reset
+    hadSynthInWord_ = false;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1539,6 +1542,9 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
     }
 
     previousComposition_ = newText;
+    // Mark that at least one synthetic event was sent for this word.
+    // Guards passthrough path in HandleAlphaKey from mixing physical+synthetic events mid-word.
+    if (synthEventsPending_ > 0) hadSynthInWord_ = true;
 }
 
 void HookEngine::SendBackspaces(size_t count) {
