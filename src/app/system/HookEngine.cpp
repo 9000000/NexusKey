@@ -1468,8 +1468,11 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                 }
 
                 sending_ = true;
-                if (isConsoleApp_) {
-                    // Split SendInput for console apps to prevent character swallowing
+                if (skipEmptyChar_) {
+                    // Split SendInput for Console and Electron/Qt apps.
+                    // Both app types process VK_BACK and VK_PACKET(KEYEVENTF_UNICODE) on
+                    // separate internal paths — batching them risks VK_PACKET chars being
+                    // processed before VK_BACK backspaces, swallowing characters.
                     if (!bsEvents.empty()) {
                         UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
                         synthEventsPending_ += static_cast<int>(sent);
@@ -1480,7 +1483,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                         synthEventsPending_ += static_cast<int>(sent);
                     }
                 } else {
-                    // Batch SendInput for GUI apps to preserve atomicity and prevent text flickering
+                    // Batch SendInput for standard Win32 apps (single message queue, FIFO).
                     bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
                     if (!bsEvents.empty()) {
                         UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
