@@ -911,13 +911,17 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
     // Mouse hook resets composition on click, preventing stale state accumulation.
     // Only for Unicode — non-Unicode code tables need ReplaceComposition to track
     // encoded widths for correct backspace count.
-    // Passthrough only when no synthetic events are in flight AND no synths were sent
-    // earlier in this word. The second guard prevents mixing physical and synthetic events
-    // in the same word: Electron/Chromium processes physical WM_KEYDOWN and synthetic
-    // VK_PACKET(KEYEVENTF_UNICODE) on different internal paths, so interleaving them
-    // mid-word can cause occasional out-of-order processing ("nuốt chữ") under CPU load.
+    // Passthrough only when no synths were sent earlier in this word.
+    // Guard prevents mixing physical and synthetic events in the same word:
+    // Electron/Chromium processes physical WM_KEYDOWN and synthetic VK_PACKET on
+    // different internal paths, so interleaving them mid-word can cause out-of-order
+    // processing ("nuốt chữ") under CPU load.
+    // NOTE: synthEventsPending_ > 0 from a PREVIOUS word is intentionally NOT a guard
+    // here — blocking passthrough across word boundaries causes a cascade where every
+    // char of the new word adds synthetic events and synthEventsPending_ never drains,
+    // flooding Electron with VK_PACKET events and causing more swallowing, not less.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
-        synthEventsPending_ == 0 && !hadSynthInWord_ &&
+        !hadSynthInWord_ &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
         composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
