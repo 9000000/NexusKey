@@ -91,6 +91,8 @@ private:
     void HandleBackspace();
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
+    void CancelCommitUndo();   // commitUndoState_ = Idle + commitStack_.clear()
+    void SetCommitUndoReady(); // commitUndoState_ = Ready + timestamp
 
     // Output — multi-method: PostMessage for Win32 controls, SendInput for others
     void ReplaceComposition(const std::wstring& newText);

@@ -199,8 +199,7 @@ void HookEngine::ToggleVietnameseMode() {
     }
 
     // Cancel backspace-into-committed-word (replay in wrong mode would be wrong)
-    commitUndoState_ = CommitUndoState::Idle;
-    commitStack_.clear();
+    CancelCommitUndo();
 
     vietnameseMode_ = !vietnameseMode_;
     NEXTKEY_LOG(L"HookEngine: mode = %s", vietnameseMode_ ? L"Vietnamese" : L"English");
@@ -518,12 +517,12 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     //
     // Auto-expire Ready after kCommitUndoTimeoutMs: cheap insurance against any cursor-movement
     // event that bypasses ResetComposition (e.g. external text change, rare edge cases).
-    if (commitUndoState_ == CommitUndoState::Ready &&
-        (GetTickCount() - commitReadyTime_) > kCommitUndoTimeoutMs) {
-        HOOK_LOG(L"  commit-undo: Ready state expired after %u ms → Idle",
-                 GetTickCount() - commitReadyTime_);
-        commitUndoState_ = CommitUndoState::Idle;
-        commitStack_.clear();
+    if (commitUndoState_ == CommitUndoState::Ready) {
+        DWORD elapsed = GetTickCount() - commitReadyTime_;
+        if (elapsed > kCommitUndoTimeoutMs) {
+            HOOK_LOG(L"  commit-undo: Ready state expired after %u ms → Idle", elapsed);
+            CancelCommitUndo();
+        }
     }
     if (commitUndoState_ == CommitUndoState::Ready && vkCode == VK_BACK && engine_->Count() == 0) {
         // Backspace deletes the commit trigger (space/etc.)
@@ -766,8 +765,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // and ONLY if a new entry was just pushed to the stack (implies: not auto-restored,
         // not quick consonant, not empty history).
         if (pushedToStack_ && (vkCode == VK_SPACE || vkCode == VK_RETURN)) {
-            commitUndoState_ = CommitUndoState::Ready;
-            commitReadyTime_ = GetTickCount();
+            SetCommitUndoReady();
         }
         if (restored || synthEventsPending_ > 0) {
             // Re-inject trigger AFTER all pending synthetic events so that:
@@ -861,8 +859,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                 // and bypass otherKeyPressed_, so commitUndoState_ can remain at 1
                 // from the last committed word. If not cleared, Backspace after
                 // double-Alt → ReplayCommittedChars() at the wrong cursor position.
-                commitUndoState_ = CommitUndoState::Idle;
-                commitStack_.clear();
+                CancelCommitUndo();
                 altTapCount_ = 0;
                 HOOK_LOG(L"  DOUBLE-ALT: tempEngineOff_ = %d", tempEngineOff_ ? 1 : 0);
             } else {
@@ -955,8 +952,7 @@ void HookEngine::HandleBackspace() {
         // Multi-word backward: re-enter undo state if stack has committed words.
         // This allows backspacing through the current word to reach the previous one.
         if (!commitStack_.empty()) {
-            commitUndoState_ = CommitUndoState::Ready;
-            commitReadyTime_ = GetTickCount();
+            SetCommitUndoReady();
             HOOK_LOG(L"  HandleBackspace: engine empty, stack has %zu entries → state 1",
                      commitStack_.size());
         }
@@ -1019,10 +1015,19 @@ void HookEngine::ResetComposition() {
     inputHistory_.clear();
     rawMacroBuffer_.clear();
     tempMacroOff_ = false;
-    commitUndoState_ = CommitUndoState::Idle;
-    commitStack_.clear();
+    CancelCommitUndo();
     synthEventsPending_ = 0;  // Pending synthetics from old context are irrelevant after reset
     hadSynthInWord_ = false;
+}
+
+void HookEngine::CancelCommitUndo() {
+    commitUndoState_ = CommitUndoState::Idle;
+    commitStack_.clear();
+}
+
+void HookEngine::SetCommitUndoReady() {
+    commitUndoState_ = CommitUndoState::Ready;
+    commitReadyTime_ = GetTickCount();
 }
 
 // ═══════════════════════════════════════════════════════════
