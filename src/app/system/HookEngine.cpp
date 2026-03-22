@@ -528,7 +528,16 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     if (commitUndoState_ == CommitUndoState::Ready && vkCode == VK_BACK && engine_->Count() == 0) {
         // Backspace deletes the commit trigger (space/etc.)
         commitUndoState_ = CommitUndoState::Primed;
-        HOOK_LOG(L"  commit-undo: BS after commit → state 2 (ready to replay)");
+        if (synthEventsPending_ > 0) {
+            // Synthetic events still in flight (word corrections, injected commit trigger).
+            // If we pass BS through now it arrives at the app BEFORE those synthetics,
+            // deleting the wrong character and permanently desynchronising previousComposition_.
+            // Re-inject so BS is placed AFTER the pending synthetics in the queue.
+            HOOK_LOG(L"  commit-undo: BS after commit → Primed, re-inject after synthetics (pending=%d)", synthEventsPending_);
+            InjectKey(VK_BACK);
+            return true;
+        }
+        HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
         return false;  // Let backspace pass through to delete the space
     }
     if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vietnameseMode_) {
@@ -782,6 +791,17 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             InjectKey(vkCode);
             return true;
         }
+    }
+
+    // 10. BS with engine empty but synthetic events pending: re-inject to preserve ordering.
+    // Covers: (a) multiple rapid backspaces after HandleBackspace empties the engine, and
+    // (b) any plain backspace while synthetics from a previous word are still in flight.
+    // Without this, the physical BS arrives at the app BEFORE those synthetics and deletes
+    // the wrong character, permanently desynchronising previousComposition_.
+    if (vkCode == VK_BACK && synthEventsPending_ > 0) {
+        HOOK_LOG(L"  re-inject BS (engine empty, synthPending=%d)", synthEventsPending_);
+        InjectKey(VK_BACK);
+        return true;
     }
 
     return false;
