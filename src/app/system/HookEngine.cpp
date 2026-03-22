@@ -911,17 +911,17 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
     // Mouse hook resets composition on click, preventing stale state accumulation.
     // Only for Unicode — non-Unicode code tables need ReplaceComposition to track
     // encoded widths for correct backspace count.
-    // Passthrough only when no synths were sent earlier in this word.
-    // Guard prevents mixing physical and synthetic events in the same word:
-    // Electron/Chromium processes physical WM_KEYDOWN and synthetic VK_PACKET on
-    // different internal paths, so interleaving them mid-word can cause out-of-order
-    // processing ("nuốt chữ") under CPU load.
-    // NOTE: synthEventsPending_ > 0 from a PREVIOUS word is intentionally NOT a guard
-    // here — blocking passthrough across word boundaries causes a cascade where every
-    // char of the new word adds synthetic events and synthEventsPending_ never drains,
-    // flooding Electron with VK_PACKET events and causing more swallowing, not less.
+    // Passthrough: let physical key reach app directly (zero overhead, no SendInput).
+    // Blocked when:
+    //   - hadSynthInWord_: synth already sent in this word — mixing physical+synthetic
+    //     mid-word causes out-of-order processing in Electron's two input paths.
+    //   - isElectronApp_: Electron/Qt apps process WM_KEYDOWN and VK_PACKET on
+    //     separate internal code paths. Even cross-word mixing (physical first char of
+    //     new word vs previous word's correction synthetics) can reorder under CPU load.
+    //     Console apps are excluded — they have their own split+delay path and don't
+    //     exhibit the two-path race.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
-        !hadSynthInWord_ &&
+        !hadSynthInWord_ && !isElectronApp_ &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
         composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
@@ -1276,6 +1276,7 @@ void HookEngine::OnFocusChanged() {
     HWND fg = GetForegroundWindow();
     isConsoleApp_ = fg && IsConsoleApp(fg);
     skipEmptyChar_ = fg && (IsQtElectronApp(fg) || isConsoleApp_);
+    isElectronApp_ = skipEmptyChar_ && !isConsoleApp_;
 
     // Skip focus tracking entirely if no feature needs it
     if (!smartSwitch_ && !excludeApps_ && !tsfApps_ && !rememberCodeTable_) return;

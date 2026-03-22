@@ -150,6 +150,7 @@ private:
     std::set<std::wstring> tsfAppSet_;      // apps that should use TSF engine instead of hook
     bool isTsfApp_ = false;       // cached: is current foreground app in TSF list?
     bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?
+    bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
     bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
     bool modeBeforeExclude_ = true;  // Vietnamese mode before entering excluded app
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode (for TOML save)
