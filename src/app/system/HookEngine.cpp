@@ -914,14 +914,15 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
     // Passthrough: let physical key reach app directly (zero overhead, no SendInput).
     // Blocked when:
     //   - hadSynthInWord_: synth already sent in this word — mixing physical+synthetic
-    //     mid-word causes out-of-order processing in Electron's two input paths.
-    //   - isElectronApp_: Electron/Qt apps process WM_KEYDOWN and VK_PACKET on
-    //     separate internal code paths. Even cross-word mixing (physical first char of
-    //     new word vs previous word's correction synthetics) can reorder under CPU load.
-    //     Console apps are excluded — they have their own split+delay path and don't
-    //     exhibit the two-path race.
+    //     mid-word causes out-of-order processing in two-queue systems.
+    //   - skipEmptyChar_: covers both Electron/Qt AND console emulators (Windows Terminal,
+    //     cmd, Git Bash). Both process WM_KEYDOWN and VK_PACKET(KEYEVENTF_UNICODE) on
+    //     separate internal paths. Physical passthrough chars race against in-flight
+    //     synthetic corrections — visible as swallowed chars in Node.js TUI apps (e.g.
+    //     Claude CLI) and Electron apps. All such apps already use the split+delay path
+    //     in ReplaceComposition; disabling passthrough here makes the routing consistent.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
-        !hadSynthInWord_ && !isElectronApp_ &&
+        !hadSynthInWord_ && !skipEmptyChar_ &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
         composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
