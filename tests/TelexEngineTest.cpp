@@ -1881,6 +1881,24 @@ TEST_F(TelexEngineTest, W_AfterConsonant_ProducesUHorn) {
     EXPECT_EQ(engine_->Peek(), L"tư");
 }
 
+TEST_F(TelexEngineTest, W_UU_HornsFirstU) {
+    // "luuw" → lưu (not luư): horn on first 'u', second 'u' stays as glide
+    TypeString(*engine_, L"luuw");
+    EXPECT_EQ(engine_->Peek(), L"l\u01B0u");  // lưu
+}
+
+TEST_F(TelexEngineTest, W_UU_NoConsonant) {
+    // "uuw" → ưu (horn on first u)
+    TypeString(*engine_, L"uuw");
+    EXPECT_EQ(engine_->Peek(), L"\u01B0u");  // ưu
+}
+
+TEST_F(TelexEngineTest, W_UU_WithTone) {
+    // "luuwj" → lựu (pomegranate): horn on first u, nặng tone
+    TypeString(*engine_, L"luuwj");
+    EXPECT_EQ(engine_->Peek(), L"l\u1EF1u");  // lựu
+}
+
 // ============================================================================
 // BACKSPACE — DELETE WHOLE CHARACTER TESTS
 // ============================================================================

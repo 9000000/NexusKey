@@ -915,14 +915,13 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
     // Blocked when:
     //   - hadSynthInWord_: synth already sent in this word — mixing physical+synthetic
     //     mid-word causes out-of-order processing in two-queue systems.
-    //   - skipEmptyChar_: covers both Electron/Qt AND console emulators (Windows Terminal,
-    //     cmd, Git Bash). Both process WM_KEYDOWN and VK_PACKET(KEYEVENTF_UNICODE) on
-    //     separate internal paths. Physical passthrough chars race against in-flight
-    //     synthetic corrections — visible as swallowed chars in Node.js TUI apps (e.g.
-    //     Claude CLI) and Electron apps. All such apps already use the split+delay path
-    //     in ReplaceComposition; disabling passthrough here makes the routing consistent.
+    //   - isElectronApp_: Electron/Qt have multi-process input architecture (browser +
+    //     renderer process). Physical WM_KEYDOWN and synthetic VK_PACKET travel on
+    //     separate internal paths and can arrive out of order under CPU load.
+    //     Console apps (Windows Terminal, cmd) use a single FIFO input queue — physical
+    //     and synthetic events are always ordered correctly, so passthrough is safe there.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
-        !hadSynthInWord_ && !skipEmptyChar_ &&
+        !hadSynthInWord_ && !isElectronApp_ &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
         composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
@@ -1477,7 +1476,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                     if (!bsEvents.empty()) {
                         UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
                         synthEventsPending_ += static_cast<int>(sent);
-                        Sleep(2);
+                        Sleep(15);  // Windows timer resolution is ~15.6ms; Sleep(2) not guaranteed
                     }
                     if (!charEvents.empty()) {
                         UINT sent = SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
@@ -1557,7 +1556,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                 if (!bsEvents.empty()) {
                     UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
                     synthEventsPending_ += static_cast<int>(sent);
-                    Sleep(2);
+                    Sleep(15);  // Windows timer resolution is ~15.6ms; Sleep(2) not guaranteed
                 }
                 if (!charEvents.empty()) {
                     UINT sent = SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));

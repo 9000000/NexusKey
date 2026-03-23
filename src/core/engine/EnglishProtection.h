@@ -183,6 +183,46 @@ template<typename CharStateT>
 }
 
 // =============================================================================
+// TIER 1: Invalid Vietnamese Coda Structure
+// =============================================================================
+
+/// Check if consonants after the last vowel form a valid Vietnamese coda.
+/// Vietnamese syllable coda is strictly limited to:
+///   Single consonant: c, m, n, p, t
+///   Digraph:          ch, ng, nh  (only these three)
+/// Any other 2-consonant cluster after a vowel (e.g. pp, mp, nd, rr) is
+/// structurally impossible in Vietnamese — the word must be English/foreign.
+/// 3+ consonants after a vowel are always invalid.
+///
+/// Called from CheckEnglishBias after each new consonant is added.
+/// Template works with both Telex::CharState and Vni::CharState.
+template<typename CharStateT>
+[[nodiscard]] inline bool IsInvalidVietnameseCoda(
+        const CharStateT* states, size_t count) noexcept {
+    if (count < 3) return false;  // Need at least vowel + 2 consonants to check
+
+    // Count consonants from the end back to the last vowel
+    size_t codaLen = 0;
+    bool foundVowel = false;
+    for (size_t i = count; i-- > 0;) {
+        if (states[i].IsVowel() || states[i].IsD()) { foundVowel = true; break; }
+        ++codaLen;
+    }
+
+    if (!foundVowel) return false;   // All consonants so far = onset cluster (ngh, kh, tr...), not coda
+    if (codaLen < 2) return false;   // 0-1 coda consonants are always valid
+    if (codaLen >= 3) return true;   // 3+ consecutive coda consonants: never Vietnamese
+
+    // codaLen == 2: only ch, ng, nh are valid Vietnamese final digraphs
+    wchar_t c1 = towlower(states[count - 2].base);
+    wchar_t c2 = towlower(states[count - 1].base);
+    bool validDigraph = (c1 == L'c' && c2 == L'h') ||  // ch
+                        (c1 == L'n' && c2 == L'g') ||  // ng
+                        (c1 == L'n' && c2 == L'h');    // nh
+    return !validDigraph;
+}
+
+// =============================================================================
 // Combined Bias Check — runs Tier 1 + Tier 2
 // =============================================================================
 
@@ -217,6 +257,14 @@ inline void CheckEnglishBias(const CharStateT* states, size_t count,
                 return;
             }
         }
+    }
+
+    // TIER 1: Hard reject — invalid Vietnamese coda structure.
+    // Catches English words like "approved" (pp), "append" (pp), "amp" (mp),
+    // "and" (nd) where 2+ consonants after a vowel don't form ch/ng/nh.
+    if (IsInvalidVietnameseCoda(states, count)) {
+        prot.bias = LanguageBias::HardEnglish;
+        return;
     }
 
     // TIER 2: Soft bias — y + vowel

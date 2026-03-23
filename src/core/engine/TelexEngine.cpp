@@ -477,8 +477,8 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
     // P7: Standalone 'a' → breve
 
     // Analyze current state (skip QU-cluster 'u' for modification targets)
-    bool hasUA = false, hasOA = false, hasUO = false;
-    size_t uIdx = SIZE_MAX, oIdx = SIZE_MAX, aIdx = SIZE_MAX;
+    bool hasUA = false, hasOA = false, hasUO = false, hasUU = false;
+    size_t uIdx = SIZE_MAX, firstUIdx = SIZE_MAX, oIdx = SIZE_MAX, aIdx = SIZE_MAX;
     size_t hornedIdx = SIZE_MAX, brevedIdx = SIZE_MAX;
 
     for (size_t i = 0; i < states_.size(); ++i) {
@@ -492,7 +492,10 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 
         if (base == L'u') {
             if (mod == Modifier::Horn) hornedIdx = i;
-            else if (mod == Modifier::None) uIdx = i;
+            else if (mod == Modifier::None) {
+                if (firstUIdx == SIZE_MAX) firstUIdx = i;  // first unmodified u
+                uIdx = i;  // last unmodified u
+            }
         } else if (base == L'o') {
             if (mod == Modifier::Horn) hornedIdx = i;
             else if (mod == Modifier::None || mod == Modifier::Circumflex) oIdx = i;
@@ -511,6 +514,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
             if (first == L'u' && second == L'a') hasUA = true;
             if (first == L'o' && second == L'a') hasOA = true;
             if (first == L'u' && second == L'o') hasUO = true;
+            if (first == L'u' && second == L'u') hasUU = true;
         }
     }
 
@@ -576,8 +580,10 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
     }
 
     // P5: Standalone 'u' → horn
+    // For "uu" pattern, horn goes on FIRST 'u' (lưu, cưu, hưu): the second 'u' is the glide.
     if (uIdx != SIZE_MAX) {
-        states_[uIdx].mod = Modifier::Horn;
+        size_t targetU = (hasUU && firstUIdx != SIZE_MAX) ? firstUIdx : uIdx;
+        states_[targetU].mod = Modifier::Horn;
         if (aIdx != SIZE_MAX && states_[aIdx].mod == Modifier::Circumflex) {
             states_[aIdx].mod = Modifier::None;
         }
