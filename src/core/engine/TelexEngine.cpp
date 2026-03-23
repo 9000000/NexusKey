@@ -696,20 +696,20 @@ void TelexEngine::ApplyAutoUO() {
     // Scan backward, bounded to last 4 positions
     size_t start = (states_.size() > 4) ? states_.size() - 4 : 0;
     for (size_t i = start; i + 2 < states_.size(); ++i) {
-        bool isQU = (i > 0 && states_[i - 1].base == L'q');
-        if (isQU) continue;
+        // Skip QU cluster: 'u' in "qu" is a consonant glide, not a modifiable vowel
+        if (i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q') continue;
 
-        // Pattern 1: u(no horn) + ơ(has horn) + [next char] → horn the u
-        // Handles u-o-w sequence: after w horns o, next char triggers auto-horn of u
+        // Pattern 1: u(no horn) + ơ(has horn) → horn the u to complete ươ
+        // Tone relocation not needed: ApplyW P2 already called RelocateToneToHornVowel()
+        // when 'w' was typed, so tone is already correctly on ơ.
         if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
             states_[i+1].base == L'o' && states_[i+1].mod == Modifier::Horn) {
             states_[i].mod = Modifier::Horn;
         }
 
-        // Pattern 2: ư(has horn) + o(no horn) + [next char] → horn the o
-        // Handles u-w-o sequence: user applies horn to u first, then types o,
-        // then types the coda consonant (which triggers this pattern).
-        // Also relocates tone if it was placed on ư before o arrived (e.g., u-w-o-j-c).
+        // Pattern 2: ư(has horn) + o(no horn) → horn the o to complete ươ
+        // Tone relocation needed: ư was horned by ApplyW P5 when only 'u' existed,
+        // so any tone placed before 'o' arrived landed on ư and must now move to ơ.
         if (states_[i].base == L'u' && states_[i].mod == Modifier::Horn &&
             states_[i+1].base == L'o' && states_[i+1].mod == Modifier::None) {
             states_[i+1].mod = Modifier::Horn;
