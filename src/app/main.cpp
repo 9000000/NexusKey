@@ -647,7 +647,6 @@ void SpawnSettingsSubprocess() {
         TrackChildProcess(pi.hProcess);
         NEXTKEY_LOG(L"Settings subprocess spawned successfully");
     } else {
-        DWORD err = GetLastError();
-        NEXTKEY_LOG(L"Failed to spawn settings subprocess (error=%lu, path=%s)", err, exePath);
+        NEXTKEY_LOG(L"Failed to spawn settings subprocess (error=%lu, path=%s)", GetLastError(), exePath);
     }
 }
