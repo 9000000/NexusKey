@@ -4,7 +4,10 @@
 // Tests for the 3 feature flags:
 //   1. modernOrtho  — Modern tone placement on diphthongs (ua→uá, ue→ué)
 //   2. autoCaps     — (config round-trip only; auto-capitalize logic lives in TSF DLL)
-//   3. allowZwjf    — (config round-trip only; consonant validation for future use)
+//   3. allowZwjf    — Spell check acceptance of z/j/w/f as valid initial consonants.
+//                     quickStartConsonant has higher priority: when enabled, w→qu
+//                     always fires regardless of allowZwjf. allowZwjf is only
+//                     relevant when quickStartConsonant is off (SimpleTelex context).
 
 #include <gtest/gtest.h>
 #include "core/engine/TelexEngine.h"
@@ -778,7 +781,10 @@ TEST_F(TelexZwjfTest, Word_Zone_NoTone) {
 // ============================================================================
 // allowZwjf controls spell check validation ONLY:
 //   z/j ≡ gi, w ≡ qu, f ≡ ph as initial consonants
-// It does NOT change z/w/j/f tone/modifier behavior in the engine.
+// quickStartConsonant has higher priority and fires independently.
+// allowZwjf is most meaningful when quickStartConsonant is OFF (SimpleTelex):
+//   allowZwjf=true  → spell check accepts 'w' as valid initial → tones can apply
+//   allowZwjf=false → spell check rejects 'w' → spellCheckDisabled_ → tones blocked
 
 // Direct spell checker tests (bypassing engine)
 TEST(SpellCheckZwjfTest, Z_Invalid_WithoutFlag) {
@@ -861,6 +867,45 @@ TEST(SpellCheckZwjfTest, StandardConsonants_StillWork) {
     };
     auto result = SpellCheck::Validate(states, 3, false);
     EXPECT_EQ(result, SpellCheck::Result::Valid);
+}
+
+// ============================================================================
+// allowZwjf=false — SimpleTelex, quickStartConsonant OFF
+// ============================================================================
+// When quickStartConsonant is off, allowZwjf controls whether 'w' is accepted
+// as a valid initial consonant by the spell checker. With allowZwjf=false,
+// spell check rejects 'w' → spellCheckDisabled_ → tone keys treated as literal.
+
+class AllowZwjfFalseSimpleTelexTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.inputMethod = InputMethod::SimpleTelex;
+        config_.allowZwjf = false;
+        config_.quickStartConsonant = false;  // quickStart off: allowZwjf is the gate
+        config_.spellCheckEnabled = true;
+        engine_ = std::make_unique<Telex::TelexEngine>(config_);
+    }
+    TypingConfig config_;
+    std::unique_ptr<Telex::TelexEngine> engine_;
+};
+
+TEST_F(AllowZwjfFalseSimpleTelexTest, W_StaysLiteral) {
+    // allowZwjf=false: spell check rejects 'w' as initial → literal
+    TypeString(*engine_, L"w");
+    EXPECT_EQ(engine_->Peek(), L"w");
+}
+
+TEST_F(AllowZwjfFalseSimpleTelexTest, EnglishWord_Work_NoTone) {
+    // spell check rejects 'w' → spellCheckDisabled_ → 'r' tone blocked → "work"
+    TypeString(*engine_, L"work");
+    EXPECT_EQ(engine_->Peek(), L"work");
+}
+
+TEST_F(AllowZwjfFalseSimpleTelexTest, W_ModifierInWord_StillWorks) {
+    // 'w' as vowel modifier mid-word still works (P1-P7 not affected by allowZwjf)
+    // "tuaw" → t + u + a + w(horn on u) → "tưa"
+    TypeString(*engine_, L"tuaw");
+    EXPECT_EQ(engine_->Peek(), L"tưa");
 }
 
 // ============================================================================
