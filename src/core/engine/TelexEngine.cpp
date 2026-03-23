@@ -690,18 +690,28 @@ void TelexEngine::ProcessChar(wchar_t c) {
 //-----------------------------------------------------------------------------
 
 void TelexEngine::ApplyAutoUO() {
-    // Pattern: 'u' (no horn) + 'ơ' (has horn) + [any char]
-    // Only need to check the last 3 positions
+    // Requires 3+ chars: both patterns need a char after the uo/ưo pair.
     if (states_.size() < 3) return;
 
     // Scan backward, bounded to last 4 positions
     size_t start = (states_.size() > 4) ? states_.size() - 4 : 0;
     for (size_t i = start; i + 2 < states_.size(); ++i) {
+        bool isQU = (i > 0 && states_[i - 1].base == L'q');
+        if (isQU) continue;
+
+        // Pattern 1: u(no horn) + ơ(has horn) + [next char] → horn the u
+        // Handles u-o-w sequence: after w horns o, next char triggers auto-horn of u
         if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
             states_[i+1].base == L'o' && states_[i+1].mod == Modifier::Horn) {
-            // Skip QU cluster: don't auto-horn 'u' when preceded by 'q'
-            if (i > 0 && states_[i - 1].base == L'q') continue;
             states_[i].mod = Modifier::Horn;
+        }
+
+        // Pattern 2: ư(has horn) + o(no horn) + [next char] → horn the o
+        // Handles u-w-o sequence: user applies horn to u first, then types o,
+        // then types the coda consonant (which triggers this pattern).
+        if (states_[i].base == L'u' && states_[i].mod == Modifier::Horn &&
+            states_[i+1].base == L'o' && states_[i+1].mod == Modifier::None) {
+            states_[i+1].mod = Modifier::Horn;
         }
     }
 }

@@ -1899,6 +1899,25 @@ TEST_F(TelexEngineTest, W_UU_WithTone) {
     EXPECT_EQ(engine_->Peek(), L"l\u1EF1u");  // lựu
 }
 
+TEST_F(TelexEngineTest, W_UO_ReverseOrder_Duoc) {
+    // u-w-o sequence: horn u first, then o → same result as u-o-w
+    // "dduwocj" → được (not đựoc)
+    TypeString(*engine_, L"dduwocj");
+    EXPECT_EQ(engine_->Peek(), L"\u0111\u01B0\u1EE3c");  // được
+}
+
+TEST_F(TelexEngineTest, W_UO_ReverseOrder_Nuoc) {
+    // "nuwocs" → nước
+    TypeString(*engine_, L"nuwocs");
+    EXPECT_EQ(engine_->Peek(), L"n\u01B0\u1EDBc");  // nước
+}
+
+TEST_F(TelexEngineTest, W_UO_ReverseOrder_NoTone) {
+    // "dduwoc" → đươc (no tone)
+    TypeString(*engine_, L"dduwoc");
+    EXPECT_EQ(engine_->Peek(), L"\u0111\u01B0\u01A1c");  // đươc
+}
+
 // ============================================================================
 // BACKSPACE — DELETE WHOLE CHARACTER TESTS
 // ============================================================================
