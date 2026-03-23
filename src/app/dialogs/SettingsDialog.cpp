@@ -12,6 +12,7 @@
 #include "sciter/SciterHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
+#include "core/Debug.h"
 #include "core/UIConfig.h"
 #include "core/ipc/SharedConstants.h"
 #include "sciter-x-dom.hpp"
@@ -93,7 +94,7 @@ SettingsDialog::SettingsDialog()
     // In Debug: on_load_data() intercepts and loads from file system
     // In Release: on_load_data() loads from packed archive
     if (!load(WSTR("this://app/settings/settings.html"))) {
-        MessageBoxW(nullptr, L"Failed to load settings.html", L"NexusKey Error", MB_OK | MB_ICONERROR);
+        NEXTKEY_LOG(L"Failed to load settings.html");
         return;
     }
 
@@ -296,15 +297,19 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     if (msg == WM_NEXUSKEY_UPDATE_RESULT) {
         if (s_instance) {
             if (wParam == 1) {
-                // Update available — show dialog
-                if (UpdateChecker::ShowUpdateDialog(hwnd, s_instance->cachedUpdateInfo_)) {
-                    s_instance->startUpdate(s_instance->cachedUpdateInfo_);
+                // UpdateInfo passed via LPARAM from background thread — take ownership
+                std::unique_ptr<UpdateInfo> info(reinterpret_cast<UpdateInfo*>(lParam));
+                if (info && UpdateChecker::ShowUpdateDialog(hwnd, *info)) {
+                    s_instance->startUpdate(*info);
                 }
             } else if (wParam == 0) {
                 UpdateChecker::ShowUpToDateMessage(hwnd);
             } else {
                 UpdateChecker::ShowCheckFailedMessage(hwnd);
             }
+        } else if (wParam == 1) {
+            // Dialog gone but info was allocated — clean up
+            delete reinterpret_cast<UpdateInfo*>(lParam);
         }
         return 0;
     }
@@ -1216,15 +1221,16 @@ void SettingsDialog::startUpdateCheck() {
         WPARAM result;
         if (info.available) {
             result = 1;
-            if (s_instance) {
-                s_instance->cachedUpdateInfo_ = std::move(info);
-            }
+            // Pass UpdateInfo via LPARAM to avoid accessing s_instance from background thread
+            auto* heapInfo = new (std::nothrow) UpdateInfo(std::move(info));
+            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, reinterpret_cast<LPARAM>(heapInfo));
         } else if (info.checkSucceeded) {
             result = 0;  // up-to-date
+            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, 0);
         } else {
             result = 2;  // network/parse error
+            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, 0);
         }
-        PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, 0);
     }).detach();
 }
 

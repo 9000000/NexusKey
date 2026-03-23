@@ -164,8 +164,15 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
 
     bool extracted = ExtractZip(zipPath, tempDir);
     if (!extracted) {
-        // Rollback attempt: this is hard because we renamed everything.
-        // But usually extract fails due to disk space or corrupted zip.
+        // Rollback: restore original files from _old_version/ back to exeDir
+        namespace fs = std::filesystem;
+        std::error_code rollbackEc;
+        for (const auto& entry : fs::directory_iterator(oldVersionDir, rollbackEc)) {
+            if (!entry.is_regular_file()) continue;
+            std::wstring name = entry.path().filename().wstring();
+            std::wstring destPath = exeDir + L"\\" + name;
+            MoveFileW(entry.path().c_str(), destPath.c_str());
+        }
         ExitProcess(1);
     }
 

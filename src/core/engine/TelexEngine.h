@@ -18,7 +18,8 @@ enum class Modifier : uint8_t {
     None,       // a e i o u y
     Circumflex, // â ê ô
     Breve,      // ă
-    Horn        // ơ ư
+    Horn,       // ơ ư
+    Stroke      // đ (dd)
 };
 
 /// Tone type for Vietnamese
@@ -56,13 +57,6 @@ struct CharState {
     [[nodiscard]] constexpr bool IsEmpty() const noexcept { return base == 0; }
 };
 
-/// Telex engine states
-enum class TelexStates {
-    Valid,       // Valid Vietnamese word
-    Invalid,     // Not a valid Vietnamese word
-    Committed    // After commit
-};
-
 /// Telex input method engine - STATE-BASED ARCHITECTURE
 ///
 /// Key principle: IME tracks STATE, not precomposed Unicode.
@@ -94,7 +88,6 @@ public:
         if (tempSpellOff_) spellCheckDisabled_ = false;
     }
     [[nodiscard]] bool HasActiveQuickConsonant() const override { return quickConsonantIdx_ != SIZE_MAX; }
-    [[nodiscard]] TelexStates GetState() const noexcept { return state_; }
 
 private:
     // Input processing
@@ -145,7 +138,6 @@ private:
     std::vector<CharState> states_;   // Internal state buffer
     std::vector<wchar_t> rawInput_;   // Raw keys for escape
     TypingConfig config_;
-    TelexStates state_ = TelexStates::Valid;
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
     bool tempSpellOff_ = false;       // true when user toggled temp spell bypass via Ctrl
     bool quickConsonantOnly_ = false;    // true when buffer is only quick consonant expansion

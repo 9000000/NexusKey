@@ -10,6 +10,7 @@
 #include <shellapi.h>
 #include <functional>
 #include <utility>
+#include <string>
 
 namespace NextKey {
 
@@ -99,6 +100,7 @@ public:
 private:
     void ShowContextMenu();
     void RefreshIcon() noexcept;  // Reload icon based on current style/mode
+    void RefreshConvertHotkeyCache();  // Rebuild cached hotkey text from config
     [[nodiscard]] HICON CreateColorizedIcon(int baseIconId, COLORREF color) noexcept;
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -116,6 +118,9 @@ private:
     uint32_t customColorV_ = 0;          // Custom V color (COLORREF, 0=default)
     uint32_t customColorE_ = 0;          // Custom E color (COLORREF, 0=default)
     HICON customIcon_ = nullptr;          // Cached custom-colorized icon (needs DestroyIcon)
+
+    // Cached hotkey text for Quick Convert menu item (updated on config change)
+    std::wstring cachedConvertHotkeyText_;
 
     static constexpr UINT WM_TRAYICON = WM_USER + 1;
 };

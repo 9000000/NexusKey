@@ -30,9 +30,10 @@ static HRESULT RegisterCLSID() {
         REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, &dwDisp);
     if (ls != ERROR_SUCCESS) return E_FAIL;
 
-    RegSetValueExW(hKey, nullptr, 0, REG_SZ, 
+    ls = RegSetValueExW(hKey, nullptr, 0, REG_SZ,
         (const BYTE*)TEXT_SERVICE_DESCRIPTION, 
         (lstrlenW(TEXT_SERVICE_DESCRIPTION) + 1) * sizeof(wchar_t));
+    if (ls != ERROR_SUCCESS) { RegCloseKey(hKey); return HRESULT_FROM_WIN32(ls); }
     RegCloseKey(hKey);
 
     // Register InprocServer32
@@ -43,12 +44,14 @@ static HRESULT RegisterCLSID() {
         REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, &dwDisp);
     if (ls != ERROR_SUCCESS) return E_FAIL;
 
-    RegSetValueExW(hKey, nullptr, 0, REG_SZ, 
+    ls = RegSetValueExW(hKey, nullptr, 0, REG_SZ,
         (const BYTE*)szModule, (lstrlenW(szModule) + 1) * sizeof(wchar_t));
+    if (ls != ERROR_SUCCESS) { RegCloseKey(hKey); return HRESULT_FROM_WIN32(ls); }
 
     const wchar_t* szThreadingModel = L"Apartment";
-    RegSetValueExW(hKey, L"ThreadingModel", 0, REG_SZ,
+    ls = RegSetValueExW(hKey, L"ThreadingModel", 0, REG_SZ,
         (const BYTE*)szThreadingModel, (lstrlenW(szThreadingModel) + 1) * sizeof(wchar_t));
+    if (ls != ERROR_SUCCESS) { RegCloseKey(hKey); return HRESULT_FROM_WIN32(ls); }
     RegCloseKey(hKey);
 
     return S_OK;

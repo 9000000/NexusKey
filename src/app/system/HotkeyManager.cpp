@@ -3,7 +3,6 @@
 
 #include "HotkeyManager.h"
 #include "core/Debug.h"
-#include "core/config/ConfigManager.h"
 
 namespace NextKey {
 
@@ -19,15 +18,6 @@ void HotkeyManager::Initialize(const HotkeyConfig& config, HWND hwndMessage, HIN
     config_ = config;
     hwndMessage_ = hwndMessage;
     s_instance = this;
-
-    // Read hotkey config from TOML (if present)
-    auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
-
-    if (hotkeyOpt) {
-        config_ = *hotkeyOpt;
-    } else {
-        NEXTKEY_LOG(L"No [hotkey] in config — using default (Ctrl+Shift)");
-    }
 
     if (!HasNexusKeyHotkey(config_)) {
         NEXTKEY_LOG(L"NexusKey hotkey disabled by user");

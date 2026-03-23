@@ -13,6 +13,7 @@ namespace NextKey {
 #ifdef _WIN32
 #include <Windows.h>
 
+// Note: Messages longer than 1024 chars are silently truncated
 inline void DebugLog(const wchar_t* format, ...) {
     wchar_t buffer[1024];
     va_list args;

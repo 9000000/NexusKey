@@ -91,7 +91,8 @@ IFACEMETHODIMP_(ULONG) KeyEventSink::AddRef() {
 
 IFACEMETHODIMP_(ULONG) KeyEventSink::Release() {
     ULONG count = InterlockedDecrement(&refCount_);
-    if (count == 0) delete this;
+    // Note: Do NOT delete this here. Lifetime is managed by unique_ptr in TextService.
+    // COM ref counting is maintained for contract compliance only.
     return count;
 }
 
@@ -165,6 +166,10 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
 
     bool wantKey = pEngineController_->WantKey(static_cast<UINT>(wParam), true);
 
+    // Cache result so OnKeyDown can reuse without calling WantKey again
+    lastTestedVk_ = static_cast<UINT>(wParam);
+    lastWantKeyResult_ = wantKey;
+
     // Non-handled keys -> commit and pass through
     if (!wantKey && pEngineController_->HasEngineBuffer()) {
         pEngineController_->Commit(pContext);
@@ -201,8 +206,13 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
         return S_OK;
     }
     
-    // Check if we actually want this key
-    if (!pEngineController_->WantKey(static_cast<UINT>(wParam), true)) {
+    // Use cached WantKey result from OnTestKeyDown to avoid double state-machine advance
+    UINT vk = static_cast<UINT>(wParam);
+    bool wantKey = (vk == lastTestedVk_) ? lastWantKeyResult_
+                                          : pEngineController_->WantKey(vk, true);
+    lastTestedVk_ = 0;  // Invalidate cache
+
+    if (!wantKey) {
         *pfEaten = FALSE;
         return S_OK;
     }

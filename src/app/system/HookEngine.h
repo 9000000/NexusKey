@@ -82,6 +82,9 @@ private:
                                        DWORD dwEventThread, DWORD dwmsEventTime);
     static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
 
+    // Config application (shared between Start and CheckConfigEvent)
+    void ApplyConfig(const TypingConfig& config);
+
     // Core processing
     bool ProcessKeyDown(DWORD vkCode, DWORD scanCode, DWORD flags);
     bool ProcessKeyUp(DWORD vkCode, DWORD flags);

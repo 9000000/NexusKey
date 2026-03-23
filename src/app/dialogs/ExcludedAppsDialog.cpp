@@ -14,6 +14,10 @@
 
 using namespace sciter::dom;
 
+// TODO: Add to i18n string table
+static constexpr const wchar_t* MSG_CANNOT_EXCLUDE_SELF =
+    L"Không thể thêm NexusKey vào danh sách loại trừ.";
+
 namespace NextKey {
 
 ExcludedAppsDialog::ExcludedAppsDialog(HWND parent)
@@ -245,7 +249,7 @@ LRESULT ExcludedAppsDialog::onCustomMessage(HWND hwnd, UINT msg,
                 if (exeName == L"nexuskey.exe") {
                     stopWindowPicking();
                     MessageBoxW(get_hwnd(),
-                        L"Không thể thêm NexusKey vào danh sách loại trừ.",
+                        MSG_CANNOT_EXCLUDE_SELF,
                         L"NexusKey", MB_OK | MB_ICONWARNING);
                 } else {
                     stopWindowPicking();

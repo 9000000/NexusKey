@@ -214,18 +214,18 @@ document.on("change", "select", function (evt, select) {
 
 // Handle text input changes - display "Space" for space character
 document.on("change", "#switch-key-char", function (evt, input) {
-    let char = input.value;
+    let keyChar = input.value;
 
-    if (char === " ") {
+    if (keyChar === " ") {
         // Space character typed - display "Space"
         input.value = "Space";
-    } else if (char === "Space") {
+    } else if (keyChar === "Space") {
         // Full "Space" text - keep it (already displayed correctly)
-    } else if (char.length === 0) {
+    } else if (keyChar.length === 0) {
         // Empty - user deleted everything
-    } else if (char.length === 1) {
+    } else if (keyChar.length === 1) {
         // Single character input - uppercase it
-        input.value = char.toUpperCase();
+        input.value = keyChar.toUpperCase();
     } else {
         // Partial text (like "Spac", "Sp" from deletion) - clear it
         input.value = "";
@@ -331,7 +331,8 @@ function updateSliderFromMouse(evt, slider, thumb, fill, valueLabel, hiddenInput
     }
 }
 
-// Called from C++ to set initial opacity value
+// Called from C++ to set initial opacity value.
+// Overrides utils.js setBackgroundOpacity to also update slider UI elements.
 function setBackgroundOpacity(value) {
     var thumb = document.getElementById("bg-opacity-thumb");
     var fill = document.getElementById("bg-opacity-fill");

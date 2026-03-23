@@ -174,17 +174,17 @@ function initSwapButton() {
 
 // Handle text input changes - display "Space" for space character
 document.on("change", "#hotkey-char", function (evt, input) {
-    var char = input.value;
+    var keyChar = input.value;
 
-    if (char === " ") {
+    if (keyChar === " ") {
         input.value = "Space";
-    } else if (char === "Space") {
+    } else if (keyChar === "Space") {
         // Keep "Space" displayed
-    } else if (char.length === 0) {
+    } else if (keyChar.length === 0) {
         // Empty - user deleted everything
-    } else if (char.length === 1) {
+    } else if (keyChar.length === 1) {
         // Single character - uppercase
-        input.value = char.toUpperCase();
+        input.value = keyChar.toUpperCase();
     } else {
         // Partial text - clear it
         input.value = "";

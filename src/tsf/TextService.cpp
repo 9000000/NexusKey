@@ -123,7 +123,8 @@ IFACEMETHODIMP TextService::GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttr
     *ppInfo = nullptr;
 
     if (IsEqualGUID(guid, GUID_DisplayAttribute_Input)) {
-        *ppInfo = new DisplayAttributeInfo();
+        *ppInfo = new (std::nothrow) DisplayAttributeInfo();
+        if (!*ppInfo) return E_OUTOFMEMORY;
         TSF_LOG(L"GetDisplayAttributeInfo: returned invisible attribute");
         return S_OK;
     }

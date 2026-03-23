@@ -12,15 +12,7 @@ if(MSVC)
     add_link_options(/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA)
 endif()
 
-# Global Include Directories
-include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/engine
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/tsf
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor
-    ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
-)
+# Per-target include directories (no global include_directories)
 
 # Engine Library (pure C++17, zero platform dependencies)
 set(NEXTKEY_ENGINE_SOURCES
@@ -40,6 +32,9 @@ set(NEXTKEY_ENGINE_SOURCES
 )
 
 add_library(NextKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
+target_include_directories(NextKeyEngine PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
 # Core Library (platform layer: SharedState, Config, Debug)
 set(NEXTKEY_CORE_SOURCES
@@ -66,6 +61,9 @@ if(WIN32)
 endif()
 
 add_library(NextKeyCore STATIC ${NEXTKEY_CORE_SOURCES})
+target_include_directories(NextKeyCore PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
+)
 target_link_libraries(NextKeyCore PUBLIC NextKeyEngine)
 
 # TSF DLL (TIP)

@@ -19,6 +19,7 @@ public:
     // IUnknown
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppvObj) override;
     IFACEMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&refCount_); }
+    // Intentionally embedded COM object — lifetime managed by EngineController, not COM ref counting
     IFACEMETHODIMP_(ULONG) Release() override { return InterlockedDecrement(&refCount_); }
 
     // ITfCompositionSink

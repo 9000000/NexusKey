@@ -12,12 +12,14 @@
 #ifdef _DEBUG
 #include <cstdio>
 inline void TsfLogImpl(const wchar_t* fmt, ...) {
+    wchar_t prefix[64];
+    _snwprintf_s(prefix, 64, _TRUNCATE, L"[NexusKey:%u] ", GetCurrentProcessId());
     wchar_t buf[512];
     va_list args;
     va_start(args, fmt);
     _vsnwprintf_s(buf, 512, _TRUNCATE, fmt, args);
     va_end(args);
-    OutputDebugStringW(L"[NexusKey] ");
+    OutputDebugStringW(prefix);
     OutputDebugStringW(buf);
     OutputDebugStringW(L"\n");
 }

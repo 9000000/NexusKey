@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Vietnamese syllable structure: [C₁] + V + [C₂]
-// Uses greedy consonant matching and binary-searched vowel nucleus table.
+// Uses greedy consonant matching and packed-key vowel nucleus table (linear scan).
 
 #include "SpellChecker.h"
 #include "TelexEngine.h"
@@ -66,7 +66,7 @@ struct VowelEntry {
     bool canEnd;  // Can be followed by a final consonant?
 };
 
-// Sorted by key for binary search
+// Sorted by key (currently searched linearly; ~50 entries so O(n) is fine)
 constexpr VowelEntry kVowelTable[] = {
     // === Single vowels (can have end consonant) ===
     { Key1(VowelSlot(kA, kNone)), true },   // a
@@ -525,8 +525,6 @@ bool IsValidConsonantPrefix(const CharStateT* states, size_t count, bool allowZw
                 (c0 == L't' && c1 == L'h') || (c0 == L't' && c1 == L'r')) {
                 return true;
             }
-            // "ng" prefix of "ngh"
-            if (c0 == L'n' && c1 == L'g') return true;
             return false;  // "bk", "bl" etc. are invalid
         }
     }

@@ -6,6 +6,7 @@
 #include "sciter/SciterHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
+#include "core/Debug.h"
 #include "sciter-x-dom.hpp"
 #include "sciter-x-host-callback.h"
 #include <dwmapi.h>
@@ -47,7 +48,7 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
 
     // Load HTML
     if (!load(config_.htmlPath)) {
-        MessageBoxW(nullptr, L"Failed to load dialog HTML", L"NexusKey Error", MB_OK | MB_ICONERROR);
+        NEXTKEY_LOG(L"Failed to load dialog HTML: %s", config_.htmlPath);
         return;
     }
 
@@ -61,9 +62,8 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         }
         if (GetLanguage() == Language::English) {
             htmlRoot.set_attribute("lang", L"en");
-            // Re-apply translations: initSubDialog() already ran during load()
-            // when lang was still "vi". Now that lang="en" is set, re-run.
-            call_function("applyTranslations");
+            // initSubDialog() defers applyTranslations() via requestAnimationFrame,
+            // so it will pick up this lang="en" attribute automatically.
         }
     }
 
@@ -81,27 +81,16 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         // and transparent OS window mode natively handles sizing
     }
 
-    // Theme-aware DWM mode + rounded corners + blur
+    // Subclass for dragging and close
+    SetWindowSubclass(get_hwnd(), SubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+
+    // Theme-aware DWM mode + rounded corners + blur (after subclass)
     HWND hwnd = get_hwnd();
     if (hwnd) {
         bool dark = SciterHelper::IsWindowsDarkMode();
         SciterHelper::SetWindowDarkMode(hwnd, dark);
 
-        int cornerPreference = DwmConstants::DWMWCP_ROUND;
-        DwmSetWindowAttribute(hwnd, DwmConstants::DWMWA_WINDOW_CORNER_PREFERENCE,
-                              &cornerPreference, sizeof(cornerPreference));
-
-        SciterHelper::enableWindowBlur(hwnd, BlurMode::Blur);
-    }
-
-    // Subclass for dragging and close
-    SetWindowSubclass(get_hwnd(), SubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
-
-    if (hwnd) {
-        bool dark = SciterHelper::IsWindowsDarkMode();
-        SciterHelper::SetWindowDarkMode(hwnd, dark);
-
-        // Subdialog body class parsing
+        // Refresh body class (may have been set during load() before subclass)
         sciter::dom::element htmlRoot(get_root());
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
@@ -109,7 +98,7 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         }
 
         int cornerPreference = DwmConstants::DWMWCP_ROUND;
-        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DwmSetWindowAttribute(hwnd, DwmConstants::DWMWA_WINDOW_CORNER_PREFERENCE,
                               &cornerPreference, sizeof(cornerPreference));
 
         SciterHelper::enableWindowBlur(hwnd, BlurMode::Blur);

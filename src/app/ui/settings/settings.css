@@ -640,6 +640,7 @@
 }
 
 /* Tab Panels - Sciter native pattern using visibility + :expanded state */
+/* Sciter-specific: 'none' is equivalent to standard CSS 'hidden' */
 .tab-panel {
     visibility: none;
 }

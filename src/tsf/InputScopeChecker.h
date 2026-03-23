@@ -12,9 +12,9 @@
 #include <InputScope.h>
 
 // GUID_PROP_INPUTSCOPE is declared in InputScope.h but not defined in uuid.lib.
-// Use a static const GUID to avoid DEFINE_GUID/INITGUID linker issues.
+// Use an inline const GUID to avoid DEFINE_GUID/INITGUID linker issues (C++17).
 // {1713DD5A-68E7-4A5B-9AF6-592A595C778D}
-static const GUID kGuidPropInputScope =
+inline const GUID kGuidPropInputScope =
     { 0x1713DD5A, 0x68E7, 0x4A5B, { 0x9A, 0xF6, 0x59, 0x2A, 0x59, 0x5C, 0x77, 0x8D } };
 
 namespace NextKey {

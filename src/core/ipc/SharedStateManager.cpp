@@ -104,6 +104,16 @@ bool SharedStateManager::Open() {
 
 bool SharedStateManager::OpenReadWrite() {
 #ifdef _WIN32
+    // Clean up any existing mapping to prevent handle leaks on re-open
+    if (pImpl_->pState) {
+        UnmapViewOfFile(const_cast<SharedState*>(pImpl_->pState));
+        pImpl_->pState = nullptr;
+    }
+    if (pImpl_->hMapping) {
+        CloseHandle(pImpl_->hMapping);
+        pImpl_->hMapping = nullptr;
+    }
+
     pImpl_->hMapping = OpenFileMappingW(
         FILE_MAP_ALL_ACCESS,
         FALSE,
@@ -157,7 +167,8 @@ SharedState SharedStateManager::Read() const noexcept {
         YieldProcessor();
     }
 
-    // Fallback: return whatever we got (best-effort after retries)
+    // Seqlock failed: return default state (magic=0 so IsValid() returns false)
+    state = {};
 #endif
     return state;
 }

@@ -184,9 +184,8 @@ body.dark {
 body.dark popup {
     background-color: rgba(26, 26, 36, 0.98) !important;
     /* solid dark background for legibility */
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2) !important;
     color: #F9FAFB !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.8) !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 4px 16px rgba(0, 0, 0, 0.8) !important;
     backdrop-filter: blur(10px);
 }
 

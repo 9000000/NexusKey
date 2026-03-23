@@ -8,6 +8,7 @@
 
 #include <cwchar>
 #include <cwctype>
+#include <iterator>
 
 namespace NextKey {
 
@@ -130,7 +131,7 @@ constexpr TriphthongPattern kTriphthongs[] = {
     {L'o', L'a', L'o'},   // oao
     {L'o', L'a', L'y'},   // oay
 };
-constexpr size_t kTriphthongCount = sizeof(kTriphthongs) / sizeof(kTriphthongs[0]);
+constexpr size_t kTriphthongCount = std::size(kTriphthongs);
 
 /// Check if three vowel bases form a triphthong
 [[nodiscard]] constexpr bool IsTriphthong(wchar_t v1, wchar_t v2, wchar_t v3) noexcept {

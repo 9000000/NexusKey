@@ -54,6 +54,7 @@ private:
     SubDialogConfig config_;
     std::wstring uiBasePath_;
 
+    // Single instance per process (subdialogs run as separate processes)
     static SciterSubDialog* s_instance;
 };
 

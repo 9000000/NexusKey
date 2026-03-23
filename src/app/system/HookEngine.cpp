@@ -64,6 +64,19 @@ HookEngine::~HookEngine() {
     Stop();
 }
 
+void HookEngine::ApplyConfig(const TypingConfig& config) {
+    beepOnSwitch_ = config.beepOnSwitch;
+    smartSwitch_ = config.smartSwitch;
+    excludeApps_ = config.excludeApps;
+    tsfApps_ = config.tsfApps;
+    autoCaps_ = config.autoCaps;
+    tempOffSpellByCtrl_ = config.tempOffSpellByCtrl;
+    tempOffByAlt_ = config.tempOffByAlt;
+    macroEnabled_ = config.macroEnabled;
+    macroInEnglish_ = config.macroInEnglish;
+    tempOffMacroByEsc_ = config.tempOffMacroByEsc;
+}
+
 bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const HotkeyConfig& hotkey) {
     if (keyboardHook_) return false;  // Already running
 
@@ -75,16 +88,7 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     s_instance = this;
     hotkeyConfig_ = hotkey;
     currentMethod_ = config.inputMethod;
-    beepOnSwitch_ = config.beepOnSwitch;
-    smartSwitch_ = config.smartSwitch;
-    excludeApps_ = config.excludeApps;
-    tsfApps_ = config.tsfApps;
-    autoCaps_ = config.autoCaps;
-    tempOffSpellByCtrl_ = config.tempOffSpellByCtrl;
-    tempOffByAlt_ = config.tempOffByAlt;
-    macroEnabled_ = config.macroEnabled;
-    macroInEnglish_ = config.macroInEnglish;
-    tempOffMacroByEsc_ = config.tempOffMacroByEsc;
+    ApplyConfig(config);
     if (macroEnabled_) {
         macroTable_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
     }
@@ -301,16 +305,7 @@ bool HookEngine::CheckConfigEvent() {
     NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
                 currentMethod_ == InputMethod::VNI ? L"VNI" : L"Telex",
                 config.modernOrtho ? 1 : 0, config.allowZwjf ? 1 : 0);
-    beepOnSwitch_ = config.beepOnSwitch;
-    smartSwitch_ = config.smartSwitch;
-    excludeApps_ = config.excludeApps;
-    tsfApps_ = config.tsfApps;
-    autoCaps_ = config.autoCaps;
-    tempOffSpellByCtrl_ = config.tempOffSpellByCtrl;
-    tempOffByAlt_ = config.tempOffByAlt;
-    macroEnabled_ = config.macroEnabled;
-    macroInEnglish_ = config.macroInEnglish;
-    tempOffMacroByEsc_ = config.tempOffMacroByEsc;
+    ApplyConfig(config);
     if (macroEnabled_) {
         macroTable_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
     } else {

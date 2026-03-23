@@ -169,7 +169,7 @@ template<typename CharStateT>
     if (!states[count - 1].IsVowel()) return false;  // Tone target must be vowel
     // Scan backwards: count consonants between last vowel and the previous vowel.
     int consonants = 0;
-    for (int i = (int)count - 2; i >= 0; --i) {
+    for (int i = static_cast<int>(count) - 2; i >= 0; --i) {
         if (states[i].IsVowel()) {
             // Modified vowel (ê, â, ô...) with exactly one coda consonant = Vietnamese nucleus.
             // E.g., {h,i,ê,n,e}: ê+n+e is plausible nucleus+coda+typo, not English V+C+V.

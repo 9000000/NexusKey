@@ -4,6 +4,8 @@
 // Mapping tables extracted from OpenKey Vietnamese.cpp _codeTable[0..4].
 // Each map: Unicode codepoint → encoded 16-bit value.
 // For 2-byte encodings: LOBYTE = first output char, HIBYTE = second (tone/mark).
+//
+// Note: String-returning functions are marked noexcept by project convention (std::bad_alloc terminates).
 
 #include "CodeTableConverter.h"
 #include "VietnameseTables.h"

@@ -7,11 +7,14 @@
 
 // Common subdialog initialization (blur + theme + scrollbar + i18n)
 // Theme is set by C++ via body class before JS runs; JS reads it here.
+// Translations are deferred to next frame so C++ can set lang="en" after load().
 function initSubDialog(scrollSelector) {
     var isDark = document.body.classList.contains("dark");
     Window.this.blurBehind = (isDark ? "dark" : "light") + " source-auto";
     if (scrollSelector) initializeScrollbarResize(scrollSelector);
-    if (typeof applyTranslations === "function") applyTranslations();
+    requestAnimationFrame(function() {
+        if (typeof applyTranslations === "function") applyTranslations();
+    });
 }
 
 // Set background opacity (called from C++ via call_function)

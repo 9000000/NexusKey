@@ -11,31 +11,13 @@
 #include <filesystem>
 
 #ifdef _WIN32
-#include <Windows.h>
+#include "core/WinStrings.h"
 #include <ShlObj.h>
 #endif
 
 namespace NextKey {
 
 namespace {
-
-std::string WideToUtf8(const std::wstring& wstr) {
-    if (wstr.empty()) return {};
-    int len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (len <= 0) return {};
-    std::string result(len - 1, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, result.data(), len, nullptr, nullptr);
-    return result;
-}
-
-std::wstring Utf8ToWide(const std::string& str) {
-    if (str.empty()) return {};
-    int len = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-    if (len <= 0) return {};
-    std::wstring result(len - 1, 0);
-    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, result.data(), len);
-    return result;
-}
 
 /// Load existing TOML file or return empty table (for merge-and-save pattern)
 toml::table LoadExistingToml(const std::string& utf8Path) {

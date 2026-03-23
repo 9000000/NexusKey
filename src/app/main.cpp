@@ -116,7 +116,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Self-update installer mode (MUST be before Sciter dialog routes — sciter.dll not loaded yet)
     if (lpCmdLine && wcsstr(lpCmdLine, L"--install-update") != nullptr) {
         const wchar_t* arg = wcsstr(lpCmdLine, L"--install-update");
-        arg += 16;  // Skip "--install-update"
+        arg += wcslen(L"--install-update");  // Skip "--install-update"
         // Skip whitespace
         while (*arg == L' ' || *arg == L'\t') arg++;
         // Strip surrounding quotes if present
@@ -191,7 +191,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Clean up leftover files from a previous update.
     // If files were cleaned up, it means we just finished an update.
     if (CleanupOldUpdateFiles()) {
-        MessageBoxW(nullptr, L"Cập nhật thành công!", L"NexusKey", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+        NEXTKEY_LOG(L"Update completed successfully, old files cleaned up");
     }
 
 #ifdef NEXUSKEY_HOOK_ENGINE
@@ -214,6 +214,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Tray Icon
     if (!g_trayIcon.Create(hInstance)) {
+        // MessageBox acceptable: fatal startup error, app cannot function without tray icon.
+        // No matching StringId — using English string (language config not yet applied to UI).
         MessageBoxW(nullptr, L"Failed to create tray icon", L"NexusKey", MB_ICONERROR);
         return 1;
     }
@@ -280,6 +282,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Start keyboard hook engine
     if (!g_hookEngine.Start(hInstance, config, hotkeyConfig)) {
+        // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
+        // No matching StringId — using English string (language config not yet applied to UI).
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"NexusKey", MB_ICONERROR);
         return 1;
     }
@@ -332,6 +336,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         NEXTKEY_LOG(L"TSF not registered, attempting registration...");
 
         if (!RegisterTsf()) {
+            // MessageBox acceptable: requires user consent before UAC elevation prompt.
+            // No matching StringId — using English strings (first-run scenario, language not configured yet).
             int result = MessageBoxW(
                 nullptr,
                 L"NexusKey needs to register its input method.\n\n"
@@ -374,6 +380,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Tray Icon
     if (!g_trayIcon.Create(hInstance)) {
+        // MessageBox acceptable: fatal startup error, app cannot function without tray icon.
+        // No matching StringId — using English string (language config not yet applied to UI).
         MessageBoxW(nullptr, L"Failed to create tray icon", L"NexusKey", MB_ICONERROR);
         CoUninitialize();
         return 1;
@@ -640,8 +648,6 @@ void SpawnSettingsSubprocess() {
         NEXTKEY_LOG(L"Settings subprocess spawned successfully");
     } else {
         DWORD err = GetLastError();
-        wchar_t errMsg[512];
-        swprintf_s(errMsg, L"Failed to open settings.\nError: %lu\nPath: %s", err, exePath);
-        MessageBoxW(nullptr, errMsg, L"NexusKey", MB_ICONERROR);
+        NEXTKEY_LOG(L"Failed to spawn settings subprocess (error=%lu, path=%s)", err, exePath);
     }
 }

@@ -130,9 +130,6 @@ private:
     // UI base path for file system loading (Debug mode)
     std::wstring uiBasePath_;
 
-    // Cached update info (from background check)
-    UpdateInfo cachedUpdateInfo_;
-
     // Cached IPC handles (opened once, reused for every toggle)
     SharedStateManager sharedState_;
     ConfigEvent configEvent_;

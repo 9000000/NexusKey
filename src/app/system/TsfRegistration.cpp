@@ -12,6 +12,7 @@
 #include "core/ipc/SharedStateManager.h"
 #include "core/Debug.h"
 #include "tsf/Globals.h"
+#include <memory>
 #include <vector>
 
 namespace NextKey {
@@ -202,13 +203,19 @@ void RunDiagnostics() {
     }
 
     // 5. TSF Active Profile
+    // RAII guard for COM pointers (ATL/CComPtr not available in EXE build)
+    auto comRelease = [](IUnknown* p) { if (p) p->Release(); };
+
     out += L"\n--- TSF Active Profile ---\n";
-    ITfInputProcessorProfileMgr* pProfileMgr = nullptr;
+    ITfInputProcessorProfileMgr* pProfileMgrRaw = nullptr;
     HRESULT hr = CoCreateInstance(
         CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
         IID_ITfInputProcessorProfileMgr,
-        reinterpret_cast<void**>(&pProfileMgr));
-    if (SUCCEEDED(hr) && pProfileMgr) {
+        reinterpret_cast<void**>(&pProfileMgrRaw));
+    std::unique_ptr<ITfInputProcessorProfileMgr, decltype(comRelease)>
+        pProfileMgr(SUCCEEDED(hr) ? pProfileMgrRaw : nullptr, comRelease);
+
+    if (pProfileMgr) {
         TF_INPUTPROCESSORPROFILE activeProfile = {};
         hr = pProfileMgr->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &activeProfile);
         if (SUCCEEDED(hr)) {
@@ -239,9 +246,12 @@ void RunDiagnostics() {
 
         // 6. Enumerate all profiles for 0x0409
         out += L"\n--- All 0x0409 Profiles ---\n";
-        IEnumTfInputProcessorProfiles* pEnum = nullptr;
-        hr = pProfileMgr->EnumProfiles(0x0409, &pEnum);
-        if (SUCCEEDED(hr) && pEnum) {
+        IEnumTfInputProcessorProfiles* pEnumRaw = nullptr;
+        hr = pProfileMgr->EnumProfiles(0x0409, &pEnumRaw);
+        std::unique_ptr<IEnumTfInputProcessorProfiles, decltype(comRelease)>
+            pEnum(SUCCEEDED(hr) ? pEnumRaw : nullptr, comRelease);
+
+        if (pEnum) {
             TF_INPUTPROCESSORPROFILE profile;
             ULONG fetched = 0;
             int idx = 0;
@@ -254,10 +264,7 @@ void RunDiagnostics() {
                             reinterpret_cast<DWORD_PTR>(profile.hkl), clsidStr2);
                 out += buf2;
             }
-            pEnum->Release();
         }
-
-        pProfileMgr->Release();
     } else {
         out += L"  Failed to create ITfInputProcessorProfileMgr\n";
     }

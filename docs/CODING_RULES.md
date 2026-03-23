@@ -10,10 +10,13 @@
 ### 1.1 Namespace Hierarchy
 
 ```cpp
-// REQUIRED: All code MUST be under NextKey namespace (flat, no sub-namespaces)
+// REQUIRED: All code MUST be under NextKey namespace
 namespace NextKey {
 // SharedState, ConfigManager, TelexEngine, VniEngine, EngineFactory, etc.
-// Sub-namespaces: SharedFlags, FeatureFlags (constants only)
+// Sub-namespaces used for type isolation:
+//   NextKey::Telex, NextKey::Vni, NextKey::SpellCheck,
+//   NextKey::CodeTableConverter, NextKey::TSF
+// Constants-only sub-namespaces: SharedFlags, FeatureFlags
 }
 ```
 

@@ -8,6 +8,7 @@
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include <strsafe.h>
+#include <vector>
 #include <CommCtrl.h>
 #include <uxtheme.h>
 #include <thread>
@@ -81,6 +82,7 @@ bool TrayIcon::Create(HINSTANCE hInstance) {
 
     // Always visible
     Shell_NotifyIconW(NIM_ADD, &nid_);
+    RefreshConvertHotkeyCache();
     return true;
 }
 
@@ -213,16 +215,9 @@ HICON TrayIcon::CreateColorizedIcon(int baseIconId, COLORREF newColor) noexcept 
     bmi.bmiHeader.biBitCount = 32;
     bmi.bmiHeader.biCompression = BI_RGB;
 
-    auto* pixels = new (std::nothrow) BYTE[width * height * 4];
-    if (!pixels) {
-        ReleaseDC(nullptr, hdc);
-        if (iconInfo.hbmColor) DeleteObject(iconInfo.hbmColor);
-        if (iconInfo.hbmMask) DeleteObject(iconInfo.hbmMask);
-        DestroyIcon(hBaseIcon);
-        return nullptr;
-    }
+    std::vector<BYTE> pixels(width * height * 4);
 
-    GetDIBits(hdc, iconInfo.hbmColor, 0, height, pixels, &bmi, DIB_RGB_COLORS);
+    GetDIBits(hdc, iconInfo.hbmColor, 0, height, pixels.data(), &bmi, DIB_RGB_COLORS);
 
     // Colorize: replace RGB while preserving alpha
     BYTE newR = GetRValue(newColor);
@@ -230,7 +225,7 @@ HICON TrayIcon::CreateColorizedIcon(int baseIconId, COLORREF newColor) noexcept 
     BYTE newB = GetBValue(newColor);
 
     for (int i = 0; i < width * height; i++) {
-        BYTE* pixel = pixels + i * 4;
+        BYTE* pixel = pixels.data() + i * 4;
         BYTE alpha = pixel[3];
         if (alpha > 0) {
             pixel[0] = newB;  // DIB is BGRA
@@ -241,8 +236,7 @@ HICON TrayIcon::CreateColorizedIcon(int baseIconId, COLORREF newColor) noexcept 
     }
 
     // Write modified pixels back
-    SetDIBits(hdc, iconInfo.hbmColor, 0, height, pixels, &bmi, DIB_RGB_COLORS);
-    delete[] pixels;
+    SetDIBits(hdc, iconInfo.hbmColor, 0, height, pixels.data(), &bmi, DIB_RGB_COLORS);
     ReleaseDC(nullptr, hdc);
 
     // Create new icon from modified bitmaps
@@ -254,6 +248,25 @@ HICON TrayIcon::CreateColorizedIcon(int baseIconId, COLORREF newColor) noexcept 
     DestroyIcon(hBaseIcon);
 
     return hNewIcon;
+}
+
+void TrayIcon::RefreshConvertHotkeyCache() {
+    auto cc = ConfigManager::LoadConvertConfigOrDefault();
+    const auto& hk = cc.hotkey;
+    cachedConvertHotkeyText_.clear();
+    if (hk.ctrl || hk.shift || hk.alt || hk.win || hk.key != 0) {
+        if (hk.ctrl)  cachedConvertHotkeyText_ += L"Ctrl+";
+        if (hk.alt)   cachedConvertHotkeyText_ += L"Alt+";
+        if (hk.shift) cachedConvertHotkeyText_ += L"Shift+";
+        if (hk.win)   cachedConvertHotkeyText_ += L"Win+";
+        if (hk.key != 0) {
+            if (hk.key == L' ') {
+                cachedConvertHotkeyText_ += L"Space";
+            } else {
+                cachedConvertHotkeyText_ += static_cast<wchar_t>(towupper(hk.key));
+            }
+        }
+    }
 }
 
 void TrayIcon::ShowContextMenu() {
@@ -288,28 +301,13 @@ void TrayIcon::ShowContextMenu() {
     AppendMenuW(hMenu, MF_STRING,
         static_cast<UINT>(TrayMenuId::ConvertTool), S(StringId::MENU_CONVERT_TOOL));
 
-    // Quick Convert — show configured hotkey as accelerator text
+    // Quick Convert — show cached hotkey as accelerator text
     {
-        auto cc = ConfigManager::LoadConvertConfigOrDefault();
         std::wstring label = S(StringId::MENU_QUICK_CONVERT);
-
-        // Build hotkey text (e.g. "Ctrl+Shift+C")
-        const auto& hk = cc.hotkey;
-        if (hk.ctrl || hk.shift || hk.alt || hk.win || hk.key != 0) {
+        if (!cachedConvertHotkeyText_.empty()) {
             label += L'\t';
-            if (hk.ctrl)  label += L"Ctrl+";
-            if (hk.alt)   label += L"Alt+";
-            if (hk.shift) label += L"Shift+";
-            if (hk.win)   label += L"Win+";
-            if (hk.key != 0) {
-                if (hk.key == L' ') {
-                    label += L"Space";
-                } else {
-                    label += static_cast<wchar_t>(towupper(hk.key));
-                }
-            }
+            label += cachedConvertHotkeyText_;
         }
-
         AppendMenuW(hMenu, MF_STRING,
             static_cast<UINT>(TrayMenuId::QuickConvert), label.c_str());
     }
@@ -441,6 +439,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
         SetIconConfig(sysConfig.iconStyle, sysConfig.customColorV, sysConfig.customColorE);
         SetLanguage(static_cast<Language>(sysConfig.language));
+        RefreshConvertHotkeyCache();
         return true;
     }
 

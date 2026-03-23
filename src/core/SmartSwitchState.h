@@ -50,6 +50,7 @@ struct SmartSwitchState {
 };
 
 /// FNV-1a hash for exe names (case-insensitive: lowercases each char before hashing)
+// Note: FNV-1a hash only, no name verification. Collision risk negligible for <=64 entries.
 inline uint32_t FnvHash(const wchar_t* str) noexcept {
     uint32_t hash = 2166136261u;  // FNV offset basis
     while (*str) {

@@ -98,6 +98,9 @@ public:
         if (pMgr_->IsComposing()) {
             pMgr_->SetCompositionText(ec, finalText_);
             pMgr_->EndComposition(ec);
+        } else {
+            TSF_LOG(L"CommitEditSession: composition externally terminated, text dropped: %s",
+                    finalText_.c_str());
         }
 
         return S_OK;

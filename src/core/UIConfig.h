@@ -15,7 +15,7 @@ struct UIConfig {
 
     // Appearance
     uint8_t backgroundOpacity = 80; // 0-100, background transparency
-    bool darkMode = true;           // Dark theme enabled
+    bool darkMode = true;           // Note: Currently unused — dark mode is always detected from Windows registry
 
     // Window state (future)
     bool pinned = false;            // Window always on top

@@ -579,7 +579,6 @@ TEST_F(TelexEngineTest, Reset_ClearsAllState) {
     
     EXPECT_EQ(engine_->Count(), 0u);
     EXPECT_EQ(engine_->Peek(), L"");
-    EXPECT_EQ(engine_->GetState(), TelexStates::Valid);
 }
 
 TEST_F(TelexEngineTest, AfterCommit_CanTypeNewWord) {
@@ -600,11 +599,6 @@ TEST_F(TelexEngineTest, Count_ReturnsCorrectValue) {
     EXPECT_EQ(engine_->Count(), 1u);
     engine_->PushChar(L'b');
     EXPECT_EQ(engine_->Count(), 2u);
-}
-
-TEST_F(TelexEngineTest, GetState_IsValidAfterReset) {
-    engine_->Reset();
-    EXPECT_EQ(engine_->GetState(), TelexStates::Valid);
 }
 
 TEST_F(TelexEngineTest, NoGlobalState_MultipleInstances) {

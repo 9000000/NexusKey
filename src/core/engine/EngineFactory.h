@@ -13,10 +13,10 @@ namespace NextKey {
 class EngineFactory {
 public:
     /// Create an engine based on configuration
-    static std::unique_ptr<IInputEngine> Create(const TypingConfig& config);
-    
+    [[nodiscard]] static std::unique_ptr<IInputEngine> Create(const TypingConfig& config);
+
     /// Create an engine for a specific input method
-    static std::unique_ptr<IInputEngine> Create(InputMethod method);
+    [[nodiscard]] static std::unique_ptr<IInputEngine> Create(InputMethod method);
 };
 
 }  // namespace NextKey

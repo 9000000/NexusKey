@@ -303,14 +303,16 @@ void EngineController::Reset() {
 void EngineController::SwitchInputMethod(InputMethod method) {
     if (method == currentMethod_) return;
     
-    // Commit any pending composition before switching (discard text)
+    // End any active TSF composition and reset engine before switching
     if (engine_->Count() > 0) {
         (void)engine_->Commit();
     }
-    
-    // Create new engine
+    compositionMgr_.TerminateComposition();
+
+    // Create new engine with current config (preserve spell check, modern ortho, etc.)
+    config_.inputMethod = method;
     currentMethod_ = method;
-    engine_ = EngineFactory::Create(method);
+    engine_ = EngineFactory::Create(config_);
     
     TSF_LOG(L"Switched to %s engine", method == InputMethod::VNI ? L"VNI" : L"Telex");
 }

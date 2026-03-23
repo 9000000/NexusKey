@@ -632,9 +632,9 @@ bool TelexEngine::ProcessDModifier(wchar_t c) {
     if (states_.empty() || !states_[0].IsD()) return false;
     CharState& first = states_[0];
     if (first.mod == Modifier::None) {
-        first.mod = Modifier::Breve;
+        first.mod = Modifier::Stroke;
         return true;
-    } else if (first.mod == Modifier::Breve) {
+    } else if (first.mod == Modifier::Stroke) {
         first.mod = Modifier::None;
         dModifierEscaped_ = true;  // Lock: user intentionally removed đ
         toneEscaped_ = true;       // Block further modifiers/tones — word is English
@@ -681,8 +681,6 @@ void TelexEngine::ProcessChar(wchar_t c) {
     CharState s;
     s.base = towlower(c);
     s.isUpper = iswupper(c);
-    s.mod = Modifier::None;
-    s.tone = Tone::None;
     s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
     states_.push_back(s);
 }
@@ -864,7 +862,7 @@ wchar_t TelexEngine::Compose(const CharState& s) {
     wchar_t ch = s.base;
 
     // Special: đ
-    if (s.IsD() && s.mod == Modifier::Breve) {
+    if (s.IsD() && s.mod == Modifier::Stroke) {
         return s.isUpper ? L'Đ' : L'đ';
     }
 
@@ -1032,7 +1030,6 @@ std::wstring TelexEngine::Commit() {
 void TelexEngine::Reset() {
     states_.clear();
     rawInput_.clear();
-    state_ = TelexStates::Valid;
     spellCheckDisabled_ = false;
     tempSpellOff_ = false;
     quickConsonantOnly_ = false;

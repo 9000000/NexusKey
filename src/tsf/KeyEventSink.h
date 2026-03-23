@@ -39,6 +39,10 @@ private:
     TextService* pTextService_ = nullptr;
     EngineController* pEngineController_ = nullptr;
     ITfKeystrokeMgr* pKeystrokeMgr_ = nullptr;
+
+    // Cached WantKey result from OnTestKeyDown to avoid double state-machine advance
+    UINT lastTestedVk_ = 0;
+    bool lastWantKeyResult_ = false;
 };
 
 }  // namespace TSF
