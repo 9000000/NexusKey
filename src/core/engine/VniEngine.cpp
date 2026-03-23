@@ -196,6 +196,7 @@ void VniEngine::PushChar(wchar_t c) {
             } else {
                 // Tone escaped (e.g., 11) → user is canceling Vietnamese.
                 RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+                CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
             }
             UpdateSpellState();
             return;
@@ -243,6 +244,7 @@ void VniEngine::PushChar(wchar_t c) {
     // English Protection: re-evaluate bias after adding character
     // (always active — independent of spell check setting)
     CheckEnglishBias(states_.data(), states_.size(), engProt_);
+    CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
 void VniEngine::Backspace() {
@@ -280,6 +282,7 @@ void VniEngine::Backspace() {
 
         UpdateSpellState();
         RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+        CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
         return;
     }
     quickConsonantIdx_ = SIZE_MAX;
@@ -295,6 +298,7 @@ void VniEngine::Backspace() {
 
     // English Protection: recalculate bias after backspace
     RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+    CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
 std::wstring VniEngine::Peek() const {

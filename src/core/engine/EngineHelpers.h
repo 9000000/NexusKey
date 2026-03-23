@@ -81,4 +81,20 @@ inline void RecalcEnglishBias(const CharStateT* states, size_t count,
     }
 }
 
+/// When allowZwjf is disabled, treat w/z/j/f as initial consonant → HardEnglish.
+/// Works independently of spell check — uses English Protection bias.
+/// Call after CheckEnglishBias() or RecalcEnglishBias() to layer this check.
+template<typename CharStateT>
+inline void CheckZwjfInitialBias(const CharStateT* states, size_t count,
+                                  const TypingConfig& config,
+                                  EnglishProtectionState& engProt) noexcept {
+    if (config.allowZwjf || count == 0) return;
+    if (engProt.bias == LanguageBias::Vietnamese) return;  // Respect confirmed VN intent
+    if (states[0].IsVowel()) return;
+    wchar_t initialChar = states[0].base;
+    if (initialChar == L'w' || initialChar == L'z' || initialChar == L'j' || initialChar == L'f') {
+        engProt.bias = LanguageBias::HardEnglish;
+    }
+}
+
 }  // namespace NextKey

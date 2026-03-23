@@ -213,6 +213,7 @@ void TelexEngine::PushChar(wchar_t c) {
                 // Tone escaped (ss, ff, etc.) → user is canceling Vietnamese.
                 // Reset bias and re-evaluate from scratch.
                 RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+                CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
             }
             ApplyAutoUO();
             UpdateSpellState();
@@ -262,6 +263,7 @@ void TelexEngine::PushChar(wchar_t c) {
     // English Protection: re-evaluate bias after adding character
     // (always active — independent of spell check setting)
     CheckEnglishBias(states_.data(), states_.size(), engProt_);
+    CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
 //-----------------------------------------------------------------------------
@@ -946,6 +948,7 @@ void TelexEngine::Backspace() {
 
         UpdateSpellState();
         RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+        CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
         return;
     }
     quickConsonantIdx_ = SIZE_MAX;
@@ -963,6 +966,7 @@ void TelexEngine::Backspace() {
 
     // English Protection: recalculate bias after backspace
     RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+    CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
 std::wstring TelexEngine::Peek() const {
