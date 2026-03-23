@@ -39,7 +39,8 @@ NexusKey/
 │   │   │   └── SharedStateManager.cpp/h  # CreateFileMapping/MapViewOfFile (Win32)
 │   │   ├── SmartSwitchManager.cpp/h   # Auto V/E switch by context
 │   │   ├── SmartSwitchState.h         # State tracking for smart switch
-│   │   ├── Strings.cpp/h             # Wstring ↔ UTF8 conversion utilities
+│   │   ├── Strings.cpp/h             # Localized string dictionary (S() lookup)
+│   │   ├── WinStrings.h              # Wstring ↔ UTF8 conversion (Win32-only)
 │   │   ├── Debug.h                    # Debug logging macros
 │   │   ├── SystemConfig.h            # System-level constants
 │   │   ├── UIConfig.h                # UI-related constants

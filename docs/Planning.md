@@ -162,10 +162,10 @@ graph TB
 #### Challenge 1: Engine State Model Conflict
 
 ```cpp
-// VietType: Object-oriented, instance-based
-class TelexEngine : public ITelexEngine {
-    TelexStates _state;
-    std::wstring _keyBuffer;
+// NexusKey: State-based architecture, instance-owned
+class TelexEngine : public IInputEngine {
+    std::vector<CharState> states_;   // Internal state buffer
+    std::vector<wchar_t> rawInput_;   // Raw keys for escape
     // ...
 };
 
