@@ -709,9 +709,11 @@ void TelexEngine::ApplyAutoUO() {
         // Pattern 2: ư(has horn) + o(no horn) + [next char] → horn the o
         // Handles u-w-o sequence: user applies horn to u first, then types o,
         // then types the coda consonant (which triggers this pattern).
+        // Also relocates tone if it was placed on ư before o arrived (e.g., u-w-o-j-c).
         if (states_[i].base == L'u' && states_[i].mod == Modifier::Horn &&
             states_[i+1].base == L'o' && states_[i+1].mod == Modifier::None) {
             states_[i+1].mod = Modifier::Horn;
+            RelocateToneToTarget();
         }
     }
 }

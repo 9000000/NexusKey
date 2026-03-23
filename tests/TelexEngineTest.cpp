@@ -1918,6 +1918,14 @@ TEST_F(TelexEngineTest, W_UO_ReverseOrder_NoTone) {
     EXPECT_EQ(engine_->Peek(), L"\u0111\u01B0\u01A1c");  // đươc
 }
 
+TEST_F(TelexEngineTest, W_UO_ReverseOrder_ToneBeforeCoda) {
+    // u-w-o-j-c: tone typed before coda → should still produce được (not đựơc)
+    // j (nặng) arrives when only ư is a horn vowel → tone lands on ư → ự
+    // then c arrives → Pattern 2 fires + tone relocates ự→ợ → được
+    TypeString(*engine_, L"dduwojc");
+    EXPECT_EQ(engine_->Peek(), L"\u0111\u01B0\u1EE3c");  // được
+}
+
 // ============================================================================
 // BACKSPACE — DELETE WHOLE CHARACTER TESTS
 // ============================================================================
