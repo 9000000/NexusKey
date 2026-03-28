@@ -79,9 +79,10 @@ struct EnglishProtectionState {
 [[nodiscard]] inline bool IsHardEnglishEnd(wchar_t c) noexcept {
     c = towlower(c);
     // Only check the most distinctive ones to avoid false positives during typing
-    // (user might still type more chars). Focus on consonants that are also
-    // tone keys in Telex (s, f, r, x, j) but never end Vietnamese words.
-    return c == L'x' || c == L'r' || c == L'z' || c == L'f';
+    // (user might still type more chars). Focus on Telex tone keys (s, f, r, x, j)
+    // plus z (clear-tone key) — none of which ever end Vietnamese words.
+    return c == L'x' || c == L'r' || c == L'z' || c == L'f' ||
+           c == L's' || c == L'j';
 }
 
 /// Q without U is impossible in Vietnamese

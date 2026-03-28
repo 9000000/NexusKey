@@ -2214,13 +2214,19 @@ TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ManagerDoubleA) {
     EXPECT_EQ(engine_->Peek(), L"manager");
 }
 
-TEST_F(EnglishDetectionNoSpellCheckTest, CircumflexEscape_AdjDoubled_WithCoda_ToneStillApplies) {
-    // h+i+e+e+n+e+r (7 keys): user fat-fingers extra 'e' before tone 'r'.
-    // double-ee → ê (adjDoubled=true), 'n' coda, extra 'e' should NOT escape ê
-    // because ê was applied by adjacent doubling and has a coda consonant after it.
-    // Result: "hiểne" (1 backspace from "hiển") — vs old buggy "hiener".
+TEST_F(EnglishDetectionNoSpellCheckTest, CircumflexEscape_AdjDoubled_WithCoda_Escapes) {
+    // h+i+e+e+n+e+r (7 keys): ee→ê, 'n' coda, 3rd 'e' escapes circumflex.
+    // Escape works regardless of coda — user intent to undo ê is clear.
+    // After escape: toneEscaped_=true → 'r' is literal.
     TypeString(*engine_, L"hieener");
-    EXPECT_EQ(engine_->Peek(), L"hi\x1EC3ne");  // hiểne: h+i+ể+n+e
+    EXPECT_EQ(engine_->Peek(), L"hiener");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, CircumflexEscape_Xuyen) {
+    // "xuyên" + 'e': escape circumflex → "xuyene"
+    // x-u-y-e-e → "xuyê", n → "xuyên", e → escape ê → "xuyene"
+    TypeString(*engine_, L"xuyeene");
+    EXPECT_EQ(engine_->Peek(), L"xuyene");
 }
 
 TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_Manager7Keys) {
@@ -2273,6 +2279,49 @@ TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_SubsequentCharsLi
     // After 'r' triggers HardEnglish on "manaager", 's' should also be literal
     TypeString(*engine_, L"manaagers");
     EXPECT_EQ(engine_->Peek(), L"managers");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ToneS_Blocked) {
+    // "bone" + 's': V+C+V (o+n+e) detected with tone key 's' (sắc).
+    // Previously 's' was not in IsHardEnglishEnd → V+C+V skipped → tone leaked.
+    TypeString(*engine_, L"bones");
+    EXPECT_EQ(engine_->Peek(), L"bones");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ToneJ_Blocked) {
+    // "bone" + 'j': V+C+V (o+n+e) detected with tone key 'j' (nặng).
+    TypeString(*engine_, L"bonej");
+    EXPECT_EQ(engine_->Peek(), L"bonej");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ToneS_LaneBlocked) {
+    // "lane" + 's': V+1C+V (a+n+e) → 's' blocked as tone
+    TypeString(*engine_, L"lanes");
+    EXPECT_EQ(engine_->Peek(), L"lanes");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, ValidVN_ToneS_StillWorks) {
+    // Vietnamese "bás" (b+a+s): no V+C+V → 's' applies as sắc tone normally
+    TypeString(*engine_, L"bas");
+    EXPECT_EQ(engine_->Peek(), L"b\xE1");  // bá
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, ValidVN_ToneJ_StillWorks) {
+    // Vietnamese "bạ" (b+a+j): no V+C+V → 'j' applies as nặng tone normally
+    TypeString(*engine_, L"baj");
+    EXPECT_EQ(engine_->Peek(), L"b\x1EA1");  // bạ
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, ToneEscape_ThenHardEnglishEnd_S) {
+    // "bass": b+a+s → tone sắc on 'a' ("bá"), then +s → escape tone + add literal 's'.
+    // After escape: states=[b,a,s], RecalcEnglishBias sees vowel+'s' → HardEnglish.
+    // Subsequent keys should remain literal.
+    TypeString(*engine_, L"bas");
+    EXPECT_EQ(engine_->Peek(), L"b\xE1");  // bá: tone applied
+    engine_->PushChar(L's');  // Escape: remove tone, add 's' literal
+    EXPECT_EQ(engine_->Peek(), L"bas");     // Tone cleared, 's' as literal
+    engine_->PushChar(L'e');  // Should be literal (HardEnglish after escape)
+    EXPECT_EQ(engine_->Peek(), L"base");
 }
 
 // ============================================================================

@@ -857,6 +857,16 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
         autoCapState_ = 0;
     }
 
+    // Defensive: if this is the first char of a new word but previousComposition_
+    // is somehow non-empty (stale from desynchronized synthetic events, e.g. Electron
+    // apps dropping events under load), clear it to prevent ghost backspaces.
+    if (engine_->Count() == 0 && !previousComposition_.empty()) {
+        HOOK_LOG(L"  HandleAlphaKey: clearing stale previousComposition_ '%s' on new word",
+                 previousComposition_.c_str());
+        previousComposition_.clear();
+        previousEncodedWidths_.clear();
+    }
+
     inputHistory_.push_back(ch);
     engine_->PushChar(ch);
     std::wstring composition = engine_->Peek();
@@ -1044,8 +1054,16 @@ static bool UsePostMessage(HWND hwnd) {
     wchar_t className[128] = {};
     GetClassNameW(hwnd, className, 128);
 
-    // Standard Win32 edit controls that accept WM_CHAR
-    if (_wcsicmp(className, L"Edit") == 0) return true;
+    // Standard Win32 edit controls that accept WM_CHAR.
+    // Exception: Edit inside ComboBox is subclassed — PostMessage doesn't reach it
+    // correctly (e.g. Notepad++ Find dialog search box).
+    if (_wcsicmp(className, L"Edit") == 0) {
+        wchar_t parentClass[128] = {};
+        HWND parent = GetParent(hwnd);
+        if (parent) GetClassNameW(parent, parentClass, 128);
+        if (_wcsicmp(parentClass, L"ComboBox") == 0) return false;
+        return true;
+    }
     if (_wcsnicmp(className, L"RichEdit", 8) == 0) return true;
     if (_wcsicmp(className, L"RICHEDIT50W") == 0) return true;
     if (_wcsicmp(className, L"Scintilla") == 0) return true;
@@ -1481,9 +1499,17 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
     size_t backspaceCount = previousComposition_.size() - commonLen;
     std::wstring toSend = newText.substr(commonLen);
 
-    HOOK_LOG(L"  ReplaceComposition: prev='%s' new='%s' common=%zu BS=%zu send='%s' method=%s",
-             previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
-             toSend.c_str(), usePost ? L"PostMessage" : L"SendInput");
+    {
+        wchar_t cls[64] = {};
+        GetClassNameW(target, cls, 64);
+        HWND parent = GetParent(target);
+        wchar_t pcls[64] = {};
+        if (parent) GetClassNameW(parent, pcls, 64);
+        HOOK_LOG(L"  ReplaceComposition: prev='%s' new='%s' common=%zu BS=%zu send='%s' method=%s target=0x%p class='%s' parent=0x%p parentClass='%s'",
+                 previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
+                 toSend.c_str(), usePost ? L"PostMessage" : L"SendInput",
+                 target, cls, parent, pcls);
+    }
 
     if (usePost) {
         // PostMessage path: send separately (no batching needed, PostMessage is async)
