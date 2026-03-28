@@ -97,6 +97,27 @@ namespace SciterHelper {
         int titleHeight = TitleBarDefaults::HEIGHT,
         int buttonsWidth = TitleBarDefaults::BUTTONS_WIDTH) noexcept;
 
+    /**
+     * Force a Sciter popup/main window to appear on the taskbar with the app icon.
+     * Removes WS_EX_TOOLWINDOW, adds WS_EX_APPWINDOW, applies SWP_FRAMECHANGED,
+     * and sets WM_SETICON from IDI_APP. Call AFTER all expand() calls.
+     *
+     * @param hwnd Window handle
+     * @param iconId Resource ID for the window icon (e.g. IDI_APP)
+     */
+    void ForceTaskbarPresence(HWND hwnd, int iconId) noexcept;
+
+    /**
+     * Filter WM_STYLECHANGING to prevent Sciter from re-adding WS_EX_TOOLWINDOW.
+     * Call from SubclassProc. Modifies styleNew in-place; caller should fall through
+     * to DefSubclassProc to propagate the corrected style.
+     *
+     * @param wParam wParam from WM_STYLECHANGING
+     * @param lParam lParam from WM_STYLECHANGING (pointer to STYLESTRUCT)
+     * @return true if the style was modified (caller should still fall through)
+     */
+    [[nodiscard]] bool GuardTaskbarStyle(WPARAM wParam, LPARAM lParam) noexcept;
+
 }  // namespace SciterHelper
 
 }  // namespace NextKey

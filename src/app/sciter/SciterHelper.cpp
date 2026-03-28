@@ -133,5 +133,31 @@ LRESULT handleWindowDrag(HWND hwnd, LPARAM lParam, int titleHeight, int buttonsW
     return HTCLIENT;
 }
 
+void ForceTaskbarPresence(HWND hwnd, int iconId) noexcept {
+    if (!hwnd) return;
+
+    LONG ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+    ex &= ~WS_EX_TOOLWINDOW;
+    ex |= WS_EX_APPWINDOW;
+    SetWindowLongW(hwnd, GWL_EXSTYLE, ex);
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE);
+
+    HICON icon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(iconId));
+    if (icon) {
+        SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(icon));
+        SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(icon));
+    }
+}
+
+bool GuardTaskbarStyle(WPARAM wParam, LPARAM lParam) noexcept {
+    if (wParam != GWL_EXSTYLE) return false;
+
+    auto* pss = reinterpret_cast<STYLESTRUCT*>(lParam);
+    pss->styleNew &= ~WS_EX_TOOLWINDOW;
+    pss->styleNew |= WS_EX_APPWINDOW;
+    return true;
+}
+
 }  // namespace SciterHelper
 }  // namespace NextKey

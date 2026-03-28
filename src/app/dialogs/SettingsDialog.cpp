@@ -61,7 +61,7 @@ constexpr int BASE_HEIGHT_COLLAPSED = 460;  // Match OpenKey height
 static SettingsDialog* s_instance = nullptr;
 
 SettingsDialog::SettingsDialog()
-    : sciter::window(SW_POPUP, RECT{-10000, -10000, -10000 + BASE_WIDTH_COLLAPSED, -10000 + BASE_HEIGHT_COLLAPSED}) {
+    : sciter::window(SW_MAIN, RECT{-10000, -10000, -10000 + BASE_WIDTH_COLLAPSED, -10000 + BASE_HEIGHT_COLLAPSED}) {
 
     s_instance = this;
 
@@ -107,13 +107,8 @@ SettingsDialog::SettingsDialog()
     // 3. Show window offscreen to initialize DWM and Sciter rendering state
     // (Required for transparency/blur to work correctly)
     expand();
-    // 4. Set title and app icon (taskbar shows IDI_APP = icon.ico, not status icons)
+    // 4. Set title (icon is set at end of constructor after all Sciter calls)
     SetWindowTextW(get_hwnd(), L"NexusKey Settings");
-    HICON appIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_APP));
-    if (appIcon) {
-        SendMessageW(get_hwnd(), WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(appIcon));
-        SendMessageW(get_hwnd(), WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(appIcon));
-    }
 
     // 8. Subclass for window dragging and close
     SetWindowSubclass(get_hwnd(), SubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
@@ -163,6 +158,9 @@ SettingsDialog::SettingsDialog()
     int x = (screenWidth - winWidth) / 2;
     int y = (screenHeight - winHeight) / 2;
     SetWindowPos(get_hwnd(), HWND_NOTOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+
+    // Force taskbar presence while DWM transitions are still disabled (avoids flicker)
+    SciterHelper::ForceTaskbarPresence(get_hwnd(), IDI_APP);
 
     // Re-enable DWM transitions for subsequent show/hide animations
     disableTransitions = FALSE;
@@ -246,6 +244,12 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
 
     UNREFERENCED_PARAMETER(uIdSubclass);
     UNREFERENCED_PARAMETER(dwRefData);
+
+    // Prevent Sciter from re-adding WS_EX_TOOLWINDOW (hides window from taskbar).
+    // Modifies styleNew in-place, then falls through so other style changes propagate.
+    if (msg == WM_STYLECHANGING) {
+        (void)SciterHelper::GuardTaskbarStyle(wParam, lParam);
+    }
 
     // WM_CLOSE: terminate child subdialogs, flush deferred save, then destroy
     // (MUST use DestroyWindow, not PostQuitMessage — Sciter assertion failures)

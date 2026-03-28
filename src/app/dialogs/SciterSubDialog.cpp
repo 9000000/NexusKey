@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SciterSubDialog.h"
+#include "../resource.h"
 #include "sciter/ScaleHelper.h"
 #include "sciter/SciterHelper.h"
 #include "core/config/ConfigManager.h"
@@ -27,7 +28,7 @@ namespace NextKey {
 SciterSubDialog* SciterSubDialog::s_instance = nullptr;
 
 SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
-    : sciter::window(SW_POPUP, RECT{-10000, -10000, -10000 + config.baseWidth, -10000 + config.baseHeight})
+    : sciter::window(SW_MAIN, RECT{-10000, -10000, -10000 + config.baseWidth, -10000 + config.baseHeight})
     , config_(config) {
 
     s_instance = this;
@@ -154,6 +155,9 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
                      x, y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
     }
 
+    // Force taskbar presence while DWM transitions are still disabled (avoids flicker)
+    SciterHelper::ForceTaskbarPresence(get_hwnd(), IDI_APP);
+
     // Re-enable DWM transitions
     disableTransitions = FALSE;
     DwmSetWindowAttribute(get_hwnd(), 3, &disableTransitions, sizeof(disableTransitions));
@@ -229,6 +233,12 @@ LRESULT CALLBACK SciterSubDialog::SubclassProc(
 
     UNREFERENCED_PARAMETER(uIdSubclass);
     UNREFERENCED_PARAMETER(dwRefData);
+
+    // Prevent Sciter from re-adding WS_EX_TOOLWINDOW (hides window from taskbar).
+    // Modifies styleNew in-place, then falls through so other style changes propagate.
+    if (msg == WM_STYLECHANGING) {
+        (void)SciterHelper::GuardTaskbarStyle(wParam, lParam);
+    }
 
     if (msg == WM_CLOSE) {
         if (s_instance) {
