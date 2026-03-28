@@ -1152,12 +1152,12 @@ void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INP
             synthEventsPending_ += static_cast<int>(sent);
             // Gap so app finishes processing BS before receiving chars.
             // timeBeginPeriod(1) in main.cpp makes Sleep(N) actually ~N ms.
-            // Base: 7ms Electron (multi-process IPC), 5ms Console (Node.js readline).
-            // +1ms per extra BS pair: more deletions = more processing time
-            // (e.g. replacing "dduowngf" needs 7 BS — app needs longer to catch up).
-            int baseMs = isElectronApp_ ? 7 : 5;
+            // Base: 10ms Electron (multi-process IPC), 8ms Console (Node.js apps like Claude CLI).
+            // +1ms per extra BS pair: more deletions = more processing time.
+            // Cap at 20ms — imperceptible to user but enough for slowest apps.
+            int baseMs = isElectronApp_ ? 10 : 8;
             int bsCount = static_cast<int>(bsEvents.size()) / 2;  // each BS = down+up pair
-            int delayMs = (std::min)(baseMs + (bsCount > 1 ? bsCount - 1 : 0), 15);
+            int delayMs = (std::min)(baseMs + (bsCount > 1 ? bsCount - 1 : 0), 20);
             Sleep(delayMs);
         }
         if (!charEvents.empty()) {
@@ -1716,8 +1716,6 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
         bsCount = rawMacroBuffer_.size();
         if (triggerChar > L' ' && bsCount > 0) --bsCount;
     }
-    SendBackspaces(bsCount);
-
     // Auto-capitalize expansion to match typed case pattern
     std::wstring expansion = it->second;
     if (autoCapsMacro_ && !rawMacroBuffer_.empty()) {
@@ -1734,7 +1732,27 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
 
     HWND target = GetInputTarget();
     bool usePost = target && UsePostMessage(target);
-    SendCharEvents(target, expansion, usePost);
+
+    if (usePost) {
+        // PostMessage path — no timing issues
+        SendBackspaceEvents(target, bsCount, true);
+        SendCharEvents(target, expansion, true);
+    } else {
+        // SendInput path — use DispatchSendInput for proper delay between BS and chars
+        WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
+        std::vector<INPUT> bsEvents;
+        std::vector<INPUT> charEvents;
+
+        bsEvents.reserve(bsCount * 2);
+        for (size_t i = 0; i < bsCount; ++i) {
+            AppendVkEvent(bsEvents, VK_BACK, bsScan);
+        }
+        charEvents.reserve(expansion.size() * 2);
+        for (wchar_t ch : expansion) {
+            AppendUnicodeEvent(charEvents, ch);
+        }
+        DispatchSendInput(bsEvents, charEvents);
+    }
     // Full state cleanup — must match CommitComposition's cleanup to prevent
     // stale inputHistory_/commitUndoState_ from leaking into the next word.
     engine_->Reset();
