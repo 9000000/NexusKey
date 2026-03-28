@@ -388,9 +388,15 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
 
             bool needsValidation = false;  // True when crossing different vowels
             bool hardCross = false;        // True when consonant found between different vowel groups
+            int consonantsCrossed = 0;     // Count consonants in path (for same-vowel coda check)
+            wchar_t singleCoda = 0;        // Base of single consonant crossed (for coda validation)
             for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
                 if (it->IsVowel() && it->base != lower) { needsValidation = true; continue; }
-                if (!it->IsVowel() && needsValidation) { hardCross = true; }
+                if (!it->IsVowel()) {
+                    if (needsValidation) hardCross = true;
+                    if (consonantsCrossed == 0) singleCoda = it->base;
+                    ++consonantsCrossed;
+                }
                 if (it->IsVowel() && it->base == lower) {
                     // Reject cross-vowel if: unsupported modifier
                     // Horn undo (ươ→uô) always allowed across vowels
@@ -412,10 +418,10 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                     }
                     if (it->mod == Modifier::None) {
                         // Spell check ON: validate via SpellChecker.
-                        // Spell check OFF: reject if path crosses consonant between
-                        // different vowel groups (V+C+V = impossible in Vietnamese syllable).
-                        // Same-vowel case (e→[l]→e) NOT blocked here — must preserve
-                        // escape flow (ee to undo circumflex). Handled by V+C+V tone gate.
+                        // Spell check OFF, cross-vowel: reject if consonant between groups.
+                        // Spell check OFF, same-vowel: reject if single consonant is not
+                        // a valid Vietnamese coda (c/m/n/p/t). Catches "release" (e→l→e)
+                        // while allowing "hiên" (e→n→e) and "tiêng" (e→ng→e).
                         if (needsValidation) {
                             if (config_.spellCheckEnabled && SpellCheck::Validate(
                                     states_.data(), states_.size(), config_.allowZwjf)
@@ -424,6 +430,14 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                                 break;
                             }
                             if (!config_.spellCheckEnabled && hardCross) {
+                                engProt_.bias = LanguageBias::HardEnglish;
+                                break;
+                            }
+                        } else if (!config_.spellCheckEnabled && consonantsCrossed == 1) {
+                            bool validCoda = (singleCoda == L'c' || singleCoda == L'm' ||
+                                              singleCoda == L'n' || singleCoda == L'p' ||
+                                              singleCoda == L't');
+                            if (!validCoda) {
                                 engProt_.bias = LanguageBias::HardEnglish;
                                 break;
                             }

@@ -165,7 +165,7 @@ template<typename CharStateT>
 [[nodiscard]] inline bool IsHardEnglishToneContext(
         const CharStateT* states, size_t count, wchar_t toneKey) noexcept {
     if (!IsHardEnglishEnd(toneKey)) return false;
-    if (count < 3) return false;  // Need at least V + C + V
+    if (count < 4) return false;  // ≥4: catches "behavior","release". <4: preserves "ipỏn" free-mark
 
     // Scan forward: find vowel groups separated by consonant(s).
     size_t i = 0;

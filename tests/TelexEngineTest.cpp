@@ -2262,6 +2262,12 @@ TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ValidVN_ShortWord
     EXPECT_EQ(engine_->Peek(), L"h\x1ECFi");  // h + ỏ + i
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ValidVN_Ipon) {
+    // "ipỏn": i,p,o + 'r' → 3 states, count < 4 → V+C+V skipped → free-mark works
+    TypeString(*engine_, L"iporn");
+    EXPECT_EQ(engine_->Peek(), L"ip\x1ECFn");  // ip + ỏ + n
+}
+
 TEST_F(EnglishDetectionNoSpellCheckTest, StructuralHardEnglish_ValidVN_Dau) {
     // "đầu": đ,â,u → 0 consonants between â and u → 'f' applies as Grave
     TypeString(*engine_, L"ddaauf");
@@ -2345,19 +2351,11 @@ TEST_F(EnglishDetectionNoSpellCheckTest, FullBufferVCV_Behavior) {
     EXPECT_EQ(engine_->Peek(), L"behavior");  // 'r' is literal, no tone
 }
 
-TEST_F(EnglishDetectionNoSpellCheckTest, FullBufferVCV_Release_ToneBlocked) {
-    // "release" (7 keys): free-mark ê applied (same-vowel e→l→e, can't block —
-    // needed for Vietnamese "hiên"). But tone 's' blocked by V+C+V: ê+l+a where
-    // 'l' is NOT a valid Vietnamese coda → tone blocked, 's' literal.
-    // Circumflex stays (unfixable without dictionary). Tone IS blocked.
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkBlocked_Release_CodaCheck) {
+    // "release": r-e-l-e-a-s-e. Same-vowel free-mark e→[l]→e blocked because
+    // 'l' is NOT a valid Vietnamese coda (only c/m/n/p/t). Sets HardEnglish.
+    // All subsequent chars are literal.
     TypeString(*engine_, L"release");
-    EXPECT_EQ(engine_->Peek(), L"r\xEAlase");  // rêlase
-}
-
-TEST_F(EnglishDetectionNoSpellCheckTest, FullBufferVCV_Release_WithEscape) {
-    // "release" (8 keys with ee escape): r-e-l-e-e-a-s-e.
-    // 4th 'e' applies circumflex, 5th 'e' escapes → toneEscaped blocks rest.
-    TypeString(*engine_, L"releease");
     EXPECT_EQ(engine_->Peek(), L"release");
 }
 
