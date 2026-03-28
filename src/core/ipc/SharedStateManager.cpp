@@ -198,6 +198,7 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->optimizeLevel = state.optimizeLevel;
     p->featureFlags[0] = state.featureFlags[0];
     p->featureFlags[1] = state.featureFlags[1];
+    p->extFeatureFlags = state.extFeatureFlags;
     p->codeTable = state.codeTable;
 
     MemoryBarrier();
