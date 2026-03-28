@@ -152,35 +152,56 @@ inline bool UpdateToneInsistence(wchar_t toneKey,
 // Pre-Tone Hard English Context Check
 // =============================================================================
 
-/// Detect structural impossibility: vowel + 1+ consonant(s) + terminal vowel.
-/// Vietnamese syllables NEVER have a consonant between two vowels within the
-/// nucleus (onset glide 'u' is pre-nucleus; coda consonant is post-nucleus).
-/// Any pattern V + C...C + V at the tail is impossible Vietnamese.
-/// Catches English words like "manager" (â+n,g+e+r) and "danger" (a+n,g+e+r)
-/// even when bias==Vietnamese (set by a free-mark modifier) or Unknown.
+/// Detect structural impossibility: vowel + 1+ consonant(s) + vowel ANYWHERE in buffer.
+/// Vietnamese syllables NEVER have a consonant between two vowel groups within
+/// a single word (onset glide 'u' is pre-nucleus; coda consonant is post-nucleus).
+/// Scans the entire buffer for any V + C(1+) + V pattern.
+/// Catches: "behavior" (e+h+a), "manager" (a+ng+e), "danger" (a+ng+e), etc.
 ///
-/// Call BEFORE ProcessTone() to gate hard-end tone keys (r, x, z, f).
+/// Call BEFORE ProcessTone() to gate tone keys (s, f, r, x, j).
 /// Template works with both Telex::CharState and Vni::CharState (VniEngine
 /// doesn't need to call this since VNI tone keys are digits 1-5, not letters).
 template<typename CharStateT>
 [[nodiscard]] inline bool IsHardEnglishToneContext(
         const CharStateT* states, size_t count, wchar_t toneKey) noexcept {
     if (!IsHardEnglishEnd(toneKey)) return false;
-    if (count < 4) return false;  // Need at least: onset + prev_V + C + last_V
-    if (!states[count - 1].IsVowel()) return false;  // Tone target must be vowel
-    // Scan backwards: count consonants between last vowel and the previous vowel.
-    int consonants = 0;
-    for (int i = static_cast<int>(count) - 2; i >= 0; --i) {
-        if (states[i].IsVowel()) {
-            // Modified vowel (ê, â, ô...) with exactly one coda consonant = Vietnamese nucleus.
-            // E.g., {h,i,ê,n,e}: ê+n+e is plausible nucleus+coda+typo, not English V+C+V.
-            // Two or more consonants (e.g., â+n+g+e = "manager") stays blocked.
-            if (states[i].HasModifier() && consonants == 1) return false;
-            return consonants >= 1;
+    if (count < 3) return false;  // Need at least V + C + V
+
+    // Scan forward: find vowel groups separated by consonant(s).
+    size_t i = 0;
+    while (i < count) {
+        // Skip consonants
+        if (!states[i].IsVowel()) { ++i; continue; }
+
+        // Found start of a vowel group — skip all adjacent vowels
+        size_t vowelEnd = i;
+        while (vowelEnd < count && states[vowelEnd].IsVowel()) ++vowelEnd;
+
+        // Count consonants after this vowel group
+        size_t consStart = vowelEnd;
+        int consonants = 0;
+        while (vowelEnd < count && !states[vowelEnd].IsVowel()) {
+            ++vowelEnd;
+            ++consonants;
         }
-        ++consonants;
+
+        // Check for next vowel group after consonant(s)
+        if (consonants >= 1 && vowelEnd < count && states[vowelEnd].IsVowel()) {
+            // Exception: modified vowel (ê, â, ô) + exactly 1 coda consonant is
+            // plausible Vietnamese nucleus+coda, not English V+C+V.
+            // E.g., {h,i,ê,n,e}: ê+n+e could be a typo after valid "hiên".
+            bool hasModifier = false;
+            for (size_t j = i; j < consStart; ++j) {
+                if (states[j].HasModifier()) { hasModifier = true; break; }
+            }
+            if (!(hasModifier && consonants == 1)) {
+                return true;  // V + C(1+) + V found — impossible Vietnamese
+            }
+        }
+
+        i = vowelEnd;
     }
-    return false;  // No previous vowel found — no V+C+V pattern
+    return false;
 }
 
 // =============================================================================

@@ -386,15 +386,17 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                 return false; 
             }
 
-            bool needsValidation = false;  // True when crossing vowels
+            bool needsValidation = false;  // True when crossing different vowels
+            bool hardCross = false;        // True when consonant found between different vowel groups
             for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
                 if (it->IsVowel() && it->base != lower) { needsValidation = true; continue; }
+                if (!it->IsVowel() && needsValidation) { hardCross = true; }
                 if (it->IsVowel() && it->base == lower) {
                     // Reject cross-vowel if: unsupported modifier
                     // Horn undo (ươ→uô) always allowed across vowels
                     if (needsValidation && it->mod != Modifier::Horn &&
                          (it->mod != Modifier::None && it->mod != Modifier::Circumflex)) break;
-                    
+
                     if (it->mod == Modifier::Circumflex) {
                         it->mod = Modifier::None;
                         ProcessChar(c);
@@ -409,13 +411,24 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                         return true;
                     }
                     if (it->mod == Modifier::None) {
-                        it->mod = Modifier::Circumflex;
-                        if (needsValidation && config_.spellCheckEnabled && SpellCheck::Validate(
-                                states_.data(), states_.size(), config_.allowZwjf)
-                                == SpellCheck::Result::Invalid) {
-                            it->mod = Modifier::None;
-                            break;
+                        // Spell check ON: validate via SpellChecker.
+                        // Spell check OFF: reject if path crosses consonant between
+                        // different vowel groups (V+C+V = impossible in Vietnamese syllable).
+                        // e.g., "solution" o→[l,u,t,i]→o: hardCross=true → reject.
+                        // e.g., "chiều" e→[u]→e: hardCross=false (adjacent vowels) → allow.
+                        if (needsValidation) {
+                            if (config_.spellCheckEnabled && SpellCheck::Validate(
+                                    states_.data(), states_.size(), config_.allowZwjf)
+                                    == SpellCheck::Result::Invalid) {
+                                it->mod = Modifier::None;
+                                break;
+                            }
+                            if (!config_.spellCheckEnabled && hardCross) {
+                                engProt_.bias = LanguageBias::HardEnglish;
+                                break;
+                            }
                         }
+                        it->mod = Modifier::Circumflex;
                         RelocateToneToTarget();
                         return true;
                     }

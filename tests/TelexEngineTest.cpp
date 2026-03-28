@@ -2324,6 +2324,48 @@ TEST_F(EnglishDetectionNoSpellCheckTest, ToneEscape_ThenHardEnglishEnd_S) {
     EXPECT_EQ(engine_->Peek(), L"base");
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkBlocked_Solution) {
+    // "solution": s-o-l-u-t-i-o-n. Second 'o' free-marks across consonant+vowel groups.
+    // Path o→[l,u,t,i]→o has consonants between different vowels → blocked.
+    TypeString(*engine_, L"solution");
+    EXPECT_EQ(engine_->Peek(), L"solution");  // No circumflex on 'o'
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkBlocked_Review) {
+    // "review": r-e-v-i-e-w. Second 'e' free-marks across consonant+vowel.
+    // Path e→[v,i]→e has consonant 'v' between vowels → blocked.
+    TypeString(*engine_, L"review");
+    EXPECT_EQ(engine_->Peek(), L"review");  // No circumflex on 'e'
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, FullBufferVCV_Behavior) {
+    // "behavior"+r: V+C+V pattern e+h+a exists in mid-buffer.
+    // Full scan catches it even though tail (i,o) is adjacent vowels.
+    TypeString(*engine_, L"behavior");
+    EXPECT_EQ(engine_->Peek(), L"behavior");  // 'r' is literal, no tone
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkAllowed_Chieu) {
+    // "chiếu": c-h-i-e-u + 'e' (free-mark circumflex) + 's' (tone sắc).
+    // Path e→[u]→e has no consonant between vowels (adjacent) → circumflex allowed.
+    TypeString(*engine_, L"chieues");
+    EXPECT_EQ(engine_->Peek(), L"chi\x1EBFu");  // chiếu
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkAllowed_Cau) {
+    // "cầu": c-a-u + 'a' (free-mark circumflex) + 'f' (tone huyền).
+    // Path a→[u]→a has no consonant → allowed.
+    TypeString(*engine_, L"cauaf");
+    EXPECT_EQ(engine_->Peek(), L"c\x1EA7u");  // cầu
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkAllowed_Tieng) {
+    // "tiếng": t-i-e-n-g + 'e' (circumflex) + 's' (tone sắc).
+    // Scan finds 'e' immediately after consonants → needsValidation=false → allowed.
+    TypeString(*engine_, L"tienges");
+    EXPECT_EQ(engine_->Peek(), L"ti\x1EBFng");  // tiếng
+}
+
 // ============================================================================
 // SIMPLE TELEX TESTS
 // Simple Telex: standalone 'w' is literal, 'w' after a/o/u vowel is modifier
