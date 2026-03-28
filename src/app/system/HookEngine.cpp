@@ -355,10 +355,23 @@ bool HookEngine::CheckConfigEvent() {
         tsfActiveCallback_(isTsfApp_);
     }
 
-    // Reload hotkey config
-    auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
-    if (hotkeyOpt) {
-        hotkeyConfig_ = *hotkeyOpt;
+    // Reload hotkey config — prefer SharedState (instant), fallback to TOML
+    {
+        HotkeyConfig newHotkey{};
+        bool fromSharedState = false;
+        SharedStateManager hkState;
+        if (hkState.Open()) {
+            SharedState st = hkState.Read();
+            if (st.IsValid()) {
+                newHotkey = st.GetHotkey();
+                fromSharedState = true;
+            }
+        }
+        if (!fromSharedState) {
+            auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
+            if (hotkeyOpt) newHotkey = *hotkeyOpt;
+        }
+        hotkeyConfig_ = newHotkey;
         hotkeyVk_ = 0;
         if (hotkeyConfig_.key != 0) {
             SHORT vkResult = VkKeyScanW(hotkeyConfig_.key);

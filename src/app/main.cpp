@@ -210,6 +210,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
+        state.SetHotkey(hotkeyConfig);
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created for HookEngine mode");
     }

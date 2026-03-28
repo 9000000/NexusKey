@@ -188,7 +188,11 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->epoch = seq;
     MemoryBarrier();
 
-    // Copy all data fields (epoch is managed by seqlock, not caller)
+    // Copy all data fields (epoch is managed by seqlock, not caller).
+    // ⚠️  When adding new SharedState fields, MUST add copy here too!
+    // Read() uses full struct copy (*p = state), but Write() copies field-by-field
+    // to skip epoch. Missing a field here silently drops it — works in Debug
+    // (which reads TOML directly) but fails in Release (SharedState path only).
     p->magic = state.magic;
     p->structVersion = state.structVersion;
     p->structSize = state.structSize;
@@ -200,6 +204,12 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->featureFlags[1] = state.featureFlags[1];
     p->extFeatureFlags = state.extFeatureFlags;
     p->codeTable = state.codeTable;
+    p->hotkeyMods = state.hotkeyMods;
+    p->hotkeyKeyLo = state.hotkeyKeyLo;
+    p->hotkeyKeyHi = state.hotkeyKeyHi;
+    p->convertMods = state.convertMods;
+    p->convertKeyLo = state.convertKeyLo;
+    p->convertKeyHi = state.convertKeyHi;
 
     MemoryBarrier();
     p->epoch = seq + 1;  // Now even = done

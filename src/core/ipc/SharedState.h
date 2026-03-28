@@ -68,11 +68,19 @@ struct SharedState {
     uint8_t  featureFlags[2]; // Bitmask for optional features (bits 0-15)
     uint8_t  extFeatureFlags; // Extended feature flags (bits 16-23)
 
-    // ── Extended config (1 byte, carved from reserved) ──
+    // ── Extended config (1 byte) ──
     uint8_t  codeTable;       // CodeTable enum value (0=Unicode, 1=TCVN3, etc.)
 
-    // ── Reserved for future expansion (29 bytes) ──
-    uint8_t  reserved[29];
+    // ── Hotkey config (6 bytes, packed: 1 byte modifiers + 2 bytes key each) ──
+    uint8_t  hotkeyMods;      // bits: [0]=ctrl [1]=shift [2]=alt [3]=win
+    uint8_t  hotkeyKeyLo;     // wchar_t key, low byte
+    uint8_t  hotkeyKeyHi;     // wchar_t key, high byte
+    uint8_t  convertMods;     // convert hotkey modifiers (same encoding)
+    uint8_t  convertKeyLo;    // convert hotkey key, low byte
+    uint8_t  convertKeyHi;    // convert hotkey key, high byte
+
+    // ── Reserved for future expansion (23 bytes) ──
+    uint8_t  reserved[23];
 
     static constexpr uint32_t MAGIC_VALUE = 0x59454B4E;    // 'NKEY'
     static constexpr uint32_t CURRENT_VERSION = 2;          // v2: added structVersion, structSize, reserved
@@ -95,6 +103,25 @@ struct SharedState {
         extFeatureFlags = static_cast<uint8_t>(ff >> 16);
     }
 
+    // ── Hotkey encode/decode helpers ──
+    void SetHotkey(const HotkeyConfig& hk) noexcept {
+        hotkeyMods = (hk.ctrl ? 1 : 0) | (hk.shift ? 2 : 0) | (hk.alt ? 4 : 0) | (hk.win ? 8 : 0);
+        hotkeyKeyLo = static_cast<uint8_t>(hk.key);
+        hotkeyKeyHi = static_cast<uint8_t>(hk.key >> 8);
+    }
+    [[nodiscard]] HotkeyConfig GetHotkey() const noexcept {
+        HotkeyConfig hk;
+        hk.ctrl  = (hotkeyMods & 1) != 0;
+        hk.shift = (hotkeyMods & 2) != 0;
+        hk.alt   = (hotkeyMods & 4) != 0;
+        hk.win   = (hotkeyMods & 8) != 0;
+        hk.key   = static_cast<wchar_t>(hotkeyKeyLo | (static_cast<uint16_t>(hotkeyKeyHi) << 8));
+        return hk;
+    }
+    // Convert hotkey fields are reserved for future migration.
+    // Currently convert hotkey is managed by ConvertToolDialog (separate subprocess)
+    // and read from TOML only. Wire here when ConvertToolDialog gets SharedState access.
+
     /// Initialize with defaults
     void InitDefaults() noexcept {
         magic = MAGIC_VALUE;
@@ -107,6 +134,8 @@ struct SharedState {
         optimizeLevel = 0;
         SetFeatureFlags(FeatureFlags::ALLOW_ZWJF);  // Default: tone keys enabled
         codeTable = 0;  // Unicode
+        hotkeyMods = 0; hotkeyKeyLo = 0; hotkeyKeyHi = 0;
+        convertMods = 0; convertKeyLo = 0; convertKeyHi = 0;
         for (auto& b : reserved) b = 0;
     }
 };

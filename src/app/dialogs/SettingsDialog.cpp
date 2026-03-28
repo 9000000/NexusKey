@@ -1118,6 +1118,7 @@ void SettingsDialog::syncToSharedState() {
             state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
+            state.SetHotkey(hotkeyConfig_);
             sharedState_.Write(state);
         }
     }
@@ -1139,6 +1140,14 @@ void SettingsDialog::saveToToml() {
     (void)ConfigManager::SaveHotkeyConfig(path, hotkeyConfig_);
 
     configDirty_ = false;
+
+    // Re-signal ConfigEvent so HookEngine reloads TOML-only fields
+    // (convert hotkey, macros, excluded/TSF apps, per-app code table).
+    // The first signal (from syncToSharedState) fired before TOML was written;
+    // this second signal picks up the fresh values.
+    if (configEvent_.IsValid()) {
+        configEvent_.Signal();
+    }
 }
 
 void SettingsDialog::saveUISettings() {

@@ -164,8 +164,16 @@ struct SharedState {
     // Extended config (1 byte)
     uint8_t  codeTable;       // CodeTable enum value
 
-    // Reserved (29 bytes)
-    uint8_t  reserved[29];    // Future expansion (7 flag bits remaining: 17-23)
+    // Hotkey config (6 bytes, packed: 1 byte modifiers + 2 bytes key each)
+    uint8_t  hotkeyMods;      // bits: [0]=ctrl [1]=shift [2]=alt [3]=win
+    uint8_t  hotkeyKeyLo;     // wchar_t key, low byte
+    uint8_t  hotkeyKeyHi;     // wchar_t key, high byte
+    uint8_t  convertMods;     // convert hotkey (same encoding)
+    uint8_t  convertKeyLo;
+    uint8_t  convertKeyHi;
+
+    // Reserved (23 bytes)
+    uint8_t  reserved[23];    // Future expansion (7 flag bits remaining: 17-23)
 };
 ```
 
