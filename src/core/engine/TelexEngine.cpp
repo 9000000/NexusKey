@@ -414,8 +414,8 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                         // Spell check ON: validate via SpellChecker.
                         // Spell check OFF: reject if path crosses consonant between
                         // different vowel groups (V+C+V = impossible in Vietnamese syllable).
-                        // e.g., "solution" o→[l,u,t,i]→o: hardCross=true → reject.
-                        // e.g., "chiều" e→[u]→e: hardCross=false (adjacent vowels) → allow.
+                        // Same-vowel case (e→[l]→e) NOT blocked here — must preserve
+                        // escape flow (ee to undo circumflex). Handled by V+C+V tone gate.
                         if (needsValidation) {
                             if (config_.spellCheckEnabled && SpellCheck::Validate(
                                     states_.data(), states_.size(), config_.allowZwjf)

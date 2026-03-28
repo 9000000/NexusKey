@@ -187,14 +187,24 @@ template<typename CharStateT>
 
         // Check for next vowel group after consonant(s)
         if (consonants >= 1 && vowelEnd < count && states[vowelEnd].IsVowel()) {
-            // Exception: modified vowel (ê, â, ô) + exactly 1 coda consonant is
-            // plausible Vietnamese nucleus+coda, not English V+C+V.
+            // Exception: modified vowel (ê, â, ô) + exactly 1 VALID Vietnamese coda
+            // consonant is plausible nucleus+coda, not English V+C+V.
             // E.g., {h,i,ê,n,e}: ê+n+e could be a typo after valid "hiên".
-            bool hasModifier = false;
-            for (size_t j = i; j < consStart; ++j) {
-                if (states[j].HasModifier()) { hasModifier = true; break; }
+            // Valid single-char codas: c, m, n, p, t (k for minority-language nouns).
+            // Does NOT allow: l, v, b, d, g, h, etc. → catches "release" (ê+l+a).
+            bool exception = false;
+            if (consonants == 1) {
+                bool hasModifier = false;
+                for (size_t j = i; j < consStart; ++j) {
+                    if (states[j].HasModifier()) { hasModifier = true; break; }
+                }
+                if (hasModifier) {
+                    wchar_t coda = states[consStart].base;
+                    exception = (coda == L'c' || coda == L'm' || coda == L'n' ||
+                                 coda == L'p' || coda == L't');
+                }
             }
-            if (!(hasModifier && consonants == 1)) {
+            if (!exception) {
                 return true;  // V + C(1+) + V found — impossible Vietnamese
             }
         }

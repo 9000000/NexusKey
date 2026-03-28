@@ -2345,6 +2345,29 @@ TEST_F(EnglishDetectionNoSpellCheckTest, FullBufferVCV_Behavior) {
     EXPECT_EQ(engine_->Peek(), L"behavior");  // 'r' is literal, no tone
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, FullBufferVCV_Release_ToneBlocked) {
+    // "release" (7 keys): free-mark ê applied (same-vowel e→l→e, can't block —
+    // needed for Vietnamese "hiên"). But tone 's' blocked by V+C+V: ê+l+a where
+    // 'l' is NOT a valid Vietnamese coda → tone blocked, 's' literal.
+    // Circumflex stays (unfixable without dictionary). Tone IS blocked.
+    TypeString(*engine_, L"release");
+    EXPECT_EQ(engine_->Peek(), L"r\xEAlase");  // rêlase
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, FullBufferVCV_Release_WithEscape) {
+    // "release" (8 keys with ee escape): r-e-l-e-e-a-s-e.
+    // 4th 'e' applies circumflex, 5th 'e' escapes → toneEscaped blocks rest.
+    TypeString(*engine_, L"releease");
+    EXPECT_EQ(engine_->Peek(), L"release");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, VCV_Exception_ValidCoda_Hien) {
+    // "hiên"+e+r: ê+n+e where 'n' IS a valid Vietnamese coda → exception allows.
+    // But 'e' escapes circumflex (our earlier fix) → toneEscaped → 'r' literal.
+    TypeString(*engine_, L"hieener");
+    EXPECT_EQ(engine_->Peek(), L"hiener");
+}
+
 TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkAllowed_Chieu) {
     // "chiếu": c-h-i-e-u + 'e' (free-mark circumflex) + 's' (tone sắc).
     // Path e→[u]→e has no consonant between vowels (adjacent) → circumflex allowed.
