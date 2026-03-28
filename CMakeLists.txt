@@ -164,7 +164,7 @@ set_target_properties(NextKeyApp PROPERTIES OUTPUT_NAME "NexusKey")
 # Link Windows libraries
 if(WIN32)
     target_link_libraries(NextKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid shell32)
-    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32)
+    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm)
 
     # Copy sciter.dll to output directory
     add_custom_command(TARGET NextKeyApp POST_BUILD

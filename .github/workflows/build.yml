@@ -3,11 +3,16 @@ name: Build
 on:
   push:
     branches: [main, "feature/*"]
+    tags:
+      - 'v*'
   pull_request:
     branches: [main]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -36,6 +41,22 @@ jobs:
 
       - name: Run tests
         run: ctest --test-dir build --build-config Release --output-on-failure
+
+      - name: Zip Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
+        run: |
+          # Create NextKey-x64.zip for backward compatibility with old updater
+          Get-ChildItem "build/Release/*" -Include NexusKey.exe,NextKeyTSF.dll,sciter.dll |
+            Compress-Archive -DestinationPath NextKey-x64.zip
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          body_path: RELEASE_NOTES.md
+          files: |
+            NextKey-x64.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
