@@ -249,7 +249,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Wire menu state getter — reads from SharedState only (no TOML)
     g_trayIcon.SetMenuStateGetter([]() -> TrayMenuState {
         SharedState state = g_sharedState.Read();
-        uint16_t ff = state.GetFeatureFlags();
+        uint32_t ff = state.GetFeatureFlags();
         return {
             g_hookEngine.IsVietnameseMode(),
             state.spellCheck != 0,
@@ -397,7 +397,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Wire menu state getter — reads from SharedState only (no TOML)
     g_trayIcon.SetMenuStateGetter([]() -> TrayMenuState {
         SharedState state = g_sharedState.Read();
-        uint16_t ff = state.GetFeatureFlags();
+        uint32_t ff = state.GetFeatureFlags();
         return {
             (state.flags & SharedFlags::VIETNAMESE_MODE) != 0,
             state.spellCheck != 0,

@@ -55,6 +55,7 @@ struct TypingConfig {
     bool quickStartConsonant = false;  // Quick start consonant: f→ph, j→gi, w→qu
     bool quickEndConsonant = false;    // Quick end consonant: g→ng, h→nh, k→ch
     bool tempOffMacroByEsc = false;    // Esc temporarily disables macro for next word
+    bool autoCapsMacro = false;        // Auto-capitalize expansion to match typed case
 
     // Default constructor for compiled defaults (FR8 - engine autonomy)
     TypingConfig() = default;

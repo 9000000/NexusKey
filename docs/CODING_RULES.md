@@ -195,15 +195,23 @@ bool ValidateSharedState(const SharedState* state) {
 
 ### 5.2 Feature Flags over New Fields
 
-```cpp
-// ✅ Preferred: Use featureFlags bitmask
-if (config.featureFlags & FEATURE_MACRO) {
-    ProcessMacro(...);
-}
+SharedState packs feature bools into a 3-byte bitmask (24 flags max):
+- Bits 0-15: `featureFlags[2]` (core flags)
+- Bits 16-23: `extFeatureFlags` (extended flags, 6 bits remaining)
+- Access via `GetFeatureFlags()` / `SetFeatureFlags()` (returns/takes `uint32_t`)
 
-// ❌ Avoid: Adding new bool fields
-bool useMacro;      // Changes struct layout
-bool useSmartSwitch;
+```cpp
+// ✅ Preferred: Use FeatureFlags bitmask in SharedState
+// TypingConfig has individual bools; Encode/DecodeFeatureFlags converts
+constexpr uint32_t AUTO_CAPS_MACRO = 0x00010000;  // Bit 16 (extFeatureFlags)
+
+// Adding a new toggle:
+// 1. Add constant to FeatureFlags namespace (SharedState.h)
+// 2. Add bool to TypingConfig (TypingConfig.h)
+// 3. Add encode/decode in EncodeFeatureFlags/DecodeFeatureFlags (SharedState.h)
+// 4. Add load/save in ConfigManager (ConfigManager.cpp)
+// 5. Add UI handler in SettingsDialog (SettingsDialog.cpp)
+// 6. Add ApplyConfig line in HookEngine (HookEngine.cpp)
 ```
 
 ---

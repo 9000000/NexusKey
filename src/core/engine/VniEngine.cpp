@@ -398,21 +398,22 @@ bool VniEngine::ProcessModifier(wchar_t c) {
         default: return false;
     }
 
-    // Handle đ specially (key 9) — Vietnamese đ only at syllable start
+    // Handle đ specially (key 9) — scan logic shared via FindStrokeDTarget (EngineHelpers.h)
     if (targetMod == Modifier::Stroke) {
-        if (dModifierEscaped_) return false;  // User already escaped đ→d
-        if (!states_.empty() && states_[0].IsD()) {
-            CharState& first = states_[0];
-            if (first.mod == Modifier::None) {
-                first.mod = Modifier::Stroke;
-                return true;
-            } else if (first.mod == Modifier::Stroke) {
-                first.mod = Modifier::None;
-                dModifierEscaped_ = true;  // Lock: user intentionally removed đ
-                toneEscaped_ = true;       // Block further modifiers/tones — word is English
-                ProcessChar(c, rawInput_.size() - 1);
-                return true;
-            }
+        if (dModifierEscaped_) return false;
+        size_t dIdx = FindStrokeDTarget(states_.data(), states_.size());
+        if (dIdx == SIZE_MAX) return false;
+
+        CharState& target = states_[dIdx];
+        if (target.mod == Modifier::None) {
+            target.mod = Modifier::Stroke;
+            return true;
+        } else if (target.mod == Modifier::Stroke) {
+            target.mod = Modifier::None;
+            dModifierEscaped_ = true;  // Lock: user intentionally removed đ
+            toneEscaped_ = true;       // Block further modifiers/tones — word is English
+            ProcessChar(c, rawInput_.size() - 1);
+            return true;
         }
         return false;
     }

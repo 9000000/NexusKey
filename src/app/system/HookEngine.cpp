@@ -75,6 +75,7 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     macroEnabled_ = config.macroEnabled;
     macroInEnglish_ = config.macroInEnglish;
     tempOffMacroByEsc_ = config.tempOffMacroByEsc;
+    autoCapsMacro_ = config.autoCapsMacro;
 }
 
 bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const HotkeyConfig& hotkey) {
@@ -562,44 +563,30 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 3. English mode fast path — skip Vietnamese-only processing
     if (!vietnameseMode_) {
         if (macroEnabled_ && macroInEnglish_) {
-            // Track macro keys and handle expansion in English mode
+            // Track macro keys (all printable chars) in English mode
             if (vkCode >= 0x41 && vkCode <= 0x5A) {
                 bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-                rawMacroBuffer_ += shift ? static_cast<wchar_t>(vkCode)
+                bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+                bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
+                rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
                                          : towlower(static_cast<wchar_t>(vkCode));
             } else if (tempOffMacroByEsc_ && vkCode == VK_ESCAPE && rawMacroBuffer_.empty()) {
                 tempMacroOff_ = true;
                 return false;
-            } else if (IsCommitTrigger(vkCode) && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
-                std::wstring lowerKey = ToLowerAscii(rawMacroBuffer_);
-                auto it = macroTable_.find(lowerKey);
-                if (it != macroTable_.end()) {
-                    SendBackspaces(rawMacroBuffer_.size());
-                    std::wstring expansion = it->second;
-                    if (autoCaps_ && !rawMacroBuffer_.empty()) {
-                        bool allUpper = true, firstUpper = iswupper(rawMacroBuffer_[0]);
-                        for (auto c : rawMacroBuffer_) {
-                            if (!iswupper(c)) { allUpper = false; break; }
-                        }
-                        if (allUpper && rawMacroBuffer_.size() > 1) {
-                            for (auto& c : expansion) c = towupper(c);
-                        } else if (firstUpper && !expansion.empty()) {
-                            expansion[0] = towupper(expansion[0]);
-                        }
+            } else if (IsCommitTrigger(vkCode) && !tempMacroOff_) {
+                wchar_t triggerChar = VkToMacroChar(vkCode);
+                if (triggerChar > L' ') rawMacroBuffer_ += triggerChar;
+                if (!rawMacroBuffer_.empty()) {
+                    auto result = TryExpandMacro(triggerChar);
+                    if (result == MacroResult::ExpandedEatTrigger) return true;
+                    if (result == MacroResult::ExpandedPassTrigger) {
+                        if (synthEventsPending_ > 0) { InjectKey(vkCode); return true; }
+                        return false;
                     }
-                    HWND target = GetInputTarget();
-                    bool usePost = target && UsePostMessage(target);
-                    SendCharEvents(target, expansion, usePost);
-                    rawMacroBuffer_.clear();
-                    if (synthEventsPending_ > 0) {
-                        InjectKey(vkCode);
-                        return true;
-                    }
-                    return false;
                 }
             } else if (vkCode == VK_BACK && !rawMacroBuffer_.empty()) {
                 rawMacroBuffer_.pop_back();
-            } else if (!(vkCode >= 0x41 && vkCode <= 0x5A)) {
+            } else if (!(vkCode >= 0x41 && vkCode <= 0x5A) && !IsCommitTrigger(vkCode)) {
                 rawMacroBuffer_.clear();
                 tempMacroOff_ = false;
             }
@@ -625,11 +612,20 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
     }
 
-    // 3b. Macro: track raw alpha keys
-    if (macroEnabled_ && vkCode >= 0x41 && vkCode <= 0x5A) {
-        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-        rawMacroBuffer_ += shift ? static_cast<wchar_t>(vkCode)
-                                 : towlower(static_cast<wchar_t>(vkCode));
+    // 3b. Macro: track ALL typed characters (OpenKey approach).
+    // Alpha keys AND printable special chars are accumulated so macros with
+    // special characters in their key (e.g., "url\" → "URL") can be matched.
+    if (macroEnabled_) {
+        if (vkCode >= 0x41 && vkCode <= 0x5A) {
+            bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+            bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+            bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
+            rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
+                                     : towlower(static_cast<wchar_t>(vkCode));
+        } else if (IsCommitTrigger(vkCode)) {
+            wchar_t ch = VkToMacroChar(vkCode);
+            if (ch > L' ') rawMacroBuffer_ += ch;  // Printable non-space chars
+        }
     }
 
     // 3c. Temp off macro by Esc: press Esc with no pending text → skip macro for next word
@@ -640,57 +636,14 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return false;  // Let Esc pass through
     }
 
-    // 3d. Macro expansion on commit trigger
+    // 3d. Macro expansion on commit trigger (uses shared TryExpandMacro helper)
     if (macroEnabled_ && !tempMacroOff_ && IsCommitTrigger(vkCode) && !rawMacroBuffer_.empty()) {
-        // Lookup with lowercase key (macros are stored lowercase)
-        // Try raw input first ("url" typed as u-r-l), then composed output
-        // ("url" typed as u-r-r-l where second r escapes tone → shows "url")
-        std::wstring lowerKey = ToLowerAscii(rawMacroBuffer_);
-        auto it = macroTable_.find(lowerKey);
-        if (it == macroTable_.end() && !previousComposition_.empty()) {
-            lowerKey = ToLowerAscii(previousComposition_);
-            it = macroTable_.find(lowerKey);
-        }
-        if (it != macroTable_.end()) {
-            size_t bsCount;
-            if (!previousComposition_.empty()) {
-                if (currentCodeTable_ != CodeTable::Unicode) {
-                    bsCount = 0;
-                    for (auto w : previousEncodedWidths_) bsCount += w;
-                } else {
-                    bsCount = previousComposition_.size();
-                }
-            } else {
-                bsCount = rawMacroBuffer_.size();
-            }
-            SendBackspaces(bsCount);
-
-            // Auto-capitalize expansion to match typed case pattern
-            std::wstring expansion = it->second;
-            if (autoCaps_ && !rawMacroBuffer_.empty()) {
-                bool allUpper = true, firstUpper = iswupper(rawMacroBuffer_[0]);
-                for (auto c : rawMacroBuffer_) {
-                    if (!iswupper(c)) { allUpper = false; break; }
-                }
-                if (allUpper && rawMacroBuffer_.size() > 1) {
-                    for (auto& c : expansion) c = towupper(c);
-                } else if (firstUpper && !expansion.empty()) {
-                    expansion[0] = towupper(expansion[0]);
-                }
-            }
-
-            HWND target = GetInputTarget();
-            bool usePost = target && UsePostMessage(target);
-            SendCharEvents(target, expansion, usePost);
-            engine_->Reset();
-            previousComposition_.clear();
-            previousEncodedWidths_.clear();
-            rawMacroBuffer_.clear();
-            if (synthEventsPending_ > 0) {
-                InjectKey(vkCode);
-                return true;
-            }
-            return false;  // Let trigger key pass through
+        wchar_t triggerChar = VkToMacroChar(vkCode);
+        auto result = TryExpandMacro(triggerChar);
+        if (result == MacroResult::ExpandedEatTrigger) return true;
+        if (result == MacroResult::ExpandedPassTrigger) {
+            if (synthEventsPending_ > 0) { InjectKey(vkCode); return true; }
+            return false;
         }
     }
 
@@ -1272,6 +1225,8 @@ void HookEngine::OnFocusChanged() {
     isConsoleApp_ = fg && IsConsoleApp(fg);
     skipEmptyChar_ = fg && (IsQtElectronApp(fg) || isConsoleApp_);
     isElectronApp_ = skipEmptyChar_ && !isConsoleApp_;
+    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d",
+             isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0);
 
     // Skip focus tracking entirely if no feature needs it
     if (!smartSwitch_ && !excludeApps_ && !tsfApps_ && !rememberCodeTable_) return;
@@ -1546,8 +1501,12 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
             }
 
             sending_ = true;
-            if (isConsoleApp_) {
-                // Split SendInput for console apps to prevent character swallowing
+            if (skipEmptyChar_) {
+                // Split SendInput for Console and Qt/Electron apps.
+                // Both app types process VK_BACK and VK_PACKET(KEYEVENTF_UNICODE) on
+                // separate internal paths — batching them risks VK_PACKET chars being
+                // processed before VK_BACK backspaces, causing garbled text.
+                // Must match the non-Unicode path logic above (line ~1466).
                 if (!bsEvents.empty()) {
                     UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
                     synthEventsPending_ += static_cast<int>(sent);
@@ -1558,7 +1517,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                     synthEventsPending_ += static_cast<int>(sent);
                 }
             } else {
-                // Batch SendInput for GUI apps to preserve atomicity and prevent text flickering
+                // Batch SendInput for standard Win32 GUI apps (single message queue, FIFO).
                 bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
                 if (!bsEvents.empty()) {
                     UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
@@ -1712,6 +1671,85 @@ bool HookEngine::IsCommitTrigger(DWORD vkCode) {
     if (vkCode == VK_DELETE || vkCode == VK_INSERT) return true;
 
     return false;
+}
+
+HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
+    std::wstring lowerKey = ToLowerAscii(rawMacroBuffer_);
+    bool isPartOfMacro = false;
+
+    // Priority 1: full buffer (includes accumulated trigger char)
+    auto it = macroTable_.find(lowerKey);
+    if (it != macroTable_.end() && triggerChar > L' ') {
+        isPartOfMacro = true;
+    }
+    // Priority 2: buffer without trigger char (e.g., "btw" from "btw.")
+    if (it == macroTable_.end() && triggerChar > L' ' &&
+        lowerKey.size() > 1 && lowerKey.back() == triggerChar) {
+        it = macroTable_.find(lowerKey.substr(0, lowerKey.size() - 1));
+    }
+    // Priority 3: composed Vietnamese output + trigger (handles tone escape: "urrl\" → "url\")
+    if (it == macroTable_.end() && !previousComposition_.empty()) {
+        std::wstring compKey = ToLowerAscii(previousComposition_);
+        if (triggerChar > L' ') {
+            it = macroTable_.find(compKey + triggerChar);
+            if (it != macroTable_.end()) isPartOfMacro = true;
+        }
+        // Priority 4: composed Vietnamese output alone
+        if (it == macroTable_.end()) {
+            it = macroTable_.find(compKey);
+        }
+    }
+    if (it == macroTable_.end()) return MacroResult::NoMatch;
+
+    // Backspace count = screen content (trigger char is NOT on screen yet)
+    size_t bsCount;
+    if (!previousComposition_.empty()) {
+        if (currentCodeTable_ != CodeTable::Unicode) {
+            bsCount = 0;
+            for (auto w : previousEncodedWidths_) bsCount += w;
+        } else {
+            bsCount = previousComposition_.size();
+        }
+    } else {
+        bsCount = rawMacroBuffer_.size();
+        if (triggerChar > L' ' && bsCount > 0) --bsCount;
+    }
+    SendBackspaces(bsCount);
+
+    // Auto-capitalize expansion to match typed case pattern
+    std::wstring expansion = it->second;
+    if (autoCapsMacro_ && !rawMacroBuffer_.empty()) {
+        bool allUpper = true, firstUpper = iswupper(rawMacroBuffer_[0]);
+        for (auto c : rawMacroBuffer_) {
+            if (!iswupper(c)) { allUpper = false; break; }
+        }
+        if (allUpper && rawMacroBuffer_.size() > 1) {
+            for (auto& c : expansion) c = towupper(c);
+        } else if (firstUpper && !expansion.empty()) {
+            expansion[0] = towupper(expansion[0]);
+        }
+    }
+
+    HWND target = GetInputTarget();
+    bool usePost = target && UsePostMessage(target);
+    SendCharEvents(target, expansion, usePost);
+    // Full state cleanup — must match CommitComposition's cleanup to prevent
+    // stale inputHistory_/commitUndoState_ from leaking into the next word.
+    engine_->Reset();
+    previousComposition_.clear();
+    previousEncodedWidths_.clear();
+    rawMacroBuffer_.clear();
+    inputHistory_.clear();
+    CancelCommitUndo();
+    hadSynthInWord_ = false;
+    return isPartOfMacro ? MacroResult::ExpandedEatTrigger : MacroResult::ExpandedPassTrigger;
+}
+
+wchar_t HookEngine::VkToMacroChar(DWORD vkCode) noexcept {
+    // Use MapVirtualKeyW to get the actual character for this VK code,
+    // respecting the current keyboard layout (not hardcoded to US QWERTY).
+    UINT ch = MapVirtualKeyW(vkCode, MAPVK_VK_TO_CHAR);
+    return ch ? static_cast<wchar_t>(towlower(static_cast<wchar_t>(ch))) : 0;
 }
 
 }  // namespace NextKey

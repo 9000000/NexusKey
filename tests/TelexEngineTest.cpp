@@ -2974,6 +2974,65 @@ TEST_F(TempOffSpellTest, NoAutoRestore) {
     EXPECT_EQ(committed, composed);
 }
 
+// =============================================================================
+// Non-initial dd→đ tests (abbreviation support)
+// =============================================================================
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_NonInitial_AfterConsonant) {
+    // "vddeef": v + dd→đ + ee→ê + f→grave = "vđề"
+    // Abbreviation for "vấn đề" — dd after consonant 'v' should apply stroke
+    TypeString(*engine_, L"vddeef");
+    EXPECT_EQ(engine_->Peek(), L"vđề");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_NonInitial_CConsonant) {
+    // "cddeef": c + dd→đ + ee→ê + f→grave = "cđề"
+    TypeString(*engine_, L"cddeef");
+    EXPECT_EQ(engine_->Peek(), L"cđề");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_NonInitial_BlockedAfterVowel) {
+    // "added": a + dd should NOT become đ (preceded by vowel 'a')
+    TypeString(*engine_, L"added");
+    EXPECT_EQ(engine_->Peek(), L"added");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_NonInitial_BlockedAfterVowelU) {
+    // "uddone": u + dd should NOT become đ (preceded by vowel 'u')
+    TypeString(*engine_, L"uddi");
+    EXPECT_EQ(engine_->Peek(), L"uddi");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_NonInitial_EscapeAfterConsonant) {
+    // "vddd" → "vdd" (dd→đ then escape → vdd)
+    TypeString(*engine_, L"vddd");
+    EXPECT_EQ(engine_->Peek(), L"vdd");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_Initial_StillWorks) {
+    // Basic dd→đ at index 0 still works
+    TypeString(*engine_, L"ddi");
+    EXPECT_EQ(engine_->Peek(), L"đi");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_Initial_EscapeStillWorks) {
+    // ddd → dd (escape) still works
+    TypeString(*engine_, L"ddd");
+    EXPECT_EQ(engine_->Peek(), L"dd");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_DropdownStillWorks) {
+    // "dropddown" → "dropdown" — English protection still prevents mangling
+    TypeString(*engine_, L"dropddown");
+    EXPECT_EQ(engine_->Peek(), L"dropdown");
+}
+
+TEST_F(TelexEngineTest, SpellCheck_ConsonantCluster_NoCrash) {
+    // Verify long consonant clusters with modifiers don't crash (spell check ON)
+    TypeString(*engine_, L"mtruowngf");
+    EXPECT_FALSE(engine_->Peek().empty());
+}
+
 }  // namespace
 }  // namespace Telex
 }  // namespace NextKey

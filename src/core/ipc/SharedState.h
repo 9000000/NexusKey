@@ -16,7 +16,7 @@ namespace SharedFlags {
     constexpr uint32_t TSF_ACTIVE      = 0x0008;  // Foreground app uses TSF engine (hook sets, DLL reads)
 }
 
-// Feature flag bit definitions (uint16_t stored as featureFlags[2] little-endian)
+// Feature flag bit definitions (uint32_t packed into 3 bytes: featureFlags[2] + extFeatureFlags)
 namespace FeatureFlags {
     // Byte 0 (bits 0-7)
     constexpr uint16_t MODERN_ORTHO         = 0x0001;
@@ -36,6 +36,8 @@ namespace FeatureFlags {
     constexpr uint16_t TEMP_OFF_MACRO_ESC    = 0x2000;
     constexpr uint16_t SMART_SWITCH          = 0x4000;
     constexpr uint16_t EXCLUDE_APPS          = 0x8000;
+    // Extended flags (byte 2, bits 16-23) — stored in extFeatureFlags
+    constexpr uint32_t AUTO_CAPS_MACRO       = 0x00010000;
 }
 
 /// SharedState struct for IPC between Core and Engine
@@ -62,14 +64,15 @@ struct SharedState {
     uint8_t  spellCheck;      // Spell check enabled
     uint8_t  optimizeLevel;   // Optimization level
 
-    // ── Feature flags (2 bytes, little-endian uint16_t) ──
-    uint8_t  featureFlags[2]; // Bitmask for optional features (see FeatureFlags namespace)
+    // ── Feature flags (3 bytes, little-endian) ──
+    uint8_t  featureFlags[2]; // Bitmask for optional features (bits 0-15)
+    uint8_t  extFeatureFlags; // Extended feature flags (bits 16-23)
 
     // ── Extended config (1 byte, carved from reserved) ──
     uint8_t  codeTable;       // CodeTable enum value (0=Unicode, 1=TCVN3, etc.)
 
-    // ── Reserved for future expansion (30 bytes) ──
-    uint8_t  reserved[30];
+    // ── Reserved for future expansion (29 bytes) ──
+    uint8_t  reserved[29];
 
     static constexpr uint32_t MAGIC_VALUE = 0x59454B4E;    // 'NKEY'
     static constexpr uint32_t CURRENT_VERSION = 2;          // v2: added structVersion, structSize, reserved
@@ -80,13 +83,16 @@ struct SharedState {
             && structSize >= 24;  // Minimum: header + epoch + flags + config
     }
 
-    [[nodiscard]] uint16_t GetFeatureFlags() const noexcept {
-        return featureFlags[0] | (static_cast<uint16_t>(featureFlags[1]) << 8);
+    [[nodiscard]] uint32_t GetFeatureFlags() const noexcept {
+        return featureFlags[0]
+             | (static_cast<uint32_t>(featureFlags[1]) << 8)
+             | (static_cast<uint32_t>(extFeatureFlags) << 16);
     }
 
-    void SetFeatureFlags(uint16_t ff) noexcept {
+    void SetFeatureFlags(uint32_t ff) noexcept {
         featureFlags[0] = static_cast<uint8_t>(ff);
         featureFlags[1] = static_cast<uint8_t>(ff >> 8);
+        extFeatureFlags = static_cast<uint8_t>(ff >> 16);
     }
 
     /// Initialize with defaults
@@ -108,9 +114,9 @@ struct SharedState {
 // Ensure SharedState layout is stable across EXE and DLL builds
 static_assert(sizeof(SharedState) == 56, "SharedState size changed — update structVersion");
 
-/// Encode TypingConfig feature bools → uint16_t bitmask
-[[nodiscard]] inline uint16_t EncodeFeatureFlags(const TypingConfig& config) noexcept {
-    uint16_t flags = 0;
+/// Encode TypingConfig feature bools → uint32_t bitmask (3 bytes used)
+[[nodiscard]] inline uint32_t EncodeFeatureFlags(const TypingConfig& config) noexcept {
+    uint32_t flags = 0;
     if (config.modernOrtho)        flags |= FeatureFlags::MODERN_ORTHO;
     if (config.autoCaps)           flags |= FeatureFlags::AUTO_CAPS;
     if (config.allowZwjf)          flags |= FeatureFlags::ALLOW_ZWJF;
@@ -127,11 +133,12 @@ static_assert(sizeof(SharedState) == 56, "SharedState size changed — update st
     if (config.tempOffMacroByEsc)   flags |= FeatureFlags::TEMP_OFF_MACRO_ESC;
     if (config.smartSwitch)         flags |= FeatureFlags::SMART_SWITCH;
     if (config.excludeApps)         flags |= FeatureFlags::EXCLUDE_APPS;
+    if (config.autoCapsMacro)       flags |= FeatureFlags::AUTO_CAPS_MACRO;
     return flags;
 }
 
-/// Decode uint16_t bitmask → TypingConfig feature bools
-inline void DecodeFeatureFlags(uint16_t flags, TypingConfig& config) noexcept {
+/// Decode uint32_t bitmask → TypingConfig feature bools
+inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.modernOrtho        = (flags & FeatureFlags::MODERN_ORTHO) != 0;
     config.autoCaps           = (flags & FeatureFlags::AUTO_CAPS) != 0;
     config.allowZwjf          = (flags & FeatureFlags::ALLOW_ZWJF) != 0;
@@ -148,6 +155,7 @@ inline void DecodeFeatureFlags(uint16_t flags, TypingConfig& config) noexcept {
     config.tempOffMacroByEsc   = (flags & FeatureFlags::TEMP_OFF_MACRO_ESC) != 0;
     config.smartSwitch         = (flags & FeatureFlags::SMART_SWITCH) != 0;
     config.excludeApps         = (flags & FeatureFlags::EXCLUDE_APPS) != 0;
+    config.autoCapsMacro       = (flags & FeatureFlags::AUTO_CAPS_MACRO) != 0;
 }
 
 }  // namespace NextKey

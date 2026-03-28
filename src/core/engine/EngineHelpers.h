@@ -97,4 +97,30 @@ inline void CheckZwjfInitialBias(const CharStateT* states, size_t count,
     }
 }
 
+/// Find the target 'd' for stroke modifier (dd→đ / d9→đ).
+/// Returns index of the 'd' to modify, or SIZE_MAX if none found or blocked.
+/// Scans backward for last 'd', then checks that the contiguous 'd' cluster
+/// is NOT preceded by a vowel (blocks "added"→"ađed", allows "vdd"→"vđ").
+/// Works with both Telex::CharState and Vni::CharState.
+template<typename CharStateT>
+[[nodiscard]] inline size_t FindStrokeDTarget(
+        const CharStateT* states, size_t count) noexcept {
+    if (count == 0) return SIZE_MAX;
+
+    size_t dIdx = SIZE_MAX;
+    for (size_t i = count; i-- > 0;) {
+        if (states[i].IsD()) { dIdx = i; break; }
+    }
+    if (dIdx == SIZE_MAX) return SIZE_MAX;
+
+    // For non-initial 'd', scan past contiguous 'd' cluster to find real predecessor.
+    // Block if preceded by vowel (prevents "added"→"ađed", "oddly"→"ođly").
+    if (dIdx > 0) {
+        size_t checkIdx = dIdx;
+        while (checkIdx > 0 && states[checkIdx - 1].IsD()) --checkIdx;
+        if (checkIdx > 0 && states[checkIdx - 1].IsVowel()) return SIZE_MAX;
+    }
+    return dIdx;
+}
+
 }  // namespace NextKey

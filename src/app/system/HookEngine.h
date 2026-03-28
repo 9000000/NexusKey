@@ -114,6 +114,16 @@ private:
     // Commit trigger check
     static bool IsCommitTrigger(DWORD vkCode);
 
+    // Convert VK code to macro-usable char (for special-char macro keys).
+    // Uses MapVirtualKeyW — returns unshifted character only (Shift state ignored).
+    [[nodiscard]] static wchar_t VkToMacroChar(DWORD vkCode) noexcept;
+
+    // Result of TryExpandMacro
+    enum class MacroResult { NoMatch, ExpandedEatTrigger, ExpandedPassTrigger };
+
+    // Shared macro expansion logic (used by both English and Vietnamese mode paths).
+    [[nodiscard]] MacroResult TryExpandMacro(wchar_t triggerChar);
+
     // Re-inject a key after auto-restore replacement
     void InjectKey(DWORD vkCode);
 
@@ -141,6 +151,7 @@ private:
     bool excludeApps_ = false;
     bool tsfApps_ = false;
     bool autoCaps_ = false;
+    bool autoCapsMacro_ = false;
     bool tempOffSpellByCtrl_ = false;
     bool tempOffByAlt_ = false;
     bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word

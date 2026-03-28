@@ -149,14 +149,23 @@ struct SharedState {
     // Runtime flags (4 bytes)
     uint32_t flags;           // Bitmask: VIETNAMESE_MODE, ENGINE_ENABLED, SPELL_CHECK
 
-    // Config data (4 bytes)
+    // Config data (3 bytes)
     uint8_t  inputMethod;     // 0=Telex, 1=VNI, 2=SimpleTelex
     uint8_t  spellCheck;      // Spell check enabled
     uint8_t  optimizeLevel;   // Optimization level
-    uint8_t  featureFlags;    // Bitmask: MODERN_ORTHO, AUTO_CAPS, ALLOW_ZWJF
 
-    // Reserved (32 bytes)
-    uint8_t  reserved[32];    // Future expansion
+    // Feature flags (3 bytes, little-endian uint32_t packed into 3 bytes)
+    // Bits 0-15: featureFlags[2]  — 16 core flags (MODERN_ORTHO..EXCLUDE_APPS)
+    // Bits 16-23: extFeatureFlags — 8 extended flags (AUTO_CAPS_MACRO..)
+    // Get/Set via GetFeatureFlags()/SetFeatureFlags() which combine 3 bytes → uint32_t
+    uint8_t  featureFlags[2]; // Bits 0-15
+    uint8_t  extFeatureFlags; // Bits 16-23
+
+    // Extended config (1 byte)
+    uint8_t  codeTable;       // CodeTable enum value
+
+    // Reserved (29 bytes)
+    uint8_t  reserved[29];    // Future expansion (7 flag bits remaining: 17-23)
 };
 ```
 

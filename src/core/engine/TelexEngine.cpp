@@ -624,18 +624,20 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 
 //-----------------------------------------------------------------------------
 // D-Modifier Processing (dd → đ)
+// Scan logic shared with VniEngine via FindStrokeDTarget (EngineHelpers.h)
 //-----------------------------------------------------------------------------
 
 bool TelexEngine::ProcessDModifier(wchar_t c) {
-    // Vietnamese đ only appears at the start of a syllable — only modify d at index 0.
-    if (dModifierEscaped_) return false;  // User already escaped đ→d, don't re-trigger
-    if (states_.empty() || !states_[0].IsD()) return false;
-    CharState& first = states_[0];
-    if (first.mod == Modifier::None) {
-        first.mod = Modifier::Stroke;
+    if (dModifierEscaped_) return false;
+    size_t dIdx = FindStrokeDTarget(states_.data(), states_.size());
+    if (dIdx == SIZE_MAX) return false;
+
+    CharState& target = states_[dIdx];
+    if (target.mod == Modifier::None) {
+        target.mod = Modifier::Stroke;
         return true;
-    } else if (first.mod == Modifier::Stroke) {
-        first.mod = Modifier::None;
+    } else if (target.mod == Modifier::Stroke) {
+        target.mod = Modifier::None;
         dModifierEscaped_ = true;  // Lock: user intentionally removed đ
         toneEscaped_ = true;       // Block further modifiers/tones — word is English
         ProcessChar(c);

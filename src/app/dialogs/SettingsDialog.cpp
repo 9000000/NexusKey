@@ -654,6 +654,9 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"temp-off-macro") {
         config_.tempOffMacroByEsc = value;
     }
+    else if (id == L"auto-caps-macro") {
+        config_.autoCapsMacro = value;
+    }
     // Show-advanced toggle: UI-only setting (expand/collapse panel)
     else if (id == L"show-advanced") {
         isExpanded_ = value;
@@ -925,6 +928,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"quick-start", config_.quickStartConsonant);
     setToggleState(L"quick-end", config_.quickEndConsonant);
     setToggleState(L"temp-off-macro", config_.tempOffMacroByEsc);
+    setToggleState(L"auto-caps-macro", config_.autoCapsMacro);
     setToggleState(L"key-ctrl", hotkeyConfig_.ctrl);
     setToggleState(L"key-alt", hotkeyConfig_.alt);
     setToggleState(L"key-win", hotkeyConfig_.win);

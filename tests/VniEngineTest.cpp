@@ -305,6 +305,35 @@ TEST_F(VniQuickConsonantTest, UU_Backspace_Escape) {
     EXPECT_EQ(engine_->Peek(), L"uuu");
 }
 
+// ============================================================================
+// NON-INITIAL d9 STROKE TESTS (abbreviation support)
+// Keep in sync with TelexEngine dd→đ tests in TelexEngineTest.cpp
+// ============================================================================
+
+TEST_F(VniEngineTest, Stroke_NonInitial_AfterConsonant) {
+    // "vd9" = v + d9→đ
+    TypeString(*engine_, L"vd9");
+    EXPECT_EQ(engine_->Peek(), L"vđ");
+}
+
+TEST_F(VniEngineTest, Stroke_NonInitial_BlockedAfterVowel) {
+    // "ad9" = a + d → d9 should NOT become đ (preceded by vowel 'a')
+    TypeString(*engine_, L"ad9");
+    EXPECT_EQ(engine_->Peek(), L"ad9");
+}
+
+TEST_F(VniEngineTest, Stroke_NonInitial_EscapeAfterConsonant) {
+    // "vd99" = v + d9→đ + 9→escape → "vd9"
+    TypeString(*engine_, L"vd99");
+    EXPECT_EQ(engine_->Peek(), L"vd9");
+}
+
+TEST_F(VniEngineTest, Stroke_Initial_StillWorks) {
+    // Basic d9→đ at index 0
+    TypeString(*engine_, L"d9i");
+    EXPECT_EQ(engine_->Peek(), L"đi");
+}
+
 }  // namespace
 }  // namespace Vni
 }  // namespace NextKey

@@ -84,6 +84,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.quickStartConsonant = (*features)["quick_start_consonant"].value_or(false);
             config.quickEndConsonant = (*features)["quick_end_consonant"].value_or(false);
             config.tempOffMacroByEsc = (*features)["temp_off_macro_esc"].value_or(false);
+            config.autoCapsMacro = (*features)["auto_caps_macro"].value_or(false);
         }
         
         return config;
@@ -129,6 +130,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("quick_start_consonant", config.quickStartConsonant);
         features.insert_or_assign("quick_end_consonant", config.quickEndConsonant);
         features.insert_or_assign("temp_off_macro_esc", config.tempOffMacroByEsc);
+        features.insert_or_assign("auto_caps_macro", config.autoCapsMacro);
         tbl.insert_or_assign("features", std::move(features));
 
         return WriteToml(utf8Path, tbl);
