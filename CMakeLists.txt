@@ -157,7 +157,7 @@ target_include_directories(NextKeyApp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/sciter
 )
-target_compile_definitions(NextKeyApp PRIVATE SKIP_MAIN NEXUSKEY_HOOK_ENGINE NEXTKEY_DEBUG)
+target_compile_definitions(NextKeyApp PRIVATE SKIP_MAIN NEXUSKEY_HOOK_ENGINE)
 target_link_libraries(NextKeyApp PRIVATE NextKeyCore)
 set_target_properties(NextKeyApp PROPERTIES OUTPUT_NAME "NexusKey")
 

@@ -467,8 +467,7 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
-// Forward declarations for file-scope helpers used in ProcessKeyDown
-static bool UsePostMessage(HWND hwnd);
+// Forward declaration for file-scope helper used in ProcessKeyDown
 static HWND GetInputTarget();
 
 // ═══════════════════════════════════════════════════════════
@@ -518,6 +517,19 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // Non-modifier key pressed — invalidate modifier-only hotkey combo
     otherKeyPressed_ = true;
     altTapCount_ = 0;  // Break double-Alt tap chain
+
+    // Watchdog: reset synthEventsPending_ if stuck > 500ms.
+    // Covers event loss in Electron/Console multi-process apps where synthetic
+    // events can be dropped under heavy CPU load, causing cascading re-injection
+    // and ghost characters.
+    if (synthEventsPending_ > 0) {
+        DWORD elapsed = GetTickCount() - lastSynthSendTime_;
+        if (elapsed > 500) {
+            HOOK_LOG(L"  watchdog: synthEventsPending_ reset from %d (stuck %ums)",
+                     synthEventsPending_, elapsed);
+            synthEventsPending_ = 0;
+        }
+    }
 
     // 2c. Backspace-into-committed-word state machine
     // Supports multi-word backward: stack holds up to kMaxCommitStack committed words.
@@ -883,16 +895,14 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
     // Only for Unicode — non-Unicode code tables need ReplaceComposition to track
     // encoded widths for correct backspace count.
     // Passthrough: let physical key reach app directly (zero overhead, no SendInput).
-    // Blocked when:
-    //   - hadSynthInWord_: synth already sent in this word — mixing physical+synthetic
-    //     mid-word causes out-of-order processing in two-queue systems.
-    //   - isElectronApp_: Electron/Qt have multi-process input architecture (browser +
-    //     renderer process). Physical WM_KEYDOWN and synthetic VK_PACKET travel on
-    //     separate internal paths and can arrive out of order under CPU load.
-    //     Console apps (Windows Terminal, cmd) use a single FIFO input queue — physical
-    //     and synthetic events are always ordered correctly, so passthrough is safe there.
+    // Blocked when BOTH conditions are true:
+    //   - hadSynthInWord_: synth already sent in this word, AND
+    //   - isElectronApp_: Electron/Qt multi-process architecture where physical
+    //     WM_KEYDOWN and synthetic VK_PACKET can arrive out of order.
+    // Win32 native apps have single FIFO message queue — mixing is safe.
+    // Console apps are NOT Electron (isElectronApp_=false) so passthrough is safe.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
-        !hadSynthInWord_ && !isElectronApp_ &&
+        !(hadSynthInWord_ && isElectronApp_) &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
         composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
@@ -1046,31 +1056,8 @@ void HookEngine::ReplayCommittedChars() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Output — Multi-method: PostMessage for Win32, SendInput for others
+// Output — Universal SendInput with KEYEVENTF_UNICODE
 // ═══════════════════════════════════════════════════════════
-
-/// Detect if a window accepts PostMessage WM_CHAR (standard Win32 edit controls)
-static bool UsePostMessage(HWND hwnd) {
-    wchar_t className[128] = {};
-    GetClassNameW(hwnd, className, 128);
-
-    // Standard Win32 edit controls that accept WM_CHAR.
-    // Exception: Edit inside ComboBox is subclassed — PostMessage doesn't reach it
-    // correctly (e.g. Notepad++ Find dialog search box).
-    if (_wcsicmp(className, L"Edit") == 0) {
-        wchar_t parentClass[128] = {};
-        HWND parent = GetParent(hwnd);
-        if (parent) GetClassNameW(parent, parentClass, 128);
-        if (_wcsicmp(parentClass, L"ComboBox") == 0) return false;
-        return true;
-    }
-    if (_wcsnicmp(className, L"RichEdit", 8) == 0) return true;
-    if (_wcsicmp(className, L"RICHEDIT50W") == 0) return true;
-    if (_wcsicmp(className, L"Scintilla") == 0) return true;
-    if (_wcsicmp(className, L"Notepad") == 0) return true;
-
-    return false;
-}
 
 /// Get the focused child window that actually receives input
 static HWND GetInputTarget() {
@@ -1114,47 +1101,31 @@ static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
     events.push_back(inUp);
 }
 
-void HookEngine::SendBackspaceEvents(HWND target, size_t count, bool usePost) {
-    if (usePost) {
-        WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-        for (size_t i = 0; i < count; ++i) {
-            LPARAM downParam = 1 | (static_cast<LPARAM>(bsScan) << 16);
-            LPARAM upParam   = 1 | (static_cast<LPARAM>(bsScan) << 16) | (1L << 30) | (1L << 31);
-            PostMessageW(target, WM_KEYDOWN, VK_BACK, downParam);
-            PostMessageW(target, WM_KEYUP, VK_BACK, upParam);
-        }
-    } else {
-        // Batch all backspace events into a single SendInput call
-        WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-        std::vector<INPUT> events;
-        events.reserve(count * 2);
-        for (size_t i = 0; i < count; ++i) {
-            AppendVkEvent(events, VK_BACK, bsScan);
-        }
-        sending_ = true;
-        UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
-        synthEventsPending_ += static_cast<int>(sent);
-        sending_ = false;
+void HookEngine::SendBackspaceEvents(size_t count) {
+    WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
+    std::vector<INPUT> events;
+    events.reserve(count * 2);
+    for (size_t i = 0; i < count; ++i) {
+        AppendVkEvent(events, VK_BACK, bsScan);
     }
+    sending_ = true;
+    UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
+    synthEventsPending_ += static_cast<int>(sent);
+    sending_ = false;
+    lastSynthSendTime_ = GetTickCount();
 }
 
-void HookEngine::SendCharEvents(HWND target, const std::wstring& text, bool usePost) {
-    if (usePost) {
-        for (wchar_t ch : text) {
-            PostMessageW(target, WM_CHAR, static_cast<WPARAM>(ch), 1);
-        }
-    } else {
-        // Batch all character events into a single SendInput call
-        std::vector<INPUT> events;
-        events.reserve(text.size() * 2);
-        for (wchar_t ch : text) {
-            AppendUnicodeEvent(events, ch);
-        }
-        sending_ = true;
-        UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
-        synthEventsPending_ += static_cast<int>(sent);
-        sending_ = false;
+void HookEngine::SendCharEvents(const std::wstring& text) {
+    std::vector<INPUT> events;
+    events.reserve(text.size() * 2);
+    for (wchar_t ch : text) {
+        AppendUnicodeEvent(events, ch);
     }
+    sending_ = true;
+    UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
+    synthEventsPending_ += static_cast<int>(sent);
+    sending_ = false;
+    lastSynthSendTime_ = GetTickCount();
 }
 
 /// Dispatch backspace + character events via SendInput.
@@ -1191,6 +1162,7 @@ void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INP
         }
     }
     sending_ = false;
+    lastSynthSendTime_ = GetTickCount();
 }
 
 /// Check if a filename (without path) is a known browser executable.
@@ -1417,8 +1389,6 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
         return;
     }
 
-    bool usePost = UsePostMessage(target);
-
     // Find common prefix at Unicode level — only replace what actually changed
     size_t commonLen = 0;
     size_t minLen = (std::min)(previousComposition_.size(), newText.size());
@@ -1444,20 +1414,13 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
             newWidths.push_back(enc.count);
         }
 
-        HOOK_LOG(L"  ReplaceComposition[encoded]: prev='%s' new='%s' common=%zu BS=%zu encodedLen=%zu method=%s",
+        HOOK_LOG(L"  ReplaceComposition[encoded]: prev='%s' new='%s' common=%zu BS=%zu encodedLen=%zu",
                  previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
-                 encodedToSend.size(), usePost ? L"PostMessage" : L"SendInput");
+                 encodedToSend.size());
 
-        if (usePost) {
-            if (backspaceCount > 0) {
-                SendBackspaceEvents(target, backspaceCount, true);
-            }
-            if (!encodedToSend.empty()) {
-                SendCharEvents(target, encodedToSend, true);
-            }
-        } else {
+        {
             bool needEmpty = (backspaceCount > 0 && !skipEmptyChar_);
-            size_t bsTotal = backspaceCount + (needEmpty ? 1 : 0);  // +1 for U+202F
+            size_t bsTotal = backspaceCount + (needEmpty ? 1 : 0);
 
             if (bsTotal > 0 || !encodedToSend.empty()) {
                 std::vector<INPUT> bsEvents;
@@ -1466,17 +1429,14 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
 
                 if (bsTotal > 0) {
                     bsEvents.reserve(bsTotal * 2 + (needEmpty ? 2 : 0));
-                    // 1. U+202F word-boundary breaker
                     if (needEmpty) {
                         AppendUnicodeEvent(bsEvents, 0x202F);
                     }
-                    // 2. Backspaces
                     for (size_t i = 0; i < bsTotal; ++i) {
                         AppendVkEvent(bsEvents, VK_BACK, bsScan);
                     }
                 }
 
-                // 3. Encoded characters
                 if (!encodedToSend.empty()) {
                     charEvents.reserve(encodedToSend.size() * 2);
                     for (wchar_t ch : encodedToSend) {
@@ -1499,33 +1459,14 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
     size_t backspaceCount = previousComposition_.size() - commonLen;
     std::wstring toSend = newText.substr(commonLen);
 
-    {
-        wchar_t cls[64] = {};
-        GetClassNameW(target, cls, 64);
-        HWND parent = GetParent(target);
-        wchar_t pcls[64] = {};
-        if (parent) GetClassNameW(parent, pcls, 64);
-        HOOK_LOG(L"  ReplaceComposition: prev='%s' new='%s' common=%zu BS=%zu send='%s' method=%s target=0x%p class='%s' parent=0x%p parentClass='%s'",
-                 previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
-                 toSend.c_str(), usePost ? L"PostMessage" : L"SendInput",
-                 target, cls, parent, pcls);
-    }
+    HOOK_LOG(L"  ReplaceComposition: prev='%s' new='%s' common=%zu BS=%zu send='%s'",
+             previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
+             toSend.c_str());
 
-    if (usePost) {
-        // PostMessage path: send separately (no batching needed, PostMessage is async)
-        if (backspaceCount > 0) {
-            SendBackspaceEvents(target, backspaceCount, true);
-        }
-        if (!toSend.empty()) {
-            SendCharEvents(target, toSend, true);
-        }
-    } else {
-        // SendInput path: separate backspaces and character injection into TWO SendInput calls.
-        // Batching them into ONE call causes terminal emulators (conhost, Windows Terminal, node.js CLI) 
-        // to process them out of order or drop characters, leading to "nuốt chữ" (swallowed letters).
+    {
         bool needEmpty = (backspaceCount > 0 && !skipEmptyChar_);
-        if (needEmpty) backspaceCount++;  // +1 to also delete the U+202F
-        
+        if (needEmpty) backspaceCount++;
+
         if (backspaceCount > 0 || !toSend.empty()) {
             std::vector<INPUT> bsEvents;
             std::vector<INPUT> charEvents;
@@ -1533,18 +1474,14 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
 
             if (backspaceCount > 0) {
                 bsEvents.reserve((needEmpty ? 2 : 0) + backspaceCount * 2);
-                // 1. U+202F to break autocomplete word boundary
                 if (needEmpty) {
                     AppendUnicodeEvent(bsEvents, 0x202F);
                 }
-
-                // 2. Backspaces (including one for U+202F)
                 for (size_t i = 0; i < backspaceCount; ++i) {
                     AppendVkEvent(bsEvents, VK_BACK, bsScan);
                 }
             }
 
-            // 3. New characters
             if (!toSend.empty()) {
                 charEvents.reserve(toSend.size() * 2);
                 for (wchar_t ch : toSend) {
@@ -1564,12 +1501,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
 
 void HookEngine::SendBackspaces(size_t count) {
     HOOK_LOG(L"  SendBackspaces: %zu", count);
-
-    HWND target = GetInputTarget();
-    if (!target) return;
-
-    bool usePost = UsePostMessage(target);
-    SendBackspaceEvents(target, count, usePost);
+    SendBackspaceEvents(count);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1669,6 +1601,7 @@ void HookEngine::InjectKey(DWORD vkCode) {
     UINT sent = SendInput(2, inputs, sizeof(INPUT));
     synthEventsPending_ += static_cast<int>(sent);
     sending_ = false;
+    lastSynthSendTime_ = GetTickCount();
 }
 
 bool HookEngine::IsCommitTrigger(DWORD vkCode) {
@@ -1756,15 +1689,7 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
         }
     }
 
-    HWND target = GetInputTarget();
-    bool usePost = target && UsePostMessage(target);
-
-    if (usePost) {
-        // PostMessage path — no timing issues
-        SendBackspaceEvents(target, bsCount, true);
-        SendCharEvents(target, expansion, true);
-    } else {
-        // SendInput path — use DispatchSendInput for proper delay between BS and chars
+    {
         WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
         std::vector<INPUT> bsEvents;
         std::vector<INPUT> charEvents;

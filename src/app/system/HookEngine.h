@@ -97,12 +97,12 @@ private:
     void CancelCommitUndo();   // commitUndoState_ = Idle + commitStack_.clear()
     void SetCommitUndoReady(); // commitUndoState_ = Ready + timestamp
 
-    // Output — multi-method: PostMessage for Win32 controls, SendInput for others
+    // Output — universal SendInput with KEYEVENTF_UNICODE
     void ReplaceComposition(const std::wstring& newText);
     void DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents);
     void SendBackspaces(size_t count);
-    void SendBackspaceEvents(HWND target, size_t count, bool usePost);
-    void SendCharEvents(HWND target, const std::wstring& text, bool usePost);
+    void SendBackspaceEvents(size_t count);
+    void SendCharEvents(const std::wstring& text);
 
     // Hotkey detection (absorbed from HotkeyManager)
     void TrackModifier(DWORD vkCode, bool isDown);
@@ -146,6 +146,7 @@ private:
     bool vietnameseMode_ = true;
     std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
     int synthEventsPending_ = 0;  // Count of synthetic INPUT structs sent but not yet processed by hook
+    DWORD lastSynthSendTime_ = 0;  // GetTickCount() of last SendInput call (watchdog: reset if stuck > 500ms)
     bool hadSynthInWord_ = false;  // True if any synthetic event was sent for the current word (blocks passthrough mixing)
     bool beepOnSwitch_ = false;
     bool smartSwitch_ = false;
