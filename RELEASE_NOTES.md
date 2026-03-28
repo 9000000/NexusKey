@@ -9,6 +9,7 @@ Engine & kiến trúc đã được viết lại hoàn toàn. Đây là phiên b
 - Giảm tài nguyên sử dụng (theo test hiện tại)
 - Thêm giao diện tiếng Anh
 - Đơn giản hóa codebase → dễ debug & mở rộng tính năng
+- Cải thiện khả năng gõ tiếng Việt kết hợp tiếng Anh (giảm nhảy dấu nhầm khi tắt kiểm tra chính tả)
 
 **🛠 Sửa lỗi:**
 - Fix các bug đã biết từ version trước
