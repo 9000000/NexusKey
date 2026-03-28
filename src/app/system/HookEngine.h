@@ -99,6 +99,7 @@ private:
 
     // Output — multi-method: PostMessage for Win32 controls, SendInput for others
     void ReplaceComposition(const std::wstring& newText);
+    void DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents);
     void SendBackspaces(size_t count);
     void SendBackspaceEvents(HWND target, size_t count, bool usePost);
     void SendCharEvents(HWND target, const std::wstring& text, bool usePost);
@@ -130,7 +131,7 @@ private:
     // Qt/Electron detection — skip U+202F to avoid first-word delay
     static bool IsQtElectronApp(HWND hwnd);
 
-    // Console detection — skip U+202F and add Sleep(2) before character injection
+    // Console detection — skip U+202F, split SendInput with adaptive delay
     static bool IsConsoleApp(HWND hwnd);
 
     // Smart switch: get foreground app exe name

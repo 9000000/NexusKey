@@ -1126,6 +1126,42 @@ void HookEngine::SendCharEvents(HWND target, const std::wstring& text, bool useP
     }
 }
 
+/// Dispatch backspace + character events via SendInput.
+/// Handles split (Electron/Console) vs batch (Win32) strategy in one place.
+/// NOTE: batch path appends charEvents into bsEvents — callers must not reuse after calling.
+void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents) {
+    sending_ = true;
+    if (skipEmptyChar_) {
+        // Split: VK_BACK and VK_PACKET travel on separate internal paths in
+        // Electron/Console apps — batching risks out-of-order processing ("nuốt chữ").
+        if (!bsEvents.empty()) {
+            UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+            synthEventsPending_ += static_cast<int>(sent);
+            // Gap so app finishes processing BS before receiving chars.
+            // timeBeginPeriod(1) in main.cpp makes Sleep(N) actually ~N ms.
+            // Base: 7ms Electron (multi-process IPC), 5ms Console (Node.js readline).
+            // +1ms per extra BS pair: more deletions = more processing time
+            // (e.g. replacing "dduowngf" needs 7 BS — app needs longer to catch up).
+            int baseMs = isElectronApp_ ? 7 : 5;
+            int bsCount = static_cast<int>(bsEvents.size()) / 2;  // each BS = down+up pair
+            int delayMs = (std::min)(baseMs + (bsCount > 1 ? bsCount - 1 : 0), 15);
+            Sleep(delayMs);
+        }
+        if (!charEvents.empty()) {
+            UINT sent = SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
+            synthEventsPending_ += static_cast<int>(sent);
+        }
+    } else {
+        // Batch: standard Win32 GUI apps have single message queue (FIFO).
+        bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
+        if (!bsEvents.empty()) {
+            UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
+            synthEventsPending_ += static_cast<int>(sent);
+        }
+    }
+    sending_ = false;
+}
+
 /// Check if a filename (without path) is a known browser executable.
 static bool IsBrowserExeName(const wchar_t* filename) {
     return _wcsnicmp(filename, L"chrome", 6) == 0 ||
@@ -1417,30 +1453,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                     }
                 }
 
-                sending_ = true;
-                if (skipEmptyChar_) {
-                    // Split SendInput for Console and Electron/Qt apps.
-                    // Both app types process VK_BACK and VK_PACKET(KEYEVENTF_UNICODE) on
-                    // separate internal paths — batching them risks VK_PACKET chars being
-                    // processed before VK_BACK backspaces, swallowing characters.
-                    if (!bsEvents.empty()) {
-                        UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
-                        synthEventsPending_ += static_cast<int>(sent);
-                        Sleep(15);  // Windows timer resolution is ~15.6ms; Sleep(2) not guaranteed
-                    }
-                    if (!charEvents.empty()) {
-                        UINT sent = SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
-                        synthEventsPending_ += static_cast<int>(sent);
-                    }
-                } else {
-                    // Batch SendInput for standard Win32 apps (single message queue, FIFO).
-                    bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
-                    if (!bsEvents.empty()) {
-                        UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
-                        synthEventsPending_ += static_cast<int>(sent);
-                    }
-                }
-                sending_ = false;
+                DispatchSendInput(bsEvents, charEvents);
             }
         }
 
@@ -1500,31 +1513,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                 }
             }
 
-            sending_ = true;
-            if (skipEmptyChar_) {
-                // Split SendInput for Console and Qt/Electron apps.
-                // Both app types process VK_BACK and VK_PACKET(KEYEVENTF_UNICODE) on
-                // separate internal paths — batching them risks VK_PACKET chars being
-                // processed before VK_BACK backspaces, causing garbled text.
-                // Must match the non-Unicode path logic above (line ~1466).
-                if (!bsEvents.empty()) {
-                    UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
-                    synthEventsPending_ += static_cast<int>(sent);
-                    Sleep(15);  // Windows timer resolution is ~15.6ms; Sleep(2) not guaranteed
-                }
-                if (!charEvents.empty()) {
-                    UINT sent = SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
-                    synthEventsPending_ += static_cast<int>(sent);
-                }
-            } else {
-                // Batch SendInput for standard Win32 GUI apps (single message queue, FIFO).
-                bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
-                if (!bsEvents.empty()) {
-                    UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
-                    synthEventsPending_ += static_cast<int>(sent);
-                }
-            }
-            sending_ = false;
+            DispatchSendInput(bsEvents, charEvents);
         }
     }
 

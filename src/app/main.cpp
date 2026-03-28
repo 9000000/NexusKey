@@ -28,12 +28,14 @@
 
 #include <Windows.h>
 #include <ole2.h>
+#include <timeapi.h>
 #include <memory>
 #include <string>
 #include <atomic>
 #include <thread>
 
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "winmm.lib")
 
 // Require Common Controls v6 for TaskDialog / TaskDialogIndirect
 #pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' " \
@@ -280,10 +282,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         });
     }
 
+    // Set 1ms timer resolution so Sleep(1) actually sleeps ~1ms instead of ~15ms.
+    // Required for smooth Vietnamese input — backspace-then-retype needs a short gap
+    // between SendInput calls for Electron/Console apps, but 15ms (default) is noticeable.
+    timeBeginPeriod(1);
+
     // Start keyboard hook engine
     if (!g_hookEngine.Start(hInstance, config, hotkeyConfig)) {
         // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
         // No matching StringId — using English string (language config not yet applied to UI).
+        timeEndPeriod(1);
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"NexusKey", MB_ICONERROR);
         return 1;
     }
@@ -322,6 +330,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Cleanup
     g_hookEngine.Stop();
+    timeEndPeriod(1);
 
 #else
     // ═══════════════════════════════════════════════════════════

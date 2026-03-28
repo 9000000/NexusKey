@@ -3027,6 +3027,15 @@ TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_DropdownStillWorks) {
     EXPECT_EQ(engine_->Peek(), L"dropdown");
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, WModifier_EscapeUndosBothHorns) {
+    // "duowww": 3 w's to escape ươ back to "duow"
+    // w(1): P2 horn on 'o' → "duơ" (AutoUO needs char after pair, not applied)
+    // w(2): canPromoteUO → P5 horn on 'u' → "dươ"
+    // w(3): P4 escape → UndoHornU + clear horn → "duow"
+    TypeString(*engine_, L"duowww");
+    EXPECT_EQ(engine_->Peek(), L"duow");
+}
+
 TEST_F(TelexEngineTest, SpellCheck_ConsonantCluster_NoCrash) {
     // Verify long consonant clusters with modifiers don't crash (spell check ON)
     TypeString(*engine_, L"mtruowngf");

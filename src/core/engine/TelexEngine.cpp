@@ -568,8 +568,8 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
             toneEscaped_ = true;  // User canceled modifier → treat rest as English
             return true;
         }
+        UndoHornU(states_.data(), hornedIdx);  // Undo companion 'u' horn BEFORE clearing 'o'
         states_[hornedIdx].mod = Modifier::None;
-        UndoHornU(states_.data(),hornedIdx);
         ProcessChar(c);
         toneEscaped_ = true;  // User canceled modifier → treat rest as English
         return true;
