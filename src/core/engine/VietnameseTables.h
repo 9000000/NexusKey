@@ -107,7 +107,7 @@ constexpr uint8_t kDiphthongClassic[6][6] = {
     /* i */ {   1, 0, 1, 0, 1, 0 },  // ia, ii, iu
     /* o */ {   3, 3, 1, 0, 1, 0 },  // oa=CODA_AWARE, oe=CODA_AWARE, oi, ou
     /* u */ {   1, 1, 1, 0, 1, 2 },  // ua, ue, ui, uu, uy=SECOND
-    /* y */ {   0, 0, 0, 0, 1, 0 },  // yu=FIRST (khuỷu)
+    /* y */ {   0, 0, 0, 0, 3, 0 },  // yu=CODA_AWARE: yủn(coda→u), khuỷu(no coda→y)
 };
 
 /// Modern placement: oa, oe, ue → tone on SECOND (new-style: hóa, xoé, thuế)
@@ -118,7 +118,7 @@ constexpr uint8_t kDiphthongModern[6][6] = {
     /* i */ {   1, 0, 1, 0, 1, 0 },  // (same as classic)
     /* o */ {   2, 2, 1, 0, 1, 0 },  // oa=SECOND, oe=SECOND (modern)
     /* u */ {   1, 2, 1, 2, 1, 2 },  // ue=SECOND, uo=SECOND, uy=SECOND (modern)
-    /* y */ {   0, 0, 0, 0, 1, 0 },  // yu=FIRST (khuỷu)
+    /* y */ {   0, 0, 0, 0, 3, 0 },  // yu=CODA_AWARE: yủn(coda→u), khuỷu(no coda→y)
 };
 
 /// Triphthong patterns (Modern only): tone on MIDDLE vowel

@@ -225,6 +225,21 @@ void TelexEngine::PushChar(wchar_t c) {
     // Modifiers can transform invalid sequences into valid ones (uo -> ươ).
     // However, if we're clearly in an English word (Tier 1 Hard Protect),
     // skip modifiers and treat them as literal keys (e.g. 'brown' -> 'w' is literal).
+    //
+    // Pre-check for 'd' modifier: if dd→đ would fire (existing 'd' target) AND there's
+    // already a consonant in coda position, adding 'd' forms an invalid coda like "pd".
+    // Only fires when FindStrokeDTarget finds a target — doesn't affect plain 'd' in "wind".
+    if (lower == L'd' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3
+        && FindStrokeDTarget(states_.data(), states_.size()) != SIZE_MAX) {
+        size_t codaLen = 0;
+        for (size_t j = states_.size(); j-- > 0;) {
+            if (states_[j].IsVowel() || states_[j].IsD()) break;
+            ++codaLen;
+        }
+        if (codaLen >= 1) {
+            engProt_.bias = LanguageBias::HardEnglish;
+        }
+    }
     if (toneEscaped_ || engProt_.bias == LanguageBias::HardEnglish) {
         // Don't try modifiers — treat as literal
     } else if (config_.spellCheckEnabled && spellCheckDisabled_) {

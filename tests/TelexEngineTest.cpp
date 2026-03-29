@@ -419,6 +419,12 @@ TEST_F(TelexEngineTest, Word_Cuoiwo_UndoHorn) {
     EXPECT_EQ(engine_->Peek(), L"cuôi");
 }
 
+TEST_F(TelexEngineTest, Word_Yunr_ToneOnU) {
+    // "yunr": yu diphthong with coda 'n' → tone on 'u' (SECOND), not 'y'
+    TypeString(*engine_, L"yunr");
+    EXPECT_EQ(engine_->Peek(), L"yủn");
+}
+
 TEST_F(TelexEngineTest, Word_Kkhuyur_Produces_Khuỷu) {
     // kk→kh, uyu triphthong, r→hook tone
     config_.quickConsonant = true;
@@ -2108,12 +2114,9 @@ TEST_F(EnglishDetectionNoSpellCheckTest, Backspace_ResetsProtection) {
 }
 
 TEST_F(EnglishDetectionNoSpellCheckTest, DModifierEscape_DropdownNoMangle) {
-    // "dropdown": d-r-o-p-d-d-o-w-n (9 keys)
-    // The "dd" in the middle escapes đ back to plain 'd'.
-    // Without fix: 'o' free-marks the 'o' in "drop", 'w' applies horn → "drơpdn".
-    // With fix: dd escape sets toneEscaped_=true → 'o' and 'w' are literal.
+    // "dropddown" (9 keys): coda pre-check blocks dd→đ → all chars literal
     TypeString(*engine_, L"dropddown");
-    EXPECT_EQ(engine_->Peek(), L"dropdown");
+    EXPECT_EQ(engine_->Peek(), L"dropddown");
 }
 
 TEST_F(EnglishDetectionNoSpellCheckTest, DModifierEscape_DownloadNoMangle) {
@@ -3133,10 +3136,16 @@ TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_Initial_EscapeStillWorks) {
     EXPECT_EQ(engine_->Peek(), L"dd");
 }
 
-TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_DropdownStillWorks) {
-    // "dropddown" → "dropdown" — English protection still prevents mangling
-    TypeString(*engine_, L"dropddown");
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_Dropdown8Keys) {
+    // "dropdown" (8 keys) → "dropdown" — invalid coda "pd" blocks dd→đ modifier
+    TypeString(*engine_, L"dropdown");
     EXPECT_EQ(engine_->Peek(), L"dropdown");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_DropdownLiteral9Keys) {
+    // "dropddown" (9 keys): coda pre-check → HardEnglish → all literal
+    TypeString(*engine_, L"dropddown");
+    EXPECT_EQ(engine_->Peek(), L"dropddown");
 }
 
 TEST_F(EnglishDetectionNoSpellCheckTest, WModifier_EscapeUndosBothHorns) {

@@ -1,26 +1,14 @@
-# NexusKey v2.0.0
+# NexusKey v2.0.1
 
-Engine & kiến trúc đã được viết lại hoàn toàn. Đây là phiên bản kế thừa của NextKey/OpenKey.
+Bản cập nhật tập trung vào sửa nhiều lỗi.
 
 ---
 
 **✨ Cải tiến:**
-- Viết lại engine & kiến trúc core → dễ maintain hơn
-- Giảm tài nguyên sử dụng (theo test hiện tại)
-- Thêm giao diện tiếng Anh
-- Đơn giản hóa codebase → dễ debug & mở rộng tính năng
-- Cải thiện khả năng gõ tiếng Việt kết hợp tiếng Anh (giảm nhảy dấu nhầm khi tắt kiểm tra chính tả)
+- Cải thiện logic bắt từ tiếng Anh, giúp gõ tiếng Anh nhanh hơn (dropdown, download, dashboard... không cần thêm phím)
 
 **🛠 Sửa lỗi:**
-- Fix các bug đã biết từ version trước
-- Sửa lỗi không gõ được tiếng Việt trong Claude Code CLI
-
-**🧪 Thử nghiệm:**
-- Hỗ trợ bước đầu TSF engine (đang cần thêm feedback)
-
-**⚠️ Lưu ý:**
-- Đây là bản thử nghiệm → có thể phát sinh bug mới
-- Hướng tới thay thế engine cũ nếu ổn định
+- Sửa vị trí dấu cho vần "yu" có coda: `yunr` → `yủn` (trước đây là `ỷun`)
 
 ---
 Cảm ơn bạn đã lựa chọn NexusKey!
