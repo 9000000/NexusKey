@@ -65,21 +65,21 @@ Follow `docs/CODING_RULES.md` in full. Critical rules:
 - **SharedState toggle**: Use `InterlockedXor` for atomic flag toggle. Both EXE and DLL can toggle.
 - **DLL icon**: TSF LanguageBarButton owns the icon. No cross-process PostMessage needed.
 
-## Skills (dùng proactively)
+## Skills (use proactively)
 
-Khi làm việc với NexusKey, **tự động dùng** các skill phù hợp:
+Use the appropriate skill BEFORE diving into code:
 
-| Skill | Khi nào dùng |
-|-------|-------------|
-| `nexuskey-typing-bugs` | Bug gõ tiếng Việt: sai dấu, English bị nhảy dấu, dd/w modifier lỗi |
-| `nexuskey-debug` | Bug tổng quát: TSF, SharedState, Sciter UI, hook engine |
-| `nexuskey-review` | Review code trước khi commit — checklist naming, SharedState, modern C++ |
+| Skill | When to use |
+|-------|------------|
+| `nexuskey-typing-bugs` | Vietnamese typing bugs: wrong tone, English mangled, dd/w modifier issues |
+| `nexuskey-debug` | General bugs: TSF, SharedState, Sciter UI, hook engine |
+| `nexuskey-review` | Code review before commit — naming, SharedState, modern C++ checklist |
 | `nexuskey-build` | Build, test, pack resources |
 
-**Quy tắc:**
-- Bug typing/dấu/English detection → dùng `nexuskey-typing-bugs` TRƯỚC khi đọc code
-- Code review / trước commit → dùng `nexuskey-review`
-- Thêm toggle mới → xem CODING_RULES.md section 5.2 (7-step checklist) + step 7 Write() copy
+**Rules:**
+- Typing/tone/English detection bugs → use `nexuskey-typing-bugs` BEFORE reading code
+- Code review / before commit → use `nexuskey-review`
+- Adding new toggle → see CODING_RULES.md section 5.2 (7-step checklist + step 7 Write() copy)
 
 ## Sciter SDK Reference
 
