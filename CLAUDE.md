@@ -86,6 +86,8 @@ Use the appropriate skill BEFORE diving into code:
 SDK location: `/mnt/c/Users/Admin/Downloads/Compressed/sciter-js-sdk-6.0.3.5/sciter-js-sdk-6.0.3.5`
 Always check SDK `samples/` and `docs/` when implementing Sciter features.
 
+Update Sciter SDK to latest: `bash tools/update_sciter.sh` (fetches from GitLab, copies includes + binaries to `extern/sciter/`)
+
 ## Screenshots
 
 When user says "see the picture", check `/mnt/c/Users/Admin/Pictures/claude/`
