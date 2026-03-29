@@ -3157,6 +3157,25 @@ TEST_F(EnglishDetectionNoSpellCheckTest, WModifier_EscapeUndosBothHorns) {
     EXPECT_EQ(engine_->Peek(), L"duow");
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMark_ReadmeBlocked) {
+    // "readmee": free-mark must NOT cross diff-vowel + consonant (e←a←dm←e)
+    // → HardEnglish, all literal
+    TypeString(*engine_, L"readmee");
+    EXPECT_EQ(engine_->Peek(), L"readmee");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMark_CrossVowelNoCons_StillWorks) {
+    // "chiều": free-mark 'e' crosses vowel 'u' (no consonant) → circumflex must apply
+    TypeString(*engine_, L"chieuef");
+    EXPECT_EQ(engine_->Peek(), L"chiều");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMark_SameVowelValidCoda_StillWorks) {
+    // "tiêng" via late circumflex: same vowel, crosses ng (valid coda)
+    TypeString(*engine_, L"tienges");
+    EXPECT_EQ(engine_->Peek(), L"tiếng");
+}
+
 TEST_F(TelexEngineTest, SpellCheck_ConsonantCluster_NoCrash) {
     // Verify long consonant clusters with modifiers don't crash (spell check ON)
     TypeString(*engine_, L"mtruowngf");

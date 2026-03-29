@@ -402,13 +402,11 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
             }
 
             bool needsValidation = false;  // True when crossing different vowels
-            bool hardCross = false;        // True when consonant found between different vowel groups
             int consonantsCrossed = 0;     // Count consonants in path (for same-vowel coda check)
             wchar_t singleCoda = 0;        // Base of single consonant crossed (for coda validation)
             for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
                 if (it->IsVowel() && it->base != lower) { needsValidation = true; continue; }
                 if (!it->IsVowel()) {
-                    if (needsValidation) hardCross = true;
                     if (consonantsCrossed == 0) singleCoda = it->base;
                     ++consonantsCrossed;
                 }
@@ -433,7 +431,11 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                     }
                     if (it->mod == Modifier::None) {
                         // Spell check ON: validate via SpellChecker.
-                        // Spell check OFF, cross-vowel: reject if consonant between groups.
+                        // Spell check OFF, cross-vowel + consonant: always reject.
+                        // Vietnamese circumflex never crosses diff-vowel + consonant
+                        // (dấu mũ ở SAU trong iê/uô → match trước needsValidation;
+                        //  dấu mũ ở TRƯỚC trong âu/ây/êu/ôi → không có coda).
+                        // Catches "readme" (e←a←dm←e) and "review" (e←v←i←e).
                         // Spell check OFF, same-vowel: reject if single consonant is not
                         // a valid Vietnamese coda (c/m/n/p/t). Catches "release" (e→l→e)
                         // while allowing "hiên" (e→n→e) and "tiêng" (e→ng→e).
@@ -444,7 +446,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                                 it->mod = Modifier::None;
                                 break;
                             }
-                            if (!config_.spellCheckEnabled && hardCross) {
+                            if (!config_.spellCheckEnabled && consonantsCrossed >= 1) {
                                 engProt_.bias = LanguageBias::HardEnglish;
                                 break;
                             }
