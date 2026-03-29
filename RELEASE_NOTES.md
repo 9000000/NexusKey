@@ -9,6 +9,8 @@ Bản cập nhật tập trung vào sửa nhiều lỗi.
 
 **🛠 Sửa lỗi:**
 - Sửa vị trí dấu cho vần "yu" có coda: `yunr` → `yủn` (trước đây là `ỷun`)
+- Sửa lỗi gõ từ tiếng Anh bị thêm dấu mũ sai vị trí: `readmee` → `readmee` (trước đây là `rêadm`)
+- Sửa lỗi bật CapsLock gõ `Ĩ`, `Ũ` bị về chữ thường
 
 ---
 Cảm ơn bạn đã lựa chọn NexusKey!
