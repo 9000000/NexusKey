@@ -3157,6 +3157,18 @@ TEST_F(EnglishDetectionNoSpellCheckTest, WModifier_EscapeUndosBothHorns) {
     EXPECT_EQ(engine_->Peek(), L"duow");
 }
 
+TEST_F(TelexEngineTest, CapsLock_Uppercase_TildeI) {
+    // CapsLock ON: I+x → Ĩ (0x0128), was reverting to ĩ (towupper fails on Windows)
+    TypeString(*engine_, L"Ix");
+    EXPECT_EQ(engine_->Peek(), L"\u0128");
+}
+
+TEST_F(TelexEngineTest, CapsLock_Uppercase_TildeU) {
+    // CapsLock ON: U+x → Ũ (0x0168)
+    TypeString(*engine_, L"Ux");
+    EXPECT_EQ(engine_->Peek(), L"\u0168");
+}
+
 TEST_F(EnglishDetectionNoSpellCheckTest, FreeMark_ReadmeBlocked) {
     // "readmee": free-mark must NOT cross diff-vowel + consonant (e←a←dm←e)
     // → HardEnglish, all literal

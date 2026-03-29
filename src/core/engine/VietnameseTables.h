@@ -156,6 +156,8 @@ inline wchar_t ToUpperVietnamese(wchar_t ch) {
     // Latin Extended-A
     if (ch == L'\x0103') return L'\x0102';  // ă → Ă
     if (ch == L'\x0111') return L'\x0110';  // đ → Đ
+    if (ch == L'\x0129') return L'\x0128';  // ĩ → Ĩ  (towupper() fails for these on Windows)
+    if (ch == L'\x0169') return L'\x0168';  // ũ → Ũ
 
     // Latin Extended-B
     if (ch == L'\x01A1') return L'\x01A0';  // ơ → Ơ
