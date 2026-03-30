@@ -24,7 +24,6 @@ namespace FeatureFlags {
     constexpr uint16_t ALLOW_ZWJF           = 0x0004;
     constexpr uint16_t AUTO_RESTORE         = 0x0008;
     constexpr uint16_t TEMP_OFF_SPELL_CTRL  = 0x0010;
-    constexpr uint16_t REMEMBER_CODE_TABLE  = 0x0020;
     constexpr uint16_t TEMP_OFF_BY_ALT      = 0x0040;
     constexpr uint16_t BEEP_ON_SWITCH      = 0x0080;
     // Byte 1 (bits 8-15)
@@ -38,6 +37,7 @@ namespace FeatureFlags {
     constexpr uint16_t EXCLUDE_APPS          = 0x8000;
     // Extended flags (byte 2, bits 16-23) — stored in extFeatureFlags
     constexpr uint32_t AUTO_CAPS_MACRO       = 0x00010000;
+    constexpr uint32_t ALLOW_ENGLISH_BYPASS  = 0x00020000;
 }
 
 /// SharedState struct for IPC between Core and Engine
@@ -152,7 +152,6 @@ static_assert(sizeof(SharedState) == 56, "SharedState size changed — update st
     if (config.autoRestoreEnabled) flags |= FeatureFlags::AUTO_RESTORE;
     if (config.tempOffSpellByCtrl) flags |= FeatureFlags::TEMP_OFF_SPELL_CTRL;
     if (config.tempOffByAlt)       flags |= FeatureFlags::TEMP_OFF_BY_ALT;
-    if (config.rememberCodeTable)  flags |= FeatureFlags::REMEMBER_CODE_TABLE;
     if (config.beepOnSwitch)       flags |= FeatureFlags::BEEP_ON_SWITCH;
     if (config.macroEnabled)       flags |= FeatureFlags::MACRO_ENABLED;
     if (config.macroInEnglish)     flags |= FeatureFlags::MACRO_IN_ENGLISH;
@@ -163,6 +162,7 @@ static_assert(sizeof(SharedState) == 56, "SharedState size changed — update st
     if (config.smartSwitch)         flags |= FeatureFlags::SMART_SWITCH;
     if (config.excludeApps)         flags |= FeatureFlags::EXCLUDE_APPS;
     if (config.autoCapsMacro)       flags |= FeatureFlags::AUTO_CAPS_MACRO;
+    if (config.allowEnglishBypass)  flags |= FeatureFlags::ALLOW_ENGLISH_BYPASS;
     return flags;
 }
 
@@ -174,7 +174,6 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.autoRestoreEnabled = (flags & FeatureFlags::AUTO_RESTORE) != 0;
     config.tempOffSpellByCtrl = (flags & FeatureFlags::TEMP_OFF_SPELL_CTRL) != 0;
     config.tempOffByAlt       = (flags & FeatureFlags::TEMP_OFF_BY_ALT) != 0;
-    config.rememberCodeTable  = (flags & FeatureFlags::REMEMBER_CODE_TABLE) != 0;
     config.beepOnSwitch       = (flags & FeatureFlags::BEEP_ON_SWITCH) != 0;
     config.macroEnabled       = (flags & FeatureFlags::MACRO_ENABLED) != 0;
     config.macroInEnglish     = (flags & FeatureFlags::MACRO_IN_ENGLISH) != 0;
@@ -185,6 +184,7 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.smartSwitch         = (flags & FeatureFlags::SMART_SWITCH) != 0;
     config.excludeApps         = (flags & FeatureFlags::EXCLUDE_APPS) != 0;
     config.autoCapsMacro       = (flags & FeatureFlags::AUTO_CAPS_MACRO) != 0;
+    config.allowEnglishBypass  = (flags & FeatureFlags::ALLOW_ENGLISH_BYPASS) != 0;
 }
 
 }  // namespace NextKey

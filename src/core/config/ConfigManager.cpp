@@ -77,7 +77,6 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.autoRestoreEnabled = (*features)["auto_restore"].value_or(false);
             config.tempOffSpellByCtrl = (*features)["temp_off_spell_ctrl"].value_or(false);
             config.tempOffByAlt = (*features)["temp_off_by_alt"].value_or(false);
-            config.rememberCodeTable = (*features)["remember_code_table"].value_or(false);
             config.macroEnabled = (*features)["macro_enabled"].value_or(false);
             config.macroInEnglish = (*features)["macro_in_english"].value_or(false);
             config.quickConsonant = (*features)["quick_consonant"].value_or(false);
@@ -85,6 +84,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.quickEndConsonant = (*features)["quick_end_consonant"].value_or(false);
             config.tempOffMacroByEsc = (*features)["temp_off_macro_esc"].value_or(false);
             config.autoCapsMacro = (*features)["auto_caps_macro"].value_or(false);
+            config.allowEnglishBypass = (*features)["allow_english_bypass"].value_or(false);
         }
         
         return config;
@@ -123,7 +123,6 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("auto_restore", config.autoRestoreEnabled);
         features.insert_or_assign("temp_off_spell_ctrl", config.tempOffSpellByCtrl);
         features.insert_or_assign("temp_off_by_alt", config.tempOffByAlt);
-        features.insert_or_assign("remember_code_table", config.rememberCodeTable);
         features.insert_or_assign("macro_enabled", config.macroEnabled);
         features.insert_or_assign("macro_in_english", config.macroInEnglish);
         features.insert_or_assign("quick_consonant", config.quickConsonant);
@@ -131,6 +130,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("quick_end_consonant", config.quickEndConsonant);
         features.insert_or_assign("temp_off_macro_esc", config.tempOffMacroByEsc);
         features.insert_or_assign("auto_caps_macro", config.autoCapsMacro);
+        features.insert_or_assign("allow_english_bypass", config.allowEnglishBypass);
         tbl.insert_or_assign("features", std::move(features));
 
         return WriteToml(utf8Path, tbl);
@@ -402,46 +402,6 @@ bool ConfigManager::SaveTsfApps(const std::wstring& path, const std::vector<std:
     }
 }
 
-std::unordered_map<std::wstring, uint8_t> ConfigManager::LoadPerAppCodeTable(const std::wstring& path) {
-    std::unordered_map<std::wstring, uint8_t> data;
-    try {
-        std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
-
-        if (auto section = table["per_app_code_table"].as_table()) {
-            for (auto& [key, val] : *section) {
-                auto v = val.value_or(0);
-                if (v >= 0 && v <= 4) {
-                    data[Utf8ToWide(std::string(key.str()))] = static_cast<uint8_t>(v);
-                }
-            }
-        }
-    } catch (...) {}
-    return data;
-}
-
-bool ConfigManager::SavePerAppCodeTable(const std::wstring& path,
-                                         const std::unordered_map<std::wstring, uint8_t>& data,
-                                         uint8_t globalDefault) {
-    try {
-        std::string utf8Path = WideToUtf8(path);
-        auto tbl = LoadExistingToml(utf8Path);
-
-        toml::table section;
-        for (auto& [exe, codeTable] : data) {
-            // Only persist entries that differ from global setting
-            if (codeTable != globalDefault) {
-                section.insert_or_assign(WideToUtf8(exe), static_cast<int64_t>(codeTable));
-            }
-        }
-        tbl.insert_or_assign("per_app_code_table", std::move(section));
-
-        return WriteToml(utf8Path, tbl);
-    } catch (...) {
-        return false;
-    }
-}
-
 std::unordered_map<std::wstring, AppOverrideEntry> ConfigManager::LoadAppOverrides(const std::wstring& path) {
     std::unordered_map<std::wstring, AppOverrideEntry> data;
     try {
@@ -452,8 +412,7 @@ std::unordered_map<std::wstring, AppOverrideEntry> ConfigManager::LoadAppOverrid
             for (auto& [key, val] : *section) {
                 if (auto* entry = val.as_table()) {
                     AppOverrideEntry e;
-                    e.behaviorType = static_cast<int8_t>((*entry)["behavior"].value_or(0));
-                    e.clipboardMethod = static_cast<int8_t>((*entry)["clipboard"].value_or(-1));
+                    e.inputMethod = static_cast<int8_t>((*entry)["input_method"].value_or(-1));
                     e.encodingOverride = static_cast<int8_t>((*entry)["encoding"].value_or(-1));
                     data[Utf8ToWide(std::string(key.str()))] = e;
                 }
@@ -472,8 +431,7 @@ bool ConfigManager::SaveAppOverrides(const std::wstring& path,
         toml::table section;
         for (auto& [exe, e] : entries) {
             toml::table entry;
-            entry.insert_or_assign("behavior", static_cast<int64_t>(e.behaviorType));
-            entry.insert_or_assign("clipboard", static_cast<int64_t>(e.clipboardMethod));
+            entry.insert_or_assign("input_method", static_cast<int64_t>(e.inputMethod));
             entry.insert_or_assign("encoding", static_cast<int64_t>(e.encodingOverride));
             section.insert_or_assign(WideToUtf8(exe), std::move(entry));
         }

@@ -191,10 +191,12 @@ void VniEngine::PushChar(wchar_t c) {
         // Tone escape: user pressed same tone key twice — blocks Vietnamese.
         if (toneEscaped_)                                       { asLiteral(); return; }
         // English Protection: always active, independent of spell check.
-        if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
-        if (engProt_.bias == LanguageBias::SoftEnglish) {
-            if (!UpdateToneInsistence(c, engProt_))              { asLiteral(); return; }
-            // User insisted (same key twice) — fall through to apply tone
+        if (!config_.allowEnglishBypass) {
+            if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
+            if (engProt_.bias == LanguageBias::SoftEnglish) {
+                if (!UpdateToneInsistence(c, engProt_))              { asLiteral(); return; }
+                // User insisted (same key twice) — fall through to apply tone
+            }
         }
         if (ProcessTone(c)) {
             if (!toneEscaped_) {
@@ -213,7 +215,7 @@ void VniEngine::PushChar(wchar_t c) {
     // Modifiers can transform invalid sequences into valid ones
     // However, if we're clearly in an English word, skip modifiers
     if (IsModifierKey(c)) {
-        if (toneEscaped_ || engProt_.bias == LanguageBias::HardEnglish) {
+        if (toneEscaped_ || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish)) {
             // Don't try modifiers — treat as literal
         } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // PREVENT modifier application if sequence is already structurally invalid.

@@ -43,9 +43,12 @@ var STRINGS = {
         "s.allow_zwjf": "Allow \"z w j f\" as initial consonants",
         "s.spell_check": "Spell check",
         "s.restore_key": "Auto-restore keys on wrong word",
+        "s.allow_english_bypass": "Allow English bypass (e.g. yes \u2192 \u00FDe)",
+        "s.allow_english_bypass_tooltip": "Allow applying Vietnamese tone marks on English words or exceptions",
         "s.temp_off_spell": "Disable spell check with Ctrl",
         "s.temp_off_spell_tooltip": "Hold Ctrl while typing to skip spell check",
-        "s.remember_code": "Remember code table per app",
+        "s.app_encoding": "Per-app encoding",
+        "s.config": "Configure",
         "s.temp_off_alt": "Disable NexusKey with Alt",
         "s.temp_off_alt_tooltip": "Double-tap Alt to disable Vietnamese input (avoid app menu conflicts)",
 
@@ -141,15 +144,12 @@ var STRINGS = {
 
         // ── App Overrides dialog ──
         "ao.title": "App Override",
-        "ao.special": "Special handling",
-        "ao.none": "None (default)",
-        "ao.skip_ime": "Skip IME check",
-        "ao.force_clip": "Force clipboard",
+        "ao.input_method": "Input method",
+        "ao.inherit": "Default (inherit)",
         "ao.encoding": "Encoding",
         "ao.encoding_default": "Default",
         "ao.list_app": "Application",
-        "ao.list_handling": "Handling",
-        "ao.list_clipboard": "Clipboard",
+        "ao.list_method": "Method",
         "ao.list_encoding": "Encoding",
         "ao.app_ph": "e.g.: myapp.exe"
     }

@@ -13,10 +13,9 @@
 
 namespace NextKey {
 
-/// Per-app override settings (encoding assignment)
+/// Per-app override settings (encoding + input method)
 struct AppOverrideEntry {
-    int8_t behaviorType = 0;       // 0=None, 1=SkipIme, 2=QtElectron (future use)
-    int8_t clipboardMethod = -1;   // -1=default, 0=CtrlV, 1=ShiftIns (future use)
+    int8_t inputMethod = -1;       // -1=inherit global, 0=Telex, 1=VNI, 2=SimpleTelex
     int8_t encodingOverride = -1;  // -1=inherit global, 0-4=CodeTable value
 };
 
@@ -67,14 +66,6 @@ public:
 
     /// Save TSF apps list to config (merges with existing)
     [[nodiscard]] static bool SaveTsfApps(const std::wstring& path, const std::vector<std::wstring>& apps);
-
-    /// Load per-app code table data (exe name → CodeTable value)
-    [[nodiscard]] static std::unordered_map<std::wstring, uint8_t> LoadPerAppCodeTable(const std::wstring& path);
-
-    /// Save per-app code table data (only entries differing from globalDefault)
-    [[nodiscard]] static bool SavePerAppCodeTable(const std::wstring& path,
-                                                   const std::unordered_map<std::wstring, uint8_t>& data,
-                                                   uint8_t globalDefault);
 
     /// Load system config from file
     [[nodiscard]] static std::optional<SystemConfig> LoadSystemConfig(const std::wstring& path);

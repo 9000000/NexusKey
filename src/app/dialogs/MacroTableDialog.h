@@ -17,9 +17,6 @@ public:
     // Override event handler for VALUE_CHANGED on #val-action
     bool handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) override;
 
-protected:
-    void onBeforeClose() override;
-
 private:
     void populateList();
     void addMacro(const std::wstring& name, const std::wstring& content);

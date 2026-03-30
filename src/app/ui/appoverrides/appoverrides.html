@@ -55,25 +55,16 @@
                     </button>
                 </div>
                 <div class="setting-row">
-                    <span class="setting-label" data-i18n="ao.special">Xử lý đặc biệt</span>
-                    <select class="setting-select" id="behavior-type">
-                        <option value="0" data-i18n="ao.none">Không (mặc định)</option>
-                        <option value="1" data-i18n="ao.skip_ime">Bỏ qua kiểm tra IME</option>
-                        <option value="2">Qt/Electron</option>
-                    </select>
-                </div>
-                <div class="setting-row">
-                    <span class="setting-label" data-i18n="ao.force_clip">Ép clipboard</span>
-                    <select class="setting-select" id="clipboard-method">
-                        <option value="-1" data-i18n="ao.none">Không (mặc định)</option>
-                        <option value="0">Ctrl+V</option>
-                        <option value="1">Shift+Insert</option>
+                    <span class="setting-label" data-i18n="ao.input_method">Kiểu gõ</span>
+                    <select class="setting-select" id="input-method">
+                        <option value="0">Telex</option>
+                        <option value="1">VNI</option>
+                        <option value="2">Simple Telex</option>
                     </select>
                 </div>
                 <div class="setting-row">
                     <span class="setting-label" data-i18n="ao.encoding">Bảng mã</span>
                     <select class="setting-select" id="encoding-override">
-                        <option value="-1" data-i18n="ao.encoding_default">Mặc định</option>
                         <option value="0">Unicode</option>
                         <option value="1">TCVN3</option>
                         <option value="2">VNI Windows</option>
@@ -92,8 +83,7 @@
             <div class="settings-card list-card">
                 <div class="list-header">
                     <span class="list-col-name" data-i18n="ao.list_app">Ứng dụng</span>
-                    <span class="list-col-behavior" data-i18n="ao.list_handling">Xử lý</span>
-                    <span class="list-col-clipboard" data-i18n="ao.list_clipboard">Clipboard</span>
+                    <span class="list-col-inputmethod" data-i18n="ao.list_method">Kiểu gõ</span>
                     <span class="list-col-encoding" data-i18n="ao.list_encoding">Bảng mã</span>
                     <span class="list-col-action"></span>
                 </div>
@@ -106,9 +96,8 @@
         <!-- Hidden inputs for C++ -->
         <input type="hidden" id="val-action" value="">
         <input type="hidden" id="val-app-name" value="">
-        <input type="hidden" id="val-behavior-type" value="0">
-        <input type="hidden" id="val-clipboard-method" value="-1">
-        <input type="hidden" id="val-encoding-override" value="-1">
+        <input type="hidden" id="val-input-method" value="0">
+        <input type="hidden" id="val-encoding-override" value="0">
     </div>
 </body>
 

@@ -201,16 +201,18 @@ void TelexEngine::PushChar(wchar_t c) {
         // Tone escape: user pressed same tone key twice (e.g., ss) — blocks Vietnamese.
         if (toneEscaped_)                                       { asLiteral(); return; }
         // English Protection: always active, independent of spell check.
-        if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
-        if (engProt_.bias == LanguageBias::SoftEnglish) {
-            if (!UpdateToneInsistence(c, engProt_))              { asLiteral(); return; }
-            // User insisted (same key twice) — fall through to apply tone
-        }
-        // Structural hard-English: V+C+V pattern is impossible in Vietnamese syllables.
-        // Catches "manager"/"danger" type words even without spell check.
-        if (IsHardEnglishToneContext(states_.data(), states_.size(), c)) {
-            engProt_.bias = LanguageBias::HardEnglish;
-            asLiteral(); return;
+        if (!config_.allowEnglishBypass) {
+            if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
+            if (engProt_.bias == LanguageBias::SoftEnglish) {
+                if (!UpdateToneInsistence(c, engProt_))              { asLiteral(); return; }
+                // User insisted (same key twice) — fall through to apply tone
+            }
+            // Structural hard-English: V+C+V pattern is impossible in Vietnamese syllables.
+            // Catches "manager"/"danger" type words even without spell check.
+            if (IsHardEnglishToneContext(states_.data(), states_.size(), c)) {
+                engProt_.bias = LanguageBias::HardEnglish;
+                asLiteral(); return;
+            }
         }
         if (ProcessTone(c)) {
             if (!toneEscaped_) {
@@ -246,7 +248,7 @@ void TelexEngine::PushChar(wchar_t c) {
             engProt_.bias = LanguageBias::HardEnglish;
         }
     }
-    if (toneEscaped_ || engProt_.bias == LanguageBias::HardEnglish) {
+    if (toneEscaped_ || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish)) {
         // Don't try modifiers — treat as literal
     } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
         // PREVENT modifier application if sequence is already structurally invalid.

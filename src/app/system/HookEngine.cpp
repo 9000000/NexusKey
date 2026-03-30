@@ -89,6 +89,7 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     s_instance = this;
     hotkeyConfig_ = hotkey;
     currentMethod_ = config.inputMethod;
+    config_ = config;
     ApplyConfig(config);
     if (macroEnabled_) {
         macroTable_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
@@ -101,21 +102,20 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
         (void)smartSwitchMgr_.Create();
     }
 
-    // Load per-app code table data
-    rememberCodeTable_ = config.rememberCodeTable;
     currentCodeTable_ = config.codeTable;
-    if (rememberCodeTable_) {
-        appCodeTableMap_ = ConfigManager::LoadPerAppCodeTable(ConfigManager::GetConfigPath());
-    }
+    globalCodeTable_ = config.codeTable;
+    globalInputMethod_ = config.inputMethod;
 
-    // Load manual per-app encoding overrides (always loaded, takes precedence over auto-remember)
+    // Load manual per-app overrides (encoding + input method)
     {
         auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
         appEncodingOverrides_.clear();
+        appInputMethodOverrides_.clear();
         for (auto& [exe, entry] : overrides) {
-            if (entry.encodingOverride >= 0) {
+            if (entry.encodingOverride >= 0)
                 appEncodingOverrides_[exe] = entry.encodingOverride;
-            }
+            if (entry.inputMethod >= 0)
+                appInputMethodOverrides_[exe] = entry.inputMethod;
         }
     }
 
@@ -177,10 +177,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
 void HookEngine::Stop() {
     HOOK_LOG(L"=== HookEngine::Stop ===");
     // Persist per-app code table data (only entries differing from global)
-    if (rememberCodeTable_ && !appCodeTableMap_.empty()) {
-        (void)ConfigManager::SavePerAppCodeTable(
-            ConfigManager::GetConfigPath(), appCodeTableMap_, static_cast<uint8_t>(currentCodeTable_));
-    }
     if (keyboardHook_) {
         UnhookWindowsHookEx(keyboardHook_);
         keyboardHook_ = nullptr;
@@ -250,20 +246,6 @@ void HookEngine::SetCodeTable(CodeTable ct) {
 
     currentCodeTable_ = ct;
 
-    // Always update per-app map — the map is authoritative when rememberCodeTable_ is on.
-    // Use the target app: when called from the tray menu, currentExe_ may point to
-    // explorer.exe (shell gets focus on tray click). Fall back to previousExe_ which
-    // is the app the user was actually working in.
-    if (rememberCodeTable_) {
-        const std::wstring& targetExe = !previousExe_.empty() ? previousExe_ : currentExe_;
-        if (!targetExe.empty()) {
-            appCodeTableMap_[targetExe] = static_cast<uint8_t>(ct);
-            HOOK_LOG(L"  SetCodeTable: %d for '%s'", static_cast<int>(ct), targetExe.c_str());
-            // Persist immediately (only entries differing from global)
-            (void)ConfigManager::SavePerAppCodeTable(
-                ConfigManager::GetConfigPath(), appCodeTableMap_, static_cast<uint8_t>(currentCodeTable_));
-        }
-    }
 }
 
 CodeTable HookEngine::GetCodeTable() const noexcept {
@@ -278,16 +260,6 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
     if (auto* v = lookupOverride(previousExe_)) return static_cast<CodeTable>(*v);
     if (auto* v = lookupOverride(currentExe_)) return static_cast<CodeTable>(*v);
 
-    // Priority 2: Auto-remember (when rememberCodeTable_ is on)
-    if (rememberCodeTable_) {
-        auto lookup = [&](const std::wstring& exe) -> const uint8_t* {
-            if (exe.empty()) return nullptr;
-            auto it = appCodeTableMap_.find(exe);
-            return it != appCodeTableMap_.end() ? &it->second : nullptr;
-        };
-        if (auto* v = lookup(previousExe_)) return static_cast<CodeTable>(*v);
-        if (auto* v = lookup(currentExe_)) return static_cast<CodeTable>(*v);
-    }
     return currentCodeTable_;
 }
 
@@ -324,6 +296,7 @@ bool HookEngine::CheckConfigEvent() {
         CommitComposition();
     }
     currentMethod_ = config.inputMethod;
+    config_ = config;
     engine_ = EngineFactory::Create(config);
     NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
                 currentMethod_ == InputMethod::VNI ? L"VNI" : L"Telex",
@@ -335,23 +308,20 @@ bool HookEngine::CheckConfigEvent() {
         macroTable_.clear();
     }
 
-    // Update per-app code table: explicit change in Settings applies globally
-    rememberCodeTable_ = config.rememberCodeTable;
-    if (config.codeTable != currentCodeTable_) {
-        // User explicitly changed code table — clear all per-app overrides
-        // so every app uses the new setting going forward
-        appCodeTableMap_.clear();
-    }
     currentCodeTable_ = config.codeTable;
+    globalCodeTable_ = config.codeTable;
+    globalInputMethod_ = config.inputMethod;
 
-    // Reload manual per-app encoding overrides
+    // Reload manual per-app overrides (encoding + input method)
     {
         auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
         appEncodingOverrides_.clear();
+        appInputMethodOverrides_.clear();
         for (auto& [exe, entry] : overrides) {
-            if (entry.encodingOverride >= 0) {
+            if (entry.encodingOverride >= 0)
                 appEncodingOverrides_[exe] = entry.encodingOverride;
-            }
+            if (entry.inputMethod >= 0)
+                appInputMethodOverrides_[exe] = entry.inputMethod;
         }
     }
 
@@ -386,6 +356,30 @@ bool HookEngine::CheckConfigEvent() {
     }
     if (isTsfApp_ != wasTsfApp && tsfActiveCallback_) {
         tsfActiveCallback_(isTsfApp_);
+    }
+
+    // Re-apply per-app overrides for current app (OnFocusChanged may have run with stale maps)
+    if (!currentExe_.empty() && !isExcludedApp_ && !isTsfApp_) {
+        // Encoding
+        {
+            auto it = appEncodingOverrides_.find(currentExe_);
+            currentCodeTable_ = (it != appEncodingOverrides_.end())
+                ? static_cast<CodeTable>(it->second) : globalCodeTable_;
+        }
+        // Input method — recreate engine only if method changed
+        {
+            auto it = appInputMethodOverrides_.find(currentExe_);
+            InputMethod targetMethod = (it != appInputMethodOverrides_.end())
+                ? static_cast<InputMethod>(it->second) : globalInputMethod_;
+            if (targetMethod != currentMethod_) {
+                currentMethod_ = targetMethod;
+                TypingConfig engineConfig = config_;
+                engineConfig.inputMethod = targetMethod;
+                engine_ = EngineFactory::Create(engineConfig);
+                NEXTKEY_LOG(L"HookEngine: re-applied inputMethod=%d for '%s'",
+                            static_cast<int>(currentMethod_), currentExe_.c_str());
+            }
+        }
     }
 
     // Reload hotkey config — prefer SharedState (instant), fallback to TOML
@@ -752,6 +746,22 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             HOOK_LOG(L"  bracket '%c' → Peek()='%s'", ch, composition.c_str());
             ReplaceComposition(composition);
             return true;  // Eat the original keystroke
+        }
+    }
+
+    // 6c. VNI: digit keys 1-9 → tone/modifier input (only with pending composition)
+    if (currentMethod_ == InputMethod::VNI &&
+        vkCode >= 0x31 && vkCode <= 0x39 &&
+        engine_->Count() > 0) {
+        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        if (!shift) {
+            wchar_t ch = static_cast<wchar_t>(vkCode);  // '1'–'9'
+            inputHistory_.push_back(ch);
+            engine_->PushChar(ch);
+            std::wstring composition = engine_->Peek();
+            HOOK_LOG(L"  VNI digit '%c' → Peek()='%s'", ch, composition.c_str());
+            ReplaceComposition(composition);
+            return true;  // Eat the digit
         }
     }
 
@@ -1371,7 +1381,8 @@ void HookEngine::OnFocusChanged() {
     }
 
     // Skip focus tracking entirely if no feature needs it
-    if (!smartSwitch_ && !excludeApps_ && !tsfApps_ && !rememberCodeTable_) return;
+    if (!smartSwitch_ && !excludeApps_ && !tsfApps_
+        && appEncodingOverrides_.empty() && appInputMethodOverrides_.empty()) return;
 
     bool wasExcluded = isExcludedApp_;
     bool wasTsfApp = isTsfApp_;
@@ -1380,11 +1391,6 @@ void HookEngine::OnFocusChanged() {
     if (smartSwitch_ && !layoutForcedEnglish_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
         appModeMap_[currentExe_] = vietnameseMode_;
         smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
-    }
-
-    // Save previous app's code table
-    if (rememberCodeTable_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
-        appCodeTableMap_[currentExe_] = static_cast<uint8_t>(currentCodeTable_);
     }
 
     // Get new app (save previous for tray menu context)
@@ -1436,32 +1442,30 @@ void HookEngine::OnFocusChanged() {
         return;
     }
 
-    // Priority 1: Manual encoding override (takes precedence over auto-remember)
+    // Manual encoding override per app (restore to global if no override)
     {
         auto it = appEncodingOverrides_.find(currentExe_);
-        if (it != appEncodingOverrides_.end() && it->second >= 0) {
-            auto overrideTable = static_cast<CodeTable>(it->second);
-            if (overrideTable != currentCodeTable_) {
-                currentCodeTable_ = overrideTable;
-                HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
-                         static_cast<int>(currentCodeTable_), currentExe_.c_str());
-            }
-        } else {
-            // Priority 2: Auto-remember code table
-            if (rememberCodeTable_) {
-                auto it2 = appCodeTableMap_.find(currentExe_);
-                if (it2 != appCodeTableMap_.end()) {
-                    auto restored = static_cast<CodeTable>(it2->second);
-                    if (restored != currentCodeTable_) {
-                        currentCodeTable_ = restored;
-                        HOOK_LOG(L"  RememberCode: restored codeTable=%d for '%s'",
-                                 static_cast<int>(currentCodeTable_), currentExe_.c_str());
-                    }
-                } else {
-                    // First time seeing this app — record current code table
-                    appCodeTableMap_[currentExe_] = static_cast<uint8_t>(currentCodeTable_);
-                }
-            }
+        CodeTable targetTable = (it != appEncodingOverrides_.end() && it->second >= 0)
+            ? static_cast<CodeTable>(it->second) : globalCodeTable_;
+        if (targetTable != currentCodeTable_) {
+            currentCodeTable_ = targetTable;
+            HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
+                     static_cast<int>(currentCodeTable_), currentExe_.c_str());
+        }
+    }
+
+    // Manual input method override per app (restore to global if no override)
+    {
+        auto it = appInputMethodOverrides_.find(currentExe_);
+        InputMethod targetMethod = (it != appInputMethodOverrides_.end() && it->second >= 0)
+            ? static_cast<InputMethod>(it->second) : globalInputMethod_;
+        if (targetMethod != currentMethod_) {
+            currentMethod_ = targetMethod;
+            TypingConfig engineConfig = config_;
+            engineConfig.inputMethod = targetMethod;
+            engine_ = EngineFactory::Create(engineConfig);
+            HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
+                     static_cast<int>(currentMethod_), currentExe_.c_str());
         }
     }
 

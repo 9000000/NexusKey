@@ -4,7 +4,6 @@
 #pragma once
 
 #include "SciterSubDialog.h"
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -14,23 +13,15 @@
 
 namespace NextKey {
 
-/// Callback when TSF apps list changes
-using TsfAppsChangedCallback = std::function<void()>;
-
 /// Dialog for managing TSF apps list (Sciter subdialog)
 /// Apps in this list use TSF engine instead of keyboard hook.
 class TsfAppsDialog : public SciterSubDialog {
 public:
     TsfAppsDialog(HWND parent);
 
-    /// Set callback for when list changes
-    void SetOnChanged(TsfAppsChangedCallback callback) { onChanged_ = std::move(callback); }
-
-    // Override event handler for VALUE_CHANGED on #val-action
     bool handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) override;
 
 protected:
-    void onBeforeClose() override;
     LRESULT onCustomMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) override;
 
 private:
@@ -45,7 +36,6 @@ private:
     std::wstring getExeNameFromWindow(HWND hwnd);
 
     std::vector<std::wstring> appList_;
-    TsfAppsChangedCallback onChanged_;
 
     bool isPickingWindow_ = false;
     HCURSOR savedArrowCursor_ = nullptr;

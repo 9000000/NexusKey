@@ -30,12 +30,6 @@ ExcludedAppsDialog::ExcludedAppsDialog(HWND parent)
     populateList();
 }
 
-void ExcludedAppsDialog::onBeforeClose() {
-    persistAndSignal();
-    if (onChanged_) {
-        onChanged_();
-    }
-}
 
 void ExcludedAppsDialog::persistAndSignal() {
     (void)ConfigManager::SaveExcludedApps(ConfigManager::GetConfigPath(), appList_);

@@ -26,12 +26,6 @@ TsfAppsDialog::TsfAppsDialog(HWND parent)
     populateList();
 }
 
-void TsfAppsDialog::onBeforeClose() {
-    persistAndSignal();
-    if (onChanged_) {
-        onChanged_();
-    }
-}
 
 void TsfAppsDialog::persistAndSignal() {
     (void)ConfigManager::SaveTsfApps(ConfigManager::GetConfigPath(), appList_);

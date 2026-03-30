@@ -5,7 +5,6 @@
 
 #include "SciterSubDialog.h"
 #include "core/config/ConfigManager.h"
-#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -16,7 +15,7 @@
 
 namespace NextKey {
 
-/// Dialog for managing per-app configuration (encoding override, behavior, clipboard)
+/// Dialog for managing per-app configuration (encoding + input method overrides)
 class AppOverridesDialog : public SciterSubDialog {
 public:
     AppOverridesDialog(HWND parent);
@@ -24,12 +23,11 @@ public:
     bool handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) override;
 
 protected:
-    void onBeforeClose() override;
     LRESULT onCustomMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) override;
 
 private:
     void populateList();
-    void addEntry(const std::wstring& name, int8_t encoding, int8_t behavior, int8_t clipboard);
+    void addEntry(const std::wstring& name, int8_t encoding, int8_t inputMethod);
     void removeEntry(const std::wstring& name);
     void persistAndSignal();
     std::vector<std::wstring> getRunningApps();

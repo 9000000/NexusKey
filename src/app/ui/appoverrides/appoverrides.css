@@ -95,7 +95,7 @@
     z-index: 1000;
 }
 
-/* List Header - 4 columns */
+/* List Header - 3 columns */
 .list-header {
     display: flex;
     padding: 8px 4px;
@@ -112,13 +112,8 @@
     max-width: 100px;
 }
 
-.list-col-behavior {
-    width: 70px;
-    text-align: center;
-}
-
-.list-col-clipboard {
-    width: 65px;
+.list-col-inputmethod {
+    width: 80px;
     text-align: center;
 }
 
@@ -168,15 +163,8 @@
     cursor: default;
 }
 
-.app-item-behavior {
-    width: 70px;
-    font-size: 11px;
-    text-align: center;
-    color: var(--text-secondary);
-}
-
-.app-item-clipboard {
-    width: 65px;
+.app-item-inputmethod {
+    width: 80px;
     font-size: 11px;
     text-align: center;
     color: var(--text-secondary);

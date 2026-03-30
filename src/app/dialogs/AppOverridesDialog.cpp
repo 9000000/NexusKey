@@ -24,9 +24,6 @@ AppOverridesDialog::AppOverridesDialog(HWND parent)
     populateList();
 }
 
-void AppOverridesDialog::onBeforeClose() {
-    persistAndSignal();
-}
 
 void AppOverridesDialog::persistAndSignal() {
     (void)ConfigManager::SaveAppOverrides(ConfigManager::GetConfigPath(), entries_);
@@ -53,26 +50,25 @@ bool AppOverridesDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params
 
             if (!action.empty()) {
                 sciter::dom::element root = get_root();
-                auto readInput = [&](const wchar_t* inputId) -> std::wstring {
+                auto readInput = [&](const char* inputId) -> std::wstring {
                     sciter::dom::element inp = root.find_first(inputId);
                     if (!inp.is_valid()) return L"";
                     sciter::value v = inp.get_value();
                     return v.is_string() ? v.get<std::wstring>() : L"";
                 };
-                auto readInt = [&](const wchar_t* inputId, int def) -> int {
+                auto readInt = [&](const char* inputId, int def) -> int {
                     auto s = readInput(inputId);
                     if (s.empty()) return def;
                     try { return std::stoi(s); } catch (...) { return def; }
                 };
 
-                std::wstring appName = readInput(L"#val-app-name");
+                std::wstring appName = readInput("#val-app-name");
 
                 if (action == L"add-app") {
                     if (!appName.empty()) {
-                        int8_t enc = static_cast<int8_t>(readInt(L"#val-encoding-override", -1));
-                        int8_t beh = static_cast<int8_t>(readInt(L"#val-behavior-type", 0));
-                        int8_t clp = static_cast<int8_t>(readInt(L"#val-clipboard-method", -1));
-                        addEntry(appName, enc, beh, clp);
+                        int8_t enc = static_cast<int8_t>(readInt("#val-encoding-override", -1));
+                        int8_t mth = static_cast<int8_t>(readInt("#val-input-method", -1));
+                        addEntry(appName, enc, mth);
                     }
                 } else if (action == L"delete-app") {
                     if (!appName.empty()) {
@@ -103,19 +99,17 @@ void AppOverridesDialog::populateList() {
     for (auto& [name, entry] : entries_) {
         call_function("addAppToList",
             sciter::value(name.c_str()),
-            sciter::value(static_cast<int>(entry.behaviorType)),
-            sciter::value(static_cast<int>(entry.clipboardMethod)),
+            sciter::value(static_cast<int>(entry.inputMethod)),
             sciter::value(static_cast<int>(entry.encodingOverride)));
     }
     call_function("forceRefresh");
 }
 
-void AppOverridesDialog::addEntry(const std::wstring& name, int8_t encoding, int8_t behavior, int8_t clipboard) {
+void AppOverridesDialog::addEntry(const std::wstring& name, int8_t encoding, int8_t inputMethod) {
     std::wstring lower = ToLowerAscii(name);
     AppOverrideEntry entry;
     entry.encodingOverride = encoding;
-    entry.behaviorType = behavior;
-    entry.clipboardMethod = clipboard;
+    entry.inputMethod = inputMethod;
 
     bool isUpdate = (entries_.find(lower) != entries_.end());
     entries_[lower] = entry;
@@ -125,8 +119,7 @@ void AppOverridesDialog::addEntry(const std::wstring& name, int8_t encoding, int
     }
     call_function("addAppToList",
         sciter::value(lower.c_str()),
-        sciter::value(static_cast<int>(behavior)),
-        sciter::value(static_cast<int>(clipboard)),
+        sciter::value(static_cast<int>(inputMethod)),
         sciter::value(static_cast<int>(encoding)));
     call_function("clearInput");
     call_function("forceRefresh", sciter::value(true));

@@ -65,7 +65,7 @@ public:
     /// Change code table (commits pending composition, updates per-app map)
     void SetCodeTable(CodeTable ct);
 
-    /// Get effective code table (checks per-app map when rememberCodeTable is on)
+    /// Get effective code table (checks manual per-app override map)
     [[nodiscard]] CodeTable GetCodeTable() const noexcept;
 
     [[nodiscard]] bool IsVietnameseMode() const noexcept { return vietnameseMode_; }
@@ -141,6 +141,7 @@ private:
 
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
+    TypingConfig config_;                            // Last applied config (for per-app engine recreation)
     InputMethod currentMethod_ = InputMethod::Telex;
     std::wstring previousComposition_;  // What's currently displayed in the app
     std::vector<uint8_t> previousEncodedWidths_;  // Output unit count per Unicode char (for non-Unicode code tables)
@@ -174,10 +175,11 @@ private:
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode
     std::wstring currentExe_;  // Currently focused app
     std::wstring previousExe_;  // Previously focused app (for tray menu context)
-    bool rememberCodeTable_ = false;
     CodeTable currentCodeTable_ = CodeTable::Unicode;
-    std::unordered_map<std::wstring, uint8_t> appCodeTableMap_;  // exe → CodeTable value
-    std::unordered_map<std::wstring, int8_t> appEncodingOverrides_;  // exe → manual encoding (-1=inherit)
+    CodeTable globalCodeTable_ = CodeTable::Unicode;     // config value, restored when no override
+    std::unordered_map<std::wstring, int8_t> appEncodingOverrides_;   // exe → encoding override (-1=inherit)
+    InputMethod globalInputMethod_ = InputMethod::Telex; // config value, restored when no override
+    std::unordered_map<std::wstring, int8_t> appInputMethodOverrides_; // exe → method override (-1=inherit)
 
     // Backspace-into-committed-word (re-enter composition after commit + backspace)
     // inputHistory_ records exact user keystrokes (including backspace as '\b')

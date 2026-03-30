@@ -636,8 +636,8 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"restore-key") {
         config_.autoRestoreEnabled = value;
     }
-    else if (id == L"remember-code") {
-        config_.rememberCodeTable = value;
+    else if (id == L"allow-english-bypass") {
+        config_.allowEnglishBypass = value;
     }
     else if (id == L"temp-off-spell") {
         config_.tempOffSpellByCtrl = value;
@@ -929,7 +929,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"auto-caps", config_.autoCaps);
     setToggleState(L"allow-zwjf", config_.allowZwjf);
     setToggleState(L"restore-key", config_.autoRestoreEnabled);
-    setToggleState(L"remember-code", config_.rememberCodeTable);
+    setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
     setToggleState(L"temp-off-spell", config_.tempOffSpellByCtrl);
     setToggleState(L"temp-off-openkey", config_.tempOffByAlt);
     setToggleState(L"use-macro", config_.macroEnabled);

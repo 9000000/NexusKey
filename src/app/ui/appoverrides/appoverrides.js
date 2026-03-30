@@ -8,17 +8,12 @@ document.ready = function () {
     initEventDelegation();
 };
 
-// ===== Behavior Type Labels =====
-var behaviorLabels = {
-    0: "-",
-    1: "Skip IME",
-    2: "Qt/Electron"
-};
-
-var clipboardLabels = {
+// ===== Input Method Labels =====
+var inputMethodLabels = {
     "-1": "-",
-    0: "Ctrl+V",
-    1: "Shift+Ins"
+    0: "Telex",
+    1: "VNI",
+    2: "Simple Telex"
 };
 
 var encodingLabels = {
@@ -111,15 +106,6 @@ function setRunningApps(apps) {
     dropdown.classList.add("visible");
 }
 
-// ===== Get Clipboard Method from Dropdown =====
-function getClipboardMethod() {
-    var clipboardSelect = document.getElementById("clipboard-method");
-    if (clipboardSelect) {
-        return parseInt(clipboardSelect.value, 10);
-    }
-    return -1; // None (default)
-}
-
 // ===== Buttons =====
 function initButtons() {
     var addBtn = document.getElementById("btn-add");
@@ -144,14 +130,12 @@ function onAddApp() {
         return;
     }
 
-    var behaviorType = document.getElementById("behavior-type").value;
-    var clipboardMethod = getClipboardMethod();
+    var inputMethod = document.getElementById("input-method").value;
     var encodingOverride = document.getElementById("encoding-override").value;
 
     // Set hidden inputs and trigger action
     document.getElementById("val-app-name").value = appName;
-    document.getElementById("val-behavior-type").value = behaviorType;
-    document.getElementById("val-clipboard-method").value = clipboardMethod;
+    document.getElementById("val-input-method").value = inputMethod;
     document.getElementById("val-encoding-override").value = encodingOverride;
     triggerAction("add-app");
 }
@@ -187,7 +171,7 @@ function clearAppList() {
     if (list) list.innerHTML = "";
 }
 
-function addAppToList(appName, behaviorType, clipboardMethod, encodingOverride) {
+function addAppToList(appName, inputMethod, encodingOverride) {
     var list = document.getElementById("app-list");
     if (!list) return;
 
@@ -202,17 +186,12 @@ function addAppToList(appName, behaviorType, clipboardMethod, encodingOverride) 
     nameSpan.title = appName;
     item.appendChild(nameSpan);
 
-    // Behavior column
-    var behaviorSpan = document.createElement("span");
-    behaviorSpan.className = "app-item-behavior";
-    behaviorSpan.textContent = behaviorLabels[behaviorType] || "-";
-    item.appendChild(behaviorSpan);
-
-    // Clipboard column
-    var clipboardSpan = document.createElement("span");
-    clipboardSpan.className = "app-item-clipboard";
-    clipboardSpan.textContent = clipboardLabels[clipboardMethod] || "-";
-    item.appendChild(clipboardSpan);
+    // Input method column
+    var methodSpan = document.createElement("span");
+    methodSpan.className = "app-item-inputmethod";
+    var mthKey = (inputMethod === undefined || inputMethod === null) ? "-1" : String(inputMethod);
+    methodSpan.textContent = inputMethodLabels[mthKey] || "-";
+    item.appendChild(methodSpan);
 
     // Encoding column
     var encodingSpan = document.createElement("span");
@@ -246,14 +225,11 @@ function clearInput() {
     var input = document.getElementById("app-name");
     if (input) input.value = "";
 
-    var behaviorSelect = document.getElementById("behavior-type");
-    if (behaviorSelect) behaviorSelect.value = "0";
-
-    var clipboardSelect = document.getElementById("clipboard-method");
-    if (clipboardSelect) clipboardSelect.value = "-1";
+    var methodSelect = document.getElementById("input-method");
+    if (methodSelect) methodSelect.value = "0";
 
     var encodingSelect = document.getElementById("encoding-override");
-    if (encodingSelect) encodingSelect.value = "-1";
+    if (encodingSelect) encodingSelect.value = "0";
 }
 
 function forceRefresh(scrollToBottom) {

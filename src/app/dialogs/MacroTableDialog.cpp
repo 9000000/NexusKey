@@ -24,9 +24,6 @@ MacroTableDialog::MacroTableDialog(HWND parent)
     populateList();
 }
 
-void MacroTableDialog::onBeforeClose() {
-    persistAndSignal();
-}
 
 void MacroTableDialog::persistAndSignal() {
     (void)ConfigManager::SaveMacros(ConfigManager::GetConfigPath(), macros_);

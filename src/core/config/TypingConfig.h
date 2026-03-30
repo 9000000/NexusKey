@@ -48,7 +48,6 @@ struct TypingConfig {
     bool autoRestoreEnabled = false;  // Restore raw keys when word is invalid
     bool tempOffSpellByCtrl = false;  // Solo Ctrl tap temporarily disables spell check for current word
     bool tempOffByAlt = false;        // Double-Alt tap temporarily disables Vietnamese for current word
-    bool rememberCodeTable = false;   // Auto-remember code table per application
     bool macroEnabled = false;         // Allow macro/shorthand expansion
     bool macroInEnglish = false;       // Allow macros even when Vietnamese mode is off
     bool quickConsonant = false;       // Quick typing: cc→ch, gg→gi, nn→ng
@@ -56,6 +55,7 @@ struct TypingConfig {
     bool quickEndConsonant = false;    // Quick end consonant: g→ng, h→nh, k→ch
     bool tempOffMacroByEsc = false;    // Esc temporarily disables macro for next word
     bool autoCapsMacro = false;        // Auto-capitalize expansion to match typed case
+    bool allowEnglishBypass = false;   // Cho phép gõ dấu tự do / Bypass English blocking (e.g. yes -> ýe)
 
     // Default constructor for compiled defaults (FR8 - engine autonomy)
     TypingConfig() = default;
