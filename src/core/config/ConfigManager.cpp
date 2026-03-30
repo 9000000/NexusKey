@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ConfigManager.h"
+#include "core/Debug.h"
 
 #define TOML_HEADER_ONLY 1
 #include "toml.hpp"
@@ -32,9 +33,24 @@ bool WriteToml(const std::string& utf8Path, const toml::table& tbl) {
     return true;
 }
 
+// Security limits — shared across all Load* functions
+constexpr uintmax_t kMaxConfigFileSizeBytes = 1 * 1024 * 1024;  // 1 MB
+constexpr size_t    kMaxMacroKeyLen         = 32;
+constexpr size_t    kMaxMacroValueLen       = 512;
+constexpr size_t    kMaxPerAppEntries       = 256;
+
 }  // namespace
 
 std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path) {
+    // Guard: reject config files larger than 1 MB to prevent OOM via crafted macros
+    std::error_code sizeEc;
+    auto fileSize = std::filesystem::file_size(path, sizeEc);
+    if (sizeEc || fileSize > kMaxConfigFileSizeBytes) {
+        NEXTKEY_LOG(L"[ConfigManager] Config file too large or unreadable (%llu bytes), using defaults",
+                    sizeEc ? 0ULL : static_cast<unsigned long long>(fileSize));
+        return std::nullopt;
+    }
+
     try {
         std::string utf8Path = WideToUtf8(path);
         auto table = toml::parse_file(utf8Path);
@@ -408,8 +424,15 @@ std::unordered_map<std::wstring, AppOverrideEntry> ConfigManager::LoadAppOverrid
         std::string utf8Path = WideToUtf8(path);
         auto table = toml::parse_file(utf8Path);
 
+        size_t entryCount = 0;
+
         if (auto section = table["app_overrides"].as_table()) {
             for (auto& [key, val] : *section) {
+                if (++entryCount > kMaxPerAppEntries) {
+                    NEXTKEY_LOG(L"[ConfigManager] Per-app table exceeds limit (%zu), truncating",
+                                kMaxPerAppEntries);
+                    break;
+                }
                 if (auto* entry = val.as_table()) {
                     AppOverrideEntry e;
                     e.inputMethod = static_cast<int8_t>((*entry)["input_method"].value_or(-1));
@@ -594,6 +617,15 @@ ConvertConfig ConfigManager::LoadConvertConfigOrDefault() {
 
 std::unordered_map<std::wstring, std::wstring> ConfigManager::LoadMacros(const std::wstring& path) {
     std::unordered_map<std::wstring, std::wstring> data;
+    // Guard: reject files larger than 1 MB — a large macro section triggers OOM when
+    // HookEngine allocates SendInput arrays proportional to the expansion length.
+    std::error_code sizeEc;
+    auto fileSize = std::filesystem::file_size(path, sizeEc);
+    if (sizeEc || fileSize > kMaxConfigFileSizeBytes) {
+        NEXTKEY_LOG(L"[ConfigManager] Macro file too large or unreadable (%llu bytes), skipping macros",
+                    sizeEc ? 0ULL : static_cast<unsigned long long>(fileSize));
+        return data;
+    }
     try {
         std::string utf8Path = WideToUtf8(path);
         auto table = toml::parse_file(utf8Path);
@@ -601,9 +633,14 @@ std::unordered_map<std::wstring, std::wstring> ConfigManager::LoadMacros(const s
         if (auto section = table["macros"].as_table()) {
             for (auto& [key, val] : *section) {
                 auto str = val.value<std::string>();
-                if (str) {
-                    data[Utf8ToWide(std::string(key.str()))] = Utf8ToWide(*str);
+                if (!str) continue;
+
+                if (key.str().size() > kMaxMacroKeyLen || str->size() > kMaxMacroValueLen) {
+                    NEXTKEY_LOG(L"[ConfigManager] Macro entry too long, skipping (key=%zu, value=%zu)",
+                                key.str().size(), str->size());
+                    continue;
                 }
+                data[Utf8ToWide(std::string(key.str()))] = Utf8ToWide(*str);
             }
         }
     } catch (...) {}

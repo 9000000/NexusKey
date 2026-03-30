@@ -16,6 +16,7 @@
 #include "core/Debug.h"
 
 #include "system/TsfRegistration.h"
+#include "core/ipc/SecurityHelpers.h"
 
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "system/HookEngine.h"
@@ -127,7 +128,24 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             zipPath = zipPath.substr(1, zipPath.size() - 2);
         }
         if (!zipPath.empty()) {
-            RunUpdateInstaller(zipPath);  // [[noreturn]]
+            // Validate that the zip is inside %TEMP% — reject arbitrary paths to prevent
+            // local malware from replacing the update archive with a crafted DLL payload.
+            // Normalize first to defeat path traversal (e.g. C:\Temp\..\evil.zip).
+            wchar_t resolvedPath[MAX_PATH] = {};
+            if (!GetFullPathNameW(zipPath.c_str(), MAX_PATH, resolvedPath, nullptr)) {
+                NEXTKEY_LOG(L"[main] --install-update rejected: path resolution failed");
+                return 1;
+            }
+            wchar_t tempDir[MAX_PATH] = {};
+            GetTempPathW(MAX_PATH, tempDir);  // Guarantees trailing backslash
+            int cmpLen = static_cast<int>(wcslen(tempDir));
+            int resolvedLen = static_cast<int>(wcslen(resolvedPath));
+            if (resolvedLen < cmpLen ||
+                CompareStringOrdinal(resolvedPath, cmpLen, tempDir, cmpLen, TRUE) != CSTR_EQUAL) {
+                NEXTKEY_LOG(L"[main] --install-update rejected: '%s' not inside TEMP", resolvedPath);
+                return 1;
+            }
+            RunUpdateInstaller(resolvedPath);  // [[noreturn]]
         }
         return 1;  // Missing zip path
     }
@@ -162,7 +180,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Ensure only one background instance of NexusKey runs at a time.
     // We check this AFTER subprocess routing so settings/macro dialogs 
     // can spawn freely, but a second background process cannot.
-    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\NexusKey_Main_Mutex");
+    auto mutexSa = NextKey::MakeCreatorOnlySecurityAttributes();
+    HANDLE hMutex = CreateMutexW(&mutexSa, TRUE, L"Local\\NexusKey_Main_Mutex");
+    if (mutexSa.lpSecurityDescriptor) LocalFree(mutexSa.lpSecurityDescriptor);
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         // Another background instance is already running.
         // If the user has "show on startup" configured, popup the settings dialog of the 
@@ -184,6 +204,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         CloseHandle(hMutex);
         return 0;
     }
+
+    // Remove any HKCU CLSID override that malware may have planted to hijack TSF DLL loading
+    CleanupHkcuClsidOverride();
 
     // Load config
     auto config = ConfigManager::LoadOrDefault();

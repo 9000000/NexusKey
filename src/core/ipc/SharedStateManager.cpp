@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SharedStateManager.h"
+#include "SecurityHelpers.h"
 
 #ifdef _WIN32
 #include <Windows.h>
 #endif
+
+#include <atomic>
 
 namespace NextKey {
 
@@ -39,14 +42,16 @@ SharedStateManager& SharedStateManager::operator=(SharedStateManager&&) noexcept
 
 bool SharedStateManager::Create() {
 #ifdef _WIN32
+    auto sa = NextKey::MakeCreatorOnlySecurityAttributes();
     pImpl_->hMapping = CreateFileMappingW(
         INVALID_HANDLE_VALUE,
-        nullptr,
+        &sa,
         PAGE_READWRITE,
         0,
         sizeof(SharedState),
         SHARED_MEM_NAME
     );
+    if (sa.lpSecurityDescriptor) LocalFree(sa.lpSecurityDescriptor);
 
     if (!pImpl_->hMapping) {
         return false;
@@ -150,14 +155,16 @@ SharedState SharedStateManager::Read() const noexcept {
 
     // Seqlock read: retry if epoch is odd (write in progress) or changed during copy
     for (int i = 0; i < SEQLOCK_MAX_RETRIES; ++i) {
-        uint32_t before = pImpl_->pState->epoch;
-        MemoryBarrier();
+        // Acquire fence before reading epoch: prevents CPU/compiler from reordering
+        // the epoch read after the struct copy (correct on x86 TSO and ARM).
+        uint32_t before = static_cast<volatile const SharedState*>(pImpl_->pState)->epoch;
+        std::atomic_thread_fence(std::memory_order_acquire);
 
         // Copy the entire struct
         state = *const_cast<const SharedState*>(pImpl_->pState);
 
-        MemoryBarrier();
-        uint32_t after = pImpl_->pState->epoch;
+        std::atomic_thread_fence(std::memory_order_acquire);
+        uint32_t after = static_cast<volatile const SharedState*>(pImpl_->pState)->epoch;
 
         // Stable if epoch didn't change and is even (not mid-write)
         if (before == after && (before & 1) == 0) {

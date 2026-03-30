@@ -7,6 +7,7 @@ Bản cập nhật sửa lỗi và cải thiện tính năng.
 - Tự động chuyển sang gõ tiếng Anh khi detect layout không phải latin
 - Thêm tính năng cho phép gõ tự do (yes -> ýe)
 - Thay thế tính năng tự nhớ bảng mã thành cho phép config từng ứng dụng
+- Optimze lại code để hạn chế các vấn đề về bảo mật
 
 **🛠 Sửa lỗi:**
 - Sửa lỗi không cho phép thoát dấu khi bật "Kiểm tra chính tả"

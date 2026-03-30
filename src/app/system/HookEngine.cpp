@@ -1056,7 +1056,11 @@ void HookEngine::ResetComposition() {
     }
     previousComposition_.clear();
     previousEncodedWidths_.clear();
+    // Secure-erase keystroke history before releasing the buffer to prevent
+    // heap forensics from recovering typed content (including passwords).
+    SecureZeroMemory(inputHistory_.data(), inputHistory_.size() * sizeof(wchar_t));
     inputHistory_.clear();
+    SecureZeroMemory(rawMacroBuffer_.data(), rawMacroBuffer_.size() * sizeof(wchar_t));
     rawMacroBuffer_.clear();
     tempMacroOff_ = false;
     CancelCommitUndo();

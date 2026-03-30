@@ -5,13 +5,18 @@
 
 #include <cstdio>
 
+#if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+#endif
+
 namespace NextKey {
 
 // Debug logging - compiles out in Release builds unless NEXTKEY_DEBUG is defined
 #if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
 
 #ifdef _WIN32
-#include <Windows.h>
 
 // Note: Messages longer than 1024 chars are silently truncated
 inline void DebugLog(const wchar_t* format, ...) {

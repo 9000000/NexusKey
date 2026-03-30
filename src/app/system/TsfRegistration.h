@@ -32,4 +32,9 @@ bool UnregisterTsfElevated();
 /// Diagnostic output — enumerates HKLs, TSF profiles, active profile, SharedState
 void RunDiagnostics();
 
+/// Remove any HKCU CLSID override for the NexusKey TSF DLL.
+/// Malware can write HKCU\Software\Classes\CLSID\{guid}\InprocServer32 to redirect
+/// DLL loading in all TSF-aware apps. Call this at startup to clean it up.
+void CleanupHkcuClsidOverride() noexcept;
+
 }  // namespace NextKey

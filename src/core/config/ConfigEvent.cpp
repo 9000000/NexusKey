@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ConfigEvent.h"
+#include "../ipc/SecurityHelpers.h"
 #include <Windows.h>
 
 namespace NextKey {
@@ -30,12 +31,14 @@ bool ConfigEvent::Initialize() {
 
     // Create or open named event
     // Auto-reset event: resets after single wait is satisfied
+    auto sa = NextKey::MakeCreatorOnlySecurityAttributes();
     pImpl_->hEvent = CreateEventW(
-        nullptr,        // default security
+        &sa,            // restricted DACL: SYSTEM + creator/owner only
         FALSE,          // auto-reset event
         FALSE,          // initial state: not signaled
         kEventName      // named event for cross-process
     );
+    if (sa.lpSecurityDescriptor) LocalFree(sa.lpSecurityDescriptor);
 
     if (!pImpl_->hEvent) {
         OutputDebugStringW(L"ConfigEvent: Failed to create event\n");

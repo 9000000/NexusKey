@@ -297,4 +297,16 @@ void RunDiagnostics() {
     MessageBoxW(nullptr, out.c_str(), L"NexusKey Diagnostics", MB_OK | MB_ICONINFORMATION);
 }
 
+void CleanupHkcuClsidOverride() noexcept {
+    wchar_t keyPath[256];
+    swprintf_s(keyPath, L"Software\\Classes\\CLSID\\%s", NextKey::TSF::CLSID_TEXTSERVICE_STRING);
+
+    LSTATUS ls = RegDeleteTreeW(HKEY_CURRENT_USER, keyPath);
+    if (ls == ERROR_SUCCESS) {
+        NEXTKEY_LOG(L"[TsfRegistration] Removed HKCU CLSID override for NexusKey TSF");
+    } else if (ls != ERROR_FILE_NOT_FOUND) {
+        NEXTKEY_LOG(L"[TsfRegistration] Warning: could not remove HKCU CLSID override (error=%ld)", ls);
+    }
+}
+
 }  // namespace NextKey

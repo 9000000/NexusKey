@@ -425,11 +425,24 @@ void EngineController::ApplySharedState(const SharedState& state) {
     engineEnabled_ = (state.flags & SharedFlags::ENGINE_ENABLED) != 0;
     vietnameseMode_ = (state.flags & SharedFlags::VIETNAMESE_MODE) != 0;
 
-    // Update config from SharedState
-    InputMethod newMethod = static_cast<InputMethod>(state.inputMethod);
+    // Validate inputMethod (valid range: 0–2) before casting to enum
+    InputMethod newMethod = InputMethod::Telex;  // safe default
+    if (state.inputMethod <= 2) {
+        newMethod = static_cast<InputMethod>(state.inputMethod);
+    } else {
+        TSF_LOG(L"[EngineController] Invalid inputMethod %d from shared state, using Telex",
+                state.inputMethod);
+    }
+
+    // Validate optimizeLevel (valid range: 0–2)
+    uint8_t optimizeLevel = 0;
+    if (state.optimizeLevel <= 2) {
+        optimizeLevel = state.optimizeLevel;
+    }
+
     config_.inputMethod = newMethod;
     config_.spellCheckEnabled = state.spellCheck != 0;
-    config_.optimizeLevel = state.optimizeLevel;
+    config_.optimizeLevel = optimizeLevel;
     DecodeFeatureFlags(state.GetFeatureFlags(), config_);
 
     // Recreate engine with updated config (engine stores a copy of TypingConfig,

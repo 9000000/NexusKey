@@ -162,6 +162,12 @@ static HRESULT UnregisterCategory() {
     return hr;
 }
 
+static void CleanupHkcuClsidOverride() noexcept {
+    wchar_t keyPath[256];
+    swprintf_s(keyPath, L"Software\\Classes\\CLSID\\%s", CLSID_TEXTSERVICE_STRING);
+    RegDeleteTreeW(HKEY_CURRENT_USER, keyPath);  // No-op if key absent (ERROR_FILE_NOT_FOUND)
+}
+
 }  // namespace TSF
 }  // namespace NextKey
 
@@ -170,6 +176,9 @@ extern "C" {
 
 STDAPI DllRegisterServer() {
     using namespace NextKey::TSF;
+
+    // Clean up any HKCU override first to ensure HKLM registration takes effect
+    CleanupHkcuClsidOverride();
 
     HRESULT hr = RegisterCLSID();
     if (FAILED(hr)) return hr;
