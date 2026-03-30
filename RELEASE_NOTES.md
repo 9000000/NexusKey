@@ -1,3 +1,17 @@
+# NexusKey v2.0.2
+
+Bản cập nhật sửa lỗi.
+
+---
+
+**🛠 Sửa lỗi:**
+- Sửa lỗi bật spell check gõ dấu rồi nhấn lại để thoát không hoạt động (ví dụ: `ocrr` → `ocr`)
+
+---
+Cảm ơn bạn đã lựa chọn NexusKey!
+
+---
+
 # NexusKey v2.0.1
 
 Bản cập nhật tập trung vào sửa nhiều lỗi.
