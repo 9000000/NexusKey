@@ -137,6 +137,7 @@ private:
     // Smart switch: get foreground app exe name
     static std::wstring GetForegroundExeName();
     void OnFocusChanged();
+    void OnLayoutChanged(bool isCompatibleNow);
 
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
@@ -228,6 +229,11 @@ private:
     bool modAltDown_ = false;
     bool modWinDown_ = false;
     bool otherKeyPressed_ = false;
+
+    // Layout auto-disable: pause Vietnamese when CJK keyboard layout is active
+    bool layoutForcedEnglish_  = false;  // True when auto-switched to English due to CJK layout
+    bool preLayoutSwitchMode_  = false;  // V/E mode saved before forced switch
+    bool cachedIsCompatLayout_ = true;   // Last known layout compatibility (updated in OnFocusChanged + key-up)
 
     // Config reload
     ConfigEvent configEvent_;
