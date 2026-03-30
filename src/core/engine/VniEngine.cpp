@@ -181,7 +181,13 @@ void VniEngine::PushChar(wchar_t c) {
         // All "treat as literal" paths share the same two operations.
         auto asLiteral = [&] { ProcessChar(c, rawInput_.size() - 1); UpdateSpellState(); };
 
-        if (config_.spellCheckEnabled && spellCheckDisabled_)  { asLiteral(); return; }
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            // Allow tone escape (33, 11, etc.) even when spell check disabled:
+            // the user is canceling a tone they already applied (e.g. oc33 → oc3).
+            CharState* t = FindToneTarget();
+            if (!t || t->tone != KeyToTone(c)) { asLiteral(); return; }
+            // Has matching pending tone → fall through to ProcessTone for escape
+        }
         // Tone escape: user pressed same tone key twice — blocks Vietnamese.
         if (toneEscaped_)                                       { asLiteral(); return; }
         // English Protection: always active, independent of spell check.

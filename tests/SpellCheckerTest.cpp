@@ -379,6 +379,14 @@ TEST_F(TelexSpellCheckTest, CircumflexModifier_NotGated) {
     EXPECT_EQ(engine.Peek(), L"blaa");
 }
 
+TEST_F(TelexSpellCheckTest, ToneEscape_WithCoda_SpellCheckOn) {
+    // ocrr: 'r' applies hỏi to 'o' → "ỏc" (invalid → spellCheckDisabled_)
+    // second 'r' must still escape → "ocr"
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"ocrr");
+    EXPECT_EQ(engine.Peek(), L"ocr");
+}
+
 //=============================================================================
 // Engine Integration Tests — VniEngine with spellCheck ON
 //=============================================================================
@@ -436,6 +444,14 @@ TEST_F(VniSpellCheckTest, BackspaceRestoresToneAbility) {
     // Now type valid syllable
     TypeString(engine, L"a1");
     EXPECT_EQ(engine.Peek(), L"bá");
+}
+
+TEST_F(VniSpellCheckTest, ToneEscape_WithCoda_SpellCheckOn) {
+    // oc33: '3' applies hỏi to 'o' → "ỏc" (invalid → spellCheckDisabled_)
+    // second '3' must still escape → "oc3"
+    Vni::VniEngine engine(config_);
+    TypeString(engine, L"oc33");
+    EXPECT_EQ(engine.Peek(), L"oc3");
 }
 
 //=============================================================================

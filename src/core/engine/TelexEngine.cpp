@@ -191,7 +191,13 @@ void TelexEngine::PushChar(wchar_t c) {
         // All "treat as literal" paths share the same two operations.
         auto asLiteral = [&] { ProcessChar(c); UpdateSpellState(); };
 
-        if (config_.spellCheckEnabled && spellCheckDisabled_)  { asLiteral(); return; }
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            // Allow tone escape (rr, ss, ff, etc.) even when spell check disabled:
+            // the user is canceling a tone they already applied (e.g. ocrr → ocr).
+            size_t t = FindToneTarget();
+            if (t == SIZE_MAX || states_[t].tone != KeyToTone(c)) { asLiteral(); return; }
+            // Has matching pending tone → fall through to ProcessTone for escape
+        }
         // Tone escape: user pressed same tone key twice (e.g., ss) — blocks Vietnamese.
         if (toneEscaped_)                                       { asLiteral(); return; }
         // English Protection: always active, independent of spell check.
