@@ -197,6 +197,11 @@ void VniEngine::PushChar(wchar_t c) {
                 if (!UpdateToneInsistence(c, engProt_))              { asLiteral(); return; }
                 // User insisted (same key twice) — fall through to apply tone
             }
+            // Structural hard-English: V+C+V pattern is impossible in Vietnamese syllables.
+            if (IsHardEnglishToneContext(states_.data(), states_.size(), c)) {
+                engProt_.bias = LanguageBias::HardEnglish;
+                asLiteral(); return;
+            }
         }
         if (ProcessTone(c)) {
             if (!toneEscaped_) {

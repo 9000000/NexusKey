@@ -1,6 +1,6 @@
 # NexusKey v2.0.2
 
-Bản cập nhật sửa lỗi.
+Bản cập nhật sửa lỗi và cải thiện tính năng.
 
 ---
 **✨ Cải tiến:**

@@ -107,17 +107,7 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     globalInputMethod_ = config.inputMethod;
 
     // Load manual per-app overrides (encoding + input method)
-    {
-        auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
-        appEncodingOverrides_.clear();
-        appInputMethodOverrides_.clear();
-        for (auto& [exe, entry] : overrides) {
-            if (entry.encodingOverride >= 0)
-                appEncodingOverrides_[exe] = entry.encodingOverride;
-            if (entry.inputMethod >= 0)
-                appInputMethodOverrides_[exe] = entry.inputMethod;
-        }
-    }
+    ReloadAppOverrides();
 
     // Load excluded apps list
     if (excludeApps_) {
@@ -205,7 +195,8 @@ void HookEngine::ToggleVietnameseMode() {
         return;
     }
 
-    layoutForcedEnglish_ = false;  // User overriding auto-detection — clear forced state
+    layoutForcedEnglish_ = false;   // User overriding auto-detection — clear forced state
+    preLayoutSwitchMode_ = false;   // Stale saved-mode is no longer meaningful
 
     // Commit any pending composition before switching
     if (engine_->Count() > 0) {
@@ -313,17 +304,7 @@ bool HookEngine::CheckConfigEvent() {
     globalInputMethod_ = config.inputMethod;
 
     // Reload manual per-app overrides (encoding + input method)
-    {
-        auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
-        appEncodingOverrides_.clear();
-        appInputMethodOverrides_.clear();
-        for (auto& [exe, entry] : overrides) {
-            if (entry.encodingOverride >= 0)
-                appEncodingOverrides_[exe] = entry.encodingOverride;
-            if (entry.inputMethod >= 0)
-                appInputMethodOverrides_[exe] = entry.inputMethod;
-        }
-    }
+    ReloadAppOverrides();
 
     // Reload excluded apps list
     if (excludeApps_) {
@@ -1330,6 +1311,18 @@ std::wstring HookEngine::GetForegroundExeName() {
     }
     CloseHandle(hProc);
     return result;
+}
+
+void HookEngine::ReloadAppOverrides() {
+    auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
+    appEncodingOverrides_.clear();
+    appInputMethodOverrides_.clear();
+    for (auto& [exe, entry] : overrides) {
+        if (entry.encodingOverride >= 0)
+            appEncodingOverrides_[exe] = entry.encodingOverride;
+        if (entry.inputMethod >= 0)
+            appInputMethodOverrides_[exe] = entry.inputMethod;
+    }
 }
 
 void HookEngine::OnLayoutChanged(bool isCompatibleNow) {

@@ -138,6 +138,7 @@ private:
     static std::wstring GetForegroundExeName();
     void OnFocusChanged();
     void OnLayoutChanged(bool isCompatibleNow);
+    void ReloadAppOverrides();
 
     // Engine state
     std::unique_ptr<IInputEngine> engine_;

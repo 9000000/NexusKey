@@ -53,16 +53,22 @@ inline void InitSciterSubprocess() {
     auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
     SetLanguage(static_cast<Language>(sysConfig.language));
 
-    sciter::application::start();
-    
-    // FIX: ClearType corrupts alpha channel on Win10 DWM surfaces
+    // FIX: ClearType corrupts alpha channel on Win10 DWM surfaces.
+    // SCITER_SET_GFX_LAYER must be set BEFORE application::start() so the
+    // renderer is initialized with the correct backend.
     if (SciterHelper::IsWindows11OrGreater()) {
         SciterSetOption(nullptr, SCITER_SET_GFX_LAYER, GFX_LAYER_D2D);
-        // CRITICAL: Disable DirectComposition on Win11 when using D2D to avoid black/blank window issues
-        SciterSetOption(nullptr, SCITER_SET_UX_THEMING, TRUE);
     } else {
         // Win10 needs SKIA to fix alpha channel issues with DWM
         SciterSetOption(nullptr, SCITER_SET_GFX_LAYER, GFX_LAYER_SKIA);
+    }
+
+    sciter::application::start();
+
+    // CRITICAL: Disable DirectComposition on Win11 when using D2D to avoid black/blank window issues.
+    // Must be set after start() (window system must be initialized).
+    if (SciterHelper::IsWindows11OrGreater()) {
+        SciterSetOption(nullptr, SCITER_SET_UX_THEMING, TRUE);
     }
 
     SciterSetOption(nullptr, SCITER_SET_SCRIPT_RUNTIME_FEATURES,

@@ -145,9 +145,7 @@ var STRINGS = {
         // ── App Overrides dialog ──
         "ao.title": "App Override",
         "ao.input_method": "Input method",
-        "ao.inherit": "Default (inherit)",
         "ao.encoding": "Encoding",
-        "ao.encoding_default": "Default",
         "ao.list_app": "Application",
         "ao.list_method": "Method",
         "ao.list_encoding": "Encoding",
