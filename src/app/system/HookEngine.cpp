@@ -780,6 +780,15 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     return false;
 }
 
+/// Returns true when the keyboard layout cannot produce Vietnamese input.
+/// Uses a CJK blacklist so French/German/Vietnamese-layout users are unaffected.
+static bool IsIncompatibleLayout(HKL hkl) {
+    WORD langId = PRIMARYLANGID(LOWORD(reinterpret_cast<DWORD_PTR>(hkl)));
+    return langId == LANG_JAPANESE   // 0x11
+        || langId == LANG_CHINESE    // 0x04 — covers Simplified (0x0804) & Traditional (0x0404)
+        || langId == LANG_KOREAN;    // 0x12
+}
+
 bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
     // TSF app — let TSF DLL handle all input
     if (isTsfApp_) return false;
@@ -1201,15 +1210,6 @@ static bool IsBrowserExeName(const wchar_t* filename) {
            _wcsnicmp(filename, L"brave", 5) == 0 ||
            _wcsnicmp(filename, L"opera", 5) == 0 ||
            _wcsnicmp(filename, L"vivaldi", 7) == 0;
-}
-
-/// Returns true when the keyboard layout cannot produce Vietnamese input.
-/// Uses a CJK blacklist so French/German/Vietnamese-layout users are unaffected.
-static bool IsIncompatibleLayout(HKL hkl) {
-    WORD langId = PRIMARYLANGID(LOWORD(reinterpret_cast<DWORD_PTR>(hkl)));
-    return langId == LANG_JAPANESE   // 0x11
-        || langId == LANG_CHINESE    // 0x04 — covers Simplified (0x0804) & Traditional (0x0404)
-        || langId == LANG_KOREAN;    // 0x12
 }
 
 bool HookEngine::IsQtElectronApp(HWND hwnd) {
