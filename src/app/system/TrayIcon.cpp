@@ -489,9 +489,19 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 menuCallback_(TrayMenuId::Settings);
             }
             return true;
+        case WM_LBUTTONDOWN:
+        case WM_MOUSEMOVE:
+        case NIN_POPUPOPEN:
+        case NIN_POPUPCLOSE:
+        case NIN_KEYSELECT:
+        case NIN_SELECT:
+        case WM_MOUSEHOVER:
+        case WM_MOUSELEAVE:
+            // Ignore benign events so they don't reset the click tracking state
+            return true;
     }
 
-    // Any non-left-button event clears the toggle tracking
+    // Any other event (e.g., focus change, other buttons) clears the toggle tracking
     toggledByClick_ = false;
     ignoreNextLButtonUp_ = false;
     return false;

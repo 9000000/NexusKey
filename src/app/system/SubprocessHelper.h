@@ -54,6 +54,17 @@ inline void InitSciterSubprocess() {
     SetLanguage(static_cast<Language>(sysConfig.language));
 
     sciter::application::start();
+    
+    // FIX: ClearType corrupts alpha channel on Win10 DWM surfaces
+    if (SciterHelper::IsWindows11OrGreater()) {
+        SciterSetOption(nullptr, SCITER_SET_GFX_LAYER, GFX_LAYER_D2D);
+        // CRITICAL: Disable DirectComposition on Win11 when using D2D to avoid black/blank window issues
+        SciterSetOption(nullptr, SCITER_SET_UX_THEMING, TRUE);
+    } else {
+        // Win10 needs SKIA to fix alpha channel issues with DWM
+        SciterSetOption(nullptr, SCITER_SET_GFX_LAYER, GFX_LAYER_SKIA);
+    }
+
     SciterSetOption(nullptr, SCITER_SET_SCRIPT_RUNTIME_FEATURES,
         ALLOW_FILE_IO | ALLOW_SOCKET_IO | ALLOW_EVAL | ALLOW_SYSINFO);
     BindSciterResources();

@@ -32,6 +32,26 @@ bool IsWindowsDarkMode() noexcept {
     return value == 0;
 }
 
+bool IsWindows11OrGreater() noexcept {
+    // NTSTATUS is LONG in user-mode
+    using RtlGetVersionPtr = LONG(WINAPI*)(OSVERSIONINFOW*);
+    
+    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+    if (!hNtdll) return false;
+    
+    auto RtlGetVersion = reinterpret_cast<RtlGetVersionPtr>(GetProcAddress(hNtdll, "RtlGetVersion"));
+    if (!RtlGetVersion) return false;
+    
+    OSVERSIONINFOW osInfo = { 0 };
+    osInfo.dwOSVersionInfoSize = sizeof(osInfo);
+    
+    if (RtlGetVersion(&osInfo) != 0) return false;  // STATUS_SUCCESS = 0
+    
+    // Windows 11 is Windows NT 10.0 with build >= 22000
+    return (osInfo.dwMajorVersion > 10) || 
+           (osInfo.dwMajorVersion == 10 && osInfo.dwBuildNumber >= 22000);
+}
+
 void ApplyDarkModeForApp() noexcept {
     HMODULE hUxTheme = LoadLibraryW(L"uxtheme.dll");
     if (!hUxTheme) return;

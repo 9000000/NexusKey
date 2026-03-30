@@ -59,6 +59,12 @@ namespace SciterHelper {
     [[nodiscard]] bool IsWindowsDarkMode() noexcept;
 
     /**
+     * Detect Windows 11 or greater (build >= 22000).
+     * @return true if Windows 11+, false for Windows 10 or older
+     */
+    [[nodiscard]] bool IsWindows11OrGreater() noexcept;
+
+    /**
      * Apply dark mode for the entire app process using undocumented uxtheme APIs.
      * Call once at startup. Enables dark context menus, scrollbars, etc.
      */
