@@ -845,6 +845,32 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             altTapCount_ = 0;  // Contaminated Alt release
         }
 
+        // Layout auto-disable: re-check on Win+Space / Ctrl+Shift / Alt+Shift key-up.
+        // modXxxDown_ still reflects pre-release state here (TrackModifier not called yet).
+        {
+            bool wasWin   = (vkCode == VK_LWIN    || vkCode == VK_RWIN);
+            bool wasShift = (vkCode == VK_LSHIFT   || vkCode == VK_RSHIFT);
+            bool wasAlt   = (vkCode == VK_LMENU    || vkCode == VK_RMENU);
+            bool wasCtrl  = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL);
+            bool triggerCheck = wasWin
+                || (wasShift && modCtrlDown_)   // Ctrl+Shift release
+                || (wasShift && modAltDown_)    // Alt+Shift release
+                || (wasCtrl  && modShiftDown_)  // Ctrl+Shift release (ctrl side)
+                || (wasAlt   && modShiftDown_); // Alt+Shift release (alt side)
+            if (triggerCheck) {
+                HWND fg = GetForegroundWindow();
+                if (fg) {
+                    DWORD tid = GetWindowThreadProcessId(fg, nullptr);
+                    HKL hkl = GetKeyboardLayout(tid);
+                    bool compatible = !IsIncompatibleLayout(hkl);
+                    if (compatible != cachedIsCompatLayout_) {
+                        cachedIsCompatLayout_ = compatible;
+                        OnLayoutChanged(compatible);
+                    }
+                }
+            }
+        }
+
         TrackModifier(vkCode, false);
     }
 
