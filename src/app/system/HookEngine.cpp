@@ -1175,6 +1175,15 @@ static bool IsBrowserExeName(const wchar_t* filename) {
            _wcsnicmp(filename, L"vivaldi", 7) == 0;
 }
 
+/// Returns true when the keyboard layout cannot produce Vietnamese input.
+/// Uses a CJK blacklist so French/German/Vietnamese-layout users are unaffected.
+static bool IsIncompatibleLayout(HKL hkl) {
+    WORD langId = PRIMARYLANGID(LOWORD(reinterpret_cast<DWORD_PTR>(hkl)));
+    return langId == LANG_JAPANESE   // 0x11
+        || langId == LANG_CHINESE    // 0x04 — covers Simplified (0x0804) & Traditional (0x0404)
+        || langId == LANG_KOREAN;    // 0x12
+}
+
 bool HookEngine::IsQtElectronApp(HWND hwnd) {
     HWND root = GetAncestor(hwnd, GA_ROOT);
     if (root) hwnd = root;
@@ -1252,6 +1261,30 @@ std::wstring HookEngine::GetForegroundExeName() {
     }
     CloseHandle(hProc);
     return result;
+}
+
+void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
+    if (!isCompatibleNow && !layoutForcedEnglish_) {
+        // Compatible → incompatible (CJK): save mode, force English
+        if (engine_->Count() > 0) CommitComposition();
+        CancelCommitUndo();
+        preLayoutSwitchMode_ = vietnameseMode_;
+        layoutForcedEnglish_ = true;
+        vietnameseMode_ = false;
+        HOOK_LOG(L"  LayoutAutoDisable: CJK layout detected, forcing English (saved mode=%d)",
+                 preLayoutSwitchMode_ ? 1 : 0);
+        if (modeChangeCallback_) modeChangeCallback_(false);
+    } else if (isCompatibleNow && layoutForcedEnglish_) {
+        // Incompatible → compatible: restore saved mode if smart switch is on
+        layoutForcedEnglish_ = false;
+        if (smartSwitch_) {
+            vietnameseMode_ = preLayoutSwitchMode_;
+            HOOK_LOG(L"  LayoutAutoDisable: compatible layout restored, mode=%d",
+                     vietnameseMode_ ? 1 : 0);
+            if (modeChangeCallback_) modeChangeCallback_(vietnameseMode_);
+        }
+        // smartSwitch OFF: stay in English, user must manually toggle back
+    }
 }
 
 void HookEngine::OnFocusChanged() {
