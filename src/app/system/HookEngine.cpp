@@ -1302,6 +1302,17 @@ void HookEngine::OnFocusChanged() {
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d",
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0);
 
+    // Layout auto-disable: check CJK layout on every focus change
+    if (fg) {
+        DWORD tid = GetWindowThreadProcessId(fg, nullptr);
+        HKL hkl = GetKeyboardLayout(tid);
+        bool compatible = !IsIncompatibleLayout(hkl);
+        if (compatible != cachedIsCompatLayout_) {
+            cachedIsCompatLayout_ = compatible;
+            OnLayoutChanged(compatible);
+        }
+    }
+
     // Skip focus tracking entirely if no feature needs it
     if (!smartSwitch_ && !excludeApps_ && !tsfApps_ && !rememberCodeTable_) return;
 
@@ -1309,7 +1320,7 @@ void HookEngine::OnFocusChanged() {
     bool wasTsfApp = isTsfApp_;
 
     // Save mode for previous app (smart switch, skip excluded/TSF apps)
-    if (smartSwitch_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
+    if (smartSwitch_ && !layoutForcedEnglish_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
         appModeMap_[currentExe_] = vietnameseMode_;
         smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
     }
