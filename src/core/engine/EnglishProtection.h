@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <cwctype>
+#include "VietnameseTables.h"
 
 namespace NextKey {
 
@@ -210,6 +211,42 @@ template<typename CharStateT>
         }
 
         i = vowelEnd;
+    }
+    return false;
+}
+
+// =============================================================================
+// Invalid Adjacent Vowel Pair — Pre-Tone Hard English Check
+// =============================================================================
+
+/// Detect adjacent plain vowel pairs that cannot form a Vietnamese syllable nucleus.
+/// Uses diphthong tables: if BOTH classic AND modern have rule 0 for a pair,
+/// it is not a recognized Vietnamese diphthong combination.
+///
+/// EXCEPTIONS (skipped even if rule 0):
+///   i+e (2+1) — smart accent intermediate state for 'iê' (tiếng = t-i-e-n-s-g-e)
+///   y+a (5+0) — part of the "uya" triphthong (khuya, đêm khuya, etc.)
+///
+/// Catches: "sea"+'r' (e+a=0,0), "aerial"+'r' (a+e=0,0), "boy"+'s' (o+y=0,0).
+/// Does NOT catch: "oa"+'f' (rule 3), "ai"+'s' (rule 1), "ie"+'s', "uya"+'s'.
+///
+/// Call in the tone gate BEFORE ProcessTone() to block tone on invalid nuclei.
+template<typename CharStateT>
+[[nodiscard]] inline bool HasInvalidAdjacentVowelPair(
+        const CharStateT* states, size_t count) noexcept {
+    for (size_t i = 0; i + 1 < count; ++i) {
+        if (!states[i].IsVowel() || !states[i+1].IsVowel()) continue;
+        if (states[i].HasModifier() || states[i+1].HasModifier()) continue;
+        int v0 = DiphthongVowelIndex(states[i].base);
+        int v1 = DiphthongVowelIndex(states[i+1].base);
+        if (v0 < 0 || v1 < 0) continue;
+        // Exception: i+e — valid smart accent intermediate state (tiê..., miê...)
+        if (v0 == 2 && v1 == 1) continue;
+        // Exception: y+a — part of the "uya" triphthong (khuya, đêm khuya, etc.)
+        if (v0 == 5 && v1 == 0) continue;
+        if (kDiphthongClassic[v0][v1] == 0 && kDiphthongModern[v0][v1] == 0) {
+            return true;
+        }
     }
     return false;
 }

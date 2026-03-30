@@ -7,6 +7,7 @@
 #include "TelexEngine.h"
 #include "EngineHelpers.h"
 #include "VietnameseTables.h"
+#include <algorithm>
 
 namespace NextKey {
 namespace Telex {
@@ -210,6 +211,12 @@ void TelexEngine::PushChar(wchar_t c) {
             // Structural hard-English: V+C+V pattern is impossible in Vietnamese syllables.
             // Catches "manager"/"danger" type words even without spell check.
             if (IsHardEnglishToneContext(states_.data(), states_.size(), c)) {
+                engProt_.bias = LanguageBias::HardEnglish;
+                asLiteral(); return;
+            }
+            // Adjacent plain vowel pair with no Vietnamese diphthong rule in either
+            // table (e.g., 'ea' in "search", 'ae' in "aerial", 'oy' in "boy").
+            if (HasInvalidAdjacentVowelPair(states_.data(), states_.size())) {
                 engProt_.bias = LanguageBias::HardEnglish;
                 asLiteral(); return;
             }
@@ -646,16 +653,23 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
     }
 
     // P8: Full Telex only — standalone 'w' with no modifiable vowel → insert ư
+    // Only fires when there are no vowels yet in the buffer (onset consonants or empty).
+    // After a vowel (e.g., "re" + w), 'w' is treated as literal — no Vietnamese word
+    // has a vowel followed by standalone ư via P8.
     // In QU cluster, don't insert standalone ư (let 'w' be literal: "quew" → "quew")
     if (config_.inputMethod != InputMethod::SimpleTelex && !IsInQUCluster()) {
-        CharState s;
-        s.base = L'u';
-        s.mod = Modifier::Horn;
-        s.isUpper = iswupper(c);
-        s.synthetic = true;  // Mark as P8-synthesized (ww escape removes it entirely)
-        s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
-        states_.push_back(s);
-        return true;
+        bool hasVowel = std::any_of(states_.begin(), states_.end(),
+            [](const CharState& s) { return s.IsVowel(); });
+        if (!hasVowel) {
+            CharState s;
+            s.base = L'u';
+            s.mod = Modifier::Horn;
+            s.isUpper = iswupper(c);
+            s.synthetic = true;  // Mark as P8-synthesized (ww escape removes it entirely)
+            s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
+            states_.push_back(s);
+            return true;
+        }
     }
 
     return false;

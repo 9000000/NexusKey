@@ -31,7 +31,7 @@ static void OpenHookLog() {
     if (pos != std::wstring::npos) logPath = logPath.substr(0, pos + 1);
     logPath += L"NexusKey_hook.log";
     (void)_wfopen_s(&g_hookLog, logPath.c_str(), L"w");
-    if (g_hookLog) setvbuf(g_hookLog, nullptr, _IOFBF, 8192);  // 8KB buffer
+    if (g_hookLog) setvbuf(g_hookLog, nullptr, _IONBF, 0);  // Unbuffered — flush every line (debug builds only)
 }
 
 static void CloseHookLog() {
@@ -573,13 +573,22 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             // Alpha key → replay saved chars, then process the new key.
             // MUST return HandleAlphaKey's value: if it triggers passthrough (return false),
             // the original key must reach the app — ignoring it would swallow the keystroke.
-            HOOK_LOG(L"  commit-undo: replaying + alpha '%c'", static_cast<char>(vkCode));
+            HOOK_LOG(L"  commit-undo: replaying + alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
+                     static_cast<char>(vkCode),
+                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
+                     commitStack_.size(),
+                     previousComposition_.c_str(),
+                     synthEventsPending_);
             ReplayCommittedChars();
             return HandleAlphaKey(vkCode);
         }
         if (vkCode == VK_BACK) {
             // Backspace → replay saved chars, then backspace into the word
-            HOOK_LOG(L"  commit-undo: replaying + backspace");
+            HOOK_LOG(L"  commit-undo: replaying + backspace (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
+                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
+                     commitStack_.size(),
+                     previousComposition_.c_str(),
+                     synthEventsPending_);
             ReplayCommittedChars();
             HandleBackspace();
             return true;
@@ -1583,6 +1592,9 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
     {
         bool needEmpty = (backspaceCount > 0 && !skipEmptyChar_);
         if (needEmpty) backspaceCount++;
+
+        HOOK_LOG(L"  ReplaceComposition[send]: BS=%zu needEmpty=%d toSend='%s' skipEmpty=%d synthPending=%d",
+                 backspaceCount, needEmpty ? 1 : 0, toSend.c_str(), skipEmptyChar_ ? 1 : 0, synthEventsPending_);
 
         if (backspaceCount > 0 || !toSend.empty()) {
             std::vector<INPUT> bsEvents;

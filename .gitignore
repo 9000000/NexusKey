@@ -47,6 +47,7 @@ changes.md
 
 # ===== Internal docs (keep only public-safe files) =====
 docs/*
+!docs/images/
 !docs/CODING_RULES.md
 !docs/telex-test-specification.md
 !docs/vietnamese-phonology-spec.md

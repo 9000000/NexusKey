@@ -250,9 +250,57 @@ This table is exhaustive (60 entries):
 
 ---
 
-## 8. Edge Cases & Exceptions
+## 8. Stop-Final Tone Restriction
 
-### 8.1 Triphthongs
+### 8.1 Overview
+
+Vietnamese coda consonants are divided into two classes:
+
+| Class | Coda consonants | Tones allowed |
+|-------|----------------|---------------|
+| **Stop finals** (phụ âm cuối tắc) | `c`, `ch`, `k`, `p`, `t` | Ngang (flat), Sắc, Nặng only |
+| **Non-stop finals** | `m`, `n`, `ng`, `nh` | All 6 tones |
+
+Stop finals are phonologically incompatible with Huyền, Hỏi, and Ngã tones. The
+syllable types containing these combinations do not exist in Vietnamese.
+
+### 8.2 Valid Tone × Stop-Final Matrix
+
+| Coda | Ngang | Sắc (s) | Huyền (f) | Hỏi (r) | Ngã (x) | Nặng (j) |
+|------|-------|---------|-----------|---------|---------|---------|
+| `c`  | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| `ch` | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| `k`  | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| `p`  | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| `t`  | ✓ | ✓ | ✗ | ✗ | ✗ | ✓ |
+| `m`  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `n`  | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `ng` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `nh` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+### 8.3 Engine Behavior (spellCheckEnabled = true)
+
+When spell check is enabled, the engine enforces this restriction **before** applying
+the tone. If a Huyền/Hỏi/Ngã key is pressed and the current coda is a stop final,
+the tone key is treated as a **literal character** immediately.
+
+| Input | Spell check OFF | Spell check ON |
+|-------|----------------|----------------|
+| `ocr` | `ỏc` (tone applied) | `ocr` (literal) |
+| `ocs` | `ốc` | `ốc` |
+| `ocj` | `ọc` | `ọc` |
+| `anr` | `ản` | `ản` |
+| `atf` | `àt` | `atf` (literal) |
+
+This fixes common English acronym/abbreviation interference: `ocr`, `tcp`, `apt`, etc.
+
+See `docs/plans/pre-tone-stop-final-check.md` for implementation details.
+
+---
+
+## 9. Edge Cases & Exceptions
+
+### 9.1 Triphthongs
 
 | Pattern | Examples | Tone Position | Notes |
 |---------|----------|---------------|-------|
@@ -265,7 +313,7 @@ This table is exhaustive (60 entries):
 | uya | khuya | y (middle) | Middle vowel is nucleus |
 | uyê | tuyệt, thuyết | ê (modified) | Circumflex takes priority |
 
-### 8.2 Semi-vowel Behaviors
+### 9.2 Semi-vowel Behaviors
 
 | Character | Context | Treated As |
 |-----------|---------|------------|
@@ -276,7 +324,7 @@ This table is exhaustive (60 entries):
 | u | Before vowel (ua, ue, uo) | Onset glide or vowel |
 | o | Before a (oa) | Onset glide |
 
-### 8.3 gi- Cluster
+### 9.3 gi- Cluster
 
 The combination "gi" has special handling:
 - Before vowel: `gi` + V → treated as onset
@@ -361,3 +409,4 @@ Toned vowels are in the Vietnamese Extended block: U+1EA0 - U+1EF9
 |---------|------|--------|---------|
 | 1.0 | 2026-02-04 | AI + Phat | Initial specification |
 | 1.1 | 2026-02-05 | AI + Phat | Added P2 "uo" pattern, fixed P6 escape condition |
+| 1.2 | 2026-03-30 | AI + Phat | Added §8 Stop-Final Tone Restriction; renumbered §8→§9 |

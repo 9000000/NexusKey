@@ -1008,6 +1008,25 @@ TEST_F(TelexEngineTest, Window_SyntheticNotErased) {
     EXPECT_EQ(engine_->Peek(), L"uindow");
 }
 
+TEST_F(TelexEngineTest, P8_LiteralWAfterVowel_Rework) {
+    // P8 must NOT fire when vowels already exist in buffer.
+    // "rework": r-e-w-o-r-k → 'w' after 'e' is literal, not ư.
+    TypeString(*engine_, L"rework");
+    EXPECT_EQ(engine_->Peek(), L"rework");
+}
+
+TEST_F(TelexEngineTest, P8_LiteralWAfterVowel_rew) {
+    // 'w' after vowel 'e' is literal (P8 blocked)
+    TypeString(*engine_, L"rew");
+    EXPECT_EQ(engine_->Peek(), L"rew");
+}
+
+TEST_F(TelexEngineTest, P8_StillFiresAfterConsonantOnly) {
+    // P8 still fires when only consonants precede 'w'
+    TypeString(*engine_, L"trwa");  // tr + ư + a = trưa
+    EXPECT_EQ(engine_->Peek(), L"tr\x01B0" L"a");  // trưa
+}
+
 TEST_F(TelexEngineTest, Tone_IA_Diphthong_Classic) {
     // ia diphthong: tone on first vowel (classic)
     TypeString(*engine_, L"nghiax");
@@ -2386,6 +2405,47 @@ TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkAllowed_Cau) {
 TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkAllowed_Tieng) {
     // "tiếng": t-i-e-n-g + 'e' (circumflex) + 's' (tone sắc).
     // Scan finds 'e' immediately after consonants → needsValidation=false → allowed.
+    TypeString(*engine_, L"tienges");
+    EXPECT_EQ(engine_->Peek(), L"ti\x1EBFng");  // tiếng
+}
+
+// ============================================================================
+// INVALID ADJACENT VOWEL PAIR — plain vowel pairs impossible in Vietnamese
+// ============================================================================
+
+TEST_F(EnglishDetectionNoSpellCheckTest, InvalidEANucleus_Search_RIsLiteral) {
+    // "sear": plain 'e' + plain 'a' is not a Vietnamese vowel nucleus.
+    // 'r' must be literal, not tone key (hỏi). Without fix: "seảr".
+    TypeString(*engine_, L"sear");
+    EXPECT_EQ(engine_->Peek(), L"sear");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, InvalidEANucleus_Search_FullWord) {
+    // Full word "search": no diacritics.
+    TypeString(*engine_, L"search");
+    EXPECT_EQ(engine_->Peek(), L"search");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, InvalidEANucleus_SeaF_FIsLiteral) {
+    // "seaf": plain 'ea' + tone key 'f' (huyền) → 'f' must be literal.
+    TypeString(*engine_, L"seaf");
+    EXPECT_EQ(engine_->Peek(), L"seaf");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, InvalidEANucleus_VN_Ao_Unaffected) {
+    // "sao"+'r': 'ao' is valid Vietnamese (rule FIRST) → tone on 'a' → "sảo". Unaffected.
+    TypeString(*engine_, L"saor");
+    EXPECT_EQ(engine_->Peek(), L"s\x1EA3o");  // sảo
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, InvalidEANucleus_VN_IponUnaffected) {
+    // "ipỏn": V+C+V at count=3 is preserved (count<4 guard). Unaffected.
+    TypeString(*engine_, L"iporn");
+    EXPECT_EQ(engine_->Peek(), L"ip\x1ECFn");  // ipỏn
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, InvalidEANucleus_SmartAccent_Tiensge_Unaffected) {
+    // Smart accent path "tiếng" uses 'i'+'e' (plain) at tone time — must NOT be blocked.
     TypeString(*engine_, L"tienges");
     EXPECT_EQ(engine_->Peek(), L"ti\x1EBFng");  // tiếng
 }
