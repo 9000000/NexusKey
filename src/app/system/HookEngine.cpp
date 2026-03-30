@@ -198,6 +198,8 @@ void HookEngine::ToggleVietnameseMode() {
         return;
     }
 
+    layoutForcedEnglish_ = false;  // User overriding auto-detection — clear forced state
+
     // Commit any pending composition before switching
     if (engine_->Count() > 0) {
         CommitComposition();
