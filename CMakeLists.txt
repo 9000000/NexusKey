@@ -119,6 +119,8 @@ add_executable(NextKeyApp WIN32
     src/app/dialogs/ConvertToolDialog.cpp
     src/app/dialogs/AboutDialog.h
     src/app/dialogs/AboutDialog.cpp
+    src/app/dialogs/AppOverridesDialog.h
+    src/app/dialogs/AppOverridesDialog.cpp
     # system/
     src/app/system/TrayIcon.h
     src/app/system/TrayIcon.cpp

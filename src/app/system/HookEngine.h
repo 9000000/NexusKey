@@ -177,6 +177,7 @@ private:
     bool rememberCodeTable_ = false;
     CodeTable currentCodeTable_ = CodeTable::Unicode;
     std::unordered_map<std::wstring, uint8_t> appCodeTableMap_;  // exe → CodeTable value
+    std::unordered_map<std::wstring, int8_t> appEncodingOverrides_;  // exe → manual encoding (-1=inherit)
 
     // Backspace-into-committed-word (re-enter composition after commit + backspace)
     // inputHistory_ records exact user keystrokes (including backspace as '\b')

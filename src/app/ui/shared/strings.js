@@ -145,9 +145,12 @@ var STRINGS = {
         "ao.none": "None (default)",
         "ao.skip_ime": "Skip IME check",
         "ao.force_clip": "Force clipboard",
+        "ao.encoding": "Encoding",
+        "ao.encoding_default": "Default",
         "ao.list_app": "Application",
         "ao.list_handling": "Handling",
         "ao.list_clipboard": "Clipboard",
+        "ao.list_encoding": "Encoding",
         "ao.app_ph": "e.g.: myapp.exe"
     }
 };

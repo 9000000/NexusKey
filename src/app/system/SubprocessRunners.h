@@ -14,5 +14,6 @@ namespace NextKey {
 [[noreturn]] void RunMacroSubprocess();
 [[noreturn]] void RunConvertToolSubprocess();
 [[noreturn]] void RunAboutSubprocess();
+[[noreturn]] void RunAppOverridesSubprocess();
 
 }  // namespace NextKey

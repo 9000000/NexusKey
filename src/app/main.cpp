@@ -151,6 +151,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     if (lpCmdLine && wcsstr(lpCmdLine, L"--about") != nullptr) {
         RunAboutSubprocess();  // [[noreturn]]
     }
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--appoverrides") != nullptr) {
+        RunAppOverridesSubprocess();  // [[noreturn]]
+    }
 
     // ═══════════════════════════════════════════════════════════
     // Main Process

@@ -363,6 +363,11 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
+    if (msg == WM_NEXUSKEY_OPEN_APPOVERRIDES) {
+        SpawnSubprocess(L"NexusKey - App Overrides", L"--appoverrides");
+        return 0;
+    }
+
     // Real-time theme switch: Windows broadcasts this when user changes theme
     if (msg == WM_SETTINGCHANGE && lParam) {
         if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
@@ -763,7 +768,8 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         return;
     }
     else if (id == L"btn-app-overrides") {
-        // TODO: Open app overrides dialog
+        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_APPOVERRIDES, 0, 0);
+        return;
     }
     else if (id == L"btn-reset-settings") {
         // TODO: Reset all settings to defaults

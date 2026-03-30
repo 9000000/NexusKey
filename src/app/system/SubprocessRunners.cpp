@@ -9,6 +9,7 @@
 #include "dialogs/MacroTableDialog.h"
 #include "dialogs/ConvertToolDialog.h"
 #include "dialogs/AboutDialog.h"
+#include "dialogs/AppOverridesDialog.h"
 #include "core/Debug.h"
 
 #include <Windows.h>
@@ -115,6 +116,19 @@ namespace NextKey {
     dialog.Show();
 
     NEXTKEY_LOG(L"About subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunAppOverridesSubprocess() {
+    NEXTKEY_LOG(L"Running app overrides subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    AppOverridesDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"App overrides subprocess exiting");
     ExitProcess(0);
 }
 

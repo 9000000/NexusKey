@@ -442,6 +442,49 @@ bool ConfigManager::SavePerAppCodeTable(const std::wstring& path,
     }
 }
 
+std::unordered_map<std::wstring, AppOverrideEntry> ConfigManager::LoadAppOverrides(const std::wstring& path) {
+    std::unordered_map<std::wstring, AppOverrideEntry> data;
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = toml::parse_file(utf8Path);
+
+        if (auto section = table["app_overrides"].as_table()) {
+            for (auto& [key, val] : *section) {
+                if (auto* entry = val.as_table()) {
+                    AppOverrideEntry e;
+                    e.behaviorType = static_cast<int8_t>((*entry)["behavior"].value_or(0));
+                    e.clipboardMethod = static_cast<int8_t>((*entry)["clipboard"].value_or(-1));
+                    e.encodingOverride = static_cast<int8_t>((*entry)["encoding"].value_or(-1));
+                    data[Utf8ToWide(std::string(key.str()))] = e;
+                }
+            }
+        }
+    } catch (...) {}
+    return data;
+}
+
+bool ConfigManager::SaveAppOverrides(const std::wstring& path,
+                                      const std::unordered_map<std::wstring, AppOverrideEntry>& entries) {
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto tbl = LoadExistingToml(utf8Path);
+
+        toml::table section;
+        for (auto& [exe, e] : entries) {
+            toml::table entry;
+            entry.insert_or_assign("behavior", static_cast<int64_t>(e.behaviorType));
+            entry.insert_or_assign("clipboard", static_cast<int64_t>(e.clipboardMethod));
+            entry.insert_or_assign("encoding", static_cast<int64_t>(e.encodingOverride));
+            section.insert_or_assign(WideToUtf8(exe), std::move(entry));
+        }
+        tbl.insert_or_assign("app_overrides", std::move(section));
+
+        return WriteToml(utf8Path, tbl);
+    } catch (...) {
+        return false;
+    }
+}
+
 std::optional<SystemConfig> ConfigManager::LoadSystemConfig(const std::wstring& path) {
     try {
         std::string utf8Path = WideToUtf8(path);

@@ -13,6 +13,13 @@
 
 namespace NextKey {
 
+/// Per-app override settings (encoding assignment)
+struct AppOverrideEntry {
+    int8_t behaviorType = 0;       // 0=None, 1=SkipIme, 2=QtElectron (future use)
+    int8_t clipboardMethod = -1;   // -1=default, 0=CtrlV, 1=ShiftIns (future use)
+    int8_t encodingOverride = -1;  // -1=inherit global, 0-4=CodeTable value
+};
+
 /// Manages loading and saving of configuration from TOML file
 /// FR5: Load configuration from TOML at word boundary
 /// FR8: Engine works with compiled defaults when config missing
@@ -93,6 +100,13 @@ public:
     /// Save macro table to config (merges with existing)
     [[nodiscard]] static bool SaveMacros(const std::wstring& path,
                                           const std::unordered_map<std::wstring, std::wstring>& macros);
+
+    /// Load per-app override entries (encoding + behavior overrides)
+    [[nodiscard]] static std::unordered_map<std::wstring, AppOverrideEntry> LoadAppOverrides(const std::wstring& path);
+
+    /// Save per-app override entries
+    [[nodiscard]] static bool SaveAppOverrides(const std::wstring& path,
+                                                const std::unordered_map<std::wstring, AppOverrideEntry>& entries);
 
 private:
     static std::wstring GetExeDirectory();

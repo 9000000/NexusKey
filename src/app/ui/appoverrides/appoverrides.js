@@ -21,6 +21,15 @@ var clipboardLabels = {
     1: "Shift+Ins"
 };
 
+var encodingLabels = {
+    "-1": "-",
+    0: "Unicode",
+    1: "TCVN3",
+    2: "VNI Win",
+    3: "UNI Cmp",
+    4: "VN Locale"
+};
+
 // ===== Running Apps Dropdown =====
 function initRunningAppsDropdown() {
     var input = document.getElementById("app-name");
@@ -137,11 +146,13 @@ function onAddApp() {
 
     var behaviorType = document.getElementById("behavior-type").value;
     var clipboardMethod = getClipboardMethod();
+    var encodingOverride = document.getElementById("encoding-override").value;
 
     // Set hidden inputs and trigger action
     document.getElementById("val-app-name").value = appName;
     document.getElementById("val-behavior-type").value = behaviorType;
     document.getElementById("val-clipboard-method").value = clipboardMethod;
+    document.getElementById("val-encoding-override").value = encodingOverride;
     triggerAction("add-app");
 }
 
@@ -176,7 +187,7 @@ function clearAppList() {
     if (list) list.innerHTML = "";
 }
 
-function addAppToList(appName, behaviorType, clipboardMethod) {
+function addAppToList(appName, behaviorType, clipboardMethod, encodingOverride) {
     var list = document.getElementById("app-list");
     if (!list) return;
 
@@ -202,6 +213,13 @@ function addAppToList(appName, behaviorType, clipboardMethod) {
     clipboardSpan.className = "app-item-clipboard";
     clipboardSpan.textContent = clipboardLabels[clipboardMethod] || "-";
     item.appendChild(clipboardSpan);
+
+    // Encoding column
+    var encodingSpan = document.createElement("span");
+    encodingSpan.className = "app-item-encoding";
+    var encKey = (encodingOverride === undefined || encodingOverride === null) ? "-1" : String(encodingOverride);
+    encodingSpan.textContent = encodingLabels[encKey] || "-";
+    item.appendChild(encodingSpan);
 
     // Delete button (uses event delegation, no inline handler)
     var deleteBtn = document.createElement("button");
@@ -233,6 +251,9 @@ function clearInput() {
 
     var clipboardSelect = document.getElementById("clipboard-method");
     if (clipboardSelect) clipboardSelect.value = "-1";
+
+    var encodingSelect = document.getElementById("encoding-override");
+    if (encodingSelect) encodingSelect.value = "-1";
 }
 
 function forceRefresh(scrollToBottom) {

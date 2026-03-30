@@ -24,6 +24,7 @@ constexpr UINT WM_NEXUSKEY_UPDATE_AVAILABLE = WM_USER + 107; // Main: auto-check
 constexpr UINT WM_NEXUSKEY_TRAY_MODE_SYNC = WM_USER + 108;  // Deferred: sync tray icon V/E mode (wParam: 1=Vietnamese, 0=English)
 constexpr UINT WM_NEXUSKEY_OPEN_TSFAPPS = WM_USER + 109;    // Deferred: open TSF apps dialog
 constexpr UINT WM_NEXUSKEY_SHOW_SETTINGS = WM_USER + 110;   // Main: show settings dialog (from second instance)
+constexpr UINT WM_NEXUSKEY_OPEN_APPOVERRIDES = WM_USER + 111; // Deferred: open app overrides dialog
 
 }  // namespace NextKey
 

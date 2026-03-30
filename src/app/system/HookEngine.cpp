@@ -108,6 +108,17 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
         appCodeTableMap_ = ConfigManager::LoadPerAppCodeTable(ConfigManager::GetConfigPath());
     }
 
+    // Load manual per-app encoding overrides (always loaded, takes precedence over auto-remember)
+    {
+        auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
+        appEncodingOverrides_.clear();
+        for (auto& [exe, entry] : overrides) {
+            if (entry.encodingOverride >= 0) {
+                appEncodingOverrides_[exe] = entry.encodingOverride;
+            }
+        }
+    }
+
     // Load excluded apps list
     if (excludeApps_) {
         auto apps = ConfigManager::LoadExcludedApps(ConfigManager::GetConfigPath());
@@ -256,9 +267,18 @@ void HookEngine::SetCodeTable(CodeTable ct) {
 }
 
 CodeTable HookEngine::GetCodeTable() const noexcept {
-    // When per-app code table is enabled, the map is authoritative.
+    // Priority 1: Manual per-app override (set explicitly by user)
     // Prefer previousExe_ — when the user right-clicks the tray, currentExe_ changes
     // to explorer.exe (shell), but previousExe_ is the app they were actually using.
+    auto lookupOverride = [&](const std::wstring& exe) -> const int8_t* {
+        if (exe.empty()) return nullptr;
+        auto it = appEncodingOverrides_.find(exe);
+        return (it != appEncodingOverrides_.end() && it->second >= 0) ? &it->second : nullptr;
+    };
+    if (auto* v = lookupOverride(previousExe_)) return static_cast<CodeTable>(*v);
+    if (auto* v = lookupOverride(currentExe_)) return static_cast<CodeTable>(*v);
+
+    // Priority 2: Auto-remember (when rememberCodeTable_ is on)
     if (rememberCodeTable_) {
         auto lookup = [&](const std::wstring& exe) -> const uint8_t* {
             if (exe.empty()) return nullptr;
@@ -323,6 +343,17 @@ bool HookEngine::CheckConfigEvent() {
         appCodeTableMap_.clear();
     }
     currentCodeTable_ = config.codeTable;
+
+    // Reload manual per-app encoding overrides
+    {
+        auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
+        appEncodingOverrides_.clear();
+        for (auto& [exe, entry] : overrides) {
+            if (entry.encodingOverride >= 0) {
+                appEncodingOverrides_[exe] = entry.encodingOverride;
+            }
+        }
+    }
 
     // Reload excluded apps list
     if (excludeApps_) {
@@ -1405,19 +1436,32 @@ void HookEngine::OnFocusChanged() {
         return;
     }
 
-    // Restore code table for new app
-    if (rememberCodeTable_) {
-        auto it = appCodeTableMap_.find(currentExe_);
-        if (it != appCodeTableMap_.end()) {
-            auto restored = static_cast<CodeTable>(it->second);
-            if (restored != currentCodeTable_) {
-                currentCodeTable_ = restored;
-                HOOK_LOG(L"  RememberCode: restored codeTable=%d for '%s'",
+    // Priority 1: Manual encoding override (takes precedence over auto-remember)
+    {
+        auto it = appEncodingOverrides_.find(currentExe_);
+        if (it != appEncodingOverrides_.end() && it->second >= 0) {
+            auto overrideTable = static_cast<CodeTable>(it->second);
+            if (overrideTable != currentCodeTable_) {
+                currentCodeTable_ = overrideTable;
+                HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
                          static_cast<int>(currentCodeTable_), currentExe_.c_str());
             }
         } else {
-            // First time seeing this app — record current code table
-            appCodeTableMap_[currentExe_] = static_cast<uint8_t>(currentCodeTable_);
+            // Priority 2: Auto-remember code table
+            if (rememberCodeTable_) {
+                auto it2 = appCodeTableMap_.find(currentExe_);
+                if (it2 != appCodeTableMap_.end()) {
+                    auto restored = static_cast<CodeTable>(it2->second);
+                    if (restored != currentCodeTable_) {
+                        currentCodeTable_ = restored;
+                        HOOK_LOG(L"  RememberCode: restored codeTable=%d for '%s'",
+                                 static_cast<int>(currentCodeTable_), currentExe_.c_str());
+                    }
+                } else {
+                    // First time seeing this app — record current code table
+                    appCodeTableMap_[currentExe_] = static_cast<uint8_t>(currentCodeTable_);
+                }
+            }
         }
     }
 
@@ -1770,9 +1814,17 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
         for (size_t i = 0; i < bsCount; ++i) {
             AppendVkEvent(bsEvents, VK_BACK, bsScan);
         }
-        charEvents.reserve(expansion.size() * 2);
-        for (wchar_t ch : expansion) {
-            AppendUnicodeEvent(charEvents, ch);
+        if (currentCodeTable_ != CodeTable::Unicode) {
+            for (wchar_t ch : expansion) {
+                auto enc = CodeTableConverter::ConvertChar(ch, currentCodeTable_);
+                AppendUnicodeEvent(charEvents, enc.units[0]);
+                if (enc.count == 2) AppendUnicodeEvent(charEvents, enc.units[1]);
+            }
+        } else {
+            charEvents.reserve(expansion.size() * 2);
+            for (wchar_t ch : expansion) {
+                AppendUnicodeEvent(charEvents, ch);
+            }
         }
         DispatchSendInput(bsEvents, charEvents);
     }
