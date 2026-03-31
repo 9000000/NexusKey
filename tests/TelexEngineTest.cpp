@@ -2451,6 +2451,30 @@ TEST_F(EnglishDetectionNoSpellCheckTest, InvalidEANucleus_SmartAccent_Tiensge_Un
 }
 
 // ============================================================================
+// GI CLUSTER — 'i' in gi+vowel acts as consonant, not vowel
+// HasInvalidAdjacentVowelPair must NOT flag gi+vowel as invalid nucleus.
+// ============================================================================
+
+TEST_F(EnglishDetectionNoSpellCheckTest, GiCluster_GioS_GivesTone) {
+    // "gios": gi+o → 'i' is consonant onset, tone 's' goes on 'o' → gió
+    TypeString(*engine_, L"gios");
+    EXPECT_EQ(engine_->Peek(), L"gi\x00F3");  // gió
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, GiCluster_GioiR_GivesTone) {
+    // "gioir": gi+oi → tone 'r' on 'o' → giỏi
+    TypeString(*engine_, L"gioir");
+    EXPECT_EQ(engine_->Peek(), L"gi\x1ECFi");  // giỏi
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, GiCluster_GiongS_GivesTone) {
+    // "giongs": gi+ong + tone 's' → gióng (sắc on plain 'o')
+    // Note: "giống" (ố) requires "gioongsN" since 'oo' gives 'ô'
+    TypeString(*engine_, L"giongs");
+    EXPECT_EQ(engine_->Peek(), L"gi\x00F3ng");  // gióng
+}
+
+// ============================================================================
 // SIMPLE TELEX TESTS
 // Simple Telex: standalone 'w' is literal, 'w' after a/o/u vowel is modifier
 // ============================================================================

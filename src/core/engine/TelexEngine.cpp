@@ -845,11 +845,7 @@ size_t TelexEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTrip
     size_t vowelCount = 0;
     for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
         if (!states_[i].IsVowel()) continue;
-        // "gi" cluster: g + i + another vowel → 'i' acts as consonant
-        if (i > 0 && states_[i].base == L'i' && states_[i - 1].base == L'g'
-            && i + 1 < states_.size() && states_[i + 1].IsVowel()) continue;
-        // "qu" cluster: q + u → 'u' acts as consonant
-        if (i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q') continue;
+        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
         vowels[vowelCount++] = i;
     }
 

@@ -216,6 +216,29 @@ template<typename CharStateT>
 }
 
 // =============================================================================
+// Consonant Cluster Detection — shared by tone target and vowel pair checks
+// =============================================================================
+
+/// Check if states[i] is acting as a consonant due to a Vietnamese onset cluster,
+/// even though it would normally be classified as a vowel by IsVowel():
+///   "gi" cluster: g + i + vowel → 'i' is consonant onset (gió, giỏi, giống...)
+///   "qu" cluster: q + u → 'u' is consonant glide (quốc, quả, quê...)
+///
+/// Callers must verify states[i].IsVowel() before calling — this function only
+/// distinguishes nucleus vowels from cluster consonants within the vowel set.
+template<typename CharStateT>
+[[nodiscard]] inline bool IsClusterConsonant(
+        const CharStateT* states, size_t count, size_t i) noexcept {
+    if (i == 0) return false;
+    // "gi" cluster: 'i' is consonant when preceded by 'g' and followed by another vowel
+    if (states[i].base == L'i' && states[i-1].base == L'g'
+        && i + 1 < count && states[i+1].IsVowel()) return true;
+    // "qu" cluster: 'u' is always a consonant glide when preceded by 'q'
+    if (states[i].base == L'u' && states[i-1].base == L'q') return true;
+    return false;
+}
+
+// =============================================================================
 // Invalid Adjacent Vowel Pair — Pre-Tone Hard English Check
 // =============================================================================
 
@@ -237,6 +260,9 @@ template<typename CharStateT>
     for (size_t i = 0; i + 1 < count; ++i) {
         if (!states[i].IsVowel() || !states[i+1].IsVowel()) continue;
         if (states[i].HasModifier() || states[i+1].HasModifier()) continue;
+        // Skip cluster consonants (gi/qu onset). states[i+1].IsVowel() is already
+        // guaranteed above, satisfying IsClusterConsonant's gi-cluster check.
+        if (IsClusterConsonant(states, count, i)) continue;
         int v0 = DiphthongVowelIndex(states[i].base);
         int v1 = DiphthongVowelIndex(states[i+1].base);
         if (v0 < 0 || v1 < 0) continue;
