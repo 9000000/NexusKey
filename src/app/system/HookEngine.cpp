@@ -31,7 +31,7 @@ static void OpenHookLog() {
     if (pos != std::wstring::npos) logPath = logPath.substr(0, pos + 1);
     logPath += L"NexusKey_hook.log";
     (void)_wfopen_s(&g_hookLog, logPath.c_str(), L"w");
-    if (g_hookLog) setvbuf(g_hookLog, nullptr, _IONBF, 0);  // Unbuffered — flush every line (debug builds only)
+    if (g_hookLog) setvbuf(g_hookLog, nullptr, _IOFBF, 8192);  // 8KB buffer — flushed on CloseHookLog()
 }
 
 static void CloseHookLog() {
