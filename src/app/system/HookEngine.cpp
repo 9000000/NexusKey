@@ -224,9 +224,7 @@ void HookEngine::ToggleVietnameseMode() {
         MessageBeep(vietnameseMode_ ? MB_OK : MB_ICONASTERISK);
     }
 
-    if (modeChangeCallback_) {
-        modeChangeCallback_(vietnameseMode_);
-    }
+    NotifyModeChange();
 }
 
 void HookEngine::SetCodeTable(CodeTable ct) {
@@ -241,8 +239,8 @@ void HookEngine::SetCodeTable(CodeTable ct) {
 
 CodeTable HookEngine::GetCodeTable() const noexcept {
     // Priority 1: Manual per-app override (set explicitly by user)
-    // Prefer previousExe_ — when the user right-clicks the tray, currentExe_ changes
-    // to explorer.exe (shell), but previousExe_ is the app they were actually using.
+    // Check previousExe_ first as a fallback: on the first focus event after startup,
+    // currentExe_ may not yet reflect the typing app.
     auto lookupOverride = [&](const std::wstring& exe) -> const int8_t* {
         if (exe.empty()) return nullptr;
         auto it = appEncodingOverrides_.find(exe);
@@ -449,13 +447,13 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
-void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD, HWND, LONG, LONG, DWORD, DWORD) {
+void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD, HWND hwnd, LONG, LONG, DWORD, DWORD) {
     HookEngine* self = s_instance.load(std::memory_order_relaxed);
     if (self) {
         HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
                  self->engine_->Count(), self->previousComposition_.c_str());
         self->autoCapState_ = 0;
-        self->OnFocusChanged();
+        self->OnFocusChanged(hwnd);
     }
 }
 
@@ -1247,6 +1245,43 @@ static bool IsBrowserExeName(const wchar_t* filename) {
            _wcsnicmp(filename, L"vivaldi", 7) == 0;
 }
 
+bool HookEngine::IsTrayOrTaskbarWindow(HWND hwnd) noexcept {
+    if (!hwnd) return false;
+    // GetAncestor is a no-op when hwnd is already a root (e.g. from GetForegroundWindow),
+    // but needed when called with a child HWND (e.g. from WindowFromPoint).
+    HWND root = GetAncestor(hwnd, GA_ROOT);
+    if (root) hwnd = root;
+    wchar_t cls[64] = {};
+    GetClassNameW(hwnd, cls, 64);
+    return _wcsicmp(cls, L"Shell_TrayWnd") == 0 ||            // main taskbar
+           _wcsicmp(cls, L"TrayNotifyWnd") == 0 ||            // notification area
+           _wcsicmp(cls, L"NotifyIconOverflowWindow") == 0 ||  // overflow (^)
+           _wcsicmp(cls, L"MSTaskSwWClass") == 0 ||            // taskbar app buttons
+           _wcsicmp(cls, L"Start") == 0 ||                     // Start button
+           _wcsicmp(cls, L"NexusKeyTrayClass") == 0;           // NexusKey own tray window
+           // Note: SetForegroundWindow(hwndMessage_) in ShowContextMenu fires
+           // EVENT_SYSTEM_FOREGROUND synchronously, but WinEventProc is WINEVENT_OUTOFCONTEXT
+           // so it's delivered asynchronously — this filter still catches it correctly.
+}
+
+std::wstring HookEngine::GetExeNameForHwnd(HWND hwnd) noexcept {
+    if (!hwnd) return {};
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (!pid) return {};
+    HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProc) return {};
+    wchar_t exePath[MAX_PATH] = {};
+    DWORD size = MAX_PATH;
+    std::wstring result;
+    if (QueryFullProcessImageNameW(hProc, 0, exePath, &size)) {
+        const wchar_t* filename = wcsrchr(exePath, L'\\');
+        result = ToLowerAscii(filename ? filename + 1 : exePath);
+    }
+    CloseHandle(hProc);
+    return result;
+}
+
 bool HookEngine::IsQtElectronApp(HWND hwnd) {
     HWND root = GetAncestor(hwnd, GA_ROOT);
     if (root) hwnd = root;
@@ -1263,25 +1298,11 @@ bool HookEngine::IsQtElectronApp(HWND hwnd) {
     // Electron apps use Chrome_WidgetWin but are NOT actual browsers
     if (wcsstr(className, L"Chrome_WidgetWin")) {
         // Exclude real browsers — they NEED U+202F for autocomplete fix
-        DWORD pid = 0;
-        GetWindowThreadProcessId(hwnd, &pid);
-        if (!pid) return false;
-
-        HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-        if (!hProc) return false;
-
-        wchar_t exePath[MAX_PATH] = {};
-        DWORD size = MAX_PATH;
-        bool isElectron = true;  // Assume Electron unless proven browser
-        if (QueryFullProcessImageNameW(hProc, 0, exePath, &size)) {
-            const wchar_t* filename = wcsrchr(exePath, L'\\');
-            filename = filename ? filename + 1 : exePath;
-            if (IsBrowserExeName(filename)) {
-                isElectron = false;
-            }
+        std::wstring exeName = GetExeNameForHwnd(hwnd);
+        if (!exeName.empty() && IsBrowserExeName(exeName.c_str())) {
+            return false;
         }
-        CloseHandle(hProc);
-        return isElectron;
+        return true;
     }
 
     return false;
@@ -1305,26 +1326,15 @@ bool HookEngine::IsConsoleApp(HWND hwnd) {
 }
 
 std::wstring HookEngine::GetForegroundExeName() {
-    HWND fg = GetForegroundWindow();
-    if (!fg) return {};
-
-    DWORD pid = 0;
-    GetWindowThreadProcessId(fg, &pid);
-    if (!pid) return {};
-
-    HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!hProc) return {};
-
-    wchar_t exePath[MAX_PATH] = {};
-    DWORD size = MAX_PATH;
-    std::wstring result;
-    if (QueryFullProcessImageNameW(hProc, 0, exePath, &size)) {
-        const wchar_t* filename = wcsrchr(exePath, L'\\');
-        result = ToLowerAscii(filename ? filename + 1 : exePath);
-    }
-    CloseHandle(hProc);
-    return result;
+    return GetExeNameForHwnd(GetForegroundWindow());
 }
+
+void HookEngine::NotifyModeChange() noexcept {
+    if (modeChangeCallback_) {
+        modeChangeCallback_(vietnameseMode_);
+    }
+}
+
 
 void HookEngine::ReloadAppOverrides() {
     auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
@@ -1356,21 +1366,36 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
             vietnameseMode_ = preLayoutSwitchMode_;
             HOOK_LOG(L"  LayoutAutoDisable: compatible layout restored, mode=%d",
                      vietnameseMode_ ? 1 : 0);
-            if (modeChangeCallback_) modeChangeCallback_(vietnameseMode_);
+            NotifyModeChange();
         }
         // smartSwitch OFF: stay in English, user must manually toggle back
     }
 }
 
-void HookEngine::OnFocusChanged() {
+void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     ResetComposition();
     tempEngineOff_ = false;
     CheckConfigEvent();
 
-    // Detect Qt/Electron apps and Console apps — skip U+202F to avoid delay/corruption
     HWND fg = GetForegroundWindow();
-    isConsoleApp_ = fg && IsConsoleApp(fg);
-    skipEmptyChar_ = fg && (IsQtElectronApp(fg) || isConsoleApp_);
+    // Use triggerHwnd (the window that fired EVENT_SYSTEM_FOREGROUND) when available.
+    // With WINEVENT_OUTOFCONTEXT, our callback is async — by the time it runs,
+    // GetForegroundWindow() may return a transient window (e.g. JumpList/taskbar) instead
+    // of the app the user is actually switching to. triggerHwnd is captured at event time.
+    HWND activeHwnd = triggerHwnd ? triggerHwnd : fg;
+
+    // Skip ALL app tracking for hidden and tray/taskbar windows.
+    // Hidden windows = tray message windows owned by apps (NexusKey, IDM, Discord, etc.)
+    // These are not typing targets and must not update currentExe_ or the SmartSwitch map.
+    // Without this guard, right-clicking any app's tray icon would set currentExe_ to that
+    // app's process, then the next real focus change would SAVE the wrong mode for that app.
+    if (!activeHwnd || !IsWindowVisible(activeHwnd) || IsTrayOrTaskbarWindow(activeHwnd)) {
+        return;
+    }
+
+    // Detect Qt/Electron apps and Console apps — skip U+202F to avoid delay/corruption
+    isConsoleApp_ = IsConsoleApp(activeHwnd);
+    skipEmptyChar_ = IsQtElectronApp(activeHwnd) || isConsoleApp_;
     isElectronApp_ = skipEmptyChar_ && !isConsoleApp_;
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d",
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0);
@@ -1395,6 +1420,9 @@ void HookEngine::OnFocusChanged() {
 
     // Save mode for previous app (smart switch, skip excluded/TSF apps)
     if (smartSwitch_ && !layoutForcedEnglish_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
+        if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
+            appModeMap_.clear();
+        }
         appModeMap_[currentExe_] = vietnameseMode_;
         smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
     }
@@ -1403,7 +1431,7 @@ void HookEngine::OnFocusChanged() {
     if (!currentExe_.empty()) {
         previousExe_ = currentExe_;
     }
-    currentExe_ = GetForegroundExeName();
+    currentExe_ = GetExeNameForHwnd(activeHwnd);
     if (currentExe_.empty()) return;
 
     // Check excluded apps
@@ -1475,7 +1503,8 @@ void HookEngine::OnFocusChanged() {
         }
     }
 
-    // Smart switch: restore mode for new app
+    // Smart switch: restore mode for new app.
+    // Hidden/tray windows are already filtered by the early return above.
     if (smartSwitch_) {
         auto it = appModeMap_.find(currentExe_);
         if (it != appModeMap_.end()) {
@@ -1484,9 +1513,7 @@ void HookEngine::OnFocusChanged() {
                 vietnameseMode_ = it->second;
                 HOOK_LOG(L"  SmartSwitch: restored %s for '%s'",
                          vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
-                if (modeChangeCallback_) {
-                    modeChangeCallback_(vietnameseMode_);
-                }
+                NotifyModeChange();
             }
         } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
             // Leaving excluded app to unknown app — restore pre-exclusion mode
@@ -1497,8 +1524,8 @@ void HookEngine::OnFocusChanged() {
                 modeChangeCallback_(vietnameseMode_);
             }
         }
-    } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
-        // No smart switch, but still restore pre-exclusion mode when leaving excluded app
+    } else if (!smartSwitch_ && wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
+        // SmartSwitch OFF — still restore pre-exclusion mode when leaving excluded app
         vietnameseMode_ = modeBeforeExclude_;
         HOOK_LOG(L"  ExcludeApps: restored pre-exclude %s for '%s'",
                  vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());

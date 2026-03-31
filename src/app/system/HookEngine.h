@@ -135,8 +135,11 @@ private:
     static bool IsConsoleApp(HWND hwnd);
 
     // Smart switch: get foreground app exe name
+    [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;
     static std::wstring GetForegroundExeName();
-    void OnFocusChanged();
+    [[nodiscard]] static bool IsTrayOrTaskbarWindow(HWND hwnd) noexcept;
+    void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with current vietnameseMode_
+    void OnFocusChanged(HWND triggerHwnd = nullptr);
     void OnLayoutChanged(bool isCompatibleNow);
     void ReloadAppOverrides();
 
@@ -171,7 +174,7 @@ private:
     bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?
     bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
     bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
-    bool modeBeforeExclude_ = true;  // Vietnamese mode before entering excluded app
+    bool modeBeforeExclude_ = true;   // Vietnamese mode before entering excluded app
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode (for TOML save)
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode
     std::wstring currentExe_;  // Currently focused app
@@ -188,6 +191,7 @@ private:
     // which mutates on escape sequences (EraseConsumedRaw).
     static constexpr wchar_t kBackspaceMarker = L'\b';
     static constexpr size_t kMaxCommitStack = 3;  // Max words to remember for backward
+    static constexpr size_t kMaxSmartSwitchEntries = 200;  // Cap per-app mode memory
     // Auto-expire the Ready state after this many ms — cheap insurance against any
     // cursor-movement event that bypasses ResetComposition (e.g. future edge cases).
     static constexpr DWORD kCommitUndoTimeoutMs = 4000;
