@@ -92,3 +92,46 @@ TEST(IsAllowedDownloadUrlNarrowTest, CaseInsensitive) {
     EXPECT_TRUE(IsAllowedDownloadUrl(
         std::string("HTTPS://GITHUB.COM/phatMT97/NextKey/releases/download/v2.0.0/NexusKey-x64.zip")));
 }
+
+// ── SEC-001: ParseSha256File (cross-platform string parsing) ─────────────
+
+TEST(ParseSha256FileTest, StandardFormat) {
+    // GNU coreutils sha256sum: "<hash>  <filename>"
+    std::string content = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  NextKey-x64.zip\n";
+    EXPECT_EQ(ParseSha256File(content),
+              "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+}
+
+TEST(ParseSha256FileTest, HashOnly) {
+    std::string content = "ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890\n";
+    EXPECT_EQ(ParseSha256File(content),
+              "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+}
+
+TEST(ParseSha256FileTest, EmptyContent) {
+    EXPECT_EQ(ParseSha256File(""), "");
+}
+
+TEST(ParseSha256FileTest, TooShortHash) {
+    EXPECT_EQ(ParseSha256File("abcdef123"), "");
+}
+
+TEST(ParseSha256FileTest, TooLongHash) {
+    EXPECT_EQ(ParseSha256File("abcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678901"), "");
+}
+
+TEST(ParseSha256FileTest, InvalidHexChar) {
+    EXPECT_EQ(ParseSha256File("abcdef1234567890abcdef1234567890abcdef1234567890abcdefXX34567890"), "");
+}
+
+TEST(ParseSha256FileTest, WindowsLineEnding) {
+    std::string content = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  NextKey-x64.zip\r\n";
+    EXPECT_EQ(ParseSha256File(content),
+              "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+}
+
+TEST(ParseSha256FileTest, UppercaseNormalizedToLower) {
+    std::string content = "ABCDEF0000000000ABCDEF0000000000ABCDEF0000000000ABCDEF0000000000";
+    EXPECT_EQ(ParseSha256File(content),
+              "abcdef0000000000abcdef0000000000abcdef0000000000abcdef0000000000");
+}

@@ -210,6 +210,9 @@ bool VerifyDownloadedZip(
     const std::wstring& localZipPath) noexcept
 {
     try {
+        // Defense-in-depth: reject non-GitHub URLs even if caller forgot to validate
+        if (!IsAllowedDownloadUrl(zipUrl)) return false;
+
         // 1. Build checksum URL: append ".sha256" to the ZIP URL
         std::wstring checksumUrl = zipUrl + L".sha256";
 
