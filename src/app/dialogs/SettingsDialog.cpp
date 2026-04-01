@@ -410,8 +410,15 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     }
 
     // Window dragging via title bar area
+    // HTLEFT (10) to HTBOTTOMRIGHT (17) are sizing borders
     if (msg == WM_NCHITTEST) {
         LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+
+        // Prevent window from being resized by the user dragging the borders
+        if (result >= HTLEFT && result <= HTBOTTOMRIGHT) {
+            return HTBORDER;
+        }
+
         if (result == HTCLIENT) {
             // Use SciterHelper for drag zone detection
             // Title height: 36px, Buttons zone: 70px (pin@40px + close@12px + margins)

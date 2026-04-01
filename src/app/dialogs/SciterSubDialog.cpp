@@ -306,8 +306,15 @@ LRESULT CALLBACK SciterSubDialog::SubclassProc(
     }
 
     // Window dragging via title bar
+    // HTLEFT (10) to HTBOTTOMRIGHT (17) are sizing borders
     if (msg == WM_NCHITTEST) {
         LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+
+        // Prevent window from being resized by user
+        if (result >= HTLEFT && result <= HTBOTTOMRIGHT) {
+            return HTBORDER;
+        }
+
         if (result == HTCLIENT && s_instance) {
             return SciterHelper::handleWindowDrag(hwnd, lParam,
                 s_instance->config_.titleBarHeight, s_instance->config_.buttonsWidth);

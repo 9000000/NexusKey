@@ -67,6 +67,8 @@ Follow `docs/CODING_RULES/` (sharded) in full. Critical rules:
 - **Win10 DWM blur artifact**: `AccentState::BlurBehind` on Win10 blurs the entire HWND including transparent `border-radius` pixels → visible halo at bottom edge. Fix: `SciterHelper::enableWindowBlur()` skips blur on Win10 (`!IsWindows11OrGreater()`). Do NOT remove this guard.
 - **Win10 window border**: `DWMWCP_ROUND` and `DWMWA_BORDER_COLOR` are Win11-only — ignored on Win10. CSS `--shadow-card` includes a `0 0 0 1px` border ring to define window edges on Win10.
 - **Sciter float kills ClearType**: `float: left/right` on transparent windows creates composite layers → ClearType disabled → text blurry. Use `flow: horizontal` (Sciter flex) wrapper instead.
+- **Sciter light mode text faded**: Grayscale AA on translucent windows makes dark-on-light text look washed out. Fix: `--text-primary: #000000` + `Segoe UI Variable Text` font.
+- **Sciter window resize**: `window-resizable="false"` alone not enough — must also block `HTLEFT..HTBOTTOMRIGHT` in `WM_NCHITTEST` (both SettingsDialog + SciterSubDialog).
 
 ## Skills (use proactively)
 

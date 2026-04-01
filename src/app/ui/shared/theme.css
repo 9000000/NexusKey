@@ -32,12 +32,12 @@
     --toggle-ve-text-v: #2E2E2E;
     --toggle-ve-text-e: #1C6CDF;
 
-    /* Text Colors */
-    --text-primary: #1F2937;
-    --text-secondary: #4B5563;
-    --text-muted: #8A8F98;
-    --text-dark: #1A1B1F;
-    --text-light: #4E4F54;
+    /* Text Colors (Maximized contrast to compensate for grayscale AA on translucent windows) */
+    --text-primary: #000000;
+    --text-secondary: #222222;
+    --text-muted: #555555;
+    --text-dark: #000000;
+    --text-light: #333333;
 
     /* Background Colors (blur-friendly glass palette) */
     --bg-glass: rgba(255, 255, 255, 1);
@@ -76,8 +76,8 @@
     --radius-large: 10px;
     --radius-round: 50%;
 
-    /* Font */
-    --font-family: 'Segoe UI', 'SF Pro Display', -apple-system, system-ui, sans-serif;
+    /* Font - 'Segoe UI Variable Text' greatly improves legibility on Windows 11 */
+    --font-family: 'Segoe UI Variable Text', 'Segoe UI', 'SF Pro Display', -apple-system, system-ui, sans-serif;
 }
 
 /* Fallback for --blur-mode none (Solid Background) */

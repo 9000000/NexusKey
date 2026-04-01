@@ -240,6 +240,53 @@ rootEl.remove_attribute("force-paint");
 rootEl.update(false);
 ```
 
+## Prevent User Resize on Fixed-Layout Windows
+
+Sciter transparent windows with fixed layouts must block user resizing at BOTH levels:
+
+### HTML attribute
+
+```html
+<html window-resizable="false">
+```
+
+### C++ WM_NCHITTEST guard
+
+The HTML attribute alone is not enough — Windows still shows resize cursors at edges. Block sizing hit-tests in `SubclassProc`:
+
+```cpp
+if (msg == WM_NCHITTEST) {
+    LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
+    // HTLEFT (10) to HTBOTTOMRIGHT (17) are sizing borders
+    if (result >= HTLEFT && result <= HTBOTTOMRIGHT) {
+        return HTBORDER;  // Non-resizable border
+    }
+    // ... handle HTCLIENT for drag zone
+}
+```
+
+Apply to ALL dialog classes (SettingsDialog + SciterSubDialog) for consistent behavior across Win10/Win11.
+
+## Light Mode Text on Translucent Windows
+
+On layered windows, ClearType (sub-pixel AA) is replaced by grayscale AA. Dark-on-light text appears washed out because grayscale AA lacks the sharpness of ClearType.
+
+**Fix**: maximize text contrast + use optical-sizing font:
+
+```css
+:root {
+    /* Pure black instead of charcoal — compensates for grayscale AA blur */
+    --text-primary: #000000;
+    --text-secondary: #222222;
+    --text-muted: #555555;
+
+    /* Segoe UI Variable Text has optical sizing for better rendering without ClearType */
+    --font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+}
+```
+
+Dark mode doesn't need this fix — white-on-dark already has maximum contrast.
+
 ## Common Issues
 
 | Issue | Cause | Fix |
@@ -251,4 +298,6 @@ rootEl.update(false);
 | No blur effect | Using Windows API | Use `Window.this.blurBehind` in JS |
 | Scripts fail | `type="module"` | Remove module attribute |
 | Text blurry/washed out | `float` on transparent window kills ClearType | Use `flow: horizontal` |
+| Light mode text faded | Grayscale AA on translucent window | `#000000` text + `Segoe UI Variable Text` |
 | Window resize no repaint | Transparent window ignores `InvalidateRect` | DOM mutation trick (see above) |
+| User can resize fixed window | HTML attr alone not enough | Block `HTLEFT..HTBOTTOMRIGHT` in `WM_NCHITTEST` |
