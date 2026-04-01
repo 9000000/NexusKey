@@ -145,6 +145,8 @@ add_executable(NextKeyApp WIN32
     src/app/system/UpdateChecker.cpp
     src/app/system/UpdateInstaller.h
     src/app/system/UpdateInstaller.cpp
+    src/app/system/UpdateSecurity.h
+    src/app/system/UpdateSecurity.cpp
     src/app/system/StartupHelper.h
     src/app/system/SubprocessHelper.h
     src/app/system/SubprocessRunners.h
@@ -175,7 +177,7 @@ set_target_properties(NextKeyApp PROPERTIES OUTPUT_NAME "NexusKey")
 # Link Windows libraries
 if(WIN32)
     target_link_libraries(NextKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid shell32)
-    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm)
+    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt)
 
     # Copy sciter.dll to output directory
     add_custom_command(TARGET NextKeyApp POST_BUILD
@@ -286,6 +288,8 @@ set(NEXTKEY_TEST_SOURCES
     tests/FeatureOptionsTest.cpp
     tests/SpellCheckerTest.cpp
     tests/CodeTableConverterTest.cpp
+    tests/UpdateSecurityTest.cpp
+    src/app/system/UpdateSecurity.cpp
 )
 
 # Windows-only tests (require ConfigManager, ConfigEvent)
