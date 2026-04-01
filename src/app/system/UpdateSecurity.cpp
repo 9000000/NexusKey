@@ -94,15 +94,113 @@ bool IsAllowedDownloadUrl(const std::string& url) noexcept {
 #ifdef _WIN32
 
 std::string ParseSha256File(const std::string& content) noexcept {
-    // Implementation added in Task 3
-    (void)content;
-    return {};
+    try {
+        if (content.empty()) return {};
+
+        std::string line = content;
+
+        // Strip trailing whitespace / newlines
+        while (!line.empty() && (line.back() == '\n' || line.back() == '\r' || line.back() == ' ')) {
+            line.pop_back();
+        }
+
+        // Extract first token (the hash) — split on space
+        std::string hash;
+        auto spacePos = line.find(' ');
+        if (spacePos != std::string::npos) {
+            hash = line.substr(0, spacePos);
+        } else {
+            hash = line;
+        }
+
+        // SHA-256 hash must be exactly 64 hex characters
+        if (hash.size() != 64) return {};
+
+        // Validate all chars are hex and lowercase the result
+        std::string result;
+        result.reserve(64);
+        for (char ch : hash) {
+            if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')) {
+                result += ch;
+            } else if (ch >= 'A' && ch <= 'F') {
+                result += static_cast<char>(ch + ('a' - 'A'));
+            } else {
+                return {};  // Not a valid hex character
+            }
+        }
+
+        return result;
+    } catch (...) {
+        return {};
+    }
 }
 
 std::string ComputeFileSha256(const std::wstring& filePath) noexcept {
-    // Implementation added in Task 3
-    (void)filePath;
-    return {};
+    try {
+        struct AlgHandle {
+            BCRYPT_ALG_HANDLE h = nullptr;
+            ~AlgHandle() { if (h) BCryptCloseAlgorithmProvider(h, 0); }
+        };
+        struct HashHandle {
+            BCRYPT_HASH_HANDLE h = nullptr;
+            ~HashHandle() { if (h) BCryptDestroyHash(h); }
+        };
+
+        AlgHandle alg;
+        NTSTATUS status = BCryptOpenAlgorithmProvider(
+            &alg.h, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
+        if (!BCRYPT_SUCCESS(status) || !alg.h) return {};
+
+        DWORD hashObjectSize = 0, cbData = 0;
+        status = BCryptGetProperty(alg.h, BCRYPT_OBJECT_LENGTH,
+            reinterpret_cast<PBYTE>(&hashObjectSize), sizeof(DWORD), &cbData, 0);
+        if (!BCRYPT_SUCCESS(status)) return {};
+
+        DWORD hashSize = 0;
+        status = BCryptGetProperty(alg.h, BCRYPT_HASH_LENGTH,
+            reinterpret_cast<PBYTE>(&hashSize), sizeof(DWORD), &cbData, 0);
+        if (!BCRYPT_SUCCESS(status) || hashSize != 32) return {};
+
+        std::vector<BYTE> hashObjectBuf(hashObjectSize);
+
+        HashHandle hash;
+        status = BCryptCreateHash(alg.h, &hash.h, hashObjectBuf.data(),
+            hashObjectSize, nullptr, 0, 0);
+        if (!BCRYPT_SUCCESS(status) || !hash.h) return {};
+
+        HANDLE hFile = CreateFileW(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+            nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) return {};
+
+        constexpr DWORD kBufSize = 65536;
+        std::vector<BYTE> readBuf(kBufSize);
+        DWORD bytesRead = 0;
+
+        while (ReadFile(hFile, readBuf.data(), kBufSize, &bytesRead, nullptr) && bytesRead > 0) {
+            status = BCryptHashData(hash.h, readBuf.data(), bytesRead, 0);
+            if (!BCRYPT_SUCCESS(status)) {
+                CloseHandle(hFile);
+                return {};
+            }
+        }
+        CloseHandle(hFile);
+
+        std::vector<BYTE> hashValue(hashSize);
+        status = BCryptFinishHash(hash.h, hashValue.data(), hashSize, 0);
+        if (!BCRYPT_SUCCESS(status)) return {};
+
+        std::string hexStr;
+        hexStr.reserve(64);
+        static constexpr char hexChars[] = "0123456789abcdef";
+        for (DWORD i = 0; i < hashSize; ++i) {
+            hexStr += hexChars[(hashValue[i] >> 4) & 0x0F];
+            hexStr += hexChars[hashValue[i] & 0x0F];
+        }
+
+        return hexStr;
+    } catch (...) {
+        return {};
+    }
 }
 
 bool VerifyDownloadedZip(
