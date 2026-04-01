@@ -207,10 +207,49 @@ bool VerifyDownloadedZip(
     const std::wstring& zipUrl,
     const std::wstring& localZipPath) noexcept
 {
-    // Implementation added in Task 4
-    (void)zipUrl;
-    (void)localZipPath;
-    return false;
+    try {
+        // 1. Build checksum URL: append ".sha256" to the ZIP URL
+        std::wstring checksumUrl = zipUrl + L".sha256";
+
+        // 2. Download checksum file to temp location
+        wchar_t tempDir[MAX_PATH] = {};
+        GetTempPathW(MAX_PATH, tempDir);
+        std::wstring checksumPath = std::wstring(tempDir) + L"nexuskey_checksum.sha256";
+
+        HRESULT hr = URLDownloadToFileW(nullptr, checksumUrl.c_str(),
+            checksumPath.c_str(), 0, nullptr);
+        if (FAILED(hr)) {
+            DeleteFileW(checksumPath.c_str());
+            return false;
+        }
+
+        // 3. Read checksum file content
+        std::ifstream checksumFile(checksumPath, std::ios::binary);
+        if (!checksumFile.is_open()) {
+            DeleteFileW(checksumPath.c_str());
+            return false;
+        }
+        std::ostringstream ss;
+        ss << checksumFile.rdbuf();
+        checksumFile.close();
+        DeleteFileW(checksumPath.c_str());
+
+        std::string checksumContent = ss.str();
+        if (checksumContent.empty()) return false;
+
+        // 4. Parse expected hash
+        std::string expectedHash = ParseSha256File(checksumContent);
+        if (expectedHash.empty()) return false;
+
+        // 5. Compute actual hash of downloaded ZIP
+        std::string actualHash = ComputeFileSha256(localZipPath);
+        if (actualHash.empty()) return false;
+
+        // 6. Compare (both are lowercase)
+        return expectedHash == actualHash;
+    } catch (...) {
+        return false;
+    }
 }
 
 #endif  // _WIN32

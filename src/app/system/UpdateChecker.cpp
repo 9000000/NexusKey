@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "UpdateChecker.h"
+#include "UpdateSecurity.h"
 #include "core/Version.h"
 #include "core/Strings.h"
 #include "core/WinStrings.h"
@@ -176,6 +177,11 @@ UpdateInfo UpdateChecker::CheckForUpdate() noexcept {
         }
 
         if (assetUrl.empty()) return info;
+
+        // SEC-003: Validate download URL points to allowed GitHub domain
+        if (!IsAllowedDownloadUrl(assetUrl)) {
+            return info;  // Reject non-GitHub URLs — possible API response tampering
+        }
 
         info.available = true;
         info.version = version;
