@@ -5,7 +5,7 @@
 
 #include <commdlg.h>
 #include <string>
-#include <cstring>
+#include <cwchar>
 
 namespace NextKey {
 
@@ -28,7 +28,7 @@ inline std::wstring ShowOpenFileDialogW(HWND hwnd, const wchar_t* filter, const 
 inline std::wstring ShowSaveFileDialogW(HWND hwnd, const wchar_t* filter,
                                          const wchar_t* defExt, const wchar_t* defaultName) {
     wchar_t buf[MAX_PATH] = {};
-    if (defaultName) wcsncpy_s(buf, defaultName, MAX_PATH - 1);
+    if (defaultName) wcsncpy_s(buf, MAX_PATH, defaultName, _TRUNCATE);
     OPENFILENAMEW ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hwnd;
