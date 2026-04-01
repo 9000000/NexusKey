@@ -195,8 +195,11 @@ void HookEngine::ToggleVietnameseMode() {
         return;
     }
 
-    layoutForcedEnglish_ = false;   // User overriding auto-detection — clear forced state
-    preLayoutSwitchMode_ = false;   // Stale saved-mode is no longer meaningful
+    // Block toggling while CJK layout is active — engine cannot produce Vietnamese on CJK layout
+    if (layoutSuppressed_) {
+        HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (CJK layout suppressed)");
+        return;
+    }
 
     // Commit any pending composition before switching
     if (engine_->Count() > 0) {
@@ -473,8 +476,9 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
-// Forward declaration for file-scope helper used in ProcessKeyDown
+// Forward declarations for file-scope helpers used in ProcessKeyDown
 static HWND GetInputTarget();
+static bool IsIncompatibleLayout(HKL hkl);
 
 // ═══════════════════════════════════════════════════════════
 // Core Processing
@@ -486,6 +490,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 
     // 0b. TSF app — let TSF DLL handle all input, hook does nothing
     if (isTsfApp_) return false;
+
+    // 0c. Layout check on every keystroke — catches layout changes via Language Bar click
+    //     (those don't produce focus change or modifier key-up events).
+    CheckLayoutChange();
 
     // 1. Track modifiers for hotkey detection
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
@@ -600,9 +608,9 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         commitUndoState_ = CommitUndoState::Idle;
     }
 
-    // 3. English mode fast path — skip Vietnamese-only processing
-    if (!vietnameseMode_) {
-        if (macroEnabled_ && macroInEnglish_) {
+    // 3. English mode or CJK layout suppression — skip Vietnamese processing
+    if (!vietnameseMode_ || layoutSuppressed_) {
+        if (!layoutSuppressed_ && macroEnabled_ && macroInEnglish_) {
             // Track macro keys (all printable chars) in English mode
             if (vkCode >= 0x41 && vkCode <= 0x5A) {
                 bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -631,7 +639,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                 tempMacroOff_ = false;
             }
         }
-        HOOK_LOG(L"  skip: Vietnamese mode OFF");
+        HOOK_LOG(layoutSuppressed_ ? L"  skip: CJK layout suppressed" : L"  skip: Vietnamese mode OFF");
         return false;
     }
 
@@ -896,16 +904,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                 || (wasCtrl  && modShiftDown_)  // Ctrl+Shift release (ctrl side)
                 || (wasAlt   && modShiftDown_); // Alt+Shift release (alt side)
             if (triggerCheck) {
-                HWND fg = GetForegroundWindow();
-                if (fg) {
-                    DWORD tid = GetWindowThreadProcessId(fg, nullptr);
-                    HKL hkl = GetKeyboardLayout(tid);
-                    bool compatible = !IsIncompatibleLayout(hkl);
-                    if (compatible != cachedIsCompatLayout_) {
-                        cachedIsCompatLayout_ = compatible;
-                        OnLayoutChanged(compatible);
-                    }
-                }
+                CheckLayoutChange();
             }
         }
 
@@ -1348,27 +1347,29 @@ void HookEngine::ReloadAppOverrides() {
     }
 }
 
+void HookEngine::CheckLayoutChange() {
+    HWND fg = GetForegroundWindow();
+    if (!fg) return;
+    DWORD tid = GetWindowThreadProcessId(fg, nullptr);
+    bool compatible = !IsIncompatibleLayout(GetKeyboardLayout(tid));
+    if (compatible != cachedIsCompatLayout_) {
+        cachedIsCompatLayout_ = compatible;
+        OnLayoutChanged(compatible);
+    }
+}
+
 void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
-    if (!isCompatibleNow && !layoutForcedEnglish_) {
-        // Compatible → incompatible (CJK): save mode, force English
+    if (!isCompatibleNow && !layoutSuppressed_) {
+        // Compatible → incompatible (CJK): suppress engine, V/E mode unchanged
         if (engine_->Count() > 0) CommitComposition();
         CancelCommitUndo();
-        preLayoutSwitchMode_ = vietnameseMode_;
-        layoutForcedEnglish_ = true;
-        vietnameseMode_ = false;
-        HOOK_LOG(L"  LayoutAutoDisable: CJK layout detected, forcing English (saved mode=%d)",
-                 preLayoutSwitchMode_ ? 1 : 0);
-        if (modeChangeCallback_) modeChangeCallback_(false);
-    } else if (isCompatibleNow && layoutForcedEnglish_) {
-        // Incompatible → compatible: restore saved mode if smart switch is on
-        layoutForcedEnglish_ = false;
-        if (smartSwitch_) {
-            vietnameseMode_ = preLayoutSwitchMode_;
-            HOOK_LOG(L"  LayoutAutoDisable: compatible layout restored, mode=%d",
-                     vietnameseMode_ ? 1 : 0);
-            NotifyModeChange();
-        }
-        // smartSwitch OFF: stay in English, user must manually toggle back
+        layoutSuppressed_ = true;
+        HOOK_LOG(L"  LayoutSuppressed: CJK layout, engine suppressed (mode preserved=%d)",
+                 vietnameseMode_ ? 1 : 0);
+    } else if (isCompatibleNow && layoutSuppressed_) {
+        // Incompatible → compatible: lift suppression, resume with current V/E mode
+        layoutSuppressed_ = false;
+        HOOK_LOG(L"  LayoutSuppressed: cleared, resuming (mode=%d)", vietnameseMode_ ? 1 : 0);
     }
 }
 
@@ -1401,15 +1402,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0);
 
     // Layout auto-disable: check CJK layout on every focus change
-    if (fg) {
-        DWORD tid = GetWindowThreadProcessId(fg, nullptr);
-        HKL hkl = GetKeyboardLayout(tid);
-        bool compatible = !IsIncompatibleLayout(hkl);
-        if (compatible != cachedIsCompatLayout_) {
-            cachedIsCompatLayout_ = compatible;
-            OnLayoutChanged(compatible);
-        }
-    }
+    CheckLayoutChange();
 
     // Skip focus tracking entirely if no feature needs it
     if (!smartSwitch_ && !excludeApps_ && !tsfApps_
@@ -1419,7 +1412,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     bool wasTsfApp = isTsfApp_;
 
     // Save mode for previous app (smart switch, skip excluded/TSF apps)
-    if (smartSwitch_ && !layoutForcedEnglish_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
+    if (smartSwitch_ && !layoutSuppressed_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
         if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
             appModeMap_.clear();
         }

@@ -141,6 +141,7 @@ private:
     void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with current vietnameseMode_
     void OnFocusChanged(HWND triggerHwnd = nullptr);
     void OnLayoutChanged(bool isCompatibleNow);
+    void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
     void ReloadAppOverrides();
 
     // Engine state
@@ -238,9 +239,8 @@ private:
     bool modWinDown_ = false;
     bool otherKeyPressed_ = false;
 
-    // Layout auto-disable: pause Vietnamese when CJK keyboard layout is active
-    bool layoutForcedEnglish_  = false;  // True when auto-switched to English due to CJK layout
-    bool preLayoutSwitchMode_  = false;  // V/E mode saved before forced switch
+    // Layout suppression: pause Vietnamese engine when CJK keyboard layout is active
+    bool layoutSuppressed_     = false;  // True when CJK layout active — engine passthrough, V/E mode unchanged
     bool cachedIsCompatLayout_ = true;   // Last known layout compatibility (updated in OnFocusChanged + key-up)
 
     // Config reload
