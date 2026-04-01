@@ -5,6 +5,7 @@
 #include "DialogUtils.h"
 #include "core/config/ConfigManager.h"
 #include "helpers/AppHelpers.h"
+#include "core/WinStrings.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <fstream>
@@ -156,27 +157,22 @@ void ExcludedAppsDialog::importApps() {
     );
 
     bool append = (msgboxID == IDYES);
-    if (!append) {
-        appList_.clear();
-    }
 
     std::ifstream infile(path);
     if (!infile.is_open()) return;
 
+    if (!append) {
+        appList_.clear();
+    }
+
     std::string line;
-    bool firstLine = true;
     while (std::getline(infile, line)) {
         // Trim CR (Windows line endings)
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        // Skip header/comment lines
-        if (firstLine) { firstLine = false; if (!line.empty() && line[0] == ';') continue; }
+        // Skip empty lines and comment/header lines
         if (line.empty() || line[0] == ';') continue;
 
-        // Convert UTF-8 to wstring
-        int len = MultiByteToWideChar(CP_UTF8, 0, line.c_str(), -1, nullptr, 0);
-        if (len <= 0) continue;
-        std::wstring wName(len - 1, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, line.c_str(), -1, wName.data(), len);
+        std::wstring wName = Utf8ToWide(line);
 
         // Lowercase + dedup
         wName = ToLowerAscii(wName);
@@ -211,11 +207,7 @@ void ExcludedAppsDialog::exportApps() {
     outfile << ";NexusKey Excluded Apps*** version=1 ***\n";
 
     for (auto& app : sorted) {
-        int len = WideCharToMultiByte(CP_UTF8, 0, app.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        if (len <= 0) continue;
-        std::string u8Name(len - 1, '\0');
-        WideCharToMultiByte(CP_UTF8, 0, app.c_str(), -1, u8Name.data(), len, nullptr, nullptr);
-        outfile << u8Name << "\n";
+        outfile << WideToUtf8(app) << "\n";
     }
 }
 
