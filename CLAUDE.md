@@ -77,10 +77,12 @@ Use the appropriate skill BEFORE diving into code:
 | `nexuskey-debug` | General bugs: TSF, SharedState, Sciter UI, hook engine |
 | `nexuskey-review` | Code review before commit — naming, SharedState, modern C++ checklist |
 | `nexuskey-build` | Build, test, pack resources |
+| `nexuskey-security` | Security audit — update system, SharedState IPC, config, macro expansion |
 
 **Rules:**
 - Typing/tone/English detection bugs → use `nexuskey-typing-bugs` BEFORE reading code
 - Code review / before commit → use `nexuskey-review`
+- Security audit / touching UpdateChecker, UpdateInstaller, SharedState → use `nexuskey-security`
 - Adding new toggle → see `docs/CODING_RULES/5-struct-versioning.md` (7-step checklist + step 7 Write() copy)
 - Docs are sharded + distilled for token efficiency → see `docs/index.md` for full map
 
