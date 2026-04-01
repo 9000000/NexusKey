@@ -89,9 +89,7 @@ bool IsAllowedDownloadUrl(const std::string& url) noexcept {
     return false;
 }
 
-// ── SEC-001: SHA-256 (Windows-only, implementations added in Task 3) ───────
-
-#ifdef _WIN32
+// ── SEC-001: ParseSha256File (cross-platform — pure string parsing) ──────────
 
 std::string ParseSha256File(const std::string& content) noexcept {
     try {
@@ -134,6 +132,10 @@ std::string ParseSha256File(const std::string& content) noexcept {
         return {};
     }
 }
+
+// ── SEC-001: Windows CNG — SHA-256 compute + ZIP verify ──────────────────────
+
+#ifdef _WIN32
 
 std::string ComputeFileSha256(const std::wstring& filePath) noexcept {
     try {

@@ -36,6 +36,10 @@ namespace NextKey {
 
 // ── SEC-001: SHA-256 hash verification ─────────────────────────────────────
 
+/// Parse a .sha256 checksum file (format: "<hex>  <filename>" or just "<hex>").
+/// Returns the extracted hex hash in lowercase, or empty string if unparseable.
+[[nodiscard]] std::string ParseSha256File(const std::string& content) noexcept;
+
 #ifdef _WIN32
 
 /// Compute SHA-256 hash of a file using Windows CNG (bcrypt.h).
@@ -43,15 +47,12 @@ namespace NextKey {
 /// Thread-safe — creates/destroys its own CNG handles.
 [[nodiscard]] std::string ComputeFileSha256(const std::wstring& filePath) noexcept;
 
-/// Parse a .sha256 checksum file (format: "<hex>  <filename>" or just "<hex>").
-/// Returns the extracted hex hash in lowercase, or empty string if unparseable.
-[[nodiscard]] std::string ParseSha256File(const std::string& content) noexcept;
-
 /// Download the .sha256 sidecar for a ZIP URL and verify the ZIP's integrity.
+/// Precondition: zipUrl must have already been validated by IsAllowedDownloadUrl.
 /// 1. Appends ".sha256" to zipUrl → downloads checksum file
 /// 2. Parses expected hash from checksum content
 /// 3. Computes actual SHA-256 of localZipPath
-/// 4. Returns true if hashes match (case-insensitive comparison)
+/// 4. Returns true if hashes match
 ///
 /// On any failure (download, parse, hash mismatch) returns false.
 [[nodiscard]] bool VerifyDownloadedZip(

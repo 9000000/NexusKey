@@ -77,6 +77,7 @@ bool WaitForOtherProcesses(DWORD timeoutMs) {
 bool ExtractZip(const std::wstring& zipPath, const std::wstring& destDir) {
     std::wstring safeZipPath = EscapePowerShellSingleQuote(zipPath);
     std::wstring safeDestDir = EscapePowerShellSingleQuote(destDir);
+    if (safeZipPath.empty() || safeDestDir.empty()) return false;
 
     // Build PowerShell command
     std::wstring cmd = L"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"";

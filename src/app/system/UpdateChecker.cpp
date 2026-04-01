@@ -164,9 +164,9 @@ UpdateInfo UpdateChecker::CheckForUpdate() noexcept {
 
         // Find architecture-specific asset
 #ifdef _WIN64
-        std::string assetName = "NexusKey-x64.zip";
+        std::string assetName = "NextKey-x64.zip";
 #else
-        std::string assetName = "NexusKey-x86.zip";
+        std::string assetName = "NextKey-x86.zip";
 #endif
 
         std::string assetUrl = FindAssetUrl(response, assetName);
