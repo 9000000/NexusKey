@@ -58,8 +58,15 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         sciter::dom::element htmlRoot(get_root());
         // Dark class goes on <body> (CSS targets body.dark), lang goes on <html>
         sciter::dom::element body = htmlRoot.find_first("body");
-        if (body.is_valid() && SciterHelper::IsWindowsDarkMode()) {
-            body.set_attribute("class", L"dark");
+        if (body.is_valid()) {
+            std::wstring classes = SciterHelper::IsWindowsDarkMode() ? L"dark" : L"";
+            if (!SciterHelper::IsWindows11OrGreater()) {
+                if (!classes.empty()) classes += L" ";
+                classes += L"win10";
+            }
+            if (!classes.empty()) {
+                body.set_attribute("class", classes.c_str());
+            }
         }
         if (GetLanguage() == Language::English) {
             htmlRoot.set_attribute("lang", L"en");
@@ -95,7 +102,12 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         sciter::dom::element htmlRoot(get_root());
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
-            body.set_attribute("class", dark ? L"dark" : L"");
+            std::wstring classes = dark ? L"dark" : L"";
+            if (!SciterHelper::IsWindows11OrGreater()) {
+                if (!classes.empty()) classes += L" ";
+                classes += L"win10";
+            }
+            body.set_attribute("class", classes.c_str());
         }
 
         int cornerPreference = DwmConstants::DWMWCP_ROUND;
@@ -264,7 +276,12 @@ LRESULT CALLBACK SciterSubDialog::SubclassProc(
                 sciter::dom::element htmlRoot(s_instance->get_root());
                 sciter::dom::element body = htmlRoot.find_first("body");
                 if (body.is_valid()) {
-                    body.set_attribute("class", dark ? L"dark" : L"");
+                    std::wstring classes = dark ? L"dark" : L"";
+                    if (!SciterHelper::IsWindows11OrGreater()) {
+                        if (!classes.empty()) classes += L" ";
+                        classes += L"win10";
+                    }
+                    body.set_attribute("class", classes.c_str());
                 }
 
                 // Update container background opacity for new theme

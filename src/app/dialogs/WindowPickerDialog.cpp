@@ -6,9 +6,6 @@
 #include <algorithm>
 #include <unordered_set>
 #include <TlHelp32.h>
-#include <Psapi.h>
-
-#pragma comment(lib, "psapi.lib")
 
 namespace NextKey {
 
@@ -51,22 +48,18 @@ std::wstring WindowPickerDialog::getExeNameFromWindow(HWND hwnd) {
     GetWindowThreadProcessId(hwnd, &processId);
     if (processId == 0) return L"";
 
-    HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-                                  FALSE, processId);
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
     if (!hProcess) return L"";
 
-    WCHAR exePath[MAX_PATH] = {};
-    GetProcessImageFileNameW(hProcess, exePath, MAX_PATH);
+    wchar_t exePath[MAX_PATH] = {};
+    DWORD size = MAX_PATH;
+    std::wstring result;
+    if (QueryFullProcessImageNameW(hProcess, 0, exePath, &size)) {
+        const wchar_t* filename = wcsrchr(exePath, L'\\');
+        result = ToLowerAscii(filename ? filename + 1 : exePath);
+    }
     CloseHandle(hProcess);
-
-    if (wcslen(exePath) == 0) return L"";
-
-    // Extract filename from device path (e.g. \Device\HarddiskVolume3\...\app.exe)
-    const WCHAR* filename = wcsrchr(exePath, L'\\');
-    if (filename) filename++;
-    else filename = exePath;
-
-    return ToLowerAscii(filename);
+    return result;
 }
 
 void WindowPickerDialog::startWindowPicking() {

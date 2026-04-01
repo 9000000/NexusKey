@@ -3214,6 +3214,19 @@ TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_Initial_StillWorks) {
     EXPECT_EQ(engine_->Peek(), L"đi");
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_Initial_WithCoda_Works) {
+    // "docd" → "đoc": onset 'd' with vowel+coda, then stroke modifier
+    // Pre-check must NOT block this — [đ,o,c] is valid Vietnamese
+    TypeString(*engine_, L"docd");
+    EXPECT_EQ(engine_->Peek(), L"đoc");
+}
+
+TEST_F(TelexEngineTest, DModifier_Initial_WithCoda_SpellCheckOn) {
+    // Same as above with spell check ON — "docd" → "đoc" (valid syllable)
+    TypeString(*engine_, L"docd");
+    EXPECT_EQ(engine_->Peek(), L"đoc");
+}
+
 TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_Initial_EscapeStillWorks) {
     // ddd → dd (escape) still works
     TypeString(*engine_, L"ddd");

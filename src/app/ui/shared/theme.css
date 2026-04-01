@@ -63,7 +63,10 @@
     --focus-ring: 0 0 0 2px rgba(124, 184, 248, 0.35);
 
     /* Shadows (more airy, glass-like) */
-    --shadow-card: 0 10px 38px rgba(0, 0, 0, 0.08);
+    /* inset ring renders INSIDE the element (within HWND boundary) — required because recalcWindowSize()
+       sizes the HWND to MARGIN_BOX, leaving no pixel space outside for an outer shadow ring.
+       Outer drop shadow (0 10px 38px) renders on Win11 only; gets clipped on Win10 (harmless). */
+    --shadow-card: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 10px 38px rgba(0, 0, 0, 0.15);
     --shadow-thumb: 0 2px 6px rgba(0, 0, 0, 0.2);
     --shadow-thumb-small: 0 1px 3px rgba(0, 0, 0, 0.2);
 
@@ -172,7 +175,8 @@ body.dark {
     --focus-ring: 0 0 0 2px rgba(96, 165, 250, 0.5);
 
     /* Shadows */
-    --shadow-card: 0 10px 40px rgba(0, 0, 0, 0.6);
+    /* inset ring — same reason as light mode (HWND clipping) */
+    --shadow-card: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 10px 40px rgba(0, 0, 0, 0.6);
     --shadow-thumb: 0 2px 8px rgba(0, 0, 0, 0.8);
     --shadow-thumb-small: 0 1px 4px rgba(0, 0, 0, 0.6);
 
@@ -349,4 +353,31 @@ body.dark select option:checked {
     pointer-events: none;
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================
+   WINDOWS 10 FALLBACKS
+   Win10 DWM does not support round window corners or clip blur properly.
+   We disable DWM blur and add a fallback border + drop shadow to separate
+   the window from the background.
+   ============================================ */
+
+/* Redefine CSS variables for win10 class to strip out the redundant inset shadow
+   which was needed on Win11 to fake an inner border, but looks bad when we
+   have a real border here on Win10. */
+body.win10 {
+    --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+body.dark.win10 {
+    --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+body.win10 .container {
+    border: 1px solid var(--border-medium);
+    margin: 8px; /* Make room for Windows 10 fallback drop shadow */
+}
+
+body.dark.win10 .container {
+    border: 1px solid var(--border-input);
 }

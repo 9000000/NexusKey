@@ -221,6 +221,18 @@ void TelexEngine::PushChar(wchar_t c) {
                 asLiteral(); return;
             }
         }
+        // Pre-tone stop-final check (spellCheck path only):
+        // Stop finals (c, ch, k, p, t) only accept Acute and Dot tones.
+        // Grave/Hook/Tilde on a stop-final syllable is phonologically impossible.
+        if (config_.spellCheckEnabled && !spellCheckDisabled_) {
+            Tone requested = KeyToTone(c);
+            if (requested == Tone::Grave || requested == Tone::Hook ||
+                    requested == Tone::Tilde) {
+                if (HasStopFinalCoda(states_.data(), states_.size())) {
+                    asLiteral(); return;
+                }
+            }
+        }
         if (ProcessTone(c)) {
             if (!toneEscaped_) {
                 engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
@@ -244,15 +256,25 @@ void TelexEngine::PushChar(wchar_t c) {
     // Pre-check for 'd' modifier: if dd→đ would fire (existing 'd' target) AND there's
     // already a consonant in coda position, adding 'd' forms an invalid coda like "pd".
     // Only fires when FindStrokeDTarget finds a target — doesn't affect plain 'd' in "wind".
-    if (lower == L'd' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3
-        && FindStrokeDTarget(states_.data(), states_.size()) != SIZE_MAX) {
-        size_t codaLen = 0;
-        for (size_t j = states_.size(); j-- > 0;) {
-            if (states_[j].IsVowel() || states_[j].IsD()) break;
-            ++codaLen;
-        }
-        if (codaLen >= 1) {
-            engProt_.bias = LanguageBias::HardEnglish;
+    if (lower == L'd' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
+        size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
+        if (dTarget != SIZE_MAX) {
+            // When onset 'd' (position 0) is immediately followed by a vowel (e.g. "doc"),
+            // applying stroke gives [đ + vowel + coda] — perfectly valid Vietnamese structure.
+            // When onset 'd' is followed by another consonant (e.g. "drop" → states[1]='r'),
+            // the cluster is English-style; block the modifier to prevent "dropdown" → "đrơpn".
+            bool isSimpleOnsetVowelCoda = (dTarget == 0 && states_.size() > 1 &&
+                                            states_[1].IsVowel());
+            if (!isSimpleOnsetVowelCoda) {
+                size_t codaLen = 0;
+                for (size_t j = states_.size(); j-- > 0;) {
+                    if (states_[j].IsVowel() || states_[j].IsD()) break;
+                    ++codaLen;
+                }
+                if (codaLen >= 1) {
+                    engProt_.bias = LanguageBias::HardEnglish;
+                }
+            }
         }
     }
     if (toneEscaped_ || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish)) {

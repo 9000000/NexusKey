@@ -10,7 +10,14 @@
 // Translations are deferred to next frame so C++ can set lang="en" after load().
 function initSubDialog(scrollSelector) {
     var isDark = document.body.classList.contains("dark");
-    Window.this.blurBehind = (isDark ? "dark" : "light") + " source-auto";
+    requestAnimationFrame(function() {
+        if (!document.body.classList.contains("win10")) {
+            Window.this.blurBehind = (document.body.classList.contains("dark") ? "dark" : "light") + " source-auto";
+        } else {
+            Window.this.blurBehind = "none";
+        }
+    });
+
     if (scrollSelector) initializeScrollbarResize(scrollSelector);
     requestAnimationFrame(function() {
         if (typeof applyTranslations === "function") applyTranslations();

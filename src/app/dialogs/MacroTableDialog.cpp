@@ -4,6 +4,7 @@
 #include "MacroTableDialog.h"
 #include "DialogUtils.h"
 #include "core/config/ConfigManager.h"
+#include "core/WinStrings.h"
 #include "helpers/AppHelpers.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
@@ -157,14 +158,9 @@ void MacroTableDialog::importMacros() {
         if (value.empty()) continue;
 
         // Convert UTF-8 to wstring
-        int keyLen = MultiByteToWideChar(CP_UTF8, 0, key.c_str(), -1, nullptr, 0);
-        int valLen = MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, nullptr, 0);
-        if (keyLen <= 0 || valLen <= 0) continue;
-
-        std::wstring wKey(keyLen - 1, L'\0');
-        std::wstring wVal(valLen - 1, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, key.c_str(), -1, wKey.data(), keyLen);
-        MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, wVal.data(), valLen);
+        std::wstring wKey = Utf8ToWide(key);
+        std::wstring wVal = Utf8ToWide(value);
+        if (wKey.empty() || wVal.empty()) continue;
 
         macros_[wKey] = wVal;
     }
@@ -193,17 +189,7 @@ void MacroTableDialog::exportMacros() {
     outfile << ";Compatible OpenKey Macro Data file*** version=1 ***\n";
 
     for (auto& [key, value] : sorted) {
-        // Convert wstring to UTF-8
-        int keyLen = WideCharToMultiByte(CP_UTF8, 0, key.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        int valLen = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, nullptr, 0, nullptr, nullptr);
-        if (keyLen <= 0 || valLen <= 0) continue;
-
-        std::string u8Key(keyLen - 1, '\0');
-        std::string u8Val(valLen - 1, '\0');
-        WideCharToMultiByte(CP_UTF8, 0, key.c_str(), -1, u8Key.data(), keyLen, nullptr, nullptr);
-        WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, u8Val.data(), valLen, nullptr, nullptr);
-
-        outfile << u8Key << ":" << u8Val << "\n";
+        outfile << WideToUtf8(key) << ":" << WideToUtf8(value) << "\n";
     }
 }
 

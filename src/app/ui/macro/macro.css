@@ -89,6 +89,24 @@
     word-break: break-all;
 }
 
+/* Newline hint below content input */
+.hint-row {
+    padding: 2px 0 4px 0;
+}
+
+.hint-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.hint-text code {
+    display: inline-block;
+    font-family: monospace;
+    background: var(--bg-primary-hover);
+    padding: 0 3px;
+    border-radius: 2px;
+}
+
 .macro-item-content {
     flex: 1;
     font-size: 12px;

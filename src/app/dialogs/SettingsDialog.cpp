@@ -131,7 +131,12 @@ SettingsDialog::SettingsDialog()
         sciter::dom::element htmlRoot(get_root());
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
-            body.set_attribute("class", dark ? L"dark" : L"");
+            std::wstring classes = dark ? L"dark" : L"";
+            if (!SciterHelper::IsWindows11OrGreater()) {
+                if (!classes.empty()) classes += L" ";
+                classes += L"win10";
+            }
+            body.set_attribute("class", classes.c_str());
         }
 
         // Enable rounded corners on Windows 11
@@ -379,7 +384,12 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
                 sciter::dom::element htmlRoot(s_instance->get_root());
                 sciter::dom::element body = htmlRoot.find_first("body");
                 if (body.is_valid()) {
-                    body.set_attribute("class", dark ? L"dark" : L"");
+                    std::wstring classes = dark ? L"dark" : L"";
+                    if (!SciterHelper::IsWindows11OrGreater()) {
+                        if (!classes.empty()) classes += L" ";
+                        classes += L"win10";
+                    }
+                    body.set_attribute("class", classes.c_str());
                 }
 
                 // Update container background opacity for new theme
@@ -826,18 +836,22 @@ void SettingsDialog::recalcWindowSize() {
     sciter::dom::element container = rootEl.find_first("#main-container");
     
     int newWidth = COMPACT_WIDTH;
+    if (isExpanded_) {
+        newWidth = COMPACT_WIDTH + ADVANCED_WIDTH;
+    }
+
     int newHeight = static_cast<int>(BASE_HEIGHT_COLLAPSED * dpiScale);
 
     if (container.is_valid()) {
         RECT r = container.get_location(MARGIN_BOX);
+        int w = r.right - r.left;
         int h = r.bottom - r.top;
-        if (h > 100) { // Safety: Only resize if we got a sensible height
-            newHeight = h;
-        }
-    }
-
-    if (isExpanded_) {
-        newWidth = COMPACT_WIDTH + ADVANCED_WIDTH;
+        
+        // Safety fallback: if DOM hasn't fully layed out yet or window is minimized,
+        // bounds might be 0 or heavily distorted. We fallback to predefined constants
+        // (COMPACT_WIDTH/ADVANCED_WIDTH and BASE_HEIGHT_COLLAPSED) unless > 100px.
+        if (w > 100) newWidth = w;
+        if (h > 100) newHeight = h;
     }
 
     // Keep window position, just resize

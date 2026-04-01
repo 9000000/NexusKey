@@ -193,6 +193,8 @@ void HookEngine::Stop() {
     if (s_instance == this) {
         s_instance = nullptr;
     }
+    layoutSuppressed_ = false;
+    cachedIsCompatLayout_ = true;
     NEXTKEY_LOG(L"HookEngine stopped");
 #if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
     CloseHookLog();
@@ -226,7 +228,7 @@ void HookEngine::ToggleVietnameseMode() {
     // Save per-app mode
     if (smartSwitch_) {
         if (currentExe_.empty()) {
-            currentExe_ = GetForegroundExeName();
+            currentExe_ = GetExeNameForHwnd(GetForegroundWindow());
         }
         if (!currentExe_.empty()) {
             appModeMap_[currentExe_] = vietnameseMode_;
@@ -332,9 +334,8 @@ bool HookEngine::CheckConfigEvent() {
 
     // Override with SharedState for fields that Settings updates immediately
     // (TOML may be stale due to deferred save)
-    SharedStateManager sharedState;
-    if (sharedState.Open()) {
-        SharedState state = sharedState.Read();
+    if (sharedStatePtr_) {
+        SharedState state = sharedStatePtr_->Read();
         if (state.IsValid()) {
             config.inputMethod = static_cast<InputMethod>(state.inputMethod);
             config.spellCheckEnabled = state.spellCheck != 0;
@@ -1386,10 +1387,6 @@ bool HookEngine::IsConsoleApp(HWND hwnd) {
     return false;
 }
 
-std::wstring HookEngine::GetForegroundExeName() {
-    return GetExeNameForHwnd(GetForegroundWindow());
-}
-
 void HookEngine::NotifyModeChange() noexcept {
     if (modeChangeCallback_) {
         modeChangeCallback_(vietnameseMode_);
@@ -1519,9 +1516,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         HOOK_LOG(L"  ExcludeApps: '%s' is excluded, forcing English", currentExe_.c_str());
         if (vietnameseMode_) {
             vietnameseMode_ = false;
-            if (modeChangeCallback_) {
-                modeChangeCallback_(false);
-            }
+            NotifyModeChange();
         }
         return;  // Skip smart switch restore and code table restore for excluded apps
     }
@@ -1576,18 +1571,14 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
             vietnameseMode_ = modeBeforeExclude_;
             HOOK_LOG(L"  SmartSwitch: restored pre-exclude %s for '%s'",
                      vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
-            if (modeChangeCallback_) {
-                modeChangeCallback_(vietnameseMode_);
-            }
+            NotifyModeChange();
         }
-    } else if (!smartSwitch_ && wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
+    } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
         // SmartSwitch OFF — still restore pre-exclusion mode when leaving excluded app
         vietnameseMode_ = modeBeforeExclude_;
         HOOK_LOG(L"  ExcludeApps: restored pre-exclude %s for '%s'",
                  vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
-        if (modeChangeCallback_) {
-            modeChangeCallback_(vietnameseMode_);
-        }
+        NotifyModeChange();
     }
 }
 
@@ -1911,28 +1902,23 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
         for (size_t i = 0; i < bsCount; ++i) {
             AppendVkEvent(bsEvents, VK_BACK, bsScan);
         }
-        if (currentCodeTable_ != CodeTable::Unicode) {
-            for (size_t i = 0; i < expansion.size(); ++i) {
-                if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
-                    expansion[i+1] == L'n') {
-                    AppendVkEvent(charEvents, VK_RETURN, retScan);
-                    ++i;
-                } else {
-                    auto enc = CodeTableConverter::ConvertChar(expansion[i], currentCodeTable_);
-                    AppendUnicodeEvent(charEvents, enc.units[0]);
-                    if (enc.count == 2) AppendUnicodeEvent(charEvents, enc.units[1]);
-                }
+        charEvents.reserve(expansion.size() * 2);
+        auto emitChar = [&](wchar_t ch) {
+            if (currentCodeTable_ != CodeTable::Unicode) {
+                auto enc = CodeTableConverter::ConvertChar(ch, currentCodeTable_);
+                AppendUnicodeEvent(charEvents, enc.units[0]);
+                if (enc.count == 2) AppendUnicodeEvent(charEvents, enc.units[1]);
+            } else {
+                AppendUnicodeEvent(charEvents, ch);
             }
-        } else {
-            charEvents.reserve(expansion.size() * 2);
-            for (size_t i = 0; i < expansion.size(); ++i) {
-                if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
-                    expansion[i+1] == L'n') {
-                    AppendVkEvent(charEvents, VK_RETURN, retScan);
-                    ++i;
-                } else {
-                    AppendUnicodeEvent(charEvents, expansion[i]);
-                }
+        };
+        for (size_t i = 0; i < expansion.size(); ++i) {
+            if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
+                expansion[i+1] == L'n') {
+                AppendVkEvent(charEvents, VK_RETURN, retScan);
+                ++i;
+            } else {
+                emitChar(expansion[i]);
             }
         }
         DispatchSendInput(bsEvents, charEvents);

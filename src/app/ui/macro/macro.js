@@ -140,8 +140,9 @@ function addMacroToList(name, content) {
     item.className = "macro-item";
     item.setAttribute("data-name", name);
     item.setAttribute("data-content", content);
+    var displayContent = escapeHtml(content).replace(/\\n/g, '<span style="opacity:0.5">↵</span>');
     item.innerHTML = '<span class="macro-item-name">' + escapeHtml(name) + '</span>' +
-        '<span class="macro-item-content">' + escapeHtml(content) + '</span>';
+        '<span class="macro-item-content">' + displayContent + '</span>';
 
     item.addEventListener("click", function () {
         selectMacroItem(this, name, content);

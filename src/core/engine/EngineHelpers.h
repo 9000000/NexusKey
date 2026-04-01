@@ -123,4 +123,36 @@ template<typename CharStateT>
     return dIdx;
 }
 
+/// Returns true if the buffer ends with a stop-final consonant (c, ch, k, p, t)
+/// preceded by at least one vowel. Scans backward from end.
+/// Stop finals only accept Acute and Dot tones in Vietnamese phonology.
+/// Used by pre-tone check to block Grave/Hook/Tilde before ProcessTone().
+template<typename CharStateT>
+[[nodiscard]] inline bool HasStopFinalCoda(
+        const CharStateT* states, size_t count) noexcept {
+    if (count < 2) return false;
+
+    // Scan backward from end to find coda start (stop at first vowel)
+    size_t codaEnd = count;
+    size_t codaStart = codaEnd;
+    while (codaStart > 0 && !states[codaStart - 1].IsVowel()) {
+        --codaStart;
+    }
+    size_t codaLen = codaEnd - codaStart;
+
+    // Must be preceded by a vowel (loop exit guarantees this when codaStart > 0)
+    if (codaStart == 0) return false;
+
+    if (codaLen == 1) {
+        wchar_t c = towlower(states[codaStart].base);
+        return c == L'c' || c == L'k' || c == L'p' || c == L't';
+    }
+    if (codaLen == 2) {
+        wchar_t c0 = towlower(states[codaStart].base);
+        wchar_t c1 = towlower(states[codaStart + 1].base);
+        return (c0 == L'c' && c1 == L'h');  // ch is the only stop digraph
+    }
+    return false;
+}
+
 }  // namespace NextKey

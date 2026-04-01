@@ -45,7 +45,7 @@ extern/sciter/bin/packfolder.exe src/app/ui src/app/resources.cpp -v resources
 
 ## Key Coding Rules
 
-Follow `docs/CODING_RULES.md` in full. Critical rules:
+Follow `docs/CODING_RULES/` (sharded) in full. Critical rules:
 
 1. **Namespace**: All code under `NextKey::`. No `using namespace` in headers.
 2. **Naming**: PascalCase classes/methods, camelCase locals, trailing_ members, UPPER_SNAKE constants.
@@ -64,6 +64,8 @@ Follow `docs/CODING_RULES.md` in full. Critical rules:
 - **TIP vs HKL**: `GetKeyboardLayout()` returns same HKL for TIPs and plain keyboards. Don't use it to detect TIP state.
 - **SharedState toggle**: Use `InterlockedXor` for atomic flag toggle. Both EXE and DLL can toggle.
 - **DLL icon**: TSF LanguageBarButton owns the icon. No cross-process PostMessage needed.
+- **Win10 DWM blur artifact**: `AccentState::BlurBehind` on Win10 blurs the entire HWND including transparent `border-radius` pixels → visible halo at bottom edge. Fix: `SciterHelper::enableWindowBlur()` skips blur on Win10 (`!IsWindows11OrGreater()`). Do NOT remove this guard.
+- **Win10 window border**: `DWMWCP_ROUND` and `DWMWA_BORDER_COLOR` are Win11-only — ignored on Win10. CSS `--shadow-card` includes a `0 0 0 1px` border ring to define window edges on Win10.
 
 ## Skills (use proactively)
 
@@ -79,7 +81,8 @@ Use the appropriate skill BEFORE diving into code:
 **Rules:**
 - Typing/tone/English detection bugs → use `nexuskey-typing-bugs` BEFORE reading code
 - Code review / before commit → use `nexuskey-review`
-- Adding new toggle → see CODING_RULES.md section 5.2 (7-step checklist + step 7 Write() copy)
+- Adding new toggle → see `docs/CODING_RULES/5-struct-versioning.md` (7-step checklist + step 7 Write() copy)
+- Docs are sharded + distilled for token efficiency → see `docs/index.md` for full map
 
 ## Sciter SDK Reference
 

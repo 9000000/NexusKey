@@ -109,9 +109,7 @@ void TsfAppsDialog::addApp(const std::wstring& name) {
     std::wstring lower = ToLowerAscii(name);
 
     // Check for duplicates
-    for (auto& existing : appList_) {
-        if (existing == lower) return;
-    }
+    if (std::find(appList_.begin(), appList_.end(), lower) != appList_.end()) return;
 
     appList_.push_back(lower);
     call_function("addAppToList", sciter::value(lower.c_str()));

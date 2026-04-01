@@ -379,12 +379,153 @@ TEST_F(TelexSpellCheckTest, CircumflexModifier_NotGated) {
     EXPECT_EQ(engine.Peek(), L"blaa");
 }
 
-TEST_F(TelexSpellCheckTest, ToneEscape_WithCoda_SpellCheckOn) {
-    // ocrr: 'r' applies hỏi to 'o' → "ỏc" (invalid → spellCheckDisabled_)
-    // second 'r' must still escape → "ocr"
+TEST_F(TelexSpellCheckTest, StopFinal_OCR_DirectLiteral) {
+    // First 'r' is now blocked by pre-tone check → literal immediately
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"ocr");
+    EXPECT_EQ(engine.Peek(), L"ocr");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_OCRR_BothLiteral) {
+    // Both 'r' are literal (no pending tone to escape)
     Telex::TelexEngine engine(config_);
     TypeString(engine, L"ocrr");
-    EXPECT_EQ(engine.Peek(), L"ocr");
+    EXPECT_EQ(engine.Peek(), L"ocrr");
+}
+
+// --- Pre-tone stop-final block ---
+
+TEST_F(TelexSpellCheckTest, StopFinal_P_Acute_Allowed) {
+    // "ap" + 's' (Acute) → "áp" valid — ensure p-coda allows Acute
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"aps");
+    EXPECT_EQ(engine.Peek(), L"áp");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_Grave_Blocked) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"ocf");
+    EXPECT_EQ(engine.Peek(), L"ocf");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_Tilde_Blocked) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"ocx");
+    EXPECT_EQ(engine.Peek(), L"ocx");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_Acute_Allowed) {
+    // "oc" + 's' (Acute) → "óc" valid (plain 'o' + acute, no circumflex)
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"ocs");
+    EXPECT_EQ(engine.Peek(), L"óc");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_Dot_Allowed) {
+    // "oc" + 'j' (Dot) → "ọc" valid
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"ocj");
+    EXPECT_EQ(engine.Peek(), L"ọc");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_T_Hook_Blocked) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"atr");
+    EXPECT_EQ(engine.Peek(), L"atr");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_T_Acute_Allowed) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"ats");
+    EXPECT_EQ(engine.Peek(), L"át");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_T_Tilde_Blocked) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"atx");
+    EXPECT_EQ(engine.Peek(), L"atx");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_Ch_Hook_Blocked) {
+    // "ach" + 'r' → "achr" (ch is stop digraph)
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"achr");
+    EXPECT_EQ(engine.Peek(), L"achr");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_Ch_Grave_Blocked) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"achf");
+    EXPECT_EQ(engine.Peek(), L"achf");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_Ch_Tilde_Blocked) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"achx");
+    EXPECT_EQ(engine.Peek(), L"achx");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_Ch_Acute_Allowed) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"achs");
+    EXPECT_EQ(engine.Peek(), L"ách");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_P_Hook_Blocked) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"apr");
+    EXPECT_EQ(engine.Peek(), L"apr");
+}
+
+// K coda: only valid after ă (breve) — SpellChecker restriction.
+// Use "awkr" (ă+k) to test the pre-tone check path; "akr" hits spellCheckDisabled_ path.
+TEST_F(TelexSpellCheckTest, StopFinal_K_Hook_Blocked) {
+    // aw=ă modifier, k=valid coda, 'r'=Hook → blocked by pre-tone check
+    // Peek() returns composed form: ă (U+0103) + k + r (literal)
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"awkr");
+    EXPECT_EQ(engine.Peek(), L"\u0103kr");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_K_Acute_Allowed) {
+    // "ắk" — the only standard Vietnamese k-coda syllable
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"awks");
+    EXPECT_EQ(engine.Peek(), L"ắk");
+}
+
+TEST_F(TelexSpellCheckTest, NonStopFinal_N_Hook_Allowed) {
+    // "an" + 'r' (Hook) → "ản" valid (n is non-stop)
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"anr");
+    EXPECT_EQ(engine.Peek(), L"ản");
+}
+
+TEST_F(TelexSpellCheckTest, NonStopFinal_M_Grave_Allowed) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"amf");
+    EXPECT_EQ(engine.Peek(), L"àm");
+}
+
+TEST_F(TelexSpellCheckTest, NonStopFinal_Ng_Tilde_Allowed) {
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"angx");
+    EXPECT_EQ(engine.Peek(), L"ãng");
+}
+
+TEST_F(TelexSpellCheckTest, SpellCheckOff_StopFinal_NotBlocked) {
+    // With spell check OFF, "ocr" still produces "ỏc" (no change)
+    config_.spellCheckEnabled = false;
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"ocr");
+    EXPECT_EQ(engine.Peek(), L"ỏc");
+}
+
+TEST_F(TelexSpellCheckTest, StopFinal_WithOnset_Hook_Blocked) {
+    // "bocr" → [b,o,c] + 'r' → blocked
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"bocr");
+    EXPECT_EQ(engine.Peek(), L"bocr");
 }
 
 //=============================================================================
@@ -446,12 +587,62 @@ TEST_F(VniSpellCheckTest, BackspaceRestoresToneAbility) {
     EXPECT_EQ(engine.Peek(), L"bá");
 }
 
-TEST_F(VniSpellCheckTest, ToneEscape_WithCoda_SpellCheckOn) {
-    // oc33: '3' applies hỏi to 'o' → "ỏc" (invalid → spellCheckDisabled_)
-    // second '3' must still escape → "oc3"
+TEST_F(VniSpellCheckTest, StopFinal_OC3_DirectLiteral) {
+    // First '3' is now blocked by pre-tone check → literal immediately
+    Vni::VniEngine engine(config_);
+    TypeString(engine, L"oc3");
+    EXPECT_EQ(engine.Peek(), L"oc3");
+}
+
+TEST_F(VniSpellCheckTest, StopFinal_OC33_BothLiteral) {
+    // Both '3' are literal (no pending tone to escape)
     Vni::VniEngine engine(config_);
     TypeString(engine, L"oc33");
+    EXPECT_EQ(engine.Peek(), L"oc33");
+}
+
+// --- VNI pre-tone stop-final block ---
+
+TEST_F(VniSpellCheckTest, StopFinal_Grave_Blocked) {
+    // "oc" + '2' (Grave) → literal
+    Vni::VniEngine engine(config_);
+    TypeString(engine, L"oc2");
+    EXPECT_EQ(engine.Peek(), L"oc2");
+}
+
+TEST_F(VniSpellCheckTest, StopFinal_Hook_Blocked) {
+    // "oc" + '3' (Hook) → literal
+    Vni::VniEngine engine(config_);
+    TypeString(engine, L"oc3");
     EXPECT_EQ(engine.Peek(), L"oc3");
+}
+
+TEST_F(VniSpellCheckTest, StopFinal_Tilde_Blocked) {
+    // "oc" + '4' (Tilde) → literal
+    Vni::VniEngine engine(config_);
+    TypeString(engine, L"oc4");
+    EXPECT_EQ(engine.Peek(), L"oc4");
+}
+
+TEST_F(VniSpellCheckTest, StopFinal_Acute_Allowed) {
+    // "oc" + '1' (Acute) → "óc" (plain 'o' + acute, no circumflex)
+    Vni::VniEngine engine(config_);
+    TypeString(engine, L"oc1");
+    EXPECT_EQ(engine.Peek(), L"óc");
+}
+
+TEST_F(VniSpellCheckTest, StopFinal_Dot_Allowed) {
+    // "oc" + '5' (Dot) → "ọc"
+    Vni::VniEngine engine(config_);
+    TypeString(engine, L"oc5");
+    EXPECT_EQ(engine.Peek(), L"ọc");
+}
+
+TEST_F(VniSpellCheckTest, SpellCheckOff_StopFinal_NotBlocked) {
+    config_.spellCheckEnabled = false;
+    Vni::VniEngine engine(config_);
+    TypeString(engine, L"oc3");
+    EXPECT_EQ(engine.Peek(), L"ỏc");
 }
 
 //=============================================================================

@@ -124,15 +124,17 @@ NexusKey/
 │   ├── ConfigEventTest.cpp            # 2K — Win32 only
 │   └── TestHelper.h                   # Shared test utilities
 │
-├── docs/                              # Documentation
-│   ├── Architecture.md                # System architecture overview (21K)
-│   ├── CODING_RULES.md                # Coding standards (12K)
+├── docs/                              # Documentation (see docs/index.md)
+│   ├── Architecture/                  # System architecture (sharded, 12 files)
+│   ├── CODING_RULES/                  # Coding standards (sharded, 10 files)
+│   ├── telex-test-specification/      # Telex test cases (sharded, 21 files)
+│   ├── vietnamese-phonology-spec-distillate.md  # Typing rules (distilled)
+│   ├── SECURITY_FIXES-distillate.md   # Security fixes (distilled)
+│   ├── tray-icon-sync-analysis-v2-distillate.md # Tray icon sync (distilled)
 │   ├── Planning.md                    # Feature roadmap (24K)
-│   ├── vietnamese-phonology-spec.md   # Vietnamese typing rules (13K)
-│   ├── telex-test-specification.md    # Telex test cases (23K)
 │   ├── tsf-hook-coordination.md       # TSF/Hook interplay (4K)
 │   ├── subdialog-checklist.md         # Subdialog creation guide (4K)
-│   ├── tray-icon-sync-analysis-v2.md  # Tray icon state sync (21K)
+│   ├── plans/                         # Implementation plans
 │   └── diagrams/                      # Visual diagrams
 │
 ├── extern/                            # Vendored dependencies

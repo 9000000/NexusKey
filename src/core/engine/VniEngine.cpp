@@ -203,6 +203,18 @@ void VniEngine::PushChar(wchar_t c) {
                 asLiteral(); return;
             }
         }
+        // Pre-tone stop-final check (spellCheck path only):
+        // Stop finals (c, ch, k, p, t) only accept Acute and Dot tones.
+        // Grave/Hook/Tilde on a stop-final syllable is phonologically impossible.
+        if (config_.spellCheckEnabled && !spellCheckDisabled_) {
+            Tone requested = KeyToTone(c);
+            if (requested == Tone::Grave || requested == Tone::Hook ||
+                    requested == Tone::Tilde) {
+                if (HasStopFinalCoda(states_.data(), states_.size())) {
+                    asLiteral(); return;
+                }
+            }
+        }
         if (ProcessTone(c)) {
             if (!toneEscaped_) {
                 engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent

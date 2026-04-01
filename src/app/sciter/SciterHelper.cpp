@@ -98,6 +98,19 @@ void enableWindowBlur(HWND hwnd, BlurMode mode) noexcept {
     if (!hwnd) return;
 
     const bool isBlur = (mode == BlurMode::Blur);
+    const bool isWin11 = IsWindows11OrGreater();
+
+    // Win10 blur artifact: AccentState::BlurBehind applies DWM blur to the entire HWND
+    // rectangle, including transparent pixels from border-radius corners and box-shadow area.
+    // Win10 also doesn't support DWMWCP_ROUND, so DWM can't clip blur to the rounded shape.
+    // Result: visible blur halo at the bottom edge of the window.
+    //
+    // Fix: skip blur on Win10 entirely. CSS --bg-glass (rgba(255,255,255,1) light /
+    // rgba(5,5,8,0.92) dark) provides a solid-enough background without blur.
+    // Reference: OpenKey ModernMenu.cpp — "Win10: No transparency (GDI+/acrylic unreliable)"
+    if (!isWin11 && isBlur) {
+        return;
+    }
 
     // 1. Set WS_EX_LAYERED to allow alpha/blur composition
     SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
@@ -130,7 +143,7 @@ void enableWindowBlur(HWND hwnd, BlurMode mode) noexcept {
         }
     }
 
-    // 3. Enable rounded corners on Windows 11
+    // 3. Enable rounded corners on Windows 11 (Win10 ignores this silently)
     int cornerPreference = DwmConstants::DWMWCP_ROUND;
     DwmSetWindowAttribute(hwnd, DwmConstants::DWMWA_WINDOW_CORNER_PREFERENCE,
                           &cornerPreference, sizeof(cornerPreference));

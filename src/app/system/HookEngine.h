@@ -141,7 +141,6 @@ private:
 
     // Smart switch: get foreground app exe name
     [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;
-    static std::wstring GetForegroundExeName();
     [[nodiscard]] static bool IsTrayOrTaskbarWindow(HWND hwnd) noexcept;
     void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with current vietnameseMode_
     void OnFocusChanged(HWND triggerHwnd = nullptr);
