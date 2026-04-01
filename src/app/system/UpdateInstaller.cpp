@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "UpdateInstaller.h"
+#include "UpdateSecurity.h"
 
 #include <TlHelp32.h>
 #include <filesystem>
@@ -74,12 +75,15 @@ bool WaitForOtherProcesses(DWORD timeoutMs) {
 
 /// Extract ZIP using PowerShell Expand-Archive (hidden window)
 bool ExtractZip(const std::wstring& zipPath, const std::wstring& destDir) {
+    std::wstring safeZipPath = EscapePowerShellSingleQuote(zipPath);
+    std::wstring safeDestDir = EscapePowerShellSingleQuote(destDir);
+
     // Build PowerShell command
     std::wstring cmd = L"powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"";
     cmd += L"Expand-Archive -Path '";
-    cmd += zipPath;
+    cmd += safeZipPath;
     cmd += L"' -DestinationPath '";
-    cmd += destDir;
+    cmd += safeDestDir;
     cmd += L"' -Force\"";
 
     STARTUPINFOW si = { sizeof(si) };
