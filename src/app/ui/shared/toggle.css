@@ -12,7 +12,9 @@
     position: relative;
     cursor: pointer;
     vertical-align: middle;
-    transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* No CSS transition — transparent window (WS_EX_LAYERED) repaints entire
+       surface every frame during transition + mouse move, causing visible jank.
+       Instant snap avoids the repaint storm entirely. */
 }
 
 /* ON state */
@@ -32,7 +34,7 @@
     font-weight: 700;
     color: var(--toggle-label-on);
     opacity: 0;
-    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* transition removed — see toggle-switch-small comment */
     z-index: 1;
 }
 
@@ -48,7 +50,7 @@
     font-weight: 700;
     color: var(--toggle-label-off);
     opacity: 1;
-    transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* transition removed — see toggle-switch-small comment */
     z-index: 1;
 }
 
@@ -70,7 +72,7 @@
     position: absolute;
     top: 2px;
     left: 2px;
-    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* transition removed — see toggle-switch-small comment */
     z-index: 2;
 }
 

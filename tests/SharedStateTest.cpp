@@ -197,5 +197,141 @@ TEST_F(SharedStateTest, ReservedSpace_ZeroInitialized) {
     }
 }
 
+// ============================================================================
+// Feature Flags Encode/Decode Roundtrip Tests
+// These cover every toggle in Settings dialog.
+// If a toggle appears to "not apply", the encode/decode chain is the first
+// thing to check. The realtime delivery path (100ms timer in main.cpp) is
+// only useful if the value actually survives the SharedState roundtrip.
+// ============================================================================
+
+TEST_F(SharedStateTest, FeatureFlags_BeepOnSwitch_Roundtrip) {
+    TypingConfig cfg{};
+    cfg.beepOnSwitch = true;
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+
+    TypingConfig out{};
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_TRUE(out.beepOnSwitch);
+
+    cfg.beepOnSwitch = false;
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_FALSE(out.beepOnSwitch);
+}
+
+TEST_F(SharedStateTest, FeatureFlags_MacroEnabled_Roundtrip) {
+    TypingConfig cfg{};
+    cfg.macroEnabled = true;
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+
+    TypingConfig out{};
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_TRUE(out.macroEnabled);
+
+    cfg.macroEnabled = false;
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_FALSE(out.macroEnabled);
+}
+
+TEST_F(SharedStateTest, FeatureFlags_MacroInEnglish_Roundtrip) {
+    TypingConfig cfg{};
+    cfg.macroInEnglish = true;
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+
+    TypingConfig out{};
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_TRUE(out.macroInEnglish);
+}
+
+TEST_F(SharedStateTest, FeatureFlags_SmartSwitch_Roundtrip) {
+    TypingConfig cfg{};
+    cfg.smartSwitch = true;
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+
+    TypingConfig out{};
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_TRUE(out.smartSwitch);
+}
+
+TEST_F(SharedStateTest, FeatureFlags_TempOffSpellByCtrl_Roundtrip) {
+    TypingConfig cfg{};
+    cfg.tempOffSpellByCtrl = true;
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+
+    TypingConfig out{};
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_TRUE(out.tempOffSpellByCtrl);
+}
+
+TEST_F(SharedStateTest, FeatureFlags_TempOffByAlt_Roundtrip) {
+    TypingConfig cfg{};
+    cfg.tempOffByAlt = true;
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+
+    TypingConfig out{};
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_TRUE(out.tempOffByAlt);
+}
+
+// All toggles ON simultaneously — verifies no bit aliasing
+TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
+    TypingConfig cfg{};
+    cfg.beepOnSwitch       = true;
+    cfg.macroEnabled       = true;
+    cfg.macroInEnglish     = true;
+    cfg.smartSwitch        = true;
+    cfg.tempOffSpellByCtrl = true;
+    cfg.tempOffByAlt       = true;
+
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+
+    TypingConfig out{};
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_TRUE(out.beepOnSwitch);
+    EXPECT_TRUE(out.macroEnabled);
+    EXPECT_TRUE(out.macroInEnglish);
+    EXPECT_TRUE(out.smartSwitch);
+    EXPECT_TRUE(out.tempOffSpellByCtrl);
+    EXPECT_TRUE(out.tempOffByAlt);
+}
+
+// Toggle beep OFF while others remain ON — verifies individual bit isolation
+TEST_F(SharedStateTest, FeatureFlags_ToggleOneOff_OthersUnchanged) {
+    TypingConfig cfg{};
+    cfg.beepOnSwitch   = true;
+    cfg.macroEnabled   = true;
+    cfg.smartSwitch    = true;
+
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+
+    // Now disable beep only
+    cfg.beepOnSwitch = false;
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+
+    TypingConfig out{};
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_FALSE(out.beepOnSwitch);
+    EXPECT_TRUE(out.macroEnabled);
+    EXPECT_TRUE(out.smartSwitch);
+}
+
 }  // namespace
 }  // namespace NextKey

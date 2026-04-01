@@ -56,6 +56,7 @@ static HINSTANCE g_hInstance = nullptr;
 static HookEngine g_hookEngine;
 static std::unique_ptr<QuickConvert> g_quickConvert;
 static SharedStateManager g_sharedState;  // Shared memory for Settings subprocess IPC
+
 #else
 static SharedStateManager g_sharedState;
 static HotkeyManager g_hotkeyManager;
@@ -313,6 +314,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Required for smooth Vietnamese input — backspace-then-retype needs a short gap
     // between SendInput calls for Electron/Console apps, but 15ms (default) is noticeable.
     timeBeginPeriod(1);
+
+    // Share g_sharedState with HookEngine for direct reading (same process, no Open needed)
+    g_hookEngine.SetSharedStateReader(&g_sharedState);
 
     // Start keyboard hook engine
     if (!g_hookEngine.Start(hInstance, config, hotkeyConfig)) {

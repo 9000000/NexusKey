@@ -42,16 +42,18 @@ SharedStateManager& SharedStateManager::operator=(SharedStateManager&&) noexcept
 
 bool SharedStateManager::Create() {
 #ifdef _WIN32
-    auto sa = NextKey::MakeCreatorOnlySecurityAttributes();
+    // Default DACL (nullptr): grants access to creator's user SID + SYSTEM + Admins.
+    // "Local\" namespace scopes to current session — no cross-session exposure.
+    // Note: MakeCreatorOnlySecurityAttributes() DACL uses CO (Creator Owner) SID which
+    // is NOT resolved for non-container objects → blocks same-user subprocesses.
     pImpl_->hMapping = CreateFileMappingW(
         INVALID_HANDLE_VALUE,
-        &sa,
+        nullptr,
         PAGE_READWRITE,
         0,
         sizeof(SharedState),
         SHARED_MEM_NAME
     );
-    if (sa.lpSecurityDescriptor) LocalFree(sa.lpSecurityDescriptor);
 
     if (!pImpl_->hMapping) {
         return false;

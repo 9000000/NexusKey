@@ -139,6 +139,17 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     // Initialize config event for reload detection
     configEvent_.Initialize();
 
+    // Cache initial SharedState values (pointer set by main.cpp via SetSharedStateReader)
+    if (sharedStatePtr_) {
+        SharedState state = sharedStatePtr_->Read();
+        if (state.IsValid()) {
+            lastFeatureFlags_ = state.GetFeatureFlags();
+            lastSpellCheck_ = state.spellCheck;
+            lastInputMethod_ = state.inputMethod;
+            lastCodeTable_ = state.codeTable;
+        }
+    }
+
     // Install low-level keyboard hook (global, all threads)
     keyboardHook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInstance, 0);
     if (!keyboardHook_) {
@@ -253,6 +264,56 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
     if (auto* v = lookupOverride(currentExe_)) return static_cast<CodeTable>(*v);
 
     return currentCodeTable_;
+}
+
+void HookEngine::QuickSyncFromSharedState() {
+    if (!sharedStatePtr_) return;
+
+    SharedState state = sharedStatePtr_->Read();
+    if (!state.IsValid()) return;
+
+    uint32_t ff = state.GetFeatureFlags();
+    uint8_t sc = state.spellCheck;
+    uint8_t im = state.inputMethod;
+    uint8_t ct = state.codeTable;
+
+    // No change → no-op (cheap: integer compares on mapped memory)
+    if (ff == lastFeatureFlags_ && sc == lastSpellCheck_ &&
+        im == lastInputMethod_ && ct == lastCodeTable_) return;
+    lastFeatureFlags_ = ff;
+    lastSpellCheck_ = sc;
+    lastInputMethod_ = im;
+    lastCodeTable_ = ct;
+
+    NEXTKEY_LOG(L"HookEngine: SharedState changed (ff=0x%04X, spell=%d, method=%d, ct=%d)", ff, sc, im, ct);
+
+    TypingConfig cfg = config_;
+    DecodeFeatureFlags(ff, cfg);
+    cfg.spellCheckEnabled = sc != 0;
+    cfg.inputMethod = static_cast<InputMethod>(im);
+    cfg.codeTable = static_cast<CodeTable>(ct);
+
+    bool methodChanged = (currentMethod_ != cfg.inputMethod);
+    bool codeTableChanged = (currentCodeTable_ != cfg.codeTable);
+    ApplyConfig(cfg);
+    config_ = cfg;
+
+    if (methodChanged) {
+        currentMethod_ = cfg.inputMethod;
+        if (engine_->Count() > 0) CommitComposition();
+        engine_ = EngineFactory::Create(cfg);
+    }
+
+    if (codeTableChanged) {
+        currentCodeTable_ = cfg.codeTable;
+        globalCodeTable_ = cfg.codeTable;
+    }
+
+    if (macroEnabled_ && macroTable_.empty()) {
+        macroTable_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
+    } else if (!macroEnabled_) {
+        macroTable_.clear();
+    }
 }
 
 bool HookEngine::CheckConfigEvent() {
@@ -487,6 +548,7 @@ static bool IsIncompatibleLayout(HKL hkl);
 bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*/) {
     // 0. Check for config changes from Settings subprocess
     CheckConfigEvent();
+    QuickSyncFromSharedState();  // Direct SharedState read — instant featureFlags sync
 
     // 0b. TSF app — let TSF DLL handle all input, hook does nothing
     if (isTsfApp_) return false;
@@ -1377,6 +1439,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     ResetComposition();
     tempEngineOff_ = false;
     CheckConfigEvent();
+    QuickSyncFromSharedState();
 
     HWND fg = GetForegroundWindow();
     // Use triggerHwnd (the window that fired EVENT_SYSTEM_FOREGROUND) when available.
@@ -1840,6 +1903,7 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
 
     {
         WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
+        WORD retScan = static_cast<WORD>(MapVirtualKeyW(VK_RETURN, MAPVK_VK_TO_VSC));
         std::vector<INPUT> bsEvents;
         std::vector<INPUT> charEvents;
 
@@ -1848,15 +1912,27 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
             AppendVkEvent(bsEvents, VK_BACK, bsScan);
         }
         if (currentCodeTable_ != CodeTable::Unicode) {
-            for (wchar_t ch : expansion) {
-                auto enc = CodeTableConverter::ConvertChar(ch, currentCodeTable_);
-                AppendUnicodeEvent(charEvents, enc.units[0]);
-                if (enc.count == 2) AppendUnicodeEvent(charEvents, enc.units[1]);
+            for (size_t i = 0; i < expansion.size(); ++i) {
+                if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
+                    expansion[i+1] == L'n') {
+                    AppendVkEvent(charEvents, VK_RETURN, retScan);
+                    ++i;
+                } else {
+                    auto enc = CodeTableConverter::ConvertChar(expansion[i], currentCodeTable_);
+                    AppendUnicodeEvent(charEvents, enc.units[0]);
+                    if (enc.count == 2) AppendUnicodeEvent(charEvents, enc.units[1]);
+                }
             }
         } else {
             charEvents.reserve(expansion.size() * 2);
-            for (wchar_t ch : expansion) {
-                AppendUnicodeEvent(charEvents, ch);
+            for (size_t i = 0; i < expansion.size(); ++i) {
+                if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
+                    expansion[i+1] == L'n') {
+                    AppendVkEvent(charEvents, VK_RETURN, retScan);
+                    ++i;
+                } else {
+                    AppendUnicodeEvent(charEvents, expansion[i]);
+                }
             }
         }
         DispatchSendInput(bsEvents, charEvents);

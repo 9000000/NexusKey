@@ -4,7 +4,13 @@
 document.on("ready", function () {
     // Enable blur-behind effect (Sciter built-in)
     // "dark" = dark tint, "source-auto" = automatic blur source
-    Window.this.blurBehind = "dark source-auto";
+    requestAnimationFrame(function() {
+        if (!document.body.classList.contains("win10")) {
+            Window.this.blurBehind = "dark source-auto";
+        } else {
+            Window.this.blurBehind = "none";
+        }
+    });
 
     // Apply i18n translations
     if (typeof applyTranslations === "function") applyTranslations();
@@ -77,7 +83,6 @@ function initializeToggles() {
         toggle.onclick = function (evt) {
             const isChecked = this.classList.contains("checked");
 
-            // Toggle the visual state immediately
             if (isChecked) {
                 this.classList.remove("checked");
             } else {
@@ -105,12 +110,15 @@ function initializeToggles() {
                 }
             }
 
-            // Update the hidden input to fire VALUE_CHANGED
-            const hiddenInput = document.getElementById("val-" + id);
-            if (hiddenInput) {
-                hiddenInput.value = newState ? "1" : "0";
-                hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
-            }
+
+            // Defer C++ notification to next frame so toggle animation starts instantly.
+            requestAnimationFrame(function() {
+                var hiddenInput = document.getElementById("val-" + id);
+                if (hiddenInput) {
+                    hiddenInput.value = newState ? "1" : "0";
+                    hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+            });
 
             return true;
         };

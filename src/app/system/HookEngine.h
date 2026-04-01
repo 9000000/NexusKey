@@ -22,6 +22,8 @@
 
 namespace NextKey {
 
+class SharedStateManager;  // Forward declaration (defined in core/ipc/SharedStateManager.h)
+
 /// Callback when Vietnamese/English mode changes
 using ModeChangeCallback = std::function<void(bool vietnamese)>;
 
@@ -61,6 +63,9 @@ public:
 
     /// Check for config changes and reload if needed
     bool CheckConfigEvent();
+
+    /// Set SharedState pointer for direct reading (must be the global instance from main.cpp)
+    void SetSharedStateReader(SharedStateManager* ptr) { sharedStatePtr_ = ptr; }
 
     /// Change code table (commits pending composition, updates per-app map)
     void SetCodeTable(CodeTable ct);
@@ -245,6 +250,14 @@ private:
 
     // Config reload
     ConfigEvent configEvent_;
+
+    // Direct SharedState reader — pointer to the global SharedStateManager (same process)
+    SharedStateManager* sharedStatePtr_ = nullptr;
+    uint32_t lastFeatureFlags_ = 0;
+    uint8_t lastSpellCheck_ = 0;
+    uint8_t lastInputMethod_ = 0;
+    uint8_t lastCodeTable_ = 0;
+    void QuickSyncFromSharedState();
 
     // Callbacks
     ModeChangeCallback modeChangeCallback_;
