@@ -266,4 +266,41 @@ void UpdateChecker::ShowCheckFailedMessage(HWND parent) {
                S(StringId::UPDATE_FAILED), TDCBF_OK_BUTTON, TD_WARNING_ICON, nullptr);
 }
 
+bool UpdateChecker::DownloadAndLaunchInstaller(const std::wstring& downloadUrl) noexcept {
+    try {
+        wchar_t tempDir[MAX_PATH] = {};
+        GetTempPathW(MAX_PATH, tempDir);
+        std::wstring zipPath = std::wstring(tempDir) + L"NexusKey_update.zip";
+
+        if (!DownloadFile(downloadUrl, zipPath)) return false;
+
+        // SEC-001: Verify ZIP hash against .sha256 sidecar
+        if (!VerifyDownloadedZip(downloadUrl, zipPath)) {
+            DeleteFileW(zipPath.c_str());
+            return false;
+        }
+
+        // Launch updater: self --install-update <zip>
+        wchar_t exePath[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+
+        std::wstring cmdLine = L"\"";
+        cmdLine += exePath;
+        cmdLine += L"\" --install-update \"";
+        cmdLine += zipPath;
+        cmdLine += L"\"";
+
+        STARTUPINFOW si = { sizeof(si) };
+        PROCESS_INFORMATION pi = {};
+        if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+            return false;
+        }
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 }  // namespace NextKey

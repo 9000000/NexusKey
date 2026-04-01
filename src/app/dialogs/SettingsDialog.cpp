@@ -7,7 +7,6 @@
 #include "system/SubprocessHelper.h"
 #include "system/TsfRegistration.h"
 #include "system/UpdateChecker.h"
-#include "system/UpdateSecurity.h"
 #include "core/Version.h"
 #include "sciter/ScaleHelper.h"
 #include "sciter/SciterHelper.h"
@@ -1280,42 +1279,9 @@ void SettingsDialog::startUpdate(const UpdateInfo& info) {
     std::wstring downloadUrl = info.downloadUrl;
 
     std::thread([hwnd, downloadUrl]() {
-        // Build temp path
-        wchar_t tempDir[MAX_PATH] = {};
-        GetTempPathW(MAX_PATH, tempDir);
-        std::wstring zipPath = std::wstring(tempDir) + L"NexusKey_update.zip";
-
-        // Download
-        bool ok = UpdateChecker::DownloadFile(downloadUrl, zipPath);
-        if (!ok) {
+        if (!UpdateChecker::DownloadAndLaunchInstaller(downloadUrl)) {
             PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, 2, 0);  // Show failed
             return;
-        }
-
-        // SEC-001: Verify ZIP hash against .sha256 sidecar before installing
-        if (!VerifyDownloadedZip(downloadUrl, zipPath)) {
-            DeleteFileW(zipPath.c_str());
-            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, 2, 0);
-            return;
-        }
-
-        // Launch updater: NexusKey.exe --install-update <zip>
-        wchar_t exePath[MAX_PATH] = {};
-        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-
-        std::wstring cmdLine = L"\"";
-        cmdLine += exePath;
-        cmdLine += L"\" --install-update \"";
-        cmdLine += zipPath;
-        cmdLine += L"\"";
-
-        STARTUPINFOW si = { sizeof(si) };
-        PROCESS_INFORMATION pi = {};
-
-        // Use raw CreateProcessW — NOT tracked (must survive parent exit)
-        if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-            CloseHandle(pi.hThread);
-            CloseHandle(pi.hProcess);
         }
 
         // Signal main process to exit

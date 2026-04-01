@@ -35,6 +35,10 @@ public:
     /// Download a file from URL to local path (synchronous)
     [[nodiscard]] static bool DownloadFile(const std::wstring& url, const std::wstring& localPath) noexcept;
 
+    /// Download ZIP, verify hash, launch installer (synchronous — call from background thread).
+    /// Returns true if installer was launched. On failure, cleans up the downloaded file.
+    [[nodiscard]] static bool DownloadAndLaunchInstaller(const std::wstring& downloadUrl) noexcept;
+
     /// Parse version string (e.g. "v1.2.3-beta") into packed format (major<<16 | minor<<8 | patch)
     [[nodiscard]] static uint32_t ParseVersion(const std::wstring& versionStr) noexcept;
 
