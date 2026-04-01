@@ -87,3 +87,8 @@ TEST(IsAllowedDownloadUrlNarrowTest, RejectsArbitraryDomain) {
 TEST(IsAllowedDownloadUrlNarrowTest, RejectsSubdomain) {
     EXPECT_FALSE(IsAllowedDownloadUrl(std::string("https://github.com.evil.com/foo.zip")));
 }
+
+TEST(IsAllowedDownloadUrlNarrowTest, CaseInsensitive) {
+    EXPECT_TRUE(IsAllowedDownloadUrl(
+        std::string("HTTPS://GITHUB.COM/phatMT97/NextKey/releases/download/v2.0.0/NexusKey-x64.zip")));
+}

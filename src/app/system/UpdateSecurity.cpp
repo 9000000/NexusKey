@@ -3,10 +3,6 @@
 
 #include "UpdateSecurity.h"
 
-#include <algorithm>
-#include <cctype>
-#include <cwctype>
-
 #ifdef _WIN32
 #include <Windows.h>
 #include <bcrypt.h>
@@ -33,7 +29,7 @@ std::wstring EscapePowerShellSingleQuote(const std::wstring& input) noexcept {
         }
         return result;
     } catch (...) {
-        return input;  // Allocation failure — return unescaped (best effort)
+        return {};  // Allocation failure — return empty rather than unescaped
     }
 }
 
@@ -41,10 +37,16 @@ std::wstring EscapePowerShellSingleQuote(const std::wstring& input) noexcept {
 
 namespace {
 
+/// ASCII-only case-insensitive prefix check (URLs are always ASCII in scheme+host).
 bool StartsWithIgnoreCase(const std::wstring& str, const wchar_t* prefix) noexcept {
     for (size_t i = 0; prefix[i] != L'\0'; ++i) {
         if (i >= str.size()) return false;
-        if (towlower(str[i]) != towlower(prefix[i])) return false;
+        wchar_t sc = str[i];
+        wchar_t pc = prefix[i];
+        // ASCII A-Z fold only (safe for URL scheme+host)
+        if (sc >= L'A' && sc <= L'Z') sc = sc - L'A' + L'a';
+        if (pc >= L'A' && pc <= L'Z') pc = pc - L'A' + L'a';
+        if (sc != pc) return false;
     }
     return true;
 }
@@ -52,8 +54,11 @@ bool StartsWithIgnoreCase(const std::wstring& str, const wchar_t* prefix) noexce
 bool StartsWithIgnoreCase(const std::string& str, const char* prefix) noexcept {
     for (size_t i = 0; prefix[i] != '\0'; ++i) {
         if (i >= str.size()) return false;
-        if (tolower(static_cast<unsigned char>(str[i])) !=
-            tolower(static_cast<unsigned char>(prefix[i]))) return false;
+        char sc = str[i];
+        char pc = prefix[i];
+        if (sc >= 'A' && sc <= 'Z') sc = sc - 'A' + 'a';
+        if (pc >= 'A' && pc <= 'Z') pc = pc - 'A' + 'a';
+        if (sc != pc) return false;
     }
     return true;
 }
