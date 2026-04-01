@@ -4,6 +4,7 @@
 #include "TrayIcon.h"
 #include "../resource.h"
 #include "UpdateChecker.h"
+#include "UpdateSecurity.h"
 #include "sciter/SciterHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
@@ -408,6 +409,12 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                     std::wstring zipPath = std::wstring(tempDir) + L"NexusKey_update.zip";
 
                     if (!UpdateChecker::DownloadFile(downloadUrl, zipPath)) return;
+
+                    // SEC-001: Verify ZIP hash before installing
+                    if (!VerifyDownloadedZip(downloadUrl, zipPath)) {
+                        DeleteFileW(zipPath.c_str());
+                        return;
+                    }
 
                     wchar_t exePath[MAX_PATH] = {};
                     GetModuleFileNameW(nullptr, exePath, MAX_PATH);

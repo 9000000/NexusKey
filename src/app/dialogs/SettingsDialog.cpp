@@ -7,6 +7,7 @@
 #include "system/SubprocessHelper.h"
 #include "system/TsfRegistration.h"
 #include "system/UpdateChecker.h"
+#include "system/UpdateSecurity.h"
 #include "core/Version.h"
 #include "sciter/ScaleHelper.h"
 #include "sciter/SciterHelper.h"
@@ -1288,6 +1289,13 @@ void SettingsDialog::startUpdate(const UpdateInfo& info) {
         bool ok = UpdateChecker::DownloadFile(downloadUrl, zipPath);
         if (!ok) {
             PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, 2, 0);  // Show failed
+            return;
+        }
+
+        // SEC-001: Verify ZIP hash against .sha256 sidecar before installing
+        if (!VerifyDownloadedZip(downloadUrl, zipPath)) {
+            DeleteFileW(zipPath.c_str());
+            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, 2, 0);
             return;
         }
 
