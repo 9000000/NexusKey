@@ -855,7 +855,14 @@ void SettingsDialog::recalcWindowSize() {
     }
 
     // Keep window position, just resize
-    SetWindowPos(hwnd, NULL, rc.left, rc.top, newWidth, newHeight, SWP_NOZORDER);
+    SetWindowPos(hwnd, NULL, 0, 0, newWidth, newHeight, SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    
+    // Force Sciter engine to render a new frame. 
+    // Transparent windows ignore Windows WM_PAINT/InvalidateRect, so we must trigger a DOM mutation.
+    rootEl.set_attribute("force-paint", L"1");
+    rootEl.update(false);
+    rootEl.remove_attribute("force-paint");
+    rootEl.update(false);
 }
 
 void SettingsDialog::setToggleState(const std::wstring& id, bool checked) {

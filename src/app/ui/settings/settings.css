@@ -157,17 +157,22 @@
     box-sizing: border-box;
 }
 
-/* Expanded state - use float layout */
+/* Content Wrapper for flex layout */
+.content-wrapper {
+    flow: horizontal;
+    width: *;
+    height: *;
+}
+
+/* Expanded state - use flow layout */
 .container.expanded {
     width: 750px;
     height: auto;
     overflow: hidden;
-    /* Clear floats */
 }
 
 /* Override compact section for expanded mode */
 .container.expanded .compact-section {
-    float: left;
     width: 350px;
     padding-bottom: 16px;
     /* Reduced for visual balance */
@@ -176,18 +181,10 @@
 .container.expanded .advanced-section {
     display: block;
     /* Override display: none from base style */
-    float: left;
     width: 400px;
     padding: 16px 8px 16px 8px;
     /* Reduced bottom padding */
     box-sizing: border-box;
-}
-
-/* Clearfix for container */
-.container.expanded::after {
-    content: "";
-    display: block;
-    clear: both;
 }
 
 /* (Removed: Arrow icon styles - now using toggle switch) */

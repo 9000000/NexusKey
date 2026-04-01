@@ -46,174 +46,175 @@
             </button>
         </div>
 
-        <!-- Compact Section (Left Panel) -->
-        <div class="compact-section">
-            <!-- Header: V - toggle - E - dropdown -->
-            <div class="header">
-                <!-- V/E toggle pill with labels inside -->
-                <div class="toggle-switch" id="toggle-language">
-                    <span class="toggle-label toggle-v">V</span>
-                    <span class="toggle-label toggle-e">E</span>
-                    <div class="toggle-thumb"></div>
-                </div>
-                <!-- Hidden input to fire VALUE_CHANGED -->
-                <input type="hidden" id="val-toggle-language" value="0">
+        <div class="content-wrapper">
+            <!-- Compact Section (Left Panel) -->
+            <div class="compact-section">
+                <!-- Header: V - toggle - E - dropdown -->
+                <div class="header">
+                    <!-- V/E toggle pill with labels inside -->
+                    <div class="toggle-switch" id="toggle-language">
+                        <span class="toggle-label toggle-v">V</span>
+                        <span class="toggle-label toggle-e">E</span>
+                        <div class="toggle-thumb"></div>
+                    </div>
+                    <!-- Hidden input to fire VALUE_CHANGED -->
+                    <input type="hidden" id="val-toggle-language" value="0">
 
-                <select class="input-type-dropdown" id="input-type">
-                    <option value="0">Telex</option>
-                    <option value="1">VNI</option>
-                    <option value="2">Simple Telex</option>
-                </select>
-            </div>
-
-            <!-- Settings Card -->
-            <div class="settings-card">
-                <!-- 1. Bảng mã (Code Table) -->
-                <div class="setting-row group-last">
-                    <span class="setting-label" data-i18n="s.code_table">Bảng mã</span>
-                    <div class="spacer" style="width: *"></div>
-                    <select class="setting-dropdown" id="bang-ma">
-                        <option value="0">Unicode</option>
-                        <option value="1">TCVN3 (ABC)</option>
-                        <option value="2">VNI Windows</option>
-                        <option value="3">Unicode Compound</option>
-                        <option value="4">Vietnamese Locale</option>
+                    <select class="input-type-dropdown" id="input-type">
+                        <option value="0">Telex</option>
+                        <option value="1">VNI</option>
+                        <option value="2">Simple Telex</option>
                     </select>
                 </div>
 
-                <!-- 2. Phím Chuyển (Switch Key) - 2 rows layout -->
-                <div class="setting-row setting-row-vertical group-last">
-                    <span class="setting-label" data-i18n="s.switch_key">Phím Chuyển</span>
-                    <div class="switch-key-container">
-                        <!-- Row 1: Ctrl Alt -->
-                        <div class="switch-key-row">
-                            <div class="switch-key-item">
-                                <span class="switch-key-label">Ctrl</span>
-                                <div class="spacer" style="width: *"></div>
-                                <div class="toggle-switch-small" id="key-ctrl">
-                                    <span class="toggle-label-i">I</span>
-                                    <span class="toggle-label-o">O</span>
-                                    <div class="toggle-thumb-small"></div>
+                <!-- Settings Card -->
+                <div class="settings-card">
+                    <!-- 1. Bảng mã (Code Table) -->
+                    <div class="setting-row group-last">
+                        <span class="setting-label" data-i18n="s.code_table">Bảng mã</span>
+                        <div class="spacer" style="width: *"></div>
+                        <select class="setting-dropdown" id="bang-ma">
+                            <option value="0">Unicode</option>
+                            <option value="1">TCVN3 (ABC)</option>
+                            <option value="2">VNI Windows</option>
+                            <option value="3">Unicode Compound</option>
+                            <option value="4">Vietnamese Locale</option>
+                        </select>
+                    </div>
+
+                    <!-- 2. Phím Chuyển (Switch Key) - 2 rows layout -->
+                    <div class="setting-row setting-row-vertical group-last">
+                        <span class="setting-label" data-i18n="s.switch_key">Phím Chuyển</span>
+                        <div class="switch-key-container">
+                            <!-- Row 1: Ctrl Alt -->
+                            <div class="switch-key-row">
+                                <div class="switch-key-item">
+                                    <span class="switch-key-label">Ctrl</span>
+                                    <div class="spacer" style="width: *"></div>
+                                    <div class="toggle-switch-small" id="key-ctrl">
+                                        <span class="toggle-label-i">I</span>
+                                        <span class="toggle-label-o">O</span>
+                                        <div class="toggle-thumb-small"></div>
+                                    </div>
+                                    <input type="hidden" id="val-key-ctrl" value="0">
                                 </div>
-                                <input type="hidden" id="val-key-ctrl" value="0">
+                                <div class="switch-key-item">
+                                    <span class="switch-key-label">Alt</span>
+                                    <div class="spacer" style="width: *"></div>
+                                    <div class="toggle-switch-small" id="key-alt">
+                                        <span class="toggle-label-i">I</span>
+                                        <span class="toggle-label-o">O</span>
+                                        <div class="toggle-thumb-small"></div>
+                                    </div>
+                                    <input type="hidden" id="val-key-alt" value="0">
+                                </div>
                             </div>
-                            <div class="switch-key-item">
-                                <span class="switch-key-label">Alt</span>
-                                <div class="spacer" style="width: *"></div>
-                                <div class="toggle-switch-small" id="key-alt">
-                                    <span class="toggle-label-i">I</span>
-                                    <span class="toggle-label-o">O</span>
-                                    <div class="toggle-thumb-small"></div>
+                            <!-- Row 2: Win Shift + textbox -->
+                            <div class="switch-key-row">
+                                <div class="switch-key-item">
+                                    <span class="switch-key-label">Win</span>
+                                    <div class="spacer" style="width: *"></div>
+                                    <div class="toggle-switch-small" id="key-win">
+                                        <span class="toggle-label-i">I</span>
+                                        <span class="toggle-label-o">O</span>
+                                        <div class="toggle-thumb-small"></div>
+                                    </div>
+                                    <input type="hidden" id="val-key-win" value="0">
                                 </div>
-                                <input type="hidden" id="val-key-alt" value="0">
+                                <div class="switch-key-item">
+                                    <span class="switch-key-label">Shift</span>
+                                    <div class="spacer" style="width: *"></div>
+                                    <div class="toggle-switch-small" id="key-shift">
+                                        <span class="toggle-label-i">I</span>
+                                        <span class="toggle-label-o">O</span>
+                                        <div class="toggle-thumb-small"></div>
+                                    </div>
+                                    <input type="hidden" id="val-key-shift" value="0">
+                                </div>
+                                <input type="text" class="switch-key-input" id="switch-key-char" maxlength="7"
+                                    placeholder="~" title="Phím chuyển" data-i18n-title="s.switch_key_title">
                             </div>
                         </div>
-                        <!-- Row 2: Win Shift + textbox -->
-                        <div class="switch-key-row">
-                            <div class="switch-key-item">
-                                <span class="switch-key-label">Win</span>
-                                <div class="spacer" style="width: *"></div>
-                                <div class="toggle-switch-small" id="key-win">
-                                    <span class="toggle-label-i">I</span>
-                                    <span class="toggle-label-o">O</span>
-                                    <div class="toggle-thumb-small"></div>
-                                </div>
-                                <input type="hidden" id="val-key-win" value="0">
-                            </div>
-                            <div class="switch-key-item">
-                                <span class="switch-key-label">Shift</span>
-                                <div class="spacer" style="width: *"></div>
-                                <div class="toggle-switch-small" id="key-shift">
-                                    <span class="toggle-label-i">I</span>
-                                    <span class="toggle-label-o">O</span>
-                                    <div class="toggle-thumb-small"></div>
-                                </div>
-                                <input type="hidden" id="val-key-shift" value="0">
-                            </div>
-                            <input type="text" class="switch-key-input" id="switch-key-char" maxlength="7"
-                                placeholder="~" title="Phím chuyển" data-i18n-title="s.switch_key_title">
+                    </div>
+
+                    <!-- 3. Kêu Beep -->
+                    <div class="setting-row">
+                        <span class="setting-label" data-i18n="s.beep">Kêu Beep</span>
+                        <button class="btn-info" data-tooltip="Phát âm báo khi chuyển đổi ngôn ngữ"
+                            data-i18n-tooltip="s.beep_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14"
+                                height="14" viewBox="0 0 256 256" style="pointer-events: none;">
+                                <path
+                                    d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z">
+                                </path>
+                            </svg></button>
+                        <div class="spacer" style="width: *"></div>
+                        <div class="toggle-switch-small" id="beep-sound">
+                            <span class="toggle-label-i">I</span>
+                            <span class="toggle-label-o">O</span>
+                            <div class="toggle-thumb-small"></div>
                         </div>
+                        <input type="hidden" id="val-beep-sound" value="0">
                     </div>
-                </div>
+                    <!-- 4. Per-app encoding override -->
+                    <div class="setting-row">
+                        <span class="setting-label" data-i18n="s.app_encoding">Cấu hình từng ứng dụng</span>
+                        <div class="spacer" style="width: *"></div>
+                        <button class="btn-action" id="btn-app-overrides" data-i18n="s.config">Cấu hình</button>
+                    </div>
+                    <!-- 5. Loại trừ ứng dụng thông minh -->
+                    <div class="setting-row">
+                        <span class="setting-label" data-i18n="s.smart_switch">Loại trừ ứng dụng thông minh</span>
+                        <button class="btn-info" data-tooltip="Tự động ghi nhớ chế độ gõ cho từng ứng dụng"
+                            data-i18n-tooltip="s.smart_switch_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14"
+                                height="14" viewBox="0 0 256 256" style="pointer-events: none;">
+                                <path
+                                    d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z">
+                                </path>
+                            </svg></button>
+                        <div class="spacer" style="width: *"></div>
+                        <div class="toggle-switch-small" id="smart-switch">
+                            <span class="toggle-label-i">I</span>
+                            <span class="toggle-label-o">O</span>
+                            <div class="toggle-thumb-small"></div>
+                        </div>
+                        <input type="hidden" id="val-smart-switch" value="0">
+                    </div>
 
-                <!-- 3. Kêu Beep -->
-                <div class="setting-row">
-                    <span class="setting-label" data-i18n="s.beep">Kêu Beep</span>
-                    <button class="btn-info" data-tooltip="Phát âm báo khi chuyển đổi ngôn ngữ"
-                        data-i18n-tooltip="s.beep_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14"
-                            height="14" viewBox="0 0 256 256" style="pointer-events: none;">
-                            <path
-                                d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z">
-                            </path>
-                        </svg></button>
-                    <div class="spacer" style="width: *"></div>
-                    <div class="toggle-switch-small" id="beep-sound">
-                        <span class="toggle-label-i">I</span>
-                        <span class="toggle-label-o">O</span>
-                        <div class="toggle-thumb-small"></div>
+                    <!-- 5b. Excluded Apps - Toggle + Button on same row -->
+                    <div class="setting-row">
+                        <span class="setting-label" data-i18n="s.enable_exclude">Bật loại trừ ứng dụng</span>
+                        <button class="btn-info" data-tooltip="Chỉ gõ tiếng Anh đối với các ứng dụng trong danh sách"
+                            data-i18n-tooltip="s.exclude_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14"
+                                height="14" viewBox="0 0 256 256" style="pointer-events: none;">
+                                <path
+                                    d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z">
+                                </path>
+                            </svg></button>
+                        <div class="spacer" style="width: *"></div>
+                        <button class="btn-action" id="btn-excluded-apps" style="margin-right: 8px;" data-i18n="s.list">Danh
+                            sách</button>
+                        <div class="spacer" style="width: *"></div>
+                        <div class="toggle-switch-small" id="exclude-apps">
+                            <span class="toggle-label-i">I</span>
+                            <span class="toggle-label-o">O</span>
+                            <div class="toggle-thumb-small"></div>
+                        </div>
+                        <input type="hidden" id="val-exclude-apps" value="0">
                     </div>
-                    <input type="hidden" id="val-beep-sound" value="0">
-                </div>
-                <!-- 4. Per-app encoding override -->
-                <div class="setting-row">
-                    <span class="setting-label" data-i18n="s.app_encoding">Cấu hình từng ứng dụng</span>
-                    <div class="spacer" style="width: *"></div>
-                    <button class="btn-action" id="btn-app-overrides" data-i18n="s.config">Cấu hình</button>
-                </div>
-                <!-- 5. Loại trừ ứng dụng thông minh -->
-                <div class="setting-row">
-                    <span class="setting-label" data-i18n="s.smart_switch">Loại trừ ứng dụng thông minh</span>
-                    <button class="btn-info" data-tooltip="Tự động ghi nhớ chế độ gõ cho từng ứng dụng"
-                        data-i18n-tooltip="s.smart_switch_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14"
-                            height="14" viewBox="0 0 256 256" style="pointer-events: none;">
-                            <path
-                                d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z">
-                            </path>
-                        </svg></button>
-                    <div class="spacer" style="width: *"></div>
-                    <div class="toggle-switch-small" id="smart-switch">
-                        <span class="toggle-label-i">I</span>
-                        <span class="toggle-label-o">O</span>
-                        <div class="toggle-thumb-small"></div>
-                    </div>
-                    <input type="hidden" id="val-smart-switch" value="0">
-                </div>
 
-                <!-- 5b. Excluded Apps - Toggle + Button on same row -->
-                <div class="setting-row">
-                    <span class="setting-label" data-i18n="s.enable_exclude">Bật loại trừ ứng dụng</span>
-                    <button class="btn-info" data-tooltip="Chỉ gõ tiếng Anh đối với các ứng dụng trong danh sách"
-                        data-i18n-tooltip="s.exclude_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="14"
-                            height="14" viewBox="0 0 256 256" style="pointer-events: none;">
-                            <path
-                                d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z">
-                            </path>
-                        </svg></button>
-                    <div class="spacer" style="width: *"></div>
-                    <button class="btn-action" id="btn-excluded-apps" style="margin-right: 8px;" data-i18n="s.list">Danh
-                        sách</button>
-                    <div class="spacer" style="width: *"></div>
-                    <div class="toggle-switch-small" id="exclude-apps">
-                        <span class="toggle-label-i">I</span>
-                        <span class="toggle-label-o">O</span>
-                        <div class="toggle-thumb-small"></div>
+                    <!-- 6. Cài đặt nâng cao - toggle switch -->
+                    <div class="setting-row" id="row-advanced">
+                        <span class="setting-label" data-i18n="s.advanced">Cài đặt nâng cao</span>
+                        <div class="spacer" style="width: *"></div>
+                        <div class="toggle-switch-small" id="show-advanced">
+                            <span class="toggle-label-i">I</span>
+                            <span class="toggle-label-o">O</span>
+                            <div class="toggle-thumb-small"></div>
+                        </div>
+                        <input type="hidden" id="val-show-advanced" value="0">
                     </div>
-                    <input type="hidden" id="val-exclude-apps" value="0">
-                </div>
-
-                <!-- 6. Cài đặt nâng cao - toggle switch -->
-                <div class="setting-row" id="row-advanced">
-                    <span class="setting-label" data-i18n="s.advanced">Cài đặt nâng cao</span>
-                    <div class="spacer" style="width: *"></div>
-                    <div class="toggle-switch-small" id="show-advanced">
-                        <span class="toggle-label-i">I</span>
-                        <span class="toggle-label-o">O</span>
-                        <div class="toggle-thumb-small"></div>
-                    </div>
-                    <input type="hidden" id="val-show-advanced" value="0">
                 </div>
             </div>
-        </div>
 
         <!-- Advanced Section (Right Panel - hidden by default) -->
         <div class="advanced-section" id="advanced-section">
@@ -647,7 +648,7 @@
                 </div>
             </div>
         </div>
-    </div>
+        </div>
 
     <!-- Hidden inputs for C++ events -->
     <input type="hidden" id="val-expand-state" value="0">
