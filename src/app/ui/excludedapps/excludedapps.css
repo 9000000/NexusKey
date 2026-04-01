@@ -50,3 +50,13 @@
     transition: background 0.15s ease;
 }
 
+/* Footer row — import/export buttons */
+.footer-row {
+    width: 100%;
+}
+
+.footer-row .btn-action {
+    font-size: 11px;
+    padding: 6px 4px;
+}
+

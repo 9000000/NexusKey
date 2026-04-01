@@ -99,10 +99,14 @@ var STRINGS = {
         "m.import": "Import from file...",
         "m.export": "Export to file...",
         "m.edit": "+ Edit",
+        "m.hint_newline_pre": "Use",
+        "m.hint_newline_post": "for a new line",
 
         // ── Excluded Apps dialog ──
         "ea.app_ph": "e.g.: notepad.exe",
         "ea.excluded_list": "Excluded applications",
+        "ea.import": "Import from file...",
+        "ea.export": "Export to file...",
 
         // ── TSF Apps dialog ──
         "tsf.app_ph": "e.g.: notepad.exe",
