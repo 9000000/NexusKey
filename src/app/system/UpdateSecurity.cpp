@@ -147,6 +147,10 @@ std::string ComputeFileSha256(const std::wstring& filePath) noexcept {
             BCRYPT_HASH_HANDLE h = nullptr;
             ~HashHandle() { if (h) BCryptDestroyHash(h); }
         };
+        struct FileHandle {
+            HANDLE h = INVALID_HANDLE_VALUE;
+            ~FileHandle() { if (h != INVALID_HANDLE_VALUE) CloseHandle(h); }
+        };
 
         AlgHandle alg;
         NTSTATUS status = BCryptOpenAlgorithmProvider(
@@ -170,22 +174,19 @@ std::string ComputeFileSha256(const std::wstring& filePath) noexcept {
             hashObjectSize, nullptr, 0, 0);
         if (!BCRYPT_SUCCESS(status) || !hash.h) return {};
 
-        HANDLE hFile = CreateFileW(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ,
+        FileHandle file;
+        file.h = CreateFileW(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ,
             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (hFile == INVALID_HANDLE_VALUE) return {};
+        if (file.h == INVALID_HANDLE_VALUE) return {};
 
         constexpr DWORD kBufSize = 65536;
         std::vector<BYTE> readBuf(kBufSize);
         DWORD bytesRead = 0;
 
-        while (ReadFile(hFile, readBuf.data(), kBufSize, &bytesRead, nullptr) && bytesRead > 0) {
+        while (ReadFile(file.h, readBuf.data(), kBufSize, &bytesRead, nullptr) && bytesRead > 0) {
             status = BCryptHashData(hash.h, readBuf.data(), bytesRead, 0);
-            if (!BCRYPT_SUCCESS(status)) {
-                CloseHandle(hFile);
-                return {};
-            }
+            if (!BCRYPT_SUCCESS(status)) return {};
         }
-        CloseHandle(hFile);
 
         std::vector<BYTE> hashValue(hashSize);
         status = BCryptFinishHash(hash.h, hashValue.data(), hashSize, 0);
