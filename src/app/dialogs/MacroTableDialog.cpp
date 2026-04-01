@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "MacroTableDialog.h"
+#include "DialogUtils.h"
 #include "core/config/ConfigManager.h"
 #include "helpers/AppHelpers.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <vector>
 #include <fstream>
-#include <commdlg.h>
 
 using namespace sciter::dom;
 
@@ -118,17 +118,12 @@ void MacroTableDialog::removeMacro(const std::wstring& name) {
 }
 
 void MacroTableDialog::importMacros() {
-    OPENFILENAME ofn = {};
-    WCHAR szFile[MAX_PATH] = {};
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = get_hwnd();
-    ofn.lpstrFile = szFile;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"Text file (*.txt)\0*.txt\0All (*.*)\0*.*\0";
-    ofn.nFilterIndex = 1;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-
-    if (!GetOpenFileNameW(&ofn)) return;
+    std::wstring path = ShowOpenFileDialogW(
+        get_hwnd(),
+        L"Text file (*.txt)\0*.txt\0All (*.*)\0*.*\0",
+        L"txt"
+    );
+    if (path.empty()) return;
 
     int msgboxID = MessageBoxW(
         get_hwnd(),
@@ -143,7 +138,7 @@ void MacroTableDialog::importMacros() {
     }
 
     // Read UTF-8 file
-    std::ifstream infile(szFile);
+    std::ifstream infile(path);
     if (!infile.is_open()) return;
 
     std::string line;
@@ -179,24 +174,19 @@ void MacroTableDialog::importMacros() {
 }
 
 void MacroTableDialog::exportMacros() {
-    OPENFILENAME ofn = {};
-    WCHAR szFile[MAX_PATH] = L"NexusKeyMacro";
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = get_hwnd();
-    ofn.lpstrFile = szFile;
-    ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"Text file (*.txt)\0*.txt\0";
-    ofn.nFilterIndex = 1;
-    ofn.lpstrDefExt = L"txt";
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
-
-    if (!GetSaveFileNameW(&ofn)) return;
+    std::wstring path = ShowSaveFileDialogW(
+        get_hwnd(),
+        L"Text file (*.txt)\0*.txt\0",
+        L"txt",
+        L"NexusKeyMacro"
+    );
+    if (path.empty()) return;
 
     // Sort entries for consistent output
     std::vector<std::pair<std::wstring, std::wstring>> sorted(macros_.begin(), macros_.end());
     std::sort(sorted.begin(), sorted.end());
 
-    std::ofstream outfile(szFile);
+    std::ofstream outfile(path);
     if (!outfile.is_open()) return;
 
     // Write OpenKey-compatible header
