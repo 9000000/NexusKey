@@ -724,6 +724,38 @@ TEST_F(TelexEngineTest, Word_Gian_ToneOnA) {
     EXPECT_EQ(engine_->Peek(), L"giàn");
 }
 
+// Mixed case: uppercase G + lowercase iar — CapsLock mid-word scenario.
+// Engine must treat 'gi' as onset cluster regardless of case.
+TEST_F(TelexEngineTest, Word_Giar_MixedCase_ToneOnA) {
+    TypeString(*engine_, L"Giar");  // Giả — uppercase G, tone on 'a' not 'i'
+    EXPECT_EQ(engine_->Peek(), L"Gi\x1EA3");  // Giả
+}
+
+TEST_F(TelexEngineTest, Word_Giar_AllUpper_ToneOnA) {
+    TypeString(*engine_, L"GIAR");  // GIẢ — all uppercase, tone still on 'A'
+    EXPECT_EQ(engine_->Peek(), L"GI\x1EA2");  // GIẢ
+}
+
+// Simulate CapsLock mid-word bug: user types G, then CapsLock commits the word
+// (hook-layer step 9), then types "iar" as a new word.
+// Without the HookEngine CapsLock bypass fix, this produces "G" + "ỉa" = "Gỉa"
+// instead of the correct "Giả".
+TEST_F(TelexEngineTest, CapsLockBug_GCommit_Iar_ToneOnI) {
+    // Step 1: Type 'G' → engine has [g]
+    engine_->PushChar(L'G');
+    EXPECT_EQ(engine_->Peek(), L"G");
+
+    // Step 2: CapsLock key → hook commits and resets engine (simulated here)
+    (void)engine_->Commit();  // Returns "G", engine resets
+
+    // Step 3: User types "iar" as a new word — no 'g' prefix!
+    TypeString(*engine_, L"iar");
+
+    // BUG: 'ia' diphthong rule puts tone on 'i' (first vowel) → "ỉa"
+    // User sees "G" + "ỉa" = "Gỉa" instead of "Giả"
+    EXPECT_EQ(engine_->Peek(), L"\x1EC9" L"a");  // ỉa — this IS the bug output
+}
+
 TEST_F(TelexEngineTest, Word_Gieo_ToneOnE) {
     TypeString(*engine_, L"gieos");  // giéo — tone on 'e'
     EXPECT_EQ(engine_->Peek(), L"giéo");
@@ -1741,6 +1773,11 @@ TEST_F(TelexEngineTest, RealWord_Dinh) {
     EXPECT_EQ(engine_->Peek(), L"đinh");
 }
 
+TEST_F(TelexEngineTest, RealWord_Dinh_PostfixD) {
+    TypeString(*engine_, L"dinhd");  // d-i-n-h-d → đinh (dd fires postfix)
+    EXPECT_EQ(engine_->Peek(), L"đinh");
+}
+
 TEST_F(TelexEngineTest, RealWord_Tra) {
     TypeString(*engine_, L"traf");  // trà
     EXPECT_EQ(engine_->Peek(), L"trà");
@@ -2472,6 +2509,26 @@ TEST_F(EnglishDetectionNoSpellCheckTest, GiCluster_GiongS_GivesTone) {
     // Note: "giống" (ố) requires "gioongsN" since 'oo' gives 'ô'
     TypeString(*engine_, L"giongs");
     EXPECT_EQ(engine_->Peek(), L"gi\x00F3ng");  // gióng
+}
+
+// Mixed case — uppercase G with lowercase continuation.
+// Reproduces the CapsLock mid-word scenario at engine level.
+TEST_F(EnglishDetectionNoSpellCheckTest, GiCluster_Giar_MixedCase_ToneOnA) {
+    // "Giar": G(upper)+i+a+r → 'i' is gi-cluster consonant, tone on 'a' → Giả
+    TypeString(*engine_, L"Giar");
+    EXPECT_EQ(engine_->Peek(), L"Gi\x1EA3");  // Giả (not Gỉa)
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, GiCluster_Gias_MixedCase_ToneOnA) {
+    // "Gias": G(upper)+i+a+s → giá with uppercase G → Giá
+    TypeString(*engine_, L"Gias");
+    EXPECT_EQ(engine_->Peek(), L"Gi\x00E1");  // Giá
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, GiCluster_GIAR_AllUpper_ToneOnA) {
+    // "GIAR": all uppercase → GIẢ, tone on 'A' not 'I'
+    TypeString(*engine_, L"GIAR");
+    EXPECT_EQ(engine_->Peek(), L"GI\x1EA2");  // GIẢ
 }
 
 // ============================================================================

@@ -569,6 +569,15 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return false;  // Don't eat modifier keys
     }
 
+    // 1b. Toggle keys (CapsLock, NumLock, ScrollLock) — pass through without
+    // committing composition. CapsLock is commonly pressed mid-word to capitalize
+    // the first letter of a Vietnamese word (e.g., CapsLock+G+CapsLock+iar → Giả).
+    // Without this bypass, CapsLock would hit step 9 ("any other key → commit"),
+    // splitting the word and producing wrong tone placement (Gỉa instead of Giả).
+    if (vkCode == VK_CAPITAL || vkCode == VK_NUMLOCK || vkCode == VK_SCROLL) {
+        return false;
+    }
+
     // 2. Check modifier+key hotkey (e.g., Alt+~) BEFORE invalidating modifier-only combo
     if (hotkeyVk_ != 0 && vkCode == hotkeyVk_ && CheckHotkeyMatch()) {
         HOOK_LOG(L"  HOTKEY match (modifier+key): vk=0x%02X", vkCode);
