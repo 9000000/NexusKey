@@ -365,18 +365,19 @@ body.dark select option:checked {
    which was needed on Win11 to fake an inner border, but looks bad when we
    have a real border here on Win10. */
 body.win10 {
-    --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.25);
+    --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.25);
 }
 
 body.dark.win10 {
-    --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.6);
+    --shadow-card: 0 5px 22px rgba(0, 0, 0, 0.55);
 }
 
 body.win10 .container {
-    border: 1px solid var(--border-inset);
-    margin: 8px; /* Make room for Windows 10 fallback drop shadow */
+    border: 1px solid #8C8C8C; /* Crisp opaque border */
+    margin: 12px; /* Increased to allow softer shadow to spread without clipping */
+    border-radius: 0; /* Square corners prevent anti-aliasing artifacts on Win10 transparent windows */
 }
 
 body.dark.win10 .container {
-    border: 1px solid var(--border-input);
+    border: 1px solid #333333;
 }
