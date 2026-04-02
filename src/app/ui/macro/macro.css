@@ -84,7 +84,7 @@
     max-width: 80px;
     flex-shrink: 0;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 400;
     color: var(--text-primary);
     word-break: break-all;
 }

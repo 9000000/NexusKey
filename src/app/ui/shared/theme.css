@@ -76,8 +76,7 @@
     --radius-large: 10px;
     --radius-round: 50%;
 
-    /* Font - 'Segoe UI Variable Text' greatly improves legibility on Windows 11 */
-    --font-family: 'Segoe UI Variable Text', 'Segoe UI', 'SF Pro Display', -apple-system, system-ui, sans-serif;
+    --font-family: system, 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
 }
 
 /* Fallback for --blur-mode none (Solid Background) */
