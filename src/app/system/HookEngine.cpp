@@ -1318,6 +1318,14 @@ static bool IsBrowserExeName(const wchar_t* filename) {
 
 bool HookEngine::IsTrayOrTaskbarWindow(HWND hwnd) noexcept {
     if (!hwnd) return false;
+    
+    // Ignore focus switches to our own process (Settings, Menu, Tray)
+    DWORD processId;
+    GetWindowThreadProcessId(hwnd, &processId);
+    if (processId == GetCurrentProcessId()) {
+        return true;
+    }
+
     // GetAncestor is a no-op when hwnd is already a root (e.g. from GetForegroundWindow),
     // but needed when called with a child HWND (e.g. from WindowFromPoint).
     HWND root = GetAncestor(hwnd, GA_ROOT);
@@ -1326,9 +1334,14 @@ bool HookEngine::IsTrayOrTaskbarWindow(HWND hwnd) noexcept {
     GetClassNameW(hwnd, cls, 64);
     return _wcsicmp(cls, L"Shell_TrayWnd") == 0 ||            // main taskbar
            _wcsicmp(cls, L"TrayNotifyWnd") == 0 ||            // notification area
-           _wcsicmp(cls, L"NotifyIconOverflowWindow") == 0 ||  // overflow (^)
+           _wcsicmp(cls, L"NotifyIconOverflowWindow") == 0 ||  // overflow (^) Win 10
+           _wcsicmp(cls, L"TopLevelWindowForOverflowTray") == 0 || // overflow (^) Win 11
+           _wcsicmp(cls, L"Shell_SecondaryTrayWnd") == 0 ||   // secondary taskbar
+           _wcsicmp(cls, L"XamlExplorerHostIslandWindow") == 0 || // Win 11 tray popups (volume, network)
+           _wcsicmp(cls, L"#32768") == 0 ||                   // standard popup menu (right-click tray apps)
            _wcsicmp(cls, L"MSTaskSwWClass") == 0 ||            // taskbar app buttons
            _wcsicmp(cls, L"Start") == 0 ||                     // Start button
+           _wcsicmp(cls, L"Windows.UI.Core.CoreWindow") == 0 || // Start Menu / Action Center (Win 10/11)
            _wcsicmp(cls, L"NexusKeyTrayClass") == 0;           // NexusKey own tray window
            // Note: SetForegroundWindow(hwndMessage_) in ShowContextMenu fires
            // EVENT_SYSTEM_FOREGROUND synchronously, but WinEventProc is WINEVENT_OUTOFCONTEXT
@@ -1459,7 +1472,23 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // These are not typing targets and must not update currentExe_ or the SmartSwitch map.
     // Without this guard, right-clicking any app's tray icon would set currentExe_ to that
     // app's process, then the next real focus change would SAVE the wrong mode for that app.
-    if (!activeHwnd || !IsWindowVisible(activeHwnd) || IsTrayOrTaskbarWindow(activeHwnd)) {
+    if (!activeHwnd || !IsWindowVisible(activeHwnd) || IsIconic(activeHwnd) || IsTrayOrTaskbarWindow(activeHwnd)) {
+        return;
+    }
+
+    // Skip zero-size or wildly off-screen windows (often used as trick message pumps for Tray menus, like IDM)
+    RECT rect;
+    if (GetWindowRect(activeHwnd, &rect)) {
+        if (rect.right - rect.left <= 0 || rect.bottom - rect.top <= 0 || rect.left <= -20000) {
+            return;
+        }
+    }
+
+    // Skip Tool Windows (WS_EX_TOOLWINDOW). These are used for custom context menus, 
+    // floating tooltips, and hidden helper windows (e.g., Discord/Telegram tray menus).
+    // They are not main applications and should not change the Smart Switch state.
+    LONG exStyle = GetWindowLongW(activeHwnd, GWL_EXSTYLE);
+    if (exStyle & WS_EX_TOOLWINDOW) {
         return;
     }
 
