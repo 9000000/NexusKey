@@ -86,16 +86,39 @@ inline void RemoveScheduledTask() noexcept {
 
 /// Create a scheduled task to run at logon with highest privileges (UAC prompt)
 [[nodiscard]] inline bool CreateScheduledTaskElevated() noexcept {
-    wchar_t path[MAX_PATH] = {};
-    GetModuleFileNameW(nullptr, path, MAX_PATH);
+    wchar_t exePath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
 
-    // /it = interactive token: run in user's desktop session (required for tray icon)
-    // /delay 0000:05 = 5s delay after logon (wait for Explorer shell)
-    // /tr needs escaped inner quotes for paths with spaces
-    std::wstring args = L"/create /sc onlogon /tn " + std::wstring(STARTUP_TASK_NAME) +
-                        L" /rl highest /it /delay 0000:05 /tr \"\\\"" + path + L"\\\"\" /f";
+    std::wstring exeStr(exePath);
+    std::wstring dirStr = exeStr.substr(0, exeStr.find_last_of(L"\\/"));
 
-    return RunSchtasksElevated(args.c_str());
+    // Secure memory-only PowerShell script string (No %TEMP% XML files required -> 100% secure from TOCTOU)
+    // Uses Cmdlets to fully configure Triggers, Actions, and disabled Battery constraints natively.
+    std::wstring ps1Args = L"-NoProfile -WindowStyle Hidden -Command \"";
+    ps1Args += L"$A = New-ScheduledTaskAction -Execute '\"" + exeStr + L"\"' -WorkingDirectory '" + dirStr + L"'; ";
+    ps1Args += L"$T = New-ScheduledTaskTrigger -AtLogOn; ";
+    ps1Args += L"$T.Delay = 'PT5S'; ";
+    ps1Args += L"$S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0; ";
+    ps1Args += L"$P = New-ScheduledTaskPrincipal -LogonType Interactive -RunLevel Highest; ";
+    ps1Args += L"Register-ScheduledTask -TaskName '" + std::wstring(STARTUP_TASK_NAME) + L"' -Action $A -Trigger $T -Settings $S -Principal $P -Force\"";
+
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.lpVerb = L"runas";
+    sei.lpFile = L"powershell.exe";
+    sei.lpParameters = ps1Args.c_str();
+    sei.nShow = SW_HIDE;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+    if (!ShellExecuteExW(&sei)) return false;
+
+    if (sei.hProcess) {
+        WaitForSingleObject(sei.hProcess, 5000);  // Allow PowerShell some time to register the task
+        DWORD exitCode = 1;
+        GetExitCodeProcess(sei.hProcess, &exitCode);
+        CloseHandle(sei.hProcess);
+        return exitCode == 0;
+    }
+    return true;
 }
 
 /// Register or unregister run-on-startup.

@@ -80,6 +80,14 @@ bool TrayIcon::Create(HINSTANCE hInstance) {
     RefreshIcon();
     StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), S(StringId::TIP_VIETNAMESE));
 
+    // Register "TaskbarCreated" message to detect explorer.exe restarts
+    wmTaskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
+
+    // Allow this message even when running with higher integrity (UIPI)
+    if (wmTaskbarCreated_) {
+        ChangeWindowMessageFilterEx(hwndMessage_, wmTaskbarCreated_, MSGFLT_ALLOW, nullptr);
+    }
+
     // Always visible
     Shell_NotifyIconW(NIM_ADD, &nid_);
     RefreshConvertHotkeyCache();
@@ -107,7 +115,11 @@ void TrayIcon::SetVietnameseMode(bool enabled) noexcept {
         enabled ? S(StringId::TIP_VIETNAMESE) : S(StringId::TIP_ENGLISH));
 
     if (nid_.hWnd) {
-        Shell_NotifyIconW(NIM_MODIFY, &nid_);
+        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
+            // Icon may have been lost (explorer restart, GDI quota, etc.)
+            // Re-add to recover
+            Shell_NotifyIconW(NIM_ADD, &nid_);
+        }
     }
 }
 
@@ -121,8 +133,17 @@ void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE) no
     RefreshIcon();
 
     if (nid_.hWnd) {
-        Shell_NotifyIconW(NIM_MODIFY, &nid_);
+        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
+            Shell_NotifyIconW(NIM_ADD, &nid_);
+        }
     }
+}
+
+void TrayIcon::ReAddIcon() noexcept {
+    if (!nid_.hWnd) return;
+    // Force re-register: delete first (may fail if already gone), then add
+    Shell_NotifyIconW(NIM_DELETE, &nid_);
+    Shell_NotifyIconW(NIM_ADD, &nid_);
 }
 
 void TrayIcon::RefreshIcon() noexcept {
@@ -494,6 +515,13 @@ LRESULT CALLBACK TrayIcon::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             bool dark = SciterHelper::IsWindowsDarkMode();
             SciterHelper::SetWindowDarkMode(hwnd, dark);
         }
+    }
+
+    // Handle TaskbarCreated: explorer.exe restarted, re-add our tray icon
+    if (g_trayInstance && g_trayInstance->wmTaskbarCreated_ != 0 &&
+        msg == g_trayInstance->wmTaskbarCreated_) {
+        g_trayInstance->ReAddIcon();
+        return 0;
     }
 
     if (g_trayInstance && g_trayInstance->ProcessMessage(hwnd, msg, wParam, lParam)) {

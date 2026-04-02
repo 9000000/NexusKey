@@ -100,6 +100,7 @@ public:
 private:
     void ShowContextMenu();
     void RefreshIcon() noexcept;  // Reload icon based on current style/mode
+    void ReAddIcon() noexcept;    // Re-register tray icon (after explorer restart or NIM_MODIFY failure)
     void RefreshConvertHotkeyCache();  // Rebuild cached hotkey text from config
     [[nodiscard]] HICON CreateColorizedIcon(int baseIconId, COLORREF color) noexcept;
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -123,6 +124,7 @@ private:
     std::wstring cachedConvertHotkeyText_;
 
     static constexpr UINT WM_TRAYICON = WM_USER + 1;
+    UINT wmTaskbarCreated_ = 0;           // Registered "TaskbarCreated" message ID
 };
 
 }  // namespace NextKey
