@@ -33,8 +33,30 @@
     flex: 1;
 }
 
+.list-col-mode {
+    width: 70px;
+    text-align: center;
+}
+
 .list-col-action {
     width: 32px;
+}
+
+/* Mode selector per app item */
+.app-item-mode {
+    width: 70px;
+    font-size: 11px;
+    padding: 2px 4px;
+    border: 1px solid var(--border-medium);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.app-item-mode:hover {
+    border-color: var(--accent);
 }
 
 /* Ensure scrollbar appears when content overflows */
@@ -45,6 +67,8 @@
 }
 
 .app-item {
+    display: flex;
+    align-items: center;
     padding: 10px 4px;
     cursor: pointer;
     transition: background 0.15s ease;

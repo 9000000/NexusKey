@@ -23,15 +23,37 @@ ExcludedAppsDialog::ExcludedAppsDialog(HWND parent)
     : WindowPickerDialog({
         L"this://app/excludedapps/excludedapps.html",
         L"NexusKey - Excluded Apps",
-        360, 420, parent, true, 36, 40, true
+        420, 420, parent, true, 36, 40, true
     }) {
-    appList_ = ConfigManager::LoadExcludedApps(ConfigManager::GetConfigPath());
+    hardList_ = ConfigManager::LoadExcludedApps(ConfigManager::GetConfigPath());
+    softList_ = ConfigManager::LoadSoftExcludedApps(ConfigManager::GetConfigPath());
     populateList();
 }
 
 void ExcludedAppsDialog::persistAndSignal() {
-    (void)ConfigManager::SaveExcludedApps(ConfigManager::GetConfigPath(), appList_);
+    (void)ConfigManager::SaveExcludedApps(ConfigManager::GetConfigPath(), hardList_, softList_);
     SignalConfigChange();
+}
+
+bool ExcludedAppsDialog::isSoftExcluded(const std::wstring& name) const {
+    return std::find(softList_.begin(), softList_.end(), name) != softList_.end();
+}
+
+void ExcludedAppsDialog::setAppMode(const std::wstring& name, const std::wstring& mode) {
+    std::wstring lower = ToLowerAscii(name);
+
+    // Remove from both lists first
+    hardList_.erase(std::remove(hardList_.begin(), hardList_.end(), lower), hardList_.end());
+    softList_.erase(std::remove(softList_.begin(), softList_.end(), lower), softList_.end());
+
+    // Add to the target list
+    if (mode == L"soft") {
+        softList_.push_back(lower);
+    } else {
+        hardList_.push_back(lower);
+    }
+
+    persistAndSignal();
 }
 
 bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
@@ -74,6 +96,17 @@ bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params
                     if (!appName.empty()) {
                         removeApp(appName);
                     }
+                } else if (action == L"set-mode") {
+                    if (!appName.empty()) {
+                        // Read mode from hidden input
+                        sciter::dom::element modeInput = root.find_first("#val-app-mode");
+                        std::wstring mode;
+                        if (modeInput.is_valid()) {
+                            sciter::value mv = modeInput.get_value();
+                            mode = mv.is_string() ? mv.get<std::wstring>() : L"hard";
+                        }
+                        setAppMode(appName, mode);
+                    }
                 } else if (action == L"get-running-apps") {
                     auto apps = getRunningApps();
                     sciter::value arr;
@@ -110,8 +143,11 @@ void ExcludedAppsDialog::onWindowPicked(const std::wstring& exeName) {
 
 void ExcludedAppsDialog::populateList() {
     call_function("clearAppList");
-    for (auto& app : appList_) {
-        call_function("addAppToList", sciter::value(app.c_str()));
+    for (auto& app : hardList_) {
+        call_function("addAppToList", sciter::value(app.c_str()), sciter::value(L"hard"));
+    }
+    for (auto& app : softList_) {
+        call_function("addAppToList", sciter::value(app.c_str()), sciter::value(L"soft"));
     }
     call_function("forceRefresh");
 }
@@ -119,21 +155,33 @@ void ExcludedAppsDialog::populateList() {
 void ExcludedAppsDialog::addApp(const std::wstring& name) {
     std::wstring lower = ToLowerAscii(name);
 
-    // Check for duplicates
-    if (std::find(appList_.begin(), appList_.end(), lower) != appList_.end()) return;
+    // Check for duplicates in both lists
+    if (std::find(hardList_.begin(), hardList_.end(), lower) != hardList_.end()) return;
+    if (std::find(softList_.begin(), softList_.end(), lower) != softList_.end()) return;
 
-    appList_.push_back(lower);
-    call_function("addAppToList", sciter::value(lower.c_str()));
+    // Default: hard exclusion
+    hardList_.push_back(lower);
+    call_function("addAppToList", sciter::value(lower.c_str()), sciter::value(L"hard"));
     call_function("forceRefresh");
     persistAndSignal();
 }
 
 void ExcludedAppsDialog::removeApp(const std::wstring& name) {
     std::wstring lower = ToLowerAscii(name);
+    bool found = false;
 
-    auto it = std::find(appList_.begin(), appList_.end(), lower);
-    if (it != appList_.end()) {
-        appList_.erase(it);
+    auto it = std::find(hardList_.begin(), hardList_.end(), lower);
+    if (it != hardList_.end()) {
+        hardList_.erase(it);
+        found = true;
+    }
+    auto it2 = std::find(softList_.begin(), softList_.end(), lower);
+    if (it2 != softList_.end()) {
+        softList_.erase(it2);
+        found = true;
+    }
+
+    if (found) {
         call_function("removeAppFromList", sciter::value(lower.c_str()));
         persistAndSignal();
     }
@@ -160,23 +208,37 @@ void ExcludedAppsDialog::importApps() {
     if (!infile.is_open()) return;
 
     if (!append) {
-        appList_.clear();
+        hardList_.clear();
+        softList_.clear();
     }
 
+    bool inSoftSection = false;
     std::string line;
     while (std::getline(infile, line)) {
         // Trim CR (Windows line endings)
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        // Skip empty lines and comment/header lines
-        if (line.empty() || line[0] == ';') continue;
+        // Skip empty lines
+        if (line.empty()) continue;
+        // Detect soft section marker
+        if (line == ";soft:") {
+            inSoftSection = true;
+            continue;
+        }
+        // Skip other comment/header lines
+        if (line[0] == ';') continue;
 
         std::wstring wName = Utf8ToWide(line);
 
-        // Lowercase + dedup
+        // Lowercase + dedup (check both lists)
         wName = ToLowerAscii(wName);
         if (wName.empty()) continue;
-        if (std::find(appList_.begin(), appList_.end(), wName) == appList_.end()) {
-            appList_.push_back(wName);
+        if (std::find(hardList_.begin(), hardList_.end(), wName) == hardList_.end()
+            && std::find(softList_.begin(), softList_.end(), wName) == softList_.end()) {
+            if (inSoftSection) {
+                softList_.push_back(wName);
+            } else {
+                hardList_.push_back(wName);
+            }
         }
     }
 
@@ -193,17 +255,26 @@ void ExcludedAppsDialog::exportApps() {
     );
     if (path.empty()) return;
 
-    // Sort for consistent output
-    std::vector<std::wstring> sorted = appList_;
-    std::sort(sorted.begin(), sorted.end());
-
     std::ofstream outfile(path);
     if (!outfile.is_open()) return;
 
-    outfile << ";NexusKey Excluded Apps*** version=1 ***\n";
+    outfile << ";NexusKey Excluded Apps*** version=2 ***\n";
 
-    for (auto& app : sorted) {
+    // Hard-excluded apps
+    std::vector<std::wstring> sortedHard = hardList_;
+    std::sort(sortedHard.begin(), sortedHard.end());
+    for (auto& app : sortedHard) {
         outfile << WideToUtf8(app) << "\n";
+    }
+
+    // Soft-excluded apps (marked with ;soft: prefix for re-import compatibility)
+    std::vector<std::wstring> sortedSoft = softList_;
+    std::sort(sortedSoft.begin(), sortedSoft.end());
+    if (!sortedSoft.empty()) {
+        outfile << ";soft:\n";
+        for (auto& app : sortedSoft) {
+            outfile << WideToUtf8(app) << "\n";
+        }
     }
 }
 

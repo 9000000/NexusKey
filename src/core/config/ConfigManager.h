@@ -55,11 +55,16 @@ public:
     /// Load hotkey config with automatic path resolution
     [[nodiscard]] static HotkeyConfig LoadHotkeyConfigOrDefault();
 
-    /// Load excluded apps list from config
+    /// Load excluded apps list from config (hard exclusion — block toggle)
     [[nodiscard]] static std::vector<std::wstring> LoadExcludedApps(const std::wstring& path);
 
-    /// Save excluded apps list to config (merges with existing)
-    [[nodiscard]] static bool SaveExcludedApps(const std::wstring& path, const std::vector<std::wstring>& apps);
+    /// Load soft-excluded apps list from config (default English on focus, allow toggle)
+    [[nodiscard]] static std::vector<std::wstring> LoadSoftExcludedApps(const std::wstring& path);
+
+    /// Save excluded apps lists to config (both hard + soft, merges with existing)
+    [[nodiscard]] static bool SaveExcludedApps(const std::wstring& path,
+                                                const std::vector<std::wstring>& hardApps,
+                                                const std::vector<std::wstring>& softApps);
 
     /// Load TSF apps list from config (apps that use TSF engine instead of hook)
     [[nodiscard]] static std::vector<std::wstring> LoadTsfApps(const std::wstring& path);

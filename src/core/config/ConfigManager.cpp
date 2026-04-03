@@ -361,17 +361,43 @@ std::vector<std::wstring> ConfigManager::LoadExcludedApps(const std::wstring& pa
     return apps;
 }
 
-bool ConfigManager::SaveExcludedApps(const std::wstring& path, const std::vector<std::wstring>& apps) {
+std::vector<std::wstring> ConfigManager::LoadSoftExcludedApps(const std::wstring& path) {
+    std::vector<std::wstring> apps;
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = toml::parse_file(utf8Path);
+
+        if (auto section = table["excluded_apps"].as_table()) {
+            if (auto arr = (*section)["soft"].as_array()) {
+                for (auto& item : *arr) {
+                    if (auto str = item.value<std::string>()) {
+                        apps.push_back(Utf8ToWide(*str));
+                    }
+                }
+            }
+        }
+    } catch (...) {}
+    return apps;
+}
+
+bool ConfigManager::SaveExcludedApps(const std::wstring& path,
+                                      const std::vector<std::wstring>& hardApps,
+                                      const std::vector<std::wstring>& softApps) {
     try {
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
-        toml::array arr;
-        for (auto& app : apps) {
-            arr.push_back(WideToUtf8(app));
+        toml::array hardArr;
+        for (auto& app : hardApps) {
+            hardArr.push_back(WideToUtf8(app));
+        }
+        toml::array softArr;
+        for (auto& app : softApps) {
+            softArr.push_back(WideToUtf8(app));
         }
         toml::table section;
-        section.insert_or_assign("list", std::move(arr));
+        section.insert_or_assign("list", std::move(hardArr));
+        section.insert_or_assign("soft", std::move(softArr));
         tbl.insert_or_assign("excluded_apps", std::move(section));
 
         return WriteToml(utf8Path, tbl);

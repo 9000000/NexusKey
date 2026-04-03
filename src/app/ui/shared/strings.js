@@ -105,6 +105,7 @@ var STRINGS = {
         // ── Excluded Apps dialog ──
         "ea.app_ph": "e.g.: notepad.exe",
         "ea.excluded_list": "Excluded applications",
+        "ea.mode": "Mode",
         "ea.import": "Import from file...",
         "ea.export": "Export to file...",
 
