@@ -875,8 +875,8 @@
     margin-right: 6px;
     background: transparent;
     border: none;
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     vertical-align: middle;
     cursor: pointer;
     border-radius: 50%;
@@ -886,8 +886,8 @@
 }
 
 .btn-info>svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     fill: var(--text-primary);
     /* Default bright color */
     transition: fill 0.2s ease, transform 0.2s ease;
@@ -896,6 +896,6 @@
 .btn-info:hover>svg {
     fill: var(--color-primary);
     /* Highlight color on hover */
-    transform: scale(1.15);
+    transform: scale(1.1);
     /* Slight zoom effect */
 }
