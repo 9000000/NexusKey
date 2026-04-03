@@ -40,9 +40,10 @@
 }
 
 /* Select Dropdown */
-.override-input {
-    width: 65px;
-    height: 24px;
+.setting-select {
+    min-width: 140px;
+    height: 26px;
+    padding: 2px 24px 2px 8px;
     font-size: 13px;
     font-weight: 400;
     box-shadow: inset 0 0 0 1px var(--border-input);
@@ -50,10 +51,12 @@
     background: var(--bg-card-solid);
     color: var(--text-primary);
     cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
 }
 
 .setting-select:focus {
-    border-color: var(--color-primary);
+    box-shadow: inset 0 0 0 1px var(--color-primary);
     outline: none;
 }
 
