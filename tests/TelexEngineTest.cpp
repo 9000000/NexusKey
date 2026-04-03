@@ -1378,6 +1378,42 @@ TEST_F(TelexEngineTest, EdgeCase_GI_Plus_U) {
     EXPECT_EQ(engine_->Peek(), L"giư");
 }
 
+TEST_F(TelexEngineTest, GIW_SynthesizesHornU) {
+    // g-i-w → giư (gi is consonant cluster, w synthesizes ư as nucleus)
+    TypeString(*engine_, L"giw");
+    EXPECT_EQ(engine_->Peek(), L"giư");
+}
+
+TEST_F(TelexEngineTest, GIW_ToneOnSynthesizedU) {
+    // g-i-w-x → giữ
+    TypeString(*engine_, L"giwx");
+    EXPECT_EQ(engine_->Peek(), L"giữ");
+}
+
+TEST_F(TelexEngineTest, GIW_EscapeWithDoubleW) {
+    // g-i-w-w → giw (second w escapes)
+    TypeString(*engine_, L"giww");
+    EXPECT_EQ(engine_->Peek(), L"giw");
+}
+
+TEST_F(TelexEngineTest, GIW_FullWord_Giua) {
+    // g-i-w-a → giưa (gi cluster + ưa nucleus)
+    TypeString(*engine_, L"giwa");
+    EXPECT_EQ(engine_->Peek(), L"giưa");
+}
+
+TEST_F(TelexEngineTest, GIW_FullWord_Giuax) {
+    // g-i-w-a-x → giữa
+    TypeString(*engine_, L"giwax");
+    EXPECT_EQ(engine_->Peek(), L"giữa");
+}
+
+TEST_F(TelexEngineTest, NonGI_Cluster_IW_Literal) {
+    // k-i-w should NOT synthesize ư (ki is not a consonant cluster)
+    TypeString(*engine_, L"kiw");
+    EXPECT_EQ(engine_->Peek(), L"kiw");
+}
+
 TEST_F(TelexEngineTest, EdgeCase_QU_Plus_E) {
     TypeString(*engine_, L"quew");
     EXPECT_EQ(engine_->Peek(), L"quew");

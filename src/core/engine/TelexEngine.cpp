@@ -675,14 +675,21 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
     }
 
     // P8: Full Telex only — standalone 'w' with no modifiable vowel → insert ư
-    // Only fires when there are no vowels yet in the buffer (onset consonants or empty).
-    // After a vowel (e.g., "re" + w), 'w' is treated as literal — no Vietnamese word
-    // has a vowel followed by standalone ư via P8.
+    // Only fires when there are no vowels yet in the buffer (onset consonants or empty),
+    // OR when the only vowel is 'i' in a potential "gi" consonant cluster (giữ, giữa, giường).
+    // After a non-cluster vowel (e.g., "re" + w), 'w' is treated as literal — no Vietnamese
+    // word has a vowel followed by standalone ư via P8.
     // In QU cluster, don't insert standalone ư (let 'w' be literal: "quew" → "quew")
     if (config_.inputMethod != InputMethod::SimpleTelex && !IsInQUCluster()) {
-        bool hasVowel = std::any_of(states_.begin(), states_.end(),
-            [](const CharState& s) { return s.IsVowel(); });
-        if (!hasVowel) {
+        bool hasNonClusterVowel = false;
+        for (size_t i = 0; i < states_.size(); ++i) {
+            if (!states_[i].IsVowel()) continue;
+            // 'i' after 'g' is a potential "gi" cluster consonant — don't count it
+            if (states_[i].base == L'i' && i > 0 && states_[i - 1].base == L'g') continue;
+            hasNonClusterVowel = true;
+            break;
+        }
+        if (!hasNonClusterVowel) {
             CharState s;
             s.base = L'u';
             s.mod = Modifier::Horn;
