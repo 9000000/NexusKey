@@ -1,4 +1,4 @@
-# NexusKey v2.0.2
+# NexusKey v2.1.0
 
 Bản cập nhật sửa lỗi và cải thiện tính năng.
 
