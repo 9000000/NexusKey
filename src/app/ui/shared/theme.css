@@ -375,7 +375,7 @@ body.dark.win10 {
 body.win10 .container {
     border: 1px solid #8C8C8C; /* Crisp opaque border */
     margin: 12px; /* Increased to allow softer shadow to spread without clipping */
-    border-radius: 0; /* Square corners prevent anti-aliasing artifacts on Win10 transparent windows */
+    border-radius: 8px; /* Restored rounded corners per user request */
 }
 
 body.dark.win10 .container {
