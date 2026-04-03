@@ -43,7 +43,7 @@ if [ ! -f "$CMAKE_FILE" ]; then
 fi
 
 echo -e "\033[36mUpdating $CMAKE_FILE...\033[0m"
-sed -i -E "s/^(project\(NexusKey VERSION )[0-9]+\.[0-9]+\.[0-9]+/\1$version/" "$CMAKE_FILE"
+perl -i -pe "s/^(project\\(NexusKey VERSION )[0-9]+\\.[0-9]+\\.[0-9]+/\${1}$version/" "$CMAKE_FILE"
 echo -e "\033[32mCMakeLists.txt updated to $version.\033[0m"
 echo -e "\033[90m  (Version.h will be regenerated automatically on next cmake configure)\033[0m"
 

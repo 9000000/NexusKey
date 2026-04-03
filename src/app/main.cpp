@@ -219,8 +219,24 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Clean up leftover files from a previous update.
     // If files were cleaned up, it means we just finished an update.
-    if (CleanupOldUpdateFiles()) {
+    bool updateJustCompleted = CleanupOldUpdateFiles();
+    if (updateJustCompleted) {
         NEXTKEY_LOG(L"Update completed successfully, old files cleaned up");
+    }
+
+    // Check for update failure marker (installer failed and relaunched us)
+    bool updateJustFailed = false;
+    {
+        wchar_t exePath[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        std::wstring exeDir(exePath);
+        auto pos = exeDir.find_last_of(L"\\/");
+        if (pos != std::wstring::npos) exeDir = exeDir.substr(0, pos);
+        std::wstring markerPath = exeDir + L"\\_update_failed";
+        if (DeleteFileW(markerPath.c_str())) {
+            updateJustFailed = true;
+            NEXTKEY_LOG(L"Update failed marker found and cleaned up");
+        }
     }
 
 #ifdef NEXUSKEY_HOOK_ENGINE
@@ -333,6 +349,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE);
     if (systemConfig.showOnStartup) {
         SpawnSettingsSubprocess();
+    }
+
+    // Show post-update notification (after tray icon is ready)
+    if (updateJustCompleted) {
+        std::thread([]() {
+            Sleep(1000);
+            ToastPopup::Show(S(StringId::UPDATE_SUCCESS), 3000);
+        }).detach();
+    } else if (updateJustFailed) {
+        std::thread([]() {
+            Sleep(1000);
+            ToastPopup::Show(S(StringId::UPDATE_INSTALL_FAILED), 3000);
+        }).detach();
     }
 
     // Auto-check for updates on startup (background thread, 3s delay)
@@ -467,6 +496,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE);
     if (systemConfig.showOnStartup) {
         SpawnSettingsSubprocess();
+    }
+
+    // Show post-update notification (after tray icon is ready)
+    if (updateJustCompleted) {
+        std::thread([]() {
+            Sleep(1000);
+            ToastPopup::Show(S(StringId::UPDATE_SUCCESS), 3000);
+        }).detach();
+    } else if (updateJustFailed) {
+        std::thread([]() {
+            Sleep(1000);
+            ToastPopup::Show(S(StringId::UPDATE_INSTALL_FAILED), 3000);
+        }).detach();
     }
 
     // Auto-check for updates on startup (background thread, 3s delay)

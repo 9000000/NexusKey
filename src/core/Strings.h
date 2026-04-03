@@ -45,6 +45,8 @@ enum class StringId : uint16_t {
     UPDATE_FAILED,
     UPDATE_DOWNLOADING,
     UPDATE_CHANGELOG,
+    UPDATE_SUCCESS,
+    UPDATE_INSTALL_FAILED,
 
     // Convert tool
     CONVERT_NO_SOURCE_FILE,

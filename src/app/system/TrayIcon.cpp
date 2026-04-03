@@ -4,6 +4,7 @@
 #include "TrayIcon.h"
 #include "../resource.h"
 #include "UpdateChecker.h"
+#include "ToastPopup.h"
 #include "sciter/SciterHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
@@ -424,8 +425,11 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 delete info;
 
                 std::thread([hwnd, downloadUrl]() {
+                    ToastPopup::Show(S(StringId::UPDATE_DOWNLOADING), 1500);
                     if (UpdateChecker::DownloadAndLaunchInstaller(downloadUrl)) {
                         PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                    } else {
+                        ToastPopup::Show(S(StringId::UPDATE_INSTALL_FAILED), 3000);
                     }
                 }).detach();
             } else {

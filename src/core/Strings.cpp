@@ -38,6 +38,8 @@ static const wchar_t* const kVietnamese[] = {
     L"Không thể kiểm tra cập nhật.",                 // UPDATE_FAILED
     L"Đang tải cập nhật...",                         // UPDATE_DOWNLOADING
     L"Xem thay đổi",                                // UPDATE_CHANGELOG
+    L"Cập nhật thành công!",                         // UPDATE_SUCCESS
+    L"Cập nhật thất bại.",                           // UPDATE_INSTALL_FAILED
     L"Chưa chọn file nguồn.",                       // CONVERT_NO_SOURCE_FILE
     L"Không thể đọc file nguồn.",                    // CONVERT_READ_ERROR
     L"Clipboard trống.",                             // CONVERT_CLIPBOARD_EMPTY
@@ -77,6 +79,8 @@ static const wchar_t* const kEnglish[] = {
     L"Unable to check for updates.",                 // UPDATE_FAILED
     L"Downloading update...",                        // UPDATE_DOWNLOADING
     L"View changelog",                               // UPDATE_CHANGELOG
+    L"Update successful!",                           // UPDATE_SUCCESS
+    L"Update failed.",                               // UPDATE_INSTALL_FAILED
     L"No source file selected.",                     // CONVERT_NO_SOURCE_FILE
     L"Cannot read source file.",                     // CONVERT_READ_ERROR
     L"Clipboard is empty.",                          // CONVERT_CLIPBOARD_EMPTY

@@ -32,7 +32,7 @@ function setBackgroundOpacity(value) {
     if (container) {
         var isDark = document.body.classList.contains("dark");
         if (isDark) {
-            container.style.backgroundColor = "rgba(18, 20, 28, " + (opacity * 0.9) + ")";
+            container.style.backgroundColor = "rgba(18, 20, 28, " + opacity + ")";
         } else {
             container.style.backgroundColor = "rgba(255, 255, 255, " + opacity + ")";
         }

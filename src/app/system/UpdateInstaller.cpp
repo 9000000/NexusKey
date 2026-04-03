@@ -172,12 +172,37 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
         // Rollback: restore original files from _old_version/ back to exeDir
         namespace fs = std::filesystem;
         std::error_code rollbackEc;
+        std::wstring restoredExePath;
         for (const auto& entry : fs::directory_iterator(oldVersionDir, rollbackEc)) {
             if (!entry.is_regular_file()) continue;
             std::wstring name = entry.path().filename().wstring();
             std::wstring destPath = exeDir + L"\\" + name;
             MoveFileW(entry.path().c_str(), destPath.c_str());
+            // Track the main exe for relaunch
+            if (_wcsicmp(fs::path(name).extension().c_str(), L".exe") == 0 &&
+                (name.find(L"Nexus") != std::wstring::npos || name.find(L"Next") != std::wstring::npos) &&
+                name.find(L"Update") == std::wstring::npos) {
+                restoredExePath = destPath;
+            }
         }
+
+        // Write failure marker so relaunched app can show notification
+        std::wstring markerPath = exeDir + L"\\_update_failed";
+        HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr,
+                                     CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hMarker != INVALID_HANDLE_VALUE) CloseHandle(hMarker);
+
+        // Relaunch the restored app
+        if (!restoredExePath.empty()) {
+            STARTUPINFOW si = { sizeof(si) };
+            PROCESS_INFORMATION pi = {};
+            std::wstring cmdLine = L"\"" + restoredExePath + L"\"";
+            CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0,
+                           nullptr, exeDir.c_str(), &si, &pi);
+            if (pi.hThread) CloseHandle(pi.hThread);
+            if (pi.hProcess) CloseHandle(pi.hProcess);
+        }
+
         ExitProcess(1);
     }
 

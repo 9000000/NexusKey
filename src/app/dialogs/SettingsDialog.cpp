@@ -7,6 +7,7 @@
 #include "system/SubprocessHelper.h"
 #include "system/TsfRegistration.h"
 #include "system/UpdateChecker.h"
+#include "system/ToastPopup.h"
 #include "core/Version.h"
 #include "sciter/ScaleHelper.h"
 #include "sciter/SciterHelper.h"
@@ -1293,8 +1294,9 @@ void SettingsDialog::startUpdate(const UpdateInfo& info) {
     std::wstring downloadUrl = info.downloadUrl;
 
     std::thread([hwnd, downloadUrl]() {
+        ToastPopup::Show(S(StringId::UPDATE_DOWNLOADING), 1500);
         if (!UpdateChecker::DownloadAndLaunchInstaller(downloadUrl)) {
-            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, 2, 0);  // Show failed
+            ToastPopup::Show(S(StringId::UPDATE_INSTALL_FAILED), 3000);
             return;
         }
 
