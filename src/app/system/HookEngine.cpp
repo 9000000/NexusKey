@@ -1032,14 +1032,15 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
     // Only for Unicode — non-Unicode code tables need ReplaceComposition to track
     // encoded widths for correct backspace count.
     // Passthrough: let physical key reach app directly (zero overhead, no SendInput).
-    // Blocked when BOTH conditions are true:
-    //   - hadSynthInWord_: synth already sent in this word, AND
-    //   - isElectronApp_: Electron/Qt multi-process architecture where physical
-    //     WM_KEYDOWN and synthetic VK_PACKET can arrive out of order.
-    // Win32 native apps have single FIFO message queue — mixing is safe.
-    // Console apps are NOT Electron (isElectronApp_=false) so passthrough is safe.
+    // Blocked when EITHER condition is true:
+    //   - hadSynthInWord_ && isElectronApp_: Electron/Qt multi-process architecture
+    //     where physical WM_KEYDOWN and synthetic VK_PACKET arrive out of order.
+    //   - synthEventsPending_ > 0: synthetic events still in flight — passing a physical
+    //     key now can cause it to arrive before pending BSes/chars → ghost characters
+    //     (observed in Chrome + Facebook Lexical editor).
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
         !(hadSynthInWord_ && isElectronApp_) &&
+        synthEventsPending_ == 0 &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
         composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
