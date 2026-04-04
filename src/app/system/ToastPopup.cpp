@@ -96,14 +96,15 @@ void ToastPopup::Show(const std::wstring& message, DWORD durationMs) {
     UpdateWindow(hwnd);
 
     SetTimer(hwnd, TIMER_DISMISS, durationMs, nullptr);
-    
-    // Since this might be called from a short-lived worker thread (like QuickConvert),
-    // we must pump messages until the window is destroyed (timer fires).
+
+    // Pump messages until PostQuitMessage(0) in WM_DESTROY causes GetMessageW to return 0.
+    // IMPORTANT: Do NOT break early with IsWindow() check — that leaves a stale WM_QUIT
+    // in the thread's message queue, which poisons any subsequent COM/message-loop operation
+    // on this thread (e.g. URLDownloadToFileW in the update flow).
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
-        if (!IsWindow(hwnd)) break;
     }
 }
 

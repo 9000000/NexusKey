@@ -63,6 +63,83 @@ TEST_F(VniEngineTest, Horn_U7_UpperCase) {
     EXPECT_EQ(engine_->Peek(), L"Ư");
 }
 
+TEST_F(VniEngineTest, Horn_UO7_SingleHorn) {
+    // uo7 → uơ (first 7 horns 'o' only, ơ at end)
+    TypeString(*engine_, L"uo7");
+    EXPECT_EQ(engine_->Peek(), L"uơ");
+}
+
+TEST_F(VniEngineTest, Horn_UO77_SecondHornsU) {
+    // uo77 → ươ (second 7 horns 'u')
+    TypeString(*engine_, L"uo77");
+    EXPECT_EQ(engine_->Peek(), L"ươ");
+}
+
+TEST_F(VniEngineTest, Horn_HUO7_AtEnd) {
+    // huo7 → huơ (ơ at end, no auto-pair)
+    TypeString(*engine_, L"huo7");
+    EXPECT_EQ(engine_->Peek(), L"huơ");
+}
+
+TEST_F(VniEngineTest, Horn_HUO77_BothHorned) {
+    // huo77 → hươ (second 7 horns u)
+    TypeString(*engine_, L"huo77");
+    EXPECT_EQ(engine_->Peek(), L"hươ");
+}
+
+TEST_F(VniEngineTest, Horn_NUO7NG_AutoPair) {
+    // nuo7ng → nương (ng after pair triggers auto-horn on u)
+    TypeString(*engine_, L"nuo7ng");
+    EXPECT_EQ(engine_->Peek(), L"nương");
+}
+
+TEST_F(VniEngineTest, Horn_NUO71NG_Nuong_WithTone) {
+    // nuo71ng → nướng (horn + acute, auto-pair when n typed)
+    TypeString(*engine_, L"nuo71ng");
+    EXPECT_EQ(engine_->Peek(), L"nướng");
+}
+
+TEST_F(VniEngineTest, Horn_DUO7C_Duoc) {
+    // d9uo7c → đươc (c after pair triggers auto-horn on u)
+    TypeString(*engine_, L"d9uo7c");
+    EXPECT_EQ(engine_->Peek(), L"đươc");
+}
+
+TEST_F(VniEngineTest, Horn_SingleO7) {
+    TypeString(*engine_, L"o7");
+    EXPECT_EQ(engine_->Peek(), L"ơ");
+}
+
+TEST_F(VniEngineTest, Horn_QUO7C_QuCluster) {
+    // u in "qu" is consonant cluster — should NOT get horned
+    TypeString(*engine_, L"quo7c");
+    EXPECT_EQ(engine_->Peek(), L"quơc");
+}
+
+TEST_F(VniEngineTest, Horn_HU7O7_ExplicitBoth) {
+    // h-u-7-o-7 → hươ (explicit horn each vowel)
+    TypeString(*engine_, L"hu7o7");
+    EXPECT_EQ(engine_->Peek(), L"hươ");
+}
+
+TEST_F(VniEngineTest, Horn_HU7O7NG_Huong) {
+    // hu7o71ng → hướng
+    TypeString(*engine_, L"hu7o71ng");
+    EXPECT_EQ(engine_->Peek(), L"hướng");
+}
+
+TEST_F(VniEngineTest, Horn_LUO7N_AutoPair) {
+    // luo7n → lươn (n after pair triggers auto)
+    TypeString(*engine_, L"luo7n");
+    EXPECT_EQ(engine_->Peek(), L"lươn");
+}
+
+TEST_F(VniEngineTest, Horn_PHUONG_AutoPair) {
+    // phuo7ng → phương
+    TypeString(*engine_, L"phuo71ng");
+    EXPECT_EQ(engine_->Peek(), L"phướng");
+}
+
 // ============================================================================
 // BREVE TESTS (key 8): ă
 // ============================================================================

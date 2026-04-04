@@ -263,6 +263,7 @@ void VniEngine::PushChar(wchar_t c) {
 
     // Regular character
     ProcessChar(c, rawInput_.size() - 1);
+    ApplyAutoUO();
     RelocateToneToTarget();
     UpdateSpellState();
 
@@ -444,9 +445,12 @@ bool VniEngine::ProcessModifier(wchar_t c) {
     }
 
     // Handle vowel modifiers (6, 7, 8)
+    // Two-pass scan for horn: first find unmodified target, then escape if none found.
+    // This lets each '7' press horn one vowel at a time (uo7 → uơ, uo77 → ươ).
+
+    // Pass 1: find rightmost unmodified vowel that accepts this modifier
     for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
         if (!it->IsVowel()) continue;
-
         wchar_t base = towlower(it->base);
 
         bool canApply = false;
@@ -463,16 +467,20 @@ bool VniEngine::ProcessModifier(wchar_t c) {
             default: break;
         }
 
-        if (canApply) {
-            if (it->mod == Modifier::None) {
-                it->mod = targetMod;
-                return true;
-            } else if (it->mod == targetMod) {
-                it->mod = Modifier::None;
-                toneEscaped_ = true;  // User canceled modifier → treat rest as English
-                ProcessChar(c, rawInput_.size() - 1);
-                return true;
-            }
+        if (canApply && it->mod == Modifier::None) {
+            it->mod = targetMod;
+            return true;
+        }
+    }
+
+    // Pass 2: no unmodified target — escape the rightmost vowel with matching modifier
+    for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
+        if (!it->IsVowel()) continue;
+        if (it->mod == targetMod) {
+            it->mod = Modifier::None;
+            toneEscaped_ = true;  // User canceled modifier → treat rest as English
+            ProcessChar(c, rawInput_.size() - 1);
+            return true;
         }
     }
 
@@ -631,6 +639,34 @@ wchar_t VniEngine::ComposeChar(const CharState& state) const {
     }
 
     return result;
+}
+
+//-----------------------------------------------------------------------------
+// Auto horn companion: complete ươ pair when a char is typed AFTER the pair.
+// huo7 stays "huơ" (ơ at end). huo7ng → "hương" (ng after pair triggers auto).
+// Requires i + 2 < size: the pair must NOT be the last two states.
+//-----------------------------------------------------------------------------
+
+void VniEngine::ApplyAutoUO() {
+    if (states_.size() < 3 || toneEscaped_) return;
+
+    size_t start = (states_.size() > 4) ? states_.size() - 4 : 0;
+    for (size_t i = start; i + 2 < states_.size(); ++i) {
+        // Skip QU cluster
+        if (i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q') continue;
+
+        // Pattern 1: u(plain) + ơ(horn) → horn the u
+        if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
+            states_[i + 1].base == L'o' && states_[i + 1].mod == Modifier::Horn) {
+            states_[i].mod = Modifier::Horn;
+        }
+
+        // Pattern 2: ư(horn) + o(plain) → horn the o
+        if (states_[i].base == L'u' && states_[i].mod == Modifier::Horn &&
+            states_[i + 1].base == L'o' && states_[i + 1].mod == Modifier::None) {
+            states_[i + 1].mod = Modifier::Horn;
+        }
+    }
 }
 
 //-----------------------------------------------------------------------------

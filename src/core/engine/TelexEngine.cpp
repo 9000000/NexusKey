@@ -533,8 +533,10 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 
     // Check if 'u' at position i is part of QU consonant cluster
     // QU-cluster 'u' should not be treated as a modifiable vowel
+    // Only unmodified 'u' qualifies — a horned ư (e.g., P8 synthetic) is not a cluster 'u'.
     auto isQUClusterU = [this](size_t i) -> bool {
-        return i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q';
+        return i > 0 && states_[i].base == L'u' && states_[i].mod == Modifier::None
+            && states_[i - 1].base == L'q';
     };
 
     // PRIORITY ORDER for 'w':
@@ -736,7 +738,8 @@ bool TelexEngine::IsInQUCluster() const {
     if (states_.size() < 2) return false;
 
     for (size_t i = 0; i + 1 < states_.size(); ++i) {
-        if (states_[i].base == L'q' && states_[i+1].base == L'u') {
+        if (states_[i].base == L'q' && states_[i+1].base == L'u'
+            && states_[i+1].mod == Modifier::None) {
             return true;
         }
     }

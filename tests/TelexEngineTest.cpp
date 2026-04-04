@@ -1059,6 +1059,13 @@ TEST_F(TelexEngineTest, P8_StillFiresAfterConsonantOnly) {
     EXPECT_EQ(engine_->Peek(), L"tr\x01B0" L"a");  // trưa
 }
 
+TEST_F(TelexEngineTest, P8_QW_EscapeAfterQ) {
+    // q + w → qư (P8 synthetic), then second w → escape → qw
+    // The synthetic ư after 'q' must NOT be treated as QU cluster
+    TypeString(*engine_, L"qww");
+    EXPECT_EQ(engine_->Peek(), L"qw");
+}
+
 TEST_F(TelexEngineTest, Tone_IA_Diphthong_Classic) {
     // ia diphthong: tone on first vowel (classic)
     TypeString(*engine_, L"nghiax");

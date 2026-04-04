@@ -34,6 +34,8 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 * **Hoạt động offline:** Phần mềm hoạt động hoàn toàn cục bộ trên máy bạn.
 * **Mã nguồn mở:** Bạn có thể tự kiểm chứng bằng cách đọc mã nguồn.
 
+> **Lưu ý:** Dự án này được phát triển chủ yếu dựa trên nhu cầu và trải nghiệm cá nhân, vì vậy có thể vẫn tồn tại một số lỗi chưa được phát hiện hoặc khắc phục triệt để. Rất mong nhận được sự thông cảm và đóng góp ý kiến thông qua [Issue](https://github.com/phatMT97/NextKey/issues) để bộ gõ ngày càng hoàn thiện hơn.
+
 ---
 
 ## Tính năng

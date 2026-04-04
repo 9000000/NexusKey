@@ -1,10 +1,10 @@
-# NexusKey v2.1.2
-
-**✨ Cải tiến:**
-- Thêm exclude app soft mode: bây giờ app sẽ luôn chuyển sang E khi switch hoặc mở lần đầu, nhưng vẫn cho phép switch sang V mode bằng hotkey. Hỗ trợ cho việc chơi game không bị loạn mode khi chat + switch app qua lại 😀
+# NexusKey v2.1.3
 
 **🛠 Sửa lỗi:**
-- Sửa một số lỗi UI
+- Sửa lỗi cập nhật không hoạt động
+- Sửa lỗi đặt dấu móc uo trong vni không hoạt động đúng: uớn thay vì ướn
+- Sửa lỗi q-w-w -> qưw thay vì qw
+- Sửa lỗi drag zone bị giảm kích thước ở các tỉ lệ scale lớn
 
 ---
 Cảm ơn bạn đã lựa chọn NexusKey!

@@ -72,6 +72,7 @@ private:
     
     // Character composition
     wchar_t ComposeChar(const CharState& state) const;
+    void ApplyAutoUO();
     CharState* FindToneTarget();
     CharState* FindToneTargetClassic();
     CharState* FindToneTargetModern();
