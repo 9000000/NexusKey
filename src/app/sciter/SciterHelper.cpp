@@ -156,10 +156,17 @@ LRESULT handleWindowDrag(HWND hwnd, LPARAM lParam, int titleHeight, int buttonsW
     RECT clientRect{};
     GetClientRect(hwnd, &clientRect);
 
-    // Drag zone: top area excluding buttons on the right
-    const int buttonsZone = clientRect.right - buttonsWidth;
+    // Scale coordinates based on window DPI to fix drag zone at > 100% scale
+    UINT dpi = GetDpiForWindow(hwnd);
+    if (dpi == 0) dpi = 96;
 
-    if (pt.y < titleHeight && pt.x < buttonsZone) {
+    int scaledTitleHeight = MulDiv(titleHeight, dpi, 96);
+    int scaledButtonsWidth = MulDiv(buttonsWidth, dpi, 96);
+
+    // Drag zone: top area excluding buttons on the right
+    const int buttonsZone = clientRect.right - scaledButtonsWidth;
+
+    if (pt.y >= 0 && pt.y < scaledTitleHeight && pt.x >= 0 && pt.x < buttonsZone) {
         return HTCAPTION;
     }
 

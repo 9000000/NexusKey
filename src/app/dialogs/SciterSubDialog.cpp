@@ -310,15 +310,20 @@ LRESULT CALLBACK SciterSubDialog::SubclassProc(
     if (msg == WM_NCHITTEST) {
         LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
 
+        // ALWAYS check drag zone FIRST to override OS invisible resize borders (e.g. HTTOP)
+        if (s_instance) {
+            LRESULT dragResult = SciterHelper::handleWindowDrag(hwnd, lParam,
+                s_instance->config_.titleBarHeight, s_instance->config_.buttonsWidth);
+            if (dragResult == HTCAPTION) {
+                return HTCAPTION;
+            }
+        }
+
         // Prevent window from being resized by user
         if (result >= HTLEFT && result <= HTBOTTOMRIGHT) {
             return HTBORDER;
         }
 
-        if (result == HTCLIENT && s_instance) {
-            return SciterHelper::handleWindowDrag(hwnd, lParam,
-                s_instance->config_.titleBarHeight, s_instance->config_.buttonsWidth);
-        }
         return result;
     }
 

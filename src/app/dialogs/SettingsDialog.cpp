@@ -415,16 +415,18 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     if (msg == WM_NCHITTEST) {
         LRESULT result = DefSubclassProc(hwnd, msg, wParam, lParam);
 
+        // ALWAYS check drag zone FIRST to override OS invisible resize borders (e.g. HTTOP)
+        // This fixes the "dead zone" at the top edge on Windows 10
+        LRESULT dragResult = SciterHelper::handleWindowDrag(hwnd, lParam, 36, 70);
+        if (dragResult == HTCAPTION) {
+            return HTCAPTION;
+        }
+
         // Prevent window from being resized by the user dragging the borders
         if (result >= HTLEFT && result <= HTBOTTOMRIGHT) {
             return HTBORDER;
         }
 
-        if (result == HTCLIENT) {
-            // Use SciterHelper for drag zone detection
-            // Title height: 36px, Buttons zone: 70px (pin@40px + close@12px + margins)
-            return SciterHelper::handleWindowDrag(hwnd, lParam, 36, 70);
-        }
         return result;
     }
 
