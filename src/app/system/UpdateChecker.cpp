@@ -162,18 +162,16 @@ UpdateInfo UpdateChecker::CheckForUpdate() noexcept {
         // Extract release page URL
         std::string htmlUrl = ExtractJsonString(response, "html_url");
 
-        // Find architecture-specific asset
-#ifdef _WIN64
-        std::string assetName = "NextKey-x64.zip";
-#else
-        std::string assetName = "NextKey-x86.zip";
-#endif
+        // Find release asset (NexusKey.zip from v2.1.4+)
+        std::string assetUrl = FindAssetUrl(response, "NexusKey.zip");
 
-        std::string assetUrl = FindAssetUrl(response, assetName);
-
-        // Fallback: try generic name
+        // Fallback: old asset names for releases before v2.1.4
         if (assetUrl.empty()) {
-            assetUrl = FindAssetUrl(response, "NexusKey.zip");
+#ifdef _WIN64
+            assetUrl = FindAssetUrl(response, "NextKey-x64.zip");
+#else
+            assetUrl = FindAssetUrl(response, "NextKey-x86.zip");
+#endif
         }
 
         if (assetUrl.empty()) return info;

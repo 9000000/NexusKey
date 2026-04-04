@@ -15,8 +15,15 @@ RELEASE_NOTES="$REPO_ROOT/RELEASE_NOTES.md"
 
 # --- Main ---
 
-# 1. Ask for version
-read -p "Enter new version (e.g. 1.0.8): " version
+# 1. Read current version from CMakeLists.txt
+current_version=$(grep -oP 'project\(NexusKey VERSION \K[0-9]+\.[0-9]+\.[0-9]+' "$CMAKE_FILE")
+if [ -z "$current_version" ]; then
+    echo "Error: Could not read current version from $CMAKE_FILE"
+    exit 1
+fi
+
+# 2. Ask for version
+read -p "Current version: $current_version. Enter new version: " version
 if [ -z "$version" ]; then
     echo "Version cannot be empty."
     exit 1
@@ -27,7 +34,7 @@ if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-# 2. Confirm
+# 3. Confirm
 branch=$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)
 echo -e "\033[33mYou are on branch: $branch\033[0m"
 read -p "Bump version to $version and create tag v$version? (y/n) " confirm
@@ -36,7 +43,7 @@ if [[ ! "$confirm" =~ ^[yY]$ ]]; then
     exit 0
 fi
 
-# 3. Update CMakeLists.txt — single source of truth
+# 4. Update CMakeLists.txt — single source of truth
 if [ ! -f "$CMAKE_FILE" ]; then
     echo "Error: Could not find CMakeLists.txt at $CMAKE_FILE"
     exit 1
@@ -47,7 +54,7 @@ perl -i -pe "s/^(project\\(NexusKey VERSION )[0-9]+\\.[0-9]+\\.[0-9]+/\${1}$vers
 echo -e "\033[32mCMakeLists.txt updated to $version.\033[0m"
 echo -e "\033[90m  (Version.h will be regenerated automatically on next cmake configure)\033[0m"
 
-# 4. Show diff and confirm
+# 5. Show diff and confirm
 echo -e "\033[33mChanges to commit:\033[0m"
 git -C "$REPO_ROOT" diff "$CMAKE_FILE"
 
@@ -57,7 +64,7 @@ if [[ ! "$confirm2" =~ ^[yY]$ ]]; then
     exit 0
 fi
 
-# 5. Git operations
+# 6. Git operations
 echo -e "\033[36mPerforming Git operations...\033[0m"
 
 git -C "$REPO_ROOT" add "$CMAKE_FILE"
