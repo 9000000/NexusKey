@@ -25,7 +25,7 @@ function initSubDialog(scrollSelector) {
 }
 
 // Set background opacity (called from C++ via call_function)
-// Shared between all dialogs that use frosted glass effect
+// Shared between all subdialogs that use frosted glass effect
 function setBackgroundOpacity(value) {
     var opacity = value / 100;
     var container = document.getElementById("main-container");

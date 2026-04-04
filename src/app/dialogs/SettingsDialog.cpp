@@ -399,7 +399,7 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
                     double opacity = s_instance->backgroundOpacity_ / 100.0;
                     wchar_t bgColor[64];
                     if (dark) {
-                        swprintf_s(bgColor, L"rgba(18, 20, 28, %.2f)", opacity * 0.9);
+                        swprintf_s(bgColor, L"rgba(18, 20, 28, %.2f)", opacity);
                     } else {
                         swprintf_s(bgColor, L"rgba(255, 255, 255, %.2f)", opacity);
                     }
@@ -1072,7 +1072,7 @@ void SettingsDialog::initializeUI() {
         if (container.is_valid()) {
             wchar_t bgColor[64];
             if (dark) {
-                swprintf_s(bgColor, L"rgba(18, 20, 28, %.2f)", opacity * 0.9);
+                swprintf_s(bgColor, L"rgba(18, 20, 28, %.2f)", opacity);
             } else {
                 swprintf_s(bgColor, L"rgba(255, 255, 255, %.2f)", opacity);
             }

@@ -388,7 +388,7 @@
 }
 
 .setting-label {
-    font-size: 14px;
+    font-size: 13.5px;
     font-weight: 400;
     color: var(--text-primary);
     width: max-content;
@@ -657,8 +657,6 @@
 }
 
 .tab-body {
-    flow: vertical;
-    border-spacing: 4px;
     height: auto;
     box-sizing: border-box;
     /* overflow-y removed to allow natural content growth and accurate height measurement */
@@ -670,10 +668,7 @@
 }
 
 
-/* Reuse setting-row styles in advanced section */
-.advanced-section .setting-row {
-    padding: 4px 0;
-}
+/* Reuse setting-row styles in advanced section - Inherit 5px padding from left panel! */
 
 /* Placeholder for macro list */
 .macro-list-placeholder {
