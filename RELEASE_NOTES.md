@@ -1,7 +1,7 @@
 # NexusKey v2.1.6
 
 **✨ Cải tiến**
-- Tiếp tục tinh chỉnh UI
+- Tiếp tục tinh chỉnh cải thiện UI
 
 **🛠 Sửa lỗi**
 - Sửa lỗi dính chuột thanh chỉnh độ đục khi kéo ra ngoài cửa sổ
