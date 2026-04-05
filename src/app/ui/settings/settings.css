@@ -13,7 +13,21 @@
     overflow: hidden;
     /* No width transition - instant resize prevents blur ghost */
     font-size: 0;
-    /* Eliminate inline-block whitespace */
+/* Eliminate inline-block whitespace */
+}
+
+/* During animation: kill hover hit-testing AND all child transitions.
+   On WS_EX_LAYERED windows every mouse-move triggers full surface repaint;
+   disabling transitions means hover style recalc produces no repaint work. */
+.animating {
+    pointer-events: none;
+}
+#main-container:disabled {
+    opacity: 1;
+    filter: none;
+}
+.animating * {
+    transition: none !important;
 }
 
 /* Title Bar - spans full width, larger drag zone */
@@ -185,6 +199,15 @@
     padding: 16px 8px 16px 8px;
     /* Reduced bottom padding */
     box-sizing: border-box;
+    transform-origin: left center;
+    animation: advancedSlide 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    behavior: layer;
+    image-rendering: optimize-speed;
+}
+
+@keyframes advancedSlide {
+    0% { opacity: 0; transform: translate(-20px, 0); }
+    100% { opacity: 1; transform: translate(0, 0); }
 }
 
 /* (Removed: Arrow icon styles - now using toggle switch) */
@@ -584,48 +607,54 @@
    ADVANCED SECTION - HORIZONTAL TABS LAYOUT
    ============================================ */
 
-/* Tab Header (horizontal tabs at top) - segmented control style */
+/* Tab Header (Sliding Pill Segmented Control) */
 .tab-header {
-    display: flex;
+    position: relative;
+    flow: horizontal;
     justify-content: center;
-    padding: 3px 16px 6px 16px;
-    background: transparent;
+    width: max-content;
+    padding: 5px;
+    margin: 0 * 12px *;
+    background: var(--bg-card-solid);
+    border-radius: 14px;
+    box-shadow: inset 0 0 0 1px var(--border-input), 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.tab-indicator {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    height: 28px;
+    background: var(--color-primary);
+    border-radius: 10px;
+    box-shadow: 0 2px 6px rgba(62, 197, 75, 0.3);
+    transition: left 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
+                width 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+    z-index: 1;
 }
 
 .tab-item {
-    padding: 8px 12px;
-    font-size: 12px;
+    position: relative;
+    z-index: 2;
+    padding: 6px 14px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--text-secondary);
     text-align: center;
     cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
+    transition: color 0.15s ease;
     border: none;
-    box-shadow: inset 0 0 0 1px var(--border-inset);
-    background: var(--bg-card-tab);
-}
-
-/* First tab - round left corners */
-.tab-item:first-child {
-    border-radius: 6px 0 0 6px;
-}
-
-/* Last tab - round right corners */
-.tab-item:last-child {
-    border-radius: 0 6px 6px 0;
+    background: transparent;
+    border-radius: 10px;
+    white-space: nowrap;
 }
 
 .tab-item:hover {
-    background: var(--color-primary-light);
-    color: var(--color-primary);
-    box-shadow: inset 0 0 0 1px var(--color-primary);
+    color: var(--text-primary);
 }
 
 .tab-item.active {
     color: white;
-    background: var(--color-primary);
-    box-shadow: inset 0 0 0 1px var(--color-primary);
 }
 
 /* Tab Content Area (below tabs) */
@@ -636,14 +665,21 @@
     /* Replaces flex: 1 */
 }
 
-/* Tab Panels - Sciter native pattern using visibility + :expanded state */
-/* Sciter-specific: 'none' is equivalent to standard CSS 'hidden' */
+/* Tab Panels - with fade and slide transition */
+/* behavior:layer buffers subtree into offscreen bitmap for hardware BitBlt during animation */
 .tab-panel {
     visibility: none;
+    opacity: 0;
+    transform: translate(0, 10px);
+    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    behavior: layer;
+    image-rendering: optimize-speed;
 }
 
 .tab-panel:expanded {
     visibility: visible;
+    opacity: 1;
+    transform: translate(0, 0);
 }
 
 

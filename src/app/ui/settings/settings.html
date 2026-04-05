@@ -219,7 +219,8 @@
         <!-- Advanced Section (Right Panel - hidden by default) -->
         <div class="advanced-section" id="advanced-section">
             <!-- Tab Header (horizontal tabs at top) -->
-            <div class="tab-header">
+            <div class="tab-header" id="advanced-tabs">
+                <div class="tab-indicator" id="tab-indicator"></div>
                 <div class="tab-item active" data-tab="1" data-i18n="s.tab_input">Bộ gõ</div>
                 <div class="tab-item" data-tab="2" data-i18n="s.tab_macro">Gõ tắt</div>
                 <div class="tab-item" data-tab="3" data-i18n="s.tab_system">Hệ thống</div>
@@ -234,8 +235,7 @@
                         <!-- NHẬP LIỆU CƠ BẢN -->
                         <!-- 1. Modern diacritics (oà, uý) -->
                         <div class="setting-row">
-                            <span class="setting-label" data-i18n="s.modern_ortho">Đặt dấu oà, uý (thay vì òa,
-                                úy)</span>
+                            <span class="setting-label" data-i18n="s.modern_ortho">Đặt dấu oà, uý (thay vì òa, úy)</span>
                             <div class="spacer" style="width: *"></div>
                             <div class="toggle-switch-small" id="modern-ortho">
                                 <span class="toggle-label-i">I</span>
@@ -244,53 +244,7 @@
                             </div>
                             <input type="hidden" id="val-modern-ortho" value="0">
                         </div>
-                        <!-- 2. Auto capitalize -->
-                        <div class="setting-row">
-                            <span class="setting-label" data-i18n="s.auto_caps">Viết hoa chữ cái đầu câu</span>
-                            <div class="spacer" style="width: *"></div>
-                            <div class="toggle-switch-small" id="auto-caps">
-                                <span class="toggle-label-i">I</span>
-                                <span class="toggle-label-o">O</span>
-                                <div class="toggle-thumb-small"></div>
-                            </div>
-                            <input type="hidden" id="val-auto-caps" value="0">
-                        </div>
-                        <!-- 3. Allow ZWJF consonants -->
-                        <div class="setting-row group-last">
-                            <span class="setting-label" data-i18n="s.allow_zwjf">Cho phép "z w j f" làm phụ âm
-                                đầu</span>
-                            <div class="spacer" style="width: *"></div>
-                            <div class="toggle-switch-small" id="allow-zwjf">
-                                <span class="toggle-label-i">I</span>
-                                <span class="toggle-label-o">O</span>
-                                <div class="toggle-thumb-small"></div>
-                            </div>
-                            <input type="hidden" id="val-allow-zwjf" value="0">
-                        </div>
-                        <!-- KIỂM TRA CHÍNH TẢ -->
-                        <!-- 4. Spell check -->
-                        <div class="setting-row">
-                            <span class="setting-label" data-i18n="s.spell_check">Kiểm tra chính tả</span>
-                            <div class="spacer" style="width: *"></div>
-                            <div class="toggle-switch-small" id="spell-check">
-                                <span class="toggle-label-i">I</span>
-                                <span class="toggle-label-o">O</span>
-                                <div class="toggle-thumb-small"></div>
-                            </div>
-                            <input type="hidden" id="val-spell-check" value="0">
-                        </div>
-                        <!-- 5. Restore key on wrong word -->
-                        <div class="setting-row">
-                            <span class="setting-label" data-i18n="s.restore_key">Tự khôi phục phím với từ sai</span>
-                            <div class="spacer" style="width: *"></div>
-                            <div class="toggle-switch-small" id="restore-key">
-                                <span class="toggle-label-i">I</span>
-                                <span class="toggle-label-o">O</span>
-                                <div class="toggle-thumb-small"></div>
-                            </div>
-                            <input type="hidden" id="val-restore-key" value="0">
-                        </div>
-                        <!-- 5.5 Cho phép gõ tắt tiếng Anh -->
+                        <!-- 2. Gõ tự do -->
                         <div class="setting-row">
                             <span class="setting-label" data-i18n="s.allow_english_bypass">Gõ tự do</span>
                             <button class="btn-info"
@@ -310,10 +264,54 @@
                             </div>
                             <input type="hidden" id="val-allow-english-bypass" value="0">
                         </div>
-                        <!-- 6. Temp disable spell with Ctrl -->
+                        <!-- 3. Auto capitalize -->
+                        <div class="setting-row">
+                            <span class="setting-label" data-i18n="s.auto_caps">Viết hoa chữ cái đầu câu</span>
+                            <div class="spacer" style="width: *"></div>
+                            <div class="toggle-switch-small" id="auto-caps">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-auto-caps" value="0">
+                        </div>
+                        <!-- 4. Allow ZWJF consonants -->
+                        <div class="setting-row group-last">
+                            <span class="setting-label" data-i18n="s.allow_zwjf">Cho phép "z w j f" làm phụ âm đầu</span>
+                            <div class="spacer" style="width: *"></div>
+                            <div class="toggle-switch-small" id="allow-zwjf">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-allow-zwjf" value="0">
+                        </div>
+                        <!-- KIỂM TRA CHÍNH TẢ -->
+                        <!-- 5. Spell check -->
+                        <div class="setting-row">
+                            <span class="setting-label" data-i18n="s.spell_check">Kiểm tra chính tả</span>
+                            <div class="spacer" style="width: *"></div>
+                            <div class="toggle-switch-small" id="spell-check">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-spell-check" value="0">
+                        </div>
+                        <!-- 6. Restore key on wrong word -->
+                        <div class="setting-row">
+                            <span class="setting-label" data-i18n="s.restore_key">Tự khôi phục phím với từ sai</span>
+                            <div class="spacer" style="width: *"></div>
+                            <div class="toggle-switch-small" id="restore-key">
+                                <span class="toggle-label-i">I</span>
+                                <span class="toggle-label-o">O</span>
+                                <div class="toggle-thumb-small"></div>
+                            </div>
+                            <input type="hidden" id="val-restore-key" value="0">
+                        </div>
+                        <!-- 7. Temp disable spell with Ctrl -->
                         <div class="setting-row group-last" id="row-temp-off-spell">
-                            <span class="setting-label" data-i18n="s.temp_off_spell">Tạm tắt chính tả bằng phím
-                                Ctrl</span>
+                            <span class="setting-label" data-i18n="s.temp_off_spell">Tạm tắt chính tả bằng phím Ctrl</span>
                             <button class="btn-info"
                                 data-tooltip="Giữ phím Ctrl trong khi gõ để tạm thời bỏ qua kiểm tra chính tả"
                                 data-i18n-tooltip="s.temp_off_spell_tooltip"><svg xmlns="http://www.w3.org/2000/svg"
@@ -330,7 +328,7 @@
                             </div>
                             <input type="hidden" id="val-temp-off-spell" value="0">
                         </div>
-                        <!-- 7. Temp disable NexusKey with Alt -->
+                        <!-- 8. Temp disable NexusKey with Alt -->
                         <div class="setting-row tooltip-upwards" id="row-temp-off-openkey">
                             <span class="setting-label" data-i18n="s.temp_off_alt">Tạm tắt NexusKey bằng phím Alt</span>
                             <button class="btn-info"
@@ -349,7 +347,7 @@
                             </div>
                             <input type="hidden" id="val-temp-off-openkey" value="0">
                         </div>
-                        <!-- 8. TSF Apps - Button + Toggle on same row -->
+                        <!-- 9. TSF Apps - Button + Toggle on same row -->
                         <div class="setting-row tooltip-upwards" id="row-tsf-apps">
                             <span class="setting-label" data-i18n="s.enable_tsf">Dùng TSF cho ứng dụng</span>
                             <button class="btn-info"

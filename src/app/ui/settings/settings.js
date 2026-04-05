@@ -138,6 +138,44 @@ function initializeAdvancedPanel() {
         };
     });
 
+    // Initialize indicator position once layout is parsed
+    requestAnimationFrame(function() {
+        var activeTab = document.querySelector(".tab-item.active");
+        if (activeTab) updateTabIndicator(activeTab);
+    });
+}
+
+// Fix Sciter animation lag caused by hover hit-testing on transparent windows.
+// On WS_EX_LAYERED windows, every mouse move triggers hit-test → style recalc →
+// full surface repaint.  During animation this doubles the render cost.
+// Strategy: suppress BOTH pointer hit-testing AND all hover transitions so that
+// mouse movement over children is essentially free (no style changes → no repaints).
+var animTimeout = null;
+function lockPointerEvents(duration) {
+    var container = document.getElementById("main-container");
+    if (!container) return;
+
+    container.classList.add("animating");
+    container.state.disabled = true;
+    if (animTimeout) clearTimeout(animTimeout);
+
+    animTimeout = setTimeout(function() {
+        container.state.disabled = false;
+        container.classList.remove("animating");
+    }, duration);
+}
+
+function updateTabIndicator(activeTab) {
+    var indicator = document.getElementById("tab-indicator");
+    if (!indicator || !activeTab) return;
+    
+    var left = activeTab.offsetLeft;
+    var width = activeTab.offsetWidth;
+    
+    if (left >= 0 && width > 0) {
+        indicator.style.left = left + "px";
+        indicator.style.width = width + "px";
+    }
 }
 
 // Initialize tab panels with Sciter native state (first tab expanded)
@@ -152,6 +190,9 @@ function initializeTabPanels() {
             panel.state.collapsed = true;
         }
     });
+
+    // Lock pointer events during tab panel slide/fade transition
+    lockPointerEvents(250);
 }
 
 // Note: Advanced settings toggle uses div-based toggle with hidden input
@@ -166,10 +207,16 @@ function toggleAdvancedSettings() {
 
         if (isExpanded) {
             container.classList.remove("expanded");
-
+            lockPointerEvents(250); // Lock during collapse
         } else {
             container.classList.add("expanded");
-
+            lockPointerEvents(300); // Lock during expand (0.25s + margin)
+            
+            // Set indicator position after layout expands
+            requestAnimationFrame(function() {
+                var activeTab = document.querySelector(".tab-item.active");
+                if (activeTab) updateTabIndicator(activeTab);
+            });
         }
 
         // Notify C++ to resize window
@@ -184,13 +231,17 @@ function toggleAdvancedSettings() {
 function switchTab(tabIndex) {
     // Update active tab header (visual only, use classList)
     const tabItems = document.querySelectorAll(".tab-item");
+    var activeTab = null;
     tabItems.forEach(function (tab) {
         if (tab.getAttribute("data-tab") === tabIndex) {
             tab.classList.add("active");
+            activeTab = tab;
         } else {
             tab.classList.remove("active");
         }
     });
+
+    if (activeTab) updateTabIndicator(activeTab);
 
     // Update tab panels using Sciter native state (no flicker)
     const tabPanels = document.querySelectorAll(".tab-panel");
