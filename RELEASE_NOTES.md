@@ -1,10 +1,7 @@
-# NexusKey v2.1.3
+# NexusKey v2.1.4
 
 **🛠 Sửa lỗi:**
-- Sửa lỗi cập nhật không hoạt động
-- Sửa lỗi đặt dấu móc uo trong vni không hoạt động đúng: uớn thay vì ướn
-- Sửa lỗi q-w-w -> qưw thay vì qw
-- Sửa lỗi drag zone bị giảm kích thước ở các tỉ lệ scale lớn
+- Sửa lỗi kéo thả cửa sổ trên Windows 10: chỉ kéo được phần nhỏ trên cùng title bar, nay đã kéo được toàn bộ
 
 ---
 Cảm ơn bạn đã lựa chọn NexusKey!
