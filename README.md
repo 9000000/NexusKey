@@ -38,10 +38,6 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 
 ---
 
-Hiểu rồi — README thì cần **gọn, rõ, scan nhanh**. Đây là phiên bản tối ưu:
-
----
-
 ## 🚀 Key Features
 
 * **Smart Switch per app**
