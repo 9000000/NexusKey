@@ -138,6 +138,25 @@ template<typename CharStateT>
     return dIdx;
 }
 
+/// Pre-check for stroke-D modifier: returns true if applying đ would create an
+/// invalid consonant cluster (e.g., "drop" + d → "đrop" with coda "p" already present).
+/// When onset 'd' (position 0) is immediately followed by a vowel (e.g. "doc"),
+/// applying stroke gives [đ + vowel + coda] — perfectly valid Vietnamese structure.
+/// Works with both Telex::CharState and Vni::CharState.
+template<typename CharStateT>
+[[nodiscard]] inline bool IsStrokeDBlockedByCoda(
+        const CharStateT* states, size_t count, size_t dTarget) noexcept {
+    bool isSimpleOnsetVowelCoda = (dTarget == 0 && count > 1 && states[1].IsVowel());
+    if (isSimpleOnsetVowelCoda) return false;
+
+    size_t codaLen = 0;
+    for (size_t j = count; j-- > 0;) {
+        if (states[j].IsVowel() || states[j].IsD()) break;
+        ++codaLen;
+    }
+    return codaLen >= 1;
+}
+
 /// Returns true if the buffer ends with a stop-final consonant (c, ch, k, p, t)
 /// preceded by at least one vowel. Scans backward from end.
 /// Stop finals only accept Acute and Dot tones in Vietnamese phonology.

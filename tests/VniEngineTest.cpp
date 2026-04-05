@@ -447,6 +447,97 @@ TEST_F(VniEngineTest, Stroke_Initial_StillWorks) {
     EXPECT_EQ(engine_->Peek(), L"đi");
 }
 
+// ============================================================================
+// MODIFIER SWITCHING (Circumflex ↔ Breve/Horn)
+// ============================================================================
+
+TEST_F(VniEngineTest, ModifierSwitch_CircumflexToBreve_CodaN) {
+    // "chận+8" → "chặn" (â→ă via breve key across coda 'n')
+    TypeString(*engine_, L"cha6n5");  // chận
+    EXPECT_EQ(engine_->Peek(), L"chận");
+    TypeString(*engine_, L"8");       // switch â→ă
+    EXPECT_EQ(engine_->Peek(), L"chặn");
+}
+
+TEST_F(VniEngineTest, ModifierSwitch_BreveToCircumflex_CodaN) {
+    // "chặn+6" → "chận" (ă→â via circumflex key across coda 'n')
+    TypeString(*engine_, L"cha8n5");  // chặn
+    EXPECT_EQ(engine_->Peek(), L"chặn");
+    TypeString(*engine_, L"6");       // switch ă→â
+    EXPECT_EQ(engine_->Peek(), L"chận");
+}
+
+TEST_F(VniEngineTest, ModifierSwitch_CircumflexToBreve_NoCoda) {
+    // "â+8" → "ă"
+    TypeString(*engine_, L"a68");
+    EXPECT_EQ(engine_->Peek(), L"ă");
+}
+
+TEST_F(VniEngineTest, ModifierSwitch_BreveToCircumflex_NoCoda) {
+    // "ă+6" → "â"
+    TypeString(*engine_, L"a86");
+    EXPECT_EQ(engine_->Peek(), L"â");
+}
+
+TEST_F(VniEngineTest, ModifierSwitch_CircumflexToHorn_O) {
+    // "ô+7" → "ơ" (circumflex→horn on 'o')
+    TypeString(*engine_, L"o67");
+    EXPECT_EQ(engine_->Peek(), L"ơ");
+}
+
+TEST_F(VniEngineTest, ModifierSwitch_HornToCircumflex_O) {
+    // "ơ+6" → "ô" (horn→circumflex on 'o')
+    TypeString(*engine_, L"o76");
+    EXPECT_EQ(engine_->Peek(), L"ô");
+}
+
+TEST_F(VniEngineTest, ModifierSwitch_CircumflexToBreve_WithTone) {
+    // Tone preserved: "tấn+8" → "tắn"
+    TypeString(*engine_, L"ta6n1");  // tấn
+    EXPECT_EQ(engine_->Peek(), L"tấn");
+    TypeString(*engine_, L"8");       // switch â→ă
+    EXPECT_EQ(engine_->Peek(), L"tắn");
+}
+
+// ============================================================================
+// TONE RELOCATION AFTER HORN MODIFIER
+// ============================================================================
+
+TEST_F(VniEngineTest, ToneReloc_HornOnUO_MovesToneToO) {
+    // "tu2o7ng" → "tường" (tone relocates from ư to ơ)
+    TypeString(*engine_, L"tu2o7ng");
+    EXPECT_EQ(engine_->Peek(), L"tường");
+}
+
+TEST_F(VniEngineTest, ToneReloc_HornOnU_ToneStaysOnHorn) {
+    // "cu1a7" → "cứa" (tone stays on ư — horn vowel P1 priority)
+    TypeString(*engine_, L"cu1a7");
+    EXPECT_EQ(engine_->Peek(), L"cứa");
+}
+
+// ============================================================================
+// ENGLISH PROTECTION — INVALID ADJACENT VOWEL PAIRS
+// ============================================================================
+
+TEST_F(VniEngineTest, EnglishProt_InvalidVowelPair_EA_BlocksTone) {
+    // "sea1" → "sea1" (ea is not a Vietnamese diphthong)
+    TypeString(*engine_, L"sea1");
+    EXPECT_EQ(engine_->Peek(), L"sea1");
+}
+
+TEST_F(VniEngineTest, EnglishProt_InvalidVowelPair_OY_BlocksTone) {
+    // "boy1" → "boy1" (oy is not a Vietnamese diphthong)
+    TypeString(*engine_, L"boy1");
+    EXPECT_EQ(engine_->Peek(), L"boy1");
+}
+
+TEST_F(VniEngineTest, EnglishProt_ValidVowelPair_OA_AllowsTone) {
+    // "hoa1" → "hóa" (oa is coda-aware: no coda → tone on first vowel 'o')
+    TypeString(*engine_, L"hoa1");
+    EXPECT_EQ(engine_->Peek(), L"hóa");
+}
+
+
 }  // namespace
 }  // namespace Vni
 }  // namespace NextKey

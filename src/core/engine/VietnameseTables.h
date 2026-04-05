@@ -197,4 +197,15 @@ inline wchar_t ToLowerVietnamese(wchar_t ch) {
     return towlower(ch);
 }
 
+//=============================================================================
+// Shared character classification — no towlower() call
+// Used by both TelexEngine and VniEngine (eliminates duplicate code)
+//=============================================================================
+
+/// Vowel check handling both cases directly (no locale-dependent towlower)
+constexpr bool IsVowelChar(wchar_t c) noexcept {
+    return c == L'a' || c == L'e' || c == L'i' || c == L'o' || c == L'u' || c == L'y' ||
+           c == L'A' || c == L'E' || c == L'I' || c == L'O' || c == L'U' || c == L'Y';
+}
+
 }  // namespace NextKey

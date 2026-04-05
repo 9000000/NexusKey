@@ -18,27 +18,22 @@ namespace {
 // Telex-specific helpers (tone key mapping etc.)
 //=============================================================================
 
-bool IsToneKey(wchar_t c) {
-    wchar_t lower = towlower(c);
-    return lower == L's' || lower == L'f' || lower == L'r' ||
-           lower == L'x' || lower == L'j';
+// IsVowelChar is shared — defined in VietnameseTables.h
+
+constexpr bool IsToneKey(wchar_t c) noexcept {
+    return c == L's' || c == L'f' || c == L'r' || c == L'x' || c == L'j' ||
+           c == L'S' || c == L'F' || c == L'R' || c == L'X' || c == L'J';
 }
 
-Tone KeyToTone(wchar_t c) {
-    switch (towlower(c)) {
-        case L's': return Tone::Acute;
-        case L'f': return Tone::Grave;
-        case L'r': return Tone::Hook;
-        case L'x': return Tone::Tilde;
-        case L'j': return Tone::Dot;
+constexpr Tone KeyToTone(wchar_t c) noexcept {
+    switch (c) {
+        case L's': case L'S': return Tone::Acute;
+        case L'f': case L'F': return Tone::Grave;
+        case L'r': case L'R': return Tone::Hook;
+        case L'x': case L'X': return Tone::Tilde;
+        case L'j': case L'J': return Tone::Dot;
         default: return Tone::None;
     }
-}
-
-bool IsVowelChar(wchar_t c) {
-    wchar_t lower = towlower(c);
-    return lower == L'a' || lower == L'e' || lower == L'i' ||
-           lower == L'o' || lower == L'u' || lower == L'y';
 }
 
 /// Map Modifier enum to flat array column index (Circumflex=0, Breve=1, Horn=2)
@@ -258,23 +253,8 @@ void TelexEngine::PushChar(wchar_t c) {
     // Only fires when FindStrokeDTarget finds a target — doesn't affect plain 'd' in "wind".
     if (lower == L'd' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
         size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
-        if (dTarget != SIZE_MAX) {
-            // When onset 'd' (position 0) is immediately followed by a vowel (e.g. "doc"),
-            // applying stroke gives [đ + vowel + coda] — perfectly valid Vietnamese structure.
-            // When onset 'd' is followed by another consonant (e.g. "drop" → states[1]='r'),
-            // the cluster is English-style; block the modifier to prevent "dropdown" → "đrơpn".
-            bool isSimpleOnsetVowelCoda = (dTarget == 0 && states_.size() > 1 &&
-                                            states_[1].IsVowel());
-            if (!isSimpleOnsetVowelCoda) {
-                size_t codaLen = 0;
-                for (size_t j = states_.size(); j-- > 0;) {
-                    if (states_[j].IsVowel() || states_[j].IsD()) break;
-                    ++codaLen;
-                }
-                if (codaLen >= 1) {
-                    engProt_.bias = LanguageBias::HardEnglish;
-                }
-            }
+        if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
+            engProt_.bias = LanguageBias::HardEnglish;
         }
     }
     if (toneEscaped_ || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish)) {

@@ -16,10 +16,7 @@ namespace Vni {
 
 namespace {
 
-bool IsVowelChar(wchar_t c) {
-    c = towlower(c);
-    return c == L'a' || c == L'e' || c == L'i' || c == L'o' || c == L'u' || c == L'y';
-}
+// IsVowelChar is shared — defined in VietnameseTables.h
 
 bool IsToneKey(wchar_t c) {
     return c >= L'1' && c <= L'5';
@@ -199,6 +196,12 @@ void VniEngine::PushChar(wchar_t c) {
             }
             // Structural hard-English: V+C+V pattern is impossible in Vietnamese syllables.
             if (IsHardEnglishToneContext(states_.data(), states_.size(), c)) {
+                engProt_.bias = LanguageBias::HardEnglish;
+                asLiteral(); return;
+            }
+            // Adjacent plain vowel pair with no Vietnamese diphthong rule
+            // (e.g., 'ea' in "search", 'ae' in "aerial", 'oy' in "boy").
+            if (HasInvalidAdjacentVowelPair(states_.data(), states_.size())) {
                 engProt_.bias = LanguageBias::HardEnglish;
                 asLiteral(); return;
             }
@@ -497,7 +500,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
         }
     }
 
-    // Generic two-pass scan for remaining modifier cases (non-uo horn, circumflex, breve)
+    // Generic three-pass scan for remaining modifier cases (non-uo horn, circumflex, breve)
     // Pass 1: find rightmost unmodified vowel that accepts this modifier
     for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
         if (!it->IsVowel()) continue;
@@ -518,6 +521,36 @@ bool VniEngine::ProcessModifier(wchar_t c) {
         }
 
         if (canApply && it->mod == Modifier::None) {
+            it->mod = targetMod;
+            return true;
+        }
+    }
+
+    // Pass 1.5: switch between compatible modifiers on the same vowel
+    // e.g., â(circumflex)+8→ă(breve), ă(breve)+6→â(circumflex), ô(circumflex)+7→ơ(horn)
+    for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
+        if (!it->IsVowel()) continue;
+        wchar_t base = towlower(it->base);
+
+        bool canSwitch = false;
+        switch (targetMod) {
+            case Modifier::Circumflex:
+                // ă→â (breve→circumflex on 'a'), ơ→ô (horn→circumflex on 'o')
+                canSwitch = (base == L'a' && it->mod == Modifier::Breve) ||
+                            (base == L'o' && it->mod == Modifier::Horn);
+                break;
+            case Modifier::Horn:
+                // ô→ơ (circumflex→horn on 'o')
+                canSwitch = (base == L'o' && it->mod == Modifier::Circumflex);
+                break;
+            case Modifier::Breve:
+                // â→ă (circumflex→breve on 'a')
+                canSwitch = (base == L'a' && it->mod == Modifier::Circumflex);
+                break;
+            default: break;
+        }
+
+        if (canSwitch) {
             it->mod = targetMod;
             return true;
         }
