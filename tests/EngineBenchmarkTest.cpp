@@ -180,13 +180,13 @@ TEST_F(EngineBenchmarkTest, Telex_Sentence_Throughput) {
         engine.Reset();
         for (wchar_t c : sentence) {
             if (c == L' ' || c == L',') {
-                engine.Commit();
+                (void)engine.Commit();
                 engine.Reset();
             } else {
                 engine.PushChar(c);
             }
         }
-        engine.Commit();
+        (void)engine.Commit();
     }, 20000);
 
     double perCharNs = r.avgNs / static_cast<double>(charCount);
@@ -220,13 +220,13 @@ TEST_F(EngineBenchmarkTest, Telex_EnglishPassthrough) {
         engine.Reset();
         for (wchar_t c : text) {
             if (c == L' ') {
-                engine.Commit();
+                (void)engine.Commit();
                 engine.Reset();
             } else {
                 engine.PushChar(c);
             }
         }
-        engine.Commit();
+        (void)engine.Commit();
     }, 20000);
 
     double perCharNs = r.avgNs / static_cast<double>(charCount);

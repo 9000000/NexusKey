@@ -459,6 +459,11 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                         toneEscaped_ = true;  // User canceled modifier → treat rest as English
                         return true;
                     }
+                    if (it->mod == Modifier::Breve && lower == L'a') {
+                        it->mod = Modifier::Circumflex;
+                        RelocateToneToTarget();
+                        return true;
+                    }
                     if (it->mod == Modifier::Horn && lower == L'o') {
                         auto oIndex = static_cast<size_t>(states_.rend() - it - 1);
                         it->mod = Modifier::Circumflex;
@@ -702,8 +707,9 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         return true;
     }
 
-    // P7: Standalone 'a' → breve
-    if (aIdx != SIZE_MAX && states_[aIdx].mod == Modifier::None) {
+    // P7: Standalone 'a' → breve (or switch circumflex → breve: â→ă)
+    if (aIdx != SIZE_MAX && (states_[aIdx].mod == Modifier::None ||
+                              states_[aIdx].mod == Modifier::Circumflex)) {
         states_[aIdx].mod = Modifier::Breve;
         return true;
     }

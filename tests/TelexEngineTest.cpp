@@ -3469,6 +3469,60 @@ TEST_F(TelexEngineTest, SpellCheck_ConsonantCluster_NoCrash) {
     EXPECT_FALSE(engine_->Peek().empty());
 }
 
+// ============================================================================
+// MODIFIER SWITCHING (Circumflex ↔ Breve via 'a'/'w' across coda)
+// ============================================================================
+
+TEST_F(TelexEngineTest, ModifierSwitch_CircumflexToBreve_CodaN) {
+    // "chậnw" → "chặn" (â→ă via 'w' across coda 'n')
+    TypeString(*engine_, L"chaajnw");
+    EXPECT_EQ(engine_->Peek(), L"chặn");
+}
+
+TEST_F(TelexEngineTest, ModifierSwitch_BreveToCircumflex_CodaN) {
+    // "chặna" → "chận" (ă→â via 'a' across coda 'n')
+    TypeString(*engine_, L"chawjna");
+    EXPECT_EQ(engine_->Peek(), L"chận");
+}
+
+TEST_F(TelexEngineTest, ModifierSwitch_CircumflexToBreve_CodaM) {
+    // "châmw" → "chăm" (â→ă via 'w' across coda 'm')
+    TypeString(*engine_, L"chaamw");
+    EXPECT_EQ(engine_->Peek(), L"chăm");
+}
+
+TEST_F(TelexEngineTest, ModifierSwitch_BreveToCircumflex_CodaT) {
+    // "chặta" → "chật" (ă→â via 'a' across coda 't')
+    TypeString(*engine_, L"chawjta");
+    EXPECT_EQ(engine_->Peek(), L"chật");
+}
+
+TEST_F(TelexEngineTest, ModifierSwitch_CircumflexToBreve_WithTone) {
+    // Tone must be preserved when switching â→ă
+    // "tấnw" → "tắn" (â+sắc → ă+sắc)
+    TypeString(*engine_, L"taasnw");
+    EXPECT_EQ(engine_->Peek(), L"tắn");
+}
+
+TEST_F(TelexEngineTest, ModifierSwitch_BreveToCircumflex_WithTone) {
+    // Tone must be preserved when switching ă→â
+    // "tắna" → "tấn" (ă+sắc → â+sắc)
+    TypeString(*engine_, L"tawsna");
+    EXPECT_EQ(engine_->Peek(), L"tấn");
+}
+
+TEST_F(TelexEngineTest, ModifierSwitch_NoCoda_CircumflexToBreve) {
+    // Adjacent: "âw" → "ă" (no coda, direct switch)
+    TypeString(*engine_, L"aaw");
+    EXPECT_EQ(engine_->Peek(), L"ă");
+}
+
+TEST_F(TelexEngineTest, ModifierSwitch_NoCoda_BreveToCircumflex) {
+    // Adjacent: "ăa" → "â" (no coda, direct switch)
+    TypeString(*engine_, L"awa");
+    EXPECT_EQ(engine_->Peek(), L"â");
+}
+
 }  // namespace
 }  // namespace Telex
 }  // namespace NextKey
