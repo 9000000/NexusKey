@@ -150,12 +150,6 @@ void SmartSwitchManager::LoadFromMap(const std::unordered_map<std::wstring, bool
 #endif
 }
 
-std::unordered_map<std::wstring, bool> SmartSwitchManager::ExportToMap() const noexcept {
-    // Can't reverse hash → exe name. This method returns an empty map.
-    // TOML save must use the original exe names from the caller's map.
-    return {};
-}
-
 bool SmartSwitchManager::IsConnected() const noexcept {
 #ifdef _WIN32
     return pImpl_->pState != nullptr && pImpl_->pState->magic == SmartSwitchState::MAGIC_VALUE;

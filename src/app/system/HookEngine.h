@@ -147,6 +147,7 @@ private:
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
     void ReloadAppOverrides();
+    void SaveEnglishModeAppsIfDirty();  // Persist English-mode apps to TOML
 
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
@@ -182,7 +183,8 @@ private:
     bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
     bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
     bool modeBeforeExclude_ = true;   // Vietnamese mode before entering excluded app
-    std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode (for TOML save)
+    std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
+    bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode
     std::wstring currentExe_;  // Currently focused app
     std::wstring previousExe_;  // Previously focused app (for tray menu context)

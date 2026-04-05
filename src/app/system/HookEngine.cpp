@@ -97,9 +97,16 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     autoCapState_ = 0;
     engine_ = EngineFactory::Create(config);
 
-    // Create shared memory for smart switch (RAM-only, no TOML persistence)
+    // Create shared memory for smart switch and load persisted English-mode apps
     if (smartSwitch_) {
         (void)smartSwitchMgr_.Create();
+        auto englishApps = ConfigManager::LoadEnglishModeApps(ConfigManager::GetConfigPath());
+        for (auto& app : englishApps) {
+            appModeMap_[std::move(app)] = false;  // false = English mode
+        }
+        if (!appModeMap_.empty()) {
+            smartSwitchMgr_.LoadFromMap(appModeMap_);
+        }
     }
 
     currentCodeTable_ = config.codeTable;
@@ -182,7 +189,8 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
 
 void HookEngine::Stop() {
     HOOK_LOG(L"=== HookEngine::Stop ===");
-    // Persist per-app code table data (only entries differing from global)
+    // Persist smart switch English-mode apps to TOML before shutdown
+    SaveEnglishModeAppsIfDirty();
     if (keyboardHook_) {
         UnhookWindowsHookEx(keyboardHook_);
         keyboardHook_ = nullptr;
@@ -1449,6 +1457,26 @@ void HookEngine::ReloadAppOverrides() {
     }
 }
 
+void HookEngine::SaveEnglishModeAppsIfDirty() {
+    if (!appModeDirty_ || !smartSwitch_) return;
+    appModeDirty_ = false;
+
+    std::vector<std::wstring> englishApps;
+    for (const auto& [exe, isVietnamese] : appModeMap_) {
+        if (!isVietnamese) {
+            englishApps.push_back(exe);
+        }
+    }
+
+    // Cap at shared memory limit
+    if (englishApps.size() > kMaxSmartSwitchEntries) {
+        englishApps.resize(kMaxSmartSwitchEntries);
+    }
+
+    (void)ConfigManager::SaveEnglishModeApps(ConfigManager::GetConfigPath(), englishApps);
+    HOOK_LOG(L"  SaveEnglishModeApps: persisted %zu English-mode apps", englishApps.size());
+}
+
 void HookEngine::CheckLayoutChange() {
     HWND fg = GetForegroundWindow();
     if (!fg) return;
@@ -1539,6 +1567,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         }
         appModeMap_[currentExe_] = vietnameseMode_;
         smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
+        appModeDirty_ = true;
     }
 
     // Get new app (save previous for tray menu context)

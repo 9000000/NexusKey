@@ -36,9 +36,6 @@ public:
     /// Populate shared memory from a map (called at startup from TOML data)
     void LoadFromMap(const std::unordered_map<std::wstring, bool>& map) noexcept;
 
-    /// Export current state to a map (for TOML save on exit)
-    [[nodiscard]] std::unordered_map<std::wstring, bool> ExportToMap() const noexcept;
-
     /// Check if connected
     [[nodiscard]] bool IsConnected() const noexcept;
 

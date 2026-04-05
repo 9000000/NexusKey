@@ -406,6 +406,45 @@ bool ConfigManager::SaveExcludedApps(const std::wstring& path,
     }
 }
 
+std::vector<std::wstring> ConfigManager::LoadEnglishModeApps(const std::wstring& path) {
+    std::vector<std::wstring> apps;
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = toml::parse_file(utf8Path);
+
+        if (auto section = table["smart_switch"].as_table()) {
+            if (auto arr = (*section)["english_mode_apps"].as_array()) {
+                for (auto& item : *arr) {
+                    if (auto str = item.value<std::string>()) {
+                        apps.push_back(Utf8ToWide(*str));
+                    }
+                }
+            }
+        }
+    } catch (...) {}
+    return apps;
+}
+
+bool ConfigManager::SaveEnglishModeApps(const std::wstring& path,
+                                         const std::vector<std::wstring>& apps) {
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto tbl = LoadExistingToml(utf8Path);
+
+        toml::array arr;
+        for (auto& app : apps) {
+            arr.push_back(WideToUtf8(app));
+        }
+        toml::table section;
+        section.insert_or_assign("english_mode_apps", std::move(arr));
+        tbl.insert_or_assign("smart_switch", std::move(section));
+
+        return WriteToml(utf8Path, tbl);
+    } catch (...) {
+        return false;
+    }
+}
+
 std::vector<std::wstring> ConfigManager::LoadTsfApps(const std::wstring& path) {
     std::vector<std::wstring> apps;
     try {

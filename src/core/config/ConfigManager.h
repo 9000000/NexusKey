@@ -66,6 +66,13 @@ public:
                                                 const std::vector<std::wstring>& hardApps,
                                                 const std::vector<std::wstring>& softApps);
 
+    /// Load persisted English-mode apps for smart switch (survives restart)
+    [[nodiscard]] static std::vector<std::wstring> LoadEnglishModeApps(const std::wstring& path);
+
+    /// Save English-mode apps for smart switch (merges with existing config)
+    [[nodiscard]] static bool SaveEnglishModeApps(const std::wstring& path,
+                                                   const std::vector<std::wstring>& apps);
+
     /// Load TSF apps list from config (apps that use TSF engine instead of hook)
     [[nodiscard]] static std::vector<std::wstring> LoadTsfApps(const std::wstring& path);
 
