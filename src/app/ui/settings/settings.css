@@ -13,7 +13,7 @@
     overflow: hidden;
     /* No width transition - instant resize prevents blur ghost */
     font-size: 0;
-/* Eliminate inline-block whitespace */
+    /* Eliminate inline-block whitespace */
 }
 
 /* During animation: kill hover hit-testing AND all child transitions.
@@ -22,10 +22,12 @@
 .animating {
     pointer-events: none;
 }
+
 #main-container:disabled {
     opacity: 1;
     filter: none;
 }
+
 .animating * {
     transition: none !important;
 }
@@ -71,7 +73,9 @@
     padding: 0;
     outline: none;
     border-radius: 50%;
-    transition: background 0.2s ease, transform 0.2s ease;
+    transition:
+        background 0.2s ease,
+        transform 0.2s ease;
 }
 
 .btn-pin:hover {
@@ -188,15 +192,17 @@
 /* Override compact section for expanded mode */
 .container.expanded .compact-section {
     width: 350px;
+    padding: 16px 4px 16px 16px;
+    /* 4px right padding to create 8px uniform gap */
     padding-bottom: 16px;
-    /* Reduced for visual balance */
 }
 
 .container.expanded .advanced-section {
     display: block;
     /* Override display: none from base style */
     width: 400px;
-    padding: 16px 8px 16px 8px;
+    padding: 16px 8px 16px 4px;
+    /* 4px left to keep 8px inner gap, 8px right to fix outer excess margin */
     /* Reduced bottom padding */
     box-sizing: border-box;
     transform-origin: left center;
@@ -206,8 +212,15 @@
 }
 
 @keyframes advancedSlide {
-    0% { opacity: 0; transform: translate(-20px, 0); }
-    100% { opacity: 1; transform: translate(0, 0); }
+    0% {
+        opacity: 0;
+        transform: translate(-20px, 0);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translate(0, 0);
+    }
 }
 
 /* (Removed: Arrow icon styles - now using toggle switch) */
@@ -259,18 +272,20 @@
     font-weight: 700;
     text-align: center;
     z-index: 3;
-    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition:
+        left 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* V - visible when unchecked (thumb on left) */
 .toggle-v {
-    color: #F36267;
+    color: #f36267;
     opacity: 1;
 }
 
 /* E - hidden when unchecked, follows thumb position */
 .toggle-e {
-    color: #2FAFDA;
+    color: #2fafda;
     opacity: 0;
 }
 
@@ -571,7 +586,7 @@
     border-radius: 4px;
     padding: 0;
     cursor: pointer;
-    background: #F36267;
+    background: #f36267;
     /* Default color - will be updated via style */
 }
 
@@ -581,12 +596,12 @@
 }
 
 #btn-color-v {
-    background-color: #F36267;
+    background-color: #f36267;
     /* Default V color - Pink RGB(243,98,103) */
 }
 
 #btn-color-e {
-    background-color: #2FAFDA;
+    background-color: #2fafda;
     /* Default E color - Blue RGB(47,175,218) */
 }
 
@@ -614,10 +629,12 @@
     justify-content: center;
     width: max-content;
     padding: 5px;
-    margin: 0 * 12px *;
+    margin: 0 * 9px *; /* 9px margin (was 14px) pulls card 2 UP to natively align with card 1 */
     background: var(--bg-card-solid);
     border-radius: 14px;
-    box-shadow: inset 0 0 0 1px var(--border-input), 0 2px 8px rgba(0,0,0,0.05);
+    box-shadow:
+        inset 0 0 0 1px var(--border-input),
+        0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .tab-indicator {
@@ -628,8 +645,9 @@
     background: var(--color-primary);
     border-radius: 10px;
     box-shadow: 0 2px 6px rgba(62, 197, 75, 0.3);
-    transition: left 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
-                width 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition:
+        left 0.15s cubic-bezier(0.2, 0.8, 0.2, 1),
+        width 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
     z-index: 1;
 }
 
@@ -671,7 +689,9 @@
     visibility: none;
     opacity: 0;
     transform: translate(0, 10px);
-    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition:
+        opacity 0.2s ease,
+        transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
     behavior: layer;
     image-rendering: optimize-speed;
 }
@@ -681,7 +701,6 @@
     opacity: 1;
     transform: translate(0, 0);
 }
-
 
 .tab-title {
     font-size: 16px;
@@ -702,7 +721,6 @@
     border-radius: 12px;
     box-shadow: inset 0 0 0 1px var(--border-card);
 }
-
 
 /* Reuse setting-row styles in advanced section - Inherit 5px padding from left panel! */
 
@@ -725,7 +743,8 @@
     text-align: center;
     padding: 20px 16px;
     position: relative;
-    z-index: 1; /* Establish stacking context so update-card tooltip can render above */
+    z-index: 1;
+    /* Establish stacking context so update-card tooltip can render above */
 }
 
 .app-name {
@@ -775,7 +794,8 @@
     border-radius: 12px;
     box-shadow: inset 0 0 0 1px var(--border-card);
     position: relative;
-    z-index: 2; /* Higher than about-content so its tooltip-upwards renders above the text block */
+    z-index: 2;
+    /* Higher than about-content so its tooltip-upwards renders above the text block */
 }
 
 .update-card .setting-row {
@@ -916,15 +936,17 @@
     /* Just in case for hover effect shape */
 }
 
-.btn-info>svg {
+.btn-info > svg {
     width: 16px;
     height: 16px;
     fill: var(--text-primary);
     /* Default bright color */
-    transition: fill 0.2s ease, transform 0.2s ease;
+    transition:
+        fill 0.2s ease,
+        transform 0.2s ease;
 }
 
-.btn-info:hover>svg {
+.btn-info:hover > svg {
     fill: var(--color-primary);
     /* Highlight color on hover */
     transform: scale(1.1);
