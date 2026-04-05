@@ -1671,12 +1671,13 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
                              vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
                     NotifyModeChange();
                 }
-            } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
-                // Leaving hard-excluded app to unknown app — restore pre-exclusion mode
-                vietnameseMode_ = modeBeforeExclude_;
-                HOOK_LOG(L"  SmartSwitch: restored pre-exclude %s for '%s'",
-                         vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
-                NotifyModeChange();
+            } else {
+                // Unknown app — default to Vietnamese (the global default)
+                if (!vietnameseMode_) {
+                    vietnameseMode_ = true;
+                    HOOK_LOG(L"  SmartSwitch: default Vietnamese for unknown '%s'", currentExe_.c_str());
+                    NotifyModeChange();
+                }
             }
         } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
             // SmartSwitch OFF — still restore pre-exclusion mode when leaving hard-excluded app
