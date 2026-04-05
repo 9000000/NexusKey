@@ -38,48 +38,38 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 
 ---
 
-## Tính năng
+Hiểu rồi — README thì cần **gọn, rõ, scan nhanh**. Đây là phiên bản tối ưu:
 
-### Phương thức gõ & Bảng mã
-- **Kiểu gõ:** Telex, VNI, Simple Telex
-- **Bảng mã:** Unicode, TCVN3, VNI Windows, Unicode tổ hợp, Vietnamese Locale
-- **Vị trí dấu:** Kiểu mới (oà, uý) và kiểu cũ (òa, úy) tùy chọn
+---
 
-### Kiểm tra chính tả & Phát hiện tiếng Anh
-- **Kiểm tra chính tả** — Kiểm tra từ tiếng Việt hợp lệ, giảm thiểu đặt dấu nhầm
-- **Gõ tự do** — Cho phép đặt dấu tự do, bỏ qua kiểm tra tiếng Anh (vd: `yes` → `ýe`)
-- **Phím tắt tạm tắt** — Solo Ctrl tạm tắt spell check, Double-Alt tạm tắt tiếng Việt cho từ đang gõ
+## 🚀 Key Features
 
-### Chuyển đổi thông minh
-- **Smart Switch** — Tự động nhớ chế độ V/E cho từng ứng dụng
-- **Loại trừ ứng dụng (Hard)** — Ép English, chặn toggle hoàn toàn cho app chỉ định
-- **Loại trừ ứng dụng (Soft)** — Luôn reset về English khi mở/switch sang app, nhưng vẫn cho phép bật V bằng hotkey — lý tưởng cho game fullscreen
-- **Tự động tắt khi CJK** — Disable gõ tiếng Việt khi keyboard layout là CJK (Trung, Nhật, Hàn)
-- **Cấu hình từng ứng dụng** — Bảng mã và kiểu gõ riêng cho từng app
-- **Import/Export** — Nạp và xuất danh sách loại trừ từ file
+* **Smart Switch per app**
+  Tự động nhớ chế độ Việt/Anh theo từng ứng dụng
 
-### Macro & Gõ nhanh
-- **Macro** — Gõ tắt tự mở rộng (vd: `addr` → địa chỉ đầy đủ), hỗ trợ xuống hàng
-- **Macro trong English mode** — Cho phép macro hoạt động khi đang ở chế độ English
-- **Phụ âm nhanh** — cc→ch, gg→gi, nn→ng, và thêm phụ âm đầu/cuối nhanh
-- **Tự viết hoa** — Tự động viết hoa chữ đầu câu, hỗ trợ cả macro
+* **App Exclusion (Hard / Soft)**
+  Linh hoạt kiểm soát bật/tắt tiếng Việt theo app (phù hợp game, tool đặc thù)
 
-### Công cụ chuyển mã (Convert Tool)
-- **Bôi đen chuyển mã nhanh** — Bôi đen văn bản rồi nhấn hotkey để chuyển mã tức thì
-- **Chuyển mã tuần tự** — Tự động chuyển qua lại giữa các tùy chọn (HOA, thường, Hoa đầu câu, Bỏ dấu...) rồi quay về ban đầu. Chỉ hoạt động khi "Tự động dán + bôi đen" được bật
-- **Hỗ trợ đa bảng mã** — Chuyển đổi giữa Unicode, TCVN3, VNI Windows
+* **Advanced Macro & Typing**
+  Gõ tắt mở rộng (có xuống dòng), hoạt động cả trong English mode, hỗ trợ phụ âm nhanh
 
-### Giao diện
-- **Glassmorphism UI** — Giao diện trong suốt, blur phía sau, bo góc kiểu Windows 11
-- **Auto Theme Sync** — Tự động chuyển Light/Dark đồng bộ real-time với Windows, không cần khởi động lại
-- **Màu sắc Icon** — Tùy chọn đổi màu biểu tượng V/E trên system tray theo ý thích
-- **Song ngữ** — Giao diện hỗ trợ tiếng Việt và tiếng Anh
+* **Spell Check + Free Typing**
+  Kiểm tra chính tả tiếng Việt + cho phép override khi cần gõ tự do
 
-### Hệ thống
-- **TSF Engine** — Tích hợp Text Services Framework cho ứng dụng hiện đại, hỗ trợ chọn app dùng TSF thay hook
-- **Tự cập nhật** — Kiểm tra và cài đặt bản cập nhật tự động
-- **Tối ưu bảo mật** — Code được optimize để hạn chế các lỗ hổng bảo mật
-- **Hiệu năng cao** — Tối ưu xử lý hệ thống.
+* **Powerful Convert Tool**
+  Bôi đen → chuyển mã nhanh, hỗ trợ nhiều kiểu chuyển đổi (HOA, thường, bỏ dấu…)
+
+* **Per-App Configuration**
+  Tùy chỉnh bảng mã & kiểu gõ riêng cho từng ứng dụng
+
+* **Context-Aware Input**
+  Tự tắt khi dùng CJK, phát hiện tiếng Anh để tránh lỗi gõ
+
+* **Modern UI**
+  Glassmorphism, auto Light/Dark, tùy biến icon, hỗ trợ song ngữ
+
+* **High Performance Engine**
+  Độ trễ thấp, hỗ trợ TSF, auto update, tối ưu bảo mật
 
 ---
 
