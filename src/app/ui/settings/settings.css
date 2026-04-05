@@ -191,16 +191,14 @@
 
 /* Override compact section for expanded mode */
 .container.expanded .compact-section {
-    width: 350px;
+    width: 338px;
     padding: 16px 4px 16px 16px;
-    /* 4px right padding to create 8px uniform gap */
-    padding-bottom: 16px;
 }
 
 .container.expanded .advanced-section {
     display: block;
     /* Override display: none from base style */
-    width: 400px;
+    width: 412px;
     padding: 16px 8px 16px 4px;
     /* 4px left to keep 8px inner gap, 8px right to fix outer excess margin */
     /* Reduced bottom padding */
