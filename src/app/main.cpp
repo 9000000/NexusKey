@@ -562,7 +562,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
     // 1. Save to TOML
     (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
 
-    // 2. Sync to SharedState
+    // 2. Sync to SharedState + bump configGeneration
     SharedStateManager sm;
     if (sm.OpenReadWrite()) {
         SharedState state = sm.Read();
@@ -571,11 +571,12 @@ static void ApplyConfigChange(const TypingConfig& config) {
             state.spellCheck = config.spellCheckEnabled ? 1 : 0;
             state.codeTable = static_cast<uint8_t>(config.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config));
+            state.configGeneration++;  // HookEngine detects on next keystroke
             sm.Write(state);
         }
     }
 
-    // 3. Signal engine to pick up changes
+    // 3. Signal ConfigEvent for TSF DLL (still uses Named Event)
     ConfigEvent event;
     if (event.Initialize()) {
         event.Signal();

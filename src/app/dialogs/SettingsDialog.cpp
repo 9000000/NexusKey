@@ -1160,11 +1160,12 @@ void SettingsDialog::syncToSharedState() {
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
             state.SetHotkey(hotkeyConfig_);
+            state.configGeneration++;  // HookEngine detects this on next keystroke
             sharedState_.Write(state);
         }
     }
 
-    // Signal Engine that config has changed (cached handle)
+    // Signal ConfigEvent for TSF DLL (still uses Named Event path)
     if (configEvent_.IsValid()) {
         configEvent_.Signal();
     }
@@ -1182,10 +1183,19 @@ void SettingsDialog::saveToToml() {
 
     configDirty_ = false;
 
-    // Re-signal ConfigEvent so HookEngine reloads TOML-only fields
+    // Bump configGeneration again so HookEngine reloads TOML-only fields
     // (convert hotkey, macros, excluded/TSF apps, per-app code table).
-    // The first signal (from syncToSharedState) fired before TOML was written;
-    // this second signal picks up the fresh values.
+    // The first bump (from syncToSharedState) fired before TOML was written;
+    // this second bump picks up the fresh values.
+    if (sharedState_.IsConnected()) {
+        SharedState state = sharedState_.Read();
+        if (state.IsValid()) {
+            state.configGeneration++;
+            sharedState_.Write(state);
+        }
+    }
+
+    // Signal ConfigEvent for TSF DLL
     if (configEvent_.IsValid()) {
         configEvent_.Signal();
     }

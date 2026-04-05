@@ -251,6 +251,12 @@ private:
     bool layoutSuppressed_     = false;  // True when CJK layout active — engine passthrough, V/E mode unchanged
     bool cachedIsCompatLayout_ = true;   // Last known layout compatibility (updated in OnFocusChanged + key-up)
 
+    // Layout throttling: avoid per-keystroke Win32 API calls for rare events.
+    // Layout changes are human-speed events (seconds apart). Focus-change and
+    // key-up events also trigger immediate checks as a safety net.
+    uint8_t layoutCheckCounter_ = 0;
+    static constexpr uint8_t kLayoutCheckInterval = 16;   // Check layout every 16 keystrokes
+
     // Config reload
     ConfigEvent configEvent_;
 
@@ -261,6 +267,9 @@ private:
     uint8_t lastInputMethod_ = 0;
     uint8_t lastCodeTable_ = 0;
     void QuickSyncFromSharedState();
+    void ReloadFromToml();  // Full TOML reload (macros, excluded apps, hotkeys, etc.)
+    uint32_t lastEpoch_ = 0;             // Epoch fast path — skip full Read() when unchanged
+    uint8_t lastConfigGeneration_ = 0;   // Tracks configGeneration from SharedState
 
     // Callbacks
     ModeChangeCallback modeChangeCallback_;

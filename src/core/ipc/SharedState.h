@@ -79,8 +79,15 @@ struct SharedState {
     uint8_t  convertKeyLo;    // convert hotkey key, low byte
     uint8_t  convertKeyHi;    // convert hotkey key, high byte
 
-    // ── Reserved for future expansion (23 bytes) ──
-    uint8_t  reserved[23];
+    // ── Config reload signal (2 bytes) ──
+    // Incremented by Settings/subdialogs after saving TOML.
+    // HookEngine detects change during QuickSyncFromSharedState() and triggers full reload.
+    // Replaces Named Event (ConfigEvent) — eliminates per-keystroke WaitForSingleObject syscall.
+    uint8_t  configGeneration;   // Wraps at 255 — use != comparison, not >
+    uint8_t  reserved0;          // Padding to maintain alignment
+
+    // ── Reserved for future expansion (21 bytes) ──
+    uint8_t  reserved[21];
 
     static constexpr uint32_t MAGIC_VALUE = 0x59454B4E;    // 'NKEY'
     static constexpr uint32_t CURRENT_VERSION = 2;          // v2: added structVersion, structSize, reserved
@@ -136,6 +143,8 @@ struct SharedState {
         codeTable = 0;  // Unicode
         hotkeyMods = 0; hotkeyKeyLo = 0; hotkeyKeyHi = 0;
         convertMods = 0; convertKeyLo = 0; convertKeyHi = 0;
+        configGeneration = 0;
+        reserved0 = 0;
         for (auto& b : reserved) b = 0;
     }
 };

@@ -289,6 +289,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/SpellCheckerTest.cpp
     tests/CodeTableConverterTest.cpp
     tests/UpdateSecurityTest.cpp
+    tests/EngineBenchmarkTest.cpp
     src/app/system/UpdateSecurity.cpp
 )
 

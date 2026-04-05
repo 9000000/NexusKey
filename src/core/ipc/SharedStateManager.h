@@ -36,6 +36,10 @@ public:
     /// Write state (Core side only)
     void Write(const SharedState& state) noexcept;
 
+    /// Read epoch directly from memory-mapped region (single 32-bit read, for hot path)
+    /// Used to skip full Read() when SharedState hasn't changed.
+    [[nodiscard]] uint32_t ReadEpoch() const noexcept;
+
     /// Read flags directly from memory-mapped region (zero-copy, for hot path)
     [[nodiscard]] uint32_t ReadFlags() const noexcept;
 

@@ -285,8 +285,22 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
 void HookEngine::QuickSyncFromSharedState() {
     if (!sharedStatePtr_) return;
 
+    // Fast path: skip full struct copy if epoch hasn't changed (single 32-bit read)
+    uint32_t epoch = sharedStatePtr_->ReadEpoch();
+    if (epoch == lastEpoch_ && (epoch & 1) == 0) return;
+
     SharedState state = sharedStatePtr_->Read();
     if (!state.IsValid()) return;
+    lastEpoch_ = state.epoch;
+
+    // ── Config generation check: detect TOML changes from Settings/subdialogs ──
+    // When configGeneration changes, do a full TOML reload (macros, excluded apps, etc.).
+    // This replaces the old ConfigEvent (Named Event + WaitForSingleObject syscall).
+    if (state.configGeneration != lastConfigGeneration_) {
+        lastConfigGeneration_ = state.configGeneration;
+        NEXTKEY_LOG(L"HookEngine: configGeneration changed (%u), full TOML reload", state.configGeneration);
+        ReloadFromToml();
+    }
 
     uint32_t ff = state.GetFeatureFlags();
     uint8_t sc = state.spellCheck;
@@ -333,15 +347,19 @@ void HookEngine::QuickSyncFromSharedState() {
 }
 
 bool HookEngine::CheckConfigEvent() {
+    // Legacy path — kept for TSF DLL compatibility. HookEngine uses configGeneration instead.
     if (!configEvent_.IsValid()) {
         configEvent_.Initialize();
     }
-
     if (!configEvent_.Wait(0)) {
-        return false;  // No signal
+        return false;
     }
+    ReloadFromToml();
+    return true;
+}
 
-    NEXTKEY_LOG(L"HookEngine: config event received, reloading");
+void HookEngine::ReloadFromToml() {
+    NEXTKEY_LOG(L"HookEngine: full TOML reload");
 
     // Read TOML for fields not in SharedState (beep, smartSwitch, excludeApps, hotkey)
     auto config = ConfigManager::LoadOrDefault();
@@ -490,8 +508,6 @@ bool HookEngine::CheckConfigEvent() {
     if (configReloadCallback_) {
         configReloadCallback_();
     }
-
-    return true;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -575,16 +591,19 @@ static bool IsIncompatibleLayout(HKL hkl);
 // ═══════════════════════════════════════════════════════════
 
 bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*/) {
-    // 0. Check for config changes from Settings subprocess
-    CheckConfigEvent();
-    QuickSyncFromSharedState();  // Direct SharedState read — instant featureFlags sync
+    // 0. Sync from SharedState — pure memory read, no syscall.
+    //    Detects feature flag changes AND configGeneration bumps (triggers TOML reload).
+    QuickSyncFromSharedState();
 
     // 0b. TSF app — let TSF DLL handle all input, hook does nothing
     if (isTsfApp_) return false;
 
-    // 0c. Layout check on every keystroke — catches layout changes via Language Bar click
-    //     (those don't produce focus change or modifier key-up events).
-    CheckLayoutChange();
+    // 0c. Throttled layout check — catches layout changes via Language Bar click.
+    //     Also checked immediately on focus-change and modifier key-up (ProcessKeyUp).
+    if (++layoutCheckCounter_ >= kLayoutCheckInterval) {
+        layoutCheckCounter_ = 0;
+        CheckLayoutChange();
+    }
 
     // 1. Track modifiers for hotkey detection
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
@@ -645,7 +664,16 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
     }
 
-    // 2c. Backspace-into-committed-word state machine
+    // 2c. Fast English exit — skip commit-undo FSM when no undo is pending.
+    //      Commit-undo only applies to Vietnamese words (line 691 checks vietnameseMode_).
+    //      When English mode + undo Idle + no English macros → nothing below applies.
+    if (!vietnameseMode_ && !layoutSuppressed_ &&
+        commitUndoState_ == CommitUndoState::Idle &&
+        !(macroEnabled_ && macroInEnglish_)) {
+        return false;
+    }
+
+    // 2d. Backspace-into-committed-word state machine
     // Supports multi-word backward: stack holds up to kMaxCommitStack committed words.
     // Ready:  set after commit with space/enter, or when engine empties after BS with stack non-empty.
     // Primed: BS in Ready deletes the space; next alpha/BS triggers replay.
@@ -743,11 +771,17 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return false;
     }
 
+    // ── Cache key states once per keystroke (GetKeyState is a snapshot, safe to cache) ──
+    const bool cachedShift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    const bool cachedCapsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+    const bool cachedCtrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    const bool cachedAlt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    const bool cachedWin = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
+
     // 3a. Auto-caps state machine (Vietnamese mode only)
     if (autoCaps_) {
-        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         // '.', '?', '!'
-        if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && shift) || (vkCode == '1' && shift)) {
+        if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && cachedShift) || (vkCode == '1' && cachedShift)) {
             autoCapState_ = 1;
         } else if (vkCode == VK_SPACE && autoCapState_ == 1) {
             autoCapState_ = 2;
@@ -763,11 +797,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 3b. Macro: track ALL typed characters (OpenKey approach).
     // Alpha keys AND printable special chars are accumulated so macros with
     // special characters in their key (e.g., "url\" → "URL") can be matched.
-    if (macroEnabled_) {
+    // Skip tracking entirely when no macros are defined — avoids string ops on every keystroke.
+    if (macroEnabled_ && !macroTable_.empty()) {
         if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-            bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
-            bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
+            bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
             rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
                                      : towlower(static_cast<wchar_t>(vkCode));
         } else if (IsCommitTrigger(vkCode)) {
@@ -777,7 +810,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     // 3c. Temp off macro by Esc: press Esc with no pending text → skip macro for next word
-    if (tempOffMacroByEsc_ && macroEnabled_ && vkCode == VK_ESCAPE
+    if (tempOffMacroByEsc_ && macroEnabled_ && !macroTable_.empty() && vkCode == VK_ESCAPE
         && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
         tempMacroOff_ = true;
         HOOK_LOG(L"  tempMacroOff: enabled by Esc");
@@ -785,7 +818,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     // 3d. Macro expansion on commit trigger (uses shared TryExpandMacro helper)
-    if (macroEnabled_ && !tempMacroOff_ && IsCommitTrigger(vkCode) && !rawMacroBuffer_.empty()) {
+    if (macroEnabled_ && !macroTable_.empty() && !tempMacroOff_ && IsCommitTrigger(vkCode) && !rawMacroBuffer_.empty()) {
         wchar_t triggerChar = VkToMacroChar(vkCode);
         auto result = TryExpandMacro(triggerChar);
         if (result == MacroResult::ExpandedEatTrigger) return true;
@@ -809,12 +842,8 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     // 5. Skip if Ctrl/Alt/Win is down (allow shortcuts to pass through)
-    bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-    bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-    bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
-
-    if (ctrl || alt || win) {
-        HOOK_LOG(L"  skip: modifier held (ctrl=%d alt=%d win=%d)", ctrl, alt, win);
+    if (cachedCtrl || cachedAlt || cachedWin) {
+        HOOK_LOG(L"  skip: modifier held (ctrl=%d alt=%d win=%d)", cachedCtrl, cachedAlt, cachedWin);
         // Always reset — shortcuts like Ctrl+A/C/Z change text state in unpredictable ways.
         // Must also reset when engine is idle (count==0): commitUndoState_ and commitStack_
         // may hold a previously committed word. If not cleared, a Backspace after Ctrl+A
@@ -833,8 +862,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư)
     if (currentMethod_ == InputMethod::Telex &&
         (vkCode == VK_OEM_4 || vkCode == VK_OEM_6)) {
-        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-        if (!shift) {
+        if (!cachedShift) {
             wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
             inputHistory_.push_back(ch);
             engine_->PushChar(ch);
@@ -849,8 +877,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     if (currentMethod_ == InputMethod::VNI &&
         vkCode >= 0x31 && vkCode <= 0x39 &&
         engine_->Count() > 0) {
-        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-        if (!shift) {
+        if (!cachedShift) {
             wchar_t ch = static_cast<wchar_t>(vkCode);  // '1'–'9'
             inputHistory_.push_back(ch);
             engine_->PushChar(ch);
@@ -1347,7 +1374,7 @@ static bool IsBrowserExeName(const wchar_t* filename) {
 
 bool HookEngine::IsTrayOrTaskbarWindow(HWND hwnd) noexcept {
     if (!hwnd) return false;
-    
+
     // Ignore focus switches to our own process (Settings, Menu, Tray)
     DWORD processId;
     GetWindowThreadProcessId(hwnd, &processId);
@@ -1506,8 +1533,10 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
 void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     ResetComposition();
     tempEngineOff_ = false;
-    CheckConfigEvent();
-    QuickSyncFromSharedState();
+    // Immediate checks on focus change — layout and config may differ in new app
+    layoutCheckCounter_ = 0;
+    CheckLayoutChange();
+    QuickSyncFromSharedState();  // Detects configGeneration changes + feature flag changes
 
     HWND fg = GetForegroundWindow();
     // Use triggerHwnd (the window that fired EVENT_SYSTEM_FOREGROUND) when available.
@@ -1533,7 +1562,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         }
     }
 
-    // Skip Tool Windows (WS_EX_TOOLWINDOW). These are used for custom context menus, 
+    // Skip Tool Windows (WS_EX_TOOLWINDOW). These are used for custom context menus,
     // floating tooltips, and hidden helper windows (e.g., Discord/Telegram tray menus).
     // They are not main applications and should not change the Smart Switch state.
     LONG exStyle = GetWindowLongW(activeHwnd, GWL_EXSTYLE);

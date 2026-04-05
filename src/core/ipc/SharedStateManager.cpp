@@ -219,10 +219,22 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->convertMods = state.convertMods;
     p->convertKeyLo = state.convertKeyLo;
     p->convertKeyHi = state.convertKeyHi;
+    p->configGeneration = state.configGeneration;
+    p->reserved0 = state.reserved0;
 
     MemoryBarrier();
     p->epoch = seq + 1;  // Now even = done
 #endif
+}
+
+uint32_t SharedStateManager::ReadEpoch() const noexcept {
+#ifdef _WIN32
+    if (pImpl_->pState && pImpl_->pState->magic == SharedState::MAGIC_VALUE) {
+        // Single 32-bit read is atomic on x86 — no seqlock needed
+        return pImpl_->pState->epoch;
+    }
+#endif
+    return 0;
 }
 
 uint32_t SharedStateManager::ReadFlags() const noexcept {
