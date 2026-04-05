@@ -124,20 +124,20 @@ TEST_F(TelexEngineTest, Horn_UW_UpperCase) {
     EXPECT_EQ(engine_->Peek(), L"Ư");
 }
 
-TEST_F(TelexEngineTest, Horn_UO_DelayedTransform) {
-    // uow → uơ (no auto-ươ yet, nothing follows)
+TEST_F(TelexEngineTest, Horn_UO_DirectTransform) {
+    // uow → ươ (direct horn on both u and o)
     TypeString(*engine_, L"uow");
-    EXPECT_EQ(engine_->Peek(), L"uơ");
+    EXPECT_EQ(engine_->Peek(), L"ươ");
 }
 
 TEST_F(TelexEngineTest, Horn_UO_AutoTransform) {
-    // uown → ươn (auto-ươ triggers when 'n' follows 'uơ')
+    // uown → ươn (already ươ from P2, AutoUO not needed)
     TypeString(*engine_, L"uown");
     EXPECT_EQ(engine_->Peek(), L"ươn");
 }
 
 TEST_F(TelexEngineTest, Horn_UO_AutoTransform_WAfterConsonant) {
-    // huonw → hươn (w applied to o, auto-ươ because n already follows)
+    // huonw → hươn (w horns both u and o, n already follows)
     TypeString(*engine_, L"huonw");
     EXPECT_EQ(engine_->Peek(), L"hươn");
 }
@@ -145,14 +145,14 @@ TEST_F(TelexEngineTest, Horn_UO_AutoTransform_WAfterConsonant) {
 TEST_F(TelexEngineTest, Horn_UA_UndoCircumflex) {
     // giuaaw → giưa (w on u, undo circumflex on a)
     // When 'w' applies horn to 'u' and 'â' follows, undo the circumflex
-    TypeString(*engine_, L"giuaaw"); 
+    TypeString(*engine_, L"giuaaw");
     EXPECT_EQ(engine_->Peek(), L"giưa");
 }
 
-TEST_F(TelexEngineTest, Horn_UO_ChainedW) {
-    // uow → uơ, then second w applies horn to 'u' → ươ
+TEST_F(TelexEngineTest, Horn_UO_Escape_2State) {
+    // uoww → uo (non h/th/kh: 2-state cycle, second w escapes)
     TypeString(*engine_, L"uoww");
-    EXPECT_EQ(engine_->Peek(), L"ươ");
+    EXPECT_EQ(engine_->Peek(), L"uow");
 }
 
 TEST_F(TelexEngineTest, Horn_UO_CircumflexThenW) {
@@ -172,6 +172,84 @@ TEST_F(TelexEngineTest, Horn_O_CircumflexToHorn) {
     // loow → l + ô (from oo) + w → lơ (w replaces circumflex with horn)
     TypeString(*engine_, L"loow");
     EXPECT_EQ(engine_->Peek(), L"lơ");
+}
+
+// --- UO Horn Cycle: h/th/kh edge case prefix (3-state) ---
+
+TEST_F(TelexEngineTest, Horn_UO_HPrefix_FirstW) {
+    // huow → hươ (first w: default ươ)
+    TypeString(*engine_, L"huow");
+    EXPECT_EQ(engine_->Peek(), L"hươ");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_HPrefix_SecondW) {
+    // huoww → huơ (second w: ươ → uơ for h prefix)
+    TypeString(*engine_, L"huoww");
+    EXPECT_EQ(engine_->Peek(), L"huơ");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_HPrefix_ThirdW) {
+    // huowww → huo + w literal (third w: escape)
+    TypeString(*engine_, L"huowww");
+    EXPECT_EQ(engine_->Peek(), L"huow");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_THPrefix_FirstW) {
+    // thuow → thươ (first w: default ươ)
+    TypeString(*engine_, L"thuow");
+    EXPECT_EQ(engine_->Peek(), L"thươ");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_THPrefix_SecondW) {
+    // thuoww → thuơ (second w: ươ → uơ for th prefix)
+    TypeString(*engine_, L"thuoww");
+    EXPECT_EQ(engine_->Peek(), L"thuơ");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_THPrefix_ThirdW) {
+    // thuowww → thuo + w literal (third w: escape)
+    TypeString(*engine_, L"thuowww");
+    EXPECT_EQ(engine_->Peek(), L"thuow");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_KHPrefix_SecondW) {
+    // khuoww → khuơ (second w: ươ → uơ for kh prefix)
+    TypeString(*engine_, L"khuoww");
+    EXPECT_EQ(engine_->Peek(), L"khuơ");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_THPrefix_Thuor) {
+    // thuowwr → thuở (second w gives uơ, then r adds tone hỏi)
+    TypeString(*engine_, L"thuowwr");
+    EXPECT_EQ(engine_->Peek(), L"thuở");
+}
+
+// --- UO Horn Cycle: non-edge prefix (2-state) ---
+
+TEST_F(TelexEngineTest, Horn_UO_DPrefix_FirstW) {
+    // duow → dươ (first w: default ươ)
+    TypeString(*engine_, L"duow");
+    EXPECT_EQ(engine_->Peek(), L"dươ");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_DPrefix_SecondW) {
+    // duoww → duo + w literal (second w: escape, skip uơ)
+    TypeString(*engine_, L"duoww");
+    EXPECT_EQ(engine_->Peek(), L"duow");
+}
+
+TEST_F(TelexEngineTest, Horn_UO_NPrefix_WithFinal) {
+    // nuowng → nương (w horns both, then ng final)
+    TypeString(*engine_, L"nuowng");
+    EXPECT_EQ(engine_->Peek(), L"nương");
+}
+
+// --- AutoUO respects h/th/kh edge case ---
+
+TEST_F(TelexEngineTest, Horn_UO_HPrefix_AutoUO_Blocked) {
+    // huowwn → huơn (second w gives huơ, n does NOT trigger AutoUO for h prefix)
+    TypeString(*engine_, L"huowwn");
+    EXPECT_EQ(engine_->Peek(), L"huơn");
 }
 
 // ============================================================================
@@ -402,15 +480,15 @@ TEST_F(TelexEngineTest, Word_Nguoi) {
 }
 
 TEST_F(TelexEngineTest, Word_Huo) {
-    // huơ: w only applies to 'o', not auto-ươ since nothing follows
+    // huow → hươ (first w horns both, h prefix 3-state cycle)
     TypeString(*engine_, L"huow");
-    EXPECT_EQ(engine_->Peek(), L"huơ");
+    EXPECT_EQ(engine_->Peek(), L"hươ");
 }
 
 TEST_F(TelexEngineTest, Word_Huo_WithSecondW) {
-    // hươ: second w applies horn to 'u'
+    // huoww → huơ (second w cycles ươ → uơ for h prefix)
     TypeString(*engine_, L"huoww");
-    EXPECT_EQ(engine_->Peek(), L"hươ");
+    EXPECT_EQ(engine_->Peek(), L"huơ");
 }
 
 TEST_F(TelexEngineTest, Word_Cuoiwo_UndoHorn) {
@@ -1088,8 +1166,9 @@ TEST_F(TelexEngineTest, Tone_IA_Diphthong_Kia) {
 
 TEST_F(TelexEngineTest, TonePriority_1_Horn_Last) {
     // Priority 1: Last horn vowel (ơ, ư)
+    // uow → ươ (both horned), f → grave on ơ → ườ
     TypeString(*engine_, L"uowf");  // tone on ơ (last horn)
-    EXPECT_EQ(engine_->Peek(), L"uờ");
+    EXPECT_EQ(engine_->Peek(), L"ườ");
 }
 
 TEST_F(TelexEngineTest, TonePriority_1_UO_Cluster) {
@@ -3346,11 +3425,10 @@ TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_DropdownLiteral9Keys) {
 }
 
 TEST_F(EnglishDetectionNoSpellCheckTest, WModifier_EscapeUndosBothHorns) {
-    // "duowww": 3 w's to escape ươ back to "duow"
-    // w(1): P2 horn on 'o' → "duơ" (AutoUO needs char after pair, not applied)
-    // w(2): canPromoteUO → P5 horn on 'u' → "dươ"
-    // w(3): P4 escape → UndoHornU + clear horn → "duow"
-    TypeString(*engine_, L"duowww");
+    // "duoww": 2 w's to escape ươ back to "duow" (2-state cycle for non h/th/kh)
+    // w(1): P2 horn both → "dươ"
+    // w(2): P2 escape → clear both horns + add 'w' literal → "duow"
+    TypeString(*engine_, L"duoww");
     EXPECT_EQ(engine_->Peek(), L"duow");
 }
 

@@ -541,7 +541,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 
     // PRIORITY ORDER for 'w':
     // P1: "ua" pattern → apply horn to 'u' (mưa, được)
-    // P2: "uo" pattern → apply horn to 'o' (uơ → later AutoUO makes ươ)
+    // P2: "uo" pair horn cycle — default ươ, edge prefixes (h/th/kh) get 3-state
     // P3: "oa" pattern → apply breve to 'a' (hoặc)
     // P4: Escape - if already have horn/breve, second 'w' clears it
     // P5: Standalone 'u' → horn
@@ -577,7 +577,8 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         }
     }
 
-    // Detect vowel patterns (skip QU-cluster 'u')
+    // Detect vowel patterns and uo pair indices (skip QU-cluster 'u')
+    size_t pairU = SIZE_MAX, pairO = SIZE_MAX;
     for (size_t i = 0; i + 1 < states_.size(); ++i) {
         if (states_[i].IsVowel() && states_[i+1].IsVowel()) {
             if (isQUClusterU(i)) continue;
@@ -585,7 +586,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
             wchar_t second = states_[i+1].base;
             if (first == L'u' && second == L'a') hasUA = true;
             if (first == L'o' && second == L'a') hasOA = true;
-            if (first == L'u' && second == L'o') hasUO = true;
+            if (first == L'u' && second == L'o') { hasUO = true; pairU = i; pairO = i + 1; }
             if (first == L'u' && second == L'u') hasUU = true;
         }
     }
@@ -600,17 +601,53 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         return true;
     }
 
-    // P2: "uo" pattern → horn on 'o' (uơ → later AutoUO makes ươ when next char typed)
-    if (hasUO && oIdx != SIZE_MAX) {
-        // When replacing circumflex (e.g., "luoow" → ô→ơ), also horn the 'u'
-        // since no future char will trigger AutoUO
-        bool wasCircumflex = states_[oIdx].mod == Modifier::Circumflex;
-        states_[oIdx].mod = Modifier::Horn;
-        if (wasCircumflex && uIdx != SIZE_MAX && states_[uIdx].mod == Modifier::None) {
-            states_[uIdx].mod = Modifier::Horn;
+    // P2: "uo" pair — horn cycle
+    // Default: uo → ươ (one press). For h/th/kh prefixes where uơ words exist
+    // (huơ, thuở, khuơ): ươ → uơ → uo (three-press cycle).
+    // Others: ươ → uo (two-press escape).
+    if (hasUO && pairU != SIZE_MAX) {
+        Modifier uMod = states_[pairU].mod;
+        Modifier oMod = states_[pairO].mod;
+        bool isEdge = IsUOEdgeCasePrefix(states_.data(), states_.size(), pairU);
+
+        // Forward: uo/uô → ươ (first press, covers circumflex replacement)
+        if (uMod != Modifier::Horn && (oMod == Modifier::None || oMod == Modifier::Circumflex)) {
+            states_[pairU].mod = Modifier::Horn;
+            states_[pairO].mod = Modifier::Horn;
+            RelocateToneToHornVowel();
+            return true;
         }
-        RelocateToneToHornVowel();
-        return true;
+
+        // Forward: ưo → ươ (u already horned via P5, now complete pair)
+        if (uMod == Modifier::Horn && oMod == Modifier::None) {
+            states_[pairO].mod = Modifier::Horn;
+            RelocateToneToHornVowel();
+            return true;
+        }
+
+        // Cycle: ươ → uơ (h/th/kh only, second press)
+        if (uMod == Modifier::Horn && oMod == Modifier::Horn && isEdge) {
+            states_[pairU].mod = Modifier::None;
+            RelocateToneToHornVowel();
+            return true;
+        }
+
+        // Escape: ươ → uo (non h/th/kh, second press)
+        if (uMod == Modifier::Horn && oMod == Modifier::Horn && !isEdge) {
+            states_[pairU].mod = Modifier::None;
+            states_[pairO].mod = Modifier::None;
+            ProcessChar(c);
+            toneEscaped_ = true;
+            return true;
+        }
+
+        // Escape: uơ → uo (h/th/kh third press, or any remaining uơ state)
+        if (uMod == Modifier::None && oMod == Modifier::Horn) {
+            states_[pairO].mod = Modifier::None;
+            ProcessChar(c);
+            toneEscaped_ = true;
+            return true;
+        }
     }
 
     // P3: "oa" pattern → breve on 'a' (hoặc)
@@ -622,12 +659,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
     // P4: Escape - clear existing modifier and add 'w' as literal
     // Must be before standalone applications (P5-P7) so that second 'w'
     // escapes the first modification.
-    // Exception: when horned 'o' has an unmodified 'u' companion,
-    // skip escape so P5 applies horn to u (e.g., "uoww" → "ươ", "huoww" → "hươ")
-    bool canPromoteUO = (hornedIdx != SIZE_MAX &&
-        states_[hornedIdx].base == L'o' && uIdx != SIZE_MAX);
-
-    if (hornedIdx != SIZE_MAX && !canPromoteUO) {
+    if (hornedIdx != SIZE_MAX) {
         // Special case: P8-synthesized ư (ww → w escape)
         // Only erase when synthetic ư is the last state (immediate ww sequence).
         // If other chars were typed after the synthetic ư (e.g., "window"),
@@ -787,11 +819,14 @@ void TelexEngine::ApplyAutoUO() {
         if (i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q') continue;
 
         // Pattern 1: u(no horn) + ơ(has horn) → horn the u to complete ươ
+        // Exception: h/th/kh prefix — user may have intentionally chosen uơ (thuở, huơ)
         // Tone relocation not needed: ApplyW P2 already called RelocateToneToHornVowel()
         // when 'w' was typed, so tone is already correctly on ơ.
         if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
             states_[i+1].base == L'o' && states_[i+1].mod == Modifier::Horn) {
-            states_[i].mod = Modifier::Horn;
+            if (!IsUOEdgeCasePrefix(states_.data(), states_.size(), i)) {
+                states_[i].mod = Modifier::Horn;
+            }
         }
 
         // Pattern 2: ư(has horn) + o(no horn) → horn the o to complete ươ

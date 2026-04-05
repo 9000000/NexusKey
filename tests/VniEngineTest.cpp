@@ -63,28 +63,64 @@ TEST_F(VniEngineTest, Horn_U7_UpperCase) {
     EXPECT_EQ(engine_->Peek(), L"Ư");
 }
 
-TEST_F(VniEngineTest, Horn_UO7_SingleHorn) {
-    // uo7 → uơ (first 7 horns 'o' only, ơ at end)
+TEST_F(VniEngineTest, Horn_UO7_DirectTransform) {
+    // uo7 → ươ (first 7 horns both u and o directly)
     TypeString(*engine_, L"uo7");
-    EXPECT_EQ(engine_->Peek(), L"uơ");
-}
-
-TEST_F(VniEngineTest, Horn_UO77_SecondHornsU) {
-    // uo77 → ươ (second 7 horns 'u')
-    TypeString(*engine_, L"uo77");
     EXPECT_EQ(engine_->Peek(), L"ươ");
 }
 
-TEST_F(VniEngineTest, Horn_HUO7_AtEnd) {
-    // huo7 → huơ (ơ at end, no auto-pair)
+TEST_F(VniEngineTest, Horn_UO77_Escape) {
+    // uo77 → uo (non h/th/kh: 2-state, second 7 escapes)
+    TypeString(*engine_, L"uo77");
+    EXPECT_EQ(engine_->Peek(), L"uo7");
+}
+
+TEST_F(VniEngineTest, Horn_HUO7_DirectTransform) {
+    // huo7 → hươ (first 7 horns both, h prefix)
     TypeString(*engine_, L"huo7");
+    EXPECT_EQ(engine_->Peek(), L"hươ");
+}
+
+TEST_F(VniEngineTest, Horn_HUO77_Cycle) {
+    // huo77 → huơ (h prefix: second 7 cycles ươ → uơ)
+    TypeString(*engine_, L"huo77");
     EXPECT_EQ(engine_->Peek(), L"huơ");
 }
 
-TEST_F(VniEngineTest, Horn_HUO77_BothHorned) {
-    // huo77 → hươ (second 7 horns u)
-    TypeString(*engine_, L"huo77");
-    EXPECT_EQ(engine_->Peek(), L"hươ");
+TEST_F(VniEngineTest, Horn_HUO777_Escape) {
+    // huo777 → huo (h prefix: third 7 escapes uơ → uo)
+    TypeString(*engine_, L"huo777");
+    EXPECT_EQ(engine_->Peek(), L"huo7");
+}
+
+TEST_F(VniEngineTest, Horn_THUO7_DirectTransform) {
+    // thuo7 → thươ (th prefix, first 7)
+    TypeString(*engine_, L"thuo7");
+    EXPECT_EQ(engine_->Peek(), L"thươ");
+}
+
+TEST_F(VniEngineTest, Horn_THUO77_Cycle) {
+    // thuo77 → thuơ (th prefix: ươ → uơ)
+    TypeString(*engine_, L"thuo77");
+    EXPECT_EQ(engine_->Peek(), L"thuơ");
+}
+
+TEST_F(VniEngineTest, Horn_KHUO77_Cycle) {
+    // khuo77 → khuơ (kh prefix: ươ → uơ)
+    TypeString(*engine_, L"khuo77");
+    EXPECT_EQ(engine_->Peek(), L"khuơ");
+}
+
+TEST_F(VniEngineTest, Horn_DUO7_DirectTransform) {
+    // duo7 → dươ (non h/th/kh, first 7)
+    TypeString(*engine_, L"duo7");
+    EXPECT_EQ(engine_->Peek(), L"dươ");
+}
+
+TEST_F(VniEngineTest, Horn_DUO77_Escape) {
+    // duo77 → duo (non h/th/kh: 2-state escape)
+    TypeString(*engine_, L"duo77");
+    EXPECT_EQ(engine_->Peek(), L"duo7");
 }
 
 TEST_F(VniEngineTest, Horn_NUO7NG_AutoPair) {

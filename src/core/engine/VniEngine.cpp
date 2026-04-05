@@ -445,9 +445,59 @@ bool VniEngine::ProcessModifier(wchar_t c) {
     }
 
     // Handle vowel modifiers (6, 7, 8)
-    // Two-pass scan for horn: first find unmodified target, then escape if none found.
-    // This lets each '7' press horn one vowel at a time (uo7 → uơ, uo77 → ươ).
 
+    // Horn on "uo" pair: cycle logic (same as Telex ProcessWModifier P2)
+    // Default: uo → ươ (one press). h/th/kh: ươ → uơ → uo (three-press).
+    // Others: ươ → uo (two-press). QU cluster handled by IsClusterConsonant.
+    if (targetMod == Modifier::Horn) {
+        size_t pairU = SIZE_MAX, pairO = SIZE_MAX;
+        for (size_t i = 0; i + 1 < states_.size(); ++i) {
+            if (states_[i].IsVowel() && states_[i+1].IsVowel() &&
+                states_[i].base == L'u' && states_[i+1].base == L'o') {
+                if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+                pairU = i; pairO = i + 1;
+            }
+        }
+        if (pairU != SIZE_MAX) {
+            Modifier uMod = states_[pairU].mod;
+            Modifier oMod = states_[pairO].mod;
+            bool isEdge = IsUOEdgeCasePrefix(states_.data(), states_.size(), pairU);
+
+            // Forward: uo → ươ (first press)
+            if (uMod == Modifier::None && oMod == Modifier::None) {
+                states_[pairU].mod = Modifier::Horn;
+                states_[pairO].mod = Modifier::Horn;
+                return true;
+            }
+            // Forward: ưo → ươ (u already horned, complete pair)
+            if (uMod == Modifier::Horn && oMod == Modifier::None) {
+                states_[pairO].mod = Modifier::Horn;
+                return true;
+            }
+            // Cycle: ươ → uơ (h/th/kh second press)
+            if (uMod == Modifier::Horn && oMod == Modifier::Horn && isEdge) {
+                states_[pairU].mod = Modifier::None;
+                return true;
+            }
+            // Escape: ươ → uo (non h/th/kh second press)
+            if (uMod == Modifier::Horn && oMod == Modifier::Horn && !isEdge) {
+                states_[pairU].mod = Modifier::None;
+                states_[pairO].mod = Modifier::None;
+                toneEscaped_ = true;
+                ProcessChar(c, rawInput_.size() - 1);
+                return true;
+            }
+            // Escape: uơ → uo (h/th/kh third press)
+            if (uMod == Modifier::None && oMod == Modifier::Horn) {
+                states_[pairO].mod = Modifier::None;
+                toneEscaped_ = true;
+                ProcessChar(c, rawInput_.size() - 1);
+                return true;
+            }
+        }
+    }
+
+    // Generic two-pass scan for remaining modifier cases (non-uo horn, circumflex, breve)
     // Pass 1: find rightmost unmodified vowel that accepts this modifier
     for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
         if (!it->IsVowel()) continue;
@@ -643,8 +693,8 @@ wchar_t VniEngine::ComposeChar(const CharState& state) const {
 
 //-----------------------------------------------------------------------------
 // Auto horn companion: complete ươ pair when a char is typed AFTER the pair.
-// huo7 stays "huơ" (ơ at end). huo7ng → "hương" (ng after pair triggers auto).
 // Requires i + 2 < size: the pair must NOT be the last two states.
+// Exception: h/th/kh prefixes skip Pattern 1 to preserve intentional uơ (thuở, huơ).
 //-----------------------------------------------------------------------------
 
 void VniEngine::ApplyAutoUO() {
@@ -656,9 +706,12 @@ void VniEngine::ApplyAutoUO() {
         if (i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q') continue;
 
         // Pattern 1: u(plain) + ơ(horn) → horn the u
+        // Exception: h/th/kh prefix — user may have intentionally chosen uơ (thuở, huơ)
         if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
             states_[i + 1].base == L'o' && states_[i + 1].mod == Modifier::Horn) {
-            states_[i].mod = Modifier::Horn;
+            if (!IsUOEdgeCasePrefix(states_.data(), states_.size(), i)) {
+                states_[i].mod = Modifier::Horn;
+            }
         }
 
         // Pattern 2: ư(horn) + o(plain) → horn the o

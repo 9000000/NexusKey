@@ -58,6 +58,21 @@ inline bool HasIntentionalStrokeD(const RawT& rawInput) noexcept {
     return false;
 }
 
+/// Check if the consonant onset before 'u' at uIdx forms an edge case prefix
+/// where uơ (not ươ) is a valid Vietnamese word: h (huơ), th (thuở), kh (khuơ).
+/// Used by the uo horn cycle to determine 3-state vs 2-state toggle.
+template<typename CharStateT>
+[[nodiscard]] inline bool IsUOEdgeCasePrefix(
+        const CharStateT* states, size_t /*count*/, size_t uIdx) noexcept {
+    if (uIdx == 1 && towlower(states[0].base) == L'h') return true;       // h + uo
+    if (uIdx == 2) {
+        wchar_t c0 = towlower(states[0].base);
+        wchar_t c1 = towlower(states[1].base);
+        if (c1 == L'h' && (c0 == L't' || c0 == L'k')) return true;        // th/kh + uo
+    }
+    return false;
+}
+
 /// Undo ươ pair: if 'o' at oIndex has a modifier and preceding 'u' also has one,
 /// clear the u's modifier. Handles: ươ→uô (horn undo), uu→ươ backspace, w escape.
 /// Works with both Telex and Vni CharState.
