@@ -21,7 +21,16 @@ document.on("ready", function () {
     initializeScrollbarResize(".tab-body");
     initializeSwitchKeyDisplay();
     initializeTabPanels();
+    initializeDropdownTooltips();
 });
+
+// Set tooltip on all dropdowns to show only the selected item text
+function initializeDropdownTooltips() {
+    document.querySelectorAll("select").forEach(function (select) {
+        var selected = select.querySelector("option:checked");
+        if (selected) select.setAttribute("title", selected.textContent);
+    });
+}
 
 // Initialize switch key input - convert space char to "Space" display
 function initializeSwitchKeyDisplay() {
@@ -269,6 +278,9 @@ document.on("change", "select", function (evt, select) {
     const id = select.id || select.getAttribute("id");
     const value = parseInt(select.value);
 
+    // Update tooltip to show only the selected item text
+    var selected = select.querySelector("option:checked");
+    if (selected) select.setAttribute("title", selected.textContent);
 });
 
 // Handle text input changes - display "Space" for space character
@@ -342,19 +354,21 @@ function initializeOpacitySlider() {
     // Click on track to set value
     slider.onmousedown = function (evt) {
         sliderDragging = true;
+        slider.state.capture(true); // Capture mouse even outside window
         updateSliderFromMouse(evt, slider, thumb, fill, valueLabel, hiddenInput);
     };
 
-    // Drag thumb
-    document.onmousemove = function (evt) {
+    // Drag thumb — use slider (capture target) instead of document
+    slider.onmousemove = function (evt) {
         if (sliderDragging) {
             updateSliderFromMouse(evt, slider, thumb, fill, valueLabel, hiddenInput);
         }
     };
 
-    document.onmouseup = function (evt) {
+    slider.onmouseup = function (evt) {
         if (sliderDragging) {
             sliderDragging = false;
+            slider.state.capture(false);
             // Save to C++ on release
             hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
         }
