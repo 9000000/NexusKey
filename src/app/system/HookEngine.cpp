@@ -116,17 +116,11 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     // Load manual per-app overrides (encoding + input method)
     ReloadAppOverrides();
 
-    // Load excluded apps lists (hard + soft)
+    // Load excluded apps
     if (excludeApps_) {
-        auto apps = ConfigManager::LoadExcludedApps(ConfigManager::GetConfigPath());
         excludedAppSet_.clear();
-        for (auto& app : apps) {
+        for (auto& app : ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath())) {
             excludedAppSet_.insert(std::move(app));
-        }
-        auto softApps = ConfigManager::LoadSoftExcludedApps(ConfigManager::GetConfigPath());
-        softExcludedAppSet_.clear();
-        for (auto& app : softApps) {
-            softExcludedAppSet_.insert(std::move(app));
         }
     }
 
@@ -216,9 +210,8 @@ void HookEngine::Stop() {
 
 void HookEngine::ToggleVietnameseMode() {
     // Block toggling in hard-excluded apps (soft-excluded apps allow toggle)
-    // Note: isExcludedApp_ is always false when isSoftExcludedApp_ is true (mutually exclusive)
     if (excludeApps_ && isExcludedApp_) {
-        HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (hard-excluded app '%s')", currentExe_.c_str());
+        HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (excluded app '%s')", currentExe_.c_str());
         return;
     }
 
@@ -401,23 +394,15 @@ void HookEngine::ReloadFromToml() {
     // Reload manual per-app overrides (encoding + input method)
     ReloadAppOverrides();
 
-    // Reload excluded apps lists (hard + soft)
+    // Reload excluded apps
     if (excludeApps_) {
-        auto apps = ConfigManager::LoadExcludedApps(ConfigManager::GetConfigPath());
         excludedAppSet_.clear();
-        for (auto& app : apps) {
+        for (auto& app : ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath())) {
             excludedAppSet_.insert(std::move(app));
-        }
-        auto softApps = ConfigManager::LoadSoftExcludedApps(ConfigManager::GetConfigPath());
-        softExcludedAppSet_.clear();
-        for (auto& app : softApps) {
-            softExcludedAppSet_.insert(std::move(app));
         }
     } else {
         excludedAppSet_.clear();
-        softExcludedAppSet_.clear();
         isExcludedApp_ = false;
-        isSoftExcludedApp_ = false;
     }
 
     // Reload TSF apps list
@@ -430,16 +415,10 @@ void HookEngine::ReloadFromToml() {
     } else {
         tsfAppSet_.clear();
     }
-    // Re-evaluate soft-excluded status for current foreground app
-    if (excludeApps_ && !isExcludedApp_ && !softExcludedAppSet_.empty() && !currentExe_.empty()) {
-        isSoftExcludedApp_ = softExcludedAppSet_.count(currentExe_) > 0;
-    } else {
-        isSoftExcludedApp_ = false;
-    }
 
     // Re-evaluate TSF app status for current foreground app
     bool wasTsfApp = isTsfApp_;
-    if (tsfApps_ && !isExcludedApp_ && !isSoftExcludedApp_ && !tsfAppSet_.empty() && !currentExe_.empty()) {
+    if (tsfApps_ && !isExcludedApp_ && !tsfAppSet_.empty() && !currentExe_.empty()) {
         isTsfApp_ = tsfAppSet_.count(currentExe_) > 0;
     } else {
         isTsfApp_ = false;
@@ -681,6 +660,17 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // Ready:  set after commit with space/enter, or when engine empties after BS with stack non-empty.
     // Primed: BS in Ready deletes the space; next alpha/BS triggers replay.
     //
+    // Ctrl/Alt/Win invalidate commit-undo: Ctrl+BS deletes entire word (not just the
+    // space), Ctrl+A/C/Z change cursor/selection — all make saved commit state stale.
+    // Must check BEFORE the state machine to prevent ghost key replay.
+    if (commitUndoState_ != CommitUndoState::Idle &&
+        ((GetKeyState(VK_CONTROL) & 0x8000) || (GetKeyState(VK_MENU) & 0x8000) ||
+         (GetKeyState(VK_LWIN) & 0x8000) || (GetKeyState(VK_RWIN) & 0x8000))) {
+        HOOK_LOG(L"  commit-undo: cancel — modifier key held");
+        CancelCommitUndo();
+        // Fall through — Ctrl check at step 5 will handle ResetComposition
+    }
+    //
     // Auto-expire Ready after kCommitUndoTimeoutMs: cheap insurance against any cursor-movement
     // event that bypasses ResetComposition (e.g. external text change, rare edge cases).
     if (commitUndoState_ == CommitUndoState::Ready) {
@@ -862,11 +852,9 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 5. Skip if Ctrl/Alt/Win is down (allow shortcuts to pass through)
     if (cachedCtrl || cachedAlt || cachedWin) {
         HOOK_LOG(L"  skip: modifier held (ctrl=%d alt=%d win=%d)", cachedCtrl, cachedAlt, cachedWin);
-        // Always reset — shortcuts like Ctrl+A/C/Z change text state in unpredictable ways.
-        // Must also reset when engine is idle (count==0): commitUndoState_ and commitStack_
-        // may hold a previously committed word. If not cleared, a Backspace after Ctrl+A
-        // triggers ReplayCommittedChars() into the wrong cursor position → garbage output.
-        // ResetComposition() guards engine_->Reset() internally on count==0, so this is safe.
+        // Always reset — shortcuts change text state in unpredictable ways.
+        // Commit-undo is already canceled at step 2d (modifier guard), but
+        // ResetComposition also clears engine, previousComposition_, inputHistory_, etc.
         ResetComposition();
         return false;
     }
@@ -1610,12 +1598,11 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         && appEncodingOverrides_.empty() && appInputMethodOverrides_.empty()) return;
 
     bool wasExcluded = isExcludedApp_;
-    bool wasSoftExcluded = isSoftExcludedApp_;
     bool wasTsfApp = isTsfApp_;
 
-    // Save mode for previous app (smart switch, skip excluded/soft-excluded/TSF apps)
+    // Save mode for previous app (smart switch, skip excluded/TSF apps)
     if (smartSwitch_ && !layoutSuppressed_ && !currentExe_.empty()
-        && !wasExcluded && !wasSoftExcluded && !wasTsfApp) {
+        && !wasExcluded && !wasTsfApp) {
         if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
             appModeMap_.clear();
         }
@@ -1631,19 +1618,16 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     currentExe_ = GetExeNameForHwnd(activeHwnd);
     if (currentExe_.empty()) return;
 
-    // Check excluded apps (hard or soft)
-    if (excludeApps_) {
-        isExcludedApp_ = !excludedAppSet_.empty() && excludedAppSet_.count(currentExe_) > 0;
-        isSoftExcludedApp_ = !isExcludedApp_ && !softExcludedAppSet_.empty()
-                             && softExcludedAppSet_.count(currentExe_) > 0;
+    // Check excluded apps
+    if (excludeApps_ && !excludedAppSet_.empty()) {
+        isExcludedApp_ = excludedAppSet_.count(currentExe_) > 0;
     } else {
         isExcludedApp_ = false;
-        isSoftExcludedApp_ = false;
     }
 
     // Check TSF apps (hook passthrough — let TSF DLL handle input)
     // Excluded apps take priority — if both, treat as excluded (force English)
-    if (!isExcludedApp_ && !isSoftExcludedApp_ && tsfApps_ && !tsfAppSet_.empty()) {
+    if (!isExcludedApp_ && tsfApps_ && !tsfAppSet_.empty()) {
         isTsfApp_ = tsfAppSet_.count(currentExe_) > 0;
     } else {
         isTsfApp_ = false;
@@ -1656,30 +1640,16 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     if (isExcludedApp_) {
-        // Entering hard-excluded app — save mode before forcing English
-        // Guard: don't re-save if coming from soft-excluded (already forced English)
-        if (!wasExcluded && !wasSoftExcluded) {
+        // Entering excluded app — save mode before forcing English
+        if (!wasExcluded) {
             modeBeforeExclude_ = vietnameseMode_;
         }
-        HOOK_LOG(L"  ExcludeApps: '%s' is hard-excluded, forcing English", currentExe_.c_str());
+        HOOK_LOG(L"  ExcludeApps: '%s' is excluded, forcing English", currentExe_.c_str());
         if (vietnameseMode_) {
             vietnameseMode_ = false;
             NotifyModeChange();
         }
-        return;  // Skip smart switch restore and code table restore for hard-excluded apps
-    }
-
-    if (isSoftExcludedApp_) {
-        // Entering soft-excluded app — save mode before forcing English
-        if (!wasSoftExcluded && !wasExcluded) {
-            modeBeforeExclude_ = vietnameseMode_;
-        }
-        HOOK_LOG(L"  ExcludeApps: '%s' is soft-excluded, resetting to English", currentExe_.c_str());
-        if (vietnameseMode_) {
-            vietnameseMode_ = false;
-            NotifyModeChange();
-        }
-        // Don't return — continue to apply per-app overrides (encoding, input method) below
+        return;  // Skip smart switch restore and code table restore for excluded apps
     }
 
     // TSF app — hook is passive, skip smart switch/code table restore
@@ -1716,34 +1686,37 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     // Smart switch: restore mode for new app.
-    // Soft-excluded apps already reset to English above — skip restore to avoid overriding.
     // Hidden/tray windows are already filtered by the early return above.
-    if (!isSoftExcludedApp_) {
-        if (smartSwitch_) {
-            auto it = appModeMap_.find(currentExe_);
-            if (it != appModeMap_.end()) {
-                // Known app — restore its saved mode
-                if (it->second != vietnameseMode_) {
-                    vietnameseMode_ = it->second;
-                    HOOK_LOG(L"  SmartSwitch: restored %s for '%s'",
-                             vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
-                    NotifyModeChange();
-                }
-            } else {
-                // Unknown app — default to Vietnamese (the global default)
-                if (!vietnameseMode_) {
-                    vietnameseMode_ = true;
-                    HOOK_LOG(L"  SmartSwitch: default Vietnamese for unknown '%s'", currentExe_.c_str());
-                    NotifyModeChange();
-                }
+    if (smartSwitch_) {
+        auto it = appModeMap_.find(currentExe_);
+        if (it != appModeMap_.end()) {
+            // Known app — restore its saved mode
+            if (it->second != vietnameseMode_) {
+                vietnameseMode_ = it->second;
+                HOOK_LOG(L"  SmartSwitch: restored %s for '%s'",
+                         vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
+                NotifyModeChange();
             }
-        } else if ((wasExcluded || wasSoftExcluded) && modeBeforeExclude_ != vietnameseMode_) {
-            // SmartSwitch OFF — restore pre-exclusion mode when leaving excluded app (hard or soft)
+        } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
+            // Leaving excluded app to unknown app — restore pre-exclusion mode
             vietnameseMode_ = modeBeforeExclude_;
-            HOOK_LOG(L"  ExcludeApps: restored pre-exclude %s for '%s'",
+            HOOK_LOG(L"  SmartSwitch: restored pre-exclude %s for '%s'",
                      vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
             NotifyModeChange();
+        } else {
+            // Unknown app — default to Vietnamese (the global default)
+            if (!vietnameseMode_) {
+                vietnameseMode_ = true;
+                HOOK_LOG(L"  SmartSwitch: default Vietnamese for unknown '%s'", currentExe_.c_str());
+                NotifyModeChange();
+            }
         }
+    } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
+        // SmartSwitch OFF — restore pre-exclusion mode when leaving excluded app
+        vietnameseMode_ = modeBeforeExclude_;
+        HOOK_LOG(L"  ExcludeApps: restored pre-exclude %s for '%s'",
+                 vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
+        NotifyModeChange();
     }
 }
 

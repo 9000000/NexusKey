@@ -55,16 +55,12 @@ public:
     /// Load hotkey config with automatic path resolution
     [[nodiscard]] static HotkeyConfig LoadHotkeyConfigOrDefault();
 
-    /// Load excluded apps list from config (hard exclusion — block toggle)
-    [[nodiscard]] static std::vector<std::wstring> LoadExcludedApps(const std::wstring& path);
+    /// Load all excluded apps (merges [excluded_apps].list + .soft for backward compat)
+    [[nodiscard]] static std::vector<std::wstring> LoadAllExcludedApps(const std::wstring& path);
 
-    /// Load soft-excluded apps list from config (default English on focus, allow toggle)
-    [[nodiscard]] static std::vector<std::wstring> LoadSoftExcludedApps(const std::wstring& path);
-
-    /// Save excluded apps lists to config (both hard + soft, merges with existing)
+    /// Save excluded apps list to config
     [[nodiscard]] static bool SaveExcludedApps(const std::wstring& path,
-                                                const std::vector<std::wstring>& hardApps,
-                                                const std::vector<std::wstring>& softApps);
+                                                const std::vector<std::wstring>& apps);
 
     /// Load persisted English-mode apps for smart switch (survives restart)
     [[nodiscard]] static std::vector<std::wstring> LoadEnglishModeApps(const std::wstring& path);

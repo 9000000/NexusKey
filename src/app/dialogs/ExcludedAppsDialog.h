@@ -23,16 +23,11 @@ private:
     void populateList();
     void addApp(const std::wstring& name);
     void removeApp(const std::wstring& name);
-    void setAppMode(const std::wstring& name, const std::wstring& mode);
     void persistAndSignal();
     void importApps();
     void exportApps();
 
-    /// Returns true if app is in softList_, false if in hardList_
-    [[nodiscard]] bool isSoftExcluded(const std::wstring& name) const;
-
-    std::vector<std::wstring> hardList_;
-    std::vector<std::wstring> softList_;
+    std::vector<std::wstring> appList_;
 };
 
 }  // namespace NextKey

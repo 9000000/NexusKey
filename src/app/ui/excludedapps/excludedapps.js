@@ -76,20 +76,6 @@ function initExcludedAppsDialog() {
         }
         evt.stopPropagation();
     });
-
-    // Event delegation for mode selector changes in app list
-    document.on("change", ".app-item-mode", function (evt, select) {
-        var item = select.closest(".app-item");
-        if (item) {
-            var appName = item.getAttribute("data-name");
-            var newMode = select.value;
-            if (appName && newMode) {
-                item.setAttribute("data-mode", newMode);
-                onSetMode(appName, newMode);
-            }
-        }
-        evt.stopPropagation();
-    });
 }
 
 // Called by C++ to set the list of running apps
@@ -133,14 +119,6 @@ function onDeleteApp(name) {
     triggerAction("delete");
 }
 
-function onSetMode(name, mode) {
-    if (!name || !mode) return;
-
-    document.getElementById("val-app-name").value = name;
-    document.getElementById("val-app-mode").value = mode;
-    triggerAction("set-mode");
-}
-
 // Clear input field and selection - called by C++ after window picker add
 function clearInput() {
     var nameField = document.getElementById("app-name");
@@ -180,16 +158,13 @@ function triggerAction(action) {
 }
 
 // Called by C++ to add items to the list
-function addAppToList(name, mode) {
+function addAppToList(name) {
     var list = document.getElementById("app-list");
     if (!list) return;
-
-    if (!mode) mode = "hard";
 
     var item = document.createElement("div");
     item.className = "app-item";
     item.setAttribute("data-name", name);
-    item.setAttribute("data-mode", mode);
 
     // Create name span with tooltip
     var nameSpan = document.createElement("span");
@@ -197,23 +172,6 @@ function addAppToList(name, mode) {
     nameSpan.textContent = name;
     nameSpan.setAttribute("title", name);  // Tooltip shows full name on hover
     item.appendChild(nameSpan);
-
-    // Mode selector
-    var modeSelect = document.createElement("select");
-    modeSelect.className = "app-item-mode";
-
-    var optHard = document.createElement("option");
-    optHard.value = "hard";
-    optHard.textContent = "Hard";
-    modeSelect.appendChild(optHard);
-
-    var optSoft = document.createElement("option");
-    optSoft.value = "soft";
-    optSoft.textContent = "Soft";
-    modeSelect.appendChild(optSoft);
-
-    modeSelect.value = mode;
-    item.appendChild(modeSelect);
 
     // Delete button (× icon)
     var deleteBtn = document.createElement("button");
@@ -259,12 +217,6 @@ function forceRefresh() {
         // Also scroll to bottom to show new items
         list.scrollTop = list.scrollHeight;
     }
-}
-
-function escapeHtml(text) {
-    var div = document.createElement("div");
-    div.textContent = text;
-    return div.innerHTML;
 }
 
 // setBackgroundOpacity is provided by shared/utils.js

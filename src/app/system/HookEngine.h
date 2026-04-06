@@ -175,10 +175,8 @@ private:
     DWORD lastAltReleaseTime_ = 0;     // GetTickCount() of first Alt release
     static constexpr DWORD DOUBLE_ALT_TIMEOUT_MS = 400;
     int autoCapState_ = 0;  // 0=normal, 1=after punct, 2=after punct+space
-    std::set<std::wstring> excludedAppSet_;      // hard exclusion: block toggle
-    std::set<std::wstring> softExcludedAppSet_;  // soft exclusion: default E, allow toggle
-    bool isExcludedApp_ = false;      // cached: current app is hard-excluded
-    bool isSoftExcludedApp_ = false;  // cached: current app is soft-excluded
+    std::set<std::wstring> excludedAppSet_;      // excluded apps: force English on focus
+    bool isExcludedApp_ = false;      // cached: current app is excluded
     std::set<std::wstring> tsfAppSet_;      // apps that should use TSF engine instead of hook
     bool isTsfApp_ = false;       // cached: is current foreground app in TSF list?
     bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?

@@ -7,6 +7,7 @@
 #define TOML_HEADER_ONLY 1
 #include "toml.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -342,13 +343,14 @@ HotkeyConfig ConfigManager::LoadHotkeyConfigOrDefault() {
     return HotkeyConfig{};  // Default: Ctrl+Shift
 }
 
-std::vector<std::wstring> ConfigManager::LoadExcludedApps(const std::wstring& path) {
+std::vector<std::wstring> ConfigManager::LoadAllExcludedApps(const std::wstring& path) {
     std::vector<std::wstring> apps;
     try {
         std::string utf8Path = WideToUtf8(path);
         auto table = toml::parse_file(utf8Path);
 
         if (auto section = table["excluded_apps"].as_table()) {
+            // Load [excluded_apps].list
             if (auto arr = (*section)["list"].as_array()) {
                 for (auto& item : *arr) {
                     if (auto str = item.value<std::string>()) {
@@ -356,22 +358,14 @@ std::vector<std::wstring> ConfigManager::LoadExcludedApps(const std::wstring& pa
                     }
                 }
             }
-        }
-    } catch (...) {}
-    return apps;
-}
-
-std::vector<std::wstring> ConfigManager::LoadSoftExcludedApps(const std::wstring& path) {
-    std::vector<std::wstring> apps;
-    try {
-        std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
-
-        if (auto section = table["excluded_apps"].as_table()) {
+            // Backward compat: merge [excluded_apps].soft into the same list
             if (auto arr = (*section)["soft"].as_array()) {
                 for (auto& item : *arr) {
                     if (auto str = item.value<std::string>()) {
-                        apps.push_back(Utf8ToWide(*str));
+                        auto wide = Utf8ToWide(*str);
+                        if (std::find(apps.begin(), apps.end(), wide) == apps.end()) {
+                            apps.push_back(std::move(wide));
+                        }
                     }
                 }
             }
@@ -381,23 +375,17 @@ std::vector<std::wstring> ConfigManager::LoadSoftExcludedApps(const std::wstring
 }
 
 bool ConfigManager::SaveExcludedApps(const std::wstring& path,
-                                      const std::vector<std::wstring>& hardApps,
-                                      const std::vector<std::wstring>& softApps) {
+                                      const std::vector<std::wstring>& apps) {
     try {
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
-        toml::array hardArr;
-        for (auto& app : hardApps) {
-            hardArr.push_back(WideToUtf8(app));
-        }
-        toml::array softArr;
-        for (auto& app : softApps) {
-            softArr.push_back(WideToUtf8(app));
+        toml::array arr;
+        for (auto& app : apps) {
+            arr.push_back(WideToUtf8(app));
         }
         toml::table section;
-        section.insert_or_assign("list", std::move(hardArr));
-        section.insert_or_assign("soft", std::move(softArr));
+        section.insert_or_assign("list", std::move(arr));
         tbl.insert_or_assign("excluded_apps", std::move(section));
 
         return WriteToml(utf8Path, tbl);
