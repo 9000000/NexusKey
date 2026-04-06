@@ -155,13 +155,16 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     // (handles focus changes within same window, e.g. YouTube video → comment box)
     mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, hInstance, 0);
 
-    // Install focus change hook to reset composition on window switch.
-    // Range covers EVENT_SYSTEM_FOREGROUND (0x0003) through EVENT_SYSTEM_MINIMIZEEND (0x0017).
-    // We only act on FOREGROUND and MINIMIZEEND — others are ignored in WinEventProc.
-    // MINIMIZEEND is needed because restoring a window from the taskbar may not fire
-    // EVENT_SYSTEM_FOREGROUND (taskbar gets the foreground event, filtered as Shell_TrayWnd).
+    // Install focus change hooks — two separate hooks for exact event targeting
+    // (avoids receiving ~20 unrelated events in the 0x0003..0x0017 range).
     focusHook_ = SetWinEventHook(
-        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+        nullptr, WinEventProc,
+        0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    // MINIMIZEEND: restoring a window from the taskbar may not fire FOREGROUND
+    // (taskbar gets the foreground event, filtered as Shell_TrayWnd).
+    minimizeHook_ = SetWinEventHook(
+        EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZEEND,
         nullptr, WinEventProc,
         0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
@@ -187,6 +190,10 @@ void HookEngine::Stop() {
     if (focusHook_) {
         UnhookWinEvent(focusHook_);
         focusHook_ = nullptr;
+    }
+    if (minimizeHook_) {
+        UnhookWinEvent(minimizeHook_);
+        minimizeHook_ = nullptr;
     }
     if (s_instance == this) {
         s_instance = nullptr;
@@ -517,9 +524,6 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
 }
 
 void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD) {
-    // Only handle events we care about (range includes others we ignore)
-    if (event != EVENT_SYSTEM_FOREGROUND && event != EVENT_SYSTEM_MINIMIZEEND) return;
-
     HookEngine* self = s_instance.load(std::memory_order_relaxed);
     if (!self) return;
 

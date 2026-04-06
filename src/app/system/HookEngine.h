@@ -237,7 +237,8 @@ private:
     // Hooks
     HHOOK keyboardHook_ = nullptr;
     HHOOK mouseHook_ = nullptr;
-    HWINEVENTHOOK focusHook_ = nullptr;
+    HWINEVENTHOOK focusHook_ = nullptr;     // EVENT_SYSTEM_FOREGROUND
+    HWINEVENTHOOK minimizeHook_ = nullptr;  // EVENT_SYSTEM_MINIMIZEEND
 
     // Hotkey state
     HotkeyConfig hotkeyConfig_{};
