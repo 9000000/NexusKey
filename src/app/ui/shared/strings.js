@@ -78,6 +78,8 @@ var STRINGS = {
         "s.custom_colors": "Custom icon colors",
         "s.color_v": "Choose V color",
         "s.color_e": "Choose E color",
+        "s.floating_icon": "Floating V/E icon",
+        "s.floating_icon_tooltip": "Show a small floating V/E indicator, useful for fullscreen apps",
 
         // Tab 4: About
         "s.tagline": "Modern Vietnamese Input Method",

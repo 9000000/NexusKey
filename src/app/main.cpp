@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "system/TrayIcon.h"
+#include "system/FloatingIcon.h"
 #include "system/SubprocessHelper.h"
 #include "system/SubprocessRunners.h"
 #include "system/UpdateChecker.h"
@@ -50,6 +51,7 @@ void SpawnSettingsSubprocess();
 // Global state
 static std::atomic<bool> g_running{true};
 static TrayIcon g_trayIcon;
+static FloatingIcon g_floatingIcon;
 static HINSTANCE g_hInstance = nullptr;
 
 #ifdef NEXUSKEY_HOOK_ENGINE
@@ -83,8 +85,53 @@ static void CALLBACK IconPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
     uint32_t flags = g_sharedState.ReadFlags();
     bool vietnamese = (flags & SharedFlags::VIETNAMESE_MODE) != 0;
     g_trayIcon.SetVietnameseMode(vietnamese);  // no-op if unchanged
+    g_floatingIcon.SetVietnameseMode(vietnamese);  // no-op if unchanged
 }
 #endif
+
+/// Ensure floating icon window exists (lazy-create on first use).
+static void EnsureFloatingIconCreated() {
+    if (g_floatingIcon.IsCreated()) return;
+    (void)g_floatingIcon.Create(g_hInstance);
+}
+
+/// Initialize floating icon overlay + config callbacks.
+/// Shared by both HookEngine and TSF modes.
+static void InitFloatingIcon(HINSTANCE hInstance, const SystemConfig& sc) {
+    // Only create resources if actually showing — saves RAM when disabled
+    if (sc.showFloatingIcon) {
+        if (g_floatingIcon.Create(hInstance)) {
+            g_floatingIcon.SetPosition(sc.floatingIconX, sc.floatingIconY);
+            g_floatingIcon.SetVisible(true);
+        }
+    }
+
+    // No TOML save on drag — position lives in g_floatingIcon.posX_/posY_,
+    // survives Destroy()/Create() cycles. Persisted to TOML at app exit only.
+
+    // Re-read config when Settings changes icon/system config
+    g_trayIcon.SetIconConfigChangedCallback([]() {
+        auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
+        if (sysConfig.showFloatingIcon) {
+            EnsureFloatingIconCreated();
+            // Don't overwrite in-memory position — object already knows where it was
+            g_floatingIcon.SetVisible(true);
+        } else {
+            g_floatingIcon.Destroy();
+        }
+    });
+}
+
+/// Save floating icon position to TOML for next launch, then destroy.
+static void CleanupFloatingIcon() noexcept {
+    if (g_floatingIcon.GetPosX() != INT32_MIN) {
+        auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
+        sysConfig.floatingIconX = g_floatingIcon.GetPosX();
+        sysConfig.floatingIconY = g_floatingIcon.GetPosY();
+        (void)ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), sysConfig);
+    }
+    g_floatingIcon.Destroy();
+}
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hInstance = hInstance;
@@ -275,6 +322,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         if (trayWnd) {
             PostMessageW(trayWnd, WM_NEXUSKEY_TRAY_MODE_SYNC, wp, 0);
         }
+        // Floating icon: direct update (same thread, no PostMessage needed)
+        g_floatingIcon.SetVietnameseMode(vietnamese);
         // Notify settings dialog directly (1 hop instead of 2 via TRAY_MODE_SYNC).
         // This keeps the toggle in sync with the tray icon even on rapid clicks.
         NotifySettingsMode(vietnamese);
@@ -347,6 +396,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Apply system config (icon style, show-on-startup)
     g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE);
+
+    InitFloatingIcon(hInstance, systemConfig);
+
     if (systemConfig.showOnStartup) {
         SpawnSettingsSubprocess();
     }
@@ -389,6 +441,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     }
 
     // Cleanup
+    CleanupFloatingIcon();
     g_hookEngine.Stop();
     timeEndPeriod(1);
 
@@ -494,6 +547,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Apply system config (icon style, show-on-startup)
     g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE);
+
+    InitFloatingIcon(hInstance, systemConfig);
+
     if (systemConfig.showOnStartup) {
         SpawnSettingsSubprocess();
     }
@@ -536,6 +592,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     }
 
     // Cleanup
+    CleanupFloatingIcon();
     KillTimer(g_trayIcon.GetMessageWindow(), TIMER_ID_ICON_POLL);
     g_hotkeyManager.Uninstall();
 

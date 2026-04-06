@@ -59,6 +59,13 @@
     border-color: var(--accent);
 }
 
+/* Mode hint text below list header */
+.mode-hint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    padding: 4px 0 6px;
+}
+
 /* Ensure scrollbar appears when content overflows */
 .app-list {
     overflow-y: scroll;

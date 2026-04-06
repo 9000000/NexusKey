@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <climits>
 #include <cstdint>
 
 namespace NextKey {
@@ -36,6 +37,11 @@ struct SystemConfig {
     uint8_t iconStyle = 0;         // IconStyle enum (0=Color, 1=Dark, 2=Light, 3=Custom)
     uint32_t customColorV = 0;     // Custom V color (COLORREF, 0 = use default)
     uint32_t customColorE = 0;     // Custom E color (COLORREF, 0 = use default)
+
+    // Floating V/E icon overlay (draggable)
+    bool showFloatingIcon = false;     // Show floating V/E indicator
+    int32_t floatingIconX = INT32_MIN; // Saved X position (INT32_MIN = default)
+    int32_t floatingIconY = INT32_MIN; // Saved Y position (INT32_MIN = default)
 
     // Auto-update
     bool autoCheckUpdate = true;   // Check for updates on startup

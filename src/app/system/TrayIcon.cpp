@@ -445,6 +445,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SetIconConfig(sysConfig.iconStyle, sysConfig.customColorV, sysConfig.customColorE);
         SetLanguage(static_cast<Language>(sysConfig.language));
         RefreshConvertHotkeyCache();
+        if (iconConfigChangedCallback_) iconConfigChangedCallback_();
         return true;
     }
 

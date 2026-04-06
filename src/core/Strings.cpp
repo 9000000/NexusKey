@@ -12,7 +12,7 @@ static std::atomic<Language> g_language{Language::Vietnamese};
 static const wchar_t* const kVietnamese[] = {
     L"Bật Tiếng Việt",                               // MENU_TOGGLE_VIET
     L"Bật kiểm tra chính tả",                        // MENU_SPELL_CHECK
-    L"Loại trừ ứng dụng thông minh",                 // MENU_SMART_SWITCH
+    L"Lưu chế độ gõ theo app",                       // MENU_SMART_SWITCH
     L"Bật gõ tắt",                                   // MENU_MACRO_TOGGLE
     L"Cấu hình gõ tắt...",                           // MENU_MACRO_CONFIG
     L"Công cụ chuyển mã...",                          // MENU_CONVERT_TOOL

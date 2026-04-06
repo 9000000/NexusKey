@@ -89,6 +89,9 @@ public:
     /// Set getter to query current state when right-click menu opens
     void SetMenuStateGetter(MenuStateGetter getter) noexcept { menuStateGetter_ = std::move(getter); }
 
+    /// Set callback when system config changes (WM_NEXUSKEY_ICON_CHANGED)
+    void SetIconConfigChangedCallback(std::function<void()> callback) noexcept { iconConfigChangedCallback_ = std::move(callback); }
+
     /// Process window messages (call from WndProc)
     [[nodiscard]] bool ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept;
 
@@ -113,6 +116,7 @@ private:
     MenuCallback menuCallback_;
     ModeRequestCallback modeRequestCallback_;
     MenuStateGetter menuStateGetter_;
+    std::function<void()> iconConfigChangedCallback_;
 
     // Icon style configuration
     uint8_t iconStyle_ = 0;              // 0=Color, 1=Dark/White, 2=Light/Black, 3=Custom

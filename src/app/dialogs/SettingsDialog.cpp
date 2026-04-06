@@ -729,6 +729,12 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         notifyIconChanged();
         return;
     }
+    else if (id == L"floating-icon") {
+        systemConfig_.showFloatingIcon = value;
+        saveSystemSettings();
+        notifyIconChanged();  // Main process reads updated config
+        return;
+    }
     else if (id == L"check-update") {
         systemConfig_.autoCheckUpdate = value;
         saveSystemSettings();
@@ -981,6 +987,9 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"show-on-startup", systemConfig_.showOnStartup);
     setToggleState(L"desktop-shortcut", systemConfig_.desktopShortcut);
     setToggleState(L"english-ui", systemConfig_.language == 1);
+
+    // Floating icon toggle
+    setToggleState(L"floating-icon", systemConfig_.showFloatingIcon);
 
     // Auto-check update toggle
     setToggleState(L"check-update", systemConfig_.autoCheckUpdate);

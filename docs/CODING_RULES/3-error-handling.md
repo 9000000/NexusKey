@@ -41,4 +41,21 @@ if (FAILED(hr)) {
 }
 ```
 
+## 3.4 `[[nodiscard]]` Return Values
+
+MSVC treats discarded `[[nodiscard]]` as error (`/WX`). Always handle or explicitly discard:
+
+```cpp
+// ❌ Triggers C4834 → error C2220
+floatingIcon.Create(hInstance);
+
+// ✅ Explicitly discard with (void) cast
+(void)floatingIcon.Create(hInstance);
+
+// ✅ Or check the result
+if (!floatingIcon.Create(hInstance)) {
+    NEXTKEY_LOG(L"FloatingIcon creation failed");
+}
+```
+
 ---
