@@ -3523,6 +3523,27 @@ TEST_F(TelexEngineTest, ModifierSwitch_NoCoda_BreveToCircumflex) {
     EXPECT_EQ(engine_->Peek(), L"â");
 }
 
+// ============================================================================
+// REPEATED VOWEL ESCAPE — spell check must not re-apply circumflex
+// ============================================================================
+
+TEST_F(EnglishProtectionTest, RepeatedO_NoCircumflex) {
+    // "oooooo" must not produce "oôoo" — circumflex escape blocks re-application.
+    // 6 keys → 5 chars (escape consumes 1), but NO diacritics.
+    TypeString(*engine_, L"oooooo");
+    EXPECT_EQ(engine_->Peek(), L"ooooo");
+}
+
+TEST_F(EnglishProtectionTest, RepeatedA_NoCircumflex) {
+    TypeString(*engine_, L"aaaaaa");
+    EXPECT_EQ(engine_->Peek(), L"aaaaa");
+}
+
+TEST_F(EnglishProtectionTest, RepeatedE_NoCircumflex) {
+    TypeString(*engine_, L"eeeeee");
+    EXPECT_EQ(engine_->Peek(), L"eeeee");
+}
+
 }  // namespace
 }  // namespace Telex
 }  // namespace NextKey

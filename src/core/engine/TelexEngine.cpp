@@ -399,6 +399,13 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
             if (last.mod == Modifier::Circumflex) {
                 last.mod = Modifier::None;
                 ProcessChar(c);
+                // With spell check ON, block further modifiers to prevent
+                // oo→ô→oo→ô re-trigger cycle ("oo" is ValidPrefix in spell
+                // checker since "oong" is valid, so spellCheckDisabled_ alone
+                // doesn't catch it — unlike "aa"/"ee" which are Invalid).
+                if (config_.spellCheckEnabled) {
+                    toneEscaped_ = true;
+                }
                 return true;
             }
             // Apply circumflex - PRESERVE FIRST LETTER CASE
