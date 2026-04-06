@@ -900,67 +900,63 @@ size_t TelexEngine::FindToneTargetModern() const {
 }
 
 size_t TelexEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs) const {
-    // Collect vowel positions, skipping "gi" and "qu" consonant clusters
-    size_t vowels[8];
+    // Single-pass scan: track only what each priority needs — no fixed buffer.
+    size_t lastHornIdx = SIZE_MAX;      // P1: last horn vowel
+    size_t firstModifiedIdx = SIZE_MAX; // P2: first non-None modified vowel
+    size_t v3rd = SIZE_MAX;             // P3: 3rd-to-last vowel (triphthong)
+    size_t v2nd = SIZE_MAX;             // P3: 2nd-to-last vowel (diphthong)
+    size_t vLast = SIZE_MAX;            // P3+P4: rightmost vowel
     size_t vowelCount = 0;
-    for (size_t i = 0; i < states_.size() && vowelCount < 8; ++i) {
+
+    for (size_t i = 0; i < states_.size(); ++i) {
         if (!states_[i].IsVowel()) continue;
         if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
-        vowels[vowelCount++] = i;
+
+        v3rd = v2nd;
+        v2nd = vLast;
+        vLast = i;
+        ++vowelCount;
+
+        if (states_[i].mod == Modifier::Horn) lastHornIdx = i;
+        if (firstModifiedIdx == SIZE_MAX && states_[i].mod != Modifier::None)
+            firstModifiedIdx = i;
     }
 
     if (vowelCount == 0) return SIZE_MAX;
 
     // Priority 1: Horn vowels (last one for ươ)
-    size_t lastHornIdx = SIZE_MAX;
-    for (size_t k = 0; k < vowelCount; ++k) {
-        if (states_[vowels[k]].mod == Modifier::Horn) lastHornIdx = vowels[k];
-    }
     if (lastHornIdx != SIZE_MAX) return lastHornIdx;
 
     // Priority 2: Other modified vowels (â, ê, ô, ă)
-    for (size_t k = 0; k < vowelCount; ++k) {
-        if (states_[vowels[k]].mod != Modifier::None) return vowels[k];
-    }
+    if (firstModifiedIdx != SIZE_MAX) return firstModifiedIdx;
 
     // Priority 3: Diphthong/triphthong rules
-    if (vowelCount >= 2) {
-        size_t lastIdx = vowels[vowelCount - 1];
-        size_t prevIdx = vowels[vowelCount - 2];
+    if (vowelCount >= 2 && vLast == v2nd + 1) {
+        // Triphthongs (Modern only): tone on MIDDLE vowel
+        if (checkTriphthongs && vowelCount >= 3 && v3rd != SIZE_MAX &&
+            v2nd == v3rd + 1 && vLast == v2nd + 1) {
+            if (IsTriphthong(states_[v3rd].base, states_[v2nd].base, states_[vLast].base))
+                return v2nd;
+        }
 
-        if (lastIdx == prevIdx + 1) {
-            // Triphthongs (Modern only): tone on MIDDLE vowel
-            if (checkTriphthongs && vowelCount >= 3) {
-                size_t midIdx = vowels[vowelCount - 2];
-                size_t firstVIdx = vowels[vowelCount - 3];
-                if (midIdx == firstVIdx + 1 && lastIdx == midIdx + 1) {
-                    wchar_t v1 = states_[firstVIdx].base;
-                    wchar_t v2 = states_[midIdx].base;
-                    wchar_t v3 = states_[lastIdx].base;
-                    if (IsTriphthong(v1, v2, v3))
-                        return midIdx;
-                }
+        // Diphthong table lookup
+        int fi = DiphthongVowelIndex(states_[v2nd].base);
+        int li = DiphthongVowelIndex(states_[vLast].base);
+        if (fi >= 0 && li >= 0) {
+            uint8_t rule = table[fi][li];
+
+            // Rule 3: Rising diphthongs (oa, oe) - SECOND with coda, FIRST without
+            if (rule == 3) {
+                rule = (vLast + 1 < states_.size()) ? 2 : 1;
             }
 
-            // Diphthong table lookup
-            int fi = DiphthongVowelIndex(states_[prevIdx].base);
-            int li = DiphthongVowelIndex(states_[lastIdx].base);
-            if (fi >= 0 && li >= 0) {
-                uint8_t rule = table[fi][li];
-                
-                // Rule 3: Rising diphthongs (oa, oe) - SECOND with coda, FIRST without
-                if (rule == 3) {
-                    rule = (lastIdx + 1 < states_.size()) ? 2 : 1;
-                }
-                
-                if (rule == 1) return prevIdx;   // tone on FIRST
-                if (rule == 2) return lastIdx;    // tone on SECOND
-            }
+            if (rule == 1) return v2nd;    // tone on FIRST
+            if (rule == 2) return vLast;   // tone on SECOND
         }
     }
 
     // Default: rightmost vowel
-    return vowels[vowelCount - 1];
+    return vLast;
 }
 
 //-----------------------------------------------------------------------------
