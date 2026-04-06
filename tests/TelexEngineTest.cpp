@@ -3565,6 +3565,18 @@ TEST_F(EnglishProtectionTest, RepeatedE_TonePlacement_Acute) {
     EXPECT_EQ(engine_->Peek(), L"meeeeeeeeé");
 }
 
+// ============================================================================
+// MODIFIER ESCAPE THROUGH SPELL CHECK GATE
+// ww should undo horn even when spellCheckDisabled_ is true
+// ============================================================================
+
+TEST_F(EnglishProtectionTest, WW_Escape_ThroughSpellCheck_EU) {
+    // euw → eư (horn applied, spellCheckDisabled_ set because "eư" is invalid)
+    // euww → euw (second 'w' should escape the horn)
+    TypeString(*engine_, L"euww");
+    EXPECT_EQ(engine_->Peek(), L"euw");
+}
+
 }  // namespace
 }  // namespace Telex
 }  // namespace NextKey

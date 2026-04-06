@@ -538,6 +538,22 @@ TEST_F(VniEngineTest, EnglishProt_ValidVowelPair_OA_AllowsTone) {
 }
 
 
+// ============================================================================
+// UU + HORN: horn should go on FIRST 'u' (lưu, cưu, hưu)
+// ============================================================================
+
+TEST_F(VniEngineTest, Horn_UU_HornOnFirstU) {
+    // uu7 → ưu (horn on first 'u', like lưu pattern)
+    TypeString(*engine_, L"uu7");
+    EXPECT_EQ(engine_->Peek(), L"ưu");
+}
+
+TEST_F(VniEngineTest, Horn_LUU_Luu) {
+    // luu7 → lưu
+    TypeString(*engine_, L"luu7");
+    EXPECT_EQ(engine_->Peek(), L"lưu");
+}
+
 }  // namespace
 }  // namespace Vni
 }  // namespace NextKey

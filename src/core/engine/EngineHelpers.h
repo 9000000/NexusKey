@@ -189,4 +189,23 @@ template<typename CharStateT>
     return false;
 }
 
+/// Check if states_ contains a modifier that the given key could escape.
+/// Used by both TelexEngine and VniEngine to bypass the spellCheckDisabled_ gate
+/// for modifier escape (ww undoes horn, dd undoes stroke, etc.).
+/// @param mod  The modifier type the key would apply/escape.
+/// @param isStroke  True if checking for stroke-d (searches IsD() instead of IsVowel()).
+template<typename CharStateT, typename ModifierT>
+[[nodiscard]] inline bool HasEscapableModifier(
+        const CharStateT* states, size_t count, ModifierT mod,
+        bool isStroke = false) noexcept {
+    for (size_t i = 0; i < count; ++i) {
+        if (isStroke) {
+            if (states[i].IsD() && states[i].mod == mod) return true;
+        } else {
+            if (states[i].IsVowel() && states[i].mod == mod) return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace NextKey

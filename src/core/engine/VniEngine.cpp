@@ -239,6 +239,22 @@ void VniEngine::PushChar(wchar_t c) {
             // Don't try modifiers — treat as literal
         } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // PREVENT modifier application if sequence is already structurally invalid.
+            // But allow modifier ESCAPE (77 undoes horn, 99 undoes stroke, 66/88 undoes
+            // circumflex/breve) — same principle as tone escape bypass.
+            Modifier escapeMod = Modifier::None;
+            switch (c) {
+                case L'6': escapeMod = Modifier::Circumflex; break;
+                case L'7': escapeMod = Modifier::Horn; break;
+                case L'8': escapeMod = Modifier::Breve; break;
+                case L'9': escapeMod = Modifier::Stroke; break;
+            }
+            if (escapeMod != Modifier::None &&
+                HasEscapableModifier(states_.data(), states_.size(), escapeMod,
+                                     escapeMod == Modifier::Stroke) &&
+                ProcessModifier(c)) {
+                UpdateSpellState();
+                return;
+            }
         } else if (ProcessModifier(c)) {
             if (engProt_.bias == LanguageBias::HardEnglish ||
                 engProt_.bias == LanguageBias::SoftEnglish) {
@@ -497,6 +513,23 @@ bool VniEngine::ProcessModifier(wchar_t c) {
                 ProcessChar(c, rawInput_.size() - 1);
                 return true;
             }
+        }
+    }
+
+    // Special: "uu" pattern → horn on FIRST 'u' (lưu, cưu, hưu)
+    // Same logic as Telex ProcessWModifier P5.
+    if (targetMod == Modifier::Horn) {
+        size_t firstU = SIZE_MAX, lastU = SIZE_MAX;
+        for (size_t i = 0; i < states_.size(); ++i) {
+            if (!states_[i].IsVowel() || states_[i].base != L'u') continue;
+            if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+            if (states_[i].mod != Modifier::None) continue;
+            if (firstU == SIZE_MAX) firstU = i;
+            lastU = i;
+        }
+        if (firstU != SIZE_MAX && lastU != firstU) {
+            states_[firstU].mod = Modifier::Horn;
+            return true;
         }
     }
 

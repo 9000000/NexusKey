@@ -261,7 +261,24 @@ void TelexEngine::PushChar(wchar_t c) {
         // Don't try modifiers — treat as literal
     } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
         // PREVENT modifier application if sequence is already structurally invalid.
-        // Treating 'w' or 'e' as literal instead of modifiers.
+        // But allow modifier ESCAPE (ww undoes horn, dd undoes stroke, aa/ee/oo undoes
+        // circumflex) — same principle as tone escape bypass above (line 190).
+        bool canEscape = false;
+        if (lower == L'w') {
+            canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Horn) ||
+                        HasEscapableModifier(states_.data(), states_.size(), Modifier::Breve);
+        } else if (lower == L'd') {
+            canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Stroke, true);
+        } else if (IsVowelChar(c) && !states_.empty()) {
+            const CharState& last = states_.back();
+            if (last.IsVowel() && last.base == lower && last.mod == Modifier::Circumflex)
+                canEscape = true;
+        }
+        if (canEscape && ProcessModifier(c)) {
+            ApplyAutoUO();
+            UpdateSpellState();
+            return;
+        }
     } else if (ProcessModifier(c)) {
         if (engProt_.bias == LanguageBias::HardEnglish || 
             engProt_.bias == LanguageBias::SoftEnglish) {
