@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(NexusKey VERSION 2.1.7 LANGUAGES CXX)
+project(NexusKey VERSION 2.1.8 LANGUAGES CXX)
 
 # Generate Version.h from Version.h.in — version is defined once in project() above.
 configure_file(
@@ -133,6 +133,8 @@ add_executable(NextKeyApp WIN32
     # system/
     src/app/system/TrayIcon.h
     src/app/system/TrayIcon.cpp
+    src/app/system/FloatingIcon.h
+    src/app/system/FloatingIcon.cpp
     src/app/system/HookEngine.h
     src/app/system/HookEngine.cpp
     src/app/system/HotkeyManager.h
