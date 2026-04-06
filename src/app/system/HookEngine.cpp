@@ -155,9 +155,13 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     // (handles focus changes within same window, e.g. YouTube video → comment box)
     mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, hInstance, 0);
 
-    // Install focus change hook to reset composition on window switch
+    // Install focus change hook to reset composition on window switch.
+    // Range covers EVENT_SYSTEM_FOREGROUND (0x0003) through EVENT_SYSTEM_MINIMIZEEND (0x0017).
+    // We only act on FOREGROUND and MINIMIZEEND — others are ignored in WinEventProc.
+    // MINIMIZEEND is needed because restoring a window from the taskbar may not fire
+    // EVENT_SYSTEM_FOREGROUND (taskbar gets the foreground event, filtered as Shell_TrayWnd).
     focusHook_ = SetWinEventHook(
-        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND,
         nullptr, WinEventProc,
         0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
@@ -512,14 +516,25 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
-void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD, HWND hwnd, LONG, LONG, DWORD, DWORD) {
+void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD) {
+    // Only handle events we care about (range includes others we ignore)
+    if (event != EVENT_SYSTEM_FOREGROUND && event != EVENT_SYSTEM_MINIMIZEEND) return;
+
     HookEngine* self = s_instance.load(std::memory_order_relaxed);
-    if (self) {
-        HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
-                 self->engine_->Count(), self->previousComposition_.c_str());
-        self->autoCapState_ = 0;
-        self->OnFocusChanged(hwnd);
+    if (!self) return;
+
+    if (event == EVENT_SYSTEM_MINIMIZEEND) {
+        // Window restored from taskbar — re-evaluate focus with the actual foreground window.
+        // Don't use hwnd directly: the restored window may not be foreground yet.
+        HOOK_LOG(L"MINIMIZEEND (hwnd=%p) — re-evaluating focus", hwnd);
+        self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+        return;
     }
+
+    HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
+             self->engine_->Count(), self->previousComposition_.c_str());
+    self->autoCapState_ = 0;
+    self->OnFocusChanged(hwnd);
 }
 
 LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
