@@ -116,22 +116,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     // Load manual per-app overrides (encoding + input method)
     ReloadAppOverrides();
 
-    // Load excluded apps
-    if (excludeApps_) {
-        excludedAppSet_.clear();
-        for (auto& app : ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath())) {
-            excludedAppSet_.insert(std::move(app));
-        }
-    }
-
-    // Load TSF apps list (apps that use TSF engine instead of hook)
-    if (tsfApps_) {
-        auto apps = ConfigManager::LoadTsfApps(ConfigManager::GetConfigPath());
-        tsfAppSet_.clear();
-        for (auto& app : apps) {
-            tsfAppSet_.insert(std::move(app));
-        }
-    }
+    // Load excluded apps and TSF apps
+    ReloadExcludedApps();
+    ReloadTsfApps();
 
     // Pre-compute VK code for hotkey character (layout-aware)
     hotkeyVk_ = 0;
@@ -394,26 +381,13 @@ void HookEngine::ReloadFromToml() {
     // Reload manual per-app overrides (encoding + input method)
     ReloadAppOverrides();
 
-    // Reload excluded apps
-    if (excludeApps_) {
-        excludedAppSet_.clear();
-        for (auto& app : ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath())) {
-            excludedAppSet_.insert(std::move(app));
-        }
-    } else {
-        excludedAppSet_.clear();
-        isExcludedApp_ = false;
-    }
+    // Reload excluded apps and TSF apps
+    ReloadExcludedApps();
+    ReloadTsfApps();
 
-    // Reload TSF apps list
-    if (tsfApps_) {
-        auto apps = ConfigManager::LoadTsfApps(ConfigManager::GetConfigPath());
-        tsfAppSet_.clear();
-        for (auto& app : apps) {
-            tsfAppSet_.insert(std::move(app));
-        }
-    } else {
-        tsfAppSet_.clear();
+    // Re-evaluate excluded status for current app (set was just reloaded)
+    if (excludeApps_ && !currentExe_.empty()) {
+        isExcludedApp_ = excludedAppSet_.count(currentExe_) > 0;
     }
 
     // Re-evaluate TSF app status for current foreground app
@@ -1506,6 +1480,24 @@ void HookEngine::ReloadAppOverrides() {
     }
 }
 
+void HookEngine::ReloadExcludedApps() {
+    excludedAppSet_.clear();
+    if (excludeApps_) {
+        for (auto& app : ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath()))
+            excludedAppSet_.insert(std::move(app));
+    } else {
+        isExcludedApp_ = false;
+    }
+}
+
+void HookEngine::ReloadTsfApps() {
+    tsfAppSet_.clear();
+    if (tsfApps_) {
+        for (auto& app : ConfigManager::LoadTsfApps(ConfigManager::GetConfigPath()))
+            tsfAppSet_.insert(std::move(app));
+    }
+}
+
 void HookEngine::SaveEnglishModeAppsIfDirty() {
     if (!appModeDirty_ || !smartSwitch_) return;
     appModeDirty_ = false;
@@ -1620,18 +1612,22 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         appModeDirty_ = true;
     }
 
-    // Get new app (save previous for tray menu context)
+    // Get new app (save previous for tray menu context).
+    // Resolve into a local first — don't wipe currentExe_ if both paths fail,
+    // so subsequent focus events still have a valid previousExe_.
+    std::wstring newExe = GetExeNameForHwnd(activeHwnd);
+    // Fallback: triggerHwnd may be stale (destroyed/inaccessible by the time async callback runs).
+    // Try current foreground window instead.
+    if (newExe.empty() && activeHwnd != fg && fg) {
+        newExe = GetExeNameForHwnd(fg);
+        HOOK_LOG(L"  GetExeNameForHwnd: triggerHwnd failed, fallback to fg → '%s'", newExe.c_str());
+    }
+    if (newExe.empty()) return;
+
     if (!currentExe_.empty()) {
         previousExe_ = currentExe_;
     }
-    currentExe_ = GetExeNameForHwnd(activeHwnd);
-    // Fallback: triggerHwnd may be stale (destroyed/inaccessible by the time async callback runs).
-    // Try current foreground window instead.
-    if (currentExe_.empty() && activeHwnd != fg && fg) {
-        currentExe_ = GetExeNameForHwnd(fg);
-        HOOK_LOG(L"  GetExeNameForHwnd: triggerHwnd failed, fallback to fg → '%s'", currentExe_.c_str());
-    }
-    if (currentExe_.empty()) return;
+    currentExe_ = std::move(newExe);
 
     // Check excluded apps
     if (excludeApps_ && !excludedAppSet_.empty()) {
