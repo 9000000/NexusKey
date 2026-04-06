@@ -65,7 +65,7 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
   Glassmorphism, auto Light/Dark, tùy biến icon, hỗ trợ song ngữ
 
 * **High Performance Engine**
-  Độ trễ thấp, hỗ trợ TSF, auto update, tối ưu bảo mật
+  Độ trễ thấp, hỗ trợ TSF, auto update, [tối ưu bảo mật](docs/SECURITY.md)
 
 ---
 
