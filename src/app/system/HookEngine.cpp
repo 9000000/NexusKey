@@ -739,9 +739,18 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
     }
     if (commitUndoState_ == CommitUndoState::Ready) {
-        // Non-backspace key after commit → cancel undo opportunity
-        // (stack preserved — HandleBackspace re-enters state 1 if engine becomes empty)
-        commitUndoState_ = CommitUndoState::Idle;
+        // Navigation keys move cursor → stack entries become stale, clear everything.
+        // Other keys (alpha, digits, punctuation) just set Idle but preserve stack
+        // so multi-word backward still works for consecutive commits.
+        if ((vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
+            vkCode == VK_HOME || vkCode == VK_END ||
+            vkCode == VK_PRIOR || vkCode == VK_NEXT ||
+            vkCode == VK_DELETE) {
+            HOOK_LOG(L"  commit-undo: cancel — navigation key vk=0x%02X", vkCode);
+            CancelCommitUndo();
+        } else {
+            commitUndoState_ = CommitUndoState::Idle;
+        }
     }
 
     // 3. English mode or CJK layout suppression — skip Vietnamese processing
