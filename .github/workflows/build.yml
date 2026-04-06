@@ -2,11 +2,11 @@ name: Build
 
 on:
   push:
-    branches: [main, "feature/*"]
+    branches: [Main, "feature/*"]
     tags:
       - 'v*'
   pull_request:
-    branches: [main]
+    branches: [Main]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

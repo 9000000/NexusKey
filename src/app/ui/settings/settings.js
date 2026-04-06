@@ -111,11 +111,21 @@ function initializeToggles() {
             if (id === "show-advanced") {
                 const container = document.getElementById("main-container");
                 if (container) {
-                    if (newState) container.classList.add("expanded");
-                    else container.classList.remove("expanded");
-
-                    // Force sync layout before C++ measures DOM
-                    Window.this.update();
+                    if (newState) {
+                        container.classList.add("expanded");
+                        // Force sync layout before C++ measures DOM
+                        Window.this.update();
+                        // Tab indicator couldn't be positioned during init
+                        // (section was display:none → offsetLeft/Width = 0).
+                        // Position it now that the section is visible.
+                        requestAnimationFrame(function() {
+                            var activeTab = document.querySelector(".tab-item.active");
+                            if (activeTab) updateTabIndicator(activeTab);
+                        });
+                    } else {
+                        container.classList.remove("expanded");
+                        Window.this.update();
+                    }
                 }
             }
 
@@ -136,8 +146,6 @@ function initializeToggles() {
 
 // Initialize advanced panel toggle and tabs
 function initializeAdvancedPanel() {
-
-
     // Tab switching
     const tabItems = document.querySelectorAll(".tab-item");
     tabItems.forEach(function (tab) {
@@ -204,38 +212,6 @@ function initializeTabPanels() {
     lockPointerEvents(250);
 }
 
-// Note: Advanced settings toggle uses div-based toggle with hidden input
-// JS updates container class and hidden input, C++ catches VALUE_CHANGED
-
-// Toggle advanced settings panel expansion
-function toggleAdvancedSettings() {
-
-    const container = document.getElementById("main-container");
-    if (container) {
-        const isExpanded = container.classList.contains("expanded");
-
-        if (isExpanded) {
-            container.classList.remove("expanded");
-            lockPointerEvents(250); // Lock during collapse
-        } else {
-            container.classList.add("expanded");
-            lockPointerEvents(300); // Lock during expand (0.25s + margin)
-            
-            // Set indicator position after layout expands
-            requestAnimationFrame(function() {
-                var activeTab = document.querySelector(".tab-item.active");
-                if (activeTab) updateTabIndicator(activeTab);
-            });
-        }
-
-        // Notify C++ to resize window
-        const hiddenInput = document.getElementById("val-expand-state");
-        if (hiddenInput) {
-            hiddenInput.value = !isExpanded ? "1" : "0";
-            hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-    }
-}
 // Switch between tabs - using Sciter native state pattern
 function switchTab(tabIndex) {
     // Update active tab header (visual only, use classList)

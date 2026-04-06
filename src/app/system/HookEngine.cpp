@@ -516,17 +516,20 @@ void HookEngine::ReloadFromToml() {
 
 LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     HookEngine* self = s_instance.load(std::memory_order_relaxed);
+    auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
+
+    // Always track our own synthetic events regardless of nCode.
+    // When nCode < 0, Windows tells us to pass the message along — but the event
+    // still represents a delivered synthetic that was counted when sent.
+    // Without this, synthEventsPending_ leaks on every nCode < 0 delivery.
+    if (self && pKey->dwExtraInfo == NEXUSKEY_EXTRA_INFO) {
+        HOOK_LOG(L"  PASSTHRU (dwExtraInfo=NK): vk=0x%02X scan=0x%04X flags=0x%08X nCode=%d",
+                 pKey->vkCode, pKey->scanCode, pKey->flags, nCode);
+        if (self->synthEventsPending_ > 0) --self->synthEventsPending_;
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+
     if (nCode == HC_ACTION && self) {
-        auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
-
-        // Skip our own injected events (dwExtraInfo magic number — primary method)
-        if (pKey->dwExtraInfo == NEXUSKEY_EXTRA_INFO) {
-            HOOK_LOG(L"  PASSTHRU (dwExtraInfo=NK): vk=0x%02X scan=0x%04X flags=0x%08X",
-                     pKey->vkCode, pKey->scanCode, pKey->flags);
-            if (self->synthEventsPending_ > 0) --self->synthEventsPending_;
-            return CallNextHookEx(nullptr, nCode, wParam, lParam);
-        }
-
         // Skip events while we're sending (safety backup)
         if (self->sending_) {
             HOOK_LOG(L"  PASSTHRU (sending_): vk=0x%02X scan=0x%04X flags=0x%08X",
@@ -703,7 +706,22 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return false;  // Let backspace pass through to delete the space
     }
     if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vietnameseMode_) {
-        if (vkCode >= 0x41 && vkCode <= 0x5A) {
+        // Synth guard: if synthetic events were sent recently and are likely still
+        // in the OS input queue, replaying now would set previousComposition_ to stale
+        // committed text while the screen hasn't caught up — causing diff miscalculation
+        // and permanent engine-screen desync.  Cancel commit-undo and fall through to
+        // normal key processing.
+        // Time check is essential: on Qt apps, synthEventsPending_ has a persistent
+        // baseline leak (counter never reaches 0 due to event counting mismatch).
+        // Checking counter alone would permanently disable commit-undo.  The 100ms
+        // threshold covers DispatchSendInput Sleep (10-20ms) + Qt processing (~30ms)
+        // with margin, while allowing replay at normal typing speed (>100ms between keys).
+        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < kSynthSettleMs) {
+            HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
+                     synthEventsPending_, vkCode);
+            CancelCommitUndo();
+            // Fall through: BS → line 938 re-inject if needed; alpha → HandleAlphaKey
+        } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
             // Alpha key → replay saved chars, then process the new key.
             // MUST return HandleAlphaKey's value: if it triggers passthrough (return false),
             // the original key must reach the app — ignoring it would swallow the keystroke.
@@ -715,8 +733,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                      synthEventsPending_);
             ReplayCommittedChars();
             return HandleAlphaKey(vkCode);
-        }
-        if (vkCode == VK_BACK) {
+        } else if (vkCode == VK_BACK) {
             // Backspace → replay saved chars, then backspace into the word
             HOOK_LOG(L"  commit-undo: replaying + backspace (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
                      commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
@@ -726,9 +743,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             ReplayCommittedChars();
             HandleBackspace();
             return true;
+        } else {
+            // Any other key → cancel commit-undo
+            commitUndoState_ = CommitUndoState::Idle;
         }
-        // Any other key → cancel commit-undo
-        commitUndoState_ = CommitUndoState::Idle;
     }
     if (commitUndoState_ == CommitUndoState::Ready) {
         // Non-backspace key after commit → cancel undo opportunity
@@ -1199,6 +1217,7 @@ void HookEngine::ResetComposition() {
     tempMacroOff_ = false;
     CancelCommitUndo();
     synthEventsPending_ = 0;  // Pending synthetics from old context are irrelevant after reset
+    lastRealSynthTime_ = 0;
     hadSynthInWord_ = false;
 }
 
@@ -1309,7 +1328,7 @@ void HookEngine::SendBackspaceEvents(size_t count) {
     UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
     synthEventsPending_ += static_cast<int>(sent);
     sending_ = false;
-    lastSynthSendTime_ = GetTickCount();
+    RecordSynthDispatch();
 }
 
 void HookEngine::SendCharEvents(const std::wstring& text) {
@@ -1322,12 +1341,18 @@ void HookEngine::SendCharEvents(const std::wstring& text) {
     UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
     synthEventsPending_ += static_cast<int>(sent);
     sending_ = false;
-    lastSynthSendTime_ = GetTickCount();
+    RecordSynthDispatch();
 }
 
 /// Dispatch backspace + character events via SendInput.
 /// Handles split (Electron/Console) vs batch (Win32) strategy in one place.
 /// NOTE: batch path appends charEvents into bsEvents — callers must not reuse after calling.
+void HookEngine::RecordSynthDispatch() noexcept {
+    DWORD now = GetTickCount();
+    lastSynthSendTime_ = now;
+    lastRealSynthTime_ = now;
+}
+
 void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents) {
     sending_ = true;
     if (skipEmptyChar_) {
@@ -1359,7 +1384,7 @@ void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INP
         }
     }
     sending_ = false;
-    lastSynthSendTime_ = GetTickCount();
+    RecordSynthDispatch();
 }
 
 /// Check if a filename (without path) is a known browser executable.

@@ -100,6 +100,7 @@ private:
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
     void CancelCommitUndo();   // commitUndoState_ = Idle + commitStack_.clear()
+    void RecordSynthDispatch() noexcept;  // Update both lastSynthSendTime_ and lastRealSynthTime_
     void SetCommitUndoReady(); // commitUndoState_ = Ready + timestamp
 
     // Output — universal SendInput with KEYEVENTF_UNICODE
@@ -159,6 +160,7 @@ private:
     std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
     int synthEventsPending_ = 0;  // Count of synthetic INPUT structs sent but not yet processed by hook
     DWORD lastSynthSendTime_ = 0;  // GetTickCount() of last SendInput call (watchdog: reset if stuck > 500ms)
+    DWORD lastRealSynthTime_ = 0;  // GetTickCount() of last typing-related dispatch (not InjectKey re-injection)
     bool hadSynthInWord_ = false;  // True if any synthetic event was sent for the current word (blocks passthrough mixing)
     bool beepOnSwitch_ = false;
     bool smartSwitch_ = false;
@@ -204,6 +206,7 @@ private:
     // Auto-expire the Ready state after this many ms — cheap insurance against any
     // cursor-movement event that bypasses ResetComposition (e.g. future edge cases).
     static constexpr DWORD kCommitUndoTimeoutMs = 4000;
+    static constexpr DWORD kSynthSettleMs = 100;  // Max time (ms) for synthetic events to be processed by app
 
     enum class CommitUndoState : uint8_t {
         Idle   = 0,  // No pending undo

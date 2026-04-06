@@ -65,7 +65,7 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
   Glassmorphism, auto Light/Dark, tùy biến icon, hỗ trợ song ngữ
 
 * **High Performance Engine**
-  Độ trễ thấp, hỗ trợ TSF, auto update, tối ưu bảo mật
+  Độ trễ thấp, hỗ trợ TSF, auto update, [tối ưu bảo mật](docs/SECURITY.md)
 
 ---
 
@@ -173,7 +173,7 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI.
 **System**
 - **TSF Engine** — Text Services Framework integration for modern applications, with per-app TSF selection
 - **Auto-update** — Built-in update checker and installer
-- **Security hardened** — Code optimized to minimize security vulnerabilities
+- **[Security hardened](docs/SECURITY.md)** — Code optimized to minimize security vulnerabilities
 - **High performance** — Optimized system processing
 
 ### Installation

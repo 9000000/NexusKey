@@ -203,22 +203,8 @@
     /* 4px left to keep 8px inner gap, 8px right to fix outer excess margin */
     /* Reduced bottom padding */
     box-sizing: border-box;
-    transform-origin: left center;
-    animation: advancedSlide 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-    behavior: layer;
-    image-rendering: optimize-speed;
-}
-
-@keyframes advancedSlide {
-    0% {
-        opacity: 0;
-        transform: translate(-20px, 0);
-    }
-
-    100% {
-        opacity: 1;
-        transform: translate(0, 0);
-    }
+    /* No CSS animation — any animation with 'forwards' fill breaks Sciter
+       hit-testing when section goes from display:none to display:block */
 }
 
 /* (Removed: Arrow icon styles - now using toggle switch) */
