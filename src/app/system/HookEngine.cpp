@@ -1625,6 +1625,12 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         previousExe_ = currentExe_;
     }
     currentExe_ = GetExeNameForHwnd(activeHwnd);
+    // Fallback: triggerHwnd may be stale (destroyed/inaccessible by the time async callback runs).
+    // Try current foreground window instead.
+    if (currentExe_.empty() && activeHwnd != fg && fg) {
+        currentExe_ = GetExeNameForHwnd(fg);
+        HOOK_LOG(L"  GetExeNameForHwnd: triggerHwnd failed, fallback to fg → '%s'", currentExe_.c_str());
+    }
     if (currentExe_.empty()) return;
 
     // Check excluded apps
