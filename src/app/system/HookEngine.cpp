@@ -1657,7 +1657,8 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 
     if (isExcludedApp_) {
         // Entering hard-excluded app — save mode before forcing English
-        if (!wasExcluded) {
+        // Guard: don't re-save if coming from soft-excluded (already forced English)
+        if (!wasExcluded && !wasSoftExcluded) {
             modeBeforeExclude_ = vietnameseMode_;
         }
         HOOK_LOG(L"  ExcludeApps: '%s' is hard-excluded, forcing English", currentExe_.c_str());
@@ -1669,7 +1670,10 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     if (isSoftExcludedApp_) {
-        // Entering soft-excluded app — always reset to English, but don't block toggle
+        // Entering soft-excluded app — save mode before forcing English
+        if (!wasSoftExcluded && !wasExcluded) {
+            modeBeforeExclude_ = vietnameseMode_;
+        }
         HOOK_LOG(L"  ExcludeApps: '%s' is soft-excluded, resetting to English", currentExe_.c_str());
         if (vietnameseMode_) {
             vietnameseMode_ = false;
@@ -1733,8 +1737,8 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
                     NotifyModeChange();
                 }
             }
-        } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
-            // SmartSwitch OFF — still restore pre-exclusion mode when leaving hard-excluded app
+        } else if ((wasExcluded || wasSoftExcluded) && modeBeforeExclude_ != vietnameseMode_) {
+            // SmartSwitch OFF — restore pre-exclusion mode when leaving excluded app (hard or soft)
             vietnameseMode_ = modeBeforeExclude_;
             HOOK_LOG(L"  ExcludeApps: restored pre-exclude %s for '%s'",
                      vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
