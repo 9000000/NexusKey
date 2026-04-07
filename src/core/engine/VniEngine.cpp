@@ -789,17 +789,44 @@ void VniEngine::ApplyAutoUO() {
 void VniEngine::RelocateToneToTarget() {
     CharState* toned = nullptr;
     for (auto& s : states_) {
-        // Only relocate if tone exists
-        if (s.IsVowel() && s.tone != Tone::None) { 
-            toned = &s; 
-            break; 
+        if (s.IsVowel() && s.tone != Tone::None) {
+            toned = &s;
+            break;
         }
     }
     if (!toned) return;
-    
+
     CharState* target = FindToneTarget();
     if (!target || target == toned) return;
-    
+
+    // P1/P2 targets (horn, circumflex, breve) always attract the tone.
+    if (target->mod != Modifier::None) {
+        target->tone = toned->tone;
+        toned->tone = Tone::None;
+        return;
+    }
+
+    // P4 guard: don't relocate to the rightmost vowel when selected by default
+    // (last two vowels have no diphthong rule). Prevents tone sliding on repeated
+    // vowels, e.g., "Kìaaaa" — tone stays on 'i', doesn't drift to the last 'a'.
+    // Legitimate P3 relocations (coda changing a rule-3 target) have rule != 0.
+    size_t vLast = SIZE_MAX, v2nd = SIZE_MAX;
+    for (size_t i = states_.size(); i-- > 0;) {
+        if (!states_[i].IsVowel()) continue;
+        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+        if (vLast == SIZE_MAX) { vLast = i; continue; }
+        v2nd = i;
+        break;
+    }
+    if (target == &states_[vLast] && v2nd != SIZE_MAX && vLast == v2nd + 1) {
+        int fi = DiphthongVowelIndex(states_[v2nd].base);
+        int li = DiphthongVowelIndex(states_[vLast].base);
+        if (fi >= 0 && li >= 0) {
+            const auto& table = config_.modernOrtho ? kDiphthongModern : kDiphthongClassic;
+            if (table[fi][li] == 0) return;  // No diphthong rule → P4 default → skip
+        }
+    }
+
     target->tone = toned->tone;
     toned->tone = Tone::None;
 }

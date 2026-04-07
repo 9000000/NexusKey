@@ -554,6 +554,46 @@ TEST_F(VniEngineTest, Horn_LUU_Luu) {
     EXPECT_EQ(engine_->Peek(), L"lưu");
 }
 
+// ============================================================================
+// TONE STABILITY — repeated vowels must NOT slide the tone (Bug #1)
+// ============================================================================
+
+TEST_F(VniEngineTest, ToneStable_RepeatedA_AfterI) {
+    // "Ki2aaaa" → "Kìaaaa" (tone stays on 'i', not last 'a')
+    TypeString(*engine_, L"Ki2aaaa");
+    EXPECT_EQ(engine_->Peek(), L"Kìaaaa");
+}
+
+TEST_F(VniEngineTest, ToneStable_RepeatedO_AfterE) {
+    // "me2oooo" → "mèoooo" (tone stays on 'e', not last 'o')
+    TypeString(*engine_, L"me2oooo");
+    EXPECT_EQ(engine_->Peek(), L"mèoooo");
+}
+
+TEST_F(VniEngineTest, ToneStable_RepeatedA_Single) {
+    // "a2aaa" → "àaaa" (tone stays on first 'a')
+    TypeString(*engine_, L"a2aaa");
+    EXPECT_EQ(engine_->Peek(), L"àaaa");
+}
+
+TEST_F(VniEngineTest, ToneStable_RepeatedO_AfterO) {
+    // "o1ooo" → "óooo"
+    TypeString(*engine_, L"o1ooo");
+    EXPECT_EQ(engine_->Peek(), L"óooo");
+}
+
+TEST_F(VniEngineTest, ToneStable_CodaRelocStillWorks) {
+    // "ho2an" → "hoàn" (coda 'n' changes rule-3 target — must still relocate)
+    TypeString(*engine_, L"ho2an");
+    EXPECT_EQ(engine_->Peek(), L"hoàn");
+}
+
+TEST_F(VniEngineTest, ToneStable_DiphthongRelocStillWorks) {
+    // "hu3y" → "huỷ" (uy diphthong rule 2 → tone on 'y')
+    TypeString(*engine_, L"hu3y");
+    EXPECT_EQ(engine_->Peek(), L"huỷ");
+}
+
 }  // namespace
 }  // namespace Vni
 }  // namespace NextKey

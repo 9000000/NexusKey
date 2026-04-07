@@ -3545,24 +3545,24 @@ TEST_F(EnglishProtectionTest, RepeatedE_NoCircumflex) {
 }
 
 // ============================================================================
-// REPEATED VOWEL TONE PLACEMENT — tone must track rightmost vowel
+// REPEATED VOWEL TONE STABILITY — tone stays where user placed it
+// Circumflex trigger/escape consumes keys, so output is shorter than input.
 // ============================================================================
 
 TEST_F(EnglishProtectionTest, RepeatedA_TonePlacement_Acute) {
-    // "masaaaaaaaaa" — tone must land on the LAST vowel, not the 8th.
-    // Circumflex trigger/escape consumes keys, so output is shorter than input.
+    // "masaaaaaaaaa" → tone stays on first 'a', doesn't slide to last.
     TypeString(*engine_, L"masaaaaaaaaa");
-    EXPECT_EQ(engine_->Peek(), L"maaaaaaaaá");
+    EXPECT_EQ(engine_->Peek(), L"máaaaaaaaa");
 }
 
 TEST_F(EnglishProtectionTest, RepeatedO_TonePlacement_Acute) {
     TypeString(*engine_, L"mosooooooooo");
-    EXPECT_EQ(engine_->Peek(), L"mooooooooó");
+    EXPECT_EQ(engine_->Peek(), L"móoooooooo");
 }
 
 TEST_F(EnglishProtectionTest, RepeatedE_TonePlacement_Acute) {
     TypeString(*engine_, L"meseeeeeeeee");
-    EXPECT_EQ(engine_->Peek(), L"meeeeeeeeé");
+    EXPECT_EQ(engine_->Peek(), L"méeeeeeeee");
 }
 
 // ============================================================================

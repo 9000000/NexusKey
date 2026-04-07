@@ -43,43 +43,64 @@ if [[ ! "$confirm" =~ ^[yY]$ ]]; then
     exit 0
 fi
 
-# 4. Update CMakeLists.txt — single source of truth
-if [ ! -f "$CMAKE_FILE" ]; then
-    echo "Error: Could not find CMakeLists.txt at $CMAKE_FILE"
-    exit 1
+# 4. Check if version bump is needed
+if [ "$current_version" = "$version" ]; then
+    echo -e "\033[32mCMakeLists.txt already at v$version — skipping bump.\033[0m"
+    need_commit=false
+else
+    if [ ! -f "$CMAKE_FILE" ]; then
+        echo "Error: Could not find CMakeLists.txt at $CMAKE_FILE"
+        exit 1
+    fi
+
+    echo -e "\033[36mUpdating $CMAKE_FILE...\033[0m"
+    perl -i -pe "s/^(project\\(NexusKey VERSION )[0-9]+\\.[0-9]+\\.[0-9]+/\${1}$version/" "$CMAKE_FILE"
+    echo -e "\033[32mCMakeLists.txt updated to $version.\033[0m"
+    echo -e "\033[90m  (Version.h will be regenerated automatically on next cmake configure)\033[0m"
+    need_commit=true
 fi
 
-echo -e "\033[36mUpdating $CMAKE_FILE...\033[0m"
-perl -i -pe "s/^(project\\(NexusKey VERSION )[0-9]+\\.[0-9]+\\.[0-9]+/\${1}$version/" "$CMAKE_FILE"
-echo -e "\033[32mCMakeLists.txt updated to $version.\033[0m"
-echo -e "\033[90m  (Version.h will be regenerated automatically on next cmake configure)\033[0m"
-
-# 5. Show diff and confirm
-echo -e "\033[33mChanges to commit:\033[0m"
-git -C "$REPO_ROOT" diff "$CMAKE_FILE"
-
-read -p "Looks good? Commit and push? (y/n) " confirm2
-if [[ ! "$confirm2" =~ ^[yY]$ ]]; then
-    echo "Aborted. Changes are on disk but not committed."
-    exit 0
+# 5. Stage any dirty files (CMakeLists.txt + RELEASE_NOTES.md)
+if [ "$need_commit" = true ] || ! git -C "$REPO_ROOT" diff --quiet "$CMAKE_FILE" 2>/dev/null; then
+    need_commit=true
+fi
+if [ -f "$RELEASE_NOTES" ] && ! git -C "$REPO_ROOT" diff --quiet "$RELEASE_NOTES" 2>/dev/null; then
+    need_commit=true
 fi
 
-# 6. Git operations
-echo -e "\033[36mPerforming Git operations...\033[0m"
+if [ "$need_commit" = true ]; then
+    echo -e "\033[33mChanges to commit:\033[0m"
+    git -C "$REPO_ROOT" diff "$CMAKE_FILE" "$RELEASE_NOTES" 2>/dev/null
+    read -p "Looks good? Commit and push? (y/n) " confirm2
+    if [[ ! "$confirm2" =~ ^[yY]$ ]]; then
+        echo "Aborted. Changes are on disk but not committed."
+        exit 0
+    fi
 
-git -C "$REPO_ROOT" add "$CMAKE_FILE"
+    echo -e "\033[36mCommitting...\033[0m"
+    git -C "$REPO_ROOT" add "$CMAKE_FILE"
+    if [ -f "$RELEASE_NOTES" ] && ! git -C "$REPO_ROOT" diff --cached --quiet "$RELEASE_NOTES" 2>/dev/null || ! git -C "$REPO_ROOT" diff --quiet "$RELEASE_NOTES" 2>/dev/null; then
+        git -C "$REPO_ROOT" add "$RELEASE_NOTES"
+        echo -e "\033[36mStaged RELEASE_NOTES.md too.\033[0m"
+    fi
+    git -C "$REPO_ROOT" commit -m "Bump version to v$version"
 
-# Also stage RELEASE_NOTES if it was modified
-if [ -f "$RELEASE_NOTES" ] && ! git -C "$REPO_ROOT" diff --quiet "$RELEASE_NOTES"; then
-    git -C "$REPO_ROOT" add "$RELEASE_NOTES"
-    echo -e "\033[36mStaged RELEASE_NOTES.md too.\033[0m"
+    echo -e "\033[36mPushing to origin ($branch)...\033[0m"
+    git -C "$REPO_ROOT" push origin "$branch"
+else
+    echo -e "\033[32mNo file changes — skipping commit.\033[0m"
+    # Still push branch in case there are unpushed commits
+    if ! git -C "$REPO_ROOT" diff --quiet "origin/$branch" "$branch" 2>/dev/null; then
+        echo -e "\033[36mPushing unpushed commits to origin ($branch)...\033[0m"
+        git -C "$REPO_ROOT" push origin "$branch"
+    fi
 fi
 
-git -C "$REPO_ROOT" commit -m "Bump version to v$version"
+# 6. Create tag and push
+echo -e "\033[36mCreating tag v$version...\033[0m"
 git -C "$REPO_ROOT" tag -a "v$version" -m "Release v$version"
 
-echo -e "\033[36mPushing to origin ($branch)...\033[0m"
-git -C "$REPO_ROOT" push origin "$branch"
+echo -e "\033[36mPushing tag v$version...\033[0m"
 git -C "$REPO_ROOT" push origin "v$version"
 
 echo -e "\033[32mDone! v$version released on branch $branch.\033[0m"
