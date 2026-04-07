@@ -2,6 +2,7 @@
 
 [![Build](https://github.com/phatMT97/NextKey/actions/workflows/build.yml/badge.svg)](https://github.com/phatMT97/NextKey/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Engine: Dual License](https://img.shields.io/badge/Engine-Dual%20License-orange.svg)](LICENSE-COMMERCIAL)
 [![Release](https://img.shields.io/github/v/release/phatMT97/NextKey)](https://github.com/phatMT97/NextKey/releases)
 
 <p align="center">
@@ -25,7 +26,9 @@
 
 **NexusKey** là bộ gõ tiếng Việt mã nguồn mở cho Windows, được viết lại hoàn toàn từ [NextKey](https://github.com/phatMT97/NextKey/tree/master) (dựa trên [OpenKey](https://github.com/tuyenvm/OpenKey) của Mai Vũ Tuyên).
 
-Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorphism. (Engine có tham khảo thêm nguồn từ https://www.unikey.org/source.html - Cảm ơn bác **Phạm Kim Long**)
+Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorphism.
+
+> Engine NexusKey được tối ưu dựa trên nghiên cứu ngữ âm học tiếng Việt, có tham khảo mã nguồn [Unikey](https://www.unikey.org/source.html) của bác **Phạm Kim Long** cho các quy tắc âm vị học (VCPair, consonant restrictions). Xin chân thành cảm ơn!
 
 <a name="privacy-policy"></a>
 ### Chính sách bảo mật
@@ -128,7 +131,7 @@ NexusKey gồm ba lớp:
 
 **NexusKey** is an open-source Vietnamese Input Method Editor (IME) for Windows, completely rewritten from [NextKey](https://github.com/phatMT97/NextKey/tree/master) (based on [OpenKey](https://github.com/tuyenvm/OpenKey) by Mai Vu Tuyen).
 
-New engine, new architecture, C++20, high performance, Glassmorphism UI.
+New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine phonology rules reference [Unikey](https://www.unikey.org/source.html) by Pham Kim Long.
 
 ### Privacy Policy
 * **No Keylogging:** NexusKey does not collect, store, or transmit your keystrokes.
@@ -210,6 +213,7 @@ cmake --build build --config Release --target NextKeyApp
 ## Credits
 
 - Kế thừa từ [NextKey](https://github.com/phatMT97/NextKey/tree/master), lấy cảm hứng từ [OpenKey](https://github.com/tuyenvm/OpenKey) của Mai Vũ Tuyên
+- Quy tắc âm vị học tham khảo từ [Unikey](https://www.unikey.org/source.html) của Phạm Kim Long
 - Giao diện bởi [Sciter.JS](https://sciter.com/)
 - Đọc config bởi [toml++](https://github.com/marzer/tomlplusplus)
 - Testing bởi [Google Test](https://github.com/google/googletest)
@@ -223,4 +227,12 @@ Cảm ơn các thành viên cộng đồng đã test và góp ý:
 
 ## License
 
-Dự án sử dụng [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html) — xem file [LICENSE](LICENSE).
+Dự án sử dụng **dual license**:
+
+| Thành phần | License |
+|------------|---------|
+| **Engine** (`src/core/engine/*`) | [GPL-3.0](LICENSE) **hoặc** [Commercial](LICENSE-COMMERCIAL) |
+| **Tất cả phần còn lại** | [GPL-3.0](LICENSE) |
+
+- **Sử dụng open-source (GPL-3.0):** Bạn có thể sử dụng, sửa đổi, phân phối lại toàn bộ mã nguồn với điều kiện giữ nguyên license GPL-3.0 cho derivative works.
+- **Sử dụng thương mại/closed-source:** Nếu muốn dùng engine NexusKey trong sản phẩm proprietary, vui lòng liên hệ tác giả để lấy commercial license. Xem [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
