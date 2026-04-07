@@ -176,6 +176,65 @@ target_compile_definitions(NextKeyApp PRIVATE SKIP_MAIN NEXUSKEY_HOOK_ENGINE $<$
 target_link_libraries(NextKeyApp PRIVATE NextKeyCore)
 set_target_properties(NextKeyApp PROPERTIES OUTPUT_NAME "NexusKey")
 
+# ============================================================================
+# Classic UI (Lite build) — Win32 native, no Sciter dependency
+# Build with: cmake -B build -DNEXUSKEY_LITE_MODE=ON
+# ============================================================================
+option(NEXUSKEY_LITE_MODE "Build Classic (Win32 native) UI instead of Sciter" OFF)
+
+if(NEXUSKEY_LITE_MODE AND WIN32)
+    add_executable(NextKeyLite WIN32
+        src/app/main_lite.cpp
+        src/app/classic/resource.h
+        src/app/classic/NexusKeyLite.rc
+        # system/ (shared with main app)
+        src/app/system/TrayIcon.h
+        src/app/system/TrayIcon.cpp
+        src/app/system/FloatingIcon.h
+        src/app/system/FloatingIcon.cpp
+        src/app/system/HookEngine.h
+        src/app/system/HookEngine.cpp
+        src/app/system/HotkeyManager.h
+        src/app/system/HotkeyManager.cpp
+        src/app/system/QuickConvert.h
+        src/app/system/QuickConvert.cpp
+        src/app/system/ToastPopup.h
+        src/app/system/ToastPopup.cpp
+        src/app/system/UpdateChecker.h
+        src/app/system/UpdateChecker.cpp
+        src/app/system/UpdateInstaller.h
+        src/app/system/UpdateInstaller.cpp
+        src/app/system/UpdateSecurity.h
+        src/app/system/UpdateSecurity.cpp
+        src/app/system/StartupHelper.h
+        src/app/system/SubprocessHelper.h
+        src/app/system/TsfRegistration.h
+        src/app/system/TsfRegistration.cpp
+        # classic/ (new)
+        src/app/classic/ClassicTheme.h
+        src/app/classic/ClassicTheme.cpp
+        src/app/classic/ClassicSettingsDialog.h
+        src/app/classic/ClassicSettingsDialog.cpp
+        # version
+        src/core/Version.h
+    )
+    target_include_directories(NextKeyLite PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/app
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/app/classic
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
+    )
+    target_compile_definitions(NextKeyLite PRIVATE
+        NEXUSKEY_HOOK_ENGINE
+        NEXUSKEY_LITE_MODE
+        $<$<CONFIG:Debug>:NEXTKEY_DEBUG>
+    )
+    target_link_libraries(NextKeyLite PRIVATE
+        NextKeyCore
+        advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt gdiplus
+    )
+    set_target_properties(NextKeyLite PROPERTIES OUTPUT_NAME "NexusKeyClassic")
+endif()
+
 # Link Windows libraries
 if(WIN32)
     target_link_libraries(NextKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid shell32)

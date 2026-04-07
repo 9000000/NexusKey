@@ -1,0 +1,33 @@
+// NexusKey Classic — Resource file
+// SPDX-License-Identifier: GPL-3.0-only
+
+#include "resource.h"
+#include <windows.h>
+
+// Version info
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 2,1,8,0
+ PRODUCTVERSION 2,1,8,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "NexusKey Classic - Vietnamese IME"
+            VALUE "ProductName", "NexusKey Classic"
+            VALUE "FileVersion", "2.1.8"
+            VALUE "ProductVersion", "2.1.8"
+            VALUE "LegalCopyright", "Copyright (c) 2026 PhatMT"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
+
+// Visual styles manifest
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "NexusKeyLite.exe.manifest"
