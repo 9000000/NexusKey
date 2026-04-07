@@ -208,8 +208,24 @@ void HookEngine::Stop() {
 
 void HookEngine::ToggleVietnameseMode() {
     // Block toggling in excluded apps (verify flag isn't stale first)
-    if (isExcludedApp_ && VerifyExcludedState()) {
-        HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (excluded app '%s')", currentExe_.c_str());
+    // Block toggle in excluded apps. Use cached excludedPid_ + foreground PID
+    // to distinguish "genuinely in excluded app" from "stale flag after leaving".
+    // PID check is cheap (no OpenProcess) and immune to transient tray/taskbar focus.
+    if (excludeApps_ && isExcludedApp_) {
+        HWND fg = GetForegroundWindow();
+        DWORD fgPid = 0;
+        if (fg) GetWindowThreadProcessId(fg, &fgPid);
+        if (fgPid == excludedPid_ && excludedPid_ != 0) {
+            HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (excluded pid=%u)", excludedPid_);
+            return;
+        }
+        // Different PID — user left excluded app, flag is stale.
+        // Force V: user perceived E, wants to toggle to V.
+        isExcludedApp_ = false;
+        vietnameseMode_ = true;
+        NotifyModeChange();
+        HOOK_LOG(L"  ToggleVietnameseMode: stale excluded → forced Vietnamese (fg pid=%u)", fgPid);
+        if (beepOnSwitch_) MessageBeep(MB_OK);
         return;
     }
 
@@ -617,6 +633,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             otherKeyPressed_ = true;
             return false;
         }
+        excludedPid_ = 0;
         NotifyModeChange();
         // Fall through to normal processing for this keystroke
     }
@@ -1641,10 +1658,6 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // Without this guard, right-clicking any app's tray icon would set currentExe_ to that
     // app's process, then the next real focus change would SAVE the wrong mode for that app.
     if (!activeHwnd || !IsWindowVisible(activeHwnd) || IsIconic(activeHwnd) || IsTrayOrTaskbarWindow(activeHwnd)) {
-        // Verify excluded state — clears stale flag if foreground changed
-        if (isExcludedApp_ && !VerifyExcludedState()) {
-            NotifyModeChange();
-        }
         return;
     }
 
