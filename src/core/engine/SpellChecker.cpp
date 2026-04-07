@@ -1,5 +1,8 @@
 // NexusKey - Vietnamese Spell Checker Implementation
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2024-2026 PhatMT. All rights reserved.
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
+// See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
 // Vietnamese syllable structure: [C₁] + V + [C₂]
 // Uses greedy consonant matching and packed-key vowel nucleus table (linear scan).
@@ -136,6 +139,97 @@ constexpr VowelEntry kVowelTable[] = {
 };
 
 constexpr size_t kVowelTableSize = sizeof(kVowelTable) / sizeof(kVowelTable[0]);
+
+//=============================================================================
+// Vowel + Final Consonant pair validation (VCPairList)
+//=============================================================================
+// Bitmask encoding for final consonants
+constexpr uint16_t F_c  = 0x001;
+constexpr uint16_t F_ch = 0x002;
+constexpr uint16_t F_k  = 0x004;
+constexpr uint16_t F_m  = 0x008;
+constexpr uint16_t F_n  = 0x010;
+constexpr uint16_t F_ng = 0x020;
+constexpr uint16_t F_nh = 0x040;
+constexpr uint16_t F_p  = 0x080;
+constexpr uint16_t F_t  = 0x100;
+constexpr uint16_t F_ALL = F_c | F_ch | F_k | F_m | F_n | F_ng | F_nh | F_p | F_t;
+// Common groups
+constexpr uint16_t F_NO_CH_NH = F_ALL & ~(F_ch | F_nh);  // c, k, m, n, ng, p, t
+
+struct VCPairRule {
+    uint32_t vowelKey;
+    uint16_t allowedFinals;
+};
+
+// Which final consonants are valid after each vowel nucleus.
+// Derived from Vietnamese phonology + Unikey VCPairList reference.
+constexpr VCPairRule kVCPairRules[] = {
+    // === Single vowels ===
+    { Key1(VowelSlot(kA, kNone)), F_ALL },                                      // a: all finals
+    { Key1(VowelSlot(kA, kCirc)), F_NO_CH_NH },                                 // â: no ch, nh
+    { Key1(VowelSlot(kA, kBrev)), F_NO_CH_NH },                                 // ă: no ch, nh
+    { Key1(VowelSlot(kE, kNone)), F_ALL },                                      // e: all finals
+    { Key1(VowelSlot(kE, kCirc)), F_c | F_ch | F_m | F_n | F_nh | F_p | F_t }, // ê: no ng
+    { Key1(VowelSlot(kI, kNone)), F_ALL },                                      // i: all finals
+    { Key1(VowelSlot(kO, kNone)), F_NO_CH_NH },                                 // o: no ch, nh
+    { Key1(VowelSlot(kO, kCirc)), F_NO_CH_NH },                                 // ô: no ch, nh
+    { Key1(VowelSlot(kO, kHorn)), F_m | F_n | F_p | F_t },                     // ơ: only m, n, p, t
+    { Key1(VowelSlot(kU, kNone)), F_NO_CH_NH },                                 // u: no ch, nh
+    { Key1(VowelSlot(kU, kHorn)), F_NO_CH_NH },                                 // ư: no ch, nh
+    { Key1(VowelSlot(kY, kNone)), F_t },                                        // y: only t
+
+    // === Double vowels with coda ===
+    { Key2(VowelSlot(kI, kNone), VowelSlot(kE, kCirc)),  F_c | F_m | F_n | F_ng | F_p | F_t },  // iê: no ch, nh
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kA, kNone)),  F_ALL },                                 // oa: all finals
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kA, kBrev)),  F_c | F_n | F_ng | F_t },               // oă: c, n, ng, t
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kE, kNone)),  F_m | F_n | F_ng | F_t },               // oe: m, n, ng, t
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kO, kNone)),  F_c | F_ng },                            // oo: only c, ng
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kA, kCirc)),  F_n | F_ng | F_t },                      // uâ: n, ng, t
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kE, kCirc)),  F_ch | F_n | F_nh },                     // uê: ch, n, nh
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kO, kCirc)),  F_c | F_m | F_n | F_ng | F_p | F_t },   // uô: no ch, nh
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kO, kHorn)),  F_c | F_m | F_n | F_ng | F_p | F_t },   // uơ: no ch, nh
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kY, kNone)),  F_ch | F_n | F_nh | F_t },              // uy: ch, n, nh, t
+    { Key2(VowelSlot(kU, kHorn), VowelSlot(kO, kHorn)),  F_c | F_m | F_n | F_ng | F_p | F_t },   // ươ: no ch, nh
+    { Key2(VowelSlot(kY, kNone), VowelSlot(kE, kCirc)),  F_c | F_m | F_n | F_ng | F_p | F_t },   // yê: same as iê
+
+    // === Triple vowels with coda ===
+    { Key3(VowelSlot(kU, kNone), VowelSlot(kY, kNone), VowelSlot(kE, kCirc)), F_n | F_t },       // uyê: n, t
+};
+
+constexpr size_t kVCPairRuleCount = sizeof(kVCPairRules) / sizeof(kVCPairRules[0]);
+
+// Look up allowed finals for a vowel key. Returns 0 if not found (no restriction).
+uint16_t GetAllowedFinals(uint32_t vowelKey) {
+    for (size_t i = 0; i < kVCPairRuleCount; ++i) {
+        if (kVCPairRules[i].vowelKey == vowelKey) return kVCPairRules[i].allowedFinals;
+    }
+    return 0;  // Not in table — no restriction known
+}
+
+// Encode a parsed final consonant as a bitmask
+template<typename CharStateT>
+uint16_t FinalConsonantBit(const CharStateT* states, size_t finalLen) {
+    if (finalLen == 0) return 0;
+    wchar_t c0 = states[0].base;
+    if (finalLen == 2) {
+        wchar_t c1 = states[1].base;
+        if (c0 == L'c' && c1 == L'h') return F_ch;
+        if (c0 == L'n' && c1 == L'g') return F_ng;
+        if (c0 == L'n' && c1 == L'h') return F_nh;
+        return 0;
+    }
+    // Single char
+    switch (c0) {
+        case L'c': return F_c;
+        case L'k': return F_k;
+        case L'm': return F_m;
+        case L'n': return F_n;
+        case L'p': return F_p;
+        case L't': return F_t;
+        default:   return 0;
+    }
+}
 
 // Linear search the vowel table for exact match (~50 entries, fast enough)
 const VowelEntry* FindVowel(uint32_t key) {
@@ -473,6 +567,16 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
         if (!validK) return Result::Invalid;
     }
 
+    // Check vowel + final consonant pair validity (VCPairList)
+    // Only restrict if the vowel is in our rules table; unknown vowels pass through.
+    uint16_t allowed = GetAllowedFinals(vowelKey);
+    if (allowed != 0) {
+        uint16_t finalBit = FinalConsonantBit(&states[pos], finalLen);
+        if (finalBit != 0 && !(allowed & finalBit)) {
+            return Result::Invalid;
+        }
+    }
+
     // Check tone restriction for stop finals
     if (IsStopFinal(&states[pos], finalLen)) {
         auto tone = GetTone(states, count);
@@ -576,6 +680,40 @@ Result ValidateImpl(const CharStateT* states, size_t count, bool allowZwjf = fal
             return Result::ValidPrefix;
         }
         return Result::Invalid;
+    }
+
+    // Initial consonant + vowel compatibility (Vietnamese phonology):
+    //
+    // k:   only before front vowels e/ê/i/y. ka/ko/ku → use c instead.
+    // c:   only before back/central vowels a/ă/â/o/ô/ơ/u/ư. ce/ci/cy → use k instead.
+    // gh:  only before front vowels e/ê/i. gha/gho → use ga/go instead.
+    // ngh: only before front vowels e/ê/i. ngha → use nga instead.
+    // q:   must be followed by u (qu cluster). qa/qe → invalid.
+    //
+    // kh/ng/nh are separate 2-3 char consonants and are NOT affected.
+
+    if (initialLen < count && states[initialLen].IsVowel()) {
+        wchar_t firstVowel = states[initialLen].base;
+        bool isFrontVowel = (firstVowel == L'e' || firstVowel == L'i' || firstVowel == L'y');
+
+        if (initialLen == 1) {
+            wchar_t c0 = states[0].base;
+            // k only before front vowels
+            if (c0 == L'k' && !isFrontVowel) return Result::Invalid;
+            // c not before front vowels (use k instead)
+            if (c0 == L'c' && isFrontVowel) return Result::Invalid;
+            // q must be part of qu cluster — qa/qe/qi invalid, qu handled by
+            // dual decomposition below. Only block when next char is NOT 'u'.
+            if (c0 == L'q' && firstVowel != L'u') return Result::Invalid;
+        } else if (initialLen == 2) {
+            // gh only before front vowels
+            if (states[0].base == L'g' && states[1].base == L'h' && !isFrontVowel)
+                return Result::Invalid;
+        } else if (initialLen == 3) {
+            // ngh only before front vowels
+            if (states[0].base == L'n' && states[1].base == L'g' && states[2].base == L'h' && !isFrontVowel)
+                return Result::Invalid;
+        }
     }
 
     Result result = ValidateDecomposition(states, count, initialLen);

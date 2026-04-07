@@ -1,5 +1,8 @@
 // NexusKey - Vietnamese Spell Checker (Syllable Structure Validation)
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2024-2026 PhatMT. All rights reserved.
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
+// See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
 // Validates that a character buffer forms a valid Vietnamese syllable:
 //   [C₁] + V + [C₂]

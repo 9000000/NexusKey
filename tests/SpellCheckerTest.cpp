@@ -858,6 +858,587 @@ TEST_F(SmartAccentVniTest, ToneBlockedOnInvalidSyllable_Bla1) {
     EXPECT_EQ(engine.Peek(), L"bla1");
 }
 
+//=============================================================================
+// Engine Integration: VCPair restrictions affect tone gating
+//=============================================================================
+
+TEST_F(TelexSpellCheckTest, VCPair_ƠCh_ToneBlocked) {
+    // "ơch" is invalid (ơ can't end with ch) → tone key becomes literal
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"owchs");  // ow=ơ, ch, s=acute
+    EXPECT_EQ(engine.Peek(), L"\u01A1chs");  // ơchs (tone blocked)
+}
+
+TEST_F(TelexSpellCheckTest, VCPair_ƠN_ToneAllowed) {
+    // "ơn" is valid (ơ + n) → tone applies
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"owns");  // ow=ơ, n, s=acute
+    EXPECT_EQ(engine.Peek(), L"ớn");
+}
+
+// Note: "oo" double vowel can't be tested via Telex engine because
+// o+o triggers circumflex (ô). Direct SpellChecker tests cover oo restrictions.
+
+TEST_F(TelexSpellCheckTest, VCPair_Ka_ToneBlocked) {
+    // k + a is invalid initial (k only before e/ê/i/y) → entire syllable invalid
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"kas");
+    EXPECT_EQ(engine.Peek(), L"kas");
+}
+
+TEST_F(TelexSpellCheckTest, VCPair_Ke_ToneAllowed) {
+    // k + e is valid → tone applies
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"kes");
+    EXPECT_EQ(engine.Peek(), L"ké");
+}
+
+TEST_F(TelexSpellCheckTest, VCPair_Kha_StillValid) {
+    // kh + a is valid (kh is 2-char consonant, NOT k+h)
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"khas");
+    EXPECT_EQ(engine.Peek(), L"khá");
+}
+
+TEST_F(TelexSpellCheckTest, VCPair_ÂCh_ToneBlocked) {
+    // "âch" is invalid (â can't end with ch) → tone blocked
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"aachs");  // aa=â, ch, s=acute
+    EXPECT_EQ(engine.Peek(), L"âchs");
+}
+
+TEST_F(TelexSpellCheckTest, VCPair_ÂN_ToneAllowed) {
+    // "ân" is valid → tone applies
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"aans");  // aa=â, n, s=acute
+    EXPECT_EQ(engine.Peek(), L"ấn");
+}
+
+TEST_F(TelexSpellCheckTest, VCPair_ƯNg_ToneAllowed) {
+    // "ưng" is valid (ư + ng) → tone applies
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"uwngs");  // uw=ư, ng, s=acute
+    EXPECT_EQ(engine.Peek(), L"ứng");
+}
+
+TEST_F(TelexSpellCheckTest, VCPair_ÊNg_ToneBlocked) {
+    // "êng" is invalid (ê can't end with ng) → tone blocked
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"eengs");  // ee=ê, ng, s=acute
+    EXPECT_EQ(engine.Peek(), L"êngs");
+}
+
+TEST_F(TelexSpellCheckTest, VCPair_ÊNh_ToneAllowed) {
+    // "ênh" is valid (ê + nh) → tone applies
+    Telex::TelexEngine engine(config_);
+    TypeString(engine, L"eenhs");  // ee=ê, nh, s=acute
+    EXPECT_EQ(engine.Peek(), L"ếnh");
+}
+
+//=============================================================================
+// P1.2 Verify: gi/qu exception cases (quỳnh, giếng, quyết, quyến)
+//=============================================================================
+
+TEST_F(SpellCheckerGiQuTest, Quynh_Valid) {
+    // qu + y + nh → quynh (valid: qu onset + uy nucleus + nh coda)
+    EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'y'), T(L'n'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerGiQuTest, Quynh_WithGrave_Valid) {
+    // quỳnh (grave tone on y)
+    EXPECT_EQ(V({T(L'q'), T(L'u'), TT(L'y', Telex::Tone::Grave), T(L'n'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerGiQuTest, Gieng_Valid) {
+    // giêng (gi onset + ê vowel + ng coda, OR g onset + iê nucleus + ng coda)
+    EXPECT_EQ(V({T(L'g'), T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerGiQuTest, Gieng_WithAcute_Valid) {
+    // giếng (acute on ê)
+    EXPECT_EQ(V({T(L'g'), T(L'i'), TMT(L'e', Telex::Modifier::Circumflex, Telex::Tone::Acute), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerGiQuTest, Gieng_WithGrave_Valid) {
+    // giềng (grave on ê)
+    EXPECT_EQ(V({T(L'g'), T(L'i'), TMT(L'e', Telex::Modifier::Circumflex, Telex::Tone::Grave), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerGiQuTest, Quyen_Valid) {
+    // quyến (qu + uyê + n)
+    EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerGiQuTest, Quyet_Valid) {
+    // quyết (qu + uyê + t)
+    EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'y'), TMT(L'e', Telex::Modifier::Circumflex, Telex::Tone::Acute), T(L't')}), Result::Valid);
+}
+
+//=============================================================================
+// P1.3 Verify: k as initial consonant with various vowels
+//=============================================================================
+
+TEST_F(SpellCheckerValidTest, K_Initial_Ke) {
+    EXPECT_EQ(V({T(L'k'), T(L'e')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerValidTest, K_Initial_Ki) {
+    EXPECT_EQ(V({T(L'k'), T(L'i')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerValidTest, K_Initial_Ky) {
+    EXPECT_EQ(V({T(L'k'), T(L'y')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerValidTest, K_Initial_Ke_Circumflex) {
+    // kê
+    EXPECT_EQ(V({T(L'k'), TM(L'e', Telex::Modifier::Circumflex)}), Result::Valid);
+}
+
+TEST_F(SpellCheckerValidTest, K_Initial_Keu) {
+    // kêu
+    EXPECT_EQ(V({T(L'k'), TM(L'e', Telex::Modifier::Circumflex), T(L'u')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerValidTest, K_Initial_Kien) {
+    // kiên (k + iê + n)
+    EXPECT_EQ(V({T(L'k'), T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerValidTest, K_Initial_Kieu) {
+    // kiểu (k + iêu)
+    EXPECT_EQ(V({T(L'k'), T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'u')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerValidTest, K_Initial_Kia) {
+    // kia (k + ia)
+    EXPECT_EQ(V({T(L'k'), T(L'i'), T(L'a')}), Result::Valid);
+}
+
+//=============================================================================
+// P1.1: VCPair — Vowel + Final Consonant restrictions
+// These tests verify that INVALID vowel+final combinations are rejected.
+// Currently most of these PASS incorrectly (the whole point of VCPairList fix).
+//=============================================================================
+
+class SpellCheckerVCPairTest : public ::testing::Test {};
+
+// --- Single vowel ơ: only m, n, p, t allowed ---
+TEST_F(SpellCheckerVCPairTest, Ơ_Ch_Invalid) {
+    // ơch — ơ cannot end with ch
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Horn), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ơ_Ng_Invalid) {
+    // ơng — ơ cannot end with ng
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Horn), T(L'n'), T(L'g')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ơ_Nh_Invalid) {
+    // ơnh — ơ cannot end with nh
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Horn), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ơ_C_Invalid) {
+    // ơc — ơ cannot end with c
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Horn), T(L'c')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ơ_M_Valid) {
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Horn), T(L'm')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ơ_N_Valid) {
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Horn), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ơ_P_Valid) {
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Horn), T(L'p')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ơ_T_Valid) {
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Horn), T(L't')}), Result::Valid);
+}
+
+// --- Single vowel y: only t allowed ---
+TEST_F(SpellCheckerVCPairTest, Y_Ng_Invalid) {
+    EXPECT_EQ(V({T(L'y'), T(L'n'), T(L'g')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Y_M_Invalid) {
+    EXPECT_EQ(V({T(L'y'), T(L'm')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Y_Ch_Invalid) {
+    EXPECT_EQ(V({T(L'y'), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Y_T_Valid) {
+    EXPECT_EQ(V({T(L'y'), T(L't')}), Result::Valid);
+}
+
+// --- Single vowel â: no ch, nh ---
+TEST_F(SpellCheckerVCPairTest, Â_Ch_Invalid) {
+    EXPECT_EQ(V({TM(L'a', Telex::Modifier::Circumflex), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Â_Nh_Invalid) {
+    EXPECT_EQ(V({TM(L'a', Telex::Modifier::Circumflex), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Â_N_Valid) {
+    EXPECT_EQ(V({TM(L'a', Telex::Modifier::Circumflex), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Â_C_Valid) {
+    EXPECT_EQ(V({TM(L'a', Telex::Modifier::Circumflex), T(L'c')}), Result::Valid);
+}
+
+// --- Single vowel ê: no ng ---
+TEST_F(SpellCheckerVCPairTest, Ê_Ng_Invalid) {
+    EXPECT_EQ(V({TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'g')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ê_Ch_Valid) {
+    // êch (chêch, kêch)
+    EXPECT_EQ(V({TM(L'e', Telex::Modifier::Circumflex), T(L'c'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ê_Nh_Valid) {
+    // ênh (lênh, kênh)
+    EXPECT_EQ(V({TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'h')}), Result::Valid);
+}
+
+// --- Single vowel ô: no ch, nh ---
+TEST_F(SpellCheckerVCPairTest, Ô_Ch_Invalid) {
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Circumflex), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ô_Nh_Invalid) {
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Circumflex), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ô_Ng_Valid) {
+    // ông, sông
+    EXPECT_EQ(V({TM(L'o', Telex::Modifier::Circumflex), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+// --- Single vowel ư: no ch, nh ---
+TEST_F(SpellCheckerVCPairTest, Ư_Ch_Invalid) {
+    EXPECT_EQ(V({TM(L'u', Telex::Modifier::Horn), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ư_Nh_Invalid) {
+    EXPECT_EQ(V({TM(L'u', Telex::Modifier::Horn), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ư_Ng_Valid) {
+    // ưng
+    EXPECT_EQ(V({TM(L'u', Telex::Modifier::Horn), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+// --- Single vowel u: no ch, nh ---
+TEST_F(SpellCheckerVCPairTest, U_Ch_Invalid) {
+    EXPECT_EQ(V({T(L'u'), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, U_Nh_Invalid) {
+    EXPECT_EQ(V({T(L'u'), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, U_Ng_Valid) {
+    // ung
+    EXPECT_EQ(V({T(L'u'), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+// --- Single vowel o: no ch, nh ---
+TEST_F(SpellCheckerVCPairTest, O_Ch_Invalid) {
+    EXPECT_EQ(V({T(L'o'), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, O_Nh_Invalid) {
+    EXPECT_EQ(V({T(L'o'), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, O_Ng_Valid) {
+    // ong
+    EXPECT_EQ(V({T(L'o'), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+// --- Single vowel ă: no ch, nh ---
+TEST_F(SpellCheckerVCPairTest, Ă_Ch_Invalid) {
+    EXPECT_EQ(V({TM(L'a', Telex::Modifier::Breve), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ă_Nh_Invalid) {
+    EXPECT_EQ(V({TM(L'a', Telex::Modifier::Breve), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ă_Ng_Valid) {
+    // ăng (măng, tăng)
+    EXPECT_EQ(V({TM(L'a', Telex::Modifier::Breve), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+// --- Double vowel oo: only c, ng ---
+TEST_F(SpellCheckerVCPairTest, OO_M_Invalid) {
+    EXPECT_EQ(V({T(L'o'), T(L'o'), T(L'm')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OO_Ng_Valid) {
+    // oong (xoong, boong)
+    EXPECT_EQ(V({T(L'o'), T(L'o'), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OO_C_Valid) {
+    // ooc
+    EXPECT_EQ(V({T(L'o'), T(L'o'), T(L'c')}), Result::Valid);
+}
+
+// --- Double vowel uê: only ch, n, nh ---
+TEST_F(SpellCheckerVCPairTest, UÊ_M_Invalid) {
+    EXPECT_EQ(V({T(L'u'), TM(L'e', Telex::Modifier::Circumflex), T(L'm')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UÊ_Ng_Invalid) {
+    EXPECT_EQ(V({T(L'u'), TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'g')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UÊ_Ch_Valid) {
+    // uếch (huếch)
+    EXPECT_EQ(V({T(L'u'), TM(L'e', Telex::Modifier::Circumflex), T(L'c'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UÊ_N_Valid) {
+    EXPECT_EQ(V({T(L'u'), TM(L'e', Telex::Modifier::Circumflex), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UÊ_Nh_Valid) {
+    // uênh (thuênh)
+    EXPECT_EQ(V({T(L'u'), TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'h')}), Result::Valid);
+}
+
+// --- Double vowel uy: only ch, n, nh, t ---
+TEST_F(SpellCheckerVCPairTest, UY_M_Invalid) {
+    EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'm')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UY_Ng_Invalid) {
+    EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'n'), T(L'g')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UY_Ch_Valid) {
+    // uych (huỳch)
+    EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'c'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UY_T_Valid) {
+    // uyt (huyết)
+    EXPECT_EQ(V({T(L'u'), T(L'y'), T(L't')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UY_Nh_Valid) {
+    // uynh (huynh, quynh)
+    EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'n'), T(L'h')}), Result::Valid);
+}
+
+// --- Regression: a can end with ALL finals ---
+TEST_F(SpellCheckerVCPairTest, A_C_Valid) {
+    EXPECT_EQ(V({T(L'a'), T(L'c')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, A_Ch_Valid) {
+    EXPECT_EQ(V({T(L'a'), T(L'c'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, A_M_Valid) {
+    EXPECT_EQ(V({T(L'a'), T(L'm')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, A_N_Valid) {
+    EXPECT_EQ(V({T(L'a'), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, A_Ng_Valid) {
+    EXPECT_EQ(V({T(L'a'), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, A_Nh_Valid) {
+    EXPECT_EQ(V({T(L'a'), T(L'n'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, A_P_Valid) {
+    EXPECT_EQ(V({T(L'a'), T(L'p')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, A_T_Valid) {
+    EXPECT_EQ(V({T(L'a'), T(L't')}), Result::Valid);
+}
+
+// --- Regression: i can end with ALL finals ---
+TEST_F(SpellCheckerVCPairTest, I_Ch_Valid) {
+    // ich (thích, lịch)
+    EXPECT_EQ(V({T(L'i'), T(L'c'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, I_Nh_Valid) {
+    // inh (bình, tĩnh)
+    EXPECT_EQ(V({T(L'i'), T(L'n'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, I_Ng_Valid) {
+    // ing (obsolete but accepted: thìng)
+    EXPECT_EQ(V({T(L'i'), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+// --- Regression: e can end with ALL finals ---
+TEST_F(SpellCheckerVCPairTest, E_Ch_Valid) {
+    // ech (nghẹch)
+    EXPECT_EQ(V({T(L'e'), T(L'c'), T(L'h')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, E_Nh_Valid) {
+    // enh
+    EXPECT_EQ(V({T(L'e'), T(L'n'), T(L'h')}), Result::Valid);
+}
+
+// --- k initial: invalid before a, o, u (must use c instead) ---
+TEST_F(SpellCheckerVCPairTest, K_Initial_Ka_Invalid) {
+    // ka → should be "ca" in Vietnamese
+    EXPECT_EQ(V({T(L'k'), T(L'a')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, K_Initial_Ko_Invalid) {
+    EXPECT_EQ(V({T(L'k'), T(L'o')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, K_Initial_Ku_Invalid) {
+    EXPECT_EQ(V({T(L'k'), T(L'u')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, K_Initial_Koa_Invalid) {
+    // koa → should be "coa" (though "coa" itself is rare)
+    EXPECT_EQ(V({T(L'k'), T(L'o'), T(L'a')}), Result::Invalid);
+}
+
+// k + ê/e/i/y still valid (already covered in SpellCheckerValidTest.K_Initial_*)
+
+// --- kh is NOT affected (kh is a different consonant cluster) ---
+TEST_F(SpellCheckerVCPairTest, Kh_Initial_Kha_Valid) {
+    EXPECT_EQ(V({T(L'k'), T(L'h'), T(L'a')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Kh_Initial_Kho_Valid) {
+    EXPECT_EQ(V({T(L'k'), T(L'h'), T(L'o')}), Result::Valid);
+}
+
+// --- c not before front vowels (use k: ke, kê, ki, ky) ---
+TEST_F(SpellCheckerVCPairTest, C_Initial_Ce_Invalid) {
+    EXPECT_EQ(V({T(L'c'), T(L'e')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, C_Initial_Ci_Invalid) {
+    EXPECT_EQ(V({T(L'c'), T(L'i')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, C_Initial_Cy_Invalid) {
+    EXPECT_EQ(V({T(L'c'), T(L'y')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, C_Initial_Ca_Valid) {
+    // c + a is valid (ca, cá, cả...)
+    EXPECT_EQ(V({T(L'c'), T(L'a')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, C_Initial_Co_Valid) {
+    EXPECT_EQ(V({T(L'c'), T(L'o')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, C_Initial_Cu_Valid) {
+    EXPECT_EQ(V({T(L'c'), T(L'u')}), Result::Valid);
+}
+
+// ch is NOT affected (ch is a 2-char consonant)
+TEST_F(SpellCheckerVCPairTest, Ch_Initial_Che_Valid) {
+    EXPECT_EQ(V({T(L'c'), T(L'h'), T(L'e')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ch_Initial_Chi_Valid) {
+    EXPECT_EQ(V({T(L'c'), T(L'h'), T(L'i')}), Result::Valid);
+}
+
+// --- gh only before front vowels (e/ê/i) ---
+TEST_F(SpellCheckerVCPairTest, Gh_Initial_Gha_Invalid) {
+    EXPECT_EQ(V({T(L'g'), T(L'h'), T(L'a')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Gh_Initial_Gho_Invalid) {
+    EXPECT_EQ(V({T(L'g'), T(L'h'), T(L'o')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Gh_Initial_Ghe_Valid) {
+    EXPECT_EQ(V({T(L'g'), T(L'h'), T(L'e')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Gh_Initial_Ghi_Valid) {
+    EXPECT_EQ(V({T(L'g'), T(L'h'), T(L'i')}), Result::Valid);
+}
+
+// --- ngh only before front vowels (e/ê/i) ---
+TEST_F(SpellCheckerVCPairTest, Ngh_Initial_Ngha_Invalid) {
+    EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), T(L'a')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ngh_Initial_Nghe_Valid) {
+    EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), T(L'e')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ngh_Initial_Nghi_Valid) {
+    EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), T(L'i')}), Result::Valid);
+}
+
+// ng (without h) is NOT affected — nga, ngo, ngu all valid
+TEST_F(SpellCheckerVCPairTest, Ng_Initial_Nga_Valid) {
+    EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'a')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ng_Initial_Ngo_Valid) {
+    EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'o')}), Result::Valid);
+}
+
+// --- q must be part of qu cluster ---
+TEST_F(SpellCheckerVCPairTest, Q_Initial_Qa_Invalid) {
+    EXPECT_EQ(V({T(L'q'), T(L'a')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Q_Initial_Qe_Invalid) {
+    EXPECT_EQ(V({T(L'q'), T(L'e')}), Result::Invalid);
+}
+
+// qu + vowel still valid (regression)
+TEST_F(SpellCheckerVCPairTest, Qu_Initial_Qua_Valid) {
+    EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'a')}), Result::Valid);
+}
+
+// --- Double vowel with onset: regression test ---
+TEST_F(SpellCheckerVCPairTest, Loan_Valid) {
+    // l + oa + n
+    EXPECT_EQ(V({T(L'l'), T(L'o'), T(L'a'), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Hoan_Valid) {
+    EXPECT_EQ(V({T(L'h'), T(L'o'), T(L'a'), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Tuong_Valid) {
+    // tương (t + ươ + ng)
+    EXPECT_EQ(V({T(L't'), TM(L'u', Telex::Modifier::Horn), TM(L'o', Telex::Modifier::Horn), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Tien_Valid) {
+    // tiên (t + iê + n)
+    EXPECT_EQ(V({T(L't'), T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'n')}), Result::Valid);
+}
+
 }  // namespace
 }  // namespace NextKey
 

@@ -3566,6 +3566,78 @@ TEST_F(EnglishProtectionTest, RepeatedE_TonePlacement_Acute) {
 }
 
 // ============================================================================
+// P2.1: Tone drift guard — tone must NOT slide on repeated vowels
+// ============================================================================
+
+TEST_F(EnglishProtectionTest, ToneDrift_Hoaaaa_Grave) {
+    // "hofaaaa" → tone stays on ò (never slides to a)
+    // 4 a's after ò: 'aa' circumflex escape consumes 1 → 3 a's in output
+    TypeString(*engine_, L"hofaaaa");
+    EXPECT_EQ(engine_->Peek(), L"hòaaa");
+}
+
+TEST_F(EnglishProtectionTest, ToneDrift_Kiaaaa_Grave) {
+    TypeString(*engine_, L"kifaaaa");
+    EXPECT_EQ(engine_->Peek(), L"kìaaa");
+}
+
+TEST_F(EnglishProtectionTest, ToneDrift_Grave_Repeated) {
+    TypeString(*engine_, L"afaaaa");
+    EXPECT_EQ(engine_->Peek(), L"àaaa");
+}
+
+TEST_F(EnglishProtectionTest, ToneDrift_Hook_Repeated) {
+    TypeString(*engine_, L"araaaa");
+    EXPECT_EQ(engine_->Peek(), L"ảaaa");
+}
+
+TEST_F(EnglishProtectionTest, ToneDrift_Tilde_Repeated) {
+    TypeString(*engine_, L"axaaaa");
+    EXPECT_EQ(engine_->Peek(), L"ãaaa");
+}
+
+TEST_F(EnglishProtectionTest, ToneDrift_Dot_Repeated) {
+    TypeString(*engine_, L"ajaaaa");
+    EXPECT_EQ(engine_->Peek(), L"ạaaa");
+}
+
+// ============================================================================
+// P2.2: gi + tone THEN vowel → tone must relocate from i to new vowel
+// ============================================================================
+
+TEST_F(EnglishProtectionTest, GiToneRelocate_Grave_A) {
+    // g-i-f(grave)-a → "già" (tone moves from ì to à)
+    TypeString(*engine_, L"gifa");
+    EXPECT_EQ(engine_->Peek(), L"già");
+}
+
+TEST_F(EnglishProtectionTest, GiToneRelocate_Acute_A) {
+    TypeString(*engine_, L"gisa");
+    EXPECT_EQ(engine_->Peek(), L"giá");
+}
+
+TEST_F(EnglishProtectionTest, GiToneRelocate_Hook_A) {
+    TypeString(*engine_, L"gira");
+    EXPECT_EQ(engine_->Peek(), L"giả");
+}
+
+TEST_F(EnglishProtectionTest, GiToneRelocate_Tilde_A) {
+    TypeString(*engine_, L"gixa");
+    EXPECT_EQ(engine_->Peek(), L"giã");
+}
+
+TEST_F(EnglishProtectionTest, GiToneRelocate_Dot_A) {
+    TypeString(*engine_, L"gija");
+    EXPECT_EQ(engine_->Peek(), L"giạ");
+}
+
+TEST_F(EnglishProtectionTest, GiToneRelocate_Grave_An) {
+    // gì + an → giàn
+    TypeString(*engine_, L"gifan");
+    EXPECT_EQ(engine_->Peek(), L"giàn");
+}
+
+// ============================================================================
 // MODIFIER ESCAPE THROUGH SPELL CHECK GATE
 // ww should undo horn even when spellCheckDisabled_ is true
 // ============================================================================

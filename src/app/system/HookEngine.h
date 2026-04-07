@@ -106,6 +106,7 @@ private:
 
     // Output — universal SendInput with KEYEVENTF_UNICODE
     void ReplaceComposition(const std::wstring& newText);
+    void TrackedSendInput(INPUT* events, UINT count) noexcept;
     void DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents);
     void SendBackspaces(size_t count);
     void SendBackspaceEvents(size_t count);
@@ -162,7 +163,7 @@ private:
     std::vector<uint8_t> previousEncodedWidths_;  // Output unit count per Unicode char (for non-Unicode code tables)
     bool vietnameseMode_ = true;
     std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
-    int synthEventsPending_ = 0;  // Count of synthetic INPUT structs sent but not yet processed by hook
+    std::atomic<int> synthEventsPending_{0};  // Count of synthetic INPUT structs sent but not yet processed by hook
     DWORD lastSynthSendTime_ = 0;  // GetTickCount() of last SendInput call (watchdog: reset if stuck > 500ms)
     DWORD lastRealSynthTime_ = 0;  // GetTickCount() of last typing-related dispatch (not InjectKey re-injection)
     bool hadSynthInWord_ = false;  // True if any synthetic event was sent for the current word (blocks passthrough mixing)

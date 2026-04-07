@@ -1,5 +1,8 @@
 // NexusKey - Telex Engine Implementation V3 (Optimized Table-Driven)
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2024-2026 PhatMT. All rights reserved.
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
+// See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
 // V3 changes: flat constexpr arrays for O(1) Compose(), stack-allocated
 // FindToneTarget(), bounded ApplyAutoUO(), pre-reserved buffers.
@@ -75,6 +78,11 @@ TelexEngine::TelexEngine(const TypingConfig& config) : config_(config) {
 //-----------------------------------------------------------------------------
 
 void TelexEngine::PushChar(wchar_t c) {
+    // Guard: cap buffer size to prevent unbounded memory growth.
+    // Vietnamese syllables are at most ~8 chars; 64 is generous for any real input.
+    // Beyond this, silently drop — the word is clearly not Vietnamese.
+    if (rawInput_.size() >= 64) return;
+
     rawInput_.push_back(c);
     quickConsonantOnly_ = false;  // Any new char clears the flag
 
@@ -497,9 +505,9 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                                 break;
                             }
                         } else if (!config_.spellCheckEnabled && consonantsCrossed == 1) {
-                            bool validCoda = (singleCoda == L'c' || singleCoda == L'm' ||
-                                              singleCoda == L'n' || singleCoda == L'p' ||
-                                              singleCoda == L't');
+                            bool validCoda = (singleCoda == L'c' || singleCoda == L'k' ||
+                                              singleCoda == L'm' || singleCoda == L'n' ||
+                                              singleCoda == L'p' || singleCoda == L't');
                             if (!validCoda) {
                                 engProt_.bias = LanguageBias::HardEnglish;
                                 break;

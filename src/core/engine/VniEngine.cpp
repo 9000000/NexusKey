@@ -1,5 +1,8 @@
 // NexusKey - VNI Input Method Engine Implementation (Optimized)
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2024-2026 PhatMT. All rights reserved.
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
+// See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
 // Uses shared VietnameseTables.h for O(1) flat array composition lookups.
 
@@ -79,6 +82,9 @@ VniEngine::VniEngine(const TypingConfig& config) : config_(config) {
 }
 
 void VniEngine::PushChar(wchar_t c) {
+    // Guard: cap buffer size to prevent unbounded memory growth.
+    if (rawInput_.size() >= 64) return;
+
     rawInput_ += c;
     quickConsonantOnly_ = false;  // Any new char clears the flag
 

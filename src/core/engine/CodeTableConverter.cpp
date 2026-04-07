@@ -1,5 +1,8 @@
 // NexusKey - Code Table Converter Implementation
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2024-2026 PhatMT. All rights reserved.
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
+// See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
 // Mapping tables extracted from OpenKey Vietnamese.cpp _codeTable[0..4].
 // Each map: Unicode codepoint → encoded 16-bit value.

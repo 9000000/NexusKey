@@ -1,5 +1,8 @@
 // NexusKey - English Protection Module (Header-Only)
-// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2024-2026 PhatMT. All rights reserved.
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
+// See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
 // 3-Tier English Protection System:
 //   TIER 1: Hard reject impossible patterns (cl, cr, ending x/r/z/f)
@@ -201,8 +204,8 @@ template<typename CharStateT>
                 }
                 if (hasModifier) {
                     wchar_t coda = states[consStart].base;
-                    exception = (coda == L'c' || coda == L'm' || coda == L'n' ||
-                                 coda == L'p' || coda == L't');
+                    exception = (coda == L'c' || coda == L'k' || coda == L'm' ||
+                                 coda == L'n' || coda == L'p' || coda == L't');
                 }
             }
             if (!exception) {
