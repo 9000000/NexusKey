@@ -25,7 +25,7 @@
 
 **NexusKey** là bộ gõ tiếng Việt mã nguồn mở cho Windows, được viết lại hoàn toàn từ [NextKey](https://github.com/phatMT97/NextKey/tree/master) (dựa trên [OpenKey](https://github.com/tuyenvm/OpenKey) của Mai Vũ Tuyên).
 
-Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorphism.
+Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorphism. (Engine có tham khảo thêm nguồn từ https://www.unikey.org/source.html - Cảm ơn bác **Phạm Kim Long**)
 
 <a name="privacy-policy"></a>
 ### Chính sách bảo mật

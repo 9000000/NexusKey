@@ -19,11 +19,8 @@ namespace NextKey {
 // ═══════════════════════════════════════════════════════════
 #if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
 static FILE* g_hookLog = nullptr;
-static LARGE_INTEGER g_hookLogFreq = {};  // Cached — doesn't change
-
 static void OpenHookLog() {
     if (g_hookLog) return;
-    QueryPerformanceFrequency(&g_hookLogFreq);
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::wstring logPath(exePath);
@@ -40,10 +37,9 @@ static void CloseHookLog() {
 
 static void HookLog(const wchar_t* format, ...) {
     if (!g_hookLog) return;
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-    double ms = (now.QuadPart * 1000.0) / g_hookLogFreq.QuadPart;
-    fwprintf(g_hookLog, L"[%012.3f] ", ms);
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    fwprintf(g_hookLog, L"[%02u:%02u:%02u.%03u] ", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
     va_list args;
     va_start(args, format);
     vfwprintf(g_hookLog, format, args);
@@ -1365,6 +1361,18 @@ static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
     events.push_back(inUp);
 }
 
+/// Send INPUT events via SendInput with correct synthEventsPending_ tracking.
+/// Counter is pre-incremented BEFORE SendInput so the hook callback (which fires
+/// synchronously during SendInput) can decrement it correctly.  Without this,
+/// the counter inflates permanently — see commit message for full explanation.
+/// Caller must set sending_=true before and false after (or wrap multiple calls).
+void HookEngine::TrackedSendInput(INPUT* events, UINT count) noexcept {
+    synthEventsPending_ += static_cast<int>(count);
+    UINT sent = SendInput(count, events, sizeof(INPUT));
+    if (sent < count)
+        synthEventsPending_ -= static_cast<int>(count - sent);
+}
+
 void HookEngine::SendBackspaceEvents(size_t count) {
     WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
     std::vector<INPUT> events;
@@ -1373,8 +1381,7 @@ void HookEngine::SendBackspaceEvents(size_t count) {
         AppendVkEvent(events, VK_BACK, bsScan);
     }
     sending_ = true;
-    UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
-    synthEventsPending_ += static_cast<int>(sent);
+    TrackedSendInput(events.data(), static_cast<UINT>(events.size()));
     sending_ = false;
     RecordSynthDispatch();
 }
@@ -1386,8 +1393,7 @@ void HookEngine::SendCharEvents(const std::wstring& text) {
         AppendUnicodeEvent(events, ch);
     }
     sending_ = true;
-    UINT sent = SendInput(static_cast<UINT>(events.size()), events.data(), sizeof(INPUT));
-    synthEventsPending_ += static_cast<int>(sent);
+    TrackedSendInput(events.data(), static_cast<UINT>(events.size()));
     sending_ = false;
     RecordSynthDispatch();
 }
@@ -1407,8 +1413,7 @@ void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INP
         // Split: VK_BACK and VK_PACKET travel on separate internal paths in
         // Electron/Console apps — batching risks out-of-order processing ("nuốt chữ").
         if (!bsEvents.empty()) {
-            UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
-            synthEventsPending_ += static_cast<int>(sent);
+            TrackedSendInput(bsEvents.data(), static_cast<UINT>(bsEvents.size()));
             // Gap so app finishes processing BS before receiving chars.
             // timeBeginPeriod(1) in main.cpp makes Sleep(N) actually ~N ms.
             // Base: 10ms Electron (multi-process IPC), 8ms Console (Node.js apps like Claude CLI).
@@ -1420,15 +1425,13 @@ void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INP
             Sleep(delayMs);
         }
         if (!charEvents.empty()) {
-            UINT sent = SendInput(static_cast<UINT>(charEvents.size()), charEvents.data(), sizeof(INPUT));
-            synthEventsPending_ += static_cast<int>(sent);
+            TrackedSendInput(charEvents.data(), static_cast<UINT>(charEvents.size()));
         }
     } else {
         // Batch: standard Win32 GUI apps have single message queue (FIFO).
         bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
         if (!bsEvents.empty()) {
-            UINT sent = SendInput(static_cast<UINT>(bsEvents.size()), bsEvents.data(), sizeof(INPUT));
-            synthEventsPending_ += static_cast<int>(sent);
+            TrackedSendInput(bsEvents.data(), static_cast<UINT>(bsEvents.size()));
         }
     }
     sending_ = false;
@@ -1677,9 +1680,22 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         return;
     }
 
-    // Detect Qt/Electron apps and Console apps — skip U+202F to avoid delay/corruption
+    // Detect Qt/Electron apps, Console apps, and GPU-rendered apps — skip U+202F.
+    // U+202F (narrow no-break space) is a "bait" char inserted before BS sequences so
+    // BS always has something to delete (prevents BS being swallowed at empty positions
+    // in some Win32 apps). Apps that don't reliably process U+202F need skipEmpty=true:
+    //   - Qt/Electron: multi-process IPC can reorder batch events
+    //   - Console: terminal emulators have their own input handling
+    //   - GPU-rendered (Zed, etc.): custom input pipelines may ignore U+202F
     isConsoleApp_ = IsConsoleApp(activeHwnd);
     skipEmptyChar_ = IsQtElectronApp(activeHwnd) || isConsoleApp_;
+    // GPU-rendered apps: detect by exe name (no shared window class convention)
+    if (!skipEmptyChar_) {
+        std::wstring exeName = GetExeNameForHwnd(activeHwnd);
+        if (!exeName.empty() && _wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
+            skipEmptyChar_ = true;
+        }
+    }
     isElectronApp_ = skipEmptyChar_ && !isConsoleApp_;
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d",
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0);
@@ -1815,6 +1831,32 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 }
 
+/// Replace on-screen text by diffing previousComposition_ vs newText.
+///
+/// ## U+202F "needEmpty" mechanism (skipEmptyChar_ == false)
+///
+/// Some Win32 apps swallow BS at certain cursor positions (start of line, empty
+/// field, after autocomplete selection in browsers). To guarantee BS always
+/// deletes something, we insert U+202F (NARROW NO-BREAK SPACE) as a "bait"
+/// character before the BS sequence, then include one extra BS to remove it:
+///
+///   [insert U+202F] → [BS × (n+1)] → [type new chars]
+///
+/// U+202F is chosen because:
+///   - It is a real Unicode character that apps must insert into the text buffer
+///   - It is NOT U+0020 (regular space), so it doesn't trigger word commit
+///   - It is narrow/invisible in most fonts, minimizing visual flicker
+///
+/// This mechanism is ONLY safe for apps that reliably insert U+202F into their
+/// text buffer. Apps that ignore or filter it will receive n+1 BS for n chars,
+/// deleting one extra character and permanently desyncing previousComposition_.
+///
+/// Apps that need skipEmptyChar_=true (skip U+202F):
+///   - Qt/Electron: multi-process IPC can reorder batched VK_BACK + VK_PACKET
+///   - Console apps: terminal emulators have custom input pipelines
+///   - GPU-rendered apps (Zed): custom text input may not process U+202F
+///
+/// See OnFocusChanged() for the detection logic.
 void HookEngine::ReplaceComposition(const std::wstring& newText) {
     HWND target = GetInputTarget();
     if (!target) {
@@ -2034,8 +2076,7 @@ void HookEngine::InjectKey(DWORD vkCode) {
     inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
     inputs[1].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
     sending_ = true;
-    UINT sent = SendInput(2, inputs, sizeof(INPUT));
-    synthEventsPending_ += static_cast<int>(sent);
+    TrackedSendInput(inputs, _countof(inputs));
     sending_ = false;
     lastSynthSendTime_ = GetTickCount();
 }
