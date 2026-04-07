@@ -41,6 +41,7 @@ struct CharState {
 
     [[nodiscard]] bool IsVowel() const noexcept;
     [[nodiscard]] constexpr bool IsD() const noexcept { return base == L'd'; }
+    [[nodiscard]] constexpr bool IsHorn() const noexcept { return mod == Modifier::Horn; }
     [[nodiscard]] constexpr bool HasModifier() const noexcept { return mod != Modifier::None; }
 };
 

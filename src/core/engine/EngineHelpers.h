@@ -208,4 +208,100 @@ template<typename CharStateT, typename ModifierT>
     return false;
 }
 
+/// Shared FindToneTarget algorithm — returns the index of the vowel that should
+/// receive the tone mark, using priority: P1 horn > P2 modified > P3 diphthong > P4 rightmost.
+/// Returns SIZE_MAX if no vowel found. Used by both TelexEngine and VniEngine.
+template<typename CharStateT>
+[[nodiscard]] inline size_t FindToneTargetImpl(
+        const CharStateT* states, size_t count,
+        const uint8_t table[6][6], bool checkTriphthongs) noexcept {
+    size_t lastHornIdx = SIZE_MAX;
+    size_t firstModifiedIdx = SIZE_MAX;
+    size_t v3rd = SIZE_MAX;
+    size_t v2nd = SIZE_MAX;
+    size_t vLast = SIZE_MAX;
+    size_t vowelCount = 0;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (!states[i].IsVowel()) continue;
+        if (IsClusterConsonant(states, count, i)) continue;
+
+        v3rd = v2nd;
+        v2nd = vLast;
+        vLast = i;
+        ++vowelCount;
+
+        if (states[i].IsHorn()) lastHornIdx = i;
+        if (firstModifiedIdx == SIZE_MAX && states[i].HasModifier())
+            firstModifiedIdx = i;
+    }
+
+    if (vowelCount == 0) return SIZE_MAX;
+
+    // Priority 1: Horn vowels (last one for ươ)
+    if (lastHornIdx != SIZE_MAX) return lastHornIdx;
+
+    // Priority 2: Other modified vowels (â, ê, ô, ă)
+    if (firstModifiedIdx != SIZE_MAX) return firstModifiedIdx;
+
+    // Priority 3: Diphthong/triphthong rules
+    if (vowelCount >= 2 && vLast == v2nd + 1) {
+        // Triphthongs (Modern only): tone on MIDDLE vowel
+        if (checkTriphthongs && vowelCount >= 3 && v3rd != SIZE_MAX &&
+            v2nd == v3rd + 1 && vLast == v2nd + 1) {
+            if (IsTriphthong(states[v3rd].base, states[v2nd].base, states[vLast].base))
+                return v2nd;
+        }
+
+        // Diphthong table lookup
+        int fi = DiphthongVowelIndex(states[v2nd].base);
+        int li = DiphthongVowelIndex(states[vLast].base);
+        if (fi >= 0 && li >= 0) {
+            uint8_t rule = table[fi][li];
+
+            // Rule 3: Rising diphthongs (oa, oe) - SECOND with coda, FIRST without
+            if (rule == 3) {
+                rule = (vLast + 1 < count) ? 2 : 1;
+            }
+
+            if (rule == 1) return v2nd;    // tone on FIRST
+            if (rule == 2) return vLast;   // tone on SECOND
+        }
+    }
+
+    // Default: rightmost vowel
+    return vLast;
+}
+
+/// P4 guard for tone relocation: returns true if the target vowel was selected
+/// by FindToneTarget's P4 default (rightmost vowel, no diphthong rule for the
+/// last two vowels). Prevents tone sliding when repeated vowels are typed,
+/// e.g., "Kìaaaa" — tone stays on 'i', doesn't drift to the last 'a'.
+/// Legitimate P3 relocations (coda changing a rule-3 target) have rule != 0.
+template<typename CharStateT>
+[[nodiscard]] inline bool IsToneRelocBlockedByP4(
+        const CharStateT* states, size_t count,
+        size_t targetIdx, bool modernOrtho) noexcept {
+    // P1/P2 targets (horn, circumflex, breve) always attract the tone.
+    if (states[targetIdx].HasModifier()) return false;
+
+    // Find last two non-cluster vowels
+    size_t vLast = SIZE_MAX, v2nd = SIZE_MAX;
+    for (size_t i = count; i-- > 0;) {
+        if (!states[i].IsVowel()) continue;
+        if (IsClusterConsonant(states, count, i)) continue;
+        if (vLast == SIZE_MAX) { vLast = i; continue; }
+        v2nd = i;
+        break;
+    }
+    if (targetIdx != vLast || v2nd == SIZE_MAX || vLast != v2nd + 1) return false;
+
+    int fi = DiphthongVowelIndex(states[v2nd].base);
+    int li = DiphthongVowelIndex(states[vLast].base);
+    if (fi < 0 || li < 0) return false;
+
+    const auto& table = modernOrtho ? kDiphthongModern : kDiphthongClassic;
+    return table[fi][li] == 0;  // No diphthong rule → P4 default → block
+}
+
 }  // namespace NextKey

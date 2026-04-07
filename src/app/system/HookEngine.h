@@ -96,6 +96,7 @@ private:
 
     // Input engine interaction
     [[nodiscard]] bool HandleAlphaKey(DWORD vkCode);  // Returns true if keystroke should be eaten
+    [[nodiscard]] bool HandleVniDigitKey(DWORD vkCode); // VNI digit 1-9: push to engine, replace composition
     void HandleBackspace();
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
@@ -143,7 +144,8 @@ private:
     // Smart switch: get foreground app exe name
     [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;
     [[nodiscard]] static bool IsTrayOrTaskbarWindow(HWND hwnd) noexcept;
-    void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with current vietnameseMode_
+    void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with effective mode
+    bool VerifyExcludedState();        // Check if foreground is still excluded; clears stale flag if not
     void OnFocusChanged(HWND triggerHwnd = nullptr);
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
@@ -179,12 +181,12 @@ private:
     int autoCapState_ = 0;  // 0=normal, 1=after punct, 2=after punct+space
     std::unordered_set<std::wstring> excludedAppSet_;  // excluded apps: force English on focus
     bool isExcludedApp_ = false;      // cached: current app is excluded
+    DWORD excludedPid_ = 0;           // PID of excluded app (fast check in ProcessKeyDown)
     std::unordered_set<std::wstring> tsfAppSet_;  // apps that should use TSF engine instead of hook
     bool isTsfApp_ = false;       // cached: is current foreground app in TSF list?
     bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?
     bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
     bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
-    bool modeBeforeExclude_ = true;   // Vietnamese mode before entering excluded app
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
     bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode

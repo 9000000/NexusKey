@@ -207,8 +207,8 @@ void HookEngine::Stop() {
 }
 
 void HookEngine::ToggleVietnameseMode() {
-    // Block toggling in hard-excluded apps (soft-excluded apps allow toggle)
-    if (excludeApps_ && isExcludedApp_) {
+    // Block toggling in excluded apps (verify flag isn't stale first)
+    if (isExcludedApp_ && VerifyExcludedState()) {
         HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (excluded app '%s')", currentExe_.c_str());
         return;
     }
@@ -600,6 +600,27 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return false;
     }
 
+    // 1c. Excluded app — full passthrough (IME is transparent to this app)
+    // Fast PID check: same process → passthrough immediately (no syscall overhead).
+    // Different PID → verify with full exe name lookup (only on actual app switch).
+    if (isExcludedApp_) {
+        HWND fg = GetForegroundWindow();
+        DWORD fgPid = 0;
+        GetWindowThreadProcessId(fg, &fgPid);
+        if (fgPid == excludedPid_) {
+            otherKeyPressed_ = true;
+            return false;  // Same process — still excluded
+        }
+        // Different process — verify if we actually left the excluded app
+        if (VerifyExcludedState()) {
+            excludedPid_ = fgPid;  // Switched to another excluded app
+            otherKeyPressed_ = true;
+            return false;
+        }
+        NotifyModeChange();
+        // Fall through to normal processing for this keystroke
+    }
+
     // 2. Check modifier+key hotkey (e.g., Alt+~) BEFORE invalidating modifier-only combo
     if (hotkeyVk_ != 0 && vkCode == hotkeyVk_ && CheckHotkeyMatch()) {
         HOOK_LOG(L"  HOTKEY match (modifier+key): vk=0x%02X", vkCode);
@@ -727,13 +748,11 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                      commitStack_.size(),
                      previousComposition_.c_str());
             ReplayCommittedChars();
-            wchar_t ch = static_cast<wchar_t>(vkCode);
-            inputHistory_.push_back(ch);
-            engine_->PushChar(ch);
-            std::wstring composition = engine_->Peek();
-            HOOK_LOG(L"  VNI commit-undo digit '%c' → Peek()='%s'", ch, composition.c_str());
-            ReplaceComposition(composition);
-            return true;
+            if (engine_->Count() == 0) {
+                commitUndoState_ = CommitUndoState::Idle;
+                return false;  // Replay failed — let digit pass through
+            }
+            return HandleVniDigitKey(vkCode);
         } else if (vkCode == VK_BACK) {
             // Backspace → replay saved chars, then backspace into the word
             HOOK_LOG(L"  commit-undo: replaying + backspace (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
@@ -904,13 +923,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         vkCode >= 0x31 && vkCode <= 0x39 &&
         engine_->Count() > 0) {
         if (!cachedShift) {
-            wchar_t ch = static_cast<wchar_t>(vkCode);  // '1'–'9'
-            inputHistory_.push_back(ch);
-            engine_->PushChar(ch);
-            std::wstring composition = engine_->Peek();
-            HOOK_LOG(L"  VNI digit '%c' → Peek()='%s'", ch, composition.c_str());
-            ReplaceComposition(composition);
-            return true;  // Eat the digit
+            return HandleVniDigitKey(vkCode);
         }
     }
 
@@ -1130,6 +1143,16 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode) {
         return false;
     }
 
+    ReplaceComposition(composition);
+    return true;
+}
+
+bool HookEngine::HandleVniDigitKey(DWORD vkCode) {
+    wchar_t ch = static_cast<wchar_t>(vkCode);  // '1'–'9'
+    inputHistory_.push_back(ch);
+    engine_->PushChar(ch);
+    std::wstring composition = engine_->Peek();
+    HOOK_LOG(L"  VNI digit '%c' → Peek()='%s'", ch, composition.c_str());
     ReplaceComposition(composition);
     return true;
 }
@@ -1500,10 +1523,26 @@ bool HookEngine::IsConsoleApp(HWND hwnd) {
 
 void HookEngine::NotifyModeChange() noexcept {
     if (modeChangeCallback_) {
-        modeChangeCallback_(vietnameseMode_);
+        // Excluded apps always show E mode (IME is transparent to them)
+        modeChangeCallback_(!isExcludedApp_ && vietnameseMode_);
     }
 }
 
+
+bool HookEngine::VerifyExcludedState() {
+    if (!excludeApps_ || excludedAppSet_.empty()) {
+        isExcludedApp_ = false;
+        return false;
+    }
+    HWND fg = GetForegroundWindow();
+    std::wstring exe = GetExeNameForHwnd(fg);
+    if (exe.empty() || excludedAppSet_.count(exe)) {
+        return true;  // Still excluded (or can't determine — safe default)
+    }
+    isExcludedApp_ = false;
+    HOOK_LOG(L"  ExcludeApps: stale flag cleared (fg='%s')", exe.c_str());
+    return false;
+}
 
 void HookEngine::ReloadAppOverrides() {
     auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
@@ -1602,6 +1641,10 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // Without this guard, right-clicking any app's tray icon would set currentExe_ to that
     // app's process, then the next real focus change would SAVE the wrong mode for that app.
     if (!activeHwnd || !IsWindowVisible(activeHwnd) || IsIconic(activeHwnd) || IsTrayOrTaskbarWindow(activeHwnd)) {
+        // Verify excluded state — clears stale flag if foreground changed
+        if (isExcludedApp_ && !VerifyExcludedState()) {
+            NotifyModeChange();
+        }
         return;
     }
 
@@ -1688,14 +1731,14 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     if (isExcludedApp_) {
-        // Entering excluded app — save mode before forcing English
+        // Excluded app — IME is transparent. vietnameseMode_ is never touched.
+        // Cache PID for fast per-keystroke check in ProcessKeyDown.
+        DWORD pid = 0;
+        GetWindowThreadProcessId(activeHwnd, &pid);
+        excludedPid_ = pid;
+        HOOK_LOG(L"  ExcludeApps: '%s' is excluded, passthrough (pid=%u)", currentExe_.c_str(), pid);
         if (!wasExcluded) {
-            modeBeforeExclude_ = vietnameseMode_;
-        }
-        HOOK_LOG(L"  ExcludeApps: '%s' is excluded, forcing English", currentExe_.c_str());
-        if (vietnameseMode_) {
-            vietnameseMode_ = false;
-            NotifyModeChange();
+            NotifyModeChange();  // Update icon to E (effective mode = false)
         }
         return;  // Skip smart switch restore and code table restore for excluded apps
     }
@@ -1745,25 +1788,16 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
                          vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
                 NotifyModeChange();
             }
-        } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
-            // Leaving excluded app to unknown app — restore pre-exclusion mode
-            vietnameseMode_ = modeBeforeExclude_;
-            HOOK_LOG(L"  SmartSwitch: restored pre-exclude %s for '%s'",
-                     vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
-            NotifyModeChange();
         } else {
-            // Unknown app — default to Vietnamese (the global default)
-            if (!vietnameseMode_) {
-                vietnameseMode_ = true;
-                HOOK_LOG(L"  SmartSwitch: default Vietnamese for unknown '%s'", currentExe_.c_str());
-                NotifyModeChange();
-            }
+            // Unknown app — inherit current mode (least surprising to the user)
+            HOOK_LOG(L"  SmartSwitch: inherit %s for unknown '%s'",
+                     vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
         }
-    } else if (wasExcluded && modeBeforeExclude_ != vietnameseMode_) {
-        // SmartSwitch OFF — restore pre-exclusion mode when leaving excluded app
-        vietnameseMode_ = modeBeforeExclude_;
-        HOOK_LOG(L"  ExcludeApps: restored pre-exclude %s for '%s'",
-                 vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
+    }
+
+    // Leaving excluded app — effective mode changed (E → actual) even if vietnameseMode_ didn't.
+    // Idempotent if NotifyModeChange was already called above.
+    if (wasExcluded) {
         NotifyModeChange();
     }
 }

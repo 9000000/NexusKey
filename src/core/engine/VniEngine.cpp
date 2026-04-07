@@ -642,63 +642,8 @@ CharState* VniEngine::FindToneTargetModern() {
 }
 
 CharState* VniEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs) {
-    // Single-pass scan: track only what each priority needs — no fixed buffer.
-    size_t lastHornIdx = SIZE_MAX;      // P1: last horn vowel
-    size_t firstModifiedIdx = SIZE_MAX; // P2: first non-None modified vowel
-    size_t v3rd = SIZE_MAX;             // P3: 3rd-to-last vowel (triphthong)
-    size_t v2nd = SIZE_MAX;             // P3: 2nd-to-last vowel (diphthong)
-    size_t vLast = SIZE_MAX;            // P3+P4: rightmost vowel
-    size_t vowelCount = 0;
-
-    for (size_t i = 0; i < states_.size(); ++i) {
-        if (!states_[i].IsVowel()) continue;
-        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
-
-        v3rd = v2nd;
-        v2nd = vLast;
-        vLast = i;
-        ++vowelCount;
-
-        if (states_[i].mod == Modifier::Horn) lastHornIdx = i;
-        if (firstModifiedIdx == SIZE_MAX && states_[i].mod != Modifier::None)
-            firstModifiedIdx = i;
-    }
-
-    if (vowelCount == 0) return nullptr;
-
-    // Priority 1: Horn vowels (last one for ươ)
-    if (lastHornIdx != SIZE_MAX) return &states_[lastHornIdx];
-
-    // Priority 2: Other modified vowels (â, ê, ô, ă)
-    if (firstModifiedIdx != SIZE_MAX) return &states_[firstModifiedIdx];
-
-    // Priority 3: Diphthong/triphthong rules
-    if (vowelCount >= 2 && vLast == v2nd + 1) {
-        // Triphthongs (Modern only): tone on MIDDLE vowel
-        if (checkTriphthongs && vowelCount >= 3 && v3rd != SIZE_MAX &&
-            v2nd == v3rd + 1 && vLast == v2nd + 1) {
-            if (IsTriphthong(states_[v3rd].base, states_[v2nd].base, states_[vLast].base))
-                return &states_[v2nd];
-        }
-
-        // Diphthong table lookup
-        int fi = DiphthongVowelIndex(states_[v2nd].base);
-        int li = DiphthongVowelIndex(states_[vLast].base);
-        if (fi >= 0 && li >= 0) {
-            uint8_t rule = table[fi][li];
-
-            // Rule 3: Rising diphthongs (oa, oe) - SECOND with coda, FIRST without
-            if (rule == 3) {
-                rule = (vLast + 1 < states_.size()) ? 2 : 1;
-            }
-
-            if (rule == 1) return &states_[v2nd];    // tone on FIRST
-            if (rule == 2) return &states_[vLast];   // tone on SECOND
-        }
-    }
-
-    // Default: rightmost vowel
-    return &states_[vLast];
+    size_t idx = NextKey::FindToneTargetImpl(states_.data(), states_.size(), table, checkTriphthongs);
+    return (idx == SIZE_MAX) ? nullptr : &states_[idx];
 }
 
 //-----------------------------------------------------------------------------
@@ -799,33 +744,9 @@ void VniEngine::RelocateToneToTarget() {
     CharState* target = FindToneTarget();
     if (!target || target == toned) return;
 
-    // P1/P2 targets (horn, circumflex, breve) always attract the tone.
-    if (target->mod != Modifier::None) {
-        target->tone = toned->tone;
-        toned->tone = Tone::None;
+    size_t targetIdx = static_cast<size_t>(target - states_.data());
+    if (IsToneRelocBlockedByP4(states_.data(), states_.size(), targetIdx, config_.modernOrtho))
         return;
-    }
-
-    // P4 guard: don't relocate to the rightmost vowel when selected by default
-    // (last two vowels have no diphthong rule). Prevents tone sliding on repeated
-    // vowels, e.g., "Kìaaaa" — tone stays on 'i', doesn't drift to the last 'a'.
-    // Legitimate P3 relocations (coda changing a rule-3 target) have rule != 0.
-    size_t vLast = SIZE_MAX, v2nd = SIZE_MAX;
-    for (size_t i = states_.size(); i-- > 0;) {
-        if (!states_[i].IsVowel()) continue;
-        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
-        if (vLast == SIZE_MAX) { vLast = i; continue; }
-        v2nd = i;
-        break;
-    }
-    if (target == &states_[vLast] && v2nd != SIZE_MAX && vLast == v2nd + 1) {
-        int fi = DiphthongVowelIndex(states_[v2nd].base);
-        int li = DiphthongVowelIndex(states_[vLast].base);
-        if (fi >= 0 && li >= 0) {
-            const auto& table = config_.modernOrtho ? kDiphthongModern : kDiphthongClassic;
-            if (table[fi][li] == 0) return;  // No diphthong rule → P4 default → skip
-        }
-    }
 
     target->tone = toned->tone;
     toned->tone = Tone::None;

@@ -52,6 +52,7 @@ struct CharState {
         return base == L'a' || base == L'e' || base == L'o' || base == L'u';
     }
     [[nodiscard]] constexpr bool IsD() const noexcept { return base == L'd'; }
+    [[nodiscard]] constexpr bool IsHorn() const noexcept { return mod == Modifier::Horn; }
     [[nodiscard]] constexpr bool HasModifier() const noexcept { return mod != Modifier::None; }
     [[nodiscard]] constexpr bool IsEmpty() const noexcept { return base == 0; }
 };
