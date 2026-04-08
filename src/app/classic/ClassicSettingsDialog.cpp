@@ -167,7 +167,7 @@ void ClassicSettingsDialog::CreateCompactControls() {
         IDC_BTN_CLOSE, true
     );
     btnExit_ = CreateBtn(
-        L"K\x1EBFt th\x00FAc",  // "Ket thuc"
+        L"K\x1EBF" L"t th\x00FA" L"c",  // "Kết thúc"
         x + btnW + Dpi(12), y, btnW, Dpi(kButtonHeight),
         IDC_BTN_EXIT, true
     );
@@ -255,7 +255,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
     int btnW = (tabW - Dpi(12)) / 2;
 
     btnDefaults_ = CreateBtn(
-        L"Thi\x1EBFt l\x1EADp m\x1EB7c \x0111\x1ECBnh",  // "Thiet lap mac dinh"
+        L"Thi\x1EBF" L"t l\x1EADp m\x1EB7" L"c \x0111\x1ECBnh",  // "Thiết lập mặc định"
         x, footerY, btnW, Dpi(kButtonHeight),
         IDC_BTN_DEFAULTS, true
     );
@@ -515,7 +515,7 @@ void ClassicSettingsDialog::ShowTabPage(int tabIndex) {
 // Command handler
 // ════════════════════════════════════════════════════════════════════
 
-void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
+void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM /*lParam*/) {
     UINT code = HIWORD(wParam);
     UINT id   = LOWORD(wParam);
 

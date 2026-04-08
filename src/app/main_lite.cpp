@@ -39,9 +39,8 @@
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "winmm.lib")
 
-// Require Common Controls v6 for visual styles
-#pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' " \
-    "version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+// Common Controls v6 manifest is embedded via NexusKeyLite.rc + .exe.manifest
+// (do NOT add #pragma manifestdependency here — causes duplicate MANIFEST resource)
 
 using namespace NextKey;
 

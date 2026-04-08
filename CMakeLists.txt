@@ -187,6 +187,7 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/main_lite.cpp
         src/app/classic/resource.h
         src/app/classic/NexusKeyLite.rc
+        src/app/classic/NexusKeyLite.exe.manifest
         # system/ (shared with main app)
         src/app/system/TrayIcon.h
         src/app/system/TrayIcon.cpp
@@ -210,6 +211,9 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/SubprocessHelper.h
         src/app/system/TsfRegistration.h
         src/app/system/TsfRegistration.cpp
+        # sciter helpers (no Sciter SDK dependency — pure Win32 dark mode/DWM)
+        src/app/sciter/SciterHelper.h
+        src/app/sciter/SciterHelper.cpp
         # classic/ (new)
         src/app/classic/ClassicTheme.h
         src/app/classic/ClassicTheme.cpp
@@ -222,6 +226,7 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/classic
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/app/sciter
     )
     target_compile_definitions(NextKeyLite PRIVATE
         NEXUSKEY_HOOK_ENGINE

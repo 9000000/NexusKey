@@ -29,5 +29,5 @@ BEGIN
     END
 END
 
-// Visual styles manifest
-CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "NexusKeyLite.exe.manifest"
+// Visual styles manifest is provided via CMake target property
+// (do NOT embed RT_MANIFEST here — MSVC auto-generates one, causing duplicates)
