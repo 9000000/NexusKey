@@ -8,7 +8,6 @@
 #include "core/config/ConfigManager.h"
 #include "core/ipc/SharedState.h"
 #include "core/ipc/SharedStateManager.h"
-#include "core/ipc/SecurityHelpers.h"
 #include "core/ipc/SharedConstants.h"
 #include "core/config/ConfigEvent.h"
 #include "core/Strings.h"
@@ -325,9 +324,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // ── Single instance check ──
 
-    auto mutexSa = NextKey::MakeCreatorOnlySecurityAttributes();
-    HANDLE hMutex = CreateMutexW(&mutexSa, TRUE, L"Local\\NexusKeyLite_Main_Mutex");
-    if (mutexSa.lpSecurityDescriptor) LocalFree(mutexSa.lpSecurityDescriptor);
+    // NOTE: Use default DACL (nullptr). CO SID doesn't resolve for non-container objects.
+    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\NexusKeyLite_Main_Mutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         NEXTKEY_LOG(L"Another Lite instance is already running. Exiting.");
         CloseHandle(hMutex);

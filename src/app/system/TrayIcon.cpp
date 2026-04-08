@@ -5,7 +5,7 @@
 #include "../resource.h"
 #include "UpdateChecker.h"
 #include "ToastPopup.h"
-#include "sciter/SciterHelper.h"
+#include "DarkModeHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include <strsafe.h>
@@ -58,8 +58,8 @@ bool TrayIcon::Create(HINSTANCE hInstance) {
     if (!hwndMessage_) return false;
 
     // Enable dark mode for context menus (must be called before showing any menu)
-    SciterHelper::ApplyDarkModeForApp();
-    SciterHelper::SetWindowDarkMode(hwndMessage_, SciterHelper::IsWindowsDarkMode());
+    DarkModeHelper::ApplyDarkModeForApp();
+    DarkModeHelper::SetWindowDarkMode(hwndMessage_, DarkModeHelper::IsWindowsDarkMode());
 
     ShowWindow(hwndMessage_, SW_HIDE);
 
@@ -517,8 +517,8 @@ LRESULT CALLBACK TrayIcon::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     // Real-time theme switch for context menus
     if (msg == WM_SETTINGCHANGE && lParam) {
         if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
-            bool dark = SciterHelper::IsWindowsDarkMode();
-            SciterHelper::SetWindowDarkMode(hwnd, dark);
+            bool dark = DarkModeHelper::IsWindowsDarkMode();
+            DarkModeHelper::SetWindowDarkMode(hwnd, dark);
         }
     }
 

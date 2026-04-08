@@ -17,7 +17,6 @@
 #include "core/Debug.h"
 
 #include "system/TsfRegistration.h"
-#include "core/ipc/SecurityHelpers.h"
 
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "system/HookEngine.h"
@@ -39,9 +38,7 @@
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "winmm.lib")
 
-// Require Common Controls v6 for TaskDialog / TaskDialogIndirect
-#pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' " \
-    "version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+// Common Controls v6 is declared in NexusKey.exe.manifest (DPI awareness + CC v6)
 
 using namespace NextKey;
 
@@ -226,11 +223,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // ═══════════════════════════════════════════════════════════
 
     // Ensure only one background instance of NexusKey runs at a time.
-    // We check this AFTER subprocess routing so settings/macro dialogs 
+    // We check this AFTER subprocess routing so settings/macro dialogs
     // can spawn freely, but a second background process cannot.
-    auto mutexSa = NextKey::MakeCreatorOnlySecurityAttributes();
-    HANDLE hMutex = CreateMutexW(&mutexSa, TRUE, L"Local\\NexusKey_Main_Mutex");
-    if (mutexSa.lpSecurityDescriptor) LocalFree(mutexSa.lpSecurityDescriptor);
+    // NOTE: Use default DACL (nullptr). MakeCreatorOnlySecurityAttributes() uses
+    // CO (Creator Owner) SID which does NOT resolve for non-container objects like
+    // mutexes — second instance gets ERROR_ACCESS_DENIED instead of ERROR_ALREADY_EXISTS.
+    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\NexusKey_Main_Mutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         // Another background instance is already running.
         // If the user has "show on startup" configured, popup the settings dialog of the 

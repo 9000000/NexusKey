@@ -5,6 +5,7 @@
 #include "../resource.h"
 #include "sciter/ScaleHelper.h"
 #include "sciter/SciterHelper.h"
+#include "system/DarkModeHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include "core/Debug.h"
@@ -59,8 +60,8 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         // Dark class goes on <body> (CSS targets body.dark), lang goes on <html>
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
-            std::wstring classes = SciterHelper::IsWindowsDarkMode() ? L"dark" : L"";
-            if (!SciterHelper::IsWindows11OrGreater()) {
+            std::wstring classes = DarkModeHelper::IsWindowsDarkMode() ? L"dark" : L"";
+            if (!DarkModeHelper::IsWindows11OrGreater()) {
                 if (!classes.empty()) classes += L" ";
                 classes += L"win10";
             }
@@ -95,15 +96,15 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
     // Theme-aware DWM mode + rounded corners + blur (after subclass)
     HWND hwnd = get_hwnd();
     if (hwnd) {
-        bool dark = SciterHelper::IsWindowsDarkMode();
-        SciterHelper::SetWindowDarkMode(hwnd, dark);
+        bool dark = DarkModeHelper::IsWindowsDarkMode();
+        DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
         // Refresh body class (may have been set during load() before subclass)
         sciter::dom::element htmlRoot(get_root());
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
             std::wstring classes = dark ? L"dark" : L"";
-            if (!SciterHelper::IsWindows11OrGreater()) {
+            if (!DarkModeHelper::IsWindows11OrGreater()) {
                 if (!classes.empty()) classes += L" ";
                 classes += L"win10";
             }
@@ -120,7 +121,7 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
     // Apply background opacity from UIConfig (via DOM, not call_function)
     if (config_.applyBackgroundOpacity) {
         auto uiConfig = ConfigManager::LoadUIConfigOrDefault();
-        bool isDark = SciterHelper::IsWindowsDarkMode();
+        bool isDark = DarkModeHelper::IsWindowsDarkMode();
         double opacity = uiConfig.backgroundOpacity / 100.0;
         sciter::dom::element rootEl2(get_root());
         sciter::dom::element mainContainer = rootEl2.find_first("#main-container");
@@ -269,15 +270,15 @@ LRESULT CALLBACK SciterSubDialog::SubclassProc(
     if (msg == WM_SETTINGCHANGE && lParam) {
         if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
             if (s_instance) {
-                bool dark = SciterHelper::IsWindowsDarkMode();
-                SciterHelper::SetWindowDarkMode(hwnd, dark);
+                bool dark = DarkModeHelper::IsWindowsDarkMode();
+                DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
                 // Toggle body.dark class (get_root() = <html>, need <body>)
                 sciter::dom::element htmlRoot(s_instance->get_root());
                 sciter::dom::element body = htmlRoot.find_first("body");
                 if (body.is_valid()) {
                     std::wstring classes = dark ? L"dark" : L"";
-                    if (!SciterHelper::IsWindows11OrGreater()) {
+                    if (!DarkModeHelper::IsWindows11OrGreater()) {
                         if (!classes.empty()) classes += L" ";
                         classes += L"win10";
                     }

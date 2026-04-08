@@ -11,6 +11,7 @@
 #include "core/Version.h"
 #include "sciter/ScaleHelper.h"
 #include "sciter/SciterHelper.h"
+#include "system/DarkModeHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include "core/Debug.h"
@@ -125,15 +126,15 @@ SettingsDialog::SettingsDialog()
     // 11. Apply theme-aware DWM mode and Windows API blur
     HWND hwnd = get_hwnd();
     if (hwnd) {
-        bool dark = SciterHelper::IsWindowsDarkMode();
-        SciterHelper::SetWindowDarkMode(hwnd, dark);
+        bool dark = DarkModeHelper::IsWindowsDarkMode();
+        DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
         // Set body class based on detected theme (get_root() = <html>, need <body>)
         sciter::dom::element htmlRoot(get_root());
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
             std::wstring classes = dark ? L"dark" : L"";
-            if (!SciterHelper::IsWindows11OrGreater()) {
+            if (!DarkModeHelper::IsWindows11OrGreater()) {
                 if (!classes.empty()) classes += L" ";
                 classes += L"win10";
             }
@@ -378,15 +379,15 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     if (msg == WM_SETTINGCHANGE && lParam) {
         if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
             if (s_instance) {
-                bool dark = SciterHelper::IsWindowsDarkMode();
-                SciterHelper::SetWindowDarkMode(hwnd, dark);
+                bool dark = DarkModeHelper::IsWindowsDarkMode();
+                DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
                 // Toggle body.dark class (get_root() = <html>, need <body>)
                 sciter::dom::element htmlRoot(s_instance->get_root());
                 sciter::dom::element body = htmlRoot.find_first("body");
                 if (body.is_valid()) {
                     std::wstring classes = dark ? L"dark" : L"";
-                    if (!SciterHelper::IsWindows11OrGreater()) {
+                    if (!DarkModeHelper::IsWindows11OrGreater()) {
                         if (!classes.empty()) classes += L" ";
                         classes += L"win10";
                     }
@@ -1077,7 +1078,7 @@ void SettingsDialog::initializeUI() {
         }
 
         // 3. Apply CSS background color
-        bool dark = SciterHelper::IsWindowsDarkMode();
+        bool dark = DarkModeHelper::IsWindowsDarkMode();
         double opacity = backgroundOpacity_ / 100.0;
         sciter::dom::element container = root.find_first("#main-container");
         if (container.is_valid()) {

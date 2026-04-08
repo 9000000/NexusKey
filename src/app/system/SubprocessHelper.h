@@ -7,7 +7,7 @@
 #pragma once
 
 #include "sciter/SciterArchive.h"
-#include "sciter/SciterHelper.h"
+#include "system/DarkModeHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include "sciter-x.h"
@@ -17,6 +17,23 @@
 #include <vector>
 
 namespace NextKey {
+
+/// Job Object for automatic child-process cleanup.
+/// When the main process exits (even via crash/TerminateProcess), Windows
+/// automatically terminates all processes assigned to this job.
+/// Returns a singleton handle; first call creates the job.
+inline HANDLE GetJobObject() noexcept {
+    static HANDLE hJob = [] {
+        HANDLE h = CreateJobObjectW(nullptr, nullptr);
+        if (h) {
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            SetInformationJobObject(h, JobObjectExtendedLimitInformation, &info, sizeof(info));
+        }
+        return h;
+    }();
+    return hJob;
+}
 
 /// Per-process list of child process handles (for TerminateProcess on exit)
 inline std::vector<HANDLE>& GetChildProcessHandles() {
@@ -49,13 +66,19 @@ inline void TrackChildProcess(HANDLE hProcess) {
         return false;
     });
     handles.push_back(hProcess);
+
+    // Also assign to job object so Windows auto-kills on main process exit
+    HANDLE hJob = GetJobObject();
+    if (hJob) {
+        AssignProcessToJobObject(hJob, hProcess);
+    }
 }
 
 /// Initialize Sciter runtime for a subprocess dialog.
 /// Call once at the start of RunXxxSubprocess() before creating any dialog.
 inline void InitSciterSubprocess() {
     OleInitialize(nullptr);
-    SciterHelper::ApplyDarkModeForApp();  // Enable dark mode for native controls
+    DarkModeHelper::ApplyDarkModeForApp();  // Enable dark mode for native controls
 
     // Load UI language from config (subprocess starts with default=Vietnamese)
     auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
@@ -64,7 +87,7 @@ inline void InitSciterSubprocess() {
     // FIX: ClearType corrupts alpha channel on Win10 DWM surfaces.
     // SCITER_SET_GFX_LAYER must be set BEFORE application::start() so the
     // renderer is initialized with the correct backend.
-    if (SciterHelper::IsWindows11OrGreater()) {
+    if (DarkModeHelper::IsWindows11OrGreater()) {
         SciterSetOption(nullptr, SCITER_SET_GFX_LAYER, GFX_LAYER_D2D);
     } else {
         // Win10 needs SKIA to fix alpha channel issues with DWM
@@ -75,7 +98,7 @@ inline void InitSciterSubprocess() {
 
     // CRITICAL: Disable DirectComposition on Win11 when using D2D to avoid black/blank window issues.
     // Must be set after start() (window system must be initialized).
-    if (SciterHelper::IsWindows11OrGreater()) {
+    if (DarkModeHelper::IsWindows11OrGreater()) {
         SciterSetOption(nullptr, SCITER_SET_UX_THEMING, TRUE);
     }
 

@@ -46,6 +46,10 @@ namespace NextKey {
         if (!IsWindow(dialog.get_hwnd())) break;
     }
 
+    // Kill any child processes (ExcludedApps, TsfApps, Macro, AppOverrides)
+    // that Settings may have spawned and are still open.
+    TerminateAllSubprocesses();
+
     // INTENTIONAL: ExitProcess() is required here because Sciter's internal
     // cleanup triggers assertion failures on normal process exit. This is a
     // known Sciter issue. Since this is a subprocess with no shared state

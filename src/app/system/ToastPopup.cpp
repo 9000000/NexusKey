@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ToastPopup.h"
-#include "sciter/SciterHelper.h"
+#include "DarkModeHelper.h"
 #include "../resource.h"
 #include <shellapi.h>
 
@@ -42,7 +42,7 @@ namespace Light {
     static constexpr COLORREF BORDER  = RGB(200, 200, 200);
 }
 
-// Theme detection uses SciterHelper::IsWindowsDarkMode()
+// Theme detection uses DarkModeHelper::IsWindowsDarkMode()
 
 void ToastPopup::RegisterWindowClass() {
     if (s_classRegistered) return;
@@ -61,6 +61,14 @@ void ToastPopup::RegisterWindowClass() {
 void ToastPopup::Show(const std::wstring& message, DWORD durationMs) {
     RegisterWindowClass();
 
+    // DPI-scale window size for PerMonitorV2 (coordinates are physical pixels)
+    auto pfnGetDpiForSystem = reinterpret_cast<UINT(WINAPI*)()>(
+        GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForSystem"));
+    const int dpi = pfnGetDpiForSystem ? static_cast<int>(pfnGetDpiForSystem()) : 96;
+    const int w = MulDiv(TOAST_WIDTH, dpi, 96);
+    const int h = MulDiv(TOAST_HEIGHT, dpi, 96);
+    const int margin = MulDiv(12, dpi, 96);
+
     // Position at bottom-right of the active monitor's work area
     POINT cursorPos;
     GetCursorPos(&cursorPos);
@@ -68,9 +76,8 @@ void ToastPopup::Show(const std::wstring& message, DWORD durationMs) {
     MONITORINFO mi = { sizeof(mi) };
     GetMonitorInfoW(hMon, &mi);
 
-    static constexpr int MARGIN = 12;
-    int x = mi.rcWork.right - TOAST_WIDTH - MARGIN;
-    int y = mi.rcWork.bottom - TOAST_HEIGHT - MARGIN;
+    int x = mi.rcWork.right - w - margin;
+    int y = mi.rcWork.bottom - h - margin;
 
     auto* msgCopy = new std::wstring(message);
 
@@ -78,7 +85,7 @@ void ToastPopup::Show(const std::wstring& message, DWORD durationMs) {
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_NOACTIVATE,
         L"NexusKeyToast", nullptr,
         WS_POPUP,
-        x, y, TOAST_WIDTH, TOAST_HEIGHT,
+        x, y, w, h,
         nullptr, nullptr, GetModuleHandleW(nullptr),
         msgCopy);
 
@@ -88,7 +95,7 @@ void ToastPopup::Show(const std::wstring& message, DWORD durationMs) {
     }
 
     // Store initial theme
-    SetPropW(hwnd, L"dark", reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(SciterHelper::IsWindowsDarkMode() ? 1 : 0)));
+    SetPropW(hwnd, L"dark", reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(DarkModeHelper::IsWindowsDarkMode() ? 1 : 0)));
 
     SetLayeredWindowAttributes(hwnd, 0, TOAST_ALPHA, LWA_ALPHA);
 
@@ -210,7 +217,7 @@ LRESULT CALLBACK ToastPopup::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         case WM_SETTINGCHANGE: {
             // Real-time theme switch: Windows broadcasts this when user changes theme
             if (lParam && wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
-                bool newDark = SciterHelper::IsWindowsDarkMode();
+                bool newDark = DarkModeHelper::IsWindowsDarkMode();
                 bool oldDark = reinterpret_cast<LONG_PTR>(GetPropW(hwnd, L"dark")) != 0;
                 if (newDark != oldDark) {
                     SetPropW(hwnd, L"dark", reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(newDark ? 1 : 0)));
