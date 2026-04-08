@@ -38,9 +38,17 @@ inline void TerminateAllSubprocesses() {
 
 /// Track a child process handle (caller retains ownership until TerminateAllSubprocesses)
 inline void TrackChildProcess(HANDLE hProcess) {
-    if (hProcess) {
-        GetChildProcessHandles().push_back(hProcess);
-    }
+    if (!hProcess) return;
+    auto& handles = GetChildProcessHandles();
+    // Purge handles to already-exited processes
+    std::erase_if(handles, [](HANDLE h) {
+        if (WaitForSingleObject(h, 0) == WAIT_OBJECT_0) {
+            CloseHandle(h);
+            return true;
+        }
+        return false;
+    });
+    handles.push_back(hProcess);
 }
 
 /// Initialize Sciter runtime for a subprocess dialog.

@@ -509,8 +509,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                 if (trayWnd) {
                     auto* pInfo = new (std::nothrow) UpdateInfo(std::move(info));
                     if (pInfo) {
-                        SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
-                                     reinterpret_cast<LPARAM>(pInfo));
+                        // WndProc returns true (1) on success and takes ownership of pInfo.
+                        // If window was destroyed, SendMessageW returns 0 — we still own pInfo.
+                        if (!SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                                          reinterpret_cast<LPARAM>(pInfo))) {
+                            delete pInfo;
+                        }
                     }
                 }
             }

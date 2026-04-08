@@ -310,6 +310,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         // MessageBox acceptable: fatal startup error, app cannot function without tray icon.
         // No matching StringId — using English string (language config not yet applied to UI).
         MessageBoxW(nullptr, L"Failed to create tray icon", L"NexusKey", MB_ICONERROR);
+        CloseHandle(hMutex);
         return 1;
     }
     g_trayIcon.SetMenuCallback(OnMenuCommand);
@@ -389,6 +390,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         // No matching StringId — using English string (language config not yet applied to UI).
         timeEndPeriod(1);
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"NexusKey", MB_ICONERROR);
+        CloseHandle(hMutex);
         return 1;
     }
 
@@ -426,8 +428,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                 if (trayWnd) {
                     auto* pInfo = new (std::nothrow) UpdateInfo(std::move(info));
                     if (pInfo) {
-                        SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
-                                     reinterpret_cast<LPARAM>(pInfo));
+                        // WndProc returns true (1) on success and takes ownership of pInfo.
+                        // If window was destroyed, SendMessageW returns 0 — we still own pInfo.
+                        if (!SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                                          reinterpret_cast<LPARAM>(pInfo))) {
+                            delete pInfo;
+                        }
                     }
                 }
             }
@@ -441,7 +447,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     }
 
     // Cleanup
+    TerminateAllSubprocesses();
     CleanupFloatingIcon();
+    g_trayIcon.Destroy();
     g_hookEngine.Stop();
     timeEndPeriod(1);
 
@@ -506,6 +514,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         // No matching StringId — using English string (language config not yet applied to UI).
         MessageBoxW(nullptr, L"Failed to create tray icon", L"NexusKey", MB_ICONERROR);
         CoUninitialize();
+        CloseHandle(hMutex);
         return 1;
     }
     g_trayIcon.SetMenuCallback(OnMenuCommand);
@@ -577,8 +586,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                 if (trayWnd) {
                     auto* pInfo = new (std::nothrow) UpdateInfo(std::move(info));
                     if (pInfo) {
-                        SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
-                                     reinterpret_cast<LPARAM>(pInfo));
+                        // WndProc returns true (1) on success and takes ownership of pInfo.
+                        // If window was destroyed, SendMessageW returns 0 — we still own pInfo.
+                        if (!SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                                          reinterpret_cast<LPARAM>(pInfo))) {
+                            delete pInfo;
+                        }
                     }
                 }
             }
@@ -606,10 +619,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     }
 
+    TerminateAllSubprocesses();
+    g_trayIcon.Destroy();
     CoUninitialize();
 #endif
 
     NEXTKEY_LOG(L"Exiting");
+    CloseHandle(hMutex);
     return 0;
 }
 

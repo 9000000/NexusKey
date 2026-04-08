@@ -53,7 +53,7 @@ bool IsWindows11OrGreater() noexcept {
 }
 
 void ApplyDarkModeForApp() noexcept {
-    HMODULE hUxTheme = LoadLibraryW(L"uxtheme.dll");
+    HMODULE hUxTheme = GetModuleHandleW(L"uxtheme.dll");
     if (!hUxTheme) return;
 
     // Ordinal 135: SetPreferredAppMode (Windows 1903+)

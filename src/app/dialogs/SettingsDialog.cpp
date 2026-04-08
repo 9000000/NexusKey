@@ -1296,7 +1296,11 @@ void SettingsDialog::startUpdateCheck() {
             result = 1;
             // Pass UpdateInfo via LPARAM to avoid accessing s_instance from background thread
             auto* heapInfo = new (std::nothrow) UpdateInfo(std::move(info));
-            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, reinterpret_cast<LPARAM>(heapInfo));
+            if (heapInfo) {
+                if (!PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, reinterpret_cast<LPARAM>(heapInfo))) {
+                    delete heapInfo;  // Dialog closed before message posted
+                }
+            }
         } else if (info.checkSucceeded) {
             result = 0;  // up-to-date
             PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, 0);

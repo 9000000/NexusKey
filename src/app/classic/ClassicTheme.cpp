@@ -74,7 +74,7 @@ void ClassicTheme::Init(HWND hwnd) {
 
     // Enable dark mode at app level (affects context menus, scrollbars, etc.)
     {
-        HMODULE hUxTheme = LoadLibraryW(L"uxtheme.dll");
+        HMODULE hUxTheme = GetModuleHandleW(L"uxtheme.dll");
         if (hUxTheme) {
             auto setMode = reinterpret_cast<fnSetPreferredAppMode>(
                 GetProcAddress(hUxTheme, MAKEINTRESOURCEA(135)));
