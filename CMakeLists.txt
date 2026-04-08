@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(NexusKey VERSION 2.1.9 LANGUAGES CXX)
+project(NexusKey VERSION 2.1.10 LANGUAGES CXX)
 
 # Generate Version.h from Version.h.in — version is defined once in project() above.
 configure_file(
@@ -161,9 +161,13 @@ add_executable(NextKeyApp WIN32
     src/app/sciter/SciterHelper.h
     src/app/sciter/SciterHelper.cpp
     src/app/sciter/ScaleHelper.h
+    # system/ (dark mode utils, shared with LITE_MODE)
+    src/app/system/DarkModeHelper.h
+    src/app/system/DarkModeHelper.cpp
     # other
     src/core/Version.h
     extern/sciter/include/sciter-main.cpp
+    src/app/NexusKey.exe.manifest
 )
 target_include_directories(NextKeyApp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/include
@@ -211,9 +215,9 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/SubprocessHelper.h
         src/app/system/TsfRegistration.h
         src/app/system/TsfRegistration.cpp
-        # SciterHelper (pure Win32 dark mode utils, needed by TrayIcon/ToastPopup)
-        src/app/sciter/SciterHelper.h
-        src/app/sciter/SciterHelper.cpp
+        # DarkModeHelper (pure Win32 dark mode utils, needed by TrayIcon/ToastPopup)
+        src/app/system/DarkModeHelper.h
+        src/app/system/DarkModeHelper.cpp
         # classic/ (new)
         src/app/classic/ClassicTheme.h
         src/app/classic/ClassicTheme.cpp
@@ -226,7 +230,6 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/classic
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/app/sciter
     )
     target_compile_definitions(NextKeyLite PRIVATE
         NEXUSKEY_HOOK_ENGINE
