@@ -668,7 +668,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         DWORD elapsed = GetTickCount() - lastSynthSendTime_;
         if (elapsed > 500) {
             HOOK_LOG(L"  watchdog: synthEventsPending_ reset from %d (stuck %ums)",
-                     synthEventsPending_, elapsed);
+                     synthEventsPending_.load(), elapsed);
             synthEventsPending_ = 0;
         }
     }
@@ -715,7 +715,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             // If we pass BS through now it arrives at the app BEFORE those synthetics,
             // deleting the wrong character and permanently desynchronising previousComposition_.
             // Re-inject so BS is placed AFTER the pending synthetics in the queue.
-            HOOK_LOG(L"  commit-undo: BS after commit → Primed, re-inject after synthetics (pending=%d)", synthEventsPending_);
+            HOOK_LOG(L"  commit-undo: BS after commit → Primed, re-inject after synthetics (pending=%d)", synthEventsPending_.load());
             InjectKey(VK_BACK);
             return true;
         }
@@ -735,7 +735,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // with margin, while allowing replay at normal typing speed (>100ms between keys).
         if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < kSynthSettleMs) {
             HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
-                     synthEventsPending_, vkCode);
+                     synthEventsPending_.load(), vkCode);
             CancelCommitUndo();
             // Fall through: BS → line 938 re-inject if needed; alpha → HandleAlphaKey
         } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
@@ -747,7 +747,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                      commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
                      commitStack_.size(),
                      previousComposition_.c_str(),
-                     synthEventsPending_);
+                     synthEventsPending_.load());
             ReplayCommittedChars();
             return HandleAlphaKey(vkCode);
         } else if (currentMethod_ == InputMethod::VNI &&
@@ -772,7 +772,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                      commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
                      commitStack_.size(),
                      previousComposition_.c_str(),
-                     synthEventsPending_);
+                     synthEventsPending_.load());
             ReplayCommittedChars();
             HandleBackspace();
             return true;
@@ -965,7 +965,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             //       before the trigger — preventing the trigger from slipping ahead of
             //       those backspaces/chars and causing corrupt output ("lỗiêhiênr").
             HOOK_LOG(L"  re-inject trigger vk=0x%02X (restored=%d synthPending=%d)",
-                     vkCode, restored ? 1 : 0, synthEventsPending_);
+                     vkCode, restored ? 1 : 0, synthEventsPending_.load());
             InjectKey(vkCode);
             return true;  // Eat original trigger
         }
@@ -988,7 +988,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // Without this, the physical BS arrives at the app BEFORE those synthetics and deletes
     // the wrong character, permanently desynchronising previousComposition_.
     if (vkCode == VK_BACK && synthEventsPending_ > 0) {
-        HOOK_LOG(L"  re-inject BS (engine empty, synthPending=%d)", synthEventsPending_);
+        HOOK_LOG(L"  re-inject BS (engine empty, synthPending=%d)", synthEventsPending_.load());
         InjectKey(VK_BACK);
         return true;
     }
@@ -1943,7 +1943,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
         if (needEmpty) backspaceCount++;
 
         HOOK_LOG(L"  ReplaceComposition[send]: BS=%zu needEmpty=%d toSend='%s' skipEmpty=%d synthPending=%d",
-                 backspaceCount, needEmpty ? 1 : 0, toSend.c_str(), skipEmptyChar_ ? 1 : 0, synthEventsPending_);
+                 backspaceCount, needEmpty ? 1 : 0, toSend.c_str(), skipEmptyChar_ ? 1 : 0, synthEventsPending_.load());
 
         if (backspaceCount > 0 || !toSend.empty()) {
             std::vector<INPUT> bsEvents;
