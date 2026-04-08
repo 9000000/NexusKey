@@ -14,6 +14,7 @@
 - Bỏ soft exclude
 - Sửa lỗi Ctrl + BS gây ghostkey
 - Sửa lỗi bỏ dấu sai cho các chữ kéo dài (kìaaaaaaaaa)
+- Sửa các lỗi liên quan đến leak data của c++
 
 ---
 Cảm ơn bạn đã chọn NexusKey! Mọi góp ý của bạn đều giúp bộ gõ ngày càng hoàn thiện hơn.
