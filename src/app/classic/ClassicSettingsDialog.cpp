@@ -29,45 +29,50 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
 
     LoadSettings();
 
-    // DPI-aware sizing
-    dpi_ = 96;
-    {
-        HDC hdc = GetDC(nullptr);
-        if (hdc) {
-            dpi_ = static_cast<UINT>(GetDeviceCaps(hdc, LOGPIXELSX));
-            ReleaseDC(nullptr, hdc);
-        }
-    }
-
-    int width  = Dpi(kCompactWidth);
-    int height = Dpi(kCompactHeight);
-
-    // Center on screen
+    // Create window first at default size, then query real DPI and resize.
+    // GetDeviceCaps(GetDC(nullptr)) returns system DPI (often 96) for PerMonitorV2 apps.
+    // GetDpiForWindow() returns the actual monitor DPI — but requires a valid HWND.
+    DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     int screenW = GetSystemMetrics(SM_CXSCREEN);
     int screenH = GetSystemMetrics(SM_CYSCREEN);
-    int x = (screenW - width) / 2;
-    int y = (screenH - height) / 2;
-
-    // Adjust for window chrome (non-client area)
-    RECT rc = { 0, 0, width, height };
-    DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    AdjustWindowRect(&rc, style, FALSE);
-    int adjWidth  = rc.right - rc.left;
-    int adjHeight = rc.bottom - rc.top;
-    x = (screenW - adjWidth) / 2;
-    y = (screenH - adjHeight) / 2;
 
     hwnd_ = CreateWindowExW(
         0,
         kClassName,
         L"NexusKey",
         style,
-        x, y, adjWidth, adjHeight,
+        CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,  // temporary size
         parent, nullptr, hInstance, this
     );
 
     if (!hwnd_)
         return false;
+
+    // Now get real DPI from the window's monitor
+    dpi_ = 96;
+    auto pfnGetDpiForWindow = reinterpret_cast<UINT(WINAPI*)(HWND)>(
+        GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+    if (pfnGetDpiForWindow) {
+        dpi_ = pfnGetDpiForWindow(hwnd_);
+    } else {
+        // Fallback for older Windows
+        HDC hdc = GetDC(hwnd_);
+        if (hdc) {
+            dpi_ = static_cast<UINT>(GetDeviceCaps(hdc, LOGPIXELSX));
+            ReleaseDC(hwnd_, hdc);
+        }
+    }
+
+    // Resize to correct DPI-scaled compact size and center
+    int width  = Dpi(kCompactWidth);
+    int height = Dpi(kCompactHeight);
+    RECT rc = { 0, 0, width, height };
+    AdjustWindowRect(&rc, style, FALSE);
+    int adjWidth  = rc.right - rc.left;
+    int adjHeight = rc.bottom - rc.top;
+    int x = (screenW - adjWidth) / 2;
+    int y = (screenH - adjHeight) / 2;
+    SetWindowPos(hwnd_, nullptr, x, y, adjWidth, adjHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
     theme_.Init(hwnd_);
     theme_.ApplyWindowAttributes(hwnd_);
