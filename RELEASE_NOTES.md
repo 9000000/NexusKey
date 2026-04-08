@@ -5,6 +5,7 @@
 - Tham khảo thêm mã nguồn của Unikey để tối ưu engine, kiểm tra chính tả và chặn đặt dấu từ tiếng anh https://www.unikey.org/source.html. Cảm ơn bác Kim Long
 
 **🛠 Sửa lỗi:**
+- Sửa lỗi giao diện bị thu nhỏ trên màn hình 2K/4K với DPI scale 200%
 - Sửa lỗi uu7 -> uư thay vì ưu
 - Sửa lỗi spell check không thoát dấu móc cho case e-u-w-w
 - Sửa lỗi kìaaaaaaaaaaaa
