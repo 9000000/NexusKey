@@ -211,7 +211,7 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/SubprocessHelper.h
         src/app/system/TsfRegistration.h
         src/app/system/TsfRegistration.cpp
-        # sciter helpers (no Sciter SDK dependency — pure Win32 dark mode/DWM)
+        # SciterHelper (pure Win32 dark mode utils, needed by TrayIcon/ToastPopup)
         src/app/sciter/SciterHelper.h
         src/app/sciter/SciterHelper.cpp
         # classic/ (new)

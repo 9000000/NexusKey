@@ -75,6 +75,7 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     CreateCompactControls();
     PopulateControls();
     SetFontOnAllChildren();
+    theme_.ThemeAllChildren(hwnd_);
 
     ShowWindow(hwnd_, SW_SHOW);
     UpdateWindow(hwnd_);
@@ -303,6 +304,7 @@ void ClassicSettingsDialog::ToggleAdvancedMode(bool expand) {
 
     if (expand) {
         CreateAdvancedControls();
+        theme_.ThemeAllChildren(hwnd_);
 
         // Show tab + footer, hide compact buttons
         ShowWindow(tabControl_, SW_SHOW);

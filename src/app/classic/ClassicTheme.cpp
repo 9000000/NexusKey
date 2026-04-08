@@ -3,9 +3,17 @@
 
 #include "ClassicTheme.h"
 #include <CommCtrl.h>
+#include <uxtheme.h>
 #include <VersionHelpers.h>
 
 #pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "uxtheme.lib")
+
+// Undocumented uxtheme.dll APIs for dark mode (Win10 1903+)
+enum class PreferredAppMode { Default = 0, AllowDark = 1, ForceDark = 2, ForceLight = 3 };
+using fnSetPreferredAppMode = PreferredAppMode(WINAPI*)(PreferredAppMode);
+using fnAllowDarkModeForWindow = bool(WINAPI*)(HWND, bool);
+using fnRefreshImmersiveColorPolicyState = void(WINAPI*)();
 
 namespace NextKey::Classic {
 
@@ -64,6 +72,20 @@ void ClassicTheme::Init(HWND hwnd) {
     DetectDarkMode();
     colors_ = isDark_ ? kDarkColors : kLightColors;
 
+    // Enable dark mode at app level (affects context menus, scrollbars, etc.)
+    {
+        HMODULE hUxTheme = LoadLibraryW(L"uxtheme.dll");
+        if (hUxTheme) {
+            auto setMode = reinterpret_cast<fnSetPreferredAppMode>(
+                GetProcAddress(hUxTheme, MAKEINTRESOURCEA(135)));
+            if (setMode) setMode(isDark_ ? PreferredAppMode::AllowDark : PreferredAppMode::Default);
+
+            auto refresh = reinterpret_cast<fnRefreshImmersiveColorPolicyState>(
+                GetProcAddress(hUxTheme, MAKEINTRESOURCEA(104)));
+            if (refresh) refresh();
+        }
+    }
+
     UINT dpi = 96;
     // GetDpiForWindow requires Win10 1607+
     auto pfn = reinterpret_cast<UINT(WINAPI*)(HWND)>(
@@ -117,6 +139,35 @@ void ClassicTheme::ApplyWindowAttributes(HWND hwnd) {
         COLORREF captionColor = isDark_ ? RGB(33, 33, 47) : RGB(242, 239, 254);
         DwmSetWindowAttribute(hwnd, 35 /*DWMWA_CAPTION_COLOR*/, &captionColor, sizeof(captionColor));
     }
+}
+
+void ClassicTheme::ThemeChildControl(HWND hwndCtrl) {
+    if (!hwndCtrl) return;
+
+    // DWM dark title bar for child windows
+    BOOL darkBool = isDark_ ? TRUE : FALSE;
+    DwmSetWindowAttribute(hwndCtrl, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &darkBool, sizeof(darkBool));
+
+    // Undocumented: AllowDarkModeForWindow (ordinal 133)
+    HMODULE hUxTheme = GetModuleHandleW(L"uxtheme.dll");
+    if (hUxTheme) {
+        auto allow = reinterpret_cast<fnAllowDarkModeForWindow>(
+            GetProcAddress(hUxTheme, MAKEINTRESOURCEA(133)));
+        if (allow) allow(hwndCtrl, isDark_);
+    }
+
+    // "DarkMode_Explorer" theme makes combobox, checkbox, scrollbar, etc. render dark
+    SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+}
+
+void ClassicTheme::ThemeAllChildren(HWND parent) {
+    struct Ctx { ClassicTheme* self; };
+    Ctx ctx{ this };
+    EnumChildWindows(parent, [](HWND child, LPARAM lp) -> BOOL {
+        auto* c = reinterpret_cast<Ctx*>(lp);
+        c->self->ThemeChildControl(child);
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&ctx));
 }
 
 // -- Brushes --

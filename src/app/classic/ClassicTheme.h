@@ -76,6 +76,13 @@ public:
     /// Apply dark mode to window caption (DWM)
     void ApplyWindowAttributes(HWND hwnd);
 
+    /// Apply dark mode theme to all child controls (combobox, checkbox, etc.)
+    /// Call after creating controls or adding new ones.
+    void ThemeAllChildren(HWND parent);
+
+    /// Apply dark mode to a single child control
+    void ThemeChildControl(HWND hwndCtrl);
+
     // -- State layer helpers --
     static COLORREF BlendColors(COLORREF base, COLORREF overlay, BYTE alpha);
 
