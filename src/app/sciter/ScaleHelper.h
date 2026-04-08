@@ -29,9 +29,19 @@ public:
     static constexpr int DEFAULT_DPI = 96;
 
     /**
-     * Get DPI scale factor (1.0 = 100%, 1.25 = 125%, etc.)
+     * Get DPI scale factor (1.0 = 100%, 1.25 = 125%, 2.0 = 200%, etc.)
+     * Uses GetDpiForSystem (Win10 1607+) which returns the correct value
+     * for PerMonitorV2 apps. Falls back to GetDeviceCaps for older Windows.
      */
     [[nodiscard]] static double getDpiScale() noexcept {
+        // GetDpiForSystem returns system DPI correctly even for PerMonitorV2 apps
+        // (unlike GetDeviceCaps which returns 96 for PerMonitorV2)
+        auto pfn = reinterpret_cast<UINT(WINAPI*)()>(
+            GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForSystem"));
+        if (pfn) {
+            return static_cast<double>(pfn()) / DEFAULT_DPI;
+        }
+        // Fallback for older Windows
         HDC hdc = GetDC(nullptr);
         if (!hdc) return 1.0;
         int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);
