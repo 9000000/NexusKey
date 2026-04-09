@@ -3,9 +3,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ClassicSettingsDialog.h"
+#include "ClassicExcludedAppsDialog.h"
+#include "ClassicAppOverridesDialog.h"
+#include "ClassicMacroTableDialog.h"
+#include "ClassicConvertToolDialog.h"
+#include "ClassicIconColorDialog.h"
 #include "core/config/ConfigManager.h"
+#include "core/ipc/SharedConstants.h"
 #include "core/Debug.h"
+#include "core/Version.h"
 #include "system/StartupHelper.h"
+#include "system/UpdateChecker.h"
+
+#include <thread>
 
 #include <windowsx.h>
 
@@ -37,7 +47,7 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     hwnd_ = CreateWindowExW(
         0,
         kClassName,
-        L"NexusKey",
+        L"NexusKey v" NEXUSKEY_VERSION_WSTR,
         style,
         CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,  // temporary size
         parent, nullptr, hInstance, this
@@ -73,6 +83,13 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
 
     theme_.Init(hwnd_);
     theme_.ApplyWindowAttributes(hwnd_);
+
+    fontSmall_ = CreateFontW(Dpi(13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI Variable Text");
+    if (!fontSmall_) {
+        fontSmall_ = CreateFontW(Dpi(13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    }
 
     CreateCompactControls();
     CreateAdvancedControls();
@@ -125,6 +142,34 @@ bool ClassicSettingsDialog::RegisterWindowClass(HINSTANCE hInstance) {
 // Control creation — Compact mode
 // ════════════════════════════════════════════════════════════════════
 
+static LRESULT CALLBACK HotkeyEditSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR /*dwRefData*/) {
+    if (msg == WM_CHAR) {
+        wchar_t ch = static_cast<wchar_t>(wParam);
+        if (ch == VK_BACK) {
+            SetWindowTextW(hWnd, L"");
+            return 0;
+        }
+        if (ch == L' ') {
+            SetWindowTextW(hWnd, L"Space");
+            SendMessageW(hWnd, EM_SETSEL, (WPARAM)-1, 0);
+            return 0;
+        }
+        if (ch >= 32) {
+            if (ch >= L'a' && ch <= L'z') ch = ch - L'a' + L'A';
+            wchar_t buf[2] = { ch, 0 };
+            SetWindowTextW(hWnd, buf);
+            SendMessageW(hWnd, EM_SETSEL, (WPARAM)-1, 0);
+            return 0;
+        }
+    } else if (msg == WM_KEYDOWN) {
+        if (wParam == VK_DELETE) {
+            SetWindowTextW(hWnd, L"");
+            return 0;
+        }
+    }
+    return DefSubclassProc(hWnd, msg, wParam, lParam);
+}
+
 void ClassicSettingsDialog::CreateCompactControls() {
     int offset = Dpi(8);
     int gbX = Dpi(8);
@@ -172,8 +217,20 @@ void ClassicSettingsDialog::CreateCompactControls() {
     
     int editH = Dpi(16);
     int editYOffset = (Dpi(kControlHeight) - editH) / 2;
-    editHotkey_ = CreateEdit(cx + Dpi(4), y + editYOffset, Dpi(24), editH, IDC_EDIT_SWITCH_KEY);
-    SendMessageW(editHotkey_, EM_SETLIMITTEXT, 1, 0);
+    int editW = Dpi(46);
+    editHotkey_ = CreateEdit(cx + Dpi(2), y + editYOffset, editW, editH, IDC_EDIT_SWITCH_KEY);
+    SetWindowLongW(editHotkey_, GWL_STYLE, GetWindowLongW(editHotkey_, GWL_STYLE) | ES_CENTER);
+    SendMessageW(editHotkey_, EM_SETLIMITTEXT, 5, 0);
+    SetWindowSubclass(editHotkey_, HotkeyEditSubclassProc, 1, 0);
+
+    // Render "Tiếng bíp khi chuyển" right after the hotkey edit textbox
+    for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
+        if (wcscmp(kSettings[i].id, L"beep-sound") == 0) {
+            checkControls_[i] = CreateCheck(kSettings[i].label, cx + editW + Dpi(18), y, Dpi(130), Dpi(kControlHeight), kSettings[i].win32Id);
+            break;
+        }
+    }
+
     y += Dpi(kControlHeight + kSectionGap) + Dpi(4);
 }
 
@@ -339,7 +396,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
     for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
         const auto& meta = kSettings[i];
-        if (meta.win32Id == 0 || meta.owner == SettingOwner::Hotkey)
+        if (meta.win32Id == 0 || meta.owner == SettingOwner::Hotkey || wcscmp(meta.id, L"beep-sound") == 0)
             continue;
 
         int tab = meta.tab;
@@ -467,7 +524,9 @@ void ClassicSettingsDialog::PopulateControls() {
     }
 
     if (editHotkey_) {
-        if (hotkeyConfig_.key) {
+        if (hotkeyConfig_.key == L' ') {
+            SetWindowTextW(editHotkey_, L"Space");
+        } else if (hotkeyConfig_.key) {
             wchar_t buf[2] = { hotkeyConfig_.key, 0 };
             SetWindowTextW(editHotkey_, buf);
         } else {
@@ -531,11 +590,17 @@ void ClassicSettingsDialog::ReadControlValues() {
     }
 
     if (editHotkey_) {
-        wchar_t buf[2] = {0};
-        GetWindowTextW(editHotkey_, buf, 2);
-        wchar_t key = buf[0];
-        if (key >= L'a' && key <= L'z') key = key - L'a' + L'A';
-        hotkeyConfig_.key = key;
+        wchar_t buf[16] = {0};
+        GetWindowTextW(editHotkey_, buf, 16);
+        if (wcscmp(buf, L"Space") == 0) {
+            hotkeyConfig_.key = L' ';
+        } else if (wcslen(buf) > 0) {
+            wchar_t key = buf[0];
+            if (key >= L'a' && key <= L'z') key = key - L'a' + L'A';
+            hotkeyConfig_.key = key;
+        } else {
+            hotkeyConfig_.key = 0;
+        }
     }
 }
 
@@ -609,7 +674,7 @@ void ClassicSettingsDialog::ShowTabPage(int tabIndex) {
         if (!ctrl) continue;
 
         const auto& meta = kSettings[i];
-        if (meta.owner == SettingOwner::Hotkey) continue;
+        if (meta.owner == SettingOwner::Hotkey || wcscmp(meta.id, L"beep-sound") == 0) continue;
 
         int showCmd = (meta.tab == tabIndex) ? SW_SHOW : SW_HIDE;
         ShowWindow(ctrl, showCmd);
@@ -673,7 +738,24 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
             if (meta->type == SettingType::Action) {
                 OnActionButton(meta->win32Id);
             } else {
+                // Icon style dropdown change
+                if (meta->type == SettingType::Dropdown && wcscmp(meta->id, L"custom-icon-style") == 0
+                    && code == CBN_SELCHANGE) {
+                    int sel = ComboBox_GetCurSel(reinterpret_cast<HWND>(lParam));
+                    if (sel == 3) { // "Tự chọn" → open color picker
+                        OnPickIconColors();
+                    }
+                    // All icon style changes need immediate flush + notify
+                    SaveSettings();
+                    KillTimer(hwnd_, kTimerDeferredSave);
+                    SaveToToml();
+                    HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                    if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
+                    return;
+                }
+
                 SaveSettings();
+
                 // System toggles have side effects beyond config save
                 if (meta->owner == SettingOwner::System && meta->type == SettingType::Toggle) {
                     bool checked = (IsDlgButtonChecked(hwnd_, meta->win32Id) == BST_CHECKED);
@@ -696,44 +778,52 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
 void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
     switch (controlId) {
         case IDC_BTN_SMART_SWITCH:
-            MessageBoxW(hwnd_,
-                L"Tính năng này sẽ lưu chế độ gõ (Việt/Anh) "
-                L"cho từng ứng dụng riêng.\n\n"
-                L"Khi bạn chuyển qua lại giữa các app, "
-                L"NexusKey sẽ tự động khôi phục chế độ gõ đã dùng trước đó.",
-                L"Lưu chế độ gõ theo app",
-                MB_ICONINFORMATION);
+            ClassicAppOverridesDialog::Show(hInstance_, hwnd_);
+            // Reload config in case overrides changed
+            LoadSettings();
+            PopulateControls();
             break;
 
         case IDC_BTN_EXCLUDE_APPS:
-            MessageBoxW(hwnd_,
-                L"Tính năng này cho phép bạn chọn những ứng dụng "
-                L"sẽ tự động tắt gõ tiếng Việt.\n\n"
-                L"Ví dụ: Game, IDE code...\n\n"
-                L"Để chỉnh sửa danh sách, mở file config tại:\n"
-                L"%APPDATA%\\NexusKey\\config.toml",
-                L"Tắt tiếng Việt theo app",
-                MB_ICONINFORMATION);
+            ClassicExcludedAppsDialog::Show(hInstance_, hwnd_);
             break;
 
         case IDC_BTN_MACRO_TABLE:
-            MessageBoxW(hwnd_,
-                L"Bảng gõ tắt cho phép bạn định nghĩa các phím tắt.\n\n"
-                L"Ví dụ: \"btv\" → \"báo tuổi trẻ\"\n\n"
-                L"Để chỉnh sửa, mở file:\n"
-                L"%APPDATA%\\NexusKey\\macros.txt",
-                L"Bảng gõ tắt",
-                MB_ICONINFORMATION);
+            ClassicMacroTableDialog::Show(hInstance_, hwnd_);
             break;
 
-        case IDC_BTN_CHECK_UPDATE:
-            MessageBoxW(hwnd_,
-                L"Đang kiểm tra máy chủ để xem có phiên bản mới không...\n\n"
-                L"Hiện tại chưa có phiên bản nào mới được phát hành.\n"
-                L"Bạn đang sử dụng bản cập nhật mới nhất.",
-                L"Kiểm tra cập nhật",
-                MB_ICONINFORMATION);
+        case IDC_BTN_CHECK_UPDATE: {
+            HWND dlgHwnd = hwnd_;
+            std::thread([dlgHwnd]() {
+                auto info = UpdateChecker::CheckForUpdate();
+                if (info.available) {
+                    std::wstring msg = L"Có phiên bản mới: v" + info.version + L"\n\n"
+                        L"Cập nhật ngay?";
+                    int res = MessageBoxW(dlgHwnd, msg.c_str(), L"Cập nhật", MB_YESNO | MB_ICONINFORMATION);
+                    if (res == IDYES) {
+                        MessageBoxW(dlgHwnd, L"Đang tải về... Vui lòng đợi.",
+                            L"Cập nhật", MB_ICONINFORMATION);
+                        if (UpdateChecker::DownloadAndReplaceExe(info.downloadUrl)) {
+                            // Relaunch succeeded — exit current process
+                            PostQuitMessage(0);
+                        } else {
+                            MessageBoxW(dlgHwnd, L"Cập nhật thất bại. Vui lòng tải thủ công.",
+                                L"Lỗi", MB_ICONERROR);
+                            if (!info.changelogUrl.empty()) {
+                                ShellExecuteW(nullptr, L"open", info.changelogUrl.c_str(), nullptr, nullptr, SW_SHOW);
+                            }
+                        }
+                    }
+                } else if (info.checkSucceeded) {
+                    MessageBoxW(dlgHwnd, L"Bạn đang sử dụng bản mới nhất.",
+                        L"Kiểm tra cập nhật", MB_ICONINFORMATION);
+                } else {
+                    MessageBoxW(dlgHwnd, L"Không thể kết nối máy chủ. Vui lòng thử lại sau.",
+                        L"Kiểm tra cập nhật", MB_ICONWARNING);
+                }
+            }).detach();
             break;
+        }
     }
 }
 
@@ -753,8 +843,35 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
     else if (wcscmp(id, L"desktop-shortcut") == 0) {
         SetDesktopShortcut(value);
     }
-    // floating-icon, show-on-startup, check-update: saved to config,
+    else if (wcscmp(id, L"floating-icon") == 0) {
+        // Flush TOML + notify main thread to show/hide floating icon immediately
+        KillTimer(hwnd_, kTimerDeferredSave);
+        SaveToToml();
+        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
+    }
+    // show-on-startup, check-update: saved to config,
     // main_lite.cpp reads updated config when dialog closes.
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Icon color picker (ChooseColor API)
+// ════════════════════════════════════════════════════════════════════
+
+void ClassicSettingsDialog::OnPickIconColors() {
+    auto result = ClassicIconColorDialog::Show(
+        hInstance_, hwnd_,
+        systemConfig_.customColorV, systemConfig_.customColorE);
+
+    if (result.accepted) {
+        systemConfig_.customColorV = result.colorV;
+        systemConfig_.customColorE = result.colorE;
+        // Flush + notify immediately so tray icon updates
+        KillTimer(hwnd_, kTimerDeferredSave);
+        SaveToToml();
+        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -794,7 +911,7 @@ HWND ClassicSettingsDialog::CreateCheck(const wchar_t* text, int x, int y, int w
 HWND ClassicSettingsDialog::CreateEdit(int x, int y, int w, int h, UINT id) {
     return CreateWindowExW(
         0, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_UPPERCASE | ES_CENTER | ES_AUTOHSCROLL,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_CENTER | ES_AUTOHSCROLL,
         x, y, w, h,
         hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
         hInstance_, nullptr
@@ -825,6 +942,8 @@ BOOL CALLBACK ClassicSettingsDialog::SetFontProc(HWND hwnd, LPARAM lParam) {
     HFONT font = self->theme_.Fonts().body;
     if (GetDlgCtrlID(hwnd) == 2999) {
         font = self->theme_.Fonts().header;
+    } else if (GetDlgCtrlID(hwnd) == IDC_EDIT_SWITCH_KEY && self->fontSmall_) {
+        font = self->fontSmall_;
     }
 
     SendMessageW(hwnd, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
@@ -950,6 +1069,12 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             return 0;
         }
 
+        case WM_LBUTTONDOWN:
+            if (self->editHotkey_ && GetFocus() == self->editHotkey_) {
+                SetFocus(hwnd);
+            }
+            return 0;
+
         case WM_SETTINGCHANGE:
             if (self->theme_.OnSettingChange(lParam)) {
                 self->theme_.ApplyWindowAttributes(hwnd);
@@ -975,6 +1100,10 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             return 0;
 
         case WM_DESTROY: {
+            if (self->fontSmall_) {
+                DeleteObject(self->fontSmall_);
+                self->fontSmall_ = nullptr;
+            }
             auto restoreAnim = [](HWND combo) {
                 if (combo && GetPropW(combo, L"WasAnim")) {
                     SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)TRUE, 0);

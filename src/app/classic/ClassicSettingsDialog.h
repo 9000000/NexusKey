@@ -59,6 +59,7 @@ private:
     void OnCommand(WPARAM wParam, LPARAM lParam);
     void OnActionButton(uint16_t controlId);
     void OnSystemToggle(const wchar_t* id, bool value);
+    void OnPickIconColors();
     void OnTabChange();
     void ShowTabPage(int tabIndex);
 
@@ -99,6 +100,7 @@ private:
     HWND btnClose_      = nullptr;
     HWND btnExit_       = nullptr;
     HWND editHotkey_    = nullptr;
+    HFONT fontSmall_    = nullptr;
 
     // Advanced controls
     HWND tabControl_    = nullptr;

@@ -162,7 +162,10 @@ UpdateInfo UpdateChecker::CheckForUpdate() noexcept {
         // Extract release page URL
         std::string htmlUrl = ExtractJsonString(response, "html_url");
 
-        // Find release asset (NexusKey.zip from v2.1.4+)
+        // Find release asset
+#ifdef NEXUSKEY_LITE_MODE
+        std::string assetUrl = FindAssetUrl(response, "NexusKeyClassic.exe");
+#else
         std::string assetUrl = FindAssetUrl(response, "NexusKey.zip");
 
         // Fallback: old asset names for releases before v2.1.4
@@ -173,6 +176,7 @@ UpdateInfo UpdateChecker::CheckForUpdate() noexcept {
             assetUrl = FindAssetUrl(response, "NextKey-x86.zip");
 #endif
         }
+#endif
 
         if (assetUrl.empty()) return info;
 
@@ -295,6 +299,61 @@ bool UpdateChecker::DownloadAndLaunchInstaller(const std::wstring& downloadUrl) 
         }
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool UpdateChecker::DownloadAndReplaceExe(const std::wstring& downloadUrl) noexcept {
+    try {
+        // 1. Download to temp
+        wchar_t tempDir[MAX_PATH] = {};
+        GetTempPathW(MAX_PATH, tempDir);
+        std::wstring tempExe = std::wstring(tempDir) + L"NexusKeyClassic_update.exe";
+
+        if (!DownloadFile(downloadUrl, tempExe)) return false;
+
+        // 2. Verify SHA-256
+        if (!VerifyDownloadedZip(downloadUrl, tempExe)) {  // Same sidecar pattern: url + ".sha256"
+            DeleteFileW(tempExe.c_str());
+            return false;
+        }
+
+        // 3. Get current exe path
+        wchar_t exePath[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+        std::wstring currentExe(exePath);
+        std::wstring oldExe = currentExe + L"_old";
+
+        // 4. Rename current → _old (delete stale _old first)
+        DeleteFileW(oldExe.c_str());
+        if (!MoveFileExW(currentExe.c_str(), oldExe.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+            DeleteFileW(tempExe.c_str());
+            return false;
+        }
+
+        // 5. Move downloaded → current location
+        if (!MoveFileExW(tempExe.c_str(), currentExe.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+            // Rollback: restore old exe
+            MoveFileW(oldExe.c_str(), currentExe.c_str());
+            DeleteFileW(tempExe.c_str());
+            return false;
+        }
+
+        // 6. Relaunch
+        STARTUPINFOW si = { sizeof(si) };
+        PROCESS_INFORMATION pi = {};
+        std::wstring cmdLine = L"\"" + currentExe + L"\"";
+        if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+            return false;
+        }
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+
+        // 7. Mark _old for deletion on next boot (best effort)
+        MoveFileExW(oldExe.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
+
         return true;
     } catch (...) {
         return false;

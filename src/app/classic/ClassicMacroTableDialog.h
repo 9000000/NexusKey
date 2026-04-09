@@ -1,0 +1,67 @@
+// NexusKey Classic — Macro Table Dialog
+// SPDX-License-Identifier: GPL-3.0-only
+
+#pragma once
+
+#ifdef _WIN32
+#include "ClassicTheme.h"
+#include "ClassicDialogUtils.h"
+#include <Windows.h>
+#include <commctrl.h>
+#include <string>
+#include <unordered_map>
+
+namespace NextKey::Classic {
+
+/// Win32 native dialog for editing macro table (key → expansion).
+class ClassicMacroTableDialog {
+public:
+    /// Show modal dialog. Returns true if macros were modified.
+    static bool Show(HINSTANCE hInstance, HWND parent);
+
+private:
+    ClassicMacroTableDialog() = default;
+
+    bool Init(HINSTANCE hInstance, HWND parent);
+    void CreateControls();
+    void PopulateList();
+    void AddMacro();
+    void DeleteSelected();
+    void ImportFromFile();
+    void ExportToFile();
+
+    void LoadData();
+    void SaveData();
+
+    static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+    int Dpi(int value) const noexcept;
+
+    static constexpr int kWidth = 420;
+    static constexpr int kHeight = 398;
+    static constexpr int kPadding = 12;
+    static constexpr int kBtnHeight = 28;
+    static constexpr int kBtnGap = 6;
+
+    HWND hwnd_ = nullptr;
+    HINSTANCE hInstance_ = nullptr;
+    ClassicTheme theme_;
+    UINT dpi_ = 96;
+    bool modified_ = false;
+
+    HWND listView_ = nullptr;
+    HWND editKey_ = nullptr;
+    HWND editValue_ = nullptr;
+    HWND btnAdd_ = nullptr;
+    HWND btnDelete_ = nullptr;
+    HWND btnImport_ = nullptr;
+    HWND btnExport_ = nullptr;
+    HWND btnClose_ = nullptr;
+
+    std::unordered_map<std::wstring, std::wstring> macros_;
+
+    static constexpr const wchar_t* kClassName = L"NexusKeyMacroTable";
+};
+
+}  // namespace NextKey::Classic
+
+#endif

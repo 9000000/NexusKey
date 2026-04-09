@@ -25,6 +25,8 @@
 #include "system/ToastPopup.h"
 
 #include "classic/ClassicSettingsDialog.h"
+#include "classic/ClassicMacroTableDialog.h"
+#include "classic/ClassicConvertToolDialog.h"
 
 #include <Windows.h>
 #include <commctrl.h>
@@ -218,11 +220,11 @@ static void OnMenuCommand(TrayMenuId id) {
         }
 
         case TrayMenuId::MacroTable:
-            // Lite build: no macro table dialog yet
+            Classic::ClassicMacroTableDialog::Show(g_hInstance, nullptr);
             break;
 
         case TrayMenuId::ConvertTool:
-            // Lite build: no convert tool dialog yet
+            Classic::ClassicConvertToolDialog::Show(g_hInstance, nullptr);
             break;
 
         case TrayMenuId::QuickConvert:

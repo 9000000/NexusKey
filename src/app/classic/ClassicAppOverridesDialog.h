@@ -1,0 +1,67 @@
+// NexusKey Classic — App Overrides Dialog
+// SPDX-License-Identifier: GPL-3.0-only
+
+#pragma once
+
+#ifdef _WIN32
+#include "ClassicTheme.h"
+#include "ClassicDialogUtils.h"
+#include "core/config/ConfigManager.h"
+#include <Windows.h>
+#include <commctrl.h>
+#include <string>
+#include <unordered_map>
+
+namespace NextKey::Classic {
+
+/// Win32 native dialog for per-app encoding/method overrides.
+class ClassicAppOverridesDialog {
+public:
+    static bool Show(HINSTANCE hInstance, HWND parent);
+
+private:
+    ClassicAppOverridesDialog() = default;
+
+    bool Init(HINSTANCE hInstance, HWND parent);
+    void CreateControls();
+    void PopulateList();
+    void AddOverride();
+    void DeleteSelected();
+    void OnPickWindow();
+
+    void LoadData();
+    void SaveData();
+
+    static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+    int Dpi(int value) const noexcept;
+
+    static constexpr int kWidth = 440;
+    static constexpr int kHeight = 366;
+    static constexpr int kPadding = 12;
+    static constexpr int kBtnHeight = 28;
+    static constexpr int kBtnGap = 6;
+
+    HWND hwnd_ = nullptr;
+    HINSTANCE hInstance_ = nullptr;
+    ClassicTheme theme_;
+    UINT dpi_ = 96;
+    bool modified_ = false;
+
+    HWND listView_ = nullptr;
+    HWND editApp_ = nullptr;
+    HWND comboMethod_ = nullptr;
+    HWND comboEncoding_ = nullptr;
+    HWND btnAdd_ = nullptr;
+    HWND btnPick_ = nullptr;
+    HWND btnDelete_ = nullptr;
+    HWND btnClose_ = nullptr;
+
+    std::unordered_map<std::wstring, AppOverrideEntry> entries_;
+    WindowPicker picker_;
+
+    static constexpr const wchar_t* kClassName = L"NexusKeyAppOverrides";
+};
+
+}  // namespace NextKey::Classic
+
+#endif

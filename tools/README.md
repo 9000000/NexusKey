@@ -61,6 +61,34 @@ English (avg/key)          28.1 us         29.5 us
   Vietnamese: NexusKey is 4.3% faster
 ```
 
+## build_lite.ps1 / build_app.ps1
+
+Build & run scripts for the two NexusKey variants.
+
+| Script | What it builds | Output |
+|--------|---------------|--------|
+| `build_lite.ps1` | Classic Win32 UI (no Sciter) | `build-lite\Debug\NexusKeyClassic.exe` |
+| `build_app.ps1` | Full Sciter UI | `build\Debug\NexusKey.exe` |
+
+```powershell
+# Build + run Classic (Lite)
+.\tools\build_lite.ps1 -Run
+
+# Build + run Sciter (App)
+.\tools\build_app.ps1 -Run
+
+# Clean rebuild
+.\tools\build_lite.ps1 -Clean -Run
+
+# Release build
+.\tools\build_lite.ps1 -Release
+
+# Debug both side by side
+.\tools\build_app.ps1 -Run; .\tools\build_lite.ps1 -Run
+```
+
+Auto-kills existing instance before launching. Auto-configures CMake if no cache exists.
+
 ## release_tag.sh
 
 Create a git tag for release.

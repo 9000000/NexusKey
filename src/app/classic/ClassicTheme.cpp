@@ -125,6 +125,52 @@ static LRESULT CALLBACK DarkListSubclassProc(HWND hWnd, UINT msg, WPARAM wParam,
     return DefSubclassProc(hWnd, msg, wParam, lParam);
 }
 
+static LRESULT CALLBACK ListViewSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
+    auto* theme = reinterpret_cast<ClassicTheme*>(dwRefData);
+    if (msg == WM_NOTIFY && theme && theme->IsDark()) {
+        auto* nmhdr = reinterpret_cast<LPNMHDR>(lParam);
+        if (nmhdr->code == NM_CUSTOMDRAW) {
+            auto* pnmcd = reinterpret_cast<LPNMCUSTOMDRAW>(lParam);
+            HWND hHeader = ListView_GetHeader(hWnd);
+            if (hHeader && pnmcd->hdr.hwndFrom == hHeader) {
+                if (pnmcd->dwDrawStage == CDDS_PREPAINT) {
+                    return CDRF_NOTIFYITEMDRAW;
+                }
+                if (pnmcd->dwDrawStage == CDDS_ITEMPREPAINT) {
+                    SetTextColor(pnmcd->hdc, theme->Colors().text);
+                    SetBkMode(pnmcd->hdc, TRANSPARENT);
+
+                    RECT rc = pnmcd->rc;
+                    FillRect(pnmcd->hdc, &rc, theme->BrushBackground());
+
+                    wchar_t buf[256] = {0};
+                    HDITEMW hdi = { HDI_TEXT };
+                    hdi.pszText = buf;
+                    hdi.cchTextMax = 256;
+                    SendMessageW(hHeader, HDM_GETITEMW, pnmcd->dwItemSpec, reinterpret_cast<LPARAM>(&hdi));
+
+                    rc.left += 6; // padding
+                    DrawTextW(pnmcd->hdc, buf, -1, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+                    int count = Header_GetItemCount(hHeader);
+                    if (static_cast<int>(pnmcd->dwItemSpec) < count - 1) {
+                        // Draw separator line
+                        HPEN pen = CreatePen(PS_SOLID, 1, theme->Colors().border);
+                        HGDIOBJ oldPen = SelectObject(pnmcd->hdc, pen);
+                        MoveToEx(pnmcd->hdc, pnmcd->rc.right - 1, pnmcd->rc.top + 4, nullptr);
+                        LineTo(pnmcd->hdc, pnmcd->rc.right - 1, pnmcd->rc.bottom - 4);
+                        SelectObject(pnmcd->hdc, oldPen);
+                        DeleteObject(pen);
+                    }
+
+                    return CDRF_SKIPDEFAULT;
+                }
+            }
+        }
+    }
+    return DefSubclassProc(hWnd, msg, wParam, lParam);
+}
+
 void ClassicTheme::ThemeChildControl(HWND hwndCtrl) {
     if (!hwndCtrl) return;
 
@@ -140,27 +186,37 @@ void ClassicTheme::ThemeChildControl(HWND hwndCtrl) {
     }
 
     wchar_t className[32] = {0};
-    if (GetClassNameW(hwndCtrl, className, 32) && wcscmp(className, L"ComboBox") == 0) {
-        SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_CFD" : L"Explorer", nullptr);
-        COMBOBOXINFO info = { sizeof(COMBOBOXINFO) };
-        if (GetComboBoxInfo(hwndCtrl, &info) && info.hwndList) {
-            DwmSetWindowAttribute(info.hwndList, 20, &darkBool, sizeof(darkBool));
-            if (hUxTheme && allow) allow(info.hwndList, isDark_);
-            
-            if (IsWindows11OrGreater()) {
-                auto corner = 2; // DWMWCP_ROUND
-                DwmSetWindowAttribute(info.hwndList, 33, &corner, sizeof(corner));
-            }
+    if (GetClassNameW(hwndCtrl, className, 32)) {
+        if (wcscmp(className, L"ComboBox") == 0) {
+            SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_CFD" : L"Explorer", nullptr);
+            COMBOBOXINFO info = { sizeof(COMBOBOXINFO) };
+            if (GetComboBoxInfo(hwndCtrl, &info) && info.hwndList) {
+                DwmSetWindowAttribute(info.hwndList, 20, &darkBool, sizeof(darkBool));
+                if (hUxTheme && allow) allow(info.hwndList, isDark_);
+                
+                if (IsWindows11OrGreater()) {
+                    auto corner = 2; // DWMWCP_ROUND
+                    DwmSetWindowAttribute(info.hwndList, 33, &corner, sizeof(corner));
+                }
 
-            SetWindowTheme(info.hwndList, isDark_ ? L"DarkMode_CFD" : L"Explorer", nullptr);
-            SetClassLongPtrW(info.hwndList, GCLP_HBRBACKGROUND,
-                reinterpret_cast<LONG_PTR>(isDark_ ? brBackground_ : GetSysColorBrush(COLOR_WINDOW)));
-            
-            // Subclass the list to catch the animation background fill
-            SetWindowSubclass(info.hwndList, DarkListSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+                SetWindowTheme(info.hwndList, isDark_ ? L"DarkMode_CFD" : L"Explorer", nullptr);
+                SetClassLongPtrW(info.hwndList, GCLP_HBRBACKGROUND,
+                    reinterpret_cast<LONG_PTR>(isDark_ ? brBackground_ : GetSysColorBrush(COLOR_WINDOW)));
+                
+                // Subclass the list to catch the animation background fill
+                SetWindowSubclass(info.hwndList, DarkListSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
+            }
+        } else if (wcscmp(className, WC_LISTVIEWW) == 0) {
+            SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_ItemsView" : L"Explorer", nullptr);
+            ListView_SetBkColor(hwndCtrl, isDark_ ? colors_.background : GetSysColor(COLOR_WINDOW));
+            ListView_SetTextBkColor(hwndCtrl, isDark_ ? colors_.background : GetSysColor(COLOR_WINDOW));
+            ListView_SetTextColor(hwndCtrl, isDark_ ? colors_.text : GetSysColor(COLOR_WINDOWTEXT));
+            SetWindowSubclass(hwndCtrl, ListViewSubclassProc, 2, reinterpret_cast<DWORD_PTR>(this));
+        } else if (wcscmp(className, WC_HEADER) == 0) {
+            SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_ItemsView" : L"Explorer", nullptr);
+        } else {
+            SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
         }
-    } else {
-        SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
     }
 }
 

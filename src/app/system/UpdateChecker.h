@@ -39,6 +39,11 @@ public:
     /// Returns true if installer was launched. On failure, cleans up the downloaded file.
     [[nodiscard]] static bool DownloadAndLaunchInstaller(const std::wstring& downloadUrl) noexcept;
 
+    /// (Lite build) Download EXE, verify hash, replace current exe, relaunch.
+    /// Simpler than ZIP flow: rename current→_old, copy new→current, launch.
+    /// Returns true if relaunch succeeded. Caller should exit after this returns true.
+    [[nodiscard]] static bool DownloadAndReplaceExe(const std::wstring& downloadUrl) noexcept;
+
     /// Parse version string (e.g. "v1.2.3-beta") into packed format (major<<16 | minor<<8 | patch)
     [[nodiscard]] static uint32_t ParseVersion(const std::wstring& versionStr) noexcept;
 

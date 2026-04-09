@@ -219,10 +219,21 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/DarkModeHelper.h
         src/app/system/DarkModeHelper.cpp
         # classic/ (new)
+        src/app/classic/ClassicDialogUtils.h
         src/app/classic/ClassicTheme.h
         src/app/classic/ClassicTheme.cpp
         src/app/classic/ClassicSettingsDialog.h
         src/app/classic/ClassicSettingsDialog.cpp
+        src/app/classic/ClassicExcludedAppsDialog.h
+        src/app/classic/ClassicExcludedAppsDialog.cpp
+        src/app/classic/ClassicMacroTableDialog.h
+        src/app/classic/ClassicMacroTableDialog.cpp
+        src/app/classic/ClassicAppOverridesDialog.h
+        src/app/classic/ClassicAppOverridesDialog.cpp
+        src/app/classic/ClassicConvertToolDialog.h
+        src/app/classic/ClassicConvertToolDialog.cpp
+        src/app/classic/ClassicIconColorDialog.h
+        src/app/classic/ClassicIconColorDialog.cpp
         # version
         src/core/Version.h
     )
