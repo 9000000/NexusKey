@@ -45,7 +45,6 @@ private:
     bool RegisterWindowClass(HINSTANCE hInstance);
     void CreateCompactControls();
     void CreateAdvancedControls();
-    void ToggleAdvancedMode(bool expand);
 
     // -- Settings I/O --
     void LoadSettings();
@@ -74,10 +73,8 @@ private:
 
     // -- Layout constants (pixels at 96 DPI, scaled by Dpi()) --
     // All values are multiples of 4 for consistent visual rhythm
-    static constexpr int kCompactWidth  = 440;
-    static constexpr int kCompactHeight = 220;
-    static constexpr int kAdvancedWidth  = 500;
-    static constexpr int kAdvancedHeight = 460;
+    static constexpr int kAdvancedWidth  = 460;
+    static constexpr int kAdvancedHeight = 373;
     static constexpr int kPadding       = 16;
     static constexpr int kControlHeight = 24;
     static constexpr int kComboHeight   = 24;
@@ -96,20 +93,19 @@ private:
     // Compact controls
     HWND comboMethod_   = nullptr;
     HWND comboEncoding_ = nullptr;
-    HWND checkExpand_   = nullptr;
     HWND btnClose_      = nullptr;
     HWND btnExit_       = nullptr;
     HWND editHotkey_    = nullptr;
 
     // Advanced controls
     HWND tabControl_    = nullptr;
-    bool isAdvanced_    = false;
     bool advancedCreated_ = false;
     int currentTab_     = 0;
 
     // Per-tab checkbox HWNDs (indexed by kSettings array index)
     static constexpr size_t kMaxControls = 64;
     HWND checkControls_[kMaxControls] = {};
+    HWND extraControls_[kMaxControls] = {};
 
     // Settings data
     TypingConfig config_{};

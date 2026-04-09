@@ -24,6 +24,7 @@ struct ThemeColors {
 struct FontSet {
     HFONT header;  // Segoe UI Variable Display, 11pt, SemiBold
     HFONT body;    // Segoe UI Variable Text, 9pt, Regular
+    HFONT bodyBold; // Segoe UI Variable Text, 9pt, SemiBold
 };
 
 /// Native Windows theme manager for Win32

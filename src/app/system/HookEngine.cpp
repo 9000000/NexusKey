@@ -233,14 +233,8 @@ void HookEngine::ToggleVietnameseMode() {
         return;
     }
 
-    // Block toggling while CJK layout is active — engine cannot produce Vietnamese on CJK layout
-    if (layoutSuppressed_) {
-        HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (CJK layout suppressed)");
-        return;
-    }
-
-    // Commit any pending composition before switching
-    if (engine_->Count() > 0) {
+    // Commit any pending composition before switching (skip if CJK-suppressed — engine inactive)
+    if (!layoutSuppressed_ && engine_->Count() > 0) {
         CommitComposition();
     }
 
@@ -593,13 +587,6 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 0b. TSF app — let TSF DLL handle all input, hook does nothing
     if (isTsfApp_) return false;
 
-    // 0c. Throttled layout check — catches layout changes via Language Bar click.
-    //     Also checked immediately on focus-change and modifier key-up (ProcessKeyUp).
-    if (++layoutCheckCounter_ >= kLayoutCheckInterval) {
-        layoutCheckCounter_ = 0;
-        CheckLayoutChange();
-    }
-
     // 1. Track modifiers for hotkey detection
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
                        vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
@@ -684,7 +671,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 2c. Fast English exit — skip commit-undo FSM when no undo is pending.
     //      Commit-undo only applies to Vietnamese words (line 691 checks vietnameseMode_).
     //      When English mode + undo Idle + no English macros → nothing below applies.
-    if (!vietnameseMode_ && !layoutSuppressed_ &&
+    if (!vietnameseMode_ &&
         commitUndoState_ == CommitUndoState::Idle &&
         !(macroEnabled_ && macroInEnglish_)) {
         return false;
@@ -804,9 +791,12 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
     }
 
-    // 3. English mode or CJK layout suppression — skip Vietnamese processing
-    if (!vietnameseMode_ || layoutSuppressed_) {
-        if (!layoutSuppressed_ && macroEnabled_ && macroInEnglish_) {
+    // 3. English mode — skip Vietnamese processing
+    // Note: CJK layout no longer suppresses here. User controls V/E mode via toggle,
+    // matching EVKey behavior. Japanese IME "A" sub-mode is indistinguishable from
+    // "あ" mode via GetKeyboardLayout(), so layout-based suppression is too coarse.
+    if (!vietnameseMode_) {
+        if (macroEnabled_ && macroInEnglish_) {
             // Track macro keys (all printable chars) in English mode
             if (vkCode >= 0x41 && vkCode <= 0x5A) {
                 bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -835,7 +825,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                 tempMacroOff_ = false;
             }
         }
-        HOOK_LOG(layoutSuppressed_ ? L"  skip: CJK layout suppressed" : L"  skip: Vietnamese mode OFF");
+        HOOK_LOG(L"  skip: Vietnamese mode OFF");
         return false;
     }
 
@@ -1635,16 +1625,26 @@ void HookEngine::CheckLayoutChange() {
 
 void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
     if (!isCompatibleNow && !layoutSuppressed_) {
-        // Compatible → incompatible (CJK): suppress engine, V/E mode unchanged
+        // Entering CJK layout: save mode, auto-switch to E
         if (engine_->Count() > 0) CommitComposition();
         CancelCommitUndo();
         layoutSuppressed_ = true;
-        HOOK_LOG(L"  LayoutSuppressed: CJK layout, engine suppressed (mode preserved=%d)",
-                 vietnameseMode_ ? 1 : 0);
+        modeBeforeCjk_ = vietnameseMode_;
+        if (vietnameseMode_) {
+            vietnameseMode_ = false;
+            NotifyModeChange();
+            if (beepOnSwitch_) MessageBeep(MB_ICONASTERISK);
+        }
+        HOOK_LOG(L"  CJK layout: auto-switched to E (saved=%d)", modeBeforeCjk_ ? 1 : 0);
     } else if (isCompatibleNow && layoutSuppressed_) {
-        // Incompatible → compatible: lift suppression, resume with current V/E mode
+        // Leaving CJK layout: restore saved mode
         layoutSuppressed_ = false;
-        HOOK_LOG(L"  LayoutSuppressed: cleared, resuming (mode=%d)", vietnameseMode_ ? 1 : 0);
+        if (modeBeforeCjk_ != vietnameseMode_) {
+            vietnameseMode_ = modeBeforeCjk_;
+            if (beepOnSwitch_) MessageBeep(vietnameseMode_ ? MB_OK : MB_ICONASTERISK);
+        }
+        NotifyModeChange();
+        HOOK_LOG(L"  CJK layout cleared: restored mode=%d", vietnameseMode_ ? 1 : 0);
     }
 }
 
@@ -1653,6 +1653,11 @@ void CALLBACK HookEngine::FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
     if (!self) return;
     HWND fg = GetForegroundWindow();
     if (!fg) return;
+
+    // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
+    // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
+    self->CheckLayoutChange();
+
     DWORD fgPid = 0;
     GetWindowThreadProcessId(fg, &fgPid);
     if (fgPid == self->lastForegroundPid_ || fgPid == 0) return;
@@ -1667,7 +1672,6 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     ResetComposition();
     tempEngineOff_ = false;
     // Immediate checks on focus change — layout and config may differ in new app
-    layoutCheckCounter_ = 0;
     CheckLayoutChange();
     QuickSyncFromSharedState();  // Detects configGeneration changes + feature flag changes
 
@@ -1739,7 +1743,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     bool wasTsfApp = isTsfApp_;
 
     // Save mode for previous app (smart switch, skip excluded/TSF apps)
-    if (smartSwitch_ && !layoutSuppressed_ && !currentExe_.empty()
+    if (smartSwitch_ && !currentExe_.empty()
         && !wasExcluded && !wasTsfApp) {
         if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
             appModeMap_.clear();

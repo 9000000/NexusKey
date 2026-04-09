@@ -10,6 +10,7 @@
 | `NextKeyCore` | Static lib | NextKeyEngine | Platform layer: SharedState, Config |
 | `NextKeyTSF` | Shared lib (DLL) | NextKeyCore | TSF Text Input Processor |
 | `NextKeyApp` | Executable | NextKeyCore | Main GUI app (Sciter UI + tray) |
+| `NextKeyLite` | Executable | NextKeyCore | Classic Win32 native UI (no Sciter). Build: `-DNEXUSKEY_LITE_MODE=ON` |
 | `NextKeyTests` | Executable | NextKeyCore, GTest | Google Test suite |
 
 ---
@@ -32,7 +33,8 @@ NexusKey/
 │   │   ├── config/                    # Configuration management
 │   │   │   ├── TypingConfig.h         # Config struct: method, spellCheck, macros etc.
 │   │   │   ├── ConfigManager.cpp/h    # TOML load/save (Win32-only, 24K cpp)
-│   │   │   └── ConfigEvent.cpp/h      # Named-event sync (Win32-only)
+│   │   │   ├── ConfigEvent.cpp/h      # Named-event sync (Win32-only)
+│   │   │   └── SettingMetadata.h      # Setting definitions: keys, types, defaults, UI labels
 │   │   ├── ipc/                       # EXE ↔ DLL communication
 │   │   │   ├── SharedState.h          # Memory-mapped struct: flags, config snapshot
 │   │   │   ├── SharedConstants.h      # Shared memory names, sizes
@@ -78,9 +80,12 @@ NexusKey/
 │       │   ├── HookEngine.cpp/h       # Keyboard hook fallback (63K cpp — largest!)
 │       │   ├── TrayIcon.cpp/h         # System tray icon + menu (18K cpp)
 │       │   ├── QuickConvert.cpp/h     # Quick consonant shortcuts (15K cpp)
+│       │   ├── FloatingIcon.cpp/h     # Floating V/E indicator overlay
+│       │   ├── DarkModeHelper.cpp/h   # Win32 dark mode detection + DWM attributes
 │       │   ├── HotkeyManager.cpp/h    # Global hotkey registration
 │       │   ├── UpdateChecker.cpp/h    # GitHub release checker
 │       │   ├── UpdateInstaller.cpp/h  # Auto-update installer
+│       │   ├── UpdateSecurity.cpp/h   # Update signature verification
 │       │   ├── TsfRegistration.cpp/h  # Register/unregister TSF DLL
 │       │   ├── ToastPopup.cpp/h       # Toast notification popup
 │       │   ├── SubprocessRunners.cpp/h  # Launch subdialogs as child processes
@@ -90,6 +95,13 @@ NexusKey/
 │       │   ├── SciterHelper.cpp/h     # Init Sciter, load HTML, callbacks
 │       │   ├── SciterArchive.cpp/h    # Embedded resource archive
 │       │   └── ScaleHelper.h          # DPI scaling helpers
+│       ├── classic/                    # ← NextKeyLite (Classic Win32 UI, no Sciter)
+│       │   ├── ClassicSettingsDialog.cpp/h  # Settings dialog (Win32 native controls)
+│       │   ├── ClassicTheme.cpp/h     # Dark/light theme for Win32 controls
+│       │   ├── NexusKeyLite.rc        # Win32 resource file
+│       │   ├── NexusKeyLite.exe.manifest  # DPI + visual styles manifest
+│       │   └── resource.h             # Resource IDs
+│       ├── main_lite.cpp              # WinMain for Lite/Classic build
 │       ├── helpers/
 │       │   └── AppHelpers.h           # App-level utility functions
 │       ├── ui/                        # HTML/CSS/JS for Sciter dialogs
@@ -168,7 +180,8 @@ NexusKey/
 | Add new subdialog | See `docs/subdialog-checklist.md` |
 | Fix tray icon/menu | `src/app/system/TrayIcon.cpp` |
 | Fix quick consonant | `src/app/system/QuickConvert.cpp` |
-| Change themes/colors | `src/app/ui/shared/theme.css` |
+| Change Classic/Lite UI | `src/app/classic/ClassicSettingsDialog.cpp` + `ClassicTheme.cpp` |
+| Change themes/colors | `src/app/ui/shared/theme.css` (Sciter) or `ClassicTheme.cpp` (Classic) |
 | Add/change i18n strings | `src/app/ui/shared/strings.js` + `i18n.js` |
 | Fix auto-update | `src/app/system/UpdateChecker.cpp` → `UpdateInstaller.cpp` |
 | Fix hotkey handling | `src/app/system/HotkeyManager.cpp` |

@@ -59,9 +59,9 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
         }
     }
 
-    // Resize to correct DPI-scaled compact size and center
-    int width  = Dpi(kCompactWidth);
-    int height = Dpi(kCompactHeight);
+    // Resize to correct DPI-scaled full size and center
+    int width  = Dpi(kAdvancedWidth);
+    int height = Dpi(kAdvancedHeight);
     RECT rc = { 0, 0, width, height };
     AdjustWindowRect(&rc, style, FALSE);
     int adjWidth  = rc.right - rc.left;
@@ -74,9 +74,13 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     theme_.ApplyWindowAttributes(hwnd_);
 
     CreateCompactControls();
+    CreateAdvancedControls();
     PopulateControls();
     SetFontOnAllChildren();
     theme_.ThemeAllChildren(hwnd_);
+
+    if (tabControl_) ShowWindow(tabControl_, SW_SHOW);
+    ShowTabPage(currentTab_);
 
     ShowWindow(hwnd_, SW_SHOW);
     UpdateWindow(hwnd_);
@@ -121,9 +125,14 @@ bool ClassicSettingsDialog::RegisterWindowClass(HINSTANCE hInstance) {
 // ════════════════════════════════════════════════════════════════════
 
 void ClassicSettingsDialog::CreateCompactControls() {
+    int offset = Dpi(8);
+    int gbX = Dpi(8);
+
+    CreateLabel(L"  C\x01A1 b\x1EA3n  ", gbX + Dpi(6), Dpi(2) + offset, Dpi(90), Dpi(18), 2999);
+
     int x1 = Dpi(kPadding);
-    int y = Dpi(kPadding);
-    int contentW = Dpi(kCompactWidth - kPadding * 2);
+    int y = Dpi(kPadding + 14) + offset;
+    int contentW = Dpi(kAdvancedWidth - kPadding * 2);
 
     int colW = (contentW - Dpi(kPadding)) / 2;
     int col2X = x1 + colW + Dpi(kPadding);
@@ -150,21 +159,11 @@ void ClassicSettingsDialog::CreateCompactControls() {
         }
     }
     
-    editHotkey_ = CreateEdit(cx, y, Dpi(28), Dpi(kControlHeight), IDC_EDIT_SWITCH_KEY);
+    int editH = Dpi(16);
+    int editYOffset = (Dpi(kControlHeight) - editH) / 2;
+    editHotkey_ = CreateEdit(cx + Dpi(4), y + editYOffset, Dpi(24), editH, IDC_EDIT_SWITCH_KEY);
     SendMessageW(editHotkey_, EM_SETLIMITTEXT, 1, 0);
-    y += Dpi(kControlHeight + kSectionGap);
-
-    // Row 3: "Mo rong" checkbox
-    checkExpand_ = CreateCheck(L"M\x1EDF r\x1ED9ng", x1, y, contentW, Dpi(kControlHeight), IDC_CHECK_EXPAND);
-    y += Dpi(kControlHeight + kSectionGap);
-
-    // Divider
-    y += Dpi(kSectionGap);
-
-    // Row 4: Buttons
-    int actBtnW = (contentW - Dpi(8)) / 2;
-    btnClose_ = CreateBtn(L"\x0110\x00F3ng", x1, y, actBtnW, Dpi(kButtonHeight), IDC_BTN_CLOSE, false);
-    btnExit_  = CreateBtn(L"K\x1EBF" L"t th\x00FA" L"c", x1 + actBtnW + Dpi(8), y, actBtnW, Dpi(kButtonHeight), IDC_BTN_EXIT, true);
+    y += Dpi(kControlHeight + kSectionGap) + Dpi(4);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -172,14 +171,98 @@ void ClassicSettingsDialog::CreateCompactControls() {
 // ════════════════════════════════════════════════════════════════════
 
 static LRESULT CALLBACK TabSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
+    auto* self = reinterpret_cast<ClassicSettingsDialog*>(dwRefData);
+
     if (uMsg == WM_ERASEBKGND || uMsg == WM_PRINTCLIENT) {
-        auto* self = reinterpret_cast<ClassicSettingsDialog*>(dwRefData);
         HDC hdc = reinterpret_cast<HDC>(wParam);
         RECT rc;
         GetClientRect(hWnd, &rc);
         FillRect(hdc, &rc, self->theme().BrushBackground());
         return 1;
     }
+
+    if (uMsg == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+
+        RECT rcClient;
+        GetClientRect(hWnd, &rcClient);
+
+        FillRect(hdc, &rcClient, self->theme().BrushBackground());
+
+        int activeTab = TabCtrl_GetCurSel(hWnd);
+        int tabCount = TabCtrl_GetItemCount(hWnd);
+
+        HPEN pen = CreatePen(PS_SOLID, 1, self->theme().Colors().border);
+        HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+
+        HFONT fontActive = self->theme().Fonts().bodyBold;
+        HFONT fontInactive = self->theme().Fonts().body;
+        SetBkMode(hdc, TRANSPARENT);
+
+        RECT activeRc = {0};
+        int topY = 0;
+        if (tabCount > 0) {
+            TabCtrl_GetItemRect(hWnd, 0, &activeRc);
+            activeRc.left = 0;
+            topY = activeRc.bottom;
+            if (activeTab != -1) {
+                TabCtrl_GetItemRect(hWnd, activeTab, &activeRc);
+                if (activeTab == 0) activeRc.left = 0;
+            }
+        }
+
+        RoundRect(hdc, rcClient.left, topY, rcClient.right, rcClient.bottom, 12, 12);
+
+        if (activeTab == 0) {
+            RECT cornerRc = { rcClient.left, topY, rcClient.left + 6, topY + 6 };
+            FillRect(hdc, &cornerRc, self->theme().BrushBackground());
+            
+            MoveToEx(hdc, rcClient.left, topY, nullptr);
+            LineTo(hdc, rcClient.left, topY + 7);
+        }
+
+        if (activeTab != -1) {
+            HPEN eraPen = CreatePen(PS_SOLID, 1, self->theme().Colors().background);
+            HPEN eraOld = (HPEN)SelectObject(hdc, eraPen);
+            MoveToEx(hdc, activeRc.left + 1, topY, nullptr);
+            LineTo(hdc, activeRc.right, topY);
+            SelectObject(hdc, eraOld);
+            DeleteObject(eraPen);
+        }
+
+        for (int i = 0; i < tabCount; ++i) {
+            RECT rcTab;
+            TabCtrl_GetItemRect(hWnd, i, &rcTab);
+            if (i == 0) rcTab.left = 0;
+            
+            bool isSelected = (i == activeTab);
+            
+            HRGN hRgn = CreateRectRgn(rcTab.left, rcTab.top, rcTab.right, rcTab.bottom + (isSelected ? 1 : 0));
+            SelectClipRgn(hdc, hRgn);
+
+            RoundRect(hdc, rcTab.left, rcTab.top, rcTab.right, rcTab.bottom + 12, 12, 12);
+
+            SelectClipRgn(hdc, NULL);
+            DeleteObject(hRgn);
+
+            wchar_t text[64]{};
+            TCITEMW tci = { TCIF_TEXT, 0, 0, text, 64 };
+            SendMessageW(hWnd, TCM_GETITEMW, i, reinterpret_cast<LPARAM>(&tci));
+
+            SetTextColor(hdc, isSelected ? self->theme().Colors().text : self->theme().Colors().textSecondary);
+            SelectObject(hdc, isSelected ? fontActive : fontInactive);
+            DrawTextW(hdc, text, -1, &rcTab, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+
+        SelectObject(hdc, oldBr);
+        SelectObject(hdc, oldPen);
+        DeleteObject(pen);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+
     return DefSubclassProc(hWnd, uMsg, wParam, lParam);
 }
 
@@ -187,17 +270,19 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
     if (advancedCreated_) return;
     advancedCreated_ = true;
 
-    int x = Dpi(kPadding);
+    int x = Dpi(8);
     // Tab control starts below compact section
-    int compactBottom = Dpi(kPadding + kLabelHeight + kRowGap + kComboHeight + kSectionGap
-                            + kLabelHeight + kRowGap + kControlHeight + kSectionGap
-                            + kControlHeight + kSectionGap);
-    int tabW = Dpi(kAdvancedWidth - kPadding * 2);
-    int tabH = Dpi(kAdvancedHeight - kPadding) - compactBottom;
+    RECT editRc;
+    GetWindowRect(editHotkey_, &editRc);
+    MapWindowPoints(HWND_DESKTOP, hwnd_, reinterpret_cast<LPPOINT>(&editRc), 2);
+    int compactBottom = editRc.bottom + Dpi(kSectionGap + 12);
+
+    int tabW = Dpi(kAdvancedWidth - 16);
+    int tabH = Dpi(kAdvancedHeight - 8) - compactBottom;
 
     tabControl_ = CreateWindowExW(
         0, WC_TABCONTROLW, L"",
-        WS_CHILD | WS_CLIPSIBLINGS | TCS_OWNERDRAWFIXED,
+        WS_CHILD | WS_CLIPSIBLINGS | TCS_FIXEDWIDTH,
         x, compactBottom, tabW, tabH,
         hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_TAB_ADVANCED)),
         hInstance_, nullptr
@@ -209,19 +294,25 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
     TCITEMW tie{};
     tie.mask = TCIF_TEXT;
 
-    tie.pszText = const_cast<wchar_t*>(L"C\x01A1 b\x1EA3n");  // "Co ban"
+    tie.pszText = const_cast<wchar_t*>(L"\xD83D\xDCDD B\x1ED9 G\x00F5"); //Bộ gõ
     TabCtrl_InsertItem(tabControl_, 0, &tie);
 
-    tie.pszText = const_cast<wchar_t*>(L"Ph\x00EDm t\x1EAFt");  // "Phim tat"
+    tie.pszText = const_cast<wchar_t*>(L"\xD83D\xDE80 G\x00F5 T\x1EAFt"); //Gõ tắt
     TabCtrl_InsertItem(tabControl_, 1, &tie);
 
-    tie.pszText = const_cast<wchar_t*>(L"H\x1EC7 th\x1ED1ng");  // "He thong"
+    tie.pszText = const_cast<wchar_t*>(L"\x2699\xFE0F H\x1EC7 th\x1ED1ng"); //Hệ thống
     TabCtrl_InsertItem(tabControl_, 2, &tie);
+
+    TabCtrl_SetItemSize(tabControl_, Dpi(120), Dpi(kTabHeight));
 
     // Get tab content area
     RECT tabRect{};
     GetClientRect(tabControl_, &tabRect);
     TabCtrl_AdjustRect(tabControl_, FALSE, &tabRect);
+
+    tabRect.left += Dpi(12);
+    tabRect.right -= Dpi(12);
+    tabRect.top += Dpi(8);
 
     // Map tab content rect to parent coordinates
     POINT tabOrigin = { tabRect.left, tabRect.top };
@@ -229,7 +320,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
     ScreenToClient(hwnd_, &tabOrigin);
 
     int contentLeft = tabOrigin.x;
-    int contentTop  = tabOrigin.y + Dpi(4);
+    int contentTop  = tabOrigin.y;
     int colWidth    = (tabRect.right - tabRect.left - Dpi(8)) / 2;
 
     // Create checkboxes from SettingMetadata
@@ -237,18 +328,56 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
     for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
         const auto& meta = kSettings[i];
-        if (meta.type != SettingType::Toggle || meta.win32Id == 0 || meta.owner == SettingOwner::Hotkey)
+        if (meta.win32Id == 0 || meta.owner == SettingOwner::Hotkey)
             continue;
 
         int tab = meta.tab;
         int col = meta.column;
         int row = rowCounts[tab][col]++;
 
+        // If it's an inline action button
+        bool isInlineAction = (meta.type == SettingType::Action && wcscmp(meta.label, L"...") == 0);
+        if (isInlineAction) {
+            rowCounts[tab][col]--; // stay on the same visual row
+            row--; // go back to the row we just incremented past
+        }
+
         int cx = contentLeft + col * (colWidth + Dpi(8));
         int cy = contentTop + row * Dpi(kControlHeight + kRowGap);
 
-        checkControls_[i] = CreateCheck(meta.label, cx, cy, colWidth, Dpi(kControlHeight), meta.win32Id);
-        ShowWindow(checkControls_[i], SW_HIDE);
+        if (meta.type == SettingType::Toggle) {
+            bool hasInlineNext = ((i + 1 < kSettingsCount) && kSettings[i+1].type == SettingType::Action && wcscmp(kSettings[i+1].label, L"...") == 0);
+            int checkW = hasInlineNext ? colWidth - Dpi(44) : colWidth;
+            checkControls_[i] = CreateCheck(meta.label, cx, cy, checkW, Dpi(kControlHeight), meta.win32Id);
+        } else if (meta.type == SettingType::Action) {
+            if (isInlineAction) {
+                int btnW = Dpi(40);
+                int inlineCx = cx + colWidth - btnW;
+                checkControls_[i] = CreateBtn(meta.label, inlineCx, cy, btnW, Dpi(kControlHeight), meta.win32Id);
+            } else {
+                checkControls_[i] = CreateBtn(meta.label, cx, cy, colWidth, Dpi(kControlHeight), meta.win32Id);
+            }
+        } else if (meta.type == SettingType::Dropdown) {
+            int lblW = Dpi(90);
+            int comboW = colWidth - lblW - Dpi(4);
+            HWND lbl = CreateLabel(meta.label, cx, cy + Dpi(4), lblW, Dpi(kControlHeight), 0);
+            extraControls_[i] = lbl;
+            HWND combo = CreateCombo(cx + lblW + Dpi(4), cy, comboW, Dpi(kComboHeight + 60), meta.win32Id);
+            if (wcscmp(meta.id, L"custom-icon-style") == 0) {
+                ComboBox_AddString(combo, L"M\x00E0u m\x1EB7" L"c \x0111\x1ECBnh");
+                ComboBox_AddString(combo, L"N\x1EC1n t\x1ED1i");
+                ComboBox_AddString(combo, L"N\x1EC1n s\x00E1ng");
+                ComboBox_AddString(combo, L"T\x1EF1 ch\x1ECDn");
+            }
+            checkControls_[i] = combo;
+        }
+        
+        if (checkControls_[i]) {
+            ShowWindow(checkControls_[i], SW_HIDE);
+        }
+        if (extraControls_[i]) {
+            ShowWindow(extraControls_[i], SW_HIDE);
+        }
     }
 
     // Apply font to newly created controls
@@ -258,61 +387,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
     ShowTabPage(0);
 }
 
-// ════════════════════════════════════════════════════════════════════
-// Advanced mode toggle
-// ════════════════════════════════════════════════════════════════════
 
-void ClassicSettingsDialog::ToggleAdvancedMode(bool expand) {
-    isAdvanced_ = expand;
-
-    int width  = Dpi(expand ? kAdvancedWidth : kCompactWidth);
-    int height = Dpi(expand ? kAdvancedHeight : kCompactHeight);
-
-    // Adjust for window chrome
-    RECT rc = { 0, 0, width, height };
-    DWORD style = static_cast<DWORD>(GetWindowLongW(hwnd_, GWL_STYLE));
-    AdjustWindowRect(&rc, style, FALSE);
-    int adjWidth  = rc.right - rc.left;
-    int adjHeight = rc.bottom - rc.top;
-
-    // Keep centered
-    RECT wr{};
-    GetWindowRect(hwnd_, &wr);
-    int cx = (wr.left + wr.right) / 2;
-    int cy = (wr.top + wr.bottom) / 2;
-
-    SetWindowPos(hwnd_, nullptr,
-        cx - adjWidth / 2, cy - adjHeight / 2,
-        adjWidth, adjHeight,
-        SWP_NOZORDER | SWP_NOACTIVATE);
-
-    if (expand) {
-        CreateAdvancedControls();
-        theme_.ThemeAllChildren(hwnd_);
-
-        // Show tab, hide compact buttons
-        ShowWindow(tabControl_, SW_SHOW);
-        ShowWindow(btnClose_, SW_HIDE);
-        ShowWindow(btnExit_, SW_HIDE);
-
-        // Re-populate and show current tab
-        PopulateControls();
-        ShowTabPage(currentTab_);
-    } else {
-        // Hide tab + all checkboxes, show compact buttons
-        if (tabControl_)  ShowWindow(tabControl_, SW_HIDE);
-
-        for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
-            if (checkControls_[i])
-                ShowWindow(checkControls_[i], SW_HIDE);
-        }
-
-        ShowWindow(btnClose_, SW_SHOW);
-        ShowWindow(btnExit_, SW_SHOW);
-    }
-
-    InvalidateRect(hwnd_, nullptr, TRUE);
-}
 
 // ════════════════════════════════════════════════════════════════════
 // Settings I/O
@@ -335,30 +410,43 @@ void ClassicSettingsDialog::PopulateControls() {
 
     for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
         const auto& meta = kSettings[i];
-        if (meta.type != SettingType::Toggle || meta.win32Id == 0)
+        if (meta.win32Id == 0)
             continue;
 
-        bool value = false;
-        switch (meta.owner) {
-            case SettingOwner::Typing:
-                value = *reinterpret_cast<const bool*>(
-                    reinterpret_cast<const char*>(&config_) + meta.offset);
-                break;
-            case SettingOwner::Hotkey:
-                value = *reinterpret_cast<const bool*>(
-                    reinterpret_cast<const char*>(&hotkeyConfig_) + meta.offset);
-                break;
-            case SettingOwner::System:
-                value = *reinterpret_cast<const bool*>(
-                    reinterpret_cast<const char*>(&systemConfig_) + meta.offset);
-                break;
-            default:
-                break;
-        }
-
         HWND ctrl = checkControls_[i];
-        if (ctrl)
+        if (!ctrl) continue;
+
+        if (meta.type == SettingType::Toggle) {
+            bool value = false;
+            switch (meta.owner) {
+                case SettingOwner::Typing:
+                    value = *reinterpret_cast<const bool*>(
+                        reinterpret_cast<const char*>(&config_) + meta.offset);
+                    break;
+                case SettingOwner::Hotkey:
+                    value = *reinterpret_cast<const bool*>(
+                        reinterpret_cast<const char*>(&hotkeyConfig_) + meta.offset);
+                    break;
+                case SettingOwner::System:
+                    value = *reinterpret_cast<const bool*>(
+                        reinterpret_cast<const char*>(&systemConfig_) + meta.offset);
+                    break;
+                default:
+                    break;
+            }
             CheckDlgButton(hwnd_, meta.win32Id, value ? BST_CHECKED : BST_UNCHECKED);
+        } else if (meta.type == SettingType::Dropdown) {
+            uint8_t value = 0;
+            switch (meta.owner) {
+                case SettingOwner::System:
+                    value = *reinterpret_cast<const uint8_t*>(
+                        reinterpret_cast<const char*>(&systemConfig_) + meta.offset);
+                    break;
+                default:
+                    break;
+            }
+            ComboBox_SetCurSel(ctrl, static_cast<int>(value));
+        }
     }
 
     if (editHotkey_) {
@@ -385,29 +473,43 @@ void ClassicSettingsDialog::ReadControlValues() {
 
     for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
         const auto& meta = kSettings[i];
-        if (meta.type != SettingType::Toggle || meta.win32Id == 0)
+        if (meta.win32Id == 0)
             continue;
 
         HWND ctrl = checkControls_[i];
         if (!ctrl) continue;
 
-        bool checked = (IsDlgButtonChecked(hwnd_, meta.win32Id) == BST_CHECKED);
-
-        switch (meta.owner) {
-            case SettingOwner::Typing:
-                *reinterpret_cast<bool*>(
-                    reinterpret_cast<char*>(&config_) + meta.offset) = checked;
-                break;
-            case SettingOwner::Hotkey:
-                *reinterpret_cast<bool*>(
-                    reinterpret_cast<char*>(&hotkeyConfig_) + meta.offset) = checked;
-                break;
-            case SettingOwner::System:
-                *reinterpret_cast<bool*>(
-                    reinterpret_cast<char*>(&systemConfig_) + meta.offset) = checked;
-                break;
-            default:
-                break;
+        if (meta.type == SettingType::Toggle) {
+            bool checked = (IsDlgButtonChecked(hwnd_, meta.win32Id) == BST_CHECKED);
+            switch (meta.owner) {
+                case SettingOwner::Typing:
+                    *reinterpret_cast<bool*>(
+                        reinterpret_cast<char*>(&config_) + meta.offset) = checked;
+                    break;
+                case SettingOwner::Hotkey:
+                    *reinterpret_cast<bool*>(
+                        reinterpret_cast<char*>(&hotkeyConfig_) + meta.offset) = checked;
+                    break;
+                case SettingOwner::System:
+                    *reinterpret_cast<bool*>(
+                        reinterpret_cast<char*>(&systemConfig_) + meta.offset) = checked;
+                    break;
+                default:
+                    break;
+            }
+        } else if (meta.type == SettingType::Dropdown) {
+            int sel = ComboBox_GetCurSel(ctrl);
+            if (sel >= 0) {
+                uint8_t value = static_cast<uint8_t>(sel);
+                switch (meta.owner) {
+                    case SettingOwner::System:
+                        *reinterpret_cast<uint8_t*>(
+                            reinterpret_cast<char*>(&systemConfig_) + meta.offset) = value;
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
     }
 
@@ -490,7 +592,14 @@ void ClassicSettingsDialog::ShowTabPage(int tabIndex) {
         if (!ctrl) continue;
 
         const auto& meta = kSettings[i];
-        ShowWindow(ctrl, (meta.tab == tabIndex) ? SW_SHOW : SW_HIDE);
+        if (meta.owner == SettingOwner::Hotkey) continue;
+
+        int showCmd = (meta.tab == tabIndex) ? SW_SHOW : SW_HIDE;
+        ShowWindow(ctrl, showCmd);
+        
+        if (extraControls_[i]) {
+            ShowWindow(extraControls_[i], showCmd);
+        }
     }
 }
 
@@ -503,11 +612,6 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
     UINT id   = LOWORD(wParam);
 
     switch (id) {
-        case IDC_CHECK_EXPAND: {
-            bool expand = (IsDlgButtonChecked(hwnd_, IDC_CHECK_EXPAND) == BST_CHECKED);
-            ToggleAdvancedMode(expand);
-            return;
-        }
 
         case IDC_BTN_CLOSE:
             DestroyWindow(hwnd_);
@@ -545,8 +649,8 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
             break;
     }
 
-    // Check if this is a BN_CLICKED on a setting checkbox
-    if (code == BN_CLICKED) {
+    // Check if this is a BN_CLICKED on a setting checkbox or CBN_SELCHANGE
+    if (code == BN_CLICKED || code == CBN_SELCHANGE) {
         const auto* meta = FindSettingByControlId(static_cast<uint16_t>(id));
         if (meta) {
             SaveSettings();
@@ -595,7 +699,7 @@ HWND ClassicSettingsDialog::CreateCheck(const wchar_t* text, int x, int y, int w
 
 HWND ClassicSettingsDialog::CreateEdit(int x, int y, int w, int h, UINT id) {
     return CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", L"",
+        0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_UPPERCASE | ES_CENTER | ES_AUTOHSCROLL,
         x, y, w, h,
         hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
@@ -617,14 +721,19 @@ HWND ClassicSettingsDialog::CreateBtn(const wchar_t* text, int x, int y, int w, 
 }
 
 void ClassicSettingsDialog::SetFontOnAllChildren() {
-    EnumChildWindows(hwnd_, SetFontProc,
-        reinterpret_cast<LPARAM>(theme_.Fonts().body));
+    EnumChildWindows(hwnd_, SetFontProc, reinterpret_cast<LPARAM>(this));
 }
 
 BOOL CALLBACK ClassicSettingsDialog::SetFontProc(HWND hwnd, LPARAM lParam) {
-    auto* font = reinterpret_cast<HFONT>(lParam);
-    if (font)
-        SendMessageW(hwnd, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    auto* self = reinterpret_cast<ClassicSettingsDialog*>(lParam);
+    if (!self) return TRUE;
+
+    HFONT font = self->theme_.Fonts().body;
+    if (GetDlgCtrlID(hwnd) == 2999) {
+        font = self->theme_.Fonts().header;
+    }
+
+    SendMessageW(hwnd, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
     return TRUE;
 }
 
@@ -713,14 +822,34 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             PAINTSTRUCT ps{};
             HDC hdc = BeginPaint(hwnd, &ps);
 
-            // Draw divider above compact buttons (when visible)
-            if (!self->isAdvanced_) {
-                int divY = self->Dpi(kPadding + kLabelHeight + kRowGap + kComboHeight + kSectionGap
-                                     + kLabelHeight + kRowGap + kControlHeight + kSectionGap
-                                     + kControlHeight + kSectionGap);
-                int divX = self->Dpi(kPadding);
-                int divW = self->Dpi(kCompactWidth - kPadding * 2);
-                self->theme_.DrawDivider(hdc, divX, divY, divW);
+            if (self->editHotkey_) {
+                RECT rcEx;
+                GetWindowRect(self->editHotkey_, &rcEx);
+                MapWindowPoints(HWND_DESKTOP, hwnd, reinterpret_cast<LPPOINT>(&rcEx), 2);
+                
+                HPEN pen = CreatePen(PS_SOLID, 1, self->theme_.Colors().border);
+                HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+                HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+
+                int offset = self->Dpi(8);
+                int gbY = self->Dpi(10) + offset;
+                int bottom = rcEx.bottom + self->Dpi(8);
+                RoundRect(hdc, self->Dpi(8), gbY, self->Dpi(kAdvancedWidth - 8), bottom, 12, 12);
+
+                if (self->editHotkey_) {
+                    RECT rcE;
+                    GetWindowRect(self->editHotkey_, &rcE);
+                    MapWindowPoints(HWND_DESKTOP, hwnd, reinterpret_cast<LPPOINT>(&rcE), 2);
+                    int padY = (self->Dpi(kControlHeight) - (rcE.bottom - rcE.top)) / 2;
+                    rcE.top -= padY;
+                    rcE.bottom += padY;
+                    InflateRect(&rcE, self->Dpi(6), 0);
+                    RoundRect(hdc, rcE.left, rcE.top, rcE.right, rcE.bottom, 6, 6);
+                }
+
+                SelectObject(hdc, oldBr);
+                SelectObject(hdc, oldPen);
+                DeleteObject(pen);
             }
 
             EndPaint(hwnd, &ps);

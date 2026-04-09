@@ -257,15 +257,10 @@ private:
     bool modWinDown_ = false;
     bool otherKeyPressed_ = false;
 
-    // Layout suppression: pause Vietnamese engine when CJK keyboard layout is active
-    bool layoutSuppressed_     = false;  // True when CJK layout active — engine passthrough, V/E mode unchanged
+    // CJK layout auto-toggle: auto-switch to E mode when CJK detected, restore on return
+    bool layoutSuppressed_     = false;  // True when CJK layout active
+    bool modeBeforeCjk_        = true;   // Saved vietnameseMode_ before CJK auto-switch
     bool cachedIsCompatLayout_ = true;   // Last known layout compatibility (updated in OnFocusChanged + key-up)
-
-    // Layout throttling: avoid per-keystroke Win32 API calls for rare events.
-    // Layout changes are human-speed events (seconds apart). Focus-change and
-    // key-up events also trigger immediate checks as a safety net.
-    uint8_t layoutCheckCounter_ = 0;
-    static constexpr uint8_t kLayoutCheckInterval = 16;   // Check layout every 16 keystrokes
 
     // Config reload
     ConfigEvent configEvent_;

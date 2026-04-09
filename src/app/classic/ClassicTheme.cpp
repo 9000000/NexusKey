@@ -72,7 +72,7 @@ void ClassicTheme::RefreshColors() {
         colors_.textSecondary = RGB(153, 153, 153);   // #999999
         colors_.accent        = GetSysColor(COLOR_HIGHLIGHT);  // system accent works
         colors_.accentText    = GetSysColor(COLOR_HIGHLIGHTTEXT);
-        colors_.border        = RGB(105, 105, 105);   // #696969
+        colors_.border        = RGB( 58,  58,  58);   // #3A3A3A (thinner, more subtle)
     } else {
         colors_.background    = GetSysColor(COLOR_WINDOW);
         colors_.surface       = GetSysColor(COLOR_BTNFACE);
@@ -80,7 +80,7 @@ void ClassicTheme::RefreshColors() {
         colors_.textSecondary = GetSysColor(COLOR_GRAYTEXT);
         colors_.accent        = GetSysColor(COLOR_HIGHLIGHT);
         colors_.accentText    = GetSysColor(COLOR_HIGHLIGHTTEXT);
-        colors_.border        = GetSysColor(COLOR_BTNSHADOW);
+        colors_.border        = RGB(224, 224, 224);   // #E0E0E0 (minimal light border)
     }
 }
 
@@ -146,6 +146,12 @@ void ClassicTheme::ThemeChildControl(HWND hwndCtrl) {
         if (GetComboBoxInfo(hwndCtrl, &info) && info.hwndList) {
             DwmSetWindowAttribute(info.hwndList, 20, &darkBool, sizeof(darkBool));
             if (hUxTheme && allow) allow(info.hwndList, isDark_);
+            
+            if (IsWindows11OrGreater()) {
+                auto corner = 2; // DWMWCP_ROUND
+                DwmSetWindowAttribute(info.hwndList, 33, &corner, sizeof(corner));
+            }
+
             SetWindowTheme(info.hwndList, isDark_ ? L"DarkMode_CFD" : L"Explorer", nullptr);
             SetClassLongPtrW(info.hwndList, GCLP_HBRBACKGROUND,
                 reinterpret_cast<LONG_PTR>(isDark_ ? brBackground_ : GetSysColorBrush(COLOR_WINDOW)));
@@ -191,17 +197,19 @@ void ClassicTheme::CreateFonts(UINT dpi) {
     };
     fonts_.header = make(11, FW_SEMIBOLD, L"Segoe UI Variable Display");
     fonts_.body   = make(9,  FW_NORMAL,   L"Segoe UI Variable Text");
+    fonts_.bodyBold = make(9,  FW_SEMIBOLD, L"Segoe UI Variable Text");
 
     // Fallback: if Segoe UI Variable not available (Win10 pre-21H2)
     if (!fonts_.body) {
         fonts_.header = make(11, FW_SEMIBOLD, L"Segoe UI");
         fonts_.body   = make(9,  FW_NORMAL,   L"Segoe UI");
+        fonts_.bodyBold = make(9,  FW_SEMIBOLD, L"Segoe UI");
     }
 }
 
 void ClassicTheme::DestroyFonts() {
     auto del = [](HFONT& f) { if (f) { DeleteObject(f); f = nullptr; } };
-    del(fonts_.header); del(fonts_.body);
+    del(fonts_.header); del(fonts_.body); del(fonts_.bodyBold);
 }
 
 // -- WM_CTLCOLOR Handlers --
@@ -213,7 +221,6 @@ HBRUSH ClassicTheme::OnCtlColorDlg(HDC) {
 HBRUSH ClassicTheme::OnCtlColorStatic(HDC hdc, HWND) {
     SetTextColor(hdc, colors_.text);
     SetBkMode(hdc, TRANSPARENT);
-    SelectObject(hdc, fonts_.body);
     return brBackground_;
 }
 
@@ -243,17 +250,23 @@ void ClassicTheme::DrawTabItem(DRAWITEMSTRUCT* dis) {
     bool selected = (dis->itemState & ODS_SELECTED) != 0;
 
     // Background
-    FillRect(hdc, &rc, brSurface_);
+    FillRect(hdc, &rc, brBackground_);
 
-    // 2px accent line at bottom for selected tab
+    HPEN pen = CreatePen(PS_SOLID, 1, colors_.border);
+    HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+
     if (selected) {
-        RECT indicator = { rc.left + 6, rc.bottom - 2, rc.right - 6, rc.bottom };
-        HBRUSH indBr = CreateSolidBrush(colors_.accent);
-        FillRect(hdc, &indicator, indBr);
-        DeleteObject(indBr);
+        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom + 12, 12, 12);
+    } else {
+        // Unselected tabs also get rounded top
+        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 12, 12);
     }
+    
+    SelectObject(hdc, oldBr);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
 
-    // Tab text
     wchar_t text[64]{};
     TCITEMW tci = {};
     tci.mask = TCIF_TEXT;

@@ -30,8 +30,10 @@ struct SystemConfig {
     bool showOnStartup = true;     // Open settings dialog on app startup
     bool desktopShortcut = false;  // Desktop shortcut exists
 
-    // UI language (0=Vietnamese, 1=English)
+    // UI language (true=English, false=Vietnamese)
+    bool englishUI = false;
     uint8_t language = 0;
+
 
     // Icon customization
     uint8_t iconStyle = 0;         // IconStyle enum (0=Color, 1=Dark, 2=Light, 3=Custom)
