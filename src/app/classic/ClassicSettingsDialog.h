@@ -15,6 +15,7 @@
 #include <Windows.h>
 #include <commctrl.h>
 #include <string>
+#include <functional>
 
 namespace NextKey::Classic {
 
@@ -56,6 +57,8 @@ private:
 
     // -- Event handlers --
     void OnCommand(WPARAM wParam, LPARAM lParam);
+    void OnActionButton(uint16_t controlId);
+    void OnSystemToggle(const wchar_t* id, bool value);
     void OnTabChange();
     void ShowTabPage(int tabIndex);
 

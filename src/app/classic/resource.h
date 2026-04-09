@@ -38,6 +38,8 @@
 #define IDC_CHECK_QUICK_END     2216
 #define IDC_CHECK_TEMP_OFF_SPELL 2217
 #define IDC_CHECK_TEMP_OFF_ALT  2218
+#define IDC_CHECK_AUTO_CAPS_MACRO 2219
+#define IDC_CHECK_CANCEL_MACRO_ESC 2220
 
 // ── Tab 1: Phím tắt ──
 #define IDC_CHECK_KEY_CTRL      2301
@@ -54,6 +56,12 @@
 #define IDC_CHECK_FLOATING_ICON 2405
 #define IDC_CHECK_AUTO_UPDATE   2406
 #define IDC_CHECK_ENGLISH_UI    2407
+#define IDC_COMBO_ICON_STYLE    2408
+
+// ── Action buttons ──
+#define IDC_BTN_SMART_SWITCH    2501
+#define IDC_BTN_EXCLUDE_APPS    2502
+#define IDC_BTN_MACRO_TABLE     2503
 
 // ── Static labels ──
 #define IDC_STATIC_METHOD       2601

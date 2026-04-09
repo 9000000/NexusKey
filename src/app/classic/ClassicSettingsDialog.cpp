@@ -5,6 +5,7 @@
 #include "ClassicSettingsDialog.h"
 #include "core/config/ConfigManager.h"
 #include "core/Debug.h"
+#include "system/StartupHelper.h"
 
 #include <windowsx.h>
 
@@ -143,7 +144,17 @@ void ClassicSettingsDialog::CreateCompactControls() {
     y += Dpi(kLabelHeight + kRowGap);
 
     comboMethod_ = CreateCombo(x1, y, colW, Dpi(kComboHeight + 120), IDC_COMBO_METHOD);
+    ComboBox_AddString(comboMethod_, L"Telex");
+    ComboBox_AddString(comboMethod_, L"VNI");
+    ComboBox_AddString(comboMethod_, L"Simple Telex");
+
     comboEncoding_ = CreateCombo(col2X, y, colW, Dpi(kComboHeight + 120), IDC_COMBO_ENCODING);
+    ComboBox_AddString(comboEncoding_, L"Unicode");
+    ComboBox_AddString(comboEncoding_, L"TCVN3 (ABC)");
+    ComboBox_AddString(comboEncoding_, L"VNI Windows");
+    ComboBox_AddString(comboEncoding_, L"Unicode t\x1ED5 h\x1EE3p");
+    ComboBox_AddString(comboEncoding_, L"Vi\x1EC7t (CP 1258)");
+
     y += Dpi(kComboHeight + kSectionGap);
 
     // Row 2: "Phim tat"
@@ -649,11 +660,20 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
             break;
     }
 
-    // Check if this is a BN_CLICKED on a setting checkbox or CBN_SELCHANGE
+    // Check if this is a BN_CLICKED on a setting checkbox/button or CBN_SELCHANGE
     if (code == BN_CLICKED || code == CBN_SELCHANGE) {
         const auto* meta = FindSettingByControlId(static_cast<uint16_t>(id));
         if (meta) {
-            SaveSettings();
+            if (meta->type == SettingType::Action) {
+                OnActionButton(meta->win32Id);
+            } else {
+                SaveSettings();
+                // System toggles have side effects beyond config save
+                if (meta->owner == SettingOwner::System && meta->type == SettingType::Toggle) {
+                    bool checked = (IsDlgButtonChecked(hwnd_, meta->win32Id) == BST_CHECKED);
+                    OnSystemToggle(meta->id, checked);
+                }
+            }
         }
     }
 
@@ -661,6 +681,65 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
     if (code == EN_CHANGE && id == IDC_EDIT_SWITCH_KEY) {
         SaveSettings();
     }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Action button handlers
+// ════════════════════════════════════════════════════════════════════
+
+void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
+    switch (controlId) {
+        case IDC_BTN_SMART_SWITCH:
+            MessageBoxW(hwnd_,
+                L"T\x00EDnh n\x0103ng n\x00E0y s\x1EBD l\x01B0u ch\x1EBF \x0111\x1ED9 g\x00F5 (Vi\x1EC7t/Anh) "
+                L"cho t\x1EEBng \x1EE9ng d\x1EE5ng ri\x00EAng.\n\n"
+                L"Khi b\x1EA1n chuy\x1EC3n qua l\x1EA1i gi\x1EEFa c\x00E1c app, "
+                L"NexusKey s\x1EBD t\x1EF1 \x0111\x1ED9ng kh\x00F4i ph\x1EE5c ch\x1EBF \x0111\x1ED9 g\x00F5 \x0111\x00E3 d\x00F9ng tr\x01B0\x1EDBc \x0111\x00F3.",
+                L"L\x01B0u ch\x1EBF \x0111\x1ED9 g\x00F5 theo app",
+                MB_ICONINFORMATION);
+            break;
+
+        case IDC_BTN_EXCLUDE_APPS:
+            MessageBoxW(hwnd_,
+                L"T\x00EDnh n\x0103ng n\x00E0y cho ph\x00E9p b\x1EA1n ch\x1ECDn nh\x1EEFng \x1EE9ng d\x1EE5ng "
+                L"s\x1EBD t\x1EF1 \x0111\x1ED9ng t\x1EAFt g\x00F5 ti\x1EBFng Vi\x1EC7t.\n\n"
+                L"V\x00ED d\x1EE5: Game, IDE code...\n\n"
+                L"\x0110\x1EC3 ch\x1EC9nh s\x1EEDa danh s\x00E1ch, m\x1EDF file config t\x1EA1i:\n"
+                L"%APPDATA%\\NexusKey\\config.toml",
+                L"T\x1EAFt ti\x1EBFng Vi\x1EC7t theo app",
+                MB_ICONINFORMATION);
+            break;
+
+        case IDC_BTN_MACRO_TABLE:
+            MessageBoxW(hwnd_,
+                L"B\x1EA3ng g\x00F5 t\x1EAFt cho ph\x00E9p b\x1EA1n \x0111\x1ECBnh ngh\x0129a c\x00E1c ph\x00EDm t\x1EAFt.\n\n"
+                L"V\x00ED d\x1EE5: \"btv\" \x2192 \"b\x00E1o tu\x1ED5i tr\x1EBB\"\n\n"
+                L"\x0110\x1EC3 ch\x1EC9nh s\x1EEDa, m\x1EDF file:\n"
+                L"%APPDATA%\\NexusKey\\macros.txt",
+                L"B\x1EA3ng g\x00F5 t\x1EAFt",
+                MB_ICONINFORMATION);
+            break;
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// System toggle side effects
+// ════════════════════════════════════════════════════════════════════
+
+void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
+    if (wcscmp(id, L"run-startup") == 0) {
+        RegisterRunOnStartup(value, systemConfig_.runAsAdmin);
+    }
+    else if (wcscmp(id, L"run-admin") == 0) {
+        if (systemConfig_.runAtStartup) {
+            RegisterRunOnStartup(true, value);
+        }
+    }
+    else if (wcscmp(id, L"desktop-shortcut") == 0) {
+        SetDesktopShortcut(value);
+    }
+    // floating-icon, show-on-startup, check-update: saved to config,
+    // main_lite.cpp reads updated config when dialog closes.
 }
 
 // ════════════════════════════════════════════════════════════════════
