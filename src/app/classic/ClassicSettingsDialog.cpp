@@ -691,32 +691,32 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
     switch (controlId) {
         case IDC_BTN_SMART_SWITCH:
             MessageBoxW(hwnd_,
-                L"T\x00EDnh n\x0103ng n\x00E0y s\x1EBD l\x01B0u ch\x1EBF \x0111\x1ED9 g\x00F5 (Vi\x1EC7t/Anh) "
-                L"cho t\x1EEBng \x1EE9ng d\x1EE5ng ri\x00EAng.\n\n"
-                L"Khi b\x1EA1n chuy\x1EC3n qua l\x1EA1i gi\x1EEFa c\x00E1c app, "
-                L"NexusKey s\x1EBD t\x1EF1 \x0111\x1ED9ng kh\x00F4i ph\x1EE5c ch\x1EBF \x0111\x1ED9 g\x00F5 \x0111\x00E3 d\x00F9ng tr\x01B0\x1EDBc \x0111\x00F3.",
-                L"L\x01B0u ch\x1EBF \x0111\x1ED9 g\x00F5 theo app",
+                L"T\u00EDnh n\u0103ng n\u00E0y s\u1EBD l\u01B0u ch\u1EBF \u0111\u1ED9 g\u00F5 (Vi\u1EC7t/Anh) "
+                L"cho t\u1EEBng \u1EE9ng d\u1EE5ng ri\u00EAng.\n\n"
+                L"Khi b\u1EA1n chuy\u1EC3n qua l\u1EA1i gi\u1EEFa c\u00E1c app, "
+                L"NexusKey s\u1EBD t\u1EF1 \u0111\u1ED9ng kh\u00F4i ph\u1EE5c ch\u1EBF \u0111\u1ED9 g\u00F5 \u0111\u00E3 d\u00F9ng tr\u01B0\u1EDBc \u0111\u00F3.",
+                L"L\u01B0u ch\u1EBF \u0111\u1ED9 g\u00F5 theo app",
                 MB_ICONINFORMATION);
             break;
 
         case IDC_BTN_EXCLUDE_APPS:
             MessageBoxW(hwnd_,
-                L"T\x00EDnh n\x0103ng n\x00E0y cho ph\x00E9p b\x1EA1n ch\x1ECDn nh\x1EEFng \x1EE9ng d\x1EE5ng "
-                L"s\x1EBD t\x1EF1 \x0111\x1ED9ng t\x1EAFt g\x00F5 ti\x1EBFng Vi\x1EC7t.\n\n"
-                L"V\x00ED d\x1EE5: Game, IDE code...\n\n"
-                L"\x0110\x1EC3 ch\x1EC9nh s\x1EEDa danh s\x00E1ch, m\x1EDF file config t\x1EA1i:\n"
+                L"T\u00EDnh n\u0103ng n\u00E0y cho ph\u00E9p b\u1EA1n ch\u1ECDn nh\u1EEFng \u1EE9ng d\u1EE5ng "
+                L"s\u1EBD t\u1EF1 \u0111\u1ED9ng t\u1EAFt g\u00F5 ti\u1EBFng Vi\u1EC7t.\n\n"
+                L"V\u00ED d\u1EE5: Game, IDE code...\n\n"
+                L"\u0110\u1EC3 ch\u1EC9nh s\u1EEDa danh s\u00E1ch, m\u1EDF file config t\u1EA1i:\n"
                 L"%APPDATA%\\NexusKey\\config.toml",
-                L"T\x1EAFt ti\x1EBFng Vi\x1EC7t theo app",
+                L"T\u1EAFt ti\u1EBFng Vi\u1EC7t theo app",
                 MB_ICONINFORMATION);
             break;
 
         case IDC_BTN_MACRO_TABLE:
             MessageBoxW(hwnd_,
-                L"B\x1EA3ng g\x00F5 t\x1EAFt cho ph\x00E9p b\x1EA1n \x0111\x1ECBnh ngh\x0129a c\x00E1c ph\x00EDm t\x1EAFt.\n\n"
-                L"V\x00ED d\x1EE5: \"btv\" \x2192 \"b\x00E1o tu\x1ED5i tr\x1EBB\"\n\n"
-                L"\x0110\x1EC3 ch\x1EC9nh s\x1EEDa, m\x1EDF file:\n"
+                L"B\u1EA3ng g\u00F5 t\u1EAFt cho ph\u00E9p b\u1EA1n \u0111\u1ECBnh ngh\u0129a c\u00E1c ph\u00EDm t\u1EAFt.\n\n"
+                L"V\u00ED d\u1EE5: \"btv\" \u2192 \"b\u00E1o tu\u1ED5i tr\u1EBB\"\n\n"
+                L"\u0110\u1EC3 ch\u1EC9nh s\u1EEDa, m\u1EDF file:\n"
                 L"%APPDATA%\\NexusKey\\macros.txt",
-                L"B\x1EA3ng g\x00F5 t\x1EAFt",
+                L"B\u1EA3ng g\u00F5 t\u1EAFt",
                 MB_ICONINFORMATION);
             break;
     }
