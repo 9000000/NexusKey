@@ -27,7 +27,7 @@ static void OpenHookLog() {
     auto pos = logPath.find_last_of(L"\\/");
     if (pos != std::wstring::npos) logPath = logPath.substr(0, pos + 1);
     logPath += L"NexusKey_hook.log";
-    (void)_wfopen_s(&g_hookLog, logPath.c_str(), L"w");
+    (void)_wfopen_s(&g_hookLog, logPath.c_str(), L"w, ccs=UTF-8");
     if (g_hookLog) setvbuf(g_hookLog, nullptr, _IOFBF, 8192);  // 8KB buffer — flushed on CloseHookLog()
 }
 
@@ -164,6 +164,11 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
         nullptr, WinEventProc,
         0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
+    // Poll foreground PID every 200ms — catches missed focus events (fullscreen games)
+    // and phantom bounce-back (game sends FOREGROUND after losing exclusive fullscreen).
+    // Runs on main thread via message pump — no threading issues.
+    focusPollTimer_ = SetTimer(nullptr, 0, 200, FocusPollTimerProc);
+
     NEXTKEY_LOG(L"HookEngine started (method=%d, vietnamese=%d)",
                 static_cast<int>(currentMethod_), vietnameseMode_);
     HOOK_LOG(L"Hook installed OK (method=%d, vietnamese=%d)",
@@ -191,6 +196,10 @@ void HookEngine::Stop() {
         UnhookWinEvent(minimizeHook_);
         minimizeHook_ = nullptr;
     }
+    if (focusPollTimer_) {
+        KillTimer(nullptr, focusPollTimer_);
+        focusPollTimer_ = 0;
+    }
     if (s_instance == this) {
         s_instance = nullptr;
     }
@@ -203,7 +212,6 @@ void HookEngine::Stop() {
 }
 
 void HookEngine::ToggleVietnameseMode() {
-    // Block toggling in excluded apps (verify flag isn't stale first)
     // Block toggle in excluded apps. Use cached excludedPid_ + foreground PID
     // to distinguish "genuinely in excluded app" from "stale flag after leaving".
     // PID check is cheap (no OpenProcess) and immune to transient tray/taskbar focus.
@@ -1640,6 +1648,21 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
     }
 }
 
+void CALLBACK HookEngine::FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
+    HookEngine* self = s_instance.load(std::memory_order_relaxed);
+    if (!self) return;
+    HWND fg = GetForegroundWindow();
+    if (!fg) return;
+    DWORD fgPid = 0;
+    GetWindowThreadProcessId(fg, &fgPid);
+    if (fgPid == self->lastForegroundPid_ || fgPid == 0) return;
+    // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
+    // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
+    self->lastForegroundPid_ = fgPid;
+    HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
+    self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+}
+
 void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     ResetComposition();
     tempEngineOff_ = false;
@@ -1661,6 +1684,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // Without this guard, right-clicking any app's tray icon would set currentExe_ to that
     // app's process, then the next real focus change would SAVE the wrong mode for that app.
     if (!activeHwnd || !IsWindowVisible(activeHwnd) || IsIconic(activeHwnd) || IsTrayOrTaskbarWindow(activeHwnd)) {
+        // Focus poll timer (200ms) will catch missed transitions
         return;
     }
 
@@ -1668,6 +1692,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     RECT rect;
     if (GetWindowRect(activeHwnd, &rect)) {
         if (rect.right - rect.left <= 0 || rect.bottom - rect.top <= 0 || rect.left <= -20000) {
+            // Focus poll timer (200ms) will catch missed transitions
             return;
         }
     }
@@ -1677,8 +1702,11 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // They are not main applications and should not change the Smart Switch state.
     LONG exStyle = GetWindowLongW(activeHwnd, GWL_EXSTYLE);
     if (exStyle & WS_EX_TOOLWINDOW) {
+        // Focus poll timer (200ms) will catch missed transitions
         return;
     }
+
+    // Successfully passed all window-validation guards — update PID tracker.
 
     // Detect Qt/Electron apps, Console apps, and GPU-rendered apps — skip U+202F.
     // U+202F (narrow no-break space) is a "bait" char inserted before BS sequences so
@@ -1737,6 +1765,13 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         previousExe_ = currentExe_;
     }
     currentExe_ = std::move(newExe);
+
+    // Sync PID tracker so focus poll timer won't re-trigger for this app
+    {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(activeHwnd, &pid);
+        if (pid) lastForegroundPid_ = pid;
+    }
 
     // Check excluded apps
     if (excludeApps_ && !excludedAppSet_.empty()) {

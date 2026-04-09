@@ -86,6 +86,7 @@ private:
                                        LONG idObject, LONG idChild,
                                        DWORD dwEventThread, DWORD dwmsEventTime);
     static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
+    static void CALLBACK FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD);
 
     // Config application (shared between Start and CheckConfigEvent)
     void ApplyConfig(const TypingConfig& config);
@@ -188,6 +189,7 @@ private:
     bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?
     bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
     bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
+    DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
     bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode
@@ -242,6 +244,7 @@ private:
     HHOOK mouseHook_ = nullptr;
     HWINEVENTHOOK focusHook_ = nullptr;     // EVENT_SYSTEM_FOREGROUND
     HWINEVENTHOOK minimizeHook_ = nullptr;  // EVENT_SYSTEM_MINIMIZEEND
+    UINT_PTR focusPollTimer_ = 0;          // 200ms PID poll — catches missed/phantom focus events
 
     // Hotkey state
     HotkeyConfig hotkeyConfig_{};
