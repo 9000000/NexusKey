@@ -383,6 +383,19 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
     // Handle bracket keys: [ → ơ, ] → ư (full Telex only)
     if (config_.inputMethod != InputMethod::SimpleTelex) {
         if (c == L'[') {
+            // Escape: [[ → undo inserted ơ, produce literal '['
+            if (!states_.empty() && rawInput_.size() >= 2 &&
+                rawInput_[rawInput_.size() - 2] == L'[') {
+                CharState& last = states_.back();
+                if (last.base == L'o' && last.mod == Modifier::Horn) {
+                    size_t consumedIdx = last.rawIdx;
+                    states_.pop_back();
+                    EraseConsumedRaw(consumedIdx);
+                    ProcessChar(c);
+                    toneEscaped_ = true;
+                    return true;
+                }
+            }
             // [ → insert 'ơ' (o with horn)
             CharState s;
             s.base = L'o';
@@ -392,6 +405,19 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
             return true;
         }
         if (c == L']') {
+            // Escape: ]] → undo inserted ư, produce literal ']'
+            if (!states_.empty() && rawInput_.size() >= 2 &&
+                rawInput_[rawInput_.size() - 2] == L']') {
+                CharState& last = states_.back();
+                if (last.base == L'u' && last.mod == Modifier::Horn) {
+                    size_t consumedIdx = last.rawIdx;
+                    states_.pop_back();
+                    EraseConsumedRaw(consumedIdx);
+                    ProcessChar(c);
+                    toneEscaped_ = true;
+                    return true;
+                }
+            }
             // ] → insert 'ư' (u with horn)
             CharState s;
             s.base = L'u';

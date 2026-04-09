@@ -2048,6 +2048,37 @@ TEST_F(TelexEngineTest, Bracket_Close_InWord) {
     EXPECT_EQ(engine_->Peek(), L"thư");
 }
 
+TEST_F(TelexEngineTest, Bracket_Open_Escape) {
+    // [[ → literal '['
+    TypeString(*engine_, L"[[");
+    EXPECT_EQ(engine_->Peek(), L"[");
+}
+
+TEST_F(TelexEngineTest, Bracket_Close_Escape) {
+    // ]] → literal ']'
+    TypeString(*engine_, L"]]");
+    EXPECT_EQ(engine_->Peek(), L"]");
+}
+
+TEST_F(TelexEngineTest, Bracket_Open_Escape_InWord) {
+    // th[[ → th[
+    TypeString(*engine_, L"th[[");
+    EXPECT_EQ(engine_->Peek(), L"th[");
+}
+
+TEST_F(TelexEngineTest, Bracket_Close_Escape_InWord) {
+    // th]] → th]
+    TypeString(*engine_, L"th]]");
+    EXPECT_EQ(engine_->Peek(), L"th]");
+}
+
+TEST_F(TelexEngineTest, Bracket_NonConsecutive_NoEscape) {
+    // n[s[ → nớơ (not escape — brackets separated by 's')
+    TypeString(*engine_, L"n[s[");
+    // First [ inserts ơ after n → nơ, s applies sắc → nớ, second [ inserts ơ → nớơ
+    EXPECT_EQ(engine_->Peek(), L"n\u1EDBơ");
+}
+
 TEST_F(TelexEngineTest, W_Standalone_ProducesUHorn) {
     TypeString(*engine_, L"w");
     EXPECT_EQ(engine_->Peek(), L"ư");
