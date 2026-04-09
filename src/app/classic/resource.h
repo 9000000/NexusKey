@@ -62,6 +62,7 @@
 #define IDC_BTN_SMART_SWITCH    2501
 #define IDC_BTN_EXCLUDE_APPS    2502
 #define IDC_BTN_MACRO_TABLE     2503
+#define IDC_BTN_CHECK_UPDATE    2504
 
 // ── Static labels ──
 #define IDC_STATIC_METHOD       2601

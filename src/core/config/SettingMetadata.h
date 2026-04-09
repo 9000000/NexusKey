@@ -85,6 +85,8 @@ inline constexpr SettingMeta kSettings[] = {
               "Tự khôi phục phím sai","Restore key on invalid",        2205, 0, 0),
 
     // ── Tab 0: Bảng gõ — Right column (col 1) ──
+    NK_TYPING("beep-sound",           beepOnSwitch,
+              "Tiếng bíp khi chuyển",   "Beep on switch",               2211, 0, 1),
     NK_TYPING("temp-off-spell",       tempOffSpellByCtrl,
               "Tạm tắt chính tả bằng Ctrl","Ctrl temps off spell check",2217, 0, 1),
     NK_TYPING("temp-off-openkey",     tempOffByAlt,
@@ -95,8 +97,6 @@ inline constexpr SettingMeta kSettings[] = {
     NK_TYPING("exclude-apps",         excludeApps,
               "Tắt tiếng việt theo app",  "Exclude apps",               2207, 0, 1),
     NK_ACTION("btn-exclude-apps",     "...", "",                      2502, 0, 1),
-    NK_TYPING("beep-sound",           beepOnSwitch,
-              "Tiếng bíp khi chuyển",   "Beep on switch",               2211, 0, 1),
 
     // ── Tab 1: Gõ tắt (col 0) ──
     NK_TYPING("use-macro",            macroEnabled,
@@ -144,6 +144,7 @@ inline constexpr SettingMeta kSettings[] = {
               "Tuỳ chỉnh icon",       "Icon Style",                    2408, 2, 1),
     NK_SYSTEM("check-update",         autoCheckUpdate,
               "Tự kiểm tra cập nhật", "Auto check update",             2406, 2, 1),
+    NK_ACTION("btn-check-update",     "Kiểm tra", "Check",             2504, 2, 1),
 };
 
 #undef NK_TYPING

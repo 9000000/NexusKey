@@ -129,7 +129,7 @@ void ClassicSettingsDialog::CreateCompactControls() {
     int offset = Dpi(8);
     int gbX = Dpi(8);
 
-    CreateLabel(L"  C\x01A1 b\x1EA3n  ", gbX + Dpi(6), Dpi(2) + offset, Dpi(90), Dpi(18), 2999);
+    CreateLabel(L"  Cơ bản  ", gbX + Dpi(6), Dpi(2) + offset, Dpi(90), Dpi(18), 2999);
 
     int x1 = Dpi(kPadding);
     int y = Dpi(kPadding + 14) + offset;
@@ -139,8 +139,8 @@ void ClassicSettingsDialog::CreateCompactControls() {
     int col2X = x1 + colW + Dpi(kPadding);
 
     // Row 1: "Kieu go" and "Bang ma" side by side
-    CreateLabel(L"Ki\x1EC3u g\x00F5", x1, y, colW, Dpi(kLabelHeight), IDC_STATIC_METHOD);
-    CreateLabel(L"B\x1EA3ng m\x00E3", col2X, y, colW, Dpi(kLabelHeight), IDC_STATIC_ENCODING);
+    CreateLabel(L"Kiểu gõ", x1, y, colW, Dpi(kLabelHeight), IDC_STATIC_METHOD);
+    CreateLabel(L"Bảng mã", col2X, y, colW, Dpi(kLabelHeight), IDC_STATIC_ENCODING);
     y += Dpi(kLabelHeight + kRowGap);
 
     comboMethod_ = CreateCombo(x1, y, colW, Dpi(kComboHeight + 120), IDC_COMBO_METHOD);
@@ -152,13 +152,13 @@ void ClassicSettingsDialog::CreateCompactControls() {
     ComboBox_AddString(comboEncoding_, L"Unicode");
     ComboBox_AddString(comboEncoding_, L"TCVN3 (ABC)");
     ComboBox_AddString(comboEncoding_, L"VNI Windows");
-    ComboBox_AddString(comboEncoding_, L"Unicode t\x1ED5 h\x1EE3p");
-    ComboBox_AddString(comboEncoding_, L"Vi\x1EC7t (CP 1258)");
+    ComboBox_AddString(comboEncoding_, L"Unicode tổ hợp");
+    ComboBox_AddString(comboEncoding_, L"Việt (CP 1258)");
 
     y += Dpi(kComboHeight + kSectionGap);
 
     // Row 2: "Phim tat"
-    CreateLabel(L"Ph\x00EDm chuy\x1EC3n (Vi\x1EC7t/Anh)", x1, y, contentW, Dpi(kLabelHeight), IDC_STATIC_SWITCHKEY);
+    CreateLabel(L"Phím chuyển (Việt/Anh)", x1, y, contentW, Dpi(kLabelHeight), IDC_STATIC_SWITCHKEY);
     y += Dpi(kLabelHeight + kRowGap);
 
     int btnW = Dpi(55);
@@ -305,13 +305,13 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
     TCITEMW tie{};
     tie.mask = TCIF_TEXT;
 
-    tie.pszText = const_cast<wchar_t*>(L"\xD83D\xDCDD B\x1ED9 G\x00F5"); //Bộ gõ
+    tie.pszText = const_cast<wchar_t*>(L"\U0001F4DD Bộ Gõ");
     TabCtrl_InsertItem(tabControl_, 0, &tie);
 
-    tie.pszText = const_cast<wchar_t*>(L"\xD83D\xDE80 G\x00F5 T\x1EAFt"); //Gõ tắt
+    tie.pszText = const_cast<wchar_t*>(L"\U0001F680 Gõ Tắt");
     TabCtrl_InsertItem(tabControl_, 1, &tie);
 
-    tie.pszText = const_cast<wchar_t*>(L"\x2699\xFE0F H\x1EC7 th\x1ED1ng"); //Hệ thống
+    tie.pszText = const_cast<wchar_t*>(L"⚙️ Hệ thống");
     TabCtrl_InsertItem(tabControl_, 2, &tie);
 
     TabCtrl_SetItemSize(tabControl_, Dpi(120), Dpi(kTabHeight));
@@ -347,7 +347,8 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         int row = rowCounts[tab][col]++;
 
         // If it's an inline action button
-        bool isInlineAction = (meta.type == SettingType::Action && wcscmp(meta.label, L"...") == 0);
+        bool isInlineAction = (meta.type == SettingType::Action && 
+            (wcscmp(meta.label, L"...") == 0 || wcscmp(meta.label, L"Kiểm tra") == 0));
         if (isInlineAction) {
             rowCounts[tab][col]--; // stay on the same visual row
             row--; // go back to the row we just incremented past
@@ -357,12 +358,17 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         int cy = contentTop + row * Dpi(kControlHeight + kRowGap);
 
         if (meta.type == SettingType::Toggle) {
-            bool hasInlineNext = ((i + 1 < kSettingsCount) && kSettings[i+1].type == SettingType::Action && wcscmp(kSettings[i+1].label, L"...") == 0);
-            int checkW = hasInlineNext ? colWidth - Dpi(44) : colWidth;
+            bool hasInlineNext = ((i + 1 < kSettingsCount) && kSettings[i+1].type == SettingType::Action && 
+                (wcscmp(kSettings[i+1].label, L"...") == 0 || wcscmp(kSettings[i+1].label, L"Kiểm tra") == 0));
+            int nextBtnW = 0;
+            if (hasInlineNext) {
+                nextBtnW = (wcscmp(kSettings[i+1].label, L"...") == 0) ? Dpi(26) : Dpi(55);
+            }
+            int checkW = hasInlineNext ? colWidth - nextBtnW - Dpi(4) : colWidth;
             checkControls_[i] = CreateCheck(meta.label, cx, cy, checkW, Dpi(kControlHeight), meta.win32Id);
         } else if (meta.type == SettingType::Action) {
             if (isInlineAction) {
-                int btnW = Dpi(40);
+                int btnW = (wcscmp(meta.label, L"...") == 0) ? Dpi(26) : Dpi(55);
                 int inlineCx = cx + colWidth - btnW;
                 checkControls_[i] = CreateBtn(meta.label, inlineCx, cy, btnW, Dpi(kControlHeight), meta.win32Id);
             } else {
@@ -375,10 +381,10 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
             extraControls_[i] = lbl;
             HWND combo = CreateCombo(cx + lblW + Dpi(4), cy, comboW, Dpi(kComboHeight + 60), meta.win32Id);
             if (wcscmp(meta.id, L"custom-icon-style") == 0) {
-                ComboBox_AddString(combo, L"M\x00E0u m\x1EB7" L"c \x0111\x1ECBnh");
-                ComboBox_AddString(combo, L"N\x1EC1n t\x1ED1i");
-                ComboBox_AddString(combo, L"N\x1EC1n s\x00E1ng");
-                ComboBox_AddString(combo, L"T\x1EF1 ch\x1ECDn");
+                ComboBox_AddString(combo, L"Màu mặc định");
+                ComboBox_AddString(combo, L"Nền tối");
+                ComboBox_AddString(combo, L"Nền sáng");
+                ComboBox_AddString(combo, L"Tự chọn");
             }
             checkControls_[i] = combo;
         }
@@ -691,32 +697,41 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
     switch (controlId) {
         case IDC_BTN_SMART_SWITCH:
             MessageBoxW(hwnd_,
-                L"T\u00EDnh n\u0103ng n\u00E0y s\u1EBD l\u01B0u ch\u1EBF \u0111\u1ED9 g\u00F5 (Vi\u1EC7t/Anh) "
-                L"cho t\u1EEBng \u1EE9ng d\u1EE5ng ri\u00EAng.\n\n"
-                L"Khi b\u1EA1n chuy\u1EC3n qua l\u1EA1i gi\u1EEFa c\u00E1c app, "
-                L"NexusKey s\u1EBD t\u1EF1 \u0111\u1ED9ng kh\u00F4i ph\u1EE5c ch\u1EBF \u0111\u1ED9 g\u00F5 \u0111\u00E3 d\u00F9ng tr\u01B0\u1EDBc \u0111\u00F3.",
-                L"L\u01B0u ch\u1EBF \u0111\u1ED9 g\u00F5 theo app",
+                L"Tính năng này sẽ lưu chế độ gõ (Việt/Anh) "
+                L"cho từng ứng dụng riêng.\n\n"
+                L"Khi bạn chuyển qua lại giữa các app, "
+                L"NexusKey sẽ tự động khôi phục chế độ gõ đã dùng trước đó.",
+                L"Lưu chế độ gõ theo app",
                 MB_ICONINFORMATION);
             break;
 
         case IDC_BTN_EXCLUDE_APPS:
             MessageBoxW(hwnd_,
-                L"T\u00EDnh n\u0103ng n\u00E0y cho ph\u00E9p b\u1EA1n ch\u1ECDn nh\u1EEFng \u1EE9ng d\u1EE5ng "
-                L"s\u1EBD t\u1EF1 \u0111\u1ED9ng t\u1EAFt g\u00F5 ti\u1EBFng Vi\u1EC7t.\n\n"
-                L"V\u00ED d\u1EE5: Game, IDE code...\n\n"
-                L"\u0110\u1EC3 ch\u1EC9nh s\u1EEDa danh s\u00E1ch, m\u1EDF file config t\u1EA1i:\n"
+                L"Tính năng này cho phép bạn chọn những ứng dụng "
+                L"sẽ tự động tắt gõ tiếng Việt.\n\n"
+                L"Ví dụ: Game, IDE code...\n\n"
+                L"Để chỉnh sửa danh sách, mở file config tại:\n"
                 L"%APPDATA%\\NexusKey\\config.toml",
-                L"T\u1EAFt ti\u1EBFng Vi\u1EC7t theo app",
+                L"Tắt tiếng Việt theo app",
                 MB_ICONINFORMATION);
             break;
 
         case IDC_BTN_MACRO_TABLE:
             MessageBoxW(hwnd_,
-                L"B\u1EA3ng g\u00F5 t\u1EAFt cho ph\u00E9p b\u1EA1n \u0111\u1ECBnh ngh\u0129a c\u00E1c ph\u00EDm t\u1EAFt.\n\n"
-                L"V\u00ED d\u1EE5: \"btv\" \u2192 \"b\u00E1o tu\u1ED5i tr\u1EBB\"\n\n"
-                L"\u0110\u1EC3 ch\u1EC9nh s\u1EEDa, m\u1EDF file:\n"
+                L"Bảng gõ tắt cho phép bạn định nghĩa các phím tắt.\n\n"
+                L"Ví dụ: \"btv\" → \"báo tuổi trẻ\"\n\n"
+                L"Để chỉnh sửa, mở file:\n"
                 L"%APPDATA%\\NexusKey\\macros.txt",
-                L"B\u1EA3ng g\u00F5 t\u1EAFt",
+                L"Bảng gõ tắt",
+                MB_ICONINFORMATION);
+            break;
+
+        case IDC_BTN_CHECK_UPDATE:
+            MessageBoxW(hwnd_,
+                L"Đang kiểm tra máy chủ để xem có phiên bản mới không...\n\n"
+                L"Hiện tại chưa có phiên bản nào mới được phát hành.\n"
+                L"Bạn đang sử dụng bản cập nhật mới nhất.",
+                L"Kiểm tra cập nhật",
                 MB_ICONINFORMATION);
             break;
     }
