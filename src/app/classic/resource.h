@@ -55,10 +55,6 @@
 #define IDC_CHECK_AUTO_UPDATE   2406
 #define IDC_CHECK_ENGLISH_UI    2407
 
-// ── Footer buttons ──
-#define IDC_BTN_DEFAULTS        2501
-#define IDC_BTN_SAVE            2502
-
 // ── Static labels ──
 #define IDC_STATIC_METHOD       2601
 #define IDC_STATIC_ENCODING     2602

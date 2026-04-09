@@ -1,4 +1,4 @@
-// NexusKey Classic — Material Design 3 Theme Engine
+// NexusKey Classic — Native Windows Theme Engine
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -9,32 +9,24 @@
 
 namespace NextKey::Classic {
 
-/// M3 color tokens (light and dark schemes)
+/// System color tokens (resolved via GetSysColor at runtime)
 struct ThemeColors {
-    COLORREF background;        // Window background
-    COLORREF surface;           // Card/panel surface
-    COLORREF surfaceVariant;    // Input background, list bg
-    COLORREF surfaceTonal1;     // Titlebar, elevated surfaces
-    COLORREF primary;           // Accent: active state, buttons
-    COLORREF onPrimary;         // Text on primary fill
-    COLORREF primaryContainer;  // Chip bg, selected state
-    COLORREF onSurface;         // Primary text
-    COLORREF onSurfaceVariant;  // Secondary text, icons
-    COLORREF outline;           // Input border, control border
-    COLORREF outlineVariant;    // Subtle divider
-    COLORREF error;             // Error state
-    COLORREF onError;           // Text on error
+    COLORREF background;    // COLOR_WINDOW
+    COLORREF surface;       // COLOR_BTNFACE
+    COLORREF text;          // COLOR_WINDOWTEXT
+    COLORREF textSecondary; // COLOR_GRAYTEXT
+    COLORREF accent;        // COLOR_HIGHLIGHT
+    COLORREF accentText;    // COLOR_HIGHLIGHTTEXT
+    COLORREF border;        // COLOR_BTNSHADOW
 };
 
 /// Font handles (created once per DPI change)
 struct FontSet {
-    HFONT header;     // Segoe UI Variable Display, 11pt, SemiBold
-    HFONT body;       // Segoe UI Variable Text, 9pt, Regular
-    HFONT caption;    // Segoe UI Variable Text, 8pt, Regular
-    HFONT label;      // Segoe UI Variable Text, 9pt, Medium (buttons)
+    HFONT header;  // Segoe UI Variable Display, 11pt, SemiBold
+    HFONT body;    // Segoe UI Variable Text, 9pt, Regular
 };
 
-/// Material Design 3 theme manager for Win32
+/// Native Windows theme manager for Win32
 class ClassicTheme {
 public:
     ClassicTheme() = default;
@@ -61,12 +53,6 @@ public:
     HBRUSH OnCtlColorEdit(HDC hdc, HWND hCtrl);
     HBRUSH OnCtlColorListBox(HDC hdc, HWND hCtrl);
 
-    /// Owner-draw button (WM_DRAWITEM for BS_OWNERDRAW buttons)
-    void DrawButton(DRAWITEMSTRUCT* dis, bool isPrimary);
-
-    /// Owner-draw checkbox (WM_DRAWITEM for BS_OWNERDRAW checkboxes)
-    void DrawCheckbox(DRAWITEMSTRUCT* dis);
-
     /// Draw tab control item (TCS_OWNERDRAWFIXED)
     void DrawTabItem(DRAWITEMSTRUCT* dis);
 
@@ -77,24 +63,20 @@ public:
     void ApplyWindowAttributes(HWND hwnd);
 
     /// Apply dark mode theme to all child controls (combobox, checkbox, etc.)
-    /// Call after creating controls or adding new ones.
     void ThemeAllChildren(HWND parent);
 
     /// Apply dark mode to a single child control
     void ThemeChildControl(HWND hwndCtrl);
-
-    // -- State layer helpers --
-    static COLORREF BlendColors(COLORREF base, COLORREF overlay, BYTE alpha);
 
     // -- Accessors --
     [[nodiscard]] bool IsDark() const noexcept { return isDark_; }
     [[nodiscard]] const ThemeColors& Colors() const noexcept { return colors_; }
     [[nodiscard]] const FontSet& Fonts() const noexcept { return fonts_; }
     [[nodiscard]] HBRUSH BrushBackground() const noexcept { return brBackground_; }
-    [[nodiscard]] HBRUSH BrushSurface() const noexcept { return brSurface_; }
 
 private:
     void DetectDarkMode();
+    void RefreshColors();
     void CreateBrushes();
     void DestroyBrushes();
     void CreateFonts(UINT dpi);
@@ -107,9 +89,6 @@ private:
     // Cached GDI brushes
     HBRUSH brBackground_ = nullptr;
     HBRUSH brSurface_ = nullptr;
-    HBRUSH brSurfaceVariant_ = nullptr;
-    HBRUSH brPrimary_ = nullptr;
-    HBRUSH brOutlineVariant_ = nullptr;
 
     HWND hwnd_ = nullptr;
 };
