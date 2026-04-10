@@ -946,10 +946,30 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return true;  // Eat backspace
     }
 
+    // 7b. Backspace with cross-commit macro buffer: update tracking, pass through
+    if (vkCode == VK_BACK && macroCrossCommit_ && !rawMacroBuffer_.empty()) {
+        rawMacroBuffer_.pop_back();
+        if (rawMacroBuffer_.empty()) macroCrossCommit_ = false;
+    }
+
     // 8. Commit triggers: space, enter, tab, punctuation, numbers, escape, arrows
     if (IsCommitTrigger(vkCode) && engine_->Count() > 0) {
         HOOK_LOG(L"  commit trigger vk=0x%02X", vkCode);
+
+        // Preserve macro buffer across commit for printable triggers (e.g., '.' in "a.i")
+        // so macros with punctuation in their key can still be matched on the final trigger.
+        std::wstring savedMacroBuffer;
+        if (macroEnabled_ && !macroTable_.empty() && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
+            wchar_t ch = VkToMacroChar(vkCode);
+            if (ch > L' ') savedMacroBuffer = rawMacroBuffer_;
+        }
+
         bool restored = CommitComposition();
+
+        if (!savedMacroBuffer.empty()) {
+            rawMacroBuffer_ = std::move(savedMacroBuffer);
+            macroCrossCommit_ = true;
+        }
         // Enable backspace-into-word only for space/enter (natural word boundaries),
         // and ONLY if a new entry was just pushed to the stack (implies: not auto-restored,
         // not quick consonant, not empty history).
@@ -1233,33 +1253,30 @@ bool HookEngine::CommitComposition() {
         HOOK_LOG(L"  CommitComposition: pushed to stack (size=%zu)", commitStack_.size());
     }
 
-    engine_->Reset();
-    previousComposition_.clear();
-    previousEncodedWidths_.clear();
-    inputHistory_.clear();
-    rawMacroBuffer_.clear();
-    tempMacroOff_ = false;
-    hadSynthInWord_ = false;
+    ClearWordState();
     return restored;
 }
 
 void HookEngine::ResetComposition() {
     HOOK_LOG(L"  ResetComposition (count=%zu, prev='%s')", engine_->Count(), previousComposition_.c_str());
-    if (engine_->Count() > 0) {
-        engine_->Reset();
-    }
-    previousComposition_.clear();
-    previousEncodedWidths_.clear();
     // Secure-erase keystroke history before releasing the buffer to prevent
     // heap forensics from recovering typed content (including passwords).
     SecureZeroMemory(inputHistory_.data(), inputHistory_.size() * sizeof(wchar_t));
-    inputHistory_.clear();
     SecureZeroMemory(rawMacroBuffer_.data(), rawMacroBuffer_.size() * sizeof(wchar_t));
-    rawMacroBuffer_.clear();
-    tempMacroOff_ = false;
+    ClearWordState();
     CancelCommitUndo();
     synthEventsPending_ = 0;  // Pending synthetics from old context are irrelevant after reset
     lastRealSynthTime_ = 0;
+}
+
+void HookEngine::ClearWordState() {
+    engine_->Reset();
+    previousComposition_.clear();
+    previousEncodedWidths_.clear();
+    inputHistory_.clear();
+    rawMacroBuffer_.clear();
+    macroCrossCommit_ = false;
+    tempMacroOff_ = false;
     hadSynthInWord_ = false;
 }
 
@@ -2180,7 +2197,15 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
 
     // Backspace count = screen content (trigger char is NOT on screen yet)
     size_t bsCount;
-    if (!previousComposition_.empty()) {
+    if (macroCrossCommit_) {
+        // Cross-commit macro (key contains punctuation like "a.i"): rawMacroBuffer_
+        // spans multiple engine commits and matches the on-screen character count.
+        // NOTE: For non-Unicode code tables (TCVN3/VNI), Vietnamese characters may
+        // encode to multiple bytes, making this count wrong. Acceptable limitation
+        // since macros with punctuation + non-Unicode encoding is extremely rare.
+        bsCount = rawMacroBuffer_.size();
+        if (triggerChar > L' ' && bsCount > 0) --bsCount;
+    } else if (!previousComposition_.empty()) {
         if (currentCodeTable_ != CodeTable::Unicode) {
             bsCount = 0;
             for (auto w : previousEncodedWidths_) bsCount += w;
@@ -2236,15 +2261,8 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
         }
         DispatchSendInput(bsEvents, charEvents);
     }
-    // Full state cleanup — must match CommitComposition's cleanup to prevent
-    // stale inputHistory_/commitUndoState_ from leaking into the next word.
-    engine_->Reset();
-    previousComposition_.clear();
-    previousEncodedWidths_.clear();
-    rawMacroBuffer_.clear();
-    inputHistory_.clear();
+    ClearWordState();
     CancelCommitUndo();
-    hadSynthInWord_ = false;
     return isPartOfMacro ? MacroResult::ExpandedEatTrigger : MacroResult::ExpandedPassTrigger;
 }
 

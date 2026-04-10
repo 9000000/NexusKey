@@ -197,8 +197,8 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
             STARTUPINFOW si = { sizeof(si) };
             PROCESS_INFORMATION pi = {};
             std::wstring cmdLine = L"\"" + restoredExePath + L"\"";
-            CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0,
-                           nullptr, exeDir.c_str(), &si, &pi);
+            CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                           CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi);
             if (pi.hThread) CloseHandle(pi.hThread);
             if (pi.hProcess) CloseHandle(pi.hProcess);
         }
@@ -270,7 +270,8 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
         // Quote the path for CreateProcessW cmdline
         std::wstring cmdLine = L"\"" + finalExePath + L"\"";
         
-        if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, exeDir.c_str(), &si, &pi)) {
+        if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                           CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi)) {
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
         }

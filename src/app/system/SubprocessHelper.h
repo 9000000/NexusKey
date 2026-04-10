@@ -27,7 +27,8 @@ inline HANDLE GetJobObject() noexcept {
         HANDLE h = CreateJobObjectW(nullptr, nullptr);
         if (h) {
             JOBOBJECT_EXTENDED_LIMIT_INFORMATION info{};
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            info.BasicLimitInformation.LimitFlags =
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_BREAKAWAY_OK;
             SetInformationJobObject(h, JobObjectExtendedLimitInformation, &info, sizeof(info));
         }
         return h;

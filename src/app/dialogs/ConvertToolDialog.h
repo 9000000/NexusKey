@@ -19,6 +19,7 @@ public:
 
 private:
     void doConvert();
+    void browseFile(bool isSource);
     [[nodiscard]] bool getToggleValue(const char* id);
     [[nodiscard]] int getDropdownValue(const char* id);
     [[nodiscard]] std::wstring getHiddenValue(const char* id);

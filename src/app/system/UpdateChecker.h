@@ -10,6 +10,7 @@
 #include <Windows.h>
 #include <string>
 #include <cstdint>
+#include <atomic>
 
 namespace NextKey {
 
@@ -56,6 +57,12 @@ public:
 
     /// Show "Unable to check for updates" message
     static void ShowCheckFailedMessage(HWND parent);
+
+    /// Show a modal progress dialog with marquee progress bar.
+    /// Blocks until doneFlag becomes true (auto-closes) or user clicks Cancel.
+    /// Returns true if the operation completed, false if user cancelled.
+    [[nodiscard]] static bool ShowProgressDialog(HWND parent, const wchar_t* message,
+                                                std::atomic<bool>& doneFlag);
 
 private:
     /// Download URL content to a string (via temp file)

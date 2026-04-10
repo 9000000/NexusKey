@@ -4,8 +4,11 @@
 #include "ClassicConvertToolDialog.h"
 #include "core/config/ConfigManager.h"
 #include "core/config/ConfigEvent.h"
+#include "core/engine/CodeTableConverter.h"
+#include "core/Strings.h"
 
 #include <windowsx.h>
+#include <commdlg.h>
 
 namespace NextKey::Classic {
 
@@ -27,6 +30,12 @@ enum {
     IDC_EDIT_HK_KEY,
     IDC_BTN_CONVERT,
     IDC_BTN_CLOSE_DLG,
+    IDC_RADIO_CLIPBOARD,
+    IDC_RADIO_FILE,
+    IDC_EDIT_SOURCE_PATH,
+    IDC_BTN_BROWSE_SOURCE,
+    IDC_EDIT_DEST_PATH,
+    IDC_BTN_BROWSE_DEST,
 };
 
 // ════════════════════════════════════════════════════════════
@@ -144,6 +153,50 @@ void ClassicConvertToolDialog::CreateControls() {
 
     checkSequential_ = check(L"Chuyển tuần tự", x, y, IDC_CHECK_SEQUENTIAL);
     y += rowH + gap * 2;
+
+    // Section: Nguồn dữ liệu (Clipboard / File)
+    label(L"Nguồn:", x, y, cw);
+    y += rowH + gap;
+
+    radioClipboard_ = CreateWindowExW(0, L"BUTTON", L"Clipboard",
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP,
+        x, y, colW, rowH, hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RADIO_CLIPBOARD)),
+        hInstance_, nullptr);
+    radioFile_ = CreateWindowExW(0, L"BUTTON", L"Ch\x1ECDn file",
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_TABSTOP,
+        col2X, y, colW, rowH, hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RADIO_FILE)),
+        hInstance_, nullptr);
+    CheckRadioButton(hwnd_, IDC_RADIO_CLIPBOARD, IDC_RADIO_FILE, IDC_RADIO_CLIPBOARD);
+    y += rowH + gap;
+
+    int browseW = Dpi(28);
+    int pathW = cw - Dpi(70) - browseW - Dpi(4);
+
+    labelSourceFile_ = CreateWindowExW(0, L"STATIC", L"File ngu\x1ED3n:",
+        WS_CHILD | SS_LEFT, x, y + Dpi(4), Dpi(70), rowH,
+        hwnd_, nullptr, hInstance_, nullptr);
+    editSourcePath_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL | ES_READONLY,
+        x + Dpi(70), y, pathW, rowH + Dpi(4),
+        hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EDIT_SOURCE_PATH)), hInstance_, nullptr);
+    btnBrowseSource_ = CreateWindowExW(0, L"BUTTON", L"...",
+        WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+        x + Dpi(70) + pathW + Dpi(4), y, browseW, rowH + Dpi(4),
+        hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_BTN_BROWSE_SOURCE)), hInstance_, nullptr);
+    y += rowH + gap + Dpi(4);
+
+    labelDestFile_ = CreateWindowExW(0, L"STATIC", L"File \x0111\x00EDch:",
+        WS_CHILD | SS_LEFT, x, y + Dpi(4), Dpi(70), rowH,
+        hwnd_, nullptr, hInstance_, nullptr);
+    editDestPath_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL | ES_READONLY,
+        x + Dpi(70), y, pathW, rowH + Dpi(4),
+        hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_EDIT_DEST_PATH)), hInstance_, nullptr);
+    btnBrowseDest_ = CreateWindowExW(0, L"BUTTON", L"...",
+        WS_CHILD | WS_TABSTOP | BS_PUSHBUTTON,
+        x + Dpi(70) + pathW + Dpi(4), y, browseW, rowH + Dpi(4),
+        hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_BTN_BROWSE_DEST)), hInstance_, nullptr);
+    y += rowH + gap * 2 + Dpi(4);
 
     // Section: Bảng mã
     label(L"Bảng mã nguồn:", x, y + Dpi(4), Dpi(90));
@@ -279,18 +332,83 @@ void ClassicConvertToolDialog::DoConvert() {
     // Save current settings first
     SaveConfig();
 
-    // TODO: Implement conversion pipeline (clipboard read → decode → transform → encode → clipboard write)
-    // For now, just inform user
-    MessageBoxW(hwnd_,
-        L"Chức năng chuyển đổi sẽ thực hiện:\n"
-        L"1. Đọc từ clipboard\n"
-        L"2. Chuyển mã nguồn → Unicode\n"
-        L"3. Áp dụng chuyển đổi chữ\n"
-        L"4. Chuyển Unicode → mã đích\n"
-        L"5. Ghi vào clipboard\n\n"
-        L"Bạn có thể dùng phím tắt đã cấu hình để chuyển nhanh.",
-        L"Chuyển đổi",
-        MB_ICONINFORMATION);
+    // 1. Read clipboard
+    if (!OpenClipboard(hwnd_)) {
+        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+    if (!hData) {
+        CloseClipboard();
+        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    auto* pText = static_cast<const wchar_t*>(GlobalLock(hData));
+    if (!pText) {
+        CloseClipboard();
+        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    std::wstring input(pText);
+    GlobalUnlock(hData);
+    CloseClipboard();
+
+    if (input.empty()) {
+        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    // 2. Decode: source encoding → Unicode
+    auto srcTable = static_cast<CodeTable>(config_.sourceEncoding);
+    auto dstTable = static_cast<CodeTable>(config_.destEncoding);
+    std::wstring unicode = CodeTableConverter::DecodeString(input, srcTable);
+
+    // 3. Apply text transformations (on Unicode)
+    if (config_.removeMark) {
+        unicode = CodeTableConverter::RemoveDiacritics(unicode);
+    }
+    if (config_.allCaps) {
+        unicode = CodeTableConverter::ToUpper(unicode);
+    } else if (config_.allLower) {
+        unicode = CodeTableConverter::ToLower(unicode);
+    } else if (config_.capsFirst) {
+        unicode = CodeTableConverter::CapitalizeFirstOfSentence(unicode);
+    } else if (config_.capsEach) {
+        unicode = CodeTableConverter::CapitalizeEachWord(unicode);
+    }
+
+    // 4. Encode: Unicode → dest encoding
+    std::wstring output = CodeTableConverter::EncodeString(unicode, dstTable);
+
+    // 5. Write to clipboard
+    if (!OpenClipboard(hwnd_)) {
+        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+        return;
+    }
+    EmptyClipboard();
+    size_t bytes = (output.size() + 1) * sizeof(wchar_t);
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!hMem) {
+        CloseClipboard();
+        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+        return;
+    }
+    auto* pDst = static_cast<wchar_t*>(GlobalLock(hMem));
+    if (!pDst) {
+        GlobalFree(hMem);
+        CloseClipboard();
+        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+        return;
+    }
+    memcpy(pDst, output.c_str(), bytes);
+    GlobalUnlock(hMem);
+    SetClipboardData(CF_UNICODETEXT, hMem);
+    CloseClipboard();
+
+    // 6. Alert on completion
+    if (config_.alertDone) {
+        MessageBoxW(hwnd_, S(StringId::CONVERT_SUCCESS), L"NexusKey", MB_OK | MB_ICONINFORMATION);
+    }
 }
 
 int ClassicConvertToolDialog::Dpi(int value) const noexcept {

@@ -25,10 +25,15 @@ function initModeSwitching() {
             container.classList.remove("mode-file");
         }
 
-        // Sync with hidden input for C++
+        // Sync with hidden inputs for C++
         if (modeInput) {
             modeInput.value = value;
             modeInput.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        var sourceTypeInput = document.getElementById("val-source-type");
+        if (sourceTypeInput) {
+            sourceTypeInput.value = value;
+            sourceTypeInput.dispatchEvent(new Event("change", { bubbles: true }));
         }
     }
 

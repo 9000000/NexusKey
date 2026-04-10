@@ -140,6 +140,9 @@ private:
     // Qt/Electron detection — skip U+202F to avoid first-word delay
     static bool IsQtElectronApp(HWND hwnd);
 
+    // Clear per-word engine state (shared by CommitComposition, ResetComposition, TryExpandMacro)
+    void ClearWordState();
+
     // Console detection — skip U+202F, split SendInput with adaptive delay
     static bool IsConsoleApp(HWND hwnd);
 
@@ -236,6 +239,7 @@ private:
     bool macroInEnglish_ = false;
     bool tempOffMacroByEsc_ = false;  // Config: Esc can temp-disable macro
     bool tempMacroOff_ = false;       // Runtime: macro disabled for current word
+    bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits (macro key has punctuation)
     std::unordered_map<std::wstring, std::wstring> macroTable_;
     std::wstring rawMacroBuffer_;
 

@@ -8,6 +8,7 @@
 #include "core/Strings.h"
 #include "sciter-x-dom.hpp"
 #include <windows.h>
+#include <commdlg.h>
 #include <vector>
 
 using namespace sciter::dom;
@@ -92,6 +93,10 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
 
             if (action == L"close") {
                 PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
+            } else if (action == L"select-source-file") {
+                browseFile(true);
+            } else if (action == L"select-dest-file") {
+                browseFile(false);
             }
 
             el.set_value(sciter::value(L""));
@@ -384,6 +389,50 @@ void ConvertToolDialog::doConvert() {
 // ═══════════════════════════════════════════════════════════
 // Config persistence
 // ═══════════════════════════════════════════════════════════
+
+void ConvertToolDialog::browseFile(bool isSource) {
+    WCHAR szFile[MAX_PATH] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = get_hwnd();
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"Text Files (*.txt)\0*.txt\0"
+                      L"Rich Text Format (*.rtf)\0*.rtf\0"
+                      L"All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+
+    BOOL result = FALSE;
+    if (isSource) {
+        ofn.lpstrTitle = L"Ch\x1ECDn file ngu\x1ED3n";
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        result = GetOpenFileNameW(&ofn);
+    } else {
+        ofn.lpstrTitle = L"Ch\x1ECDn file \x0111\x00EDch";
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
+        result = GetSaveFileNameW(&ofn);
+    }
+
+    if (!result) return;
+
+    std::wstring path(szFile);
+    sciter::dom::element root = get_root();
+
+    // Update hidden value for C++ doConvert()
+    const char* hiddenId = isSource ? "#val-source-file" : "#val-dest-file";
+    sciter::dom::element hidden = root.find_first(hiddenId);
+    if (hidden.is_valid()) {
+        hidden.set_value(sciter::value(path));
+    }
+
+    // Update visible path display
+    const char* displayId = isSource ? "#source-file-path" : "#dest-file-path";
+    sciter::dom::element display = root.find_first(displayId);
+    if (display.is_valid()) {
+        display.set_value(sciter::value(path));
+        display.set_attribute("title", path.c_str());
+    }
+}
 
 void ConvertToolDialog::saveConvertConfig() {
     (void)ConfigManager::SaveConvertConfig(ConfigManager::GetConfigPath(), config_);

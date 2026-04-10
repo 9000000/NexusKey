@@ -209,16 +209,7 @@
 
 /* (Removed: Arrow icon styles - now using toggle switch) */
 
-/* Header - single row with all elements */
-.header {
-    flow: horizontal;
-    vertical-align: middle;
-    border-spacing: 8px;
-    padding-bottom: 11px;
-    border-bottom: none;
-    height: 40px;
-    line-height: 40px;
-}
+/* (Removed: .header — replaced by .settings-card wrapper in HTML) */
 
 /* =============================================
    V/E Language Toggle - Labels Inside Pill
@@ -603,6 +594,11 @@
     line-height: 20px;
     box-sizing: border-box;
     vertical-align: middle;
+}
+
+#btn-check-update[disabled] {
+    opacity: 0.6;
+    cursor: default;
 }
 
 /* ============================================

@@ -26,12 +26,14 @@ private:
     void ReadToConfig();
     void SaveConfig();
     void DoConvert();
+    void BrowseFile(bool isSource);
+    void UpdateFileMode();
 
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     int Dpi(int value) const noexcept;
 
     static constexpr int kWidth = 400;
-    static constexpr int kHeight = 440;
+    static constexpr int kHeight = 510;
     static constexpr int kPadding = 12;
     static constexpr int kRowH = 24;
     static constexpr int kRowGap = 4;
@@ -65,6 +67,17 @@ private:
     HWND checkHkShift_ = nullptr;
     HWND checkHkWin_ = nullptr;
     HWND editHkKey_ = nullptr;
+
+    // Source mode (clipboard / file)
+    HWND radioClipboard_ = nullptr;
+    HWND radioFile_ = nullptr;
+    HWND labelSourceFile_ = nullptr;
+    HWND editSourcePath_ = nullptr;
+    HWND btnBrowseSource_ = nullptr;
+    HWND labelDestFile_ = nullptr;
+    HWND editDestPath_ = nullptr;
+    HWND btnBrowseDest_ = nullptr;
+    bool fileMode_ = false;
 
     // Buttons
     HWND btnConvert_ = nullptr;

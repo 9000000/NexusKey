@@ -102,8 +102,9 @@ private:
     void updateColorSwatches();         // Update btn-color-v/e background colors
 
     // Update helpers
-    void startUpdateCheck();            // Spawn background thread to check for updates
+    void startUpdateCheck();            // Check for updates with progress dialog
     void startUpdate(const UpdateInfo& info);  // Download + launch updater + exit
+    void setUpdateButtonEnabled(bool enabled);
 
     // Subclass procedure for window dragging and close
     static LRESULT CALLBACK SubclassProc(HWND hwnd, UINT msg, WPARAM wParam,

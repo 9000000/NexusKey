@@ -95,7 +95,7 @@ inline constexpr SettingMeta kSettings[] = {
               "Lưu chế độ gõ theo app",   "Smart input switch",         2206, 0, 1),
     NK_ACTION("btn-smart-switch",     "...", "",                      2501, 0, 1),
     NK_TYPING("exclude-apps",         excludeApps,
-              "Tắt tiếng việt theo app",  "Exclude apps",               2207, 0, 1),
+              "Loại trừ ứng dụng",        "Exclude apps",               2207, 0, 1),
     NK_ACTION("btn-exclude-apps",     "...", "",                      2502, 0, 1),
 
     // ── Tab 1: Gõ tắt (col 0) ──

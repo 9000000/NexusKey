@@ -268,6 +268,39 @@ void UpdateChecker::ShowCheckFailedMessage(HWND parent) {
                S(StringId::UPDATE_FAILED), TDCBF_OK_BUTTON, TD_WARNING_ICON, nullptr);
 }
 
+bool UpdateChecker::ShowProgressDialog(HWND parent, const wchar_t* message,
+                                       std::atomic<bool>& doneFlag) {
+    struct Ctx { std::atomic<bool>& done; };
+    Ctx ctx{doneFlag};
+
+    TASKDIALOGCONFIG tdc = {};
+    tdc.cbSize = sizeof(tdc);
+    tdc.hwndParent = parent;
+    tdc.dwFlags = TDF_SHOW_MARQUEE_PROGRESS_BAR | TDF_CALLBACK_TIMER;
+    tdc.pszWindowTitle = L"NexusKey";
+    tdc.pszMainInstruction = message;
+    tdc.dwCommonButtons = TDCBF_CANCEL_BUTTON;
+    tdc.lpCallbackData = reinterpret_cast<LONG_PTR>(&ctx);
+    tdc.pfCallback = [](HWND hwnd, UINT notification, WPARAM, LPARAM,
+                        LONG_PTR refData) -> HRESULT {
+        auto* c = reinterpret_cast<Ctx*>(refData);
+        if (notification == TDN_CREATED) {
+            SendMessageW(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, TRUE, 0);
+            SendMessageW(hwnd, TDM_SET_PROGRESS_BAR_MARQUEE, TRUE, 30);
+        }
+        if (notification == TDN_TIMER) {
+            if (c->done.load(std::memory_order_acquire)) {
+                PostMessageW(hwnd, TDM_CLICK_BUTTON, IDCANCEL, 0);
+            }
+        }
+        return S_OK;
+    };
+
+    int button = 0;
+    TaskDialogIndirect(&tdc, &button, nullptr, nullptr);
+    return doneFlag.load(std::memory_order_acquire);
+}
+
 bool UpdateChecker::DownloadAndLaunchInstaller(const std::wstring& downloadUrl) noexcept {
     try {
         wchar_t tempDir[MAX_PATH] = {};
@@ -294,7 +327,11 @@ bool UpdateChecker::DownloadAndLaunchInstaller(const std::wstring& downloadUrl) 
 
         STARTUPINFOW si = { sizeof(si) };
         PROCESS_INFORMATION pi = {};
-        if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        // CREATE_BREAKAWAY_FROM_JOB: installer must outlive the main process.
+        // Without this, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE kills the installer
+        // when the main process exits, preventing restart after update.
+        if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                            CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
             return false;
         }
         CloseHandle(pi.hThread);
@@ -341,11 +378,12 @@ bool UpdateChecker::DownloadAndReplaceExe(const std::wstring& downloadUrl) noexc
             return false;
         }
 
-        // 6. Relaunch
+        // 6. Relaunch (break away from job so new process survives parent exit)
         STARTUPINFOW si = { sizeof(si) };
         PROCESS_INFORMATION pi = {};
         std::wstring cmdLine = L"\"" + currentExe + L"\"";
-        if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                            CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
             return false;
         }
         CloseHandle(pi.hThread);

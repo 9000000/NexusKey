@@ -19,7 +19,7 @@ constexpr UINT WM_NEXUSKEY_OPEN_EXCLUDED = WM_USER + 102;  // Deferred: open exc
 constexpr UINT WM_NEXUSKEY_OPEN_MACRO = WM_USER + 103;    // Deferred: open macro table dialog
 constexpr UINT WM_NEXUSKEY_ICON_CHANGED = WM_USER + 104;  // Settings → Main: icon style/color changed, re-read config
 constexpr UINT WM_NEXUSKEY_CONFIG_CHANGED = WM_USER + 105;  // Main → Settings: config changed from tray menu, re-read TOML
-constexpr UINT WM_NEXUSKEY_UPDATE_RESULT = WM_USER + 106;    // Settings: update check result (wParam: 0=up-to-date, 1=available, 2=failed)
+constexpr UINT WM_NEXUSKEY_UPDATE_RESULT = WM_USER + 106;    // RESERVED (was: Settings update check result, now unused — synchronous flow)
 constexpr UINT WM_NEXUSKEY_UPDATE_AVAILABLE = WM_USER + 107; // Main: auto-check found update (lParam: UpdateInfo*)
 constexpr UINT WM_NEXUSKEY_TRAY_MODE_SYNC = WM_USER + 108;  // Deferred: sync tray icon V/E mode (wParam: 1=Vietnamese, 0=English)
 constexpr UINT WM_NEXUSKEY_OPEN_TSFAPPS = WM_USER + 109;    // Deferred: open TSF apps dialog

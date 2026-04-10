@@ -29,7 +29,9 @@ namespace NextKey {
 SciterSubDialog* SciterSubDialog::s_instance = nullptr;
 
 SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
-    : sciter::window(SW_MAIN, RECT{-10000, -10000, -10000 + config.baseWidth, -10000 + config.baseHeight})
+    : sciter::window(SW_MAIN, RECT{-10000, -10000,
+        -10000 + ScaleHelper::scale(config.baseWidth),
+        -10000 + ScaleHelper::scale(config.baseHeight)})
     , config_(config) {
 
     s_instance = this;

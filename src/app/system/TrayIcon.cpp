@@ -530,7 +530,7 @@ LRESULT CALLBACK TrayIcon::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     }
 
     if (g_trayInstance && g_trayInstance->ProcessMessage(hwnd, msg, wParam, lParam)) {
-        return 0;
+        return TRUE;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }

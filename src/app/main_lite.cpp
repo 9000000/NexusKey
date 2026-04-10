@@ -89,13 +89,14 @@ static void SpawnSettingsDialog() {
 
         // After dialog closes, reload config in case settings changed
         auto config = ConfigManager::LoadOrDefault();
-        auto hotkeyConfig = ConfigManager::LoadHotkeyConfigOrDefault();
-        g_hookEngine.SetConvertHotkey(hotkeyConfig);
 
-        // Reload convert config for QuickConvert
-        if (g_quickConvert) {
+        // Reload convert config for QuickConvert + hotkey
+        {
             auto cc = ConfigManager::LoadConvertConfigOrDefault();
-            g_quickConvert->UpdateConfig(cc);
+            g_hookEngine.SetConvertHotkey(cc.hotkey);
+            if (g_quickConvert) {
+                g_quickConvert->UpdateConfig(cc);
+            }
         }
 
         // Refresh floating icon config

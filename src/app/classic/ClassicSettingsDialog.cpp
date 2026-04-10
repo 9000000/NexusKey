@@ -21,6 +21,10 @@
 
 namespace NextKey::Classic {
 
+// Private WM for update button state changes from background thread
+// wParam: 0=restore, 1=checking, 2=downloading
+constexpr UINT WM_UPDATE_BTN_STATE = WM_APP;
+
 // ════════════════════════════════════════════════════════════════════
 // Lifecycle
 // ════════════════════════════════════════════════════════════════════
@@ -794,19 +798,24 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
 
         case IDC_BTN_CHECK_UPDATE: {
             HWND dlgHwnd = hwnd_;
+
+            // Show loading state on UI thread
+            PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 1, 0);
+
             std::thread([dlgHwnd]() {
                 auto info = UpdateChecker::CheckForUpdate();
+
                 if (info.available) {
+                    PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 0, 0);
                     std::wstring msg = L"Có phiên bản mới: v" + info.version + L"\n\n"
                         L"Cập nhật ngay?";
                     int res = MessageBoxW(dlgHwnd, msg.c_str(), L"Cập nhật", MB_YESNO | MB_ICONINFORMATION);
                     if (res == IDYES) {
-                        MessageBoxW(dlgHwnd, L"Đang tải về... Vui lòng đợi.",
-                            L"Cập nhật", MB_ICONINFORMATION);
+                        PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 2, 0);
                         if (UpdateChecker::DownloadAndReplaceExe(info.downloadUrl)) {
-                            // Relaunch succeeded — exit current process
                             PostQuitMessage(0);
                         } else {
+                            PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 0, 0);
                             MessageBoxW(dlgHwnd, L"Cập nhật thất bại. Vui lòng tải thủ công.",
                                 L"Lỗi", MB_ICONERROR);
                             if (!info.changelogUrl.empty()) {
@@ -815,9 +824,11 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
                         }
                     }
                 } else if (info.checkSucceeded) {
+                    PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 0, 0);
                     MessageBoxW(dlgHwnd, L"Bạn đang sử dụng bản mới nhất.",
                         L"Kiểm tra cập nhật", MB_ICONINFORMATION);
                 } else {
+                    PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 0, 0);
                     MessageBoxW(dlgHwnd, L"Không thể kết nối máy chủ. Vui lòng thử lại sau.",
                         L"Kiểm tra cập nhật", MB_ICONWARNING);
                 }
@@ -977,6 +988,22 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
         case WM_COMMAND:
             self->OnCommand(wParam, lParam);
             return 0;
+
+        case WM_UPDATE_BTN_STATE: {
+            HWND btn = GetDlgItem(hwnd, IDC_BTN_CHECK_UPDATE);
+            if (!btn) break;
+            if (wParam == 0) {
+                EnableWindow(btn, TRUE);
+                SetWindowTextW(btn, S(StringId::UPDATE_CHECK_NOW));
+            } else if (wParam == 1) {
+                EnableWindow(btn, FALSE);
+                SetWindowTextW(btn, S(StringId::UPDATE_CHECKING));
+            } else if (wParam == 2) {
+                EnableWindow(btn, FALSE);
+                SetWindowTextW(btn, S(StringId::UPDATE_DOWNLOADING));
+            }
+            return 0;
+        }
 
         case WM_NOTIFY: {
             auto* hdr = reinterpret_cast<NMHDR*>(lParam);

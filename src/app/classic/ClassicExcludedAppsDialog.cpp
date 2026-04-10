@@ -65,7 +65,7 @@ bool ClassicExcludedAppsDialog::Init(HINSTANCE hInstance, HWND parent) {
     RegisterClassExW(&wc);
 
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-    hwnd_ = CreateWindowExW(WS_EX_TOPMOST, kClassName, L"Tắt tiếng Việt theo ứng dụng",
+    hwnd_ = CreateWindowExW(WS_EX_TOPMOST, kClassName, L"Loại trừ ứng dụng",
         style, CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,
         parent, nullptr, hInstance, this);
     if (!hwnd_) return false;

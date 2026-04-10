@@ -15,6 +15,7 @@
     - [3.1 Never Block User](./3-error-handling.md#31-never-block-user)
     - [3.2 Fallback Chain](./3-error-handling.md#32-fallback-chain)
     - [3.3 HRESULT Handling](./3-error-handling.md#33-hresult-handling)
+    - [3.4 Async User Actions Must Have UI Feedback](./3-error-handling.md#34-async-user-actions-must-have-ui-feedback)
   - [4. Interface-Based Design](./4-interface-based-design.md)
     - [4.1 Engine Interface](./4-interface-based-design.md#41-engine-interface)
     - [4.2 Dependency Injection](./4-interface-based-design.md#42-dependency-injection)

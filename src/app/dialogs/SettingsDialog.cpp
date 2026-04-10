@@ -304,27 +304,6 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
-    // Handle update check result from background thread
-    if (msg == WM_NEXUSKEY_UPDATE_RESULT) {
-        if (s_instance) {
-            if (wParam == 1) {
-                // UpdateInfo passed via LPARAM from background thread — take ownership
-                std::unique_ptr<UpdateInfo> info(reinterpret_cast<UpdateInfo*>(lParam));
-                if (info && UpdateChecker::ShowUpdateDialog(hwnd, *info)) {
-                    s_instance->startUpdate(*info);
-                }
-            } else if (wParam == 0) {
-                UpdateChecker::ShowUpToDateMessage(hwnd);
-            } else {
-                UpdateChecker::ShowCheckFailedMessage(hwnd);
-            }
-        } else if (wParam == 1) {
-            // Dialog gone but info was allocated — clean up
-            delete reinterpret_cast<UpdateInfo*>(lParam);
-        }
-        return 0;
-    }
-
     // Handle config changed from tray menu — reload TOML and refresh UI
     if (msg == WM_NEXUSKEY_CONFIG_CHANGED) {
         if (s_instance) {
@@ -1286,55 +1265,92 @@ void SettingsDialog::updateColorSwatches() {
     setSwatchColor("#btn-color-e", colorE);
 }
 
+void SettingsDialog::setUpdateButtonEnabled(bool enabled) {
+    sciter::dom::element root = get_root();
+    sciter::dom::element btn = root.find_first("#btn-check-update");
+    if (btn.is_valid()) {
+        if (enabled) {
+            btn.set_attribute("disabled", nullptr);  // remove attribute
+        } else {
+            btn.set_attribute("disabled", L"");
+        }
+    }
+}
+
 void SettingsDialog::startUpdateCheck() {
     HWND hwnd = get_hwnd();
     if (!hwnd) return;
 
-    std::thread([hwnd]() {
-        auto info = UpdateChecker::CheckForUpdate();
-        WPARAM result;
-        if (info.available) {
-            result = 1;
-            // Pass UpdateInfo via LPARAM to avoid accessing s_instance from background thread
-            auto* heapInfo = new (std::nothrow) UpdateInfo(std::move(info));
-            if (heapInfo) {
-                if (!PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, reinterpret_cast<LPARAM>(heapInfo))) {
-                    delete heapInfo;  // Dialog closed before message posted
-                }
-            }
-        } else if (info.checkSucceeded) {
-            result = 0;  // up-to-date
-            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, 0);
-        } else {
-            result = 2;  // network/parse error
-            PostMessageW(hwnd, WM_NEXUSKEY_UPDATE_RESULT, result, 0);
-        }
+    setUpdateButtonEnabled(false);
+
+    // Shared state between background thread and progress dialog
+    struct State {
+        std::atomic<bool> done{false};
+        UpdateInfo info;
+    };
+    auto state = std::make_shared<State>();
+
+    std::thread([state]() {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        state->info = UpdateChecker::CheckForUpdate();
+        CoUninitialize();
+        state->done.store(true, std::memory_order_release);
     }).detach();
+
+    // Blocking progress dialog — closes when done or user cancels
+    bool completed = UpdateChecker::ShowProgressDialog(hwnd, S(StringId::UPDATE_CHECKING), state->done);
+
+    setUpdateButtonEnabled(true);
+
+    if (!completed) return;  // User cancelled
+
+    if (state->info.available) {
+        if (UpdateChecker::ShowUpdateDialog(hwnd, state->info)) {
+            startUpdate(state->info);
+        }
+    } else if (state->info.checkSucceeded) {
+        UpdateChecker::ShowUpToDateMessage(hwnd);
+    } else {
+        UpdateChecker::ShowCheckFailedMessage(hwnd);
+    }
 }
 
 void SettingsDialog::startUpdate(const UpdateInfo& info) {
     HWND hwnd = get_hwnd();
     if (!hwnd || info.downloadUrl.empty()) return;
 
-    // Download ZIP to %TEMP% on a background thread, then launch updater
+    struct State {
+        std::atomic<bool> done{false};
+        bool success = false;
+    };
+    auto state = std::make_shared<State>();
     std::wstring downloadUrl = info.downloadUrl;
 
-    std::thread([hwnd, downloadUrl]() {
-        ToastPopup::Show(S(StringId::UPDATE_DOWNLOADING), 1500);
-        if (!UpdateChecker::DownloadAndLaunchInstaller(downloadUrl)) {
-            ToastPopup::Show(S(StringId::UPDATE_INSTALL_FAILED), 3000);
-            return;
-        }
-
-        // Signal main process to exit
-        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
-        if (trayWnd) {
-            PostMessageW(trayWnd, WM_CLOSE, 0, 0);
-        }
-
-        // Close self
-        PostMessageW(hwnd, WM_CLOSE, 0, 0);
+    std::thread([state, downloadUrl]() {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        state->success = UpdateChecker::DownloadAndLaunchInstaller(downloadUrl);
+        CoUninitialize();
+        state->done.store(true, std::memory_order_release);
     }).detach();
+
+    // Blocking progress dialog — closes when done or user cancels
+    bool completed = UpdateChecker::ShowProgressDialog(hwnd, S(StringId::UPDATE_DOWNLOADING), state->done);
+
+    if (!completed || !state->success) {
+        if (completed && !state->success) {
+            // Download completed but failed — show error
+            TaskDialog(hwnd, nullptr, L"NexusKey", S(StringId::UPDATE_TITLE),
+                       S(StringId::UPDATE_DOWNLOAD_FAILED), TDCBF_OK_BUTTON, TD_WARNING_ICON, nullptr);
+        }
+        return;
+    }
+
+    // Success — signal main process to exit
+    HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+    if (trayWnd) {
+        PostMessageW(trayWnd, WM_CLOSE, 0, 0);
+    }
+    PostMessageW(hwnd, WM_CLOSE, 0, 0);
 }
 
 }  // namespace NextKey

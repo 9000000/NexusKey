@@ -19,6 +19,7 @@ var STRINGS = {
 
         // ── Settings dialog ──
         "s.pin": "Pin to top",
+        "s.input_method": "Input Method",
         "s.code_table": "Code Table",
         "s.switch_key": "Switch Key",
         "s.switch_key_title": "Switch key",
@@ -26,9 +27,9 @@ var STRINGS = {
         "s.beep_tooltip": "Play sound when switching language",
         "s.smart_switch": "Smart app exclusion",
         "s.smart_switch_tooltip": "Auto-remember input mode per app",
-        "s.enable_exclude": "Enable app exclusion",
+        "s.enable_exclude": "Exclude apps",
         "s.list": "List",
-        "s.exclude_tooltip": "Type only English for listed apps",
+        "s.exclude_tooltip": "Disable Vietnamese for listed apps",
         "s.enable_tsf": "Use TSF for apps",
         "s.tsf_tooltip": "Use TSF engine instead of hook for listed apps",
         "s.advanced": "Advanced settings",
