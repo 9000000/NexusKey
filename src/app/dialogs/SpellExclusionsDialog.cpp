@@ -4,8 +4,11 @@
 #include "SpellExclusionsDialog.h"
 #include "helpers/AppHelpers.h"
 #include "core/config/ConfigManager.h"
+#include "core/WinStrings.h"
 #include "sciter-x-dom.hpp"
+#include "DialogUtils.h"
 #include <algorithm>
+#include <fstream>
 
 using namespace sciter::dom;
 
@@ -65,6 +68,10 @@ bool SpellExclusionsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& par
                     if (!entryName.empty()) {
                         removeEntry(entryName);
                     }
+                } else if (action == L"import") {
+                    importExclusions();
+                } else if (action == L"export") {
+                    exportExclusions();
                 } else if (action == L"close") {
                     PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
                 }
@@ -88,12 +95,12 @@ void SpellExclusionsDialog::populateList() {
 
 void SpellExclusionsDialog::addEntry(const std::wstring& text) {
     // Trim
-    size_t s = 0, e = text.size();
-    while (s < e && text[s] == L' ') ++s;
-    while (e > s && text[e - 1] == L' ') --e;
-    if (e - s < 2) return;
+    size_t start = 0, end = text.size();
+    while (start < end && text[start] == L' ') ++start;
+    while (end > start && text[end - 1] == L' ') --end;
+    if (end - start < 2) return;
 
-    std::wstring entry = text.substr(s, e - s);
+    std::wstring entry = text.substr(start, end - start);
 
     // Dedup (case-insensitive)
     for (auto& existing : entries_) {
@@ -112,6 +119,70 @@ void SpellExclusionsDialog::removeEntry(const std::wstring& text) {
         entries_.erase(it);
         call_function("removeFromList", sciter::value(text.c_str()));
         persistAndSignal();
+    }
+}
+
+void SpellExclusionsDialog::importExclusions() {
+    std::wstring path = ShowOpenFileDialogW(
+        get_hwnd(),
+        L"Text file (*.txt)\0*.txt\0All (*.*)\0*.*\0",
+        L"txt"
+    );
+    if (path.empty()) return;
+
+    int msgboxID = MessageBoxW(
+        get_hwnd(),
+        L"B\u1EA1n c\u00F3 mu\u1ED1n gi\u1EEF l\u1EA1i danh s\u00E1ch hi\u1EC7n t\u1EA1i kh\u00F4ng?",
+        L"T\u1EEB kh\u00F3a lo\u1EA1i tr\u1EEB",
+        MB_ICONEXCLAMATION | MB_YESNO
+    );
+
+    bool append = (msgboxID == IDYES);
+
+    std::ifstream infile(path);
+    if (!infile.is_open()) return;
+
+    if (!append) {
+        entries_.clear();
+    }
+
+    std::string line;
+    while (std::getline(infile, line)) {
+        // Trim CR (Windows line endings)
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == ';') continue;
+
+        std::wstring wName = Utf8ToWide(line);
+        if (wName.empty()) continue;
+        if (std::find(entries_.begin(), entries_.end(), wName) == entries_.end()) {
+            entries_.push_back(wName);
+        }
+    }
+
+    std::sort(entries_.begin(), entries_.end());
+    populateList();
+    persistAndSignal();
+}
+
+void SpellExclusionsDialog::exportExclusions() {
+    std::wstring path = ShowSaveFileDialogW(
+        get_hwnd(),
+        L"Text file (*.txt)\0*.txt\0",
+        L"txt",
+        L"NexusKeySpellExclusions"
+    );
+    if (path.empty()) return;
+
+    std::ofstream outfile(path);
+    if (!outfile.is_open()) return;
+
+    outfile << ";NexusKey Spell Exclusions\n";
+
+    std::vector<std::wstring> sorted = entries_;
+    std::sort(sorted.begin(), sorted.end());
+    for (auto& entry : sorted) {
+        outfile << WideToUtf8(entry) << "\n";
     }
 }
 

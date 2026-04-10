@@ -243,10 +243,12 @@ void VniEngine::PushChar(wchar_t c) {
     if (IsModifierKey(c)) {
         bool blockMod = toneEscaped_ ||
             (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
-        // Allow d9→đ through English Protection when spell exclusions exist.
+        // Allow d9→đ through English Protection when the word matches a spell exclusion.
         if (blockMod && c == L'9') {
-            for (const auto& e : config_.spellExclusions) {
-                if (e.size() >= 2) { blockMod = false; break; }
+            if (WouldStrokeDMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [this](const CharState& s) { return ComposeChar(s); })) {
+                blockMod = false;
             }
         }
         if (blockMod) {
@@ -255,8 +257,6 @@ void VniEngine::PushChar(wchar_t c) {
             // PREVENT modifier application if sequence is already structurally invalid.
             // But allow modifier ESCAPE (77 undoes horn, 99 undoes stroke, 66/88 undoes
             // circumflex/breve) — same principle as tone escape bypass.
-            // Also allow d9→đ when spell exclusions exist — the modifier has its own
-            // guards and the exclusion check in UpdateSpellCheck handles the rest.
             Modifier escapeMod = Modifier::None;
             bool canExclude = false;
             switch (c) {
@@ -264,10 +264,9 @@ void VniEngine::PushChar(wchar_t c) {
                 case L'7': escapeMod = Modifier::Horn; break;
                 case L'8': escapeMod = Modifier::Breve; break;
                 case L'9': escapeMod = Modifier::Stroke;
-                           // Allow d9→đ when valid spell exclusions exist
-                           for (const auto& e : config_.spellExclusions) {
-                               if (e.size() >= 2) { canExclude = true; break; }
-                           }
+                           canExclude = WouldStrokeDMatchExclusion(states_.data(), states_.size(),
+                               config_.spellExclusions,
+                               [this](const CharState& s) { return ComposeChar(s); });
                            break;
             }
             if ((canExclude || (escapeMod != Modifier::None &&

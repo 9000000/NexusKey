@@ -20,6 +20,8 @@ private:
     void populateList();
     void addEntry(const std::wstring& text);
     void removeEntry(const std::wstring& text);
+    void importExclusions();
+    void exportExclusions();
     void persistAndSignal();
 
     std::vector<std::wstring> entries_;

@@ -15,6 +15,7 @@
 #include "core/Version.h"
 #include "system/StartupHelper.h"
 #include "system/UpdateChecker.h"
+#include "core/Strings.h"
 
 #include <thread>
 
@@ -467,7 +468,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         linkReportBug_ = CreateWindowExW(0, WC_LINK,
             L"<a href=\"https://github.com/phatMT97/NexusKey/issues\">Báo cáo lỗi</a>",
             WS_CHILD | WS_VISIBLE,
-            tcRc.right - Dpi(60), tcRc.bottom + Dpi(2), Dpi(60), Dpi(16),
+            tcRc.right - Dpi(80), tcRc.bottom + Dpi(2), Dpi(80), Dpi(16),
             hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINK_REPORT_BUG)),
             hInstance_, nullptr);
     }
@@ -746,6 +747,12 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                     SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)TRUE, 0);
                     RemovePropW(reinterpret_cast<HWND>(lParam), L"WasAnim");
                 }
+            }
+            return;
+
+        case IDC_BTN_SPELL_EXCLUSIONS:
+            if (code == BN_CLICKED) {
+                OnActionButton(id);
             }
             return;
 

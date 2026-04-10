@@ -267,12 +267,12 @@ void TelexEngine::PushChar(wchar_t c) {
     }
     bool blockModifiers = toneEscaped_ ||
         (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
-    // Allow dd→đ through English Protection when spell exclusions exist.
-    // The modifier has its own guards (FindStrokeDTarget + IsStrokeDBlockedByCoda)
-    // and the exclusion check at commit time determines whether to keep or restore.
+    // Allow dd→đ through English Protection when the word matches a spell exclusion.
     if (blockModifiers && lower == L'd') {
-        for (const auto& e : config_.spellExclusions) {
-            if (e.size() >= 2) { blockModifiers = false; break; }
+        if (WouldStrokeDMatchExclusion(states_.data(), states_.size(),
+                config_.spellExclusions,
+                [](const CharState& s) { return Compose(s); })) {
+            blockModifiers = false;
         }
     }
     if (blockModifiers) {
@@ -281,21 +281,16 @@ void TelexEngine::PushChar(wchar_t c) {
         // PREVENT modifier application if sequence is already structurally invalid.
         // But allow modifier ESCAPE (ww undoes horn, dd undoes stroke, aa/ee/oo undoes
         // circumflex) — same principle as tone escape bypass above (line 190).
-        // Also allow dd→đ when spell exclusions exist — the modifier has its own guards
-        // (FindStrokeDTarget + IsStrokeDBlockedByCoda) and the exclusion check in
-        // UpdateSpellCheck will determine if the result should bypass spell check.
         bool canEscape = false;
         if (lower == L'w') {
             canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Horn) ||
                         HasEscapableModifier(states_.data(), states_.size(), Modifier::Breve);
         } else if (lower == L'd') {
             canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Stroke, true);
-            // Allow dd→đ when valid spell exclusions exist — the modifier has its own
-            // guards and the exclusion check in UpdateSpellCheck handles the rest.
             if (!canEscape) {
-                for (const auto& e : config_.spellExclusions) {
-                    if (e.size() >= 2) { canEscape = true; break; }
-                }
+                canEscape = WouldStrokeDMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [](const CharState& s) { return Compose(s); });
             }
         } else if (IsVowelChar(c) && !states_.empty()) {
             const CharState& last = states_.back();

@@ -130,6 +130,8 @@ add_executable(NextKeyApp WIN32
     src/app/dialogs/WindowPickerDialog.cpp
     src/app/dialogs/AppOverridesDialog.h
     src/app/dialogs/AppOverridesDialog.cpp
+    src/app/dialogs/SpellExclusionsDialog.h
+    src/app/dialogs/SpellExclusionsDialog.cpp
     # system/
     src/app/system/TrayIcon.h
     src/app/system/TrayIcon.cpp
@@ -234,6 +236,8 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/classic/ClassicConvertToolDialog.cpp
         src/app/classic/ClassicIconColorDialog.h
         src/app/classic/ClassicIconColorDialog.cpp
+        src/app/classic/ClassicSpellExclusionsDialog.h
+        src/app/classic/ClassicSpellExclusionsDialog.cpp
         # version
         src/core/Version.h
     )

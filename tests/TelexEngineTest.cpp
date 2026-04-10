@@ -3432,10 +3432,19 @@ TEST_F(SpellExclusionTest, PLHDD_NoExclusion_Blocked) {
 }
 
 TEST_F(SpellExclusionTest, PLHDD_ExclHD_PrefixMismatch) {
-    // "hđ" in exclusion list — dd→đ applies (exclusions bypass English Protection),
-    // but "plhđ" doesn't START with "hđ" → auto-restore to "plhdd"
+    // "hđ" in exclusion list — "plhđ" doesn't prefix-match "hđ"
+    // → dd→đ blocked at typing time too (precise bypass)
     TypeString(*engine_, L"plhdd");
+    EXPECT_EQ(engine_->Peek(), L"plhdd");
     EXPECT_EQ(engine_->Commit(), L"plhdd");
+}
+
+TEST_F(SpellExclusionTest, Dropdown_ExclHD_NotBypassed) {
+    // "hđ" exclusion should NOT make "dropdown" apply dd→đ
+    // (FindStrokeDTarget finds 'd' at index 0, stroke → "đrop" doesn't match "hđ")
+    TypeString(*engine_, L"dropdown");
+    EXPECT_EQ(engine_->Peek(), L"dropdown");
+    EXPECT_EQ(engine_->Commit(), L"dropdown");
 }
 
 TEST_F(SpellExclusionTest, PLHDD_ExclPLHD_Works) {
@@ -3697,6 +3706,31 @@ TEST_F(EnglishProtectionTest, ToneDrift_Tilde_Repeated) {
 TEST_F(EnglishProtectionTest, ToneDrift_Dot_Repeated) {
     TypeString(*engine_, L"ajaaaa");
     EXPECT_EQ(engine_->Peek(), L"ạaaa");
+}
+
+TEST_F(EnglishProtectionTest, ToneDrift_RepeatedI_AfterOA) {
+    // "Hoaifiiiii" → "Hoàiiiiii" (tone stays on 'a', not sliding to 'i')
+    // Tone key 'f' doesn't add a char → 6 i's in output (1 original + 5 typed)
+    TypeString(*engine_, L"Hoaifiiiii");
+    EXPECT_EQ(engine_->Peek(), L"Hoàiiiiii");
+}
+
+TEST_F(EnglishProtectionTest, ToneDrift_RepeatedI_AfterAI) {
+    // "Vaixiiiii" → "Vãiiiiii" (tone stays on 'a')
+    TypeString(*engine_, L"Vaixiiiii");
+    EXPECT_EQ(engine_->Peek(), L"Vãiiiiii");
+}
+
+TEST_F(EnglishProtectionTest, ToneDrift_RepeatedU_Single) {
+    // "Tusuuuuu" → "Túuuuuu" (tone stays on first 'u')
+    TypeString(*engine_, L"Tusuuuuu");
+    EXPECT_EQ(engine_->Peek(), L"Túuuuuu");
+}
+
+TEST_F(EnglishProtectionTest, ToneDrift_RepeatedI_AfterOI) {
+    // "ddoifiiiii" → "đòiiiiii" (tone stays on 'o')
+    TypeString(*engine_, L"ddoifiiiii");
+    EXPECT_EQ(engine_->Peek(), L"đòiiiiii");
 }
 
 // ============================================================================

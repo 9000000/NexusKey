@@ -216,6 +216,40 @@ template<typename CharStateT>
     return codaLen >= 1;
 }
 
+/// Typing-time check: would applying dd→đ produce a word matching a spell exclusion?
+/// Simulates stroke on the d-target, builds composed buffer with 'd' replaced by 'đ',
+/// then does bidirectional prefix match (buffer may be shorter than exclusion while typing).
+template<typename CharStateT, typename ComposeFunc>
+[[nodiscard]] inline bool WouldStrokeDMatchExclusion(
+        const CharStateT* states, size_t count,
+        const std::vector<std::wstring>& exclusions,
+        ComposeFunc compose) {
+    if (exclusions.empty() || count == 0) return false;
+
+    size_t dIdx = FindStrokeDTarget(states, count);
+    if (dIdx == SIZE_MAX) return false;
+
+    wchar_t buf[16];
+    size_t bufLen = 0;
+    for (size_t i = 0; i < count && bufLen < 16; ++i) {
+        wchar_t ch = compose(states[i]);
+        if (ch == 0) continue;
+        buf[bufLen++] = (i == dIdx) ? L'\u0111' : towlower(ch);
+    }
+
+    for (const auto& pat : exclusions) {
+        if (pat.size() < 2) continue;
+        size_t cmpLen = std::min(bufLen, pat.size());
+        if (cmpLen == 0) continue;
+        bool match = true;
+        for (size_t i = 0; i < cmpLen; ++i) {
+            if (towlower(pat[i]) != buf[i]) { match = false; break; }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
 /// Returns true if the buffer ends with a stop-final consonant (c, ch, k, p, t)
 /// preceded by at least one vowel. Scans backward from end.
 /// Stop finals only accept Acute and Dot tones in Vietnamese phonology.

@@ -43,6 +43,21 @@ function initSpellExclusionsDialog() {
         }
         evt.stopPropagation();
     });
+
+    var btnImport = document.getElementById("btn-import");
+    var btnExport = document.getElementById("btn-export");
+
+    if (btnImport) {
+        btnImport.addEventListener("click", function () {
+            triggerAction("import");
+        });
+    }
+
+    if (btnExport) {
+        btnExport.addEventListener("click", function () {
+            triggerAction("export");
+        });
+    }
 }
 
 function onAdd() {
@@ -122,10 +137,6 @@ function clearList() {
 function forceRefresh() {
     var list = document.getElementById("entry-list");
     if (list) {
-        var origDisplay = list.style.display || "";
-        list.style.display = "none";
-        void list.offsetHeight;
-        list.style.display = origDisplay || "block";
         list.scrollTop = list.scrollHeight;
     }
 }

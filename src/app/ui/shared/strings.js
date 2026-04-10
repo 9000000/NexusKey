@@ -111,6 +111,7 @@ var STRINGS = {
         // ── Spell Exclusions dialog ──
         "se.info": "Abbreviation prefixes that bypass spell check. Prefix match, min 2 chars. E.g.: h\u0111 covers h\u0111, h\u0111t, h\u0111qt...",
         "se.exclusion_list": "Exclusion list",
+        "se.word": "Word",
 
         // ── Excluded Apps dialog ──
         "ea.app_ph": "e.g.: notepad.exe",

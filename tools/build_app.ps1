@@ -33,7 +33,7 @@ if (-not (Test-Path (Join-Path $buildDir "CMakeCache.txt"))) {
 }
 
 Write-Host "[2/3] Building NexusKey ($config)..." -ForegroundColor Yellow
-$buildOutput = cmake --build $buildDir --target NexusKey --config $config 2>&1
+$buildOutput = cmake --build $buildDir --target NextKeyApp --config $config 2>&1
 $buildCode = $LASTEXITCODE
 
 $buildOutput | Select-String -Pattern "error |warning C|fatal error|Build SUCCEEDED|Build FAILED" | ForEach-Object { Write-Host $_.Line }

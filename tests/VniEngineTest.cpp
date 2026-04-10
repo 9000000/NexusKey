@@ -582,6 +582,37 @@ TEST_F(VniEngineTest, ToneStable_RepeatedO_AfterO) {
     EXPECT_EQ(engine_->Peek(), L"óooo");
 }
 
+TEST_F(VniEngineTest, ToneStable_RepeatedI_AfterOA) {
+    // "Hoai2iiiii" → "Hoàiiiiii" (tone stays on 'a', not sliding to 'i')
+    // Tone key '2' doesn't add a char → 6 i's in output (1 original + 5 typed)
+    TypeString(*engine_, L"Hoai2iiiii");
+    EXPECT_EQ(engine_->Peek(), L"Hoàiiiiii");
+}
+
+TEST_F(VniEngineTest, ToneStable_RepeatedI_AfterUA) {
+    // "Quai1iiiii" → "Quáiiiiii" (tone stays on 'a')
+    TypeString(*engine_, L"Quai1iiiii");
+    EXPECT_EQ(engine_->Peek(), L"Quáiiiiii");
+}
+
+TEST_F(VniEngineTest, ToneStable_RepeatedU_Single) {
+    // "Tu1uuuuu" → "Túuuuuu" (tone stays on first 'u')
+    TypeString(*engine_, L"Tu1uuuuu");
+    EXPECT_EQ(engine_->Peek(), L"Túuuuuu");
+}
+
+TEST_F(VniEngineTest, ToneStable_RepeatedI_AfterOI) {
+    // "d9oi2iiiii" → "đòiiiiii" (tone stays on 'o')
+    TypeString(*engine_, L"d9oi2iiiii");
+    EXPECT_EQ(engine_->Peek(), L"đòiiiiii");
+}
+
+TEST_F(VniEngineTest, ToneStable_RepeatedI_AfterAI) {
+    // "Vai4iiiii" → "Vãiiiiii" (tone stays on 'a')
+    TypeString(*engine_, L"Vai4iiiii");
+    EXPECT_EQ(engine_->Peek(), L"Vãiiiiii");
+}
+
 TEST_F(VniEngineTest, ToneStable_CodaRelocStillWorks) {
     // "ho2an" → "hoàn" (coda 'n' changes rule-3 target — must still relocate)
     TypeString(*engine_, L"ho2an");

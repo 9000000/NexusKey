@@ -7,39 +7,18 @@
     line-height: 1.4;
 }
 
-/* List Header */
-.list-header {
-    display: flex;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border-medium);
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    white-space: nowrap;
-}
-
+/* Let dropdown.css handle the list structure max-width */
 .list-col-name {
-    flex: 1;
+    max-width: none;
 }
 
-.list-col-action {
-    width: 32px;
+.list-card {
+    margin-bottom: 0;
 }
 
 .app-list {
-    overflow-y: scroll;
     height: *;
+    overflow-y: scroll-indicator;
 }
 
-.app-item {
-    display: flex;
-    align-items: center;
-    padding: 10px 4px;
-    cursor: pointer;
-    transition: background 0.15s ease;
-}
 
-.setting-row .setting-input {
-    flex: 1;
-    margin-right: 8px;
-}

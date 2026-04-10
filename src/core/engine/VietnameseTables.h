@@ -107,9 +107,9 @@ constexpr uint8_t kDiphthongClassic[6][6] = {
     //          a  e  i  o  u  y
     /* a */ {   0, 0, 1, 1, 1, 1 },  // ai, ao, au, ay
     /* e */ {   0, 0, 1, 1, 1, 0 },  // ei, eo, eu
-    /* i */ {   1, 0, 1, 0, 1, 0 },  // ia, ii, iu
+    /* i */ {   1, 0, 0, 0, 1, 0 },  // ia, iu (ii=0: not a diphthong)
     /* o */ {   3, 3, 1, 0, 1, 0 },  // oa=CODA_AWARE, oe=CODA_AWARE, oi, ou
-    /* u */ {   1, 1, 1, 0, 1, 2 },  // ua, ue, ui, uu, uy=SECOND
+    /* u */ {   1, 1, 1, 0, 0, 2 },  // ua, ue, ui, uy=SECOND (uu=0: not a diphthong)
     /* y */ {   0, 0, 0, 0, 3, 0 },  // yu=CODA_AWARE: yủn(coda→u), khuỷu(no coda→y)
 };
 
@@ -118,9 +118,9 @@ constexpr uint8_t kDiphthongModern[6][6] = {
     //          a  e  i  o  u  y
     /* a */ {   0, 0, 1, 1, 1, 1 },  // (same as classic)
     /* e */ {   0, 0, 1, 1, 1, 0 },  // (same as classic)
-    /* i */ {   1, 0, 1, 0, 1, 0 },  // (same as classic)
+    /* i */ {   1, 0, 0, 0, 1, 0 },  // (same as classic; ii=0)
     /* o */ {   2, 2, 1, 0, 1, 0 },  // oa=SECOND, oe=SECOND (modern)
-    /* u */ {   1, 2, 1, 2, 1, 2 },  // ue=SECOND, uo=SECOND, uy=SECOND (modern)
+    /* u */ {   1, 2, 1, 2, 0, 2 },  // ue=SECOND, uo=SECOND, uy=SECOND (uu=0)
     /* y */ {   0, 0, 0, 0, 3, 0 },  // yu=CODA_AWARE: yủn(coda→u), khuỷu(no coda→y)
 };
 

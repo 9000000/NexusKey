@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="../shared/theme.css">
     <link rel="stylesheet" href="../shared/base.css">
     <link rel="stylesheet" href="../shared/subdialog.css">
+    <link rel="stylesheet" href="../shared/dropdown.css">
     <link rel="stylesheet" href="spellexclusions.css">
     <script src="../shared/strings.js"></script>
     <script src="../shared/i18n.js"></script>
@@ -38,8 +39,13 @@
             <!-- Input Card -->
             <div class="settings-card">
                 <div class="setting-row">
-                    <input type="text" class="setting-input" id="entry-name" placeholder="hđ"
-                        autocomplete="off">
+                    <span class="setting-label" data-i18n="se.word">Từ khóa</span>
+                    <div class="input-container">
+                        <input type="text" class="setting-input" id="entry-name" placeholder="vd: hđ"
+                            autocomplete="off">
+                    </div>
+                </div>
+                <div class="button-row">
                     <button class="btn-action btn-primary" id="btn-add" data-i18n="add">+ Thêm</button>
                 </div>
             </div>
@@ -53,6 +59,12 @@
                 <div class="app-list" id="entry-list">
                     <!-- Items inserted by C++ -->
                 </div>
+            </div>
+
+            <!-- Footer Buttons -->
+            <div class="button-row footer-row">
+                <button class="btn-action btn-secondary" id="btn-import" data-i18n="ea.import">Nạp từ file...</button>
+                <button class="btn-action btn-secondary" id="btn-export" data-i18n="ea.export">Xuất ra file...</button>
             </div>
         </div>
 
