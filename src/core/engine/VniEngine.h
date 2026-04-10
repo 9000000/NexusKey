@@ -62,10 +62,6 @@ public:
     [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
     [[nodiscard]] size_t Count() const override { return states_.size(); }
-    void ToggleTempSpellOff() override {
-        tempSpellOff_ = !tempSpellOff_;
-        if (tempSpellOff_) spellCheckDisabled_ = false;
-    }
     [[nodiscard]] bool HasActiveQuickConsonant() const override { return quickConsonantIdx_ != SIZE_MAX; }
 
 private:
@@ -91,7 +87,6 @@ private:
     std::wstring rawInput_;
     TypingConfig config_;
     bool spellCheckDisabled_ = false;
-    bool tempSpellOff_ = false;          // true when user toggled temp spell bypass via Ctrl
     bool quickConsonantOnly_ = false;    // true when buffer is only quick consonant expansion
     bool quickConsonantEscaped_ = false; // true after backspace undoes quick consonant
     size_t quickConsonantIdx_ = SIZE_MAX; // states_ index of quick consonant result char

@@ -5,6 +5,7 @@
 
 #ifdef _WIN32
 #include "ClassicTheme.h"
+#include "ClassicDialogUtils.h"
 #include <Windows.h>
 #include <cstdint>
 
@@ -35,7 +36,7 @@ private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     int Dpi(int value) const noexcept;
 
-    static constexpr int kWidth = 260;
+    static constexpr int kWidth = 180;
     static constexpr int kHeight = 110;
     static constexpr int kPadding = 12;
     static constexpr int kSwatchSize = 28;
@@ -47,12 +48,10 @@ private:
 
     HWND btnSwatchV_ = nullptr;
     HWND btnSwatchE_ = nullptr;
-    HWND btnSave_ = nullptr;
-    HWND btnClose_ = nullptr;
 
     COLORREF colorV_ = RGB(233, 30, 99);
     COLORREF colorE_ = RGB(33, 150, 243);
-    bool accepted_ = false;
+    bool colorPicked_ = false;  // True if at least one ChooseColor was accepted
 
     static COLORREF customColors_[16];
     static constexpr const wchar_t* kClassName = L"NexusKeyIconColor";

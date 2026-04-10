@@ -10,6 +10,7 @@
 #include "dialogs/ConvertToolDialog.h"
 #include "dialogs/AboutDialog.h"
 #include "dialogs/AppOverridesDialog.h"
+#include "dialogs/SpellExclusionsDialog.h"
 #include "core/Debug.h"
 
 #include <Windows.h>
@@ -133,6 +134,19 @@ namespace NextKey {
     dialog.Show();
 
     NEXTKEY_LOG(L"App overrides subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunSpellExclusionsSubprocess() {
+    NEXTKEY_LOG(L"Running spell exclusions subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    SpellExclusionsDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"Spell exclusions subprocess exiting");
     ExitProcess(0);
 }
 

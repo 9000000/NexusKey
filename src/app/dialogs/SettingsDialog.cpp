@@ -354,6 +354,11 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
+    if (msg == WM_NEXUSKEY_OPEN_SPELLEXCL) {
+        SpawnSubprocess(L"NexusKey - Spell Exclusions", L"--spellexclusions");
+        return 0;
+    }
+
     // Real-time theme switch: Windows broadcasts this when user changes theme
     if (msg == WM_SETTINGCHANGE && lParam) {
         if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
@@ -639,9 +644,6 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
     }
-    else if (id == L"temp-off-spell") {
-        config_.tempOffSpellByCtrl = value;
-    }
     else if (id == L"temp-off-openkey") {
         config_.tempOffByAlt = value;
     }
@@ -777,11 +779,21 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_APPOVERRIDES, 0, 0);
         return;
     }
+    else if (id == L"btn-spell-exclusions") {
+        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_SPELLEXCL, 0, 0);
+        return;
+    }
     else if (id == L"btn-reset-settings") {
         // TODO: Reset all settings to defaults
     }
     else if (id == L"btn-check-update") {
         startUpdateCheck();
+        return;
+    }
+    else if (id == L"btn-report-issue") {
+        ShellExecuteW(nullptr, L"open",
+            L"https://github.com/phatMT97/NexusKey/issues",
+            nullptr, nullptr, SW_SHOW);
         return;
     }
     else if (id == L"btn-open-log-folder") {
@@ -947,7 +959,6 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"allow-zwjf", config_.allowZwjf);
     setToggleState(L"restore-key", config_.autoRestoreEnabled);
     setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
-    setToggleState(L"temp-off-spell", config_.tempOffSpellByCtrl);
     setToggleState(L"temp-off-openkey", config_.tempOffByAlt);
     setToggleState(L"use-macro", config_.macroEnabled);
     setToggleState(L"macro-english", config_.macroInEnglish);
@@ -956,6 +967,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"quick-end", config_.quickEndConsonant);
     setToggleState(L"temp-off-macro", config_.tempOffMacroByEsc);
     setToggleState(L"auto-caps-macro", config_.autoCapsMacro);
+
     setToggleState(L"key-ctrl", hotkeyConfig_.ctrl);
     setToggleState(L"key-alt", hotkeyConfig_.alt);
     setToggleState(L"key-win", hotkeyConfig_.win);

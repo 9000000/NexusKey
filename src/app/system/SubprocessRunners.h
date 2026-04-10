@@ -15,5 +15,6 @@ namespace NextKey {
 [[noreturn]] void RunConvertToolSubprocess();
 [[noreturn]] void RunAboutSubprocess();
 [[noreturn]] void RunAppOverridesSubprocess();
+[[noreturn]] void RunSpellExclusionsSubprocess();
 
 }  // namespace NextKey

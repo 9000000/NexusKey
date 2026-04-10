@@ -37,12 +37,7 @@ void ClassicTheme::Init(HWND hwnd) {
     // Enable dark mode at app level (affects native combobox, scrollbar, etc.)
     DarkModeHelper::ApplyDarkModeForApp();
 
-    UINT dpi = 96;
-    auto pfn = reinterpret_cast<UINT(WINAPI*)(HWND)>(
-        GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
-    if (pfn) dpi = pfn(hwnd);
-
-    CreateFonts(dpi);
+    CreateFonts(Classic::GetWindowDpi(hwnd));
     CreateBrushes();
     ApplyWindowAttributes(hwnd);
 }

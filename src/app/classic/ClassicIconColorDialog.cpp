@@ -12,8 +12,6 @@ COLORREF ClassicIconColorDialog::customColors_[16] = {};
 enum {
     IDC_SWATCH_V = 3401,
     IDC_SWATCH_E,
-    IDC_BTN_SAVE,
-    IDC_BTN_CLOSE_DLG,
 };
 
 // ════════════════════════════════════════════════════════════
@@ -33,7 +31,7 @@ IconColorResult ClassicIconColorDialog::Show(HINSTANCE hInstance, HWND parent,
         }
     }
 
-    return {dlg.colorV_, dlg.colorE_, dlg.accepted_};
+    return {dlg.colorV_, dlg.colorE_, dlg.colorPicked_};
 }
 
 bool ClassicIconColorDialog::Init(HINSTANCE hInstance, HWND parent,
@@ -60,9 +58,7 @@ bool ClassicIconColorDialog::Init(HINSTANCE hInstance, HWND parent,
         parent, nullptr, hInstance, this);
     if (!hwnd_) return false;
 
-    auto pfn = reinterpret_cast<UINT(WINAPI*)(HWND)>(
-        GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
-    dpi_ = pfn ? pfn(hwnd_) : 96;
+    dpi_ = Classic::GetWindowDpi(hwnd_);
 
     int w = Dpi(kWidth), h = Dpi(kHeight);
     RECT rc = {0, 0, w, h};
@@ -92,21 +88,18 @@ bool ClassicIconColorDialog::Init(HINSTANCE hInstance, HWND parent,
 void ClassicIconColorDialog::CreateControls() {
     int x = Dpi(kPadding);
     int cw = Dpi(kWidth - kPadding * 2);
-    int btnH = Dpi(28);
-    int btnW = Dpi(64);
 
     int lblW = Dpi(50);
     int sw = Dpi(28);
     int prevS = Dpi(32);
     int gapPrev = Dpi(16);
-    int gapBtn = Dpi(16);
-    int totalBlockW = lblW + sw + gapPrev + prevS + gapBtn + btnW;
+    int totalBlockW = lblW + sw + gapPrev + prevS;
     int startX = x + (cw - totalBlockW) / 2;
 
     int vRowCenter = Dpi(kPadding) + Dpi(20);
     int eRowCenter = vRowCenter + Dpi(44);
 
-    // V row
+    // V row: label + swatch + preview
     CreateWindowExW(0, L"STATIC", L"Màu V:",
         WS_CHILD | WS_VISIBLE | SS_LEFT,
         startX, vRowCenter - Dpi(8), lblW, Dpi(16), hwnd_, nullptr, hInstance_, nullptr);
@@ -116,12 +109,7 @@ void ClassicIconColorDialog::CreateControls() {
         startX + lblW, vRowCenter - sw / 2, sw, sw, hwnd_,
         reinterpret_cast<HMENU>(IDC_SWATCH_V), hInstance_, nullptr);
 
-    btnSave_ = CreateWindowExW(0, L"BUTTON", L"Lưu",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-        startX + lblW + sw + gapPrev + prevS + gapBtn, vRowCenter - btnH / 2, btnW, btnH, hwnd_,
-        reinterpret_cast<HMENU>(IDC_BTN_SAVE), hInstance_, nullptr);
-
-    // E row
+    // E row: label + swatch + preview
     CreateWindowExW(0, L"STATIC", L"Màu E:",
         WS_CHILD | WS_VISIBLE | SS_LEFT,
         startX, eRowCenter - Dpi(8), lblW, Dpi(16), hwnd_, nullptr, hInstance_, nullptr);
@@ -130,11 +118,6 @@ void ClassicIconColorDialog::CreateControls() {
         WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         startX + lblW, eRowCenter - sw / 2, sw, sw, hwnd_,
         reinterpret_cast<HMENU>(IDC_SWATCH_E), hInstance_, nullptr);
-
-    btnClose_ = CreateWindowExW(0, L"BUTTON", L"Đóng",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        startX + lblW + sw + gapPrev + prevS + gapBtn, eRowCenter - btnH / 2, btnW, btnH, hwnd_,
-        reinterpret_cast<HMENU>(IDC_BTN_CLOSE_DLG), hInstance_, nullptr);
 }
 
 void ClassicIconColorDialog::PickColor(bool isV) {
@@ -148,6 +131,7 @@ void ClassicIconColorDialog::PickColor(bool isV) {
     if (ChooseColorW(&cc)) {
         if (isV) colorV_ = cc.rgbResult;
         else colorE_ = cc.rgbResult;
+        colorPicked_ = true;
 
         // Redraw swatches + preview
         InvalidateRect(hwnd_, nullptr, TRUE);
@@ -156,14 +140,12 @@ void ClassicIconColorDialog::PickColor(bool isV) {
 
 void ClassicIconColorDialog::PaintPreview(HDC hdc) {
     int cw = Dpi(kWidth - kPadding * 2);
-    int btnW = Dpi(64);
     int lblW = Dpi(50);
     int sw = Dpi(28);
     int prevS = Dpi(32);
     int gapPrev = Dpi(16);
-    int gapBtn = Dpi(16);
-    int totalBlockW = lblW + sw + gapPrev + prevS + gapBtn + btnW;
-    
+    int totalBlockW = lblW + sw + gapPrev + prevS;
+
     int startX = Dpi(kPadding) + (cw - totalBlockW) / 2;
     int previewX = startX + lblW + sw + gapPrev;
 
@@ -197,7 +179,7 @@ void ClassicIconColorDialog::PaintPreview(HDC hdc) {
 }
 
 int ClassicIconColorDialog::Dpi(int value) const noexcept {
-    return MulDiv(value, static_cast<int>(dpi_), 96);
+    return Classic::DpiScale(value, dpi_);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -222,13 +204,6 @@ LRESULT CALLBACK ClassicIconColorDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPa
             switch (id) {
                 case IDC_SWATCH_V: self->PickColor(true);  return 0;
                 case IDC_SWATCH_E: self->PickColor(false); return 0;
-                case IDC_BTN_SAVE:
-                    self->accepted_ = true;
-                    DestroyWindow(hwnd);
-                    return 0;
-                case IDC_BTN_CLOSE_DLG:
-                    DestroyWindow(hwnd);
-                    return 0;
             }
             break;
         }

@@ -66,7 +66,6 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     excludeApps_ = config.excludeApps;
     tsfApps_ = config.tsfApps;
     autoCaps_ = config.autoCaps;
-    tempOffSpellByCtrl_ = config.tempOffSpellByCtrl;
     tempOffByAlt_ = config.tempOffByAlt;
     macroEnabled_ = config.macroEnabled;
     macroInEnglish_ = config.macroInEnglish;
@@ -1052,14 +1051,6 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             if (convertCallback_) {
                 convertCallback_();
             }
-        }
-
-        // Temp off spell check: solo Ctrl tap (press + release, no other key)
-        if (tempOffSpellByCtrl_ &&
-            (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL) &&
-            !otherKeyPressed_ && !modShiftDown_ && !modAltDown_ && !modWinDown_) {
-            engine_->ToggleTempSpellOff();
-            HOOK_LOG(L"  temp off spell check toggled");
         }
 
         // Double-Alt tap: temporarily disable Vietnamese for current word

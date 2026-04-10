@@ -4,6 +4,7 @@
 
 #include "ClassicSettingsDialog.h"
 #include "ClassicExcludedAppsDialog.h"
+#include "ClassicSpellExclusionsDialog.h"
 #include "ClassicAppOverridesDialog.h"
 #include "ClassicMacroTableDialog.h"
 #include "ClassicConvertToolDialog.h"
@@ -61,18 +62,7 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
         return false;
 
     // Get real DPI from the window's monitor
-    dpi_ = 96;
-    auto pfnGetDpiForWindow = reinterpret_cast<UINT(WINAPI*)(HWND)>(
-        GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
-    if (pfnGetDpiForWindow) {
-        dpi_ = pfnGetDpiForWindow(hwnd_);
-    } else {
-        HDC hdc = GetDC(hwnd_);
-        if (hdc) {
-            dpi_ = static_cast<UINT>(GetDeviceCaps(hdc, LOGPIXELSX));
-            ReleaseDC(hwnd_, hdc);
-        }
-    }
+    dpi_ = Classic::GetWindowDpi(hwnd_);
 
     // Resize to correct DPI-scaled full size and center
     int width  = Dpi(kAdvancedWidth);
@@ -97,6 +87,7 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
 
     CreateCompactControls();
     CreateAdvancedControls();
+    SetupTooltips();
     PopulateControls();
     SetFontOnAllChildren();
     theme_.ThemeAllChildren(hwnd_);
@@ -458,6 +449,29 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         }
     }
 
+    // Spell exclusions button (tab 0, right column, after last metadata row)
+    {
+        int col1X = contentLeft + 1 * (colWidth + Dpi(8));
+        int exclRow = rowCounts[0][1];
+        int exclY = contentTop + exclRow * Dpi(kControlHeight + kRowGap);
+        btnSpellExcl_ = CreateBtn(L"Loại trừ chính tả...", col1X, exclY,
+            colWidth, Dpi(kControlHeight), IDC_BTN_SPELL_EXCLUSIONS);
+        ShowWindow(btnSpellExcl_, SW_HIDE);
+    }
+
+    // "Báo cáo lỗi" link below tab control
+    {
+        RECT tcRc;
+        GetWindowRect(tabControl_, &tcRc);
+        MapWindowPoints(HWND_DESKTOP, hwnd_, reinterpret_cast<LPPOINT>(&tcRc), 2);
+        linkReportBug_ = CreateWindowExW(0, WC_LINK,
+            L"<a href=\"https://github.com/phatMT97/NexusKey/issues\">Báo cáo lỗi</a>",
+            WS_CHILD | WS_VISIBLE,
+            tcRc.right - Dpi(60), tcRc.bottom + Dpi(2), Dpi(60), Dpi(16),
+            hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINK_REPORT_BUG)),
+            hInstance_, nullptr);
+    }
+
     // Apply font to newly created controls
     SetFontOnAllChildren();
 
@@ -537,6 +551,7 @@ void ClassicSettingsDialog::PopulateControls() {
             SetWindowTextW(editHotkey_, L"");
         }
     }
+
 }
 
 void ClassicSettingsDialog::ReadControlValues() {
@@ -606,6 +621,7 @@ void ClassicSettingsDialog::ReadControlValues() {
             hotkeyConfig_.key = 0;
         }
     }
+
 }
 
 void ClassicSettingsDialog::SaveSettings() {
@@ -682,11 +698,13 @@ void ClassicSettingsDialog::ShowTabPage(int tabIndex) {
 
         int showCmd = (meta.tab == tabIndex) ? SW_SHOW : SW_HIDE;
         ShowWindow(ctrl, showCmd);
-        
+
         if (extraControls_[i]) {
             ShowWindow(extraControls_[i], showCmd);
         }
     }
+    // Show/hide spell exclusions button (tab 0)
+    if (btnSpellExcl_) ShowWindow(btnSpellExcl_, (tabIndex == 0) ? SW_SHOW : SW_HIDE);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -792,6 +810,12 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
             ClassicExcludedAppsDialog::Show(hInstance_, hwnd_);
             break;
 
+        case IDC_BTN_SPELL_EXCLUSIONS:
+            ClassicSpellExclusionsDialog::Show(hInstance_, hwnd_);
+            // Reload config to pick up changes made in the dialog
+            config_ = ConfigManager::LoadOrDefault();
+            break;
+
         case IDC_BTN_MACRO_TABLE:
             ClassicMacroTableDialog::Show(hInstance_, hwnd_);
             break;
@@ -886,6 +910,54 @@ void ClassicSettingsDialog::OnPickIconColors() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// Tooltips
+// ════════════════════════════════════════════════════════════════════
+
+void ClassicSettingsDialog::SetupTooltips() {
+    tooltip_ = CreateWindowExW(
+        WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        hwnd_, nullptr, hInstance_, nullptr);
+
+    if (!tooltip_) return;
+
+    SendMessageW(tooltip_, TTM_SETMAXTIPWIDTH, 0, Dpi(300));
+    SendMessageW(tooltip_, TTM_SETDELAYTIME, TTDT_INITIAL, 400);
+
+    for (size_t i = 0; i < kSettingsCount; ++i) {
+        const auto& meta = kSettings[i];
+        if (!meta.tooltip || meta.win32Id == 0) continue;
+
+        HWND ctrl = GetDlgItem(hwnd_, meta.win32Id);
+        if (!ctrl) continue;
+
+        TTTOOLINFOW ti{};
+        ti.cbSize   = sizeof(ti);
+        ti.uFlags   = TTF_IDISHWND | TTF_SUBCLASS;
+        ti.hwnd     = hwnd_;
+        ti.uId      = reinterpret_cast<UINT_PTR>(ctrl);
+        ti.lpszText = const_cast<wchar_t*>(meta.tooltip);
+
+        SendMessageW(tooltip_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
+    }
+
+    ThemeTooltip();
+}
+
+void ClassicSettingsDialog::ThemeTooltip() {
+    if (!tooltip_) return;
+
+    if (theme_.IsDark()) {
+        SendMessageW(tooltip_, TTM_SETTIPBKCOLOR, static_cast<WPARAM>(theme_.Colors().surface), 0);
+        SendMessageW(tooltip_, TTM_SETTIPTEXTCOLOR, static_cast<WPARAM>(theme_.Colors().text), 0);
+    } else {
+        SendMessageW(tooltip_, TTM_SETTIPBKCOLOR, static_cast<WPARAM>(GetSysColor(COLOR_INFOBK)), 0);
+        SendMessageW(tooltip_, TTM_SETTIPTEXTCOLOR, static_cast<WPARAM>(GetSysColor(COLOR_INFOTEXT)), 0);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════
 // Control creation helpers
 // ════════════════════════════════════════════════════════════════════
 
@@ -962,7 +1034,7 @@ BOOL CALLBACK ClassicSettingsDialog::SetFontProc(HWND hwnd, LPARAM lParam) {
 }
 
 int ClassicSettingsDialog::Dpi(int value) const noexcept {
-    return MulDiv(value, static_cast<int>(dpi_), 96);
+    return Classic::DpiScale(value, dpi_);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1009,6 +1081,11 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             auto* hdr = reinterpret_cast<NMHDR*>(lParam);
             if (hdr->idFrom == IDC_TAB_ADVANCED && hdr->code == TCN_SELCHANGE) {
                 self->OnTabChange();
+            }
+            if (hdr->idFrom == IDC_LINK_REPORT_BUG && (hdr->code == NM_CLICK || hdr->code == NM_RETURN)) {
+                ShellExecuteW(nullptr, L"open",
+                    L"https://github.com/phatMT97/NexusKey/issues",
+                    nullptr, nullptr, SW_SHOW);
             }
             return 0;
         }
@@ -1106,6 +1183,7 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             if (self->theme_.OnSettingChange(lParam)) {
                 self->theme_.ApplyWindowAttributes(hwnd);
                 self->theme_.ThemeAllChildren(hwnd);
+                self->ThemeTooltip();
                 InvalidateRect(hwnd, nullptr, TRUE);
             }
             return 0;

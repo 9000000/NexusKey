@@ -42,12 +42,13 @@ var STRINGS = {
         "s.modern_ortho": "Place diacritics: o\u00E0, u\u00FD (not \u00F2a, \u00FAy)",
         "s.auto_caps": "Auto-capitalize first letter",
         "s.allow_zwjf": "Allow \"z w j f\" as initial consonants",
+        "s.allow_zwjf_tooltip": "Allowed by default. Only needed when spell check is on",
         "s.spell_check": "Spell check",
         "s.restore_key": "Auto-restore keys on wrong word",
         "s.allow_english_bypass": "Allow English bypass (e.g. yes \u2192 \u00FDe)",
         "s.allow_english_bypass_tooltip": "Allow applying Vietnamese tone marks on English words or exceptions",
-        "s.temp_off_spell": "Disable spell check with Ctrl",
-        "s.temp_off_spell_tooltip": "Hold Ctrl while typing to skip spell check",
+        "s.spell_exclusions": "Spell exclusions",
+        "s.spell_exclusions_tooltip": "Abbreviation prefixes that bypass spell check (e.g. h\u0111, \u0111p). Prefix match, min 2 chars.",
         "s.app_encoding": "Per-app encoding",
         "s.config": "Configure",
         "s.temp_off_alt": "Disable NexusKey with Alt",
@@ -92,6 +93,8 @@ var STRINGS = {
         "s.auto_update": "Auto-check for updates",
         "s.check_now": "Check now",
         "s.update_tooltip": "Check for new version on startup",
+        "s.report_issue_label": "Are you having problems?",
+        "s.report_issue": "Report problem",
 
         // ── Macro dialog ──
         "m.title": "Macro Table",
@@ -104,6 +107,10 @@ var STRINGS = {
         "m.edit": "+ Edit",
         "m.hint_newline_pre": "Use",
         "m.hint_newline_post": "for a new line",
+
+        // ── Spell Exclusions dialog ──
+        "se.info": "Abbreviation prefixes that bypass spell check. Prefix match, min 2 chars. E.g.: h\u0111 covers h\u0111, h\u0111t, h\u0111qt...",
+        "se.exclusion_list": "Exclusion list",
 
         // ── Excluded Apps dialog ──
         "ea.app_ph": "e.g.: notepad.exe",

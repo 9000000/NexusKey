@@ -872,9 +872,10 @@ TEST(SpellCheckZwjfTest, StandardConsonants_StillWork) {
 // ============================================================================
 // allowZwjf=false — SimpleTelex, quickStartConsonant OFF
 // ============================================================================
-// With allowZwjf=false, 'w' as the initial char sets HardEnglish bias via
-// CheckZwjfInitialBias — tone and modifier gates then block composition.
-// This works independently of spell check (English Protection is always active).
+// With allowZwjf=false AND spellCheckEnabled=true, 'w' as the initial char
+// sets HardEnglish bias via CheckZwjfInitialBias — tone and modifier gates
+// then block composition.  When spellCheckEnabled=false, the ZWJF bias is
+// skipped entirely (z/w/j/f always allowed).
 
 class AllowZwjfFalseSimpleTelexTest : public ::testing::Test {
 protected:
@@ -901,12 +902,19 @@ TEST_F(AllowZwjfFalseSimpleTelexTest, EnglishWord_Work_NoTone) {
     EXPECT_EQ(engine_->Peek(), L"work");
 }
 
-TEST_F(AllowZwjfFalseSimpleTelexTest, EnglishWord_Work_NoTone_SpellCheckOff) {
-    // Same behavior even with spell check off — uses English Protection, not spell check
+TEST_F(AllowZwjfFalseSimpleTelexTest, SpellCheckOff_ZwjfBiasSkipped) {
+    // With spell check off, ZWJF bias is skipped — allowZwjf has no effect.
+    // 'w' is allowed as initial consonant, tones can apply normally.
     config_.spellCheckEnabled = false;
     auto engine = std::make_unique<Telex::TelexEngine>(config_);
-    TypeString(*engine, L"work");
-    EXPECT_EQ(engine->Peek(), L"work");
+    TypeString(*engine, L"zos");
+    EXPECT_EQ(engine->Peek(), L"zó");  // Tone applies — z allowed freely
+}
+
+TEST_F(AllowZwjfFalseSimpleTelexTest, SpellCheckOn_ZwjfBlocked) {
+    // With spell check on and allowZwjf=false, z initial → HardEnglish → tone blocked
+    TypeString(*engine_, L"zos");
+    EXPECT_EQ(engine_->Peek(), L"zos");  // Tone blocked
 }
 
 TEST_F(AllowZwjfFalseSimpleTelexTest, W_ModifierInWord_StillWorks) {

@@ -5,6 +5,7 @@
 #pragma once
 
 #include "ClassicTheme.h"
+#include "ClassicDialogUtils.h"
 #include "resource.h"
 #include "core/config/TypingConfig.h"
 #include "core/config/SettingMetadata.h"
@@ -69,6 +70,8 @@ private:
     HWND CreateCheck(const wchar_t* text, int x, int y, int w, int h, UINT id);
     HWND CreateEdit(int x, int y, int w, int h, UINT id);
     HWND CreateBtn(const wchar_t* text, int x, int y, int w, int h, UINT id, bool isPrimary = false);
+    void SetupTooltips();
+    void ThemeTooltip();
     void SetFontOnAllChildren();
     static BOOL CALLBACK SetFontProc(HWND hwnd, LPARAM lParam);
     int Dpi(int value) const noexcept;
@@ -100,10 +103,12 @@ private:
     HWND btnClose_      = nullptr;
     HWND btnExit_       = nullptr;
     HWND editHotkey_    = nullptr;
+    HWND tooltip_       = nullptr;
     HFONT fontSmall_    = nullptr;
 
     // Advanced controls
     HWND tabControl_    = nullptr;
+    HWND linkReportBug_ = nullptr;
     bool advancedCreated_ = false;
     int currentTab_     = 0;
 
@@ -111,6 +116,9 @@ private:
     static constexpr size_t kMaxControls = 64;
     HWND checkControls_[kMaxControls] = {};
     HWND extraControls_[kMaxControls] = {};
+
+    // Spell exclusions button (tab 0)
+    HWND btnSpellExcl_ = nullptr;
 
     // Settings data
     TypingConfig config_{};

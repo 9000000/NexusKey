@@ -58,9 +58,7 @@ bool ClassicAppOverridesDialog::Init(HINSTANCE hInstance, HWND parent) {
         parent, nullptr, hInstance, this);
     if (!hwnd_) return false;
 
-    auto pfn = reinterpret_cast<UINT(WINAPI*)(HWND)>(
-        GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
-    dpi_ = pfn ? pfn(hwnd_) : 96;
+    dpi_ = Classic::GetWindowDpi(hwnd_);
 
     int w = Dpi(kWidth), h = Dpi(kHeight);
     RECT rc = {0, 0, w, h};
@@ -270,7 +268,7 @@ void ClassicAppOverridesDialog::SaveData() {
 }
 
 int ClassicAppOverridesDialog::Dpi(int value) const noexcept {
-    return MulDiv(value, static_cast<int>(dpi_), 96);
+    return Classic::DpiScale(value, dpi_);
 }
 
 // ════════════════════════════════════════════════════════════

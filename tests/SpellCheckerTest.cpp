@@ -1439,6 +1439,186 @@ TEST_F(SpellCheckerVCPairTest, Tien_Valid) {
     EXPECT_EQ(V({T(L't'), T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'n')}), Result::Valid);
 }
 
+// --- Diphthong iê: c, m, n, ng, p, t allowed; ch, nh invalid ---
+TEST_F(SpellCheckerVCPairTest, IÊ_Ch_Invalid) {
+    // iêch — invalid
+    EXPECT_EQ(V({T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, IÊ_Nh_Invalid) {
+    // iênh — invalid
+    EXPECT_EQ(V({T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, IÊ_C_Valid) {
+    // iêc (diệc)
+    EXPECT_EQ(V({T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'c')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, IÊ_M_Valid) {
+    // iêm (tiêm, điểm)
+    EXPECT_EQ(V({T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'm')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, IÊ_Ng_Valid) {
+    // iêng (tiếng, chiêng)
+    EXPECT_EQ(V({T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, IÊ_P_Valid) {
+    // iêp (tiếp, nghiệp)
+    EXPECT_EQ(V({T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L'p')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, IÊ_T_Valid) {
+    // iêt (tiết, việt)
+    EXPECT_EQ(V({T(L'i'), TM(L'e', Telex::Modifier::Circumflex), T(L't')}), Result::Valid);
+}
+
+// --- Diphthong yê: same as iê — c, m, n, ng, p, t allowed; ch, nh invalid ---
+TEST_F(SpellCheckerVCPairTest, YÊ_Ch_Invalid) {
+    EXPECT_EQ(V({T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, YÊ_Nh_Invalid) {
+    EXPECT_EQ(V({T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, YÊ_C_Valid) {
+    EXPECT_EQ(V({T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'c')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, YÊ_M_Valid) {
+    // yêm (yếm)
+    EXPECT_EQ(V({T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'm')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, YÊ_N_Valid) {
+    // yên (yến, quyên)
+    EXPECT_EQ(V({T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, YÊ_Ng_Valid) {
+    EXPECT_EQ(V({T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, YÊ_P_Valid) {
+    EXPECT_EQ(V({T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'p')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, YÊ_T_Valid) {
+    // yêt (yết)
+    EXPECT_EQ(V({T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L't')}), Result::Valid);
+}
+
+// --- Diphthong oe: m, n, ng, t allowed; ch, nh, p, c invalid ---
+TEST_F(SpellCheckerVCPairTest, OE_Ch_Invalid) {
+    EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OE_Nh_Invalid) {
+    EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OE_P_Invalid) {
+    EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'p')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OE_C_Invalid) {
+    EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'c')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OE_M_Valid) {
+    // oem (ngoém)
+    EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'm')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OE_N_Valid) {
+    // oen (ngoen)
+    EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OE_Ng_Valid) {
+    // oeng
+    EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OE_T_Valid) {
+    // oet (ngoét)
+    EXPECT_EQ(V({T(L'o'), T(L'e'), T(L't')}), Result::Valid);
+}
+
+// --- Diphthong oă: c, n, ng, t allowed; ch, nh, m, p invalid ---
+TEST_F(SpellCheckerVCPairTest, OĂ_Ch_Invalid) {
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Telex::Modifier::Breve), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OĂ_Nh_Invalid) {
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Telex::Modifier::Breve), T(L'n'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OĂ_M_Invalid) {
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Telex::Modifier::Breve), T(L'm')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OĂ_P_Invalid) {
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Telex::Modifier::Breve), T(L'p')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OĂ_C_Valid) {
+    // oăc (loắc, xoắc)
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Telex::Modifier::Breve), T(L'c')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OĂ_N_Valid) {
+    // oăn (hoăn)
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Telex::Modifier::Breve), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OĂ_Ng_Valid) {
+    // oăng (hoằng)
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Telex::Modifier::Breve), T(L'n'), T(L'g')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, OĂ_T_Valid) {
+    // oăt (loắt, choắt)
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Telex::Modifier::Breve), T(L't')}), Result::Valid);
+}
+
+// --- Triphthong uyê: n, t only ---
+TEST_F(SpellCheckerVCPairTest, UYÊ_Ch_Invalid) {
+    EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'c'), T(L'h')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UYÊ_M_Invalid) {
+    EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'm')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UYÊ_Ng_Invalid) {
+    EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'n'), T(L'g')}), Result::Invalid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UYÊ_N_Valid) {
+    // uyên (quyên, huyền)
+    EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L'n')}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, UYÊ_T_Valid) {
+    // uyêt (quyết, huyết)
+    EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Telex::Modifier::Circumflex), T(L't')}), Result::Valid);
+}
+
+// --- gh/ngh + ê (circumflex front vowel) ---
+TEST_F(SpellCheckerVCPairTest, Gh_Initial_Ghê_Valid) {
+    // ghê (ghế, ghẻ)
+    EXPECT_EQ(V({T(L'g'), T(L'h'), TM(L'e', Telex::Modifier::Circumflex)}), Result::Valid);
+}
+
+TEST_F(SpellCheckerVCPairTest, Ngh_Initial_Nghê_Valid) {
+    // nghê (nghề, nghệ)
+    EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), TM(L'e', Telex::Modifier::Circumflex)}), Result::Valid);
+}
+
 }  // namespace
 }  // namespace NextKey
 

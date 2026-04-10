@@ -5,6 +5,7 @@
 
 #ifdef _WIN32
 #include "ClassicTheme.h"
+#include "ClassicDialogUtils.h"
 #include "core/config/TypingConfig.h"
 #include <Windows.h>
 #include <commctrl.h>

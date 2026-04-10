@@ -35,9 +35,6 @@ public:
     /// Get number of characters in current composition
     [[nodiscard]] virtual size_t Count() const = 0;
 
-    /// Toggle temporary spell check bypass for current word
-    virtual void ToggleTempSpellOff() = 0;
-
     /// Check if a quick consonant expansion (e.g., nn->ng, cc->ch) is currently active
     [[nodiscard]] virtual bool HasActiveQuickConsonant() const = 0;
 };

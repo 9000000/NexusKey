@@ -217,6 +217,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     if (lpCmdLine && wcsstr(lpCmdLine, L"--appoverrides") != nullptr) {
         RunAppOverridesSubprocess();  // [[noreturn]]
     }
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--spellexclusions") != nullptr) {
+        RunSpellExclusionsSubprocess();  // [[noreturn]]
+    }
 
     // ═══════════════════════════════════════════════════════════
     // Main Process

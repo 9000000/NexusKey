@@ -177,7 +177,6 @@ private:
     bool tsfApps_ = false;
     bool autoCaps_ = false;
     bool autoCapsMacro_ = false;
-    bool tempOffSpellByCtrl_ = false;
     bool tempOffByAlt_ = false;
     bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word
     int altTapCount_ = 0;              // 0 or 1 (waiting for second tap)

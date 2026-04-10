@@ -92,7 +92,6 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.autoCaps = (*features)["auto_caps"].value_or(false);
             config.allowZwjf = (*features)["allow_zwjf"].value_or(true);
             config.autoRestoreEnabled = (*features)["auto_restore"].value_or(false);
-            config.tempOffSpellByCtrl = (*features)["temp_off_spell_ctrl"].value_or(false);
             config.tempOffByAlt = (*features)["temp_off_by_alt"].value_or(false);
             config.macroEnabled = (*features)["macro_enabled"].value_or(false);
             config.macroInEnglish = (*features)["macro_in_english"].value_or(false);
@@ -102,8 +101,19 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.tempOffMacroByEsc = (*features)["temp_off_macro_esc"].value_or(false);
             config.autoCapsMacro = (*features)["auto_caps_macro"].value_or(false);
             config.allowEnglishBypass = (*features)["allow_english_bypass"].value_or(false);
+            // Spell exclusion prefixes (e.g. ["hđ", "đp"])
+            if (auto arr = (*features)["spell_exclusions"].as_array()) {
+                for (auto& item : *arr) {
+                    if (auto str = item.value<std::string>()) {
+                        auto wide = Utf8ToWide(*str);
+                        if (wide.size() >= 2) {
+                            config.spellExclusions.push_back(std::move(wide));
+                        }
+                    }
+                }
+            }
         }
-        
+
         return config;
     } catch (const toml::parse_error&) {
         // Fall through to return nullopt
@@ -138,7 +148,6 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("auto_caps", config.autoCaps);
         features.insert_or_assign("allow_zwjf", config.allowZwjf);
         features.insert_or_assign("auto_restore", config.autoRestoreEnabled);
-        features.insert_or_assign("temp_off_spell_ctrl", config.tempOffSpellByCtrl);
         features.insert_or_assign("temp_off_by_alt", config.tempOffByAlt);
         features.insert_or_assign("macro_enabled", config.macroEnabled);
         features.insert_or_assign("macro_in_english", config.macroInEnglish);
@@ -148,6 +157,14 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("temp_off_macro_esc", config.tempOffMacroByEsc);
         features.insert_or_assign("auto_caps_macro", config.autoCapsMacro);
         features.insert_or_assign("allow_english_bypass", config.allowEnglishBypass);
+        // Spell exclusion prefixes
+        toml::array exclArr;
+        for (const auto& excl : config.spellExclusions) {
+            if (excl.size() >= 2) {
+                exclArr.push_back(WideToUtf8(excl));
+            }
+        }
+        features.insert_or_assign("spell_exclusions", std::move(exclArr));
         tbl.insert_or_assign("features", std::move(features));
 
         return WriteToml(utf8Path, tbl);

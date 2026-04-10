@@ -19,7 +19,7 @@ ConvertToolDialog::ConvertToolDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/convert-tool/convert-tool.html",
         L"NexusKey - Convert Tool",
-        420, 560, parent, true, 36, 40, true
+        420, 568, parent, true, 36, 40, true
     }) {
     // Load saved config (UI will be populated in DOCUMENT_COMPLETE)
     config_ = ConfigManager::LoadConvertConfigOrDefault();
@@ -100,6 +100,34 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
             }
 
             el.set_value(sciter::value(L""));
+            return true;
+        }
+
+        // Mode switch (clipboard ↔ file) — adjust window height by file section delta
+        if (id == L"val-ui-mode") {
+            sciter::dom::element rootEl = get_root();
+            sciter::dom::element fileArea = rootEl.find_first("#file-selection-area");
+            if (fileArea.is_valid()) {
+                rootEl.update(true);  // commit CSS class change
+
+                RECT fr = fileArea.get_location(BORDER_BOX);
+                int sectionH = fr.bottom - fr.top;
+
+                sciter::value val = el.get_value();
+                bool isFile = val.is_string() && val.get<std::wstring>() == L"file";
+
+                RECT wr;
+                GetWindowRect(get_hwnd(), &wr);
+                int newH = (wr.bottom - wr.top) + (isFile ? sectionH : -sectionH);
+                SetWindowPos(get_hwnd(), nullptr, 0, 0, wr.right - wr.left, newH,
+                             SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
+
+                // Force repaint transparent window
+                rootEl.set_attribute("force-paint", L"1");
+                rootEl.update(false);
+                rootEl.remove_attribute("force-paint");
+                rootEl.update(false);
+            }
             return true;
         }
 
@@ -471,7 +499,7 @@ void ConvertToolDialog::setDropdownUI(const char* id, int value) {
     sciter::dom::element root = get_root();
     sciter::dom::element dropdown = root.find_first(id);
     if (dropdown.is_valid()) {
-        dropdown.set_value(sciter::value(std::to_wstring(value)));
+        dropdown.set_value(sciter::value(value));
     }
 }
 

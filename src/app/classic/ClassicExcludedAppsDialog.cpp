@@ -71,9 +71,7 @@ bool ClassicExcludedAppsDialog::Init(HINSTANCE hInstance, HWND parent) {
     if (!hwnd_) return false;
 
     // DPI
-    auto pfn = reinterpret_cast<UINT(WINAPI*)(HWND)>(
-        GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
-    dpi_ = pfn ? pfn(hwnd_) : 96;
+    dpi_ = Classic::GetWindowDpi(hwnd_);
 
     // Resize + center
     int w = Dpi(kWidth), h = Dpi(kHeight);
@@ -318,7 +316,7 @@ void ClassicExcludedAppsDialog::SaveData() {
 // ════════════════════════════════════════════════════════════
 
 int ClassicExcludedAppsDialog::Dpi(int value) const noexcept {
-    return MulDiv(value, static_cast<int>(dpi_), 96);
+    return Classic::DpiScale(value, dpi_);
 }
 
 // ════════════════════════════════════════════════════════════

@@ -75,9 +75,7 @@ bool ClassicConvertToolDialog::Init(HINSTANCE hInstance, HWND parent) {
         parent, nullptr, hInstance, this);
     if (!hwnd_) return false;
 
-    auto pfn = reinterpret_cast<UINT(WINAPI*)(HWND)>(
-        GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
-    dpi_ = pfn ? pfn(hwnd_) : 96;
+    dpi_ = Classic::GetWindowDpi(hwnd_);
 
     int w = Dpi(kWidth), h = Dpi(kHeight);
     RECT rc = {0, 0, w, h};
@@ -92,6 +90,7 @@ bool ClassicConvertToolDialog::Init(HINSTANCE hInstance, HWND parent) {
     config_ = ConfigManager::LoadConvertConfigOrDefault();
     CreateControls();
     PopulateFromConfig();
+    UpdateFileMode();  // Hide file controls initially (clipboard mode)
 
     EnumChildWindows(hwnd_, [](HWND h, LPARAM lp) -> BOOL {
         auto* self = reinterpret_cast<ClassicConvertToolDialog*>(lp);
@@ -329,90 +328,187 @@ void ClassicConvertToolDialog::SaveConfig() {
 }
 
 void ClassicConvertToolDialog::DoConvert() {
-    // Save current settings first
     SaveConfig();
 
-    // 1. Read clipboard
-    if (!OpenClipboard(hwnd_)) {
-        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
-        return;
-    }
-    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
-    if (!hData) {
-        CloseClipboard();
-        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
-        return;
-    }
-    auto* pText = static_cast<const wchar_t*>(GlobalLock(hData));
-    if (!pText) {
-        CloseClipboard();
-        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
-        return;
-    }
-    std::wstring input(pText);
-    GlobalUnlock(hData);
-    CloseClipboard();
-
-    if (input.empty()) {
-        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
-        return;
-    }
-
-    // 2. Decode: source encoding → Unicode
     auto srcTable = static_cast<CodeTable>(config_.sourceEncoding);
     auto dstTable = static_cast<CodeTable>(config_.destEncoding);
+    std::wstring input;
+
+    if (fileMode_) {
+        // ── File mode: read source file ──
+        wchar_t srcPath[MAX_PATH] = {};
+        GetWindowTextW(editSourcePath_, srcPath, MAX_PATH);
+        if (srcPath[0] == 0) {
+            MessageBoxW(hwnd_, S(StringId::CONVERT_NO_SOURCE_FILE), L"NexusKey", MB_OK | MB_ICONWARNING);
+            return;
+        }
+        // Use ConvertToolDialog's static readFileContent (same logic)
+        HANDLE hFile = CreateFileW(srcPath, GENERIC_READ, FILE_SHARE_READ,
+                                   nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            MessageBoxW(hwnd_, S(StringId::CONVERT_READ_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+            return;
+        }
+        DWORD fileSize = GetFileSize(hFile, nullptr);
+        if (fileSize == INVALID_FILE_SIZE || fileSize == 0) {
+            CloseHandle(hFile);
+            MessageBoxW(hwnd_, S(StringId::CONVERT_READ_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+            return;
+        }
+        std::vector<BYTE> buffer(fileSize);
+        DWORD bytesRead = 0;
+        if (!ReadFile(hFile, buffer.data(), fileSize, &bytesRead, nullptr)) {
+            CloseHandle(hFile);
+            MessageBoxW(hwnd_, S(StringId::CONVERT_READ_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+            return;
+        }
+        CloseHandle(hFile);
+
+        if (srcTable == CodeTable::Unicode) {
+            int wideLen = MultiByteToWideChar(CP_UTF8, 0,
+                reinterpret_cast<const char*>(buffer.data()), static_cast<int>(bytesRead), nullptr, 0);
+            if (wideLen > 0) {
+                input.resize(wideLen);
+                MultiByteToWideChar(CP_UTF8, 0,
+                    reinterpret_cast<const char*>(buffer.data()), static_cast<int>(bytesRead),
+                    input.data(), wideLen);
+            }
+        } else {
+            input.reserve(bytesRead);
+            for (DWORD i = 0; i < bytesRead; ++i)
+                input += static_cast<wchar_t>(buffer[i]);
+        }
+    } else {
+        // ── Clipboard mode ──
+        if (!OpenClipboard(hwnd_)) {
+            MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
+            return;
+        }
+        HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+        if (!hData) { CloseClipboard(); MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING); return; }
+        auto* pText = static_cast<const wchar_t*>(GlobalLock(hData));
+        if (!pText) { CloseClipboard(); MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING); return; }
+        input = pText;
+        GlobalUnlock(hData);
+        CloseClipboard();
+    }
+
+    if (input.empty()) {
+        MessageBoxW(hwnd_,
+            S(fileMode_ ? StringId::CONVERT_READ_ERROR : StringId::CONVERT_CLIPBOARD_EMPTY),
+            L"NexusKey", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    // Decode → transform → encode
     std::wstring unicode = CodeTableConverter::DecodeString(input, srcTable);
-
-    // 3. Apply text transformations (on Unicode)
-    if (config_.removeMark) {
-        unicode = CodeTableConverter::RemoveDiacritics(unicode);
-    }
-    if (config_.allCaps) {
-        unicode = CodeTableConverter::ToUpper(unicode);
-    } else if (config_.allLower) {
-        unicode = CodeTableConverter::ToLower(unicode);
-    } else if (config_.capsFirst) {
-        unicode = CodeTableConverter::CapitalizeFirstOfSentence(unicode);
-    } else if (config_.capsEach) {
-        unicode = CodeTableConverter::CapitalizeEachWord(unicode);
-    }
-
-    // 4. Encode: Unicode → dest encoding
+    if (config_.removeMark) unicode = CodeTableConverter::RemoveDiacritics(unicode);
+    if (config_.allCaps) unicode = CodeTableConverter::ToUpper(unicode);
+    else if (config_.allLower) unicode = CodeTableConverter::ToLower(unicode);
+    else if (config_.capsFirst) unicode = CodeTableConverter::CapitalizeFirstOfSentence(unicode);
+    else if (config_.capsEach) unicode = CodeTableConverter::CapitalizeEachWord(unicode);
     std::wstring output = CodeTableConverter::EncodeString(unicode, dstTable);
 
-    // 5. Write to clipboard
-    if (!OpenClipboard(hwnd_)) {
-        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
-        return;
-    }
-    EmptyClipboard();
-    size_t bytes = (output.size() + 1) * sizeof(wchar_t);
-    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
-    if (!hMem) {
+    if (fileMode_) {
+        // ── Write to dest file ──
+        wchar_t dstPath[MAX_PATH] = {};
+        GetWindowTextW(editDestPath_, dstPath, MAX_PATH);
+        if (dstPath[0] == 0) {
+            MessageBoxW(hwnd_, S(StringId::CONVERT_NO_DEST_FILE), L"NexusKey", MB_OK | MB_ICONWARNING);
+            return;
+        }
+        HANDLE hFile = CreateFileW(dstPath, GENERIC_WRITE, 0,
+                                   nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            MessageBoxW(hwnd_, S(StringId::CONVERT_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+            return;
+        }
+        DWORD bytesWritten = 0;
+        bool ok = false;
+        if (dstTable == CodeTable::Unicode) {
+            int utf8Len = WideCharToMultiByte(CP_UTF8, 0, output.c_str(), static_cast<int>(output.size()),
+                                              nullptr, 0, nullptr, nullptr);
+            if (utf8Len > 0) {
+                std::vector<char> utf8(utf8Len);
+                WideCharToMultiByte(CP_UTF8, 0, output.c_str(), static_cast<int>(output.size()),
+                                    utf8.data(), utf8Len, nullptr, nullptr);
+                ok = WriteFile(hFile, utf8.data(), utf8Len, &bytesWritten, nullptr) != FALSE;
+            }
+        } else {
+            std::vector<BYTE> bytes;
+            bytes.reserve(output.size());
+            for (wchar_t ch : output) bytes.push_back(static_cast<BYTE>(ch & 0xFF));
+            ok = WriteFile(hFile, bytes.data(), static_cast<DWORD>(bytes.size()), &bytesWritten, nullptr) != FALSE;
+        }
+        CloseHandle(hFile);
+        if (!ok) {
+            MessageBoxW(hwnd_, S(StringId::CONVERT_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+            return;
+        }
+    } else {
+        // ── Write to clipboard ──
+        if (!OpenClipboard(hwnd_)) {
+            MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+            return;
+        }
+        EmptyClipboard();
+        size_t bytes = (output.size() + 1) * sizeof(wchar_t);
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+        if (!hMem) { CloseClipboard(); return; }
+        auto* pDst = static_cast<wchar_t*>(GlobalLock(hMem));
+        if (pDst) {
+            memcpy(pDst, output.c_str(), bytes);
+            GlobalUnlock(hMem);
+            SetClipboardData(CF_UNICODETEXT, hMem);
+        }
         CloseClipboard();
-        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
-        return;
     }
-    auto* pDst = static_cast<wchar_t*>(GlobalLock(hMem));
-    if (!pDst) {
-        GlobalFree(hMem);
-        CloseClipboard();
-        MessageBoxW(hwnd_, S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
-        return;
-    }
-    memcpy(pDst, output.c_str(), bytes);
-    GlobalUnlock(hMem);
-    SetClipboardData(CF_UNICODETEXT, hMem);
-    CloseClipboard();
 
-    // 6. Alert on completion
     if (config_.alertDone) {
         MessageBoxW(hwnd_, S(StringId::CONVERT_SUCCESS), L"NexusKey", MB_OK | MB_ICONINFORMATION);
     }
 }
 
+void ClassicConvertToolDialog::BrowseFile(bool isSource) {
+    WCHAR szFile[MAX_PATH] = {};
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd_;
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrFilter = L"Text Files (*.txt)\0*.txt\0"
+                      L"Rich Text Format (*.rtf)\0*.rtf\0"
+                      L"All Files (*.*)\0*.*\0";
+    ofn.nFilterIndex = 1;
+
+    BOOL result = FALSE;
+    if (isSource) {
+        ofn.lpstrTitle = L"Ch\x1ECDn file ngu\x1ED3n";
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        result = GetOpenFileNameW(&ofn);
+    } else {
+        ofn.lpstrTitle = L"Ch\x1ECDn file \x0111\x00EDch";
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_HIDEREADONLY;
+        result = GetSaveFileNameW(&ofn);
+    }
+    if (!result) return;
+
+    SetWindowTextW(isSource ? editSourcePath_ : editDestPath_, szFile);
+}
+
+void ClassicConvertToolDialog::UpdateFileMode() {
+    fileMode_ = (IsDlgButtonChecked(hwnd_, IDC_RADIO_FILE) == BST_CHECKED);
+    int show = fileMode_ ? SW_SHOW : SW_HIDE;
+    ShowWindow(labelSourceFile_, show);
+    ShowWindow(editSourcePath_, show);
+    ShowWindow(btnBrowseSource_, show);
+    ShowWindow(labelDestFile_, show);
+    ShowWindow(editDestPath_, show);
+    ShowWindow(btnBrowseDest_, show);
+}
+
 int ClassicConvertToolDialog::Dpi(int value) const noexcept {
-    return MulDiv(value, static_cast<int>(dpi_), 96);
+    return Classic::DpiScale(value, dpi_);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -437,8 +533,12 @@ LRESULT CALLBACK ClassicConvertToolDialog::WndProc(HWND hwnd, UINT msg, WPARAM w
             UINT code = HIWORD(wParam);
 
             switch (id) {
-                case IDC_BTN_CONVERT:   self->DoConvert();     return 0;
-                case IDC_BTN_CLOSE_DLG: DestroyWindow(hwnd);   return 0;
+                case IDC_BTN_CONVERT:        self->DoConvert();        return 0;
+                case IDC_BTN_CLOSE_DLG:      DestroyWindow(hwnd);     return 0;
+                case IDC_BTN_BROWSE_SOURCE:  self->BrowseFile(true);  return 0;
+                case IDC_BTN_BROWSE_DEST:    self->BrowseFile(false); return 0;
+                case IDC_RADIO_CLIPBOARD:
+                case IDC_RADIO_FILE:         self->UpdateFileMode();  return 0;
             }
 
             // Auto-save on any toggle/combo/edit change

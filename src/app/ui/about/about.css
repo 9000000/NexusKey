@@ -145,6 +145,17 @@ body {
     border-color: var(--text-light);
 }
 
+.btn-report {
+    background: transparent;
+    color: var(--color-danger);
+    box-shadow: inset 0 0 0 1px var(--color-danger);
+}
+
+.btn-report:hover {
+    background: var(--color-danger);
+    color: white;
+}
+
 /* Footer */
 .footer {
     text-align: center;

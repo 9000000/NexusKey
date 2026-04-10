@@ -263,18 +263,6 @@ TEST_F(SharedStateTest, FeatureFlags_SmartSwitch_Roundtrip) {
     EXPECT_TRUE(out.smartSwitch);
 }
 
-TEST_F(SharedStateTest, FeatureFlags_TempOffSpellByCtrl_Roundtrip) {
-    TypingConfig cfg{};
-    cfg.tempOffSpellByCtrl = true;
-    SharedState state{};
-    state.InitDefaults();
-    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
-
-    TypingConfig out{};
-    DecodeFeatureFlags(state.GetFeatureFlags(), out);
-    EXPECT_TRUE(out.tempOffSpellByCtrl);
-}
-
 TEST_F(SharedStateTest, FeatureFlags_TempOffByAlt_Roundtrip) {
     TypingConfig cfg{};
     cfg.tempOffByAlt = true;
@@ -294,7 +282,6 @@ TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
     cfg.macroEnabled       = true;
     cfg.macroInEnglish     = true;
     cfg.smartSwitch        = true;
-    cfg.tempOffSpellByCtrl = true;
     cfg.tempOffByAlt       = true;
 
     SharedState state{};
@@ -307,7 +294,6 @@ TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
     EXPECT_TRUE(out.macroEnabled);
     EXPECT_TRUE(out.macroInEnglish);
     EXPECT_TRUE(out.smartSwitch);
-    EXPECT_TRUE(out.tempOffSpellByCtrl);
     EXPECT_TRUE(out.tempOffByAlt);
 }
 

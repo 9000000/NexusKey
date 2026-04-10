@@ -18,6 +18,30 @@
 namespace NextKey::Classic {
 
 // ═══════════════════════════════════════════════════════════
+// DPI helpers — per-window DPI scaling for Classic dialogs
+// ═══════════════════════════════════════════════════════════
+
+/// Get per-window DPI (Win10 1607+), falls back to system DPI.
+[[nodiscard]] inline UINT GetWindowDpi(HWND hwnd) noexcept {
+    auto pfn = reinterpret_cast<UINT(WINAPI*)(HWND)>(
+        GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow"));
+    if (pfn && hwnd) {
+        UINT dpi = pfn(hwnd);
+        if (dpi > 0) return dpi;
+    }
+    HDC hdc = GetDC(nullptr);
+    if (!hdc) return 96;
+    UINT dpi = static_cast<UINT>(GetDeviceCaps(hdc, LOGPIXELSX));
+    ReleaseDC(nullptr, hdc);
+    return dpi ? dpi : 96;
+}
+
+/// Scale a value by DPI (96 = 100%).
+[[nodiscard]] inline int DpiScale(int value, UINT dpi) noexcept {
+    return MulDiv(value, static_cast<int>(dpi), 96);
+}
+
+// ═══════════════════════════════════════════════════════════
 // String helpers
 // ═══════════════════════════════════════════════════════════
 

@@ -25,6 +25,7 @@ constexpr UINT WM_NEXUSKEY_TRAY_MODE_SYNC = WM_USER + 108;  // Deferred: sync tr
 constexpr UINT WM_NEXUSKEY_OPEN_TSFAPPS = WM_USER + 109;    // Deferred: open TSF apps dialog
 constexpr UINT WM_NEXUSKEY_SHOW_SETTINGS = WM_USER + 110;   // Main: show settings dialog (from second instance)
 constexpr UINT WM_NEXUSKEY_OPEN_APPOVERRIDES = WM_USER + 111; // Deferred: open app overrides dialog
+constexpr UINT WM_NEXUSKEY_OPEN_SPELLEXCL = WM_USER + 112;    // Deferred: open spell exclusions dialog
 
 }  // namespace NextKey
 

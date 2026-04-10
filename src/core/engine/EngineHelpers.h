@@ -16,17 +16,45 @@
 
 namespace NextKey {
 
+/// Check if the composed buffer matches any spell exclusion prefix (case-insensitive).
+/// Exclusion entries must be >= 2 chars. Match is prefix-based: "hđ" covers "hđt", "hđqt".
+template<typename CharStateT, typename ComposeFunc>
+inline bool IsSpellExcluded(const CharStateT* states, size_t count,
+                            const std::vector<std::wstring>& exclusions,
+                            ComposeFunc compose) {
+    if (exclusions.empty() || count == 0) return false;
+    // Build composed buffer for matching
+    std::wstring buf;
+    buf.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        wchar_t ch = compose(states[i]);
+        if (ch != 0) buf += towlower(ch);
+    }
+    for (const auto& pat : exclusions) {
+        if (pat.size() < 2) continue;
+        if (buf.size() < pat.size()) continue;
+        // Case-insensitive prefix match
+        bool match = true;
+        for (size_t i = 0; i < pat.size(); ++i) {
+            if (towlower(pat[i]) != buf[i]) { match = false; break; }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
 /// Update spell check state — works with both Telex::CharState and Vni::CharState.
 /// Call after every PushChar/Backspace to revalidate the syllable.
-template<typename CharStateT>
+template<typename CharStateT, typename ComposeFunc>
 inline void UpdateSpellCheck(const CharStateT* states, size_t count,
-                             const TypingConfig& config, bool tempSpellOff,
-                             bool& spellCheckDisabled) noexcept {
+                             const TypingConfig& config,
+                             bool& spellCheckDisabled,
+                             ComposeFunc compose) {
     if (!config.spellCheckEnabled || count == 0) {
         spellCheckDisabled = false;
         return;
     }
-    if (tempSpellOff) {
+    if (IsSpellExcluded(states, count, config.spellExclusions, compose)) {
         spellCheckDisabled = false;
         return;
     }
@@ -45,20 +73,47 @@ inline bool ShouldAutoRestore(const std::wstring& raw, const std::wstring& compo
     return raw.length() <= composed.length();
 }
 
-/// Check if the user intentionally typed đ by looking for the stroke pattern in raw input.
-/// Telex: consecutive "dd" (e.g., "ddt"→"đt").  VNI: "d" followed by "9" (e.g., "d9t"→"đt").
-/// This protects abbreviations from auto-restore, while allowing words like "download"
-/// (non-consecutive d's) to be restored correctly.
+/// Check if the user intentionally typed đ and the result looks like an abbreviation.
+/// Returns true (keep composed) when ALL of:
+///   1. Raw input has consecutive "dd"/"DD" or "d9" (Telex/VNI stroke pattern)
+///   2. Composed output actually contains đ/Đ (the stroke fired, not blocked)
+///   3. No plain ASCII vowels (a,e,i,o,u,y) appear after the last đ in composed
+///      (abbreviations are đ + consonants like "đt"; typing attempts have unmodified
+///       vowels like "đwa" with plain 'a')
+/// This protects abbreviations (đt, đh) while letting failed typing attempts
+/// (đwa, đp+vowel) auto-restore. For full control, use the spell exclusion list.
 template<typename RawT>
-inline bool HasIntentionalStrokeD(const RawT& rawInput) noexcept {
+inline bool HasIntentionalStrokeD(const RawT& rawInput,
+                                  const std::wstring& composed) noexcept {
+    // Step 1: raw input must have consecutive dd or d9
+    bool hasRawDD = false;
     for (size_t i = 0; i + 1 < rawInput.size(); ++i) {
         wchar_t ch = rawInput[i];
         if (ch == L'd' || ch == L'D') {
             wchar_t next = rawInput[i + 1];
-            if (next == L'd' || next == L'D' || next == L'9') return true;
+            if (next == L'd' || next == L'D' || next == L'9') { hasRawDD = true; break; }
         }
     }
-    return false;
+    if (!hasRawDD) return false;
+
+    // Step 2: composed must contain đ/Đ — if the stroke was blocked (e.g.,
+    // spellCheckDisabled_ prevented dd→đ), there's nothing to protect.
+    size_t lastStrokeD = std::wstring::npos;
+    for (size_t i = 0; i < composed.size(); ++i) {
+        if (composed[i] == L'\u0111' || composed[i] == L'\u0110') lastStrokeD = i;
+    }
+    if (lastStrokeD == std::wstring::npos) return false;
+
+    // Step 3: after the last đ, only consonants (no plain vowels).
+    // Abbreviations: đt, đh, hđ, vđề (ề is > 0x7F, not plain ASCII vowel).
+    // Typing attempts: đwa (plain 'a'), đia (plain 'i','a').
+    for (size_t i = lastStrokeD + 1; i < composed.size(); ++i) {
+        wchar_t ch = towlower(composed[i]);
+        if (ch == L'a' || ch == L'e' || ch == L'i' || ch == L'o' || ch == L'u' || ch == L'y') {
+            return false;
+        }
+    }
+    return true;
 }
 
 /// Check if the consonant onset before 'u' at uIdx forms an edge case prefix
@@ -99,14 +154,15 @@ inline void RecalcEnglishBias(const CharStateT* states, size_t count,
     }
 }
 
-/// When allowZwjf is disabled, treat w/z/j/f as initial consonant → HardEnglish.
-/// Works independently of spell check — uses English Protection bias.
+/// When allowZwjf is disabled AND spell check is on, treat w/z/j/f as initial
+/// consonant → HardEnglish.  When spell check is off, z/w/j/f are always
+/// allowed (the toggle has no effect).
 /// Call after CheckEnglishBias() or RecalcEnglishBias() to layer this check.
 template<typename CharStateT>
 inline void CheckZwjfInitialBias(const CharStateT* states, size_t count,
                                   const TypingConfig& config,
                                   EnglishProtectionState& engProt) noexcept {
-    if (config.allowZwjf || count == 0) return;
+    if (config.allowZwjf || !config.spellCheckEnabled || count == 0) return;
     if (engProt.bias == LanguageBias::Vietnamese) return;  // Respect confirmed VN intent
     if (states[0].IsVowel()) return;
     wchar_t initialChar = states[0].base;

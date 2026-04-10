@@ -159,7 +159,7 @@ static_assert(sizeof(SharedState) == 56, "SharedState size changed — update st
     if (config.autoCaps)           flags |= FeatureFlags::AUTO_CAPS;
     if (config.allowZwjf)          flags |= FeatureFlags::ALLOW_ZWJF;
     if (config.autoRestoreEnabled) flags |= FeatureFlags::AUTO_RESTORE;
-    if (config.tempOffSpellByCtrl) flags |= FeatureFlags::TEMP_OFF_SPELL_CTRL;
+    // Bit 0x0010 (TEMP_OFF_SPELL_CTRL) removed — now using spell exclusion list
     if (config.tempOffByAlt)       flags |= FeatureFlags::TEMP_OFF_BY_ALT;
     if (config.beepOnSwitch)       flags |= FeatureFlags::BEEP_ON_SWITCH;
     if (config.macroEnabled)       flags |= FeatureFlags::MACRO_ENABLED;
@@ -181,7 +181,7 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.autoCaps           = (flags & FeatureFlags::AUTO_CAPS) != 0;
     config.allowZwjf          = (flags & FeatureFlags::ALLOW_ZWJF) != 0;
     config.autoRestoreEnabled = (flags & FeatureFlags::AUTO_RESTORE) != 0;
-    config.tempOffSpellByCtrl = (flags & FeatureFlags::TEMP_OFF_SPELL_CTRL) != 0;
+    // Bit 0x0010 (TEMP_OFF_SPELL_CTRL) removed — now using spell exclusion list
     config.tempOffByAlt       = (flags & FeatureFlags::TEMP_OFF_BY_ALT) != 0;
     config.beepOnSwitch       = (flags & FeatureFlags::BEEP_ON_SWITCH) != 0;
     config.macroEnabled       = (flags & FeatureFlags::MACRO_ENABLED) != 0;

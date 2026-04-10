@@ -3285,7 +3285,7 @@ TEST_F(AutoRestoreTest, QuickStartConsonant_F_FullWord_Phan) {
 
 TEST_F(AutoRestoreTest, StrokeD_Abbreviation_DT_KeepsComposed) {
     // "ddt" → "đt" — abbreviation for "điện thoại"
-    // Should keep composed "đt", NOT restore to "ddt"
+    // đ + consonant only → heuristic keeps composed
     TypeString(*engine_, L"ddt");
     EXPECT_EQ(engine_->Commit(), L"đt");
 }
@@ -3316,19 +3316,41 @@ TEST_F(AutoRestoreTest, StrokeD_NonInitial_Add_Restores) {
     EXPECT_EQ(engine_->Commit(), L"add");
 }
 
+TEST_F(AutoRestoreTest, StrokeD_DdwaSimpleTelex_Restores) {
+    // "ddwa" with Simple Telex: dd→đ, w=literal (no vowel context), a=literal
+    // → "đwa" invalid → auto-restore to "ddwa"
+    config_.inputMethod = InputMethod::SimpleTelex;
+    engine_ = std::make_unique<TelexEngine>(config_);
+    TypeString(*engine_, L"ddwa");
+    EXPECT_EQ(engine_->Commit(), L"ddwa");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_Ddp_KeepsAbbreviation) {
+    // "ddp" → "đp" — đ + consonant only → treated as abbreviation
+    TypeString(*engine_, L"ddp");
+    EXPECT_EQ(engine_->Commit(), L"đp");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_Awndd_Restores) {
+    // "awndd" → breve 'a', then "ndd" with dd blocked by spellCheck → "ăndd"
+    // invalid → auto-restore to "awndd"
+    TypeString(*engine_, L"awndd");
+    EXPECT_EQ(engine_->Commit(), L"awndd");
+}
+
 // ============================================================================
-// TEMP OFF SPELL CHECK TESTS
-// Solo Ctrl tap temporarily disables spell check for current word
+// SPELL CHECK EXCLUSION LIST TESTS
+// Prefix-based exclusion: "hđ" in list → "hđ", "hđt" bypass spell check
 // ============================================================================
 
-class TempOffSpellTest : public ::testing::Test {
+class SpellExclusionTest : public ::testing::Test {
 protected:
     void SetUp() override {
         config_.inputMethod = InputMethod::Telex;
         config_.spellCheckEnabled = true;
         config_.autoRestoreEnabled = true;
-        config_.tempOffSpellByCtrl = true;
         config_.optimizeLevel = 0;
+        config_.spellExclusions = {L"hđ", L"đp"};
         engine_ = std::make_unique<TelexEngine>(config_);
     }
 
@@ -3336,51 +3358,96 @@ protected:
     std::unique_ptr<TelexEngine> engine_;
 };
 
-TEST_F(TempOffSpellTest, ToggleAllowsToneOnInvalid) {
-    // Type invalid syllable "gooex" → spell check blocks tone keys
-    TypeString(*engine_, L"gooex");
-    // Tone key 's' should be blocked (added as literal) because spell check says invalid
-    std::wstring beforeToggle = engine_->Peek();
-
-    // Reset and try again with temp spell off
-    engine_->Reset();
-    TypeString(*engine_, L"gooex");
-    engine_->ToggleTempSpellOff();  // Simulate Ctrl tap
-    // Now push a tone key — should apply as tone, not literal
-    engine_->PushChar(L's');
-    std::wstring afterToggle = engine_->Peek();
-
-    // After toggle, tone 's' should apply (not be added as literal 's')
-    // The composed result should NOT end with 's' as a literal character
-    EXPECT_NE(afterToggle, beforeToggle + L"s");
+TEST_F(SpellExclusionTest, ExcludedPattern_NoAutoRestore) {
+    // "hdd" → "hđ" (dd→đ). "hđ" is in exclusion list → no auto-restore
+    TypeString(*engine_, L"hdd");
+    EXPECT_EQ(engine_->Peek(), L"hđ");
+    EXPECT_EQ(engine_->Commit(), L"hđ");
 }
 
-TEST_F(TempOffSpellTest, ResetsOnCommit) {
-    // Toggle temp spell off, then reset — tempSpellOff should be cleared
-    TypeString(*engine_, L"abc");
-    engine_->ToggleTempSpellOff();
-    engine_->Reset();
-
-    // After reset, spell check should be active again
-    // Type invalid syllable — tone should be blocked again
-    TypeString(*engine_, L"gooex");
-    engine_->PushChar(L's');
-    std::wstring result = engine_->Peek();
-    // 's' should be literal (blocked by spell check) since temp off was reset
-    EXPECT_TRUE(result.back() == L's' || result.find(L"s") != std::wstring::npos);
+TEST_F(SpellExclusionTest, ExcludedPrefix_CoversDerivedWords) {
+    // "hđ" in exclusion list → "hđt" also bypasses (prefix match)
+    TypeString(*engine_, L"hddt");
+    EXPECT_EQ(engine_->Peek(), L"hđt");
+    EXPECT_EQ(engine_->Commit(), L"hđt");
 }
 
-TEST_F(TempOffSpellTest, NoAutoRestore) {
-    // With tempSpellOff active, Commit() should return composed text (not raw)
-    // even though the word is invalid
-    TypeString(*engine_, L"gooex");
-    engine_->ToggleTempSpellOff();
-    engine_->PushChar(L's');  // Tone applies because spell check bypassed
+TEST_F(SpellExclusionTest, NonExcluded_AutoRestores) {
+    // "hhdd" → "hhđ" is NOT prefixed by "hđ" (starts with "hh") → auto-restore
+    TypeString(*engine_, L"hhdd");
+    std::wstring result = engine_->Commit();
+    EXPECT_EQ(result, L"hhdd");
+}
 
-    std::wstring composed = engine_->Peek();
-    std::wstring committed = engine_->Commit();
-    // Commit should return composed (not auto-restore to raw)
-    EXPECT_EQ(committed, composed);
+TEST_F(SpellExclusionTest, SecondExclusion_Works) {
+    // "đp" is in exclusion list → "ddp" → "đp" stays
+    TypeString(*engine_, L"ddp");
+    EXPECT_EQ(engine_->Peek(), L"đp");
+    EXPECT_EQ(engine_->Commit(), L"đp");
+}
+
+TEST_F(SpellExclusionTest, EmptyExclusionList_NormalBehavior) {
+    // No exclusions → normal spell check applies
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    TelexEngine eng(cfg);
+    TypeString(eng, L"hdd");
+    // "hđ" is invalid syllable, no exclusion → auto-restore
+    EXPECT_EQ(eng.Commit(), L"hdd");
+}
+
+TEST_F(SpellExclusionTest, CaseInsensitive) {
+    // Exclusion "hđ" should also match "Hđ" (uppercase H)
+    engine_->Reset();
+    engine_->PushChar(L'H');
+    engine_->PushChar(L'd');
+    engine_->PushChar(L'd');
+    EXPECT_EQ(engine_->Peek(), L"Hđ");
+    EXPECT_EQ(engine_->Commit(), L"Hđ");
+}
+
+TEST_F(SpellExclusionTest, SingleCharExclusion_Ignored) {
+    // Exclusion entries < 2 chars should be ignored
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.spellExclusions = {L"đ"};  // Too short, should be ignored
+    TelexEngine eng(cfg);
+    TypeString(eng, L"hdd");
+    // "hđ" not matched (single-char pattern ignored) → auto-restore
+    EXPECT_EQ(eng.Commit(), L"hdd");
+}
+
+// PLHĐ: English Protection normally blocks dd→đ (PL = HardEnglish).
+// With exclusions, dd→đ is allowed through the English Protection gate.
+TEST_F(SpellExclusionTest, PLHDD_NoExclusion_Blocked) {
+    // No exclusions → English Protection blocks dd→đ → literal "plhdd"
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    TelexEngine eng(cfg);
+    TypeString(eng, L"plhdd");
+    EXPECT_EQ(eng.Peek(), L"plhdd");
+}
+
+TEST_F(SpellExclusionTest, PLHDD_ExclHD_PrefixMismatch) {
+    // "hđ" in exclusion list — dd→đ applies (exclusions bypass English Protection),
+    // but "plhđ" doesn't START with "hđ" → auto-restore to "plhdd"
+    TypeString(*engine_, L"plhdd");
+    EXPECT_EQ(engine_->Commit(), L"plhdd");
+}
+
+TEST_F(SpellExclusionTest, PLHDD_ExclPLHD_Works) {
+    // "plhđ" in exclusion list → dd→đ applies AND prefix matches → kept
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.spellExclusions = {L"plhđ"};
+    TelexEngine eng(cfg);
+    TypeString(eng, L"plhdd");
+    EXPECT_EQ(eng.Peek(), L"plhđ");
+    EXPECT_EQ(eng.Commit(), L"plhđ");
 }
 
 // =============================================================================

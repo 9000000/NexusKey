@@ -1,0 +1,45 @@
+/* Spell Check Exclusions Dialog Styles */
+
+.info-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding: 4px 0 8px;
+    line-height: 1.4;
+}
+
+/* List Header */
+.list-header {
+    display: flex;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-medium);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.list-col-name {
+    flex: 1;
+}
+
+.list-col-action {
+    width: 32px;
+}
+
+.app-list {
+    overflow-y: scroll;
+    height: *;
+}
+
+.app-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 4px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.setting-row .setting-input {
+    flex: 1;
+    margin-right: 8px;
+}

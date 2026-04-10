@@ -241,22 +241,38 @@ void VniEngine::PushChar(wchar_t c) {
     // Modifiers can transform invalid sequences into valid ones
     // However, if we're clearly in an English word, skip modifiers
     if (IsModifierKey(c)) {
-        if (toneEscaped_ || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish)) {
+        bool blockMod = toneEscaped_ ||
+            (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
+        // Allow d9→đ through English Protection when spell exclusions exist.
+        if (blockMod && c == L'9') {
+            for (const auto& e : config_.spellExclusions) {
+                if (e.size() >= 2) { blockMod = false; break; }
+            }
+        }
+        if (blockMod) {
             // Don't try modifiers — treat as literal
         } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // PREVENT modifier application if sequence is already structurally invalid.
             // But allow modifier ESCAPE (77 undoes horn, 99 undoes stroke, 66/88 undoes
             // circumflex/breve) — same principle as tone escape bypass.
+            // Also allow d9→đ when spell exclusions exist — the modifier has its own
+            // guards and the exclusion check in UpdateSpellCheck handles the rest.
             Modifier escapeMod = Modifier::None;
+            bool canExclude = false;
             switch (c) {
                 case L'6': escapeMod = Modifier::Circumflex; break;
                 case L'7': escapeMod = Modifier::Horn; break;
                 case L'8': escapeMod = Modifier::Breve; break;
-                case L'9': escapeMod = Modifier::Stroke; break;
+                case L'9': escapeMod = Modifier::Stroke;
+                           // Allow d9→đ when valid spell exclusions exist
+                           for (const auto& e : config_.spellExclusions) {
+                               if (e.size() >= 2) { canExclude = true; break; }
+                           }
+                           break;
             }
-            if (escapeMod != Modifier::None &&
+            if ((canExclude || (escapeMod != Modifier::None &&
                 HasEscapableModifier(states_.data(), states_.size(), escapeMod,
-                                     escapeMod == Modifier::Stroke) &&
+                                     escapeMod == Modifier::Stroke))) &&
                 ProcessModifier(c)) {
                 UpdateSpellState();
                 return;
@@ -385,13 +401,11 @@ std::wstring VniEngine::Commit() {
 
     // Guard: skip auto-restore when any of these are true:
     //  - spell check / auto-restore not enabled
-    //  - user toggled temp spell bypass for this word
     //  - an active quick consonant (nn→ng, cc→ch, etc.) was applied — user did
     //    this intentionally; restoring would undo the conversion they wanted.
     //    (quickConsonantIdx_ is SIZE_MAX when no quick consonant is active)
     bool skipAutoRestore = !config_.spellCheckEnabled
                         || !config_.autoRestoreEnabled
-                        || tempSpellOff_
                         || quickConsonantIdx_ != SIZE_MAX;
     if (!skipAutoRestore) {
         bool shouldRestore = spellCheckDisabled_;  // Already known Invalid
@@ -404,11 +418,21 @@ std::wstring VniEngine::Commit() {
             shouldRestore = (result == SpellCheck::Result::ValidPrefix);
         }
 
-        if (shouldRestore && !HasIntentionalStrokeD(rawInput_)) {
-            std::wstring raw = rawInput_;
-            if (ShouldAutoRestore(raw, composed)) {
-                Reset();
-                return raw;
+        if (shouldRestore) {
+            // Spell exclusion list is the primary authority on what to keep.
+            // When empty, fall back to HasIntentionalStrokeD heuristic.
+            bool excluded = IsSpellExcluded(states_.data(), states_.size(),
+                                            config_.spellExclusions,
+                                            [this](const CharState& s) { return ComposeChar(s); });
+            bool keepComposed = excluded ||
+                                (config_.spellExclusions.empty() &&
+                                 HasIntentionalStrokeD(rawInput_, composed));
+            if (!keepComposed) {
+                std::wstring raw = rawInput_;
+                if (ShouldAutoRestore(raw, composed)) {
+                    Reset();
+                    return raw;
+                }
             }
         }
     }
@@ -421,7 +445,6 @@ void VniEngine::Reset() {
     states_.clear();
     rawInput_.clear();
     spellCheckDisabled_ = false;
-    tempSpellOff_ = false;
     quickConsonantOnly_ = false;
     quickConsonantEscaped_ = false;
     quickConsonantIdx_ = SIZE_MAX;
@@ -759,7 +782,8 @@ void VniEngine::RelocateToneToTarget() {
 }
 
 void VniEngine::UpdateSpellState() {
-    UpdateSpellCheck(states_.data(), states_.size(), config_, tempSpellOff_, spellCheckDisabled_);
+    UpdateSpellCheck(states_.data(), states_.size(), config_, spellCheckDisabled_,
+                     [this](const CharState& s) { return ComposeChar(s); });
 }
 
 }  // namespace Vni

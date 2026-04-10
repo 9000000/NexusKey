@@ -265,18 +265,38 @@ void TelexEngine::PushChar(wchar_t c) {
             engProt_.bias = LanguageBias::HardEnglish;
         }
     }
-    if (toneEscaped_ || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish)) {
+    bool blockModifiers = toneEscaped_ ||
+        (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
+    // Allow dd→đ through English Protection when spell exclusions exist.
+    // The modifier has its own guards (FindStrokeDTarget + IsStrokeDBlockedByCoda)
+    // and the exclusion check at commit time determines whether to keep or restore.
+    if (blockModifiers && lower == L'd') {
+        for (const auto& e : config_.spellExclusions) {
+            if (e.size() >= 2) { blockModifiers = false; break; }
+        }
+    }
+    if (blockModifiers) {
         // Don't try modifiers — treat as literal
     } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
         // PREVENT modifier application if sequence is already structurally invalid.
         // But allow modifier ESCAPE (ww undoes horn, dd undoes stroke, aa/ee/oo undoes
         // circumflex) — same principle as tone escape bypass above (line 190).
+        // Also allow dd→đ when spell exclusions exist — the modifier has its own guards
+        // (FindStrokeDTarget + IsStrokeDBlockedByCoda) and the exclusion check in
+        // UpdateSpellCheck will determine if the result should bypass spell check.
         bool canEscape = false;
         if (lower == L'w') {
             canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Horn) ||
                         HasEscapableModifier(states_.data(), states_.size(), Modifier::Breve);
         } else if (lower == L'd') {
             canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Stroke, true);
+            // Allow dd→đ when valid spell exclusions exist — the modifier has its own
+            // guards and the exclusion check in UpdateSpellCheck handles the rest.
+            if (!canEscape) {
+                for (const auto& e : config_.spellExclusions) {
+                    if (e.size() >= 2) { canEscape = true; break; }
+                }
+            }
         } else if (IsVowelChar(c) && !states_.empty()) {
             const CharState& last = states_.back();
             if (last.IsVowel() && last.base == lower && last.mod == Modifier::Circumflex)
@@ -1100,13 +1120,11 @@ std::wstring TelexEngine::Commit() {
 
     // Guard: skip auto-restore when any of these are true:
     //  - spell check / auto-restore not enabled
-    //  - user toggled temp spell bypass for this word
     //  - an active quick consonant (nn→ng, cc→ch, etc.) was applied — user did
     //    this intentionally; restoring would undo the conversion they wanted.
     //    (quickConsonantIdx_ is SIZE_MAX when no quick consonant is active)
     bool skipAutoRestore = !config_.spellCheckEnabled
                         || !config_.autoRestoreEnabled
-                        || tempSpellOff_
                         || quickConsonantIdx_ != SIZE_MAX;
     if (!skipAutoRestore) {
         bool shouldRestore = spellCheckDisabled_;  // Already known Invalid
@@ -1119,11 +1137,22 @@ std::wstring TelexEngine::Commit() {
             shouldRestore = (result == SpellCheck::Result::ValidPrefix);
         }
 
-        if (shouldRestore && !HasIntentionalStrokeD(rawInput_)) {
-            std::wstring raw(rawInput_.begin(), rawInput_.end());
-            if (ShouldAutoRestore(raw, composed)) {
-                Reset();
-                return raw;
+        if (shouldRestore) {
+            // Spell exclusion list is the primary authority on what to keep.
+            // When empty, fall back to HasIntentionalStrokeD heuristic
+            // (protects abbreviations like đt, đh while restoring đwa, ăndd).
+            bool excluded = IsSpellExcluded(states_.data(), states_.size(),
+                                            config_.spellExclusions,
+                                            [](const CharState& s) { return Compose(s); });
+            bool keepComposed = excluded ||
+                                (config_.spellExclusions.empty() &&
+                                 HasIntentionalStrokeD(rawInput_, composed));
+            if (!keepComposed) {
+                std::wstring raw(rawInput_.begin(), rawInput_.end());
+                if (ShouldAutoRestore(raw, composed)) {
+                    Reset();
+                    return raw;
+                }
             }
         }
     }
@@ -1136,7 +1165,6 @@ void TelexEngine::Reset() {
     states_.clear();
     rawInput_.clear();
     spellCheckDisabled_ = false;
-    tempSpellOff_ = false;
     quickConsonantOnly_ = false;
     quickConsonantEscaped_ = false;
     quickConsonantIdx_ = SIZE_MAX;
@@ -1154,7 +1182,8 @@ void TelexEngine::Reset() {
 //-----------------------------------------------------------------------------
 
 void TelexEngine::UpdateSpellState() {
-    UpdateSpellCheck(states_.data(), states_.size(), config_, tempSpellOff_, spellCheckDisabled_);
+    UpdateSpellCheck(states_.data(), states_.size(), config_, spellCheckDisabled_,
+                     [](const CharState& s) { return Compose(s); });
 }
 
 }  // namespace Telex

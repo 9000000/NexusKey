@@ -1,36 +1,33 @@
-// NexusKey Classic — Macro Table Dialog Implementation
+// NexusKey Classic — Spell Check Exclusions Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
-#include "ClassicMacroTableDialog.h"
+#include "ClassicSpellExclusionsDialog.h"
 #include "core/config/ConfigManager.h"
 #include "core/config/ConfigEvent.h"
 
 #include <windowsx.h>
 #include <algorithm>
-#include <fstream>
-#include <vector>
 
 namespace NextKey::Classic {
 
+// Control IDs
 enum {
-    IDC_LIST_MACROS = 3101,
-    IDC_EDIT_KEY,
-    IDC_EDIT_VALUE,
-    IDC_BTN_ADD,
-    IDC_BTN_DELETE,
-    IDC_BTN_IMPORT,
-    IDC_BTN_EXPORT,
-    IDC_BTN_CLOSE_DLG,
+    IDC_SPELL_LIST = 3101,
+    IDC_SPELL_EDIT,
+    IDC_SPELL_BTN_ADD,
+    IDC_SPELL_BTN_DELETE,
+    IDC_SPELL_BTN_CLOSE,
 };
 
 // ════════════════════════════════════════════════════════════
-// Public
+// Public entry point
 // ════════════════════════════════════════════════════════════
 
-bool ClassicMacroTableDialog::Show(HINSTANCE hInstance, HWND parent) {
-    ClassicMacroTableDialog dlg;
+bool ClassicSpellExclusionsDialog::Show(HINSTANCE hInstance, HWND parent) {
+    ClassicSpellExclusionsDialog dlg;
     if (!dlg.Init(hInstance, parent)) return false;
 
+    // Modal message loop
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0)) {
         if (!IsDialogMessageW(dlg.hwnd_, &msg)) {
@@ -42,10 +39,10 @@ bool ClassicMacroTableDialog::Show(HINSTANCE hInstance, HWND parent) {
 }
 
 // ════════════════════════════════════════════════════════════
-// Init
+// Initialization
 // ════════════════════════════════════════════════════════════
 
-bool ClassicMacroTableDialog::Init(HINSTANCE hInstance, HWND parent) {
+bool ClassicSpellExclusionsDialog::Init(HINSTANCE hInstance, HWND parent) {
     hInstance_ = hInstance;
 
     WNDCLASSEXW wc{};
@@ -61,13 +58,15 @@ bool ClassicMacroTableDialog::Init(HINSTANCE hInstance, HWND parent) {
     RegisterClassExW(&wc);
 
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-    hwnd_ = CreateWindowExW(WS_EX_TOPMOST, kClassName, L"Bảng gõ tắt",
-        style, CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,
+    hwnd_ = CreateWindowExW(WS_EX_TOPMOST, kClassName,
+        L"Loại trừ kiểm tra chính tả",
+        style, CW_USEDEFAULT, CW_USEDEFAULT, 300, 250,
         parent, nullptr, hInstance, this);
     if (!hwnd_) return false;
 
     dpi_ = Classic::GetWindowDpi(hwnd_);
 
+    // Resize + center
     int w = Dpi(kWidth), h = Dpi(kHeight);
     RECT rc = {0, 0, w, h};
     AdjustWindowRectEx(&rc, style, FALSE, WS_EX_TOPMOST);
@@ -82,8 +81,9 @@ bool ClassicMacroTableDialog::Init(HINSTANCE hInstance, HWND parent) {
     CreateControls();
     PopulateList();
 
+    // Apply theme + font
     EnumChildWindows(hwnd_, [](HWND h, LPARAM lp) -> BOOL {
-        auto* self = reinterpret_cast<ClassicMacroTableDialog*>(lp);
+        auto* self = reinterpret_cast<ClassicSpellExclusionsDialog*>(lp);
         SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(self->theme_.Fonts().body), TRUE);
         return TRUE;
     }, reinterpret_cast<LPARAM>(this));
@@ -98,87 +98,59 @@ bool ClassicMacroTableDialog::Init(HINSTANCE hInstance, HWND parent) {
 // Controls
 // ════════════════════════════════════════════════════════════
 
-void ClassicMacroTableDialog::CreateControls() {
+void ClassicSpellExclusionsDialog::CreateControls() {
     int x = Dpi(kPadding), y = Dpi(kPadding);
     int cw = Dpi(kWidth - kPadding * 2);
     int btnH = Dpi(kBtnHeight);
     int gap = Dpi(kBtnGap);
 
-    // ListView — 2 columns: Key, Expansion
-    int listH = Dpi(260);
+    // ListView
+    int listH = Dpi(180);
     listView_ = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
         WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER,
-        x, y, cw, listH, hwnd_, reinterpret_cast<HMENU>(IDC_LIST_MACROS), hInstance_, nullptr);
+        x, y, cw, listH, hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_LIST), hInstance_, nullptr);
     ListView_SetExtendedListViewStyle(listView_, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
     LVCOLUMNW col{};
     col.mask = LVCF_TEXT | LVCF_WIDTH;
-    col.pszText = const_cast<wchar_t*>(L"Phím tắt");
-    col.cx = Dpi(100);
+    col.pszText = const_cast<wchar_t*>(L"Viết tắt (tối thiểu 2 ký tự)");
+    col.cx = cw - Dpi(24);
     ListView_InsertColumn(listView_, 0, &col);
-
-    col.pszText = const_cast<wchar_t*>(L"Nội dung");
-    col.cx = cw - Dpi(100 + 24);
-    ListView_InsertColumn(listView_, 1, &col);
     y += listH + gap;
 
-    // Row: key edit + value edit + add
-    int keyW = Dpi(100);
-    int addW = Dpi(50);
-    int valW = cw - keyW - addW - gap * 2;
-
-    editKey_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+    // Row: edit + add button
+    int editW = cw - Dpi(60) - gap;
+    editEntry_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-        x, y, keyW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_KEY), hInstance_, nullptr);
-    SendMessageW(editKey_, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"btv"));
-    SendMessageW(editKey_, EM_SETLIMITTEXT, 32, 0);
-
-    editValue_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-        x + keyW + gap, y, valW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_VALUE), hInstance_, nullptr);
-    SendMessageW(editValue_, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"báo tuổi trẻ"));
-    SendMessageW(editValue_, EM_SETLIMITTEXT, 512, 0);
+        x, y, editW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_EDIT), hInstance_, nullptr);
+    SendMessageW(editEntry_, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"hđ"));
 
     btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + keyW + valW + gap * 2, y, addW, btnH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
+        x + editW + gap, y, Dpi(60), btnH,
+        hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_BTN_ADD), hInstance_, nullptr);
     y += btnH + gap * 2;
 
-    // Action buttons
-    int abw = (cw - gap * 2) / 3;
+    // Delete + Close buttons
     btnDelete_ = CreateWindowExW(0, L"BUTTON", L"Xoá",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x, y, abw, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_DELETE), hInstance_, nullptr);
-    btnImport_ = CreateWindowExW(0, L"BUTTON", L"Nhập file",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + abw + gap, y, abw, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_IMPORT), hInstance_, nullptr);
-    btnExport_ = CreateWindowExW(0, L"BUTTON", L"Xuất file",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + (abw + gap) * 2, y, abw, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_EXPORT), hInstance_, nullptr);
-    y += btnH + gap * 2;
+        x, y, Dpi(80), btnH,
+        hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_BTN_DELETE), hInstance_, nullptr);
 
     btnClose_ = CreateWindowExW(0, L"BUTTON", L"Đóng",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
         x + cw - Dpi(80), y, Dpi(80), btnH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_CLOSE_DLG), hInstance_, nullptr);
+        hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_BTN_CLOSE), hInstance_, nullptr);
 }
 
-void ClassicMacroTableDialog::PopulateList() {
+void ClassicSpellExclusionsDialog::PopulateList() {
     ListView_DeleteAllItems(listView_);
-
-    // Sort by key for display
-    std::vector<std::pair<std::wstring, std::wstring>> sorted(macros_.begin(), macros_.end());
-    std::sort(sorted.begin(), sorted.end());
-
-    for (int i = 0; i < static_cast<int>(sorted.size()); ++i) {
+    for (size_t i = 0; i < entries_.size(); ++i) {
         LVITEMW item{};
         item.mask = LVIF_TEXT;
-        item.iItem = i;
-        item.pszText = const_cast<wchar_t*>(sorted[i].first.c_str());
+        item.iItem = static_cast<int>(i);
+        item.pszText = const_cast<wchar_t*>(entries_[i].c_str());
         ListView_InsertItem(listView_, &item);
-
-        ListView_SetItemText(listView_, i, 1, const_cast<wchar_t*>(sorted[i].second.c_str()));
     }
 }
 
@@ -186,127 +158,83 @@ void ClassicMacroTableDialog::PopulateList() {
 // Actions
 // ════════════════════════════════════════════════════════════
 
-void ClassicMacroTableDialog::AddMacro() {
-    wchar_t key[64] = {}, value[1024] = {};
-    GetWindowTextW(editKey_, key, 64);
-    GetWindowTextW(editValue_, value, 1024);
+void ClassicSpellExclusionsDialog::AddEntry(const std::wstring& text) {
+    // Trim whitespace
+    size_t s = 0, e = text.size();
+    while (s < e && text[s] == L' ') ++s;
+    while (e > s && text[e - 1] == L' ') --e;
+    if (e - s < 2) {
+        MessageBoxW(hwnd_, L"Viết tắt phải có ít nhất 2 ký tự.",
+            L"Lỗi", MB_ICONWARNING);
+        return;
+    }
 
-    std::wstring k(key), v(value);
-    if (k.empty() || v.empty()) return;
+    std::wstring entry = text.substr(s, e - s);
 
-    macros_[k] = v;
+    // Dedup (case-insensitive)
+    for (auto& existing : entries_) {
+        if (_wcsicmp(existing.c_str(), entry.c_str()) == 0) return;
+    }
+
+    entries_.push_back(entry);
+    std::sort(entries_.begin(), entries_.end());
     PopulateList();
     SaveData();
-
-    SetWindowTextW(editKey_, L"");
-    SetWindowTextW(editValue_, L"");
-    SetFocus(editKey_);
 }
 
-void ClassicMacroTableDialog::DeleteSelected() {
+void ClassicSpellExclusionsDialog::DeleteSelected() {
     int sel = ListView_GetNextItem(listView_, -1, LVNI_SELECTED);
-    if (sel < 0) return;
+    if (sel < 0 || sel >= static_cast<int>(entries_.size())) return;
 
-    wchar_t key[64] = {};
-    ListView_GetItemText(listView_, sel, 0, key, 64);
-    macros_.erase(key);
+    entries_.erase(entries_.begin() + sel);
     PopulateList();
     SaveData();
-}
-
-void ClassicMacroTableDialog::ImportFromFile() {
-    auto path = OpenFileDialog(hwnd_,
-        L"Text Files (*.txt)\0*.txt\0All Files\0*.*\0",
-        L"Nhập bảng gõ tắt");
-    if (path.empty()) return;
-
-    int choice = MessageBoxW(hwnd_,
-        L"Thay thế bảng hiện tại hay thêm vào?",
-        L"Nhập file",
-        MB_YESNOCANCEL | MB_ICONQUESTION);
-    if (choice == IDCANCEL) return;
-
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        MessageBoxW(hwnd_, L"Không thể mở file.", L"Lỗi", MB_ICONERROR);
-        return;
-    }
-
-    if (choice == IDYES) macros_.clear();
-
-    std::string line;
-    while (std::getline(file, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (line.empty() || line[0] == ';') continue;
-
-        auto colonPos = line.find(':');
-        if (colonPos == std::string::npos || colonPos == 0) continue;
-
-        std::wstring k = Utf8ToWide(line.substr(0, colonPos));
-        std::wstring v = Utf8ToWide(line.substr(colonPos + 1));
-        if (!k.empty() && !v.empty() && k.size() <= 32 && v.size() <= 512) {
-            macros_[k] = v;
-        }
-    }
-
-    PopulateList();
-    SaveData();
-}
-
-void ClassicMacroTableDialog::ExportToFile() {
-    auto path = SaveFileDialog(hwnd_,
-        L"Text Files (*.txt)\0*.txt\0",
-        L"Xuất bảng gõ tắt", L"txt");
-    if (path.empty()) return;
-
-    std::ofstream file(path);
-    if (!file.is_open()) {
-        MessageBoxW(hwnd_, L"Không thể tạo file.", L"Lỗi", MB_ICONERROR);
-        return;
-    }
-
-    file << ";Compatible OpenKey Macro Data file*** version=1 ***\n";
-    std::vector<std::pair<std::wstring, std::wstring>> sorted(macros_.begin(), macros_.end());
-    std::sort(sorted.begin(), sorted.end());
-    for (auto& [k, v] : sorted) {
-        file << WideToUtf8(k) << ":" << WideToUtf8(v) << "\n";
-    }
 }
 
 // ════════════════════════════════════════════════════════════
 // Data I/O
 // ════════════════════════════════════════════════════════════
 
-void ClassicMacroTableDialog::LoadData() {
-    macros_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
+void ClassicSpellExclusionsDialog::LoadData() {
+    auto config = ConfigManager::LoadOrDefault();
+    entries_ = std::move(config.spellExclusions);
 }
 
-void ClassicMacroTableDialog::SaveData() {
+void ClassicSpellExclusionsDialog::SaveData() {
     modified_ = true;
-    (void)ConfigManager::SaveMacros(ConfigManager::GetConfigPath(), macros_);
+
+    // Load full config, update just spellExclusions, save back
+    auto path = ConfigManager::GetConfigPath();
+    auto config = ConfigManager::LoadFromFile(path).value_or(TypingConfig{});
+    config.spellExclusions = entries_;
+    (void)ConfigManager::SaveToFile(path, config);
 
     ConfigEvent event;
     if (event.Initialize()) event.Signal();
 }
 
-int ClassicMacroTableDialog::Dpi(int value) const noexcept {
+// ════════════════════════════════════════════════════════════
+// Helpers
+// ════════════════════════════════════════════════════════════
+
+int ClassicSpellExclusionsDialog::Dpi(int value) const noexcept {
     return Classic::DpiScale(value, dpi_);
 }
 
 // ════════════════════════════════════════════════════════════
-// WndProc
+// Window procedure
 // ════════════════════════════════════════════════════════════
 
-LRESULT CALLBACK ClassicMacroTableDialog::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    ClassicMacroTableDialog* self = nullptr;
+LRESULT CALLBACK ClassicSpellExclusionsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    ClassicSpellExclusionsDialog* self = nullptr;
 
     if (msg == WM_NCCREATE) {
         auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-        self = reinterpret_cast<ClassicMacroTableDialog*>(cs->lpCreateParams);
+        self = reinterpret_cast<ClassicSpellExclusionsDialog*>(cs->lpCreateParams);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         self->hwnd_ = hwnd;
     } else {
-        self = reinterpret_cast<ClassicMacroTableDialog*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        self = reinterpret_cast<ClassicSpellExclusionsDialog*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
 
     if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -314,12 +242,22 @@ LRESULT CALLBACK ClassicMacroTableDialog::WndProc(HWND hwnd, UINT msg, WPARAM wP
     switch (msg) {
         case WM_COMMAND: {
             UINT id = LOWORD(wParam);
+
             switch (id) {
-                case IDC_BTN_ADD:     self->AddMacro();       return 0;
-                case IDC_BTN_DELETE:  self->DeleteSelected(); return 0;
-                case IDC_BTN_IMPORT:  self->ImportFromFile(); return 0;
-                case IDC_BTN_EXPORT:  self->ExportToFile();   return 0;
-                case IDC_BTN_CLOSE_DLG: DestroyWindow(hwnd);  return 0;
+                case IDC_SPELL_BTN_ADD: {
+                    wchar_t buf[256] = {};
+                    GetWindowTextW(self->editEntry_, buf, 256);
+                    self->AddEntry(buf);
+                    SetWindowTextW(self->editEntry_, L"");
+                    SetFocus(self->editEntry_);
+                    return 0;
+                }
+                case IDC_SPELL_BTN_DELETE:
+                    self->DeleteSelected();
+                    return 0;
+                case IDC_SPELL_BTN_CLOSE:
+                    DestroyWindow(hwnd);
+                    return 0;
             }
             break;
         }
@@ -335,12 +273,15 @@ LRESULT CALLBACK ClassicMacroTableDialog::WndProc(HWND hwnd, UINT msg, WPARAM wP
         case WM_CTLCOLORSTATIC:
             return reinterpret_cast<LRESULT>(self->theme_.OnCtlColorStatic(
                 reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam)));
+
         case WM_CTLCOLOREDIT:
             return reinterpret_cast<LRESULT>(self->theme_.OnCtlColorEdit(
                 reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam)));
+
         case WM_CTLCOLORLISTBOX:
             return reinterpret_cast<LRESULT>(self->theme_.OnCtlColorListBox(
                 reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam)));
+
         case WM_CTLCOLORBTN:
             return reinterpret_cast<LRESULT>(self->theme_.OnCtlColorBtn(
                 reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam)));
@@ -348,6 +289,7 @@ LRESULT CALLBACK ClassicMacroTableDialog::WndProc(HWND hwnd, UINT msg, WPARAM wP
         case WM_CLOSE:
             DestroyWindow(hwnd);
             return 0;
+
         case WM_DESTROY:
             self->theme_.Destroy();
             self->hwnd_ = nullptr;

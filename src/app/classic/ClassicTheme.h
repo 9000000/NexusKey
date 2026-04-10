@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "ClassicDialogUtils.h"
 #include <Windows.h>
 #include <dwmapi.h>
 #include <cstdint>
