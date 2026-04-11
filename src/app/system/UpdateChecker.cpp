@@ -11,6 +11,7 @@
 #include <urlmon.h>
 #include <CommCtrl.h>
 #include <ShlObj.h>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
