@@ -11,6 +11,7 @@
 #include <ShlObj.h>
 #include <shellapi.h>
 #include <string>
+#include "UpdateSecurity.h"
 
 namespace NextKey {
 
@@ -105,7 +106,7 @@ inline void RemoveScheduledTask() noexcept {
     ps1Args += L"$T = New-ScheduledTaskTrigger -AtLogOn; ";
     ps1Args += L"$T.Delay = 'PT5S'; ";
     ps1Args += L"$S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0; ";
-    ps1Args += L"$P = New-ScheduledTaskPrincipal -UserId '" + std::wstring(username) + L"' -LogonType Interactive -RunLevel Highest; ";
+    ps1Args += L"$P = New-ScheduledTaskPrincipal -UserId '" + EscapePowerShellSingleQuote(username) + L"' -LogonType Interactive -RunLevel Highest; ";
     ps1Args += L"Register-ScheduledTask -TaskName '" + std::wstring(STARTUP_TASK_NAME) + L"' -Action $A -Trigger $T -Settings $S -Principal $P -Force\"";
 
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
