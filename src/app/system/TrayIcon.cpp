@@ -420,18 +420,13 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         auto* info = reinterpret_cast<UpdateInfo*>(lParam);
         if (info) {
             if (UpdateChecker::ShowUpdateDialog(hwnd, *info)) {
-                // User clicked "Update now" — download + launch updater + exit
+                // User clicked "Update now" — download with progress dialog
                 std::wstring downloadUrl = info->downloadUrl;
                 delete info;
 
-                std::thread([hwnd, downloadUrl]() {
-                    ToastPopup::Show(S(StringId::UPDATE_DOWNLOADING), 1500);
-                    if (UpdateChecker::DownloadAndLaunchInstaller(downloadUrl)) {
-                        PostMessageW(hwnd, WM_CLOSE, 0, 0);
-                    } else {
-                        ToastPopup::Show(S(StringId::UPDATE_INSTALL_FAILED), 3000);
-                    }
-                }).detach();
+                if (UpdateChecker::DownloadWithProgress(hwnd, downloadUrl)) {
+                    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                }
             } else {
                 delete info;
             }

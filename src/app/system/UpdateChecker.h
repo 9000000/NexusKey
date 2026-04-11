@@ -64,6 +64,10 @@ public:
     [[nodiscard]] static bool ShowProgressDialog(HWND parent, const wchar_t* message,
                                                 std::atomic<bool>& doneFlag);
 
+    /// Download update with progress dialog, launch installer.
+    /// Shows marquee progress, handles errors. Returns true if installer launched (caller should exit).
+    [[nodiscard]] static bool DownloadWithProgress(HWND parent, const std::wstring& downloadUrl);
+
 private:
     /// Download URL content to a string (via temp file)
     [[nodiscard]] static std::string DownloadToString(const std::wstring& url) noexcept;

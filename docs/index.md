@@ -29,67 +29,37 @@
 - **[7-debug-architecture.md](./CODING_RULES/7-debug-architecture.md)** - DebugConsole, OutputDebugString
 - **[8-tsf-specific-rules.md](./CODING_RULES/8-tsf-specific-rules.md)** - Edit sessions, composition cleanup
 - **[9-naming-conventions.md](./CODING_RULES/9-naming-conventions.md)** - PascalCase/camelCase/UPPER_SNAKE rules
+- **[10-refactoring-checklist.md](./CODING_RULES/10-refactoring-checklist.md)** - Refactoring safety checklist
 
 ### telex-test-specification/
 
-- **[index.md](./telex-test-specification/index.md)** - Table of contents
-- **[test-organization-strategy.md](./telex-test-specification/test-organization-strategy.md)** - Test suite structure and naming
-- **[category-1-basic-vowels-no-transformation.md](./telex-test-specification/category-1-basic-vowels-no-transformation.md)** - Plain vowel passthrough tests
-- **[category-2-circumflex-modifier.md](./telex-test-specification/category-2-circumflex-modifier.md)** - aa/ee/oo → â/ê/ô tests
-- **[category-3-breve-modifier.md](./telex-test-specification/category-3-breve-modifier.md)** - aw → ă tests
-- **[category-4-horn-modifier.md](./telex-test-specification/category-4-horn-modifier.md)** - ow/uw → ơ/ư tests
-- **[category-5-stroke-modifier.md](./telex-test-specification/category-5-stroke-modifier.md)** - dd → đ tests
-- **[category-6-tone-marks.md](./telex-test-specification/category-6-tone-marks.md)** - s/f/r/x/j tone application tests
-- **[category-7-falling-diphthongs-tone-on-first-vowel.md](./telex-test-specification/category-7-falling-diphthongs-tone-on-first-vowel.md)** - ai/ao/au/oi/ui tone placement
-- **[category-8-rising-diphthongs-tone-on-second-vowel.md](./telex-test-specification/category-8-rising-diphthongs-tone-on-second-vowel.md)** - oa/oe/uy/uê tone placement
-- **[category-9-triphthongs.md](./telex-test-specification/category-9-triphthongs.md)** - iêu/ươi/oai triphthong tests
-- **[category-10-w-modifier-priority-7-levels.md](./telex-test-specification/category-10-w-modifier-priority-7-levels.md)** - 'w' key priority resolution tests
-- **[category-11-tone-placement-priority.md](./telex-test-specification/category-11-tone-placement-priority.md)** - Horn > modified > diphthong > default
-- **[category-12-tone-relocation.md](./telex-test-specification/category-12-tone-relocation.md)** - Tone moves when horn applied after tone
-- **[category-13-escape-mechanism.md](./telex-test-specification/category-13-escape-mechanism.md)** - Double-press escape tests
-- **[category-14-edge-cases.md](./telex-test-specification/category-14-edge-cases.md)** - Boundary and unusual input tests
-- **[category-15-real-vietnamese-words.md](./telex-test-specification/category-15-real-vietnamese-words.md)** - End-to-end word typing tests
-- **[category-16-stop-final-tone-block-spellcheckenabled-true.md](./telex-test-specification/category-16-stop-final-tone-block-spellcheckenabled-true.md)** - Stop-final tone restriction tests
-- **[implementation-checklist.md](./telex-test-specification/implementation-checklist.md)** - Feature coverage tracking
-- **[known-issues-to-investigate.md](./telex-test-specification/known-issues-to-investigate.md)** - Open bugs and edge cases
-- **[test-execution-strategy.md](./telex-test-specification/test-execution-strategy.md)** - How to run and filter tests
+- **[index.md](./telex-test-specification/index.md)** - Table of contents (21 files)
 
 ## Distillates (Token-Optimized)
 
-- **[vietnamese-phonology-spec-distillate.md](./vietnamese-phonology-spec-distillate.md)** - Vietnamese syllable/tone/modifier rules for engine dev
+- **[vietnamese-phonology-spec-distillate.md](./vietnamese-phonology-spec-distillate.md)** - Vietnamese syllable/tone/modifier rules
 - **[SECURITY_FIXES-distillate.md](./SECURITY_FIXES-distillate.md)** - 7 security fixes: DACL, config limits, CLSID, enums, seqlock, buffer, ZIP
-- **[tray-icon-sync-analysis-v2-distillate.md](./tray-icon-sync-analysis-v2-distillate.md)** - SharedState read-only bug, tray icon sync debugging
+- **[tray-icon-sync-analysis-v2-distillate.md](./tray-icon-sync-analysis-v2-distillate.md)** - SharedState read-only bug, tray icon sync
 - **[plans/pre-tone-stop-final-check-distillate.md](./plans/pre-tone-stop-final-check-distillate.md)** - Stop-final tone blocking: design, code, test cases
 
-## Standalone Docs
+## Reference
 
-- **[Planning.md](./Planning.md)** - Hybrid TSF + Hook architecture planning
+- **[SECURITY.md](./SECURITY.md)** - Security hardening & threat model
 - **[tsf-hook-coordination.md](./tsf-hook-coordination.md)** - TSF/Hook coexistence, no double-processing
 - **[subdialog-checklist.md](./subdialog-checklist.md)** - Sciter subdialog implementation checklist
-- **[Win10_UI_Fixed.md](./Win10_UI_Fixed.md)** - Win10 rendering and tray icon sync fixes
-- **[_optimize_UI.md](./_optimize_UI.md)** - Sciter UI optimization rollback notes
+- **[TODO.md](./TODO.md)** - Outstanding tasks and review findings
 
-## Plans
+## Plans (Active)
 
-- **[plans/2026-03-28-sendinput-universal-output.md](./plans/2026-03-28-sendinput-universal-output.md)** - Universal SendInput output implementation plan
-- **[plans/2026-03-28-manual-test-matrix.md](./plans/2026-03-28-manual-test-matrix.md)** - Manual test matrix for SendInput output
+- **[plans/2026-03-28-sendinput-universal-output.md](./plans/2026-03-28-sendinput-universal-output.md)** - Universal SendInput output plan
+- **[plans/2026-03-28-manual-test-matrix.md](./plans/2026-03-28-manual-test-matrix.md)** - Manual test matrix for SendInput
 
-## Superpowers (Specs & Plans)
+## Resources
 
-- **[superpowers/specs/2026-03-30-auto-disable-vn-non-english-layout-design.md](./superpowers/specs/2026-03-30-auto-disable-vn-non-english-layout-design.md)** - Auto-disable Vietnamese for incompatible layouts design
-- **[superpowers/plans/2026-03-30-auto-disable-vn-non-english-layout.md](./superpowers/plans/2026-03-30-auto-disable-vn-non-english-layout.md)** - Auto-disable Vietnamese implementation plan
-- **[superpowers/plans/2026-04-01-excludedapps-import-export.md](./superpowers/plans/2026-04-01-excludedapps-import-export.md)** - ExcludedApps import/export implementation plan
-
-## Implemented (Historical)
-
-- **[implemented/2026-03-23-session-fixes.md](./implemented/2026-03-23-session-fixes.md)** - l-u-u-w fix, engine state fixes
-- **[implemented/quick-consonant-backspace.md](./implemented/quick-consonant-backspace.md)** - Quick consonant backspace & auto-restore
-
-## Tech Debt (Resolved)
-
-- **[tech-debt/engine-backspace-engprot-duplication.md](./tech-debt/engine-backspace-engprot-duplication.md)** - RESOLVED: English protection recalc duplication
-- **[tech-debt/pushchar-literal-path-duplication.md](./tech-debt/pushchar-literal-path-duplication.md)** - RESOLVED: PushChar literal path duplication
+- **[diagrams/](./diagrams/)** - Excalidraw diagrams (system overview, engine state machine, config flow)
+- **[images/](./images/)** - UI screenshots
+- **[x-unikey-1.0.4/](./x-unikey-1.0.4/)** - Unikey source code reference
 
 ## Archive
 
-Original (pre-distillation/pre-shard) files in `archive/` — not indexed.
+Historical docs (completed plans, resolved tech debt, old reviews) in `archive/` — not indexed.

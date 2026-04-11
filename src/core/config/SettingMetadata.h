@@ -176,6 +176,11 @@ inline constexpr SettingMeta kSettings[] = {
               "Tạo biểu tượng desktop","Desktop shortcut",
               nullptr, nullptr,                                          2404, 2, 0),
 
+    NK_SYSTEM("english-ui",           englishUI,
+              "Giao diện tiếng Anh",  "English interface",
+              L"Chuyển menu, thông báo sang tiếng Anh",
+              L"Switch menus, notifications to English",            2407, 2, 0),
+
     // ── Tab 2: Hệ thống — Right column (col 1) ──
     NK_SYSTEM("floating-icon",        showFloatingIcon,
               "Icon V/E nổi",          "Floating icon",

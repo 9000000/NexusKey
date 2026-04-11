@@ -14,6 +14,8 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <thread>
+#include <memory>
 
 #pragma comment(lib, "urlmon.lib")
 
@@ -299,6 +301,37 @@ bool UpdateChecker::ShowProgressDialog(HWND parent, const wchar_t* message,
     int button = 0;
     TaskDialogIndirect(&tdc, &button, nullptr, nullptr);
     return doneFlag.load(std::memory_order_acquire);
+}
+
+bool UpdateChecker::DownloadWithProgress(HWND parent, const std::wstring& downloadUrl) {
+    struct State {
+        std::atomic<bool> done{false};
+        bool success = false;
+    };
+    auto state = std::make_shared<State>();
+
+    std::thread([state, downloadUrl]() {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+#ifdef NEXUSKEY_LITE_MODE
+        state->success = DownloadAndReplaceExe(downloadUrl);
+#else
+        state->success = DownloadAndLaunchInstaller(downloadUrl);
+#endif
+        CoUninitialize();
+        state->done.store(true, std::memory_order_release);
+    }).detach();
+
+    bool completed = ShowProgressDialog(parent, S(StringId::UPDATE_DOWNLOADING), state->done);
+
+    if (!completed) return false;  // User cancelled
+
+    if (!state->success) {
+        TaskDialog(parent, nullptr, L"NexusKey", S(StringId::UPDATE_TITLE),
+                   S(StringId::UPDATE_DOWNLOAD_FAILED), TDCBF_OK_BUTTON, TD_WARNING_ICON, nullptr);
+        return false;
+    }
+
+    return true;
 }
 
 bool UpdateChecker::DownloadAndLaunchInstaller(const std::wstring& downloadUrl) noexcept {

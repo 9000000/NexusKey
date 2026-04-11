@@ -18,6 +18,8 @@
 #include "core/Strings.h"
 
 #include <thread>
+#include <atomic>
+#include <memory>
 
 #include <windowsx.h>
 
@@ -92,6 +94,10 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     PopulateControls();
     SetFontOnAllChildren();
     theme_.ThemeAllChildren(hwnd_);
+
+    // Apply English labels if language was already set to English
+    if (GetLanguage() == Language::English)
+        RefreshLabels();
 
     if (tabControl_) ShowWindow(tabControl_, SW_SHOW);
     ShowTabPage(currentTab_);
@@ -401,7 +407,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
         // If it's an inline action button
         bool isInlineAction = (meta.type == SettingType::Action && 
-            (wcscmp(meta.label, L"...") == 0 || wcscmp(meta.label, L"Kiểm tra") == 0));
+            (wcscmp(meta.label, L"...") == 0 || meta.win32Id == IDC_BTN_CHECK_UPDATE));
         if (isInlineAction) {
             rowCounts[tab][col]--; // stay on the same visual row
             row--; // go back to the row we just incremented past
@@ -412,7 +418,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
         if (meta.type == SettingType::Toggle) {
             bool hasInlineNext = ((i + 1 < kSettingsCount) && kSettings[i+1].type == SettingType::Action && 
-                (wcscmp(kSettings[i+1].label, L"...") == 0 || wcscmp(kSettings[i+1].label, L"Kiểm tra") == 0));
+                (wcscmp(kSettings[i+1].label, L"...") == 0 || kSettings[i+1].win32Id == IDC_BTN_CHECK_UPDATE));
             int nextBtnW = 0;
             if (hasInlineNext) {
                 nextBtnW = (wcscmp(kSettings[i+1].label, L"...") == 0) ? Dpi(26) : Dpi(55);
@@ -468,7 +474,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         linkReportBug_ = CreateWindowExW(0, WC_LINK,
             L"<a href=\"https://github.com/phatMT97/NexusKey/issues\">Báo cáo lỗi</a>",
             WS_CHILD | WS_VISIBLE,
-            tcRc.right - Dpi(80), tcRc.bottom + Dpi(2), Dpi(80), Dpi(16),
+            tcRc.right - Dpi(90), tcRc.bottom - Dpi(26), Dpi(80), Dpi(16),
             hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINK_REPORT_BUG)),
             hInstance_, nullptr);
     }
@@ -490,6 +496,7 @@ void ClassicSettingsDialog::LoadSettings() {
     config_       = ConfigManager::LoadOrDefault();
     hotkeyConfig_ = ConfigManager::LoadHotkeyConfigOrDefault();
     systemConfig_ = ConfigManager::LoadSystemConfigOrDefault();
+    systemConfig_.englishUI = (systemConfig_.language == 1);
 
     (void)sharedState_.OpenReadWrite();
     (void)configEvent_.Initialize();
@@ -752,7 +759,7 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
 
         case IDC_BTN_SPELL_EXCLUSIONS:
             if (code == BN_CLICKED) {
-                OnActionButton(id);
+                OnActionButton(static_cast<uint16_t>(id));
             }
             return;
 
@@ -830,40 +837,38 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
         case IDC_BTN_CHECK_UPDATE: {
             HWND dlgHwnd = hwnd_;
 
-            // Show loading state on UI thread
             PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 1, 0);
 
-            std::thread([dlgHwnd]() {
-                auto info = UpdateChecker::CheckForUpdate();
+            // Background check with progress dialog
+            struct State {
+                std::atomic<bool> done{false};
+                UpdateInfo info;
+            };
+            auto state = std::make_shared<State>();
 
-                if (info.available) {
-                    PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 0, 0);
-                    std::wstring msg = L"Có phiên bản mới: v" + info.version + L"\n\n"
-                        L"Cập nhật ngay?";
-                    int res = MessageBoxW(dlgHwnd, msg.c_str(), L"Cập nhật", MB_YESNO | MB_ICONINFORMATION);
-                    if (res == IDYES) {
-                        PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 2, 0);
-                        if (UpdateChecker::DownloadAndReplaceExe(info.downloadUrl)) {
-                            PostQuitMessage(0);
-                        } else {
-                            PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 0, 0);
-                            MessageBoxW(dlgHwnd, L"Cập nhật thất bại. Vui lòng tải thủ công.",
-                                L"Lỗi", MB_ICONERROR);
-                            if (!info.changelogUrl.empty()) {
-                                ShellExecuteW(nullptr, L"open", info.changelogUrl.c_str(), nullptr, nullptr, SW_SHOW);
-                            }
-                        }
-                    }
-                } else if (info.checkSucceeded) {
-                    PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 0, 0);
-                    MessageBoxW(dlgHwnd, L"Bạn đang sử dụng bản mới nhất.",
-                        L"Kiểm tra cập nhật", MB_ICONINFORMATION);
-                } else {
-                    PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 0, 0);
-                    MessageBoxW(dlgHwnd, L"Không thể kết nối máy chủ. Vui lòng thử lại sau.",
-                        L"Kiểm tra cập nhật", MB_ICONWARNING);
-                }
+            std::thread([state]() {
+                state->info = UpdateChecker::CheckForUpdate();
+                state->done.store(true, std::memory_order_release);
             }).detach();
+
+            bool completed = UpdateChecker::ShowProgressDialog(
+                dlgHwnd, S(StringId::UPDATE_CHECKING), state->done);
+
+            PostMessageW(dlgHwnd, WM_UPDATE_BTN_STATE, 0, 0);
+
+            if (!completed) break;  // User cancelled
+
+            if (state->info.available) {
+                if (UpdateChecker::ShowUpdateDialog(dlgHwnd, state->info)) {
+                    if (UpdateChecker::DownloadWithProgress(dlgHwnd, state->info.downloadUrl)) {
+                        PostQuitMessage(0);
+                    }
+                }
+            } else if (state->info.checkSucceeded) {
+                UpdateChecker::ShowUpToDateMessage(dlgHwnd);
+            } else {
+                UpdateChecker::ShowCheckFailedMessage(dlgHwnd);
+            }
             break;
         }
     }
@@ -884,6 +889,16 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
     }
     else if (wcscmp(id, L"desktop-shortcut") == 0) {
         SetDesktopShortcut(value);
+    }
+    else if (wcscmp(id, L"english-ui") == 0) {
+        systemConfig_.language = value ? 1 : 0;
+        SetLanguage(value ? Language::English : Language::Vietnamese);
+        RefreshLabels();
+        // Flush + notify tray to rebuild menu in new language
+        KillTimer(hwnd_, kTimerDeferredSave);
+        SaveToToml();
+        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
     }
     else if (wcscmp(id, L"floating-icon") == 0) {
         // Flush TOML + notify main thread to show/hide floating icon immediately
@@ -914,6 +929,95 @@ void ClassicSettingsDialog::OnPickIconColors() {
         HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
         if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
     }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Language refresh — update all visible labels to current language
+// ════════════════════════════════════════════════════════════════════
+
+void ClassicSettingsDialog::RefreshLabels() {
+    bool en = (GetLanguage() == Language::English);
+
+    // Tab names
+    if (tabControl_) {
+        TCITEMW tie{};
+        tie.mask = TCIF_TEXT;
+        tie.pszText = const_cast<wchar_t*>(en ? L"\U0001F4DD Input" : L"\U0001F4DD Bộ Gõ");
+        TabCtrl_SetItem(tabControl_, 0, &tie);
+        tie.pszText = const_cast<wchar_t*>(en ? L"\U0001F680 Macros" : L"\U0001F680 Gõ Tắt");
+        TabCtrl_SetItem(tabControl_, 1, &tie);
+        tie.pszText = const_cast<wchar_t*>(en ? L"\u2699\uFE0F System" : L"\u2699\uFE0F Hệ thống");
+        TabCtrl_SetItem(tabControl_, 2, &tie);
+        InvalidateRect(tabControl_, nullptr, TRUE);
+    }
+
+    // Compact section labels
+    SetDlgItemTextW(hwnd_, 2999, en ? L"  Basic  " : L"  Cơ bản  ");
+    SetDlgItemTextW(hwnd_, IDC_STATIC_METHOD, en ? L"Input method" : L"Kiểu gõ");
+    SetDlgItemTextW(hwnd_, IDC_STATIC_ENCODING, en ? L"Encoding" : L"Bảng mã");
+    SetDlgItemTextW(hwnd_, IDC_STATIC_SWITCHKEY, en ? L"Switch key (V/E)" : L"Phím chuyển (Việt/Anh)");
+
+    // Metadata-driven controls (checkboxes, buttons, dropdown labels)
+    for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
+        const auto& meta = kSettings[i];
+        const wchar_t* lbl = (en && meta.labelEn && meta.labelEn[0]) ? meta.labelEn : meta.label;
+
+        if (HWND ctrl = checkControls_[i]) {
+            if (meta.type == SettingType::Toggle || meta.type == SettingType::Action)
+                SetWindowTextW(ctrl, lbl);
+        }
+        if (HWND lbl2 = extraControls_[i]) {
+            if (meta.type == SettingType::Dropdown)
+                SetWindowTextW(lbl2, lbl);
+        }
+    }
+
+    // Icon style dropdown items
+    HWND iconCombo = GetDlgItem(hwnd_, IDC_COMBO_ICON_STYLE);
+    if (iconCombo) {
+        int sel = ComboBox_GetCurSel(iconCombo);
+        ComboBox_ResetContent(iconCombo);
+        ComboBox_AddString(iconCombo, en ? L"Default color" : L"Màu mặc định");
+        ComboBox_AddString(iconCombo, en ? L"Dark" : L"Nền tối");
+        ComboBox_AddString(iconCombo, en ? L"Light" : L"Nền sáng");
+        ComboBox_AddString(iconCombo, en ? L"Custom" : L"Tự chọn");
+        if (sel >= 0) ComboBox_SetCurSel(iconCombo, sel);
+    }
+
+    // Spell exclusions button
+    if (btnSpellExcl_)
+        SetWindowTextW(btnSpellExcl_, en ? L"Spell exclusions..." : L"Loại trừ chính tả...");
+
+    // Report bug link
+    if (linkReportBug_) {
+        SetWindowTextW(linkReportBug_, en
+            ? L"<a href=\"https://github.com/phatMT97/NexusKey/issues\">Report bug</a>"
+            : L"<a href=\"https://github.com/phatMT97/NexusKey/issues\">Báo cáo lỗi</a>");
+    }
+
+    // Tooltips
+    if (tooltip_) {
+        for (size_t i = 0; i < kSettingsCount; ++i) {
+            const auto& meta = kSettings[i];
+            if (meta.win32Id == 0) continue;
+
+            const wchar_t* tip = en ? meta.tooltipEn : meta.tooltip;
+            if (!tip) continue;
+
+            HWND ctrl = GetDlgItem(hwnd_, meta.win32Id);
+            if (!ctrl) continue;
+
+            TTTOOLINFOW ti{};
+            ti.cbSize   = sizeof(ti);
+            ti.uFlags   = TTF_IDISHWND;
+            ti.hwnd     = hwnd_;
+            ti.uId      = reinterpret_cast<UINT_PTR>(ctrl);
+            ti.lpszText = const_cast<wchar_t*>(tip);
+            SendMessageW(tooltip_, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&ti));
+        }
+    }
+
+    InvalidateRect(hwnd_, nullptr, TRUE);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1073,13 +1177,13 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             if (!btn) break;
             if (wParam == 0) {
                 EnableWindow(btn, TRUE);
-                SetWindowTextW(btn, S(StringId::UPDATE_CHECK_NOW));
+                // SetWindowTextW(btn, S(StringId::UPDATE_CHECK_NOW));
             } else if (wParam == 1) {
                 EnableWindow(btn, FALSE);
-                SetWindowTextW(btn, S(StringId::UPDATE_CHECKING));
+                // SetWindowTextW(btn, S(StringId::UPDATE_CHECKING));
             } else if (wParam == 2) {
                 EnableWindow(btn, FALSE);
-                SetWindowTextW(btn, S(StringId::UPDATE_DOWNLOADING));
+                // SetWindowTextW(btn, S(StringId::UPDATE_DOWNLOADING));
             }
             return 0;
         }

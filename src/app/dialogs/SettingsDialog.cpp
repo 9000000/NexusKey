@@ -1331,31 +1331,7 @@ void SettingsDialog::startUpdate(const UpdateInfo& info) {
     HWND hwnd = get_hwnd();
     if (!hwnd || info.downloadUrl.empty()) return;
 
-    struct State {
-        std::atomic<bool> done{false};
-        bool success = false;
-    };
-    auto state = std::make_shared<State>();
-    std::wstring downloadUrl = info.downloadUrl;
-
-    std::thread([state, downloadUrl]() {
-        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        state->success = UpdateChecker::DownloadAndLaunchInstaller(downloadUrl);
-        CoUninitialize();
-        state->done.store(true, std::memory_order_release);
-    }).detach();
-
-    // Blocking progress dialog — closes when done or user cancels
-    bool completed = UpdateChecker::ShowProgressDialog(hwnd, S(StringId::UPDATE_DOWNLOADING), state->done);
-
-    if (!completed || !state->success) {
-        if (completed && !state->success) {
-            // Download completed but failed — show error
-            TaskDialog(hwnd, nullptr, L"NexusKey", S(StringId::UPDATE_TITLE),
-                       S(StringId::UPDATE_DOWNLOAD_FAILED), TDCBF_OK_BUTTON, TD_WARNING_ICON, nullptr);
-        }
-        return;
-    }
+    if (!UpdateChecker::DownloadWithProgress(hwnd, info.downloadUrl)) return;
 
     // Success — signal main process to exit
     HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);

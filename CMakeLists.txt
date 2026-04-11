@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(NexusKey VERSION 2.1.11 LANGUAGES CXX)
+project(NexusKey VERSION 2.1.10 LANGUAGES CXX)
 
 # Generate Version.h from Version.h.in — version is defined once in project() above.
 configure_file(
@@ -367,6 +367,7 @@ enable_testing()
 set(NEXTKEY_TEST_SOURCES
     tests/TelexEngineTest.cpp
     tests/VniEngineTest.cpp
+    tests/TelexDictionaryTest.cpp
     tests/EngineFactoryTest.cpp
     tests/SharedStateTest.cpp
     tests/FeatureOptionsTest.cpp
