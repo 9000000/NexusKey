@@ -63,7 +63,7 @@ public:
     [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
     [[nodiscard]] size_t Count() const override { return states_.size(); }
-    [[nodiscard]] bool HasActiveQuickConsonant() const override { return quickConsonantIdx_ != SIZE_MAX; }
+    [[nodiscard]] bool HasActiveQuickConsonant() const override { return qc_.hasActive(); }
 
 private:
     // Processing
@@ -88,10 +88,7 @@ private:
     std::wstring rawInput_;
     TypingConfig config_;
     bool spellCheckDisabled_ = false;
-    bool quickConsonantOnly_ = false;    // true when buffer is only quick consonant expansion
-    bool quickConsonantEscaped_ = false; // true after backspace undoes quick consonant
-    size_t quickConsonantIdx_ = SIZE_MAX; // states_ index of quick consonant result char
-    wchar_t lastQuickConsonantKey_ = 0;  // key that triggered last quick consonant (suppresses consecutive re-trigger)
+    QuickConsonantState qc_;              // Quick consonant expansion state
     EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_
     wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
     EnglishProtectionState engProt_;     // 3-tier English protection state

@@ -84,7 +84,7 @@ void TelexEngine::PushChar(wchar_t c) {
     if (rawInput_.size() >= 64) return;
 
     rawInput_.push_back(c);
-    quickConsonantOnly_ = false;  // Any new char clears the flag
+    qc_.onlyQC = false;  // Any new char clears the flag
 
     // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
     if (config_.quickStartConsonant && states_.empty()) {
@@ -120,17 +120,17 @@ void TelexEngine::PushChar(wchar_t c) {
 
     // 0b. Quick consonant: cc→ch, gg→gi, nn→ng, kk→kh, qq→qu, pp→ph, tt→th
     // Skip if backspace just undid a quick consonant (let user type the literal)
-    bool quickEscaped = quickConsonantEscaped_;
-    quickConsonantEscaped_ = false;
+    bool quickEscaped = qc_.escaped;
+    qc_.escaped = false;
 
     // Suppress consecutive re-triggering: after cc→ch, skip quick consonant
     // while the user keeps pressing the same key (e.g., cccc → chcc, not chch)
     wchar_t lower = towlower(c);
-    if (lastQuickConsonantKey_ != 0) {
-        if (lower == lastQuickConsonantKey_) {
+    if (qc_.lastKey != 0) {
+        if (lower == qc_.lastKey) {
             quickEscaped = true;  // Reuse escape flag to skip quick consonant
         } else {
-            lastQuickConsonantKey_ = 0;  // Different key, allow future expansions
+            qc_.lastKey = 0;  // Different key, allow future expansions
         }
     }
 
@@ -147,9 +147,9 @@ void TelexEngine::PushChar(wchar_t c) {
             else if (last.base == L't' && lower == L't') replacement = L'h';
             if (replacement) {
                 c = iswupper(c) ? towupper(replacement) : replacement;
-                if (states_.size() == 1) quickConsonantOnly_ = true;
-                quickConsonantIdx_ = states_.size();  // Index of the char about to be added
-                lastQuickConsonantKey_ = lower;  // Suppress re-trigger on consecutive same key
+                if (states_.size() == 1) qc_.onlyQC = true;
+                qc_.idx = states_.size();  // Index of the char about to be added
+                qc_.lastKey = lower;  // Suppress re-trigger on consecutive same key
             }
         }
         // uu→ươ: apply horn to existing 'u', then insert 'ơ'
@@ -167,9 +167,9 @@ void TelexEngine::PushChar(wchar_t c) {
                 s.isUpper = upper;
                 s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
                 states_.push_back(s);
-                quickConsonantIdx_ = states_.size() - 1;  // Index of the ơ just added
-                if (states_.size() == 2) quickConsonantOnly_ = true;
-                lastQuickConsonantKey_ = lower;  // Suppress re-trigger on consecutive same key
+                qc_.idx = states_.size() - 1;  // Index of the ơ just added
+                if (states_.size() == 2) qc_.onlyQC = true;
+                qc_.lastKey = lower;  // Suppress re-trigger on consecutive same key
                 UpdateSpellState();
                 return;
             }
@@ -1046,18 +1046,16 @@ void TelexEngine::Backspace() {
     // e.g., "aph" + BS → "app" (not "ap"), "rieng" + BS → "rienn".
     // The triggering key is still in rawInput_; re-add it as an escaped literal
     // so the user sees the full original sequence without having to retype.
-    if (quickConsonantIdx_ != SIZE_MAX && states_.size() - 1 == quickConsonantIdx_) {
-        quickConsonantEscaped_ = true;
+    if (qc_.hasActive() && states_.size() - 1 == qc_.idx) {
         // For uu→ươ: undo the horn on the preceding 'u' before popping ơ
         UndoHornU(states_.data(), states_.size() - 1);
 
-        wchar_t originalKey = lastQuickConsonantKey_;
-        quickConsonantIdx_ = SIZE_MAX;
-        lastQuickConsonantKey_ = 0;
+        wchar_t originalKey = qc_.lastKey;
+        qc_.markEscaped();  // escaped=true, clearActive (idx+lastKey)
 
         states_.pop_back();  // Remove the converted char (h in ph, g in ng, i in gi, ơ in ươ)
         // rawInput_ already contains the original triggering key — don't trim it.
-        // Re-add it as a literal char; quickConsonantEscaped_ prevents re-conversion.
+        // Re-add it as a literal char; qc_.escaped prevents re-conversion.
         if (originalKey != 0) {
             ProcessChar(originalKey);
         }
@@ -1067,8 +1065,7 @@ void TelexEngine::Backspace() {
         CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
         return;
     }
-    quickConsonantIdx_ = SIZE_MAX;
-    lastQuickConsonantKey_ = 0;
+    qc_.clearActive();
 
     // Trim rawInput_ to the position when this state was created.
     // This correctly handles modifier keys (circumflex, tone) that add to rawInput_
@@ -1103,7 +1100,7 @@ std::wstring TelexEngine::Commit() {
     }
 
     // Quick consonant alone (gg, uu) — always restore regardless of spell check setting
-    if (quickConsonantOnly_) {
+    if (qc_.onlyQC) {
         std::wstring raw(rawInput_.begin(), rawInput_.end());
         if (ShouldAutoRestore(raw, composed)) {
             Reset();
@@ -1115,10 +1112,10 @@ std::wstring TelexEngine::Commit() {
     //  - spell check / auto-restore not enabled
     //  - an active quick consonant (nn→ng, cc→ch, etc.) was applied — user did
     //    this intentionally; restoring would undo the conversion they wanted.
-    //    (quickConsonantIdx_ is SIZE_MAX when no quick consonant is active)
+    //    (qc_.hasActive() when quick consonant is active)
     bool skipAutoRestore = !config_.spellCheckEnabled
                         || !config_.autoRestoreEnabled
-                        || quickConsonantIdx_ != SIZE_MAX;
+                        || qc_.hasActive();
     if (!skipAutoRestore) {
         bool shouldRestore = spellCheckDisabled_;  // Already known Invalid
 
@@ -1158,10 +1155,7 @@ void TelexEngine::Reset() {
     states_.clear();
     rawInput_.clear();
     spellCheckDisabled_ = false;
-    quickConsonantOnly_ = false;
-    quickConsonantEscaped_ = false;
-    quickConsonantIdx_ = SIZE_MAX;
-    lastQuickConsonantKey_ = 0;
+    qc_.Reset();
     escape_.clear();
     quickStartKey_ = 0;
     engProt_.Reset();

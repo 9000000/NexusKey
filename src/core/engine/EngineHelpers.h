@@ -43,6 +43,30 @@ struct EscapeState {
     constexpr void clear() noexcept { kind = EscapeKind::None; }
 };
 
+//=============================================================================
+// QuickConsonantState — replaces 4 scattered QC fields
+//=============================================================================
+
+struct QuickConsonantState {
+    size_t idx = SIZE_MAX;       // states_ index of quick consonant result char
+    wchar_t lastKey = 0;         // key that triggered last QC (suppresses consecutive re-trigger)
+    bool onlyQC = false;         // true when buffer is only quick consonant expansion
+    bool escaped = false;        // true after backspace undoes quick consonant
+
+    constexpr void Reset() noexcept {
+        idx = SIZE_MAX; lastKey = 0; onlyQC = false; escaped = false;
+    }
+    constexpr void clearActive() noexcept {
+        idx = SIZE_MAX; lastKey = 0;
+    }
+    constexpr void markEscaped() noexcept {
+        escaped = true; clearActive();
+    }
+    [[nodiscard]] constexpr bool hasActive() const noexcept {
+        return idx != SIZE_MAX;
+    }
+};
+
 /// Check if the composed buffer matches any spell exclusion prefix (case-insensitive).
 /// Exclusion entries must be >= 2 chars. Match is prefix-based: "hđ" covers "hđt", "hđqt".
 template<typename CharStateT, typename ComposeFunc>

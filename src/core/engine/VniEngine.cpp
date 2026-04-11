@@ -86,7 +86,7 @@ void VniEngine::PushChar(wchar_t c) {
     if (rawInput_.size() >= 64) return;
 
     rawInput_ += c;
-    quickConsonantOnly_ = false;  // Any new char clears the flag
+    qc_.onlyQC = false;  // Any new char clears the flag
 
     // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
     if (config_.quickStartConsonant && states_.empty()) {
@@ -122,17 +122,17 @@ void VniEngine::PushChar(wchar_t c) {
 
     // 0b. Quick consonant: cc→ch, gg→gi, nn→ng, kk→kh, qq→qu, pp→ph, tt→th
     // Skip if backspace just undid a quick consonant (let user type the literal)
-    bool quickEscaped = quickConsonantEscaped_;
-    quickConsonantEscaped_ = false;
+    bool quickEscaped = qc_.escaped;
+    qc_.escaped = false;
 
     // Suppress consecutive re-triggering: after cc→ch, skip quick consonant
     // while the user keeps pressing the same key (e.g., cccc → chcc, not chch)
     wchar_t lower = towlower(c);
-    if (lastQuickConsonantKey_ != 0) {
-        if (lower == lastQuickConsonantKey_) {
+    if (qc_.lastKey != 0) {
+        if (lower == qc_.lastKey) {
             quickEscaped = true;  // Reuse escape flag to skip quick consonant
         } else {
-            lastQuickConsonantKey_ = 0;  // Different key, allow future expansions
+            qc_.lastKey = 0;  // Different key, allow future expansions
         }
     }
 
@@ -149,9 +149,9 @@ void VniEngine::PushChar(wchar_t c) {
             else if (last.base == L't' && lower == L't') replacement = L'h';
             if (replacement) {
                 c = iswupper(c) ? towupper(replacement) : replacement;
-                if (states_.size() == 1) quickConsonantOnly_ = true;
-                quickConsonantIdx_ = states_.size();
-                lastQuickConsonantKey_ = lower;  // Suppress re-trigger on consecutive same key
+                if (states_.size() == 1) qc_.onlyQC = true;
+                qc_.idx = states_.size();
+                qc_.lastKey = lower;  // Suppress re-trigger on consecutive same key
             }
         }
         // uu→ươ: apply horn to existing 'u', then insert 'ơ'
@@ -169,9 +169,9 @@ void VniEngine::PushChar(wchar_t c) {
                 s.isUpper = upper;
                 s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
                 states_.push_back(s);
-                quickConsonantIdx_ = states_.size() - 1;
-                if (states_.size() == 2) quickConsonantOnly_ = true;
-                lastQuickConsonantKey_ = lower;  // Suppress re-trigger on consecutive same key
+                qc_.idx = states_.size() - 1;
+                if (states_.size() == 2) qc_.onlyQC = true;
+                qc_.lastKey = lower;  // Suppress re-trigger on consecutive same key
                 UpdateSpellState();
                 return;
             }
@@ -331,13 +331,11 @@ void VniEngine::Backspace() {
 
     // Undo quick consonant expansion — restore original key in-place.
     // e.g., "aph" + BS → "app" (not "ap"), "rieng" + BS → "rienn".
-    if (quickConsonantIdx_ != SIZE_MAX && states_.size() - 1 == quickConsonantIdx_) {
-        quickConsonantEscaped_ = true;
+    if (qc_.hasActive() && states_.size() - 1 == qc_.idx) {
         UndoHornU(states_.data(), states_.size() - 1);
 
-        wchar_t originalKey = lastQuickConsonantKey_;
-        quickConsonantIdx_ = SIZE_MAX;
-        lastQuickConsonantKey_ = 0;
+        wchar_t originalKey = qc_.lastKey;
+        qc_.markEscaped();  // escaped=true, clearActive (idx+lastKey)
 
         states_.pop_back();
         // rawInput_ still holds the original triggering key — don't trim it.
@@ -350,8 +348,7 @@ void VniEngine::Backspace() {
         CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
         return;
     }
-    quickConsonantIdx_ = SIZE_MAX;
-    lastQuickConsonantKey_ = 0;
+    qc_.clearActive();
 
     // Trim rawInput_ to the position when this state was created.
     size_t rawTarget = states_.back().rawIdx;
@@ -389,7 +386,7 @@ std::wstring VniEngine::Commit() {
     }
 
     // Quick consonant alone (gg, uu) — always restore regardless of spell check setting
-    if (quickConsonantOnly_) {
+    if (qc_.onlyQC) {
         std::wstring raw = rawInput_;
         if (ShouldAutoRestore(raw, composed)) {
             Reset();
@@ -401,10 +398,10 @@ std::wstring VniEngine::Commit() {
     //  - spell check / auto-restore not enabled
     //  - an active quick consonant (nn→ng, cc→ch, etc.) was applied — user did
     //    this intentionally; restoring would undo the conversion they wanted.
-    //    (quickConsonantIdx_ is SIZE_MAX when no quick consonant is active)
+    //    (qc_.idx is SIZE_MAX when no quick consonant is active)
     bool skipAutoRestore = !config_.spellCheckEnabled
                         || !config_.autoRestoreEnabled
-                        || quickConsonantIdx_ != SIZE_MAX;
+                        || qc_.hasActive();
     if (!skipAutoRestore) {
         bool shouldRestore = spellCheckDisabled_;  // Already known Invalid
 
@@ -443,10 +440,7 @@ void VniEngine::Reset() {
     states_.clear();
     rawInput_.clear();
     spellCheckDisabled_ = false;
-    quickConsonantOnly_ = false;
-    quickConsonantEscaped_ = false;
-    quickConsonantIdx_ = SIZE_MAX;
-    lastQuickConsonantKey_ = 0;
+    qc_.Reset();
     escape_.clear();
     quickStartKey_ = 0;
     engProt_.Reset();
