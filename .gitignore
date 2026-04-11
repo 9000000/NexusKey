@@ -25,6 +25,7 @@ Thumbs.db
 .agent/
 .agents/
 .claude/
+.claude-m/
 _bmad/
 _bmad-output/
 
