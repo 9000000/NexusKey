@@ -743,7 +743,11 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                      previousComposition_.c_str(),
                      synthEventsPending_.load());
             ReplayCommittedChars();
-            return HandleAlphaKey(vkCode);
+            {
+                bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+                return HandleAlphaKey(vkCode, shift, caps);
+            }
         } else if (currentMethod_ == InputMethod::VNI &&
                    vkCode >= 0x31 && vkCode <= 0x39 &&
                    !(GetKeyState(VK_SHIFT) & 0x8000)) {
@@ -911,7 +915,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 6. A-Z keys → process with engine
     if (vkCode >= 0x41 && vkCode <= 0x5A) {
         HOOK_LOG(L"  alpha key '%c' → HandleAlphaKey", static_cast<char>(vkCode));
-        return HandleAlphaKey(vkCode);
+        return HandleAlphaKey(vkCode, cachedShift, cachedCapsLock);
     }
 
     // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư)
@@ -1115,9 +1119,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
 // Input Engine Interaction
 // ═══════════════════════════════════════════════════════════
 
-bool HookEngine::HandleAlphaKey(DWORD vkCode) {
-    bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-    bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
     wchar_t originalCh = static_cast<wchar_t>(vkCode);
     if (!upper) originalCh = towlower(originalCh);
@@ -1950,7 +1952,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                  encodedToSend.size());
 
         {
-            bool needEmpty = (backspaceCount > 0 && !skipEmptyChar_);
+            bool needEmpty = (backspaceCount > 0 && commonLen == 0 && !skipEmptyChar_);
             size_t bsTotal = backspaceCount + (needEmpty ? 1 : 0);
 
             if (bsTotal > 0 || !encodedToSend.empty()) {
@@ -1995,35 +1997,93 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
              toSend.c_str());
 
     {
-        bool needEmpty = (backspaceCount > 0 && !skipEmptyChar_);
+        // Bait char (U+202F): prevents apps with autofill from swallowing the first
+        // typed char after backspacing to empty. Only needed when ALL composition
+        // content is removed (commonLen == 0 → field becomes empty → autofill triggers).
+        // For typical transforms (1-2 BS on 3+ char words), field stays non-empty → no bait.
+        bool needEmpty = (backspaceCount > 0 && commonLen == 0 && !skipEmptyChar_);
         if (needEmpty) backspaceCount++;
 
         HOOK_LOG(L"  ReplaceComposition[send]: BS=%zu needEmpty=%d toSend='%s' skipEmpty=%d synthPending=%d",
                  backspaceCount, needEmpty ? 1 : 0, toSend.c_str(), skipEmptyChar_ ? 1 : 0, synthEventsPending_.load());
 
         if (backspaceCount > 0 || !toSend.empty()) {
-            std::vector<INPUT> bsEvents;
-            std::vector<INPUT> charEvents;
+            // Stack-allocated events: Vietnamese words max ~8 chars, transforms touch 1-3.
+            // Max: bait(2) + 8 BS(16) + 8 chars(16) = 34 INPUT structs. 48 is generous.
+            static constexpr size_t kMaxEvents = 48;
+            INPUT bsBuf[kMaxEvents];
+            size_t bsCount = 0;
+            INPUT charBuf[kMaxEvents];
+            size_t charCount = 0;
             WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
 
+            auto appendUnicode = [](INPUT* buf, size_t& count, wchar_t ch) {
+                if (count + 2 > kMaxEvents) return;
+                INPUT& down = buf[count++];
+                down = {};
+                down.type = INPUT_KEYBOARD;
+                down.ki.wScan = ch;
+                down.ki.dwFlags = KEYEVENTF_UNICODE;
+                INPUT& up = buf[count++];
+                up = {};
+                up.type = INPUT_KEYBOARD;
+                up.ki.wScan = ch;
+                up.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+            };
+
+            auto appendVk = [](INPUT* buf, size_t& count, WORD vk, WORD scan) {
+                if (count + 2 > kMaxEvents) return;
+                INPUT& down = buf[count++];
+                down = {};
+                down.type = INPUT_KEYBOARD;
+                down.ki.wVk = vk;
+                down.ki.wScan = scan;
+                INPUT& up = buf[count++];
+                up = {};
+                up.type = INPUT_KEYBOARD;
+                up.ki.wVk = vk;
+                up.ki.wScan = scan;
+                up.ki.dwFlags = KEYEVENTF_KEYUP;
+            };
+
             if (backspaceCount > 0) {
-                bsEvents.reserve((needEmpty ? 2 : 0) + backspaceCount * 2);
                 if (needEmpty) {
-                    AppendUnicodeEvent(bsEvents, 0x202F);
+                    appendUnicode(bsBuf, bsCount, 0x202F);
                 }
                 for (size_t i = 0; i < backspaceCount; ++i) {
-                    AppendVkEvent(bsEvents, VK_BACK, bsScan);
+                    appendVk(bsBuf, bsCount, VK_BACK, bsScan);
                 }
             }
 
-            if (!toSend.empty()) {
-                charEvents.reserve(toSend.size() * 2);
-                for (wchar_t ch : toSend) {
-                    AppendUnicodeEvent(charEvents, ch);
-                }
+            for (wchar_t ch : toSend) {
+                appendUnicode(charBuf, charCount, ch);
             }
 
-            DispatchSendInput(bsEvents, charEvents);
+            // Dispatch using stack buffers
+            sending_ = true;
+            if (skipEmptyChar_) {
+                if (bsCount > 0) {
+                    TrackedSendInput(bsBuf, static_cast<UINT>(bsCount));
+                    int baseMs = isElectronApp_ ? 10 : 8;
+                    int bsKeys = static_cast<int>(bsCount) / 2;
+                    int delayMs = (std::min)(baseMs + (bsKeys > 1 ? bsKeys - 1 : 0), 20);
+                    Sleep(delayMs);
+                }
+                if (charCount > 0) {
+                    TrackedSendInput(charBuf, static_cast<UINT>(charCount));
+                }
+            } else {
+                // Batch: merge into bsBuf and send once
+                if (charCount > 0 && bsCount + charCount <= kMaxEvents) {
+                    memcpy(&bsBuf[bsCount], charBuf, charCount * sizeof(INPUT));
+                    bsCount += charCount;
+                }
+                if (bsCount > 0) {
+                    TrackedSendInput(bsBuf, static_cast<UINT>(bsCount));
+                }
+            }
+            sending_ = false;
+            RecordSynthDispatch();
         }
     }
 

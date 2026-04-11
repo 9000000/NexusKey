@@ -96,7 +96,7 @@ private:
     bool ProcessKeyUp(DWORD vkCode, DWORD flags);
 
     // Input engine interaction
-    [[nodiscard]] bool HandleAlphaKey(DWORD vkCode);  // Returns true if keystroke should be eaten
+    [[nodiscard]] bool HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock);
     [[nodiscard]] bool HandleVniDigitKey(DWORD vkCode); // VNI digit 1-9: push to engine, replace composition
     void HandleBackspace();
     bool CommitComposition();  // Returns true if auto-restore changed text
