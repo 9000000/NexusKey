@@ -128,6 +128,7 @@ void VniEngine::PushChar(wchar_t c) {
     // Suppress consecutive re-triggering: after cc→ch, skip quick consonant
     // while the user keeps pressing the same key (e.g., cccc → chcc, not chch)
     wchar_t lower = towlower(c);
+    bool isUpper = iswupper(c);
     if (qc_.lastKey != 0) {
         if (lower == qc_.lastKey) {
             quickEscaped = true;  // Reuse escape flag to skip quick consonant
@@ -148,10 +149,12 @@ void VniEngine::PushChar(wchar_t c) {
             else if (last.base == L'p' && lower == L'p') replacement = L'h';
             else if (last.base == L't' && lower == L't') replacement = L'h';
             if (replacement) {
-                c = iswupper(c) ? towupper(replacement) : replacement;
                 if (states_.size() == 1) qc_.onlyQC = true;
                 qc_.idx = states_.size();
-                qc_.lastKey = lower;  // Suppress re-trigger on consecutive same key
+                qc_.lastKey = lower;  // Save ORIGINAL key before update
+                c = isUpper ? towupper(replacement) : replacement;
+                lower = towlower(c);
+                isUpper = iswupper(c);
             }
         }
         // uu→ươ: apply horn to existing 'u', then insert 'ơ'
@@ -182,7 +185,7 @@ void VniEngine::PushChar(wchar_t c) {
     // 1. Try tone keys (1-5) — gated by spell check + English protection
     if (IsToneKey(c)) {
         // All "treat as literal" paths share the same two operations.
-        auto asLiteral = [&] { ProcessChar(c, rawInput_.size() - 1); UpdateSpellState(); };
+        auto asLiteral = [&] { ProcessChar(c, rawInput_.size() - 1, lower, isUpper); UpdateSpellState(); };
 
         if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // Allow tone escape (33, 11, etc.) even when spell check disabled:
@@ -302,7 +305,7 @@ void VniEngine::PushChar(wchar_t c) {
     }
 
     // Regular character
-    ProcessChar(c, rawInput_.size() - 1);
+    ProcessChar(c, rawInput_.size() - 1, lower, isUpper);
     ApplyAutoUO();
     RelocateToneToTarget();
     UpdateSpellState();
@@ -364,12 +367,11 @@ void VniEngine::Backspace() {
 }
 
 std::wstring VniEngine::Peek() const {
-    std::wstring result;
-    result.reserve(states_.size());
+    composeBuf_.clear();
     for (const auto& s : states_) {
-        result += ComposeChar(s);
+        composeBuf_ += ComposeChar(s);
     }
-    return result;
+    return composeBuf_;
 }
 
 std::wstring VniEngine::Commit() {
@@ -669,10 +671,10 @@ CharState* VniEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTr
 // Character Processing
 //-----------------------------------------------------------------------------
 
-void VniEngine::ProcessChar(wchar_t c, size_t rawIdx) {
+void VniEngine::ProcessChar(wchar_t /*c*/, size_t rawIdx, wchar_t lower, bool isUpper) {
     CharState state;
-    state.base = towlower(c);
-    state.isUpper = iswupper(c);
+    state.base = lower;
+    state.isUpper = isUpper;
     state.rawIdx = rawIdx;
     states_.push_back(state);
 }

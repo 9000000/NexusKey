@@ -93,8 +93,9 @@ private:
     // Input processing
     bool ProcessTone(wchar_t c);      // s, f, r, x, j
     bool ProcessClearTone();          // z — remove existing tone
-    bool ProcessModifier(wchar_t c);  // w, [], aa, ee, oo, dd
-    void ProcessChar(wchar_t c);      // Regular character
+    bool ProcessModifier(wchar_t c, wchar_t lower);  // w, [], aa, ee, oo, dd
+    void ProcessChar(wchar_t c) { ProcessChar(c, towlower(c), iswupper(c)); }
+    void ProcessChar(wchar_t c, wchar_t lower, bool isUpper);
 
     // Find target for tone/modifier application
     size_t FindToneTarget() const;
@@ -143,6 +144,7 @@ private:
     EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_
     wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
     EnglishProtectionState engProt_;     // 3-tier English protection state
+    mutable std::wstring composeBuf_;    // Reusable buffer for ComposeAll() — avoids heap alloc per Peek()
 };
 
 }  // namespace Telex

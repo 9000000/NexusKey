@@ -69,7 +69,8 @@ private:
     // Processing
     bool ProcessModifier(wchar_t c);
     bool ProcessTone(wchar_t c);
-    void ProcessChar(wchar_t c, size_t rawIdx);
+    void ProcessChar(wchar_t c, size_t rawIdx) { ProcessChar(c, rawIdx, towlower(c), iswupper(c)); }
+    void ProcessChar(wchar_t c, size_t rawIdx, wchar_t lower, bool isUpper);
     
     // Character composition
     wchar_t ComposeChar(const CharState& state) const;
@@ -90,6 +91,7 @@ private:
     bool spellCheckDisabled_ = false;
     QuickConsonantState qc_;              // Quick consonant expansion state
     EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_
+    mutable std::wstring composeBuf_;     // Reusable buffer for Peek() — avoids heap alloc
     wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
     EnglishProtectionState engProt_;     // 3-tier English protection state
 };

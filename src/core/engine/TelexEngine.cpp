@@ -126,6 +126,7 @@ void TelexEngine::PushChar(wchar_t c) {
     // Suppress consecutive re-triggering: after cc→ch, skip quick consonant
     // while the user keeps pressing the same key (e.g., cccc → chcc, not chch)
     wchar_t lower = towlower(c);
+    bool isUpper = iswupper(c);
     if (qc_.lastKey != 0) {
         if (lower == qc_.lastKey) {
             quickEscaped = true;  // Reuse escape flag to skip quick consonant
@@ -146,10 +147,12 @@ void TelexEngine::PushChar(wchar_t c) {
             else if (last.base == L'p' && lower == L'p') replacement = L'h';
             else if (last.base == L't' && lower == L't') replacement = L'h';
             if (replacement) {
-                c = iswupper(c) ? towupper(replacement) : replacement;
                 if (states_.size() == 1) qc_.onlyQC = true;
                 qc_.idx = states_.size();  // Index of the char about to be added
-                qc_.lastKey = lower;  // Suppress re-trigger on consecutive same key
+                qc_.lastKey = lower;  // Suppress re-trigger — save ORIGINAL key before update
+                c = isUpper ? towupper(replacement) : replacement;
+                lower = towlower(c);  // Update for downstream ProcessChar
+                isUpper = iswupper(c);
             }
         }
         // uu→ươ: apply horn to existing 'u', then insert 'ơ'
@@ -178,7 +181,7 @@ void TelexEngine::PushChar(wchar_t c) {
     }
 
     // 1a. 'z' key — clear existing tone (if any)
-    if (towlower(c) == L'z' && !states_.empty()) {
+    if (lower == L'z' && !states_.empty()) {
         if (config_.spellCheckEnabled && spellCheckDisabled_) {
             ProcessChar(c);
             UpdateSpellState();
@@ -193,7 +196,7 @@ void TelexEngine::PushChar(wchar_t c) {
     // 1b. Try tone keys (s, f, r, x, j) — gated by spell check + English protection
     if (IsToneKey(c) && !states_.empty()) {
         // All "treat as literal" paths share the same two operations.
-        auto asLiteral = [&] { ProcessChar(c); UpdateSpellState(); };
+        auto asLiteral = [&] { ProcessChar(c, lower, isUpper); UpdateSpellState(); };
 
         if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // Allow tone escape (rr, ss, ff, etc.) even when spell check disabled:
@@ -297,12 +300,12 @@ void TelexEngine::PushChar(wchar_t c) {
             if (last.IsVowel() && last.base == lower && last.mod == Modifier::Circumflex)
                 canEscape = true;
         }
-        if (canEscape && ProcessModifier(c)) {
+        if (canEscape && ProcessModifier(c, lower)) {
             ApplyAutoUO();
             UpdateSpellState();
             return;
         }
-    } else if (ProcessModifier(c)) {
+    } else if (ProcessModifier(c, lower)) {
         if (engProt_.bias == LanguageBias::HardEnglish || 
             engProt_.bias == LanguageBias::SoftEnglish) {
             engProt_.bias = LanguageBias::Vietnamese;  // Modifier applied → VN intent
@@ -327,7 +330,7 @@ void TelexEngine::PushChar(wchar_t c) {
     }
 
     // 3. Regular character
-    ProcessChar(c);
+    ProcessChar(c, lower, isUpper);
     RelocateToneToTarget();
     ApplyAutoUO();
     UpdateSpellState();
@@ -392,8 +395,7 @@ bool TelexEngine::ProcessClearTone() {
 // Modifier Processing (W, [], AA, EE, OO, DD) - TABLE-DRIVEN
 //-----------------------------------------------------------------------------
 
-bool TelexEngine::ProcessModifier(wchar_t c) {
-    wchar_t lower = towlower(c);
+bool TelexEngine::ProcessModifier(wchar_t c, wchar_t lower) {
 
     // Handle bracket keys: [ → ơ, ] → ư (full Telex only)
     if (config_.inputMethod != InputMethod::SimpleTelex) {
@@ -854,10 +856,10 @@ void TelexEngine::EraseConsumedRaw(size_t idx) {
 // Character Processing
 //-----------------------------------------------------------------------------
 
-void TelexEngine::ProcessChar(wchar_t c) {
+void TelexEngine::ProcessChar(wchar_t /*c*/, wchar_t lower, bool isUpper) {
     CharState s;
-    s.base = towlower(c);
-    s.isUpper = iswupper(c);
+    s.base = lower;
+    s.isUpper = isUpper;
     s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
     states_.push_back(s);
 }
@@ -1013,13 +1015,12 @@ wchar_t TelexEngine::Compose(const CharState& s) {
 }
 
 std::wstring TelexEngine::ComposeAll() const {
-    std::wstring result;
-    result.reserve(states_.size());
+    composeBuf_.clear();
     for (const auto& s : states_) {
         wchar_t ch = Compose(s);
-        if (ch != 0) result += ch;
+        if (ch != 0) composeBuf_ += ch;
     }
-    return result;
+    return composeBuf_;
 }
 
 //-----------------------------------------------------------------------------
