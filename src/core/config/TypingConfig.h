@@ -46,7 +46,7 @@ struct TypingConfig {
     uint8_t optimizeLevel = 0;  // 0 = off, 1 = basic, 2 = aggressive
     bool modernOrtho = false;   // Modern tone placement (oà, uý)
     bool autoCaps = false;      // Auto-capitalize first letter of sentence
-    bool allowZwjf = true;      // z/w/j/f act as tone/modifier keys (normal Vietnamese)
+    bool allowZwjf = false;     // z/w/j/f act as tone/modifier keys (normal Vietnamese)
     bool autoRestoreEnabled = false;  // Restore raw keys when word is invalid
     bool tempOffByAlt = false;        // Double-Alt tap temporarily disables Vietnamese for current word
     bool macroEnabled = false;         // Allow macro/shorthand expansion

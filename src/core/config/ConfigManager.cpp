@@ -90,7 +90,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             );
             config.modernOrtho = (*features)["modern_ortho"].value_or(false);
             config.autoCaps = (*features)["auto_caps"].value_or(false);
-            config.allowZwjf = (*features)["allow_zwjf"].value_or(true);
+            config.allowZwjf = (*features)["allow_zwjf"].value_or(false);
             config.autoRestoreEnabled = (*features)["auto_restore"].value_or(false);
             config.tempOffByAlt = (*features)["temp_off_by_alt"].value_or(false);
             config.macroEnabled = (*features)["macro_enabled"].value_or(false);

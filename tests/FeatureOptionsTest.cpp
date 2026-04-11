@@ -34,7 +34,7 @@ TEST(FeatureOptionsDefaults, NewFieldsDefaults) {
     TypingConfig config;
     EXPECT_FALSE(config.modernOrtho);
     EXPECT_FALSE(config.autoCaps);
-    EXPECT_TRUE(config.allowZwjf);  // Default: tone keys enabled (normal Vietnamese)
+    EXPECT_FALSE(config.allowZwjf);  // Default: off (stricter spell check)
 }
 
 // ============================================================================
@@ -184,7 +184,7 @@ spell_check = true
     ASSERT_TRUE(config.has_value());
     EXPECT_FALSE(config->modernOrtho);
     EXPECT_FALSE(config->autoCaps);
-    EXPECT_TRUE(config->allowZwjf);  // Default: tone keys enabled
+    EXPECT_FALSE(config->allowZwjf);  // Default: off
 }
 
 TEST_F(FeatureConfigTest, Load_NoFeaturesSection_Defaults) {
@@ -197,7 +197,7 @@ method = "vni"
     ASSERT_TRUE(config.has_value());
     EXPECT_FALSE(config->modernOrtho);
     EXPECT_FALSE(config->autoCaps);
-    EXPECT_TRUE(config->allowZwjf);  // Default: tone keys enabled
+    EXPECT_FALSE(config->allowZwjf);  // Default: off
 }
 
 TEST_F(FeatureConfigTest, SaveAndReload_AllTrue) {
@@ -255,7 +255,7 @@ optimize_level = 2
     EXPECT_EQ(loaded->optimizeLevel, 2);
     EXPECT_TRUE(loaded->modernOrtho);
     EXPECT_TRUE(loaded->autoCaps);
-    EXPECT_TRUE(loaded->allowZwjf);  // Default: tone keys enabled
+    EXPECT_FALSE(loaded->allowZwjf);  // Default: off
 }
 
 #endif  // _WIN32
@@ -614,7 +614,7 @@ class TelexZwjfTest : public ::testing::Test {
 protected:
     void SetUp() override {
         config_.inputMethod = InputMethod::Telex;
-        // allowZwjf defaults to true (normal Vietnamese)
+        config_.allowZwjf = true;  // These tests require ZWJF enabled
         engine_ = std::make_unique<Telex::TelexEngine>(config_);
     }
 
