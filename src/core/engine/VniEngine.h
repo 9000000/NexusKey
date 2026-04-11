@@ -7,6 +7,7 @@
 #pragma once
 
 #include "IInputEngine.h"
+#include "EngineHelpers.h"
 #include "SpellChecker.h"
 #include "EnglishProtection.h"
 #include "core/config/TypingConfig.h"
@@ -91,9 +92,8 @@ private:
     bool quickConsonantEscaped_ = false; // true after backspace undoes quick consonant
     size_t quickConsonantIdx_ = SIZE_MAX; // states_ index of quick consonant result char
     wchar_t lastQuickConsonantKey_ = 0;  // key that triggered last quick consonant (suppresses consecutive re-trigger)
-    bool dModifierEscaped_ = false;      // true after đ→d escape (d99), prevents re-triggering
+    EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_
     wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
-    bool toneEscaped_ = false;           // true after double tone key (11, 22, etc.) — blocks Vietnamese for rest of word
     EnglishProtectionState engProt_;     // 3-tier English protection state
 };
 

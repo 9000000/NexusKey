@@ -192,7 +192,7 @@ void VniEngine::PushChar(wchar_t c) {
             // Has matching pending tone → fall through to ProcessTone for escape
         }
         // Tone escape: user pressed same tone key twice — blocks Vietnamese.
-        if (toneEscaped_)                                       { asLiteral(); return; }
+        if (escape_.isEscaped())                                { asLiteral(); return; }
         // English Protection: always active, independent of spell check.
         if (!config_.allowEnglishBypass) {
             if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
@@ -225,7 +225,7 @@ void VniEngine::PushChar(wchar_t c) {
             }
         }
         if (ProcessTone(c)) {
-            if (!toneEscaped_) {
+            if (!escape_.isEscaped()) {
                 engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
             } else {
                 // Tone escaped (e.g., 11) → user is canceling Vietnamese.
@@ -241,7 +241,7 @@ void VniEngine::PushChar(wchar_t c) {
     // Modifiers can transform invalid sequences into valid ones
     // However, if we're clearly in an English word, skip modifiers
     if (IsModifierKey(c)) {
-        bool blockMod = toneEscaped_ ||
+        bool blockMod = escape_.isEscaped() ||
             (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
         // Allow d9→đ through English Protection when the word matches a spell exclusion.
         if (blockMod && c == L'9') {
@@ -315,8 +315,7 @@ void VniEngine::PushChar(wchar_t c) {
 
 void VniEngine::Backspace() {
     if (states_.empty()) return;
-    dModifierEscaped_ = false;  // Allow đ re-trigger after user edits
-    toneEscaped_ = false;       // Allow Vietnamese re-trigger after user edits
+    escape_.clear();  // Allow đ re-trigger + Vietnamese re-trigger after user edits
 
     // Undo quick start consonant: ph→f, gi→j, qu→w (collapse both chars to original)
     if (quickStartKey_ != 0 && states_.size() == 2) {
@@ -448,8 +447,7 @@ void VniEngine::Reset() {
     quickConsonantEscaped_ = false;
     quickConsonantIdx_ = SIZE_MAX;
     lastQuickConsonantKey_ = 0;
-    dModifierEscaped_ = false;
-    toneEscaped_ = false;
+    escape_.clear();
     quickStartKey_ = 0;
     engProt_.Reset();
 }
@@ -473,7 +471,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
 
     // Handle đ specially (key 9) — scan logic shared via FindStrokeDTarget (EngineHelpers.h)
     if (targetMod == Modifier::Stroke) {
-        if (dModifierEscaped_) return false;
+        if (escape_.isEscaped(EscapeKind::Stroke)) return false;
         size_t dIdx = FindStrokeDTarget(states_.data(), states_.size());
         if (dIdx == SIZE_MAX) return false;
 
@@ -483,8 +481,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
             return true;
         } else if (target.mod == Modifier::Stroke) {
             target.mod = Modifier::None;
-            dModifierEscaped_ = true;  // Lock: user intentionally removed đ
-            toneEscaped_ = true;       // Block further modifiers/tones — word is English
+            escape_.escape(EscapeKind::Stroke);
             ProcessChar(c, rawInput_.size() - 1);
             return true;
         }
@@ -530,14 +527,14 @@ bool VniEngine::ProcessModifier(wchar_t c) {
             if (uMod == Modifier::Horn && oMod == Modifier::Horn && !isEdge) {
                 states_[pairU].mod = Modifier::None;
                 states_[pairO].mod = Modifier::None;
-                toneEscaped_ = true;
+                escape_.escape(EscapeKind::Horn);
                 ProcessChar(c, rawInput_.size() - 1);
                 return true;
             }
             // Escape: uơ → uo (h/th/kh third press)
             if (uMod == Modifier::None && oMod == Modifier::Horn) {
                 states_[pairO].mod = Modifier::None;
-                toneEscaped_ = true;
+                escape_.escape(EscapeKind::Horn);
                 ProcessChar(c, rawInput_.size() - 1);
                 return true;
             }
@@ -622,7 +619,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
         if (!it->IsVowel()) continue;
         if (it->mod == targetMod) {
             it->mod = Modifier::None;
-            toneEscaped_ = true;  // User canceled modifier → treat rest as English
+            escape_.escape(EscapeKind::Modifier);
             ProcessChar(c, rawInput_.size() - 1);
             return true;
         }
@@ -642,14 +639,14 @@ bool VniEngine::ProcessTone(wchar_t c) {
     CharState* target = FindToneTarget();
     if (!target) return false;
 
-    toneEscaped_ = false;
+    escape_.clear();
     if (target->tone == Tone::None) {
         target->tone = newTone;
         return true;
     } else if (target->tone == newTone) {
         target->tone = Tone::None;
         ProcessChar(c, rawInput_.size() - 1);
-        toneEscaped_ = true;  // Signal caller: user canceled tone
+        escape_.escape(EscapeKind::Tone);
         return true;
     } else {
         target->tone = newTone;
@@ -731,7 +728,7 @@ wchar_t VniEngine::ComposeChar(const CharState& state) const {
 //-----------------------------------------------------------------------------
 
 void VniEngine::ApplyAutoUO() {
-    if (states_.size() < 3 || toneEscaped_) return;
+    if (states_.size() < 3 || escape_.isEscaped()) return;
 
     size_t start = (states_.size() > 4) ? states_.size() - 4 : 0;
     for (size_t i = start; i + 2 < states_.size(); ++i) {

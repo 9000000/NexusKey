@@ -203,7 +203,7 @@ void TelexEngine::PushChar(wchar_t c) {
             // Has matching pending tone → fall through to ProcessTone for escape
         }
         // Tone escape: user pressed same tone key twice (e.g., ss) — blocks Vietnamese.
-        if (toneEscaped_)                                       { asLiteral(); return; }
+        if (escape_.isEscaped())                                { asLiteral(); return; }
         // English Protection: always active, independent of spell check.
         if (!config_.allowEnglishBypass) {
             if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
@@ -237,7 +237,7 @@ void TelexEngine::PushChar(wchar_t c) {
             }
         }
         if (ProcessTone(c)) {
-            if (!toneEscaped_) {
+            if (!escape_.isEscaped()) {
                 engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
             } else {
                 // Tone escaped (ss, ff, etc.) → user is canceling Vietnamese.
@@ -265,7 +265,7 @@ void TelexEngine::PushChar(wchar_t c) {
             engProt_.bias = LanguageBias::HardEnglish;
         }
     }
-    bool blockModifiers = toneEscaped_ ||
+    bool blockModifiers = escape_.isEscaped() ||
         (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
     // Allow dd→đ through English Protection when the word matches a spell exclusion.
     if (blockModifiers && lower == L'd') {
@@ -361,14 +361,14 @@ bool TelexEngine::ProcessTone(wchar_t c) {
         }
         target.toneRawIdx = SIZE_MAX;
         ProcessChar(c);
-        toneEscaped_ = true;  // Signal caller: user canceled tone
+        escape_.escape(EscapeKind::Tone);  // Signal caller: user canceled tone
         return true;
     }
 
     // Apply or replace tone
     target.tone = newTone;
     target.toneRawIdx = rawInput_.size() - 1;
-    toneEscaped_ = false;
+    escape_.clear();
     return true;
 }
 
@@ -407,7 +407,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                     states_.pop_back();
                     EraseConsumedRaw(consumedIdx);
                     ProcessChar(c);
-                    toneEscaped_ = true;
+                    escape_.escape(EscapeKind::Horn);
                     return true;
                 }
             }
@@ -429,7 +429,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                     states_.pop_back();
                     EraseConsumedRaw(consumedIdx);
                     ProcessChar(c);
-                    toneEscaped_ = true;
+                    escape_.escape(EscapeKind::Horn);
                     return true;
                 }
             }
@@ -470,7 +470,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                 // checker since "oong" is valid, so spellCheckDisabled_ alone
                 // doesn't catch it — unlike "aa"/"ee" which are Invalid).
                 if (config_.spellCheckEnabled) {
-                    toneEscaped_ = true;
+                    escape_.escape(EscapeKind::Circumflex);
                 }
                 return true;
             }
@@ -509,7 +509,7 @@ bool TelexEngine::ProcessModifier(wchar_t c) {
                     if (it->mod == Modifier::Circumflex) {
                         it->mod = Modifier::None;
                         ProcessChar(c);
-                        toneEscaped_ = true;  // User canceled modifier → treat rest as English
+                        escape_.escape(EscapeKind::Circumflex);
                         return true;
                     }
                     if (it->mod == Modifier::Breve && lower == L'a') {
@@ -695,7 +695,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
             states_[pairU].mod = Modifier::None;
             states_[pairO].mod = Modifier::None;
             ProcessChar(c);
-            toneEscaped_ = true;
+            escape_.escape(EscapeKind::Horn);
             return true;
         }
 
@@ -703,7 +703,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         if (uMod == Modifier::None && oMod == Modifier::Horn) {
             states_[pairO].mod = Modifier::None;
             ProcessChar(c);
-            toneEscaped_ = true;
+            escape_.escape(EscapeKind::Horn);
             return true;
         }
     }
@@ -725,19 +725,19 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
         if (states_[hornedIdx].synthetic && hornedIdx == states_.size() - 1) {
             states_.erase(states_.begin() + static_cast<ptrdiff_t>(hornedIdx));
             ProcessChar(c);
-            toneEscaped_ = true;  // User canceled modifier → treat rest as English
+            escape_.escape(EscapeKind::Horn);
             return true;
         }
         UndoHornU(states_.data(), hornedIdx);  // Undo companion 'u' horn BEFORE clearing 'o'
         states_[hornedIdx].mod = Modifier::None;
         ProcessChar(c);
-        toneEscaped_ = true;  // User canceled modifier → treat rest as English
+        escape_.escape(EscapeKind::Horn);
         return true;
     }
     if (brevedIdx != SIZE_MAX) {
         states_[brevedIdx].mod = Modifier::None;
         ProcessChar(c);
-        toneEscaped_ = true;  // User canceled modifier → treat rest as English
+        escape_.escape(EscapeKind::Breve);
         return true;
     }
 
@@ -803,7 +803,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 //-----------------------------------------------------------------------------
 
 bool TelexEngine::ProcessDModifier(wchar_t c) {
-    if (dModifierEscaped_) return false;
+    if (escape_.isEscaped(EscapeKind::Stroke)) return false;
     size_t dIdx = FindStrokeDTarget(states_.data(), states_.size());
     if (dIdx == SIZE_MAX) return false;
 
@@ -813,8 +813,7 @@ bool TelexEngine::ProcessDModifier(wchar_t c) {
         return true;
     } else if (target.mod == Modifier::Stroke) {
         target.mod = Modifier::None;
-        dModifierEscaped_ = true;  // Lock: user intentionally removed đ
-        toneEscaped_ = true;       // Block further modifiers/tones — word is English
+        escape_.escape(EscapeKind::Stroke);
         ProcessChar(c);
         return true;
     }
@@ -1029,8 +1028,7 @@ std::wstring TelexEngine::ComposeAll() const {
 
 void TelexEngine::Backspace() {
     if (states_.empty()) return;
-    dModifierEscaped_ = false;  // Allow đ re-trigger after user edits
-    toneEscaped_ = false;       // Allow Vietnamese re-trigger after user edits
+    escape_.clear();  // Allow đ re-trigger + Vietnamese re-trigger after user edits
 
     // Undo quick start consonant: ph→f, gi→j, qu→w (collapse both chars to original)
     if (quickStartKey_ != 0 && states_.size() == 2) {
@@ -1164,8 +1162,7 @@ void TelexEngine::Reset() {
     quickConsonantEscaped_ = false;
     quickConsonantIdx_ = SIZE_MAX;
     lastQuickConsonantKey_ = 0;
-    dModifierEscaped_ = false;
-    toneEscaped_ = false;
+    escape_.clear();
     quickStartKey_ = 0;
     engProt_.Reset();
 }

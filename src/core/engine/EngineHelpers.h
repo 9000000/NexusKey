@@ -16,6 +16,33 @@
 
 namespace NextKey {
 
+//=============================================================================
+// EscapeState — replaces toneEscaped_ + dModifierEscaped_ booleans
+//=============================================================================
+
+enum class EscapeKind : uint8_t {
+    None = 0,
+    Tone,           // ss, ff, rr, xx, jj (Telex) / 11, 22... (VNI)
+    Circumflex,     // aa, ee, oo escape / 6-key escape
+    Horn,           // ơ[], ư], w-pairs, P4 / 7-key escape
+    Breve,          // ă→a via ww / 8-key escape
+    Stroke,         // ddd / d99 — replaces dModifierEscaped_
+    Modifier,       // VNI generic (Pass 2 fallback — covers circ/horn/breve in one pass)
+};
+
+struct EscapeState {
+    EscapeKind kind = EscapeKind::None;
+
+    [[nodiscard]] constexpr bool isEscaped() const noexcept {
+        return kind != EscapeKind::None;
+    }
+    [[nodiscard]] constexpr bool isEscaped(EscapeKind k) const noexcept {
+        return kind == k;
+    }
+    constexpr void escape(EscapeKind k) noexcept { kind = k; }
+    constexpr void clear() noexcept { kind = EscapeKind::None; }
+};
+
 /// Check if the composed buffer matches any spell exclusion prefix (case-insensitive).
 /// Exclusion entries must be >= 2 chars. Match is prefix-based: "hđ" covers "hđt", "hđqt".
 template<typename CharStateT, typename ComposeFunc>
