@@ -40,10 +40,15 @@ public:
     /// Returns true if installer was launched. On failure, cleans up the downloaded file.
     [[nodiscard]] static bool DownloadAndLaunchInstaller(const std::wstring& downloadUrl) noexcept;
 
-    /// (Lite build) Download EXE, verify hash, replace current exe, relaunch.
-    /// Simpler than ZIP flow: rename current→_old, copy new→current, launch.
-    /// Returns true if relaunch succeeded. Caller should exit after this returns true.
+    /// (Lite build) Download EXE, verify hash, replace current exe in-place.
+    /// Simpler than ZIP flow: rename current→_old, copy new→current.
+    /// Does NOT relaunch — sets pending relaunch flag for caller to handle
+    /// after releasing the single-instance mutex.
     [[nodiscard]] static bool DownloadAndReplaceExe(const std::wstring& downloadUrl) noexcept;
+
+    /// True if DownloadAndReplaceExe succeeded and caller should relaunch after cleanup.
+    [[nodiscard]] static bool IsPendingRelaunch() noexcept { return pendingRelaunch_; }
+    static void SetPendingRelaunch(bool value) noexcept { pendingRelaunch_ = value; }
 
     /// Parse version string (e.g. "v1.2.3-beta") into packed format (major<<16 | minor<<8 | patch)
     [[nodiscard]] static uint32_t ParseVersion(const std::wstring& versionStr) noexcept;
@@ -69,6 +74,8 @@ public:
     [[nodiscard]] static bool DownloadWithProgress(HWND parent, const std::wstring& downloadUrl);
 
 private:
+    static inline bool pendingRelaunch_ = false;
+
     /// Download URL content to a string (via temp file)
     [[nodiscard]] static std::string DownloadToString(const std::wstring& url) noexcept;
 

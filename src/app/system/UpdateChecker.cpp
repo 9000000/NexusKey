@@ -394,7 +394,10 @@ bool UpdateChecker::DownloadAndReplaceExe(const std::wstring& downloadUrl) noexc
         wchar_t exePath[MAX_PATH] = {};
         GetModuleFileNameW(nullptr, exePath, MAX_PATH);
         std::wstring currentExe(exePath);
-        std::wstring oldExe = currentExe + L"_old";
+        // Build "NexusKeyClassic_old.exe" so CleanupOldUpdateFiles() matches stem ending "_old"
+        namespace fs = std::filesystem;
+        fs::path currentPath(currentExe);
+        std::wstring oldExe = (currentPath.parent_path() / (currentPath.stem().wstring() + L"_old" + currentPath.extension().wstring())).wstring();
 
         // 4. Rename current → _old (delete stale _old first)
         DeleteFileW(oldExe.c_str());
@@ -414,19 +417,12 @@ bool UpdateChecker::DownloadAndReplaceExe(const std::wstring& downloadUrl) noexc
         // 5b. Remove Zone.Identifier (internet download block)
         DeleteFileW((currentExe + L":Zone.Identifier").c_str());
 
-        // 6. Relaunch (break away from job so new process survives parent exit)
-        STARTUPINFOW si = { sizeof(si) };
-        PROCESS_INFORMATION pi = {};
-        std::wstring cmdLine = L"\"" + currentExe + L"\"";
-        if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
-                            CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
-            return false;
-        }
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-
-        // 7. Mark _old for deletion on next boot (best effort)
+        // 6. Mark _old for deletion on next boot (best effort)
         MoveFileExW(oldExe.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
+
+        // 7. Signal pending relaunch — caller (main_lite.cpp) will launch
+        //    the new exe after releasing the single-instance mutex.
+        SetPendingRelaunch(true);
 
         return true;
     } catch (...) {

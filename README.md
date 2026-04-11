@@ -16,6 +16,11 @@
 </p>
 <p align="center"><em>Giao diện đầy đủ NexusKey</em></p>
 
+<p align="center">
+  <img src="docs/images/nexus-classic.png" alt="NexusKey Classic UI" width="700">
+</p>
+<p align="center"><em>Giao diện Classic (Win32 native) — nhẹ, tương thích cao</em></p>
+
 ---
 
 **[Giới thiệu](#giới-thiệu)** | **[Tính năng](#tính-năng)** | **[Cài đặt](#cài-đặt)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
