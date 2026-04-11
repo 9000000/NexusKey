@@ -969,11 +969,20 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             rawMacroBuffer_ = std::move(savedMacroBuffer);
             macroCrossCommit_ = true;
         }
-        // Enable backspace-into-word only for space/enter (natural word boundaries),
-        // and ONLY if a new entry was just pushed to the stack (implies: not auto-restored,
+        // Enable backspace-into-word for printable commit triggers (space, enter,
+        // digits, punctuation). Navigation keys (arrows, Tab, ESC, etc.) move the
+        // cursor — replay would insert text at the wrong position, so exclude them.
+        // Only if a new entry was just pushed (implies: not auto-restored,
         // not quick consonant, not empty history).
-        if (pushedToStack_ && (vkCode == VK_SPACE || vkCode == VK_RETURN)) {
-            SetCommitUndoReady();
+        if (pushedToStack_) {
+            bool isNavigation = (vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
+                vkCode == VK_HOME || vkCode == VK_END ||
+                vkCode == VK_PRIOR || vkCode == VK_NEXT ||
+                vkCode == VK_TAB || vkCode == VK_ESCAPE ||
+                vkCode == VK_DELETE || vkCode == VK_INSERT;
+            if (!isNavigation) {
+                SetCommitUndoReady();
+            }
         }
         if (restored || synthEventsPending_ > 0) {
             // Re-inject trigger AFTER all pending synthetic events so that:
