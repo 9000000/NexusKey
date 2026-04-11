@@ -120,6 +120,15 @@ NexusKey gồm ba lớp:
 | **NextKeyApp** | Win32 EXE | Ứng dụng GUI với Sciter.JS, hook engine, tray icon, tự cập nhật. |
 | **NextKeyTSF** | DLL | Tích hợp Text Services Framework — đăng ký như Windows input method. |
 
+### Tối ưu bộ nhớ
+
+NexusKey được thiết kế với kiến trúc gọn nhẹ, không phụ thuộc runtime nặng, nên bản thân chương trình đã rất tiết kiệm tài nguyên — khởi chạy chỉ chiếm khoảng **1.6 ~ 2 MB RAM**. Nhờ footprint nhỏ, hệ điều hành có thể dễ dàng trim working set xuống còn khoảng **0.3 MB** sau một thời gian idle:
+
+<p align="center">
+  <img src="docs/images/ram-optimize.png" alt="NexusKey RAM Usage - 0.3 MB" width="700">
+</p>
+<p align="center"><em>NexusKey chỉ chiếm 0.3 MB RAM — kiến trúc nhẹ, OS dễ dàng tối ưu</em></p>
+
 ---
 
 ## English Version
@@ -205,6 +214,15 @@ cmake --build build --config Release --target NextKeyApp
 | **NextKeyCore** | Static lib | Platform layer — shared memory IPC, configuration management, smart switch. |
 | **NextKeyApp** | Win32 EXE | GUI application with Sciter.JS UI, hook engine, tray icon, auto-update. |
 | **NextKeyTSF** | DLL | Text Services Framework integration — registers as a Windows input method. |
+
+#### Memory Optimization
+
+NexusKey is built with a lean architecture and no heavy runtime dependencies, keeping resource usage minimal — starting at only **~1.6–2 MB RAM**. Thanks to its small footprint, the OS can easily trim the working set down to as low as **0.3 MB** after idle:
+
+<p align="center">
+  <img src="docs/images/ram-optimize.png" alt="NexusKey RAM Usage - 0.3 MB" width="700">
+</p>
+<p align="center"><em>NexusKey at 0.3 MB RAM — lightweight architecture, easily optimized by the OS</em></p>
 
 </details>
 

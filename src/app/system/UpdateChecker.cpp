@@ -403,13 +403,16 @@ bool UpdateChecker::DownloadAndReplaceExe(const std::wstring& downloadUrl) noexc
             return false;
         }
 
-        // 5. Move downloaded → current location
-        if (!MoveFileExW(tempExe.c_str(), currentExe.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        // 5. Move downloaded → current location (COPY_ALLOWED for cross-drive moves)
+        if (!MoveFileExW(tempExe.c_str(), currentExe.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
             // Rollback: restore old exe
             MoveFileW(oldExe.c_str(), currentExe.c_str());
             DeleteFileW(tempExe.c_str());
             return false;
         }
+
+        // 5b. Remove Zone.Identifier (internet download block)
+        DeleteFileW((currentExe + L":Zone.Identifier").c_str());
 
         // 6. Relaunch (break away from job so new process survives parent exit)
         STARTUPINFOW si = { sizeof(si) };
