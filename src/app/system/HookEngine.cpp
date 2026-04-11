@@ -1748,8 +1748,22 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         }
     }
     isElectronApp_ = skipEmptyChar_ && !isConsoleApp_;
-    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d",
-             isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0);
+
+    // Bait char (U+202F) only needed for apps with autocomplete/suggest.
+    // Normal apps (Notepad, Word, etc.): no bait → faster.
+    // Browsers + Office: bait → prevents suggest from eating BS.
+    needBaitChar_ = false;
+    if (!skipEmptyChar_) {
+        // exeName already lowercase from GetExeNameForHwnd (uses ToLowerAscii)
+        std::wstring exeName = GetExeNameForHwnd(activeHwnd);
+        needBaitChar_ = !exeName.empty() && (
+            IsBrowserExeName(exeName.c_str()) ||
+            exeName.find(L"excel") != std::wstring::npos ||
+            exeName.find(L"outlook") != std::wstring::npos
+        );
+    }
+    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d",
+             isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0, needBaitChar_ ? 1 : 0);
 
     // Layout auto-disable: check CJK layout on every focus change
     CheckLayoutChange();
@@ -1952,7 +1966,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                  encodedToSend.size());
 
         {
-            bool needEmpty = (backspaceCount > 0 && commonLen == 0 && !skipEmptyChar_);
+            bool needEmpty = (backspaceCount > 0 && needBaitChar_);
             size_t bsTotal = backspaceCount + (needEmpty ? 1 : 0);
 
             if (bsTotal > 0 || !encodedToSend.empty()) {
@@ -1998,10 +2012,11 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
 
     {
         // Bait char (U+202F): prevents apps with autofill from swallowing the first
-        // typed char after backspacing to empty. Only needed when ALL composition
-        // content is removed (commonLen == 0 → field becomes empty → autofill triggers).
-        // For typical transforms (1-2 BS on 3+ char words), field stays non-empty → no bait.
-        bool needEmpty = (backspaceCount > 0 && commonLen == 0 && !skipEmptyChar_);
+        // U+202F bait: dismiss autocomplete suggestions before BS. Must fire on EVERY
+        // transform (not just empty-field), because suggest is active at any word length.
+        // U+202F has visible width → triggers suggest recalculation → dismiss.
+        // Zero-width chars (U+200B) don't work — Chrome ignores them for suggest.
+        bool needEmpty = (backspaceCount > 0 && needBaitChar_);
         if (needEmpty) backspaceCount++;
 
         HOOK_LOG(L"  ReplaceComposition[send]: BS=%zu needEmpty=%d toSend='%s' skipEmpty=%d synthPending=%d",
@@ -2094,7 +2109,19 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
 }
 
 void HookEngine::SendBackspaces(size_t count) {
-    HOOK_LOG(L"  SendBackspaces: %zu", count);
+    HOOK_LOG(L"  SendBackspaces: %zu bait=%d", count, needBaitChar_ ? 1 : 0);
+    if (needBaitChar_ && count > 0) {
+        // Insert bait to dismiss autocomplete suggest before BS
+        INPUT bait[2] = {};
+        bait[0].type = INPUT_KEYBOARD;
+        bait[0].ki.wScan = 0x202F;
+        bait[0].ki.dwFlags = KEYEVENTF_UNICODE;
+        bait[1].type = INPUT_KEYBOARD;
+        bait[1].ki.wScan = 0x202F;
+        bait[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+        TrackedSendInput(bait, 2);
+        count++;  // Extra BS to delete bait
+    }
     SendBackspaceEvents(count);
 }
 
