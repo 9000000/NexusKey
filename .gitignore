@@ -39,6 +39,7 @@ _bmad-output/
 # ===== Testing artifacts =====
 /Testing/Temporary/
 /Testing/Cache/
+/benchmark_results/
 
 # ===== Optional: external deps build =====
 /extern/**/build/
