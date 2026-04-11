@@ -1740,28 +1740,24 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     //   - GPU-rendered (Zed, etc.): custom input pipelines may ignore U+202F
     isConsoleApp_ = IsConsoleApp(activeHwnd);
     skipEmptyChar_ = IsQtElectronApp(activeHwnd) || isConsoleApp_;
-    // GPU-rendered apps: detect by exe name (no shared window class convention)
+    needBaitChar_ = false;
+    // GPU-rendered apps + bait detection: single exe name lookup for both
     if (!skipEmptyChar_) {
         std::wstring exeName = GetExeNameForHwnd(activeHwnd);
-        if (!exeName.empty() && _wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
-            skipEmptyChar_ = true;
+        if (!exeName.empty()) {
+            // GPU-rendered apps: skip U+202F entirely (custom input pipelines)
+            if (_wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
+                skipEmptyChar_ = true;
+            } else {
+                // Bait char (U+202F) only for apps with autocomplete/suggest.
+                // Normal apps (Notepad, Word, etc.): no bait → faster.
+                needBaitChar_ = IsBrowserExeName(exeName.c_str()) ||
+                    exeName.find(L"excel") != std::wstring::npos ||
+                    exeName.find(L"outlook") != std::wstring::npos;
+            }
         }
     }
     isElectronApp_ = skipEmptyChar_ && !isConsoleApp_;
-
-    // Bait char (U+202F) only needed for apps with autocomplete/suggest.
-    // Normal apps (Notepad, Word, etc.): no bait → faster.
-    // Browsers + Office: bait → prevents suggest from eating BS.
-    needBaitChar_ = false;
-    if (!skipEmptyChar_) {
-        // exeName already lowercase from GetExeNameForHwnd (uses ToLowerAscii)
-        std::wstring exeName = GetExeNameForHwnd(activeHwnd);
-        needBaitChar_ = !exeName.empty() && (
-            IsBrowserExeName(exeName.c_str()) ||
-            exeName.find(L"excel") != std::wstring::npos ||
-            exeName.find(L"outlook") != std::wstring::npos
-        );
-    }
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d",
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0, needBaitChar_ ? 1 : 0);
 
