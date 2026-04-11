@@ -358,6 +358,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         NEXTKEY_LOG(L"Update completed successfully, old files cleaned up");
     }
 
+    // Ensure startup registration is intact (never prompts UAC, same logic as main.cpp)
+    if (EnsureStartupRegistration(systemConfig.runAtStartup, systemConfig.runAsAdmin)) {
+        ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), systemConfig);
+        NEXTKEY_LOG(L"Startup task missing — fell back to registry, disabled admin mode in config");
+    }
+
     // Check for update failure marker
     bool updateJustFailed = false;
     {

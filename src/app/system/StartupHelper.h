@@ -89,6 +89,12 @@ inline void RemoveScheduledTask() noexcept {
     wchar_t exePath[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
 
+    // Get current username BEFORE elevation — ensures task triggers for the
+    // logged-in user, not the admin account used for UAC elevation.
+    wchar_t username[256] = {};
+    DWORD usernameSize = 256;
+    GetUserNameW(username, &usernameSize);
+
     std::wstring exeStr(exePath);
     std::wstring dirStr = exeStr.substr(0, exeStr.find_last_of(L"\\/"));
 
@@ -99,7 +105,7 @@ inline void RemoveScheduledTask() noexcept {
     ps1Args += L"$T = New-ScheduledTaskTrigger -AtLogOn; ";
     ps1Args += L"$T.Delay = 'PT5S'; ";
     ps1Args += L"$S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0; ";
-    ps1Args += L"$P = New-ScheduledTaskPrincipal -LogonType Interactive -RunLevel Highest; ";
+    ps1Args += L"$P = New-ScheduledTaskPrincipal -UserId '" + std::wstring(username) + L"' -LogonType Interactive -RunLevel Highest; ";
     ps1Args += L"Register-ScheduledTask -TaskName '" + std::wstring(STARTUP_TASK_NAME) + L"' -Action $A -Trigger $T -Settings $S -Principal $P -Force\"";
 
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
@@ -112,7 +118,7 @@ inline void RemoveScheduledTask() noexcept {
     if (!ShellExecuteExW(&sei)) return false;
 
     if (sei.hProcess) {
-        WaitForSingleObject(sei.hProcess, 5000);  // Allow PowerShell some time to register the task
+        WaitForSingleObject(sei.hProcess, 10000);  // PowerShell + Register-ScheduledTask can be slow
         DWORD exitCode = 1;
         GetExitCodeProcess(sei.hProcess, &exitCode);
         CloseHandle(sei.hProcess);
@@ -222,6 +228,50 @@ inline void SetDesktopShortcut(bool enable) {
     } else {
         RemoveDesktopShortcut();
     }
+}
+
+/// Check if the scheduled task exists (non-elevated query, no UAC prompt)
+[[nodiscard]] inline bool IsScheduledTaskRegistered() noexcept {
+    std::wstring cmdLine = L"schtasks.exe /query /tn \"" + std::wstring(STARTUP_TASK_NAME) + L"\"";
+
+    STARTUPINFOW si = { sizeof(si) };
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        return false;
+    }
+
+    WaitForSingleObject(pi.hProcess, 5000);
+    DWORD exitCode = 1;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    return exitCode == 0;
+}
+
+/// Ensure startup registration is intact. Call on app startup. Never prompts UAC.
+/// If the Task Scheduler task was lost (Windows Update, antivirus, etc.),
+/// silently falls back to registry and syncs config so Settings UI matches reality.
+/// Returns true if config was modified (caller should save).
+[[nodiscard]] inline bool EnsureStartupRegistration(bool runAtStartup, bool& runAsAdmin) {
+    if (!runAtStartup) return false;
+
+    if (runAsAdmin) {
+        if (IsScheduledTaskRegistered()) return false;  // Task exists, all good
+
+        // Task lost: fall back to registry, sync config
+        (void)SetRegistryStartup();
+        runAsAdmin = false;
+        return true;  // Config changed, caller should save
+    }
+
+    // Non-admin mode: ensure registry entry points to current EXE
+    (void)SetRegistryStartup();
+    return false;
 }
 
 }  // namespace NextKey

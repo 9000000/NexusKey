@@ -2599,6 +2599,38 @@ TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkAllowed_Tieng) {
     EXPECT_EQ(engine_->Peek(), L"ti\x1EBFng");  // tiếng
 }
 
+// --- Delayed circumflex VCV (spell check OFF, coda validation only) ---
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DelayedCircumflex_VCV_Toto) {
+    // "toto" → same-vowel o across valid coda 't' → "tôt"
+    TypeString(*engine_, L"toto");
+    EXPECT_EQ(engine_->Peek(), L"tôt");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DelayedCircumflex_VCV_Ata) {
+    // "ata" → same-vowel a across valid coda 't' → "ât"
+    TypeString(*engine_, L"ata");
+    EXPECT_EQ(engine_->Peek(), L"ât");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DelayedCircumflex_VCV_Oho_Blocked) {
+    // "oho" → 'h' not valid coda → HardEnglish → no circumflex
+    TypeString(*engine_, L"oho");
+    EXPECT_EQ(engine_->Peek(), L"oho");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DelayedCircumflex_VCV_Olo_Blocked) {
+    // "olo" → 'l' not valid coda → HardEnglish → no circumflex
+    TypeString(*engine_, L"olo");
+    EXPECT_EQ(engine_->Peek(), L"olo");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DelayedCircumflex_VCV_Ono_Allowed) {
+    // "ono" → 'n' IS valid coda → circumflex allowed → "ôn"
+    TypeString(*engine_, L"ono");
+    EXPECT_EQ(engine_->Peek(), L"ôn");
+}
+
 // ============================================================================
 // INVALID ADJACENT VOWEL PAIR — plain vowel pairs impossible in Vietnamese
 // ============================================================================
@@ -2995,6 +3027,83 @@ TEST_F(AutoRestoreTest, FreeCircumflex_CrossVowel_Invalid_Oao) {
     // "oao" → circumflex would give "ôao" (invalid) → spell check rejects → no circumflex
     TypeString(*engine_, L"oao");
     EXPECT_EQ(engine_->Peek(), L"oao");
+}
+
+// --- Delayed circumflex VCV: same vowel across single consonant ---
+// Pattern V+C+V where both V are same → circumflex on first V, consume second V
+// Gõ Nhanh calls this "DelayedCircumflex" — distinct from adjacent doubling (aa→â)
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Toto_Tot) {
+    // "toto" → 'o' crosses 't' to circumflex first 'o' → "tôt"
+    TypeString(*engine_, L"toto");
+    EXPECT_EQ(engine_->Peek(), L"tôt");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Totos_Tot_Sac) {
+    // "totos" → circumflex + sắc → "tốt"
+    TypeString(*engine_, L"totos");
+    EXPECT_EQ(engine_->Commit(), L"tốt");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Onro_On) {
+    // "onro" → 'o' crosses 'n' to circumflex, 'r' applies hỏi → "ổn"
+    TypeString(*engine_, L"onro");
+    EXPECT_EQ(engine_->Peek(), L"ổn");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Ata_At) {
+    // "ata" → 'a' crosses 't' to circumflex first 'a' → "ât"
+    TypeString(*engine_, L"ata");
+    EXPECT_EQ(engine_->Peek(), L"ât");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Xepe_Xep) {
+    // "xepe" → 'e' crosses 'p' to circumflex → "xêp"
+    TypeString(*engine_, L"xepe");
+    EXPECT_EQ(engine_->Peek(), L"xêp");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Xepes_Xep_Sac) {
+    // "xepes" → circumflex + sắc → "xếp"
+    TypeString(*engine_, L"xepes");
+    EXPECT_EQ(engine_->Commit(), L"xếp");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_NotTriggered_DiffVowel) {
+    // "tote" → different vowels (o vs e) → NOT delayed circumflex, just literal
+    TypeString(*engine_, L"tote");
+    EXPECT_EQ(engine_->Peek(), L"tote");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_NotTriggered_InvalidCoda) {
+    // "oho" → 'h' is not a valid Vietnamese coda → should NOT apply circumflex
+    // (without spell check, coda validation rejects 'h')
+    TypeString(*engine_, L"oho");
+    EXPECT_EQ(engine_->Peek(), L"oho");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Revert_Totoo) {
+    // "totoo" → first "toto" gives "tôt", then third 'o' reverts circumflex → "toto"
+    TypeString(*engine_, L"totoo");
+    EXPECT_EQ(engine_->Peek(), L"toto");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_NoReTriger_Totooo) {
+    // "totooo" → after revert, fourth 'o' should NOT re-apply circumflex → "totoo"
+    TypeString(*engine_, L"totooo");
+    EXPECT_EQ(engine_->Peek(), L"totoo");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Commit_Toto_RestoresEnglish) {
+    // "toto" + space → "tôt" is valid VN, should commit as "tôt" (not auto-restore)
+    TypeString(*engine_, L"toto");
+    EXPECT_EQ(engine_->Commit(), L"tôt");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Commit_Xepe_RestoresEnglish) {
+    // "xepe" + space → "xêp" is valid VN, should commit as "xêp"
+    TypeString(*engine_, L"xepe");
+    EXPECT_EQ(engine_->Commit(), L"xêp");
 }
 
 // ============================================================================
