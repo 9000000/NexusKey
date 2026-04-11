@@ -16,6 +16,57 @@
 
 namespace NextKey {
 
+//=============================================================================
+// EscapeState — replaces toneEscaped_ + dModifierEscaped_ booleans
+//=============================================================================
+
+enum class EscapeKind : uint8_t {
+    None = 0,
+    Tone,           // ss, ff, rr, xx, jj (Telex) / 11, 22... (VNI)
+    Circumflex,     // aa, ee, oo escape / 6-key escape
+    Horn,           // ơ[], ư], w-pairs, P4 / 7-key escape
+    Breve,          // ă→a via ww / 8-key escape
+    Stroke,         // ddd / d99 — replaces dModifierEscaped_
+    Modifier,       // VNI generic (Pass 2 fallback — covers circ/horn/breve in one pass)
+};
+
+struct EscapeState {
+    EscapeKind kind = EscapeKind::None;
+
+    [[nodiscard]] constexpr bool isEscaped() const noexcept {
+        return kind != EscapeKind::None;
+    }
+    [[nodiscard]] constexpr bool isEscaped(EscapeKind k) const noexcept {
+        return kind == k;
+    }
+    constexpr void escape(EscapeKind k) noexcept { kind = k; }
+    constexpr void clear() noexcept { kind = EscapeKind::None; }
+};
+
+//=============================================================================
+// QuickConsonantState — replaces 4 scattered QC fields
+//=============================================================================
+
+struct QuickConsonantState {
+    size_t idx = SIZE_MAX;       // states_ index of quick consonant result char
+    wchar_t lastKey = 0;         // key that triggered last QC (suppresses consecutive re-trigger)
+    bool onlyQC = false;         // true when buffer is only quick consonant expansion
+    bool escaped = false;        // true after backspace undoes quick consonant
+
+    constexpr void Reset() noexcept {
+        idx = SIZE_MAX; lastKey = 0; onlyQC = false; escaped = false;
+    }
+    constexpr void clearActive() noexcept {
+        idx = SIZE_MAX; lastKey = 0;
+    }
+    constexpr void markEscaped() noexcept {
+        escaped = true; clearActive();
+    }
+    [[nodiscard]] constexpr bool hasActive() const noexcept {
+        return idx != SIZE_MAX;
+    }
+};
+
 /// Check if the composed buffer matches any spell exclusion prefix (case-insensitive).
 /// Exclusion entries must be >= 2 chars. Match is prefix-based: "hđ" covers "hđt", "hđqt".
 template<typename CharStateT, typename ComposeFunc>

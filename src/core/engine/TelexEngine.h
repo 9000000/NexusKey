@@ -7,6 +7,7 @@
 #pragma once
 
 #include "IInputEngine.h"
+#include "EngineHelpers.h"
 #include "SpellChecker.h"
 #include "EnglishProtection.h"
 #include "core/config/TypingConfig.h"
@@ -86,7 +87,7 @@ public:
     [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
     [[nodiscard]] size_t Count() const override { return states_.size(); }
-    [[nodiscard]] bool HasActiveQuickConsonant() const override { return quickConsonantIdx_ != SIZE_MAX; }
+    [[nodiscard]] bool HasActiveQuickConsonant() const override { return qc_.hasActive(); }
 
 private:
     // Input processing
@@ -138,12 +139,8 @@ private:
     std::vector<wchar_t> rawInput_;   // Raw keys for escape
     TypingConfig config_;
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
-    bool quickConsonantOnly_ = false;    // true when buffer is only quick consonant expansion
-    bool quickConsonantEscaped_ = false; // true after backspace undoes quick consonant
-    size_t quickConsonantIdx_ = SIZE_MAX; // states_ index of quick consonant result char
-    wchar_t lastQuickConsonantKey_ = 0;  // key that triggered last quick consonant (suppresses consecutive re-trigger)
-    bool dModifierEscaped_ = false;      // true after đ→d escape (ddd), prevents re-triggering
-    bool toneEscaped_ = false;           // true after double tone key (ss, ff, etc.) — blocks Vietnamese for rest of word
+    QuickConsonantState qc_;              // Quick consonant expansion state
+    EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_
     wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
     EnglishProtectionState engProt_;     // 3-tier English protection state
 };
