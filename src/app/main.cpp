@@ -276,7 +276,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Ensure startup registration is intact (never prompts UAC).
     // If admin task was lost, falls back to registry and syncs config.
     if (EnsureStartupRegistration(systemConfig.runAtStartup, systemConfig.runAsAdmin)) {
-        ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), systemConfig);
+        (void)ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), systemConfig);
         NEXTKEY_LOG(L"Startup task missing — fell back to registry, disabled admin mode in config");
     }
 
