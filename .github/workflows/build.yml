@@ -42,6 +42,14 @@ jobs:
       - name: Run tests
         run: ctest --test-dir build --build-config Release --output-on-failure
 
+      # --- Classic UI (Lite) build ---
+      - name: Configure Classic UI
+        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DNEXUSKEY_LITE_MODE=ON
+
+      - name: Build Classic UI
+        run: cmake --build build-classic --config Release --target NextKeyLite
+
+      # --- Zip releases ---
       - name: Zip Release
         if: startsWith(github.ref, 'refs/tags/')
         shell: powershell
@@ -49,14 +57,18 @@ jobs:
           Get-ChildItem "build/Release/*" -Include NexusKey.exe,NextKeyTSF.dll,sciter.dll |
             Compress-Archive -DestinationPath NexusKey.zip
 
-      - name: Generate SHA-256 checksum
+      # --- SHA-256 checksums ---
+      - name: Generate SHA-256 checksums
         if: startsWith(github.ref, 'refs/tags/')
         shell: powershell
         run: |
-          # Generate SHA-256 sidecar used by VerifyDownloadedZip (SEC-001)
+          # Generate SHA-256 sidecars used by VerifyDownloadedZip (SEC-001)
           # Format: "<hash>  <filename>" (GNU coreutils sha256sum compatible)
-          $hash = (Get-FileHash NexusKey.zip -Algorithm SHA256).Hash.ToLower()
-          "$hash  NexusKey.zip" | Out-File -Encoding ascii NexusKey.zip.sha256
+          Copy-Item "build-classic/Release/NexusKeyClassic.exe" .
+          foreach ($file in @("NexusKey.zip", "NexusKeyClassic.exe")) {
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+            "$hash  $file" | Out-File -Encoding ascii "$file.sha256"
+          }
 
       - name: Release
         uses: softprops/action-gh-release@v1
@@ -66,6 +78,8 @@ jobs:
           files: |
             NexusKey.zip
             NexusKey.zip.sha256
+            NexusKeyClassic.exe
+            NexusKeyClassic.exe.sha256
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
