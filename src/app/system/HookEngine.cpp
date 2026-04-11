@@ -1739,7 +1739,8 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     //   - Console: terminal emulators have their own input handling
     //   - GPU-rendered (Zed, etc.): custom input pipelines may ignore U+202F
     isConsoleApp_ = IsConsoleApp(activeHwnd);
-    skipEmptyChar_ = IsQtElectronApp(activeHwnd) || isConsoleApp_;
+    bool isQtElectron = IsQtElectronApp(activeHwnd);
+    skipEmptyChar_ = isQtElectron || isConsoleApp_;
     needBaitChar_ = false;
     // GPU-rendered apps + bait detection: single exe name lookup for both
     if (!skipEmptyChar_) {
@@ -1757,7 +1758,8 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
             }
         }
     }
-    isElectronApp_ = skipEmptyChar_ && !isConsoleApp_;
+    // Electron = Qt/Electron apps only (NOT GPU-rendered like Zed, NOT console)
+    isElectronApp_ = isQtElectron && !isConsoleApp_;
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d",
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0, needBaitChar_ ? 1 : 0);
 
