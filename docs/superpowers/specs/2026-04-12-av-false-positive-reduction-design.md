@@ -10,7 +10,7 @@ Windows Defender quarantines NexusKey EXE (likely Wacatac ML heuristic). SmartSc
 - Releases are frequent — manual Microsoft submission per release not feasible
 - App uses keyboard hooks — inherently suspicious to AV ML scanners
 
-## Solution: PE Metadata Hardening + CI Attestation
+## Solution: PE Metadata Hardening + CI Signing & Attestation
 
 ### Part 1: PE Metadata Hardening
 
@@ -56,11 +56,36 @@ Change CI from `--config Release` to `--config RelWithDebInfo`:
 
 Ship PDB alongside EXE in release artifacts (optional but beneficial).
 
-### Part 2: GitHub Actions Attestation (Sigstore)
+### Part 2: CI Signing & Attestation (Cosign + GitHub Attestation)
 
-#### 2a. Add attestation steps to `build.yml`
+#### 2a. Cosign keyless signing (`sign-blob`)
 
-After building release zips, before publishing:
+Sign release artifacts with `cosign sign-blob` — creates detached `.sigstore.json` bundles shipped alongside binaries.
+
+- Keyless: uses GitHub OIDC identity, no keys to manage
+- Certificate identity encodes exact workflow + repo + ref
+- Signatures recorded in Rekor public transparency log
+
+```yaml
+- name: Install Cosign
+  uses: sigstore/cosign-installer@v3
+
+- name: Sign NexusKey.zip
+  continue-on-error: true    # Don't block release if Sigstore infra is down
+  run: |
+    cosign sign-blob NexusKey.zip \
+      --bundle NexusKey.zip.sigstore.json --yes
+
+- name: Sign NexusKeyClassic.zip
+  continue-on-error: true
+  run: |
+    cosign sign-blob NexusKeyClassic.zip \
+      --bundle NexusKeyClassic.zip.sigstore.json --yes
+```
+
+#### 2b. GitHub native attestation
+
+Complementary to cosign — stores structured SLSA provenance in GitHub's attestation registry.
 
 ```yaml
 - name: Attest NexusKey
@@ -74,21 +99,37 @@ After building release zips, before publishing:
     subject-path: NexusKeyClassic.zip
 ```
 
-#### 2b. Add required permissions
+#### 2c. Required permissions
 
 ```yaml
 permissions:
   contents: write
-  id-token: write
-  attestations: write
+  id-token: write       # OIDC token for cosign keyless signing
+  attestations: write   # GitHub native attestation
 ```
 
-#### 2c. Impact
+#### 2d. Caveats
 
-- Creates cryptographic proof: binary was built from specific repo/commit by CI
-- GitHub shows attestation badge on release page
-- Users can verify: `gh attestation verify NexusKey.zip --repo PhatMT/NexusKey`
-- SmartScreen/Defender don't check sigstore yet, but Microsoft is evaluating integration
+- **Rekor is public**: artifact hashes, repo name, workflow path are publicly logged
+- **Certificate identity tied to workflow path + ref**: renaming `build.yml` or changing branch invalidates old verification commands
+- **Ship `.sigstore.json` alongside binaries**: user needs both files to verify
+- **`continue-on-error: true`**: Sigstore infra down must not block releases
+- **No Defender/SmartScreen impact**: Fulcio root cert not in Windows trust store, signatures are detached (not Authenticode)
+
+#### 2e. User verification
+
+```bash
+# Via GitHub CLI
+gh attestation verify NexusKey.zip --repo PhatMT/NexusKey
+
+# Via cosign
+cosign verify-blob NexusKey.zip \
+  --bundle NexusKey.zip.sigstore.json \
+  --certificate-identity=https://github.com/PhatMT/NexusKey/.github/workflows/build.yml@refs/tags/v2.1.12 \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+```
+
+Add a "Verify Release" section to README after implementation.
 
 ## Files Changed
 
@@ -98,16 +139,19 @@ permissions:
 | `src/app/classic/NexusKeyLite.exe.manifest` | Add `trustInfo` block |
 | `src/tsf/NexusKeyTSF.rc` | Add `VS_VERSION_INFO` block |
 | `CMakeLists.txt` | Add `/RELEASE`, `/SUBSYSTEM:WINDOWS,6.01` linker flags |
-| `.github/workflows/build.yml` | Change Release→RelWithDebInfo, add attestation steps + permissions |
+| `.github/workflows/build.yml` | Change Release→RelWithDebInfo, add cosign signing + attestation steps + permissions |
+| `README.md` | Add "Verify Release" section |
 
 ## What This Does NOT Solve
 
 - SmartScreen reputation is primarily download-count based — new hashes always start with low reputation
 - Defender ML detection is probabilistic — metadata helps but keyboard hook behavior may still trigger
-- For complete solution, code signing is needed (future consideration)
+- Cosign/attestation does not replace Authenticode for Windows trust
+- For complete solution, Authenticode code signing is needed (future consideration)
 
 ## Expected Impact
 
 - **Defender quarantine**: Reduced — richer PE metadata + symbols = lower ML suspicion score
-- **SmartScreen**: Marginal improvement — attestation badge builds user trust, but reputation still needs downloads
-- **Cost**: Zero (code changes + free GitHub Actions feature)
+- **SmartScreen**: Marginal improvement from metadata; attestation badge builds user trust but reputation still needs downloads
+- **Supply chain integrity**: High — cryptographic proof that binaries come from repo, verifiable by anyone
+- **Cost**: Zero (code changes + free GitHub Actions features)
