@@ -17,8 +17,8 @@ if(MSVC)
     add_definitions(-DUNICODE -D_UNICODE)
     # Linker security flags: ASLR, DEP, High-Entropy ASLR
     add_link_options(/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA)
-    # PE legitimacy: checksum + explicit subsystem version (reduces AV false positives)
-    add_link_options(/RELEASE /SUBSYSTEM:WINDOWS,6.01)
+    # PE legitimacy: checksum (reduces AV false positives)
+    add_link_options(/RELEASE)
 endif()
 
 # Per-target include directories (no global include_directories)
@@ -183,6 +183,9 @@ target_include_directories(NextKeyApp PRIVATE
 target_compile_definitions(NextKeyApp PRIVATE SKIP_MAIN NEXUSKEY_HOOK_ENGINE $<$<CONFIG:Debug>:NEXTKEY_DEBUG>)
 target_link_libraries(NextKeyApp PRIVATE NextKeyCore)
 set_target_properties(NextKeyApp PROPERTIES OUTPUT_NAME "NexusKey")
+if(MSVC)
+    target_link_options(NextKeyApp PRIVATE /SUBSYSTEM:WINDOWS,6.01)
+endif()
 
 # ============================================================================
 # Classic UI (Lite build) — Win32 native, no Sciter dependency
@@ -258,6 +261,9 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt gdiplus
     )
     set_target_properties(NextKeyLite PROPERTIES OUTPUT_NAME "NexusKeyClassic")
+    if(MSVC)
+        target_link_options(NextKeyLite PRIVATE /SUBSYSTEM:WINDOWS,6.01)
+    endif()
 endif()
 
 # Link Windows libraries
