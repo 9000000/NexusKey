@@ -91,7 +91,7 @@ public:
 
 private:
     // Input processing
-    bool ProcessTone(wchar_t c);      // s, f, r, x, j
+    bool ProcessTone(wchar_t c, size_t cachedTarget = SIZE_MAX);
     bool ProcessClearTone();          // z — remove existing tone
     bool ProcessModifier(wchar_t c, wchar_t lower);  // w, [], aa, ee, oo, dd
     void ProcessChar(wchar_t c) { ProcessChar(c, towlower(c), iswupper(c)); }

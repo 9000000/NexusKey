@@ -67,14 +67,15 @@ struct QuickConsonantState {
     }
 };
 
-/// Check if the composed buffer matches any spell exclusion prefix (case-insensitive).
-/// Exclusion entries must be >= 2 chars. Match is prefix-based: "hđ" covers "hđt", "hđqt".
+/// Check if the composed buffer matches any spell exclusion prefix.
+/// Exclusion entries must be >= 2 chars and pre-lowercased (done at config load time).
+/// Match is prefix-based: "hđ" covers "hđt", "hđqt".
 template<typename CharStateT, typename ComposeFunc>
 inline bool IsSpellExcluded(const CharStateT* states, size_t count,
                             const std::vector<std::wstring>& exclusions,
                             ComposeFunc compose) {
     if (exclusions.empty() || count == 0) return false;
-    // Build composed buffer for matching
+    // Build composed buffer for matching (lowercased)
     std::wstring buf;
     buf.reserve(count);
     for (size_t i = 0; i < count; ++i) {
@@ -84,10 +85,9 @@ inline bool IsSpellExcluded(const CharStateT* states, size_t count,
     for (const auto& pat : exclusions) {
         if (pat.size() < 2) continue;
         if (buf.size() < pat.size()) continue;
-        // Case-insensitive prefix match
         bool match = true;
         for (size_t i = 0; i < pat.size(); ++i) {
-            if (towlower(pat[i]) != buf[i]) { match = false; break; }
+            if (pat[i] != buf[i]) { match = false; break; }
         }
         if (match) return true;
     }
@@ -267,6 +267,42 @@ template<typename CharStateT>
     return codaLen >= 1;
 }
 
+/// Does a composed buffer match any spell exclusion prefix?
+/// Buffer may be shorter than exclusion (typing in progress) or longer (prefix match).
+/// Exclusion entries are pre-lowercased at config load time; buffer is lowercased by caller.
+[[nodiscard]] inline bool MatchExclusionBuf(
+        const wchar_t* buf, size_t bufLen,
+        const std::vector<std::wstring>& exclusions) {
+    for (const auto& pat : exclusions) {
+        if (pat.size() < 2) continue;
+        size_t cmpLen = std::min(bufLen, pat.size());
+        if (cmpLen == 0) continue;
+        bool match = true;
+        for (size_t i = 0; i < cmpLen; ++i) {
+            if (pat[i] != buf[i]) { match = false; break; }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+/// Build composed buffer with one character overridden at overrideIdx.
+/// Returns buffer length. Caller provides a stack-allocated wchar_t[16].
+template<typename CharStateT, typename ComposeFunc>
+[[nodiscard]] inline size_t BuildExclusionBuf(
+        const CharStateT* states, size_t count,
+        ComposeFunc compose,
+        wchar_t* buf,
+        size_t overrideIdx, wchar_t overrideChar) {
+    size_t bufLen = 0;
+    for (size_t i = 0; i < count && bufLen < 16; ++i) {
+        wchar_t ch = (i == overrideIdx) ? overrideChar : compose(states[i]);
+        if (ch == 0) continue;
+        buf[bufLen++] = towlower(ch);
+    }
+    return bufLen;
+}
+
 /// Typing-time check: would applying dd→đ produce a word matching a spell exclusion?
 /// Simulates stroke on the d-target, builds composed buffer with 'd' replaced by 'đ',
 /// then does bidirectional prefix match (buffer may be shorter than exclusion while typing).
@@ -276,29 +312,29 @@ template<typename CharStateT, typename ComposeFunc>
         const std::vector<std::wstring>& exclusions,
         ComposeFunc compose) {
     if (exclusions.empty() || count == 0) return false;
-
     size_t dIdx = FindStrokeDTarget(states, count);
     if (dIdx == SIZE_MAX) return false;
 
     wchar_t buf[16];
-    size_t bufLen = 0;
-    for (size_t i = 0; i < count && bufLen < 16; ++i) {
-        wchar_t ch = compose(states[i]);
-        if (ch == 0) continue;
-        buf[bufLen++] = (i == dIdx) ? L'\u0111' : towlower(ch);
-    }
+    size_t bufLen = BuildExclusionBuf(states, count, compose, buf, dIdx, L'\u0111');
+    return MatchExclusionBuf(buf, bufLen, exclusions);
+}
 
-    for (const auto& pat : exclusions) {
-        if (pat.size() < 2) continue;
-        size_t cmpLen = std::min(bufLen, pat.size());
-        if (cmpLen == 0) continue;
-        bool match = true;
-        for (size_t i = 0; i < cmpLen; ++i) {
-            if (towlower(pat[i]) != buf[i]) { match = false; break; }
-        }
-        if (match) return true;
-    }
-    return false;
+/// Typing-time check: would applying a tone produce a word matching a spell exclusion?
+/// Simulates tone on the target vowel, builds composed buffer with the toned char,
+/// then does bidirectional prefix match (buffer may be shorter than exclusion while typing).
+/// Caller provides the target index and the pre-composed toned character.
+template<typename CharStateT, typename ComposeFunc>
+[[nodiscard]] inline bool WouldToneMatchExclusion(
+        const CharStateT* states, size_t count,
+        const std::vector<std::wstring>& exclusions,
+        ComposeFunc compose,
+        size_t toneIdx, wchar_t tonedChar) {
+    if (exclusions.empty() || count == 0 || toneIdx >= count) return false;
+
+    wchar_t buf[16];
+    size_t bufLen = BuildExclusionBuf(states, count, compose, buf, toneIdx, tonedChar);
+    return MatchExclusionBuf(buf, bufLen, exclusions);
 }
 
 /// Returns true if the buffer ends with a stop-final consonant (c, ch, k, p, t)

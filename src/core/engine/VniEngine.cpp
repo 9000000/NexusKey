@@ -187,12 +187,32 @@ void VniEngine::PushChar(wchar_t c) {
         // All "treat as literal" paths share the same two operations.
         auto asLiteral = [&] { ProcessChar(c, rawInput_.size() - 1, lower, isUpper); UpdateSpellState(); };
 
+        // Cache FindToneTarget result from spell-check gate to avoid redundant call
+        // in ProcessTone. nullptr means "not yet computed".
+        CharState* cachedToneTarget = nullptr;
+        bool hasCachedTarget = false;
+
         if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // Allow tone escape (33, 11, etc.) even when spell check disabled:
             // the user is canceling a tone they already applied (e.g. oc33 → oc3).
-            CharState* t = FindToneTarget();
-            if (!t || t->tone != KeyToTone(c)) { asLiteral(); return; }
-            // Has matching pending tone → fall through to ProcessTone for escape
+            cachedToneTarget = FindToneTarget();
+            hasCachedTarget = true;
+            CharState* t = cachedToneTarget;
+            bool isEscape = (t && t->tone == KeyToTone(c));
+            // Allow tone if applying it would match a spell exclusion (e.g. "kà").
+            bool matchesExclusion = false;
+            if (!isEscape && !config_.spellExclusions.empty() && t) {
+                size_t tIdx = static_cast<size_t>(t - states_.data());
+                CharState tentative = *t;
+                tentative.tone = KeyToTone(c);
+                wchar_t tonedCh = ComposeChar(tentative);
+                matchesExclusion = WouldToneMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [this](const CharState& s) { return ComposeChar(s); },
+                    tIdx, tonedCh);
+            }
+            if (!isEscape && !matchesExclusion) { asLiteral(); return; }
+            // Fall through: either tone escape or exclusion match
         }
         // Tone escape: user pressed same tone key twice — blocks Vietnamese.
         if (escape_.isEscaped())                                { asLiteral(); return; }
@@ -227,7 +247,7 @@ void VniEngine::PushChar(wchar_t c) {
                 }
             }
         }
-        if (ProcessTone(c)) {
+        if (ProcessTone(c, hasCachedTarget ? cachedToneTarget : nullptr)) {
             if (!escape_.isEscaped()) {
                 engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
             } else {
@@ -628,11 +648,11 @@ bool VniEngine::ProcessModifier(wchar_t c) {
 // Tone Processing (1-5)
 //-----------------------------------------------------------------------------
 
-bool VniEngine::ProcessTone(wchar_t c) {
+bool VniEngine::ProcessTone(wchar_t c, CharState* cachedTarget) {
     Tone newTone = KeyToTone(c);
     if (newTone == Tone::None) return false;
 
-    CharState* target = FindToneTarget();
+    CharState* target = cachedTarget ? cachedTarget : FindToneTarget();
     if (!target) return false;
 
     escape_.clear();

@@ -625,6 +625,48 @@ TEST_F(VniEngineTest, ToneStable_DiphthongRelocStillWorks) {
     EXPECT_EQ(engine_->Peek(), L"huỷ");
 }
 
+// ============================================================================
+// Spell exclusion tone bypass (Issue #75)
+// ============================================================================
+
+class VniSpellExclusionTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.inputMethod = InputMethod::VNI;
+        config_.spellCheckEnabled = true;
+        config_.autoRestoreEnabled = true;
+        config_.spellExclusions = {L"kà"};
+        engine_ = std::make_unique<VniEngine>(config_);
+    }
+
+    TypingConfig config_;
+    std::unique_ptr<VniEngine> engine_;
+};
+
+TEST_F(VniSpellExclusionTest, ToneBypass_KaGrave_ExactMatch) {
+    // VNI: "ka2" → "kà" (2 = grave). Exclusion "kà" allows it.
+    TypeString(*engine_, L"ka2");
+    EXPECT_EQ(engine_->Peek(), L"kà");
+    EXPECT_EQ(engine_->Commit(), L"kà");
+}
+
+TEST_F(VniSpellExclusionTest, ToneBypass_KaAcute_NotBypassed) {
+    // VNI: "ka1" → "kas" (1 = acute). Exclusion "kà" does NOT allow "ká".
+    TypeString(*engine_, L"ka1");
+    EXPECT_EQ(engine_->Peek(), L"ka1");  // '1' treated as literal
+}
+
+TEST_F(VniSpellExclusionTest, ToneBypass_NoExclusion_Blocked) {
+    // Without exclusion, "ka2" → literal "ka2"
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::VNI;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    VniEngine eng(cfg);
+    TypeString(eng, L"ka2");
+    EXPECT_EQ(eng.Peek(), L"ka2");
+}
+
 }  // namespace
 }  // namespace Vni
 }  // namespace NextKey

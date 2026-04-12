@@ -164,10 +164,11 @@ void ClassicSpellExclusionsDialog::AddEntry(const std::wstring& text) {
     }
 
     std::wstring entry = text.substr(s, e - s);
+    for (auto& ch : entry) ch = towlower(ch);  // Store pre-lowercased
 
-    // Dedup (case-insensitive)
+    // Dedup
     for (auto& existing : entries_) {
-        if (_wcsicmp(existing.c_str(), entry.c_str()) == 0) return;
+        if (existing == entry) return;
     }
 
     entries_.push_back(entry);

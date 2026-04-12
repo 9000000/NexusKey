@@ -198,12 +198,30 @@ void TelexEngine::PushChar(wchar_t c) {
         // All "treat as literal" paths share the same two operations.
         auto asLiteral = [&] { ProcessChar(c, lower, isUpper); UpdateSpellState(); };
 
+        // Cache FindToneTarget from spell-check gate to avoid redundant call in ProcessTone.
+        size_t cachedToneTarget = SIZE_MAX;
+        bool hasCachedTarget = false;
+
         if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // Allow tone escape (rr, ss, ff, etc.) even when spell check disabled:
             // the user is canceling a tone they already applied (e.g. ocrr → ocr).
-            size_t t = FindToneTarget();
-            if (t == SIZE_MAX || states_[t].tone != KeyToTone(c)) { asLiteral(); return; }
-            // Has matching pending tone → fall through to ProcessTone for escape
+            cachedToneTarget = FindToneTarget();
+            hasCachedTarget = true;
+            size_t t = cachedToneTarget;
+            bool isEscape = (t != SIZE_MAX && states_[t].tone == KeyToTone(c));
+            // Allow tone if applying it would match a spell exclusion (e.g. "kà").
+            bool matchesExclusion = false;
+            if (!isEscape && !config_.spellExclusions.empty() && t != SIZE_MAX) {
+                CharState tentative = states_[t];
+                tentative.tone = KeyToTone(c);
+                wchar_t tonedCh = Compose(tentative);
+                matchesExclusion = WouldToneMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [](const CharState& s) { return Compose(s); },
+                    t, tonedCh);
+            }
+            if (!isEscape && !matchesExclusion) { asLiteral(); return; }
+            // Fall through: either tone escape or exclusion match
         }
         // Tone escape: user pressed same tone key twice (e.g., ss) — blocks Vietnamese.
         if (escape_.isEscaped())                                { asLiteral(); return; }
@@ -239,7 +257,7 @@ void TelexEngine::PushChar(wchar_t c) {
                 }
             }
         }
-        if (ProcessTone(c)) {
+        if (ProcessTone(c, hasCachedTarget ? cachedToneTarget : SIZE_MAX)) {
             if (!escape_.isEscaped()) {
                 engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
             } else {
@@ -345,11 +363,11 @@ void TelexEngine::PushChar(wchar_t c) {
 // Tone Processing
 //-----------------------------------------------------------------------------
 
-bool TelexEngine::ProcessTone(wchar_t c) {
+bool TelexEngine::ProcessTone(wchar_t c, size_t cachedTarget) {
     Tone newTone = KeyToTone(c);
     if (newTone == Tone::None) return false;
 
-    size_t targetIdx = FindToneTarget();
+    size_t targetIdx = (cachedTarget != SIZE_MAX) ? cachedTarget : FindToneTarget();
     if (targetIdx == SIZE_MAX) return false;
 
     CharState& target = states_[targetIdx];

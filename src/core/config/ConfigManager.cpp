@@ -101,12 +101,13 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.tempOffMacroByEsc = (*features)["temp_off_macro_esc"].value_or(false);
             config.autoCapsMacro = (*features)["auto_caps_macro"].value_or(false);
             config.allowEnglishBypass = (*features)["allow_english_bypass"].value_or(false);
-            // Spell exclusion prefixes (e.g. ["hđ", "đp"])
+            // Spell exclusion prefixes (e.g. ["hđ", "đp"]) — stored pre-lowercased
             if (auto arr = (*features)["spell_exclusions"].as_array()) {
                 for (auto& item : *arr) {
                     if (auto str = item.value<std::string>()) {
                         auto wide = Utf8ToWide(*str);
                         if (wide.size() >= 2) {
+                            for (auto& ch : wide) ch = towlower(ch);
                             config.spellExclusions.push_back(std::move(wide));
                         }
                     }

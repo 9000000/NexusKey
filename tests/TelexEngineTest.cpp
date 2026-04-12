@@ -3618,6 +3618,57 @@ TEST_F(SpellExclusionTest, PLHDD_ExclPLHD_Works) {
     EXPECT_EQ(eng.Commit(), L"plhđ");
 }
 
+// Issue #75: Tone bypass via spell exclusion (e.g. "kà" for Kà Tum)
+// Spell check blocks "ka" (k before non-front vowel) → tone key becomes literal.
+// With exclusion "kà", applying grave tone tentatively matches → tone allowed through.
+
+TEST_F(SpellExclusionTest, ToneBypass_KaGrave_ExactMatch) {
+    // Exclusion "kà" → typing "kaf" should produce "kà" (grave on 'a')
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.spellExclusions = {L"kà"};
+    TelexEngine eng(cfg);
+    TypeString(eng, L"kaf");
+    EXPECT_EQ(eng.Peek(), L"kà");
+    EXPECT_EQ(eng.Commit(), L"kà");
+}
+
+TEST_F(SpellExclusionTest, ToneBypass_KaAcute_NotBypassed) {
+    // Exclusion "kà" should NOT allow "ká" (different tone)
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.spellExclusions = {L"kà"};
+    TelexEngine eng(cfg);
+    TypeString(eng, L"kas");
+    EXPECT_EQ(eng.Peek(), L"kas");  // 's' treated as literal
+}
+
+TEST_F(SpellExclusionTest, ToneBypass_CaseInsensitive) {
+    // Exclusion "kà" should also allow "Kà" (uppercase K)
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.spellExclusions = {L"kà"};
+    TelexEngine eng(cfg);
+    eng.PushChar(L'K');
+    eng.PushChar(L'a');
+    eng.PushChar(L'f');
+    EXPECT_EQ(eng.Peek(), L"Kà");
+    EXPECT_EQ(eng.Commit(), L"Kà");
+}
+
+TEST_F(SpellExclusionTest, ToneBypass_NoExclusion_Blocked) {
+    // Without exclusion, "kaf" → literal "kaf" (spell check blocks tone)
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    TelexEngine eng(cfg);
+    TypeString(eng, L"kaf");
+    EXPECT_EQ(eng.Peek(), L"kaf");
+}
+
 // =============================================================================
 // Non-initial dd→đ tests (abbreviation support)
 // =============================================================================

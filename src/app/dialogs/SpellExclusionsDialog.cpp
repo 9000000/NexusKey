@@ -101,10 +101,11 @@ void SpellExclusionsDialog::addEntry(const std::wstring& text) {
     if (end - start < 2) return;
 
     std::wstring entry = text.substr(start, end - start);
+    for (auto& ch : entry) ch = towlower(ch);  // Store pre-lowercased
 
-    // Dedup (case-insensitive)
+    // Dedup
     for (auto& existing : entries_) {
-        if (_wcsicmp(existing.c_str(), entry.c_str()) == 0) return;
+        if (existing == entry) return;
     }
 
     entries_.push_back(entry);
@@ -155,6 +156,7 @@ void SpellExclusionsDialog::importExclusions() {
 
         std::wstring wName = Utf8ToWide(line);
         if (wName.empty()) continue;
+        for (auto& ch : wName) ch = towlower(ch);  // Store pre-lowercased
         if (std::find(entries_.begin(), entries_.end(), wName) == entries_.end()) {
             entries_.push_back(wName);
         }

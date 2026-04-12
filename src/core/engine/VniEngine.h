@@ -68,7 +68,7 @@ public:
 private:
     // Processing
     bool ProcessModifier(wchar_t c);
-    bool ProcessTone(wchar_t c);
+    bool ProcessTone(wchar_t c, CharState* cachedTarget = nullptr);
     void ProcessChar(wchar_t c, size_t rawIdx) { ProcessChar(c, rawIdx, towlower(c), iswupper(c)); }
     void ProcessChar(wchar_t c, size_t rawIdx, wchar_t lower, bool isUpper);
     
