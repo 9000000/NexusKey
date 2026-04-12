@@ -11,7 +11,6 @@
 #include <urlmon.h>
 #include <CommCtrl.h>
 #include <ShlObj.h>
-#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -167,7 +166,7 @@ UpdateInfo UpdateChecker::CheckForUpdate() noexcept {
 
         // Find release asset
 #ifdef NEXUSKEY_LITE_MODE
-        std::string assetUrl = FindAssetUrl(response, "NexusKeyClassic.exe");
+        std::string assetUrl = FindAssetUrl(response, "NexusKeyClassic.zip");
 #else
         std::string assetUrl = FindAssetUrl(response, "NexusKey.zip");
 
@@ -313,11 +312,7 @@ bool UpdateChecker::DownloadWithProgress(HWND parent, const std::wstring& downlo
 
     std::thread([state, downloadUrl]() {
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-#ifdef NEXUSKEY_LITE_MODE
-        state->success = DownloadAndReplaceExe(downloadUrl);
-#else
         state->success = DownloadAndLaunchInstaller(downloadUrl);
-#endif
         CoUninitialize();
         state->done.store(true, std::memory_order_release);
     }).detach();
@@ -370,61 +365,6 @@ bool UpdateChecker::DownloadAndLaunchInstaller(const std::wstring& downloadUrl) 
         }
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-bool UpdateChecker::DownloadAndReplaceExe(const std::wstring& downloadUrl) noexcept {
-    try {
-        // 1. Download to temp
-        wchar_t tempDir[MAX_PATH] = {};
-        GetTempPathW(MAX_PATH, tempDir);
-        std::wstring tempExe = std::wstring(tempDir) + L"NexusKeyClassic_update.exe";
-
-        if (!DownloadFile(downloadUrl, tempExe)) return false;
-
-        // 2. Verify SHA-256
-        if (!VerifyDownloadedZip(downloadUrl, tempExe)) {  // Same sidecar pattern: url + ".sha256"
-            DeleteFileW(tempExe.c_str());
-            return false;
-        }
-
-        // 3. Get current exe path
-        wchar_t exePath[MAX_PATH] = {};
-        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-        std::wstring currentExe(exePath);
-        // Build "NexusKeyClassic_old.exe" so CleanupOldUpdateFiles() matches stem ending "_old"
-        namespace fs = std::filesystem;
-        fs::path currentPath(currentExe);
-        std::wstring oldExe = (currentPath.parent_path() / (currentPath.stem().wstring() + L"_old" + currentPath.extension().wstring())).wstring();
-
-        // 4. Rename current → _old (delete stale _old first)
-        DeleteFileW(oldExe.c_str());
-        if (!MoveFileExW(currentExe.c_str(), oldExe.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-            DeleteFileW(tempExe.c_str());
-            return false;
-        }
-
-        // 5. Move downloaded → current location (COPY_ALLOWED for cross-drive moves)
-        if (!MoveFileExW(tempExe.c_str(), currentExe.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
-            // Rollback: restore old exe
-            MoveFileW(oldExe.c_str(), currentExe.c_str());
-            DeleteFileW(tempExe.c_str());
-            return false;
-        }
-
-        // 5b. Remove Zone.Identifier (internet download block)
-        DeleteFileW((currentExe + L":Zone.Identifier").c_str());
-
-        // 6. Mark _old for deletion on next boot (best effort)
-        MoveFileExW(oldExe.c_str(), nullptr, MOVEFILE_DELAY_UNTIL_REBOOT);
-
-        // 7. Signal pending relaunch — caller (main_lite.cpp) will launch
-        //    the new exe after releasing the single-instance mutex.
-        SetPendingRelaunch(true);
-
         return true;
     } catch (...) {
         return false;

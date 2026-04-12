@@ -394,6 +394,11 @@
     padding-bottom: 8px;
 }
 
+/* Child setting row - indented sub-option of a parent setting */
+.child-setting-row {
+    padding-left: 16dip;
+}
+
 /* Vertical setting row (for Phím Chuyển with 2 rows) */
 .setting-row-vertical {
     flow: vertical;

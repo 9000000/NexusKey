@@ -60,10 +60,10 @@
                         </div>
                         <!-- Hidden input to fire VALUE_CHANGED -->
                         <input type="hidden" id="val-toggle-language" value="0">
-                        
+
                         <!-- Tạm ẩn chữ Kiểu gõ theo yêu cầu của user -->
                         <!-- <span class="setting-label" data-i18n="s.input_method" style="margin-left: 24px; position: relative; top: -2px;">Kiểu gõ</span> -->
-                        
+
                         <div class="spacer" style="width: *"></div>
                         <select class="input-type-dropdown" id="input-type">
                             <option value="0">Telex</option>
@@ -297,12 +297,14 @@
                                 <input type="hidden" id="val-spell-check" value="0">
                             </div>
                             <!-- 5. Allow ZWJF consonants (sub-option of spell check) -->
-                            <div class="setting-row">
-                                <span class="setting-label" data-i18n="s.allow_zwjf">Cho phép "z w j f" làm phụ âm
+                            <div class="setting-row child-setting-row">
+                                <span class="setting-label" data-i18n="s.allow_zwjf">Cho
+                                    phép "z w j f" làm phụ âm
                                     đầu</span>
-                                <button class="btn-info" data-tooltip="Mặc định đã cho phép. Chỉ cần bật khi kiểm tra chính tả được bật"
-                                    data-i18n-tooltip="s.allow_zwjf_tooltip"><svg xmlns="http://www.w3.org/2000/svg" width="16"
-                                        height="16" viewBox="0 0 256 256" style="pointer-events: none;">
+                                <button class="btn-info"
+                                    data-tooltip="Mặc định đã cho phép. Chỉ cần bật khi kiểm tra chính tả được bật"
+                                    data-i18n-tooltip="s.allow_zwjf_tooltip"><svg xmlns="http://www.w3.org/2000/svg"
+                                        width="16" height="16" viewBox="0 0 256 256" style="pointer-events: none;">
                                         <path
                                             d="M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm0,192a84,84,0,1,1,84-84A84.09,84.09,0,0,1,128,212Zm20-36a12,12,0,0,1-12,12,20,20,0,0,1-20-20V128a12,12,0,0,1,0-24,20,20,0,0,1,20,20v40A12,12,0,0,1,148,176ZM112,84a16,16,0,1,1,16,16A16,16,0,0,1,112,84Z">
                                         </path>
@@ -316,7 +318,7 @@
                                 <input type="hidden" id="val-allow-zwjf" value="0">
                             </div>
                             <!-- 6. Restore key on wrong word -->
-                            <div class="setting-row">
+                            <div class="setting-row child-setting-row">
                                 <span class="setting-label" data-i18n="s.restore_key">Tự khôi phục phím với từ
                                     sai</span>
                                 <div class="spacer" style="width: *"></div>
@@ -328,18 +330,20 @@
                                 <input type="hidden" id="val-restore-key" value="0">
                             </div>
                             <!-- 7. Spell check exclusion list -->
-                            <div class="setting-row group-last" id="row-spell-exclusions">
+                            <div class="setting-row child-setting-row group-last" id="row-spell-exclusions">
                                 <span class="setting-label" data-i18n="s.spell_exclusions">Loại trừ chính tả</span>
                                 <button class="btn-info"
                                     data-tooltip="Danh sách viết tắt bỏ qua kiểm tra chính tả (VD: hđ, đp). Khớp từ đầu, tối thiểu 2 ký tự."
-                                    data-i18n-tooltip="s.spell_exclusions_tooltip"><svg xmlns="http://www.w3.org/2000/svg"
-                                        width="16" height="16" viewBox="0 0 256 256" style="pointer-events: none;">
+                                    data-i18n-tooltip="s.spell_exclusions_tooltip"><svg
+                                        xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 256 256"
+                                        style="pointer-events: none;">
                                         <path
                                             d="M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm0,192a84,84,0,1,1,84-84A84.09,84.09,0,0,1,128,212Zm20-36a12,12,0,0,1-12,12,20,20,0,0,1-20-20V128a12,12,0,0,1,0-24,20,20,0,0,1,20,20v40A12,12,0,0,1,148,176ZM112,84a16,16,0,1,1,16,16A16,16,0,0,1,112,84Z">
                                         </path>
                                     </svg></button>
                                 <div class="spacer" style="width: *"></div>
-                                <button class="btn-action" id="btn-spell-exclusions" data-i18n="s.list">Danh sách</button>
+                                <button class="btn-action" id="btn-spell-exclusions" data-i18n="s.list">Danh
+                                    sách</button>
                             </div>
                             <!-- 8. Temp disable NexusKey with Alt -->
                             <div class="setting-row tooltip-upwards" id="row-temp-off-openkey">
@@ -522,7 +526,7 @@
                                 <input type="hidden" id="val-run-startup" value="0">
                             </div>
                             <!-- 1b. Chế độ mặc định -->
-                            <div class="setting-row" style="padding-left: 16dip">
+                            <div class="setting-row child-setting-row">
                                 <span class="setting-label" data-i18n="s.startup_mode">Chế độ mặc định</span>
                                 <div class="spacer" style="width: *"></div>
                                 <select class="setting-dropdown-small" id="startup-mode">

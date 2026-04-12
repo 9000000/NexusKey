@@ -554,18 +554,5 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     OleUninitialize();
     CloseHandle(hMutex);
 
-    // Relaunch after update — mutex is released, new exe can acquire it
-    if (UpdateChecker::IsPendingRelaunch()) {
-        wchar_t exePath[MAX_PATH] = {};
-        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-        STARTUPINFOW si = { sizeof(si) };
-        PROCESS_INFORMATION pi = {};
-        std::wstring cmdLine = L"\"" + std::wstring(exePath) + L"\"";
-        CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
-                       CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi);
-        if (pi.hThread) CloseHandle(pi.hThread);
-        if (pi.hProcess) CloseHandle(pi.hProcess);
-    }
-
     return 0;
 }
