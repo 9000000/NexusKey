@@ -13,6 +13,8 @@ env:
 
 permissions:
   contents: write
+  id-token: write       # OIDC token for cosign keyless signing
+  attestations: write   # GitHub native attestation
 
 jobs:
   build:
@@ -31,10 +33,10 @@ jobs:
         run: cmake -B build -G "Visual Studio 17 2022" -A x64
 
       - name: Build NexusKey
-        run: cmake --build build --config Release --target NextKeyApp
+        run: cmake --build build --config RelWithDebInfo --target NextKeyApp
 
       - name: Build TSF DLL
-        run: cmake --build build --config Release --target NextKeyTSF
+        run: cmake --build build --config RelWithDebInfo --target NextKeyTSF
 
       - name: Build tests
         run: cmake --build build --config Release --target NextKeyTests
@@ -47,15 +49,21 @@ jobs:
         run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DNEXUSKEY_LITE_MODE=ON
 
       - name: Build Classic UI
-        run: cmake --build build-classic --config Release --target NextKeyLite
+        run: cmake --build build-classic --config RelWithDebInfo --target NextKeyLite
 
       # --- Zip releases ---
       - name: Zip Release
         if: startsWith(github.ref, 'refs/tags/')
         shell: powershell
         run: |
-          Get-ChildItem "build/Release/*" -Include NexusKey.exe,NextKeyTSF.dll,sciter.dll |
+          Get-ChildItem "build/RelWithDebInfo/*" -Include NexusKey.exe,NextKeyTSF.dll,sciter.dll |
             Compress-Archive -DestinationPath NexusKey.zip
+
+      - name: Zip Classic Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
+        run: |
+          Compress-Archive -Path "build-classic/RelWithDebInfo/NexusKeyClassic.exe" -DestinationPath NexusKeyClassic.zip
 
       # --- SHA-256 checksums ---
       - name: Generate SHA-256 checksums
@@ -64,11 +72,40 @@ jobs:
         run: |
           # Generate SHA-256 sidecars used by VerifyDownloadedZip (SEC-001)
           # Format: "<hash>  <filename>" (GNU coreutils sha256sum compatible)
-          Copy-Item "build-classic/Release/NexusKeyClassic.exe" .
-          foreach ($file in @("NexusKey.zip", "NexusKeyClassic.exe")) {
+          foreach ($file in @("NexusKey.zip", "NexusKeyClassic.zip")) {
             $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
             "$hash  $file" | Out-File -Encoding ascii "$file.sha256"
           }
+
+      # --- Cosign keyless signing (Sigstore) ---
+      - name: Install Cosign
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign NexusKey.zip
+        if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
+        run: |
+          cosign sign-blob NexusKey.zip --bundle NexusKey.zip.sigstore.json --yes
+
+      - name: Sign NexusKeyClassic.zip
+        if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
+        run: |
+          cosign sign-blob NexusKeyClassic.zip --bundle NexusKeyClassic.zip.sigstore.json --yes
+
+      # --- GitHub build provenance attestation ---
+      - name: Attest NexusKey
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: NexusKey.zip
+
+      - name: Attest NexusKey Classic
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: NexusKeyClassic.zip
 
       - name: Release
         uses: softprops/action-gh-release@v1
@@ -78,14 +115,16 @@ jobs:
           files: |
             NexusKey.zip
             NexusKey.zip.sha256
-            NexusKeyClassic.exe
-            NexusKeyClassic.exe.sha256
+            NexusKey.zip.sigstore.json
+            NexusKeyClassic.zip
+            NexusKeyClassic.zip.sha256
+            NexusKeyClassic.zip.sigstore.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: NexusKey-x64
           path: |
-            build/Release/NexusKey.exe
-            build/Release/NextKeyTSF.dll
-            build/Release/sciter.dll
+            build/RelWithDebInfo/NexusKey.exe
+            build/RelWithDebInfo/NextKeyTSF.dll
+            build/RelWithDebInfo/sciter.dll

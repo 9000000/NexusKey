@@ -17,6 +17,8 @@ if(MSVC)
     add_definitions(-DUNICODE -D_UNICODE)
     # Linker security flags: ASLR, DEP, High-Entropy ASLR
     add_link_options(/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA)
+    # PE legitimacy: checksum + explicit subsystem version (reduces AV false positives)
+    add_link_options(/RELEASE /SUBSYSTEM:WINDOWS,6.01)
 endif()
 
 # Per-target include directories (no global include_directories)

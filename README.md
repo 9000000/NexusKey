@@ -23,13 +23,13 @@
 
 ---
 
-**[Giới thiệu](#giới-thiệu)** | **[Tính năng](#tính-năng)** | **[Cài đặt](#cài-đặt)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
+**[Giới thiệu](#giới-thiệu)** | **[Tính năng](#tính-năng)** | **[Cài đặt](#cài-đặt)** | **[Xác minh](#xác-minh-bản-tải-verify-release)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
 
 ---
 
 ## Giới thiệu
 
-**NexusKey** là bộ gõ tiếng Việt mã nguồn mở cho Windows, được viết lại hoàn toàn từ [NextKey](https://github.com/phatMT97/NexusKey/tree/feat/UI-Next) (dựa trên [OpenKey](https://github.com/tuyenvm/OpenKey) của Mai Vũ Tuyên).
+**NexusKey** là bộ gõ tiếng Việt mã nguồn mở cho Windows, được viết lại từ hoàn toàn [NextKey](https://github.com/phatMT97/NexusKey/tree/feat/UI-Next) (một fork của [OpenKey](https://github.com/tuyenvm/OpenKey) của Mai Vũ Tuyên).
 
 Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorphism.
 
@@ -85,6 +85,25 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 1. Tải phiên bản mới nhất tại **[Releases](https://github.com/phatMT97/NextKey/releases)**.
 2. Giải nén và chạy `NexusKey.exe`.
 3. *(Khuyến nghị)* Tắt các bộ gõ khác (Unikey, EVKey) để tránh xung đột.
+
+---
+
+## Xác minh bản tải (Verify Release)
+
+Mỗi bản phát hành đều được ký bằng [Sigstore](https://sigstore.dev) và đính kèm [build attestation](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds) từ GitHub Actions — chứng minh file được build từ mã nguồn trong repo này.
+
+```bash
+# Xác minh bằng GitHub CLI
+gh attestation verify NexusKey.zip --repo PhatMT97/NexusKey
+
+# Xác minh bằng cosign
+cosign verify-blob NexusKey.zip \
+  --bundle NexusKey.zip.sigstore.json \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp="https://github.com/phatMT97/NexusKey/"
+```
+
+> **Lưu ý:** Đây không phải code signing truyền thống (Authenticode). Windows SmartScreen vẫn có thể cảnh báo khi chạy lần đầu — đây là hành vi bình thường với phần mềm mã nguồn mở chưa có chứng chỉ ký số.
 
 ---
 
@@ -240,6 +259,7 @@ NexusKey is built with a lean architecture and no heavy runtime dependencies, ke
 - Giao diện bởi [Sciter.JS](https://sciter.com/)
 - Đọc config bởi [toml++](https://github.com/marzer/tomlplusplus)
 - Testing bởi [Google Test](https://github.com/google/googletest)
+- Tham khảo rule -ing cho spell check của [Gonhanh.org](https://github.com/khaphanspace/gonhanh.org?tab=readme-ov-file#-t%C3%A0i-li%E1%BB%87u-k%E1%BB%B9-thu%E1%BA%ADt)
 
 ### Top Testers
 Cảm ơn các thành viên cộng đồng đã test và góp ý:
