@@ -21,7 +21,7 @@ public:
     FloatingIcon& operator=(const FloatingIcon&) = delete;
 
     /// Create the overlay window (hidden by default)
-    [[nodiscard]] bool Create(HINSTANCE hInstance);
+    [[nodiscard]] bool Create(HINSTANCE hInstance, bool initialVietnamese = true);
 
     /// Destroy the overlay window and free resources
     void Destroy() noexcept;

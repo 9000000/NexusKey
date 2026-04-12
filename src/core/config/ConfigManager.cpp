@@ -556,6 +556,7 @@ std::optional<SystemConfig> ConfigManager::LoadSystemConfig(const std::wstring& 
             config.floatingIconX = static_cast<int32_t>((*system)["floating_icon_x"].value_or(int64_t(INT32_MIN)));
             config.floatingIconY = static_cast<int32_t>((*system)["floating_icon_y"].value_or(int64_t(INT32_MIN)));
             config.autoCheckUpdate = (*system)["auto_check_update"].value_or(true);
+            config.startupMode = static_cast<uint8_t>((*system)["startup_mode"].value_or(0));
         }
 
         return config;
@@ -582,6 +583,7 @@ bool ConfigManager::SaveSystemConfig(const std::wstring& path, const SystemConfi
         system.insert_or_assign("floating_icon_x", static_cast<int64_t>(config.floatingIconX));
         system.insert_or_assign("floating_icon_y", static_cast<int64_t>(config.floatingIconY));
         system.insert_or_assign("auto_check_update", config.autoCheckUpdate);
+        system.insert_or_assign("startup_mode", static_cast<int64_t>(config.startupMode));
         tbl.insert_or_assign("system", std::move(system));
 
         return WriteToml(utf8Path, tbl);

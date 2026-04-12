@@ -436,6 +436,9 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         } else if (meta.type == SettingType::Dropdown) {
             int lblW = Dpi(90);
             int comboW = colWidth - lblW - Dpi(4);
+            if (wcscmp(meta.id, L"startup-mode") == 0) {
+                comboW = Dpi(80); // Make this dropdown specifically smaller
+            }
             HWND lbl = CreateLabel(meta.label, cx, cy + Dpi(4), lblW, Dpi(kControlHeight), 0);
             extraControls_[i] = lbl;
             HWND combo = CreateCombo(cx + lblW + Dpi(4), cy, comboW, Dpi(kComboHeight + 60), meta.win32Id);
@@ -444,6 +447,11 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
                 ComboBox_AddString(combo, L"Nền tối");
                 ComboBox_AddString(combo, L"Nền sáng");
                 ComboBox_AddString(combo, L"Tự chọn");
+            }
+            if (wcscmp(meta.id, L"startup-mode") == 0) {
+                ComboBox_AddString(combo, L"Tiếng Việt");
+                ComboBox_AddString(combo, L"Tiếng Anh");
+                ComboBox_AddString(combo, L"Ghi nhớ");
             }
             checkControls_[i] = combo;
         }
@@ -790,6 +798,15 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                     return;
                 }
 
+                if (meta->type == SettingType::Dropdown && wcscmp(meta->id, L"startup-mode") == 0
+                    && code == CBN_SELCHANGE) {
+                    // Startup mode change — immediate save
+                    SaveSettings();
+                    KillTimer(hwnd_, kTimerDeferredSave);
+                    SaveToToml();
+                    return;
+                }
+
                 SaveSettings();
 
                 // System toggles have side effects beyond config save
@@ -982,6 +999,24 @@ void ClassicSettingsDialog::RefreshLabels() {
         ComboBox_AddString(iconCombo, en ? L"Light" : L"Nền sáng");
         ComboBox_AddString(iconCombo, en ? L"Custom" : L"Tự chọn");
         if (sel >= 0) ComboBox_SetCurSel(iconCombo, sel);
+    }
+
+    // Startup mode dropdown items
+    HWND startupCombo = GetDlgItem(hwnd_, IDC_COMBO_STARTUP_MODE);
+    if (startupCombo) {
+        int sel = ComboBox_GetCurSel(startupCombo);
+        ComboBox_ResetContent(startupCombo);
+        ComboBox_AddString(startupCombo, en ? L"Vietnamese" : L"Tiếng Việt");
+        ComboBox_AddString(startupCombo, en ? L"English" : L"Tiếng Anh");
+        ComboBox_AddString(startupCombo, en ? L"Remember" : L"Ghi nhớ");
+        if (sel >= 0) ComboBox_SetCurSel(startupCombo, sel);
+
+        // Resize dropdown: wider for English, narrower for Vietnamese
+        RECT rc;
+        GetWindowRect(startupCombo, &rc);
+        MapWindowPoints(HWND_DESKTOP, hwnd_, reinterpret_cast<LPPOINT>(&rc), 2);
+        int newW = en ? Dpi(90) : Dpi(80);
+        SetWindowPos(startupCombo, nullptr, rc.left, rc.top, newW, rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     // Spell exclusions button

@@ -34,7 +34,7 @@ TrayIcon::~TrayIcon() {
     g_trayInstance = nullptr;
 }
 
-bool TrayIcon::Create(HINSTANCE hInstance) {
+bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);
     wc.lpfnWndProc = WndProc;
@@ -78,8 +78,10 @@ bool TrayIcon::Create(HINSTANCE hInstance) {
     nid_.uCallbackMessage = WM_TRAYICON;
 
     // Load initial icon based on style
+    vietnameseMode_ = initialVietnamese;
     RefreshIcon();
-    StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), S(StringId::TIP_VIETNAMESE));
+    StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip),
+                   S(initialVietnamese ? StringId::TIP_VIETNAMESE : StringId::TIP_ENGLISH));
 
     // Register "TaskbarCreated" message to detect explorer.exe restarts
     wmTaskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");

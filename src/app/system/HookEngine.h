@@ -38,7 +38,8 @@ public:
     HookEngine& operator=(const HookEngine&) = delete;
 
     /// Start the hook engine (installs keyboard hook + focus hook)
-    bool Start(HINSTANCE hInstance, const TypingConfig& config, const HotkeyConfig& hotkey);
+    bool Start(HINSTANCE hInstance, const TypingConfig& config, const HotkeyConfig& hotkey,
+               bool initialVietnamese = true, uint8_t startupMode = 0);
 
     /// Stop and unhook everything
     void Stop();
@@ -166,6 +167,7 @@ private:
     std::wstring previousComposition_;  // What's currently displayed in the app
     std::vector<uint8_t> previousEncodedWidths_;  // Output unit count per Unicode char (for non-Unicode code tables)
     bool vietnameseMode_ = true;
+    uint8_t startupMode_ = 0;  // 0=Vietnamese, 1=English, 2=Remember
     std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
     std::atomic<int> synthEventsPending_{0};  // Count of synthetic INPUT structs sent but not yet processed by hook
     DWORD lastSynthSendTime_ = 0;  // GetTickCount() of last SendInput call (watchdog: reset if stuck > 500ms)

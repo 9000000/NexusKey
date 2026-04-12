@@ -90,15 +90,16 @@ static void CALLBACK IconPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
 /// Ensure floating icon window exists (lazy-create on first use).
 static void EnsureFloatingIconCreated() {
     if (g_floatingIcon.IsCreated()) return;
-    (void)g_floatingIcon.Create(g_hInstance);
+    (void)g_floatingIcon.Create(g_hInstance, g_hookEngine.IsVietnameseMode());
 }
 
 /// Initialize floating icon overlay + config callbacks.
 /// Shared by both HookEngine and TSF modes.
 static void InitFloatingIcon(HINSTANCE hInstance, const SystemConfig& sc) {
+    bool startVietnamese = (sc.startupMode != 1);
     // Only create resources if actually showing — saves RAM when disabled
     if (sc.showFloatingIcon) {
-        if (g_floatingIcon.Create(hInstance)) {
+        if (g_floatingIcon.Create(hInstance, startVietnamese)) {
             g_floatingIcon.SetPosition(sc.floatingIconX, sc.floatingIconY);
             g_floatingIcon.SetVisible(true);
         }
@@ -300,6 +301,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Hook Engine Mode — single process, no DLL/COM needed
     // ═══════════════════════════════════════════════════════════
 
+    bool startVietnamese = (systemConfig.startupMode != 1);
+
     // Create SharedState for Settings subprocess IPC
     if (g_sharedState.Create()) {
         SharedState state;
@@ -309,13 +312,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
+        if (!startVietnamese) {
+            state.flags &= ~SharedFlags::VIETNAMESE_MODE;
+        }
         state.SetHotkey(hotkeyConfig);
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created for HookEngine mode");
     }
 
     // Tray Icon
-    if (!g_trayIcon.Create(hInstance)) {
+    if (!g_trayIcon.Create(hInstance, startVietnamese)) {
         // MessageBox acceptable: fatal startup error, app cannot function without tray icon.
         // No matching StringId — using English string (language config not yet applied to UI).
         MessageBoxW(nullptr, L"Failed to create tray icon", L"NexusKey", MB_ICONERROR);
@@ -394,7 +400,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
     // Start keyboard hook engine
-    if (!g_hookEngine.Start(hInstance, config, hotkeyConfig)) {
+    if (!g_hookEngine.Start(hInstance, config, hotkeyConfig, startVietnamese, systemConfig.startupMode)) {
         // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
         // No matching StringId — using English string (language config not yet applied to UI).
         timeEndPeriod(1);

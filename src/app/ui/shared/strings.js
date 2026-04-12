@@ -70,6 +70,10 @@ var STRINGS = {
 
         // Tab 3: System
         "s.run_startup": "Run on Windows startup",
+        "s.startup_mode": "Default mode",
+        "s.startup_mode_v": "Vietnamese",
+        "s.startup_mode_e": "English",
+        "s.startup_mode_r": "Remember last",
         "s.show_startup": "Show settings on startup",
         "s.run_admin": "Run as Administrator",
         "s.desktop_shortcut": "Create desktop shortcut",

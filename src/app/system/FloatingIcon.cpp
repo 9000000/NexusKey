@@ -139,7 +139,8 @@ FloatingIcon::~FloatingIcon() {
     Destroy();
 }
 
-bool FloatingIcon::Create(HINSTANCE hInstance) {
+bool FloatingIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
+    vietnameseMode_ = initialVietnamese;
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);
     wc.lpfnWndProc = WndProc;

@@ -73,7 +73,8 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     autoCapsMacro_ = config.autoCapsMacro;
 }
 
-bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const HotkeyConfig& hotkey) {
+bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const HotkeyConfig& hotkey,
+                        bool initialVietnamese, uint8_t startupMode) {
     if (keyboardHook_) return false;  // Already running
 
 #if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
@@ -91,16 +92,20 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     }
     autoCapState_ = 0;
     engine_ = EngineFactory::Create(config);
+    vietnameseMode_ = initialVietnamese;
+    startupMode_ = startupMode;
 
     // Create shared memory for smart switch and load persisted English-mode apps
     if (smartSwitch_) {
         (void)smartSwitchMgr_.Create();
-        auto englishApps = ConfigManager::LoadEnglishModeApps(ConfigManager::GetConfigPath());
-        for (auto& app : englishApps) {
-            appModeMap_[std::move(app)] = false;  // false = English mode
-        }
-        if (!appModeMap_.empty()) {
-            smartSwitchMgr_.LoadFromMap(appModeMap_);
+        if (startupMode_ == 2) {  // Remember: load persisted per-app modes
+            auto englishApps = ConfigManager::LoadEnglishModeApps(ConfigManager::GetConfigPath());
+            for (auto& app : englishApps) {
+                appModeMap_[std::move(app)] = false;  // false = English mode
+            }
+            if (!appModeMap_.empty()) {
+                smartSwitchMgr_.LoadFromMap(appModeMap_);
+            }
         }
     }
 
@@ -178,7 +183,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
 void HookEngine::Stop() {
     HOOK_LOG(L"=== HookEngine::Stop ===");
     // Persist smart switch English-mode apps to TOML before shutdown
-    SaveEnglishModeAppsIfDirty();
+    if (startupMode_ == 2) {  // Remember: persist per-app modes
+        SaveEnglishModeAppsIfDirty();
+    }
     if (keyboardHook_) {
         UnhookWindowsHookEx(keyboardHook_);
         keyboardHook_ = nullptr;

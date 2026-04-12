@@ -508,7 +508,7 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
         }
 
         // Handle dropdown changes
-        if (id == L"input-type" || id == L"bang-ma" || id == L"modern-icon") {
+        if (id == L"input-type" || id == L"bang-ma" || id == L"modern-icon" || id == L"startup-mode") {
             sciter::value val = el.get_value();
             int intValue = 0;
             if (val.is_int()) intValue = val.get<int>();
@@ -738,6 +738,11 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
         systemConfig_.iconStyle = static_cast<uint8_t>(value);
         saveSystemSettings();
         notifyIconChanged();
+        return;  // System setting, not typing config
+    }
+    else if (id == L"startup-mode") {
+        systemConfig_.startupMode = static_cast<uint8_t>(value);
+        saveSystemSettings();
         return;  // System setting, not typing config
     }
 
@@ -1001,6 +1006,8 @@ void SettingsDialog::initializeUI() {
 
     // Icon style dropdown
     setDropdownValue(L"modern-icon", static_cast<int>(systemConfig_.iconStyle));
+    // Startup mode dropdown
+    setDropdownValue(L"startup-mode", static_cast<int>(systemConfig_.startupMode));
 
     // Color swatches: set initial background colors + show custom row if needed
     updateColorSwatches();

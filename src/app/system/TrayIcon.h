@@ -69,7 +69,7 @@ public:
     TrayIcon& operator=(const TrayIcon&) = delete;
 
     /// Initialize and add tray icon
-    [[nodiscard]] bool Create(HINSTANCE hInstance);
+    [[nodiscard]] bool Create(HINSTANCE hInstance, bool initialVietnamese = true);
 
     /// Destroy tray icon
     void Destroy() noexcept;

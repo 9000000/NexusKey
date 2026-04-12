@@ -45,6 +45,9 @@ struct SystemConfig {
     int32_t floatingIconX = INT32_MIN; // Saved X position (INT32_MIN = default)
     int32_t floatingIconY = INT32_MIN; // Saved Y position (INT32_MIN = default)
 
+    // Startup mode
+    uint8_t startupMode = 0;   // 0=Vietnamese, 1=English, 2=Remember (Smart Switch persist)
+
     // Auto-update
     bool autoCheckUpdate = true;   // Check for updates on startup
 

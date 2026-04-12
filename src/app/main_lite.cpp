@@ -119,12 +119,13 @@ static void SpawnSettingsDialog() {
 
 static void EnsureFloatingIconCreated() {
     if (g_floatingIcon.IsCreated()) return;
-    (void)g_floatingIcon.Create(g_hInstance);
+    (void)g_floatingIcon.Create(g_hInstance, g_hookEngine.IsVietnameseMode());
 }
 
 static void InitFloatingIcon(HINSTANCE hInstance, const SystemConfig& sc) {
+    bool startVietnamese = (sc.startupMode != 1);
     if (sc.showFloatingIcon) {
-        if (g_floatingIcon.Create(hInstance)) {
+        if (g_floatingIcon.Create(hInstance, startVietnamese)) {
             g_floatingIcon.SetPosition(sc.floatingIconX, sc.floatingIconY);
             g_floatingIcon.SetVisible(true);
         }
@@ -381,6 +382,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // ── SharedState ──
 
+    bool startVietnamese = (systemConfig.startupMode != 1);
+
     if (g_sharedState.Create()) {
         SharedState state;
         state.InitDefaults();
@@ -390,13 +393,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
         state.SetHotkey(hotkeyConfig);
+        if (!startVietnamese) {
+            state.flags &= ~SharedFlags::VIETNAMESE_MODE;
+        }
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created for Lite mode");
     }
 
     // ── Tray Icon ──
 
-    if (!g_trayIcon.Create(hInstance)) {
+    if (!g_trayIcon.Create(hInstance, startVietnamese)) {
         MessageBoxW(nullptr, L"Failed to create tray icon", L"NexusKey", MB_ICONERROR);
         OleUninitialize();
         CloseHandle(hMutex);
@@ -470,7 +476,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
-    if (!g_hookEngine.Start(hInstance, config, hotkeyConfig)) {
+    if (!g_hookEngine.Start(hInstance, config, hotkeyConfig, startVietnamese, systemConfig.startupMode)) {
         timeEndPeriod(1);
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"NexusKey", MB_ICONERROR);
         OleUninitialize();
