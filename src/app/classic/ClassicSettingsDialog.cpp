@@ -464,16 +464,6 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         }
     }
 
-    // Spell exclusions button (tab 0, right column, after last metadata row)
-    {
-        int col1X = contentLeft + 1 * (colWidth + Dpi(8));
-        int exclRow = rowCounts[0][1];
-        int exclY = contentTop + exclRow * Dpi(kControlHeight + kRowGap);
-        btnSpellExcl_ = CreateBtn(L"Loại trừ chính tả...", col1X, exclY,
-            colWidth, Dpi(kControlHeight), IDC_BTN_SPELL_EXCLUSIONS);
-        ShowWindow(btnSpellExcl_, SW_HIDE);
-    }
-
     // "Báo cáo lỗi" link below tab control
     {
         RECT tcRc;
@@ -719,8 +709,6 @@ void ClassicSettingsDialog::ShowTabPage(int tabIndex) {
             ShowWindow(extraControls_[i], showCmd);
         }
     }
-    // Show/hide spell exclusions button (tab 0)
-    if (btnSpellExcl_) ShowWindow(btnSpellExcl_, (tabIndex == 0) ? SW_SHOW : SW_HIDE);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -830,7 +818,7 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
 
 void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
     switch (controlId) {
-        case IDC_BTN_SMART_SWITCH:
+        case IDC_BTN_APP_OVERRIDES:
             ClassicAppOverridesDialog::Show(hInstance_, hwnd_);
             // Reload config in case overrides changed
             LoadSettings();
@@ -1018,10 +1006,6 @@ void ClassicSettingsDialog::RefreshLabels() {
         int newW = en ? Dpi(90) : Dpi(80);
         SetWindowPos(startupCombo, nullptr, rc.left, rc.top, newW, rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE);
     }
-
-    // Spell exclusions button
-    if (btnSpellExcl_)
-        SetWindowTextW(btnSpellExcl_, en ? L"Spell exclusions..." : L"Loại trừ chính tả...");
 
     // Report bug link
     if (linkReportBug_) {

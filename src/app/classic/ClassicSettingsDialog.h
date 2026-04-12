@@ -118,9 +118,6 @@ private:
     HWND checkControls_[kMaxControls] = {};
     HWND extraControls_[kMaxControls] = {};
 
-    // Spell exclusions button (tab 0)
-    HWND btnSpellExcl_ = nullptr;
-
     // Settings data
     TypingConfig config_{};
     HotkeyConfig hotkeyConfig_{};

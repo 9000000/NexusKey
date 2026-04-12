@@ -15,15 +15,12 @@ namespace NextKey::Classic {
 // Control IDs
 enum {
     IDC_LIST_APPS = 3001,
-    IDC_EDIT_APP,
     IDC_COMBO_RUNNING,
     IDC_BTN_ADD,
-    IDC_BTN_ADD_RUNNING,
     IDC_BTN_PICK,
     IDC_BTN_DELETE,
     IDC_BTN_IMPORT,
     IDC_BTN_EXPORT,
-    IDC_BTN_CLOSE_DLG,
 };
 
 // ════════════════════════════════════════════════════════════
@@ -125,23 +122,10 @@ void ClassicExcludedAppsDialog::CreateControls() {
     ListView_InsertColumn(listView_, 0, &col);
     y += listH + gap;
 
-    // Row: edit + add button
-    int editW = cw - Dpi(60) - gap;
-    editApp_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_LOWERCASE,
-        x, y, editW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_APP), hInstance_, nullptr);
-    SendMessageW(editApp_, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"chrome.exe"));
-
-    btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + editW + gap, y, Dpi(60), btnH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
-    y += btnH + gap;
-
     // Row: combo running apps + add from list + pick window
     int comboW = cw - Dpi(60 + 80) - gap * 2;
     comboRunning_ = CreateWindowExW(0, L"COMBOBOX", L"",
-        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP,
         x, y, comboW, Dpi(200), hwnd_, reinterpret_cast<HMENU>(IDC_COMBO_RUNNING), hInstance_, nullptr);
 
     // Populate running apps
@@ -150,10 +134,10 @@ void ClassicExcludedAppsDialog::CreateControls() {
         ComboBox_AddString(comboRunning_, app.c_str());
     }
 
-    btnAddRunning_ = CreateWindowExW(0, L"BUTTON", L"Thêm ▾",
+    btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         x + comboW + gap, y, Dpi(60), btnH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD_RUNNING), hInstance_, nullptr);
+        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
 
     btnPick_ = CreateWindowExW(0, L"BUTTON", L"\u2316 Chọn cửa sổ",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -173,12 +157,6 @@ void ClassicExcludedAppsDialog::CreateControls() {
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         x + (abw + gap) * 2, y, abw, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_EXPORT), hInstance_, nullptr);
     y += btnH + gap * 2;
-
-    // Close button
-    btnClose_ = CreateWindowExW(0, L"BUTTON", L"Đóng",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-        x + cw - Dpi(80), y, Dpi(80), btnH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_CLOSE_DLG), hInstance_, nullptr);
 }
 
 void ClassicExcludedAppsDialog::PopulateList() {
@@ -291,7 +269,7 @@ void ClassicExcludedAppsDialog::ExportToFile() {
 
 void ClassicExcludedAppsDialog::OnPickWindow() {
     picker_.Start(hwnd_, [this](const std::wstring& exeName) {
-        AddApp(exeName);
+        SetWindowTextW(comboRunning_, exeName.c_str());
     });
 }
 
@@ -347,19 +325,10 @@ LRESULT CALLBACK ClassicExcludedAppsDialog::WndProc(HWND hwnd, UINT msg, WPARAM 
             switch (id) {
                 case IDC_BTN_ADD: {
                     wchar_t buf[256] = {};
-                    GetWindowTextW(self->editApp_, buf, 256);
+                    GetWindowTextW(self->comboRunning_, buf, 256);
                     self->AddApp(buf);
-                    SetWindowTextW(self->editApp_, L"");
-                    SetFocus(self->editApp_);
-                    return 0;
-                }
-                case IDC_BTN_ADD_RUNNING: {
-                    int sel = ComboBox_GetCurSel(self->comboRunning_);
-                    if (sel >= 0) {
-                        wchar_t buf[256] = {};
-                        ComboBox_GetLBText(self->comboRunning_, sel, buf);
-                        self->AddApp(buf);
-                    }
+                    SetWindowTextW(self->comboRunning_, L"");
+                    SetFocus(self->comboRunning_);
                     return 0;
                 }
                 case IDC_BTN_PICK:
@@ -373,9 +342,6 @@ LRESULT CALLBACK ClassicExcludedAppsDialog::WndProc(HWND hwnd, UINT msg, WPARAM 
                     return 0;
                 case IDC_BTN_EXPORT:
                     self->ExportToFile();
-                    return 0;
-                case IDC_BTN_CLOSE_DLG:
-                    DestroyWindow(hwnd);
                     return 0;
             }
             break;

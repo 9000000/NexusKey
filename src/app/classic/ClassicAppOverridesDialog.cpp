@@ -12,13 +12,12 @@ namespace NextKey::Classic {
 
 enum {
     IDC_LIST_OVERRIDES = 3201,
-    IDC_EDIT_APP,
+    IDC_COMBO_APP,
     IDC_COMBO_METHOD,
     IDC_COMBO_ENCODING,
     IDC_BTN_ADD,
     IDC_BTN_PICK,
     IDC_BTN_DELETE,
-    IDC_BTN_CLOSE_DLG,
 };
 
 // ════════════════════════════════════════════════════════════
@@ -114,16 +113,25 @@ void ClassicAppOverridesDialog::CreateControls() {
     ListView_InsertColumn(listView_, 2, &col);
     y += listH + gap;
 
-    // Row: app name edit + pick button
-    int editW = cw - Dpi(90) - gap;
-    editApp_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_LOWERCASE,
-        x, y, editW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_APP), hInstance_, nullptr);
-    SendMessageW(editApp_, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"chrome.exe"));
+    // Row: app combobox + add + pick button
+    int appComboW = cw - Dpi(60 + 80) - gap * 2;
+    comboApp_ = CreateWindowExW(0, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP,
+        x, y, appComboW, Dpi(200), hwnd_, reinterpret_cast<HMENU>(IDC_COMBO_APP), hInstance_, nullptr);
+
+    auto running = GetRunningApps();
+    for (auto& app : running) {
+        ComboBox_AddString(comboApp_, app.c_str());
+    }
+
+    btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        x + appComboW + gap, y, Dpi(60), btnH,
+        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
 
     btnPick_ = CreateWindowExW(0, L"BUTTON", L"\u2316 Chọn cửa sổ",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + editW + gap, y, Dpi(90), btnH,
+        x + appComboW + Dpi(60) + gap * 2, y, Dpi(80), btnH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_PICK), hInstance_, nullptr);
     y += btnH + gap;
 
@@ -157,22 +165,12 @@ void ClassicAppOverridesDialog::CreateControls() {
     ComboBox_AddString(comboEncoding_, L"Unicode tổ hợp");
     ComboBox_AddString(comboEncoding_, L"Việt CP1258");
     ComboBox_SetCurSel(comboEncoding_, 0);
-    y += btnH + gap;
 
-    // Add + Delete buttons
-    int halfW = (cw - gap) / 2;
-    btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm / Cập nhật",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x, y, halfW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
     btnDelete_ = CreateWindowExW(0, L"BUTTON", L"Xoá",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + halfW + gap, y, halfW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_DELETE), hInstance_, nullptr);
-    y += btnH + gap * 2;
+        x + cw - Dpi(80), y, Dpi(80), btnH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_DELETE), hInstance_, nullptr);
 
-    btnClose_ = CreateWindowExW(0, L"BUTTON", L"Đóng",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-        x + cw - Dpi(80), y, Dpi(80), btnH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_CLOSE_DLG), hInstance_, nullptr);
+    y += btnH + gap * 2;
 }
 
 static const wchar_t* MethodName(int8_t m) {
@@ -218,7 +216,7 @@ void ClassicAppOverridesDialog::PopulateList() {
 
 void ClassicAppOverridesDialog::AddOverride() {
     wchar_t buf[256] = {};
-    GetWindowTextW(editApp_, buf, 256);
+    GetWindowTextW(comboApp_, buf, 256);
     std::wstring app = ToLowerAscii(buf);
     if (app.empty()) return;
 
@@ -233,7 +231,7 @@ void ClassicAppOverridesDialog::AddOverride() {
     PopulateList();
     SaveData();
 
-    SetWindowTextW(editApp_, L"");
+    SetWindowTextW(comboApp_, L"");
     ComboBox_SetCurSel(comboMethod_, 0);
     ComboBox_SetCurSel(comboEncoding_, 0);
 }
@@ -251,7 +249,7 @@ void ClassicAppOverridesDialog::DeleteSelected() {
 
 void ClassicAppOverridesDialog::OnPickWindow() {
     picker_.Start(hwnd_, [this](const std::wstring& exeName) {
-        SetWindowTextW(editApp_, exeName.c_str());
+        SetWindowTextW(comboApp_, exeName.c_str());
     });
 }
 
@@ -296,7 +294,6 @@ LRESULT CALLBACK ClassicAppOverridesDialog::WndProc(HWND hwnd, UINT msg, WPARAM 
                 case IDC_BTN_ADD:       self->AddOverride();    return 0;
                 case IDC_BTN_PICK:      self->OnPickWindow();   return 0;
                 case IDC_BTN_DELETE:    self->DeleteSelected(); return 0;
-                case IDC_BTN_CLOSE_DLG: DestroyWindow(hwnd);    return 0;
             }
             break;
         }

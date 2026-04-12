@@ -108,14 +108,17 @@ inline constexpr SettingMeta kSettings[] = {
               "Lưu chế độ gõ theo app",   "Smart input switch",
               L"Tự động ghi nhớ chế độ gõ cho từng ứng dụng",
               L"Auto-remember input mode per app",                       2206, 0, 1),
-    NK_ACTION("btn-smart-switch",     "...", "",
-              nullptr, nullptr,                                          2501, 0, 1),
     NK_TYPING("exclude-apps",         excludeApps,
               "Loại trừ ứng dụng",        "Exclude apps",
               L"Tắt gõ tiếng Việt cho ứng dụng trong danh sách",
               L"Disable Vietnamese for listed apps",                     2207, 0, 1),
     NK_ACTION("btn-exclude-apps",     "...", "",
               nullptr, nullptr,                                          2502, 0, 1),
+    // ── Action buttons (grouped at bottom) ──
+    NK_ACTION("btn-app-overrides",    "Cấu hình từng ứng dụng", "Per-app config",
+              nullptr, nullptr,                                          2500, 0, 1),
+    NK_ACTION("btn-spell-exclusions", "Loại trừ chính tả...", "Spell exclusions...",
+              nullptr, nullptr,                                          2801, 0, 1),
 
     // ── Tab 1: Gõ tắt (col 0) ──
     NK_TYPING("use-macro",            macroEnabled,

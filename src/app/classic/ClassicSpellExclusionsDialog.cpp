@@ -16,7 +16,6 @@ enum {
     IDC_SPELL_EDIT,
     IDC_SPELL_BTN_ADD,
     IDC_SPELL_BTN_DELETE,
-    IDC_SPELL_BTN_CLOSE,
 };
 
 // ════════════════════════════════════════════════════════════
@@ -131,16 +130,11 @@ void ClassicSpellExclusionsDialog::CreateControls() {
         hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_BTN_ADD), hInstance_, nullptr);
     y += btnH + gap * 2;
 
-    // Delete + Close buttons
+    // Delete button
     btnDelete_ = CreateWindowExW(0, L"BUTTON", L"Xoá",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         x, y, Dpi(80), btnH,
         hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_BTN_DELETE), hInstance_, nullptr);
-
-    btnClose_ = CreateWindowExW(0, L"BUTTON", L"Đóng",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-        x + cw - Dpi(80), y, Dpi(80), btnH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_BTN_CLOSE), hInstance_, nullptr);
 }
 
 void ClassicSpellExclusionsDialog::PopulateList() {
@@ -254,9 +248,6 @@ LRESULT CALLBACK ClassicSpellExclusionsDialog::WndProc(HWND hwnd, UINT msg, WPAR
                 }
                 case IDC_SPELL_BTN_DELETE:
                     self->DeleteSelected();
-                    return 0;
-                case IDC_SPELL_BTN_CLOSE:
-                    DestroyWindow(hwnd);
                     return 0;
             }
             break;

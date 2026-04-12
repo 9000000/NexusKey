@@ -20,7 +20,6 @@ enum {
     IDC_BTN_DELETE,
     IDC_BTN_IMPORT,
     IDC_BTN_EXPORT,
-    IDC_BTN_CLOSE_DLG,
 };
 
 // ════════════════════════════════════════════════════════════
@@ -157,11 +156,6 @@ void ClassicMacroTableDialog::CreateControls() {
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         x + (abw + gap) * 2, y, abw, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_EXPORT), hInstance_, nullptr);
     y += btnH + gap * 2;
-
-    btnClose_ = CreateWindowExW(0, L"BUTTON", L"Đóng",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-        x + cw - Dpi(80), y, Dpi(80), btnH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_CLOSE_DLG), hInstance_, nullptr);
 }
 
 void ClassicMacroTableDialog::PopulateList() {
@@ -319,7 +313,6 @@ LRESULT CALLBACK ClassicMacroTableDialog::WndProc(HWND hwnd, UINT msg, WPARAM wP
                 case IDC_BTN_DELETE:  self->DeleteSelected(); return 0;
                 case IDC_BTN_IMPORT:  self->ImportFromFile(); return 0;
                 case IDC_BTN_EXPORT:  self->ExportToFile();   return 0;
-                case IDC_BTN_CLOSE_DLG: DestroyWindow(hwnd);  return 0;
             }
             break;
         }

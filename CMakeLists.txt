@@ -391,10 +391,13 @@ endif()
 add_executable(NextKeyTests EXCLUDE_FROM_ALL ${NEXTKEY_TEST_SOURCES})
 target_link_libraries(NextKeyTests PRIVATE NextKeyCore GTest::gtest_main)
 
-# Put tests in separate directory
+# Put tests in separate directory; override global /SUBSYSTEM:WINDOWS
 set_target_properties(NextKeyTests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
+if(MSVC)
+    target_link_options(NextKeyTests PRIVATE /SUBSYSTEM:CONSOLE)
+endif()
 
 include(GoogleTest)
 gtest_discover_tests(NextKeyTests)

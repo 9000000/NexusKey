@@ -37,7 +37,7 @@ private:
 
     // Layout
     static constexpr int kWidth = 340;
-    static constexpr int kHeight = 310;
+    static constexpr int kHeight = 278;
     static constexpr int kPadding = 12;
     static constexpr int kBtnHeight = 28;
     static constexpr int kBtnGap = 6;
@@ -53,7 +53,6 @@ private:
     HWND editEntry_ = nullptr;
     HWND btnAdd_ = nullptr;
     HWND btnDelete_ = nullptr;
-    HWND btnClose_ = nullptr;
 
     // State
     std::vector<std::wstring> entries_;

@@ -40,7 +40,7 @@ private:
 
     // Layout
     static constexpr int kWidth = 420;
-    static constexpr int kHeight = 372;
+    static constexpr int kHeight = 298;
     static constexpr int kPadding = 12;
     static constexpr int kBtnHeight = 28;
     static constexpr int kBtnGap = 6;
@@ -53,15 +53,12 @@ private:
 
     // Controls
     HWND listView_ = nullptr;
-    HWND editApp_ = nullptr;
     HWND comboRunning_ = nullptr;
     HWND btnAdd_ = nullptr;
-    HWND btnAddRunning_ = nullptr;
     HWND btnPick_ = nullptr;
     HWND btnDelete_ = nullptr;
     HWND btnImport_ = nullptr;
     HWND btnExport_ = nullptr;
-    HWND btnClose_ = nullptr;
 
     // State
     std::vector<std::wstring> appList_;

@@ -59,7 +59,7 @@
 #define IDC_COMBO_STARTUP_MODE  2409
 
 // ── Action buttons ──
-#define IDC_BTN_SMART_SWITCH    2501
+#define IDC_BTN_APP_OVERRIDES   2500
 #define IDC_BTN_EXCLUDE_APPS    2502
 #define IDC_BTN_MACRO_TABLE     2503
 #define IDC_BTN_CHECK_UPDATE    2504

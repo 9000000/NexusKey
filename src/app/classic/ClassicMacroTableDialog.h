@@ -37,7 +37,7 @@ private:
     int Dpi(int value) const noexcept;
 
     static constexpr int kWidth = 420;
-    static constexpr int kHeight = 398;
+    static constexpr int kHeight = 358;
     static constexpr int kPadding = 12;
     static constexpr int kBtnHeight = 28;
     static constexpr int kBtnGap = 6;
@@ -55,7 +55,6 @@ private:
     HWND btnDelete_ = nullptr;
     HWND btnImport_ = nullptr;
     HWND btnExport_ = nullptr;
-    HWND btnClose_ = nullptr;
 
     std::unordered_map<std::wstring, std::wstring> macros_;
 
