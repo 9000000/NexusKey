@@ -1285,9 +1285,9 @@ TEST_F(SpellCheckerVCPairTest, I_Nh_Valid) {
     EXPECT_EQ(V({T(L'i'), T(L'n'), T(L'h')}), Result::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, I_Ng_Valid) {
-    // ing (obsolete but accepted: thìng)
-    EXPECT_EQ(V({T(L'i'), T(L'n'), T(L'g')}), Result::Valid);
+TEST_F(SpellCheckerVCPairTest, I_Ng_Invalid) {
+    // ing: -ing+tone doesn't exist in Vietnamese (things→thíng, kings→kíng bug)
+    EXPECT_EQ(V({T(L'i'), T(L'n'), T(L'g')}), Result::Invalid);
 }
 
 // --- Regression: e can end with ALL finals ---

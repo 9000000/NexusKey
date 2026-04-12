@@ -2263,6 +2263,56 @@ TEST_F(EnglishProtectionTest, SoftReject_Vietnamese) {
 }
 
 // ============================================================================
+// -ING + TONE BLOCK (VCPair: i + ng = Invalid)
+// Vietnamese has no word with rhyme -ing + tone (tíng, kíng don't exist).
+// But -inh + tone is common (tính, kính, lính).
+// Requires spellCheckEnabled = true (EnglishProtectionTest fixture).
+// ============================================================================
+
+TEST_F(EnglishProtectionTest, IngTone_Ting_Blocked) {
+    // "tings": -ing coda makes spellCheckDisabled_ = true, 's' is literal
+    TypeString(*engine_, L"tings");
+    EXPECT_EQ(engine_->Peek(), L"tings");
+}
+
+TEST_F(EnglishProtectionTest, IngTone_King_Blocked) {
+    TypeString(*engine_, L"kings");
+    EXPECT_EQ(engine_->Peek(), L"kings");
+}
+
+TEST_F(EnglishProtectionTest, IngTone_Thing_Blocked) {
+    TypeString(*engine_, L"things");
+    EXPECT_EQ(engine_->Peek(), L"things");
+}
+
+TEST_F(EnglishProtectionTest, IngTone_Ring_Blocked) {
+    TypeString(*engine_, L"rings");
+    EXPECT_EQ(engine_->Peek(), L"rings");
+}
+
+TEST_F(EnglishProtectionTest, IngTone_Sing_Blocked) {
+    TypeString(*engine_, L"sings");
+    EXPECT_EQ(engine_->Peek(), L"sings");
+}
+
+TEST_F(EnglishProtectionTest, InhTone_Tinh_StillWorks) {
+    // -inh + tone is valid Vietnamese (tính, kính)
+    TypeString(*engine_, L"tinhs");
+    EXPECT_EQ(engine_->Peek(), L"t\xEDnh");  // tính
+}
+
+TEST_F(EnglishProtectionTest, InhTone_Kinh_StillWorks) {
+    TypeString(*engine_, L"kinhs");
+    EXPECT_EQ(engine_->Peek(), L"k\xEDnh");  // kính
+}
+
+TEST_F(EnglishProtectionTest, IngNoTone_Ting_PassThrough) {
+    // "ting" without tone → spellCheckDisabled_ but no diacritics → commit as-is
+    TypeString(*engine_, L"ting");
+    EXPECT_EQ(engine_->Peek(), L"ting");
+}
+
+// ============================================================================
 // ENGLISH DETECTION WITHOUT SPELL CHECK
 // English detection is always active, even when spell check is OFF.
 // ============================================================================

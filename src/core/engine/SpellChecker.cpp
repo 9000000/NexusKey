@@ -171,7 +171,7 @@ constexpr VCPairRule kVCPairRules[] = {
     { Key1(VowelSlot(kA, kBrev)), F_NO_CH_NH },                                 // ă: no ch, nh
     { Key1(VowelSlot(kE, kNone)), F_ALL },                                      // e: all finals
     { Key1(VowelSlot(kE, kCirc)), F_c | F_ch | F_m | F_n | F_nh | F_p | F_t }, // ê: no ng
-    { Key1(VowelSlot(kI, kNone)), F_ALL },                                      // i: all finals
+    { Key1(VowelSlot(kI, kNone)), F_ALL & ~F_ng },                               // i: all finals except ng (-ing+tone doesn't exist in Vietnamese)
     { Key1(VowelSlot(kO, kNone)), F_NO_CH_NH },                                 // o: no ch, nh
     { Key1(VowelSlot(kO, kCirc)), F_NO_CH_NH },                                 // ô: no ch, nh
     { Key1(VowelSlot(kO, kHorn)), F_m | F_n | F_p | F_t },                     // ơ: only m, n, p, t
