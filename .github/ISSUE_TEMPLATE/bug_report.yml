@@ -1,0 +1,104 @@
+name: Bug Report
+description: Báo lỗi bộ gõ (vui lòng điền đầy đủ, thiếu là không submit được)
+title: "[BUG]: "
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Lưu ý
+        Vui lòng điền đầy đủ thông tin. Thiếu thông tin sẽ không thể debug.
+
+  - type: input
+    id: app_version
+    attributes:
+      label: Phiên bản bộ gõ
+      placeholder: "vd: v1.0.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: windows_version
+    attributes:
+      label: Phiên bản Windows
+      options:
+        - Windows 10
+        - Windows 11
+        - Khác (ghi rõ bên dưới)
+    validations:
+      required: true
+
+  - type: input
+    id: windows_build
+    attributes:
+      label: Windows build (optional nhưng nên có)
+      placeholder: "vd: 22631.3155"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: input_method
+    attributes:
+      label: Kiểu gõ
+      options:
+        - Telex
+        - VNI
+        - Khác
+    validations:
+      required: true
+
+  - type: input
+    id: app_context
+    attributes:
+      label: Ứng dụng gặp lỗi
+      placeholder: "vd: Chrome, VSCode, Word"
+    validations:
+      required: true
+
+  - type: textarea
+    id: settings
+    attributes:
+      label: Toàn bộ settings
+      description: |
+        BẮT BUỘC: cung cấp settings theo 1 trong 2 cách:
+        - Dán nội dung file .toml
+        - Hoặc chụp màn hình
+      placeholder: |
+        # Dán file .toml vào đây
+        # hoặc attach ảnh
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Các bước gây lỗi
+      placeholder: |
+        1. Mở app
+        2. Gõ ...
+        3. Lỗi xảy ra
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Kết quả mong muốn
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Kết quả thực tế
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log (nếu có)
+      description: Copy log hoặc attach file
+    validations:
+      required: false
