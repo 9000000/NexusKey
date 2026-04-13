@@ -266,12 +266,35 @@ void VniEngine::PushChar(wchar_t c) {
     if (IsModifierKey(c)) {
         bool blockMod = escape_.isEscaped() ||
             (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
-        // Allow d9→đ through English Protection when the word matches a spell exclusion.
-        if (blockMod && c == L'9') {
-            if (WouldStrokeDMatchExclusion(states_.data(), states_.size(),
-                    config_.spellExclusions,
-                    [this](const CharState& s) { return ComposeChar(s); })) {
-                blockMod = false;
+        // Allow modifiers through English Protection when the word matches a spell exclusion.
+        if (blockMod && !escape_.isEscaped() && !config_.spellExclusions.empty()) {
+            if (c == L'9') {
+                if (WouldStrokeDMatchExclusion(states_.data(), states_.size(),
+                        config_.spellExclusions,
+                        [this](const CharState& s) { return ComposeChar(s); })) {
+                    blockMod = false;
+                }
+            } else if (c == L'6') {
+                if (WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                        config_.spellExclusions,
+                        [this](const CharState& s) { return ComposeChar(s); },
+                        Modifier::Circumflex, L"aeo")) {
+                    blockMod = false;
+                }
+            } else if (c == L'7') {
+                if (WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                        config_.spellExclusions,
+                        [this](const CharState& s) { return ComposeChar(s); },
+                        Modifier::Horn, L"uo")) {
+                    blockMod = false;
+                }
+            } else if (c == L'8') {
+                if (WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                        config_.spellExclusions,
+                        [this](const CharState& s) { return ComposeChar(s); },
+                        Modifier::Breve, L"a")) {
+                    blockMod = false;
+                }
             }
         }
         if (blockMod) {
@@ -283,9 +306,24 @@ void VniEngine::PushChar(wchar_t c) {
             Modifier escapeMod = Modifier::None;
             bool canExclude = false;
             switch (c) {
-                case L'6': escapeMod = Modifier::Circumflex; break;
-                case L'7': escapeMod = Modifier::Horn; break;
-                case L'8': escapeMod = Modifier::Breve; break;
+                case L'6': escapeMod = Modifier::Circumflex;
+                           canExclude = WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                               config_.spellExclusions,
+                               [this](const CharState& s) { return ComposeChar(s); },
+                               Modifier::Circumflex, L"aeo");
+                           break;
+                case L'7': escapeMod = Modifier::Horn;
+                           canExclude = WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                               config_.spellExclusions,
+                               [this](const CharState& s) { return ComposeChar(s); },
+                               Modifier::Horn, L"uo");
+                           break;
+                case L'8': escapeMod = Modifier::Breve;
+                           canExclude = WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                               config_.spellExclusions,
+                               [this](const CharState& s) { return ComposeChar(s); },
+                               Modifier::Breve, L"a");
+                           break;
                 case L'9': escapeMod = Modifier::Stroke;
                            canExclude = WouldStrokeDMatchExclusion(states_.data(), states_.size(),
                                config_.spellExclusions,
@@ -296,6 +334,10 @@ void VniEngine::PushChar(wchar_t c) {
                 HasEscapableModifier(states_.data(), states_.size(), escapeMod,
                                      escapeMod == Modifier::Stroke))) &&
                 ProcessModifier(c)) {
+                if (engProt_.bias == LanguageBias::HardEnglish ||
+                    engProt_.bias == LanguageBias::SoftEnglish) {
+                    engProt_.bias = LanguageBias::Vietnamese;
+                }
                 UpdateSpellState();
                 return;
             }
@@ -436,14 +478,13 @@ std::wstring VniEngine::Commit() {
         }
 
         if (shouldRestore) {
-            // Spell exclusion list is the primary authority on what to keep.
-            // When empty, fall back to HasIntentionalStrokeD heuristic.
+            // Spell exclusion list takes priority. HasIntentionalStrokeD heuristic
+            // also protects abbreviations like đt, đh while restoring đwa, ăndd.
             bool excluded = IsSpellExcluded(states_.data(), states_.size(),
                                             config_.spellExclusions,
                                             [this](const CharState& s) { return ComposeChar(s); });
             bool keepComposed = excluded ||
-                                (config_.spellExclusions.empty() &&
-                                 HasIntentionalStrokeD(rawInput_, composed));
+                                HasIntentionalStrokeD(rawInput_, composed);
             if (!keepComposed) {
                 std::wstring raw = rawInput_;
                 if (ShouldAutoRestore(raw, composed)) {

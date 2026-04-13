@@ -667,6 +667,48 @@ TEST_F(VniSpellExclusionTest, ToneBypass_NoExclusion_Blocked) {
     EXPECT_EQ(eng.Peek(), L"ka2");
 }
 
+// Issue #78: Modifier bypass when allowZwjf=false (VNI keys 6/7/8)
+
+TEST_F(VniSpellExclusionTest, ZwjfOff_CircumflexBypass) {
+    // VNI: "zo6" → "zô" with exclusion "zô", allowZwjf=false
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::VNI;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.allowZwjf = false;
+    cfg.spellExclusions = {L"zô"};
+    VniEngine eng(cfg);
+    TypeString(eng, L"zo6");
+    EXPECT_EQ(eng.Peek(), L"zô");
+    EXPECT_EQ(eng.Commit(), L"zô");
+}
+
+TEST_F(VniSpellExclusionTest, ZwjfOff_BreveBypass_FullWord) {
+    // VNI: "za81c" → "zắc" with exclusion "zắc", allowZwjf=false
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::VNI;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.allowZwjf = false;
+    cfg.spellExclusions = {L"zắc"};
+    VniEngine eng(cfg);
+    TypeString(eng, L"za81c");
+    EXPECT_EQ(eng.Peek(), L"zắc");
+    EXPECT_EQ(eng.Commit(), L"zắc");
+}
+
+TEST_F(VniSpellExclusionTest, ZwjfOff_NoExclusion_StillBlocked) {
+    // No matching exclusion → modifier blocked
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::VNI;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.allowZwjf = false;
+    VniEngine eng(cfg);
+    TypeString(eng, L"zo6");
+    EXPECT_EQ(eng.Peek(), L"zo6");
+}
+
 }  // namespace
 }  // namespace Vni
 }  // namespace NextKey

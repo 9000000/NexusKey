@@ -3669,6 +3669,89 @@ TEST_F(SpellExclusionTest, ToneBypass_NoExclusion_Blocked) {
     EXPECT_EQ(eng.Peek(), L"kaf");
 }
 
+// Issue #78: Modifier bypass via spell exclusion when allowZwjf=false.
+// z/w/j/f as initial → spellCheckDisabled_ blocks modifiers → exclusion can never match.
+// Fix: allow modifier through (tone-tolerant match) when result heads toward an exclusion.
+
+TEST_F(SpellExclusionTest, ZwjfOff_CircumflexBypass) {
+    // Exclusion "zô", allowZwjf=false → "zoo" should produce "zô"
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.allowZwjf = false;
+    cfg.spellExclusions = {L"zô"};
+    TelexEngine eng(cfg);
+    TypeString(eng, L"zoo");
+    EXPECT_EQ(eng.Peek(), L"zô");
+    EXPECT_EQ(eng.Commit(), L"zô");
+}
+
+TEST_F(SpellExclusionTest, ZwjfOff_BreveBypass_FullWord) {
+    // Exclusion "zắc", allowZwjf=false → "zawsc" should produce "zắc"
+    // Modifier bypass (tone-tolerant: 'ă' matches 'ắ') lets breve through,
+    // then existing tone bypass lets acute through.
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.allowZwjf = false;
+    cfg.spellExclusions = {L"zắc"};
+    TelexEngine eng(cfg);
+    TypeString(eng, L"zawsc");
+    EXPECT_EQ(eng.Peek(), L"zắc");
+    EXPECT_EQ(eng.Commit(), L"zắc");
+}
+
+TEST_F(SpellExclusionTest, ZwjfOff_HornBypass) {
+    // Exclusion "fư", allowZwjf=false → "fuw" should produce "fư"
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.allowZwjf = false;
+    cfg.spellExclusions = {L"fư"};
+    TelexEngine eng(cfg);
+    TypeString(eng, L"fuw");
+    EXPECT_EQ(eng.Peek(), L"fư");
+    EXPECT_EQ(eng.Commit(), L"fư");
+}
+
+TEST_F(SpellExclusionTest, ZwjfOff_NoExclusion_StillBlocked) {
+    // No matching exclusion → modifier still blocked
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.allowZwjf = false;
+    TelexEngine eng(cfg);
+    TypeString(eng, L"zoo");
+    EXPECT_EQ(eng.Peek(), L"zoo");
+}
+
+TEST_F(SpellExclusionTest, ZwjfOff_WrongExclusion_Blocked) {
+    // Exclusion "zô" but typing "foo" → prefix mismatch → blocked
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.allowZwjf = false;
+    cfg.spellExclusions = {L"zô"};
+    TelexEngine eng(cfg);
+    TypeString(eng, L"foo");
+    EXPECT_EQ(eng.Peek(), L"foo");
+}
+
+TEST_F(SpellExclusionTest, ZwjfOff_CaseInsensitive) {
+    // Exclusion "zô" should also allow "Zô" (uppercase Z)
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    cfg.allowZwjf = false;
+    cfg.spellExclusions = {L"zô"};
+    TelexEngine eng(cfg);
+    eng.PushChar(L'Z');
+    eng.PushChar(L'o');
+    eng.PushChar(L'o');
+    EXPECT_EQ(eng.Peek(), L"Zô");
+    EXPECT_EQ(eng.Commit(), L"Zô");
+}
+
 // =============================================================================
 // Non-initial dd→đ tests (abbreviation support)
 // =============================================================================

@@ -288,12 +288,32 @@ void TelexEngine::PushChar(wchar_t c) {
     }
     bool blockModifiers = escape_.isEscaped() ||
         (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
-    // Allow dd→đ through English Protection when the word matches a spell exclusion.
-    if (blockModifiers && lower == L'd') {
-        if (WouldStrokeDMatchExclusion(states_.data(), states_.size(),
-                config_.spellExclusions,
-                [](const CharState& s) { return Compose(s); })) {
-            blockModifiers = false;
+    // Allow modifiers through English Protection when the word matches a spell exclusion.
+    if (blockModifiers && !escape_.isEscaped() && !config_.spellExclusions.empty()) {
+        if (lower == L'd') {
+            if (WouldStrokeDMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [](const CharState& s) { return Compose(s); })) {
+                blockModifiers = false;
+            }
+        } else if (lower == L'w') {
+            if (WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [](const CharState& s) { return Compose(s); },
+                    Modifier::Horn, L"uo") ||
+                WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [](const CharState& s) { return Compose(s); },
+                    Modifier::Breve, L"a")) {
+                blockModifiers = false;
+            }
+        } else if ((lower == L'a' || lower == L'e' || lower == L'o') && !states_.empty()) {
+            if (WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [](const CharState& s) { return Compose(s); },
+                    Modifier::Circumflex, L"aeo")) {
+                blockModifiers = false;
+            }
         }
     }
     if (blockModifiers) {
@@ -306,6 +326,17 @@ void TelexEngine::PushChar(wchar_t c) {
         if (lower == L'w') {
             canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Horn) ||
                         HasEscapableModifier(states_.data(), states_.size(), Modifier::Breve);
+            // Allow horn/breve if it would match a spell exclusion (e.g. "jắc", "fư")
+            if (!canEscape) {
+                canEscape = WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [](const CharState& s) { return Compose(s); },
+                    Modifier::Horn, L"uo") ||
+                    WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [](const CharState& s) { return Compose(s); },
+                    Modifier::Breve, L"a");
+            }
         } else if (lower == L'd') {
             canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Stroke, true);
             if (!canEscape) {
@@ -317,8 +348,19 @@ void TelexEngine::PushChar(wchar_t c) {
             const CharState& last = states_.back();
             if (last.IsVowel() && last.base == lower && last.mod == Modifier::Circumflex)
                 canEscape = true;
+            // Allow circumflex if it would match a spell exclusion (e.g. "zô", "fôn")
+            if (!canEscape && (lower == L'a' || lower == L'e' || lower == L'o')) {
+                canEscape = WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                    config_.spellExclusions,
+                    [](const CharState& s) { return Compose(s); },
+                    Modifier::Circumflex, L"aeo");
+            }
         }
         if (canEscape && ProcessModifier(c, lower)) {
+            if (engProt_.bias == LanguageBias::HardEnglish ||
+                engProt_.bias == LanguageBias::SoftEnglish) {
+                engProt_.bias = LanguageBias::Vietnamese;
+            }
             ApplyAutoUO();
             UpdateSpellState();
             return;
@@ -1147,15 +1189,13 @@ std::wstring TelexEngine::Commit() {
         }
 
         if (shouldRestore) {
-            // Spell exclusion list is the primary authority on what to keep.
-            // When empty, fall back to HasIntentionalStrokeD heuristic
-            // (protects abbreviations like đt, đh while restoring đwa, ăndd).
+            // Spell exclusion list takes priority. HasIntentionalStrokeD heuristic
+            // also protects abbreviations like đt, đh while restoring đwa, ăndd.
             bool excluded = IsSpellExcluded(states_.data(), states_.size(),
                                             config_.spellExclusions,
                                             [](const CharState& s) { return Compose(s); });
             bool keepComposed = excluded ||
-                                (config_.spellExclusions.empty() &&
-                                 HasIntentionalStrokeD(rawInput_, composed));
+                                HasIntentionalStrokeD(rawInput_, composed);
             if (!keepComposed) {
                 std::wstring raw(rawInput_.begin(), rawInput_.end());
                 if (ShouldAutoRestore(raw, composed)) {

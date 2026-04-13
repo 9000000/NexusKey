@@ -11,7 +11,9 @@
 
 #include "SpellChecker.h"
 #include "EnglishProtection.h"
+#include "VietnameseTables.h"
 #include "core/config/TypingConfig.h"
+#include <functional>
 #include <string>
 
 namespace NextKey {
@@ -270,20 +272,34 @@ template<typename CharStateT>
 /// Does a composed buffer match any spell exclusion prefix?
 /// Buffer may be shorter than exclusion (typing in progress) or longer (prefix match).
 /// Exclusion entries are pre-lowercased at config load time; buffer is lowercased by caller.
+/// @param Compare  Binary predicate for char equality. Default: std::equal_to (exact match).
+///                 Pass a tone-stripping comparator for modifier bypass (see overload below).
+template<typename Compare = std::equal_to<wchar_t>>
 [[nodiscard]] inline bool MatchExclusionBuf(
         const wchar_t* buf, size_t bufLen,
-        const std::vector<std::wstring>& exclusions) {
+        const std::vector<std::wstring>& exclusions,
+        Compare cmp = {}) {
     for (const auto& pat : exclusions) {
         if (pat.size() < 2) continue;
         size_t cmpLen = std::min(bufLen, pat.size());
         if (cmpLen == 0) continue;
         bool match = true;
         for (size_t i = 0; i < cmpLen; ++i) {
-            if (pat[i] != buf[i]) { match = false; break; }
+            if (!cmp(pat[i], buf[i])) { match = false; break; }
         }
         if (match) return true;
     }
     return false;
+}
+
+/// Like MatchExclusionBuf but strips tones before comparing.
+/// Used by modifier bypass: at modifier time the tone hasn't been applied yet,
+/// so 'ă' (untoned) must match 'ắ' (toned) in the exclusion pattern.
+[[nodiscard]] inline bool MatchExclusionBufIgnoreTone(
+        const wchar_t* buf, size_t bufLen,
+        const std::vector<std::wstring>& exclusions) {
+    return MatchExclusionBuf(buf, bufLen, exclusions,
+        [](wchar_t a, wchar_t b) { return StripTone(a) == StripTone(b); });
 }
 
 /// Build composed buffer with one character overridden at overrideIdx.
@@ -335,6 +351,54 @@ template<typename CharStateT, typename ComposeFunc>
     wchar_t buf[16];
     size_t bufLen = BuildExclusionBuf(states, count, compose, buf, toneIdx, tonedChar);
     return MatchExclusionBuf(buf, bufLen, exclusions);
+}
+
+/// Typing-time check: would applying a modifier at targetIdx produce a word matching
+/// a spell exclusion? Uses tone-tolerant matching because tone hasn't been applied yet
+/// (e.g. tentative 'ă' must match exclusion 'ắ').
+template<typename CharStateT, typename ComposeFunc, typename ModifierT>
+[[nodiscard]] inline bool WouldModifierMatchExclusion(
+        const CharStateT* states, size_t count,
+        const std::vector<std::wstring>& exclusions,
+        ComposeFunc compose,
+        size_t targetIdx, ModifierT mod) {
+    if (exclusions.empty() || count == 0 || targetIdx >= count) return false;
+
+    CharStateT tentative = states[targetIdx];
+    tentative.mod = mod;
+    wchar_t modChar = compose(tentative);
+
+    wchar_t buf[16];
+    size_t bufLen = BuildExclusionBuf(states, count, compose, buf, targetIdx, modChar);
+    return MatchExclusionBufIgnoreTone(buf, bufLen, exclusions);
+}
+
+/// Typing-time check: would applying a modifier to any eligible vowel match an exclusion?
+/// Horn: tries u/o. Breve: tries a. Circumflex: tries a/e/o.
+/// Used by Telex 'w' key and VNI modifier keys (6/7/8) to bypass spellCheckDisabled_.
+/// @param eligibleBases  Null-terminated string of base vowels eligible for this modifier
+///                       (e.g. L"ao" for circumflex a/e/o → pass L"aeo").
+template<typename CharStateT, typename ComposeFunc, typename ModifierT>
+[[nodiscard]] inline bool WouldAnyModifierMatchExclusion(
+        const CharStateT* states, size_t count,
+        const std::vector<std::wstring>& exclusions,
+        ComposeFunc compose,
+        ModifierT mod, const wchar_t* eligibleBases) {
+    if (exclusions.empty() || count == 0) return false;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (!states[i].IsVowel() || states[i].mod != static_cast<ModifierT>(0)) continue;
+
+        wchar_t base = states[i].base;
+        bool eligible = false;
+        for (const wchar_t* p = eligibleBases; *p; ++p) {
+            if (base == *p) { eligible = true; break; }
+        }
+        if (!eligible) continue;
+        if (WouldModifierMatchExclusion(states, count, exclusions, compose, i, mod))
+            return true;
+    }
+    return false;
 }
 
 /// Returns true if the buffer ends with a stop-final consonant (c, ch, k, p, t)

@@ -82,6 +82,27 @@ constexpr int ToneBaseIndex(wchar_t ch) {
     }
 }
 
+/// Strip tone from a Vietnamese vowel, keeping base + modifier intact.
+/// 'ắ' → 'ă', 'ầ' → 'â', 'ớ' → 'ơ', 'ừ' → 'ư', 'á' → 'a', etc.
+/// Non-Vietnamese or untoned chars pass through unchanged.
+[[nodiscard]] inline wchar_t StripTone(wchar_t ch) noexcept {
+    // Table of untoned vowels indexed by kTonedVowel row
+    constexpr wchar_t kToneBase[] = {
+        L'a', L'\x00E2', L'\x0103', L'e', L'\x00EA', L'i',
+        L'o', L'\x00F4', L'\x01A1', L'u', L'\x01B0', L'y'
+    };
+    // Already untoned?
+    if (ToneBaseIndex(ch) >= 0) return ch;
+    // Search toned vowel table
+    wchar_t low = towlower(ch);
+    for (int i = 0; i < 12; ++i) {
+        for (int j = 0; j < 5; ++j) {
+            if (kTonedVowel[i][j] == low) return kToneBase[i];
+        }
+    }
+    return ch;
+}
+
 //=============================================================================
 // Diphthong Tone Placement — shared between Telex and VNI engines
 // Table[first_vowel][second_vowel] → 0=no rule, 1=FIRST, 2=SECOND
