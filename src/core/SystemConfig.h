@@ -32,6 +32,10 @@ struct SystemConfig {
 
     // UI language (true=English, false=Vietnamese)
     bool englishUI = false;
+
+    // Theme override
+    bool forceLightTheme = false;  // Always use light theme (ignore Windows dark mode)
+
     uint8_t language = 0;
 
 
