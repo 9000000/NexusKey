@@ -61,6 +61,7 @@ private:
     void OnActionButton(uint16_t controlId);
     void OnSystemToggle(const wchar_t* id, bool value);
     void OnPickIconColors();
+    void UpdateSpellCheckChildren();
     void RefreshLabels();
     void OnTabChange();
     void ShowTabPage(int tabIndex);

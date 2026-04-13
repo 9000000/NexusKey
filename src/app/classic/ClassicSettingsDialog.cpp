@@ -421,20 +421,20 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
                 (wcscmp(kSettings[i+1].label, L"...") == 0 || kSettings[i+1].win32Id == IDC_BTN_CHECK_UPDATE));
             int nextBtnW = 0;
             if (hasInlineNext) {
-                nextBtnW = (wcscmp(kSettings[i+1].label, L"...") == 0) ? Dpi(26) : Dpi(55);
+                nextBtnW = (wcscmp(kSettings[i+1].label, L"...") == 0) ? Dpi(26) : Dpi(70);
             }
             int checkW = hasInlineNext ? colWidth - nextBtnW - Dpi(4) : colWidth;
             checkControls_[i] = CreateCheck(meta.label, cx, cy, checkW, Dpi(kControlHeight), meta.win32Id);
         } else if (meta.type == SettingType::Action) {
             if (isInlineAction) {
-                int btnW = (wcscmp(meta.label, L"...") == 0) ? Dpi(26) : Dpi(55);
+                int btnW = (wcscmp(meta.label, L"...") == 0) ? Dpi(26) : Dpi(70);
                 int inlineCx = cx + colWidth - btnW;
                 checkControls_[i] = CreateBtn(meta.label, inlineCx, cy, btnW, Dpi(kControlHeight), meta.win32Id);
             } else {
                 checkControls_[i] = CreateBtn(meta.label, cx, cy, colWidth, Dpi(kControlHeight), meta.win32Id);
             }
         } else if (meta.type == SettingType::Dropdown) {
-            int lblW = Dpi(90);
+            int lblW = Dpi(115);
             int comboW = colWidth - lblW - Dpi(4);
             if (wcscmp(meta.id, L"startup-mode") == 0) {
                 comboW = Dpi(80); // Make this dropdown specifically smaller
@@ -558,6 +558,7 @@ void ClassicSettingsDialog::PopulateControls() {
         }
     }
 
+    UpdateSpellCheckChildren();
 }
 
 void ClassicSettingsDialog::ReadControlValues() {
@@ -797,6 +798,11 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
 
                 SaveSettings();
 
+                // Spell check controls child toggles (zwjf, auto-restore, exclusions button)
+                if (meta->win32Id == IDC_CHECK_SPELL) {
+                    UpdateSpellCheckChildren();
+                }
+
                 // System toggles have side effects beyond config save
                 if (meta->owner == SettingOwner::System && meta->type == SettingType::Toggle) {
                     bool checked = (IsDlgButtonChecked(hwnd_, meta->win32Id) == BST_CHECKED);
@@ -877,6 +883,24 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
             break;
         }
     }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Parent-child toggle dependencies
+// ════════════════════════════════════════════════════════════════════
+
+void ClassicSettingsDialog::UpdateSpellCheckChildren() {
+    bool spellOn = (IsDlgButtonChecked(hwnd_, IDC_CHECK_SPELL) == BST_CHECKED);
+    BOOL enable = spellOn ? TRUE : FALSE;
+
+    // Child toggles: "Cho phép zwjf" and "Tự khôi phục phím sai"
+    HWND zwjf = GetDlgItem(hwnd_, IDC_CHECK_ALLOW_ZWJF);
+    HWND restore = GetDlgItem(hwnd_, IDC_CHECK_AUTO_RESTORE);
+    HWND exclusions = GetDlgItem(hwnd_, IDC_BTN_SPELL_EXCLUSIONS);
+
+    if (zwjf)       EnableWindow(zwjf, enable);
+    if (restore)    EnableWindow(restore, enable);
+    if (exclusions) EnableWindow(exclusions, enable);
 }
 
 // ════════════════════════════════════════════════════════════════════

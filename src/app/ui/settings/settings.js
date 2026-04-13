@@ -90,6 +90,9 @@ function initializeToggles() {
 
     allToggles.forEach(function (toggle) {
         toggle.onclick = function (evt) {
+            // Block clicks on disabled toggles (child of unchecked parent)
+            if (this.classList.contains("disabled")) return false;
+
             const isChecked = this.classList.contains("checked");
 
             if (isChecked) {
@@ -130,6 +133,11 @@ function initializeToggles() {
             }
 
 
+            // Spell check controls child toggles (zwjf, restore-key, exclusions button)
+            if (id === "spell-check") {
+                updateSpellCheckChildren(newState);
+            }
+
             // Defer C++ notification to next frame so toggle animation starts instantly.
             requestAnimationFrame(function() {
                 var hiddenInput = document.getElementById("val-" + id);
@@ -142,6 +150,44 @@ function initializeToggles() {
             return true;
         };
     });
+
+    // Initial state: sync child toggles with spell-check parent
+    var spellToggle = document.getElementById("spell-check");
+    if (spellToggle) {
+        updateSpellCheckChildren(spellToggle.classList.contains("checked"));
+    }
+}
+
+// Enable/disable spell check child options based on parent state
+function updateSpellCheckChildren(spellEnabled) {
+    var childIds = ["allow-zwjf", "restore-key"];
+    childIds.forEach(function(id) {
+        var toggle = document.getElementById(id);
+        if (!toggle) return;
+        var row = toggle.closest(".setting-row");
+
+        if (spellEnabled) {
+            toggle.classList.remove("disabled");
+            if (row) row.classList.remove("disabled");
+        } else {
+            toggle.classList.add("disabled");
+            if (row) row.classList.add("disabled");
+        }
+    });
+
+    // Exclusions button
+    var btnExcl = document.getElementById("btn-spell-exclusions");
+    if (btnExcl) {
+        btnExcl.state.disabled = !spellEnabled;
+    }
+    var rowExcl = document.getElementById("row-spell-exclusions");
+    if (rowExcl) {
+        if (spellEnabled) {
+            rowExcl.classList.remove("disabled");
+        } else {
+            rowExcl.classList.add("disabled");
+        }
+    }
 }
 
 // Initialize advanced panel toggle and tabs

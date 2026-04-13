@@ -399,6 +399,14 @@
     padding-left: 16dip;
 }
 
+/* Disabled setting row (parent toggle is off) */
+.setting-row.disabled {
+    opacity: 0.4;
+}
+.setting-row.disabled .btn-action {
+    cursor: not-allowed;
+}
+
 /* Vertical setting row (for Phím Chuyển with 2 rows) */
 .setting-row-vertical {
     flow: vertical;
