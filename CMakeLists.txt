@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(NexusKey VERSION 2.1.15 LANGUAGES CXX)
+project(NexusKey VERSION 2.1.16 LANGUAGES CXX)
 
 # Generate Version.h from Version.h.in — version is defined once in project() above.
 configure_file(
