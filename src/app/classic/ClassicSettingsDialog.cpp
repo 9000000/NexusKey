@@ -78,7 +78,7 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     int y = (screenH - adjHeight) / 2;
     SetWindowPos(hwnd_, nullptr, x, y, adjWidth, adjHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
-    theme_.Init(hwnd_);
+    theme_.Init(hwnd_, systemConfig_.forceLightTheme);
     theme_.ApplyWindowAttributes(hwnd_);
 
     fontSmall_ = CreateFontW(Dpi(13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
@@ -912,6 +912,17 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
         HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
         if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
     }
+    else if (wcscmp(id, L"force-light-theme") == 0) {
+        // Re-init theme with new setting, repaint entire window
+        theme_.Destroy();
+        theme_.Init(hwnd_, value);
+        theme_.ApplyWindowAttributes(hwnd_);
+        theme_.ThemeAllChildren(hwnd_);
+        InvalidateRect(hwnd_, nullptr, TRUE);
+        // Flush to TOML immediately
+        KillTimer(hwnd_, kTimerDeferredSave);
+        SaveToToml();
+    }
     // show-on-startup, check-update: saved to config,
     // main_lite.cpp reads updated config when dialog closes.
 }
@@ -1257,7 +1268,7 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
             UINT ctrlId = static_cast<UINT>(wParam);
 
-            // Only tab control is owner-drawn now
+            // Only tab control is owner-drawn
             if (ctrlId == IDC_TAB_ADVANCED) {
                 self->theme_.DrawTabItem(dis);
                 return TRUE;
