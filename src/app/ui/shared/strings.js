@@ -81,6 +81,8 @@ var STRINGS = {
         "s.icon_style": "Customize icon",
         "s.english_ui": "English interface",
         "s.english_ui_tooltip": "Switch UI, menus, and notifications to English",
+        "s.force_light_theme": "Always use light theme",
+        "s.force_light_theme_tooltip": "Ignore Windows dark mode, always show light theme",
         "s.custom_colors": "Custom icon colors",
         "s.color_v": "Choose V color",
         "s.color_e": "Choose E color",
