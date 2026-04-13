@@ -80,6 +80,9 @@ public:
     // Magic number to mark our own SendInput events (prevents other hooks from processing them)
     static constexpr ULONG_PTR NEXUSKEY_EXTRA_INFO = 0x4E4B;  // "NK"
 
+    // Get exe name (lowercase) from window handle — used by ClassifyWindow() and smart switch
+    [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;
+
 private:
     // Hook callbacks (static → instance dispatch)
     static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
@@ -141,8 +144,6 @@ private:
     // Clear per-word engine state (shared by CommitComposition, ResetComposition, TryExpandMacro)
     void ClearWordState();
 
-    // Smart switch: get foreground app exe name
-    [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;
     [[nodiscard]] static bool IsTrayOrTaskbarWindow(HWND hwnd) noexcept;
     void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with effective mode
     bool VerifyExcludedState();        // Check if foreground is still excluded; clears stale flag if not
