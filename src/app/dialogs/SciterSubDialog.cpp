@@ -62,7 +62,9 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         // Dark class goes on <body> (CSS targets body.dark), lang goes on <html>
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
-            std::wstring classes = DarkModeHelper::IsWindowsDarkMode() ? L"dark" : L"";
+            auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
+            bool dark = sysConfig.forceLightTheme ? false : DarkModeHelper::IsWindowsDarkMode();
+            std::wstring classes = dark ? L"dark" : L"";
             if (!DarkModeHelper::IsWindows11OrGreater()) {
                 if (!classes.empty()) classes += L" ";
                 classes += L"win10";
@@ -272,6 +274,8 @@ LRESULT CALLBACK SciterSubDialog::SubclassProc(
     if (msg == WM_SETTINGCHANGE && lParam) {
         if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
             if (s_instance) {
+                auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
+                if (sysConfig.forceLightTheme) return 0;
                 bool dark = DarkModeHelper::IsWindowsDarkMode();
                 DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
