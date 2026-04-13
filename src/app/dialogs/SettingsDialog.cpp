@@ -126,7 +126,7 @@ SettingsDialog::SettingsDialog()
     // 11. Apply theme-aware DWM mode and Windows API blur
     HWND hwnd = get_hwnd();
     if (hwnd) {
-        bool dark = DarkModeHelper::IsWindowsDarkMode();
+        bool dark = forceLightTheme_ ? false : DarkModeHelper::IsWindowsDarkMode();
         DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
         // Set body class based on detected theme (get_root() = <html>, need <body>)
@@ -363,6 +363,7 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     if (msg == WM_SETTINGCHANGE && lParam) {
         if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
             if (s_instance) {
+                if (s_instance->forceLightTheme_) return 0;
                 bool dark = DarkModeHelper::IsWindowsDarkMode();
                 DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
@@ -717,6 +718,41 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         notifyIconChanged();  // Main process reads updated config
         return;
     }
+    else if (id == L"force-light-theme") {
+        systemConfig_.forceLightTheme = value;
+        forceLightTheme_ = value;
+        saveSystemSettings();
+
+        // Apply immediately: switch to light theme
+        bool dark = value ? false : DarkModeHelper::IsWindowsDarkMode();
+        DarkModeHelper::SetWindowDarkMode(get_hwnd(), dark);
+
+        sciter::dom::element htmlRoot(get_root());
+        sciter::dom::element body = htmlRoot.find_first("body");
+        if (body.is_valid()) {
+            std::wstring classes = dark ? L"dark" : L"";
+            if (!DarkModeHelper::IsWindows11OrGreater()) {
+                if (!classes.empty()) classes += L" ";
+                classes += L"win10";
+            }
+            body.set_attribute("class", classes.c_str());
+        }
+
+        // Update container background for new theme
+        double opacity = backgroundOpacity_ / 100.0;
+        sciter::dom::element root(get_root());
+        sciter::dom::element container = root.find_first("#main-container");
+        if (container.is_valid()) {
+            wchar_t bgColor[64];
+            if (dark) {
+                swprintf_s(bgColor, L"rgba(18, 20, 28, %.2f)", opacity);
+            } else {
+                swprintf_s(bgColor, L"rgba(255, 255, 255, %.2f)", opacity);
+            }
+            container.set_style_attribute("background-color", bgColor);
+        }
+        return;
+    }
     else if (id == L"check-update") {
         systemConfig_.autoCheckUpdate = value;
         saveSystemSettings();
@@ -990,6 +1026,7 @@ void SettingsDialog::initializeUI() {
 
     // Auto-check update toggle
     setToggleState(L"check-update", systemConfig_.autoCheckUpdate);
+    setToggleState(L"force-light-theme", systemConfig_.forceLightTheme);
 
     // Version number display
     {
@@ -1076,7 +1113,7 @@ void SettingsDialog::initializeUI() {
         }
 
         // 3. Apply CSS background color
-        bool dark = DarkModeHelper::IsWindowsDarkMode();
+        bool dark = forceLightTheme_ ? false : DarkModeHelper::IsWindowsDarkMode();
         double opacity = backgroundOpacity_ / 100.0;
         sciter::dom::element container = root.find_first("#main-container");
         if (container.is_valid()) {
@@ -1149,6 +1186,7 @@ void SettingsDialog::loadSettings() {
 
     // Load system config
     systemConfig_ = ConfigManager::LoadSystemConfigOrDefault();
+    forceLightTheme_ = systemConfig_.forceLightTheme;
 }
 
 void SettingsDialog::saveSettings() {

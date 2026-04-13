@@ -121,6 +121,7 @@ private:
     bool modeSyncPending_ = false; // Coalescing flag: deferred toggle-language DOM update in flight
     bool isExpanded_ = false;
     bool isPinned_ = false;
+    bool forceLightTheme_ = false;
 
     // UI settings (saved to config)
     uint8_t backgroundOpacity_ = 80;  // 0-100
