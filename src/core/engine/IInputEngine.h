@@ -23,8 +23,9 @@ public:
     /// Handle backspace - remove last character
     virtual void Backspace() = 0;
 
-    /// Get current composition (without committing)
-    [[nodiscard]] virtual std::wstring Peek() const = 0;
+    /// Get current composition (without committing).
+    /// Returns const ref to internal buffer — valid until next mutation (PushChar/Backspace/Reset).
+    [[nodiscard]] virtual const std::wstring& Peek() const = 0;
 
     /// Commit composition and get final text, then reset state
     [[nodiscard]] virtual std::wstring Commit() = 0;

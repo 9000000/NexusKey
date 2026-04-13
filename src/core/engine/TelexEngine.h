@@ -83,7 +83,7 @@ public:
     // IInputEngine implementation
     void PushChar(wchar_t c) override;
     void Backspace() override;
-    [[nodiscard]] std::wstring Peek() const override;
+    [[nodiscard]] const std::wstring& Peek() const override;
     [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
     [[nodiscard]] size_t Count() const override { return states_.size(); }
@@ -127,10 +127,13 @@ private:
     static wchar_t Compose(const CharState& s);
 
     // Compose all states to string
-    std::wstring ComposeAll() const;
+    const std::wstring& ComposeAll() const;
 
     // Remove consumed raw entry and adjust all indices
     void EraseConsumedRaw(size_t idx);
+
+    // Spell exclusion: would the modifier key produce an excluded word?
+    bool WouldModifierKeyMatchExclusion(wchar_t lower) const;
 
     // Spell check: validate syllable structure after each keystroke
     void UpdateSpellState();

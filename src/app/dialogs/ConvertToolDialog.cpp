@@ -190,7 +190,9 @@ int ConvertToolDialog::getDropdownValue(const char* id) {
     sciter::value val = el.get_value();
     if (val.is_string()) {
         std::wstring s = val.get<std::wstring>();
-        if (!s.empty()) return std::stoi(s);
+        if (!s.empty()) {
+            try { return std::stoi(s); } catch (...) { return 0; }
+        }
     } else if (val.is_int()) {
         return val.get<int>();
     }

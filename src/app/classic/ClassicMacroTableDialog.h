@@ -17,12 +17,12 @@ namespace NextKey::Classic {
 class ClassicMacroTableDialog {
 public:
     /// Show modal dialog. Returns true if macros were modified.
-    static bool Show(HINSTANCE hInstance, HWND parent);
+    static bool Show(HINSTANCE hInstance, HWND parent, bool forceLightTheme = false);
 
 private:
     ClassicMacroTableDialog() = default;
 
-    bool Init(HINSTANCE hInstance, HWND parent);
+    bool Init(HINSTANCE hInstance, HWND parent, bool forceLightTheme);
     void CreateControls();
     void PopulateList();
     void AddMacro();

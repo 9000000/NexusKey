@@ -23,12 +23,14 @@ class ClassicIconColorDialog {
 public:
     /// Show modal dialog. initialV/E are current COLORREF values.
     static IconColorResult Show(HINSTANCE hInstance, HWND parent,
-                                uint32_t initialV, uint32_t initialE);
+                                uint32_t initialV, uint32_t initialE,
+                                bool forceLightTheme = false);
 
 private:
     ClassicIconColorDialog() = default;
 
-    bool Init(HINSTANCE hInstance, HWND parent, uint32_t initV, uint32_t initE);
+    bool Init(HINSTANCE hInstance, HWND parent, uint32_t initV, uint32_t initE,
+              bool forceLightTheme);
     void CreateControls();
     void PickColor(bool isV);
     void PaintPreview(HDC hdc);
@@ -52,6 +54,7 @@ private:
     COLORREF colorV_ = RGB(233, 30, 99);
     COLORREF colorE_ = RGB(33, 150, 243);
     bool colorPicked_ = false;  // True if at least one ChooseColor was accepted
+    HFONT previewFont_ = nullptr;  // Cached font for icon preview painting
 
     static COLORREF customColors_[16];
     static constexpr const wchar_t* kClassName = L"NexusKeyIconColor";

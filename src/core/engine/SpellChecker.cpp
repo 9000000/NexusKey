@@ -647,7 +647,7 @@ bool IsValidConsonantPrefix(const CharStateT* states, size_t count, bool allowZw
 //=============================================================================
 
 template<typename CharStateT>
-Result ValidateImpl(const CharStateT* states, size_t count, bool allowZwjf = false) {
+Result ValidateImpl(const CharStateT* states, size_t count, bool allowZwjf = false) noexcept {
     if (count == 0) return Result::ValidPrefix;
 
     // First, try standard decomposition

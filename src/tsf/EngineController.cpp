@@ -148,7 +148,7 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
 
     // 4. Space handling depends on the app
     if (vkCode == VK_SPACE) {
-        if (IsScintillaApp()) {
+        if (isScintillaApp_) {
             // For Scintilla apps: don't claim space, let it trigger commit via "non-handled key" path
             // and pass through naturally
             return false;
@@ -300,49 +300,28 @@ void EngineController::Reset() {
     autoCapState_ = 0;
 }
 
-void EngineController::SwitchInputMethod(InputMethod method) {
-    if (method == currentMethod_) return;
-    
-    // End any active TSF composition and reset engine before switching
-    if (engine_->Count() > 0) {
-        (void)engine_->Commit();
-    }
-    compositionMgr_.TerminateComposition();
-
-    // Create new engine with current config (preserve spell check, modern ortho, etc.)
-    config_.inputMethod = method;
-    currentMethod_ = method;
-    engine_ = EngineFactory::Create(config_);
-    
-    TSF_LOG(L"Switched to %s engine", method == InputMethod::VNI ? L"VNI" : L"Telex");
-}
-
-bool EngineController::IsScintillaApp() const {
-    // Get the foreground window and check if it's a Scintilla-based app
+void EngineController::DetectScintillaApp() {
+    // Cache Scintilla detection — called on context change, not per-keystroke.
     HWND hwnd = GetForegroundWindow();
-    if (hwnd == nullptr) return false;
+    if (hwnd == nullptr) { isScintillaApp_ = false; return; }
 
-    // Check window class name
     wchar_t className[256] = {0};
     if (GetClassNameW(hwnd, className, 256) > 0) {
-        // Notepad++ main window class
         if (wcsstr(className, L"Notepad++") != nullptr) {
-            return true;
+            isScintillaApp_ = true; return;
         }
     }
 
-    // Also check child windows for Scintilla class
     HWND hwndFocus = GetFocus();
     if (hwndFocus != nullptr) {
         if (GetClassNameW(hwndFocus, className, 256) > 0) {
-            // Scintilla edit control class
             if (wcsstr(className, L"Scintilla") != nullptr) {
-                return true;
+                isScintillaApp_ = true; return;
             }
         }
     }
 
-    return false;
+    isScintillaApp_ = false;
 }
 
 bool EngineController::CheckConfigEvent() {
@@ -388,6 +367,7 @@ bool EngineController::CheckConfigEvent() {
 }
 
 void EngineController::RefreshFlags() {
+    DetectScintillaApp();
     if (!sharedState_.IsConnected()) {
         // Try to reconnect (EXE may have restarted)
         if (!sharedState_.OpenReadWrite()) {

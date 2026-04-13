@@ -89,9 +89,10 @@ bool CompositionManager::StartComposition(ITfContext* pContext, TfEditCookie ec,
         return false;
     }
 
-    // Store composition
+    // Store composition and context (AddRef context for safe cross-session use)
     pComposition_ = pComposition;
     pContext_ = pContext;
+    pContext_->AddRef();
 
     // Set selection to the insertion range (VietType pattern - helps apps properly track insertion point)
     TF_SELECTION sel;
@@ -163,6 +164,7 @@ void CompositionManager::EndComposition(TfEditCookie ec) {
     pComposition_->EndComposition(ec);
     pComposition_->Release();
     pComposition_ = nullptr;
+    pContext_->Release();
     pContext_ = nullptr;
 
     TSF_LOG(L"EndComposition: COMPLETED");
@@ -175,7 +177,10 @@ void CompositionManager::TerminateComposition() {
         pComposition_->Release();
         pComposition_ = nullptr;
     }
-    pContext_ = nullptr;
+    if (pContext_) {
+        pContext_->Release();
+        pContext_ = nullptr;
+    }
 }
 
 void CompositionManager::ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange) {

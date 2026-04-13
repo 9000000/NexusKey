@@ -59,9 +59,6 @@ public:
     /// Reset only engine buffer (for sync recovery)
     void ResetEngine() { engine_->Reset(); }
 
-    /// Switch input method at word boundary
-    void SwitchInputMethod(InputMethod method);
-
     /// Check for config changes (call periodically, e.g., on focus)
     /// Returns true if config was reloaded
     bool CheckConfigEvent();
@@ -100,8 +97,8 @@ public:
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
 
-    /// Check if current app is Scintilla-based (Notepad++, etc.)
-    bool IsScintillaApp() const;
+    /// Detect if current app is Scintilla-based (cached, updated on context change)
+    void DetectScintillaApp();
 
     /// Apply config from SharedState
     void ApplySharedState(const SharedState& state);
@@ -121,6 +118,7 @@ private:
     LanguageBarButton* langBarButton_ = nullptr;  // Owned, Release'd in UninitLanguageBar
     ITfContext* lastContext_ = nullptr;   // Last seen context (AddRef'd for safe identity comparison)
     bool contextBlocked_ = false;        // True if current context blocks input (password, etc.)
+    bool isScintillaApp_ = false;        // Cached: current app is Scintilla-based (Notepad++, etc.)
 };
 
 }  // namespace TSF

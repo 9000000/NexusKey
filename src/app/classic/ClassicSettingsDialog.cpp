@@ -82,11 +82,7 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     theme_.ApplyWindowAttributes(hwnd_);
 
     fontSmall_ = CreateFontW(Dpi(13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI Variable Text");
-    if (!fontSmall_) {
-        fontSmall_ = CreateFontW(Dpi(13), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-    }
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
 
     CreateCompactControls();
     CreateAdvancedControls();
@@ -176,7 +172,7 @@ void ClassicSettingsDialog::CreateCompactControls() {
     int offset = Dpi(8);
     int gbX = Dpi(8);
 
-    CreateLabel(L"  Cơ bản  ", gbX + Dpi(6), Dpi(2) + offset, Dpi(90), Dpi(18), 2999);
+    CreateLabel(L"  Cơ bản", gbX + Dpi(6), Dpi(2) + offset, Dpi(90), Dpi(18), 2999);
 
     int x1 = Dpi(kPadding);
     int y = Dpi(kPadding + 8) + offset;
@@ -283,14 +279,17 @@ static LRESULT CALLBACK TabSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
             }
         }
 
-        RoundRect(hdc, rcClient.left, topY, rcClient.right, rcClient.bottom, 12, 12);
+        int r = Classic::DpiScale(12, Classic::GetWindowDpi(hWnd));
+
+        RoundRect(hdc, rcClient.left, topY, rcClient.right, rcClient.bottom, r, r);
 
         if (activeTab == 0) {
-            RECT cornerRc = { rcClient.left, topY, rcClient.left + 6, topY + 6 };
+            int half = r / 2;
+            RECT cornerRc = { rcClient.left, topY, rcClient.left + half, topY + half };
             FillRect(hdc, &cornerRc, self->theme().BrushBackground());
             
             MoveToEx(hdc, rcClient.left, topY, nullptr);
-            LineTo(hdc, rcClient.left, topY + 7);
+            LineTo(hdc, rcClient.left, topY + half + 1);
         }
 
         if (activeTab != -1) {
@@ -312,7 +311,7 @@ static LRESULT CALLBACK TabSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
             HRGN hRgn = CreateRectRgn(rcTab.left, rcTab.top, rcTab.right, rcTab.bottom + (isSelected ? 1 : 0));
             SelectClipRgn(hdc, hRgn);
 
-            RoundRect(hdc, rcTab.left, rcTab.top, rcTab.right, rcTab.bottom + 12, 12, 12);
+            RoundRect(hdc, rcTab.left, rcTab.top, rcTab.right, rcTab.bottom + r, r, r);
 
             SelectClipRgn(hdc, NULL);
             DeleteObject(hRgn);
@@ -434,11 +433,9 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
                 checkControls_[i] = CreateBtn(meta.label, cx, cy, colWidth, Dpi(kControlHeight), meta.win32Id);
             }
         } else if (meta.type == SettingType::Dropdown) {
-            int lblW = Dpi(115);
+            int lblW = Dpi(100);
             int comboW = colWidth - lblW - Dpi(4);
-            if (wcscmp(meta.id, L"startup-mode") == 0) {
-                comboW = Dpi(80); // Make this dropdown specifically smaller
-            }
+
             HWND lbl = CreateLabel(meta.label, cx, cy + Dpi(4), lblW, Dpi(kControlHeight), 0);
             extraControls_[i] = lbl;
             HWND combo = CreateCombo(cx + lblW + Dpi(4), cy, comboW, Dpi(kComboHeight + 60), meta.win32Id);
@@ -825,24 +822,24 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
 void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
     switch (controlId) {
         case IDC_BTN_APP_OVERRIDES:
-            ClassicAppOverridesDialog::Show(hInstance_, hwnd_);
+            ClassicAppOverridesDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
             // Reload config in case overrides changed
             LoadSettings();
             PopulateControls();
             break;
 
         case IDC_BTN_EXCLUDE_APPS:
-            ClassicExcludedAppsDialog::Show(hInstance_, hwnd_);
+            ClassicExcludedAppsDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
             break;
 
         case IDC_BTN_SPELL_EXCLUSIONS:
-            ClassicSpellExclusionsDialog::Show(hInstance_, hwnd_);
+            ClassicSpellExclusionsDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
             // Reload config to pick up changes made in the dialog
             config_ = ConfigManager::LoadOrDefault();
             break;
 
         case IDC_BTN_MACRO_TABLE:
-            ClassicMacroTableDialog::Show(hInstance_, hwnd_);
+            ClassicMacroTableDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
             break;
 
         case IDC_BTN_CHECK_UPDATE: {
@@ -959,7 +956,8 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
 void ClassicSettingsDialog::OnPickIconColors() {
     auto result = ClassicIconColorDialog::Show(
         hInstance_, hwnd_,
-        systemConfig_.customColorV, systemConfig_.customColorE);
+        systemConfig_.customColorV, systemConfig_.customColorE,
+        systemConfig_.forceLightTheme);
 
     if (result.accepted) {
         systemConfig_.customColorV = result.colorV;
@@ -1034,13 +1032,6 @@ void ClassicSettingsDialog::RefreshLabels() {
         ComboBox_AddString(startupCombo, en ? L"English" : L"Tiếng Anh");
         ComboBox_AddString(startupCombo, en ? L"Remember" : L"Ghi nhớ");
         if (sel >= 0) ComboBox_SetCurSel(startupCombo, sel);
-
-        // Resize dropdown: wider for English, narrower for Vietnamese
-        RECT rc;
-        GetWindowRect(startupCombo, &rc);
-        MapWindowPoints(HWND_DESKTOP, hwnd_, reinterpret_cast<LPPOINT>(&rc), 2);
-        int newW = en ? Dpi(90) : Dpi(80);
-        SetWindowPos(startupCombo, nullptr, rc.left, rc.top, newW, rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     // Report bug link
@@ -1306,10 +1297,11 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             HDC hdc = BeginPaint(hwnd, &ps);
 
             if (self->editHotkey_) {
+                // Draw outer group box around the hotkey section
                 RECT rcEx;
                 GetWindowRect(self->editHotkey_, &rcEx);
                 MapWindowPoints(HWND_DESKTOP, hwnd, reinterpret_cast<LPPOINT>(&rcEx), 2);
-                
+
                 HPEN pen = CreatePen(PS_SOLID, 1, self->theme_.Colors().border);
                 HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
                 HPEN oldPen = (HPEN)SelectObject(hdc, pen);
@@ -1317,22 +1309,15 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
                 int offset = self->Dpi(8);
                 int gbY = self->Dpi(10) + offset;
                 int bottom = rcEx.bottom + self->Dpi(8);
-                RoundRect(hdc, self->Dpi(8), gbY, self->Dpi(kAdvancedWidth - 8), bottom, 12, 12);
-
-                if (self->editHotkey_) {
-                    RECT rcE;
-                    GetWindowRect(self->editHotkey_, &rcE);
-                    MapWindowPoints(HWND_DESKTOP, hwnd, reinterpret_cast<LPPOINT>(&rcE), 2);
-                    int padY = (self->Dpi(kControlHeight) - (rcE.bottom - rcE.top)) / 2;
-                    rcE.top -= padY;
-                    rcE.bottom += padY;
-                    InflateRect(&rcE, self->Dpi(6), 0);
-                    RoundRect(hdc, rcE.left, rcE.top, rcE.right, rcE.bottom, 6, 6);
-                }
+                int r = self->theme_.CornerRadius();
+                RoundRect(hdc, self->Dpi(8), gbY, self->Dpi(kAdvancedWidth - 8), bottom, r, r);
 
                 SelectObject(hdc, oldBr);
                 SelectObject(hdc, oldPen);
                 DeleteObject(pen);
+
+                // Draw rounded border for hotkey edit
+                self->theme_.DrawHotkeyEditBorder(hdc, hwnd, self->editHotkey_, self->Dpi(kControlHeight));
             }
 
             EndPaint(hwnd, &ps);

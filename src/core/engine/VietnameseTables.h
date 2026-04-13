@@ -145,19 +145,7 @@ constexpr uint8_t kDiphthongModern[6][6] = {
     /* y */ {   0, 0, 0, 0, 3, 0 },  // yu=CODA_AWARE: yủn(coda→u), khuỷu(no coda→y)
 };
 
-/// Triphthong patterns (Modern only): tone on MIDDLE vowel
-struct TriphthongPattern { wchar_t v1, v2, v3; };
-constexpr TriphthongPattern kTriphthongs[] = {
-    {L'o', L'a', L'i'},   // oai
-    {L'o', L'e', L'o'},   // oeo
-    {L'u', L'y', L'a'},   // uya
-    {L'u', L'y', L'u'},   // uyu
-    {L'o', L'a', L'o'},   // oao
-    {L'o', L'a', L'y'},   // oay
-};
-constexpr size_t kTriphthongCount = std::size(kTriphthongs);
-
-/// Check if three vowel bases form a triphthong
+/// Check if three vowel bases form a triphthong (Modern only): tone on MIDDLE vowel
 [[nodiscard]] constexpr bool IsTriphthong(wchar_t v1, wchar_t v2, wchar_t v3) noexcept {
     // Flat comparison is faster than loop, no branch misprediction
     return (v1 == L'o' && v2 == L'a' && v3 == L'i') ||  // oai
@@ -172,7 +160,7 @@ constexpr size_t kTriphthongCount = std::size(kTriphthongs);
 // Vietnamese-aware uppercase conversion (shared)
 //=============================================================================
 
-inline wchar_t ToUpperVietnamese(wchar_t ch) {
+[[nodiscard]] inline wchar_t ToUpperVietnamese(wchar_t ch) noexcept {
     // Latin-1 Supplement
     if (ch >= 0x00E0 && ch <= 0x00F6) return ch - 0x20;
     if (ch >= 0x00F8 && ch <= 0x00FE) return ch - 0x20;
@@ -200,7 +188,7 @@ inline wchar_t ToUpperVietnamese(wchar_t ch) {
 // Vietnamese-aware lowercase conversion (shared)
 //=============================================================================
 
-inline wchar_t ToLowerVietnamese(wchar_t ch) {
+[[nodiscard]] inline wchar_t ToLowerVietnamese(wchar_t ch) noexcept {
     // Latin-1 Supplement
     if (ch >= 0x00C0 && ch <= 0x00D6) return ch + 0x20;
     if (ch >= 0x00D8 && ch <= 0x00DE) return ch + 0x20;

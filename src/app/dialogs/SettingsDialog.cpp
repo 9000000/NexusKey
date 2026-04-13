@@ -35,7 +35,7 @@ using namespace sciter::dom;  // For ELEMENT_AREAS enum (CONTENT_BOX, etc.)
 namespace NextKey {
 
 // Timer IDs for async operations
-#define TIMER_RESIZE_WINDOW 1001
+static constexpr UINT_PTR TIMER_RESIZE_WINDOW = 1001;
 
 // Private self-posted message for coalescing rapid V/E mode changes
 static constexpr UINT WM_SETTINGS_MODE_SYNC = WM_APP + 1;
@@ -133,12 +133,7 @@ SettingsDialog::SettingsDialog()
         sciter::dom::element htmlRoot(get_root());
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
-            std::wstring classes = dark ? L"dark" : L"";
-            if (!DarkModeHelper::IsWindows11OrGreater()) {
-                if (!classes.empty()) classes += L" ";
-                classes += L"win10";
-            }
-            body.set_attribute("class", classes.c_str());
+            body.set_attribute("class", DarkModeHelper::BuildBodyClasses(dark).c_str());
         }
 
         // Enable rounded corners on Windows 11
@@ -371,12 +366,7 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
                 sciter::dom::element htmlRoot(s_instance->get_root());
                 sciter::dom::element body = htmlRoot.find_first("body");
                 if (body.is_valid()) {
-                    std::wstring classes = dark ? L"dark" : L"";
-                    if (!DarkModeHelper::IsWindows11OrGreater()) {
-                        if (!classes.empty()) classes += L" ";
-                        classes += L"win10";
-                    }
-                    body.set_attribute("class", classes.c_str());
+                    body.set_attribute("class", DarkModeHelper::BuildBodyClasses(dark).c_str());
                 }
 
                 // Update container background opacity for new theme
@@ -724,24 +714,18 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         saveSystemSettings();
 
         // Apply immediately: switch to light theme
-        bool dark = value ? false : DarkModeHelper::IsWindowsDarkMode();
+        bool dark = !value && DarkModeHelper::IsWindowsDarkMode();
         DarkModeHelper::SetWindowDarkMode(get_hwnd(), dark);
 
         sciter::dom::element htmlRoot(get_root());
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
-            std::wstring classes = dark ? L"dark" : L"";
-            if (!DarkModeHelper::IsWindows11OrGreater()) {
-                if (!classes.empty()) classes += L" ";
-                classes += L"win10";
-            }
-            body.set_attribute("class", classes.c_str());
+            body.set_attribute("class", DarkModeHelper::BuildBodyClasses(dark).c_str());
         }
 
         // Update container background for new theme
         double opacity = backgroundOpacity_ / 100.0;
-        sciter::dom::element root(get_root());
-        sciter::dom::element container = root.find_first("#main-container");
+        sciter::dom::element container = htmlRoot.find_first("#main-container");
         if (container.is_valid()) {
             wchar_t bgColor[64];
             if (dark) {

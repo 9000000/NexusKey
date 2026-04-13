@@ -5,6 +5,7 @@
 #include "DarkModeHelper.h"
 #include <CommCtrl.h>
 #include <uxtheme.h>
+#include <vssym32.h>
 
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "uxtheme.lib")
@@ -13,15 +14,6 @@
 using fnAllowDarkModeForWindow = bool(WINAPI*)(HWND, bool);
 
 namespace NextKey::Classic {
-
-// -- IsWindows11OrGreater helper --
-static bool IsWindows11OrGreater() {
-    OSVERSIONINFOEXW osvi = { sizeof(osvi) };
-    osvi.dwBuildNumber = 22000;
-    DWORDLONG mask = 0;
-    VER_SET_CONDITION(mask, VER_BUILDNUMBER, VER_GREATER_EQUAL);
-    return VerifyVersionInfoW(&osvi, VER_BUILDNUMBER, mask) != FALSE;
-}
 
 // -- Lifecycle --
 
@@ -40,7 +32,8 @@ void ClassicTheme::Init(HWND hwnd, bool forceLightTheme) {
 
     // Destroy old fonts before recreating them to prevent GDI leak
     DestroyFonts();
-    CreateFonts(Classic::GetWindowDpi(hwnd));
+    dpi_ = Classic::GetWindowDpi(hwnd);
+    CreateFonts(dpi_);
     CreateBrushes();
     ApplyWindowAttributes(hwnd);
 }
@@ -109,7 +102,7 @@ void ClassicTheme::ApplyWindowAttributes(HWND hwnd) {
     DwmSetWindowAttribute(hwnd, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &darkBool, sizeof(darkBool));
 
     // Win11: rounded corners (no custom caption color — let Windows decide)
-    if (IsWindows11OrGreater()) {
+    if (DarkModeHelper::IsWindows11OrGreater()) {
         auto corner = 2; // DWMWCP_ROUND
         DwmSetWindowAttribute(hwnd, 33 /*DWMWA_WINDOW_CORNER_PREFERENCE*/, &corner, sizeof(corner));
     }
@@ -152,16 +145,17 @@ static LRESULT CALLBACK ListViewSubclassProc(HWND hWnd, UINT msg, WPARAM wParam,
                     hdi.cchTextMax = 256;
                     SendMessageW(hHeader, HDM_GETITEMW, pnmcd->dwItemSpec, reinterpret_cast<LPARAM>(&hdi));
 
-                    rc.left += 6; // padding
+                    rc.left += DpiScale(6, theme->Dpi()); // padding
                     DrawTextW(pnmcd->hdc, buf, -1, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
                     int count = Header_GetItemCount(hHeader);
                     if (static_cast<int>(pnmcd->dwItemSpec) < count - 1) {
                         // Draw separator line
+                        int inset = DpiScale(4, theme->Dpi());
                         HPEN pen = CreatePen(PS_SOLID, 1, theme->Colors().border);
                         HGDIOBJ oldPen = SelectObject(pnmcd->hdc, pen);
-                        MoveToEx(pnmcd->hdc, pnmcd->rc.right - 1, pnmcd->rc.top + 4, nullptr);
-                        LineTo(pnmcd->hdc, pnmcd->rc.right - 1, pnmcd->rc.bottom - 4);
+                        MoveToEx(pnmcd->hdc, pnmcd->rc.right - 1, pnmcd->rc.top + inset, nullptr);
+                        LineTo(pnmcd->hdc, pnmcd->rc.right - 1, pnmcd->rc.bottom - inset);
                         SelectObject(pnmcd->hdc, oldPen);
                         DeleteObject(pen);
                     }
@@ -239,7 +233,6 @@ static LRESULT CALLBACK ComboSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LP
         SelectObject(hdc, oldPen);
         DeleteObject(bgBr);
         DeleteObject(bgPen);
-        // DeleteObject(bottomPen); // Removed
         DeleteObject(arrowPen);
 
         // 3. Draw text (only if there's no child Edit control overlapping)
@@ -267,7 +260,126 @@ static LRESULT CALLBACK ComboSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LP
     return DefSubclassProc(hWnd, msg, wParam, lParam);
 }
 
+// Edit custom border subclass proc
+static LRESULT CALLBACK EditSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                         UINT_PTR /*uId*/, DWORD_PTR dwRef) {
+    auto* th = reinterpret_cast<ClassicTheme*>(dwRef);
+    if (!th) return DefSubclassProc(hWnd, msg, wParam, lParam);
 
+    if (msg == WM_NCCALCSIZE && wParam) {
+        // Shrink client area top/bottom to vertically center text
+        LPNCCALCSIZE_PARAMS p = (LPNCCALCSIZE_PARAMS)lParam;
+        int windowH = p->rgrc[0].bottom - p->rgrc[0].top;
+
+        // Measure actual font height
+        HFONT hFont = (HFONT)SendMessageW(hWnd, WM_GETFONT, 0, 0);
+        int textH = Classic::DpiScale(18, th->Dpi()); // fallback
+        if (hFont) {
+            HDC hdc = GetDC(hWnd);
+            HFONT old = (HFONT)SelectObject(hdc, hFont);
+            TEXTMETRICW tm;
+            GetTextMetricsW(hdc, &tm);
+            textH = tm.tmHeight;
+            SelectObject(hdc, old);
+            ReleaseDC(hWnd, hdc);
+        }
+
+        int vPad = (windowH - textH) / 2;
+        if (vPad < 1) vPad = 1;
+        int hPad = Classic::DpiScale(8, th->Dpi());
+
+        p->rgrc[0].top    += vPad;
+        p->rgrc[0].bottom -= vPad;
+        p->rgrc[0].left   += hPad;
+        p->rgrc[0].right  -= hPad;
+        return 0;
+    }
+
+    if (msg == WM_NCPAINT) {
+        // Fill the non-client padding area with the edit background color
+        HDC hdc = GetWindowDC(hWnd);
+        if (hdc) {
+            RECT wr;
+            GetWindowRect(hWnd, &wr);
+            OffsetRect(&wr, -wr.left, -wr.top);
+            HBRUSH bg = th->IsDark() ? th->BrushBackground()
+                                     : GetSysColorBrush(COLOR_WINDOW);
+            FillRect(hdc, &wr, bg);
+            th->DrawEditBorder(hdc, wr, GetFocus() == hWnd);
+            ReleaseDC(hWnd, hdc);
+        }
+        return 0;
+    }
+
+    if (msg == WM_PAINT) {
+        // Let the system draw the text in the (shrunken) client area
+        LRESULT res = DefSubclassProc(hWnd, msg, wParam, lParam);
+
+        // Overlay our rounded border on the full window rect
+        HDC hdc = GetWindowDC(hWnd);
+        if (hdc) {
+            RECT wr;
+            GetWindowRect(hWnd, &wr);
+            OffsetRect(&wr, -wr.left, -wr.top);
+            th->DrawEditBorder(hdc, wr, GetFocus() == hWnd);
+            ReleaseDC(hWnd, hdc);
+        }
+        return res;
+    }
+
+    if (msg == WM_SETFOCUS || msg == WM_KILLFOCUS) {
+        LRESULT res = DefSubclassProc(hWnd, msg, wParam, lParam);
+        SetWindowPos(hWnd, nullptr, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        return res;
+    }
+
+    return DefSubclassProc(hWnd, msg, wParam, lParam);
+}
+
+void ClassicTheme::DrawEditBorder(HDC hdc, const RECT& rc, bool isFocused) {
+    COLORREF borderCol = isFocused ? colors_.accent : colors_.border;
+    
+    HPEN pen = CreatePen(PS_SOLID, 1, borderCol);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    HGDIOBJ oldBr = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    
+    int r = Classic::DpiScale(12, dpi_); // Pill style
+
+    // Draw exactly inside the client area
+    ::RoundRect(hdc, rc.left, rc.top, rc.right - 1, rc.bottom - 1, r, r);
+
+    SelectObject(hdc, oldPen);
+    SelectObject(hdc, oldBr);
+    DeleteObject(pen);
+}
+
+void ClassicTheme::DrawHotkeyEditBorder(HDC hdc, HWND hwndParent, HWND hwndEdit, int controlHeight) {
+    if (!hwndEdit) return;
+
+    RECT rcE;
+    GetWindowRect(hwndEdit, &rcE);
+    MapWindowPoints(HWND_DESKTOP, hwndParent, reinterpret_cast<LPPOINT>(&rcE), 2);
+
+    int padY = (controlHeight - (rcE.bottom - rcE.top)) / 2;
+    rcE.top -= (padY + 1);
+    rcE.bottom += (padY + 1);
+
+    int hInf = Classic::DpiScale(6, dpi_);
+    rcE.left -= hInf;
+    rcE.right += hInf;
+
+    HPEN pen = CreatePen(PS_SOLID, 1, colors_.border);
+    HGDIOBJ oldBr = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+
+    int r = Classic::DpiScale(12, dpi_);
+    RoundRect(hdc, rcE.left, rcE.top, rcE.right, rcE.bottom, r, r);
+
+    SelectObject(hdc, oldBr);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+}
 
 void ClassicTheme::ThemeChildControl(HWND hwndCtrl) {
     if (!hwndCtrl) return;
@@ -329,14 +441,35 @@ void ClassicTheme::ThemeChildControl(HWND hwndCtrl) {
 }
 
 void ClassicTheme::ThemeAllChildren(HWND parent) {
-    struct Ctx { ClassicTheme* self; };
-    Ctx ctx{ this };
-    EnumChildWindows(parent, [](HWND child, LPARAM lp) -> BOOL {
-        auto* c = reinterpret_cast<Ctx*>(lp);
-        c->self->ThemeChildControl(child);
+    EnumChildWindows(parent, [](HWND hwnd, LPARAM lParam) -> BOOL {
+        auto* th = reinterpret_cast<ClassicTheme*>(lParam);
+        th->ThemeChildControl(hwnd);
         return TRUE;
-    }, reinterpret_cast<LPARAM>(&ctx));
+    }, reinterpret_cast<LPARAM>(this));
 }
+
+int ClassicTheme::ModernHeight() const {
+    return DpiScale(32, dpi_);
+}
+
+void ClassicTheme::ApplyModernEntryStyle(HWND hwndCtrl) {
+    if (!hwndCtrl) return;
+
+    // 1. Theme + remove 3D border + subclass
+    SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+    SetWindowLongPtrW(hwndCtrl, GWL_EXSTYLE, GetWindowLongPtrW(hwndCtrl, GWL_EXSTYLE) & ~WS_EX_CLIENTEDGE);
+    SetWindowSubclass(hwndCtrl, EditSubclassProc, 202, reinterpret_cast<DWORD_PTR>(this));
+
+    // 2. Set font FIRST — WM_NCCALCSIZE needs to measure this font
+    SendMessageW(hwndCtrl, WM_SETFONT, reinterpret_cast<WPARAM>(fonts_.entry), TRUE);
+
+    // 3. NOW trigger frame recalculation — WM_NCCALCSIZE will read the correct font
+    SetWindowPos(hwndCtrl, nullptr, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+
+    InvalidateRect(hwndCtrl, nullptr, TRUE);
+}
+
 
 // -- Brushes --
 
@@ -359,21 +492,18 @@ void ClassicTheme::CreateFonts(UINT dpi) {
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, face);
     };
-    fonts_.header = make(11, FW_SEMIBOLD, L"Segoe UI Variable Display");
-    fonts_.body   = make(9,  FW_NORMAL,   L"Segoe UI Variable Text");
-    fonts_.bodyBold = make(9,  FW_SEMIBOLD, L"Segoe UI Variable Text");
-
-    // Fallback: if Segoe UI Variable not available (Win10 pre-21H2)
-    if (!fonts_.body) {
-        fonts_.header = make(11, FW_SEMIBOLD, L"Segoe UI");
-        fonts_.body   = make(9,  FW_NORMAL,   L"Segoe UI");
-        fonts_.bodyBold = make(9,  FW_SEMIBOLD, L"Segoe UI");
-    }
+    // Use plain "Segoe UI" — it has dedicated per-weight font files with
+    // proper ClearType hinting for GDI. "Segoe UI Variable" is a variable font
+    // designed for DirectWrite and causes GDI to synthetic-bold → blurry text.
+    fonts_.header   = make(11, FW_SEMIBOLD, L"Segoe UI Semibold");
+    fonts_.body     = make(10, FW_NORMAL,   L"Segoe UI");
+    fonts_.bodyBold = make(10, FW_SEMIBOLD, L"Segoe UI Semibold");
+    fonts_.entry    = make(11, FW_NORMAL,   L"Segoe UI");
 }
 
 void ClassicTheme::DestroyFonts() {
     auto del = [](HFONT& f) { if (f) { DeleteObject(f); f = nullptr; } };
-    del(fonts_.header); del(fonts_.body); del(fonts_.bodyBold);
+    del(fonts_.header); del(fonts_.body); del(fonts_.bodyBold); del(fonts_.entry);
 }
 
 // -- WM_CTLCOLOR Handlers --
@@ -422,11 +552,12 @@ void ClassicTheme::DrawTabItem(DRAWITEMSTRUCT* dis) {
     HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
     HPEN oldPen = (HPEN)SelectObject(hdc, pen);
 
+    int r = CornerRadius();
     if (selected) {
-        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom + 12, 12, 12);
+        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom + r, r, r);
     } else {
         // Unselected tabs also get rounded top
-        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 12, 12);
+        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, r, r);
     }
     
     SelectObject(hdc, oldBr);
@@ -476,42 +607,34 @@ void ClassicTheme::DrawCheckbox(HWND hWnd, HDC hdc) {
     int boxY = rc.top + (rc.bottom - rc.top - boxSize) / 2;
     int boxX = rc.left + 1;
     RECT boxRc = { boxX, boxY, boxX + boxSize, boxY + boxSize };
-    int radius = isRadio ? boxSize : Classic::DpiScale(4, dpi);
 
-    if (isChecked) {
-        // Filled accent box
-        COLORREF fill = isDisabled ? colors_.textSecondary : colors_.accent;
-        HBRUSH fillBr = CreateSolidBrush(fill);
-        HPEN pen = CreatePen(PS_SOLID, 1, fill);
-        HGDIOBJ oldPen = SelectObject(hdc, pen);
-        HGDIOBJ oldBr = SelectObject(hdc, fillBr);
-        
-        if (isRadio) {
-            Ellipse(hdc, boxRc.left, boxRc.top, boxRc.right, boxRc.bottom);
-        } else {
-            RoundRect(hdc, boxRc.left, boxRc.top, boxRc.right, boxRc.bottom, radius, radius);
+    if (isRadio) {
+        // Use native theme rendering for radio button indicator (perfect circle)
+        HTHEME hTheme = OpenThemeData(hWnd, L"BUTTON");
+        if (hTheme) {
+            int stateId;
+            if (isDisabled)
+                stateId = isChecked ? RBS_CHECKEDDISABLED : RBS_UNCHECKEDDISABLED;
+            else
+                stateId = isChecked ? RBS_CHECKEDNORMAL : RBS_UNCHECKEDNORMAL;
+            DrawThemeBackground(hTheme, hdc, BP_RADIOBUTTON, stateId, &boxRc, nullptr);
+            CloseThemeData(hTheme);
         }
-        
-        SelectObject(hdc, oldBr);
-        SelectObject(hdc, oldPen);
-        DeleteObject(pen);
-        DeleteObject(fillBr);
+    } else {
+        int radius = Classic::DpiScale(4, dpi);
+        if (isChecked) {
+            // Filled accent box
+            COLORREF fill = isDisabled ? colors_.textSecondary : colors_.accent;
+            HBRUSH fillBr = CreateSolidBrush(fill);
+            HPEN pen = CreatePen(PS_SOLID, 1, fill);
+            HGDIOBJ oldPen = SelectObject(hdc, pen);
+            HGDIOBJ oldBr = SelectObject(hdc, fillBr);
+            RoundRect(hdc, boxRc.left, boxRc.top, boxRc.right, boxRc.bottom, radius, radius);
+            SelectObject(hdc, oldBr);
+            SelectObject(hdc, oldPen);
+            DeleteObject(pen);
+            DeleteObject(fillBr);
 
-        if (isRadio) {
-            // White dot for radio
-            int dotR = boxSize / 4;
-            int cx = (boxRc.left + boxRc.right) / 2;
-            int cy = (boxRc.top + boxRc.bottom) / 2;
-            HBRUSH dotBr = CreateSolidBrush(RGB(255, 255, 255));
-            HPEN dotPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
-            SelectObject(hdc, dotPen);
-            SelectObject(hdc, dotBr);
-            Ellipse(hdc, cx - dotR, cy - dotR, cx + dotR, cy + dotR);
-            SelectObject(hdc, GetStockObject(NULL_BRUSH));
-            SelectObject(hdc, GetStockObject(BLACK_PEN));
-            DeleteObject(dotPen);
-            DeleteObject(dotBr);
-        } else {
             // Checkmark: thin L-shaped polyline
             int s = Classic::DpiScale(1, dpi); // base scale
             // Force 1px thickness on 100-125% DPI for a thinner look, 2px for >=150%
@@ -526,25 +649,19 @@ void ClassicTheme::DrawCheckbox(HWND hWnd, HDC hdc) {
             LineTo(hdc, cx + q + 2, cy - q - 1);
             SelectObject(hdc, oldP);
             DeleteObject(checkPen);
-        }
-    } else {
-        // Empty box with border and surface background
-        COLORREF bdr = colors_.border;
-        HBRUSH bgBr = CreateSolidBrush(colors_.surface); // Subtle dark fill
-        HPEN pen = CreatePen(PS_SOLID, 1, bdr);
-        HGDIOBJ oldPen = SelectObject(hdc, pen);
-        HGDIOBJ oldBr = SelectObject(hdc, bgBr);
-        
-        if (isRadio) {
-            Ellipse(hdc, boxRc.left, boxRc.top, boxRc.right, boxRc.bottom);
         } else {
+            // Empty box with border and surface background
+            COLORREF bdr = colors_.border;
+            HBRUSH bgBr = CreateSolidBrush(colors_.surface);
+            HPEN pen = CreatePen(PS_SOLID, 1, bdr);
+            HGDIOBJ oldPen = SelectObject(hdc, pen);
+            HGDIOBJ oldBr = SelectObject(hdc, bgBr);
             RoundRect(hdc, boxRc.left, boxRc.top, boxRc.right, boxRc.bottom, radius, radius);
+            SelectObject(hdc, oldBr);
+            SelectObject(hdc, oldPen);
+            DeleteObject(pen);
+            DeleteObject(bgBr);
         }
-        
-        SelectObject(hdc, oldBr);
-        SelectObject(hdc, oldPen);
-        DeleteObject(pen);
-        DeleteObject(bgBr);
     }
 
     // Draw label text

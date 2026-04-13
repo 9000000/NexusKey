@@ -30,7 +30,7 @@ void enableWindowBlur(HWND hwnd, BlurMode mode) noexcept {
     }
 
     // 1. Set WS_EX_LAYERED to allow alpha/blur composition
-    SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
 
     // 2. Apply SetWindowCompositionAttribute for blur effect (undocumented API)
     HMODULE hUser = GetModuleHandle(L"user32.dll");

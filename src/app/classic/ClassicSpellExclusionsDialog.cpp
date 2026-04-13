@@ -22,9 +22,9 @@ enum {
 // Public entry point
 // ════════════════════════════════════════════════════════════
 
-bool ClassicSpellExclusionsDialog::Show(HINSTANCE hInstance, HWND parent) {
+bool ClassicSpellExclusionsDialog::Show(HINSTANCE hInstance, HWND parent, bool forceLightTheme) {
     ClassicSpellExclusionsDialog dlg;
-    if (!dlg.Init(hInstance, parent)) return false;
+    if (!dlg.Init(hInstance, parent, forceLightTheme)) return false;
 
     // Modal message loop
     MSG msg{};
@@ -41,7 +41,7 @@ bool ClassicSpellExclusionsDialog::Show(HINSTANCE hInstance, HWND parent) {
 // Initialization
 // ════════════════════════════════════════════════════════════
 
-bool ClassicSpellExclusionsDialog::Init(HINSTANCE hInstance, HWND parent) {
+bool ClassicSpellExclusionsDialog::Init(HINSTANCE hInstance, HWND parent, bool forceLightTheme) {
     hInstance_ = hInstance;
 
     WNDCLASSEXW wc{};
@@ -73,7 +73,7 @@ bool ClassicSpellExclusionsDialog::Init(HINSTANCE hInstance, HWND parent) {
     int sx = GetSystemMetrics(SM_CXSCREEN), sy = GetSystemMetrics(SM_CYSCREEN);
     SetWindowPos(hwnd_, nullptr, (sx - aw) / 2, (sy - ah) / 2, aw, ah, SWP_NOZORDER);
 
-    theme_.Init(hwnd_);
+    theme_.Init(hwnd_, forceLightTheme);
     theme_.ApplyWindowAttributes(hwnd_);
 
     LoadData();
@@ -118,17 +118,19 @@ void ClassicSpellExclusionsDialog::CreateControls() {
     y += listH + gap;
 
     // Row: edit + add button
+    int editH = theme_.ModernHeight();
     int editW = cw - Dpi(60) - gap;
-    editEntry_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+    editEntry_ = CreateWindowExW(0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-        x, y, editW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_EDIT), hInstance_, nullptr);
+        x, y, editW, editH, hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_EDIT), hInstance_, nullptr);
     SendMessageW(editEntry_, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"hđ"));
+    theme_.ApplyModernEntryStyle(editEntry_);
 
     btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + editW + gap, y, Dpi(60), btnH,
+        x + editW + gap, y, Dpi(60), editH,
         hwnd_, reinterpret_cast<HMENU>(IDC_SPELL_BTN_ADD), hInstance_, nullptr);
-    y += btnH + gap * 2;
+    y += editH + gap * 2;
 
     // Delete button
     btnDelete_ = CreateWindowExW(0, L"BUTTON", L"Xoá",

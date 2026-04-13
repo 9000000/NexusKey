@@ -3,7 +3,7 @@
 
 #include "ClassicExcludedAppsDialog.h"
 #include "core/config/ConfigManager.h"
-#include "core/config/ConfigEvent.h"
+#include "app/helpers/AppHelpers.h"
 
 #include <windowsx.h>
 #include <algorithm>
@@ -27,9 +27,9 @@ enum {
 // Public entry point
 // ════════════════════════════════════════════════════════════
 
-bool ClassicExcludedAppsDialog::Show(HINSTANCE hInstance, HWND parent) {
+bool ClassicExcludedAppsDialog::Show(HINSTANCE hInstance, HWND parent, bool forceLightTheme) {
     ClassicExcludedAppsDialog dlg;
-    if (!dlg.Init(hInstance, parent)) return false;
+    if (!dlg.Init(hInstance, parent, forceLightTheme)) return false;
 
     // Modal message loop
     MSG msg{};
@@ -46,7 +46,7 @@ bool ClassicExcludedAppsDialog::Show(HINSTANCE hInstance, HWND parent) {
 // Initialization
 // ════════════════════════════════════════════════════════════
 
-bool ClassicExcludedAppsDialog::Init(HINSTANCE hInstance, HWND parent) {
+bool ClassicExcludedAppsDialog::Init(HINSTANCE hInstance, HWND parent, bool forceLightTheme) {
     hInstance_ = hInstance;
 
     WNDCLASSEXW wc{};
@@ -78,7 +78,7 @@ bool ClassicExcludedAppsDialog::Init(HINSTANCE hInstance, HWND parent) {
     int sx = GetSystemMetrics(SM_CXSCREEN), sy = GetSystemMetrics(SM_CYSCREEN);
     SetWindowPos(hwnd_, nullptr, (sx - aw) / 2, (sy - ah) / 2, aw, ah, SWP_NOZORDER);
 
-    theme_.Init(hwnd_);
+    theme_.Init(hwnd_, forceLightTheme);
     theme_.ApplyWindowAttributes(hwnd_);
 
     LoadData();
@@ -284,9 +284,7 @@ void ClassicExcludedAppsDialog::LoadData() {
 void ClassicExcludedAppsDialog::SaveData() {
     modified_ = true;
     (void)ConfigManager::SaveExcludedApps(ConfigManager::GetConfigPath(), appList_);
-
-    ConfigEvent event;
-    if (event.Initialize()) event.Signal();
+    SignalConfigChange();
 }
 
 // ════════════════════════════════════════════════════════════

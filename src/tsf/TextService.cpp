@@ -63,8 +63,11 @@ IFACEMETHODIMP TextService::Activate(ITfThreadMgr* pThreadMgr, TfClientId tfClie
     clientId_ = tfClientId;
 
     // Create category manager for display attributes
-    CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER,
-                     IID_ITfCategoryMgr, (void**)&pCategoryMgr_);
+    HRESULT hrCat = CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER,
+                                     IID_ITfCategoryMgr, (void**)&pCategoryMgr_);
+    if (FAILED(hrCat)) {
+        TSF_LOG(L"CategoryMgr creation failed (hr=0x%08X) — no composition underline", hrCat);
+    }
 
     // Initialize engine controller
     engineController_ = std::make_unique<EngineController>();
@@ -75,6 +78,10 @@ IFACEMETHODIMP TextService::Activate(ITfThreadMgr* pThreadMgr, TfClientId tfClie
     keyEventSink_ = std::make_unique<KeyEventSink>(this, engineController_.get());
     if (!keyEventSink_->Advise(pThreadMgr)) {
         TSF_LOG(L"Failed to advise KeyEventSink");
+        keyEventSink_.reset();
+        engineController_.reset();
+        if (pCategoryMgr_) { pCategoryMgr_->Release(); pCategoryMgr_ = nullptr; }
+        pThreadMgr_->Release(); pThreadMgr_ = nullptr;
         return E_FAIL;
     }
 

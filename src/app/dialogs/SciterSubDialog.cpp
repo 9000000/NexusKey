@@ -65,12 +65,8 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         // Dark class goes on <body> (CSS targets body.dark), lang goes on <html>
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
-            bool dark = forceLightTheme ? false : DarkModeHelper::IsWindowsDarkMode();
-            std::wstring classes = dark ? L"dark" : L"";
-            if (!DarkModeHelper::IsWindows11OrGreater()) {
-                if (!classes.empty()) classes += L" ";
-                classes += L"win10";
-            }
+            bool dark = !forceLightTheme && DarkModeHelper::IsWindowsDarkMode();
+            auto classes = DarkModeHelper::BuildBodyClasses(dark);
             if (!classes.empty()) {
                 body.set_attribute("class", classes.c_str());
             }
@@ -88,33 +84,20 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
     // Set title
     SetWindowTextW(get_hwnd(), config_.windowTitle);
 
-    // Auto-fit to content with DPI scaling
-    sciter::dom::element rootEl = get_root();
-    sciter::dom::element container = rootEl.find_first(".container");
-    if (container.is_valid()) {
-        // Window auto-sizes based on CSS width/height: max-content
-        // and transparent OS window mode natively handles sizing
-    }
-
     // Subclass for dragging and close
     SetWindowSubclass(get_hwnd(), SubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     // Theme-aware DWM mode + rounded corners + blur (after subclass)
     HWND hwnd = get_hwnd();
     if (hwnd) {
-        bool dark = forceLightTheme ? false : DarkModeHelper::IsWindowsDarkMode();
+        bool dark = !forceLightTheme && DarkModeHelper::IsWindowsDarkMode();
         DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
         // Refresh body class (may have been set during load() before subclass)
         sciter::dom::element htmlRoot(get_root());
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
-            std::wstring classes = dark ? L"dark" : L"";
-            if (!DarkModeHelper::IsWindows11OrGreater()) {
-                if (!classes.empty()) classes += L" ";
-                classes += L"win10";
-            }
-            body.set_attribute("class", classes.c_str());
+            body.set_attribute("class", DarkModeHelper::BuildBodyClasses(dark).c_str());
         }
 
         int cornerPreference = DwmConstants::DWMWCP_ROUND;
@@ -285,12 +268,7 @@ LRESULT CALLBACK SciterSubDialog::SubclassProc(
                 sciter::dom::element htmlRoot(s_instance->get_root());
                 sciter::dom::element body = htmlRoot.find_first("body");
                 if (body.is_valid()) {
-                    std::wstring classes = dark ? L"dark" : L"";
-                    if (!DarkModeHelper::IsWindows11OrGreater()) {
-                        if (!classes.empty()) classes += L" ";
-                        classes += L"win10";
-                    }
-                    body.set_attribute("class", classes.c_str());
+                    body.set_attribute("class", DarkModeHelper::BuildBodyClasses(dark).c_str());
                 }
 
                 // Update container background opacity for new theme

@@ -17,12 +17,12 @@ namespace NextKey::Classic {
 /// Win32 native dialog for per-app encoding/method overrides.
 class ClassicAppOverridesDialog {
 public:
-    static bool Show(HINSTANCE hInstance, HWND parent);
+    static bool Show(HINSTANCE hInstance, HWND parent, bool forceLightTheme = false);
 
 private:
     ClassicAppOverridesDialog() = default;
 
-    bool Init(HINSTANCE hInstance, HWND parent);
+    bool Init(HINSTANCE hInstance, HWND parent, bool forceLightTheme);
     void CreateControls();
     void PopulateList();
     void AddOverride();
@@ -35,8 +35,8 @@ private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     int Dpi(int value) const noexcept;
 
-    static constexpr int kWidth = 440;
-    static constexpr int kHeight = 292;
+    static constexpr int kWidth = 490;
+    static constexpr int kHeight = 295;
     static constexpr int kPadding = 12;
     static constexpr int kBtnHeight = 28;
     static constexpr int kBtnGap = 6;

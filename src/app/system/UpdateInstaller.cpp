@@ -112,6 +112,10 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
         namespace fs = std::filesystem;
         for (const auto& entry : fs::recursive_directory_iterator(srcDir)) {
             auto relativePath = fs::relative(entry.path(), srcDir);
+
+            // Defense-in-depth: reject paths with ".." to prevent directory traversal
+            if (relativePath.wstring().find(L"..") != std::wstring::npos) continue;
+
             auto destPath = fs::path(destDir) / relativePath;
 
             if (entry.is_directory()) {

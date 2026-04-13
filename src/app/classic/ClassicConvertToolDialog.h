@@ -16,12 +16,12 @@ namespace NextKey::Classic {
 /// Configures: case conversion toggles, encoding dropdowns, hotkey, and execute.
 class ClassicConvertToolDialog {
 public:
-    static bool Show(HINSTANCE hInstance, HWND parent);
+    static bool Show(HINSTANCE hInstance, HWND parent, bool forceLightTheme = false);
 
 private:
     ClassicConvertToolDialog() = default;
 
-    bool Init(HINSTANCE hInstance, HWND parent);
+    bool Init(HINSTANCE hInstance, HWND parent, bool forceLightTheme);
     void CreateControls();
     void PopulateFromConfig();
     void ReadToConfig();
@@ -34,7 +34,7 @@ private:
     int Dpi(int value) const noexcept;
 
     static constexpr int kWidth = 400;
-    static constexpr int kHeight = 510;
+    static constexpr int kHeight = 540;
     static constexpr int kPadding = 12;
     static constexpr int kRowH = 24;
     static constexpr int kRowGap = 4;

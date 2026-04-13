@@ -3,6 +3,7 @@
 
 #include "ConfigEvent.h"
 #include <Windows.h>
+#include "core/Debug.h"
 
 namespace NextKey {
 
@@ -40,15 +41,15 @@ bool ConfigEvent::Initialize() {
     );
 
     if (!pImpl_->hEvent) {
-        OutputDebugStringW(L"ConfigEvent: Failed to create event\n");
+        NEXTKEY_LOG(L"ConfigEvent: Failed to create event");
         return false;
     }
 
     // Check if we created or opened existing
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        OutputDebugStringW(L"ConfigEvent: Opened existing event\n");
+        NEXTKEY_LOG(L"ConfigEvent: Opened existing event");
     } else {
-        OutputDebugStringW(L"ConfigEvent: Created new event\n");
+        NEXTKEY_LOG(L"ConfigEvent: Created new event");
     }
 
     return true;
@@ -57,7 +58,7 @@ bool ConfigEvent::Initialize() {
 void ConfigEvent::Signal() {
     if (pImpl_->hEvent) {
         SetEvent(pImpl_->hEvent);
-        OutputDebugStringW(L"ConfigEvent: Signaled\n");
+        NEXTKEY_LOG(L"ConfigEvent: Signaled");
     }
 }
 

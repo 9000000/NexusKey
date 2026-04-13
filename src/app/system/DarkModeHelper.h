@@ -6,6 +6,7 @@
 
 #pragma once
 #include <windows.h>
+#include <string>
 
 namespace NextKey {
 namespace DarkModeHelper {
@@ -34,6 +35,20 @@ namespace DarkModeHelper {
      * @param dark true for dark mode, false for light mode
      */
     void SetWindowDarkMode(HWND hwnd, bool dark) noexcept;
+
+    /**
+     * Build CSS body classes for Sciter dialogs ("dark", "win10", or both).
+     * @param dark true if dark mode is active
+     * @return Space-separated class string (e.g. "dark win10")
+     */
+    [[nodiscard]] inline std::wstring BuildBodyClasses(bool dark) {
+        std::wstring classes = dark ? L"dark" : L"";
+        if (!IsWindows11OrGreater()) {
+            if (!classes.empty()) classes += L" ";
+            classes += L"win10";
+        }
+        return classes;
+    }
 
 }  // namespace DarkModeHelper
 }  // namespace NextKey

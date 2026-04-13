@@ -43,7 +43,7 @@ struct CharState {
     bool isUpper = false;
     size_t rawIdx = 0;  // rawInput_ index when this state was created (for backspace sync)
 
-    [[nodiscard]] bool IsVowel() const noexcept;
+    [[nodiscard]] constexpr bool IsVowel() const noexcept { return IsVowelChar(base); }
     [[nodiscard]] constexpr bool IsD() const noexcept { return base == L'd'; }
     [[nodiscard]] constexpr bool IsHorn() const noexcept { return mod == Modifier::Horn; }
     [[nodiscard]] constexpr bool HasModifier() const noexcept { return mod != Modifier::None; }
@@ -59,7 +59,7 @@ public:
     // IInputEngine interface
     void PushChar(wchar_t c) override;
     void Backspace() override;
-    [[nodiscard]] std::wstring Peek() const override;
+    [[nodiscard]] const std::wstring& Peek() const override;
     [[nodiscard]] std::wstring Commit() override;
     void Reset() override;
     [[nodiscard]] size_t Count() const override { return states_.size(); }
@@ -81,6 +81,9 @@ private:
     CharState* FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs);
     void RelocateToneToTarget();
     
+    // Spell exclusion: would the modifier key produce an excluded word?
+    bool WouldModifierKeyMatchExclusion(wchar_t key) const;
+
     // Spell check
     void UpdateSpellState();
 

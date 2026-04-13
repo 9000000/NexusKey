@@ -83,6 +83,7 @@ static void SpawnSettingsDialog() {
     // Run in a separate thread so the main message loop keeps running
     // (tray icon, hook engine callbacks, etc. must remain responsive).
     std::thread([]() {
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         NextKey::Classic::ClassicSettingsDialog dialog;
         dialog.Show(g_hInstance);
         g_settingsOpen = false;
@@ -110,6 +111,7 @@ static void SpawnSettingsDialog() {
 
         // Refresh tray icon style
         g_trayIcon.SetIconConfig(sysConfig.iconStyle, sysConfig.customColorV, sysConfig.customColorE);
+        CoUninitialize();
     }).detach();
 }
 
@@ -222,12 +224,14 @@ static void OnMenuCommand(TrayMenuId id) {
         }
 
         case TrayMenuId::MacroTable:
-            Classic::ClassicMacroTableDialog::Show(g_hInstance, nullptr);
+        case TrayMenuId::ConvertTool: {
+            bool forceLight = ConfigManager::LoadSystemConfigOrDefault().forceLightTheme;
+            if (id == TrayMenuId::MacroTable)
+                Classic::ClassicMacroTableDialog::Show(g_hInstance, nullptr, forceLight);
+            else
+                Classic::ClassicConvertToolDialog::Show(g_hInstance, nullptr, forceLight);
             break;
-
-        case TrayMenuId::ConvertTool:
-            Classic::ClassicConvertToolDialog::Show(g_hInstance, nullptr);
-            break;
+        }
 
         case TrayMenuId::QuickConvert:
             if (g_quickConvert) {

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SharedStateManager.h"
-#include "SecurityHelpers.h"
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -221,6 +220,7 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->convertKeyHi = state.convertKeyHi;
     p->configGeneration = state.configGeneration;
     p->reserved0 = state.reserved0;
+    memcpy(p->reserved, state.reserved, sizeof(state.reserved));
 
     MemoryBarrier();
     p->epoch = seq + 1;  // Now even = done

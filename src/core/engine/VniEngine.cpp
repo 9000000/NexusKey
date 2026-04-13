@@ -65,14 +65,6 @@ constexpr int ToneIndex(Tone tone) {
 }  // namespace
 
 //=============================================================================
-// CharState Implementation
-//=============================================================================
-
-bool CharState::IsVowel() const noexcept {
-    return IsVowelChar(base);
-}
-
-//=============================================================================
 // VniEngine Implementation
 //=============================================================================
 
@@ -268,34 +260,8 @@ void VniEngine::PushChar(wchar_t c) {
             (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
         // Allow modifiers through English Protection when the word matches a spell exclusion.
         if (blockMod && !escape_.isEscaped() && !config_.spellExclusions.empty()) {
-            if (c == L'9') {
-                if (WouldStrokeDMatchExclusion(states_.data(), states_.size(),
-                        config_.spellExclusions,
-                        [this](const CharState& s) { return ComposeChar(s); })) {
-                    blockMod = false;
-                }
-            } else if (c == L'6') {
-                if (WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
-                        config_.spellExclusions,
-                        [this](const CharState& s) { return ComposeChar(s); },
-                        Modifier::Circumflex, L"aeo")) {
-                    blockMod = false;
-                }
-            } else if (c == L'7') {
-                if (WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
-                        config_.spellExclusions,
-                        [this](const CharState& s) { return ComposeChar(s); },
-                        Modifier::Horn, L"uo")) {
-                    blockMod = false;
-                }
-            } else if (c == L'8') {
-                if (WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
-                        config_.spellExclusions,
-                        [this](const CharState& s) { return ComposeChar(s); },
-                        Modifier::Breve, L"a")) {
-                    blockMod = false;
-                }
-            }
+            if (WouldModifierKeyMatchExclusion(c))
+                blockMod = false;
         }
         if (blockMod) {
             // Don't try modifiers — treat as literal
@@ -304,32 +270,13 @@ void VniEngine::PushChar(wchar_t c) {
             // But allow modifier ESCAPE (77 undoes horn, 99 undoes stroke, 66/88 undoes
             // circumflex/breve) — same principle as tone escape bypass.
             Modifier escapeMod = Modifier::None;
-            bool canExclude = false;
             switch (c) {
-                case L'6': escapeMod = Modifier::Circumflex;
-                           canExclude = WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
-                               config_.spellExclusions,
-                               [this](const CharState& s) { return ComposeChar(s); },
-                               Modifier::Circumflex, L"aeo");
-                           break;
-                case L'7': escapeMod = Modifier::Horn;
-                           canExclude = WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
-                               config_.spellExclusions,
-                               [this](const CharState& s) { return ComposeChar(s); },
-                               Modifier::Horn, L"uo");
-                           break;
-                case L'8': escapeMod = Modifier::Breve;
-                           canExclude = WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
-                               config_.spellExclusions,
-                               [this](const CharState& s) { return ComposeChar(s); },
-                               Modifier::Breve, L"a");
-                           break;
-                case L'9': escapeMod = Modifier::Stroke;
-                           canExclude = WouldStrokeDMatchExclusion(states_.data(), states_.size(),
-                               config_.spellExclusions,
-                               [this](const CharState& s) { return ComposeChar(s); });
-                           break;
+                case L'6': escapeMod = Modifier::Circumflex; break;
+                case L'7': escapeMod = Modifier::Horn; break;
+                case L'8': escapeMod = Modifier::Breve; break;
+                case L'9': escapeMod = Modifier::Stroke; break;
             }
+            bool canExclude = WouldModifierKeyMatchExclusion(c);
             if ((canExclude || (escapeMod != Modifier::None &&
                 HasEscapableModifier(states_.data(), states_.size(), escapeMod,
                                      escapeMod == Modifier::Stroke))) &&
@@ -428,7 +375,7 @@ void VniEngine::Backspace() {
     CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
-std::wstring VniEngine::Peek() const {
+const std::wstring& VniEngine::Peek() const {
     composeBuf_.clear();
     for (const auto& s : states_) {
         composeBuf_ += ComposeChar(s);
@@ -832,6 +779,21 @@ void VniEngine::RelocateToneToTarget() {
 
     target->tone = toned->tone;
     toned->tone = Tone::None;
+}
+
+bool VniEngine::WouldModifierKeyMatchExclusion(wchar_t key) const {
+    auto compose = [this](const CharState& s) { return ComposeChar(s); };
+    switch (key) {
+        case L'6': return WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                       config_.spellExclusions, compose, Modifier::Circumflex, L"aeo");
+        case L'7': return WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                       config_.spellExclusions, compose, Modifier::Horn, L"uo");
+        case L'8': return WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+                       config_.spellExclusions, compose, Modifier::Breve, L"a");
+        case L'9': return WouldStrokeDMatchExclusion(states_.data(), states_.size(),
+                       config_.spellExclusions, compose);
+        default: return false;
+    }
 }
 
 void VniEngine::UpdateSpellState() {

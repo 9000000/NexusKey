@@ -316,5 +316,30 @@ TEST_F(EngineBenchmarkTest, Telex_SustainedTyping_WithSpellCheck) {
         << "Per-keystroke must be < 5 us for smooth typing";
 }
 
+TEST_F(EngineBenchmarkTest, Telex_SpellExclusions_Overhead) {
+    config_.spellCheckEnabled = true;
+    config_.spellExclusions = {L"hđ", L"hđqt", L"đt", L"fôn", L"jắc", L"btv", L"thpt", L"đh"};
+    TelexEngine engine(config_);
+
+    const size_t wordCount = sizeof(kTelexWords) / sizeof(kTelexWords[0]);
+    size_t totalKeystrokes = 0;
+    for (size_t i = 0; i < wordCount; ++i)
+        totalKeystrokes += wcslen(kTelexWords[i]);
+
+    auto r = RunBenchmark([&]() {
+        for (size_t i = 0; i < wordCount; ++i) {
+            engine.Reset();
+            TypeString(engine, kTelexWords[i]);
+            auto result = engine.Commit();
+            (void)result;
+        }
+    }, 5000);
+
+    double perKeystroke = r.avgNs / static_cast<double>(totalKeystrokes);
+    printf("  %-40s per-key=%5.0f ns  (excl=%zu patterns)\n",
+           "Telex spell exclusions overhead", perKeystroke, config_.spellExclusions.size());
+    EXPECT_LT(perKeystroke, 5000.0);
+}
+
 }  // namespace
 }  // namespace NextKey

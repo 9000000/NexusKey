@@ -153,7 +153,10 @@ IFACEMETHODIMP LanguageBarButton::OnClick(TfLBIClick click, POINT pt, const RECT
             flags |= TPM_RIGHTALIGN;
         }
 
-        UINT cmd = TrackPopupMenuEx(hMenu, flags, pt.x, pt.y, GetFocus(), nullptr);
+        HWND hwndOwner = GetFocus();
+        if (!hwndOwner) hwndOwner = GetForegroundWindow();
+        if (!hwndOwner) hwndOwner = GetDesktopWindow();
+        UINT cmd = TrackPopupMenuEx(hMenu, flags, pt.x, pt.y, hwndOwner, nullptr);
         DestroyMenu(hMenu);
 
         if (cmd != 0) {

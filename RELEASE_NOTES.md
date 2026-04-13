@@ -11,6 +11,7 @@
 - Sửa lỗi đ -> dd khi có đh trong danh sách loại trừ chính ta
 - Sửa lỗi classic xoá từ khỏi loại trừ chính tả nhưng phải restart app mới apply
 - Sửa lỗi double kí tự search của Floorp
+- Sửa lỗi oà, uỳ không hoạt động đúng
 
 ---
 Cảm ơn bạn đã lựa chọn NexusKey! Mọi đóng góp của bạn đều là nguồn động lực lớn giúp bộ gõ ngày càng hoàn thiện hơn. ❤️

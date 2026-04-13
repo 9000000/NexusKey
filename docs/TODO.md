@@ -1,0 +1,173 @@
+# TODO
+
+## Detach Fork
+- [x] Detach fork: repo `phatMT97/NexusKey` is forked from `tuyenvm/OpenKey`. Submitted GitHub Support ticket (2026-04-05).
+
+---
+
+## Deep Review (2026-04-13)
+
+Full-source review covering engine, config/IPC, TSF, HookEngine, dialogs, Classic UI, and CMake.
+
+### BUG — Must fix
+
+- [x] **HookEngine fast-path missing `dwExtraInfo`** — `HookEngine.cpp:2107-2141`
+  Stack-allocated `INPUT` buffers in `ReplaceComposition` don't set `dwExtraInfo = NEXUSKEY_EXTRA_INFO`. Hook callback at line 509 checks this field to recognize synthetic events. Without it, `synthEventsPending_` increments but never decrements → leaks upward → 500ms watchdog fires repeatedly. Affects all Unicode-mode typing in standard Win32 apps.
+  **Fix**: Add `input.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;` to both `appendUnicode` and `appendVk` lambdas. Compare with heap-allocated helpers `AppendUnicodeEvent` (line 1363) and `AppendVkEvent` (line 1375) which already set it correctly.
+
+- [x] **SmartSwitchManager cross-process race** — `SmartSwitchManager.cpp:93-117, 135-151`
+  `SetAppMode()` writes `hash`, `vietnamese`, `count` with plain stores — no seqlock. Concurrent `GetAppMode()` reader can see partially-written entry (hash updated but vietnamese stale, or count incremented before entry populated). `LoadFromMap()` sets `count=0` before writing entries → reader sees empty table mid-reload. `SharedStateManager` uses proper seqlock; SmartSwitchManager does not.
+  **Fix**: Add seqlock protocol (reader checks epoch before/after, retry on mismatch) — same pattern as `SharedStateManager::Read()`. OR write entry data before incrementing `count` with a write barrier.
+
+- [x] **SharedStateManager `Write()` missing `reserved[]` copy** — `SharedStateManager.cpp:201-224`
+  Field-by-field copy skips the `reserved[21]` byte array (SharedState.h:90). Currently zeros, but if a future version stores data in reserved and forgets to update `Write()`, data silently dropped.
+  **Fix**: Add `memcpy(p->reserved, state.reserved, sizeof(state.reserved));` after the last field copy.
+
+- [x] **CompositionManager `pContext_` stored without AddRef** — `CompositionManager.cpp:94`
+  `pContext_ = pContext` without `pContext->AddRef()`. Used later in `MoveCaretToEnd()`, `ApplyDisplayAttribute()`, `EndComposition()`. If TSF releases context before these calls → dangling pointer. Currently safe (same edit session scope) but violates COM contract.
+  **Fix**: `pContext->AddRef()` in `StartComposition`, `pContext_->Release()` in `EndComposition` and `TerminateComposition`.
+
+- [x] **TextService `Activate()` leaks on failure** — `TextService.cpp:76-79`
+  When `keyEventSink_->Advise()` fails, returns `E_FAIL` without releasing `pThreadMgr_` (AddRef'd at line 62), `pCategoryMgr_`, or resetting `engineController_`. TSF may not call `Deactivate()` after failed Activate.
+  **Fix**: Add cleanup block before `return E_FAIL`: release pThreadMgr_, pCategoryMgr_, reset engineController_.
+
+- [x] **TextService `CoCreateInstance` unchecked** — `TextService.cpp:66-67`
+  HRESULT silently discarded. If fails → `pCategoryMgr_` null → no composition underline, but typing works.
+  **Fix**: Add `if (FAILED(hr)) { TSF_LOG("CategoryMgr creation failed"); }` — don't abort, just log.
+
+- [x] **LanguageBarButton `TrackPopupMenuEx` null hwnd** — `LanguageBarButton.cpp:156`
+  Uses `GetFocus()` which can return NULL (no focused window) → `TrackPopupMenuEx` fails silently, menu won't show.
+  **Fix**: `HWND hwnd = GetFocus(); if (!hwnd) hwnd = GetForegroundWindow(); if (!hwnd) hwnd = GetDesktopWindow();`
+
+- [x] **ConvertToolDialog `std::stoi` unguarded** — `ConvertToolDialog.cpp:193`
+  `getDropdownValue()` calls `std::stoi()` without try/catch. Malformed non-numeric string from Sciter JS → `std::invalid_argument` → crash subprocess.
+  **Fix**: Wrap in `try { return std::stoi(s); } catch (...) { return defaultVal; }`.
+
+- [x] **SciterHelper `SetWindowLong` vs `SetWindowLongPtr`** — `SciterHelper.cpp:33`
+  Uses `SetWindowLong`/`GetWindowLong` instead of 64-bit correct `SetWindowLongPtrW`/`GetWindowLongPtrW` for `GWL_EXSTYLE`. Currently no crash (EXSTYLE fits 32-bit) but officially wrong per MSDN, flagged by static analyzers.
+  **Fix**: Replace with `SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED)`.
+
+- [ ] **WindowPicker system cursor not restored on crash** — `WindowPickerDialog.cpp:66-76` + `ClassicDialogUtils.h:143-146`
+  `SetSystemCursor()` replaces cursor **globally for all apps**. If process crashes/killed during picking → arrow cursor permanently replaced with crosshair until logoff. Both Sciter and Classic pickers have this issue.
+  **Fix**: Register an `atexit()` handler or `SetUnhandledExceptionFilter` that calls `SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0)` to restore defaults. Or use per-window `SetCursor()` + `WM_SETCURSOR` instead of system-wide replacement.
+
+- [x] **main_lite.cpp settings thread missing COM init** — `main_lite.cpp:85-113`
+  Settings dialog runs on detached `std::thread` without `CoInitializeEx`/`OleInitialize`. Subdialogs (ConvertTool) use clipboard via `OpenClipboard`, ChooseColor dialog needs OLE. Operations may fail silently.
+  **Fix**: Add `CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)` at start of thread lambda, `CoUninitialize()` before return.
+
+### SECURITY
+
+- [x] **UpdateInstaller ZIP path traversal** — `UpdateInstaller.cpp:132-282`
+  `CopyDirectoryContents` uses `fs::relative()` to compute destination paths. Crafted ZIP with `../../` entries could write files outside target directory. Mitigated by SHA-256 hash verification (only legit GitHub ZIPs pass), but lacks defense-in-depth.
+  **Fix**: After computing `relativePath`, reject if it contains `..`: `if (relativePath.string().find("..") != std::string::npos) continue;`. Also see existing item below about validate-ZIP-first.
+
+### PERF — Hot path optimizations
+
+- [x] **`IsSpellExcluded` heap alloc per keystroke** — `EngineHelpers.h:76-97`
+  Allocates `std::wstring` via `reserve()` + `+=` on every `PushChar()` call. Vietnamese words max ~8 chars.
+  **Fix**: Replace with stack `wchar_t buf[16]` + manual length tracking, same pattern as `BuildExclusionBuf` already uses in the same file. Eliminates heap allocation from the per-keystroke hot path.
+
+- [x] **`composeBuf_` return by value defeats optimization** — `TelexEngine.cpp:1041` + `VniEngine.cpp:391`
+  `Peek()` returns `composeBuf_` by value → copies string every call. Comment says "avoids heap alloc per Peek" but return-by-value negates this. Buffer capacity reuse only helps internally.
+  **Fix**: Change `IInputEngine::Peek()` return type to `const std::wstring&`. Both engines return `composeBuf_` by const-ref. Callers already use the result as temporary. **Note**: Interface change — update IInputEngine.h, TelexEngine, VniEngine, and all callers (EngineController, HookEngine).
+
+- [x] **`IsScintillaApp()` syscalls per keystroke** — `EngineController.cpp:320-346`
+  Calls `GetForegroundWindow()` + `GetClassNameW()` + `GetFocus()` every time Space is pressed during composition. Result only changes on focus change.
+  **Fix**: Cache the Scintilla detection result in `RefreshFlags()` (called on focus/context change). Add `bool isScintillaApp_` member, check it in `WantKey()`.
+
+- [x] **`ScaleHelper::getDpiScale()` resolves `GetProcAddress` every call** — `ScaleHelper.h:39-40`
+  `GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForSystem")` called on every DPI query. Called multiple times during window creation.
+  **Fix**: Add `static` before `auto pfn = ...` to cache the function pointer.
+
+- [x] **ClassicIconColorDialog font created/destroyed every WM_PAINT** — `ClassicIconColorDialog.cpp:170-176`
+  `CreateFontW()` + `DeleteObject()` inside paint lambda that runs twice per paint cycle.
+  **Fix**: Create the preview font once in `WM_INITDIALOG` or as a class member. Destroy in `WM_DESTROY`.
+
+- [ ] **HookEngine `Sleep()` in hook callback path** — `HookEngine.cpp:1448`
+  `DispatchSendInput` has 8-20ms `Sleep()` for Electron/Console app workaround. Runs inside keyboard hook callback → adds measurable input latency. Low-level hooks have ~500ms system timeout so it's safe, but users may perceive sluggishness.
+  **Fix**: Consider `PostMessage` to self + process in message loop instead of blocking `Sleep`. Or use `MsgWaitForMultipleObjects` with timeout. Low priority — only affects Electron/Console apps.
+
+### SMELL — Code quality
+
+- [x] **SmartSwitchManager `OpenReadWrite()` no existing handle check** — `SmartSwitchManager.cpp:67-88`
+  Calling `OpenReadWrite()` twice leaks the first HANDLE + mapping. SharedStateManager properly checks/cleans existing handles.
+  **Fix**: Add `if (pImpl_->hMapping) { ... cleanup ... }` at start, same pattern as SharedStateManager.
+
+- [x] **ConfigManager `LoadAllExcludedApps()` no entry count limit** — `ConfigManager.cpp:362-389`
+  `LoadMacros()` and `LoadAppOverrides()` enforce max entry limits, but excluded/english/tsf app lists do not. Crafted TOML with millions of entries → memory exhaustion.
+  **Fix**: Add `if (entries.size() >= kMaxAppEntries) break;` with a reasonable constant (e.g., 1000).
+
+- [x] **Classic dialogs inconsistent config signaling** — 4 dialogs vs SpellExclusions
+  ExcludedApps, MacroTable, AppOverrides, ConvertTool create local `ConfigEvent` + `Signal()` (skips `configGeneration` bump). SpellExclusions uses `SignalConfigChange()` from AppHelpers.h (bumps generation). HookEngine checks `configGeneration` for fast-path reload.
+  **Fix**: All Classic subdialogs should use `SignalConfigChange()` from AppHelpers.h consistently. Or inline the same 2-step pattern: bump SharedState generation + signal event.
+
+- [x] **SettingsDialog manual `BuildBodyClasses()` duplication** — `SettingsDialog.cpp:131-139, 373-380`
+  Constructor and WM_SETTINGCHANGE handler manually build CSS class string (`dark`, `win10`). `DarkModeHelper::BuildBodyClasses()` exists and is already used in SciterSubDialog.
+  **Fix**: Replace both inline blocks with `DarkModeHelper::BuildBodyClasses(dark)`.
+
+- [x] **Dead code: `kTriphthongs[]` array** — `VietnameseTables.h:150-158`
+  `kTriphthongs[]` and `kTriphthongCount` defined but never referenced. `IsTriphthong()` uses hardcoded comparisons instead.
+  **Fix**: Delete the array and count constant.
+
+- [x] **Dead code: `SwitchInputMethod`** — `EngineController.cpp:303-318`
+  Public method never called anywhere. Also has a bug (#18 in TSF review): commits via engine but not via TSF, discarding user's text. Dead code with a bug in it.
+  **Fix**: Delete the method declaration and implementation.
+
+- [x] **Dead include: `SecurityHelpers.h`** — `SharedStateManager.cpp:5`
+  Included but `MakeCreatorOnlySecurityAttributes()` never called (commented out, doesn't work for non-container objects).
+  **Fix**: Remove `#include "SecurityHelpers.h"`.
+
+- [x] **`ConfigEvent.cpp` uses `OutputDebugStringW` directly** — `ConfigEvent.cpp:43,49,51,60`
+  Should use `NEXTKEY_LOG()` which compiles out in Release. Current code outputs debug strings in production builds.
+  **Fix**: Replace `OutputDebugStringW(...)` with `NEXTKEY_LOG(...)`.
+
+- [x] **`SpellChecker::Validate()` noexcept mismatch** — `SpellChecker.cpp:775`
+  Public `Validate()` declared `noexcept`, calls `ValidateImpl()` which is NOT noexcept. If ValidateImpl ever throws → `std::terminate`.
+  **Fix**: Add `noexcept` to `ValidateImpl()` declaration and definition.
+
+- [ ] **`SystemConfig::englishUI` redundant field** — `SystemConfig.h:34`
+  `englishUI` is never persisted to TOML. Only `language` is loaded/saved. Classic UI manually derives `englishUI = (language == 1)`. New code reading `englishUI` directly would always see `false` unless Classic path ran.
+  **Fix**: Remove `englishUI` field, derive it from `language` via a method: `bool IsEnglishUI() const { return language == 1; }`.
+
+- [x] **`Debug.h` buffer overflow behavior** — `Debug.h:23`
+  Comment says "Messages longer than 1024 chars are silently truncated" but `vswprintf_s` calls invalid parameter handler (may crash) on overflow. Should use `_vsnwprintf_s` which actually truncates.
+  **Fix**: Replace `vswprintf_s(buffer, format, args)` with `_vsnwprintf_s(buffer, 1024, _TRUNCATE, format, args)`.
+
+- [x] **HookEngine redundant SharedStateManager** — `HookEngine.cpp:463-475`
+  `ReloadFromToml` creates a new stack `SharedStateManager`, opens it, reads — while `sharedStatePtr_` already exists.
+  **Fix**: Use `sharedStatePtr_` directly instead of creating a new instance.
+
+- [x] **SciterSubDialog dead container code** — `SciterSubDialog.cpp:87-93`
+  Finds `.container` element, checks validity, does nothing. Comment explains why but code is noise.
+  **Fix**: Delete the 6-line block.
+
+### STYLE — Minor cleanup
+
+- [x] `VietnameseTables.h:175,203` — `ToUpperVietnamese`/`ToLowerVietnamese` missing `noexcept`
+- [x] `VniEngine.cpp:71` — `Vni::CharState::IsVowel()` should be `constexpr` inline in header (Telex version is)
+- [x] `SettingsDialog.cpp:38` — `#define TIMER_RESIZE_WINDOW` should be `static constexpr UINT_PTR` (inconsistent with `TIMER_DEFERRED_SAVE`)
+- [x] `ClassicSettingsDialog.h:118` — Add `static_assert(kSettingsCount <= kMaxControls)` to catch overflow at compile time
+- [x] `ClassicTheme.cpp:19-25` — Duplicate `IsWindows11OrGreater()` — already in `DarkModeHelper.h` which is included
+- [ ] Multi-monitor: 7 Classic dialogs + SettingsDialog + SciterSubDialog use `SM_CXSCREEN` — ignores multi-monitor. Use `MonitorFromWindow` + `GetMonitorInfo` for proper centering. Low priority — works on primary monitor.
+- [ ] `TSF_LOG` (Define.h:14-25) outputs 3 separate `OutputDebugStringW` calls per log line — non-atomic, threads can interleave. Concat into single buffer.
+
+---
+
+## Earlier Findings (2026-04-11)
+
+### Actual Bugs (Low severity)
+- [ ] `SettingsDialog.cpp:586-587` — Hardcoded Vietnamese MessageBox for TSF registration failure. Should use `S(StringId::...)` for English UI support.
+- [x] `TextService.cpp:66-67` — Merged into deep review BUG list above.
+- [ ] `SettingsDialog.cpp:787` — TODO: "Reset all settings to defaults" button handler not implemented.
+- [ ] `SettingsDialog.cpp:800` — TODO: "Open log folder in explorer" button handler not implemented.
+- [ ] `ExcludedAppsDialog.cpp:16` — TODO: Add strings to i18n string table.
+
+### Defensive Improvements (nice-to-have)
+- [x] `UpdateInstaller.cpp:140-170` — Merged into deep review SECURITY list above (path traversal + validate-ZIP-first).
+- [ ] `UpdateSecurity.cpp:223` — Predictable temp filename `nexuskey_checksum.sha256`. Use `GetTempFileNameW()` for unique name.
+- [ ] `SettingsDialog.cpp:74-75` — IPC handle errors silently discarded with `(void)`. Add logging on failure.
+
+### Test Coverage Gaps
+- [ ] Corrupted/partial TOML config file recovery — no tests
+- [ ] Unicode surrogate pairs through engine — no tests
+- [ ] Commit `tests/TelexDictionaryTest.cpp` — complete, ready to add (329 lines, real Vietnamese words)

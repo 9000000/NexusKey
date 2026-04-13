@@ -18,12 +18,12 @@ namespace NextKey::Classic {
 class ClassicSpellExclusionsDialog {
 public:
     /// Show modal dialog. Returns true if list was modified.
-    static bool Show(HINSTANCE hInstance, HWND parent);
+    static bool Show(HINSTANCE hInstance, HWND parent, bool forceLightTheme = false);
 
 private:
     ClassicSpellExclusionsDialog() = default;
 
-    bool Init(HINSTANCE hInstance, HWND parent);
+    bool Init(HINSTANCE hInstance, HWND parent, bool forceLightTheme);
     void CreateControls();
     void PopulateList();
     void AddEntry(const std::wstring& text);

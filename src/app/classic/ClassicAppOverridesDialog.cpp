@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ClassicAppOverridesDialog.h"
-#include "core/config/ConfigEvent.h"
+#include "app/helpers/AppHelpers.h"
 
 #include <windowsx.h>
 #include <algorithm>
@@ -22,9 +22,9 @@ enum {
 
 // ════════════════════════════════════════════════════════════
 
-bool ClassicAppOverridesDialog::Show(HINSTANCE hInstance, HWND parent) {
+bool ClassicAppOverridesDialog::Show(HINSTANCE hInstance, HWND parent, bool forceLightTheme) {
     ClassicAppOverridesDialog dlg;
-    if (!dlg.Init(hInstance, parent)) return false;
+    if (!dlg.Init(hInstance, parent, forceLightTheme)) return false;
 
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0)) {
@@ -36,7 +36,7 @@ bool ClassicAppOverridesDialog::Show(HINSTANCE hInstance, HWND parent) {
     return dlg.modified_;
 }
 
-bool ClassicAppOverridesDialog::Init(HINSTANCE hInstance, HWND parent) {
+bool ClassicAppOverridesDialog::Init(HINSTANCE hInstance, HWND parent, bool forceLightTheme) {
     hInstance_ = hInstance;
 
     WNDCLASSEXW wc{};
@@ -66,7 +66,7 @@ bool ClassicAppOverridesDialog::Init(HINSTANCE hInstance, HWND parent) {
     int sx = GetSystemMetrics(SM_CXSCREEN), sy = GetSystemMetrics(SM_CYSCREEN);
     SetWindowPos(hwnd_, nullptr, (sx - aw) / 2, (sy - ah) / 2, aw, ah, SWP_NOZORDER);
 
-    theme_.Init(hwnd_);
+    theme_.Init(hwnd_, forceLightTheme);
     theme_.ApplyWindowAttributes(hwnd_);
 
     LoadData();
@@ -90,7 +90,6 @@ bool ClassicAppOverridesDialog::Init(HINSTANCE hInstance, HWND parent) {
 void ClassicAppOverridesDialog::CreateControls() {
     int x = Dpi(kPadding), y = Dpi(kPadding);
     int cw = Dpi(kWidth - kPadding * 2);
-    int btnH = Dpi(kBtnHeight);
     int gap = Dpi(kBtnGap);
 
     // ListView: app | method | encoding
@@ -113,11 +112,16 @@ void ClassicAppOverridesDialog::CreateControls() {
     ListView_InsertColumn(listView_, 2, &col);
     y += listH + gap;
 
-    // Row: app combobox + add + pick button
-    int appComboW = cw - Dpi(60 + 80) - gap * 2;
+    // Row 1: app combobox + add + pick button
+    int rowH = Dpi(26);  // compact row height for this dialog
+    int comboInnerH = rowH - Dpi(6); // inner selection field height
+    int pickW = Dpi(110);
+    int addW = Dpi(60);
+    int appComboW = cw - addW - pickW - gap * 2;
     comboApp_ = CreateWindowExW(0, L"COMBOBOX", L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP,
         x, y, appComboW, Dpi(200), hwnd_, reinterpret_cast<HMENU>(IDC_COMBO_APP), hInstance_, nullptr);
+    SendMessageW(comboApp_, CB_SETITEMHEIGHT, (WPARAM)-1, comboInnerH);
 
     auto running = GetRunningApps();
     for (auto& app : running) {
@@ -126,25 +130,28 @@ void ClassicAppOverridesDialog::CreateControls() {
 
     btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + appComboW + gap, y, Dpi(60), btnH,
+        x + appComboW + gap, y, addW, rowH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
 
     btnPick_ = CreateWindowExW(0, L"BUTTON", L"\u2316 Chọn cửa sổ",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + appComboW + Dpi(60) + gap * 2, y, Dpi(80), btnH,
+        x + appComboW + addW + gap * 2, y, pickW, rowH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_PICK), hInstance_, nullptr);
-    y += btnH + gap;
+    y += rowH + gap * 2;  // breathing room before row 2
 
-    // Row: method combo + encoding combo + add button
-    int lblW = Dpi(50);
-    int comboW = Dpi(110);
+    // Row 2: method combo + encoding combo + delete button
+    int lblW = Dpi(55);
+    int comboW = Dpi(120);
+    int lblH = Dpi(20);
+    int labelY = y + (rowH - lblH) / 2;
 
     CreateWindowExW(0, L"STATIC", L"Kiểu gõ:",
         WS_CHILD | WS_VISIBLE | SS_LEFT,
-        x, y + Dpi(4), lblW, btnH, hwnd_, nullptr, hInstance_, nullptr);
+        x, labelY, lblW, lblH, hwnd_, nullptr, hInstance_, nullptr);
     comboMethod_ = CreateWindowExW(0, L"COMBOBOX", L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_TABSTOP,
         x + lblW, y, comboW, Dpi(120), hwnd_, reinterpret_cast<HMENU>(IDC_COMBO_METHOD), hInstance_, nullptr);
+    SendMessageW(comboMethod_, CB_SETITEMHEIGHT, (WPARAM)-1, comboInnerH);
     ComboBox_AddString(comboMethod_, L"Theo mặc định");
     ComboBox_AddString(comboMethod_, L"Telex");
     ComboBox_AddString(comboMethod_, L"VNI");
@@ -154,10 +161,11 @@ void ClassicAppOverridesDialog::CreateControls() {
     int col2X = x + lblW + comboW + gap;
     CreateWindowExW(0, L"STATIC", L"Bảng mã:",
         WS_CHILD | WS_VISIBLE | SS_LEFT,
-        col2X, y + Dpi(4), lblW, btnH, hwnd_, nullptr, hInstance_, nullptr);
+        col2X, labelY, lblW, lblH, hwnd_, nullptr, hInstance_, nullptr);
     comboEncoding_ = CreateWindowExW(0, L"COMBOBOX", L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_TABSTOP,
         col2X + lblW, y, comboW, Dpi(120), hwnd_, reinterpret_cast<HMENU>(IDC_COMBO_ENCODING), hInstance_, nullptr);
+    SendMessageW(comboEncoding_, CB_SETITEMHEIGHT, (WPARAM)-1, comboInnerH);
     ComboBox_AddString(comboEncoding_, L"Theo mặc định");
     ComboBox_AddString(comboEncoding_, L"Unicode");
     ComboBox_AddString(comboEncoding_, L"TCVN3");
@@ -166,11 +174,12 @@ void ClassicAppOverridesDialog::CreateControls() {
     ComboBox_AddString(comboEncoding_, L"Việt CP1258");
     ComboBox_SetCurSel(comboEncoding_, 0);
 
+    int deleteW = Dpi(70);
     btnDelete_ = CreateWindowExW(0, L"BUTTON", L"Xoá",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + cw - Dpi(80), y, Dpi(80), btnH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_DELETE), hInstance_, nullptr);
+        x + cw - deleteW, y, deleteW, rowH, hwnd_, reinterpret_cast<HMENU>(IDC_BTN_DELETE), hInstance_, nullptr);
 
-    y += btnH + gap * 2;
+    y += rowH + gap * 2;
 }
 
 static const wchar_t* MethodName(int8_t m) {
@@ -260,9 +269,7 @@ void ClassicAppOverridesDialog::LoadData() {
 void ClassicAppOverridesDialog::SaveData() {
     modified_ = true;
     (void)ConfigManager::SaveAppOverrides(ConfigManager::GetConfigPath(), entries_);
-
-    ConfigEvent event;
-    if (event.Initialize()) event.Signal();
+    SignalConfigChange();
 }
 
 int ClassicAppOverridesDialog::Dpi(int value) const noexcept {

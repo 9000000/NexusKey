@@ -23,9 +23,10 @@ struct ThemeColors {
 
 /// Font handles (created once per DPI change)
 struct FontSet {
-    HFONT header;  // Segoe UI Variable Display, 11pt, SemiBold
-    HFONT body;    // Segoe UI Variable Text, 9pt, Regular
-    HFONT bodyBold; // Segoe UI Variable Text, 9pt, SemiBold
+    HFONT header;  // Segoe UI Semibold, 11pt
+    HFONT body;    // Segoe UI, 10pt, Regular
+    HFONT bodyBold; // Segoe UI Semibold, 10pt
+    HFONT entry;   // Segoe UI, 11pt, Regular (Modern entries)
 };
 
 /// Native Windows theme manager for Win32
@@ -61,6 +62,16 @@ public:
     /// Draw custom checkbox (called from subclass proc)
     void DrawCheckbox(HWND hWnd, HDC hdc);
 
+    /// Draw custom edit border (called from subclass proc)
+    void DrawEditBorder(HDC hdc, const RECT& rc, bool isFocused);
+
+    /// Draw rounded border around a hotkey edit control (used by SettingsDialog + ConvertToolDialog)
+    void DrawHotkeyEditBorder(HDC hdc, HWND hwndParent, HWND hwndEdit, int controlHeight);
+
+    /// Modern entry controls: rounded border, larger height, centered text
+    int ModernHeight() const;
+    void ApplyModernEntryStyle(HWND hwndCtrl);
+
     /// Draw 1px horizontal divider
     void DrawDivider(HDC hdc, int x, int y, int width);
 
@@ -78,6 +89,8 @@ public:
     [[nodiscard]] const ThemeColors& Colors() const noexcept { return colors_; }
     [[nodiscard]] const FontSet& Fonts() const noexcept { return fonts_; }
     [[nodiscard]] HBRUSH BrushBackground() const noexcept { return brBackground_; }
+    [[nodiscard]] UINT Dpi() const noexcept { return dpi_; }
+    [[nodiscard]] int CornerRadius() const noexcept { return DpiScale(12, dpi_); }
 
 private:
     void DetectDarkMode();
@@ -89,6 +102,7 @@ private:
 
     bool isDark_ = false;
     bool forceLightTheme_ = false;
+    UINT dpi_ = 96;
     ThemeColors colors_{};
     FontSet fonts_{};
 

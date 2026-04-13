@@ -460,9 +460,8 @@ void HookEngine::ReloadFromToml() {
     {
         HotkeyConfig newHotkey{};
         bool fromSharedState = false;
-        SharedStateManager hkState;
-        if (hkState.Open()) {
-            SharedState st = hkState.Read();
+        if (sharedStatePtr_) {
+            SharedState st = sharedStatePtr_->Read();
             if (st.IsValid()) {
                 newHotkey = st.GetHotkey();
                 fromSharedState = true;
@@ -2118,11 +2117,13 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                 down.type = INPUT_KEYBOARD;
                 down.ki.wScan = ch;
                 down.ki.dwFlags = KEYEVENTF_UNICODE;
+                down.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
                 INPUT& up = buf[count++];
                 up = {};
                 up.type = INPUT_KEYBOARD;
                 up.ki.wScan = ch;
                 up.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+                up.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
             };
 
             auto appendVk = [](INPUT* buf, size_t& count, WORD vk, WORD scan) {
@@ -2132,12 +2133,14 @@ void HookEngine::ReplaceComposition(const std::wstring& newText) {
                 down.type = INPUT_KEYBOARD;
                 down.ki.wVk = vk;
                 down.ki.wScan = scan;
+                down.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
                 INPUT& up = buf[count++];
                 up = {};
                 up.type = INPUT_KEYBOARD;
                 up.ki.wVk = vk;
                 up.ki.wScan = scan;
                 up.ki.dwFlags = KEYEVENTF_KEYUP;
+                up.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
             };
 
             if (backspaceCount > 0) {

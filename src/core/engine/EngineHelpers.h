@@ -77,16 +77,18 @@ inline bool IsSpellExcluded(const CharStateT* states, size_t count,
                             const std::vector<std::wstring>& exclusions,
                             ComposeFunc compose) {
     if (exclusions.empty() || count == 0) return false;
-    // Build composed buffer for matching (lowercased)
-    std::wstring buf;
-    buf.reserve(count);
-    for (size_t i = 0; i < count; ++i) {
+    // Stack buffer — Vietnamese words max ~8 chars, 16 is generous.
+    // Avoids heap allocation on every PushChar call.
+    constexpr size_t kMaxBuf = 16;
+    wchar_t buf[kMaxBuf];
+    size_t bufLen = 0;
+    for (size_t i = 0; i < count && bufLen < kMaxBuf; ++i) {
         wchar_t ch = compose(states[i]);
-        if (ch != 0) buf += towlower(ch);
+        if (ch != 0) buf[bufLen++] = towlower(ch);
     }
+    // Inline prefix match (same logic as MatchExclusionBuf but avoids forward-decl issue)
     for (const auto& pat : exclusions) {
-        if (pat.size() < 2) continue;
-        if (buf.size() < pat.size()) continue;
+        if (pat.size() < 2 || bufLen < pat.size()) continue;
         bool match = true;
         for (size_t i = 0; i < pat.size(); ++i) {
             if (pat[i] != buf[i]) { match = false; break; }

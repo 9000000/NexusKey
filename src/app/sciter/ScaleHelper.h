@@ -36,7 +36,7 @@ public:
     [[nodiscard]] static double getDpiScale() noexcept {
         // GetDpiForSystem returns system DPI correctly even for PerMonitorV2 apps
         // (unlike GetDeviceCaps which returns 96 for PerMonitorV2)
-        auto pfn = reinterpret_cast<UINT(WINAPI*)()>(
+        static auto pfn = reinterpret_cast<UINT(WINAPI*)()>(
             GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForSystem"));
         if (pfn) {
             return static_cast<double>(pfn()) / DEFAULT_DPI;

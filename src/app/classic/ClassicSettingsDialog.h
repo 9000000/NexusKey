@@ -82,13 +82,13 @@ private:
 
     // -- Layout constants (pixels at 96 DPI, scaled by Dpi()) --
     // All values are multiples of 4 for consistent visual rhythm
-    static constexpr int kAdvancedWidth  = 460;
-    static constexpr int kAdvancedHeight = 373;
+    static constexpr int kAdvancedWidth  = 490;
+    static constexpr int kAdvancedHeight = 400;
     static constexpr int kPadding       = 16;
     static constexpr int kControlHeight = 24;
     static constexpr int kComboHeight   = 24;
     static constexpr int kButtonHeight  = 32;
-    static constexpr int kRowGap        = 4;
+    static constexpr int kRowGap        = 5;
     static constexpr int kSectionGap    = 8;
     static constexpr int kLabelHeight   = 16;
     static constexpr int kTabHeight     = 28;
@@ -116,6 +116,7 @@ private:
 
     // Per-tab checkbox HWNDs (indexed by kSettings array index)
     static constexpr size_t kMaxControls = 64;
+    static_assert(kSettingsCount <= kMaxControls, "kMaxControls too small for kSettingsCount");
     HWND checkControls_[kMaxControls] = {};
     HWND extraControls_[kMaxControls] = {};
 

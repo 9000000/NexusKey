@@ -39,6 +39,7 @@ constexpr uintmax_t kMaxConfigFileSizeBytes = 1 * 1024 * 1024;  // 1 MB
 constexpr size_t    kMaxMacroKeyLen         = 32;
 constexpr size_t    kMaxMacroValueLen       = 512;
 constexpr size_t    kMaxPerAppEntries       = 256;
+constexpr size_t    kMaxAppListEntries      = 1000;
 
 }  // namespace
 
@@ -369,6 +370,7 @@ std::vector<std::wstring> ConfigManager::LoadAllExcludedApps(const std::wstring&
             // Load [excluded_apps].list
             if (auto arr = (*section)["list"].as_array()) {
                 for (auto& item : *arr) {
+                    if (apps.size() >= kMaxAppListEntries) break;
                     if (auto str = item.value<std::string>()) {
                         apps.push_back(Utf8ToWide(*str));
                     }
@@ -377,6 +379,7 @@ std::vector<std::wstring> ConfigManager::LoadAllExcludedApps(const std::wstring&
             // Backward compat: merge [excluded_apps].soft into the same list
             if (auto arr = (*section)["soft"].as_array()) {
                 for (auto& item : *arr) {
+                    if (apps.size() >= kMaxAppListEntries) break;
                     if (auto str = item.value<std::string>()) {
                         auto wide = Utf8ToWide(*str);
                         if (std::find(apps.begin(), apps.end(), wide) == apps.end()) {
@@ -419,6 +422,7 @@ std::vector<std::wstring> ConfigManager::LoadEnglishModeApps(const std::wstring&
         if (auto section = table["smart_switch"].as_table()) {
             if (auto arr = (*section)["english_mode_apps"].as_array()) {
                 for (auto& item : *arr) {
+                    if (apps.size() >= kMaxAppListEntries) break;
                     if (auto str = item.value<std::string>()) {
                         apps.push_back(Utf8ToWide(*str));
                     }
@@ -458,6 +462,7 @@ std::vector<std::wstring> ConfigManager::LoadTsfApps(const std::wstring& path) {
         if (auto section = table["tsf_apps"].as_table()) {
             if (auto arr = (*section)["list"].as_array()) {
                 for (auto& item : *arr) {
+                    if (apps.size() >= kMaxAppListEntries) break;
                     if (auto str = item.value<std::string>()) {
                         apps.push_back(Utf8ToWide(*str));
                     }

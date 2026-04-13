@@ -17,9 +17,10 @@ enum {
 // ════════════════════════════════════════════════════════════
 
 IconColorResult ClassicIconColorDialog::Show(HINSTANCE hInstance, HWND parent,
-                                              uint32_t initialV, uint32_t initialE) {
+                                              uint32_t initialV, uint32_t initialE,
+                                              bool forceLightTheme) {
     ClassicIconColorDialog dlg;
-    if (!dlg.Init(hInstance, parent, initialV, initialE)) {
+    if (!dlg.Init(hInstance, parent, initialV, initialE, forceLightTheme)) {
         return {initialV, initialE, false};
     }
 
@@ -35,7 +36,8 @@ IconColorResult ClassicIconColorDialog::Show(HINSTANCE hInstance, HWND parent,
 }
 
 bool ClassicIconColorDialog::Init(HINSTANCE hInstance, HWND parent,
-                                   uint32_t initV, uint32_t initE) {
+                                   uint32_t initV, uint32_t initE,
+                                   bool forceLightTheme) {
     hInstance_ = hInstance;
     colorV_ = initV ? initV : RGB(233, 30, 99);
     colorE_ = initE ? initE : RGB(33, 150, 243);
@@ -67,9 +69,13 @@ bool ClassicIconColorDialog::Init(HINSTANCE hInstance, HWND parent,
     int sx = GetSystemMetrics(SM_CXSCREEN), sy = GetSystemMetrics(SM_CYSCREEN);
     SetWindowPos(hwnd_, nullptr, (sx - aw) / 2, (sy - ah) / 2, aw, ah, SWP_NOZORDER);
 
-    theme_.Init(hwnd_);
+    theme_.Init(hwnd_, forceLightTheme);
     theme_.ApplyWindowAttributes(hwnd_);
     CreateControls();
+
+    // Create cached font for icon preview (avoids CreateFont/DeleteObject per WM_PAINT)
+    previewFont_ = CreateFontW(Dpi(18), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
 
     EnumChildWindows(hwnd_, [](HWND h, LPARAM lp) -> BOOL {
         auto* self = reinterpret_cast<ClassicIconColorDialog*>(lp);
@@ -162,16 +168,13 @@ void ClassicIconColorDialog::PaintPreview(HDC hdc) {
         SelectObject(hdc, oldPen);
         DeleteObject(br);
 
-        // Letter
+        // Letter (use cached previewFont_)
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(255, 255, 255));
-        HFONT hFont = CreateFontW(Dpi(18), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-        HFONT oldFont = (HFONT)SelectObject(hdc, hFont);
+        HFONT oldFont = (HFONT)SelectObject(hdc, previewFont_);
         RECT textRc = {previewX, cy - prevS / 2, previewX + prevS, cy + prevS / 2};
         DrawTextW(hdc, letter, 1, &textRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         SelectObject(hdc, oldFont);
-        DeleteObject(hFont);
     };
 
     drawIconPreview(vRowCenter, colorV_, L"V");
@@ -250,6 +253,7 @@ LRESULT CALLBACK ClassicIconColorDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPa
             DestroyWindow(hwnd);
             return 0;
         case WM_DESTROY:
+            if (self->previewFont_) { DeleteObject(self->previewFont_); self->previewFont_ = nullptr; }
             self->theme_.Destroy();
             self->hwnd_ = nullptr;
             PostQuitMessage(0);

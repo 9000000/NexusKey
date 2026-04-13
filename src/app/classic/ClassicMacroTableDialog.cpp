@@ -3,7 +3,7 @@
 
 #include "ClassicMacroTableDialog.h"
 #include "core/config/ConfigManager.h"
-#include "core/config/ConfigEvent.h"
+#include "app/helpers/AppHelpers.h"
 
 #include <windowsx.h>
 #include <algorithm>
@@ -26,9 +26,9 @@ enum {
 // Public
 // ════════════════════════════════════════════════════════════
 
-bool ClassicMacroTableDialog::Show(HINSTANCE hInstance, HWND parent) {
+bool ClassicMacroTableDialog::Show(HINSTANCE hInstance, HWND parent, bool forceLightTheme) {
     ClassicMacroTableDialog dlg;
-    if (!dlg.Init(hInstance, parent)) return false;
+    if (!dlg.Init(hInstance, parent, forceLightTheme)) return false;
 
     MSG msg{};
     while (GetMessageW(&msg, nullptr, 0, 0)) {
@@ -44,7 +44,7 @@ bool ClassicMacroTableDialog::Show(HINSTANCE hInstance, HWND parent) {
 // Init
 // ════════════════════════════════════════════════════════════
 
-bool ClassicMacroTableDialog::Init(HINSTANCE hInstance, HWND parent) {
+bool ClassicMacroTableDialog::Init(HINSTANCE hInstance, HWND parent, bool forceLightTheme) {
     hInstance_ = hInstance;
 
     WNDCLASSEXW wc{};
@@ -74,7 +74,7 @@ bool ClassicMacroTableDialog::Init(HINSTANCE hInstance, HWND parent) {
     int sx = GetSystemMetrics(SM_CXSCREEN), sy = GetSystemMetrics(SM_CYSCREEN);
     SetWindowPos(hwnd_, nullptr, (sx - aw) / 2, (sy - ah) / 2, aw, ah, SWP_NOZORDER);
 
-    theme_.Init(hwnd_);
+    theme_.Init(hwnd_, forceLightTheme);
     theme_.ApplyWindowAttributes(hwnd_);
 
     LoadData();
@@ -122,27 +122,30 @@ void ClassicMacroTableDialog::CreateControls() {
     y += listH + gap;
 
     // Row: key edit + value edit + add
+    int editH = theme_.ModernHeight();
     int keyW = Dpi(100);
     int addW = Dpi(50);
     int valW = cw - keyW - addW - gap * 2;
 
-    editKey_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+    editKey_ = CreateWindowExW(0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-        x, y, keyW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_KEY), hInstance_, nullptr);
+        x, y, keyW, editH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_KEY), hInstance_, nullptr);
     SendMessageW(editKey_, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"btv"));
     SendMessageW(editKey_, EM_SETLIMITTEXT, 32, 0);
+    theme_.ApplyModernEntryStyle(editKey_);
 
-    editValue_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+    editValue_ = CreateWindowExW(0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-        x + keyW + gap, y, valW, btnH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_VALUE), hInstance_, nullptr);
+        x + keyW + gap, y, valW, editH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_VALUE), hInstance_, nullptr);
     SendMessageW(editValue_, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"báo tuổi trẻ"));
     SendMessageW(editValue_, EM_SETLIMITTEXT, 512, 0);
+    theme_.ApplyModernEntryStyle(editValue_);
 
     btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + keyW + valW + gap * 2, y, addW, btnH,
+        x + keyW + valW + gap * 2, y, addW, editH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
-    y += btnH + gap * 2;
+    y += editH + gap * 2;
 
     // Action buttons
     int abw = (cw - gap * 2) / 3;
@@ -278,9 +281,7 @@ void ClassicMacroTableDialog::LoadData() {
 void ClassicMacroTableDialog::SaveData() {
     modified_ = true;
     (void)ConfigManager::SaveMacros(ConfigManager::GetConfigPath(), macros_);
-
-    ConfigEvent event;
-    if (event.Initialize()) event.Signal();
+    SignalConfigChange();
 }
 
 int ClassicMacroTableDialog::Dpi(int value) const noexcept {
