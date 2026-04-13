@@ -39,7 +39,7 @@ public:
     ClassicTheme& operator=(const ClassicTheme&) = delete;
 
     /// Initialize theme (detect dark mode, create fonts/brushes)
-    void Init(HWND hwnd);
+    void Init(HWND hwnd, bool forceLightTheme = false);
 
     /// Clean up GDI resources
     void Destroy();
@@ -57,6 +57,9 @@ public:
 
     /// Draw tab control item (TCS_OWNERDRAWFIXED)
     void DrawTabItem(DRAWITEMSTRUCT* dis);
+
+    /// Draw custom checkbox (called from subclass proc)
+    void DrawCheckbox(HWND hWnd, HDC hdc);
 
     /// Draw 1px horizontal divider
     void DrawDivider(HDC hdc, int x, int y, int width);
@@ -85,6 +88,7 @@ private:
     void DestroyFonts();
 
     bool isDark_ = false;
+    bool forceLightTheme_ = false;
     ThemeColors colors_{};
     FontSet fonts_{};
 

@@ -29,8 +29,9 @@ ClassicTheme::~ClassicTheme() {
     Destroy();
 }
 
-void ClassicTheme::Init(HWND hwnd) {
+void ClassicTheme::Init(HWND hwnd, bool forceLightTheme) {
     hwnd_ = hwnd;
+    forceLightTheme_ = forceLightTheme;
     DetectDarkMode();
     RefreshColors();
 
@@ -48,6 +49,10 @@ void ClassicTheme::Destroy() {
 }
 
 void ClassicTheme::DetectDarkMode() {
+    if (forceLightTheme_) {
+        isDark_ = false;
+        return;
+    }
     DWORD value = 1;  // default light
     DWORD size = sizeof(value);
     RegGetValueW(HKEY_CURRENT_USER,
@@ -61,25 +66,26 @@ void ClassicTheme::RefreshColors() {
     // gets automatic dark system colors. So we use system colors for light mode
     // and provide our own neutral dark palette.
     if (isDark_) {
-        colors_.background    = RGB( 30,  30,  30);  // #1E1E1E
-        colors_.surface       = RGB( 45,  45,  45);  // #2D2D2D
+        colors_.background    = RGB( 32,  32,  32);  // #202020
+        colors_.surface       = RGB( 43,  43,  43);  // #2B2B2B
         colors_.text          = RGB(255, 255, 255);   // #FFFFFF
-        colors_.textSecondary = RGB(153, 153, 153);   // #999999
+        colors_.textSecondary = RGB(170, 170, 170);   // #AAAAAA
         colors_.accent        = GetSysColor(COLOR_HIGHLIGHT);  // system accent works
         colors_.accentText    = GetSysColor(COLOR_HIGHLIGHTTEXT);
-        colors_.border        = RGB( 58,  58,  58);   // #3A3A3A (thinner, more subtle)
+        colors_.border        = RGB( 64,  64,  64);   // #404040
     } else {
         colors_.background    = GetSysColor(COLOR_WINDOW);
-        colors_.surface       = GetSysColor(COLOR_BTNFACE);
+        colors_.surface       = RGB( 242, 242, 242);  // softer than COLOR_BTNFACE usually
         colors_.text          = GetSysColor(COLOR_WINDOWTEXT);
-        colors_.textSecondary = GetSysColor(COLOR_GRAYTEXT);
+        colors_.textSecondary = RGB( 90,  90,  90);
         colors_.accent        = GetSysColor(COLOR_HIGHLIGHT);
         colors_.accentText    = GetSysColor(COLOR_HIGHLIGHTTEXT);
-        colors_.border        = RGB(224, 224, 224);   // #E0E0E0 (minimal light border)
+        colors_.border        = RGB( 210, 210, 210);  // #D2D2D2
     }
 }
 
 bool ClassicTheme::OnSettingChange(LPARAM lParam) {
+    if (forceLightTheme_) return false;  // Ignore system theme changes
     if (lParam && wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
         bool wasDark = isDark_;
         DetectDarkMode();
@@ -115,7 +121,7 @@ static LRESULT CALLBACK DarkListSubclassProc(HWND hWnd, UINT msg, WPARAM wParam,
         RECT rc;
         GetClientRect(hWnd, &rc);
         FillRect(hdc, &rc, theme->BrushBackground());
-        if (msg == WM_ERASEBKGND) return 1; // Handled
+        if (msg == WM_ERASEBKGND) return 1;
     }
     return DefSubclassProc(hWnd, msg, wParam, lParam);
 }
@@ -166,6 +172,101 @@ static LRESULT CALLBACK ListViewSubclassProc(HWND hWnd, UINT msg, WPARAM wParam,
     return DefSubclassProc(hWnd, msg, wParam, lParam);
 }
 
+// Checkbox/Radio custom-draw subclass proc
+static LRESULT CALLBACK CheckboxSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                              UINT_PTR /*uId*/, DWORD_PTR dwRef) {
+    auto* th = reinterpret_cast<ClassicTheme*>(dwRef);
+    if (msg == WM_PAINT && th) {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        th->DrawCheckbox(hWnd, hdc);
+        EndPaint(hWnd, &ps);
+        return 0; // Handled
+    }
+    return DefSubclassProc(hWnd, msg, wParam, lParam);
+}
+
+// ComboBox full custom-draw subclass proc (draws Fluent Design style box + arrow + text)
+static LRESULT CALLBACK ComboSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                          UINT_PTR /*uId*/, DWORD_PTR dwRef) {
+    auto* th = reinterpret_cast<ClassicTheme*>(dwRef);
+    if (!th) return DefSubclassProc(hWnd, msg, wParam, lParam);
+
+    if (msg == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+
+        RECT rc;
+        GetClientRect(hWnd, &rc);
+
+        bool isFocused = (GetFocus() == hWnd);
+
+        LONG_PTR style = GetWindowLongPtrW(hWnd, GWL_STYLE);
+        bool hasEdit = ((style & CBS_DROPDOWN) == CBS_DROPDOWN) && ((style & CBS_DROPDOWNLIST) != CBS_DROPDOWNLIST);
+        
+        if (hasEdit) {
+            HWND hEdit = FindWindowExW(hWnd, nullptr, L"Edit", nullptr);
+            if (hEdit && GetFocus() == hEdit) isFocused = true;
+        }
+
+        // 1. Draw rounded background and border
+        COLORREF bg = th->Colors().surface;
+        COLORREF border = isFocused ? th->Colors().accent : th->Colors().border;
+        
+        HBRUSH bgBr = CreateSolidBrush(bg);
+        HPEN bgPen = CreatePen(PS_SOLID, 1, border);
+        HGDIOBJ oldBr = SelectObject(hdc, bgBr);
+        HGDIOBJ oldPen = SelectObject(hdc, bgPen);
+
+        UINT dpi = Classic::GetWindowDpi(hWnd);
+        int r = Classic::DpiScale(6, dpi); 
+
+        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, r, r);
+
+        // 2. Draw standard chevron (arrow)
+        int cx = rc.right - Classic::DpiScale(16, dpi);
+        int cy = rc.top + (rc.bottom - rc.top) / 2;
+        HPEN arrowPen = CreatePen(PS_SOLID, Classic::DpiScale(1, dpi) < 2 ? 2 : Classic::DpiScale(1, dpi), th->Colors().textSecondary);
+        SelectObject(hdc, arrowPen);
+        int aw = Classic::DpiScale(4, dpi);
+        MoveToEx(hdc, cx - aw, cy - aw / 2 + 1, nullptr);
+        LineTo(hdc, cx, cy + aw / 2 + 1);
+        LineTo(hdc, cx + aw, cy - aw / 2 + 1);
+
+        SelectObject(hdc, oldBr);
+        SelectObject(hdc, oldPen);
+        DeleteObject(bgBr);
+        DeleteObject(bgPen);
+        // DeleteObject(bottomPen); // Removed
+        DeleteObject(arrowPen);
+
+        // 3. Draw text (only if there's no child Edit control overlapping)
+        if (!hasEdit) {
+            wchar_t text[256] = {};
+            GetWindowTextW(hWnd, text, 256);
+            RECT textRc = rc;
+            textRc.left += Classic::DpiScale(10, dpi);
+            textRc.right -= Classic::DpiScale(28, dpi); // make room for arrow
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, th->Colors().text);
+            SelectObject(hdc, th->Fonts().body);
+            DrawTextW(hdc, text, -1, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        }
+
+        EndPaint(hWnd, &ps);
+        return 0; // Completely bypass system drawing!
+    }
+    
+    // Completely ignore WM_ERASEBKGND so the system doesn't draw a grey box behind our rounded corners
+    if (msg == WM_ERASEBKGND) {
+        return 1;
+    }
+
+    return DefSubclassProc(hWnd, msg, wParam, lParam);
+}
+
+
+
 void ClassicTheme::ThemeChildControl(HWND hwndCtrl) {
     if (!hwndCtrl) return;
 
@@ -183,32 +284,42 @@ void ClassicTheme::ThemeChildControl(HWND hwndCtrl) {
     wchar_t className[32] = {0};
     if (GetClassNameW(hwndCtrl, className, 32)) {
         if (wcscmp(className, L"ComboBox") == 0) {
-            SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_CFD" : L"Explorer", nullptr);
+            SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+            
+            // Apply full custom paint to the combobox body
+            SetWindowSubclass(hwndCtrl, ComboSubclassProc, 201, reinterpret_cast<DWORD_PTR>(this));
+
             COMBOBOXINFO info = { sizeof(COMBOBOXINFO) };
             if (GetComboBoxInfo(hwndCtrl, &info) && info.hwndList) {
                 DwmSetWindowAttribute(info.hwndList, 20, &darkBool, sizeof(darkBool));
                 if (hUxTheme && allow) allow(info.hwndList, isDark_);
-                
-                if (IsWindows11OrGreater()) {
-                    auto corner = 2; // DWMWCP_ROUND
-                    DwmSetWindowAttribute(info.hwndList, 33, &corner, sizeof(corner));
-                }
 
-                SetWindowTheme(info.hwndList, isDark_ ? L"DarkMode_CFD" : L"Explorer", nullptr);
+                // DarkMode_Explorer is crucial for getting dark scrollbars on Win10/11
+                SetWindowTheme(info.hwndList, isDark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
                 SetClassLongPtrW(info.hwndList, GCLP_HBRBACKGROUND,
                     reinterpret_cast<LONG_PTR>(isDark_ ? brBackground_ : GetSysColorBrush(COLOR_WINDOW)));
                 
-                // Subclass the list to catch the animation background fill
+                // Subclass the dropdown list
                 SetWindowSubclass(info.hwndList, DarkListSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
             }
         } else if (wcscmp(className, WC_LISTVIEWW) == 0) {
-            SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_ItemsView" : L"Explorer", nullptr);
+            SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
             ListView_SetBkColor(hwndCtrl, isDark_ ? colors_.background : GetSysColor(COLOR_WINDOW));
             ListView_SetTextBkColor(hwndCtrl, isDark_ ? colors_.background : GetSysColor(COLOR_WINDOW));
             ListView_SetTextColor(hwndCtrl, isDark_ ? colors_.text : GetSysColor(COLOR_WINDOWTEXT));
             SetWindowSubclass(hwndCtrl, ListViewSubclassProc, 2, reinterpret_cast<DWORD_PTR>(this));
         } else if (wcscmp(className, WC_HEADER) == 0) {
             SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_ItemsView" : L"Explorer", nullptr);
+        } else if (wcscmp(className, L"Button") == 0) {
+            // Detect checkbox / radio button for custom draw
+            LONG_PTR style = GetWindowLongPtrW(hwndCtrl, GWL_STYLE);
+            LONG_PTR type = style & BS_TYPEMASK;
+            if (type == BS_AUTOCHECKBOX || type == BS_CHECKBOX ||
+                type == BS_AUTO3STATE || type == BS_3STATE ||
+                type == BS_AUTORADIOBUTTON || type == BS_RADIOBUTTON) {
+                SetWindowSubclass(hwndCtrl, CheckboxSubclassProc, 200, reinterpret_cast<DWORD_PTR>(this));
+            }
+            SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
         } else {
             SetWindowTheme(hwndCtrl, isDark_ ? L"DarkMode_Explorer" : L"Explorer", nullptr);
         }
@@ -338,6 +449,117 @@ void ClassicTheme::DrawDivider(HDC hdc, int x, int y, int width) {
     HBRUSH br = CreateSolidBrush(colors_.border);
     FillRect(hdc, &line, br);
     DeleteObject(br);
+}
+
+// -- Owner-Draw: Checkbox / Radio --
+
+void ClassicTheme::DrawCheckbox(HWND hWnd, HDC hdc) {
+    RECT rc;
+    GetClientRect(hWnd, &rc);
+
+    // Fill background
+    FillRect(hdc, &rc, brBackground_);
+
+    LONG_PTR style = GetWindowLongPtrW(hWnd, GWL_STYLE);
+    LONG_PTR type = style & BS_TYPEMASK;
+    bool isRadio = (type == BS_AUTORADIOBUTTON || type == BS_RADIOBUTTON);
+    bool isChecked = (SendMessageW(hWnd, BM_GETCHECK, 0, 0) == BST_CHECKED);
+    bool isDisabled = !IsWindowEnabled(hWnd);
+
+    // DPI-aware box size
+    UINT dpi = Classic::GetWindowDpi(hWnd);
+    int boxSize = Classic::DpiScale(14, dpi);
+    int boxY = rc.top + (rc.bottom - rc.top - boxSize) / 2;
+    int boxX = rc.left + 1;
+    RECT boxRc = { boxX, boxY, boxX + boxSize, boxY + boxSize };
+    int radius = isRadio ? boxSize : Classic::DpiScale(4, dpi);
+
+    if (isChecked) {
+        // Filled accent box
+        COLORREF fill = isDisabled ? colors_.textSecondary : colors_.accent;
+        HBRUSH fillBr = CreateSolidBrush(fill);
+        HPEN pen = CreatePen(PS_SOLID, 1, fill);
+        HGDIOBJ oldPen = SelectObject(hdc, pen);
+        HGDIOBJ oldBr = SelectObject(hdc, fillBr);
+        
+        if (isRadio) {
+            Ellipse(hdc, boxRc.left, boxRc.top, boxRc.right, boxRc.bottom);
+        } else {
+            RoundRect(hdc, boxRc.left, boxRc.top, boxRc.right, boxRc.bottom, radius, radius);
+        }
+        
+        SelectObject(hdc, oldBr);
+        SelectObject(hdc, oldPen);
+        DeleteObject(pen);
+        DeleteObject(fillBr);
+
+        if (isRadio) {
+            // White dot for radio
+            int dotR = boxSize / 4;
+            int cx = (boxRc.left + boxRc.right) / 2;
+            int cy = (boxRc.top + boxRc.bottom) / 2;
+            HBRUSH dotBr = CreateSolidBrush(RGB(255, 255, 255));
+            HPEN dotPen = CreatePen(PS_SOLID, 1, RGB(255, 255, 255));
+            SelectObject(hdc, dotPen);
+            SelectObject(hdc, dotBr);
+            Ellipse(hdc, cx - dotR, cy - dotR, cx + dotR, cy + dotR);
+            SelectObject(hdc, GetStockObject(NULL_BRUSH));
+            SelectObject(hdc, GetStockObject(BLACK_PEN));
+            DeleteObject(dotPen);
+            DeleteObject(dotBr);
+        } else {
+            // Checkmark: thin L-shaped polyline
+            int s = Classic::DpiScale(1, dpi); // base scale
+            // Force 1px thickness on 100-125% DPI for a thinner look, 2px for >=150%
+            int thickness = s < 2 ? 1 : 2; 
+            HPEN checkPen = CreatePen(PS_SOLID, thickness, RGB(255, 255, 255));
+            HPEN oldP = (HPEN)SelectObject(hdc, checkPen);
+            int cx = (boxRc.left + boxRc.right) / 2;
+            int cy = (boxRc.top + boxRc.bottom) / 2;
+            int q = boxSize / 5;
+            MoveToEx(hdc, cx - q - 1, cy - 1, nullptr);
+            LineTo(hdc, cx - 1, cy + q);
+            LineTo(hdc, cx + q + 2, cy - q - 1);
+            SelectObject(hdc, oldP);
+            DeleteObject(checkPen);
+        }
+    } else {
+        // Empty box with border and surface background
+        COLORREF bdr = colors_.border;
+        HBRUSH bgBr = CreateSolidBrush(colors_.surface); // Subtle dark fill
+        HPEN pen = CreatePen(PS_SOLID, 1, bdr);
+        HGDIOBJ oldPen = SelectObject(hdc, pen);
+        HGDIOBJ oldBr = SelectObject(hdc, bgBr);
+        
+        if (isRadio) {
+            Ellipse(hdc, boxRc.left, boxRc.top, boxRc.right, boxRc.bottom);
+        } else {
+            RoundRect(hdc, boxRc.left, boxRc.top, boxRc.right, boxRc.bottom, radius, radius);
+        }
+        
+        SelectObject(hdc, oldBr);
+        SelectObject(hdc, oldPen);
+        DeleteObject(pen);
+        DeleteObject(bgBr);
+    }
+
+    // Draw label text
+    wchar_t text[256] = {};
+    int textLen = GetWindowTextW(hWnd, text, 256);
+    if (textLen > 0) {
+        int textX = boxRc.right + Classic::DpiScale(6, dpi);
+        RECT textRc = { textX, rc.top, rc.right, rc.bottom };
+        
+        COLORREF txtCol = isDisabled ? colors_.textSecondary : colors_.text;
+        // Safety: if dark mode but text color is somehow black, force it to white
+        if (isDark_ && txtCol == RGB(0, 0, 0)) txtCol = RGB(255, 255, 255);
+        
+        SetTextColor(hdc, txtCol);
+        SetBkMode(hdc, TRANSPARENT);
+        HGDIOBJ oldFont = SelectObject(hdc, fonts_.body);
+        DrawTextW(hdc, text, textLen, &textRc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP);
+        SelectObject(hdc, oldFont);
+    }
 }
 
 } // namespace NextKey::Classic
