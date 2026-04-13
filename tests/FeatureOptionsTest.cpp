@@ -377,17 +377,42 @@ TEST_F(TelexModernOrthoTest, OE_Modern_ToneOnSecond) {
     EXPECT_EQ(modern_->Peek(), L"hoé");
 }
 
-// --- "uy" should be SAME in both modes (tone on second) ---
+// --- "uy" differs between classic and modern ---
 
-TEST_F(TelexModernOrthoTest, UY_Grave_Both) {
+TEST_F(TelexModernOrthoTest, UY_Grave_Classic_ToneOnFirst) {
+    // Classic: "uy" → tone on 'u' (old-style: ùy)
     TypeString(*classic_, L"uyf");
-    std::wstring classicResult = classic_->Peek();
+    EXPECT_EQ(classic_->Peek(), L"ùy");
+}
 
+TEST_F(TelexModernOrthoTest, UY_Grave_Modern_ToneOnSecond) {
+    // Modern: "uy" → tone on 'y' (new-style: uỳ)
     TypeString(*modern_, L"uyf");
-    std::wstring modernResult = modern_->Peek();
+    EXPECT_EQ(modern_->Peek(), L"uỳ");
+}
 
-    EXPECT_EQ(classicResult, L"uỳ");
-    EXPECT_EQ(modernResult, L"uỳ");
+TEST_F(TelexModernOrthoTest, UY_Acute_Classic_ToneOnFirst) {
+    // Classic: "uy" + s → "úy"
+    TypeString(*classic_, L"uys");
+    EXPECT_EQ(classic_->Peek(), L"úy");
+}
+
+TEST_F(TelexModernOrthoTest, UY_Acute_Modern_ToneOnSecond) {
+    // Modern: "uy" + s → "uý"
+    TypeString(*modern_, L"uys");
+    EXPECT_EQ(modern_->Peek(), L"uý");
+}
+
+TEST_F(TelexModernOrthoTest, UY_WithCoda_Classic_ToneOnSecond) {
+    // Classic + coda: "huynh" + f → "huỳnh" (coda-aware: SECOND with coda)
+    TypeString(*classic_, L"huynhf");
+    EXPECT_EQ(classic_->Peek(), L"huỳnh");
+}
+
+TEST_F(TelexModernOrthoTest, UY_WithCoda_Modern_ToneOnSecond) {
+    // Modern + coda: "huynh" + f → "huỳnh" (always SECOND)
+    TypeString(*modern_, L"huynhf");
+    EXPECT_EQ(modern_->Peek(), L"huỳnh");
 }
 
 // --- Falling diphthongs: SAME in both modes (tone on first) ---
@@ -562,6 +587,12 @@ TEST_F(VniModernOrthoTest, OI_Modern_ToneOnFirst) {
 TEST_F(VniModernOrthoTest, AU_Modern_ToneOnFirst) {
     TypeString(*modern_, L"au3");
     EXPECT_EQ(modern_->Peek(), L"ảu");
+}
+
+TEST_F(VniModernOrthoTest, UY_Classic_ToneOnFirst) {
+    // VNI classic: "uy" → tone on 'u' (old-style: ùy)
+    TypeString(*classic_, L"uy2");
+    EXPECT_EQ(classic_->Peek(), L"ùy");
 }
 
 TEST_F(VniModernOrthoTest, UY_Modern_ToneOnSecond) {

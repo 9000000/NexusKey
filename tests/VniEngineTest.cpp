@@ -620,9 +620,9 @@ TEST_F(VniEngineTest, ToneStable_CodaRelocStillWorks) {
 }
 
 TEST_F(VniEngineTest, ToneStable_DiphthongRelocStillWorks) {
-    // "hu3y" → "huỷ" (uy diphthong rule 2 → tone on 'y')
+    // "hu3y" → "hủy" (classic uy: no coda → tone on first)
     TypeString(*engine_, L"hu3y");
-    EXPECT_EQ(engine_->Peek(), L"huỷ");
+    EXPECT_EQ(engine_->Peek(), L"hủy");
 }
 
 // ============================================================================

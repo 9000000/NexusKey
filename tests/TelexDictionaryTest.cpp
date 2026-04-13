@@ -286,7 +286,7 @@ static const WordCase kTonePlacement[] = {
     // Rising diphthong oa/oe — tone on first vowel (o)
     {L"oas", L"óa"},
     {L"oes", L"óe"},
-    {L"uys", L"uý"},
+    {L"uys", L"úy"},  // classic: tone on first
 
     // Triphthongs
     {L"oais", L"oái"},

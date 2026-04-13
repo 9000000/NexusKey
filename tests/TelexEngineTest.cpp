@@ -1012,8 +1012,8 @@ TEST_F(TelexEngineTest, RisingDiphthong_OE_Grave) {
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_UY_Grave) {
-    TypeString(*engine_, L"uyf");  // uỳ (quỳ)
-    EXPECT_EQ(engine_->Peek(), L"uỳ");
+    TypeString(*engine_, L"uyf");  // ùy (classic: tone on first)
+    EXPECT_EQ(engine_->Peek(), L"ùy");
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_Hoa) {
@@ -1863,12 +1863,12 @@ TEST_F(TelexEngineTest, RisingDiphthong_OA_Hook) {
 
 TEST_F(TelexEngineTest, RisingDiphthong_UY_Acute) {
     TypeString(*engine_, L"uys");
-    EXPECT_EQ(engine_->Peek(), L"uý");
+    EXPECT_EQ(engine_->Peek(), L"úy");  // classic: tone on first
 }
 
 TEST_F(TelexEngineTest, RisingDiphthong_UY_Dot) {
     TypeString(*engine_, L"uyj");
-    EXPECT_EQ(engine_->Peek(), L"uỵ");
+    EXPECT_EQ(engine_->Peek(), L"ụy");  // classic: tone on first
 }
 
 // ============================================================================
@@ -3170,11 +3170,11 @@ TEST_F(AutoRestoreTest, QuickConsonant_KK_Khuya_Valid) {
 }
 
 TEST_F(AutoRestoreTest, QuickConsonant_TT_Thuy_Valid) {
-    // "ttuys" → tt→th, so "thuýs" wait no: "thuys" → "thuý"
+    // "ttuys" → tt→th, "thuys" → "thúy" (classic: no coda → tone on first)
     config_.quickConsonant = true;
     engine_ = std::make_unique<TelexEngine>(config_);
     TypeString(*engine_, L"ttuys");
-    EXPECT_EQ(engine_->Commit(), L"thuý");
+    EXPECT_EQ(engine_->Commit(), L"thúy");
 }
 
 TEST_F(AutoRestoreTest, QuickConsonant_GG_Alone_Restores) {

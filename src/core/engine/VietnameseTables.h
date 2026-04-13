@@ -130,7 +130,7 @@ constexpr uint8_t kDiphthongClassic[6][6] = {
     /* e */ {   0, 0, 1, 1, 1, 0 },  // ei, eo, eu
     /* i */ {   1, 0, 0, 0, 1, 0 },  // ia, iu (ii=0: not a diphthong)
     /* o */ {   3, 3, 1, 0, 1, 0 },  // oa=CODA_AWARE, oe=CODA_AWARE, oi, ou
-    /* u */ {   1, 1, 1, 0, 0, 2 },  // ua, ue, ui, uy=SECOND (uu=0: not a diphthong)
+    /* u */ {   1, 1, 1, 0, 0, 3 },  // ua, ue, ui, uy=CODA_AWARE (classic: úy no coda, huỳnh with coda) (uu=0)
     /* y */ {   0, 0, 0, 0, 3, 0 },  // yu=CODA_AWARE: yủn(coda→u), khuỷu(no coda→y)
 };
 
