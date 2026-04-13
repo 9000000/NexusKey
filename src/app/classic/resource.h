@@ -57,6 +57,7 @@
 #define IDC_CHECK_ENGLISH_UI    2407
 #define IDC_COMBO_ICON_STYLE    2408
 #define IDC_COMBO_STARTUP_MODE  2409
+#define IDC_CHECK_FORCE_LIGHT   2410
 
 // ── Action buttons ──
 #define IDC_BTN_APP_OVERRIDES   2500

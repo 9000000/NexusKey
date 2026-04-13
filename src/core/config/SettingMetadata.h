@@ -187,6 +187,10 @@ inline constexpr SettingMeta kSettings[] = {
               "Giao diện tiếng Anh",  "English interface",
               L"Chuyển menu, thông báo sang tiếng Anh",
               L"Switch menus, notifications to English",            2407, 2, 0),
+    NK_SYSTEM("force-light-theme",    forceLightTheme,
+              "Luôn dùng giao diện sáng", "Always use light theme",
+              L"Bỏ qua chế độ tối của Windows, luôn hiển thị giao diện sáng",
+              L"Ignore Windows dark mode, always show light theme",     2410, 2, 0),
 
     // ── Tab 2: Hệ thống — Right column (col 1) ──
     NK_SYSTEM("floating-icon",        showFloatingIcon,
