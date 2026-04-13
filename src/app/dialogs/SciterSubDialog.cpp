@@ -56,14 +56,16 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
         return;
     }
 
+    // Load system config once for theme decisions
+    bool forceLightTheme = ConfigManager::LoadSystemConfigOrDefault().forceLightTheme;
+
     // Set theme class + language (before scripts run)
     {
         sciter::dom::element htmlRoot(get_root());
         // Dark class goes on <body> (CSS targets body.dark), lang goes on <html>
         sciter::dom::element body = htmlRoot.find_first("body");
         if (body.is_valid()) {
-            auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
-            bool dark = sysConfig.forceLightTheme ? false : DarkModeHelper::IsWindowsDarkMode();
+            bool dark = forceLightTheme ? false : DarkModeHelper::IsWindowsDarkMode();
             std::wstring classes = dark ? L"dark" : L"";
             if (!DarkModeHelper::IsWindows11OrGreater()) {
                 if (!classes.empty()) classes += L" ";
@@ -100,7 +102,7 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
     // Theme-aware DWM mode + rounded corners + blur (after subclass)
     HWND hwnd = get_hwnd();
     if (hwnd) {
-        bool dark = DarkModeHelper::IsWindowsDarkMode();
+        bool dark = forceLightTheme ? false : DarkModeHelper::IsWindowsDarkMode();
         DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
         // Refresh body class (may have been set during load() before subclass)
@@ -125,7 +127,7 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
     // Apply background opacity from UIConfig (via DOM, not call_function)
     if (config_.applyBackgroundOpacity) {
         auto uiConfig = ConfigManager::LoadUIConfigOrDefault();
-        bool isDark = DarkModeHelper::IsWindowsDarkMode();
+        bool isDark = forceLightTheme ? false : DarkModeHelper::IsWindowsDarkMode();
         double opacity = uiConfig.backgroundOpacity / 100.0;
         sciter::dom::element rootEl2(get_root());
         sciter::dom::element mainContainer = rootEl2.find_first("#main-container");
