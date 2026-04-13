@@ -122,8 +122,8 @@ void ClassicConvertToolDialog::CreateControls() {
             hInstance_, nullptr);
     };
 
-    auto label = [&](const wchar_t* text, int cx, int cy, int w) {
-        CreateWindowExW(0, L"STATIC", text, WS_CHILD | WS_VISIBLE | SS_LEFT,
+    auto label = [&](const wchar_t* text, int cx, int cy, int w) -> HWND {
+        return CreateWindowExW(0, L"STATIC", text, WS_CHILD | WS_VISIBLE | SS_LEFT,
             cx, cy, w, rowH, hwnd_, nullptr, hInstance_, nullptr);
     };
 
@@ -171,7 +171,7 @@ void ClassicConvertToolDialog::CreateControls() {
     int browseW = Dpi(28);
     int pathW = cw - Dpi(70) - browseW - Dpi(4);
 
-    labelSourceFile_ = CreateWindowExW(0, L"STATIC", L"File ngu\x1ED3n:",
+    labelSourceFile_ = CreateWindowExW(0, L"STATIC", L"File nguồn:",
         WS_CHILD | SS_LEFT, x, y + Dpi(4), Dpi(70), rowH,
         hwnd_, nullptr, hInstance_, nullptr);
     editSourcePath_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
@@ -184,7 +184,7 @@ void ClassicConvertToolDialog::CreateControls() {
         hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_BTN_BROWSE_SOURCE)), hInstance_, nullptr);
     y += rowH + gap + Dpi(4);
 
-    labelDestFile_ = CreateWindowExW(0, L"STATIC", L"File \x0111\x00EDch:",
+    labelDestFile_ = CreateWindowExW(0, L"STATIC", L"File đích:",
         WS_CHILD | SS_LEFT, x, y + Dpi(4), Dpi(70), rowH,
         hwnd_, nullptr, hInstance_, nullptr);
     editDestPath_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
@@ -198,14 +198,14 @@ void ClassicConvertToolDialog::CreateControls() {
     y += rowH + gap * 2 + Dpi(4);
 
     // Section: Bảng mã
-    label(L"Bảng mã nguồn:", x, y + Dpi(4), Dpi(90));
+    labelEncodingSource_ = label(L"Bảng mã nguồn:", x, y + Dpi(4), Dpi(90));
     comboSource_ = CreateWindowExW(0, L"COMBOBOX", L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_TABSTOP,
         x + Dpi(90), y, cw - Dpi(90), Dpi(120),
         hwnd_, reinterpret_cast<HMENU>(IDC_COMBO_SOURCE), hInstance_, nullptr);
     y += rowH + gap;
 
-    label(L"Bảng mã đích:", x, y + Dpi(4), Dpi(90));
+    labelEncodingDest_ = label(L"Bảng mã đích:", x, y + Dpi(4), Dpi(90));
     comboDest_ = CreateWindowExW(0, L"COMBOBOX", L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_TABSTOP,
         x + Dpi(90), y, cw - Dpi(90), Dpi(120),
@@ -220,11 +220,14 @@ void ClassicConvertToolDialog::CreateControls() {
     y += rowH + gap * 2;
 
     // Section: Phím tắt
-    label(L"Phím tắt:", x, y, cw);
+    labelHotkey_ = label(L"Phím tắt:", x, y, cw);
     y += rowH + gap;
 
     int hkBtnW = Dpi(50);
-    checkHkCtrl_ = check(L"Ctrl", x, y, IDC_CHECK_HK_CTRL);
+    checkHkCtrl_ = CreateWindowExW(0, L"BUTTON", L"Ctrl",
+        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
+        x, y, hkBtnW, rowH,
+        hwnd_, reinterpret_cast<HMENU>(IDC_CHECK_HK_CTRL), hInstance_, nullptr);
     checkHkAlt_ = CreateWindowExW(0, L"BUTTON", L"Alt",
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
         x + hkBtnW + Dpi(4), y, hkBtnW, rowH,
@@ -238,9 +241,11 @@ void ClassicConvertToolDialog::CreateControls() {
         x + (hkBtnW + Dpi(4)) * 3, y, hkBtnW, rowH,
         hwnd_, reinterpret_cast<HMENU>(IDC_CHECK_HK_WIN), hInstance_, nullptr);
 
-    editHkKey_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+    int editH = Dpi(16);
+    int editYOffset = (rowH - editH) / 2;
+    editHkKey_ = CreateWindowExW(0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_UPPERCASE | ES_CENTER | ES_AUTOHSCROLL,
-        x + (hkBtnW + Dpi(4)) * 4, y, Dpi(30), rowH,
+        x + (hkBtnW + Dpi(4)) * 4 + Dpi(2), y + editYOffset, Dpi(30), editH,
         hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_HK_KEY), hInstance_, nullptr);
     SendMessageW(editHkKey_, EM_SETLIMITTEXT, 1, 0);
     y += rowH + gap * 3;
@@ -505,6 +510,59 @@ void ClassicConvertToolDialog::UpdateFileMode() {
     ShowWindow(labelDestFile_, show);
     ShowWindow(editDestPath_, show);
     ShowWindow(btnBrowseDest_, show);
+
+    int x = Dpi(kPadding);
+    int cw = Dpi(kWidth - kPadding * 2);
+    int rowH = Dpi(kRowH);
+    int gap = Dpi(kRowGap);
+
+    RECT rcRadio;
+    GetWindowRect(radioClipboard_, &rcRadio);
+    MapWindowPoints(HWND_DESKTOP, hwnd_, reinterpret_cast<LPPOINT>(&rcRadio), 2);
+    int y = rcRadio.bottom + gap;
+
+    if (fileMode_) {
+        // Accounting for the 2 rows of file inputs that are now visible
+        y += rowH + gap + Dpi(4);
+        y += rowH + gap * 2 + Dpi(4);
+    }
+
+    HDWP hdwp = BeginDeferWindowPos(14);
+    
+    hdwp = DeferWindowPos(hdwp, labelEncodingSource_, nullptr, x, y + Dpi(4), Dpi(90), rowH, SWP_NOZORDER | SWP_NOSIZE);
+    hdwp = DeferWindowPos(hdwp, comboSource_, nullptr, x + Dpi(90), y, cw - Dpi(90), Dpi(120), SWP_NOZORDER | SWP_NOSIZE);
+    y += rowH + gap;
+
+    hdwp = DeferWindowPos(hdwp, labelEncodingDest_, nullptr, x, y + Dpi(4), Dpi(90), rowH, SWP_NOZORDER | SWP_NOSIZE);
+    hdwp = DeferWindowPos(hdwp, comboDest_, nullptr, x + Dpi(90), y, cw - Dpi(90), Dpi(120), SWP_NOZORDER | SWP_NOSIZE);
+    y += rowH + gap * 2;
+
+    hdwp = DeferWindowPos(hdwp, labelHotkey_, nullptr, x, y, cw, rowH, SWP_NOZORDER | SWP_NOSIZE);
+    y += rowH + gap;
+
+    int hkBtnW = Dpi(50);
+    int editH = Dpi(16);
+    int editYOffset = (rowH - editH) / 2;
+    hdwp = DeferWindowPos(hdwp, checkHkCtrl_, nullptr, x, y, hkBtnW, rowH, SWP_NOZORDER | SWP_NOSIZE);
+    hdwp = DeferWindowPos(hdwp, checkHkAlt_, nullptr, x + hkBtnW + Dpi(4), y, hkBtnW, rowH, SWP_NOZORDER | SWP_NOSIZE);
+    hdwp = DeferWindowPos(hdwp, checkHkShift_, nullptr, x + (hkBtnW + Dpi(4)) * 2, y, hkBtnW, rowH, SWP_NOZORDER | SWP_NOSIZE);
+    hdwp = DeferWindowPos(hdwp, checkHkWin_, nullptr, x + (hkBtnW + Dpi(4)) * 3, y, hkBtnW, rowH, SWP_NOZORDER | SWP_NOSIZE);
+    hdwp = DeferWindowPos(hdwp, editHkKey_, nullptr, x + (hkBtnW + Dpi(4)) * 4 + Dpi(2), y + editYOffset, Dpi(30), editH, SWP_NOZORDER);
+    y += rowH + gap * 3;
+
+    int halfW = (cw - Dpi(8)) / 2;
+    hdwp = DeferWindowPos(hdwp, btnConvert_, nullptr, x, y, halfW, Dpi(kBtnHeight), SWP_NOZORDER | SWP_NOSIZE);
+    hdwp = DeferWindowPos(hdwp, btnClose_, nullptr, x + halfW + Dpi(8), y, halfW, Dpi(kBtnHeight), SWP_NOZORDER | SWP_NOSIZE);
+    y += Dpi(kBtnHeight) + Dpi(kPadding);
+
+    EndDeferWindowPos(hdwp);
+
+    DWORD style = GetWindowLongW(hwnd_, GWL_STYLE);
+    DWORD exStyle = GetWindowLongW(hwnd_, GWL_EXSTYLE);
+    RECT rcClient = {0, 0, Dpi(kWidth), y};
+    AdjustWindowRectEx(&rcClient, style, FALSE, exStyle);
+    SetWindowPos(hwnd_, nullptr, 0, 0, rcClient.right - rcClient.left, rcClient.bottom - rcClient.top, SWP_NOMOVE | SWP_NOZORDER);
+    InvalidateRect(hwnd_, nullptr, TRUE);
 }
 
 int ClassicConvertToolDialog::Dpi(int value) const noexcept {
@@ -557,6 +615,34 @@ LRESULT CALLBACK ClassicConvertToolDialog::WndProc(HWND hwnd, UINT msg, WPARAM w
             break;
         }
 
+        case WM_PAINT: {
+            PAINTSTRUCT ps{};
+            HDC hdc = BeginPaint(hwnd, &ps);
+
+            if (self->editHkKey_) {
+                RECT rcE;
+                GetWindowRect(self->editHkKey_, &rcE);
+                MapWindowPoints(HWND_DESKTOP, hwnd, reinterpret_cast<LPPOINT>(&rcE), 2);
+                
+                HPEN pen = CreatePen(PS_SOLID, 1, self->theme_.Colors().border);
+                HBRUSH oldBr = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+                HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+
+                int padY = (self->Dpi(self->kRowH) - (rcE.bottom - rcE.top)) / 2;
+                rcE.top -= padY;
+                rcE.bottom += padY;
+                InflateRect(&rcE, self->Dpi(6), 0);
+                RoundRect(hdc, rcE.left, rcE.top, rcE.right, rcE.bottom, 6, 6);
+
+                SelectObject(hdc, oldBr);
+                SelectObject(hdc, oldPen);
+                DeleteObject(pen);
+            }
+
+            EndPaint(hwnd, &ps);
+            return 0;
+        }
+
         case WM_ERASEBKGND: {
             HDC hdc = reinterpret_cast<HDC>(wParam);
             RECT rc;
@@ -568,9 +654,11 @@ LRESULT CALLBACK ClassicConvertToolDialog::WndProc(HWND hwnd, UINT msg, WPARAM w
         case WM_CTLCOLORSTATIC:
             return reinterpret_cast<LRESULT>(self->theme_.OnCtlColorStatic(
                 reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam)));
-        case WM_CTLCOLOREDIT:
-            return reinterpret_cast<LRESULT>(self->theme_.OnCtlColorEdit(
-                reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam)));
+        case WM_CTLCOLOREDIT: {
+            HDC hdc = reinterpret_cast<HDC>(wParam);
+            HWND hctrl = reinterpret_cast<HWND>(lParam);
+            return reinterpret_cast<LRESULT>(self->theme_.OnCtlColorEdit(hdc, hctrl));
+        }
         case WM_CTLCOLORLISTBOX:
             return reinterpret_cast<LRESULT>(self->theme_.OnCtlColorListBox(
                 reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam)));

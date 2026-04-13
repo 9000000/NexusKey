@@ -179,7 +179,7 @@ void ClassicSettingsDialog::CreateCompactControls() {
     CreateLabel(L"  Cơ bản  ", gbX + Dpi(6), Dpi(2) + offset, Dpi(90), Dpi(18), 2999);
 
     int x1 = Dpi(kPadding);
-    int y = Dpi(kPadding + 14) + offset;
+    int y = Dpi(kPadding + 8) + offset;
     int contentW = Dpi(kAdvancedWidth - kPadding * 2);
 
     int colW = (contentW - Dpi(kPadding)) / 2;
@@ -940,6 +940,7 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
         // Re-init theme with new setting, repaint entire window
         theme_.Destroy();
         theme_.Init(hwnd_, value);
+        SetFontOnAllChildren();
         theme_.ApplyWindowAttributes(hwnd_);
         theme_.ThemeAllChildren(hwnd_);
         InvalidateRect(hwnd_, nullptr, TRUE);
@@ -1189,7 +1190,7 @@ BOOL CALLBACK ClassicSettingsDialog::SetFontProc(HWND hwnd, LPARAM lParam) {
 
     HFONT font = self->theme_.Fonts().body;
     if (GetDlgCtrlID(hwnd) == 2999) {
-        font = self->theme_.Fonts().header;
+        font = self->theme_.Fonts().bodyBold;
     } else if (GetDlgCtrlID(hwnd) == IDC_EDIT_SWITCH_KEY && self->fontSmall_) {
         font = self->fontSmall_;
     }

@@ -59,10 +59,13 @@ private:
     HWND checkSequential_ = nullptr;
 
     // Encoding
+    HWND labelEncodingSource_ = nullptr;
     HWND comboSource_ = nullptr;
+    HWND labelEncodingDest_ = nullptr;
     HWND comboDest_ = nullptr;
 
     // Hotkey
+    HWND labelHotkey_ = nullptr;
     HWND checkHkCtrl_ = nullptr;
     HWND checkHkAlt_ = nullptr;
     HWND checkHkShift_ = nullptr;

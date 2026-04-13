@@ -8,6 +8,7 @@
 #include <Windows.h>
 #include <TlHelp32.h>
 #include <commdlg.h>
+#include <CommCtrl.h>
 #include <algorithm>
 #include <string>
 #include <vector>

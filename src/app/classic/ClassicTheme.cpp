@@ -38,6 +38,8 @@ void ClassicTheme::Init(HWND hwnd, bool forceLightTheme) {
     // Enable dark mode at app level (affects native combobox, scrollbar, etc.)
     DarkModeHelper::ApplyDarkModeForApp();
 
+    // Destroy old fonts before recreating them to prevent GDI leak
+    DestroyFonts();
     CreateFonts(Classic::GetWindowDpi(hwnd));
     CreateBrushes();
     ApplyWindowAttributes(hwnd);
@@ -382,13 +384,15 @@ HBRUSH ClassicTheme::OnCtlColorDlg(HDC) {
 
 HBRUSH ClassicTheme::OnCtlColorStatic(HDC hdc, HWND) {
     SetTextColor(hdc, colors_.text);
-    SetBkMode(hdc, TRANSPARENT);
+    SetBkColor(hdc, colors_.background);
+    SetBkMode(hdc, OPAQUE);
     return brBackground_;
 }
 
 HBRUSH ClassicTheme::OnCtlColorBtn(HDC hdc, HWND) {
     SetTextColor(hdc, colors_.text);
-    SetBkMode(hdc, TRANSPARENT);
+    SetBkColor(hdc, colors_.background);
+    SetBkMode(hdc, OPAQUE);
     return brBackground_;
 }
 
