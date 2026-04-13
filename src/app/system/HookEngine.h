@@ -138,14 +138,8 @@ private:
     // Re-inject a key after auto-restore replacement
     void InjectKey(DWORD vkCode);
 
-    // Qt/Electron detection — skip U+202F to avoid first-word delay
-    static bool IsQtElectronApp(HWND hwnd);
-
     // Clear per-word engine state (shared by CommitComposition, ResetComposition, TryExpandMacro)
     void ClearWordState();
-
-    // Console detection — skip U+202F, split SendInput with adaptive delay
-    static bool IsConsoleApp(HWND hwnd);
 
     // Smart switch: get foreground app exe name
     [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;

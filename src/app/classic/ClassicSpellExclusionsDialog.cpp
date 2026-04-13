@@ -3,7 +3,7 @@
 
 #include "ClassicSpellExclusionsDialog.h"
 #include "core/config/ConfigManager.h"
-#include "core/config/ConfigEvent.h"
+#include "app/helpers/AppHelpers.h"
 
 #include <windowsx.h>
 #include <algorithm>
@@ -204,8 +204,7 @@ void ClassicSpellExclusionsDialog::SaveData() {
     config.spellExclusions = entries_;
     (void)ConfigManager::SaveToFile(path, config);
 
-    ConfigEvent event;
-    if (event.Initialize()) event.Signal();
+    SignalConfigChange();
 }
 
 // ════════════════════════════════════════════════════════════

@@ -1462,15 +1462,73 @@ void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INP
     RecordSynthDispatch();
 }
 
-/// Check if a filename (without path) is a known browser executable.
-static bool IsBrowserExeName(const wchar_t* filename) {
-    return _wcsnicmp(filename, L"chrome", 6) == 0 ||
-           _wcsnicmp(filename, L"msedge", 6) == 0 ||
-           _wcsnicmp(filename, L"firefox", 7) == 0 ||
-           _wcsnicmp(filename, L"brave", 5) == 0 ||
-           _wcsnicmp(filename, L"opera", 5) == 0 ||
-           _wcsnicmp(filename, L"vivaldi", 7) == 0;
+/// Check if a filename (without path) is a known Electron app executable.
+/// Electron apps use Chrome_WidgetWin window class (same as Chromium browsers).
+/// Unknown Chrome_WidgetWin apps default to "browser" — safer because:
+///   - Browser miss → double text (visible, user reports immediately)
+///   - Electron miss → slightly slower input (split delay absent, usually OK)
+/// This list covers the most popular Electron apps. Add new ones as needed.
+static bool IsKnownElectronExe(const wchar_t* filename) noexcept {
+    return _wcsnicmp(filename, L"code", 4) == 0 ||       // VS Code
+           _wcsnicmp(filename, L"cursor", 6) == 0 ||     // Cursor (AI code editor)
+           _wcsnicmp(filename, L"discord", 7) == 0 ||    // Discord
+           _wcsnicmp(filename, L"slack", 5) == 0 ||      // Slack
+           _wcsnicmp(filename, L"notion", 6) == 0 ||     // Notion
+           _wcsnicmp(filename, L"obsidian", 8) == 0 ||   // Obsidian
+           _wcsnicmp(filename, L"figma", 5) == 0 ||      // Figma
+           _wcsnicmp(filename, L"postman", 7) == 0 ||    // Postman
+           _wcsnicmp(filename, L"insomnia", 8) == 0 ||   // Insomnia
+           _wcsnicmp(filename, L"signal", 6) == 0 ||     // Signal
+           _wcsnicmp(filename, L"1password", 9) == 0 ||  // 1Password
+           _wcsnicmp(filename, L"bitwarden", 9) == 0 ||  // Bitwarden
+           _wcsnicmp(filename, L"gitkraken", 9) == 0 ||  // GitKraken
+           _wcsnicmp(filename, L"hyper", 5) == 0 ||      // Hyper terminal
+           _wcsnicmp(filename, L"spotify", 7) == 0 ||    // Spotify
+           _wcsnicmp(filename, L"whatsapp", 8) == 0 ||   // WhatsApp Desktop
+           _wcsnicmp(filename, L"telegram", 8) == 0 ||   // Telegram (some forks are Electron; native is Qt, caught earlier)
+           _wcsnicmp(filename, L"logseq", 6) == 0 ||     // Logseq
+           _wcsnicmp(filename, L"linear", 6) == 0 ||     // Linear
+           _wcsnicmp(filename, L"lark", 4) == 0 ||       // Lark/Feishu
+           _wcsnicmp(filename, L"zalo", 4) == 0;         // Zalo PC
 }
+
+// ── Auto-detect Electron by app.asar marker (FUTURE USE) ──────────────
+// Uncomment to replace IsKnownElectronExe() with zero-maintenance detection.
+// Checks if resources/app.asar exists next to the exe — all Electron apps ship this.
+// Performance: GetFileAttributesW is metadata-only (~0.05ms SSD), cached per exe path.
+// Risk: network drives can timeout (30s). Guard with GetDriveTypeW before using.
+//
+// #include <unordered_map>
+//
+// static bool IsElectronByMarker(const wchar_t* exeFullPath) {
+//     // Cache: one check per unique exe path, forever (exe won't change at runtime)
+//     static std::unordered_map<std::wstring, bool> cache;
+//     auto it = cache.find(exeFullPath);
+//     if (it != cache.end()) return it->second;
+//
+//     // Guard: skip network/removable drives (GetFileAttributesW can timeout 30s)
+//     if (exeFullPath[0] == L'\\' && exeFullPath[1] == L'\\') {
+//         cache[exeFullPath] = true;  // UNC path — assume Electron (safe default)
+//         return true;
+//     }
+//     wchar_t drive[4] = { exeFullPath[0], L':', L'\\', L'\0' };
+//     UINT driveType = GetDriveTypeW(drive);
+//     if (driveType != DRIVE_FIXED && driveType != DRIVE_RAMDISK) {
+//         cache[exeFullPath] = true;  // Non-fixed drive — assume Electron
+//         return true;
+//     }
+//
+//     // Local fixed drive: safe to check file system
+//     const wchar_t* lastSlash = wcsrchr(exeFullPath, L'\\');
+//     if (!lastSlash) { cache[exeFullPath] = false; return false; }
+//     std::wstring dir(exeFullPath, lastSlash);
+//     std::wstring asarPath = dir + L"\\resources\\app.asar";
+//     bool isElectron = (GetFileAttributesW(asarPath.c_str()) != INVALID_FILE_ATTRIBUTES);
+//     cache[exeFullPath] = isElectron;
+//     return isElectron;
+// }
+// Usage in ClassifyWindow: replace IsKnownElectronExe(exeName.c_str()) with
+// IsElectronByMarker(exeFullPath) — requires GetExePathForHwnd() returning full path.
 
 bool HookEngine::IsTrayOrTaskbarWindow(HWND hwnd) noexcept {
     if (!hwnd) return false;
@@ -1522,47 +1580,65 @@ std::wstring HookEngine::GetExeNameForHwnd(HWND hwnd) noexcept {
     return result;
 }
 
-bool HookEngine::IsQtElectronApp(HWND hwnd) {
+/// Classify window into app type — called from OnFocusChanged().
+/// Reads window class ONCE and determines: Browser, Electron, Qt, Console, or Normal.
+/// Results are written directly to the caller's output variables.
+///
+/// Priority order:
+///   1. Console (by window class: ConsoleWindowClass, CASCADIA, mintty, PuTTY)
+///   2. Firefox-based browser (by window class: MozillaWindowClass)
+///   3. Chrome_WidgetWin → Known Electron list or default to browser
+///   4. Qt app (by window class: Qt5*, Qt6*, QWidget)
+///   5. Normal Win32 app
+static void ClassifyWindow(HWND hwnd,
+                           bool& outIsBrowser,
+                           bool& outIsElectron,
+                           bool& outIsQtApp,
+                           bool& outIsConsole) noexcept {
+    outIsBrowser = outIsElectron = outIsQtApp = outIsConsole = false;
+
     HWND root = GetAncestor(hwnd, GA_ROOT);
     if (root) hwnd = root;
 
     wchar_t className[64] = {};
     GetClassNameW(hwnd, className, 64);
 
-    // Qt apps: Qt5QWindowIcon, Qt6QWindowIcon, QWidget, etc.
+    // 1. Console apps
+    if (_wcsicmp(className, L"ConsoleWindowClass") == 0 ||
+        _wcsicmp(className, L"CASCADIA_HOSTING_WINDOW_CLASS") == 0 ||  // Windows Terminal
+        _wcsicmp(className, L"tty") == 0 ||                            // Cygwin/MSYS
+        _wcsicmp(className, L"mintty") == 0 ||                         // Git Bash
+        _wcsicmp(className, L"PuTTY") == 0) {
+        outIsConsole = true;
+        return;
+    }
+
+    // 2. Firefox-based browsers (covers Firefox, Floorp, Tor, LibreWolf, Waterfox, Pale Moon)
+    if (_wcsicmp(className, L"MozillaWindowClass") == 0) {
+        outIsBrowser = true;
+        return;
+    }
+
+    // 3. Chrome_WidgetWin: Chromium browser OR Electron app
+    //    Disambiguate by known Electron exe list. Unknown → browser (safer default).
+    if (wcsstr(className, L"Chrome_WidgetWin")) {
+        std::wstring exeName = HookEngine::GetExeNameForHwnd(hwnd);
+        if (!exeName.empty() && IsKnownElectronExe(exeName.c_str())) {
+            outIsElectron = true;
+        } else {
+            outIsBrowser = true;  // Unknown Chrome_WidgetWin → assume browser
+        }
+        return;
+    }
+
+    // 4. Qt apps (Telegram native, KeePassXC, etc.)
     if (wcsstr(className, L"Qt5") || wcsstr(className, L"Qt6") ||
         wcsstr(className, L"QWidget")) {
-        return true;
+        outIsQtApp = true;
+        return;
     }
 
-    // Electron apps use Chrome_WidgetWin but are NOT actual browsers
-    if (wcsstr(className, L"Chrome_WidgetWin")) {
-        // Exclude real browsers — they NEED U+202F for autocomplete fix
-        std::wstring exeName = GetExeNameForHwnd(hwnd);
-        if (!exeName.empty() && IsBrowserExeName(exeName.c_str())) {
-            return false;
-        }
-        return true;
-    }
-
-    return false;
-}
-
-bool HookEngine::IsConsoleApp(HWND hwnd) {
-    HWND root = GetAncestor(hwnd, GA_ROOT);
-    if (root) hwnd = root;
-
-    wchar_t className[64] = {};
-    GetClassNameW(hwnd, className, 64);
-
-    if (_wcsicmp(className, L"ConsoleWindowClass") == 0) return true;
-    if (_wcsicmp(className, L"CASCADIA_HOSTING_WINDOW_CLASS") == 0) return true; // Windows Terminal
-    if (_wcsicmp(className, L"tty") == 0) return true; // Cygwin/MSYS
-    if (_wcsicmp(className, L"mintty") == 0) return true; // Git Bash
-    if (_wcsicmp(className, L"PuTTY") == 0) return true; // PuTTY
-
-    // Electron apps (e.g. VS Code terminal) are handled by IsQtElectronApp.
-    return false;
+    // 5. Normal Win32 app (Notepad, Word, etc.) — no flags set
 }
 
 void HookEngine::NotifyModeChange() noexcept {
@@ -1738,35 +1814,33 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 
     // Successfully passed all window-validation guards — update PID tracker.
 
-    // Detect Qt/Electron apps, Console apps, and GPU-rendered apps — skip U+202F.
+    // Classify app type — single GetClassNameW call covers all detection.
     // U+202F (narrow no-break space) is a "bait" char inserted before BS sequences so
-    // BS always has something to delete (prevents BS being swallowed at empty positions
-    // in some Win32 apps). Apps that don't reliably process U+202F need skipEmpty=true:
-    //   - Qt/Electron: multi-process IPC can reorder batch events
-    //   - Console: terminal emulators have their own input handling
-    //   - GPU-rendered (Zed, etc.): custom input pipelines may ignore U+202F
-    isConsoleApp_ = IsConsoleApp(activeHwnd);
-    bool isQtElectron = IsQtElectronApp(activeHwnd);
-    skipEmptyChar_ = isQtElectron || isConsoleApp_;
-    needBaitChar_ = false;
-    // GPU-rendered apps + bait detection: single exe name lookup for both
-    if (!skipEmptyChar_) {
+    // BS always has something to delete (prevents BS being swallowed at empty positions).
+    //   - Browsers: need bait (autocomplete/address bar)
+    //   - Electron/Qt: skip bait, split SendInput with delay (IPC reorder prevention)
+    //   - Console: skip bait, split SendInput (terminal-specific input handling)
+    //   - GPU-rendered (Zed): skip bait entirely (custom input pipelines)
+    bool isBrowser = false, isElectron = false, isQtApp = false;
+    isConsoleApp_ = false;
+    ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, isConsoleApp_);
+
+    skipEmptyChar_ = isElectron || isQtApp || isConsoleApp_;
+    needBaitChar_ = isBrowser;
+
+    // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
+    if (!skipEmptyChar_ && !needBaitChar_) {
         std::wstring exeName = GetExeNameForHwnd(activeHwnd);
         if (!exeName.empty()) {
-            // GPU-rendered apps: skip U+202F entirely (custom input pipelines)
             if (_wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
                 skipEmptyChar_ = true;
             } else {
-                // Bait char (U+202F) only for apps with autocomplete/suggest.
-                // Normal apps (Notepad, Word, etc.): no bait → faster.
-                needBaitChar_ = IsBrowserExeName(exeName.c_str()) ||
-                    exeName.find(L"excel") != std::wstring::npos ||
+                needBaitChar_ = exeName.find(L"excel") != std::wstring::npos ||
                     exeName.find(L"outlook") != std::wstring::npos;
             }
         }
     }
-    // Electron = Qt/Electron apps only (NOT GPU-rendered like Zed, NOT console)
-    isElectronApp_ = isQtElectron && !isConsoleApp_;
+    isElectronApp_ = (isElectron || isQtApp) && !isConsoleApp_;
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d",
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0, needBaitChar_ ? 1 : 0);
 
