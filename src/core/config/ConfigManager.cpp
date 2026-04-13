@@ -261,7 +261,6 @@ std::optional<UIConfig> ConfigManager::LoadUIConfig(const std::wstring& path) {
             config.backgroundOpacity = static_cast<uint8_t>(
                 (*ui)["background_opacity"].value_or(80)
             );
-            config.darkMode = (*ui)["dark_mode"].value_or(true);
             config.pinned = (*ui)["pinned"].value_or(false);
         }
 
@@ -279,7 +278,6 @@ bool ConfigManager::SaveUIConfig(const std::wstring& path, const UIConfig& confi
         toml::table ui;
         ui.insert_or_assign("show_advanced", config.showAdvanced);
         ui.insert_or_assign("background_opacity", static_cast<int64_t>(config.backgroundOpacity));
-        ui.insert_or_assign("dark_mode", config.darkMode);
         ui.insert_or_assign("pinned", config.pinned);
         tbl.insert_or_assign("ui", std::move(ui));
 
@@ -558,6 +556,7 @@ std::optional<SystemConfig> ConfigManager::LoadSystemConfig(const std::wstring& 
             config.floatingIconY = static_cast<int32_t>((*system)["floating_icon_y"].value_or(int64_t(INT32_MIN)));
             config.autoCheckUpdate = (*system)["auto_check_update"].value_or(true);
             config.startupMode = static_cast<uint8_t>((*system)["startup_mode"].value_or(0));
+            config.forceLightTheme = (*system)["force_light_theme"].value_or(false);
         }
 
         return config;
@@ -585,6 +584,7 @@ bool ConfigManager::SaveSystemConfig(const std::wstring& path, const SystemConfi
         system.insert_or_assign("floating_icon_y", static_cast<int64_t>(config.floatingIconY));
         system.insert_or_assign("auto_check_update", config.autoCheckUpdate);
         system.insert_or_assign("startup_mode", static_cast<int64_t>(config.startupMode));
+        system.insert_or_assign("force_light_theme", config.forceLightTheme);
         tbl.insert_or_assign("system", std::move(system));
 
         return WriteToml(utf8Path, tbl);

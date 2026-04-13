@@ -174,7 +174,6 @@ pinned = false
     ASSERT_TRUE(config.has_value());
     EXPECT_FALSE(config->showAdvanced);
     EXPECT_EQ(config->backgroundOpacity, 80);
-    EXPECT_TRUE(config->darkMode);
     EXPECT_FALSE(config->pinned);
 }
 
@@ -183,7 +182,6 @@ TEST_F(ConfigManagerTest, LoadUIConfig_CustomValues) {
 [ui]
 show_advanced = true
 background_opacity = 50
-dark_mode = false
 pinned = true
 )");
 
@@ -191,7 +189,6 @@ pinned = true
     ASSERT_TRUE(config.has_value());
     EXPECT_TRUE(config->showAdvanced);
     EXPECT_EQ(config->backgroundOpacity, 50);
-    EXPECT_FALSE(config->darkMode);
     EXPECT_TRUE(config->pinned);
 }
 
@@ -222,7 +219,6 @@ TEST_F(ConfigManagerTest, LoadUIConfig_FallbackToDefaults) {
 
     EXPECT_FALSE(result.showAdvanced);
     EXPECT_EQ(result.backgroundOpacity, 80);
-    EXPECT_TRUE(result.darkMode);
     EXPECT_FALSE(result.pinned);
 }
 
@@ -234,7 +230,6 @@ TEST_F(ConfigManagerTest, SaveUIConfig_Basic) {
     UIConfig config;
     config.showAdvanced = true;
     config.backgroundOpacity = 60;
-    config.darkMode = false;
     config.pinned = true;
 
     EXPECT_TRUE(ConfigManager::SaveUIConfig(testConfigPath_, config));
@@ -244,7 +239,6 @@ TEST_F(ConfigManagerTest, SaveUIConfig_Basic) {
     ASSERT_TRUE(loaded.has_value());
     EXPECT_TRUE(loaded->showAdvanced);
     EXPECT_EQ(loaded->backgroundOpacity, 60);
-    EXPECT_FALSE(loaded->darkMode);
     EXPECT_TRUE(loaded->pinned);
 }
 
@@ -305,7 +299,6 @@ TEST_F(ConfigManagerTest, UIConfig_DefaultConstructor) {
 
     EXPECT_FALSE(config.showAdvanced);
     EXPECT_EQ(config.backgroundOpacity, 80);
-    EXPECT_TRUE(config.darkMode);
     EXPECT_FALSE(config.pinned);
 }
 
