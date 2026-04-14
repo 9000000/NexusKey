@@ -75,3 +75,9 @@
 
 // ── Links ──
 #define IDC_LINK_REPORT_BUG     2701
+
+// ── Tab icons (color icons replacing emoji text) ──
+#define IDI_TAB_INPUT           301
+#define IDI_TAB_MACROS          302
+#define IDI_TAB_SYSTEM          303
+#define IDI_BTN_PICK            304

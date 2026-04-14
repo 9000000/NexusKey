@@ -133,7 +133,7 @@ void ClassicAppOverridesDialog::CreateControls() {
         x + appComboW + gap, y, addW, rowH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
 
-    btnPick_ = CreateWindowExW(0, L"BUTTON", L"\u2316 Chọn cửa sổ",
+    btnPick_ = CreateWindowExW(0, L"BUTTON", L"Chọn cửa sổ",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         x + appComboW + addW + gap * 2, y, pickW, rowH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_PICK), hInstance_, nullptr);

@@ -139,7 +139,7 @@ void ClassicExcludedAppsDialog::CreateControls() {
         x + comboW + gap, y, Dpi(60), btnH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
 
-    btnPick_ = CreateWindowExW(0, L"BUTTON", L"\u2316 Chọn cửa sổ",
+    btnPick_ = CreateWindowExW(0, L"BUTTON", L"Chọn cửa sổ",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         x + comboW + Dpi(60) + gap * 2, y, Dpi(80), btnH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_PICK), hInstance_, nullptr);

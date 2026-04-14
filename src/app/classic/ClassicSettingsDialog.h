@@ -43,6 +43,8 @@ public:
     [[nodiscard]] const ClassicTheme& theme() const noexcept { return theme_; }
 
 private:
+    friend LRESULT CALLBACK TabSubclassProc(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
+
     // -- Window setup --
     bool RegisterWindowClass(HINSTANCE hInstance);
     void CreateCompactControls();
@@ -113,6 +115,10 @@ private:
     HWND linkReportBug_ = nullptr;
     bool advancedCreated_ = false;
     int currentTab_     = 0;
+
+    // Tab icons (color icons replacing emoji text)
+    HICON tabIcons_[3]{};
+    int   iconSize_ = 16;
 
     // Per-tab checkbox HWNDs (indexed by kSettings array index)
     static constexpr size_t kMaxControls = 64;

@@ -338,6 +338,30 @@ template<typename CharStateT, typename ComposeFunc>
     return MatchExclusionBuf(buf, bufLen, exclusions);
 }
 
+/// Escape-suppression check: would keeping the existing stroke on dTarget AND
+/// adding another đ (from a future dd) match a spell exclusion?
+/// Used to prevent dd→đ escape when the user is building toward "đđ"-style words.
+/// Composes current buffer (stroke kept), appends 'đ', then does prefix match.
+template<typename CharStateT, typename ComposeFunc>
+[[nodiscard]] inline bool WouldKeepStrokeAndNewStrokeDMatchExclusion(
+        const CharStateT* states, size_t count,
+        const std::vector<std::wstring>& exclusions,
+        ComposeFunc compose) {
+    if (exclusions.empty() || count == 0) return false;
+
+    constexpr size_t kMaxBuf = 16;
+    wchar_t buf[kMaxBuf];
+    size_t bufLen = 0;
+    for (size_t i = 0; i < count && bufLen < kMaxBuf - 1; ++i) {
+        wchar_t ch = compose(states[i]);
+        if (ch != 0) buf[bufLen++] = towlower(ch);
+    }
+    if (bufLen < kMaxBuf) {
+        buf[bufLen++] = L'\u0111';  // append hypothetical đ
+    }
+    return MatchExclusionBuf(buf, bufLen, exclusions);
+}
+
 /// Typing-time check: would applying a tone produce a word matching a spell exclusion?
 /// Simulates tone on the target vowel, builds composed buffer with the toned char,
 /// then does bidirectional prefix match (buffer may be shorter than exclusion while typing).

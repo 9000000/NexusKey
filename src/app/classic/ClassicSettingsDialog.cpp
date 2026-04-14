@@ -34,6 +34,9 @@ constexpr UINT WM_UPDATE_BTN_STATE = WM_APP;
 // ════════════════════════════════════════════════════════════════════
 
 ClassicSettingsDialog::~ClassicSettingsDialog() {
+    for (auto& icon : tabIcons_) {
+        if (icon) { DestroyIcon(icon); icon = nullptr; }
+    }
     if (hwnd_) {
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
@@ -236,7 +239,7 @@ void ClassicSettingsDialog::CreateCompactControls() {
 // Control creation — Advanced mode (tab + checkboxes)
 // ════════════════════════════════════════════════════════════════════
 
-static LRESULT CALLBACK TabSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
+LRESULT CALLBACK TabSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
     auto* self = reinterpret_cast<ClassicSettingsDialog*>(dwRefData);
 
     if (uMsg == WM_ERASEBKGND || uMsg == WM_PRINTCLIENT) {
@@ -322,7 +325,25 @@ static LRESULT CALLBACK TabSubclassProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 
             SetTextColor(hdc, isSelected ? self->theme().Colors().text : self->theme().Colors().textSecondary);
             SelectObject(hdc, isSelected ? fontActive : fontInactive);
-            DrawTextW(hdc, text, -1, &rcTab, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+            HICON icon = (i < 3) ? self->tabIcons_[i] : nullptr;
+            if (icon) {
+                int iconSz = self->iconSize_;
+                int gap = Classic::DpiScale(4, Classic::GetWindowDpi(hWnd));
+                SIZE textSz{};
+                GetTextExtentPoint32W(hdc, text, static_cast<int>(wcslen(text)), &textSz);
+                int totalW = iconSz + gap + textSz.cx;
+                int startX = rcTab.left + (rcTab.right - rcTab.left - totalW) / 2;
+                int iconY = rcTab.top + (rcTab.bottom - rcTab.top - iconSz) / 2;
+
+                DrawIconEx(hdc, startX, iconY, icon, iconSz, iconSz, 0, nullptr, DI_NORMAL);
+
+                RECT rcText = rcTab;
+                rcText.left = startX + iconSz + gap;
+                DrawTextW(hdc, text, -1, &rcText, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+            } else {
+                DrawTextW(hdc, text, -1, &rcTab, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            }
         }
 
         SelectObject(hdc, oldBr);
@@ -359,17 +380,26 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
     SetWindowSubclass(tabControl_, TabSubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
-    // Insert tabs
+    // Load tab icons (color .ico replacing monochrome emoji)
+    iconSize_ = Dpi(16);
+    const int iconIds[] = { IDI_TAB_INPUT, IDI_TAB_MACROS, IDI_TAB_SYSTEM };
+    for (int i = 0; i < 3; ++i) {
+        tabIcons_[i] = static_cast<HICON>(LoadImageW(
+            hInstance_, MAKEINTRESOURCEW(iconIds[i]), IMAGE_ICON,
+            iconSize_, iconSize_, LR_DEFAULTCOLOR));
+    }
+
+    // Insert tabs (text only — icons drawn by TabSubclassProc)
     TCITEMW tie{};
     tie.mask = TCIF_TEXT;
 
-    tie.pszText = const_cast<wchar_t*>(L"\U0001F4DD Bộ Gõ");
+    tie.pszText = const_cast<wchar_t*>(L"Bộ Gõ");
     TabCtrl_InsertItem(tabControl_, 0, &tie);
 
-    tie.pszText = const_cast<wchar_t*>(L"\U0001F680 Gõ Tắt");
+    tie.pszText = const_cast<wchar_t*>(L"Gõ Tắt");
     TabCtrl_InsertItem(tabControl_, 1, &tie);
 
-    tie.pszText = const_cast<wchar_t*>(L"⚙️ Hệ thống");
+    tie.pszText = const_cast<wchar_t*>(L"Hệ thống");
     TabCtrl_InsertItem(tabControl_, 2, &tie);
 
     TabCtrl_SetItemSize(tabControl_, Dpi(120), Dpi(kTabHeight));
@@ -981,11 +1011,11 @@ void ClassicSettingsDialog::RefreshLabels() {
     if (tabControl_) {
         TCITEMW tie{};
         tie.mask = TCIF_TEXT;
-        tie.pszText = const_cast<wchar_t*>(en ? L"\U0001F4DD Input" : L"\U0001F4DD Bộ Gõ");
+        tie.pszText = const_cast<wchar_t*>(en ? L"Input" : L"Bộ Gõ");
         TabCtrl_SetItem(tabControl_, 0, &tie);
-        tie.pszText = const_cast<wchar_t*>(en ? L"\U0001F680 Macros" : L"\U0001F680 Gõ Tắt");
+        tie.pszText = const_cast<wchar_t*>(en ? L"Macros" : L"Gõ Tắt");
         TabCtrl_SetItem(tabControl_, 1, &tie);
-        tie.pszText = const_cast<wchar_t*>(en ? L"\u2699\uFE0F System" : L"\u2699\uFE0F Hệ thống");
+        tie.pszText = const_cast<wchar_t*>(en ? L"System" : L"Hệ thống");
         TabCtrl_SetItem(tabControl_, 2, &tie);
         InvalidateRect(tabControl_, nullptr, TRUE);
     }

@@ -681,17 +681,25 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 
     // P2: "uo" pair — horn cycle
     // Default: uo → ươ (one press). For h/th/kh prefixes where uơ words exist
-    // (huơ, thuở, khuơ): ươ → uơ → uo (three-press cycle).
+    // (huơ, thuở, khuơ): uo → uơ → ươ → uo (three-press cycle, uơ first).
     // Others: ươ → uo (two-press escape).
+    // ApplyAutoUO() will auto-complete uơ → ươ when followed by another char.
     if (hasUO && pairU != SIZE_MAX) {
         Modifier uMod = states_[pairU].mod;
         Modifier oMod = states_[pairO].mod;
         bool isEdge = IsUOEdgeCasePrefix(states_.data(), states_.size(), pairU);
 
-        // Forward: uo/uô → ươ (first press, covers circumflex replacement)
+        // Forward (non-edge): uo/uô → ươ (first press, covers circumflex replacement)
+        // Forward (edge h/th/kh): uo → uơ (first press — default to uơ for huơ/khuơ)
         if (uMod != Modifier::Horn && (oMod == Modifier::None || oMod == Modifier::Circumflex)) {
-            states_[pairU].mod = Modifier::Horn;
-            states_[pairO].mod = Modifier::Horn;
+            if (isEdge) {
+                // Edge case: first press → uơ (horn only on o)
+                states_[pairO].mod = Modifier::Horn;
+            } else {
+                // Normal: first press → ươ (horn on both)
+                states_[pairU].mod = Modifier::Horn;
+                states_[pairO].mod = Modifier::Horn;
+            }
             RelocateToneToHornVowel();
             return true;
         }
@@ -703,15 +711,15 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
             return true;
         }
 
-        // Cycle: ươ → uơ (h/th/kh only, second press)
-        if (uMod == Modifier::Horn && oMod == Modifier::Horn && isEdge) {
-            states_[pairU].mod = Modifier::None;
+        // Forward (edge): uơ → ươ (h/th/kh second press — complete the pair)
+        if (uMod == Modifier::None && oMod == Modifier::Horn && isEdge) {
+            states_[pairU].mod = Modifier::Horn;
             RelocateToneToHornVowel();
             return true;
         }
 
-        // Escape: ươ → uo (non h/th/kh, second press)
-        if (uMod == Modifier::Horn && oMod == Modifier::Horn && !isEdge) {
+        // Escape: ươ → uo (third press for h/th/kh, second press for others)
+        if (uMod == Modifier::Horn && oMod == Modifier::Horn) {
             states_[pairU].mod = Modifier::None;
             states_[pairO].mod = Modifier::None;
             ProcessChar(c);
@@ -719,7 +727,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
             return true;
         }
 
-        // Escape: uơ → uo (h/th/kh third press, or any remaining uơ state)
+        // Escape: uơ → uo (non h/th/kh, or any remaining uơ state)
         if (uMod == Modifier::None && oMod == Modifier::Horn) {
             states_[pairO].mod = Modifier::None;
             ProcessChar(c);
@@ -832,6 +840,17 @@ bool TelexEngine::ProcessDModifier(wchar_t c) {
         target.mod = Modifier::Stroke;
         return true;
     } else if (target.mod == Modifier::Stroke) {
+        // Before escaping, check if keeping stroke and starting a new d→đ sequence
+        // would match a spell exclusion (e.g., "đđ" in exclusion list).
+        // If so, skip escape — let 'd' fall through to ProcessChar as a raw char.
+        if (!config_.spellExclusions.empty()) {
+            auto compose = [](const CharState& s) { return Compose(s); };
+            if (WouldKeepStrokeAndNewStrokeDMatchExclusion(
+                    states_.data(), states_.size(),
+                    config_.spellExclusions, compose)) {
+                return false;
+            }
+        }
         target.mod = Modifier::None;
         escape_.escape(EscapeKind::Stroke);
         ProcessChar(c);
@@ -897,14 +916,13 @@ void TelexEngine::ApplyAutoUO() {
         if (i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q') continue;
 
         // Pattern 1: u(no horn) + ơ(has horn) → horn the u to complete ươ
-        // Exception: h/th/kh prefix — user may have intentionally chosen uơ (thuở, huơ)
+        // When followed by another character, always auto-complete to ươ
+        // (including h/th/kh prefixes: huơn → hươn, thuở → OK via P2 cycle).
         // Tone relocation not needed: ApplyW P2 already called RelocateToneToHornVowel()
         // when 'w' was typed, so tone is already correctly on ơ.
         if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
             states_[i+1].base == L'o' && states_[i+1].mod == Modifier::Horn) {
-            if (!IsUOEdgeCasePrefix(states_.data(), states_.size(), i)) {
-                states_[i].mod = Modifier::Horn;
-            }
+            states_[i].mod = Modifier::Horn;
         }
 
         // Pattern 2: ư(has horn) + o(no horn) → horn the o to complete ươ

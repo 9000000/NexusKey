@@ -1,17 +1,10 @@
-# NexusKey v2.1.16
-
+# NexusKey v2.1.17
 **✨ Tính năng mới & Cải tiến:**
-- Tinh chỉnh UI phiên bản classic
-- Thêm tuỳ chọn luôn dùng light theme thay vì auto theo system
-- Disable tính năng con nếu tính năng cha không được bật
+- Điều chỉnh cơ chế đặt dấu mũ huơ, khuơ, thuơ: mặc định sẽ là uơ, w thêm để thành ươ, hoặc tự động thành ươ nếu có kí tự tiếp theo
+- Điều chỉnh lại màu icon của tab
 
 **🛠 Sửa lỗi:**
-- Sửa lỗi UI classic trên win 10
-- Sửa lỗi "Loại trừ chính tả" không hoạt động khi cho phép z w j f làm phụ âm đầu bị tắt
-- Sửa lỗi đ -> dd khi có đh trong danh sách loại trừ chính ta
-- Sửa lỗi classic xoá từ khỏi loại trừ chính tả nhưng phải restart app mới apply
-- Sửa lỗi double kí tự search của Floorp
-- Sửa lỗi oà, uỳ không hoạt động đúng
+- Sửa lỗi đđ trong loại trừ chính tả nhưng không hoạt động
 
 ---
 Cảm ơn bạn đã lựa chọn NexusKey! Mọi đóng góp của bạn đều là nguồn động lực lớn giúp bộ gõ ngày càng hoàn thiện hơn. ❤️

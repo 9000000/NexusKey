@@ -25,6 +25,12 @@ IDI_VIET_OFF_WHITE   ICON    "../resources/status/StatusEng10.ico"
 IDI_VIET_ON_BLACK    ICON    "../resources/status/StatusVietBlack.ico"
 IDI_VIET_OFF_BLACK   ICON    "../resources/status/StatusEngBlack.ico"
 
+// Icons — Tab/button UI elements (color)
+IDI_TAB_INPUT        ICON    "../resources/tabs/tab_input.ico"
+IDI_TAB_MACROS       ICON    "../resources/tabs/tab_macros.ico"
+IDI_TAB_SYSTEM       ICON    "../resources/tabs/tab_system.ico"
+IDI_BTN_PICK         ICON    "../resources/tabs/btn_pick.ico"
+
 // Version info
 VS_VERSION_INFO VERSIONINFO
     FILEVERSION    NEXUSKEY_VERSION_RC
