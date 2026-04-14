@@ -833,17 +833,6 @@ bool TelexEngine::ProcessDModifier(wchar_t c) {
         target.mod = Modifier::Stroke;
         return true;
     } else if (target.mod == Modifier::Stroke) {
-        // Before escaping, check if keeping stroke and starting a new d→đ sequence
-        // would match a spell exclusion (e.g., "đđ" in exclusion list).
-        // If so, skip escape — let 'd' fall through to ProcessChar as a raw char.
-        if (!config_.spellExclusions.empty()) {
-            auto compose = [](const CharState& s) { return Compose(s); };
-            if (WouldKeepStrokeAndNewStrokeDMatchExclusion(
-                    states_.data(), states_.size(),
-                    config_.spellExclusions, compose)) {
-                return false;
-            }
-        }
         target.mod = Modifier::None;
         escape_.escape(EscapeKind::Stroke);
         ProcessChar(c);

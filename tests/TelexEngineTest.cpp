@@ -3752,41 +3752,6 @@ TEST_F(SpellExclusionTest, ZwjfOff_CaseInsensitive) {
     EXPECT_EQ(eng.Commit(), L"Zô");
 }
 
-TEST_F(SpellExclusionTest, DoubleStrokeD_ExclusionPreventsEscape) {
-    // "đđ" in exclusion list → typing "dddd" should produce "đđ" (not "ddd")
-    // Bug: 3rd 'd' triggered escape of first đ instead of starting a new d→đ sequence
-    TypingConfig cfg;
-    cfg.spellCheckEnabled = true;
-    cfg.autoRestoreEnabled = true;
-    cfg.spellExclusions = {L"đđ"};
-    TelexEngine eng(cfg);
-    TypeString(eng, L"dddd");
-    EXPECT_EQ(eng.Peek(), L"đđ");
-    EXPECT_EQ(eng.Commit(), L"đđ");
-}
-
-TEST_F(SpellExclusionTest, DoubleStrokeD_NoExclusion_EscapeWorks) {
-    // Without exclusion, "ddd" should escape: dd→đ, then d escapes → "dd"
-    TypingConfig cfg;
-    cfg.spellCheckEnabled = true;
-    cfg.autoRestoreEnabled = true;
-    TelexEngine eng(cfg);
-    TypeString(eng, L"ddd");
-    EXPECT_EQ(eng.Peek(), L"dd");
-}
-
-TEST_F(SpellExclusionTest, DoubleStrokeD_PrefixExclusion) {
-    // "đđt" in exclusion list → "ddddt" should produce "đđt"
-    TypingConfig cfg;
-    cfg.spellCheckEnabled = true;
-    cfg.autoRestoreEnabled = true;
-    cfg.spellExclusions = {L"đđt"};
-    TelexEngine eng(cfg);
-    TypeString(eng, L"ddddt");
-    EXPECT_EQ(eng.Peek(), L"đđt");
-    EXPECT_EQ(eng.Commit(), L"đđt");
-}
-
 // =============================================================================
 // Non-initial dd→đ tests (abbreviation support)
 // =============================================================================
