@@ -899,6 +899,18 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
             if (state->info.available) {
                 if (UpdateChecker::ShowUpdateDialog(dlgHwnd, state->info)) {
                     if (UpdateChecker::DownloadWithProgress(dlgHwnd, state->info.downloadUrl)) {
+                        // Flush dirty config before quitting — PostQuitMessage bypasses
+                        // WM_CLOSE, so the deferred save timer never fires.
+                        if (configDirty_) {
+                            KillTimer(hwnd_, kTimerDeferredSave);
+                            SaveToToml();
+                        }
+                        // Signal main process to exit so the updater can replace files.
+                        // Without this, updater waits 30s then proceeds while we're still running.
+                        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                        if (trayWnd) {
+                            PostMessageW(trayWnd, WM_CLOSE, 0, 0);
+                        }
                         PostQuitMessage(0);
                     }
                 }
