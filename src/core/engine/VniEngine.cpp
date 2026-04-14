@@ -512,15 +512,10 @@ bool VniEngine::ProcessModifier(wchar_t c) {
             Modifier oMod = states_[pairO].mod;
             bool isEdge = IsUOEdgeCasePrefix(states_.data(), states_.size(), pairU);
 
-            // Forward (non-edge): uo → ươ (first press)
-            // Forward (edge h/th/kh): uo → uơ (first press — default to uơ for huơ/khuơ)
+            // Forward: uo → ươ (first press for all cases)
             if (uMod == Modifier::None && oMod == Modifier::None) {
-                if (isEdge) {
-                    states_[pairO].mod = Modifier::Horn;
-                } else {
-                    states_[pairU].mod = Modifier::Horn;
-                    states_[pairO].mod = Modifier::Horn;
-                }
+                states_[pairU].mod = Modifier::Horn;
+                states_[pairO].mod = Modifier::Horn;
                 return true;
             }
             // Forward: ưo → ươ (u already horned, complete pair)
@@ -528,12 +523,12 @@ bool VniEngine::ProcessModifier(wchar_t c) {
                 states_[pairO].mod = Modifier::Horn;
                 return true;
             }
-            // Forward (edge): uơ → ươ (h/th/kh second press — complete the pair)
-            if (uMod == Modifier::None && oMod == Modifier::Horn && isEdge) {
-                states_[pairU].mod = Modifier::Horn;
+            // Edge (h/th/kh): ươ → uơ (second press — alternate form)
+            if (uMod == Modifier::Horn && oMod == Modifier::Horn && isEdge) {
+                states_[pairU].mod = Modifier::None;
                 return true;
             }
-            // Escape: ươ → uo (third press for h/th/kh, second press for others)
+            // Escape: ươ → uo (second press for non-edge)
             if (uMod == Modifier::Horn && oMod == Modifier::Horn) {
                 states_[pairU].mod = Modifier::None;
                 states_[pairO].mod = Modifier::None;
@@ -541,7 +536,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
                 ProcessChar(c, rawInput_.size() - 1);
                 return true;
             }
-            // Escape: uơ → uo (non h/th/kh, or any remaining uơ state)
+            // Escape: uơ → uo (third press for edge, or any remaining uơ state)
             if (uMod == Modifier::None && oMod == Modifier::Horn) {
                 states_[pairO].mod = Modifier::None;
                 escape_.escape(EscapeKind::Horn);
