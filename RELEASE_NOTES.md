@@ -6,5 +6,6 @@
 
 **🛠 Sửa lỗi:**
 - Fix lỗi mất thông tin smart switch khi update app ở phiên bản classic
+
 ---
 Cảm ơn bạn đã lựa chọn NexusKey! Mọi đóng góp của bạn đều là nguồn động lực lớn giúp bộ gõ ngày càng hoàn thiện hơn. ❤️
