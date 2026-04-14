@@ -4,7 +4,6 @@
 - Điều chỉnh lại màu icon của tab
 
 **🛠 Sửa lỗi:**
-- Sửa lỗi đđ trong loại trừ chính tả nhưng không hoạt động
-
+- N/a
 ---
 Cảm ơn bạn đã lựa chọn NexusKey! Mọi đóng góp của bạn đều là nguồn động lực lớn giúp bộ gõ ngày càng hoàn thiện hơn. ❤️

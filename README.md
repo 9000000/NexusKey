@@ -279,3 +279,7 @@ Dự án sử dụng **dual license**:
 
 - **Sử dụng open-source (GPL-3.0):** Bạn có thể sử dụng, sửa đổi, phân phối lại toàn bộ mã nguồn với điều kiện giữ nguyên license GPL-3.0 cho derivative works.
 - **Sử dụng thương mại/closed-source:** Nếu muốn dùng engine NexusKey trong sản phẩm proprietary, vui lòng liên hệ tác giả để lấy commercial license. Xem [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/chart?repos=phatMT97/NexusKey&type=date&legend=top-left)](https://www.star-history.com/?repos=phatMT97%2FNexusKey&type=date&legend=top-left)
