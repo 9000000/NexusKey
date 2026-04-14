@@ -75,6 +75,9 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 * **High Performance Engine**
   Độ trễ thấp, hỗ trợ TSF, auto update, [tối ưu bảo mật](docs/SECURITY.md)
 
+* **Game-Friendly Telex**
+  Chơi game với Telex bình thường — WASD di chuyển mượt, không cần chuyển Simple Telex hay tắt tiếng Việt
+
 * **Float icon in FullScreen**
   Hỗ trợ hiển thị icon status V/E nổi trên màn hình - thích hợp các app FullScreen
 

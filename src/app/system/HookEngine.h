@@ -110,7 +110,7 @@ private:
     void SetCommitUndoReady(); // commitUndoState_ = Ready + timestamp
 
     // Output — universal SendInput with KEYEVENTF_UNICODE
-    void ReplaceComposition(const std::wstring& newText);
+    void ReplaceComposition(const std::wstring& newText, DWORD reinjectVk = 0);
     void TrackedSendInput(INPUT* events, UINT count) noexcept;
     void DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents);
     void SendBackspaces(size_t count);
