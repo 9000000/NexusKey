@@ -74,8 +74,10 @@ VniEngine::VniEngine(const TypingConfig& config) : config_(config) {
 }
 
 void VniEngine::PushChar(wchar_t c) {
-    // Guard: cap buffer size to prevent unbounded memory growth.
-    if (rawInput_.size() >= 64) return;
+    // NOTE: buffer cap removed — game-compatible mode lets users keep V mode
+    // while gaming; key spam easily exceeds 64 chars without commit.
+    // Restore if unbounded growth becomes an issue:
+    // if (rawInput_.size() >= 64) return;
 
     rawInput_ += c;
     qc_.onlyQC = false;  // Any new char clears the flag
@@ -495,7 +497,8 @@ bool VniEngine::ProcessModifier(wchar_t c) {
     // Handle vowel modifiers (6, 7, 8)
 
     // Horn on "uo" pair: cycle logic (same as Telex ProcessWModifier P2)
-    // Default: uo → ươ (one press). h/th/kh: uo → uơ → ươ → uo (three-press, uơ first).
+    // All cases: first press uo → ươ. For h/th/kh prefixes where uơ words exist
+    // (huơ, thuở, khuơ): ươ → uơ → uo (three-press cycle, ươ first).
     // Others: ươ → uo (two-press). QU cluster handled by IsClusterConsonant.
     // ApplyAutoUO() will auto-complete uơ → ươ when followed by another char.
     if (targetMod == Modifier::Horn) {
@@ -740,18 +743,20 @@ void VniEngine::ApplyAutoUO() {
         // Skip QU cluster
         if (i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q') continue;
 
-        // Pattern 1: u(plain) + ơ(horn) → horn the u
-        // When followed by another character, always auto-complete to ươ
-        // (including h/th/kh prefixes: huơn → hươn).
+        // Pattern 1: u(no horn) + ơ(has horn) → horn the u to complete ươ
+        // When followed by another character, auto-complete to ươ — UNLESS the user
+        // explicitly cycled to uơ (h/th/kh prefix), in which case keep it.
         if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
             states_[i + 1].base == L'o' && states_[i + 1].mod == Modifier::Horn) {
-            states_[i].mod = Modifier::Horn;
+            if (!IsUOEdgeCasePrefix(states_.data(), states_.size(), i))
+                states_[i].mod = Modifier::Horn;
         }
 
-        // Pattern 2: ư(horn) + o(plain) → horn the o
+        // Pattern 2: ư(has horn) + o(no horn) → horn the o to complete ươ
         if (states_[i].base == L'u' && states_[i].mod == Modifier::Horn &&
             states_[i + 1].base == L'o' && states_[i + 1].mod == Modifier::None) {
             states_[i + 1].mod = Modifier::Horn;
+            RelocateToneToTarget();
         }
     }
 }

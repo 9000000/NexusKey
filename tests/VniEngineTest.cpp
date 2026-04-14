@@ -111,6 +111,18 @@ TEST_F(VniEngineTest, Horn_KHUO77_Cycle) {
     EXPECT_EQ(engine_->Peek(), L"khuơ");
 }
 
+TEST_F(VniEngineTest, Horn_HUO77N_AutoUO_PreservesEdge) {
+    // huo77n → huơn (n does NOT trigger AutoUO for h prefix — keep intentional uơ)
+    TypeString(*engine_, L"huo77n");
+    EXPECT_EQ(engine_->Peek(), L"huơn");
+}
+
+TEST_F(VniEngineTest, Horn_THUO773_Thuor) {
+    // thuo773 → thuở (second 7 gives uơ, then 3 adds hỏi tone)
+    TypeString(*engine_, L"thuo773");
+    EXPECT_EQ(engine_->Peek(), L"thuở");
+}
+
 TEST_F(VniEngineTest, Horn_DUO7_DirectTransform) {
     // duo7 → dươ (non h/th/kh, first 7)
     TypeString(*engine_, L"duo7");

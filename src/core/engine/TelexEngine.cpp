@@ -78,10 +78,11 @@ TelexEngine::TelexEngine(const TypingConfig& config) : config_(config) {
 //-----------------------------------------------------------------------------
 
 void TelexEngine::PushChar(wchar_t c) {
-    // Guard: cap buffer size to prevent unbounded memory growth.
-    // Vietnamese syllables are at most ~8 chars; 64 is generous for any real input.
-    // Beyond this, silently drop — the word is clearly not Vietnamese.
-    if (rawInput_.size() >= 64) return;
+    // NOTE: buffer cap removed — game-compatible Telex (VK re-inject) lets users
+    // keep V mode while gaming; WASD spam easily exceeds 64 chars without commit.
+    // Memory leak unlikely: engine resets on focus change, click, space, enter.
+    // Restore if unbounded growth becomes an issue:
+    // if (rawInput_.size() >= 64) return;
 
     rawInput_.push_back(c);
     qc_.onlyQC = false;  // Any new char clears the flag
