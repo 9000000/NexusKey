@@ -76,15 +76,15 @@ TEST_F(VniEngineTest, Horn_UO77_Escape) {
 }
 
 TEST_F(VniEngineTest, Horn_HUO7_DirectTransform) {
-    // huo7 → hươ (first 7 horns both, h prefix)
+    // huo7 → huơ (first 7: default uơ for h prefix)
     TypeString(*engine_, L"huo7");
-    EXPECT_EQ(engine_->Peek(), L"hươ");
+    EXPECT_EQ(engine_->Peek(), L"huơ");
 }
 
 TEST_F(VniEngineTest, Horn_HUO77_Cycle) {
-    // huo77 → huơ (h prefix: second 7 cycles ươ → uơ)
+    // huo77 → hươ (h prefix: second 7 cycles uơ → ươ)
     TypeString(*engine_, L"huo77");
-    EXPECT_EQ(engine_->Peek(), L"huơ");
+    EXPECT_EQ(engine_->Peek(), L"hươ");
 }
 
 TEST_F(VniEngineTest, Horn_HUO777_Escape) {
@@ -94,32 +94,32 @@ TEST_F(VniEngineTest, Horn_HUO777_Escape) {
 }
 
 TEST_F(VniEngineTest, Horn_THUO7_DirectTransform) {
-    // thuo7 → thươ (th prefix, first 7)
+    // thuo7 → thuơ (th prefix, first 7: default uơ)
     TypeString(*engine_, L"thuo7");
-    EXPECT_EQ(engine_->Peek(), L"thươ");
-}
-
-TEST_F(VniEngineTest, Horn_THUO77_Cycle) {
-    // thuo77 → thuơ (th prefix: ươ → uơ)
-    TypeString(*engine_, L"thuo77");
     EXPECT_EQ(engine_->Peek(), L"thuơ");
 }
 
+TEST_F(VniEngineTest, Horn_THUO77_Cycle) {
+    // thuo77 → thươ (th prefix: uơ → ươ)
+    TypeString(*engine_, L"thuo77");
+    EXPECT_EQ(engine_->Peek(), L"thươ");
+}
+
 TEST_F(VniEngineTest, Horn_KHUO77_Cycle) {
-    // khuo77 → khuơ (kh prefix: ươ → uơ)
+    // khuo77 → khươ (kh prefix: uơ → ươ)
     TypeString(*engine_, L"khuo77");
-    EXPECT_EQ(engine_->Peek(), L"khuơ");
+    EXPECT_EQ(engine_->Peek(), L"khươ");
 }
 
-TEST_F(VniEngineTest, Horn_HUO77N_AutoUO_PreservesEdge) {
-    // huo77n → huơn (n does NOT trigger AutoUO for h prefix — keep intentional uơ)
-    TypeString(*engine_, L"huo77n");
-    EXPECT_EQ(engine_->Peek(), L"huơn");
+TEST_F(VniEngineTest, Horn_HUO7N_AutoUO_Completes) {
+    // huo7n → hươn (first 7 gives uơ, n triggers AutoUO to complete ươ)
+    TypeString(*engine_, L"huo7n");
+    EXPECT_EQ(engine_->Peek(), L"hươn");
 }
 
-TEST_F(VniEngineTest, Horn_THUO773_Thuor) {
-    // thuo773 → thuở (second 7 gives uơ, then 3 adds hỏi tone)
-    TypeString(*engine_, L"thuo773");
+TEST_F(VniEngineTest, Horn_THUO73_Thuor) {
+    // thuo73 → thuở (first 7 gives uơ, then 3 adds hỏi tone)
+    TypeString(*engine_, L"thuo73");
     EXPECT_EQ(engine_->Peek(), L"thuở");
 }
 

@@ -177,15 +177,15 @@ TEST_F(TelexEngineTest, Horn_O_CircumflexToHorn) {
 // --- UO Horn Cycle: h/th/kh edge case prefix (3-state) ---
 
 TEST_F(TelexEngineTest, Horn_UO_HPrefix_FirstW) {
-    // huow → hươ (first w: default ươ)
+    // huow → huơ (first w: default uơ for h prefix)
     TypeString(*engine_, L"huow");
-    EXPECT_EQ(engine_->Peek(), L"hươ");
+    EXPECT_EQ(engine_->Peek(), L"huơ");
 }
 
 TEST_F(TelexEngineTest, Horn_UO_HPrefix_SecondW) {
-    // huoww → huơ (second w: ươ → uơ for h prefix)
+    // huoww → hươ (second w: uơ → ươ for h prefix)
     TypeString(*engine_, L"huoww");
-    EXPECT_EQ(engine_->Peek(), L"huơ");
+    EXPECT_EQ(engine_->Peek(), L"hươ");
 }
 
 TEST_F(TelexEngineTest, Horn_UO_HPrefix_ThirdW) {
@@ -195,15 +195,15 @@ TEST_F(TelexEngineTest, Horn_UO_HPrefix_ThirdW) {
 }
 
 TEST_F(TelexEngineTest, Horn_UO_THPrefix_FirstW) {
-    // thuow → thươ (first w: default ươ)
+    // thuow → thuơ (first w: default uơ for th prefix)
     TypeString(*engine_, L"thuow");
-    EXPECT_EQ(engine_->Peek(), L"thươ");
+    EXPECT_EQ(engine_->Peek(), L"thuơ");
 }
 
 TEST_F(TelexEngineTest, Horn_UO_THPrefix_SecondW) {
-    // thuoww → thuơ (second w: ươ → uơ for th prefix)
+    // thuoww → thươ (second w: uơ → ươ for th prefix)
     TypeString(*engine_, L"thuoww");
-    EXPECT_EQ(engine_->Peek(), L"thuơ");
+    EXPECT_EQ(engine_->Peek(), L"thươ");
 }
 
 TEST_F(TelexEngineTest, Horn_UO_THPrefix_ThirdW) {
@@ -213,14 +213,14 @@ TEST_F(TelexEngineTest, Horn_UO_THPrefix_ThirdW) {
 }
 
 TEST_F(TelexEngineTest, Horn_UO_KHPrefix_SecondW) {
-    // khuoww → khuơ (second w: ươ → uơ for kh prefix)
+    // khuoww → khươ (second w: uơ → ươ for kh prefix)
     TypeString(*engine_, L"khuoww");
-    EXPECT_EQ(engine_->Peek(), L"khuơ");
+    EXPECT_EQ(engine_->Peek(), L"khươ");
 }
 
 TEST_F(TelexEngineTest, Horn_UO_THPrefix_Thuor) {
-    // thuowwr → thuở (second w gives uơ, then r adds tone hỏi)
-    TypeString(*engine_, L"thuowwr");
+    // thuowr → thuở (first w gives uơ, then r adds tone hỏi)
+    TypeString(*engine_, L"thuowr");
     EXPECT_EQ(engine_->Peek(), L"thuở");
 }
 
@@ -246,10 +246,10 @@ TEST_F(TelexEngineTest, Horn_UO_NPrefix_WithFinal) {
 
 // --- AutoUO respects h/th/kh edge case ---
 
-TEST_F(TelexEngineTest, Horn_UO_HPrefix_AutoUO_Blocked) {
-    // huowwn → huơn (second w gives huơ, n does NOT trigger AutoUO for h prefix)
-    TypeString(*engine_, L"huowwn");
-    EXPECT_EQ(engine_->Peek(), L"huơn");
+TEST_F(TelexEngineTest, Horn_UO_HPrefix_AutoUO_Completes) {
+    // huown → hươn (first w gives huơ, n triggers AutoUO to complete ươ)
+    TypeString(*engine_, L"huown");
+    EXPECT_EQ(engine_->Peek(), L"hươn");
 }
 
 // ============================================================================
@@ -480,15 +480,15 @@ TEST_F(TelexEngineTest, Word_Nguoi) {
 }
 
 TEST_F(TelexEngineTest, Word_Huo) {
-    // huow → hươ (first w horns both, h prefix 3-state cycle)
+    // huow → huơ (first w: default uơ for h prefix)
     TypeString(*engine_, L"huow");
-    EXPECT_EQ(engine_->Peek(), L"hươ");
+    EXPECT_EQ(engine_->Peek(), L"huơ");
 }
 
 TEST_F(TelexEngineTest, Word_Huo_WithSecondW) {
-    // huoww → huơ (second w cycles ươ → uơ for h prefix)
+    // huoww → hươ (second w cycles uơ → ươ for h prefix)
     TypeString(*engine_, L"huoww");
-    EXPECT_EQ(engine_->Peek(), L"huơ");
+    EXPECT_EQ(engine_->Peek(), L"hươ");
 }
 
 TEST_F(TelexEngineTest, Word_Cuoiwo_UndoHorn) {

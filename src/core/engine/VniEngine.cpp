@@ -497,9 +497,8 @@ bool VniEngine::ProcessModifier(wchar_t c) {
     // Handle vowel modifiers (6, 7, 8)
 
     // Horn on "uo" pair: cycle logic (same as Telex ProcessWModifier P2)
-    // All cases: first press uo → ươ. For h/th/kh prefixes where uơ words exist
-    // (huơ, thuở, khuơ): ươ → uơ → uo (three-press cycle, ươ first).
-    // Others: ươ → uo (two-press). QU cluster handled by IsClusterConsonant.
+    // Non-edge: uo → ươ → uo (two-press cycle).
+    // Edge (h/th/kh): uo → uơ → ươ → uo (three-press cycle, uơ first).
     // ApplyAutoUO() will auto-complete uơ → ươ when followed by another char.
     if (targetMod == Modifier::Horn) {
         size_t pairU = SIZE_MAX, pairO = SIZE_MAX;
@@ -515,10 +514,15 @@ bool VniEngine::ProcessModifier(wchar_t c) {
             Modifier oMod = states_[pairO].mod;
             bool isEdge = IsUOEdgeCasePrefix(states_.data(), states_.size(), pairU);
 
-            // Forward: uo → ươ (first press for all cases)
+            // Forward (non-edge): uo → ươ (first press)
+            // Forward (edge h/th/kh): uo → uơ (first press — default to uơ for huơ/khuơ)
             if (uMod == Modifier::None && oMod == Modifier::None) {
-                states_[pairU].mod = Modifier::Horn;
-                states_[pairO].mod = Modifier::Horn;
+                if (isEdge) {
+                    states_[pairO].mod = Modifier::Horn;
+                } else {
+                    states_[pairU].mod = Modifier::Horn;
+                    states_[pairO].mod = Modifier::Horn;
+                }
                 return true;
             }
             // Forward: ưo → ươ (u already horned, complete pair)
@@ -526,12 +530,12 @@ bool VniEngine::ProcessModifier(wchar_t c) {
                 states_[pairO].mod = Modifier::Horn;
                 return true;
             }
-            // Edge (h/th/kh): ươ → uơ (second press — alternate form)
-            if (uMod == Modifier::Horn && oMod == Modifier::Horn && isEdge) {
-                states_[pairU].mod = Modifier::None;
+            // Forward (edge): uơ → ươ (h/th/kh second press — complete the pair)
+            if (uMod == Modifier::None && oMod == Modifier::Horn && isEdge) {
+                states_[pairU].mod = Modifier::Horn;
                 return true;
             }
-            // Escape: ươ → uo (second press for non-edge)
+            // Escape: ươ → uo (third press for h/th/kh, second press for others)
             if (uMod == Modifier::Horn && oMod == Modifier::Horn) {
                 states_[pairU].mod = Modifier::None;
                 states_[pairO].mod = Modifier::None;
@@ -539,7 +543,7 @@ bool VniEngine::ProcessModifier(wchar_t c) {
                 ProcessChar(c, rawInput_.size() - 1);
                 return true;
             }
-            // Escape: uơ → uo (third press for edge, or any remaining uơ state)
+            // Escape: uơ → uo (non h/th/kh, or any remaining uơ state)
             if (uMod == Modifier::None && oMod == Modifier::Horn) {
                 states_[pairO].mod = Modifier::None;
                 escape_.escape(EscapeKind::Horn);
@@ -731,8 +735,9 @@ wchar_t VniEngine::ComposeChar(const CharState& state) const {
 
 //-----------------------------------------------------------------------------
 // Auto horn companion: complete ươ pair when a char is typed AFTER the pair.
+// Always auto-completes uơ → ươ (including h/th/kh prefixes).
 // Requires i + 2 < size: the pair must NOT be the last two states.
-// Exception: h/th/kh prefixes skip Pattern 1 to preserve intentional uơ (thuở, huơ).
+// h/th/kh prefixes: first modifier gives uơ, auto-complete promotes to ươ on next char.
 //-----------------------------------------------------------------------------
 
 void VniEngine::ApplyAutoUO() {
@@ -744,12 +749,11 @@ void VniEngine::ApplyAutoUO() {
         if (i > 0 && states_[i].base == L'u' && states_[i - 1].base == L'q') continue;
 
         // Pattern 1: u(no horn) + ơ(has horn) → horn the u to complete ươ
-        // When followed by another character, auto-complete to ươ — UNLESS the user
-        // explicitly cycled to uơ (h/th/kh prefix), in which case keep it.
+        // When followed by another character, always auto-complete uơ → ươ
+        // (including h/th/kh prefixes: huơn → hươn).
         if (states_[i].base == L'u' && states_[i].mod == Modifier::None &&
             states_[i + 1].base == L'o' && states_[i + 1].mod == Modifier::Horn) {
-            if (!IsUOEdgeCasePrefix(states_.data(), states_.size(), i))
-                states_[i].mod = Modifier::Horn;
+            states_[i].mod = Modifier::Horn;
         }
 
         // Pattern 2: ư(has horn) + o(no horn) → horn the o to complete ươ
