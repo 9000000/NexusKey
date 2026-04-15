@@ -177,6 +177,11 @@ static void ApplyConfigChange(const TypingConfig& config) {
     if (event.Initialize()) {
         event.Signal();
     }
+
+    // Notify Classic settings dialog (if open) to refresh UI
+    if (HWND settingsWnd = FindWindowW(L"NexusKeyClassicSettings", nullptr)) {
+        PostMessageW(settingsWnd, WM_NEXUSKEY_CONFIG_CHANGED, 0, 0);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -328,6 +333,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             RunUpdateInstaller(resolvedPath);
         }
         return 1;
+    }
+
+    // Self-elevate if "Run as Admin" is enabled but we're not elevated.
+    {
+        auto preConfig = ConfigManager::LoadSystemConfigOrDefault();
+        if (SelfElevateIfNeeded(ConfigManager::GetConfigPath(), preConfig.runAsAdmin)) {
+            return 0;
+        }
     }
 
     // ── Single instance check ──

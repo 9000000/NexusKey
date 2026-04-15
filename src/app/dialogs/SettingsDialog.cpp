@@ -675,11 +675,14 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     }
     else if (id == L"run-admin") {
         systemConfig_.runAsAdmin = value;
-        // Re-register with new admin mode if startup is enabled
-        if (systemConfig_.runAtStartup) {
-            RegisterRunOnStartup(true, value);
-        }
         saveSystemSettings();
+        // Restart main process to apply elevation change.
+        // Startup registration (Task Scheduler/Registry) is handled by
+        // EnsureStartupRegistration() in the new instance — no double UAC.
+        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        if (trayWnd) {
+            PostMessageW(trayWnd, WM_NEXUSKEY_RESTART, 0, 0);
+        }
         return;
     }
     else if (id == L"show-on-startup") {
@@ -979,6 +982,8 @@ void SettingsDialog::initializeUI() {
     config_.tsfApps = IsTsfRegistered();
     setToggleState(L"tsf-apps", config_.tsfApps);
     setToggleState(L"spell-check", config_.spellCheckEnabled);
+    // Sync spell check child toggles (allow-zwjf, restore-key, exclusions button)
+    call_function("updateSpellCheckChildren", sciter::value(config_.spellCheckEnabled));
     setToggleState(L"modern-ortho", config_.modernOrtho);
     setToggleState(L"auto-caps", config_.autoCaps);
     setToggleState(L"allow-zwjf", config_.allowZwjf);

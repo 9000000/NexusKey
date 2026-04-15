@@ -951,8 +951,14 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
         RegisterRunOnStartup(value, systemConfig_.runAsAdmin);
     }
     else if (wcscmp(id, L"run-admin") == 0) {
-        if (systemConfig_.runAtStartup) {
-            RegisterRunOnStartup(true, value);
+        // Flush to TOML now — RestartWithNewAdminMode reads config from disk
+        KillTimer(hwnd_, kTimerDeferredSave);
+        SaveToToml();
+        // Restart main process to apply elevation change.
+        // Startup registration handled by EnsureStartupRegistration() in new instance.
+        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        if (trayWnd) {
+            PostMessageW(trayWnd, WM_NEXUSKEY_RESTART, 0, 0);
         }
     }
     else if (wcscmp(id, L"desktop-shortcut") == 0) {
@@ -1258,6 +1264,11 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
     switch (msg) {
         case WM_COMMAND:
             self->OnCommand(wParam, lParam);
+            return 0;
+
+        case WM_NEXUSKEY_CONFIG_CHANGED:
+            self->LoadSettings();
+            self->PopulateControls();
             return 0;
 
         case WM_UPDATE_BTN_STATE: {

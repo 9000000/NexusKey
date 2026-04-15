@@ -227,6 +227,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Main Process
     // ═══════════════════════════════════════════════════════════
 
+    // Self-elevate if "Run as Admin" is enabled but we're not elevated.
+    // Must be before mutex — the elevated instance will acquire the mutex instead.
+    {
+        auto preConfig = ConfigManager::LoadSystemConfigOrDefault();
+        if (SelfElevateIfNeeded(ConfigManager::GetConfigPath(), preConfig.runAsAdmin)) {
+            return 0;  // Elevated instance launching, exit this one
+        }
+    }
+
     // Ensure only one background instance of NexusKey runs at a time.
     // We check this AFTER subprocess routing so settings/macro dialogs
     // can spawn freely, but a second background process cannot.

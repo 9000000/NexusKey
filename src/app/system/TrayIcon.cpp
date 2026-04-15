@@ -6,6 +6,7 @@
 #include "UpdateChecker.h"
 #include "ToastPopup.h"
 #include "DarkModeHelper.h"
+#include "StartupHelper.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include <strsafe.h>
@@ -443,6 +444,19 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SetLanguage(static_cast<Language>(sysConfig.language));
         RefreshConvertHotkeyCache();
         if (iconConfigChangedCallback_) iconConfigChangedCallback_();
+        return true;
+    }
+
+    // Restart app (admin mode changed in settings)
+    if (msg == WM_NEXUSKEY_RESTART && hwnd == hwndMessage_) {
+        OutputDebugStringW(L"[NexusKey] WM_NEXUSKEY_RESTART received\n");
+        if (RestartWithNewAdminMode()) {
+            // New instance launched — exit via menu callback
+            // (TerminateAllSubprocesses is called inside OnMenuCommand::Exit)
+            if (menuCallback_) {
+                menuCallback_(TrayMenuId::Exit);
+            }
+        }
         return true;
     }
 

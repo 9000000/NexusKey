@@ -12,6 +12,8 @@
 #include <shellapi.h>
 #include <string>
 #include "UpdateSecurity.h"
+#include "core/config/ConfigManager.h"
+#include "core/SystemConfig.h"
 
 namespace NextKey {
 
@@ -257,6 +259,7 @@ inline void SetDesktopShortcut(bool enable) {
 /// Ensure startup registration is intact. Call on app startup. Never prompts UAC.
 /// If the Task Scheduler task was lost (Windows Update, antivirus, etc.),
 /// silently falls back to registry and syncs config so Settings UI matches reality.
+/// When elevated + admin + task missing: recreates the task (no UAC needed — already elevated).
 /// Returns true if config was modified (caller should save).
 [[nodiscard]] inline bool EnsureStartupRegistration(bool runAtStartup, bool& runAsAdmin) {
     if (!runAtStartup) return false;
@@ -264,7 +267,15 @@ inline void SetDesktopShortcut(bool enable) {
     if (runAsAdmin) {
         if (IsScheduledTaskRegistered()) return false;  // Task exists, all good
 
-        // Task lost: fall back to registry, sync config
+        // Task missing — if we're already elevated, recreate it (no UAC prompt)
+        if (IsRunningAsAdmin()) {
+            if (CreateScheduledTaskElevated()) {
+                RemoveRegistryStartup();
+                return false;
+            }
+        }
+
+        // Not elevated or task creation failed: fall back to registry, sync config
         (void)SetRegistryStartup();
         runAsAdmin = false;
         return true;  // Config changed, caller should save
@@ -272,6 +283,80 @@ inline void SetDesktopShortcut(bool enable) {
 
     // Non-admin mode: ensure registry entry points to current EXE
     (void)SetRegistryStartup();
+    return false;
+}
+
+/// Self-elevate if config says runAsAdmin but process is not elevated.
+/// Call early in WinMain (before mutex). Returns true if re-launching elevated
+/// (caller should return 0 immediately). Returns false to continue normally.
+/// If UAC is denied, sets runAsAdmin=false in config so we don't prompt again.
+[[nodiscard]] inline bool SelfElevateIfNeeded(const std::wstring& configPath, bool runAsAdmin) {
+    if (!runAsAdmin || IsRunningAsAdmin()) return false;
+
+    wchar_t exePath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.lpVerb = L"runas";
+    sei.lpFile = exePath;
+    sei.nShow = SW_SHOWNORMAL;
+
+    if (ShellExecuteExW(&sei)) {
+        return true;  // Elevated instance launching — caller should exit
+    }
+
+    // UAC denied — disable admin mode so we don't prompt on every start
+    SystemConfig sysConfig;
+    auto loaded = ConfigManager::LoadSystemConfig(configPath);
+    if (loaded) sysConfig = *loaded;
+    sysConfig.runAsAdmin = false;
+    (void)ConfigManager::SaveSystemConfig(configPath, sysConfig);
+    return false;
+}
+
+/// Restart the app with elevation (from main process). Used when admin mode is toggled ON.
+/// Shows UAC via ShellExecuteEx(runas). If denied, reverts config.
+/// Returns true if app should exit (new instance launched).
+/// De-elevation (admin OFF while elevated): not handled here — takes effect on next
+/// manual start, since CreateProcessW from elevated parent inherits the token.
+[[nodiscard]] inline bool RestartWithNewAdminMode() {
+    auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
+
+    OutputDebugStringW(L"[NexusKey] RestartWithNewAdminMode: runAsAdmin=");
+    OutputDebugStringW(sysConfig.runAsAdmin ? L"true" : L"false");
+    OutputDebugStringW(L", IsRunningAsAdmin=");
+    OutputDebugStringW(IsRunningAsAdmin() ? L"true\n" : L"false\n");
+
+    if (!sysConfig.runAsAdmin || IsRunningAsAdmin()) {
+        OutputDebugStringW(L"[NexusKey] RestartWithNewAdminMode: skipped (no change needed)\n");
+        return false;  // Already matching or de-elevating (can't restart non-elevated)
+    }
+
+    // Need elevation — ShellExecute with runas (shows UAC)
+    wchar_t exePath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+
+    OutputDebugStringW(L"[NexusKey] RestartWithNewAdminMode: launching elevated: ");
+    OutputDebugStringW(exePath);
+    OutputDebugStringW(L"\n");
+
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.lpVerb = L"runas";
+    sei.lpFile = exePath;
+    sei.nShow = SW_SHOWNORMAL;
+
+    if (ShellExecuteExW(&sei)) {
+        OutputDebugStringW(L"[NexusKey] RestartWithNewAdminMode: ShellExecuteEx succeeded\n");
+        return true;  // New elevated instance launching — caller should exit
+    }
+    // UAC denied or error
+    DWORD err = GetLastError();
+    wchar_t buf[128];
+    swprintf_s(buf, L"[NexusKey] RestartWithNewAdminMode: ShellExecuteEx failed, error=%lu\n", err);
+    OutputDebugStringW(buf);
+
+    sysConfig.runAsAdmin = false;
+    (void)ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), sysConfig);
     return false;
 }
 
