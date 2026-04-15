@@ -449,7 +449,6 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     // Restart app (admin mode changed in settings)
     if (msg == WM_NEXUSKEY_RESTART && hwnd == hwndMessage_) {
-        OutputDebugStringW(L"[NexusKey] WM_NEXUSKEY_RESTART received\n");
         if (RestartWithNewAdminMode()) {
             // New instance launched — exit via menu callback
             // (TerminateAllSubprocesses is called inside OnMenuCommand::Exit)

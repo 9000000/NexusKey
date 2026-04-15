@@ -322,13 +322,7 @@ inline void SetDesktopShortcut(bool enable) {
 [[nodiscard]] inline bool RestartWithNewAdminMode() {
     auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
 
-    OutputDebugStringW(L"[NexusKey] RestartWithNewAdminMode: runAsAdmin=");
-    OutputDebugStringW(sysConfig.runAsAdmin ? L"true" : L"false");
-    OutputDebugStringW(L", IsRunningAsAdmin=");
-    OutputDebugStringW(IsRunningAsAdmin() ? L"true\n" : L"false\n");
-
     if (!sysConfig.runAsAdmin || IsRunningAsAdmin()) {
-        OutputDebugStringW(L"[NexusKey] RestartWithNewAdminMode: skipped (no change needed)\n");
         return false;  // Already matching or de-elevating (can't restart non-elevated)
     }
 
@@ -336,25 +330,15 @@ inline void SetDesktopShortcut(bool enable) {
     wchar_t exePath[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
 
-    OutputDebugStringW(L"[NexusKey] RestartWithNewAdminMode: launching elevated: ");
-    OutputDebugStringW(exePath);
-    OutputDebugStringW(L"\n");
-
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
     sei.lpVerb = L"runas";
     sei.lpFile = exePath;
     sei.nShow = SW_SHOWNORMAL;
 
     if (ShellExecuteExW(&sei)) {
-        OutputDebugStringW(L"[NexusKey] RestartWithNewAdminMode: ShellExecuteEx succeeded\n");
         return true;  // New elevated instance launching — caller should exit
     }
-    // UAC denied or error
-    DWORD err = GetLastError();
-    wchar_t buf[128];
-    swprintf_s(buf, L"[NexusKey] RestartWithNewAdminMode: ShellExecuteEx failed, error=%lu\n", err);
-    OutputDebugStringW(buf);
-
+    // UAC denied — revert config
     sysConfig.runAsAdmin = false;
     (void)ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), sysConfig);
     return false;
