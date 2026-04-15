@@ -117,6 +117,10 @@ private:
     void SendBackspaceEvents(size_t count);
     void SendCharEvents(const std::wstring& text);
 
+    // Clipboard paste fallback for ANSI windows (can't handle KEYEVENTF_UNICODE)
+    [[nodiscard]] bool ShouldUseClipboard(HWND target) const noexcept;
+    void ClipboardPaste(const std::wstring& text);
+
     // Hotkey detection (absorbed from HotkeyManager)
     void TrackModifier(DWORD vkCode, bool isDown);
     bool CheckHotkeyMatch() const;

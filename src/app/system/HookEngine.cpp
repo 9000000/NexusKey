@@ -1451,6 +1451,57 @@ void HookEngine::SendCharEvents(const std::wstring& text) {
     RecordSynthDispatch();
 }
 
+bool HookEngine::ShouldUseClipboard(HWND target) const noexcept {
+    if (currentCodeTable_ != CodeTable::Unicode) return false;
+    return target && !IsWindowUnicode(target);
+}
+
+/// Write Unicode text to clipboard. Returns false on any failure.
+static bool SetClipboardText(const std::wstring& text) noexcept {
+    if (!OpenClipboard(nullptr)) return false;
+    EmptyClipboard();
+    size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!hMem) { CloseClipboard(); return false; }
+    auto* dest = static_cast<wchar_t*>(GlobalLock(hMem));
+    if (!dest) { GlobalFree(hMem); CloseClipboard(); return false; }
+    memcpy(dest, text.c_str(), bytes);
+    GlobalUnlock(hMem);
+    SetClipboardData(CF_UNICODETEXT, hMem);
+    CloseClipboard();
+    return true;
+}
+
+void HookEngine::ClipboardPaste(const std::wstring& text) {
+    if (text.empty()) return;
+
+    if (!SetClipboardText(text)) {
+        HOOK_LOG(L"  ClipboardPaste: clipboard failed, fallback to SendInput");
+        SendCharEvents(text);
+        return;
+    }
+
+    // Simulate Ctrl+V — hook proc passes these through (NEXUSKEY_EXTRA_INFO marker)
+    WORD ctrlScan = static_cast<WORD>(MapVirtualKeyW(VK_CONTROL, MAPVK_VK_TO_VSC));
+    WORD vScan = static_cast<WORD>(MapVirtualKeyW('V', MAPVK_VK_TO_VSC));
+    INPUT inputs[4] = {};
+    for (auto& in : inputs) {
+        in.type = INPUT_KEYBOARD;
+        in.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+    }
+    inputs[0].ki.wVk = VK_CONTROL;  inputs[0].ki.wScan = ctrlScan;
+    inputs[1].ki.wVk = 'V';         inputs[1].ki.wScan = vScan;
+    inputs[2].ki.wVk = 'V';         inputs[2].ki.wScan = vScan;     inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[3].ki.wVk = VK_CONTROL;  inputs[3].ki.wScan = ctrlScan;  inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
+
+    sending_ = true;
+    TrackedSendInput(inputs, 4);
+    sending_ = false;
+    RecordSynthDispatch();
+
+    HOOK_LOG(L"  ClipboardPaste: pasted '%s' via Ctrl+V", text.c_str());
+}
+
 /// Dispatch backspace + character events via SendInput.
 /// Handles split (Electron/Console) vs batch (Win32) strategy in one place.
 /// NOTE: batch path appends charEvents into bsEvents — callers must not reuse after calling.
@@ -2126,6 +2177,24 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     HOOK_LOG(L"  ReplaceComposition: prev='%s' new='%s' common=%zu BS=%zu send='%s'",
              previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
              toSend.c_str());
+
+    // ── Clipboard paste for ANSI windows ──
+    // ANSI windows can't handle KEYEVENTF_UNICODE (VK_PACKET) — Vietnamese chars become '?'.
+    // Fallback: set clipboard + simulate Ctrl+V. Backspaces (VK_BACK) work fine on all windows.
+    if (ShouldUseClipboard(target) && reinjectVk == 0) {
+        HOOK_LOG(L"  ReplaceComposition[clipboard]: ANSI window, BS=%zu send='%s'",
+                 backspaceCount, toSend.c_str());
+        if (backspaceCount > 0) {
+            SendBackspaceEvents(backspaceCount);
+            Sleep(15);  // Let app process deletions before clipboard paste
+        }
+        if (!toSend.empty()) {
+            ClipboardPaste(toSend);
+        }
+        previousComposition_ = newText;
+        if (synthEventsPending_ > 0) hadSynthInWord_ = true;
+        return;
+    }
 
     {
         // Bait char (U+202F): prevents apps with autofill from swallowing the first
