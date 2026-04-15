@@ -115,24 +115,26 @@ void QuickConvert::Execute() {
     // 4. Simulate Ctrl+C to copy selection
     SimulateCopy();
     
-    if (!WaitForClipboardUnicode(500)) {
-        QC_LOG(L"Clipboard wait timeout, no text copied.");
-        if (!savedClipboard.empty()) {
-            WriteClipboard(savedClipboard);
-        }
-        return;
-    }
-
-    // 5. Read clipboard text (the selection)
-    std::wstring clipText = ReadClipboard();
+    bool gotClip = WaitForClipboardUnicode(500);
+    std::wstring clipText = gotClip ? ReadClipboard() : L"";
     QC_LOG(L"Copied text length: %zu", clipText.size());
 
+    // 5. Sequential recovery: if clipboard is empty but we're mid-cycle,
+    // re-select failed last time — recover by re-selecting the previous paste
+    bool recoveryMode = false;
     if (clipText.empty()) {
-        // Nothing selected — restore clipboard and bail
-        if (!savedClipboard.empty()) {
-            WriteClipboard(savedClipboard);
+        if (config_.sequential && config_.autoPaste && IsStillInCycle(currentWindow, anchor)) {
+            QC_LOG(L"Sequential recovery: re-selecting previous paste (length: %d)", seqState_.lastPastedLength);
+            SimulateShiftLeftSelect(seqState_.lastPastedLength);
+            Sleep(30);
+            recoveryMode = true;
+        } else {
+            QC_LOG(L"Clipboard empty, no text copied.");
+            if (!savedClipboard.empty()) {
+                WriteClipboard(savedClipboard);
+            }
+            return;
         }
-        return;
     }
 
     // 6. Determine enabled options
@@ -151,7 +153,7 @@ void QuickConvert::Execute() {
         // Sequential mode: cycle through enabled options on repeated presses
         DWORD now = GetTickCount();
 
-        if (IsNewSelection(clipText, currentWindow, anchor)) {
+        if (!recoveryMode && IsNewSelection(clipText, currentWindow, anchor)) {
             // New selection: start fresh cycle
             QC_LOG(L"Starting new sequential cycle");
             seqState_.originText = clipText;
@@ -236,13 +238,20 @@ void QuickConvert::Execute() {
         WriteClipboard(result);
 
         SimulatePaste();
-        
-        // Wait for paste operation to finish (some apps take a bit longer)
-        Sleep(50);
+
+        // Wait for paste operation to finish (Electron apps need 50-200ms)
+        Sleep(100);
 
         // 9. Re-select pasted text
-        QC_LOG(L"Reselecting pasted text");
-        TryReselect(currentWindow, anchor, static_cast<int>(result.size()), static_cast<int>(clipText.size()));
+        // In recovery mode, use stored anchor (current anchor is invalid since there was no selection)
+        SelectionAnchor reselectAnchor = recoveryMode ? seqState_.anchor : anchor;
+        QC_LOG(L"Reselecting pasted text (recovery: %d)", recoveryMode);
+        TryReselect(currentWindow, reselectAnchor, static_cast<int>(result.size()));
+
+        // Track pasted length for sequential recovery on next press
+        if (config_.sequential) {
+            seqState_.lastPastedLength = static_cast<int>(result.size());
+        }
 
         // Don't restore clipboard — user expects converted text to stay
     } else {
@@ -444,7 +453,7 @@ SelectionAnchor QuickConvert::GetSelectionAnchor(HWND hwnd) {
     return anchor;
 }
 
-bool QuickConvert::TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLength, int originalSelLength) {
+bool QuickConvert::TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLength) {
     if (pastedLength <= 0) return true;
 
     // Check if should skip EM_SETSEL (RichEdit controls can behave badly with raw EM_SETSEL if active, but we'll try)
@@ -460,14 +469,14 @@ bool QuickConvert::TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLeng
 
     if (anchor.valid && targetCtrl && !skipEmSetsel) {
         // Poll: wait for selection to collapse (paste committed)
-        // Max 160ms (8 × 20ms)
-        for (int i = 0; i < 8; i++) {
-            Sleep(20);
-            
+        // Max 300ms (12 × 25ms)
+        for (int i = 0; i < 12; i++) {
+            Sleep(25);
+
             DWORD s = 0, e = 0;
             DWORD_PTR dummy = 0;
             SendMessageTimeoutW(targetCtrl, EM_GETSEL, reinterpret_cast<WPARAM>(&s), reinterpret_cast<LPARAM>(&e), SMTO_ABORTIFHUNG | SMTO_NORMAL, 50, &dummy);
-            
+
             if (s == e) {  // Selection collapsed → paste done!
                 // Use actual caret position (e) which accounts for Unicode normalization
                 if (e >= anchor.start) {
@@ -482,7 +491,7 @@ bool QuickConvert::TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLeng
                 return true;
             }
         }
-        
+
         QC_LOG(L"Tier 1 (EM_SETSEL) failed - paste did not settle in time");
         // If EM_SETSEL was supposed to work but timed out, do NOT fall through to Shift+Left
         // because the app might still be processing the paste and keystrokes would corrupt it.
@@ -490,14 +499,18 @@ bool QuickConvert::TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLeng
     }
 
     // TIER 2: Generic apps using Keystrokes (Shift + Left × N)
-    int keystrokeLength = (originalSelLength > 0) ? originalSelLength : pastedLength;
-    QC_LOG(L"Reselecting using Shift+Left fallback (length: %d)", keystrokeLength);
-    
+    QC_LOG(L"Reselecting using Shift+Left fallback (length: %d)", pastedLength);
+    SimulateShiftLeftSelect(pastedLength);
+    return true;
+}
+
+void QuickConvert::SimulateShiftLeftSelect(int length) {
+    if (length <= 0) return;
+
     // Safety limit to prevent locking up the OS
-    if (keystrokeLength > 5000) keystrokeLength = 5000;
-    
-    size_t charCount = static_cast<size_t>(keystrokeLength);
-    // Batch into groups to avoid SendInput limits
+    if (length > RESELECT_CUTOFF) length = RESELECT_CUTOFF;
+
+    size_t charCount = static_cast<size_t>(length);
     constexpr size_t BATCH = 32;
 
     for (size_t sent = 0; sent < charCount; ) {
@@ -531,13 +544,11 @@ bool QuickConvert::TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLeng
 
         SendInput(static_cast<UINT>(inputCount), inputs.data(), sizeof(INPUT));
         sent += batchSize;
-        
+
         if (sent < charCount) {
             Sleep(5);
         }
     }
-
-    return true;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -640,6 +651,39 @@ bool QuickConvert::IsNewSelection(const std::wstring& clipText, HWND targetHwnd,
     }
 
     QC_LOG(L"IsNewSelection: Content changed");
+    return true;
+}
+
+bool QuickConvert::IsStillInCycle(HWND targetHwnd, const SelectionAnchor& anchor) const {
+    // No previous conversion
+    if (seqState_.lastConvertTime == 0 || seqState_.lastPastedLength <= 0) {
+        return false;
+    }
+
+    // Timeout check
+    DWORD now = GetTickCount();
+    if ((now - seqState_.lastConvertTime) > SEQUENTIAL_TIMEOUT_MS) {
+        QC_LOG(L"IsStillInCycle: Timeout");
+        return false;
+    }
+
+    // Window check
+    if (targetHwnd != seqState_.window) {
+        QC_LOG(L"IsStillInCycle: Different window");
+        return false;
+    }
+
+    // Anchor validation (Edit controls only): verify cursor is at expected position
+    // If user moved cursor, recovery would select wrong text — abort
+    if (anchor.valid && seqState_.anchor.valid) {
+        DWORD expectedCursor = seqState_.anchor.start + static_cast<DWORD>(seqState_.lastPastedLength);
+        if (anchor.start != expectedCursor || anchor.end != expectedCursor) {
+            QC_LOG(L"IsStillInCycle: Cursor moved (expected %u, got %u-%u)", expectedCursor, anchor.start, anchor.end);
+            return false;
+        }
+    }
+
+    QC_LOG(L"IsStillInCycle: Yes (lastPastedLength: %d)", seqState_.lastPastedLength);
     return true;
 }
 

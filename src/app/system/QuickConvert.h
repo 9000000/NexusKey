@@ -46,7 +46,10 @@ private:
     SelectionAnchor GetSelectionAnchor(HWND hwnd);
 
     // Re-select pasted text (EM_SETSEL or Shift+Left fallback)
-    bool TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLength, int originalSelLength);
+    bool TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLength);
+
+    // Simulate Shift+Left × length to select text backwards from cursor
+    static void SimulateShiftLeftSelect(int length);
 
     // Apply a single conversion option to text
     [[nodiscard]] std::wstring ApplyConversion(const std::wstring& input, int optionIndex) const;
@@ -65,11 +68,13 @@ private:
         int currentIndex = 0;          // Current position in enabled options cycle
         DWORD lastConvertTime = 0;     // For timeout-based reset
         size_t contentHash = 0;        // Hash of converted text for change detection
+        int lastPastedLength = 0;      // Length of last pasted text for recovery re-select
     };
     static constexpr DWORD SEQUENTIAL_TIMEOUT_MS = 5000;
     static constexpr int RESELECT_CUTOFF = 5000;
 
     [[nodiscard]] bool IsNewSelection(const std::wstring& clipText, HWND targetHwnd, const SelectionAnchor& anchor) const;
+    [[nodiscard]] bool IsStillInCycle(HWND targetHwnd, const SelectionAnchor& anchor) const;
     void ResetSequentialState();
 
     ConvertConfig config_;
