@@ -879,7 +879,7 @@ void SettingsDialog::recalcWindowSize() {
     int newHeight = static_cast<int>(BASE_HEIGHT_COLLAPSED * dpiScale);
 
     if (container.is_valid()) {
-        RECT r = container.get_location(MARGIN_BOX);
+        RECT r = container.get_location_ppx(MARGIN_BOX);
         int w = r.right - r.left;
         int h = r.bottom - r.top;
         

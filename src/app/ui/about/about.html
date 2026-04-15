@@ -80,7 +80,7 @@
             Window.this.close();
         };
 
-        document.querySelectorAll(".btn-repo").forEach(function (btn) {
+        document.querySelectorAll("[data-url]").forEach(function (btn) {
             btn.onclick = function () {
                 var url = this.getAttribute("data-url");
                 if (url) {

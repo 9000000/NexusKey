@@ -25,7 +25,7 @@ public:
     static constexpr int REF_SCREEN_WIDTH = 1920;
     static constexpr int REF_SCREEN_HEIGHT = 1080;
     static constexpr double MIN_SCALE = 0.7;
-    static constexpr double MAX_SCALE = 1.6;
+    static constexpr double MAX_SCALE = 2.0;
     static constexpr int DEFAULT_DPI = 96;
 
     /**

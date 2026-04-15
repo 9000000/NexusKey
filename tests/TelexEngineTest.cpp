@@ -4074,6 +4074,80 @@ TEST_F(EnglishProtectionTest, WW_Escape_ThroughSpellCheck_EU) {
     EXPECT_EQ(engine_->Peek(), L"euw");
 }
 
+// ============================================================================
+// ENGLISH WORD BLOCK — RAW PREFIX CHECK
+// Block tone/modifier on known English prefixes when spell check is ON.
+// TDD: these tests are written BEFORE the implementation — expect RED.
+// ============================================================================
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Pass) {
+    // "pass": p-a-s → 's' should NOT fire sắc on "pa"
+    // Expected: "pas" (literal s), not "pá" (sắc applied)
+    TypeString(*engine_, L"pass");
+    EXPECT_EQ(engine_->Peek(), L"pass");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Passing) {
+    // "passing": same prefix "pas" → tone blocked, rest is literal
+    TypeString(*engine_, L"passing");
+    EXPECT_EQ(engine_->Peek(), L"passing");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Password) {
+    TypeString(*engine_, L"password");
+    EXPECT_EQ(engine_->Peek(), L"password");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Guess) {
+    // "guess": g-u-e-s → 's' should NOT fire sắc on "gue"
+    TypeString(*engine_, L"guess");
+    EXPECT_EQ(engine_->Peek(), L"guess");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Guessing) {
+    TypeString(*engine_, L"guessing");
+    EXPECT_EQ(engine_->Peek(), L"guessing");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Power) {
+    // "power": p-o-w → 'w' should NOT fire horn on "po" → no "pơ"
+    TypeString(*engine_, L"power");
+    EXPECT_EQ(engine_->Peek(), L"power");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Powder) {
+    TypeString(*engine_, L"powder");
+    EXPECT_EQ(engine_->Peek(), L"powder");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Upward) {
+    // "upward": u-p-w → 'w' should NOT fire horn on "u" → no "ưp"
+    TypeString(*engine_, L"upward");
+    EXPECT_EQ(engine_->Peek(), L"upward");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Upload) {
+    TypeString(*engine_, L"upload");
+    EXPECT_EQ(engine_->Peek(), L"upload");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_Up_ToneStillWorks) {
+    // "úp" (u-p-s): tone sắc on "up" should STILL work — only horn is blocked
+    TypeString(*engine_, L"ups");
+    EXPECT_EQ(engine_->Peek(), L"úp");
+}
+
+TEST_F(EnglishProtectionTest, EnglishBlock_SpellCheckOff_NoBlock) {
+    // With spell check OFF, English block should NOT activate
+    TypingConfig offConfig;
+    offConfig.spellCheckEnabled = false;
+    offConfig.optimizeLevel = 0;
+    auto offEngine = std::make_unique<TelexEngine>(offConfig);
+    TypeString(*offEngine, L"pas");
+    // Spell check off → 's' fires sắc normally → "pá"
+    EXPECT_EQ(offEngine->Peek(), L"pá");
+}
+
 }  // namespace
 }  // namespace Telex
 }  // namespace NextKey

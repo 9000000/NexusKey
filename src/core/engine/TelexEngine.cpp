@@ -226,6 +226,26 @@ void TelexEngine::PushChar(wchar_t c) {
         }
         // Tone escape: user pressed same tone key twice (e.g., ss) — blocks Vietnamese.
         if (escape_.isEscaped())                                { asLiteral(); return; }
+        // English word block: raw prefix check (spell check required).
+        // Blocks tone on known English prefixes (e.g. "pas"→pass, "gues"→guess).
+        if (config_.spellCheckEnabled &&
+            IsBlockedEnglishTone(rawInput_.data(), rawInput_.size())) {
+            // Allow override via spell exclusion (e.g. "pá" in exclusion list)
+            bool overridden = false;
+            if (!config_.spellExclusions.empty()) {
+                if (!hasCachedTarget) { cachedToneTarget = FindToneTarget(); hasCachedTarget = true; }
+                if (cachedToneTarget != SIZE_MAX) {
+                    CharState tentative = states_[cachedToneTarget];
+                    tentative.tone = KeyToTone(c);
+                    wchar_t tonedCh = Compose(tentative);
+                    overridden = WouldToneMatchExclusion(states_.data(), states_.size(),
+                        config_.spellExclusions,
+                        [](const CharState& s) { return Compose(s); },
+                        cachedToneTarget, tonedCh);
+                }
+            }
+            if (!overridden) { asLiteral(); return; }
+        }
         // English Protection: always active, independent of spell check.
         if (!config_.allowEnglishBypass) {
             if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
@@ -289,6 +309,11 @@ void TelexEngine::PushChar(wchar_t c) {
     }
     bool blockModifiers = escape_.isEscaped() ||
         (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
+    // English word block: raw prefix check for modifiers (e.g. "pow"→power, "upw"→upward).
+    if (!blockModifiers && config_.spellCheckEnabled &&
+        IsBlockedEnglishModifier(rawInput_.data(), rawInput_.size())) {
+        blockModifiers = true;
+    }
     // Allow modifiers through English Protection when the word matches a spell exclusion.
     if (blockModifiers && !escape_.isEscaped() && !config_.spellExclusions.empty()) {
         if (WouldModifierKeyMatchExclusion(lower))

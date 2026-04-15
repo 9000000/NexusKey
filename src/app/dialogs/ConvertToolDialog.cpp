@@ -110,7 +110,7 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
             if (fileArea.is_valid()) {
                 rootEl.update(true);  // commit CSS class change
 
-                RECT fr = fileArea.get_location(BORDER_BOX);
+                RECT fr = fileArea.get_location_ppx(BORDER_BOX);
                 int sectionH = fr.bottom - fr.top;
 
                 sciter::value val = el.get_value();

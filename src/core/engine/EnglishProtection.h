@@ -371,4 +371,59 @@ inline void CheckEnglishBias(const CharStateT* states, size_t count,
     }
 }
 
+// =============================================================================
+// English Word Block — Raw Prefix Check (spell check required)
+// =============================================================================
+
+/// Table entry: a raw keystroke suffix that blocks tone or modifier application.
+/// Patterns are lowercase.  To add a new word, append one line to the table.
+struct RawSuffixRule {
+    const wchar_t* pattern;
+    uint8_t len;
+};
+
+/// Tone-blocking suffixes — checked BEFORE ProcessTone().
+/// rawInput_ already includes the incoming key when checked.
+constexpr RawSuffixRule kBlockedToneSuffixes[] = {
+    {L"pas",  3},   // pass, passing, passive, password, passion...
+    {L"gues", 4},   // guess, guessing...
+};
+
+/// Modifier-blocking suffixes — checked BEFORE ProcessModifier().
+constexpr RawSuffixRule kBlockedModifierSuffixes[] = {
+    {L"pow", 3},    // power, powerful, powder...
+    {L"upw", 3},    // upward, upload, update, upon...
+};
+
+/// Match the tail of `raw` against a table of suffix rules.
+[[nodiscard]] inline bool MatchesRawSuffix(
+        const wchar_t* raw, size_t rawLen,
+        const RawSuffixRule* rules, size_t ruleCount) noexcept {
+    for (size_t r = 0; r < ruleCount; ++r) {
+        if (rawLen < rules[r].len) continue;
+        const wchar_t* pat = rules[r].pattern;
+        const wchar_t* tail = raw + rawLen - rules[r].len;
+        bool match = true;
+        for (uint8_t i = 0; i < rules[r].len; ++i) {
+            if (towlower(tail[i]) != pat[i]) { match = false; break; }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+/// Check if raw keystrokes end with a known English prefix that blocks tone.
+[[nodiscard]] inline bool IsBlockedEnglishTone(
+        const wchar_t* raw, size_t len) noexcept {
+    return MatchesRawSuffix(raw, len, kBlockedToneSuffixes,
+        sizeof(kBlockedToneSuffixes) / sizeof(kBlockedToneSuffixes[0]));
+}
+
+/// Check if raw keystrokes end with a known English prefix that blocks modifier.
+[[nodiscard]] inline bool IsBlockedEnglishModifier(
+        const wchar_t* raw, size_t len) noexcept {
+    return MatchesRawSuffix(raw, len, kBlockedModifierSuffixes,
+        sizeof(kBlockedModifierSuffixes) / sizeof(kBlockedModifierSuffixes[0]));
+}
+
 }  // namespace NextKey
