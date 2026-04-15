@@ -2459,6 +2459,7 @@ bool HookEngine::IsCommitTrigger(DWORD vkCode) {
 HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
     std::wstring lowerKey = ToLowerAscii(rawMacroBuffer_);
     bool isPartOfMacro = false;
+    bool matchedViaComposition = false;  // true when matched via Priority 3/4
 
     // Priority 1: full buffer (includes accumulated trigger char)
     auto it = macroTable_.find(lowerKey);
@@ -2475,18 +2476,28 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
         std::wstring compKey = ToLowerAscii(previousComposition_);
         if (triggerChar > L' ') {
             it = macroTable_.find(compKey + triggerChar);
-            if (it != macroTable_.end()) isPartOfMacro = true;
+            if (it != macroTable_.end()) { isPartOfMacro = true; matchedViaComposition = true; }
         }
         // Priority 4: composed Vietnamese output alone
         if (it == macroTable_.end()) {
             it = macroTable_.find(compKey);
+            if (it != macroTable_.end()) matchedViaComposition = true;
         }
     }
     if (it == macroTable_.end()) return MacroResult::NoMatch;
 
-    // Backspace count = screen content (trigger char is NOT on screen yet)
+    // Backspace count = on-screen characters that need erasing.
+    // When matchedViaComposition: only the last composed word (previousComposition_)
+    // matched — don't erase characters from earlier words accumulated in rawMacroBuffer_.
     size_t bsCount;
-    if (macroCrossCommit_) {
+    if (matchedViaComposition) {
+        if (currentCodeTable_ != CodeTable::Unicode) {
+            bsCount = 0;
+            for (auto w : previousEncodedWidths_) bsCount += w;
+        } else {
+            bsCount = previousComposition_.size();
+        }
+    } else if (macroCrossCommit_) {
         // Cross-commit macro (key contains punctuation like "a.i"): rawMacroBuffer_
         // spans multiple engine commits and matches the on-screen character count.
         // NOTE: For non-Unicode code tables (TCVN3/VNI), Vietnamese characters may
