@@ -117,8 +117,8 @@ private:
     void SendBackspaceEvents(size_t count);
     void SendCharEvents(const std::wstring& text);
 
-    // Clipboard paste fallback for ANSI windows (can't handle KEYEVENTF_UNICODE)
-    [[nodiscard]] bool ShouldUseClipboard(HWND target) const noexcept;
+    // Clipboard paste fallback for VB6/ANSI-internal apps (can't handle KEYEVENTF_UNICODE)
+    [[nodiscard]] bool ShouldUseClipboard() const noexcept;
     void ClipboardPaste(const std::wstring& text);
 
     // Hotkey detection (absorbed from HotkeyManager)
@@ -193,6 +193,7 @@ private:
     bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
     bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
     bool needBaitChar_ = false;   // Apps with autocomplete/suggest need U+202F bait before BS
+    bool useClipboardPaste_ = false;  // VB6 and legacy ANSI-internal apps need clipboard paste
     DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
     bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
@@ -233,6 +234,7 @@ private:
     std::vector<CommitEntry> commitStack_;       // Stack of committed words (LIFO, max kMaxCommitStack)
     bool pushedToStack_ = false;                 // True if last CommitComposition pushed to stack
     CommitUndoState commitUndoState_ = CommitUndoState::Idle;
+    uint8_t pendingTriggerCount_ = 0;           // Extra commit triggers typed while Ready (need BS before Primed)
     DWORD commitReadyTime_ = 0;                 // GetTickCount() when entering Ready state
 
     // Macro expansion

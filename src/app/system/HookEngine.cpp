@@ -708,6 +708,12 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
     }
     if (commitUndoState_ == CommitUndoState::Ready && vkCode == VK_BACK && engine_->Count() == 0) {
+        if (pendingTriggerCount_ > 0) {
+            // Extra trigger chars still on screen (e.g., "a==" → need to delete both '=' before undo)
+            pendingTriggerCount_--;
+            HOOK_LOG(L"  commit-undo: BS in Ready, pendingTriggers=%u — stay Ready", pendingTriggerCount_);
+            return false;  // Let BS pass through to delete the extra trigger char
+        }
         // Backspace deletes the commit trigger (space/etc.)
         commitUndoState_ = CommitUndoState::Primed;
         if (synthEventsPending_ > 0) {
@@ -787,15 +793,25 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
     if (commitUndoState_ == CommitUndoState::Ready) {
         // Navigation keys move cursor → stack entries become stale, clear everything.
-        // Other keys (alpha, digits, punctuation) just set Idle but preserve stack
-        // so multi-word backward still works for consecutive commits.
         if ((vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
             vkCode == VK_HOME || vkCode == VK_END ||
             vkCode == VK_PRIOR || vkCode == VK_NEXT ||
             vkCode == VK_DELETE) {
             HOOK_LOG(L"  commit-undo: cancel — navigation key vk=0x%02X", vkCode);
             CancelCommitUndo();
+        } else if (IsCommitTrigger(vkCode) && engine_->Count() == 0) {
+            // Printable commit trigger with engine empty (e.g., second '=' in "a=="):
+            // stay Ready so subsequent BS sequence can still reach Primed.
+            wchar_t ch = VkToMacroChar(vkCode);
+            if (ch > L' ') {
+                pendingTriggerCount_++;
+                HOOK_LOG(L"  commit-undo: extra trigger '%c' in Ready, pendingTriggers=%u", ch, pendingTriggerCount_);
+            } else {
+                // Non-printable trigger (Esc, Tab) → cancel undo
+                CancelCommitUndo();
+            }
         } else {
+            // Alpha, digit, or other key → start new word, preserve stack for multi-word backward
             commitUndoState_ = CommitUndoState::Idle;
         }
     }
@@ -1320,11 +1336,13 @@ void HookEngine::ClearWordState() {
 
 void HookEngine::CancelCommitUndo() {
     commitUndoState_ = CommitUndoState::Idle;
+    pendingTriggerCount_ = 0;
     commitStack_.clear();
 }
 
 void HookEngine::SetCommitUndoReady() {
     commitUndoState_ = CommitUndoState::Ready;
+    pendingTriggerCount_ = 0;
     commitReadyTime_ = GetTickCount();
 }
 
@@ -1451,9 +1469,9 @@ void HookEngine::SendCharEvents(const std::wstring& text) {
     RecordSynthDispatch();
 }
 
-bool HookEngine::ShouldUseClipboard(HWND target) const noexcept {
+bool HookEngine::ShouldUseClipboard() const noexcept {
     if (currentCodeTable_ != CodeTable::Unicode) return false;
-    return target && !IsWindowUnicode(target);
+    return useClipboardPaste_;
 }
 
 /// Write Unicode text to clipboard. Returns false on any failure.
@@ -1513,9 +1531,10 @@ void HookEngine::RecordSynthDispatch() noexcept {
 
 void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents) {
     sending_ = true;
-    if (skipEmptyChar_) {
+    if (isElectronApp_ || isConsoleApp_) {
         // Split: VK_BACK and VK_PACKET travel on separate internal paths in
         // Electron/Console apps — batching risks out-of-order processing ("nuốt chữ").
+        // Other skipEmptyChar_ apps (Zed) are single-process — batch is fine.
         if (!bsEvents.empty()) {
             TrackedSendInput(bsEvents.data(), static_cast<UINT>(bsEvents.size()));
             // Gap so app finishes processing BS before receiving chars.
@@ -1669,13 +1688,15 @@ std::wstring HookEngine::GetExeNameForHwnd(HWND hwnd) noexcept {
 ///   2. Firefox-based browser (by window class: MozillaWindowClass)
 ///   3. Chrome_WidgetWin → Known Electron list or default to browser
 ///   4. Qt app (by window class: Qt5*, Qt6*, QWidget)
-///   5. Normal Win32 app
+///   5. VB6 app (by window class: ThunderRT6*) — needs clipboard paste
+///   6. Normal Win32 app
 static void ClassifyWindow(HWND hwnd,
                            bool& outIsBrowser,
                            bool& outIsElectron,
                            bool& outIsQtApp,
-                           bool& outIsConsole) noexcept {
-    outIsBrowser = outIsElectron = outIsQtApp = outIsConsole = false;
+                           bool& outIsConsole,
+                           bool& outIsVB6) noexcept {
+    outIsBrowser = outIsElectron = outIsQtApp = outIsConsole = outIsVB6 = false;
 
     HWND root = GetAncestor(hwnd, GA_ROOT);
     if (root) hwnd = root;
@@ -1684,12 +1705,12 @@ static void ClassifyWindow(HWND hwnd,
     GetClassNameW(hwnd, className, 64);
 
     // 1a. Windows Terminal — modern DirectX renderer + ConPTY, handles batch input fine.
-    //     Treated as normal app (no skipEmptyChar_, no bait, no Sleep).
+    //     Treated as normal app (no flags set, batch dispatch, no bait).
     if (_wcsicmp(className, L"CASCADIA_HOSTING_WINDOW_CLASS") == 0) {
         return;  // No flags set → batch path
     }
 
-    // 1b. Legacy console apps — need skipEmptyChar_ (split BS/chars + Sleep)
+    // 1b. Legacy console apps — outIsConsole triggers split dispatch in DispatchSendInput
     if (_wcsicmp(className, L"ConsoleWindowClass") == 0 ||
         _wcsicmp(className, L"tty") == 0 ||                            // Cygwin/MSYS
         _wcsicmp(className, L"mintty") == 0 ||                         // Git Bash
@@ -1723,7 +1744,14 @@ static void ClassifyWindow(HWND hwnd,
         return;
     }
 
-    // 5. Normal Win32 app (Notepad, Word, etc.) — no flags set
+    // 5. VB6 apps (XYplorer, etc.): register Unicode window classes but process
+    //    messages as ANSI internally — KEYEVENTF_UNICODE / VK_PACKET chars become '?'.
+    if (_wcsnicmp(className, L"ThunderRT6", 10) == 0) {
+        outIsVB6 = true;
+        return;
+    }
+
+    // 6. Normal Win32 app (Notepad, Word, etc.) — no flags set
 }
 
 void HookEngine::NotifyModeChange() noexcept {
@@ -1903,22 +1931,19 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // U+202F (narrow no-break space) is a "bait" char inserted before BS sequences so
     // BS always has something to delete (prevents BS being swallowed at empty positions).
     //   - Browsers: need bait (autocomplete/address bar)
-    //   - Electron/Qt: skip bait, split SendInput with delay (IPC reorder prevention)
-    //   - Console: skip bait, split SendInput (terminal-specific input handling)
-    //   - GPU-rendered (Zed): skip bait entirely (custom input pipelines)
-    bool isBrowser = false, isElectron = false, isQtApp = false;
+    //   - Electron/Console: skip bait + split dispatch with Sleep (IPC reorder prevention)
+    //   - GPU-rendered (Zed): skip bait + batch dispatch (single-process, no flicker)
+    //   - VB6 (XYplorer): clipboard paste (ANSI-internal, VK_PACKET → '?')
+    bool isBrowser = false, isElectron = false, isQtApp = false, isVB6 = false;
     isConsoleApp_ = false;
-    ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, isConsoleApp_);
+    ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, isConsoleApp_, isVB6);
 
     skipEmptyChar_ = isElectron || isConsoleApp_;
     needBaitChar_ = isBrowser;
-
-    // Qt apps (Telegram, KeePassXC): single-process, can use batch path.
-    // No bait char needed (Qt text widgets may not handle U+202F).
-    // No split+Sleep needed (no multi-process reorder like Electron).
+    useClipboardPaste_ = isVB6;
 
     // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
-    if (!skipEmptyChar_ && !needBaitChar_) {
+    if (!skipEmptyChar_ && !needBaitChar_ && !useClipboardPaste_) {
         std::wstring exeName = GetExeNameForHwnd(activeHwnd);
         if (!exeName.empty()) {
             if (_wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
@@ -1930,8 +1955,9 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         }
     }
     isElectronApp_ = isElectron && !isConsoleApp_;
-    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d",
-             isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0, needBaitChar_ ? 1 : 0);
+    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d clipboard=%d",
+             isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0,
+             needBaitChar_ ? 1 : 0, useClipboardPaste_ ? 1 : 0);
 
     // Layout auto-disable: check CJK layout on every focus change
     CheckLayoutChange();
@@ -2091,10 +2117,9 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 /// text buffer. Apps that ignore or filter it will receive n+1 BS for n chars,
 /// deleting one extra character and permanently desyncing previousComposition_.
 ///
-/// Apps that need skipEmptyChar_=true (skip U+202F):
-///   - Qt/Electron: multi-process IPC can reorder batched VK_BACK + VK_PACKET
-///   - Console apps: terminal emulators have custom input pipelines
-///   - GPU-rendered apps (Zed): custom text input may not process U+202F
+/// Apps with skipEmptyChar_=true (block reinjectVk, skip U+202F bait):
+///   - Electron/Console: also get split dispatch (isElectronApp_/isConsoleApp_)
+///   - GPU-rendered apps (Zed): batch dispatch (single-process, no IPC reorder)
 ///
 /// See OnFocusChanged() for the detection logic.
 void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectVk) {
@@ -2181,11 +2206,18 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     // ── Clipboard paste for ANSI windows ──
     // ANSI windows can't handle KEYEVENTF_UNICODE (VK_PACKET) — Vietnamese chars become '?'.
     // Fallback: set clipboard + simulate Ctrl+V. Backspaces (VK_BACK) work fine on all windows.
-    if (ShouldUseClipboard(target) && reinjectVk == 0) {
-        HOOK_LOG(L"  ReplaceComposition[clipboard]: ANSI window, BS=%zu send='%s'",
-                 backspaceCount, toSend.c_str());
-        if (backspaceCount > 0) {
-            SendBackspaceEvents(backspaceCount);
+    //
+    // When reinjectVk != 0: HandleAlphaKey appended originalCh to previousComposition_
+    // for game-compat tracking, but the physical key was blocked and never reached the
+    // ANSI window. Subtract 1 BS to compensate. Reinject VK itself is skipped — ANSI
+    // desktop apps (XYplorer, etc.) don't need game-style VK re-injection.
+    if (ShouldUseClipboard()) {
+        size_t bsCount = backspaceCount;
+        if (reinjectVk != 0 && bsCount > 0) bsCount--;
+        HOOK_LOG(L"  ReplaceComposition[clipboard]: ANSI window, BS=%zu (raw=%zu reinject=0x%X) send='%s'",
+                 bsCount, backspaceCount, reinjectVk, toSend.c_str());
+        if (bsCount > 0) {
+            SendBackspaceEvents(bsCount);
             Sleep(15);  // Let app process deletions before clipboard paste
         }
         if (!toSend.empty()) {
@@ -2278,7 +2310,8 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
 
             // Dispatch using stack buffers
             sending_ = true;
-            if (skipEmptyChar_) {
+            if (isElectronApp_ || isConsoleApp_) {
+                // Split only for Electron/Console (multi-process IPC reorder risk).
                 if (bsCount > 0) {
                     TrackedSendInput(bsBuf, static_cast<UINT>(bsCount));
                     int baseMs = isElectronApp_ ? 10 : 8;
