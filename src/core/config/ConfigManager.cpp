@@ -21,6 +21,37 @@ namespace NextKey {
 
 namespace {
 
+#ifdef _WIN32
+/// Named mutex to serialize TOML read-modify-write across processes.
+/// Prevents race where Settings deferred save overwrites Macro/ExcludedApps changes.
+class ConfigFileLock {
+public:
+    ConfigFileLock() noexcept {
+        hMutex_ = CreateMutexW(nullptr, FALSE, L"Local\\NexusKeyConfigLock");
+        if (hMutex_) {
+            DWORD result = WaitForSingleObject(hMutex_, 5000);
+            // WAIT_OBJECT_0: acquired normally
+            // WAIT_ABANDONED: previous owner crashed — we now own it
+            // WAIT_TIMEOUT/WAIT_FAILED: proceed without lock (better than blocking user)
+            owned_ = (result == WAIT_OBJECT_0 || result == WAIT_ABANDONED);
+        }
+    }
+    ~ConfigFileLock() noexcept {
+        if (hMutex_) {
+            if (owned_) ReleaseMutex(hMutex_);
+            CloseHandle(hMutex_);
+        }
+    }
+    ConfigFileLock(const ConfigFileLock&) = delete;
+    ConfigFileLock& operator=(const ConfigFileLock&) = delete;
+private:
+    HANDLE hMutex_ = nullptr;
+    bool owned_ = false;
+};
+#else
+struct ConfigFileLock {};  // No-op on Linux (test builds)
+#endif
+
 /// Load existing TOML file or return empty table (for merge-and-save pattern)
 toml::table LoadExistingToml(const std::string& utf8Path) {
     try { return toml::parse_file(utf8Path); } catch (...) { return {}; }
@@ -127,6 +158,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
 
 bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& config) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
@@ -273,6 +305,7 @@ std::optional<UIConfig> ConfigManager::LoadUIConfig(const std::wstring& path) {
 
 bool ConfigManager::SaveUIConfig(const std::wstring& path, const UIConfig& config) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
@@ -327,6 +360,7 @@ std::optional<HotkeyConfig> ConfigManager::LoadHotkeyConfig(const std::wstring& 
 
 bool ConfigManager::SaveHotkeyConfig(const std::wstring& path, const HotkeyConfig& config) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
@@ -396,6 +430,7 @@ std::vector<std::wstring> ConfigManager::LoadAllExcludedApps(const std::wstring&
 bool ConfigManager::SaveExcludedApps(const std::wstring& path,
                                       const std::vector<std::wstring>& apps) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
@@ -436,6 +471,7 @@ std::vector<std::wstring> ConfigManager::LoadEnglishModeApps(const std::wstring&
 bool ConfigManager::SaveEnglishModeApps(const std::wstring& path,
                                          const std::vector<std::wstring>& apps) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
@@ -475,6 +511,7 @@ std::vector<std::wstring> ConfigManager::LoadTsfApps(const std::wstring& path) {
 
 bool ConfigManager::SaveTsfApps(const std::wstring& path, const std::vector<std::wstring>& apps) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
@@ -522,6 +559,7 @@ std::unordered_map<std::wstring, AppOverrideEntry> ConfigManager::LoadAppOverrid
 bool ConfigManager::SaveAppOverrides(const std::wstring& path,
                                       const std::unordered_map<std::wstring, AppOverrideEntry>& entries) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
@@ -572,6 +610,7 @@ std::optional<SystemConfig> ConfigManager::LoadSystemConfig(const std::wstring& 
 
 bool ConfigManager::SaveSystemConfig(const std::wstring& path, const SystemConfig& config) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
@@ -652,6 +691,7 @@ std::optional<ConvertConfig> ConfigManager::LoadConvertConfig(const std::wstring
 
 bool ConfigManager::SaveConvertConfig(const std::wstring& path, const ConvertConfig& config) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
@@ -734,6 +774,7 @@ std::unordered_map<std::wstring, std::wstring> ConfigManager::LoadMacros(const s
 bool ConfigManager::SaveMacros(const std::wstring& path,
                                 const std::unordered_map<std::wstring, std::wstring>& macros) {
     try {
+        ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
