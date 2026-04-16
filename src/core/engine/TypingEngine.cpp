@@ -1,4 +1,4 @@
-// NexusKey - Telex Engine Implementation V3 (Optimized Table-Driven)
+// NexusKey - Typing Engine Implementation (unified Telex/VNI/Combined)
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
 // SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
 // Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
@@ -7,13 +7,12 @@
 // V3 changes: flat constexpr arrays for O(1) Compose(), stack-allocated
 // FindToneTarget(), bounded ApplyAutoUO(), pre-reserved buffers.
 
-#include "TelexEngine.h"
+#include "TypingEngine.h"
 #include "EngineHelpers.h"
 #include "VietnameseTables.h"
 #include <algorithm>
 
 namespace NextKey {
-namespace Telex {
 
 namespace {
 
@@ -64,10 +63,10 @@ constexpr int ToneIndex(Tone tone) {
 }  // namespace
 
 //=============================================================================
-// TelexEngine Implementation
+// TypingEngine Implementation
 //=============================================================================
 
-TelexEngine::TelexEngine(const TypingConfig& config) : config_(config) {
+TypingEngine::TypingEngine(const TypingConfig& config) : config_(config) {
     states_.reserve(8);
     rawInput_.reserve(12);
     Reset();
@@ -77,7 +76,7 @@ TelexEngine::TelexEngine(const TypingConfig& config) : config_(config) {
 // Main Entry Point
 //-----------------------------------------------------------------------------
 
-void TelexEngine::PushChar(wchar_t c) {
+void TypingEngine::PushChar(wchar_t c) {
     // NOTE: buffer cap removed — game-compatible Telex (VK re-inject) lets users
     // keep V mode while gaming; WASD spam easily exceeds 64 chars without commit.
     // Memory leak unlikely: engine resets on focus change, click, space, enter.
@@ -340,7 +339,7 @@ void TelexEngine::PushChar(wchar_t c) {
         if (!canEscape) {
             canEscape = WouldModifierKeyMatchExclusion(lower);
         }
-        if (canEscape && ProcessModifier(c, lower)) {
+        if (canEscape && ProcessTelexModifier(c, lower)) {
             if (engProt_.bias == LanguageBias::HardEnglish ||
                 engProt_.bias == LanguageBias::SoftEnglish) {
                 engProt_.bias = LanguageBias::Vietnamese;
@@ -349,7 +348,7 @@ void TelexEngine::PushChar(wchar_t c) {
             UpdateSpellState();
             return;
         }
-    } else if (ProcessModifier(c, lower)) {
+    } else if (ProcessTelexModifier(c, lower)) {
         if (engProt_.bias == LanguageBias::HardEnglish || 
             engProt_.bias == LanguageBias::SoftEnglish) {
             engProt_.bias = LanguageBias::Vietnamese;  // Modifier applied → VN intent
@@ -389,7 +388,7 @@ void TelexEngine::PushChar(wchar_t c) {
 // Tone Processing
 //-----------------------------------------------------------------------------
 
-bool TelexEngine::ProcessTone(wchar_t c, size_t cachedTarget) {
+bool TypingEngine::ProcessTone(wchar_t c, size_t cachedTarget) {
     Tone newTone = KeyToTone(c);
     if (newTone == Tone::None) return false;
 
@@ -423,7 +422,7 @@ bool TelexEngine::ProcessTone(wchar_t c, size_t cachedTarget) {
 // Clear Tone (z key) — remove any existing tone
 //-----------------------------------------------------------------------------
 
-bool TelexEngine::ProcessClearTone() {
+bool TypingEngine::ProcessClearTone() {
     size_t targetIdx = FindToneTarget();
     if (targetIdx == SIZE_MAX) return false;
 
@@ -439,7 +438,7 @@ bool TelexEngine::ProcessClearTone() {
 // Modifier Processing (W, [], AA, EE, OO, DD) - TABLE-DRIVEN
 //-----------------------------------------------------------------------------
 
-bool TelexEngine::ProcessModifier(wchar_t c, wchar_t lower) {
+bool TypingEngine::ProcessTelexModifier(wchar_t c, wchar_t lower) {
 
     // Handle bracket keys: [ → ơ, ] → ư (full Telex only)
     if (config_.inputMethod != InputMethod::SimpleTelex) {
@@ -622,7 +621,7 @@ bool TelexEngine::ProcessModifier(wchar_t c, wchar_t lower) {
 // W-Modifier Processing - EXPLICIT PRIORITY ORDER
 //-----------------------------------------------------------------------------
 
-bool TelexEngine::ProcessWModifier(wchar_t c) {
+bool TypingEngine::ProcessWModifier(wchar_t c) {
     // Simple Telex: 'w' only acts as modifier when preceded by a/o/u vowel
     if (config_.inputMethod == InputMethod::SimpleTelex) {
         bool hasVowelContext = false;
@@ -853,7 +852,7 @@ bool TelexEngine::ProcessWModifier(wchar_t c) {
 // Scan logic shared with VniEngine via FindStrokeDTarget (EngineHelpers.h)
 //-----------------------------------------------------------------------------
 
-bool TelexEngine::ProcessDModifier(wchar_t c) {
+bool TypingEngine::ProcessDModifier(wchar_t c) {
     if (escape_.isEscaped(EscapeKind::Stroke)) return false;
     size_t dIdx = FindStrokeDTarget(states_.data(), states_.size());
     if (dIdx == SIZE_MAX) return false;
@@ -875,7 +874,7 @@ bool TelexEngine::ProcessDModifier(wchar_t c) {
 // QU Cluster Detection
 //-----------------------------------------------------------------------------
 
-bool TelexEngine::IsInQUCluster() const {
+bool TypingEngine::IsInQUCluster() const {
     if (states_.size() < 2) return false;
 
     for (size_t i = 0; i + 1 < states_.size(); ++i) {
@@ -891,7 +890,7 @@ bool TelexEngine::IsInQUCluster() const {
 // Remove Consumed Raw Entry (for tone escape auto-restore fix)
 //-----------------------------------------------------------------------------
 
-void TelexEngine::EraseConsumedRaw(size_t idx) {
+void TypingEngine::EraseConsumedRaw(size_t idx) {
     if (idx >= rawInput_.size()) return;
     rawInput_.erase(rawInput_.begin() + static_cast<ptrdiff_t>(idx));
     // Adjust all indices that reference positions after the erased entry
@@ -905,7 +904,7 @@ void TelexEngine::EraseConsumedRaw(size_t idx) {
 // Character Processing
 //-----------------------------------------------------------------------------
 
-void TelexEngine::ProcessChar(wchar_t /*c*/, wchar_t lower, bool isUpper) {
+void TypingEngine::ProcessChar(wchar_t /*c*/, wchar_t lower, bool isUpper) {
     CharState s;
     s.base = lower;
     s.isUpper = isUpper;
@@ -917,7 +916,7 @@ void TelexEngine::ProcessChar(wchar_t /*c*/, wchar_t lower, bool isUpper) {
 // Auto ươ Transformation — O(1) bounded scan
 //-----------------------------------------------------------------------------
 
-void TelexEngine::ApplyAutoUO() {
+void TypingEngine::ApplyAutoUO() {
     // Requires 3+ chars: both patterns need a char after the uo/ưo pair.
     if (states_.size() < 3) return;
 
@@ -950,7 +949,7 @@ void TelexEngine::ApplyAutoUO() {
 // Tone Relocation (after horn applied)
 //-----------------------------------------------------------------------------
 
-void TelexEngine::RelocateToneToHornVowel() {
+void TypingEngine::RelocateToneToHornVowel() {
     size_t hornIdx = SIZE_MAX;
     size_t tonedIdx = SIZE_MAX;
 
@@ -975,7 +974,7 @@ void TelexEngine::RelocateToneToHornVowel() {
 // Tone Relocation (after any modifier changes priority)
 //-----------------------------------------------------------------------------
 
-void TelexEngine::RelocateToneToTarget() {
+void TypingEngine::RelocateToneToTarget() {
     // Find where the tone currently is
     size_t tonedIdx = SIZE_MAX;
     for (size_t i = 0; i < states_.size(); ++i) {
@@ -1003,19 +1002,19 @@ void TelexEngine::RelocateToneToTarget() {
 // Tone Target Finding — stack-allocated, no heap alloc
 //-----------------------------------------------------------------------------
 
-size_t TelexEngine::FindToneTarget() const {
+size_t TypingEngine::FindToneTarget() const {
     return config_.modernOrtho ? FindToneTargetModern() : FindToneTargetClassic();
 }
 
-size_t TelexEngine::FindToneTargetClassic() const {
+size_t TypingEngine::FindToneTargetClassic() const {
     return FindToneTargetImpl(kDiphthongClassic, false);
 }
 
-size_t TelexEngine::FindToneTargetModern() const {
+size_t TypingEngine::FindToneTargetModern() const {
     return FindToneTargetImpl(kDiphthongModern, true);
 }
 
-size_t TelexEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs) const {
+size_t TypingEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs) const {
     return NextKey::FindToneTargetImpl(states_.data(), states_.size(), table, checkTriphthongs);
 }
 
@@ -1023,7 +1022,7 @@ size_t TelexEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTrip
 // Composition (State → Unicode) — O(1) flat array lookups
 //-----------------------------------------------------------------------------
 
-wchar_t TelexEngine::Compose(const CharState& s) {
+wchar_t TypingEngine::Compose(const CharState& s) {
     if (s.IsEmpty()) return 0;
 
     wchar_t ch = s.base;
@@ -1060,7 +1059,7 @@ wchar_t TelexEngine::Compose(const CharState& s) {
     return ch;
 }
 
-const std::wstring& TelexEngine::ComposeAll() const {
+const std::wstring& TypingEngine::ComposeAll() const {
     composeBuf_.clear();
     for (const auto& s : states_) {
         wchar_t ch = Compose(s);
@@ -1073,7 +1072,7 @@ const std::wstring& TelexEngine::ComposeAll() const {
 // Public API
 //-----------------------------------------------------------------------------
 
-void TelexEngine::Backspace() {
+void TypingEngine::Backspace() {
     if (states_.empty()) return;
     escape_.clear();  // Allow đ re-trigger + Vietnamese re-trigger after user edits
 
@@ -1129,11 +1128,11 @@ void TelexEngine::Backspace() {
     CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
-const std::wstring& TelexEngine::Peek() const {
+const std::wstring& TypingEngine::Peek() const {
     return ComposeAll();
 }
 
-std::wstring TelexEngine::Commit() {
+std::wstring TypingEngine::Commit() {
     std::wstring composed = ComposeAll();
 
     // Single quick-start consonant alone (f->ph, j->gi, w->qu) — always restore
@@ -1196,7 +1195,7 @@ std::wstring TelexEngine::Commit() {
     return composed;
 }
 
-void TelexEngine::Reset() {
+void TypingEngine::Reset() {
     states_.clear();
     rawInput_.clear();
     spellCheckDisabled_ = false;
@@ -1212,7 +1211,7 @@ void TelexEngine::Reset() {
 // Spell Exclusion — modifier key match
 //-----------------------------------------------------------------------------
 
-bool TelexEngine::WouldModifierKeyMatchExclusion(wchar_t lower) const {
+bool TypingEngine::WouldModifierKeyMatchExclusion(wchar_t lower) const {
     auto compose = [](const CharState& s) { return Compose(s); };
     if (lower == L'd') {
         return WouldStrokeDMatchExclusion(states_.data(), states_.size(),
@@ -1235,10 +1234,9 @@ bool TelexEngine::WouldModifierKeyMatchExclusion(wchar_t lower) const {
 // Spell Check State Update
 //-----------------------------------------------------------------------------
 
-void TelexEngine::UpdateSpellState() {
+void TypingEngine::UpdateSpellState() {
     UpdateSpellCheck(states_.data(), states_.size(), config_, spellCheckDisabled_,
                      [](const CharState& s) { return Compose(s); });
 }
 
-}  // namespace Telex
 }  // namespace NextKey

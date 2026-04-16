@@ -26,7 +26,8 @@ endif()
 # Engine Library (pure C++17, zero platform dependencies)
 set(NEXTKEY_ENGINE_SOURCES
     src/core/config/TypingConfig.h
-    src/core/engine/TelexEngine.cpp
+    src/core/engine/TypingEngine.cpp
+    src/core/engine/TypingEngine.h
     src/core/engine/TelexEngine.h
     src/core/engine/VniEngine.cpp
     src/core/engine/VniEngine.h

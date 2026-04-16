@@ -13,7 +13,8 @@ namespace NextKey {
 enum class InputMethod : uint8_t {
     Telex = 0,
     VNI = 1,
-    SimpleTelex = 2  // w/[/] as literal when standalone (no vowel context)
+    SimpleTelex = 2,  // w/[/] as literal when standalone (no vowel context)
+    Combined = 3      // Telex + VNI triggers simultaneously
 };
 
 /// Output encoding (bảng mã)
