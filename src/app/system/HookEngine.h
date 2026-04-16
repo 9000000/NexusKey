@@ -79,7 +79,6 @@ public:
 
     // Magic number to mark our own SendInput events (prevents other hooks from processing them)
     static constexpr ULONG_PTR NEXUSKEY_EXTRA_INFO = 0x4E4B;  // "NK"
-    static constexpr size_t kMacroClipboardThreshold = 200;
 
     // Get exe name (lowercase) from window handle — used by ClassifyWindow() and smart switch
     [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;

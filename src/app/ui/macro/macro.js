@@ -169,11 +169,9 @@ function formatPreview(content) {
     var firstLine = lines[0];
     var lineCount = lines.length;
 
-    // Truncate first line
+    // Truncate before escaping to avoid cutting HTML entities mid-way
+    if (firstLine.length > 60) firstLine = firstLine.substring(0, 60) + "...";
     var display = escapeHtml(firstLine);
-    if (display.length > 60) {
-        display = display.substring(0, 60) + "...";
-    }
 
     // Add line count badge if multi-line
     if (lineCount > 1) {

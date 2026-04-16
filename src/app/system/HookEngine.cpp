@@ -1407,6 +1407,9 @@ static HWND GetInputTarget() {
 // SendInput Event Helpers
 // ═══════════════════════════════════════════════════════════
 
+// Clipboard paste threshold: macros longer than this use Ctrl+V instead of SendInput
+static constexpr size_t kMacroClipboardThreshold = 200;
+
 static void AppendUnicodeEvent(std::vector<INPUT>& events, WORD wScan) {
     INPUT inDown = {};
     inDown.type = INPUT_KEYBOARD;
