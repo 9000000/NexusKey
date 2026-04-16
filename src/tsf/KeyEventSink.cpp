@@ -155,13 +155,17 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
         return S_OK;
     }
 
-    // Check if this is a punctuation/number key that should trigger commit
-    // These keys should commit composition and pass through to the app
+    // Check if this is a punctuation/number key that should trigger commit.
+    // Exception: VNI/Combined digit keys 1-9 are tone/modifier input — don't commit.
     bool isPunctuation = IsPunctuationKey(static_cast<UINT>(wParam));
     if (isPunctuation && pEngineController_->HasEngineBuffer()) {
-        pEngineController_->Commit(pContext);
-        *pfEaten = FALSE;  // Let punctuation pass through
-        return S_OK;
+        bool isVniDigit = pEngineController_->IsVniDigitKey(static_cast<UINT>(wParam));
+        if (!isVniDigit) {
+            pEngineController_->Commit(pContext);
+            *pfEaten = FALSE;  // Let punctuation pass through
+            return S_OK;
+        }
+        // VNI/Combined digit: fall through to WantKey → HandleKey
     }
 
     bool wantKey = pEngineController_->WantKey(static_cast<UINT>(wParam), true);
