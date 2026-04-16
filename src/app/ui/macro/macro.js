@@ -50,9 +50,9 @@ function updateCharCounter() {
 
     // Count storage-format length (what C++ will receive)
     var storageLen = displayToStorage(content.value).length;
-    counter.textContent = storageLen + " / 20000";
+    counter.textContent = storageLen + " / 20480";
 
-    if (storageLen > 18000) {
+    if (storageLen > 18400) {
         counter.classList.add("near-limit");
     } else {
         counter.classList.remove("near-limit");

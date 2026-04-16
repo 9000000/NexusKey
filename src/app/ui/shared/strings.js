@@ -111,8 +111,6 @@ var STRINGS = {
         "m.import": "Import from file...",
         "m.export": "Export to file...",
         "m.edit": "+ Edit",
-        "m.hint_newline_pre": "Use",
-        "m.hint_newline_post": "for a new line",
         "m.hint_enter": "Press Enter for a new line",
         "m.hint_clipboard": "Long macros use Clipboard to paste (current Clipboard content will be overwritten)",
 

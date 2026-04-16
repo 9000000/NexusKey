@@ -1525,6 +1525,8 @@ void HookEngine::ClipboardPaste(const std::wstring& text) {
           (GetKeyState(VK_MENU) & 0x8000) != 0 },
         { VK_LWIN,  static_cast<WORD>(MapVirtualKeyW(VK_LWIN, MAPVK_VK_TO_VSC)),
           (GetKeyState(VK_LWIN) & 0x8000) != 0 },
+        { VK_RWIN,  static_cast<WORD>(MapVirtualKeyW(VK_RWIN, MAPVK_VK_TO_VSC)),
+          (GetKeyState(VK_RWIN) & 0x8000) != 0 },
     };
 
     std::vector<INPUT> preEvents;
@@ -2613,7 +2615,14 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
             if (!iswupper(c)) { allUpper = false; break; }
         }
         if (allUpper && rawMacroBuffer_.size() > 1) {
-            for (auto& c : expansion) c = towupper(c);
+            // Skip \n escape sequences — towupper('n') → 'N' breaks newline detection
+            for (size_t i = 0; i < expansion.size(); ++i) {
+                if (expansion[i] == L'\\' && i + 1 < expansion.size() && expansion[i + 1] == L'n') {
+                    ++i;  // skip the 'n' in '\n'
+                } else {
+                    expansion[i] = towupper(expansion[i]);
+                }
+            }
         } else if (firstUpper && !expansion.empty()) {
             expansion[0] = towupper(expansion[0]);
         }
