@@ -168,11 +168,14 @@ template<typename CharStateT>
     // Scan forward: find vowel groups separated by consonant(s).
     size_t i = 0;
     while (i < count) {
+        // Skip consonants
         if (!states[i].IsVowel()) { ++i; continue; }
 
+        // Found start of a vowel group — skip all adjacent vowels
         size_t vowelEnd = i;
         while (vowelEnd < count && states[vowelEnd].IsVowel()) ++vowelEnd;
 
+        // Count consonants after this vowel group
         size_t consStart = vowelEnd;
         int consonants = 0;
         while (vowelEnd < count && !states[vowelEnd].IsVowel()) {
@@ -180,8 +183,11 @@ template<typename CharStateT>
             ++consonants;
         }
 
+        // Check for next vowel group after consonant(s)
         if (consonants >= 1 && vowelEnd < count && states[vowelEnd].IsVowel()) {
-            // Exception: modified vowel + valid single-char Vietnamese coda
+            // Exception: modified vowel (ê, â, ô) + exactly 1 valid Vietnamese coda
+            // consonant (c, k, m, n, p, t) is plausible nucleus+coda, not V+C+V.
+            // E.g., {h,i,ê,n,e}: ê+n+e could be a typo after valid "hiên".
             bool exception = false;
             if (consonants == 1) {
                 bool hasModifier = false;

@@ -389,10 +389,15 @@ void TypingEngine::PushChar(wchar_t c) {
         }
         bool blockVni = escape_.isEscaped() ||
             (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
+        // Spell exclusion override for VNI modifiers (same as Telex path)
+        if (blockVni && !escape_.isEscaped() && !config_.spellExclusions.empty()) {
+            if (WouldModifierKeyMatchExclusion(lower))
+                blockVni = false;
+        }
         if (blockVni) {
             // Don't try VNI modifiers — treat as literal
         } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
-            // Allow VNI modifier escape only
+            // Allow VNI modifier escape or spell exclusion match
             bool canEscape = false;
             Modifier escMod = Modifier::None;
             if (c == L'6') escMod = Modifier::Circumflex;
@@ -403,6 +408,9 @@ void TypingEngine::PushChar(wchar_t c) {
                 canEscape = HasEscapableModifier(states_.data(), states_.size(), escMod, true);
             } else if (escMod != Modifier::None) {
                 canEscape = HasEscapableModifier(states_.data(), states_.size(), escMod);
+            }
+            if (!canEscape) {
+                canEscape = WouldModifierKeyMatchExclusion(lower);
             }
             if (canEscape && ProcessVniModifier(c)) {
                 if (engProt_.bias != LanguageBias::Vietnamese)
@@ -1352,7 +1360,7 @@ bool TypingEngine::ProcessVniHornModifier(wchar_t c) {
         }
     }
 
-    // --- uu pattern (horn first u, like Telex P5) ---
+    // --- uu pattern (horn first u, like Telex P5 — 2-press cycle) ---
     size_t firstU = SIZE_MAX, lastU = SIZE_MAX;
     int uCount = 0;
     for (size_t i = 0; i < states_.size(); ++i) {
@@ -1363,11 +1371,20 @@ bool TypingEngine::ProcessVniHornModifier(wchar_t c) {
             ++uCount;
         }
     }
-    if (uCount >= 2 && firstU != lastU &&
-        states_[firstU].mod == Modifier::None && states_[lastU].mod == Modifier::None) {
-        states_[firstU].mod = Modifier::Horn;
-        RelocateToneToTarget();
-        return true;
+    if (uCount >= 2 && firstU != lastU) {
+        if (states_[firstU].mod == Modifier::None && states_[lastU].mod == Modifier::None) {
+            // Apply: horn first u (lưu, cưu, hưu)
+            states_[firstU].mod = Modifier::Horn;
+            RelocateToneToTarget();
+            return true;
+        }
+        if (states_[firstU].mod == Modifier::Horn) {
+            // Escape: clear horn on first u, add '7' literal (2-press cycle, same as Telex P4)
+            states_[firstU].mod = Modifier::None;
+            ProcessChar(c);
+            escape_.escape(EscapeKind::Horn);
+            return true;
+        }
     }
 
     // --- Generic: rightmost eligible o/u → apply horn ---
