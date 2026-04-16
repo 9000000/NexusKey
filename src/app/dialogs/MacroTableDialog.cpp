@@ -19,7 +19,7 @@ MacroTableDialog::MacroTableDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/macro/macro.html",
         L"NexusKey - Macro Table",
-        420, 480, parent, true, 36, 40, true
+        420, 600, parent, true, 36, 40, true
     }) {
     macros_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
     populateList();

@@ -113,6 +113,8 @@ var STRINGS = {
         "m.edit": "+ Edit",
         "m.hint_newline_pre": "Use",
         "m.hint_newline_post": "for a new line",
+        "m.hint_enter": "Press Enter for a new line",
+        "m.hint_clipboard": "Long macros use Clipboard to paste (current Clipboard content will be overwritten)",
 
         // ── Spell Exclusions dialog ──
         "se.info": "Abbreviation prefixes that bypass spell check. Prefix match, min 2 chars. E.g.: h\u0111 covers h\u0111, h\u0111t, h\u0111qt...",

@@ -92,6 +92,9 @@
 /* Newline hint below content input */
 .hint-row {
     padding: 2px 0 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .hint-text {
@@ -114,5 +117,54 @@
     word-wrap: break-word;
     overflow-wrap: break-word;
     line-height: 1.3;
+}
+
+/* Textarea for multi-line macro content */
+.macro-textarea {
+    height: 100px;
+    font-family: monospace;
+    font-size: 12px;
+    resize: none;
+    line-height: 1.4;
+    overflow-y: auto;
+}
+
+/* Content row needs vertical layout for textarea */
+.content-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.content-row .setting-label {
+    margin-bottom: 0;
+}
+
+.content-row .macro-textarea {
+    width: 100%;
+}
+
+/* Character counter */
+.char-counter {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.char-counter.near-limit {
+    color: var(--color-danger);
+    font-weight: 600;
+}
+
+/* Clipboard overwrite warning — hidden by default */
+.clipboard-hint {
+    display: none;
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding: 0 0 4px 0;
+    font-style: italic;
+}
+
+.clipboard-hint.visible {
+    display: block;
 }
 

@@ -38,16 +38,18 @@
                     <span class="setting-label" data-i18n="m.shortcut">Từ gõ tắt</span>
                     <input type="text" class="setting-input" id="macro-name" placeholder="vd: btw" data-i18n-ph="m.shortcut_ph">
                 </div>
-                <div class="setting-row">
+                <div class="setting-row content-row">
                     <span class="setting-label" data-i18n="m.content">Nội dung đầy đủ</span>
-                    <input type="text" class="setting-input" id="macro-content" placeholder="vd: by the way" data-i18n-ph="m.content_ph">
+                    <textarea class="setting-input macro-textarea" id="macro-content"
+                        placeholder="vd: by the way" data-i18n-ph="m.content_ph"
+                        maxlength="20000"></textarea>
                 </div>
                 <div class="hint-row">
-                    <span class="hint-text">
-                        <span data-i18n="m.hint_newline_pre">Dùng</span>
-                        <code>\n</code>
-                        <span data-i18n="m.hint_newline_post">để xuống dòng</span>
-                    </span>
+                    <span class="hint-text" data-i18n="m.hint_enter">Nhấn Enter để xuống dòng</span>
+                    <span class="char-counter" id="char-counter">0 / 20000</span>
+                </div>
+                <div class="clipboard-hint" id="clipboard-hint">
+                    <span class="hint-text" data-i18n="m.hint_clipboard">Macro dài sẽ dùng Clipboard để dán (nội dung Clipboard hiện tại sẽ bị ghi đè)</span>
                 </div>
                 <div class="button-row">
                     <button class="btn-action btn-primary" id="btn-add" data-i18n="add">+ Thêm</button>
