@@ -193,6 +193,7 @@ void ClassicSettingsDialog::CreateCompactControls() {
     ComboBox_AddString(comboMethod_, L"Telex");
     ComboBox_AddString(comboMethod_, L"VNI");
     ComboBox_AddString(comboMethod_, L"Simple Telex");
+    ComboBox_AddString(comboMethod_, L"Telex + VNI");
 
     comboEncoding_ = CreateCombo(col2X, y, colW, Dpi(kComboHeight + 120), IDC_COMBO_ENCODING);
     ComboBox_AddString(comboEncoding_, L"Unicode");
@@ -591,7 +592,7 @@ void ClassicSettingsDialog::PopulateControls() {
 void ClassicSettingsDialog::ReadControlValues() {
     if (comboMethod_) {
         int sel = ComboBox_GetCurSel(comboMethod_);
-        if (sel >= 0 && sel <= 2)
+        if (sel >= 0 && sel <= 3)
             config_.inputMethod = static_cast<InputMethod>(sel);
     }
     if (comboEncoding_) {
