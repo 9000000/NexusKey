@@ -1,12 +1,13 @@
 // Macro Dialog JavaScript
 
+var MACRO_CLIPBOARD_THRESHOLD = 200;
+
 document.ready = function () {
     initSubDialog(".macro-list");
     initMacroDialog();
 };
 
 function initMacroDialog() {
-    // Bind button clicks
     var btnAdd = document.getElementById("btn-add");
     var btnDelete = document.getElementById("btn-delete");
     var btnImport = document.getElementById("btn-import");
@@ -15,41 +16,55 @@ function initMacroDialog() {
     var macroName = document.getElementById("macro-name");
     var macroContent = document.getElementById("macro-content");
 
-    if (btnAdd) {
-        btnAdd.addEventListener("click", function () {
-            onAddMacro();
-        });
-    }
+    if (btnAdd) btnAdd.addEventListener("click", function () { onAddMacro(); });
+    if (btnDelete) btnDelete.addEventListener("click", function () { onDeleteMacro(); });
+    if (btnImport) btnImport.addEventListener("click", function () { triggerAction("import"); });
+    if (btnExport) btnExport.addEventListener("click", function () { triggerAction("export"); });
+    if (btnClose) btnClose.addEventListener("click", function () { triggerAction("close"); });
 
-    if (btnDelete) {
-        btnDelete.addEventListener("click", function () {
-            onDeleteMacro();
-        });
-    }
-
-    if (btnImport) {
-        btnImport.addEventListener("click", function () {
-            triggerAction("import");
-        });
-    }
-
-    if (btnExport) {
-        btnExport.addEventListener("click", function () {
-            triggerAction("export");
-        });
-    }
-
-    if (btnClose) {
-        btnClose.addEventListener("click", function () {
-            triggerAction("close");
-        });
-    }
-
-    // Check if name field changes to switch between Add/Update
     if (macroName) {
-        macroName.addEventListener("change", function () {
-            updateAddButtonText();
-        });
+        macroName.addEventListener("change", function () { updateAddButtonText(); });
+    }
+
+    // Character counter + clipboard hint
+    if (macroContent) {
+        macroContent.addEventListener("input", function () { updateCharCounter(); });
+    }
+}
+
+// Convert storage format (\n literal) → real newlines for textarea display
+function storageToDisplay(text) {
+    return text.replace(/\\n/g, "\n");
+}
+
+// Convert real newlines → storage format (\n literal) for C++
+function displayToStorage(text) {
+    return text.replace(/\n/g, "\\n");
+}
+
+function updateCharCounter() {
+    var content = document.getElementById("macro-content");
+    var counter = document.getElementById("char-counter");
+    var clipHint = document.getElementById("clipboard-hint");
+    if (!content || !counter) return;
+
+    // Count storage-format length (what C++ will receive)
+    var storageLen = displayToStorage(content.value).length;
+    counter.textContent = storageLen + " / 20000";
+
+    if (storageLen > 18000) {
+        counter.classList.add("near-limit");
+    } else {
+        counter.classList.remove("near-limit");
+    }
+
+    // Show clipboard hint when macro will use clipboard paste
+    if (clipHint) {
+        if (storageLen > MACRO_CLIPBOARD_THRESHOLD) {
+            clipHint.classList.add("visible");
+        } else {
+            clipHint.classList.remove("visible");
+        }
     }
 }
 
@@ -62,18 +77,16 @@ function onAddMacro() {
     var name = nameField.value.trim();
     var content = contentField.value.trim();
 
-    if (name === "" || content === "") {
-        return;
-    }
+    if (name === "" || content === "") return;
 
-    // Set hidden inputs for C++ to read
+    // Convert real newlines to \n storage format before sending to C++
     document.getElementById("val-macro-name").value = name;
-    document.getElementById("val-macro-content").value = content;
+    document.getElementById("val-macro-content").value = displayToStorage(content);
     triggerAction("add");
 
-    // Clear inputs after add
     nameField.value = "";
     contentField.value = "";
+    updateCharCounter();
     nameField.focus();
 }
 
@@ -82,42 +95,35 @@ function onDeleteMacro() {
     if (!nameField) return;
 
     var name = nameField.value.trim();
-    if (name === "") {
-        return;
-    }
+    if (name === "") return;
 
     document.getElementById("val-macro-name").value = name;
     triggerAction("delete");
 
-    // Clear inputs after delete
     nameField.value = "";
     document.getElementById("macro-content").value = "";
+    updateCharCounter();
 }
 
 function selectMacroItem(element, name, content) {
-    // Remove selected class from all items
     var items = document.querySelectorAll(".macro-item");
     for (var i = 0; i < items.length; i++) {
         items[i].classList.remove("selected");
     }
-
-    // Add selected class to clicked item
     element.classList.add("selected");
 
-    // Fill input fields
+    // content from C++ is in storage format — convert to real newlines for textarea
     document.getElementById("macro-name").value = name;
-    document.getElementById("macro-content").value = content;
+    document.getElementById("macro-content").value = storageToDisplay(content);
+    updateCharCounter();
 
-    // Change button text to "Edit"
-    document.getElementById("btn-add").textContent = t("m.edit") || "+ Sửa";
+    document.getElementById("btn-add").textContent = t("m.edit") || "+ S\u1eeda";
 }
 
 function updateAddButtonText() {
-    // This will be called by C++ after checking if macro exists
     var btnAdd = document.getElementById("btn-add");
     if (btnAdd) {
-        // Default to "Add", C++ will change to "Edit" if macro exists
-        btnAdd.textContent = t("add") || "+ Thêm";
+        btnAdd.textContent = t("add") || "+ Th\u00eam";
     }
 }
 
@@ -125,7 +131,6 @@ function triggerAction(action) {
     var actionInput = document.getElementById("val-action");
     if (actionInput) {
         actionInput.value = action;
-        // Dispatch change event for C++ to detect
         var event = new Event("change", { bubbles: true });
         actionInput.dispatchEvent(event);
     }
@@ -140,9 +145,16 @@ function addMacroToList(name, content) {
     item.className = "macro-item";
     item.setAttribute("data-name", name);
     item.setAttribute("data-content", content);
-    var displayContent = escapeHtml(content).replace(/\\n/g, '<span style="opacity:0.5">↵</span>');
+
+    // Preview: first line, max 60 chars, line count badge
+    var preview = formatPreview(content);
     item.innerHTML = '<span class="macro-item-name">' + escapeHtml(name) + '</span>' +
-        '<span class="macro-item-content">' + displayContent + '</span>';
+        '<span class="macro-item-content">' + preview + '</span>';
+
+    // Tooltip: first 500 chars of content with real newlines
+    var tooltipText = storageToDisplay(content);
+    if (tooltipText.length > 500) tooltipText = tooltipText.substring(0, 500) + "...";
+    item.setAttribute("title", tooltipText);
 
     item.addEventListener("click", function () {
         selectMacroItem(this, name, content);
@@ -151,12 +163,29 @@ function addMacroToList(name, content) {
     list.appendChild(item);
 }
 
-// Called by C++ to clear the list before refreshing
+function formatPreview(content) {
+    // Split on \n escape sequences
+    var lines = content.split("\\n");
+    var firstLine = lines[0];
+    var lineCount = lines.length;
+
+    // Truncate first line
+    var display = escapeHtml(firstLine);
+    if (display.length > 60) {
+        display = display.substring(0, 60) + "...";
+    }
+
+    // Add line count badge if multi-line
+    if (lineCount > 1) {
+        display += ' <span style="opacity:0.5; font-size:10px">\u23CE' + lineCount + '</span>';
+    }
+
+    return display;
+}
+
 function clearMacroList() {
     var list = document.getElementById("macro-list");
-    if (list) {
-        list.innerHTML = "";
-    }
+    if (list) list.innerHTML = "";
 }
 
 function escapeHtml(text) {
