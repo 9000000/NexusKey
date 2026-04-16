@@ -1476,6 +1476,7 @@ bool HookEngine::ShouldUseClipboard() const noexcept {
 }
 
 /// Write Unicode text to clipboard. Returns false on any failure.
+/// Sets ExcludeClipboardContentFromMonitorProcessing to keep Win+V clean.
 static bool SetClipboardText(const std::wstring& text) noexcept {
     if (!OpenClipboard(nullptr)) return false;
     EmptyClipboard();
@@ -1487,6 +1488,20 @@ static bool SetClipboardText(const std::wstring& text) noexcept {
     memcpy(dest, text.c_str(), bytes);
     GlobalUnlock(hMem);
     SetClipboardData(CF_UNICODETEXT, hMem);
+
+    // Exclude from Windows Clipboard History (Win+V) and cloud sync.
+    // Win10 1809+; harmless no-op on older builds.
+    static UINT cfExclude = RegisterClipboardFormat(
+        L"ExcludeClipboardContentFromMonitorProcessing");
+    if (cfExclude) {
+        HGLOBAL hExclude = GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD));
+        if (hExclude) {
+            auto* p = static_cast<DWORD*>(GlobalLock(hExclude));
+            if (p) { *p = 0; GlobalUnlock(hExclude); }
+            SetClipboardData(cfExclude, hExclude);
+        }
+    }
+
     CloseClipboard();
     return true;
 }
