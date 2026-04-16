@@ -2621,34 +2621,69 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
 
     {
         WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-        WORD retScan = static_cast<WORD>(MapVirtualKeyW(VK_RETURN, MAPVK_VK_TO_VSC));
         std::vector<INPUT> bsEvents;
-        std::vector<INPUT> charEvents;
 
         bsEvents.reserve(bsCount * 2);
         for (size_t i = 0; i < bsCount; ++i) {
             AppendVkEvent(bsEvents, VK_BACK, bsScan);
         }
-        charEvents.reserve(expansion.size() * 2);
-        auto emitChar = [&](wchar_t ch) {
-            if (currentCodeTable_ != CodeTable::Unicode) {
-                auto enc = CodeTableConverter::ConvertChar(ch, currentCodeTable_);
-                AppendUnicodeEvent(charEvents, enc.units[0]);
-                if (enc.count == 2) AppendUnicodeEvent(charEvents, enc.units[1]);
-            } else {
-                AppendUnicodeEvent(charEvents, ch);
+
+        // Choose output method based on encoding and expansion size.
+        // Non-Unicode code tables need per-char conversion → always SendInput.
+        // Unicode macros >200 chars use clipboard paste for speed.
+        bool useClipboard = (currentCodeTable_ == CodeTable::Unicode &&
+                             expansion.size() > kMacroClipboardThreshold);
+
+        if (useClipboard) {
+            // Convert \n escape sequences to real \r\n for clipboard paste
+            std::wstring clipText;
+            clipText.reserve(expansion.size());
+            for (size_t i = 0; i < expansion.size(); ++i) {
+                if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
+                    expansion[i + 1] == L'n') {
+                    clipText += L"\r\n";
+                    ++i;
+                } else {
+                    clipText += expansion[i];
+                }
             }
-        };
-        for (size_t i = 0; i < expansion.size(); ++i) {
-            if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
-                expansion[i+1] == L'n') {
-                AppendVkEvent(charEvents, VK_RETURN, retScan);
-                ++i;
-            } else {
-                emitChar(expansion[i]);
+
+            // Send backspaces first, then clipboard paste
+            if (!bsEvents.empty()) {
+                sending_ = true;
+                TrackedSendInput(bsEvents.data(), static_cast<UINT>(bsEvents.size()));
+                sending_ = false;
+                RecordSynthDispatch();
             }
+            ClipboardPaste(clipText);
+
+            HOOK_LOG(L"  TryExpandMacro: clipboard paste %zu chars (raw %zu)",
+                     clipText.size(), expansion.size());
+        } else {
+            // SendInput path: per-character with encoding support
+            WORD retScan = static_cast<WORD>(MapVirtualKeyW(VK_RETURN, MAPVK_VK_TO_VSC));
+            std::vector<INPUT> charEvents;
+            charEvents.reserve(expansion.size() * 2);
+            auto emitChar = [&](wchar_t ch) {
+                if (currentCodeTable_ != CodeTable::Unicode) {
+                    auto enc = CodeTableConverter::ConvertChar(ch, currentCodeTable_);
+                    AppendUnicodeEvent(charEvents, enc.units[0]);
+                    if (enc.count == 2) AppendUnicodeEvent(charEvents, enc.units[1]);
+                } else {
+                    AppendUnicodeEvent(charEvents, ch);
+                }
+            };
+            for (size_t i = 0; i < expansion.size(); ++i) {
+                if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
+                    expansion[i + 1] == L'n') {
+                    AppendVkEvent(charEvents, VK_RETURN, retScan);
+                    ++i;
+                } else {
+                    emitChar(expansion[i]);
+                }
+            }
+            DispatchSendInput(bsEvents, charEvents);
         }
-        DispatchSendInput(bsEvents, charEvents);
     }
     ClearWordState();
     CancelCommitUndo();
