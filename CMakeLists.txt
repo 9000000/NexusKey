@@ -377,6 +377,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/TelexEngineTest.cpp
     tests/CombinedEngineTest.cpp
     tests/VniEngineTest.cpp
+    tests/VniParityTest.cpp
     tests/TelexDictionaryTest.cpp
     tests/EngineFactoryTest.cpp
     tests/SharedStateTest.cpp

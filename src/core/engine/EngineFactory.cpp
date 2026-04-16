@@ -11,17 +11,10 @@
 namespace NextKey {
 
 std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) {
-    switch (config.inputMethod) {
-        case InputMethod::VNI:
-            return std::make_unique<Vni::VniEngine>(config);
-        case InputMethod::Combined:
-            return std::make_unique<TypingEngine>(config);
-        case InputMethod::SimpleTelex:
-            [[fallthrough]];
-        case InputMethod::Telex:
-        default:
-            return std::make_unique<TypingEngine>(config);
-    }
+    // All input methods route through TypingEngine (unified engine).
+    // VniEngine is deprecated — kept for reference only.
+    (void)config.inputMethod;  // All modes handled by TypingEngine
+    return std::make_unique<TypingEngine>(config);
 }
 
 std::unique_ptr<IInputEngine> EngineFactory::Create(InputMethod method) {

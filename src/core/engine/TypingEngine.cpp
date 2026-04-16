@@ -313,7 +313,7 @@ void TypingEngine::PushChar(wchar_t c) {
                 engProt_.bias = LanguageBias::Vietnamese;
             } else {
                 RecalcEnglishBias(states_.data(), states_.size(), engProt_);
-                CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+                if (isTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
             }
             ApplyAutoUO();
             UpdateSpellState();
@@ -451,7 +451,7 @@ void TypingEngine::PushChar(wchar_t c) {
     // English Protection: re-evaluate bias after adding character
     // (always active — independent of spell check setting)
     CheckEnglishBias(states_.data(), states_.size(), engProt_);
-    CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+    if (isTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
 //-----------------------------------------------------------------------------
@@ -1177,7 +1177,7 @@ void TypingEngine::Backspace() {
 
         UpdateSpellState();
         RecalcEnglishBias(states_.data(), states_.size(), engProt_);
-        CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+        if (isTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
         return;
     }
     qc_.clearActive();
@@ -1194,7 +1194,7 @@ void TypingEngine::Backspace() {
 
     // English Protection: recalculate bias after backspace
     RecalcEnglishBias(states_.data(), states_.size(), engProt_);
-    CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+    if (isTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
 const std::wstring& TypingEngine::Peek() const {
@@ -1282,6 +1282,7 @@ void TypingEngine::Reset() {
 
 bool TypingEngine::WouldModifierKeyMatchExclusion(wchar_t lower) const {
     auto compose = [](const CharState& s) { return Compose(s); };
+    // Telex modifier keys
     if (lower == L'd') {
         return WouldStrokeDMatchExclusion(states_.data(), states_.size(),
             config_.spellExclusions, compose);
@@ -1295,6 +1296,23 @@ bool TypingEngine::WouldModifierKeyMatchExclusion(wchar_t lower) const {
     if (lower == L'a' || lower == L'e' || lower == L'o') {
         return WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
             config_.spellExclusions, compose, Modifier::Circumflex, L"aeo");
+    }
+    // VNI modifier keys
+    if (lower == L'6') {
+        return WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+            config_.spellExclusions, compose, Modifier::Circumflex, L"aeo");
+    }
+    if (lower == L'7') {
+        return WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+            config_.spellExclusions, compose, Modifier::Horn, L"uo");
+    }
+    if (lower == L'8') {
+        return WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
+            config_.spellExclusions, compose, Modifier::Breve, L"a");
+    }
+    if (lower == L'9') {
+        return WouldStrokeDMatchExclusion(states_.data(), states_.size(),
+            config_.spellExclusions, compose);
     }
     return false;
 }
@@ -1344,8 +1362,14 @@ bool TypingEngine::ProcessVniHornModifier(wchar_t c) {
             RelocateToneToTarget();
             return true;
         }
+        // Forward: ưo → ươ (u already horned via explicit hu7, complete pair)
+        if (uHorn && !oHorn) {
+            states_[oIdx].mod = Modifier::Horn;
+            RelocateToneToTarget();
+            return true;
+        }
         if (isEdge && !uHorn && oHorn) {
-            // Edge step 2: horn u too
+            // Edge step 2: uơ → ươ (horn u too)
             states_[uIdx].mod = Modifier::Horn;
             RelocateToneToTarget();
             return true;
