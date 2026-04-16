@@ -5,21 +5,14 @@
 // See LICENSE and LICENSE-COMMERCIAL in the project root.
 
 #include "EngineFactory.h"
-#include "TelexEngine.h"
-#include "VniEngine.h"
+#include "TypingEngine.h"
 
 namespace NextKey {
 
 std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) {
-    switch (config.inputMethod) {
-        case InputMethod::VNI:
-            return std::make_unique<Vni::VniEngine>(config);
-        case InputMethod::SimpleTelex:
-            [[fallthrough]];
-        case InputMethod::Telex:
-        default:
-            return std::make_unique<Telex::TelexEngine>(config);
-    }
+    // All input methods route through TypingEngine (unified engine).
+    // Mode dispatch happens inside TypingEngine via IsTelexMode()/IsVniMode().
+    return std::make_unique<TypingEngine>(config);
 }
 
 std::unique_ptr<IInputEngine> EngineFactory::Create(InputMethod method) {

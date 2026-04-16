@@ -26,13 +26,16 @@ endif()
 # Engine Library (pure C++17, zero platform dependencies)
 set(NEXTKEY_ENGINE_SOURCES
     src/core/config/TypingConfig.h
-    src/core/engine/TelexEngine.cpp
+    src/core/engine/TypingEngine.cpp
+    src/core/engine/TypingEngine.h
     src/core/engine/TelexEngine.h
     src/core/engine/VniEngine.cpp
     src/core/engine/VniEngine.h
     src/core/engine/EngineFactory.cpp
     src/core/engine/EngineFactory.h
     src/core/engine/IInputEngine.h
+    src/core/engine/EngineHelpers.h
+    src/core/engine/EnglishProtection.h
     src/core/engine/VietnameseTables.h
     src/core/engine/SpellChecker.cpp
     src/core/engine/SpellChecker.h
@@ -374,7 +377,9 @@ enable_testing()
 # Tests are excluded from ALL - build explicitly with --target NextKeyTests
 set(NEXTKEY_TEST_SOURCES
     tests/TelexEngineTest.cpp
+    tests/CombinedEngineTest.cpp
     tests/VniEngineTest.cpp
+    tests/VniParityTest.cpp
     tests/TelexDictionaryTest.cpp
     tests/EngineFactoryTest.cpp
     tests/SharedStateTest.cpp

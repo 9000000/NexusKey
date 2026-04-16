@@ -396,7 +396,8 @@ void HookEngine::ReloadFromToml() {
     config_ = config;
     engine_ = EngineFactory::Create(config);
     NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
-                currentMethod_ == InputMethod::VNI ? L"VNI" : L"Telex",
+                currentMethod_ == InputMethod::VNI ? L"VNI" :
+                currentMethod_ == InputMethod::Combined ? L"Combined" : L"Telex",
                 config.modernOrtho ? 1 : 0, config.allowZwjf ? 1 : 0);
     ApplyConfig(config);
     if (macroEnabled_) {
@@ -760,10 +761,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                 bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
                 return HandleAlphaKey(vkCode, shift, caps);
             }
-        } else if (currentMethod_ == InputMethod::VNI &&
+        } else if ((currentMethod_ == InputMethod::VNI || currentMethod_ == InputMethod::Combined) &&
                    vkCode >= 0x31 && vkCode <= 0x39 &&
                    !(GetKeyState(VK_SHIFT) & 0x8000)) {
-            // VNI digit key (1-9) → replay saved chars, then process as tone/modifier.
+            // VNI/Combined digit key (1-9) → replay saved chars, then process as tone/modifier.
             // Without this, "cá " + BS + '2' would produce "cá2" instead of "cà".
             HOOK_LOG(L"  commit-undo: replaying + VNI digit '%c' (stack_top='%s' stackSize=%zu prevComp='%s')",
                      static_cast<char>(vkCode),
@@ -954,8 +955,8 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
     }
 
-    // 6c. VNI: digit keys 1-9 → tone/modifier input (only with pending composition)
-    if (currentMethod_ == InputMethod::VNI &&
+    // 6c. VNI/Combined: digit keys 1-9 → tone/modifier input (only with pending composition)
+    if ((currentMethod_ == InputMethod::VNI || currentMethod_ == InputMethod::Combined) &&
         vkCode >= 0x31 && vkCode <= 0x39 &&
         engine_->Count() > 0) {
         if (!cachedShift) {

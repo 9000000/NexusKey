@@ -98,6 +98,8 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
                     config.inputMethod = InputMethod::VNI;
                 } else if (methodStr == "simple_telex") {
                     config.inputMethod = InputMethod::SimpleTelex;
+                } else if (methodStr == "combined") {
+                    config.inputMethod = InputMethod::Combined;
                 } else {
                     config.inputMethod = InputMethod::Telex;
                 }
@@ -166,6 +168,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         const char* methodStr = "telex";
         if (config.inputMethod == InputMethod::VNI) methodStr = "vni";
         else if (config.inputMethod == InputMethod::SimpleTelex) methodStr = "simple_telex";
+        else if (config.inputMethod == InputMethod::Combined) methodStr = "combined";
         input.insert_or_assign("method", methodStr);
         input.insert_or_assign("code_table", static_cast<int64_t>(config.codeTable));
         tbl.insert_or_assign("input", std::move(input));

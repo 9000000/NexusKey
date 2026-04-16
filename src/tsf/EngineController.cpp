@@ -136,8 +136,13 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
 
     bool engineHasComp = engine_->Count() > 0;
 
-    // 2. We want A-Z keys for Telex processing
+    // 2. We want A-Z keys for typing processing
     if (vkCode >= 0x41 && vkCode <= 0x5A) {
+        return true;
+    }
+
+    // 3. VNI/Combined: digit keys 1-9 for tone/modifier (only with pending composition)
+    if (IsVniDigitKey(vkCode) && engineHasComp) {
         return true;
     }
 
@@ -235,6 +240,21 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         }
 
         TSF_LOG(L"Key processed, composition updated");
+        return true;
+    }
+
+    // 4. VNI/Combined: digit keys 1-9 → push to engine, update composition
+    if (IsVniDigitKey(vkCode) && engine_->Count() > 0) {
+        wchar_t ch = static_cast<wchar_t>(vkCode);  // VK '1'-'9' = 0x31-0x39 = L'1'-L'9'
+        TSF_LOG(L"HandleKey: pushing VNI digit '%c'", ch);
+        engine_->PushChar(ch);
+
+        std::wstring composition = engine_->Peek();
+        if (compositionMgr_.IsComposing()) {
+            auto* pSession = new UpdateCompositionEditSession(pContext, &compositionMgr_, composition);
+            RequestEditSession(pContext, pSession);
+            pSession->Release();
+        }
         return true;
     }
 

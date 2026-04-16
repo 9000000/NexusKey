@@ -56,6 +56,14 @@ public:
     /// Check if engine has buffer (for sync check)
     bool HasEngineBuffer() const { return engine_->Count() > 0; }
 
+    /// Check if vkCode is a VNI/Combined digit key (1-9) that should NOT trigger commit
+    bool IsVniDigitKey(UINT vkCode) const {
+        return (config_.inputMethod == InputMethod::VNI ||
+                config_.inputMethod == InputMethod::Combined) &&
+               vkCode >= 0x31 && vkCode <= 0x39 &&
+               !(GetKeyState(VK_SHIFT) & 0x8000);
+    }
+
     /// Reset only engine buffer (for sync recovery)
     void ResetEngine() { engine_->Reset(); }
 
