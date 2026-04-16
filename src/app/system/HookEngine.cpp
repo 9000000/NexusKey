@@ -1515,6 +1515,39 @@ void HookEngine::ClipboardPaste(const std::wstring& text) {
         return;
     }
 
+    // Release held modifiers to prevent Ctrl+Shift+V / Ctrl+Alt+V.
+    // Scenario: user triggers macro with '!' (Shift+1) — Shift still held.
+    struct ModRelease { WORD vk; WORD scan; bool wasDown; };
+    ModRelease mods[] = {
+        { VK_SHIFT, static_cast<WORD>(MapVirtualKeyW(VK_SHIFT, MAPVK_VK_TO_VSC)),
+          (GetKeyState(VK_SHIFT) & 0x8000) != 0 },
+        { VK_MENU,  static_cast<WORD>(MapVirtualKeyW(VK_MENU, MAPVK_VK_TO_VSC)),
+          (GetKeyState(VK_MENU) & 0x8000) != 0 },
+        { VK_LWIN,  static_cast<WORD>(MapVirtualKeyW(VK_LWIN, MAPVK_VK_TO_VSC)),
+          (GetKeyState(VK_LWIN) & 0x8000) != 0 },
+    };
+
+    std::vector<INPUT> preEvents;
+    std::vector<INPUT> postEvents;
+    for (auto& m : mods) {
+        if (m.wasDown) {
+            INPUT up{};
+            up.type = INPUT_KEYBOARD;
+            up.ki.wVk = m.vk;
+            up.ki.wScan = m.scan;
+            up.ki.dwFlags = KEYEVENTF_KEYUP;
+            up.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+            preEvents.push_back(up);
+
+            INPUT down{};
+            down.type = INPUT_KEYBOARD;
+            down.ki.wVk = m.vk;
+            down.ki.wScan = m.scan;
+            down.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+            postEvents.push_back(down);
+        }
+    }
+
     // Simulate Ctrl+V — hook proc passes these through (NEXUSKEY_EXTRA_INFO marker)
     WORD ctrlScan = static_cast<WORD>(MapVirtualKeyW(VK_CONTROL, MAPVK_VK_TO_VSC));
     WORD vScan = static_cast<WORD>(MapVirtualKeyW('V', MAPVK_VK_TO_VSC));
@@ -1529,11 +1562,18 @@ void HookEngine::ClipboardPaste(const std::wstring& text) {
     inputs[3].ki.wVk = VK_CONTROL;  inputs[3].ki.wScan = ctrlScan;  inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
 
     sending_ = true;
+    if (!preEvents.empty()) {
+        TrackedSendInput(preEvents.data(), static_cast<UINT>(preEvents.size()));
+    }
     TrackedSendInput(inputs, 4);
+    if (!postEvents.empty()) {
+        TrackedSendInput(postEvents.data(), static_cast<UINT>(postEvents.size()));
+    }
     sending_ = false;
     RecordSynthDispatch();
 
-    HOOK_LOG(L"  ClipboardPaste: pasted '%s' via Ctrl+V", text.c_str());
+    HOOK_LOG(L"  ClipboardPaste: pasted %zu chars via Ctrl+V (mod-release: %zu)",
+             text.size(), preEvents.size());
 }
 
 /// Dispatch backspace + character events via SendInput.
