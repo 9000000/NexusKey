@@ -11,8 +11,7 @@ namespace NextKey {
 
 std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) {
     // All input methods route through TypingEngine (unified engine).
-    // VniEngine is deprecated — kept for reference only.
-    (void)config.inputMethod;  // All modes handled by TypingEngine
+    // Mode dispatch happens inside TypingEngine via IsTelexMode()/IsVniMode().
     return std::make_unique<TypingEngine>(config);
 }
 
