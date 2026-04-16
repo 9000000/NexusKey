@@ -98,10 +98,10 @@ public:
 
 private:
     // Mode helpers
-    [[nodiscard]] bool isTelexMode() const noexcept {
+    [[nodiscard]] bool IsTelexMode() const noexcept {
         return config_.inputMethod != InputMethod::VNI;
     }
-    [[nodiscard]] bool isVniMode() const noexcept {
+    [[nodiscard]] bool IsVniMode() const noexcept {
         return config_.inputMethod == InputMethod::VNI ||
                config_.inputMethod == InputMethod::Combined;
     }

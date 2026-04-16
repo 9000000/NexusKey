@@ -23,11 +23,6 @@ namespace {
 // IsVowelChar is shared — defined in VietnameseTables.h
 
 // --- Telex key mapping ---
-constexpr bool IsTelexToneKey(wchar_t c) noexcept {
-    return c == L's' || c == L'f' || c == L'r' || c == L'x' || c == L'j' ||
-           c == L'S' || c == L'F' || c == L'R' || c == L'X' || c == L'J';
-}
-
 constexpr Tone TelexKeyToTone(wchar_t c) noexcept {
     switch (c) {
         case L's': case L'S': return Tone::Acute;
@@ -40,10 +35,6 @@ constexpr Tone TelexKeyToTone(wchar_t c) noexcept {
 }
 
 // --- VNI key mapping ---
-constexpr bool IsVniToneKey(wchar_t c) noexcept {
-    return c >= L'1' && c <= L'5';
-}
-
 constexpr Tone VniKeyToTone(wchar_t c) noexcept {
     switch (c) {
         case L'1': return Tone::Acute;
@@ -59,8 +50,7 @@ constexpr bool IsVniModifierKey(wchar_t c) noexcept {
     return c >= L'6' && c <= L'9';
 }
 
-/// Map Modifier enum to flat array column index (Circumflex=0, Breve=1, Horn=2)
-constexpr int ModifierIndex(Modifier mod) {
+constexpr int ModifierIndex(Modifier mod) noexcept {
     switch (mod) {
         case Modifier::Circumflex: return 0;
         case Modifier::Breve:      return 1;
@@ -69,8 +59,7 @@ constexpr int ModifierIndex(Modifier mod) {
     }
 }
 
-/// Map Tone enum to flat array column index (Acute=0 .. Dot=4)
-constexpr int ToneIndex(Tone tone) {
+constexpr int ToneIndex(Tone tone) noexcept {
     switch (tone) {
         case Tone::Acute: return 0;
         case Tone::Grave: return 1;
@@ -203,8 +192,8 @@ void TypingEngine::PushChar(wchar_t c) {
 
     // 1a. Clear tone: Telex 'z' / VNI '0'
     if (!states_.empty()) {
-        bool isClearToneKey = (isTelexMode() && lower == L'z') ||
-                              (isVniMode() && c == L'0');
+        bool isClearToneKey = (IsTelexMode() && lower == L'z') ||
+                              (IsVniMode() && c == L'0');
         if (isClearToneKey) {
             if (config_.spellCheckEnabled && spellCheckDisabled_) {
                 ProcessChar(c);
@@ -221,11 +210,11 @@ void TypingEngine::PushChar(wchar_t c) {
     // 1b. Tone keys — determine tone from Telex or VNI key mapping
     Tone requestedTone = Tone::None;
     bool isTelexTone = false;
-    if (isTelexMode() && !states_.empty()) {
+    if (IsTelexMode() && !states_.empty()) {
         requestedTone = TelexKeyToTone(c);
         isTelexTone = (requestedTone != Tone::None);
     }
-    if (requestedTone == Tone::None && isVniMode() && !states_.empty()) {
+    if (requestedTone == Tone::None && IsVniMode() && !states_.empty()) {
         requestedTone = VniKeyToTone(c);
     }
 
@@ -313,7 +302,7 @@ void TypingEngine::PushChar(wchar_t c) {
                 engProt_.bias = LanguageBias::Vietnamese;
             } else {
                 RecalcEnglishBias(states_.data(), states_.size(), engProt_);
-                if (isTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+                if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
             }
             ApplyAutoUO();
             UpdateSpellState();
@@ -322,7 +311,7 @@ void TypingEngine::PushChar(wchar_t c) {
     }
 
     // 2a. Telex modifier keys (w, [], aa, ee, oo, dd)
-    if (isTelexMode()) {
+    if (IsTelexMode()) {
         // Pre-check for 'd' modifier: if dd→đ would fire AND there's already a
         // consonant in coda position, adding 'd' forms an invalid coda like "pd".
         if (lower == L'd' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
@@ -359,27 +348,21 @@ void TypingEngine::PushChar(wchar_t c) {
                 canEscape = WouldModifierKeyMatchExclusion(lower);
             }
             if (canEscape && ProcessTelexModifier(c, lower)) {
-                if (engProt_.bias == LanguageBias::HardEnglish ||
-                    engProt_.bias == LanguageBias::SoftEnglish) {
-                    engProt_.bias = LanguageBias::Vietnamese;
-                }
+                engProt_.bias = LanguageBias::Vietnamese;
                 ApplyAutoUO();
                 UpdateSpellState();
                 return;
             }
         } else if (ProcessTelexModifier(c, lower)) {
-            if (engProt_.bias == LanguageBias::HardEnglish ||
-                engProt_.bias == LanguageBias::SoftEnglish) {
-                engProt_.bias = LanguageBias::Vietnamese;
-            }
+            engProt_.bias = LanguageBias::Vietnamese;
             ApplyAutoUO();
             UpdateSpellState();
             return;
         }
     }
 
-    // 2b. VNI modifier keys (6, 7, 8, 9)
-    if (isVniMode() && IsVniModifierKey(c)) {
+    // 2b. VNI modifier keys (6, 7, 8, 9) — only in VNI/Combined mode
+    if (IsVniMode() && IsVniModifierKey(c)) {
         // Pre-check for '9' (stroke): same coda check as Telex 'd'
         if (c == L'9' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
             size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
@@ -413,22 +396,20 @@ void TypingEngine::PushChar(wchar_t c) {
                 canEscape = WouldModifierKeyMatchExclusion(lower);
             }
             if (canEscape && ProcessVniModifier(c)) {
-                if (engProt_.bias != LanguageBias::Vietnamese)
-                    engProt_.bias = LanguageBias::Vietnamese;
+                engProt_.bias = LanguageBias::Vietnamese;
                 ApplyAutoUO();
                 UpdateSpellState();
                 return;
             }
         } else if (ProcessVniModifier(c)) {
-            if (engProt_.bias != LanguageBias::Vietnamese)
-                engProt_.bias = LanguageBias::Vietnamese;
+            engProt_.bias = LanguageBias::Vietnamese;
             ApplyAutoUO();
             UpdateSpellState();
             return;
         }
     }
 
-    // 2b. Quick end consonant: g→ng, h→nh, k→ch (after vowel)
+    // 2c. Quick end consonant: g→ng, h→nh, k→ch (after vowel)
     if (config_.quickEndConsonant && !states_.empty() && states_.back().IsVowel()) {
         wchar_t first = 0, second = 0;
         if (lower == L'g') { first = L'n'; second = L'g'; }
@@ -451,7 +432,7 @@ void TypingEngine::PushChar(wchar_t c) {
     // English Protection: re-evaluate bias after adding character
     // (always active — independent of spell check setting)
     CheckEnglishBias(states_.data(), states_.size(), engProt_);
-    if (isTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+    if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
 //-----------------------------------------------------------------------------
@@ -1177,7 +1158,7 @@ void TypingEngine::Backspace() {
 
         UpdateSpellState();
         RecalcEnglishBias(states_.data(), states_.size(), engProt_);
-        if (isTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+        if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
         return;
     }
     qc_.clearActive();
@@ -1194,7 +1175,7 @@ void TypingEngine::Backspace() {
 
     // English Protection: recalculate bias after backspace
     RecalcEnglishBias(states_.data(), states_.size(), engProt_);
-    if (isTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+    if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
 const std::wstring& TypingEngine::Peek() const {
@@ -1374,8 +1355,9 @@ bool TypingEngine::ProcessVniHornModifier(wchar_t c) {
             RelocateToneToTarget();
             return true;
         }
-        // Escape: both horned (or edge fully horned)
-        if ((uHorn && oHorn) || (isEdge && uHorn)) {
+        // Escape: both horned — clear pair
+        // (isEdge && uHorn && !oHorn already handled above by ưo→ươ forward)
+        if (uHorn && oHorn) {
             states_[uIdx].mod = Modifier::None;
             states_[oIdx].mod = Modifier::None;
             ProcessChar(c);

@@ -34,6 +34,8 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/EngineFactory.cpp
     src/core/engine/EngineFactory.h
     src/core/engine/IInputEngine.h
+    src/core/engine/EngineHelpers.h
+    src/core/engine/EnglishProtection.h
     src/core/engine/VietnameseTables.h
     src/core/engine/SpellChecker.cpp
     src/core/engine/SpellChecker.h

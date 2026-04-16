@@ -5,8 +5,7 @@
 // See LICENSE and LICENSE-COMMERCIAL in the project root.
 
 #include "EngineFactory.h"
-#include "TelexEngine.h"
-#include "VniEngine.h"
+#include "TypingEngine.h"
 
 namespace NextKey {
 
