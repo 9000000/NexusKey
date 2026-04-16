@@ -241,7 +241,7 @@ void ClassicMacroTableDialog::ImportFromFile() {
 
         std::wstring k = Utf8ToWide(line.substr(0, colonPos));
         std::wstring v = Utf8ToWide(line.substr(colonPos + 1));
-        if (!k.empty() && !v.empty() && k.size() <= 32 && v.size() <= 512) {
+        if (!k.empty() && !v.empty() && k.size() <= 32 && v.size() <= 20480) {
             macros_[k] = v;
         }
     }

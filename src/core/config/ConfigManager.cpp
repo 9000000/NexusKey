@@ -66,16 +66,16 @@ bool WriteToml(const std::string& utf8Path, const toml::table& tbl) {
 }
 
 // Security limits — shared across all Load* functions
-constexpr uintmax_t kMaxConfigFileSizeBytes = 1 * 1024 * 1024;  // 1 MB
+constexpr uintmax_t kMaxConfigFileSizeBytes = 5 * 1024 * 1024;  // 5 MB
 constexpr size_t    kMaxMacroKeyLen         = 32;
-constexpr size_t    kMaxMacroValueLen       = 512;
+constexpr size_t    kMaxMacroValueLen       = 20480;
 constexpr size_t    kMaxPerAppEntries       = 256;
 constexpr size_t    kMaxAppListEntries      = 1000;
 
 }  // namespace
 
 std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path) {
-    // Guard: reject config files larger than 1 MB to prevent OOM via crafted macros
+    // Guard: reject config files larger than 5 MB to prevent OOM via crafted macros
     std::error_code sizeEc;
     auto fileSize = std::filesystem::file_size(path, sizeEc);
     if (sizeEc || fileSize > kMaxConfigFileSizeBytes) {
