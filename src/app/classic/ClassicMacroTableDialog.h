@@ -33,11 +33,15 @@ private:
     void LoadData();
     void SaveData();
 
+    static std::wstring StorageToEdit(const std::wstring& s);
+    static std::wstring EditToStorage(const std::wstring& s);
+    std::wstring GetEditValue() const;
+
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     int Dpi(int value) const noexcept;
 
     static constexpr int kWidth = 420;
-    static constexpr int kHeight = 358;
+    static constexpr int kHeight = 440;
     static constexpr int kPadding = 12;
     static constexpr int kBtnHeight = 28;
     static constexpr int kBtnGap = 6;

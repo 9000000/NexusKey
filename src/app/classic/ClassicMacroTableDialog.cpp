@@ -104,7 +104,7 @@ void ClassicMacroTableDialog::CreateControls() {
     int gap = Dpi(kBtnGap);
 
     // ListView — 2 columns: Key, Expansion
-    int listH = Dpi(260);
+    int listH = Dpi(200);
     listView_ = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
         WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | LVS_NOSORTHEADER,
         x, y, cw, listH, hwnd_, reinterpret_cast<HMENU>(IDC_LIST_MACROS), hInstance_, nullptr);
@@ -121,11 +121,10 @@ void ClassicMacroTableDialog::CreateControls() {
     ListView_InsertColumn(listView_, 1, &col);
     y += listH + gap;
 
-    // Row: key edit + value edit + add
+    // Row: key edit + add button
     int editH = theme_.ModernHeight();
     int keyW = Dpi(100);
     int addW = Dpi(50);
-    int valW = cw - keyW - addW - gap * 2;
 
     editKey_ = CreateWindowExW(0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
@@ -134,18 +133,21 @@ void ClassicMacroTableDialog::CreateControls() {
     SendMessageW(editKey_, EM_SETLIMITTEXT, 32, 0);
     theme_.ApplyModernEntryStyle(editKey_);
 
-    editValue_ = CreateWindowExW(0, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-        x + keyW + gap, y, valW, editH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_VALUE), hInstance_, nullptr);
-    SendMessageW(editValue_, EM_SETCUEBANNER, FALSE, reinterpret_cast<LPARAM>(L"báo tuổi trẻ"));
-    SendMessageW(editValue_, EM_SETLIMITTEXT, 512, 0);
-    theme_.ApplyModernEntryStyle(editValue_);
-
     btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + keyW + valW + gap * 2, y, addW, editH,
+        x + cw - addW, y, addW, editH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
-    y += editH + gap * 2;
+    y += editH + gap;
+
+    // Multi-line value edit (full width, 4 lines)
+    int valH = Dpi(80);
+    editValue_ = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
+        ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+        x, y, cw, valH, hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_VALUE), hInstance_, nullptr);
+    SendMessageW(editValue_, EM_SETLIMITTEXT, 20480, 0);
+    theme_.ApplyModernEntryStyle(editValue_);
+    y += valH + gap;
 
     // Action buttons
     int abw = (cw - gap * 2) / 3;
@@ -161,10 +163,51 @@ void ClassicMacroTableDialog::CreateControls() {
     y += btnH + gap * 2;
 }
 
+// Convert storage format (\n literal 2-char) → \r\n for Win32 multi-line EDIT
+std::wstring ClassicMacroTableDialog::StorageToEdit(const std::wstring& s) {
+    std::wstring result;
+    result.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == L'\\' && i + 1 < s.size() && s[i + 1] == L'n') {
+            result += L"\r\n";
+            ++i;
+        } else {
+            result += s[i];
+        }
+    }
+    return result;
+}
+
+// Convert \r\n from Win32 EDIT → storage format (\n literal 2-char)
+std::wstring ClassicMacroTableDialog::EditToStorage(const std::wstring& s) {
+    std::wstring result;
+    result.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == L'\r' && i + 1 < s.size() && s[i + 1] == L'\n') {
+            result += L"\\n";
+            ++i;
+        } else if (s[i] == L'\n') {
+            result += L"\\n";
+        } else {
+            result += s[i];
+        }
+    }
+    return result;
+}
+
+// Read text from multi-line EDIT using dynamic buffer
+std::wstring ClassicMacroTableDialog::GetEditValue() const {
+    int len = GetWindowTextLengthW(editValue_);
+    if (len <= 0) return {};
+    std::wstring buf(static_cast<size_t>(len) + 1, L'\0');
+    GetWindowTextW(editValue_, buf.data(), len + 1);
+    buf.resize(static_cast<size_t>(len));
+    return buf;
+}
+
 void ClassicMacroTableDialog::PopulateList() {
     ListView_DeleteAllItems(listView_);
 
-    // Sort by key for display
     std::vector<std::pair<std::wstring, std::wstring>> sorted(macros_.begin(), macros_.end());
     std::sort(sorted.begin(), sorted.end());
 
@@ -175,7 +218,26 @@ void ClassicMacroTableDialog::PopulateList() {
         item.pszText = const_cast<wchar_t*>(sorted[i].first.c_str());
         ListView_InsertItem(listView_, &item);
 
-        ListView_SetItemText(listView_, i, 1, const_cast<wchar_t*>(sorted[i].second.c_str()));
+        // Preview: first line, truncated, with line count
+        const auto& val = sorted[i].second;
+        std::wstring preview;
+        auto nlPos = val.find(L"\\n");
+        int lineCount = 1;
+        {
+            size_t pos = 0;
+            while ((pos = val.find(L"\\n", pos)) != std::wstring::npos) {
+                ++lineCount;
+                pos += 2;
+            }
+        }
+        std::wstring firstLine = (nlPos != std::wstring::npos) ? val.substr(0, nlPos) : val;
+        if (firstLine.size() > 60) firstLine = firstLine.substr(0, 60) + L"...";
+        if (lineCount > 1) {
+            preview = firstLine + L" \u23CE" + std::to_wstring(lineCount);
+        } else {
+            preview = firstLine;
+        }
+        ListView_SetItemText(listView_, i, 1, const_cast<wchar_t*>(preview.c_str()));
     }
 }
 
@@ -184,11 +246,13 @@ void ClassicMacroTableDialog::PopulateList() {
 // ════════════════════════════════════════════════════════════
 
 void ClassicMacroTableDialog::AddMacro() {
-    wchar_t key[64] = {}, value[1024] = {};
+    wchar_t key[64] = {};
     GetWindowTextW(editKey_, key, 64);
-    GetWindowTextW(editValue_, value, 1024);
 
-    std::wstring k(key), v(value);
+    std::wstring k(key);
+    std::wstring editText = GetEditValue();
+    std::wstring v = EditToStorage(editText);
+
     if (k.empty() || v.empty()) return;
 
     macros_[k] = v;
@@ -314,6 +378,25 @@ LRESULT CALLBACK ClassicMacroTableDialog::WndProc(HWND hwnd, UINT msg, WPARAM wP
                 case IDC_BTN_DELETE:  self->DeleteSelected(); return 0;
                 case IDC_BTN_IMPORT:  self->ImportFromFile(); return 0;
                 case IDC_BTN_EXPORT:  self->ExportToFile();   return 0;
+            }
+            break;
+        }
+
+        case WM_NOTIFY: {
+            auto* nmhdr = reinterpret_cast<NMHDR*>(lParam);
+            if (nmhdr->idFrom == IDC_LIST_MACROS && nmhdr->code == LVN_ITEMCHANGED) {
+                auto* nmItem = reinterpret_cast<NMLISTVIEW*>(lParam);
+                if (nmItem->uNewState & LVIS_SELECTED) {
+                    int sel = nmItem->iItem;
+                    wchar_t key[64] = {};
+                    ListView_GetItemText(self->listView_, sel, 0, key, 64);
+                    SetWindowTextW(self->editKey_, key);
+                    auto it = self->macros_.find(key);
+                    if (it != self->macros_.end()) {
+                        auto editText = ClassicMacroTableDialog::StorageToEdit(it->second);
+                        SetWindowTextW(self->editValue_, editText.c_str());
+                    }
+                }
             }
             break;
         }
