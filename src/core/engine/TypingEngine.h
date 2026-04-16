@@ -107,7 +107,7 @@ private:
     }
 
     // Input processing — Telex
-    bool ProcessTone(wchar_t c, size_t cachedTarget = SIZE_MAX);
+    bool ProcessTone(Tone tone, wchar_t keyChar, size_t cachedTarget = SIZE_MAX);
     bool ProcessClearTone();          // z/0 — remove existing tone
     bool ProcessTelexModifier(wchar_t c, wchar_t lower);  // w, [], aa, ee, oo, dd
     void ProcessChar(wchar_t c) { ProcessChar(c, towlower(c), iswupper(c)); }

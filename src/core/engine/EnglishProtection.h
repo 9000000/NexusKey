@@ -156,32 +156,23 @@ inline bool UpdateToneInsistence(wchar_t toneKey,
 // Pre-Tone Hard English Context Check
 // =============================================================================
 
-/// Detect structural impossibility: vowel + 1+ consonant(s) + vowel ANYWHERE in buffer.
-/// Vietnamese syllables NEVER have a consonant between two vowel groups within
-/// a single word (onset glide 'u' is pre-nucleus; coda consonant is post-nucleus).
-/// Scans the entire buffer for any V + C(1+) + V pattern.
+/// Detect structural V+C(1+)+V pattern anywhere in the buffer.
+/// Vietnamese syllables never have a consonant between two vowel groups.
 /// Catches: "behavior" (e+h+a), "manager" (a+ng+e), "danger" (a+ng+e), etc.
-///
-/// Call BEFORE ProcessTone() to gate tone keys (s, f, r, x, j).
-/// Template works with both Telex::CharState and Vni::CharState (VniEngine
-/// doesn't need to call this since VNI tone keys are digits 1-5, not letters).
+/// Used by VNI tone gate (directly) and Telex tone gate (via IsHardEnglishToneContext).
 template<typename CharStateT>
-[[nodiscard]] inline bool IsHardEnglishToneContext(
-        const CharStateT* states, size_t count, wchar_t toneKey) noexcept {
-    if (!IsHardEnglishEnd(toneKey)) return false;
+[[nodiscard]] inline bool HasStructuralVCVPattern(
+        const CharStateT* states, size_t count) noexcept {
     if (count < 4) return false;  // ≥4: catches "behavior","release". <4: preserves "ipỏn" free-mark
 
     // Scan forward: find vowel groups separated by consonant(s).
     size_t i = 0;
     while (i < count) {
-        // Skip consonants
         if (!states[i].IsVowel()) { ++i; continue; }
 
-        // Found start of a vowel group — skip all adjacent vowels
         size_t vowelEnd = i;
         while (vowelEnd < count && states[vowelEnd].IsVowel()) ++vowelEnd;
 
-        // Count consonants after this vowel group
         size_t consStart = vowelEnd;
         int consonants = 0;
         while (vowelEnd < count && !states[vowelEnd].IsVowel()) {
@@ -189,13 +180,8 @@ template<typename CharStateT>
             ++consonants;
         }
 
-        // Check for next vowel group after consonant(s)
         if (consonants >= 1 && vowelEnd < count && states[vowelEnd].IsVowel()) {
-            // Exception: modified vowel (ê, â, ô) + exactly 1 VALID Vietnamese coda
-            // consonant is plausible nucleus+coda, not English V+C+V.
-            // E.g., {h,i,ê,n,e}: ê+n+e could be a typo after valid "hiên".
-            // Valid single-char codas: c, m, n, p, t (k for minority-language nouns).
-            // Does NOT allow: l, v, b, d, g, h, etc. → catches "release" (ê+l+a).
+            // Exception: modified vowel + valid single-char Vietnamese coda
             bool exception = false;
             if (consonants == 1) {
                 bool hasModifier = false;
@@ -208,14 +194,22 @@ template<typename CharStateT>
                                  coda == L'n' || coda == L'p' || coda == L't');
                 }
             }
-            if (!exception) {
-                return true;  // V + C(1+) + V found — impossible Vietnamese
-            }
+            if (!exception) return true;
         }
 
         i = vowelEnd;
     }
     return false;
+}
+
+/// Detect structural impossibility gated by tone key type.
+/// For Telex: only fires when toneKey is a letter that can't end Vietnamese words
+/// (s, f, r, x, j, z). For VNI digit keys, use HasStructuralVCVPattern() directly.
+template<typename CharStateT>
+[[nodiscard]] inline bool IsHardEnglishToneContext(
+        const CharStateT* states, size_t count, wchar_t toneKey) noexcept {
+    if (!IsHardEnglishEnd(toneKey)) return false;
+    return HasStructuralVCVPattern(states, count);
 }
 
 // =============================================================================

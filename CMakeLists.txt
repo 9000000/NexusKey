@@ -375,6 +375,7 @@ enable_testing()
 # Tests are excluded from ALL - build explicitly with --target NextKeyTests
 set(NEXTKEY_TEST_SOURCES
     tests/TelexEngineTest.cpp
+    tests/CombinedEngineTest.cpp
     tests/VniEngineTest.cpp
     tests/TelexDictionaryTest.cpp
     tests/EngineFactoryTest.cpp

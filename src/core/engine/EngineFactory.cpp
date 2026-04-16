@@ -14,11 +14,13 @@ std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) 
     switch (config.inputMethod) {
         case InputMethod::VNI:
             return std::make_unique<Vni::VniEngine>(config);
+        case InputMethod::Combined:
+            return std::make_unique<TypingEngine>(config);
         case InputMethod::SimpleTelex:
             [[fallthrough]];
         case InputMethod::Telex:
         default:
-            return std::make_unique<Telex::TelexEngine>(config);
+            return std::make_unique<TypingEngine>(config);
     }
 }
 

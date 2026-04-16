@@ -17,17 +17,18 @@ namespace NextKey {
 namespace {
 
 //=============================================================================
-// Telex-specific helpers (tone key mapping etc.)
+// Key mapping helpers
 //=============================================================================
 
 // IsVowelChar is shared — defined in VietnameseTables.h
 
-constexpr bool IsToneKey(wchar_t c) noexcept {
+// --- Telex key mapping ---
+constexpr bool IsTelexToneKey(wchar_t c) noexcept {
     return c == L's' || c == L'f' || c == L'r' || c == L'x' || c == L'j' ||
            c == L'S' || c == L'F' || c == L'R' || c == L'X' || c == L'J';
 }
 
-constexpr Tone KeyToTone(wchar_t c) noexcept {
+constexpr Tone TelexKeyToTone(wchar_t c) noexcept {
     switch (c) {
         case L's': case L'S': return Tone::Acute;
         case L'f': case L'F': return Tone::Grave;
@@ -36,6 +37,26 @@ constexpr Tone KeyToTone(wchar_t c) noexcept {
         case L'j': case L'J': return Tone::Dot;
         default: return Tone::None;
     }
+}
+
+// --- VNI key mapping ---
+constexpr bool IsVniToneKey(wchar_t c) noexcept {
+    return c >= L'1' && c <= L'5';
+}
+
+constexpr Tone VniKeyToTone(wchar_t c) noexcept {
+    switch (c) {
+        case L'1': return Tone::Acute;
+        case L'2': return Tone::Grave;
+        case L'3': return Tone::Hook;
+        case L'4': return Tone::Tilde;
+        case L'5': return Tone::Dot;
+        default:   return Tone::None;
+    }
+}
+
+constexpr bool IsVniModifierKey(wchar_t c) noexcept {
+    return c >= L'6' && c <= L'9';
 }
 
 /// Map Modifier enum to flat array column index (Circumflex=0, Breve=1, Horn=2)
@@ -180,21 +201,35 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 1a. 'z' key — clear existing tone (if any)
-    if (lower == L'z' && !states_.empty()) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_) {
-            ProcessChar(c);
-            UpdateSpellState();
-            return;
-        }
-        if (ProcessClearTone()) {
-            UpdateSpellState();
-            return;
+    // 1a. Clear tone: Telex 'z' / VNI '0'
+    if (!states_.empty()) {
+        bool isClearToneKey = (isTelexMode() && lower == L'z') ||
+                              (isVniMode() && c == L'0');
+        if (isClearToneKey) {
+            if (config_.spellCheckEnabled && spellCheckDisabled_) {
+                ProcessChar(c);
+                UpdateSpellState();
+                return;
+            }
+            if (ProcessClearTone()) {
+                UpdateSpellState();
+                return;
+            }
         }
     }
 
-    // 1b. Try tone keys (s, f, r, x, j) — gated by spell check + English protection
-    if (IsToneKey(c) && !states_.empty()) {
+    // 1b. Tone keys — determine tone from Telex or VNI key mapping
+    Tone requestedTone = Tone::None;
+    bool isTelexTone = false;
+    if (isTelexMode() && !states_.empty()) {
+        requestedTone = TelexKeyToTone(c);
+        isTelexTone = (requestedTone != Tone::None);
+    }
+    if (requestedTone == Tone::None && isVniMode() && !states_.empty()) {
+        requestedTone = VniKeyToTone(c);
+    }
+
+    if (requestedTone != Tone::None) {
         // All "treat as literal" paths share the same two operations.
         auto asLiteral = [&] { ProcessChar(c, lower, isUpper); UpdateSpellState(); };
 
@@ -203,17 +238,14 @@ void TypingEngine::PushChar(wchar_t c) {
         bool hasCachedTarget = false;
 
         if (config_.spellCheckEnabled && spellCheckDisabled_) {
-            // Allow tone escape (rr, ss, ff, etc.) even when spell check disabled:
-            // the user is canceling a tone they already applied (e.g. ocrr → ocr).
             cachedToneTarget = FindToneTarget();
             hasCachedTarget = true;
             size_t t = cachedToneTarget;
-            bool isEscape = (t != SIZE_MAX && states_[t].tone == KeyToTone(c));
-            // Allow tone if applying it would match a spell exclusion (e.g. "kà").
+            bool isEscape = (t != SIZE_MAX && states_[t].tone == requestedTone);
             bool matchesExclusion = false;
             if (!isEscape && !config_.spellExclusions.empty() && t != SIZE_MAX) {
                 CharState tentative = states_[t];
-                tentative.tone = KeyToTone(c);
+                tentative.tone = requestedTone;
                 wchar_t tonedCh = Compose(tentative);
                 matchesExclusion = WouldToneMatchExclusion(states_.data(), states_.size(),
                     config_.spellExclusions,
@@ -221,21 +253,18 @@ void TypingEngine::PushChar(wchar_t c) {
                     t, tonedCh);
             }
             if (!isEscape && !matchesExclusion) { asLiteral(); return; }
-            // Fall through: either tone escape or exclusion match
         }
-        // Tone escape: user pressed same tone key twice (e.g., ss) — blocks Vietnamese.
+        // Tone escape: user pressed same tone twice — blocks Vietnamese.
         if (escape_.isEscaped())                                { asLiteral(); return; }
-        // English word block: raw prefix check (spell check required).
-        // Blocks tone on known English prefixes (e.g. "pas"→pass, "gues"→guess).
-        if (config_.spellCheckEnabled &&
+        // English word block: raw prefix check (Telex keys only — digits don't appear in English).
+        if (isTelexTone && config_.spellCheckEnabled &&
             IsBlockedEnglishTone(rawInput_.data(), rawInput_.size())) {
-            // Allow override via spell exclusion (e.g. "pá" in exclusion list)
             bool overridden = false;
             if (!config_.spellExclusions.empty()) {
                 if (!hasCachedTarget) { cachedToneTarget = FindToneTarget(); hasCachedTarget = true; }
                 if (cachedToneTarget != SIZE_MAX) {
                     CharState tentative = states_[cachedToneTarget];
-                    tentative.tone = KeyToTone(c);
+                    tentative.tone = requestedTone;
                     wchar_t tonedCh = Compose(tentative);
                     overridden = WouldToneMatchExclusion(states_.data(), states_.size(),
                         config_.spellExclusions,
@@ -250,39 +279,39 @@ void TypingEngine::PushChar(wchar_t c) {
             if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
             if (engProt_.bias == LanguageBias::SoftEnglish) {
                 if (!UpdateToneInsistence(c, engProt_))              { asLiteral(); return; }
-                // User insisted (same key twice) — fall through to apply tone
             }
-            // Structural hard-English: V+C+V pattern is impossible in Vietnamese syllables.
-            // Catches "manager"/"danger" type words even without spell check.
-            if (IsHardEnglishToneContext(states_.data(), states_.size(), c)) {
-                engProt_.bias = LanguageBias::HardEnglish;
-                asLiteral(); return;
+            // Structural V+C+V check:
+            // Telex: uses IsHardEnglishToneContext (gated by IsHardEnglishEnd on the key)
+            // VNI: uses HasStructuralVCVPattern (no key guard — digits aren't word-ending chars)
+            if (isTelexTone) {
+                if (IsHardEnglishToneContext(states_.data(), states_.size(), c)) {
+                    engProt_.bias = LanguageBias::HardEnglish;
+                    asLiteral(); return;
+                }
+            } else if (states_.size() >= 4) {
+                if (HasStructuralVCVPattern(states_.data(), states_.size())) {
+                    engProt_.bias = LanguageBias::HardEnglish;
+                    asLiteral(); return;
+                }
             }
-            // Adjacent plain vowel pair with no Vietnamese diphthong rule in either
-            // table (e.g., 'ea' in "search", 'ae' in "aerial", 'oy' in "boy").
             if (HasInvalidAdjacentVowelPair(states_.data(), states_.size())) {
                 engProt_.bias = LanguageBias::HardEnglish;
                 asLiteral(); return;
             }
         }
         // Pre-tone stop-final check (spellCheck path only):
-        // Stop finals (c, ch, k, p, t) only accept Acute and Dot tones.
-        // Grave/Hook/Tilde on a stop-final syllable is phonologically impossible.
         if (config_.spellCheckEnabled && !spellCheckDisabled_) {
-            Tone requested = KeyToTone(c);
-            if (requested == Tone::Grave || requested == Tone::Hook ||
-                    requested == Tone::Tilde) {
+            if (requestedTone == Tone::Grave || requestedTone == Tone::Hook ||
+                    requestedTone == Tone::Tilde) {
                 if (HasStopFinalCoda(states_.data(), states_.size())) {
                     asLiteral(); return;
                 }
             }
         }
-        if (ProcessTone(c, hasCachedTarget ? cachedToneTarget : SIZE_MAX)) {
+        if (ProcessTone(requestedTone, c, hasCachedTarget ? cachedToneTarget : SIZE_MAX)) {
             if (!escape_.isEscaped()) {
-                engProt_.bias = LanguageBias::Vietnamese;  // Tone applied → VN intent
+                engProt_.bias = LanguageBias::Vietnamese;
             } else {
-                // Tone escaped (ss, ff, etc.) → user is canceling Vietnamese.
-                // Reset bias and re-evaluate from scratch.
                 RecalcEnglishBias(states_.data(), states_.size(), engProt_);
                 CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
             }
@@ -292,54 +321,53 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 2. Try modifier keys (w, [], aa, ee, oo, dd)
-    // Modifiers can transform invalid sequences into valid ones (uo -> ươ).
-    // However, if we're clearly in an English word (Tier 1 Hard Protect),
-    // skip modifiers and treat them as literal keys (e.g. 'brown' -> 'w' is literal).
-    //
-    // Pre-check for 'd' modifier: if dd→đ would fire (existing 'd' target) AND there's
-    // already a consonant in coda position, adding 'd' forms an invalid coda like "pd".
-    // Only fires when FindStrokeDTarget finds a target — doesn't affect plain 'd' in "wind".
-    if (lower == L'd' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
-        size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
-        if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
-            engProt_.bias = LanguageBias::HardEnglish;
+    // 2a. Telex modifier keys (w, [], aa, ee, oo, dd)
+    if (isTelexMode()) {
+        // Pre-check for 'd' modifier: if dd→đ would fire AND there's already a
+        // consonant in coda position, adding 'd' forms an invalid coda like "pd".
+        if (lower == L'd' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
+            size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
+            if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
+                engProt_.bias = LanguageBias::HardEnglish;
+            }
         }
-    }
-    bool blockModifiers = escape_.isEscaped() ||
-        (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
-    // English word block: raw prefix check for modifiers (e.g. "pow"→power, "upw"→upward).
-    if (!blockModifiers && config_.spellCheckEnabled &&
-        IsBlockedEnglishModifier(rawInput_.data(), rawInput_.size())) {
-        blockModifiers = true;
-    }
-    // Allow modifiers through English Protection when the word matches a spell exclusion.
-    if (blockModifiers && !escape_.isEscaped() && !config_.spellExclusions.empty()) {
-        if (WouldModifierKeyMatchExclusion(lower))
-            blockModifiers = false;
-    }
-    if (blockModifiers) {
-        // Don't try modifiers — treat as literal
-    } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
-        // PREVENT modifier application if sequence is already structurally invalid.
-        // But allow modifier ESCAPE (ww undoes horn, dd undoes stroke, aa/ee/oo undoes
-        // circumflex) — same principle as tone escape bypass above (line 190).
-        bool canEscape = false;
-        if (lower == L'w') {
-            canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Horn) ||
-                        HasEscapableModifier(states_.data(), states_.size(), Modifier::Breve);
-        } else if (lower == L'd') {
-            canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Stroke, true);
-        } else if (IsVowelChar(c) && !states_.empty()) {
-            const CharState& last = states_.back();
-            if (last.IsVowel() && last.base == lower && last.mod == Modifier::Circumflex)
-                canEscape = true;
+        bool blockModifiers = escape_.isEscaped() ||
+            (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
+        if (!blockModifiers && config_.spellCheckEnabled &&
+            IsBlockedEnglishModifier(rawInput_.data(), rawInput_.size())) {
+            blockModifiers = true;
         }
-        // Also allow modifier if it would match a spell exclusion (e.g. "jắc", "fư", "zô")
-        if (!canEscape) {
-            canEscape = WouldModifierKeyMatchExclusion(lower);
+        if (blockModifiers && !escape_.isEscaped() && !config_.spellExclusions.empty()) {
+            if (WouldModifierKeyMatchExclusion(lower))
+                blockModifiers = false;
         }
-        if (canEscape && ProcessTelexModifier(c, lower)) {
+        if (blockModifiers) {
+            // Don't try Telex modifiers — treat as literal
+        } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            bool canEscape = false;
+            if (lower == L'w') {
+                canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Horn) ||
+                            HasEscapableModifier(states_.data(), states_.size(), Modifier::Breve);
+            } else if (lower == L'd') {
+                canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Stroke, true);
+            } else if (IsVowelChar(c) && !states_.empty()) {
+                const CharState& last = states_.back();
+                if (last.IsVowel() && last.base == lower && last.mod == Modifier::Circumflex)
+                    canEscape = true;
+            }
+            if (!canEscape) {
+                canEscape = WouldModifierKeyMatchExclusion(lower);
+            }
+            if (canEscape && ProcessTelexModifier(c, lower)) {
+                if (engProt_.bias == LanguageBias::HardEnglish ||
+                    engProt_.bias == LanguageBias::SoftEnglish) {
+                    engProt_.bias = LanguageBias::Vietnamese;
+                }
+                ApplyAutoUO();
+                UpdateSpellState();
+                return;
+            }
+        } else if (ProcessTelexModifier(c, lower)) {
             if (engProt_.bias == LanguageBias::HardEnglish ||
                 engProt_.bias == LanguageBias::SoftEnglish) {
                 engProt_.bias = LanguageBias::Vietnamese;
@@ -348,14 +376,48 @@ void TypingEngine::PushChar(wchar_t c) {
             UpdateSpellState();
             return;
         }
-    } else if (ProcessTelexModifier(c, lower)) {
-        if (engProt_.bias == LanguageBias::HardEnglish || 
-            engProt_.bias == LanguageBias::SoftEnglish) {
-            engProt_.bias = LanguageBias::Vietnamese;  // Modifier applied → VN intent
+    }
+
+    // 2b. VNI modifier keys (6, 7, 8, 9)
+    if (isVniMode() && IsVniModifierKey(c)) {
+        // Pre-check for '9' (stroke): same coda check as Telex 'd'
+        if (c == L'9' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
+            size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
+            if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
+                engProt_.bias = LanguageBias::HardEnglish;
+            }
         }
-        ApplyAutoUO();
-        UpdateSpellState();
-        return;
+        bool blockVni = escape_.isEscaped() ||
+            (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
+        if (blockVni) {
+            // Don't try VNI modifiers — treat as literal
+        } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            // Allow VNI modifier escape only
+            bool canEscape = false;
+            Modifier escMod = Modifier::None;
+            if (c == L'6') escMod = Modifier::Circumflex;
+            else if (c == L'7') escMod = Modifier::Horn;
+            else if (c == L'8') escMod = Modifier::Breve;
+            else if (c == L'9') escMod = Modifier::Stroke;
+            if (escMod == Modifier::Stroke) {
+                canEscape = HasEscapableModifier(states_.data(), states_.size(), escMod, true);
+            } else if (escMod != Modifier::None) {
+                canEscape = HasEscapableModifier(states_.data(), states_.size(), escMod);
+            }
+            if (canEscape && ProcessVniModifier(c)) {
+                if (engProt_.bias != LanguageBias::Vietnamese)
+                    engProt_.bias = LanguageBias::Vietnamese;
+                ApplyAutoUO();
+                UpdateSpellState();
+                return;
+            }
+        } else if (ProcessVniModifier(c)) {
+            if (engProt_.bias != LanguageBias::Vietnamese)
+                engProt_.bias = LanguageBias::Vietnamese;
+            ApplyAutoUO();
+            UpdateSpellState();
+            return;
+        }
     }
 
     // 2b. Quick end consonant: g→ng, h→nh, k→ch (after vowel)
@@ -388,8 +450,7 @@ void TypingEngine::PushChar(wchar_t c) {
 // Tone Processing
 //-----------------------------------------------------------------------------
 
-bool TypingEngine::ProcessTone(wchar_t c, size_t cachedTarget) {
-    Tone newTone = KeyToTone(c);
+bool TypingEngine::ProcessTone(Tone newTone, wchar_t keyChar, size_t cachedTarget) {
     if (newTone == Tone::None) return false;
 
     size_t targetIdx = (cachedTarget != SIZE_MAX) ? cachedTarget : FindToneTarget();
@@ -406,7 +467,7 @@ bool TypingEngine::ProcessTone(wchar_t c, size_t cachedTarget) {
             EraseConsumedRaw(target.toneRawIdx);
         }
         target.toneRawIdx = SIZE_MAX;
-        ProcessChar(c);
+        ProcessChar(keyChar);
         escape_.escape(EscapeKind::Tone);  // Signal caller: user canceled tone
         return true;
     }
@@ -1227,6 +1288,155 @@ bool TypingEngine::WouldModifierKeyMatchExclusion(wchar_t lower) const {
         return WouldAnyModifierMatchExclusion(states_.data(), states_.size(),
             config_.spellExclusions, compose, Modifier::Circumflex, L"aeo");
     }
+    return false;
+}
+
+//-----------------------------------------------------------------------------
+// VNI Modifier Processing (keys 6, 7, 8, 9)
+//-----------------------------------------------------------------------------
+
+bool TypingEngine::ProcessVniModifier(wchar_t c) {
+    if (c == L'9') return ProcessDModifier(c);
+    if (c == L'7') return ProcessVniHornModifier(c);
+
+    Modifier targetMod = Modifier::None;
+    if (c == L'6') targetMod = Modifier::Circumflex;
+    else if (c == L'8') targetMod = Modifier::Breve;
+    else return false;
+
+    return ProcessVniVowelModifier(targetMod, c);
+}
+
+bool TypingEngine::ProcessVniHornModifier(wchar_t c) {
+    if (states_.empty()) return false;
+
+    // --- uo pair cycle (same logic as Telex ProcessWModifier P2) ---
+    size_t uIdx = SIZE_MAX, oIdx = SIZE_MAX;
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (!states_[i].IsVowel()) continue;
+        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+        if (states_[i].base == L'u') uIdx = i;
+        if (states_[i].base == L'o') oIdx = i;
+    }
+
+    // uo pair detected (adjacent)
+    if (uIdx != SIZE_MAX && oIdx != SIZE_MAX && oIdx == uIdx + 1) {
+        bool isEdge = IsUOEdgeCasePrefix(states_.data(), states_.size(), uIdx);
+        bool uHorn = states_[uIdx].IsHorn();
+        bool oHorn = states_[oIdx].IsHorn();
+
+        if (!uHorn && !oHorn) {
+            // uo → apply horn
+            if (isEdge) {
+                states_[oIdx].mod = Modifier::Horn;  // Edge: horn o first
+            } else {
+                states_[uIdx].mod = Modifier::Horn;
+                states_[oIdx].mod = Modifier::Horn;
+            }
+            RelocateToneToTarget();
+            return true;
+        }
+        if (isEdge && !uHorn && oHorn) {
+            // Edge step 2: horn u too
+            states_[uIdx].mod = Modifier::Horn;
+            RelocateToneToTarget();
+            return true;
+        }
+        // Escape: both horned (or edge fully horned)
+        if ((uHorn && oHorn) || (isEdge && uHorn)) {
+            states_[uIdx].mod = Modifier::None;
+            states_[oIdx].mod = Modifier::None;
+            ProcessChar(c);
+            escape_.escape(EscapeKind::Horn);
+            return true;
+        }
+    }
+
+    // --- uu pattern (horn first u, like Telex P5) ---
+    size_t firstU = SIZE_MAX, lastU = SIZE_MAX;
+    int uCount = 0;
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (states_[i].base == L'u' && states_[i].IsVowel()) {
+            if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+            if (firstU == SIZE_MAX) firstU = i;
+            lastU = i;
+            ++uCount;
+        }
+    }
+    if (uCount >= 2 && firstU != lastU &&
+        states_[firstU].mod == Modifier::None && states_[lastU].mod == Modifier::None) {
+        states_[firstU].mod = Modifier::Horn;
+        RelocateToneToTarget();
+        return true;
+    }
+
+    // --- Generic: rightmost eligible o/u → apply horn ---
+    return ProcessVniVowelModifier(Modifier::Horn, c);
+}
+
+bool TypingEngine::ProcessVniVowelModifier(Modifier targetMod, wchar_t key) {
+    if (states_.empty()) return false;
+
+    // Eligible base vowels for each modifier type
+    auto isEligible = [targetMod](wchar_t base) -> bool {
+        switch (targetMod) {
+            case Modifier::Circumflex: return base == L'a' || base == L'e' || base == L'o';
+            case Modifier::Horn:       return base == L'o' || base == L'u';
+            case Modifier::Breve:      return base == L'a';
+            default:                   return false;
+        }
+    };
+
+    // Pass 1: rightmost unmodified eligible vowel → apply
+    for (size_t i = states_.size(); i-- > 0;) {
+        if (!states_[i].IsVowel() || !isEligible(states_[i].base)) continue;
+        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+        if (states_[i].mod == Modifier::None) {
+            states_[i].mod = targetMod;
+            RelocateToneToTarget();
+            return true;
+        }
+    }
+
+    // Pass 1.5: modifier switching on compatible vowels
+    // â+8→ă, ă+6→â, ô+7→ơ, ơ+6→ô
+    for (size_t i = states_.size(); i-- > 0;) {
+        if (!states_[i].IsVowel() || !states_[i].HasModifier()) continue;
+        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+        wchar_t base = states_[i].base;
+        Modifier curMod = states_[i].mod;
+        bool canSwitch = false;
+        // a: Circumflex ↔ Breve
+        if (base == L'a' && ((curMod == Modifier::Circumflex && targetMod == Modifier::Breve) ||
+                             (curMod == Modifier::Breve && targetMod == Modifier::Circumflex))) {
+            canSwitch = true;
+        }
+        // o: Circumflex ↔ Horn
+        if (base == L'o' && ((curMod == Modifier::Circumflex && targetMod == Modifier::Horn) ||
+                             (curMod == Modifier::Horn && targetMod == Modifier::Circumflex))) {
+            canSwitch = true;
+        }
+        if (canSwitch) {
+            UndoHornU(states_.data(), i);
+            states_[i].mod = targetMod;
+            RelocateToneToTarget();
+            return true;
+        }
+    }
+
+    // Pass 2: escape — rightmost vowel with matching modifier → clear
+    for (size_t i = states_.size(); i-- > 0;) {
+        if (!states_[i].IsVowel()) continue;
+        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+        if (states_[i].mod == targetMod) {
+            UndoHornU(states_.data(), i);
+            states_[i].mod = Modifier::None;
+            ProcessChar(key);
+            escape_.escape(EscapeKind::Modifier);
+            return true;
+        }
+    }
+
     return false;
 }
 
