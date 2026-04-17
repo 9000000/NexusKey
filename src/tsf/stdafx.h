@@ -8,9 +8,9 @@
 #include <msctf.h>
 #include <olectl.h>
 
-// ATL headers (optional, for COM registration)
-// #include <atlbase.h>
-// #include <atlcom.h>
+// ATL — only CComPtr is needed (smart pointer for COM interfaces).
+// Prereq: VS2022 "Desktop development with C++" + "C++ ATL" component (see CLAUDE.md).
+#include <atlbase.h>
 
 // Standard C++ headers used throughout TSF
 #include <string>

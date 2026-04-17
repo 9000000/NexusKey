@@ -458,6 +458,45 @@ void VniEngine::Reset() {
     engProt_.Reset();
 }
 
+bool VniEngine::SeedFromText(const std::wstring& text) {
+    Reset();
+    states_.reserve(text.size());
+    rawInput_.reserve(text.size());
+    for (wchar_t ch : text) {
+        wchar_t base = 0;
+        int modIdx = -1, toneIdx = -1;
+        bool isUpper = false;
+        if (!DecomposeVietChar(ch, base, modIdx, toneIdx, isUpper)) {
+            Reset();
+            return false;
+        }
+        CharState st;
+        st.base = base;
+        st.isUpper = isUpper;
+        switch (modIdx) {
+            case 0: st.mod = Modifier::Circumflex; break;
+            case 1: st.mod = Modifier::Breve; break;
+            case 2: st.mod = Modifier::Horn; break;
+            case 3: st.mod = Modifier::Stroke; break;
+            default: st.mod = Modifier::None; break;
+        }
+        switch (toneIdx) {
+            case 0: st.tone = Tone::Acute; break;
+            case 1: st.tone = Tone::Grave; break;
+            case 2: st.tone = Tone::Hook; break;
+            case 3: st.tone = Tone::Tilde; break;
+            case 4: st.tone = Tone::Dot; break;
+            default: st.tone = Tone::None; break;
+        }
+        st.rawIdx = rawInput_.size();
+        rawInput_.push_back(base);
+        states_.push_back(st);
+    }
+    UpdateSpellState();
+    ::NextKey::CheckEnglishBias(states_.data(), states_.size(), engProt_);
+    return true;
+}
+
 
 
 //-----------------------------------------------------------------------------

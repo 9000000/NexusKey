@@ -7,6 +7,7 @@
 #include "InputScopeChecker.h"
 #include "Define.h"
 #include "core/engine/EngineFactory.h"
+#include <memory>
 
 namespace NextKey {
 namespace TSF {
@@ -49,7 +50,94 @@ EngineController::~EngineController() {
         lastContext_->Release();
         lastContext_ = nullptr;
     }
+    ClearPendingRevive();
     TSF_LOG(L"EngineController destroyed");
+}
+
+void EngineController::ClearPendingRevive() {
+    pendingReviveRange_.Release();
+    pendingReviveWord_.clear();
+}
+
+bool EngineController::PrepareBackspaceRevive(ITfContext* pContext) {
+    ClearPendingRevive();
+    if (pContext == nullptr) return false;
+
+    // Gate: only when engine is fully enabled AND Vietnamese mode AND engine empty.
+    if (!engineEnabled_ || !tsfActive_ || !vietnameseMode_) return false;
+    if (contextBlocked_) return false;
+    if (engine_->Count() > 0) return false;
+    // Scintilla (Notepad++) doesn't support ITfRange backward scan — skip to avoid
+    // a guaranteed-to-fail sync edit session per BS.
+    if (isScintillaApp_) return false;
+
+    // Step 1: READ preceding word via sync edit session.
+    auto* pSession = new ReadPrecedingWordEditSession(pContext);
+    HRESULT hrSession = S_OK;
+    HRESULT hr = pContext->RequestEditSession(
+        clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
+
+    std::wstring word;
+    CComPtr<ITfRange> pRange;
+    if (SUCCEEDED(hr) && SUCCEEDED(hrSession) && pSession->Found()) {
+        word = pSession->Word();
+        pRange.Attach(pSession->DetachRange());  // ownership transfer, no extra AddRef
+    }
+    pSession->Release();
+
+    if (!pRange || word.empty()) return false;
+
+    // Step 2: English-word gate via a throwaway engine (don't mutate engine_ —
+    // safety resets at the top of each OnTestKeyDown would wipe it).
+    auto tempEngine = EngineFactory::Create(config_);
+    if (!tempEngine || !tempEngine->SeedFromText(word) || tempEngine->IsEnglishWord()) {
+        TSF_LOG(L"PrepareBackspaceRevive: '%ls' rejected (not Vietnamese)", word.c_str());
+        return false;  // pRange auto-Released
+    }
+
+    // Step 3: Cache {word, range} for HandleKey(VK_BACK). Engine_ stays empty.
+    pendingReviveWord_ = std::move(word);
+    pendingReviveRange_ = pRange;  // CComPtr = CComPtr → AddRefs (local copy stays valid)
+    TSF_LOG(L"PrepareBackspaceRevive: armed for '%ls'", pendingReviveWord_.c_str());
+    return true;
+}
+
+bool EngineController::TryReviveOnType(ITfContext* pContext, wchar_t ch) {
+    if (pContext == nullptr || ch == 0) return false;
+    if (!engineEnabled_ || !tsfActive_ || !vietnameseMode_) return false;
+    if (contextBlocked_) return false;
+    if (engine_->Count() > 0) return false;
+    if (compositionMgr_.IsComposing()) return false;
+    if (isScintillaApp_) return false;  // Scintilla TSF limited — skip.
+
+    // Read preceding word (sync READ edit session).
+    auto* pRead = new ReadPrecedingWordEditSession(pContext);
+    HRESULT hrSession = S_OK;
+    HRESULT hr = pContext->RequestEditSession(
+        clientId_, pRead, TF_ES_SYNC | TF_ES_READ, &hrSession);
+
+    std::wstring word;
+    CComPtr<ITfRange> pRange;
+    if (SUCCEEDED(hr) && SUCCEEDED(hrSession) && pRead->Found()) {
+        word = pRead->Word();
+        pRange.Attach(pRead->DetachRange());
+    }
+    pRead->Release();
+
+    if (!pRange || word.empty()) return false;
+
+    // English-word gate via throwaway engine.
+    auto tempEngine = EngineFactory::Create(config_);
+    if (!tempEngine || !tempEngine->SeedFromText(word) || tempEngine->IsEnglishWord()) {
+        TSF_LOG(L"TryReviveOnType: '%ls' rejected as English", word.c_str());
+        return false;
+    }
+
+    auto* pSession = new ReviveAndTypeEditSession(
+        pContext, &compositionMgr_, engine_.get(), word, pRange, ch);
+    RequestEditSession(pContext, pSession);
+    pSession->Release();
+    return true;  // pRange auto-Released
 }
 
 void EngineController::CheckContextBlocked(ITfContext* pContext) {
@@ -187,6 +275,18 @@ void EngineController::RequestEditSession(ITfContext* pContext, EditSession* pEd
 bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
     // 1. Handle Backspace (only if we have content, as decided by WantKey)
     if (vkCode == VK_BACK) {
+        // Revive path: engine was pre-seeded in OnTestKeyDown via
+        // PrepareBackspaceRevive (and passed the English-word gate). Wire up
+        // composition covering the cached range, then apply backspace.
+        if (HasPendingRevive()) {
+            auto* pSession = new ReviveCompositionEditSession(
+                pContext, &compositionMgr_, engine_.get(),
+                pendingReviveWord_, pendingReviveRange_);
+            RequestEditSession(pContext, pSession);
+            pSession->Release();
+            ClearPendingRevive();
+            return true;
+        }
         ProcessBackspace(pContext);
         return true;
     }
@@ -210,6 +310,13 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         if (config_.autoCaps && autoCapState_ == 2 && engine_->Count() == 0) {
             ch = towupper(ch);
             autoCapState_ = 0;
+        }
+
+        // Type-revive: if engine is empty and there's a Vietnamese word right
+        // before the caret, re-enter composition over it and apply this char.
+        // E.g. "tét gõ|" + 'f' → "tét [gò]" (grave tone replaces tilde).
+        if (engine_->Count() == 0 && !compositionMgr_.IsComposing()) {
+            if (TryReviveOnType(pContext, ch)) return true;
         }
 
         TSF_LOG(L"HandleKey: pushing char '%c'", ch);

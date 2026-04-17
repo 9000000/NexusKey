@@ -103,6 +103,79 @@ constexpr int ToneBaseIndex(wchar_t ch) {
     return ch;
 }
 
+// Forward declaration — definition lives below after the case-conversion helpers.
+[[nodiscard]] inline wchar_t ToLowerVietnamese(wchar_t ch) noexcept;
+
+//=============================================================================
+// Decompose a Vietnamese Unicode char into (base, modifier index, tone index)
+// Used by SeedFromText to rebuild engine state from committed text.
+//
+// modIdx:  -1=None, 0=Circumflex, 1=Breve, 2=Horn, 3=Stroke (d only)
+// toneIdx: -1=None, 0=Acute, 1=Grave, 2=Hook, 3=Tilde, 4=Dot
+//
+// Returns false for non-letter chars (digits, punctuation, whitespace).
+// Base is always lowercase a-z; isUpper preserves original case.
+//=============================================================================
+[[nodiscard]] inline bool DecomposeVietChar(wchar_t ch, wchar_t& baseOut, int& modIdxOut,
+                                             int& toneIdxOut, bool& isUpperOut) noexcept {
+    wchar_t lower = ToLowerVietnamese(ch);
+    isUpperOut = (lower != ch);
+    modIdxOut = -1;
+    toneIdxOut = -1;
+    baseOut = 0;
+
+    // Special: đ
+    if (lower == L'\x0111') {
+        baseOut = L'd';
+        modIdxOut = 3;  // Stroke
+        return true;
+    }
+
+    // Helper: decompose toned-base char (a, â, ă, e, ê, i, o, ô, ơ, u, ư, y) → base + mod
+    auto decomposeToneBase = [&](wchar_t tb) -> bool {
+        switch (tb) {
+            case L'a': baseOut = L'a'; return true;
+            case L'e': baseOut = L'e'; return true;
+            case L'i': baseOut = L'i'; return true;
+            case L'o': baseOut = L'o'; return true;
+            case L'u': baseOut = L'u'; return true;
+            case L'y': baseOut = L'y'; return true;
+            case L'\x00E2': baseOut = L'a'; modIdxOut = 0; return true;  // â
+            case L'\x0103': baseOut = L'a'; modIdxOut = 1; return true;  // ă
+            case L'\x00EA': baseOut = L'e'; modIdxOut = 0; return true;  // ê
+            case L'\x00F4': baseOut = L'o'; modIdxOut = 0; return true;  // ô
+            case L'\x01A1': baseOut = L'o'; modIdxOut = 2; return true;  // ơ
+            case L'\x01B0': baseOut = L'u'; modIdxOut = 2; return true;  // ư
+            default: return false;
+        }
+    };
+
+    // Toned vowel? Search kTonedVowel.
+    for (int i = 0; i < 12; ++i) {
+        for (int j = 0; j < 5; ++j) {
+            if (kTonedVowel[i][j] == lower) {
+                constexpr wchar_t kToneBaseLocal[] = {
+                    L'a', L'\x00E2', L'\x0103', L'e', L'\x00EA', L'i',
+                    L'o', L'\x00F4', L'\x01A1', L'u', L'\x01B0', L'y'
+                };
+                toneIdxOut = j;
+                return decomposeToneBase(kToneBaseLocal[i]);
+            }
+        }
+    }
+
+    // Untoned modified vowel or plain vowel
+    if (decomposeToneBase(lower)) return true;
+
+    // Plain latin consonant
+    if (lower >= L'a' && lower <= L'z') {
+        baseOut = lower;
+        return true;
+    }
+
+    return false;
+}
+
 //=============================================================================
 // Diphthong Tone Placement — shared between Telex and VNI engines
 // Table[first_vowel][second_vowel] → 0=no rule, 1=FIRST, 2=SECOND

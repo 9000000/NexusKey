@@ -11,6 +11,17 @@
 namespace NextKey {
 namespace TSF {
 
+// Convert VK code + lParam to the Unicode character the active layout would produce.
+// Uses ToUnicode so it respects US QWERTY, shift state, etc. Returns 0 if not printable.
+static wchar_t VkToChar(UINT vk, LPARAM lParam) {
+    BYTE keyState[256] = {};
+    if (!GetKeyboardState(keyState)) return 0;
+    UINT scanCode = (static_cast<UINT>(lParam) >> 16) & 0xFF;
+    wchar_t buf[4] = {};
+    int result = ToUnicode(vk, scanCode, keyState, buf, 4, 0);
+    return (result == 1 && buf[0] != 0) ? buf[0] : 0;
+}
+
 // Helper function to check if a key is punctuation/number that should trigger commit
 static bool IsPunctuationKey(UINT vkCode) {
     // Number keys (0-9)
@@ -110,7 +121,7 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
     return S_OK;
 }
 
-IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM /*lParam*/, BOOL* pfEaten) {
+IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
 
     // Check if this context blocks input (password, PIN, email fields)
@@ -155,20 +166,43 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
         return S_OK;
     }
 
-    // Check if this is a punctuation/number key that should trigger commit.
-    // Exception: VNI/Combined digit keys 1-9 are tone/modifier input — don't commit.
+    // Punctuation + active composition → eat the key if we can reproduce the char
+    // via ToUnicode; OnKeyDown will commit with this char appended (atomic "abc,",
+    // no race between our EndComposition and the host's default key handling).
+    // Exception: VNI/Combined digit keys 1-9 are tone/modifier input — don't eat here.
     bool isPunctuation = IsPunctuationKey(static_cast<UINT>(wParam));
     if (isPunctuation && pEngineController_->HasEngineBuffer()) {
         bool isVniDigit = pEngineController_->IsVniDigitKey(static_cast<UINT>(wParam));
         if (!isVniDigit) {
+            wchar_t ch = VkToChar(static_cast<UINT>(wParam), lParam);
+            if (ch != 0) {
+                TSF_LOG(L"OnTestKeyDown: punct vk=0x%02X ch='%lc' will eat+commit",
+                        (UINT)wParam, ch);
+                *pfEaten = TRUE;
+                lastTestedVk_ = static_cast<UINT>(wParam);
+                lastWantKeyResult_ = true;
+                return S_OK;
+            }
+            // Conversion failed — fall back to old commit+passthrough (rare path).
+            TSF_LOG(L"OnTestKeyDown: VkToChar failed vk=0x%02X, commit+passthrough",
+                    (UINT)wParam);
             pEngineController_->Commit(pContext);
-            *pfEaten = FALSE;  // Let punctuation pass through
+            *pfEaten = FALSE;
             return S_OK;
         }
         // VNI/Combined digit: fall through to WantKey → HandleKey
     }
 
     bool wantKey = pEngineController_->WantKey(static_cast<UINT>(wParam), true);
+
+    // Backspace revive: if engine is empty and cursor is right after a Vietnamese
+    // word, claim the BS and re-enter composition in HandleKey. Pre-read the word
+    // here (sync edit session) so we can decide whether to eat the key.
+    if (!wantKey && wParam == VK_BACK && !pEngineController_->HasEngineBuffer()) {
+        if (pEngineController_->PrepareBackspaceRevive(pContext)) {
+            wantKey = true;
+        }
+    }
 
     // Cache result so OnKeyDown can reuse without calling WantKey again
     lastTestedVk_ = static_cast<UINT>(wParam);
@@ -197,21 +231,41 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam
     return S_OK;
 }
 
-IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM /*lParam*/, BOOL* pfEaten) {
+IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
-    
-    // Check modifiers first (Ctrl, Alt, Win should never be handled)
+
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
-    
+
     if (ctrl || alt || win) {
         *pfEaten = FALSE;
         return S_OK;
     }
-    
-    // Use cached WantKey result from OnTestKeyDown to avoid double state-machine advance
+
     UINT vk = static_cast<UINT>(wParam);
+
+    // Punctuation: commit composition with this char appended (atomic, no race).
+    // Gate mirrors OnTestKeyDown so behavior stays consistent.
+    if (IsPunctuationKey(vk) && pEngineController_->HasEngineBuffer()
+        && !pEngineController_->IsVniDigitKey(vk)) {
+        wchar_t ch = VkToChar(vk, lParam);
+        if (ch != 0) {
+            TSF_LOG(L"OnKeyDown: punct vk=0x%02X ch='%lc' → CommitWithChar", vk, ch);
+            pEngineController_->CommitWithChar(pContext, ch);
+            lastTestedVk_ = 0;
+            *pfEaten = TRUE;
+            return S_OK;
+        }
+        // VkToChar failed (rare) — fall back to plain commit + passthrough so the
+        // user still sees the key effect.
+        TSF_LOG(L"OnKeyDown: VkToChar failed for vk=0x%02X, fallback commit+passthrough", vk);
+        pEngineController_->Commit(pContext);
+        lastTestedVk_ = 0;
+        *pfEaten = FALSE;
+        return S_OK;
+    }
+
     bool wantKey = (vk == lastTestedVk_) ? lastWantKeyResult_
                                           : pEngineController_->WantKey(vk, true);
     lastTestedVk_ = 0;  // Invalidate cache
@@ -220,8 +274,8 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
         *pfEaten = FALSE;
         return S_OK;
     }
-    
-    *pfEaten = pEngineController_->HandleKey(pContext, static_cast<UINT>(wParam)) ? TRUE : FALSE;
+
+    *pfEaten = pEngineController_->HandleKey(pContext, vk) ? TRUE : FALSE;
     return S_OK;
 }
 

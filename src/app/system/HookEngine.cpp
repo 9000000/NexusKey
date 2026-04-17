@@ -429,7 +429,14 @@ void HookEngine::ReloadFromToml() {
     } else {
         isTsfApp_ = false;
     }
+    HOOK_LOG(L"  Engine (config reload): %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
+             isTsfApp_ ? L"TSF (hook passthrough)" : L"HOOK",
+             currentExe_.c_str(),
+             tsfApps_ ? 1 : 0,
+             (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
+             isExcludedApp_ ? 1 : 0);
     if (isTsfApp_ != wasTsfApp && tsfActiveCallback_) {
+        HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s", wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
         tsfActiveCallback_(isTsfApp_);
     }
 
@@ -2083,6 +2090,14 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     } else {
         isTsfApp_ = false;
     }
+
+    // Always log active engine for this focus — makes it easy to tell which engine handles the app
+    HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
+             isTsfApp_ ? L"TSF (hook passthrough)" : L"HOOK",
+             currentExe_.c_str(),
+             tsfApps_ ? 1 : 0,
+             (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
+             isExcludedApp_ ? 1 : 0);
 
     // Notify SharedState when TSF active state changes (DLL reads this flag)
     if (isTsfApp_ != wasTsfApp && tsfActiveCallback_) {

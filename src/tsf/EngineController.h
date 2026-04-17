@@ -102,6 +102,23 @@ public:
     /// Whether current context blocks Vietnamese input
     [[nodiscard]] bool IsContextBlocked() const noexcept { return contextBlocked_; }
 
+    /// Try to prepare a Backspace revive: sync-read preceding Vietnamese word
+    /// before caret. On success caches word + range for HandleKey(VK_BACK) to consume.
+    /// Returns true if a Vietnamese word was found — caller should eat the BS key.
+    bool PrepareBackspaceRevive(ITfContext* pContext);
+
+    /// Type-revive: when engine is empty and user types a char, check whether the
+    /// char sits right after a Vietnamese word. If so, start composition over that
+    /// word, seed the engine, and PushChar(ch) — all in one sync edit session.
+    /// Returns true if revive happened; false means caller should do normal typing.
+    bool TryReviveOnType(ITfContext* pContext, wchar_t ch);
+
+    /// Discard any pending revive state (word + range). Safe to call at any time.
+    void ClearPendingRevive();
+
+    /// Whether a revive is queued (set by PrepareBackspaceRevive, consumed by HandleKey).
+    [[nodiscard]] bool HasPendingRevive() const noexcept { return pendingReviveRange_ != nullptr; }
+
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
 
@@ -127,6 +144,11 @@ private:
     ITfContext* lastContext_ = nullptr;   // Last seen context (AddRef'd for safe identity comparison)
     bool contextBlocked_ = false;        // True if current context blocks input (password, etc.)
     bool isScintillaApp_ = false;        // Cached: current app is Scintilla-based (Notepad++, etc.)
+
+    // Pending Backspace revive — set by PrepareBackspaceRevive (called from OnTestKeyDown),
+    // consumed by HandleKey(VK_BACK). CComPtr auto-manages ref count.
+    std::wstring pendingReviveWord_;
+    CComPtr<ITfRange> pendingReviveRange_;
 };
 
 }  // namespace TSF

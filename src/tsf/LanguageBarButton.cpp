@@ -257,7 +257,7 @@ IFACEMETHODIMP LanguageBarButton::GetText(BSTR* pbstrText) {
     if (pbstrText == nullptr) return E_INVALIDARG;
 
     bool vietnamese = controller_ && controller_->IsVietnameseMode();
-    *pbstrText = SysAllocString(vietnamese ? L"VIE" : L"ENG");
+    *pbstrText = SysAllocString(vietnamese ? L"VIE" : L"NXK");
 
     return *pbstrText ? S_OK : E_OUTOFMEMORY;
 }

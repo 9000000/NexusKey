@@ -28,7 +28,7 @@ MacroTableDialog::MacroTableDialog(HWND parent)
     TypingConfig cfg = ConfigManager::LoadOrDefault();
     sciter::dom::element root = get_root();
     auto setChecked = [&](const char* id, bool val) {
-        auto el = root.find_first(id);
+        sciter::dom::element el = root.find_first(id);
         if (el.is_valid()) el.set_value(sciter::value(val));
     };
     setChecked("#cfg-macro_trigger_space", cfg.macroTriggerSpace);

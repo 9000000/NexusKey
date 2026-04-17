@@ -64,6 +64,10 @@ public:
     void Reset() override;
     [[nodiscard]] size_t Count() const override { return states_.size(); }
     [[nodiscard]] bool HasActiveQuickConsonant() const override { return qc_.hasActive(); }
+    [[nodiscard]] bool SeedFromText(const std::wstring& text) override;
+    [[nodiscard]] bool IsEnglishWord() const override {
+        return engProt_.bias == ::NextKey::LanguageBias::HardEnglish;
+    }
 
 private:
     // Processing

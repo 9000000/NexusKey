@@ -4148,6 +4148,96 @@ TEST_F(EnglishProtectionTest, EnglishBlock_SpellCheckOff_NoBlock) {
     EXPECT_EQ(offEngine->Peek(), L"pá");
 }
 
+// ============================================================================
+// SeedFromText — revive composition from committed Vietnamese text
+// ============================================================================
+
+TEST_F(TelexEngineTest, Seed_Empty) {
+    EXPECT_TRUE(engine_->SeedFromText(L""));
+    EXPECT_EQ(engine_->Count(), 0u);
+    EXPECT_EQ(engine_->Peek(), L"");
+}
+
+TEST_F(TelexEngineTest, Seed_PlainAscii) {
+    EXPECT_TRUE(engine_->SeedFromText(L"go"));
+    EXPECT_EQ(engine_->Peek(), L"go");
+    EXPECT_EQ(engine_->Count(), 2u);
+}
+
+TEST_F(TelexEngineTest, Seed_ThenAddTone) {
+    // User typed "gõ", committed. BS back to "go". Type 's' → "gó".
+    ASSERT_TRUE(engine_->SeedFromText(L"go"));
+    engine_->PushChar(L's');
+    EXPECT_EQ(engine_->Peek(), L"gó");
+}
+
+TEST_F(TelexEngineTest, Seed_TonedVowel_ThenChangeTone) {
+    // Seed "gõ", user types 's' → sắc overrides tilde → "gó"
+    ASSERT_TRUE(engine_->SeedFromText(L"gõ"));
+    EXPECT_EQ(engine_->Peek(), L"gõ");
+    engine_->PushChar(L's');
+    EXPECT_EQ(engine_->Peek(), L"gó");
+}
+
+TEST_F(TelexEngineTest, Seed_ModifiedVowel_Backspace) {
+    ASSERT_TRUE(engine_->SeedFromText(L"â"));
+    EXPECT_EQ(engine_->Count(), 1u);
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Count(), 0u);
+}
+
+TEST_F(TelexEngineTest, Seed_FullSyllable) {
+    ASSERT_TRUE(engine_->SeedFromText(L"tiếng"));
+    EXPECT_EQ(engine_->Peek(), L"tiếng");
+    EXPECT_EQ(engine_->Count(), 5u);
+}
+
+TEST_F(TelexEngineTest, Seed_DStroke) {
+    ASSERT_TRUE(engine_->SeedFromText(L"đẹp"));
+    EXPECT_EQ(engine_->Peek(), L"đẹp");
+    EXPECT_EQ(engine_->Count(), 3u);
+}
+
+TEST_F(TelexEngineTest, Seed_UpperCasePreserved) {
+    ASSERT_TRUE(engine_->SeedFromText(L"Tiếng"));
+    EXPECT_EQ(engine_->Peek(), L"Tiếng");
+}
+
+TEST_F(TelexEngineTest, Seed_RejectsNonLetter_Space) {
+    EXPECT_FALSE(engine_->SeedFromText(L"go "));
+    EXPECT_EQ(engine_->Count(), 0u);
+}
+
+TEST_F(TelexEngineTest, Seed_RejectsNonLetter_Digit) {
+    EXPECT_FALSE(engine_->SeedFromText(L"go1"));
+    EXPECT_EQ(engine_->Count(), 0u);
+}
+
+TEST_F(TelexEngineTest, Seed_RejectsNonLetter_Punct) {
+    EXPECT_FALSE(engine_->SeedFromText(L"go."));
+    EXPECT_EQ(engine_->Count(), 0u);
+}
+
+TEST_F(TelexEngineTest, Seed_Horn_ThenTone) {
+    ASSERT_TRUE(engine_->SeedFromText(L"ư"));
+    engine_->PushChar(L's');
+    EXPECT_EQ(engine_->Peek(), L"ứ");
+}
+
+TEST_F(TelexEngineTest, Seed_OverridesPreviousState) {
+    TypeString(*engine_, L"hello");
+    ASSERT_TRUE(engine_->SeedFromText(L"go"));
+    EXPECT_EQ(engine_->Peek(), L"go");
+    EXPECT_EQ(engine_->Count(), 2u);
+}
+
+TEST_F(TelexEngineTest, Seed_LatinOnlyWord_Succeeds) {
+    // "system" is all latin a-z → decompose OK. TSF layer decides whether to revive
+    // based on spell validity; the engine just decomposes.
+    EXPECT_TRUE(engine_->SeedFromText(L"system"));
+    EXPECT_EQ(engine_->Peek(), L"system");
+}
+
 }  // namespace
 }  // namespace Telex
 }  // namespace NextKey

@@ -4,6 +4,16 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      include_tests:
+        description: 'Include tests in the build'
+        type: boolean
+        default: false
+      include_classic:
+        description: 'Include Classic UI (Lite) build'
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -36,16 +46,20 @@ jobs:
         run: cmake --build build --config Release --target NextKeyTSF
 
       - name: Build tests
+        if: github.event_name != 'workflow_dispatch' || inputs.include_tests
         run: cmake --build build --config Release --target NextKeyTests
 
       - name: Run tests
+        if: github.event_name != 'workflow_dispatch' || inputs.include_tests
         run: ctest --test-dir build --build-config Release --output-on-failure
 
       # --- Classic UI (Lite) build ---
       - name: Configure Classic UI
+        if: github.event_name != 'workflow_dispatch' || inputs.include_classic
         run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DNEXUSKEY_LITE_MODE=ON
 
       - name: Build Classic UI
+        if: github.event_name != 'workflow_dispatch' || inputs.include_classic
         run: cmake --build build-classic --config Release --target NextKeyLite
 
       # --- Zip releases ---
