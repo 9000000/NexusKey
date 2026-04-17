@@ -32,6 +32,7 @@ private:
 
     void LoadData();
     void SaveData();
+    void SaveTriggerConfig();
 
     static std::wstring StorageToEdit(const std::wstring& s);
     static std::wstring EditToStorage(const std::wstring& s);
@@ -40,8 +41,8 @@ private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     int Dpi(int value) const noexcept;
 
-    static constexpr int kWidth = 420;
-    static constexpr int kHeight = 440;
+    static constexpr int kWidth = 440;
+    static constexpr int kHeight = 405;
     static constexpr int kPadding = 12;
     static constexpr int kBtnHeight = 28;
     static constexpr int kBtnGap = 6;
@@ -59,6 +60,12 @@ private:
     HWND btnDelete_ = nullptr;
     HWND btnImport_ = nullptr;
     HWND btnExport_ = nullptr;
+
+    HWND lblTrigger_ = nullptr;
+    HWND chkSpace_ = nullptr;
+    HWND chkEnter_ = nullptr;
+    HWND chkTab_ = nullptr;
+    HWND chkDir_ = nullptr;
 
     std::unordered_map<std::wstring, std::wstring> macros_;
 

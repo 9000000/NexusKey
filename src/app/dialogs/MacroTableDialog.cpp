@@ -23,6 +23,18 @@ MacroTableDialog::MacroTableDialog(HWND parent)
     }) {
     macros_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
     populateList();
+
+    // Set trigger states in UI via DOM attributes (safe during init — no JS dependency)
+    TypingConfig cfg = ConfigManager::LoadOrDefault();
+    sciter::dom::element root = get_root();
+    auto setChecked = [&](const char* id, bool val) {
+        auto el = root.find_first(id);
+        if (el.is_valid()) el.set_value(sciter::value(val));
+    };
+    setChecked("#cfg-macro_trigger_space", cfg.macroTriggerSpace);
+    setChecked("#cfg-macro_trigger_enter", cfg.macroTriggerEnter);
+    setChecked("#cfg-macro_trigger_tab", cfg.macroTriggerTab);
+    setChecked("#cfg-macro_trigger_dir", cfg.macroTriggerDir);
 }
 
 
@@ -80,6 +92,22 @@ bool MacroTableDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) 
                     importMacros();
                 } else if (action == L"export") {
                     exportMacros();
+                } else if (action == L"toggle_trigger") {
+                    sciter::dom::element triggerIdEl = root.find_first("#val-trigger-id");
+                    sciter::dom::element triggerValEl = root.find_first("#val-trigger-val");
+                    if (triggerIdEl.is_valid() && triggerValEl.is_valid()) {
+                        std::wstring triggerId = triggerIdEl.get_value().get<std::wstring>();
+                        bool triggerVal = triggerValEl.get_value().get<std::wstring>() == L"1";
+                        
+                        TypingConfig cfg = ConfigManager::LoadOrDefault();
+                        if (triggerId == L"cfg-macro_trigger_space") cfg.macroTriggerSpace = triggerVal;
+                        else if (triggerId == L"cfg-macro_trigger_enter") cfg.macroTriggerEnter = triggerVal;
+                        else if (triggerId == L"cfg-macro_trigger_tab") cfg.macroTriggerTab = triggerVal;
+                        else if (triggerId == L"cfg-macro_trigger_dir") cfg.macroTriggerDir = triggerVal;
+                        
+                        (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), cfg);
+                        SignalConfigChange();
+                    }
                 } else if (action == L"close") {
                     PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
                 }

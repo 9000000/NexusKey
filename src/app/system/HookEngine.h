@@ -131,6 +131,7 @@ private:
 
     // Commit trigger check
     static bool IsCommitTrigger(DWORD vkCode);
+    bool IsMacroTrigger(DWORD vkCode) const;
 
     // Convert VK code to macro-usable char (for special-char macro keys).
     // Uses MapVirtualKeyW — returns unshifted character only (Shift state ignored).

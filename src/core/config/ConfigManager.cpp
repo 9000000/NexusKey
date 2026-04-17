@@ -135,6 +135,10 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.tempOffMacroByEsc = (*features)["temp_off_macro_esc"].value_or(false);
             config.autoCapsMacro = (*features)["auto_caps_macro"].value_or(false);
             config.allowEnglishBypass = (*features)["allow_english_bypass"].value_or(false);
+            config.macroTriggerSpace = (*features)["macro_trigger_space"].value_or(true);
+            config.macroTriggerEnter = (*features)["macro_trigger_enter"].value_or(true);
+            config.macroTriggerTab = (*features)["macro_trigger_tab"].value_or(true);
+            config.macroTriggerDir = (*features)["macro_trigger_dir"].value_or(true);
             // Spell exclusion prefixes (e.g. ["hđ", "đp"]) — stored pre-lowercased
             if (auto arr = (*features)["spell_exclusions"].as_array()) {
                 for (auto& item : *arr) {
@@ -194,6 +198,10 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("temp_off_macro_esc", config.tempOffMacroByEsc);
         features.insert_or_assign("auto_caps_macro", config.autoCapsMacro);
         features.insert_or_assign("allow_english_bypass", config.allowEnglishBypass);
+        features.insert_or_assign("macro_trigger_space", config.macroTriggerSpace);
+        features.insert_or_assign("macro_trigger_enter", config.macroTriggerEnter);
+        features.insert_or_assign("macro_trigger_tab", config.macroTriggerTab);
+        features.insert_or_assign("macro_trigger_dir", config.macroTriggerDir);
         // Spell exclusion prefixes
         toml::array exclArr;
         for (const auto& excl : config.spellExclusions) {

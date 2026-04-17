@@ -57,8 +57,27 @@
                 </div>
             </div>
 
+            <!-- Trigger Card -->
+            <div class="settings-card" style="padding: 12px 16px; display: flex; flex-direction: row; align-items: center; gap: 12px;">
+                <span class="setting-label" style="white-space: nowrap; margin-right: 16px;" data-i18n="m.trigger_keys">Phím kích hoạt:</span>
+                <div style="display: flex; flex-direction: row; gap: 12px; flex-wrap: wrap;">
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
+                        <input type="checkbox" id="cfg-macro_trigger_space" checked> Space
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
+                        <input type="checkbox" id="cfg-macro_trigger_enter" checked> Enter
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
+                        <input type="checkbox" id="cfg-macro_trigger_tab" checked> Tab
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
+                        <input type="checkbox" id="cfg-macro_trigger_dir" checked> <span data-i18n="m.trigger_arrows">Điều hướng</span>
+                    </label>
+                </div>
+            </div>
+
             <!-- List Card -->
-            <div class="settings-card">
+            <div class="settings-card list-card">
                 <div class="list-header">
                     <span class="list-col-name" data-i18n="m.shortcut">Từ gõ tắt</span>
                     <span class="list-col-content" data-i18n="m.content">Nội dung đầy đủ</span>
@@ -79,6 +98,8 @@
         <input type="hidden" id="val-action" value="">
         <input type="hidden" id="val-macro-name" value="">
         <input type="hidden" id="val-macro-content" value="">
+        <input type="hidden" id="val-trigger-id" value="">
+        <input type="hidden" id="val-trigger-val" value="">
     </div>
 </body>
 

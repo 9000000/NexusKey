@@ -12,9 +12,9 @@
     background: var(--bg-card-solid);
 }
 
-/* Second settings-card (list) - fixed height container */
-.settings-card:nth-child(2) {
-    flex-shrink: 0;
+/* Flexible height container for the list */
+.settings-card.list-card {
+    height: *;
     display: flex;
     flex-direction: column;
     min-height: 40px;
@@ -24,6 +24,7 @@
 /* Footer row override */
 .footer-row {
     width: 100%;
+    flex-shrink: 0;
 }
 
 /* Footer buttons are smaller */
@@ -40,6 +41,7 @@
     font-size: 12px;
     font-weight: 600;
     color: var(--text-secondary);
+    flex-shrink: 0;
 }
 
 .list-col-name {
@@ -51,14 +53,13 @@
     flex: 1;
 }
 
-/* Macro List - Flexible height with scroll, max 5 items visible */
+/* Macro List - Flexible height with scroll */
 .macro-list {
     display: block;
-    flex: 1;
+    height: *;
     min-height: 40px;
-    max-height: 170px;
-    /* ~5 items × 34px per item */
-    overflow: scroll-indicator;
+    overflow-y: scroll-indicator;
+    overflow-x: hidden;
     vertical-scrollbar: pink-scroll-indicator;
     padding-right: 10px;
 }
@@ -92,14 +93,20 @@
 /* Newline hint below content input */
 .hint-row {
     padding: 2px 0 4px 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    display: block;
+    flow: horizontal;
+    width: 100%;
 }
 
 .hint-text {
     font-size: 11px;
     color: var(--text-secondary);
+}
+
+.char-counter {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-left: *; /* Sciter's way to push elements to the right */
 }
 
 .hint-text code {
@@ -120,13 +127,19 @@
 }
 
 /* Textarea for multi-line macro content */
-.macro-textarea {
-    height: 100px;
+textarea.setting-input.macro-textarea {
+    height: 130px !important;
+    min-height: 100px !important;
+    max-height: 150px !important;
     font-family: monospace;
     font-size: 12px;
     resize: none;
-    line-height: 1.4;
-    overflow-y: auto;
+    line-height: 1.4 !important;
+    overflow-y: scroll-indicator !important;
+    overflow-x: hidden !important;
+    white-space: pre-wrap !important;
+    width: 100% !important;
+    padding: 6px !important;
 }
 
 /* Content row needs vertical layout for textarea */
@@ -138,16 +151,6 @@
 
 .content-row .setting-label {
     margin-bottom: 0;
-}
-
-.content-row .macro-textarea {
-    width: 100%;
-}
-
-/* Character counter */
-.char-counter {
-    font-size: 11px;
-    color: var(--text-secondary);
 }
 
 .char-counter.near-limit {

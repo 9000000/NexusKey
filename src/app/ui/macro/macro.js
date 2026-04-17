@@ -26,6 +26,19 @@ function initMacroDialog() {
         macroName.addEventListener("change", function () { updateAddButtonText(); });
     }
 
+    // Bind triggers
+    var triggers = ["cfg-macro_trigger_space", "cfg-macro_trigger_enter", "cfg-macro_trigger_tab", "cfg-macro_trigger_dir"];
+    for (var i = 0; i < triggers.length; i++) {
+        var el = document.getElementById(triggers[i]);
+        if (el) {
+            el.addEventListener("change", function () {
+                document.getElementById("val-trigger-id").value = this.id;
+                document.getElementById("val-trigger-val").value = this.checked ? "1" : "0";
+                triggerAction("toggle_trigger");
+            });
+        }
+    }
+
     // Character counter + clipboard hint
     if (macroContent) {
         macroContent.addEventListener("input", function () { updateCharCounter(); });

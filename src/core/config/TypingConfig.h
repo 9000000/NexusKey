@@ -58,6 +58,10 @@ struct TypingConfig {
     bool tempOffMacroByEsc = false;    // Esc temporarily disables macro for next word
     bool autoCapsMacro = false;        // Auto-capitalize expansion to match typed case
     bool allowEnglishBypass = false;   // Cho phép gõ dấu tự do / Bypass English blocking (e.g. yes -> ýe)
+    bool macroTriggerSpace = true;     // Kích hoạt bằng phím Space
+    bool macroTriggerEnter = true;     // Kích hoạt bằng phím Enter
+    bool macroTriggerTab = true;       // Kích hoạt bằng phím Tab
+    bool macroTriggerDir = true;       // Kích hoạt bằng phím Mũi tên (Arrows)
     std::vector<std::wstring> spellExclusions;  // Spell check exclusion prefixes (e.g. "hđ", "đp")
 
     // Default constructor for compiled defaults (FR8 - engine autonomy)

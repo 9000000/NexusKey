@@ -20,6 +20,10 @@ enum {
     IDC_BTN_DELETE,
     IDC_BTN_IMPORT,
     IDC_BTN_EXPORT,
+    IDC_CHK_SPACE,
+    IDC_CHK_ENTER,
+    IDC_CHK_TAB,
+    IDC_CHK_DIR
 };
 
 // ════════════════════════════════════════════════════════════
@@ -77,8 +81,8 @@ bool ClassicMacroTableDialog::Init(HINSTANCE hInstance, HWND parent, bool forceL
     theme_.Init(hwnd_, forceLightTheme);
     theme_.ApplyWindowAttributes(hwnd_);
 
-    LoadData();
     CreateControls();
+    LoadData();
     PopulateList();
 
     EnumChildWindows(hwnd_, [](HWND h, LPARAM lp) -> BOOL {
@@ -148,6 +152,41 @@ void ClassicMacroTableDialog::CreateControls() {
     SendMessageW(editValue_, EM_SETLIMITTEXT, 20480, 0);
     theme_.ApplyModernEntryStyle(editValue_);
     y += valH + gap;
+
+    // Trigger Checkboxes
+    int chkY = y;
+    int chkH = Dpi(20);
+    int lblW = Dpi(100);
+    lblTrigger_ = CreateWindowExW(0, L"STATIC", L"Phím kích hoạt:",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        x, chkY, lblW, chkH, hwnd_, nullptr, hInstance_, nullptr);
+
+    int cbX = x + lblW - Dpi(4); // slightly closer to label
+    
+    int wSpace = Dpi(60);
+    chkSpace_ = CreateWindowExW(0, L"BUTTON", L"Space",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        cbX, chkY, wSpace, chkH, hwnd_, reinterpret_cast<HMENU>(IDC_CHK_SPACE), hInstance_, nullptr);
+    cbX += wSpace;
+
+    int wEnter = Dpi(55);
+    chkEnter_ = CreateWindowExW(0, L"BUTTON", L"Enter",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        cbX, chkY, wEnter, chkH, hwnd_, reinterpret_cast<HMENU>(IDC_CHK_ENTER), hInstance_, nullptr);
+    cbX += wEnter;
+
+    int wTab = Dpi(45);
+    chkTab_ = CreateWindowExW(0, L"BUTTON", L"Tab",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        cbX, chkY, wTab, chkH, hwnd_, reinterpret_cast<HMENU>(IDC_CHK_TAB), hInstance_, nullptr);
+    cbX += wTab;
+
+    int wDir = Dpi(90);
+    chkDir_ = CreateWindowExW(0, L"BUTTON", L"Điều hướng",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        cbX, chkY, wDir, chkH, hwnd_, reinterpret_cast<HMENU>(IDC_CHK_DIR), hInstance_, nullptr);
+    
+    y = chkY + chkH + gap * 2;
 
     // Action buttons
     int abw = (cw - gap * 2) / 3;
@@ -340,11 +379,27 @@ void ClassicMacroTableDialog::ExportToFile() {
 
 void ClassicMacroTableDialog::LoadData() {
     macros_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
+    
+    TypingConfig cfg = ConfigManager::LoadOrDefault();
+    SendMessageW(chkSpace_, BM_SETCHECK, cfg.macroTriggerSpace ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(chkEnter_, BM_SETCHECK, cfg.macroTriggerEnter ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(chkTab_, BM_SETCHECK, cfg.macroTriggerTab ? BST_CHECKED : BST_UNCHECKED, 0);
+    SendMessageW(chkDir_, BM_SETCHECK, cfg.macroTriggerDir ? BST_CHECKED : BST_UNCHECKED, 0);
 }
 
 void ClassicMacroTableDialog::SaveData() {
     modified_ = true;
     (void)ConfigManager::SaveMacros(ConfigManager::GetConfigPath(), macros_);
+    SignalConfigChange();
+}
+
+void ClassicMacroTableDialog::SaveTriggerConfig() {
+    TypingConfig cfg = ConfigManager::LoadOrDefault();
+    cfg.macroTriggerSpace = SendMessageW(chkSpace_, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    cfg.macroTriggerEnter = SendMessageW(chkEnter_, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    cfg.macroTriggerTab = SendMessageW(chkTab_, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    cfg.macroTriggerDir = SendMessageW(chkDir_, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), cfg);
     SignalConfigChange();
 }
 
@@ -378,6 +433,12 @@ LRESULT CALLBACK ClassicMacroTableDialog::WndProc(HWND hwnd, UINT msg, WPARAM wP
                 case IDC_BTN_DELETE:  self->DeleteSelected(); return 0;
                 case IDC_BTN_IMPORT:  self->ImportFromFile(); return 0;
                 case IDC_BTN_EXPORT:  self->ExportToFile();   return 0;
+                case IDC_CHK_SPACE:
+                case IDC_CHK_ENTER:
+                case IDC_CHK_TAB:
+                case IDC_CHK_DIR:
+                    if (HIWORD(wParam) == BN_CLICKED) self->SaveTriggerConfig();
+                    return 0;
             }
             break;
         }

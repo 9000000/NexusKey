@@ -267,7 +267,7 @@ static LRESULT CALLBACK EditSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
     if (!th) return DefSubclassProc(hWnd, msg, wParam, lParam);
 
     if (msg == WM_NCCALCSIZE && wParam) {
-        // Shrink client area top/bottom to vertically center text
+        LRESULT res = DefSubclassProc(hWnd, msg, wParam, lParam);
         LPNCCALCSIZE_PARAMS p = (LPNCCALCSIZE_PARAMS)lParam;
         int windowH = p->rgrc[0].bottom - p->rgrc[0].top;
 
@@ -285,6 +285,9 @@ static LRESULT CALLBACK EditSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
         }
 
         int vPad = (windowH - textH) / 2;
+        if ((GetWindowLongPtrW(hWnd, GWL_STYLE) & ES_MULTILINE) != 0) {
+            vPad = Classic::DpiScale(8, th->Dpi()); // Fixed top/bottom padding for multiline
+        }
         if (vPad < 1) vPad = 1;
         int hPad = Classic::DpiScale(8, th->Dpi());
 
@@ -292,23 +295,41 @@ static LRESULT CALLBACK EditSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
         p->rgrc[0].bottom -= vPad;
         p->rgrc[0].left   += hPad;
         p->rgrc[0].right  -= hPad;
-        return 0;
+        return res;
     }
 
     if (msg == WM_NCPAINT) {
+        LRESULT res = DefSubclassProc(hWnd, msg, wParam, lParam);
         // Fill the non-client padding area with the edit background color
         HDC hdc = GetWindowDC(hWnd);
         if (hdc) {
-            RECT wr;
-            GetWindowRect(hWnd, &wr);
+            RECT wrBase;
+            GetWindowRect(hWnd, &wrBase);
+            RECT wr = wrBase;
             OffsetRect(&wr, -wr.left, -wr.top);
+            
+            // Exclude the client area so we don't erase text when unfocused
+            RECT cr;
+            GetClientRect(hWnd, &cr);
+            POINT pt = {0, 0};
+            ClientToScreen(hWnd, &pt);
+            OffsetRect(&cr, pt.x - wrBase.left, pt.y - wrBase.top);
+            ExcludeClipRect(hdc, cr.left, cr.top, cr.right, cr.bottom);
+
+            if (GetWindowLongPtrW(hWnd, GWL_STYLE) & WS_VSCROLL) {
+                int cxVScroll = Classic::DpiScale(GetSystemMetrics(SM_CXVSCROLL), th->Dpi());
+                // Exclude the scrollbar area to preserve the native scrollbar
+                ExcludeClipRect(hdc, wr.right - cxVScroll, wr.top, wr.right, wr.bottom);
+            }
+
             HBRUSH bg = th->IsDark() ? th->BrushBackground()
                                      : GetSysColorBrush(COLOR_WINDOW);
             FillRect(hdc, &wr, bg);
+            // Draw border over the full rect (will be clipped properly by scrollbar exclusion)
             th->DrawEditBorder(hdc, wr, GetFocus() == hWnd);
             ReleaseDC(hWnd, hdc);
         }
-        return 0;
+        return res;
     }
 
     if (msg == WM_PAINT) {
@@ -318,9 +339,17 @@ static LRESULT CALLBACK EditSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPA
         // Overlay our rounded border on the full window rect
         HDC hdc = GetWindowDC(hWnd);
         if (hdc) {
-            RECT wr;
-            GetWindowRect(hWnd, &wr);
+            RECT wrBase;
+            GetWindowRect(hWnd, &wrBase);
+            RECT wr = wrBase;
             OffsetRect(&wr, -wr.left, -wr.top);
+
+            if (GetWindowLongPtrW(hWnd, GWL_STYLE) & WS_VSCROLL) {
+                int cxVScroll = Classic::DpiScale(GetSystemMetrics(SM_CXVSCROLL), th->Dpi());
+                // Ensure we don't overlay the border onto the native scrollbar
+                ExcludeClipRect(hdc, wr.right - cxVScroll, wr.top, wr.right, wr.bottom);
+            }
+
             th->DrawEditBorder(hdc, wr, GetFocus() == hWnd);
             ReleaseDC(hWnd, hdc);
         }

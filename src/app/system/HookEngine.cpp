@@ -836,13 +836,17 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             } else if (IsCommitTrigger(vkCode) && !tempMacroOff_) {
                 wchar_t triggerChar = VkToMacroChar(vkCode);
                 if (triggerChar > L' ') rawMacroBuffer_ += triggerChar;
-                if (!rawMacroBuffer_.empty()) {
+                if (!rawMacroBuffer_.empty() && IsMacroTrigger(vkCode)) {
                     auto result = TryExpandMacro(triggerChar);
                     if (result == MacroResult::ExpandedEatTrigger) return true;
                     if (result == MacroResult::ExpandedPassTrigger) {
                         if (synthEventsPending_ > 0) { InjectKey(vkCode); return true; }
                         return false;
                     }
+                } else if (!IsMacroTrigger(vkCode)) {
+                    // Disabled trigger still marks word boundary — clear buffer
+                    rawMacroBuffer_.clear();
+                    tempMacroOff_ = false;
                 }
             } else if (vkCode == VK_BACK && !rawMacroBuffer_.empty()) {
                 rawMacroBuffer_.pop_back();
@@ -902,7 +906,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     // 3d. Macro expansion on commit trigger (uses shared TryExpandMacro helper)
-    if (macroEnabled_ && !macroTable_.empty() && !tempMacroOff_ && IsCommitTrigger(vkCode) && !rawMacroBuffer_.empty()) {
+    if (macroEnabled_ && !macroTable_.empty() && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
         wchar_t triggerChar = VkToMacroChar(vkCode);
         auto result = TryExpandMacro(triggerChar);
         if (result == MacroResult::ExpandedEatTrigger) return true;
@@ -2548,6 +2552,22 @@ bool HookEngine::IsCommitTrigger(DWORD vkCode) {
     if (vkCode == VK_DELETE || vkCode == VK_INSERT) return true;
 
     return false;
+}
+
+bool HookEngine::IsMacroTrigger(DWORD vkCode) const {
+    // If not a commit trigger natively, it shouldn't trigger macro either
+    if (!IsCommitTrigger(vkCode)) return false;
+
+    if (vkCode == VK_SPACE) return config_.macroTriggerSpace;
+    if (vkCode == VK_RETURN) return config_.macroTriggerEnter;
+    if (vkCode == VK_TAB) return config_.macroTriggerTab;
+    
+    // Direction / Navigation
+    if (vkCode >= VK_LEFT && vkCode <= VK_DOWN) return config_.macroTriggerDir;
+    if (vkCode == VK_HOME || vkCode == VK_END ||
+        vkCode == VK_PRIOR || vkCode == VK_NEXT) return config_.macroTriggerDir;
+        
+    return true; // Numbers, Punctuation, Esc, etc. default to true if they are commit triggers
 }
 
 HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
