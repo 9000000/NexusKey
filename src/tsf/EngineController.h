@@ -113,6 +113,16 @@ public:
     /// Returns true if revive happened; false means caller should do normal typing.
     bool TryReviveOnType(ITfContext* pContext, wchar_t ch);
 
+    /// Auto-cap check: should the next typed letter be capitalized based on
+    /// document state? Reads preceding chars via sync edit session and applies rules:
+    ///   - Caret at doc start                       → cap
+    ///   - Preceding char is newline (\n/\r)        → cap
+    ///   - Preceding char is '.'/'?'/'!'            → cap  (e.g. "b.B")
+    ///   - Preceding is whitespace that follows
+    ///     '.'/'?'/'!' (any amount)                 → cap  (e.g. "b.  B")
+    /// Returns false for Scintilla or when gating flags are off.
+    [[nodiscard]] bool ShouldAutoCapitalize(ITfContext* pContext);
+
     /// Discard any pending revive state (word + range). Safe to call at any time.
     void ClearPendingRevive();
 
@@ -139,7 +149,6 @@ private:
     bool engineEnabled_ = true;     // ENGINE_ENABLED flag from SharedState
     bool tsfActive_ = false;        // TSF_ACTIVE flag from SharedState (foreground app in TSF list)
     bool vietnameseMode_ = true;    // VIETNAMESE_MODE flag from SharedState
-    uint8_t autoCapState_ = 0;      // 0=idle, 1=after-punct, 2=capitalize-next
     LanguageBarButton* langBarButton_ = nullptr;  // Owned, Release'd in UninitLanguageBar
     ITfContext* lastContext_ = nullptr;   // Last seen context (AddRef'd for safe identity comparison)
     bool contextBlocked_ = false;        // True if current context blocks input (password, etc.)

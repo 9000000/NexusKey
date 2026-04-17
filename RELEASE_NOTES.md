@@ -12,7 +12,7 @@
 **ℹ️ Planning:**
 - Cho phép paste macro vẫn giữ format (tạm thời sẽ giữ tab), các format khác cần nghiên cứu độ khả thi
 - Sử dụng từ để tiên đoán phục hồi từ: ví dụ gõ a-s-u-s -> kết quả sẽ là aus -> engine tra từ điển tự phục hồi thành "asus" -> cần cộng đồng đóng góp từ điển
-- Cải tiến thêm engine TSF nếu có người chịu test, ban đầu app được xây dựng để có thể chạy song song 2 engine cũng như tiến tới lâu dài nếu TSF được mở rộng hơn
+- Cải tiến thêm engine TSF nếu có người chịu test 😁, ban đầu app được xây dựng để có thể chạy song song 2 engine (hook/tsf) cũng như tiến tới lâu dài cho tương lai nếu TSF được mở rộng hơn.
 
 ---
 Cảm ơn bạn đã lựa chọn NexusKey! Mọi đóng góp của bạn đều là nguồn động lực lớn giúp bộ gõ ngày càng hoàn thiện hơn. ❤️

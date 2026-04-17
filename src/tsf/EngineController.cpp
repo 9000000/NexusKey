@@ -140,6 +140,41 @@ bool EngineController::TryReviveOnType(ITfContext* pContext, wchar_t ch) {
     return true;  // pRange auto-Released
 }
 
+bool EngineController::ShouldAutoCapitalize(ITfContext* pContext) {
+    if (!config_.autoCaps) return false;
+    if (pContext == nullptr) return false;
+    if (!engineEnabled_ || !tsfActive_ || !vietnameseMode_) return false;
+    if (contextBlocked_) return false;
+    if (isScintillaApp_) return false;  // Scintilla can't read preceding text.
+    if (engine_->Count() > 0) return false;  // Only at new-composition boundary.
+
+    auto* pSession = new ReadPrecedingCharsEditSession(pContext);
+    HRESULT hrSession = S_OK;
+    HRESULT hr = pContext->RequestEditSession(
+        clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
+
+    bool atStart = false;
+    std::wstring text;
+    if (SUCCEEDED(hr) && SUCCEEDED(hrSession)) {
+        atStart = pSession->AtDocStart();
+        text = pSession->Text();
+    }
+    pSession->Release();
+
+    if (atStart || text.empty()) return true;  // Cursor at doc start.
+
+    // Walk backward over spaces/tabs (but not newlines — they're a trigger).
+    size_t i = text.size();
+    while (i > 0 && (text[i - 1] == L' ' || text[i - 1] == L'\t')) --i;
+
+    if (i == 0) return true;  // Only whitespace seen → treat as start.
+
+    wchar_t c = text[i - 1];
+    if (c == L'\n' || c == L'\r') return true;
+    if (c == L'.' || c == L'?' || c == L'!') return true;
+    return false;
+}
+
 void EngineController::CheckContextBlocked(ITfContext* pContext) {
     if (pContext == lastContext_) return;  // Same context, use cached result
 
@@ -196,22 +231,8 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
         return false;
     }
 
-    // Auto-caps state machine: track sentence-ending punctuation
-    if (config_.autoCaps) {
-        bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-        if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && shift) || (vkCode == '1' && shift)) {
-            // '.', '?', '!'
-            autoCapState_ = 1;
-        } else if (vkCode == VK_SPACE && autoCapState_ == 1) {
-            autoCapState_ = 2;
-        } else if (vkCode == VK_RETURN) {
-            autoCapState_ = 2;
-        } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            // Letter key — don't reset, HandleKey will consume it
-        } else {
-            autoCapState_ = 0;
-        }
-    }
+    // Auto-cap is now driven by ShouldAutoCapitalize() which peeks the document
+    // on each A-Z keystroke — no keystroke-history state machine needed.
 
     // 1. NEVER intercept if any modifier (except Shift) is down.
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -306,17 +327,23 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         wchar_t ch = static_cast<wchar_t>(vkCode);
         if (!upper) ch = towlower(ch);
 
-        // Auto-capitalize first letter after sentence-ending punctuation
-        if (config_.autoCaps && autoCapState_ == 2 && engine_->Count() == 0) {
-            ch = towupper(ch);
-            autoCapState_ = 0;
-        }
-
         // Type-revive: if engine is empty and there's a Vietnamese word right
         // before the caret, re-enter composition over it and apply this char.
         // E.g. "tét gõ|" + 'f' → "tét [gò]" (grave tone replaces tilde).
+        // (Revive takes priority over auto-cap — extending an existing word,
+        //  not starting a new sentence.)
         if (engine_->Count() == 0 && !compositionMgr_.IsComposing()) {
             if (TryReviveOnType(pContext, ch)) return true;
+        }
+
+        // Auto-capitalize at document start / after newline / after sentence punct.
+        // Document-peek (via edit session) covers cases the old state machine misses:
+        // cursor=0, "b.B" (no space), "b.    B" (multi-space), and after-BS re-eval.
+        if (engine_->Count() == 0 && !compositionMgr_.IsComposing()) {
+            if (ShouldAutoCapitalize(pContext)) {
+                ch = towupper(ch);
+                TSF_LOG(L"HandleKey: auto-cap → '%lc'", ch);
+            }
         }
 
         TSF_LOG(L"HandleKey: pushing char '%c'", ch);
@@ -424,7 +451,6 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
 void EngineController::Reset() {
     engine_->Reset();
     compositionMgr_.TerminateComposition();
-    autoCapState_ = 0;
 }
 
 void EngineController::DetectScintillaApp() {

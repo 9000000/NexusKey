@@ -114,6 +114,59 @@ private:
     std::wstring finalText_;
 };
 
+/// Read-only edit session: fetch up to N chars preceding the caret.
+/// No filtering — caller interprets the buffer (e.g. for auto-cap rules).
+/// `AtDocStart()` is true when the caret can't be shifted back at all.
+class ReadPrecedingCharsEditSession : public EditSession {
+public:
+    // Caller passes a compile-time max; buffer sized at template instantiation. 64 is
+    // plenty for auto-cap (only need ~16 to skip trailing whitespace).
+    static constexpr LONG MAX_CHARS = 64;
+
+    explicit ReadPrecedingCharsEditSession(ITfContext* pContext, LONG maxChars = MAX_CHARS)
+        : EditSession(pContext), maxChars_((std::min)(maxChars, MAX_CHARS)) {}
+
+    IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
+        if (pContext_ == nullptr) return E_FAIL;
+
+        TF_SELECTION sel = {};
+        ULONG fetched = 0;
+        HRESULT hr = pContext_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched);
+        if (FAILED(hr) || fetched != 1 || sel.range == nullptr) return S_OK;
+        CComPtr<ITfRange> pSelRange;
+        pSelRange.Attach(sel.range);
+
+        BOOL selEmpty = FALSE;
+        if (FAILED(pSelRange->IsEmpty(ec, &selEmpty)) || !selEmpty) return S_OK;
+
+        CComPtr<ITfRange> pPeek;
+        if (FAILED(pSelRange->Clone(&pPeek)) || !pPeek) return S_OK;
+
+        TF_HALTCOND haltcond = { nullptr, TF_ANCHOR_START, TF_HF_OBJECT };
+        LONG shifted = 0;
+        if (FAILED(pPeek->ShiftStart(ec, -maxChars_, &shifted, &haltcond))) return S_OK;
+        atDocStart_ = (shifted == 0);  // can't move back → caret is at doc start
+
+        if (shifted >= 0) return S_OK;
+
+        WCHAR buf[MAX_CHARS] = {};
+        ULONG retrieved = 0;
+        if (FAILED(pPeek->GetText(ec, 0, buf, -shifted, &retrieved)) || retrieved == 0) {
+            return S_OK;
+        }
+        text_.assign(buf, retrieved);
+        return S_OK;
+    }
+
+    [[nodiscard]] const std::wstring& Text() const noexcept { return text_; }
+    [[nodiscard]] bool AtDocStart() const noexcept { return atDocStart_; }
+
+private:
+    LONG maxChars_;
+    std::wstring text_;
+    bool atDocStart_ = false;
+};
+
 /// Read-only edit session: find the Vietnamese word immediately before the caret.
 /// Walks backward over up to MAX_CHARS chars, counting consecutive Vietnamese letters.
 /// On success, DetachRange() transfers ownership of the word range to the caller.
