@@ -166,31 +166,32 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
         return S_OK;
     }
 
-    // Punctuation + active composition → eat the key if we can reproduce the char
-    // via ToUnicode; OnKeyDown will commit with this char appended (atomic "abc,",
-    // no race between our EndComposition and the host's default key handling).
-    // Exception: VNI/Combined digit keys 1-9 are tone/modifier input — don't eat here.
+    // Punctuation + active composition → eat the key; OnKeyDown will commit with
+    // this char appended (atomic "abc," — no race between EndComposition and the
+    // host's default key handling).
+    //
+    // We only eat when VkToChar succeeds (can reproduce the printable char). For
+    // the rare case where it fails (dead key, non-printable punct mapping), fall
+    // through without eating — TSF spec forbids mutating the document in the test
+    // phase, so no commit here. Composition will resolve via normal flow in
+    // OnKeyDown, which may not fire for an un-eaten key; worst case the user sees
+    // a momentarily stale composition with an uneaten punct arriving at caret.
+    // Acceptable for an edge case essentially never hit on US QWERTY.
     bool isPunctuation = IsPunctuationKey(static_cast<UINT>(wParam));
     if (isPunctuation && pEngineController_->HasEngineBuffer()) {
         bool isVniDigit = pEngineController_->IsVniDigitKey(static_cast<UINT>(wParam));
         if (!isVniDigit) {
             wchar_t ch = VkToChar(static_cast<UINT>(wParam), lParam);
             if (ch != 0) {
-                TSF_LOG(L"OnTestKeyDown: punct vk=0x%02X ch='%lc' will eat+commit",
-                        (UINT)wParam, ch);
                 *pfEaten = TRUE;
                 lastTestedVk_ = static_cast<UINT>(wParam);
                 lastWantKeyResult_ = true;
                 return S_OK;
             }
-            // Conversion failed — fall back to old commit+passthrough (rare path).
-            TSF_LOG(L"OnTestKeyDown: VkToChar failed vk=0x%02X, commit+passthrough",
+            TSF_LOG(L"OnTestKeyDown: VkToChar failed vk=0x%02X, passthrough (no eat)",
                     (UINT)wParam);
-            pEngineController_->Commit(pContext);
-            *pfEaten = FALSE;
-            return S_OK;
+            // Fall through to WantKey / normal flow — no doc mutation in test phase.
         }
-        // VNI/Combined digit: fall through to WantKey → HandleKey
     }
 
     bool wantKey = pEngineController_->WantKey(static_cast<UINT>(wParam), true);
@@ -246,23 +247,23 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
     UINT vk = static_cast<UINT>(wParam);
 
     // Punctuation: commit composition with this char appended (atomic, no race).
-    // Gate mirrors OnTestKeyDown so behavior stays consistent.
+    // OnTestKeyDown only returned TRUE when VkToChar succeeded, so the call here
+    // should always succeed too — but retry defensively.
     if (IsPunctuationKey(vk) && pEngineController_->HasEngineBuffer()
         && !pEngineController_->IsVniDigitKey(vk)) {
         wchar_t ch = VkToChar(vk, lParam);
         if (ch != 0) {
-            TSF_LOG(L"OnKeyDown: punct vk=0x%02X ch='%lc' → CommitWithChar", vk, ch);
             pEngineController_->CommitWithChar(pContext, ch);
             lastTestedVk_ = 0;
             *pfEaten = TRUE;
             return S_OK;
         }
-        // VkToChar failed (rare) — fall back to plain commit + passthrough so the
-        // user still sees the key effect.
-        TSF_LOG(L"OnKeyDown: VkToChar failed for vk=0x%02X, fallback commit+passthrough", vk);
+        // Shouldn't reach here (OnTestKeyDown gated on VkToChar success). If it
+        // does, commit without char and eat — doc modification is legal in OnKeyDown.
+        TSF_LOG(L"OnKeyDown: VkToChar unexpectedly failed vk=0x%02X, commit only", vk);
         pEngineController_->Commit(pContext);
         lastTestedVk_ = 0;
-        *pfEaten = FALSE;
+        *pfEaten = TRUE;
         return S_OK;
     }
 
