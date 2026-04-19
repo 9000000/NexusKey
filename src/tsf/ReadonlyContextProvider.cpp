@@ -272,18 +272,22 @@ void ReadonlyContextProvider::UnadviseEditSink() {
 IFACEMETHODIMP ReadonlyContextProvider::OnSetFocus(ITfDocumentMgr* pDocMgrFocus,
                                                    ITfDocumentMgr* pDocMgrPrevFocus) {
     (void)pDocMgrPrevFocus;
-    // Focus gained → advise edit sink on the new doc mgr's top context.
-    // Focus lost (pDocMgrFocus == null) → unadvise.
     if (pDocMgrFocus == nullptr) {
+        // Losing focus — invalidate anchor so readers (Hook in another process
+        // that just gained focus) don't see stale doc truth from this app before
+        // their own TSF has time to push fresh data.
+        if (pSharedState_ && pSharedState_->IsConnected()) {
+            HookContextAnchor cleared{};  // isAvailable=0, all flags=0
+            pSharedState_->WriteAnchor(cleared);
+        }
         UnadviseEditSink();
         isFocused_ = false;
     } else {
         isFocused_ = true;
         AdviseEditSink(pDocMgrFocus);
-        // Opportunistic prime: if we can request a sync read session on the new
-        // doc, push an anchor immediately so Hook sees fresh state on first key.
-        // We skip this for simplicity in phase 1 — OnEndEdit will fire on the
-        // first user edit anyway.
+        // First OnEndEdit on user edit will push fresh anchor. Until then the
+        // anchor we just wrote (isAvailable=0, from the previous focus-out) tells
+        // Hook to fall back to its keystroke state machine — safe default.
     }
     return S_OK;
 }

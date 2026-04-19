@@ -354,9 +354,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         NotifySettingsMode(vietnamese);
     });
 
-    // Wire TSF active callback: HookEngine → SharedState flag for DLL
-    g_hookEngine.SetTsfActiveCallback([](bool active) {
-        g_sharedState.SetOrClearFlag(SharedFlags::TSF_ACTIVE, active);
+    // Wire TSF mode callback: HookEngine → SharedState flags for DLL.
+    // TSF_ACTIVE   = DLL consumes keys (foreground app in TSF list).
+    // TSF_READONLY = DLL publishes HookContextAnchor for auto-cap (ordinary app).
+    g_hookEngine.SetTsfModeCallback([](bool tsfActive, bool tsfReadonly) {
+        g_sharedState.SetOrClearFlag(SharedFlags::TSF_ACTIVE, tsfActive);
+        g_sharedState.SetOrClearFlag(SharedFlags::TSF_READONLY, tsfReadonly);
     });
 
     // Wire settings dialog → HookEngine mode set (cross-process)

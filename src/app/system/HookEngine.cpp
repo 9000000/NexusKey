@@ -435,9 +435,13 @@ void HookEngine::ReloadFromToml() {
              tsfApps_ ? 1 : 0,
              (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
              isExcludedApp_ ? 1 : 0);
-    if (isTsfApp_ != wasTsfApp && tsfActiveCallback_) {
-        HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s", wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
-        tsfActiveCallback_(isTsfApp_);
+    if (tsfModeCallback_) {
+        const bool tsfReadonly = !isTsfApp_ && !isExcludedApp_;
+        if (isTsfApp_ != wasTsfApp) {
+            HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
+                     wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
+        }
+        tsfModeCallback_(isTsfApp_, tsfReadonly);
     }
 
     // Re-apply per-app overrides for current app (OnFocusChanged may have run with stale maps)
@@ -1169,12 +1173,27 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     if (!upper) originalCh = towlower(originalCh);
     wchar_t ch = originalCh;
 
-    // Auto-capitalize first letter after sentence-ending punctuation
+    // Auto-capitalize first letter at sentence/line start.
+    // Two truth sources:
+    //   1. TSF readonly anchor (via SharedState) — reads live document context.
+    //      Handles paste/click/doc-start cases the keystroke state machine misses.
+    //   2. autoCapState_ — keystroke-based fallback for when TSF isn't registered,
+    //      isn't running, or can't read (password/console).
     bool autoCapped = false;
-    if (autoCaps_ && autoCapState_ == 2 && engine_->Count() == 0) {
-        ch = towupper(ch);
-        autoCapped = (ch != originalCh);
-        autoCapState_ = 0;
+    if (autoCaps_ && engine_->Count() == 0) {
+        bool shouldCap = (autoCapState_ == 2);  // keystroke fallback
+        if (sharedStatePtr_) {
+            HookContextAnchor snap{};
+            if (sharedStatePtr_->ReadAnchor(snap) && snap.isAvailable) {
+                // Doc truth overrides the keystroke state machine.
+                shouldCap = snap.isSentenceStart || snap.isLineStart;
+            }
+        }
+        if (shouldCap) {
+            ch = towupper(ch);
+            autoCapped = (ch != originalCh);
+        }
+        autoCapState_ = 0;  // consume state regardless of path taken
     }
 
     // Defensive: if this is the first char of a new word but previousComposition_
@@ -2112,10 +2131,15 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
              (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
              isExcludedApp_ ? 1 : 0);
 
-    // Notify SharedState when TSF active state changes (DLL reads this flag)
-    if (isTsfApp_ != wasTsfApp && tsfActiveCallback_) {
-        HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s", wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
-        tsfActiveCallback_(isTsfApp_);
+    // Notify SharedState of TSF_ACTIVE + TSF_READONLY flags (DLL reads these).
+    // Fired on every focus change (idempotent via SetOrClearFlag).
+    if (tsfModeCallback_) {
+        const bool tsfReadonly = !isTsfApp_ && !isExcludedApp_;
+        if (isTsfApp_ != wasTsfApp) {
+            HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
+                     wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
+        }
+        tsfModeCallback_(isTsfApp_, tsfReadonly);
     }
 
     if (isExcludedApp_) {
