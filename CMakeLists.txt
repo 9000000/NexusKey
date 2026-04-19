@@ -383,6 +383,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/TelexDictionaryTest.cpp
     tests/EngineFactoryTest.cpp
     tests/SharedStateTest.cpp
+    tests/HookContextAnchorTest.cpp
     tests/FeatureOptionsTest.cpp
     tests/SpellCheckerTest.cpp
     tests/CodeTableConverterTest.cpp

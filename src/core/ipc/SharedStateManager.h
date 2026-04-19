@@ -51,6 +51,15 @@ public:
     /// Requires OpenReadWrite() or Create()
     void SetOrClearFlag(uint32_t flagBit, bool set) noexcept;
 
+    /// Read the HookContextAnchor (TSF readonly → Hook) with seqlock validation.
+    /// Returns true on consistent snapshot; false on 3 retries exhausted.
+    /// Callers should treat failure as "anchor unavailable" (fallback path).
+    [[nodiscard]] bool ReadAnchor(HookContextAnchor& out) const noexcept;
+
+    /// Write the HookContextAnchor from TSF readonly DLL.
+    /// Requires OpenReadWrite() or Create(). Bumps generation internally.
+    void WriteAnchor(const HookContextAnchor& in) noexcept;
+
     /// Check if connected to valid shared memory
     [[nodiscard]] bool IsConnected() const noexcept;
 

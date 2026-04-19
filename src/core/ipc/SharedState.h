@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include "core/config/TypingConfig.h"
 
@@ -14,6 +16,7 @@ namespace SharedFlags {
     constexpr uint32_t ENGINE_ENABLED  = 0x0002;
     constexpr uint32_t SPELL_CHECK     = 0x0004;
     constexpr uint32_t TSF_ACTIVE      = 0x0008;  // Foreground app uses TSF engine (hook sets, DLL reads)
+    constexpr uint32_t TSF_READONLY    = 0x0010;  // Hook active, TSF sinks doc events + pushes contextAnchor
 }
 
 // Feature flag bit definitions (uint32_t packed into 3 bytes: featureFlags[2] + extFeatureFlags)
@@ -40,13 +43,161 @@ namespace FeatureFlags {
     constexpr uint32_t ALLOW_ENGLISH_BYPASS  = 0x00020000;
 }
 
+/// Document context anchor published by TSF (readonly mode) for HookEngine.
+/// Written per-OnEndEdit by the TSF DLL running in the foreground process;
+/// read by HookEngine in its ProcessKeyDown path.
+///
+/// Uses its own seqlock (generation) independent of SharedState.epoch — TSF writes
+/// anchor without disturbing config readers. SharedStateManager::Write() MUST NOT
+/// copy this field (TSF owns writes).
+///
+/// Layout pinned to 44 bytes for IPC stability. uint16_t used for currentSyllable
+/// (instead of wchar_t) to keep size consistent across Win/Linux for unit tests.
+struct HookContextAnchor {
+    uint32_t generation;              // seqlock: odd = writing, even = stable
+    uint8_t  isAvailable;             // 0 = TSF couldn't read (password/console/fail)
+    uint8_t  isSentenceStart;         // doc start or after '.' '?' '!' (+ optional whitespace)
+    uint8_t  isLineStart;             // doc start or after '\n' (+ optional whitespace, no punct required)
+    uint8_t  isWordStart;             // preceding char is whitespace/nothing
+    uint8_t  syllableLen;             // 0..16, length of currentSyllable
+    uint8_t  padding[3];              // align currentSyllable to 4
+    uint16_t currentSyllable[16];     // UTF-16 non-whitespace run immediately before cursor (phase 2+)
+};
+static_assert(sizeof(HookContextAnchor) == 44, "HookContextAnchor ABI frozen");
+
+/// Pure scan: derive anchor content from the last N preceding characters.
+/// Caller sets `generation` and `isAvailable` separately.
+/// `preceding` points to chars immediately before the cursor, in forward order
+/// (i.e., preceding[len-1] is the char right before the caret).
+inline void DeriveAnchorFromPreceding(const uint16_t* preceding, size_t len,
+                                     HookContextAnchor& out) noexcept {
+    // Empty buffer (doc start / no read) → treat as fresh start for everything.
+    out.isSentenceStart = 1;
+    out.isLineStart     = 1;
+    out.isWordStart     = 1;
+    out.syllableLen     = 0;
+    for (auto& c : out.currentSyllable) c = 0;
+
+    if (preceding == nullptr || len == 0) return;
+
+    // isWordStart: cursor is after any whitespace (space/tab/newline).
+    uint16_t last = preceding[len - 1];
+    out.isWordStart = (last == u' ' || last == u'\t' ||
+                       last == u'\n' || last == u'\r') ? 1 : 0;
+
+    // Walk back over spaces/tabs (not newlines — newline is its own trigger).
+    size_t i = len;
+    while (i > 0) {
+        uint16_t c = preceding[i - 1];
+        if (c == u' ' || c == u'\t') { --i; continue; }
+        break;
+    }
+
+    if (i == 0) {
+        // Buffer is only spaces/tabs. Conservative: sentence + line start both true.
+        // (Over-cap in pathological mid-doc whitespace runs is benign.)
+        out.isSentenceStart = 1;
+        out.isLineStart     = 1;
+    } else {
+        uint16_t prev = preceding[i - 1];
+        if (prev == u'\n' || prev == u'\r') {
+            out.isSentenceStart = 0;
+            out.isLineStart     = 1;
+        } else if (prev == u'.' || prev == u'?' || prev == u'!') {
+            out.isSentenceStart = 1;
+            out.isLineStart     = 0;
+        } else {
+            out.isSentenceStart = 0;
+            out.isLineStart     = 0;
+        }
+    }
+
+    // currentSyllable: non-whitespace run ending at cursor. Meaningful only when
+    // cursor is NOT after whitespace (phase 2+ uses for cross-boundary tone).
+    if (out.isWordStart) return;
+
+    size_t wordEnd = len;
+    size_t wordBegin = wordEnd;
+    while (wordBegin > 0) {
+        uint16_t c = preceding[wordBegin - 1];
+        if (c == u' ' || c == u'\t' || c == u'\n' || c == u'\r') break;
+        --wordBegin;
+    }
+    size_t wordLen = wordEnd - wordBegin;
+    if (wordLen > 16) {
+        wordBegin = wordEnd - 16;
+        wordLen = 16;
+    }
+    for (size_t k = 0; k < wordLen; ++k) {
+        out.currentSyllable[k] = preceding[wordBegin + k];
+    }
+    out.syllableLen = static_cast<uint8_t>(wordLen);
+}
+
+/// Seqlock read of HookContextAnchor from shared memory.
+/// Returns true if a consistent snapshot was obtained within 3 retries.
+/// On failure, `out` is left in an indeterminate state — callers should
+/// check the return value before using `out` (and treat failure as "anchor
+/// unavailable", equivalent to isAvailable = 0).
+inline bool ReadAnchorSeqlock(const volatile HookContextAnchor* src,
+                              HookContextAnchor& out) noexcept {
+    if (src == nullptr) return false;
+    for (int retry = 0; retry < 3; ++retry) {
+        uint32_t g1 = src->generation;  // single aligned 32-bit load is atomic
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (g1 & 1u) continue;  // writer in progress → retry
+
+        // Copy fields explicitly (volatile struct has no assignment operator).
+        out.generation      = g1;
+        out.isAvailable     = src->isAvailable;
+        out.isSentenceStart = src->isSentenceStart;
+        out.isLineStart     = src->isLineStart;
+        out.isWordStart     = src->isWordStart;
+        out.syllableLen     = src->syllableLen;
+        for (size_t k = 0; k < 16; ++k) {
+            out.currentSyllable[k] = src->currentSyllable[k];
+        }
+
+        std::atomic_thread_fence(std::memory_order_acquire);
+        uint32_t g2 = src->generation;
+        if (g1 == g2) return true;  // stable snapshot
+    }
+    return false;
+}
+
+/// Seqlock write of HookContextAnchor to shared memory.
+/// Single-writer pattern (only the foreground TSF DLL writes at any time —
+/// `TSF_READONLY` flag ensures this). Increments generation odd → even.
+/// Caller does NOT pre-set `src.generation` (we bump the destination's counter).
+inline void WriteAnchorSeqlock(volatile HookContextAnchor* dst,
+                              const HookContextAnchor& src) noexcept {
+    if (dst == nullptr) return;
+    uint32_t seq = dst->generation + 1;  // now odd = writing
+    dst->generation = seq;
+    std::atomic_thread_fence(std::memory_order_release);
+
+    dst->isAvailable     = src.isAvailable;
+    dst->isSentenceStart = src.isSentenceStart;
+    dst->isLineStart     = src.isLineStart;
+    dst->isWordStart     = src.isWordStart;
+    dst->syllableLen     = src.syllableLen;
+    for (size_t k = 0; k < 16; ++k) {
+        dst->currentSyllable[k] = src.currentSyllable[k];
+    }
+
+    std::atomic_thread_fence(std::memory_order_release);
+    dst->generation = seq + 1;  // now even = stable
+}
+
 /// SharedState struct for IPC between Core and Engine
 /// Layout is versioned for forward compatibility (Phase 3+ expansion).
 /// Magic: 0x59454B4E ('NKEY')
 ///
-/// Seqlock protocol using epoch field:
+/// Seqlock protocol using epoch field (for config fields only):
 ///   Writer: epoch++ (now odd = writing), copy data, epoch++ (now even = done)
 ///   Reader: read epoch, copy data, verify epoch unchanged AND even → retry if not
+///
+/// HookContextAnchor uses its own independent seqlock (generation field).
 struct SharedState {
     // ── Header (12 bytes) ──
     uint32_t magic;           // Magic identifier: 'NKEY' = 0x59454B4E
@@ -89,8 +240,13 @@ struct SharedState {
     // ── Reserved for future expansion (21 bytes) ──
     uint8_t  reserved[21];
 
+    // ── Readonly context anchor (44 bytes, v3+) ──
+    // Written by TSF DLL in readonly mode; read by HookEngine.
+    // Uses its own seqlock (generation). SharedStateManager::Write() MUST NOT copy.
+    HookContextAnchor contextAnchor;
+
     static constexpr uint32_t MAGIC_VALUE = 0x59454B4E;    // 'NKEY'
-    static constexpr uint32_t CURRENT_VERSION = 2;          // v2: added structVersion, structSize, reserved
+    static constexpr uint32_t CURRENT_VERSION = 3;          // v3: added contextAnchor (phase 1 TSF readonly)
 
     [[nodiscard]] bool IsValid() const noexcept {
         return magic == MAGIC_VALUE
@@ -146,11 +302,19 @@ struct SharedState {
         configGeneration = 0;
         reserved0 = 0;
         for (auto& b : reserved) b = 0;
+        contextAnchor.generation = 0;
+        contextAnchor.isAvailable = 0;
+        contextAnchor.isSentenceStart = 0;
+        contextAnchor.isLineStart = 0;
+        contextAnchor.isWordStart = 0;
+        contextAnchor.syllableLen = 0;
+        for (auto& b : contextAnchor.padding) b = 0;
+        for (auto& c : contextAnchor.currentSyllable) c = 0;
     }
 };
 
 // Ensure SharedState layout is stable across EXE and DLL builds
-static_assert(sizeof(SharedState) == 56, "SharedState size changed — update structVersion");
+static_assert(sizeof(SharedState) == 100, "SharedState size changed — update structVersion");
 
 /// Encode TypingConfig feature bools → uint32_t bitmask (3 bytes used)
 [[nodiscard]] inline uint32_t EncodeFeatureFlags(const TypingConfig& config) noexcept {

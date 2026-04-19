@@ -201,6 +201,10 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     // Read() uses full struct copy (*p = state), but Write() copies field-by-field
     // to skip epoch. Missing a field here silently drops it — works in Debug
     // (which reads TOML directly) but fails in Release (SharedState path only).
+    //
+    // NOTE: contextAnchor is intentionally NOT copied here — TSF DLL writes it
+    // via its own seqlock (WriteAnchorSeqlock). Copying from `state` would race
+    // with the TSF writer and clobber live data. Use WriteAnchor() instead.
     p->magic = state.magic;
     p->structVersion = state.structVersion;
     p->structSize = state.structSize;
@@ -268,6 +272,34 @@ void SharedStateManager::SetOrClearFlag(uint32_t flagBit, bool set) noexcept {
     } else {
         InterlockedAnd(flagsAddr, ~static_cast<LONG>(flagBit));
     }
+#endif
+}
+
+bool SharedStateManager::ReadAnchor(HookContextAnchor& out) const noexcept {
+#ifdef _WIN32
+    if (!pImpl_->pState || pImpl_->pState->magic != SharedState::MAGIC_VALUE) {
+        return false;
+    }
+    // Take address of the anchor field in the memory-mapped region.
+    // const_cast peels the volatile-on-pointer; ReadAnchorSeqlock takes volatile*.
+    const volatile HookContextAnchor* anchor =
+        &const_cast<const SharedState*>(pImpl_->pState)->contextAnchor;
+    return ReadAnchorSeqlock(anchor, out);
+#else
+    (void)out;
+    return false;
+#endif
+}
+
+void SharedStateManager::WriteAnchor(const HookContextAnchor& in) noexcept {
+#ifdef _WIN32
+    if (!pImpl_->pState || !pImpl_->isWritable) return;
+    if (pImpl_->pState->magic != SharedState::MAGIC_VALUE) return;
+    volatile HookContextAnchor* anchor =
+        &const_cast<SharedState*>(pImpl_->pState)->contextAnchor;
+    WriteAnchorSeqlock(anchor, in);
+#else
+    (void)in;
 #endif
 }
 
