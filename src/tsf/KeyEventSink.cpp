@@ -135,14 +135,24 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
         return S_OK;
     }
 
-    // Safety check: recover if composition terminated without us knowing
+    // Safety check: recover from engine/composition desync without mutating the
+    // document in the test phase (TSF spec forbids that).
+    //
+    // State A: engine has buffer but TSF composition was externally ended.
+    //          Reset engine-side state; no doc mutation (TerminateComposition
+    //          just drops our composition pointer, doesn't call EndComposition).
+    // State B: TSF composition active but our engine is empty.
+    //          Same Reset() — detach from the stale composition pointer. We
+    //          previously called Commit(pContext) which fired an edit session
+    //          that wrote the empty buffer to the doc (thereby clearing any
+    //          visible composition text). That was the "Chrome cursor race"
+    //          anti-pattern ab4497b eliminated from the punct path.
     bool isComposing = pEngineController_->IsComposing();
     bool hasBuffer = pEngineController_->HasEngineBuffer();
-
-    if (!isComposing && hasBuffer) {
+    if (isComposing != hasBuffer) {
+        TSF_LOG(L"OnTestKeyDown: engine/composition desync (composing=%d buffer=%d) → Reset",
+                isComposing ? 1 : 0, hasBuffer ? 1 : 0);
         pEngineController_->Reset();
-    } else if (isComposing && !hasBuffer) {
-        pEngineController_->Commit(pContext);
     }
 
     // Check modifiers
@@ -159,11 +169,15 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
         return S_OK;
     }
 
-    // Enter -> commit composition (eat Enter if we had composition)
+    // Enter -> commit composition. Eat Enter if we have buffer so the app
+    // doesn't also insert a newline after the commit. Defer the actual commit
+    // (doc mutation) to OnKeyDown — spec forbids mutation in the test phase.
     if (wParam == VK_RETURN) {
         if (pEngineController_->HasEngineBuffer()) {
-            pEngineController_->Commit(pContext);
-            *pfEaten = TRUE;  // Eat Enter - only commit, don't pass through
+            *pfEaten = TRUE;
+            lastTestedVk_ = static_cast<UINT>(wParam);
+            lastWantKeyResult_ = false;  // marker: eaten-for-deferred-commit
+            lastPunctChar_ = 0;
             return S_OK;
         }
         *pfEaten = FALSE;  // No composition, pass Enter through normally
@@ -214,9 +228,17 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
     lastTestedVk_ = static_cast<UINT>(wParam);
     lastWantKeyResult_ = wantKey;
 
-    // Non-handled keys -> commit and pass through
+    // Non-handled keys with buffer → eat + defer commit to OnKeyDown (no doc
+    // mutation in test phase). OnKeyDown will commit and drop the key.
+    // Tradeoff: non-text keys (F1, arrows, Escape) pressed mid-composition
+    // are consumed by the commit — user presses them again after commit to
+    // navigate/activate. This matches ab4497b's principle and avoids the
+    // "Chrome cursor race" that appears as extra whitespace between commit
+    // text and the passthrough key.
     if (!wantKey && pEngineController_->HasEngineBuffer()) {
-        pEngineController_->Commit(pContext);
+        *pfEaten = TRUE;
+        lastPunctChar_ = 0;  // not a punct-with-char path; just commit-and-drop
+        return S_OK;
     }
 
     *pfEaten = wantKey ? TRUE : FALSE;
@@ -237,7 +259,7 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam
     return S_OK;
 }
 
-IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
+IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM /*lParam*/, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
 
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -260,6 +282,18 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
         pEngineController_->CommitWithChar(pContext, lastPunctChar_);
         lastTestedVk_ = 0;
         lastPunctChar_ = 0;
+        *pfEaten = TRUE;
+        return S_OK;
+    }
+
+    // Deferred commit from OnTestKeyDown: we ate the key in the test phase
+    // because we had a pending buffer but the key wasn't one we wanted (Enter,
+    // arrow, F-key, etc. with composition active). Commit now (mutation is
+    // legal in OnKeyDown), then drop the key — user re-presses if they need it.
+    if (vk == lastTestedVk_ && !lastWantKeyResult_ && lastPunctChar_ == 0
+        && pEngineController_->HasEngineBuffer()) {
+        pEngineController_->Commit(pContext);
+        lastTestedVk_ = 0;
         *pfEaten = TRUE;
         return S_OK;
     }
