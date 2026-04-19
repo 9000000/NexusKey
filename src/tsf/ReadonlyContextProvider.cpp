@@ -321,6 +321,11 @@ bool ReadonlyContextProvider::IsReadonlyModeActive() const noexcept {
 void ReadonlyContextProvider::UpdateAnchor(ITfContext* pContext, TfEditCookie ec) {
     HookContextAnchor anchor{};
 
+    // TODO(logging): when user-facing log infra lands, instrument the two
+    // "isAvailable = 0" paths below (password-blocked and read-failed) so we
+    // can identify apps where readonly context mode is silently degrading to
+    // the keystroke-state-machine fallback.
+
     // Password / blocked context → mark unavailable and bail.
     if (IsContextBlockedInline(pContext, ec)) {
         anchor.isAvailable = 0;
