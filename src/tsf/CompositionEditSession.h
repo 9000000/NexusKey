@@ -145,9 +145,11 @@ public:
         TF_HALTCOND haltcond = { nullptr, TF_ANCHOR_START, TF_HF_OBJECT };
         LONG shifted = 0;
         if (FAILED(pPeek->ShiftStart(ec, -maxChars_, &shifted, &haltcond))) return S_OK;
-        atDocStart_ = (shifted == 0);  // can't move back → caret is at doc start
-
-        if (shifted >= 0) return S_OK;
+        if (shifted == 0) {
+            atDocStart_ = true;  // caret sits at document start — can't move back at all
+            return S_OK;
+        }
+        if (shifted > 0) return S_OK;  // unexpected (shift-back should never go forward)
 
         WCHAR buf[MAX_CHARS] = {};
         ULONG retrieved = 0;
