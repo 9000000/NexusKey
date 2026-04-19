@@ -1037,16 +1037,6 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             InjectKey(vkCode);
             return true;  // Eat original trigger
         }
-        // Mozilla (Firefox/Floorp) + Froala (XenForo): Gecko swallows the first
-        // SPACE/ENTER/TAB that immediately follows VK_PACKET chars from a transform.
-        // Confirmed empirically — pressing SPACE twice works, once doesn't. Inject
-        // a sacrificial VK_SPACE; Gecko eats it, then the physical SPACE survives.
-        // Only fires when we transformed mid-word (hadSynthInWord_) so plain English
-        // typing without transforms passes through cleanly (no double-space risk).
-        if (isMozillaBrowser_ && vkCode == VK_SPACE && hadSynthInWord_) {
-            HOOK_LOG(L"  Mozilla sacrificial SPACE → inject VK_SPACE before physical");
-            InjectKey(VK_SPACE);
-        }
         return false;  // No pending synthetics, safe to pass through
     }
 
@@ -1796,9 +1786,8 @@ static void ClassifyWindow(HWND hwnd,
                            bool& outIsElectron,
                            bool& outIsQtApp,
                            bool& outIsConsole,
-                           bool& outIsVB6,
-                           bool& outIsMozilla) noexcept {
-    outIsBrowser = outIsElectron = outIsQtApp = outIsConsole = outIsVB6 = outIsMozilla = false;
+                           bool& outIsVB6) noexcept {
+    outIsBrowser = outIsElectron = outIsQtApp = outIsConsole = outIsVB6 = false;
 
     HWND root = GetAncestor(hwnd, GA_ROOT);
     if (root) hwnd = root;
@@ -1824,7 +1813,6 @@ static void ClassifyWindow(HWND hwnd,
     // 2. Firefox-based browsers (covers Firefox, Floorp, Tor, LibreWolf, Waterfox, Pale Moon)
     if (_wcsicmp(className, L"MozillaWindowClass") == 0) {
         outIsBrowser = true;
-        outIsMozilla = true;
         return;
     }
 
@@ -2037,14 +2025,13 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     //   - Electron/Console: skip bait + split dispatch with Sleep (IPC reorder prevention)
     //   - GPU-rendered (Zed): skip bait + batch dispatch (single-process, no flicker)
     //   - VB6 (XYplorer): clipboard paste (ANSI-internal, VK_PACKET → '?')
-    bool isBrowser = false, isElectron = false, isQtApp = false, isVB6 = false, isMozilla = false;
+    bool isBrowser = false, isElectron = false, isQtApp = false, isVB6 = false;
     isConsoleApp_ = false;
-    ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, isConsoleApp_, isVB6, isMozilla);
-    isMozillaBrowser_ = isMozilla;
+    ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, isConsoleApp_, isVB6);
 
     skipEmptyChar_ = isElectron || isConsoleApp_;
-    needBaitChar_ = isBrowser && !isMozilla;  // Mozilla uses clipboard paste (bypasses Gecko composition)
-    useClipboardPaste_ = isVB6 || isMozilla;
+    needBaitChar_ = isBrowser;
+    useClipboardPaste_ = isVB6;
 
     // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
     if (!skipEmptyChar_ && !needBaitChar_ && !useClipboardPaste_) {
@@ -2059,9 +2046,9 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         }
     }
     isElectronApp_ = isElectron && !isConsoleApp_;
-    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d clipboard=%d mozilla=%d",
+    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d clipboard=%d",
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0,
-             needBaitChar_ ? 1 : 0, useClipboardPaste_ ? 1 : 0, isMozillaBrowser_ ? 1 : 0);
+             needBaitChar_ ? 1 : 0, useClipboardPaste_ ? 1 : 0);
 
     // Layout auto-disable: check CJK layout on every focus change
     CheckLayoutChange();
