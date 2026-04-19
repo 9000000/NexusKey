@@ -327,19 +327,14 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         wchar_t ch = static_cast<wchar_t>(vkCode);
         if (!upper) ch = towlower(ch);
 
-        // Type-revive: if engine is empty and there's a Vietnamese word right
-        // before the caret, re-enter composition over it and apply this char.
-        // E.g. "tét gõ|" + 'f' → "tét [gò]" (grave tone replaces tilde).
-        // (Revive takes priority over auto-cap — extending an existing word,
-        //  not starting a new sentence.)
+        // At a new-composition boundary: first try Type-revive (extend an
+        // existing Vietnamese word before caret), and if that doesn't fire,
+        // apply auto-capitalize based on document state.
+        //   "tét gõ|" + 'f' → "tét [gò]"       (revive wins, no auto-cap)
+        //   "b.|" + 'a' → "b.A"                (auto-cap)
+        //   empty doc + 'a' → "A"              (auto-cap: cursor at doc start)
         if (engine_->Count() == 0 && !compositionMgr_.IsComposing()) {
             if (TryReviveOnType(pContext, ch)) return true;
-        }
-
-        // Auto-capitalize at document start / after newline / after sentence punct.
-        // Document-peek (via edit session) covers cases the old state machine misses:
-        // cursor=0, "b.B" (no space), "b.    B" (multi-space), and after-BS re-eval.
-        if (engine_->Count() == 0 && !compositionMgr_.IsComposing()) {
             if (ShouldAutoCapitalize(pContext)) {
                 ch = towupper(ch);
                 TSF_LOG(L"HandleKey: auto-cap → '%lc'", ch);

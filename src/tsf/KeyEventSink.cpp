@@ -124,6 +124,10 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
 IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
 
+    // Defensive: drop any punct char cached by a previous OnTestKeyDown whose
+    // OnKeyDown pair never fired (rare TSF anomaly). Fresh keystroke = fresh cache.
+    lastPunctChar_ = 0;
+
     // Check if this context blocks input (password, PIN, email fields)
     pEngineController_->CheckContextBlocked(pContext);
     if (pEngineController_->IsContextBlocked()) {
@@ -186,6 +190,7 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
                 *pfEaten = TRUE;
                 lastTestedVk_ = static_cast<UINT>(wParam);
                 lastWantKeyResult_ = true;
+                lastPunctChar_ = ch;  // OnKeyDown reads this — no second ToUnicode call.
                 return S_OK;
             }
             TSF_LOG(L"OnTestKeyDown: VkToChar failed vk=0x%02X, passthrough (no eat)",
@@ -247,22 +252,14 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
     UINT vk = static_cast<UINT>(wParam);
 
     // Punctuation: commit composition with this char appended (atomic, no race).
-    // OnTestKeyDown only returned TRUE when VkToChar succeeded, so the call here
-    // should always succeed too — but retry defensively.
+    // Use the char cached by OnTestKeyDown — avoids a second ToUnicode call that
+    // could mutate kernel dead-key state on some layouts.
     if (IsPunctuationKey(vk) && pEngineController_->HasEngineBuffer()
-        && !pEngineController_->IsVniDigitKey(vk)) {
-        wchar_t ch = VkToChar(vk, lParam);
-        if (ch != 0) {
-            pEngineController_->CommitWithChar(pContext, ch);
-            lastTestedVk_ = 0;
-            *pfEaten = TRUE;
-            return S_OK;
-        }
-        // Shouldn't reach here (OnTestKeyDown gated on VkToChar success). If it
-        // does, commit without char and eat — doc modification is legal in OnKeyDown.
-        TSF_LOG(L"OnKeyDown: VkToChar unexpectedly failed vk=0x%02X, commit only", vk);
-        pEngineController_->Commit(pContext);
+        && !pEngineController_->IsVniDigitKey(vk)
+        && vk == lastTestedVk_ && lastPunctChar_ != 0) {
+        pEngineController_->CommitWithChar(pContext, lastPunctChar_);
         lastTestedVk_ = 0;
+        lastPunctChar_ = 0;
         *pfEaten = TRUE;
         return S_OK;
     }
@@ -270,6 +267,7 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
     bool wantKey = (vk == lastTestedVk_) ? lastWantKeyResult_
                                           : pEngineController_->WantKey(vk, true);
     lastTestedVk_ = 0;  // Invalidate cache
+    lastPunctChar_ = 0;
 
     if (!wantKey) {
         *pfEaten = FALSE;

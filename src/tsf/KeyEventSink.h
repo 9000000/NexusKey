@@ -43,6 +43,9 @@ private:
     // Cached WantKey result from OnTestKeyDown to avoid double state-machine advance
     UINT lastTestedVk_ = 0;
     bool lastWantKeyResult_ = false;
+    // Cached punct char from OnTestKeyDown's ToUnicode call. Avoids calling ToUnicode
+    // twice per keystroke (ToUnicode can mutate kernel dead-key state on some layouts).
+    wchar_t lastPunctChar_ = 0;
 };
 
 }  // namespace TSF
