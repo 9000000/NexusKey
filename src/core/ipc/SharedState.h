@@ -64,6 +64,11 @@ struct HookContextAnchor {
     uint16_t currentSyllable[16];     // UTF-16 non-whitespace run immediately before cursor (phase 2+)
 };
 static_assert(sizeof(HookContextAnchor) == 44, "HookContextAnchor ABI frozen");
+// generation must be aligned for std::atomic_ref<uint32_t> (writer path).
+static_assert(alignof(HookContextAnchor) >= 4,
+              "HookContextAnchor.generation requires 4-byte alignment for atomic_ref");
+static_assert(offsetof(HookContextAnchor, generation) == 0,
+              "generation expected at offset 0 for atomic_ref alignment");
 
 /// Pure scan: derive anchor content from the last N preceding characters.
 /// Caller sets `generation` and `isAvailable` separately.
@@ -173,10 +178,11 @@ inline void DeriveAnchorFromPreceding(const uint16_t* preceding, size_t len,
 /// advancing without collision, but readers may briefly see torn fields —
 /// they'll retry via the seqlock protocol. Acceptable phase 1 degradation.
 ///
-/// The two generation bumps are atomic (`InterlockedIncrement` on Windows,
-/// `fetch_add(..., acquire_release)` elsewhere) to avoid the non-atomic
-/// read-modify-write bug where two writers read the same counter value and
-/// write the same odd sequence, making readers accept a torn snapshot.
+/// Both generation bumps use `std::atomic_ref<uint32_t>::fetch_add` with
+/// `memory_order_acq_rel` (C++20). This avoids the non-atomic read-modify-write
+/// bug where two writers would read the same counter value and produce the
+/// same odd sequence, making readers accept a torn snapshot. Cross-platform;
+/// keeps SharedState.h free of <Windows.h>.
 inline void WriteAnchorSeqlock(volatile HookContextAnchor* dst,
                               const HookContextAnchor& src) noexcept {
     if (dst == nullptr) return;

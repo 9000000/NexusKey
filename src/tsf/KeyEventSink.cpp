@@ -135,24 +135,26 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
         return S_OK;
     }
 
-    // Safety check: recover from engine/composition desync without mutating the
-    // document in the test phase (TSF spec forbids that).
+    // Safety check: recover from engine/composition desync.
     //
     // State A: engine has buffer but TSF composition was externally ended.
-    //          Reset engine-side state; no doc mutation (TerminateComposition
-    //          just drops our composition pointer, doesn't call EndComposition).
-    // State B: TSF composition active but our engine is empty.
-    //          Same Reset() — detach from the stale composition pointer. We
-    //          previously called Commit(pContext) which fired an edit session
-    //          that wrote the empty buffer to the doc (thereby clearing any
-    //          visible composition text). That was the "Chrome cursor race"
-    //          anti-pattern ab4497b eliminated from the punct path.
+    //          TSF side is already gone — Reset() just drops our orphan
+    //          composition pointer. No doc mutation.
+    // State B: TSF composition active but our engine is empty. TSF host still
+    //          has visible pending composition text. We must properly end the
+    //          TSF composition (SetCompositionText + EndComposition via edit
+    //          session) or the stale composition lingers until the host ends
+    //          it. This does mutate the doc in the test phase — accepted
+    //          tradeoff because TerminateComposition-only leaks the composition.
     bool isComposing = pEngineController_->IsComposing();
     bool hasBuffer = pEngineController_->HasEngineBuffer();
-    if (isComposing != hasBuffer) {
-        TSF_LOG(L"OnTestKeyDown: engine/composition desync (composing=%d buffer=%d) → Reset",
-                isComposing ? 1 : 0, hasBuffer ? 1 : 0);
+    if (!isComposing && hasBuffer) {
+        TSF_LOG(L"OnTestKeyDown: desync A (composition gone, buffer=%d) → Reset",
+                static_cast<int>(pEngineController_->HasEngineBuffer()));
         pEngineController_->Reset();
+    } else if (isComposing && !hasBuffer) {
+        TSF_LOG(L"OnTestKeyDown: desync B (composition live, buffer empty) → Commit");
+        pEngineController_->Commit(pContext);
     }
 
     // Check modifiers

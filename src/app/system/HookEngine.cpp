@@ -1175,8 +1175,9 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     // survives intervening non-letter keys as before.
     bool autoCapped = false;
     if (autoCaps_ && engine_->Count() == 0) {
+        const bool keystrokePending = (autoCapState_ == 2);
         bool anchorUsed = false;
-        bool shouldCap = (autoCapState_ == 2);  // keystroke fallback
+        bool shouldCap = keystrokePending;  // keystroke fallback
         if (sharedStatePtr_) {
             HookContextAnchor snap{};
             if (sharedStatePtr_->ReadAnchor(snap) && snap.isAvailable) {
@@ -1190,7 +1191,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
             autoCapped = (ch != originalCh);
         }
         // Reset state when we had truth (anchor) or consumed a pending state==2.
-        if (anchorUsed || autoCapState_ == 2) {
+        if (anchorUsed || keystrokePending) {
             autoCapState_ = 0;
         }
     }
