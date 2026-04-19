@@ -89,8 +89,12 @@ bool CompositionManager::StartComposition(ITfContext* pContext, TfEditCookie ec,
         return false;
     }
 
-    // Store composition and context (AddRef context for safe cross-session use)
-    pComposition_ = pComposition;
+    // StartComposition returned ONE ref in `pComposition`. We must hold our own ref
+    // in pComposition_ (it outlives this call) AND the caller also needs a ref for
+    // their own use. AddRef once more so caller owning a CComPtr/raw ref can safely
+    // Release without freeing the composition while we still hold pComposition_.
+    pComposition_ = pComposition;      // takes the one ref from StartComposition
+    pComposition_->AddRef();           // now 2 refs total — one for us, one for caller
     pContext_ = pContext;
     pContext_->AddRef();
 
@@ -102,7 +106,7 @@ bool CompositionManager::StartComposition(ITfContext* pContext, TfEditCookie ec,
     pContext->SetSelection(ec, 1, &sel);
 
     pRange->Release();
-    *ppComposition = pComposition;
+    *ppComposition = pComposition;     // caller owns 1 ref, must Release (or CComPtr does it)
 
     TSF_LOG(L"StartComposition: SUCCESS");
     return true;
