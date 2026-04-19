@@ -192,6 +192,7 @@ private:
     bool isTsfApp_ = false;       // cached: is current foreground app in TSF list?
     bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?
     bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
+    bool isMozillaBrowser_ = false;  // cached: Firefox/Floorp/Tor/LibreWolf/Waterfox (MozillaWindowClass) — Gecko eats real SPACE after VK_PACKET
     bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
     bool needBaitChar_ = false;   // Apps with autocomplete/suggest need U+202F bait before BS
     bool useClipboardPaste_ = false;  // VB6 and legacy ANSI-internal apps need clipboard paste
