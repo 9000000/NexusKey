@@ -5,6 +5,40 @@
 
 ---
 
+## Review (2026-04-19) — TSF revive + auto-cap
+
+Review after commits `7146077`..`feca899` (revive composition, auto-cap, punct
+commit-with-char, ref-count fix).
+
+### PERF
+
+- [ ] **Combine read sessions for revive + auto-cap** — `src/tsf/CompositionEditSession.h`, `src/tsf/EngineController.cpp:327-347`
+  `HandleKey` A-Z path can fire up to 3 sync edit sessions per keystroke when engine
+  is empty: (1) `ReadPrecedingWordEditSession` in `TryReviveOnType`, (2)
+  `ReadPrecedingCharsEditSession` in `ShouldAutoCapitalize`, (3) Start/UpdateComposition
+  for the PushChar result. (1) and (2) read overlapping text.
+  **Fix**: single `InspectAndReviveEditSession` that reads once, decides revive vs
+  auto-cap, runs revive surgery inline when applicable. Cuts session count:
+  non-revive path 3 → 2, revive path 2 → 1. Priority: polish, not correctness —
+  defer until real slowness reported.
+
+### STYLE
+
+- [ ] `src/tsf/CompositionEditSession.h:117` — `WCHAR buf[MAX_CHARS]` is always 128 bytes
+  on stack even when caller passes smaller `maxChars`. Not a real issue (stack cheap),
+  flag only if someone ups `MAX_CHARS` significantly.
+- [ ] `src/tsf/EngineController.h:116-124` vs `.cpp` — docstring lists auto-cap rules,
+  implementation re-states them via logic. Mild repetition, acceptable.
+
+### Punted on TSF idiomatic rewrite
+
+Separate doc-state cache via `ITfTextEditSink::OnEndEdit` (avoid per-keystroke
+sync edit sessions) considered and skipped: current sync-read pattern IS
+TSF-supported. Not a "trick". Reconsider if per-keystroke latency becomes a
+real complaint on slower hosts.
+
+---
+
 ## Deep Review (2026-04-13)
 
 Full-source review covering engine, config/IPC, TSF, HookEngine, dialogs, Classic UI, and CMake.
