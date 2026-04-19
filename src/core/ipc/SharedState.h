@@ -181,12 +181,13 @@ inline void WriteAnchorSeqlock(volatile HookContextAnchor* dst,
                               const HookContextAnchor& src) noexcept {
     if (dst == nullptr) return;
 
-    // gen++ → now odd = writing. Atomic RMW defends against multi-writer race.
-#ifdef _WIN32
-    InterlockedIncrement(reinterpret_cast<volatile LONG*>(&dst->generation));
-#else
-    __atomic_fetch_add(&dst->generation, 1u, __ATOMIC_ACQ_REL);
-#endif
+    // Atomic RMW defends against multi-writer race. std::atomic_ref (C++20)
+    // keeps this header free of <Windows.h>; memory_order_acq_rel matches
+    // InterlockedIncrement semantics on Windows.
+    uint32_t* genPtr = const_cast<uint32_t*>(&dst->generation);
+
+    // gen++ → now odd = writing.
+    std::atomic_ref<uint32_t>(*genPtr).fetch_add(1u, std::memory_order_acq_rel);
 
     dst->isAvailable     = src.isAvailable;
     dst->isSentenceStart = src.isSentenceStart;
@@ -200,11 +201,7 @@ inline void WriteAnchorSeqlock(volatile HookContextAnchor* dst,
     std::atomic_thread_fence(std::memory_order_release);
 
     // gen++ → now even = stable.
-#ifdef _WIN32
-    InterlockedIncrement(reinterpret_cast<volatile LONG*>(&dst->generation));
-#else
-    __atomic_fetch_add(&dst->generation, 1u, __ATOMIC_ACQ_REL);
-#endif
+    std::atomic_ref<uint32_t>(*genPtr).fetch_add(1u, std::memory_order_acq_rel);
 }
 
 /// SharedState struct for IPC between Core and Engine
