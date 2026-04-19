@@ -653,8 +653,8 @@ bool TypingEngine::ProcessTelexModifier(wchar_t c, wchar_t lower) {
                             // transformations that produce invalid syllables.
                             // Catches "gacha" → "gâch", "bacha" → "bâch", etc.
                             // — âch/ăch are not valid Vietnamese codas.
-                            size_t idx = static_cast<size_t>(states_.rend() - it - 1);
-                            if (!WouldBeValidSyllable(idx, Modifier::Circumflex)) break;
+                            size_t targetIdx = static_cast<size_t>(states_.rend() - it - 1);
+                            if (!WouldBeValidSyllable(targetIdx, Modifier::Circumflex)) break;
                         }
                         it->mod = Modifier::Circumflex;
                         RelocateToneToTarget();
@@ -862,7 +862,10 @@ bool TypingEngine::ProcessWModifier(wchar_t c) {
     // For "uu" pattern, horn goes on FIRST 'u' (lưu, cưu, hưu): the second 'u' is the glide.
     if (uIdx != SIZE_MAX) {
         size_t targetU = (hasUU && firstUIdx != SIZE_MAX) ? firstUIdx : uIdx;
-        if (hasNonVowelAfter(targetU) && !WouldBeValidSyllable(targetU, Modifier::Horn)) {
+        // Pass aIdx so the validation matches the real mutation (u→horn and,
+        // if present, strip sister â back to a). Example: "uaan" + w.
+        if (hasNonVowelAfter(targetU) &&
+            !WouldBeValidSyllable(targetU, Modifier::Horn, aIdx)) {
             return false;
         }
         states_[targetU].mod = Modifier::Horn;
@@ -1541,12 +1544,20 @@ void TypingEngine::UpdateSpellState() {
                      [](const CharState& s) { return Compose(s); });
 }
 
-bool TypingEngine::WouldBeValidSyllable(size_t targetIdx, Modifier newMod) {
+bool TypingEngine::WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
+                                        size_t clearCircumflexIdx) {
     if (!config_.spellCheckEnabled) return true;
     if (targetIdx >= states_.size()) return true;
     Modifier saved = states_[targetIdx].mod;
     states_[targetIdx].mod = newMod;
+    bool didClear = false;
+    if (clearCircumflexIdx < states_.size() &&
+        states_[clearCircumflexIdx].mod == Modifier::Circumflex) {
+        states_[clearCircumflexIdx].mod = Modifier::None;
+        didClear = true;
+    }
     auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
+    if (didClear) states_[clearCircumflexIdx].mod = Modifier::Circumflex;
     states_[targetIdx].mod = saved;
     return result != SpellCheck::Result::Invalid;
 }

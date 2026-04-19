@@ -4198,6 +4198,18 @@ TEST_F(EnglishProtectionTest, AnwStillGivesBreve) {
     EXPECT_EQ(engine_->Peek(), L"ăn");
 }
 
+TEST_F(EnglishProtectionTest, HungwStillGivesHorn) {
+    // P5 path: u→horn applied because "hưng" is valid. Non-regression.
+    TypeString(*engine_, L"hungw");
+    EXPECT_EQ(engine_->Peek(), L"hưng");
+}
+
+TEST_F(EnglishProtectionTest, CongwNotHornedCong) {
+    // P6 path: o→horn blocked because "cơng" is not a valid syllable.
+    TypeString(*engine_, L"congw");
+    EXPECT_EQ(engine_->Peek(), L"congw");
+}
+
 // ============================================================================
 // SeedFromText — revive composition from committed Vietnamese text
 // ============================================================================

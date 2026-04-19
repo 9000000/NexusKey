@@ -165,8 +165,12 @@ private:
 
     // Would applying `newMod` to states_[targetIdx] produce a syllable that is
     // not Invalid per SpellCheck? Returns true when spell-check is disabled
-    // (no validation performed). Restores state before returning.
-    bool WouldBeValidSyllable(size_t targetIdx, Modifier newMod);
+    // (no validation performed). If `clearCircumflexIdx` is a valid index and
+    // that state has a Circumflex, it is temporarily cleared for the check
+    // (models W-modifier P5 which strips the sister â when applying horn to u).
+    // Restores state before returning.
+    [[nodiscard]] bool WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
+                                            size_t clearCircumflexIdx = SIZE_MAX);
 
     // State
     std::vector<CharState> states_;   // Internal state buffer
