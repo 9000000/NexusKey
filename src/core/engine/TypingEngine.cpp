@@ -648,6 +648,13 @@ bool TypingEngine::ProcessTelexModifier(wchar_t c, wchar_t lower) {
                                 engProt_.bias = LanguageBias::HardEnglish;
                                 break;
                             }
+                        } else if (config_.spellCheckEnabled && consonantsCrossed >= 1) {
+                            // Same-vowel free-marking across consonants: reject
+                            // transformations that produce invalid syllables.
+                            // Catches "gacha" → "gâch", "bacha" → "bâch", etc.
+                            // — âch/ăch are not valid Vietnamese codas.
+                            size_t idx = static_cast<size_t>(states_.rend() - it - 1);
+                            if (!WouldBeValidSyllable(idx, Modifier::Circumflex)) break;
                         }
                         it->mod = Modifier::Circumflex;
                         RelocateToneToTarget();
@@ -841,10 +848,23 @@ bool TypingEngine::ProcessWModifier(wchar_t c) {
         return true;
     }
 
+    // When a modifier would apply to a vowel with intervening non-vowel state(s)
+    // before end of buffer, validate that the resulting syllable is not Invalid.
+    // Rejects "gachw" → "găch", "congw" → "cơng", "hunw" → "hưn", etc.
+    auto hasNonVowelAfter = [this](size_t idx) {
+        for (size_t i = idx + 1; i < states_.size(); ++i) {
+            if (!states_[i].IsVowel()) return true;
+        }
+        return false;
+    };
+
     // P5: Standalone 'u' → horn
     // For "uu" pattern, horn goes on FIRST 'u' (lưu, cưu, hưu): the second 'u' is the glide.
     if (uIdx != SIZE_MAX) {
         size_t targetU = (hasUU && firstUIdx != SIZE_MAX) ? firstUIdx : uIdx;
+        if (hasNonVowelAfter(targetU) && !WouldBeValidSyllable(targetU, Modifier::Horn)) {
+            return false;
+        }
         states_[targetU].mod = Modifier::Horn;
         if (aIdx != SIZE_MAX && states_[aIdx].mod == Modifier::Circumflex) {
             states_[aIdx].mod = Modifier::None;
@@ -855,6 +875,9 @@ bool TypingEngine::ProcessWModifier(wchar_t c) {
 
     // P6: Standalone 'o' (not in oa pattern) → horn (replaces circumflex: ô→ơ)
     if (oIdx != SIZE_MAX && !hasOA) {
+        if (hasNonVowelAfter(oIdx) && !WouldBeValidSyllable(oIdx, Modifier::Horn)) {
+            return false;
+        }
         states_[oIdx].mod = Modifier::Horn;
         RelocateToneToHornVowel();
         return true;
@@ -863,6 +886,9 @@ bool TypingEngine::ProcessWModifier(wchar_t c) {
     // P7: Standalone 'a' → breve (or switch circumflex → breve: â→ă)
     if (aIdx != SIZE_MAX && (states_[aIdx].mod == Modifier::None ||
                               states_[aIdx].mod == Modifier::Circumflex)) {
+        if (hasNonVowelAfter(aIdx) && !WouldBeValidSyllable(aIdx, Modifier::Breve)) {
+            return false;
+        }
         states_[aIdx].mod = Modifier::Breve;
         return true;
     }
@@ -1513,6 +1539,16 @@ bool TypingEngine::ProcessVniVowelModifier(Modifier targetMod, wchar_t key) {
 void TypingEngine::UpdateSpellState() {
     UpdateSpellCheck(states_.data(), states_.size(), config_, spellCheckDisabled_,
                      [](const CharState& s) { return Compose(s); });
+}
+
+bool TypingEngine::WouldBeValidSyllable(size_t targetIdx, Modifier newMod) {
+    if (!config_.spellCheckEnabled) return true;
+    if (targetIdx >= states_.size()) return true;
+    Modifier saved = states_[targetIdx].mod;
+    states_[targetIdx].mod = newMod;
+    auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
+    states_[targetIdx].mod = saved;
+    return result != SpellCheck::Result::Invalid;
 }
 
 }  // namespace NextKey

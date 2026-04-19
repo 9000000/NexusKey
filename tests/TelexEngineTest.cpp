@@ -4149,6 +4149,56 @@ TEST_F(EnglishProtectionTest, EnglishBlock_SpellCheckOff_NoBlock) {
 }
 
 // ============================================================================
+// Free-marking spell-check validation
+// "gacha" must stay "gacha", not become "gâch" (âch is not a valid coda).
+// ============================================================================
+
+TEST_F(EnglishProtectionTest, GachaNotMarkedCircumflex) {
+    TypeString(*engine_, L"gacha");
+    EXPECT_EQ(engine_->Peek(), L"gacha");
+}
+
+TEST_F(EnglishProtectionTest, GachWNotMarkedBreve) {
+    TypeString(*engine_, L"gachw");
+    EXPECT_EQ(engine_->Peek(), L"gachw");
+}
+
+TEST_F(EnglishProtectionTest, GachSStillGivesSacTone) {
+    TypeString(*engine_, L"gachs");
+    EXPECT_EQ(engine_->Peek(), L"gách");
+}
+
+TEST_F(EnglishProtectionTest, GachJStillGivesNangTone) {
+    TypeString(*engine_, L"gachj");
+    EXPECT_EQ(engine_->Peek(), L"gạch");
+}
+
+TEST_F(EnglishProtectionTest, BachaNotMarkedCircumflex) {
+    TypeString(*engine_, L"bacha");
+    EXPECT_EQ(engine_->Peek(), L"bacha");
+}
+
+TEST_F(EnglishProtectionTest, MachaNotMarkedCircumflex) {
+    TypeString(*engine_, L"macha");
+    EXPECT_EQ(engine_->Peek(), L"macha");
+}
+
+TEST_F(EnglishProtectionTest, TiengStillFreeMarks) {
+    TypeString(*engine_, L"tienge");
+    EXPECT_EQ(engine_->Peek(), L"tiêng");
+}
+
+TEST_F(EnglishProtectionTest, BanwStillGivesBreve) {
+    TypeString(*engine_, L"banw");
+    EXPECT_EQ(engine_->Peek(), L"băn");
+}
+
+TEST_F(EnglishProtectionTest, AnwStillGivesBreve) {
+    TypeString(*engine_, L"anw");
+    EXPECT_EQ(engine_->Peek(), L"ăn");
+}
+
+// ============================================================================
 // SeedFromText — revive composition from committed Vietnamese text
 // ============================================================================
 

@@ -163,6 +163,11 @@ private:
     // Spell check: validate syllable structure after each keystroke
     void UpdateSpellState();
 
+    // Would applying `newMod` to states_[targetIdx] produce a syllable that is
+    // not Invalid per SpellCheck? Returns true when spell-check is disabled
+    // (no validation performed). Restores state before returning.
+    bool WouldBeValidSyllable(size_t targetIdx, Modifier newMod);
+
     // State
     std::vector<CharState> states_;   // Internal state buffer
     std::vector<wchar_t> rawInput_;   // Raw keys for escape
