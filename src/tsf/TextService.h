@@ -12,6 +12,7 @@ namespace TSF {
 // Forward declarations
 class KeyEventSink;
 class EngineController;
+class ReadonlyContextProvider;
 
 // DLL reference management
 void DllAddRef();
@@ -50,6 +51,7 @@ private:
 
     std::unique_ptr<KeyEventSink> keyEventSink_;
     std::unique_ptr<EngineController> engineController_;
+    std::unique_ptr<ReadonlyContextProvider> readonlyProvider_;
 };
 
 /// Text Service Class Factory

@@ -91,6 +91,8 @@ add_library(NextKeyTSF SHARED
     src/tsf/CompositionManager.cpp
     src/tsf/EngineController.h
     src/tsf/EngineController.cpp
+    src/tsf/ReadonlyContextProvider.h
+    src/tsf/ReadonlyContextProvider.cpp
     src/tsf/Register.cpp
     src/tsf/dllmain.cpp
     src/tsf/EditSession.h

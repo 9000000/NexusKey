@@ -95,6 +95,11 @@ public:
     /// Re-read flags from SharedState (call on focus)
     void RefreshFlags();
 
+    /// Non-owning access to the SharedStateManager — shared with ReadonlyContextProvider
+    /// so both can read/write the same memory-mapped region without duplicating the
+    /// mapping handle.
+    [[nodiscard]] SharedStateManager* GetSharedStateManager() noexcept { return &sharedState_; }
+
     /// Check if context is blocked (password, PIN, etc.) and cache result.
     /// Call from OnTestKeyDown when context changes.
     void CheckContextBlocked(ITfContext* pContext);

@@ -6,6 +6,7 @@
 #include "Globals.h"
 #include "KeyEventSink.h"
 #include "EngineController.h"
+#include "ReadonlyContextProvider.h"
 #include "DisplayAttribute.h"
 #include "ComUtils.h"
 #include "Define.h"
@@ -91,12 +92,27 @@ IFACEMETHODIMP TextService::Activate(ITfThreadMgr* pThreadMgr, TfClientId tfClie
         // Non-fatal — typing still works without the icon
     }
 
+    // Readonly context provider — publishes document anchor to SharedState so
+    // HookEngine can do context-aware auto-cap without owning the TIP.
+    // Gated on TSF_READONLY flag per-event; cheap when inactive.
+    readonlyProvider_ = std::make_unique<ReadonlyContextProvider>(
+        engineController_->GetSharedStateManager());
+    if (!readonlyProvider_->Advise(pThreadMgr, tfClientId)) {
+        TSF_LOG(L"Warning: ReadonlyContextProvider failed to advise — Hook fallback only");
+        readonlyProvider_.reset();  // Non-fatal — continue without anchor publishing
+    }
+
     TSF_LOG(L"TextService activated successfully");
     return S_OK;
 }
 
 IFACEMETHODIMP TextService::Deactivate() {
     TSF_LOG(L"TextService::Deactivate");
+
+    if (readonlyProvider_) {
+        readonlyProvider_->Unadvise();
+        readonlyProvider_.reset();
+    }
 
     if (engineController_) {
         engineController_->UninitLanguageBar();
