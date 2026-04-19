@@ -96,12 +96,11 @@ bool IsContextBlockedInline(ITfContext* pContext, TfEditCookie ec) noexcept {
 }
 
 // Read up to `bufSize` chars immediately before the caret using the provided ec.
-// Returns the number of chars written to buf. Sets `atDocStart` when caret
-// can't be shifted back at all.
+// Returns the number of chars written to buf. len==0 covers both "caret at doc
+// start" (ShiftStart returned 0) and "read failed" — DeriveAnchorFromPreceding
+// treats both identically (conservative start-of-everything).
 ULONG ReadPrecedingCharsInline(ITfContext* pContext, TfEditCookie ec,
-                               wchar_t* buf, ULONG bufSize,
-                               bool& atDocStart) noexcept {
-    atDocStart = false;
+                               wchar_t* buf, ULONG bufSize) noexcept {
     if (pContext == nullptr || buf == nullptr || bufSize == 0) return 0;
 
     TF_SELECTION sel = {};
@@ -122,8 +121,7 @@ ULONG ReadPrecedingCharsInline(ITfContext* pContext, TfEditCookie ec,
     TF_HALTCOND haltcond = { nullptr, TF_ANCHOR_START, TF_HF_OBJECT };
     LONG shifted = 0;
     if (FAILED(pPeek->ShiftStart(ec, -static_cast<LONG>(bufSize), &shifted, &haltcond))) return 0;
-    if (shifted == 0) { atDocStart = true; return 0; }
-    if (shifted > 0) return 0;
+    if (shifted >= 0) return 0;  // 0 = doc start (no chars to read), >0 = unexpected
 
     ULONG retrieved = 0;
     if (FAILED(pPeek->GetText(ec, 0, buf, -shifted, &retrieved))) return 0;
@@ -180,11 +178,11 @@ IFACEMETHODIMP_(ULONG) ReadonlyContextProvider::Release() {
 // ============================================================================
 
 bool ReadonlyContextProvider::Advise(ITfThreadMgr* pThreadMgr, TfClientId clientId) {
+    (void)clientId;  // unused — OnEndEdit provides the edit cookie
     if (pThreadMgr == nullptr) return false;
     if (threadMgrCookie_ != TF_INVALID_COOKIE) return true;  // already advised
 
     pThreadMgr_ = pThreadMgr;
-    clientId_   = clientId;
 
     ITfSource* pSource = nullptr;
     HRESULT hr = pThreadMgr->QueryInterface(IID_ITfSource, (void**)&pSource);
@@ -227,7 +225,6 @@ void ReadonlyContextProvider::Unadvise() {
     }
 
     pThreadMgr_ = nullptr;
-    clientId_   = TF_CLIENTID_NULL;
     isFocused_  = false;
 }
 
@@ -334,16 +331,12 @@ void ReadonlyContextProvider::UpdateAnchor(ITfContext* pContext, TfEditCookie ec
     }
 
     wchar_t buf[kReadbackChars] = {};
-    bool atDocStart = false;
-    ULONG len = ReadPrecedingCharsInline(pContext, ec, buf, kReadbackChars, atDocStart);
+    ULONG len = ReadPrecedingCharsInline(pContext, ec, buf, kReadbackChars);
 
     // On Windows wchar_t is 16-bit (UTF-16); reinterpret is safe.
     static_assert(sizeof(wchar_t) == sizeof(uint16_t), "wchar_t must be UTF-16 on Windows");
     DeriveAnchorFromPreceding(reinterpret_cast<const uint16_t*>(buf),
                               static_cast<size_t>(len), anchor);
-    // atDocStart override: when ShiftStart returned 0, nothing before caret —
-    // DeriveAnchorFromPreceding already sets all flags true for empty buf.
-    (void)atDocStart;
 
     anchor.isAvailable = 1;
     if (pSharedState_) pSharedState_->WriteAnchor(anchor);

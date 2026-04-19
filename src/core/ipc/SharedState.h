@@ -139,7 +139,7 @@ inline void DeriveAnchorFromPreceding(const uint16_t* preceding, size_t len,
 /// On failure, `out` is left in an indeterminate state — callers should
 /// check the return value before using `out` (and treat failure as "anchor
 /// unavailable", equivalent to isAvailable = 0).
-inline bool ReadAnchorSeqlock(const volatile HookContextAnchor* src,
+[[nodiscard]] inline bool ReadAnchorSeqlock(const volatile HookContextAnchor* src,
                               HookContextAnchor& out) noexcept {
     if (src == nullptr) return false;
     for (int retry = 0; retry < 3; ++retry) {
@@ -166,15 +166,27 @@ inline bool ReadAnchorSeqlock(const volatile HookContextAnchor* src,
 }
 
 /// Seqlock write of HookContextAnchor to shared memory.
-/// Single-writer pattern (only the foreground TSF DLL writes at any time —
-/// `TSF_READONLY` flag ensures this). Increments generation odd → even.
-/// Caller does NOT pre-set `src.generation` (we bump the destination's counter).
+///
+/// INVARIANT: single-writer pattern. Only the foreground TSF DLL should write
+/// at any given time (EXE's TSF_READONLY flag coordinates this). If two
+/// writers race during focus transition, the atomic increments keep generation
+/// advancing without collision, but readers may briefly see torn fields —
+/// they'll retry via the seqlock protocol. Acceptable phase 1 degradation.
+///
+/// The two generation bumps are atomic (`InterlockedIncrement` on Windows,
+/// `fetch_add(..., acquire_release)` elsewhere) to avoid the non-atomic
+/// read-modify-write bug where two writers read the same counter value and
+/// write the same odd sequence, making readers accept a torn snapshot.
 inline void WriteAnchorSeqlock(volatile HookContextAnchor* dst,
                               const HookContextAnchor& src) noexcept {
     if (dst == nullptr) return;
-    uint32_t seq = dst->generation + 1;  // now odd = writing
-    dst->generation = seq;
-    std::atomic_thread_fence(std::memory_order_release);
+
+    // gen++ → now odd = writing. Atomic RMW defends against multi-writer race.
+#ifdef _WIN32
+    InterlockedIncrement(reinterpret_cast<volatile LONG*>(&dst->generation));
+#else
+    __atomic_fetch_add(&dst->generation, 1u, __ATOMIC_ACQ_REL);
+#endif
 
     dst->isAvailable     = src.isAvailable;
     dst->isSentenceStart = src.isSentenceStart;
@@ -186,7 +198,13 @@ inline void WriteAnchorSeqlock(volatile HookContextAnchor* dst,
     }
 
     std::atomic_thread_fence(std::memory_order_release);
-    dst->generation = seq + 1;  // now even = stable
+
+    // gen++ → now even = stable.
+#ifdef _WIN32
+    InterlockedIncrement(reinterpret_cast<volatile LONG*>(&dst->generation));
+#else
+    __atomic_fetch_add(&dst->generation, 1u, __ATOMIC_ACQ_REL);
+#endif
 }
 
 /// SharedState struct for IPC between Core and Engine
@@ -302,14 +320,7 @@ struct SharedState {
         configGeneration = 0;
         reserved0 = 0;
         for (auto& b : reserved) b = 0;
-        contextAnchor.generation = 0;
-        contextAnchor.isAvailable = 0;
-        contextAnchor.isSentenceStart = 0;
-        contextAnchor.isLineStart = 0;
-        contextAnchor.isWordStart = 0;
-        contextAnchor.syllableLen = 0;
-        for (auto& b : contextAnchor.padding) b = 0;
-        for (auto& c : contextAnchor.currentSyllable) c = 0;
+        contextAnchor = HookContextAnchor{};  // zero all fields (generation=0=stable)
     }
 };
 

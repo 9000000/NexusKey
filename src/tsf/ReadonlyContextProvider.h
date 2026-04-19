@@ -46,7 +46,7 @@ public:
 
     /// Advise ITfThreadMgrEventSink and prime with current focus. Idempotent.
     /// Returns true on success.
-    bool Advise(ITfThreadMgr* pThreadMgr, TfClientId clientId);
+    [[nodiscard]] bool Advise(ITfThreadMgr* pThreadMgr, TfClientId clientId);
 
     /// Unadvise all sinks. Safe to call multiple times.
     void Unadvise();
@@ -64,11 +64,10 @@ private:
     void UpdateAnchor(ITfContext* pContext, TfEditCookie ec);
 
     /// Quick flag check — are we in readonly mode right now?
-    bool IsReadonlyModeActive() const noexcept;
+    [[nodiscard]] bool IsReadonlyModeActive() const noexcept;
 
     SharedStateManager* pSharedState_;        // non-owning, shared with EngineController
     ITfThreadMgr*       pThreadMgr_ = nullptr;  // not owned
-    TfClientId          clientId_   = TF_CLIENTID_NULL;
     DWORD               threadMgrCookie_ = TF_INVALID_COOKIE;
 
     CComPtr<ITfContext> pAdvisedContext_;

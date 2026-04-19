@@ -1169,21 +1169,30 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     //      Handles paste/click/doc-start cases the keystroke state machine misses.
     //   2. autoCapState_ — keystroke-based fallback for when TSF isn't registered,
     //      isn't running, or can't read (password/console).
+    // State-reset policy: anchor-authoritative paths reset `autoCapState_` to 0
+    // (we just overrode it). Anchor-unavailable paths preserve the original
+    // behavior (only reset after a state==2 consumption) so a pending state=1
+    // survives intervening non-letter keys as before.
     bool autoCapped = false;
     if (autoCaps_ && engine_->Count() == 0) {
+        bool anchorUsed = false;
         bool shouldCap = (autoCapState_ == 2);  // keystroke fallback
         if (sharedStatePtr_) {
             HookContextAnchor snap{};
             if (sharedStatePtr_->ReadAnchor(snap) && snap.isAvailable) {
                 // Doc truth overrides the keystroke state machine.
                 shouldCap = snap.isSentenceStart || snap.isLineStart;
+                anchorUsed = true;
             }
         }
         if (shouldCap) {
             ch = towupper(ch);
             autoCapped = (ch != originalCh);
         }
-        autoCapState_ = 0;  // consume state regardless of path taken
+        // Reset state when we had truth (anchor) or consumed a pending state==2.
+        if (anchorUsed || autoCapState_ == 2) {
+            autoCapState_ = 0;
+        }
     }
 
     // Defensive: if this is the first char of a new word but previousComposition_
