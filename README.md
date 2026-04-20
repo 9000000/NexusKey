@@ -55,7 +55,10 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
   Linh hoạt kiểm soát bật/tắt tiếng Việt theo app (phù hợp game, tool đặc thù)
 
 * **Advanced Macro & Typing**
-  Gõ tắt mở rộng (có xuống dòng), hoạt động cả trong English mode, hỗ trợ phụ âm nhanh
+  Gõ tắt mở rộng (lên đến 20.000 ký tự, hỗ trợ xuống hàng), hoạt động cả trong English mode, hỗ trợ phụ âm nhanh
+
+* **Telex + VNI Combined**
+  Hỗ trợ gõ song song cả Telex và VNI mà không cần chuyển đổi
 
 * **Spell Check + Free Typing**
   Kiểm tra chính tả tiếng Việt + cho phép override khi cần gõ tự do
@@ -73,7 +76,7 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
   Glassmorphism, auto Light/Dark, tùy biến icon, hỗ trợ song ngữ
 
 * **High Performance Engine**
-  Độ trễ thấp, hỗ trợ TSF, auto update, [tối ưu bảo mật](docs/SECURITY.md)
+  Độ trễ thấp, hỗ trợ song song Hook Engine & TSF (Context-Aware) để bắt ngữ cảnh tốt nhất, auto update, [tối ưu bảo mật](docs/SECURITY.md)
 
 * **Game-Friendly Telex**
   Chơi game với Telex bình thường — WASD di chuyển mượt, không cần chuyển Simple Telex hay tắt tiếng Việt
@@ -178,7 +181,7 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 ### Features
 
 **Input Methods & Code Tables**
-- **Input methods:** Telex, VNI, Simple Telex
+- **Input methods:** Telex, VNI, Simple Telex, Combined (Telex + VNI)
 - **Code tables:** Unicode, TCVN3, VNI Windows, Unicode Compound, Vietnamese Locale
 - **Tone placement:** Modern (oà, uý) and classic (òa, úy) options
 
@@ -196,10 +199,10 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 - **Import/Export** — Import and export excluded apps lists from file
 
 **Macros & Quick Typing**
-- **Macros** — Text expansion shortcuts (e.g., `addr` → full address), supports newlines
+- **Macros** — Text expansion shortcuts (e.g., `addr` → full address), supports up to 20,000 characters and newlines
 - **Macros in English mode** — Allows macro expansion while in English mode
 - **Quick consonants** — cc→ch, gg→gi, nn→ng, plus quick start/end consonant shortcuts
-- **Auto-capitalize** — Automatically capitalizes first letter after sentence-ending punctuation, including macro output
+- **Auto-capitalize** — Automatically capitalizes first letter after sentence-ending punctuation, including macro output and TSF context-aware support
 
 **Convert Tool**
 - **Quick convert via selection** — Select text and press hotkey to convert instantly
@@ -213,6 +216,7 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 - **Bilingual** — UI supports both Vietnamese and English
 
 **System**
+- **Parallel Engine** — Parallel Hook Engine and TSF (Context-Aware) support for superior tracking and document awareness
 - **TSF Engine** — Text Services Framework integration for modern applications, with per-app TSF selection
 - **Auto-update** — Built-in update checker and installer
 - **[Security hardened](docs/SECURITY.md)** — Code optimized to minimize security vulnerabilities
@@ -263,13 +267,14 @@ NexusKey is built with a lean architecture and no heavy runtime dependencies, ke
 - Đọc config bởi [toml++](https://github.com/marzer/tomlplusplus)
 - Testing bởi [Google Test](https://github.com/google/googletest)
 - Tham khảo rule -ing cho spell check của [Gonhanh.org](https://github.com/khaphanspace/gonhanh.org?tab=readme-ov-file#-t%C3%A0i-li%E1%BB%87u-k%E1%BB%B9-thu%E1%BA%ADt)
+- Tham khảo config TSF từ [VietType](https://github.com/dinhngtu/VietType)
 
 ### Top Testers
 Cảm ơn các thành viên cộng đồng đã test và góp ý:
-- Zenfas
-- huntersun
-- haihv8x
-- os-hoanghv
+- [Zenfas](https://github.com/Zenfas)
+- [huntersun](https://github.com/huntersun)
+- [haihv8x](https://github.com/haihv8x)
+- [os-hoanghv](https://github.com/os-hoanghv)
 
 ## License
 
