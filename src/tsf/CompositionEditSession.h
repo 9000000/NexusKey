@@ -53,7 +53,7 @@ public:
 
         if (!pMgr_->IsComposing()) {
             TSF_LOG(L"UpdateCompositionEditSession: Not composing, starting new");
-            ITfComposition* pComposition = nullptr;
+            CComPtr<ITfComposition> pComposition;
             if (!pMgr_->StartComposition(pContext_, ec, &pComposition)) {
                 return E_FAIL;
             }
