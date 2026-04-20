@@ -8,6 +8,26 @@
 #include <cwctype>
 #include <string>
 
+#ifndef _WIN32
+// Stub for non-Windows builds (Linux tests)
+inline void InstallCursorCrashHandler() noexcept {}
+#else
+#include <Windows.h>
+
+/// Crash handler that restores system cursors if app crashes during window picking.
+/// SetSystemCursor() changes cursors globally — if we crash mid-pick, the crosshair
+/// cursor stays until logoff. This handler restores defaults on any unhandled exception.
+inline LONG WINAPI CursorCrashHandler(EXCEPTION_POINTERS*) noexcept {
+    SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0);
+    return EXCEPTION_CONTINUE_SEARCH;  // Let debugger/WER handle it
+}
+
+/// Install the cursor crash handler. Call once at startup (main.cpp / main_lite.cpp).
+inline void InstallCursorCrashHandler() noexcept {
+    SetUnhandledExceptionFilter(CursorCrashHandler);
+}
+#endif
+
 namespace NextKey {
 
 /// Signal HookEngine that a config value changed.

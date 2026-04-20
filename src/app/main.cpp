@@ -18,6 +18,7 @@
 
 #include "system/TsfRegistration.h"
 #include "system/StartupHelper.h"
+#include "helpers/AppHelpers.h"
 
 #include "system/HotkeyManager.h"
 #include "core/ipc/SharedStateManager.h"
@@ -132,6 +133,7 @@ static void CleanupFloatingIcon() noexcept {
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hInstance = hInstance;
+    InstallCursorCrashHandler();  // Restore system cursors if we crash during window picking
 
     // ═══════════════════════════════════════════════════════════
     // Command-line Router

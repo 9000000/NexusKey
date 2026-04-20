@@ -24,6 +24,7 @@
 #include "system/UpdateChecker.h"
 #include "system/UpdateInstaller.h"
 #include "system/ToastPopup.h"
+#include "helpers/AppHelpers.h"
 
 #include "classic/ClassicSettingsDialog.h"
 #include "classic/ClassicMacroTableDialog.h"
@@ -292,6 +293,7 @@ static void OnMenuCommand(TrayMenuId id) {
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hInstance = hInstance;
+    InstallCursorCrashHandler();  // Restore system cursors if we crash during window picking
 
     // ── Command-line routes (shared with main build) ──
 

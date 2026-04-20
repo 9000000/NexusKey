@@ -1566,12 +1566,12 @@ void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INP
             TrackedSendInput(bsEvents.data(), static_cast<UINT>(bsEvents.size()));
             // Gap so app finishes processing BS before receiving chars.
             // timeBeginPeriod(1) in main.cpp makes Sleep(N) actually ~N ms.
-            // Base: 10ms Electron (multi-process IPC), 8ms Console (Node.js apps like Claude CLI).
+            // Base: 6ms Electron (multi-process IPC), 5ms Console (Node.js apps).
             // +1ms per extra BS pair: more deletions = more processing time.
-            // Cap at 20ms — imperceptible to user but enough for slowest apps.
-            int baseMs = isElectronApp_ ? 10 : 8;
+            // Cap at 12ms — reduced from 20ms after profiling showed lower values work.
+            int baseMs = isElectronApp_ ? 6 : 5;
             int bsCount = static_cast<int>(bsEvents.size()) / 2;  // each BS = down+up pair
-            int delayMs = (std::min)(baseMs + (bsCount > 1 ? bsCount - 1 : 0), 20);
+            int delayMs = (std::min)(baseMs + (bsCount > 1 ? bsCount - 1 : 0), 12);
             Sleep(delayMs);
         }
         if (!charEvents.empty()) {
@@ -2258,7 +2258,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
                  bsCount, backspaceCount, reinjectVk, toSend.c_str());
         if (bsCount > 0) {
             SendBackspaceEvents(bsCount);
-            Sleep(15);  // Let app process deletions before clipboard paste
+            Sleep(8);  // Let app process deletions before clipboard paste
         }
         if (!toSend.empty()) {
             ClipboardPaste(toSend);
@@ -2354,9 +2354,9 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
                 // Split only for Electron/Console (multi-process IPC reorder risk).
                 if (bsCount > 0) {
                     TrackedSendInput(bsBuf, static_cast<UINT>(bsCount));
-                    int baseMs = isElectronApp_ ? 10 : 8;
+                    int baseMs = isElectronApp_ ? 6 : 5;
                     int bsKeys = static_cast<int>(bsCount) / 2;
-                    int delayMs = (std::min)(baseMs + (bsKeys > 1 ? bsKeys - 1 : 0), 20);
+                    int delayMs = (std::min)(baseMs + (bsKeys > 1 ? bsKeys - 1 : 0), 12);
                     Sleep(delayMs);
                 }
                 if (charCount > 0) {
