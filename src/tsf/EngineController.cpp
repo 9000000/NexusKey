@@ -255,12 +255,12 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
         return true;
     }
 
-    // 3. We handle Backspace ONLY if we have internal content.
+    // 4. We handle Backspace ONLY if we have internal content.
     if (vkCode == VK_BACK) {
         return engineHasComp;
     }
 
-    // 4. Space handling depends on the app
+    // 5. Space handling depends on the app
     if (vkCode == VK_SPACE) {
         if (isScintillaApp_) {
             // For Scintilla apps: don't claim space, let it trigger commit via "non-handled key" path
@@ -271,7 +271,7 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
         return engineHasComp;
     }
 
-    // 4. For Enter and all others, let the app handle it (we'll commit in OnTestKeyDown)
+    // 6. For Enter and all others, let the app handle it (we'll commit in OnTestKeyDown)
     return false;
 }
 
