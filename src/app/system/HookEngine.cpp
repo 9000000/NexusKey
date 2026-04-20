@@ -1178,7 +1178,10 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
         const bool keystrokePending = (autoCapState_ == 2);
         bool anchorUsed = false;
         bool shouldCap = keystrokePending;  // keystroke fallback
-        if (sharedStatePtr_) {
+        // Only probe the anchor when TSF_READONLY is set — otherwise no writer
+        // is pushing fresh data and the seqlock read is pure overhead per key.
+        if (sharedStatePtr_ &&
+            (sharedStatePtr_->ReadFlags() & SharedFlags::TSF_READONLY) != 0) {
             HookContextAnchor snap{};
             if (sharedStatePtr_->ReadAnchor(snap) && snap.isAvailable) {
                 // Doc truth overrides the keystroke state machine.
