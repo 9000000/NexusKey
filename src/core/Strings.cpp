@@ -50,6 +50,13 @@ static const wchar_t* const kVietnamese[] = {
     L"Không thể ghi file đích.",                     // CONVERT_WRITE_ERROR
     L"Không thể ghi vào clipboard.",                 // CONVERT_CLIPBOARD_WRITE_ERROR
     L"Chuyển mã thành công!",                        // CONVERT_SUCCESS
+    L"Đã đăng ký TSF thành công.\n"                  // TSF_REGISTER_SUCCESS
+    L"Cần khởi động lại các ứng dụng đang mở để thay đổi có hiệu lực.",
+    L"Đã gỡ đăng ký TSF thành công.\n"               // TSF_UNREGISTER_SUCCESS
+    L"Cần khởi động lại các ứng dụng đang mở để thay đổi có hiệu lực.",
+    L"Không thể gỡ đăng ký TSF.\n"                   // TSF_UNREGISTER_FAILED
+    L"Vui lòng chạy với quyền Administrator.",
+    L"Không thể thêm NexusKey vào danh sách loại trừ.",  // EXCLUDED_CANNOT_SELF
 };
 
 // English string table
@@ -94,6 +101,13 @@ static const wchar_t* const kEnglish[] = {
     L"Cannot write destination file.",               // CONVERT_WRITE_ERROR
     L"Cannot write to clipboard.",                   // CONVERT_CLIPBOARD_WRITE_ERROR
     L"Conversion successful!",                       // CONVERT_SUCCESS
+    L"TSF registered successfully.\n"                // TSF_REGISTER_SUCCESS
+    L"Please restart open applications for changes to take effect.",
+    L"TSF unregistered successfully.\n"              // TSF_UNREGISTER_SUCCESS
+    L"Please restart open applications for changes to take effect.",
+    L"Unable to unregister TSF.\n"                   // TSF_UNREGISTER_FAILED
+    L"Please run as Administrator.",
+    L"Cannot add NexusKey to the exclusion list.",   // EXCLUDED_CANNOT_SELF
 };
 
 static_assert(sizeof(kVietnamese) / sizeof(kVietnamese[0]) == static_cast<size_t>(StringId::_COUNT),

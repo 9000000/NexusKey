@@ -21,6 +21,7 @@
 #include "helpers/AppHelpers.h"
 
 #include "system/HotkeyManager.h"
+#include "system/HotkeyWiring.h"
 #include "core/ipc/SharedStateManager.h"
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "system/HookEngine.h"
@@ -383,37 +384,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         };
     });
 
-    // Load convert config and create QuickConvert
-    HotkeyConfig convertHotkeyCfg{};
-    {
-        auto convertConfig = ConfigManager::LoadConvertConfigOrDefault();
-        convertHotkeyCfg = convertConfig.hotkey;
-        g_quickConvert = std::make_unique<QuickConvert>(convertConfig);
-
-        g_hookEngine.SetConfigReloadCallback([]() {
-            auto cc = ConfigManager::LoadConvertConfigOrDefault();
-            if (g_quickConvert) g_quickConvert->UpdateConfig(cc);
-            g_hotkeyManager.UpdateHotkey(g_convertHotkeySlot, cc.hotkey);
-            g_trayIcon.RefreshConvertHotkeyCache(cc);
-
-            auto hk = ConfigManager::LoadHotkeyConfigOrDefault();
-            g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
-        });
-    }
-
-    // Register hotkeys (toggle V/E + quick convert) via HotkeyManager.
-    // Callbacks run on the hook thread — keep them lock-free / PostMessage-style.
-    {
-        HWND trayWnd = g_trayIcon.GetMessageWindow();
-        g_toggleHotkeySlot = g_hotkeyManager.AddHotkey(hotkeyConfig, [trayWnd]() {
-            if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
-        });
-        g_convertHotkeySlot = g_hotkeyManager.AddHotkey(convertHotkeyCfg, []() {
-            g_hookEngine.CommitPending();
-            if (g_quickConvert) g_quickConvert->Execute();
-        });
-        g_hotkeyManager.Initialize(hInstance);
-    }
+    // Wire hotkeys (toggle V/E + quick convert) and config reload callback
+    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
+                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
 
     // Set 1ms timer resolution so Sleep(1) actually sleeps ~1ms instead of ~15ms.
     // Required for smooth Vietnamese input — backspace-then-retype needs a short gap

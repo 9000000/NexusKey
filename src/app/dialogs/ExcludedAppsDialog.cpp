@@ -5,6 +5,7 @@
 #include "DialogUtils.h"
 #include "core/config/ConfigManager.h"
 #include "helpers/AppHelpers.h"
+#include "core/Strings.h"
 #include "core/WinStrings.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
@@ -12,10 +13,6 @@
 #include <vector>
 
 using namespace sciter::dom;
-
-// TODO: Add to i18n string table
-static constexpr const wchar_t* MSG_CANNOT_EXCLUDE_SELF =
-    L"Không thể thêm NexusKey vào danh sách loại trừ.";
 
 namespace NextKey {
 
@@ -101,7 +98,7 @@ bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params
 
 void ExcludedAppsDialog::onWindowPicked(const std::wstring& exeName) {
     if (exeName == L"nexuskey.exe") {
-        MessageBoxW(get_hwnd(), MSG_CANNOT_EXCLUDE_SELF,
+        MessageBoxW(get_hwnd(), S(StringId::EXCLUDED_CANNOT_SELF),
                     L"NexusKey", MB_OK | MB_ICONWARNING);
     } else {
         addApp(exeName);

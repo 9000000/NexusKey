@@ -9,8 +9,8 @@
 
 Reviewed deferred items from the HotkeyManager multi-slot refactor (commits pending). All non-blocking; fixed items already landed in the refactor.
 
-- [ ] **Extract `WireHotkeys` helper** — `src/app/main.cpp:384-416` + `src/app/main_lite.cpp:474-506`
-  ~25 lines of convert-config load + `AddHotkey` + `configReloadCallback_` lambda are duplicated between the Sciter and Classic entry points. Each bug fix since the refactor had to be applied twice. Extract to `src/app/system/HotkeyWiring.{h,cpp}` with signature like `WireHotkeys(HotkeyManager&, HookEngine&, TrayIcon&, std::unique_ptr<QuickConvert>&, HINSTANCE, const HotkeyConfig& toggle)`. Returns `{toggleSlotId, convertSlotId}`. Low urgency; do when touching either file next.
+- [x] **Extract `WireHotkeys` helper** — `src/app/system/HotkeyWiring.{h,cpp}`
+  Extracted ~25 duplicate lines from main.cpp + main_lite.cpp. Lambda factory approach: captures refs to globals for config reload callback.
 
 - [ ] **`HotkeyConfig::ModifiersMatch(ctrl, shift, alt, win)` helper** — `src/core/config/TypingConfig.h`, used by `src/app/system/HotkeyManager.cpp:141-152`
   `matchCombo` and `matchModifierOnlyRelease` lambdas each do the same 4-bool equality check. Encapsulating in a `HotkeyConfig` method clarifies intent. Only 2 call sites post-refactor so win is local clarity, not cross-file dedup.
@@ -273,11 +273,11 @@ Full-source review covering engine, config/IPC, TSF, HookEngine, dialogs, Classi
 ## Earlier Findings (2026-04-11)
 
 ### Actual Bugs (Low severity)
-- [ ] `SettingsDialog.cpp:586-587` — Hardcoded Vietnamese MessageBox for TSF registration failure. Should use `S(StringId::...)` for English UI support.
+- [x] `SettingsDialog.cpp` — TSF registration MessageBox strings now use `S(StringId::TSF_REGISTER_SUCCESS)` etc.
 - [x] `TextService.cpp:66-67` — Merged into deep review BUG list above.
 - [ ] `SettingsDialog.cpp:787` — TODO: "Reset all settings to defaults" button handler not implemented.
 - [ ] `SettingsDialog.cpp:800` — TODO: "Open log folder in explorer" button handler not implemented.
-- [ ] `ExcludedAppsDialog.cpp:16` — TODO: Add strings to i18n string table.
+- [x] `ExcludedAppsDialog.cpp` — `MSG_CANNOT_EXCLUDE_SELF` now uses `S(StringId::EXCLUDED_CANNOT_SELF)`.
 
 ### Defensive Improvements (nice-to-have)
 - [x] `UpdateInstaller.cpp:140-170` — Merged into deep review SECURITY list above (path traversal + validate-ZIP-first).

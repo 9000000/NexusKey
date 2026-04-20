@@ -578,9 +578,7 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                     L"NexusKey", MB_OK | MB_ICONWARNING);
                 return;  // Don't save broken state
             }
-            MessageBoxW(get_hwnd(),
-                L"Đã đăng ký TSF thành công.\n"
-                L"Cần khởi động lại các ứng dụng đang mở để thay đổi có hiệu lực.",
+            MessageBoxW(get_hwnd(), S(StringId::TSF_REGISTER_SUCCESS),
                 L"NexusKey", MB_OK | MB_ICONINFORMATION);
         } else {
             if (IsTsfRegistered()) {
@@ -593,14 +591,11 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                 if (IsTsfRegistered()) {
                     config_.tsfApps = true;
                     setToggleState(L"tsf-apps", true);
-                    MessageBoxW(get_hwnd(),
-                        L"Không thể gỡ đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
+                    MessageBoxW(get_hwnd(), S(StringId::TSF_UNREGISTER_FAILED),
                         L"NexusKey", MB_OK | MB_ICONWARNING);
                     return;  // Don't save broken state
                 }
-                MessageBoxW(get_hwnd(),
-                    L"Đã gỡ đăng ký TSF thành công.\n"
-                    L"Cần khởi động lại các ứng dụng đang mở để thay đổi có hiệu lực.",
+                MessageBoxW(get_hwnd(), S(StringId::TSF_UNREGISTER_SUCCESS),
                     L"NexusKey", MB_OK | MB_ICONINFORMATION);
             }
         }

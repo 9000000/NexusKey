@@ -60,6 +60,14 @@ enum class StringId : uint16_t {
     CONVERT_CLIPBOARD_WRITE_ERROR,
     CONVERT_SUCCESS,
 
+    // TSF registration
+    TSF_REGISTER_SUCCESS,
+    TSF_UNREGISTER_SUCCESS,
+    TSF_UNREGISTER_FAILED,
+
+    // Excluded apps
+    EXCLUDED_CANNOT_SELF,
+
     _COUNT
 };
 

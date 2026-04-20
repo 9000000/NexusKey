@@ -16,6 +16,7 @@
 
 #include "system/HookEngine.h"
 #include "system/HotkeyManager.h"
+#include "system/HotkeyWiring.h"
 #include "system/QuickConvert.h"
 #include "system/TrayIcon.h"
 #include "system/FloatingIcon.h"
@@ -96,13 +97,15 @@ static void SpawnSettingsDialog() {
         // After dialog closes, reload config in case settings changed
         auto config = ConfigManager::LoadOrDefault();
 
-        // Reload convert config for QuickConvert + hotkey
+        // Reload convert + toggle hotkeys (mirrors HotkeyWiring callback)
         {
             auto cc = ConfigManager::LoadConvertConfigOrDefault();
+            if (g_quickConvert) g_quickConvert->UpdateConfig(cc);
             g_hotkeyManager.UpdateHotkey(g_convertHotkeySlot, cc.hotkey);
-            if (g_quickConvert) {
-                g_quickConvert->UpdateConfig(cc);
-            }
+            g_trayIcon.RefreshConvertHotkeyCache(cc);
+
+            auto hk = ConfigManager::LoadHotkeyConfigOrDefault();
+            g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
         }
 
         // Refresh floating icon config
@@ -472,38 +475,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         };
     });
 
-    // ── QuickConvert ──
+    // ── Hotkeys (toggle V/E + quick convert) ──
 
-    HotkeyConfig convertHotkeyCfg{};
-    {
-        auto convertConfig = ConfigManager::LoadConvertConfigOrDefault();
-        convertHotkeyCfg = convertConfig.hotkey;
-        g_quickConvert = std::make_unique<QuickConvert>(convertConfig);
-
-        g_hookEngine.SetConfigReloadCallback([]() {
-            auto cc = ConfigManager::LoadConvertConfigOrDefault();
-            if (g_quickConvert) g_quickConvert->UpdateConfig(cc);
-            g_hotkeyManager.UpdateHotkey(g_convertHotkeySlot, cc.hotkey);
-            g_trayIcon.RefreshConvertHotkeyCache(cc);
-
-            auto hk = ConfigManager::LoadHotkeyConfigOrDefault();
-            g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
-        });
-    }
-
-    // ── HotkeyManager (toggle V/E + quick convert) ──
-
-    {
-        HWND trayWnd = g_trayIcon.GetMessageWindow();
-        g_toggleHotkeySlot = g_hotkeyManager.AddHotkey(hotkeyConfig, [trayWnd]() {
-            if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
-        });
-        g_convertHotkeySlot = g_hotkeyManager.AddHotkey(convertHotkeyCfg, []() {
-            g_hookEngine.CommitPending();
-            if (g_quickConvert) g_quickConvert->Execute();
-        });
-        g_hotkeyManager.Initialize(hInstance);
-    }
+    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
+                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
 
     // ── Timer resolution ──
 

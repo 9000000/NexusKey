@@ -145,6 +145,8 @@ add_executable(NextKeyApp WIN32
     src/app/system/HookEngine.cpp
     src/app/system/HotkeyManager.h
     src/app/system/HotkeyManager.cpp
+    src/app/system/HotkeyWiring.h
+    src/app/system/HotkeyWiring.cpp
     src/app/system/QuickConvert.h
     src/app/system/QuickConvert.cpp
     src/app/system/ToastPopup.h
@@ -210,6 +212,8 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/HookEngine.cpp
         src/app/system/HotkeyManager.h
         src/app/system/HotkeyManager.cpp
+        src/app/system/HotkeyWiring.h
+        src/app/system/HotkeyWiring.cpp
         src/app/system/QuickConvert.h
         src/app/system/QuickConvert.cpp
         src/app/system/ToastPopup.h
