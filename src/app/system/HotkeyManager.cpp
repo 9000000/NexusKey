@@ -2,38 +2,46 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HotkeyManager.h"
+#include "HookEngine.h"  // NEXUSKEY_EXTRA_INFO tag
 #include "core/Debug.h"
 
 namespace NextKey {
 
 std::atomic<HotkeyManager*> HotkeyManager::s_instance{nullptr};
 
-static constexpr int HOTKEY_ID = 1;
-
 HotkeyManager::~HotkeyManager() {
     Uninstall();
 }
 
-void HotkeyManager::Initialize(const HotkeyConfig& config, HWND hwndMessage, HINSTANCE hInstance) {
-    config_ = config;
-    hwndMessage_ = hwndMessage;
+BYTE HotkeyManager::ResolveVk(wchar_t key) noexcept {
+    if (key == 0) return 0;
+    SHORT r = VkKeyScanW(key);
+    return (r == -1) ? 0 : LOBYTE(r);
+}
+
+HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config, Callback callback) {
+    std::lock_guard lk(slotsMutex_);
+    slots_.push_back(Slot{config, std::move(callback), ResolveVk(config.key), false});
+    return slots_.size() - 1;
+}
+
+void HotkeyManager::UpdateHotkey(SlotId slot, const HotkeyConfig& config) {
+    std::lock_guard lk(slotsMutex_);
+    if (slot >= slots_.size()) return;
+    // Skip if config unchanged — preserves comboKeyDown across spurious reloads.
+    // Without this, a config reload while the user holds the combo resets
+    // comboKeyDown=false and the next auto-repeat re-fires the callback.
+    if (slots_[slot].config == config) return;
+    slots_[slot].config = config;
+    slots_[slot].vkCached = ResolveVk(config.key);
+    slots_[slot].comboKeyDown = false;
+}
+
+void HotkeyManager::Initialize(HINSTANCE hInstance) {
     s_instance = this;
-
-    if (!HasNexusKeyHotkey(config_)) {
-        NEXTKEY_LOG(L"NexusKey hotkey disabled by user");
-        return;
-    }
-
-    // Always install our hotkey. NexusKey is a single-layout TIP —
-    // toggle is via SharedState flag, not keyboard layout switching.
-    if (config_.key != 0) {
-        InstallRegisterHotKey(hwndMessage);
-    } else {
-        InstallKeyboardHook(hInstance);
-    }
-
-    NEXTKEY_LOG(L"Hotkey installed (ctrl=%d, shift=%d, alt=%d, win=%d, key=%d)",
-                config_.ctrl, config_.shift, config_.alt, config_.win, config_.key);
+    InstallKeyboardHook(hInstance);
+    NEXTKEY_LOG(L"HotkeyManager installed (%zu slot%s)",
+                slots_.size(), slots_.size() == 1 ? L"" : L"s");
 }
 
 void HotkeyManager::Uninstall() {
@@ -41,101 +49,147 @@ void HotkeyManager::Uninstall() {
         UnhookWindowsHookEx(keyboardHook_);
         keyboardHook_ = nullptr;
     }
-    if (hwndMessage_) {
-        UnregisterHotKey(hwndMessage_, HOTKEY_ID);
-    }
     if (s_instance == this) {
         s_instance = nullptr;
     }
-}
-
-bool HotkeyManager::HasNexusKeyHotkey(const HotkeyConfig& cfg) {
-    return cfg.ctrl || cfg.shift || cfg.alt || cfg.win || cfg.key != 0;
-}
-
-void HotkeyManager::InstallRegisterHotKey(HWND hwndMessage) {
-    UINT modifiers = 0;
-    if (config_.ctrl) modifiers |= MOD_CONTROL;
-    if (config_.shift) modifiers |= MOD_SHIFT;
-    if (config_.alt) modifiers |= MOD_ALT;
-    if (config_.win) modifiers |= MOD_WIN;
-
-    UINT vk = static_cast<UINT>(config_.key);
-    if (RegisterHotKey(hwndMessage, HOTKEY_ID, modifiers, vk)) {
-        NEXTKEY_LOG(L"RegisterHotKey installed (mod=0x%X, key='%c')", modifiers, config_.key);
-    } else {
-        NEXTKEY_LOG(L"RegisterHotKey failed (error: %lu)", GetLastError());
-    }
+    std::lock_guard lk(slotsMutex_);
+    slots_.clear();
 }
 
 void HotkeyManager::InstallKeyboardHook(HINSTANCE hInstance) {
     keyboardHook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInstance, 0);
     if (keyboardHook_) {
-        NEXTKEY_LOG(L"Keyboard hook installed for modifier-only hotkey");
+        NEXTKEY_LOG(L"Keyboard hook installed for hotkey");
     } else {
         NEXTKEY_LOG(L"Keyboard hook failed (error: %lu)", GetLastError());
     }
 }
 
+// Inject VK_LCONTROL down+up tagged with NEXUSKEY_EXTRA_INFO to break Windows
+// "Alt/Win tapped alone" detection. Without this, releasing Alt before the key
+// in combos like Alt+Z activates the browser menu bar (Firefox) or steals focus
+// (Chrome). HookEngine::LowLevelKeyboardProc passes through events with this tag.
+void HotkeyManager::InjectDummyKey() noexcept {
+    static const WORD scan = static_cast<WORD>(MapVirtualKeyW(VK_LCONTROL, MAPVK_VK_TO_VSC));
+    INPUT inputs[2] = {};
+
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = VK_LCONTROL;
+    inputs[0].ki.wScan = scan;
+    inputs[0].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+
+    inputs[1].type = INPUT_KEYBOARD;
+    inputs[1].ki.wVk = VK_LCONTROL;
+    inputs[1].ki.wScan = scan;
+    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[1].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+
+    SendInput(2, inputs, sizeof(INPUT));
+}
+
 LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     HotkeyManager* inst = s_instance.load(std::memory_order_relaxed);
-    if (nCode == HC_ACTION && inst) {
-        auto& self = *inst;
-        auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
-        bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
-        bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
-        DWORD vk = pKey->vkCode;
+    if (nCode != HC_ACTION || !inst) {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
 
-        bool isCtrl = (vk == VK_LCONTROL || vk == VK_RCONTROL);
-        bool isShift = (vk == VK_LSHIFT || vk == VK_RSHIFT);
-        bool isAlt = (vk == VK_LMENU || vk == VK_RMENU);
-        bool isWin = (vk == VK_LWIN || vk == VK_RWIN);
+    auto& self = *inst;
+    auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
-        auto checkMatch = [&]() -> bool {
-            return (!self.config_.ctrl || self.modCtrlDown_) &&
-                   (!self.config_.shift || self.modShiftDown_) &&
-                   (!self.config_.alt || self.modAltDown_) &&
-                   (!self.config_.win || self.modWinDown_);
-        };
+    // Pass through our own injected dummy events untouched.
+    if (pKey->dwExtraInfo == HookEngine::NEXUSKEY_EXTRA_INFO) {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
 
-        // On match: post WM_HOTKEY to tray window → OnMenuCommand(ToggleMode)
-        auto notifyToggle = [&]() {
-            if (self.hwndMessage_) {
-                PostMessageW(self.hwndMessage_, WM_HOTKEY, 0, 0);
-            }
-        };
+    const bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+    const bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
+    const DWORD vk = pKey->vkCode;
 
-        if (isCtrl) {
-            if (isDown && !self.modCtrlDown_) { self.modCtrlDown_ = true; self.otherKeyPressed_ = false; }
-            else if (isUp) {
-                if (!self.otherKeyPressed_ && checkMatch()) notifyToggle();
-                self.modCtrlDown_ = false;
+    const bool isCtrl = (vk == VK_LCONTROL || vk == VK_RCONTROL);
+    const bool isShift = (vk == VK_LSHIFT || vk == VK_RSHIFT);
+    const bool isAlt = (vk == VK_LMENU || vk == VK_RMENU);
+    const bool isWin = (vk == VK_LWIN || vk == VK_RWIN);
+    const bool isModifier = isCtrl || isShift || isAlt || isWin;
+
+    // Snapshot pre-update state so modifier-only release checks see the modifier
+    // as "still held" (match the original per-modifier semantics).
+    const bool preCtrl = self.modCtrlDown_;
+    const bool preShift = self.modShiftDown_;
+    const bool preAlt = self.modAltDown_;
+    const bool preWin = self.modWinDown_;
+    const bool preOtherKey = self.otherKeyPressed_;
+
+    // Update modifier state. Reset otherKeyPressed_ on modifier down-transition.
+    if (isCtrl) {
+        if (isDown && !self.modCtrlDown_) { self.modCtrlDown_ = true; self.otherKeyPressed_ = false; }
+        else if (isUp) self.modCtrlDown_ = false;
+    } else if (isShift) {
+        if (isDown && !self.modShiftDown_) { self.modShiftDown_ = true; self.otherKeyPressed_ = false; }
+        else if (isUp) self.modShiftDown_ = false;
+    } else if (isAlt) {
+        if (isDown && !self.modAltDown_) { self.modAltDown_ = true; self.otherKeyPressed_ = false; }
+        else if (isUp) self.modAltDown_ = false;
+    } else if (isWin) {
+        if (isDown && !self.modWinDown_) { self.modWinDown_ = true; self.otherKeyPressed_ = false; }
+        else if (isUp) self.modWinDown_ = false;
+    } else if (isDown) {
+        self.otherKeyPressed_ = true;
+    }
+
+    // Strict XOR: required modifiers must be held AND non-required modifiers
+    // must NOT be held. Prevents Alt+Z hotkey from firing on Ctrl+Alt+Z.
+    auto matchCombo = [&](const HotkeyConfig& cfg) noexcept {
+        return cfg.ctrl == self.modCtrlDown_ &&
+               cfg.shift == self.modShiftDown_ &&
+               cfg.alt == self.modAltDown_ &&
+               cfg.win == self.modWinDown_;
+    };
+
+    auto matchModifierOnlyRelease = [&](const HotkeyConfig& cfg) noexcept {
+        return cfg.ctrl == preCtrl &&
+               cfg.shift == preShift &&
+               cfg.alt == preAlt &&
+               cfg.win == preWin;
+    };
+
+    std::lock_guard lk(self.slotsMutex_);
+
+    // ─── Combo hotkey: target key DOWN fires, UP is eaten ───
+    if (!isModifier && (isDown || isUp)) {
+        for (auto& slot : self.slots_) {
+            if (slot.vkCached == 0) continue;  // Modifier-only slot
+            if (vk != static_cast<DWORD>(slot.vkCached)) continue;
+
+            if (isDown) {
+                if (slot.comboKeyDown) return 1;  // Eat auto-repeat
+                if (matchCombo(slot.config)) {
+                    slot.comboKeyDown = true;
+                    if (slot.callback) slot.callback();
+                    if (slot.config.alt || slot.config.win) InjectDummyKey();
+                    return 1;  // Eat DOWN
+                }
+            } else {  // isUp
+                if (slot.comboKeyDown) {
+                    slot.comboKeyDown = false;
+                    return 1;  // Eat matching UP
+                }
             }
-        } else if (isShift) {
-            if (isDown && !self.modShiftDown_) { self.modShiftDown_ = true; self.otherKeyPressed_ = false; }
-            else if (isUp) {
-                if (!self.otherKeyPressed_ && checkMatch()) notifyToggle();
-                self.modShiftDown_ = false;
-            }
-        } else if (isAlt) {
-            if (isDown && !self.modAltDown_) { self.modAltDown_ = true; self.otherKeyPressed_ = false; }
-            else if (isUp) {
-                if (!self.otherKeyPressed_ && checkMatch()) notifyToggle();
-                self.modAltDown_ = false;
-            }
-        } else if (isWin) {
-            if (isDown && !self.modWinDown_) { self.modWinDown_ = true; self.otherKeyPressed_ = false; }
-            else if (isUp) {
-                if (!self.otherKeyPressed_ && checkMatch()) notifyToggle();
-                self.modWinDown_ = false;
-            }
-        } else if (isDown) {
-            self.otherKeyPressed_ = true;
         }
     }
 
-    HotkeyManager* inst2 = s_instance.load(std::memory_order_relaxed);
-    return CallNextHookEx(inst2 ? inst2->keyboardHook_ : nullptr, nCode, wParam, lParam);
+    // ─── Modifier-only hotkey: fires on modifier UP if no non-modifier was pressed ───
+    if (isModifier && isUp && !preOtherKey) {
+        for (auto& slot : self.slots_) {
+            if (slot.vkCached != 0) continue;  // Combo slot
+            const auto& c = slot.config;
+            if (!c.HasAny()) continue;  // Empty config would match everything
+            if (matchModifierOnlyRelease(c)) {
+                if (slot.callback) slot.callback();
+            }
+        }
+    }
+
+    return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
 }  // namespace NextKey

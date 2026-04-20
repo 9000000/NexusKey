@@ -38,7 +38,7 @@ public:
     HookEngine& operator=(const HookEngine&) = delete;
 
     /// Start the hook engine (installs keyboard hook + focus hook)
-    bool Start(HINSTANCE hInstance, const TypingConfig& config, const HotkeyConfig& hotkey,
+    bool Start(HINSTANCE hInstance, const TypingConfig& config,
                bool initialVietnamese = true, uint8_t startupMode = 0);
 
     /// Stop and unhook everything
@@ -47,11 +47,12 @@ public:
     /// Toggle Vietnamese/English mode
     void ToggleVietnameseMode();
 
+    /// Commit any pending composition — called by hotkey callbacks before firing actions
+    /// (e.g., Quick Convert) so the text in the document reflects what's on screen.
+    void CommitPending();
+
     /// Set callback for mode changes (to update tray icon)
     void SetModeChangeCallback(ModeChangeCallback callback) { modeChangeCallback_ = std::move(callback); }
-
-    /// Set callback for quick-convert hotkey
-    void SetConvertCallback(std::function<void()> callback) { convertCallback_ = std::move(callback); }
 
     /// Set callback for config reload (notifies main to update QuickConvert etc.)
     void SetConfigReloadCallback(std::function<void()> callback) { configReloadCallback_ = std::move(callback); }
@@ -63,9 +64,6 @@ public:
     void SetTsfModeCallback(std::function<void(bool, bool)> callback) {
         tsfModeCallback_ = std::move(callback);
     }
-
-    /// Update the convert hotkey config (called on config reload)
-    void SetConvertHotkey(const HotkeyConfig& hotkey);
 
     /// Check for config changes and reload if needed
     bool CheckConfigEvent();
@@ -126,10 +124,8 @@ private:
     [[nodiscard]] bool ShouldUseClipboard() const noexcept;
     void ClipboardPaste(const std::wstring& text);
 
-    // Hotkey detection (absorbed from HotkeyManager)
+    // Modifier state tracking (used by double-Alt and layout change detection)
     void TrackModifier(DWORD vkCode, bool isDown);
-    bool CheckHotkeyMatch() const;
-    bool CheckConvertHotkeyMatch() const;
 
     // Backspace-into-committed-word: replay saved chars to restore engine state
     void ReplayCommittedChars();
@@ -265,11 +261,7 @@ private:
     HWINEVENTHOOK minimizeHook_ = nullptr;  // EVENT_SYSTEM_MINIMIZEEND
     UINT_PTR focusPollTimer_ = 0;          // 200ms PID poll — catches missed/phantom focus events
 
-    // Hotkey state
-    HotkeyConfig hotkeyConfig_{};
-    BYTE hotkeyVk_ = 0;  // Pre-computed VK code for hotkeyConfig_.key
-    HotkeyConfig convertHotkeyConfig_{};
-    BYTE convertHotkeyVk_ = 0;  // Pre-computed VK for convert hotkey
+    // Modifier tracking state (for double-Alt and layout change detection)
     bool modCtrlDown_ = false;
     bool modShiftDown_ = false;
     bool modAltDown_ = false;
@@ -297,7 +289,6 @@ private:
 
     // Callbacks
     ModeChangeCallback modeChangeCallback_;
-    std::function<void()> convertCallback_;
     std::function<void()> configReloadCallback_;
     std::function<void(bool, bool)> tsfModeCallback_;
 

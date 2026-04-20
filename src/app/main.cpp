@@ -19,13 +19,11 @@
 #include "system/TsfRegistration.h"
 #include "system/StartupHelper.h"
 
+#include "system/HotkeyManager.h"
+#include "core/ipc/SharedStateManager.h"
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "system/HookEngine.h"
 #include "system/QuickConvert.h"
-#include "core/ipc/SharedStateManager.h"
-#else
-#include "system/HotkeyManager.h"
-#include "core/ipc/SharedStateManager.h"
 #endif
 
 #include <Windows.h>
@@ -52,14 +50,14 @@ static TrayIcon g_trayIcon;
 static FloatingIcon g_floatingIcon;
 static HINSTANCE g_hInstance = nullptr;
 
+static SharedStateManager g_sharedState;  // Shared memory for Settings subprocess IPC
+static HotkeyManager g_hotkeyManager;
+
 #ifdef NEXUSKEY_HOOK_ENGINE
 static HookEngine g_hookEngine;
 static std::unique_ptr<QuickConvert> g_quickConvert;
-static SharedStateManager g_sharedState;  // Shared memory for Settings subprocess IPC
-
-#else
-static SharedStateManager g_sharedState;
-static HotkeyManager g_hotkeyManager;
+static HotkeyManager::SlotId g_toggleHotkeySlot = 0;
+static HotkeyManager::SlotId g_convertHotkeySlot = 0;
 #endif
 
 // Forward declaration
@@ -384,23 +382,35 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     });
 
     // Load convert config and create QuickConvert
+    HotkeyConfig convertHotkeyCfg{};
     {
         auto convertConfig = ConfigManager::LoadConvertConfigOrDefault();
+        convertHotkeyCfg = convertConfig.hotkey;
         g_quickConvert = std::make_unique<QuickConvert>(convertConfig);
 
-        g_hookEngine.SetConvertHotkey(convertConfig.hotkey);
-        g_hookEngine.SetConvertCallback([]() {
-            if (g_quickConvert) {
-                g_quickConvert->Execute();
-            }
-        });
-
         g_hookEngine.SetConfigReloadCallback([]() {
-            if (g_quickConvert) {
-                auto cc = ConfigManager::LoadConvertConfigOrDefault();
-                g_quickConvert->UpdateConfig(cc);
-            }
+            auto cc = ConfigManager::LoadConvertConfigOrDefault();
+            if (g_quickConvert) g_quickConvert->UpdateConfig(cc);
+            g_hotkeyManager.UpdateHotkey(g_convertHotkeySlot, cc.hotkey);
+            g_trayIcon.RefreshConvertHotkeyCache(cc);
+
+            auto hk = ConfigManager::LoadHotkeyConfigOrDefault();
+            g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
         });
+    }
+
+    // Register hotkeys (toggle V/E + quick convert) via HotkeyManager.
+    // Callbacks run on the hook thread — keep them lock-free / PostMessage-style.
+    {
+        HWND trayWnd = g_trayIcon.GetMessageWindow();
+        g_toggleHotkeySlot = g_hotkeyManager.AddHotkey(hotkeyConfig, [trayWnd]() {
+            if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
+        });
+        g_convertHotkeySlot = g_hotkeyManager.AddHotkey(convertHotkeyCfg, []() {
+            g_hookEngine.CommitPending();
+            if (g_quickConvert) g_quickConvert->Execute();
+        });
+        g_hotkeyManager.Initialize(hInstance);
     }
 
     // Set 1ms timer resolution so Sleep(1) actually sleeps ~1ms instead of ~15ms.
@@ -412,7 +422,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
     // Start keyboard hook engine
-    if (!g_hookEngine.Start(hInstance, config, hotkeyConfig, startVietnamese, systemConfig.startupMode)) {
+    if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
         // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
         // No matching StringId — using English string (language config not yet applied to UI).
         timeEndPeriod(1);
@@ -477,6 +487,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     TerminateAllSubprocesses();
     CleanupFloatingIcon();
     g_trayIcon.Destroy();
+    g_hotkeyManager.Uninstall();
     g_hookEngine.Stop();
     timeEndPeriod(1);
 
@@ -569,10 +580,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Poll SharedState flags every 250ms to sync icon V/E state
     SetTimer(g_trayIcon.GetMessageWindow(), TIMER_ID_ICON_POLL, 250, IconPollTimerProc);
 
-    // Internal Hotkey
+    // Internal Hotkey — TSF mode has toggle only (no QuickConvert)
     auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
-    if (hotkeyOpt && (hotkeyOpt->ctrl || hotkeyOpt->shift || hotkeyOpt->alt || hotkeyOpt->win || hotkeyOpt->key != 0)) {
-        g_hotkeyManager.Initialize(*hotkeyOpt, g_trayIcon.GetMessageWindow(), hInstance);
+    if (hotkeyOpt && hotkeyOpt->HasAny()) {
+        HWND trayWnd = g_trayIcon.GetMessageWindow();
+        g_hotkeyManager.AddHotkey(*hotkeyOpt, [trayWnd]() {
+            if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
+        });
+        g_hotkeyManager.Initialize(hInstance);
         NEXTKEY_LOG(L"Internal hotkey installed (ctrl=%d, shift=%d, alt=%d, win=%d, key=0x%02X)",
                     hotkeyOpt->ctrl, hotkeyOpt->shift, hotkeyOpt->alt, hotkeyOpt->win, hotkeyOpt->key);
     } else {

@@ -100,11 +100,17 @@ public:
 
     [[nodiscard]] bool IsVietnameseMode() const noexcept { return vietnameseMode_; }
 
+    /// Rebuild cached convert-hotkey text from TOML. Call after SaveConvertConfig.
+    void RefreshConvertHotkeyCache();
+
+    /// Same but reuses an already-loaded ConvertConfig — avoids a redundant TOML read
+    /// when the caller has just loaded it for another purpose.
+    void RefreshConvertHotkeyCache(const ConvertConfig& cc);
+
 private:
     void ShowContextMenu();
     void RefreshIcon() noexcept;  // Reload icon based on current style/mode
     void ReAddIcon() noexcept;    // Re-register tray icon (after explorer restart or NIM_MODIFY failure)
-    void RefreshConvertHotkeyCache();  // Rebuild cached hotkey text from config
     [[nodiscard]] HICON CreateColorizedIcon(int baseIconId, COLORREF color) noexcept;
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 

@@ -33,6 +33,12 @@ struct HotkeyConfig {
     bool alt = false;
     bool win = false;
     wchar_t key = 0;  // e.g. 'Z' for Alt+Z. Default: none (user must configure)
+
+    [[nodiscard]] bool HasAny() const noexcept {
+        return ctrl || shift || alt || win || key != 0;
+    }
+
+    bool operator==(const HotkeyConfig&) const noexcept = default;
 };
 
 /// Typing configuration loaded from TOML, used by engine

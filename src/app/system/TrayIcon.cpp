@@ -276,10 +276,13 @@ HICON TrayIcon::CreateColorizedIcon(int baseIconId, COLORREF newColor) noexcept 
 }
 
 void TrayIcon::RefreshConvertHotkeyCache() {
-    auto cc = ConfigManager::LoadConvertConfigOrDefault();
+    RefreshConvertHotkeyCache(ConfigManager::LoadConvertConfigOrDefault());
+}
+
+void TrayIcon::RefreshConvertHotkeyCache(const ConvertConfig& cc) {
     const auto& hk = cc.hotkey;
     cachedConvertHotkeyText_.clear();
-    if (hk.ctrl || hk.shift || hk.alt || hk.win || hk.key != 0) {
+    if (hk.HasAny()) {
         if (hk.ctrl)  cachedConvertHotkeyText_ += L"Ctrl+";
         if (hk.alt)   cachedConvertHotkeyText_ += L"Alt+";
         if (hk.shift) cachedConvertHotkeyText_ += L"Shift+";
@@ -378,11 +381,21 @@ void TrayIcon::ShowContextMenu() {
 
     POINT pt;
     GetCursorPos(&pt);
+
+    // Capture the real user window before SetForegroundWindow(tray) so menu actions
+    // that operate on the source window (Quick Convert → Ctrl+C) still target it.
+    HWND prevFg = GetForegroundWindow();
+    if (prevFg == hwndMessage_) prevFg = nullptr;
+
     SetForegroundWindow(hwndMessage_);
 
     UINT cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
         pt.x, pt.y, 0, hwndMessage_, nullptr);
     DestroyMenu(hMenu);
+
+    // Restore the source window as foreground before dispatching — otherwise
+    // GetForegroundWindow() inside the callback returns our tray message window.
+    if (prevFg) SetForegroundWindow(prevFg);
 
     if (cmd && menuCallback_) {
         menuCallback_(static_cast<TrayMenuId>(cmd));

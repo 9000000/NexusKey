@@ -5,6 +5,27 @@
 
 ---
 
+## Hotkey Refactor — Deferred (2026-04-20)
+
+Reviewed deferred items from the HotkeyManager multi-slot refactor (commits pending). All non-blocking; fixed items already landed in the refactor.
+
+- [ ] **Extract `WireHotkeys` helper** — `src/app/main.cpp:384-416` + `src/app/main_lite.cpp:474-506`
+  ~25 lines of convert-config load + `AddHotkey` + `configReloadCallback_` lambda are duplicated between the Sciter and Classic entry points. Each bug fix since the refactor had to be applied twice. Extract to `src/app/system/HotkeyWiring.{h,cpp}` with signature like `WireHotkeys(HotkeyManager&, HookEngine&, TrayIcon&, std::unique_ptr<QuickConvert>&, HINSTANCE, const HotkeyConfig& toggle)`. Returns `{toggleSlotId, convertSlotId}`. Low urgency; do when touching either file next.
+
+- [ ] **`HotkeyConfig::ModifiersMatch(ctrl, shift, alt, win)` helper** — `src/core/config/TypingConfig.h`, used by `src/app/system/HotkeyManager.cpp:141-152`
+  `matchCombo` and `matchModifierOnlyRelease` lambdas each do the same 4-bool equality check. Encapsulating in a `HotkeyConfig` method clarifies intent. Only 2 call sites post-refactor so win is local clarity, not cross-file dedup.
+
+- [ ] **`ReloadFromToml` parses 5+ TOMLs per config bump** — `src/app/system/HookEngine.cpp:368-470`
+  One `configGeneration` bump triggers `LoadOrDefault` + `LoadMacros` + `LoadExcludedApps` + `LoadTsfApps` + `ReloadAppOverrides`, plus the callback body loads `LoadConvertConfigOrDefault` + `LoadHotkeyConfigOrDefault`. Each is a separate `toml::parse_file`. Estimated 5-15ms per bump on cold cache. Fix options: parse TOML once into a `toml::table` and pass around, or cache parsed table with mtime check in `ConfigManager`. Profile first — may be imperceptible in practice (Settings Save is user-paced).
+
+- [ ] **`ScopedForegroundRestore` RAII helper** — `src/app/system/TrayIcon.cpp:379-396`
+  `prevFg = GetForegroundWindow()` + `SetForegroundWindow(prevFg)` pattern. Only 1 call site today; `ClassicDialogUtils.h:157` and `WindowPickerDialog.cpp:88` do similar one-shot restores but not the full save-and-restore pair. Not enough duplication to justify a helper yet — revisit if a 3rd call site appears.
+
+- [ ] **Slot removal API + `kInvalidSlotId` sentinel** — `src/app/system/HotkeyManager.h:26-42`
+  `using SlotId = size_t;` with default `0` means slot 0 is ambiguous (valid id vs. unset). Today's usage is fine (all slots registered at startup, never removed), but if slot removal is ever added, introduce `static constexpr SlotId kInvalid = SIZE_MAX;` and have `UpdateHotkey` return a bool or check against the sentinel. Low priority until a remove API is actually needed.
+
+---
+
 ## TSF Readonly Context — Future Phases (2026-04-19)
 
 Phase 1 shipped: auto-cap via `HookContextAnchor` (commits `89d1add`..`b0bbb09`).

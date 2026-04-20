@@ -15,6 +15,7 @@
 #include "core/Debug.h"
 
 #include "system/HookEngine.h"
+#include "system/HotkeyManager.h"
 #include "system/QuickConvert.h"
 #include "system/TrayIcon.h"
 #include "system/FloatingIcon.h"
@@ -55,6 +56,9 @@ static FloatingIcon g_floatingIcon;
 static HookEngine g_hookEngine;
 static SharedStateManager g_sharedState;
 static std::unique_ptr<QuickConvert> g_quickConvert;
+static HotkeyManager g_hotkeyManager;
+static HotkeyManager::SlotId g_toggleHotkeySlot = 0;
+static HotkeyManager::SlotId g_convertHotkeySlot = 0;
 static HINSTANCE g_hInstance = nullptr;
 
 // Forward declarations
@@ -94,7 +98,7 @@ static void SpawnSettingsDialog() {
         // Reload convert config for QuickConvert + hotkey
         {
             auto cc = ConfigManager::LoadConvertConfigOrDefault();
-            g_hookEngine.SetConvertHotkey(cc.hotkey);
+            g_hotkeyManager.UpdateHotkey(g_convertHotkeySlot, cc.hotkey);
             if (g_quickConvert) {
                 g_quickConvert->UpdateConfig(cc);
             }
@@ -468,23 +472,35 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // ── QuickConvert ──
 
+    HotkeyConfig convertHotkeyCfg{};
     {
         auto convertConfig = ConfigManager::LoadConvertConfigOrDefault();
+        convertHotkeyCfg = convertConfig.hotkey;
         g_quickConvert = std::make_unique<QuickConvert>(convertConfig);
 
-        g_hookEngine.SetConvertHotkey(convertConfig.hotkey);
-        g_hookEngine.SetConvertCallback([]() {
-            if (g_quickConvert) {
-                g_quickConvert->Execute();
-            }
-        });
-
         g_hookEngine.SetConfigReloadCallback([]() {
-            if (g_quickConvert) {
-                auto cc = ConfigManager::LoadConvertConfigOrDefault();
-                g_quickConvert->UpdateConfig(cc);
-            }
+            auto cc = ConfigManager::LoadConvertConfigOrDefault();
+            if (g_quickConvert) g_quickConvert->UpdateConfig(cc);
+            g_hotkeyManager.UpdateHotkey(g_convertHotkeySlot, cc.hotkey);
+            g_trayIcon.RefreshConvertHotkeyCache(cc);
+
+            auto hk = ConfigManager::LoadHotkeyConfigOrDefault();
+            g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
         });
+    }
+
+    // ── HotkeyManager (toggle V/E + quick convert) ──
+
+    {
+        HWND trayWnd = g_trayIcon.GetMessageWindow();
+        g_toggleHotkeySlot = g_hotkeyManager.AddHotkey(hotkeyConfig, [trayWnd]() {
+            if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
+        });
+        g_convertHotkeySlot = g_hotkeyManager.AddHotkey(convertHotkeyCfg, []() {
+            g_hookEngine.CommitPending();
+            if (g_quickConvert) g_quickConvert->Execute();
+        });
+        g_hotkeyManager.Initialize(hInstance);
     }
 
     // ── Timer resolution ──
@@ -496,7 +512,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
-    if (!g_hookEngine.Start(hInstance, config, hotkeyConfig, startVietnamese, systemConfig.startupMode)) {
+    if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
         timeEndPeriod(1);
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"NexusKey", MB_ICONERROR);
         OleUninitialize();
@@ -565,6 +581,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // ── Cleanup ──
 
     CleanupFloatingIcon();
+    g_hotkeyManager.Uninstall();
     g_hookEngine.Stop();
     timeEndPeriod(1);
     g_trayIcon.Destroy();

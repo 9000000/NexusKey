@@ -60,6 +60,12 @@ HookEngine::~HookEngine() {
     Stop();
 }
 
+void HookEngine::CommitPending() {
+    if (engine_ && engine_->Count() > 0) {
+        CommitComposition();
+    }
+}
+
 void HookEngine::ApplyConfig(const TypingConfig& config) {
     beepOnSwitch_ = config.beepOnSwitch;
     smartSwitch_ = config.smartSwitch;
@@ -73,7 +79,7 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     autoCapsMacro_ = config.autoCapsMacro;
 }
 
-bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const HotkeyConfig& hotkey,
+bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
                         bool initialVietnamese, uint8_t startupMode) {
     if (keyboardHook_) return false;  // Already running
 
@@ -83,7 +89,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
 #endif
 
     s_instance = this;
-    hotkeyConfig_ = hotkey;
     currentMethod_ = config.inputMethod;
     config_ = config;
     ApplyConfig(config);
@@ -119,15 +124,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     // Load excluded apps and TSF apps
     ReloadExcludedApps();
     ReloadTsfApps();
-
-    // Pre-compute VK code for hotkey character (layout-aware)
-    hotkeyVk_ = 0;
-    if (hotkeyConfig_.key != 0) {
-        SHORT vkResult = VkKeyScanW(hotkeyConfig_.key);
-        if (vkResult != -1) {
-            hotkeyVk_ = LOBYTE(vkResult);
-        }
-    }
 
     // Initialize config event for reload detection
     configEvent_.Initialize();
@@ -468,38 +464,8 @@ void HookEngine::ReloadFromToml() {
         }
     }
 
-    // Reload hotkey config — prefer SharedState (instant), fallback to TOML
-    {
-        HotkeyConfig newHotkey{};
-        bool fromSharedState = false;
-        if (sharedStatePtr_) {
-            SharedState st = sharedStatePtr_->Read();
-            if (st.IsValid()) {
-                newHotkey = st.GetHotkey();
-                fromSharedState = true;
-            }
-        }
-        if (!fromSharedState) {
-            auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
-            if (hotkeyOpt) newHotkey = *hotkeyOpt;
-        }
-        hotkeyConfig_ = newHotkey;
-        hotkeyVk_ = 0;
-        if (hotkeyConfig_.key != 0) {
-            SHORT vkResult = VkKeyScanW(hotkeyConfig_.key);
-            if (vkResult != -1) {
-                hotkeyVk_ = LOBYTE(vkResult);
-            }
-        }
-    }
-
-    // Reload convert hotkey config
-    auto convertConfigOpt = ConfigManager::LoadConvertConfig(ConfigManager::GetConfigPath());
-    if (convertConfigOpt) {
-        SetConvertHotkey(convertConfigOpt->hotkey);
-    }
-
-    // Notify main process to update QuickConvert config etc.
+    // Notify main process to reload hotkey / QuickConvert configs.
+    // Main owns HotkeyManager slots and calls UpdateHotkey there.
     if (configReloadCallback_) {
         configReloadCallback_();
     }
@@ -644,28 +610,6 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         excludedPid_ = 0;
         NotifyModeChange();
         // Fall through to normal processing for this keystroke
-    }
-
-    // 2. Check modifier+key hotkey (e.g., Alt+~) BEFORE invalidating modifier-only combo
-    if (hotkeyVk_ != 0 && vkCode == hotkeyVk_ && CheckHotkeyMatch()) {
-        HOOK_LOG(L"  HOTKEY match (modifier+key): vk=0x%02X", vkCode);
-        if (engine_->Count() > 0) {
-            CommitComposition();
-        }
-        ToggleVietnameseMode();
-        return true;  // Eat the hotkey
-    }
-
-    // 2b. Check convert hotkey (modifier+key variant)
-    if (convertHotkeyVk_ != 0 && vkCode == convertHotkeyVk_ && CheckConvertHotkeyMatch()) {
-        HOOK_LOG(L"  CONVERT HOTKEY match (modifier+key): vk=0x%02X", vkCode);
-        if (engine_->Count() > 0) {
-            CommitComposition();
-        }
-        if (convertCallback_) {
-            convertCallback_();
-        }
-        return true;  // Eat the hotkey
     }
 
     // Non-modifier key pressed — invalidate modifier-only hotkey combo
@@ -1083,27 +1027,6 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                        vkCode == VK_LWIN || vkCode == VK_RWIN);
 
     if (isModifier) {
-        // Modifier-only hotkey (e.g., Ctrl+Shift): trigger on release,
-        // but only if no other key was pressed and no key is configured
-        if (hotkeyVk_ == 0 && !otherKeyPressed_ && CheckHotkeyMatch()) {
-            HOOK_LOG(L"  HOTKEY match (modifier-only release): vk=0x%02X", vkCode);
-            if (engine_->Count() > 0) {
-                CommitComposition();
-            }
-            ToggleVietnameseMode();
-        }
-
-        // Modifier-only convert hotkey
-        if (convertHotkeyVk_ == 0 && !otherKeyPressed_ && CheckConvertHotkeyMatch()) {
-            HOOK_LOG(L"  CONVERT HOTKEY match (modifier-only release): vk=0x%02X", vkCode);
-            if (engine_->Count() > 0) {
-                CommitComposition();
-            }
-            if (convertCallback_) {
-                convertCallback_();
-            }
-        }
-
         // Double-Alt tap: temporarily disable Vietnamese for current word
         if (tempOffByAlt_ &&
             (vkCode == VK_LMENU || vkCode == VK_RMENU) &&
@@ -2478,7 +2401,7 @@ void HookEngine::SendBackspaces(size_t count) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// Hotkey Detection (absorbed from HotkeyManager)
+// Modifier Tracking — feeds double-Alt + layout-change detection
 // ═══════════════════════════════════════════════════════════
 
 void HookEngine::TrackModifier(DWORD vkCode, bool isDown) {
@@ -2499,58 +2422,6 @@ void HookEngine::TrackModifier(DWORD vkCode, bool isDown) {
             if (isDown && !modWinDown_) { modWinDown_ = true; otherKeyPressed_ = false; }
             else if (!isDown) modWinDown_ = false;
             break;
-    }
-}
-
-bool HookEngine::CheckHotkeyMatch() const {
-    // No hotkey configured
-    if (!hotkeyConfig_.ctrl && !hotkeyConfig_.shift &&
-        !hotkeyConfig_.alt && !hotkeyConfig_.win && hotkeyConfig_.key == 0) {
-        return false;
-    }
-
-    // Strict XOR matching: modifiers must match EXACTLY (like OpenKey)
-    bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-    bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-    bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-    bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
-
-    if (hotkeyConfig_.ctrl != ctrl) return false;
-    if (hotkeyConfig_.alt != alt) return false;
-    if (hotkeyConfig_.shift != shift) return false;
-    if (hotkeyConfig_.win != win) return false;
-
-    return true;
-}
-
-bool HookEngine::CheckConvertHotkeyMatch() const {
-    // No convert hotkey configured
-    if (!convertHotkeyConfig_.ctrl && !convertHotkeyConfig_.shift &&
-        !convertHotkeyConfig_.alt && !convertHotkeyConfig_.win && convertHotkeyConfig_.key == 0) {
-        return false;
-    }
-
-    bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-    bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-    bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-    bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
-
-    if (convertHotkeyConfig_.ctrl != ctrl) return false;
-    if (convertHotkeyConfig_.alt != alt) return false;
-    if (convertHotkeyConfig_.shift != shift) return false;
-    if (convertHotkeyConfig_.win != win) return false;
-
-    return true;
-}
-
-void HookEngine::SetConvertHotkey(const HotkeyConfig& hotkey) {
-    convertHotkeyConfig_ = hotkey;
-    convertHotkeyVk_ = 0;
-    if (convertHotkeyConfig_.key != 0) {
-        SHORT vkResult = VkKeyScanW(convertHotkeyConfig_.key);
-        if (vkResult != -1) {
-            convertHotkeyVk_ = LOBYTE(vkResult);
-        }
     }
 }
 
