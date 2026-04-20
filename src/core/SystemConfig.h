@@ -30,9 +30,6 @@ struct SystemConfig {
     bool showOnStartup = true;     // Open settings dialog on app startup
     bool desktopShortcut = false;  // Desktop shortcut exists
 
-    // UI language (true=English, false=Vietnamese)
-    bool englishUI = false;
-
     // Theme override
     bool forceLightTheme = false;  // Always use light theme (ignore Windows dark mode)
 
@@ -64,6 +61,9 @@ struct SystemConfig {
     [[nodiscard]] uint32_t GetEffectiveColorE() const noexcept {
         return customColorE != 0 ? customColorE : DEFAULT_ICON_COLOR_E;
     }
+
+    /// Check if UI language is English (derived from language field)
+    [[nodiscard]] bool IsEnglishUI() const noexcept { return language == 1; }
 
     SystemConfig() = default;
 };

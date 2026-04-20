@@ -183,7 +183,7 @@ inline constexpr SettingMeta kSettings[] = {
               "Tạo biểu tượng desktop","Desktop shortcut",
               nullptr, nullptr,                                          2404, 2, 0),
 
-    NK_SYSTEM("english-ui",           englishUI,
+    NK_SYSTEM("english-ui",           language,
               "Giao diện tiếng Anh",  "English interface",
               L"Chuyển menu, thông báo sang tiếng Anh",
               L"Switch menus, notifications to English",            2407, 2, 0),

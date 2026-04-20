@@ -522,7 +522,6 @@ void ClassicSettingsDialog::LoadSettings() {
     config_       = ConfigManager::LoadOrDefault();
     hotkeyConfig_ = ConfigManager::LoadHotkeyConfigOrDefault();
     systemConfig_ = ConfigManager::LoadSystemConfigOrDefault();
-    systemConfig_.englishUI = (systemConfig_.language == 1);
 
     (void)sharedState_.OpenReadWrite();
     (void)configEvent_.Initialize();

@@ -243,9 +243,8 @@ Full-source review covering engine, config/IPC, TSF, HookEngine, dialogs, Classi
   Public `Validate()` declared `noexcept`, calls `ValidateImpl()` which is NOT noexcept. If ValidateImpl ever throws → `std::terminate`.
   **Fix**: Add `noexcept` to `ValidateImpl()` declaration and definition.
 
-- [ ] **`SystemConfig::englishUI` redundant field** — `SystemConfig.h:34`
-  `englishUI` is never persisted to TOML. Only `language` is loaded/saved. Classic UI manually derives `englishUI = (language == 1)`. New code reading `englishUI` directly would always see `false` unless Classic path ran.
-  **Fix**: Remove `englishUI` field, derive it from `language` via a method: `bool IsEnglishUI() const { return language == 1; }`.
+- [x] **`SystemConfig::englishUI` redundant field** — `SystemConfig.h`
+  Fixed: Removed `englishUI` field, added `IsEnglishUI()` method. Updated `SettingMetadata.h` to use `language` field for offset-based UI binding.
 
 - [x] **`Debug.h` buffer overflow behavior** — `Debug.h:23`
   Comment says "Messages longer than 1024 chars are silently truncated" but `vswprintf_s` calls invalid parameter handler (may crash) on overflow. Should use `_vsnwprintf_s` which actually truncates.
