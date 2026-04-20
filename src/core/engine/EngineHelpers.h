@@ -50,22 +50,22 @@ struct EscapeState {
 //=============================================================================
 
 struct QuickConsonantState {
-    size_t idx = SIZE_MAX;       // states_ index of quick consonant result char
-    wchar_t lastKey = 0;         // key that triggered last QC (suppresses consecutive re-trigger)
-    bool onlyQC = false;         // true when buffer is only quick consonant expansion
-    bool escaped = false;        // true after backspace undoes quick consonant
+    size_t resultIndex = SIZE_MAX;  // states_ index of quick consonant result char
+    wchar_t lastKey = 0;            // key that triggered last QC (suppresses consecutive re-trigger)
+    bool onlyQC = false;            // true when buffer is only quick consonant expansion
+    bool escaped = false;           // true after backspace undoes quick consonant
 
     constexpr void Reset() noexcept {
-        idx = SIZE_MAX; lastKey = 0; onlyQC = false; escaped = false;
+        resultIndex = SIZE_MAX; lastKey = 0; onlyQC = false; escaped = false;
     }
     constexpr void clearActive() noexcept {
-        idx = SIZE_MAX; lastKey = 0;
+        resultIndex = SIZE_MAX; lastKey = 0;
     }
     constexpr void markEscaped() noexcept {
         escaped = true; clearActive();
     }
     [[nodiscard]] constexpr bool hasActive() const noexcept {
-        return idx != SIZE_MAX;
+        return resultIndex != SIZE_MAX;
     }
 };
 

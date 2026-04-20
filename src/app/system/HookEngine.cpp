@@ -90,7 +90,7 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config, const Ho
     if (macroEnabled_) {
         macroTable_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
     }
-    autoCapState_ = 0;
+    autoCapState_ = AutoCapState::Idle;
     engine_ = EngineFactory::Create(config);
     vietnameseMode_ = initialVietnamese;
     startupMode_ = startupMode;
@@ -568,7 +568,7 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LO
 
     HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
              self->engine_->Count(), self->previousComposition_.c_str());
-    self->autoCapState_ = 0;
+    self->autoCapState_ = AutoCapState::Idle;
     self->OnFocusChanged(hwnd);
 }
 
@@ -881,15 +881,15 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     if (autoCaps_) {
         // '.', '?', '!'
         if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && cachedShift) || (vkCode == '1' && cachedShift)) {
-            autoCapState_ = 1;
-        } else if (vkCode == VK_SPACE && autoCapState_ == 1) {
-            autoCapState_ = 2;
+            autoCapState_ = AutoCapState::AfterPunct;
+        } else if (vkCode == VK_SPACE && autoCapState_ == AutoCapState::AfterPunct) {
+            autoCapState_ = AutoCapState::ReadyToCapitalize;
         } else if (vkCode == VK_RETURN) {
-            autoCapState_ = 2;
+            autoCapState_ = AutoCapState::ReadyToCapitalize;
         } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
             // Letter key — don't reset, HandleAlphaKey will consume it
         } else {
-            autoCapState_ = 0;
+            autoCapState_ = AutoCapState::Idle;
         }
     }
 
@@ -1169,13 +1169,13 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     //      Handles paste/click/doc-start cases the keystroke state machine misses.
     //   2. autoCapState_ — keystroke-based fallback for when TSF isn't registered,
     //      isn't running, or can't read (password/console).
-    // State-reset policy: anchor-authoritative paths reset `autoCapState_` to 0
+    // State-reset policy: anchor-authoritative paths reset `autoCapState_` to Idle
     // (we just overrode it). Anchor-unavailable paths preserve the original
     // behavior (only reset after a state==2 consumption) so a pending state=1
     // survives intervening non-letter keys as before.
     bool autoCapped = false;
     if (autoCaps_ && engine_->Count() == 0) {
-        const bool keystrokePending = (autoCapState_ == 2);
+        const bool keystrokePending = (autoCapState_ == AutoCapState::ReadyToCapitalize);
         bool anchorUsed = false;
         bool shouldCap = keystrokePending;  // keystroke fallback
         // Only probe the anchor when TSF_READONLY is set — otherwise no writer
@@ -1193,9 +1193,9 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
             ch = towupper(ch);
             autoCapped = (ch != originalCh);
         }
-        // Reset state when we had truth (anchor) or consumed a pending state==2.
+        // Reset state when we had truth (anchor) or consumed a pending ReadyToCapitalize.
         if (anchorUsed || keystrokePending) {
-            autoCapState_ = 0;
+            autoCapState_ = AutoCapState::Idle;
         }
     }
 

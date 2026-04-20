@@ -87,11 +87,9 @@ TypingEngine::TypingEngine(const TypingConfig& config) : config_(config) {
 //-----------------------------------------------------------------------------
 
 void TypingEngine::PushChar(wchar_t c) {
-    // NOTE: buffer cap removed — game-compatible Telex (VK re-inject) lets users
-    // keep V mode while gaming; WASD spam easily exceeds 64 chars without commit.
-    // Memory leak unlikely: engine resets on focus change, click, space, enter.
-    // Restore if unbounded growth becomes an issue:
-    // if (rawInput_.size() >= 64) return;
+    // No buffer cap: game-compatible Telex keeps V mode active while WASD-spamming
+    // can exceed any fixed limit. Relies on Reset() hooks (focus, click, space, enter)
+    // to bound growth in practice.
 
     rawInput_.push_back(c);
     qc_.onlyQC = false;  // Any new char clears the flag
@@ -158,7 +156,7 @@ void TypingEngine::PushChar(wchar_t c) {
             else if (last.base == L't' && lower == L't') replacement = L'h';
             if (replacement) {
                 if (states_.size() == 1) qc_.onlyQC = true;
-                qc_.idx = states_.size();  // Index of the char about to be added
+                qc_.resultIndex = states_.size();  // Index of the char about to be added
                 qc_.lastKey = lower;  // Suppress re-trigger — save ORIGINAL key before update
                 c = isUpper ? towupper(replacement) : replacement;
                 lower = towlower(c);  // Update for downstream ProcessChar
@@ -180,7 +178,7 @@ void TypingEngine::PushChar(wchar_t c) {
                 s.isUpper = upper;
                 s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
                 states_.push_back(s);
-                qc_.idx = states_.size() - 1;  // Index of the ơ just added
+                qc_.resultIndex = states_.size() - 1;  // Index of the ơ just added
                 if (states_.size() == 2) qc_.onlyQC = true;
                 qc_.lastKey = lower;  // Suppress re-trigger on consecutive same key
                 UpdateSpellState();
@@ -1171,7 +1169,7 @@ void TypingEngine::Backspace() {
     // e.g., "aph" + BS → "app" (not "ap"), "rieng" + BS → "rienn".
     // The triggering key is still in rawInput_; re-add it as an escaped literal
     // so the user sees the full original sequence without having to retype.
-    if (qc_.hasActive() && states_.size() - 1 == qc_.idx) {
+    if (qc_.hasActive() && states_.size() - 1 == qc_.resultIndex) {
         // For uu→ươ: undo the horn on the preceding 'u' before popping ơ
         UndoHornU(states_.data(), states_.size() - 1);
 

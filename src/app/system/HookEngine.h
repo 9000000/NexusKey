@@ -189,7 +189,13 @@ private:
     int altTapCount_ = 0;              // 0 or 1 (waiting for second tap)
     DWORD lastAltReleaseTime_ = 0;     // GetTickCount() of first Alt release
     static constexpr DWORD DOUBLE_ALT_TIMEOUT_MS = 400;
-    int autoCapState_ = 0;  // 0=normal, 1=after punct, 2=after punct+space
+    /// Keystroke-based auto-capitalize state machine (used when no TSF anchor truth).
+    enum class AutoCapState : uint8_t {
+        Idle = 0,            // normal typing
+        AfterPunct,          // just saw . ? !
+        ReadyToCapitalize,   // saw punct + space/Enter → next A-Z is the sentence start
+    };
+    AutoCapState autoCapState_ = AutoCapState::Idle;
     std::unordered_set<std::wstring> excludedAppSet_;  // excluded apps: force English on focus
     bool isExcludedApp_ = false;      // cached: current app is excluded
     DWORD excludedPid_ = 0;           // PID of excluded app (fast check in ProcessKeyDown)

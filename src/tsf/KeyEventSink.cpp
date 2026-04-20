@@ -124,8 +124,8 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
 IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
 
-    // Defensive: drop any punct char cached by a previous OnTestKeyDown whose
-    // OnKeyDown pair never fired (rare TSF anomaly). Fresh keystroke = fresh cache.
+    // Drop any punct char cached by a previous OnTestKeyDown whose OnKeyDown pair
+    // never fired (rare TSF anomaly).
     lastPunctChar_ = 0;
 
     // Check if this context blocks input (password, PIN, email fields)
