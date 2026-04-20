@@ -8,7 +8,7 @@
     padding: 0;
     background: var(--bg-glass);
     /* background: rgba(255, 255, 255, 0.05); */
-    border-radius: 8px;
+    border-radius: 0px; /* Let Windows 11 DWM handle the rounded corners to avoid sub-pixel clash */
     box-shadow: var(--shadow-card);
     overflow: hidden;
     /* No width transition - instant resize prevents blur ghost */
