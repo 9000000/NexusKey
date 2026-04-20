@@ -761,14 +761,16 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             HOOK_LOG(L"  commit-undo: cancel — navigation key vk=0x%02X", vkCode);
             CancelCommitUndo();
         } else if (IsCommitTrigger(vkCode) && engine_->Count() == 0) {
-            // Printable commit trigger with engine empty (e.g., second '=' in "a=="):
-            // stay Ready so subsequent BS sequence can still reach Primed.
+            // Printable commit trigger with engine empty (e.g., second '=' in "a==",
+            // second ' ' in "a  "): stay Ready so subsequent BS sequence can reach Primed.
+            // `>=` (not `>`) keeps SPACE in the printable branch — MapVirtualKeyW(VK_SPACE)
+            // returns L' ', which would otherwise fall into the cancel branch.
             wchar_t ch = VkToMacroChar(vkCode);
-            if (ch > L' ') {
+            if (ch >= L' ') {
                 pendingTriggerCount_++;
                 HOOK_LOG(L"  commit-undo: extra trigger '%c' in Ready, pendingTriggers=%u", ch, pendingTriggerCount_);
             } else {
-                // Non-printable trigger (Esc, Tab) → cancel undo
+                // Non-printable trigger (Esc, Tab, Enter) → cancel undo
                 CancelCommitUndo();
             }
         } else {
