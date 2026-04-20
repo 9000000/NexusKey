@@ -1547,6 +1547,108 @@ void HookEngine::ClipboardPaste(const std::wstring& text) {
              text.size(), preEvents.size());
 }
 
+// ═══════════════════════════════════════════════════════════
+// EM_REPLACESEL direct-paste — primary VB6/ANSI path (issue #94)
+// ═══════════════════════════════════════════════════════════
+//
+// Sends text directly into the focused Edit control via EM_REPLACESEL — no
+// clipboard, no SendInput. Preserves undo stack (wParam=TRUE).
+//
+// All SendMessage calls use SMTO_ABORTIFHUNG with a 50ms timeout — the
+// keyboard hook must never block: a hung target app would otherwise freeze
+// every keystroke system-wide.
+
+namespace {
+constexpr size_t kMaxClassName = 64;
+constexpr UINT   kEditMsgTimeoutMs = 50;
+
+HWND GetFocusedChildHwnd() noexcept {
+    HWND fg = GetForegroundWindow();
+    if (!fg) return nullptr;
+    DWORD fgTid = GetWindowThreadProcessId(fg, nullptr);
+    DWORD myTid = GetCurrentThreadId();
+    if (fgTid == myTid) return GetFocus();
+    HWND focused = nullptr;
+    if (AttachThreadInput(myTid, fgTid, TRUE)) {
+        focused = GetFocus();
+        AttachThreadInput(myTid, fgTid, FALSE);
+    }
+    return focused;
+}
+
+// VB6 (ThunderRT6*) apps are the whole reason this path exists — check first.
+// _wcsnicmp is case-insensitive so "RichEdit" matches "RICHEDIT60W" too.
+bool IsEditCompatibleClass(const wchar_t* cls) noexcept {
+    if (!cls || !*cls) return false;
+    if (_wcsnicmp(cls, L"ThunderRT6TextBox", 17) == 0) return true;
+    if (_wcsnicmp(cls, L"ThunderRT6RichText", 18) == 0) return true;
+    if (_wcsicmp(cls, L"Edit") == 0) return true;
+    if (_wcsnicmp(cls, L"RichEdit", 8) == 0) return true;
+    return false;
+}
+}  // namespace
+
+bool HookEngine::TryEditMessagePaste(const std::wstring& text, size_t backspaceCount) noexcept {
+    if (text.empty() && backspaceCount == 0) return true;
+
+    HWND hwnd = GetFocusedChildHwnd();
+    if (!hwnd) {
+        HOOK_LOG(L"  EditMsgPaste: no focused child hwnd");
+        return false;
+    }
+
+    wchar_t cls[kMaxClassName] = {};
+    if (GetClassNameW(hwnd, cls, kMaxClassName) == 0) {
+        HOOK_LOG(L"  EditMsgPaste: GetClassName failed");
+        return false;
+    }
+    if (!IsEditCompatibleClass(cls)) {
+        HOOK_LOG(L"  EditMsgPaste: incompatible class='%s'", cls);
+        return false;
+    }
+
+    constexpr UINT kFlags = SMTO_ABORTIFHUNG | SMTO_NORMAL;
+    DWORD_PTR dummy = 0;
+    DWORD newStart = 0, selEnd = 0;
+
+    if (backspaceCount > 0) {
+        DWORD selStart = 0;
+        if (!SendMessageTimeoutW(hwnd, EM_GETSEL,
+                                 reinterpret_cast<WPARAM>(&selStart),
+                                 reinterpret_cast<LPARAM>(&selEnd),
+                                 kFlags, kEditMsgTimeoutMs, &dummy)) {
+            HOOK_LOG(L"  EditMsgPaste: EM_GETSEL timed out (class='%s')", cls);
+            return false;
+        }
+        if (static_cast<DWORD>(backspaceCount) > selEnd) {
+            HOOK_LOG(L"  EditMsgPaste: BS=%zu > caret=%u (class='%s')",
+                     backspaceCount, selEnd, cls);
+            return false;
+        }
+        newStart = selEnd - static_cast<DWORD>(backspaceCount);
+        if (!SendMessageTimeoutW(hwnd, EM_SETSEL,
+                                 static_cast<WPARAM>(newStart),
+                                 static_cast<LPARAM>(selEnd),
+                                 kFlags, kEditMsgTimeoutMs, &dummy)) {
+            HOOK_LOG(L"  EditMsgPaste: EM_SETSEL timed out (class='%s')", cls);
+            return false;
+        }
+    }
+
+    // wParam=TRUE → operation goes on the undo stack (Ctrl+Z works).
+    if (!SendMessageTimeoutW(hwnd, EM_REPLACESEL,
+                             static_cast<WPARAM>(TRUE),
+                             reinterpret_cast<LPARAM>(text.c_str()),
+                             kFlags, kEditMsgTimeoutMs, &dummy)) {
+        HOOK_LOG(L"  EditMsgPaste: EM_REPLACESEL timed out (class='%s')", cls);
+        return false;
+    }
+
+    HOOK_LOG(L"  EditMsgPaste: class='%s' sel=[%u,%u] BS=%zu text='%s' OK",
+             cls, newStart, selEnd, backspaceCount, text.c_str());
+    return true;
+}
+
 /// Dispatch backspace + character events via SendInput.
 /// Handles split (Electron/Console) vs batch (Win32) strategy in one place.
 /// NOTE: batch path appends charEvents into bsEvents — callers must not reuse after calling.
@@ -2243,9 +2345,11 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
              previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
              toSend.c_str());
 
-    // ── Clipboard paste for ANSI windows ──
+    // ── VB6 / ANSI-internal windows ──
     // ANSI windows can't handle KEYEVENTF_UNICODE (VK_PACKET) — Vietnamese chars become '?'.
-    // Fallback: set clipboard + simulate Ctrl+V. Backspaces (VK_BACK) work fine on all windows.
+    // Primary path: EM_REPLACESEL directly into the focused Edit/RichEdit/ThunderRT6
+    // child (no clipboard side-effect). Fallback: clipboard paste when the focused
+    // child isn't a compatible Edit control.
     //
     // When reinjectVk != 0: HandleAlphaKey appended originalCh to previousComposition_
     // for game-compat tracking, but the physical key was blocked and never reached the
@@ -2254,7 +2358,14 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     if (ShouldUseClipboard()) {
         size_t bsCount = backspaceCount;
         if (reinjectVk != 0 && bsCount > 0) bsCount--;
-        HOOK_LOG(L"  ReplaceComposition[clipboard]: ANSI window, BS=%zu (raw=%zu reinject=0x%X) send='%s'",
+
+        if (TryEditMessagePaste(toSend, bsCount)) {
+            previousComposition_ = newText;
+            if (synthEventsPending_ > 0) hadSynthInWord_ = true;
+            return;
+        }
+
+        HOOK_LOG(L"  ReplaceComposition[clipboard]: fallback BS=%zu (raw=%zu reinject=0x%X) send='%s'",
                  bsCount, backspaceCount, reinjectVk, toSend.c_str());
         if (bsCount > 0) {
             SendBackspaceEvents(bsCount);

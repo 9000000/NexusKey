@@ -124,6 +124,11 @@ private:
     [[nodiscard]] bool ShouldUseClipboard() const noexcept;
     void ClipboardPaste(const std::wstring& text);
 
+    // Direct EM_REPLACESEL into focused Edit/RichEdit/VB6 TextBox — no clipboard touched.
+    // Primary VB6/ANSI-window path. Returns false if the focused control isn't a
+    // compatible Edit class; caller falls back to ClipboardPaste.
+    [[nodiscard]] bool TryEditMessagePaste(const std::wstring& text, size_t backspaceCount) noexcept;
+
     // Modifier state tracking (used by double-Alt and layout change detection)
     void TrackModifier(DWORD vkCode, bool isDown);
 
