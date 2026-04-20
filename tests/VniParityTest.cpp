@@ -723,5 +723,89 @@ TEST_F(VniParitySpellExclusionTest, ZwjfOff_NoExclusion_StillBlocked) {
     EXPECT_EQ(eng.Peek(), L"zo6");
 }
 
+// ============================================================================
+// SeedFromText — revive composition from committed Vietnamese text (VNI mode)
+// ============================================================================
+
+TEST_F(VniParityTest, Seed_Empty) {
+    EXPECT_TRUE(engine_->SeedFromText(L""));
+    EXPECT_EQ(engine_->Count(), 0u);
+    EXPECT_EQ(engine_->Peek(), L"");
+}
+
+TEST_F(VniParityTest, Seed_PlainAscii) {
+    EXPECT_TRUE(engine_->SeedFromText(L"go"));
+    EXPECT_EQ(engine_->Peek(), L"go");
+    EXPECT_EQ(engine_->Count(), 2u);
+}
+
+TEST_F(VniParityTest, Seed_ThenAddTone) {
+    // Seed "go", VNI '1' = sắc → "gó"
+    ASSERT_TRUE(engine_->SeedFromText(L"go"));
+    engine_->PushChar(L'1');
+    EXPECT_EQ(engine_->Peek(), L"gó");
+}
+
+TEST_F(VniParityTest, Seed_TonedVowel_ThenChangeTone) {
+    // Seed "gõ" (tilde), VNI '1' = sắc → acute replaces tilde → "gó"
+    ASSERT_TRUE(engine_->SeedFromText(L"gõ"));
+    EXPECT_EQ(engine_->Peek(), L"gõ");
+    engine_->PushChar(L'1');
+    EXPECT_EQ(engine_->Peek(), L"gó");
+}
+
+TEST_F(VniParityTest, Seed_ModifiedVowel_Backspace) {
+    ASSERT_TRUE(engine_->SeedFromText(L"â"));
+    EXPECT_EQ(engine_->Count(), 1u);
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Count(), 0u);
+}
+
+TEST_F(VniParityTest, Seed_FullSyllable) {
+    ASSERT_TRUE(engine_->SeedFromText(L"tiếng"));
+    EXPECT_EQ(engine_->Peek(), L"tiếng");
+    EXPECT_EQ(engine_->Count(), 5u);
+}
+
+TEST_F(VniParityTest, Seed_DStroke) {
+    ASSERT_TRUE(engine_->SeedFromText(L"đẹp"));
+    EXPECT_EQ(engine_->Peek(), L"đẹp");
+    EXPECT_EQ(engine_->Count(), 3u);
+}
+
+TEST_F(VniParityTest, Seed_UpperCasePreserved) {
+    ASSERT_TRUE(engine_->SeedFromText(L"Tiếng"));
+    EXPECT_EQ(engine_->Peek(), L"Tiếng");
+}
+
+TEST_F(VniParityTest, Seed_RejectsNonLetter_Space) {
+    EXPECT_FALSE(engine_->SeedFromText(L"go "));
+    EXPECT_EQ(engine_->Count(), 0u);
+}
+
+TEST_F(VniParityTest, Seed_RejectsNonLetter_Punct) {
+    EXPECT_FALSE(engine_->SeedFromText(L"go."));
+    EXPECT_EQ(engine_->Count(), 0u);
+}
+
+TEST_F(VniParityTest, Seed_Horn_ThenTone) {
+    // Seed "ư", VNI '1' = sắc → "ứ"
+    ASSERT_TRUE(engine_->SeedFromText(L"ư"));
+    engine_->PushChar(L'1');
+    EXPECT_EQ(engine_->Peek(), L"ứ");
+}
+
+TEST_F(VniParityTest, Seed_OverridesPreviousState) {
+    TypeString(*engine_, L"hello");
+    ASSERT_TRUE(engine_->SeedFromText(L"go"));
+    EXPECT_EQ(engine_->Peek(), L"go");
+    EXPECT_EQ(engine_->Count(), 2u);
+}
+
+TEST_F(VniParityTest, Seed_LatinOnlyWord_Succeeds) {
+    EXPECT_TRUE(engine_->SeedFromText(L"system"));
+    EXPECT_EQ(engine_->Peek(), L"system");
+}
+
 }  // namespace
 }  // namespace NextKey

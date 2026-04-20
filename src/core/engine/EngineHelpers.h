@@ -4,8 +4,8 @@
 // Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
 // See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
-// Template helpers shared between TelexEngine and VniEngine.
-// Eliminates logic duplication for spell check and auto-restore.
+// Template helpers used by TypingEngine (Telex, VNI, and Combined input methods).
+// Templated so call sites stay structural-only against CharState.
 
 #pragma once
 
@@ -436,7 +436,7 @@ template<typename CharStateT>
 }
 
 /// Check if states_ contains a modifier that the given key could escape.
-/// Used by both TelexEngine and VniEngine to bypass the spellCheckDisabled_ gate
+/// Used by TypingEngine to bypass the spellCheckDisabled_ gate
 /// for modifier escape (ww undoes horn, dd undoes stroke, etc.).
 /// @param mod  The modifier type the key would apply/escape.
 /// @param isStroke  True if checking for stroke-d (searches IsD() instead of IsVowel()).
@@ -456,7 +456,7 @@ template<typename CharStateT, typename ModifierT>
 
 /// Shared FindToneTarget algorithm — returns the index of the vowel that should
 /// receive the tone mark, using priority: P1 horn > P2 modified > P3 diphthong > P4 rightmost.
-/// Returns SIZE_MAX if no vowel found. Used by both TelexEngine and VniEngine.
+/// Returns SIZE_MAX if no vowel found.
 template<typename CharStateT>
 [[nodiscard]] inline size_t FindToneTargetImpl(
         const CharStateT* states, size_t count,

@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 #include "core/engine/TelexEngine.h"
-#include "core/engine/VniEngine.h"
+#include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
 #include "core/ipc/SharedState.h"
 #include "TestHelper.h"
@@ -538,17 +538,17 @@ protected:
     void SetUp() override {
         classicConfig_.inputMethod = InputMethod::VNI;
         classicConfig_.modernOrtho = false;
-        classic_ = std::make_unique<Vni::VniEngine>(classicConfig_);
+        classic_ = std::make_unique<TypingEngine>(classicConfig_);
 
         modernConfig_.inputMethod = InputMethod::VNI;
         modernConfig_.modernOrtho = true;
-        modern_ = std::make_unique<Vni::VniEngine>(modernConfig_);
+        modern_ = std::make_unique<TypingEngine>(modernConfig_);
     }
 
     TypingConfig classicConfig_;
     TypingConfig modernConfig_;
-    std::unique_ptr<Vni::VniEngine> classic_;
-    std::unique_ptr<Vni::VniEngine> modern_;
+    std::unique_ptr<TypingEngine> classic_;
+    std::unique_ptr<TypingEngine> modern_;
 };
 
 TEST_F(VniModernOrthoTest, UA_Classic_ToneOnFirst) {
@@ -986,7 +986,7 @@ TEST(FeatureOptionsFactory, VniEngine_ModernOrtho_ViaConfig) {
     config.inputMethod = InputMethod::VNI;
     config.modernOrtho = true;
 
-    Vni::VniEngine engine(config);
+    TypingEngine engine(config);
     TypeString(engine, L"ai1");
     // Modern diphthong-aware: tone on 'a'
     EXPECT_EQ(engine.Peek(), L"ái");

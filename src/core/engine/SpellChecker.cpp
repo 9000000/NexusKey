@@ -9,7 +9,6 @@
 
 #include "SpellChecker.h"
 #include "TelexEngine.h"
-#include "VniEngine.h"
 #include <algorithm>
 #include <cwctype>
 
@@ -396,7 +395,7 @@ auto GetTone(const CharStateT* states, size_t count) {
 
 template<typename ModT>
 uint8_t ModOrdinal(ModT mod) {
-    // Both Telex::Modifier and Vni::Modifier have:
+    // Telex::Modifier exposes:
     // None=0, Circumflex=1, Breve=2, Horn=3
     // Vni also has Stroke=4 but that's only for đ
     auto val = static_cast<uint8_t>(mod);
@@ -776,9 +775,8 @@ Result Validate(const CharStateT* states, size_t count, bool allowZwjf) noexcept
     return ValidateImpl(states, count, allowZwjf);
 }
 
-// Explicit instantiations for both engine types
+// Explicit instantiation — TypingEngine reuses Telex::CharState for both Telex and VNI modes.
 template Result Validate<Telex::CharState>(const Telex::CharState* states, size_t count, bool allowZwjf) noexcept;
-template Result Validate<Vni::CharState>(const Vni::CharState* states, size_t count, bool allowZwjf) noexcept;
 
 }  // namespace SpellCheck
 }  // namespace NextKey

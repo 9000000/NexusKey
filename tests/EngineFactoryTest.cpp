@@ -4,8 +4,7 @@
 #include <gtest/gtest.h>
 #include "core/engine/EngineFactory.h"
 #include "core/engine/IInputEngine.h"
-#include "core/engine/TelexEngine.h"
-#include "core/engine/VniEngine.h"
+#include "core/engine/TypingEngine.h"
 
 namespace NextKey {
 namespace {

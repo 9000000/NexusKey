@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include "core/engine/SpellChecker.h"
 #include "core/engine/TelexEngine.h"
-#include "core/engine/VniEngine.h"
+#include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
 #include "TestHelper.h"
 
@@ -529,7 +529,7 @@ TEST_F(TelexSpellCheckTest, StopFinal_WithOnset_Hook_Blocked) {
 }
 
 //=============================================================================
-// Engine Integration Tests — VniEngine with spellCheck ON
+// Engine Integration Tests — TypingEngine (VNI mode) with spellCheck ON
 //=============================================================================
 
 class VniSpellCheckTest : public ::testing::Test {
@@ -544,14 +544,14 @@ protected:
 
 TEST_F(VniSpellCheckTest, ValidSyllable_ToneApplied) {
     // "ba" + '1' → "bá"
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"ba1");
     EXPECT_EQ(engine.Peek(), L"bá");
 }
 
 TEST_F(VniSpellCheckTest, InvalidSyllable_ToneBlocked) {
     // "bl" + '1' → "bl1" (blocked)
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"bl1");
     EXPECT_EQ(engine.Peek(), L"bl1");
 }
@@ -559,20 +559,20 @@ TEST_F(VniSpellCheckTest, InvalidSyllable_ToneBlocked) {
 TEST_F(VniSpellCheckTest, VowelMod_NotBlocked) {
     // Modifiers are NOT gated by spell check
     // "bl" + '6' → no vowel to apply circumflex → falls through to ProcessChar → "bl6"
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"bl6");
     EXPECT_EQ(engine.Peek(), L"bl6");
 }
 
 TEST_F(VniSpellCheckTest, Stroke_NotBlocked) {
     // "d" + '9' → "đ" (stroke is NOT gated)
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"d9");
     EXPECT_EQ(engine.Peek(), L"đ");
 }
 
 TEST_F(VniSpellCheckTest, BackspaceRestoresToneAbility) {
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"bl");
     engine.PushChar(L'1');
     EXPECT_EQ(engine.Peek(), L"bl1");
@@ -589,14 +589,14 @@ TEST_F(VniSpellCheckTest, BackspaceRestoresToneAbility) {
 
 TEST_F(VniSpellCheckTest, StopFinal_OC3_DirectLiteral) {
     // First '3' is now blocked by pre-tone check → literal immediately
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"oc3");
     EXPECT_EQ(engine.Peek(), L"oc3");
 }
 
 TEST_F(VniSpellCheckTest, StopFinal_OC33_BothLiteral) {
     // Both '3' are literal (no pending tone to escape)
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"oc33");
     EXPECT_EQ(engine.Peek(), L"oc33");
 }
@@ -605,42 +605,42 @@ TEST_F(VniSpellCheckTest, StopFinal_OC33_BothLiteral) {
 
 TEST_F(VniSpellCheckTest, StopFinal_Grave_Blocked) {
     // "oc" + '2' (Grave) → literal
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"oc2");
     EXPECT_EQ(engine.Peek(), L"oc2");
 }
 
 TEST_F(VniSpellCheckTest, StopFinal_Hook_Blocked) {
     // "oc" + '3' (Hook) → literal
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"oc3");
     EXPECT_EQ(engine.Peek(), L"oc3");
 }
 
 TEST_F(VniSpellCheckTest, StopFinal_Tilde_Blocked) {
     // "oc" + '4' (Tilde) → literal
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"oc4");
     EXPECT_EQ(engine.Peek(), L"oc4");
 }
 
 TEST_F(VniSpellCheckTest, StopFinal_Acute_Allowed) {
     // "oc" + '1' (Acute) → "óc" (plain 'o' + acute, no circumflex)
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"oc1");
     EXPECT_EQ(engine.Peek(), L"óc");
 }
 
 TEST_F(VniSpellCheckTest, StopFinal_Dot_Allowed) {
     // "oc" + '5' (Dot) → "ọc"
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"oc5");
     EXPECT_EQ(engine.Peek(), L"ọc");
 }
 
 TEST_F(VniSpellCheckTest, SpellCheckOff_StopFinal_NotBlocked) {
     config_.spellCheckEnabled = false;
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"oc3");
     EXPECT_EQ(engine.Peek(), L"ỏc");
 }
@@ -853,7 +853,7 @@ protected:
 
 TEST_F(SmartAccentVniTest, ToneBlockedOnInvalidSyllable_Bla1) {
     // "bla" is invalid → '1' tone blocked by spell check → literal
-    Vni::VniEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"bla1");
     EXPECT_EQ(engine.Peek(), L"bla1");
 }

@@ -31,7 +31,7 @@ enum class LanguageBias : uint8_t {
     Vietnamese    // Confirmed Vietnamese pattern
 };
 
-// Shared state struct — embedded in both TelexEngine and VniEngine
+// Shared state struct embedded in TypingEngine.
 struct EnglishProtectionState {
     LanguageBias bias = LanguageBias::Unknown;
     wchar_t lastToneKey = 0;
@@ -100,7 +100,7 @@ struct EnglishProtectionState {
 
 /// Check if a y-initial sequence is a valid Vietnamese pattern.
 /// Valid: yê + u/n/m/t (yêu, yên, yếu, yết...)
-/// Template works with both Telex::CharState and Vni::CharState.
+/// Template works structurally against Telex::CharState (shared across input methods).
 template<typename CharStateT>
 [[nodiscard]] inline bool IsValidVietnameseYSequence(
         const CharStateT* states, size_t count) noexcept {
@@ -293,7 +293,7 @@ template<typename CharStateT>
 /// 3+ consonants after a vowel are always invalid.
 ///
 /// Called from CheckEnglishBias after each new consonant is added.
-/// Template works with both Telex::CharState and Vni::CharState.
+/// Template works structurally against Telex::CharState (shared across input methods).
 template<typename CharStateT>
 [[nodiscard]] inline bool IsInvalidVietnameseCoda(
         const CharStateT* states, size_t count) noexcept {
@@ -326,7 +326,7 @@ template<typename CharStateT>
 
 /// Analyze states and update English protection bias.
 /// Call after each PushChar() that adds a new state.
-/// Template works with both Telex::CharState and Vni::CharState.
+/// Template works structurally against Telex::CharState (shared across input methods).
 template<typename CharStateT>
 inline void CheckEnglishBias(const CharStateT* states, size_t count,
                              EnglishProtectionState& prot) noexcept {

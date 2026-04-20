@@ -29,8 +29,6 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/TypingEngine.cpp
     src/core/engine/TypingEngine.h
     src/core/engine/TelexEngine.h
-    src/core/engine/VniEngine.cpp
-    src/core/engine/VniEngine.h
     src/core/engine/EngineFactory.cpp
     src/core/engine/EngineFactory.h
     src/core/engine/IInputEngine.h
@@ -380,7 +378,6 @@ enable_testing()
 set(NEXTKEY_TEST_SOURCES
     tests/TelexEngineTest.cpp
     tests/CombinedEngineTest.cpp
-    tests/VniEngineTest.cpp
     tests/VniParityTest.cpp
     tests/TelexDictionaryTest.cpp
     tests/EngineFactoryTest.cpp

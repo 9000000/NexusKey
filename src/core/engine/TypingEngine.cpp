@@ -928,7 +928,7 @@ bool TypingEngine::ProcessWModifier(wchar_t c) {
 
 //-----------------------------------------------------------------------------
 // D-Modifier Processing (dd → đ)
-// Scan logic shared with VniEngine via FindStrokeDTarget (EngineHelpers.h)
+// Scan logic via FindStrokeDTarget (EngineHelpers.h)
 //-----------------------------------------------------------------------------
 
 bool TypingEngine::ProcessDModifier(wchar_t c) {

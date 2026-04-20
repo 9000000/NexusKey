@@ -1,10 +1,10 @@
 // NexusKey - Engine CPU Benchmark Tests
 // SPDX-License-Identifier: GPL-3.0-only
-// Measures per-keystroke latency and throughput for TelexEngine and VniEngine.
+// Measures per-keystroke latency and throughput for Telex and VNI input methods.
 
 #include <gtest/gtest.h>
 #include "core/engine/TelexEngine.h"
-#include "core/engine/VniEngine.h"
+#include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
 #include "TestHelper.h"
 #include <chrono>
@@ -19,7 +19,6 @@ namespace {
 using Clock = std::chrono::high_resolution_clock;
 using Nanoseconds = std::chrono::nanoseconds;
 using Telex::TelexEngine;
-using Vni::VniEngine;
 using Testing::TypeString;
 
 // ---------------------------------------------------------------------------
@@ -266,7 +265,7 @@ TEST_F(EngineBenchmarkTest, Telex_PeekCost) {
 
 TEST_F(EngineBenchmarkTest, Vni_ShortWord_TypeAndCommit) {
     config_.inputMethod = InputMethod::VNI;
-    VniEngine engine(config_);
+    TypingEngine engine(config_);
 
     auto r = RunBenchmark([&]() {
         engine.Reset();

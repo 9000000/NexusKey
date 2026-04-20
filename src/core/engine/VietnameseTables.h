@@ -5,7 +5,7 @@
 // See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
 // Flat constexpr arrays for O(1) composition lookups.
-// Shared between TelexEngine and VniEngine.
+// Used by TypingEngine (Telex, VNI, and Combined input methods).
 
 #pragma once
 
@@ -283,8 +283,7 @@ constexpr uint8_t kDiphthongModern[6][6] = {
 }
 
 //=============================================================================
-// Shared character classification — no towlower() call
-// Used by both TelexEngine and VniEngine (eliminates duplicate code)
+// Shared character classification — no towlower() call.
 //=============================================================================
 
 /// Vowel check handling both cases directly (no locale-dependent towlower)

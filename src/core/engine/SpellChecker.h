@@ -8,7 +8,7 @@
 //   [C₁] + V + [C₂]
 // where C₁ is initial consonant, V is vowel nucleus, C₂ is final consonant.
 //
-// Template API works with both Telex::CharState and Vni::CharState.
+// Template API takes Telex::CharState (shared across Telex/VNI/Combined modes).
 
 #pragma once
 
@@ -26,9 +26,9 @@ enum class Result : uint8_t {
 };
 
 /// Validate a sequence of CharState objects as a Vietnamese syllable.
-/// Template works with both Telex::CharState and Vni::CharState.
-/// Both have: base (wchar_t), mod (enum with None/Circumflex/Breve/Horn),
-///            IsVowel(), IsD(), tone (enum with None/Acute/Grave/Hook/Tilde/Dot)
+/// Template is structural over CharState, which must expose:
+///   base (wchar_t), mod (enum with None/Circumflex/Breve/Horn),
+///   IsVowel(), IsD(), tone (enum with None/Acute/Grave/Hook/Tilde/Dot)
 /// @param allowZwjf When true, accept z/j/w/f as valid initial consonants
 ///                  (z/j≡gi, w≡qu, f≡ph)
 template<typename CharStateT>
