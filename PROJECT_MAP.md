@@ -50,7 +50,7 @@ NexusKey/
 │   │
 │   ├── tsf/                           # ← NextKeyTSF (DLL)
 │   │   ├── TextService.cpp/h          # ITfTextInputProcessorEx — TSF entry point
-│   │   ├── KeyEventSink.cpp/h         # ITfKeyEventSink — keystroke handling
+│   │   ├── KeyEventSink.cpp/h         # ITfKeyEventSink — keystroke handling (OnKeyDown must be self-sufficient: Chromium hosts skip OnTestKeyDown)
 │   │   ├── EngineController.cpp/h     # Owns IInputEngine, orchestrates typing (17K cpp)
 │   │   ├── CompositionManager.cpp/h   # ITfComposition management
 │   │   ├── LanguageBarButton.cpp/h    # V/E toggle on language bar (11K cpp)

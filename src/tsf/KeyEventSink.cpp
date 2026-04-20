@@ -171,20 +171,10 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
         return S_OK;
     }
 
-    // Enter -> commit composition. Eat Enter if we have buffer so the app
-    // doesn't also insert a newline after the commit. Defer the actual commit
-    // (doc mutation) to OnKeyDown — spec forbids mutation in the test phase.
-    if (wParam == VK_RETURN) {
-        if (pEngineController_->HasEngineBuffer()) {
-            *pfEaten = TRUE;
-            lastTestedVk_ = static_cast<UINT>(wParam);
-            lastWantKeyResult_ = false;  // marker: eaten-for-deferred-commit
-            lastPunctChar_ = 0;
-            return S_OK;
-        }
-        *pfEaten = FALSE;  // No composition, pass Enter through normally
-        return S_OK;
-    }
+    // (VK_RETURN falls through to the generic non-handled-key branch below:
+    // WantKey returns false for Enter, so with a live buffer the branch commits
+    // the composition and passes Enter to the host — search submits, newline
+    // inserts, form submits, all on a single press.)
 
     // Punctuation + active composition → eat the key; OnKeyDown will commit with
     // this char appended (atomic "abc," — no race between EndComposition and the
@@ -230,16 +220,14 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
     lastTestedVk_ = static_cast<UINT>(wParam);
     lastWantKeyResult_ = wantKey;
 
-    // Non-handled keys with buffer → eat + defer commit to OnKeyDown (no doc
-    // mutation in test phase). OnKeyDown will commit and drop the key.
-    // Tradeoff: non-text keys (F1, arrows, Escape) pressed mid-composition
-    // are consumed by the commit — user presses them again after commit to
-    // navigate/activate. This matches ab4497b's principle and avoids the
-    // "Chrome cursor race" that appears as extra whitespace between commit
-    // text and the passthrough key.
+    // Non-handled key with active buffer → commit and pass through. Action and
+    // navigation keys (arrows, Escape, F-keys, Home/End, Delete) take effect on
+    // a single press. Printable keys that could race with commit text are
+    // handled by earlier branches (punct above, A-Z/space via HandleKey), so
+    // they don't reach here.
     if (!wantKey && pEngineController_->HasEngineBuffer()) {
-        *pfEaten = TRUE;
-        lastPunctChar_ = 0;  // not a punct-with-char path; just commit-and-drop
+        pEngineController_->Commit(pContext);
+        *pfEaten = FALSE;
         return S_OK;
     }
 
@@ -261,7 +249,7 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam
     return S_OK;
 }
 
-IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM /*lParam*/, BOOL* pfEaten) {
+IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
 
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -276,34 +264,45 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
     UINT vk = static_cast<UINT>(wParam);
 
     // Punctuation: commit composition with this char appended (atomic, no race).
-    // Use the char cached by OnTestKeyDown — avoids a second ToUnicode call that
-    // could mutate kernel dead-key state on some layouts.
+    // Prefer the char cached by OnTestKeyDown (avoids a second ToUnicode call that
+    // could mutate kernel dead-key state on some layouts). Fall back to a direct
+    // VkToChar when the cache is empty — some hosts (notably Chromium) skip
+    // OnTestKeyDown entirely and route keystrokes straight to OnKeyDown, so the
+    // cache never gets populated. Only one ToUnicode call per keystroke either way.
     if (IsPunctuationKey(vk) && pEngineController_->HasEngineBuffer()
-        && !pEngineController_->IsVniDigitKey(vk)
-        && vk == lastTestedVk_ && lastPunctChar_ != 0) {
-        pEngineController_->CommitWithChar(pContext, lastPunctChar_);
-        lastTestedVk_ = 0;
-        lastPunctChar_ = 0;
-        *pfEaten = TRUE;
-        return S_OK;
-    }
-
-    // Deferred commit from OnTestKeyDown: we ate the key in the test phase
-    // because we had a pending buffer but the key wasn't one we wanted (Enter,
-    // arrow, F-key, etc. with composition active). Commit now (mutation is
-    // legal in OnKeyDown), then drop the key — user re-presses if they need it.
-    if (vk == lastTestedVk_ && !lastWantKeyResult_ && lastPunctChar_ == 0
-        && pEngineController_->HasEngineBuffer()) {
-        pEngineController_->Commit(pContext);
-        lastTestedVk_ = 0;
-        *pfEaten = TRUE;
-        return S_OK;
+        && !pEngineController_->IsVniDigitKey(vk)) {
+        wchar_t ch = (vk == lastTestedVk_ && lastPunctChar_ != 0)
+                       ? lastPunctChar_
+                       : VkToChar(vk, lParam);
+        if (ch != 0) {
+            pEngineController_->CommitWithChar(pContext, ch);
+            lastTestedVk_ = 0;
+            lastPunctChar_ = 0;
+            *pfEaten = TRUE;
+            return S_OK;
+        }
+        // VkToChar failed (dead key / non-printable punct mapping). Fall through
+        // to normal flow — worst case the punct arrives at the caret after the
+        // composition, which is what would happen without any IME anyway.
+        TSF_LOG(L"OnKeyDown: VkToChar failed vk=0x%02X, falling through", vk);
     }
 
     bool wantKey = (vk == lastTestedVk_) ? lastWantKeyResult_
                                           : pEngineController_->WantKey(vk, true);
     lastTestedVk_ = 0;  // Invalidate cache
     lastPunctChar_ = 0;
+
+    // Non-handled key with active buffer → commit composition and pass the key
+    // through so action keys (Enter submits, Escape cancels, F-keys, arrows,
+    // Home/End) take effect on a single press. The "Chrome cursor race" only
+    // affects printable keys racing with commit text; those are already handled
+    // (punct via the branch above, A-Z/space via HandleKey), so nothing text-
+    // inserting reaches this point. Works whether OnTestKeyDown fired or not.
+    if (!wantKey && pEngineController_->HasEngineBuffer()) {
+        pEngineController_->Commit(pContext);
+        *pfEaten = FALSE;
+        return S_OK;
+    }
 
     if (!wantKey) {
         *pfEaten = FALSE;
