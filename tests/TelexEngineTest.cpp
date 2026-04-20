@@ -3127,6 +3127,25 @@ TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Xepes_Xep_Sac) {
     EXPECT_EQ(engine_->Commit(), L"xếp");
 }
 
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Apas_Ap_Sac) {
+    // "apas" → delayed circumflex (apa→âp) + sắc on 's' → "ấp"
+    // Regression: English block "pas" suffix used to catch this — now prefix-only.
+    TypeString(*engine_, L"apas");
+    EXPECT_EQ(engine_->Peek(), L"ấp");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Epas_Ep_Sac) {
+    // "epes" → delayed circumflex (epe→êp) + sắc → "ếp"
+    TypeString(*engine_, L"epes");
+    EXPECT_EQ(engine_->Peek(), L"ếp");
+}
+
+TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_Opos_Op_Sac) {
+    // "opos" → delayed circumflex (opo→ôp) + sắc → "ốp"
+    TypeString(*engine_, L"opos");
+    EXPECT_EQ(engine_->Peek(), L"ốp");
+}
+
 TEST_F(AutoRestoreTest, DelayedCircumflex_VCV_NotTriggered_DiffVowel) {
     // "tote" → different vowels (o vs e) → NOT delayed circumflex, just literal
     TypeString(*engine_, L"tote");
