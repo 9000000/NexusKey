@@ -159,6 +159,9 @@ private:
     void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with effective mode
     bool VerifyExcludedState();        // Check if foreground is still excluded; clears stale flag if not
     void OnFocusChanged(HWND triggerHwnd = nullptr);
+    // Populate cachedFocusedHwnd_/cachedFocusedClass_ from `foreground` via AttachThreadInput.
+    // Called from OnFocusChanged and on-demand from TryEditMessagePaste when cache is stale.
+    void RefreshFocusCache(HWND foreground) noexcept;
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
     void ReloadAppOverrides();
@@ -277,6 +280,12 @@ private:
     bool layoutSuppressed_     = false;  // True when CJK layout active
     bool modeBeforeCjk_        = true;   // Saved vietnameseMode_ before CJK auto-switch
     bool cachedIsCompatLayout_ = true;   // Last known layout compatibility (updated in OnFocusChanged + key-up)
+
+    // Focused child HWND + class name, cached to avoid AttachThreadInput per keystroke
+    // (used by TryEditMessagePaste for VB6/ANSI apps). Refreshed in OnFocusChanged and
+    // invalidated on mouse click (within-app focus change).
+    HWND cachedFocusedHwnd_ = nullptr;
+    std::wstring cachedFocusedClass_;
 
     // Config reload
     ConfigEvent configEvent_;

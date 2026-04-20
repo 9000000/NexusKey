@@ -549,6 +549,11 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
             // followed by Backspace triggers ReplayCommittedChars() at the new cursor
             // position — identical to the Ctrl+A bug.
             self->ResetComposition();
+            // Click may move focus to another control within the same app (no
+            // EVENT_SYSTEM_FOREGROUND fires) — invalidate cache so the next
+            // TryEditMessagePaste re-queries the focused HWND.
+            self->cachedFocusedHwnd_ = nullptr;
+            self->cachedFocusedClass_.clear();
         }
     }
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -1562,20 +1567,6 @@ namespace {
 constexpr size_t kMaxClassName = 64;
 constexpr UINT   kEditMsgTimeoutMs = 50;
 
-HWND GetFocusedChildHwnd() noexcept {
-    HWND fg = GetForegroundWindow();
-    if (!fg) return nullptr;
-    DWORD fgTid = GetWindowThreadProcessId(fg, nullptr);
-    DWORD myTid = GetCurrentThreadId();
-    if (fgTid == myTid) return GetFocus();
-    HWND focused = nullptr;
-    if (AttachThreadInput(myTid, fgTid, TRUE)) {
-        focused = GetFocus();
-        AttachThreadInput(myTid, fgTid, FALSE);
-    }
-    return focused;
-}
-
 // VB6 (ThunderRT6*) apps are the whole reason this path exists — check first.
 // _wcsnicmp is case-insensitive so "RichEdit" matches "RICHEDIT60W" too.
 bool IsEditCompatibleClass(const wchar_t* cls) noexcept {
@@ -1591,17 +1582,19 @@ bool IsEditCompatibleClass(const wchar_t* cls) noexcept {
 bool HookEngine::TryEditMessagePaste(const std::wstring& text, size_t backspaceCount) noexcept {
     if (text.empty() && backspaceCount == 0) return true;
 
-    HWND hwnd = GetFocusedChildHwnd();
-    if (!hwnd) {
-        HOOK_LOG(L"  EditMsgPaste: no focused child hwnd");
-        return false;
+    // Prefer cached focused HWND (populated in OnFocusChanged / invalidated on mouse click)
+    // to avoid AttachThreadInput on every keystroke. Fall back to a fresh query on miss.
+    HWND hwnd = cachedFocusedHwnd_;
+    if (!hwnd || !IsWindow(hwnd)) {
+        RefreshFocusCache(GetForegroundWindow());
+        hwnd = cachedFocusedHwnd_;
+        if (!hwnd) {
+            HOOK_LOG(L"  EditMsgPaste: no focused child hwnd");
+            return false;
+        }
     }
 
-    wchar_t cls[kMaxClassName] = {};
-    if (GetClassNameW(hwnd, cls, kMaxClassName) == 0) {
-        HOOK_LOG(L"  EditMsgPaste: GetClassName failed");
-        return false;
-    }
+    const wchar_t* cls = cachedFocusedClass_.c_str();
     if (!IsEditCompatibleClass(cls)) {
         HOOK_LOG(L"  EditMsgPaste: incompatible class='%s'", cls);
         return false;
@@ -2012,6 +2005,17 @@ void CALLBACK HookEngine::FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
     self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
 }
 
+void HookEngine::RefreshFocusCache(HWND foreground) noexcept {
+    cachedFocusedHwnd_ = ::NextKey::GetFocusedChildHwnd(foreground);
+    if (cachedFocusedHwnd_) {
+        wchar_t cls[64] = {};
+        GetClassNameW(cachedFocusedHwnd_, cls, 64);
+        cachedFocusedClass_.assign(cls);
+    } else {
+        cachedFocusedClass_.clear();
+    }
+}
+
 void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     ResetComposition();
     tempEngineOff_ = false;
@@ -2087,6 +2091,13 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d clipboard=%d",
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0,
              needBaitChar_ ? 1 : 0, useClipboardPaste_ ? 1 : 0);
+
+    if (useClipboardPaste_) {
+        RefreshFocusCache(activeHwnd);
+    } else {
+        cachedFocusedHwnd_ = nullptr;
+        cachedFocusedClass_.clear();
+    }
 
     // Layout auto-disable: check CJK layout on every focus change
     CheckLayoutChange();

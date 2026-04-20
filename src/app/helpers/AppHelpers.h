@@ -57,4 +57,30 @@ inline std::wstring ToLowerAscii(std::wstring str) noexcept {
     return str;
 }
 
+#ifdef _WIN32
+/// Get the focused child window within a foreground top-level HWND.
+/// Uses AttachThreadInput for cross-thread queries — SLOW, avoid per-keystroke.
+/// Returns nullptr if GetFocus() fails or foreground is null.
+[[nodiscard]] inline HWND GetFocusedChildHwnd(HWND foreground) noexcept {
+    if (!foreground) return nullptr;
+    DWORD fgTid = GetWindowThreadProcessId(foreground, nullptr);
+    DWORD myTid = GetCurrentThreadId();
+    if (fgTid == myTid) return GetFocus();
+    HWND focused = nullptr;
+    if (AttachThreadInput(myTid, fgTid, TRUE)) {
+        focused = GetFocus();
+        AttachThreadInput(myTid, fgTid, FALSE);
+    }
+    return focused;
+}
+
+/// Same as GetFocusedChildHwnd, but falls back to the foreground HWND itself
+/// when no child is focused. Useful when the caller wants to operate on
+/// *something* (e.g. send EM_GETSEL) rather than return failure.
+[[nodiscard]] inline HWND GetFocusedChildOrForeground(HWND foreground) noexcept {
+    HWND focused = GetFocusedChildHwnd(foreground);
+    return focused ? focused : foreground;
+}
+#endif
+
 }  // namespace NextKey

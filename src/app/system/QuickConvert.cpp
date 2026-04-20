@@ -4,6 +4,7 @@
 #include "QuickConvert.h"
 #include "ToastPopup.h"
 #include "HookEngine.h"
+#include "helpers/AppHelpers.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/Debug.h"
 #include <functional>
@@ -416,27 +417,11 @@ bool QuickConvert::WaitForClipboardUnicode(int maxWaitMs, int checkIntervalMs) {
     return false;
 }
 
-static HWND getFocusedControl(HWND foregroundWnd) {
-    DWORD foregroundThread = GetWindowThreadProcessId(foregroundWnd, nullptr);
-    DWORD currentThread = GetCurrentThreadId();
-    HWND focusWnd = nullptr;
-    
-    if (foregroundThread != currentThread) {
-        AttachThreadInput(currentThread, foregroundThread, TRUE);
-        focusWnd = GetFocus();
-        AttachThreadInput(currentThread, foregroundThread, FALSE);
-    } else {
-        focusWnd = GetFocus();
-    }
-    
-    return focusWnd ? focusWnd : foregroundWnd;
-}
-
 SelectionAnchor QuickConvert::GetSelectionAnchor(HWND hwnd) {
     SelectionAnchor anchor;
     if (!hwnd) return anchor;
 
-    HWND targetCtrl = getFocusedControl(hwnd);
+    HWND targetCtrl = NextKey::GetFocusedChildOrForeground(hwnd);
     if (!targetCtrl) return anchor;
 
     DWORD start = 0, end = 0;
@@ -458,7 +443,7 @@ bool QuickConvert::TryReselect(HWND hwnd, SelectionAnchor anchor, int pastedLeng
 
     // Check if should skip EM_SETSEL (RichEdit controls can behave badly with raw EM_SETSEL if active, but we'll try)
     bool skipEmSetsel = false;
-    HWND targetCtrl = getFocusedControl(hwnd);
+    HWND targetCtrl = NextKey::GetFocusedChildOrForeground(hwnd);
     if (targetCtrl) {
         wchar_t className[64] = {0};
         GetClassNameW(targetCtrl, className, 64);
