@@ -139,17 +139,12 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
     // Strict XOR: required modifiers must be held AND non-required modifiers
     // must NOT be held. Prevents Alt+Z hotkey from firing on Ctrl+Alt+Z.
     auto matchCombo = [&](const HotkeyConfig& cfg) noexcept {
-        return cfg.ctrl == self.modCtrlDown_ &&
-               cfg.shift == self.modShiftDown_ &&
-               cfg.alt == self.modAltDown_ &&
-               cfg.win == self.modWinDown_;
+        return cfg.ModifiersMatch(self.modCtrlDown_, self.modShiftDown_,
+                                  self.modAltDown_, self.modWinDown_);
     };
 
     auto matchModifierOnlyRelease = [&](const HotkeyConfig& cfg) noexcept {
-        return cfg.ctrl == preCtrl &&
-               cfg.shift == preShift &&
-               cfg.alt == preAlt &&
-               cfg.win == preWin;
+        return cfg.ModifiersMatch(preCtrl, preShift, preAlt, preWin);
     };
 
     std::lock_guard lk(self.slotsMutex_);

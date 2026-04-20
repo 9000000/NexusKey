@@ -12,8 +12,8 @@ Reviewed deferred items from the HotkeyManager multi-slot refactor (commits pend
 - [x] **Extract `WireHotkeys` helper** — `src/app/system/HotkeyWiring.{h,cpp}`
   Extracted ~25 duplicate lines from main.cpp + main_lite.cpp. Lambda factory approach: captures refs to globals for config reload callback.
 
-- [ ] **`HotkeyConfig::ModifiersMatch(ctrl, shift, alt, win)` helper** — `src/core/config/TypingConfig.h`, used by `src/app/system/HotkeyManager.cpp:141-152`
-  `matchCombo` and `matchModifierOnlyRelease` lambdas each do the same 4-bool equality check. Encapsulating in a `HotkeyConfig` method clarifies intent. Only 2 call sites post-refactor so win is local clarity, not cross-file dedup.
+- [x] **`HotkeyConfig::ModifiersMatch(ctrl, shift, alt, win)` helper** — `src/core/config/TypingConfig.h`
+  Added method, used by `matchCombo` and `matchModifierOnlyRelease` lambdas in HotkeyManager.cpp.
 
 - [ ] **`ReloadFromToml` parses 5+ TOMLs per config bump** — `src/app/system/HookEngine.cpp:368-470`
   One `configGeneration` bump triggers `LoadOrDefault` + `LoadMacros` + `LoadExcludedApps` + `LoadTsfApps` + `ReloadAppOverrides`, plus the callback body loads `LoadConvertConfigOrDefault` + `LoadHotkeyConfigOrDefault`. Each is a separate `toml::parse_file`. Estimated 5-15ms per bump on cold cache. Fix options: parse TOML once into a `toml::table` and pass around, or cache parsed table with mtime check in `ConfigManager`. Profile first — may be imperceptible in practice (Settings Save is user-paced).

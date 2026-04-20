@@ -38,6 +38,10 @@ struct HotkeyConfig {
         return ctrl || shift || alt || win || key != 0;
     }
 
+    [[nodiscard]] bool ModifiersMatch(bool c, bool s, bool a, bool w) const noexcept {
+        return ctrl == c && shift == s && alt == a && win == w;
+    }
+
     bool operator==(const HotkeyConfig&) const noexcept = default;
 };
 
