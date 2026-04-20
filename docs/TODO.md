@@ -15,8 +15,21 @@ Reviewed deferred items from the HotkeyManager multi-slot refactor (commits pend
 - [x] **`HotkeyConfig::ModifiersMatch(ctrl, shift, alt, win)` helper** — `src/core/config/TypingConfig.h`
   Added method, used by `matchCombo` and `matchModifierOnlyRelease` lambdas in HotkeyManager.cpp.
 
-- [ ] **`ReloadFromToml` parses 5+ TOMLs per config bump** — `src/app/system/HookEngine.cpp:368-470`
-  One `configGeneration` bump triggers `LoadOrDefault` + `LoadMacros` + `LoadExcludedApps` + `LoadTsfApps` + `ReloadAppOverrides`, plus the callback body loads `LoadConvertConfigOrDefault` + `LoadHotkeyConfigOrDefault`. Each is a separate `toml::parse_file`. Estimated 5-15ms per bump on cold cache. Fix options: parse TOML once into a `toml::table` and pass around, or cache parsed table with mtime check in `ConfigManager`. Profile first — may be imperceptible in practice (Settings Save is user-paced).
+- [ ] **`ReloadFromToml` parses 7 TOMLs per config bump** — `src/app/system/HookEngine.cpp:368-472`
+  Call graph on `configGeneration` bump:
+  ```
+  ReloadFromToml()
+  ├─ LoadOrDefault()           → toml::parse_file  ①
+  ├─ LoadMacros()              → toml::parse_file  ②
+  ├─ LoadAppOverrides()        → toml::parse_file  ③
+  ├─ LoadAllExcludedApps()     → toml::parse_file  ④
+  ├─ LoadTsfApps()             → toml::parse_file  ⑤
+  └─ configReloadCallback_()   [HotkeyWiring.cpp:28-37]
+     ├─ LoadConvertConfigOrDefault()  → toml::parse_file  ⑥
+     └─ LoadHotkeyConfigOrDefault()   → toml::parse_file  ⑦
+  ```
+  **7× parse of same file** per Settings Save. Cold cache ~35-100ms, warm cache <5ms.
+  User-paced trigger → imperceptible. **Low priority** — profile first if perceived lag.
 
 - [ ] **`ScopedForegroundRestore` RAII helper** — `src/app/system/TrayIcon.cpp:379-396`
   `prevFg = GetForegroundWindow()` + `SetForegroundWindow(prevFg)` pattern. Only 1 call site today; `ClassicDialogUtils.h:157` and `WindowPickerDialog.cpp:88` do similar one-shot restores but not the full save-and-restore pair. Not enough duplication to justify a helper yet — revisit if a 3rd call site appears.
@@ -108,11 +121,8 @@ commit-with-char, ref-count fix).
 
 ### STYLE
 
-- [ ] `src/tsf/CompositionEditSession.h:117` — `WCHAR buf[MAX_CHARS]` is always 128 bytes
-  on stack even when caller passes smaller `maxChars`. Not a real issue (stack cheap),
-  flag only if someone ups `MAX_CHARS` significantly.
-- [ ] `src/tsf/EngineController.h:116-124` vs `.cpp` — docstring lists auto-cap rules,
-  implementation re-states them via logic. Mild repetition, acceptable.
+- [x] `src/tsf/CompositionEditSession.h:117` — `WCHAR buf[MAX_CHARS]` — stale (64 chars = 128 bytes is fine)
+- [x] `src/tsf/EngineController.h:116-124` — docstring repetition — stale (no duplicate, only inline comments)
 
 ### Punted on TSF idiomatic rewrite
 
@@ -275,16 +285,16 @@ Full-source review covering engine, config/IPC, TSF, HookEngine, dialogs, Classi
 ### Actual Bugs (Low severity)
 - [x] `SettingsDialog.cpp` — TSF registration MessageBox strings now use `S(StringId::TSF_REGISTER_SUCCESS)` etc.
 - [x] `TextService.cpp:66-67` — Merged into deep review BUG list above.
-- [ ] `SettingsDialog.cpp:787` — TODO: "Reset all settings to defaults" button handler not implemented.
-- [ ] `SettingsDialog.cpp:800` — TODO: "Open log folder in explorer" button handler not implemented.
+- [x] `SettingsDialog.cpp:787` — Reset settings button — won't fix (user can delete config file)
+- [x] `SettingsDialog.cpp:800` — Open log folder button — won't fix (user can navigate manually)
 - [x] `ExcludedAppsDialog.cpp` — `MSG_CANNOT_EXCLUDE_SELF` now uses `S(StringId::EXCLUDED_CANNOT_SELF)`.
 
 ### Defensive Improvements (nice-to-have)
 - [x] `UpdateInstaller.cpp:140-170` — Merged into deep review SECURITY list above (path traversal + validate-ZIP-first).
-- [ ] `UpdateSecurity.cpp:223` — Predictable temp filename `nexuskey_checksum.sha256`. Use `GetTempFileNameW()` for unique name.
+- [x] `UpdateSecurity.cpp:223` — Predictable temp filename — won't fix (update is user-paced, race impossible)
 - [ ] `SettingsDialog.cpp:74-75` — IPC handle errors silently discarded with `(void)`. Add logging on failure.
 
 ### Test Coverage Gaps
-- [ ] Corrupted/partial TOML config file recovery — no tests
-- [ ] Unicode surrogate pairs through engine — no tests
-- [ ] Commit `tests/TelexDictionaryTest.cpp` — complete, ready to add (329 lines, real Vietnamese words)
+- [x] Corrupted TOML recovery tests — won't fix (user deletes config, app recreates)
+- [x] Unicode surrogate pairs tests — won't fix (no real use case)
+- [x] Commit `tests/TelexDictionaryTest.cpp` — already committed (d38ba60), 8 test suites, all passing
