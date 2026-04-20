@@ -276,6 +276,7 @@ IFACEMETHODIMP ReadonlyContextProvider::OnSetFocus(ITfDocumentMgr* pDocMgrFocus,
         if (pSharedState_ && pSharedState_->IsConnected()) {
             HookContextAnchor cleared{};  // isAvailable=0, all flags=0
             pSharedState_->WriteAnchor(cleared);
+            lastWritten_ = cleared;
         }
         UnadviseEditSink();
         isFocused_ = false;
@@ -315,6 +316,21 @@ bool ReadonlyContextProvider::IsReadonlyModeActive() const noexcept {
     return (flags & SharedFlags::TSF_READONLY) != 0;
 }
 
+namespace {
+/// Payload-only equality (ignores generation — that's the writer's private counter).
+bool AnchorPayloadEquals(const HookContextAnchor& a, const HookContextAnchor& b) noexcept {
+    if (a.isAvailable     != b.isAvailable)     return false;
+    if (a.isSentenceStart != b.isSentenceStart) return false;
+    if (a.isLineStart     != b.isLineStart)     return false;
+    if (a.isWordStart     != b.isWordStart)     return false;
+    if (a.syllableLen     != b.syllableLen)     return false;
+    for (size_t k = 0; k < a.syllableLen; ++k) {
+        if (a.currentSyllable[k] != b.currentSyllable[k]) return false;
+    }
+    return true;
+}
+}  // namespace
+
 void ReadonlyContextProvider::UpdateAnchor(ITfContext* pContext, TfEditCookie ec) {
     HookContextAnchor anchor{};
 
@@ -326,20 +342,24 @@ void ReadonlyContextProvider::UpdateAnchor(ITfContext* pContext, TfEditCookie ec
     // Password / blocked context → mark unavailable and bail.
     if (IsContextBlockedInline(pContext, ec)) {
         anchor.isAvailable = 0;
-        if (pSharedState_) pSharedState_->WriteAnchor(anchor);
-        return;
+    } else {
+        wchar_t buf[kReadbackChars] = {};
+        ULONG len = ReadPrecedingCharsInline(pContext, ec, buf, kReadbackChars);
+
+        // On Windows wchar_t is 16-bit (UTF-16); reinterpret is safe.
+        static_assert(sizeof(wchar_t) == sizeof(uint16_t), "wchar_t must be UTF-16 on Windows");
+        DeriveAnchorFromPreceding(reinterpret_cast<const uint16_t*>(buf),
+                                  static_cast<size_t>(len), anchor);
+        anchor.isAvailable = 1;
     }
 
-    wchar_t buf[kReadbackChars] = {};
-    ULONG len = ReadPrecedingCharsInline(pContext, ec, buf, kReadbackChars);
+    // Skip the cross-process write if the payload hasn't changed since our
+    // last push — avoids bumping `generation` (and forcing reader retries on
+    // another process) every keystroke within the same word.
+    if (AnchorPayloadEquals(anchor, lastWritten_)) return;
 
-    // On Windows wchar_t is 16-bit (UTF-16); reinterpret is safe.
-    static_assert(sizeof(wchar_t) == sizeof(uint16_t), "wchar_t must be UTF-16 on Windows");
-    DeriveAnchorFromPreceding(reinterpret_cast<const uint16_t*>(buf),
-                              static_cast<size_t>(len), anchor);
-
-    anchor.isAvailable = 1;
     if (pSharedState_) pSharedState_->WriteAnchor(anchor);
+    lastWritten_ = anchor;
 }
 
 }  // namespace TSF

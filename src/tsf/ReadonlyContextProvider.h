@@ -73,6 +73,11 @@ private:
     CComPtr<ITfContext> pAdvisedContext_;
     DWORD               editCookie_ = TF_INVALID_COOKIE;
 
+    /// Last anchor payload handed to SharedState. Used to skip no-op WriteAnchor
+    /// calls so readers in another process don't retry seqlocks for nothing every
+    /// time the user types inside a single word.
+    HookContextAnchor   lastWritten_{};
+
     LONG                refCount_   = 1;
     bool                isFocused_  = false;  // this thread's doc mgr currently focused
 };
