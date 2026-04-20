@@ -8,7 +8,7 @@
 //   [C₁] + V + [C₂]
 // where C₁ is initial consonant, V is vowel nucleus, C₂ is final consonant.
 //
-// Template API takes Telex::CharState (shared across Telex/VNI/Combined modes).
+// Template API is structural over CharState (TypingEngine's shared struct).
 
 #pragma once
 

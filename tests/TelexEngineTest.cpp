@@ -3,12 +3,11 @@
 // Story 1.2: Comprehensive Telex transformation tests (50+ tests)
 
 #include <gtest/gtest.h>
-#include "core/engine/TelexEngine.h"
+#include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
 #include "TestHelper.h"
 
 namespace NextKey {
-namespace Telex {
 namespace {
 
 using Testing::TypeString;
@@ -19,11 +18,11 @@ protected:
         config_.inputMethod = InputMethod::Telex;
         config_.spellCheckEnabled = false;
         config_.optimizeLevel = 0;
-        engine_ = std::make_unique<TelexEngine>(config_);
+        engine_ = std::make_unique<TypingEngine>(config_);
     }
 
     TypingConfig config_;
-    std::unique_ptr<TelexEngine> engine_;
+    std::unique_ptr<TypingEngine> engine_;
 };
 
 // ============================================================================
@@ -506,7 +505,7 @@ TEST_F(TelexEngineTest, Word_Yunr_ToneOnU) {
 TEST_F(TelexEngineTest, Word_Kkhuyur_Produces_Khuỷu) {
     // kk→kh, uyu triphthong, r→hook tone
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"kkuyur");
     EXPECT_EQ(engine_->Peek(), L"khuỷu");
 }
@@ -514,7 +513,7 @@ TEST_F(TelexEngineTest, Word_Kkhuyur_Produces_Khuỷu) {
 TEST_F(TelexEngineTest, Triphthong_UYU_ExtraU_NotExpandedToUO) {
     // khuyu + u: triphthong uyu complete, extra 'u' should NOT trigger uu→ươ
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"kkuyuu");
     EXPECT_EQ(engine_->Peek(), L"khuyuu");
 }
@@ -686,7 +685,7 @@ TEST_F(TelexEngineTest, Count_ReturnsCorrectValue) {
 }
 
 TEST_F(TelexEngineTest, NoGlobalState_MultipleInstances) {
-    TelexEngine engine2(config_);
+    TypingEngine engine2(config_);
     
     // Use strings without Vietnamese patterns
     TypeString(*engine_, L"abc");
@@ -984,7 +983,7 @@ TEST_F(TelexEngineTest, CodaAware_NoCoda_EarlyTone_StaysOnFirst) {
 
 TEST_F(TelexEngineTest, ModernOrtho_NoCoda_MovesToSecond) {
     config_.modernOrtho = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     
     TypeString(*engine_, L"hoaf");  // hoà (modern rule -> tone on 'a')
     EXPECT_EQ(engine_->Peek(), L"hoà");
@@ -992,7 +991,7 @@ TEST_F(TelexEngineTest, ModernOrtho_NoCoda_MovesToSecond) {
 
 TEST_F(TelexEngineTest, ModernOrtho_NoCoda_EarlyTone_RelocatesToSecond) {
     config_.modernOrtho = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     
     TypeString(*engine_, L"hofa");  // h-o-f -> hò, a -> hoà (relocates because modern rule puts tone on SECOND)
     EXPECT_EQ(engine_->Peek(), L"hoà");
@@ -1000,7 +999,7 @@ TEST_F(TelexEngineTest, ModernOrtho_NoCoda_EarlyTone_RelocatesToSecond) {
 
 TEST_F(TelexEngineTest, ModernOrtho_WithCoda_StaysOnSecond) {
     config_.modernOrtho = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     
     TypeString(*engine_, L"hoanf");  // hoàn
     EXPECT_EQ(engine_->Peek(), L"hoàn");
@@ -2170,10 +2169,10 @@ protected:
     void SetUp() override {
         config_.spellCheckEnabled = true;
         config_.optimizeLevel = 0;
-        engine_ = std::make_unique<TelexEngine>(config_);
+        engine_ = std::make_unique<TypingEngine>(config_);
     }
     TypingConfig config_;
-    std::unique_ptr<TelexEngine> engine_;
+    std::unique_ptr<TypingEngine> engine_;
 };
 
 TEST_F(EnglishProtectionTest, HardReject_DR_Cluster) {
@@ -2322,10 +2321,10 @@ protected:
     void SetUp() override {
         config_.spellCheckEnabled = false;  // Spell check OFF
         config_.optimizeLevel = 0;
-        engine_ = std::make_unique<TelexEngine>(config_);
+        engine_ = std::make_unique<TypingEngine>(config_);
     }
     TypingConfig config_;
-    std::unique_ptr<TelexEngine> engine_;
+    std::unique_ptr<TypingEngine> engine_;
 };
 
 TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_FL_Cluster_BlocksTone) {
@@ -2777,11 +2776,11 @@ protected:
         config_.inputMethod = InputMethod::SimpleTelex;
         config_.spellCheckEnabled = false;
         config_.optimizeLevel = 0;
-        engine_ = std::make_unique<TelexEngine>(config_);
+        engine_ = std::make_unique<TypingEngine>(config_);
     }
 
     TypingConfig config_;
-    std::unique_ptr<TelexEngine> engine_;
+    std::unique_ptr<TypingEngine> engine_;
 };
 
 TEST_F(SimpleTelexTest, W_Standalone_IsLiteral) {
@@ -2862,11 +2861,11 @@ protected:
         config_.spellCheckEnabled = true;
         config_.autoRestoreEnabled = true;
         config_.optimizeLevel = 0;
-        engine_ = std::make_unique<TelexEngine>(config_);
+        engine_ = std::make_unique<TypingEngine>(config_);
     }
 
     TypingConfig config_;
-    std::unique_ptr<TelexEngine> engine_;
+    std::unique_ptr<TypingEngine> engine_;
 };
 
 TEST_F(AutoRestoreTest, InvalidWord_ReturnsRaw) {
@@ -2891,7 +2890,7 @@ TEST_F(AutoRestoreTest, NoModifications_ReturnsAsIs) {
 TEST_F(AutoRestoreTest, Disabled_ReturnsComposed) {
     // autoRestore OFF → return composed even if invalid
     config_.autoRestoreEnabled = false;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
 
     TypeString(*engine_, L"basl");
     // With autoRestore off, returns composed text regardless
@@ -2902,7 +2901,7 @@ TEST_F(AutoRestoreTest, Disabled_ReturnsComposed) {
 TEST_F(AutoRestoreTest, SpellCheckOff_ReturnsComposed) {
     // spellCheck OFF → no validity info, return composed
     config_.spellCheckEnabled = false;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
 
     TypeString(*engine_, L"basl");
     std::wstring result = engine_->Commit();
@@ -3164,7 +3163,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_KK_Khuya_Valid) {
     // "kkuya" → kk→kh, so "khuya" — valid Vietnamese word
     // Should NOT auto-restore to "kkuya"
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"kkuya");
     EXPECT_EQ(engine_->Commit(), L"khuya");
 }
@@ -3172,7 +3171,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_KK_Khuya_Valid) {
 TEST_F(AutoRestoreTest, QuickConsonant_TT_Thuy_Valid) {
     // "ttuys" → tt→th, "thuys" → "thúy" (classic: no coda → tone on first)
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"ttuys");
     EXPECT_EQ(engine_->Commit(), L"thúy");
 }
@@ -3180,7 +3179,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_TT_Thuy_Valid) {
 TEST_F(AutoRestoreTest, QuickConsonant_GG_Alone_Restores) {
     // "gg" alone → "gi" composed, but invalid on commit → restore to "gg"
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"gg");
     EXPECT_EQ(engine_->Commit(), L"gg");
 }
@@ -3188,7 +3187,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_GG_Alone_Restores) {
 TEST_F(AutoRestoreTest, QuickConsonant_CC_Alone_Restores) {
     // "cc" alone → "ch" composed, invalid on commit → restore to "cc"
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"cc");
     EXPECT_EQ(engine_->Commit(), L"cc");
 }
@@ -3196,7 +3195,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_CC_Alone_Restores) {
 TEST_F(AutoRestoreTest, QuickConsonant_UU_Alone_Restores) {
     // "uu" alone → "ươ" composed, invalid on commit → restore to "uu"
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"uu");
     EXPECT_EQ(engine_->Commit(), L"uu");
 }
@@ -3205,7 +3204,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_GG_Alone_Restores_NoSpellCheck) {
     // "gg" alone → "gi" composed, restore even with spell check disabled
     config_.quickConsonant = true;
     config_.spellCheckEnabled = false;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"gg");
     EXPECT_EQ(engine_->Commit(), L"gg");
 }
@@ -3214,7 +3213,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_UU_Alone_Restores_NoSpellCheck) {
     // "uu" alone → "ươ" composed, restore even with spell check disabled
     config_.quickConsonant = true;
     config_.spellCheckEnabled = false;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"uu");
     EXPECT_EQ(engine_->Commit(), L"uu");
 }
@@ -3222,7 +3221,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_UU_Alone_Restores_NoSpellCheck) {
 TEST_F(AutoRestoreTest, QuickConsonant_GG_WithVowel_Keeps) {
     // "ggia" → "gia" — valid Vietnamese word, keep composed
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"gga");
     EXPECT_EQ(engine_->Commit(), L"gia");
 }
@@ -3231,7 +3230,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_PP_Backspace_Escape) {
     // "app" → "aph"; backspace now restores in-place → "app" (not "ap")
     // The escape flag still prevents the next 'p' from re-triggering quick consonant.
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"app");
     EXPECT_EQ(engine_->Peek(), L"aph");
     engine_->Backspace();
@@ -3243,7 +3242,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_PP_Backspace_Escape) {
 TEST_F(AutoRestoreTest, QuickConsonant_GG_Backspace_Escape) {
     // "agg" → "agi"; backspace restores in-place → "agg"
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"agg");
     EXPECT_EQ(engine_->Peek(), L"agi");
     engine_->Backspace();
@@ -3255,7 +3254,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_GG_Backspace_Escape) {
 TEST_F(AutoRestoreTest, QuickConsonant_UU_Backspace_Escape) {
     // "uu" → "ươ"; backspace restores in-place → "uu"
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"uu");
     EXPECT_EQ(engine_->Peek(), L"ươ");
     engine_->Backspace();
@@ -3268,7 +3267,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_UUUU_NoConsecutiveRetrigger) {
     // "uuuu" → uu→ươ, then uu should NOT re-trigger → "ươuu"
     config_.quickConsonant = true;
     config_.spellCheckEnabled = false;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"uuuu");
     EXPECT_EQ(engine_->Peek(), L"ươuu");
 }
@@ -3277,7 +3276,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_CCCC_NoConsecutiveRetrigger) {
     // "cccc" → cc→ch, then cc should NOT re-trigger → "chcc"
     config_.quickConsonant = true;
     config_.spellCheckEnabled = false;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"cccc");
     EXPECT_EQ(engine_->Peek(), L"chcc");
 }
@@ -3286,7 +3285,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_UU_DifferentChar_ReAllows) {
     // "uuauuu" → uu→ươ, a (clears suppression), uu→ươ, u → "ươaươu"
     config_.quickConsonant = true;
     config_.spellCheckEnabled = false;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"uuauuu");
     EXPECT_EQ(engine_->Peek(), L"ươaươu");
 }
@@ -3296,7 +3295,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_CC_DifferentChar_ReAllows) {
     // Note: after "cha", next "cc" fires as quick consonant again, then last c is suppressed
     config_.quickConsonant = true;
     config_.spellCheckEnabled = false;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"ccaccc");
     EXPECT_EQ(engine_->Peek(), L"chachc");
 }
@@ -3308,7 +3307,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_CC_DifferentChar_ReAllows) {
 TEST_F(AutoRestoreTest, QuickConsonant_NN_Word_NotRestored) {
     // Bug: "rienn" → "rieng" (nn→ng), commit should keep "rieng", NOT revert to "rienn"
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"rienn");
     EXPECT_EQ(engine_->Commit(), L"rieng");
 }
@@ -3316,7 +3315,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_NN_Word_NotRestored) {
 TEST_F(AutoRestoreTest, QuickConsonant_PP_Word_NotRestored) {
     // "ppuong" → "phuong" — not a standard tone-marked word but user chose it
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"ppuong");
     EXPECT_EQ(engine_->Commit(), L"phuong");
 }
@@ -3324,7 +3323,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_PP_Word_NotRestored) {
 TEST_F(AutoRestoreTest, QuickConsonant_CC_Word_NotRestored) {
     // "ccuong" → "chuong" — same pattern
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"ccuong");
     EXPECT_EQ(engine_->Commit(), L"chuong");
 }
@@ -3334,7 +3333,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_NN_Backspace_ThenCommit_Restores) {
     // After backspace quick consonant is cleared → next commit of "rien" is fine
     // This validates backspace properly clears the active quick consonant guard
     config_.quickConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"rienn");            // → "rieng"
     EXPECT_EQ(engine_->Peek(), L"rieng");
     engine_->Backspace();                       // revert: "rieng" → "rien"
@@ -3350,7 +3349,7 @@ TEST_F(AutoRestoreTest, QuickConsonant_NN_Backspace_ThenCommit_Restores) {
 
 TEST_F(AutoRestoreTest, QuickStartConsonant_F_ProducesPh) {
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     engine_->PushChar(L'f');
     EXPECT_EQ(engine_->Peek(), L"ph");
 }
@@ -3358,7 +3357,7 @@ TEST_F(AutoRestoreTest, QuickStartConsonant_F_ProducesPh) {
 TEST_F(AutoRestoreTest, QuickStartConsonant_F_Backspace_RestoresF) {
     // f→ph, backspace→f (not p)
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     engine_->PushChar(L'f');
     engine_->Backspace();
     EXPECT_EQ(engine_->Peek(), L"f");
@@ -3367,7 +3366,7 @@ TEST_F(AutoRestoreTest, QuickStartConsonant_F_Backspace_RestoresF) {
 TEST_F(AutoRestoreTest, QuickStartConsonant_F_Vowel_KeepsExpansion) {
     // f+a → pha (expansion confirmed by vowel)
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"fa");
     EXPECT_EQ(engine_->Peek(), L"pha");
 }
@@ -3375,14 +3374,14 @@ TEST_F(AutoRestoreTest, QuickStartConsonant_F_Vowel_KeepsExpansion) {
 TEST_F(AutoRestoreTest, QuickStartConsonant_F_Consonant_UndoesExpansion) {
     // f+t → ft (not pht, expansion undone by non-vowel)
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"ft");
     EXPECT_EQ(engine_->Peek(), L"ft");
 }
 
 TEST_F(AutoRestoreTest, QuickStartConsonant_J_Backspace_RestoresJ) {
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     engine_->PushChar(L'j');
     EXPECT_EQ(engine_->Peek(), L"gi");
     engine_->Backspace();
@@ -3391,7 +3390,7 @@ TEST_F(AutoRestoreTest, QuickStartConsonant_J_Backspace_RestoresJ) {
 
 TEST_F(AutoRestoreTest, QuickStartConsonant_W_Backspace_RestoresW) {
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     engine_->PushChar(L'w');
     EXPECT_EQ(engine_->Peek(), L"qu");
     engine_->Backspace();
@@ -3400,14 +3399,14 @@ TEST_F(AutoRestoreTest, QuickStartConsonant_W_Backspace_RestoresW) {
 
 TEST_F(AutoRestoreTest, QuickStartConsonant_J_Consonant_UndoesExpansion) {
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"jt");
     EXPECT_EQ(engine_->Peek(), L"jt");
 }
 
 TEST_F(AutoRestoreTest, QuickStartConsonant_W_Consonant_UndoesExpansion) {
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"wt");
     EXPECT_EQ(engine_->Peek(), L"wt");
 }
@@ -3415,7 +3414,7 @@ TEST_F(AutoRestoreTest, QuickStartConsonant_W_Consonant_UndoesExpansion) {
 TEST_F(AutoRestoreTest, QuickStartConsonant_F_UpperCase_Backspace) {
     // F→Ph, backspace→F
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     engine_->PushChar(L'F');
     EXPECT_EQ(engine_->Peek(), L"Ph");
     engine_->Backspace();
@@ -3425,7 +3424,7 @@ TEST_F(AutoRestoreTest, QuickStartConsonant_F_UpperCase_Backspace) {
 TEST_F(AutoRestoreTest, QuickStartConsonant_F_Vowel_Backspace_KeepsPh) {
     // f+a→pha, backspace→ph (expansion already confirmed, not undone)
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"fa");
     engine_->Backspace();
     EXPECT_EQ(engine_->Peek(), L"ph");
@@ -3433,7 +3432,7 @@ TEST_F(AutoRestoreTest, QuickStartConsonant_F_Vowel_Backspace_KeepsPh) {
 
 TEST_F(AutoRestoreTest, QuickStartConsonant_F_FullWord_Phan) {
     config_.quickStartConsonant = true;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"fan");
     EXPECT_EQ(engine_->Commit(), L"phan");
 }
@@ -3479,7 +3478,7 @@ TEST_F(AutoRestoreTest, StrokeD_DdwaSimpleTelex_Restores) {
     // "ddwa" with Simple Telex: dd→đ, w=literal (no vowel context), a=literal
     // → "đwa" invalid → auto-restore to "ddwa"
     config_.inputMethod = InputMethod::SimpleTelex;
-    engine_ = std::make_unique<TelexEngine>(config_);
+    engine_ = std::make_unique<TypingEngine>(config_);
     TypeString(*engine_, L"ddwa");
     EXPECT_EQ(engine_->Commit(), L"ddwa");
 }
@@ -3510,11 +3509,11 @@ protected:
         config_.autoRestoreEnabled = true;
         config_.optimizeLevel = 0;
         config_.spellExclusions = {L"hđ", L"đp"};
-        engine_ = std::make_unique<TelexEngine>(config_);
+        engine_ = std::make_unique<TypingEngine>(config_);
     }
 
     TypingConfig config_;
-    std::unique_ptr<TelexEngine> engine_;
+    std::unique_ptr<TypingEngine> engine_;
 };
 
 TEST_F(SpellExclusionTest, ExcludedPattern_NoAutoRestore) {
@@ -3550,7 +3549,7 @@ TEST_F(SpellExclusionTest, EmptyExclusionList_NormalBehavior) {
     TypingConfig cfg;
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"hdd");
     // "hđ" is invalid syllable, no exclusion → auto-restore
     EXPECT_EQ(eng.Commit(), L"hdd");
@@ -3572,7 +3571,7 @@ TEST_F(SpellExclusionTest, SingleCharExclusion_Ignored) {
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     cfg.spellExclusions = {L"đ"};  // Too short, should be ignored
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"hdd");
     // "hđ" not matched (single-char pattern ignored) → auto-restore
     EXPECT_EQ(eng.Commit(), L"hdd");
@@ -3585,7 +3584,7 @@ TEST_F(SpellExclusionTest, PLHDD_NoExclusion_Blocked) {
     TypingConfig cfg;
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"plhdd");
     EXPECT_EQ(eng.Peek(), L"plhdd");
 }
@@ -3612,7 +3611,7 @@ TEST_F(SpellExclusionTest, PLHDD_ExclPLHD_Works) {
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     cfg.spellExclusions = {L"plhđ"};
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"plhdd");
     EXPECT_EQ(eng.Peek(), L"plhđ");
     EXPECT_EQ(eng.Commit(), L"plhđ");
@@ -3628,7 +3627,7 @@ TEST_F(SpellExclusionTest, ToneBypass_KaGrave_ExactMatch) {
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     cfg.spellExclusions = {L"kà"};
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"kaf");
     EXPECT_EQ(eng.Peek(), L"kà");
     EXPECT_EQ(eng.Commit(), L"kà");
@@ -3640,7 +3639,7 @@ TEST_F(SpellExclusionTest, ToneBypass_KaAcute_NotBypassed) {
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     cfg.spellExclusions = {L"kà"};
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"kas");
     EXPECT_EQ(eng.Peek(), L"kas");  // 's' treated as literal
 }
@@ -3651,7 +3650,7 @@ TEST_F(SpellExclusionTest, ToneBypass_CaseInsensitive) {
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     cfg.spellExclusions = {L"kà"};
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     eng.PushChar(L'K');
     eng.PushChar(L'a');
     eng.PushChar(L'f');
@@ -3664,7 +3663,7 @@ TEST_F(SpellExclusionTest, ToneBypass_NoExclusion_Blocked) {
     TypingConfig cfg;
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"kaf");
     EXPECT_EQ(eng.Peek(), L"kaf");
 }
@@ -3680,7 +3679,7 @@ TEST_F(SpellExclusionTest, ZwjfOff_CircumflexBypass) {
     cfg.autoRestoreEnabled = true;
     cfg.allowZwjf = false;
     cfg.spellExclusions = {L"zô"};
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"zoo");
     EXPECT_EQ(eng.Peek(), L"zô");
     EXPECT_EQ(eng.Commit(), L"zô");
@@ -3695,7 +3694,7 @@ TEST_F(SpellExclusionTest, ZwjfOff_BreveBypass_FullWord) {
     cfg.autoRestoreEnabled = true;
     cfg.allowZwjf = false;
     cfg.spellExclusions = {L"zắc"};
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"zawsc");
     EXPECT_EQ(eng.Peek(), L"zắc");
     EXPECT_EQ(eng.Commit(), L"zắc");
@@ -3708,7 +3707,7 @@ TEST_F(SpellExclusionTest, ZwjfOff_HornBypass) {
     cfg.autoRestoreEnabled = true;
     cfg.allowZwjf = false;
     cfg.spellExclusions = {L"fư"};
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"fuw");
     EXPECT_EQ(eng.Peek(), L"fư");
     EXPECT_EQ(eng.Commit(), L"fư");
@@ -3720,7 +3719,7 @@ TEST_F(SpellExclusionTest, ZwjfOff_NoExclusion_StillBlocked) {
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     cfg.allowZwjf = false;
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"zoo");
     EXPECT_EQ(eng.Peek(), L"zoo");
 }
@@ -3732,7 +3731,7 @@ TEST_F(SpellExclusionTest, ZwjfOff_WrongExclusion_Blocked) {
     cfg.autoRestoreEnabled = true;
     cfg.allowZwjf = false;
     cfg.spellExclusions = {L"zô"};
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     TypeString(eng, L"foo");
     EXPECT_EQ(eng.Peek(), L"foo");
 }
@@ -3744,7 +3743,7 @@ TEST_F(SpellExclusionTest, ZwjfOff_CaseInsensitive) {
     cfg.autoRestoreEnabled = true;
     cfg.allowZwjf = false;
     cfg.spellExclusions = {L"zô"};
-    TelexEngine eng(cfg);
+    TypingEngine eng(cfg);
     eng.PushChar(L'Z');
     eng.PushChar(L'o');
     eng.PushChar(L'o');
@@ -4142,7 +4141,7 @@ TEST_F(EnglishProtectionTest, EnglishBlock_SpellCheckOff_NoBlock) {
     TypingConfig offConfig;
     offConfig.spellCheckEnabled = false;
     offConfig.optimizeLevel = 0;
-    auto offEngine = std::make_unique<TelexEngine>(offConfig);
+    auto offEngine = std::make_unique<TypingEngine>(offConfig);
     TypeString(*offEngine, L"pas");
     // Spell check off → 's' fires sắc normally → "pá"
     EXPECT_EQ(offEngine->Peek(), L"pá");
@@ -4301,5 +4300,4 @@ TEST_F(TelexEngineTest, Seed_LatinOnlyWord_Succeeds) {
 }
 
 }  // namespace
-}  // namespace Telex
 }  // namespace NextKey

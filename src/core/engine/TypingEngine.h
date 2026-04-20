@@ -184,14 +184,4 @@ private:
     mutable std::wstring composeBuf_;    // Reusable buffer for ComposeAll() — avoids heap alloc per Peek()
 };
 
-// =============================================================================
-// Backward compatibility aliases — allows existing code to use Telex:: names
-// =============================================================================
-namespace Telex {
-    using Modifier = NextKey::Modifier;
-    using Tone = NextKey::Tone;
-    using CharState = NextKey::CharState;
-    using TelexEngine = NextKey::TypingEngine;
-}  // namespace Telex
-
 }  // namespace NextKey

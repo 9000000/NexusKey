@@ -3,7 +3,6 @@
 // Measures per-keystroke latency and throughput for Telex and VNI input methods.
 
 #include <gtest/gtest.h>
-#include "core/engine/TelexEngine.h"
 #include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
 #include "TestHelper.h"
@@ -18,7 +17,6 @@ namespace {
 
 using Clock = std::chrono::high_resolution_clock;
 using Nanoseconds = std::chrono::nanoseconds;
-using Telex::TelexEngine;
 using Testing::TypeString;
 
 // ---------------------------------------------------------------------------
@@ -118,7 +116,7 @@ protected:
 };
 
 TEST_F(EngineBenchmarkTest, Telex_SinglePushChar) {
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
     auto r = RunBenchmark([&]() {
         engine.Reset();
         engine.PushChar(L'a');
@@ -128,7 +126,7 @@ TEST_F(EngineBenchmarkTest, Telex_SinglePushChar) {
 }
 
 TEST_F(EngineBenchmarkTest, Telex_ShortWord_TypeAndPeek) {
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
     auto r = RunBenchmark([&]() {
         engine.Reset();
         TypeString(engine, L"vieejt");
@@ -140,7 +138,7 @@ TEST_F(EngineBenchmarkTest, Telex_ShortWord_TypeAndPeek) {
 }
 
 TEST_F(EngineBenchmarkTest, Telex_ShortWord_TypeAndCommit) {
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
     auto r = RunBenchmark([&]() {
         engine.Reset();
         TypeString(engine, L"truwowngf");
@@ -152,7 +150,7 @@ TEST_F(EngineBenchmarkTest, Telex_ShortWord_TypeAndCommit) {
 }
 
 TEST_F(EngineBenchmarkTest, Telex_CommonWords_Throughput) {
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
     const size_t wordCount = sizeof(kTelexWords) / sizeof(kTelexWords[0]);
 
     auto r = RunBenchmark([&]() {
@@ -171,7 +169,7 @@ TEST_F(EngineBenchmarkTest, Telex_CommonWords_Throughput) {
 }
 
 TEST_F(EngineBenchmarkTest, Telex_Sentence_Throughput) {
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
     const std::wstring sentence(kTelexSentence);
     const size_t charCount = sentence.size();
 
@@ -197,7 +195,7 @@ TEST_F(EngineBenchmarkTest, Telex_Sentence_Throughput) {
 
 TEST_F(EngineBenchmarkTest, Telex_WithSpellCheck) {
     config_.spellCheckEnabled = true;
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
 
     auto r = RunBenchmark([&]() {
         engine.Reset();
@@ -211,7 +209,7 @@ TEST_F(EngineBenchmarkTest, Telex_WithSpellCheck) {
 
 TEST_F(EngineBenchmarkTest, Telex_EnglishPassthrough) {
     config_.spellCheckEnabled = true;
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
     const std::wstring text(kEnglishSentence);
     const size_t charCount = text.size();
 
@@ -235,7 +233,7 @@ TEST_F(EngineBenchmarkTest, Telex_EnglishPassthrough) {
 }
 
 TEST_F(EngineBenchmarkTest, Telex_BackspaceUndo) {
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
     auto r = RunBenchmark([&]() {
         engine.Reset();
         TypeString(engine, L"truwowngf");
@@ -248,7 +246,7 @@ TEST_F(EngineBenchmarkTest, Telex_BackspaceUndo) {
 }
 
 TEST_F(EngineBenchmarkTest, Telex_PeekCost) {
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
     TypeString(engine, L"truwowngf");
 
     auto r = RunBenchmark([&]() {
@@ -282,7 +280,7 @@ TEST_F(EngineBenchmarkTest, Vni_ShortWord_TypeAndCommit) {
 
 TEST_F(EngineBenchmarkTest, Telex_SustainedTyping_WithSpellCheck) {
     config_.spellCheckEnabled = true;
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
 
     const size_t wordCount = sizeof(kTelexWords) / sizeof(kTelexWords[0]);
     size_t totalKeystrokes = 0;
@@ -318,7 +316,7 @@ TEST_F(EngineBenchmarkTest, Telex_SustainedTyping_WithSpellCheck) {
 TEST_F(EngineBenchmarkTest, Telex_SpellExclusions_Overhead) {
     config_.spellCheckEnabled = true;
     config_.spellExclusions = {L"hđ", L"hđqt", L"đt", L"fôn", L"jắc", L"btv", L"thpt", L"đh"};
-    TelexEngine engine(config_);
+    TypingEngine engine(config_);
 
     const size_t wordCount = sizeof(kTelexWords) / sizeof(kTelexWords[0]);
     size_t totalKeystrokes = 0;

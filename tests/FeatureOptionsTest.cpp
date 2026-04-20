@@ -10,7 +10,6 @@
 //                     relevant when quickStartConsonant is off (SimpleTelex context).
 
 #include <gtest/gtest.h>
-#include "core/engine/TelexEngine.h"
 #include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
 #include "core/ipc/SharedState.h"
@@ -270,12 +269,12 @@ protected:
         // Classic engine (default)
         classicConfig_.inputMethod = InputMethod::Telex;
         classicConfig_.modernOrtho = false;
-        classic_ = std::make_unique<Telex::TelexEngine>(classicConfig_);
+        classic_ = std::make_unique<TypingEngine>(classicConfig_);
 
         // Modern engine
         modernConfig_.inputMethod = InputMethod::Telex;
         modernConfig_.modernOrtho = true;
-        modern_ = std::make_unique<Telex::TelexEngine>(modernConfig_);
+        modern_ = std::make_unique<TypingEngine>(modernConfig_);
     }
 
     void ResetEngines() {
@@ -285,8 +284,8 @@ protected:
 
     TypingConfig classicConfig_;
     TypingConfig modernConfig_;
-    std::unique_ptr<Telex::TelexEngine> classic_;
-    std::unique_ptr<Telex::TelexEngine> modern_;
+    std::unique_ptr<TypingEngine> classic_;
+    std::unique_ptr<TypingEngine> modern_;
 };
 
 // --- Key difference: "ua" diphthong ---
@@ -646,7 +645,7 @@ protected:
     void SetUp() override {
         config_.inputMethod = InputMethod::Telex;
         config_.allowZwjf = true;  // These tests require ZWJF enabled
-        engine_ = std::make_unique<Telex::TelexEngine>(config_);
+        engine_ = std::make_unique<TypingEngine>(config_);
     }
 
     void ResetEngine() {
@@ -654,7 +653,7 @@ protected:
     }
 
     TypingConfig config_;
-    std::unique_ptr<Telex::TelexEngine> engine_;
+    std::unique_ptr<TypingEngine> engine_;
 };
 
 // --- F as initial consonant, still tones after vowel ---
@@ -820,9 +819,9 @@ TEST_F(TelexZwjfTest, Word_Zone_NoTone) {
 // Direct spell checker tests (bypassing engine)
 TEST(SpellCheckZwjfTest, Z_Invalid_WithoutFlag) {
     // "zá" (z + á): z is not a valid initial consonant → Invalid
-    Telex::CharState states[] = {
-        {L'z', Telex::Modifier::None, Telex::Tone::None, false},
-        {L'a', Telex::Modifier::None, Telex::Tone::Acute, true},
+    CharState states[] = {
+        {L'z', Modifier::None, Tone::None, false},
+        {L'a', Modifier::None, Tone::Acute, true},
     };
     auto result = SpellCheck::Validate(states, 2, false);
     EXPECT_EQ(result, SpellCheck::Result::Invalid);
@@ -830,19 +829,19 @@ TEST(SpellCheckZwjfTest, Z_Invalid_WithoutFlag) {
 
 TEST(SpellCheckZwjfTest, Z_Valid_WithFlag) {
     // "zá" with allowZwjf: z accepted as initial consonant (≡gi) → Valid
-    Telex::CharState states[] = {
-        {L'z', Telex::Modifier::None, Telex::Tone::None, false},
-        {L'a', Telex::Modifier::None, Telex::Tone::Acute, true},
+    CharState states[] = {
+        {L'z', Modifier::None, Tone::None, false},
+        {L'a', Modifier::None, Tone::Acute, true},
     };
     auto result = SpellCheck::Validate(states, 2, true);
     EXPECT_EQ(result, SpellCheck::Result::Valid);
 }
 
 TEST(SpellCheckZwjfTest, F_Invalid_WithoutFlag) {
-    Telex::CharState states[] = {
-        {L'f', Telex::Modifier::None, Telex::Tone::None, false},
-        {L'a', Telex::Modifier::None, Telex::Tone::None, true},
-        {L'n', Telex::Modifier::None, Telex::Tone::None, false},
+    CharState states[] = {
+        {L'f', Modifier::None, Tone::None, false},
+        {L'a', Modifier::None, Tone::None, true},
+        {L'n', Modifier::None, Tone::None, false},
     };
     auto result = SpellCheck::Validate(states, 3, false);
     EXPECT_EQ(result, SpellCheck::Result::Invalid);
@@ -850,10 +849,10 @@ TEST(SpellCheckZwjfTest, F_Invalid_WithoutFlag) {
 
 TEST(SpellCheckZwjfTest, F_Valid_WithFlag) {
     // "fan" with allowZwjf: f ≡ ph → Valid (a vowel, n final)
-    Telex::CharState states[] = {
-        {L'f', Telex::Modifier::None, Telex::Tone::None, false},
-        {L'a', Telex::Modifier::None, Telex::Tone::None, true},
-        {L'n', Telex::Modifier::None, Telex::Tone::None, false},
+    CharState states[] = {
+        {L'f', Modifier::None, Tone::None, false},
+        {L'a', Modifier::None, Tone::None, true},
+        {L'n', Modifier::None, Tone::None, false},
     };
     auto result = SpellCheck::Validate(states, 3, true);
     EXPECT_EQ(result, SpellCheck::Result::Valid);
@@ -861,10 +860,10 @@ TEST(SpellCheckZwjfTest, F_Valid_WithFlag) {
 
 TEST(SpellCheckZwjfTest, W_Valid_WithFlag) {
     // "wen" with allowZwjf: w ≡ qu → Valid (e vowel, n final)
-    Telex::CharState states[] = {
-        {L'w', Telex::Modifier::None, Telex::Tone::None, false},
-        {L'e', Telex::Modifier::None, Telex::Tone::None, true},
-        {L'n', Telex::Modifier::None, Telex::Tone::None, false},
+    CharState states[] = {
+        {L'w', Modifier::None, Tone::None, false},
+        {L'e', Modifier::None, Tone::None, true},
+        {L'n', Modifier::None, Tone::None, false},
     };
     auto result = SpellCheck::Validate(states, 3, true);
     EXPECT_EQ(result, SpellCheck::Result::Valid);
@@ -872,9 +871,9 @@ TEST(SpellCheckZwjfTest, W_Valid_WithFlag) {
 
 TEST(SpellCheckZwjfTest, J_Valid_WithFlag) {
     // "já" with allowZwjf: j ≡ gi → Valid (a vowel + acute tone)
-    Telex::CharState states[] = {
-        {L'j', Telex::Modifier::None, Telex::Tone::None, false},
-        {L'a', Telex::Modifier::None, Telex::Tone::Acute, true},
+    CharState states[] = {
+        {L'j', Modifier::None, Tone::None, false},
+        {L'a', Modifier::None, Tone::Acute, true},
     };
     auto result = SpellCheck::Validate(states, 2, true);
     EXPECT_EQ(result, SpellCheck::Result::Valid);
@@ -882,8 +881,8 @@ TEST(SpellCheckZwjfTest, J_Valid_WithFlag) {
 
 TEST(SpellCheckZwjfTest, Z_ValidPrefix_WithFlag) {
     // "z" alone with allowZwjf: valid prefix (waiting for vowel)
-    Telex::CharState states[] = {
-        {L'z', Telex::Modifier::None, Telex::Tone::None, false},
+    CharState states[] = {
+        {L'z', Modifier::None, Tone::None, false},
     };
     auto result = SpellCheck::Validate(states, 1, true);
     EXPECT_EQ(result, SpellCheck::Result::ValidPrefix);
@@ -891,10 +890,10 @@ TEST(SpellCheckZwjfTest, Z_ValidPrefix_WithFlag) {
 
 TEST(SpellCheckZwjfTest, StandardConsonants_StillWork) {
     // "bán" — standard consonant, always valid
-    Telex::CharState states[] = {
-        {L'b', Telex::Modifier::None, Telex::Tone::None, false},
-        {L'a', Telex::Modifier::None, Telex::Tone::Acute, true},
-        {L'n', Telex::Modifier::None, Telex::Tone::None, false},
+    CharState states[] = {
+        {L'b', Modifier::None, Tone::None, false},
+        {L'a', Modifier::None, Tone::Acute, true},
+        {L'n', Modifier::None, Tone::None, false},
     };
     auto result = SpellCheck::Validate(states, 3, false);
     EXPECT_EQ(result, SpellCheck::Result::Valid);
@@ -915,10 +914,10 @@ protected:
         config_.allowZwjf = false;
         config_.quickStartConsonant = false;  // quickStart off: allowZwjf is the gate
         config_.spellCheckEnabled = true;
-        engine_ = std::make_unique<Telex::TelexEngine>(config_);
+        engine_ = std::make_unique<TypingEngine>(config_);
     }
     TypingConfig config_;
-    std::unique_ptr<Telex::TelexEngine> engine_;
+    std::unique_ptr<TypingEngine> engine_;
 };
 
 TEST_F(AllowZwjfFalseSimpleTelexTest, W_StaysLiteral) {
@@ -937,7 +936,7 @@ TEST_F(AllowZwjfFalseSimpleTelexTest, SpellCheckOff_ZwjfBiasSkipped) {
     // With spell check off, ZWJF bias is skipped — allowZwjf has no effect.
     // 'w' is allowed as initial consonant, tones can apply normally.
     config_.spellCheckEnabled = false;
-    auto engine = std::make_unique<Telex::TelexEngine>(config_);
+    auto engine = std::make_unique<TypingEngine>(config_);
     TypeString(*engine, L"zos");
     EXPECT_EQ(engine->Peek(), L"zó");  // Tone applies — z allowed freely
 }
@@ -964,7 +963,7 @@ TEST(FeatureOptionsFactory, TelexEngine_ModernOrtho_ViaConfig) {
     config.inputMethod = InputMethod::Telex;
     config.modernOrtho = true;
 
-    Telex::TelexEngine engine(config);
+    TypingEngine engine(config);
     TypeString(engine, L"uas");
     // "ua" diphthong: tone on FIRST vowel (same as classic: úa)
     EXPECT_EQ(engine.Peek(), L"úa");
@@ -975,7 +974,7 @@ TEST(FeatureOptionsFactory, TelexEngine_ClassicOrtho_ViaConfig) {
     config.inputMethod = InputMethod::Telex;
     config.modernOrtho = false;
 
-    Telex::TelexEngine engine(config);
+    TypingEngine engine(config);
     TypeString(engine, L"uas");
     // Classic: tone on 'u'
     EXPECT_EQ(engine.Peek(), L"úa");

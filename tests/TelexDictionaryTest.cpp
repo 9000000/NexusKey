@@ -6,12 +6,11 @@
 // Goal: catch regressions in everyday vocabulary without touching existing tests.
 
 #include <gtest/gtest.h>
-#include "core/engine/TelexEngine.h"
+#include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
 #include "TestHelper.h"
 
 namespace NextKey {
-namespace Telex {
 namespace {
 
 using Testing::TypeString;
@@ -27,7 +26,7 @@ protected:
         config_.inputMethod = InputMethod::Telex;
         config_.spellCheckEnabled = false;
         config_.optimizeLevel = 0;
-        engine_ = std::make_unique<TelexEngine>(config_);
+        engine_ = std::make_unique<TypingEngine>(config_);
     }
 
     void RunCases(const WordCase cases[], size_t count) {
@@ -41,7 +40,7 @@ protected:
     }
 
     TypingConfig config_;
-    std::unique_ptr<TelexEngine> engine_;
+    std::unique_ptr<TypingEngine> engine_;
 };
 
 // ============================================================================
@@ -325,5 +324,4 @@ TEST_F(TelexDictionaryTest, UpperCase) {
 }
 
 }  // namespace
-}  // namespace Telex
 }  // namespace NextKey

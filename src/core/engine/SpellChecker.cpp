@@ -8,7 +8,7 @@
 // Uses greedy consonant matching and packed-key vowel nucleus table (linear scan).
 
 #include "SpellChecker.h"
-#include "TelexEngine.h"
+#include "TypingEngine.h"
 #include <algorithm>
 #include <cwctype>
 
@@ -395,7 +395,7 @@ auto GetTone(const CharStateT* states, size_t count) {
 
 template<typename ModT>
 uint8_t ModOrdinal(ModT mod) {
-    // Telex::Modifier exposes:
+    // Modifier exposes:
     // None=0, Circumflex=1, Breve=2, Horn=3
     // Vni also has Stroke=4 but that's only for đ
     auto val = static_cast<uint8_t>(mod);
@@ -775,8 +775,8 @@ Result Validate(const CharStateT* states, size_t count, bool allowZwjf) noexcept
     return ValidateImpl(states, count, allowZwjf);
 }
 
-// Explicit instantiation — TypingEngine reuses Telex::CharState for both Telex and VNI modes.
-template Result Validate<Telex::CharState>(const Telex::CharState* states, size_t count, bool allowZwjf) noexcept;
+// Explicit instantiation — single CharState type shared across Telex/VNI/Combined modes.
+template Result Validate<CharState>(const CharState* states, size_t count, bool allowZwjf) noexcept;
 
 }  // namespace SpellCheck
 }  // namespace NextKey

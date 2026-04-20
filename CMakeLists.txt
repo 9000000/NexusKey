@@ -28,7 +28,6 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/config/TypingConfig.h
     src/core/engine/TypingEngine.cpp
     src/core/engine/TypingEngine.h
-    src/core/engine/TelexEngine.h
     src/core/engine/EngineFactory.cpp
     src/core/engine/EngineFactory.h
     src/core/engine/IInputEngine.h

@@ -98,7 +98,7 @@ inline bool IsSpellExcluded(const CharStateT* states, size_t count,
     return false;
 }
 
-/// Update spell check state — works with both Telex::CharState and Vni::CharState.
+/// Update spell check state. Template over CharState.
 /// Call after every PushChar/Backspace to revalidate the syllable.
 template<typename CharStateT, typename ComposeFunc>
 inline void UpdateSpellCheck(const CharStateT* states, size_t count,
@@ -230,7 +230,7 @@ inline void CheckZwjfInitialBias(const CharStateT* states, size_t count,
 /// Returns index of the 'd' to modify, or SIZE_MAX if none found or blocked.
 /// Scans backward for last 'd', then checks that the contiguous 'd' cluster
 /// is NOT preceded by a vowel (blocks "added"→"ađed", allows "vdd"→"vđ").
-/// Works with both Telex::CharState and Vni::CharState.
+/// Template over CharState.
 template<typename CharStateT>
 [[nodiscard]] inline size_t FindStrokeDTarget(
         const CharStateT* states, size_t count) noexcept {
@@ -256,7 +256,7 @@ template<typename CharStateT>
 /// invalid consonant cluster (e.g., "drop" + d → "đrop" with coda "p" already present).
 /// When onset 'd' (position 0) is immediately followed by a vowel (e.g. "doc"),
 /// applying stroke gives [đ + vowel + coda] — perfectly valid Vietnamese structure.
-/// Works with both Telex::CharState and Vni::CharState.
+/// Template over CharState.
 template<typename CharStateT>
 [[nodiscard]] inline bool IsStrokeDBlockedByCoda(
         const CharStateT* states, size_t count, size_t dTarget) noexcept {
