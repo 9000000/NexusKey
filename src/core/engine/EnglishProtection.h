@@ -299,11 +299,18 @@ template<typename CharStateT>
         const CharStateT* states, size_t count) noexcept {
     if (count < 3) return false;  // Need at least vowel + 2 consonants to check
 
-    // Count consonants from the end back to the last vowel
+    // Count consonants from the end back to the last vowel.
+    // 'd' at position 0 (onset) is vowel-like — the scan stops there so
+    // buffers like [d,d,...] or [đ,...] don't report a bogus coda.
+    // A 'd' at any non-initial position is treated as a coda consonant
+    // — Vietnamese never places 'd' in coda, so patterns like [a,d,v]
+    // correctly surface as invalid (dv ≠ ch/ng/nh).
     size_t codaLen = 0;
     bool foundVowel = false;
     for (size_t i = count; i-- > 0;) {
-        if (states[i].IsVowel() || states[i].IsD()) { foundVowel = true; break; }
+        if (states[i].IsVowel() || (states[i].IsD() && i == 0)) {
+            foundVowel = true; break;
+        }
         ++codaLen;
     }
 

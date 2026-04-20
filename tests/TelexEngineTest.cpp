@@ -2620,6 +2620,15 @@ TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkBlocked_Release_CodaCheck) {
     EXPECT_EQ(engine_->Peek(), L"release");
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, FreeMarkBlocked_Advance_TwoCons) {
+    // "adva" (typing "advance"): a-d-v + 'a' attempts same-vowel free-mark
+    // across 2 consonants ("dv"). No valid Vietnamese syllable has two
+    // non-digraph consonants between identical vowels — block and mark
+    // HardEnglish so the remaining keys type literally.
+    TypeString(*engine_, L"advance");
+    EXPECT_EQ(engine_->Peek(), L"advance");
+}
+
 TEST_F(EnglishDetectionNoSpellCheckTest, VCV_Exception_ValidCoda_Hien) {
     // "hiên"+e+r: ê+n+e where 'n' IS a valid Vietnamese coda → exception allows.
     // But 'e' escapes circumflex (our earlier fix) → toneEscaped → 'r' literal.
