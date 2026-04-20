@@ -102,15 +102,9 @@ commit-with-char, ref-count fix).
 
 ### PERF
 
-- [ ] **Combine read sessions for revive + auto-cap** — `src/tsf/CompositionEditSession.h`, `src/tsf/EngineController.cpp:327-347`
-  `HandleKey` A-Z path can fire up to 3 sync edit sessions per keystroke when engine
-  is empty: (1) `ReadPrecedingWordEditSession` in `TryReviveOnType`, (2)
-  `ReadPrecedingCharsEditSession` in `ShouldAutoCapitalize`, (3) Start/UpdateComposition
-  for the PushChar result. (1) and (2) read overlapping text.
-  **Fix**: single `InspectAndReviveEditSession` that reads once, decides revive vs
-  auto-cap, runs revive surgery inline when applicable. Cuts session count:
-  non-revive path 3 → 2, revive path 2 → 1. Priority: polish, not correctness —
-  defer until real slowness reported.
+- [x] **Combine read sessions for revive + auto-cap** — `src/tsf/CompositionEditSession.h`, `src/tsf/EngineController.cpp`
+  Fixed: `InspectPrecedingTextEditSession` reads text once, extracts word + auto-cap decision.
+  Auto-cap path reduced from 3 → 2 sessions. Design: `docs/plans/2026-04-20-combine-read-sessions-design.md`.
 
 ### STYLE
 

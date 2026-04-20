@@ -112,22 +112,6 @@ public:
     /// Returns true if a Vietnamese word was found — caller should eat the BS key.
     bool PrepareBackspaceRevive(ITfContext* pContext);
 
-    /// Type-revive: when engine is empty and user types a char, check whether the
-    /// char sits right after a Vietnamese word. If so, start composition over that
-    /// word, seed the engine, and PushChar(ch) — all in one sync edit session.
-    /// Returns true if revive happened; false means caller should do normal typing.
-    bool TryReviveOnType(ITfContext* pContext, wchar_t ch);
-
-    /// Auto-cap check: should the next typed letter be capitalized based on
-    /// document state? Reads preceding chars via sync edit session and applies rules:
-    ///   - Caret at doc start                       → cap
-    ///   - Preceding char is newline (\n/\r)        → cap
-    ///   - Preceding char is '.'/'?'/'!'            → cap  (e.g. "b.B")
-    ///   - Preceding is whitespace that follows
-    ///     '.'/'?'/'!' (any amount)                 → cap  (e.g. "b.  B")
-    /// Returns false for Scintilla or when gating flags are off.
-    [[nodiscard]] bool ShouldAutoCapitalize(ITfContext* pContext);
-
     /// Discard any pending revive state (word + range). Safe to call at any time.
     void ClearPendingRevive();
 

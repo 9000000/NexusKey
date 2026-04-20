@@ -243,6 +243,98 @@ private:
     CComPtr<ITfRange> pRange_;
 };
 
+/// Combined read session: extracts Vietnamese word AND checks auto-cap in one pass.
+/// Replaces separate ReadPrecedingWordEditSession + ReadPrecedingCharsEditSession calls
+/// on the HandleKey A-Z path when engine buffer is empty.
+class InspectPrecedingTextEditSession : public EditSession {
+public:
+    explicit InspectPrecedingTextEditSession(ITfContext* pContext)
+        : EditSession(pContext) {}
+
+    IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
+        if (pContext_ == nullptr) return E_FAIL;
+
+        constexpr LONG MAX_CHARS = 64;
+
+        TF_SELECTION sel = {};
+        ULONG fetched = 0;
+        HRESULT hr = pContext_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched);
+        if (FAILED(hr) || fetched != 1 || sel.range == nullptr) return S_OK;
+        CComPtr<ITfRange> pSelRange;
+        pSelRange.Attach(sel.range);
+
+        BOOL selEmpty = FALSE;
+        if (FAILED(pSelRange->IsEmpty(ec, &selEmpty)) || !selEmpty) return S_OK;
+
+        CComPtr<ITfRange> pPeek;
+        if (FAILED(pSelRange->Clone(&pPeek)) || !pPeek) return S_OK;
+
+        TF_HALTCOND haltcond = { nullptr, TF_ANCHOR_START, TF_HF_OBJECT };
+        LONG shifted = 0;
+        if (FAILED(pPeek->ShiftStart(ec, -MAX_CHARS, &shifted, &haltcond))) return S_OK;
+
+        if (shifted == 0) {
+            atDocStart_ = true;
+            shouldAutoCap_ = true;
+            return S_OK;
+        }
+        if (shifted > 0) return S_OK;
+
+        LONG availChars = -shifted;
+        WCHAR buf[MAX_CHARS] = {};
+        ULONG len = 0;
+        if (FAILED(pPeek->GetText(ec, 0, buf, availChars, &len)) || len == 0) return S_OK;
+
+        // Extract Vietnamese word (walk backward using DecomposeVietChar)
+        LONG wordLen = 0;
+        for (LONG i = static_cast<LONG>(len) - 1; i >= 0; --i) {
+            wchar_t base = 0;
+            int modIdx = -1, toneIdx = -1;
+            bool isUpper = false;
+            if (DecomposeVietChar(buf[i], base, modIdx, toneIdx, isUpper)) {
+                ++wordLen;
+            } else {
+                break;
+            }
+        }
+
+        if (wordLen > 0) {
+            word_.assign(&buf[len - wordLen], wordLen);
+            CComPtr<ITfRange> pWordRange;
+            if (SUCCEEDED(pSelRange->Clone(&pWordRange)) && pWordRange) {
+                LONG shifted2 = 0;
+                if (SUCCEEDED(pWordRange->ShiftStart(ec, -wordLen, &shifted2, &haltcond))) {
+                    wordRange_ = pWordRange;
+                }
+            }
+        }
+
+        // Auto-cap check: skip trailing whitespace, check for sentence-ending punct
+        size_t i = len;
+        while (i > 0 && (buf[i - 1] == L' ' || buf[i - 1] == L'\t')) --i;
+
+        if (i == 0) {
+            shouldAutoCap_ = true;
+        } else {
+            wchar_t c = buf[i - 1];
+            shouldAutoCap_ = (c == L'\n' || c == L'\r' || c == L'.' || c == L'?' || c == L'!');
+        }
+
+        return S_OK;
+    }
+
+    [[nodiscard]] const std::wstring& Word() const noexcept { return word_; }
+    [[nodiscard]] ITfRange* DetachWordRange() noexcept { return wordRange_.Detach(); }
+    [[nodiscard]] bool ShouldAutoCap() const noexcept { return shouldAutoCap_; }
+    [[nodiscard]] bool AtDocStart() const noexcept { return atDocStart_; }
+
+private:
+    std::wstring word_;
+    CComPtr<ITfRange> wordRange_;
+    bool shouldAutoCap_ = false;
+    bool atDocStart_ = false;
+};
+
 /// Revive-composition edit session: starts a composition over an existing range that
 /// covers a previously-committed Vietnamese word, seeds the engine from that word,
 /// then deletes the last char (since this fires from VK_BACK). The resulting

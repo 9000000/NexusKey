@@ -102,79 +102,6 @@ bool EngineController::PrepareBackspaceRevive(ITfContext* pContext) {
     return true;
 }
 
-bool EngineController::TryReviveOnType(ITfContext* pContext, wchar_t ch) {
-    if (pContext == nullptr || ch == 0) return false;
-    if (!engineEnabled_ || !tsfActive_ || !vietnameseMode_) return false;
-    if (contextBlocked_) return false;
-    if (engine_->Count() > 0) return false;
-    if (compositionMgr_.IsComposing()) return false;
-    if (isScintillaApp_) return false;  // Scintilla TSF limited — skip.
-
-    // Read preceding word (sync READ edit session).
-    auto* pRead = new ReadPrecedingWordEditSession(pContext);
-    HRESULT hrSession = S_OK;
-    HRESULT hr = pContext->RequestEditSession(
-        clientId_, pRead, TF_ES_SYNC | TF_ES_READ, &hrSession);
-
-    std::wstring word;
-    CComPtr<ITfRange> pRange;
-    if (SUCCEEDED(hr) && SUCCEEDED(hrSession) && pRead->Found()) {
-        word = pRead->Word();
-        pRange.Attach(pRead->DetachRange());
-    }
-    pRead->Release();
-
-    if (!pRange || word.empty()) return false;
-
-    // English-word gate via throwaway engine.
-    auto tempEngine = EngineFactory::Create(config_);
-    if (!tempEngine || !tempEngine->SeedFromText(word) || tempEngine->IsEnglishWord()) {
-        TSF_LOG(L"TryReviveOnType: '%ls' rejected as English", word.c_str());
-        return false;
-    }
-
-    auto* pSession = new ReviveAndTypeEditSession(
-        pContext, &compositionMgr_, engine_.get(), word, pRange, ch);
-    RequestEditSession(pContext, pSession);
-    pSession->Release();
-    return true;  // pRange auto-Released
-}
-
-bool EngineController::ShouldAutoCapitalize(ITfContext* pContext) {
-    if (!config_.autoCaps) return false;
-    if (pContext == nullptr) return false;
-    if (!engineEnabled_ || !tsfActive_ || !vietnameseMode_) return false;
-    if (contextBlocked_) return false;
-    if (isScintillaApp_) return false;  // Scintilla can't read preceding text.
-    if (engine_->Count() > 0) return false;  // Only at new-composition boundary.
-
-    auto* pSession = new ReadPrecedingCharsEditSession(pContext);
-    HRESULT hrSession = S_OK;
-    HRESULT hr = pContext->RequestEditSession(
-        clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
-
-    bool atStart = false;
-    std::wstring text;
-    if (SUCCEEDED(hr) && SUCCEEDED(hrSession)) {
-        atStart = pSession->AtDocStart();
-        text = pSession->Text();
-    }
-    pSession->Release();
-
-    if (atStart || text.empty()) return true;  // Cursor at doc start.
-
-    // Walk backward over spaces/tabs (but not newlines — they're a trigger).
-    size_t i = text.size();
-    while (i > 0 && (text[i - 1] == L' ' || text[i - 1] == L'\t')) --i;
-
-    if (i == 0) return true;  // Only whitespace seen → treat as start.
-
-    wchar_t c = text[i - 1];
-    if (c == L'\n' || c == L'\r') return true;
-    if (c == L'.' || c == L'?' || c == L'!') return true;
-    return false;
-}
-
 void EngineController::CheckContextBlocked(ITfContext* pContext) {
     if (pContext == lastContext_) return;  // Same context, use cached result
 
@@ -333,9 +260,33 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         //   "tét gõ|" + 'f' → "tét [gò]"       (revive wins, no auto-cap)
         //   "b.|" + 'a' → "b.A"                (auto-cap)
         //   empty doc + 'a' → "A"              (auto-cap: cursor at doc start)
-        if (engine_->Count() == 0 && !compositionMgr_.IsComposing()) {
-            if (TryReviveOnType(pContext, ch)) return true;
-            if (ShouldAutoCapitalize(pContext)) {
+        if (engine_->Count() == 0 && !compositionMgr_.IsComposing() && !isScintillaApp_) {
+            // Single READ session for both revive check and auto-cap check
+            auto* pInspect = new InspectPrecedingTextEditSession(pContext);
+            HRESULT hrSession = S_OK;
+            pContext->RequestEditSession(clientId_, pInspect, TF_ES_SYNC | TF_ES_READ, &hrSession);
+
+            std::wstring word = pInspect->Word();
+            CComPtr<ITfRange> wordRange;
+            wordRange.Attach(pInspect->DetachWordRange());
+            bool shouldAutoCap = pInspect->ShouldAutoCap();
+            pInspect->Release();
+
+            // Try revive if Vietnamese word found
+            if (!word.empty() && wordRange) {
+                auto tempEngine = EngineFactory::Create(config_);
+                if (tempEngine && tempEngine->SeedFromText(word) && !tempEngine->IsEnglishWord()) {
+                    auto* pRevive = new ReviveAndTypeEditSession(
+                        pContext, &compositionMgr_, engine_.get(), word, wordRange, ch);
+                    RequestEditSession(pContext, pRevive);
+                    pRevive->Release();
+                    TSF_LOG(L"HandleKey: revive '%ls' + '%lc'", word.c_str(), ch);
+                    return true;
+                }
+            }
+
+            // Auto-cap if revive didn't happen
+            if (config_.autoCaps && shouldAutoCap) {
                 ch = towupper(ch);
                 TSF_LOG(L"HandleKey: auto-cap → '%lc'", ch);
             }
