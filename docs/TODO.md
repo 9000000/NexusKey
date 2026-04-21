@@ -5,6 +5,81 @@
 
 ---
 
+## Auto-caps + TSF Apps Feedback — Follow-ups (2026-04-21)
+
+User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
+`7548dea`, `e53176b`, `a3f00c6`, `f89ea4d`. Remaining items below.
+
+### Unfinished from user feedback
+
+- [ ] **Windows Search cannot type Vietnamese** — `searchapp.exe` / `SearchHost.exe`
+  UWP AppContainer rejects third-party TIP load → TSF DLL never instantiated.
+  In Hybrid mode these apps are classified TSF → Hook skips them → no fallback.
+  **Proposed fix**: add both exe names to a TSF-EXCLUSION list ("force Hook for
+  these") rather than the TSF-app list. Verify low-level `WH_KEYBOARD_LL`
+  actually delivers keys inside UWP AppContainer (normally yes) before shipping.
+  Also affects: Start menu search, Settings app search box.
+
+- [ ] **Arrow-left revive drops auto-cap state** — needs repro
+  User report: type `wqewqe` + space (→ `Wqewqe `), arrow-left, type `a` +
+  space → result `wqewqea` (first W demoted to lowercase). Hook has no revive
+  so shouldn't touch the W — suggests TSF path. `SeedFromText` DOES preserve
+  `isUpper` (`TypingEngine.cpp:1299`), but `wqewqe` is classified as English
+  → revive should be skipped. User's observation conflicts with code trace.
+  **Action**: get HOOK_LOG + TSF_LOG reproduction before fixing. Possibly a
+  display-composition edit-session bug overwriting the range.
+
+- [ ] **Arrow-left revive breaks Vietnamese word** — needs repro
+  User report: `bưởi` + space (`Bưởi `), arrow-left to caret before space,
+  type any letter (`a`/`A`) → result `buoi` (caps + diacritics + tone all
+  lost). Likely same root cause as the W→w issue above, but with vowel/tone
+  state involved. Seed path in `SeedFromText` handles `isUpper` + `mod` +
+  `tone` — so symptom suggests revive is NOT running and something else is
+  stomping the range.
+  **Action**: capture logs; verify which edit session path fires.
+
+- [ ] **Word-boundary protection test matrix**
+  User asks whether gluing two words (no space) corrupts the earlier word in
+  either Hook or TSF mode. Architecturally: Hook doesn't touch committed text;
+  TSF revive only seeds the trailing word. No regression expected, but no
+  explicit test. Add scenarios: `xinchao` + backspace-into-word + retype,
+  `bưởichuối` edit sequences, commit-trigger behavior on punctuation glue.
+  Location: add to `tests/` once revive paths are testable from Linux (see
+  "Extract ShouldAutoCap to pure function" below).
+
+### Tech debt surfaced during code review
+
+- [ ] **Extract shared `Import/ExportStringList` helpers** — `src/app/dialogs/DialogUtils.h`
+  4 dialogs now duplicate ~60 lines each: `ExcludedAppsDialog`,
+  `MacroTableDialog`, `SpellExclusionsDialog`, `TsfAppsDialog`. Differences
+  are: window title, default filename, file header comment, and line
+  transform. A templated helper with `std::function<std::wstring(std::string)>`
+  transform + 3 string params would unify them and prevent future drift.
+  Touching all 4 dialogs in one refactor PR — out of scope for feature work.
+
+- [ ] **i18n the import-confirm MessageBox** — `StringId::IMPORT_KEEP_EXISTING`
+  All 4 list dialogs hardcode the Vietnamese UTF-16 escape sequence
+  `L"Bạn có muốn giữ lại danh sách hiện tại không?"` + per-dialog title.
+  Should go through `S(StringId::...)` like other user-facing strings. Pairs
+  with the helper extraction above.
+
+- [ ] **Action-string constants** — 4 dialogs
+  `handle_event` compares raw wide strings (`L"import"`, `L"export"`,
+  `L"close"`, `L"add-manual"`, `L"add-current"`, `L"delete"`,
+  `L"get-running-apps"`). Define `namespace DialogActions { inline constexpr
+  const wchar_t* IMPORT = L"import"; ... }` in a shared header so typos become
+  compile errors. Pairs with the helper extraction above.
+
+- [ ] **Extract `ShouldAutoCap` logic to pure function** — `src/tsf/CompositionEditSession.h:312`
+  Auto-cap decision (skip whitespace + check punct/newline + `skippedWhitespace`
+  gate) is currently inside `InspectPrecedingTextEditSession::DoEditSession`
+  which needs TSF APIs → untestable on Linux. Extract to free
+  `bool ComputeShouldAutoCap(const wchar_t* buf, size_t len) noexcept` and
+  call from the edit session. Lets Linux tests cover the 3rd auto-cap site
+  (currently only the Hook-anchor `DeriveAnchorFromPreceding` has tests).
+
+---
+
 ## Hotkey Refactor — Deferred (2026-04-20)
 
 Reviewed deferred items from the HotkeyManager multi-slot refactor (commits pending). All non-blocking; fixed items already landed in the refactor.
