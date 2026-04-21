@@ -91,10 +91,14 @@ inline void DeriveAnchorFromPreceding(const uint16_t* preceding, size_t len,
                        last == u'\n' || last == u'\r') ? 1 : 0;
 
     // Walk back over spaces/tabs (not newlines — newline is its own trigger).
+    // Track whether any whitespace was skipped: sentence-start requires at least one
+    // space between '.?!' and the cursor, otherwise domains/extensions like ".com"
+    // get force-capped to ".Com".
     size_t i = len;
+    bool skippedWhitespace = false;
     while (i > 0) {
         uint16_t c = preceding[i - 1];
-        if (c == u' ' || c == u'\t') { --i; continue; }
+        if (c == u' ' || c == u'\t') { --i; skippedWhitespace = true; continue; }
         break;
     }
 
@@ -108,7 +112,7 @@ inline void DeriveAnchorFromPreceding(const uint16_t* preceding, size_t len,
         if (prev == u'\n' || prev == u'\r') {
             out.isSentenceStart = 0;
             out.isLineStart     = 1;
-        } else if (prev == u'.' || prev == u'?' || prev == u'!') {
+        } else if ((prev == u'.' || prev == u'?' || prev == u'!') && skippedWhitespace) {
             out.isSentenceStart = 1;
             out.isLineStart     = 0;
         } else {

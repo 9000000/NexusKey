@@ -833,7 +833,11 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // '.', '?', '!'
         if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && cachedShift) || (vkCode == '1' && cachedShift)) {
             autoCapState_ = AutoCapState::AfterPunct;
-        } else if (vkCode == VK_SPACE && autoCapState_ == AutoCapState::AfterPunct) {
+        } else if (vkCode == VK_SPACE &&
+                   (autoCapState_ == AutoCapState::AfterPunct ||
+                    autoCapState_ == AutoCapState::ReadyToCapitalize)) {
+            // Promote on first space after punct; keep Ready across any number of
+            // additional spaces so ". ␣ ␣ c" still caps.
             autoCapState_ = AutoCapState::ReadyToCapitalize;
         } else if (vkCode == VK_RETURN) {
             autoCapState_ = AutoCapState::ReadyToCapitalize;

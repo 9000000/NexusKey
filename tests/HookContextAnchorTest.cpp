@@ -64,6 +64,41 @@ TEST(HookContextAnchorTest, Derive_AfterExclamation_SentenceStart) {
     EXPECT_EQ(a.isSentenceStart, 1);
 }
 
+// ".com" / "Hi." / "What?" — punct glued to cursor with no trailing whitespace.
+// Domains and file extensions must NOT be treated as sentence starts.
+TEST(HookContextAnchorTest, Derive_PeriodGluedToCursor_NotSentenceStart) {
+    auto buf = U(u"chrome.");
+    HookContextAnchor a{};
+    DeriveAnchorFromPreceding(buf.data(), buf.size(), a);
+    EXPECT_EQ(a.isSentenceStart, 0);
+    EXPECT_EQ(a.isLineStart, 0);
+    EXPECT_EQ(a.isWordStart, 0);
+}
+
+TEST(HookContextAnchorTest, Derive_PeriodFollowedByLetter_NotSentenceStart) {
+    auto buf = U(u"chrome.com");
+    HookContextAnchor a{};
+    DeriveAnchorFromPreceding(buf.data(), buf.size(), a);
+    EXPECT_EQ(a.isSentenceStart, 0);
+}
+
+TEST(HookContextAnchorTest, Derive_ShortWordWithPeriodGlued_NotSentenceStart) {
+    auto buf = U(u"Hi.");
+    HookContextAnchor a{};
+    DeriveAnchorFromPreceding(buf.data(), buf.size(), a);
+    EXPECT_EQ(a.isSentenceStart, 0);
+}
+
+TEST(HookContextAnchorTest, Derive_QuestionAndExclamGlued_NotSentenceStart) {
+    auto bufQ = U(u"What?");
+    auto bufE = U(u"Wow!");
+    HookContextAnchor aQ{}, aE{};
+    DeriveAnchorFromPreceding(bufQ.data(), bufQ.size(), aQ);
+    DeriveAnchorFromPreceding(bufE.data(), bufE.size(), aE);
+    EXPECT_EQ(aQ.isSentenceStart, 0);
+    EXPECT_EQ(aE.isSentenceStart, 0);
+}
+
 TEST(HookContextAnchorTest, Derive_AfterNewline_LineStartNotSentence) {
     auto buf = U(u"hello\n");
     HookContextAnchor a{};
