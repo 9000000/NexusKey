@@ -687,7 +687,7 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                 return;
             }
             if (systemConfig_.runAtStartup) {
-                SetRegistryStartup();
+                (void)SetRegistryStartup();
             }
         }
 

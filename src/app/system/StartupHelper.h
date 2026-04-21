@@ -22,6 +22,10 @@ inline constexpr const wchar_t* STARTUP_REG_KEY = L"Software\\Microsoft\\Windows
 inline constexpr const wchar_t* STARTUP_REG_VALUE = L"NexusKey";
 inline constexpr const wchar_t* STARTUP_TASK_NAME = L"NexusKey";
 
+// Forward declaration — defined below. RemoveScheduledTask() calls this before
+// its definition appears in the file.
+[[nodiscard]] inline bool IsScheduledTaskRegistered() noexcept;
+
 /// Check if the current process is running with admin privileges
 [[nodiscard]] inline bool IsRunningAsAdmin() noexcept {
     return IsUserAnAdmin() != FALSE;
