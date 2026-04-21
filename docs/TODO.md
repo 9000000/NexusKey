@@ -14,23 +14,56 @@ User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
 
 - [ ] **Windows Search cannot type Vietnamese** — `searchapp.exe` / `SearchHost.exe`
   UWP AppContainer rejects third-party TIP load → TSF DLL never instantiated.
-  In Hybrid mode these apps are classified TSF → Hook skips them → no fallback.
-  **Proposed fix**: add both exe names to a TSF-EXCLUSION list ("force Hook for
-  these") rather than the TSF-app list. Verify low-level `WH_KEYBOARD_LL`
-  actually delivers keys inside UWP AppContainer (normally yes) before shipping.
-  Also affects: Start menu search, Settings app search box.
+  User workaround (add to TSF list) DID NOT WORK (confirmed on v2.1.21).
+  Observation: when Windows Search gains focus from Edge, Input Indicator
+  auto-switches from "NexusKey Vietnamese IME" to "English (US) US Keyboard"
+  — indicates Windows is forcibly changing the active IME profile, not just
+  blocking our TIP. Screenshot evidence in feedback 2026-04-21.
+  **Actual fix path**: add both exes to a TSF-EXCLUSION list ("force Hook
+  for these") so Hook handles them. Confirm `WH_KEYBOARD_LL` reaches UWP
+  AppContainer. Investigate whether IME profile auto-switch also suppresses
+  hook delivery. Affects: Start menu, Settings app search, Win+S.
 
-- [~] **Arrow-left revive drops auto-cap state** — cannot reproduce (2026-04-21)
-  User-reported `Wqewqe` + ←+`a` → `wqewqea` bug did NOT reproduce on retest.
-  Code trace (EngineController.cpp:263-293 revive gate + SeedFromText case
-  preservation) shows no bug path. Keeping this stub in case the original
-  scenario resurfaces — retry with HOOK_LOG + TSF_LOG capture.
+- [ ] **Arrow-left revive drops auto-cap state** — REPRODUCIBLE 100% in Edge (2026-04-21 retest)
+  Steps: type `wqewqe` + space → displays `Wqewqe ` (auto-cap fired on
+  first char). Arrow-left once (caret between 'e' and ' '). Type `a` +
+  space → final text `wqewqea` (first `W` demoted to lowercase).
+  Confirmed on v2.1.19 AND v2.1.21 in Edge native search, GitHub Issue box,
+  Google Keep, Facebook. Config: simple_telex, auto_caps=true, tsf_apps
+  includes msedge.exe.
+  **Code trace expectation**: `InspectPrecedingTextEditSession` reads
+  "Wqewqe", `tempEngine->SeedFromText` seeds states with isUpper=true for
+  'W'. English-classification TBD — if `HardEnglish` → revive SKIPPED → 'a'
+  starts fresh composition, W untouched → would show `Wqewqea`. If revive
+  FIRES → SeedFromText + PushChar('a') → Peek composes "Wqewqea" with W
+  upper. Either path preserves W — so observed lowercase-demotion is from
+  a third code path not yet identified.
+  **Hypothesis**: revive DOES fire, but `Peek()` output at
+  `CompositionEditSession.h:444` emits lowercase; OR `SetCompositionText`
+  writes a different string than composed.
+  **Action**: instrument `EngineController.cpp:283` (revive log),
+  `CompositionEditSession.h:444` (composed log), ask user to capture with
+  DebugView++ and report the composed string.
 
-- [~] **Arrow-left revive breaks Vietnamese word** — cannot reproduce (2026-04-21)
-  User-reported `Bưởi` + ←+`a` → `buoi` bug did NOT reproduce on retest.
-  Seed path in TypingEngine.cpp:1285 handles `isUpper` + `mod` + `tone`;
-  Peek() reads from states_ not rawInput_. Keeping stub for future retest
-  with logs if the scenario resurfaces.
+- [ ] **Arrow-left revive breaks Vietnamese word (strips diacritics)** —
+  REPRODUCIBLE 100% in Edge + Word 2024 LTSC (2026-04-21 retest)
+  Steps: type `bưởi` + space → `Bưởi `. Arrow-left. Type any letter
+  (`a`/`A`/`b`/`B`) → text becomes `buoi` (all caps + horn + tone LOST,
+  typed character also missing or misplaced).
+  Confirmed on v2.1.19 AND v2.1.21. Config: simple_telex, auto_caps=true.
+  **Critical observation**: the OUTPUT "buoi" equals `SeedFromText`'s
+  synthetic `rawInput_` (base letters only — see TypingEngine.cpp:1319
+  which pushes only `base` to rawInput_, no tone/mod keystrokes). This
+  strongly suggests an auto-restore path fires that returns
+  `std::wstring(rawInput_.begin(), rawInput_.end())` — matches
+  TypingEngine.cpp:1266 in `Commit()`.
+  **But**: `ReviveAndTypeEditSession` uses `Peek()` not `Commit()`, so
+  auto-restore shouldn't apply. Unless some other path reads rawInput_
+  under invalid/HardEnglish state, or `SetCompositionText` is being fed
+  raw characters instead of composed Peek output.
+  **Action**: same diagnostic as item above. Add log at
+  `CompositionEditSession.h:444`: `TSF_LOG(L"Revive composed='%ls'
+  rawInput='%ls'", composed, raw)`. Repro in Edge and attach log.
 
 - [ ] **Word-boundary protection test matrix**
   User asks whether gluing two words (no space) corrupts the earlier word in
