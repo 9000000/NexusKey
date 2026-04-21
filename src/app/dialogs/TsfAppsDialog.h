@@ -25,6 +25,8 @@ private:
     void addApp(const std::wstring& name);
     void removeApp(const std::wstring& name);
     void persistAndSignal();
+    void importApps();
+    void exportApps();
 
     std::vector<std::wstring> appList_;
 };

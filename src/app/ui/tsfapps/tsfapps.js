@@ -49,6 +49,21 @@ function initTsfAppsDialog() {
         });
     }
 
+    var btnImport = document.getElementById("btn-import");
+    var btnExport = document.getElementById("btn-export");
+
+    if (btnImport) {
+        btnImport.addEventListener("click", function () {
+            triggerAction("import");
+        });
+    }
+
+    if (btnExport) {
+        btnExport.addEventListener("click", function () {
+            triggerAction("export");
+        });
+    }
+
     // Event delegation for delete button clicks in app list
     document.on("click", ".app-item-delete", function (evt, btn) {
         var item = btn.closest(".app-item");

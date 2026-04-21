@@ -130,6 +130,8 @@ var STRINGS = {
         // ── TSF Apps dialog ──
         "tsf.app_ph": "e.g.: notepad.exe",
         "tsf.app_list": "TSF applications",
+        "tsf.import": "Import from file...",
+        "tsf.export": "Export to file...",
 
         // ── Convert Tool dialog ──
         "ct.title": "Convert Tool",

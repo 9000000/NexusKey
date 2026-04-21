@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "TsfAppsDialog.h"
+#include "DialogUtils.h"
 #include "core/config/ConfigManager.h"
 #include "helpers/AppHelpers.h"
+#include "core/WinStrings.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
+#include <fstream>
 #include <vector>
 
 using namespace sciter::dom;
@@ -74,6 +77,10 @@ bool TsfAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
                         arr.set_item(static_cast<int>(i), sciter::value(apps[i].c_str()));
                     }
                     call_function("setRunningApps", arr);
+                } else if (action == L"import") {
+                    importApps();
+                } else if (action == L"export") {
+                    exportApps();
                 } else if (action == L"close") {
                     PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
                 }
@@ -125,6 +132,67 @@ void TsfAppsDialog::removeApp(const std::wstring& name) {
         appList_.erase(it);
         call_function("removeAppFromList", sciter::value(lower.c_str()));
         persistAndSignal();
+    }
+}
+
+void TsfAppsDialog::importApps() {
+    std::wstring path = ShowOpenFileDialogW(
+        get_hwnd(),
+        L"Text file (*.txt)\0*.txt\0All (*.*)\0*.*\0",
+        L"txt"
+    );
+    if (path.empty()) return;
+
+    int msgboxID = MessageBoxW(
+        get_hwnd(),
+        L"B\u1EA1n c\u00F3 mu\u1ED1n gi\u1EEF l\u1EA1i danh s\u00E1ch hi\u1EC7n t\u1EA1i kh\u00F4ng?",
+        L"Danh s\u00E1ch TSF",
+        MB_ICONEXCLAMATION | MB_YESNO
+    );
+
+    bool append = (msgboxID == IDYES);
+
+    std::ifstream infile(path);
+    if (!infile.is_open()) return;
+
+    if (!append) {
+        appList_.clear();
+    }
+
+    std::string line;
+    while (std::getline(infile, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty() || line[0] == ';') continue;
+
+        std::wstring wName = ToLowerAscii(Utf8ToWide(line));
+        if (wName.empty()) continue;
+        if (std::find(appList_.begin(), appList_.end(), wName) == appList_.end()) {
+            appList_.push_back(wName);
+        }
+    }
+
+    populateList();
+    persistAndSignal();
+}
+
+void TsfAppsDialog::exportApps() {
+    std::wstring path = ShowSaveFileDialogW(
+        get_hwnd(),
+        L"Text file (*.txt)\0*.txt\0",
+        L"txt",
+        L"NexusKeyTsfApps"
+    );
+    if (path.empty()) return;
+
+    std::ofstream outfile(path);
+    if (!outfile.is_open()) return;
+
+    outfile << ";NexusKey TSF Apps\n";
+
+    std::vector<std::wstring> sorted = appList_;
+    std::sort(sorted.begin(), sorted.end());
+    for (auto& app : sorted) {
+        outfile << WideToUtf8(app) << "\n";
     }
 }
 
