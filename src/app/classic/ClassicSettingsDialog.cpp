@@ -963,7 +963,7 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
                 return;
             }
             if (systemConfig_.runAtStartup) {
-                SetRegistryStartup();
+                (void)SetRegistryStartup();
             }
         }
 
