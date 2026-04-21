@@ -309,15 +309,27 @@ public:
             }
         }
 
-        // Auto-cap check: skip trailing whitespace, check for sentence-ending punct
+        // Auto-cap check: skip trailing whitespace, check for sentence-ending punct.
+        // '.?!' requires at least one whitespace between punct and cursor so that
+        // domains/extensions glued to the period (".com", ".vn") are NOT capped.
         size_t i = len;
-        while (i > 0 && (buf[i - 1] == L' ' || buf[i - 1] == L'\t')) --i;
+        bool skippedWhitespace = false;
+        while (i > 0 && (buf[i - 1] == L' ' || buf[i - 1] == L'\t')) {
+            --i;
+            skippedWhitespace = true;
+        }
 
         if (i == 0) {
             shouldAutoCap_ = true;
         } else {
             wchar_t c = buf[i - 1];
-            shouldAutoCap_ = (c == L'\n' || c == L'\r' || c == L'.' || c == L'?' || c == L'!');
+            if (c == L'\n' || c == L'\r') {
+                shouldAutoCap_ = true;
+            } else if ((c == L'.' || c == L'?' || c == L'!') && skippedWhitespace) {
+                shouldAutoCap_ = true;
+            } else {
+                shouldAutoCap_ = false;
+            }
         }
 
         return S_OK;
