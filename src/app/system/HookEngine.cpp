@@ -1201,7 +1201,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
                            composition.compare(0, previousComposition_.size(), previousComposition_) == 0);
     DWORD reinjectVk = 0;
     if (!isSimpleAppend && !autoCapped && currentCodeTable_ == CodeTable::Unicode &&
-        !needBaitChar_ && !skipEmptyChar_) {
+        !needBaitChar_ && !skipEmptyChar_ && !useEditMsgPath_) {
         reinjectVk = vkCode;
         previousComposition_ += originalCh;
     }
@@ -1610,6 +1610,7 @@ bool HookEngine::TryEditMessagePaste(const std::wstring& text, size_t backspaceC
     DWORD_PTR dummy = 0;
     DWORD newStart = 0, selEnd = 0;
 
+    // EM_GETSEL is a query — safe to call before we suppress redraw below.
     if (backspaceCount > 0) {
         DWORD selStart = 0;
         if (!SendMessageTimeoutW(hwnd, EM_GETSEL,
@@ -1625,20 +1626,45 @@ bool HookEngine::TryEditMessagePaste(const std::wstring& text, size_t backspaceC
             return false;
         }
         newStart = selEnd - static_cast<DWORD>(backspaceCount);
+    }
+
+    // Suppress repaint between EM_SETSEL (highlights selection) and EM_REPLACESEL —
+    // otherwise the selection renders as a blue flash before being replaced.
+    // Re-enable + InvalidateRect at the end to paint the final text once.
+    // erase=FALSE: text controls paint their own background in WM_PAINT — TRUE would
+    // cause a brief background-color flash before the text redraws on top.
+    // Edge case: if WM_SETREDRAW TRUE times out after FALSE succeeded, the control
+    // stays in no-redraw state until its thread un-hangs. Rare (target must hang
+    // mid-sequence) but worth noting.
+    bool redrawSuppressed = (backspaceCount > 0);
+    if (redrawSuppressed) {
+        SendMessageTimeoutW(hwnd, WM_SETREDRAW, FALSE, 0,
+                            kFlags, kEditMsgTimeoutMs, &dummy);
         if (!SendMessageTimeoutW(hwnd, EM_SETSEL,
                                  static_cast<WPARAM>(newStart),
                                  static_cast<LPARAM>(selEnd),
                                  kFlags, kEditMsgTimeoutMs, &dummy)) {
             HOOK_LOG(L"  EditMsgPaste: EM_SETSEL timed out (class='%s')", cls);
+            SendMessageTimeoutW(hwnd, WM_SETREDRAW, TRUE, 0,
+                                kFlags, kEditMsgTimeoutMs, &dummy);
+            InvalidateRect(hwnd, nullptr, FALSE);
             return false;
         }
     }
 
     // wParam=TRUE → operation goes on the undo stack (Ctrl+Z works).
-    if (!SendMessageTimeoutW(hwnd, EM_REPLACESEL,
-                             static_cast<WPARAM>(TRUE),
-                             reinterpret_cast<LPARAM>(text.c_str()),
-                             kFlags, kEditMsgTimeoutMs, &dummy)) {
+    BOOL replaceOk = SendMessageTimeoutW(hwnd, EM_REPLACESEL,
+                                         static_cast<WPARAM>(TRUE),
+                                         reinterpret_cast<LPARAM>(text.c_str()),
+                                         kFlags, kEditMsgTimeoutMs, &dummy) != 0;
+
+    if (redrawSuppressed) {
+        SendMessageTimeoutW(hwnd, WM_SETREDRAW, TRUE, 0,
+                            kFlags, kEditMsgTimeoutMs, &dummy);
+        InvalidateRect(hwnd, nullptr, FALSE);
+    }
+
+    if (!replaceOk) {
         HOOK_LOG(L"  EditMsgPaste: EM_REPLACESEL timed out (class='%s')", cls);
         return false;
     }
@@ -2080,6 +2106,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     skipEmptyChar_ = isElectron || isConsoleApp_;
     needBaitChar_ = isBrowser;
     useClipboardPaste_ = isVB6;
+    useEditMsgPath_ = false;
 
     // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
     if (!skipEmptyChar_ && !needBaitChar_ && !useClipboardPaste_) {
@@ -2087,6 +2114,14 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         if (!exeName.empty()) {
             if (_wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
                 skipEmptyChar_ = true;
+            } else if (_wcsicmp(exeName.c_str(), L"notepad.exe") == 0) {
+                // Notepad (both classic Win32 Edit and Win11 WinUI 3 RichEditBox)
+                // share exe name + root class "Notepad". The new one renders async on
+                // the compositor thread and flashes suppressed keys with the SendInput
+                // batch path; EM_REPLACESEL on the Edit/RichEdit child is atomic and
+                // fixes the flicker. Classic Notepad benefits too: one undo entry per
+                // transform instead of per BS + per char.
+                useEditMsgPath_ = true;
             } else {
                 needBaitChar_ = exeName.find(L"excel") != std::wstring::npos ||
                     exeName.find(L"outlook") != std::wstring::npos;
@@ -2094,11 +2129,11 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         }
     }
     isElectronApp_ = isElectron && !isConsoleApp_;
-    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d clipboard=%d",
+    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d bait=%d clipboard=%d editMsg=%d",
              isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0,
-             needBaitChar_ ? 1 : 0, useClipboardPaste_ ? 1 : 0);
+             needBaitChar_ ? 1 : 0, useClipboardPaste_ ? 1 : 0, useEditMsgPath_ ? 1 : 0);
 
-    if (useClipboardPaste_) {
+    if (useClipboardPaste_ || useEditMsgPath_) {
         RefreshFocusCache(activeHwnd);
     } else {
         cachedFocusedHwnd_ = nullptr;
@@ -2361,6 +2396,21 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     HOOK_LOG(L"  ReplaceComposition: prev='%s' new='%s' common=%zu BS=%zu send='%s'",
              previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
              toSend.c_str());
+
+    // ── Async-render apps (Win11 new Notepad) ──
+    // WinUI 3 RichEditBox renders on the compositor thread async to input. SendInput
+    // BS+replace arrives a frame too late → suppressed key flashes before replacement.
+    // EM_REPLACESEL goes straight into the RichEdit child synchronously → atomic.
+    // Fall through to SendInput on failure (not clipboard — preserve user's clipboard).
+    if (useEditMsgPath_) {
+        if (TryEditMessagePaste(toSend, backspaceCount)) {
+            previousComposition_ = newText;
+            if (synthEventsPending_ > 0) hadSynthInWord_ = true;
+            return;
+        }
+        HOOK_LOG(L"  ReplaceComposition[editMsg]: fallback to SendInput BS=%zu send='%s'",
+                 backspaceCount, toSend.c_str());
+    }
 
     // ── VB6 / ANSI-internal windows ──
     // ANSI windows can't handle KEYEVENTF_UNICODE (VK_PACKET) — Vietnamese chars become '?'.
