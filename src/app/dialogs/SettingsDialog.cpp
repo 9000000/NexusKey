@@ -670,6 +670,27 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     }
     else if (id == L"run-admin") {
         systemConfig_.runAsAdmin = value;
+
+        // Clean up startup mechanisms from the current user's context 
+        // to ensure the exact user's HKCU or Scheduled Task is targeted.
+        if (value) {
+            // Enabling admin: remove registry key immediately. The new elevated
+            // instance will create the task in EnsureStartupRegistration().
+            RemoveRegistryStartup();
+        } else {
+            // Disabling admin: remove elevated task and fall back to registry.
+            // (RemoveScheduledTask requires UAC, which is correct).
+            if (!RemoveScheduledTask()) {
+                // UAC denied or removal failed — revert toggle to match reality
+                systemConfig_.runAsAdmin = true;
+                setToggleState(L"run-admin", true);
+                return;
+            }
+            if (systemConfig_.runAtStartup) {
+                SetRegistryStartup();
+            }
+        }
+
         saveSystemSettings();
         // Restart main process to apply elevation change.
         // Startup registration (Task Scheduler/Registry) is handled by

@@ -81,10 +81,14 @@ inline void RemoveRegistryStartup() noexcept {
     return true;
 }
 
-/// Remove the scheduled task (requires elevation for /rl highest tasks)
-inline void RemoveScheduledTask() noexcept {
+/// Remove the scheduled task (requires elevation for /rl highest tasks).
+/// Returns true if the task was successfully deleted or didn't exist.
+[[nodiscard]] inline bool RemoveScheduledTask() noexcept {
+    if (!IsScheduledTaskRegistered()) return true;  // Nothing to remove
     std::wstring args = L"/delete /tn " + std::wstring(STARTUP_TASK_NAME) + L" /f";
-    (void)RunSchtasksElevated(args.c_str());
+    bool ok = RunSchtasksElevated(args.c_str());
+    // Verify removal — schtasks may return 0 even on partial failure
+    return ok && !IsScheduledTaskRegistered();
 }
 
 /// Create a scheduled task to run at logon with highest privileges (UAC prompt)
@@ -139,7 +143,7 @@ inline void RegisterRunOnStartup(bool enable, bool asAdmin) {
     if (!enable) {
         // Remove both to be safe
         RemoveRegistryStartup();
-        RemoveScheduledTask();
+        (void)RemoveScheduledTask();
         return;
     }
 
@@ -150,7 +154,7 @@ inline void RegisterRunOnStartup(bool enable, bool asAdmin) {
         }
     } else {
         // Normal registry startup, remove any elevated task
-        RemoveScheduledTask();
+        (void)RemoveScheduledTask();
         (void)SetRegistryStartup();
     }
 }
@@ -265,6 +269,11 @@ inline void SetDesktopShortcut(bool enable) {
     if (!runAtStartup) return false;
 
     if (runAsAdmin) {
+        // ALWAYS forcefully remove the registry startup to make sure it doesn't conflict
+        // with the Scheduled Task. This prevents lingering non-elevated auto-start entries 
+        // from causing UAC prompts on every logon.
+        RemoveRegistryStartup();
+
         if (IsScheduledTaskRegistered()) return false;  // Task exists, all good
 
         // Task missing — if we're already elevated, recreate it (no UAC prompt)

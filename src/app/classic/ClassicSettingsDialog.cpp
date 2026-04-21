@@ -951,6 +951,22 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
         RegisterRunOnStartup(value, systemConfig_.runAsAdmin);
     }
     else if (wcscmp(id, L"run-admin") == 0) {
+        // Clean up startup mechanisms from the current user's context 
+        // to ensure the exact user's HKCU or Scheduled Task is targeted.
+        if (value) {
+            RemoveRegistryStartup();
+        } else {
+            if (!RemoveScheduledTask()) {
+                // UAC denied or removal failed — revert checkbox to match reality
+                systemConfig_.runAsAdmin = true;
+                CheckDlgButton(hwnd_, IDC_CHECK_RUN_ADMIN, BST_CHECKED);
+                return;
+            }
+            if (systemConfig_.runAtStartup) {
+                SetRegistryStartup();
+            }
+        }
+
         // Flush to TOML now — RestartWithNewAdminMode reads config from disk
         KillTimer(hwnd_, kTimerDeferredSave);
         SaveToToml();
