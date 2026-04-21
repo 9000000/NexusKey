@@ -211,6 +211,7 @@ private:
     bool needBaitChar_ = false;   // Apps with autocomplete/suggest need U+202F bait before BS
     bool useClipboardPaste_ = false;  // VB6 and legacy ANSI-internal apps need clipboard paste
     bool useEditMsgPath_ = false;     // Async-render apps (Win11 new Notepad) — try EM_REPLACESEL first, fall to SendInput
+    bool isOutlookApp_ = false;   // Outlook 2016 RichEdit drops trailing char of a word when physical Shift+letter precedes it — force SendInput path (issue #97)
     DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
     bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save

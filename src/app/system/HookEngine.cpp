@@ -1159,14 +1159,18 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     // Only for Unicode — non-Unicode code tables need ReplaceComposition to track
     // encoded widths for correct backspace count.
     // Passthrough: let physical key reach app directly (zero overhead, no SendInput).
-    // Blocked when EITHER condition is true:
+    // Blocked when ANY condition is true:
     //   - hadSynthInWord_ && isElectronApp_: Electron/Qt multi-process architecture
     //     where physical WM_KEYDOWN and synthetic VK_PACKET arrive out of order.
     //   - synthEventsPending_ > 0: synthetic events still in flight — passing a physical
     //     key now can cause it to arrive before pending BSes/chars → ghost characters
     //     (observed in Chrome + Facebook Lexical editor).
+    //   - isOutlookApp_: Outlook 2016 RichEdit drops the last char of a word when
+    //     physical Shift+letter precedes subsequent chars (e.g. "Anh em" → "An hem").
+    //     SendInput VK_PACKET path avoids the quirk (issue #97).
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
         !(hadSynthInWord_ && isElectronApp_) &&
+        !isOutlookApp_ &&
         synthEventsPending_ == 0 &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
@@ -2107,6 +2111,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     needBaitChar_ = isBrowser;
     useClipboardPaste_ = isVB6;
     useEditMsgPath_ = false;
+    isOutlookApp_ = false;
 
     // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
     if (!skipEmptyChar_ && !needBaitChar_ && !useClipboardPaste_) {
@@ -2123,8 +2128,8 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
                 // transform instead of per BS + per char.
                 useEditMsgPath_ = true;
             } else {
-                needBaitChar_ = exeName.find(L"excel") != std::wstring::npos ||
-                    exeName.find(L"outlook") != std::wstring::npos;
+                isOutlookApp_ = exeName.find(L"outlook") != std::wstring::npos;
+                needBaitChar_ = exeName.find(L"excel") != std::wstring::npos || isOutlookApp_;
             }
         }
     }
