@@ -323,13 +323,8 @@ public:
             shouldAutoCap_ = true;
         } else {
             wchar_t c = buf[i - 1];
-            if (c == L'\n' || c == L'\r') {
-                shouldAutoCap_ = true;
-            } else if ((c == L'.' || c == L'?' || c == L'!') && skippedWhitespace) {
-                shouldAutoCap_ = true;
-            } else {
-                shouldAutoCap_ = false;
-            }
+            shouldAutoCap_ = (c == L'\n' || c == L'\r') ||
+                             ((c == L'.' || c == L'?' || c == L'!') && skippedWhitespace);
         }
 
         return S_OK;
