@@ -1,0 +1,48 @@
+name: Feature Request
+description: Đề xuất tính năng mới
+title: "[FEATURE]: "
+labels: ["enhancement"]
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Mô tả tính năng
+      placeholder: Bạn muốn NexusKey có thêm tính năng gì?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: Lý do cần tính năng này
+      description: Tính năng này giải quyết vấn đề gì cho bạn?
+      placeholder: Ví dụ - Khi gõ tiếng Việt trong app X, tôi gặp khó khăn vì...
+    validations:
+      required: false
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Giải pháp đề xuất (optional)
+      description: Bạn hình dung tính năng này hoạt động như thế nào?
+      placeholder: Mô tả cách bạn muốn tính năng này hoạt động
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Giải pháp thay thế (optional)
+      description: Bạn đã thử cách nào khác chưa?
+      placeholder: Ví dụ - Hiện tại tôi đang dùng cách...
+    validations:
+      required: false
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: Thông tin thêm (optional)
+      description: Ảnh mockup, link tham khảo, hoặc bất kỳ thông tin nào hữu ích
+    validations:
+      required: false

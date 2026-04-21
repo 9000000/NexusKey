@@ -63,10 +63,9 @@
     --focus-ring: 0 0 0 2px rgba(124, 184, 248, 0.35);
 
     /* Shadows (more airy, glass-like) */
-    /* inset ring renders INSIDE the element (within HWND boundary) — required because recalcWindowSize()
-       sizes the HWND to MARGIN_BOX, leaving no pixel space outside for an outer shadow ring.
-       Outer drop shadow (0 10px 38px) renders on Win11 only; gets clipped on Win10 (harmless). */
-    --shadow-card: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 10px 38px rgba(0, 0, 0, 0.15);
+    /* inset ring rendered INSIDE the element removed based on user feedback */
+    /* Outer drop shadow renders on Win11 only; gets clipped on Win10 (harmless). */
+    --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.08);
     --shadow-thumb: 0 2px 6px rgba(0, 0, 0, 0.2);
     --shadow-thumb-small: 0 1px 3px rgba(0, 0, 0, 0.2);
 
@@ -174,8 +173,8 @@ body.dark {
     --focus-ring: 0 0 0 2px rgba(96, 165, 250, 0.5);
 
     /* Shadows */
-    /* inset ring — same reason as light mode (HWND clipping) */
-    --shadow-card: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 10px 40px rgba(0, 0, 0, 0.6);
+    /* inset ring removed */
+    --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.2);
     --shadow-thumb: 0 2px 8px rgba(0, 0, 0, 0.8);
     --shadow-thumb-small: 0 1px 4px rgba(0, 0, 0, 0.6);
 
@@ -189,7 +188,7 @@ popup {
     padding: 4px !important;
     background-color: #ffffff !important; 
     color: #000000 !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), inset 0 0 0 1px rgba(0,0,0,0.1) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
     border: none !important;
 }
 
@@ -208,7 +207,7 @@ popup option:checked {
 body.dark popup {
     background-color: rgba(26, 26, 36, 0.98) !important;
     color: #F9FAFB !important;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 4px 16px rgba(0, 0, 0, 0.8) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
     backdrop-filter: blur(10px);
 }
 
@@ -385,19 +384,19 @@ body.dark select option:checked {
    which was needed on Win11 to fake an inner border, but looks bad when we
    have a real border here on Win10. */
 body.win10 {
-    --shadow-card: 0 4px 18px rgba(0, 0, 0, 0.25);
+    --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 body.dark.win10 {
-    --shadow-card: 0 5px 22px rgba(0, 0, 0, 0.55);
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 body.win10 .container {
-    border: 1px solid #8C8C8C; /* Crisp opaque border */
+    border: 1px solid rgba(0, 0, 0, 0.1); /* Subtle dark border instead of white */
     margin: 12px; /* Increased to allow softer shadow to spread without clipping */
     border-radius: 8px; /* Restored rounded corners per user request */
 }
 
 body.dark.win10 .container {
-    border: 1px solid #333333;
+    border: 1px solid rgba(0, 0, 0, 0.6); /* Pure dark border, completely eliminating 'white ring' */
 }
