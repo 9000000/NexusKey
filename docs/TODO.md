@@ -20,23 +20,17 @@ User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
   actually delivers keys inside UWP AppContainer (normally yes) before shipping.
   Also affects: Start menu search, Settings app search box.
 
-- [ ] **Arrow-left revive drops auto-cap state** — needs repro
-  User report: type `wqewqe` + space (→ `Wqewqe `), arrow-left, type `a` +
-  space → result `wqewqea` (first W demoted to lowercase). Hook has no revive
-  so shouldn't touch the W — suggests TSF path. `SeedFromText` DOES preserve
-  `isUpper` (`TypingEngine.cpp:1299`), but `wqewqe` is classified as English
-  → revive should be skipped. User's observation conflicts with code trace.
-  **Action**: get HOOK_LOG + TSF_LOG reproduction before fixing. Possibly a
-  display-composition edit-session bug overwriting the range.
+- [~] **Arrow-left revive drops auto-cap state** — cannot reproduce (2026-04-21)
+  User-reported `Wqewqe` + ←+`a` → `wqewqea` bug did NOT reproduce on retest.
+  Code trace (EngineController.cpp:263-293 revive gate + SeedFromText case
+  preservation) shows no bug path. Keeping this stub in case the original
+  scenario resurfaces — retry with HOOK_LOG + TSF_LOG capture.
 
-- [ ] **Arrow-left revive breaks Vietnamese word** — needs repro
-  User report: `bưởi` + space (`Bưởi `), arrow-left to caret before space,
-  type any letter (`a`/`A`) → result `buoi` (caps + diacritics + tone all
-  lost). Likely same root cause as the W→w issue above, but with vowel/tone
-  state involved. Seed path in `SeedFromText` handles `isUpper` + `mod` +
-  `tone` — so symptom suggests revive is NOT running and something else is
-  stomping the range.
-  **Action**: capture logs; verify which edit session path fires.
+- [~] **Arrow-left revive breaks Vietnamese word** — cannot reproduce (2026-04-21)
+  User-reported `Bưởi` + ←+`a` → `buoi` bug did NOT reproduce on retest.
+  Seed path in TypingEngine.cpp:1285 handles `isUpper` + `mod` + `tone`;
+  Peek() reads from states_ not rawInput_. Keeping stub for future retest
+  with logs if the scenario resurfaces.
 
 - [ ] **Word-boundary protection test matrix**
   User asks whether gluing two words (no space) corrupts the earlier word in
