@@ -828,8 +828,12 @@ bool TypingEngine::ProcessWModifier(wchar_t c) {
         // If other chars were typed after the synthetic ư (e.g., "window"),
         // it's now part of a word — do regular escape instead.
         if (states_[hornedIdx].synthetic && hornedIdx == states_.size() - 1) {
+            // Preserve the case of the first keystroke (the 'W' that produced Ư).
+            // Passing the raw second keystroke drops uppercase intent: W + w → w
+            // instead of W. Force case on the escape output to match the original.
+            bool origUpper = states_[hornedIdx].isUpper;
             states_.erase(states_.begin() + static_cast<ptrdiff_t>(hornedIdx));
-            ProcessChar(c);
+            ProcessChar(origUpper ? towupper(c) : towlower(c));
             escape_.escape(EscapeKind::Horn);
             return true;
         }

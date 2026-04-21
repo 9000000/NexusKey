@@ -1096,6 +1096,20 @@ TEST_F(TelexEngineTest, WW_Standalone_Escape) {
     EXPECT_EQ(engine_->Peek(), L"w");
 }
 
+TEST_F(TelexEngineTest, WW_Standalone_Escape_UppercasePreserved) {
+    // W + w → Ư (P8) then escape. Result should be 'W' (preserve first keystroke's
+    // uppercase intent), not 'w'. Without the fix, second keystroke's lowercase
+    // wins and user loses the capitalization.
+    TypeString(*engine_, L"Ww");
+    EXPECT_EQ(engine_->Peek(), L"W");
+}
+
+TEST_F(TelexEngineTest, WW_Standalone_Escape_LowerThenUpper_StillLower) {
+    // Symmetric case: lowercase w first, uppercase W second. First keystroke wins.
+    TypeString(*engine_, L"wW");
+    EXPECT_EQ(engine_->Peek(), L"w");
+}
+
 TEST_F(TelexEngineTest, BWW_Standalone_Escape) {
     // bww → bw (P8 synthetic ư after consonant removed)
     TypeString(*engine_, L"bww");
