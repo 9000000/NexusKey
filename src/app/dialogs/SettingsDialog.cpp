@@ -895,7 +895,7 @@ void SettingsDialog::recalcWindowSize() {
     int newHeight = static_cast<int>(BASE_HEIGHT_COLLAPSED * dpiScale);
 
     if (container.is_valid()) {
-        RECT r = container.get_location_ppx(MARGIN_BOX);
+        RECT r = container.get_location_ppx(BORDER_BOX);
         int w = r.right - r.left;
         int h = r.bottom - r.top;
         
@@ -904,6 +904,13 @@ void SettingsDialog::recalcWindowSize() {
         // (COMPACT_WIDTH/ADVANCED_WIDTH and BASE_HEIGHT_COLLAPSED) unless > 100px.
         if (w > 100) newWidth = w;
         if (h > 100) newHeight = h;
+    }
+
+    if (!DarkModeHelper::IsWindows11OrGreater()) {
+        // Windows 10 CSS fallback adds 12px margin on all sides for drop shadow
+        // Since BORDER_BOX excludes margins, we manually add the margin size here
+        newWidth += static_cast<int>(24 * dpiScale);
+        newHeight += static_cast<int>(24 * dpiScale);
     }
 
     // Keep window position, just resize

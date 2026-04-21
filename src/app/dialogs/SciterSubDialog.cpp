@@ -30,8 +30,8 @@ SciterSubDialog* SciterSubDialog::s_instance = nullptr;
 
 SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
     : sciter::window(SW_MAIN, RECT{-10000, -10000,
-        -10000 + ScaleHelper::scale(config.baseWidth),
-        -10000 + ScaleHelper::scale(config.baseHeight)})
+        -10000 + ScaleHelper::scale(config.baseWidth + (!DarkModeHelper::IsWindows11OrGreater() ? 24 : 0)),
+        -10000 + ScaleHelper::scale(config.baseHeight + (!DarkModeHelper::IsWindows11OrGreater() ? 24 : 0))})
     , config_(config) {
 
     s_instance = this;
