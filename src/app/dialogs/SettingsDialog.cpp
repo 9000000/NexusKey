@@ -7,6 +7,7 @@
 #include "system/SubprocessHelper.h"
 #include "system/TsfRegistration.h"
 #include "system/UpdateChecker.h"
+#include "system/PendingDllApply.h"
 #include "system/ToastPopup.h"
 #include "core/Version.h"
 #include "sciter/ScaleHelper.h"
@@ -1149,8 +1150,31 @@ void SettingsDialog::initializeUI() {
         }
     }
 
+    // Restart banner — driven by TSF-update flags in SharedState. Settings
+    // runs as a subprocess so it cannot observe main-process globals; the
+    // main EXE publishes banner state into flags after ApplyPendingDllUpdate.
+    {
+        int bannerState = 0;  // 0=hide, 1=pending, 2=mismatch
+        if (sharedState_.IsConnected()) {
+            const uint32_t flags = sharedState_.ReadFlags();
+            if (flags & SharedFlags::TSF_PENDING_DLL_SWAP) {
+                bannerState = 1;
+            } else if (flags & (SharedFlags::TSF_POST_UPDATE_REBOOT
+                              | SharedFlags::TSF_ABI_MISMATCH)) {
+                bannerState = 2;
+            }
+        }
+        call_function("showUpdateBanner", sciter::value(bannerState));
+    }
+
     // Flush all batched DOM mutations in one repaint
     root.update(false);
+}
+
+void SettingsDialog::requestRestartWindows() {
+    // Delegate to the shared helper so the Classic dialog and the tray share
+    // the same ExitWindowsEx flow (and SE_SHUTDOWN_NAME privilege acquisition).
+    RestartWindowsWithPrompt(get_hwnd());
 }
 
 void SettingsDialog::onInputMethodChange(int method) {
