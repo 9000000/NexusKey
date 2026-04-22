@@ -336,15 +336,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created for HookEngine mode");
 
-        // Publish the startup DLL-swap outcome so Settings subprocess + tray
-        // can render a restart banner. Bits clear on reboot (SharedState is
-        // recreated fresh; InitDefaults zeroes flags).
+        // Publish the startup DLL-swap outcome ONLY if TSF is currently
+        // registered — users who haven't opted into TSF don't care about
+        // DLL-host synchronization and shouldn't be nagged to reboot.
+        // Bits clear on reboot (SharedState is recreated fresh).
+        const bool tsfInUse = IsTsfRegistered();
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_PENDING_DLL_SWAP,
-            pendingDllState == PendingDllState::SwapFailed);
+            tsfInUse && pendingDllState == PendingDllState::SwapFailed);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_POST_UPDATE_REBOOT,
-            pendingDllState == PendingDllState::SwapDoneNeedsReboot);
-        // TSF_ABI_MISMATCH is NOT cleared here — if the old DLL is still mapped
-        // in a host and set the bit, the banner must persist until reboot.
+            tsfInUse && pendingDllState == PendingDllState::SwapDoneNeedsReboot);
+        // TSF_ABI_MISMATCH is set cross-process by the DLL itself and only if
+        // a host process loaded our DLL. DLL can't load without registration,
+        // so this flag implicitly requires TSF-in-use. No gate needed.
     }
 
     // Tray Icon
@@ -546,7 +549,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created and initialized (TSF_ACTIVE=1, TSF-only mode)");
 
-        // Publish startup DLL-swap outcome (see HookEngine mode above).
+        // Publish startup DLL-swap outcome. We're in the TSF-only mode branch,
+        // so TSF is registered by construction (earlier `if (!IsTsfRegistered())`
+        // path handled the register prompt) — no IsTsfRegistered() gate needed.
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_PENDING_DLL_SWAP,
             pendingDllState == PendingDllState::SwapFailed);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_POST_UPDATE_REBOOT,

@@ -434,12 +434,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created for Lite mode");
 
-        // Publish startup DLL-swap outcome so Settings subprocess + tray can
-        // render a restart banner.
+        // Publish the startup DLL-swap outcome ONLY if TSF is registered —
+        // users who haven't opted into TSF (or toggled it off) don't care
+        // about DLL-host sync and shouldn't be nagged to reboot.
+        const bool tsfInUse = IsTsfRegistered();
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_PENDING_DLL_SWAP,
-            pendingDllState == PendingDllState::SwapFailed);
+            tsfInUse && pendingDllState == PendingDllState::SwapFailed);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_POST_UPDATE_REBOOT,
-            pendingDllState == PendingDllState::SwapDoneNeedsReboot);
+            tsfInUse && pendingDllState == PendingDllState::SwapDoneNeedsReboot);
     }
 
     // ── Tray Icon ──
