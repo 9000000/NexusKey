@@ -51,6 +51,12 @@ enum class StringId : uint16_t {
     UPDATE_CHECKING,
     UPDATE_DOWNLOAD_FAILED,
 
+    // Update-restart banner (hybrid TSF DLL update)
+    UPDATE_BANNER_PENDING,
+    UPDATE_BANNER_MISMATCH,
+    UPDATE_BANNER_RESTART_NOW,
+    UPDATE_BANNER_LATER,
+
     // Convert tool
     CONVERT_NO_SOURCE_FILE,
     CONVERT_READ_ERROR,
