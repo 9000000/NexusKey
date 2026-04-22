@@ -310,7 +310,8 @@ void TrayIcon::ShowContextMenu() {
     auto checked = [](bool on) -> UINT { return MF_STRING | (on ? MF_CHECKED : 0); };
 
     // ── Section 0: Restart-to-finish-update (conditional) ──
-    if (sharedState_ && GetUpdateBannerState(*sharedState_) != 0) {
+    if (sharedState_
+        && GetUpdateBannerState(*sharedState_) != UpdateBannerState::Hide) {
         AppendMenuW(hMenu, MF_STRING,
             static_cast<UINT>(TrayMenuId::RestartWindows),
             S(StringId::UPDATE_BANNER_RESTART_NOW));

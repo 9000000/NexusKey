@@ -34,11 +34,16 @@ void RestartWindowsWithPrompt(HWND owner) noexcept;
 /// have already obtained user consent.
 void RestartWindowsNow() noexcept;
 
+/// Banner to display on the restart banner in Settings / tray.
+enum class UpdateBannerState {
+    Hide = 0,           // No banner.
+    PendingSwap = 1,    // "Update not finished" — startup swap failed.
+    Mismatch = 2        // "Some apps still run the old version" — swap done
+                        // or DLL reported TSF_ABI_MISMATCH.
+};
+
 /// Read TSF-update flags from SharedState and decide banner visibility.
-/// Returns 0 = hide, 1 = "update not finished" (pending-swap failed),
-/// 2 = "some apps still run the old version" (swap done + mismatch cases).
-/// Single source of truth for the banner-state decision used by Sciter
-/// settings, Classic settings and the tray menu.
-[[nodiscard]] int GetUpdateBannerState(const SharedStateManager& shared) noexcept;
+/// Single source of truth used by Sciter settings, Classic settings and tray.
+[[nodiscard]] UpdateBannerState GetUpdateBannerState(const SharedStateManager& shared) noexcept;
 
 }  // namespace NextKey

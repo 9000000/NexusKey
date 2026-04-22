@@ -116,9 +116,7 @@ bool ExtractZip(const std::wstring& zipPath, const std::wstring& destDir) {
 /// If rename fails (rare: AV holding a non-share-delete handle), stash the new
 /// DLL next to the old one with a `.pending` suffix and drop a marker file so
 /// WinMain applies the swap on the next EXE launch.
-///
-/// Returns true if the live file on disk is now the new version.
-bool HandleTsfDllReplace(const std::wstring& newDllSrc,
+void HandleTsfDllReplace(const std::wstring& newDllSrc,
                          const std::wstring& exeDir,
                          const std::wstring& oldVersionDir) {
     namespace fs = std::filesystem;
@@ -134,7 +132,7 @@ bool HandleTsfDllReplace(const std::wstring& newDllSrc,
         if (CopyFileW(newDllSrc.c_str(), liveDll.c_str(), FALSE)) {
             DeleteFileW((exeDir + L"\\" + TSF_DLL_FILENAME + TSF_DLL_PENDING_SUFFIX).c_str());
             DeleteFileW((exeDir + L"\\" + TSF_DLL_PENDING_MARKER).c_str());
-            return true;
+            return;
         }
         MoveFileW(parked.c_str(), liveDll.c_str());
     }
@@ -146,7 +144,7 @@ bool HandleTsfDllReplace(const std::wstring& newDllSrc,
         // the next boot's ApplyPendingDllUpdate doesn't see half-deferred
         // state. User retains the old DLL; EXE may be newer but ABI gate
         // will catch it on DLL-load.
-        return false;
+        return;
     }
 
     // Marker body = SHA256 of the pending DLL. ApplyPendingDllUpdate recomputes
@@ -158,13 +156,11 @@ bool HandleTsfDllReplace(const std::wstring& newDllSrc,
                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hMarker == INVALID_HANDLE_VALUE) {
         DeleteFileW(pendingPath.c_str());  // back out of the half-deferred state
-        return false;
+        return;
     }
     DWORD written = 0;
     WriteFile(hMarker, sha.data(), static_cast<DWORD>(sha.size()), &written, nullptr);
     CloseHandle(hMarker);
-
-    return false;
 }
 
 /// Copy all files from srcDir to destDir (overwriting)

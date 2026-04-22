@@ -108,8 +108,9 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     // Classic uses a one-shot confirm instead of an inline banner (Win32 tab
     // layout makes an inline strip costly). User clicks OK → ExitWindowsEx;
     // Cancel → continue with settings.
-    if (int bannerState = GetUpdateBannerState(sharedState_); bannerState != 0) {
-        const wchar_t* msg = (bannerState == 1)
+    if (auto bannerState = GetUpdateBannerState(sharedState_);
+        bannerState != UpdateBannerState::Hide) {
+        const wchar_t* msg = (bannerState == UpdateBannerState::PendingSwap)
             ? S(StringId::UPDATE_BANNER_PENDING)
             : S(StringId::UPDATE_BANNER_MISMATCH);
         // User already confirms reboot intent in THIS MessageBox; skip the

@@ -126,12 +126,14 @@ void RestartWindowsWithPrompt(HWND owner) noexcept {
     }
 }
 
-int GetUpdateBannerState(const SharedStateManager& shared) noexcept {
-    if (!shared.IsConnected()) return 0;
+UpdateBannerState GetUpdateBannerState(const SharedStateManager& shared) noexcept {
+    if (!shared.IsConnected()) return UpdateBannerState::Hide;
     const uint32_t flags = shared.ReadFlags();
-    if (flags & SharedFlags::TSF_PENDING_DLL_SWAP) return 1;
-    if (flags & (SharedFlags::TSF_POST_UPDATE_REBOOT | SharedFlags::TSF_ABI_MISMATCH)) return 2;
-    return 0;
+    if (flags & SharedFlags::TSF_PENDING_DLL_SWAP) return UpdateBannerState::PendingSwap;
+    if (flags & (SharedFlags::TSF_POST_UPDATE_REBOOT | SharedFlags::TSF_ABI_MISMATCH)) {
+        return UpdateBannerState::Mismatch;
+    }
+    return UpdateBannerState::Hide;
 }
 
 }  // namespace NextKey
