@@ -3,16 +3,39 @@
 
 #include "PendingDllApply.h"
 #include "UpdateInstaller.h"              // TSF_DLL_FILENAME, constants, MakeParkedDllTimestamp
+#include "UpdateSecurity.h"               // ComputeFileSha256
 #include "core/Strings.h"
 #include "core/ipc/SharedState.h"          // SharedFlags
 #include "core/ipc/SharedStateManager.h"
 
+#include <cctype>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace NextKey {
 
 namespace {
+
+/// Read a marker file produced by HandleTsfDllReplace. Content is a hex
+/// SHA-256 string (64 chars) — we trim whitespace and lowercase for a stable
+/// compare. Returns empty string on any failure.
+std::string ReadMarkerHash(const std::filesystem::path& markerPath) noexcept {
+    std::ifstream in(markerPath, std::ios::binary);
+    if (!in.is_open()) return {};
+    std::string content((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+    // Trim + lowercase.
+    auto not_hex = [](unsigned char c) {
+        return !std::isxdigit(c);
+    };
+    auto begin = std::find_if_not(content.begin(), content.end(), not_hex);
+    auto end = content.end();
+    while (end > begin && not_hex(static_cast<unsigned char>(*(end - 1)))) --end;
+    std::string hex(begin, end);
+    for (auto& c : hex) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return hex.size() == 64 ? hex : std::string{};
+}
 
 std::wstring GetExeDirW() noexcept {
     wchar_t buf[MAX_PATH] = {};
@@ -39,6 +62,22 @@ PendingDllState ApplyPendingDllUpdate() noexcept {
     if (!fs::exists(pending, ec)) {
         fs::remove(marker, ec);   // defensive: clean orphan markers
         return PendingDllState::None;
+    }
+
+    // SHA-256 gate — only apply .pending if the marker's recorded hash
+    // matches the file's current hash. Protects against user-dropped or
+    // corrupted .pending files, restoring parity with the %TEMP%+SHA256
+    // guarantees of the --install-update flow.
+    {
+        std::string expected = ReadMarkerHash(marker);
+        std::string actual   = ComputeFileSha256(pending);
+        if (expected.empty() || actual.empty() || expected != actual) {
+            // Unauthenticated or corrupted pending — throw it away so the
+            // next boot starts clean. Don't install it.
+            fs::remove(pending, ec);
+            fs::remove(marker, ec);
+            return PendingDllState::None;
+        }
     }
 
     fs::create_directories(oldDir, ec);

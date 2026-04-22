@@ -6,6 +6,7 @@
 
 #include <TlHelp32.h>
 #include <filesystem>
+#include <fstream>
 #include <vector>
 
 namespace NextKey {
@@ -140,12 +141,28 @@ bool HandleTsfDllReplace(const std::wstring& newDllSrc,
 
     // Fallback: defer to next EXE startup.
     std::wstring pendingPath = exeDir + L"\\" + TSF_DLL_FILENAME + TSF_DLL_PENDING_SUFFIX;
-    CopyFileW(newDllSrc.c_str(), pendingPath.c_str(), FALSE);
+    if (!CopyFileW(newDllSrc.c_str(), pendingPath.c_str(), FALSE)) {
+        // Disk full / permission denied / AV quarantine — leave NO marker so
+        // the next boot's ApplyPendingDllUpdate doesn't see half-deferred
+        // state. User retains the old DLL; EXE may be newer but ABI gate
+        // will catch it on DLL-load.
+        return false;
+    }
 
+    // Marker body = SHA256 of the pending DLL. ApplyPendingDllUpdate recomputes
+    // and verifies before swapping — prevents applying a user-dropped or
+    // corrupted `.pending` file.
+    std::string sha = ComputeFileSha256(pendingPath);
     std::wstring markerPath = exeDir + L"\\" + TSF_DLL_PENDING_MARKER;
     HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr,
                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (hMarker != INVALID_HANDLE_VALUE) CloseHandle(hMarker);
+    if (hMarker == INVALID_HANDLE_VALUE) {
+        DeleteFileW(pendingPath.c_str());  // back out of the half-deferred state
+        return false;
+    }
+    DWORD written = 0;
+    WriteFile(hMarker, sha.data(), static_cast<DWORD>(sha.size()), &written, nullptr);
+    CloseHandle(hMarker);
 
     return false;
 }
