@@ -356,6 +356,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         return 1;
     }
     g_trayIcon.SetMenuCallback(OnMenuCommand);
+    g_trayIcon.SetSharedState(&g_sharedState);  // for TSF-update restart menu item
 
     // Wire mode change callback: HookEngine → defer icon update via PostMessage
     g_hookEngine.SetModeChangeCallback([](bool vietnamese) {
@@ -378,6 +379,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hookEngine.SetTsfModeCallback([](bool tsfActive, bool tsfReadonly) {
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_ACTIVE, tsfActive);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_READONLY, tsfReadonly);
+    });
+
+    // Wire hook-reload callback: sub-dialog subprocess → main EXE eager sync.
+    // Without this, new lists (TSF apps, excluded apps, macros, …) only apply on the next
+    // keystroke / focus change in the target app. SyncConfigFromSharedState reads
+    // configGeneration; it must not touch the Named Event (auto-reset, reserved for TSF DLL).
+    g_trayIcon.SetHookReloadCallback([]() {
+        g_hookEngine.SyncConfigFromSharedState();
     });
 
     // Wire settings dialog → HookEngine mode set (cross-process)
@@ -554,6 +563,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         return 1;
     }
     g_trayIcon.SetMenuCallback(OnMenuCommand);
+    g_trayIcon.SetSharedState(&g_sharedState);  // for TSF-update restart menu item
 
     // Wire settings dialog → TSF mode set (cross-process)
     g_trayIcon.SetModeRequestCallback([](bool vietnamese) {
@@ -772,6 +782,10 @@ void OnMenuCommand(TrayMenuId id) {
             TerminateAllSubprocesses();
             g_running.store(false, std::memory_order_relaxed);
             PostQuitMessage(0);
+            break;
+
+        case TrayMenuId::RestartWindows:
+            RestartWindowsWithPrompt(g_trayIcon.GetMessageWindow());
             break;
 
         default: {
