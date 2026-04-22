@@ -197,10 +197,15 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
 std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
     SYSTEMTIME st{};
     GetLocalTime(&st);
-    wchar_t ts[64];
-    swprintf_s(ts, L"_%04u%02u%02u_%02u%02u%02u%s",
+    // Include PID + tick-count low word to disambiguate same-second collisions
+    // (e.g. user double-clicks the installer and two --install-update processes
+    // race to park the live DLL).
+    wchar_t ts[96];
+    swprintf_s(ts, L"_%04u%02u%02u_%02u%02u%02u_%lu_%lx%s",
                st.wYear, st.wMonth, st.wDay,
                st.wHour, st.wMinute, st.wSecond,
+               GetCurrentProcessId(),
+               GetTickCount() & 0xFFFFu,
                extraSuffix ? extraSuffix : L"");
     return ts;
 }
@@ -209,6 +214,13 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
     std::wstring exeDir = GetExeDirectory();
     std::wstring currentExePath = GetExePath();
     std::wstring tempDir = exeDir + L"\\_update_temp";
+
+    // Known-clean start: delete any stale .pending / marker from a prior
+    // aborted update. Otherwise a rollback in this run + stale pending from
+    // a prior run could pair an old .pending DLL with a freshly-rolled-back
+    // EXE and apply mismatched bits at the next boot.
+    DeleteFileW((exeDir + L"\\" + TSF_DLL_FILENAME + TSF_DLL_PENDING_SUFFIX).c_str());
+    DeleteFileW((exeDir + L"\\" + TSF_DLL_PENDING_MARKER).c_str());
 
     // 1. Wait for all other NexusKey.exe processes to exit (30s timeout)
     WaitForOtherProcesses(30000);
