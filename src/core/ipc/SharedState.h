@@ -17,6 +17,10 @@ namespace SharedFlags {
     constexpr uint32_t SPELL_CHECK     = 0x0004;
     constexpr uint32_t TSF_ACTIVE      = 0x0008;  // Foreground app uses TSF engine (hook sets, DLL reads)
     constexpr uint32_t TSF_READONLY    = 0x0010;  // Hook active, TSF sinks doc events + pushes contextAnchor
+    // Hybrid TSF-DLL update banner triggers (docs/plans/2026-04-22-tsf-update-hybrid-design.md):
+    constexpr uint32_t TSF_ABI_MISMATCH       = 0x0020;  // DLL: mapped SharedState layout doesn't match this DLL
+    constexpr uint32_t TSF_PENDING_DLL_SWAP   = 0x0040;  // EXE: startup swap failed, reboot needed
+    constexpr uint32_t TSF_POST_UPDATE_REBOOT = 0x0080;  // EXE: swap succeeded, hosts may still hold old DLL
 }
 
 // Feature flag bit definitions (uint32_t packed into 3 bytes: featureFlags[2] + extFeatureFlags)

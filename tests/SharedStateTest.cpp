@@ -332,5 +332,25 @@ TEST_F(SharedStateTest, CurrentVersion_IsAtLeast4) {
     EXPECT_GE(SharedState::CURRENT_VERSION, 4u);
 }
 
+TEST_F(SharedStateTest, SharedFlags_NewUpdateBitsDoNotCollide) {
+    // Sanity: each new flag is non-zero and does not collide with existing bits
+    // or with each other.
+    constexpr uint32_t existing =
+        SharedFlags::VIETNAMESE_MODE |
+        SharedFlags::ENGINE_ENABLED  |
+        SharedFlags::SPELL_CHECK     |
+        SharedFlags::TSF_ACTIVE      |
+        SharedFlags::TSF_READONLY;
+    EXPECT_NE(SharedFlags::TSF_ABI_MISMATCH, 0u);
+    EXPECT_NE(SharedFlags::TSF_PENDING_DLL_SWAP, 0u);
+    EXPECT_NE(SharedFlags::TSF_POST_UPDATE_REBOOT, 0u);
+    EXPECT_EQ(SharedFlags::TSF_ABI_MISMATCH & existing, 0u);
+    EXPECT_EQ(SharedFlags::TSF_PENDING_DLL_SWAP & existing, 0u);
+    EXPECT_EQ(SharedFlags::TSF_POST_UPDATE_REBOOT & existing, 0u);
+    EXPECT_EQ(SharedFlags::TSF_ABI_MISMATCH & SharedFlags::TSF_PENDING_DLL_SWAP, 0u);
+    EXPECT_EQ(SharedFlags::TSF_ABI_MISMATCH & SharedFlags::TSF_POST_UPDATE_REBOOT, 0u);
+    EXPECT_EQ(SharedFlags::TSF_PENDING_DLL_SWAP & SharedFlags::TSF_POST_UPDATE_REBOOT, 0u);
+}
+
 }  // namespace
 }  // namespace NextKey
