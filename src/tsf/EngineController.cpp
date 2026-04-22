@@ -15,19 +15,11 @@ namespace TSF {
 EngineController::EngineController() {
     // Try to open SharedState from main app (read-write for flag toggling)
     if (sharedState_.OpenReadWrite()) {
-        SharedState state = sharedState_.Read();
-        if (state.IsValid()) {
-            // Apply config from SharedState
-            ApplySharedState(state);
-            lastEpoch_ = state.epoch;
-            TSF_LOG(L"EngineController initialized from SharedState (epoch=%u, method=%d)",
-                    state.epoch, state.inputMethod);
-        } else {
-            // SharedState exists (mapping opened) but IsValid() failed — this
-            // indicates the layout doesn't match what this DLL was built
-            // against (EXE was updated while this DLL is still mapped in a
-            // host process). Signal the EXE so it renders the restart banner,
-            // and disable TSF for this process until the host restarts.
+        // Step 1: ABI check — direct header read, immune to seqlock contention.
+        // magic/structVersion/structSize never change after Create(), so this
+        // answer is stable and cannot spuriously flip TSF_ABI_MISMATCH under
+        // concurrent writer activity.
+        if (!sharedState_.IsAbiCompatible()) {
             abiOk_ = false;
             sharedState_.SetOrClearFlag(SharedFlags::TSF_ABI_MISMATCH, true);
             config_.inputMethod = InputMethod::Telex;
@@ -35,8 +27,26 @@ EngineController::EngineController() {
             config_.optimizeLevel = 0;
             currentMethod_ = InputMethod::Telex;
             engine_ = EngineFactory::Create(config_);
-            TSF_LOG(L"EngineController: SharedState ABI mismatch (magic=%08X version=%u size=%u) — passthrough",
-                    state.magic, state.structVersion, state.structSize);
+            TSF_LOG(L"EngineController: SharedState ABI mismatch — passthrough");
+        } else {
+            // Step 2: ABI OK; try a seqlock Read for the full config.
+            SharedState state = sharedState_.Read();
+            if (state.IsValid()) {
+                ApplySharedState(state);
+                lastEpoch_ = state.epoch;
+                TSF_LOG(L"EngineController initialized from SharedState (epoch=%u, method=%d)",
+                        state.epoch, state.inputMethod);
+            } else {
+                // Seqlock exhausted under contention — use defaults for now.
+                // RefreshFlags / CheckConfigEvent will re-read on next focus.
+                // Do NOT flip TSF_ABI_MISMATCH — ABI is fine.
+                config_.inputMethod = InputMethod::Telex;
+                config_.spellCheckEnabled = false;
+                config_.optimizeLevel = 0;
+                currentMethod_ = InputMethod::Telex;
+                engine_ = EngineFactory::Create(config_);
+                TSF_LOG(L"EngineController: SharedState read contention, using defaults");
+            }
         }
     } else {
         // SharedState not available = EXE not running → disabled

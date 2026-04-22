@@ -353,6 +353,19 @@ TEST_F(SharedStateTest, ShrunkStruct_FailsIsValid_SoDllCanDetectMismatch) {
     EXPECT_FALSE(state.IsValid());
 }
 
+TEST_F(SharedStateTest, AbiHeaderFields_DoNotOverlapEpoch) {
+    // The DLL's IsAbiCompatible() reads magic/structVersion/structSize without
+    // seqlock protection, relying on the fact that these three fields are
+    // written once at Create() and never mutated. If anyone ever adds an
+    // InitDefaults-style writer that touches them after creation, this test
+    // becomes a red flag for the ABI gate.
+    EXPECT_EQ(offsetof(SharedState, magic), 0u);
+    EXPECT_EQ(offsetof(SharedState, structVersion), 4u);
+    EXPECT_EQ(offsetof(SharedState, structSize), 8u);
+    // epoch is the first seqlock-managed field — ABI header must end before it.
+    EXPECT_EQ(offsetof(SharedState, epoch), 12u);
+}
+
 TEST_F(SharedStateTest, SharedFlags_NewUpdateBitsDoNotCollide) {
     // Sanity: each new flag is non-zero and does not collide with existing bits
     // or with each other.
