@@ -72,7 +72,9 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import * as env from "@env";
+
         // Init subdialog (blur + dark + i18n)
         initSubDialog();
 
@@ -84,7 +86,7 @@
             btn.onclick = function () {
                 var url = this.getAttribute("data-url");
                 if (url) {
-                    try { Sciter.launch(url); } catch (e) { }
+                    try { env.launch(url); } catch (e) { }
                 }
             };
         });
