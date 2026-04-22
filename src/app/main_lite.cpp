@@ -437,9 +437,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         // Publish startup DLL-swap outcome so Settings subprocess + tray can
         // render a restart banner. See design doc § 4.
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_PENDING_DLL_SWAP,
-            pendingDllState == PendingDllState::kSwapFailed);
+            pendingDllState == PendingDllState::SwapFailed);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_POST_UPDATE_REBOOT,
-            pendingDllState == PendingDllState::kSwapDoneNeedsReboot);
+            pendingDllState == PendingDllState::SwapDoneNeedsReboot);
     }
 
     // ── Tray Icon ──

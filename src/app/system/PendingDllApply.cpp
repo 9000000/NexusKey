@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "PendingDllApply.h"
-#include "UpdateInstaller.h"  // for kTsfDllFilename
+#include "UpdateInstaller.h"  // for TSF_DLL_FILENAME
 
 #include <filesystem>
 #include <string>
@@ -11,7 +11,7 @@ namespace NextKey {
 
 namespace {
 
-std::wstring GetExeDirW() {
+std::wstring GetExeDirW() noexcept {
     wchar_t buf[MAX_PATH] = {};
     DWORD len = GetModuleFileNameW(nullptr, buf, MAX_PATH);
     if (len == 0) return L".";
@@ -20,7 +20,7 @@ std::wstring GetExeDirW() {
     return (pos != std::wstring::npos) ? full.substr(0, pos) : L".";
 }
 
-std::wstring TimestampSuffix() {
+std::wstring TimestampSuffix() noexcept {
     SYSTEMTIME st{};
     GetLocalTime(&st);
     wchar_t ts[64];
@@ -35,8 +35,8 @@ PendingDllState ApplyPendingDllUpdate() noexcept {
     namespace fs = std::filesystem;
 
     std::wstring exeDir = GetExeDirW();
-    fs::path pending = fs::path(exeDir) / (std::wstring(kTsfDllFilename) + L".pending");
-    fs::path live    = fs::path(exeDir) / kTsfDllFilename;
+    fs::path pending = fs::path(exeDir) / (std::wstring(TSF_DLL_FILENAME) + L".pending");
+    fs::path live    = fs::path(exeDir) / TSF_DLL_FILENAME;
     fs::path marker  = fs::path(exeDir) / L"_pending_dll_update";
     fs::path oldDir  = fs::path(exeDir) / L"_old_version";
 
@@ -45,17 +45,17 @@ PendingDllState ApplyPendingDllUpdate() noexcept {
     if (!fs::exists(pending, ec)) {
         // Defensive: clean up orphan marker so UI does not show a phantom banner.
         fs::remove(marker, ec);
-        return PendingDllState::kNone;
+        return PendingDllState::None;
     }
 
     fs::create_directories(oldDir, ec);
-    fs::path parked = oldDir / (std::wstring(kTsfDllFilename) + TimestampSuffix());
+    fs::path parked = oldDir / (std::wstring(TSF_DLL_FILENAME) + TimestampSuffix());
 
     // Step 1: move live → parked. If the live DLL is still mapped in some host
     // process without FILE_SHARE_DELETE, this fails — defer again.
     fs::rename(live, parked, ec);
     if (ec) {
-        return PendingDllState::kSwapFailed;
+        return PendingDllState::SwapFailed;
     }
 
     // Step 2: move pending → live.
@@ -65,13 +65,13 @@ PendingDllState ApplyPendingDllUpdate() noexcept {
         // Extremely rare: something else grabbed the live name between the two
         // renames. Put the old copy back so the EXE doesn't launch with no DLL.
         fs::rename(parked, live, ec);
-        return PendingDllState::kSwapFailed;
+        return PendingDllState::SwapFailed;
     }
 
     // Swap succeeded. Clear the marker — banner still shows kSwapDoneNeedsReboot
     // because hosts may hold the parked copy mapped in RAM.
     fs::remove(marker, ec);
-    return PendingDllState::kSwapDoneNeedsReboot;
+    return PendingDllState::SwapDoneNeedsReboot;
 }
 
 void RestartWindowsWithPrompt(HWND owner) noexcept {

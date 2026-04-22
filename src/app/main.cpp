@@ -340,9 +340,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         // can render a restart banner. Bits clear on reboot (SharedState is
         // recreated fresh; InitDefaults zeroes flags).
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_PENDING_DLL_SWAP,
-            pendingDllState == PendingDllState::kSwapFailed);
+            pendingDllState == PendingDllState::SwapFailed);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_POST_UPDATE_REBOOT,
-            pendingDllState == PendingDllState::kSwapDoneNeedsReboot);
+            pendingDllState == PendingDllState::SwapDoneNeedsReboot);
         // TSF_ABI_MISMATCH is NOT cleared here — if the old DLL is still mapped
         // in a host and set the bit, the banner must persist until reboot.
     }
@@ -548,9 +548,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
         // Publish startup DLL-swap outcome (see HookEngine mode above).
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_PENDING_DLL_SWAP,
-            pendingDllState == PendingDllState::kSwapFailed);
+            pendingDllState == PendingDllState::SwapFailed);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_POST_UPDATE_REBOOT,
-            pendingDllState == PendingDllState::kSwapDoneNeedsReboot);
+            pendingDllState == PendingDllState::SwapDoneNeedsReboot);
     }
 
     // Tray Icon

@@ -15,7 +15,7 @@ namespace NextKey {
 // Single source of truth for the TSF DLL filename. The update flow treats this
 // file specially (see HandleTsfDllReplace) because it is routinely mapped into
 // foreign host processes (Chrome, Word, Outlook, …) via Windows TSF.
-inline constexpr const wchar_t* kTsfDllFilename = L"NextKeyTSF.dll";
+inline constexpr const wchar_t* TSF_DLL_FILENAME = L"NextKeyTSF.dll";
 
 /// Run the self-update installer mode.
 /// Waits for other NexusKey processes to exit, extracts ZIP, replaces files, relaunches.
