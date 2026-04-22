@@ -23,13 +23,20 @@ EngineController::EngineController() {
             TSF_LOG(L"EngineController initialized from SharedState (epoch=%u, method=%d)",
                     state.epoch, state.inputMethod);
         } else {
-            // SharedState invalid, use defaults
+            // SharedState exists (mapping opened) but IsValid() failed — this
+            // indicates the layout doesn't match what this DLL was built
+            // against (EXE was updated while this DLL is still mapped in a
+            // host process). Signal the EXE so it renders the restart banner,
+            // and disable TSF for this process until the host restarts.
+            abiOk_ = false;
+            sharedState_.SetOrClearFlag(SharedFlags::TSF_ABI_MISMATCH, true);
             config_.inputMethod = InputMethod::Telex;
             config_.spellCheckEnabled = false;
             config_.optimizeLevel = 0;
             currentMethod_ = InputMethod::Telex;
             engine_ = EngineFactory::Create(config_);
-            TSF_LOG(L"EngineController: SharedState invalid, using defaults");
+            TSF_LOG(L"EngineController: SharedState ABI mismatch (magic=%08X version=%u size=%u) — passthrough",
+                    state.magic, state.structVersion, state.structSize);
         }
     } else {
         // SharedState not available = EXE not running → disabled
@@ -130,7 +137,13 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
 }
 
 bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
-    // 0. Check if engine should process keys
+    // 0. ABI-mismatch safety gate: if this DLL's SharedState layout doesn't
+    //    match what the main EXE is writing, pass every key through. Host
+    //    process sees raw English typing until it restarts or the machine
+    //    reboots — Settings dialog + tray render a banner via TSF_ABI_MISMATCH.
+    if (!abiOk_) return false;
+
+    // 1. Check if engine should process keys
     if (sharedState_.IsConnected()) {
         // Read flags directly from shared memory (live, zero-copy)
         uint32_t flags = sharedState_.ReadFlags();
