@@ -395,6 +395,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/CodeTableConverterTest.cpp
     tests/UpdateSecurityTest.cpp
     tests/EngineBenchmarkTest.cpp
+    tests/MacroPrefixTest.cpp
     src/app/system/UpdateSecurity.cpp
 )
 
