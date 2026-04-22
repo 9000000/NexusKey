@@ -112,9 +112,11 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
         const wchar_t* msg = (bannerState == 1)
             ? S(StringId::UPDATE_BANNER_PENDING)
             : S(StringId::UPDATE_BANNER_MISMATCH);
+        // User already confirms reboot intent in THIS MessageBox; skip the
+        // second prompt in RestartWindowsWithPrompt — call the no-UI variant.
         if (MessageBoxW(hwnd_, msg, L"NexusKey",
                         MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2) == IDOK) {
-            RestartWindowsWithPrompt(hwnd_);
+            RestartWindowsNow();
         }
     }
 

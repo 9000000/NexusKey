@@ -105,6 +105,7 @@ var STRINGS = {
         "update.banner.mismatch":   "Some apps still run the old version. Restart Windows to sync.",
         "update.banner.restartNow": "Restart now",
         "update.banner.later":      "Later",
+        "update.banner.confirm":    "Restart Windows now to finish the NexusKey update?",
         "s.report_issue_label": "Are you having problems?",
         "s.report_issue": "Report problem",
 

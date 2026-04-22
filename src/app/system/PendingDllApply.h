@@ -23,10 +23,16 @@ enum class PendingDllState {
 /// subprocess dialogs can observe it — hence [[nodiscard]].
 [[nodiscard]] PendingDllState ApplyPendingDllUpdate() noexcept;
 
-/// Prompt for reboot and call ExitWindowsEx(EWX_REBOOT|EWX_RESTARTAPPS).
-/// Acquires SE_SHUTDOWN_NAME privilege automatically. Shared entry point used
-/// by SettingsDialog, ClassicSettingsDialog and TrayIcon.
+/// Prompt for reboot (localized via S(UPDATE_BANNER_CONFIRM)) and, on OK,
+/// call RestartWindowsNow(). Used by SettingsDialog (Sciter) and TrayIcon.
+/// Classic dialog prefers RestartWindowsNow() directly — it already shows its
+/// own banner-copy MessageBox and doesn't need a second confirmation.
 void RestartWindowsWithPrompt(HWND owner) noexcept;
+
+/// Acquire SE_SHUTDOWN_NAME privilege and call
+/// ExitWindowsEx(EWX_REBOOT | EWX_RESTARTAPPS). No UI. Callers are expected to
+/// have already obtained user consent.
+void RestartWindowsNow() noexcept;
 
 /// Read TSF-update flags from SharedState and decide banner visibility.
 /// Returns 0 = hide, 1 = "update not finished" (pending-swap failed),

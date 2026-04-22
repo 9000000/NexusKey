@@ -3,6 +3,7 @@
 
 #include "PendingDllApply.h"
 #include "UpdateInstaller.h"              // TSF_DLL_FILENAME, constants, MakeParkedDllTimestamp
+#include "core/Strings.h"
 #include "core/ipc/SharedState.h"          // SharedFlags
 #include "core/ipc/SharedStateManager.h"
 
@@ -60,13 +61,7 @@ PendingDllState ApplyPendingDllUpdate() noexcept {
     return PendingDllState::SwapDoneNeedsReboot;
 }
 
-void RestartWindowsWithPrompt(HWND owner) noexcept {
-    const wchar_t* msg = L"Restart Windows now to finish the NexusKey update?";
-    if (MessageBoxW(owner, msg, L"NexusKey",
-                    MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2) != IDOK) {
-        return;
-    }
-
+void RestartWindowsNow() noexcept {
     HANDLE hToken = nullptr;
     if (OpenProcessToken(GetCurrentProcess(),
                          TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
@@ -83,6 +78,13 @@ void RestartWindowsWithPrompt(HWND owner) noexcept {
                   SHTDN_REASON_MAJOR_APPLICATION
                   | SHTDN_REASON_MINOR_UPGRADE
                   | SHTDN_REASON_FLAG_PLANNED);
+}
+
+void RestartWindowsWithPrompt(HWND owner) noexcept {
+    if (MessageBoxW(owner, S(StringId::UPDATE_BANNER_CONFIRM), L"NexusKey",
+                    MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2) == IDOK) {
+        RestartWindowsNow();
+    }
 }
 
 int GetUpdateBannerState(const SharedStateManager& shared) noexcept {

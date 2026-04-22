@@ -47,6 +47,7 @@ static const wchar_t* const kVietnamese[] = {
     L"Một vài ứng dụng đang chạy phiên bản cũ. Khởi động lại Windows để đồng bộ.",  // UPDATE_BANNER_MISMATCH
     L"Khởi động lại ngay",                           // UPDATE_BANNER_RESTART_NOW
     L"Để sau",                                       // UPDATE_BANNER_LATER
+    L"Khởi động lại Windows ngay để hoàn tất cập nhật NexusKey?", // UPDATE_BANNER_CONFIRM
     L"Chưa chọn file nguồn.",                       // CONVERT_NO_SOURCE_FILE
     L"Không thể đọc file nguồn.",                    // CONVERT_READ_ERROR
     L"Clipboard trống.",                             // CONVERT_CLIPBOARD_EMPTY
@@ -105,6 +106,7 @@ static const wchar_t* const kEnglish[] = {
     L"Some apps still run the old version. Restart Windows to sync.",      // UPDATE_BANNER_MISMATCH
     L"Restart now",                                  // UPDATE_BANNER_RESTART_NOW
     L"Later",                                        // UPDATE_BANNER_LATER
+    L"Restart Windows now to finish the NexusKey update?", // UPDATE_BANNER_CONFIRM
     L"No source file selected.",                     // CONVERT_NO_SOURCE_FILE
     L"Cannot read source file.",                     // CONVERT_READ_ERROR
     L"Clipboard is empty.",                          // CONVERT_CLIPBOARD_EMPTY

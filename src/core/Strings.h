@@ -56,6 +56,7 @@ enum class StringId : uint16_t {
     UPDATE_BANNER_MISMATCH,
     UPDATE_BANNER_RESTART_NOW,
     UPDATE_BANNER_LATER,
+    UPDATE_BANNER_CONFIRM,       // final reboot confirmation prompt
 
     // Convert tool
     CONVERT_NO_SOURCE_FILE,
