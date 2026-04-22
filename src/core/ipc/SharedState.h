@@ -17,7 +17,7 @@ namespace SharedFlags {
     constexpr uint32_t SPELL_CHECK     = 0x0004;
     constexpr uint32_t TSF_ACTIVE      = 0x0008;  // Foreground app uses TSF engine (hook sets, DLL reads)
     constexpr uint32_t TSF_READONLY    = 0x0010;  // Hook active, TSF sinks doc events + pushes contextAnchor
-    // Hybrid TSF-DLL update banner triggers (docs/plans/2026-04-22-tsf-update-hybrid-design.md):
+    // Restart-banner triggers — set cross-process by main EXE / TSF DLL.
     constexpr uint32_t TSF_ABI_MISMATCH       = 0x0020;  // DLL: mapped SharedState layout doesn't match this DLL
     constexpr uint32_t TSF_PENDING_DLL_SWAP   = 0x0040;  // EXE: startup swap failed, reboot needed
     constexpr uint32_t TSF_POST_UPDATE_REBOOT = 0x0080;  // EXE: swap succeeded, hosts may still hold old DLL
@@ -345,8 +345,8 @@ struct SharedState {
 static_assert(sizeof(SharedState) == 1104, "SharedState size changed — update structVersion");
 
 // Layout-freeze guards — failing any of these means a field was reordered or
-// resized and CURRENT_VERSION MUST be bumped. See design doc
-// (docs/plans/2026-04-22-tsf-update-hybrid-design.md § 3).
+// resized and CURRENT_VERSION MUST be bumped (DLLs built against the old
+// layout will then hit IsValid() == false and enter passthrough).
 static_assert(offsetof(SharedState, magic) == 0,
               "magic must stay at offset 0");
 static_assert(offsetof(SharedState, structVersion) == 4,

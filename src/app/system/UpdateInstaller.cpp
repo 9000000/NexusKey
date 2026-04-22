@@ -123,37 +123,26 @@ bool HandleTsfDllReplace(const std::wstring& newDllSrc,
     namespace fs = std::filesystem;
 
     std::wstring liveDll = exeDir + L"\\" + TSF_DLL_FILENAME;
-
-    // Park name: include a timestamp so repeated updates don't collide.
-    SYSTEMTIME st{};
-    GetLocalTime(&st);
-    wchar_t ts[32];
-    swprintf_s(ts, L"_%04u%02u%02u_%02u%02u%02u",
-               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-    std::wstring parked = oldVersionDir + L"\\" + TSF_DLL_FILENAME + ts;
+    std::wstring parked  = oldVersionDir + L"\\" + TSF_DLL_FILENAME
+                         + MakeParkedDllTimestamp();
 
     std::error_code ec;
     fs::create_directories(oldVersionDir, ec);
 
-    // Attempt optimistic overwrite.
     if (MoveFileW(liveDll.c_str(), parked.c_str())) {
         if (CopyFileW(newDllSrc.c_str(), liveDll.c_str(), FALSE)) {
-            // Success: drop any stale pending marker so WinMain skips the swap path.
-            DeleteFileW((exeDir + L"\\" + TSF_DLL_FILENAME + L".pending").c_str());
-            DeleteFileW((exeDir + L"\\_pending_dll_update").c_str());
+            DeleteFileW((exeDir + L"\\" + TSF_DLL_FILENAME + TSF_DLL_PENDING_SUFFIX).c_str());
+            DeleteFileW((exeDir + L"\\" + TSF_DLL_PENDING_MARKER).c_str());
             return true;
         }
-        // Copy failed — restore by renaming the parked copy back.
         MoveFileW(parked.c_str(), liveDll.c_str());
     }
 
-    // Fallback: defer to boot. Write new DLL as `.pending` and drop a marker
-    // file so WinMain knows to apply it (and so we can detect orphaned `.pending`
-    // files created by a user manually).
-    std::wstring pendingPath = exeDir + L"\\" + TSF_DLL_FILENAME + L".pending";
+    // Fallback: defer to next EXE startup.
+    std::wstring pendingPath = exeDir + L"\\" + TSF_DLL_FILENAME + TSF_DLL_PENDING_SUFFIX;
     CopyFileW(newDllSrc.c_str(), pendingPath.c_str(), FALSE);
 
-    std::wstring markerPath = exeDir + L"\\_pending_dll_update";
+    std::wstring markerPath = exeDir + L"\\" + TSF_DLL_PENDING_MARKER;
     HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr,
                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hMarker != INVALID_HANDLE_VALUE) CloseHandle(hMarker);
@@ -187,6 +176,17 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
 }
 
 }  // namespace
+
+std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
+    SYSTEMTIME st{};
+    GetLocalTime(&st);
+    wchar_t ts[64];
+    swprintf_s(ts, L"_%04u%02u%02u_%02u%02u%02u%s",
+               st.wYear, st.wMonth, st.wDay,
+               st.wHour, st.wMinute, st.wSecond,
+               extraSuffix ? extraSuffix : L"");
+    return ts;
+}
 
 [[noreturn]] void RunUpdateInstaller(const std::wstring& zipPath) {
     std::wstring exeDir = GetExeDirectory();

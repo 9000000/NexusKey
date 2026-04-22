@@ -969,11 +969,7 @@
     color: white;
 }
 
-/* ─────────────────────────────────────────────────────────────
-   Restart banner (TSF hybrid-update — see design doc 2026-04-22)
-   Driven by TSF_PENDING_DLL_SWAP / TSF_POST_UPDATE_REBOOT /
-   TSF_ABI_MISMATCH flags in SharedState.
-   ───────────────────────────────────────────────────────────── */
+/* Restart banner — shown when a reboot is needed after a TSF DLL update. */
 .update-banner {
     flow: horizontal;
     padding: 8px 12px;

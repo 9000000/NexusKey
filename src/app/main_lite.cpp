@@ -435,7 +435,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         NEXTKEY_LOG(L"SharedState created for Lite mode");
 
         // Publish startup DLL-swap outcome so Settings subprocess + tray can
-        // render a restart banner. See design doc § 4.
+        // render a restart banner.
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_PENDING_DLL_SWAP,
             pendingDllState == PendingDllState::SwapFailed);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_POST_UPDATE_REBOOT,

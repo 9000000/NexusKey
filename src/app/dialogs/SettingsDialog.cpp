@@ -1150,20 +1150,10 @@ void SettingsDialog::initializeUI() {
         }
     }
 
-    // Restart banner — driven by TSF-update flags in SharedState. Settings
-    // runs as a subprocess so it cannot observe main-process globals; the
-    // main EXE publishes banner state into flags after ApplyPendingDllUpdate.
-    {
-        int bannerState = 0;  // 0=hide, 1=pending, 2=mismatch
-        if (sharedState_.IsConnected()) {
-            const uint32_t flags = sharedState_.ReadFlags();
-            if (flags & SharedFlags::TSF_PENDING_DLL_SWAP) {
-                bannerState = 1;
-            } else if (flags & (SharedFlags::TSF_POST_UPDATE_REBOOT
-                              | SharedFlags::TSF_ABI_MISMATCH)) {
-                bannerState = 2;
-            }
-        }
+    // Restart banner — Settings runs as a subprocess so it cannot observe
+    // main-process globals; banner state travels via SharedState flags.
+    // Skip the JS round-trip when there is nothing to show.
+    if (int bannerState = GetUpdateBannerState(sharedState_); bannerState != 0) {
         call_function("showUpdateBanner", sciter::value(bannerState));
     }
 

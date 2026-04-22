@@ -105,23 +105,16 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     ShowWindow(hwnd_, SW_SHOW);
     UpdateWindow(hwnd_);
 
-    // Restart-banner — Classic UI uses a one-shot confirm instead of an inline
-    // banner (simpler than shifting the Win32 tab layout). Fires when the main
-    // EXE set TSF_PENDING_DLL_SWAP / TSF_POST_UPDATE_REBOOT, or when a TSF DLL
-    // in a host detected TSF_ABI_MISMATCH. User clicks OK → ExitWindowsEx;
+    // Classic uses a one-shot confirm instead of an inline banner (Win32 tab
+    // layout makes an inline strip costly). User clicks OK → ExitWindowsEx;
     // Cancel → continue with settings.
-    if (sharedState_.IsConnected()) {
-        const uint32_t updFlags = sharedState_.ReadFlags();
-        constexpr uint32_t bannerMask = SharedFlags::TSF_PENDING_DLL_SWAP
-                                      | SharedFlags::TSF_POST_UPDATE_REBOOT
-                                      | SharedFlags::TSF_ABI_MISMATCH;
-        if (updFlags & bannerMask) {
-            const wchar_t* msg = (updFlags & SharedFlags::TSF_PENDING_DLL_SWAP)
-                ? S(StringId::UPDATE_BANNER_PENDING)
-                : S(StringId::UPDATE_BANNER_MISMATCH);
-            const int r = MessageBoxW(hwnd_, msg, L"NexusKey",
-                                      MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2);
-            if (r == IDOK) RestartWindowsWithPrompt(hwnd_);
+    if (int bannerState = GetUpdateBannerState(sharedState_); bannerState != 0) {
+        const wchar_t* msg = (bannerState == 1)
+            ? S(StringId::UPDATE_BANNER_PENDING)
+            : S(StringId::UPDATE_BANNER_MISMATCH);
+        if (MessageBoxW(hwnd_, msg, L"NexusKey",
+                        MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2) == IDOK) {
+            RestartWindowsWithPrompt(hwnd_);
         }
     }
 

@@ -310,20 +310,11 @@ void TrayIcon::ShowContextMenu() {
     auto checked = [](bool on) -> UINT { return MF_STRING | (on ? MF_CHECKED : 0); };
 
     // ── Section 0: Restart-to-finish-update (conditional) ──
-    // Shows when any of the three TSF-update flags is live:
-    //   TSF_PENDING_DLL_SWAP   — startup swap failed
-    //   TSF_POST_UPDATE_REBOOT — swap succeeded, hosts may still have old DLL
-    //   TSF_ABI_MISMATCH       — DLL in host detected layout mismatch
-    if (sharedState_ && sharedState_->IsConnected()) {
-        constexpr uint32_t bannerMask = SharedFlags::TSF_PENDING_DLL_SWAP
-                                      | SharedFlags::TSF_POST_UPDATE_REBOOT
-                                      | SharedFlags::TSF_ABI_MISMATCH;
-        if (sharedState_->ReadFlags() & bannerMask) {
-            AppendMenuW(hMenu, MF_STRING,
-                static_cast<UINT>(TrayMenuId::RestartWindows),
-                S(StringId::UPDATE_BANNER_RESTART_NOW));
-            AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
-        }
+    if (sharedState_ && GetUpdateBannerState(*sharedState_) != 0) {
+        AppendMenuW(hMenu, MF_STRING,
+            static_cast<UINT>(TrayMenuId::RestartWindows),
+            S(StringId::UPDATE_BANNER_RESTART_NOW));
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     }
 
     // ── Section 1: Vietnamese mode toggle ──
