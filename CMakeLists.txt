@@ -157,6 +157,8 @@ add_executable(NextKeyApp WIN32
     src/app/system/UpdateInstaller.cpp
     src/app/system/UpdateSecurity.h
     src/app/system/UpdateSecurity.cpp
+    src/app/system/PendingDllApply.h
+    src/app/system/PendingDllApply.cpp
     src/app/system/StartupHelper.h
     src/app/system/SubprocessHelper.h
     src/app/system/SubprocessRunners.h
@@ -224,6 +226,8 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/UpdateInstaller.cpp
         src/app/system/UpdateSecurity.h
         src/app/system/UpdateSecurity.cpp
+        src/app/system/PendingDllApply.h
+        src/app/system/PendingDllApply.cpp
         src/app/system/StartupHelper.h
         src/app/system/SubprocessHelper.h
         src/app/system/TsfRegistration.h
