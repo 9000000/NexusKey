@@ -106,6 +106,61 @@ bool ExtractZip(const std::wstring& zipPath, const std::wstring& destDir) {
     return exitCode == 0;
 }
 
+/// Replace a locked-prone DLL. Tries MoveFileW on the live copy first — NTFS
+/// allows same-volume rename of image-mapped DLLs because the image section is
+/// opened with FILE_SHARE_DELETE. If that succeeds, we copy the new file in
+/// place and processes that haven't loaded the DLL yet pick up the new version
+/// immediately.
+///
+/// If rename fails (rare: AV holding a non-share-delete handle), stash the new
+/// DLL next to the old one with a `.pending` suffix and drop a marker file so
+/// WinMain applies the swap on the next EXE launch.
+///
+/// Returns true if the live file on disk is now the new version.
+bool HandleTsfDllReplace(const std::wstring& newDllSrc,
+                         const std::wstring& exeDir,
+                         const std::wstring& oldVersionDir) {
+    namespace fs = std::filesystem;
+
+    std::wstring liveDll = exeDir + L"\\" + kTsfDllFilename;
+
+    // Park name: include a timestamp so repeated updates don't collide.
+    SYSTEMTIME st{};
+    GetLocalTime(&st);
+    wchar_t ts[32];
+    swprintf_s(ts, L"_%04u%02u%02u_%02u%02u%02u",
+               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    std::wstring parked = oldVersionDir + L"\\" + kTsfDllFilename + ts;
+
+    std::error_code ec;
+    fs::create_directories(oldVersionDir, ec);
+
+    // Attempt optimistic overwrite.
+    if (MoveFileW(liveDll.c_str(), parked.c_str())) {
+        if (CopyFileW(newDllSrc.c_str(), liveDll.c_str(), FALSE)) {
+            // Success: drop any stale pending marker so WinMain skips the swap path.
+            DeleteFileW((exeDir + L"\\" + kTsfDllFilename + L".pending").c_str());
+            DeleteFileW((exeDir + L"\\_pending_dll_update").c_str());
+            return true;
+        }
+        // Copy failed — restore by renaming the parked copy back.
+        MoveFileW(parked.c_str(), liveDll.c_str());
+    }
+
+    // Fallback: defer to boot. Write new DLL as `.pending` and drop a marker
+    // file so WinMain knows to apply it (and so we can detect orphaned `.pending`
+    // files created by a user manually).
+    std::wstring pendingPath = exeDir + L"\\" + kTsfDllFilename + L".pending";
+    CopyFileW(newDllSrc.c_str(), pendingPath.c_str(), FALSE);
+
+    std::wstring markerPath = exeDir + L"\\_pending_dll_update";
+    HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr,
+                                 CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hMarker != INVALID_HANDLE_VALUE) CloseHandle(hMarker);
+
+    return false;
+}
+
 /// Copy all files from srcDir to destDir (overwriting)
 bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destDir) {
     try {
@@ -153,10 +208,14 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
             if (!entry.is_regular_file()) continue;
             auto ext = entry.path().extension().wstring();
             if (_wcsicmp(ext.c_str(), L".exe") == 0 || _wcsicmp(ext.c_str(), L".dll") == 0) {
-                // Don't move files that are already inside a special folder (though iterator is non-recursive)
                 std::wstring name = entry.path().filename().wstring();
+
+                // TSF DLL is handled separately after extraction — it may be
+                // mapped into foreign host processes and cannot be bulk-moved
+                // safely alongside the EXE kill path.
+                if (_wcsicmp(name.c_str(), kTsfDllFilename) == 0) continue;
+
                 std::wstring destPath = oldVersionDir + L"\\" + name;
-                
                 DeleteFileW(destPath.c_str());
                 MoveFileW(entry.path().c_str(), destPath.c_str());
             }
@@ -226,7 +285,21 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
             sourceDir = entries[0].path().wstring();
         }
 
-        // 5. Copy new files to exe directory
+        // 5a. Special-case TSF DLL (may be mapped in foreign host processes).
+        //     CopyDirectoryContents below would blindly try to overwrite the
+        //     live copy and silently fail; instead route via HandleTsfDllReplace
+        //     which does the NTFS rename trick + pending-swap fallback.
+        {
+            std::wstring newTsfDll = sourceDir + L"\\" + kTsfDllFilename;
+            if (fs::exists(newTsfDll)) {
+                HandleTsfDllReplace(newTsfDll, exeDir, oldVersionDir);
+                // Prevent the generic copy from clobbering our decision.
+                std::error_code delEc;
+                fs::remove(newTsfDll, delEc);
+            }
+        }
+
+        // 5b. Copy remaining new files to exe directory.
         CopyDirectoryContents(sourceDir, exeDir);
 
         // 6. Find the main executable to launch
