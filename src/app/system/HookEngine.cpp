@@ -365,6 +365,10 @@ bool HookEngine::CheckConfigEvent() {
     return true;
 }
 
+void HookEngine::SyncConfigFromSharedState() {
+    QuickSyncFromSharedState();
+}
+
 void HookEngine::ReloadFromToml() {
     NEXTKEY_LOG(L"HookEngine: full TOML reload");
 
