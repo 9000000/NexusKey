@@ -320,8 +320,10 @@ TEST(HookContextAnchorTest, SharedState_ContainsContextAnchor) {
     EXPECT_EQ(s.contextAnchor.syllableLen, 0);
 }
 
-TEST(HookContextAnchorTest, SharedState_VersionBumpedToV3) {
-    EXPECT_EQ(SharedState::CURRENT_VERSION, 3u);
+TEST(HookContextAnchorTest, SharedState_VersionAtLeastV3) {
+    // v3 added contextAnchor; v4 grew reserved[] to 1024 (no anchor impact).
+    // Both versions expose the same contextAnchor contract.
+    EXPECT_GE(SharedState::CURRENT_VERSION, 3u);
 }
 
 TEST(HookContextAnchorTest, SharedFlags_TsfReadonlyDefined) {

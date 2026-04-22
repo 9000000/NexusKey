@@ -7,6 +7,7 @@
 #include "system/SubprocessHelper.h"
 #include "system/TsfRegistration.h"
 #include "system/UpdateChecker.h"
+#include "system/PendingDllApply.h"
 #include "system/ToastPopup.h"
 #include "core/Version.h"
 #include "sciter/ScaleHelper.h"
@@ -1149,8 +1150,21 @@ void SettingsDialog::initializeUI() {
         }
     }
 
+    // Restart banner — Settings runs as a subprocess so it cannot observe
+    // main-process globals; banner state travels via SharedState flags.
+    // Skip the JS round-trip when there is nothing to show.
+    if (int bannerState = GetUpdateBannerState(sharedState_); bannerState != 0) {
+        call_function("showUpdateBanner", sciter::value(bannerState));
+    }
+
     // Flush all batched DOM mutations in one repaint
     root.update(false);
+}
+
+void SettingsDialog::requestRestartWindows() {
+    // Delegate to the shared helper so the Classic dialog and the tray share
+    // the same ExitWindowsEx flow (and SE_SHUTDOWN_NAME privilege acquisition).
+    RestartWindowsWithPrompt(get_hwnd());
 }
 
 void SettingsDialog::onInputMethodChange(int method) {

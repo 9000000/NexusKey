@@ -43,6 +43,10 @@ static const wchar_t* const kVietnamese[] = {
     L"Kiểm tra ngay",                                // UPDATE_CHECK_NOW
     L"Đang kiểm tra...",                             // UPDATE_CHECKING
     L"Tải cập nhật thất bại.",                       // UPDATE_DOWNLOAD_FAILED
+    L"Cập nhật chưa hoàn tất. Khởi động lại Windows để áp dụng phiên bản TSF mới.", // UPDATE_BANNER_PENDING
+    L"Một vài ứng dụng đang chạy phiên bản cũ. Khởi động lại Windows để đồng bộ.",  // UPDATE_BANNER_MISMATCH
+    L"Khởi động lại ngay",                           // UPDATE_BANNER_RESTART_NOW
+    L"Để sau",                                       // UPDATE_BANNER_LATER
     L"Chưa chọn file nguồn.",                       // CONVERT_NO_SOURCE_FILE
     L"Không thể đọc file nguồn.",                    // CONVERT_READ_ERROR
     L"Clipboard trống.",                             // CONVERT_CLIPBOARD_EMPTY
@@ -97,6 +101,10 @@ static const wchar_t* const kEnglish[] = {
     L"Check now",                                    // UPDATE_CHECK_NOW
     L"Checking...",                                  // UPDATE_CHECKING
     L"Download failed.",                             // UPDATE_DOWNLOAD_FAILED
+    L"Update not finished. Restart Windows to apply the new TSF version.", // UPDATE_BANNER_PENDING
+    L"Some apps still run the old version. Restart Windows to sync.",      // UPDATE_BANNER_MISMATCH
+    L"Restart now",                                  // UPDATE_BANNER_RESTART_NOW
+    L"Later",                                        // UPDATE_BANNER_LATER
     L"No source file selected.",                     // CONVERT_NO_SOURCE_FILE
     L"Cannot read source file.",                     // CONVERT_READ_ERROR
     L"Clipboard is empty.",                          // CONVERT_CLIPBOARD_EMPTY
