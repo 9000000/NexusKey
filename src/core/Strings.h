@@ -68,6 +68,11 @@ enum class StringId : uint16_t {
     // Excluded apps
     EXCLUDED_CANNOT_SELF,
 
+    // Import/Export shared prompts
+    IMPORT_KEEP_EXISTING,
+    IMPORT_FILE_OPEN_FAILED,
+    EXPORT_FILE_WRITE_FAILED,
+
     _COUNT
 };
 

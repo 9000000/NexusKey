@@ -907,10 +907,11 @@ void SettingsDialog::recalcWindowSize() {
     }
 
     if (!DarkModeHelper::IsWindows11OrGreater()) {
-        // Windows 10 CSS fallback adds 12px margin on all sides for drop shadow
-        // Since BORDER_BOX excludes margins, we manually add the margin size here
-        newWidth += static_cast<int>(24 * dpiScale);
-        newHeight += static_cast<int>(24 * dpiScale);
+        // Win10 .container has margin on all sides for drop shadow; BORDER_BOX
+        // excludes margins so the HWND would clip the shadow. Pad by 2×margin.
+        const int pad = static_cast<int>(Win10Frame::FRAME_SIZE_ADD * dpiScale);
+        newWidth += pad;
+        newHeight += pad;
     }
 
     // Keep window position, just resize

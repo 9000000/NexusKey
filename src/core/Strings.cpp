@@ -57,6 +57,9 @@ static const wchar_t* const kVietnamese[] = {
     L"Không thể gỡ đăng ký TSF.\n"                   // TSF_UNREGISTER_FAILED
     L"Vui lòng chạy với quyền Administrator.",
     L"Không thể thêm NexusKey vào danh sách loại trừ.",  // EXCLUDED_CANNOT_SELF
+    L"Bạn có muốn giữ lại danh sách hiện tại không?",    // IMPORT_KEEP_EXISTING
+    L"Không thể mở file để nạp dữ liệu.",                // IMPORT_FILE_OPEN_FAILED
+    L"Không thể ghi file để xuất dữ liệu.",              // EXPORT_FILE_WRITE_FAILED
 };
 
 // English string table
@@ -108,6 +111,9 @@ static const wchar_t* const kEnglish[] = {
     L"Unable to unregister TSF.\n"                   // TSF_UNREGISTER_FAILED
     L"Please run as Administrator.",
     L"Cannot add NexusKey to the exclusion list.",   // EXCLUDED_CANNOT_SELF
+    L"Keep the existing list?",                      // IMPORT_KEEP_EXISTING
+    L"Could not open file for import.",              // IMPORT_FILE_OPEN_FAILED
+    L"Could not write file for export.",             // EXPORT_FILE_WRITE_FAILED
 };
 
 static_assert(sizeof(kVietnamese) / sizeof(kVietnamese[0]) == static_cast<size_t>(StringId::_COUNT),
