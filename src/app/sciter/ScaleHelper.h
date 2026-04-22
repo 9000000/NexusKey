@@ -60,20 +60,11 @@ public:
      * - 1366x768 @ 125%:  scale = 0.89
      */
     [[nodiscard]] static double getScaleFactor() noexcept {
-        // Factor 1: Resolution scaling (for small screens)
-        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-        double resScaleX = static_cast<double>(screenWidth) / REF_SCREEN_WIDTH;
-        double resScaleY = static_cast<double>(screenHeight) / REF_SCREEN_HEIGHT;
-        // Note: Parentheses around std::min/max to prevent Windows macro expansion
-        double resScale = (std::min)(resScaleX, resScaleY);
-
-        // Factor 2: DPI scaling - Sciter renders at native DPI
+        // We only use DPI scaling because Sciter renders CSS pixels (e.g. width: 420px)
+        // directly scaled by DPI. If we shrink the native window using a resolution scale 
+        // (< 1.0 on small monitors), Sciter's content will overflow and get clipped!
         double dpiScale = getDpiScale();
-
-        // Apply both factors and clamp
-        double scale = resScale * dpiScale;
-        return (std::max)(MIN_SCALE, (std::min)(MAX_SCALE, scale));
+        return (std::max)(MIN_SCALE, (std::min)(MAX_SCALE, dpiScale));
     }
 
     /**
