@@ -332,6 +332,27 @@ TEST_F(SharedStateTest, CurrentVersion_IsAtLeast4) {
     EXPECT_GE(SharedState::CURRENT_VERSION, 4u);
 }
 
+TEST_F(SharedStateTest, FutureVersion_FailsIsValid_SoDllCanDetectMismatch) {
+    // Simulate: new EXE wrote a struct with structVersion = CURRENT_VERSION + 1.
+    // An old DLL reading this memory must see IsValid() == false so it can
+    // disable itself and set TSF_ABI_MISMATCH.
+    SharedState state{};
+    state.InitDefaults();
+    state.structVersion = SharedState::CURRENT_VERSION + 1;
+
+    EXPECT_FALSE(state.IsValid())
+        << "ABI gate relies on IsValid() rejecting future versions";
+}
+
+TEST_F(SharedStateTest, ShrunkStruct_FailsIsValid_SoDllCanDetectMismatch) {
+    // Simulate: writer claimed a struct smaller than the header itself.
+    SharedState state{};
+    state.InitDefaults();
+    state.structSize = 20;  // < 24 (minimum: header + epoch + flags + config)
+
+    EXPECT_FALSE(state.IsValid());
+}
+
 TEST_F(SharedStateTest, SharedFlags_NewUpdateBitsDoNotCollide) {
     // Sanity: each new flag is non-zero and does not collide with existing bits
     // or with each other.
