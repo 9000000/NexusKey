@@ -262,8 +262,10 @@ struct SharedState {
     uint8_t  configGeneration;   // Wraps at 255 — use != comparison, not >
     uint8_t  reserved0;          // Padding to maintain alignment
 
-    // ── Reserved for future expansion (21 bytes) ──
-    uint8_t  reserved[21];
+    // ── Reserved for future expansion (1024 bytes) ──
+    // Draw from this pool for new fields; do NOT bump CURRENT_VERSION unless
+    // resizing/reordering existing fields. See docs/CODING_RULES/5-struct-versioning.md.
+    uint8_t  reserved[1024];
 
     // ── Readonly context anchor (44 bytes, v3+) ──
     // Written by TSF DLL in readonly mode; read by HookEngine.
@@ -271,7 +273,7 @@ struct SharedState {
     HookContextAnchor contextAnchor;
 
     static constexpr uint32_t MAGIC_VALUE = 0x59454B4E;    // 'NKEY'
-    static constexpr uint32_t CURRENT_VERSION = 3;          // v3: added contextAnchor (phase 1 TSF readonly)
+    static constexpr uint32_t CURRENT_VERSION = 4;          // v4: reserved pool grown to 1024 (hybrid DLL update headroom)
 
     [[nodiscard]] bool IsValid() const noexcept {
         return magic == MAGIC_VALUE
@@ -331,8 +333,12 @@ struct SharedState {
     }
 };
 
-// Ensure SharedState layout is stable across EXE and DLL builds
-static_assert(sizeof(SharedState) == 100, "SharedState size changed — update structVersion");
+// Ensure SharedState layout is stable across EXE and DLL builds.
+// sizeof breakdown: 12 header + 4 epoch + 4 flags + 3 config + 3 featureFlags +
+// 1 codeTable + 6 hotkey + 2 configGen/reserved0 + 1024 reserved
+//   = 1059 bytes, rounded up by 1 byte of alignment padding before contextAnchor
+//   (alignof >= 4) → contextAnchor at offset 1060 + 44 = 1104.
+static_assert(sizeof(SharedState) == 1104, "SharedState size changed — update structVersion");
 
 /// Encode TypingConfig feature bools → uint32_t bitmask (3 bytes used)
 [[nodiscard]] inline uint32_t EncodeFeatureFlags(const TypingConfig& config) noexcept {

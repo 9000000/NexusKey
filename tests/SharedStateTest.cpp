@@ -319,5 +319,18 @@ TEST_F(SharedStateTest, FeatureFlags_ToggleOneOff_OthersUnchanged) {
     EXPECT_TRUE(out.smartSwitch);
 }
 
+// ============================================================================
+// ABI-gate tests (hybrid TSF DLL update — see docs/plans/2026-04-22-tsf-*)
+// ============================================================================
+
+TEST_F(SharedStateTest, ReservedPool_IsAtLeast1024Bytes) {
+    SharedState state{};
+    EXPECT_GE(sizeof(state.reserved), 1024u);
+}
+
+TEST_F(SharedStateTest, CurrentVersion_IsAtLeast4) {
+    EXPECT_GE(SharedState::CURRENT_VERSION, 4u);
+}
+
 }  // namespace
 }  // namespace NextKey
