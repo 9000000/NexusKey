@@ -344,6 +344,28 @@ struct SharedState {
 //   (alignof >= 4) → contextAnchor at offset 1060 + 44 = 1104.
 static_assert(sizeof(SharedState) == 1104, "SharedState size changed — update structVersion");
 
+// Layout-freeze guards — failing any of these means a field was reordered or
+// resized and CURRENT_VERSION MUST be bumped. See design doc
+// (docs/plans/2026-04-22-tsf-update-hybrid-design.md § 3).
+static_assert(offsetof(SharedState, magic) == 0,
+              "magic must stay at offset 0");
+static_assert(offsetof(SharedState, structVersion) == 4,
+              "structVersion offset frozen");
+static_assert(offsetof(SharedState, structSize) == 8,
+              "structSize offset frozen");
+static_assert(offsetof(SharedState, epoch) == 12,
+              "epoch offset frozen");
+static_assert(offsetof(SharedState, flags) == 16,
+              "flags offset frozen");
+static_assert(offsetof(SharedState, configGeneration) == 33,
+              "configGeneration offset frozen");
+// contextAnchor offset moves with reserved[] size. Pin it so any accidental
+// field insert/reorder upstream gets caught at compile time. Accounts for
+// 1 byte of alignment padding after reserved[1024] (ends at 1059, anchor
+// requires alignof >= 4 so lands at 1060).
+static_assert(offsetof(SharedState, contextAnchor) == 1060,
+              "contextAnchor offset frozen (must account for reserved[1024] + pad)");
+
 /// Encode TypingConfig feature bools → uint32_t bitmask (3 bytes used)
 [[nodiscard]] inline uint32_t EncodeFeatureFlags(const TypingConfig& config) noexcept {
     uint32_t flags = 0;
