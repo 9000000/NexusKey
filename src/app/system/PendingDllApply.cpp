@@ -4,6 +4,7 @@
 #include "PendingDllApply.h"
 #include "UpdateInstaller.h"              // TSF_DLL_FILENAME, constants, MakeParkedDllTimestamp
 #include "UpdateSecurity.h"               // ComputeFileSha256
+#include "core/Debug.h"
 #include "core/Strings.h"
 #include "core/ipc/SharedState.h"          // SharedFlags
 #include "core/ipc/SharedStateManager.h"
@@ -25,13 +26,15 @@ std::string ReadMarkerHash(const std::filesystem::path& markerPath) noexcept {
     if (!in.is_open()) return {};
     std::string content((std::istreambuf_iterator<char>(in)),
                          std::istreambuf_iterator<char>());
-    // Trim + lowercase.
-    auto not_hex = [](unsigned char c) {
-        return !std::isxdigit(c);
+    // Trim leading/trailing non-hex characters (whitespace, newlines), keep the
+    // hex run in the middle. std::isxdigit needs unsigned char to avoid UB
+    // on values > 127.
+    auto is_hex = [](char c) {
+        return std::isxdigit(static_cast<unsigned char>(c)) != 0;
     };
-    auto begin = std::find_if_not(content.begin(), content.end(), not_hex);
+    auto begin = std::find_if(content.begin(), content.end(), is_hex);
     auto end = content.end();
-    while (end > begin && not_hex(static_cast<unsigned char>(*(end - 1)))) --end;
+    while (end > begin && !is_hex(*(end - 1))) --end;
     std::string hex(begin, end);
     for (auto& c : hex) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return hex.size() == 64 ? hex : std::string{};
@@ -108,15 +111,25 @@ void RestartWindowsNow() noexcept {
         if (LookupPrivilegeValueW(nullptr, SE_SHUTDOWN_NAME, &tp.Privileges[0].Luid)) {
             tp.PrivilegeCount = 1;
             tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-            AdjustTokenPrivileges(hToken, FALSE, &tp, 0, nullptr, nullptr);
+            if (!AdjustTokenPrivileges(hToken, FALSE, &tp, 0, nullptr, nullptr)
+                || GetLastError() == ERROR_NOT_ALL_ASSIGNED) {
+                NEXTKEY_LOG(L"RestartWindowsNow: SE_SHUTDOWN_NAME not granted (err=%lu) — ExitWindowsEx will likely fail",
+                            GetLastError());
+            }
+        } else {
+            NEXTKEY_LOG(L"RestartWindowsNow: LookupPrivilegeValueW failed (err=%lu)", GetLastError());
         }
         CloseHandle(hToken);
+    } else {
+        NEXTKEY_LOG(L"RestartWindowsNow: OpenProcessToken failed (err=%lu)", GetLastError());
     }
 
-    ExitWindowsEx(EWX_REBOOT | EWX_RESTARTAPPS,
-                  SHTDN_REASON_MAJOR_APPLICATION
-                  | SHTDN_REASON_MINOR_UPGRADE
-                  | SHTDN_REASON_FLAG_PLANNED);
+    if (!ExitWindowsEx(EWX_REBOOT | EWX_RESTARTAPPS,
+                       SHTDN_REASON_MAJOR_APPLICATION
+                       | SHTDN_REASON_MINOR_UPGRADE
+                       | SHTDN_REASON_FLAG_PLANNED)) {
+        NEXTKEY_LOG(L"RestartWindowsNow: ExitWindowsEx failed (err=%lu)", GetLastError());
+    }
 }
 
 void RestartWindowsWithPrompt(HWND owner) noexcept {

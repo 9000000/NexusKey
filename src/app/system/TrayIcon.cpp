@@ -7,6 +7,7 @@
 #include "ToastPopup.h"
 #include "DarkModeHelper.h"
 #include "StartupHelper.h"
+#include "PendingDllApply.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include <strsafe.h>

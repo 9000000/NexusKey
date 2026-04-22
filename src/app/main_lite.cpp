@@ -480,6 +480,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     });
 
+    // Wire hook-reload callback: sub-dialog subprocess → main EXE eager sync.
+    // Without this, new lists (TSF apps, excluded apps, macros, …) only apply
+    // on the next keystroke / focus change in the target app.
+    g_trayIcon.SetHookReloadCallback([]() {
+        g_hookEngine.SyncConfigFromSharedState();
+    });
+
     // Wire menu state getter
     g_trayIcon.SetMenuStateGetter([]() -> TrayMenuState {
         SharedState state = g_sharedState.Read();

@@ -3,6 +3,7 @@
 
 #include "UpdateInstaller.h"
 #include "UpdateSecurity.h"
+#include "core/Debug.h"
 
 #include <TlHelp32.h>
 #include <filesystem>
@@ -151,16 +152,29 @@ void HandleTsfDllReplace(const std::wstring& newDllSrc,
     // and verifies before swapping — prevents applying a user-dropped or
     // corrupted `.pending` file.
     std::string sha = ComputeFileSha256(pendingPath);
+    if (sha.empty()) {
+        NEXTKEY_LOG(L"HandleTsfDllReplace: SHA-256 of pending DLL failed — discarding");
+        DeleteFileW(pendingPath.c_str());
+        return;
+    }
     std::wstring markerPath = exeDir + L"\\" + TSF_DLL_PENDING_MARKER;
     HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr,
                                  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hMarker == INVALID_HANDLE_VALUE) {
+        NEXTKEY_LOG(L"HandleTsfDllReplace: CreateFileW marker failed (err=%lu) — discarding pending",
+                    GetLastError());
         DeleteFileW(pendingPath.c_str());  // back out of the half-deferred state
         return;
     }
     DWORD written = 0;
-    WriteFile(hMarker, sha.data(), static_cast<DWORD>(sha.size()), &written, nullptr);
+    BOOL wrote = WriteFile(hMarker, sha.data(), static_cast<DWORD>(sha.size()), &written, nullptr);
     CloseHandle(hMarker);
+    if (!wrote || written != sha.size()) {
+        NEXTKEY_LOG(L"HandleTsfDllReplace: marker WriteFile short/failed (wrote=%lu/%zu err=%lu) — discarding",
+                    written, sha.size(), GetLastError());
+        DeleteFileW(markerPath.c_str());
+        DeleteFileW(pendingPath.c_str());
+    }
 }
 
 /// Copy all files from srcDir to destDir (overwriting)
