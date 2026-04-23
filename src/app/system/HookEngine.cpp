@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <vector>
+#include <UIAutomation.h>
 
 namespace NextKey {
 
@@ -73,6 +74,7 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     excludeApps_ = config.excludeApps;
     tsfApps_ = config.tsfApps;
     autoCaps_ = config.autoCaps;
+    autoOffByUrl_ = config.autoOffByUrl;
     tempOffByAlt_ = config.tempOffByAlt;
     macroEnabled_ = config.macroEnabled;
     macroInEnglish_ = config.macroInEnglish;
@@ -148,6 +150,12 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         return false;
     }
 
+    // Initialize UIAutomation
+    HRESULT hr = CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&uia_));
+    if (FAILED(hr)) {
+        HOOK_LOG(L"Failed to initialize UIAutomation for URL bar detection, hr=0x%08X", hr);
+    }
+
     // Install mouse hook to reset composition on left click
     // (handles focus changes within same window, e.g. YouTube video → comment box)
     mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, hInstance, 0);
@@ -162,6 +170,10 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // (taskbar gets the foreground event, filtered as Shell_TrayWnd).
     minimizeHook_ = SetWinEventHook(
         EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZEEND,
+        nullptr, WinEventProc,
+        0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    objectFocusHook_ = SetWinEventHook(
+        EVENT_OBJECT_FOCUS, EVENT_OBJECT_FOCUS,
         nullptr, WinEventProc,
         0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
@@ -199,9 +211,21 @@ void HookEngine::Stop() {
         UnhookWinEvent(minimizeHook_);
         minimizeHook_ = nullptr;
     }
+    if (objectFocusHook_) {
+        UnhookWinEvent(objectFocusHook_);
+        objectFocusHook_ = nullptr;
+    }
     if (focusPollTimer_) {
         KillTimer(nullptr, focusPollTimer_);
         focusPollTimer_ = 0;
+    }
+    if (urlFocusTimer_) {
+        KillTimer(nullptr, urlFocusTimer_);
+        urlFocusTimer_ = 0;
+    }
+    if (uia_) {
+        uia_->Release();
+        uia_ = nullptr;
     }
     if (s_instance == this) {
         s_instance = nullptr;
@@ -537,6 +561,19 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LO
         return;
     }
 
+    if (event == EVENT_OBJECT_FOCUS) {
+        // Focus change within the same window (e.g. address bar vs web page).
+        // Only re-evaluate if it's a browser we're currently tracking.
+        if (self->needBaitChar_) {
+            self->CheckUrlBarFocus(hwnd);
+            
+            // Queue a 100ms delayed check in case UIA is lagging (common in Chromium)
+            if (self->urlFocusTimer_) KillTimer(nullptr, self->urlFocusTimer_);
+            self->urlFocusTimer_ = SetTimer(nullptr, 3, 100, DelayedUrlCheckTimerProc);
+        }
+        return;
+    }
+
     HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
              self->engine_->Count(), self->previousComposition_.c_str());
     self->autoCapState_ = AutoCapState::Idle;
@@ -559,6 +596,9 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
             // TryEditMessagePaste re-queries the focused HWND.
             self->cachedFocusedHwnd_ = nullptr;
             self->cachedFocusedClass_.clear();
+            
+            // Clear URL bar suppression on mouse click (will re-apply if they clicked the address bar)
+            self->ClearUrlSuppression();
         }
     }
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -620,6 +660,11 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         excludedPid_ = 0;
         NotifyModeChange();
         // Fall through to normal processing for this keystroke
+    }
+
+    // 1d. URL bar suppression clear on Enter, Escape, or Tab
+    if (urlSuppressed_ && (vkCode == VK_RETURN || vkCode == VK_ESCAPE || vkCode == VK_TAB)) {
+        ClearUrlSuppression();
     }
 
     // Non-modifier key pressed — invalidate modifier-only hotkey combo
@@ -2067,7 +2112,19 @@ void CALLBACK HookEngine::FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
     // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
     self->lastForegroundPid_ = fgPid;
     HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
-    self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+}
+
+void CALLBACK HookEngine::DelayedUrlCheckTimerProc(HWND, UINT, UINT_PTR idEvent, DWORD) {
+    HookEngine* self = s_instance.load(std::memory_order_relaxed);
+    if (!self) return;
+    KillTimer(nullptr, idEvent);
+    self->urlFocusTimer_ = 0;
+    
+    // Check if the foreground window is still the browser we were tracking
+    HWND fg = GetForegroundWindow();
+    if (fg && self->needBaitChar_) {
+        self->CheckUrlBarFocus(fg);
+    }
 }
 
 void HookEngine::RefreshFocusCache(HWND foreground) noexcept {
@@ -2078,6 +2135,68 @@ void HookEngine::RefreshFocusCache(HWND foreground) noexcept {
         cachedFocusedClass_.assign(cls);
     } else {
         cachedFocusedClass_.clear();
+    }
+}
+
+void HookEngine::CheckUrlBarFocus(HWND /*activeHwnd*/) {
+    if (!autoOffByUrl_) return;
+
+    HWND fg = GetForegroundWindow();
+    if (!fg) return;
+    
+    bool isUrlBar = false;
+
+    // Use UIAutomation to detect Chromium Omnibox (which is windowless)
+    if (uia_) {
+        IUIAutomationElement* focusedElement = nullptr;
+        if (SUCCEEDED(uia_->GetFocusedElement(&focusedElement)) && focusedElement) {
+            BSTR className = nullptr;
+            if (SUCCEEDED(focusedElement->get_CurrentClassName(&className)) && className) {
+                if (_wcsicmp(className, L"OmniboxViewViews") == 0 ||
+                    _wcsicmp(className, L"URLEdit") == 0) { // Safari/others
+                    isUrlBar = true;
+                }
+                SysFreeString(className);
+            }
+            focusedElement->Release();
+        }
+    }
+
+    if (!isUrlBar) {
+        // Fallback for old browsers/Firefox Edit controls
+        DWORD tid = GetWindowThreadProcessId(fg, nullptr);
+        GUITHREADINFO gti = { sizeof(gti) };
+        if (GetGUIThreadInfo(tid, &gti) && gti.hwndFocus) {
+            wchar_t cls[64] = {};
+            GetClassNameW(gti.hwndFocus, cls, 64);
+            isUrlBar = (_wcsicmp(cls, L"Edit") == 0 && needBaitChar_);
+        }
+    }
+
+    if (isUrlBar && !urlSuppressed_) {
+        // Entering URL bar: save mode, switch to E
+        if (engine_->Count() > 0) CommitComposition();
+        CancelCommitUndo();
+        urlSuppressed_ = true;
+        modeBeforeUrl_ = vietnameseMode_;
+        if (vietnameseMode_) {
+            vietnameseMode_ = false;
+            NotifyModeChange();
+            if (beepOnSwitch_) MessageBeep(MB_ICONASTERISK);
+        }
+        HOOK_LOG(L"  URL bar focus: auto-switched to E (saved=%d)", modeBeforeUrl_ ? 1 : 0);
+    }
+}
+
+void HookEngine::ClearUrlSuppression() noexcept {
+    if (urlSuppressed_) {
+        urlSuppressed_ = false;
+        if (modeBeforeUrl_ != vietnameseMode_) {
+            vietnameseMode_ = modeBeforeUrl_;
+            if (beepOnSwitch_) MessageBeep(vietnameseMode_ ? MB_OK : MB_ICONASTERISK);
+        }
+        NotifyModeChange();
+        HOOK_LOG(L"  URL bar focus cleared: restored mode=%d", vietnameseMode_ ? 1 : 0);
     }
 }
 
@@ -2185,7 +2304,8 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 
     // Skip focus tracking entirely if no feature needs it
     if (!smartSwitch_ && !excludeApps_ && !tsfApps_
-        && appEncodingOverrides_.empty() && appInputMethodOverrides_.empty()) return;
+        && appEncodingOverrides_.empty() && appInputMethodOverrides_.empty()
+        && !autoOffByUrl_) return;
 
     bool wasExcluded = isExcludedApp_;
     bool wasTsfApp = isTsfApp_;
@@ -2217,6 +2337,10 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         previousExe_ = currentExe_;
     }
     currentExe_ = std::move(newExe);
+
+    if (previousExe_ != currentExe_) {
+        ClearUrlSuppression();
+    }
 
     // Sync PID tracker so focus poll timer won't re-trigger for this app
     {
@@ -2324,10 +2448,21 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         }
     }
 
-    // Leaving excluded app — effective mode changed (E → actual) even if vietnameseMode_ didn't.
     // Idempotent if NotifyModeChange was already called above.
     if (wasExcluded) {
         NotifyModeChange();
+    }
+
+    // Check for URL bar focus if it's a browser
+    if (isBrowser) {
+        CheckUrlBarFocus(activeHwnd);
+    } else if (urlSuppressed_) {
+        // Switched to a non-browser app while URL was suppressed (edge case)
+        urlSuppressed_ = false;
+        if (modeBeforeUrl_ != vietnameseMode_) {
+            vietnameseMode_ = modeBeforeUrl_;
+            NotifyModeChange();
+        }
     }
 }
 

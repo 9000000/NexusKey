@@ -1,0 +1,217 @@
+Class: Chrome_WidgetWin_1 | ID:  | Name: about:blank - Google Chrome | ControlType: ControlType.Window
+  Class: Chrome_RenderWidgetHostHWND | ID: 555 | Name: Chrome Legacy Window | ControlType: ControlType.Pane
+  Class: Intermediate D3D Window | ID:  | Name:  | ControlType: ControlType.Pane
+  Class: BrowserRootView | ID:  | Name: about:blank - Google Chrome | ControlType: ControlType.Pane
+    Class: NonClientView | ID:  | Name:  | ControlType: ControlType.Pane
+      Class: BrowserFrameViewWin | ID:  | Name:  | ControlType: ControlType.Pane
+        Class: BrowserCaptionButtonContainer | ID:  | Name:  | ControlType: ControlType.Pane
+          Class: WindowsCaptionButton | ID: view_1 | Name: Minimize | ControlType: ControlType.Button
+          Class: WindowsCaptionButton | ID: view_2 | Name: Maximize | ControlType: ControlType.Button
+          Class: WindowsCaptionButton | ID: view_3 | Name: Restore | ControlType: ControlType.Button
+          Class: WindowsCaptionButton | ID: view_4 | Name: Close | ControlType: ControlType.Button
+        Class: BrowserView | ID:  | Name:  | ControlType: ControlType.Pane
+          Class: MainBackgroundRegionView | ID:  | Name:  | ControlType: ControlType.Pane
+          Class: TopContainerView | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: ToolbarView | ID: view_1000 | Name:  | ControlType: ControlType.ToolBar
+              Class: BackForwardButton | ID: view_1001 | Name: Back | ControlType: ControlType.Button
+              Class: BackForwardButton | ID: view_1002 | Name: Forward | ControlType: ControlType.Button
+              Class: ReloadButton | ID: view_1003 | Name: Reload | ControlType: ControlType.Button
+              Class: HomeButton | ID: view_1004 | Name: Home | ControlType: ControlType.Button
+              Class: SplitTabsToolbarButton | ID:  | Name: Open tab in split view | ControlType: ControlType.Button
+              Class: LocationBarView | ID:  | Name:  | ControlType: ControlType.Group
+                Class: PermissionDashboardView | ID:  | Name:  | ControlType: ControlType.Button
+                Class: LocationIconView | ID: view_1011 | Name: View site information | ControlType: ControlType.Button
+                  Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: OmniboxViewViews | ID: view_1012 | Name: Address and search bar | ControlType: ControlType.Edit
+                Class: Label | ID:  | Name:  | ControlType: ControlType.Text
+                Class: Label | ID:  | Name:  | ControlType: ControlType.Text
+                Class: SelectedKeywordView | ID:  | Name:  | ControlType: ControlType.Button
+                  Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: ContentSettingImageView | ID:  | Name:  | ControlType: ControlType.Button
+                  Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: PageActionContainerView | ID:  | Name:  | ControlType: ControlType.Pane
+                  Class: PageActionView | ID:  | Name: Search with Google Lens | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Translate | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Indigo | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Tab active again | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: JavaScript optimizations are disabled. | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: To open this link, choose an app | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Reading mode | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Offer available | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: This page is allowed to edit files | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name:  | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Shopping insights | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Discount found | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Google Password Manager | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name:  | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Find | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: PageActionView | ID:  | Name: Addresses and more | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: PageActionIconContainerView | ID:  | Name:  | ControlType: ControlType.Pane
+                  Class: AiModePageActionIconView | ID:  | Name: Ask AI Mode in Google Search | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: LensOverlayHomeworkPageActionIconView | ID:  | Name: Ask Google | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: ZoomView | ID:  | Name: Zoom: 100% | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: CookieControlsIconView | ID:  | Name: Third-party cookies blocked | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: SavePaymentIconView | ID: view_1014 | Name: Save card | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: SavePaymentIconView | ID: view_1015 | Name: Save card | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: FilledCardInformationIconView | ID:  | Name: View your virtual card number | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: VirtualCardEnrollIconView | ID:  | Name: Add virtual card | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: MandatoryReauthIconView | ID:  | Name: Enable mandatory re-authentication | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: StarView | ID: view_1005 | Name: Bookmark this tab | ControlType: ControlType.Button
+                    Class: AXVirtualView | ID:  | Name:  | ControlType: ControlType.Text
+                Class: ImageButton | ID:  | Name: Clear input | ControlType: ControlType.Button
+              Class: ExtensionsToolbarDesktop | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: ExtensionsToolbarButton | ID: view_1006 | Name: Extensions | ControlType: ControlType.Button
+                Class: ToolbarButton | ID:  | Name: Close side panel | ControlType: ControlType.Button
+              Class: ToolbarDivider | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: PinnedToolbarActionsContainer | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: ToolbarDivider | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: BatterySaverButton | ID:  | Name: Energy Saver is on | ControlType: ControlType.Button
+              Class: PerformanceInterventionButton | ID:  | Name: Performance issue alert | ControlType: ControlType.Button
+              Class: MediaToolbarButtonView | ID:  | Name: Control your music, videos, and more | ControlType: ControlType.Button
+              Class: AvatarToolbarButton | ID: view_1018 | Name: You | ControlType: ControlType.Button
+              Class: ToolbarButton | ID:  | Name: New tab | ControlType: ControlType.Button
+              Class: OverflowButton | ID:  | Name: Hidden toolbar buttons | ControlType: ControlType.Button
+              Class: BrowserAppMenuButton | ID: view_1007 | Name: Chrome | ControlType: ControlType.Button
+            Class: BookmarkBarView | ID: view_1025 | Name: Bookmarks | ControlType: ControlType.ToolBar
+              Class: ShortcutButton | ID: view_1028 | Name: Apps | ControlType: ControlType.Button
+              Class: BookmarkFolderButton | ID: view_1027 | Name: Managed bookmarks | ControlType: ControlType.Button
+              Class: SavedTabGroupBar | ID:  | Name: Saved Tab Groups | ControlType: ControlType.ToolBar
+                Class: SavedTabGroupOverflowButton | ID:  | Name: Tab groups | ControlType: ControlType.Button
+              Class: BookmarkBarView::ButtonSeparatorView | ID:  | Name: Separator | ControlType: ControlType.Separator
+              Class: BookmarkMenuButtonBase | ID:  | Name: Menu containing hidden bookmarks | ControlType: ControlType.Button
+              Class: BookmarkFolderButton | ID: view_1026 | Name: All Bookmarks | ControlType: ControlType.Button
+              Class: BookmarkBarView::ButtonSeparatorView | ID:  | Name: Separator | ControlType: ControlType.Separator
+            Class: ContentsSeparator | ID:  | Name:  | ControlType: ControlType.Pane
+          Class: View | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: MultiContentsView | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: MultiContentsBackgroundView | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: Chrome_WidgetWin_1 | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: WebView | ID: view_1034 | Name:  | ControlType: ControlType.Document
+                  Class: NativeViewHost | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: ScrimView | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: Chrome_RenderWidgetHostHWND | ID: 622 | Name: Chrome Legacy Window | ControlType: ControlType.Pane
+                  Class:  | ID: RootWebArea | Name:  | ControlType: ControlType.Document
+                    Class:  | ID: preact-border-shadow-host | Name:  | ControlType: ControlType.Group
+                      Class:  | ID: preact-border-container | Name:  | ControlType: ControlType.Group
+                Class: ContentsSeparator | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: NewTabFooterWebView | ID:  | Name:  | ControlType: ControlType.Document
+                  Class: NativeViewHost | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: WatermarkView | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: ScrimView | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: NativeViewHost | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: WebView | ID:  | Name:  | ControlType: ControlType.Document
+                  Class: NativeViewHost | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: MultiContentsViewMiniToolbar | ID:  | Name:  | ControlType: ControlType.Pane
+                  Class: Label | ID:  | Name: about:blank | ControlType: ControlType.Text
+                  Class: ImageButton | ID:  | Name: Arrange split view | ControlType: ControlType.Button
+                Class: ContentsContainerOutline | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: MultiContentsResizeArea | ID:  | Name:  | ControlType: ControlType.Separator
+                Class: MultiContentsResizeHandle | ID:  | Name: Split View Resize Handle (draggable) | ControlType: ControlType.Slider
+              Class: Chrome_WidgetWin_1 | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: WebView | ID: view_1034 | Name:  | ControlType: ControlType.Document
+                  Class: NativeViewHost | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: ScrimView | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: ContentsWebView | ID: view_1033 | Name:  | ControlType: ControlType.Document
+                  Class: NativeViewHost | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: ContentsSeparator | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: NewTabFooterWebView | ID:  | Name:  | ControlType: ControlType.Document
+                  Class: NativeViewHost | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: WatermarkView | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: ScrimView | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: NativeViewHost | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: WebView | ID:  | Name:  | ControlType: ControlType.Document
+                  Class: NativeViewHost | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: MultiContentsViewMiniToolbar | ID:  | Name:  | ControlType: ControlType.Pane
+                  Class: Label | ID:  | Name:  | ControlType: ControlType.Text
+                  Class: ImageButton | ID:  | Name: Arrange split view | ControlType: ControlType.Button
+                Class: ContentsContainerOutline | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: MultiContentsDropTargetView | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: View | ID:  | Name:  | ControlType: ControlType.Pane
+                  Class: Label | ID:  | Name: Create split view | ControlType: ControlType.Text
+              Class: ContentsSeparator | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: ContentsSeparator | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: ContentsSeparator | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: CustomFloatingCorner | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: View | ID: view_1035 | Name:  | ControlType: ControlType.Pane
+            Class: View | ID:  | Name:  | ControlType: ControlType.Pane
+          Class: SidePanel | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: ContentParentView | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: SidePanel::BorderView | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: SidePanelResizeArea | ID:  | Name: Side Panel Resize Handle (draggable) | ControlType: ControlType.Slider
+          Class: InfoBarContainerView | ID: view_1039 | Name: Infobar Container | ControlType: ControlType.Group
+            Class: ContentShadow | ID:  | Name:  | ControlType: ControlType.Pane
+          Class: ShadowOverlayView | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: CornerView | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: CornerView | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: CornerView | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: CornerView | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: ShadowBox | ID:  | Name:  | ControlType: ControlType.Pane
+          Class: SidePanel | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: ContentParentView | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: SidePanelResizeArea | ID:  | Name: Side Panel Resize Handle (draggable) | ControlType: ControlType.Slider
+          Class: HorizontalTabStripRegionView | ID:  | Name:  | ControlType: ControlType.Tab
+            Class: TabSearchContainer | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: TabSearchButton | ID:  | Name: Search tabs | ControlType: ControlType.Button
+              Class: TabStripNudgeButton | ID:  | Name: Group related tabs | ControlType: ControlType.Button
+                Class: InkDropContainerView | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: LabelButtonLabel | ID:  | Name: Organize tabs? | ControlType: ControlType.Text
+                Class: LabelButton | ID:  | Name: Dismiss suggestion | ControlType: ControlType.Button
+                  Class: InkDropContainerView | ID:  | Name:  | ControlType: ControlType.Pane
+                  Class: LabelButtonLabel | ID:  | Name:  | ControlType: ControlType.Text
+            Class: TabStrip | ID: view_21 | Name:  | ControlType: ControlType.Pane
+              Class: TabContainerImpl | ID:  | Name:  | ControlType: ControlType.Pane
+                Class: Tab | ID: view_20 | Name: New Tab | ControlType: ControlType.TabItem
+                  Class: AlertIndicatorButton | ID:  | Name: Mute tab | ControlType: ControlType.Button
+                  Class: TabCloseButton | ID:  | Name: Close | ControlType: ControlType.Button
+                Class: Tab | ID: view_20 | Name: about:blank | ControlType: ControlType.TabItem
+                  Class: AlertIndicatorButton | ID:  | Name: Mute tab | ControlType: ControlType.Button
+                  Class: TabCloseButton | ID:  | Name: Close | ControlType: ControlType.Button
+                Class: View | ID:  | Name:  | ControlType: ControlType.Pane
+              Class: TabStrip::TabDragContextImpl | ID:  | Name:  | ControlType: ControlType.Pane
+            Class: TabStripControlButton | ID:  | Name: New Tab | ControlType: ControlType.Button
+            Class: FrameGrabHandle | ID:  | Name:  | ControlType: ControlType.Pane
+          Class: View | ID:  | Name:  | ControlType: ControlType.Pane
+          Class: ScrimView | ID:  | Name:  | ControlType: ControlType.Pane
+      Class: TopContainerOverlayView | ID:  | Name:  | ControlType: ControlType.Pane
