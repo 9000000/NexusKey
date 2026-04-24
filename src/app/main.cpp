@@ -139,6 +139,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hInstance = hInstance;
     InstallCursorCrashHandler();  // Restore system cursors if we crash during window picking
 
+    // Last-resort catch: if a C++ throw ever escapes all try/catch at thread boundaries
+    // (shouldn't happen after issue #103 fix, but belt-and-suspenders), log before dying
+    // so the next crash report shows WHAT escaped, not a silent std::terminate.
+    std::set_terminate([]() noexcept {
+        CrashLog(L"std::terminate", "uncaught exception reached std::terminate");
+        std::abort();
+    });
+
     // ═══════════════════════════════════════════════════════════
     // Command-line Router
     // ═══════════════════════════════════════════════════════════

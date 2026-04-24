@@ -12,12 +12,14 @@
 #include "core/config/ConfigManager.h"
 #include "core/ipc/SharedConstants.h"
 #include "core/Debug.h"
+#include "core/CrashLog.h"
 #include "core/Version.h"
 #include "system/StartupHelper.h"
 #include "system/UpdateChecker.h"
 #include "system/PendingDllApply.h"
 #include "core/Strings.h"
 
+#include <exception>
 #include <thread>
 #include <atomic>
 #include <memory>
@@ -902,7 +904,13 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
             auto state = std::make_shared<State>();
 
             std::thread([state]() {
-                state->info = UpdateChecker::CheckForUpdate();
+                try {
+                    state->info = UpdateChecker::CheckForUpdate();
+                } catch (const std::exception& e) {
+                    NextKey::CrashLog(L"ClassicSettings::UpdateCheck::thread", e.what());
+                } catch (...) {
+                    NextKey::CrashLog(L"ClassicSettings::UpdateCheck::thread", "(non-std exception)");
+                }
                 state->done.store(true, std::memory_order_release);
             }).detach();
 
