@@ -83,10 +83,16 @@ static void NotifySettingsMode(bool vietnamese) noexcept {
 static constexpr UINT_PTR TIMER_ID_ICON_POLL = 100;
 
 static void CALLBACK IconPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
-    uint32_t flags = g_sharedState.ReadFlags();
-    bool vietnamese = (flags & SharedFlags::VIETNAMESE_MODE) != 0;
-    g_trayIcon.SetVietnameseMode(vietnamese);  // no-op if unchanged
-    g_floatingIcon.SetVietnameseMode(vietnamese);  // no-op if unchanged
+    try {
+        uint32_t flags = g_sharedState.ReadFlags();
+        bool vietnamese = (flags & SharedFlags::VIETNAMESE_MODE) != 0;
+        g_trayIcon.SetVietnameseMode(vietnamese);  // no-op if unchanged
+        g_floatingIcon.SetVietnameseMode(vietnamese);  // no-op if unchanged
+    } catch (const std::exception& e) {
+        CrashLog(L"IconPollTimerProc", e.what());
+    } catch (...) {
+        CrashLog(L"IconPollTimerProc", "(non-std exception)");
+    }
 }
 #endif
 
