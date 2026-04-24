@@ -9,8 +9,10 @@
 #include "core/MacroPrefix.h"
 #include "core/ipc/SharedStateManager.h"
 #include "core/Debug.h"
+#include "core/CrashLog.h"
 #include <algorithm>
 #include <cstdio>
+#include <exception>
 #include <vector>
 
 namespace NextKey {
@@ -481,85 +483,106 @@ void HookEngine::ReloadFromToml() {
 // ═══════════════════════════════════════════════════════════
 
 LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    HookEngine* self = s_instance.load(std::memory_order_relaxed);
-    auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
+    // Top-level catch: a C++ throw escaping a low-level hook unwinds through
+    // KiUserCallbackDispatcher and Windows raises STATUS_FATAL_USER_CALLBACK_EXCEPTION
+    // (0xC000041D), terminating the process. Swallow + log so the next keystroke
+    // gets a fresh attempt instead of the app silently disappearing.
+    try {
+        HookEngine* self = s_instance.load(std::memory_order_relaxed);
+        auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
-    // Always track our own synthetic events regardless of nCode.
-    // When nCode < 0, Windows tells us to pass the message along — but the event
-    // still represents a delivered synthetic that was counted when sent.
-    // Without this, synthEventsPending_ leaks on every nCode < 0 delivery.
-    if (self && pKey->dwExtraInfo == NEXUSKEY_EXTRA_INFO) {
-        HOOK_LOG(L"  PASSTHRU (dwExtraInfo=NK): vk=0x%02X scan=0x%04X flags=0x%08X nCode=%d",
-                 pKey->vkCode, pKey->scanCode, pKey->flags, nCode);
-        if (self->synthEventsPending_ > 0) --self->synthEventsPending_;
-        return CallNextHookEx(nullptr, nCode, wParam, lParam);
-    }
-
-    if (nCode == HC_ACTION && self) {
-        // Skip events while we're sending (safety backup)
-        if (self->sending_) {
-            HOOK_LOG(L"  PASSTHRU (sending_): vk=0x%02X scan=0x%04X flags=0x%08X",
-                     pKey->vkCode, pKey->scanCode, pKey->flags);
+        // Always track our own synthetic events regardless of nCode.
+        // When nCode < 0, Windows tells us to pass the message along — but the event
+        // still represents a delivered synthetic that was counted when sent.
+        // Without this, synthEventsPending_ leaks on every nCode < 0 delivery.
+        if (self && pKey->dwExtraInfo == NEXUSKEY_EXTRA_INFO) {
+            HOOK_LOG(L"  PASSTHRU (dwExtraInfo=NK): vk=0x%02X scan=0x%04X flags=0x%08X nCode=%d",
+                     pKey->vkCode, pKey->scanCode, pKey->flags, nCode);
+            if (self->synthEventsPending_ > 0) --self->synthEventsPending_;
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
 
-        bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
-        bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
-
-        HOOK_LOG(L"KEY vk=0x%02X scan=0x%04X flags=0x%08X %s",
-                 pKey->vkCode, pKey->scanCode, pKey->flags,
-                 isDown ? L"DOWN" : (isUp ? L"UP" : L"OTHER"));
-
-        if (isDown) {
-            if (self->ProcessKeyDown(pKey->vkCode, pKey->scanCode, pKey->flags)) {
-                HOOK_LOG(L"  → EATEN (key-down vk=0x%02X)", pKey->vkCode);
-                return 1;  // Eat the keystroke
+        if (nCode == HC_ACTION && self) {
+            // Skip events while we're sending (safety backup)
+            if (self->sending_) {
+                HOOK_LOG(L"  PASSTHRU (sending_): vk=0x%02X scan=0x%04X flags=0x%08X",
+                         pKey->vkCode, pKey->scanCode, pKey->flags);
+                return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
-        } else if (isUp) {
-            if (self->ProcessKeyUp(pKey->vkCode, pKey->flags)) {
-                return 1;  // Eat the keystroke
+
+            bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+            bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
+
+            HOOK_LOG(L"KEY vk=0x%02X scan=0x%04X flags=0x%08X %s",
+                     pKey->vkCode, pKey->scanCode, pKey->flags,
+                     isDown ? L"DOWN" : (isUp ? L"UP" : L"OTHER"));
+
+            if (isDown) {
+                if (self->ProcessKeyDown(pKey->vkCode, pKey->scanCode, pKey->flags)) {
+                    HOOK_LOG(L"  → EATEN (key-down vk=0x%02X)", pKey->vkCode);
+                    return 1;  // Eat the keystroke
+                }
+            } else if (isUp) {
+                if (self->ProcessKeyUp(pKey->vkCode, pKey->flags)) {
+                    return 1;  // Eat the keystroke
+                }
             }
         }
+    } catch (const std::exception& e) {
+        CrashLog(L"HookEngine::LowLevelKeyboardProc", e.what());
+    } catch (...) {
+        CrashLog(L"HookEngine::LowLevelKeyboardProc", "(non-std exception)");
     }
-
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
 void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD) {
-    HookEngine* self = s_instance.load(std::memory_order_relaxed);
-    if (!self) return;
+    try {
+        HookEngine* self = s_instance.load(std::memory_order_relaxed);
+        if (!self) return;
 
-    if (event == EVENT_SYSTEM_MINIMIZEEND) {
-        // Window restored from taskbar — re-evaluate focus with the actual foreground window.
-        // Don't use hwnd directly: the restored window may not be foreground yet.
-        HOOK_LOG(L"MINIMIZEEND (hwnd=%p) — re-evaluating focus", hwnd);
-        self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
-        return;
+        if (event == EVENT_SYSTEM_MINIMIZEEND) {
+            // Window restored from taskbar — re-evaluate focus with the actual foreground window.
+            // Don't use hwnd directly: the restored window may not be foreground yet.
+            HOOK_LOG(L"MINIMIZEEND (hwnd=%p) — re-evaluating focus", hwnd);
+            self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+            return;
+        }
+
+        HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
+                 self->engine_->Count(), self->previousComposition_.c_str());
+        self->autoCapState_ = AutoCapState::Idle;
+        self->OnFocusChanged(hwnd);
+    } catch (const std::exception& e) {
+        CrashLog(L"HookEngine::WinEventProc", e.what());
+    } catch (...) {
+        CrashLog(L"HookEngine::WinEventProc", "(non-std exception)");
     }
-
-    HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
-             self->engine_->Count(), self->previousComposition_.c_str());
-    self->autoCapState_ = AutoCapState::Idle;
-    self->OnFocusChanged(hwnd);
 }
 
 LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (nCode == HC_ACTION && wParam == WM_LBUTTONDOWN) {
-        HookEngine* self = s_instance.load(std::memory_order_relaxed);
-        if (self) {
-            HOOK_LOG(L"MOUSE click — resetting composition (engine count=%zu, prev='%s')",
-                     self->engine_->Count(), self->previousComposition_.c_str());
-            // Always reset, even when engine is idle: commitUndoState_ and commitStack_
-            // may hold a previously committed word. If not cleared here, a click elsewhere
-            // followed by Backspace triggers ReplayCommittedChars() at the new cursor
-            // position — identical to the Ctrl+A bug.
-            self->ResetComposition();
-            // Click may move focus to another control within the same app (no
-            // EVENT_SYSTEM_FOREGROUND fires) — invalidate cache so the next
-            // TryEditMessagePaste re-queries the focused HWND.
-            self->cachedFocusedHwnd_ = nullptr;
-            self->cachedFocusedClass_.clear();
+    try {
+        if (nCode == HC_ACTION && wParam == WM_LBUTTONDOWN) {
+            HookEngine* self = s_instance.load(std::memory_order_relaxed);
+            if (self) {
+                HOOK_LOG(L"MOUSE click — resetting composition (engine count=%zu, prev='%s')",
+                         self->engine_->Count(), self->previousComposition_.c_str());
+                // Always reset, even when engine is idle: commitUndoState_ and commitStack_
+                // may hold a previously committed word. If not cleared here, a click elsewhere
+                // followed by Backspace triggers ReplayCommittedChars() at the new cursor
+                // position — identical to the Ctrl+A bug.
+                self->ResetComposition();
+                // Click may move focus to another control within the same app (no
+                // EVENT_SYSTEM_FOREGROUND fires) — invalidate cache so the next
+                // TryEditMessagePaste re-queries the focused HWND.
+                self->cachedFocusedHwnd_ = nullptr;
+                self->cachedFocusedClass_.clear();
+            }
         }
+    } catch (const std::exception& e) {
+        CrashLog(L"HookEngine::LowLevelMouseProc", e.what());
+    } catch (...) {
+        CrashLog(L"HookEngine::LowLevelMouseProc", "(non-std exception)");
     }
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
@@ -2051,23 +2074,29 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
 }
 
 void CALLBACK HookEngine::FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
-    HookEngine* self = s_instance.load(std::memory_order_relaxed);
-    if (!self) return;
-    HWND fg = GetForegroundWindow();
-    if (!fg) return;
+    try {
+        HookEngine* self = s_instance.load(std::memory_order_relaxed);
+        if (!self) return;
+        HWND fg = GetForegroundWindow();
+        if (!fg) return;
 
-    // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
-    // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
-    self->CheckLayoutChange();
+        // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
+        // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
+        self->CheckLayoutChange();
 
-    DWORD fgPid = 0;
-    GetWindowThreadProcessId(fg, &fgPid);
-    if (fgPid == self->lastForegroundPid_ || fgPid == 0) return;
-    // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
-    // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
-    self->lastForegroundPid_ = fgPid;
-    HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
-    self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+        DWORD fgPid = 0;
+        GetWindowThreadProcessId(fg, &fgPid);
+        if (fgPid == self->lastForegroundPid_ || fgPid == 0) return;
+        // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
+        // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
+        self->lastForegroundPid_ = fgPid;
+        HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
+        self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+    } catch (const std::exception& e) {
+        CrashLog(L"HookEngine::FocusPollTimerProc", e.what());
+    } catch (...) {
+        CrashLog(L"HookEngine::FocusPollTimerProc", "(non-std exception)");
+    }
 }
 
 void HookEngine::RefreshFocusCache(HWND foreground) noexcept {

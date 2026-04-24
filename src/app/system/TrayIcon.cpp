@@ -10,10 +10,12 @@
 #include "PendingDllApply.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
+#include "core/CrashLog.h"
 #include <strsafe.h>
 #include <vector>
 #include <CommCtrl.h>
 #include <uxtheme.h>
+#include <exception>
 #include <thread>
 
 #pragma comment(lib, "comctl32.lib")
@@ -413,7 +415,7 @@ void TrayIcon::ShowContextMenu() {
     PostMessageW(hwndMessage_, WM_NULL, 0, 0);
 }
 
-bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept {
+bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) noexcept try {
     // Deferred V/E mode sync from hook callback or tray click (PostMessage pattern).
     // Settings notification is posted directly from modeChangeCallback_ (1 hop) —
     // no FindWindow needed here.
@@ -551,26 +553,41 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     toggledByClick_ = false;
     ignoreNextLButtonUp_ = false;
     return false;
+} catch (const std::exception& e) {
+    CrashLog(L"TrayIcon::ProcessMessage", e.what());
+    return false;
+} catch (...) {
+    CrashLog(L"TrayIcon::ProcessMessage", "(non-std exception)");
+    return false;
 }
 
 LRESULT CALLBACK TrayIcon::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    // Real-time theme switch for context menus
-    if (msg == WM_SETTINGCHANGE && lParam) {
-        if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
-            bool dark = DarkModeHelper::IsWindowsDarkMode();
-            DarkModeHelper::SetWindowDarkMode(hwnd, dark);
+    // Top-level catch: WndProc is kernel-dispatched via KiUserCallbackDispatcher.
+    // An escaping C++ exception becomes STATUS_FATAL_USER_CALLBACK_EXCEPTION
+    // (0xC000041D) and terminates the process — issue #103.
+    try {
+        // Real-time theme switch for context menus
+        if (msg == WM_SETTINGCHANGE && lParam) {
+            if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
+                bool dark = DarkModeHelper::IsWindowsDarkMode();
+                DarkModeHelper::SetWindowDarkMode(hwnd, dark);
+            }
         }
-    }
 
-    // Handle TaskbarCreated: explorer.exe restarted, re-add our tray icon
-    if (g_trayInstance && g_trayInstance->wmTaskbarCreated_ != 0 &&
-        msg == g_trayInstance->wmTaskbarCreated_) {
-        g_trayInstance->ReAddIcon();
-        return 0;
-    }
+        // Handle TaskbarCreated: explorer.exe restarted, re-add our tray icon
+        if (g_trayInstance && g_trayInstance->wmTaskbarCreated_ != 0 &&
+            msg == g_trayInstance->wmTaskbarCreated_) {
+            g_trayInstance->ReAddIcon();
+            return 0;
+        }
 
-    if (g_trayInstance && g_trayInstance->ProcessMessage(hwnd, msg, wParam, lParam)) {
-        return TRUE;
+        if (g_trayInstance && g_trayInstance->ProcessMessage(hwnd, msg, wParam, lParam)) {
+            return TRUE;
+        }
+    } catch (const std::exception& e) {
+        CrashLog(L"TrayIcon::WndProc", e.what());
+    } catch (...) {
+        CrashLog(L"TrayIcon::WndProc", "(non-std exception)");
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
