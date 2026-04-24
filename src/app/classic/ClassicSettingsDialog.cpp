@@ -494,6 +494,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
                 ComboBox_AddString(combo, L"Nền tối");
                 ComboBox_AddString(combo, L"Nền sáng");
                 ComboBox_AddString(combo, L"Tự chọn");
+                ComboBox_AddString(combo, L"Tự động");
             }
             if (wcscmp(meta.id, L"startup-mode") == 0) {
                 ComboBox_AddString(combo, L"Tiếng Việt");
@@ -1109,6 +1110,7 @@ void ClassicSettingsDialog::RefreshLabels() {
         ComboBox_AddString(iconCombo, en ? L"Dark" : L"Nền tối");
         ComboBox_AddString(iconCombo, en ? L"Light" : L"Nền sáng");
         ComboBox_AddString(iconCombo, en ? L"Custom" : L"Tự chọn");
+        ComboBox_AddString(iconCombo, en ? L"Auto" : L"Tự động");
         if (sel >= 0) ComboBox_SetCurSel(iconCombo, sel);
     }
 

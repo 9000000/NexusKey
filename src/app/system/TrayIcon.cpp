@@ -164,20 +164,20 @@ void TrayIcon::RefreshIcon() noexcept {
 
     HICON newIcon = nullptr;
 
-    switch (iconStyle_) {
-        case 1:  // Dark mode (white icons)
+    switch (static_cast<IconStyle>(iconStyle_)) {
+        case IconStyle::Dark:
             newIcon = LoadIconW(hInstance,
                 MAKEINTRESOURCEW(vietnameseMode_ ? IDI_VIET_ON_WHITE : IDI_VIET_OFF_WHITE));
             break;
 
-        case 2:  // Light mode (black icons)
+        case IconStyle::Light:
             newIcon = LoadIconW(hInstance,
                 MAKEINTRESOURCEW(vietnameseMode_ ? IDI_VIET_ON_BLACK : IDI_VIET_OFF_BLACK));
             break;
 
-        case 3: {  // Custom color
-            int baseIcon = vietnameseMode_ ? IDI_VIET_ON : IDI_VIET_OFF;
-            COLORREF color = static_cast<COLORREF>(
+        case IconStyle::Custom: {
+            const int baseIcon = vietnameseMode_ ? IDI_VIET_ON : IDI_VIET_OFF;
+            const COLORREF color = static_cast<COLORREF>(
                 vietnameseMode_
                     ? (customColorV_ != 0 ? customColorV_ : DEFAULT_ICON_COLOR_V)
                     : (customColorE_ != 0 ? customColorE_ : DEFAULT_ICON_COLOR_E));
@@ -188,7 +188,17 @@ void TrayIcon::RefreshIcon() noexcept {
             break;
         }
 
-        default:  // 0 = Color (default)
+        case IconStyle::Auto: {
+            const bool taskbarDark = DarkModeHelper::IsTaskbarDark();
+            const int iconId = taskbarDark
+                ? (vietnameseMode_ ? IDI_VIET_ON_WHITE : IDI_VIET_OFF_WHITE)
+                : (vietnameseMode_ ? IDI_VIET_ON_BLACK : IDI_VIET_OFF_BLACK);
+            newIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(iconId));
+            break;
+        }
+
+        case IconStyle::Color:
+        default:
             newIcon = LoadIconW(hInstance,
                 MAKEINTRESOURCEW(vietnameseMode_ ? IDI_VIET_ON : IDI_VIET_OFF));
             break;
@@ -566,11 +576,19 @@ LRESULT CALLBACK TrayIcon::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     // An escaping C++ exception becomes STATUS_FATAL_USER_CALLBACK_EXCEPTION
     // (0xC000041D) and terminates the process — issue #103.
     try {
-        // Real-time theme switch for context menus
+        // Real-time theme switch for context menus + Auto tray icon (issue #104)
         if (msg == WM_SETTINGCHANGE && lParam) {
             if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
                 bool dark = DarkModeHelper::IsWindowsDarkMode();
                 DarkModeHelper::SetWindowDarkMode(hwnd, dark);
+
+                if (g_trayInstance &&
+                    static_cast<IconStyle>(g_trayInstance->iconStyle_) == IconStyle::Auto) {
+                    g_trayInstance->RefreshIcon();
+                    if (g_trayInstance->nid_.hIcon) {
+                        Shell_NotifyIconW(NIM_MODIFY, &g_trayInstance->nid_);
+                    }
+                }
             }
         }
 
