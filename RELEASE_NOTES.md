@@ -6,7 +6,7 @@
 **🛠 Sửa lỗi:**
 - Sửa lỗi bất đồng bộ khi chạy với quyền admin
 - Điều chỉnh UI macro
-- Fix lỗi không gõ được tiếng việt trong app webview2 (Dorion)
+- Sửa lỗi không gõ được tiếng việt trong app webview2 (Dorion)
 - Chặn app tự tắt im lặng khi có C++ exception thoát ra từ hook bàn phím / chuột, sự kiện đổi cửa sổ, tray icon, hoặc thread auto-update. Exception sẽ được log vào `_nexuskey_crash.log` cạnh file exe thay vì làm chết app (issue #103). (Nếu thấy có vấn đề hoặc có file crash log, vui lòng gửi vào [issue #103](https://github.com/phatMT97/NexusKey/issues/103) )
 
 **ℹ️ Thông tin:**
