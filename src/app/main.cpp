@@ -245,6 +245,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Main Process
     // ═══════════════════════════════════════════════════════════
 
+    const bool isAdminRestart = HasCmdlineFlag(lpCmdLine, ADMIN_RESTART_FLAG);
+
     // Self-elevate if "Run as Admin" is enabled but we're not elevated.
     // Must be before mutex — the elevated instance will acquire the mutex instead.
     {
@@ -262,25 +264,40 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // mutexes — second instance gets ERROR_ACCESS_DENIED instead of ERROR_ALREADY_EXISTS.
     HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\NexusKey_Main_Mutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        // Another background instance is already running.
-        // If the user has "show on startup" configured, popup the settings dialog of the 
-        // existing instance to indicate the app is active. Otherwise, strictly silent.
-        auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
-        if (sysConfig.showOnStartup) {
-            HWND existingTrayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
-            if (existingTrayWnd) {
-                PostMessageW(existingTrayWnd, WM_NEXUSKEY_SHOW_SETTINGS, 0, 0);
-                
-                HWND existingSettings = GetSettingsHwnd();
-                if (existingSettings) {
-                    SetForegroundWindow(existingSettings);
+        if (isAdminRestart) {
+            // Admin-restart path: old instance is in the middle of cleanup.
+            // Wait for ownership transfer (either clean release or WAIT_ABANDONED
+            // if old is killed). This closes the restart race: by the time we
+            // hold the mutex, old has unhooked and released shared resources.
+            DWORD r = WaitForSingleObject(hMutex, 10000);
+            if (r != WAIT_OBJECT_0 && r != WAIT_ABANDONED) {
+                NEXTKEY_LOG(L"Admin-restart: timeout waiting for old instance mutex (r=%lu)", r);
+                CloseHandle(hMutex);
+                return 1;
+            }
+            NEXTKEY_LOG(L"Admin-restart: mutex ownership acquired (%s)",
+                         r == WAIT_ABANDONED ? L"abandoned" : L"released");
+        } else {
+            // Another background instance is already running.
+            // If the user has "show on startup" configured, popup the settings dialog of the
+            // existing instance to indicate the app is active. Otherwise, strictly silent.
+            auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
+            if (sysConfig.showOnStartup) {
+                HWND existingTrayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                if (existingTrayWnd) {
+                    PostMessageW(existingTrayWnd, WM_NEXUSKEY_SHOW_SETTINGS, 0, 0);
+
+                    HWND existingSettings = GetSettingsHwnd();
+                    if (existingSettings) {
+                        SetForegroundWindow(existingSettings);
+                    }
                 }
             }
+
+            NEXTKEY_LOG(L"Another instance is already running. Exiting.");
+            CloseHandle(hMutex);
+            return 0;
         }
-        
-        NEXTKEY_LOG(L"Another instance is already running. Exiting.");
-        CloseHandle(hMutex);
-        return 0;
     }
 
     // Remove any HKCU CLSID override that malware may have planted to hijack TSF DLL loading

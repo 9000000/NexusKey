@@ -491,12 +491,25 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     // Restart app (admin mode changed in settings)
     if (msg == WM_NEXUSKEY_RESTART && hwnd == hwndMessage_) {
-        if (RestartWithNewAdminMode()) {
-            // New instance launched — exit via menu callback
-            // (TerminateAllSubprocesses is called inside OnMenuCommand::Exit)
-            if (menuCallback_) {
-                menuCallback_(TrayMenuId::Exit);
-            }
+        switch (RestartWithNewAdminMode()) {
+            case AdminRestartResult::Restarting:
+                // New instance launched — exit via menu callback
+                // (TerminateAllSubprocesses is called inside OnMenuCommand::Exit)
+                if (menuCallback_) {
+                    menuCallback_(TrayMenuId::Exit);
+                }
+                break;
+            case AdminRestartResult::DeElevationFailed:
+                // Config was saved as runAsAdmin=false but we couldn't spawn an
+                // unelevated child (no shell). Tell the user to restart manually
+                // so they don't think the toggle silently failed.
+                MessageBoxW(nullptr, S(StringId::ADMIN_DEELEVATION_FAILED),
+                             L"NexusKey", MB_ICONWARNING | MB_OK);
+                break;
+            case AdminRestartResult::NoRestartNeeded:
+            case AdminRestartResult::UacDenied:
+                // Nothing to do; UacDenied already reverted config inside helper.
+                break;
         }
         return true;
     }

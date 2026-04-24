@@ -367,6 +367,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         return 1;
     }
 
+    const bool isAdminRestart = HasCmdlineFlag(lpCmdLine, ADMIN_RESTART_FLAG);
+
     // Self-elevate if "Run as Admin" is enabled but we're not elevated.
     {
         auto preConfig = ConfigManager::LoadSystemConfigOrDefault();
@@ -380,9 +382,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // NOTE: Use default DACL (nullptr). CO SID doesn't resolve for non-container objects.
     HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\NexusKeyLite_Main_Mutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        NEXTKEY_LOG(L"Another Lite instance is already running. Exiting.");
-        CloseHandle(hMutex);
-        return 0;
+        if (isAdminRestart) {
+            // See main.cpp for rationale — wait for old instance to release.
+            DWORD r = WaitForSingleObject(hMutex, 10000);
+            if (r != WAIT_OBJECT_0 && r != WAIT_ABANDONED) {
+                NEXTKEY_LOG(L"Admin-restart: timeout waiting for old Lite mutex (r=%lu)", r);
+                CloseHandle(hMutex);
+                return 1;
+            }
+            NEXTKEY_LOG(L"Admin-restart: Lite mutex ownership acquired (%s)",
+                         r == WAIT_ABANDONED ? L"abandoned" : L"released");
+        } else {
+            NEXTKEY_LOG(L"Another Lite instance is already running. Exiting.");
+            CloseHandle(hMutex);
+            return 0;
+        }
     }
 
     // ── Initialization ──

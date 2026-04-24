@@ -19,6 +19,7 @@ var STRINGS = {
 
         // ── Settings dialog ──
         "s.pin": "Pin to top",
+        "s.admin_running": "Running as Administrator",
         "s.input_method": "Input Method",
         "s.code_table": "Code Table",
         "s.switch_key": "Switch Key",

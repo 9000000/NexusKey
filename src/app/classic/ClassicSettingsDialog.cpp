@@ -483,7 +483,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
                 checkControls_[i] = CreateBtn(meta.label, cx, cy, colWidth, Dpi(kControlHeight), meta.win32Id);
             }
         } else if (meta.type == SettingType::Dropdown) {
-            int lblW = Dpi(100);
+            int lblW = Dpi(115);
             int comboW = colWidth - lblW - Dpi(4);
 
             HWND lbl = CreateLabel(meta.label, cx, cy + Dpi(4), lblW, Dpi(kControlHeight), 0);
