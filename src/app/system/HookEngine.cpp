@@ -672,38 +672,19 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LO
         HookEngine* self = s_instance.load(std::memory_order_relaxed);
         if (!self) return;
 
-        // Main-thread writer path — hook thread's callback reads the same state
-        // (engine_, previousComposition_, app-detect flags, currentExe_...).
-        // Lock must cover the engine_->Count() read below and the subsequent
-        // OnFocusChanged() which mutates extensively.
         std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
 
         if (event == EVENT_SYSTEM_MINIMIZEEND) {
-            // Window restored from taskbar — re-evaluate focus with the actual foreground window.
-            // Don't use hwnd directly: the restored window may not be foreground yet.
             HOOK_LOG(L"MINIMIZEEND (hwnd=%p) — re-evaluating focus", hwnd);
-            self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+            self->OnFocusChanged(nullptr);
             return;
         }
 
-        HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
-                 self->engine_->Count(), self->previousComposition_.c_str());
-        self->autoCapState_ = AutoCapState::Idle;
-        self->OnFocusChanged(hwnd);
-    } catch (const std::exception& e) {
-        CrashLog(L"HookEngine::WinEventProc", e.what());
-    } catch (...) {
-        CrashLog(L"HookEngine::WinEventProc", "(non-std exception)");
-    }
         if (event == EVENT_OBJECT_FOCUS) {
-            // Focus change within the same window (e.g. address bar vs web page).
-            // Only re-evaluate if it's a browser we're currently tracking.
             if (self->needBaitChar_) {
                 self->CheckUrlBarFocus(hwnd);
-                
-                // Queue a 100ms delayed check in case UIA is lagging (common in Chromium)
-                if (self->urlFocusTimer_) KillTimer(nullptr, self->urlFocusTimer_);
-                self->urlFocusTimer_ = SetTimer(nullptr, 3, 100, DelayedUrlCheckTimerProc);
+                if (self->urlFocusTimer_) ::KillTimer(nullptr, self->urlFocusTimer_);
+                self->urlFocusTimer_ = ::SetTimer(nullptr, 3, 100, DelayedUrlCheckTimerProc);
             }
             return;
         }
@@ -724,23 +705,12 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
         if (nCode == HC_ACTION && wParam == WM_LBUTTONDOWN) {
             HookEngine* self = s_instance.load(std::memory_order_relaxed);
             if (self) {
-                // Mouse callback runs on hook thread — ResetComposition + state
-                // writes below race with main-thread writers. Take the lock.
                 std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
                 HOOK_LOG(L"MOUSE click — resetting composition (engine count=%zu, prev='%s')",
                          self->engine_->Count(), self->previousComposition_.c_str());
-                // Always reset, even when engine is idle: commitUndoState_ and commitStack_
-                // may hold a previously committed word. If not cleared here, a click elsewhere
-                // followed by Backspace triggers ReplayCommittedChars() at the new cursor
-                // position — identical to the Ctrl+A bug.
                 self->ResetComposition();
-                // Click may move focus to another control within the same app (no
-                // EVENT_SYSTEM_FOREGROUND fires) — invalidate cache so the next
-                // TryEditMessagePaste re-queries the focused HWND.
                 self->cachedFocusedHwnd_ = nullptr;
                 self->cachedFocusedClass_.clear();
-
-                // Clear URL bar suppression on mouse click (will re-apply if they clicked the address bar)
                 self->ClearUrlSuppression();
             }
         }
