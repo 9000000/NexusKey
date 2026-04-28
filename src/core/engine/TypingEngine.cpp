@@ -188,8 +188,20 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
+    // 1. Literal digit sequence protection (VNI mode)
+    // If the user types a digit immediately following a literal digit,
+    // it's highly likely they are typing a number sequence (e.g., E747).
+    // Bypass VNI tone/modifier processing to insert the digit literally.
+    bool isVniDigitSequence = false;
+    if (IsVniMode() && c >= L'0' && c <= L'9' && !states_.empty()) {
+        wchar_t lastBase = states_.back().base;
+        if (lastBase >= L'0' && lastBase <= L'9') {
+            isVniDigitSequence = true;
+        }
+    }
+
     // 1a. Clear tone: Telex 'z' / VNI '0'
-    if (!states_.empty()) {
+    if (!states_.empty() && !isVniDigitSequence) {
         bool isClearToneKey = (IsTelexMode() && lower == L'z') ||
                               (IsVniMode() && c == L'0');
         if (isClearToneKey) {
@@ -212,7 +224,7 @@ void TypingEngine::PushChar(wchar_t c) {
         requestedTone = TelexKeyToTone(c);
         isTelexTone = (requestedTone != Tone::None);
     }
-    if (requestedTone == Tone::None && IsVniMode() && !states_.empty()) {
+    if (requestedTone == Tone::None && IsVniMode() && !states_.empty() && !isVniDigitSequence) {
         requestedTone = VniKeyToTone(c);
     }
 
@@ -360,7 +372,7 @@ void TypingEngine::PushChar(wchar_t c) {
     }
 
     // 2b. VNI modifier keys (6, 7, 8, 9) — only in VNI/Combined mode
-    if (IsVniMode() && IsVniModifierKey(c)) {
+    if (IsVniMode() && IsVniModifierKey(c) && !isVniDigitSequence) {
         // Pre-check for '9' (stroke): same coda check as Telex 'd'
         if (c == L'9' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
             size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
