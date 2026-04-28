@@ -29,15 +29,13 @@ public:
 
 private:
     // Clipboard operations
+    [[nodiscard]] static bool OpenClipboardWithRetry(int maxRetries = 5, int intervalMs = 10) noexcept;
     [[nodiscard]] static std::wstring ReadClipboard();
     static bool WriteClipboard(const std::wstring& text);
 
     // Simulate Ctrl+C / Ctrl+V via SendInput
     static void SimulateCopy();
     static void SimulatePaste();
-
-    // Wait for modifier keys to be released (prevent interference)
-    bool WaitForModifiersRelease(int maxWaitMs = 500);
 
     // Wait for clipboard to have Unicode text
     bool WaitForClipboardUnicode(int maxWaitMs, int checkIntervalMs = 10);

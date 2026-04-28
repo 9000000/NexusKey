@@ -384,9 +384,9 @@ void ConvertToolDialog::doConvert() {
     } else if (allLower) {
         unicode = CodeTableConverter::ToLower(unicode);
     } else if (capsFirst) {
-        unicode = CodeTableConverter::CapitalizeFirstOfSentence(unicode);
+        unicode = CodeTableConverter::ToSentenceCase(unicode);
     } else if (capsEach) {
-        unicode = CodeTableConverter::CapitalizeEachWord(unicode);
+        unicode = CodeTableConverter::ToTitleCase(unicode);
     }
 
     // 6. Encode: Unicode → dest encoding

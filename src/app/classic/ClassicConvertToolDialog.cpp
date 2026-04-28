@@ -416,8 +416,8 @@ void ClassicConvertToolDialog::DoConvert() {
     if (config_.removeMark) unicode = CodeTableConverter::RemoveDiacritics(unicode);
     if (config_.allCaps) unicode = CodeTableConverter::ToUpper(unicode);
     else if (config_.allLower) unicode = CodeTableConverter::ToLower(unicode);
-    else if (config_.capsFirst) unicode = CodeTableConverter::CapitalizeFirstOfSentence(unicode);
-    else if (config_.capsEach) unicode = CodeTableConverter::CapitalizeEachWord(unicode);
+    else if (config_.capsFirst) unicode = CodeTableConverter::ToSentenceCase(unicode);
+    else if (config_.capsEach) unicode = CodeTableConverter::ToTitleCase(unicode);
     std::wstring output = CodeTableConverter::EncodeString(unicode, dstTable);
 
     if (fileMode_) {

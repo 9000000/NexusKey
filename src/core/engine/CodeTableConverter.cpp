@@ -625,7 +625,7 @@ std::wstring CodeTableConverter::ToLower(const std::wstring& input) noexcept {
     return output;
 }
 
-std::wstring CodeTableConverter::CapitalizeFirstOfSentence(const std::wstring& input) noexcept {
+std::wstring CodeTableConverter::ToSentenceCase(const std::wstring& input) noexcept {
     std::wstring output;
     output.reserve(input.size());
     bool atSentenceStart = true;
@@ -634,7 +634,7 @@ std::wstring CodeTableConverter::CapitalizeFirstOfSentence(const std::wstring& i
             output += ToUpperVietnamese(ch);
             atSentenceStart = false;
         } else {
-            output += ch;
+            output += IsAlpha(ch) ? ToLowerVietnamese(ch) : ch;
             if (ch == L'.' || ch == L'!' || ch == L'?' || ch == L'\n') {
                 atSentenceStart = true;
             }
@@ -643,7 +643,7 @@ std::wstring CodeTableConverter::CapitalizeFirstOfSentence(const std::wstring& i
     return output;
 }
 
-std::wstring CodeTableConverter::CapitalizeEachWord(const std::wstring& input) noexcept {
+std::wstring CodeTableConverter::ToTitleCase(const std::wstring& input) noexcept {
     std::wstring output;
     output.reserve(input.size());
     bool afterSpace = true;
@@ -652,7 +652,7 @@ std::wstring CodeTableConverter::CapitalizeEachWord(const std::wstring& input) n
             output += ToUpperVietnamese(ch);
             afterSpace = false;
         } else {
-            output += ch;
+            output += IsAlpha(ch) ? ToLowerVietnamese(ch) : ch;
             afterSpace = std::iswspace(ch) != 0;
         }
     }

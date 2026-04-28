@@ -45,11 +45,11 @@ namespace CodeTableConverter {
 /// Vietnamese-aware lowercase conversion.
 [[nodiscard]] std::wstring ToLower(const std::wstring& input) noexcept;
 
-/// Capitalize first letter of each sentence (after .!?\n).
-[[nodiscard]] std::wstring CapitalizeFirstOfSentence(const std::wstring& input) noexcept;
+/// Capitalize first letter of each sentence (after .!?\n), lowercasing the rest.
+[[nodiscard]] std::wstring ToSentenceCase(const std::wstring& input) noexcept;
 
-/// Capitalize first letter of each word.
-[[nodiscard]] std::wstring CapitalizeEachWord(const std::wstring& input) noexcept;
+/// Capitalize first letter of each word, lowercasing the rest.
+[[nodiscard]] std::wstring ToTitleCase(const std::wstring& input) noexcept;
 
 }  // namespace CodeTableConverter
 

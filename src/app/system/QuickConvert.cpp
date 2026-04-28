@@ -100,55 +100,61 @@ void QuickConvert::Execute() {
         SelectionAnchor anchor = GetSelectionAnchor(currentWindow);
         QC_LOG(L"Anchor valid: %d, start: %u, end: %u", anchor.valid, anchor.start, anchor.end);
 
-        // 1b. Wait for modifier keys to be released
-        // This safely pauses the background thread without freezing OS input.
-        // We wait up to 500ms (matching OpenKey) for the user to lift their fingers.
-        if (!WaitForModifiersRelease(500)) {
-            QC_LOG(L"Modifiers not fully released, proceeding anyway to maintain speed.");
-        }
-
         // 2. Save current clipboard content
         std::wstring savedClipboard = ReadClipboard();
 
-    // 3. Clear clipboard before copy to reliably wait for new data
-    if (OpenClipboard(nullptr)) {
-        EmptyClipboard();
-        CloseClipboard();
-    }
+        std::wstring clipText;
+        bool gotClip = false;
 
-    // 4. Simulate Ctrl+C to copy selection
-    SimulateCopy();
-    
-    bool gotClip = WaitForClipboardUnicode(500);
-    std::wstring clipText = gotClip ? ReadClipboard() : L"";
-    QC_LOG(L"Copied text length: %zu", clipText.size());
-
-    // 5. Sequential recovery: if clipboard is empty but we're mid-cycle,
-    // re-select failed last time — recover by re-selecting the previous paste
-    bool recoveryMode = false;
-    if (clipText.empty()) {
-        if (config_.sequential && config_.autoPaste && IsStillInCycle(currentWindow, anchor)) {
-            QC_LOG(L"Sequential recovery: re-selecting previous paste (length: %d)", seqState_.lastPastedLength);
-            SimulateShiftLeftSelect(seqState_.lastPastedLength);
-            Sleep(30);
-            recoveryMode = true;
-        } else {
-            QC_LOG(L"Clipboard empty, no text copied.");
-            if (!savedClipboard.empty()) {
-                WriteClipboard(savedClipboard);
+        // Try copy up to 2 times with backoff
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            if (OpenClipboardWithRetry()) {
+                EmptyClipboard();
+                CloseClipboard();
             }
+            
+            SimulateCopy();
+            
+            if (WaitForClipboardUnicode(300)) {
+                clipText = ReadClipboard();
+                if (!clipText.empty()) {
+                    gotClip = true;
+                    break;
+                }
+            }
+            
+            QC_LOG(L"Copy attempt %d failed, retrying...", attempt + 1);
+            Sleep(30 * (attempt + 1));  // 30ms -> 60ms backoff
+        }
+
+        QC_LOG(L"Copied text length: %zu", clipText.size());
+
+        // 5. Sequential recovery: if clipboard is empty but we're mid-cycle,
+        // re-select failed last time — recover by re-selecting the previous paste
+        bool recoveryMode = false;
+        if (!gotClip || clipText.empty()) {
+            if (config_.sequential && config_.autoPaste && IsStillInCycle(currentWindow, anchor)) {
+                QC_LOG(L"Sequential recovery: re-selecting previous paste (length: %d)", seqState_.lastPastedLength);
+                SimulateShiftLeftSelect(seqState_.lastPastedLength);
+                Sleep(30);
+                recoveryMode = true;
+            } else {
+                QC_LOG(L"Clipboard empty, no text copied.");
+                if (!savedClipboard.empty()) {
+                    WriteClipboard(savedClipboard);
+                }
+                return;
+            }
+        }
+
+        // 6. Determine enabled options
+        auto enabledOptions = GetEnabledOptions();
+        if (enabledOptions.empty()) {
+            QC_LOG(L"No conversions enabled");
+            // No conversions enabled — restore and bail
+            WriteClipboard(savedClipboard);
             return;
         }
-    }
-
-    // 6. Determine enabled options
-    auto enabledOptions = GetEnabledOptions();
-    if (enabledOptions.empty()) {
-        QC_LOG(L"No conversions enabled");
-        // No conversions enabled — restore and bail
-        WriteClipboard(savedClipboard);
-        return;
-    }
 
     std::wstring result;
     const wchar_t* toastMsg = nullptr;  // Which conversion was applied
@@ -215,10 +221,10 @@ void QuickConvert::Execute() {
             result = CodeTableConverter::ToLower(result);
             toastMsg = GetOptionName(kToLower);
         } else if (config_.capsFirst) {
-            result = CodeTableConverter::CapitalizeFirstOfSentence(result);
+            result = CodeTableConverter::ToSentenceCase(result);
             toastMsg = GetOptionName(kCapsFirst);
         } else if (config_.capsEach) {
-            result = CodeTableConverter::CapitalizeEachWord(result);
+            result = CodeTableConverter::ToTitleCase(result);
             toastMsg = GetOptionName(kCapsEach);
         }
 
@@ -285,12 +291,16 @@ void QuickConvert::Execute() {
     }).detach();
 }
 
-// ═══════════════════════════════════════════════════════════
-// Clipboard operations
-// ═══════════════════════════════════════════════════════════
+bool QuickConvert::OpenClipboardWithRetry(int maxRetries, int intervalMs) noexcept {
+    for (int i = 0; i < maxRetries; ++i) {
+        if (OpenClipboard(nullptr)) return true;
+        Sleep(intervalMs);
+    }
+    return false;
+}
 
 std::wstring QuickConvert::ReadClipboard() {
-    if (!OpenClipboard(nullptr)) return L"";
+    if (!OpenClipboardWithRetry()) return L"";
     HANDLE hData = GetClipboardData(CF_UNICODETEXT);
     if (!hData) {
         CloseClipboard();
@@ -308,7 +318,7 @@ std::wstring QuickConvert::ReadClipboard() {
 }
 
 bool QuickConvert::WriteClipboard(const std::wstring& text) {
-    if (!OpenClipboard(nullptr)) return false;
+    if (!OpenClipboardWithRetry()) return false;
     EmptyClipboard();
     size_t bytes = (text.size() + 1) * sizeof(wchar_t);
     HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
@@ -334,88 +344,83 @@ bool QuickConvert::WriteClipboard(const std::wstring& text) {
 // ═══════════════════════════════════════════════════════════
 
 void QuickConvert::SimulateCopy() {
-    INPUT inputs[4] = {};
-
-    // Ctrl down
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = VK_CONTROL;
-    inputs[0].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
-    SendInput(1, &inputs[0], sizeof(INPUT));
+    INPUT inputs[9] = {};
+    int n = 0;
     
-    // CRITICAL: Prevent "c" being typed instead of copied by giving OS time to register Ctrl state
-    Sleep(20);
+    // Force-release ALL modifiers (unconditional, harmless if not held)
+    for (WORD vk : {static_cast<WORD>(VK_SHIFT), static_cast<WORD>(VK_MENU), static_cast<WORD>(VK_CONTROL), static_cast<WORD>(VK_LWIN), static_cast<WORD>(VK_RWIN)}) {
+        inputs[n].type = INPUT_KEYBOARD;
+        inputs[n].ki.wVk = vk;
+        inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
+        inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+        n++;
+    }
 
-    // C down
-    inputs[1].type = INPUT_KEYBOARD;
-    inputs[1].ki.wVk = 'C';
-    inputs[1].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    // Ctrl+C (Ctrl down, C down, C up, Ctrl up)
+    inputs[n].type = INPUT_KEYBOARD;
+    inputs[n].ki.wVk = VK_CONTROL;
+    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    n++;
+    
+    inputs[n].type = INPUT_KEYBOARD;
+    inputs[n].ki.wVk = 'C';
+    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    n++;
 
-    // C up
-    inputs[2].type = INPUT_KEYBOARD;
-    inputs[2].ki.wVk = 'C';
-    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[2].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
-    SendInput(2, &inputs[1], sizeof(INPUT));
+    inputs[n].type = INPUT_KEYBOARD;
+    inputs[n].ki.wVk = 'C';
+    inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    n++;
 
-    Sleep(10);
+    inputs[n].type = INPUT_KEYBOARD;
+    inputs[n].ki.wVk = VK_CONTROL;
+    inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    n++;
 
-    // Ctrl up
-    inputs[3].type = INPUT_KEYBOARD;
-    inputs[3].ki.wVk = VK_CONTROL;
-    inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[3].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
-    SendInput(1, &inputs[3], sizeof(INPUT));
+    SendInput(n, inputs, sizeof(INPUT));
 }
 
 void QuickConvert::SimulatePaste() {
-    INPUT inputs[4] = {};
+    INPUT inputs[9] = {};
+    int n = 0;
 
-    // Ctrl down
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = VK_CONTROL;
-    inputs[0].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
-    SendInput(1, &inputs[0], sizeof(INPUT));
-
-    // CRITICAL: Prevent "v" being typed instead of pasted
-    Sleep(20);
-
-    // V down
-    inputs[1].type = INPUT_KEYBOARD;
-    inputs[1].ki.wVk = 'V';
-    inputs[1].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
-
-    // V up
-    inputs[2].type = INPUT_KEYBOARD;
-    inputs[2].ki.wVk = 'V';
-    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[2].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
-    SendInput(2, &inputs[1], sizeof(INPUT));
-
-    Sleep(10);
-
-    // Ctrl up
-    inputs[3].type = INPUT_KEYBOARD;
-    inputs[3].ki.wVk = VK_CONTROL;
-    inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[3].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
-    SendInput(1, &inputs[3], sizeof(INPUT));
-}
-
-bool QuickConvert::WaitForModifiersRelease(int maxWaitMs) {
-    // Spin until all modifier keys are released
-    int elapsedMs = 0;
-    while (elapsedMs < maxWaitMs) {
-        bool anyDown = (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
-                       (GetAsyncKeyState(VK_SHIFT) & 0x8000) ||
-                       (GetAsyncKeyState(VK_MENU) & 0x8000) ||
-                       (GetAsyncKeyState(VK_LWIN) & 0x8000) ||
-                       (GetAsyncKeyState(VK_RWIN) & 0x8000);
-        if (!anyDown) return true;
-        Sleep(5);
-        elapsedMs += 5;
+    // Force-release ALL modifiers
+    for (WORD vk : {static_cast<WORD>(VK_SHIFT), static_cast<WORD>(VK_MENU), static_cast<WORD>(VK_CONTROL), static_cast<WORD>(VK_LWIN), static_cast<WORD>(VK_RWIN)}) {
+        inputs[n].type = INPUT_KEYBOARD;
+        inputs[n].ki.wVk = vk;
+        inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
+        inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+        n++;
     }
-    return false;
+
+    // Ctrl+V (Ctrl down, V down, V up, Ctrl up)
+    inputs[n].type = INPUT_KEYBOARD;
+    inputs[n].ki.wVk = VK_CONTROL;
+    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    n++;
+
+    inputs[n].type = INPUT_KEYBOARD;
+    inputs[n].ki.wVk = 'V';
+    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    n++;
+
+    inputs[n].type = INPUT_KEYBOARD;
+    inputs[n].ki.wVk = 'V';
+    inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    n++;
+
+    inputs[n].type = INPUT_KEYBOARD;
+    inputs[n].ki.wVk = VK_CONTROL;
+    inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    n++;
+
+    SendInput(n, inputs, sizeof(INPUT));
 }
+
 
 bool QuickConvert::WaitForClipboardUnicode(int maxWaitMs, int checkIntervalMs) {
     if (maxWaitMs <= 0) return false;
@@ -567,9 +572,9 @@ std::wstring QuickConvert::ApplyConversion(const std::wstring& input, int option
         case kToLower:
             return CodeTableConverter::ToLower(input);
         case kCapsFirst:
-            return CodeTableConverter::CapitalizeFirstOfSentence(input);
+            return CodeTableConverter::ToSentenceCase(input);
         case kCapsEach:
-            return CodeTableConverter::CapitalizeEachWord(input);
+            return CodeTableConverter::ToTitleCase(input);
         case kRemoveDiacritics:
             return CodeTableConverter::RemoveDiacritics(input);
         default:
