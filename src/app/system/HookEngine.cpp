@@ -107,7 +107,7 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
 #endif
 
     s_instance = this;
-    currentMethod_ = config.inputMethod;
+    currentMethod_.store(config.inputMethod, std::memory_order_release);
     config_ = config;
     ApplyConfig(config);
     if (macroEnabled_) {
@@ -203,10 +203,10 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     focusPollTimer_ = SetTimer(nullptr, 0, 200, FocusPollTimerProc);
 
     NEXTKEY_LOG(L"HookEngine started (method=%d, vietnamese=%d)",
-                static_cast<int>(currentMethod_),
+                static_cast<int>(currentMethod_.load(std::memory_order_acquire)),
                 vietnameseMode_.load(std::memory_order_acquire));
     HOOK_LOG(L"Hook installed OK (method=%d, vietnamese=%d)",
-             static_cast<int>(currentMethod_),
+             static_cast<int>(currentMethod_.load(std::memory_order_acquire)),
              vietnameseMode_.load(std::memory_order_acquire));
     return true;
 }
@@ -455,13 +455,13 @@ void HookEngine::QuickSyncFromSharedState() {
     cfg.inputMethod = static_cast<InputMethod>(im);
     cfg.codeTable = static_cast<CodeTable>(ct);
 
-    bool methodChanged = (currentMethod_ != cfg.inputMethod);
+    bool methodChanged = (currentMethod_.load(std::memory_order_acquire) != cfg.inputMethod);
     bool codeTableChanged = (currentCodeTable_ != cfg.codeTable);
     ApplyConfig(cfg);
     config_ = cfg;
 
     if (methodChanged) {
-        currentMethod_ = cfg.inputMethod;
+        currentMethod_.store(cfg.inputMethod, std::memory_order_release);
         if (engine_->Count() > 0) CommitComposition();
         engine_ = EngineFactory::Create(cfg);
     }
@@ -518,13 +518,16 @@ void HookEngine::ReloadFromToml() {
     if (engine_->Count() > 0) {
         CommitComposition();
     }
-    currentMethod_ = config.inputMethod;
+    currentMethod_.store(config.inputMethod, std::memory_order_release);
     config_ = config;
     engine_ = EngineFactory::Create(config);
-    NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
-                currentMethod_ == InputMethod::VNI ? L"VNI" :
-                currentMethod_ == InputMethod::Combined ? L"Combined" : L"Telex",
-                config.modernOrtho ? 1 : 0, config.allowZwjf ? 1 : 0);
+    {
+        const InputMethod loggedMethod = currentMethod_.load(std::memory_order_acquire);
+        NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
+                    loggedMethod == InputMethod::VNI ? L"VNI" :
+                    loggedMethod == InputMethod::Combined ? L"Combined" : L"Telex",
+                    config.modernOrtho ? 1 : 0, config.allowZwjf ? 1 : 0);
+    }
     ApplyConfig(config);
     if (macroEnabled_) {
         ReloadMacroTable();
@@ -549,29 +552,31 @@ void HookEngine::ReloadFromToml() {
     }
 
     // Re-evaluate TSF app status for current foreground app
-    bool wasTsfApp = isTsfApp_;
+    const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
+    bool newTsfApp;
     if (tsfApps_ && !isExcludedApp_ && !tsfAppSet_.empty() && !currentExe_.empty()) {
-        isTsfApp_ = tsfAppSet_.count(currentExe_) > 0;
+        newTsfApp = tsfAppSet_.count(currentExe_) > 0;
     } else {
-        isTsfApp_ = false;
+        newTsfApp = false;
     }
+    isTsfApp_.store(newTsfApp, std::memory_order_release);
     HOOK_LOG(L"  Engine (config reload): %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
-             isTsfApp_ ? L"TSF (hook passthrough)" : L"HOOK",
+             newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
              currentExe_.c_str(),
              tsfApps_ ? 1 : 0,
              (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
              isExcludedApp_ ? 1 : 0);
     if (tsfModeCallback_) {
-        const bool tsfReadonly = !isTsfApp_ && !isExcludedApp_;
-        if (isTsfApp_ != wasTsfApp) {
+        const bool tsfReadonly = !newTsfApp && !isExcludedApp_;
+        if (newTsfApp != wasTsfApp) {
             HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
-                     wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
+                     wasTsfApp ? L"true" : L"false", newTsfApp ? L"true" : L"false");
         }
-        tsfModeCallback_(isTsfApp_, tsfReadonly);
+        tsfModeCallback_(newTsfApp, tsfReadonly);
     }
 
     // Re-apply per-app overrides for current app (OnFocusChanged may have run with stale maps)
-    if (!currentExe_.empty() && !isExcludedApp_ && !isTsfApp_) {
+    if (!currentExe_.empty() && !isExcludedApp_ && !newTsfApp) {
         // Encoding
         {
             auto it = appEncodingOverrides_.find(currentExe_);
@@ -583,13 +588,13 @@ void HookEngine::ReloadFromToml() {
             auto it = appInputMethodOverrides_.find(currentExe_);
             InputMethod targetMethod = (it != appInputMethodOverrides_.end())
                 ? static_cast<InputMethod>(it->second) : globalInputMethod_;
-            if (targetMethod != currentMethod_) {
-                currentMethod_ = targetMethod;
+            if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
+                currentMethod_.store(targetMethod, std::memory_order_release);
                 TypingConfig engineConfig = config_;
                 engineConfig.inputMethod = targetMethod;
                 engine_ = EngineFactory::Create(engineConfig);
                 NEXTKEY_LOG(L"HookEngine: re-applied inputMethod=%d for '%s'",
-                            static_cast<int>(currentMethod_), currentExe_.c_str());
+                            static_cast<int>(targetMethod), currentExe_.c_str());
             }
         }
     }
@@ -757,7 +762,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     QuickSyncFromSharedState();
 
     // 0b. TSF app — let TSF DLL handle all input, hook does nothing
-    if (isTsfApp_) return false;
+    if (isTsfApp_.load(std::memory_order_acquire)) return false;
 
     // 1. Track modifiers for hotkey detection
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
@@ -910,7 +915,8 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                 bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
                 return HandleAlphaKey(vkCode, shift, caps);
             }
-        } else if ((currentMethod_ == InputMethod::VNI || currentMethod_ == InputMethod::Combined) &&
+        } else if (const InputMethod method = currentMethod_.load(std::memory_order_acquire);
+                   (method == InputMethod::VNI || method == InputMethod::Combined) &&
                    vkCode >= 0x31 && vkCode <= 0x39 &&
                    !(GetKeyState(VK_SHIFT) & 0x8000)) {
             // VNI/Combined digit key (1-9) → replay saved chars, then process as tone/modifier.
@@ -1100,8 +1106,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return HandleAlphaKey(vkCode, cachedShift, cachedCapsLock);
     }
 
+    const InputMethod method = currentMethod_.load(std::memory_order_acquire);
+
     // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư)
-    if (currentMethod_ == InputMethod::Telex &&
+    if (method == InputMethod::Telex &&
         (vkCode == VK_OEM_4 || vkCode == VK_OEM_6)) {
         if (!cachedShift) {
             wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
@@ -1115,7 +1123,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     // 6c. VNI/Combined: digit keys 1-9 → tone/modifier input (only with pending composition)
-    if ((currentMethod_ == InputMethod::VNI || currentMethod_ == InputMethod::Combined) &&
+    if ((method == InputMethod::VNI || method == InputMethod::Combined) &&
         vkCode >= 0x31 && vkCode <= 0x39 &&
         engine_->Count() > 0) {
         if (!cachedShift) {
@@ -1225,7 +1233,7 @@ static bool IsIncompatibleLayout(HKL hkl) {
 
 bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
     // TSF app — let TSF DLL handle all input
-    if (isTsfApp_) return false;
+    if (isTsfApp_.load(std::memory_order_acquire)) return false;
 
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
                        vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
@@ -2499,7 +2507,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         && appEncodingOverrides_.empty() && appInputMethodOverrides_.empty()) return;
 
     bool wasExcluded = isExcludedApp_;
-    bool wasTsfApp = isTsfApp_;
+    const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
 
     // Save mode for previous app (smart switch, skip excluded/TSF apps)
     if (smartSwitch_ && !currentExe_.empty()
@@ -2546,15 +2554,17 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 
     // Check TSF apps (hook passthrough — let TSF DLL handle input)
     // Excluded apps take priority — if both, treat as excluded (force English)
+    bool newTsfApp;
     if (!isExcludedApp_ && tsfApps_ && !tsfAppSet_.empty()) {
-        isTsfApp_ = tsfAppSet_.count(currentExe_) > 0;
+        newTsfApp = tsfAppSet_.count(currentExe_) > 0;
     } else {
-        isTsfApp_ = false;
+        newTsfApp = false;
     }
+    isTsfApp_.store(newTsfApp, std::memory_order_release);
 
     // Always log active engine for this focus — makes it easy to tell which engine handles the app
     HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
-             isTsfApp_ ? L"TSF (hook passthrough)" : L"HOOK",
+             newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
              currentExe_.c_str(),
              tsfApps_ ? 1 : 0,
              (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
@@ -2563,12 +2573,12 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // Notify SharedState of TSF_ACTIVE + TSF_READONLY flags (DLL reads these).
     // Fired on every focus change (idempotent via SetOrClearFlag).
     if (tsfModeCallback_) {
-        const bool tsfReadonly = !isTsfApp_ && !isExcludedApp_;
-        if (isTsfApp_ != wasTsfApp) {
+        const bool tsfReadonly = !newTsfApp && !isExcludedApp_;
+        if (newTsfApp != wasTsfApp) {
             HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
-                     wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
+                     wasTsfApp ? L"true" : L"false", newTsfApp ? L"true" : L"false");
         }
-        tsfModeCallback_(isTsfApp_, tsfReadonly);
+        tsfModeCallback_(newTsfApp, tsfReadonly);
     }
 
     if (isExcludedApp_) {
@@ -2585,7 +2595,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     // TSF app — hook is passive, skip smart switch/code table restore
-    if (isTsfApp_) {
+    if (newTsfApp) {
         HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough", currentExe_.c_str());
         return;
     }
@@ -2607,13 +2617,13 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         auto it = appInputMethodOverrides_.find(currentExe_);
         InputMethod targetMethod = (it != appInputMethodOverrides_.end() && it->second >= 0)
             ? static_cast<InputMethod>(it->second) : globalInputMethod_;
-        if (targetMethod != currentMethod_) {
-            currentMethod_ = targetMethod;
+        if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
+            currentMethod_.store(targetMethod, std::memory_order_release);
             TypingConfig engineConfig = config_;
             engineConfig.inputMethod = targetMethod;
             engine_ = EngineFactory::Create(engineConfig);
             HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
-                     static_cast<int>(currentMethod_), currentExe_.c_str());
+                     static_cast<int>(targetMethod), currentExe_.c_str());
         }
     }
 

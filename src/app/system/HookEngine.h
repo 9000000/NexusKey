@@ -189,7 +189,12 @@ private:
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
     TypingConfig config_;                            // Last applied config (for per-app engine recreation)
-    InputMethod currentMethod_ = InputMethod::Telex;
+    // Sprint 1 D5.1: migrated to std::atomic for hook-thread-safe read without
+    // stateMutex_ (Rule #11.3 acquire/release). Writers: ApplyConfig (main),
+    // QuickSyncFromSharedState (hook — same thread as readers), ReloadFromToml
+    // (main), OnFocusChanged app-method override (main, via WinEventProc).
+    // Readers: ProcessKeyDown punct branch + HandleAlphaKey VNI/Combined gates.
+    std::atomic<InputMethod> currentMethod_{InputMethod::Telex};
     std::wstring previousComposition_;  // What's currently displayed in the app
     std::vector<uint8_t> previousEncodedWidths_;  // Output unit count per Unicode char (for non-Unicode code tables)
     // Sprint 1 D5: migrated to std::atomic for hook-thread-safe read without
@@ -226,7 +231,10 @@ private:
     bool isExcludedApp_ = false;      // cached: current app is excluded
     DWORD excludedPid_ = 0;           // PID of excluded app (fast check in ProcessKeyDown)
     std::unordered_set<std::wstring> tsfAppSet_;  // apps that should use TSF engine instead of hook
-    bool isTsfApp_ = false;       // cached: is current foreground app in TSF list?
+    // Sprint 1 D5.1: migrated to std::atomic. Writers: ReloadFromToml (main) +
+    // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +
+    // ProcessKeyUp early-return gates on the hook hot path.
+    std::atomic<bool> isTsfApp_{false};       // cached: is current foreground app in TSF list?
     bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?
     bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
     std::unordered_set<std::wstring> webView2PositiveCache_;  // full exe path → known WebView2 host (positive-only; see IsWebView2App)
