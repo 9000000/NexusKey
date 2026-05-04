@@ -36,6 +36,17 @@ Driver::~Driver() noexcept {
 }
 
 bool Driver::SendChar(char16_t ch) noexcept {
+    // Control codes: send the physical Win32 key directly (VkKeyScanW maps
+    // these inconsistently across layouts). Test corpus uses \b for BS,
+    // \n / \r for Enter, \t for Tab.
+    switch (ch) {
+        case u'\b':  return SendKeyCombo(VK_BACK,   false, false, false);
+        case u'\t':  return SendKeyCombo(VK_TAB,    false, false, false);
+        case u'\n':
+        case u'\r':  return SendKeyCombo(VK_RETURN, false, false, false);
+        default: break;
+    }
+
     const SHORT scan = VkKeyScanW(static_cast<WCHAR>(ch));
     if (scan == -1) return false;
 

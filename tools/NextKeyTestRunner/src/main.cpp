@@ -29,7 +29,7 @@
 
 namespace NextKey::TestRunner {
 
-constexpr const char* kVersion = "0.3.0-d4-verify";
+constexpr const char* kVersion = "0.4.0-d7-corpus";
 
 void PrintUsage() {
     std::printf("NextKeyTestRunner v%s\n", kVersion);
@@ -49,7 +49,9 @@ void PrintUsage() {
     std::printf("  --post-send-ms=N     Wait after send before Ctrl+A (default 200)\n\n");
     std::printf("Corpus mode:\n");
     std::printf("  --list FILE.toml     Parse corpus file and print loaded cases\n");
-    std::printf("                       (no SendInput driving; debug helper for D6)\n\n");
+    std::printf("                       (no SendInput driving; debug helper)\n");
+    std::printf("  --corpus FILE.toml   Run all tests in FILE.toml; PASS/FAIL summary\n");
+    std::printf("                       (auto-enables clear-first per case)\n\n");
     std::printf("  --help, -h           Show this help\n\n");
     std::printf("Examples:\n");
     std::printf("  NextKeyTestRunner.exe --send vieejt --raw\n");
@@ -83,6 +85,7 @@ struct RunOptions {
     std::u16string sendText;
     std::u16string expected;
     std::u16string listFile;        // --list FILE.toml: print parsed cases, no driving
+    std::u16string corpusFile;      // --corpus FILE.toml: drive every case + verify
     bool raw = false;
     bool verify = false;
     bool clearFirst = false;
@@ -122,6 +125,97 @@ int RunList(std::u16string_view filePath) {
                     tc.interKeyMicros, tc.budgetP99Micros);
     }
     return EXIT_SUCCESS;
+}
+
+// Runs a single TestCase end-to-end: clear, send keys, Ctrl+A+C, read
+// clipboard, compare. Returns true on PASS, false on FAIL.
+// `failureMessage` is filled with diff details on failure.
+bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
+                   std::string& failureMessage) {
+    SendInputDriver::Options drvOpts;
+    drvOpts.interKeyMicros = tc.interKeyMicros;
+    SendInputDriver::Driver driver(drvOpts);
+
+    constexpr uint16_t kVkA = 0x41;
+    constexpr uint16_t kVkC = 0x43;
+    constexpr uint16_t kVkDelete = 0x2E;
+
+    // Clear target first.
+    if (!driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false) ||
+        (Sleep(30), !driver.SendKeyCombo(kVkDelete, false, false, false))) {
+        failureMessage = "clear-first SendInput failed";
+        return false;
+    }
+    Sleep(30);
+
+    if (!driver.SendString(tc.keys)) {
+        failureMessage = "SendString failed (untypeable char or SendInput rejected)";
+        return false;
+    }
+
+    Sleep(postSendMs);
+    if (!driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false)) {
+        failureMessage = "Ctrl+A SendInput failed";
+        return false;
+    }
+    Sleep(50);
+    if (!driver.SendKeyCombo(kVkC, /*ctrl=*/true, false, false)) {
+        failureMessage = "Ctrl+C SendInput failed";
+        return false;
+    }
+    Sleep(150);
+
+    auto actual = ClipboardReader::ReadText();
+    if (!actual) {
+        failureMessage = "clipboard read failed (no CF_UNICODETEXT)";
+        return false;
+    }
+
+    if (*actual == tc.expected) {
+        return true;
+    }
+
+    failureMessage =
+        "expected: " + Encoding::Utf16ToUtf8(tc.expected) +
+        "\n        actual:   " + Encoding::Utf16ToUtf8(*actual);
+    return false;
+}
+
+int RunCorpus(const RunOptions& opt) {
+    const std::string narrowPath = Encoding::Utf16ToUtf8(opt.corpusFile);
+    const auto loadResult = TomlLoader::LoadFile(narrowPath);
+    if (!loadResult.error.empty()) {
+        std::fprintf(stderr, "[ERROR] %s\n", loadResult.error.c_str());
+        return EXIT_FAILURE;
+    }
+
+    const auto& cases = loadResult.cases;
+    std::printf("Loaded %zu test case(s) from %s\n", cases.size(), narrowPath.c_str());
+    std::printf("Focus your target window -- starting in %u ms...\n", opt.initialDelayMs);
+    std::fflush(stdout);
+    Sleep(opt.initialDelayMs);
+
+    int passed = 0;
+    int failed = 0;
+    const std::size_t total = cases.size();
+
+    for (std::size_t i = 0; i < total; ++i) {
+        const auto& tc = cases[i];
+        std::printf("[%2zu/%zu] %-50s ", i + 1, total, tc.name.c_str());
+        std::fflush(stdout);
+
+        std::string msg;
+        if (RunSingleCase(tc, opt.postSendMs, msg)) {
+            std::printf("PASS\n");
+            ++passed;
+        } else {
+            std::printf("FAIL\n        %s\n", msg.c_str());
+            ++failed;
+        }
+    }
+
+    std::printf("\nSummary: %d PASS, %d FAIL out of %zu\n", passed, failed, total);
+    return failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 int RunSend(const RunOptions& opt) {
@@ -244,6 +338,8 @@ int Run(int argc, wchar_t* argv[]) {
             opt.clearFirst = true;
         } else if (arg == L"--list" && i + 1 < argc) {
             opt.listFile = WideToU16(argv[++i]);
+        } else if (arg == L"--corpus" && i + 1 < argc) {
+            opt.corpusFile = WideToU16(argv[++i]);
         } else if (arg == L"--help" || arg == L"-h") {
             PrintUsage();
             return EXIT_SUCCESS;
@@ -257,6 +353,10 @@ int Run(int argc, wchar_t* argv[]) {
 
     if (!opt.listFile.empty()) {
         return RunList(opt.listFile);
+    }
+
+    if (!opt.corpusFile.empty()) {
+        return RunCorpus(opt);
     }
 
     if (opt.sendText.empty()) {
