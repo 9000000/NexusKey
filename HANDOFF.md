@@ -1,4 +1,4 @@
-# NexusKey Refactor — Sprint 1 Handoff (D6 done, D7 next)
+# NexusKey Refactor — Sprint 1 Handoff (D7 done, D8+ next)
 
 ## TL;DR
 
@@ -8,17 +8,17 @@ Sprint 1 (this branch) is bringing the hook into compliance with the
 just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
 
 **Where we are right now (2026-05-04):** Foundation + Phase A spike + **Phase
-B foundation refactor complete (D5 + D5.1 + D5.2 + D6)** — all hook-read
-state on `HookEngine` is now Rule #11.3-compliant: 18 primitive flags as
-`std::atomic` with acquire/release semantics, 1 complex struct (`TypingConfig`)
-as `std::atomic<std::shared_ptr<const TypingConfig>>` (RCU). L1 worst-case
-chaos p99 trajectory: D4 17 ms → D5 18 ms → D5.1 16 ms → D5.2 16 ms → D6 18 ms
-(at the D12 merge gate cap). The 3 commented hook-thread `lock_guard` lines
-from D4 can now be **deleted** in D7 (audit) — there is no remaining state on
-the hook hot path that requires `stateMutex_`. Pick up at **D7** (audit
-script: confirm zero `stateMutex_` + zero plain primitive read + zero plain
-struct read reachable from `LowLevelKeyboardProc` / `WinEventProc` /
-`LowLevelMouseProc`) per plan §B.
+B complete (D5 + D5.1 + D5.2 + D6 + D7)** — all hook-read state on
+`HookEngine` is Rule #11.3-compliant (18 atomic primitives + 1 RCU
+shared_ptr struct), and a CI-integrated audit script enforces the
+guarantees on every Windows build. L1 worst-case chaos p99 trajectory: D4
+17 ms → D5 18 ms → D5.1 16 ms → D5.2 16 ms → D6 18 ms (at the D12 merge
+gate cap). The 3 commented hook-thread `lock_guard` lines from D4 are now
+formally proven unreachable by the D7 audit; they remain as historical
+markers (deletion deferred to a later cleanup commit). Pick up at **D8**
+(MainThreadWorker — async queue for hook→main work, e.g. ConfigEvent reload
++ macro persistence) or **D11** (drop `recursive_mutex` → `std::mutex`),
+then **D12.5** (engine-level fix for chaos 3.3) per plan §C/§D.
 
 | Layer | Status | Reference |
 |---|---|---|
@@ -33,7 +33,8 @@ struct read reachable from `LowLevelKeyboardProc` / `WinEventProc` /
 | D5.1: `currentMethod_` → `std::atomic<InputMethod>`, `isTsfApp_` → `std::atomic<bool>` (19 sites) | ✅ DoD met — sustained byte-identical (p99 −3 ms vs D5), chaos 1 PASS gain via 1.2 flip, no PASS regress, L1 worst p99 16 ms (improvement) | `docs/baselines/perf-baseline-d5.1-atomic-method-tsf-{chaos,sustained}.{csv,xml,md}` |
 | D5.2: 15 remaining hook-read primitives → `std::atomic` (8 per-app cached + `excludedPid_` DWORD + 6 config-derived; ~60 sites) | ✅ DoD met — sustained byte-identical, chaos verdicts preserved (1.1+1.2+1.3+5.1+5.2 byte-identical PASS, 2.1+2.2 byte-identical FAIL), L1 worst p99 16 ms (cap unchanged), 3.3 engine-stress p99 −5 ms | `docs/baselines/perf-baseline-d5.2-atomic-rest-{chaos,sustained}.{csv,xml,md}` |
 | D6: RCU `shared_ptr<const TypingConfig>` for `config_` (7 sites + 3 RCU GTest cases) | ✅ DoD met — sustained byte-identical (forward p99 −1, edits −3 ms vs D5.2), chaos stable PASS preserved, stable FAIL {2.1, 2.2, 3.3} byte-identical, L1 worst p99 18 ms (run 2; run 1 hit 22 ms = heisenbug, dropped to 14 ms on re-run); 5.2 flipped FAIL (flip-prone per HANDOFF) | `docs/baselines/perf-baseline-d6-rcu-config-{chaos,sustained}.{csv,xml,md}`, `tests/TypingConfigRCUTests.cpp` |
-| D7+: audit script (no `stateMutex_` + no plain primitive read + no plain struct read on hook hot path), MainThreadWorker, drop recursive_mutex, **D12.5 engine fix for chaos 3.3** | 🔜 next — Phase B foundation done, D7 is the formal compliance gate | `docs/plans/sprint-1-single-owner-refactor.md` |
+| D7: audit script `tools/audit/check_hook_thread_no_mutex.sh` + CI integration (4 checks: D4 spike comment integrity, no `stateMutex_` reachable from LL hook entries, atomic fields use `.load`/`.store`, RCU `config_` likewise) | ✅ DoD met — script exits 0 on current tree, wired into `.github/workflows/build.yml` as fail-fast pre-build step | `tools/audit/check_hook_thread_no_mutex.sh`, `.github/workflows/build.yml` |
+| D8+: MainThreadWorker, drop recursive_mutex, **D12.5 engine fix for chaos 3.3** | pending | `docs/plans/sprint-1-single-owner-refactor.md` §C/§D |
 
 ## Branch state
 

@@ -36,6 +36,14 @@ jobs:
         with:
           arch: x64
 
+      # Sprint 1 D7 — Phase B compliance gate.
+      # Fails the build if any hook callback regains a stateMutex_ acquisition
+      # or if any migrated atomic field gets a plain assignment/read.
+      # See tools/audit/check_hook_thread_no_mutex.sh + plan §B D7.
+      - name: Audit hook-thread Rule #11.3 compliance
+        shell: bash
+        run: bash tools/audit/check_hook_thread_no_mutex.sh
+
       - name: Configure
         run: cmake -B build -G "Visual Studio 17 2022" -A x64
 
