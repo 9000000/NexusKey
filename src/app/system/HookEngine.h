@@ -85,7 +85,9 @@ public:
     /// Get effective code table (checks manual per-app override map)
     [[nodiscard]] CodeTable GetCodeTable() const noexcept;
 
-    [[nodiscard]] bool IsVietnameseMode() const noexcept { return vietnameseMode_; }
+    [[nodiscard]] bool IsVietnameseMode() const noexcept {
+        return vietnameseMode_.load(std::memory_order_acquire);
+    }
     [[nodiscard]] bool IsRunning() const noexcept { return keyboardHook_ != nullptr; }
 
     // Magic number to mark our own SendInput events (prevents other hooks from processing them)
@@ -190,7 +192,12 @@ private:
     InputMethod currentMethod_ = InputMethod::Telex;
     std::wstring previousComposition_;  // What's currently displayed in the app
     std::vector<uint8_t> previousEncodedWidths_;  // Output unit count per Unicode char (for non-Unicode code tables)
-    bool vietnameseMode_ = true;
+    // Sprint 1 D5: migrated to std::atomic for hook-thread-safe read without
+    // stateMutex_ (Rule #11.3 acquire/release pattern). Hook callback paths
+    // (ProcessKeyDown/Up, CheckLayoutChange) use .load(acquire); main thread
+    // (ApplyConfig, ToggleVietnameseMode, SettingsDialog WM_NEXUSKEY_MODE_CHANGED
+    // → HookEngine via callback) uses .store(release).
+    std::atomic<bool> vietnameseMode_{true};
     uint8_t startupMode_ = 0;  // 0=Vietnamese, 1=English, 2=Remember
     std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
     std::atomic<int> synthEventsPending_{0};  // Count of synthetic INPUT structs sent but not yet processed by hook

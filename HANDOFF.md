@@ -1,4 +1,4 @@
-# NexusKey Refactor — Sprint 1 Handoff (D2 done, D3 next)
+# NexusKey Refactor — Sprint 1 Handoff (D5 done, D6 next)
 
 ## TL;DR
 
@@ -7,10 +7,10 @@ key, tone misplacement under fast typing). Phase 0a built the test harness;
 Sprint 1 (this branch) is bringing the hook into compliance with the
 just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
 
-**Where we are right now (2026-05-04):** Foundation docs + test infrastructure
-+ all three baselines (chaos, sustained-forward, sustained-edit) locked.
-**The single-owner refactor itself has not started** — that begins at D3
-(diagnostic spike) per the plan. Pick up at **D3** next.
+**Where we are right now (2026-05-04):** Foundation + Phase A spike + first
+Phase B atomic field migration locked. Pick up at **D5.x** (extend pattern to
+remaining primitive flags) or **D6** (RCU `shared_ptr` for `TypingConfig`)
+per plan §B.
 
 | Layer | Status | Reference |
 |---|---|---|
@@ -21,7 +21,9 @@ just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
 | D2: Sustained edit baseline locked | ✅ **0.00 % error** on both edit cases at master | `docs/baselines/perf-baseline-3459642-sustained-edit.{csv,xml,md}` |
 | D3: Pre-spike snapshot locked | ✅ Sustained zero-drift; chaos heisenbug-bounded | `docs/baselines/perf-baseline-a28f1ea-pre-spike-{chaos,sustained}.{csv,xml,md}` |
 | D4: Spike (3 hook-thread mutex acquisitions commented out) | ✅ **Outcome B** — mutex not the bug source | `docs/baselines/perf-baseline-d4-spike-{chaos,sustained}.{csv,xml,md}` |
-| D5+: Phase B foundation refactor (atomic + RCU), MainThreadWorker, drop recursive_mutex, **D12.5 engine fix for chaos 3.3** | 🔜 **NEXT** | `docs/plans/sprint-1-single-owner-refactor.md` |
+| D5: `vietnameseMode_` → `std::atomic<bool>` (incremental, N=1) | ✅ DoD met — sustained byte-identical, chaos heisenbug envelope preserved, L1 worst p99 18 ms | `docs/baselines/perf-baseline-d5-atomic-vnmode-{chaos,sustained}.{csv,xml,md}`, `tests/HookEngineAtomicTests.cpp` |
+| D5.x: extend atomic pattern to remaining primitives (`currentMethod_`, `isTsfApp_`, profile/exclude flags) | 🔜 next — pattern baselined in D5 | `docs/plans/sprint-1-single-owner-refactor.md` §B |
+| D6+: RCU `shared_ptr` for `TypingConfig`, MainThreadWorker, drop recursive_mutex, **D12.5 engine fix for chaos 3.3** | pending | `docs/plans/sprint-1-single-owner-refactor.md` |
 
 ## Branch state
 

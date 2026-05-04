@@ -115,7 +115,7 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     }
     autoCapState_ = AutoCapState::Idle;
     engine_ = EngineFactory::Create(config);
-    vietnameseMode_ = initialVietnamese;
+    vietnameseMode_.store(initialVietnamese, std::memory_order_release);
     startupMode_ = startupMode;
 
     // Create shared memory for smart switch and load persisted English-mode apps
@@ -203,9 +203,11 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     focusPollTimer_ = SetTimer(nullptr, 0, 200, FocusPollTimerProc);
 
     NEXTKEY_LOG(L"HookEngine started (method=%d, vietnamese=%d)",
-                static_cast<int>(currentMethod_), vietnameseMode_);
+                static_cast<int>(currentMethod_),
+                vietnameseMode_.load(std::memory_order_acquire));
     HOOK_LOG(L"Hook installed OK (method=%d, vietnamese=%d)",
-             static_cast<int>(currentMethod_), vietnameseMode_);
+             static_cast<int>(currentMethod_),
+             vietnameseMode_.load(std::memory_order_acquire));
     return true;
 }
 
@@ -342,7 +344,7 @@ void HookEngine::ToggleVietnameseMode() {
         // Different PID — user left excluded app, flag is stale.
         // Force V: user perceived E, wants to toggle to V.
         isExcludedApp_ = false;
-        vietnameseMode_ = true;
+        vietnameseMode_.store(true, std::memory_order_release);
         NotifyModeChange();
         HOOK_LOG(L"  ToggleVietnameseMode: stale excluded → forced Vietnamese (fg pid=%u)", fgPid);
         if (beepOnSwitch_) MessageBeep(MB_OK);
@@ -357,8 +359,12 @@ void HookEngine::ToggleVietnameseMode() {
     // Cancel backspace-into-committed-word (replay in wrong mode would be wrong)
     CancelCommitUndo();
 
-    vietnameseMode_ = !vietnameseMode_;
-    NEXTKEY_LOG(L"HookEngine: mode = %s", vietnameseMode_ ? L"Vietnamese" : L"English");
+    // Toggle is single-source (main thread only — Toggle never runs from hook
+    // path), so load + negate + store is race-free for the toggle itself.
+    // Hook readers see one value or the other, never a torn intermediate.
+    const bool newMode = !vietnameseMode_.load(std::memory_order_acquire);
+    vietnameseMode_.store(newMode, std::memory_order_release);
+    NEXTKEY_LOG(L"HookEngine: mode = %s", newMode ? L"Vietnamese" : L"English");
 
     // Save per-app mode
     if (smartSwitch_) {
@@ -366,13 +372,13 @@ void HookEngine::ToggleVietnameseMode() {
             currentExe_ = GetExeNameForHwnd(GetForegroundWindow());
         }
         if (!currentExe_.empty()) {
-            appModeMap_[currentExe_] = vietnameseMode_;
-            smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
+            appModeMap_[currentExe_] = newMode;
+            smartSwitchMgr_.SetAppMode(currentExe_, newMode);
         }
     }
 
     if (beepOnSwitch_) {
-        MessageBeep(vietnameseMode_ ? MB_OK : MB_ICONASTERISK);
+        MessageBeep(newMode ? MB_OK : MB_ICONASTERISK);
     }
 
     NotifyModeChange();
@@ -815,7 +821,8 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 2c. Fast English exit — skip commit-undo FSM when no undo is pending.
     //      Commit-undo only applies to Vietnamese words (line 691 checks vietnameseMode_).
     //      When English mode + undo Idle + no English macros → nothing below applies.
-    if (!vietnameseMode_ &&
+    const bool vnMode = vietnameseMode_.load(std::memory_order_acquire);
+    if (!vnMode &&
         commitUndoState_ == CommitUndoState::Idle &&
         !(macroEnabled_ && macroInEnglish_)) {
         return false;
@@ -871,7 +878,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
         return false;  // Let backspace pass through to delete the space
     }
-    if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vietnameseMode_) {
+    if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vnMode) {
         // Synth guard: if synthetic events were sent recently and are likely still
         // in the OS input queue, replaying now would set previousComposition_ to stale
         // committed text while the screen hasn't caught up — causing diff miscalculation
@@ -965,7 +972,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // Note: CJK layout no longer suppresses here. User controls V/E mode via toggle,
     // matching EVKey behavior. Japanese IME "A" sub-mode is indistinguishable from
     // "あ" mode via GetKeyboardLayout(), so layout-based suppression is too coarse.
-    if (!vietnameseMode_) {
+    if (!vnMode) {
         if (macroEnabled_ && macroInEnglish_) {
             // Track macro keys (all printable chars) in English mode
             if (vkCode >= 0x41 && vkCode <= 0x5A) {
@@ -2194,7 +2201,7 @@ static void ClassifyWindow(HWND hwnd,
 void HookEngine::NotifyModeChange() noexcept {
     if (modeChangeCallback_) {
         // Excluded apps always show E mode (IME is transparent to them)
-        modeChangeCallback_(!isExcludedApp_ && vietnameseMode_);
+        modeChangeCallback_(!isExcludedApp_ && vietnameseMode_.load(std::memory_order_acquire));
     }
 }
 
@@ -2294,9 +2301,10 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
         if (engine_->Count() > 0) CommitComposition();
         CancelCommitUndo();
         layoutSuppressed_ = true;
-        modeBeforeCjk_ = vietnameseMode_;
-        if (vietnameseMode_) {
-            vietnameseMode_ = false;
+        const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
+        modeBeforeCjk_ = curMode;
+        if (curMode) {
+            vietnameseMode_.store(false, std::memory_order_release);
             NotifyModeChange();
             if (beepOnSwitch_) MessageBeep(MB_ICONASTERISK);
         }
@@ -2304,12 +2312,14 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
     } else if (isCompatibleNow && layoutSuppressed_) {
         // Leaving CJK layout: restore saved mode
         layoutSuppressed_ = false;
-        if (modeBeforeCjk_ != vietnameseMode_) {
-            vietnameseMode_ = modeBeforeCjk_;
-            if (beepOnSwitch_) MessageBeep(vietnameseMode_ ? MB_OK : MB_ICONASTERISK);
+        const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
+        if (modeBeforeCjk_ != curMode) {
+            vietnameseMode_.store(modeBeforeCjk_, std::memory_order_release);
+            if (beepOnSwitch_) MessageBeep(modeBeforeCjk_ ? MB_OK : MB_ICONASTERISK);
         }
         NotifyModeChange();
-        HOOK_LOG(L"  CJK layout cleared: restored mode=%d", vietnameseMode_ ? 1 : 0);
+        HOOK_LOG(L"  CJK layout cleared: restored mode=%d",
+                 vietnameseMode_.load(std::memory_order_acquire) ? 1 : 0);
     }
 }
 
@@ -2497,8 +2507,9 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
             appModeMap_.clear();
         }
-        appModeMap_[currentExe_] = vietnameseMode_;
-        smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
+        const bool savedMode = vietnameseMode_.load(std::memory_order_acquire);
+        appModeMap_[currentExe_] = savedMode;
+        smartSwitchMgr_.SetAppMode(currentExe_, savedMode);
         appModeDirty_ = true;
     }
 
@@ -2612,16 +2623,19 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         auto it = appModeMap_.find(currentExe_);
         if (it != appModeMap_.end()) {
             // Known app — restore its saved mode
-            if (it->second != vietnameseMode_) {
-                vietnameseMode_ = it->second;
+            const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
+            if (it->second != curMode) {
+                vietnameseMode_.store(it->second, std::memory_order_release);
                 HOOK_LOG(L"  SmartSwitch: restored %s for '%s'",
-                         vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
+                         it->second ? L"Vietnamese" : L"English", currentExe_.c_str());
                 NotifyModeChange();
             }
         } else {
             // Unknown app — inherit current mode (least surprising to the user)
             HOOK_LOG(L"  SmartSwitch: inherit %s for unknown '%s'",
-                     vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
+                     vietnameseMode_.load(std::memory_order_acquire)
+                         ? L"Vietnamese" : L"English",
+                     currentExe_.c_str());
         }
     }
 
