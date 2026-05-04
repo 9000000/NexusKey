@@ -644,7 +644,13 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
             // ApplyConfig, ToggleVietnameseMode, Reload* methods). Brief lock
             // keeps the critical section on the hook thread — main thread holds
             // this mutex only for fast state updates, never for Sciter/IO work.
-            std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
+            // Sprint 1 D4 SPIKE (refactor/phase-1-single-owner): commented out
+            // to measure whether removing hook-thread mutex acquisition flips
+            // any chaos FAIL. Torn-read risk knowingly accepted FOR THE SPIKE
+            // ONLY. Phase B replaces this with atomic + RCU patterns. Restore
+            // OR replace per Phase B before merge — DO NOT ship with this line
+            // commented. See docs/plans/sprint-1-single-owner-refactor.md §A D4.
+            // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
 
             if (isDown) {
                 if (self->ProcessKeyDown(pKey->vkCode, pKey->scanCode, pKey->flags)) {
@@ -674,7 +680,10 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LO
         // (engine_, previousComposition_, app-detect flags, currentExe_...).
         // Lock must cover the engine_->Count() read below and the subsequent
         // OnFocusChanged() which mutates extensively.
-        std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
+        // Sprint 1 D4 SPIKE: see corresponding note above LowLevelKeyboardProc
+        // lock_guard. WinEventProc executes on the hook thread per the existing
+        // architecture — that's why this acquisition is on the hot path.
+        // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
 
         if (event == EVENT_SYSTEM_MINIMIZEEND) {
             // Window restored from taskbar — re-evaluate focus with the actual foreground window.
@@ -702,7 +711,10 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
             if (self) {
                 // Mouse callback runs on hook thread — ResetComposition + state
                 // writes below race with main-thread writers. Take the lock.
-                std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
+                // Sprint 1 D4 SPIKE: see LowLevelKeyboardProc note. Mouse path
+                // includes a writer (ResetComposition); torn-read risk is
+                // higher here than the keyboard read paths.
+                // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
                 HOOK_LOG(L"MOUSE click — resetting composition (engine count=%zu, prev='%s')",
                          self->engine_->Count(), self->previousComposition_.c_str());
                 // Always reset, even when engine is idle: commitUndoState_ and commitStack_

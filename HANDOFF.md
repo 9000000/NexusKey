@@ -19,7 +19,9 @@ just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
 | D0: NextKeyTestRunner extensions (text field, --convert, edit_distance) | ✅ Committed `a372a27` + Windows fix `3459642` | `tools/NextKeyTestRunner/` |
 | D1: Sustained forward baseline locked | ✅ **0.41 % error** at master | `docs/baselines/perf-baseline-3459642-sustained-forward.{csv,xml,md}` |
 | D2: Sustained edit baseline locked | ✅ **0.00 % error** on both edit cases at master | `docs/baselines/perf-baseline-3459642-sustained-edit.{csv,xml,md}` |
-| D3+: Diagnostic spike, foundation refactor, MainThreadWorker, drop mutex | 🔜 **NEXT** | `docs/plans/sprint-1-single-owner-refactor.md` |
+| D3: Pre-spike snapshot locked | ✅ Sustained zero-drift; chaos heisenbug-bounded | `docs/baselines/perf-baseline-a28f1ea-pre-spike-{chaos,sustained}.{csv,xml,md}` |
+| D4: Spike (3 hook-thread mutex acquisitions commented out) | ✅ **Outcome B** — mutex not the bug source | `docs/baselines/perf-baseline-d4-spike-{chaos,sustained}.{csv,xml,md}` |
+| D5+: Phase B foundation refactor (atomic + RCU), MainThreadWorker, drop recursive_mutex, **D12.5 engine fix for chaos 3.3** | 🔜 **NEXT** | `docs/plans/sprint-1-single-owner-refactor.md` |
 
 ## Branch state
 

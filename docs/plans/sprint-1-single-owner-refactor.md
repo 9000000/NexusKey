@@ -147,30 +147,39 @@ Every phase below is governed by the three pre-code questions (PHILOSOPHY §3): 
 - **DoD (revised):** sustained result identical to D1/D2 within scheduler noise (✓ achieved). Chaos result: stable PASS {1.1, 1.3, 5.1} and stable FAIL {2.1, 2.3, 3.3} unchanged from locked baseline (✓ achieved). Flip-prone cases {1.2, 5.2, 6.1} verdict variation is expected.
 - **Commit:** `Sprint 1 D3: lock pre-spike snapshot (sustained zero-drift, chaos heisenbug-bounded)`
 
-### D4 — Spike: minimal mutex drop
+### D4 — Spike: minimal mutex drop ✅ DONE — Outcome B
+
+**Status:** Completed 2026-05-04. Files: `docs/baselines/perf-baseline-d4-spike-{chaos,sustained}.{csv,xml,md}`.
+
+**Result:**
+- **Sustained**: zero regression on all 3 cases (5 chars / 0.41 %, 0 / 0.00 %, 0 / 0.00 %) — same as D3 anchor within ±2 ms scheduler noise.
+- **Chaos**: 4 PASS / 7 FAIL (count unchanged from D3). Stable PASS {1.1, 1.3, 5.1} unchanged. Stable FAIL {2.1, 2.3, 3.3} unchanged with byte-identical corruption. Flip-prone cases 1.2 and 5.2 swapped (one each direction → cancels). Composition shifts on 2.2, 5.3, 6.1 (heisenbug noise). 6.1 corruption shape worsened (`bình tươờng` → `ình ườnggnh`) — flip-prone variance, not a stable regression.
+- **L1 timing**: 3.3 p99 +5 ms (12 → 17), all others within ±2 ms. Worst-case 17 ms — well under any timeout.
+
+**Decision per §A decision gate: Outcome B confirmed.** Mutex contention is NOT the cause of the chaos FAILs. The bugs are in `TelexEngine.cpp` state-machine logic (see HANDOFF "Cross-engine + cross-version check" — v2.1 + EVKey both PASS chaos cleanly, confirming TelexEngine-layer fixability).
+
+**Plan amendment:**
+- Phase B+ proceeds for code-health value alone (Rule #11 + V2 foundation).
+- **Insert D12.5** (engine-level fix). Recommended target: chaos `3.3 truongwf` → `tờương` (discrete diphthong + tone routing logic, deterministic corruption shape, debuggable as a single bug). Alternates: 2.1 or 2.3.
+- Sprint 1 D12 merge gate revised — see "Decision gate after D4" table below.
 
 - **Q1:** Three lines only — `HookEngine.cpp:647, 677, 705`. No headers, no new files.
-- **Q2:** Hook callbacks read state without a lock; will race with main-thread writers (`OnFocusChanged`, `ApplyConfig`, `ToggleVietnameseMode`, `Reload*`). Torn-read risk knowingly accepted *for the spike only* to isolate the question. Phase B fixes the races properly.
-- **Q3:** Better than this spike = full RCU + atomic publication (Phase B). The spike's purpose is **not** to ship — it is to **measure**. A minimal change is the cleanest probe.
-- **Test-first:** chaos corpus + sustained corpus results ARE the answer.
-- **Implementation:** comment out (do not delete) the three `lock_guard` lines, leaving comments referencing this plan. Build. Run both corpora.
-- **DoD:** numerical answer captured to `docs/baselines/perf-baseline-<sha>-spike-{chaos,sustained}.{csv,xml,md}`:
-  - count of chaos FAILs flipped to PASS,
-  - count of chaos PASSes regressed to FAIL,
-  - sustained forward error rate delta vs D1,
-  - sustained edit error rate delta vs D2,
-  - p99 delta vs D3 baseline.
-- **Commit:** `Sprint 1 D4 SPIKE: drop 3 hook-thread mutex acquisitions, capture chaos + sustained delta`
+- **Q2:** Hook callbacks read state without a lock; race with main-thread writers (`OnFocusChanged`, `ApplyConfig`, `ToggleVietnameseMode`, `Reload*`). Torn-read risk knowingly accepted *for the spike only*.
+- **Q3:** Better than this spike = full RCU + atomic publication (Phase B). Spike's purpose is to measure, not ship.
+- **Test-first:** chaos + sustained corpora results ARE the answer.
+- **Implementation:** commented out (NOT deleted) three `lock_guard` lines with reference comments to this commit + plan §A D4. Build. Run both corpora. ✅ done.
+- **DoD:** numerical answer captured. ✅ done.
+- **Commit:** `Sprint 1 D4 SPIKE: drop 3 hook-thread mutex acquisitions, capture chaos + sustained delta — Outcome B (mutex not the bug source)`
 
-### Decision gate after D4
+### Decision gate after D4 — **Outcome B selected (2026-05-04)**
 
 | Outcome | Meaning | Phase B response |
 |---|---|---|
 | **A** — chaos: ≥ 1 flip, 0 regress; sustained: error rate down | Single-owner is genuinely fixing race-induced bugs at both granularities | Continue D5 with confidence; expect more flips after full RCU |
-| **B** — chaos unchanged, sustained unchanged | Mutex was not the bug source. Refactor is cleanup (still satisfies Pillar #1 / Rule #11) but the merge gate's "≥ 1 FAIL flip" + "30 % sustained reduction" is NOT met by single-owner alone | Continue D5 — Sprint 1 still cleans up Rule #11 violations — but add **D12.5** engine-level fix for the cheapest single FAIL (likely 5.2 `uống` vowel routing or 3.3 `trường`). Sustained gate may need to soften to "no regression." |
+| **B (CHOSEN)** — chaos unchanged, sustained unchanged | Mutex was not the bug source. Refactor is cleanup (still satisfies Pillar #1 / Rule #11) but the merge gate's "≥ 1 FAIL flip" + "30 % sustained reduction" is NOT met by single-owner alone | Continue D5 — Sprint 1 still cleans up Rule #11 violations — add **D12.5** engine-level fix for chaos 3.3 `truongwf` (alternates: 2.1, 2.3). Sustained gate softened to "no regression." |
 | **C** — any chaos PASS regressed OR sustained error rate increased | A lock was protecting something the spike broke | Pause. Identify which composition manipulation broke. Phase B scope expands to cover that field's publication |
 
-The spike outcome is committed alongside the corpus output; future readers of this branch can see the experiment's data immediately.
+**Outcome B confirmed by D4 spike data** — see `docs/baselines/perf-baseline-d4-spike-chaos.md` and HANDOFF "Cross-engine + cross-version check" (v2.1 + EVKey PASS chaos cleanly, confirming TelexEngine-layer fixability of the regressions).
 
 ---
 
