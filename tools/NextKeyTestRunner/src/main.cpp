@@ -25,6 +25,7 @@
 #include "Encoding.h"
 #include "SendInputDriver.h"
 #include "Telex.h"
+#include "TomlLoader.h"
 
 namespace NextKey::TestRunner {
 
@@ -46,6 +47,9 @@ void PrintUsage() {
     std::printf("  --expected TEXT      Expected clipboard contents (compared to actual)\n");
     std::printf("  --clear-first        Send Ctrl+A + Delete before typing\n");
     std::printf("  --post-send-ms=N     Wait after send before Ctrl+A (default 200)\n\n");
+    std::printf("Corpus mode:\n");
+    std::printf("  --list FILE.toml     Parse corpus file and print loaded cases\n");
+    std::printf("                       (no SendInput driving; debug helper for D6)\n\n");
     std::printf("  --help, -h           Show this help\n\n");
     std::printf("Examples:\n");
     std::printf("  NextKeyTestRunner.exe --send vieejt --raw\n");
@@ -78,6 +82,7 @@ void PrintTelexDiagnostic(std::u16string_view telex) {
 struct RunOptions {
     std::u16string sendText;
     std::u16string expected;
+    std::u16string listFile;        // --list FILE.toml: print parsed cases, no driving
     bool raw = false;
     bool verify = false;
     bool clearFirst = false;
@@ -86,6 +91,38 @@ struct RunOptions {
     uint32_t initialDelayMs = 3'000;
     uint32_t postSendMs = 200;
 };
+
+int RunList(std::u16string_view filePath) {
+    const std::string narrowPath = Encoding::Utf16ToUtf8(filePath);
+    const auto result = TomlLoader::LoadFile(narrowPath);
+    if (!result.error.empty()) {
+        std::fprintf(stderr, "[ERROR] %s\n", result.error.c_str());
+        return EXIT_FAILURE;
+    }
+
+    std::printf("Loaded %zu test case(s) from %s\n\n",
+                result.cases.size(), narrowPath.c_str());
+    for (std::size_t i = 0; i < result.cases.size(); ++i) {
+        const auto& tc = result.cases[i];
+        std::printf("[%zu] %s  (target=%s)\n",
+                    i, tc.name.c_str(), tc.targetApp.c_str());
+        std::printf("     keys      = ");
+        for (char16_t ch : tc.keys) {
+            if (ch == u'\b')      std::printf("\\b");
+            else if (ch == u'\t') std::printf("\\t");
+            else if (ch == u'\n') std::printf("\\n");
+            else if (ch == u'\r') std::printf("\\r");
+            else if (ch >= 0x20 && ch < 0x7F) std::putchar(static_cast<char>(ch));
+            else                  std::printf("[U+%04X]", static_cast<unsigned>(ch));
+        }
+        std::printf("  (%zu chars)\n", tc.keys.size());
+        std::printf("     expected  = %s\n",
+                    Encoding::Utf16ToUtf8(tc.expected).c_str());
+        std::printf("     timing    = inter_key=%uus  budget_p99=%uus\n\n",
+                    tc.interKeyMicros, tc.budgetP99Micros);
+    }
+    return EXIT_SUCCESS;
+}
 
 int RunSend(const RunOptions& opt) {
     const std::u16string toSend =
@@ -205,6 +242,8 @@ int Run(int argc, wchar_t* argv[]) {
             opt.clearFirst = true;  // verify always wants clean target
         } else if (arg == L"--clear-first") {
             opt.clearFirst = true;
+        } else if (arg == L"--list" && i + 1 < argc) {
+            opt.listFile = WideToU16(argv[++i]);
         } else if (arg == L"--help" || arg == L"-h") {
             PrintUsage();
             return EXIT_SUCCESS;
@@ -214,6 +253,10 @@ int Run(int argc, wchar_t* argv[]) {
             PrintUsage();
             return EXIT_FAILURE;
         }
+    }
+
+    if (!opt.listFile.empty()) {
+        return RunList(opt.listFile);
     }
 
     if (opt.sendText.empty()) {
