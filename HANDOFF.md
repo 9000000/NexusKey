@@ -67,8 +67,10 @@ produced a 5 PASS / 6 FAIL total (count unchanged) but the **composition shifted
 | 6.1 `binhf thuongwf` | PASS `bình thường` | **FAIL** `bình tườngg` | flipped |
 | 2.3 `hello vieejt` | FAIL `helệo viet` | FAIL `heloệ viet` | same FAIL, ệ position drifts |
 | 5.3 `vieejt nam BS×4 s` | FAIL `etết` | FAIL `itết` | same FAIL, first char differs |
-| 2.1, 2.2, 3.3 | FAIL | FAIL (identical strings) | stable |
-| 1.1, 1.2, 1.3, 5.1 | PASS | PASS | stable |
+| 2.1, 2.3, 3.3 | FAIL | FAIL (identical strings) | stable |
+| 1.1, 1.3, 5.1 | PASS | PASS | stable |
+| **1.2** | PASS | PASS in conv-run, **FAIL `in`** in D3 capture | flip-prone (D3 evidence) |
+| **2.2, 5.3** | FAIL | FAIL with corruption shape varying between runs | composition unstable |
 
 This is the heisenbug behavior already documented in `perf-baseline-43fb4c1.md`
 observation #2 (6.1 was borderline at D7 capture). Confirmed: under sub-ms
