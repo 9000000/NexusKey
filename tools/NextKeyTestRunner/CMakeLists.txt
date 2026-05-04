@@ -37,6 +37,9 @@ gtest_discover_tests(NextKeyTestRunnerTests)
 if(WIN32)
     add_executable(NextKeyTestRunner EXCLUDE_FROM_ALL
         src/main.cpp
+        src/SendInputDriver.h
+        src/SendInputDriver.cpp
+        src/Telex.h
     )
 
     target_include_directories(NextKeyTestRunner PRIVATE
