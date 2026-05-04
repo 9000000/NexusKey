@@ -2,6 +2,14 @@
 
 > Vietnamese IME for Windows. Hybrid TSF + Hook, C++20, Sciter.JS UI.
 
+## Read First
+
+> **`docs/PHILOSOPHY.md`** — the four pillars (Nhanh / Nhẹ / Mượt / Mở rộng), test-first development, and the three pre-code questions (right place? impact? better way?). This document is the highest-level filter for all design and implementation. Read it before touching code.
+>
+> **`docs/CODING_RULES/index.md`** — concrete rules that operationalize the philosophy. Rule #11 (Hook System) is mandatory reading before changing anything reachable from `LowLevelKeyboardProc`.
+>
+> **`HANDOFF.md`** — current sprint state, gates, and recent decisions.
+
 ## Build Targets
 
 | Target | Type | Links | Description |
