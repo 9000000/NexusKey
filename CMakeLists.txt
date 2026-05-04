@@ -422,3 +422,10 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(NextKeyTests)
+
+# ============================================================================
+# Tools (Windows-only, excluded from ALL build)
+# ============================================================================
+if(WIN32)
+    add_subdirectory(tools/NextKeyTestRunner)
+endif()
