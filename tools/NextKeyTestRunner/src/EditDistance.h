@@ -38,11 +38,14 @@ namespace NextKey::TestRunner::EditDistance {
         curr[0] = i;
         for (std::size_t j = 1; j <= n; ++j) {
             const std::size_t cost = (a[i - 1] == b[j - 1]) ? 0u : 1u;
-            curr[j] = std::min({
-                prev[j] + 1u,         // deletion from a
-                curr[j - 1] + 1u,     // insertion into a
-                prev[j - 1] + cost,   // substitution
-            });
+            // Parenthesized `std::min` defeats the Windows.h `min` macro,
+            // which would otherwise expand `std::min({...})` and break parsing.
+            // Nested form avoids the initializer-list overload entirely so
+            // the file is robust whether or not NOMINMAX is in scope.
+            const std::size_t deletion    = prev[j] + 1u;
+            const std::size_t insertion   = curr[j - 1] + 1u;
+            const std::size_t substitution = prev[j - 1] + cost;
+            curr[j] = (std::min)((std::min)(deletion, insertion), substitution);
         }
         std::swap(prev, curr);
     }
