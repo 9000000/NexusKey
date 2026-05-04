@@ -424,8 +424,7 @@ include(GoogleTest)
 gtest_discover_tests(NextKeyTests)
 
 # ============================================================================
-# Tools (Windows-only, excluded from ALL build)
+# Tools — NextKeyTestRunner: cross-platform tests + Windows-only runner exe
+# (sub-CMakeLists gates platform-specific targets internally)
 # ============================================================================
-if(WIN32)
-    add_subdirectory(tools/NextKeyTestRunner)
-endif()
+add_subdirectory(tools/NextKeyTestRunner)
