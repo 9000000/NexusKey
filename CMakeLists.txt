@@ -422,3 +422,9 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(NextKeyTests)
+
+# ============================================================================
+# Tools — NextKeyTestRunner: cross-platform tests + Windows-only runner exe
+# (sub-CMakeLists gates platform-specific targets internally)
+# ============================================================================
+add_subdirectory(tools/NextKeyTestRunner)

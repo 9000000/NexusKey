@@ -807,5 +807,25 @@ TEST_F(VniParityTest, Seed_LatinOnlyWord_Succeeds) {
     EXPECT_EQ(engine_->Peek(), L"system");
 }
 
+// ============================================================================
+// NUMERIC INTERFERENCE TESTS
+// ============================================================================
+
+TEST_F(VniParityTest, NumericInterference_E747) {
+    // Typing "E747" in VNI should NOT interpret trailing digits as tones
+    // because they follow numeric characters.
+    TypeString(*engine_, L"E747");
+    EXPECT_EQ(engine_->Peek(), L"E747");
+}
+
+TEST_F(VniParityTest, NumericInterference_Mixed) {
+    // "a1" -> "á", but "11" -> "11"
+    TypeString(*engine_, L"a1");
+    EXPECT_EQ(engine_->Peek(), L"á");
+    engine_->Reset();
+    TypeString(*engine_, L"11");
+    EXPECT_EQ(engine_->Peek(), L"11");
+}
+
 }  // namespace
 }  // namespace NextKey

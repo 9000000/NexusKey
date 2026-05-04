@@ -93,7 +93,7 @@ var STRINGS = {
         "s.color_v": "Choose V color",
         "s.color_e": "Choose E color",
         "s.floating_icon": "Floating V/E icon",
-        "s.floating_icon_tooltip": "Show a small floating V/E indicator, useful for fullscreen apps",
+        "s.floating_icon_tooltip": "Show floating icon. May reduce FPS in Fullscreen games (Borderless recommended)",
 
         // Tab 4: About
         "s.tagline": "Modern Vietnamese Input Method",
