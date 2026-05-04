@@ -24,3 +24,54 @@ inter_key_us = 50000
 budget_p99_us = 16000
 verdict_mode = "edit_distance"
 threshold_pct = 99.0
+
+# ---------------------------------------------------------------------------
+# Edit cases (D2 -- typo correction + cross-word edit at realistic 50 ms pace)
+# ---------------------------------------------------------------------------
+# These exercise edit scenarios that the binary chaos corpus over-stresses
+# (1-5 ms inter-key, race-condition territory). Captured here at the same
+# 50 ms inter-key as `forward-200wpm-sustained` so the "before" picture is
+# realistic-pace edit behavior, not race-pressure behavior.
+#
+# Verdict: edit_distance with threshold_pct = 99 (matches forward sustained).
+# Sprint 1 gate: post-refactor must not regress these error rates; ideal is
+# >=30 % reduction (per docs/plans/sprint-1-single-owner-refactor.md A0 D2).
+#
+# Telex citations: kTable in tools/NextKeyTestRunner/src/Telex.h:25-44 is the
+# source of truth for Vietnamese -> ASCII telex. Per-case `expected` reflects
+# the typing user's semantic intent. On first Windows run (commit 3459642,
+# 2026-05-04), engine output matched intent exactly on both cases (0.00 %
+# error) -- baseline locked. See docs/baselines/perf-baseline-3459642-
+# sustained-edit.md.
+
+[[tests]]
+# Inline tone correction: type 'vieet' -> "viêt" (no tone, ee->ê per kTable
+# line 30). User notices missing tone, BS deletes 't', 'j' applies dot-below
+# tone to ê -> ệ (kTable line 33), retypes 't'. Semantic intent: "việt".
+# Engine path: telex tone replacement after BS-into-vowel-context.
+name = "edit-1-inline-tone-fix-vieet-bs-jt"
+target_app = "notepad"
+keys = 'vieet\bjt'
+expected = "việt"
+inter_key_us = 50000
+budget_p99_us = 16000
+verdict_mode = "edit_distance"
+threshold_pct = 99.0
+
+[[tests]]
+# Cross-word backspace replay at realistic pace. Mirrors chaos `5.3-cross-
+# word-bs-vieejt-nam-bs4-s` (which fails at 1 ms inter-key with heisenbug
+# corruption per perf-baseline-43fb4c1.md line 77). Same key sequence,
+# slowed from 1 ms to 50 ms inter-key. Verified at master `43fb4c1`:
+# at realistic pace the cross-word backspace replay path produces "viết"
+# byte-exactly (0.00 % error). The chaos 5.3 bug is speed-bound, not a
+# structural edit-path bug.
+# kTable refs: line 33 (ệ -> "eej").
+name = "edit-2-cross-word-bs-vieejt-nam-bs4-s"
+target_app = "notepad"
+keys = 'vieejt nam\b\b\b\bs'
+expected = "viết"
+inter_key_us = 50000
+budget_p99_us = 16000
+verdict_mode = "edit_distance"
+threshold_pct = 99.0

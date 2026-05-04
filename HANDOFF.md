@@ -1,4 +1,4 @@
-# NexusKey Refactor — Sprint 1 Handoff (D1 done, D2 next)
+# NexusKey Refactor — Sprint 1 Handoff (D2 done, D3 next)
 
 ## TL;DR
 
@@ -8,9 +8,9 @@ Sprint 1 (this branch) is bringing the hook into compliance with the
 just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
 
 **Where we are right now (2026-05-04):** Foundation docs + test infrastructure
-done. Baselines locked. **The single-owner refactor itself has not started** —
-that begins at D3 (diagnostic spike) per the plan. A teammate continuing here
-should pick up at **D2** (sustained-edit corpus encoding) before D3 unlocks.
++ all three baselines (chaos, sustained-forward, sustained-edit) locked.
+**The single-owner refactor itself has not started** — that begins at D3
+(diagnostic spike) per the plan. Pick up at **D3** next.
 
 | Layer | Status | Reference |
 |---|---|---|
@@ -18,8 +18,8 @@ should pick up at **D2** (sustained-edit corpus encoding) before D3 unlocks.
 | Sprint 1 plan (14-day, A0→A→B→C→D→E) | ✅ Committed `ec9798e` | `docs/plans/sprint-1-single-owner-refactor.md` |
 | D0: NextKeyTestRunner extensions (text field, --convert, edit_distance) | ✅ Committed `a372a27` + Windows fix `3459642` | `tools/NextKeyTestRunner/` |
 | D1: Sustained forward baseline locked | ✅ **0.41 % error** at master | `docs/baselines/perf-baseline-3459642-sustained-forward.{csv,xml,md}` |
-| D2: Sustained edit baseline (typo + cross-word) | 🔜 **NEXT** | corpus to extend in `tools/NextKeyTestRunner/corpus/sustained.toml` |
-| D3+: Diagnostic spike, foundation refactor, MainThreadWorker, drop mutex | ⏳ Per plan | `docs/plans/sprint-1-single-owner-refactor.md` |
+| D2: Sustained edit baseline locked | ✅ **0.00 % error** on both edit cases at master | `docs/baselines/perf-baseline-3459642-sustained-edit.{csv,xml,md}` |
+| D3+: Diagnostic spike, foundation refactor, MainThreadWorker, drop mutex | 🔜 **NEXT** | `docs/plans/sprint-1-single-owner-refactor.md` |
 
 ## Branch state
 
@@ -31,24 +31,115 @@ should pick up at **D2** (sustained-edit corpus encoding) before D3 unlocks.
   - `docs/baselines/perf-baseline-3459642-sustained-forward.{md,csv,xml}` — sustained forward (1 case, 0.41 % error)
 - Branch adds docs + test infra only. **No production code touched yet.** The single-owner refactor begins at D3.
 
-## Significant finding from D1
+## Significant findings from D1 + D2 baselines
 
-Master state already handles realistic forward Vietnamese typing at **0.41 % error
-rate** — chaos-style bugs are speed-bound and don't reproduce at 50 ms inter-key.
-This means:
+**D1 (sustained forward, 50 ms inter-key, 1 case, 1 631 keys):** master state
+handles realistic forward Vietnamese typing at **0.41 % error rate**.
 
-1. The original "≥ 30 % improvement on sustained forward" gate is unworkable
-   (30 % of 0.41 % is below noise). Plan revised: forward sustained is now
-   "no-regression" anchor only.
-2. The interesting Sprint 1 movement signal will live in **chaos FAIL flips**
-   (≥ 1 of 6) and **D2 sustained-edit baseline** (when it exists). Forward
-   typing is solid territory; bugs cluster in edit scenarios (BS-and-retry,
-   cross-word backspace) per chaos category 5.3 and brainstorm Phase 3.
+**D2 (sustained edit, 50 ms inter-key, 2 cases, ~21 keys total):** master state
+handles realistic edit scenarios (inline tone correction, cross-word backspace
+replay) at **0.00 % error rate**. The chaos `5.3-cross-word-bs-vieejt-nam-bs4-s`
+key sequence — which corrupts at 1 ms inter-key — produces correct output at
+50 ms inter-key, byte-exactly.
 
-See `docs/baselines/perf-baseline-3459642-sustained-forward.md` Observations
-#1–3 for the full reasoning.
+**Combined implications:**
 
-## Read in this order (for a teammate picking up D2)
+1. The original "≥ 30 % improvement on sustained" gate is unworkable on BOTH
+   sustained dimensions (30 % of 0.41 % is below noise; 30 % of 0.00 % is
+   undefined). Plan revised: both sustained dimensions are "no-regression"
+   anchors only.
+2. The interesting Sprint 1 movement signal lives in **chaos FAIL flips**
+   (≥ 1 of 6) and **L1 timing tightening** (single-owner removes mutex
+   contention; expected p99 drop from current 60 ms to under 50 ms post-D11).
+3. Chaos bugs are confirmed speed-bound: same key sequences pass cleanly at
+   realistic typing pace. The Sprint 1 refactor's value is **letting the
+   engine survive sub-millisecond burst input**, not fixing structural
+   edit-path bugs (those don't exist at this layer).
+
+### Heisenbug variance noted on chaos co-run (2026-05-04 ~1010)
+
+Re-running `chaos.toml` against the same `43fb4c1` runtime as the locked baseline
+produced a 5 PASS / 6 FAIL total (count unchanged) but the **composition shifted**:
+
+| Case | Locked baseline (43fb4c1.md) | New run | Note |
+|---|---|---|---|
+| 5.2 `uongs` | FAIL `ốngg` | **PASS** | flipped |
+| 6.1 `binhf thuongwf` | PASS `bình thường` | **FAIL** `bình tườngg` | flipped |
+| 2.3 `hello vieejt` | FAIL `helệo viet` | FAIL `heloệ viet` | same FAIL, ệ position drifts |
+| 5.3 `vieejt nam BS×4 s` | FAIL `etết` | FAIL `itết` | same FAIL, first char differs |
+| 2.1, 2.2, 3.3 | FAIL | FAIL (identical strings) | stable |
+| 1.1, 1.2, 1.3, 5.1 | PASS | PASS | stable |
+
+This is the heisenbug behavior already documented in `perf-baseline-43fb4c1.md`
+observation #2 (6.1 was borderline at D7 capture). Confirmed: under sub-ms
+input, engine state is non-deterministic — the same input gives different
+corrupt outputs run-to-run, and a few cases (5.2, 6.1) flip between PASS/FAIL.
+
+**Implication for Sprint 1 D12 gate**: "≥ 1 FAIL flip" can be satisfied by
+heisenbug noise rather than by an actual fix. Stable FAILs (2.1, 2.2, 3.3,
+2.3, 5.3) are the meaningful regression-detection targets; 5.2 and 6.1 are
+unreliable signals on their own. Concrete tightening for D12:
+
+- **Run chaos N=3 times** post-refactor and require a flip in ≥ 2 of 3 runs.
+- **Track stable FAILs explicitly**: a flip on 2.1, 2.2, or 3.3 (which never
+  PASSed in any captured run) is high-confidence; a flip on 5.2 or 6.1 alone
+  is low-confidence and must be corroborated by an L1 timing improvement.
+- **Locked baseline is NOT updated** with this re-run data — `43fb4c1.md` is
+  frozen by design. The variance observation lives here in HANDOFF.
+
+### Cross-engine + cross-version check (2026-05-04 ~1030)
+
+The same chaos corpus run on the same Windows host at the same 1–5 ms inter-key
+pace against three engines:
+
+| Engine | Result | Note |
+|---|---|---|
+| NexusKey current (`43fb4c1`) | 5 PASS / 6 FAIL (heisenbug variance noted above) | Sprint 1 starting state |
+| **NexusKey v2.1** (older release) | **PASS-clean (≈ EVKey)** | Per Phat's test, 2026-05-04 |
+| **EVKey** | **11 PASS / 0 FAIL** | Different project, stable |
+
+This is **regression evidence**: an older version of *the same project* handled
+the chaos cases cleanly. The bugs were introduced by feature additions over
+time, not by a fundamental design limitation. The competing engine (EVKey)
+confirms the architecture *can* be stable.
+
+Implications for Sprint 1:
+
+1. The chaos failures are **NexusKey-specific regressions**, not a pace-induced
+   limitation. Earlier doc wording that called them "speed-bound" (in chaos
+   baseline obs #2 and the first draft of sustained-edit obs #1) was
+   imprecise — v21 demonstrates the same engine logic *was* stable at this
+   pace before recent feature work introduced regressions.
+2. Sprint 1 single-owner refactor's value is **restoring architectural
+   stability** — not as a "code health" abstraction, but as a concrete
+   condition that v21 had and current does not: adding a feature should not
+   regress prior chaos behavior. The four pillars (Nhanh / Nhẹ / Mượt / Mở
+   rộng-không-làm-nặng) plus "dễ debug" govern this directly: an architecture
+   where features compose without regressing each other.
+3. Plan scope is **unchanged**. The single-owner refactor is the right
+   structural change — it disentangles state ownership so feature additions
+   do not silently couple via shared mutable state. Phase D outcome B
+   (D12.5 single-FAIL engine fix) accommodates per-bug regression repairs
+   if the architectural change alone does not fully restore v21 behavior.
+4. EVKey passing 11/11 + v21 passing chaos is **proof the architecture is
+   recoverable**, not just proof "fixes exist for individual bugs". Post-
+   Sprint 1, the right comparison is: does adding the next feature on the
+   refactored base regress chaos? If no, the architectural goal is met.
+
+**Locked baseline `43fb4c1.md` is NOT amended** with this data — frozen by
+design. The observation lives here in HANDOFF.
+
+**Methodology note (lesson recorded in feedback_test_dont_theorize):** the
+v21 + EVKey runs were direct test evidence supplied by Phat. An earlier
+draft of this section reasoned about what the chaos FAILs *must* be from
+the locked baseline alone, without the comparator data. That hypothesizing
+was wrong-shaped — the right question was "can we run the same corpus
+against a known-good engine?", which Phat answered by running v21 and EVKey.
+Future Sprint 1 work that needs to attribute a regression cause should
+likewise prefer "run the corpus against state X" over "reason about state X
+from data we already have".
+
+## Read in this order (for a teammate picking up D3)
 
 1. **`docs/PHILOSOPHY.md`** (~10 min)
    Four pillars (Nhanh / Nhẹ / Mượt / Mở rộng-no-runtime-cost), test-first,

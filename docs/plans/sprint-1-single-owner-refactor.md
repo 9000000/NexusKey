@@ -99,7 +99,11 @@ Every phase below is governed by the three pre-code questions (PHILOSOPHY §3): 
 - **Significant finding for the plan:** Forward typing at realistic pace is already near-perfect at master state. The "≥ 30 % improvement" gate was removed for this dimension (30 % of 0.41 % = 0.12 %, below measurement noise). Forward sustained is now a **no-regression** anchor; the interesting improvement signal will live in chaos FAIL flips and (after D2) the sustained-edit baseline.
 - **Commit:** `Sprint 1 D1: lock forward-200wpm sustained baseline (0.41 % error, 5 chars)`
 
-### D2 — Encode + verify cross-word edit cases
+### D2 — Encode + verify cross-word edit cases ✅ DONE
+
+**Status:** Completed 2026-05-04. Baseline locked at **0.00 % error** on both edit cases. Files: `docs/baselines/perf-baseline-3459642-sustained-edit.{csv,xml,md}`. Cases: `edit-1-inline-tone-fix-vieet-bs-jt`, `edit-2-cross-word-bs-vieejt-nam-bs4-s`. Mixed-edit-session case skipped (optional per plan; both committed cases already give 0 % error, so a third case would not add baseline signal).
+
+**Cross-engine observation (2026-05-04):** EVKey running the same chaos corpus on the same host at the same 1 ms inter-key pace produced 11 / 11 PASS. Confirms chaos FAILs are NexusKey TelexEngine state-machine bugs, not pace-induced — see HANDOFF "EVKey cross-engine check" section. Sprint 1 scope unchanged (Rule #11 + code health); engine bug fixes tracked under Phase D outcome B (D12.5).
 
 - **Q1:** Add 2-3 cases to `sustained.toml` covering:
   - `inline-typo-correction` — small typo in middle of a word, BS, retype.
