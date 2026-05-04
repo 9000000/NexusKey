@@ -1,6 +1,6 @@
 // HookEngineAtomicTests.cpp
 //
-// Sprint 1 D5 + D5.1: regression test for HookEngine field migration to
+// Sprint 1 D5 + D5.1 + D5.2: regression test for HookEngine field migration to
 // std::atomic (Rule #11.3 — atomic acquire/release pattern for hook-thread-safe
 // primitive reads without stateMutex_).
 //
@@ -9,6 +9,11 @@
 //   - vietnameseMode_   — std::atomic<bool>     (D5)
 //   - isTsfApp_         — std::atomic<bool>     (D5.1)
 //   - currentMethod_    — std::atomic<InputMethod>  (D5.1, enum)
+//   - 14 per-app + config bools (D5.2): isExcludedApp_, isConsoleApp_,
+//     isElectronApp_, skipEmptyChar_, needBaitChar_, useClipboardPaste_,
+//     useEditMsgPath_, isOutlookApp_, macroEnabled_, macroInEnglish_,
+//     autoCaps_, autoCapsMacro_, tempOffMacroByEsc_, tempOffByAlt_
+//   - excludedPid_      — std::atomic<DWORD>    (D5.2, 32-bit PID)
 //
 // This file provides:
 //   1. compile-time enforcement that the platform supports lock-free atomic
@@ -46,6 +51,8 @@ static_assert(std::atomic<bool>::is_always_lock_free,
               "Sprint 1 D5: HookEngine::vietnameseMode_ / isTsfApp_ require lock-free atomic<bool>");
 static_assert(std::atomic<InputMethod>::is_always_lock_free,
               "Sprint 1 D5.1: HookEngine::currentMethod_ requires lock-free atomic<InputMethod>");
+static_assert(std::atomic<uint32_t>::is_always_lock_free,
+              "Sprint 1 D5.2: HookEngine::excludedPid_ (DWORD == uint32_t) requires lock-free atomic");
 
 // Acquire/release visibility — main-thread store is observed by hook-thread
 // load. Pattern matches HookEngine::ToggleVietnameseMode (writer) and
@@ -114,6 +121,78 @@ TEST(HookEngineAtomic, EnumStoreLoadRoundTrip) {
 
     field.store(InputMethod::Telex, std::memory_order_release);
     EXPECT_EQ(field.load(std::memory_order_acquire), InputMethod::Telex);
+}
+
+// D5.2: snapshot-then-publish idiom used by HookEngine::OnFocusChanged.
+// Multiple atomic stores must each be independently visible after their
+// release-store; readers using acquire-loads see the new value of each field
+// without torn-tuple ordering between fields.
+//
+// HookEngine pattern: OnFocusChanged classifies the foreground app into
+// 7 booleans (isConsoleApp_, skipEmptyChar_, needBaitChar_, ...) using stack
+// locals, then issues 7 sequential .store(release). Readers in the hook hot
+// path .load(acquire) each independently — there is no atomicity requirement
+// across the 7 fields (any reader interleaving is acceptable; the worst case
+// is "previous app for some flags, new app for others" which is recoverable).
+//
+// This test verifies that each individual store/load pair sees the published
+// value, even when 7 stores happen in tight succession — i.e. no compiler
+// reordering or store buffer collapsing breaks the per-field acquire/release
+// guarantee.
+TEST(HookEngineAtomic, MultiPublishVisibility) {
+    constexpr int kIterations = 500;
+    for (int iter = 0; iter < kIterations; ++iter) {
+        std::atomic<bool> a{false}, b{false}, c{false}, d{false},
+                          e{false}, f{false}, g{false};
+        std::atomic<bool> done{false};
+
+        std::thread reader([&]() {
+            // Wait for handshake, then verify each field independently.
+            while (!done.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            EXPECT_TRUE(a.load(std::memory_order_acquire));
+            EXPECT_TRUE(b.load(std::memory_order_acquire));
+            EXPECT_TRUE(c.load(std::memory_order_acquire));
+            EXPECT_TRUE(d.load(std::memory_order_acquire));
+            EXPECT_TRUE(e.load(std::memory_order_acquire));
+            EXPECT_TRUE(f.load(std::memory_order_acquire));
+            EXPECT_TRUE(g.load(std::memory_order_acquire));
+        });
+
+        // Publish all 7 fields, then handshake. Done's release-store must
+        // make all prior release-stores visible after the reader's
+        // acquire-load on done.
+        a.store(true, std::memory_order_release);
+        b.store(true, std::memory_order_release);
+        c.store(true, std::memory_order_release);
+        d.store(true, std::memory_order_release);
+        e.store(true, std::memory_order_release);
+        f.store(true, std::memory_order_release);
+        g.store(true, std::memory_order_release);
+        done.store(true, std::memory_order_release);
+
+        reader.join();
+    }
+}
+
+// D5.2: std::atomic<DWORD> (== std::atomic<uint32_t>) round-trip + cross-thread
+// visibility. Mirrors HookEngine::excludedPid_ — main thread writes the PID
+// from OnFocusChanged when entering an excluded app; hook thread reads in
+// ProcessKeyDown's fast PID equality check.
+TEST(HookEngineAtomic, PidStoreLoadRoundTrip) {
+    std::atomic<uint32_t> pid{0};
+
+    EXPECT_EQ(pid.load(std::memory_order_acquire), 0u);
+
+    pid.store(4096, std::memory_order_release);
+    EXPECT_EQ(pid.load(std::memory_order_acquire), 4096u);
+
+    pid.store(0xDEADBEEF, std::memory_order_release);
+    EXPECT_EQ(pid.load(std::memory_order_acquire), 0xDEADBEEFu);
+
+    pid.store(0, std::memory_order_release);
+    EXPECT_EQ(pid.load(std::memory_order_acquire), 0u);
 }
 
 // D5.1: cross-thread visibility for std::atomic<enum>. Producer cycles through

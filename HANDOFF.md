@@ -1,4 +1,4 @@
-# NexusKey Refactor — Sprint 1 Handoff (D5.1 done, D6 next)
+# NexusKey Refactor — Sprint 1 Handoff (D5.2 done, D6 next)
 
 ## TL;DR
 
@@ -7,14 +7,15 @@ key, tone misplacement under fast typing). Phase 0a built the test harness;
 Sprint 1 (this branch) is bringing the hook into compliance with the
 just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
 
-**Where we are right now (2026-05-04):** Foundation + Phase A spike + Phase B
-atomic primitive migration covering the three highest-value hook-read fields
-(`vietnameseMode_`, `currentMethod_`, `isTsfApp_`). L1 worst-case p99 has
-ticked down from D4 17 ms → D5 18 ms → D5.1 16 ms — the atomic migration is
-slightly *helping* hot-path predictability, in addition to satisfying Rule
-#11.3. Pick up at **D5.2** (remaining primitive flags — `isExcludedApp_` +
-per-app cached app-detect bools + config-derived flags) or **D6** (RCU
-`shared_ptr` for `TypingConfig`) per plan §B.
+**Where we are right now (2026-05-04):** Foundation + Phase A spike + **Phase
+B D5 sub-goal complete** — all 18 primitive flags read on the hook callback
+path are now `std::atomic` with acquire/release semantics (3 in D5/D5.1, 15
+in D5.2). L1 worst-case p99 trajectory: D4 17 ms → D5 18 ms → D5.1 16 ms →
+D5.2 16 ms (with the 3.3 engine-stress case dropping further to 11 ms in
+D5.2). The atomic migration is consistently *helping* hot-path predictability,
+in addition to satisfying Rule #11.3. Pick up at **D6** (RCU `shared_ptr` for
+`TypingConfig` — the complex-struct case where atomic-on-single-load doesn't
+suffice) per plan §B.
 
 | Layer | Status | Reference |
 |---|---|---|
@@ -27,8 +28,8 @@ per-app cached app-detect bools + config-derived flags) or **D6** (RCU
 | D4: Spike (3 hook-thread mutex acquisitions commented out) | ✅ **Outcome B** — mutex not the bug source | `docs/baselines/perf-baseline-d4-spike-{chaos,sustained}.{csv,xml,md}` |
 | D5: `vietnameseMode_` → `std::atomic<bool>` (incremental, N=1) | ✅ DoD met — sustained byte-identical, chaos heisenbug envelope preserved, L1 worst p99 18 ms | `docs/baselines/perf-baseline-d5-atomic-vnmode-{chaos,sustained}.{csv,xml,md}`, `tests/HookEngineAtomicTests.cpp` |
 | D5.1: `currentMethod_` → `std::atomic<InputMethod>`, `isTsfApp_` → `std::atomic<bool>` (19 sites) | ✅ DoD met — sustained byte-identical (p99 −3 ms vs D5), chaos 1 PASS gain via 1.2 flip, no PASS regress, L1 worst p99 16 ms (improvement) | `docs/baselines/perf-baseline-d5.1-atomic-method-tsf-{chaos,sustained}.{csv,xml,md}` |
-| D5.2: remaining hook-read primitives (`isExcludedApp_`, per-app cached bools, config-derived flags) | 🔜 candidate — pattern is mature, can fold into D7 audit | `docs/plans/sprint-1-single-owner-refactor.md` §B |
-| D6+: RCU `shared_ptr` for `TypingConfig`, MainThreadWorker, drop recursive_mutex, **D12.5 engine fix for chaos 3.3** | pending | `docs/plans/sprint-1-single-owner-refactor.md` |
+| D5.2: 15 remaining hook-read primitives → `std::atomic` (8 per-app cached + `excludedPid_` DWORD + 6 config-derived; ~60 sites) | ✅ DoD met — sustained byte-identical, chaos verdicts preserved (1.1+1.2+1.3+5.1+5.2 byte-identical PASS, 2.1+2.2 byte-identical FAIL), L1 worst p99 16 ms (cap unchanged), 3.3 engine-stress p99 −5 ms | `docs/baselines/perf-baseline-d5.2-atomic-rest-{chaos,sustained}.{csv,xml,md}` |
+| D6+: RCU `shared_ptr` for `TypingConfig`, MainThreadWorker, drop recursive_mutex, D7 audit script (**now also enforces "no plain primitive read on hook"**), **D12.5 engine fix for chaos 3.3** | pending | `docs/plans/sprint-1-single-owner-refactor.md` |
 
 ## Branch state
 

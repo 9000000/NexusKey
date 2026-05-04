@@ -213,10 +213,14 @@ private:
     bool smartSwitch_ = false;
     bool excludeApps_ = false;
     bool tsfApps_ = false;
-    bool autoCaps_ = false;
-    bool autoCapsMacro_ = false;
-    bool tempOffByAlt_ = false;
-    bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word
+    // Sprint 1 D5.2: config-derived flags read on the hook callback path
+    // (ProcessKeyDown / HandleAlphaKey / TryExpandMacro). Writers: ApplyConfig
+    // (main thread). Readers: hook hot path uses .load(acquire); other call
+    // sites also use .load(acquire) for uniform pattern (cost = MOV on x86).
+    std::atomic<bool> autoCaps_{false};
+    std::atomic<bool> autoCapsMacro_{false};
+    std::atomic<bool> tempOffByAlt_{false};
+    bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word; same-thread (hook) only
     int altTapCount_ = 0;              // 0 or 1 (waiting for second tap)
     DWORD lastAltReleaseTime_ = 0;     // GetTickCount() of first Alt release
     static constexpr DWORD DOUBLE_ALT_TIMEOUT_MS = 400;
@@ -228,21 +232,29 @@ private:
     };
     AutoCapState autoCapState_ = AutoCapState::Idle;
     std::unordered_set<std::wstring> excludedAppSet_;  // excluded apps: force English on focus
-    bool isExcludedApp_ = false;      // cached: current app is excluded
-    DWORD excludedPid_ = 0;           // PID of excluded app (fast check in ProcessKeyDown)
+    // Sprint 1 D5.2: per-app cached + macro config flags read on hook callback
+    // path. Writers: ApplyConfig (main), ReloadFromToml (main),
+    // OnFocusChanged + RefreshFocusCache (main, via WinEventProc),
+    // VerifyExcludedState (main), ToggleVietnameseMode (main).
+    // Readers: ProcessKeyDown / ProcessKeyUp / HandleAlphaKey / output dispatch
+    // (DispatchSendInput, SendCharEvents, SendBackspaces) on the hook hot path
+    // — all use .load(acquire). Same-thread reads on writer paths use the
+    // same idiom for uniformity (cost = MOV on x86).
+    std::atomic<bool> isExcludedApp_{false};      // cached: current app is excluded
+    std::atomic<DWORD> excludedPid_{0};           // PID of excluded app (fast check in ProcessKeyDown)
     std::unordered_set<std::wstring> tsfAppSet_;  // apps that should use TSF engine instead of hook
     // Sprint 1 D5.1: migrated to std::atomic. Writers: ReloadFromToml (main) +
     // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +
     // ProcessKeyUp early-return gates on the hook hot path.
     std::atomic<bool> isTsfApp_{false};       // cached: is current foreground app in TSF list?
-    bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?
-    bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
+    std::atomic<bool> isConsoleApp_{false};   // cached: is current foreground app a console emulator?
+    std::atomic<bool> isElectronApp_{false};  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
     std::unordered_set<std::wstring> webView2PositiveCache_;  // full exe path → known WebView2 host (positive-only; see IsWebView2App)
-    bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
-    bool needBaitChar_ = false;   // Apps with autocomplete/suggest need U+202F bait before BS
-    bool useClipboardPaste_ = false;  // VB6 and legacy ANSI-internal apps need clipboard paste
-    bool useEditMsgPath_ = false;     // Async-render apps (Win11 new Notepad) — try EM_REPLACESEL first, fall to SendInput
-    bool isOutlookApp_ = false;   // Outlook 2016 RichEdit drops trailing char of a word when physical Shift+letter precedes it — force SendInput path (issue #97)
+    std::atomic<bool> skipEmptyChar_{false};  // Skip U+202F for Qt/Electron and Console apps
+    std::atomic<bool> needBaitChar_{false};   // Apps with autocomplete/suggest need U+202F bait before BS
+    std::atomic<bool> useClipboardPaste_{false};  // VB6 and legacy ANSI-internal apps need clipboard paste
+    std::atomic<bool> useEditMsgPath_{false};     // Async-render apps (Win11 new Notepad) — try EM_REPLACESEL first, fall to SendInput
+    std::atomic<bool> isOutlookApp_{false};   // Outlook 2016 RichEdit drops trailing char of a word when physical Shift+letter precedes it — force SendInput path (issue #97)
     DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
     bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
@@ -287,11 +299,15 @@ private:
     DWORD commitReadyTime_ = 0;                 // GetTickCount() when entering Ready state
 
     // Macro expansion
-    bool macroEnabled_ = false;
-    bool macroInEnglish_ = false;
-    bool tempOffMacroByEsc_ = false;  // Config: Esc can temp-disable macro
-    bool tempMacroOff_ = false;       // Runtime: macro disabled for current word
-    bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits (macro key has punctuation)
+    // Sprint 1 D5.2: macroEnabled_, macroInEnglish_, tempOffMacroByEsc_ migrated
+    // to std::atomic — read on hook hot path (ProcessKeyDown step 2c, alpha key
+    // path, TryExpandMacro). tempMacroOff_ / macroCrossCommit_ are per-word
+    // runtime state on the hook thread only — no atomic needed.
+    std::atomic<bool> macroEnabled_{false};
+    std::atomic<bool> macroInEnglish_{false};
+    std::atomic<bool> tempOffMacroByEsc_{false};  // Config: Esc can temp-disable macro
+    bool tempMacroOff_ = false;       // Runtime: macro disabled for current word; same-thread (hook) only
+    bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits; same-thread (hook) only
     std::unordered_map<std::wstring, std::wstring> macroTable_;
     std::unordered_set<std::wstring> spaceMacroKeys_;  // subset of macroTable_ keys that contain ' '
     std::wstring rawMacroBuffer_;
