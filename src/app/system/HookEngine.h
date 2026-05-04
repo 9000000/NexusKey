@@ -188,7 +188,19 @@ private:
 
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
-    TypingConfig config_;                            // Last applied config (for per-app engine recreation)
+    // Sprint 1 D6: migrated to std::atomic<std::shared_ptr<const TypingConfig>>
+    // (Rule #11.3 RCU pattern). Writers (main thread): Start, QuickSyncFromSharedState,
+    // ReloadFromToml — create a fresh shared_ptr with the new config and store with
+    // release ordering. Readers (hook hot path): IsMacroTrigger loads once per
+    // call and dereferences the loaded shared_ptr. The old config object stays
+    // alive while readers hold their loaded shared_ptr, so no use-after-free is
+    // possible even when a writer publishes mid-keystroke. Initialized with a
+    // default TypingConfig so the field is never nullptr — Start overwrites it
+    // before the hook thread is spawned, but the default-init guards against
+    // any pre-Start IsMacroTrigger access path.
+    std::atomic<std::shared_ptr<const TypingConfig>> config_{
+        std::make_shared<const TypingConfig>()
+    };  // Last applied config (for per-app engine recreation)
     // Sprint 1 D5.1: migrated to std::atomic for hook-thread-safe read without
     // stateMutex_ (Rule #11.3 acquire/release). Writers: ApplyConfig (main),
     // QuickSyncFromSharedState (hook — same thread as readers), ReloadFromToml

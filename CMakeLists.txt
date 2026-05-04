@@ -399,6 +399,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/EngineBenchmarkTest.cpp
     tests/MacroPrefixTest.cpp
     tests/HookEngineAtomicTests.cpp
+    tests/TypingConfigRCUTests.cpp
     src/app/system/UpdateSecurity.cpp
 )
 

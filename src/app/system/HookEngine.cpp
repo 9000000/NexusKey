@@ -108,7 +108,7 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
 
     s_instance = this;
     currentMethod_.store(config.inputMethod, std::memory_order_release);
-    config_ = config;
+    config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
     ApplyConfig(config);
     if (macroEnabled_.load(std::memory_order_acquire)) {
         ReloadMacroTable();
@@ -450,7 +450,7 @@ void HookEngine::QuickSyncFromSharedState() {
 
     NEXTKEY_LOG(L"HookEngine: SharedState changed (ff=0x%04X, spell=%d, method=%d, ct=%d)", ff, sc, im, ct);
 
-    TypingConfig cfg = config_;
+    TypingConfig cfg = *config_.load(std::memory_order_acquire);
     DecodeFeatureFlags(ff, cfg);
     cfg.spellCheckEnabled = sc != 0;
     cfg.inputMethod = static_cast<InputMethod>(im);
@@ -459,7 +459,7 @@ void HookEngine::QuickSyncFromSharedState() {
     bool methodChanged = (currentMethod_.load(std::memory_order_acquire) != cfg.inputMethod);
     bool codeTableChanged = (currentCodeTable_ != cfg.codeTable);
     ApplyConfig(cfg);
-    config_ = cfg;
+    config_.store(std::make_shared<const TypingConfig>(cfg), std::memory_order_release);
 
     if (methodChanged) {
         currentMethod_.store(cfg.inputMethod, std::memory_order_release);
@@ -523,7 +523,7 @@ void HookEngine::ReloadFromToml() {
         CommitComposition();
     }
     currentMethod_.store(config.inputMethod, std::memory_order_release);
-    config_ = config;
+    config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
     engine_ = EngineFactory::Create(config);
     {
         const InputMethod loggedMethod = currentMethod_.load(std::memory_order_acquire);
@@ -598,7 +598,7 @@ void HookEngine::ReloadFromToml() {
                 ? static_cast<InputMethod>(it->second) : globalInputMethod_;
             if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
                 currentMethod_.store(targetMethod, std::memory_order_release);
-                TypingConfig engineConfig = config_;
+                TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
                 engineConfig.inputMethod = targetMethod;
                 engine_ = EngineFactory::Create(engineConfig);
                 NEXTKEY_LOG(L"HookEngine: re-applied inputMethod=%d for '%s'",
@@ -2660,7 +2660,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
             ? static_cast<InputMethod>(it->second) : globalInputMethod_;
         if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
             currentMethod_.store(targetMethod, std::memory_order_release);
-            TypingConfig engineConfig = config_;
+            TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
             engineConfig.inputMethod = targetMethod;
             engine_ = EngineFactory::Create(engineConfig);
             HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
@@ -3069,15 +3069,20 @@ bool HookEngine::IsMacroTrigger(DWORD vkCode) const {
     // If not a commit trigger natively, it shouldn't trigger macro either
     if (!IsCommitTrigger(vkCode)) return false;
 
-    if (vkCode == VK_SPACE) return config_.macroTriggerSpace;
-    if (vkCode == VK_RETURN) return config_.macroTriggerEnter;
-    if (vkCode == VK_TAB) return config_.macroTriggerTab;
-    
+    // Sprint 1 D6: snapshot the RCU shared_ptr once for the call. The loaded
+    // shared_ptr keeps the config object alive even if a writer (ApplyConfig
+    // / ReloadFromToml) publishes a new config mid-call — safe internal
+    // consistency without stateMutex_ acquisition on the hook hot path.
+    auto cfg = config_.load(std::memory_order_acquire);
+    if (vkCode == VK_SPACE) return cfg->macroTriggerSpace;
+    if (vkCode == VK_RETURN) return cfg->macroTriggerEnter;
+    if (vkCode == VK_TAB) return cfg->macroTriggerTab;
+
     // Direction / Navigation
-    if (vkCode >= VK_LEFT && vkCode <= VK_DOWN) return config_.macroTriggerDir;
+    if (vkCode >= VK_LEFT && vkCode <= VK_DOWN) return cfg->macroTriggerDir;
     if (vkCode == VK_HOME || vkCode == VK_END ||
-        vkCode == VK_PRIOR || vkCode == VK_NEXT) return config_.macroTriggerDir;
-        
+        vkCode == VK_PRIOR || vkCode == VK_NEXT) return cfg->macroTriggerDir;
+
     return true; // Numbers, Punctuation, Esc, etc. default to true if they are commit triggers
 }
 
