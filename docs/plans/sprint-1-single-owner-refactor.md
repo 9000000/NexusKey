@@ -2,14 +2,14 @@
 
 > **Branch:** `refactor/phase-1-single-owner`
 > **Foundation:** [`docs/PHILOSOPHY.md`](../PHILOSOPHY.md), [`docs/CODING_RULES/11-hook-system-rules.md`](../CODING_RULES/11-hook-system-rules.md)
-> **Gate (expanded after pre-mortem 2026-05-04):**
+> **Gate (revised after D1 baseline 2026-05-04):**
 > - Chaos corpus: ≥ 5 PASS, ≥ 1 FAIL flip vs `perf-baseline-43fb4c1`
-> - Hook callback p99: ≤ 16 ms
-> - **Sustained 200wpm forward test:** error rate decrease ≥ 30 % vs D1 baseline
-> - **Sustained edit (typo + cross-word) test:** no regression vs D2 baseline; ≥ 30 % improvement is target
+> - Hook callback p99: ≤ 16 ms (chaos)
+> - **Sustained 200wpm forward test:** no regression vs D1 baseline (`0.41 %` error). The original "≥ 30 % improvement" wording is removed — D1 captured master at 0.41 %, so 30 % of that is below measurement noise. See `docs/baselines/perf-baseline-3459642-sustained-forward.md` Observation #3.
+> - **Sustained edit (typo + cross-word) test:** no regression vs D2 baseline; ≥ 30 % improvement is target (D2 baseline TBD).
 > **Frozen test corpora:**
 > - `tools/NextKeyTestRunner/corpus/chaos.toml` (11 cases, current: 5 PASS / 6 FAIL)
-> - (NEW) `tools/NextKeyTestRunner/corpus/sustained.toml` — added in Phase A0
+> - `tools/NextKeyTestRunner/corpus/sustained.toml` (1 case `forward-200wpm-sustained`, locked in D1; D2 will append edit cases)
 > **Foundation commit (already landed on this branch):** `0e5322e` (PHILOSOPHY + Rule #11 + PROJECT_MAP read-first)
 
 ---
@@ -82,28 +82,22 @@ Every phase below is governed by the three pre-code questions (PHILOSOPHY §3): 
 - **DoD:** all 3 unit-test files pass on Linux. Manual: `./NextKeyTestRunner --convert "có dấu việt"` outputs `cos daasu vieejt`.
 - **Commit:** `Sprint 1 D0: NextKeyTestRunner — text field, --convert CLI, edit_distance verdict`
 
-### D1 — Encode + run forward-only sustained baseline
+### D1 — Encode + run forward-only sustained baseline ✅ DONE
 
-- **Q1:** New corpus file `tools/NextKeyTestRunner/corpus/sustained.toml`. Source paragraph reused from brainstorm 2026-05-03 Phase 3 line 238 (~200 Vietnamese words).
+**Status:** Completed 2026-05-04. Baseline locked at `0.41 %` error.
+
+- **Q1:** New corpus file `tools/NextKeyTestRunner/corpus/sustained.toml`. Source paragraph reused from `tools/NextKeyTestRunner/tests/TelexGolden.h:218` (already golden-tested vs vn-str). Two `Điều này` sentence-openers rewritten to `Việc này` because uppercase Đ (U+0110) is not typeable via `VkKeyScanW` on a US layout — pattern documented in baseline.md for D2.
 - **Q2:** Adds one new corpus file. No code change.
-- **Q3:** Considered multiple smaller cases vs one long case; chose one long case to capture sustained engine state under realistic typing pressure (the whole point of "sustained"). A 200-word run takes ~10 seconds at 50 ms inter-key — fast enough to iterate.
-- **Test-first:** the corpus case itself is the test artifact. Pre-condition: D0 must pass.
-- **Implementation:**
-  ```toml
-  [forward-200wpm]
-  description = "200 Vietnamese words, realistic 200wpm, no edits"
-  text = "Hôm nay mình mở máy sớm hơn thường lệ, ..."   # full ~200 words from brainstorm
-  inter_key_us = 50_000
-  verdict_mode = "edit_distance"
-  expected = "Hôm nay mình mở máy sớm hơn thường lệ, ..."   # same source string
-  threshold_pct = 99.0
-  ```
-- **Run:** Windows full build → start NexusKey debug → `NextKeyTestRunner --corpus sustained.toml --perf-csv ... --junit ...`.
-- **DoD:**
-  - Output committed: `docs/baselines/perf-baseline-<sha>-sustained-forward.csv` + `.xml` + `.md`.
-  - Baseline.md records: error rate %, top-10 error patterns (e.g. "ệ→ệ swap 3×", "missing tone 5×"), L1 hook timing distribution.
-  - This is the "before" picture against which Phase A spike + Phase B/C/D refactor will be compared.
-- **Commit:** `Sprint 1 D1: lock forward-200wpm sustained baseline (error rate <X.X>%)`
+- **Q3:** Considered multiple smaller cases vs one long case; chose one long case to capture sustained engine state under realistic typing pressure. A 200-word run took 86.7 s at 50 ms inter-key — fast enough to iterate.
+- **Test-first:** the corpus case itself is the test artifact. Pre-condition: D0 must pass (and did).
+- **Outcome (locked baseline):**
+  - Verdict: PASS at threshold 99 %.
+  - Error rate: **0.41 %** (5 chars wrong out of ~1500 expected).
+  - L1 hook timing: mean 52 ms, p99 60 ms, max 65 ms (over 1 631 keydowns).
+  - Wall-clock: 86.743 s.
+  - Files: `docs/baselines/perf-baseline-3459642-sustained-forward.{csv,xml,md}`.
+- **Significant finding for the plan:** Forward typing at realistic pace is already near-perfect at master state. The "≥ 30 % improvement" gate was removed for this dimension (30 % of 0.41 % = 0.12 %, below measurement noise). Forward sustained is now a **no-regression** anchor; the interesting improvement signal will live in chaos FAIL flips and (after D2) the sustained-edit baseline.
+- **Commit:** `Sprint 1 D1: lock forward-200wpm sustained baseline (0.41 % error, 5 chars)`
 
 ### D2 — Encode + verify cross-word edit cases
 
@@ -254,12 +248,13 @@ The spike outcome is committed alongside the corpus output; future readers of th
 ### D12 — Full chaos + sustained validation against gate
 
 - Run `NextKeyTestRunner --corpus chaos.toml` and `--corpus sustained.toml` against the post-D11 build.
-- **DoD (HANDOFF gate, expanded):**
+- **DoD (HANDOFF gate, revised after D1):**
   - Chaos: ≥ 5 PASS (no regression vs `perf-baseline-43fb4c1`)
   - Chaos: ≥ 1 FAIL flipped to PASS
-  - Sustained forward: error rate ≥ 30 % below D1 baseline
-  - Sustained edit: no regression vs D2 baseline (≥ 30 % improvement is target)
-  - Hook callback p99: ≤ 16 ms
+  - Sustained forward: ≤ 0.41 % error (no regression vs D1 baseline `3459642`)
+  - Sustained edit: no regression vs D2 baseline (≥ 30 % improvement is target — TBD when D2 baseline exists)
+  - Hook callback p99: ≤ 16 ms (chaos burst input)
+  - Hook L1 sustained: mean ≤ 53 ms / p99 ≤ 62 ms / max ≤ 67 ms (no regression vs D1)
 - If gate not met:
   - Outcome A path (D4): identify which Phase B/C migration introduced the regression; fix and re-run.
   - Outcome B path (D4): insert **D12.5** — engine-level fix for the cheapest single FAIL (likely `5.2 uống` per failure-categorization table in `perf-baseline-43fb4c1.md`). Re-run corpora.

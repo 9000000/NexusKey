@@ -1,64 +1,152 @@
-# NexusKey Refactor — Phase 0a Handoff
+# NexusKey Refactor — Sprint 1 Handoff (D1 done, D2 next)
 
 ## TL;DR
 
 NexusKey's hook engine has long-standing race-condition bugs (x2 space, ghost
-key, tone misplacement under fast typing). We brainstormed a 5-phase refactor
-(Single-Owner architecture, IOutputInjector factory, ...) but realized we
-couldn't measure success without a deterministic test harness.
+key, tone misplacement under fast typing). Phase 0a built the test harness;
+Sprint 1 (this branch) is bringing the hook into compliance with the
+just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
 
-**Phase 0a built that harness.** It's complete, locked, and ready for PR.
-Baseline: **5 PASS / 6 FAIL** on an 11-case stress corpus, **L1 hook p99 = 16 ms**
-worst case. Phase 1+ refactor work measures itself against this frozen state.
+**Where we are right now (2026-05-04):** Foundation docs + test infrastructure
+done. Baselines locked. **The single-owner refactor itself has not started** —
+that begins at D3 (diagnostic spike) per the plan. A teammate continuing here
+should pick up at **D2** (sustained-edit corpus encoding) before D3 unlocks.
+
+| Layer | Status | Reference |
+|---|---|---|
+| Project philosophy + Rule #11 | ✅ Committed `0e5322e` | `docs/PHILOSOPHY.md`, `docs/CODING_RULES/11-hook-system-rules.md` |
+| Sprint 1 plan (14-day, A0→A→B→C→D→E) | ✅ Committed `ec9798e` | `docs/plans/sprint-1-single-owner-refactor.md` |
+| D0: NextKeyTestRunner extensions (text field, --convert, edit_distance) | ✅ Committed `a372a27` + Windows fix `3459642` | `tools/NextKeyTestRunner/` |
+| D1: Sustained forward baseline locked | ✅ **0.41 % error** at master | `docs/baselines/perf-baseline-3459642-sustained-forward.{csv,xml,md}` |
+| D2: Sustained edit baseline (typo + cross-word) | 🔜 **NEXT** | corpus to extend in `tools/NextKeyTestRunner/corpus/sustained.toml` |
+| D3+: Diagnostic spike, foundation refactor, MainThreadWorker, drop mutex | ⏳ Per plan | `docs/plans/sprint-1-single-owner-refactor.md` |
 
 ## Branch state
 
-- Branch: `refactor/phase-0a-test-runner` (15 commits ahead of master `43fb4c1`)
-- Cross-platform tests: **250 / 250** pass on Linux + Windows MSVC
-- Tool location: `tools/NextKeyTestRunner/`
-- Frozen baseline: `docs/baselines/perf-baseline-43fb4c1.{md,csv,xml}`
-- Branch only adds tooling. The single comment-only diff in
-  `src/app/system/HookEngine.cpp` does not change runtime behavior.
+- Branch: `refactor/phase-1-single-owner` (4 commits ahead of master `43fb4c1`)
+- Cross-platform tests: **281 / 281** pass on Linux (Windows MSVC verified)
+- Tool location: `tools/NextKeyTestRunner/` (now with `--convert`, `text` field, `edit_distance` verdict)
+- Frozen baselines:
+  - `docs/baselines/perf-baseline-43fb4c1.{md,csv,xml}` — chaos corpus (11 cases, 5 PASS / 6 FAIL)
+  - `docs/baselines/perf-baseline-3459642-sustained-forward.{md,csv,xml}` — sustained forward (1 case, 0.41 % error)
+- Branch adds docs + test infra only. **No production code touched yet.** The single-owner refactor begins at D3.
 
-## Read in this order
+## Significant finding from D1
 
-1. **`_bmad-output/brainstorming/brainstorming-session-2026-05-03-1201.md`** (986 lines)
-   The full design dialog: Reverse Brainstorm → Constraint Mapping → Chaos Engineering
-   → Subsystem Compatibility → Crash Resilience → (extension) Six Thinking Hats
-   → First Principles → SCAMPER → Idea Organization with Sprint 0a-5 plan.
-   Search "Phase 7" for the actionable sprint table.
+Master state already handles realistic forward Vietnamese typing at **0.41 % error
+rate** — chaos-style bugs are speed-bound and don't reproduce at 50 ms inter-key.
+This means:
 
-2. **`docs/baselines/perf-baseline-43fb4c1.md`**
-   Frozen reference state, per-case L1 timing, failure categorization for
-   Phase 1+ planning, reproduction steps, and the **Phase 1 merge gate**
-   (must not regress 5/11 PASS, must fix ≥1 FAIL).
+1. The original "≥ 30 % improvement on sustained forward" gate is unworkable
+   (30 % of 0.41 % is below noise). Plan revised: forward sustained is now
+   "no-regression" anchor only.
+2. The interesting Sprint 1 movement signal will live in **chaos FAIL flips**
+   (≥ 1 of 6) and **D2 sustained-edit baseline** (when it exists). Forward
+   typing is solid territory; bugs cluster in edit scenarios (BS-and-retry,
+   cross-word backspace) per chaos category 5.3 and brainstorm Phase 3.
 
-3. **`tools/NextKeyTestRunner/README.md`**
-   Build + run + CLI flag reference + source layout.
+See `docs/baselines/perf-baseline-3459642-sustained-forward.md` Observations
+#1–3 for the full reasoning.
 
-4. **`git log 43fb4c1..HEAD --oneline`** plus full bodies — every commit has
-   10-30 lines of context (what + why + manual smoke test results).
+## Read in this order (for a teammate picking up D2)
 
-## Sprint 1 (next, 2 weeks): Single-Owner Architecture
+1. **`docs/PHILOSOPHY.md`** (~10 min)
+   Four pillars (Nhanh / Nhẹ / Mượt / Mở rộng-no-runtime-cost), test-first,
+   three pre-code questions. Highest-level filter for all design decisions.
 
-**Spec:** brainstorm session Phase 7.4 row 1 + Phase 6.3 SCAMPER design
-(`WaitOnAddress` + 1-thread worker for config event + heartbeat).
+2. **`docs/CODING_RULES/11-hook-system-rules.md`** (~5 min)
+   Operationalizes Pillar #1 — 1 ms hook budget, forbidden ops, contention
+   law, atomic + RCU patterns, two-phase classification. Mandatory before
+   touching anything reachable from `LowLevelKeyboardProc`.
 
-**Files to touch:**
-- `src/app/system/HookEngine.cpp` — single-owner refactor (drop `recursive_mutex`)
-- `src/core/ipc/SharedStateManager.cpp` — atomic flag publication
-- New `src/app/system/MainThreadWorker.{h,cpp}` for config + heartbeat
+3. **`docs/plans/sprint-1-single-owner-refactor.md`** (~10 min)
+   The 14-day plan. D0–D1 are ✅. **Pick up at D2.** Each day has Q1/Q2/Q3
+   pre-code answers, test-first artifact, DoD, and commit message draft.
 
-**Gate (must hold before merge):**
-- ≥ 5 PASS on chaos corpus (no PASS regression)
-- ≥ 1 new PASS (must fix at least one of the 6 known FAILs)
-- p99 hook callback ≤ 16 ms (current baseline)
+4. **`docs/baselines/perf-baseline-43fb4c1.md`** (chaos baseline, 5 PASS / 6 FAIL)
+   and **`docs/baselines/perf-baseline-3459642-sustained-forward.md`**
+   (sustained forward, 0.41 % error). The "before" pictures Sprint 1 must
+   not regress.
+
+5. **`_bmad-output/brainstorming/brainstorming-session-2026-05-03-1201.md`**
+   (986 lines) — full design history. Phase 6.3 SCAMPER + Phase 7.4 sprint
+   table. Read only if Sprint 1 hits an unexpected blocker; otherwise the
+   plan + rules are sufficient.
+
+6. **`_bmad-output/brainstorming/brainstorming-session-2026-05-04-0734.md`**
+   pre-mortem session that produced the philosophy + plan. Optional, but
+   shows the reasoning behind the assumption verdicts.
+
+7. **`git log 43fb4c1..HEAD --oneline`** plus full bodies — every commit has
+   pre-code questions answered + test diff. Read commit `a372a27` (D0
+   infrastructure) and `3459642` (Windows fix) for the testing patterns.
+
+8. **`tools/NextKeyTestRunner/README.md`** + the runner's `--help` output —
+   for `--corpus`, `--convert`, `--hook-log` flag references.
+
+## Sprint 1 — D2 next (sustained edit baseline)
+
+**Goal:** Encode 2–3 cases for typo + cross-word edit scenarios into
+`tools/NextKeyTestRunner/corpus/sustained.toml`, run them on the SAME
+master `43fb4c1` runtime that the rest of D0–D1 measured, lock the
+baseline.
+
+**Approach (per plan §A0 D2):**
+
+Each scenario built from the `text_with_edits`-style pattern:
+- Pure text segments → run through `Telex.h::StrToTelex` (use the new `text` field; auto-converts).
+- Backspace interjections → explicit `\b` characters or `keys` field.
+- For each case: write expected as the *intended Vietnamese final text*,
+  drive the actual sequence, observe what the engine produces, set
+  `expected = <observed>` if it matches user expectation. **Do not predict
+  the output from telex math — verify on the actual engine.**
+
+Verify any hand-written telex via the new CLI:
+```powershell
+.\build\tools\Debug\NextKeyTestRunner.exe --convert "việt có dấu"
+# -> vieejt cos daasu
+```
+
+Reference scenario types (see plan A0 §D2):
+- `inline-typo-correction` — type a wrong letter mid-word, BS, retype.
+- `cross-word-edit-fix` — type a word, commit, BS past committed text,
+  retype to fix. (User's example: `việt có dấu` → BS×N → `viết có dấu`.)
+- `mixed-edit-session` — 50 forward + 3 typos + 1 cross-word edit (optional).
+
+**DoD for D2:** baseline files
+`docs/baselines/perf-baseline-<sha>-sustained-edit.{csv,xml,md}` committed.
+Each new case in `sustained.toml` has a comment citing kTable lines
+(`Telex.h:25–44`) for hand-written telex segments.
+
+**Anti-pattern reminder (from `feedback_never_hand_encode_telex` memory):**
+Do NOT generate Vietnamese telex from memory. Always cite the kTable entry.
+The `--convert` CLI is the source of truth.
+
+## Sprint 1 — D3+ (refactor proper)
+
+After D2 baseline is locked, the diagnostic spike begins (D3 lock pre-spike
+snapshot, D4 minimal mutex drop). See plan for full day-by-day. The 3 Rule
+#11 violations to remove:
+
+| File:line | Function |
+|---|---|
+| `src/app/system/HookEngine.cpp:647` | `LowLevelKeyboardProc` |
+| `src/app/system/HookEngine.cpp:677` | `WinEventProc` |
+| `src/app/system/HookEngine.cpp:705` | `LowLevelMouseProc` |
+
+**Gate (revised after D1):**
+- Chaos: ≥ 5 PASS, ≥ 1 FAIL flip vs `perf-baseline-43fb4c1`.
+- Hook callback p99: ≤ 16 ms (chaos burst).
+- Sustained forward: no regression vs D1 baseline (≤ 0.41 % error).
+- Sustained edit: no regression vs D2 baseline (≥ 30 % improvement target).
 
 **Verification per commit:**
-1. Build NexusKey debug + restart
+1. Build NexusKey debug + restart.
 2. `NextKeyTestRunner --corpus chaos.toml --hook-log ... --junit ... --perf-csv ...`
-3. Diff `perf-baseline-<new-sha>.csv` vs `perf-baseline-43fb4c1.csv`
-4. On merge, commit new baseline as `docs/baselines/perf-baseline-<sha>.{md,csv,xml}`
+3. `NextKeyTestRunner --corpus sustained.toml --hook-log ... --junit ... --perf-csv ...`
+4. Diff against baselines.
+5. On merge, commit new baselines as
+   `docs/baselines/perf-baseline-<sha>-{chaos,sustained-forward,sustained-edit}.{csv,xml,md}`.
 
 ## Known limitations (do NOT re-discover)
 
@@ -68,6 +156,8 @@ worst case. Phase 1+ refactor work measures itself against this frozen state.
 | L1 timing only via post-mortem log parse (NexusKey buffers + locks log while running) | commit `2efd180` body | Tool prompts user to stop NexusKey at end of run |
 | **Heisenbug**: `_IONBF` log slowed hook enough to mask race-condition bugs entirely | commit `d58bb4e` revert + `2efd180` body | **DO NOT re-enable `_IONBF`** without verifying bugs still reproduce against baseline |
 | Uppercase Vietnamese passthrough in `--raw` mode returns false from VkKeyScanW | commit `fd4a14f` body | Use lowercase Vietnamese in TOML `keys` field |
+| Uppercase Đ (U+0110) in `text` field also fails — `StrToTelex` passes uppercase through and `VkKeyScanW(Đ) == -1` on US layout | D1 baseline `3459642`, commit body | Edit Vietnamese source paragraphs to avoid uppercase Đ; e.g. `Điều này` → `Việc này`. ASCII uppercase (H, K, M, V, ...) is fine. |
+| `std::min({initializer-list})` breaks under MSVC after `Windows.h` (min macro) | D0 fix commit `3459642`, memory `feedback_windows_min_max_macros` | Use `(std::min)(a, (std::min)(b, c))` paren-trick form in headers that may be included after `Windows.h`. |
 
 ## Sprint 1-5 roadmap (from brainstorm Phase 7.4)
 
@@ -100,7 +190,7 @@ cmake -B build-linux -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-linux --target NextKeyTestRunnerTests
 ./build-linux/tests/NextKeyTestRunnerTests
 ```
-Expected: 250 / 250 tests pass in < 5 ms.
+Expected: **281 / 281** tests pass in < 5 ms (was 250 before D0 added EditDistance + CliConvert + new TomlLoader cases).
 
 ### Windows full build (from WSL)
 ```bash
