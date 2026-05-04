@@ -1,4 +1,4 @@
-# NexusKey Refactor — Sprint 1 Handoff (D7 done, D8+ next)
+# NexusKey Refactor — Sprint 1 Handoff (D7 done; D11 IN PROGRESS — pending re-run + decision)
 
 ## TL;DR
 
@@ -7,18 +7,154 @@ key, tone misplacement under fast typing). Phase 0a built the test harness;
 Sprint 1 (this branch) is bringing the hook into compliance with the
 just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
 
-**Where we are right now (2026-05-04):** Foundation + Phase A spike + **Phase
-B complete (D5 + D5.1 + D5.2 + D6 + D7)** — all hook-read state on
-`HookEngine` is Rule #11.3-compliant (18 atomic primitives + 1 RCU
-shared_ptr struct), and a CI-integrated audit script enforces the
-guarantees on every Windows build. L1 worst-case chaos p99 trajectory: D4
-17 ms → D5 18 ms → D5.1 16 ms → D5.2 16 ms → D6 18 ms (at the D12 merge
-gate cap). The 3 commented hook-thread `lock_guard` lines from D4 are now
-formally proven unreachable by the D7 audit; they remain as historical
-markers (deletion deferred to a later cleanup commit). Pick up at **D8**
-(MainThreadWorker — async queue for hook→main work, e.g. ConfigEvent reload
-+ macro persistence) or **D11** (drop `recursive_mutex` → `std::mutex`),
-then **D12.5** (engine-level fix for chaos 3.3) per plan §C/§D.
+**Where we are right now (2026-05-04 evening — pause before resolving D11
+regression):** Phase B is committed clean through D7 (`9f77412`). D11
+(`recursive_mutex` → `std::mutex`) is **WIP**: code edits done, Linux build
++ Linux 1381/1381 GTest + D7 audit all pass, but Windows chaos run 1
+flagged a **stable PASS regression on case 5.1** (`Giar` → `Gảa`, was PASS
+`Giả` consecutively across D3 / D4 / D5 / D5.1 / D5.2 / D6 — 6-streak
+broken). Working tree has uncommitted changes; D11 is NOT committed.
+
+**Resume order (pick one, then commit or revert):**
+
+1. **Re-run chaos on Windows to disambiguate heisenbug vs regression.**
+   Same command as below (Resume — Test commands), overwriting
+   `docs/baselines/junit-baseline-d11-plain-mutex-chaos.{xml,csv}`. Decision
+   gate after re-run:
+   - **5.1 PASS on re-run** → heisenbug noise. Run sustained, then commit
+     D11 with chaos run 2 as locked baseline. Note 5.1 anomaly in the .md.
+   - **5.1 FAIL on re-run** → confirmed regression. See investigation
+     hypotheses below. Either fix or revert D11.
+
+2. **Investigation hypotheses (only if 5.1 FAIL on re-run):**
+
+   - **H1 (most likely): `FocusPollTimerProc` restructure**. D11 split the
+     locked region so `OnFocusChanged` is called WITHOUT `stateMutex_`
+     held (was held before). `OnFocusChanged` writes a lot of plain
+     non-atomic state (`currentExe_` wstring, `excludedAppSet_` /
+     `tsfAppSet_` reads, `appModeMap_` writes). Hook-thread paths that
+     read `currentExe_` (mostly logs but check) could observe
+     mid-write data. **Most relevant to 5.1 specifically**: if
+     `ResetComposition` fires during `OnFocusChanged` (fires
+     unconditionally per WinEventProc line 712 + FocusPoll line 2379 path,
+     would clear engine state mid-burst). Trace the 5.1 hook log
+     (`build/Debug/NexusKey_hook.log` after a failing run) for any
+     `FOCUS changed` / `FOCUS poll` line during the typing burst.
+
+   - **H2: `ApplyConfig` self-lock removal**. `ApplyConfig` no longer
+     locks; callers must hold the lock. The 3 internal callers all do
+     (Start, QuickSyncFromSharedState, ReloadFromToml's caller
+     CheckConfigEvent). But `ProcessKeyDown` → `QuickSyncFromSharedState`
+     on the hook thread acquires the lock — and `QuickSync` then calls
+     `ApplyConfig` while holding the lock, which is correct but means the
+     hook thread takes the mutex on every keystroke (pre-existing
+     Rule #11 violation, was masked by `recursive_mutex`'s
+     reentrant-friendly mental model). Less likely to cause 5.1
+     specifically but worth ruling out.
+
+3. **Possible fix for H1 (if confirmed):** revert `FocusPollTimerProc`
+   restructure and instead fix the recursion at the QuickSync side:
+   ```
+   void QuickSyncFromSharedState() {
+       std::unique_lock<std::mutex> lk(stateMutex_, std::defer_lock);
+       // Caller may already hold the mutex (FocusPollTimerProc path).
+       // try_lock: if main thread already holds it, we're called in the
+       // already-locked context — proceed without re-acquiring.
+       if (!lk.try_lock()) {
+           // Caller holds the lock; proceed without re-acquiring.
+       }
+       // ... rest of logic ...
+   }
+   ```
+   But `try_lock` semantics are subtle and `unique_lock(defer_lock)` +
+   `try_lock` doesn't tell you "I already own it" vs "another thread
+   owns it". Better fix: drop QuickSync's self-lock entirely; require
+   caller. Then `SyncConfigFromSharedState` (public API) and
+   `ProcessKeyDown` (hook) need to lock — but locking on hook violates
+   Rule #11 (the very thing we're trying to remove). So actually the
+   right fix is **defer D11 to after D8** (MainThreadWorker) — D8 moves
+   SharedState polling off the hook thread, eliminating the
+   ProcessKeyDown → QuickSync call path. Then QuickSync becomes
+   main-thread-only, and the lock semantics simplify.
+
+   **Concrete revert command** if going the defer route:
+   ```
+   git checkout -- src/app/system/HookEngine.h src/app/system/HookEngine.cpp
+   rm docs/baselines/junit-baseline-d11-plain-mutex-chaos.xml \
+      docs/baselines/perf-baseline-d11-plain-mutex-chaos.csv
+   ```
+
+**Working tree state at pause (2026-05-04 evening):**
+
+```
+ M src/app/system/HookEngine.cpp     ← D11 lock changes (uncommitted)
+ M src/app/system/HookEngine.h       ← recursive_mutex → mutex (uncommitted)
+?? docs/baselines/junit-baseline-d11-plain-mutex-chaos.xml   ← run 1 output (5.1 FAIL)
+?? docs/baselines/perf-baseline-d11-plain-mutex-chaos.csv    ← run 1 output
+```
+
+**D11 changes summary** (in case `git diff` is unwieldy):
+- `HookEngine.h`: `std::recursive_mutex stateMutex_;` → `std::mutex stateMutex_;` + comment.
+- `HookEngine.cpp` (7 edits):
+  1. All 7 uncommented `lock_guard<std::recursive_mutex>` → `lock_guard<std::mutex>`.
+  2. 3 D4-spike-commented `lock_guard<std::recursive_mutex>` lines preserved as-is (audit Check 1 still PASS).
+  3. `ApplyConfig` self-lock removed (line 87 region) + REQUIRES caller comment block.
+  4. `Start` adds explicit `lock_guard<std::mutex>` around its `ApplyConfig` call (defensive, single-threaded init).
+  5. `QuickSyncFromSharedState` comment updated (no longer claims
+     "recursive_mutex handles both paths").
+  6. `FocusPollTimerProc` restructured: lock-around-CheckLayoutChange-and-PID-update, release before `OnFocusChanged`. **THIS IS THE SUSPECT EDIT for the 5.1 regression.**
+
+**Resume — Test commands:**
+
+```powershell
+# 1. Build (Windows from WSL)
+cd Z:\home\phatmt\code\NexusKey
+cmake --build build --config Debug 2>&1 | Select-String -Pattern "error|warning C"
+
+# 2. Restart NexusKey, fresh Notepad
+
+# 3. Re-run chaos
+cd build\tools\Debug
+.\NextKeyTestRunner.exe `
+  --corpus    ..\..\..\tools\NextKeyTestRunner\corpus\chaos.toml `
+  --hook-log  ..\..\Debug\NexusKey_hook.log `
+  --junit     ..\..\..\docs\baselines\junit-baseline-d11-plain-mutex-chaos.xml `
+  --perf-csv  ..\..\..\docs\baselines\perf-baseline-d11-plain-mutex-chaos.csv `
+  --delay-ms=5000
+
+# 4. If 5.1 PASS → run sustained too:
+.\NextKeyTestRunner.exe `
+  --corpus    ..\..\..\tools\NextKeyTestRunner\corpus\sustained.toml `
+  --hook-log  ..\..\Debug\NexusKey_hook.log `
+  --junit     ..\..\..\docs\baselines\junit-baseline-d11-plain-mutex-sustained.xml `
+  --perf-csv  ..\..\..\docs\baselines\perf-baseline-d11-plain-mutex-sustained.csv `
+  --delay-ms=5000
+```
+
+**Run 1 result (2026-05-04, pre-pause):**
+
+| # | Case | D6 verdict | D11 r1 verdict | D11 r1 actual | Note |
+|---|---|---|---|---|---|
+| 1.1 | ghost-hoaf-bs-t | ✅ PASS | ✅ PASS | hot | byte-identical |
+| 1.2 | tone-ghost-toans-bs3-i | ✅ PASS | ✅ PASS | ti | byte-identical |
+| 1.3 | escape-bs-aa-b | ✅ PASS | ✅ PASS | b | byte-identical |
+| 2.1 | x2-space-vieejt-nam | ❌ FAIL | ❌ FAIL | ệet nami | shifted (heisenbug) |
+| 2.2 | word-boundary-xin-chao-ban | ❌ FAIL | ❌ FAIL | xàạnchao ban | byte-identical |
+| 2.3 | en-vn-transition-hello-vieejt | ❌ FAIL | ❌ FAIL | helệo viet | byte-identical |
+| 3.3 | engine-stress-truongf | ❌ FAIL | ❌ FAIL | ờnương | byte-identical |
+| **5.1** | **case-tracking-Giar** | **✅ PASS** | **❌ FAIL** | **Gảa** | **REGRESSION — 6-streak PASS broken** |
+| 5.2 | vowel-start-uongs | ✅ PASS | ❌ FAIL | ốngg | flip-prone |
+| 5.3 | cross-word-bs-vieejt-nam-bs4-s | ❌ FAIL | ❌ FAIL | tếti | shifted |
+| 6.1 | autocap-binh-thuongf | ❌ FAIL | ❌ FAIL | bình ườngng | shifted |
+
+Net: D6 4P/7F → D11 r1 **3P/8F**. 5.1 + 5.2 both lost.
+
+**L1 timing run 1**: worst p99 = 16 ms (1.1) — well within D12 gate. Timing is NOT the issue; 5.1's L1 was 8 ms, identical to D6.
+
+Pick up at one of:
+- **D11 resolution** (re-run + decide commit vs revert)
+- **D12.5** (engine fix for chaos 3.3) — independent of D11; could be done first if D11 needs more thought
+- **D8** (MainThreadWorker) — would simplify D11 fix path per H1 hypothesis
 
 | Layer | Status | Reference |
 |---|---|---|
