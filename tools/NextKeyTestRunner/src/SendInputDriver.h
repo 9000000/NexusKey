@@ -40,6 +40,10 @@ public:
     // first untypeable char and returns false; otherwise returns true.
     [[nodiscard]] bool SendString(std::u16string_view input) noexcept;
 
+    // Sends a single VK code with explicit modifier state. Use for Ctrl+A,
+    // Ctrl+C, Delete, etc. `vk` is a Win32 virtual key code (e.g. 0x41 for 'A').
+    void SendKeyCombo(uint16_t vk, bool ctrl, bool shift, bool alt) noexcept;
+
 private:
     Options options_;
     bool timerResolutionAcquired_ = false;

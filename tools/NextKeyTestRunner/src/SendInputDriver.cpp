@@ -58,6 +58,19 @@ bool Driver::SendChar(char16_t ch) noexcept {
     return true;
 }
 
+void Driver::SendKeyCombo(uint16_t vk, bool ctrl, bool shift, bool alt) noexcept {
+    if (ctrl)  EmitKeyEvent(VK_CONTROL, false);
+    if (shift) EmitKeyEvent(VK_SHIFT, false);
+    if (alt)   EmitKeyEvent(VK_MENU, false);
+
+    EmitKeyEvent(static_cast<WORD>(vk), false);
+    EmitKeyEvent(static_cast<WORD>(vk), true);
+
+    if (alt)   EmitKeyEvent(VK_MENU, true);
+    if (shift) EmitKeyEvent(VK_SHIFT, true);
+    if (ctrl)  EmitKeyEvent(VK_CONTROL, true);
+}
+
 bool Driver::SendString(std::u16string_view input) noexcept {
     bool first = true;
     for (char16_t ch : input) {

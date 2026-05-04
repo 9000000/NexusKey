@@ -6,34 +6,11 @@
 #include <iterator>
 #include <string>
 
+#include "Encoding.h"
 #include "Telex.h"
 #include "TelexGolden.h"
 
 namespace NextKey::TestRunner::Test {
-
-namespace {
-
-// UTF-16 (BMP only) → UTF-8 for ADD_FAILURE printing. Vietnamese chars all
-// fit in BMP (≤ U+FFFF), so no surrogate-pair handling needed.
-std::string Utf8(std::u16string_view input) {
-    std::string out;
-    out.reserve(input.size() * 3);
-    for (char16_t ch : input) {
-        if (ch < 0x80) {
-            out.push_back(static_cast<char>(ch));
-        } else if (ch < 0x800) {
-            out.push_back(static_cast<char>(0xC0 | (ch >> 6)));
-            out.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
-        } else {
-            out.push_back(static_cast<char>(0xE0 | (ch >> 12)));
-            out.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
-            out.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
-        }
-    }
-    return out;
-}
-
-}  // namespace
 
 // Hardcoded sanity tests — independent of generator.
 TEST(TelexTest, EmptyString) {
@@ -69,9 +46,9 @@ TEST_P(TelexGoldenTest, MatchesVnStr) {
     const std::u16string actual = ::NextKey::TestRunner::Telex::StrToTelex(testCase.input);
     EXPECT_EQ(actual, testCase.expected)
         << "Group:    " << testCase.group << "\n"
-        << "Input:    " << Utf8(testCase.input) << "\n"
-        << "Expected: " << Utf8(testCase.expected) << "\n"
-        << "Actual:   " << Utf8(actual);
+        << "Input:    " << Encoding::Utf16ToUtf8(testCase.input) << "\n"
+        << "Expected: " << Encoding::Utf16ToUtf8(testCase.expected) << "\n"
+        << "Actual:   " << Encoding::Utf16ToUtf8(actual);
 }
 
 INSTANTIATE_TEST_SUITE_P(

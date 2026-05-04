@@ -2,27 +2,33 @@
 // Drives SendInput against a running NexusKey hook, verifies clipboard output,
 // and emits per-keystroke timing for L1 (NexusKey internal) and L2 (end-to-end).
 //
-// Phase 0a status: D3 — SendInput driver wired. No verify yet (D4).
+// Phase 0a status: D4 -- clipboard verify wired. Single-test mode only;
+// multi-test loop with TOML corpus comes in D7+.
 // See _bmad-output/brainstorming/brainstorming-session-2026-05-03-1201.md
 // (Phase 7.3 day-by-day plan) for the full sprint definition of done.
+//
+// Windows-only. Entry is wmain(): we need wide argv so that Vietnamese
+// values like --expected "việt" survive without being squashed to '?' by
+// the ANSI codepage conversion that narrow `main(int, char**)` does.
 
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-#include <string_view>
-
-#ifdef _WIN32
 // clang-format off
 #include <Windows.h>
 // clang-format on
-#include "SendInputDriver.h"
-#endif
 
+#include <cstdio>
+#include <cstdlib>
+#include <cwchar>
+#include <string>
+#include <string_view>
+
+#include "ClipboardReader.h"
+#include "Encoding.h"
+#include "SendInputDriver.h"
 #include "Telex.h"
 
 namespace NextKey::TestRunner {
 
-constexpr const char* kVersion = "0.2.0-d3-driver";
+constexpr const char* kVersion = "0.3.0-d4-verify";
 
 void PrintUsage() {
     std::printf("NextKeyTestRunner v%s\n", kVersion);
@@ -30,37 +36,31 @@ void PrintUsage() {
     std::printf("Usage:\n");
     std::printf("  NextKeyTestRunner.exe                    Print this help\n");
     std::printf("  NextKeyTestRunner.exe --send TEXT [opts] Drive SendInput\n\n");
-    std::printf("Options:\n");
+    std::printf("Send options:\n");
     std::printf("  --send TEXT          Vietnamese or Telex text to type\n");
     std::printf("  --inter-key-us=N     Inter-key delay in microseconds (default 10000)\n");
-    std::printf("  --delay-ms=N         Initial delay before sending (default 3000)\n");
-    std::printf("  --raw                Skip Telex conversion; type TEXT verbatim\n");
+    std::printf("  --delay-ms=N         Initial focus delay (default 3000)\n");
+    std::printf("  --raw                Skip Telex conversion; type TEXT verbatim\n\n");
+    std::printf("Verify options (auto-enables --clear-first):\n");
+    std::printf("  --verify             After send, Ctrl+A+C and read clipboard\n");
+    std::printf("  --expected TEXT      Expected clipboard contents (compared to actual)\n");
+    std::printf("  --clear-first        Send Ctrl+A + Delete before typing\n");
+    std::printf("  --post-send-ms=N     Wait after send before Ctrl+A (default 200)\n\n");
     std::printf("  --help, -h           Show this help\n\n");
-    std::printf("Example:\n");
+    std::printf("Examples:\n");
     std::printf("  NextKeyTestRunner.exe --send vieejt --raw\n");
-    std::printf("    Types raw Telex keystrokes v-i-e-e-j-t. With NexusKey hook\n");
-    std::printf("    active, the target window will display the Vietnamese for\n");
-    std::printf("    'viet' with the dot-below tone mark.\n\n");
-    std::printf("  NextKeyTestRunner.exe --send <vietnamese-text>\n");
-    std::printf("    (run 'chcp 65001' first for UTF-8 console.)\n");
-    std::printf("    Telex.h converts the input back to raw keystrokes,\n");
-    std::printf("    then types them.\n");
+    std::printf("    Types v-i-e-e-j-t into the focused window. Visual smoke test.\n\n");
+    std::printf("  NextKeyTestRunner.exe --send vieejt --raw --verify --expected viet-with-tone\n");
+    std::printf("    Types vieejt, selects all, copies, compares clipboard to expected.\n");
+    std::printf("    Exits 0 on PASS, 1 on FAIL with a diff. Vietnamese in --expected\n");
+    std::printf("    requires UTF-8 capable shell (PowerShell 7 / Windows Terminal /\n");
+    std::printf("    cmd after 'chcp 65001').\n");
 }
 
-#ifdef _WIN32
-
-// CLI args arrive as char* in the active console codepage. We widen via
-// CP_UTF8 — works when the user runs `chcp 65001` first or uses Windows
-// Terminal (UTF-8 by default). ASCII-only args work regardless.
-std::u16string Utf8ToU16(const char* input) {
-    if (!input || !*input) return {};
-    const int needed = MultiByteToWideChar(CP_UTF8, 0, input, -1, nullptr, 0);
-    if (needed <= 1) return {};  // <= 1 means just the null terminator
-    std::u16string out(static_cast<size_t>(needed - 1), 0);
-    MultiByteToWideChar(
-        CP_UTF8, 0, input, -1,
-        reinterpret_cast<LPWSTR>(out.data()), needed);
-    return out;
+// wchar_t and char16_t are both 16-bit on Windows -- layout-compatible.
+std::u16string WideToU16(const wchar_t* w) {
+    if (!w) return {};
+    return std::u16string(reinterpret_cast<const char16_t*>(w));
 }
 
 void PrintTelexDiagnostic(std::u16string_view telex) {
@@ -75,82 +75,150 @@ void PrintTelexDiagnostic(std::u16string_view telex) {
     std::printf("\n");
 }
 
-int RunSend(std::u16string_view text, bool raw,
-            uint32_t interKeyMicros, uint32_t initialDelayMs) {
+struct RunOptions {
+    std::u16string sendText;
+    std::u16string expected;
+    bool raw = false;
+    bool verify = false;
+    bool clearFirst = false;
+    bool hasExpected = false;
+    uint32_t interKeyMicros = 10'000;
+    uint32_t initialDelayMs = 3'000;
+    uint32_t postSendMs = 200;
+};
+
+int RunSend(const RunOptions& opt) {
     const std::u16string toSend =
-        raw ? std::u16string(text) : Telex::StrToTelex(text);
+        opt.raw ? opt.sendText : Telex::StrToTelex(opt.sendText);
 
     PrintTelexDiagnostic(toSend);
-    std::printf("Focus your target window -- sending in %u ms...\n", initialDelayMs);
+    if (opt.verify) {
+        std::printf("Expected: %s\n",
+                    Encoding::Utf16ToUtf8(opt.expected).c_str());
+    }
+    std::printf("Focus your target window -- sending in %u ms...\n",
+                opt.initialDelayMs);
     std::fflush(stdout);
-    Sleep(initialDelayMs);
+    Sleep(opt.initialDelayMs);
 
-    SendInputDriver::Options opts;
-    opts.interKeyMicros = interKeyMicros;
-    SendInputDriver::Driver driver(opts);
+    SendInputDriver::Options drvOpts;
+    drvOpts.interKeyMicros = opt.interKeyMicros;
+    SendInputDriver::Driver driver(drvOpts);
+
+    constexpr uint16_t kVkA = 0x41;
+    constexpr uint16_t kVkC = 0x43;
+    constexpr uint16_t kVkDelete = 0x2E;
+
+    if (opt.clearFirst) {
+        driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false);
+        Sleep(30);
+        driver.SendKeyCombo(kVkDelete, false, false, false);
+        Sleep(30);
+    }
 
     if (!driver.SendString(toSend)) {
         std::fprintf(stderr,
             "[ERROR] One or more chars cannot be typed on current layout.\n"
-            "        (uppercase Vietnamese passthrough is a known D3 limitation)\n");
+            "        (uppercase Vietnamese passthrough is a known limitation)\n");
         return EXIT_FAILURE;
     }
 
-    std::printf("Done. %zu chars sent.\n", toSend.size());
-    return EXIT_SUCCESS;
+    if (!opt.verify) {
+        std::printf("Done. %zu chars sent.\n", toSend.size());
+        return EXIT_SUCCESS;
+    }
+
+    Sleep(opt.postSendMs);
+    driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false);
+    Sleep(50);
+    driver.SendKeyCombo(kVkC, /*ctrl=*/true, false, false);
+    Sleep(150);  // give the target app time to update the clipboard
+
+    auto actual = ClipboardReader::ReadText();
+    if (!actual) {
+        std::fprintf(stderr, "[FAIL] Clipboard read failed (no CF_UNICODETEXT).\n");
+        return EXIT_FAILURE;
+    }
+
+    if (opt.hasExpected && *actual == opt.expected) {
+        std::printf("[PASS] Clipboard matches expected.\n");
+        std::printf("       Got: %s\n",
+                    Encoding::Utf16ToUtf8(*actual).c_str());
+        return EXIT_SUCCESS;
+    }
+
+    if (!opt.hasExpected) {
+        std::printf("[INFO] Clipboard contents:\n");
+        std::printf("       %s\n",
+                    Encoding::Utf16ToUtf8(*actual).c_str());
+        return EXIT_SUCCESS;
+    }
+
+    std::fprintf(stderr, "[FAIL] Clipboard mismatch.\n");
+    std::fprintf(stderr, "       Expected: %s\n",
+                 Encoding::Utf16ToUtf8(opt.expected).c_str());
+    std::fprintf(stderr, "       Actual:   %s\n",
+                 Encoding::Utf16ToUtf8(*actual).c_str());
+    return EXIT_FAILURE;
 }
 
-#endif  // _WIN32
-
-int Run(int argc, char* argv[]) {
+int Run(int argc, wchar_t* argv[]) {
     if (argc < 2) {
         PrintUsage();
         return EXIT_SUCCESS;
     }
 
-#ifdef _WIN32
-    std::u16string sendText;
-    bool raw = false;
-    uint32_t interKeyMicros = 10'000;
-    uint32_t initialDelayMs = 3'000;
+    RunOptions opt;
 
     for (int i = 1; i < argc; ++i) {
-        const std::string_view arg = argv[i];
-        if ((arg == "--send" || arg == "-s") && i + 1 < argc) {
-            sendText = Utf8ToU16(argv[++i]);
-        } else if (arg.starts_with("--inter-key-us=")) {
-            interKeyMicros = static_cast<uint32_t>(
-                std::strtoul(arg.data() + 15, nullptr, 10));
-        } else if (arg.starts_with("--delay-ms=")) {
-            initialDelayMs = static_cast<uint32_t>(
-                std::strtoul(arg.data() + 11, nullptr, 10));
-        } else if (arg == "--raw") {
-            raw = true;
-        } else if (arg == "--help" || arg == "-h") {
+        const std::wstring_view arg(argv[i]);
+        if ((arg == L"--send" || arg == L"-s") && i + 1 < argc) {
+            opt.sendText = WideToU16(argv[++i]);
+        } else if (arg == L"--expected" && i + 1 < argc) {
+            opt.expected = WideToU16(argv[++i]);
+            opt.hasExpected = true;
+        } else if (arg.starts_with(L"--inter-key-us=")) {
+            opt.interKeyMicros = static_cast<uint32_t>(
+                std::wcstoul(arg.data() + 15, nullptr, 10));
+        } else if (arg.starts_with(L"--delay-ms=")) {
+            opt.initialDelayMs = static_cast<uint32_t>(
+                std::wcstoul(arg.data() + 11, nullptr, 10));
+        } else if (arg.starts_with(L"--post-send-ms=")) {
+            opt.postSendMs = static_cast<uint32_t>(
+                std::wcstoul(arg.data() + 15, nullptr, 10));
+        } else if (arg == L"--raw") {
+            opt.raw = true;
+        } else if (arg == L"--verify") {
+            opt.verify = true;
+            opt.clearFirst = true;  // verify always wants clean target
+        } else if (arg == L"--clear-first") {
+            opt.clearFirst = true;
+        } else if (arg == L"--help" || arg == L"-h") {
             PrintUsage();
             return EXIT_SUCCESS;
         } else {
-            std::fprintf(stderr, "[ERROR] Unknown arg: %s\n\n", argv[i]);
+            std::fprintf(stderr, "[ERROR] Unknown arg: %s\n\n",
+                         Encoding::Utf16ToUtf8(WideToU16(argv[i])).c_str());
             PrintUsage();
             return EXIT_FAILURE;
         }
     }
 
-    if (sendText.empty()) {
+    if (opt.sendText.empty()) {
         PrintUsage();
         return EXIT_SUCCESS;
     }
 
-    return RunSend(sendText, raw, interKeyMicros, initialDelayMs);
-#else
-    (void)argv;
-    std::fprintf(stderr, "[ERROR] Send mode requires Windows.\n");
-    return EXIT_FAILURE;
-#endif
+    return RunSend(opt);
 }
 
 }  // namespace NextKey::TestRunner
 
-int main(int argc, char* argv[]) {
+int wmain(int argc, wchar_t* argv[]) {
+    // Force UTF-8 console output so Vietnamese chars in PASS/FAIL diff render
+    // correctly regardless of `chcp` state. wmain (vs main) gives us wide argv
+    // so Vietnamese values in --send / --expected don't go through the lossy
+    // ANSI codepage conversion.
+    SetConsoleOutputCP(CP_UTF8);
     return NextKey::TestRunner::Run(argc, argv);
 }
