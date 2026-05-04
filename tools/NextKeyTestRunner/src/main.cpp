@@ -110,16 +110,22 @@ int RunSend(const RunOptions& opt) {
     constexpr uint16_t kVkDelete = 0x2E;
 
     if (opt.clearFirst) {
-        driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false);
+        const bool clearOk =
+            driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false);
         Sleep(30);
-        driver.SendKeyCombo(kVkDelete, false, false, false);
+        const bool deleteOk =
+            driver.SendKeyCombo(kVkDelete, false, false, false);
         Sleep(30);
+        if (!clearOk || !deleteOk) {
+            std::fprintf(stderr,
+                "[WARN] Clear-first SendInput call failed (target may have leftover text).\n");
+        }
     }
 
     if (!driver.SendString(toSend)) {
         std::fprintf(stderr,
-            "[ERROR] One or more chars cannot be typed on current layout.\n"
-            "        (uppercase Vietnamese passthrough is a known limitation)\n");
+            "[ERROR] Send failed: char untypeable on current layout, or SendInput\n"
+            "        call rejected (UAC consent / locked desktop?).\n");
         return EXIT_FAILURE;
     }
 
@@ -129,9 +135,15 @@ int RunSend(const RunOptions& opt) {
     }
 
     Sleep(opt.postSendMs);
-    driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false);
+    if (!driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false)) {
+        std::fprintf(stderr, "[ERROR] Verify Ctrl+A SendInput failed.\n");
+        return EXIT_FAILURE;
+    }
     Sleep(50);
-    driver.SendKeyCombo(kVkC, /*ctrl=*/true, false, false);
+    if (!driver.SendKeyCombo(kVkC, /*ctrl=*/true, false, false)) {
+        std::fprintf(stderr, "[ERROR] Verify Ctrl+C SendInput failed.\n");
+        return EXIT_FAILURE;
+    }
     Sleep(150);  // give the target app time to update the clipboard
 
     auto actual = ClipboardReader::ReadText();

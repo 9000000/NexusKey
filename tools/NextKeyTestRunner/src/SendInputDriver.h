@@ -42,7 +42,9 @@ public:
 
     // Sends a single VK code with explicit modifier state. Use for Ctrl+A,
     // Ctrl+C, Delete, etc. `vk` is a Win32 virtual key code (e.g. 0x41 for 'A').
-    void SendKeyCombo(uint16_t vk, bool ctrl, bool shift, bool alt) noexcept;
+    // Returns false if any underlying SendInput call failed (e.g. UAC consent
+    // dialog blocking input, session locked).
+    [[nodiscard]] bool SendKeyCombo(uint16_t vk, bool ctrl, bool shift, bool alt) noexcept;
 
 private:
     Options options_;

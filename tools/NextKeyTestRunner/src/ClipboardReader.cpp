@@ -6,7 +6,7 @@
 
 namespace NextKey::TestRunner::ClipboardReader {
 
-std::optional<std::u16string> ReadText(int retries, int retryDelayMs) noexcept {
+std::optional<std::u16string> ReadText(int retries, int retryDelayMs) {
     for (int attempt = 0; attempt < retries; ++attempt) {
         if (!OpenClipboard(nullptr)) {
             Sleep(static_cast<DWORD>(retryDelayMs));

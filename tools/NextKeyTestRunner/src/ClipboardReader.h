@@ -14,8 +14,11 @@
 
 namespace NextKey::TestRunner::ClipboardReader {
 
+// Not noexcept: std::u16string allocation can throw bad_alloc. Caller can
+// rely on ReadText to either return a valid optional, return nullopt, or
+// (very rarely) throw bad_alloc.
 [[nodiscard]] std::optional<std::u16string> ReadText(
     int retries = 5,
-    int retryDelayMs = 50) noexcept;
+    int retryDelayMs = 50);
 
 }  // namespace NextKey::TestRunner::ClipboardReader
