@@ -31,6 +31,15 @@ namespace NextKey::TestRunner {
 
 constexpr const char* kVersion = "0.4.0-d7-corpus";
 
+// Shared constants for the send/verify flow (used by both --send and --corpus).
+constexpr uint16_t kVkA       = 0x41;   // 'A' for Ctrl+A
+constexpr uint16_t kVkC       = 0x43;   // 'C' for Ctrl+C
+constexpr uint16_t kVkDelete  = 0x2E;   // VK_DELETE
+
+constexpr uint32_t kClearStepDelayMs   = 30;   // between Ctrl+A and Delete
+constexpr uint32_t kCtrlACtrlCDelayMs  = 50;   // between Ctrl+A and Ctrl+C
+constexpr uint32_t kClipboardSettleMs  = 150;  // after Ctrl+C, before reading
+
 void PrintUsage() {
     std::printf("NextKeyTestRunner v%s\n", kVersion);
     std::printf("E2E stress test harness for NexusKey IME (Windows-only)\n\n");
@@ -136,17 +145,15 @@ bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
     drvOpts.interKeyMicros = tc.interKeyMicros;
     SendInputDriver::Driver driver(drvOpts);
 
-    constexpr uint16_t kVkA = 0x41;
-    constexpr uint16_t kVkC = 0x43;
-    constexpr uint16_t kVkDelete = 0x2E;
-
-    // Clear target first.
-    if (!driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false) ||
-        (Sleep(30), !driver.SendKeyCombo(kVkDelete, false, false, false))) {
+    // Clear target first (Ctrl+A then Delete).
+    const bool clearOk = driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false);
+    Sleep(kClearStepDelayMs);
+    const bool deleteOk = driver.SendKeyCombo(kVkDelete, false, false, false);
+    Sleep(kClearStepDelayMs);
+    if (!clearOk || !deleteOk) {
         failureMessage = "clear-first SendInput failed";
         return false;
     }
-    Sleep(30);
 
     if (!driver.SendString(tc.keys)) {
         failureMessage = "SendString failed (untypeable char or SendInput rejected)";
@@ -158,12 +165,12 @@ bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
         failureMessage = "Ctrl+A SendInput failed";
         return false;
     }
-    Sleep(50);
+    Sleep(kCtrlACtrlCDelayMs);
     if (!driver.SendKeyCombo(kVkC, /*ctrl=*/true, false, false)) {
         failureMessage = "Ctrl+C SendInput failed";
         return false;
     }
-    Sleep(150);
+    Sleep(kClipboardSettleMs);
 
     auto actual = ClipboardReader::ReadText();
     if (!actual) {
@@ -236,17 +243,13 @@ int RunSend(const RunOptions& opt) {
     drvOpts.interKeyMicros = opt.interKeyMicros;
     SendInputDriver::Driver driver(drvOpts);
 
-    constexpr uint16_t kVkA = 0x41;
-    constexpr uint16_t kVkC = 0x43;
-    constexpr uint16_t kVkDelete = 0x2E;
-
     if (opt.clearFirst) {
         const bool clearOk =
             driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false);
-        Sleep(30);
+        Sleep(kClearStepDelayMs);
         const bool deleteOk =
             driver.SendKeyCombo(kVkDelete, false, false, false);
-        Sleep(30);
+        Sleep(kClearStepDelayMs);
         if (!clearOk || !deleteOk) {
             std::fprintf(stderr,
                 "[WARN] Clear-first SendInput call failed (target may have leftover text).\n");
@@ -270,12 +273,12 @@ int RunSend(const RunOptions& opt) {
         std::fprintf(stderr, "[ERROR] Verify Ctrl+A SendInput failed.\n");
         return EXIT_FAILURE;
     }
-    Sleep(50);
+    Sleep(kCtrlACtrlCDelayMs);
     if (!driver.SendKeyCombo(kVkC, /*ctrl=*/true, false, false)) {
         std::fprintf(stderr, "[ERROR] Verify Ctrl+C SendInput failed.\n");
         return EXIT_FAILURE;
     }
-    Sleep(150);  // give the target app time to update the clipboard
+    Sleep(kClipboardSettleMs);  // give the target app time to update the clipboard
 
     auto actual = ClipboardReader::ReadText();
     if (!actual) {

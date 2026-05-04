@@ -33,7 +33,12 @@ public:
     Driver(const Driver&) = delete;
     Driver& operator=(const Driver&) = delete;
 
-    // Returns false if the char cannot be typed on the current keyboard layout.
+    // Sends a single character. Control codes \b \t \n \r are mapped directly
+    // to VK_BACK / VK_TAB / VK_RETURN (VkKeyScanW maps these inconsistently
+    // across keyboard layouts, so we bypass it). All other chars go through
+    // VkKeyScanW with auto-detected modifier state. Returns false if the char
+    // cannot be typed on the current layout, or if any underlying SendInput
+    // call failed (UAC consent dialog, locked desktop, etc).
     [[nodiscard]] bool SendChar(char16_t ch) noexcept;
 
     // Sends each char with `interKeyMicros` delay between them. Stops at the
