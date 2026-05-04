@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <iterator>
 #include <string>
 
 #include "Telex.h"
@@ -14,73 +15,68 @@ namespace {
 
 // UTF-16 (BMP only) → UTF-8 for ADD_FAILURE printing. Vietnamese chars all
 // fit in BMP (≤ U+FFFF), so no surrogate-pair handling needed.
-std::string Utf8(std::u16string_view s) {
-    std::string r;
-    r.reserve(s.size() * 3);
-    for (char16_t c : s) {
-        if (c < 0x80) {
-            r.push_back(static_cast<char>(c));
-        } else if (c < 0x800) {
-            r.push_back(static_cast<char>(0xC0 | (c >> 6)));
-            r.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+std::string Utf8(std::u16string_view input) {
+    std::string out;
+    out.reserve(input.size() * 3);
+    for (char16_t ch : input) {
+        if (ch < 0x80) {
+            out.push_back(static_cast<char>(ch));
+        } else if (ch < 0x800) {
+            out.push_back(static_cast<char>(0xC0 | (ch >> 6)));
+            out.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
         } else {
-            r.push_back(static_cast<char>(0xE0 | (c >> 12)));
-            r.push_back(static_cast<char>(0x80 | ((c >> 6) & 0x3F)));
-            r.push_back(static_cast<char>(0x80 | (c & 0x3F)));
+            out.push_back(static_cast<char>(0xE0 | (ch >> 12)));
+            out.push_back(static_cast<char>(0x80 | ((ch >> 6) & 0x3F)));
+            out.push_back(static_cast<char>(0x80 | (ch & 0x3F)));
         }
     }
-    return r;
+    return out;
 }
 
 }  // namespace
 
 // Hardcoded sanity tests — independent of generator.
 TEST(TelexTest, EmptyString) {
-    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u""), std::u16string(u""));
+    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u""), u"");
 }
 
 TEST(TelexTest, AsciiPassthrough) {
-    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u"hello"), std::u16string(u"hello"));
+    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u"hello"), u"hello");
 }
 
 TEST(TelexTest, BasicVietnameseLowercase) {
-    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u"việt"), std::u16string(u"vieejt"));
+    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u"việt"), u"vieejt");
 }
 
 TEST(TelexTest, UppercaseVietnamesePassesThrough) {
     // vn-str only converts lowercase — uppercase Vietnamese passes through unchanged.
-    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u"VIỆT"), std::u16string(u"VIỆT"));
+    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u"VIỆT"), u"VIỆT");
 }
 
 TEST(TelexTest, MixedSentence) {
-    EXPECT_EQ(
-        ::NextKey::TestRunner::Telex::StrToTelex(u"Trường Sa"),
-        std::u16string(u"Truwowfng Sa"));
+    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u"Trường Sa"), u"Truwowfng Sa");
 }
 
 TEST(TelexTest, NumbersAndPunctuationPassThrough) {
-    EXPECT_EQ(
-        ::NextKey::TestRunner::Telex::StrToTelex(u"123, abc!"),
-        std::u16string(u"123, abc!"));
+    EXPECT_EQ(::NextKey::TestRunner::Telex::StrToTelex(u"123, abc!"), u"123, abc!");
 }
 
 // Parameterized test over generated golden corpus (201 cases).
 class TelexGoldenTest : public ::testing::TestWithParam<TelexGoldenCase> {};
 
 TEST_P(TelexGoldenTest, MatchesVnStr) {
-    const auto& c = GetParam();
-    const std::u16string actual = ::NextKey::TestRunner::Telex::StrToTelex(c.input);
-    const std::u16string expected = c.expected;
-    EXPECT_EQ(actual, expected)
-        << "Group:    " << c.group << "\n"
-        << "Input:    " << Utf8(c.input) << "\n"
-        << "Expected: " << Utf8(expected) << "\n"
+    const auto& testCase = GetParam();
+    const std::u16string actual = ::NextKey::TestRunner::Telex::StrToTelex(testCase.input);
+    EXPECT_EQ(actual, testCase.expected)
+        << "Group:    " << testCase.group << "\n"
+        << "Input:    " << Utf8(testCase.input) << "\n"
+        << "Expected: " << Utf8(testCase.expected) << "\n"
         << "Actual:   " << Utf8(actual);
 }
 
 INSTANTIATE_TEST_SUITE_P(
     AllGoldenCases,
     TelexGoldenTest,
-    ::testing::ValuesIn(kTelexGolden, kTelexGolden + kTelexGoldenCount));
+    ::testing::ValuesIn(std::begin(kTelexGolden), std::end(kTelexGolden)));
 
 }  // namespace NextKey::TestRunner::Test

@@ -18,7 +18,7 @@ namespace detail {
 
 struct Entry {
     char16_t input;
-    const char16_t* output;  // null-terminated
+    std::u16string_view output;
 };
 
 // Table mirrors vn-str/src/convertString.ts VN_TELEX (commit 0.4.0).
@@ -46,25 +46,27 @@ inline constexpr Entry kTable[] = {
 
 inline constexpr std::size_t kTableSize = sizeof(kTable) / sizeof(kTable[0]);
 
-[[nodiscard]] constexpr const char16_t* Lookup(char16_t c) noexcept {
+// Returns empty view if `ch` has no replacement (caller passes `ch` through).
+[[nodiscard]] constexpr std::u16string_view Lookup(char16_t ch) noexcept {
     for (std::size_t i = 0; i < kTableSize; ++i) {
-        if (kTable[i].input == c) return kTable[i].output;
+        if (kTable[i].input == ch) return kTable[i].output;
     }
-    return nullptr;
+    return {};
 }
 
 }  // namespace detail
 
+// Vietnamese chars are BMP (≤ U+1EF9), so per-char16_t iteration is correct.
+// Surrogate pairs would split incorrectly, but vn-str has the same limitation.
 [[nodiscard]] inline std::u16string StrToTelex(std::u16string_view input) {
     std::u16string out;
     out.reserve(input.size() * 3);  // worst case 3 wchars per input ("uws", "ows" ...)
-    for (char16_t c : input) {
-        if (const char16_t* repl = detail::Lookup(c)) {
-            for (const char16_t* p = repl; *p; ++p) {
-                out.push_back(*p);
-            }
+    for (char16_t ch : input) {
+        const std::u16string_view repl = detail::Lookup(ch);
+        if (!repl.empty()) {
+            out.append(repl);
         } else {
-            out.push_back(c);
+            out.push_back(ch);
         }
     }
     return out;
