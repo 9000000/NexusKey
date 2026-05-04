@@ -12,6 +12,8 @@
 # ---------------------------------------------------------------------------
 add_executable(NextKeyTestRunnerTests EXCLUDE_FROM_ALL
     src/CaseResult.h
+    src/CliConvert.h
+    src/EditDistance.h
     src/HookLogParser.h
     src/HookLogParser.cpp
     src/JunitXmlWriter.h
@@ -20,8 +22,11 @@ add_executable(NextKeyTestRunnerTests EXCLUDE_FROM_ALL
     src/KeyEscapes.cpp
     src/PerfCsvWriter.h
     src/PerfCsvWriter.cpp
+    src/TestCase.h
     src/TomlLoader.h
     src/TomlLoader.cpp
+    tests/CliConvertTest.cpp
+    tests/EditDistanceTest.cpp
     tests/HookLogParserTest.cpp
     tests/JunitXmlWriterTest.cpp
     tests/KeyEscapesTest.cpp
@@ -56,8 +61,10 @@ if(WIN32)
     add_executable(NextKeyTestRunner EXCLUDE_FROM_ALL
         src/main.cpp
         src/CaseResult.h
+        src/CliConvert.h
         src/ClipboardReader.h
         src/ClipboardReader.cpp
+        src/EditDistance.h
         src/Encoding.h
         src/HookLogParser.h
         src/HookLogParser.cpp

@@ -7,6 +7,7 @@
 
 #include "Encoding.h"
 #include "KeyEscapes.h"
+#include "Telex.h"
 
 namespace NextKey::TestRunner::TomlLoader {
 
@@ -34,30 +35,71 @@ ParseOneResult ParseOneTest(const toml::table& tbl, std::size_t index) {
 
     tc.targetApp = tbl["target_app"].value_or<std::string>("notepad");
 
-    auto keysOpt = tbl["keys"].value<std::string>();
-    if (!keysOpt) {
-        r.error = "test '" + tc.name + "' missing required field 'keys'";
+    // Source for raw keys: either `keys` (manual telex) or `text` (auto-
+    // converted via Telex::StrToTelex). Exactly one must be present.
+    const auto keysOpt = tbl["keys"].value<std::string>();
+    const auto textOpt = tbl["text"].value<std::string>();
+    if (keysOpt && textOpt) {
+        r.error = "test '" + tc.name +
+                  "' has both 'keys' and 'text' (mutually exclusive)";
         return r;
     }
-    auto resolved = KeyEscapes::Resolve(Encoding::Utf8ToUtf16(*keysOpt));
-    if (!resolved) {
-        r.error = "test '" + tc.name + "' has invalid escape in 'keys'";
+    if (!keysOpt && !textOpt) {
+        r.error = "test '" + tc.name +
+                  "' missing required field: provide either 'keys' or 'text'";
         return r;
     }
-    tc.keys = std::move(*resolved);
+
+    if (keysOpt) {
+        auto resolved = KeyEscapes::Resolve(Encoding::Utf8ToUtf16(*keysOpt));
+        if (!resolved) {
+            r.error = "test '" + tc.name + "' has invalid escape in 'keys'";
+            return r;
+        }
+        tc.keys = std::move(*resolved);
+    } else {
+        // `text` is Vietnamese (or mixed) source -- convert to raw telex.
+        // No escape resolution needed: text comes from user-typing, not key-
+        // sequence DSL.
+        const auto u16text = Encoding::Utf8ToUtf16(*textOpt);
+        tc.keys = Telex::StrToTelex(u16text);
+        // Default `expected` to the source text when not explicitly given.
+        tc.expected = u16text;
+    }
 
     auto expectedOpt = tbl["expected"].value<std::string>();
-    if (!expectedOpt) {
+    if (expectedOpt) {
+        tc.expected = Encoding::Utf8ToUtf16(*expectedOpt);
+    } else if (keysOpt) {
+        // Manual `keys` requires explicit expected (no source string to default to).
         r.error = "test '" + tc.name + "' missing required field 'expected'";
         return r;
     }
-    tc.expected = Encoding::Utf8ToUtf16(*expectedOpt);
 
     if (auto v = tbl["inter_key_us"].value<int64_t>(); v && *v >= 0) {
         tc.interKeyMicros = static_cast<uint32_t>(*v);
     }
     if (auto v = tbl["budget_p99_us"].value<int64_t>(); v && *v >= 0) {
         tc.budgetP99Micros = static_cast<uint32_t>(*v);
+    }
+
+    if (auto modeStr = tbl["verdict_mode"].value<std::string>()) {
+        if (*modeStr == "exact") {
+            tc.verdictMode = VerdictMode::Exact;
+        } else if (*modeStr == "edit_distance") {
+            tc.verdictMode = VerdictMode::EditDistance;
+        } else {
+            r.error = "test '" + tc.name + "' has unknown verdict_mode '" +
+                      *modeStr + "' (expected 'exact' or 'edit_distance')";
+            return r;
+        }
+    }
+
+    if (auto v = tbl["threshold_pct"].value<double>()) {
+        tc.thresholdPct = *v;
+    } else if (auto v2 = tbl["threshold_pct"].value<int64_t>()) {
+        // Allow integer threshold (e.g., `threshold_pct = 99`).
+        tc.thresholdPct = static_cast<double>(*v2);
     }
 
     r.testCase = std::move(tc);
