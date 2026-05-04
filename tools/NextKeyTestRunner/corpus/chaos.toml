@@ -20,7 +20,7 @@
 name = "1.1-ghost-hoaf-bs-t"
 target_app = "notepad"
 keys = 'hoaf\bt'
-expected = "t"
+expected = "hot"
 inter_key_us = 10000
 budget_p99_us = 1500
 
@@ -28,7 +28,7 @@ budget_p99_us = 1500
 name = "1.2-tone-ghost-toans-bs3-i"
 target_app = "notepad"
 keys = 'toans\b\b\bi'
-expected = "toi"
+expected = "ti"
 inter_key_us = 5000
 budget_p99_us = 1500
 
@@ -75,7 +75,7 @@ budget_p99_us = 1500
 [[tests]]
 name = "3.3-engine-stress-truongf"
 target_app = "notepad"
-keys = "truongf"
+keys = "truongwf"
 expected = "trường"
 inter_key_us = 500
 budget_p99_us = 1500
@@ -98,7 +98,7 @@ budget_p99_us = 1500
 [[tests]]
 name = "5.2-vowel-start-uongs"
 target_app = "notepad"
-keys = "uongs"
+keys = "uoongs"
 expected = "uống"
 inter_key_us = 5000
 budget_p99_us = 1500
@@ -120,7 +120,7 @@ budget_p99_us = 1500
 [[tests]]
 name = "6.1-autocap-binh-thuongf"
 target_app = "notepad"
-keys = "binh thuongf"
+keys = "binhf thuongwf"
 expected = "bình thường"
 inter_key_us = 5000
 budget_p99_us = 1500

@@ -23,13 +23,14 @@
 
 #include "ClipboardReader.h"
 #include "Encoding.h"
+#include "HookLogParser.h"
 #include "SendInputDriver.h"
 #include "Telex.h"
 #include "TomlLoader.h"
 
 namespace NextKey::TestRunner {
 
-constexpr const char* kVersion = "0.4.0-d7-corpus";
+constexpr const char* kVersion = "0.5.0-d8-l1-timing";
 
 // Shared constants for the send/verify flow (used by both --send and --corpus).
 constexpr uint16_t kVkA       = 0x41;   // 'A' for Ctrl+A
@@ -60,7 +61,10 @@ void PrintUsage() {
     std::printf("  --list FILE.toml     Parse corpus file and print loaded cases\n");
     std::printf("                       (no SendInput driving; debug helper)\n");
     std::printf("  --corpus FILE.toml   Run all tests in FILE.toml; PASS/FAIL summary\n");
-    std::printf("                       (auto-enables clear-first per case)\n\n");
+    std::printf("                       (auto-enables clear-first per case)\n");
+    std::printf("  --hook-log PATH      Path to NexusKey_hook.log (debug build) -- when\n");
+    std::printf("                       supplied, --corpus prints L1 inter-key timing\n");
+    std::printf("                       per case from the hook's perspective\n\n");
     std::printf("  --help, -h           Show this help\n\n");
     std::printf("Examples:\n");
     std::printf("  NextKeyTestRunner.exe --send vieejt --raw\n");
@@ -95,6 +99,7 @@ struct RunOptions {
     std::u16string expected;
     std::u16string listFile;        // --list FILE.toml: print parsed cases, no driving
     std::u16string corpusFile;      // --corpus FILE.toml: drive every case + verify
+    std::u16string hookLogPath;     // --hook-log: NexusKey_hook.log for L1 timing
     bool raw = false;
     bool verify = false;
     bool clearFirst = false;
@@ -198,6 +203,14 @@ int RunCorpus(const RunOptions& opt) {
 
     const auto& cases = loadResult.cases;
     std::printf("Loaded %zu test case(s) from %s\n", cases.size(), narrowPath.c_str());
+
+    const std::filesystem::path hookLog =
+        Encoding::Utf16ToUtf8(opt.hookLogPath);
+    const bool haveHookLog = !hookLog.empty();
+    if (haveHookLog) {
+        std::printf("L1 timing source: %s\n", hookLog.string().c_str());
+    }
+
     std::printf("Focus your target window -- starting in %u ms...\n", opt.initialDelayMs);
     std::fflush(stdout);
     Sleep(opt.initialDelayMs);
@@ -211,14 +224,33 @@ int RunCorpus(const RunOptions& opt) {
         std::printf("[%2zu/%zu] %-50s ", i + 1, total, tc.name.c_str());
         std::fflush(stdout);
 
+        // Capture log offset before driving the test so we can slice the
+        // entries belonging to this case afterwards.
+        const std::uint64_t logOffsetBefore =
+            haveHookLog ? HookLogParser::FileSize(hookLog) : 0;
+
         std::string msg;
-        if (RunSingleCase(tc, opt.postSendMs, msg)) {
-            std::printf("PASS\n");
+        const bool casePassed = RunSingleCase(tc, opt.postSendMs, msg);
+        if (casePassed) {
+            std::printf("PASS");
             ++passed;
         } else {
-            std::printf("FAIL\n        %s\n", msg.c_str());
+            std::printf("FAIL\n        %s", msg.c_str());
             ++failed;
         }
+
+        if (haveHookLog) {
+            const auto entries = HookLogParser::ParseFileSlice(hookLog, logOffsetBefore);
+            const auto stats = HookLogParser::ComputeKeyDownStats(entries);
+            if (stats.intervals > 0) {
+                std::printf("\n        L1 hook (n=%zu): mean=%llums  p99=%llums  max=%llums",
+                            stats.intervals,
+                            static_cast<unsigned long long>(stats.meanMs),
+                            static_cast<unsigned long long>(stats.p99Ms),
+                            static_cast<unsigned long long>(stats.maxMs));
+            }
+        }
+        std::printf("\n");
     }
 
     std::printf("\nSummary: %d PASS, %d FAIL out of %zu\n", passed, failed, total);
@@ -343,6 +375,8 @@ int Run(int argc, wchar_t* argv[]) {
             opt.listFile = WideToU16(argv[++i]);
         } else if (arg == L"--corpus" && i + 1 < argc) {
             opt.corpusFile = WideToU16(argv[++i]);
+        } else if (arg == L"--hook-log" && i + 1 < argc) {
+            opt.hookLogPath = WideToU16(argv[++i]);
         } else if (arg == L"--help" || arg == L"-h") {
             PrintUsage();
             return EXIT_SUCCESS;

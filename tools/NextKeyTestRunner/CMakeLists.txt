@@ -11,10 +11,13 @@
 # parser, and TOML loader. None of these depend on Win32 APIs.
 # ---------------------------------------------------------------------------
 add_executable(NextKeyTestRunnerTests EXCLUDE_FROM_ALL
+    src/HookLogParser.h
+    src/HookLogParser.cpp
     src/KeyEscapes.h
     src/KeyEscapes.cpp
     src/TomlLoader.h
     src/TomlLoader.cpp
+    tests/HookLogParserTest.cpp
     tests/KeyEscapesTest.cpp
     tests/TelexTest.cpp
     tests/TomlLoaderTest.cpp
@@ -48,6 +51,8 @@ if(WIN32)
         src/ClipboardReader.h
         src/ClipboardReader.cpp
         src/Encoding.h
+        src/HookLogParser.h
+        src/HookLogParser.cpp
         src/KeyEscapes.h
         src/KeyEscapes.cpp
         src/SendInputDriver.h
