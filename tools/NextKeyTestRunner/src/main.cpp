@@ -18,8 +18,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
+#include <filesystem>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "ClipboardReader.h"
 #include "Encoding.h"
@@ -30,7 +32,23 @@
 
 namespace NextKey::TestRunner {
 
-constexpr const char* kVersion = "0.5.0-d8-l1-timing";
+constexpr const char* kVersion = "0.5.1-d8-postmortem";
+
+// GetLocalTime-derived ms-since-midnight (matches NexusKey HookLog timestamp
+// format, so we can slice log entries by per-case windows).
+[[nodiscard]] uint64_t LocalTimeMs() noexcept {
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    return static_cast<uint64_t>(st.wHour)   * 3'600'000ULL +
+           static_cast<uint64_t>(st.wMinute) *    60'000ULL +
+           static_cast<uint64_t>(st.wSecond) *     1'000ULL +
+           static_cast<uint64_t>(st.wMilliseconds);
+}
+
+struct CaseWindow {
+    uint64_t startMs;  // ms-since-midnight just before SendString
+    uint64_t endMs;    // ms-since-midnight after Ctrl+A+C + clipboard settle
+};
 
 // Shared constants for the send/verify flow (used by both --send and --corpus).
 constexpr uint16_t kVkA       = 0x41;   // 'A' for Ctrl+A
@@ -63,8 +81,9 @@ void PrintUsage() {
     std::printf("  --corpus FILE.toml   Run all tests in FILE.toml; PASS/FAIL summary\n");
     std::printf("                       (auto-enables clear-first per case)\n");
     std::printf("  --hook-log PATH      Path to NexusKey_hook.log (debug build) -- when\n");
-    std::printf("                       supplied, --corpus prints L1 inter-key timing\n");
-    std::printf("                       per case from the hook's perspective\n\n");
+    std::printf("                       supplied, --corpus prompts after the run for the\n");
+    std::printf("                       user to stop NexusKey, then post-mortem parses the\n");
+    std::printf("                       log to print L1 inter-key timing per case.\n\n");
     std::printf("  --help, -h           Show this help\n\n");
     std::printf("Examples:\n");
     std::printf("  NextKeyTestRunner.exe --send vieejt --raw\n");
@@ -144,13 +163,16 @@ int RunList(std::u16string_view filePath) {
 // Runs a single TestCase end-to-end: clear, send keys, Ctrl+A+C, read
 // clipboard, compare. Returns true on PASS, false on FAIL.
 // `failureMessage` is filled with diff details on failure.
+// `outWindow` records the wall-clock window (start = just before SendString,
+// end = after the post-send/clipboard-settle wait) so the post-mortem L1
+// analyzer can slice log entries belonging to this case.
 bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
-                   std::string& failureMessage) {
+                   std::string& failureMessage, CaseWindow& outWindow) {
     SendInputDriver::Options drvOpts;
     drvOpts.interKeyMicros = tc.interKeyMicros;
     SendInputDriver::Driver driver(drvOpts);
 
-    // Clear target first (Ctrl+A then Delete).
+    // Clear target first (Ctrl+A then Delete) -- not part of the L1 window.
     const bool clearOk = driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false);
     Sleep(kClearStepDelayMs);
     const bool deleteOk = driver.SendKeyCombo(kVkDelete, false, false, false);
@@ -160,12 +182,15 @@ bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
         return false;
     }
 
+    outWindow.startMs = LocalTimeMs();
     if (!driver.SendString(tc.keys)) {
         failureMessage = "SendString failed (untypeable char or SendInput rejected)";
         return false;
     }
 
     Sleep(postSendMs);
+    outWindow.endMs = LocalTimeMs();
+
     if (!driver.SendKeyCombo(kVkA, /*ctrl=*/true, false, false)) {
         failureMessage = "Ctrl+A SendInput failed";
         return false;
@@ -193,6 +218,67 @@ bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
     return false;
 }
 
+// After all cases run AND the user has stopped NexusKey (so its 8KB log
+// buffer has been flushed by CloseHookLog), parse the full log and compute
+// L1 inter-keystroke stats per case using the windows captured during the
+// run. NexusKey's log is invisible while the process is alive (file is open
+// for writing + entries sit in the in-process buffer); a post-mortem read
+// avoids the heisenbug we'd hit with mid-run instrumentation.
+void RunPostMortemL1(const std::vector<TestCase>& cases,
+                     const std::vector<CaseWindow>& windows,
+                     const std::filesystem::path& hookLog) {
+    std::printf("\nTo compute L1 hook timing per case:\n");
+    std::printf("  1. Stop NexusKey (tray -> Quit) so its log buffer flushes.\n");
+    std::printf("  2. Press Enter to read the log (or Ctrl+C to skip).\n");
+    std::printf("  > ");
+    std::fflush(stdout);
+
+    char dummy[16];
+    if (std::fgets(dummy, sizeof(dummy), stdin) == nullptr) {
+        std::printf("(skipped)\n");
+        return;
+    }
+
+    const auto allEntries = HookLogParser::ParseFile(hookLog);
+    if (allEntries.empty()) {
+        std::printf("(no entries parsed from %s -- file missing, empty,\n"
+                    " or NexusKey still has it open)\n",
+                    hookLog.string().c_str());
+        return;
+    }
+
+    std::printf("\nL1 hook timing (post-mortem, %zu total log entries):\n",
+                allEntries.size());
+
+    for (std::size_t i = 0; i < cases.size(); ++i) {
+        const auto& w = windows[i];
+        std::vector<HookLogParser::KeystrokeEntry> sliced;
+        sliced.reserve(64);
+        // Exclusive on endMs: the verify-phase Ctrl+A fires ~1us after we
+        // capture endMs and lands in the same GetLocalTime ms tick, so an
+        // inclusive filter would slurp its DOWN event into the window and
+        // skew max/p99 by exactly postSendMs. Last typed key is logged
+        // hundreds of ms before endMs, so exclusive filter is safe for it.
+        for (const auto& e : allEntries) {
+            if (e.timestampMs >= w.startMs && e.timestampMs < w.endMs) {
+                sliced.push_back(e);
+            }
+        }
+        const auto stats = HookLogParser::ComputeKeyDownStats(sliced);
+        if (stats.intervals == 0) {
+            std::printf("[%2zu/%zu] %-50s (no log entries in window)\n",
+                        i + 1, cases.size(), cases[i].name.c_str());
+            continue;
+        }
+        std::printf("[%2zu/%zu] %-50s n=%zu mean=%llums p99=%llums max=%llums\n",
+                    i + 1, cases.size(), cases[i].name.c_str(),
+                    stats.intervals,
+                    static_cast<unsigned long long>(stats.meanMs),
+                    static_cast<unsigned long long>(stats.p99Ms),
+                    static_cast<unsigned long long>(stats.maxMs));
+    }
+}
+
 int RunCorpus(const RunOptions& opt) {
     const std::string narrowPath = Encoding::Utf16ToUtf8(opt.corpusFile);
     const auto loadResult = TomlLoader::LoadFile(narrowPath);
@@ -208,7 +294,8 @@ int RunCorpus(const RunOptions& opt) {
         Encoding::Utf16ToUtf8(opt.hookLogPath);
     const bool haveHookLog = !hookLog.empty();
     if (haveHookLog) {
-        std::printf("L1 timing source: %s\n", hookLog.string().c_str());
+        std::printf("L1 timing source: %s (post-mortem analysis after run)\n",
+                    hookLog.string().c_str());
     }
 
     std::printf("Focus your target window -- starting in %u ms...\n", opt.initialDelayMs);
@@ -218,42 +305,34 @@ int RunCorpus(const RunOptions& opt) {
     int passed = 0;
     int failed = 0;
     const std::size_t total = cases.size();
+    std::vector<CaseWindow> windows;
+    windows.reserve(total);
 
     for (std::size_t i = 0; i < total; ++i) {
         const auto& tc = cases[i];
         std::printf("[%2zu/%zu] %-50s ", i + 1, total, tc.name.c_str());
         std::fflush(stdout);
 
-        // Capture log offset before driving the test so we can slice the
-        // entries belonging to this case afterwards.
-        const std::uint64_t logOffsetBefore =
-            haveHookLog ? HookLogParser::FileSize(hookLog) : 0;
-
         std::string msg;
-        const bool casePassed = RunSingleCase(tc, opt.postSendMs, msg);
+        CaseWindow window{};
+        const bool casePassed = RunSingleCase(tc, opt.postSendMs, msg, window);
+        windows.push_back(window);
+
         if (casePassed) {
-            std::printf("PASS");
+            std::printf("PASS\n");
             ++passed;
         } else {
-            std::printf("FAIL\n        %s", msg.c_str());
+            std::printf("FAIL\n        %s\n", msg.c_str());
             ++failed;
         }
-
-        if (haveHookLog) {
-            const auto entries = HookLogParser::ParseFileSlice(hookLog, logOffsetBefore);
-            const auto stats = HookLogParser::ComputeKeyDownStats(entries);
-            if (stats.intervals > 0) {
-                std::printf("\n        L1 hook (n=%zu): mean=%llums  p99=%llums  max=%llums",
-                            stats.intervals,
-                            static_cast<unsigned long long>(stats.meanMs),
-                            static_cast<unsigned long long>(stats.p99Ms),
-                            static_cast<unsigned long long>(stats.maxMs));
-            }
-        }
-        std::printf("\n");
     }
 
     std::printf("\nSummary: %d PASS, %d FAIL out of %zu\n", passed, failed, total);
+
+    if (haveHookLog) {
+        RunPostMortemL1(cases, windows, hookLog);
+    }
+
     return failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 

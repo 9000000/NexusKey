@@ -39,12 +39,12 @@ static void OpenHookLog() {
     if (pos != std::wstring::npos) logPath = logPath.substr(0, pos + 1);
     logPath += L"NexusKey_hook.log";
     (void)_wfopen_s(&g_hookLog, logPath.c_str(), L"w, ccs=UTF-8");
-    // Unbuffered: each HookLog() write hits disk immediately so external test
-    // runners (NextKeyTestRunner --hook-log) can read entries in real-time.
-    // _IOFBF with an 8KB buffer was the previous policy (flushed only on
-    // CloseHookLog), which made the file opaque while NexusKey was running.
-    // DEBUG-only code path -- production builds compile this out entirely.
-    if (g_hookLog) setvbuf(g_hookLog, nullptr, _IONBF, 0);
+    // 8KB block buffer, flushed when CloseHookLog() runs on Stop. NextKeyTestRunner
+    // does post-mortem L1 analysis after NexusKey shuts down, so real-time
+    // visibility isn't required and we'd rather not pay per-keystroke fwrite
+    // syscalls (an earlier _IONBF attempt slowed the hook enough to mask the
+    // very stress bugs the corpus is meant to surface).
+    if (g_hookLog) setvbuf(g_hookLog, nullptr, _IOFBF, 8192);
 }
 
 static void CloseHookLog() {
