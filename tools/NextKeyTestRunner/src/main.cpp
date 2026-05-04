@@ -19,20 +19,24 @@
 #include <cstdlib>
 #include <cwchar>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "CaseResult.h"
 #include "ClipboardReader.h"
 #include "Encoding.h"
 #include "HookLogParser.h"
+#include "JunitXmlWriter.h"
+#include "PerfCsvWriter.h"
 #include "SendInputDriver.h"
 #include "Telex.h"
 #include "TomlLoader.h"
 
 namespace NextKey::TestRunner {
 
-constexpr const char* kVersion = "0.5.1-d8-postmortem";
+constexpr const char* kVersion = "0.6.0-d9-reporter";
 
 // GetLocalTime-derived ms-since-midnight (matches NexusKey HookLog timestamp
 // format, so we can slice log entries by per-case windows).
@@ -83,7 +87,9 @@ void PrintUsage() {
     std::printf("  --hook-log PATH      Path to NexusKey_hook.log (debug build) -- when\n");
     std::printf("                       supplied, --corpus prompts after the run for the\n");
     std::printf("                       user to stop NexusKey, then post-mortem parses the\n");
-    std::printf("                       log to print L1 inter-key timing per case.\n\n");
+    std::printf("                       log to print L1 inter-key timing per case.\n");
+    std::printf("  --junit PATH         Write JUnit-style XML report to PATH\n");
+    std::printf("  --perf-csv PATH      Write per-case perf metrics as CSV to PATH\n\n");
     std::printf("  --help, -h           Show this help\n\n");
     std::printf("Examples:\n");
     std::printf("  NextKeyTestRunner.exe --send vieejt --raw\n");
@@ -119,6 +125,8 @@ struct RunOptions {
     std::u16string listFile;        // --list FILE.toml: print parsed cases, no driving
     std::u16string corpusFile;      // --corpus FILE.toml: drive every case + verify
     std::u16string hookLogPath;     // --hook-log: NexusKey_hook.log for L1 timing
+    std::u16string junitXmlPath;    // --junit: JUnit XML report output
+    std::u16string perfCsvPath;     // --perf-csv: per-case CSV output
     bool raw = false;
     bool verify = false;
     bool clearFirst = false;
@@ -224,7 +232,9 @@ bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
 // run. NexusKey's log is invisible while the process is alive (file is open
 // for writing + entries sit in the in-process buffer); a post-mortem read
 // avoids the heisenbug we'd hit with mid-run instrumentation.
-void RunPostMortemL1(const std::vector<TestCase>& cases,
+//
+// Side-effect: fills `results[i].l1Stats` for each case.
+void RunPostMortemL1(std::vector<CaseResult>& results,
                      const std::vector<CaseWindow>& windows,
                      const std::filesystem::path& hookLog) {
     std::printf("\nTo compute L1 hook timing per case:\n");
@@ -250,7 +260,7 @@ void RunPostMortemL1(const std::vector<TestCase>& cases,
     std::printf("\nL1 hook timing (post-mortem, %zu total log entries):\n",
                 allEntries.size());
 
-    for (std::size_t i = 0; i < cases.size(); ++i) {
+    for (std::size_t i = 0; i < results.size(); ++i) {
         const auto& w = windows[i];
         std::vector<HookLogParser::KeystrokeEntry> sliced;
         sliced.reserve(64);
@@ -264,18 +274,46 @@ void RunPostMortemL1(const std::vector<TestCase>& cases,
                 sliced.push_back(e);
             }
         }
-        const auto stats = HookLogParser::ComputeKeyDownStats(sliced);
-        if (stats.intervals == 0) {
+        results[i].l1Stats = HookLogParser::ComputeKeyDownStats(sliced);
+
+        if (results[i].l1Stats.intervals == 0) {
             std::printf("[%2zu/%zu] %-50s (no log entries in window)\n",
-                        i + 1, cases.size(), cases[i].name.c_str());
+                        i + 1, results.size(), results[i].name.c_str());
             continue;
         }
         std::printf("[%2zu/%zu] %-50s n=%zu mean=%llums p99=%llums max=%llums\n",
-                    i + 1, cases.size(), cases[i].name.c_str(),
-                    stats.intervals,
-                    static_cast<unsigned long long>(stats.meanMs),
-                    static_cast<unsigned long long>(stats.p99Ms),
-                    static_cast<unsigned long long>(stats.maxMs));
+                    i + 1, results.size(), results[i].name.c_str(),
+                    results[i].l1Stats.intervals,
+                    static_cast<unsigned long long>(results[i].l1Stats.meanMs),
+                    static_cast<unsigned long long>(results[i].l1Stats.p99Ms),
+                    static_cast<unsigned long long>(results[i].l1Stats.maxMs));
+    }
+}
+
+void WriteReports(const RunOptions& opt,
+                  const std::vector<CaseResult>& results,
+                  uint64_t totalWallClockMs) {
+    if (!opt.junitXmlPath.empty()) {
+        const std::string path = Encoding::Utf16ToUtf8(opt.junitXmlPath);
+        std::ofstream out(path);
+        if (!out) {
+            std::fprintf(stderr, "[ERROR] Cannot open %s for JUnit XML write\n",
+                         path.c_str());
+        } else {
+            JunitXmlWriter::Write(out, "chaos", results, totalWallClockMs);
+            std::printf("JUnit XML written: %s\n", path.c_str());
+        }
+    }
+    if (!opt.perfCsvPath.empty()) {
+        const std::string path = Encoding::Utf16ToUtf8(opt.perfCsvPath);
+        std::ofstream out(path);
+        if (!out) {
+            std::fprintf(stderr, "[ERROR] Cannot open %s for perf CSV write\n",
+                         path.c_str());
+        } else {
+            PerfCsvWriter::Write(out, results);
+            std::printf("Perf CSV written: %s\n", path.c_str());
+        }
     }
 }
 
@@ -307,16 +345,30 @@ int RunCorpus(const RunOptions& opt) {
     const std::size_t total = cases.size();
     std::vector<CaseWindow> windows;
     windows.reserve(total);
+    std::vector<CaseResult> results;
+    results.reserve(total);
+
+    const uint64_t corpusStartMs = LocalTimeMs();
 
     for (std::size_t i = 0; i < total; ++i) {
         const auto& tc = cases[i];
         std::printf("[%2zu/%zu] %-50s ", i + 1, total, tc.name.c_str());
         std::fflush(stdout);
 
+        const uint64_t caseStartMs = LocalTimeMs();
         std::string msg;
         CaseWindow window{};
         const bool casePassed = RunSingleCase(tc, opt.postSendMs, msg, window);
+        const uint64_t caseEndMs = LocalTimeMs();
         windows.push_back(window);
+
+        CaseResult r;
+        r.name = tc.name;
+        r.passed = casePassed;
+        r.failureMessage = casePassed ? "" : msg;
+        r.wallClockMs = (caseEndMs >= caseStartMs) ? (caseEndMs - caseStartMs) : 0;
+        r.interKeyMicrosConfig = tc.interKeyMicros;
+        results.push_back(std::move(r));
 
         if (casePassed) {
             std::printf("PASS\n");
@@ -327,11 +379,17 @@ int RunCorpus(const RunOptions& opt) {
         }
     }
 
+    const uint64_t corpusEndMs = LocalTimeMs();
+    const uint64_t totalWallClockMs =
+        (corpusEndMs >= corpusStartMs) ? (corpusEndMs - corpusStartMs) : 0;
+
     std::printf("\nSummary: %d PASS, %d FAIL out of %zu\n", passed, failed, total);
 
     if (haveHookLog) {
-        RunPostMortemL1(cases, windows, hookLog);
+        RunPostMortemL1(results, windows, hookLog);
     }
+
+    WriteReports(opt, results, totalWallClockMs);
 
     return failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
@@ -456,6 +514,10 @@ int Run(int argc, wchar_t* argv[]) {
             opt.corpusFile = WideToU16(argv[++i]);
         } else if (arg == L"--hook-log" && i + 1 < argc) {
             opt.hookLogPath = WideToU16(argv[++i]);
+        } else if (arg == L"--junit" && i + 1 < argc) {
+            opt.junitXmlPath = WideToU16(argv[++i]);
+        } else if (arg == L"--perf-csv" && i + 1 < argc) {
+            opt.perfCsvPath = WideToU16(argv[++i]);
         } else if (arg == L"--help" || arg == L"-h") {
             PrintUsage();
             return EXIT_SUCCESS;

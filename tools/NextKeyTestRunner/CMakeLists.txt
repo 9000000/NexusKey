@@ -11,14 +11,21 @@
 # parser, and TOML loader. None of these depend on Win32 APIs.
 # ---------------------------------------------------------------------------
 add_executable(NextKeyTestRunnerTests EXCLUDE_FROM_ALL
+    src/CaseResult.h
     src/HookLogParser.h
     src/HookLogParser.cpp
+    src/JunitXmlWriter.h
+    src/JunitXmlWriter.cpp
     src/KeyEscapes.h
     src/KeyEscapes.cpp
+    src/PerfCsvWriter.h
+    src/PerfCsvWriter.cpp
     src/TomlLoader.h
     src/TomlLoader.cpp
     tests/HookLogParserTest.cpp
+    tests/JunitXmlWriterTest.cpp
     tests/KeyEscapesTest.cpp
+    tests/PerfCsvWriterTest.cpp
     tests/TelexTest.cpp
     tests/TomlLoaderTest.cpp
 )
@@ -48,13 +55,18 @@ gtest_discover_tests(NextKeyTestRunnerTests)
 if(WIN32)
     add_executable(NextKeyTestRunner EXCLUDE_FROM_ALL
         src/main.cpp
+        src/CaseResult.h
         src/ClipboardReader.h
         src/ClipboardReader.cpp
         src/Encoding.h
         src/HookLogParser.h
         src/HookLogParser.cpp
+        src/JunitXmlWriter.h
+        src/JunitXmlWriter.cpp
         src/KeyEscapes.h
         src/KeyEscapes.cpp
+        src/PerfCsvWriter.h
+        src/PerfCsvWriter.cpp
         src/SendInputDriver.h
         src/SendInputDriver.cpp
         src/TestCase.h
