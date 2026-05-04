@@ -58,6 +58,7 @@ docs/*
 !docs/CODING_RULES/
 !docs/telex-test-specification/
 !docs/Architecture/
+!docs/baselines/
 !docs/vietnamese-phonology-spec-distillate.md
 !docs/SECURITY.md
 !docs/SECURITY_FIXES-distillate.md
