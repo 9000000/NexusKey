@@ -3119,29 +3119,29 @@ void HookEngine::SendBackspaces(size_t count) {
     // shape (`viejtnam BS×4 s` → `việt`) is exactly that: BS#3 + BS#4 sit
     // posted in the queue while 's' fires its sent EM_REPLACESEL on stale
     // caret, then the queued BS drains and eats the just-inserted chars.
+    //
+    // Sprint 2 D1: useEditMsgPath_ short-circuit kept for now (D2 removes it
+    // when RichEditEmReplaceSelInjector takes over the EM_REPLACESEL path).
     if (useEditMsgPath_.load(std::memory_order_acquire)) {
         if (TryEditMessagePaste(L"", count)) {
             HOOK_LOG(L"  SendBackspaces: %zu via EM_REPLACESEL", count);
             return;
         }
-        HOOK_LOG(L"  SendBackspaces: EM_REPLACESEL failed, fallback to SendInput");
+        HOOK_LOG(L"  SendBackspaces: EM_REPLACESEL failed, fallback to injector");
     }
 
-    const bool baitChar = needBaitChar_.load(std::memory_order_acquire);
-    HOOK_LOG(L"  SendBackspaces: %zu bait=%d", count, baitChar ? 1 : 0);
-    if (baitChar && count > 0) {
-        // Insert bait to dismiss autocomplete suggest before BS
-        INPUT bait[2] = {};
-        bait[0].type = INPUT_KEYBOARD;
-        bait[0].ki.wScan = 0x202F;
-        bait[0].ki.dwFlags = KEYEVENTF_UNICODE;
-        bait[1].type = INPUT_KEYBOARD;
-        bait[1].ki.wScan = 0x202F;
-        bait[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-        TrackedSendInput(bait, 2);
-        count++;  // Extra BS to delete bait
+    // Sprint 2 D1: route through IOutputInjector. Bait-char prefix logic
+    // (formerly inline here) is now inside Win32SendInputInjector::Replace,
+    // gated by needsBaitCharPrefix_ which the factory wires from the
+    // Chromium classification flag.
+    auto inj = injector_.load(std::memory_order_acquire);
+    HOOK_LOG(L"  SendBackspaces: %zu via injector", count);
+    if (!inj->Replace(count, std::wstring_view{})) {
+        // Partial-send (renderer dropped events) — log but no further
+        // fallback at this layer; caller's commit-undo state machine
+        // handles the desync on the next keystroke.
+        HOOK_LOG(L"  SendBackspaces: injector reported partial delivery");
     }
-    SendBackspaceEvents(count);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3174,19 +3174,13 @@ void HookEngine::TrackModifier(DWORD vkCode, bool isDown) {
 // ═══════════════════════════════════════════════════════════
 
 void HookEngine::InjectKey(DWORD vkCode) {
-    WORD scan = static_cast<WORD>(MapVirtualKeyW(vkCode, MAPVK_VK_TO_VSC));
-    INPUT inputs[2] = {};
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = static_cast<WORD>(vkCode);
-    inputs[0].ki.wScan = scan;
-    inputs[0].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-    inputs[1].type = INPUT_KEYBOARD;
-    inputs[1].ki.wVk = static_cast<WORD>(vkCode);
-    inputs[1].ki.wScan = scan;
-    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[1].ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+    // Sprint 2 D1: route through IOutputInjector. The injector knows the
+    // active host class and emits the right INPUT[] with NEXUSKEY_EXTRA_INFO
+    // marker. Engine still owns sending_ guard + lastSynthSendTime_ tracking
+    // (they're synth-pressure state, not channel state).
     sending_ = true;
-    TrackedSendInput(inputs, _countof(inputs));
+    auto inj = injector_.load(std::memory_order_acquire);
+    inj->SendKey(static_cast<unsigned short>(vkCode));
     sending_ = false;
     lastSynthSendTime_ = GetTickCount();
 }

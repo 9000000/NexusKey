@@ -433,11 +433,17 @@ set(NEXTKEY_TEST_SOURCES
     src/app/system/MainThreadWorker.cpp
 )
 
-# Windows-only tests (require ConfigManager, ConfigEvent)
+# Windows-only tests (require ConfigManager, ConfigEvent, Win32 APIs)
 if(WIN32)
     list(APPEND NEXTKEY_TEST_SOURCES
         tests/ConfigManagerTest.cpp
         tests/ConfigEventTest.cpp
+        # Sprint 2 T3 — IOutputInjector unit tests + impl sources for linkage.
+        # NextKeyTests links NextKeyCore (which excludes output/), so impls
+        # are pulled in directly here for the test binary.
+        tests/output/Win32SendInputInjectorTest.cpp
+        src/app/output/Internal.cpp
+        src/app/output/Win32SendInputInjector.cpp
     )
 endif()
 

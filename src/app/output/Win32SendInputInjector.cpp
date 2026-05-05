@@ -1,19 +1,93 @@
 // src/app/output/Win32SendInputInjector.cpp
 //
-// D0 stub. Returns false / no-op. D1 implements Replace + SendKey.
+// D1 implementation. Batch SendInput. Stack-buffer std::array (no heap
+// alloc on hot path). Bait-char prefix for Chromium autocomplete-dismiss
+// quirk (replicates HookEngine::SendBackspaces line ~3121).
+//
+// Spec: docs/plans/sprint-2-output-injector.md §2.2
 #include "Win32SendInputInjector.h"
+#include "Internal.h"
+
+#include <array>
 
 namespace NextKey::Output {
 
-bool Win32SendInputInjector::Replace(std::size_t /*bsCount*/,
-                                     std::wstring_view /*text*/) noexcept {
-    // D1 implementation. Stub returns false → caller falls back to
-    // passthrough (today's TryEditMessagePaste failure semantics).
-    return false;
+namespace {
+
+// Stack-buffer upper bound. Worst-case Vietnamese composition replacement
+// needs ~8 chars + 8 BS; 256 events (= 128 keystrokes × down/up) is 16×
+// safety margin. Sized to fit a single SendInput batch comfortably.
+constexpr std::size_t kMaxBatch = 256;
+
+INPUT MakeKeyEvent(WORD vk, bool keyup,
+                   ULONG_PTR extraInfo = Internal::kNexusKeyExtraInfo) noexcept {
+    INPUT in{};
+    in.type = INPUT_KEYBOARD;
+    in.ki.wVk = vk;
+    in.ki.wScan = static_cast<WORD>(::MapVirtualKeyW(vk, MAPVK_VK_TO_VSC));
+    in.ki.dwFlags = keyup ? KEYEVENTF_KEYUP : 0u;
+    in.ki.dwExtraInfo = extraInfo;
+    return in;
 }
 
-void Win32SendInputInjector::SendKey(unsigned short /*vkCode*/) noexcept {
-    // D1 implementation.
+INPUT MakeUnicodeChar(WCHAR ch, bool keyup,
+                      ULONG_PTR extraInfo = Internal::kNexusKeyExtraInfo) noexcept {
+    INPUT in{};
+    in.type = INPUT_KEYBOARD;
+    in.ki.wScan = static_cast<WORD>(ch);
+    in.ki.dwFlags = KEYEVENTF_UNICODE | (keyup ? KEYEVENTF_KEYUP : 0u);
+    in.ki.dwExtraInfo = extraInfo;
+    return in;
+}
+
+}  // namespace
+
+bool Win32SendInputInjector::Replace(std::size_t bsCount,
+                                     std::wstring_view text) noexcept {
+    std::array<INPUT, kMaxBatch> buf{};
+    std::size_t i = 0;
+
+    // Bait-char prefix: only when this impl is the Chromium variant AND
+    // the operation is pure-backspace (text empty, bs > 0). Inserts
+    // U+202F + an extra BS to delete it. Replicates HookEngine
+    // ::SendBackspaces line ~3121 logic so the autocomplete-suggest
+    // dismiss behavior is preserved when D1 routes through the injector.
+    const bool emitBait = needsBaitCharPrefix_ && text.empty() && bsCount > 0;
+    if (emitBait) {
+        if (i + 2 > kMaxBatch) return false;
+        buf[i++] = MakeUnicodeChar(0x202F, /*keyup=*/false);
+        buf[i++] = MakeUnicodeChar(0x202F, /*keyup=*/true);
+        ++bsCount;  // extra BS to delete the bait char
+    }
+
+    // Backspace events.
+    for (std::size_t k = 0; k < bsCount; ++k) {
+        if (i + 2 > kMaxBatch) return false;
+        buf[i++] = MakeKeyEvent(VK_BACK, /*keyup=*/false);
+        buf[i++] = MakeKeyEvent(VK_BACK, /*keyup=*/true);
+    }
+
+    // Char events.
+    for (WCHAR ch : text) {
+        if (i + 2 > kMaxBatch) return false;
+        buf[i++] = MakeUnicodeChar(ch, /*keyup=*/false);
+        buf[i++] = MakeUnicodeChar(ch, /*keyup=*/true);
+    }
+
+    if (i == 0) return true;  // nothing to do (bsCount=0, text empty)
+    return Internal::TrackedSendInput(buf.data(), static_cast<UINT>(i));
+}
+
+void Win32SendInputInjector::SendKey(unsigned short vkCode) noexcept {
+    INPUT events[2] = {
+        MakeKeyEvent(static_cast<WORD>(vkCode), /*keyup=*/false),
+        MakeKeyEvent(static_cast<WORD>(vkCode), /*keyup=*/true),
+    };
+    // Fire-and-forget; partial-send detection logged by TrackedSendInput
+    // but not actionable for SendKey (re-inject single key has no clean
+    // fallback — the original use case at HookEngine line ~905 is
+    // re-inject after synth-pending, not a primary delivery).
+    (void)Internal::TrackedSendInput(events, 2);
 }
 
 }  // namespace NextKey::Output
