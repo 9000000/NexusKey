@@ -1,0 +1,36 @@
+Loaded 11 test case(s) from Z:\home\phatmt\code\NexusKey\tools\NextKeyTestRunner\corpus\chaos.toml
+L1 timing source: Z:\home\phatmt\code\NexusKey\build\Debug\NexusKey_hook.log (post-mortem analysis after run)
+Focus your target window -- starting in 3000 ms...
+[ 1/11] 1.1-ghost-hoaf-bs-t                                PASS
+[ 2/11] 1.2-tone-ghost-toans-bs3-i                         PASS
+[ 3/11] 1.3-escape-bs-aa-b                                 PASS
+[ 4/11] 2.1-x2-space-vieejt-nam                            PASS
+[ 5/11] 2.2-word-boundary-xin-chao-ban                     PASS
+[ 6/11] 2.3-en-vn-transition-hello-vieejt                  PASS
+[ 7/11] 3.3-engine-stress-truongf                          PASS
+[ 8/11] 5.1-case-tracking-Giar                             PASS
+[ 9/11] 5.2-vowel-start-uongs                              PASS
+[10/11] 5.3-cross-word-bs-vieejt-nam-bs4-s                 PASS
+[11/11] 6.1-autocap-binh-thuongf                           PASS
+
+Summary: 11 PASS, 0 FAIL out of 11
+
+To compute L1 hook timing per case:
+  1. Stop NexusKey (tray -> Quit) so its log buffer flushes.
+  2. Press Enter to read the log (or Ctrl+C to skip).
+  > 
+L1 hook timing (post-mortem, 349 total log entries):
+[ 1/11] 1.1-ghost-hoaf-bs-t                                n=5 mean=13ms p99=15ms max=15ms
+[ 2/11] 1.2-tone-ghost-toans-bs3-i                         n=8 mean=9ms p99=10ms max=10ms
+[ 3/11] 1.3-escape-bs-aa-b                                 n=3 mean=9ms p99=11ms max=11ms
+[ 4/11] 2.1-x2-space-vieejt-nam                            n=9 mean=5ms p99=8ms max=8ms
+[ 5/11] 2.2-word-boundary-xin-chao-ban                     n=13 mean=5ms p99=7ms max=7ms
+[ 6/11] 2.3-en-vn-transition-hello-vieejt                  n=11 mean=5ms p99=9ms max=9ms
+[ 7/11] 3.3-engine-stress-truongf                          n=7 mean=5ms p99=9ms max=9ms
+[ 8/11] 5.1-case-tracking-Giar                             n=4 mean=6ms p99=10ms max=10ms
+[ 9/11] 5.2-vowel-start-uongs                              n=5 mean=8ms p99=11ms max=11ms
+[10/11] 5.3-cross-word-bs-vieejt-nam-bs4-s                 n=14 mean=5ms p99=8ms max=8ms
+[11/11] 6.1-autocap-binh-thuongf                           n=12 mean=8ms p99=10ms max=10ms
+JUnit XML written: Z:\home\phatmt\code\NexusKey\report-channeltraits-notepad.xml
+Perf CSV written: Z:\home\phatmt\code\NexusKey\perf-channeltraits-notepad.csv
+
