@@ -17,10 +17,10 @@ already built (`-DCMAKE_BUILD_TYPE=Debug`).
 # 1. Open Discord + sign in (if testing 'discord' host)
 # 2. Open Chrome on chat.openai.com / chatgpt.com + sign in (if testing 'gpt')
 # 3. Run the sweep
-pwsh tools/run-chaos.ps1 -Tag channeltraits
+powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag channeltraits
 
 # Subset run — skip auth-dependent hosts
-pwsh tools/run-chaos.ps1 -Tag dev -Hosts notepad,notepadpp,chrome
+powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag dev -Hosts notepad,notepadpp,chrome
 ```
 
 ### Parameters

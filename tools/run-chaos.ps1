@@ -40,14 +40,16 @@
     -OutDir        Where report-*.xml + perf-*.csv land. Default: repo root.
 
 .USAGE
-    # Full sweep, tag "channeltraits"
-    pwsh tools/run-chaos.ps1 -Tag channeltraits
+    # Full sweep, tag "channeltraits".
+    # Use `powershell` (Windows PowerShell 5.1, built-in) — `pwsh` only
+    # exists if PowerShell 7+ is separately installed.
+    powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag channeltraits
 
     # Quick local-only run (skip discord/gpt — no login required)
-    pwsh tools/run-chaos.ps1 -Tag dev -Hosts notepad,notepadpp,chrome
+    powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag dev -Hosts notepad,notepadpp,chrome
 
     # Single-host smoke test
-    pwsh tools/run-chaos.ps1 -Tag smoke -Hosts notepad
+    powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag smoke -Hosts notepad
 
 .OUTPUTS
     For each host: report-{Tag}-{host}.xml, perf-{Tag}-{host}.csv,
