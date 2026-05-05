@@ -31,7 +31,8 @@
     -NexusKeyExe   Path to NexusKey.exe. Default: build/Debug/NexusKey.exe.
 
     -RunnerExe     Path to NextKeyTestRunner.exe. Default:
-                   build/tools/NextKeyTestRunner/Debug/NextKeyTestRunner.exe.
+                   build/tools/Debug/NextKeyTestRunner.exe (CMake
+                   RUNTIME_OUTPUT_DIRECTORY="${CMAKE_BINARY_DIR}/tools").
 
     -HookLog       Path NexusKey writes its debug log to (must match
                    NexusKey's compiled-in OpenHookLog target). Default:
@@ -90,7 +91,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Corpus)      { $Corpus      = Join-Path $repoRoot "tools/NextKeyTestRunner/corpus/chaos.toml" }
 if (-not $NexusKeyExe) { $NexusKeyExe = Join-Path $repoRoot "build/Debug/NexusKey.exe" }
-if (-not $RunnerExe)   { $RunnerExe   = Join-Path $repoRoot "build/tools/NextKeyTestRunner/Debug/NextKeyTestRunner.exe" }
+if (-not $RunnerExe)   { $RunnerExe   = Join-Path $repoRoot "build/tools/Debug/NextKeyTestRunner.exe" }
 if (-not $HookLog)     { $HookLog     = Join-Path $repoRoot "build/Debug/NexusKey_hook.log" }
 if (-not $OutDir)      { $OutDir      = $repoRoot }
 
