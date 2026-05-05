@@ -77,14 +77,19 @@ HookEngine::~HookEngine() {
 }
 
 void HookEngine::CommitPending() {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     if (engine_ && engine_->Count() > 0) {
         CommitComposition();
     }
 }
 
+// REQUIRES: caller holds stateMutex_. Sprint 1 D11 removed the self-lock so
+// the std::mutex transition doesn't deadlock through the
+// QuickSyncFromSharedState → ApplyConfig and CheckConfigEvent → ReloadFromToml
+// → ApplyConfig recursive paths. Direct callers: Start (single-threaded
+// init, no race), QuickSyncFromSharedState (locked), ReloadFromToml (called
+// from CheckConfigEvent which locks).
 void HookEngine::ApplyConfig(const TypingConfig& config) {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
     beepOnSwitch_ = config.beepOnSwitch;
     smartSwitch_ = config.smartSwitch;
     excludeApps_ = config.excludeApps;
@@ -109,7 +114,13 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     s_instance = this;
     currentMethod_.store(config.inputMethod, std::memory_order_release);
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
-    ApplyConfig(config);
+    // Sprint 1 D11: ApplyConfig requires caller-held stateMutex_. Start runs
+    // single-threaded (hookThread_ not yet spawned, no Settings dialog yet),
+    // so the lock is defensive — it documents the ApplyConfig contract.
+    {
+        std::lock_guard<std::mutex> _lock(stateMutex_);
+        ApplyConfig(config);
+    }
     if (macroEnabled_.load(std::memory_order_acquire)) {
         ReloadMacroTable();
     }
@@ -329,7 +340,7 @@ void HookEngine::HookThreadProc() {
 }
 
 void HookEngine::ToggleVietnameseMode() {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     // Block toggle in excluded apps. Use cached excludedPid_ + foreground PID
     // to distinguish "genuinely in excluded app" from "stale flag after leaving".
     // PID check is cheap (no OpenProcess) and immune to transient tray/taskbar focus.
@@ -386,7 +397,7 @@ void HookEngine::ToggleVietnameseMode() {
 }
 
 void HookEngine::SetCodeTable(CodeTable ct) {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     // Commit any pending composition before switching
     if (ct != currentCodeTable_ && engine_->Count() > 0) {
         CommitComposition();
@@ -412,10 +423,13 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
 }
 
 void HookEngine::QuickSyncFromSharedState() {
-    // Called from OnFocusChanged (already under lock via WinEventProc/FocusPollTimerProc)
-    // AND from SyncConfigFromSharedState (public API — needs its own lock).
-    // recursive_mutex handles both paths.
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    // Sprint 1 D11: callers must NOT hold stateMutex_. Self-locks for the
+    // slow-path config reload. After D11, FocusPollTimerProc releases its
+    // lock before calling OnFocusChanged, so the inner OnFocusChanged →
+    // QuickSync chain reaches this self-lock without recursion. ProcessKeyDown
+    // (hook thread) and SyncConfigFromSharedState (public API) call this
+    // without any lock held.
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     if (!sharedStatePtr_) return;
 
     // Fast path: skip full struct copy if epoch hasn't changed (single 32-bit read)
@@ -483,7 +497,7 @@ void HookEngine::QuickSyncFromSharedState() {
 }
 
 bool HookEngine::CheckConfigEvent() {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     // Legacy path — kept for TSF DLL compatibility. HookEngine uses configGeneration instead.
     if (!configEvent_.IsValid()) {
         configEvent_.Initialize();
@@ -2361,22 +2375,34 @@ void CALLBACK HookEngine::FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
         HWND fg = GetForegroundWindow();
         if (!fg) return;
 
-        // Main-thread writer path (timer callback). Lock to serialize with
-        // hook-thread reads; CheckLayoutChange + OnFocusChanged mutate state.
-        std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
-
-        // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
-        // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
-        self->CheckLayoutChange();
-
+        // Sprint 1 D11: split the locked region so OnFocusChanged is called
+        // WITHOUT stateMutex_ held. OnFocusChanged → QuickSyncFromSharedState
+        // self-locks; with std::mutex (non-recursive) any pre-held lock here
+        // would deadlock. The lock still serializes CheckLayoutChange's plain-
+        // bool writes (layoutSuppressed_, modeBeforeCjk_, cachedIsCompatLayout_)
+        // with main-thread Toggle/SetCodeTable, and protects the
+        // lastForegroundPid_ read-modify-write cycle.
         DWORD fgPid = 0;
         GetWindowThreadProcessId(fg, &fgPid);
-        if (fgPid == self->lastForegroundPid_ || fgPid == 0) return;
-        // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
-        // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
-        self->lastForegroundPid_ = fgPid;
-        HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
-        self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+
+        bool needFullRefresh = false;
+        {
+            std::lock_guard<std::mutex> _lock(self->stateMutex_);
+            // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
+            // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
+            self->CheckLayoutChange();
+
+            if (fgPid == self->lastForegroundPid_ || fgPid == 0) return;
+            // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
+            // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
+            self->lastForegroundPid_ = fgPid;
+            needFullRefresh = true;
+        }  // release lock — OnFocusChanged → QuickSync will self-lock.
+
+        if (needFullRefresh) {
+            HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
+            self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+        }
     } catch (const std::exception& e) {
         CrashLog(L"HookEngine::FocusPollTimerProc", e.what());
     } catch (...) {

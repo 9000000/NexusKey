@@ -343,9 +343,16 @@ private:
     std::mutex hookStartMutex_;                    // pairs with hookStartCv_ for handshake
     std::condition_variable hookStartCv_;
     HINSTANCE cachedHInstance_ = nullptr;          // captured in Start(), used by HookThreadProc
-    // Recursive: main-thread API methods (Start, ApplyConfig, etc.) call each other
-    // while holding the lock. Callback on hook thread acquires for brief read-modify.
-    mutable std::recursive_mutex stateMutex_;
+    // Sprint 1 D11: downgraded from recursive_mutex to plain mutex. After Phase B
+    // (D5–D7), all hook-read state is atomic — hook callbacks no longer acquire
+    // this mutex for reads. The remaining users are main-thread writers
+    // (ApplyConfig requires caller-held; QuickSyncFromSharedState self-locks;
+    // CheckConfigEvent/ReloadFromToml/Toggle/SetCodeTable/CommitPending lock at
+    // their public entry; FocusPollTimerProc locks for the layout check + PID
+    // update phase, releases before invoking OnFocusChanged so the inner
+    // QuickSync self-lock isn't recursive). Pillar #2 (Nhẹ): smaller primitive
+    // when recursion is no longer required.
+    mutable std::mutex stateMutex_;
     void HookThreadProc();                         // runs on hookThread_
 
     // ── Self-healing: Dual-channel hook integrity detection ──
