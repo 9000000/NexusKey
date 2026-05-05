@@ -1,4 +1,4 @@
-# NexusKey Refactor — Sprint 1 Handoff (chaos 11/11, D13 next)
+# NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
 ## TL;DR
 
@@ -8,6 +8,8 @@ Sprint 1 (this branch) brought the hook into compliance with the
 just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
 
 **Headline result (D12, 2026-05-05):** chaos verdict flipped from **5 / 11 PASS → 11 / 11 PASS** on Win11 New Notepad (`RichEditD2DPT`). All 6 stable FAILs (`vieejt nam`, `xin chao ban`, `hello vieejt`, `truongwf`, `uongs`, `binhf thuongwf`) plus the cross-word edit case (`5.3`) now pass byte-exact. Root cause was *not* a TelexEngine state-machine bug as D4 hypothesized (engine reproducer PASSED at HEAD — see D12.5 row); it was a **WinUI 3 async-render race** in the hook's output channel: `RichEditD2DPT` lags caret behind queued `WM_KEYDOWN`, and mixing sent `EM_REPLACESEL` with posted `SendInput` (passthrough alpha + `SendBackspaces` + commit-trigger physical) reorders under burst load — sent messages pre-empt the posted queue, EM_REPLACESEL runs on stale caret, then the posted BS / chars drain afterwards and corrupt the result. Fix routes **every** output channel through `EM_REPLACESEL` when `useEditMsgPath_` is set (alpha disabled-passthrough, commit triggers eaten + sent, BS via `TryEditMessagePaste`, commit-undo BS via same), with a 30 ms caret-lag retry loop. EVKey passes the same corpus on the same app because it uses pure SendInput throughout — never mixes sent/posted. NexusKey added `EM_REPLACESEL` for the WinUI 3 flicker fix, and that addition required the all-or-nothing rule to be safe under chaos load.
+
+**Cross-app smoke (D12 follow-up, 2026-05-05):** chaos.toml re-run with `target_app` switched to Chrome (address bar / textarea — non-`useEditMsgPath_` host) gave **10 / 11 PASS**. Only `5.3-cross-word-bs-vieejt-nam-bs4-s` still fails, and the corruption shape **changed**: Notepad-pre-fix `etết` → Notepad-post-fix `viết` (PASS) → **Chrome `việts`**. Chrome takes the original SendInput-batch / split-Electron path (Fix C is gated on `useEditMsgPath_`, which is false here), so the new failure is a different bug than the one D12 closed. See `docs/baselines/perf-baseline-d12-chrome-cross-app.md` for full analysis. Treat as Sprint 2 follow-up — does not block Sprint 1 PR for the Notepad / RichEditD2DPT chaos win.
 
 **Where we are right now (2026-05-05 morning — D11 resolved, Phase D
 started):** Phase B is committed clean through D7 (`9f77412`). D11
@@ -179,6 +181,91 @@ against a known-good engine?", which Phat answered by running v21 and EVKey.
 Future Sprint 1 work that needs to attribute a regression cause should
 likewise prefer "run the corpus against state X" over "reason about state X
 from data we already have".
+
+## Teammate handoff (2026-05-05) — picking up Sprint 1 D13
+
+If you're inheriting this branch from Phat, this is the **fastest read for the current state**. Skip directly past the legacy "Read in this order" section below — that was for D3 pickup and is now stale on most points.
+
+**Sprint 1 status: code-complete on Notepad / RichEditD2DPT. PR not yet opened. One known cross-app issue on Chrome (5.3 only).**
+
+### What's done
+
+- Phase A0/A/B/C/D all committed on this branch (`refactor/phase-1-single-owner`).
+- Chaos verdict on Win11 New Notepad: **5 / 11 → 11 / 11 PASS** at commit `582dab2`. Baseline captured: `docs/baselines/perf-baseline-d12-richedit-fix-chaos.{md,csv,xml}`.
+- Cross-platform GTest suite: 1403 / 1403 PASS on Linux at commit `58be0f7`.
+- D7 audit script (`tools/audit/check_hook_thread_no_mutex.sh`) exits 0 — Phase B compliance maintained.
+- HookEngine refactor: lock-free hook hot path (atomic flags + RCU `shared_ptr<TypingConfig>`), `recursive_mutex` → `std::mutex`, `MainThreadWorker` owns config drain + 200 ms CJK / focus poll (was a `SetTimer`).
+- Output-channel fix: for `useEditMsgPath_` apps, **all** output (alpha, commit-trigger char, BS, commit-undo BS) routes through `EM_REPLACESEL` — solves the chaos failures that were a `RichEditD2DPT` sent-vs-posted reorder race, NOT the engine state-machine bug D4 hypothesised.
+
+### What's left for Sprint 1 close
+
+1. **Decide what to do about the Chrome 5.3 finding** (see below). My recommendation: document as known limitation in the merge PR, defer fix to Sprint 2 IOutputInjector. Notepad / RichEditD2DPT chaos win stands on its own.
+2. **Open the PR.** Title: `Sprint 1: single-owner hook engine refactor + RichEditD2DPT chaos fix`. Body should link the 13 commits and the canonical baseline doc.
+3. **(Optional) Manual smoke test on a few real-world apps** before merge — the chaos corpus is synthetic; the architectural changes are broad enough that one real-world walkthrough on Notepad++, Word / Outlook, Slack / Discord (Electron) is cheap insurance. Won't catch the Chrome 5.3 case but will catch obvious regressions in the editMsg path.
+
+### Known Chrome 5.3 issue (2026-05-05)
+
+After the Notepad fix landed, smoke run on Chrome (address bar / textarea — non-`useEditMsgPath_` host) shows **10 / 11 PASS** with **5.3 still failing**, but the corruption shape **changed**:
+
+- Notepad-pre-fix `5.3` actual: `etết`
+- Notepad-post-fix `5.3` actual: `viết` (PASS)
+- Chrome-post-fix `5.3` actual: `việts` (FAIL, new shape)
+
+Engine layer is clean (engine reproducer test passes). The fix C all-EM_REPLACESEL rule is gated on `useEditMsgPath_`, which is false for Chrome — so Chrome takes the original SendInput-batch / split-Electron output path. The new failure shape suggests the BS+chars portion of the synthetic burst is being dropped (or pre-empted by the reinjected VK_S) on Chrome's renderer, but exact mechanism is not localised yet.
+
+**Full analysis + investigation paths:** `docs/baselines/perf-baseline-d12-chrome-cross-app.md`. Reproduces with foreground=Chrome and `chaos.toml`.
+
+This is **separate** from the bug D12 just closed on Notepad — different host, different output path. Don't try to fix it by tightening the EM_REPLACESEL rule (that would regress everything else).
+
+### Do NOT before merge
+
+- Do **not** revert any of the D5–D11 atomic / RCU / mutex changes — they are the foundation Fix C builds on, and the D7 audit script will fail.
+- Do **not** re-introduce a posted-output path (passthrough alpha, raw `SendBackspaces`, raw `InjectKey(VK_BACK)`) for an editMsg app — that resurrects the chaos failures D12 closed.
+- Do **not** change `useEditMsgPath_` detection to fire for Chrome — Chrome doesn't accept `EM_REPLACESEL` and the path will fail silently. Need a different abstraction (Sprint 2 IOutputInjector).
+
+### Files to know
+
+| File | Purpose |
+|---|---|
+| `HANDOFF.md` (this) | Current branch state |
+| `docs/plans/sprint-1-single-owner-refactor.md` | The 14-day plan, all phases marked ✅ except D13 |
+| `docs/baselines/perf-baseline-43fb4c1.{md,csv,xml}` | Locked baseline (5/11 PASS pre-Sprint-1) |
+| `docs/baselines/perf-baseline-d12-richedit-fix-chaos.{md,csv,xml}` | Canonical D12 baseline (11/11 on Notepad) |
+| `docs/baselines/perf-baseline-d12-chrome-cross-app.md` | Cross-app smoke + Chrome 5.3 finding |
+| `src/app/system/HookEngine.{h,cpp}` | All Sprint 1 hook changes |
+| `src/app/system/MainThreadWorker.{h,cpp}` | New in D8–D10 |
+| `tools/audit/check_hook_thread_no_mutex.sh` | D7 CI guard — must keep exit 0 |
+| `tools/NextKeyTestRunner/corpus/chaos.toml` | Full corpus, 11 cases |
+| `tools/NextKeyTestRunner/corpus/chaos-3.3-only.toml` | Single-case repro for diagnostic capture |
+
+### Reproduce locally (Windows)
+
+```powershell
+cd '\\wsl.localhost\Ubuntu-24.04\home\phatmt\code\NexusKey\build'
+cmake --build . --target NextKeyApp NextKeyTestRunner --config Debug
+
+# Start NexusKey Debug from build\Debug\NexusKey.exe (tray icon)
+# Open Notepad, focus it.
+
+.\tools\Debug\NextKeyTestRunner.exe `
+    --corpus ..\tools\NextKeyTestRunner\corpus\chaos.toml `
+    --junit  ..\docs\baselines\NEW.xml `
+    --perf-csv ..\docs\baselines\NEW.csv `
+    --hook-log Debug\NexusKey_hook.log
+```
+
+Runner prompts at end of run — exit NexusKey from tray, press Enter, runner post-mortem-parses `NexusKey_hook.log` for L1 timing.
+
+### Linux GTest
+
+```
+cmake --build build-linux --target NextKeyTests
+./build-linux/tests/NextKeyTests
+```
+
+1403 tests should pass.
+
+---
 
 ## Read in this order (for a teammate picking up D3)
 
