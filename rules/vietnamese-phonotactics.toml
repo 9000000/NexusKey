@@ -75,8 +75,10 @@ diphthong = [
     "ơi",
     "ua", "uâ", "uê", "ui", "uô", "uơ", "uy",
     "ưa", "ưi", "ươ", "ưu",
-    "oo", "ôô",
-]   # 30
+    "oo",
+]   # 29 — doc lists "ôô" but anh confirmed it does not exist in real
+       #  Vietnamese (RuleTiengViet_Summary.md error). "oo" retained for
+       #  loanwords like xoong/soong.
 
 triphthong = [
     "iêu",
@@ -138,10 +140,10 @@ suspended = [
     "iê",
     "oă",
     "uâ", "uô",
-    "oo", "ôô",
+    "oo",
     "ươ",
     "uyê",
-]   # 10
+]   # 9 — "ôô" removed (doc error, anh confirmed). "oo" kept for loanwords.
 
 # ─────────────────────────────────────────────────────────────────────────
 # 6. Tone marks — 6 total (1 base + 5 marked).
