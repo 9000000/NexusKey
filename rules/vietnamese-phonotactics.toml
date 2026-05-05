@@ -221,15 +221,30 @@ modifier_targets.d_bar      = ["d"]                 # d→đ (consonant, not vow
 # ─────────────────────────────────────────────────────────────────────────
 
 [auto_modifier_completion]
-# Pairs where typing the second vowel auto-completes the modifier.
-# Format: [first_vowel_state, next_input] = result_pair
-horn_propagation = [
-    # When state has horned ư and next input is 'o', second o gets horn → ươ
+
+# ── Forward propagation (anh example 'nử + oc → nưởc') ──
+# When state already has horned ư and user types 'o', second o gets horn → ươ.
+# This applies ALWAYS (no consonant-prefix branching), because horn was
+# explicitly applied to u first via 'w' / 'uw' / VNI '7'.
+horn_forward_propagation = [
     { from = "ư", next_vowel = "o", result_pair = "ươ" },
-    # Reverse case: ư typed via 'uw', then 'o' → ươ (both horned)
-    # Forward: 'uo' typed, then '7' (VNI) or 'w' → ươ
-    { from = "u", next_vowel = "o", trigger = "horn_modifier", result_pair = "ươ" },
 ]
+
+# ── Initial horn application on 'uo' pair (split between default vs edge) ──
+# When user types 'uo' first then applies horn (Telex 'w' / VNI '7'), the
+# result depends on the preceding initial consonant:
+#
+#   Default initial    : 'uo' + horn → 'ươ'  (both vowels horned)
+#                          examples: thương, lương, phương, tướng
+#   Edge initials      : 'uo' + horn → 'uơ'  (only o horned, u stays bare)
+#                          examples: huơ (huơ tay), khuơ, thuơ
+#
+# Source: src/core/engine/EngineHelpers.h:178 IsUOEdgeCasePrefix.
+# Anh confirmed 2026-05-05: edge applies after h, th, kh only.
+[auto_modifier_completion.horn_initial_uo_pair]
+default_result = "ươ"
+edge_result    = "uơ"
+edge_initials  = ["h", "th", "kh"]
 
 # Note: tone re-placement during transitions is governed by [tone_placement]
 # rules above — tone slot recomputed each time syllable structure changes
