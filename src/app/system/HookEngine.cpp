@@ -905,6 +905,18 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             InjectKey(VK_BACK);
             return true;
         }
+        // Sprint 1 Fix C/2026-05-05: editMsg apps need this BS via the sent
+        // EM_REPLACESEL channel — passing the physical BS through goes via the
+        // posted message queue and is pre-empted by the next sent EM_REPLACESEL
+        // (the 's' in chaos 5.3), leaving the pre-replace BS to drain after
+        // the replacement and eat the just-inserted chars.
+        if (useEditMsgPath_.load(std::memory_order_acquire)) {
+            if (TryEditMessagePaste(L"", /*BS=*/1)) {
+                HOOK_LOG(L"  commit-undo: BS after commit via EM_REPLACESEL → Primed");
+                return true;
+            }
+            HOOK_LOG(L"  commit-undo: BS after commit EM_REPLACESEL failed, passthrough");
+        }
         HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
         return false;  // Let backspace pass through to delete the space
     }
@@ -1221,6 +1233,30 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             InjectKey(vkCode);
             return true;  // Eat original trigger
         }
+        // Sprint 1 Fix C/2026-05-05: in async-render hosts (Win11 New Notepad
+        // RichEditD2DPT) every alpha key is now routed through EM_REPLACESEL
+        // (sent message). A passthrough trigger char arrives via posted
+        // WM_KEYDOWN, and sent messages pre-empt posted ones — so the next
+        // eaten alpha's EM_REPLACESEL can be processed before the previous
+        // word's space/punctuation makes it to WM_CHAR. The chaos 2.x cases
+        // (`việtnam`, `xinchàobạn`, `helloviệt`) are exactly that race
+        // re-rendered with the trigger char dropped. Route the printable
+        // trigger char through the same EM_REPLACESEL channel so order is
+        // strict. Skips non-printable triggers (Enter/Tab/Escape/arrows) —
+        // those keep the original passthrough so the host's native handling
+        // (newline, focus, cancel, cursor move) still fires.
+        if (useEditMsgPath_.load(std::memory_order_acquire)) {
+            const wchar_t triggerChar = VkToMacroChar(vkCode);
+            if (triggerChar >= L' ') {
+                std::wstring oneChar(1, triggerChar);
+                if (TryEditMessagePaste(oneChar, /*BS=*/0)) {
+                    HOOK_LOG(L"  commit trigger via EM_REPLACESEL: '%c'", triggerChar);
+                    return true;  // Eat original — we inserted it ourselves
+                }
+                // EM_REPLACESEL failed → fall through to original passthrough
+                HOOK_LOG(L"  commit trigger EM_REPLACESEL failed, passthrough vk=0x%02X", vkCode);
+            }
+        }
         return false;  // No pending synthetics, safe to pass through
     }
 
@@ -1402,9 +1438,25 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     const bool baitChar = needBaitChar_.load(std::memory_order_acquire);
     const bool skipEmpty = skipEmptyChar_.load(std::memory_order_acquire);
     const bool editMsgPath = useEditMsgPath_.load(std::memory_order_acquire);
+    //   - useEditMsgPath_ (Win11 New Notepad RichEditD2DPT, etc.): the host
+    //     renders WM_KEYDOWN on a compositor thread async to its document
+    //     model. Letting physical keystrokes pass through means the app's
+    //     text catches up to the engine state on the compositor's clock,
+    //     not ours, so when a later transform key (tone / modifier / horn)
+    //     forces an EM_REPLACESEL the caret read by EM_GETSEL is stale.
+    //     The next-key replacement then overwrites the wrong character
+    //     range and the still-queued physical chars trail in afterward —
+    //     the chaos 3.3 `truongwf → ườngng` shape is exactly that race.
+    //     Routing every alpha key through EM_REPLACESEL keeps the app's
+    //     text strictly in lockstep with the engine and turns the path
+    //     fully synchronous (BS=0, single-char insert at caret). Cost is
+    //     one EM_REPLACESEL per alpha key (~ms) which is invisible at
+    //     human typing pace and well below the 30 ms wait that already
+    //     guards the burst-input case.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
         !(hadSynthInWord_ && electronApp) &&
         !outlookApp &&
+        !editMsgPath &&
         synthEventsPending_ == 0 &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
@@ -2827,15 +2879,45 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     // WinUI 3 RichEditBox renders on the compositor thread async to input. SendInput
     // BS+replace arrives a frame too late → suppressed key flashes before replacement.
     // EM_REPLACESEL goes straight into the RichEdit child synchronously → atomic.
-    // Fall through to SendInput on failure (not clipboard — preserve user's clipboard).
+    //
+    // Burst-input race (chaos 3.3 / 5.2 / 6.1, fixed C/2026-05-05): under sub-1ms
+    // inter-key, physical WM_KEYDOWN messages stack up in the app's input queue
+    // faster than the compositor renders them. When the hook fires for a
+    // tone/modifier key, the EM_GETSEL caret read inside TryEditMessagePaste is
+    // still at a stale (low) position, so the BS > caret guard refuses the
+    // replacement. The original code's "fallback to SendInput" branch was the
+    // actual corruption source: BS+chars injected into the kernel queue then
+    // interleave with the still-pending physical chars in front of them, and
+    // the next hook callback (for the next key) reads a half-applied caret. The
+    // observed shapes (tờương / ờnương for `truongwf`) are exactly that race
+    // re-rendered.
+    //
+    // Fix: when TryEditMessagePaste fails, sleep briefly in the hook callback
+    // so the app's main thread has time to drain its input queue and advance
+    // the caret; then retry. The hook thread holds back its own callback while
+    // sleeping, so no further physical keys race in. 30 ms upper bound is well
+    // below LowLevelHooksTimeout (default 500 ms) and dwarfs the typical 5-10 ms
+    // catch-up needed at chaos 500 µs inter-key. Only invokes the SendInput
+    // fallback if the wait is exhausted — true human-pace typing never hits it.
     if (useEditMsgPath_.load(std::memory_order_acquire)) {
-        if (TryEditMessagePaste(toSend, backspaceCount)) {
-            previousComposition_ = newText;
-            if (synthEventsPending_ > 0) hadSynthInWord_ = true;
-            return;
+        constexpr int kAsyncRenderMaxWaitMs = 30;
+        constexpr int kAsyncRenderStepMs    = 1;
+        int waitedMs = 0;
+        for (;;) {
+            if (TryEditMessagePaste(toSend, backspaceCount)) {
+                previousComposition_ = newText;
+                if (synthEventsPending_ > 0) hadSynthInWord_ = true;
+                if (waitedMs > 0) {
+                    HOOK_LOG(L"  ReplaceComposition[editMsg]: caught up after %dms wait", waitedMs);
+                }
+                return;
+            }
+            if (waitedMs >= kAsyncRenderMaxWaitMs) break;
+            Sleep(kAsyncRenderStepMs);
+            waitedMs += kAsyncRenderStepMs;
         }
-        HOOK_LOG(L"  ReplaceComposition[editMsg]: fallback to SendInput BS=%zu send='%s'",
-                 backspaceCount, toSend.c_str());
+        HOOK_LOG(L"  ReplaceComposition[editMsg]: retry exhausted (%dms) — fallback to SendInput BS=%zu send='%s'",
+                 kAsyncRenderMaxWaitMs, backspaceCount, toSend.c_str());
     }
 
     // ── VB6 / ANSI-internal windows ──
@@ -2991,6 +3073,23 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
 }
 
 void HookEngine::SendBackspaces(size_t count) {
+    if (count == 0) return;
+
+    // Sprint 1 Fix C/2026-05-05: editMsg apps (Win11 RichEditD2DPT) need BS
+    // delivered via the same sent-message channel as the rest of the output.
+    // SendInput-posted VK_BACK events otherwise interleave with already-queued
+    // events and get pre-empted by the next sent EM_REPLACESEL. The chaos 5.3
+    // shape (`viejtnam BS×4 s` → `việt`) is exactly that: BS#3 + BS#4 sit
+    // posted in the queue while 's' fires its sent EM_REPLACESEL on stale
+    // caret, then the queued BS drains and eats the just-inserted chars.
+    if (useEditMsgPath_.load(std::memory_order_acquire)) {
+        if (TryEditMessagePaste(L"", count)) {
+            HOOK_LOG(L"  SendBackspaces: %zu via EM_REPLACESEL", count);
+            return;
+        }
+        HOOK_LOG(L"  SendBackspaces: EM_REPLACESEL failed, fallback to SendInput");
+    }
+
     const bool baitChar = needBaitChar_.load(std::memory_order_acquire);
     HOOK_LOG(L"  SendBackspaces: %zu bait=%d", count, baitChar ? 1 : 0);
     if (baitChar && count > 0) {

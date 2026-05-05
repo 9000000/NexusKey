@@ -1,11 +1,13 @@
-# NexusKey Refactor — Sprint 1 Handoff (Phase C done, D12 next)
+# NexusKey Refactor — Sprint 1 Handoff (chaos 11/11, D13 next)
 
 ## TL;DR
 
 NexusKey's hook engine has long-standing race-condition bugs (x2 space, ghost
 key, tone misplacement under fast typing). Phase 0a built the test harness;
-Sprint 1 (this branch) is bringing the hook into compliance with the
+Sprint 1 (this branch) brought the hook into compliance with the
 just-committed Rule #11 (no mutex on hook hot path) via single-owner refactor.
+
+**Headline result (D12, 2026-05-05):** chaos verdict flipped from **5 / 11 PASS → 11 / 11 PASS** on Win11 New Notepad (`RichEditD2DPT`). All 6 stable FAILs (`vieejt nam`, `xin chao ban`, `hello vieejt`, `truongwf`, `uongs`, `binhf thuongwf`) plus the cross-word edit case (`5.3`) now pass byte-exact. Root cause was *not* a TelexEngine state-machine bug as D4 hypothesized (engine reproducer PASSED at HEAD — see D12.5 row); it was a **WinUI 3 async-render race** in the hook's output channel: `RichEditD2DPT` lags caret behind queued `WM_KEYDOWN`, and mixing sent `EM_REPLACESEL` with posted `SendInput` (passthrough alpha + `SendBackspaces` + commit-trigger physical) reorders under burst load — sent messages pre-empt the posted queue, EM_REPLACESEL runs on stale caret, then the posted BS / chars drain afterwards and corrupt the result. Fix routes **every** output channel through `EM_REPLACESEL` when `useEditMsgPath_` is set (alpha disabled-passthrough, commit triggers eaten + sent, BS via `TryEditMessagePaste`, commit-undo BS via same), with a 30 ms caret-lag retry loop. EVKey passes the same corpus on the same app because it uses pure SendInput throughout — never mixes sent/posted. NexusKey added `EM_REPLACESEL` for the WinUI 3 flicker fix, and that addition required the all-or-nothing rule to be safe under chaos load.
 
 **Where we are right now (2026-05-05 morning — D11 resolved, Phase D
 started):** Phase B is committed clean through D7 (`9f77412`). D11
@@ -55,7 +57,7 @@ breaks.
 | D9: MainThreadWorker handles config-changed event | ✅ DoD met — Signal/SetWorkHandler API + 7 dispatch tests (within-50ms wake, coalescing, pre-Start latch, post-Stop no-op, handler swap, exception isolation). main.cpp + main_lite.cpp `hookReloadCallback_` rewired so cross-process Settings → main → `worker.Signal()` instead of direct main-thread `SyncConfigFromSharedState()`. Worker handler runs `SyncConfig` on its own thread, pre-empting hook QuickSync slow path. **Note:** plan §C Q1 hinted Win32 ConfigEvent HANDLE wait, but the existing `WM_NEXUSKEY_HOOK_RELOAD` PostMessage path already lands on main thread; a portable cv-Signal there is functionally equivalent and Linux-testable. | `src/app/main.cpp`, `src/app/main_lite.cpp`, `src/app/system/MainThreadWorker.{h,cpp}` |
 | D10: MainThreadWorker handles heartbeat + CJK layout poll | ✅ DoD met — `SetTickHandler` / `SetTickInterval` on the worker (6 new tests: cadence, no-tick when interval=0, no-crash when handler unset, signal+tick coexist, mid-run interval change, tick exception isolation). `HookEngine::FocusPollTimerProc` retired; body migrated to public `OnTickPoll()` driven from worker tick at 200 ms. `SetTimer(nullptr, 0, 200, FocusPollTimerProc)` and the matching `KillTimer` removed from `HookEngine::Start`/`Stop`; main.cpp + main_lite.cpp wire `g_mainThreadWorker.SetTickHandler/SetTickInterval(200ms)` after Start. **Note:** plan §C D10 also mentioned a heartbeat thread — none existed in the tree (raw-input self-heal in `RawInputWndProc` is event-driven, not timer-driven, and untouched). | `src/app/system/HookEngine.{h,cpp}`, `src/app/main.cpp`, `src/app/main_lite.cpp`, `src/app/system/MainThreadWorker.{h,cpp}` |
 | D11: `recursive_mutex` → `std::mutex` | ✅ already committed `3a60bc3` (re-listed in D11 row above) | — |
-| D12 / D13: full corpus gate run + PR prep | 🔜 **next** | `docs/plans/sprint-1-single-owner-refactor.md` §D/§E |
+| D12 / D13: full corpus gate run + PR prep | D12 ✅ chaos 11/11 PASS on Win11 New Notepad RichEditD2DPT (was 5/11 baseline). All 6 stable FAIL flipped (1.2, 2.1, 2.2, 2.3, 3.3, 5.2, 5.3, 6.1). Root-caused: WinUI 3 RichEditD2DPT async-render race — caret-stale `EM_GETSEL` while physical `WM_KEYDOWN` queued + sent `EM_REPLACESEL` pre-empts posted `SendInput` BS. Fix C routes ALL output through `EM_REPLACESEL` for `useEditMsgPath_` apps (alpha, commit triggers, BS, commit-undo BS) + 30 ms caret-lag retry. D13 PR prep next. | `docs/plans/sprint-1-single-owner-refactor.md` §D/§E, `src/app/system/HookEngine.cpp` |
 | D12 / D13: full corpus gate run + PR prep | pending | `docs/plans/sprint-1-single-owner-refactor.md` §D/§E |
 
 ## Branch state
