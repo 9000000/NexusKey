@@ -267,6 +267,55 @@ TEST_F(TelexEngineTest, D12_5_Truongw_NoTone) {
     EXPECT_EQ(engine_->Peek(), L"trương");
 }
 
+// --- Sprint 2 D0: 5.3 Chrome bug — engine-layer isolation test ---
+//
+// Repro for chaos 5.3 "vieejt nam BS×4 s" → expected "viết" but Chrome
+// produces "việts". Per Sprint 2 D0 hook-log analysis, the failure is
+// in HookEngine's commit-undo "Primed → cancel on synthPending" state
+// machine: under chaos 1ms inter-key, 's' arrives before the BS#4 synth
+// events drain → Primed canceled → engine never gets "việt" replayed →
+// 's' processed fresh → screen shows "việts".
+//
+// This test ISOLATES the engine layer: pushes the equivalent post-replay
+// sequence ("viejt" then "s") directly. No hook, no commit, no synthetic
+// events.
+//
+//   PASS → engine is clean. Bug is purely in HookEngine commit-undo
+//          replay. Sprint 2 fix lives in HookEngine, not TypingEngine.
+//   FAIL → engine itself can't do the tone replacement. Fix needed in
+//          TypingEngine tone-replacement logic.
+//
+// Reference: docs/baselines/perf-baseline-d12-chrome-cross-app.md
+// HookEngine state-machine site: HookEngine.cpp "commit-undo: cancel Primed"
+
+TEST_F(TelexEngineTest, S2D0_ChromeBug53_VieejtPlusS_ToneReplace) {
+    // Per HookEngine::ReplayCommittedChars (HookEngine.cpp:1621): replay pushes
+    // the ORIGINAL user keystrokes from CommitEntry::history into the engine —
+    // not the composed Unicode chars. So a committed 'việt' from input 'vieejt'
+    // replays as PushChar('v'),('i'),('e'),('e'),('j'),('t').
+    //
+    // This test feeds the post-replay-equivalent sequence: 'vieejt' then 's'.
+
+    TypeString(*engine_, L"vieejt");
+    EXPECT_EQ(engine_->Peek(), L"việt") << "Baseline 'vieejt' → 'việt' must hold";
+
+    // Bug repro: 's' after 'việt' should replace j-tone (nặng) with
+    // s-tone (sắc), preserving the ê circumflex → 'viết'.
+    engine_->PushChar(L's');
+    EXPECT_EQ(engine_->Peek(), L"viết")
+        << "After 'vieejt'+'s', engine should replace nặng with sắc → 'viết'.\n"
+        << "PASS means bug is purely in HookEngine commit-undo state machine.\n"
+        << "FAIL means TypingEngine tone-replacement logic is also broken.";
+}
+
+// Sanity check: the simpler path (forward typing without replay) for the same
+// final word — verifies the engine CAN produce 'viết' when 's' is the only
+// tone modifier on the syllable. This locks in what 'right' looks like.
+TEST_F(TelexEngineTest, S2D0_ChromeBug53_Sanity_VieetsForward) {
+    TypeString(*engine_, L"vieets");
+    EXPECT_EQ(engine_->Peek(), L"viết");
+}
+
 // ============================================================================
 // STROKE TESTS (dd→đ)
 // ============================================================================
