@@ -213,6 +213,53 @@ fi
 : "${ATOMIC_INJECTOR:?}" >/dev/null
 
 # ────────────────────────────────────────────────────────────────────────
+# Check 5: QuickSyncFromSharedState hot path is lock-free
+# ────────────────────────────────────────────────────────────────────────
+# ProcessKeyDown calls QuickSyncFromSharedState on every keystroke from the
+# LL hook thread. Rule #11.3 forbids the hook thread from waiting on a
+# mutex contended with the main thread. The function MUST early-return
+# before acquiring stateMutex_ on the common case (epoch unchanged).
+#
+# Heuristic: in the body of QuickSyncFromSharedState, an uncommented
+# `return` statement must appear BEFORE the first uncommented
+# `lock_guard<std::mutex> _lock(stateMutex_)` line. That return is the
+# lock-free fast path; the lock guards only the slow path that handles
+# an actual SharedState change.
+#
+# This check would have caught the pre-fix shape where the lock was
+# acquired unconditionally at the top of the function (Pre-T3 review
+# Minor 2, see docs/TODO.md).
+echo
+echo "Check 5: QuickSyncFromSharedState hot path returns before stateMutex_ lock"
+qs_body=$(awk '
+    /HookEngine::QuickSyncFromSharedState[[:space:]]*\(/ { in_fn = 1; next }
+    in_fn { print }
+    in_fn && /^\}/ { in_fn = 0 }
+' "$CPP")
+if [ -z "$qs_body" ]; then
+    echo "  SKIP: QuickSyncFromSharedState body not found"
+else
+    # Strip whole-line C++ comments so commented patterns don't fool the heuristic.
+    qs_clean=$(echo "$qs_body" | grep -vE "^\s*//")
+    # Line numbers within the cleaned body for the lock and the first return.
+    lock_line=$(echo "$qs_clean" | grep -nE "lock_guard<std::mutex>.*stateMutex_" | head -1 | cut -d: -f1)
+    return_line=$(echo "$qs_clean" | grep -nE "\breturn[[:space:]]*;" | head -1 | cut -d: -f1)
+    if [ -z "$lock_line" ]; then
+        echo "  OK: QuickSyncFromSharedState no longer locks stateMutex_"
+    elif [ -z "$return_line" ]; then
+        echo "  FAIL: QuickSyncFromSharedState locks stateMutex_ with no early return"
+        errors=$((errors + 1))
+    elif [ "$return_line" -ge "$lock_line" ]; then
+        echo "  FAIL: QuickSyncFromSharedState lock acquired before any early return"
+        echo "        (lock at body line $lock_line, first return at body line $return_line)"
+        echo "        Hook hot path must early-return on unchanged epoch BEFORE locking"
+        errors=$((errors + 1))
+    else
+        echo "  OK: lock-free early return at body line $return_line precedes lock at $lock_line"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────────────────
 # Result
 # ────────────────────────────────────────────────────────────────────────
 echo

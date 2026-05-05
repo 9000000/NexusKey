@@ -454,7 +454,13 @@ private:
     uint8_t lastCodeTable_ = 0;
     void QuickSyncFromSharedState();
     void ReloadFromToml();  // Full TOML reload (macros, excluded apps, hotkeys, etc.)
-    uint32_t lastEpoch_ = 0;             // Epoch fast path — skip full Read() when unchanged
+    // Pre-T3 Minor 2 fix (Rule #11.3): atomic for lock-free hot-path read
+    // in QuickSyncFromSharedState. Writer (slow path inside stateMutex_):
+    // release-store after applying SharedState. Reader (lock-free fast path
+    // on hook thread): acquire-load + epoch compare; equal → early-return
+    // without ever taking stateMutex_. Initialised to 0 so the first call
+    // always enters the slow path (any valid SharedState epoch mismatches).
+    std::atomic<uint32_t> lastEpoch_{0};  // Epoch fast path — skip full Read() when unchanged
     uint8_t lastConfigGeneration_ = 0;   // Tracks configGeneration from SharedState
 
     // Callbacks
