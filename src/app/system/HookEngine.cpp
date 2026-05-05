@@ -931,7 +931,29 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // Checking counter alone would permanently disable commit-undo.  The 100ms
         // threshold covers DispatchSendInput Sleep (10-20ms) + Qt processing (~30ms)
         // with margin, while allowing replay at normal typing speed (>100ms between keys).
-        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < kSynthSettleMs) {
+        //
+        // Sprint 2 D1/2026-05-05: tone modifiers (Telex s/f/r/x/j; VNI 1-5) are
+        // EXEMPT from the synth guard. Reason: by definition they only modify the
+        // previous word — no other linguistic meaning. ReplaceComposition's diff
+        // (prev=committed, new=committed-with-tone) computes BS correctly relative
+        // to the post-drain screen state, and SendInput appends our events AFTER
+        // any pending synth, so screen-engine sync is preserved across the gap.
+        // Without this exemption, chaos 5.3 (`viejtnam BS×4 s` on non-EditMsg apps
+        // like Chrome) cancels the replay and produces `việts` instead of `viết`.
+        // See docs/baselines/perf-baseline-d12-chrome-cross-app.md and the
+        // S2D0_ChromeBug53_* engine-isolation tests.
+        const auto methodForTone = currentMethod_.load(std::memory_order_acquire);
+        const bool isTelexTone =
+            (methodForTone == InputMethod::Telex || methodForTone == InputMethod::Combined) &&
+            (vkCode == 'S' || vkCode == 'F' || vkCode == 'R' ||
+             vkCode == 'X' || vkCode == 'J');
+        const bool isVniTone =
+            (methodForTone == InputMethod::VNI || methodForTone == InputMethod::Combined) &&
+            vkCode >= '1' && vkCode <= '5' &&
+            !(GetKeyState(VK_SHIFT) & 0x8000);
+        const bool isToneModifier = isTelexTone || isVniTone;
+        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < kSynthSettleMs
+            && !isToneModifier) {
             HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
                      synthEventsPending_.load(), vkCode);
             CancelCommitUndo();
