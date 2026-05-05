@@ -920,11 +920,12 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // (the 's' in chaos 5.3), leaving the pre-replace BS to drain after
         // the replacement and eat the just-inserted chars.
         //
-        // Sprint 2 D2: the useEditMsgPath_ flag now selects RichEditEmReplaceSel-
-        // Injector via the factory; injector_->Replace handles the channel.
-        // Flag still read here to gate whether to attempt synthetic delivery
-        // (RichEdit hosts) vs let the BS pass through naturally (default hosts).
-        if (useEditMsgPath_.load(std::memory_order_acquire)) {
+        // Sprint 2 D2: the synchronous-channel injector (RichEditEm) handles
+        // commit-undo BS via sent message. Default hosts let physical BS
+        // pass through naturally — synthesizing would just add latency.
+        // Sprint 2 D4: gate moved from useEditMsgPath_.load() to
+        // IsSyncReplaceChannel() proxy (SettleBudget==0).
+        if (IsSyncReplaceChannel()) {
             auto inj = injector_.load(std::memory_order_acquire);
             if (inj->Replace(/*bs=*/1, std::wstring_view{})) {
                 HOOK_LOG(L"  commit-undo: BS after commit via injector → Primed");
@@ -1282,7 +1283,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // strict. Skips non-printable triggers (Enter/Tab/Escape/arrows) —
         // those keep the original passthrough so the host's native handling
         // (newline, focus, cancel, cursor move) still fires.
-        if (useEditMsgPath_.load(std::memory_order_acquire)) {
+        // Sprint 2 D4: gate flipped to IsSyncReplaceChannel() — only the
+        // synchronous-channel injector (RichEdit) needs the trigger char
+        // routed through the same EM_REPLACESEL channel for strict ordering.
+        if (IsSyncReplaceChannel()) {
             const wchar_t triggerChar = VkToMacroChar(vkCode);
             if (triggerChar >= L' ') {
                 auto inj = injector_.load(std::memory_order_acquire);
@@ -1474,7 +1478,10 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     const bool outlookApp = isOutlookApp_.load(std::memory_order_acquire);
     const bool baitChar = needBaitChar_.load(std::memory_order_acquire);
     const bool skipEmpty = skipEmptyChar_.load(std::memory_order_acquire);
-    const bool editMsgPath = useEditMsgPath_.load(std::memory_order_acquire);
+    // Sprint 2 D4: editMsgPath via SettleBudget==0 proxy (RichEditEm only
+    // returns 0ms today). Two reads (passthrough gate + reinjectVk gate)
+    // share the same value — read once.
+    const bool editMsgPath = IsSyncReplaceChannel();
     //   - useEditMsgPath_ (Win11 New Notepad RichEditD2DPT, etc.): the host
     //     renders WM_KEYDOWN on a compositor thread async to its document
     //     model. Letting physical keystrokes pass through means the app's
@@ -1738,6 +1745,18 @@ static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
     INPUT inUp = inDown;
     inUp.ki.dwFlags |= KEYEVENTF_KEYUP;
     events.push_back(inUp);
+}
+
+// Sprint 2 D4: Replaces useEditMsgPath_.load() at four policy gates
+// (commit-undo BS, commit trigger char, HandleAlphaKey passthrough/reinjectVk,
+// ReplaceComposition retry-loop). Returns true iff the active injector's
+// SettleBudget == 0ms — only RichEditEmReplaceSelInjector qualifies today
+// (sent-message channel, drains synchronously). See header for the leak-
+// caveat: the proxy ties policy to a perf characteristic; if a future Win32-
+// sync impl returns 0ms it would misfire.
+bool HookEngine::IsSyncReplaceChannel() const noexcept {
+    auto inj = injector_.load(std::memory_order_acquire);
+    return inj && inj->SettleBudget().count() == 0;
 }
 
 /// Send INPUT events via SendInput with correct synthEventsPending_ tracking.
@@ -2004,52 +2023,16 @@ bool HookEngine::TryEditMessagePaste(const std::wstring& text, size_t backspaceC
     return true;
 }
 
-/// Dispatch backspace + character events via SendInput.
-/// Handles split (Electron/Console) vs batch (Win32) strategy in one place.
-/// NOTE: batch path appends charEvents into bsEvents — callers must not reuse after calling.
 void HookEngine::RecordSynthDispatch() noexcept {
     DWORD now = GetTickCount();
     lastSynthSendTime_ = now;
     lastRealSynthTime_ = now;
 }
 
-void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents) {
-    sending_ = true;
-    const bool electronApp = isElectronApp_.load(std::memory_order_acquire);
-    const bool consoleApp = isConsoleApp_.load(std::memory_order_acquire);
-    HOOK_LOG(L"  DispatchSendInput: path=%s BS=%zu chars=%zu electron=%d console=%d",
-             (electronApp || consoleApp) ? L"split" : L"batch",
-             bsEvents.size() / 2, charEvents.size() / 2,
-             electronApp ? 1 : 0, consoleApp ? 1 : 0);
-    if (electronApp || consoleApp) {
-        // Split: VK_BACK and VK_PACKET travel on separate internal paths in
-        // Electron/Console apps — batching risks out-of-order processing ("nuốt chữ").
-        // Other skipEmptyChar_ apps (Zed) are single-process — batch is fine.
-        if (!bsEvents.empty()) {
-            TrackedSendInput(bsEvents.data(), static_cast<UINT>(bsEvents.size()));
-            // Gap so app finishes processing BS before receiving chars.
-            // timeBeginPeriod(1) in main.cpp makes Sleep(N) actually ~N ms.
-            // Base: 6ms Electron (multi-process IPC), 5ms Console (Node.js apps).
-            // +1ms per extra BS pair: more deletions = more processing time.
-            // Cap at 12ms — reduced from 20ms after profiling showed lower values work.
-            int baseMs = electronApp ? 6 : 5;
-            int bsCount = static_cast<int>(bsEvents.size()) / 2;  // each BS = down+up pair
-            int delayMs = (std::min)(baseMs + (bsCount > 1 ? bsCount - 1 : 0), 12);
-            Sleep(delayMs);
-        }
-        if (!charEvents.empty()) {
-            TrackedSendInput(charEvents.data(), static_cast<UINT>(charEvents.size()));
-        }
-    } else {
-        // Batch: standard Win32 GUI apps have single message queue (FIFO).
-        bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
-        if (!bsEvents.empty()) {
-            TrackedSendInput(bsEvents.data(), static_cast<UINT>(bsEvents.size()));
-        }
-    }
-    sending_ = false;
-    RecordSynthDispatch();
-}
+// Sprint 2 D3 removed all callers of DispatchSendInput; D4 deletes the body.
+// Split-vs-batch dispatch lives inside SplitDispatchInjector / Win32SendInput-
+// Injector now. The legacy implementation read isElectronApp_+isConsoleApp_
+// directly which both this commit removes from the hot path.
 
 /// Check if a filename (without path) is a known Electron app executable.
 /// Electron apps use Chrome_WidgetWin window class (same as Chromium browsers).
@@ -2613,12 +2596,14 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 
     // Publish all per-app cached flags atomically once the classification is final.
     // Hook hot-path readers see consistent state (each .store(release) is paired
-    // with their .load(acquire) in ProcessKeyDown / DispatchSendInput / etc.).
-    isConsoleApp_.store(localConsole, std::memory_order_release);
+    // with their .load(acquire) in ProcessKeyDown).
+    // Sprint 2 D4 deleted: isConsoleApp_ + useEditMsgPath_ stores. Console
+    // selection flows through WindowClassification.isConsole → factory →
+    // SplitDispatchInjector. RichEdit/edit-msg policy now derived via
+    // IsSyncReplaceChannel() proxy on the active injector.
     skipEmptyChar_.store(localSkipEmpty, std::memory_order_release);
     needBaitChar_.store(localNeedBait, std::memory_order_release);
     useClipboardPaste_.store(localClipboard, std::memory_order_release);
-    useEditMsgPath_.store(localEditMsg, std::memory_order_release);
     isOutlookApp_.store(localOutlook, std::memory_order_release);
     isElectronApp_.store(localElectronApp, std::memory_order_release);
 
@@ -2633,7 +2618,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         c.isRichEditD2DPT = localEditMsg;
         c.isElectron      = localElectronApp;
         c.isConsole       = localConsole;
-        c.isChromium      = localNeedBait;  // bait-char hint matches the legacy needBaitChar_ semantics
+        c.isChromium      = localNeedBait;  // bait-char hint (Chromium autocomplete-dismiss)
         injector_.store(NextKey::Output::Create(c), std::memory_order_release);
     }
 
@@ -2943,11 +2928,12 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     // below LowLevelHooksTimeout (default 500 ms) and dwarfs the typical 5-10 ms
     // catch-up needed at chaos 500 µs inter-key. Only invokes the SendInput
     // fallback if the wait is exhausted — true human-pace typing never hits it.
-    if (useEditMsgPath_.load(std::memory_order_acquire)) {
+    if (IsSyncReplaceChannel()) {
         // Sprint 2 D2: RichEdit path now delegates to RichEditEmReplaceSelInjector.
         // Retry-loop preserved here (not pushed into impl) because the
         // 30 ms catch-up window is policy on the engine side: the budget is
         // bounded by LowLevelHooksTimeout, not by the channel itself.
+        // Sprint 2 D4: gate via IsSyncReplaceChannel() (was useEditMsgPath_).
         constexpr int kAsyncRenderMaxWaitMs = 30;
         constexpr int kAsyncRenderStepMs    = 1;
         int waitedMs = 0;

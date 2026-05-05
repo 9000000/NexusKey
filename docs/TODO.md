@@ -1,5 +1,65 @@
 # TODO
 
+## 🔴 synthEventsPending_ counter broken on injector hot path (2026-05-05, found in D4 audit)
+
+**Severity:** medium-high. Synth-guard mechanism is silently no-op for the most common dispatch path.
+
+**Root cause:** D2 introduced `Internal::TrackedSendInput` (`src/app/output/Internal.cpp:14-17`) which doesn't increment `synthEventsPending_`. The pre-D2 `HookEngine::TrackedSendInput` member (`HookEngine.cpp:1748-1755`) WAS the integration point — it bumped the counter. D2/D3 routed all common-path dispatch (Win32 + Split injectors) through `Internal::TrackedSendInput`, leaving `synthEventsPending_` permanently at 0 on the hot path.
+
+**Symptoms (not caught by chaos):**
+- Synth-guard at `HookEngine.cpp:970` (gates physical key when synth recent + counter>0): never fires → physical keys can race with our injected chars/BS in the OS queue.
+- Re-inject gates at `:1074, :1150, :1262, :1304, :1315`: always behave as "no pending" → physical delivered immediately even when our synthetics still in flight.
+- Passthrough gate at `:1497` checks `synthEventsPending_ == 0`: always true → passthrough always allowed → mixing physical with synthetic.
+- Watchdog at `:841` doesn't trip (counter never inflates).
+
+**Why chaos didn't catch:** `NextKeyTestRunner` serializes — `Ctrl+A+C` verify between cases. No human-typing race scenario. Real Chrome + Lexical editor / Discord under fast typing very likely affected (the original `:1467` comment "ghost characters in Chrome+Lexical editor" is exactly the symptom that returns).
+
+**Fix complexity:** non-trivial. The injector lives in `src/app/output/` and shouldn't depend on `HookEngine`. Options:
+1. Pass `synthEventsPending_` ref/callback into injector (interface bloat, but minimal).
+2. Have `Internal::TrackedSendInput` accept an optional `int*` counter parameter and have HookEngine wire it via a free-standing pointer.
+3. Add `size_t LastDispatchEventCount() const` to `IOutputInjector`, HookEngine increments after each `Replace` returns.
+4. Have `IOutputInjector::Replace` return event count or `(events_sent, events_attempted)` instead of bool.
+5. RichEdit (sent message) doesn't echo back through hook → don't increment for it. Win32/Split do.
+
+Option 4 is cleanest semantically; option 2 is least invasive. Pick during D5 alongside SettleBudget integration (both touch the same dispatch code).
+
+**Test plan when fixing:**
+- Add a HookEngine integration test that mocks `Internal::g_sendInput` to capture event count, calls `inj->Replace(2, L"vi")`, then verifies `synthEventsPending_` was bumped exactly 8 (= 4 BS+chars × 2 down/up) and decremented back to 0 after we synthetically feed the same NK-marked events through the LL hook.
+- Reproduce Chrome+Lexical ghost-char manually before fix; verify gone after.
+
+**Out of scope for D4:** fix is bigger than D4's ½-day budget. Captured here so D5 can address.
+
+---
+
+## Typing bug — spell-check blocks tone replacement on already-toned syllable (2026-05-05)
+
+**Repro:** Type telex sequence `c a f c s` (each char individually).
+
+| Step | Keys so far | Expected | Actual |
+|------|-------------|----------|--------|
+| 1 | `c`     | `c`   | `c`    |
+| 2 | `c a`   | `ca`  | `ca`   |
+| 3 | `c a f` | `cà`  | `cà`   |
+| 4 | `c a f c` | `càc` | `càc` |
+| 5 | `c a f c s` | `các` (tone replaces huyền → sắc) | `càcs` (s emits literal, tone not applied) |
+
+**Symptom:** when a syllable already carries a tone, the second tone modifier is rejected and the modifier key emits as a plain letter instead of replacing the existing tone. User-facing it looks like spell-check (`Validate*` path) blocking the legal tone-correction.
+
+**Hypothesis to check first** — likely culprits, in order of suspicion:
+1. `SpellChecker::Validate` returning false for the candidate `các` because the engine validates after the first transform but not for the post-`s` retransform — needs to allow tone replacement even if intermediate state is also a valid syllable.
+2. `TelexEngine::PushChar` short-circuit: an already-applied tone may flag the syllable as "complete" and skip the second tone application.
+3. English-protection / abbreviation guard mistakenly catching `càc` as foreign and refusing further transforms.
+
+**Verification steps before fix:**
+- [ ] Add test case to `tests/TelexEngineTest.cpp` (or wherever tone-replacement coverage lives): `cafcs` → `các`. Per [test-first memory](../../home/phatmt/.claude-m/projects/-home-phatmt-code-NexusKey/memory/feedback_never_hand_encode_telex.md), use `Telex.h::StrToTelex` to encode the sequence — do NOT hand-write `c a f c s` as a string. Expect FAIL.
+- [ ] Use `nexuskey-typing-bugs` skill before reading code (per CLAUDE.md skill rules).
+- [ ] Trace the `PushChar` pipeline + `Validate` call per skill checklist.
+- [ ] Check whether `cosj` (other tone-replacement seqs in test corpus) shares the same path — if those pass but `cafcs` fails, the difference is a "modifier inserted between two tones" case.
+
+**Out of scope for this entry:** any actual fix. This TODO captures the bug + repro for the next session.
+
+---
+
 ## Review (2026-05-05) — Pre-T3 Code Review Followups
 
 Code review on Main `003a059` (post governance + T3 design merge, before T3

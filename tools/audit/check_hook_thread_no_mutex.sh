@@ -126,10 +126,18 @@ done
 #     match — we accept that and recommend tightening this filter only if
 #     it triggers in practice.
 
-ATOMIC_BOOLS="vietnameseMode_|isTsfApp_|isExcludedApp_|isConsoleApp_|isElectronApp_|skipEmptyChar_|needBaitChar_|useClipboardPaste_|useEditMsgPath_|isOutlookApp_|macroEnabled_|macroInEnglish_|autoCaps_|autoCapsMacro_|tempOffMacroByEsc_|tempOffByAlt_"
+# Sprint 2 D3 deleted: isConsoleApp_ — Console selection now flows through
+# WindowClassification.isConsole → SplitDispatchInjector(5ms) by the factory.
+# Sprint 2 D4 deleted: useEditMsgPath_ — replaced by HookEngine::IsSync-
+# ReplaceChannel() proxy on injector_->SettleBudget()==0.
+ATOMIC_BOOLS="vietnameseMode_|isTsfApp_|isExcludedApp_|isElectronApp_|skipEmptyChar_|needBaitChar_|useClipboardPaste_|isOutlookApp_|macroEnabled_|macroInEnglish_|autoCaps_|autoCapsMacro_|tempOffMacroByEsc_|tempOffByAlt_"
 ATOMIC_DWORD="excludedPid_"
 ATOMIC_ENUM="currentMethod_"
 ATOMIC_RCU="config_"
+# Sprint 2 D2: injector_ is std::atomic<std::shared_ptr<IOutputInjector>>.
+# Same discipline as config_ — access only via std::atomic_load/store, never
+# via plain assignment or read.
+ATOMIC_INJECTOR="injector_"
 
 echo
 echo "Check 3: atomic fields use .load()/.store() (no plain assignment or read)"
@@ -170,6 +178,30 @@ audit_field_group "atomic<DWORD>"            "$ATOMIC_DWORD"  ""
 audit_field_group "atomic<InputMethod>"      "$ATOMIC_ENUM"   ""
 # config_ check excludes configEvent_ / configReloadCallback_ / config_t typedefs
 audit_field_group "atomic<shared_ptr<TypingConfig>>" "$ATOMIC_RCU" "configEvent_|configReloadCallback_|TypingConfig"
+
+# ────────────────────────────────────────────────────────────────────────
+# Check 4: injector_ accessed only via std::atomic_load / std::atomic_store
+# ────────────────────────────────────────────────────────────────────────
+# Sprint 2 D2 introduced injector_ (RCU on std::shared_ptr<IOutputInjector>).
+# Hot path readers MUST use std::atomic_load(&injector_) — plain
+# `injector_->Replace(...)` would be a torn read on the shared_ptr control
+# block and could invoke Replace on a destructed impl. Same regression-
+# trap intent as Check 3 for config_.
+echo
+echo "Check 4: injector_ accessed only via std::atomic_load / std::atomic_store"
+inj_violations=$(grep -nE "\binjector_\b" "$CPP" | \
+    grep -vE "\\.(load|store)\\s*\\(|^\\s*[0-9]+:\\s*//|std::atomic" || true)
+inj_count=$(echo -n "$inj_violations" | grep -c '^' || true)
+if [ "$inj_count" -gt 0 ]; then
+    echo "  FAIL: $inj_count plain access(es) to injector_ outside .load()/.store()"
+    echo "$inj_violations" | head -10 | sed 's/^/    /'
+    errors=$((errors + 1))
+else
+    echo "  OK"
+fi
+# Suppress unused-variable warning when ATOMIC_INJECTOR is reserved for future
+# decomposition (e.g. dynamic_cast traits via the same regex helper).
+: "${ATOMIC_INJECTOR:?}" >/dev/null
 
 # ────────────────────────────────────────────────────────────────────────
 # Result
