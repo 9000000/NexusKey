@@ -251,6 +251,22 @@ TEST_F(TelexEngineTest, Horn_UO_HPrefix_AutoUO_Completes) {
     EXPECT_EQ(engine_->Peek(), L"hươn");
 }
 
+// --- D12.5: 3.3 chaos truongwf → trường (full uong + late w + tone) ---
+
+TEST_F(TelexEngineTest, D12_5_Truongwf_FullCodaThenWThenTone) {
+    // truongwf → trường
+    // Steps: t-r-u-o-n-g (= "truong"), then w should retro-horn uo→ươ
+    // making "trương", then f tone on second vowel (coda present) → "trường".
+    TypeString(*engine_, L"truongwf");
+    EXPECT_EQ(engine_->Peek(), L"trường");
+}
+
+TEST_F(TelexEngineTest, D12_5_Truongw_NoTone) {
+    // Intermediate state: truongw → trương (w retro-horns uo after full ng coda)
+    TypeString(*engine_, L"truongw");
+    EXPECT_EQ(engine_->Peek(), L"trương");
+}
+
 // ============================================================================
 // STROKE TESTS (dd→đ)
 // ============================================================================

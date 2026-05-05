@@ -1,4 +1,4 @@
-# NexusKey Refactor — Sprint 1 Handoff (D11 done, D12.5 next)
+# NexusKey Refactor — Sprint 1 Handoff (D11 + D12.5 engine-clear, D8 next)
 
 ## TL;DR
 
@@ -21,13 +21,19 @@ D11 14). Sustained verification was elected-skipped for D11 (sustained
 has been byte-identical 3 PASS / 0 FAIL with forward 5/0.41 %, edits 0/0 %
 across all 8 prior captures D1–D6; D11 changes lock semantics only —
 no data flow / no engine logic change — so the realistic-pace property
-is fully baselined). Pick up at **D12.5** (engine-level fix for chaos
-3.3 `truongwf` → `tờương` — the only stable-FAIL case that's both
-deterministic byte-identical across captures and small-scope debuggable;
-delivers a measurable PASS gain for the D12 merge gate), then **D8**
-(MainThreadWorker — async queue for hook → main work, also closes the
-pre-existing Rule #11 violation where `ProcessKeyDown → QuickSync`
-acquires `stateMutex_` on the hook hot path).
+is fully baselined). **D12.5 was reframed when engine-layer reproducer
+PASSED**: a unit test driving `truongwf` directly through `TypingEngine`
+(no hook, no SendInput, no threads) produces `trường` correctly at HEAD.
+The D4 plan's "engine state-machine bug" framing for 3.3 was wrong —
+the corruption only emerges through the hook → engine → SendInput
+replay loop at 500 µs inter-key. The 2 protective unit tests
+(`D12_5_Truongwf_FullCodaThenWThenTone`, `D12_5_Truongw_NoTone`) are
+kept as engine regression guards. The chaos 3.3 verdict flip is
+deferred to **D8** (MainThreadWorker — async queue for hook → main
+work, also closes the pre-existing Rule #11 violation where
+`ProcessKeyDown → QuickSync` acquires `stateMutex_` on the hook hot
+path), which directly attacks the hook integration where 3.3 actually
+breaks.
 
 | Layer | Status | Reference |
 |---|---|---|
@@ -44,8 +50,8 @@ acquires `stateMutex_` on the hook hot path).
 | D6: RCU `shared_ptr<const TypingConfig>` for `config_` (7 sites + 3 RCU GTest cases) | ✅ DoD met — sustained byte-identical (forward p99 −1, edits −3 ms vs D5.2), chaos stable PASS preserved, stable FAIL {2.1, 2.2, 3.3} byte-identical, L1 worst p99 18 ms (run 2; run 1 hit 22 ms = heisenbug, dropped to 14 ms on re-run); 5.2 flipped FAIL (flip-prone per HANDOFF) | `docs/baselines/perf-baseline-d6-rcu-config-{chaos,sustained}.{csv,xml,md}`, `tests/TypingConfigRCUTests.cpp` |
 | D7: audit script `tools/audit/check_hook_thread_no_mutex.sh` + CI integration (4 checks: D4 spike comment integrity, no `stateMutex_` reachable from LL hook entries, atomic fields use `.load`/`.store`, RCU `config_` likewise) | ✅ DoD met — script exits 0 on current tree, wired into `.github/workflows/build.yml` as fail-fast pre-build step | `tools/audit/check_hook_thread_no_mutex.sh`, `.github/workflows/build.yml` |
 | D11: `recursive_mutex` → `std::mutex` (type swap + `ApplyConfig` self-lock removal + `Start` defensive lock + `FocusPollTimerProc` lock-region split) | ✅ DoD met — sustained skipped (byte-identical baseline across 8 prior captures, D11 changes lock semantics only); chaos run 2 5 PASS / 6 FAIL with stable PASS {1.1, 1.3, 5.1} byte-identical and 5.2 flip-PASS; L1 worst p99 14 ms = lowest in series. Run 1's 5.1 anomaly attributed to heisenbug. | `docs/baselines/perf-baseline-d11-plain-mutex-chaos.{csv,xml,md}` |
-| D12.5: engine-level fix for chaos 3.3 `truongwf` → `tờương` (single-FAIL targeted fix, deterministic byte-identical across captures) | 🔜 **next** — value-delivery item per D4 plan §A decision gate | `docs/baselines/perf-baseline-d4-spike-chaos.md` §"D12.5 (insert)" |
-| D8: MainThreadWorker async queue (also closes pre-existing Rule #11 violation: `ProcessKeyDown → QuickSync` acquires `stateMutex_` on hook hot path) | pending | `docs/plans/sprint-1-single-owner-refactor.md` §C |
+| D12.5: engine-level fix for chaos 3.3 `truongwf` → `tờương` (originally framed as engine state-machine bug per D4 plan §A) | ✅ **engine-clear** — pure-engine reproducer (`TelexEngineTest.D12_5_Truongwf_*`) PASSES at HEAD; bug is hook-integration-only. Two protective unit tests added; chaos 3.3 flip deferred to D8 side effect. | `tests/TelexEngineTest.cpp`, `docs/baselines/perf-baseline-d4-spike-chaos.md` §"D12.5 finding (revised)" |
+| D8: MainThreadWorker async queue (also closes pre-existing Rule #11 violation: `ProcessKeyDown → QuickSync` acquires `stateMutex_` on hook hot path; now also expected to fix chaos 3.3 / 5.x via removing replay-loop / hot-path sync that the D12.5 evidence localised here) | 🔜 **next** | `docs/plans/sprint-1-single-owner-refactor.md` §C |
 | D12 / D13: full corpus gate run + PR prep | pending | `docs/plans/sprint-1-single-owner-refactor.md` §D/§E |
 
 ## Branch state

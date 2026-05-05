@@ -69,12 +69,44 @@ Per `docs/plans/sprint-1-single-owner-refactor.md` §A "Decision gate after D4":
    - Alternatives: 2.1 `ệiet nam` (tone routing) or 2.3 `helệo viet` (English protection) are also stable.
    - 5.3 cross-word backspace replay is *not* recommended for D12.5 — composition shape varies run-to-run, harder to verify a fix.
 
+   ### D12.5 finding (revised, 2026-05-05)
+
+   **The "engine state-machine bug" hypothesis was wrong.** Pure-engine
+   reproducers (`tests/TelexEngineTest.cpp::D12_5_Truongwf_FullCodaThenWThenTone`
+   and `D12_5_Truongw_NoTone`) drive `TypingEngine` directly — no hook,
+   no `SendInput`, no threads — and PASS at HEAD: `truongwf` produces
+   `trường` and `truongw` produces `trương`. Existing
+   `Horn_UO_NPrefix_WithFinal` (`nuowng → nương`) and
+   `Horn_UO_AutoTransform_WAfterConsonant` (`huonw → hươn`) already
+   covered the retro-horn paths, and the engine handles the
+   ng-coda + late-w + tone-f case correctly.
+
+   The chaos 3.3 corruption only emerges through the **hook → engine
+   → SendInput-replay** loop at 500 µs inter-key on Windows. The
+   shifting corruption shape across captures (`tờương`, `ờnương`)
+   consistently *drops leading characters* — a SendInput-replay race
+   signature, not a vowel-priority logic bug.
+
+   **Action taken**:
+   - The 2 unit tests are kept as **engine regression guards** —
+     they lock in that the engine layer cannot regress here, so any
+     future 3.3 corruption must be pinned to integration code.
+   - D12.5 is closed without an engine code change.
+   - Chaos 3.3 verdict flip is deferred to **D8 (MainThreadWorker)** as
+     an expected side effect of removing hot-path sync on the hook
+     thread. If D8 lands and 3.3 still FAILs byte-identically, the
+     remaining cause is in the SendInput-replay sequencing
+     (`HookEngine::ProcessKeyDown` output path), and a follow-up
+     hook-integration fix is opened against that.
+   - The "Plus D12.5 fix" clause in the revised D12 merge gate (item 3
+     below) is dropped; D12 acceptance depends on D8 outcome instead.
+
 3. **Sprint 1 D12 merge gate (revised)** — the original "≥ 1 FAIL flip" condition cannot be a merge gate because Outcome B says it won't happen via single-owner alone. Replace with:
    - No regression on stable PASS {1.1, 1.3, 5.1}.
    - No regression on stable FAIL corruption shape on {2.1, 2.3, 3.3} (must remain byte-identical).
    - Sustained zero regression vs D2 (forward 0.41 %, edit 0.00 %).
    - L1 p99 ≤ 18 ms across all chaos cases (1 ms headroom over current worst).
-   - **Plus D12.5 fix**: at least one of {2.1, 2.3, 3.3} flips to PASS via TelexEngine bug fix.
+   - ~~**Plus D12.5 fix**: at least one of {2.1, 2.3, 3.3} flips to PASS via TelexEngine bug fix.~~ **Dropped (2026-05-05)** per D12.5 finding above — engine layer is clear; the chaos flip target moves to D8's hook-integration scope and is no longer a hard gate condition for the merge.
 
 4. **6.1 corruption worsened post-spike** (`bình tươờng` → `ình ườnggnh`). This is a flip-prone case — heisenbug noise — but the corruption shape is meaningfully more degraded (lost two leading characters across both syllables). Suggests removing the lock can amplify race amplitude on edge cases even when net verdict is unchanged. Phase B atomic + RCU patterns must be evaluated against this case specifically. Not a Sprint 1 blocker.
 
