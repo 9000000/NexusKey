@@ -184,7 +184,8 @@ exception_uye = 3   # uyê → tone on ê (3rd char)
 # Same shape for hoe→hoè and huy→huỳ.
 [tone_placement_classic_vs_modern]
 diphthongs_with_variant = ["oa", "oe", "uy"]
-default_to = "modern"   # NexusKey default per docs/CODING_RULES; user can toggle
+default_to = "classic"   # anh confirmed 2026-05-05: NexusKey default is classic
+                          # (òa, hòa). User can toggle to modern via Settings.
 
 # ─────────────────────────────────────────────────────────────────────────
 # 8. Modifiers (diacritic marks layered on bare vowel).
@@ -201,3 +202,36 @@ modifier_targets.circumflex = ["a", "o", "e"]      # a→â, o→ô, e→ê
 modifier_targets.breve      = ["a"]                 # a→ă
 modifier_targets.horn       = ["o", "u"]            # o→ơ, u→ư
 modifier_targets.d_bar      = ["d"]                 # d→đ (consonant, not vowel)
+
+# ─────────────────────────────────────────────────────────────────────────
+# 9. Auto-modifier completion — phonotactic-driven horn propagation.
+#
+# When the user has typed a horn-applied vowel and continues into the
+# diphthong/triphthong sibling, FSM auto-applies horn to the second vowel
+# to maintain orthographic validity.
+#
+# Anh example 2026-05-05: typing 'nu' + 'w' = 'nư', + 'r' = 'nử',
+#   + 'o' → 'nửo' (intermediate, ư horned alone),
+#   + 'c' → 'nưởc' (= n + ư + ở + c)
+# Mechanism:
+#   step 4: state(ư + tone_hỏi) + INSERT_o → state(ưo, both auto-horned) but
+#           tone stays on ư (2-vowel-no-coda rule per [tone_placement])
+#   step 5: state(ưo + tone_hỏi_on_ư) + INSERT_c → state(ươ + coda_c) and
+#           tone migrates from ư → ơ (2-vowel-WITH-coda rule)
+# ─────────────────────────────────────────────────────────────────────────
+
+[auto_modifier_completion]
+# Pairs where typing the second vowel auto-completes the modifier.
+# Format: [first_vowel_state, next_input] = result_pair
+horn_propagation = [
+    # When state has horned ư and next input is 'o', second o gets horn → ươ
+    { from = "ư", next_vowel = "o", result_pair = "ươ" },
+    # Reverse case: ư typed via 'uw', then 'o' → ươ (both horned)
+    # Forward: 'uo' typed, then '7' (VNI) or 'w' → ươ
+    { from = "u", next_vowel = "o", trigger = "horn_modifier", result_pair = "ươ" },
+]
+
+# Note: tone re-placement during transitions is governed by [tone_placement]
+# rules above — tone slot recomputed each time syllable structure changes
+# (vowel added, coda added, modifier applied). Codegen must recompute tone
+# position at every transition, not just at initial tone application.
