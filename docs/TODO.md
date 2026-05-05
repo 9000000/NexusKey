@@ -1,5 +1,90 @@
 # TODO
 
+## Review (2026-05-05) — Pre-T3 Code Review Followups
+
+Code review on Main `003a059` (post governance + T3 design merge, before T3
+implementation D0 commit). Findings to address as a single follow-up batch
+**after T3 ships** (per project owner decision: complete T3 first, then
+review + fix together to avoid mid-sprint scope inflation).
+
+### 🔴 Critical — 3 commented `// std::lock_guard<std::recursive_mutex>` lines in hook callbacks
+
+**Reviewer claim:** "Type `recursive_mutex` no longer exists since D11 changed
+`stateMutex_` to `std::mutex` — these dangling references should be deleted."
+
+**Counter-context (the reviewer didn't see this):**
+`tools/audit/check_hook_thread_no_mutex.sh` Check 1 explicitly **requires**
+`≥3` commented `lock_guard<recursive_mutex>` lines in HookEngine.cpp as
+**regression markers** (D4 SPIKE artifact, lines 50-63 of the script).
+Because the type is gone, anyone who uncomments these lines triggers a
+**compile error** — that is the intentional regression trap.
+
+**Recommended fix (not "delete entirely"):**
+- KEEP the 3 commented lines.
+- Update each comment to clarify intent, e.g.
+  `// REGRESSION TRAP: do NOT uncomment. The recursive_mutex type was
+  removed in Sprint 1 D11; uncomment triggers compile error which is
+  the intended marker. Audit Check 1 verifies these stay commented.`
+- Update audit script Check 1 comment block to point back at the trap
+  rationale so future readers don't try to "clean up" again.
+
+### 🟡 Minor 1 — `LowLevelMouseProc` writes `cachedFocusedHwnd_` and calls `ResetComposition` without lock
+
+**Risk:** Race with `WinEventProc` (main thread) which reads/writes the same
+state. Manifests as transient composition desync after rapid mouse-click
+near a focus boundary.
+
+**Action:** Investigate exact write set in `LowLevelMouseProc`; either
+- Migrate `cachedFocusedHwnd_` to `std::atomic<HWND>`, or
+- Defer the writes via `MainThreadWorker` (Sprint 1 D8-D10 pattern), or
+- Document the race as benign (write-write to same value in practice).
+
+Pick one based on what the writes actually do.
+
+### 🟡 Minor 2 — `ProcessKeyDown` calls `QuickSyncFromSharedState()` which acquires `stateMutex_` on hook thread (Rule #11.2/11.3 violation)
+
+**Risk:** Slow path of the sync may include file I/O (TOML reload trigger?).
+Acquiring a mutex contended with main thread on the LL hook callback is the
+exact pattern Rule #11.3 forbids ("Hook thread MUST NEVER wait for main
+thread").
+
+**Action:** Audit `QuickSyncFromSharedState` body. If it only reads atomics,
+remove the lock. If it must access mutex-protected state, route via
+`MainThreadWorker` and let the hook read a published atomic snapshot
+(Sprint 1 D6 RCU `config_` pattern). Minor #2 is potentially the highest-
+impact finding because Rule #11 violations directly degrade "Mượt" (the p99
+chaos jitter we've been chasing).
+
+### 🟡 Minor 3 — Misleading comment at `HookEngine.cpp` line 779 ("pure memory read, no syscall")
+
+The slow path of the sync triggered around that comment includes TOML
+reload, so the "no syscall" claim is wrong on the slow path.
+
+**Action:** Trivial — split the comment into "fast path (atomic read)" vs
+"slow path (TOML reload, off-hot-path)" or remove the assertion entirely.
+Can ride along with whichever T3 D-day commit touches that file's vicinity,
+or as a one-line follow-up commit.
+
+### 🟢 Positives noted (no action)
+
+Reviewer flagged: excellent atomic migration, textbook RCU pattern,
+clean `MainThreadWorker` design, full exception safety, high-quality WHY
+comments, very good test coverage.
+
+### Order of operations
+
+1. T3 D0 → D6 ships first (single PR, tight scope).
+2. After T3 merges, open a single small PR addressing all 4 findings in
+   one batch. Each fix gets its own commit on that PR for bisect clarity:
+   - `fix: clarify D4 SPIKE regression trap markers in HookEngine`
+   - `fix: investigate + fix LowLevelMouseProc race on cachedFocusedHwnd_`
+   - `fix: remove stateMutex_ lock from ProcessKeyDown hot path` (or route via worker)
+   - `fix: correct misleading "no syscall" comment in HookEngine.cpp`
+3. Audit script (`check_hook_thread_no_mutex.sh`) Check 1 + Check 2 are
+   the regression net during the cleanup PR.
+
+---
+
 ## Outlook "Anh em" Fix — Verify Still Needed (2026-04-23)
 
 Issue #97 originally reported "Anh em" → "An hem" in Outlook 2016. Fix landed
