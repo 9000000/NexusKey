@@ -19,11 +19,13 @@
 //
 // Spec: docs/plans/sprint-2-output-injector.md §2.3
 #include "RichEditEmReplaceSelInjector.h"
-#include "Win32SendInputInjector.h"
-#include "Internal.h"
 
 #include <richedit.h>
+
 #include <string>
+
+#include "Internal.h"
+#include "Win32SendInputInjector.h"
 
 namespace NextKey::Output {
 
