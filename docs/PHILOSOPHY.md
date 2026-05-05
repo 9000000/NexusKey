@@ -149,6 +149,7 @@ A change that satisfies all three layers is ready to merge. A change that fails 
 
 ## Companion Documents
 
+- **`docs/CODE_GOVERNANCE.md`** — the 5-question pre-code gate (operational form of §3) and the architectural prescriptions (FSM core, IOutputInjector, SPSC, plugin layer) that 3 collaborators align on.
 - **`docs/CODING_RULES/index.md`** — concrete rules (naming, memory, error handling, hook system, etc.) that operationalize this philosophy.
 - **`docs/CODING_RULES/11-hook-system-rules.md`** — the hard rules that derive from Pillar #1 (Nhanh).
 - **`docs/CODING_RULES/5-struct-versioning.md`** — the rule that makes Pillar #4 (extensibility without breaking) actually work cross-process.
