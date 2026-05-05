@@ -216,6 +216,8 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/FloatingIcon.cpp
         src/app/system/HookEngine.h
         src/app/system/HookEngine.cpp
+        src/app/system/MainThreadWorker.h
+        src/app/system/MainThreadWorker.cpp
         src/app/system/HotkeyManager.h
         src/app/system/HotkeyManager.cpp
         src/app/system/HotkeyWiring.h

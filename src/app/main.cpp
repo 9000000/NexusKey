@@ -27,6 +27,7 @@
 #include "core/ipc/SharedStateManager.h"
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "system/HookEngine.h"
+#include "system/MainThreadWorker.h"
 #include "system/QuickConvert.h"
 #endif
 
@@ -60,6 +61,7 @@ static HotkeyManager g_hotkeyManager;
 
 #ifdef NEXUSKEY_HOOK_ENGINE
 static HookEngine g_hookEngine;
+static MainThreadWorker g_mainThreadWorker;  // Sprint 1 D9: drain config-change work off main thread
 static std::unique_ptr<QuickConvert> g_quickConvert;
 static HotkeyManager::SlotId g_toggleHotkeySlot = 0;
 static HotkeyManager::SlotId g_convertHotkeySlot = 0;
@@ -421,8 +423,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Without this, new lists (TSF apps, excluded apps, macros, …) only apply on the next
     // keystroke / focus change in the target app. SyncConfigFromSharedState reads
     // configGeneration; it must not touch the Named Event (auto-reset, reserved for TSF DLL).
+    //
+    // Sprint 1 D9: route the actual work onto MainThreadWorker so SyncConfig
+    // (which acquires stateMutex_ + may ReloadFromToml — file I/O) runs on
+    // a dedicated thread, not the tray-window message thread. The worker
+    // pre-empts the hook thread's QuickSync slow path: by the time the next
+    // hook key arrives, lastConfigGeneration_ already matches and ProcessKeyDown
+    // hits the no-op fast-path inside QuickSyncFromSharedState.
     g_trayIcon.SetHookReloadCallback([]() {
-        g_hookEngine.SyncConfigFromSharedState();
+        g_mainThreadWorker.Signal();
     });
 
     // Wire settings dialog → HookEngine mode set (cross-process)
@@ -467,6 +476,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         CloseHandle(hMutex);
         return 1;
     }
+
+    // Sprint 1 D9: launch MainThreadWorker after the hook engine is up so the
+    // first config-change Signal it sees has a fully-initialised HookEngine
+    // to call into. Handler runs on the worker's own thread.
+    g_mainThreadWorker.SetWorkHandler([]() {
+        g_hookEngine.SyncConfigFromSharedState();
+    });
+    g_mainThreadWorker.Start();
 
     NEXTKEY_LOG(L"HookEngine started, entering message loop");
 
@@ -547,6 +564,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     CleanupFloatingIcon();
     g_trayIcon.Destroy();
     g_hotkeyManager.Uninstall();
+    // Sprint 1 D9: stop the worker before HookEngine — handler captures
+    // g_hookEngine, so the worker thread must finish any in-flight
+    // SyncConfigFromSharedState before HookEngine teardown begins.
+    g_mainThreadWorker.Stop();
     g_hookEngine.Stop();
     timeEndPeriod(1);
 

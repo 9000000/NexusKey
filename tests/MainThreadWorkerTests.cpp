@@ -20,7 +20,10 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <mutex>
 #include <thread>
 
 #include "app/system/MainThreadWorker.h"
@@ -101,6 +104,149 @@ TEST(MainThreadWorkerLifetimeTest, RapidStartStop_NoDeadlockOrCrash) {
         ASSERT_TRUE(w.Start()) << "iteration " << i;
         w.Stop();
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// D9 — Signal / WorkHandler dispatch
+//
+// Worker exposes Signal() and SetWorkHandler(callable). When Signal()
+// fires, the worker invokes the registered handler on its own thread.
+// This is the channel that main.cpp's hookReloadCallback uses to push
+// config-change handling off the main thread (and out of the
+// QuickSyncFromSharedState hook-thread race window).
+// ─────────────────────────────────────────────────────────────────────
+
+namespace {
+
+// Helper: waits for the handler to fire or times out. Returns true if fired.
+struct HandlerLatch {
+    std::atomic<int> count{0};
+    std::mutex mu;
+    std::condition_variable cv;
+
+    void Fire() {
+        count.fetch_add(1, std::memory_order_release);
+        std::lock_guard<std::mutex> lock(mu);
+        cv.notify_all();
+    }
+
+    bool WaitFor(int target, std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(mu);
+        return cv.wait_for(lock, timeout, [&] {
+            return count.load(std::memory_order_acquire) >= target;
+        });
+    }
+};
+
+}  // namespace
+
+TEST_F(MainThreadWorkerTest, Signal_HandlerInvokedWithin50ms) {
+    HandlerLatch latch;
+    worker_.SetWorkHandler([&latch] { latch.Fire(); });
+    ASSERT_TRUE(worker_.Start());
+
+    const auto t0 = std::chrono::steady_clock::now();
+    worker_.Signal();
+    EXPECT_TRUE(latch.WaitFor(1, 50ms));
+    const auto elapsed = std::chrono::steady_clock::now() - t0;
+    EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 50);
+    EXPECT_EQ(latch.count.load(), 1);
+
+    worker_.Stop();
+}
+
+TEST_F(MainThreadWorkerTest, MultipleSignalsCoalesce_HandlerRunsAtLeastOnce) {
+    // Coalescing semantics: the handler reads SharedState which already
+    // reflects the latest change, so N rapid Signal() calls are allowed
+    // to collapse to fewer handler invocations. We only require ≥ 1.
+    HandlerLatch latch;
+    worker_.SetWorkHandler([&latch] { latch.Fire(); });
+    ASSERT_TRUE(worker_.Start());
+
+    for (int i = 0; i < 10; ++i) worker_.Signal();
+    EXPECT_TRUE(latch.WaitFor(1, 50ms));
+    // Don't pin the count — the worker may dispatch once or up to 10×.
+    EXPECT_GE(latch.count.load(), 1);
+
+    worker_.Stop();
+}
+
+TEST_F(MainThreadWorkerTest, SignalWithoutHandler_NoCrash) {
+    ASSERT_TRUE(worker_.Start());
+    worker_.Signal();
+    // Give worker a tick to wake; with no handler, it just no-ops.
+    std::this_thread::sleep_for(20ms);
+    worker_.Stop();
+    SUCCEED();
+}
+
+TEST_F(MainThreadWorkerTest, SignalBeforeStart_LatchedAndDispatchedOnStart) {
+    HandlerLatch latch;
+    worker_.SetWorkHandler([&latch] { latch.Fire(); });
+
+    worker_.Signal();  // pre-start signal — should latch
+    ASSERT_TRUE(worker_.Start());
+    EXPECT_TRUE(latch.WaitFor(1, 50ms));
+
+    worker_.Stop();
+}
+
+TEST_F(MainThreadWorkerTest, SignalAfterStop_NoOp) {
+    HandlerLatch latch;
+    worker_.SetWorkHandler([&latch] { latch.Fire(); });
+    ASSERT_TRUE(worker_.Start());
+    worker_.Stop();
+
+    worker_.Signal();
+    std::this_thread::sleep_for(20ms);
+    EXPECT_EQ(latch.count.load(), 0);
+}
+
+TEST_F(MainThreadWorkerTest, SetHandlerWhileRunning_NewHandlerSeenOnNextSignal) {
+    HandlerLatch latchA, latchB;
+    worker_.SetWorkHandler([&latchA] { latchA.Fire(); });
+    ASSERT_TRUE(worker_.Start());
+
+    worker_.Signal();
+    EXPECT_TRUE(latchA.WaitFor(1, 50ms));
+
+    worker_.SetWorkHandler([&latchB] { latchB.Fire(); });
+    worker_.Signal();
+    EXPECT_TRUE(latchB.WaitFor(1, 50ms));
+
+    worker_.Stop();
+}
+
+TEST_F(MainThreadWorkerTest, HandlerExceptionDoesNotKillWorker) {
+    // If a handler throws, the worker must keep running and continue
+    // dispatching subsequent signals. (Owner code is std::function — a
+    // throw must not propagate out of the worker thread and abort.)
+    std::atomic<int> normalCalls{0};
+    std::atomic<int> throwCalls{0};
+    HandlerLatch normalLatch;
+
+    worker_.SetWorkHandler([&] {
+        throwCalls.fetch_add(1, std::memory_order_relaxed);
+        throw std::runtime_error("test");
+    });
+    ASSERT_TRUE(worker_.Start());
+
+    worker_.Signal();
+    // Give the worker time to wake, run the throwing handler, and recover.
+    std::this_thread::sleep_for(20ms);
+    EXPECT_GE(throwCalls.load(), 1);
+    EXPECT_TRUE(worker_.IsRunning());
+
+    // Replace the handler and signal again — must still be invoked.
+    worker_.SetWorkHandler([&] {
+        normalCalls.fetch_add(1, std::memory_order_relaxed);
+        normalLatch.Fire();
+    });
+    worker_.Signal();
+    EXPECT_TRUE(normalLatch.WaitFor(1, 50ms));
+    EXPECT_GE(normalCalls.load(), 1);
+
+    worker_.Stop();
 }
 
 }  // namespace

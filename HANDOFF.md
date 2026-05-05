@@ -1,4 +1,4 @@
-# NexusKey Refactor — Sprint 1 Handoff (D11 + D12.5 engine-clear, D8 next)
+# NexusKey Refactor — Sprint 1 Handoff (D8 + D9 done, D10 next)
 
 ## TL;DR
 
@@ -51,7 +51,9 @@ breaks.
 | D7: audit script `tools/audit/check_hook_thread_no_mutex.sh` + CI integration (4 checks: D4 spike comment integrity, no `stateMutex_` reachable from LL hook entries, atomic fields use `.load`/`.store`, RCU `config_` likewise) | ✅ DoD met — script exits 0 on current tree, wired into `.github/workflows/build.yml` as fail-fast pre-build step | `tools/audit/check_hook_thread_no_mutex.sh`, `.github/workflows/build.yml` |
 | D11: `recursive_mutex` → `std::mutex` (type swap + `ApplyConfig` self-lock removal + `Start` defensive lock + `FocusPollTimerProc` lock-region split) | ✅ DoD met — sustained skipped (byte-identical baseline across 8 prior captures, D11 changes lock semantics only); chaos run 2 5 PASS / 6 FAIL with stable PASS {1.1, 1.3, 5.1} byte-identical and 5.2 flip-PASS; L1 worst p99 14 ms = lowest in series. Run 1's 5.1 anomaly attributed to heisenbug. | `docs/baselines/perf-baseline-d11-plain-mutex-chaos.{csv,xml,md}` |
 | D12.5: engine-level fix for chaos 3.3 `truongwf` → `tờương` (originally framed as engine state-machine bug per D4 plan §A) | ✅ **engine-clear** — pure-engine reproducer (`TelexEngineTest.D12_5_Truongwf_*`) PASSES at HEAD; bug is hook-integration-only. Two protective unit tests added; chaos 3.3 flip deferred to D8 side effect. | `tests/TelexEngineTest.cpp`, `docs/baselines/perf-baseline-d4-spike-chaos.md` §"D12.5 finding (revised)" |
-| D8: MainThreadWorker async queue (also closes pre-existing Rule #11 violation: `ProcessKeyDown → QuickSync` acquires `stateMutex_` on hook hot path; now also expected to fix chaos 3.3 / 5.x via removing replay-loop / hot-path sync that the D12.5 evidence localised here) | 🔜 **next** | `docs/plans/sprint-1-single-owner-refactor.md` §C |
+| D8: MainThreadWorker scaffolding (start/stop only, portable cv-based) | ✅ DoD met — 7 lifecycle tests on Linux (start/stop < 100 ms, idempotent start/stop, RAII destructor, 50× rapid cycle stress); Windows MSVC build clean. No runtime wiring — pure scaffolding per plan §C | `src/app/system/MainThreadWorker.{h,cpp}`, `tests/MainThreadWorkerTests.cpp` |
+| D9: MainThreadWorker handles config-changed event | ✅ DoD met — Signal/SetWorkHandler API + 7 dispatch tests (within-50ms wake, coalescing, pre-Start latch, post-Stop no-op, handler swap, exception isolation). main.cpp + main_lite.cpp `hookReloadCallback_` rewired so cross-process Settings → main → `worker.Signal()` instead of direct main-thread `SyncConfigFromSharedState()`. Worker handler runs `SyncConfig` on its own thread, pre-empting hook QuickSync slow path. **Note:** plan §C Q1 hinted Win32 ConfigEvent HANDLE wait, but the existing `WM_NEXUSKEY_HOOK_RELOAD` PostMessage path already lands on main thread; a portable cv-Signal there is functionally equivalent and Linux-testable. | `src/app/main.cpp`, `src/app/main_lite.cpp`, `src/app/system/MainThreadWorker.{h,cpp}` |
+| D10: MainThreadWorker handles heartbeat + CJK layout poll | 🔜 **next** | `docs/plans/sprint-1-single-owner-refactor.md` §C |
 | D12 / D13: full corpus gate run + PR prep | pending | `docs/plans/sprint-1-single-owner-refactor.md` §D/§E |
 
 ## Branch state

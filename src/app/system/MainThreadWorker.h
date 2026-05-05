@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <thread>
 
@@ -24,6 +25,14 @@ namespace NextKey {
 
 class MainThreadWorker {
 public:
+    /// Handler invoked on the worker thread when Signal() fires (or on
+    /// the first wake after Start() if Signal was called pre-Start).
+    /// Owner-provided; coalescing is allowed — if N rapid signals
+    /// arrive while the handler is running, the worker will dispatch
+    /// at most one additional invocation. Exceptions thrown from the
+    /// handler are caught and swallowed; the worker continues running.
+    using WorkHandler = std::function<void()>;
+
     MainThreadWorker() = default;
     ~MainThreadWorker();
 
@@ -33,19 +42,32 @@ public:
     MainThreadWorker& operator=(MainThreadWorker&&) = delete;
 
     /// Launch the worker thread. Returns false if already running
-    /// (idempotent — second call while running is a no-op).
+    /// (idempotent — second call while running is a no-op). If Signal
+    /// was called before Start, the latched signal is dispatched on
+    /// first wake.
     bool Start();
 
     /// Signal shutdown and join the worker thread. Idempotent: safe
     /// before Start, after Stop, and from the destructor. Returns once
     /// the worker thread has finished (within the wakeup latency of the
-    /// wait primitive; in D8 that is "immediate" because the cv is
-    /// notified directly).
+    /// wait primitive — typically a few µs).
     void Stop() noexcept;
 
     /// True between Start() returning true and Stop() (or destruction)
     /// completing.
     [[nodiscard]] bool IsRunning() const noexcept;
+
+    /// Register the work handler. Safe to call before Start, while
+    /// running, or after Stop. Calling while running takes effect on
+    /// the next Signal() (the in-flight invocation, if any, finishes
+    /// with the previous handler).
+    void SetWorkHandler(WorkHandler handler);
+
+    /// Wake the worker. Coalescing: multiple rapid signals while the
+    /// handler is running collapse to at most one extra dispatch. Safe
+    /// to call from any thread, including before Start (latched) and
+    /// after Stop (no-op).
+    void Signal() noexcept;
 
 private:
     void Run() noexcept;
@@ -54,6 +76,8 @@ private:
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     bool stopRequested_ = false;
+    bool workPending_ = false;
+    WorkHandler workHandler_;
     std::atomic<bool> running_{false};
 };
 
