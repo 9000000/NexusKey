@@ -1,5 +1,65 @@
 # NexusKey Tools
 
+## run-chaos.ps1
+
+Drives `NextKeyTestRunner.exe` against the chaos corpus across multiple host
+apps in one shot. Replaces the per-host manual workflow (start NexusKey,
+focus target, run runner, wait for "stop NexusKey" prompt, kill, press
+Enter, rename outputs) — verifies a hook-engine change doesn't regress
+the natural-classification matrix without a full afternoon of clicking.
+
+**Requirements:** Windows PowerShell 5.1+, NexusKey + NextKeyTestRunner
+already built (`-DCMAKE_BUILD_TYPE=Debug`).
+
+### Quick Start
+
+```powershell
+# 1. Open Discord + sign in (if testing 'discord' host)
+# 2. Open Chrome on chat.openai.com / chatgpt.com + sign in (if testing 'gpt')
+# 3. Run the sweep
+powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag channeltraits
+
+# Subset run — skip auth-dependent hosts
+powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag dev -Hosts notepad,notepadpp,chrome
+```
+
+### Parameters
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `-Tag` | yes | — | Identifier embedded in output filenames |
+| `-Hosts` | no | all 5 | Subset of `notepad notepadpp chrome discord gpt` |
+| `-Corpus` | no | `tools/NextKeyTestRunner/corpus/chaos.toml` | Test corpus |
+| `-NexusKeyExe` | no | `build/Debug/NexusKey.exe` | App under test |
+| `-RunnerExe` | no | `build/tools/NextKeyTestRunner/Debug/NextKeyTestRunner.exe` | Driver |
+| `-HookLog` | no | `build/Debug/NexusKey_hook.log` | Where NexusKey writes its debug log |
+| `-OutDir` | no | repo root | Where reports land |
+
+### Outputs (per host)
+
+- `report-{Tag}-{host}.xml` — JUnit; check `tests=` and `failures=` attrs.
+- `perf-{Tag}-{host}.csv` — per-keystroke L1 timing (post-mortem).
+- `runner-{Tag}-{host}.log` — full runner stdout for triage.
+
+### Verdict
+
+Exit code 0 if every host reports `failures=0` and runner exit code 0.
+Non-zero if any host failed or had no target window (e.g. Discord not
+signed in). Final summary table prints per-host counts.
+
+### Host preconditions
+
+| Host | Auto-launch? | Manual prep |
+|------|--------------|-------------|
+| notepad | yes | none |
+| notepadpp | yes (if installed in default path) | none |
+| chrome | yes (if not already running) | none |
+| discord | no | open + sign in beforehand |
+| gpt | no | open Chrome tab on chatgpt.com + sign in |
+
+During each run **do not touch keyboard / mouse** — the runner needs
+target focus for the full 11-case sequence.
+
 ## benchmark_ime.ps1
 
 End-to-end IME benchmark. Compares NexusKey vs UniKey (or any IME) by injecting keystrokes into Notepad and measuring latency.
