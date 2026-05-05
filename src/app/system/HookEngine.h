@@ -23,6 +23,12 @@
 #include <unordered_set>
 #include <vector>
 
+// Forward declaration so HookEngine.h stays Linux-friendly (output/ folder
+// is Win32-only). Sprint 2 T3 — IOutputInjector is the output channel
+// strategy interface (see src/app/output/IOutputInjector.h, doc:
+// docs/plans/sprint-2-output-injector.md §2.1).
+namespace NextKey::Output { class IOutputInjector; }
+
 namespace NextKey {
 
 class SharedStateManager;  // Forward declaration (defined in core/ipc/SharedStateManager.h)
@@ -133,10 +139,28 @@ private:
     // Output — universal SendInput with KEYEVENTF_UNICODE
     void ReplaceComposition(const std::wstring& newText, DWORD reinjectVk = 0);
     void TrackedSendInput(INPUT* events, UINT count) noexcept;
-    void DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents);
+    // Sprint 2 D3 removed DispatchSendInput callers; D4 deleted body+decl.
+    // Split-vs-batch lives inside the IOutputInjector impls now.
     void SendBackspaces(size_t count);
     void SendBackspaceEvents(size_t count);
     void SendCharEvents(const std::wstring& text);
+
+    // Sprint 2 D5: Routes Internal::g_synthCounterCallback into the
+    // singleton's synthEventsPending_ atomic. Static so it can be
+    // wired as a plain function pointer (no captures); friends-of-the-
+    // class access via s_instance is sufficient. Wired in Start, no-op
+    // when s_instance is null (defensive — Start is the only writer).
+    static void OnSynthDispatched(int delta) noexcept;
+
+    // Sprint 2 D4: Returns true when the current injector publishes a
+    // synchronous channel (RichEditEmReplaceSelInjector — SettleBudget=0ms).
+    // Replaces the legacy useEditMsgPath_ atomic-bool flag for the four
+    // policy-gate sites in HandleAlphaKey / commit-undo / commit-trigger /
+    // ReplaceComposition retry-loop. Cheap: 1 atomic_load(injector_) + 1
+    // virtual call + 1 compare. Coupling caveat: relies on the contract that
+    // only RichEdit returns 0ms; if a future Win32-sync impl also returns 0ms
+    // it would misfire. D5 SettleBudget integration may revisit.
+    [[nodiscard]] bool IsSyncReplaceChannel() const noexcept;
 
     // Clipboard paste fallback for VB6/ANSI-internal apps (can't handle KEYEVENTF_UNICODE)
     [[nodiscard]] bool ShouldUseClipboard() const noexcept;
@@ -209,6 +233,15 @@ private:
     std::atomic<std::shared_ptr<const TypingConfig>> config_{
         std::make_shared<const TypingConfig>()
     };  // Last applied config (for per-app engine recreation)
+    // Sprint 2 T3: Output channel strategy. RCU-published shared_ptr to the
+    // active IOutputInjector, same pattern as config_ above. Writers (main
+    // thread on focus change): two-phase classify → atomic_store. Readers
+    // (hook hot path): atomic load → 1 virtual call (~11 ns total overhead).
+    // Initialized in HookEngine ctor via Output::Create({}) so the field is
+    // never nullptr — hot path's atomic_load can rely on a usable injector
+    // even before any focus event has fired.
+    // See docs/plans/sprint-2-output-injector.md §1 for the data-flow contract.
+    std::atomic<std::shared_ptr<NextKey::Output::IOutputInjector>> injector_;
     // Sprint 1 D5.1: migrated to std::atomic for hook-thread-safe read without
     // stateMutex_ (Rule #11.3 acquire/release). Writers: ApplyConfig (main),
     // QuickSyncFromSharedState (hook — same thread as readers), ReloadFromToml
@@ -267,13 +300,18 @@ private:
     // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +
     // ProcessKeyUp early-return gates on the hook hot path.
     std::atomic<bool> isTsfApp_{false};       // cached: is current foreground app in TSF list?
-    std::atomic<bool> isConsoleApp_{false};   // cached: is current foreground app a console emulator?
-    std::atomic<bool> isElectronApp_{false};  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
+    // Sprint 2 D3 deleted: dispatch flag isConsoleApp_ — Console hosts now
+    // selected via WindowClassification.isConsole → SplitDispatchInjector(5)
+    // by the factory; no remaining HookEngine reader. Sprint 2 D4 deleted
+    // useEditMsgPath_ — replaced by IsSyncReplaceChannel() (SettleBudget==0
+    // proxy). isElectronApp_ + needBaitChar_ kept (live policy readers in
+    // HandleAlphaKey passthrough/reinjectVk gates) — D5 may lift to
+    // ChannelTraits on IOutputInjector.
+    std::atomic<bool> isElectronApp_{false};  // cached: Electron/Qt but NOT console
     std::unordered_set<std::wstring> webView2PositiveCache_;  // full exe path → known WebView2 host (positive-only; see IsWebView2App)
     std::atomic<bool> skipEmptyChar_{false};  // Skip U+202F for Qt/Electron and Console apps
     std::atomic<bool> needBaitChar_{false};   // Apps with autocomplete/suggest need U+202F bait before BS
     std::atomic<bool> useClipboardPaste_{false};  // VB6 and legacy ANSI-internal apps need clipboard paste
-    std::atomic<bool> useEditMsgPath_{false};     // Async-render apps (Win11 new Notepad) — try EM_REPLACESEL first, fall to SendInput
     std::atomic<bool> isOutlookApp_{false};   // Outlook 2016 RichEdit drops trailing char of a word when physical Shift+letter precedes it — force SendInput path (issue #97)
     DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
@@ -297,7 +335,12 @@ private:
     // Auto-expire the Ready state after this many ms — cheap insurance against any
     // cursor-movement event that bypasses ResetComposition (e.g. future edge cases).
     static constexpr DWORD kCommitUndoTimeoutMs = 4000;
-    static constexpr DWORD kSynthSettleMs = 100;  // Max time (ms) for synthetic events to be processed by app
+    // Sprint 2 D5: kSynthSettleMs (was 100 ms hardcoded for all hosts) replaced
+    // by per-injector budget — `injector_->SettleBudget()` returns 0 ms for
+    // RichEdit (sent message drains synchronously), 30 ms for Win32 batch,
+    // and 100 ms for Split (Electron/Console). Read inline at the gate sites
+    // so a focus change (re-publishing a different injector) takes effect on
+    // the next keystroke without staleness.
 
     enum class CommitUndoState : uint8_t {
         Idle   = 0,  // No pending undo
