@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    NexusKey chaos sweep harness — drive `NextKeyTestRunner.exe` against
+    NexusKey chaos sweep harness -- drive `NextKeyTestRunner.exe` against
     multiple host apps and aggregate per-host JUnit / perf-CSV reports.
 
 .DESCRIPTION
@@ -9,7 +9,7 @@
     corpus + reports" section: per host you used to (1) start NexusKey,
     (2) focus the target window, (3) run the runner, (4) wait for the
     "stop NexusKey" prompt, (5) kill NexusKey, (6) press Enter, (7)
-    rename the output. This script automates 1–6 across N hosts and
+    rename the output. This script automates 1-6 across N hosts and
     leaves output filenames tagged with -Tag.
 
     Hosts notepad / notepadpp / chrome are launched fresh if not
@@ -41,11 +41,11 @@
 
 .USAGE
     # Full sweep, tag "channeltraits".
-    # Use `powershell` (Windows PowerShell 5.1, built-in) — `pwsh` only
+    # Use `powershell` (Windows PowerShell 5.1, built-in) -- `pwsh` only
     # exists if PowerShell 7+ is separately installed.
     powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag channeltraits
 
-    # Quick local-only run (skip discord/gpt — no login required)
+    # Quick local-only run (skip discord/gpt -- no login required)
     powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag dev -Hosts notepad,notepadpp,chrome
 
     # Single-host smoke test
@@ -60,12 +60,12 @@
 
 .NOTES
     Per-host preconditions:
-        notepad / notepadpp / chrome — script launches if not running.
-        discord                       — user must have Discord open + signed in.
-        gpt                           — user must have a Chrome tab open
+        notepad / notepadpp / chrome -- script launches if not running.
+        discord                       -- user must have Discord open + signed in.
+        gpt                           -- user must have a Chrome tab open
                                          on chat.openai.com / chatgpt.com,
                                          signed in, prompt textarea ready.
-    During each run DO NOT touch keyboard / mouse — the runner needs
+    During each run DO NOT touch keyboard / mouse -- the runner needs
     target focus for the entire 11-case sequence.
 #>
 
@@ -86,7 +86,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# ─── Repo root + path defaults ─────────────────────────────────────────
+# --- Repo root + path defaults -----------------------------------------
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Corpus)      { $Corpus      = Join-Path $repoRoot "tools/NextKeyTestRunner/corpus/chaos.toml" }
 if (-not $NexusKeyExe) { $NexusKeyExe = Join-Path $repoRoot "build/Debug/NexusKey.exe" }
@@ -101,9 +101,9 @@ foreach ($p in @($Corpus, $NexusKeyExe, $RunnerExe)) {
 }
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
 
-# ─── Win32 P/Invoke for window focus ───────────────────────────────────
+# --- Win32 P/Invoke for window focus -----------------------------------
 # We only need: find a window by class or title-pattern, then bring it
-# to the foreground. Keystroke driving lives in NextKeyTestRunner — the
+# to the foreground. Keystroke driving lives in NextKeyTestRunner -- the
 # script never sends keys itself.
 Add-Type -TypeDefinition @"
 using System;
@@ -165,14 +165,14 @@ function Focus-Window {
     return $true
 }
 
-# ─── Per-host launchers ────────────────────────────────────────────────
+# --- Per-host launchers ------------------------------------------------
 # Returns the HWND of the focused window (or [IntPtr]::Zero on failure).
 function Open-Host {
     param([string]$Name)
 
     switch ($Name) {
         "notepad" {
-            # Win11 default Notepad is the new RichEditD2DPT app — exactly
+            # Win11 default Notepad is the new RichEditD2DPT app -- exactly
             # the host we want for that test slot. Win10 falls back to
             # legacy notepad.exe; both bind to a window with "Notepad" in
             # the title.
@@ -225,17 +225,17 @@ function Open-Host {
     return [IntPtr]::Zero
 }
 
-# ─── NexusKey lifecycle ────────────────────────────────────────────────
+# --- NexusKey lifecycle ------------------------------------------------
 function Start-NexusKey {
     if (Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue) {
-        # Already running — kill first so each host starts with a fresh
+        # Already running -- kill first so each host starts with a fresh
         # hook-log buffer and consistent classifier state.
         Stop-NexusKey
     }
     Start-Process -FilePath $NexusKeyExe | Out-Null
     Start-Sleep -Seconds 2
     if (-not (Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue)) {
-        throw "NexusKey.exe failed to start — check $NexusKeyExe"
+        throw "NexusKey.exe failed to start -- check $NexusKeyExe"
     }
 }
 
@@ -245,7 +245,7 @@ function Stop-NexusKey {
     Start-Sleep -Milliseconds 500
 }
 
-# ─── Per-host runner driver ────────────────────────────────────────────
+# --- Per-host runner driver --------------------------------------------
 function Invoke-ChaosForHost {
     param([string]$HostName)
 
@@ -255,12 +255,12 @@ function Invoke-ChaosForHost {
 
     $hwnd = Open-Host -Name $HostName
     if ($hwnd -eq [IntPtr]::Zero) {
-        Write-Warning "[$HostName] no target window — skipping"
+        Write-Warning "[$HostName] no target window -- skipping"
         Stop-NexusKey
         return [PSCustomObject]@{ Host = $HostName; Tests = 0; Failures = -1; Reason = "no target window" }
     }
     if (-not (Focus-Window -Hwnd $hwnd)) {
-        Write-Warning "[$HostName] failed to focus target — skipping"
+        Write-Warning "[$HostName] failed to focus target -- skipping"
         Stop-NexusKey
         return [PSCustomObject]@{ Host = $HostName; Tests = 0; Failures = -1; Reason = "focus failed" }
     }
@@ -276,10 +276,10 @@ function Invoke-ChaosForHost {
         "--perf-csv", $perfPath
     )
 
-    # Build a single Arguments string with each value double-quoted —
+    # Build a single Arguments string with each value double-quoted --
     # ProcessStartInfo.ArgumentList is .NET 6+ / PS 7+ only, so on
     # PS 5.1 we have to assemble Arguments by hand. Repo paths may
-    # contain spaces (Program Files, OneDrive folders, …) so quote
+    # contain spaces (Program Files, OneDrive folders, ...) so quote
     # unconditionally to be safe.
     $quoted = @()
     foreach ($a in $argv) { $quoted += '"' + $a + '"' }
@@ -296,7 +296,7 @@ function Invoke-ChaosForHost {
 
     $proc = [System.Diagnostics.Process]::Start($psi)
 
-    # Re-focus the target — Process.Start can briefly steal focus even
+    # Re-focus the target -- Process.Start can briefly steal focus even
     # with CreateNoWindow=true depending on shell hosts.
     [void](Focus-Window -Hwnd $hwnd)
 
@@ -338,13 +338,13 @@ function Invoke-ChaosForHost {
     [xml]$xml = Get-Content $reportPath
     $tests    = [int]$xml.testsuites.tests
     $failures = [int]$xml.testsuites.failures
-    # PS 5.1 doesn't support `if` as an expression — pre-compute the colour.
+    # PS 5.1 doesn't support `if` as an expression -- pre-compute the colour.
     $colour = if ($failures -eq 0 -and $exitCode -eq 0) { 'Green' } else { 'Red' }
     Write-Host "[$HostName] tests=$tests failures=$failures exit=$exitCode" -ForegroundColor $colour
     return [PSCustomObject]@{ Host = $HostName; Tests = $tests; Failures = $failures; ExitCode = $exitCode }
 }
 
-# ─── Main ──────────────────────────────────────────────────────────────
+# --- Main --------------------------------------------------------------
 $results = @()
 try {
     foreach ($h in $Hosts) {
