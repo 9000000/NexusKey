@@ -149,6 +149,13 @@ class Nfa:
         all_vowels_single = phono.vowels_single
         all_codas = phono.finals_c1 + phono.finals_c2 + phono.finals_c3
 
+        # Helper for translating raw key → abstract input via keymap.
+        # Defined early because Layer A needs it (multi-char consonants
+        # like 'tr' have second char 'r' which is a Telex tone key —
+        # keymap maps 'r' → TONE_HOI, not INSERT_LITERAL_r).
+        def _abstract_for_raw(ch: str) -> str:
+            return keymap.mappings.get(ch, f"INSERT_LITERAL_{ch.lower()}")
+
         # ── Layer A: initial consonants ──────────────────────────────────
         # From start, type each initial consonant char-by-char.
         cons_states: dict[str, NfaState] = {}   # final state of each initial path
@@ -158,7 +165,7 @@ class Nfa:
             for ch in cons:
                 buf += ch
                 nxt = NfaState(cons=buf)
-                nfa._add_transition(cur, f"INSERT_LITERAL_{ch}", nxt)
+                nfa._add_transition(cur, _abstract_for_raw(ch), nxt)
                 cur = nxt
             cons_states[cons] = cur
 
@@ -178,37 +185,49 @@ class Nfa:
                 vowel_state_map[(cons, v)] = dst
 
         # ── Layer C: modifier via double_sequences (Telex 'aa', 'oo' etc.) ─
-        # State (cons, vowel='a') + INSERT_LITERAL_a → state (cons, vowel='â')
-        # — when keymap has 'aa' → MOD_CIRCUMFLEX.
+        # State (cons, vowel='a') + <abstract input for second char> →
+        # state (cons, vowel='â'). The transition input symbol is the
+        # ABSTRACT input the second char produces — looked up via
+        # keymap.mappings (e.g., 'w' → MOD_HORN), else INSERT_LITERAL_<x>.
         for seq_str, abstract in keymap.double_sequences.items():
             if len(seq_str) != 2:
                 continue
             seq_lower = seq_str.lower()
             first, second = seq_lower[0], seq_lower[1]
+            second_abstract = _abstract_for_raw(second)
+
+            # MOD_D_BAR — dd → đ — modifies CONSONANT, not vowel.
+            # Land on the EXISTING cons='đ' state (already in initial_d1
+            # per phonotactics), so all downstream vowel/coda transitions
+            # from cons='đ' apply for free.
+            if abstract == "MOD_D_BAR" and first == "d":
+                src = cons_states.get("d")
+                dst = cons_states.get("đ")
+                if src is not None and dst is not None:
+                    nfa._add_transition(src, second_abstract, dst)
+                continue
+
+            # Vowel modifiers
+            mod_name: str | None = None
+            mod_map: dict[str, str] | None = None
+            if abstract == "MOD_CIRCUMFLEX":
+                mod_name, mod_map = "circumflex", _CIRCUMFLEX
+            elif abstract == "MOD_BREVE":
+                mod_name, mod_map = "breve", _BREVE
+            elif abstract == "MOD_HORN":
+                mod_name, mod_map = "horn", _HORN
+            else:
+                continue
+
+            if first not in mod_map:
+                continue
+            modded = mod_map[first]
             for cons, _ in cons_entry:
                 src = vowel_state_map.get((cons, first))
                 if src is None:
                     continue
-                # Determine modified vowel char + mod name.
-                mod_name, mod_map = None, None
-                if abstract == "MOD_CIRCUMFLEX":
-                    mod_name, mod_map = "circumflex", _CIRCUMFLEX
-                elif abstract == "MOD_BREVE":
-                    mod_name, mod_map = "breve", _BREVE
-                elif abstract == "MOD_HORN":
-                    mod_name, mod_map = "horn", _HORN
-                elif abstract == "MOD_D_BAR":
-                    # 'dd' → đ — special: modifies CONSONANT, not vowel.
-                    # Skip in Layer C; handled inline below if needed.
-                    continue
-                else:
-                    continue
-
-                if first not in mod_map:
-                    continue
-                modded = mod_map[first]
                 dst = NfaState(cons=cons, vowels=(modded,), mods=(mod_name,))
-                nfa._add_transition(src, f"INSERT_LITERAL_{second}", dst)
+                nfa._add_transition(src, second_abstract, dst)
 
         # ── Layer C': single-press modifier keys (Telex 'w' standalone) ──
         # keymap.mappings has direct abstract input (e.g., 'w' → MOD_HORN).
@@ -238,98 +257,49 @@ class Nfa:
                     dst = NfaState(cons=cons, vowels=("ă",), mods=("breve",))
                     nfa._add_transition(src, "MOD_BREVE", dst)
 
-        # ── Layer D: tone application ────────────────────────────────────
-        # From any single-vowel state (incl. modified), apply tone via
-        # TONE_SAC / TONE_HUYEN / TONE_HOI / TONE_NGA / TONE_NANG.
-        tone_inputs = ("TONE_SAC", "TONE_HUYEN", "TONE_HOI", "TONE_NGA", "TONE_NANG")
-        tone_name = {
-            "TONE_SAC": "sắc", "TONE_HUYEN": "huyền", "TONE_HOI": "hỏi",
-            "TONE_NGA": "ngã", "TONE_NANG": "nặng",
-        }
-        # Walk over all single-vowel states (no tone yet, no coda).
-        single_vowel_states = [
-            s for s in list(nfa._states)
-            if len(s.vowels) == 1 and s.tone == "none" and s.coda == ""
-            and not s.is_start
-        ]
-        for src in single_vowel_states:
-            for tin in tone_inputs:
-                # Same-tone-twice → escape; handled in Layer F.
-                # Different tones replace; encoded directly here.
-                dst = NfaState(
-                    cons=src.cons, vowels=src.vowels, mods=src.mods,
-                    tone=tone_name[tin], coda=src.coda,
-                )
-                nfa._add_transition(src, tin, dst)
+        # ── Layer G: coda (final consonant) — runs BEFORE tone layers ───
+        # Multi-char codas (ng, nh, ch) share first char with single-char
+        # codas (n, c). Naive add-edge-per-coda creates non-determinism
+        # ('ban' vs 'bang' both reachable on first 'n'). FIX: chain —
+        # first char enters single-char-coda state (e.g., 'ban'), then
+        # extension char advances to multi-char coda state ('bang'/'banh').
+        # Both states are accept; user can stop typing at either.
 
-        # ── Layer E: tone replacement on already-toned vowel ─────────────
-        # From state with tone X, on TONE_Y (Y != X) → state with tone Y.
-        # On TONE_X (same) → escape, handled Layer F.
-        toned_states = [
-            s for s in list(nfa._states)
-            if len(s.vowels) == 1 and s.tone != "none" and s.coda == ""
-        ]
-        name_to_input = {v: k for k, v in tone_name.items()}
-        for src in toned_states:
-            cur_input = name_to_input[src.tone]
-            for tin in tone_inputs:
-                if tin == cur_input:
-                    continue   # same tone → escape, Layer F
-                new_tone = tone_name[tin]
-                dst = NfaState(
-                    cons=src.cons, vowels=src.vowels, mods=src.mods,
-                    tone=new_tone, coda=src.coda,
-                )
-                nfa._add_transition(src, tin, dst)
+        # Group codas by first char.
+        codas_by_first: dict[str, list[str]] = {}
+        for coda in all_codas:
+            codas_by_first.setdefault(coda[0], []).append(coda)
 
-        # ── Layer F: escape ──────────────────────────────────────────────
-        # F1: same-tone-twice → escape.
-        for src in toned_states:
-            cur_input = name_to_input[src.tone]
-            esc = NfaState(
-                cons=src.cons, vowels=src.vowels, mods=src.mods,
-                tone="none", coda=src.coda, is_escape=True,
-            )
-            nfa._add_transition(src, cur_input, esc)
-
-        # F2: same-modifier-twice → escape.
-        # State (cons, vowel=modified) + INSERT_LITERAL_<base_char> → escape.
-        modified_vowel_states = [
-            s for s in list(nfa._states)
-            if len(s.vowels) == 1 and s.mods != ("none",) and s.tone == "none"
-            and s.coda == ""
-        ]
-        for src in modified_vowel_states:
-            modified_v = src.vowels[0]
-            base = _UNMODIFIED.get(modified_v)
-            if base is None:
-                continue
-            esc = NfaState(
-                cons=src.cons, vowels=(base,), mods=("none",),
-                tone="none", is_escape=True,
-            )
-            # Trigger key — for circumflex 'â', third 'a' triggers escape.
-            # For horn 'ư', third 'u' or 'w' triggers escape.
-            # We encode INSERT_LITERAL_<base> as the trigger.
-            nfa._add_transition(src, f"INSERT_LITERAL_{base}", esc)
-
-        # ── Layer G: coda (final consonant) ──────────────────────────────
-        # From any single-vowel state (toned or not, modified or not), on
-        # INSERT_LITERAL_<coda_first_char> → state with coda set.
         all_vowel_states_for_coda = [
             s for s in list(nfa._states)
-            if len(s.vowels) == 1 and s.coda == "" and not s.is_start
+            if len(s.vowels) >= 1 and s.coda == "" and not s.is_start
             and not s.is_escape
         ]
         for src in all_vowel_states_for_coda:
-            for coda in all_codas:
-                dst = NfaState(
+            for first_ch, coda_list in codas_by_first.items():
+                # Single-char "intermediate" coda — accept, since the input
+                # may stop here (e.g., 'ban', 'tac').
+                single_state = NfaState(
                     cons=src.cons, vowels=src.vowels, mods=src.mods,
-                    tone=src.tone, coda=coda,
+                    tone=src.tone, coda=first_ch,
                 )
-                # Use first char of coda as trigger (multi-char codas like
-                # 'ng', 'ch', 'nh' also start with their first char).
-                nfa._add_transition(src, f"INSERT_LITERAL_{coda[0]}", dst)
+                nfa._add_transition(src, f"INSERT_LITERAL_{first_ch}", single_state)
+
+                # Extensions — from single_state, add second-char transitions
+                # to multi-char coda states.
+                for coda in coda_list:
+                    if len(coda) == 1:
+                        continue
+                    extension_char = coda[1]
+                    full_state = NfaState(
+                        cons=src.cons, vowels=src.vowels, mods=src.mods,
+                        tone=src.tone, coda=coda,
+                    )
+                    nfa._add_transition(
+                        single_state,
+                        f"INSERT_LITERAL_{extension_char}",
+                        full_state,
+                    )
 
         # ── Layer H: 2-vowel sequences (diphthong) ───────────────────────
         # Allow vowel after vowel, including 'uo' for horn-modifier path.
@@ -387,5 +357,72 @@ class Nfa:
                 if abstract == "MOD_HORN":
                     nfa._add_transition(src, "MOD_HORN", dst)
                     break
+
+        # ── Layer D: tone application ────────────────────────────────────
+        # Runs AFTER state construction so coda + 2-vowel states are covered.
+        tone_inputs = ("TONE_SAC", "TONE_HUYEN", "TONE_HOI", "TONE_NGA", "TONE_NANG")
+        tone_name = {
+            "TONE_SAC": "sắc", "TONE_HUYEN": "huyền", "TONE_HOI": "hỏi",
+            "TONE_NGA": "ngã", "TONE_NANG": "nặng",
+        }
+        # Walk over all vowel-bearing states (any coda, any vowel count, no tone yet).
+        toneless_states = [
+            s for s in list(nfa._states)
+            if len(s.vowels) >= 1 and s.tone == "none"
+            and not s.is_start and not s.is_escape
+        ]
+        for src in toneless_states:
+            for tin in tone_inputs:
+                dst = NfaState(
+                    cons=src.cons, vowels=src.vowels, mods=src.mods,
+                    tone=tone_name[tin], coda=src.coda,
+                )
+                nfa._add_transition(src, tin, dst)
+
+        # ── Layer E: tone replacement on already-toned vowel ─────────────
+        toned_states = [
+            s for s in list(nfa._states)
+            if len(s.vowels) >= 1 and s.tone != "none"
+            and not s.is_escape
+        ]
+        name_to_input = {v: k for k, v in tone_name.items()}
+        for src in toned_states:
+            cur_input = name_to_input[src.tone]
+            for tin in tone_inputs:
+                if tin == cur_input:
+                    continue   # same tone → escape, Layer F
+                new_tone = tone_name[tin]
+                dst = NfaState(
+                    cons=src.cons, vowels=src.vowels, mods=src.mods,
+                    tone=new_tone, coda=src.coda,
+                )
+                nfa._add_transition(src, tin, dst)
+
+        # ── Layer F: escape ──────────────────────────────────────────────
+        # F1: same-tone-twice → escape state with tone cleared.
+        for src in toned_states:
+            cur_input = name_to_input[src.tone]
+            esc = NfaState(
+                cons=src.cons, vowels=src.vowels, mods=src.mods,
+                tone="none", coda=src.coda, is_escape=True,
+            )
+            nfa._add_transition(src, cur_input, esc)
+
+        # F2: same-modifier-twice → escape (single-vowel only for now).
+        modified_vowel_states = [
+            s for s in list(nfa._states)
+            if len(s.vowels) == 1 and s.mods != ("none",) and s.tone == "none"
+            and s.coda == ""
+        ]
+        for src in modified_vowel_states:
+            modified_v = src.vowels[0]
+            base = _UNMODIFIED.get(modified_v)
+            if base is None:
+                continue
+            esc = NfaState(
+                cons=src.cons, vowels=(base,), mods=("none",),
+                tone="none", is_escape=True,
+            )
+            nfa._add_transition(src, f"INSERT_LITERAL_{base}", esc)
 
         return nfa

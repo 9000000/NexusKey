@@ -196,19 +196,31 @@ def apply_overlay(dfa: Dfa, nfa: Nfa, keymap: KeymapRule) -> OverlayResult:
         if abstract not in inv_keymap or raw.islower():
             inv_keymap[abstract] = raw
 
+    # Index DFA states by ID for O(1) lookup (was O(n) per transition →
+    # 14 billion ops on real Vietnamese rules).
+    state_by_id: dict[int, "DfaState"] = {s.state_id: s for s in dfa.states}
+
     # Pre-render canonical text per DFA state.
     dfa_text: dict[int, str] = {}
-    for ds in dfa.states:
+    for sid, ds in state_by_id.items():
         if not ds.nfa_states:
-            dfa_text[ds.state_id] = ""
+            dfa_text[sid] = ""
             continue
-        # Pick canonical NFA state — prefer non-escape if any (cleaner render).
         canonical = next(
             (ns for ns in ds.nfa_states if not ns.is_escape),
             next(iter(ds.nfa_states)),
         )
-        dfa_text[ds.state_id] = render_state(canonical)
+        dfa_text[sid] = render_state(canonical)
     result.state_render = dict(dfa_text)
+
+    # Pre-compute pure-escape flag per DFA state.
+    is_pure_escape: dict[int, NfaState | None] = {}
+    for sid, ds in state_by_id.items():
+        esc = next((n for n in ds.nfa_states if n.is_escape), None)
+        if esc is not None and not any(not n.is_escape for n in ds.nfa_states):
+            is_pure_escape[sid] = esc
+        else:
+            is_pure_escape[sid] = None
 
     # Action interning.
     action_to_id: dict[Action, int] = {}
@@ -219,28 +231,15 @@ def apply_overlay(dfa: Dfa, nfa: Nfa, keymap: KeymapRule) -> OverlayResult:
             result.action_table.append(action)
         return action_to_id[action]
 
-    # Walk transitions, compute action.
     for src_id, edges in dfa.transitions.items():
         src_text = dfa_text.get(src_id, "")
         for sym, dst_id in edges.items():
-            dst_state = next(s for s in dfa.states if s.state_id == dst_id)
-
-            # Determine dst text — handle escape destinations specially.
-            dst_text = ""
-            esc_nfa = next(
-                (n for n in dst_state.nfa_states if n.is_escape),
-                None,
-            )
-            if esc_nfa is not None and not any(
-                not n.is_escape for n in dst_state.nfa_states
-            ):
-                # Pure-escape destination — derive literal text.
+            esc_nfa = is_pure_escape.get(dst_id)
+            if esc_nfa is not None:
                 dst_text = _escape_text(esc_nfa, sym, inv_keymap)
             else:
                 dst_text = dfa_text.get(dst_id, "")
-
-            action = compute_action(src_text, dst_text)
-            action_id = intern(action)
+            action_id = intern(compute_action(src_text, dst_text))
             result.transition_actions.setdefault(src_id, {})[sym] = action_id
 
     return result

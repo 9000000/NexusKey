@@ -195,29 +195,27 @@ class Dfa:
             for sid in block:
                 block_of[sid] = idx
 
+        # Index source states by ID (was O(n) lookup per block — 50K² ops).
+        src_by_id: dict[int, DfaState] = {s.state_id: s for s in self.states}
+
         new = Dfa()
-        # Build new states per block.
         block_to_new: dict[int, DfaState] = {}
         for idx, block in enumerate(partition):
             sample_id = next(iter(block))
-            sample_state = next(s for s in self.states if s.state_id == sample_id)
+            sample_state = src_by_id[sample_id]
             ds = DfaState(
                 state_id=idx,
                 is_accept=sample_state.is_accept,
-                # Union the NFA states of every member for debug.
                 nfa_states=frozenset().union(
-                    *[next(s for s in self.states if s.state_id == sid).nfa_states
-                      for sid in block]
+                    *[src_by_id[sid].nfa_states for sid in block]
                 ),
             )
             new.states.append(ds)
             block_to_new[idx] = ds
 
-        # Set start.
         start_block = block_of[self.start.state_id]
         new.start = block_to_new[start_block]
 
-        # Build transitions: pick representative per block, copy edges.
         for idx, block in enumerate(partition):
             sample_id = next(iter(block))
             sample_edges = self.transitions.get(sample_id, {})
