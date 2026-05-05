@@ -20,16 +20,27 @@ using SendMessageWFn       = LRESULT (WINAPI*)(HWND, UINT, WPARAM, LPARAM);
 using SendMessageTimeoutWFn = LRESULT (WINAPI*)(HWND, UINT, WPARAM, LPARAM,
                                                 UINT, UINT, PDWORD_PTR);
 using SleepFn              = void (WINAPI*)(DWORD);
+// Sprint 2 D5: synth-counter callback. Fires from TrackedSendInput
+// pre-SendInput (positive delta = events about to dispatch) and on
+// partial-send (negative delta = compensate for events that didn't
+// land). HookEngine wires this to its synthEventsPending_ atomic so
+// the per-event decrement in LowLevelKeyboardProc balances correctly.
+// Function pointer (not std::function) keeps the layer decoupled — no
+// HookEngine dependency leaking into src/app/output/.
+using SynthCounterFn       = void (*)(int delta) noexcept;
 
 // Test seams. Production initializes to the real Win32 APIs.
 extern SendInputFn           g_sendInput;
 extern SendMessageWFn        g_sendMessageW;
 extern SendMessageTimeoutWFn g_sendMessageTimeoutW;
 extern SleepFn               g_sleep;
+extern SynthCounterFn        g_synthCounterCallback;  // null = disabled
 
 // Wrapper around g_sendInput with partial-send detection. Returns true
 // iff all events delivered; false on partial (renderer drop case —
-// detected when SendInput returns fewer events than requested).
+// detected when SendInput returns fewer events than requested). Fires
+// g_synthCounterCallback (when non-null) before SendInput with +count,
+// then again with -(count-sent) on partial.
 [[nodiscard]] bool TrackedSendInput(INPUT* events, UINT count) noexcept;
 
 // Marker dwExtraInfo so own synth events skip our own hook (Rule #11.4

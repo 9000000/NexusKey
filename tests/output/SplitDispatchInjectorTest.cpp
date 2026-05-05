@@ -113,4 +113,28 @@ TEST_F(SplitDispatchInjectorTest, BaitCharSkippedWhenBsCountZero) {
     EXPECT_EQ(sleepDelays.size(), 0u);
 }
 
+TEST_F(SplitDispatchInjectorTest, ReplaceNotifiesSynthCounterPerBatch) {
+    // D5: the split dispatch fires Internal::TrackedSendInput TWICE
+    // (BS batch then char batch separated by Sleep). Each call invokes
+    // the callback so HookEngine's synthEventsPending_ tracks both
+    // halves. Replace(2, "vi") = 4 BS events (batch 1) + 4 char events
+    // (batch 2). Callback observes [+4, +4].
+    SplitDispatchInjector inj(/*sleepMsBetweenBatches=*/6);
+    EXPECT_TRUE(inj.Replace(2, L"vi"));
+    ASSERT_EQ(synthCounterDeltas.size(), 2u);
+    EXPECT_EQ(synthCounterDeltas[0], 4);
+    EXPECT_EQ(synthCounterDeltas[1], 4);
+}
+
+TEST_F(SplitDispatchInjectorTest, PartialFirstBatchEmitsCompensatingNegativeDelta) {
+    // First batch partial-send → callback emits +n then -(n-sent). Second
+    // batch never attempted (Replace returns false on partial first).
+    SplitDispatchInjector inj(6);
+    sendInputReturnOverride = 1;  // 4 expected, 1 delivered
+    EXPECT_FALSE(inj.Replace(2, L"x"));
+    ASSERT_EQ(synthCounterDeltas.size(), 2u);
+    EXPECT_EQ(synthCounterDeltas[0], 4);
+    EXPECT_EQ(synthCounterDeltas[1], -3);
+}
+
 }  // namespace NextKey::Output::Test

@@ -101,4 +101,41 @@ TEST_F(Win32SendInputInjectorTest, SendKeyEmitsDownAndUpWithMarker) {
     EXPECT_NE(capturedInputs[1].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
 }
 
+TEST_F(Win32SendInputInjectorTest, ReplaceNotifiesSynthCounterByEventCount) {
+    // D5: every Internal::TrackedSendInput call must report its event count
+    // back to the registered callback so HookEngine's synthEventsPending_
+    // stays balanced against the per-event decrements in
+    // LowLevelKeyboardProc. Replace(2, "vi") = 2 BS down/up + 2 chars
+    // down/up = 8 events delivered in a single batch — one positive delta.
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/false);
+    EXPECT_TRUE(inj.Replace(2, L"vi"));
+    ASSERT_EQ(synthCounterDeltas.size(), 1u);
+    EXPECT_EQ(synthCounterDeltas[0], 8);
+}
+
+TEST_F(Win32SendInputInjectorTest, ReplaceWithBaitCountsBaitEventsToo) {
+    // Bait prefix adds 1 char (down+up=2) and 1 extra BS (down+up=2) on
+    // top of the caller's bsCount. The callback must reflect the actual
+    // dispatched count so HookEngine doesn't undercount and release the
+    // synth-guard early.
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
+    EXPECT_TRUE(inj.Replace(1, L"x"));
+    // Expected: 8 events — bait char (2) + 2 BS×(down+up)=4 + 1 char×(down+up)=2.
+    ASSERT_EQ(synthCounterDeltas.size(), 1u);
+    EXPECT_EQ(synthCounterDeltas[0], 8);
+}
+
+TEST_F(Win32SendInputInjectorTest, PartialSendEmitsCompensatingNegativeDelta) {
+    // Renderer-drop simulation: SendInput returns 2 of 6. Callback fires
+    // twice — first +6 (pre-dispatch), then -4 (recovery so the counter
+    // ends up at +2, matching the 2 events that will round-trip through
+    // the LL hook decrement path).
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/false);
+    sendInputReturnOverride = 2;  // 6 expected, only 2 delivered
+    EXPECT_FALSE(inj.Replace(3, L""));
+    ASSERT_EQ(synthCounterDeltas.size(), 2u);
+    EXPECT_EQ(synthCounterDeltas[0], 6);
+    EXPECT_EQ(synthCounterDeltas[1], -4);
+}
+
 }  // namespace NextKey::Output::Test

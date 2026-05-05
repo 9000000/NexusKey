@@ -145,6 +145,13 @@ private:
     void SendBackspaceEvents(size_t count);
     void SendCharEvents(const std::wstring& text);
 
+    // Sprint 2 D5: Routes Internal::g_synthCounterCallback into the
+    // singleton's synthEventsPending_ atomic. Static so it can be
+    // wired as a plain function pointer (no captures); friends-of-the-
+    // class access via s_instance is sufficient. Wired in Start, no-op
+    // when s_instance is null (defensive — Start is the only writer).
+    static void OnSynthDispatched(int delta) noexcept;
+
     // Sprint 2 D4: Returns true when the current injector publishes a
     // synchronous channel (RichEditEmReplaceSelInjector — SettleBudget=0ms).
     // Replaces the legacy useEditMsgPath_ atomic-bool flag for the four
@@ -328,7 +335,12 @@ private:
     // Auto-expire the Ready state after this many ms — cheap insurance against any
     // cursor-movement event that bypasses ResetComposition (e.g. future edge cases).
     static constexpr DWORD kCommitUndoTimeoutMs = 4000;
-    static constexpr DWORD kSynthSettleMs = 100;  // Max time (ms) for synthetic events to be processed by app
+    // Sprint 2 D5: kSynthSettleMs (was 100 ms hardcoded for all hosts) replaced
+    // by per-injector budget — `injector_->SettleBudget()` returns 0 ms for
+    // RichEdit (sent message drains synchronously), 30 ms for Win32 batch,
+    // and 100 ms for Split (Electron/Console). Read inline at the gate sites
+    // so a focus change (re-publishing a different injector) takes effect on
+    // the next keystroke without staleness.
 
     enum class CommitUndoState : uint8_t {
         Idle   = 0,  // No pending undo

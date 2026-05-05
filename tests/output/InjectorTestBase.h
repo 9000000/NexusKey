@@ -39,12 +39,24 @@ protected:
     // Default SendMessageW return for tests that don't override.
     static inline LRESULT sendMessageReturnDefault = 1;
 
+    // Sprint 2 D5: synth-counter callback observation. Each invocation of
+    // Internal::TrackedSendInput emits a delta — positive when events are
+    // about to be dispatched, negative on partial-send recovery. Tests
+    // sum them to verify the bookkeeping a HookEngine integration would
+    // see for synthEventsPending_.
+    static inline std::vector<int> synthCounterDeltas;
+
     void SetUp() override {
         capturedInputs.clear();
         sleepDelays.clear();
         capturedMsgs.clear();
+        synthCounterDeltas.clear();
         sendInputReturnOverride = 0;
         sendMessageReturnDefault = 1;
+
+        Internal::g_synthCounterCallback = [](int delta) noexcept {
+            synthCounterDeltas.push_back(delta);
+        };
 
         Internal::g_sendInput = [](UINT n, LPINPUT inputs, int) -> UINT {
             for (UINT i = 0; i < n; ++i) capturedInputs.push_back(inputs[i]);
@@ -71,10 +83,11 @@ protected:
     }
 
     void TearDown() override {
-        Internal::g_sendInput           = ::SendInput;
-        Internal::g_sleep               = ::Sleep;
-        Internal::g_sendMessageW        = ::SendMessageW;
-        Internal::g_sendMessageTimeoutW = ::SendMessageTimeoutW;
+        Internal::g_sendInput             = ::SendInput;
+        Internal::g_sleep                 = ::Sleep;
+        Internal::g_sendMessageW          = ::SendMessageW;
+        Internal::g_sendMessageTimeoutW   = ::SendMessageTimeoutW;
+        Internal::g_synthCounterCallback  = nullptr;
     }
 };
 

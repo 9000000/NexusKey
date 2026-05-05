@@ -4,6 +4,7 @@
 #include "HookEngine.h"
 #include "helpers/AppHelpers.h"
 #include "output/OutputInjectorFactory.h"  // Sprint 2 T3 — output channel strategy
+#include "output/Internal.h"  // Sprint 2 D5 — g_synthCounterCallback bridge
 #include "core/engine/CodeTableConverter.h"
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
@@ -121,6 +122,11 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
 #endif
 
     s_instance = this;
+    // Sprint 2 D5: route the IOutputInjector → Internal::TrackedSendInput
+    // event count back into synthEventsPending_. Wired AFTER s_instance
+    // is set (callback dereferences it). Hook thread isn't installed yet
+    // so no synth dispatch can fire before this point.
+    NextKey::Output::Internal::g_synthCounterCallback = &HookEngine::OnSynthDispatched;
     currentMethod_.store(config.inputMethod, std::memory_order_release);
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
     // Sprint 1 D11: ApplyConfig requires caller-held stateMutex_. Start runs
@@ -258,6 +264,10 @@ void HookEngine::Stop() {
     }
     // Sprint 1 D10: focusPollTimer_ retired — owner stops its
     // MainThreadWorker (which owns the 200 ms tick) before us.
+    // Sprint 2 D5: clear the synth-counter callback BEFORE nulling
+    // s_instance — otherwise an in-flight Internal::TrackedSendInput
+    // could dereference s_instance after we cleared it.
+    NextKey::Output::Internal::g_synthCounterCallback = nullptr;
     if (s_instance == this) {
         s_instance = nullptr;
     }
@@ -968,7 +978,15 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             vkCode >= '1' && vkCode <= '5' &&
             !(GetKeyState(VK_SHIFT) & 0x8000);
         const bool isToneModifier = isTelexTone || isVniTone;
-        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < kSynthSettleMs
+        // Sprint 2 D5: settle window is now per-host. RichEdit (0 ms) lets
+        // commit-undo replay immediately; Win32 (30 ms) tightens the gate
+        // ~3× vs the legacy 100 ms hardcode; Electron/Console (100 ms) keeps
+        // the original budget where IPC reorder margin still matters. Read
+        // here, not cached, so a focus change between commit and the next
+        // BS uses the new injector's budget.
+        const DWORD settleMs = static_cast<DWORD>(
+            injector_.load(std::memory_order_acquire)->SettleBudget().count());
+        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < settleMs
             && !isToneModifier) {
             HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
                      synthEventsPending_.load(), vkCode);
@@ -1745,6 +1763,19 @@ static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
     INPUT inUp = inDown;
     inUp.ki.dwFlags |= KEYEVENTF_KEYUP;
     events.push_back(inUp);
+}
+
+// Sprint 2 D5: Bridges Internal::g_synthCounterCallback into the
+// singleton's synthEventsPending_ atomic. Pre-D2 the increment lived
+// in HookEngine::TrackedSendInput (only entry point for synth dispatch);
+// the IOutputInjector refactor moved dispatch into Internal::TrackedSendInput
+// which has no HookEngine dependency, leaving the counter at 0 on the
+// hot path and silently disabling synth-guard everywhere. This callback
+// restores the pre-D2 behavior without re-coupling the layers.
+void HookEngine::OnSynthDispatched(int delta) noexcept {
+    auto* self = s_instance.load(std::memory_order_relaxed);
+    if (!self) return;
+    self->synthEventsPending_.fetch_add(delta, std::memory_order_relaxed);
 }
 
 // Sprint 2 D4: Replaces useEditMsgPath_.load() at four policy gates
