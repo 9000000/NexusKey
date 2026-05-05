@@ -47,12 +47,16 @@ bool Win32SendInputInjector::Replace(std::size_t bsCount,
     std::array<INPUT, kMaxBatch> buf{};
     std::size_t i = 0;
 
-    // Bait-char prefix: only when this impl is the Chromium variant AND
-    // the operation is pure-backspace (text empty, bs > 0). Inserts
-    // U+202F + an extra BS to delete it. Replicates HookEngine
-    // ::SendBackspaces line ~3121 logic so the autocomplete-suggest
-    // dismiss behavior is preserved when D1 routes through the injector.
-    const bool emitBait = needsBaitCharPrefix_ && text.empty() && bsCount > 0;
+    // Bait-char prefix: when this impl is the Chromium variant AND the
+    // operation deletes anything (bsCount > 0). Inserts U+202F + an extra
+    // BS to delete it before the rest of the deletes/chars run. Replicates
+    // the legacy HookEngine logic at the encoded path (line ~2891) and
+    // Unicode path (line ~3026): bait fires whenever there is at least
+    // one BS to dispatch, regardless of whether the operation also types
+    // characters. The Chromium autocomplete-dismiss requires the visible-
+    // width char to "kick" the suggest engine before deletions land —
+    // partial-replace (BS + chars) needs it just as much as pure-BS does.
+    const bool emitBait = needsBaitCharPrefix_ && bsCount > 0;
     if (emitBait) {
         if (i + 2 > kMaxBatch) return false;
         buf[i++] = MakeUnicodeChar(0x202F, /*keyup=*/false);

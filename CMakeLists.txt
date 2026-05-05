@@ -443,9 +443,13 @@ if(WIN32)
         # are pulled in directly here for the test binary.
         tests/output/Win32SendInputInjectorTest.cpp
         tests/output/RichEditEmReplaceSelInjectorTest.cpp
+        tests/output/SplitDispatchInjectorTest.cpp
+        tests/output/OutputInjectorFactoryTest.cpp
         src/app/output/Internal.cpp
         src/app/output/Win32SendInputInjector.cpp
         src/app/output/RichEditEmReplaceSelInjector.cpp
+        src/app/output/SplitDispatchInjector.cpp
+        src/app/output/OutputInjectorFactory.cpp
     )
 endif()
 

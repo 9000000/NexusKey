@@ -54,14 +54,35 @@ TEST_F(Win32SendInputInjectorTest, BaitCharPrefixWhenFlaggedAndPureBackspace) {
     }
 }
 
-TEST_F(Win32SendInputInjectorTest, BaitCharSkippedWhenTextNonEmpty) {
+TEST_F(Win32SendInputInjectorTest, BaitCharFiresEvenWhenTextNonEmpty) {
+    // D3 contract change: the bait fires whenever bsCount > 0 on the
+    // Chromium variant — partial-replace (BS + chars) needs autocomplete
+    // dismissed too, not just pure-BS. Previously (D1) bait was gated on
+    // text.empty(). HookEngine ReplaceComposition's pre-injector logic
+    // (lines ~2891 / ~3026) already emitted bait in this configuration —
+    // the gate is moved into the injector to centralize the channel quirk.
     Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
     EXPECT_TRUE(inj.Replace(1, L"x"));
-    // No bait prefix: just BS×1 + char×1 = 4 events
-    ASSERT_EQ(capturedInputs.size(), 4u);
-    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_BACK);
-    EXPECT_NE(capturedInputs[2].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
-    EXPECT_EQ(capturedInputs[2].ki.wScan, L'x');
+    // Expected: bait (down+up = 2) + 2 BS down/up (= 4: 1 orig + 1 extra
+    // to delete the bait) + 1 char down/up (= 2) = 8 events.
+    ASSERT_EQ(capturedInputs.size(), 8u);
+    EXPECT_NE(capturedInputs[0].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[0].ki.wScan, 0x202F);
+    EXPECT_EQ(capturedInputs[2].ki.wVk, VK_BACK);
+    EXPECT_EQ(capturedInputs[4].ki.wVk, VK_BACK);
+    EXPECT_NE(capturedInputs[6].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[6].ki.wScan, L'x');
+}
+
+TEST_F(Win32SendInputInjectorTest, BaitCharSkippedWhenBsCountZero) {
+    // Pure-typing (no deletions) on the Chromium variant: no bait,
+    // no extra BS — just the chars. Autocomplete-dismiss isn't needed
+    // when nothing is being removed.
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
+    EXPECT_TRUE(inj.Replace(0, L"y"));
+    ASSERT_EQ(capturedInputs.size(), 2u);  // 1 char × down+up
+    EXPECT_NE(capturedInputs[0].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[0].ki.wScan, L'y');
 }
 
 TEST_F(Win32SendInputInjectorTest, ReplaceReturnsFalseOnPartialSend) {

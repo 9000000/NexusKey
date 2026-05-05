@@ -17,8 +17,10 @@ namespace NextKey::Output {
 
 class SplitDispatchInjector final : public IOutputInjector {
 public:
-    explicit SplitDispatchInjector(int sleepMsBetweenBatches) noexcept
-        : sleepMs_(sleepMsBetweenBatches) {}
+    explicit SplitDispatchInjector(int sleepMsBetweenBatches,
+                                   bool needsBaitCharPrefix = false) noexcept
+        : sleepMs_(sleepMsBetweenBatches),
+          needsBaitCharPrefix_(needsBaitCharPrefix) {}
 
     bool Replace(std::size_t bsCount, std::wstring_view text) noexcept override;
     void SendKey(unsigned short vkCode) noexcept override;
@@ -31,6 +33,13 @@ public:
 
 private:
     int sleepMs_;
+    // WebView2 / Electron-on-Chromium hosts need the same U+202F
+    // autocomplete-dismiss prefix as Win32 Chromium browsers — the
+    // dispatch channel changes (split + Sleep) but the renderer-side
+    // suggest engine is the same Chromium one and still requires the
+    // bait. Without it, BS land into a still-open suggest popup and
+    // get swallowed.
+    bool needsBaitCharPrefix_;
 };
 
 }  // namespace NextKey::Output

@@ -2622,17 +2622,18 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     isOutlookApp_.store(localOutlook, std::memory_order_release);
     isElectronApp_.store(localElectronApp, std::memory_order_release);
 
-    // Sprint 2 D2: build the IOutputInjector for this classification and
-    // RCU-publish to injector_. D2 wires only the RichEdit branch (via
-    // localEditMsg → c.isRichEditD2DPT); D3 wires Electron/Console/Chromium
-    // branches and removes the per-flag atomic stores above. Keeping both
-    // for now because the 4 useEditMsgPath_ branch sites are also
-    // transitioning in this same D-commit, and the per-flag fields still
-    // serve their old readers until D3.
+    // Sprint 2 D3: build the IOutputInjector for this classification and
+    // RCU-publish to injector_. All four branches now live: RichEdit
+    // (D2), Electron/Console (D3 SplitDispatch), and Win32 default with
+    // optional Chromium bait-char hint. The per-flag atomic stores above
+    // are kept for non-dispatch readers (passthrough policy at line ~1471,
+    // retry-loop gating at line ~2959) and are removed in D4.
     {
         NextKey::Output::WindowClassification c{};
         c.isRichEditD2DPT = localEditMsg;
-        // c.isElectron / c.isConsole / c.isChromium wired in D3.
+        c.isElectron      = localElectronApp;
+        c.isConsole       = localConsole;
+        c.isChromium      = localNeedBait;  // bait-char hint matches the legacy needBaitChar_ semantics
         injector_.store(NextKey::Output::Create(c), std::memory_order_release);
     }
 
@@ -2887,34 +2888,20 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
                  previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
                  encodedToSend.size(), reinjectVk);
 
-        {
-            bool needEmpty = (backspaceCount > 0 && needBaitChar_.load(std::memory_order_acquire));
-            size_t bsTotal = backspaceCount + (needEmpty ? 1 : 0);
-
-            if (bsTotal > 0 || !encodedToSend.empty()) {
-                std::vector<INPUT> bsEvents;
-                std::vector<INPUT> charEvents;
-                WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-
-                if (bsTotal > 0) {
-                    bsEvents.reserve(bsTotal * 2 + (needEmpty ? 2 : 0));
-                    if (needEmpty) {
-                        AppendUnicodeEvent(bsEvents, 0x202F);
-                    }
-                    for (size_t i = 0; i < bsTotal; ++i) {
-                        AppendVkEvent(bsEvents, VK_BACK, bsScan);
-                    }
-                }
-
-                if (!encodedToSend.empty()) {
-                    charEvents.reserve(encodedToSend.size() * 2);
-                    for (wchar_t ch : encodedToSend) {
-                        AppendUnicodeEvent(charEvents, ch);
-                    }
-                }
-
-                DispatchSendInput(bsEvents, charEvents);
+        // Sprint 2 D3: route encoded path through the IOutputInjector.
+        // The bait-char prefix (Chromium autocomplete-dismiss) is now
+        // owned by Win32SendInputInjector and gated on its
+        // needsBaitCharPrefix_ flag, so we no longer pre-bake U+202F or
+        // an extra BS here. The injector also handles the Electron/
+        // Console split-with-Sleep when classified accordingly.
+        if (backspaceCount > 0 || !encodedToSend.empty()) {
+            sending_ = true;
+            auto inj = injector_.load(std::memory_order_acquire);
+            if (!inj->Replace(backspaceCount, std::wstring_view(encodedToSend))) {
+                HOOK_LOG(L"  ReplaceComposition[encoded]: injector reported partial delivery");
             }
+            sending_ = false;
+            RecordSynthDispatch();
         }
 
         // Update widths: keep [0..commonLen), append newWidths
@@ -3017,112 +3004,41 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     }
 
     {
-        // Bait char (U+202F): prevents apps with autofill from swallowing the first
-        // U+202F bait: dismiss autocomplete suggestions before BS. Must fire on EVERY
-        // transform (not just empty-field), because suggest is active at any word length.
-        // U+202F has visible width → triggers suggest recalculation → dismiss.
-        // Zero-width chars (U+200B) don't work — Chrome ignores them for suggest.
-        bool needEmpty = (backspaceCount > 0 && needBaitChar_.load(std::memory_order_acquire));
-        if (needEmpty) backspaceCount++;
+        // Sprint 2 D3: Unicode path now delegates to IOutputInjector for
+        // the BS + chars dispatch — bait-char prefix (Chromium) and
+        // split-with-Sleep (Electron/Console) live inside the impl,
+        // gated on the classification flags wired in OnFocusChanged.
+        //
+        // reinjectVk handling stays inline: it's a single VK keydown
+        // (no keyup — the physical key-up flows through later) prepended
+        // for game compatibility, which the (bsCount, text) interface
+        // can't carry. Rare path (only fires when HandleAlphaKey replays
+        // a held game-hotkey through a Vietnamese transform), so the
+        // extra raw SendInput call here is acceptable.
+        HOOK_LOG(L"  ReplaceComposition[send]: BS=%zu toSend='%s' skipEmpty=%d synthPending=%d reinjectVk=0x%02X",
+                 backspaceCount, toSend.c_str(),
+                 skipEmptyChar_.load(std::memory_order_acquire) ? 1 : 0,
+                 synthEventsPending_.load(), reinjectVk);
 
-        HOOK_LOG(L"  ReplaceComposition[send]: BS=%zu needEmpty=%d toSend='%s' skipEmpty=%d synthPending=%d",
-                 backspaceCount, needEmpty ? 1 : 0, toSend.c_str(),
-                 skipEmptyChar_.load(std::memory_order_acquire) ? 1 : 0, synthEventsPending_.load());
+        if (backspaceCount > 0 || !toSend.empty() || reinjectVk != 0) {
+            sending_ = true;
 
-        if (backspaceCount > 0 || !toSend.empty()) {
-            // Stack-allocated events: Vietnamese words max ~8 chars, transforms touch 1-3.
-            // Max: bait(2) + 8 BS(16) + 8 chars(16) = 34 INPUT structs. 48 is generous.
-            static constexpr size_t kMaxEvents = 48;
-            INPUT bsBuf[kMaxEvents];
-            size_t bsCount = 0;
-            INPUT charBuf[kMaxEvents];
-            size_t charCount = 0;
-            WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-
-            auto appendUnicode = [](INPUT* buf, size_t& count, wchar_t ch) {
-                if (count + 2 > kMaxEvents) return;
-                INPUT& down = buf[count++];
-                down = {};
-                down.type = INPUT_KEYBOARD;
-                down.ki.wScan = ch;
-                down.ki.dwFlags = KEYEVENTF_UNICODE;
-                down.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-                INPUT& up = buf[count++];
-                up = {};
-                up.type = INPUT_KEYBOARD;
-                up.ki.wScan = ch;
-                up.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-                up.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            };
-
-            auto appendVk = [](INPUT* buf, size_t& count, WORD vk, WORD scan) {
-                if (count + 2 > kMaxEvents) return;
-                INPUT& down = buf[count++];
-                down = {};
-                down.type = INPUT_KEYBOARD;
-                down.ki.wVk = vk;
-                down.ki.wScan = scan;
-                down.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-                INPUT& up = buf[count++];
-                up = {};
-                up.type = INPUT_KEYBOARD;
-                up.ki.wVk = vk;
-                up.ki.wScan = scan;
-                up.ki.dwFlags = KEYEVENTF_KEYUP;
-                up.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-            };
-
-            // Re-inject VK keydown FIRST in the batch (game compatibility).
-            // Games see WM_KEYDOWN(VK_W) for movement; BS+chars follow in the same
-            // SendInput call so the app processes everything in one pump cycle → no flicker.
-            if (reinjectVk != 0 && bsCount + 1 <= kMaxEvents) {
-                INPUT& evt = bsBuf[bsCount++];
-                evt = {};
+            if (reinjectVk != 0) {
+                INPUT evt{};
                 evt.type = INPUT_KEYBOARD;
                 evt.ki.wVk = static_cast<WORD>(reinjectVk);
                 evt.ki.wScan = static_cast<WORD>(MapVirtualKeyW(reinjectVk, MAPVK_VK_TO_VSC));
                 evt.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+                TrackedSendInput(&evt, 1);
             }
 
-            if (backspaceCount > 0) {
-                if (needEmpty) {
-                    appendUnicode(bsBuf, bsCount, 0x202F);
-                }
-                for (size_t i = 0; i < backspaceCount; ++i) {
-                    appendVk(bsBuf, bsCount, VK_BACK, bsScan);
+            if (backspaceCount > 0 || !toSend.empty()) {
+                auto inj = injector_.load(std::memory_order_acquire);
+                if (!inj->Replace(backspaceCount, std::wstring_view(toSend))) {
+                    HOOK_LOG(L"  ReplaceComposition[send]: injector reported partial delivery");
                 }
             }
 
-            for (wchar_t ch : toSend) {
-                appendUnicode(charBuf, charCount, ch);
-            }
-
-            // Dispatch using stack buffers
-            sending_ = true;
-            const bool electronApp2 = isElectronApp_.load(std::memory_order_acquire);
-            const bool consoleApp2 = isConsoleApp_.load(std::memory_order_acquire);
-            if (electronApp2 || consoleApp2) {
-                // Split only for Electron/Console (multi-process IPC reorder risk).
-                if (bsCount > 0) {
-                    TrackedSendInput(bsBuf, static_cast<UINT>(bsCount));
-                    int baseMs = electronApp2 ? 6 : 5;
-                    int bsKeys = static_cast<int>(bsCount) / 2;
-                    int delayMs = (std::min)(baseMs + (bsKeys > 1 ? bsKeys - 1 : 0), 12);
-                    Sleep(delayMs);
-                }
-                if (charCount > 0) {
-                    TrackedSendInput(charBuf, static_cast<UINT>(charCount));
-                }
-            } else {
-                // Batch: merge into bsBuf and send once
-                if (charCount > 0 && bsCount + charCount <= kMaxEvents) {
-                    memcpy(&bsBuf[bsCount], charBuf, charCount * sizeof(INPUT));
-                    bsCount += charCount;
-                }
-                if (bsCount > 0) {
-                    TrackedSendInput(bsBuf, static_cast<UINT>(bsCount));
-                }
-            }
             sending_ = false;
             RecordSynthDispatch();
         }
@@ -3373,14 +3289,6 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
     }
 
     {
-        WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-        std::vector<INPUT> bsEvents;
-
-        bsEvents.reserve(bsCount * 2);
-        for (size_t i = 0; i < bsCount; ++i) {
-            AppendVkEvent(bsEvents, VK_BACK, bsScan);
-        }
-
         // Choose output method based on encoding and expansion size.
         // Non-Unicode code tables need per-char conversion → always SendInput.
         // Unicode macros >200 chars use clipboard paste for speed.
@@ -3401,10 +3309,13 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
                 }
             }
 
-            // Send backspaces first, then clipboard paste
-            if (!bsEvents.empty()) {
+            // Send backspaces first via injector, then clipboard paste.
+            if (bsCount > 0) {
                 sending_ = true;
-                TrackedSendInput(bsEvents.data(), static_cast<UINT>(bsEvents.size()));
+                auto inj = injector_.load(std::memory_order_acquire);
+                if (!inj->Replace(bsCount, std::wstring_view{})) {
+                    HOOK_LOG(L"  TryExpandMacro[clipboard]: BS injector reported partial delivery");
+                }
                 sending_ = false;
                 RecordSynthDispatch();
             }
@@ -3413,29 +3324,54 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
             HOOK_LOG(L"  TryExpandMacro: clipboard paste %zu chars (raw %zu)",
                      clipText.size(), expansion.size());
         } else {
-            // SendInput path: per-character with encoding support
-            WORD retScan = static_cast<WORD>(MapVirtualKeyW(VK_RETURN, MAPVK_VK_TO_VSC));
-            std::vector<INPUT> charEvents;
-            charEvents.reserve(expansion.size() * 2);
-            auto emitChar = [&](wchar_t ch) {
-                if (currentCodeTable_ != CodeTable::Unicode) {
-                    auto enc = CodeTableConverter::ConvertChar(ch, currentCodeTable_);
-                    AppendUnicodeEvent(charEvents, enc.units[0]);
-                    if (enc.count == 2) AppendUnicodeEvent(charEvents, enc.units[1]);
-                } else {
-                    AppendUnicodeEvent(charEvents, ch);
+            // Sprint 2 D3: macro SendInput path now flows through the
+            // IOutputInjector. The expansion may contain `\n` escape
+            // sequences that must materialize as VK_RETURN keystrokes
+            // (not Unicode U+000A) — the injector's text param is pure
+            // Unicode, so we segment around `\n` boundaries:
+            //   inj->Replace(bsCount, segment_before_first_newline)
+            //   inj->SendKey(VK_RETURN)
+            //   inj->Replace(0, next_segment)
+            //   ...
+            // Multi-line macros are infrequent; the extra Replace calls
+            // are acceptable. Code tables: per-char ConvertChar
+            // expansion still happens here before assembling the segment.
+            sending_ = true;
+            auto inj = injector_.load(std::memory_order_acquire);
+
+            std::wstring segment;
+            segment.reserve(expansion.size());
+            std::size_t pendingBsCount = bsCount;  // attached to the first segment
+
+            auto flushSegment = [&]() {
+                if (pendingBsCount == 0 && segment.empty()) return;
+                if (!inj->Replace(pendingBsCount, std::wstring_view(segment))) {
+                    HOOK_LOG(L"  TryExpandMacro[send]: injector reported partial delivery");
                 }
+                pendingBsCount = 0;
+                segment.clear();
             };
+
             for (size_t i = 0; i < expansion.size(); ++i) {
                 if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
                     expansion[i + 1] == L'n') {
-                    AppendVkEvent(charEvents, VK_RETURN, retScan);
+                    flushSegment();
+                    inj->SendKey(VK_RETURN);
                     ++i;
+                    continue;
+                }
+                if (currentCodeTable_ != CodeTable::Unicode) {
+                    auto enc = CodeTableConverter::ConvertChar(expansion[i], currentCodeTable_);
+                    segment += enc.units[0];
+                    if (enc.count == 2) segment += enc.units[1];
                 } else {
-                    emitChar(expansion[i]);
+                    segment += expansion[i];
                 }
             }
-            DispatchSendInput(bsEvents, charEvents);
+            flushSegment();
+
+            sending_ = false;
+            RecordSynthDispatch();
         }
     }
     ClearWordState();
