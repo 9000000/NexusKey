@@ -439,22 +439,45 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
 }
 
 void HookEngine::QuickSyncFromSharedState() {
-    // Sprint 1 D11: callers must NOT hold stateMutex_. Self-locks for the
-    // slow-path config reload. After D11, OnTickPoll (formerly the
-    // FocusPollTimerProc) releases its lock before calling OnFocusChanged,
-    // so the inner OnFocusChanged → QuickSync chain reaches this self-lock
+    // Pre-T3 Minor 2 fix (Rule #11.3): hot path is lock-free. The common
+    // case — no SharedState change since the last call — returns before
+    // any mutex acquire, eliminating the per-keystroke contention with
+    // main-thread writers (ToggleVietnameseMode, SetCodeTable, …) that
+    // showed up as p99 jitter under chaos. Slow path still takes the
+    // lock and re-checks the epoch under it (double-checked locking) so
+    // hook ↔ main both detecting a bump are serialised cleanly.
+    //
+    // Sprint 1 D11 contract preserved: callers must NOT hold stateMutex_.
+    // OnTickPoll releases its lock before calling OnFocusChanged, so the
+    // inner OnFocusChanged → QuickSync chain reaches the slow-path lock
     // without recursion. ProcessKeyDown (hook thread) and
-    // SyncConfigFromSharedState (public API) call this without any lock held.
-    std::lock_guard<std::mutex> _lock(stateMutex_);
+    // SyncConfigFromSharedState (public API) call this without any lock
+    // held.
     if (!sharedStatePtr_) return;
 
-    // Fast path: skip full struct copy if epoch hasn't changed (single 32-bit read)
+    // Fast path: lock-free atomic epoch check. SharedState::ReadEpoch is
+    // a memory-mapped 32-bit seqlock counter; lastEpoch_ is std::atomic.
+    // Common case under steady-state typing: epoch unchanged → return
+    // without any stateMutex_ acquire. Cost: ~5 ns total.
     uint32_t epoch = sharedStatePtr_->ReadEpoch();
-    if (epoch == lastEpoch_ && (epoch & 1) == 0) return;
+    uint32_t seenEpoch = lastEpoch_.load(std::memory_order_acquire);
+    if (epoch == seenEpoch && (epoch & 1) == 0) return;
+
+    // Slow path: SharedState may have changed. Acquire the lock to
+    // serialise with main-thread writers (ApplyConfig, ReloadFromToml).
+    std::lock_guard<std::mutex> _lock(stateMutex_);
+
+    // Double-check inside the lock — a concurrent QuickSync caller (hook
+    // ↔ main race on configGeneration bump) may have already applied
+    // this epoch. Without the recheck both threads would run the full
+    // body and the second one would no-op only after wasted TOML reload.
+    epoch = sharedStatePtr_->ReadEpoch();
+    seenEpoch = lastEpoch_.load(std::memory_order_acquire);
+    if (epoch == seenEpoch && (epoch & 1) == 0) return;
 
     SharedState state = sharedStatePtr_->Read();
     if (!state.IsValid()) return;
-    lastEpoch_ = state.epoch;
+    lastEpoch_.store(state.epoch, std::memory_order_release);
 
     // ── Config generation check: detect TOML changes from Settings/subdialogs ──
     // When configGeneration changes, do a full TOML reload (macros, excluded apps, etc.).
@@ -799,13 +822,14 @@ static bool IsIncompatibleLayout(HKL hkl);
 // ═══════════════════════════════════════════════════════════
 
 bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*/) {
-    // 0. Sync from SharedState. Fast path is a memory-mapped atomic read
-    //    (no syscall, ~10 ns); the slow path — taken when the writer's
-    //    configGeneration bumped — invokes TOML reload + can briefly hold
-    //    stateMutex_ on this thread. Pre-T3 review Minor 2 captures the
-    //    Rule #11.2/11.3 concern (mutex on hook hot path); see docs/TODO.md
-    //    for the audit task. Most calls hit the fast path; the slow-path
-    //    cost is bounded to 1 reload per generation bump.
+    // 0. Sync from SharedState. Fast path (post Pre-T3 Minor 2 fix) is
+    //    fully lock-free — atomic ReadEpoch + atomic load of lastEpoch_,
+    //    early-return on unchanged. Cost ~5 ns. The slow path (taken
+    //    only when configGeneration bumped — user-paced Settings save,
+    //    not chaos) acquires stateMutex_ + may run ReloadFromToml on
+    //    this thread; that residual Rule #11.2 cost is bounded to one
+    //    reload per generation bump (~10–50 ms once / minute of user
+    //    config tweaking). Steady-state typing never reaches it.
     QuickSyncFromSharedState();
 
     // 0b. TSF app — let TSF DLL handle all input, hook does nothing

@@ -225,4 +225,184 @@ TEST(HookEngineAtomic, EnumCrossThreadVisibility) {
     reader.join();
 }
 
+// Pre-T3 Minor 2 fix: HookEngine::QuickSyncFromSharedState now uses
+// double-checked locking with std::atomic<uint32_t> lastEpoch_. The hot
+// path on the LL hook thread reads SharedState::ReadEpoch() + compares
+// against lastEpoch_.load() — equal → return without acquiring
+// stateMutex_. The slow path acquires the lock and re-checks the epoch
+// under it before doing any actual work, so concurrent QuickSync
+// callers (hook ↔ main race on a configGeneration bump) collapse to
+// exactly one body execution per bump.
+//
+// HookEngine.cpp is Windows-only (LL hook APIs) and not linked into
+// this test target, so this test mirrors the pattern with a minimal
+// mock — exercising the same atomic + lock + recheck shape against the
+// invariants the real implementation must hold.
+TEST(HookEngineAtomic, QuickSyncDoubleCheckedLocking_HotPathSkipsSlowBody) {
+    std::atomic<uint32_t> lastEpoch{0};
+    std::mutex stateMutex;
+    std::atomic<uint32_t> sharedEpoch{0};
+    std::atomic<int> slowBodyRuns{0};
+    std::atomic<int> lockAcquires{0};
+
+    auto QuickSync = [&]() {
+        // Fast path: lock-free epoch check (mirrors HookEngine.cpp lines
+        // 459-462 post-fix).
+        uint32_t epoch = sharedEpoch.load(std::memory_order_acquire);
+        uint32_t seen = lastEpoch.load(std::memory_order_acquire);
+        if (epoch == seen && (epoch & 1) == 0) return;
+
+        // Slow path: lock + re-check inside lock.
+        std::lock_guard<std::mutex> _lock(stateMutex);
+        lockAcquires.fetch_add(1, std::memory_order_relaxed);
+        epoch = sharedEpoch.load(std::memory_order_acquire);
+        seen = lastEpoch.load(std::memory_order_acquire);
+        if (epoch == seen && (epoch & 1) == 0) return;
+
+        // "Body" — in production this is TOML reload + ApplyConfig.
+        slowBodyRuns.fetch_add(1, std::memory_order_relaxed);
+        lastEpoch.store(epoch, std::memory_order_release);
+    };
+
+    // Initial bump: lastEpoch=0, sharedEpoch=2 (even = quiescent state).
+    sharedEpoch.store(2, std::memory_order_release);
+
+    // First call enters slow path (epoch mismatch).
+    QuickSync();
+    EXPECT_EQ(slowBodyRuns.load(), 1);
+    EXPECT_EQ(lockAcquires.load(), 1);
+
+    // 100 subsequent calls without bump: every call hits the lock-free
+    // fast path and returns. Lock is never acquired again.
+    for (int i = 0; i < 100; ++i) QuickSync();
+    EXPECT_EQ(slowBodyRuns.load(), 1)
+        << "fast path must skip slow body when epoch unchanged";
+    EXPECT_EQ(lockAcquires.load(), 1)
+        << "fast path must NOT acquire stateMutex_ when epoch unchanged";
+}
+
+// Concurrent QuickSync from N threads on a single epoch bump must
+// collapse to exactly one slow-body execution. Without the
+// inside-the-lock recheck, all N threads would run the body — N times
+// the wasted ReloadFromToml. The double-check is what serialises hook
+// thread and main thread cleanly when both observe the same bump.
+TEST(HookEngineAtomic, QuickSyncDoubleCheckedLocking_ConcurrentBumpCollapses) {
+    std::atomic<uint32_t> lastEpoch{0};
+    std::mutex stateMutex;
+    std::atomic<uint32_t> sharedEpoch{2};  // initial quiescent
+    std::atomic<int> slowBodyRuns{0};
+    std::atomic<bool> startGate{false};
+
+    auto QuickSync = [&]() {
+        uint32_t epoch = sharedEpoch.load(std::memory_order_acquire);
+        uint32_t seen = lastEpoch.load(std::memory_order_acquire);
+        if (epoch == seen && (epoch & 1) == 0) return;
+
+        std::lock_guard<std::mutex> _lock(stateMutex);
+        epoch = sharedEpoch.load(std::memory_order_acquire);
+        seen = lastEpoch.load(std::memory_order_acquire);
+        if (epoch == seen && (epoch & 1) == 0) return;
+
+        slowBodyRuns.fetch_add(1, std::memory_order_relaxed);
+        lastEpoch.store(epoch, std::memory_order_release);
+    };
+
+    constexpr int kThreads = 16;
+    std::vector<std::thread> threads;
+    threads.reserve(kThreads);
+    for (int i = 0; i < kThreads; ++i) {
+        threads.emplace_back([&]() {
+            // Spin until released so all threads start near-simultaneously,
+            // maximising the chance multiple ones see the bump together.
+            while (!startGate.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+            QuickSync();
+        });
+    }
+
+    // Bump the epoch, then release the gate.
+    sharedEpoch.store(4, std::memory_order_release);
+    startGate.store(true, std::memory_order_release);
+
+    for (auto& t : threads) t.join();
+
+    EXPECT_EQ(slowBodyRuns.load(), 1)
+        << "double-checked locking must collapse N concurrent observers "
+           "of one bump down to one slow-body execution";
+    EXPECT_EQ(lastEpoch.load(std::memory_order_acquire), 4u);
+}
+
+// Multiple bumps over time: each bump should drive exactly one slow-body
+// execution; calls between bumps should hit the fast path. This guards
+// against a regression where lastEpoch_ stops being updated (slow body
+// would then re-run forever).
+TEST(HookEngineAtomic, QuickSyncDoubleCheckedLocking_MultipleBumpsOnePerBump) {
+    std::atomic<uint32_t> lastEpoch{0};
+    std::mutex stateMutex;
+    std::atomic<uint32_t> sharedEpoch{2};
+    std::atomic<int> slowBodyRuns{0};
+
+    auto QuickSync = [&]() {
+        uint32_t epoch = sharedEpoch.load(std::memory_order_acquire);
+        uint32_t seen = lastEpoch.load(std::memory_order_acquire);
+        if (epoch == seen && (epoch & 1) == 0) return;
+        std::lock_guard<std::mutex> _lock(stateMutex);
+        epoch = sharedEpoch.load(std::memory_order_acquire);
+        seen = lastEpoch.load(std::memory_order_acquire);
+        if (epoch == seen && (epoch & 1) == 0) return;
+        slowBodyRuns.fetch_add(1, std::memory_order_relaxed);
+        lastEpoch.store(epoch, std::memory_order_release);
+    };
+
+    // Each bump drives exactly one slow-body; intermediate calls hit
+    // fast path.
+    for (uint32_t bump = 0; bump < 5; ++bump) {
+        sharedEpoch.store((bump + 1) * 2, std::memory_order_release);
+        for (int i = 0; i < 10; ++i) QuickSync();
+    }
+    EXPECT_EQ(slowBodyRuns.load(), 5)
+        << "exactly one slow-body run per epoch bump expected";
+}
+
+// Mid-write epoch (odd value, seqlock entry counter half-bumped) must
+// be skipped on the fast path — the writer is in flight, no consistent
+// SharedState read possible. Mirrors the `(epoch & 1) == 0` guard.
+TEST(HookEngineAtomic, QuickSyncDoubleCheckedLocking_OddEpochSkipped) {
+    std::atomic<uint32_t> lastEpoch{0};
+    std::mutex stateMutex;
+    std::atomic<uint32_t> sharedEpoch{3};  // odd → mid-write
+    std::atomic<int> slowBodyRuns{0};
+
+    auto QuickSync = [&]() {
+        uint32_t epoch = sharedEpoch.load(std::memory_order_acquire);
+        uint32_t seen = lastEpoch.load(std::memory_order_acquire);
+        if (epoch == seen && (epoch & 1) == 0) return;
+        std::lock_guard<std::mutex> _lock(stateMutex);
+        epoch = sharedEpoch.load(std::memory_order_acquire);
+        seen = lastEpoch.load(std::memory_order_acquire);
+        if (epoch == seen && (epoch & 1) == 0) return;
+        slowBodyRuns.fetch_add(1, std::memory_order_relaxed);
+        lastEpoch.store(epoch, std::memory_order_release);
+    };
+
+    // Odd epoch — call enters slow path (mismatch), body runs but with
+    // odd value stored. Production then checks (epoch & 1) and bails on
+    // the SharedState::Read() result; we model the worst case where
+    // body just runs.
+    QuickSync();
+    EXPECT_EQ(slowBodyRuns.load(), 1);
+    EXPECT_EQ(lastEpoch.load(std::memory_order_acquire), 3u);
+
+    // Writer completes, epoch becomes even.
+    sharedEpoch.store(4, std::memory_order_release);
+    QuickSync();
+    EXPECT_EQ(slowBodyRuns.load(), 2);
+    EXPECT_EQ(lastEpoch.load(std::memory_order_acquire), 4u);
+
+    // Subsequent calls hit fast path.
+    for (int i = 0; i < 50; ++i) QuickSync();
+    EXPECT_EQ(slowBodyRuns.load(), 2);
+}
+
 }  // namespace

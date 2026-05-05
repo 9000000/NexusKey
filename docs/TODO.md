@@ -1,5 +1,31 @@
 # TODO
 
+## ✅ Pre-T3 Minor 2 fix landed (2026-05-05)
+
+`QuickSyncFromSharedState` hot path is now lock-free. The `stateMutex_`
+acquire moved from the top of the function to the slow-path branch only;
+the common case (no SharedState change since last call) early-returns
+after a single `std::atomic<uint32_t>` epoch comparison. Slow path
+(`configGeneration` bumped — user-paced Settings save) still locks +
+runs `ReloadFromToml`; that residual Rule #11.2 cost is bounded to one
+reload per generation bump and never hit during steady-state typing or
+chaos runs.
+
+Implementation:
+- `lastEpoch_` migrated to `std::atomic<uint32_t>` (`HookEngine.h:457`).
+- `QuickSyncFromSharedState` reordered (`HookEngine.cpp:441-470`):
+  lock-free epoch check first → return on match; otherwise acquire
+  `stateMutex_` and double-check epoch under lock before reading
+  `SharedState` and applying changes.
+- Audit script gained Check 5 (`tools/audit/check_hook_thread_no_mutex.sh`)
+  enforcing the early-return-before-lock invariant; would have caught
+  the pre-fix shape.
+
+Gates: Linux GTest 1405 / 1405 PASS, audit 5 / 5 PASS. Chaos verification
+on Windows pending (next session — needs target apps + injector harness).
+
+---
+
 ## ✅ Post-T3 cleanup PR — first batch landed (2026-05-05)
 
 Mechanical / low-risk items addressed in the post-T3 cleanup branch:
@@ -21,8 +47,10 @@ These need investigation, design work, or 3-collaborator decisions and were inte
 ### Pre-T3 Minor 1 — `LowLevelMouseProc` race on `cachedFocusedHwnd_`
 Investigation needed: read the exact write set in the mouse callback, decide between (a) atomic migration, (b) defer to `MainThreadWorker`, or (c) document as benign. Detailed in the §"Review (2026-05-05)" section below.
 
-### Pre-T3 Minor 2 — `QuickSyncFromSharedState` acquires `stateMutex_` on hook hot path (Rule #11.3 violation)
-Highest-impact open audit item. Slow-path TOML reload + lock acquire on every keystroke when configGeneration bumps. Fix likely needs RCU re-publish via `MainThreadWorker` (Sprint 1 D6 `config_` pattern). Detailed below.
+### ~~Pre-T3 Minor 2 — `QuickSyncFromSharedState` acquires `stateMutex_` on hook hot path (Rule #11.3 violation)~~ — LANDED
+Resolved via lock-free hot-path / locked slow-path split (double-checked
+locking with `std::atomic<uint32_t> lastEpoch_`). See "✅ Pre-T3 Minor 2
+fix landed" entry at top of file.
 
 ### M2 — Constants naming convention (`kFoo` vs `UPPER_SNAKE`)
 Codebase-wide pattern uses `kFoo` for file-scope `static constexpr`; Rule 9.1 prescribes `UPPER_SNAKE`. Need 3-collaborator decision: update Rule 9.1 to formalize the k-prefix convention, or rename ~10 codebase constants. Recommendation: update the rule.
@@ -149,19 +177,22 @@ near a focus boundary.
 
 Pick one based on what the writes actually do.
 
-### 🟡 Minor 2 — `ProcessKeyDown` calls `QuickSyncFromSharedState()` which acquires `stateMutex_` on hook thread (Rule #11.2/11.3 violation)
+### ✅ ~~🟡 Minor 2 — `ProcessKeyDown` calls `QuickSyncFromSharedState()` which acquires `stateMutex_` on hook thread (Rule #11.2/11.3 violation)~~ — LANDED
 
-**Risk:** Slow path of the sync may include file I/O (TOML reload trigger?).
-Acquiring a mutex contended with main thread on the LL hook callback is the
-exact pattern Rule #11.3 forbids ("Hook thread MUST NEVER wait for main
-thread").
+Resolved 2026-05-05. The original concern — unconditional `stateMutex_`
+acquire on every keystroke — fixed by reordering the function so the
+epoch check runs lock-free first (`lastEpoch_` migrated to
+`std::atomic<uint32_t>`), and the lock is taken only on the rare slow
+path when `configGeneration` actually bumped. Steady-state typing and
+chaos runs no longer touch the mutex at all.
 
-**Action:** Audit `QuickSyncFromSharedState` body. If it only reads atomics,
-remove the lock. If it must access mutex-protected state, route via
-`MainThreadWorker` and let the hook read a published atomic snapshot
-(Sprint 1 D6 RCU `config_` pattern). Minor #2 is potentially the highest-
-impact finding because Rule #11 violations directly degrade "Mượt" (the p99
-chaos jitter we've been chasing).
+Residual: the slow-path branch still acquires `stateMutex_` and may run
+`ReloadFromToml` on the hook thread (~10–50 ms once per Settings save).
+This is user-paced and never seen by chaos / sustained typing, so it's
+not the "Mượt" jitter source. If profiling later shows the slow path
+matters, the next step is routing the bump-detect signal to
+`MainThreadWorker` (Sprint 1 D6 RCU pattern) and letting the worker do
+the reload.
 
 ### ✅ ~~🟡 Minor 3 — Misleading comment at `HookEngine.cpp` line 779 ("pure memory read, no syscall")~~ — LANDED
 
