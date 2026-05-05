@@ -492,8 +492,8 @@ Single PR at end of D6. Each D-day commits chaos PASS or skip with explanation.
 |---|---|---|
 | **D-1** | Codegen tool dev (1 week pre-sprint) | `tools/fsm-codegen/` Python pkg + unit tests + sample rule input. Linux-only, no project dep. |
 | **D0** | Codegen tool emit → `src/core/engine/generated/*.h` committed. `FsmTable` struct + accessors. Linux GTest unchanged. **Not wired to engine yet.** | Generated `.h` PASS exhaustive 20,504-syllable verify. CMake `make codegen` works. |
-| **D1** | `FsmDispatcher` class + `InputMapping` + `HistoryRingBuffer`. **Diff harness** `tests/FsmDispatcherDiffTest.cpp` runs `vietnamese_telex_pairs.txt` (30,337 cases) through both engines. | Diff <5% mismatch initial. Engine cũ untouched. |
-| **D2** | Audit + fix mismatches. Update rule TOML, regen codegen. Until **diff = 0**. | 30,337/30,337 PASS. TelexEngineTest 1409/1409 still PASS via FsmDispatcher. |
+| **D1** | `FsmDispatcher` class + `InputMapping` + `HistoryRingBuffer`. **Diff harness** `tests/FsmDispatcherDiffTest.cpp` runs combined corpus (gonhanh 30,337 + TelexEngineTest 1,409 + chaos.toml 11 = 31,757 cases) through both engines. | Diff <5% mismatch initial. Engine cũ untouched. |
+| **D2** | Audit + fix mismatches. Update rule TOML, regen codegen. Until **diff = 0** on all 3 corpus tiers. ⚠️ chaos corpus (11 cases) catches edge cases gonhanh pairs don't cover (`cafcs`, `uongs`, `truongwf`, `vieejt`). | 31,757/31,757 PASS. |
 | **D3** | Plugin event bus + `SyllableValidatorPlugin` (extracted from `SpellChecker`). Free typing toggle still works. | Plugin contract test PASS. Diff harness 30,337 PASS. Strict + free toggle test PASS. |
 | **D4** | HookEngine swap: `LowLevelKeyboardProc` routes via `FsmDispatcher`. TypingEngine code dead but compiled. **Chaos 55/55 PASS.** Run `tools/run-chaos.ps1`. | Chaos baseline `perf-baseline-fsm-d4.{md,csv,xml}` committed, 55/55 PASS. |
 | **D5** | Delete `TypingEngine.cpp` + `SpellChecker.cpp`. Delete redundant tests (replaced by codegen verify + diff harness). Update `tools/audit/check_hook_thread_no_mutex.sh` regex. | Linux GTest PASS, build clean, dead code removed. ~1,800 LOC deleted. |
@@ -603,13 +603,17 @@ These need lock-in before D-1 starts coding. Minor enough to defer to plan doc.
 - [`docs/plans/sprint-2-output-injector.md`](sprint-2-output-injector.md) — Sprint 2 T3 IOutputInjector
 - [`docs/plans/sprint-2-output-injector-plan.md`](sprint-2-output-injector-plan.md) — Sprint 2 implementation plan reference
 
-### External (license-compatible)
-- [gonhanh.org](https://github.com/khaphanspace/gonhanh.org) — BSD-3-Clause
-  - `core/src/data/dictionaries/vi.dic` (6,711 từ) → `rules/dictionary.toml`
-  - `core/tests/data/vietnamese_telex_pairs.txt` (30,337 cases) → `tests/corpus/gonhanh-telex-pairs.txt`
-  - Attribute in `LICENSE-3RD-PARTY.md` + file header
-- [PHTV](https://github.com/PhamHungTien/PHTV) — AGPL-3.0 — **SKIP** (license conflict with NexusKey GPL-3)
-- [xkey](https://github.com/xmannv/xkey) — MIT — **SKIP** (Swift code, parse cost > benefit)
+### External (license-compatible — verified 2026-05-05)
+
+**[gonhanh.org](https://github.com/khaphanspace/gonhanh.org)** — BSD-3-Clause (Khá Phạm + Gõ Nhanh Contributors, 2025). Attribution: copyright notice in source + binary distribution required.
+- `core/src/data/dictionaries/vi.dic` (UTF-8, header `6711` + 6,711 lines, 1 word/line) → `rules/dictionary.toml`. Verified clean format.
+- `core/tests/data/vietnamese_telex_pairs.txt` (UTF-8, 30,337 lines, `telex<TAB>expected`) → `tests/corpus/gonhanh-telex-pairs.txt`. Verified clean format.
+- ⚠️ **Coverage gap (verified)**: gonhanh pairs cover **forward typing only**. Chaos failure cases `cafcs`, `uongs`, `truongwf`, `vieejt` NOT in pairs file. D1-D2 diff harness MUST also run NexusKey's own `TelexEngineTest.cpp` (~1,409 cases) + `corpus/chaos.toml` (11) for edge-case + chaos coverage. Total D2 gate = **31,757 ASSERT_EQ**.
+- Attribute in: `LICENSE-3RD-PARTY.md` (top-level) + file header of `tests/corpus/gonhanh-telex-pairs.txt` + file header of `rules/dictionary.toml`.
+
+**[PHTV](https://github.com/PhamHungTien/PHTV)** — AGPL-3.0 — **SKIP** (license conflict with NexusKey GPL-3; AGPL would force NexusKey upgrade).
+
+**[xkey](https://github.com/xmannv/xkey)** — MIT — **SKIP** (compatible license, but Swift code in `VNEngine.swift` 183 KB; parse cost > benefit).
 
 ### Algorithms
 - Hopcroft DFA minimization — Wikipedia + libraries `automata-lib` / `pyfsa`
