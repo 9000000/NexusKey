@@ -15,14 +15,17 @@
 
 namespace NextKey::Output::Internal {
 
-using SendInputFn    = UINT (WINAPI*)(UINT, LPINPUT, int);
-using SendMessageWFn = LRESULT (WINAPI*)(HWND, UINT, WPARAM, LPARAM);
-using SleepFn        = void (WINAPI*)(DWORD);
+using SendInputFn          = UINT (WINAPI*)(UINT, LPINPUT, int);
+using SendMessageWFn       = LRESULT (WINAPI*)(HWND, UINT, WPARAM, LPARAM);
+using SendMessageTimeoutWFn = LRESULT (WINAPI*)(HWND, UINT, WPARAM, LPARAM,
+                                                UINT, UINT, PDWORD_PTR);
+using SleepFn              = void (WINAPI*)(DWORD);
 
 // Test seams. Production initializes to the real Win32 APIs.
-extern SendInputFn    g_sendInput;
-extern SendMessageWFn g_sendMessageW;
-extern SleepFn        g_sleep;
+extern SendInputFn           g_sendInput;
+extern SendMessageWFn        g_sendMessageW;
+extern SendMessageTimeoutWFn g_sendMessageTimeoutW;
+extern SleepFn               g_sleep;
 
 // Wrapper around g_sendInput with partial-send detection. Returns true
 // iff all events delivered; false on partial (renderer drop case —

@@ -53,16 +53,28 @@ protected:
         Internal::g_sleep = [](DWORD ms) {
             sleepDelays.push_back(ms);
         };
+        // Tests can override either of these in their bodies BEFORE calling
+        // the impl. By default both capture and return sendMessageReturnDefault
+        // (1 = success). g_sendMessageTimeoutW also writes 0 to the result
+        // out-param — tests caring about return value override the lambda.
         Internal::g_sendMessageW = [](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
             capturedMsgs.emplace_back(h, m, w, l);
+            return sendMessageReturnDefault;
+        };
+        Internal::g_sendMessageTimeoutW = [](HWND h, UINT m, WPARAM w, LPARAM l,
+                                             UINT /*flags*/, UINT /*timeout*/,
+                                             PDWORD_PTR result) -> LRESULT {
+            capturedMsgs.emplace_back(h, m, w, l);
+            if (result) *result = 0;
             return sendMessageReturnDefault;
         };
     }
 
     void TearDown() override {
-        Internal::g_sendInput    = ::SendInput;
-        Internal::g_sleep        = ::Sleep;
-        Internal::g_sendMessageW = ::SendMessageW;
+        Internal::g_sendInput           = ::SendInput;
+        Internal::g_sleep               = ::Sleep;
+        Internal::g_sendMessageW        = ::SendMessageW;
+        Internal::g_sendMessageTimeoutW = ::SendMessageTimeoutW;
     }
 };
 

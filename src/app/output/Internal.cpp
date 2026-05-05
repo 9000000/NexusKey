@@ -6,9 +6,10 @@
 
 namespace NextKey::Output::Internal {
 
-SendInputFn    g_sendInput    = ::SendInput;
-SendMessageWFn g_sendMessageW = ::SendMessageW;
-SleepFn        g_sleep        = ::Sleep;
+SendInputFn           g_sendInput           = ::SendInput;
+SendMessageWFn        g_sendMessageW        = ::SendMessageW;
+SendMessageTimeoutWFn g_sendMessageTimeoutW = ::SendMessageTimeoutW;
+SleepFn               g_sleep               = ::Sleep;
 
 bool TrackedSendInput(INPUT* events, UINT count) noexcept {
     UINT sent = g_sendInput(count, events, sizeof(INPUT));

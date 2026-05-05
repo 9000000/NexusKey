@@ -442,8 +442,10 @@ if(WIN32)
         # NextKeyTests links NextKeyCore (which excludes output/), so impls
         # are pulled in directly here for the test binary.
         tests/output/Win32SendInputInjectorTest.cpp
+        tests/output/RichEditEmReplaceSelInjectorTest.cpp
         src/app/output/Internal.cpp
         src/app/output/Win32SendInputInjector.cpp
+        src/app/output/RichEditEmReplaceSelInjector.cpp
     )
 endif()
 

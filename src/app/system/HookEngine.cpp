@@ -919,12 +919,18 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // posted message queue and is pre-empted by the next sent EM_REPLACESEL
         // (the 's' in chaos 5.3), leaving the pre-replace BS to drain after
         // the replacement and eat the just-inserted chars.
+        //
+        // Sprint 2 D2: the useEditMsgPath_ flag now selects RichEditEmReplaceSel-
+        // Injector via the factory; injector_->Replace handles the channel.
+        // Flag still read here to gate whether to attempt synthetic delivery
+        // (RichEdit hosts) vs let the BS pass through naturally (default hosts).
         if (useEditMsgPath_.load(std::memory_order_acquire)) {
-            if (TryEditMessagePaste(L"", /*BS=*/1)) {
-                HOOK_LOG(L"  commit-undo: BS after commit via EM_REPLACESEL → Primed");
+            auto inj = injector_.load(std::memory_order_acquire);
+            if (inj->Replace(/*bs=*/1, std::wstring_view{})) {
+                HOOK_LOG(L"  commit-undo: BS after commit via injector → Primed");
                 return true;
             }
-            HOOK_LOG(L"  commit-undo: BS after commit EM_REPLACESEL failed, passthrough");
+            HOOK_LOG(L"  commit-undo: BS after commit injector failed, passthrough");
         }
         HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
         return false;  // Let backspace pass through to delete the space
@@ -1279,13 +1285,13 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         if (useEditMsgPath_.load(std::memory_order_acquire)) {
             const wchar_t triggerChar = VkToMacroChar(vkCode);
             if (triggerChar >= L' ') {
-                std::wstring oneChar(1, triggerChar);
-                if (TryEditMessagePaste(oneChar, /*BS=*/0)) {
-                    HOOK_LOG(L"  commit trigger via EM_REPLACESEL: '%c'", triggerChar);
+                auto inj = injector_.load(std::memory_order_acquire);
+                if (inj->Replace(/*bs=*/0, std::wstring_view(&triggerChar, 1))) {
+                    HOOK_LOG(L"  commit trigger via injector: '%c'", triggerChar);
                     return true;  // Eat original — we inserted it ourselves
                 }
-                // EM_REPLACESEL failed → fall through to original passthrough
-                HOOK_LOG(L"  commit trigger EM_REPLACESEL failed, passthrough vk=0x%02X", vkCode);
+                // Synth failed → fall through to original passthrough
+                HOOK_LOG(L"  commit trigger injector failed, passthrough vk=0x%02X", vkCode);
             }
         }
         return false;  // No pending synthetics, safe to pass through
@@ -2616,6 +2622,20 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     isOutlookApp_.store(localOutlook, std::memory_order_release);
     isElectronApp_.store(localElectronApp, std::memory_order_release);
 
+    // Sprint 2 D2: build the IOutputInjector for this classification and
+    // RCU-publish to injector_. D2 wires only the RichEdit branch (via
+    // localEditMsg → c.isRichEditD2DPT); D3 wires Electron/Console/Chromium
+    // branches and removes the per-flag atomic stores above. Keeping both
+    // for now because the 4 useEditMsgPath_ branch sites are also
+    // transitioning in this same D-commit, and the per-flag fields still
+    // serve their old readers until D3.
+    {
+        NextKey::Output::WindowClassification c{};
+        c.isRichEditD2DPT = localEditMsg;
+        // c.isElectron / c.isConsole / c.isChromium wired in D3.
+        injector_.store(NextKey::Output::Create(c), std::memory_order_release);
+    }
+
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d",
              localConsole ? 1 : 0, localSkipEmpty ? 1 : 0, localElectronApp ? 1 : 0,
              isWebView2 ? 1 : 0, localNeedBait ? 1 : 0, localClipboard ? 1 : 0, localEditMsg ? 1 : 0);
@@ -2937,11 +2957,16 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     // catch-up needed at chaos 500 µs inter-key. Only invokes the SendInput
     // fallback if the wait is exhausted — true human-pace typing never hits it.
     if (useEditMsgPath_.load(std::memory_order_acquire)) {
+        // Sprint 2 D2: RichEdit path now delegates to RichEditEmReplaceSelInjector.
+        // Retry-loop preserved here (not pushed into impl) because the
+        // 30 ms catch-up window is policy on the engine side: the budget is
+        // bounded by LowLevelHooksTimeout, not by the channel itself.
         constexpr int kAsyncRenderMaxWaitMs = 30;
         constexpr int kAsyncRenderStepMs    = 1;
         int waitedMs = 0;
+        auto inj = injector_.load(std::memory_order_acquire);
         for (;;) {
-            if (TryEditMessagePaste(toSend, backspaceCount)) {
+            if (inj->Replace(backspaceCount, std::wstring_view(toSend))) {
                 previousComposition_ = newText;
                 if (synthEventsPending_ > 0) hadSynthInWord_ = true;
                 if (waitedMs > 0) {
@@ -3112,34 +3137,17 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
 void HookEngine::SendBackspaces(size_t count) {
     if (count == 0) return;
 
-    // Sprint 1 Fix C/2026-05-05: editMsg apps (Win11 RichEditD2DPT) need BS
-    // delivered via the same sent-message channel as the rest of the output.
-    // SendInput-posted VK_BACK events otherwise interleave with already-queued
-    // events and get pre-empted by the next sent EM_REPLACESEL. The chaos 5.3
-    // shape (`viejtnam BS×4 s` → `việt`) is exactly that: BS#3 + BS#4 sit
-    // posted in the queue while 's' fires its sent EM_REPLACESEL on stale
-    // caret, then the queued BS drains and eats the just-inserted chars.
-    //
-    // Sprint 2 D1: useEditMsgPath_ short-circuit kept for now (D2 removes it
-    // when RichEditEmReplaceSelInjector takes over the EM_REPLACESEL path).
-    if (useEditMsgPath_.load(std::memory_order_acquire)) {
-        if (TryEditMessagePaste(L"", count)) {
-            HOOK_LOG(L"  SendBackspaces: %zu via EM_REPLACESEL", count);
-            return;
-        }
-        HOOK_LOG(L"  SendBackspaces: EM_REPLACESEL failed, fallback to injector");
-    }
-
-    // Sprint 2 D1: route through IOutputInjector. Bait-char prefix logic
-    // (formerly inline here) is now inside Win32SendInputInjector::Replace,
-    // gated by needsBaitCharPrefix_ which the factory wires from the
-    // Chromium classification flag.
+    // Sprint 2 D2: uniform injector dispatch. The RichEdit class
+    // (Win11 New Notepad RichEditD2DPT, Sprint 1 D12 verdict) is now
+    // handled inside RichEditEmReplaceSelInjector — no useEditMsgPath_
+    // short-circuit needed. Bait-char prefix lives inside
+    // Win32SendInputInjector::Replace, gated by needsBaitCharPrefix_
+    // wired from the Chromium classification flag (D3).
     auto inj = injector_.load(std::memory_order_acquire);
     HOOK_LOG(L"  SendBackspaces: %zu via injector", count);
     if (!inj->Replace(count, std::wstring_view{})) {
-        // Partial-send (renderer dropped events) — log but no further
-        // fallback at this layer; caller's commit-undo state machine
-        // handles the desync on the next keystroke.
+        // Partial-send / channel failure — log but no further fallback;
+        // caller's commit-undo state machine handles desync on next key.
         HOOK_LOG(L"  SendBackspaces: injector reported partial delivery");
     }
 }
