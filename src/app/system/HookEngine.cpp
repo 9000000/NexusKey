@@ -3,6 +3,7 @@
 
 #include "HookEngine.h"
 #include "helpers/AppHelpers.h"
+#include "output/OutputInjectorFactory.h"  // Sprint 2 T3 — output channel strategy
 #include "core/engine/CodeTableConverter.h"
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
@@ -70,7 +71,15 @@ static void HookLog(const wchar_t* format, ...) {
 
 std::atomic<HookEngine*> HookEngine::s_instance{nullptr};
 
-HookEngine::HookEngine() = default;
+HookEngine::HookEngine() {
+    // Sprint 2 T3: seed injector_ with the default Win32 impl so the hook
+    // hot path's std::atomic_load(&injector_) never returns nullptr — even
+    // before the first OnFocusChanged classifies the foreground window.
+    // The default classification (all flags false) maps to
+    // Win32SendInputInjector(needsBaitCharPrefix=false), the safest
+    // mechanism (batch SendInput, no Sleep, no SendMessage).
+    injector_.store(NextKey::Output::Create({}), std::memory_order_release);
+}
 
 HookEngine::~HookEngine() {
     Stop();

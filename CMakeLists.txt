@@ -169,6 +169,18 @@ add_executable(NextKeyApp WIN32
     src/app/system/SubprocessRunners.cpp
     src/app/system/TsfRegistration.h
     src/app/system/TsfRegistration.cpp
+    # output/ — IOutputInjector strategy (Sprint 2 T3)
+    src/app/output/IOutputInjector.h
+    src/app/output/Internal.h
+    src/app/output/Internal.cpp
+    src/app/output/OutputInjectorFactory.h
+    src/app/output/OutputInjectorFactory.cpp
+    src/app/output/Win32SendInputInjector.h
+    src/app/output/Win32SendInputInjector.cpp
+    src/app/output/RichEditEmReplaceSelInjector.h
+    src/app/output/RichEditEmReplaceSelInjector.cpp
+    src/app/output/SplitDispatchInjector.h
+    src/app/output/SplitDispatchInjector.cpp
     # sciter/
     src/app/sciter/SciterArchive.h
     src/app/sciter/SciterArchive.cpp
@@ -238,6 +250,18 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/SubprocessHelper.h
         src/app/system/TsfRegistration.h
         src/app/system/TsfRegistration.cpp
+        # output/ — IOutputInjector strategy (Sprint 2 T3)
+        src/app/output/IOutputInjector.h
+        src/app/output/Internal.h
+        src/app/output/Internal.cpp
+        src/app/output/OutputInjectorFactory.h
+        src/app/output/OutputInjectorFactory.cpp
+        src/app/output/Win32SendInputInjector.h
+        src/app/output/Win32SendInputInjector.cpp
+        src/app/output/RichEditEmReplaceSelInjector.h
+        src/app/output/RichEditEmReplaceSelInjector.cpp
+        src/app/output/SplitDispatchInjector.h
+        src/app/output/SplitDispatchInjector.cpp
         # DarkModeHelper (pure Win32 dark mode utils, needed by TrayIcon/ToastPopup)
         src/app/system/DarkModeHelper.h
         src/app/system/DarkModeHelper.cpp

@@ -23,6 +23,12 @@
 #include <unordered_set>
 #include <vector>
 
+// Forward declaration so HookEngine.h stays Linux-friendly (output/ folder
+// is Win32-only). Sprint 2 T3 — IOutputInjector is the output channel
+// strategy interface (see src/app/output/IOutputInjector.h, doc:
+// docs/plans/sprint-2-output-injector.md §2.1).
+namespace NextKey::Output { class IOutputInjector; }
+
 namespace NextKey {
 
 class SharedStateManager;  // Forward declaration (defined in core/ipc/SharedStateManager.h)
@@ -209,6 +215,15 @@ private:
     std::atomic<std::shared_ptr<const TypingConfig>> config_{
         std::make_shared<const TypingConfig>()
     };  // Last applied config (for per-app engine recreation)
+    // Sprint 2 T3: Output channel strategy. RCU-published shared_ptr to the
+    // active IOutputInjector, same pattern as config_ above. Writers (main
+    // thread on focus change): two-phase classify → atomic_store. Readers
+    // (hook hot path): atomic load → 1 virtual call (~11 ns total overhead).
+    // Initialized in HookEngine ctor via Output::Create({}) so the field is
+    // never nullptr — hot path's atomic_load can rely on a usable injector
+    // even before any focus event has fired.
+    // See docs/plans/sprint-2-output-injector.md §1 for the data-flow contract.
+    std::atomic<std::shared_ptr<NextKey::Output::IOutputInjector>> injector_;
     // Sprint 1 D5.1: migrated to std::atomic for hook-thread-safe read without
     // stateMutex_ (Rule #11.3 acquire/release). Writers: ApplyConfig (main),
     // QuickSyncFromSharedState (hook — same thread as readers), ReloadFromToml
