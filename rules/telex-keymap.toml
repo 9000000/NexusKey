@@ -39,6 +39,13 @@ spec_source = "src/core/engine/TypingEngine.cpp"
 # (counterpart to VNI '0'). Source: TypingEngine.cpp:205.
 "z" = "TONE_CLEAR"
 
+# Direct vowel-with-horn shortcuts — Telex full only (Telex Simple omits).
+# `]` → ư, `[` → ơ. Anh confirmed 2026-05-05.
+# Treated as direct vowel insert (not context-modifier), so abstract inputs
+# bypass the MOD_HORN context-resolution that 'w' uses.
+"]" = "INSERT_VOWEL_U_HORN"   # direct ư
+"[" = "INSERT_VOWEL_O_HORN"   # direct ơ
+
 # Uppercase variants — same abstract input (case-insensitive Telex tone keys).
 "S" = "TONE_SAC"
 "F" = "TONE_HUYEN"
@@ -47,6 +54,8 @@ spec_source = "src/core/engine/TypingEngine.cpp"
 "J" = "TONE_NANG"
 "W" = "MOD_HORN"
 "Z" = "TONE_CLEAR"
+# Note: `]` and `[` have no shifted variant on Vietnamese keyboards
+# (shifted '}' and '{' produce different chars; not Telex inputs).
 
 # All other ASCII letters → INSERT_LITERAL_<lowercase>. Generated
 # automatically by codegen, not enumerated here. Digits 0-9 → literal
