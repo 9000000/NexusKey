@@ -931,7 +931,29 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // Checking counter alone would permanently disable commit-undo.  The 100ms
         // threshold covers DispatchSendInput Sleep (10-20ms) + Qt processing (~30ms)
         // with margin, while allowing replay at normal typing speed (>100ms between keys).
-        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < kSynthSettleMs) {
+        //
+        // Sprint 2 D1/2026-05-05: tone modifiers (Telex s/f/r/x/j; VNI 1-5) are
+        // EXEMPT from the synth guard. Reason: by definition they only modify the
+        // previous word — no other linguistic meaning. ReplaceComposition's diff
+        // (prev=committed, new=committed-with-tone) computes BS correctly relative
+        // to the post-drain screen state, and SendInput appends our events AFTER
+        // any pending synth, so screen-engine sync is preserved across the gap.
+        // Without this exemption, chaos 5.3 (`viejtnam BS×4 s` on non-EditMsg apps
+        // like Chrome) cancels the replay and produces `việts` instead of `viết`.
+        // See docs/baselines/perf-baseline-d12-chrome-cross-app.md and the
+        // S2D0_ChromeBug53_* engine-isolation tests.
+        const auto methodForTone = currentMethod_.load(std::memory_order_acquire);
+        const bool isTelexTone =
+            (methodForTone == InputMethod::Telex || methodForTone == InputMethod::Combined) &&
+            (vkCode == 'S' || vkCode == 'F' || vkCode == 'R' ||
+             vkCode == 'X' || vkCode == 'J');
+        const bool isVniTone =
+            (methodForTone == InputMethod::VNI || methodForTone == InputMethod::Combined) &&
+            vkCode >= '1' && vkCode <= '5' &&
+            !(GetKeyState(VK_SHIFT) & 0x8000);
+        const bool isToneModifier = isTelexTone || isVniTone;
+        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < kSynthSettleMs
+            && !isToneModifier) {
             HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
                      synthEventsPending_.load(), vkCode);
             CancelCommitUndo();
@@ -1711,8 +1733,10 @@ static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
 void HookEngine::TrackedSendInput(INPUT* events, UINT count) noexcept {
     synthEventsPending_ += static_cast<int>(count);
     UINT sent = SendInput(count, events, sizeof(INPUT));
-    if (sent < count)
+    if (sent < count) {
         synthEventsPending_ -= static_cast<int>(count - sent);
+        HOOK_LOG(L"  TrackedSendInput: PARTIAL sent=%u of %u (renderer drop?)", sent, count);
+    }
 }
 
 void HookEngine::SendBackspaceEvents(size_t count) {
@@ -1978,6 +2002,10 @@ void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INP
     sending_ = true;
     const bool electronApp = isElectronApp_.load(std::memory_order_acquire);
     const bool consoleApp = isConsoleApp_.load(std::memory_order_acquire);
+    HOOK_LOG(L"  DispatchSendInput: path=%s BS=%zu chars=%zu electron=%d console=%d",
+             (electronApp || consoleApp) ? L"split" : L"batch",
+             bsEvents.size() / 2, charEvents.size() / 2,
+             electronApp ? 1 : 0, consoleApp ? 1 : 0);
     if (electronApp || consoleApp) {
         // Split: VK_BACK and VK_PACKET travel on separate internal paths in
         // Electron/Console apps — batching risks out-of-order processing ("nuốt chữ").
@@ -2826,9 +2854,9 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
             newWidths.push_back(enc.count);
         }
 
-        HOOK_LOG(L"  ReplaceComposition[encoded]: prev='%s' new='%s' common=%zu BS=%zu encodedLen=%zu",
+        HOOK_LOG(L"  ReplaceComposition[encoded]: prev='%s' new='%s' common=%zu BS=%zu encodedLen=%zu reinjectVk=0x%02X",
                  previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
-                 encodedToSend.size());
+                 encodedToSend.size(), reinjectVk);
 
         {
             bool needEmpty = (backspaceCount > 0 && needBaitChar_.load(std::memory_order_acquire));
@@ -2871,9 +2899,9 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     size_t backspaceCount = previousComposition_.size() - commonLen;
     std::wstring toSend = newText.substr(commonLen);
 
-    HOOK_LOG(L"  ReplaceComposition: prev='%s' new='%s' common=%zu BS=%zu send='%s'",
+    HOOK_LOG(L"  ReplaceComposition: prev='%s' new='%s' common=%zu BS=%zu send='%s' reinjectVk=0x%02X",
              previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
-             toSend.c_str());
+             toSend.c_str(), reinjectVk);
 
     // ── Async-render apps (Win11 new Notepad) ──
     // WinUI 3 RichEditBox renders on the compositor thread async to input. SendInput
