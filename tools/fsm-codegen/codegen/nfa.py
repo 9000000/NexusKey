@@ -333,7 +333,12 @@ class Nfa:
 
         # ── Layer H: 2-vowel sequences (diphthong) ───────────────────────
         # Allow vowel after vowel, including 'uo' for horn-modifier path.
-        # Permissive: any single-vowel state + another vowel char → 2-vowel.
+        # CONFLICT AVOIDANCE: skip pairs where keymap has a double-sequence
+        # (e.g., 'aa', 'oo', 'ee' → modifier per Layer C). Otherwise NFA
+        # encodes BOTH modifier-target and 2-vowel literal for same input,
+        # producing non-deterministic action emission after subset
+        # construction.
+        double_seq_pairs = {seq.lower() for seq in keymap.double_sequences.keys()}
         single_vowel_for_extend = [
             s for s in list(nfa._states)
             if len(s.vowels) == 1 and s.tone == "none" and s.coda == ""
@@ -341,7 +346,12 @@ class Nfa:
         ]
         two_vowel_state_map: dict[tuple[str, str, str], NfaState] = {}
         for src in single_vowel_for_extend:
+            base_first = _UNMODIFIED.get(src.vowels[0], src.vowels[0])
             for v2 in all_vowels_single:
+                # Skip if (base_first + v2) is a double-sequence — Layer C
+                # already wired the modifier transition.
+                if (base_first + v2) in double_seq_pairs:
+                    continue
                 dst = NfaState(
                     cons=src.cons,
                     vowels=src.vowels + (v2,),
