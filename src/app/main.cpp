@@ -34,10 +34,11 @@
 #include <Windows.h>
 #include <ole2.h>
 #include <timeapi.h>
+#include <atomic>
+#include <chrono>
 #include <exception>
 #include <memory>
 #include <string>
-#include <atomic>
 #include <thread>
 
 #pragma comment(lib, "ole32.lib")
@@ -483,6 +484,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_mainThreadWorker.SetWorkHandler([]() {
         g_hookEngine.SyncConfigFromSharedState();
     });
+    // Sprint 1 D10: 200 ms periodic tick — replaces the retired
+    // SetTimer(nullptr, 0, 200, FocusPollTimerProc) inside HookEngine::Start.
+    // Drives CJK layout poll + foreground-PID fallback off the worker thread.
+    g_mainThreadWorker.SetTickHandler([]() {
+        g_hookEngine.OnTickPoll();
+    });
+    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
     g_mainThreadWorker.Start();
 
     NEXTKEY_LOG(L"HookEngine started, entering message loop");

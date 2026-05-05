@@ -1,4 +1,4 @@
-# NexusKey Refactor — Sprint 1 Handoff (D8 + D9 done, D10 next)
+# NexusKey Refactor — Sprint 1 Handoff (Phase C done, D12 next)
 
 ## TL;DR
 
@@ -53,7 +53,9 @@ breaks.
 | D12.5: engine-level fix for chaos 3.3 `truongwf` → `tờương` (originally framed as engine state-machine bug per D4 plan §A) | ✅ **engine-clear** — pure-engine reproducer (`TelexEngineTest.D12_5_Truongwf_*`) PASSES at HEAD; bug is hook-integration-only. Two protective unit tests added; chaos 3.3 flip deferred to D8 side effect. | `tests/TelexEngineTest.cpp`, `docs/baselines/perf-baseline-d4-spike-chaos.md` §"D12.5 finding (revised)" |
 | D8: MainThreadWorker scaffolding (start/stop only, portable cv-based) | ✅ DoD met — 7 lifecycle tests on Linux (start/stop < 100 ms, idempotent start/stop, RAII destructor, 50× rapid cycle stress); Windows MSVC build clean. No runtime wiring — pure scaffolding per plan §C | `src/app/system/MainThreadWorker.{h,cpp}`, `tests/MainThreadWorkerTests.cpp` |
 | D9: MainThreadWorker handles config-changed event | ✅ DoD met — Signal/SetWorkHandler API + 7 dispatch tests (within-50ms wake, coalescing, pre-Start latch, post-Stop no-op, handler swap, exception isolation). main.cpp + main_lite.cpp `hookReloadCallback_` rewired so cross-process Settings → main → `worker.Signal()` instead of direct main-thread `SyncConfigFromSharedState()`. Worker handler runs `SyncConfig` on its own thread, pre-empting hook QuickSync slow path. **Note:** plan §C Q1 hinted Win32 ConfigEvent HANDLE wait, but the existing `WM_NEXUSKEY_HOOK_RELOAD` PostMessage path already lands on main thread; a portable cv-Signal there is functionally equivalent and Linux-testable. | `src/app/main.cpp`, `src/app/main_lite.cpp`, `src/app/system/MainThreadWorker.{h,cpp}` |
-| D10: MainThreadWorker handles heartbeat + CJK layout poll | 🔜 **next** | `docs/plans/sprint-1-single-owner-refactor.md` §C |
+| D10: MainThreadWorker handles heartbeat + CJK layout poll | ✅ DoD met — `SetTickHandler` / `SetTickInterval` on the worker (6 new tests: cadence, no-tick when interval=0, no-crash when handler unset, signal+tick coexist, mid-run interval change, tick exception isolation). `HookEngine::FocusPollTimerProc` retired; body migrated to public `OnTickPoll()` driven from worker tick at 200 ms. `SetTimer(nullptr, 0, 200, FocusPollTimerProc)` and the matching `KillTimer` removed from `HookEngine::Start`/`Stop`; main.cpp + main_lite.cpp wire `g_mainThreadWorker.SetTickHandler/SetTickInterval(200ms)` after Start. **Note:** plan §C D10 also mentioned a heartbeat thread — none existed in the tree (raw-input self-heal in `RawInputWndProc` is event-driven, not timer-driven, and untouched). | `src/app/system/HookEngine.{h,cpp}`, `src/app/main.cpp`, `src/app/main_lite.cpp`, `src/app/system/MainThreadWorker.{h,cpp}` |
+| D11: `recursive_mutex` → `std::mutex` | ✅ already committed `3a60bc3` (re-listed in D11 row above) | — |
+| D12 / D13: full corpus gate run + PR prep | 🔜 **next** | `docs/plans/sprint-1-single-owner-refactor.md` §D/§E |
 | D12 / D13: full corpus gate run + PR prep | pending | `docs/plans/sprint-1-single-owner-refactor.md` §D/§E |
 
 ## Branch state

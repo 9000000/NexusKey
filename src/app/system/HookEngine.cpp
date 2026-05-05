@@ -208,10 +208,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         nullptr, WinEventProc,
         0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
-    // Poll foreground PID every 200ms — catches missed focus events (fullscreen games)
-    // and phantom bounce-back (game sends FOREGROUND after losing exclusive fullscreen).
-    // Runs on main thread via message pump — no threading issues.
-    focusPollTimer_ = SetTimer(nullptr, 0, 200, FocusPollTimerProc);
+    // Sprint 1 D10: 200 ms focus / CJK poll is no longer driven by SetTimer.
+    // The owning EXE wires MainThreadWorker::SetTickHandler([](){ OnTickPoll(); })
+    // and SetTickInterval(200ms); Start does not own the cadence anymore.
 
     NEXTKEY_LOG(L"HookEngine started (method=%d, vietnamese=%d)",
                 static_cast<int>(currentMethod_.load(std::memory_order_acquire)),
@@ -248,10 +247,8 @@ void HookEngine::Stop() {
         UnhookWinEvent(minimizeHook_);
         minimizeHook_ = nullptr;
     }
-    if (focusPollTimer_) {
-        KillTimer(nullptr, focusPollTimer_);
-        focusPollTimer_ = 0;
-    }
+    // Sprint 1 D10: focusPollTimer_ retired — owner stops its
+    // MainThreadWorker (which owns the 200 ms tick) before us.
     if (s_instance == this) {
         s_instance = nullptr;
     }
@@ -424,11 +421,11 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
 
 void HookEngine::QuickSyncFromSharedState() {
     // Sprint 1 D11: callers must NOT hold stateMutex_. Self-locks for the
-    // slow-path config reload. After D11, FocusPollTimerProc releases its
-    // lock before calling OnFocusChanged, so the inner OnFocusChanged →
-    // QuickSync chain reaches this self-lock without recursion. ProcessKeyDown
-    // (hook thread) and SyncConfigFromSharedState (public API) call this
-    // without any lock held.
+    // slow-path config reload. After D11, OnTickPoll (formerly the
+    // FocusPollTimerProc) releases its lock before calling OnFocusChanged,
+    // so the inner OnFocusChanged → QuickSync chain reaches this self-lock
+    // without recursion. ProcessKeyDown (hook thread) and
+    // SyncConfigFromSharedState (public API) call this without any lock held.
     std::lock_guard<std::mutex> _lock(stateMutex_);
     if (!sharedStatePtr_) return;
 
@@ -2368,45 +2365,42 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
     }
 }
 
-void CALLBACK HookEngine::FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
+void HookEngine::OnTickPoll() noexcept {
+    // Sprint 1 D10: body migrated verbatim from the retired
+    // FocusPollTimerProc. Cadence (200 ms) is now owned by
+    // MainThreadWorker::SetTickInterval; the per-thread story is the
+    // same — caller is not the LL hook thread, stateMutex_ serializes
+    // against main-thread Toggle/SetCodeTable, and OnFocusChanged is
+    // invoked unlocked because it self-locks downstream.
     try {
-        HookEngine* self = s_instance.load(std::memory_order_relaxed);
-        if (!self) return;
         HWND fg = GetForegroundWindow();
         if (!fg) return;
 
-        // Sprint 1 D11: split the locked region so OnFocusChanged is called
-        // WITHOUT stateMutex_ held. OnFocusChanged → QuickSyncFromSharedState
-        // self-locks; with std::mutex (non-recursive) any pre-held lock here
-        // would deadlock. The lock still serializes CheckLayoutChange's plain-
-        // bool writes (layoutSuppressed_, modeBeforeCjk_, cachedIsCompatLayout_)
-        // with main-thread Toggle/SetCodeTable, and protects the
-        // lastForegroundPid_ read-modify-write cycle.
         DWORD fgPid = 0;
         GetWindowThreadProcessId(fg, &fgPid);
 
         bool needFullRefresh = false;
         {
-            std::lock_guard<std::mutex> _lock(self->stateMutex_);
+            std::lock_guard<std::mutex> _lock(stateMutex_);
             // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
             // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
-            self->CheckLayoutChange();
+            CheckLayoutChange();
 
-            if (fgPid == self->lastForegroundPid_ || fgPid == 0) return;
+            if (fgPid == lastForegroundPid_ || fgPid == 0) return;
             // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
             // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
-            self->lastForegroundPid_ = fgPid;
+            lastForegroundPid_ = fgPid;
             needFullRefresh = true;
         }  // release lock — OnFocusChanged → QuickSync will self-lock.
 
         if (needFullRefresh) {
             HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
-            self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+            OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
         }
     } catch (const std::exception& e) {
-        CrashLog(L"HookEngine::FocusPollTimerProc", e.what());
+        CrashLog(L"HookEngine::OnTickPoll", e.what());
     } catch (...) {
-        CrashLog(L"HookEngine::FocusPollTimerProc", "(non-std exception)");
+        CrashLog(L"HookEngine::OnTickPoll", "(non-std exception)");
     }
 }
 

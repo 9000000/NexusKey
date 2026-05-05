@@ -8,7 +8,7 @@
 #      Phase B's correctness contract is broken).
 #   2. No uncommented `stateMutex_` reference inside any hook-callback entry
 #      function body (`LowLevelKeyboardProc`, `WinEventProc`,
-#      `LowLevelMouseProc`, `RawInputWndProc`, `FocusPollTimerProc`).
+#      `LowLevelMouseProc`, `RawInputWndProc`).
 #   3. All migrated atomic fields (D5 + D5.1 + D5.2 + D6) use `.load()` /
 #      `.store()` — no plain assignment or read of these fields. The atomic
 #      RCU `config_` field also obeys this rule.
@@ -72,11 +72,10 @@ fi
 # audit catches the case where a future refactor moves it back onto the
 # hook thread without removing the lock.
 #
-# `FocusPollTimerProc` is intentionally NOT in the audit list — it's a main-
-# thread WM_TIMER callback whose lock protects non-migrated complex state
-# (currentExe_ std::wstring, excludedAppSet_ unordered_set, appModeMap_)
-# from concurrent hook-thread reads. Removing that lock requires migrating
-# those complex types first (out of scope for D5–D6).
+# Sprint 1 D10 retired `FocusPollTimerProc` (the 200 ms `SetTimer` poll for
+# CJK layout + foreground PID). Its body now lives in `OnTickPoll`, driven
+# from `MainThreadWorker`'s tick branch. Worker-thread access to stateMutex_
+# is fine — Rule #11 only forbids it on the LL hook thread.
 
 HOOK_ENTRIES=(
     "LowLevelKeyboardProc"

@@ -76,6 +76,15 @@ public:
     /// (which is auto-reset and reserved for the TSF DLL).
     void SyncConfigFromSharedState();
 
+    /// Periodic poll: CJK layout change detection + foreground PID
+    /// fallback (catches missed/phantom focus events). Sprint 1 D10
+    /// migrated this off `SetTimer(200ms, FocusPollTimerProc)` and onto
+    /// `MainThreadWorker`'s tick branch. The body is unchanged from the
+    /// retired `FocusPollTimerProc`; the call site is the only difference.
+    /// Safe to call from any thread that is not the LL hook thread —
+    /// stateMutex_ serializes against main-thread writers.
+    void OnTickPoll() noexcept;
+
     /// Set SharedState pointer for direct reading (must be the global instance from main.cpp)
     void SetSharedStateReader(SharedStateManager* ptr) { sharedStatePtr_ = ptr; }
 
@@ -103,7 +112,6 @@ private:
                                        LONG idObject, LONG idChild,
                                        DWORD dwEventThread, DWORD dwmsEventTime);
     static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
-    static void CALLBACK FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD);
 
     // Config application (shared between Start and CheckConfigEvent)
     void ApplyConfig(const TypingConfig& config);
@@ -329,7 +337,8 @@ private:
     HHOOK mouseHook_ = nullptr;
     HWINEVENTHOOK focusHook_ = nullptr;     // EVENT_SYSTEM_FOREGROUND
     HWINEVENTHOOK minimizeHook_ = nullptr;  // EVENT_SYSTEM_MINIMIZEEND
-    UINT_PTR focusPollTimer_ = 0;          // 200ms PID poll — catches missed/phantom focus events
+    // Sprint 1 D10: 200 ms focus / CJK poll moved off SetTimer onto
+    // MainThreadWorker's tick branch. The body lives in OnTickPoll().
 
     // Dedicated hook thread: owns keyboardHook_ + mouseHook_ and runs its own
     // GetMessage pump so LL hook callbacks never block on the main (UI) thread's
@@ -345,10 +354,11 @@ private:
     HINSTANCE cachedHInstance_ = nullptr;          // captured in Start(), used by HookThreadProc
     // Sprint 1 D11: downgraded from recursive_mutex to plain mutex. After Phase B
     // (D5–D7), all hook-read state is atomic — hook callbacks no longer acquire
-    // this mutex for reads. The remaining users are main-thread writers
-    // (ApplyConfig requires caller-held; QuickSyncFromSharedState self-locks;
-    // CheckConfigEvent/ReloadFromToml/Toggle/SetCodeTable/CommitPending lock at
-    // their public entry; FocusPollTimerProc locks for the layout check + PID
+    // this mutex for reads. The remaining users are main-thread / worker-thread
+    // writers (ApplyConfig requires caller-held; QuickSyncFromSharedState
+    // self-locks; CheckConfigEvent/ReloadFromToml/Toggle/SetCodeTable/CommitPending
+    // lock at their public entry; OnTickPoll — formerly FocusPollTimerProc, now
+    // driven by MainThreadWorker per D10 — locks for the layout check + PID
     // update phase, releases before invoking OnFocusChanged so the inner
     // QuickSync self-lock isn't recursive). Pillar #2 (Nhẹ): smaller primitive
     // when recursion is no longer required.

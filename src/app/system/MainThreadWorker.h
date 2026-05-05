@@ -16,6 +16,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -69,6 +70,20 @@ public:
     /// after Stop (no-op).
     void Signal() noexcept;
 
+    /// Register the periodic-tick handler. The tick handler runs on
+    /// the worker thread every tick interval (see SetTickInterval) as
+    /// long as Start has been called and Stop has not. Like the work
+    /// handler, exceptions are caught and swallowed; setting a new
+    /// handler while running takes effect on the next tick.
+    void SetTickHandler(WorkHandler handler);
+
+    /// Set the tick interval. A non-zero interval enables periodic
+    /// ticks; an interval of zero (the default) disables them. Safe to
+    /// call before Start, while running, or after Stop. Changes take
+    /// effect on the next wait cycle (no shorter than the previously-
+    /// configured interval if a wait is already in flight).
+    void SetTickInterval(std::chrono::milliseconds interval) noexcept;
+
 private:
     void Run() noexcept;
 
@@ -78,6 +93,8 @@ private:
     bool stopRequested_ = false;
     bool workPending_ = false;
     WorkHandler workHandler_;
+    WorkHandler tickHandler_;
+    std::chrono::milliseconds tickInterval_{0};
     std::atomic<bool> running_{false};
 };
 

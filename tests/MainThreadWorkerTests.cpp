@@ -217,6 +217,96 @@ TEST_F(MainThreadWorkerTest, SetHandlerWhileRunning_NewHandlerSeenOnNextSignal) 
     worker_.Stop();
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// D10 — periodic tick (CJK poll + heartbeat replacement)
+//
+// Worker grows SetTickHandler + SetTickInterval. The wait primitive
+// becomes wait_for(interval): the timeout branch dispatches the tick
+// handler, the predicate branch dispatches the work handler (D9) or
+// exits on stop. Tick is independent from Signal: a Signal fired
+// during a tick interval still wakes the work handler, and a tick
+// fired while a Signal is pending still runs the work handler at
+// least once on the same wake.
+// ─────────────────────────────────────────────────────────────────────
+
+TEST_F(MainThreadWorkerTest, TickHandler_FiresAtConfiguredInterval) {
+    HandlerLatch latch;
+    worker_.SetTickHandler([&latch] { latch.Fire(); });
+    worker_.SetTickInterval(std::chrono::milliseconds(50));
+    ASSERT_TRUE(worker_.Start());
+
+    // Expect ≥ 3 ticks within 250 ms (3 × 50 ms = 150 ms; 100 ms slack
+    // for scheduler jitter).
+    EXPECT_TRUE(latch.WaitFor(3, 250ms));
+    worker_.Stop();
+    EXPECT_GE(latch.count.load(), 3);
+}
+
+TEST_F(MainThreadWorkerTest, NoTickWhenIntervalUnset) {
+    HandlerLatch latch;
+    worker_.SetTickHandler([&latch] { latch.Fire(); });
+    // Interval not set — defaults to disabled.
+    ASSERT_TRUE(worker_.Start());
+    std::this_thread::sleep_for(100ms);
+    worker_.Stop();
+    EXPECT_EQ(latch.count.load(), 0);
+}
+
+TEST_F(MainThreadWorkerTest, NoTickWhenHandlerUnset) {
+    // Setting an interval without a handler must not crash on tick.
+    worker_.SetTickInterval(std::chrono::milliseconds(20));
+    ASSERT_TRUE(worker_.Start());
+    std::this_thread::sleep_for(80ms);
+    worker_.Stop();
+    SUCCEED();
+}
+
+TEST_F(MainThreadWorkerTest, TickAndSignalCoexist_BothInvoked) {
+    HandlerLatch tickLatch;
+    HandlerLatch workLatch;
+    worker_.SetTickHandler([&tickLatch] { tickLatch.Fire(); });
+    worker_.SetWorkHandler([&workLatch] { workLatch.Fire(); });
+    worker_.SetTickInterval(std::chrono::milliseconds(40));
+    ASSERT_TRUE(worker_.Start());
+
+    worker_.Signal();
+    EXPECT_TRUE(workLatch.WaitFor(1, 100ms));
+    EXPECT_TRUE(tickLatch.WaitFor(1, 200ms));
+    worker_.Stop();
+}
+
+TEST_F(MainThreadWorkerTest, ChangeTickIntervalWhileRunning_TakesEffectNextWait) {
+    HandlerLatch latch;
+    worker_.SetTickHandler([&latch] { latch.Fire(); });
+    worker_.SetTickInterval(std::chrono::milliseconds(200));  // slow
+    ASSERT_TRUE(worker_.Start());
+
+    // Speed up — the next wait cycle should pick up the new interval.
+    worker_.SetTickInterval(std::chrono::milliseconds(20));
+    EXPECT_TRUE(latch.WaitFor(3, 250ms));
+    worker_.Stop();
+}
+
+TEST_F(MainThreadWorkerTest, TickHandlerExceptionDoesNotKillWorker) {
+    std::atomic<int> throwCount{0};
+    HandlerLatch healthyLatch;
+
+    worker_.SetTickHandler([&] {
+        throwCount.fetch_add(1, std::memory_order_relaxed);
+        throw std::runtime_error("tick failure");
+    });
+    worker_.SetTickInterval(std::chrono::milliseconds(20));
+    ASSERT_TRUE(worker_.Start());
+
+    std::this_thread::sleep_for(80ms);
+    EXPECT_GE(throwCount.load(), 2);
+    EXPECT_TRUE(worker_.IsRunning());
+
+    worker_.SetTickHandler([&healthyLatch] { healthyLatch.Fire(); });
+    EXPECT_TRUE(healthyLatch.WaitFor(1, 100ms));
+    worker_.Stop();
+}
+
 TEST_F(MainThreadWorkerTest, HandlerExceptionDoesNotKillWorker) {
     // If a handler throws, the worker must keep running and continue
     // dispatching subsequent signals. (Owner code is std::function — a

@@ -38,10 +38,11 @@
 #include <commctrl.h>
 #include <ole2.h>
 #include <timeapi.h>
+#include <atomic>
+#include <chrono>
 #include <exception>
 #include <memory>
 #include <string>
-#include <atomic>
 #include <thread>
 
 #pragma comment(lib, "comctl32.lib")
@@ -566,6 +567,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_mainThreadWorker.SetWorkHandler([]() {
         g_hookEngine.SyncConfigFromSharedState();
     });
+    // Sprint 1 D10: 200 ms tick replaces the retired SetTimer focus/CJK
+    // poll that lived inside HookEngine::Start.
+    g_mainThreadWorker.SetTickHandler([]() {
+        g_hookEngine.OnTickPoll();
+    });
+    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
     g_mainThreadWorker.Start();
 
     NEXTKEY_LOG(L"HookEngine started (Lite mode), entering message loop");

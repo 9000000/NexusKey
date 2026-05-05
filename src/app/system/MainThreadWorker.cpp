@@ -69,27 +69,70 @@ void MainThreadWorker::Signal() noexcept {
     cv_.notify_all();
 }
 
+void MainThreadWorker::SetTickHandler(WorkHandler handler) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    tickHandler_ = std::move(handler);
+}
+
+void MainThreadWorker::SetTickInterval(std::chrono::milliseconds interval) noexcept {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tickInterval_ = interval;
+    }
+    // Wake any in-flight wait so the new interval is picked up at the
+    // next loop iteration. Without this, lengthening or shortening the
+    // interval while the worker is mid-wait would leave the old timeout
+    // running until it expires.
+    cv_.notify_all();
+}
+
 void MainThreadWorker::Run() noexcept {
+    auto invoke = [](const WorkHandler& h) noexcept {
+        if (!h) return;
+        try {
+            h();
+        } catch (...) {
+            // Owner-provided handlers must not crash the worker. We
+            // intentionally swallow — the alternative is std::terminate
+            // through a noexcept boundary.
+        }
+    };
+
     for (;;) {
-        WorkHandler handler;
+        WorkHandler workCopy;
+        WorkHandler tickCopy;
+        bool runWork = false;
+        bool runTick = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait(lock, [this] { return stopRequested_ || workPending_; });
-            if (stopRequested_) return;
+            const auto interval = tickInterval_;
+            const auto predicate = [this] { return stopRequested_ || workPending_; };
 
-            workPending_ = false;
-            handler = workHandler_;  // copy callable so we can run unlocked
-        }
-
-        if (handler) {
-            try {
-                handler();
-            } catch (...) {
-                // Owner-provided handlers must not crash the worker. We
-                // intentionally swallow — the alternative is std::terminate
-                // through a noexcept boundary.
+            if (interval.count() > 0) {
+                // Timeout-bounded wait: returns false on timeout, true if
+                // predicate became true before the timeout. Distinguishes
+                // tick (timeout) from work-signal / stop (predicate).
+                const bool predicateMet = cv_.wait_for(lock, interval, predicate);
+                if (stopRequested_) return;
+                if (predicateMet) {
+                    workPending_ = false;
+                    runWork = true;
+                    workCopy = workHandler_;
+                } else {
+                    runTick = true;
+                    tickCopy = tickHandler_;
+                }
+            } else {
+                cv_.wait(lock, predicate);
+                if (stopRequested_) return;
+                workPending_ = false;
+                runWork = true;
+                workCopy = workHandler_;
             }
         }
+
+        if (runWork) invoke(workCopy);
+        if (runTick) invoke(tickCopy);
     }
 }
 
