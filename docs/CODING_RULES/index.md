@@ -57,4 +57,4 @@
     - [11.6 SendInput Timing](./11-hook-system-rules.md#116-sendinput-timing)
   - [Summary Checklist](#summary-checklist)
 
-> **Read first:** [`docs/PHILOSOPHY.md`](../PHILOSOPHY.md) — the four pillars (Nhanh / Nhẹ / Mượt / Mở rộng), test-first, and the three pre-code questions. The rules below operationalize that philosophy. If a rule conflicts with the philosophy, the philosophy wins and the rule is updated.
+> **Read first:** [`docs/PHILOSOPHY.md`](../PHILOSOPHY.md) — the four pillars (Nhanh / Nhẹ / Mượt / Mở rộng), test-first, and the three pre-code questions. Then [`docs/CODE_GOVERNANCE.md`](../CODE_GOVERNANCE.md) — the 5-question pre-code gate (mandatory before any architectural proposal) and the architectural prescriptions (FSM, IOutputInjector, SPSC, plugin layer) that the 3-collaborator team aligns on. The rules below operationalize both. If a rule conflicts with the philosophy, the philosophy wins and the rule is updated.
