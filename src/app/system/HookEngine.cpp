@@ -689,16 +689,18 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
                      pKey->vkCode, pKey->scanCode, pKey->flags,
                      isDown ? L"DOWN" : (isUp ? L"UP" : L"OTHER"));
 
-            // State access below races with main-thread writers (OnFocusChanged,
-            // ApplyConfig, ToggleVietnameseMode, Reload* methods). Brief lock
-            // keeps the critical section on the hook thread — main thread holds
-            // this mutex only for fast state updates, never for Sciter/IO work.
-            // Sprint 1 D4 SPIKE (refactor/phase-1-single-owner): commented out
-            // to measure whether removing hook-thread mutex acquisition flips
-            // any chaos FAIL. Torn-read risk knowingly accepted FOR THE SPIKE
-            // ONLY. Phase B replaces this with atomic + RCU patterns. Restore
-            // OR replace per Phase B before merge — DO NOT ship with this line
-            // commented. See docs/plans/sprint-1-single-owner-refactor.md §A D4.
+            // REGRESSION TRAP — DO NOT UNCOMMENT
+            //
+            // Sprint 1 D4 originally took stateMutex_ here to guard the racing
+            // reads of `engine_`, `previousComposition_`, app-detect flags, etc.
+            // Phase B (D5-D11) replaced every reader/writer with std::atomic
+            // + RCU patterns; the lock is no longer needed and the type
+            // (`std::recursive_mutex`) was downgraded to `std::mutex` in D11
+            // — uncommenting this line triggers a compile error which IS the
+            // intentional regression trap. `tools/audit/check_hook_thread_no
+            // _mutex.sh` Check 1 verifies this line stays commented (one of
+            // 3 such lines across hook callbacks). If you're tempted to "clean
+            // up" the dangling reference, read the audit script first.
             // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
 
             if (isDown) {
@@ -725,13 +727,12 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LO
         HookEngine* self = s_instance.load(std::memory_order_relaxed);
         if (!self) return;
 
-        // Main-thread writer path — hook thread's callback reads the same state
-        // (engine_, previousComposition_, app-detect flags, currentExe_...).
-        // Lock must cover the engine_->Count() read below and the subsequent
-        // OnFocusChanged() which mutates extensively.
-        // Sprint 1 D4 SPIKE: see corresponding note above LowLevelKeyboardProc
-        // lock_guard. WinEventProc executes on the hook thread per the existing
-        // architecture — that's why this acquisition is on the hot path.
+        // REGRESSION TRAP — DO NOT UNCOMMENT (see LowLevelKeyboardProc above
+        // for the full rationale). WinEventProc runs on the hook thread per
+        // the existing architecture; Phase B replaced its mutex needs with
+        // atomic flags + RCU. Audit Check 1 enforces this line stays
+        // commented; uncommenting also fails to compile (recursive_mutex
+        // type removed in D11).
         // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
 
         if (event == EVENT_SYSTEM_MINIMIZEEND) {
@@ -758,11 +759,14 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
         if (nCode == HC_ACTION && wParam == WM_LBUTTONDOWN) {
             HookEngine* self = s_instance.load(std::memory_order_relaxed);
             if (self) {
-                // Mouse callback runs on hook thread — ResetComposition + state
-                // writes below race with main-thread writers. Take the lock.
-                // Sprint 1 D4 SPIKE: see LowLevelKeyboardProc note. Mouse path
-                // includes a writer (ResetComposition); torn-read risk is
-                // higher here than the keyboard read paths.
+                // REGRESSION TRAP — DO NOT UNCOMMENT (see LowLevelKeyboardProc
+                // above for the full rationale). Mouse path includes a writer
+                // (ResetComposition); torn-read risk pre-Phase-B was higher
+                // here than the keyboard read paths. Phase B replaced this
+                // with atomic state — current cachedFocusedHwnd_ + Reset-
+                // Composition write set is captured as Pre-T3 review Minor
+                // 1 in docs/TODO.md (still-open audit). Audit Check 1
+                // enforces this line stays commented.
                 // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
                 HOOK_LOG(L"MOUSE click — resetting composition (engine count=%zu, prev='%s')",
                          self->engine_->Count(), self->previousComposition_.c_str());
@@ -795,8 +799,13 @@ static bool IsIncompatibleLayout(HKL hkl);
 // ═══════════════════════════════════════════════════════════
 
 bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*/) {
-    // 0. Sync from SharedState — pure memory read, no syscall.
-    //    Detects feature flag changes AND configGeneration bumps (triggers TOML reload).
+    // 0. Sync from SharedState. Fast path is a memory-mapped atomic read
+    //    (no syscall, ~10 ns); the slow path — taken when the writer's
+    //    configGeneration bumped — invokes TOML reload + can briefly hold
+    //    stateMutex_ on this thread. Pre-T3 review Minor 2 captures the
+    //    Rule #11.2/11.3 concern (mutex on hook hot path); see docs/TODO.md
+    //    for the audit task. Most calls hit the fast path; the slow-path
+    //    cost is bounded to 1 reload per generation bump.
     QuickSyncFromSharedState();
 
     // 0b. TSF app — let TSF DLL handle all input, hook does nothing
@@ -1500,7 +1509,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     // returns 0ms today). Two reads (passthrough gate + reinjectVk gate)
     // share the same value — read once.
     const bool editMsgPath = IsSyncReplaceChannel();
-    //   - useEditMsgPath_ (Win11 New Notepad RichEditD2DPT, etc.): the host
+    //   - IsSyncReplaceChannel() (Win11 New Notepad RichEditD2DPT, etc.): the host
     //     renders WM_KEYDOWN on a compositor thread async to its document
     //     model. Letting physical keystrokes pass through means the app's
     //     text catches up to the engine state on the compositor's clock,
@@ -1772,6 +1781,16 @@ static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
 // which has no HookEngine dependency, leaving the counter at 0 on the
 // hot path and silently disabling synth-guard everywhere. This callback
 // restores the pre-D2 behavior without re-coupling the layers.
+//
+// Memory ordering: relaxed is sufficient because every increment AND the
+// matching per-event decrement at LowLevelKeyboardProc:663 happen on the
+// same LL hook thread (SendInput fires the WH_KEYBOARD_LL callback
+// synchronously on the calling thread for own-injection events marked
+// with NEXUSKEY_EXTRA_INFO). No inter-thread visibility chain to
+// establish. The counter is a hint for the synth-guard heuristic, not a
+// synchronization primitive — readers at HookEngine.cpp:971/1074/1150/
+// 1497 also use implicit-default ordering on `synthEventsPending_ > 0`
+// comparisons, which is fine same-thread.
 void HookEngine::OnSynthDispatched(int delta) noexcept {
     auto* self = s_instance.load(std::memory_order_relaxed);
     if (!self) return;
@@ -2864,10 +2883,14 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 /// deleting one extra character and permanently desyncing previousComposition_.
 ///
 /// Apps with skipEmptyChar_=true (block reinjectVk, skip U+202F bait):
-///   - Electron/Console: also get split dispatch (isElectronApp_/isConsoleApp_)
-///   - GPU-rendered apps (Zed): batch dispatch (single-process, no IPC reorder)
+///   - Electron/Console: also get split dispatch — selected by the factory
+///     (WindowClassification.isElectron / .isConsole → SplitDispatchInjector
+///     with sleepMs=6 / 5 respectively). Sprint 2 D3 lifted the dispatch
+///     branching out of HookEngine into the injector layer.
+///   - GPU-rendered apps (Zed): batch dispatch via Win32SendInputInjector
+///     (single-process, no IPC reorder).
 ///
-/// See OnFocusChanged() for the detection logic.
+/// See OnFocusChanged() for the detection logic + injector publish.
 void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectVk) {
     HWND target = GetInputTarget();
     if (!target) {

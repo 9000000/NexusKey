@@ -1,6 +1,53 @@
 # TODO
 
-## 🔴 synthEventsPending_ counter broken on injector hot path (2026-05-05, found in D4 audit)
+## ✅ Post-T3 cleanup PR — first batch landed (2026-05-05)
+
+Mechanical / low-risk items addressed in the post-T3 cleanup branch:
+
+- M1 stale comments at HookEngine.cpp:1503 + :2867 — refreshed to reference `IsSyncReplaceChannel()` / `SplitDispatchInjector` instead of the deleted `useEditMsgPath_` / `isElectronApp_` / `isConsoleApp_` flags.
+- L1 header include order in `Win32SendInputInjector.cpp`, `SplitDispatchInjector.cpp`, `RichEditEmReplaceSelInjector.cpp` — STL group now precedes project-internal `Internal.h` per Rule 1.2.
+- M4 memory ordering doc — `OnSynthDispatched` now carries an inline rationale for `memory_order_relaxed` (same-thread invariant: every increment + decrement runs on the LL hook thread).
+- Pre-T3 Critical (D4 SPIKE markers) — three commented `lock_guard<recursive_mutex>` lines updated to "REGRESSION TRAP — DO NOT UNCOMMENT" with cross-references to the audit script. Audit Check 1 comment block updated to explain the trap rather than the original "Phase B in-progress" wording.
+- Pre-T3 Minor 3 (misleading comment) — `HookEngine.cpp:802` "pure memory read, no syscall" split into fast-path (atomic) + slow-path (TOML reload + brief stateMutex_) wording, with a forward reference to the open Pre-T3 Minor 2 audit task.
+
+`tools/audit/check_hook_thread_no_mutex.sh` PASS — all 4 checks green after the changes. Linux GTest 1405 / 1405 PASS.
+
+---
+
+## 🟡 Items deferred from this cleanup PR (need their own session)
+
+These need investigation, design work, or 3-collaborator decisions and were intentionally NOT addressed in the mechanical batch:
+
+### Pre-T3 Minor 1 — `LowLevelMouseProc` race on `cachedFocusedHwnd_`
+Investigation needed: read the exact write set in the mouse callback, decide between (a) atomic migration, (b) defer to `MainThreadWorker`, or (c) document as benign. Detailed in the §"Review (2026-05-05)" section below.
+
+### Pre-T3 Minor 2 — `QuickSyncFromSharedState` acquires `stateMutex_` on hook hot path (Rule #11.3 violation)
+Highest-impact open audit item. Slow-path TOML reload + lock acquire on every keystroke when configGeneration bumps. Fix likely needs RCU re-publish via `MainThreadWorker` (Sprint 1 D6 `config_` pattern). Detailed below.
+
+### M2 — Constants naming convention (`kFoo` vs `UPPER_SNAKE`)
+Codebase-wide pattern uses `kFoo` for file-scope `static constexpr`; Rule 9.1 prescribes `UPPER_SNAKE`. Need 3-collaborator decision: update Rule 9.1 to formalize the k-prefix convention, or rename ~10 codebase constants. Recommendation: update the rule.
+
+### M3 — Dual-route `TrackedSendInput` (HookEngine member + `Internal::` free function)
+Both bump `synthEventsPending_` via different mechanisms; no double-counting today but the dual presence is confusing for future readers. Suggested fix: route the 4 VB6/clipboard sites + reinjectVk through `Internal::TrackedSendInput`, then delete `HookEngine::TrackedSendInput` member. ~5 call sites, non-trivial.
+
+### ChannelTraits + `isElectronApp_` / `needBaitChar_` deletion
+Gotcha G6 (Sprint 2 D4 mid-sprint discovery) — both flags retain live policy readers in `HandleAlphaKey` passthrough/reinjectVk gates. Cleanly lifting them requires a `ChannelTraits` query method on `IOutputInjector` (interface design needs its own commit). Captured in `docs/baselines/perf-baseline-t3-final.md` deferred-items list.
+
+### Typing bug — `cafcs → các` (spell-check tone-replacement)
+Investigation-first item: needs `nexuskey-typing-bugs` skill trace through `PushChar` + `Validate` pipeline before fix. Hypotheses captured in the dedicated section below.
+
+### `--host-class` matrix harness (Sprint 2 D6 deferred)
+Sprint 2 plan §D6 Tasks 32-33 — `NextKeyTestRunner` flag for forced host-class override. Marginal value given existing 132-case natural coverage; reopen as one focused task if QA later needs forced-cell testing.
+
+---
+
+## ✅ ~~synthEventsPending_ counter broken on injector hot path~~ — FIXED in Sprint 2 D5 (`2f1b400`)
+
+Resolved by `Internal::g_synthCounterCallback` + `HookEngine::OnSynthDispatched` bridge. Win32 / Split paths now correctly bump the counter; RichEdit (sent message, no hook echo) correctly does not. Test contract captured in `Win32SendInputInjectorTest.ReplaceNotifiesSynthCounterByEventCount` and the partial-send compensating-delta tests. Original entry preserved below for the post-mortem trail.
+
+---
+
+## 🔴 ~~synthEventsPending_ counter broken on injector hot path~~ (2026-05-05, found in D4 audit) — RESOLVED in D5
 
 **Severity:** medium-high. Synth-guard mechanism is silently no-op for the most common dispatch path.
 
@@ -60,14 +107,15 @@ Option 4 is cleanest semantically; option 2 is least invasive. Pick during D5 al
 
 ---
 
-## Review (2026-05-05) — Pre-T3 Code Review Followups
+## Review (2026-05-05) — Pre-T3 Code Review Followups (partial — Critical + Minor 3 LANDED post-T3 cleanup PR)
 
 Code review on Main `003a059` (post governance + T3 design merge, before T3
-implementation D0 commit). Findings to address as a single follow-up batch
-**after T3 ships** (per project owner decision: complete T3 first, then
-review + fix together to avoid mid-sprint scope inflation).
+implementation D0 commit). Critical (D4 SPIKE marker clarify) + Minor 3
+(misleading comment) landed in the post-T3 cleanup PR. Minor 1 (mouse race)
+and Minor 2 (`QuickSyncFromSharedState` Rule #11.3 violation) deferred —
+both need investigation before fix.
 
-### 🔴 Critical — 3 commented `// std::lock_guard<std::recursive_mutex>` lines in hook callbacks
+### ✅ ~~🔴 Critical — 3 commented `// std::lock_guard<std::recursive_mutex>` lines in hook callbacks~~ — LANDED
 
 **Reviewer claim:** "Type `recursive_mutex` no longer exists since D11 changed
 `stateMutex_` to `std::mutex` — these dangling references should be deleted."
@@ -115,7 +163,7 @@ remove the lock. If it must access mutex-protected state, route via
 impact finding because Rule #11 violations directly degrade "Mượt" (the p99
 chaos jitter we've been chasing).
 
-### 🟡 Minor 3 — Misleading comment at `HookEngine.cpp` line 779 ("pure memory read, no syscall")
+### ✅ ~~🟡 Minor 3 — Misleading comment at `HookEngine.cpp` line 779 ("pure memory read, no syscall")~~ — LANDED
 
 The slow path of the sync triggered around that comment includes TOML
 reload, so the "no syscall" claim is wrong on the slow path.

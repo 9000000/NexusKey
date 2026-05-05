@@ -47,10 +47,19 @@ echo
 # ────────────────────────────────────────────────────────────────────────
 # Check 1: D4 SPIKE comment integrity
 # ────────────────────────────────────────────────────────────────────────
-# The 3 hook-thread lock_guard<recursive_mutex> lines at HookEngine.cpp
-# (originally lines 647 / 677 / 705 — line numbers drift with edits) are
-# expected to remain commented. If anyone uncomments them, Phase B's
-# atomic-only contract on the hook hot path is silently broken.
+# REGRESSION TRAP — Phase B Sprint 1 D11 downgraded `stateMutex_` from
+# `std::recursive_mutex` to `std::mutex`. The 3 commented lock_guard
+# lines in HookEngine.cpp (LowLevelKeyboardProc / WinEventProc /
+# LowLevelMouseProc) reference the old `recursive_mutex` type which no
+# longer exists, so any "cleanup" attempt that uncomments them triggers
+# a compile error. That is the intended trap.
+#
+# This check enforces the lines stay commented — verifying both that
+# someone hasn't uncommented (which would fail compile anyway) and that
+# someone hasn't deleted the trap entirely (which would lose the
+# regression marker for the eventual mutex removal). If a future
+# reviewer flags these as "dangling references", point them here and
+# at the in-source comments above each line.
 
 echo "Check 1: D4 SPIKE comment integrity (≥3 commented lock_guard lines)"
 spike_commented=$(grep -cE "^\s*//\s*std::lock_guard<std::recursive_mutex>" "$CPP")

@@ -9,9 +9,10 @@
 //
 // Spec: docs/plans/sprint-2-output-injector.md §2.4
 #include "SplitDispatchInjector.h"
-#include "Internal.h"
 
 #include <array>
+
+#include "Internal.h"
 
 namespace NextKey::Output {
 

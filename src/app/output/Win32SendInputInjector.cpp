@@ -6,9 +6,10 @@
 //
 // Spec: docs/plans/sprint-2-output-injector.md §2.2
 #include "Win32SendInputInjector.h"
-#include "Internal.h"
 
 #include <array>
+
+#include "Internal.h"
 
 namespace NextKey::Output {
 
