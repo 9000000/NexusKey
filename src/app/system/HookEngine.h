@@ -304,13 +304,12 @@ private:
     // selected via WindowClassification.isConsole → SplitDispatchInjector(5)
     // by the factory; no remaining HookEngine reader. Sprint 2 D4 deleted
     // useEditMsgPath_ — replaced by IsSyncReplaceChannel() (SettleBudget==0
-    // proxy). isElectronApp_ + needBaitChar_ kept (live policy readers in
-    // HandleAlphaKey passthrough/reinjectVk gates) — D5 may lift to
-    // ChannelTraits on IOutputInjector.
-    std::atomic<bool> isElectronApp_{false};  // cached: Electron/Qt but NOT console
+    // proxy). Post-T3 ChannelTraits cleanup deleted isElectronApp_ +
+    // needBaitChar_ — both flags moved onto IOutputInjector
+    // (HasMultiProcessRenderer() / NeedsBaitCharPrefix()). Single source
+    // of truth on the injector itself.
     std::unordered_set<std::wstring> webView2PositiveCache_;  // full exe path → known WebView2 host (positive-only; see IsWebView2App)
     std::atomic<bool> skipEmptyChar_{false};  // Skip U+202F for Qt/Electron and Console apps
-    std::atomic<bool> needBaitChar_{false};   // Apps with autocomplete/suggest need U+202F bait before BS
     std::atomic<bool> useClipboardPaste_{false};  // VB6 and legacy ANSI-internal apps need clipboard paste
     std::atomic<bool> isOutlookApp_{false};   // Outlook 2016 RichEdit drops trailing char of a word when physical Shift+letter precedes it — force SendInput path (issue #97)
     DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)

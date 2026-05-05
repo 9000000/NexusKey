@@ -27,6 +27,15 @@ public:
         return std::chrono::milliseconds{30};
     }
 
+    // Channel trait — exposes the constructor-supplied bait flag.
+    // HookEngine uses this to skip game-compat reinjectVk for Chromium
+    // browsers (the bait char already handles suggest dismiss).
+    bool NeedsBaitCharPrefix() const noexcept override {
+        return needsBaitCharPrefix_;
+    }
+    // HasMultiProcessRenderer() inherits the base default (false) —
+    // Win32 batched dispatch is for vanilla single-process renderers.
+
 private:
     bool needsBaitCharPrefix_;
 };

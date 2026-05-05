@@ -42,13 +42,18 @@ std::shared_ptr<IOutputInjector> Create(
     if (c.isElectron) {
         // Electron-on-Chromium hosts (WebView2 / Tauri / Dorion) need the
         // bait prefix even though they go through the split channel.
+        // hasMultiProcessRenderer=true blocks mid-word passthrough in
+        // HookEngine — Electron's multi-process renderer reorders
+        // physical WM_KEYDOWN against synthetic VK_PACKET.
         return std::make_shared<SplitDispatchInjector>(
-            kElectronSleepMs, c.isChromium);
+            kElectronSleepMs, c.isChromium, /*hasMultiProcessRenderer=*/true);
     }
     if (c.isConsole) {
-        // Console hosts (CMD/PowerShell) never use Chromium suggest, so
-        // bait is unconditionally off here.
-        return std::make_shared<SplitDispatchInjector>(kConsoleSleepMs);
+        // Console hosts (CMD/PowerShell) never use Chromium suggest and
+        // are single-process renderers, so both traits are false here.
+        return std::make_shared<SplitDispatchInjector>(
+            kConsoleSleepMs, /*needsBaitCharPrefix=*/false,
+            /*hasMultiProcessRenderer=*/false);
     }
     return std::make_shared<Win32SendInputInjector>(c.isChromium);
 }

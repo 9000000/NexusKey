@@ -1517,17 +1517,25 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     // encoded widths for correct backspace count.
     // Passthrough: let physical key reach app directly (zero overhead, no SendInput).
     // Blocked when ANY condition is true:
-    //   - hadSynthInWord_ && isElectronApp_: Electron/Qt multi-process architecture
-    //     where physical WM_KEYDOWN and synthetic VK_PACKET arrive out of order.
+    //   - hadSynthInWord_ && injector.HasMultiProcessRenderer(): Electron/Qt
+    //     multi-process architecture where physical WM_KEYDOWN and synthetic
+    //     VK_PACKET arrive out of order.
     //   - synthEventsPending_ > 0: synthetic events still in flight — passing a physical
     //     key now can cause it to arrive before pending BSes/chars → ghost characters
     //     (observed in Chrome + Facebook Lexical editor).
     //   - isOutlookApp_: Outlook 2016 RichEdit drops the last char of a word when
     //     physical Shift+letter precedes subsequent chars (e.g. "Anh em" → "An hem").
     //     SendInput VK_PACKET path avoids the quirk (issue #97).
-    const bool electronApp = isElectronApp_.load(std::memory_order_acquire);
+    //
+    // Post-T3 ChannelTraits cleanup: the multi-process-renderer and bait-prefix
+    // flags now live on the injector itself (single source of truth). One
+    // atomic_load(&injector_) snapshot covers both traits + the IsSyncReplace-
+    // Channel proxy reads injector_ separately (kept for callers outside this
+    // function; not worth threading the snapshot through public API).
+    auto inj = injector_.load(std::memory_order_acquire);
+    const bool electronApp = inj && inj->HasMultiProcessRenderer();
+    const bool baitChar = inj && inj->NeedsBaitCharPrefix();
     const bool outlookApp = isOutlookApp_.load(std::memory_order_acquire);
-    const bool baitChar = needBaitChar_.load(std::memory_order_acquire);
     const bool skipEmpty = skipEmptyChar_.load(std::memory_order_acquire);
     // Sprint 2 D4: editMsgPath via SettleBudget==0 proxy (RichEditEm only
     // returns 0ms today). Two reads (passthrough gate + reinjectVk gate)
@@ -2675,18 +2683,21 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // selection flows through WindowClassification.isConsole → factory →
     // SplitDispatchInjector. RichEdit/edit-msg policy now derived via
     // IsSyncReplaceChannel() proxy on the active injector.
+    // Post-T3 ChannelTraits cleanup deleted: needBaitChar_ + isElectronApp_
+    // stores. Both flags now live on the injector (NeedsBaitCharPrefix() /
+    // HasMultiProcessRenderer()) — see the WindowClassification publish
+    // block below for the propagation path.
     skipEmptyChar_.store(localSkipEmpty, std::memory_order_release);
-    needBaitChar_.store(localNeedBait, std::memory_order_release);
     useClipboardPaste_.store(localClipboard, std::memory_order_release);
     isOutlookApp_.store(localOutlook, std::memory_order_release);
-    isElectronApp_.store(localElectronApp, std::memory_order_release);
 
     // Sprint 2 D3: build the IOutputInjector for this classification and
     // RCU-publish to injector_. All four branches now live: RichEdit
     // (D2), Electron/Console (D3 SplitDispatch), and Win32 default with
-    // optional Chromium bait-char hint. The per-flag atomic stores above
-    // are kept for non-dispatch readers (passthrough policy at line ~1471,
-    // retry-loop gating at line ~2959) and are removed in D4.
+    // optional Chromium bait-char hint. Post-T3 ChannelTraits cleanup
+    // moved the multi-process-renderer + bait-prefix flags onto the
+    // injector itself; HookEngine reads via injector_->trait method on
+    // the hot path (HandleAlphaKey passthrough/reinjectVk gates).
     {
         NextKey::Output::WindowClassification c{};
         c.isRichEditD2DPT = localEditMsg;

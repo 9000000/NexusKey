@@ -445,6 +445,7 @@ if(WIN32)
         tests/output/RichEditEmReplaceSelInjectorTest.cpp
         tests/output/SplitDispatchInjectorTest.cpp
         tests/output/OutputInjectorFactoryTest.cpp
+        tests/output/InjectorTraitsTest.cpp
         src/app/output/Internal.cpp
         src/app/output/Win32SendInputInjector.cpp
         src/app/output/RichEditEmReplaceSelInjector.cpp

@@ -18,9 +18,11 @@ namespace NextKey::Output {
 class SplitDispatchInjector final : public IOutputInjector {
 public:
     explicit SplitDispatchInjector(int sleepMsBetweenBatches,
-                                   bool needsBaitCharPrefix = false) noexcept
+                                   bool needsBaitCharPrefix = false,
+                                   bool hasMultiProcessRenderer = false) noexcept
         : sleepMs_(sleepMsBetweenBatches),
-          needsBaitCharPrefix_(needsBaitCharPrefix) {}
+          needsBaitCharPrefix_(needsBaitCharPrefix),
+          hasMultiProcessRenderer_(hasMultiProcessRenderer) {}
 
     bool Replace(std::size_t bsCount, std::wstring_view text) noexcept override;
     void SendKey(unsigned short vkCode) noexcept override;
@@ -29,6 +31,19 @@ public:
     // Empirical from current HookEngine kSynthSettleMs hardcode.
     std::chrono::milliseconds SettleBudget() const noexcept override {
         return std::chrono::milliseconds{100};
+    }
+
+    // Channel traits — both flags are dispatch-arm hints set by the
+    // factory based on WindowClassification. Console hosts construct
+    // with both false (single-process readline ingest); Electron hosts
+    // construct with hasMultiProcessRenderer=true (Discord/Slack/VSCode
+    // multi-process renderer race) and optionally needsBaitCharPrefix=
+    // true when the renderer is Chromium (WebView2 / Tauri / Dorion).
+    bool NeedsBaitCharPrefix() const noexcept override {
+        return needsBaitCharPrefix_;
+    }
+    bool HasMultiProcessRenderer() const noexcept override {
+        return hasMultiProcessRenderer_;
     }
 
 private:
@@ -40,6 +55,11 @@ private:
     // bait. Without it, BS land into a still-open suggest popup and
     // get swallowed.
     bool needsBaitCharPrefix_;
+    // True for Electron / Qt-on-Chromium hosts where physical
+    // WM_KEYDOWN and synthetic VK_PACKET arrive out of order. Console
+    // hosts (CMD/PowerShell) also use split dispatch but are NOT
+    // multi-process — flag is false there.
+    bool hasMultiProcessRenderer_;
 };
 
 }  // namespace NextKey::Output
