@@ -113,11 +113,119 @@ class Dfa:
 
         return dfa
 
-    # ── Hopcroft minimization (Task 5 — placeholder) ──────────────────────
+    # ── Hopcroft minimization (Task 5) ────────────────────────────────────
 
     def minimize(self) -> "Dfa":
-        """Hopcroft minimization: collapse equivalent states.
+        """Hopcroft minimization — collapse equivalent states.
 
-        Implementation: D-1 Task 5.
+        Reference: Hopcroft (1971), "An n log n algorithm for minimizing
+        states in a finite automaton". Pseudocode follows Wikipedia
+        "DFA minimization" §Hopcroft's algorithm.
+
+        Returns a new Dfa where each state corresponds to an equivalence
+        class. Language is preserved: this.accepts(x) ⇔ minimized.accepts(x).
         """
-        raise NotImplementedError("Task 5")
+        if not self.states or self.start is None:
+            return Dfa()
+
+        all_ids: set[int] = {s.state_id for s in self.states}
+        accepts: set[int] = {s.state_id for s in self.states if s.is_accept}
+        non_accepts: set[int] = all_ids - accepts
+
+        # ── Build predecessors index: predecessors[c][dst_id] = set(src_id) ──
+        predecessors: dict[str, dict[int, set[int]]] = {}
+        alphabet: set[str] = set()
+        for src_id, edges in self.transitions.items():
+            for sym, dst_id in edges.items():
+                alphabet.add(sym)
+                predecessors.setdefault(sym, {}).setdefault(dst_id, set()).add(src_id)
+
+        # ── Initial partition P = { F, Q\F } (drop empty parts) ──
+        partition: list[frozenset[int]] = []
+        if accepts:
+            partition.append(frozenset(accepts))
+        if non_accepts:
+            partition.append(frozenset(non_accepts))
+
+        # Worklist W initialized with BOTH halves of initial partition
+        # (Hopcroft 1971 Wikipedia spec — the "smaller half" optimization
+        # only applies to refinement steps, not init).
+        worklist: list[frozenset[int]] = list(partition)
+
+        while worklist:
+            A = worklist.pop()
+            for c in alphabet:
+                # X = pre-image of A on c: { src : δ(src, c) ∈ A }
+                preds_for_c = predecessors.get(c, {})
+                X: set[int] = set()
+                for dst_id in A:
+                    X |= preds_for_c.get(dst_id, set())
+                if not X:
+                    continue
+                X_frozen = frozenset(X)
+
+                # For each Y in P split by X.
+                new_partition: list[frozenset[int]] = []
+                for Y in partition:
+                    intersect = Y & X_frozen
+                    diff = Y - X_frozen
+                    if intersect and diff:
+                        new_partition.append(intersect)
+                        new_partition.append(diff)
+                        # Worklist update.
+                        if Y in worklist:
+                            # Replace Y with both halves.
+                            worklist.remove(Y)
+                            worklist.append(intersect)
+                            worklist.append(diff)
+                        else:
+                            # Add smaller half.
+                            if len(intersect) <= len(diff):
+                                worklist.append(intersect)
+                            else:
+                                worklist.append(diff)
+                    else:
+                        new_partition.append(Y)
+                partition = new_partition
+
+        # ── Build minimized DFA from partition ────────────────────────────
+        # state_id → block index
+        block_of: dict[int, int] = {}
+        for idx, block in enumerate(partition):
+            for sid in block:
+                block_of[sid] = idx
+
+        new = Dfa()
+        # Build new states per block.
+        block_to_new: dict[int, DfaState] = {}
+        for idx, block in enumerate(partition):
+            sample_id = next(iter(block))
+            sample_state = next(s for s in self.states if s.state_id == sample_id)
+            ds = DfaState(
+                state_id=idx,
+                is_accept=sample_state.is_accept,
+                # Union the NFA states of every member for debug.
+                nfa_states=frozenset().union(
+                    *[next(s for s in self.states if s.state_id == sid).nfa_states
+                      for sid in block]
+                ),
+            )
+            new.states.append(ds)
+            block_to_new[idx] = ds
+
+        # Set start.
+        start_block = block_of[self.start.state_id]
+        new.start = block_to_new[start_block]
+
+        # Build transitions: pick representative per block, copy edges.
+        for idx, block in enumerate(partition):
+            sample_id = next(iter(block))
+            sample_edges = self.transitions.get(sample_id, {})
+            if not sample_edges:
+                continue
+            new_edges: dict[str, int] = {}
+            for sym, dst_id in sample_edges.items():
+                new_edges[sym] = block_of[dst_id]
+            new.transitions[idx] = new_edges
+
+        return new

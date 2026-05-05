@@ -237,3 +237,110 @@ def test_dfa_has_accepts_method() -> None:
 def test_dfa_start_in_states() -> None:
     dfa = _build_minimal_dfa()
     assert dfa.start in dfa.states
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Task 5 — Hopcroft minimization tests
+# ═════════════════════════════════════════════════════════════════════════
+
+
+def test_minimize_returns_dfa() -> None:
+    dfa = _build_minimal_dfa()
+    minimized = dfa.minimize()
+    assert isinstance(minimized, Dfa)
+    assert minimized.start is not None
+
+
+def test_minimize_does_not_grow_state_count() -> None:
+    """Minimization can only reduce or preserve state count, never grow."""
+    dfa = _build_minimal_dfa()
+    minimized = dfa.minimize()
+    assert len(minimized.states) <= len(dfa.states)
+
+
+def test_minimize_state_count_at_least_one() -> None:
+    dfa = _build_minimal_dfa()
+    minimized = dfa.minimize()
+    assert len(minimized.states) >= 1
+
+
+@pytest.mark.parametrize("inputs", [
+    ["INSERT_LITERAL_a"],
+    ["INSERT_LITERAL_a", "TONE_SAC"],
+    ["INSERT_LITERAL_a", "TONE_HUYEN"],
+    ["INSERT_LITERAL_a", "INSERT_LITERAL_a"],
+    ["INSERT_LITERAL_a", "INSERT_LITERAL_a", "TONE_SAC"],
+    ["INSERT_LITERAL_a", "TONE_SAC", "TONE_HUYEN"],
+    ["INSERT_LITERAL_a", "TONE_SAC", "TONE_SAC"],
+    ["INSERT_LITERAL_a", "INSERT_LITERAL_a", "INSERT_LITERAL_a"],
+])
+def test_minimize_preserves_acceptance(inputs: list[str]) -> None:
+    """Language preservation: minimized DFA accepts ⇔ original accepts."""
+    dfa = _build_minimal_dfa()
+    minimized = dfa.minimize()
+    assert dfa.accepts(inputs) == minimized.accepts(inputs), (
+        f"language mismatch on {inputs}: "
+        f"orig={dfa.accepts(inputs)}, min={minimized.accepts(inputs)}"
+    )
+
+
+@pytest.mark.parametrize("inputs", [
+    ["TONE_SAC"],
+    ["NOT_A_REAL_INPUT_SYMBOL"],
+])
+def test_minimize_preserves_rejection(inputs: list[str]) -> None:
+    dfa = _build_minimal_dfa()
+    minimized = dfa.minimize()
+    assert not dfa.accepts(inputs)
+    assert not minimized.accepts(inputs)
+
+
+def test_minimize_idempotent() -> None:
+    """minimize().minimize() should have same state count as minimize()."""
+    dfa = _build_minimal_dfa()
+    once = dfa.minimize()
+    twice = once.minimize()
+    assert len(once.states) == len(twice.states)
+
+
+def test_minimize_real_rules_reduces_state_count(real_dfa: Dfa) -> None:
+    """Hopcroft on real Vietnamese DFA must significantly reduce states.
+
+    Pre-min: ~19,549 states (em saw). Target ≤ 5,000 (≥ 4× reduction).
+    Tighter target post-Hopcroft is 500-2000 per design doc; allow slack.
+    """
+    minimized = real_dfa.minimize()
+    assert len(minimized.states) <= len(real_dfa.states)
+    assert len(minimized.states) <= 5000, (
+        f"minimize did not compress enough: "
+        f"{len(real_dfa.states)} → {len(minimized.states)}"
+    )
+
+
+def test_minimize_real_rules_preserves_acceptance(real_dfa: Dfa) -> None:
+    minimized = real_dfa.minimize()
+    cases = [
+        ["INSERT_LITERAL_t", "INSERT_LITERAL_a"],
+        ["INSERT_LITERAL_t", "INSERT_LITERAL_a", "TONE_SAC"],
+        ["INSERT_LITERAL_t", "INSERT_LITERAL_a", "INSERT_LITERAL_n"],
+        ["INSERT_LITERAL_t", "INSERT_LITERAL_u", "INSERT_LITERAL_o", "MOD_HORN"],
+        ["INSERT_LITERAL_h", "INSERT_LITERAL_u", "INSERT_LITERAL_o", "MOD_HORN"],
+    ]
+    for inputs in cases:
+        assert real_dfa.accepts(inputs)
+        assert minimized.accepts(inputs), f"minimize regressed accept: {inputs}"
+
+    rejects = [["TONE_SAC"], ["NOT_REAL"], ["INSERT_LITERAL_t"]]
+    for inputs in rejects:
+        assert not real_dfa.accepts(inputs)
+        assert not minimized.accepts(inputs), f"minimize regressed reject: {inputs}"
+
+
+def test_minimize_real_rules_under_30s(real_dfa: Dfa) -> None:
+    """Hopcroft minimization ≤ 30s budget (verifier total budget)."""
+    import time
+
+    t0 = time.perf_counter()
+    real_dfa.minimize()
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 30.0, f"minimize took {elapsed:.2f}s, budget 30.0s"
