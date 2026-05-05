@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="NextKeyTestRunner" tests="11" failures="0" time="6.628">
+  <testsuite name="chaos" tests="11" failures="0" time="6.628">
+    <testcase name="1.1-ghost-hoaf-bs-t" classname="chaos" time="0.588"/>
+    <testcase name="1.2-tone-ghost-toans-bs3-i" classname="chaos" time="0.654"/>
+    <testcase name="1.3-escape-bs-aa-b" classname="chaos" time="0.564"/>
+    <testcase name="2.1-x2-space-vieejt-nam" classname="chaos" time="0.560"/>
+    <testcase name="2.2-word-boundary-xin-chao-ban" classname="chaos" time="0.576"/>
+    <testcase name="2.3-en-vn-transition-hello-vieejt" classname="chaos" time="0.558"/>
+    <testcase name="3.3-engine-stress-truongf" classname="chaos" time="0.560"/>
+    <testcase name="5.1-case-tracking-Giar" classname="chaos" time="0.575"/>
+    <testcase name="5.2-vowel-start-uongs" classname="chaos" time="0.609"/>
+    <testcase name="5.3-cross-word-bs-vieejt-nam-bs4-s" classname="chaos" time="0.606"/>
+    <testcase name="6.1-autocap-binh-thuongf" classname="chaos" time="0.775"/>
+  </testsuite>
+</testsuites>

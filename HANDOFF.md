@@ -1,5 +1,77 @@
 # NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
+## Post-T3 status (2026-05-05 PM) — current pickup note
+
+Today's session shipped 7 PRs (#122-128) on top of the post-T3 cleanup
+(PR #121, c19239c). Main is now at `32fceb7`. Two production fixes,
+one piece of shared tooling, three small follow-ups, one baseline
+capture.
+
+### Landed today
+
+| PR | Subject | Effect |
+|---|---|---|
+| #122 | Pre-T3 Minor 2: lock-free hot path in `QuickSyncFromSharedState` | Hot path no longer acquires `stateMutex_` on common case. Slow path (configGeneration bumped) still locks but is user-paced. Closes the highest-impact open audit item from the Pre-T3 review. |
+| #123 | ChannelTraits cleanup | `isElectronApp_` + `needBaitChar_` atomic flags moved from HookEngine onto `IOutputInjector` as `HasMultiProcessRenderer()` / `NeedsBaitCharPrefix()` virtual methods. `HandleAlphaKey` now reads via 1 `injector_.load()` snapshot + 2 virtual calls instead of 2 separate atomic loads. `SplitDispatchInjector` gained a 3rd ctor param to distinguish Electron (multi-process renderer) from Console. |
+| #124 | `tools/run-chaos.ps1` harness | Single-command driver replacing the per-host manual workflow. Loops over 5 hosts (notepad / notepadpp / chrome / discord / gpt), launches NexusKey + target, drives the runner, watches stdout for the "stop NexusKey" prompt, kills + Enter, parses each report. Exit 0 iff every host clean. |
+| #125–127 | Three quick follow-ups on the harness | `pwsh` → `powershell` invocation (PS 7+ vs 5.1), strip non-ASCII chars from the script (Win-1252 misdecode of em-dash terminated string literals on PS 5.1), and correct the default `-RunnerExe` path to match CMake's `RUNTIME_OUTPUT_DIRECTORY`. |
+| #128 | `perf-baseline-channeltraits-chaos` | Full chaos verify of #123 via the new harness — 55/55 PASS, no regression vs T3 baseline. ChatGPT improved -11 ms p99 (consistent with the saved atomic load); other hosts flat or slightly improved. |
+
+### Verified gates
+
+- Linux GTest **1409 / 1409 PASS**.
+- Audit `tools/audit/check_hook_thread_no_mutex.sh` **5 / 5 PASS** (Check 5 added in #122 enforces lock-free hot path; Check 3's `ATOMIC_BOOLS` list pruned in #123 to drop the deleted names).
+- Windows chaos sweep **55 / 55 PASS** across all 5 hosts (`docs/baselines/perf-baseline-channeltraits-chaos.md`).
+
+### Worst-case p99 vs T3 baseline
+
+| Host | T3 | ChannelTraits | Δ |
+|---|---|---|---|
+| Notepad Win11 RichEdit | 17 ms | **15 ms** | -2 ms |
+| Notepad++ | 17 ms | **16 ms** | -1 ms |
+| Chrome omnibox | 17 ms | **15 ms** | -2 ms |
+| ChatGPT (Chromium textarea) | 33 ms | **22 ms** | -11 ms |
+| Discord | 27 ms | **28 ms** | +1 ms (flat) |
+
+### Items pending — pickup priority for next session
+
+1. **Pre-T3 Minor 1 — `LowLevelMouseProc` race on `cachedFocusedHwnd_`.** Investigate-first: read the exact write set in the mouse callback, then decide between (a) atomic migration, (b) defer to `MainThreadWorker`, (c) document as benign. Detailed in `docs/TODO.md` "Review (2026-05-05)" section.
+
+2. **M3 — dual-route `TrackedSendInput` unification.** Bundles cleanly with the output area refactored in #123. Route the 4 VB6/clipboard sites + reinjectVk through `Internal::TrackedSendInput`, then delete the `HookEngine::TrackedSendInput` member. ~5 call sites, non-trivial.
+
+3. **Typing bug `cafcs → các`** (spell-check tone-replacement gate). User-facing. Investigation-first via `nexuskey-typing-bugs` skill before reading code. Repro + 3 hypotheses captured in `docs/TODO.md`.
+
+4. **M2 — constants naming convention (`kFoo` vs `UPPER_SNAKE`).** Needs 3-collaborator decision before code: update Rule 9.1 to formalise the k-prefix convention, or rename ~10 codebase constants. Recommendation in TODO is to update the rule.
+
+### Repo cleanup landed in this same PR
+
+- All 30 D1–D5 chaos artefacts (`perf-d{1-5}-*.csv`, `report-d{1-5}-*.xml`) moved from repo root into `docs/baselines/` so `perf-baseline-t3-final.md`'s "Companion files in this directory" note is accurate. `docs/baselines/` is now the canonical location for chaos-capture artefacts (T3, ChannelTraits, and the D-day predecessors).
+- 13 untagged + harness-smoke trial files (`perf-{host}.csv`, `report-{host}.xml`, `*-harness-smoke-notepad.*`) deleted — no doc references them; they were trial captures from prior sessions.
+
+### Key references
+
+| Doc | Use for |
+|---|---|
+| `docs/TODO.md` (top) | Pending items, audit follow-ups, deferred work |
+| `docs/baselines/perf-baseline-channeltraits-chaos.md` | Latest chaos baseline + comparison vs T3 |
+| `docs/CODE_GOVERNANCE.md` Part 1 | 5-question gate before architectural proposals |
+| `docs/CODING_RULES/11-hook-system-rules.md` | Rule #11 (1 ms budget, contention law) |
+| `docs/plans/sprint-1-single-owner-refactor.md` D6 | RCU pattern reference (Pre-T3 Minor 2 used it) |
+| `tools/run-chaos.ps1` + `tools/README.md` | Chaos harness — for verifying every future hook-engine change |
+
+### Memory (auto-loaded each session)
+
+Already-captured rules that future-em should follow without re-deriving:
+- `feedback_no_coauthor` — no `Co-Authored-By` in commits
+- `feedback_review_discipline` — review = report only, never auto-fix
+- `feedback_vietnamese_response` — reason in English, respond in Vietnamese
+- `feedback_role_split` — anh verifies feature/UI/test results; em decides architecture, codes, runs tests
+- `project_test_first` — failing test before implementation; concurrency bugs only caught by tests
+- `project_three_questions` — right place / impact / better way before code
+- `project_core_philosophy` — Nhanh / Nhẹ / Mượt / Mở rộng-không-ảnh-hưởng-perf
+
+---
+
 ## TL;DR
 
 NexusKey's hook engine has long-standing race-condition bugs (x2 space, ghost
