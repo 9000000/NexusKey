@@ -1,5 +1,41 @@
 # TODO
 
+## ✅ ChannelTraits cleanup landed (2026-05-05)
+
+Both `isElectronApp_` and `needBaitChar_` atomic flags moved from
+HookEngine onto `IOutputInjector` as virtual trait methods. Source of
+truth now lives with the dispatch channel that picked the trait, not
+duplicated in HookEngine.
+
+Implementation:
+- `IOutputInjector` gained `HasMultiProcessRenderer()` and
+  `NeedsBaitCharPrefix()` virtual methods (default `false`).
+- `Win32SendInputInjector` overrides `NeedsBaitCharPrefix()` to expose
+  its constructor-supplied bait flag.
+- `SplitDispatchInjector` gained a 3rd constructor parameter
+  (`hasMultiProcessRenderer`) so the factory can distinguish Electron
+  (multi-process renderer = true) from Console (= false). Both injectors
+  override both trait methods.
+- `OutputInjectorFactory::Create` propagates `WindowClassification`:
+  Electron branch passes `hasMultiProcessRenderer=true`, Console branch
+  passes `false`, Win32 branch inherits the default.
+- `HookEngine::HandleAlphaKey` (passthrough + reinjectVk gates) now
+  reads via one `injector_.load()` snapshot + 2 virtual calls instead
+  of 2 separate atomic loads. `HookEngine::OnFocusChanged` no longer
+  publishes the 2 deleted flags; the `WindowClassification → factory`
+  path is now the single propagation channel.
+- Audit script `ATOMIC_BOOLS` list trimmed to drop the deleted names.
+- `tests/output/InjectorTraitsTest.cpp` (new, Win32 build) covers each
+  injector's trait response across all flag combinations + the factory
+  propagation contract end-to-end.
+
+Gates: Linux GTest 1409 / 1409 PASS, audit 5 / 5 PASS, build clean.
+Windows chaos run pending — should show no behavioural delta (the
+trait values are derived from the same `WindowClassification` inputs
+that previously fed the deleted atomic stores).
+
+---
+
 ## ✅ Pre-T3 Minor 2 fix landed (2026-05-05)
 
 `QuickSyncFromSharedState` hot path is now lock-free. The `stateMutex_`
@@ -58,8 +94,12 @@ Codebase-wide pattern uses `kFoo` for file-scope `static constexpr`; Rule 9.1 pr
 ### M3 — Dual-route `TrackedSendInput` (HookEngine member + `Internal::` free function)
 Both bump `synthEventsPending_` via different mechanisms; no double-counting today but the dual presence is confusing for future readers. Suggested fix: route the 4 VB6/clipboard sites + reinjectVk through `Internal::TrackedSendInput`, then delete `HookEngine::TrackedSendInput` member. ~5 call sites, non-trivial.
 
-### ChannelTraits + `isElectronApp_` / `needBaitChar_` deletion
-Gotcha G6 (Sprint 2 D4 mid-sprint discovery) — both flags retain live policy readers in `HandleAlphaKey` passthrough/reinjectVk gates. Cleanly lifting them requires a `ChannelTraits` query method on `IOutputInjector` (interface design needs its own commit). Captured in `docs/baselines/perf-baseline-t3-final.md` deferred-items list.
+### ~~ChannelTraits + `isElectronApp_` / `needBaitChar_` deletion~~ — LANDED
+Resolved via two virtual trait methods (`HasMultiProcessRenderer()` /
+`NeedsBaitCharPrefix()`) on `IOutputInjector`, plus a 3rd
+`SplitDispatchInjector` constructor param so Electron and Console can
+diverge on the multi-process trait. See "✅ ChannelTraits cleanup
+landed" entry at top of file.
 
 ### Typing bug — `cafcs → các` (spell-check tone-replacement)
 Investigation-first item: needs `nexuskey-typing-bugs` skill trace through `PushChar` + `Validate` pipeline before fix. Hypotheses captured in the dedicated section below.

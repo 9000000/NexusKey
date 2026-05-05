@@ -139,7 +139,10 @@ done
 # WindowClassification.isConsole → SplitDispatchInjector(5ms) by the factory.
 # Sprint 2 D4 deleted: useEditMsgPath_ — replaced by HookEngine::IsSync-
 # ReplaceChannel() proxy on injector_->SettleBudget()==0.
-ATOMIC_BOOLS="vietnameseMode_|isTsfApp_|isExcludedApp_|isElectronApp_|skipEmptyChar_|needBaitChar_|useClipboardPaste_|isOutlookApp_|macroEnabled_|macroInEnglish_|autoCaps_|autoCapsMacro_|tempOffMacroByEsc_|tempOffByAlt_"
+# Post-T3 ChannelTraits cleanup deleted: isElectronApp_ + needBaitChar_ —
+# both flags moved onto IOutputInjector (HasMultiProcessRenderer() /
+# NeedsBaitCharPrefix()) so the dispatch channel owns its own character.
+ATOMIC_BOOLS="vietnameseMode_|isTsfApp_|isExcludedApp_|skipEmptyChar_|useClipboardPaste_|isOutlookApp_|macroEnabled_|macroInEnglish_|autoCaps_|autoCapsMacro_|tempOffMacroByEsc_|tempOffByAlt_"
 ATOMIC_DWORD="excludedPid_"
 ATOMIC_ENUM="currentMethod_"
 ATOMIC_RCU="config_"

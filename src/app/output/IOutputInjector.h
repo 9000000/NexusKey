@@ -42,6 +42,36 @@ public:
     [[nodiscard]] virtual std::chrono::milliseconds SettleBudget() const noexcept {
         return std::chrono::milliseconds{100};
     }
+
+    // ─── Channel traits (post-T3 follow-up) ──────────────────────────
+    // Replaces HookEngine's duplicated isElectronApp_ / needBaitChar_
+    // atomic flags. Source of truth lives with the injector — the
+    // dispatch channel that picked the trait is also the one that knows
+    // its character. HookEngine reads via std::atomic_load(&injector_)
+    // → trait method (1 atomic load + 1 virtual call ~11 ns total,
+    // same overhead pattern as SettleBudget()).
+
+    // True iff this channel runs through a multi-process renderer where
+    // physical WM_KEYDOWN and synthetic VK_PACKET arrive out of order
+    // (Electron / Qt / WebView2). HookEngine uses this to block
+    // mid-word passthrough once a synth has fired in this word —
+    // without that gate the multi-process renderer reorders our
+    // injected chars/BS against the user's physical keystroke and the
+    // app text drifts. Default false (vanilla single-process renderer).
+    [[nodiscard]] virtual bool HasMultiProcessRenderer() const noexcept {
+        return false;
+    }
+
+    // True iff this channel needs a U+202F bait char prefix before
+    // backspaces to dismiss Chromium-style autocomplete suggestions
+    // (Chrome, Edge, WebView2, Excel, Outlook). Without it, BS land
+    // into the still-open suggest popup and get swallowed. HookEngine
+    // uses this to skip the game-compat reinjectVk path (the bait
+    // already keeps the renderer's suggest dismissed; an extra physical
+    // VK would race with the bait char). Default false.
+    [[nodiscard]] virtual bool NeedsBaitCharPrefix() const noexcept {
+        return false;
+    }
 };
 
 }  // namespace NextKey::Output
