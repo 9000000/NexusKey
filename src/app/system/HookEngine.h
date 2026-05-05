@@ -76,6 +76,15 @@ public:
     /// (which is auto-reset and reserved for the TSF DLL).
     void SyncConfigFromSharedState();
 
+    /// Periodic poll: CJK layout change detection + foreground PID
+    /// fallback (catches missed/phantom focus events). Sprint 1 D10
+    /// migrated this off `SetTimer(200ms, FocusPollTimerProc)` and onto
+    /// `MainThreadWorker`'s tick branch. The body is unchanged from the
+    /// retired `FocusPollTimerProc`; the call site is the only difference.
+    /// Safe to call from any thread that is not the LL hook thread —
+    /// stateMutex_ serializes against main-thread writers.
+    void OnTickPoll() noexcept;
+
     /// Set SharedState pointer for direct reading (must be the global instance from main.cpp)
     void SetSharedStateReader(SharedStateManager* ptr) { sharedStatePtr_ = ptr; }
 
@@ -85,7 +94,9 @@ public:
     /// Get effective code table (checks manual per-app override map)
     [[nodiscard]] CodeTable GetCodeTable() const noexcept;
 
-    [[nodiscard]] bool IsVietnameseMode() const noexcept { return vietnameseMode_; }
+    [[nodiscard]] bool IsVietnameseMode() const noexcept {
+        return vietnameseMode_.load(std::memory_order_acquire);
+    }
     [[nodiscard]] bool IsRunning() const noexcept { return keyboardHook_ != nullptr; }
 
     // Magic number to mark our own SendInput events (prevents other hooks from processing them)
@@ -101,7 +112,6 @@ private:
                                        LONG idObject, LONG idChild,
                                        DWORD dwEventThread, DWORD dwmsEventTime);
     static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
-    static void CALLBACK FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD);
 
     // Config application (shared between Start and CheckConfigEvent)
     void ApplyConfig(const TypingConfig& config);
@@ -186,11 +196,33 @@ private:
 
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
-    TypingConfig config_;                            // Last applied config (for per-app engine recreation)
-    InputMethod currentMethod_ = InputMethod::Telex;
+    // Sprint 1 D6: migrated to std::atomic<std::shared_ptr<const TypingConfig>>
+    // (Rule #11.3 RCU pattern). Writers (main thread): Start, QuickSyncFromSharedState,
+    // ReloadFromToml — create a fresh shared_ptr with the new config and store with
+    // release ordering. Readers (hook hot path): IsMacroTrigger loads once per
+    // call and dereferences the loaded shared_ptr. The old config object stays
+    // alive while readers hold their loaded shared_ptr, so no use-after-free is
+    // possible even when a writer publishes mid-keystroke. Initialized with a
+    // default TypingConfig so the field is never nullptr — Start overwrites it
+    // before the hook thread is spawned, but the default-init guards against
+    // any pre-Start IsMacroTrigger access path.
+    std::atomic<std::shared_ptr<const TypingConfig>> config_{
+        std::make_shared<const TypingConfig>()
+    };  // Last applied config (for per-app engine recreation)
+    // Sprint 1 D5.1: migrated to std::atomic for hook-thread-safe read without
+    // stateMutex_ (Rule #11.3 acquire/release). Writers: ApplyConfig (main),
+    // QuickSyncFromSharedState (hook — same thread as readers), ReloadFromToml
+    // (main), OnFocusChanged app-method override (main, via WinEventProc).
+    // Readers: ProcessKeyDown punct branch + HandleAlphaKey VNI/Combined gates.
+    std::atomic<InputMethod> currentMethod_{InputMethod::Telex};
     std::wstring previousComposition_;  // What's currently displayed in the app
     std::vector<uint8_t> previousEncodedWidths_;  // Output unit count per Unicode char (for non-Unicode code tables)
-    bool vietnameseMode_ = true;
+    // Sprint 1 D5: migrated to std::atomic for hook-thread-safe read without
+    // stateMutex_ (Rule #11.3 acquire/release pattern). Hook callback paths
+    // (ProcessKeyDown/Up, CheckLayoutChange) use .load(acquire); main thread
+    // (ApplyConfig, ToggleVietnameseMode, SettingsDialog WM_NEXUSKEY_MODE_CHANGED
+    // → HookEngine via callback) uses .store(release).
+    std::atomic<bool> vietnameseMode_{true};
     uint8_t startupMode_ = 0;  // 0=Vietnamese, 1=English, 2=Remember
     std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
     std::atomic<int> synthEventsPending_{0};  // Count of synthetic INPUT structs sent but not yet processed by hook
@@ -201,10 +233,14 @@ private:
     bool smartSwitch_ = false;
     bool excludeApps_ = false;
     bool tsfApps_ = false;
-    bool autoCaps_ = false;
-    bool autoCapsMacro_ = false;
-    bool tempOffByAlt_ = false;
-    bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word
+    // Sprint 1 D5.2: config-derived flags read on the hook callback path
+    // (ProcessKeyDown / HandleAlphaKey / TryExpandMacro). Writers: ApplyConfig
+    // (main thread). Readers: hook hot path uses .load(acquire); other call
+    // sites also use .load(acquire) for uniform pattern (cost = MOV on x86).
+    std::atomic<bool> autoCaps_{false};
+    std::atomic<bool> autoCapsMacro_{false};
+    std::atomic<bool> tempOffByAlt_{false};
+    bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word; same-thread (hook) only
     int altTapCount_ = 0;              // 0 or 1 (waiting for second tap)
     DWORD lastAltReleaseTime_ = 0;     // GetTickCount() of first Alt release
     static constexpr DWORD DOUBLE_ALT_TIMEOUT_MS = 400;
@@ -216,18 +252,29 @@ private:
     };
     AutoCapState autoCapState_ = AutoCapState::Idle;
     std::unordered_set<std::wstring> excludedAppSet_;  // excluded apps: force English on focus
-    bool isExcludedApp_ = false;      // cached: current app is excluded
-    DWORD excludedPid_ = 0;           // PID of excluded app (fast check in ProcessKeyDown)
+    // Sprint 1 D5.2: per-app cached + macro config flags read on hook callback
+    // path. Writers: ApplyConfig (main), ReloadFromToml (main),
+    // OnFocusChanged + RefreshFocusCache (main, via WinEventProc),
+    // VerifyExcludedState (main), ToggleVietnameseMode (main).
+    // Readers: ProcessKeyDown / ProcessKeyUp / HandleAlphaKey / output dispatch
+    // (DispatchSendInput, SendCharEvents, SendBackspaces) on the hook hot path
+    // — all use .load(acquire). Same-thread reads on writer paths use the
+    // same idiom for uniformity (cost = MOV on x86).
+    std::atomic<bool> isExcludedApp_{false};      // cached: current app is excluded
+    std::atomic<DWORD> excludedPid_{0};           // PID of excluded app (fast check in ProcessKeyDown)
     std::unordered_set<std::wstring> tsfAppSet_;  // apps that should use TSF engine instead of hook
-    bool isTsfApp_ = false;       // cached: is current foreground app in TSF list?
-    bool isConsoleApp_ = false;   // cached: is current foreground app a console emulator?
-    bool isElectronApp_ = false;  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
+    // Sprint 1 D5.1: migrated to std::atomic. Writers: ReloadFromToml (main) +
+    // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +
+    // ProcessKeyUp early-return gates on the hook hot path.
+    std::atomic<bool> isTsfApp_{false};       // cached: is current foreground app in TSF list?
+    std::atomic<bool> isConsoleApp_{false};   // cached: is current foreground app a console emulator?
+    std::atomic<bool> isElectronApp_{false};  // cached: Electron/Qt but NOT console (skipEmptyChar_ && !isConsoleApp_)
     std::unordered_set<std::wstring> webView2PositiveCache_;  // full exe path → known WebView2 host (positive-only; see IsWebView2App)
-    bool skipEmptyChar_ = false;  // Skip U+202F for Qt/Electron and Console apps
-    bool needBaitChar_ = false;   // Apps with autocomplete/suggest need U+202F bait before BS
-    bool useClipboardPaste_ = false;  // VB6 and legacy ANSI-internal apps need clipboard paste
-    bool useEditMsgPath_ = false;     // Async-render apps (Win11 new Notepad) — try EM_REPLACESEL first, fall to SendInput
-    bool isOutlookApp_ = false;   // Outlook 2016 RichEdit drops trailing char of a word when physical Shift+letter precedes it — force SendInput path (issue #97)
+    std::atomic<bool> skipEmptyChar_{false};  // Skip U+202F for Qt/Electron and Console apps
+    std::atomic<bool> needBaitChar_{false};   // Apps with autocomplete/suggest need U+202F bait before BS
+    std::atomic<bool> useClipboardPaste_{false};  // VB6 and legacy ANSI-internal apps need clipboard paste
+    std::atomic<bool> useEditMsgPath_{false};     // Async-render apps (Win11 new Notepad) — try EM_REPLACESEL first, fall to SendInput
+    std::atomic<bool> isOutlookApp_{false};   // Outlook 2016 RichEdit drops trailing char of a word when physical Shift+letter precedes it — force SendInput path (issue #97)
     DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
     bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
@@ -272,11 +319,15 @@ private:
     DWORD commitReadyTime_ = 0;                 // GetTickCount() when entering Ready state
 
     // Macro expansion
-    bool macroEnabled_ = false;
-    bool macroInEnglish_ = false;
-    bool tempOffMacroByEsc_ = false;  // Config: Esc can temp-disable macro
-    bool tempMacroOff_ = false;       // Runtime: macro disabled for current word
-    bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits (macro key has punctuation)
+    // Sprint 1 D5.2: macroEnabled_, macroInEnglish_, tempOffMacroByEsc_ migrated
+    // to std::atomic — read on hook hot path (ProcessKeyDown step 2c, alpha key
+    // path, TryExpandMacro). tempMacroOff_ / macroCrossCommit_ are per-word
+    // runtime state on the hook thread only — no atomic needed.
+    std::atomic<bool> macroEnabled_{false};
+    std::atomic<bool> macroInEnglish_{false};
+    std::atomic<bool> tempOffMacroByEsc_{false};  // Config: Esc can temp-disable macro
+    bool tempMacroOff_ = false;       // Runtime: macro disabled for current word; same-thread (hook) only
+    bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits; same-thread (hook) only
     std::unordered_map<std::wstring, std::wstring> macroTable_;
     std::unordered_set<std::wstring> spaceMacroKeys_;  // subset of macroTable_ keys that contain ' '
     std::wstring rawMacroBuffer_;
@@ -286,7 +337,8 @@ private:
     HHOOK mouseHook_ = nullptr;
     HWINEVENTHOOK focusHook_ = nullptr;     // EVENT_SYSTEM_FOREGROUND
     HWINEVENTHOOK minimizeHook_ = nullptr;  // EVENT_SYSTEM_MINIMIZEEND
-    UINT_PTR focusPollTimer_ = 0;          // 200ms PID poll — catches missed/phantom focus events
+    // Sprint 1 D10: 200 ms focus / CJK poll moved off SetTimer onto
+    // MainThreadWorker's tick branch. The body lives in OnTickPoll().
 
     // Dedicated hook thread: owns keyboardHook_ + mouseHook_ and runs its own
     // GetMessage pump so LL hook callbacks never block on the main (UI) thread's
@@ -300,9 +352,17 @@ private:
     std::mutex hookStartMutex_;                    // pairs with hookStartCv_ for handshake
     std::condition_variable hookStartCv_;
     HINSTANCE cachedHInstance_ = nullptr;          // captured in Start(), used by HookThreadProc
-    // Recursive: main-thread API methods (Start, ApplyConfig, etc.) call each other
-    // while holding the lock. Callback on hook thread acquires for brief read-modify.
-    mutable std::recursive_mutex stateMutex_;
+    // Sprint 1 D11: downgraded from recursive_mutex to plain mutex. After Phase B
+    // (D5–D7), all hook-read state is atomic — hook callbacks no longer acquire
+    // this mutex for reads. The remaining users are main-thread / worker-thread
+    // writers (ApplyConfig requires caller-held; QuickSyncFromSharedState
+    // self-locks; CheckConfigEvent/ReloadFromToml/Toggle/SetCodeTable/CommitPending
+    // lock at their public entry; OnTickPoll — formerly FocusPollTimerProc, now
+    // driven by MainThreadWorker per D10 — locks for the layout check + PID
+    // update phase, releases before invoking OnFocusChanged so the inner
+    // QuickSync self-lock isn't recursive). Pillar #2 (Nhẹ): smaller primitive
+    // when recursion is no longer required.
+    mutable std::mutex stateMutex_;
     void HookThreadProc();                         // runs on hookThread_
 
     // ── Self-healing: Dual-channel hook integrity detection ──

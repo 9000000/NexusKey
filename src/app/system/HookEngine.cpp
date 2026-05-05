@@ -77,24 +77,29 @@ HookEngine::~HookEngine() {
 }
 
 void HookEngine::CommitPending() {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     if (engine_ && engine_->Count() > 0) {
         CommitComposition();
     }
 }
 
+// REQUIRES: caller holds stateMutex_. Sprint 1 D11 removed the self-lock so
+// the std::mutex transition doesn't deadlock through the
+// QuickSyncFromSharedState → ApplyConfig and CheckConfigEvent → ReloadFromToml
+// → ApplyConfig recursive paths. Direct callers: Start (single-threaded
+// init, no race), QuickSyncFromSharedState (locked), ReloadFromToml (called
+// from CheckConfigEvent which locks).
 void HookEngine::ApplyConfig(const TypingConfig& config) {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
     beepOnSwitch_ = config.beepOnSwitch;
     smartSwitch_ = config.smartSwitch;
     excludeApps_ = config.excludeApps;
     tsfApps_ = config.tsfApps;
-    autoCaps_ = config.autoCaps;
-    tempOffByAlt_ = config.tempOffByAlt;
-    macroEnabled_ = config.macroEnabled;
-    macroInEnglish_ = config.macroInEnglish;
-    tempOffMacroByEsc_ = config.tempOffMacroByEsc;
-    autoCapsMacro_ = config.autoCapsMacro;
+    autoCaps_.store(config.autoCaps, std::memory_order_release);
+    tempOffByAlt_.store(config.tempOffByAlt, std::memory_order_release);
+    macroEnabled_.store(config.macroEnabled, std::memory_order_release);
+    macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
+    tempOffMacroByEsc_.store(config.tempOffMacroByEsc, std::memory_order_release);
+    autoCapsMacro_.store(config.autoCapsMacro, std::memory_order_release);
 }
 
 bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
@@ -107,15 +112,21 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
 #endif
 
     s_instance = this;
-    currentMethod_ = config.inputMethod;
-    config_ = config;
-    ApplyConfig(config);
-    if (macroEnabled_) {
+    currentMethod_.store(config.inputMethod, std::memory_order_release);
+    config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
+    // Sprint 1 D11: ApplyConfig requires caller-held stateMutex_. Start runs
+    // single-threaded (hookThread_ not yet spawned, no Settings dialog yet),
+    // so the lock is defensive — it documents the ApplyConfig contract.
+    {
+        std::lock_guard<std::mutex> _lock(stateMutex_);
+        ApplyConfig(config);
+    }
+    if (macroEnabled_.load(std::memory_order_acquire)) {
         ReloadMacroTable();
     }
     autoCapState_ = AutoCapState::Idle;
     engine_ = EngineFactory::Create(config);
-    vietnameseMode_ = initialVietnamese;
+    vietnameseMode_.store(initialVietnamese, std::memory_order_release);
     startupMode_ = startupMode;
 
     // Create shared memory for smart switch and load persisted English-mode apps
@@ -197,15 +208,16 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         nullptr, WinEventProc,
         0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
 
-    // Poll foreground PID every 200ms — catches missed focus events (fullscreen games)
-    // and phantom bounce-back (game sends FOREGROUND after losing exclusive fullscreen).
-    // Runs on main thread via message pump — no threading issues.
-    focusPollTimer_ = SetTimer(nullptr, 0, 200, FocusPollTimerProc);
+    // Sprint 1 D10: 200 ms focus / CJK poll is no longer driven by SetTimer.
+    // The owning EXE wires MainThreadWorker::SetTickHandler([](){ OnTickPoll(); })
+    // and SetTickInterval(200ms); Start does not own the cadence anymore.
 
     NEXTKEY_LOG(L"HookEngine started (method=%d, vietnamese=%d)",
-                static_cast<int>(currentMethod_), vietnameseMode_);
+                static_cast<int>(currentMethod_.load(std::memory_order_acquire)),
+                vietnameseMode_.load(std::memory_order_acquire));
     HOOK_LOG(L"Hook installed OK (method=%d, vietnamese=%d)",
-             static_cast<int>(currentMethod_), vietnameseMode_);
+             static_cast<int>(currentMethod_.load(std::memory_order_acquire)),
+             vietnameseMode_.load(std::memory_order_acquire));
     return true;
 }
 
@@ -235,10 +247,8 @@ void HookEngine::Stop() {
         UnhookWinEvent(minimizeHook_);
         minimizeHook_ = nullptr;
     }
-    if (focusPollTimer_) {
-        KillTimer(nullptr, focusPollTimer_);
-        focusPollTimer_ = 0;
-    }
+    // Sprint 1 D10: focusPollTimer_ retired — owner stops its
+    // MainThreadWorker (which owns the 200 ms tick) before us.
     if (s_instance == this) {
         s_instance = nullptr;
     }
@@ -327,22 +337,23 @@ void HookEngine::HookThreadProc() {
 }
 
 void HookEngine::ToggleVietnameseMode() {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     // Block toggle in excluded apps. Use cached excludedPid_ + foreground PID
     // to distinguish "genuinely in excluded app" from "stale flag after leaving".
     // PID check is cheap (no OpenProcess) and immune to transient tray/taskbar focus.
-    if (excludeApps_ && isExcludedApp_) {
+    if (excludeApps_ && isExcludedApp_.load(std::memory_order_acquire)) {
         HWND fg = GetForegroundWindow();
         DWORD fgPid = 0;
         if (fg) GetWindowThreadProcessId(fg, &fgPid);
-        if (fgPid == excludedPid_ && excludedPid_ != 0) {
-            HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (excluded pid=%u)", excludedPid_);
+        const DWORD cachedPid = excludedPid_.load(std::memory_order_acquire);
+        if (fgPid == cachedPid && cachedPid != 0) {
+            HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (excluded pid=%u)", cachedPid);
             return;
         }
         // Different PID — user left excluded app, flag is stale.
         // Force V: user perceived E, wants to toggle to V.
-        isExcludedApp_ = false;
-        vietnameseMode_ = true;
+        isExcludedApp_.store(false, std::memory_order_release);
+        vietnameseMode_.store(true, std::memory_order_release);
         NotifyModeChange();
         HOOK_LOG(L"  ToggleVietnameseMode: stale excluded → forced Vietnamese (fg pid=%u)", fgPid);
         if (beepOnSwitch_) MessageBeep(MB_OK);
@@ -357,8 +368,12 @@ void HookEngine::ToggleVietnameseMode() {
     // Cancel backspace-into-committed-word (replay in wrong mode would be wrong)
     CancelCommitUndo();
 
-    vietnameseMode_ = !vietnameseMode_;
-    NEXTKEY_LOG(L"HookEngine: mode = %s", vietnameseMode_ ? L"Vietnamese" : L"English");
+    // Toggle is single-source (main thread only — Toggle never runs from hook
+    // path), so load + negate + store is race-free for the toggle itself.
+    // Hook readers see one value or the other, never a torn intermediate.
+    const bool newMode = !vietnameseMode_.load(std::memory_order_acquire);
+    vietnameseMode_.store(newMode, std::memory_order_release);
+    NEXTKEY_LOG(L"HookEngine: mode = %s", newMode ? L"Vietnamese" : L"English");
 
     // Save per-app mode
     if (smartSwitch_) {
@@ -366,20 +381,20 @@ void HookEngine::ToggleVietnameseMode() {
             currentExe_ = GetExeNameForHwnd(GetForegroundWindow());
         }
         if (!currentExe_.empty()) {
-            appModeMap_[currentExe_] = vietnameseMode_;
-            smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
+            appModeMap_[currentExe_] = newMode;
+            smartSwitchMgr_.SetAppMode(currentExe_, newMode);
         }
     }
 
     if (beepOnSwitch_) {
-        MessageBeep(vietnameseMode_ ? MB_OK : MB_ICONASTERISK);
+        MessageBeep(newMode ? MB_OK : MB_ICONASTERISK);
     }
 
     NotifyModeChange();
 }
 
 void HookEngine::SetCodeTable(CodeTable ct) {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     // Commit any pending composition before switching
     if (ct != currentCodeTable_ && engine_->Count() > 0) {
         CommitComposition();
@@ -405,10 +420,13 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
 }
 
 void HookEngine::QuickSyncFromSharedState() {
-    // Called from OnFocusChanged (already under lock via WinEventProc/FocusPollTimerProc)
-    // AND from SyncConfigFromSharedState (public API — needs its own lock).
-    // recursive_mutex handles both paths.
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    // Sprint 1 D11: callers must NOT hold stateMutex_. Self-locks for the
+    // slow-path config reload. After D11, OnTickPoll (formerly the
+    // FocusPollTimerProc) releases its lock before calling OnFocusChanged,
+    // so the inner OnFocusChanged → QuickSync chain reaches this self-lock
+    // without recursion. ProcessKeyDown (hook thread) and
+    // SyncConfigFromSharedState (public API) call this without any lock held.
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     if (!sharedStatePtr_) return;
 
     // Fast path: skip full struct copy if epoch hasn't changed (single 32-bit read)
@@ -443,19 +461,19 @@ void HookEngine::QuickSyncFromSharedState() {
 
     NEXTKEY_LOG(L"HookEngine: SharedState changed (ff=0x%04X, spell=%d, method=%d, ct=%d)", ff, sc, im, ct);
 
-    TypingConfig cfg = config_;
+    TypingConfig cfg = *config_.load(std::memory_order_acquire);
     DecodeFeatureFlags(ff, cfg);
     cfg.spellCheckEnabled = sc != 0;
     cfg.inputMethod = static_cast<InputMethod>(im);
     cfg.codeTable = static_cast<CodeTable>(ct);
 
-    bool methodChanged = (currentMethod_ != cfg.inputMethod);
+    bool methodChanged = (currentMethod_.load(std::memory_order_acquire) != cfg.inputMethod);
     bool codeTableChanged = (currentCodeTable_ != cfg.codeTable);
     ApplyConfig(cfg);
-    config_ = cfg;
+    config_.store(std::make_shared<const TypingConfig>(cfg), std::memory_order_release);
 
     if (methodChanged) {
-        currentMethod_ = cfg.inputMethod;
+        currentMethod_.store(cfg.inputMethod, std::memory_order_release);
         if (engine_->Count() > 0) CommitComposition();
         engine_ = EngineFactory::Create(cfg);
     }
@@ -465,15 +483,18 @@ void HookEngine::QuickSyncFromSharedState() {
         globalCodeTable_ = cfg.codeTable;
     }
 
-    if (macroEnabled_ && macroTable_.empty()) {
-        ReloadMacroTable();
-    } else if (!macroEnabled_) {
-        macroTable_.clear();
+    {
+        const bool macroOn = macroEnabled_.load(std::memory_order_acquire);
+        if (macroOn && macroTable_.empty()) {
+            ReloadMacroTable();
+        } else if (!macroOn) {
+            macroTable_.clear();
+        }
     }
 }
 
 bool HookEngine::CheckConfigEvent() {
-    std::lock_guard<std::recursive_mutex> _lock(stateMutex_);
+    std::lock_guard<std::mutex> _lock(stateMutex_);
     // Legacy path — kept for TSF DLL compatibility. HookEngine uses configGeneration instead.
     if (!configEvent_.IsValid()) {
         configEvent_.Initialize();
@@ -512,15 +533,18 @@ void HookEngine::ReloadFromToml() {
     if (engine_->Count() > 0) {
         CommitComposition();
     }
-    currentMethod_ = config.inputMethod;
-    config_ = config;
+    currentMethod_.store(config.inputMethod, std::memory_order_release);
+    config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
     engine_ = EngineFactory::Create(config);
-    NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
-                currentMethod_ == InputMethod::VNI ? L"VNI" :
-                currentMethod_ == InputMethod::Combined ? L"Combined" : L"Telex",
-                config.modernOrtho ? 1 : 0, config.allowZwjf ? 1 : 0);
+    {
+        const InputMethod loggedMethod = currentMethod_.load(std::memory_order_acquire);
+        NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
+                    loggedMethod == InputMethod::VNI ? L"VNI" :
+                    loggedMethod == InputMethod::Combined ? L"Combined" : L"Telex",
+                    config.modernOrtho ? 1 : 0, config.allowZwjf ? 1 : 0);
+    }
     ApplyConfig(config);
-    if (macroEnabled_) {
+    if (macroEnabled_.load(std::memory_order_acquire)) {
         ReloadMacroTable();
     } else {
         macroTable_.clear();
@@ -538,34 +562,40 @@ void HookEngine::ReloadFromToml() {
     ReloadTsfApps();
 
     // Re-evaluate excluded status for current app (set was just reloaded)
+    bool newExcluded = false;
     if (excludeApps_ && !currentExe_.empty()) {
-        isExcludedApp_ = excludedAppSet_.count(currentExe_) > 0;
+        newExcluded = excludedAppSet_.count(currentExe_) > 0;
+        isExcludedApp_.store(newExcluded, std::memory_order_release);
+    } else {
+        newExcluded = isExcludedApp_.load(std::memory_order_acquire);
     }
 
     // Re-evaluate TSF app status for current foreground app
-    bool wasTsfApp = isTsfApp_;
-    if (tsfApps_ && !isExcludedApp_ && !tsfAppSet_.empty() && !currentExe_.empty()) {
-        isTsfApp_ = tsfAppSet_.count(currentExe_) > 0;
+    const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
+    bool newTsfApp;
+    if (tsfApps_ && !newExcluded && !tsfAppSet_.empty() && !currentExe_.empty()) {
+        newTsfApp = tsfAppSet_.count(currentExe_) > 0;
     } else {
-        isTsfApp_ = false;
+        newTsfApp = false;
     }
+    isTsfApp_.store(newTsfApp, std::memory_order_release);
     HOOK_LOG(L"  Engine (config reload): %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
-             isTsfApp_ ? L"TSF (hook passthrough)" : L"HOOK",
+             newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
              currentExe_.c_str(),
              tsfApps_ ? 1 : 0,
              (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
-             isExcludedApp_ ? 1 : 0);
+             newExcluded ? 1 : 0);
     if (tsfModeCallback_) {
-        const bool tsfReadonly = !isTsfApp_ && !isExcludedApp_;
-        if (isTsfApp_ != wasTsfApp) {
+        const bool tsfReadonly = !newTsfApp && !newExcluded;
+        if (newTsfApp != wasTsfApp) {
             HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
-                     wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
+                     wasTsfApp ? L"true" : L"false", newTsfApp ? L"true" : L"false");
         }
-        tsfModeCallback_(isTsfApp_, tsfReadonly);
+        tsfModeCallback_(newTsfApp, tsfReadonly);
     }
 
     // Re-apply per-app overrides for current app (OnFocusChanged may have run with stale maps)
-    if (!currentExe_.empty() && !isExcludedApp_ && !isTsfApp_) {
+    if (!currentExe_.empty() && !newExcluded && !newTsfApp) {
         // Encoding
         {
             auto it = appEncodingOverrides_.find(currentExe_);
@@ -577,13 +607,13 @@ void HookEngine::ReloadFromToml() {
             auto it = appInputMethodOverrides_.find(currentExe_);
             InputMethod targetMethod = (it != appInputMethodOverrides_.end())
                 ? static_cast<InputMethod>(it->second) : globalInputMethod_;
-            if (targetMethod != currentMethod_) {
-                currentMethod_ = targetMethod;
-                TypingConfig engineConfig = config_;
+            if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
+                currentMethod_.store(targetMethod, std::memory_order_release);
+                TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
                 engineConfig.inputMethod = targetMethod;
                 engine_ = EngineFactory::Create(engineConfig);
                 NEXTKEY_LOG(L"HookEngine: re-applied inputMethod=%d for '%s'",
-                            static_cast<int>(currentMethod_), currentExe_.c_str());
+                            static_cast<int>(targetMethod), currentExe_.c_str());
             }
         }
     }
@@ -644,7 +674,13 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
             // ApplyConfig, ToggleVietnameseMode, Reload* methods). Brief lock
             // keeps the critical section on the hook thread — main thread holds
             // this mutex only for fast state updates, never for Sciter/IO work.
-            std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
+            // Sprint 1 D4 SPIKE (refactor/phase-1-single-owner): commented out
+            // to measure whether removing hook-thread mutex acquisition flips
+            // any chaos FAIL. Torn-read risk knowingly accepted FOR THE SPIKE
+            // ONLY. Phase B replaces this with atomic + RCU patterns. Restore
+            // OR replace per Phase B before merge — DO NOT ship with this line
+            // commented. See docs/plans/sprint-1-single-owner-refactor.md §A D4.
+            // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
 
             if (isDown) {
                 if (self->ProcessKeyDown(pKey->vkCode, pKey->scanCode, pKey->flags)) {
@@ -674,7 +710,10 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LO
         // (engine_, previousComposition_, app-detect flags, currentExe_...).
         // Lock must cover the engine_->Count() read below and the subsequent
         // OnFocusChanged() which mutates extensively.
-        std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
+        // Sprint 1 D4 SPIKE: see corresponding note above LowLevelKeyboardProc
+        // lock_guard. WinEventProc executes on the hook thread per the existing
+        // architecture — that's why this acquisition is on the hot path.
+        // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
 
         if (event == EVENT_SYSTEM_MINIMIZEEND) {
             // Window restored from taskbar — re-evaluate focus with the actual foreground window.
@@ -702,7 +741,10 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
             if (self) {
                 // Mouse callback runs on hook thread — ResetComposition + state
                 // writes below race with main-thread writers. Take the lock.
-                std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
+                // Sprint 1 D4 SPIKE: see LowLevelKeyboardProc note. Mouse path
+                // includes a writer (ResetComposition); torn-read risk is
+                // higher here than the keyboard read paths.
+                // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
                 HOOK_LOG(L"MOUSE click — resetting composition (engine count=%zu, prev='%s')",
                          self->engine_->Count(), self->previousComposition_.c_str());
                 // Always reset, even when engine is idle: commitUndoState_ and commitStack_
@@ -739,7 +781,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     QuickSyncFromSharedState();
 
     // 0b. TSF app — let TSF DLL handle all input, hook does nothing
-    if (isTsfApp_) return false;
+    if (isTsfApp_.load(std::memory_order_acquire)) return false;
 
     // 1. Track modifiers for hotkey detection
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
@@ -764,21 +806,21 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 1c. Excluded app — full passthrough (IME is transparent to this app)
     // Fast PID check: same process → passthrough immediately (no syscall overhead).
     // Different PID → verify with full exe name lookup (only on actual app switch).
-    if (isExcludedApp_) {
+    if (isExcludedApp_.load(std::memory_order_acquire)) {
         HWND fg = GetForegroundWindow();
         DWORD fgPid = 0;
         GetWindowThreadProcessId(fg, &fgPid);
-        if (fgPid == excludedPid_) {
+        if (fgPid == excludedPid_.load(std::memory_order_acquire)) {
             otherKeyPressed_ = true;
             return false;  // Same process — still excluded
         }
         // Different process — verify if we actually left the excluded app
         if (VerifyExcludedState()) {
-            excludedPid_ = fgPid;  // Switched to another excluded app
+            excludedPid_.store(fgPid, std::memory_order_release);  // Switched to another excluded app
             otherKeyPressed_ = true;
             return false;
         }
-        excludedPid_ = 0;
+        excludedPid_.store(0, std::memory_order_release);
         NotifyModeChange();
         // Fall through to normal processing for this keystroke
     }
@@ -803,9 +845,16 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // 2c. Fast English exit — skip commit-undo FSM when no undo is pending.
     //      Commit-undo only applies to Vietnamese words (line 691 checks vietnameseMode_).
     //      When English mode + undo Idle + no English macros → nothing below applies.
-    if (!vietnameseMode_ &&
+    // Sprint 1 D5.2: hoist atomic config-flag loads to a single snapshot at the
+    // top of the hot path. Same-thread within ProcessKeyDown — no need to re-load
+    // (config writers run on main and cannot interleave a sub-ms hook callback).
+    const bool vnMode = vietnameseMode_.load(std::memory_order_acquire);
+    const bool macroOn = macroEnabled_.load(std::memory_order_acquire);
+    const bool macroEng = macroInEnglish_.load(std::memory_order_acquire);
+    const bool tempOffMacroEsc = tempOffMacroByEsc_.load(std::memory_order_acquire);
+    if (!vnMode &&
         commitUndoState_ == CommitUndoState::Idle &&
-        !(macroEnabled_ && macroInEnglish_)) {
+        !(macroOn && macroEng)) {
         return false;
     }
 
@@ -856,10 +905,22 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             InjectKey(VK_BACK);
             return true;
         }
+        // Sprint 1 Fix C/2026-05-05: editMsg apps need this BS via the sent
+        // EM_REPLACESEL channel — passing the physical BS through goes via the
+        // posted message queue and is pre-empted by the next sent EM_REPLACESEL
+        // (the 's' in chaos 5.3), leaving the pre-replace BS to drain after
+        // the replacement and eat the just-inserted chars.
+        if (useEditMsgPath_.load(std::memory_order_acquire)) {
+            if (TryEditMessagePaste(L"", /*BS=*/1)) {
+                HOOK_LOG(L"  commit-undo: BS after commit via EM_REPLACESEL → Primed");
+                return true;
+            }
+            HOOK_LOG(L"  commit-undo: BS after commit EM_REPLACESEL failed, passthrough");
+        }
         HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
         return false;  // Let backspace pass through to delete the space
     }
-    if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vietnameseMode_) {
+    if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vnMode) {
         // Synth guard: if synthetic events were sent recently and are likely still
         // in the OS input queue, replaying now would set previousComposition_ to stale
         // committed text while the screen hasn't caught up — causing diff miscalculation
@@ -891,7 +952,8 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                 bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
                 return HandleAlphaKey(vkCode, shift, caps);
             }
-        } else if ((currentMethod_ == InputMethod::VNI || currentMethod_ == InputMethod::Combined) &&
+        } else if (const InputMethod method = currentMethod_.load(std::memory_order_acquire);
+                   (method == InputMethod::VNI || method == InputMethod::Combined) &&
                    vkCode >= 0x31 && vkCode <= 0x39 &&
                    !(GetKeyState(VK_SHIFT) & 0x8000)) {
             // VNI/Combined digit key (1-9) → replay saved chars, then process as tone/modifier.
@@ -953,8 +1015,8 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // Note: CJK layout no longer suppresses here. User controls V/E mode via toggle,
     // matching EVKey behavior. Japanese IME "A" sub-mode is indistinguishable from
     // "あ" mode via GetKeyboardLayout(), so layout-based suppression is too coarse.
-    if (!vietnameseMode_) {
-        if (macroEnabled_ && macroInEnglish_) {
+    if (!vnMode) {
+        if (macroOn && macroEng) {
             // Track macro keys (all printable chars) in English mode
             if (vkCode >= 0x41 && vkCode <= 0x5A) {
                 bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -962,7 +1024,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
                 bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
                 rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
                                          : towlower(static_cast<wchar_t>(vkCode));
-            } else if (tempOffMacroByEsc_ && vkCode == VK_ESCAPE && rawMacroBuffer_.empty()) {
+            } else if (tempOffMacroEsc && vkCode == VK_ESCAPE && rawMacroBuffer_.empty()) {
                 tempMacroOff_ = true;
                 return false;
             } else if (IsCommitTrigger(vkCode) && !tempMacroOff_) {
@@ -999,7 +1061,8 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     const bool cachedWin = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
 
     // 3a. Auto-caps state machine (Vietnamese mode only)
-    if (autoCaps_) {
+    const bool autoCapsOn = autoCaps_.load(std::memory_order_acquire);
+    if (autoCapsOn) {
         // '.', '?', '!'
         if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && cachedShift) || (vkCode == '1' && cachedShift)) {
             autoCapState_ = AutoCapState::AfterPunct;
@@ -1022,7 +1085,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // Alpha keys AND printable special chars are accumulated so macros with
     // special characters in their key (e.g., "url\" → "URL") can be matched.
     // Skip tracking entirely when no macros are defined — avoids string ops on every keystroke.
-    if (macroEnabled_ && !macroTable_.empty()) {
+    if (macroOn && !macroTable_.empty()) {
         if (vkCode >= 0x41 && vkCode <= 0x5A) {
             bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
             rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
@@ -1034,7 +1097,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     // 3c. Temp off macro by Esc: press Esc with no pending text → skip macro for next word
-    if (tempOffMacroByEsc_ && macroEnabled_ && !macroTable_.empty() && vkCode == VK_ESCAPE
+    if (tempOffMacroEsc && macroOn && !macroTable_.empty() && vkCode == VK_ESCAPE
         && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
         tempMacroOff_ = true;
         HOOK_LOG(L"  tempMacroOff: enabled by Esc");
@@ -1042,7 +1105,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     // 3d. Macro expansion on commit trigger (uses shared TryExpandMacro helper)
-    if (macroEnabled_ && !macroTable_.empty() && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
+    if (macroOn && !macroTable_.empty() && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
         wchar_t triggerChar = VkToMacroChar(vkCode);
         auto result = TryExpandMacro(triggerChar);
         if (result == MacroResult::ExpandedEatTrigger) return true;
@@ -1081,8 +1144,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return HandleAlphaKey(vkCode, cachedShift, cachedCapsLock);
     }
 
+    const InputMethod method = currentMethod_.load(std::memory_order_acquire);
+
     // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư)
-    if (currentMethod_ == InputMethod::Telex &&
+    if (method == InputMethod::Telex &&
         (vkCode == VK_OEM_4 || vkCode == VK_OEM_6)) {
         if (!cachedShift) {
             wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
@@ -1096,7 +1161,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     // 6c. VNI/Combined: digit keys 1-9 → tone/modifier input (only with pending composition)
-    if ((currentMethod_ == InputMethod::VNI || currentMethod_ == InputMethod::Combined) &&
+    if ((method == InputMethod::VNI || method == InputMethod::Combined) &&
         vkCode >= 0x31 && vkCode <= 0x39 &&
         engine_->Count() > 0) {
         if (!cachedShift) {
@@ -1106,7 +1171,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 
     // 7. Backspace → engine backspace if we have content
     if (vkCode == VK_BACK && engine_->Count() > 0) {
-        if (macroEnabled_ && !rawMacroBuffer_.empty()) rawMacroBuffer_.pop_back();
+        if (macroOn && !rawMacroBuffer_.empty()) rawMacroBuffer_.pop_back();
         HOOK_LOG(L"  backspace (engine count=%zu)", engine_->Count());
         HandleBackspace();
         return true;  // Eat backspace
@@ -1127,7 +1192,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // Also preserve across SPACE when the accumulated prefix matches a stored space-
         // containing key — enables multi-word macros like "oc om bok" = "Óoc Om Bok".
         std::wstring savedMacroBuffer;
-        if (macroEnabled_ && !macroTable_.empty() && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
+        if (macroOn && !macroTable_.empty() && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
             wchar_t ch = VkToMacroChar(vkCode);
             if (ch > L' ') {
                 savedMacroBuffer = rawMacroBuffer_;
@@ -1168,6 +1233,30 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
             InjectKey(vkCode);
             return true;  // Eat original trigger
         }
+        // Sprint 1 Fix C/2026-05-05: in async-render hosts (Win11 New Notepad
+        // RichEditD2DPT) every alpha key is now routed through EM_REPLACESEL
+        // (sent message). A passthrough trigger char arrives via posted
+        // WM_KEYDOWN, and sent messages pre-empt posted ones — so the next
+        // eaten alpha's EM_REPLACESEL can be processed before the previous
+        // word's space/punctuation makes it to WM_CHAR. The chaos 2.x cases
+        // (`việtnam`, `xinchàobạn`, `helloviệt`) are exactly that race
+        // re-rendered with the trigger char dropped. Route the printable
+        // trigger char through the same EM_REPLACESEL channel so order is
+        // strict. Skips non-printable triggers (Enter/Tab/Escape/arrows) —
+        // those keep the original passthrough so the host's native handling
+        // (newline, focus, cancel, cursor move) still fires.
+        if (useEditMsgPath_.load(std::memory_order_acquire)) {
+            const wchar_t triggerChar = VkToMacroChar(vkCode);
+            if (triggerChar >= L' ') {
+                std::wstring oneChar(1, triggerChar);
+                if (TryEditMessagePaste(oneChar, /*BS=*/0)) {
+                    HOOK_LOG(L"  commit trigger via EM_REPLACESEL: '%c'", triggerChar);
+                    return true;  // Eat original — we inserted it ourselves
+                }
+                // EM_REPLACESEL failed → fall through to original passthrough
+                HOOK_LOG(L"  commit trigger EM_REPLACESEL failed, passthrough vk=0x%02X", vkCode);
+            }
+        }
         return false;  // No pending synthetics, safe to pass through
     }
 
@@ -1206,7 +1295,7 @@ static bool IsIncompatibleLayout(HKL hkl) {
 
 bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
     // TSF app — let TSF DLL handle all input
-    if (isTsfApp_) return false;
+    if (isTsfApp_.load(std::memory_order_acquire)) return false;
 
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
                        vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
@@ -1215,7 +1304,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
 
     if (isModifier) {
         // Double-Alt tap: temporarily disable Vietnamese for current word
-        if (tempOffByAlt_ &&
+        if (tempOffByAlt_.load(std::memory_order_acquire) &&
             (vkCode == VK_LMENU || vkCode == VK_RMENU) &&
             !otherKeyPressed_ && !modCtrlDown_ && !modShiftDown_ && !modWinDown_) {
             DWORD now = GetTickCount();
@@ -1284,7 +1373,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     // behavior (only reset after a state==2 consumption) so a pending state=1
     // survives intervening non-letter keys as before.
     bool autoCapped = false;
-    if (autoCaps_ && engine_->Count() == 0) {
+    if (autoCaps_.load(std::memory_order_acquire) && engine_->Count() == 0) {
         const bool keystrokePending = (autoCapState_ == AutoCapState::ReadyToCapitalize);
         bool anchorUsed = false;
         bool shouldCap = keystrokePending;  // keystroke fallback
@@ -1344,9 +1433,30 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     //   - isOutlookApp_: Outlook 2016 RichEdit drops the last char of a word when
     //     physical Shift+letter precedes subsequent chars (e.g. "Anh em" → "An hem").
     //     SendInput VK_PACKET path avoids the quirk (issue #97).
+    const bool electronApp = isElectronApp_.load(std::memory_order_acquire);
+    const bool outlookApp = isOutlookApp_.load(std::memory_order_acquire);
+    const bool baitChar = needBaitChar_.load(std::memory_order_acquire);
+    const bool skipEmpty = skipEmptyChar_.load(std::memory_order_acquire);
+    const bool editMsgPath = useEditMsgPath_.load(std::memory_order_acquire);
+    //   - useEditMsgPath_ (Win11 New Notepad RichEditD2DPT, etc.): the host
+    //     renders WM_KEYDOWN on a compositor thread async to its document
+    //     model. Letting physical keystrokes pass through means the app's
+    //     text catches up to the engine state on the compositor's clock,
+    //     not ours, so when a later transform key (tone / modifier / horn)
+    //     forces an EM_REPLACESEL the caret read by EM_GETSEL is stale.
+    //     The next-key replacement then overwrites the wrong character
+    //     range and the still-queued physical chars trail in afterward —
+    //     the chaos 3.3 `truongwf → ườngng` shape is exactly that race.
+    //     Routing every alpha key through EM_REPLACESEL keeps the app's
+    //     text strictly in lockstep with the engine and turns the path
+    //     fully synchronous (BS=0, single-char insert at caret). Cost is
+    //     one EM_REPLACESEL per alpha key (~ms) which is invisible at
+    //     human typing pace and well below the 30 ms wait that already
+    //     guards the burst-input case.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
-        !(hadSynthInWord_ && isElectronApp_) &&
-        !isOutlookApp_ &&
+        !(hadSynthInWord_ && electronApp) &&
+        !outlookApp &&
+        !editMsgPath &&
         synthEventsPending_ == 0 &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
@@ -1381,7 +1491,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
                            composition.compare(0, previousComposition_.size(), previousComposition_) == 0);
     DWORD reinjectVk = 0;
     if (!isSimpleAppend && !autoCapped && currentCodeTable_ == CodeTable::Unicode &&
-        !needBaitChar_ && !skipEmptyChar_ && !useEditMsgPath_) {
+        !baitChar && !skipEmpty && !editMsgPath) {
         reinjectVk = vkCode;
         previousComposition_ += originalCh;
     }
@@ -1632,7 +1742,7 @@ void HookEngine::SendCharEvents(const std::wstring& text) {
 
 bool HookEngine::ShouldUseClipboard() const noexcept {
     if (currentCodeTable_ != CodeTable::Unicode) return false;
-    return useClipboardPaste_;
+    return useClipboardPaste_.load(std::memory_order_acquire);
 }
 
 /// Write Unicode text to clipboard. Returns false on any failure.
@@ -1866,7 +1976,9 @@ void HookEngine::RecordSynthDispatch() noexcept {
 
 void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INPUT>& charEvents) {
     sending_ = true;
-    if (isElectronApp_ || isConsoleApp_) {
+    const bool electronApp = isElectronApp_.load(std::memory_order_acquire);
+    const bool consoleApp = isConsoleApp_.load(std::memory_order_acquire);
+    if (electronApp || consoleApp) {
         // Split: VK_BACK and VK_PACKET travel on separate internal paths in
         // Electron/Console apps — batching risks out-of-order processing ("nuốt chữ").
         // Other skipEmptyChar_ apps (Zed) are single-process — batch is fine.
@@ -1877,7 +1989,7 @@ void HookEngine::DispatchSendInput(std::vector<INPUT>& bsEvents, std::vector<INP
             // Base: 6ms Electron (multi-process IPC), 5ms Console (Node.js apps).
             // +1ms per extra BS pair: more deletions = more processing time.
             // Cap at 12ms — reduced from 20ms after profiling showed lower values work.
-            int baseMs = isElectronApp_ ? 6 : 5;
+            int baseMs = electronApp ? 6 : 5;
             int bsCount = static_cast<int>(bsEvents.size()) / 2;  // each BS = down+up pair
             int delayMs = (std::min)(baseMs + (bsCount > 1 ? bsCount - 1 : 0), 12);
             Sleep(delayMs);
@@ -2182,14 +2294,15 @@ static void ClassifyWindow(HWND hwnd,
 void HookEngine::NotifyModeChange() noexcept {
     if (modeChangeCallback_) {
         // Excluded apps always show E mode (IME is transparent to them)
-        modeChangeCallback_(!isExcludedApp_ && vietnameseMode_);
+        const bool excluded = isExcludedApp_.load(std::memory_order_acquire);
+        modeChangeCallback_(!excluded && vietnameseMode_.load(std::memory_order_acquire));
     }
 }
 
 
 bool HookEngine::VerifyExcludedState() {
     if (!excludeApps_ || excludedAppSet_.empty()) {
-        isExcludedApp_ = false;
+        isExcludedApp_.store(false, std::memory_order_release);
         return false;
     }
     HWND fg = GetForegroundWindow();
@@ -2197,7 +2310,7 @@ bool HookEngine::VerifyExcludedState() {
     if (exe.empty() || excludedAppSet_.count(exe)) {
         return true;  // Still excluded (or can't determine — safe default)
     }
-    isExcludedApp_ = false;
+    isExcludedApp_.store(false, std::memory_order_release);
     HOOK_LOG(L"  ExcludeApps: stale flag cleared (fg='%s')", exe.c_str());
     return false;
 }
@@ -2220,7 +2333,7 @@ void HookEngine::ReloadExcludedApps() {
         for (auto& app : ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath()))
             excludedAppSet_.insert(std::move(app));
     } else {
-        isExcludedApp_ = false;
+        isExcludedApp_.store(false, std::memory_order_release);
     }
 }
 
@@ -2282,9 +2395,10 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
         if (engine_->Count() > 0) CommitComposition();
         CancelCommitUndo();
         layoutSuppressed_ = true;
-        modeBeforeCjk_ = vietnameseMode_;
-        if (vietnameseMode_) {
-            vietnameseMode_ = false;
+        const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
+        modeBeforeCjk_ = curMode;
+        if (curMode) {
+            vietnameseMode_.store(false, std::memory_order_release);
             NotifyModeChange();
             if (beepOnSwitch_) MessageBeep(MB_ICONASTERISK);
         }
@@ -2292,42 +2406,53 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
     } else if (isCompatibleNow && layoutSuppressed_) {
         // Leaving CJK layout: restore saved mode
         layoutSuppressed_ = false;
-        if (modeBeforeCjk_ != vietnameseMode_) {
-            vietnameseMode_ = modeBeforeCjk_;
-            if (beepOnSwitch_) MessageBeep(vietnameseMode_ ? MB_OK : MB_ICONASTERISK);
+        const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
+        if (modeBeforeCjk_ != curMode) {
+            vietnameseMode_.store(modeBeforeCjk_, std::memory_order_release);
+            if (beepOnSwitch_) MessageBeep(modeBeforeCjk_ ? MB_OK : MB_ICONASTERISK);
         }
         NotifyModeChange();
-        HOOK_LOG(L"  CJK layout cleared: restored mode=%d", vietnameseMode_ ? 1 : 0);
+        HOOK_LOG(L"  CJK layout cleared: restored mode=%d",
+                 vietnameseMode_.load(std::memory_order_acquire) ? 1 : 0);
     }
 }
 
-void CALLBACK HookEngine::FocusPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
+void HookEngine::OnTickPoll() noexcept {
+    // Sprint 1 D10: body migrated verbatim from the retired
+    // FocusPollTimerProc. Cadence (200 ms) is now owned by
+    // MainThreadWorker::SetTickInterval; the per-thread story is the
+    // same — caller is not the LL hook thread, stateMutex_ serializes
+    // against main-thread Toggle/SetCodeTable, and OnFocusChanged is
+    // invoked unlocked because it self-locks downstream.
     try {
-        HookEngine* self = s_instance.load(std::memory_order_relaxed);
-        if (!self) return;
         HWND fg = GetForegroundWindow();
         if (!fg) return;
 
-        // Main-thread writer path (timer callback). Lock to serialize with
-        // hook-thread reads; CheckLayoutChange + OnFocusChanged mutate state.
-        std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
-
-        // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
-        // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
-        self->CheckLayoutChange();
-
         DWORD fgPid = 0;
         GetWindowThreadProcessId(fg, &fgPid);
-        if (fgPid == self->lastForegroundPid_ || fgPid == 0) return;
-        // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
-        // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
-        self->lastForegroundPid_ = fgPid;
-        HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
-        self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+
+        bool needFullRefresh = false;
+        {
+            std::lock_guard<std::mutex> _lock(stateMutex_);
+            // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
+            // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
+            CheckLayoutChange();
+
+            if (fgPid == lastForegroundPid_ || fgPid == 0) return;
+            // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
+            // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
+            lastForegroundPid_ = fgPid;
+            needFullRefresh = true;
+        }  // release lock — OnFocusChanged → QuickSync will self-lock.
+
+        if (needFullRefresh) {
+            HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
+            OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+        }
     } catch (const std::exception& e) {
-        CrashLog(L"HookEngine::FocusPollTimerProc", e.what());
+        CrashLog(L"HookEngine::OnTickPoll", e.what());
     } catch (...) {
-        CrashLog(L"HookEngine::FocusPollTimerProc", "(non-std exception)");
+        CrashLog(L"HookEngine::OnTickPoll", "(non-std exception)");
     }
 }
 
@@ -2386,23 +2511,27 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     //   - Electron/Console: skip bait + split dispatch with Sleep (IPC reorder prevention)
     //   - GPU-rendered (Zed): skip bait + batch dispatch (single-process, no flicker)
     //   - VB6 (XYplorer): clipboard paste (ANSI-internal, VK_PACKET → '?')
+    // Sprint 1 D5.2: detect classification into locals first so the atomic
+    // fields receive a single release-store after the full decision is made.
+    // ClassifyWindow takes `bool&` (line 2145), incompatible with std::atomic<bool>;
+    // staging through `localConsole` keeps the function signature unchanged.
     bool isBrowser = false, isElectron = false, isQtApp = false, isVB6 = false;
-    isConsoleApp_ = false;
-    ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, isConsoleApp_, isVB6);
+    bool localConsole = false;
+    ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, localConsole, isVB6);
 
-    skipEmptyChar_ = isElectron || isConsoleApp_;
-    needBaitChar_ = isBrowser;
-    useClipboardPaste_ = isVB6;
-    useEditMsgPath_ = false;
-    isOutlookApp_ = false;
+    bool localSkipEmpty = isElectron || localConsole;
+    bool localNeedBait = isBrowser;
+    bool localClipboard = isVB6;
+    bool localEditMsg = false;
+    bool localOutlook = false;
 
     // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
     bool isWebView2 = false;
-    if (!skipEmptyChar_ && !needBaitChar_ && !useClipboardPaste_) {
+    if (!localSkipEmpty && !localNeedBait && !localClipboard) {
         std::wstring exeName = GetExeNameForHwnd(activeHwnd);
         if (!exeName.empty()) {
             if (_wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
-                skipEmptyChar_ = true;
+                localSkipEmpty = true;
             } else if (_wcsicmp(exeName.c_str(), L"notepad.exe") == 0) {
                 // Notepad (both classic Win32 Edit and Win11 WinUI 3 RichEditBox)
                 // share exe name + root class "Notepad". The new one renders async on
@@ -2410,7 +2539,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
                 // batch path; EM_REPLACESEL on the Edit/RichEdit child is atomic and
                 // fixes the flicker. Classic Notepad benefits too: one undo entry per
                 // transform instead of per BS + per char.
-                useEditMsgPath_ = true;
+                localEditMsg = true;
             } else {
                 // Outlook 2016 RichEdit has two orthogonal quirks, both derived from
                 // the same detection: (1) needs a U+202F bait char before BS (same
@@ -2418,29 +2547,41 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
                 // Shift+letter precedes other chars — passthrough must be disabled
                 // (issue #97). Single exe scan; both flags fall out.
                 const bool isOutlook = exeName.find(L"outlook") != std::wstring::npos;
-                isOutlookApp_ = isOutlook;
-                needBaitChar_ = exeName.find(L"excel") != std::wstring::npos || isOutlook;
+                localOutlook = isOutlook;
+                localNeedBait = exeName.find(L"excel") != std::wstring::npos || isOutlook;
 
                 // Tauri / WebView2-embedding apps (e.g. Dorion): detected by
                 // scanning for `Chrome_WidgetWin*` descendants. WebView2 is fundamentally
                 // Chromium, so it suffers from the same autocomplete/suggest bug as Chrome.
                 // We MUST use the bait character (needBaitChar_ = true).
-                if (!needBaitChar_) {
+                if (!localNeedBait) {
                     std::wstring exeFullPath = GetExeFullPathForHwnd(activeHwnd);
                     isWebView2 = IsWebView2App(activeHwnd, exeFullPath);
                     if (isWebView2) {
-                        needBaitChar_ = true;
-                        skipEmptyChar_ = false;
+                        localNeedBait = true;
+                        localSkipEmpty = false;
                     }
                 }
             }
         }
     }
 
-    isElectronApp_ = (isElectron || isWebView2) && !isConsoleApp_;
+    const bool localElectronApp = (isElectron || isWebView2) && !localConsole;
+
+    // Publish all per-app cached flags atomically once the classification is final.
+    // Hook hot-path readers see consistent state (each .store(release) is paired
+    // with their .load(acquire) in ProcessKeyDown / DispatchSendInput / etc.).
+    isConsoleApp_.store(localConsole, std::memory_order_release);
+    skipEmptyChar_.store(localSkipEmpty, std::memory_order_release);
+    needBaitChar_.store(localNeedBait, std::memory_order_release);
+    useClipboardPaste_.store(localClipboard, std::memory_order_release);
+    useEditMsgPath_.store(localEditMsg, std::memory_order_release);
+    isOutlookApp_.store(localOutlook, std::memory_order_release);
+    isElectronApp_.store(localElectronApp, std::memory_order_release);
+
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d",
-             isConsoleApp_ ? 1 : 0, skipEmptyChar_ ? 1 : 0, isElectronApp_ ? 1 : 0,
-             isWebView2 ? 1 : 0, needBaitChar_ ? 1 : 0, useClipboardPaste_ ? 1 : 0, useEditMsgPath_ ? 1 : 0);
+             localConsole ? 1 : 0, localSkipEmpty ? 1 : 0, localElectronApp ? 1 : 0,
+             isWebView2 ? 1 : 0, localNeedBait ? 1 : 0, localClipboard ? 1 : 0, localEditMsg ? 1 : 0);
 
     // Re-install hooks to guarantee NexusKey remains at the top of the hook chain.
     // We only do this for Chromium-based architectures (Electron, WebView2, Browsers)
@@ -2449,11 +2590,11 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // Doing it conditionally avoids unnecessary unhook/rehook overhead for normal apps.
     // We must do this even if the PID hasn't changed, because WebView2 creates child
     // windows that trigger focus events AFTER the initial app launch and hook setup.
-    if (hookThreadId_ && (isElectronApp_ || isBrowser)) {
+    if (hookThreadId_ && (localElectronApp || isBrowser)) {
         PostThreadMessageW(hookThreadId_, WM_APP_REINSTALL_HOOKS, 0, 0);
     }
 
-    if (useClipboardPaste_ || useEditMsgPath_) {
+    if (localClipboard || localEditMsg) {
         RefreshFocusCache(activeHwnd);
     } else {
         cachedFocusedHwnd_ = nullptr;
@@ -2476,8 +2617,8 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     if (!smartSwitch_ && !excludeApps_ && !tsfApps_
         && appEncodingOverrides_.empty() && appInputMethodOverrides_.empty()) return;
 
-    bool wasExcluded = isExcludedApp_;
-    bool wasTsfApp = isTsfApp_;
+    const bool wasExcluded = isExcludedApp_.load(std::memory_order_acquire);
+    const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
 
     // Save mode for previous app (smart switch, skip excluded/TSF apps)
     if (smartSwitch_ && !currentExe_.empty()
@@ -2485,8 +2626,9 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
             appModeMap_.clear();
         }
-        appModeMap_[currentExe_] = vietnameseMode_;
-        smartSwitchMgr_.SetAppMode(currentExe_, vietnameseMode_);
+        const bool savedMode = vietnameseMode_.load(std::memory_order_acquire);
+        appModeMap_[currentExe_] = savedMode;
+        smartSwitchMgr_.SetAppMode(currentExe_, savedMode);
         appModeDirty_ = true;
     }
 
@@ -2515,45 +2657,49 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     // Check excluded apps
+    bool newExcluded;
     if (excludeApps_ && !excludedAppSet_.empty()) {
-        isExcludedApp_ = excludedAppSet_.count(currentExe_) > 0;
+        newExcluded = excludedAppSet_.count(currentExe_) > 0;
     } else {
-        isExcludedApp_ = false;
+        newExcluded = false;
     }
+    isExcludedApp_.store(newExcluded, std::memory_order_release);
 
     // Check TSF apps (hook passthrough — let TSF DLL handle input)
     // Excluded apps take priority — if both, treat as excluded (force English)
-    if (!isExcludedApp_ && tsfApps_ && !tsfAppSet_.empty()) {
-        isTsfApp_ = tsfAppSet_.count(currentExe_) > 0;
+    bool newTsfApp;
+    if (!newExcluded && tsfApps_ && !tsfAppSet_.empty()) {
+        newTsfApp = tsfAppSet_.count(currentExe_) > 0;
     } else {
-        isTsfApp_ = false;
+        newTsfApp = false;
     }
+    isTsfApp_.store(newTsfApp, std::memory_order_release);
 
     // Always log active engine for this focus — makes it easy to tell which engine handles the app
     HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
-             isTsfApp_ ? L"TSF (hook passthrough)" : L"HOOK",
+             newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
              currentExe_.c_str(),
              tsfApps_ ? 1 : 0,
              (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
-             isExcludedApp_ ? 1 : 0);
+             newExcluded ? 1 : 0);
 
     // Notify SharedState of TSF_ACTIVE + TSF_READONLY flags (DLL reads these).
     // Fired on every focus change (idempotent via SetOrClearFlag).
     if (tsfModeCallback_) {
-        const bool tsfReadonly = !isTsfApp_ && !isExcludedApp_;
-        if (isTsfApp_ != wasTsfApp) {
+        const bool tsfReadonly = !newTsfApp && !newExcluded;
+        if (newTsfApp != wasTsfApp) {
             HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
-                     wasTsfApp ? L"true" : L"false", isTsfApp_ ? L"true" : L"false");
+                     wasTsfApp ? L"true" : L"false", newTsfApp ? L"true" : L"false");
         }
-        tsfModeCallback_(isTsfApp_, tsfReadonly);
+        tsfModeCallback_(newTsfApp, tsfReadonly);
     }
 
-    if (isExcludedApp_) {
+    if (newExcluded) {
         // Excluded app — IME is transparent. vietnameseMode_ is never touched.
         // Cache PID for fast per-keystroke check in ProcessKeyDown.
         DWORD pid = 0;
         GetWindowThreadProcessId(activeHwnd, &pid);
-        excludedPid_ = pid;
+        excludedPid_.store(pid, std::memory_order_release);
         HOOK_LOG(L"  ExcludeApps: '%s' is excluded, passthrough (pid=%u)", currentExe_.c_str(), pid);
         if (!wasExcluded) {
             NotifyModeChange();  // Update icon to E (effective mode = false)
@@ -2562,7 +2708,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     // TSF app — hook is passive, skip smart switch/code table restore
-    if (isTsfApp_) {
+    if (newTsfApp) {
         HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough", currentExe_.c_str());
         return;
     }
@@ -2584,13 +2730,13 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         auto it = appInputMethodOverrides_.find(currentExe_);
         InputMethod targetMethod = (it != appInputMethodOverrides_.end() && it->second >= 0)
             ? static_cast<InputMethod>(it->second) : globalInputMethod_;
-        if (targetMethod != currentMethod_) {
-            currentMethod_ = targetMethod;
-            TypingConfig engineConfig = config_;
+        if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
+            currentMethod_.store(targetMethod, std::memory_order_release);
+            TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
             engineConfig.inputMethod = targetMethod;
             engine_ = EngineFactory::Create(engineConfig);
             HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
-                     static_cast<int>(currentMethod_), currentExe_.c_str());
+                     static_cast<int>(targetMethod), currentExe_.c_str());
         }
     }
 
@@ -2600,16 +2746,19 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         auto it = appModeMap_.find(currentExe_);
         if (it != appModeMap_.end()) {
             // Known app — restore its saved mode
-            if (it->second != vietnameseMode_) {
-                vietnameseMode_ = it->second;
+            const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
+            if (it->second != curMode) {
+                vietnameseMode_.store(it->second, std::memory_order_release);
                 HOOK_LOG(L"  SmartSwitch: restored %s for '%s'",
-                         vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
+                         it->second ? L"Vietnamese" : L"English", currentExe_.c_str());
                 NotifyModeChange();
             }
         } else {
             // Unknown app — inherit current mode (least surprising to the user)
             HOOK_LOG(L"  SmartSwitch: inherit %s for unknown '%s'",
-                     vietnameseMode_ ? L"Vietnamese" : L"English", currentExe_.c_str());
+                     vietnameseMode_.load(std::memory_order_acquire)
+                         ? L"Vietnamese" : L"English",
+                     currentExe_.c_str());
         }
     }
 
@@ -2682,7 +2831,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
                  encodedToSend.size());
 
         {
-            bool needEmpty = (backspaceCount > 0 && needBaitChar_);
+            bool needEmpty = (backspaceCount > 0 && needBaitChar_.load(std::memory_order_acquire));
             size_t bsTotal = backspaceCount + (needEmpty ? 1 : 0);
 
             if (bsTotal > 0 || !encodedToSend.empty()) {
@@ -2730,15 +2879,45 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     // WinUI 3 RichEditBox renders on the compositor thread async to input. SendInput
     // BS+replace arrives a frame too late → suppressed key flashes before replacement.
     // EM_REPLACESEL goes straight into the RichEdit child synchronously → atomic.
-    // Fall through to SendInput on failure (not clipboard — preserve user's clipboard).
-    if (useEditMsgPath_) {
-        if (TryEditMessagePaste(toSend, backspaceCount)) {
-            previousComposition_ = newText;
-            if (synthEventsPending_ > 0) hadSynthInWord_ = true;
-            return;
+    //
+    // Burst-input race (chaos 3.3 / 5.2 / 6.1, fixed C/2026-05-05): under sub-1ms
+    // inter-key, physical WM_KEYDOWN messages stack up in the app's input queue
+    // faster than the compositor renders them. When the hook fires for a
+    // tone/modifier key, the EM_GETSEL caret read inside TryEditMessagePaste is
+    // still at a stale (low) position, so the BS > caret guard refuses the
+    // replacement. The original code's "fallback to SendInput" branch was the
+    // actual corruption source: BS+chars injected into the kernel queue then
+    // interleave with the still-pending physical chars in front of them, and
+    // the next hook callback (for the next key) reads a half-applied caret. The
+    // observed shapes (tờương / ờnương for `truongwf`) are exactly that race
+    // re-rendered.
+    //
+    // Fix: when TryEditMessagePaste fails, sleep briefly in the hook callback
+    // so the app's main thread has time to drain its input queue and advance
+    // the caret; then retry. The hook thread holds back its own callback while
+    // sleeping, so no further physical keys race in. 30 ms upper bound is well
+    // below LowLevelHooksTimeout (default 500 ms) and dwarfs the typical 5-10 ms
+    // catch-up needed at chaos 500 µs inter-key. Only invokes the SendInput
+    // fallback if the wait is exhausted — true human-pace typing never hits it.
+    if (useEditMsgPath_.load(std::memory_order_acquire)) {
+        constexpr int kAsyncRenderMaxWaitMs = 30;
+        constexpr int kAsyncRenderStepMs    = 1;
+        int waitedMs = 0;
+        for (;;) {
+            if (TryEditMessagePaste(toSend, backspaceCount)) {
+                previousComposition_ = newText;
+                if (synthEventsPending_ > 0) hadSynthInWord_ = true;
+                if (waitedMs > 0) {
+                    HOOK_LOG(L"  ReplaceComposition[editMsg]: caught up after %dms wait", waitedMs);
+                }
+                return;
+            }
+            if (waitedMs >= kAsyncRenderMaxWaitMs) break;
+            Sleep(kAsyncRenderStepMs);
+            waitedMs += kAsyncRenderStepMs;
         }
-        HOOK_LOG(L"  ReplaceComposition[editMsg]: fallback to SendInput BS=%zu send='%s'",
-                 backspaceCount, toSend.c_str());
+        HOOK_LOG(L"  ReplaceComposition[editMsg]: retry exhausted (%dms) — fallback to SendInput BS=%zu send='%s'",
+                 kAsyncRenderMaxWaitMs, backspaceCount, toSend.c_str());
     }
 
     // ── VB6 / ANSI-internal windows ──
@@ -2781,11 +2960,12 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
         // transform (not just empty-field), because suggest is active at any word length.
         // U+202F has visible width → triggers suggest recalculation → dismiss.
         // Zero-width chars (U+200B) don't work — Chrome ignores them for suggest.
-        bool needEmpty = (backspaceCount > 0 && needBaitChar_);
+        bool needEmpty = (backspaceCount > 0 && needBaitChar_.load(std::memory_order_acquire));
         if (needEmpty) backspaceCount++;
 
         HOOK_LOG(L"  ReplaceComposition[send]: BS=%zu needEmpty=%d toSend='%s' skipEmpty=%d synthPending=%d",
-                 backspaceCount, needEmpty ? 1 : 0, toSend.c_str(), skipEmptyChar_ ? 1 : 0, synthEventsPending_.load());
+                 backspaceCount, needEmpty ? 1 : 0, toSend.c_str(),
+                 skipEmptyChar_.load(std::memory_order_acquire) ? 1 : 0, synthEventsPending_.load());
 
         if (backspaceCount > 0 || !toSend.empty()) {
             // Stack-allocated events: Vietnamese words max ~8 chars, transforms touch 1-3.
@@ -2857,11 +3037,13 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
 
             // Dispatch using stack buffers
             sending_ = true;
-            if (isElectronApp_ || isConsoleApp_) {
+            const bool electronApp2 = isElectronApp_.load(std::memory_order_acquire);
+            const bool consoleApp2 = isConsoleApp_.load(std::memory_order_acquire);
+            if (electronApp2 || consoleApp2) {
                 // Split only for Electron/Console (multi-process IPC reorder risk).
                 if (bsCount > 0) {
                     TrackedSendInput(bsBuf, static_cast<UINT>(bsCount));
-                    int baseMs = isElectronApp_ ? 6 : 5;
+                    int baseMs = electronApp2 ? 6 : 5;
                     int bsKeys = static_cast<int>(bsCount) / 2;
                     int delayMs = (std::min)(baseMs + (bsKeys > 1 ? bsKeys - 1 : 0), 12);
                     Sleep(delayMs);
@@ -2891,8 +3073,26 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
 }
 
 void HookEngine::SendBackspaces(size_t count) {
-    HOOK_LOG(L"  SendBackspaces: %zu bait=%d", count, needBaitChar_ ? 1 : 0);
-    if (needBaitChar_ && count > 0) {
+    if (count == 0) return;
+
+    // Sprint 1 Fix C/2026-05-05: editMsg apps (Win11 RichEditD2DPT) need BS
+    // delivered via the same sent-message channel as the rest of the output.
+    // SendInput-posted VK_BACK events otherwise interleave with already-queued
+    // events and get pre-empted by the next sent EM_REPLACESEL. The chaos 5.3
+    // shape (`viejtnam BS×4 s` → `việt`) is exactly that: BS#3 + BS#4 sit
+    // posted in the queue while 's' fires its sent EM_REPLACESEL on stale
+    // caret, then the queued BS drains and eats the just-inserted chars.
+    if (useEditMsgPath_.load(std::memory_order_acquire)) {
+        if (TryEditMessagePaste(L"", count)) {
+            HOOK_LOG(L"  SendBackspaces: %zu via EM_REPLACESEL", count);
+            return;
+        }
+        HOOK_LOG(L"  SendBackspaces: EM_REPLACESEL failed, fallback to SendInput");
+    }
+
+    const bool baitChar = needBaitChar_.load(std::memory_order_acquire);
+    HOOK_LOG(L"  SendBackspaces: %zu bait=%d", count, baitChar ? 1 : 0);
+    if (baitChar && count > 0) {
         // Insert bait to dismiss autocomplete suggest before BS
         INPUT bait[2] = {};
         bait[0].type = INPUT_KEYBOARD;
@@ -2988,15 +3188,20 @@ bool HookEngine::IsMacroTrigger(DWORD vkCode) const {
     // If not a commit trigger natively, it shouldn't trigger macro either
     if (!IsCommitTrigger(vkCode)) return false;
 
-    if (vkCode == VK_SPACE) return config_.macroTriggerSpace;
-    if (vkCode == VK_RETURN) return config_.macroTriggerEnter;
-    if (vkCode == VK_TAB) return config_.macroTriggerTab;
-    
+    // Sprint 1 D6: snapshot the RCU shared_ptr once for the call. The loaded
+    // shared_ptr keeps the config object alive even if a writer (ApplyConfig
+    // / ReloadFromToml) publishes a new config mid-call — safe internal
+    // consistency without stateMutex_ acquisition on the hook hot path.
+    auto cfg = config_.load(std::memory_order_acquire);
+    if (vkCode == VK_SPACE) return cfg->macroTriggerSpace;
+    if (vkCode == VK_RETURN) return cfg->macroTriggerEnter;
+    if (vkCode == VK_TAB) return cfg->macroTriggerTab;
+
     // Direction / Navigation
-    if (vkCode >= VK_LEFT && vkCode <= VK_DOWN) return config_.macroTriggerDir;
+    if (vkCode >= VK_LEFT && vkCode <= VK_DOWN) return cfg->macroTriggerDir;
     if (vkCode == VK_HOME || vkCode == VK_END ||
-        vkCode == VK_PRIOR || vkCode == VK_NEXT) return config_.macroTriggerDir;
-        
+        vkCode == VK_PRIOR || vkCode == VK_NEXT) return cfg->macroTriggerDir;
+
     return true; // Numbers, Punctuation, Esc, etc. default to true if they are commit triggers
 }
 
@@ -3089,7 +3294,7 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
     // CharUpperBuffW is locale-aware so Vietnamese diacritics uppercase correctly
     // ('ô' → 'Ô'), unlike towupper() which only handles ASCII under the C locale.
     std::wstring expansion = it->second;
-    if (autoCapsMacro_ && !matchedExact && !matchedViaComposition &&
+    if (autoCapsMacro_.load(std::memory_order_acquire) && !matchedExact && !matchedViaComposition &&
         !rawMacroBuffer_.empty() && !expansion.empty()) {
         // Expansion has no upper iff lowercasing it is a no-op (locale-aware).
         std::wstring expansionLower = expansion;

@@ -1,0 +1,77 @@
+# Sustained-typing corpus -- realistic Vietnamese typing patterns at human pace.
+#
+# Used for measuring user-perceptible smoothness (Pillar #3 -- Mượt) which the
+# binary chaos corpus cannot. See docs/plans/sprint-1-single-owner-refactor.md
+# Phase A0 for the rationale and gate criteria.
+#
+# Source paragraph: adapted from tools/NextKeyTestRunner/tests/TelexGolden.h:218
+# (golden-tested against vn-str). Two `Điều này` sentence-openers were rewritten
+# to `Việc này` because uppercase Đ (U+0110) is not typeable via VkKeyScanW on a
+# standard US keyboard layout; uppercase V is ASCII and types correctly via
+# Shift+V. Semantic meaning preserved.
+#
+# Verdict: edit_distance with threshold_pct = 99 -- the test PASSES if at most
+# 1% of chars are wrong. For the pre-refactor baseline (D1 first run), this is
+# expected to FAIL with the actual error rate captured in the report -- that
+# rate becomes the "before" number for the Sprint 1 gate
+# ("error rate down >= 30% post-refactor").
+
+[[tests]]
+name = "forward-200wpm-sustained"
+target_app = "notepad"
+text = "Hôm nay mình mở máy sớm hơn thường lệ, pha một ly cà phê và ngồi trước màn hình với quyết tâm sửa dứt điểm một lỗi nhỏ nhưng cực kỳ khó chịu. Khi gõ văn bản bình thường, thỉnh thoảng sau khi nhấn phím cách, chữ cái đầu tiên của từ tiếp theo lại tự động viết hoa, dù trước đó không hề có dấu chấm câu. Việc này làm mình mất nhịp suy nghĩ, giống như đang đi đều bỗng bị vấp một viên sỏi vô hình. Mình bắt đầu ghi lại từng bước thao tác, từ việc nhập từng ký tự cho đến thời điểm nhấn phím cách. Có lúc mọi thứ hoạt động trơn tru, nhưng đôi khi chỉ cần thay đổi nhịp gõ một chút là lỗi xuất hiện. Cảm giác như hệ thống đang phản ứng chậm hơn một nhịp, và quyết định viết hoa được đưa ra muộn hơn so với thời điểm thực tế của phím bấm. Sau khi xem lại log, mình nhận ra rằng trạng thái nội bộ có thể đang bị giữ lại lâu hơn dự kiến. Một cờ đánh dấu kết thúc câu có lẽ chưa được reset đúng lúc, hoặc bị kích hoạt sai trong một tình huống hiếm gặp. Việc này khiến hệ thống hiểu nhầm rằng mình đang bắt đầu một câu mới, dù thực tế chỉ là một từ bình thường sau dấu cách. Giải pháp trước mắt là viết thêm test để tái hiện lại tình huống này một cách ổn định. Khi đã có thể tái hiện, việc sửa lỗi sẽ trở nên rõ ràng hơn rất nhiều."
+inter_key_us = 50000
+budget_p99_us = 16000
+verdict_mode = "edit_distance"
+threshold_pct = 99.0
+
+# ---------------------------------------------------------------------------
+# Edit cases (D2 -- typo correction + cross-word edit at realistic 50 ms pace)
+# ---------------------------------------------------------------------------
+# These exercise edit scenarios that the binary chaos corpus over-stresses
+# (1-5 ms inter-key, race-condition territory). Captured here at the same
+# 50 ms inter-key as `forward-200wpm-sustained` so the "before" picture is
+# realistic-pace edit behavior, not race-pressure behavior.
+#
+# Verdict: edit_distance with threshold_pct = 99 (matches forward sustained).
+# Sprint 1 gate: post-refactor must not regress these error rates; ideal is
+# >=30 % reduction (per docs/plans/sprint-1-single-owner-refactor.md A0 D2).
+#
+# Telex citations: kTable in tools/NextKeyTestRunner/src/Telex.h:25-44 is the
+# source of truth for Vietnamese -> ASCII telex. Per-case `expected` reflects
+# the typing user's semantic intent. On first Windows run (commit 3459642,
+# 2026-05-04), engine output matched intent exactly on both cases (0.00 %
+# error) -- baseline locked. See docs/baselines/perf-baseline-3459642-
+# sustained-edit.md.
+
+[[tests]]
+# Inline tone correction: type 'vieet' -> "viêt" (no tone, ee->ê per kTable
+# line 30). User notices missing tone, BS deletes 't', 'j' applies dot-below
+# tone to ê -> ệ (kTable line 33), retypes 't'. Semantic intent: "việt".
+# Engine path: telex tone replacement after BS-into-vowel-context.
+name = "edit-1-inline-tone-fix-vieet-bs-jt"
+target_app = "notepad"
+keys = 'vieet\bjt'
+expected = "việt"
+inter_key_us = 50000
+budget_p99_us = 16000
+verdict_mode = "edit_distance"
+threshold_pct = 99.0
+
+[[tests]]
+# Cross-word backspace replay at realistic pace. Mirrors chaos `5.3-cross-
+# word-bs-vieejt-nam-bs4-s` (which fails at 1 ms inter-key with heisenbug
+# corruption per perf-baseline-43fb4c1.md line 77). Same key sequence,
+# slowed from 1 ms to 50 ms inter-key. Verified at master `43fb4c1`:
+# at realistic pace the cross-word backspace replay path produces "viết"
+# byte-exactly (0.00 % error). The chaos 5.3 bug is speed-bound, not a
+# structural edit-path bug.
+# kTable refs: line 33 (ệ -> "eej").
+name = "edit-2-cross-word-bs-vieejt-nam-bs4-s"
+target_app = "notepad"
+keys = 'vieejt nam\b\b\b\bs'
+expected = "viết"
+inter_key_us = 50000
+budget_p99_us = 16000
+verdict_mode = "edit_distance"
+threshold_pct = 99.0

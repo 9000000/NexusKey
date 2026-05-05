@@ -1,0 +1,36 @@
+# Chaos 3.3 only -- single-case corpus for option C diagnostic capture.
+# Used to localize the truongwf -> trường race vs corruption shapes
+# (tờương / ờnương) under sub-1ms inter-key load. Pair with a Debug
+# build of NextKeyApp so HOOK_LOG writes NexusKey_hook.log next to
+# the EXE; that log is what the diagnostic step reads.
+#
+# Run via (from build folder):
+#   NextKeyTestRunner.exe --corpus ../tools/NextKeyTestRunner/corpus/chaos-3.3-only.toml
+#
+# Repeat the case 3× so a single run captures both stable-corruption
+# and flip-prone runs without restarting the runner. Each case writes
+# its own row in perf.csv / report.xml.
+
+[[tests]]
+name = "3.3-engine-stress-truongf-run1"
+target_app = "notepad"
+keys = "truongwf"
+expected = "trường"
+inter_key_us = 500
+budget_p99_us = 1500
+
+[[tests]]
+name = "3.3-engine-stress-truongf-run2"
+target_app = "notepad"
+keys = "truongwf"
+expected = "trường"
+inter_key_us = 500
+budget_p99_us = 1500
+
+[[tests]]
+name = "3.3-engine-stress-truongf-run3"
+target_app = "notepad"
+keys = "truongwf"
+expected = "trường"
+inter_key_us = 500
+budget_p99_us = 1500

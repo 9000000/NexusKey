@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="NextKeyTestRunner" tests="3" failures="0" time="88.914">
+  <testsuite name="chaos" tests="3" failures="0" time="88.914">
+    <testcase name="forward-200wpm-sustained" classname="chaos" time="86.823"/>
+    <testcase name="edit-1-inline-tone-fix-vieet-bs-jt" classname="chaos" time="0.863"/>
+    <testcase name="edit-2-cross-word-bs-vieejt-nam-bs4-s" classname="chaos" time="1.228"/>
+  </testsuite>
+</testsuites>

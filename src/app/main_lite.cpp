@@ -16,6 +16,7 @@
 #include "core/CrashLog.h"
 
 #include "system/HookEngine.h"
+#include "system/MainThreadWorker.h"
 #include "system/HotkeyManager.h"
 #include "system/HotkeyWiring.h"
 #include "system/QuickConvert.h"
@@ -37,10 +38,11 @@
 #include <commctrl.h>
 #include <ole2.h>
 #include <timeapi.h>
+#include <atomic>
+#include <chrono>
 #include <exception>
 #include <memory>
 #include <string>
-#include <atomic>
 #include <thread>
 
 #pragma comment(lib, "comctl32.lib")
@@ -59,6 +61,7 @@ static std::atomic<bool> g_running{true};
 static TrayIcon g_trayIcon;
 static FloatingIcon g_floatingIcon;
 static HookEngine g_hookEngine;
+static MainThreadWorker g_mainThreadWorker;  // Sprint 1 D9: drain config-change work off main thread
 static SharedStateManager g_sharedState;
 static std::unique_ptr<QuickConvert> g_quickConvert;
 static HotkeyManager g_hotkeyManager;
@@ -515,8 +518,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Wire hook-reload callback: sub-dialog subprocess → main EXE eager sync.
     // Without this, new lists (TSF apps, excluded apps, macros, …) only apply
     // on the next keystroke / focus change in the target app.
+    //
+    // Sprint 1 D9: route the work onto MainThreadWorker (see main.cpp for the
+    // full rationale — keeps SyncConfig + potential ReloadFromToml off the
+    // tray-window thread, pre-empts hook QuickSync slow path).
     g_trayIcon.SetHookReloadCallback([]() {
-        g_hookEngine.SyncConfigFromSharedState();
+        g_mainThreadWorker.Signal();
     });
 
     // Wire menu state getter
@@ -554,6 +561,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         CloseHandle(hMutex);
         return 1;
     }
+
+    // Sprint 1 D9: launch worker after HookEngine so the first Signal it
+    // observes lands on a fully-initialised engine.
+    g_mainThreadWorker.SetWorkHandler([]() {
+        g_hookEngine.SyncConfigFromSharedState();
+    });
+    // Sprint 1 D10: 200 ms tick replaces the retired SetTimer focus/CJK
+    // poll that lived inside HookEngine::Start.
+    g_mainThreadWorker.SetTickHandler([]() {
+        g_hookEngine.OnTickPoll();
+    });
+    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
+    g_mainThreadWorker.Start();
 
     NEXTKEY_LOG(L"HookEngine started (Lite mode), entering message loop");
 
@@ -639,6 +659,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     CleanupFloatingIcon();
     g_hotkeyManager.Uninstall();
+    // Sprint 1 D9: stop the worker before HookEngine — handler captures
+    // g_hookEngine, so any in-flight SyncConfigFromSharedState must finish
+    // before HookEngine teardown.
+    g_mainThreadWorker.Stop();
     g_hookEngine.Stop();
     timeEndPeriod(1);
     g_trayIcon.Destroy();

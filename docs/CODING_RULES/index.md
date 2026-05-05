@@ -48,4 +48,13 @@
     - [10.3 DPI Awareness](./10-refactoring-checklist.md#103-dpi-awareness)
     - [10.4 SharedState DACL](./10-refactoring-checklist.md#104-sharedstate-dacl)
     - [10.5 Extract/Move Function Safety](./10-refactoring-checklist.md#105-extractmove-function-safety)
+  - [11. Hook System Rules](./11-hook-system-rules.md)
+    - [11.1 The 1 ms Budget](./11-hook-system-rules.md#111-the-1-ms-budget)
+    - [11.2 Forbidden Operations in Hook Callback](./11-hook-system-rules.md#112-forbidden-operations-in-hook-callback)
+    - [11.3 The Contention Law](./11-hook-system-rules.md#113-the-contention-law)
+    - [11.4 Early-Return Hierarchy](./11-hook-system-rules.md#114-early-return-hierarchy)
+    - [11.5 Exception Safety](./11-hook-system-rules.md#115-exception-safety)
+    - [11.6 SendInput Timing](./11-hook-system-rules.md#116-sendinput-timing)
   - [Summary Checklist](#summary-checklist)
+
+> **Read first:** [`docs/PHILOSOPHY.md`](../PHILOSOPHY.md) — the four pillars (Nhanh / Nhẹ / Mượt / Mở rộng), test-first, and the three pre-code questions. The rules below operationalize that philosophy. If a rule conflicts with the philosophy, the philosophy wins and the rule is updated.

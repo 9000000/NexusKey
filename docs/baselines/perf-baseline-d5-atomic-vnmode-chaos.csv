@@ -1,0 +1,12 @@
+case_name,verdict,verdict_mode,error_chars,error_pct,inter_key_us_config,wall_clock_ms,l1_count,l1_mean_ms,l1_p50_ms,l1_p95_ms,l1_p99_ms,l1_max_ms
+1.1-ghost-hoaf-bs-t,PASS,exact,0,0.00,10000,550,5,12,12,16,16,16
+1.2-tone-ghost-toans-bs3-i,FAIL,exact,0,0.00,5000,545,8,8,9,11,11,11
+1.3-escape-bs-aa-b,PASS,exact,0,0.00,5000,506,3,7,8,9,9,9
+2.1-x2-space-vieejt-nam,FAIL,exact,0,0.00,1000,518,9,4,4,9,9,9
+2.2-word-boundary-xin-chao-ban,FAIL,exact,0,0.00,1000,533,13,2,2,5,5,5
+2.3-en-vn-transition-hello-vieejt,FAIL,exact,0,0.00,1000,525,11,4,4,9,9,9
+3.3-engine-stress-truongf,FAIL,exact,0,0.00,500,528,7,4,3,18,18,18
+5.1-case-tracking-Giar,PASS,exact,0,0.00,5000,505,4,5,7,8,8,8
+5.2-vowel-start-uongs,PASS,exact,0,0.00,5000,524,5,8,7,13,13,13
+5.3-cross-word-bs-vieejt-nam-bs4-s,FAIL,exact,0,0.00,1000,534,14,4,3,8,8,8
+6.1-autocap-binh-thuongf,FAIL,exact,0,0.00,5000,574,13,7,6,11,11,11

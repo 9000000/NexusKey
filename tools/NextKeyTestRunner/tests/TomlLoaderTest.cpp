@@ -155,4 +155,137 @@ name = "x"
     EXPECT_TRUE(result.cases.empty());
 }
 
+// ---------------------------------------------------------------------------
+// `text` field (auto-converts via Telex::StrToTelex)
+// ---------------------------------------------------------------------------
+
+TEST(TomlLoaderTest, TextFieldAutoConvertsToTelex) {
+    // "việt" -> StrToTelex -> "vieejt" (per Telex.h kTable: ệ -> eej).
+    constexpr std::string_view kToml = R"(
+[[tests]]
+name = "text-only"
+text = "việt"
+)";
+    const auto result = TomlLoader::LoadString(kToml);
+    ASSERT_TRUE(result.error.empty()) << result.error;
+    ASSERT_EQ(result.cases.size(), 1u);
+    EXPECT_EQ(result.cases[0].keys, std::u16string(u"vieejt"));
+    // Default: expected mirrors text when expected omitted.
+    EXPECT_EQ(result.cases[0].expected, std::u16string(u"việt"));
+}
+
+TEST(TomlLoaderTest, TextFieldAllowsExpectedOverride) {
+    // For typo+correction scenarios where final text differs from input text.
+    constexpr std::string_view kToml = R"(
+[[tests]]
+name = "text-with-explicit-expected"
+text = "việt"
+expected = "viết"
+)";
+    const auto result = TomlLoader::LoadString(kToml);
+    ASSERT_TRUE(result.error.empty()) << result.error;
+    ASSERT_EQ(result.cases.size(), 1u);
+    EXPECT_EQ(result.cases[0].keys, std::u16string(u"vieejt"));
+    EXPECT_EQ(result.cases[0].expected, std::u16string(u"viết"));
+}
+
+TEST(TomlLoaderTest, TextAndKeysTogetherIsError) {
+    // Mutually exclusive -- pick one source for keys, not both.
+    constexpr std::string_view kToml = R"(
+[[tests]]
+name = "both"
+text = "việt"
+keys = "vieejt"
+expected = "việt"
+)";
+    const auto result = TomlLoader::LoadString(kToml);
+    EXPECT_FALSE(result.error.empty());
+    EXPECT_TRUE(result.cases.empty());
+}
+
+TEST(TomlLoaderTest, NeitherTextNorKeysIsError) {
+    constexpr std::string_view kToml = R"(
+[[tests]]
+name = "nothing"
+expected = "abc"
+)";
+    const auto result = TomlLoader::LoadString(kToml);
+    EXPECT_FALSE(result.error.empty());
+    EXPECT_TRUE(result.cases.empty());
+}
+
+// ---------------------------------------------------------------------------
+// `verdict_mode` field
+// ---------------------------------------------------------------------------
+
+TEST(TomlLoaderTest, VerdictModeDefaultsToExact) {
+    constexpr std::string_view kToml = R"(
+[[tests]]
+name = "default-verdict"
+keys = "abc"
+expected = "abc"
+)";
+    const auto result = TomlLoader::LoadString(kToml);
+    ASSERT_TRUE(result.error.empty()) << result.error;
+    ASSERT_EQ(result.cases.size(), 1u);
+    EXPECT_EQ(result.cases[0].verdictMode, VerdictMode::Exact);
+    EXPECT_DOUBLE_EQ(result.cases[0].thresholdPct, 100.0);
+}
+
+TEST(TomlLoaderTest, VerdictModeExactExplicit) {
+    constexpr std::string_view kToml = R"(
+[[tests]]
+name = "explicit-exact"
+keys = "abc"
+expected = "abc"
+verdict_mode = "exact"
+)";
+    const auto result = TomlLoader::LoadString(kToml);
+    ASSERT_TRUE(result.error.empty()) << result.error;
+    ASSERT_EQ(result.cases.size(), 1u);
+    EXPECT_EQ(result.cases[0].verdictMode, VerdictMode::Exact);
+}
+
+TEST(TomlLoaderTest, VerdictModeEditDistanceParses) {
+    constexpr std::string_view kToml = R"(
+[[tests]]
+name = "ed"
+text = "việt nam"
+verdict_mode = "edit_distance"
+threshold_pct = 95.0
+)";
+    const auto result = TomlLoader::LoadString(kToml);
+    ASSERT_TRUE(result.error.empty()) << result.error;
+    ASSERT_EQ(result.cases.size(), 1u);
+    EXPECT_EQ(result.cases[0].verdictMode, VerdictMode::EditDistance);
+    EXPECT_DOUBLE_EQ(result.cases[0].thresholdPct, 95.0);
+}
+
+TEST(TomlLoaderTest, VerdictModeUnknownIsError) {
+    constexpr std::string_view kToml = R"(
+[[tests]]
+name = "bad-mode"
+keys = "abc"
+expected = "abc"
+verdict_mode = "fuzzy"
+)";
+    const auto result = TomlLoader::LoadString(kToml);
+    EXPECT_FALSE(result.error.empty());
+    EXPECT_TRUE(result.cases.empty());
+}
+
+TEST(TomlLoaderTest, ThresholdPctDefaultIsHundred) {
+    // edit_distance without threshold_pct -> 100.0 (exact-match in spirit).
+    constexpr std::string_view kToml = R"(
+[[tests]]
+name = "no-threshold"
+text = "abc"
+verdict_mode = "edit_distance"
+)";
+    const auto result = TomlLoader::LoadString(kToml);
+    ASSERT_TRUE(result.error.empty()) << result.error;
+    ASSERT_EQ(result.cases.size(), 1u);
+    EXPECT_DOUBLE_EQ(result.cases[0].thresholdPct, 100.0);
+}
+
 }  // namespace NextKey::TestRunner::Test

@@ -20,12 +20,15 @@
 #include <cwchar>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "CaseResult.h"
+#include "CliConvert.h"
 #include "ClipboardReader.h"
+#include "EditDistance.h"
 #include "Encoding.h"
 #include "HookLogParser.h"
 #include "JunitXmlWriter.h"
@@ -36,7 +39,7 @@
 
 namespace NextKey::TestRunner {
 
-constexpr const char* kVersion = "0.6.0-d9-reporter";
+constexpr const char* kVersion = "0.7.0-d0-edit-distance";
 
 // GetLocalTime-derived ms-since-midnight (matches NexusKey HookLog timestamp
 // format, so we can slice log entries by per-case windows).
@@ -90,6 +93,14 @@ void PrintUsage() {
     std::printf("                       log to print L1 inter-key timing per case.\n");
     std::printf("  --junit PATH         Write JUnit-style XML report to PATH\n");
     std::printf("  --perf-csv PATH      Write per-case perf metrics as CSV to PATH\n\n");
+    std::printf("Standalone helpers:\n");
+    std::printf("  --convert TEXT       Print raw Telex sequence for TEXT (uses Telex.h\n");
+    std::printf("                       table -- the same source of truth that drives\n");
+    std::printf("                       corpus `text` fields). Useful for verifying\n");
+    std::printf("                       hand-written corpus segments before locking.\n");
+    std::printf("                       Example:\n");
+    std::printf("                         NextKeyTestRunner.exe --convert \"việt có dấu\"\n");
+    std::printf("                       prints:  vieejt cos daasu\n\n");
     std::printf("  --help, -h           Show this help\n\n");
     std::printf("Examples:\n");
     std::printf("  NextKeyTestRunner.exe --send vieejt --raw\n");
@@ -127,10 +138,12 @@ struct RunOptions {
     std::u16string hookLogPath;     // --hook-log: NexusKey_hook.log for L1 timing
     std::u16string junitXmlPath;    // --junit: JUnit XML report output
     std::u16string perfCsvPath;     // --perf-csv: per-case CSV output
+    std::u16string convertText;     // --convert TEXT: print raw Telex, no driving
     bool raw = false;
     bool verify = false;
     bool clearFirst = false;
     bool hasExpected = false;
+    bool hasConvert = false;
     uint32_t interKeyMicros = 10'000;
     uint32_t initialDelayMs = 3'000;
     uint32_t postSendMs = 200;
@@ -174,8 +187,13 @@ int RunList(std::u16string_view filePath) {
 // `outWindow` records the wall-clock window (start = just before SendString,
 // end = after the post-send/clipboard-settle wait) so the post-mortem L1
 // analyzer can slice log entries belonging to this case.
+// `outErrorChars` / `outErrorPct` are filled when verdictMode == EditDistance
+// (zero otherwise) so the reporter can surface the corruption-rate metric.
 bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
-                   std::string& failureMessage, CaseWindow& outWindow) {
+                   std::string& failureMessage, CaseWindow& outWindow,
+                   std::size_t& outErrorChars, double& outErrorPct) {
+    outErrorChars = 0;
+    outErrorPct = 0.0;
     SendInputDriver::Options drvOpts;
     drvOpts.interKeyMicros = tc.interKeyMicros;
     SendInputDriver::Driver driver(drvOpts);
@@ -213,6 +231,23 @@ bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
     auto actual = ClipboardReader::ReadText();
     if (!actual) {
         failureMessage = "clipboard read failed (no CF_UNICODETEXT)";
+        return false;
+    }
+
+    if (tc.verdictMode == VerdictMode::EditDistance) {
+        outErrorChars = EditDistance::Levenshtein(*actual, tc.expected);
+        outErrorPct = EditDistance::ErrorPct(*actual, tc.expected);
+        const double matchPct = 100.0 - outErrorPct;
+        if (matchPct >= tc.thresholdPct) {
+            return true;
+        }
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+            "edit_distance FAIL: %.2f%% error (%zu chars), threshold>=%.2f%%",
+            outErrorPct, outErrorChars, tc.thresholdPct);
+        failureMessage = std::string(buf) +
+            "\n        expected: " + Encoding::Utf16ToUtf8(tc.expected) +
+            "\n        actual:   " + Encoding::Utf16ToUtf8(*actual);
         return false;
     }
 
@@ -358,7 +393,10 @@ int RunCorpus(const RunOptions& opt) {
         const uint64_t caseStartMs = LocalTimeMs();
         std::string msg;
         CaseWindow window{};
-        const bool casePassed = RunSingleCase(tc, opt.postSendMs, msg, window);
+        std::size_t errorChars = 0;
+        double errorPct = 0.0;
+        const bool casePassed = RunSingleCase(tc, opt.postSendMs, msg, window,
+                                              errorChars, errorPct);
         const uint64_t caseEndMs = LocalTimeMs();
         windows.push_back(window);
 
@@ -368,10 +406,18 @@ int RunCorpus(const RunOptions& opt) {
         r.failureMessage = casePassed ? "" : msg;
         r.wallClockMs = (caseEndMs >= caseStartMs) ? (caseEndMs - caseStartMs) : 0;
         r.interKeyMicrosConfig = tc.interKeyMicros;
+        r.verdictMode = tc.verdictMode;
+        r.errorChars = errorChars;
+        r.errorPct = errorPct;
         results.push_back(std::move(r));
 
         if (casePassed) {
-            std::printf("PASS\n");
+            if (tc.verdictMode == VerdictMode::EditDistance) {
+                std::printf("PASS (edit_distance: %.2f%% error, %zu chars)\n",
+                            errorPct, errorChars);
+            } else {
+                std::printf("PASS\n");
+            }
             ++passed;
         } else {
             std::printf("FAIL\n        %s\n", msg.c_str());
@@ -518,6 +564,9 @@ int Run(int argc, wchar_t* argv[]) {
             opt.junitXmlPath = WideToU16(argv[++i]);
         } else if (arg == L"--perf-csv" && i + 1 < argc) {
             opt.perfCsvPath = WideToU16(argv[++i]);
+        } else if (arg == L"--convert" && i + 1 < argc) {
+            opt.convertText = WideToU16(argv[++i]);
+            opt.hasConvert = true;
         } else if (arg == L"--help" || arg == L"-h") {
             PrintUsage();
             return EXIT_SUCCESS;
@@ -527,6 +576,16 @@ int Run(int argc, wchar_t* argv[]) {
             PrintUsage();
             return EXIT_FAILURE;
         }
+    }
+
+    if (opt.hasConvert) {
+        // Use std::wcout would lose the explicit UTF-8 codepage; build the
+        // UTF-8 string in CliConvert and printf it for parity with the rest
+        // of the runner's output path (already SetConsoleOutputCP(CP_UTF8)).
+        std::ostringstream os;
+        CliConvert::Convert(opt.convertText, os);
+        std::fputs(os.str().c_str(), stdout);
+        return EXIT_SUCCESS;
     }
 
     if (!opt.listFile.empty()) {
