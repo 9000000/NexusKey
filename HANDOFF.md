@@ -1,13 +1,113 @@
 # NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
-## Sprint 3 FSM — D-1 COMPLETE (2026-05-05 night) — CURRENT PICKUP NOTE
+## Sprint 3 FSM — D-1 MERGED TO MAIN (2026-05-06) — CURRENT PICKUP NOTE
 
-Active branch: **`sprint-3/codegen-tool`** (15 commits ahead of Main).
-Sprint 3 FSM codegen tool **fully working end-to-end**. Ready to open PR.
+Main is at `0600f34`. Three PRs merged this session 2026-05-05/06 night:
 
-- Design: [`docs/plans/2026-05-05-fsm-engine-refactor-design.md`](docs/plans/2026-05-05-fsm-engine-refactor-design.md) (642 lines)
-- Plan: [`docs/plans/sprint-3-fsm-engine-plan.md`](docs/plans/sprint-3-fsm-engine-plan.md) (687 lines, D-1..D6 task breakdown)
-- Design lives on a **separate** branch `design/fsm-engine-refactor` (3 commits, design + plan + license-audit doc).
+| PR | Title | Effect |
+|---|---|---|
+| **#131** | design: FSM engine refactor (Sprint 3) + implementation plan | Adds `docs/plans/2026-05-05-fsm-engine-refactor-design.md` (642 lines) + `docs/plans/sprint-3-fsm-engine-plan.md` (687 lines). Locks 8 brainstorm decisions; license audit (gonhanh.org BSD-3 ✅, PHTV AGPL-3 ❌, xkey MIT skip). |
+| **#132** | tooling: FSM codegen tool (Sprint 3 D-1) | Standalone Python pkg `tools/fsm-codegen/` — parser → NFA → DFA → Hopcroft minimize → overlay → emit C++. 16 commits, 8 tasks. 179/179 pytest PASS. Generates 10 C++ headers (~288 KB source / ~30 KB runtime). Engine code untouched. |
+| **#133** | feat(classic): import / export spell-check exception list | Adds Nhập / Xuất buttons to `ClassicSpellExclusionsDialog`. UTF-8 BOM-safe import with replace/append, sort + dedup. Plus README contributor add (Shzr0). |
+
+### Pipeline numbers (real Vietnamese rules + Telex full)
+
+```
+NFA:     55,801 states  /  1.14s  build
+DFA:     55,727 states  /  0.70s  subset construction
+Min:     55 states      /  0.44s  Hopcroft (1014× reduction)
+Overlay: 1,483 actions  /  0.50s
+TOTAL:   2.78s end-to-end on real rules
+
+Memory dense post-min: ~30 KB resident across 3 methods
+                       (target was 50-80 KB per method — 5× under budget).
+```
+
+### Generated headers in `tools/fsm-codegen/codegen/emitter.py`
+
+```
+abstract_input.h           1,860  bytes (shared enum)
+action_table_<method>.h    ~5 KB  (3 methods)
+fsm_table_<method>.h      ~80 KB  (3 methods)
+keymap_<method>.h           ~7 KB  (3 methods)
+TOTAL SOURCE:            288,464  bytes
+```
+
+CLI: `python -m codegen.cli --rules rules/ --output /tmp/gen` produces all 10.
+
+---
+
+## NEXT — D0 (engine refactor begins)
+
+**Branch to create**: `sprint-3/fsm-engine` from Main.
+
+**Task list (per `docs/plans/sprint-3-fsm-engine-plan.md` Tasks 11-16)**:
+
+1. **Task 11 — CMake codegen integration** (~2-3 hours)
+   - `CMakeLists.txt`: `find_package(Python3 REQUIRED COMPONENTS Interpreter)`.
+   - `add_custom_command` to run `tools/fsm-codegen/codegen/cli.py` at configure time → output to `${CMAKE_BINARY_DIR}/generated/`.
+   - Add include path so source files can `#include "abstract_input.h"` etc.
+
+2. **Task 12 — Pre-generated headers committed** (~30 min)
+   - Run codegen, commit output to `src/core/engine/generated/*.h` (7 headers per method × 3 methods + shared = 10 files).
+   - CMake picks committed dir if Python unavailable (headless build fallback).
+   - CI step: re-run codegen, `git diff` should be empty (no drift).
+
+3. **Task 13 — `FsmDispatcher` class skeleton** (~3-4 hours)
+   - Create `src/core/engine/FsmDispatcher.{h,cpp}`.
+   - Forward-decl `FsmTable`, `Keymap`, atomic shared_ptr members for RCU.
+   - `ProcessKey(rawKey) -> HookVerdict` stub (returns PASSTHROUGH).
+   - `ProcessBackspace()` stub.
+   - Setter accessors with `std::atomic_store`.
+   - Add to CMake source list. Linux compile clean. **NOT wired to hook yet.**
+
+4. **Task 14 — `HistoryRingBuffer<Record, 256>`** (~2 hours)
+   - Lock-free SPSC, single-thread (hook callback). `Push`, `PopLast`, `RewindToPrevSyllable`, `Clear`.
+   - `tests/HistoryRingBufferTest.cpp`: 256-record fill+wrap, push-pop matched, rewind boundary.
+
+5. **Task 15 — `CommitUndoSM`** (~1-2 hours)
+   - Port 3-state Idle/Primed/Ready logic from `HookEngine.cpp:556-594`.
+   - Tests: state transitions on space/punct/Enter + BS + non-BS input.
+
+6. **Task 16 — D0 commit** (~30 min)
+   - All scaffolding committed atomically. Engine wiring NOT touched.
+   - Linux GTest 1409+ PASS.
+   - Windows MSVC compile clean.
+   - Commit message: `Sprint 3 D0: FSM scaffolding (codegen output, FsmDispatcher, HistoryRingBuffer, CommitUndoSM)`.
+
+After D0 → D1 (FsmDispatcher impl + diff harness 31,757 cases) → D2 (fix to diff=0) → D3 (plugin bus + SyllableValidator) → D4 (hook swap + chaos 55/55 PASS) → D5 (delete TypingEngine + SpellChecker, ~1800 LOC) → D6 (baseline + PR).
+
+### Pickup commands (next session)
+
+```bash
+git checkout Main && git pull origin Main           # 0600f34 expected
+git checkout -b sprint-3/fsm-engine                 # new branch from Main
+
+# Verify codegen tool still works (ship-state baseline):
+cd tools/fsm-codegen
+python3 -m venv /tmp/fsm-venv
+/tmp/fsm-venv/bin/pip install pytest
+/tmp/fsm-venv/bin/python -m pytest                  # 179/179 PASS
+/tmp/fsm-venv/bin/python -m codegen.cli \
+    --rules ../../rules/ --output /tmp/gen          # 10 headers, 288 KB
+
+# Then start Task 11 — CMake integration.
+```
+
+### Key open items flagged
+
+- Plan doc Task 7b (full 20,504 syllable enumeration verifier) deferred — current 35 curated cases sufficient gate for D-1.
+- `docs/RuleTiengViet_Summary.md` lists `ôô` (line 48 + 73) but anh confirmed not real Vietnamese — TOML now corrects it; doc itself NOT updated. Anh decides if upstream-fix worth doing.
+- License attribution: gonhanh.org BSD-3 cited in codegen output headers + emitter docstring; need to also add `LICENSE-3RD-PARTY.md` at repo root before D-1 PR if anh's repo policy requires it (currently not required — codegen output already attributes inline).
+
+---
+
+## Sprint 3 FSM — D-1 COMPLETE (previous session note, kept for trail)
+
+Earlier this session 2026-05-05 night the codegen-tool work was on a feature branch. The above section reflects post-merge state.
+
+- Branch: `sprint-3/codegen-tool` (now merged + deleted)
+- Design branch: `design/fsm-engine-refactor` (now merged + deleted)
 
 ### What landed this session (D-1 Tasks 1-8 — ALL DONE)
 
