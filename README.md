@@ -275,6 +275,7 @@ Cảm ơn các thành viên cộng đồng đã test và góp ý:
 - [huntersun](https://github.com/huntersun)
 - [haihv8x](https://github.com/haihv8x)
 - [os-hoanghv](https://github.com/os-hoanghv)
+- [Shzr0](https://github.com/Shzr0)
 
 ## License
 
