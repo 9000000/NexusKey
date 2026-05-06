@@ -55,13 +55,19 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: --output path not a directory: {args.output}", file=sys.stderr)
         return 2
 
-    # D-1 Task 1: stub. Real pipeline wired Tasks 2-8.
-    print(f"fsm-codegen v0.1.0 (skeleton — D-1 Task 1 stub)")
-    print(f"  rules: {args.rules.resolve()}")
+    # D-1 Task 8: full pipeline wired.
+    from .emitter import CppEmitter
+
+    print(f"fsm-codegen v0.1.0")
+    print(f"  rules:  {args.rules.resolve()}")
     print(f"  output: {args.output.resolve()}")
     print(f"  method: {args.method}")
-    print(f"  verify: {args.verify}")
-    print("  (pipeline impl pending Tasks 2-8)")
+
+    files = CppEmitter.emit_all(args.rules, args.output)
+    total = sum(f.stat().st_size for f in files)
+    print(f"  emitted {len(files)} headers ({total:,} bytes)")
+    for f in sorted(files):
+        print(f"    {f.stat().st_size:>8,} bytes  {f.name}")
     return 0
 
 
