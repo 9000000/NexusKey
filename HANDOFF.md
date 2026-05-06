@@ -1,14 +1,15 @@
 # NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
-## Sprint 3 FSM — D-1 in progress (2026-05-05 night) — CURRENT PICKUP NOTE
+## Sprint 3 FSM — D-1 COMPLETE (2026-05-05 night) — CURRENT PICKUP NOTE
 
-Active branch: **`sprint-3/codegen-tool`** (13 commits ahead of Main).
-Working on the FSM engine refactor per:
+Active branch: **`sprint-3/codegen-tool`** (15 commits ahead of Main).
+Sprint 3 FSM codegen tool **fully working end-to-end**. Ready to open PR.
+
 - Design: [`docs/plans/2026-05-05-fsm-engine-refactor-design.md`](docs/plans/2026-05-05-fsm-engine-refactor-design.md) (642 lines)
 - Plan: [`docs/plans/sprint-3-fsm-engine-plan.md`](docs/plans/sprint-3-fsm-engine-plan.md) (687 lines, D-1..D6 task breakdown)
 - Design lives on a **separate** branch `design/fsm-engine-refactor` (3 commits, design + plan + license-audit doc).
 
-### What landed this session (D-1 Tasks 1-7, ~90% done)
+### What landed this session (D-1 Tasks 1-8 — ALL DONE)
 
 | Task | Commit | What |
 |---|---|---|
@@ -22,6 +23,7 @@ Working on the FSM engine refactor per:
 | 5  | `15a3dd4` | Hopcroft minimization + 17 tests (407× state reduction) |
 | 6  | `922a725` | Tone/modifier overlay + Action emission + 32 tests (Vietnamese tone diacritic table 12 vowels × 5 tones, render_state, compute_action diff) |
 | 7  | `bb6de6f` | Exhaustive verifier + 5 NFA bug fixes revealed by 35 curated cases (multi-char cons `tr`, MOD_D_BAR, coda chaining `n→ng/nh`, layer order, etc.) + perf O(n²)→O(1) state-by-id index |
+| 8  | `bb9c9e2` | Emit C++ tables (`fsm_table_<method>.h`, `keymap_<method>.h`, `action_table_<method>.h`, shared `abstract_input.h`) for telex/telex-simple/vni. Each header g++ -fsyntax-only verified. CLI wired end-to-end. |
 
 ### Pipeline numbers (real Vietnamese rules + Telex full keymap)
 
@@ -32,27 +34,46 @@ Min:     55 states      /  0.44s  Hopcroft (1014× reduction)
 Overlay: 1,483 actions  /  0.50s  text-emission Actions per transition
 TOTAL:   2.78s end-to-end on real rules
 
-pytest: 163/163 PASS in 19.4s (deterministic across multiple runs)
+pytest: 179/179 PASS in 70s (was 163 pre-Task-8; +16 emitter tests
+                              with g++ syntax-check overhead)
 Memory dense (post-min):  ~7 KB  (target was 50-80 KB — 10× under budget)
 ```
 
-### What's left in D-1
+### Generated headers (per method × 3 methods + shared)
 
-**Task 8** — emit C++ tables. The minimized DFA + overlay action table need to be serialized to:
 ```
-src/core/engine/generated/abstract_input.h     enum AbstractInput
-src/core/engine/generated/fsm_table_telex.h    constexpr FsmCell[state][input]
-src/core/engine/generated/fsm_table_telex_simple.h
-src/core/engine/generated/fsm_table_vni.h
-src/core/engine/generated/fsm_table_combined.h
-src/core/engine/generated/keymap_telex.h
-src/core/engine/generated/keymap_vni.h
-src/core/engine/generated/action_table.h       constexpr Action[]
+abstract_input.h           1,860  bytes (shared enum)
+action_table_telex.h       5,196  bytes
+action_table_telex_simple  5,198  bytes
+action_table_vni.h         4,657  bytes
+fsm_table_telex.h         84,844  bytes
+fsm_table_telex_simple.h  84,894  bytes
+fsm_table_vni.h           79,004  bytes
+keymap_telex.h             7,598  bytes
+keymap_telex_simple.h      7,610  bytes
+keymap_vni.h               7,603  bytes
+TOTAL SOURCE:            288,464  bytes
+RUNTIME DATA estimate:   ~30 KB resident (3 methods + shared) —
+                         comments inflate source 10×; actual constexpr
+                         data is just states × inputs × 4 bytes per cell.
 ```
 
-Stub already in `tools/fsm-codegen/codegen/emitter.py` — fill `emit_dense()` + `emit_keymap()` + wire CLI in `main.py` to do full pipeline → emit. Verify generated `.h` compiles via `clang -fsyntax-only`. Test: `tests/test_emitter.py`. ~half a day.
+### What's NEXT — open PR + start D0
 
-After Task 8 — D-1 complete, open PR `tooling: FSM codegen tool (Sprint 3 D-1)`. Merge to Main. Then start D0 on a new branch `sprint-3/fsm-engine` (engine refactor consumes the generated tables).
+**Step 1**: Open PR `tooling: FSM codegen tool (Sprint 3 D-1)` from
+`sprint-3/codegen-tool` to Main. Body should reference design doc +
+plan doc + chaos-baseline preservation (D-1 standalone, no engine touch).
+Merge after review.
+
+**Step 2**: Start D0 on new branch `sprint-3/fsm-engine` from Main:
+1. CMake integration (run codegen at configure-time).
+2. Commit pre-generated `src/core/engine/generated/*.h` so headless
+   build works without Python.
+3. New `FsmDispatcher` class skeleton + `HistoryRingBuffer` +
+   `CommitUndoSM`. NOT wired to hook callback yet.
+4. Linux GTest 1409+ PASS.
+
+D0 is plan-doc Task 11-16. Estimate ~1 day.
 
 ### Pickup commands
 
@@ -60,9 +81,15 @@ After Task 8 — D-1 complete, open PR `tooling: FSM codegen tool (Sprint 3 D-1)
 git checkout sprint-3/codegen-tool
 cd tools/fsm-codegen
 python3 -m venv /tmp/fsm-venv && /tmp/fsm-venv/bin/pip install pytest
-/tmp/fsm-venv/bin/python -m pytest                  # 163/163 PASS
+/tmp/fsm-venv/bin/python -m pytest                  # 179/179 PASS
 /tmp/fsm-venv/bin/python -m codegen.cli \
-    --rules ../../rules/ --output /tmp/test-emit/   # CLI smoke (currently stub)
+    --rules ../../rules/ --output /tmp/test-emit/   # 10 headers, 288 KB source
+
+# To prep the PR:
+git checkout sprint-3/codegen-tool
+git push -u origin sprint-3/codegen-tool
+gh pr create --base Main --title "tooling: FSM codegen tool (Sprint 3 D-1)" \
+    --body "..."  # link design + plan docs
 ```
 
 ### Key open items flagged
