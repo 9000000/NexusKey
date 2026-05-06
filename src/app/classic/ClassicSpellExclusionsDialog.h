@@ -28,6 +28,8 @@ private:
     void PopulateList();
     void AddEntry(const std::wstring& text);
     void DeleteSelected();
+    void ImportFromFile();
+    void ExportToFile();
 
     void LoadData();
     void SaveData();
@@ -53,6 +55,8 @@ private:
     HWND editEntry_ = nullptr;
     HWND btnAdd_ = nullptr;
     HWND btnDelete_ = nullptr;
+    HWND btnImport_ = nullptr;
+    HWND btnExport_ = nullptr;
 
     // State
     std::vector<std::wstring> entries_;
