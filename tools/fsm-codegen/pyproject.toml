@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fsm-codegen"
+version = "0.1.0"
+description = "FSM table codegen for NexusKey Sprint 3 Vietnamese typing engine"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+
+# tomllib is stdlib in 3.11+; no runtime deps needed for parser/NFA/DFA core.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+# Hopcroft DFA library spike (Task 5). Optional — fallback to in-tree impl.
+automata = [
+    "automata-lib>=8.0",
+]
+
+[project.scripts]
+fsm-codegen = "codegen.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["codegen*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

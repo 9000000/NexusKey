@@ -1,6 +1,106 @@
 # NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
-## Post-T3 status (2026-05-05 PM) — current pickup note
+## Sprint 3 FSM — D-1 COMPLETE (2026-05-05 night) — CURRENT PICKUP NOTE
+
+Active branch: **`sprint-3/codegen-tool`** (15 commits ahead of Main).
+Sprint 3 FSM codegen tool **fully working end-to-end**. Ready to open PR.
+
+- Design: [`docs/plans/2026-05-05-fsm-engine-refactor-design.md`](docs/plans/2026-05-05-fsm-engine-refactor-design.md) (642 lines)
+- Plan: [`docs/plans/sprint-3-fsm-engine-plan.md`](docs/plans/sprint-3-fsm-engine-plan.md) (687 lines, D-1..D6 task breakdown)
+- Design lives on a **separate** branch `design/fsm-engine-refactor` (3 commits, design + plan + license-audit doc).
+
+### What landed this session (D-1 Tasks 1-8 — ALL DONE)
+
+| Task | Commit | What |
+|---|---|---|
+| 1  | `96ef1a7` | Python pkg skeleton — `tools/fsm-codegen/` (CLI, parser/nfa/dfa/overlay/verifier stubs, 4 smoke tests) |
+| 2a | `1cf5504` | Rule TOML data — `rules/{vietnamese-phonotactics,telex-keymap,vni-keymap}.toml` |
+| 2a (fixes) | `34987aa`, `5a5e6d2`, `62a4e03`, `c4b0a9c` | anh review: remove ôô, add `]/[`/Telex Simple, classic-default, VNI `uo+7/6` combos, auto-horn `huơ` edge case (h/th/kh) |
+| 2b | `0a62474` | `RuleParser` impl + 23 tests |
+| 3a | `aea0cae` | NFA test design (23 tests, locks API surface) |
+| 3b | `ade8beb` | `Nfa.from_rules()` impl — 9 layers (cons / vowel / modifier / tone / coda / 2-vowel / uo edge / escape) |
+| 4  | `5b03427` | DFA subset construction (Aho/Sethi/Ullman §3.7) + 22 tests |
+| 5  | `15a3dd4` | Hopcroft minimization + 17 tests (407× state reduction) |
+| 6  | `922a725` | Tone/modifier overlay + Action emission + 32 tests (Vietnamese tone diacritic table 12 vowels × 5 tones, render_state, compute_action diff) |
+| 7  | `bb6de6f` | Exhaustive verifier + 5 NFA bug fixes revealed by 35 curated cases (multi-char cons `tr`, MOD_D_BAR, coda chaining `n→ng/nh`, layer order, etc.) + perf O(n²)→O(1) state-by-id index |
+| 8  | `bb9c9e2` | Emit C++ tables (`fsm_table_<method>.h`, `keymap_<method>.h`, `action_table_<method>.h`, shared `abstract_input.h`) for telex/telex-simple/vni. Each header g++ -fsyntax-only verified. CLI wired end-to-end. |
+
+### Pipeline numbers (real Vietnamese rules + Telex full keymap)
+
+```
+NFA:     55,801 states  /  1.14s  build
+DFA:     55,727 states  /  0.70s  subset construction
+Min:     55 states      /  0.44s  Hopcroft (1014× reduction)
+Overlay: 1,483 actions  /  0.50s  text-emission Actions per transition
+TOTAL:   2.78s end-to-end on real rules
+
+pytest: 179/179 PASS in 70s (was 163 pre-Task-8; +16 emitter tests
+                              with g++ syntax-check overhead)
+Memory dense (post-min):  ~7 KB  (target was 50-80 KB — 10× under budget)
+```
+
+### Generated headers (per method × 3 methods + shared)
+
+```
+abstract_input.h           1,860  bytes (shared enum)
+action_table_telex.h       5,196  bytes
+action_table_telex_simple  5,198  bytes
+action_table_vni.h         4,657  bytes
+fsm_table_telex.h         84,844  bytes
+fsm_table_telex_simple.h  84,894  bytes
+fsm_table_vni.h           79,004  bytes
+keymap_telex.h             7,598  bytes
+keymap_telex_simple.h      7,610  bytes
+keymap_vni.h               7,603  bytes
+TOTAL SOURCE:            288,464  bytes
+RUNTIME DATA estimate:   ~30 KB resident (3 methods + shared) —
+                         comments inflate source 10×; actual constexpr
+                         data is just states × inputs × 4 bytes per cell.
+```
+
+### What's NEXT — open PR + start D0
+
+**Step 1**: Open PR `tooling: FSM codegen tool (Sprint 3 D-1)` from
+`sprint-3/codegen-tool` to Main. Body should reference design doc +
+plan doc + chaos-baseline preservation (D-1 standalone, no engine touch).
+Merge after review.
+
+**Step 2**: Start D0 on new branch `sprint-3/fsm-engine` from Main:
+1. CMake integration (run codegen at configure-time).
+2. Commit pre-generated `src/core/engine/generated/*.h` so headless
+   build works without Python.
+3. New `FsmDispatcher` class skeleton + `HistoryRingBuffer` +
+   `CommitUndoSM`. NOT wired to hook callback yet.
+4. Linux GTest 1409+ PASS.
+
+D0 is plan-doc Task 11-16. Estimate ~1 day.
+
+### Pickup commands
+
+```bash
+git checkout sprint-3/codegen-tool
+cd tools/fsm-codegen
+python3 -m venv /tmp/fsm-venv && /tmp/fsm-venv/bin/pip install pytest
+/tmp/fsm-venv/bin/python -m pytest                  # 179/179 PASS
+/tmp/fsm-venv/bin/python -m codegen.cli \
+    --rules ../../rules/ --output /tmp/test-emit/   # 10 headers, 288 KB source
+
+# To prep the PR:
+git checkout sprint-3/codegen-tool
+git push -u origin sprint-3/codegen-tool
+gh pr create --base Main --title "tooling: FSM codegen tool (Sprint 3 D-1)" \
+    --body "..."  # link design + plan docs
+```
+
+### Key open items flagged
+
+- `docs/RuleTiengViet_Summary.md` lists `ôô` (line 48 + 73) but anh confirmed not real Vietnamese — TOML now corrects it; doc itself NOT updated (separate scope; anh decides if upstream-fix worth doing).
+- Curated case list 35 covers core happy paths but not edge cases like `lèeeeee` (extended vowel for chat). Verifier extension to full ~20K syllables (Task 7b) deferred.
+- License audit done — gonhanh.org BSD-3 ✅ compatible with NexusKey GPL-3. PHTV AGPL-3 SKIP. Memory: `reference_external_vn_typing_repos.md`.
+
+---
+
+## Post-T3 status (2026-05-05 PM) — previous pickup note
 
 Today's session shipped 7 PRs (#122-128) on top of the post-T3 cleanup
 (PR #121, c19239c). Main is now at `32fceb7`. Two production fixes,
