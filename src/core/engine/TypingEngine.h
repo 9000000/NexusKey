@@ -120,28 +120,38 @@ private:
                config_.inputMethod == InputMethod::Combined;
     }
 
-    // Input processing — Telex
+    // Tone keys (Telex z/s/f/r/x/j, VNI 0/1/2/3/4/5) — handled inline in PushChar.
     bool ProcessTone(Tone tone, wchar_t keyChar, size_t cachedTarget = SIZE_MAX);
-    bool ProcessClearTone();          // z/0 — remove existing tone
+    bool ProcessClearTone();
 
-    // Telex modifier dispatcher — fans out to per-action handlers below.
-    // `action` is the TypingAction classified by PushChar (HornInsertO,
-    // HornInsertU, HornW, CircumflexA/E/O, StrokeD); other actions yield false.
-    bool ProcessTelexModifier(TypingAction action, wchar_t c, wchar_t lower);
-
-    // Per-action Telex modifier handlers (G-3.3 extraction). Each returns
-    // true on consumption, false to fall through to ProcessChar (literal).
-    bool HandleHornInsertO(wchar_t c);   // Telex `[` — inserts ơ, escapes `[[`
-    bool HandleHornInsertU(wchar_t c);   // Telex `]` — inserts ư, escapes `]]`
-    bool HandleAdjacentCircumflex(wchar_t c, wchar_t lower);  // aa/ee/oo + cross-vowel free-marking
+    // Unified modifier dispatch (G-3.5). Single entry point for every
+    // user-mappable modifier action — both Telex and VNI. Switches on
+    // TypingAction and forwards to the per-action handlers below. The
+    // Telex/VNI split lives in PushChar's gating (English protection,
+    // escape, spell-check disabled paths) — once the action is approved,
+    // it's the same dispatch. Foundation for G-4 customKeyMap.
+    bool ProcessModifier(TypingAction action, wchar_t c);
 
     void ProcessChar(wchar_t c) { ProcessChar(c, towlower(c), iswupper(c)); }
     void ProcessChar(wchar_t c, wchar_t lower, bool isUpper);
 
-    // VNI modifier dispatcher — fans out to per-action handlers below.
-    // `action` is the TypingAction classified by PushChar (VniCircumflex,
-    // VniHorn, VniBreve, VniStroke); other actions yield false.
-    bool ProcessVniModifier(TypingAction action, wchar_t c);
+    // Per-action modifier handlers. Uniform `(TypingAction, wchar_t)`
+    // signature so ProcessModifier can dispatch them by action without
+    // per-handler thunks. Each returns true on consumption, false to
+    // fall through to ProcessChar (literal). `action` selects sub-
+    // behaviour where one handler covers multiple actions (HornInsert,
+    // AdjacentCircumflex); ignored where it's 1:1.
+    bool HandleHornInsert(TypingAction action, wchar_t c);          // Telex `[`/`]`
+    bool HandleAdjacentCircumflex(TypingAction action, wchar_t c);  // Telex aa/ee/oo + cross-vowel
+    bool HandleHornW(TypingAction action, wchar_t c);               // Telex w (P1-P8)
+    bool HandleStrokeD(TypingAction action, wchar_t c);             // Telex dd / VNI 9
+    bool HandleVniHorn(TypingAction action, wchar_t c);             // VNI 7
+    bool HandleVniCircumflex(TypingAction action, wchar_t c);       // VNI 6
+    bool HandleVniBreve(TypingAction action, wchar_t c);             // VNI 8
+
+    // Internal helpers used by Handle* wrappers above. The Modifier-
+    // parameterised VNI helper stays here (rather than splitting per-
+    // modifier) so the cross-vowel scan logic isn't duplicated.
     bool ProcessVniHornModifier(wchar_t c);
     bool ProcessVniVowelModifier(Modifier targetMod, wchar_t key);
 

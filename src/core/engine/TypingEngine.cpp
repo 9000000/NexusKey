@@ -63,6 +63,16 @@ constexpr bool IsVniModifierAction(TypingAction a) noexcept {
            a == TypingAction::VniStroke;
 }
 
+constexpr Modifier ActionToVniModifier(TypingAction a) noexcept {
+    switch (a) {
+        case TypingAction::VniCircumflex: return Modifier::Circumflex;
+        case TypingAction::VniHorn:       return Modifier::Horn;
+        case TypingAction::VniBreve:      return Modifier::Breve;
+        case TypingAction::VniStroke:     return Modifier::Stroke;
+        default:                           return Modifier::None;
+    }
+}
+
 constexpr int ModifierIndex(Modifier mod) noexcept {
     switch (mod) {
         case Modifier::Circumflex: return 0;
@@ -373,13 +383,13 @@ void TypingEngine::PushChar(wchar_t c) {
             if (!canEscape) {
                 canEscape = WouldModifierKeyMatchExclusion(lower);
             }
-            if (canEscape && ProcessTelexModifier(action, c, lower)) {
+            if (canEscape && ProcessModifier(action, c)) {
                 engProt_.bias = LanguageBias::Vietnamese;
                 ApplyAutoUO();
                 UpdateSpellState();
                 return;
             }
-        } else if (ProcessTelexModifier(action, c, lower)) {
+        } else if (ProcessModifier(action, c)) {
             engProt_.bias = LanguageBias::Vietnamese;
             ApplyAutoUO();
             UpdateSpellState();
@@ -408,11 +418,7 @@ void TypingEngine::PushChar(wchar_t c) {
         } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // Allow VNI modifier escape or spell exclusion match
             bool canEscape = false;
-            Modifier escMod = Modifier::None;
-            if (c == L'6') escMod = Modifier::Circumflex;
-            else if (c == L'7') escMod = Modifier::Horn;
-            else if (c == L'8') escMod = Modifier::Breve;
-            else if (c == L'9') escMod = Modifier::Stroke;
+            Modifier escMod = ActionToVniModifier(action);
             if (escMod == Modifier::Stroke) {
                 canEscape = HasEscapableModifier(states_.data(), states_.size(), escMod, true);
             } else if (escMod != Modifier::None) {
@@ -421,13 +427,13 @@ void TypingEngine::PushChar(wchar_t c) {
             if (!canEscape) {
                 canEscape = WouldModifierKeyMatchExclusion(lower);
             }
-            if (canEscape && ProcessVniModifier(action, c)) {
+            if (canEscape && ProcessModifier(action, c)) {
                 engProt_.bias = LanguageBias::Vietnamese;
                 ApplyAutoUO();
                 UpdateSpellState();
                 return;
             }
-        } else if (ProcessVniModifier(action, c)) {
+        } else if (ProcessModifier(action, c)) {
             engProt_.bias = LanguageBias::Vietnamese;
             ApplyAutoUO();
             UpdateSpellState();
@@ -511,31 +517,70 @@ bool TypingEngine::ProcessClearTone() {
 }
 
 //-----------------------------------------------------------------------------
-// Modifier Processing (W, [], AA, EE, OO, DD) - TABLE-DRIVEN
+// Unified modifier dispatcher — single switch(TypingAction) covering both
+// Telex and VNI modifier actions. PushChar gates per-mode pre-checks (English
+// protection, escape, spell-check disabled) and then routes the approved
+// action here. Handler signature is uniform `(TypingAction, wchar_t)` so this
+// stays a flat fan-out — foundation for G-4 customKeyMap.
 //-----------------------------------------------------------------------------
 
-bool TypingEngine::ProcessTelexModifier(TypingAction action, wchar_t c, wchar_t lower) {
+bool TypingEngine::ProcessModifier(TypingAction action, wchar_t c) {
     switch (action) {
-        case TypingAction::HornInsertO: return HandleHornInsertO(c);
-        case TypingAction::HornInsertU: return HandleHornInsertU(c);
-        case TypingAction::HornW:       return ProcessWModifier(c);
+        case TypingAction::HornInsertO:
+        case TypingAction::HornInsertU: return HandleHornInsert(action, c);
+        case TypingAction::HornW:       return HandleHornW(action, c);
         case TypingAction::CircumflexA:
         case TypingAction::CircumflexE:
-        case TypingAction::CircumflexO: return HandleAdjacentCircumflex(c, lower);
-        case TypingAction::StrokeD:     return ProcessDModifier(c);
-        default:                         return false;
+        case TypingAction::CircumflexO: return HandleAdjacentCircumflex(action, c);
+        case TypingAction::StrokeD:     return HandleStrokeD(action, c);
+        case TypingAction::VniCircumflex: return HandleVniCircumflex(action, c);
+        case TypingAction::VniHorn:       return HandleVniHorn(action, c);
+        case TypingAction::VniBreve:      return HandleVniBreve(action, c);
+        case TypingAction::VniStroke:     return HandleStrokeD(action, c);
+        default:                          return false;
     }
 }
 
-bool TypingEngine::HandleHornInsertO(wchar_t c) {
-    // SimpleTelex omits bracket keys — let `[` fall through to literal.
+// Thin wrappers giving the Process* implementation methods a uniform
+// `(TypingAction, wchar_t)` shape so ProcessModifier can dispatch them
+// alongside the natively-uniform handlers (HandleHornInsert,
+// HandleAdjacentCircumflex). The `action` arg is unused for handlers
+// that are 1:1 with their action; HandleVniCircumflex/Breve forward to
+// the Modifier-parameterised VNI vowel modifier helper.
+
+bool TypingEngine::HandleHornW(TypingAction /*action*/, wchar_t c) {
+    return ProcessWModifier(c);
+}
+
+bool TypingEngine::HandleStrokeD(TypingAction /*action*/, wchar_t c) {
+    return ProcessDModifier(c);
+}
+
+bool TypingEngine::HandleVniHorn(TypingAction /*action*/, wchar_t c) {
+    return ProcessVniHornModifier(c);
+}
+
+bool TypingEngine::HandleVniCircumflex(TypingAction /*action*/, wchar_t c) {
+    return ProcessVniVowelModifier(Modifier::Circumflex, c);
+}
+
+bool TypingEngine::HandleVniBreve(TypingAction /*action*/, wchar_t c) {
+    return ProcessVniVowelModifier(Modifier::Breve, c);
+}
+
+bool TypingEngine::HandleHornInsert(TypingAction action, wchar_t c) {
+    // SimpleTelex omits bracket keys — let `[`/`]` fall through to literal.
     if (config_.inputMethod == InputMethod::SimpleTelex) return false;
 
-    // Escape: [[ → undo inserted ơ, produce literal '['
+    const wchar_t bracketChar = (action == TypingAction::HornInsertO) ? L'[' : L']';
+    const wchar_t baseVowel   = (action == TypingAction::HornInsertO) ? L'o' : L'u';
+
+    // Escape: doubled bracket (`[[` or `]]`) undoes the just-inserted ơ/ư
+    // and produces the bracket literal.
     if (!states_.empty() && rawInput_.size() >= 2 &&
-        rawInput_[rawInput_.size() - 2] == L'[') {
+        rawInput_[rawInput_.size() - 2] == bracketChar) {
         CharState& last = states_.back();
-        if (last.base == L'o' && last.mod == Modifier::Horn) {
+        if (last.base == baseVowel && last.mod == Modifier::Horn) {
             size_t consumedIdx = last.rawIdx;
             states_.pop_back();
             EraseConsumedRaw(consumedIdx);
@@ -544,44 +589,20 @@ bool TypingEngine::HandleHornInsertO(wchar_t c) {
             return true;
         }
     }
-    // [ → insert 'ơ' (o with horn)
+
     CharState s;
-    s.base = L'o';
+    s.base = baseVowel;
     s.mod = Modifier::Horn;
     s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
     states_.push_back(s);
     return true;
 }
 
-bool TypingEngine::HandleHornInsertU(wchar_t c) {
-    if (config_.inputMethod == InputMethod::SimpleTelex) return false;
-
-    // Escape: ]] → undo inserted ư, produce literal ']'
-    if (!states_.empty() && rawInput_.size() >= 2 &&
-        rawInput_[rawInput_.size() - 2] == L']') {
-        CharState& last = states_.back();
-        if (last.base == L'u' && last.mod == Modifier::Horn) {
-            size_t consumedIdx = last.rawIdx;
-            states_.pop_back();
-            EraseConsumedRaw(consumedIdx);
-            ProcessChar(c);
-            escape_.escape(EscapeKind::Horn);
-            return true;
-        }
-    }
-    // ] → insert 'ư' (u with horn)
-    CharState s;
-    s.base = L'u';
-    s.mod = Modifier::Horn;
-    s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
-    states_.push_back(s);
-    return true;
-}
-
-bool TypingEngine::HandleAdjacentCircumflex(wchar_t c, wchar_t lower) {
+bool TypingEngine::HandleAdjacentCircumflex(TypingAction /*action*/, wchar_t c) {
     // Dispatcher only routes a/e/o here; defensively bail when there's no
     // prior state to apply circumflex against.
     if (states_.empty()) return false;
+    const wchar_t lower = towlower(c);
 
     CharState& last = states_.back();
 
@@ -1452,17 +1473,9 @@ bool TypingEngine::WouldModifierKeyMatchExclusion(wchar_t lower) const {
 
 //-----------------------------------------------------------------------------
 // VNI Modifier Processing (keys 6, 7, 8, 9)
+// G-3.5: dispatch lives in ProcessModifier; the helpers below are called
+// via the HandleVni{Horn,Circumflex,Breve} wrappers.
 //-----------------------------------------------------------------------------
-
-bool TypingEngine::ProcessVniModifier(TypingAction action, wchar_t c) {
-    switch (action) {
-        case TypingAction::VniStroke:     return ProcessDModifier(c);
-        case TypingAction::VniHorn:       return ProcessVniHornModifier(c);
-        case TypingAction::VniCircumflex: return ProcessVniVowelModifier(Modifier::Circumflex, c);
-        case TypingAction::VniBreve:      return ProcessVniVowelModifier(Modifier::Breve, c);
-        default:                           return false;
-    }
-}
 
 bool TypingEngine::ProcessVniHornModifier(wchar_t c) {
     if (states_.empty()) return false;
