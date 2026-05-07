@@ -121,10 +121,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
 #endif
 
     s_instance = this;
-    // Sprint 2 D5: route the IOutputInjector → Internal::TrackedSendInput
-    // event count back into synthEventsPending_. Wired AFTER s_instance
-    // is set (callback dereferences it). Hook thread isn't installed yet
-    // so no synth dispatch can fire before this point.
+    // Wire Internal::TrackedSendInput synth counter → synthEventsPending_.
+    // Must be set AFTER s_instance (callback dereferences it). Hook thread
+    // isn't installed yet so no synth dispatch can fire before this point.
     NextKey::Output::Internal::g_synthCounterCallback = &HookEngine::OnSynthDispatched;
     currentMethod_.store(config.inputMethod, std::memory_order_release);
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
@@ -1786,13 +1785,10 @@ static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
     events.push_back(inUp);
 }
 
-// Sprint 2 D5: Bridges Internal::g_synthCounterCallback into the
-// singleton's synthEventsPending_ atomic. Pre-D2 the increment lived
-// in HookEngine::TrackedSendInput (only entry point for synth dispatch);
-// the IOutputInjector refactor moved dispatch into Internal::TrackedSendInput
-// which has no HookEngine dependency, leaving the counter at 0 on the
-// hot path and silently disabling synth-guard everywhere. This callback
-// restores the pre-D2 behavior without re-coupling the layers.
+// Bridges Internal::g_synthCounterCallback into the singleton's
+// synthEventsPending_ atomic. Internal::TrackedSendInput calls this
+// callback (when non-null) before and after SendInput to keep the counter
+// accurate across the hook thread. Wired in Start(); cleared in Stop().
 //
 // Memory ordering: relaxed is sufficient because every increment AND the
 // matching per-event decrement at LowLevelKeyboardProc:663 happen on the
@@ -1821,20 +1817,6 @@ bool HookEngine::IsSyncReplaceChannel() const noexcept {
     return inj && inj->SettleBudget().count() == 0;
 }
 
-/// Send INPUT events via SendInput with correct synthEventsPending_ tracking.
-/// Counter is pre-incremented BEFORE SendInput so the hook callback (which fires
-/// synchronously during SendInput) can decrement it correctly.  Without this,
-/// the counter inflates permanently — see commit message for full explanation.
-/// Caller must set sending_=true before and false after (or wrap multiple calls).
-void HookEngine::TrackedSendInput(INPUT* events, UINT count) noexcept {
-    synthEventsPending_ += static_cast<int>(count);
-    UINT sent = SendInput(count, events, sizeof(INPUT));
-    if (sent < count) {
-        synthEventsPending_ -= static_cast<int>(count - sent);
-        HOOK_LOG(L"  TrackedSendInput: PARTIAL sent=%u of %u (renderer drop?)", sent, count);
-    }
-}
-
 void HookEngine::SendBackspaceEvents(size_t count) {
     WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
     std::vector<INPUT> events;
@@ -1843,7 +1825,7 @@ void HookEngine::SendBackspaceEvents(size_t count) {
         AppendVkEvent(events, VK_BACK, bsScan);
     }
     sending_ = true;
-    TrackedSendInput(events.data(), static_cast<UINT>(events.size()));
+    NextKey::Output::Internal::TrackedSendInput(events.data(), static_cast<UINT>(events.size()));
     sending_ = false;
     RecordSynthDispatch();
 }
@@ -1855,7 +1837,7 @@ void HookEngine::SendCharEvents(const std::wstring& text) {
         AppendUnicodeEvent(events, ch);
     }
     sending_ = true;
-    TrackedSendInput(events.data(), static_cast<UINT>(events.size()));
+    NextKey::Output::Internal::TrackedSendInput(events.data(), static_cast<UINT>(events.size()));
     sending_ = false;
     RecordSynthDispatch();
 }
@@ -1955,11 +1937,11 @@ void HookEngine::ClipboardPaste(const std::wstring& text) {
 
     sending_ = true;
     if (!preEvents.empty()) {
-        TrackedSendInput(preEvents.data(), static_cast<UINT>(preEvents.size()));
+        NextKey::Output::Internal::TrackedSendInput(preEvents.data(), static_cast<UINT>(preEvents.size()));
     }
-    TrackedSendInput(inputs, 4);
+    NextKey::Output::Internal::TrackedSendInput(inputs, 4);
     if (!postEvents.empty()) {
-        TrackedSendInput(postEvents.data(), static_cast<UINT>(postEvents.size()));
+        NextKey::Output::Internal::TrackedSendInput(postEvents.data(), static_cast<UINT>(postEvents.size()));
     }
     sending_ = false;
     RecordSynthDispatch();
@@ -3070,7 +3052,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
                 evt.ki.wVk = static_cast<WORD>(reinjectVk);
                 evt.ki.wScan = static_cast<WORD>(MapVirtualKeyW(reinjectVk, MAPVK_VK_TO_VSC));
                 evt.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
-                TrackedSendInput(&evt, 1);
+                NextKey::Output::Internal::TrackedSendInput(&evt, 1);
             }
 
             if (backspaceCount > 0 || !toSend.empty()) {
