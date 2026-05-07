@@ -158,6 +158,13 @@ private:
     // Find target for tone/modifier application — delegates to phonotactics_.
     size_t FindToneTarget() const;
 
+    // T5 (anh 2026-05-07): true when the buffer is invalid because the existing
+    // tone (huyền/hỏi/ngã) is incompatible with a stop final coda (c/ch/p/t).
+    // Used by tone and modifier gates as a "mid-correction" predicate — when
+    // true, the user is presumed to be fixing the syllable so we let through
+    // tone replacement / modifier even if the current snapshot is invalid.
+    [[nodiscard]] bool IsToneStopCodaMismatch() const noexcept;
+
     // Auto ươ: convert 'uơ' to 'ươ' when followed by another character
     void ApplyAutoUO();
 

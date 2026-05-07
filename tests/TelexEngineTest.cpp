@@ -1586,6 +1586,26 @@ TEST_F(TelexEngineTest, EdgeCase_ToneReplace_2) {
     EXPECT_EQ(engine_->Peek(), L"ả");
 }
 
+// T5 (docs/TODO.md): tone replacement on already-toned syllable WITH coda.
+// Baseline: forward typing 'casc' should produce 'các' — no replacement involved.
+TEST_F(TelexEngineTest, T5_ToneAfterCoda_BaselineForward) {
+    TypeString(*engine_, L"casc");
+    EXPECT_EQ(engine_->Peek(), L"các");
+}
+
+// T5 (docs/TODO.md): user mistypes 'f' (huyền) on 'ca', adds coda 'c', then
+// corrects with 's' (sắc). 's' must REPLACE huyền with sắc on the toned vowel.
+// Spell-check OFF here — isolates whether the engine alone handles this.
+//   PASS → engine OK; bug lives in PhonotacticsValidator path (CombinedEngineSpellTest).
+//   FAIL → engine tone-replacement logic broken irrespective of validator.
+TEST_F(TelexEngineTest, T5_ToneReplaceAfterCoda_NoSpellCheck) {
+    TypeString(*engine_, L"cafcs");
+    EXPECT_EQ(engine_->Peek(), L"các")
+        << "After 'cafcs', engine should replace huyền with sắc on 'à' → 'các'.\n"
+        << "PASS means engine alone is fine; bug is in validator (CombinedEngineSpellTest).\n"
+        << "FAIL means TypingEngine tone-replacement logic itself is broken.";
+}
+
 TEST_F(TelexEngineTest, EdgeCase_GI_Plus_U) {
     TypeString(*engine_, L"giuw");
     EXPECT_EQ(engine_->Peek(), L"giư");
