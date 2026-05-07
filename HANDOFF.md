@@ -1,4 +1,35 @@
-# NexusKey Refactor — handoff (T5 `cafcs→các` next; H1 closed)
+# NexusKey Refactor — handoff (T5 closed; T6 retest or T2/T3 next)
+
+## 2026-05-07 — T5 `cafcs → các` FIX MERGED (PR #146, Main `1ade8dc`)
+
+**Pickup for teammate:** T5 closed. Engine now allows tone-replacement and modifier-then-tone correction on syllables that are temporarily Invalid due to tone-stop-coda mismatch. Next active items per sequencing rule:
+
+- **T6 retest** — Issue #117 `Lỗi → Lôĩ`. Anh hypothesis 2026-05-07: H1 hot-path restructure may have shifted timing enough that the race no longer reproduces. Retest first, then decide. ~15 min to verify.
+- **T2** — Phonotactics onset agreement (c/k/qu, g/gh, ng/ngh enforcement on `IsValidSyllable`). 2-3h, MEDIUM correctness.
+- **T3** — Phonotactics N1/N2/N3 vowel-coda compatibility (tighter group rules). 2-3h, MEDIUM correctness.
+
+### What T5 delivered
+
+The engine treated tone/modifier keys as literal whenever the buffer was Invalid (`spellCheckDisabled_=true`). This blocked self-correction sequences like:
+
+| Sequence | Pre-fix | Post-fix |
+|---|---|---|
+| `cafcs` | `càcs` | `các` |
+| `cofcs` | `còcs` | `cóc` |
+| `kefcs` | broken | `kéc` (generic across vowels) |
+| `cafcwj` | `càcwj` | `cặc` (modifier + tone chain) |
+| `cafcaj` | `càcaj` | `cậc` (circumflex variant) |
+
+Fix: shared predicate `TypingEngine::IsToneStopCodaMismatch()` plus three gate-relaxations:
+1. **Tone gate** — speculatively replace the existing tone, ask validator if result is Valid; if so, allow ProcessTone.
+2. **Modifier outer gate** — Telex + VNI; allow ProcessModifier when in tone-stop-coda mismatch state.
+3. **`WouldBeValidSyllable`** — accept modifier even if speculative result still Invalid, when invalidity is the same recoverable pattern.
+
+Hot-path cost: one extra `ValidateSyllableState` call (~hundreds of ns) on the rare `spellCheckDisabled_` path. Within Rule #11.1 1 ms budget.
+
+Verification: Linux 1515 → **1524** PASS (+9 T5 tests). Windows MSVC NextKeyTests clean under `/WX`, 9/9 T5 PASS. CODING_RULES naming/memory/error-handling/hot-path checked.
+
+---
 
 ## 2026-05-07 — H1 ProcessKeyDown decompose CLOSED (3 PRs, Main `659b910`)
 

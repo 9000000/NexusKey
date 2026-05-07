@@ -1,8 +1,8 @@
 # NexusKey Refactor Status — Living Inventory
 
-> **Last refresh:** 2026-05-07 (post H1c #145, Main `659b910`)
+> **Last refresh:** 2026-05-07 (post T5 #146, Main `1ade8dc`)
 > **Scope:** All architectural / cleanup refactor work. Excludes user-facing features (G-5/G-6 Sciter UI + keymap files, TSF Phase 2/3, etc.) — those track separately.
-> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Post-H1c the rule is satisfied** — only H6/H8 remain (roadmap-scale). Pivot to §D TypingEngine items.
+> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Post-H1c the rule is satisfied; T5 also done.** Remaining: T2/T3 (phonotactics correctness) + T6 retest (likely auto-resolved by H1).
 
 ---
 
@@ -48,6 +48,7 @@
 | **H1a** `HandleCommitUndo` extract | #143 `e820876` | 2026-05-07 | Step 2d (commit-undo Idle/Ready/Primed FSM, 187 LOC) extracted to private method with `KeyOutcome { Eat / Pass / Fallthrough }` enum. ProcessKeyDown 561 → 380 LOC. Chaos 55/55 PASS. Pre-merge naming fix: `kEat/kPass/kFallthrough` → `Eat/Pass/Fallthrough` to match project convention (CommitUndoState/MacroResult/AutoCapState/etc. all PascalCase no prefix). |
 | **H1b** `RunTopGuards` extract | #144 `3c06499` | 2026-05-07 | Steps 0/0b/1/1b/1c (TSF early-out / modifier track / toggle keys / excluded-app PID verification, 54 LOC) extracted. Bookkeeping (`otherKeyPressed_/altTapCount_/synth-watchdog`) stays in ProcessKeyDown post-switch — runs only on Fallthrough; excluded-app's same-PID/still-excluded paths set `otherKeyPressed_` themselves before returning Pass. ProcessKeyDown 380 → 327 LOC. `CommitUndoOutcome` renamed to generic `KeyOutcome` for sharing across H1a/H1b/H1c. Chaos 55/55 PASS. |
 | **H1c** `HandlePreDispatch` + `DispatchKeyAction` extract | #145 `659b910` | 2026-05-07 | Steps 3 / 3a-3d (English mode + auto-caps + macro tracking, ~107 LOC) → `HandlePreDispatch`. Steps 4b-10 (tempEngineOff / Ctrl-Alt-Win / alpha / bracket / VNI digit / BS / commit-trigger / fallthrough, ~158 LOC) → `DispatchKeyAction`. Cache shifted from after-step-3 to before HandlePreDispatch — byte-identical because GetKeyState within hook callback is stable. ProcessKeyDown 327 → **79 LOC** orchestrator (-86% cumulative across H1). Chaos 55/55 PASS. **HookEngine refactor backlog effectively closed.** |
+| **T5** Tone replacement on invalid buffer recovers validity | #146 `1ade8dc` | 2026-05-07 | New helper `TypingEngine::IsToneStopCodaMismatch()` + 3 gate-relaxations (tone gate, modifier outer gate, `WouldBeValidSyllable`). Engine no longer treats tone/modifier as literal when current buffer is Invalid solely because of huyền/hỏi/ngã + stop coda — the user is mid-correction; next tone keystroke recovers. Generic across vowels (a/e/o/ô) + Telex/VNI modifier paths. Linux 1524/1524 PASS (+9 T5 tests). Windows MSVC clean. Hot-path cost ~hundreds of ns on rare `spellCheckDisabled_` path, within Rule #11.1 1 ms budget. |
 
 ---
 
@@ -95,7 +96,7 @@
 | T2 | **Phonotactics onset agreement** — c/k/qu, g/gh, ng/ngh enforcement (`IsValidSyllable` currently ignores `onset` arg) | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
 | T3 | **Phonotactics N1/N2/N3 vowel-coda compatibility** — tighter group rules | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
 | ~~T4~~ | ~~**Verify Hot-path Fix 3 ComposeAll buffer reuse**~~ — VERIFIED 2026-05-07: shipped at `TypingEngine.h:218` (`mutable std::wstring composeBuf_`) + `TypingEngine.cpp:1236-1241` | hot-path-optimization-plan.md | DONE | ✅ |
-| T5 | **Bug `cafcs → các`** — tone replacement blocked on already-toned syllable | docs/TODO.md | 1-2h | Bug (HIGH) |
+| ~~T5~~ | ~~**Bug `cafcs → các`**~~ | — | DONE | ✅ PR #146 `1ade8dc` |
 | T6 | **Bug Issue #117 `Lỗi → Lôĩ`** — fast-typing chaos timing. **Anh decision 2026-05-07 post-H1:** retest first before scheduling fix work — H1's hot-path restructure may have shifted timing enough that the race no longer reproduces. If reproducible post-H1, schedule deep work; if not, monitor + close as auto-resolved. | HANDOFF.md + Issue #117 | Hard — chaos timing | Bug (LOWER, retest gate) |
 
 > **Note on T5/T6:** Bugs strictly speaking, not refactor. Listed here because they touch engine internals. Anh quyết định fix cùng Path G T-batch hay tách bug-fix branch riêng.
@@ -145,14 +146,13 @@ Verified by grep on Main `3ded489` (2026-05-07):
 
 ## Section G — Recommended next steps
 
-**Already shipped today (2026-05-07):** PR #138 (Path G G-4 customKeyMap), PR #139 (cleanup H2 + H7 + T1 + T4), PR #140 (H3 atomic migration), PR #141 (H5 Macro extract), PR #142 (H5 follow-ups), PR #143 (H1a HandleCommitUndo), PR #144 (H1b RunTopGuards), PR #145 (H1c HandlePreDispatch + DispatchKeyAction). Plus tooling `2e30f82` (chaos graceful shutdown + lôĩ stress) + 2 handoff commits. Total ~9 PRs / ~50 commits / 1 active day.
+**Already shipped today (2026-05-07):** PR #138 (Path G G-4 customKeyMap), PR #139 (cleanup H2 + H7 + T1 + T4), PR #140 (H3 atomic migration), PR #141 (H5 Macro extract), PR #142 (H5 follow-ups), PR #143 (H1a HandleCommitUndo), PR #144 (H1b RunTopGuards), PR #145 (H1c HandlePreDispatch + DispatchKeyAction), PR #146 (T5 tone-replace recovery). Plus tooling `2e30f82` (chaos graceful shutdown + lôĩ stress) + 3 handoff/doc commits. Total ~10 PRs / ~55 commits / 1 active day.
 
 **Immediate (next session — start here):**
-1. **T5 — Bug `cafcs → các`** — tone replacement blocked on already-toned syllable. 1-2h, HIGH. First-priority bug now that H1 closed sequencing rule.
+1. **T6 retest** — try to reproduce Issue #117 `Lỗi → Lôĩ` post-H1. May have been incidentally resolved by hot-path restructure (anh hypothesis 2026-05-07). 15 min to verify; if reproducible → deep timing work, if not → close auto-resolved.
 
 **Short-term:**
-2. **T6 retest** — try to reproduce Issue #117 `Lỗi → Lôĩ` post-H1. May have been incidentally resolved by hot-path restructure (anh's hypothesis 2026-05-07). If reproducible → deep timing work. If not → close as auto-resolved.
-3. **T2/T3 — Phonotactics deepening** — onset agreement + N-group vowel-coda rules. Builds on Path G groundwork.
+2. **T2/T3 — Phonotactics deepening** — onset agreement (c/k/qu, g/gh, ng/ngh) + N-group vowel-coda compatibility. Builds on Path G groundwork. 2-3h each, MEDIUM correctness.
 
 **User-facing alternatives** (out of refactor scope, but anh may pivot):
 - **G-5/G-6** — keymap UI (Sciter dialog + per-user TOML files).
