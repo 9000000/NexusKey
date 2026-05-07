@@ -111,11 +111,11 @@ constexpr std::wstring_view kPendingVowels[] = {
 // =============================================================================
 // Stop-final coda (c, ch, p, t) → tone restricted to Acute (sắc) or Dot (nặng).
 // =============================================================================
-[[nodiscard]] bool IsStopFinalCoda(std::wstring_view coda) noexcept {
+[[nodiscard]] constexpr bool IsStopFinalCoda(std::wstring_view coda) noexcept {
     return coda == L"c" || coda == L"ch" || coda == L"p" || coda == L"t";
 }
 
-[[nodiscard]] bool ToneAllowedForCoda(std::wstring_view coda, Tone tone) noexcept {
+[[nodiscard]] constexpr bool ToneAllowedForCoda(std::wstring_view coda, Tone tone) noexcept {
     if (!IsStopFinalCoda(coda)) return true;
     return tone == Tone::None || tone == Tone::Acute || tone == Tone::Dot;
 }
@@ -150,16 +150,14 @@ constexpr std::wstring_view kValidOnsets[] = {
         if (Decompose(leadChar).base != 0) return false;
         return (leadChar >= L'a' && leadChar <= L'z') || leadChar == L'\x0111';  // đ
     }
-    // For 2+ chars, must match a known onset exactly (or be a known prefix
-    // of a 3-char onset like "ng" → "ngh").
-    if (IsKnownOnset(text)) return true;
-    // "ng" is a prefix of "ngh".
-    if (text == L"ng") return true;
-    return false;
+    // For 2+ chars, must match a known onset exactly. The only 3-char onset
+    // is "ngh"; its 2-char prefix "ng" is itself a known onset, so no separate
+    // prefix branch is needed.
+    return IsKnownOnset(text);
 }
 
 constexpr std::wstring_view kValidCodas[] = {
-    L"", L"c", L"m", L"n", L"p", L"t",
+    L"c", L"m", L"n", L"p", L"t",
     L"ch", L"ng", L"nh",
 };
 
@@ -214,11 +212,12 @@ constexpr std::wstring_view kValidCodas[] = {
         }
 
         // Diphthong table lookup on the last two vowels.
-        int fi = NextKey::DiphthongVowelIndex(vowels[count - 2].base);
-        int li = NextKey::DiphthongVowelIndex(vowels[count - 1].base);
-        if (fi >= 0 && li >= 0) {
-            uint8_t rule = modernOrtho ? NextKey::kDiphthongModern[fi][li]
-                                       : NextKey::kDiphthongClassic[fi][li];
+        int firstDiphIndex = NextKey::DiphthongVowelIndex(vowels[count - 2].base);
+        int lastDiphIndex  = NextKey::DiphthongVowelIndex(vowels[count - 1].base);
+        if (firstDiphIndex >= 0 && lastDiphIndex >= 0) {
+            uint8_t rule = modernOrtho
+                ? NextKey::kDiphthongModern[firstDiphIndex][lastDiphIndex]
+                : NextKey::kDiphthongClassic[firstDiphIndex][lastDiphIndex];
             if (rule == 3) {
                 rule = !coda.empty() ? 2 : 1;
             }
