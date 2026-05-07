@@ -63,6 +63,16 @@ constexpr bool IsVniModifierAction(TypingAction a) noexcept {
            a == TypingAction::VniStroke;
 }
 
+constexpr Modifier ActionToVniModifier(TypingAction a) noexcept {
+    switch (a) {
+        case TypingAction::VniCircumflex: return Modifier::Circumflex;
+        case TypingAction::VniHorn:       return Modifier::Horn;
+        case TypingAction::VniBreve:      return Modifier::Breve;
+        case TypingAction::VniStroke:     return Modifier::Stroke;
+        default:                           return Modifier::None;
+    }
+}
+
 constexpr int ModifierIndex(Modifier mod) noexcept {
     switch (mod) {
         case Modifier::Circumflex: return 0;
@@ -408,11 +418,7 @@ void TypingEngine::PushChar(wchar_t c) {
         } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
             // Allow VNI modifier escape or spell exclusion match
             bool canEscape = false;
-            Modifier escMod = Modifier::None;
-            if (c == L'6') escMod = Modifier::Circumflex;
-            else if (c == L'7') escMod = Modifier::Horn;
-            else if (c == L'8') escMod = Modifier::Breve;
-            else if (c == L'9') escMod = Modifier::Stroke;
+            Modifier escMod = ActionToVniModifier(action);
             if (escMod == Modifier::Stroke) {
                 canEscape = HasEscapableModifier(states_.data(), states_.size(), escMod, true);
             } else if (escMod != Modifier::None) {
@@ -511,13 +517,14 @@ bool TypingEngine::ProcessClearTone() {
 }
 
 //-----------------------------------------------------------------------------
-// Modifier Processing (W, [], AA, EE, OO, DD) - TABLE-DRIVEN
+// Telex modifier dispatcher — switch(TypingAction) fans out to per-action
+// handlers below plus the unchanged ProcessWModifier / ProcessDModifier.
 //-----------------------------------------------------------------------------
 
 bool TypingEngine::ProcessTelexModifier(TypingAction action, wchar_t c, wchar_t lower) {
     switch (action) {
-        case TypingAction::HornInsertO: return HandleHornInsertO(c);
-        case TypingAction::HornInsertU: return HandleHornInsertU(c);
+        case TypingAction::HornInsertO:
+        case TypingAction::HornInsertU: return HandleHornInsert(action, c);
         case TypingAction::HornW:       return ProcessWModifier(c);
         case TypingAction::CircumflexA:
         case TypingAction::CircumflexE:
@@ -527,15 +534,19 @@ bool TypingEngine::ProcessTelexModifier(TypingAction action, wchar_t c, wchar_t 
     }
 }
 
-bool TypingEngine::HandleHornInsertO(wchar_t c) {
-    // SimpleTelex omits bracket keys — let `[` fall through to literal.
+bool TypingEngine::HandleHornInsert(TypingAction action, wchar_t c) {
+    // SimpleTelex omits bracket keys — let `[`/`]` fall through to literal.
     if (config_.inputMethod == InputMethod::SimpleTelex) return false;
 
-    // Escape: [[ → undo inserted ơ, produce literal '['
+    const wchar_t bracketChar = (action == TypingAction::HornInsertO) ? L'[' : L']';
+    const wchar_t baseVowel   = (action == TypingAction::HornInsertO) ? L'o' : L'u';
+
+    // Escape: doubled bracket (`[[` or `]]`) undoes the just-inserted ơ/ư
+    // and produces the bracket literal.
     if (!states_.empty() && rawInput_.size() >= 2 &&
-        rawInput_[rawInput_.size() - 2] == L'[') {
+        rawInput_[rawInput_.size() - 2] == bracketChar) {
         CharState& last = states_.back();
-        if (last.base == L'o' && last.mod == Modifier::Horn) {
+        if (last.base == baseVowel && last.mod == Modifier::Horn) {
             size_t consumedIdx = last.rawIdx;
             states_.pop_back();
             EraseConsumedRaw(consumedIdx);
@@ -544,34 +555,9 @@ bool TypingEngine::HandleHornInsertO(wchar_t c) {
             return true;
         }
     }
-    // [ → insert 'ơ' (o with horn)
-    CharState s;
-    s.base = L'o';
-    s.mod = Modifier::Horn;
-    s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
-    states_.push_back(s);
-    return true;
-}
 
-bool TypingEngine::HandleHornInsertU(wchar_t c) {
-    if (config_.inputMethod == InputMethod::SimpleTelex) return false;
-
-    // Escape: ]] → undo inserted ư, produce literal ']'
-    if (!states_.empty() && rawInput_.size() >= 2 &&
-        rawInput_[rawInput_.size() - 2] == L']') {
-        CharState& last = states_.back();
-        if (last.base == L'u' && last.mod == Modifier::Horn) {
-            size_t consumedIdx = last.rawIdx;
-            states_.pop_back();
-            EraseConsumedRaw(consumedIdx);
-            ProcessChar(c);
-            escape_.escape(EscapeKind::Horn);
-            return true;
-        }
-    }
-    // ] → insert 'ư' (u with horn)
     CharState s;
-    s.base = L'u';
+    s.base = baseVowel;
     s.mod = Modifier::Horn;
     s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
     states_.push_back(s);

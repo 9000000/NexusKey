@@ -131,8 +131,8 @@ private:
 
     // Per-action Telex modifier handlers (G-3.3 extraction). Each returns
     // true on consumption, false to fall through to ProcessChar (literal).
-    bool HandleHornInsertO(wchar_t c);   // Telex `[` — inserts ơ, escapes `[[`
-    bool HandleHornInsertU(wchar_t c);   // Telex `]` — inserts ư, escapes `]]`
+    // `action` (HornInsertO|HornInsertU) selects the bracket char + base vowel.
+    bool HandleHornInsert(TypingAction action, wchar_t c);
     bool HandleAdjacentCircumflex(wchar_t c, wchar_t lower);  // aa/ee/oo + cross-vowel free-marking
 
     void ProcessChar(wchar_t c) { ProcessChar(c, towlower(c), iswupper(c)); }
