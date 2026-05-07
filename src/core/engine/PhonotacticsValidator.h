@@ -1,4 +1,4 @@
-// NexusKey - Vietnamese Spell Checker (Syllable Structure Validation)
+// NexusKey - PhonotacticsValidator (Vietnamese Syllable Structure Validation)
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
 // SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
 // Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
@@ -12,8 +12,6 @@
 //
 // Lives in `NextKey::Phonology` alongside the wstring-based IPhonotactics
 // interface; this is the structural-input half of the same rule engine.
-// Filename retained as SpellChecker.{h,cpp} until a follow-up commit
-// consolidates the validator under a Phonotactics-prefixed name.
 
 #pragma once
 

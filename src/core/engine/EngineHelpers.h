@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "SpellChecker.h"
+#include "PhonotacticsValidator.h"
 #include "Phonotactics.h"
 #include "EnglishProtection.h"
 #include "VietnameseTables.h"

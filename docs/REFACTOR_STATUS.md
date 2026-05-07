@@ -67,7 +67,7 @@
 | H1 | **`ProcessKeyDown` 557-LOC god-method decompose** — split per dispatch class (printable / backspace / modifier / system) | Code review #24 + survey | 1-2 days | **HIGH (architectural)** |
 | H2 | **Delete dead code** `HookEngine::CheckConfigEvent()` (HookEngine.cpp:538) + `configEvent_` member (HookEngine.h:446) — zero callers in src/app or src/core (verified by grep 2026-05-07) | docs/TODO.md + Code review #1 | 30 min | Quick win |
 | H3 | **`LowLevelMouseProc` race on `cachedFocusedHwnd_`** — write set in mouse callback races with `WinEventProc`. Options: atomic migration / MainThreadWorker defer / document benign | docs/TODO.md Pre-T3 Minor 1 | 1-2h | MEDIUM |
-| H4 | **Dual-route `TrackedSendInput` consolidate** — 4 sites VB6/clipboard/reinjectVk still use member; route all through `Internal::` free function | docs/TODO.md M3 | 1h | Quick win |
+| ~~H4~~ | ~~**Dual-route `TrackedSendInput` consolidate**~~ — REJECTED 2026-05-07: `HookEngine::TrackedSendInput` is NOT a duplicate — it's a logging adapter that wraps `Internal::TrackedSendInput` and emits `HOOK_LOG` on partial sends (renderer-drop diagnostic). Consolidation attempt at commit `794f38f` lost this observability and broke MSVC `/WX` (`[[nodiscard]]` warning C4834 at 6 call sites). Reverted at `66ae1dc`. The dual-route is justified — member adds value. | docs/TODO.md M3 | N/A | ❌ Wontfix |
 | H5 | **Macro extract to pure functions** — `ApplyAutoCapsMacro` (HookEngine.cpp:2778-2826) and `ResolveMacroMatch` (lines 2699-2747) → `src/core/MacroCase.h`. Linux unit-testable | docs/TODO.md + Code review #11 | 2-3h | MEDIUM |
 | H6 | **Sprint 4 §3 SPSC ring + watchdog** — Rule #11 next-stage compliance | CODE_GOVERNANCE.md §3 | Sprint scale | LOW (roadmap) |
 | H7 | **Strip Sprint 2 D4/T3 history comments** — ~10 lines of "Sprint 2 D4 deleted X" doc comments at HookEngine.cpp lines 969/1832/2682/2686/3025/3133. Optional cull for noise reduction | survey 2026-05-07 | 5 min | Quick win |
@@ -82,7 +82,7 @@
 | T1 | **`SpellChecker.{h,cpp}` → `PhonotacticsValidator` rename** — content already in `NextKey::Phonology::` namespace post G-2.3; files retained old names | Path G G-2.4 deferred | 30 min (`git mv` + tests) | Quick win (cosmetic) |
 | T2 | **Phonotactics onset agreement** — c/k/qu, g/gh, ng/ngh enforcement (`IsValidSyllable` currently ignores `onset` arg) | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
 | T3 | **Phonotactics N1/N2/N3 vowel-coda compatibility** — tighter group rules | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
-| T4 | **Verify Hot-path Fix 3 ComposeAll buffer reuse** — Fix 1 done, Fix 2 superseded by T3 IOutputInjector, Fix 3 status uncertain (grep `mutable composeBuf_`) | hot-path-optimization-plan.md | 30 min verify | Quick win |
+| ~~T4~~ | ~~**Verify Hot-path Fix 3 ComposeAll buffer reuse**~~ — VERIFIED 2026-05-07: shipped at `TypingEngine.h:218` (`mutable std::wstring composeBuf_`) + `TypingEngine.cpp:1236-1241` | hot-path-optimization-plan.md | DONE | ✅ |
 | T5 | **Bug `cafcs → các`** — tone replacement blocked on already-toned syllable | docs/TODO.md | 1-2h | Bug (HIGH) |
 | T6 | **Bug Issue #117 `Lỗi → Lôĩ`** — fast-typing chaos timing | HANDOFF.md + Issue #117 | Hard — chaos timing | Bug (HIGH) |
 
@@ -102,6 +102,7 @@ Verified by grep on Main `3ded489` (2026-05-07):
 | `EngineHelpers::FindToneTargetImpl` | (deleted) | Already cleaned during Path G G-2.4 |
 | `TelexEngine.{cpp,h}` / `VniEngine.{cpp,h}` | (deleted) | Already cleaned post TypingEngine unification |
 | `DispatchSendInput()` body | (deleted) | Already cleaned during Sprint 2 T3 D3 |
+| Hot-path Fix 3 ComposeAll buffer reuse | TypingEngine.h:218 + TypingEngine.cpp:1236-1241 | Verified shipped 2026-05-07 |
 
 **Misleading filenames (NOT dead, rename pending):**
 - `src/core/engine/SpellChecker.cpp/h` (812 LOC) — content under `NextKey::Phonology::`, files keep old name. Tracked as T1.

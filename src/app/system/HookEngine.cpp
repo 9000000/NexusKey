@@ -95,10 +95,9 @@ void HookEngine::CommitPending() {
 
 // REQUIRES: caller holds stateMutex_. Sprint 1 D11 removed the self-lock so
 // the std::mutex transition doesn't deadlock through the
-// QuickSyncFromSharedState → ApplyConfig and CheckConfigEvent → ReloadFromToml
-// → ApplyConfig recursive paths. Direct callers: Start (single-threaded
-// init, no race), QuickSyncFromSharedState (locked), ReloadFromToml (called
-// from CheckConfigEvent which locks).
+// QuickSyncFromSharedState → ApplyConfig and ReloadFromToml → ApplyConfig
+// recursive paths. Direct callers: Start (single-threaded init, no race),
+// QuickSyncFromSharedState (locked), ReloadFromToml (caller-locked).
 void HookEngine::ApplyConfig(const TypingConfig& config) {
     beepOnSwitch_ = config.beepOnSwitch;
     smartSwitch_ = config.smartSwitch;
@@ -168,9 +167,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // Load excluded apps and TSF apps
     ReloadExcludedApps();
     ReloadTsfApps();
-
-    // Initialize config event for reload detection
-    configEvent_.Initialize();
 
     // Cache initial SharedState values (pointer set by main.cpp via SetSharedStateReader)
     if (sharedStatePtr_) {
@@ -533,19 +529,6 @@ void HookEngine::QuickSyncFromSharedState() {
             macroTable_.clear();
         }
     }
-}
-
-bool HookEngine::CheckConfigEvent() {
-    std::lock_guard<std::mutex> _lock(stateMutex_);
-    // Legacy path — kept for TSF DLL compatibility. HookEngine uses configGeneration instead.
-    if (!configEvent_.IsValid()) {
-        configEvent_.Initialize();
-    }
-    if (!configEvent_.Wait(0)) {
-        return false;
-    }
-    ReloadFromToml();
-    return true;
 }
 
 void HookEngine::SyncConfigFromSharedState() {
@@ -963,11 +946,9 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // (the 's' in chaos 5.3), leaving the pre-replace BS to drain after
         // the replacement and eat the just-inserted chars.
         //
-        // Sprint 2 D2: the synchronous-channel injector (RichEditEm) handles
-        // commit-undo BS via sent message. Default hosts let physical BS
-        // pass through naturally — synthesizing would just add latency.
-        // Sprint 2 D4: gate moved from useEditMsgPath_.load() to
-        // IsSyncReplaceChannel() proxy (SettleBudget==0).
+        // The synchronous-channel injector (RichEditEm) handles commit-undo BS
+        // via sent message. Default hosts let physical BS pass through naturally —
+        // synthesizing would just add latency.
         if (IsSyncReplaceChannel()) {
             auto inj = injector_.load(std::memory_order_acquire);
             if (inj->Replace(/*bs=*/1, std::wstring_view{})) {
@@ -1334,8 +1315,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         // strict. Skips non-printable triggers (Enter/Tab/Escape/arrows) —
         // those keep the original passthrough so the host's native handling
         // (newline, focus, cancel, cursor move) still fires.
-        // Sprint 2 D4: gate flipped to IsSyncReplaceChannel() — only the
-        // synchronous-channel injector (RichEdit) needs the trigger char
+        // Only the synchronous-channel injector (RichEdit) needs the trigger char
         // routed through the same EM_REPLACESEL channel for strict ordering.
         if (IsSyncReplaceChannel()) {
             const wchar_t triggerChar = VkToMacroChar(vkCode);
@@ -2111,11 +2091,6 @@ void HookEngine::RecordSynthDispatch() noexcept {
     lastRealSynthTime_ = now;
 }
 
-// Sprint 2 D3 removed all callers of DispatchSendInput; D4 deletes the body.
-// Split-vs-batch dispatch lives inside SplitDispatchInjector / Win32SendInput-
-// Injector now. The legacy implementation read isElectronApp_+isConsoleApp_
-// directly which both this commit removes from the hot path.
-
 /// Check if a filename (without path) is a known Electron app executable.
 /// Electron apps use Chrome_WidgetWin window class (same as Chromium browsers).
 /// Unknown Chrome_WidgetWin apps default to "browser" — safer because:
@@ -2661,7 +2636,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
                 // Tauri / WebView2-embedding apps (e.g. Dorion): detected by
                 // scanning for `Chrome_WidgetWin*` descendants. WebView2 is fundamentally
                 // Chromium, so it suffers from the same autocomplete/suggest bug as Chrome.
-                // We MUST use the bait character (needBaitChar_ = true).
+                // We MUST use the bait character (localNeedBait = true).
                 if (!localNeedBait) {
                     std::wstring exeFullPath = GetExeFullPathForHwnd(activeHwnd);
                     isWebView2 = IsWebView2App(activeHwnd, exeFullPath);
@@ -2679,14 +2654,6 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // Publish all per-app cached flags atomically once the classification is final.
     // Hook hot-path readers see consistent state (each .store(release) is paired
     // with their .load(acquire) in ProcessKeyDown).
-    // Sprint 2 D4 deleted: isConsoleApp_ + useEditMsgPath_ stores. Console
-    // selection flows through WindowClassification.isConsole → factory →
-    // SplitDispatchInjector. RichEdit/edit-msg policy now derived via
-    // IsSyncReplaceChannel() proxy on the active injector.
-    // Post-T3 ChannelTraits cleanup deleted: needBaitChar_ + isElectronApp_
-    // stores. Both flags now live on the injector (NeedsBaitCharPrefix() /
-    // HasMultiProcessRenderer()) — see the WindowClassification publish
-    // block below for the propagation path.
     skipEmptyChar_.store(localSkipEmpty, std::memory_order_release);
     useClipboardPaste_.store(localClipboard, std::memory_order_release);
     isOutlookApp_.store(localOutlook, std::memory_order_release);
@@ -3018,11 +2985,10 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     // catch-up needed at chaos 500 µs inter-key. Only invokes the SendInput
     // fallback if the wait is exhausted — true human-pace typing never hits it.
     if (IsSyncReplaceChannel()) {
-        // Sprint 2 D2: RichEdit path now delegates to RichEditEmReplaceSelInjector.
+        // RichEdit path delegates to RichEditEmReplaceSelInjector.
         // Retry-loop preserved here (not pushed into impl) because the
         // 30 ms catch-up window is policy on the engine side: the budget is
         // bounded by LowLevelHooksTimeout, not by the channel itself.
-        // Sprint 2 D4: gate via IsSyncReplaceChannel() (was useEditMsgPath_).
         constexpr int kAsyncRenderMaxWaitMs = 30;
         constexpr int kAsyncRenderStepMs    = 1;
         int waitedMs = 0;
