@@ -1,5 +1,40 @@
 # NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
+## 2026-05-07 — Sprint 3 Path G G-4 COMPLETE (CURRENT PICKUP NOTE)
+
+**Branch:** `sprint-3/path-g-customkeymap`. **Goal:** engine-side per-key user override layer.
+
+**Commits:**
+1. G-4.1 — `customKeyMap` field on TypingConfig (default-init all `None`).
+2. G-4.2 — G1 regression tests (default-empty parity, 3 cases).
+3. G-4.3 — Dispatch hook at `TypingEngine.cpp:235` + G2 user-wins tests (2 cases).
+4. G-4.4 — G3-G7 tests (22 cases): gap-fill, ASCII boundary, digit-sequence interaction, sentinel, all-actions parametric.
+
+**Final dispatch shape (G-4):**
+
+```
+PushChar(c)
+  └─ lower = towlower(c)
+  └─ if (lower < 128 && customKeyMap[lower] != None)
+        action = customKeyMap[lower]            ← user override wins
+     else
+        action = ClassifyKey(lower, isTelex, isVni)
+  └─ if (isVniDigitSequence) action = None       ← literal-digit guard post-applies
+  └─ ProcessModifier(action, c) → 6 Handle*
+```
+
+**Test counts:** 1450 (post-G-3) + 27 (G-4 new) = **1477 cases on Linux**.
+
+**Files touched:** `src/core/config/TypingConfig.h` (+1 field, +2 includes), `src/core/engine/TypingEngine.cpp` (+4 LOC at line 235), `tests/CustomKeyMapTest.cpp` (NEW, ~250 LOC), `CMakeLists.txt` (+1 test source).
+
+**Out of scope (deferred to G-5):** TOML schema, Sciter dialog, per-user `keymap_<name>.toml` files, active-method selector. ConfigManager untouched in G-4.
+
+### NEXT — G-5 keymap files + UI
+
+Wire ConfigManager to load per-user `keymap_<name>.toml` files into `TypingConfig.customKeyMap`. Add Sciter dialog for editing. Add `[input].active_user_method` field to select which keymap is loaded. Reuse the existing 7-file split pattern (see `ConfigManager.cpp`).
+
+---
+
 ## 2026-05-07 — Sprint 3 Path G G-3 COMPLETE (CURRENT PICKUP NOTE)
 
 **Main HEAD:** `56f48ed` (PR #137 merged). All Path G G-1..G-3.6 shipped via 4 PRs:
