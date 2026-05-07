@@ -784,8 +784,8 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
                 // Click may move focus to another control within the same app (no
                 // EVENT_SYSTEM_FOREGROUND fires) — invalidate cache so the next
                 // TryEditMessagePaste re-queries the focused HWND.
-                self->cachedFocusedHwnd_ = nullptr;
-                self->cachedFocusedClass_.clear();
+                self->cachedFocusedHwnd_.store(nullptr, std::memory_order_relaxed);
+                self->cachedFocusedClass_.clear();  // see HWND comment in HookEngine.h: tuple race benign
             }
         }
     } catch (const std::exception& e) {
@@ -2000,10 +2000,10 @@ bool HookEngine::TryEditMessagePaste(const std::wstring& text, size_t backspaceC
 
     // Prefer cached focused HWND (populated in OnFocusChanged / invalidated on mouse click)
     // to avoid AttachThreadInput on every keystroke. Fall back to a fresh query on miss.
-    HWND hwnd = cachedFocusedHwnd_;
+    HWND hwnd = cachedFocusedHwnd_.load(std::memory_order_relaxed);
     if (!hwnd || !IsWindow(hwnd)) {
         RefreshFocusCache(GetForegroundWindow());
-        hwnd = cachedFocusedHwnd_;
+        hwnd = cachedFocusedHwnd_.load(std::memory_order_relaxed);
         if (!hwnd) {
             HOOK_LOG(L"  EditMsgPaste: no focused child hwnd");
             return false;
@@ -2540,10 +2540,11 @@ void HookEngine::OnTickPoll() noexcept {
 }
 
 void HookEngine::RefreshFocusCache(HWND foreground) noexcept {
-    cachedFocusedHwnd_ = ::NextKey::GetFocusedChildHwnd(foreground);
-    if (cachedFocusedHwnd_) {
+    HWND focused = ::NextKey::GetFocusedChildHwnd(foreground);
+    cachedFocusedHwnd_.store(focused, std::memory_order_relaxed);
+    if (focused) {
         wchar_t cls[64] = {};
-        GetClassNameW(cachedFocusedHwnd_, cls, 64);
+        GetClassNameW(focused, cls, 64);
         cachedFocusedClass_.assign(cls);
     } else {
         cachedFocusedClass_.clear();
@@ -2692,7 +2693,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     if (localClipboard || localEditMsg) {
         RefreshFocusCache(activeHwnd);
     } else {
-        cachedFocusedHwnd_ = nullptr;
+        cachedFocusedHwnd_.store(nullptr, std::memory_order_relaxed);
         cachedFocusedClass_.clear();
     }
 
