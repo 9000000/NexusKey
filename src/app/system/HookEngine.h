@@ -122,16 +122,27 @@ private:
     bool ProcessKeyDown(DWORD vkCode, DWORD scanCode, DWORD flags);
     bool ProcessKeyUp(DWORD vkCode, DWORD flags);
 
-    // H1a: outcome of HandleCommitUndo. Fallthrough = continue ProcessKeyDown
-    // with normal flow; Eat = ProcessKeyDown returns true (key consumed);
-    // Pass = ProcessKeyDown returns false (key passes through to app).
-    enum class CommitUndoOutcome : uint8_t { Eat, Pass, Fallthrough };
+    // Outcome of ProcessKeyDown step extracts (H1a/H1b/H1c).
+    //   Eat         → ProcessKeyDown returns true (key consumed by step).
+    //   Pass        → ProcessKeyDown returns false (key passes through to app).
+    //   Fallthrough → continue with subsequent ProcessKeyDown steps.
+    enum class KeyOutcome : uint8_t { Eat, Pass, Fallthrough };
+
+    // H1b (extracted from ProcessKeyDown steps 0/0b/1/1b/1c): top-of-pipeline
+    // guards — QuickSync from SharedState, TSF early-out, modifier tracking,
+    // toggle-key passthrough (Caps/Num/Scroll), excluded-app passthrough with
+    // PID verification. Falls through only when the keystroke should reach
+    // the Vietnamese pipeline. Bookkeeping (otherKeyPressed_/altTapCount_/
+    // synth watchdog) stays in ProcessKeyDown after the switch — only runs
+    // on Fallthrough by design (excluded-app's same-PID/still-excluded paths
+    // set otherKeyPressed_ themselves before returning Pass).
+    [[nodiscard]] KeyOutcome RunTopGuards(DWORD vkCode);
 
     // H1a (extracted from ProcessKeyDown step 2d): commit-undo state machine
     // (Idle/Ready/Primed) — handles backspace-into-committed-word replay.
     // Mutates commitUndoState_/pendingTriggerCount_/macroCrossCommit_/rawMacroBuffer_
     // and may call HandleAlphaKey/HandleVniDigitKey/HandleBackspace/InjectKey.
-    [[nodiscard]] CommitUndoOutcome HandleCommitUndo(DWORD vkCode, bool vnMode);
+    [[nodiscard]] KeyOutcome HandleCommitUndo(DWORD vkCode, bool vnMode);
 
     // Input engine interaction
     [[nodiscard]] bool HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock);
