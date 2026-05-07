@@ -807,59 +807,12 @@ static bool IsIncompatibleLayout(HKL hkl);
 // ═══════════════════════════════════════════════════════════
 
 bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*/) {
-    // 0. Sync from SharedState. Fast path (post Pre-T3 Minor 2 fix) is
-    //    fully lock-free — atomic ReadEpoch + atomic load of lastEpoch_,
-    //    early-return on unchanged. Cost ~5 ns. The slow path (taken
-    //    only when configGeneration bumped — user-paced Settings save,
-    //    not chaos) acquires stateMutex_ + may run ReloadFromToml on
-    //    this thread; that residual Rule #11.2 cost is bounded to one
-    //    reload per generation bump (~10–50 ms once / minute of user
-    //    config tweaking). Steady-state typing never reaches it.
-    QuickSyncFromSharedState();
-
-    // 0b. TSF app — let TSF DLL handle all input, hook does nothing
-    if (isTsfApp_.load(std::memory_order_acquire)) return false;
-
-    // 1. Track modifiers for hotkey detection
-    bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
-                       vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
-                       vkCode == VK_LMENU || vkCode == VK_RMENU ||
-                       vkCode == VK_LWIN || vkCode == VK_RWIN);
-
-    if (isModifier) {
-        TrackModifier(vkCode, true);
-        return false;  // Don't eat modifier keys
-    }
-
-    // 1b. Toggle keys (CapsLock, NumLock, ScrollLock) — pass through without
-    // committing composition. CapsLock is commonly pressed mid-word to capitalize
-    // the first letter of a Vietnamese word (e.g., CapsLock+G+CapsLock+iar → Giả).
-    // Without this bypass, CapsLock would hit step 9 ("any other key → commit"),
-    // splitting the word and producing wrong tone placement (Gỉa instead of Giả).
-    if (vkCode == VK_CAPITAL || vkCode == VK_NUMLOCK || vkCode == VK_SCROLL) {
-        return false;
-    }
-
-    // 1c. Excluded app — full passthrough (IME is transparent to this app)
-    // Fast PID check: same process → passthrough immediately (no syscall overhead).
-    // Different PID → verify with full exe name lookup (only on actual app switch).
-    if (isExcludedApp_.load(std::memory_order_acquire)) {
-        HWND fg = GetForegroundWindow();
-        DWORD fgPid = 0;
-        GetWindowThreadProcessId(fg, &fgPid);
-        if (fgPid == excludedPid_.load(std::memory_order_acquire)) {
-            otherKeyPressed_ = true;
-            return false;  // Same process — still excluded
-        }
-        // Different process — verify if we actually left the excluded app
-        if (VerifyExcludedState()) {
-            excludedPid_.store(fgPid, std::memory_order_release);  // Switched to another excluded app
-            otherKeyPressed_ = true;
-            return false;
-        }
-        excludedPid_.store(0, std::memory_order_release);
-        NotifyModeChange();
-        // Fall through to normal processing for this keystroke
+    // H1b: top-of-pipeline guards extracted to RunTopGuards (steps 0/0b/1/1b/1c).
+    // Behavior preserved byte-identical — see method comment for details.
+    switch (RunTopGuards(vkCode)) {
+        case KeyOutcome::Eat: return true;
+        case KeyOutcome::Pass: return false;
+        case KeyOutcome::Fallthrough: break;
     }
 
     // Non-modifier key pressed — invalidate modifier-only hotkey combo
@@ -900,9 +853,9 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // ProcessKeyDown short-circuits (Eat/Pass) or continues with subsequent
     // steps (Fallthrough). Behavior preserved byte-identical to pre-H1a.
     switch (HandleCommitUndo(vkCode, vnMode)) {
-        case CommitUndoOutcome::Eat: return true;
-        case CommitUndoOutcome::Pass: return false;
-        case CommitUndoOutcome::Fallthrough: break;
+        case KeyOutcome::Eat: return true;
+        case KeyOutcome::Pass: return false;
+        case KeyOutcome::Fallthrough: break;
     }
 
     // 3. English mode — skip Vietnamese processing
@@ -1180,6 +1133,90 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     return false;
 }
 
+// H1b: top-of-pipeline guards extracted from ProcessKeyDown steps 0/0b/1/1b/1c.
+//
+//  Step 0  — QuickSyncFromSharedState (atomic config epoch; see comment below).
+//  Step 0b — TSF early-out: foreground app is in TSF list, hook does nothing.
+//  Step 1  — Track modifier keys (LCTRL/RCTRL/LSHIFT/RSHIFT/LMENU/RMENU/LWIN/RWIN);
+//            pass through without consumption (don't eat modifier keys themselves).
+//  Step 1b — Toggle keys (CapsLock/NumLock/ScrollLock): pass through without
+//            committing composition (CapsLock often pressed mid-word).
+//  Step 1c — Excluded-app passthrough: same-PID short-circuit; different-PID
+//            verifies via VerifyExcludedState; on cleared, NotifyModeChange and
+//            fall through to normal processing for this keystroke.
+//
+// Behavior is byte-identical to the pre-extraction inline block. Returns:
+//   Eat         → ProcessKeyDown returns true (no top guards do this today,
+//                 reserved for future use).
+//   Pass        → ProcessKeyDown returns false (TSF / modifier / toggle /
+//                 still-excluded paths).
+//   Fallthrough → continue with subsequent ProcessKeyDown steps (only when no
+//                 guard matched, or excluded-app cleared its PID).
+//
+// The post-guard bookkeeping in ProcessKeyDown (otherKeyPressed_=true,
+// altTapCount_=0, synth-pending watchdog) lives in the wrapper, not here, so it
+// runs only on Fallthrough. The excluded-app same-PID and still-excluded paths
+// set otherKeyPressed_ themselves before returning Pass, preserving the original
+// "any non-modifier key invalidates the modifier-only combo" semantics.
+HookEngine::KeyOutcome HookEngine::RunTopGuards(DWORD vkCode) {
+    // 0. Sync from SharedState. Fast path (post Pre-T3 Minor 2 fix) is
+    //    fully lock-free — atomic ReadEpoch + atomic load of lastEpoch_,
+    //    early-return on unchanged. Cost ~5 ns. The slow path (taken
+    //    only when configGeneration bumped — user-paced Settings save,
+    //    not chaos) acquires stateMutex_ + may run ReloadFromToml on
+    //    this thread; that residual Rule #11.2 cost is bounded to one
+    //    reload per generation bump (~10–50 ms once / minute of user
+    //    config tweaking). Steady-state typing never reaches it.
+    QuickSyncFromSharedState();
+
+    // 0b. TSF app — let TSF DLL handle all input, hook does nothing
+    if (isTsfApp_.load(std::memory_order_acquire)) return KeyOutcome::Pass;
+
+    // 1. Track modifiers for hotkey detection
+    bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
+                       vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
+                       vkCode == VK_LMENU || vkCode == VK_RMENU ||
+                       vkCode == VK_LWIN || vkCode == VK_RWIN);
+
+    if (isModifier) {
+        TrackModifier(vkCode, true);
+        return KeyOutcome::Pass;  // Don't eat modifier keys
+    }
+
+    // 1b. Toggle keys (CapsLock, NumLock, ScrollLock) — pass through without
+    // committing composition. CapsLock is commonly pressed mid-word to capitalize
+    // the first letter of a Vietnamese word (e.g., CapsLock+G+CapsLock+iar → Giả).
+    // Without this bypass, CapsLock would hit step 9 ("any other key → commit"),
+    // splitting the word and producing wrong tone placement (Gỉa instead of Giả).
+    if (vkCode == VK_CAPITAL || vkCode == VK_NUMLOCK || vkCode == VK_SCROLL) {
+        return KeyOutcome::Pass;
+    }
+
+    // 1c. Excluded app — full passthrough (IME is transparent to this app)
+    // Fast PID check: same process → passthrough immediately (no syscall overhead).
+    // Different PID → verify with full exe name lookup (only on actual app switch).
+    if (isExcludedApp_.load(std::memory_order_acquire)) {
+        HWND fg = GetForegroundWindow();
+        DWORD fgPid = 0;
+        GetWindowThreadProcessId(fg, &fgPid);
+        if (fgPid == excludedPid_.load(std::memory_order_acquire)) {
+            otherKeyPressed_ = true;
+            return KeyOutcome::Pass;  // Same process — still excluded
+        }
+        // Different process — verify if we actually left the excluded app
+        if (VerifyExcludedState()) {
+            excludedPid_.store(fgPid, std::memory_order_release);  // Switched to another excluded app
+            otherKeyPressed_ = true;
+            return KeyOutcome::Pass;
+        }
+        excludedPid_.store(0, std::memory_order_release);
+        NotifyModeChange();
+        // Fall through to normal processing for this keystroke
+    }
+
+    return KeyOutcome::Fallthrough;
+}
+
 // H1a: commit-undo state machine extracted from ProcessKeyDown step 2d.
 // Supports multi-word backward — stack holds up to kMaxCommitStack committed words.
 // Ready:  set after commit with space/enter, or when engine empties after BS with stack non-empty.
@@ -1189,7 +1226,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 //   Eat         → ProcessKeyDown returns true (key consumed by undo machinery).
 //   Pass        → ProcessKeyDown returns false (key passes through to app).
 //   Fallthrough → no decision; ProcessKeyDown continues with subsequent steps.
-HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
+HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
     // Ctrl/Alt/Win invalidate commit-undo: Ctrl+BS deletes entire word (not just the
     // space), Ctrl+A/C/Z change cursor/selection — all make saved commit state stale.
     // Must check BEFORE the state machine to prevent ghost key replay.
@@ -1215,7 +1252,7 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             // Extra trigger chars still on screen (e.g., "a==" → need to delete both '=' before undo)
             pendingTriggerCount_--;
             HOOK_LOG(L"  commit-undo: BS in Ready, pendingTriggers=%u — stay Ready", pendingTriggerCount_);
-            return CommitUndoOutcome::Pass;  // Let BS pass through to delete the extra trigger char
+            return KeyOutcome::Pass;  // Let BS pass through to delete the extra trigger char
         }
         // Backspace deletes the commit trigger (space/etc.)
         commitUndoState_ = CommitUndoState::Primed;
@@ -1230,7 +1267,7 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             // Re-inject so BS is placed AFTER the pending synthetics in the queue.
             HOOK_LOG(L"  commit-undo: BS after commit → Primed, re-inject after synthetics (pending=%d)", synthEventsPending_.load());
             InjectKey(VK_BACK);
-            return CommitUndoOutcome::Eat;
+            return KeyOutcome::Eat;
         }
         // Sprint 1 Fix C/2026-05-05: editMsg apps need this BS via the sent
         // EM_REPLACESEL channel — passing the physical BS through goes via the
@@ -1245,12 +1282,12 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             auto inj = injector_.load(std::memory_order_acquire);
             if (inj->Replace(/*bs=*/1, std::wstring_view{})) {
                 HOOK_LOG(L"  commit-undo: BS after commit via injector → Primed");
-                return CommitUndoOutcome::Eat;
+                return KeyOutcome::Eat;
             }
             HOOK_LOG(L"  commit-undo: BS after commit injector failed, passthrough");
         }
         HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
-        return CommitUndoOutcome::Pass;  // Let backspace pass through to delete the space
+        return KeyOutcome::Pass;  // Let backspace pass through to delete the space
     }
     if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vnMode) {
         // Synth guard: if synthetic events were sent recently and are likely still
@@ -1313,8 +1350,8 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
                 bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
                 bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
                 return HandleAlphaKey(vkCode, shift, caps)
-                    ? CommitUndoOutcome::Eat
-                    : CommitUndoOutcome::Pass;
+                    ? KeyOutcome::Eat
+                    : KeyOutcome::Pass;
             }
         } else if (const InputMethod method = currentMethod_.load(std::memory_order_acquire);
                    (method == InputMethod::VNI || method == InputMethod::Combined) &&
@@ -1330,11 +1367,11 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             ReplayCommittedChars();
             if (engine_->Count() == 0) {
                 commitUndoState_ = CommitUndoState::Idle;
-                return CommitUndoOutcome::Pass;  // Replay failed — let digit pass through
+                return KeyOutcome::Pass;  // Replay failed — let digit pass through
             }
             return HandleVniDigitKey(vkCode)
-                ? CommitUndoOutcome::Eat
-                : CommitUndoOutcome::Pass;
+                ? KeyOutcome::Eat
+                : KeyOutcome::Pass;
         } else if (vkCode == VK_BACK) {
             // Backspace → replay saved chars, then backspace into the word
             HOOK_LOG(L"  commit-undo: replaying + backspace (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
@@ -1344,7 +1381,7 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
                      synthEventsPending_.load());
             ReplayCommittedChars();
             HandleBackspace();
-            return CommitUndoOutcome::Eat;
+            return KeyOutcome::Eat;
         } else {
             // Any other key → cancel commit-undo
             commitUndoState_ = CommitUndoState::Idle;
@@ -1376,7 +1413,7 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             commitUndoState_ = CommitUndoState::Idle;
         }
     }
-    return CommitUndoOutcome::Fallthrough;
+    return KeyOutcome::Fallthrough;
 }
 
 /// Returns true when the keyboard layout cannot produce Vietnamese input.
