@@ -100,6 +100,29 @@ TEST_F(PhonotacticsTonePosition, ThreeVowelUyeToneOnModifiedThird) {
     EXPECT_EQ(phon_.TonePosition(L"uyê", L"", kModern), 2u);
 }
 
+TEST_F(PhonotacticsTonePosition, ShiftedThreeVowelTypoAoi) {
+    // "aoi" typo (gạo + extra i): shifted-3-vowel rule fires — first 2 vowels
+    // (a,o) have a diphthong rule, so tone stays on the original diphthong's
+    // FIRST vowel (a, index 0) instead of sliding to the typo's last-2 (o,i)
+    // pair which would give index 1.
+    EXPECT_EQ(phon_.TonePosition(L"aoi", L"", kClassic), 0u);
+}
+
+TEST_F(PhonotacticsTonePosition, ShiftedThreeVowelRepeatHoaa) {
+    // "oaa" typo (hòa + extra a): shift fires onto first 2 (o,a) which is
+    // rule-3 (coda-aware). Vowel-repeat at end overrides coda-aware to
+    // FIRST → tone on 'o' (index 0).
+    EXPECT_EQ(phon_.TonePosition(L"oaa", L"", kClassic), 0u);
+}
+
+TEST_F(PhonotacticsTonePosition, ClassicOaiHasRemainderRule) {
+    // "oai" classic: shift fires onto (o,a) rule 3, but classic-mode "oai"
+    // has more text (the trailing 'i') after the secondPos, so coda-aware
+    // resolves to SECOND → tone on 'a' (index 1). Different from triphthong
+    // path (modern) which also returns 1 but for a different reason.
+    EXPECT_EQ(phon_.TonePosition(L"oai", L"", kClassic), 1u);
+}
+
 //=============================================================================
 // IsValidSyllable — full syllable validity per RuleTiengViet
 //=============================================================================

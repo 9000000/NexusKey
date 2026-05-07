@@ -176,9 +176,12 @@ constexpr std::wstring_view kValidCodas[] = {
         std::wstring_view vowelSeq,
         std::wstring_view coda,
         bool modernOrtho) noexcept {
-    // Decompose into a small fixed-capacity array (Vietnamese vowel nucleus
-    // is at most 3 chars).
-    std::array<VowelInfo, 4> vowels{};
+    // Real Vietnamese vowel nuclei are at most 3 chars, but the engine may pass
+    // longer sequences for typo cases ("máaaaaaaa" — 9+ repeated vowels). Cap
+    // generously to keep all such inputs in scope: P1/P2 must scan the full
+    // sequence to find any horn / modifier regardless of where the user typed
+    // it, and the rightmost-fallback (P4) must point at the actual last vowel.
+    std::array<VowelInfo, 16> vowels{};
     size_t count = 0;
     for (wchar_t ch : vowelSeq) {
         if (count >= vowels.size()) break;
@@ -211,18 +214,48 @@ constexpr std::wstring_view kValidCodas[] = {
             }
         }
 
-        // Diphthong table lookup on the last two vowels.
-        int firstDiphIndex = NextKey::DiphthongVowelIndex(vowels[count - 2].base);
-        int lastDiphIndex  = NextKey::DiphthongVowelIndex(vowels[count - 1].base);
+        // Default pair: last two vowels.
+        size_t firstPos = count - 2;
+        size_t lastPos  = count - 1;
+        int firstDiphIndex = NextKey::DiphthongVowelIndex(vowels[firstPos].base);
+        int lastDiphIndex  = NextKey::DiphthongVowelIndex(vowels[lastPos].base);
+        bool shifted = false;
+
+        // Shift onto first two of a 3-vowel cluster when those have a diphthong
+        // rule. Mirrors EngineHelpers::FindToneTargetImpl's typo handling for
+        // cases like "gaoi" (gạo + extra i) and classic "oai".
+        if (count >= 3) {
+            int shiftFirstIndex = NextKey::DiphthongVowelIndex(vowels[count - 3].base);
+            if (shiftFirstIndex >= 0 && firstDiphIndex >= 0) {
+                uint8_t shiftRule = modernOrtho
+                    ? NextKey::kDiphthongModern[shiftFirstIndex][firstDiphIndex]
+                    : NextKey::kDiphthongClassic[shiftFirstIndex][firstDiphIndex];
+                if (shiftRule != 0) {
+                    lastDiphIndex = firstDiphIndex;
+                    firstDiphIndex = shiftFirstIndex;
+                    firstPos = count - 3;
+                    lastPos  = count - 2;
+                    shifted = true;
+                }
+            }
+        }
+
         if (firstDiphIndex >= 0 && lastDiphIndex >= 0) {
             uint8_t rule = modernOrtho
                 ? NextKey::kDiphthongModern[firstDiphIndex][lastDiphIndex]
                 : NextKey::kDiphthongClassic[firstDiphIndex][lastDiphIndex];
             if (rule == 3) {
-                rule = !coda.empty() ? 2 : 1;
+                // Shifted with vowel-repeat at end → tone stays on first vowel
+                // (typo "hoaa" / "oaa": don't slide tone onto the duplicated 'a').
+                if (shifted && vowels[count - 1].base == vowels[count - 2].base) {
+                    rule = 1;
+                } else {
+                    bool hasRemainder = (lastPos + 1 < count) || !coda.empty();
+                    rule = hasRemainder ? 2 : 1;
+                }
             }
-            if (rule == 1) return count - 2;  // FIRST
-            if (rule == 2) return count - 1;  // SECOND
+            if (rule == 1) return firstPos;
+            if (rule == 2) return lastPos;
         }
     }
 

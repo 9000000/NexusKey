@@ -11,6 +11,7 @@
 #include "EngineHelpers.h"
 #include "VietnameseTables.h"
 #include <algorithm>
+#include <array>
 
 namespace NextKey {
 
@@ -1108,23 +1109,59 @@ void TypingEngine::RelocateToneToTarget() {
 }
 
 //-----------------------------------------------------------------------------
-// Tone Target Finding — stack-allocated, no heap alloc
+// Tone Target Finding — delegates rule logic to phonotactics_.
+// Builds a vowel sequence + state-index map from states_ (skipping cluster
+// consonants like the 'i' in "gi" and the 'u' in "qu"), composes each vowel
+// state without its tone diacritic so Phonotactics::Decompose sees only the
+// modifier+base char, then maps Phonotactics' returned vowel-sequence index
+// back to a state index.
 //-----------------------------------------------------------------------------
 
 size_t TypingEngine::FindToneTarget() const {
-    return config_.modernOrtho ? FindToneTargetModern() : FindToneTargetClassic();
-}
+    // Cap matches Phonotactics' internal vowel capacity; sequences past the cap
+    // are truncated identically on both sides so the index map stays consistent.
+    constexpr size_t kVowelCap = 16;
+    std::array<size_t, kVowelCap> vowelStateIdx{};
+    std::wstring vowelSeq;
+    vowelSeq.reserve(kVowelCap);
+    size_t vowelCount = 0;
+    size_t lastVowelStateIdx = SIZE_MAX;
 
-size_t TypingEngine::FindToneTargetClassic() const {
-    return FindToneTargetImpl(kDiphthongClassic, false);
-}
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (!states_[i].IsVowel()) continue;
+        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+        if (vowelCount >= kVowelCap) break;
 
-size_t TypingEngine::FindToneTargetModern() const {
-    return FindToneTargetImpl(kDiphthongModern, true);
-}
+        // Compose without tone and without case — Phonotactics::Decompose
+        // matches lowercase rendered modifier+base (e.g. L'\x01B0' for ư).
+        // Using towlower() on Vietnamese chars is locale-dependent and
+        // unreliable on Linux; clearing isUpper produces the canonical
+        // lowercase form directly.
+        CharState canonical = states_[i];
+        canonical.tone = Tone::None;
+        canonical.isUpper = false;
+        wchar_t composed = Compose(canonical);
+        if (composed == 0) continue;
 
-size_t TypingEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs) const {
-    return NextKey::FindToneTargetImpl(states_.data(), states_.size(), table, checkTriphthongs);
+        vowelSeq.push_back(composed);
+        vowelStateIdx[vowelCount++] = i;
+        lastVowelStateIdx = i;
+    }
+
+    if (vowelCount == 0) return SIZE_MAX;
+
+    // Coda: any state past the last nucleus vowel.
+    std::wstring coda;
+    for (size_t i = lastVowelStateIdx + 1; i < states_.size(); ++i) {
+        CharState canonical = states_[i];
+        canonical.isUpper = false;
+        wchar_t composed = Compose(canonical);
+        if (composed != 0) coda.push_back(composed);
+    }
+
+    size_t vowelIdx = phonotactics_.TonePosition(vowelSeq, coda, config_.modernOrtho);
+    if (vowelIdx == SIZE_MAX || vowelIdx >= vowelCount) return SIZE_MAX;
+    return vowelStateIdx[vowelIdx];
 }
 
 //-----------------------------------------------------------------------------

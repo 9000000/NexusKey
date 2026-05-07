@@ -34,21 +34,35 @@ Linux GTest **1434 / 1434 PASS** (1409 baseline + 25 new). Build clean. Windows 
 
 `Phonotactics::Default()` static accessor returns process-wide stateless singleton. `TypingEngine` gains 2-arg ctor `(const TypingConfig&, const Phonology::IPhonotactics&)`; existing 1-arg ctor delegates with `Phonotactics::Default()` so all 30+ existing call sites (EngineFactory, tests, dialogs) compile unchanged. Member `phonotactics_` stored as `const IPhonotactics&` — reference, not value, for swappability per CODING_RULES §4.2.
 
-3 new tests in `PhonotacticsTest.cpp`:
-- `TypingEngineDI.AcceptsCustomPhonotactics` — DI ctor compile + smoke
-- `TypingEngineDI.SingleArgCtorBindsDefaultPhonotactics` — backwards compat
-- `PhonotacticsDefault.ReturnsStableSingleton` — singleton identity
+3 new tests: `TypingEngineDI.AcceptsCustomPhonotactics`, `TypingEngineDI.SingleArgCtorBindsDefaultPhonotactics`, `PhonotacticsDefault.ReturnsStableSingleton`.
 
-Linux GTest **1437 / 1437 PASS** (1434 baseline + 3 DI). `phonotactics_` stored but NOT yet called — that lands in G-2.2.
+### G-2.2 — Replace FindToneTarget* with phonotactics_ (DONE 2026-05-07)
 
-### NEXT — G-2.2 (replace FindToneTarget* callers)
+`TypingEngine::FindToneTarget()` rewired to delegate to `phonotactics_.TonePosition(...)`. The classic/modern split moves into Phonotactics (driven by `config_.modernOrtho` bool); `FindToneTargetClassic`, `FindToneTargetModern`, and the per-class `FindToneTargetImpl` member are removed. The 5 external call sites (`TypingEngine.cpp:240,263,460,491,1093`) stay untouched.
+
+Wrapper handles the structural translation:
+1. Iterate `states_`, skip cluster consonants (gi/qu) via `IsClusterConsonant`,
+2. Compose each nucleus state with `tone=None` and `isUpper=false` so Phonotactics' Decompose sees the canonical lowercase modifier+base char,
+3. Track `vowelStateIdx[k] = state index` for later mapping,
+4. Build `coda` from any post-last-vowel states,
+5. Call `phonotactics_.TonePosition(vowelSeq, coda, modernOrtho)`,
+6. Map the returned vowel-sequence index back to a `states_` index.
+
+Phonotactics extensions to match `EngineHelpers::FindToneTargetImpl` semantics:
+- **Shifted-3-vowel rule** ported into `ComputeTonePosition`: when count ≥ 3 and the first 2 of the last 3 vowels have a diphthong rule, shift the (firstPos, lastPos) pair onto them. Vowel-repeat at end forces FIRST (typo cases like "hoaa", "oaa"). Otherwise rule-3 coda-aware uses `(lastPos + 1 < count) || !coda.empty()` to decide FIRST vs SECOND.
+- **Vowel array cap raised** from 4 → 16 to keep all of `máaaaaaaa`-style typos in scope; P1/P2 must scan the full sequence to find any horn/modifier no matter where the user typed it, and P4-rightmost must point at the actual last vowel for `IsToneRelocBlockedByP4` to drift-block correctly.
+
+3 new Phonotactics tests: `ShiftedThreeVowelTypoAoi`, `ShiftedThreeVowelRepeatHoaa`, `ClassicOaiHasRemainderRule`.
+
+Linux GTest **1440 / 1440 PASS**. The `EngineHelpers::FindToneTargetImpl` free function now has zero callers — dead code, kept for G-2.4 cleanup.
+
+### NEXT — G-2.3 (SpellCheck → Phonotactics::IsValidSyllable / CanComplete)
 
 | Step | Goal |
 |---|---|
-| G-2.2 | Replace `FindToneTarget*` callers in `TypingEngine.cpp` (5 call sites at lines 240, 263, 455, 486, 1088) → derive `vowelSeq` + `coda` from `states_` then call `phonotactics_.TonePosition(...)`. Tricky bit: TypingEngine internal CharState has explicit `mod` field; Phonotactics works on rendered Vietnamese chars. Need a small `BuildVowelSeqFromStates(states_)` helper that calls `Compose()` on each vowel state and concatenates. |
-| G-2.3 | Replace `SpellCheck::Validate` use in spell-check gate → `Phonotactics::IsValidSyllable` / `CanComplete`. Auto-exclude shrinks `spell_exclusions` list. |
-| G-2.4 | Decommission `EngineHelpers::FindToneTargetImpl` once all callers migrated; keep `kDiphthong*` tables in `VietnameseTables.h` (single source of truth). |
-| Tests | All 1437 stay green. Add Phonotactics integration tests showing TypingEngine produces the same output via injected interface (mock IPhonotactics that records calls). |
+| G-2.3 | Replace `SpellCheck::Validate` use in spell-check gate (`TypingEngine::UpdateSpellState` + the `WouldBeValidSyllable`/`ShouldRejectModifier` guards) → `Phonotactics::IsValidSyllable` / `CanComplete`. Need `Phonotactics` to gain onset-agreement (c/k/qu, g/gh, ng/ngh) and N1/N2/N3 vowel-coda rules, otherwise it'll under-reject. Auto-exclude reduces the per-bug `spell_exclusions` list. |
+| G-2.4 | Delete `EngineHelpers::FindToneTargetImpl` free function (zero callers post-G-2.2). Audit `kDiphthong*` table consumers — keep tables in `VietnameseTables.h` (still used by `IsToneRelocBlockedByP4` + `EnglishProtection`). |
+| Tests | All 1440 stay green. Add Phonotactics tests for c/k/qu agreement, g/gh+i/e, N1/N2/N3 + integration tests that prove TypingEngine spell-check verdict matches old SpellCheck::Validate verdict for the corpus. |
 
 ### Path G remaining phases (per brainstorm sign-off)
 
@@ -74,11 +88,10 @@ Linux GTest **1437 / 1437 PASS** (1434 baseline + 3 DI). `phonotactics_` stored 
 ```bash
 git checkout sprint-3/path-g
 cmake --build build-linux --target NextKeyTests
-./build-linux/tests/NextKeyTests --gtest_brief=1   # 1437 PASS
+./build-linux/tests/NextKeyTests --gtest_brief=1   # 1440 PASS
 
-# G-2.2 first step:
-grep -n "FindToneTarget\b" src/core/engine/TypingEngine.cpp
-# 5 call sites at lines 240, 263, 455, 486, 1088
+# G-2.3 first step — survey SpellCheck::Validate users:
+grep -rn "SpellCheck::Validate\|SpellCheck::Result" src/core/engine/
 ```
 
 ### Open items for anh
