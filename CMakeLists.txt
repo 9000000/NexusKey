@@ -39,6 +39,7 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/IPhonotactics.h
     src/core/engine/Phonotactics.cpp
     src/core/engine/Phonotactics.h
+    src/core/engine/TypingAction.h
     src/core/engine/CodeTableConverter.cpp
     src/core/engine/CodeTableConverter.h
 )
@@ -426,6 +427,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/FeatureOptionsTest.cpp
     tests/SpellCheckerTest.cpp
     tests/PhonotacticsTest.cpp
+    tests/TypingActionTest.cpp
     tests/CodeTableConverterTest.cpp
     tests/UpdateSecurityTest.cpp
     tests/EngineBenchmarkTest.cpp
