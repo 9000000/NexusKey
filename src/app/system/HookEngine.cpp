@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookEngine.h"
+#include "Win32CaseMapper.h"
 #include "helpers/AppHelpers.h"
 #include "output/OutputInjectorFactory.h"  // Sprint 2 T3 — output channel strategy
 #include "output/Internal.h"  // Sprint 2 D5 — g_synthCounterCallback bridge
 #include "core/engine/CodeTableConverter.h"
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
+#include "core/MacroCase.h"
 #include "core/MacroPrefix.h"
 #include "core/ipc/SharedStateManager.h"
 #include "core/Debug.h"
@@ -3203,222 +3205,66 @@ bool HookEngine::IsMacroTrigger(DWORD vkCode) const {
 }
 
 HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
-    std::wstring lowerKey = ToLowerAscii(rawMacroBuffer_);
-    bool isPartOfMacro = false;
-    bool matchedViaComposition = false;  // true when matched via Priority 3/4
-    bool matchedExact = false;            // true when match used the typed case verbatim
+    Win32CaseMapper mapper;
+    Macro::PlanInputs inputs{
+        rawMacroBuffer_, previousComposition_, previousEncodedWidths_,
+        macroTable_,
+        macroCrossCommit_,
+        currentCodeTable_,
+        autoCapsMacro_.load(std::memory_order_acquire),
+        triggerChar,
+        kMacroClipboardThreshold,
+    };
+    auto plan = Macro::Plan(inputs, mapper);
+    if (!plan.matched) return MacroResult::NoMatch;
 
-    // Matching contract (raw-buffer priorities 1 and 2):
-    //   - Stored key has any uppercase → exact case match only.
-    //   - Stored key is all lowercase    → case-insensitive; typed case adapts.
-    // Implemented with a two-step find: exact first, then lowered. An exact hit
-    // can be strict (upper key + typed matches) or a natural match on a lowercase key.
-    // A lowered-only hit can only land on a lowercase key (upper keys wouldn't match
-    // a lowercase probe), which is exactly the flexible branch.
+    auto inj = injector_.load(std::memory_order_acquire);
 
-    // Priority 1: full buffer (raw typed, includes accumulated trigger char)
-    auto it = macroTable_.find(rawMacroBuffer_);
-    if (it != macroTable_.end()) {
-        matchedExact = true;
-    } else {
-        it = macroTable_.find(lowerKey);
-    }
-    if (it != macroTable_.end() && triggerChar > L' ') {
-        isPartOfMacro = true;
-    }
-    // Priority 2: buffer without trigger char (e.g., "btw" from "btw.")
-    if (it == macroTable_.end() && triggerChar > L' ' &&
-        lowerKey.size() > 1 && lowerKey.back() == triggerChar) {
-        std::wstring rawWithoutTrigger = rawMacroBuffer_.substr(0, rawMacroBuffer_.size() - 1);
-        it = macroTable_.find(rawWithoutTrigger);
-        if (it != macroTable_.end()) {
-            matchedExact = true;
-        } else {
-            it = macroTable_.find(lowerKey.substr(0, lowerKey.size() - 1));
-        }
-    }
-    // Priority 3/4: composition-based matches stay case-insensitive only — the
-    // "raw" here is engine-composed output, not the user's keystroke case, so
-    // the strict-case contract above doesn't apply cleanly.
-    if (it == macroTable_.end() && !previousComposition_.empty()) {
-        std::wstring compKey = ToLowerAscii(previousComposition_);
-        if (triggerChar > L' ') {
-            it = macroTable_.find(compKey + triggerChar);
-            if (it != macroTable_.end()) { isPartOfMacro = true; matchedViaComposition = true; }
-        }
-        if (it == macroTable_.end()) {
-            it = macroTable_.find(compKey);
-            if (it != macroTable_.end()) matchedViaComposition = true;
-        }
-    }
-    if (it == macroTable_.end()) return MacroResult::NoMatch;
-
-    // Backspace count = on-screen characters that need erasing.
-    // When matchedViaComposition: only the last composed word (previousComposition_)
-    // matched — don't erase characters from earlier words accumulated in rawMacroBuffer_.
-    size_t bsCount;
-    if (matchedViaComposition) {
-        if (currentCodeTable_ != CodeTable::Unicode) {
-            bsCount = 0;
-            for (auto w : previousEncodedWidths_) bsCount += w;
-        } else {
-            bsCount = previousComposition_.size();
-        }
-    } else if (macroCrossCommit_) {
-        // Cross-commit macro (key contains punctuation like "a.i"): rawMacroBuffer_
-        // spans multiple engine commits and matches the on-screen character count.
-        // NOTE: For non-Unicode code tables (TCVN3/VNI), Vietnamese characters may
-        // encode to multiple bytes, making this count wrong. Acceptable limitation
-        // since macros with punctuation + non-Unicode encoding is extremely rare.
-        bsCount = rawMacroBuffer_.size();
-        if (triggerChar > L' ' && bsCount > 0) --bsCount;
-    } else if (!previousComposition_.empty()) {
-        if (currentCodeTable_ != CodeTable::Unicode) {
-            bsCount = 0;
-            for (auto w : previousEncodedWidths_) bsCount += w;
-        } else {
-            bsCount = previousComposition_.size();
-        }
-    } else {
-        bsCount = rawMacroBuffer_.size();
-        if (triggerChar > L' ' && bsCount > 0) --bsCount;
-    }
-    // Auto-capitalize expansion to match typed case — only fires when BOTH:
-    //   (a) the match was flexible (stored key all-lowercase, so case-insensitive
-    //       matching was in play — !matchedExact && !matchedViaComposition), and
-    //   (b) the stored expansion is itself all-lowercase (no deliberate casing).
-    // Transform: typed all-upper → expansion all-upper; typed first-upper → first-upper.
-    // CharUpperBuffW is locale-aware so Vietnamese diacritics uppercase correctly
-    // ('ô' → 'Ô'), unlike towupper() which only handles ASCII under the C locale.
-    std::wstring expansion = it->second;
-    if (autoCapsMacro_.load(std::memory_order_acquire) && !matchedExact && !matchedViaComposition &&
-        !rawMacroBuffer_.empty() && !expansion.empty()) {
-        // Expansion has no upper iff lowercasing it is a no-op (locale-aware).
-        std::wstring expansionLower = expansion;
-        CharLowerBuffW(expansionLower.data(), static_cast<DWORD>(expansionLower.size()));
-        const bool expansionAllLower = (expansionLower == expansion);
-        if (expansionAllLower) {
-            // Inspect only the letter chars — rawMacroBuffer_ may include an
-            // appended trigger (e.g. "BTW." when trigger is '.'), and
-            // iswupper('.') is false and would wrongly defeat all-upper detection.
-            // Note: iswupper/iswalpha are ASCII-only under the C locale, which is
-            // fine here — rawMacroBuffer_ only accumulates VK 0x41-0x5A and
-            // VkToMacroChar() triggers, both ASCII. The transform below uses
-            // locale-aware CharUpperBuffW so non-ASCII expansion chars ('ô'→'Ô')
-            // still uppercase correctly.
-            bool allUpper = true;
-            bool anyAlpha = false;
-            for (auto c : rawMacroBuffer_) {
-                if (!iswalpha(c)) continue;
-                anyAlpha = true;
-                if (!iswupper(c)) { allUpper = false; break; }
-            }
-            allUpper = allUpper && anyAlpha && rawMacroBuffer_.size() > 1;
-            bool firstUpper = iswupper(rawMacroBuffer_[0]);
-            if (allUpper) {
-                // Skip \n escape sequences — uppercasing 'n' → 'N' breaks newline detection
-                for (size_t i = 0; i < expansion.size(); ++i) {
-                    if (expansion[i] == L'\\' && i + 1 < expansion.size() && expansion[i + 1] == L'n') {
-                        ++i;  // skip the 'n' in '\n'
-                    } else {
-                        CharUpperBuffW(&expansion[i], 1);
-                    }
-                }
-            } else if (firstUpper) {
-                CharUpperBuffW(&expansion[0], 1);
-            }
-        }
-    }
-
-    {
-        // Choose output method based on encoding and expansion size.
-        // Non-Unicode code tables need per-char conversion → always SendInput.
-        // Unicode macros >200 chars use clipboard paste for speed.
-        bool useClipboard = (currentCodeTable_ == CodeTable::Unicode &&
-                             expansion.size() > kMacroClipboardThreshold);
-
-        if (useClipboard) {
-            // Convert \n escape sequences to real \r\n for clipboard paste
-            std::wstring clipText;
-            clipText.reserve(expansion.size());
-            for (size_t i = 0; i < expansion.size(); ++i) {
-                if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
-                    expansion[i + 1] == L'n') {
-                    clipText += L"\r\n";
-                    ++i;
-                } else {
-                    clipText += expansion[i];
-                }
-            }
-
-            // Send backspaces first via injector, then clipboard paste.
-            if (bsCount > 0) {
-                sending_ = true;
-                auto inj = injector_.load(std::memory_order_acquire);
-                if (!inj->Replace(bsCount, std::wstring_view{})) {
-                    HOOK_LOG(L"  TryExpandMacro[clipboard]: BS injector reported partial delivery");
-                }
-                sending_ = false;
-                RecordSynthDispatch();
-            }
-            ClipboardPaste(clipText);
-
-            HOOK_LOG(L"  TryExpandMacro: clipboard paste %zu chars (raw %zu)",
-                     clipText.size(), expansion.size());
-        } else {
-            // Sprint 2 D3: macro SendInput path now flows through the
-            // IOutputInjector. The expansion may contain `\n` escape
-            // sequences that must materialize as VK_RETURN keystrokes
-            // (not Unicode U+000A) — the injector's text param is pure
-            // Unicode, so we segment around `\n` boundaries:
-            //   inj->Replace(bsCount, segment_before_first_newline)
-            //   inj->SendKey(VK_RETURN)
-            //   inj->Replace(0, next_segment)
-            //   ...
-            // Multi-line macros are infrequent; the extra Replace calls
-            // are acceptable. Code tables: per-char ConvertChar
-            // expansion still happens here before assembling the segment.
+    if (plan.useClipboard) {
+        if (plan.bsCount > 0) {
             sending_ = true;
-            auto inj = injector_.load(std::memory_order_acquire);
-
-            std::wstring segment;
-            segment.reserve(expansion.size());
-            std::size_t pendingBsCount = bsCount;  // attached to the first segment
-
-            auto flushSegment = [&]() {
-                if (pendingBsCount == 0 && segment.empty()) return;
-                if (!inj->Replace(pendingBsCount, std::wstring_view(segment))) {
-                    HOOK_LOG(L"  TryExpandMacro[send]: injector reported partial delivery");
-                }
-                pendingBsCount = 0;
-                segment.clear();
-            };
-
-            for (size_t i = 0; i < expansion.size(); ++i) {
-                if (expansion[i] == L'\\' && i + 1 < expansion.size() &&
-                    expansion[i + 1] == L'n') {
-                    flushSegment();
-                    inj->SendKey(VK_RETURN);
-                    ++i;
-                    continue;
-                }
-                if (currentCodeTable_ != CodeTable::Unicode) {
-                    auto enc = CodeTableConverter::ConvertChar(expansion[i], currentCodeTable_);
-                    segment += enc.units[0];
-                    if (enc.count == 2) segment += enc.units[1];
-                } else {
-                    segment += expansion[i];
-                }
+            if (!inj->Replace(plan.bsCount, std::wstring_view{})) {
+                HOOK_LOG(L"  TryExpandMacro[clipboard]: BS injector reported partial delivery");
             }
-            flushSegment();
-
             sending_ = false;
             RecordSynthDispatch();
         }
+        auto clipText = Macro::ExpandEscapesForClipboard(plan.expansion);
+        ClipboardPaste(clipText);
+        HOOK_LOG(L"  TryExpandMacro: clipboard paste %zu chars (raw %zu)",
+                 clipText.size(), plan.expansion.size());
+    } else {
+        sending_ = true;
+        std::size_t pendingBs = plan.bsCount;
+        for (const auto& s : Macro::BuildSegments(plan.expansion, currentCodeTable_)) {
+            if (s.isReturn) {
+                if (pendingBs > 0) {
+                    if (!inj->Replace(pendingBs, std::wstring_view{})) {
+                        HOOK_LOG(L"  TryExpandMacro[send]: injector reported partial delivery");
+                    }
+                    pendingBs = 0;
+                }
+                inj->SendKey(VK_RETURN);
+            } else if (!s.text.empty()) {
+                if (!inj->Replace(pendingBs, std::wstring_view(s.text))) {
+                    HOOK_LOG(L"  TryExpandMacro[send]: injector reported partial delivery");
+                }
+                pendingBs = 0;
+            }
+        }
+        if (pendingBs > 0) {
+            if (!inj->Replace(pendingBs, std::wstring_view{})) {
+                HOOK_LOG(L"  TryExpandMacro[send]: injector reported partial delivery");
+            }
+        }
+        sending_ = false;
+        RecordSynthDispatch();
     }
+
     ClearWordState();
     CancelCommitUndo();
-    return isPartOfMacro ? MacroResult::ExpandedEatTrigger : MacroResult::ExpandedPassTrigger;
+    return plan.isPartOfMacro ? MacroResult::ExpandedEatTrigger
+                              : MacroResult::ExpandedPassTrigger;
 }
 
 wchar_t HookEngine::VkToMacroChar(DWORD vkCode) noexcept {
