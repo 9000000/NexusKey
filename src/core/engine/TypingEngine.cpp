@@ -282,7 +282,25 @@ void TypingEngine::PushChar(wchar_t c) {
                     [](const CharState& s) { return Compose(s); },
                     t, tonedCh);
             }
-            if (!isEscape && !matchesExclusion) { asLiteral(); return; }
+            // T5 (docs/TODO.md): allow tone REPLACEMENT when the current invalid
+            // buffer would become Valid after swapping the existing tone for the
+            // requested one. Covers `cafcs → các`: `càc` is invalid (huyền + stop
+            // coda c) so spellCheckDisabled_=true; without this branch the next
+            // tone key 's' falls through to asLiteral and produces `càcs`. With
+            // this branch we speculatively validate `các` (sắc + stop coda c =
+            // valid), and ProcessTone replaces huyền with sắc as the user intended.
+            // Conservative: requires an EXISTING tone at target (HasTone) — first-
+            // application on invalid buffer still treats key as literal.
+            bool wouldRecover = false;
+            if (!isEscape && !matchesExclusion && t != SIZE_MAX && states_[t].HasTone()) {
+                Tone savedTone = states_[t].tone;
+                states_[t].tone = requestedTone;
+                auto result = Phonology::ValidateSyllableState(
+                    states_.data(), states_.size(), config_.allowZwjf);
+                states_[t].tone = savedTone;
+                wouldRecover = (result == Phonology::SyllableState::Valid);
+            }
+            if (!isEscape && !matchesExclusion && !wouldRecover) { asLiteral(); return; }
         }
         // Tone escape: user pressed same tone twice — blocks Vietnamese.
         if (escape_.isEscaped())                                { asLiteral(); return; }
@@ -388,7 +406,15 @@ void TypingEngine::PushChar(wchar_t c) {
             if (!canEscape) {
                 canEscape = WouldModifierKeyMatchExclusion(lower);
             }
-            if (canEscape && ProcessModifier(action, c)) {
+            // T5 case 2 (anh 2026-05-07): if the buffer is invalid SOLELY because
+            // of tone-stop-coda mismatch (e.g., càc — huyền + stop coda c), allow
+            // the modifier through. The user is mid-correction; subsequent tone
+            // keystroke recovers validity via the T5 case 1 branch in the tone
+            // gate above. Covers `cafcwj → cặc`, `cafcaj → cậc`, etc. Without
+            // this, modifier is treated as literal and the chain never reaches
+            // the recovery tone.
+            bool isToneStopCodaMismatch = IsToneStopCodaMismatch();
+            if ((canEscape || isToneStopCodaMismatch) && ProcessModifier(action, c)) {
                 engProt_.bias = LanguageBias::Vietnamese;
                 ApplyAutoUO();
                 UpdateSpellState();
@@ -432,7 +458,11 @@ void TypingEngine::PushChar(wchar_t c) {
             if (!canEscape) {
                 canEscape = WouldModifierKeyMatchExclusion(lower);
             }
-            if (canEscape && ProcessModifier(action, c)) {
+            // T5 case 2: same recovery-via-tone-fix branch as the Telex modifier
+            // path above. VNI uses digits 6/7/8/9 for vowel modifiers; the buffer
+            // can be in the same tone-stop-coda-mismatch state.
+            bool isToneStopCodaMismatch = IsToneStopCodaMismatch();
+            if ((canEscape || isToneStopCodaMismatch) && ProcessModifier(action, c)) {
                 engProt_.bias = LanguageBias::Vietnamese;
                 ApplyAutoUO();
                 UpdateSpellState();
@@ -1144,6 +1174,28 @@ void TypingEngine::RelocateToneToTarget() {
 // back to a state index.
 //-----------------------------------------------------------------------------
 
+bool TypingEngine::IsToneStopCodaMismatch() const noexcept {
+    // T5 (anh 2026-05-07): "tone-stop-coda mismatch" = a syllable invalid
+    // SOLELY because the existing tone (huyền/hỏi/ngã) is incompatible with
+    // a stop final coda (c/ch/p/t). Vietnamese phonotactics: stop codas only
+    // permit sắc and nặng tones; the other three tones force re-evaluation.
+    //
+    // Used by tone and modifier gates as a "user is mid-correction" predicate.
+    // When true, the gate lets through a tone or modifier that would otherwise
+    // be treated as literal — covers the `cafcs → các` and `cafcwj → cặc`
+    // chains where the user mistypes huyền then corrects.
+    if (!HasStopFinalCoda(states_.data(), states_.size())) return false;
+    for (const auto& state : states_) {
+        if (!state.HasTone()) continue;
+        // First tone-bearing vowel determines mismatch — sắc/nặng = compatible,
+        // huyền/hỏi/ngã = mismatch.
+        return state.tone == Tone::Grave
+            || state.tone == Tone::Hook
+            || state.tone == Tone::Tilde;
+    }
+    return false;
+}
+
 size_t TypingEngine::FindToneTarget() const {
     // Cap matches Phonotactics' internal vowel capacity; sequences past the cap
     // are truncated identically on both sides so the index map stays consistent.
@@ -1654,9 +1706,18 @@ bool TypingEngine::WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
         didClear = true;
     }
     auto result = Phonology::ValidateSyllableState(states_.data(), states_.size(), config_.allowZwjf);
+    // T5 case 2 (anh 2026-05-07): if the speculative state is Invalid SOLELY
+    // because of tone-stop-coda mismatch (huyền/hỏi/ngã + stop coda c/ch/p/t),
+    // accept the modifier — the user is mid-correction and the next tone
+    // keystroke recovers via the T5 case 1 branch in the tone gate. Without
+    // this, P5/P6/P7 in HandleHornW reject `càc + w` because `cằc` is still
+    // invalid, and `w` falls through to literal even though the user clearly
+    // wants to type `cặc`/`cẳc`/etc.
+    bool recoverableMismatch = (result == Phonology::SyllableState::Invalid)
+                               && IsToneStopCodaMismatch();
     if (didClear) states_[clearCircumflexIdx].mod = Modifier::Circumflex;
     states_[targetIdx].mod = saved;
-    return result != Phonology::SyllableState::Invalid;
+    return result != Phonology::SyllableState::Invalid || recoverableMismatch;
 }
 
 }  // namespace NextKey
