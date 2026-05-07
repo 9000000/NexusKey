@@ -1,6 +1,84 @@
 # NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
-## Sprint 3 FSM — D-1 MERGED TO MAIN (2026-05-06) — CURRENT PICKUP NOTE
+## 2026-05-07 — Sprint 3 Path G, G-1 LANDED (CURRENT PICKUP NOTE)
+
+Branch `sprint-3/path-g` off Main `54e379b`. Sprint 3 FSM rewrite cancelled; Path G replaces it (refactor TypingEngine + `Phonotactics` class + custom keymap layer). Brainstorm `_bmad-output/brainstorming/brainstorming-session-2026-05-07-0250.md` signed off; full Path G plan + scope locks below.
+
+### G-1 — IPhonotactics interface + Phonotactics impl + GTest (DONE)
+
+| Deliverable | File |
+|---|---|
+| Interface header | `src/core/engine/IPhonotactics.h` — namespace `NextKey::Phonology`, methods `TonePosition` / `IsValidSyllable` / `CanComplete`, `Tone` enum redeclared in-namespace for layer isolation |
+| Concrete impl | `src/core/engine/Phonotactics.cpp/h` — anonymous-namespace helpers (Decompose, ParsedSyllable, IsClosedVowelSeq, IsPendingVowelSeq, IsKnownOnset/Coda…), reuses `NextKey::kDiphthongClassic/Modern` + `NextKey::IsTriphthong` from `VietnameseTables.h` (no duplication) |
+| Tests | `tests/PhonotacticsTest.cpp` — 25 cases / 3 fixtures: `PhonotacticsTonePosition` (12), `PhonotacticsIsValidSyllable` (7 incl. parametric coda+tone matrix), `PhonotacticsCanComplete` (5 + 1 nonsense reject) |
+| CMake | `CMakeLists.txt` — added 3 sources to `NEXTKEY_ENGINE_SOURCES`, added test to `NEXTKEY_TEST_SOURCES` |
+
+Linux GTest **1434 / 1434 PASS** (1409 baseline + 25 new). Build clean. Windows MSVC verification pending — anh rebuild from WSL when picking up.
+
+### Rules encoded in G-1 (per `docs/RuleTiengViet_Summary.md`)
+
+- **Tone position priority** (mirrors `EngineHelpers::FindToneTargetImpl`): P1 last horn vowel → P2 first non-horn modified vowel (â/ê/ô/ă) → P3 modern triphthong middle | diphthong table (rule 1=FIRST, 2=SECOND, 3=coda-aware) → P4 rightmost.
+- **Closed vowels (28)** reject any coda — `ai, ao, au, ay, âu, ây, eo, êu, ia, iu, oi, ôi, ơi, ui, ưa, ưi, ưu, iêu, uôi, uyu, ươi, ươu, oai, oay, uây, uya, oeo, oao`.
+- **Pending vowels (10)** require coda — `ă, â, iê, oă, uâ, uô, oo, ôô, ươ, uyê`.
+- **Stop-final coda** (`c, ch, p, t`) restricts tone to `Acute (sắc)` or `Dot (nặng)`.
+- **CanComplete parser** splits partial → onset / vowels / coda / leftover, rejects post-coda leftover (covers `gacha`, `gachw` auto-exclusion case from `spell_exclusions`).
+
+### Out of G-1 scope (deferred to G-2 or later)
+
+- **Onset agreement** (c/k/qu, g/gh, ng/ngh) — `IsValidSyllable` currently ignores `onset` arg. Add when G-2 wires Phonotactics into TypingEngine and we see real call patterns.
+- **N1/N2/N3 vowel-coda compatibility** — currently only closed/pending checks. Tighter group rules (N1 vowels can pair with C1+C3 only, not C2; etc.) deferred.
+- **Shifted-3-vowel typo rule** in `EngineHelpers::FindToneTargetImpl` (e.g. "hoaa", "gaoi" with vowel-repeat coda) — couples to CharState concept of which vowel carries the modifier; revisit when G-2 has the call sites.
+- **Issue #117 (`Lỗi → Lôĩ` fast typing)** — explicitly out of Path G; separate Sprint 1/2 timing-class follow-up.
+
+### NEXT — G-2 (refactor TypingEngine to USE Phonotactics)
+
+| Step | Goal |
+|---|---|
+| G-2.1 | DI: add `IPhonotactics&` constructor injection to `TypingEngine`, default to `Phonotactics` instance. Per CODING_RULES §4.2. |
+| G-2.2 | Replace `FindToneTarget*` callers in `TypingEngine.cpp` (5 call sites at lines 240, 263, 455, 486, 1088) → derive `vowelSeq` + `coda` from `states_` then call `phonotactics_.TonePosition(...)`. |
+| G-2.3 | Replace `SpellCheck::Validate` use in spell-check gate → `Phonotactics::IsValidSyllable` / `CanComplete`. Auto-exclude shrinks `spell_exclusions` list. |
+| G-2.4 | Decommission `EngineHelpers::FindToneTargetImpl` once all callers migrated; keep `kDiphthong*` tables in `VietnameseTables.h` (single source of truth). |
+| Tests | All 1409 baseline TelexEngine/SpellChecker tests stay green. Add Phonotactics integration tests showing TypingEngine produces the same output via injected interface. |
+
+### Path G remaining phases (per brainstorm sign-off)
+
+| Phase | Goal | Sessions |
+|---|---|---|
+| **G-1** | Phonotactics class + interface + tests | DONE |
+| **G-2** | Refactor TypingEngine `FindToneTarget*` → `Phonotactics::TonePosition`. Spell check → `IsValidSyllable`. Auto-exclusion via `CanComplete`. | 1-2 |
+| **G-3** | Internal handler dispatch: `TypingAction` enum + ~20 extracted handlers + single dispatch table. TypingEngine drops to ~1300 LOC. | 1-2 |
+| **G-4** | `customKeyMap` field in `TypingConfig`. PushChar checks override before default Telex/VNI dispatch. | 1 |
+| **G-5** | Sciter UI dialog + per-user `keymap_<name>.toml` + conflict warnings + active-method selector. | 1-2 |
+| **G-6** | Import/export Unikey + EVKey format compatibility. | 1 |
+
+### Coding rules adherence (per `docs/CODING_RULES/`)
+
+- §1 namespace: `NextKey::Phonology::` sub-namespace ✓
+- §1.2 include order: own → system → STL → project ✓
+- §4.1 interface-based: `IPhonotactics` virtual interface ✓
+- §9 naming: PascalCase class/methods, camelCase locals, `kCamelCase` table constants (matching `VietnameseTables.h` precedent), no Hungarian, no single-letter non-loop vars ✓
+- §10 documentation: WHY-comments where non-obvious; minimal doc on stable rule logic ✓
+
+### Pickup commands (next session)
+
+```bash
+git checkout sprint-3/path-g
+cmake --build build-linux --target NextKeyTests
+./build-linux/tests/NextKeyTests --gtest_brief=1   # 1434 PASS
+
+# G-2.1 first step:
+grep -n "FindToneTarget\b" src/core/engine/TypingEngine.cpp
+# 5 call sites at lines 240, 263, 455, 486, 1088
+```
+
+### Open items for anh
+
+- **Windows MSVC verification pending.** Anh rebuild from WSL after pulling — most-likely warning surface is `[[nodiscard]]` placement on virtual `noexcept` overrides under `/W4 /WX`. Em fixes inline.
+- **G-2 scope decision** — wire Phonotactics into TypingEngine via DI (preferred: matches §4.2) or via free-function adapter (less invasive)? Default to DI unless anh push back.
+
+---
+
+## Sprint 3 FSM — D-1 MERGED TO MAIN (2026-05-06) — superseded by Path G above
 
 Main is at `0600f34`. Three PRs merged this session 2026-05-05/06 night:
 

@@ -1,0 +1,42 @@
+// NexusKey - Vietnamese Phonotactics Implementation
+// Copyright (c) 2024-2026 PhatMT. All rights reserved.
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+//
+// Concrete implementation of IPhonotactics encoding RuleTiengViet rules.
+// Reuses VietnameseTables.h tables (kDiphthongClassic/Modern, IsTriphthong)
+// where applicable; extends with N1/N2/N3 vowel-coda compatibility,
+// closed/pending vowel sets, c/k/qu onset agreement.
+
+#pragma once
+
+#include "IPhonotactics.h"
+
+namespace NextKey {
+namespace Phonology {
+
+class Phonotactics final : public IPhonotactics {
+public:
+    Phonotactics() noexcept = default;
+    ~Phonotactics() override = default;
+
+    Phonotactics(const Phonotactics&) = delete;
+    Phonotactics& operator=(const Phonotactics&) = delete;
+
+    [[nodiscard]] size_t TonePosition(
+        std::wstring_view vowelSeq,
+        std::wstring_view coda,
+        bool modernOrtho) const noexcept override;
+
+    [[nodiscard]] bool IsValidSyllable(
+        std::wstring_view onset,
+        std::wstring_view vowelSeq,
+        std::wstring_view coda,
+        Tone tone,
+        bool modernOrtho) const noexcept override;
+
+    [[nodiscard]] bool CanComplete(
+        std::wstring_view partial) const noexcept override;
+};
+
+}  // namespace Phonology
+}  // namespace NextKey
