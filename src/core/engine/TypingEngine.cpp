@@ -9,6 +9,7 @@
 
 #include "TypingEngine.h"
 #include "EngineHelpers.h"
+#include "TypingAction.h"
 #include "VietnameseTables.h"
 #include <algorithm>
 #include <array>
@@ -23,32 +24,43 @@ namespace {
 
 // IsVowelChar is shared — defined in VietnameseTables.h
 
-// --- Telex key mapping ---
-constexpr Tone TelexKeyToTone(wchar_t c) noexcept {
-    switch (c) {
-        case L's': case L'S': return Tone::Acute;
-        case L'f': case L'F': return Tone::Grave;
-        case L'r': case L'R': return Tone::Hook;
-        case L'x': case L'X': return Tone::Tilde;
-        case L'j': case L'J': return Tone::Dot;
-        default: return Tone::None;
+// --- TypingAction helpers (G-3.2 dispatch foundation) ---
+// Replaces the per-mode TelexKeyToTone / VniKeyToTone / IsVniModifierKey
+// helpers — `ClassifyKey` (TypingAction.h) classifies the key once and
+// these helpers extract the post-classification subset PushChar still
+// needs.
+
+constexpr Tone ActionToTone(TypingAction a) noexcept {
+    switch (a) {
+        case TypingAction::ToneAcute: return Tone::Acute;
+        case TypingAction::ToneGrave: return Tone::Grave;
+        case TypingAction::ToneHook:  return Tone::Hook;
+        case TypingAction::ToneTilde: return Tone::Tilde;
+        case TypingAction::ToneDot:   return Tone::Dot;
+        default:                       return Tone::None;
     }
 }
 
-// --- VNI key mapping ---
-constexpr Tone VniKeyToTone(wchar_t c) noexcept {
-    switch (c) {
-        case L'1': return Tone::Acute;
-        case L'2': return Tone::Grave;
-        case L'3': return Tone::Hook;
-        case L'4': return Tone::Tilde;
-        case L'5': return Tone::Dot;
-        default:   return Tone::None;
+constexpr bool IsTelexModifierAction(TypingAction a) noexcept {
+    switch (a) {
+        case TypingAction::CircumflexA:
+        case TypingAction::CircumflexE:
+        case TypingAction::CircumflexO:
+        case TypingAction::HornW:
+        case TypingAction::HornInsertO:
+        case TypingAction::HornInsertU:
+        case TypingAction::StrokeD:
+            return true;
+        default:
+            return false;
     }
 }
 
-constexpr bool IsVniModifierKey(wchar_t c) noexcept {
-    return c >= L'6' && c <= L'9';
+constexpr bool IsVniModifierAction(TypingAction a) noexcept {
+    return a == TypingAction::VniCircumflex ||
+           a == TypingAction::VniHorn ||
+           a == TypingAction::VniBreve ||
+           a == TypingAction::VniStroke;
 }
 
 constexpr int ModifierIndex(Modifier mod) noexcept {
@@ -206,33 +218,31 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
+    // 1. Classify keystroke once (G-3.2 dispatch foundation). VNI digit
+    // sequences override to None so subsequent action checks treat the
+    // digit as literal — matches the pre-G-3 `!isVniDigitSequence` guards
+    // that gated VNI tone, VNI modifier, and clear-tone branches.
+    TypingAction action = ClassifyKey(lower, IsTelexMode(), IsVniMode());
+    if (isVniDigitSequence) action = TypingAction::None;
+
     // 1a. Clear tone: Telex 'z' / VNI '0'
-    if (!states_.empty() && !isVniDigitSequence) {
-        bool isClearToneKey = (IsTelexMode() && lower == L'z') ||
-                              (IsVniMode() && c == L'0');
-        if (isClearToneKey) {
-            if (config_.spellCheckEnabled && spellCheckDisabled_) {
-                ProcessChar(c);
-                UpdateSpellState();
-                return;
-            }
-            if (ProcessClearTone()) {
-                UpdateSpellState();
-                return;
-            }
+    if (action == TypingAction::ClearTone && !states_.empty()) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            ProcessChar(c);
+            UpdateSpellState();
+            return;
+        }
+        if (ProcessClearTone()) {
+            UpdateSpellState();
+            return;
         }
     }
 
-    // 1b. Tone keys — determine tone from Telex or VNI key mapping
-    Tone requestedTone = Tone::None;
-    bool isTelexTone = false;
-    if (IsTelexMode() && !states_.empty()) {
-        requestedTone = TelexKeyToTone(c);
-        isTelexTone = (requestedTone != Tone::None);
-    }
-    if (requestedTone == Tone::None && IsVniMode() && !states_.empty() && !isVniDigitSequence) {
-        requestedTone = VniKeyToTone(c);
-    }
+    // 1b. Tone keys — derive Tone from action. isTelexTone distinguishes
+    // Telex letter keys (s/f/r/x/j) from VNI digits 1-5 — only Telex tones
+    // run the raw-prefix English block + zwjf bias hook below.
+    Tone requestedTone = states_.empty() ? Tone::None : ActionToTone(action);
+    bool isTelexTone = (requestedTone != Tone::None) && (lower < L'0' || lower > L'9');
 
     if (requestedTone != Tone::None) {
         // All "treat as literal" paths share the same two operations.
@@ -327,10 +337,10 @@ void TypingEngine::PushChar(wchar_t c) {
     }
 
     // 2a. Telex modifier keys (w, [], aa, ee, oo, dd)
-    if (IsTelexMode()) {
+    if (IsTelexMode() && IsTelexModifierAction(action)) {
         // Pre-check for 'd' modifier: if dd→đ would fire AND there's already a
         // consonant in coda position, adding 'd' forms an invalid coda like "pd".
-        if (lower == L'd' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
+        if (action == TypingAction::StrokeD && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
             size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
             if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
                 engProt_.bias = LanguageBias::HardEnglish;
@@ -378,9 +388,9 @@ void TypingEngine::PushChar(wchar_t c) {
     }
 
     // 2b. VNI modifier keys (6, 7, 8, 9) — only in VNI/Combined mode
-    if (IsVniMode() && IsVniModifierKey(c) && !isVniDigitSequence) {
+    if (IsVniMode() && IsVniModifierAction(action)) {
         // Pre-check for '9' (stroke): same coda check as Telex 'd'
-        if (c == L'9' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
+        if (action == TypingAction::VniStroke && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
             size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
             if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
                 engProt_.bias = LanguageBias::HardEnglish;
