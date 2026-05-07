@@ -75,5 +75,30 @@ TEST_F(CustomKeyMapTest, DefaultEmptyMatchesCombined) {
     EXPECT_EQ(engine.Peek(), L"ắ7");
 }
 
+
+// =====================================================================
+// G2 — Replace built-in: user override always wins (precedence)
+// =====================================================================
+
+TEST_F(CustomKeyMapTest, RemapTelexSToToneHook) {
+    TypingConfig cfg = MakeTelexConfig();
+    cfg.customKeyMap[static_cast<size_t>(L's')] = TypingAction::ToneHook;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"as");
+    // Default Telex: 'a' + 's' → 'á' (sắc). With remap 's'→ToneHook: 'a' + 's' → 'ả' (hỏi).
+    EXPECT_EQ(engine.Peek(), L"ả");
+}
+
+TEST_F(CustomKeyMapTest, RemapVniDigit1ToClearTone) {
+    TypingConfig cfg = MakeVniConfig();
+    // Default VNI: '1' → ToneAcute. Remap '1' → ClearTone.
+    cfg.customKeyMap[static_cast<size_t>(L'1')] = TypingAction::ClearTone;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"a2");  // 'a' + grave → 'à'
+    EXPECT_EQ(engine.Peek(), L"à");
+    TypeString(engine, L"1");   // remapped: clear tone
+    EXPECT_EQ(engine.Peek(), L"a");
+}
+
 }  // namespace
 }  // namespace NextKey

@@ -228,11 +228,20 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 1. Classify keystroke once (G-3.2 dispatch foundation). VNI digit
-    // sequences override to None so subsequent action checks treat the
-    // digit as literal — matches the pre-G-3 `!isVniDigitSequence` guards
-    // that gated VNI tone, VNI modifier, and clear-tone branches.
-    TypingAction action = ClassifyKey(lower, IsTelexMode(), IsVniMode());
+    // 1. Classify keystroke once (G-3.2 dispatch foundation). G-4 layers
+    // an optional per-key user override above the static rules: when
+    // `customKeyMap[lower]` is non-`None`, it wins. ASCII-only (`lower <
+    // 128`) — non-ASCII keys fall straight to `ClassifyKey`. VNI digit
+    // sequences still override to None so subsequent action checks treat
+    // the digit as literal — matches the pre-G-3 `!isVniDigitSequence`
+    // guards that gated VNI tone, VNI modifier, and clear-tone branches.
+    TypingAction action;
+    if (lower < 128 &&
+        config_.customKeyMap[static_cast<uint8_t>(lower)] != TypingAction::None) {
+        action = config_.customKeyMap[static_cast<uint8_t>(lower)];
+    } else {
+        action = ClassifyKey(lower, IsTelexMode(), IsVniMode());
+    }
     if (isVniDigitSequence) action = TypingAction::None;
 
     // 1a. Clear tone: Telex 'z' / VNI '0'
