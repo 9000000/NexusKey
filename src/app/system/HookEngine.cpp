@@ -858,276 +858,29 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         case KeyOutcome::Fallthrough: break;
     }
 
-    // 3. English mode — skip Vietnamese processing
-    // Note: CJK layout no longer suppresses here. User controls V/E mode via toggle,
-    // matching EVKey behavior. Japanese IME "A" sub-mode is indistinguishable from
-    // "あ" mode via GetKeyboardLayout(), so layout-based suppression is too coarse.
-    if (!vnMode) {
-        if (macroOn && macroEng) {
-            // Track macro keys (all printable chars) in English mode
-            if (vkCode >= 0x41 && vkCode <= 0x5A) {
-                bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-                bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
-                bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
-                rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
-                                         : towlower(static_cast<wchar_t>(vkCode));
-            } else if (tempOffMacroEsc && vkCode == VK_ESCAPE && rawMacroBuffer_.empty()) {
-                tempMacroOff_ = true;
-                return false;
-            } else if (IsCommitTrigger(vkCode) && !tempMacroOff_) {
-                wchar_t triggerChar = VkToMacroChar(vkCode);
-                if (triggerChar > L' ') rawMacroBuffer_ += triggerChar;
-                if (!rawMacroBuffer_.empty() && IsMacroTrigger(vkCode)) {
-                    auto result = TryExpandMacro(triggerChar);
-                    if (result == MacroResult::ExpandedEatTrigger) return true;
-                    if (result == MacroResult::ExpandedPassTrigger) {
-                        if (synthEventsPending_ > 0) { InjectKey(vkCode); return true; }
-                        return false;
-                    }
-                } else if (!IsMacroTrigger(vkCode)) {
-                    // Disabled trigger still marks word boundary — clear buffer
-                    rawMacroBuffer_.clear();
-                    tempMacroOff_ = false;
-                }
-            } else if (vkCode == VK_BACK && !rawMacroBuffer_.empty()) {
-                rawMacroBuffer_.pop_back();
-            } else if (!(vkCode >= 0x41 && vkCode <= 0x5A) && !IsCommitTrigger(vkCode)) {
-                rawMacroBuffer_.clear();
-                tempMacroOff_ = false;
-            }
-        }
-        HOOK_LOG(L"  skip: Vietnamese mode OFF");
-        return false;
-    }
-
-    // ── Cache key states once per keystroke (GetKeyState is a snapshot, safe to cache) ──
+    // Cache key states once per keystroke (GetKeyState is a snapshot, safe to
+    // cache). Used by HandlePreDispatch (vnMode tracking) and DispatchKeyAction.
     const bool cachedShift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
     const bool cachedCapsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
     const bool cachedCtrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     const bool cachedAlt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     const bool cachedWin = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
 
-    // 3a. Auto-caps state machine (Vietnamese mode only)
-    const bool autoCapsOn = autoCaps_.load(std::memory_order_acquire);
-    if (autoCapsOn) {
-        // '.', '?', '!'
-        if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && cachedShift) || (vkCode == '1' && cachedShift)) {
-            autoCapState_ = AutoCapState::AfterPunct;
-        } else if (vkCode == VK_SPACE &&
-                   (autoCapState_ == AutoCapState::AfterPunct ||
-                    autoCapState_ == AutoCapState::ReadyToCapitalize)) {
-            // Promote on first space after punct; keep Ready across any number of
-            // additional spaces so ". ␣ ␣ c" still caps.
-            autoCapState_ = AutoCapState::ReadyToCapitalize;
-        } else if (vkCode == VK_RETURN) {
-            autoCapState_ = AutoCapState::ReadyToCapitalize;
-        } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            // Letter key — don't reset, HandleAlphaKey will consume it
-        } else {
-            autoCapState_ = AutoCapState::Idle;
-        }
+    // H1c: English-mode short-circuit + Vietnamese pre-dispatch tracking
+    // (steps 3 / 3a-3d). Behavior preserved byte-identical.
+    switch (HandlePreDispatch(vkCode, vnMode, macroOn, macroEng, tempOffMacroEsc,
+                              cachedShift, cachedCapsLock)) {
+        case KeyOutcome::Eat: return true;
+        case KeyOutcome::Pass: return false;
+        case KeyOutcome::Fallthrough: break;
     }
 
-    // 3b. Macro: track ALL typed characters (OpenKey approach).
-    // Alpha keys AND printable special chars are accumulated so macros with
-    // special characters in their key (e.g., "url\" → "URL") can be matched.
-    // Skip tracking entirely when no macros are defined — avoids string ops on every keystroke.
-    if (macroOn && !macroTable_.empty()) {
-        if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
-            rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
-                                     : towlower(static_cast<wchar_t>(vkCode));
-        } else if (IsCommitTrigger(vkCode)) {
-            wchar_t ch = VkToMacroChar(vkCode);
-            if (ch > L' ') rawMacroBuffer_ += ch;  // Printable non-space chars
-        }
-    }
-
-    // 3c. Temp off macro by Esc: press Esc with no pending text → skip macro for next word
-    if (tempOffMacroEsc && macroOn && !macroTable_.empty() && vkCode == VK_ESCAPE
-        && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
-        tempMacroOff_ = true;
-        HOOK_LOG(L"  tempMacroOff: enabled by Esc");
-        return false;  // Let Esc pass through
-    }
-
-    // 3d. Macro expansion on commit trigger (uses shared TryExpandMacro helper)
-    if (macroOn && !macroTable_.empty() && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
-        wchar_t triggerChar = VkToMacroChar(vkCode);
-        auto result = TryExpandMacro(triggerChar);
-        if (result == MacroResult::ExpandedEatTrigger) return true;
-        if (result == MacroResult::ExpandedPassTrigger) {
-            if (synthEventsPending_ > 0) { InjectKey(vkCode); return true; }
-            return false;
-        }
-    }
-
-    // 4b. Temp-off bypass: Vietnamese mode is ON but temporarily disabled for current word
-    if (tempEngineOff_) {
-        if (IsCommitTrigger(vkCode)) {
-            tempEngineOff_ = false;
-            HOOK_LOG(L"  tempEngineOff: reset on commit trigger vk=0x%02X", vkCode);
-        } else if (vkCode == VK_BACK && engine_->Count() == 0) {
-            tempEngineOff_ = false;
-            HOOK_LOG(L"  tempEngineOff: reset on backspace (engine empty)");
-        }
-        HOOK_LOG(L"  skip: tempEngineOff_ active=%d", tempEngineOff_ ? 1 : 0);
-        return false;  // Pass through as English
-    }
-
-    // 5. Skip if Ctrl/Alt/Win is down (allow shortcuts to pass through)
-    if (cachedCtrl || cachedAlt || cachedWin) {
-        HOOK_LOG(L"  skip: modifier held (ctrl=%d alt=%d win=%d)", cachedCtrl, cachedAlt, cachedWin);
-        // Always reset — shortcuts change text state in unpredictable ways.
-        // Commit-undo is already canceled at step 2d (modifier guard), but
-        // ResetComposition also clears engine, previousComposition_, inputHistory_, etc.
-        ResetComposition();
-        return false;
-    }
-
-    // 6. A-Z keys → process with engine
-    if (vkCode >= 0x41 && vkCode <= 0x5A) {
-        HOOK_LOG(L"  alpha key '%c' → HandleAlphaKey", static_cast<char>(vkCode));
-        return HandleAlphaKey(vkCode, cachedShift, cachedCapsLock);
-    }
-
-    const InputMethod method = currentMethod_.load(std::memory_order_acquire);
-
-    // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư)
-    if (method == InputMethod::Telex &&
-        (vkCode == VK_OEM_4 || vkCode == VK_OEM_6)) {
-        if (!cachedShift) {
-            wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
-            inputHistory_.push_back(ch);
-            engine_->PushChar(ch);
-            std::wstring composition = engine_->Peek();
-            HOOK_LOG(L"  bracket '%c' → Peek()='%s'", ch, composition.c_str());
-            ReplaceComposition(composition);
-            return true;  // Eat the original keystroke
-        }
-    }
-
-    // 6c. VNI/Combined: digit keys 1-9 → tone/modifier input (only with pending composition)
-    if ((method == InputMethod::VNI || method == InputMethod::Combined) &&
-        vkCode >= 0x31 && vkCode <= 0x39 &&
-        engine_->Count() > 0) {
-        if (!cachedShift) {
-            return HandleVniDigitKey(vkCode);
-        }
-    }
-
-    // 7. Backspace → engine backspace if we have content
-    if (vkCode == VK_BACK && engine_->Count() > 0) {
-        if (macroOn && !rawMacroBuffer_.empty()) rawMacroBuffer_.pop_back();
-        HOOK_LOG(L"  backspace (engine count=%zu)", engine_->Count());
-        HandleBackspace();
-        return true;  // Eat backspace
-    }
-
-    // 7b. Backspace with cross-commit macro buffer: update tracking, pass through
-    if (vkCode == VK_BACK && macroCrossCommit_ && !rawMacroBuffer_.empty()) {
-        rawMacroBuffer_.pop_back();
-        if (rawMacroBuffer_.empty()) macroCrossCommit_ = false;
-    }
-
-    // 8. Commit triggers: space, enter, tab, punctuation, numbers, escape, arrows
-    if (IsCommitTrigger(vkCode) && engine_->Count() > 0) {
-        HOOK_LOG(L"  commit trigger vk=0x%02X", vkCode);
-
-        // Preserve macro buffer across commit for printable triggers (e.g., '.' in "a.i")
-        // so macros with punctuation in their key can still be matched on the final trigger.
-        // Also preserve across SPACE when the accumulated prefix matches a stored space-
-        // containing key — enables multi-word macros like "oc om bok" = "Óoc Om Bok".
-        std::wstring savedMacroBuffer;
-        if (macroOn && !macroTable_.empty() && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
-            wchar_t ch = VkToMacroChar(vkCode);
-            if (ch > L' ') {
-                savedMacroBuffer = rawMacroBuffer_;
-            } else if (ch == L' ' && IsSpaceMacroPrefix(rawMacroBuffer_ + L' ', spaceMacroKeys_)) {
-                savedMacroBuffer = rawMacroBuffer_ + L' ';
-            }
-        }
-
-        bool restored = CommitComposition();
-
-        if (!savedMacroBuffer.empty()) {
-            rawMacroBuffer_ = std::move(savedMacroBuffer);
-            macroCrossCommit_ = true;
-        }
-        // Enable backspace-into-word for printable commit triggers (space, enter,
-        // digits, punctuation). Navigation keys (arrows, Tab, ESC, etc.) move the
-        // cursor — replay would insert text at the wrong position, so exclude them.
-        // Only if a new entry was just pushed (implies: not auto-restored,
-        // not quick consonant, not empty history).
-        if (pushedToStack_) {
-            bool isNavigation = (vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
-                vkCode == VK_HOME || vkCode == VK_END ||
-                vkCode == VK_PRIOR || vkCode == VK_NEXT ||
-                vkCode == VK_TAB || vkCode == VK_ESCAPE ||
-                vkCode == VK_DELETE || vkCode == VK_INSERT;
-            if (!isNavigation) {
-                SetCommitUndoReady();
-            }
-        }
-        if (restored || synthEventsPending_ > 0) {
-            // Re-inject trigger AFTER all pending synthetic events so that:
-            //   (a) auto-restore replacement arrives before the trigger, and
-            //   (b) in-flight correction synthetics (e.g. from ee→ê mid-word) arrive
-            //       before the trigger — preventing the trigger from slipping ahead of
-            //       those backspaces/chars and causing corrupt output ("lỗiêhiênr").
-            HOOK_LOG(L"  re-inject trigger vk=0x%02X (restored=%d synthPending=%d)",
-                     vkCode, restored ? 1 : 0, synthEventsPending_.load());
-            InjectKey(vkCode);
-            return true;  // Eat original trigger
-        }
-        // Sprint 1 Fix C/2026-05-05: in async-render hosts (Win11 New Notepad
-        // RichEditD2DPT) every alpha key is now routed through EM_REPLACESEL
-        // (sent message). A passthrough trigger char arrives via posted
-        // WM_KEYDOWN, and sent messages pre-empt posted ones — so the next
-        // eaten alpha's EM_REPLACESEL can be processed before the previous
-        // word's space/punctuation makes it to WM_CHAR. The chaos 2.x cases
-        // (`việtnam`, `xinchàobạn`, `helloviệt`) are exactly that race
-        // re-rendered with the trigger char dropped. Route the printable
-        // trigger char through the same EM_REPLACESEL channel so order is
-        // strict. Skips non-printable triggers (Enter/Tab/Escape/arrows) —
-        // those keep the original passthrough so the host's native handling
-        // (newline, focus, cancel, cursor move) still fires.
-        // Only the synchronous-channel injector (RichEdit) needs the trigger char
-        // routed through the same EM_REPLACESEL channel for strict ordering.
-        if (IsSyncReplaceChannel()) {
-            const wchar_t triggerChar = VkToMacroChar(vkCode);
-            if (triggerChar >= L' ') {
-                auto inj = injector_.load(std::memory_order_acquire);
-                if (inj->Replace(/*bs=*/0, std::wstring_view(&triggerChar, 1))) {
-                    HOOK_LOG(L"  commit trigger via injector: '%c'", triggerChar);
-                    return true;  // Eat original — we inserted it ourselves
-                }
-                // Synth failed → fall through to original passthrough
-                HOOK_LOG(L"  commit trigger injector failed, passthrough vk=0x%02X", vkCode);
-            }
-        }
-        return false;  // No pending synthetics, safe to pass through
-    }
-
-    // 9. Any other key with pending composition → commit and pass through
-    if (engine_->Count() > 0) {
-        HOOK_LOG(L"  other key vk=0x%02X with pending composition → commit", vkCode);
-        bool restored = CommitComposition();
-        if (restored || synthEventsPending_ > 0) {
-            InjectKey(vkCode);
-            return true;
-        }
-    }
-
-    // 10. BS with engine empty but synthetic events pending: re-inject to preserve ordering.
-    // Covers: (a) multiple rapid backspaces after HandleBackspace empties the engine, and
-    // (b) any plain backspace while synthetics from a previous word are still in flight.
-    // Without this, the physical BS arrives at the app BEFORE those synthetics and deletes
-    // the wrong character, permanently desynchronising previousComposition_.
-    if (vkCode == VK_BACK && synthEventsPending_ > 0) {
-        HOOK_LOG(L"  re-inject BS (engine empty, synthPending=%d)", synthEventsPending_.load());
-        InjectKey(VK_BACK);
-        return true;
+    // H1c: action dispatch (steps 4b-10). Returns Eat or Pass for every code path.
+    switch (DispatchKeyAction(vkCode, cachedShift, cachedCapsLock, cachedCtrl,
+                              cachedAlt, cachedWin, macroOn)) {
+        case KeyOutcome::Eat: return true;
+        case KeyOutcome::Pass: return false;
+        case KeyOutcome::Fallthrough: break;
     }
 
     return false;
@@ -1414,6 +1167,328 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         }
     }
     return KeyOutcome::Fallthrough;
+}
+
+// H1c: English-mode short-circuit + Vietnamese pre-dispatch tracking
+// (extracted from ProcessKeyDown steps 3 / 3a-3d).
+//
+//   Step 3   — !vnMode early-out with English-mode macro tracking. Macro
+//              keys accumulate in rawMacroBuffer_; commit triggers attempt
+//              expansion; Esc with empty buffer arms tempMacroOff_; non-
+//              alpha non-trigger keys clear the buffer at word boundary.
+//   Step 3a  — Auto-caps state machine (Idle/AfterPunct/ReadyToCapitalize).
+//              Punctuation '.', '?', '!' arms AfterPunct; subsequent space
+//              promotes to ReadyToCapitalize; Enter also promotes.
+//   Step 3b  — Macro tracking on the Vietnamese path: alpha keys lower-cased
+//              (or upper-cased per shift XOR caps), printable triggers join
+//              the buffer for multi-char macro key matching.
+//   Step 3c  — Temp-off-by-Esc: Esc with engine empty + buffer empty arms
+//              tempMacroOff_ for the next word.
+//   Step 3d  — Macro expansion on commit trigger via TryExpandMacro.
+//
+// Behavior is byte-identical to the pre-extraction inline block. Returns:
+//   Eat         → ProcessKeyDown returns true (macro expansion ate trigger).
+//   Pass        → ProcessKeyDown returns false (English-mode passthrough,
+//                 ExpandedPassTrigger without synth, or Esc temp-off arming).
+//   Fallthrough → continue to DispatchKeyAction (vnMode + no expansion).
+HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
+                                                      bool macroEng, bool tempOffMacroEsc,
+                                                      bool cachedShift, bool cachedCapsLock) {
+    // 3. English mode — skip Vietnamese processing
+    // Note: CJK layout no longer suppresses here. User controls V/E mode via toggle,
+    // matching EVKey behavior. Japanese IME "A" sub-mode is indistinguishable from
+    // "あ" mode via GetKeyboardLayout(), so layout-based suppression is too coarse.
+    if (!vnMode) {
+        if (macroOn && macroEng) {
+            // Track macro keys (all printable chars) in English mode
+            if (vkCode >= 0x41 && vkCode <= 0x5A) {
+                bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
+                rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
+                                         : towlower(static_cast<wchar_t>(vkCode));
+            } else if (tempOffMacroEsc && vkCode == VK_ESCAPE && rawMacroBuffer_.empty()) {
+                tempMacroOff_ = true;
+                return KeyOutcome::Pass;
+            } else if (IsCommitTrigger(vkCode) && !tempMacroOff_) {
+                wchar_t triggerChar = VkToMacroChar(vkCode);
+                if (triggerChar > L' ') rawMacroBuffer_ += triggerChar;
+                if (!rawMacroBuffer_.empty() && IsMacroTrigger(vkCode)) {
+                    auto result = TryExpandMacro(triggerChar);
+                    if (result == MacroResult::ExpandedEatTrigger) return KeyOutcome::Eat;
+                    if (result == MacroResult::ExpandedPassTrigger) {
+                        if (synthEventsPending_ > 0) { InjectKey(vkCode); return KeyOutcome::Eat; }
+                        return KeyOutcome::Pass;
+                    }
+                } else if (!IsMacroTrigger(vkCode)) {
+                    // Disabled trigger still marks word boundary — clear buffer
+                    rawMacroBuffer_.clear();
+                    tempMacroOff_ = false;
+                }
+            } else if (vkCode == VK_BACK && !rawMacroBuffer_.empty()) {
+                rawMacroBuffer_.pop_back();
+            } else if (!(vkCode >= 0x41 && vkCode <= 0x5A) && !IsCommitTrigger(vkCode)) {
+                rawMacroBuffer_.clear();
+                tempMacroOff_ = false;
+            }
+        }
+        HOOK_LOG(L"  skip: Vietnamese mode OFF");
+        return KeyOutcome::Pass;
+    }
+
+    // 3a. Auto-caps state machine (Vietnamese mode only)
+    const bool autoCapsOn = autoCaps_.load(std::memory_order_acquire);
+    if (autoCapsOn) {
+        // '.', '?', '!'
+        if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && cachedShift) || (vkCode == '1' && cachedShift)) {
+            autoCapState_ = AutoCapState::AfterPunct;
+        } else if (vkCode == VK_SPACE &&
+                   (autoCapState_ == AutoCapState::AfterPunct ||
+                    autoCapState_ == AutoCapState::ReadyToCapitalize)) {
+            // Promote on first space after punct; keep Ready across any number of
+            // additional spaces so ". ␣ ␣ c" still caps.
+            autoCapState_ = AutoCapState::ReadyToCapitalize;
+        } else if (vkCode == VK_RETURN) {
+            autoCapState_ = AutoCapState::ReadyToCapitalize;
+        } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
+            // Letter key — don't reset, HandleAlphaKey will consume it
+        } else {
+            autoCapState_ = AutoCapState::Idle;
+        }
+    }
+
+    // 3b. Macro: track ALL typed characters (OpenKey approach).
+    // Alpha keys AND printable special chars are accumulated so macros with
+    // special characters in their key (e.g., "url\" → "URL") can be matched.
+    // Skip tracking entirely when no macros are defined — avoids string ops on every keystroke.
+    if (macroOn && !macroTable_.empty()) {
+        if (vkCode >= 0x41 && vkCode <= 0x5A) {
+            bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
+            rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
+                                     : towlower(static_cast<wchar_t>(vkCode));
+        } else if (IsCommitTrigger(vkCode)) {
+            wchar_t ch = VkToMacroChar(vkCode);
+            if (ch > L' ') rawMacroBuffer_ += ch;  // Printable non-space chars
+        }
+    }
+
+    // 3c. Temp off macro by Esc: press Esc with no pending text → skip macro for next word
+    if (tempOffMacroEsc && macroOn && !macroTable_.empty() && vkCode == VK_ESCAPE
+        && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
+        tempMacroOff_ = true;
+        HOOK_LOG(L"  tempMacroOff: enabled by Esc");
+        return KeyOutcome::Pass;  // Let Esc pass through
+    }
+
+    // 3d. Macro expansion on commit trigger (uses shared TryExpandMacro helper)
+    if (macroOn && !macroTable_.empty() && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
+        wchar_t triggerChar = VkToMacroChar(vkCode);
+        auto result = TryExpandMacro(triggerChar);
+        if (result == MacroResult::ExpandedEatTrigger) return KeyOutcome::Eat;
+        if (result == MacroResult::ExpandedPassTrigger) {
+            if (synthEventsPending_ > 0) { InjectKey(vkCode); return KeyOutcome::Eat; }
+            return KeyOutcome::Pass;
+        }
+    }
+
+    return KeyOutcome::Fallthrough;
+}
+
+// H1c: action dispatch chain (extracted from ProcessKeyDown steps 4b-10).
+//
+//   Step 4b — tempEngineOff_ bypass: vnMode is ON but temporarily disabled
+//             for current word (commit trigger or BS-on-empty resets it).
+//   Step 5  — Ctrl/Alt/Win shortcut skip: ResetComposition + passthrough.
+//   Step 6  — A-Z alpha key → HandleAlphaKey (returns Eat if engine consumed
+//             the key, Pass if it triggered passthrough mid-word).
+//   Step 6b — Telex bracket [/] → engine modifier for ơ/ư.
+//   Step 6c — VNI/Combined digit 1-9 with engine non-empty → HandleVniDigitKey.
+//   Step 7  — Backspace with engine non-empty → HandleBackspace + Eat.
+//   Step 7b — Backspace with cross-commit macro buffer: update tracking,
+//             pass through (no return — falls into step 8/9/10).
+//   Step 8  — Commit trigger with engine non-empty: macro buffer preservation
+//             across the commit, trigger re-injection after pending synth,
+//             RichEdit synchronous-channel routing.
+//   Step 9  — Any other key with engine non-empty → commit + InjectKey.
+//   Step 10 — Backspace with engine empty + synth pending → re-inject BS to
+//             preserve ordering after in-flight word corrections.
+//
+// Behavior is byte-identical to the pre-extraction inline block. Returns:
+//   Eat  → ProcessKeyDown returns true (key consumed).
+//   Pass → ProcessKeyDown returns false (passthrough — final fallthrough also
+//          maps here; the original code's tail `return false` is preserved).
+HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedShift,
+                                                      bool cachedCapsLock, bool cachedCtrl,
+                                                      bool cachedAlt, bool cachedWin, bool macroOn) {
+    // 4b. Temp-off bypass: Vietnamese mode is ON but temporarily disabled for current word
+    if (tempEngineOff_) {
+        if (IsCommitTrigger(vkCode)) {
+            tempEngineOff_ = false;
+            HOOK_LOG(L"  tempEngineOff: reset on commit trigger vk=0x%02X", vkCode);
+        } else if (vkCode == VK_BACK && engine_->Count() == 0) {
+            tempEngineOff_ = false;
+            HOOK_LOG(L"  tempEngineOff: reset on backspace (engine empty)");
+        }
+        HOOK_LOG(L"  skip: tempEngineOff_ active=%d", tempEngineOff_ ? 1 : 0);
+        return KeyOutcome::Pass;  // Pass through as English
+    }
+
+    // 5. Skip if Ctrl/Alt/Win is down (allow shortcuts to pass through)
+    if (cachedCtrl || cachedAlt || cachedWin) {
+        HOOK_LOG(L"  skip: modifier held (ctrl=%d alt=%d win=%d)", cachedCtrl, cachedAlt, cachedWin);
+        // Always reset — shortcuts change text state in unpredictable ways.
+        // Commit-undo is already canceled at step 2d (modifier guard), but
+        // ResetComposition also clears engine, previousComposition_, inputHistory_, etc.
+        ResetComposition();
+        return KeyOutcome::Pass;
+    }
+
+    // 6. A-Z keys → process with engine
+    if (vkCode >= 0x41 && vkCode <= 0x5A) {
+        HOOK_LOG(L"  alpha key '%c' → HandleAlphaKey", static_cast<char>(vkCode));
+        return HandleAlphaKey(vkCode, cachedShift, cachedCapsLock)
+            ? KeyOutcome::Eat
+            : KeyOutcome::Pass;
+    }
+
+    const InputMethod method = currentMethod_.load(std::memory_order_acquire);
+
+    // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư)
+    if (method == InputMethod::Telex &&
+        (vkCode == VK_OEM_4 || vkCode == VK_OEM_6)) {
+        if (!cachedShift) {
+            wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
+            inputHistory_.push_back(ch);
+            engine_->PushChar(ch);
+            std::wstring composition = engine_->Peek();
+            HOOK_LOG(L"  bracket '%c' → Peek()='%s'", ch, composition.c_str());
+            ReplaceComposition(composition);
+            return KeyOutcome::Eat;  // Eat the original keystroke
+        }
+    }
+
+    // 6c. VNI/Combined: digit keys 1-9 → tone/modifier input (only with pending composition)
+    if ((method == InputMethod::VNI || method == InputMethod::Combined) &&
+        vkCode >= 0x31 && vkCode <= 0x39 &&
+        engine_->Count() > 0) {
+        if (!cachedShift) {
+            return HandleVniDigitKey(vkCode) ? KeyOutcome::Eat : KeyOutcome::Pass;
+        }
+    }
+
+    // 7. Backspace → engine backspace if we have content
+    if (vkCode == VK_BACK && engine_->Count() > 0) {
+        if (macroOn && !rawMacroBuffer_.empty()) rawMacroBuffer_.pop_back();
+        HOOK_LOG(L"  backspace (engine count=%zu)", engine_->Count());
+        HandleBackspace();
+        return KeyOutcome::Eat;  // Eat backspace
+    }
+
+    // 7b. Backspace with cross-commit macro buffer: update tracking, pass through
+    if (vkCode == VK_BACK && macroCrossCommit_ && !rawMacroBuffer_.empty()) {
+        rawMacroBuffer_.pop_back();
+        if (rawMacroBuffer_.empty()) macroCrossCommit_ = false;
+    }
+
+    // 8. Commit triggers: space, enter, tab, punctuation, numbers, escape, arrows
+    if (IsCommitTrigger(vkCode) && engine_->Count() > 0) {
+        HOOK_LOG(L"  commit trigger vk=0x%02X", vkCode);
+
+        // Preserve macro buffer across commit for printable triggers (e.g., '.' in "a.i")
+        // so macros with punctuation in their key can still be matched on the final trigger.
+        // Also preserve across SPACE when the accumulated prefix matches a stored space-
+        // containing key — enables multi-word macros like "oc om bok" = "Óoc Om Bok".
+        std::wstring savedMacroBuffer;
+        if (macroOn && !macroTable_.empty() && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
+            wchar_t ch = VkToMacroChar(vkCode);
+            if (ch > L' ') {
+                savedMacroBuffer = rawMacroBuffer_;
+            } else if (ch == L' ' && IsSpaceMacroPrefix(rawMacroBuffer_ + L' ', spaceMacroKeys_)) {
+                savedMacroBuffer = rawMacroBuffer_ + L' ';
+            }
+        }
+
+        bool restored = CommitComposition();
+
+        if (!savedMacroBuffer.empty()) {
+            rawMacroBuffer_ = std::move(savedMacroBuffer);
+            macroCrossCommit_ = true;
+        }
+        // Enable backspace-into-word for printable commit triggers (space, enter,
+        // digits, punctuation). Navigation keys (arrows, Tab, ESC, etc.) move the
+        // cursor — replay would insert text at the wrong position, so exclude them.
+        // Only if a new entry was just pushed (implies: not auto-restored,
+        // not quick consonant, not empty history).
+        if (pushedToStack_) {
+            bool isNavigation = (vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
+                vkCode == VK_HOME || vkCode == VK_END ||
+                vkCode == VK_PRIOR || vkCode == VK_NEXT ||
+                vkCode == VK_TAB || vkCode == VK_ESCAPE ||
+                vkCode == VK_DELETE || vkCode == VK_INSERT;
+            if (!isNavigation) {
+                SetCommitUndoReady();
+            }
+        }
+        if (restored || synthEventsPending_ > 0) {
+            // Re-inject trigger AFTER all pending synthetic events so that:
+            //   (a) auto-restore replacement arrives before the trigger, and
+            //   (b) in-flight correction synthetics (e.g. from ee→ê mid-word) arrive
+            //       before the trigger — preventing the trigger from slipping ahead of
+            //       those backspaces/chars and causing corrupt output ("lỗiêhiênr").
+            HOOK_LOG(L"  re-inject trigger vk=0x%02X (restored=%d synthPending=%d)",
+                     vkCode, restored ? 1 : 0, synthEventsPending_.load());
+            InjectKey(vkCode);
+            return KeyOutcome::Eat;  // Eat original trigger
+        }
+        // Sprint 1 Fix C/2026-05-05: in async-render hosts (Win11 New Notepad
+        // RichEditD2DPT) every alpha key is now routed through EM_REPLACESEL
+        // (sent message). A passthrough trigger char arrives via posted
+        // WM_KEYDOWN, and sent messages pre-empt posted ones — so the next
+        // eaten alpha's EM_REPLACESEL can be processed before the previous
+        // word's space/punctuation makes it to WM_CHAR. The chaos 2.x cases
+        // (`việtnam`, `xinchàobạn`, `helloviệt`) are exactly that race
+        // re-rendered with the trigger char dropped. Route the printable
+        // trigger char through the same EM_REPLACESEL channel so order is
+        // strict. Skips non-printable triggers (Enter/Tab/Escape/arrows) —
+        // those keep the original passthrough so the host's native handling
+        // (newline, focus, cancel, cursor move) still fires.
+        // Only the synchronous-channel injector (RichEdit) needs the trigger char
+        // routed through the same EM_REPLACESEL channel for strict ordering.
+        if (IsSyncReplaceChannel()) {
+            const wchar_t triggerChar = VkToMacroChar(vkCode);
+            if (triggerChar >= L' ') {
+                auto inj = injector_.load(std::memory_order_acquire);
+                if (inj->Replace(/*bs=*/0, std::wstring_view(&triggerChar, 1))) {
+                    HOOK_LOG(L"  commit trigger via injector: '%c'", triggerChar);
+                    return KeyOutcome::Eat;  // Eat original — we inserted it ourselves
+                }
+                // Synth failed → fall through to original passthrough
+                HOOK_LOG(L"  commit trigger injector failed, passthrough vk=0x%02X", vkCode);
+            }
+        }
+        return KeyOutcome::Pass;  // No pending synthetics, safe to pass through
+    }
+
+    // 9. Any other key with pending composition → commit and pass through
+    if (engine_->Count() > 0) {
+        HOOK_LOG(L"  other key vk=0x%02X with pending composition → commit", vkCode);
+        bool restored = CommitComposition();
+        if (restored || synthEventsPending_ > 0) {
+            InjectKey(vkCode);
+            return KeyOutcome::Eat;
+        }
+    }
+
+    // 10. BS with engine empty but synthetic events pending: re-inject to preserve ordering.
+    // Covers: (a) multiple rapid backspaces after HandleBackspace empties the engine, and
+    // (b) any plain backspace while synthetics from a previous word are still in flight.
+    // Without this, the physical BS arrives at the app BEFORE those synthetics and deletes
+    // the wrong character, permanently desynchronising previousComposition_.
+    if (vkCode == VK_BACK && synthEventsPending_ > 0) {
+        HOOK_LOG(L"  re-inject BS (engine empty, synthPending=%d)", synthEventsPending_.load());
+        InjectKey(VK_BACK);
+        return KeyOutcome::Eat;
+    }
+
+    return KeyOutcome::Pass;
 }
 
 /// Returns true when the keyboard layout cannot produce Vietnamese input.
