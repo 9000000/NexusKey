@@ -1,4 +1,4 @@
-// NexusKey - Vietnamese Spell Checker Implementation
+// NexusKey - PhonotacticsValidator Implementation
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
 // SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
 // Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
@@ -7,7 +7,7 @@
 // Vietnamese syllable structure: [C₁] + V + [C₂]
 // Uses greedy consonant matching and packed-key vowel nucleus table (linear scan).
 
-#include "SpellChecker.h"
+#include "PhonotacticsValidator.h"
 #include "TypingEngine.h"
 #include <algorithm>
 #include <cwctype>

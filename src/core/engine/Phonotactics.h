@@ -10,7 +10,7 @@
 #pragma once
 
 #include "IPhonotactics.h"
-#include "SpellChecker.h"  // SyllableState + ValidateSyllableState (same Phonology namespace)
+#include "PhonotacticsValidator.h"  // SyllableState + ValidateSyllableState (same Phonology namespace)
 
 namespace NextKey {
 namespace Phonology {

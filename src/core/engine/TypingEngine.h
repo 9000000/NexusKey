@@ -8,7 +8,7 @@
 
 #include "IInputEngine.h"
 #include "EngineHelpers.h"
-#include "SpellChecker.h"
+#include "PhonotacticsValidator.h"
 #include "EnglishProtection.h"
 #include "Phonotactics.h"
 #include "TypingAction.h"

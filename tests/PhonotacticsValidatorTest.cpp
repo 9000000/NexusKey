@@ -1,10 +1,10 @@
-// NexusKey - SpellChecker Unit Tests
+// NexusKey - PhonotacticsValidator Unit Tests
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Tests: Direct validator tests + engine integration tests
 
 #include <gtest/gtest.h>
-#include "core/engine/SpellChecker.h"
+#include "core/engine/PhonotacticsValidator.h"
 #include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
 #include "TestHelper.h"
@@ -46,110 +46,110 @@ SyllableState V(const std::vector<CharState>& states) {
 // Direct Validator Tests — Valid Complete Syllables
 //=============================================================================
 
-class SpellCheckerValidTest : public ::testing::Test {};
+class PhonotacticsValidatorValidTest : public ::testing::Test {};
 
-TEST_F(SpellCheckerValidTest, EmptyIsPrefix) {
+TEST_F(PhonotacticsValidatorValidTest, EmptyIsPrefix) {
     EXPECT_EQ(V({}), SyllableState::ValidPrefix);
 }
 
-TEST_F(SpellCheckerValidTest, SingleVowel_a) {
+TEST_F(PhonotacticsValidatorValidTest, SingleVowel_a) {
     EXPECT_EQ(V({T(L'a')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, SingleVowel_i) {
+TEST_F(PhonotacticsValidatorValidTest, SingleVowel_i) {
     EXPECT_EQ(V({T(L'i')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Ba) {
+TEST_F(PhonotacticsValidatorValidTest, Ba) {
     EXPECT_EQ(V({T(L'b'), T(L'a')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Cam) {
+TEST_F(PhonotacticsValidatorValidTest, Cam) {
     // c + a + m
     EXPECT_EQ(V({T(L'c'), T(L'a'), T(L'm')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Di_Stroke) {
+TEST_F(PhonotacticsValidatorValidTest, Di_Stroke) {
     // đ + i  (đi)
     EXPECT_EQ(V({TM(L'd', Modifier::Breve), T(L'i')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Nghi) {
+TEST_F(PhonotacticsValidatorValidTest, Nghi) {
     // ngh + i
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), T(L'i')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Qua) {
+TEST_F(PhonotacticsValidatorValidTest, Qua) {
     // qu + a
     EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'a')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Oai) {
+TEST_F(PhonotacticsValidatorValidTest, Oai) {
     // vowel-only: oai (triple no-end)
     EXPECT_EQ(V({T(L'o'), T(L'a'), T(L'i')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Uoi_WithHorn) {
+TEST_F(PhonotacticsValidatorValidTest, Uoi_WithHorn) {
     // ươi (triple no-end, with horn modifiers)
     EXPECT_EQ(V({TM(L'u', Modifier::Horn), TM(L'o', Modifier::Horn), T(L'i')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Yeu_WithCircumflex) {
+TEST_F(PhonotacticsValidatorValidTest, Yeu_WithCircumflex) {
     // yêu
     EXPECT_EQ(V({T(L'y'), TM(L'e', Modifier::Circumflex), T(L'u')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Bac_WithAcute) {
+TEST_F(PhonotacticsValidatorValidTest, Bac_WithAcute) {
     // bác (stop final c + acute tone → valid)
     EXPECT_EQ(V({T(L'b'), TT(L'a', Tone::Acute), T(L'c')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Bat_WithDot) {
+TEST_F(PhonotacticsValidatorValidTest, Bat_WithDot) {
     // bạt (stop final t + dot tone → valid)
     EXPECT_EQ(V({T(L'b'), TT(L'a', Tone::Dot), T(L't')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Than) {
+TEST_F(PhonotacticsValidatorValidTest, Than) {
     // th + a + n
     EXPECT_EQ(V({T(L't'), T(L'h'), T(L'a'), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Trang) {
+TEST_F(PhonotacticsValidatorValidTest, Trang) {
     // tr + a + ng
     EXPECT_EQ(V({T(L't'), T(L'r'), T(L'a'), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, An) {
+TEST_F(PhonotacticsValidatorValidTest, An) {
     // a + n (vowel-initial with final)
     EXPECT_EQ(V({T(L'a'), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Anh) {
+TEST_F(PhonotacticsValidatorValidTest, Anh) {
     // a + nh
     EXPECT_EQ(V({T(L'a'), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Ong) {
+TEST_F(PhonotacticsValidatorValidTest, Ong) {
     // o + ng
     EXPECT_EQ(V({T(L'o'), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Gia) {
+TEST_F(PhonotacticsValidatorValidTest, Gia) {
     // gi + a → valid (gi as consonant cluster)
     EXPECT_EQ(V({T(L'g'), T(L'i'), T(L'a')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Gi_Alone) {
+TEST_F(PhonotacticsValidatorValidTest, Gi_Alone) {
     // "gi" alone → g + vowel_i → valid
     EXPECT_EQ(V({T(L'g'), T(L'i')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Loan) {
+TEST_F(PhonotacticsValidatorValidTest, Loan) {
     // l + oa + n
     EXPECT_EQ(V({T(L'l'), T(L'o'), T(L'a'), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, Oan) {
+TEST_F(PhonotacticsValidatorValidTest, Oan) {
     // oa + n (oan)
     EXPECT_EQ(V({T(L'o'), T(L'a'), T(L'n')}), SyllableState::Valid);
 }
@@ -158,25 +158,25 @@ TEST_F(SpellCheckerValidTest, Oan) {
 // Direct Validator Tests — Valid Prefix
 //=============================================================================
 
-class SpellCheckerPrefixTest : public ::testing::Test {};
+class PhonotacticsValidatorPrefixTest : public ::testing::Test {};
 
-TEST_F(SpellCheckerPrefixTest, SingleConsonant_b) {
+TEST_F(PhonotacticsValidatorPrefixTest, SingleConsonant_b) {
     EXPECT_EQ(V({T(L'b')}), SyllableState::ValidPrefix);
 }
 
-TEST_F(SpellCheckerPrefixTest, TwoCharConsonant_th) {
+TEST_F(PhonotacticsValidatorPrefixTest, TwoCharConsonant_th) {
     EXPECT_EQ(V({T(L't'), T(L'h')}), SyllableState::ValidPrefix);
 }
 
-TEST_F(SpellCheckerPrefixTest, ThreeCharConsonant_ngh) {
+TEST_F(PhonotacticsValidatorPrefixTest, ThreeCharConsonant_ngh) {
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h')}), SyllableState::ValidPrefix);
 }
 
-TEST_F(SpellCheckerPrefixTest, Qu_Prefix) {
+TEST_F(PhonotacticsValidatorPrefixTest, Qu_Prefix) {
     EXPECT_EQ(V({T(L'q'), T(L'u')}), SyllableState::ValidPrefix);
 }
 
-TEST_F(SpellCheckerPrefixTest, SingleD) {
+TEST_F(PhonotacticsValidatorPrefixTest, SingleD) {
     EXPECT_EQ(V({T(L'd')}), SyllableState::ValidPrefix);
 }
 
@@ -184,47 +184,47 @@ TEST_F(SpellCheckerPrefixTest, SingleD) {
 // Direct Validator Tests — Invalid
 //=============================================================================
 
-class SpellCheckerInvalidTest : public ::testing::Test {};
+class PhonotacticsValidatorInvalidTest : public ::testing::Test {};
 
-TEST_F(SpellCheckerInvalidTest, Bl_InvalidCluster) {
+TEST_F(PhonotacticsValidatorInvalidTest, Bl_InvalidCluster) {
     EXPECT_EQ(V({T(L'b'), T(L'l')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerInvalidTest, Bk_InvalidCluster) {
+TEST_F(PhonotacticsValidatorInvalidTest, Bk_InvalidCluster) {
     EXPECT_EQ(V({T(L'b'), T(L'k')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerInvalidTest, FourVowels) {
+TEST_F(PhonotacticsValidatorInvalidTest, FourVowels) {
     // aaaa → invalid (too many vowels)
     EXPECT_EQ(V({T(L'a'), T(L'a'), T(L'a'), T(L'a')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerInvalidTest, InvalidVowelCombo_ae) {
+TEST_F(PhonotacticsValidatorInvalidTest, InvalidVowelCombo_ae) {
     // "ae" is not in the vowel table
     EXPECT_EQ(V({T(L'a'), T(L'e')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerInvalidTest, StopFinal_Grave_Bac) {
+TEST_F(PhonotacticsValidatorInvalidTest, StopFinal_Grave_Bac) {
     // bàc — stop final 'c' with grave tone → invalid
     EXPECT_EQ(V({T(L'b'), TT(L'a', Tone::Grave), T(L'c')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerInvalidTest, StopFinal_Hook_Bac) {
+TEST_F(PhonotacticsValidatorInvalidTest, StopFinal_Hook_Bac) {
     // bảc — stop final 'c' with hook tone → invalid
     EXPECT_EQ(V({T(L'b'), TT(L'a', Tone::Hook), T(L'c')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerInvalidTest, StopFinal_Tilde_Bat) {
+TEST_F(PhonotacticsValidatorInvalidTest, StopFinal_Tilde_Bat) {
     // bãt — stop final 't' with tilde tone → invalid
     EXPECT_EQ(V({T(L'b'), TT(L'a', Tone::Tilde), T(L't')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerInvalidTest, ExtraAfterFinal) {
+TEST_F(PhonotacticsValidatorInvalidTest, ExtraAfterFinal) {
     // "bang" is valid, but "bangx" has extra chars
     EXPECT_EQ(V({T(L'b'), T(L'a'), T(L'n'), T(L'g'), T(L'x')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerInvalidTest, NoEndVowel_WithConsonant) {
+TEST_F(PhonotacticsValidatorInvalidTest, NoEndVowel_WithConsonant) {
     // "ai" cannot have end consonant → "aim" is invalid
     EXPECT_EQ(V({T(L'a'), T(L'i'), T(L'm')}), SyllableState::Invalid);
 }
@@ -233,28 +233,28 @@ TEST_F(SpellCheckerInvalidTest, NoEndVowel_WithConsonant) {
 // gi/qu special decomposition tests
 //=============================================================================
 
-class SpellCheckerGiQuTest : public ::testing::Test {};
+class PhonotacticsValidatorGiQuTest : public ::testing::Test {};
 
-TEST_F(SpellCheckerGiQuTest, Gia_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Gia_Valid) {
     // gi + a → valid
     EXPECT_EQ(V({T(L'g'), T(L'i'), T(L'a')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Gip_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Gip_Valid) {
     // g + i + p → valid (gíp, as in "gip" = help in some dialects)
     // Decompose: g + vowel(i) + final(p)
     EXPECT_EQ(V({T(L'g'), T(L'i'), T(L'p')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Qua_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Qua_Valid) {
     EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'a')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Quan_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Quan_Valid) {
     EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'a'), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Gian_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Gian_Valid) {
     // gi + a + n
     EXPECT_EQ(V({T(L'g'), T(L'i'), T(L'a'), T(L'n')}), SyllableState::Valid);
 }
@@ -476,7 +476,7 @@ TEST_F(TelexSpellCheckTest, StopFinal_P_Hook_Blocked) {
     EXPECT_EQ(engine.Peek(), L"apr");
 }
 
-// K coda: only valid after ă (breve) — SpellChecker restriction.
+// K coda: only valid after ă (breve) — PhonotacticsValidator restriction.
 // Use "awkr" (ă+k) to test the pre-tone check path; "akr" hits spellCheckDisabled_ path.
 TEST_F(TelexSpellCheckTest, StopFinal_K_Hook_Blocked) {
     // aw=ă modifier, k=valid coda, 'r'=Hook → blocked by pre-tone check
@@ -648,44 +648,44 @@ TEST_F(VniSpellCheckTest, SpellCheckOff_StopFinal_NotBlocked) {
 // Edge cases
 //=============================================================================
 
-class SpellCheckerEdgeTest : public ::testing::Test {};
+class PhonotacticsValidatorEdgeTest : public ::testing::Test {};
 
-TEST_F(SpellCheckerEdgeTest, Uyen_Valid) {
+TEST_F(PhonotacticsValidatorEdgeTest, Uyen_Valid) {
     // uyên (uyê + n)
     EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Modifier::Circumflex), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, Oang_Valid) {
+TEST_F(PhonotacticsValidatorEdgeTest, Oang_Valid) {
     // oăng (oă + ng)
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, Uong_WithHorn) {
+TEST_F(PhonotacticsValidatorEdgeTest, Uong_WithHorn) {
     // uống (uô + ng, with circumflex)
     EXPECT_EQ(V({T(L'u'), TM(L'o', Modifier::Circumflex), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, Ach) {
+TEST_F(PhonotacticsValidatorEdgeTest, Ach) {
     // ach (a + ch)
     EXPECT_EQ(V({T(L'a'), T(L'c'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, StopFinal_Acute_Valid) {
+TEST_F(PhonotacticsValidatorEdgeTest, StopFinal_Acute_Valid) {
     // bắc (stop final + acute → valid)
     EXPECT_EQ(V({T(L'b'), TMT(L'a', Modifier::Breve, Tone::Acute), T(L'c')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, StopFinal_Dot_Valid) {
+TEST_F(PhonotacticsValidatorEdgeTest, StopFinal_Dot_Valid) {
     // bặc (stop final + dot → valid)
     EXPECT_EQ(V({T(L'b'), TMT(L'a', Modifier::Breve, Tone::Dot), T(L'c')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, StopFinal_Grave_Invalid) {
+TEST_F(PhonotacticsValidatorEdgeTest, StopFinal_Grave_Invalid) {
     // bằc (stop final + grave → invalid)
     EXPECT_EQ(V({T(L'b'), TMT(L'a', Modifier::Breve, Tone::Grave), T(L'c')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerEdgeTest, NonStopFinal_AllTones_Valid) {
+TEST_F(PhonotacticsValidatorEdgeTest, NonStopFinal_AllTones_Valid) {
     // Non-stop finals (m, n, ng, nh) allow all tones
     // bàn (grave + n → valid)
     EXPECT_EQ(V({T(L'b'), TT(L'a', Tone::Grave), T(L'n')}), SyllableState::Valid);
@@ -695,53 +695,53 @@ TEST_F(SpellCheckerEdgeTest, NonStopFinal_AllTones_Valid) {
     EXPECT_EQ(V({T(L'b'), TT(L'a', Tone::Tilde), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, Khanh) {
+TEST_F(PhonotacticsValidatorEdgeTest, Khanh) {
     // kh + a + nh
     EXPECT_EQ(V({T(L'k'), T(L'h'), T(L'a'), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, Phat) {
+TEST_F(PhonotacticsValidatorEdgeTest, Phat) {
     // ph + a + t
     EXPECT_EQ(V({T(L'p'), T(L'h'), TT(L'a', Tone::Acute), T(L't')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, Nghieng) {
+TEST_F(PhonotacticsValidatorEdgeTest, Nghieng) {
     // ngh + iê + ng
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), T(L'i'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
 // k as stop final — minority-language proper nouns (Đắk Lắk, Đắk Nông)
-TEST_F(SpellCheckerEdgeTest, FinalK_Dak_Valid) {
+TEST_F(PhonotacticsValidatorEdgeTest, FinalK_Dak_Valid) {
     // đắk (đ + ắ + k → valid, stop final)
     EXPECT_EQ(V({TM(L'd', Modifier::Breve), TMT(L'a', Modifier::Breve, Tone::Acute), T(L'k')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, FinalK_Lak_Valid) {
+TEST_F(PhonotacticsValidatorEdgeTest, FinalK_Lak_Valid) {
     // lắk (l + ắ + k → valid, stop final)
     EXPECT_EQ(V({T(L'l'), TMT(L'a', Modifier::Breve, Tone::Acute), T(L'k')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, FinalK_StopTone_Acute_Valid) {
+TEST_F(PhonotacticsValidatorEdgeTest, FinalK_StopTone_Acute_Valid) {
     // Stop final k + acute → valid
     EXPECT_EQ(V({T(L'b'), TMT(L'a', Modifier::Breve, Tone::Acute), T(L'k')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, FinalK_StopTone_Dot_Valid) {
+TEST_F(PhonotacticsValidatorEdgeTest, FinalK_StopTone_Dot_Valid) {
     // Stop final k + dot → valid
     EXPECT_EQ(V({T(L'b'), TMT(L'a', Modifier::Breve, Tone::Dot), T(L'k')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerEdgeTest, FinalK_StopTone_Grave_Invalid) {
+TEST_F(PhonotacticsValidatorEdgeTest, FinalK_StopTone_Grave_Invalid) {
     // Stop final k + grave → invalid (same rule as c)
     EXPECT_EQ(V({T(L'b'), TMT(L'a', Modifier::Breve, Tone::Grave), T(L'k')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerEdgeTest, FinalK_NonBreveVowel_Invalid) {
+TEST_F(PhonotacticsValidatorEdgeTest, FinalK_NonBreveVowel_Invalid) {
     // hôk — 'k' final only valid after ắ vowel, not ô → invalid
     EXPECT_EQ(V({T(L'h'), TM(L'o', Modifier::Circumflex), T(L'k')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerEdgeTest, FinalK_PlainA_Invalid) {
+TEST_F(PhonotacticsValidatorEdgeTest, FinalK_PlainA_Invalid) {
     // bak — 'k' final after plain 'a' (no breve) → invalid
     EXPECT_EQ(V({T(L'b'), T(L'a'), T(L'k')}), SyllableState::Invalid);
 }
@@ -876,7 +876,7 @@ TEST_F(TelexSpellCheckTest, VCPair_ƠN_ToneAllowed) {
 }
 
 // Note: "oo" double vowel can't be tested via Telex engine because
-// o+o triggers circumflex (ô). Direct SpellChecker tests cover oo restrictions.
+// o+o triggers circumflex (ô). Direct PhonotacticsValidator tests cover oo restrictions.
 
 TEST_F(TelexSpellCheckTest, VCPair_Ka_ToneBlocked) {
     // k + a is invalid initial (k only before e/ê/i/y) → entire syllable invalid
@@ -938,37 +938,37 @@ TEST_F(TelexSpellCheckTest, VCPair_ÊNh_ToneAllowed) {
 // P1.2 Verify: gi/qu exception cases (quỳnh, giếng, quyết, quyến)
 //=============================================================================
 
-TEST_F(SpellCheckerGiQuTest, Quynh_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Quynh_Valid) {
     // qu + y + nh → quynh (valid: qu onset + uy nucleus + nh coda)
     EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'y'), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Quynh_WithGrave_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Quynh_WithGrave_Valid) {
     // quỳnh (grave tone on y)
     EXPECT_EQ(V({T(L'q'), T(L'u'), TT(L'y', Tone::Grave), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Gieng_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Gieng_Valid) {
     // giêng (gi onset + ê vowel + ng coda, OR g onset + iê nucleus + ng coda)
     EXPECT_EQ(V({T(L'g'), T(L'i'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Gieng_WithAcute_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Gieng_WithAcute_Valid) {
     // giếng (acute on ê)
     EXPECT_EQ(V({T(L'g'), T(L'i'), TMT(L'e', Modifier::Circumflex, Tone::Acute), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Gieng_WithGrave_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Gieng_WithGrave_Valid) {
     // giềng (grave on ê)
     EXPECT_EQ(V({T(L'g'), T(L'i'), TMT(L'e', Modifier::Circumflex, Tone::Grave), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Quyen_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Quyen_Valid) {
     // quyến (qu + uyê + n)
     EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'y'), TM(L'e', Modifier::Circumflex), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerGiQuTest, Quyet_Valid) {
+TEST_F(PhonotacticsValidatorGiQuTest, Quyet_Valid) {
     // quyết (qu + uyê + t)
     EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'y'), TMT(L'e', Modifier::Circumflex, Tone::Acute), T(L't')}), SyllableState::Valid);
 }
@@ -977,39 +977,39 @@ TEST_F(SpellCheckerGiQuTest, Quyet_Valid) {
 // P1.3 Verify: k as initial consonant with various vowels
 //=============================================================================
 
-TEST_F(SpellCheckerValidTest, K_Initial_Ke) {
+TEST_F(PhonotacticsValidatorValidTest, K_Initial_Ke) {
     EXPECT_EQ(V({T(L'k'), T(L'e')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, K_Initial_Ki) {
+TEST_F(PhonotacticsValidatorValidTest, K_Initial_Ki) {
     EXPECT_EQ(V({T(L'k'), T(L'i')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, K_Initial_Ky) {
+TEST_F(PhonotacticsValidatorValidTest, K_Initial_Ky) {
     EXPECT_EQ(V({T(L'k'), T(L'y')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, K_Initial_Ke_Circumflex) {
+TEST_F(PhonotacticsValidatorValidTest, K_Initial_Ke_Circumflex) {
     // kê
     EXPECT_EQ(V({T(L'k'), TM(L'e', Modifier::Circumflex)}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, K_Initial_Keu) {
+TEST_F(PhonotacticsValidatorValidTest, K_Initial_Keu) {
     // kêu
     EXPECT_EQ(V({T(L'k'), TM(L'e', Modifier::Circumflex), T(L'u')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, K_Initial_Kien) {
+TEST_F(PhonotacticsValidatorValidTest, K_Initial_Kien) {
     // kiên (k + iê + n)
     EXPECT_EQ(V({T(L'k'), T(L'i'), TM(L'e', Modifier::Circumflex), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, K_Initial_Kieu) {
+TEST_F(PhonotacticsValidatorValidTest, K_Initial_Kieu) {
     // kiểu (k + iêu)
     EXPECT_EQ(V({T(L'k'), T(L'i'), TM(L'e', Modifier::Circumflex), T(L'u')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerValidTest, K_Initial_Kia) {
+TEST_F(PhonotacticsValidatorValidTest, K_Initial_Kia) {
     // kia (k + ia)
     EXPECT_EQ(V({T(L'k'), T(L'i'), T(L'a')}), SyllableState::Valid);
 }
@@ -1020,600 +1020,600 @@ TEST_F(SpellCheckerValidTest, K_Initial_Kia) {
 // Currently most of these PASS incorrectly (the whole point of VCPairList fix).
 //=============================================================================
 
-class SpellCheckerVCPairTest : public ::testing::Test {};
+class PhonotacticsValidatorVCPairTest : public ::testing::Test {};
 
 // --- Single vowel ơ: only m, n, p, t allowed ---
-TEST_F(SpellCheckerVCPairTest, Ơ_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ơ_Ch_Invalid) {
     // ơch — ơ cannot end with ch
     EXPECT_EQ(V({TM(L'o', Modifier::Horn), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ơ_Ng_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ơ_Ng_Invalid) {
     // ơng — ơ cannot end with ng
     EXPECT_EQ(V({TM(L'o', Modifier::Horn), T(L'n'), T(L'g')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ơ_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ơ_Nh_Invalid) {
     // ơnh — ơ cannot end with nh
     EXPECT_EQ(V({TM(L'o', Modifier::Horn), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ơ_C_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ơ_C_Invalid) {
     // ơc — ơ cannot end with c
     EXPECT_EQ(V({TM(L'o', Modifier::Horn), T(L'c')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ơ_M_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ơ_M_Valid) {
     EXPECT_EQ(V({TM(L'o', Modifier::Horn), T(L'm')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ơ_N_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ơ_N_Valid) {
     EXPECT_EQ(V({TM(L'o', Modifier::Horn), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ơ_P_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ơ_P_Valid) {
     EXPECT_EQ(V({TM(L'o', Modifier::Horn), T(L'p')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ơ_T_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ơ_T_Valid) {
     EXPECT_EQ(V({TM(L'o', Modifier::Horn), T(L't')}), SyllableState::Valid);
 }
 
 // --- Single vowel y: only t allowed ---
-TEST_F(SpellCheckerVCPairTest, Y_Ng_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Y_Ng_Invalid) {
     EXPECT_EQ(V({T(L'y'), T(L'n'), T(L'g')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Y_M_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Y_M_Invalid) {
     EXPECT_EQ(V({T(L'y'), T(L'm')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Y_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Y_Ch_Invalid) {
     EXPECT_EQ(V({T(L'y'), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Y_T_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Y_T_Valid) {
     EXPECT_EQ(V({T(L'y'), T(L't')}), SyllableState::Valid);
 }
 
 // --- Single vowel â: no ch, nh ---
-TEST_F(SpellCheckerVCPairTest, Â_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Â_Ch_Invalid) {
     EXPECT_EQ(V({TM(L'a', Modifier::Circumflex), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Â_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Â_Nh_Invalid) {
     EXPECT_EQ(V({TM(L'a', Modifier::Circumflex), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Â_N_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Â_N_Valid) {
     EXPECT_EQ(V({TM(L'a', Modifier::Circumflex), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Â_C_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Â_C_Valid) {
     EXPECT_EQ(V({TM(L'a', Modifier::Circumflex), T(L'c')}), SyllableState::Valid);
 }
 
 // --- Single vowel ê: no ng ---
-TEST_F(SpellCheckerVCPairTest, Ê_Ng_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ê_Ng_Invalid) {
     EXPECT_EQ(V({TM(L'e', Modifier::Circumflex), T(L'n'), T(L'g')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ê_Ch_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ê_Ch_Valid) {
     // êch (chêch, kêch)
     EXPECT_EQ(V({TM(L'e', Modifier::Circumflex), T(L'c'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ê_Nh_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ê_Nh_Valid) {
     // ênh (lênh, kênh)
     EXPECT_EQ(V({TM(L'e', Modifier::Circumflex), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
 // --- Single vowel ô: no ch, nh ---
-TEST_F(SpellCheckerVCPairTest, Ô_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ô_Ch_Invalid) {
     EXPECT_EQ(V({TM(L'o', Modifier::Circumflex), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ô_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ô_Nh_Invalid) {
     EXPECT_EQ(V({TM(L'o', Modifier::Circumflex), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ô_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ô_Ng_Valid) {
     // ông, sông
     EXPECT_EQ(V({TM(L'o', Modifier::Circumflex), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
 // --- Single vowel ư: no ch, nh ---
-TEST_F(SpellCheckerVCPairTest, Ư_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ư_Ch_Invalid) {
     EXPECT_EQ(V({TM(L'u', Modifier::Horn), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ư_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ư_Nh_Invalid) {
     EXPECT_EQ(V({TM(L'u', Modifier::Horn), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ư_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ư_Ng_Valid) {
     // ưng
     EXPECT_EQ(V({TM(L'u', Modifier::Horn), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
 // --- Single vowel u: no ch, nh ---
-TEST_F(SpellCheckerVCPairTest, U_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, U_Ch_Invalid) {
     EXPECT_EQ(V({T(L'u'), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, U_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, U_Nh_Invalid) {
     EXPECT_EQ(V({T(L'u'), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, U_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, U_Ng_Valid) {
     // ung
     EXPECT_EQ(V({T(L'u'), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
 // --- Single vowel o: no ch, nh ---
-TEST_F(SpellCheckerVCPairTest, O_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, O_Ch_Invalid) {
     EXPECT_EQ(V({T(L'o'), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, O_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, O_Nh_Invalid) {
     EXPECT_EQ(V({T(L'o'), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, O_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, O_Ng_Valid) {
     // ong
     EXPECT_EQ(V({T(L'o'), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
 // --- Single vowel ă: no ch, nh ---
-TEST_F(SpellCheckerVCPairTest, Ă_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ă_Ch_Invalid) {
     EXPECT_EQ(V({TM(L'a', Modifier::Breve), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ă_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ă_Nh_Invalid) {
     EXPECT_EQ(V({TM(L'a', Modifier::Breve), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ă_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ă_Ng_Valid) {
     // ăng (măng, tăng)
     EXPECT_EQ(V({TM(L'a', Modifier::Breve), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
 // --- Double vowel oo: only c, ng ---
-TEST_F(SpellCheckerVCPairTest, OO_M_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OO_M_Invalid) {
     EXPECT_EQ(V({T(L'o'), T(L'o'), T(L'm')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OO_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OO_Ng_Valid) {
     // oong (xoong, boong)
     EXPECT_EQ(V({T(L'o'), T(L'o'), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OO_C_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OO_C_Valid) {
     // ooc
     EXPECT_EQ(V({T(L'o'), T(L'o'), T(L'c')}), SyllableState::Valid);
 }
 
 // --- Double vowel uê: only ch, n, nh ---
-TEST_F(SpellCheckerVCPairTest, UÊ_M_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UÊ_M_Invalid) {
     EXPECT_EQ(V({T(L'u'), TM(L'e', Modifier::Circumflex), T(L'm')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UÊ_Ng_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UÊ_Ng_Invalid) {
     EXPECT_EQ(V({T(L'u'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'g')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UÊ_Ch_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UÊ_Ch_Valid) {
     // uếch (huếch)
     EXPECT_EQ(V({T(L'u'), TM(L'e', Modifier::Circumflex), T(L'c'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UÊ_N_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UÊ_N_Valid) {
     EXPECT_EQ(V({T(L'u'), TM(L'e', Modifier::Circumflex), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UÊ_Nh_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UÊ_Nh_Valid) {
     // uênh (thuênh)
     EXPECT_EQ(V({T(L'u'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
 // --- Double vowel uy: only ch, n, nh, t ---
-TEST_F(SpellCheckerVCPairTest, UY_M_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UY_M_Invalid) {
     EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'm')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UY_Ng_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UY_Ng_Invalid) {
     EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'n'), T(L'g')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UY_Ch_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UY_Ch_Valid) {
     // uych (huỳch)
     EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'c'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UY_T_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UY_T_Valid) {
     // uyt (huyết)
     EXPECT_EQ(V({T(L'u'), T(L'y'), T(L't')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UY_Nh_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UY_Nh_Valid) {
     // uynh (huynh, quynh)
     EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
 // --- Regression: a can end with ALL finals ---
-TEST_F(SpellCheckerVCPairTest, A_C_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, A_C_Valid) {
     EXPECT_EQ(V({T(L'a'), T(L'c')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, A_Ch_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, A_Ch_Valid) {
     EXPECT_EQ(V({T(L'a'), T(L'c'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, A_M_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, A_M_Valid) {
     EXPECT_EQ(V({T(L'a'), T(L'm')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, A_N_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, A_N_Valid) {
     EXPECT_EQ(V({T(L'a'), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, A_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, A_Ng_Valid) {
     EXPECT_EQ(V({T(L'a'), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, A_Nh_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, A_Nh_Valid) {
     EXPECT_EQ(V({T(L'a'), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, A_P_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, A_P_Valid) {
     EXPECT_EQ(V({T(L'a'), T(L'p')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, A_T_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, A_T_Valid) {
     EXPECT_EQ(V({T(L'a'), T(L't')}), SyllableState::Valid);
 }
 
 // --- Regression: i can end with ALL finals ---
-TEST_F(SpellCheckerVCPairTest, I_Ch_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, I_Ch_Valid) {
     // ich (thích, lịch)
     EXPECT_EQ(V({T(L'i'), T(L'c'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, I_Nh_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, I_Nh_Valid) {
     // inh (bình, tĩnh)
     EXPECT_EQ(V({T(L'i'), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, I_Ng_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, I_Ng_Invalid) {
     // ing: -ing+tone doesn't exist in Vietnamese (things→thíng, kings→kíng bug)
     EXPECT_EQ(V({T(L'i'), T(L'n'), T(L'g')}), SyllableState::Invalid);
 }
 
 // --- Regression: e can end with ALL finals ---
-TEST_F(SpellCheckerVCPairTest, E_Ch_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, E_Ch_Valid) {
     // ech (nghẹch)
     EXPECT_EQ(V({T(L'e'), T(L'c'), T(L'h')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, E_Nh_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, E_Nh_Valid) {
     // enh
     EXPECT_EQ(V({T(L'e'), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
 // --- k initial: invalid before a, o, u (must use c instead) ---
-TEST_F(SpellCheckerVCPairTest, K_Initial_Ka_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, K_Initial_Ka_Invalid) {
     // ka → should be "ca" in Vietnamese
     EXPECT_EQ(V({T(L'k'), T(L'a')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, K_Initial_Ko_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, K_Initial_Ko_Invalid) {
     EXPECT_EQ(V({T(L'k'), T(L'o')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, K_Initial_Ku_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, K_Initial_Ku_Invalid) {
     EXPECT_EQ(V({T(L'k'), T(L'u')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, K_Initial_Koa_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, K_Initial_Koa_Invalid) {
     // koa → should be "coa" (though "coa" itself is rare)
     EXPECT_EQ(V({T(L'k'), T(L'o'), T(L'a')}), SyllableState::Invalid);
 }
 
-// k + ê/e/i/y still valid (already covered in SpellCheckerValidTest.K_Initial_*)
+// k + ê/e/i/y still valid (already covered in PhonotacticsValidatorValidTest.K_Initial_*)
 
 // --- kh is NOT affected (kh is a different consonant cluster) ---
-TEST_F(SpellCheckerVCPairTest, Kh_Initial_Kha_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Kh_Initial_Kha_Valid) {
     EXPECT_EQ(V({T(L'k'), T(L'h'), T(L'a')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Kh_Initial_Kho_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Kh_Initial_Kho_Valid) {
     EXPECT_EQ(V({T(L'k'), T(L'h'), T(L'o')}), SyllableState::Valid);
 }
 
 // --- c not before front vowels (use k: ke, kê, ki, ky) ---
-TEST_F(SpellCheckerVCPairTest, C_Initial_Ce_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, C_Initial_Ce_Invalid) {
     EXPECT_EQ(V({T(L'c'), T(L'e')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, C_Initial_Ci_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, C_Initial_Ci_Invalid) {
     EXPECT_EQ(V({T(L'c'), T(L'i')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, C_Initial_Cy_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, C_Initial_Cy_Invalid) {
     EXPECT_EQ(V({T(L'c'), T(L'y')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, C_Initial_Ca_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, C_Initial_Ca_Valid) {
     // c + a is valid (ca, cá, cả...)
     EXPECT_EQ(V({T(L'c'), T(L'a')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, C_Initial_Co_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, C_Initial_Co_Valid) {
     EXPECT_EQ(V({T(L'c'), T(L'o')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, C_Initial_Cu_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, C_Initial_Cu_Valid) {
     EXPECT_EQ(V({T(L'c'), T(L'u')}), SyllableState::Valid);
 }
 
 // ch is NOT affected (ch is a 2-char consonant)
-TEST_F(SpellCheckerVCPairTest, Ch_Initial_Che_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ch_Initial_Che_Valid) {
     EXPECT_EQ(V({T(L'c'), T(L'h'), T(L'e')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ch_Initial_Chi_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ch_Initial_Chi_Valid) {
     EXPECT_EQ(V({T(L'c'), T(L'h'), T(L'i')}), SyllableState::Valid);
 }
 
 // --- gh only before front vowels (e/ê/i) ---
-TEST_F(SpellCheckerVCPairTest, Gh_Initial_Gha_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Gh_Initial_Gha_Invalid) {
     EXPECT_EQ(V({T(L'g'), T(L'h'), T(L'a')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Gh_Initial_Gho_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Gh_Initial_Gho_Invalid) {
     EXPECT_EQ(V({T(L'g'), T(L'h'), T(L'o')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Gh_Initial_Ghe_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Gh_Initial_Ghe_Valid) {
     EXPECT_EQ(V({T(L'g'), T(L'h'), T(L'e')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Gh_Initial_Ghi_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Gh_Initial_Ghi_Valid) {
     EXPECT_EQ(V({T(L'g'), T(L'h'), T(L'i')}), SyllableState::Valid);
 }
 
 // --- ngh only before front vowels (e/ê/i) ---
-TEST_F(SpellCheckerVCPairTest, Ngh_Initial_Ngha_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ngh_Initial_Ngha_Invalid) {
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), T(L'a')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ngh_Initial_Nghe_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ngh_Initial_Nghe_Valid) {
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), T(L'e')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ngh_Initial_Nghi_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ngh_Initial_Nghi_Valid) {
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), T(L'i')}), SyllableState::Valid);
 }
 
 // ng (without h) is NOT affected — nga, ngo, ngu all valid
-TEST_F(SpellCheckerVCPairTest, Ng_Initial_Nga_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ng_Initial_Nga_Valid) {
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'a')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ng_Initial_Ngo_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ng_Initial_Ngo_Valid) {
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'o')}), SyllableState::Valid);
 }
 
 // --- q must be part of qu cluster ---
-TEST_F(SpellCheckerVCPairTest, Q_Initial_Qa_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Q_Initial_Qa_Invalid) {
     EXPECT_EQ(V({T(L'q'), T(L'a')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Q_Initial_Qe_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Q_Initial_Qe_Invalid) {
     EXPECT_EQ(V({T(L'q'), T(L'e')}), SyllableState::Invalid);
 }
 
 // qu + vowel still valid (regression)
-TEST_F(SpellCheckerVCPairTest, Qu_Initial_Qua_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Qu_Initial_Qua_Valid) {
     EXPECT_EQ(V({T(L'q'), T(L'u'), T(L'a')}), SyllableState::Valid);
 }
 
 // --- Double vowel with onset: regression test ---
-TEST_F(SpellCheckerVCPairTest, Loan_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Loan_Valid) {
     // l + oa + n
     EXPECT_EQ(V({T(L'l'), T(L'o'), T(L'a'), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Hoan_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Hoan_Valid) {
     EXPECT_EQ(V({T(L'h'), T(L'o'), T(L'a'), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Tuong_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Tuong_Valid) {
     // tương (t + ươ + ng)
     EXPECT_EQ(V({T(L't'), TM(L'u', Modifier::Horn), TM(L'o', Modifier::Horn), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Tien_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Tien_Valid) {
     // tiên (t + iê + n)
     EXPECT_EQ(V({T(L't'), T(L'i'), TM(L'e', Modifier::Circumflex), T(L'n')}), SyllableState::Valid);
 }
 
 // --- Diphthong iê: c, m, n, ng, p, t allowed; ch, nh invalid ---
-TEST_F(SpellCheckerVCPairTest, IÊ_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, IÊ_Ch_Invalid) {
     // iêch — invalid
     EXPECT_EQ(V({T(L'i'), TM(L'e', Modifier::Circumflex), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, IÊ_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, IÊ_Nh_Invalid) {
     // iênh — invalid
     EXPECT_EQ(V({T(L'i'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, IÊ_C_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, IÊ_C_Valid) {
     // iêc (diệc)
     EXPECT_EQ(V({T(L'i'), TM(L'e', Modifier::Circumflex), T(L'c')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, IÊ_M_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, IÊ_M_Valid) {
     // iêm (tiêm, điểm)
     EXPECT_EQ(V({T(L'i'), TM(L'e', Modifier::Circumflex), T(L'm')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, IÊ_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, IÊ_Ng_Valid) {
     // iêng (tiếng, chiêng)
     EXPECT_EQ(V({T(L'i'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, IÊ_P_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, IÊ_P_Valid) {
     // iêp (tiếp, nghiệp)
     EXPECT_EQ(V({T(L'i'), TM(L'e', Modifier::Circumflex), T(L'p')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, IÊ_T_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, IÊ_T_Valid) {
     // iêt (tiết, việt)
     EXPECT_EQ(V({T(L'i'), TM(L'e', Modifier::Circumflex), T(L't')}), SyllableState::Valid);
 }
 
 // --- Diphthong yê: same as iê — c, m, n, ng, p, t allowed; ch, nh invalid ---
-TEST_F(SpellCheckerVCPairTest, YÊ_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, YÊ_Ch_Invalid) {
     EXPECT_EQ(V({T(L'y'), TM(L'e', Modifier::Circumflex), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, YÊ_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, YÊ_Nh_Invalid) {
     EXPECT_EQ(V({T(L'y'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, YÊ_C_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, YÊ_C_Valid) {
     EXPECT_EQ(V({T(L'y'), TM(L'e', Modifier::Circumflex), T(L'c')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, YÊ_M_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, YÊ_M_Valid) {
     // yêm (yếm)
     EXPECT_EQ(V({T(L'y'), TM(L'e', Modifier::Circumflex), T(L'm')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, YÊ_N_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, YÊ_N_Valid) {
     // yên (yến, quyên)
     EXPECT_EQ(V({T(L'y'), TM(L'e', Modifier::Circumflex), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, YÊ_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, YÊ_Ng_Valid) {
     EXPECT_EQ(V({T(L'y'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, YÊ_P_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, YÊ_P_Valid) {
     EXPECT_EQ(V({T(L'y'), TM(L'e', Modifier::Circumflex), T(L'p')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, YÊ_T_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, YÊ_T_Valid) {
     // yêt (yết)
     EXPECT_EQ(V({T(L'y'), TM(L'e', Modifier::Circumflex), T(L't')}), SyllableState::Valid);
 }
 
 // --- Diphthong oe: m, n, ng, t allowed; ch, nh, p, c invalid ---
-TEST_F(SpellCheckerVCPairTest, OE_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OE_Ch_Invalid) {
     EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OE_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OE_Nh_Invalid) {
     EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OE_P_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OE_P_Invalid) {
     EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'p')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OE_C_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OE_C_Invalid) {
     EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'c')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OE_M_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OE_M_Valid) {
     // oem (ngoém)
     EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'm')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OE_N_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OE_N_Valid) {
     // oen (ngoen)
     EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OE_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OE_Ng_Valid) {
     // oeng
     EXPECT_EQ(V({T(L'o'), T(L'e'), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OE_T_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OE_T_Valid) {
     // oet (ngoét)
     EXPECT_EQ(V({T(L'o'), T(L'e'), T(L't')}), SyllableState::Valid);
 }
 
 // --- Diphthong oă: c, n, ng, t allowed; ch, nh, m, p invalid ---
-TEST_F(SpellCheckerVCPairTest, OĂ_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_Ch_Invalid) {
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OĂ_Nh_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_Nh_Invalid) {
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OĂ_M_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_M_Invalid) {
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'm')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OĂ_P_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_P_Invalid) {
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'p')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OĂ_C_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_C_Valid) {
     // oăc (loắc, xoắc)
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'c')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OĂ_N_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_N_Valid) {
     // oăn (hoăn)
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OĂ_Ng_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_Ng_Valid) {
     // oăng (hoằng)
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'n'), T(L'g')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, OĂ_T_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_T_Valid) {
     // oăt (loắt, choắt)
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L't')}), SyllableState::Valid);
 }
 
 // --- Triphthong uyê: n, t only ---
-TEST_F(SpellCheckerVCPairTest, UYÊ_Ch_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UYÊ_Ch_Invalid) {
     EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Modifier::Circumflex), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UYÊ_M_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UYÊ_M_Invalid) {
     EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Modifier::Circumflex), T(L'm')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UYÊ_Ng_Invalid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UYÊ_Ng_Invalid) {
     EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'g')}), SyllableState::Invalid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UYÊ_N_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UYÊ_N_Valid) {
     // uyên (quyên, huyền)
     EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Modifier::Circumflex), T(L'n')}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, UYÊ_T_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, UYÊ_T_Valid) {
     // uyêt (quyết, huyết)
     EXPECT_EQ(V({T(L'u'), T(L'y'), TM(L'e', Modifier::Circumflex), T(L't')}), SyllableState::Valid);
 }
 
 // --- gh/ngh + ê (circumflex front vowel) ---
-TEST_F(SpellCheckerVCPairTest, Gh_Initial_Ghê_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Gh_Initial_Ghê_Valid) {
     // ghê (ghế, ghẻ)
     EXPECT_EQ(V({T(L'g'), T(L'h'), TM(L'e', Modifier::Circumflex)}), SyllableState::Valid);
 }
 
-TEST_F(SpellCheckerVCPairTest, Ngh_Initial_Nghê_Valid) {
+TEST_F(PhonotacticsValidatorVCPairTest, Ngh_Initial_Nghê_Valid) {
     // nghê (nghề, nghệ)
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), TM(L'e', Modifier::Circumflex)}), SyllableState::Valid);
 }

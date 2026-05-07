@@ -34,8 +34,8 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/EngineHelpers.h
     src/core/engine/EnglishProtection.h
     src/core/engine/VietnameseTables.h
-    src/core/engine/SpellChecker.cpp
-    src/core/engine/SpellChecker.h
+    src/core/engine/PhonotacticsValidator.cpp
+    src/core/engine/PhonotacticsValidator.h
     src/core/engine/IPhonotactics.h
     src/core/engine/Phonotactics.cpp
     src/core/engine/Phonotactics.h
@@ -425,7 +425,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/SharedStateTest.cpp
     tests/HookContextAnchorTest.cpp
     tests/FeatureOptionsTest.cpp
-    tests/SpellCheckerTest.cpp
+    tests/PhonotacticsValidatorTest.cpp
     tests/PhonotacticsTest.cpp
     tests/TypingActionTest.cpp
     tests/CustomKeyMapTest.cpp
