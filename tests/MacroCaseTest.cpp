@@ -142,7 +142,13 @@ TEST(PlanStoredKeyCaseRuleTest, LowercaseKeyAcceptsAnyCase) {
         f.raw = probe;
         f.trigger = L' ';
         auto p = f.Run();
-        EXPECT_TRUE(p.matched) << "probe = " << std::string(probe, probe + 3);
+        // probe is always ASCII ("btw" variants) — explicit narrow avoids
+        // MSVC /WX C4244 from std::string(wchar_t*, wchar_t*).
+        const char narrow[4] = {static_cast<char>(probe[0]),
+                                static_cast<char>(probe[1]),
+                                static_cast<char>(probe[2]),
+                                0};
+        EXPECT_TRUE(p.matched) << "probe = " << narrow;
     }
 }
 
