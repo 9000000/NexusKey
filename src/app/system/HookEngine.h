@@ -9,7 +9,6 @@
 #include "core/engine/IInputEngine.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/config/TypingConfig.h"
-#include "core/config/ConfigEvent.h"
 #include "core/SmartSwitchManager.h"
 #include <Windows.h>
 #include <functional>
@@ -74,9 +73,6 @@ public:
         tsfModeCallback_ = std::move(callback);
     }
 
-    /// Check for config changes and reload if needed
-    bool CheckConfigEvent();
-
     /// Re-read SharedState and reload TOML if configGeneration changed.
     /// Safe cross-process: uses the configGeneration counter, not the Named Event
     /// (which is auto-reset and reserved for the TSF DLL).
@@ -119,7 +115,7 @@ private:
                                        DWORD dwEventThread, DWORD dwmsEventTime);
     static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
 
-    // Config application (shared between Start and CheckConfigEvent)
+    // Config application (shared between Start and SyncConfigFromSharedState)
     void ApplyConfig(const TypingConfig& config);
 
     // Core processing
@@ -398,7 +394,7 @@ private:
     // (D5–D7), all hook-read state is atomic — hook callbacks no longer acquire
     // this mutex for reads. The remaining users are main-thread / worker-thread
     // writers (ApplyConfig requires caller-held; QuickSyncFromSharedState
-    // self-locks; CheckConfigEvent/ReloadFromToml/Toggle/SetCodeTable/CommitPending
+    // self-locks; ReloadFromToml/Toggle/SetCodeTable/CommitPending
     // lock at their public entry; OnTickPoll — formerly FocusPollTimerProc, now
     // driven by MainThreadWorker per D10 — locks for the layout check + PID
     // update phase, releases before invoking OnFocusChanged so the inner
@@ -441,9 +437,6 @@ private:
     // invalidated on mouse click (within-app focus change).
     HWND cachedFocusedHwnd_ = nullptr;
     std::wstring cachedFocusedClass_;
-
-    // Config reload
-    ConfigEvent configEvent_;
 
     // Direct SharedState reader — pointer to the global SharedStateManager (same process)
     SharedStateManager* sharedStatePtr_ = nullptr;

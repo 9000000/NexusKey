@@ -95,10 +95,9 @@ void HookEngine::CommitPending() {
 
 // REQUIRES: caller holds stateMutex_. Sprint 1 D11 removed the self-lock so
 // the std::mutex transition doesn't deadlock through the
-// QuickSyncFromSharedState → ApplyConfig and CheckConfigEvent → ReloadFromToml
-// → ApplyConfig recursive paths. Direct callers: Start (single-threaded
-// init, no race), QuickSyncFromSharedState (locked), ReloadFromToml (called
-// from CheckConfigEvent which locks).
+// QuickSyncFromSharedState → ApplyConfig and ReloadFromToml → ApplyConfig
+// recursive paths. Direct callers: Start (single-threaded init, no race),
+// QuickSyncFromSharedState (locked), ReloadFromToml (caller-locked).
 void HookEngine::ApplyConfig(const TypingConfig& config) {
     beepOnSwitch_ = config.beepOnSwitch;
     smartSwitch_ = config.smartSwitch;
@@ -168,9 +167,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // Load excluded apps and TSF apps
     ReloadExcludedApps();
     ReloadTsfApps();
-
-    // Initialize config event for reload detection
-    configEvent_.Initialize();
 
     // Cache initial SharedState values (pointer set by main.cpp via SetSharedStateReader)
     if (sharedStatePtr_) {
@@ -533,19 +529,6 @@ void HookEngine::QuickSyncFromSharedState() {
             macroTable_.clear();
         }
     }
-}
-
-bool HookEngine::CheckConfigEvent() {
-    std::lock_guard<std::mutex> _lock(stateMutex_);
-    // Legacy path — kept for TSF DLL compatibility. HookEngine uses configGeneration instead.
-    if (!configEvent_.IsValid()) {
-        configEvent_.Initialize();
-    }
-    if (!configEvent_.Wait(0)) {
-        return false;
-    }
-    ReloadFromToml();
-    return true;
 }
 
 void HookEngine::SyncConfigFromSharedState() {
