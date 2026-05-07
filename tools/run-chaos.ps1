@@ -135,6 +135,9 @@ public static class Win32 {
 
     [DllImport("user32.dll")]
     public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError=true)]
+    public static extern bool PostMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 }
 "@
 
@@ -231,7 +234,8 @@ function Start-NexusKey {
     if (Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue) {
         # Already running -- kill first so each host starts with a fresh
         # hook-log buffer and consistent classifier state.
-        Stop-NexusKey
+        # Use -Force here: we don't need the hook log from the stale instance.
+        Stop-NexusKey -Force
     }
     Start-Process -FilePath $NexusKeyExe | Out-Null
     Start-Sleep -Seconds 2
@@ -241,6 +245,42 @@ function Start-NexusKey {
 }
 
 function Stop-NexusKey {
+    param([switch]$Force)
+
+    if ($Force) {
+        # Hard kill -- TerminateProcess, no buffer flush.
+        Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 500
+        return
+    }
+
+    # Graceful shutdown: send WM_CLOSE to the NexusKeyTrayClass window.
+    # Requires NexusKey built with ChangeWindowMessageFilterEx(WM_CLOSE,
+    # MSGFLT_ALLOW) so UIPI allows the message when NexusKey is elevated.
+    # Clean path: WM_CLOSE → PostQuitMessage → message loop exit →
+    # HookEngine::Stop() → CloseHookLog() → fflush + fclose → hook log
+    # buffer written to disk.
+    $nk = Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue
+    if (-not $nk) { return }
+
+    $trayHwnd = [Win32]::FindWindow("NexusKeyTrayClass", $null)
+    if ($trayHwnd -ne [IntPtr]::Zero) {
+        [void][Win32]::PostMessageW($trayHwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+
+        # Wait up to 5s for graceful exit
+        $deadline = (Get-Date).AddSeconds(5)
+        while ((Get-Date) -lt $deadline) {
+            if (-not (Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue)) {
+                Start-Sleep -Milliseconds 200   # Let OS finish flushing file handles
+                return
+            }
+            Start-Sleep -Milliseconds 100
+        }
+        Write-Warning "NexusKey did not exit within 5s after WM_CLOSE -- force-killing"
+    }
+
+    # Fallback: hard kill (no buffer flush -- hook log will be empty)
     Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
@@ -257,12 +297,12 @@ function Invoke-ChaosForHost {
     $hwnd = Open-Host -Name $HostName
     if ($hwnd -eq [IntPtr]::Zero) {
         Write-Warning "[$HostName] no target window -- skipping"
-        Stop-NexusKey
+        Stop-NexusKey -Force
         return [PSCustomObject]@{ Host = $HostName; Tests = 0; Failures = -1; Reason = "no target window" }
     }
     if (-not (Focus-Window -Hwnd $hwnd)) {
         Write-Warning "[$HostName] failed to focus target -- skipping"
-        Stop-NexusKey
+        Stop-NexusKey -Force
         return [PSCustomObject]@{ Host = $HostName; Tests = 0; Failures = -1; Reason = "focus failed" }
     }
 
@@ -329,7 +369,7 @@ function Invoke-ChaosForHost {
     }
 
     $exitCode = $proc.ExitCode
-    Stop-NexusKey   # belt-and-braces: ensure killed even if the prompt was missed
+    Stop-NexusKey -Force   # belt-and-braces: ensure killed even if the prompt was missed
 
     if (-not (Test-Path $reportPath)) {
         Write-Warning "[$HostName] report file not produced (exit=$exitCode)"
@@ -352,7 +392,7 @@ try {
         $results += Invoke-ChaosForHost -HostName $h
     }
 } finally {
-    Stop-NexusKey
+    Stop-NexusKey -Force
 }
 
 Write-Host "`n=== SUMMARY (tag=$Tag) ===" -ForegroundColor Cyan

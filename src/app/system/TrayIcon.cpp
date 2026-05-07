@@ -95,6 +95,11 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
         ChangeWindowMessageFilterEx(hwndMessage_, wmTaskbarCreated_, MSGFLT_ALLOW, nullptr);
     }
 
+    // Allow WM_CLOSE through UIPI so the chaos test harness (run-chaos.ps1)
+    // and updater can trigger graceful shutdown even when NexusKey is elevated.
+    // WM_CLOSE only triggers clean exit (PostQuitMessage), no security risk.
+    ChangeWindowMessageFilterEx(hwndMessage_, WM_CLOSE, MSGFLT_ALLOW, nullptr);
+
     // Always visible
     Shell_NotifyIconW(NIM_ADD, &nid_);
     RefreshConvertHotkeyCache();
