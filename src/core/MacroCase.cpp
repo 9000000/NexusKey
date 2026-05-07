@@ -23,8 +23,17 @@ MacroPlan Plan(const PlanInputs& in, const CaseMapper& mapper) {
 }
 
 std::wstring ExpandEscapesForClipboard(std::wstring_view expansion) {
-    (void)expansion;
-    return {};   // stub — implemented in Task 2
+    std::wstring out;
+    out.reserve(expansion.size());
+    for (std::size_t i = 0; i < expansion.size(); ++i) {
+        if (expansion[i] == L'\\' && i + 1 < expansion.size() && expansion[i + 1] == L'n') {
+            out += L"\r\n";
+            ++i;
+        } else {
+            out += expansion[i];
+        }
+    }
+    return out;
 }
 
 std::vector<Segment> BuildSegments(std::wstring_view expansion, CodeTable codeTable) {

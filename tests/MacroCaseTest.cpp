@@ -28,5 +28,26 @@ TEST(MacroCaseSmokeTest, StubLinks) {
     EXPECT_FALSE(plan.matched);   // stub returns default-constructed MacroPlan
 }
 
+TEST(ClipboardEscapesTest, EmptyInput) {
+    EXPECT_EQ(ExpandEscapesForClipboard(L""), L"");
+}
+
+TEST(ClipboardEscapesTest, NoEscapes) {
+    EXPECT_EQ(ExpandEscapesForClipboard(L"hello world"), L"hello world");
+}
+
+TEST(ClipboardEscapesTest, SingleNewlineEscape) {
+    EXPECT_EQ(ExpandEscapesForClipboard(L"line1\\nline2"), L"line1\r\nline2");
+}
+
+TEST(ClipboardEscapesTest, MultipleNewlinesEscape) {
+    EXPECT_EQ(ExpandEscapesForClipboard(L"a\\nb\\nc"), L"a\r\nb\r\nc");
+}
+
+TEST(ClipboardEscapesTest, LiteralBackslashFollowedByNonN) {
+    // \\t is NOT an escape — only \n is recognized. \t passes through verbatim.
+    EXPECT_EQ(ExpandEscapesForClipboard(L"a\\tb"), L"a\\tb");
+}
+
 }  // namespace
 }  // namespace NextKey::Macro
