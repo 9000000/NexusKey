@@ -879,7 +879,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
     }
 
-    // 2c. Fast English exit — skip commit-undo FSM when no undo is pending.
+    // 2c. Fast English exit — skip commit-undo step when no undo is pending.
     //      Commit-undo only applies to Vietnamese words (line 691 checks vietnameseMode_).
     //      When English mode + undo Idle + no English macros → nothing below applies.
     // Sprint 1 D5.2: hoist atomic config-flag loads to a single snapshot at the
@@ -895,192 +895,14 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return false;
     }
 
-    // 2d. Backspace-into-committed-word state machine
-    // Supports multi-word backward: stack holds up to kMaxCommitStack committed words.
-    // Ready:  set after commit with space/enter, or when engine empties after BS with stack non-empty.
-    // Primed: BS in Ready deletes the space; next alpha/BS triggers replay.
-    //
-    // Ctrl/Alt/Win invalidate commit-undo: Ctrl+BS deletes entire word (not just the
-    // space), Ctrl+A/C/Z change cursor/selection — all make saved commit state stale.
-    // Must check BEFORE the state machine to prevent ghost key replay.
-    if (commitUndoState_ != CommitUndoState::Idle &&
-        ((GetKeyState(VK_CONTROL) & 0x8000) || (GetKeyState(VK_MENU) & 0x8000) ||
-         (GetKeyState(VK_LWIN) & 0x8000) || (GetKeyState(VK_RWIN) & 0x8000))) {
-        HOOK_LOG(L"  commit-undo: cancel — modifier key held");
-        CancelCommitUndo();
-        // Fall through — Ctrl check at step 5 will handle ResetComposition
-    }
-    //
-    // Auto-expire Ready after kCommitUndoTimeoutMs: cheap insurance against any cursor-movement
-    // event that bypasses ResetComposition (e.g. external text change, rare edge cases).
-    if (commitUndoState_ == CommitUndoState::Ready) {
-        DWORD elapsed = GetTickCount() - commitReadyTime_;
-        if (elapsed > kCommitUndoTimeoutMs) {
-            HOOK_LOG(L"  commit-undo: Ready state expired after %u ms → Idle", elapsed);
-            CancelCommitUndo();
-        }
-    }
-    if (commitUndoState_ == CommitUndoState::Ready && vkCode == VK_BACK && engine_->Count() == 0) {
-        if (pendingTriggerCount_ > 0) {
-            // Extra trigger chars still on screen (e.g., "a==" → need to delete both '=' before undo)
-            pendingTriggerCount_--;
-            HOOK_LOG(L"  commit-undo: BS in Ready, pendingTriggers=%u — stay Ready", pendingTriggerCount_);
-            return false;  // Let BS pass through to delete the extra trigger char
-        }
-        // Backspace deletes the commit trigger (space/etc.)
-        commitUndoState_ = CommitUndoState::Primed;
-        // Any accumulated multi-word-macro state is stale once replay begins —
-        // the phrase buffer no longer mirrors what's on screen.
-        macroCrossCommit_ = false;
-        rawMacroBuffer_.clear();
-        if (synthEventsPending_ > 0) {
-            // Synthetic events still in flight (word corrections, injected commit trigger).
-            // If we pass BS through now it arrives at the app BEFORE those synthetics,
-            // deleting the wrong character and permanently desynchronising previousComposition_.
-            // Re-inject so BS is placed AFTER the pending synthetics in the queue.
-            HOOK_LOG(L"  commit-undo: BS after commit → Primed, re-inject after synthetics (pending=%d)", synthEventsPending_.load());
-            InjectKey(VK_BACK);
-            return true;
-        }
-        // Sprint 1 Fix C/2026-05-05: editMsg apps need this BS via the sent
-        // EM_REPLACESEL channel — passing the physical BS through goes via the
-        // posted message queue and is pre-empted by the next sent EM_REPLACESEL
-        // (the 's' in chaos 5.3), leaving the pre-replace BS to drain after
-        // the replacement and eat the just-inserted chars.
-        //
-        // The synchronous-channel injector (RichEditEm) handles commit-undo BS
-        // via sent message. Default hosts let physical BS pass through naturally —
-        // synthesizing would just add latency.
-        if (IsSyncReplaceChannel()) {
-            auto inj = injector_.load(std::memory_order_acquire);
-            if (inj->Replace(/*bs=*/1, std::wstring_view{})) {
-                HOOK_LOG(L"  commit-undo: BS after commit via injector → Primed");
-                return true;
-            }
-            HOOK_LOG(L"  commit-undo: BS after commit injector failed, passthrough");
-        }
-        HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
-        return false;  // Let backspace pass through to delete the space
-    }
-    if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vnMode) {
-        // Synth guard: if synthetic events were sent recently and are likely still
-        // in the OS input queue, replaying now would set previousComposition_ to stale
-        // committed text while the screen hasn't caught up — causing diff miscalculation
-        // and permanent engine-screen desync.  Cancel commit-undo and fall through to
-        // normal key processing.
-        // Time check is essential: on Qt apps, synthEventsPending_ has a persistent
-        // baseline leak (counter never reaches 0 due to event counting mismatch).
-        // Checking counter alone would permanently disable commit-undo.  The 100ms
-        // threshold covers DispatchSendInput Sleep (10-20ms) + Qt processing (~30ms)
-        // with margin, while allowing replay at normal typing speed (>100ms between keys).
-        //
-        // Sprint 2 D1/2026-05-05: tone modifiers (Telex s/f/r/x/j; VNI 1-5) are
-        // EXEMPT from the synth guard. Reason: by definition they only modify the
-        // previous word — no other linguistic meaning. ReplaceComposition's diff
-        // (prev=committed, new=committed-with-tone) computes BS correctly relative
-        // to the post-drain screen state, and SendInput appends our events AFTER
-        // any pending synth, so screen-engine sync is preserved across the gap.
-        // Without this exemption, chaos 5.3 (`viejtnam BS×4 s` on non-EditMsg apps
-        // like Chrome) cancels the replay and produces `việts` instead of `viết`.
-        // See docs/baselines/perf-baseline-d12-chrome-cross-app.md and the
-        // S2D0_ChromeBug53_* engine-isolation tests.
-        const auto methodForTone = currentMethod_.load(std::memory_order_acquire);
-        const bool isTelexTone =
-            (methodForTone == InputMethod::Telex || methodForTone == InputMethod::Combined) &&
-            (vkCode == 'S' || vkCode == 'F' || vkCode == 'R' ||
-             vkCode == 'X' || vkCode == 'J');
-        const bool isVniTone =
-            (methodForTone == InputMethod::VNI || methodForTone == InputMethod::Combined) &&
-            vkCode >= '1' && vkCode <= '5' &&
-            !(GetKeyState(VK_SHIFT) & 0x8000);
-        const bool isToneModifier = isTelexTone || isVniTone;
-        // Sprint 2 D5: settle window is now per-host. RichEdit (0 ms) lets
-        // commit-undo replay immediately; Win32 (30 ms) tightens the gate
-        // ~3× vs the legacy 100 ms hardcode; Electron/Console (100 ms) keeps
-        // the original budget where IPC reorder margin still matters. Read
-        // here, not cached, so a focus change between commit and the next
-        // BS uses the new injector's budget.
-        const DWORD settleMs = static_cast<DWORD>(
-            injector_.load(std::memory_order_acquire)->SettleBudget().count());
-        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < settleMs
-            && !isToneModifier) {
-            HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
-                     synthEventsPending_.load(), vkCode);
-            CancelCommitUndo();
-            // Fall through: BS → line 938 re-inject if needed; alpha → HandleAlphaKey
-        } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            // Alpha key → replay saved chars, then process the new key.
-            // MUST return HandleAlphaKey's value: if it triggers passthrough (return false),
-            // the original key must reach the app — ignoring it would swallow the keystroke.
-            HOOK_LOG(L"  commit-undo: replaying + alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
-                     static_cast<char>(vkCode),
-                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
-                     commitStack_.size(),
-                     previousComposition_.c_str(),
-                     synthEventsPending_.load());
-            ReplayCommittedChars();
-            {
-                bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-                bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
-                return HandleAlphaKey(vkCode, shift, caps);
-            }
-        } else if (const InputMethod method = currentMethod_.load(std::memory_order_acquire);
-                   (method == InputMethod::VNI || method == InputMethod::Combined) &&
-                   vkCode >= 0x31 && vkCode <= 0x39 &&
-                   !(GetKeyState(VK_SHIFT) & 0x8000)) {
-            // VNI/Combined digit key (1-9) → replay saved chars, then process as tone/modifier.
-            // Without this, "cá " + BS + '2' would produce "cá2" instead of "cà".
-            HOOK_LOG(L"  commit-undo: replaying + VNI digit '%c' (stack_top='%s' stackSize=%zu prevComp='%s')",
-                     static_cast<char>(vkCode),
-                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
-                     commitStack_.size(),
-                     previousComposition_.c_str());
-            ReplayCommittedChars();
-            if (engine_->Count() == 0) {
-                commitUndoState_ = CommitUndoState::Idle;
-                return false;  // Replay failed — let digit pass through
-            }
-            return HandleVniDigitKey(vkCode);
-        } else if (vkCode == VK_BACK) {
-            // Backspace → replay saved chars, then backspace into the word
-            HOOK_LOG(L"  commit-undo: replaying + backspace (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
-                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
-                     commitStack_.size(),
-                     previousComposition_.c_str(),
-                     synthEventsPending_.load());
-            ReplayCommittedChars();
-            HandleBackspace();
-            return true;
-        } else {
-            // Any other key → cancel commit-undo
-            commitUndoState_ = CommitUndoState::Idle;
-        }
-    }
-    if (commitUndoState_ == CommitUndoState::Ready) {
-        // Navigation keys move cursor → stack entries become stale, clear everything.
-        if ((vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
-            vkCode == VK_HOME || vkCode == VK_END ||
-            vkCode == VK_PRIOR || vkCode == VK_NEXT ||
-            vkCode == VK_DELETE) {
-            HOOK_LOG(L"  commit-undo: cancel — navigation key vk=0x%02X", vkCode);
-            CancelCommitUndo();
-        } else if (IsCommitTrigger(vkCode) && engine_->Count() == 0) {
-            // Printable commit trigger with engine empty (e.g., second '=' in "a==",
-            // second ' ' in "a  "): stay Ready so subsequent BS sequence can reach Primed.
-            // `>=` (not `>`) keeps SPACE in the printable branch — MapVirtualKeyW(VK_SPACE)
-            // returns L' ', which would otherwise fall into the cancel branch.
-            wchar_t ch = VkToMacroChar(vkCode);
-            if (ch >= L' ') {
-                pendingTriggerCount_++;
-                HOOK_LOG(L"  commit-undo: extra trigger '%c' in Ready, pendingTriggers=%u", ch, pendingTriggerCount_);
-            } else {
-                // Non-printable trigger (Esc, Tab, Enter) → cancel undo
-                CancelCommitUndo();
-            }
-        } else {
-            // Alpha, digit, or other key → start new word, preserve stack for multi-word backward
-            commitUndoState_ = CommitUndoState::Idle;
-        }
+    // 2d. Backspace-into-committed-word state machine (Idle/Ready/Primed).
+    // H1a: body extracted to HandleCommitUndo. Returned outcome dictates whether
+    // ProcessKeyDown short-circuits (kEat/kPass) or continues with subsequent
+    // steps (kFallthrough). Behavior preserved byte-identical to pre-H1a.
+    switch (HandleCommitUndo(vkCode, vnMode)) {
+        case CommitUndoOutcome::kEat: return true;
+        case CommitUndoOutcome::kPass: return false;
+        case CommitUndoOutcome::kFallthrough: break;
     }
 
     // 3. English mode — skip Vietnamese processing
@@ -1356,6 +1178,205 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     return false;
+}
+
+// H1a: commit-undo state machine extracted from ProcessKeyDown step 2d.
+// Supports multi-word backward — stack holds up to kMaxCommitStack committed words.
+// Ready:  set after commit with space/enter, or when engine empties after BS with stack non-empty.
+// Primed: BS in Ready deletes the space; next alpha/BS triggers replay.
+//
+// Behavior is byte-identical to the pre-extraction inline block. Returns:
+//   kEat         → ProcessKeyDown returns true (key consumed by undo machinery).
+//   kPass        → ProcessKeyDown returns false (key passes through to app).
+//   kFallthrough → no decision; ProcessKeyDown continues with subsequent steps.
+HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
+    // Ctrl/Alt/Win invalidate commit-undo: Ctrl+BS deletes entire word (not just the
+    // space), Ctrl+A/C/Z change cursor/selection — all make saved commit state stale.
+    // Must check BEFORE the state machine to prevent ghost key replay.
+    if (commitUndoState_ != CommitUndoState::Idle &&
+        ((GetKeyState(VK_CONTROL) & 0x8000) || (GetKeyState(VK_MENU) & 0x8000) ||
+         (GetKeyState(VK_LWIN) & 0x8000) || (GetKeyState(VK_RWIN) & 0x8000))) {
+        HOOK_LOG(L"  commit-undo: cancel — modifier key held");
+        CancelCommitUndo();
+        // Fall through — Ctrl check at ProcessKeyDown step 5 will handle ResetComposition
+    }
+    //
+    // Auto-expire Ready after kCommitUndoTimeoutMs: cheap insurance against any cursor-movement
+    // event that bypasses ResetComposition (e.g. external text change, rare edge cases).
+    if (commitUndoState_ == CommitUndoState::Ready) {
+        DWORD elapsed = GetTickCount() - commitReadyTime_;
+        if (elapsed > kCommitUndoTimeoutMs) {
+            HOOK_LOG(L"  commit-undo: Ready state expired after %u ms → Idle", elapsed);
+            CancelCommitUndo();
+        }
+    }
+    if (commitUndoState_ == CommitUndoState::Ready && vkCode == VK_BACK && engine_->Count() == 0) {
+        if (pendingTriggerCount_ > 0) {
+            // Extra trigger chars still on screen (e.g., "a==" → need to delete both '=' before undo)
+            pendingTriggerCount_--;
+            HOOK_LOG(L"  commit-undo: BS in Ready, pendingTriggers=%u — stay Ready", pendingTriggerCount_);
+            return CommitUndoOutcome::kPass;  // Let BS pass through to delete the extra trigger char
+        }
+        // Backspace deletes the commit trigger (space/etc.)
+        commitUndoState_ = CommitUndoState::Primed;
+        // Any accumulated multi-word-macro state is stale once replay begins —
+        // the phrase buffer no longer mirrors what's on screen.
+        macroCrossCommit_ = false;
+        rawMacroBuffer_.clear();
+        if (synthEventsPending_ > 0) {
+            // Synthetic events still in flight (word corrections, injected commit trigger).
+            // If we pass BS through now it arrives at the app BEFORE those synthetics,
+            // deleting the wrong character and permanently desynchronising previousComposition_.
+            // Re-inject so BS is placed AFTER the pending synthetics in the queue.
+            HOOK_LOG(L"  commit-undo: BS after commit → Primed, re-inject after synthetics (pending=%d)", synthEventsPending_.load());
+            InjectKey(VK_BACK);
+            return CommitUndoOutcome::kEat;
+        }
+        // Sprint 1 Fix C/2026-05-05: editMsg apps need this BS via the sent
+        // EM_REPLACESEL channel — passing the physical BS through goes via the
+        // posted message queue and is pre-empted by the next sent EM_REPLACESEL
+        // (the 's' in chaos 5.3), leaving the pre-replace BS to drain after
+        // the replacement and eat the just-inserted chars.
+        //
+        // The synchronous-channel injector (RichEditEm) handles commit-undo BS
+        // via sent message. Default hosts let physical BS pass through naturally —
+        // synthesizing would just add latency.
+        if (IsSyncReplaceChannel()) {
+            auto inj = injector_.load(std::memory_order_acquire);
+            if (inj->Replace(/*bs=*/1, std::wstring_view{})) {
+                HOOK_LOG(L"  commit-undo: BS after commit via injector → Primed");
+                return CommitUndoOutcome::kEat;
+            }
+            HOOK_LOG(L"  commit-undo: BS after commit injector failed, passthrough");
+        }
+        HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
+        return CommitUndoOutcome::kPass;  // Let backspace pass through to delete the space
+    }
+    if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vnMode) {
+        // Synth guard: if synthetic events were sent recently and are likely still
+        // in the OS input queue, replaying now would set previousComposition_ to stale
+        // committed text while the screen hasn't caught up — causing diff miscalculation
+        // and permanent engine-screen desync.  Cancel commit-undo and fall through to
+        // normal key processing.
+        // Time check is essential: on Qt apps, synthEventsPending_ has a persistent
+        // baseline leak (counter never reaches 0 due to event counting mismatch).
+        // Checking counter alone would permanently disable commit-undo.  The 100ms
+        // threshold covers DispatchSendInput Sleep (10-20ms) + Qt processing (~30ms)
+        // with margin, while allowing replay at normal typing speed (>100ms between keys).
+        //
+        // Sprint 2 D1/2026-05-05: tone modifiers (Telex s/f/r/x/j; VNI 1-5) are
+        // EXEMPT from the synth guard. Reason: by definition they only modify the
+        // previous word — no other linguistic meaning. ReplaceComposition's diff
+        // (prev=committed, new=committed-with-tone) computes BS correctly relative
+        // to the post-drain screen state, and SendInput appends our events AFTER
+        // any pending synth, so screen-engine sync is preserved across the gap.
+        // Without this exemption, chaos 5.3 (`viejtnam BS×4 s` on non-EditMsg apps
+        // like Chrome) cancels the replay and produces `việts` instead of `viết`.
+        // See docs/baselines/perf-baseline-d12-chrome-cross-app.md and the
+        // S2D0_ChromeBug53_* engine-isolation tests.
+        const auto methodForTone = currentMethod_.load(std::memory_order_acquire);
+        const bool isTelexTone =
+            (methodForTone == InputMethod::Telex || methodForTone == InputMethod::Combined) &&
+            (vkCode == 'S' || vkCode == 'F' || vkCode == 'R' ||
+             vkCode == 'X' || vkCode == 'J');
+        const bool isVniTone =
+            (methodForTone == InputMethod::VNI || methodForTone == InputMethod::Combined) &&
+            vkCode >= '1' && vkCode <= '5' &&
+            !(GetKeyState(VK_SHIFT) & 0x8000);
+        const bool isToneModifier = isTelexTone || isVniTone;
+        // Sprint 2 D5: settle window is now per-host. RichEdit (0 ms) lets
+        // commit-undo replay immediately; Win32 (30 ms) tightens the gate
+        // ~3× vs the legacy 100 ms hardcode; Electron/Console (100 ms) keeps
+        // the original budget where IPC reorder margin still matters. Read
+        // here, not cached, so a focus change between commit and the next
+        // BS uses the new injector's budget.
+        const DWORD settleMs = static_cast<DWORD>(
+            injector_.load(std::memory_order_acquire)->SettleBudget().count());
+        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < settleMs
+            && !isToneModifier) {
+            HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
+                     synthEventsPending_.load(), vkCode);
+            CancelCommitUndo();
+            // Fall through — ProcessKeyDown step 10 re-injects BS if needed; alpha → step 6 HandleAlphaKey
+        } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
+            // Alpha key → replay saved chars, then process the new key.
+            // MUST return HandleAlphaKey's value: if it triggers passthrough (return false),
+            // the original key must reach the app — ignoring it would swallow the keystroke.
+            HOOK_LOG(L"  commit-undo: replaying + alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
+                     static_cast<char>(vkCode),
+                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
+                     commitStack_.size(),
+                     previousComposition_.c_str(),
+                     synthEventsPending_.load());
+            ReplayCommittedChars();
+            {
+                bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+                return HandleAlphaKey(vkCode, shift, caps)
+                    ? CommitUndoOutcome::kEat
+                    : CommitUndoOutcome::kPass;
+            }
+        } else if (const InputMethod method = currentMethod_.load(std::memory_order_acquire);
+                   (method == InputMethod::VNI || method == InputMethod::Combined) &&
+                   vkCode >= 0x31 && vkCode <= 0x39 &&
+                   !(GetKeyState(VK_SHIFT) & 0x8000)) {
+            // VNI/Combined digit key (1-9) → replay saved chars, then process as tone/modifier.
+            // Without this, "cá " + BS + '2' would produce "cá2" instead of "cà".
+            HOOK_LOG(L"  commit-undo: replaying + VNI digit '%c' (stack_top='%s' stackSize=%zu prevComp='%s')",
+                     static_cast<char>(vkCode),
+                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
+                     commitStack_.size(),
+                     previousComposition_.c_str());
+            ReplayCommittedChars();
+            if (engine_->Count() == 0) {
+                commitUndoState_ = CommitUndoState::Idle;
+                return CommitUndoOutcome::kPass;  // Replay failed — let digit pass through
+            }
+            return HandleVniDigitKey(vkCode)
+                ? CommitUndoOutcome::kEat
+                : CommitUndoOutcome::kPass;
+        } else if (vkCode == VK_BACK) {
+            // Backspace → replay saved chars, then backspace into the word
+            HOOK_LOG(L"  commit-undo: replaying + backspace (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
+                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
+                     commitStack_.size(),
+                     previousComposition_.c_str(),
+                     synthEventsPending_.load());
+            ReplayCommittedChars();
+            HandleBackspace();
+            return CommitUndoOutcome::kEat;
+        } else {
+            // Any other key → cancel commit-undo
+            commitUndoState_ = CommitUndoState::Idle;
+        }
+    }
+    if (commitUndoState_ == CommitUndoState::Ready) {
+        // Navigation keys move cursor → stack entries become stale, clear everything.
+        if ((vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
+            vkCode == VK_HOME || vkCode == VK_END ||
+            vkCode == VK_PRIOR || vkCode == VK_NEXT ||
+            vkCode == VK_DELETE) {
+            HOOK_LOG(L"  commit-undo: cancel — navigation key vk=0x%02X", vkCode);
+            CancelCommitUndo();
+        } else if (IsCommitTrigger(vkCode) && engine_->Count() == 0) {
+            // Printable commit trigger with engine empty (e.g., second '=' in "a==",
+            // second ' ' in "a  "): stay Ready so subsequent BS sequence can reach Primed.
+            // `>=` (not `>`) keeps SPACE in the printable branch — MapVirtualKeyW(VK_SPACE)
+            // returns L' ', which would otherwise fall into the cancel branch.
+            wchar_t ch = VkToMacroChar(vkCode);
+            if (ch >= L' ') {
+                pendingTriggerCount_++;
+                HOOK_LOG(L"  commit-undo: extra trigger '%c' in Ready, pendingTriggers=%u", ch, pendingTriggerCount_);
+            } else {
+                // Non-printable trigger (Esc, Tab, Enter) → cancel undo
+                CancelCommitUndo();
+            }
+        } else {
+            // Alpha, digit, or other key → start new word, preserve stack for multi-word backward
+            commitUndoState_ = CommitUndoState::Idle;
+        }
+    }
+    return CommitUndoOutcome::kFallthrough;
 }
 
 /// Returns true when the keyboard layout cannot produce Vietnamese input.
