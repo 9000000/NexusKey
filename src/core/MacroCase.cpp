@@ -37,8 +37,28 @@ std::wstring ExpandEscapesForClipboard(std::wstring_view expansion) {
 }
 
 std::vector<Segment> BuildSegments(std::wstring_view expansion, CodeTable codeTable) {
-    (void)expansion; (void)codeTable;
-    return {};   // stub — implemented in Task 3
+    std::vector<Segment> segments;
+    Segment cur{};
+    auto flush = [&]() {
+        if (!cur.text.empty()) { segments.push_back(std::move(cur)); cur = {}; }
+    };
+    for (std::size_t i = 0; i < expansion.size(); ++i) {
+        if (expansion[i] == L'\\' && i + 1 < expansion.size() && expansion[i + 1] == L'n') {
+            flush();
+            segments.push_back(Segment{true, {}});
+            ++i;
+            continue;
+        }
+        if (codeTable != CodeTable::Unicode) {
+            auto enc = CodeTableConverter::ConvertChar(expansion[i], codeTable);
+            cur.text += enc.units[0];
+            if (enc.count == 2) cur.text += enc.units[1];
+        } else {
+            cur.text += expansion[i];
+        }
+    }
+    flush();
+    return segments;
 }
 
 }  // namespace NextKey::Macro
