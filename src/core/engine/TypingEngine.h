@@ -194,7 +194,7 @@ private:
     std::vector<CharState> states_;   // Internal state buffer
     std::vector<wchar_t> rawInput_;   // Raw keys for escape
     TypingConfig config_;
-    const Phonology::IPhonotactics& phonotactics_;  // DI rule engine (G-2)
+    const Phonology::IPhonotactics& phonotactics_;  // Vietnamese rule engine
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
     QuickConsonantState qc_;              // Quick consonant expansion state
     EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_
