@@ -373,13 +373,13 @@ void TypingEngine::PushChar(wchar_t c) {
             if (!canEscape) {
                 canEscape = WouldModifierKeyMatchExclusion(lower);
             }
-            if (canEscape && ProcessTelexModifier(c, lower)) {
+            if (canEscape && ProcessTelexModifier(action, c, lower)) {
                 engProt_.bias = LanguageBias::Vietnamese;
                 ApplyAutoUO();
                 UpdateSpellState();
                 return;
             }
-        } else if (ProcessTelexModifier(c, lower)) {
+        } else if (ProcessTelexModifier(action, c, lower)) {
             engProt_.bias = LanguageBias::Vietnamese;
             ApplyAutoUO();
             UpdateSpellState();
@@ -514,198 +514,201 @@ bool TypingEngine::ProcessClearTone() {
 // Modifier Processing (W, [], AA, EE, OO, DD) - TABLE-DRIVEN
 //-----------------------------------------------------------------------------
 
-bool TypingEngine::ProcessTelexModifier(wchar_t c, wchar_t lower) {
-
-    // Handle bracket keys: [ → ơ, ] → ư (full Telex only)
-    if (config_.inputMethod != InputMethod::SimpleTelex) {
-        if (c == L'[') {
-            // Escape: [[ → undo inserted ơ, produce literal '['
-            if (!states_.empty() && rawInput_.size() >= 2 &&
-                rawInput_[rawInput_.size() - 2] == L'[') {
-                CharState& last = states_.back();
-                if (last.base == L'o' && last.mod == Modifier::Horn) {
-                    size_t consumedIdx = last.rawIdx;
-                    states_.pop_back();
-                    EraseConsumedRaw(consumedIdx);
-                    ProcessChar(c);
-                    escape_.escape(EscapeKind::Horn);
-                    return true;
-                }
-            }
-            // [ → insert 'ơ' (o with horn)
-            CharState s;
-            s.base = L'o';
-            s.mod = Modifier::Horn;
-            s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
-            states_.push_back(s);
-            return true;
-        }
-        if (c == L']') {
-            // Escape: ]] → undo inserted ư, produce literal ']'
-            if (!states_.empty() && rawInput_.size() >= 2 &&
-                rawInput_[rawInput_.size() - 2] == L']') {
-                CharState& last = states_.back();
-                if (last.base == L'u' && last.mod == Modifier::Horn) {
-                    size_t consumedIdx = last.rawIdx;
-                    states_.pop_back();
-                    EraseConsumedRaw(consumedIdx);
-                    ProcessChar(c);
-                    escape_.escape(EscapeKind::Horn);
-                    return true;
-                }
-            }
-            // ] → insert 'ư' (u with horn)
-            CharState s;
-            s.base = L'u';
-            s.mod = Modifier::Horn;
-            s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
-            states_.push_back(s);
-            return true;
-        }
+bool TypingEngine::ProcessTelexModifier(TypingAction action, wchar_t c, wchar_t lower) {
+    switch (action) {
+        case TypingAction::HornInsertO: return HandleHornInsertO(c);
+        case TypingAction::HornInsertU: return HandleHornInsertU(c);
+        case TypingAction::HornW:       return ProcessWModifier(c);
+        case TypingAction::CircumflexA:
+        case TypingAction::CircumflexE:
+        case TypingAction::CircumflexO: return HandleAdjacentCircumflex(c, lower);
+        case TypingAction::StrokeD:     return ProcessDModifier(c);
+        default:                         return false;
     }
+}
 
-    // Handle 'w' modifier
-    if (lower == L'w') {
-        return ProcessWModifier(c);
-    }
+bool TypingEngine::HandleHornInsertO(wchar_t c) {
+    // SimpleTelex omits bracket keys — let `[` fall through to literal.
+    if (config_.inputMethod == InputMethod::SimpleTelex) return false;
 
-    // Handle double vowel → circumflex (aa→â, ee→ê, oo→ô)
-    if (IsVowelChar(c) && !states_.empty()) {
+    // Escape: [[ → undo inserted ơ, produce literal '['
+    if (!states_.empty() && rawInput_.size() >= 2 &&
+        rawInput_[rawInput_.size() - 2] == L'[') {
         CharState& last = states_.back();
-        bool isCircumflexBase = (lower == L'a' || lower == L'e' || lower == L'o');
+        if (last.base == L'o' && last.mod == Modifier::Horn) {
+            size_t consumedIdx = last.rawIdx;
+            states_.pop_back();
+            EraseConsumedRaw(consumedIdx);
+            ProcessChar(c);
+            escape_.escape(EscapeKind::Horn);
+            return true;
+        }
+    }
+    // [ → insert 'ơ' (o with horn)
+    CharState s;
+    s.base = L'o';
+    s.mod = Modifier::Horn;
+    s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
+    states_.push_back(s);
+    return true;
+}
 
-        if (last.IsVowel() && last.base == lower && isCircumflexBase) {
-            // Guard: don't apply circumflex if last 3 vowels form a triphthong
-            // e.g., "ngoeo" + 'o' → consume but don't modify (triphthong complete)
-            size_t n = states_.size();
-            if (n >= 3 && states_[n - 3].IsVowel() && states_[n - 2].IsVowel() &&
-                IsTriphthong(states_[n - 3].base, states_[n - 2].base, last.base)) {
-                return true;  // Consume keystroke, no state change
+bool TypingEngine::HandleHornInsertU(wchar_t c) {
+    if (config_.inputMethod == InputMethod::SimpleTelex) return false;
+
+    // Escape: ]] → undo inserted ư, produce literal ']'
+    if (!states_.empty() && rawInput_.size() >= 2 &&
+        rawInput_[rawInput_.size() - 2] == L']') {
+        CharState& last = states_.back();
+        if (last.base == L'u' && last.mod == Modifier::Horn) {
+            size_t consumedIdx = last.rawIdx;
+            states_.pop_back();
+            EraseConsumedRaw(consumedIdx);
+            ProcessChar(c);
+            escape_.escape(EscapeKind::Horn);
+            return true;
+        }
+    }
+    // ] → insert 'ư' (u with horn)
+    CharState s;
+    s.base = L'u';
+    s.mod = Modifier::Horn;
+    s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
+    states_.push_back(s);
+    return true;
+}
+
+bool TypingEngine::HandleAdjacentCircumflex(wchar_t c, wchar_t lower) {
+    // Dispatcher only routes a/e/o here; defensively bail when there's no
+    // prior state to apply circumflex against.
+    if (states_.empty()) return false;
+
+    CharState& last = states_.back();
+
+    if (last.IsVowel() && last.base == lower) {
+        // Guard: don't apply circumflex if last 3 vowels form a triphthong
+        // e.g., "ngoeo" + 'o' → consume but don't modify (triphthong complete)
+        size_t n = states_.size();
+        if (n >= 3 && states_[n - 3].IsVowel() && states_[n - 2].IsVowel() &&
+            IsTriphthong(states_[n - 3].base, states_[n - 2].base, last.base)) {
+            return true;  // Consume keystroke, no state change
+        }
+        // Escape: already has circumflex (adjacent case — last char, no coda possible)
+        if (last.mod == Modifier::Circumflex) {
+            last.mod = Modifier::None;
+            ProcessChar(c);
+            // With spell check ON, block further modifiers to prevent
+            // oo→ô→oo→ô re-trigger cycle ("oo" is ValidPrefix in spell
+            // checker since "oong" is valid, so spellCheckDisabled_ alone
+            // doesn't catch it — unlike "aa"/"ee" which are Invalid).
+            if (config_.spellCheckEnabled) {
+                escape_.escape(EscapeKind::Circumflex);
             }
-            // Escape: already has circumflex (adjacent case — last char, no coda possible)
-            if (last.mod == Modifier::Circumflex) {
-                last.mod = Modifier::None;
+            return true;
+        }
+        // Reject adjacent circumflex when the result is an invalid
+        // syllable — catches split tone/mod typos ("của" + 'a' → c,ủ,â)
+        // via SpellCheck's tone/mod invariant and structural invalidity
+        // ("hò" + 'a' + 'a' → h,ò,â with "âo" not in vowel table).
+        if (ShouldRejectModifier(states_.size() - 1,
+                                 Modifier::Circumflex, lower)) {
+            return false;  // Fall through to ProcessChar — add vowel literally
+        }
+        // Apply circumflex - PRESERVE FIRST LETTER CASE
+        last.mod = Modifier::Circumflex;
+        return true;
+    }
+
+    // Free marking: backward scan for circumflex across intervening chars
+    // e.g., "tieng" + 'e' → "tiêng", "cau" + 'a' → "câu", "chieu" + 'e' → "chiêu"
+    // Crosses consonants freely; crosses vowels only with spell-check validation (if enabled)
+
+    // GUARD: don't apply cross-vowel circumflex if it completes a contiguous triphthong
+    // e.g., "ngoe" + 'o' -> forms "o e o" triphthong, so let it be "ngoeo" instead of "ngôe"
+    size_t n = states_.size();
+    if (n >= 2 && states_[n - 1].IsVowel() && states_[n - 2].IsVowel() &&
+        IsTriphthong(states_[n - 2].base, states_[n - 1].base, lower)) {
+        return false;
+    }
+
+    bool needsValidation = false;  // True when crossing different vowels
+    int consonantsCrossed = 0;     // Count consonants in path (for same-vowel coda check)
+    wchar_t singleCoda = 0;        // Base of single consonant crossed (for coda validation)
+    for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
+        if (it->IsVowel() && it->base != lower) { needsValidation = true; continue; }
+        if (!it->IsVowel()) {
+            if (consonantsCrossed == 0) singleCoda = it->base;
+            ++consonantsCrossed;
+        }
+        if (it->IsVowel() && it->base == lower) {
+            // Reject cross-vowel if: unsupported modifier
+            // Horn undo (ươ→uô) always allowed across vowels
+            if (needsValidation && it->mod != Modifier::Horn &&
+                 (it->mod != Modifier::None && it->mod != Modifier::Circumflex)) break;
+
+            if (it->mod == Modifier::Circumflex) {
+                it->mod = Modifier::None;
                 ProcessChar(c);
-                // With spell check ON, block further modifiers to prevent
-                // oo→ô→oo→ô re-trigger cycle ("oo" is ValidPrefix in spell
-                // checker since "oong" is valid, so spellCheckDisabled_ alone
-                // doesn't catch it — unlike "aa"/"ee" which are Invalid).
-                if (config_.spellCheckEnabled) {
-                    escape_.escape(EscapeKind::Circumflex);
-                }
+                escape_.escape(EscapeKind::Circumflex);
                 return true;
             }
-            // Reject adjacent circumflex when the result is an invalid
-            // syllable — catches split tone/mod typos ("của" + 'a' → c,ủ,â)
-            // via SpellCheck's tone/mod invariant and structural invalidity
-            // ("hò" + 'a' + 'a' → h,ò,â with "âo" not in vowel table).
-            if (ShouldRejectModifier(states_.size() - 1,
-                                     Modifier::Circumflex, lower)) {
-                return false;  // Fall through to ProcessChar — add vowel literally
+            if (it->mod == Modifier::Breve && lower == L'a') {
+                it->mod = Modifier::Circumflex;
+                RelocateToneToTarget();
+                return true;
             }
-            // Apply circumflex - PRESERVE FIRST LETTER CASE
-            last.mod = Modifier::Circumflex;
-            return true;
-        }
-
-        // Free marking: backward scan for circumflex across intervening chars
-        // e.g., "tieng" + 'e' → "tiêng", "cau" + 'a' → "câu", "chieu" + 'e' → "chiêu"
-        // Crosses consonants freely; crosses vowels only with spell-check validation (if enabled)
-        if (isCircumflexBase) {
-            // GUARD: don't apply cross-vowel circumflex if it completes a contiguous triphthong
-            // e.g., "ngoe" + 'o' -> forms "o e o" triphthong, so let it be "ngoeo" instead of "ngôe"
-            size_t n = states_.size();
-            if (n >= 2 && states_[n - 1].IsVowel() && states_[n - 2].IsVowel() &&
-                IsTriphthong(states_[n - 2].base, states_[n - 1].base, lower)) {
-                return false; 
+            if (it->mod == Modifier::Horn && lower == L'o') {
+                auto oIndex = static_cast<size_t>(states_.rend() - it - 1);
+                it->mod = Modifier::Circumflex;
+                UndoHornU(states_.data(), oIndex);
+                RelocateToneToTarget();
+                return true;
             }
-
-            bool needsValidation = false;  // True when crossing different vowels
-            int consonantsCrossed = 0;     // Count consonants in path (for same-vowel coda check)
-            wchar_t singleCoda = 0;        // Base of single consonant crossed (for coda validation)
-            for (auto it = states_.rbegin(); it != states_.rend(); ++it) {
-                if (it->IsVowel() && it->base != lower) { needsValidation = true; continue; }
-                if (!it->IsVowel()) {
-                    if (consonantsCrossed == 0) singleCoda = it->base;
-                    ++consonantsCrossed;
+            if (it->mod == Modifier::None) {
+                // Spell check ON: validate the RESULT of applying circumflex.
+                //   Rejects "vào" + 'a' → "vầo" (invalid syllable) while
+                //   allowing "cau" + 'a' → "câu" and "chieu" + 'e' → "chiêu".
+                // Spell check OFF, cross-vowel + consonant: always reject.
+                //   Vietnamese circumflex never crosses diff-vowel + consonant
+                //   (dấu mũ ở SAU trong iê/uô → match trước needsValidation;
+                //    dấu mũ ở TRƯỚC trong âu/ây/êu/ôi → không có coda).
+                //   Catches "readme" (e←a←dm←e) and "review" (e←v←i←e).
+                // Spell check OFF, same-vowel: reject if single consonant is not
+                //   a valid Vietnamese coda (c/m/n/p/t). Catches "release" (e→l→e)
+                //   while allowing "hiên" (e→n→e) and "tiêng" (e→ng→e).
+                if (needsValidation) {
+                    if (config_.spellCheckEnabled) {
+                        size_t targetIdx =
+                            static_cast<size_t>(states_.rend() - it - 1);
+                        if (ShouldRejectModifier(targetIdx, Modifier::Circumflex, lower))
+                            break;
+                    } else if (consonantsCrossed >= 1) {
+                        engProt_.bias = LanguageBias::HardEnglish;
+                        break;
+                    }
+                } else if (!config_.spellCheckEnabled && consonantsCrossed == 1) {
+                    bool validCoda = (singleCoda == L'c' || singleCoda == L'k' ||
+                                      singleCoda == L'm' || singleCoda == L'n' ||
+                                      singleCoda == L'p' || singleCoda == L't');
+                    if (!validCoda) {
+                        engProt_.bias = LanguageBias::HardEnglish;
+                        break;
+                    }
+                } else if (config_.spellCheckEnabled && consonantsCrossed >= 1) {
+                    // Same-vowel free-marking across consonants: reject
+                    // transformations that produce invalid syllables.
+                    // Catches "gacha" → "gâch", "bacha" → "bâch", etc.
+                    // — âch/ăch are not valid Vietnamese codas.
+                    size_t targetIdx = static_cast<size_t>(states_.rend() - it - 1);
+                    if (!WouldBeValidSyllable(targetIdx, Modifier::Circumflex)) break;
                 }
-                if (it->IsVowel() && it->base == lower) {
-                    // Reject cross-vowel if: unsupported modifier
-                    // Horn undo (ươ→uô) always allowed across vowels
-                    if (needsValidation && it->mod != Modifier::Horn &&
-                         (it->mod != Modifier::None && it->mod != Modifier::Circumflex)) break;
-
-                    if (it->mod == Modifier::Circumflex) {
-                        it->mod = Modifier::None;
-                        ProcessChar(c);
-                        escape_.escape(EscapeKind::Circumflex);
-                        return true;
-                    }
-                    if (it->mod == Modifier::Breve && lower == L'a') {
-                        it->mod = Modifier::Circumflex;
-                        RelocateToneToTarget();
-                        return true;
-                    }
-                    if (it->mod == Modifier::Horn && lower == L'o') {
-                        auto oIndex = static_cast<size_t>(states_.rend() - it - 1);
-                        it->mod = Modifier::Circumflex;
-                        UndoHornU(states_.data(), oIndex);
-                        RelocateToneToTarget();
-                        return true;
-                    }
-                    if (it->mod == Modifier::None) {
-                        // Spell check ON: validate the RESULT of applying circumflex.
-                        //   Rejects "vào" + 'a' → "vầo" (invalid syllable) while
-                        //   allowing "cau" + 'a' → "câu" and "chieu" + 'e' → "chiêu".
-                        // Spell check OFF, cross-vowel + consonant: always reject.
-                        //   Vietnamese circumflex never crosses diff-vowel + consonant
-                        //   (dấu mũ ở SAU trong iê/uô → match trước needsValidation;
-                        //    dấu mũ ở TRƯỚC trong âu/ây/êu/ôi → không có coda).
-                        //   Catches "readme" (e←a←dm←e) and "review" (e←v←i←e).
-                        // Spell check OFF, same-vowel: reject if single consonant is not
-                        //   a valid Vietnamese coda (c/m/n/p/t). Catches "release" (e→l→e)
-                        //   while allowing "hiên" (e→n→e) and "tiêng" (e→ng→e).
-                        if (needsValidation) {
-                            if (config_.spellCheckEnabled) {
-                                size_t targetIdx =
-                                    static_cast<size_t>(states_.rend() - it - 1);
-                                if (ShouldRejectModifier(targetIdx, Modifier::Circumflex, lower))
-                                    break;
-                            } else if (consonantsCrossed >= 1) {
-                                engProt_.bias = LanguageBias::HardEnglish;
-                                break;
-                            }
-                        } else if (!config_.spellCheckEnabled && consonantsCrossed == 1) {
-                            bool validCoda = (singleCoda == L'c' || singleCoda == L'k' ||
-                                              singleCoda == L'm' || singleCoda == L'n' ||
-                                              singleCoda == L'p' || singleCoda == L't');
-                            if (!validCoda) {
-                                engProt_.bias = LanguageBias::HardEnglish;
-                                break;
-                            }
-                        } else if (config_.spellCheckEnabled && consonantsCrossed >= 1) {
-                            // Same-vowel free-marking across consonants: reject
-                            // transformations that produce invalid syllables.
-                            // Catches "gacha" → "gâch", "bacha" → "bâch", etc.
-                            // — âch/ăch are not valid Vietnamese codas.
-                            size_t targetIdx = static_cast<size_t>(states_.rend() - it - 1);
-                            if (!WouldBeValidSyllable(targetIdx, Modifier::Circumflex)) break;
-                        }
-                        it->mod = Modifier::Circumflex;
-                        RelocateToneToTarget();
-                        return true;
-                    }
-                    break;
-                }
+                it->mod = Modifier::Circumflex;
+                RelocateToneToTarget();
+                return true;
             }
+            break;
         }
     }
-
-    // Handle dd → đ
-    if (lower == L'd') {
-        return ProcessDModifier(c);
-    }
-
     return false;
 }
 
