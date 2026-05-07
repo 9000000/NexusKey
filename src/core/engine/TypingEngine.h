@@ -11,6 +11,7 @@
 #include "SpellChecker.h"
 #include "EnglishProtection.h"
 #include "Phonotactics.h"
+#include "TypingAction.h"
 #include "core/config/TypingConfig.h"
 #include <vector>
 #include <string>
@@ -122,12 +123,25 @@ private:
     // Input processing — Telex
     bool ProcessTone(Tone tone, wchar_t keyChar, size_t cachedTarget = SIZE_MAX);
     bool ProcessClearTone();          // z/0 — remove existing tone
-    bool ProcessTelexModifier(wchar_t c, wchar_t lower);  // w, [], aa, ee, oo, dd
+
+    // Telex modifier dispatcher — fans out to per-action handlers below.
+    // `action` is the TypingAction classified by PushChar (HornInsertO,
+    // HornInsertU, HornW, CircumflexA/E/O, StrokeD); other actions yield false.
+    bool ProcessTelexModifier(TypingAction action, wchar_t c, wchar_t lower);
+
+    // Per-action Telex modifier handlers (G-3.3 extraction). Each returns
+    // true on consumption, false to fall through to ProcessChar (literal).
+    bool HandleHornInsertO(wchar_t c);   // Telex `[` — inserts ơ, escapes `[[`
+    bool HandleHornInsertU(wchar_t c);   // Telex `]` — inserts ư, escapes `]]`
+    bool HandleAdjacentCircumflex(wchar_t c, wchar_t lower);  // aa/ee/oo + cross-vowel free-marking
+
     void ProcessChar(wchar_t c) { ProcessChar(c, towlower(c), iswupper(c)); }
     void ProcessChar(wchar_t c, wchar_t lower, bool isUpper);
 
-    // Input processing — VNI
-    bool ProcessVniModifier(wchar_t c);
+    // VNI modifier dispatcher — fans out to per-action handlers below.
+    // `action` is the TypingAction classified by PushChar (VniCircumflex,
+    // VniHorn, VniBreve, VniStroke); other actions yield false.
+    bool ProcessVniModifier(TypingAction action, wchar_t c);
     bool ProcessVniHornModifier(wchar_t c);
     bool ProcessVniVowelModifier(Modifier targetMod, wchar_t key);
 
