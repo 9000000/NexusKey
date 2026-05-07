@@ -18,15 +18,326 @@ struct AsciiCaseMapper final : CaseMapper {
     }
 };
 
-TEST(MacroCaseSmokeTest, StubLinks) {
+// PlanFixture helper — shared by all Plan test suites (Tasks 4b–4e)
+struct PlanFixture {
     AsciiCaseMapper mapper;
-    std::wstring raw, prev;
+    std::wstring raw;
+    std::wstring prevComp;
     std::vector<uint8_t> widths;
     std::unordered_map<std::wstring, std::wstring> table;
-    PlanInputs in{raw, prev, widths, table, false, CodeTable::Unicode, false, L' ', 200};
-    auto plan = Plan(in, mapper);
-    EXPECT_FALSE(plan.matched);   // stub returns default-constructed MacroPlan
+    bool crossCommit = false;
+    CodeTable codeTable = CodeTable::Unicode;
+    bool autoCaps = false;
+    wchar_t trigger = L' ';
+    std::size_t threshold = 200;
+
+    [[nodiscard]] MacroPlan Run() const {
+        PlanInputs in{raw, prevComp, widths, table, crossCommit, codeTable,
+                      autoCaps, trigger, threshold};
+        return Plan(in, mapper);
+    }
+};
+
+// -------------------------------------------------------------------------
+// Task 4b: PlanMatchPrioritiesTest + PlanStoredKeyCaseRuleTest (9 tests)
+// -------------------------------------------------------------------------
+
+TEST(PlanMatchPrioritiesTest, FullBufferExact) {
+    PlanFixture f;
+    f.table[L"BTW"] = L"by the way";
+    f.raw = L"BTW";
+    f.trigger = L' ';
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"by the way");
+    EXPECT_FALSE(p.isPartOfMacro);   // trigger == L' ' is not "> L' '"
 }
+
+TEST(PlanMatchPrioritiesTest, FullBufferLowerFallback) {
+    PlanFixture f;
+    f.table[L"btw"] = L"by the way";
+    f.raw = L"BTW";
+    f.trigger = L'.';
+    auto p = f.Run();
+    // No exact match for "BTW.", lowered "btw." also misses.
+    // Priority 2: try "BTW" exact (miss), then "btw" lower → hit.
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"by the way");
+}
+
+TEST(PlanMatchPrioritiesTest, BufferWithoutTriggerExact) {
+    PlanFixture f;
+    f.table[L"BTW"] = L"by the way";
+    f.raw = L"BTW.";
+    f.trigger = L'.';
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_FALSE(p.isPartOfMacro);    // P2 does NOT set isPartOfMacro — trigger '.' passes through to the document
+}
+
+TEST(PlanMatchPrioritiesTest, BufferWithoutTriggerLower) {
+    PlanFixture f;
+    f.table[L"btw"] = L"by the way";
+    f.raw = L"btw.";
+    f.trigger = L'.';
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_FALSE(p.isPartOfMacro);    // P2 does NOT set isPartOfMacro — trigger '.' passes through to the document
+}
+
+TEST(PlanMatchPrioritiesTest, PrevCompositionWithTrigger) {
+    PlanFixture f;
+    f.table[L"chao."] = L"xin chao";
+    f.raw = L".";
+    f.prevComp = L"CHAO";
+    f.trigger = L'.';
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_TRUE(p.isPartOfMacro);
+}
+
+TEST(PlanMatchPrioritiesTest, PrevCompositionWithoutTrigger) {
+    PlanFixture f;
+    f.table[L"chao"] = L"xin chao";
+    f.raw = L"";
+    f.prevComp = L"CHAO";
+    f.trigger = L' ';
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_FALSE(p.isPartOfMacro);
+}
+
+TEST(PlanMatchPrioritiesTest, NoMatchReturnsFalse) {
+    PlanFixture f;
+    f.table[L"btw"] = L"by the way";
+    f.raw = L"xyz";
+    f.trigger = L' ';
+    auto p = f.Run();
+    EXPECT_FALSE(p.matched);
+}
+
+TEST(PlanStoredKeyCaseRuleTest, UppercaseKeyRejectsLowercaseTyping) {
+    // Uppercase-key contract: only exact case matches.
+    PlanFixture f;
+    f.table[L"BTW"] = L"BY THE WAY";
+    f.raw = L"btw";
+    f.trigger = L' ';
+    auto p = f.Run();
+    EXPECT_FALSE(p.matched);
+}
+
+TEST(PlanStoredKeyCaseRuleTest, LowercaseKeyAcceptsAnyCase) {
+    PlanFixture f;
+    f.table[L"btw"] = L"by the way";
+    for (auto* probe : {L"btw", L"BTW", L"Btw", L"bTw"}) {
+        f.raw = probe;
+        f.trigger = L' ';
+        auto p = f.Run();
+        EXPECT_TRUE(p.matched) << "probe = " << std::string(probe, probe + 3);
+    }
+}
+
+// -------------------------------------------------------------------------
+// Task 4c: PlanBsCountTest (5 tests)
+// -------------------------------------------------------------------------
+
+TEST(PlanBsCountTest, MatchedViaCompositionUnicode) {
+    PlanFixture f;
+    f.table[L"chao"] = L"xin chao";
+    f.prevComp = L"chao";
+    f.raw = L"";
+    f.trigger = L' ';
+    f.codeTable = CodeTable::Unicode;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.bsCount, 4u);
+}
+
+TEST(PlanBsCountTest, MatchedViaCompositionTcvn3Widths) {
+    PlanFixture f;
+    f.table[L"chao"] = L"xin chao";
+    f.prevComp = L"chao";   // Unicode 4 chars
+    f.raw = L"";
+    f.trigger = L' ';
+    f.codeTable = CodeTable::TCVN3;
+    f.widths = {1, 1, 2, 1};   // 5 bytes total under encoding
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.bsCount, 5u);
+}
+
+TEST(PlanBsCountTest, CrossCommitWithTrigger) {
+    PlanFixture f;
+    f.table[L"a.i"] = L"artificial intelligence";
+    f.raw = L"a.i.";        // includes trigger
+    f.crossCommit = true;
+    f.trigger = L'.';
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.bsCount, 3u);   // 4 - 1 (trigger)
+}
+
+TEST(PlanBsCountTest, CrossCommitWithoutTrigger) {
+    PlanFixture f;
+    f.table[L"a.i"] = L"artificial intelligence";
+    f.raw = L"a.i";
+    f.crossCommit = true;
+    f.trigger = L' ';
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.bsCount, 3u);   // trigger == ' ', no decrement
+}
+
+TEST(PlanBsCountTest, DefaultBranchWithTrigger) {
+    PlanFixture f;
+    f.table[L"btw"] = L"by the way";
+    f.raw = L"btw.";
+    f.trigger = L'.';
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.bsCount, 3u);   // 4 - 1 (trigger), default branch
+}
+
+// -------------------------------------------------------------------------
+// Task 4d: PlanAutoCapsDecisionTest + PlanAutoCapsEscapeTest (8 tests)
+// -------------------------------------------------------------------------
+
+TEST(PlanAutoCapsDecisionTest, AutoCapsDisabledNoTransform) {
+    PlanFixture f;
+    f.table[L"btw"] = L"by the way";
+    f.raw = L"BTW";
+    f.trigger = L'.';
+    f.autoCaps = false;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"by the way");   // unchanged
+}
+
+TEST(PlanAutoCapsDecisionTest, MatchedExactSuppressesAutoCaps) {
+    PlanFixture f;
+    f.table[L"BTW"] = L"by the way";   // uppercase key (exact-match contract)
+    f.raw = L"BTW";
+    f.trigger = L'.';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"by the way");   // matchedExact → no transform
+}
+
+TEST(PlanAutoCapsDecisionTest, MatchedViaCompositionSuppressesAutoCaps) {
+    PlanFixture f;
+    f.table[L"chao"] = L"xin chao";
+    f.prevComp = L"CHAO";
+    f.raw = L"";
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"xin chao");   // composition match → no transform
+}
+
+TEST(PlanAutoCapsDecisionTest, ExpansionHasUppercaseSuppressesTransform) {
+    PlanFixture f;
+    f.table[L"omw"] = L"On My Way";   // expansion not all-lower
+    f.raw = L"OMW";
+    f.trigger = L'.';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"On My Way");
+}
+
+TEST(PlanAutoCapsDecisionTest, AllUpperRawTransformsToAllUpperExpansion) {
+    PlanFixture f;
+    f.table[L"omw"] = L"on my way";
+    f.raw = L"OMW";
+    f.trigger = L'.';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"ON MY WAY");
+}
+
+TEST(PlanAutoCapsDecisionTest, FirstUpperRawTransformsToFirstUpperExpansion) {
+    PlanFixture f;
+    f.table[L"omw"] = L"on my way";
+    f.raw = L"Omw";
+    f.trigger = L'.';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"On my way");
+}
+
+TEST(PlanAutoCapsEscapeTest, AllUpperSkipsBackslashN) {
+    PlanFixture f;
+    f.table[L"sig"] = L"name\\nemail";   // \n escape inside expansion
+    f.raw = L"SIG";
+    f.trigger = L'.';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    // 'n' in '\n' must remain lowercase; everything else uppercase.
+    EXPECT_EQ(p.expansion, L"NAME\\nEMAIL");
+}
+
+TEST(PlanAutoCapsEscapeTest, AllUpperPlainNStillUppercases) {
+    PlanFixture f;
+    f.table[L"hi"] = L"hello name";   // plain 'n' (no leading backslash)
+    f.raw = L"HI";
+    f.trigger = L'.';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"HELLO NAME");
+}
+
+// -------------------------------------------------------------------------
+// Task 4e: PlanUseClipboardTest (3 tests)
+// -------------------------------------------------------------------------
+
+TEST(PlanUseClipboardTest, UnicodeAboveThresholdSetsClipboardTrue) {
+    PlanFixture f;
+    std::wstring big(250, L'x');   // > threshold (200)
+    f.table[L"big"] = big;
+    f.raw = L"big";
+    f.trigger = L' ';
+    f.codeTable = CodeTable::Unicode;
+    f.threshold = 200;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_TRUE(p.useClipboard);
+}
+
+TEST(PlanUseClipboardTest, UnicodeAtOrBelowThresholdKeepsSendInput) {
+    PlanFixture f;
+    std::wstring small(200, L'x');   // == threshold; uses ">" not ">="
+    f.table[L"small"] = small;
+    f.raw = L"small";
+    f.trigger = L' ';
+    f.codeTable = CodeTable::Unicode;
+    f.threshold = 200;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_FALSE(p.useClipboard);
+}
+
+TEST(PlanUseClipboardTest, NonUnicodeAlwaysSendInputRegardlessOfSize) {
+    PlanFixture f;
+    std::wstring big(500, L'x');
+    f.table[L"big"] = big;
+    f.raw = L"big";
+    f.trigger = L' ';
+    f.codeTable = CodeTable::TCVN3;
+    f.threshold = 200;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_FALSE(p.useClipboard);   // non-Unicode → always SendInput
+}
+
+// -------------------------------------------------------------------------
+// Tasks 2 & 3: ClipboardEscapesTest + BuildSegmentsTest (unchanged)
+// -------------------------------------------------------------------------
 
 TEST(ClipboardEscapesTest, EmptyInput) {
     EXPECT_EQ(ExpandEscapesForClipboard(L""), L"");
