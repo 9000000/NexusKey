@@ -435,7 +435,14 @@ private:
     // Focused child HWND + class name, cached to avoid AttachThreadInput per keystroke
     // (used by TryEditMessagePaste for VB6/ANSI apps). Refreshed in OnFocusChanged and
     // invalidated on mouse click (within-app focus change).
-    HWND cachedFocusedHwnd_ = nullptr;
+    //
+    // Cross-thread: written by LowLevelMouseProc (mouse hook thread) AND
+    // WinEventProc (window event thread); read by key thread. HWND is atomic
+    // (compiler-fence + intent doc; x64 hardware already torn-read-safe for
+    // 8B aligned pointers). Class wstring is NOT atomic — the resulting
+    // tuple race is benign: a brief stale-class read causes at worst a
+    // 1-keystroke filter miss, which the next focus change recovers.
+    std::atomic<HWND> cachedFocusedHwnd_{nullptr};
     std::wstring cachedFocusedClass_;
 
     // Direct SharedState reader — pointer to the global SharedStateManager (same process)
