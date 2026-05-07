@@ -548,18 +548,6 @@ bool TypingEngine::ProcessModifier(TypingAction action, wchar_t c) {
 // that are 1:1 with their action; HandleVniCircumflex/Breve forward to
 // the Modifier-parameterised VNI vowel modifier helper.
 
-bool TypingEngine::HandleHornW(TypingAction /*action*/, wchar_t c) {
-    return ProcessWModifier(c);
-}
-
-bool TypingEngine::HandleStrokeD(TypingAction /*action*/, wchar_t c) {
-    return ProcessDModifier(c);
-}
-
-bool TypingEngine::HandleVniHorn(TypingAction /*action*/, wchar_t c) {
-    return ProcessVniHornModifier(c);
-}
-
 bool TypingEngine::HandleVniCircumflex(TypingAction /*action*/, wchar_t c) {
     return ProcessVniVowelModifier(Modifier::Circumflex, c);
 }
@@ -734,10 +722,10 @@ bool TypingEngine::HandleAdjacentCircumflex(TypingAction /*action*/, wchar_t c) 
 }
 
 //-----------------------------------------------------------------------------
-// W-Modifier Processing - EXPLICIT PRIORITY ORDER
+// HandleHornW — Telex `w` modifier (EXPLICIT PRIORITY ORDER P1-P8)
 //-----------------------------------------------------------------------------
 
-bool TypingEngine::ProcessWModifier(wchar_t c) {
+bool TypingEngine::HandleHornW(TypingAction /*action*/, wchar_t c) {
     // Simple Telex: 'w' only acts as modifier when preceded by a/o/u vowel
     if (config_.inputMethod == InputMethod::SimpleTelex) {
         bool hasVowelContext = false;
@@ -990,11 +978,11 @@ bool TypingEngine::ProcessWModifier(wchar_t c) {
 }
 
 //-----------------------------------------------------------------------------
-// D-Modifier Processing (dd → đ)
+// HandleStrokeD — Telex `dd` / VNI `9` (dd → đ)
 // Scan logic via FindStrokeDTarget (EngineHelpers.h)
 //-----------------------------------------------------------------------------
 
-bool TypingEngine::ProcessDModifier(wchar_t c) {
+bool TypingEngine::HandleStrokeD(TypingAction /*action*/, wchar_t c) {
     if (escape_.isEscaped(EscapeKind::Stroke)) return false;
     size_t dIdx = FindStrokeDTarget(states_.data(), states_.size());
     if (dIdx == SIZE_MAX) return false;
@@ -1472,15 +1460,15 @@ bool TypingEngine::WouldModifierKeyMatchExclusion(wchar_t lower) const {
 }
 
 //-----------------------------------------------------------------------------
-// VNI Modifier Processing (keys 6, 7, 8, 9)
-// G-3.5: dispatch lives in ProcessModifier; the helpers below are called
-// via the HandleVni{Horn,Circumflex,Breve} wrappers.
+// HandleVniHorn — VNI `7` (uo pair cycle + standalone u/o horn)
+// HandleVniCircumflex / HandleVniBreve are thin wrappers over
+// ProcessVniVowelModifier below; HandleStrokeD covers VNI `9`.
 //-----------------------------------------------------------------------------
 
-bool TypingEngine::ProcessVniHornModifier(wchar_t c) {
+bool TypingEngine::HandleVniHorn(TypingAction /*action*/, wchar_t c) {
     if (states_.empty()) return false;
 
-    // --- uo pair cycle (same logic as Telex ProcessWModifier P2) ---
+    // --- uo pair cycle (same logic as Telex HandleHornW P2) ---
     size_t uIdx = SIZE_MAX, oIdx = SIZE_MAX;
     for (size_t i = 0; i < states_.size(); ++i) {
         if (!states_[i].IsVowel()) continue;
