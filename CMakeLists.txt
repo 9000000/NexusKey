@@ -56,6 +56,8 @@ set(NEXTKEY_CORE_SOURCES
     src/core/CrashLog.cpp
     src/core/Strings.h
     src/core/Strings.cpp
+    src/core/MacroCase.h
+    src/core/MacroCase.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
 )
@@ -433,6 +435,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/UpdateSecurityTest.cpp
     tests/EngineBenchmarkTest.cpp
     tests/MacroPrefixTest.cpp
+    tests/MacroCaseTest.cpp
     tests/HookEngineAtomicTests.cpp
     tests/TypingConfigRCUTests.cpp
     tests/MainThreadWorkerTests.cpp
