@@ -1,6 +1,6 @@
 # NexusKey Refactor Status — Living Inventory
 
-> **Last refresh:** 2026-05-07 (post-Path-G-4, Main `3ded489`)
+> **Last refresh:** 2026-05-07 (post-cleanup #139, Main `64fb80f`)
 > **Scope:** All architectural / cleanup refactor work. Excludes user-facing features (G-5/G-6 Sciter UI + keymap files, TSF Phase 2/3, etc.) — those track separately.
 > **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. Quick wins from both layers may bundle into a single cleanup PR.
 
@@ -36,6 +36,7 @@
 | TypingEngine unification | `e5b21fc` | 2026-04-16 | TelexEngine → TypingEngine; VNI routed through one engine; `InputMethod::Combined` |
 | TSF DLL hybrid update | `c1e9ce2` | 2026-04-22 | SharedState ABI gate + deferred DLL swap |
 | **Sprint 3 Path G G-1..G-4** | #134-#138 | 2026-05-07 | Phonotactics class, DI, TypingAction enum, unified ProcessModifier dispatch, customKeyMap engine hook |
+| **Post-Path-G cleanup** (H2 + H7 + T1 + T4) | #139 `64fb80f` | 2026-05-07 | Delete `HookEngine::CheckConfigEvent` dead code (H2); strip Sprint 2 D4/T3 history comments (H7); rename `SpellChecker → PhonotacticsValidator` (T1); verify Hot-path Fix 3 shipped (T4). H4 attempted then reverted (wontfix — member is logging adapter, not dup) |
 
 ---
 
@@ -65,12 +66,12 @@
 | ID | Item | Source | Effort | Priority |
 |---|---|---|---|---|
 | H1 | **`ProcessKeyDown` 557-LOC god-method decompose** — split per dispatch class (printable / backspace / modifier / system) | Code review #24 + survey | 1-2 days | **HIGH (architectural)** |
-| H2 | **Delete dead code** `HookEngine::CheckConfigEvent()` (HookEngine.cpp:538) + `configEvent_` member (HookEngine.h:446) — zero callers in src/app or src/core (verified by grep 2026-05-07) | docs/TODO.md + Code review #1 | 30 min | Quick win |
+| ~~H2~~ | ~~**Delete dead code** `HookEngine::CheckConfigEvent()` + `configEvent_` member~~ | — | DONE | ✅ PR #139 `5f080ca` |
 | H3 | **`LowLevelMouseProc` race on `cachedFocusedHwnd_`** — write set in mouse callback races with `WinEventProc`. Options: atomic migration / MainThreadWorker defer / document benign | docs/TODO.md Pre-T3 Minor 1 | 1-2h | MEDIUM |
 | ~~H4~~ | ~~**Dual-route `TrackedSendInput` consolidate**~~ — REJECTED 2026-05-07: `HookEngine::TrackedSendInput` is NOT a duplicate — it's a logging adapter that wraps `Internal::TrackedSendInput` and emits `HOOK_LOG` on partial sends (renderer-drop diagnostic). Consolidation attempt at commit `794f38f` lost this observability and broke MSVC `/WX` (`[[nodiscard]]` warning C4834 at 6 call sites). Reverted at `66ae1dc`. The dual-route is justified — member adds value. | docs/TODO.md M3 | N/A | ❌ Wontfix |
 | H5 | **Macro extract to pure functions** — `ApplyAutoCapsMacro` (HookEngine.cpp:2778-2826) and `ResolveMacroMatch` (lines 2699-2747) → `src/core/MacroCase.h`. Linux unit-testable | docs/TODO.md + Code review #11 | 2-3h | MEDIUM |
 | H6 | **Sprint 4 §3 SPSC ring + watchdog** — Rule #11 next-stage compliance | CODE_GOVERNANCE.md §3 | Sprint scale | LOW (roadmap) |
-| H7 | **Strip Sprint 2 D4/T3 history comments** — ~10 lines of "Sprint 2 D4 deleted X" doc comments at HookEngine.cpp lines 969/1832/2682/2686/3025/3133. Optional cull for noise reduction | survey 2026-05-07 | 5 min | Quick win |
+| ~~H7~~ | ~~**Strip Sprint 2 D4/T3 history comments**~~ | — | DONE | ✅ PR #139 `4042dcc` |
 | H8 | **Sprint 1 deferred** — `WaitOnAddress` for configEpoch, ETW tracing, hook fast-path foreground detection | sprint-1-single-owner-refactor.md "Open items" | Sprint scale | LOW (roadmap) |
 
 ---
@@ -79,7 +80,7 @@
 
 | ID | Item | Source | Effort | Priority |
 |---|---|---|---|---|
-| T1 | **`SpellChecker.{h,cpp}` → `PhonotacticsValidator` rename** — content already in `NextKey::Phonology::` namespace post G-2.3; files retained old names | Path G G-2.4 deferred | 30 min (`git mv` + tests) | Quick win (cosmetic) |
+| ~~T1~~ | ~~**`SpellChecker.{h,cpp}` → `PhonotacticsValidator` rename**~~ | — | DONE | ✅ PR #139 `b115f75` |
 | T2 | **Phonotactics onset agreement** — c/k/qu, g/gh, ng/ngh enforcement (`IsValidSyllable` currently ignores `onset` arg) | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
 | T3 | **Phonotactics N1/N2/N3 vowel-coda compatibility** — tighter group rules | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
 | ~~T4~~ | ~~**Verify Hot-path Fix 3 ComposeAll buffer reuse**~~ — VERIFIED 2026-05-07: shipped at `TypingEngine.h:218` (`mutable std::wstring composeBuf_`) + `TypingEngine.cpp:1236-1241` | hot-path-optimization-plan.md | DONE | ✅ |
