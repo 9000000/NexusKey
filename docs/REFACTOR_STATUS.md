@@ -82,7 +82,7 @@
 | T1 | **`SpellChecker.{h,cpp}` → `PhonotacticsValidator` rename** — content already in `NextKey::Phonology::` namespace post G-2.3; files retained old names | Path G G-2.4 deferred | 30 min (`git mv` + tests) | Quick win (cosmetic) |
 | T2 | **Phonotactics onset agreement** — c/k/qu, g/gh, ng/ngh enforcement (`IsValidSyllable` currently ignores `onset` arg) | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
 | T3 | **Phonotactics N1/N2/N3 vowel-coda compatibility** — tighter group rules | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
-| T4 | **Verify Hot-path Fix 3 ComposeAll buffer reuse** — Fix 1 done, Fix 2 superseded by T3 IOutputInjector, Fix 3 status uncertain (grep `mutable composeBuf_`) | hot-path-optimization-plan.md | 30 min verify | Quick win |
+| ~~T4~~ | ~~**Verify Hot-path Fix 3 ComposeAll buffer reuse**~~ — VERIFIED 2026-05-07: shipped at `TypingEngine.h:218` (`mutable std::wstring composeBuf_`) + `TypingEngine.cpp:1236-1241` | hot-path-optimization-plan.md | DONE | ✅ |
 | T5 | **Bug `cafcs → các`** — tone replacement blocked on already-toned syllable | docs/TODO.md | 1-2h | Bug (HIGH) |
 | T6 | **Bug Issue #117 `Lỗi → Lôĩ`** — fast-typing chaos timing | HANDOFF.md + Issue #117 | Hard — chaos timing | Bug (HIGH) |
 
@@ -102,6 +102,7 @@ Verified by grep on Main `3ded489` (2026-05-07):
 | `EngineHelpers::FindToneTargetImpl` | (deleted) | Already cleaned during Path G G-2.4 |
 | `TelexEngine.{cpp,h}` / `VniEngine.{cpp,h}` | (deleted) | Already cleaned post TypingEngine unification |
 | `DispatchSendInput()` body | (deleted) | Already cleaned during Sprint 2 T3 D3 |
+| Hot-path Fix 3 ComposeAll buffer reuse | TypingEngine.h:218 + TypingEngine.cpp:1236-1241 | Verified shipped 2026-05-07 |
 
 **Misleading filenames (NOT dead, rename pending):**
 - `src/core/engine/SpellChecker.cpp/h` (812 LOC) — content under `NextKey::Phonology::`, files keep old name. Tracked as T1.
