@@ -18,10 +18,6 @@ namespace NextKey {
 /// `ClassifyKey` returns one of these based on (key, mode) only —
 /// runtime applicability (state shape, escape flags, English protection,
 /// spell-check gating) stays in the per-action handlers in TypingEngine.
-///
-/// G-3 introduces this enum to centralize the dispatch shape. G-4 will
-/// expose it via `TypingConfig::customKeyMap` so users can rebind keys
-/// without modifying engine code.
 enum class TypingAction : uint8_t {
     None = 0,        // Not an IME-bound key — handled as literal char
 

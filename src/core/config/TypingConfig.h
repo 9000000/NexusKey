@@ -77,11 +77,9 @@ struct TypingConfig {
     bool macroTriggerDir = true;       // Kích hoạt bằng phím Mũi tên (Arrows)
     std::vector<std::wstring> spellExclusions;  // Spell check exclusion prefixes (e.g. "hđ", "đp")
 
-    /// Per-key user override (G-4). Index by ASCII code; callers MUST
-    /// guard with `lower < 128` before indexing. Default-init = all
-    /// `TypingAction::None`, which the dispatcher treats as "no override
-    /// → fall through to `ClassifyKey`". G-5 will populate this from
-    /// per-user keymap files; G-4 ships the engine hook only.
+    /// Per-key user override. Index by ASCII code; callers MUST guard
+    /// with `lower < 128` before indexing. `TypingAction::None` (the
+    /// default) means "no override — fall through to ClassifyKey".
     std::array<TypingAction, 128> customKeyMap{};
 
     // Default constructor for compiled defaults (FR8 - engine autonomy)

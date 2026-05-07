@@ -216,7 +216,7 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 1. Literal digit sequence protection (VNI mode)
+    // Literal digit sequence protection (VNI mode)
     // If the user types a digit immediately following a literal digit,
     // it's highly likely they are typing a number sequence (e.g., E747).
     // Bypass VNI tone/modifier processing to insert the digit literally.
@@ -228,7 +228,7 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 2. Classify keystroke. G-4 layers an optional per-key user override
+    // 1. Classify keystroke. G-4 layers an optional per-key user override
     // above the static rules: when customKeyMap[lower] is non-None (ASCII
     // keys only), it wins; otherwise ClassifyKey provides the built-in
     // Telex/VNI mapping.
