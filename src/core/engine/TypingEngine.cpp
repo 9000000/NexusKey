@@ -421,13 +421,13 @@ void TypingEngine::PushChar(wchar_t c) {
             if (!canEscape) {
                 canEscape = WouldModifierKeyMatchExclusion(lower);
             }
-            if (canEscape && ProcessVniModifier(c)) {
+            if (canEscape && ProcessVniModifier(action, c)) {
                 engProt_.bias = LanguageBias::Vietnamese;
                 ApplyAutoUO();
                 UpdateSpellState();
                 return;
             }
-        } else if (ProcessVniModifier(c)) {
+        } else if (ProcessVniModifier(action, c)) {
             engProt_.bias = LanguageBias::Vietnamese;
             ApplyAutoUO();
             UpdateSpellState();
@@ -1454,16 +1454,14 @@ bool TypingEngine::WouldModifierKeyMatchExclusion(wchar_t lower) const {
 // VNI Modifier Processing (keys 6, 7, 8, 9)
 //-----------------------------------------------------------------------------
 
-bool TypingEngine::ProcessVniModifier(wchar_t c) {
-    if (c == L'9') return ProcessDModifier(c);
-    if (c == L'7') return ProcessVniHornModifier(c);
-
-    Modifier targetMod = Modifier::None;
-    if (c == L'6') targetMod = Modifier::Circumflex;
-    else if (c == L'8') targetMod = Modifier::Breve;
-    else return false;
-
-    return ProcessVniVowelModifier(targetMod, c);
+bool TypingEngine::ProcessVniModifier(TypingAction action, wchar_t c) {
+    switch (action) {
+        case TypingAction::VniStroke:     return ProcessDModifier(c);
+        case TypingAction::VniHorn:       return ProcessVniHornModifier(c);
+        case TypingAction::VniCircumflex: return ProcessVniVowelModifier(Modifier::Circumflex, c);
+        case TypingAction::VniBreve:      return ProcessVniVowelModifier(Modifier::Breve, c);
+        default:                           return false;
+    }
 }
 
 bool TypingEngine::ProcessVniHornModifier(wchar_t c) {

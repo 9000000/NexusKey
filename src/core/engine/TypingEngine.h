@@ -138,8 +138,10 @@ private:
     void ProcessChar(wchar_t c) { ProcessChar(c, towlower(c), iswupper(c)); }
     void ProcessChar(wchar_t c, wchar_t lower, bool isUpper);
 
-    // Input processing — VNI
-    bool ProcessVniModifier(wchar_t c);
+    // VNI modifier dispatcher — fans out to per-action handlers below.
+    // `action` is the TypingAction classified by PushChar (VniCircumflex,
+    // VniHorn, VniBreve, VniStroke); other actions yield false.
+    bool ProcessVniModifier(TypingAction action, wchar_t c);
     bool ProcessVniHornModifier(wchar_t c);
     bool ProcessVniVowelModifier(Modifier targetMod, wchar_t key);
 
