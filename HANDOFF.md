@@ -1,5 +1,19 @@
 # NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
+## 2026-05-07 — Refactor sequencing rule (READ FIRST)
+
+**Source of truth:** [`docs/REFACTOR_STATUS.md`](docs/REFACTOR_STATUS.md) — living inventory of all refactor work (done / in-flight / TODO / dead code / vital signs).
+
+**Sequencing rule (anh decision 2026-05-07):** Complete the HookEngine refactor backlog (REFACTOR_STATUS §C: H1-H6) BEFORE picking up TypingEngine TODO items (§D: T1-T4).
+
+**Rationale:** HookEngine is the highest-risk file (3615 LOC, hottest in codebase). Architectural decomposition is the priority. TypingEngine is in good shape post Path G G-1..G-4 — its remaining items are correctness-quality, not architecture.
+
+**Exception:** Quick wins from BOTH layers may bundle into a single cleanup PR. Bug fixes (T5/T6, new user-reported bugs) are NOT bound by the sequencing rule.
+
+**Recommended next:** Cleanup PR bundling `H2 + H4 + H7 + T1 + T4` (~3h, single branch). Then attack `H1 ProcessKeyDown decompose` as the major architectural win.
+
+---
+
 ## 2026-05-07 — Sprint 3 Path G G-4 COMPLETE (CURRENT PICKUP NOTE)
 
 **Branch:** `sprint-3/path-g-customkeymap`. **Goal:** engine-side per-key user override layer.
