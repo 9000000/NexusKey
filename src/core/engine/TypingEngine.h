@@ -10,6 +10,7 @@
 #include "EngineHelpers.h"
 #include "SpellChecker.h"
 #include "EnglishProtection.h"
+#include "Phonotactics.h"
 #include "core/config/TypingConfig.h"
 #include <vector>
 #include <string>
@@ -83,6 +84,13 @@ class TypingEngine : public IInputEngine {
 public:
     TypingEngine() : TypingEngine(TypingConfig{}) {}
     explicit TypingEngine(const TypingConfig& config);
+    /// DI ctor — accepts a custom phonotactics rule engine. Lets tests inject
+    /// mocks and lets future engines (e.g. user-defined keymaps) supply their
+    /// own rule set. The reference must outlive this TypingEngine; the
+    /// single-arg ctor binds it to `Phonology::Phonotactics::Default()`, a
+    /// static singleton with process lifetime.
+    TypingEngine(const TypingConfig& config,
+                 const Phonology::IPhonotactics& phonotactics);
     ~TypingEngine() override = default;
 
     TypingEngine(const TypingEngine&) = delete;
@@ -123,11 +131,8 @@ private:
     bool ProcessVniHornModifier(wchar_t c);
     bool ProcessVniVowelModifier(Modifier targetMod, wchar_t key);
 
-    // Find target for tone/modifier application
+    // Find target for tone/modifier application — delegates to phonotactics_.
     size_t FindToneTarget() const;
-    size_t FindToneTargetClassic() const;
-    size_t FindToneTargetModern() const;
-    size_t FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs) const;
 
     // Auto ươ: convert 'uơ' to 'ươ' when followed by another character
     void ApplyAutoUO();
@@ -165,13 +170,13 @@ private:
     void UpdateSpellState();
 
     // Would applying `newMod` to states_[targetIdx] produce a syllable that is
-    // not Invalid per SpellCheck? Returns true when spell-check is disabled
-    // (no validation performed). If `clearCircumflexIdx` is a valid index and
-    // that state has a Circumflex, it is temporarily cleared for the check
-    // (models W-modifier P5 which strips the sister â when applying horn to u).
-    // Restores state before returning.
-    // SpellCheck::Validate enforces the tone/mod same-vowel invariant, so
-    // this also catches typos like "của" + circumflex on 'a' → c,ủ,â.
+    // not Invalid per Phonology::ValidateSyllableState? Returns true when
+    // spell-check is disabled (no validation performed). If `clearCircumflexIdx`
+    // is a valid index and that state has a Circumflex, it is temporarily
+    // cleared for the check (models W-modifier P5 which strips the sister â
+    // when applying horn to u). Restores state before returning.
+    // The validator enforces the tone/mod same-vowel invariant, so this also
+    // catches typos like "của" + circumflex on 'a' → c,ủ,â.
     [[nodiscard]] bool WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
                                             size_t clearCircumflexIdx = SIZE_MAX);
 
@@ -186,6 +191,7 @@ private:
     std::vector<CharState> states_;   // Internal state buffer
     std::vector<wchar_t> rawInput_;   // Raw keys for escape
     TypingConfig config_;
+    const Phonology::IPhonotactics& phonotactics_;  // Vietnamese rule engine
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
     QuickConsonantState qc_;              // Quick consonant expansion state
     EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_

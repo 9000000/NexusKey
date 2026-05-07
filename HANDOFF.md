@@ -1,6 +1,121 @@
 # NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
-## Sprint 3 FSM — D-1 MERGED TO MAIN (2026-05-06) — CURRENT PICKUP NOTE
+## 2026-05-07 — Sprint 3 Path G, G-1 LANDED (CURRENT PICKUP NOTE)
+
+Branch `sprint-3/path-g` off Main `54e379b`. Sprint 3 FSM rewrite cancelled; Path G replaces it (refactor TypingEngine + `Phonotactics` class + custom keymap layer). Brainstorm `_bmad-output/brainstorming/brainstorming-session-2026-05-07-0250.md` signed off; full Path G plan + scope locks below.
+
+### G-1 — IPhonotactics interface + Phonotactics impl + GTest (DONE)
+
+| Deliverable | File |
+|---|---|
+| Interface header | `src/core/engine/IPhonotactics.h` — namespace `NextKey::Phonology`, methods `TonePosition` / `IsValidSyllable` / `CanComplete`, `Tone` enum redeclared in-namespace for layer isolation |
+| Concrete impl | `src/core/engine/Phonotactics.cpp/h` — anonymous-namespace helpers (Decompose, ParsedSyllable, IsClosedVowelSeq, IsPendingVowelSeq, IsKnownOnset/Coda…), reuses `NextKey::kDiphthongClassic/Modern` + `NextKey::IsTriphthong` from `VietnameseTables.h` (no duplication) |
+| Tests | `tests/PhonotacticsTest.cpp` — 25 cases / 3 fixtures: `PhonotacticsTonePosition` (12), `PhonotacticsIsValidSyllable` (7 incl. parametric coda+tone matrix), `PhonotacticsCanComplete` (5 + 1 nonsense reject) |
+| CMake | `CMakeLists.txt` — added 3 sources to `NEXTKEY_ENGINE_SOURCES`, added test to `NEXTKEY_TEST_SOURCES` |
+
+Linux GTest **1434 / 1434 PASS** (1409 baseline + 25 new). Build clean. Windows MSVC verification pending — anh rebuild from WSL when picking up.
+
+### Rules encoded in G-1 (per `docs/RuleTiengViet_Summary.md`)
+
+- **Tone position priority** (mirrors `EngineHelpers::FindToneTargetImpl`): P1 last horn vowel → P2 first non-horn modified vowel (â/ê/ô/ă) → P3 modern triphthong middle | diphthong table (rule 1=FIRST, 2=SECOND, 3=coda-aware) → P4 rightmost.
+- **Closed vowels (28)** reject any coda — `ai, ao, au, ay, âu, ây, eo, êu, ia, iu, oi, ôi, ơi, ui, ưa, ưi, ưu, iêu, uôi, uyu, ươi, ươu, oai, oay, uây, uya, oeo, oao`.
+- **Pending vowels (10)** require coda — `ă, â, iê, oă, uâ, uô, oo, ôô, ươ, uyê`.
+- **Stop-final coda** (`c, ch, p, t`) restricts tone to `Acute (sắc)` or `Dot (nặng)`.
+- **CanComplete parser** splits partial → onset / vowels / coda / leftover, rejects post-coda leftover (covers `gacha`, `gachw` auto-exclusion case from `spell_exclusions`).
+
+### Out of G-1 scope (deferred to G-2 or later)
+
+- **Onset agreement** (c/k/qu, g/gh, ng/ngh) — `IsValidSyllable` currently ignores `onset` arg. Add when G-2 wires Phonotactics into TypingEngine and we see real call patterns.
+- **N1/N2/N3 vowel-coda compatibility** — currently only closed/pending checks. Tighter group rules (N1 vowels can pair with C1+C3 only, not C2; etc.) deferred.
+- **Shifted-3-vowel typo rule** in `EngineHelpers::FindToneTargetImpl` (e.g. "hoaa", "gaoi" with vowel-repeat coda) — couples to CharState concept of which vowel carries the modifier; revisit when G-2 has the call sites.
+- **Issue #117 (`Lỗi → Lôĩ` fast typing)** — explicitly out of Path G; separate Sprint 1/2 timing-class follow-up.
+
+### G-2.1 — DI plumbing (DONE 2026-05-07)
+
+`Phonotactics::Default()` static accessor returns process-wide stateless singleton. `TypingEngine` gains 2-arg ctor `(const TypingConfig&, const Phonology::IPhonotactics&)`; existing 1-arg ctor delegates with `Phonotactics::Default()` so all 30+ existing call sites (EngineFactory, tests, dialogs) compile unchanged. Member `phonotactics_` stored as `const IPhonotactics&` — reference, not value, for swappability per CODING_RULES §4.2.
+
+3 new tests: `TypingEngineDI.AcceptsCustomPhonotactics`, `TypingEngineDI.SingleArgCtorBindsDefaultPhonotactics`, `PhonotacticsDefault.ReturnsStableSingleton`.
+
+### G-2.2 — Replace FindToneTarget* with phonotactics_ (DONE 2026-05-07)
+
+`TypingEngine::FindToneTarget()` rewired to delegate to `phonotactics_.TonePosition(...)`. The classic/modern split moves into Phonotactics (driven by `config_.modernOrtho` bool); `FindToneTargetClassic`, `FindToneTargetModern`, and the per-class `FindToneTargetImpl` member are removed. The 5 external call sites (`TypingEngine.cpp:240,263,460,491,1093`) stay untouched.
+
+Wrapper handles the structural translation:
+1. Iterate `states_`, skip cluster consonants (gi/qu) via `IsClusterConsonant`,
+2. Compose each nucleus state with `tone=None` and `isUpper=false` so Phonotactics' Decompose sees the canonical lowercase modifier+base char,
+3. Track `vowelStateIdx[k] = state index` for later mapping,
+4. Build `coda` from any post-last-vowel states,
+5. Call `phonotactics_.TonePosition(vowelSeq, coda, modernOrtho)`,
+6. Map the returned vowel-sequence index back to a `states_` index.
+
+Phonotactics extensions to match `EngineHelpers::FindToneTargetImpl` semantics:
+- **Shifted-3-vowel rule** ported into `ComputeTonePosition`: when count ≥ 3 and the first 2 of the last 3 vowels have a diphthong rule, shift the (firstPos, lastPos) pair onto them. Vowel-repeat at end forces FIRST (typo cases like "hoaa", "oaa"). Otherwise rule-3 coda-aware uses `(lastPos + 1 < count) || !coda.empty()` to decide FIRST vs SECOND.
+- **Vowel array cap raised** from 4 → 16 to keep all of `máaaaaaaa`-style typos in scope; P1/P2 must scan the full sequence to find any horn/modifier no matter where the user typed it, and P4-rightmost must point at the actual last vowel for `IsToneRelocBlockedByP4` to drift-block correctly.
+
+3 new Phonotactics tests: `ShiftedThreeVowelTypoAoi`, `ShiftedThreeVowelRepeatHoaa`, `ClassicOaiHasRemainderRule`.
+
+Linux GTest **1440 / 1440 PASS**. The `EngineHelpers::FindToneTargetImpl` free function now has zero callers — dead code, kept for G-2.4 cleanup.
+
+### G-2.3 — Namespace unification under Phonology (DONE 2026-05-07)
+
+**G-2.3.A** added `Phonology::SyllableState` + `Phonology::ValidateSyllableState<CharStateT>` as aliases over `SpellCheck::*` and routed production callers (`EngineHelpers::UpdateSpellState`, `TypingEngine::Commit` ValidPrefix branch, `TypingEngine::WouldBeValidSyllable`) through the new entry point.
+
+**G-2.3.B** flipped the underlying namespace: `SpellChecker.{h,cpp}` now lives under `NextKey::Phonology` directly (no aliases). `enum class Result` → `enum class SyllableState`; `template Validate` → `template ValidateSyllableState`. The structural validator and the wstring-based `IPhonotactics` interface now share one namespace, one rule engine. Filenames retained as `SpellChecker.{h,cpp}` until a follow-up commit consolidates the validator under a Phonotactics-prefixed name (G-2.4 cleanup).
+
+Test files migrated: `tests/SpellCheckerTest.cpp` + `tests/FeatureOptionsTest.cpp` (18 references). Zero `SpellCheck::` references remain in the codebase.
+
+Linux GTest **1440 / 1440 PASS**. Zero behavior change — the underlying validator code is byte-identical, only namespace + names flipped.
+
+### NEXT — G-2.4 (cleanup) and beyond
+
+| Step | Goal |
+|---|---|
+| G-2.4 | Delete `EngineHelpers::FindToneTargetImpl` free function (zero callers post-G-2.2). Optionally rename `SpellChecker.{h,cpp}` files to `PhonotacticsValidator.{h,cpp}` via `git mv` (preserves history). Audit `kDiphthong*` table consumers — keep tables in `VietnameseTables.h` (still used by `IsToneRelocBlockedByP4` + `EnglishProtection`). |
+| G-3 | Internal handler dispatch: `TypingAction` enum + ~20 extracted handlers + single dispatch table. PushChar uses `kHandlers[action]`. TypingEngine drops to ~1300 LOC. |
+| G-4 | `customKeyMap` field in `TypingConfig`. PushChar checks override before default Telex/VNI dispatch. |
+| G-5 | Sciter UI dialog + per-user `keymap_<name>.toml` files + conflict warnings + active-method selector. |
+| G-6 | Import/export Unikey + EVKey format compatibility. |
+
+### Path G remaining phases (per brainstorm sign-off)
+
+| Phase | Goal | Sessions |
+|---|---|---|
+| **G-1** | Phonotactics class + interface + tests | DONE |
+| **G-2** | Refactor TypingEngine `FindToneTarget*` → `Phonotactics::TonePosition`. Spell check → `IsValidSyllable`. Auto-exclusion via `CanComplete`. | 1-2 |
+| **G-3** | Internal handler dispatch: `TypingAction` enum + ~20 extracted handlers + single dispatch table. TypingEngine drops to ~1300 LOC. | 1-2 |
+| **G-4** | `customKeyMap` field in `TypingConfig`. PushChar checks override before default Telex/VNI dispatch. | 1 |
+| **G-5** | Sciter UI dialog + per-user `keymap_<name>.toml` + conflict warnings + active-method selector. | 1-2 |
+| **G-6** | Import/export Unikey + EVKey format compatibility. | 1 |
+
+### Coding rules adherence (per `docs/CODING_RULES/`)
+
+- §1 namespace: `NextKey::Phonology::` sub-namespace ✓
+- §1.2 include order: own → system → STL → project ✓
+- §4.1 interface-based: `IPhonotactics` virtual interface ✓
+- §9 naming: PascalCase class/methods, camelCase locals, `kCamelCase` table constants (matching `VietnameseTables.h` precedent), no Hungarian, no single-letter non-loop vars ✓
+- §10 documentation: WHY-comments where non-obvious; minimal doc on stable rule logic ✓
+
+### Pickup commands (next session)
+
+```bash
+git checkout sprint-3/path-g
+cmake --build build-linux --target NextKeyTests
+./build-linux/tests/NextKeyTests --gtest_brief=1   # 1440 PASS
+
+# G-2.4 first steps:
+grep -rn "FindToneTargetImpl" src/   # only definition left at EngineHelpers.h:491
+# Optional: git mv src/core/engine/SpellChecker.{h,cpp} → PhonotacticsValidator.{h,cpp}
+# Update CMakeLists + the 4 #include "SpellChecker.h" sites.
+```
+
+### Open items for anh
+
+- **Windows MSVC verification pending.** Anh rebuild from WSL after pulling — most-likely warning surface is `[[nodiscard]]` placement on virtual `noexcept` overrides under `/W4 /WX`, plus `const IPhonotactics& phonotactics_` member-init order. Em fixes inline.
+- **G-2 scope decision** — DI locked per brainstorm sign-off. G-2.1 plumbing landed; G-2.2 is the substantive swap.
+
+---
+
+## Sprint 3 FSM — D-1 MERGED TO MAIN (2026-05-06) — superseded by Path G above
 
 Main is at `0600f34`. Three PRs merged this session 2026-05-05/06 night:
 

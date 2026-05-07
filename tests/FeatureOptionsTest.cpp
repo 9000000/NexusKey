@@ -823,8 +823,8 @@ TEST(SpellCheckZwjfTest, Z_Invalid_WithoutFlag) {
         {L'z', Modifier::None, Tone::None, false},
         {L'a', Modifier::None, Tone::Acute, true},
     };
-    auto result = SpellCheck::Validate(states, 2, false);
-    EXPECT_EQ(result, SpellCheck::Result::Invalid);
+    auto result = Phonology::ValidateSyllableState(states, 2, false);
+    EXPECT_EQ(result, Phonology::SyllableState::Invalid);
 }
 
 TEST(SpellCheckZwjfTest, Z_Valid_WithFlag) {
@@ -833,8 +833,8 @@ TEST(SpellCheckZwjfTest, Z_Valid_WithFlag) {
         {L'z', Modifier::None, Tone::None, false},
         {L'a', Modifier::None, Tone::Acute, true},
     };
-    auto result = SpellCheck::Validate(states, 2, true);
-    EXPECT_EQ(result, SpellCheck::Result::Valid);
+    auto result = Phonology::ValidateSyllableState(states, 2, true);
+    EXPECT_EQ(result, Phonology::SyllableState::Valid);
 }
 
 TEST(SpellCheckZwjfTest, F_Invalid_WithoutFlag) {
@@ -843,8 +843,8 @@ TEST(SpellCheckZwjfTest, F_Invalid_WithoutFlag) {
         {L'a', Modifier::None, Tone::None, true},
         {L'n', Modifier::None, Tone::None, false},
     };
-    auto result = SpellCheck::Validate(states, 3, false);
-    EXPECT_EQ(result, SpellCheck::Result::Invalid);
+    auto result = Phonology::ValidateSyllableState(states, 3, false);
+    EXPECT_EQ(result, Phonology::SyllableState::Invalid);
 }
 
 TEST(SpellCheckZwjfTest, F_Valid_WithFlag) {
@@ -854,8 +854,8 @@ TEST(SpellCheckZwjfTest, F_Valid_WithFlag) {
         {L'a', Modifier::None, Tone::None, true},
         {L'n', Modifier::None, Tone::None, false},
     };
-    auto result = SpellCheck::Validate(states, 3, true);
-    EXPECT_EQ(result, SpellCheck::Result::Valid);
+    auto result = Phonology::ValidateSyllableState(states, 3, true);
+    EXPECT_EQ(result, Phonology::SyllableState::Valid);
 }
 
 TEST(SpellCheckZwjfTest, W_Valid_WithFlag) {
@@ -865,8 +865,8 @@ TEST(SpellCheckZwjfTest, W_Valid_WithFlag) {
         {L'e', Modifier::None, Tone::None, true},
         {L'n', Modifier::None, Tone::None, false},
     };
-    auto result = SpellCheck::Validate(states, 3, true);
-    EXPECT_EQ(result, SpellCheck::Result::Valid);
+    auto result = Phonology::ValidateSyllableState(states, 3, true);
+    EXPECT_EQ(result, Phonology::SyllableState::Valid);
 }
 
 TEST(SpellCheckZwjfTest, J_Valid_WithFlag) {
@@ -875,8 +875,8 @@ TEST(SpellCheckZwjfTest, J_Valid_WithFlag) {
         {L'j', Modifier::None, Tone::None, false},
         {L'a', Modifier::None, Tone::Acute, true},
     };
-    auto result = SpellCheck::Validate(states, 2, true);
-    EXPECT_EQ(result, SpellCheck::Result::Valid);
+    auto result = Phonology::ValidateSyllableState(states, 2, true);
+    EXPECT_EQ(result, Phonology::SyllableState::Valid);
 }
 
 TEST(SpellCheckZwjfTest, Z_ValidPrefix_WithFlag) {
@@ -884,8 +884,8 @@ TEST(SpellCheckZwjfTest, Z_ValidPrefix_WithFlag) {
     CharState states[] = {
         {L'z', Modifier::None, Tone::None, false},
     };
-    auto result = SpellCheck::Validate(states, 1, true);
-    EXPECT_EQ(result, SpellCheck::Result::ValidPrefix);
+    auto result = Phonology::ValidateSyllableState(states, 1, true);
+    EXPECT_EQ(result, Phonology::SyllableState::ValidPrefix);
 }
 
 TEST(SpellCheckZwjfTest, StandardConsonants_StillWork) {
@@ -895,8 +895,8 @@ TEST(SpellCheckZwjfTest, StandardConsonants_StillWork) {
         {L'a', Modifier::None, Tone::Acute, true},
         {L'n', Modifier::None, Tone::None, false},
     };
-    auto result = SpellCheck::Validate(states, 3, false);
-    EXPECT_EQ(result, SpellCheck::Result::Valid);
+    auto result = Phonology::ValidateSyllableState(states, 3, false);
+    EXPECT_EQ(result, Phonology::SyllableState::Valid);
 }
 
 // ============================================================================

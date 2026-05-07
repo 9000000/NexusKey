@@ -9,8 +9,10 @@
 
 #include "TypingEngine.h"
 #include "EngineHelpers.h"
+#include "TypingAction.h"
 #include "VietnameseTables.h"
 #include <algorithm>
+#include <array>
 
 namespace NextKey {
 
@@ -22,32 +24,43 @@ namespace {
 
 // IsVowelChar is shared — defined in VietnameseTables.h
 
-// --- Telex key mapping ---
-constexpr Tone TelexKeyToTone(wchar_t c) noexcept {
-    switch (c) {
-        case L's': case L'S': return Tone::Acute;
-        case L'f': case L'F': return Tone::Grave;
-        case L'r': case L'R': return Tone::Hook;
-        case L'x': case L'X': return Tone::Tilde;
-        case L'j': case L'J': return Tone::Dot;
-        default: return Tone::None;
+// --- TypingAction helpers (G-3.2 dispatch foundation) ---
+// Replaces the per-mode TelexKeyToTone / VniKeyToTone / IsVniModifierKey
+// helpers — `ClassifyKey` (TypingAction.h) classifies the key once and
+// these helpers extract the post-classification subset PushChar still
+// needs.
+
+constexpr Tone ActionToTone(TypingAction a) noexcept {
+    switch (a) {
+        case TypingAction::ToneAcute: return Tone::Acute;
+        case TypingAction::ToneGrave: return Tone::Grave;
+        case TypingAction::ToneHook:  return Tone::Hook;
+        case TypingAction::ToneTilde: return Tone::Tilde;
+        case TypingAction::ToneDot:   return Tone::Dot;
+        default:                       return Tone::None;
     }
 }
 
-// --- VNI key mapping ---
-constexpr Tone VniKeyToTone(wchar_t c) noexcept {
-    switch (c) {
-        case L'1': return Tone::Acute;
-        case L'2': return Tone::Grave;
-        case L'3': return Tone::Hook;
-        case L'4': return Tone::Tilde;
-        case L'5': return Tone::Dot;
-        default:   return Tone::None;
+constexpr bool IsTelexModifierAction(TypingAction a) noexcept {
+    switch (a) {
+        case TypingAction::CircumflexA:
+        case TypingAction::CircumflexE:
+        case TypingAction::CircumflexO:
+        case TypingAction::HornW:
+        case TypingAction::HornInsertO:
+        case TypingAction::HornInsertU:
+        case TypingAction::StrokeD:
+            return true;
+        default:
+            return false;
     }
 }
 
-constexpr bool IsVniModifierKey(wchar_t c) noexcept {
-    return c >= L'6' && c <= L'9';
+constexpr bool IsVniModifierAction(TypingAction a) noexcept {
+    return a == TypingAction::VniCircumflex ||
+           a == TypingAction::VniHorn ||
+           a == TypingAction::VniBreve ||
+           a == TypingAction::VniStroke;
 }
 
 constexpr int ModifierIndex(Modifier mod) noexcept {
@@ -76,7 +89,12 @@ constexpr int ToneIndex(Tone tone) noexcept {
 // TypingEngine Implementation
 //=============================================================================
 
-TypingEngine::TypingEngine(const TypingConfig& config) : config_(config) {
+TypingEngine::TypingEngine(const TypingConfig& config)
+    : TypingEngine(config, Phonology::Phonotactics::Default()) {}
+
+TypingEngine::TypingEngine(const TypingConfig& config,
+                           const Phonology::IPhonotactics& phonotactics)
+    : config_(config), phonotactics_(phonotactics) {
     states_.reserve(8);
     rawInput_.reserve(12);
     Reset();
@@ -200,33 +218,31 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
+    // 1. Classify keystroke once (G-3.2 dispatch foundation). VNI digit
+    // sequences override to None so subsequent action checks treat the
+    // digit as literal — matches the pre-G-3 `!isVniDigitSequence` guards
+    // that gated VNI tone, VNI modifier, and clear-tone branches.
+    TypingAction action = ClassifyKey(lower, IsTelexMode(), IsVniMode());
+    if (isVniDigitSequence) action = TypingAction::None;
+
     // 1a. Clear tone: Telex 'z' / VNI '0'
-    if (!states_.empty() && !isVniDigitSequence) {
-        bool isClearToneKey = (IsTelexMode() && lower == L'z') ||
-                              (IsVniMode() && c == L'0');
-        if (isClearToneKey) {
-            if (config_.spellCheckEnabled && spellCheckDisabled_) {
-                ProcessChar(c);
-                UpdateSpellState();
-                return;
-            }
-            if (ProcessClearTone()) {
-                UpdateSpellState();
-                return;
-            }
+    if (action == TypingAction::ClearTone && !states_.empty()) {
+        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+            ProcessChar(c);
+            UpdateSpellState();
+            return;
+        }
+        if (ProcessClearTone()) {
+            UpdateSpellState();
+            return;
         }
     }
 
-    // 1b. Tone keys — determine tone from Telex or VNI key mapping
-    Tone requestedTone = Tone::None;
-    bool isTelexTone = false;
-    if (IsTelexMode() && !states_.empty()) {
-        requestedTone = TelexKeyToTone(c);
-        isTelexTone = (requestedTone != Tone::None);
-    }
-    if (requestedTone == Tone::None && IsVniMode() && !states_.empty() && !isVniDigitSequence) {
-        requestedTone = VniKeyToTone(c);
-    }
+    // 1b. Tone keys — derive Tone from action. isTelexTone distinguishes
+    // Telex letter keys (s/f/r/x/j) from VNI digits 1-5 — only Telex tones
+    // run the raw-prefix English block + zwjf bias hook below.
+    Tone requestedTone = states_.empty() ? Tone::None : ActionToTone(action);
+    bool isTelexTone = (requestedTone != Tone::None) && (lower < L'0' || lower > L'9');
 
     if (requestedTone != Tone::None) {
         // All "treat as literal" paths share the same two operations.
@@ -321,10 +337,10 @@ void TypingEngine::PushChar(wchar_t c) {
     }
 
     // 2a. Telex modifier keys (w, [], aa, ee, oo, dd)
-    if (IsTelexMode()) {
+    if (IsTelexMode() && IsTelexModifierAction(action)) {
         // Pre-check for 'd' modifier: if dd→đ would fire AND there's already a
         // consonant in coda position, adding 'd' forms an invalid coda like "pd".
-        if (lower == L'd' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
+        if (action == TypingAction::StrokeD && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
             size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
             if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
                 engProt_.bias = LanguageBias::HardEnglish;
@@ -372,9 +388,9 @@ void TypingEngine::PushChar(wchar_t c) {
     }
 
     // 2b. VNI modifier keys (6, 7, 8, 9) — only in VNI/Combined mode
-    if (IsVniMode() && IsVniModifierKey(c) && !isVniDigitSequence) {
+    if (IsVniMode() && IsVniModifierAction(action)) {
         // Pre-check for '9' (stroke): same coda check as Telex 'd'
-        if (c == L'9' && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
+        if (action == TypingAction::VniStroke && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
             size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
             if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
                 engProt_.bias = LanguageBias::HardEnglish;
@@ -1103,23 +1119,59 @@ void TypingEngine::RelocateToneToTarget() {
 }
 
 //-----------------------------------------------------------------------------
-// Tone Target Finding — stack-allocated, no heap alloc
+// Tone Target Finding — delegates rule logic to phonotactics_.
+// Builds a vowel sequence + state-index map from states_ (skipping cluster
+// consonants like the 'i' in "gi" and the 'u' in "qu"), composes each vowel
+// state without its tone diacritic so Phonotactics::Decompose sees only the
+// modifier+base char, then maps Phonotactics' returned vowel-sequence index
+// back to a state index.
 //-----------------------------------------------------------------------------
 
 size_t TypingEngine::FindToneTarget() const {
-    return config_.modernOrtho ? FindToneTargetModern() : FindToneTargetClassic();
-}
+    // Cap matches Phonotactics' internal vowel capacity; sequences past the cap
+    // are truncated identically on both sides so the index map stays consistent.
+    constexpr size_t kVowelCap = 16;
+    std::array<size_t, kVowelCap> vowelStateIdx{};
+    std::wstring vowelSeq;
+    vowelSeq.reserve(kVowelCap);
+    size_t vowelCount = 0;
+    size_t lastVowelStateIdx = SIZE_MAX;
 
-size_t TypingEngine::FindToneTargetClassic() const {
-    return FindToneTargetImpl(kDiphthongClassic, false);
-}
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (!states_[i].IsVowel()) continue;
+        if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
+        if (vowelCount >= kVowelCap) break;
 
-size_t TypingEngine::FindToneTargetModern() const {
-    return FindToneTargetImpl(kDiphthongModern, true);
-}
+        // Compose without tone and without case — Phonotactics::Decompose
+        // matches lowercase rendered modifier+base (e.g. L'\x01B0' for ư).
+        // Using towlower() on Vietnamese chars is locale-dependent and
+        // unreliable on Linux; clearing isUpper produces the canonical
+        // lowercase form directly.
+        CharState canonical = states_[i];
+        canonical.tone = Tone::None;
+        canonical.isUpper = false;
+        wchar_t composed = Compose(canonical);
+        if (composed == 0) continue;
 
-size_t TypingEngine::FindToneTargetImpl(const uint8_t table[6][6], bool checkTriphthongs) const {
-    return NextKey::FindToneTargetImpl(states_.data(), states_.size(), table, checkTriphthongs);
+        vowelSeq.push_back(composed);
+        vowelStateIdx[vowelCount++] = i;
+        lastVowelStateIdx = i;
+    }
+
+    if (vowelCount == 0) return SIZE_MAX;
+
+    // Coda: any state past the last nucleus vowel.
+    std::wstring coda;
+    for (size_t i = lastVowelStateIdx + 1; i < states_.size(); ++i) {
+        CharState canonical = states_[i];
+        canonical.isUpper = false;
+        wchar_t composed = Compose(canonical);
+        if (composed != 0) coda.push_back(composed);
+    }
+
+    size_t vowelIdx = phonotactics_.TonePosition(vowelSeq, coda, config_.modernOrtho);
+    if (vowelIdx == SIZE_MAX || vowelIdx >= vowelCount) return SIZE_MAX;
+    return vowelStateIdx[vowelIdx];
 }
 
 //-----------------------------------------------------------------------------
@@ -1273,8 +1325,8 @@ std::wstring TypingEngine::Commit() {
         // (from typing "user") are ValidPrefix during typing (allowing future
         // modifiers) but should auto-restore when the user commits.
         if (!shouldRestore && !states_.empty()) {
-            auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
-            shouldRestore = (result == SpellCheck::Result::ValidPrefix);
+            auto result = Phonology::ValidateSyllableState(states_.data(), states_.size(), config_.allowZwjf);
+            shouldRestore = (result == Phonology::SyllableState::ValidPrefix);
         }
 
         if (shouldRestore) {
@@ -1594,10 +1646,10 @@ bool TypingEngine::WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
         states_[clearCircumflexIdx].mod = Modifier::None;
         didClear = true;
     }
-    auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
+    auto result = Phonology::ValidateSyllableState(states_.data(), states_.size(), config_.allowZwjf);
     if (didClear) states_[clearCircumflexIdx].mod = Modifier::Circumflex;
     states_[targetIdx].mod = saved;
-    return result != SpellCheck::Result::Invalid;
+    return result != Phonology::SyllableState::Invalid;
 }
 
 }  // namespace NextKey

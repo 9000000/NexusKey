@@ -9,6 +9,11 @@
 // where C₁ is initial consonant, V is vowel nucleus, C₂ is final consonant.
 //
 // Template API is structural over CharState (TypingEngine's shared struct).
+//
+// Lives in `NextKey::Phonology` alongside the wstring-based IPhonotactics
+// interface; this is the structural-input half of the same rule engine.
+// Filename retained as SpellChecker.{h,cpp} until a follow-up commit
+// consolidates the validator under a Phonotactics-prefixed name.
 
 #pragma once
 
@@ -16,10 +21,10 @@
 #include <cstddef>
 
 namespace NextKey {
-namespace SpellCheck {
+namespace Phonology {
 
-/// Result of syllable validation
-enum class Result : uint8_t {
+/// Tri-state result of structural syllable validation.
+enum class SyllableState : uint8_t {
     Valid,        // Complete valid syllable
     ValidPrefix,  // Could become valid with more characters
     Invalid       // Cannot form a valid Vietnamese syllable
@@ -32,7 +37,7 @@ enum class Result : uint8_t {
 /// @param allowZwjf When true, accept z/j/w/f as valid initial consonants
 ///                  (z/j≡gi, w≡qu, f≡ph)
 template<typename CharStateT>
-Result Validate(const CharStateT* states, size_t count, bool allowZwjf = false) noexcept;
+SyllableState ValidateSyllableState(const CharStateT* states, size_t count, bool allowZwjf = false) noexcept;
 
-}  // namespace SpellCheck
+}  // namespace Phonology
 }  // namespace NextKey

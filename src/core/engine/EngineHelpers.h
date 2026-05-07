@@ -10,6 +10,7 @@
 #pragma once
 
 #include "SpellChecker.h"
+#include "Phonotactics.h"
 #include "EnglishProtection.h"
 #include "VietnameseTables.h"
 #include "core/config/TypingConfig.h"
@@ -113,8 +114,8 @@ inline void UpdateSpellCheck(const CharStateT* states, size_t count,
         spellCheckDisabled = false;
         return;
     }
-    auto result = SpellCheck::Validate(states, count, config.allowZwjf);
-    spellCheckDisabled = (result == SpellCheck::Result::Invalid);
+    auto result = Phonology::ValidateSyllableState(states, count, config.allowZwjf);
+    spellCheckDisabled = (result == Phonology::SyllableState::Invalid);
 }
 
 /// Check if auto-restore should return raw input instead of composed text.
@@ -482,103 +483,6 @@ template<typename CharStateT>
         if (!states[i].IsVowel()) return true;
     }
     return false;
-}
-
-/// Shared FindToneTarget algorithm — returns the index of the vowel that should
-/// receive the tone mark, using priority: P1 horn > P2 modified > P3 diphthong > P4 rightmost.
-/// Returns SIZE_MAX if no vowel found.
-template<typename CharStateT>
-[[nodiscard]] inline size_t FindToneTargetImpl(
-        const CharStateT* states, size_t count,
-        const uint8_t table[6][6], bool checkTriphthongs) noexcept {
-    size_t lastHornIdx = SIZE_MAX;
-    size_t firstModifiedIdx = SIZE_MAX;
-    size_t v3rd = SIZE_MAX;
-    size_t v2nd = SIZE_MAX;
-    size_t vLast = SIZE_MAX;
-    size_t vowelCount = 0;
-
-    for (size_t i = 0; i < count; ++i) {
-        if (!states[i].IsVowel()) continue;
-        if (IsClusterConsonant(states, count, i)) continue;
-
-        v3rd = v2nd;
-        v2nd = vLast;
-        vLast = i;
-        ++vowelCount;
-
-        if (states[i].IsHorn()) lastHornIdx = i;
-        if (firstModifiedIdx == SIZE_MAX && states[i].HasModifier())
-            firstModifiedIdx = i;
-    }
-
-    if (vowelCount == 0) return SIZE_MAX;
-
-    // Priority 1: Horn vowels (last one for ươ)
-    if (lastHornIdx != SIZE_MAX) return lastHornIdx;
-
-    // Priority 2: Other modified vowels (â, ê, ô, ă)
-    if (firstModifiedIdx != SIZE_MAX) return firstModifiedIdx;
-
-    // Priority 3: Diphthong/triphthong rules
-    if (vowelCount >= 2 && vLast == v2nd + 1) {
-        // Triphthongs (Modern only): tone on MIDDLE vowel
-        if (checkTriphthongs && vowelCount >= 3 && v3rd != SIZE_MAX &&
-            v2nd == v3rd + 1 && vLast == v2nd + 1) {
-            if (IsTriphthong(states[v3rd].base, states[v2nd].base, states[vLast].base))
-                return v2nd;
-        }
-
-        // Default: diphthong on last two vowels.
-        size_t firstIdx = v2nd;
-        size_t secondIdx = vLast;
-        int fi = DiphthongVowelIndex(states[v2nd].base);
-        int li = DiphthongVowelIndex(states[vLast].base);
-        bool shifted3Vowel = false;
-
-        // For 3+ contiguous vowels that are NOT a recognized triphthong
-        // (typo: e.g., gạo + extra 'i' → "gaoi"), prefer the FIRST two
-        // vowels of the cluster so the tone stays on the original diphthong
-        // instead of sliding onto the typo vowel. Only applies when the
-        // first pair has a valid rule; otherwise fall back to the last pair
-        // (preserves "uoi"→"uói"-style raw triphthongs without circumflex).
-        if (vowelCount >= 3 && v3rd != SIZE_MAX &&
-            v2nd == v3rd + 1 && vLast == v2nd + 1) {
-            int fiShift = DiphthongVowelIndex(states[v3rd].base);
-            // liShift = DiphthongVowelIndex(states[v2nd]) — already computed as fi.
-            if (fiShift >= 0 && fi >= 0 && table[fiShift][fi] != 0) {
-                li = fi;
-                fi = fiShift;
-                firstIdx = v3rd;
-                secondIdx = v2nd;
-                shifted3Vowel = true;
-            }
-        }
-
-        if (fi >= 0 && li >= 0) {
-            uint8_t rule = table[fi][li];
-
-            // Rule 3: Rising diphthongs (oa, oe) - SECOND with coda, FIRST without
-            if (rule == 3) {
-                // Shifted 3-vowel case with the "coda" being a REPEAT of the
-                // second vowel (e.g., "hoaa" = o,a,a from "hòa"+extra 'a') is a
-                // typo, not a real triphthong — tone must stay on the original
-                // first vowel (FIRST). For non-repeat vLast (e.g., "oai"→hoài),
-                // keep the standard coda check: vowel after secondIdx = SECOND.
-                if (shifted3Vowel && states[vLast].base == states[v2nd].base) {
-                    rule = 1;
-                } else {
-                    rule = (secondIdx + 1 < count) ? 2 : 1;
-                }
-            }
-
-            if (rule == 1) return firstIdx;    // tone on FIRST
-            if (rule == 2) return secondIdx;   // tone on SECOND
-        }
-    }
-
-    // Default: rightmost vowel
-    return vLast;
 }
 
 /// P4 guard for tone relocation: returns true if the target vowel was selected

@@ -282,7 +282,7 @@ ProcessWModifier()
 | Any char after ơ | → `ApplyAutoUO()` | Auto-horns preceding 'u' (u+ơ → ư+ơ) |
 | Every PushChar/Backspace | → `UpdateSpellState()` | Sets `spellCheckDisabled_` if invalid syllable |
 | `spellCheckDisabled_` = true | Tone keys become literal chars | Free marking blocked, tone blocked |
-| Free marking crosses vowels | → `SpellCheck::Validate()` | Tentative apply + validate, undo if invalid |
+| Free marking crosses vowels | → `Phonology::ValidateSyllableState()` | Tentative apply + validate, undo if invalid |
 
 ### State Model (CharState)
 
