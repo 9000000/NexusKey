@@ -216,7 +216,7 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 1. Literal digit sequence protection (VNI mode)
+    // Literal digit sequence protection (VNI mode)
     // If the user types a digit immediately following a literal digit,
     // it's highly likely they are typing a number sequence (e.g., E747).
     // Bypass VNI tone/modifier processing to insert the digit literally.
@@ -228,11 +228,16 @@ void TypingEngine::PushChar(wchar_t c) {
         }
     }
 
-    // 1. Classify keystroke once (G-3.2 dispatch foundation). VNI digit
-    // sequences override to None so subsequent action checks treat the
-    // digit as literal — matches the pre-G-3 `!isVniDigitSequence` guards
-    // that gated VNI tone, VNI modifier, and clear-tone branches.
-    TypingAction action = ClassifyKey(lower, IsTelexMode(), IsVniMode());
+    // 1. Classify keystroke. G-4 layers an optional per-key user override
+    // above the static rules: when customKeyMap[lower] is non-None (ASCII
+    // keys only), it wins; otherwise ClassifyKey provides the built-in
+    // Telex/VNI mapping.
+    const TypingAction overrideAction = (lower < 128)
+        ? config_.customKeyMap[static_cast<uint8_t>(lower)]
+        : TypingAction::None;
+    TypingAction action = (overrideAction != TypingAction::None)
+        ? overrideAction
+        : ClassifyKey(lower, IsTelexMode(), IsVniMode());
     if (isVniDigitSequence) action = TypingAction::None;
 
     // 1a. Clear tone: Telex 'z' / VNI '0'

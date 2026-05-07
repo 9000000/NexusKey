@@ -428,6 +428,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/SpellCheckerTest.cpp
     tests/PhonotacticsTest.cpp
     tests/TypingActionTest.cpp
+    tests/CustomKeyMapTest.cpp
     tests/CodeTableConverterTest.cpp
     tests/UpdateSecurityTest.cpp
     tests/EngineBenchmarkTest.cpp
