@@ -144,6 +144,26 @@ private:
     // and may call HandleAlphaKey/HandleVniDigitKey/HandleBackspace/InjectKey.
     [[nodiscard]] KeyOutcome HandleCommitUndo(DWORD vkCode, bool vnMode);
 
+    // H1c (extracted from ProcessKeyDown steps 3 / 3a-3d): English-mode short
+    // circuit + Vietnamese-mode pre-dispatch tracking. When !vnMode, runs the
+    // English-mode macro tracking block and returns Pass. When vnMode, updates
+    // auto-caps FSM, accumulates the macro buffer, handles temp-off-by-Esc, and
+    // attempts macro expansion on commit triggers — returning Eat/Pass on
+    // expansion match, Fallthrough otherwise so the dispatch chain runs next.
+    [[nodiscard]] KeyOutcome HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
+                                                bool macroEng, bool tempOffMacroEsc,
+                                                bool cachedShift, bool cachedCapsLock);
+
+    // H1c (extracted from ProcessKeyDown steps 4b-10): action dispatch chain.
+    // Late guards (tempEngineOff_ bypass, Ctrl/Alt/Win shortcut skip), then
+    // alpha / Telex bracket / VNI digit / backspace / commit-trigger / "other
+    // key with pending composition" / synth-pending BS re-inject. Returns Eat
+    // or Pass for every keystroke (final fallthrough returns Pass — original
+    // ProcessKeyDown's tail `return false`).
+    [[nodiscard]] KeyOutcome DispatchKeyAction(DWORD vkCode, bool cachedShift,
+                                                bool cachedCapsLock, bool cachedCtrl,
+                                                bool cachedAlt, bool cachedWin, bool macroOn);
+
     // Input engine interaction
     [[nodiscard]] bool HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock);
     [[nodiscard]] bool HandleVniDigitKey(DWORD vkCode); // VNI digit 1-9: push to engine, replace composition
