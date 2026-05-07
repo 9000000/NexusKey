@@ -1,6 +1,6 @@
 # NexusKey Refactor Status — Living Inventory
 
-> **Last refresh:** 2026-05-07 (post-cleanup #139, Main `64fb80f`)
+> **Last refresh:** 2026-05-07 (post H3 #140, Main `6ebc603`)
 > **Scope:** All architectural / cleanup refactor work. Excludes user-facing features (G-5/G-6 Sciter UI + keymap files, TSF Phase 2/3, etc.) — those track separately.
 > **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. Quick wins from both layers may bundle into a single cleanup PR.
 
@@ -14,7 +14,7 @@
 | App layer LOC | 25,496 (67%) |
 | Engine layer LOC | 5,419 |
 | TypingEngine.cpp | 1,662 LOC |
-| HookEngine.cpp | **3,615 LOC** (hottest file: 24 commits / 14 days) |
+| HookEngine.cpp | **3,582 LOC** (-33 vs pre-cleanup; hottest file: 24 commits / 14 days) |
 | `ProcessKeyDown` (HookEngine) | **557 LOC single function** — biggest in codebase |
 | GTest count | 1,477 / 1,477 PASS Linux (2.7s) |
 | TODO/FIXME density | 3 markers total in src/ (very low) |
@@ -37,6 +37,7 @@
 | TSF DLL hybrid update | `c1e9ce2` | 2026-04-22 | SharedState ABI gate + deferred DLL swap |
 | **Sprint 3 Path G G-1..G-4** | #134-#138 | 2026-05-07 | Phonotactics class, DI, TypingAction enum, unified ProcessModifier dispatch, customKeyMap engine hook |
 | **Post-Path-G cleanup** (H2 + H7 + T1 + T4) | #139 `64fb80f` | 2026-05-07 | Delete `HookEngine::CheckConfigEvent` dead code (H2); strip Sprint 2 D4/T3 history comments (H7); rename `SpellChecker → PhonotacticsValidator` (T1); verify Hot-path Fix 3 shipped (T4). H4 attempted then reverted (wontfix — member is logging adapter, not dup) |
+| **H3** atomic migration `cachedFocusedHwnd_` | #140 `6ebc603` | 2026-05-07 | Closes Pre-T3 Minor 1: `HWND` field → `std::atomic<HWND>` with `relaxed` memory order. Tuple race with `cachedFocusedClass_` (wstring) documented as benign in field comment. 4 stores + 2 loads updated. |
 
 ---
 
@@ -67,9 +68,9 @@
 |---|---|---|---|---|
 | H1 | **`ProcessKeyDown` 557-LOC god-method decompose** — split per dispatch class (printable / backspace / modifier / system) | Code review #24 + survey | 1-2 days | **HIGH (architectural)** |
 | ~~H2~~ | ~~**Delete dead code** `HookEngine::CheckConfigEvent()` + `configEvent_` member~~ | — | DONE | ✅ PR #139 `5f080ca` |
-| H3 | **`LowLevelMouseProc` race on `cachedFocusedHwnd_`** — write set in mouse callback races with `WinEventProc`. Options: atomic migration / MainThreadWorker defer / document benign | docs/TODO.md Pre-T3 Minor 1 | 1-2h | MEDIUM |
+| ~~H3~~ | ~~**`LowLevelMouseProc` race on `cachedFocusedHwnd_`**~~ | — | DONE | ✅ PR #140 `58d8f88` |
 | ~~H4~~ | ~~**Dual-route `TrackedSendInput` consolidate**~~ — REJECTED 2026-05-07: `HookEngine::TrackedSendInput` is NOT a duplicate — it's a logging adapter that wraps `Internal::TrackedSendInput` and emits `HOOK_LOG` on partial sends (renderer-drop diagnostic). Consolidation attempt at commit `794f38f` lost this observability and broke MSVC `/WX` (`[[nodiscard]]` warning C4834 at 6 call sites). Reverted at `66ae1dc`. The dual-route is justified — member adds value. | docs/TODO.md M3 | N/A | ❌ Wontfix |
-| H5 | **Macro extract to pure functions** — `ApplyAutoCapsMacro` (HookEngine.cpp:2778-2826) and `ResolveMacroMatch` (lines 2699-2747) → `src/core/MacroCase.h`. Linux unit-testable | docs/TODO.md + Code review #11 | 2-3h | MEDIUM |
+| H5 | **Macro extract to pure functions** — extract from `TryExpandMacro` (HookEngine.cpp:3205+): match logic at 3206-3254 (Linux-portable) + auto-caps logic at 3286-3340 (uses Win32 `CharUpperBuffW`/`CharLowerBuffW` for Vietnamese diacritics — **portability blocker**). Target: new `src/core/MacroCase.h`. Three options for portability: (A) callback inject `CaseMapper` interface; (B) explicit Vietnamese diacritic table; (C) extract match-only (~50% scope). docs/TODO.md line numbers (2778-2826, 2699-2747) are stale post-cleanup PRs. | docs/TODO.md + Code review #11 | 2-5h depending on option | MEDIUM. **Brainstorm needed before plan** — choose portability strategy. |
 | H6 | **Sprint 4 §3 SPSC ring + watchdog** — Rule #11 next-stage compliance | CODE_GOVERNANCE.md §3 | Sprint scale | LOW (roadmap) |
 | ~~H7~~ | ~~**Strip Sprint 2 D4/T3 history comments**~~ | — | DONE | ✅ PR #139 `4042dcc` |
 | H8 | **Sprint 1 deferred** — `WaitOnAddress` for configEpoch, ETW tracing, hook fast-path foreground detection | sprint-1-single-owner-refactor.md "Open items" | Sprint scale | LOW (roadmap) |
@@ -134,22 +135,24 @@ Verified by grep on Main `3ded489` (2026-05-07):
 
 ## Section G — Recommended next steps
 
-**Immediate (next session):**
-1. **Cleanup PR** — bundle H2 + H4 + H7 + T1 + T4. ~3 hours. Branch `cleanup/post-path-g`. Single PR with 5 atomic commits.
-2. Open GitHub issues triage — close any wontfix duplicates, re-triage bugs vs enhancements
+**Already shipped today (2026-05-07):** PR #138 (Path G G-4 customKeyMap), PR #139 (cleanup H2 + H7 + T1 + T4), PR #140 (H3 atomic migration). Plus inventory commits `ec821ee` + `b5350a7` + post-#140 refresh. Total ~5 PRs / ~30 commits / 1 active day.
 
-**Short-term (1-2 weeks):**
-3. **H1 — `ProcessKeyDown` decompose** — biggest architectural win. Brainstorm decomposition strategy first (per-handler vs state-machine vs continuation pattern), then plan + execute via subagent-driven workflow.
-4. **H3 — LowLevelMouseProc race fix** — pick atomic-migration option (lowest risk).
-5. **H5 — Macro extract** — enables Linux unit testing for Macro pipeline.
+**Immediate (next session — start here):**
+1. **H5 — Macro extract** — needs **brainstorm first** (3 portability options outlined in §C H5 row). Choose strategy → plan → execute. Realistic 2-5h depending on option chosen.
+2. **H1 — `ProcessKeyDown` decompose** — biggest architectural win remaining. Brainstorm decomposition strategy first (per-handler vs state-machine vs continuation pattern), then plan + execute via subagent-driven workflow. ~1-2 days.
 
-**Medium-term (after HookEngine done, per sequencing rule):**
-6. **T2/T3 — Phonotactics deepening** — onset agreement + N-group vowel-coda rules. Builds on Path G groundwork.
-7. **T5/T6 — engine bug triage** — `cafcs → các` and Issue #117.
+**Short-term (after H5 + H1):**
+3. **Sequencing rule satisfied → can pivot to TypingEngine TODOs.**
+4. **T2/T3 — Phonotactics deepening** — onset agreement + N-group vowel-coda rules. Builds on Path G groundwork.
+5. **T5/T6 — engine bug triage** — `cafcs → các` and Issue #117 `Lỗi → Lôĩ`.
 
 **Roadmap (defer until current backlog clears):**
-8. **H6 — Sprint 4 §3 SPSC ring + watchdog** — multi-week effort. Captured in CODE_GOVERNANCE.md §3.
-9. **H8 — Sprint 1 deferred** — WaitOnAddress / ETW / fast-path foreground detection.
+6. **H6 — Sprint 4 §3 SPSC ring + watchdog** — multi-week effort. Captured in CODE_GOVERNANCE.md §3.
+7. **H8 — Sprint 1 deferred** — WaitOnAddress / ETW / fast-path foreground detection.
+
+**General checklist:**
+- Open GitHub issues triage — close any wontfix duplicates, re-triage bugs vs enhancements (Issue #92 marked `wontfix` may be closable).
+- Cleanup local `sprint-3/fsm-engine` branch (cancelled) — `git branch -D sprint-3/fsm-engine`.
 
 ---
 

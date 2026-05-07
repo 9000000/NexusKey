@@ -10,7 +10,11 @@
 
 **Exception:** Quick wins from BOTH layers may bundle into a single cleanup PR. Bug fixes (T5/T6, new user-reported bugs) are NOT bound by the sequencing rule.
 
-**Recommended next:** Cleanup PR bundling `H2 + H4 + H7 + T1 + T4` (~3h, single branch). Then attack `H1 ProcessKeyDown decompose` as the major architectural win.
+**Recommended next (post 2026-05-07):**
+1. **H5 Macro extract** — brainstorm portability strategy (Win32 `CharUpperBuffW` is the blocker for Linux unit-testing) → plan → execute. 2-5h depending on option chosen.
+2. **H1 ProcessKeyDown decompose** — biggest architectural win remaining. ~1-2 days.
+
+**2026-05-07 shipped:** PR #138 (Path G G-4), PR #139 (cleanup H2+H7+T1+T4), PR #140 (H3 atomic migration). Sequencing rule on track — H1+H5 close out HookEngine before TypingEngine TODOs.
 
 ---
 
