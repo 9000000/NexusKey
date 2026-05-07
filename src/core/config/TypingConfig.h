@@ -3,9 +3,12 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
+
+#include "core/engine/TypingAction.h"
 
 namespace NextKey {
 
@@ -73,6 +76,13 @@ struct TypingConfig {
     bool macroTriggerTab = true;       // Kích hoạt bằng phím Tab
     bool macroTriggerDir = true;       // Kích hoạt bằng phím Mũi tên (Arrows)
     std::vector<std::wstring> spellExclusions;  // Spell check exclusion prefixes (e.g. "hđ", "đp")
+
+    /// Per-key user override (G-4). Index by ASCII code (`towlower(c)` of
+    /// the keystroke). Default-init = all `TypingAction::None`, which the
+    /// dispatcher treats as "no override → fall through to `ClassifyKey`".
+    /// G-5 will populate this from per-user keymap files; G-4 ships the
+    /// engine hook only.
+    std::array<TypingAction, 128> customKeyMap{};
 
     // Default constructor for compiled defaults (FR8 - engine autonomy)
     TypingConfig() = default;
