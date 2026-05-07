@@ -56,19 +56,25 @@ Phonotactics extensions to match `EngineHelpers::FindToneTargetImpl` semantics:
 
 Linux GTest **1440 / 1440 PASS**. The `EngineHelpers::FindToneTargetImpl` free function now has zero callers — dead code, kept for G-2.4 cleanup.
 
-### G-2.3.A — API rename (DONE 2026-05-07)
+### G-2.3 — Namespace unification under Phonology (DONE 2026-05-07)
 
-`Phonology::SyllableState` (alias of `SpellCheck::Result`) and `Phonology::ValidateSyllableState<CharStateT>` (inline template wrapper around `SpellCheck::Validate`) added in `Phonotactics.h`. Production callers (`EngineHelpers::UpdateSpellState`, `TypingEngine::Commit` auto-restore branch, `TypingEngine::WouldBeValidSyllable`) routed through the new entry point. Tests still call `SpellCheck::Validate` directly — they get migrated when `SpellChecker.{h,cpp}` is folded into `Phonotactics.cpp` (G-2.3.B).
+**G-2.3.A** added `Phonology::SyllableState` + `Phonology::ValidateSyllableState<CharStateT>` as aliases over `SpellCheck::*` and routed production callers (`EngineHelpers::UpdateSpellState`, `TypingEngine::Commit` ValidPrefix branch, `TypingEngine::WouldBeValidSyllable`) through the new entry point.
 
-Linux GTest **1440 / 1440 PASS**. Zero behavior change — the underlying validator is unchanged, only the public API contract moved into `Phonology::`.
+**G-2.3.B** flipped the underlying namespace: `SpellChecker.{h,cpp}` now lives under `NextKey::Phonology` directly (no aliases). `enum class Result` → `enum class SyllableState`; `template Validate` → `template ValidateSyllableState`. The structural validator and the wstring-based `IPhonotactics` interface now share one namespace, one rule engine. Filenames retained as `SpellChecker.{h,cpp}` until a follow-up commit consolidates the validator under a Phonotactics-prefixed name (G-2.4 cleanup).
 
-### NEXT — G-2.3.B (relocate SpellChecker rules into Phonotactics)
+Test files migrated: `tests/SpellCheckerTest.cpp` + `tests/FeatureOptionsTest.cpp` (18 references). Zero `SpellCheck::` references remain in the codebase.
+
+Linux GTest **1440 / 1440 PASS**. Zero behavior change — the underlying validator code is byte-identical, only namespace + names flipped.
+
+### NEXT — G-2.4 (cleanup) and beyond
 
 | Step | Goal |
 |---|---|
-| G-2.3.B | Move SpellChecker.cpp's ~800 LOC validator (vowel nucleus table `kVowelTable`, VC pair table `kVCPairRules`, onset parser `ParseInitialConsonant`, ZWJF alternates) into `Phonotactics.cpp` proper. Delete `SpellChecker.{h,cpp}` files (or stub for back-compat). Migrate `tests/SpellCheckerTest.cpp` + `tests/FeatureOptionsTest.cpp` from `SpellCheck::` → `Phonology::`. After this commit `Phonotactics` truly OWNS the rule per the brainstorm intent. |
-| G-2.4 | Delete `EngineHelpers::FindToneTargetImpl` free function (zero callers post-G-2.2). Audit `kDiphthong*` table consumers — keep tables in `VietnameseTables.h` (still used by `IsToneRelocBlockedByP4` + `EnglishProtection`). |
-| Tests | All 1440 stay green throughout the move. No new behavior — pure file relocation + namespace rename. |
+| G-2.4 | Delete `EngineHelpers::FindToneTargetImpl` free function (zero callers post-G-2.2). Optionally rename `SpellChecker.{h,cpp}` files to `PhonotacticsValidator.{h,cpp}` via `git mv` (preserves history). Audit `kDiphthong*` table consumers — keep tables in `VietnameseTables.h` (still used by `IsToneRelocBlockedByP4` + `EnglishProtection`). |
+| G-3 | Internal handler dispatch: `TypingAction` enum + ~20 extracted handlers + single dispatch table. PushChar uses `kHandlers[action]`. TypingEngine drops to ~1300 LOC. |
+| G-4 | `customKeyMap` field in `TypingConfig`. PushChar checks override before default Telex/VNI dispatch. |
+| G-5 | Sciter UI dialog + per-user `keymap_<name>.toml` files + conflict warnings + active-method selector. |
+| G-6 | Import/export Unikey + EVKey format compatibility. |
 
 ### Path G remaining phases (per brainstorm sign-off)
 
@@ -96,10 +102,10 @@ git checkout sprint-3/path-g
 cmake --build build-linux --target NextKeyTests
 ./build-linux/tests/NextKeyTests --gtest_brief=1   # 1440 PASS
 
-# G-2.3.B first step — survey symbols to relocate:
-grep -rn "SpellCheck::\|SpellChecker.h" src/core/engine/ tests/
-# Move ~800 LOC from SpellChecker.cpp → Phonotactics.cpp, rename SpellCheck:: → Phonology::,
-# delete SpellChecker.{h,cpp}, update tests.
+# G-2.4 first steps:
+grep -rn "FindToneTargetImpl" src/   # only definition left at EngineHelpers.h:491
+# Optional: git mv src/core/engine/SpellChecker.{h,cpp} → PhonotacticsValidator.{h,cpp}
+# Update CMakeLists + the 4 #include "SpellChecker.h" sites.
 ```
 
 ### Open items for anh

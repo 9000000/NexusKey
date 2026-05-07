@@ -13,7 +13,7 @@
 #include <cwctype>
 
 namespace NextKey {
-namespace SpellCheck {
+namespace Phonology {
 
 namespace {
 
@@ -445,14 +445,14 @@ bool TryModifiedVowels(const CharStateT* vowelStates, size_t vowelLen, Pred pred
 //=============================================================================
 
 template<typename CharStateT>
-Result ValidateDecomposition(const CharStateT* states, size_t count,
+SyllableState ValidateDecomposition(const CharStateT* states, size_t count,
                              size_t initialLen) {
     size_t pos = initialLen;
     size_t remaining = count - pos;
 
     // All chars consumed by consonant → ValidPrefix (awaiting vowel)
     if (remaining == 0) {
-        return Result::ValidPrefix;
+        return SyllableState::ValidPrefix;
     }
 
     // Parse vowel nucleus
@@ -467,7 +467,7 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
         // After initial consonant, next char must be a vowel
         // Check if it could be a valid 2/3-char consonant prefix
         // e.g., "th" → valid prefix, "bk" → invalid
-        return Result::Invalid;
+        return SyllableState::Invalid;
     }
 
     // Encode vowel slots
@@ -476,26 +476,26 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
 
     if (vowelLen == 1) {
         uint8_t bi = BaseIndex(vowelStates[0].base);
-        if (bi == 0xFF) return Result::Invalid;
+        if (bi == 0xFF) return SyllableState::Invalid;
         uint8_t mi = ModOrdinal(vowelStates[0].mod);
         vowelKey = Key1(VowelSlot(bi, mi));
     } else if (vowelLen == 2) {
         uint8_t b0 = BaseIndex(vowelStates[0].base);
         uint8_t b1 = BaseIndex(vowelStates[1].base);
-        if (b0 == 0xFF || b1 == 0xFF) return Result::Invalid;
+        if (b0 == 0xFF || b1 == 0xFF) return SyllableState::Invalid;
         vowelKey = Key2(VowelSlot(b0, ModOrdinal(vowelStates[0].mod)),
                         VowelSlot(b1, ModOrdinal(vowelStates[1].mod)));
     } else if (vowelLen == 3) {
         uint8_t b0 = BaseIndex(vowelStates[0].base);
         uint8_t b1 = BaseIndex(vowelStates[1].base);
         uint8_t b2 = BaseIndex(vowelStates[2].base);
-        if (b0 == 0xFF || b1 == 0xFF || b2 == 0xFF) return Result::Invalid;
+        if (b0 == 0xFF || b1 == 0xFF || b2 == 0xFF) return SyllableState::Invalid;
         vowelKey = Key3(VowelSlot(b0, ModOrdinal(vowelStates[0].mod)),
                         VowelSlot(b1, ModOrdinal(vowelStates[1].mod)),
                         VowelSlot(b2, ModOrdinal(vowelStates[2].mod)));
     } else {
         // 4+ consecutive vowels → invalid
-        return Result::Invalid;
+        return SyllableState::Invalid;
     }
 
     // Look up vowel in table
@@ -505,7 +505,7 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
         // Not an exact match — check if prefix of a valid combo
         if (vowelLen <= 2 && IsVowelPrefix(vowelKey, static_cast<int>(vowelLen))) {
             // Could still become valid with more vowels
-            if (pos == count) return Result::ValidPrefix;
+            if (pos == count) return SyllableState::ValidPrefix;
         }
 
         // Check if adding a modifier to any vowel slot would produce a valid nucleus.
@@ -519,9 +519,9 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
             }
             return false;
         });
-        if (found) return Result::ValidPrefix;
+        if (found) return SyllableState::ValidPrefix;
 
-        return Result::Invalid;
+        return SyllableState::Invalid;
     }
 
     // Vowel found — check what follows
@@ -529,7 +529,7 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
 
     if (remaining == 0) {
         // No final consonant — always valid
-        return Result::Valid;
+        return SyllableState::Valid;
     }
 
     // Try to parse final consonant
@@ -542,19 +542,19 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
             size_t finalLen = ParseFinalConsonant(&states[pos], remaining);
             return finalLen == remaining;
         });
-        if (canEndWithMod) return Result::ValidPrefix;
-        return Result::Invalid;
+        if (canEndWithMod) return SyllableState::ValidPrefix;
+        return SyllableState::Invalid;
     }
 
     size_t finalLen = ParseFinalConsonant(&states[pos], remaining);
     if (finalLen == 0) {
         // What follows isn't a valid final consonant
-        return Result::Invalid;
+        return SyllableState::Invalid;
     }
 
     if (pos + finalLen < count) {
         // Extra characters after final consonant
-        return Result::Invalid;
+        return SyllableState::Invalid;
     }
 
     // 'k' as final consonant is non-standard Vietnamese — only appears in
@@ -563,7 +563,7 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
     if (finalLen == 1 && states[pos].base == L'k') {
         bool validK = (vowelLen == 1 && vowelStates[0].base == L'a' &&
                        ModOrdinal(vowelStates[0].mod) == kBrev);
-        if (!validK) return Result::Invalid;
+        if (!validK) return SyllableState::Invalid;
     }
 
     // Check vowel + final consonant pair validity (VCPairList)
@@ -572,7 +572,7 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
     if (allowed != 0) {
         uint16_t finalBit = FinalConsonantBit(&states[pos], finalLen);
         if (finalBit != 0 && !(allowed & finalBit)) {
-            return Result::Invalid;
+            return SyllableState::Invalid;
         }
     }
 
@@ -585,12 +585,12 @@ Result ValidateDecomposition(const CharStateT* states, size_t count,
             // Acute is value 1, Dot is value 5 in both enums
             auto toneVal = static_cast<uint8_t>(tone);
             if (toneVal != 1 && toneVal != 5) {
-                return Result::Invalid;
+                return SyllableState::Invalid;
             }
         }
     }
 
-    return Result::Valid;
+    return SyllableState::Valid;
 }
 
 //=============================================================================
@@ -646,8 +646,8 @@ bool IsValidConsonantPrefix(const CharStateT* states, size_t count, bool allowZw
 //=============================================================================
 
 template<typename CharStateT>
-Result ValidateImpl(const CharStateT* states, size_t count, bool allowZwjf = false) noexcept {
-    if (count == 0) return Result::ValidPrefix;
+SyllableState ValidateImpl(const CharStateT* states, size_t count, bool allowZwjf = false) noexcept {
+    if (count == 0) return SyllableState::ValidPrefix;
 
     // First, try standard decomposition
     size_t initialLen = ParseInitialConsonant(states, count, allowZwjf);
@@ -660,25 +660,25 @@ Result ValidateImpl(const CharStateT* states, size_t count, bool allowZwjf = fal
             // Plain 'd' is a valid consonant
             initialLen = 1;
         } else {
-            return Result::Invalid;
+            return SyllableState::Invalid;
         }
     }
 
     // Special: if only consonants consumed and no vowels follow, check prefix validity
     if (initialLen > 0 && initialLen == count) {
         if (IsValidConsonantPrefix(states, count, allowZwjf)) {
-            return Result::ValidPrefix;
+            return SyllableState::ValidPrefix;
         }
-        return Result::Invalid;
+        return SyllableState::Invalid;
     }
 
     // After initial consonant, if next char is not a vowel, it might be invalid
     if (initialLen > 0 && initialLen < count && !states[initialLen].IsVowel()) {
         // Check if the first chars form a valid consonant-only prefix
         if (IsValidConsonantPrefix(states, count, allowZwjf)) {
-            return Result::ValidPrefix;
+            return SyllableState::ValidPrefix;
         }
-        return Result::Invalid;
+        return SyllableState::Invalid;
     }
 
     // Initial consonant + vowel compatibility (Vietnamese phonology):
@@ -698,50 +698,50 @@ Result ValidateImpl(const CharStateT* states, size_t count, bool allowZwjf = fal
         if (initialLen == 1) {
             wchar_t c0 = states[0].base;
             // k only before front vowels
-            if (c0 == L'k' && !isFrontVowel) return Result::Invalid;
+            if (c0 == L'k' && !isFrontVowel) return SyllableState::Invalid;
             // c not before front vowels (use k instead)
-            if (c0 == L'c' && isFrontVowel) return Result::Invalid;
+            if (c0 == L'c' && isFrontVowel) return SyllableState::Invalid;
             // q must be part of qu cluster — qa/qe/qi invalid, qu handled by
             // dual decomposition below. Only block when next char is NOT 'u'.
-            if (c0 == L'q' && firstVowel != L'u') return Result::Invalid;
+            if (c0 == L'q' && firstVowel != L'u') return SyllableState::Invalid;
         } else if (initialLen == 2) {
             // gh only before front vowels
             if (states[0].base == L'g' && states[1].base == L'h' && !isFrontVowel)
-                return Result::Invalid;
+                return SyllableState::Invalid;
         } else if (initialLen == 3) {
             // ngh only before front vowels
             if (states[0].base == L'n' && states[1].base == L'g' && states[2].base == L'h' && !isFrontVowel)
-                return Result::Invalid;
+                return SyllableState::Invalid;
         }
     }
 
-    Result result = ValidateDecomposition(states, count, initialLen);
+    SyllableState result = ValidateDecomposition(states, count, initialLen);
 
     // Handle gi/qu dual decomposition
     // "gi" + vowel → try C₁="gi" (2-char consonant) + V=rest
     //            AND C₁="g" (1-char consonant) + V="i"+rest
     if (count >= 2 && states[0].base == L'g' && states[1].base == L'i' && states[1].IsVowel()) {
         // Decomposition 1: g + i... (initialLen=1, vowel starts at 1)
-        Result r1 = ValidateDecomposition(states, count, 1);
+        SyllableState r1 = ValidateDecomposition(states, count, 1);
 
         // Decomposition 2: gi + ... (initialLen=2, vowel starts at 2)
         if (count > 2 && states[2].IsVowel()) {
-            Result r2 = ValidateDecomposition(states, count, 2);
+            SyllableState r2 = ValidateDecomposition(states, count, 2);
             // Return most permissive
-            if (r2 == Result::Valid || r1 == Result::Valid) {
-                result = Result::Valid;
-            } else if (r2 == Result::ValidPrefix || r1 == Result::ValidPrefix) {
-                result = Result::ValidPrefix;
+            if (r2 == SyllableState::Valid || r1 == SyllableState::Valid) {
+                result = SyllableState::Valid;
+            } else if (r2 == SyllableState::ValidPrefix || r1 == SyllableState::ValidPrefix) {
+                result = SyllableState::ValidPrefix;
             }
         } else if (count == 2) {
             // "gi" alone: g + vowel_i → valid (e.g., the word "gì")
             r1 = ValidateDecomposition(states, count, 1);
-            if (r1 == Result::Valid) result = Result::Valid;
-            else if (r1 == Result::ValidPrefix && result != Result::Valid) result = Result::ValidPrefix;
+            if (r1 == SyllableState::Valid) result = SyllableState::Valid;
+            else if (r1 == SyllableState::ValidPrefix && result != SyllableState::Valid) result = SyllableState::ValidPrefix;
         } else {
             // "gi" + consonant: try g + i + consonant
-            if (r1 == Result::Valid) result = Result::Valid;
-            else if (r1 == Result::ValidPrefix && result != Result::Valid) result = Result::ValidPrefix;
+            if (r1 == SyllableState::Valid) result = SyllableState::Valid;
+            else if (r1 == SyllableState::ValidPrefix && result != SyllableState::Valid) result = SyllableState::ValidPrefix;
         }
 
         // Override initial result with best
@@ -751,12 +751,12 @@ Result ValidateImpl(const CharStateT* states, size_t count, bool allowZwjf = fal
     // "qu" + vowel → try C₁="qu" (2-char) + V=rest
     if (count >= 2 && states[0].base == L'q' && states[1].base == L'u') {
         if (count > 2 && states[2].IsVowel()) {
-            Result r2 = ValidateDecomposition(states, count, 2);
-            if (r2 == Result::Valid) return Result::Valid;
-            if (r2 == Result::ValidPrefix && result != Result::Valid) return Result::ValidPrefix;
+            SyllableState r2 = ValidateDecomposition(states, count, 2);
+            if (r2 == SyllableState::Valid) return SyllableState::Valid;
+            if (r2 == SyllableState::ValidPrefix && result != SyllableState::Valid) return SyllableState::ValidPrefix;
         } else if (count == 2) {
             // "qu" alone → valid prefix
-            return Result::ValidPrefix;
+            return SyllableState::ValidPrefix;
         }
         return result;
     }
@@ -797,16 +797,16 @@ bool CheckToneModInvariant(const CharStateT* states, size_t count) noexcept {
 //=============================================================================
 
 template<typename CharStateT>
-Result Validate(const CharStateT* states, size_t count, bool allowZwjf) noexcept {
-    Result r = ValidateImpl(states, count, allowZwjf);
-    if (r != Result::Invalid && !CheckToneModInvariant(states, count)) {
-        r = Result::Invalid;
+SyllableState ValidateSyllableState(const CharStateT* states, size_t count, bool allowZwjf) noexcept {
+    SyllableState r = ValidateImpl(states, count, allowZwjf);
+    if (r != SyllableState::Invalid && !CheckToneModInvariant(states, count)) {
+        r = SyllableState::Invalid;
     }
     return r;
 }
 
 // Explicit instantiation — single CharState type shared across Telex/VNI/Combined modes.
-template Result Validate<CharState>(const CharState* states, size_t count, bool allowZwjf) noexcept;
+template SyllableState ValidateSyllableState<CharState>(const CharState* states, size_t count, bool allowZwjf) noexcept;
 
-}  // namespace SpellCheck
+}  // namespace Phonology
 }  // namespace NextKey

@@ -10,27 +10,10 @@
 #pragma once
 
 #include "IPhonotactics.h"
-#include "SpellChecker.h"
+#include "SpellChecker.h"  // SyllableState + ValidateSyllableState (same Phonology namespace)
 
 namespace NextKey {
 namespace Phonology {
-
-/// Tri-state result of structural syllable validation. Currently aliased to
-/// SpellCheck::Result; the underlying enum lives in SpellChecker.h for now
-/// and will be folded into this namespace when G-2.3.B moves the validator
-/// rules out of SpellChecker.cpp into Phonotactics.cpp.
-using SyllableState = SpellCheck::Result;
-
-/// Validate a sequence of CharState as a Vietnamese syllable. Returns
-/// SyllableState::Valid for a complete syllable, ValidPrefix for a prefix
-/// that can still extend, Invalid otherwise. Currently delegates to
-/// SpellCheck::Validate; production callers should route through this entry
-/// point so the future rule migration is transparent.
-template<typename CharStateT>
-[[nodiscard]] inline SyllableState ValidateSyllableState(
-        const CharStateT* states, size_t count, bool allowZwjf = false) noexcept {
-    return SpellCheck::Validate(states, count, allowZwjf);
-}
 
 class Phonotactics final : public IPhonotactics {
 public:
