@@ -149,10 +149,10 @@ private:
     bool HandleVniCircumflex(TypingAction action, wchar_t c);       // VNI 6
     bool HandleVniBreve(TypingAction action, wchar_t c);             // VNI 8
 
-    // Internal helpers used by Handle* wrappers above. The Modifier-
-    // parameterised VNI helper stays here (rather than splitting per-
-    // modifier) so the cross-vowel scan logic isn't duplicated.
-    bool ProcessVniHornModifier(wchar_t c);
+    // ProcessVniVowelModifier is the shared backing impl for VniCircumflex
+    // and VniBreve — kept Modifier-parameterised so the cross-vowel scan
+    // isn't duplicated. HandleVniCircumflex / HandleVniBreve are the
+    // dispatch entry points that supply the right Modifier.
     bool ProcessVniVowelModifier(Modifier targetMod, wchar_t key);
 
     // Find target for tone/modifier application — delegates to phonotactics_.
@@ -168,12 +168,6 @@ private:
     // Move tone to correct target after modifier changes priority
     // Example: "chuanr" + a → tone moves from u to â (circumflex has higher priority)
     void RelocateToneToTarget();
-
-    // W-Modifier processing (explicit priority order)
-    bool ProcessWModifier(wchar_t c);
-
-    // D-Modifier processing (dd/d9 → đ)
-    bool ProcessDModifier(wchar_t c);
 
     // QU Cluster detection (qu is consonant cluster, u is not vowel)
     bool IsInQUCluster() const;

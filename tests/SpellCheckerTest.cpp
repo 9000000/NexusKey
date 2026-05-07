@@ -363,7 +363,7 @@ TEST_F(TelexSpellCheckTest, ValidWord_Duoc) {
     // d → state [d]
     // u → state [d, u]
     // o → state [d, u, o]
-    // w → ProcessWModifier: u+o pattern → horn on o → [d, u, ơ] → AutoUO → [d, ư, ơ]
+    // w → HandleHornW: u+o pattern → horn on o → [d, u, ơ] → AutoUO → [d, ư, ơ]
     // c → ProcessChar [d, ư, ơ, c]
     // s → ProcessTone: acute on ơ → [d, ư, ớ, c] → "dước"
     // Actually 'd' at start has no modifier, so it's just 'd' not 'đ'
