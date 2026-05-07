@@ -3207,13 +3207,15 @@ bool HookEngine::IsMacroTrigger(DWORD vkCode) const {
 HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
     Win32CaseMapper mapper;
     Macro::PlanInputs inputs{
-        rawMacroBuffer_, previousComposition_, previousEncodedWidths_,
-        macroTable_,
-        macroCrossCommit_,
-        currentCodeTable_,
-        autoCapsMacro_.load(std::memory_order_acquire),
-        triggerChar,
-        kMacroClipboardThreshold,
+        .rawMacroBuffer        = rawMacroBuffer_,
+        .previousComposition   = previousComposition_,
+        .previousEncodedWidths = previousEncodedWidths_,
+        .macroTable            = macroTable_,
+        .macroCrossCommit      = macroCrossCommit_,
+        .currentCodeTable      = currentCodeTable_,
+        .autoCapsEnabled       = autoCapsMacro_.load(std::memory_order_acquire),
+        .triggerChar           = triggerChar,
+        .clipboardThreshold    = kMacroClipboardThreshold,
     };
     auto plan = Macro::Plan(inputs, mapper);
     if (!plan.matched) return MacroResult::NoMatch;

@@ -146,13 +146,14 @@ std::wstring ExpandEscapesForClipboard(std::wstring_view expansion) {
 std::vector<Segment> BuildSegments(std::wstring_view expansion, CodeTable codeTable) {
     std::vector<Segment> segments;
     Segment cur{};
+    cur.text.reserve(expansion.size());
     auto flush = [&]() {
         if (!cur.text.empty()) { segments.push_back(std::move(cur)); cur = {}; }
     };
     for (std::size_t i = 0; i < expansion.size(); ++i) {
         if (expansion[i] == L'\\' && i + 1 < expansion.size() && expansion[i + 1] == L'n') {
             flush();
-            segments.push_back(Segment{true, {}});
+            segments.push_back(Segment{.isReturn = true});
             ++i;
             continue;
         }

@@ -31,7 +31,7 @@ public:
 struct PlanInputs {
     const std::wstring& rawMacroBuffer;
     const std::wstring& previousComposition;
-    const std::vector<uint8_t>& previousEncodedWidths;
+    const std::vector<uint8_t>& previousEncodedWidths;   // Only read when currentCodeTable != Unicode
     const std::unordered_map<std::wstring, std::wstring>& macroTable;
     bool macroCrossCommit;
     CodeTable currentCodeTable;

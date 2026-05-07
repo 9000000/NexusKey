@@ -32,14 +32,23 @@ struct PlanFixture {
     std::size_t threshold = 200;
 
     [[nodiscard]] MacroPlan Run() const {
-        PlanInputs in{raw, prevComp, widths, table, crossCommit, codeTable,
-                      autoCaps, trigger, threshold};
+        PlanInputs in{
+            .rawMacroBuffer        = raw,
+            .previousComposition   = prevComp,
+            .previousEncodedWidths = widths,
+            .macroTable            = table,
+            .macroCrossCommit      = crossCommit,
+            .currentCodeTable      = codeTable,
+            .autoCapsEnabled       = autoCaps,
+            .triggerChar           = trigger,
+            .clipboardThreshold    = threshold,
+        };
         return Plan(in, mapper);
     }
 };
 
 // -------------------------------------------------------------------------
-// Task 4b: PlanMatchPrioritiesTest + PlanStoredKeyCaseRuleTest (9 tests)
+// Match priorities + stored-key case rule
 // -------------------------------------------------------------------------
 
 TEST(PlanMatchPrioritiesTest, FullBufferExact) {
@@ -138,7 +147,7 @@ TEST(PlanStoredKeyCaseRuleTest, LowercaseKeyAcceptsAnyCase) {
 }
 
 // -------------------------------------------------------------------------
-// Task 4c: PlanBsCountTest (5 tests)
+// Backspace count — covers all five branches of the bs-count tree
 // -------------------------------------------------------------------------
 
 TEST(PlanBsCountTest, MatchedViaCompositionUnicode) {
@@ -198,8 +207,38 @@ TEST(PlanBsCountTest, DefaultBranchWithTrigger) {
     EXPECT_EQ(p.bsCount, 3u);   // 4 - 1 (trigger), default branch
 }
 
+TEST(PlanBsCountTest, RawMatchWithNonEmptyPrevCompUnicode) {
+    // Raw-buffer match (P1) with prevComp non-empty + non-crossCommit:
+    // bsCount comes from previousComposition.size(), not rawMacroBuffer.size().
+    PlanFixture f;
+    f.table[L"btw"] = L"by the way";
+    f.raw = L"btw";
+    f.prevComp = L"hoa";       // 3 Unicode chars displayed on screen
+    f.crossCommit = false;
+    f.trigger = L' ';
+    f.codeTable = CodeTable::Unicode;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.bsCount, 3u);   // previousComposition.size()
+}
+
+TEST(PlanBsCountTest, RawMatchWithNonEmptyPrevCompTcvn3Widths) {
+    // Same branch, non-Unicode encoding: bsCount sums previousEncodedWidths.
+    PlanFixture f;
+    f.table[L"btw"] = L"by the way";
+    f.raw = L"btw";
+    f.prevComp = L"hoa";
+    f.crossCommit = false;
+    f.trigger = L' ';
+    f.codeTable = CodeTable::TCVN3;
+    f.widths = {1, 2, 1};   // 4 bytes total under encoding
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.bsCount, 4u);
+}
+
 // -------------------------------------------------------------------------
-// Task 4d: PlanAutoCapsDecisionTest + PlanAutoCapsEscapeTest (8 tests)
+// Auto-caps — decision gates and \n-escape preservation
 // -------------------------------------------------------------------------
 
 TEST(PlanAutoCapsDecisionTest, AutoCapsDisabledNoTransform) {
@@ -293,7 +332,7 @@ TEST(PlanAutoCapsEscapeTest, AllUpperPlainNStillUppercases) {
 }
 
 // -------------------------------------------------------------------------
-// Task 4e: PlanUseClipboardTest (3 tests)
+// useClipboard threshold
 // -------------------------------------------------------------------------
 
 TEST(PlanUseClipboardTest, UnicodeAboveThresholdSetsClipboardTrue) {
@@ -336,7 +375,7 @@ TEST(PlanUseClipboardTest, NonUnicodeAlwaysSendInputRegardlessOfSize) {
 }
 
 // -------------------------------------------------------------------------
-// Tasks 2 & 3: ClipboardEscapesTest + BuildSegmentsTest (unchanged)
+// Clipboard escape expansion + segment builder
 // -------------------------------------------------------------------------
 
 TEST(ClipboardEscapesTest, EmptyInput) {
