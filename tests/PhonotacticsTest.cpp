@@ -7,6 +7,8 @@
 #include <gtest/gtest.h>
 #include "core/engine/IPhonotactics.h"
 #include "core/engine/Phonotactics.h"
+#include "core/engine/TypingEngine.h"
+#include "core/config/TypingConfig.h"
 
 namespace NextKey {
 namespace Phonology {
@@ -203,6 +205,38 @@ TEST_F(PhonotacticsCanComplete, ClosedVowelPlusVowelRejected) {
 TEST_F(PhonotacticsCanComplete, NonsenseClusterRejected) {
     // "bcd" — no vowel, can't form syllable.
     EXPECT_FALSE(phon_.CanComplete(L"bcd"));
+}
+
+//=============================================================================
+// TypingEngine DI plumbing — verifies G-2.1 wiring:
+// TypingEngine accepts a custom IPhonotactics via ctor, default-binds to
+// Phonotactics::Default() singleton, behavior unchanged from G-1 baseline.
+//=============================================================================
+
+TEST(TypingEngineDI, AcceptsCustomPhonotactics) {
+    Phonotactics customPhonotactics;
+    TypingConfig config;
+    TypingEngine engine(config, customPhonotactics);
+    // Smoke: engine constructible + functional through DI ctor.
+    engine.PushChar(L'a');
+    EXPECT_EQ(engine.Peek(), L"a");
+}
+
+TEST(TypingEngineDI, SingleArgCtorBindsDefaultPhonotactics) {
+    // Existing single-arg ctor must still compile and behave identically;
+    // it delegates to Phonotactics::Default() internally.
+    TypingConfig config;
+    TypingEngine engine(config);
+    engine.PushChar(L'a');
+    EXPECT_EQ(engine.Peek(), L"a");
+}
+
+TEST(PhonotacticsDefault, ReturnsStableSingleton) {
+    // Default() must return the same instance every call (singleton lifetime
+    // covers any TypingEngine that bound to it).
+    const Phonotactics& a = Phonotactics::Default();
+    const Phonotactics& b = Phonotactics::Default();
+    EXPECT_EQ(&a, &b);
 }
 
 }  // namespace

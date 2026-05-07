@@ -283,6 +283,11 @@ struct ParsedSyllable {
 // IPhonotactics implementation
 // =============================================================================
 
+const Phonotactics& Phonotactics::Default() noexcept {
+    static const Phonotactics instance;
+    return instance;
+}
+
 size_t Phonotactics::TonePosition(
         std::wstring_view vowelSeq,
         std::wstring_view coda,

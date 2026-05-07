@@ -76,7 +76,12 @@ constexpr int ToneIndex(Tone tone) noexcept {
 // TypingEngine Implementation
 //=============================================================================
 
-TypingEngine::TypingEngine(const TypingConfig& config) : config_(config) {
+TypingEngine::TypingEngine(const TypingConfig& config)
+    : TypingEngine(config, Phonology::Phonotactics::Default()) {}
+
+TypingEngine::TypingEngine(const TypingConfig& config,
+                           const Phonology::IPhonotactics& phonotactics)
+    : config_(config), phonotactics_(phonotactics) {
     states_.reserve(8);
     rawInput_.reserve(12);
     Reset();

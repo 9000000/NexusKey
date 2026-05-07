@@ -22,6 +22,11 @@ public:
     Phonotactics(const Phonotactics&) = delete;
     Phonotactics& operator=(const Phonotactics&) = delete;
 
+    /// Returns the process-wide default Phonotactics instance. Stateless and
+    /// thread-safe; used as the implicit dependency for callers that don't
+    /// inject a custom IPhonotactics (e.g. TypingEngine's single-arg ctor).
+    [[nodiscard]] static const Phonotactics& Default() noexcept;
+
     [[nodiscard]] size_t TonePosition(
         std::wstring_view vowelSeq,
         std::wstring_view coda,

@@ -30,15 +30,25 @@ Linux GTest **1434 / 1434 PASS** (1409 baseline + 25 new). Build clean. Windows 
 - **Shifted-3-vowel typo rule** in `EngineHelpers::FindToneTargetImpl` (e.g. "hoaa", "gaoi" with vowel-repeat coda) — couples to CharState concept of which vowel carries the modifier; revisit when G-2 has the call sites.
 - **Issue #117 (`Lỗi → Lôĩ` fast typing)** — explicitly out of Path G; separate Sprint 1/2 timing-class follow-up.
 
-### NEXT — G-2 (refactor TypingEngine to USE Phonotactics)
+### G-2.1 — DI plumbing (DONE 2026-05-07)
+
+`Phonotactics::Default()` static accessor returns process-wide stateless singleton. `TypingEngine` gains 2-arg ctor `(const TypingConfig&, const Phonology::IPhonotactics&)`; existing 1-arg ctor delegates with `Phonotactics::Default()` so all 30+ existing call sites (EngineFactory, tests, dialogs) compile unchanged. Member `phonotactics_` stored as `const IPhonotactics&` — reference, not value, for swappability per CODING_RULES §4.2.
+
+3 new tests in `PhonotacticsTest.cpp`:
+- `TypingEngineDI.AcceptsCustomPhonotactics` — DI ctor compile + smoke
+- `TypingEngineDI.SingleArgCtorBindsDefaultPhonotactics` — backwards compat
+- `PhonotacticsDefault.ReturnsStableSingleton` — singleton identity
+
+Linux GTest **1437 / 1437 PASS** (1434 baseline + 3 DI). `phonotactics_` stored but NOT yet called — that lands in G-2.2.
+
+### NEXT — G-2.2 (replace FindToneTarget* callers)
 
 | Step | Goal |
 |---|---|
-| G-2.1 | DI: add `IPhonotactics&` constructor injection to `TypingEngine`, default to `Phonotactics` instance. Per CODING_RULES §4.2. |
-| G-2.2 | Replace `FindToneTarget*` callers in `TypingEngine.cpp` (5 call sites at lines 240, 263, 455, 486, 1088) → derive `vowelSeq` + `coda` from `states_` then call `phonotactics_.TonePosition(...)`. |
+| G-2.2 | Replace `FindToneTarget*` callers in `TypingEngine.cpp` (5 call sites at lines 240, 263, 455, 486, 1088) → derive `vowelSeq` + `coda` from `states_` then call `phonotactics_.TonePosition(...)`. Tricky bit: TypingEngine internal CharState has explicit `mod` field; Phonotactics works on rendered Vietnamese chars. Need a small `BuildVowelSeqFromStates(states_)` helper that calls `Compose()` on each vowel state and concatenates. |
 | G-2.3 | Replace `SpellCheck::Validate` use in spell-check gate → `Phonotactics::IsValidSyllable` / `CanComplete`. Auto-exclude shrinks `spell_exclusions` list. |
 | G-2.4 | Decommission `EngineHelpers::FindToneTargetImpl` once all callers migrated; keep `kDiphthong*` tables in `VietnameseTables.h` (single source of truth). |
-| Tests | All 1409 baseline TelexEngine/SpellChecker tests stay green. Add Phonotactics integration tests showing TypingEngine produces the same output via injected interface. |
+| Tests | All 1437 stay green. Add Phonotactics integration tests showing TypingEngine produces the same output via injected interface (mock IPhonotactics that records calls). |
 
 ### Path G remaining phases (per brainstorm sign-off)
 
@@ -64,17 +74,17 @@ Linux GTest **1434 / 1434 PASS** (1409 baseline + 25 new). Build clean. Windows 
 ```bash
 git checkout sprint-3/path-g
 cmake --build build-linux --target NextKeyTests
-./build-linux/tests/NextKeyTests --gtest_brief=1   # 1434 PASS
+./build-linux/tests/NextKeyTests --gtest_brief=1   # 1437 PASS
 
-# G-2.1 first step:
+# G-2.2 first step:
 grep -n "FindToneTarget\b" src/core/engine/TypingEngine.cpp
 # 5 call sites at lines 240, 263, 455, 486, 1088
 ```
 
 ### Open items for anh
 
-- **Windows MSVC verification pending.** Anh rebuild from WSL after pulling — most-likely warning surface is `[[nodiscard]]` placement on virtual `noexcept` overrides under `/W4 /WX`. Em fixes inline.
-- **G-2 scope decision** — wire Phonotactics into TypingEngine via DI (preferred: matches §4.2) or via free-function adapter (less invasive)? Default to DI unless anh push back.
+- **Windows MSVC verification pending.** Anh rebuild from WSL after pulling — most-likely warning surface is `[[nodiscard]]` placement on virtual `noexcept` overrides under `/W4 /WX`, plus `const IPhonotactics& phonotactics_` member-init order. Em fixes inline.
+- **G-2 scope decision** — DI locked per brainstorm sign-off. G-2.1 plumbing landed; G-2.2 is the substantive swap.
 
 ---
 

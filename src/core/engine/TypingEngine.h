@@ -10,6 +10,7 @@
 #include "EngineHelpers.h"
 #include "SpellChecker.h"
 #include "EnglishProtection.h"
+#include "Phonotactics.h"
 #include "core/config/TypingConfig.h"
 #include <vector>
 #include <string>
@@ -83,6 +84,13 @@ class TypingEngine : public IInputEngine {
 public:
     TypingEngine() : TypingEngine(TypingConfig{}) {}
     explicit TypingEngine(const TypingConfig& config);
+    /// DI ctor — accepts a custom phonotactics rule engine. Lets tests inject
+    /// mocks and lets future engines (e.g. user-defined keymaps) supply their
+    /// own rule set. The reference must outlive this TypingEngine; the
+    /// single-arg ctor binds it to `Phonology::Phonotactics::Default()`, a
+    /// static singleton with process lifetime.
+    TypingEngine(const TypingConfig& config,
+                 const Phonology::IPhonotactics& phonotactics);
     ~TypingEngine() override = default;
 
     TypingEngine(const TypingEngine&) = delete;
@@ -186,6 +194,7 @@ private:
     std::vector<CharState> states_;   // Internal state buffer
     std::vector<wchar_t> rawInput_;   // Raw keys for escape
     TypingConfig config_;
+    const Phonology::IPhonotactics& phonotactics_;  // DI rule engine (G-2)
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
     QuickConsonantState qc_;              // Quick consonant expansion state
     EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_
