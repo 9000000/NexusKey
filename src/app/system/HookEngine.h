@@ -122,6 +122,17 @@ private:
     bool ProcessKeyDown(DWORD vkCode, DWORD scanCode, DWORD flags);
     bool ProcessKeyUp(DWORD vkCode, DWORD flags);
 
+    // H1a: outcome of HandleCommitUndo. Fallthrough = continue ProcessKeyDown
+    // with normal flow; Eat = ProcessKeyDown returns true (key consumed);
+    // Pass = ProcessKeyDown returns false (key passes through to app).
+    enum class CommitUndoOutcome : uint8_t { Eat, Pass, Fallthrough };
+
+    // H1a (extracted from ProcessKeyDown step 2d): commit-undo state machine
+    // (Idle/Ready/Primed) — handles backspace-into-committed-word replay.
+    // Mutates commitUndoState_/pendingTriggerCount_/macroCrossCommit_/rawMacroBuffer_
+    // and may call HandleAlphaKey/HandleVniDigitKey/HandleBackspace/InjectKey.
+    [[nodiscard]] CommitUndoOutcome HandleCommitUndo(DWORD vkCode, bool vnMode);
+
     // Input engine interaction
     [[nodiscard]] bool HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock);
     [[nodiscard]] bool HandleVniDigitKey(DWORD vkCode); // VNI digit 1-9: push to engine, replace composition
