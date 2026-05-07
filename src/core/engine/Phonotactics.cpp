@@ -169,8 +169,9 @@ constexpr std::wstring_view kValidCodas[] = {
 }
 
 // =============================================================================
-// Core priority logic for tone placement (mirrors EngineHelpers FindToneTargetImpl
-// but operates on rendered wstring_view rather than CharState[]).
+// Core priority logic for tone placement: P1 horn > P2 modified > P3 diphthong /
+// triphthong > P4 rightmost. Operates on a rendered wstring_view of the vowel
+// nucleus (Decompose maps each char to base + modifier).
 // =============================================================================
 [[nodiscard]] size_t ComputeTonePosition(
         std::wstring_view vowelSeq,
@@ -222,8 +223,7 @@ constexpr std::wstring_view kValidCodas[] = {
         bool shifted = false;
 
         // Shift onto first two of a 3-vowel cluster when those have a diphthong
-        // rule. Mirrors EngineHelpers::FindToneTargetImpl's typo handling for
-        // cases like "gaoi" (gạo + extra i) and classic "oai".
+        // rule. Handles typo cases like "gaoi" (gạo + extra i) and classic "oai".
         if (count >= 3) {
             int shiftFirstIndex = NextKey::DiphthongVowelIndex(vowels[count - 3].base);
             if (shiftFirstIndex >= 0 && firstDiphIndex >= 0) {
