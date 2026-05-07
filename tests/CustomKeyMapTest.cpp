@@ -178,7 +178,7 @@ class CustomKeyMapAllActions
     : public CustomKeyMapTest,
       public ::testing::WithParamInterface<TypingAction> {};
 
-TEST_P(CustomKeyMapAllActions, EveryTypingActionRoundtrips) {
+TEST_P(CustomKeyMapAllActions, EveryTypingActionNoThrow) {
     const TypingAction action = GetParam();
     ASSERT_NE(action, TypingAction::None) << "G7 only iterates non-None actions";
 
