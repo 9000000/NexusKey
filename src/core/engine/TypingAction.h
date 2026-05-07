@@ -6,7 +6,7 @@
 //
 // Action vocabulary for TypingEngine dispatch and (future) per-user keymap.
 // Header is intentionally dependency-free so TypingConfig can hold a
-// `customKeyMap: array<TypingAction, 256>` without circular includes.
+// `customKeyMap: array<TypingAction, 128>` without circular includes.
 
 #pragma once
 
