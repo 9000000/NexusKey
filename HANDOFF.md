@@ -1,6 +1,76 @@
 # NexusKey Refactor — Sprint 1 Handoff (Notepad 11/11, Chrome 10/11, D13 next)
 
-## 2026-05-07 — Sprint 3 Path G, G-1 LANDED (CURRENT PICKUP NOTE)
+## 2026-05-07 — Sprint 3 Path G G-3 COMPLETE (CURRENT PICKUP NOTE)
+
+**Main HEAD:** `56f48ed` (PR #137 merged). All Path G G-1..G-3.6 shipped via 4 PRs:
+
+| PR  | Merge sha | Scope |
+|-----|-----------|-------|
+| #134 | `b73b6d2` | G-1 (Phonotactics class) + G-2.1..G-2.3 (FindToneTarget delegation, namespace flip) + G-2.4 (dead code) + G-3.1 (TypingAction enum + ClassifyKey) + G-3.2 (PushChar action dispatch) |
+| #135 | `fa4ee91` | G-3.3 (extract HandleHornInsert{O,U} + HandleAdjacentCircumflex) + G-3.4 (symmetric VNI ProcessVniModifier) |
+| #136 | `a1039d7` | G-3.4 polish (parallel-agent review fixes) + G-3.5 (unified ProcessModifier; Telex+VNI dispatchers collapsed; uniform Handle* sig; 5 wrappers) |
+| #137 | `56f48ed` | G-3.6 (inline ProcessWModifier/ProcessDModifier/ProcessVniHornModifier into HandleHornW/StrokeD/VniHorn — drops 3 thin wrappers) |
+
+**Final dispatch shape:**
+
+```
+PushChar(c)
+  └─ ClassifyKey(lower, isTelex, isVni)  → TypingAction          (TypingAction.h)
+     └─ ProcessModifier(action, c)        → switch(TypingAction)  (TypingEngine.cpp)
+        ├─ HandleHornInsert(action, c)        ← Telex `[`/`]`     (action picks bracket+vowel)
+        ├─ HandleAdjacentCircumflex(action,c) ← Telex aa/ee/oo + cross-vowel free-marking
+        ├─ HandleHornW(action, c)             ← Telex w (P1-P8)
+        ├─ HandleStrokeD(action, c)           ← Telex dd / VNI 9
+        ├─ HandleVniHorn(action, c)           ← VNI 7 (uo pair + standalone)
+        ├─ HandleVniCircumflex(action, c)     ← VNI 6 (wraps ProcessVniVowelModifier)
+        └─ HandleVniBreve(action, c)          ← VNI 8 (wraps ProcessVniVowelModifier)
+```
+
+Six native handlers + two thin VNI vowel wrappers (kept so the cross-vowel scan in ProcessVniVowelModifier isn't duplicated per Modifier). 18 user-mappable TypingAction values; tone keys (ClearTone + 5 tones) handled inline in PushChar.
+
+**Verification:** Linux GTest 1450/1450 PASS through every PR. Windows MSVC clean per @phatMT97 local verify.
+
+**Test counts on Main:** 1440 baseline (pre-G-1) + 25 PhonotacticsTest (G-1) + 10 TypingActionClassifyKey (G-3.1) = **1450 cases**.
+
+**TypingEngine.cpp LOC:** 1645 (pre-G-3) → 1657 (post-G-3.6). Brainstorm "~1300 LOC" target unmet — refactor reorganises rather than reduces. Net +12 LOC reflects the unified ProcessModifier dispatch + 6 Handle\* signatures + TypingAction.h include.
+
+### NEXT — G-4 customKeyMap (start here)
+
+Add `customKeyMap: array<TypingAction, 256>` field in `TypingConfig`. Wire override layer in PushChar BEFORE `ClassifyKey`:
+
+```cpp
+// At PushChar's classification step (currently TypingEngine.cpp around line 225):
+TypingAction action = config_.customKeyMap.empty()
+    ? ClassifyKey(lower, IsTelexMode(), IsVniMode())
+    : config_.customKeyMap[static_cast<uint8_t>(lower)];
+```
+
+Or fold the override into ClassifyKey. Decide during planning.
+
+**Path G remaining phases (per brainstorm):**
+
+| Phase | Goal | Notes |
+|---|---|---|
+| **G-4** | `customKeyMap` field in TypingConfig + override layer in PushChar | Foundation in place — engine code path unchanged, just remap key→action. ConfigManager changes for backward-compat schema. |
+| **G-5** | Sciter UI dialog + per-user `keymap_<name>.toml` files + conflict warnings + active-method selector | Reuse 7-file split pattern from existing ConfigManager. |
+| **G-6** | Import/export Unikey + EVKey format compatibility | Unikey config: `S=DAU_SAC F=DAU_HUYEN ...` flat key=action. Maps cleanly to TypingAction. |
+
+### Pickup commands (next session)
+
+```bash
+git checkout Main
+git pull origin Main
+# Confirm at 56f48ed
+git log --oneline -1
+# Branch fresh
+git checkout -b sprint-3/path-g-customkeymap Main
+```
+
+Read this section + `_bmad-output/brainstorming/brainstorming-session-2026-05-07-0250.md` (Idea #11 = per-user keymap files) before planning G-4.
+
+---
+
+## 2026-05-07 (HISTORICAL) — Sprint 3 Path G, G-1 LANDED
 
 Branch `sprint-3/path-g` off Main `54e379b`. Sprint 3 FSM rewrite cancelled; Path G replaces it (refactor TypingEngine + `Phonotactics` class + custom keymap layer). Brainstorm `_bmad-output/brainstorming/brainstorming-session-2026-05-07-0250.md` signed off; full Path G plan + scope locks below.
 
