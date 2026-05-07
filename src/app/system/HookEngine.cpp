@@ -897,12 +897,12 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 
     // 2d. Backspace-into-committed-word state machine (Idle/Ready/Primed).
     // H1a: body extracted to HandleCommitUndo. Returned outcome dictates whether
-    // ProcessKeyDown short-circuits (kEat/kPass) or continues with subsequent
-    // steps (kFallthrough). Behavior preserved byte-identical to pre-H1a.
+    // ProcessKeyDown short-circuits (Eat/Pass) or continues with subsequent
+    // steps (Fallthrough). Behavior preserved byte-identical to pre-H1a.
     switch (HandleCommitUndo(vkCode, vnMode)) {
-        case CommitUndoOutcome::kEat: return true;
-        case CommitUndoOutcome::kPass: return false;
-        case CommitUndoOutcome::kFallthrough: break;
+        case CommitUndoOutcome::Eat: return true;
+        case CommitUndoOutcome::Pass: return false;
+        case CommitUndoOutcome::Fallthrough: break;
     }
 
     // 3. English mode — skip Vietnamese processing
@@ -1186,9 +1186,9 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 // Primed: BS in Ready deletes the space; next alpha/BS triggers replay.
 //
 // Behavior is byte-identical to the pre-extraction inline block. Returns:
-//   kEat         → ProcessKeyDown returns true (key consumed by undo machinery).
-//   kPass        → ProcessKeyDown returns false (key passes through to app).
-//   kFallthrough → no decision; ProcessKeyDown continues with subsequent steps.
+//   Eat         → ProcessKeyDown returns true (key consumed by undo machinery).
+//   Pass        → ProcessKeyDown returns false (key passes through to app).
+//   Fallthrough → no decision; ProcessKeyDown continues with subsequent steps.
 HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
     // Ctrl/Alt/Win invalidate commit-undo: Ctrl+BS deletes entire word (not just the
     // space), Ctrl+A/C/Z change cursor/selection — all make saved commit state stale.
@@ -1215,7 +1215,7 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             // Extra trigger chars still on screen (e.g., "a==" → need to delete both '=' before undo)
             pendingTriggerCount_--;
             HOOK_LOG(L"  commit-undo: BS in Ready, pendingTriggers=%u — stay Ready", pendingTriggerCount_);
-            return CommitUndoOutcome::kPass;  // Let BS pass through to delete the extra trigger char
+            return CommitUndoOutcome::Pass;  // Let BS pass through to delete the extra trigger char
         }
         // Backspace deletes the commit trigger (space/etc.)
         commitUndoState_ = CommitUndoState::Primed;
@@ -1230,7 +1230,7 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             // Re-inject so BS is placed AFTER the pending synthetics in the queue.
             HOOK_LOG(L"  commit-undo: BS after commit → Primed, re-inject after synthetics (pending=%d)", synthEventsPending_.load());
             InjectKey(VK_BACK);
-            return CommitUndoOutcome::kEat;
+            return CommitUndoOutcome::Eat;
         }
         // Sprint 1 Fix C/2026-05-05: editMsg apps need this BS via the sent
         // EM_REPLACESEL channel — passing the physical BS through goes via the
@@ -1245,12 +1245,12 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             auto inj = injector_.load(std::memory_order_acquire);
             if (inj->Replace(/*bs=*/1, std::wstring_view{})) {
                 HOOK_LOG(L"  commit-undo: BS after commit via injector → Primed");
-                return CommitUndoOutcome::kEat;
+                return CommitUndoOutcome::Eat;
             }
             HOOK_LOG(L"  commit-undo: BS after commit injector failed, passthrough");
         }
         HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
-        return CommitUndoOutcome::kPass;  // Let backspace pass through to delete the space
+        return CommitUndoOutcome::Pass;  // Let backspace pass through to delete the space
     }
     if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vnMode) {
         // Synth guard: if synthetic events were sent recently and are likely still
@@ -1313,8 +1313,8 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
                 bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
                 bool caps = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
                 return HandleAlphaKey(vkCode, shift, caps)
-                    ? CommitUndoOutcome::kEat
-                    : CommitUndoOutcome::kPass;
+                    ? CommitUndoOutcome::Eat
+                    : CommitUndoOutcome::Pass;
             }
         } else if (const InputMethod method = currentMethod_.load(std::memory_order_acquire);
                    (method == InputMethod::VNI || method == InputMethod::Combined) &&
@@ -1330,11 +1330,11 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             ReplayCommittedChars();
             if (engine_->Count() == 0) {
                 commitUndoState_ = CommitUndoState::Idle;
-                return CommitUndoOutcome::kPass;  // Replay failed — let digit pass through
+                return CommitUndoOutcome::Pass;  // Replay failed — let digit pass through
             }
             return HandleVniDigitKey(vkCode)
-                ? CommitUndoOutcome::kEat
-                : CommitUndoOutcome::kPass;
+                ? CommitUndoOutcome::Eat
+                : CommitUndoOutcome::Pass;
         } else if (vkCode == VK_BACK) {
             // Backspace → replay saved chars, then backspace into the word
             HOOK_LOG(L"  commit-undo: replaying + backspace (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
@@ -1344,7 +1344,7 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
                      synthEventsPending_.load());
             ReplayCommittedChars();
             HandleBackspace();
-            return CommitUndoOutcome::kEat;
+            return CommitUndoOutcome::Eat;
         } else {
             // Any other key → cancel commit-undo
             commitUndoState_ = CommitUndoState::Idle;
@@ -1376,7 +1376,7 @@ HookEngine::CommitUndoOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vn
             commitUndoState_ = CommitUndoState::Idle;
         }
     }
-    return CommitUndoOutcome::kFallthrough;
+    return CommitUndoOutcome::Fallthrough;
 }
 
 /// Returns true when the keyboard layout cannot produce Vietnamese input.

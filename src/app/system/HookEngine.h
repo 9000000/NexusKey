@@ -122,10 +122,10 @@ private:
     bool ProcessKeyDown(DWORD vkCode, DWORD scanCode, DWORD flags);
     bool ProcessKeyUp(DWORD vkCode, DWORD flags);
 
-    // H1a: outcome of HandleCommitUndo. kFallthrough = continue ProcessKeyDown
-    // with normal flow; kEat = ProcessKeyDown returns true (key consumed);
-    // kPass = ProcessKeyDown returns false (key passes through to app).
-    enum class CommitUndoOutcome : uint8_t { kEat, kPass, kFallthrough };
+    // H1a: outcome of HandleCommitUndo. Fallthrough = continue ProcessKeyDown
+    // with normal flow; Eat = ProcessKeyDown returns true (key consumed);
+    // Pass = ProcessKeyDown returns false (key passes through to app).
+    enum class CommitUndoOutcome : uint8_t { Eat, Pass, Fallthrough };
 
     // H1a (extracted from ProcessKeyDown step 2d): commit-undo state machine
     // (Idle/Ready/Primed) — handles backspace-into-committed-word replay.
