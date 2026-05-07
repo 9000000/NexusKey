@@ -134,13 +134,18 @@ private:
 
     // Output — universal SendInput with KEYEVENTF_UNICODE
     void ReplaceComposition(const std::wstring& newText, DWORD reinjectVk = 0);
+    void TrackedSendInput(INPUT* events, UINT count) noexcept;
+    // Sprint 2 D3 removed DispatchSendInput callers; D4 deleted body+decl.
+    // Split-vs-batch lives inside the IOutputInjector impls now.
     void SendBackspaces(size_t count);
     void SendBackspaceEvents(size_t count);
     void SendCharEvents(const std::wstring& text);
 
-    // Routes Internal::g_synthCounterCallback into synthEventsPending_.
-    // Static: wired as a plain function pointer (no captures); accesses
-    // the singleton via s_instance. Wired in Start, cleared in Stop.
+    // Sprint 2 D5: Routes Internal::g_synthCounterCallback into the
+    // singleton's synthEventsPending_ atomic. Static so it can be
+    // wired as a plain function pointer (no captures); friends-of-the-
+    // class access via s_instance is sufficient. Wired in Start, no-op
+    // when s_instance is null (defensive — Start is the only writer).
     static void OnSynthDispatched(int delta) noexcept;
 
     // Sprint 2 D4: Returns true when the current injector publishes a
