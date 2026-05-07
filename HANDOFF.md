@@ -56,13 +56,19 @@ Phonotactics extensions to match `EngineHelpers::FindToneTargetImpl` semantics:
 
 Linux GTest **1440 / 1440 PASS**. The `EngineHelpers::FindToneTargetImpl` free function now has zero callers — dead code, kept for G-2.4 cleanup.
 
-### NEXT — G-2.3 (SpellCheck → Phonotactics::IsValidSyllable / CanComplete)
+### G-2.3.A — API rename (DONE 2026-05-07)
+
+`Phonology::SyllableState` (alias of `SpellCheck::Result`) and `Phonology::ValidateSyllableState<CharStateT>` (inline template wrapper around `SpellCheck::Validate`) added in `Phonotactics.h`. Production callers (`EngineHelpers::UpdateSpellState`, `TypingEngine::Commit` auto-restore branch, `TypingEngine::WouldBeValidSyllable`) routed through the new entry point. Tests still call `SpellCheck::Validate` directly — they get migrated when `SpellChecker.{h,cpp}` is folded into `Phonotactics.cpp` (G-2.3.B).
+
+Linux GTest **1440 / 1440 PASS**. Zero behavior change — the underlying validator is unchanged, only the public API contract moved into `Phonology::`.
+
+### NEXT — G-2.3.B (relocate SpellChecker rules into Phonotactics)
 
 | Step | Goal |
 |---|---|
-| G-2.3 | Replace `SpellCheck::Validate` use in spell-check gate (`TypingEngine::UpdateSpellState` + the `WouldBeValidSyllable`/`ShouldRejectModifier` guards) → `Phonotactics::IsValidSyllable` / `CanComplete`. Need `Phonotactics` to gain onset-agreement (c/k/qu, g/gh, ng/ngh) and N1/N2/N3 vowel-coda rules, otherwise it'll under-reject. Auto-exclude reduces the per-bug `spell_exclusions` list. |
+| G-2.3.B | Move SpellChecker.cpp's ~800 LOC validator (vowel nucleus table `kVowelTable`, VC pair table `kVCPairRules`, onset parser `ParseInitialConsonant`, ZWJF alternates) into `Phonotactics.cpp` proper. Delete `SpellChecker.{h,cpp}` files (or stub for back-compat). Migrate `tests/SpellCheckerTest.cpp` + `tests/FeatureOptionsTest.cpp` from `SpellCheck::` → `Phonology::`. After this commit `Phonotactics` truly OWNS the rule per the brainstorm intent. |
 | G-2.4 | Delete `EngineHelpers::FindToneTargetImpl` free function (zero callers post-G-2.2). Audit `kDiphthong*` table consumers — keep tables in `VietnameseTables.h` (still used by `IsToneRelocBlockedByP4` + `EnglishProtection`). |
-| Tests | All 1440 stay green. Add Phonotactics tests for c/k/qu agreement, g/gh+i/e, N1/N2/N3 + integration tests that prove TypingEngine spell-check verdict matches old SpellCheck::Validate verdict for the corpus. |
+| Tests | All 1440 stay green throughout the move. No new behavior — pure file relocation + namespace rename. |
 
 ### Path G remaining phases (per brainstorm sign-off)
 
@@ -90,8 +96,10 @@ git checkout sprint-3/path-g
 cmake --build build-linux --target NextKeyTests
 ./build-linux/tests/NextKeyTests --gtest_brief=1   # 1440 PASS
 
-# G-2.3 first step — survey SpellCheck::Validate users:
-grep -rn "SpellCheck::Validate\|SpellCheck::Result" src/core/engine/
+# G-2.3.B first step — survey symbols to relocate:
+grep -rn "SpellCheck::\|SpellChecker.h" src/core/engine/ tests/
+# Move ~800 LOC from SpellChecker.cpp → Phonotactics.cpp, rename SpellCheck:: → Phonology::,
+# delete SpellChecker.{h,cpp}, update tests.
 ```
 
 ### Open items for anh

@@ -1315,8 +1315,8 @@ std::wstring TypingEngine::Commit() {
         // (from typing "user") are ValidPrefix during typing (allowing future
         // modifiers) but should auto-restore when the user commits.
         if (!shouldRestore && !states_.empty()) {
-            auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
-            shouldRestore = (result == SpellCheck::Result::ValidPrefix);
+            auto result = Phonology::ValidateSyllableState(states_.data(), states_.size(), config_.allowZwjf);
+            shouldRestore = (result == Phonology::SyllableState::ValidPrefix);
         }
 
         if (shouldRestore) {
@@ -1636,10 +1636,10 @@ bool TypingEngine::WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
         states_[clearCircumflexIdx].mod = Modifier::None;
         didClear = true;
     }
-    auto result = SpellCheck::Validate(states_.data(), states_.size(), config_.allowZwjf);
+    auto result = Phonology::ValidateSyllableState(states_.data(), states_.size(), config_.allowZwjf);
     if (didClear) states_[clearCircumflexIdx].mod = Modifier::Circumflex;
     states_[targetIdx].mod = saved;
-    return result != SpellCheck::Result::Invalid;
+    return result != Phonology::SyllableState::Invalid;
 }
 
 }  // namespace NextKey

@@ -10,6 +10,7 @@
 #pragma once
 
 #include "SpellChecker.h"
+#include "Phonotactics.h"
 #include "EnglishProtection.h"
 #include "VietnameseTables.h"
 #include "core/config/TypingConfig.h"
@@ -113,8 +114,8 @@ inline void UpdateSpellCheck(const CharStateT* states, size_t count,
         spellCheckDisabled = false;
         return;
     }
-    auto result = SpellCheck::Validate(states, count, config.allowZwjf);
-    spellCheckDisabled = (result == SpellCheck::Result::Invalid);
+    auto result = Phonology::ValidateSyllableState(states, count, config.allowZwjf);
+    spellCheckDisabled = (result == Phonology::SyllableState::Invalid);
 }
 
 /// Check if auto-restore should return raw input instead of composed text.

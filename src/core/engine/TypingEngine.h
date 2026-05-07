@@ -170,13 +170,13 @@ private:
     void UpdateSpellState();
 
     // Would applying `newMod` to states_[targetIdx] produce a syllable that is
-    // not Invalid per SpellCheck? Returns true when spell-check is disabled
-    // (no validation performed). If `clearCircumflexIdx` is a valid index and
-    // that state has a Circumflex, it is temporarily cleared for the check
-    // (models W-modifier P5 which strips the sister â when applying horn to u).
-    // Restores state before returning.
-    // SpellCheck::Validate enforces the tone/mod same-vowel invariant, so
-    // this also catches typos like "của" + circumflex on 'a' → c,ủ,â.
+    // not Invalid per Phonology::ValidateSyllableState? Returns true when
+    // spell-check is disabled (no validation performed). If `clearCircumflexIdx`
+    // is a valid index and that state has a Circumflex, it is temporarily
+    // cleared for the check (models W-modifier P5 which strips the sister â
+    // when applying horn to u). Restores state before returning.
+    // The validator enforces the tone/mod same-vowel invariant, so this also
+    // catches typos like "của" + circumflex on 'a' → c,ủ,â.
     [[nodiscard]] bool WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
                                             size_t clearCircumflexIdx = SIZE_MAX);
 
