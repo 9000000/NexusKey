@@ -1,8 +1,8 @@
 # NexusKey Refactor Status — Living Inventory
 
-> **Last refresh:** 2026-05-07 (post H5 #141, Main `a141548`)
+> **Last refresh:** 2026-05-07 (post H1c #145, Main `659b910`)
 > **Scope:** All architectural / cleanup refactor work. Excludes user-facing features (G-5/G-6 Sciter UI + keymap files, TSF Phase 2/3, etc.) — those track separately.
-> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. Quick wins from both layers may bundle into a single cleanup PR.
+> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Post-H1c the rule is satisfied** — only H6/H8 remain (roadmap-scale). Pivot to §D TypingEngine items.
 
 ---
 
@@ -14,11 +14,15 @@
 | App layer LOC | 25,496 (67%) |
 | Engine layer LOC | 5,419 |
 | TypingEngine.cpp | 1,662 LOC |
-| HookEngine.cpp | **3,428 LOC** (-154 post H5; -187 vs pre-cleanup; hottest file) |
-| `ProcessKeyDown` (HookEngine) | **561 LOC single function** — biggest in codebase (lines 809-1370) |
+| HookEngine.cpp | **3,563 LOC** (+135 vs post-H5 from verbose H1 helper headers; +178 vs original peak) |
+| `ProcessKeyDown` (HookEngine) | **79 LOC** orchestrator (down from pre-H1 561; -86%) — cache GetKeyState + 4 switch-on-outcome + final return |
+| `RunTopGuards` (H1b) | ~50 LOC body — TSF / modifier / toggle / excluded-app guards |
+| `HandleCommitUndo` (H1a) | ~190 LOC body — Idle/Ready/Primed FSM for backspace-into-committed-word |
+| `HandlePreDispatch` (H1c) | ~107 LOC body — English mode + auto-caps + macro tracking |
+| `DispatchKeyAction` (H1c) | ~158 LOC body — alpha / Telex bracket / VNI digit / BS / commit trigger / fallthrough |
 | `core/MacroCase.{h,cpp}` (new H5) | 171 LOC — pure free helpers (`Macro::Plan` / `BuildSegments` / `ExpandEscapesForClipboard`) |
 | `app/system/Win32CaseMapper.h` (new H5) | 28 LOC — production `CaseMapper` impl wrapping `CharUpperBuffW`/`CharLowerBuffW` |
-| GTest count | 1,515 / 1,515 PASS Linux (+38 H5 tests) |
+| GTest count | 1,515 / 1,515 PASS Linux (+38 H5 tests; H1 added zero — pure refactor) |
 | TODO/FIXME density | 3 markers total in src/ (very low) |
 | Open GitHub issues | 11 (6 bugs / 4 enhancements / 1 wontfix) |
 | Layering violations | **None** (engine/config has zero Win32 deps) |
@@ -41,6 +45,9 @@
 | **Post-Path-G cleanup** (H2 + H7 + T1 + T4) | #139 `64fb80f` | 2026-05-07 | Delete `HookEngine::CheckConfigEvent` dead code (H2); strip Sprint 2 D4/T3 history comments (H7); rename `SpellChecker → PhonotacticsValidator` (T1); verify Hot-path Fix 3 shipped (T4). H4 attempted then reverted (wontfix — member is logging adapter, not dup) |
 | **H3** atomic migration `cachedFocusedHwnd_` | #140 `6ebc603` | 2026-05-07 | Closes Pre-T3 Minor 1: `HWND` field → `std::atomic<HWND>` with `relaxed` memory order. Tuple race with `cachedFocusedClass_` (wstring) documented as benign in field comment. 4 stores + 2 loads updated. |
 | **H5** Macro extract to pure functions | #141 `a141548` | 2026-05-07 | `TryExpandMacro` 217-LOC body → ~50-LOC orchestrator delegating to `Macro::Plan` + `ExpandEscapesForClipboard` + `BuildSegments` (3 free helpers in new `core/MacroCase.{h,cpp}`, Linux-portable). DI seam via `Macro::CaseMapper` abstract — production wraps Win32 `CharUpperBuffW`/`CharLowerBuffW` (`Win32CaseMapper.h`); tests use `AsciiCaseMapper`. HookEngine.cpp 3582 → 3428 LOC (-154). +38 gtests. Chaos 55/55 PASS across notepad/notepad++/chrome/discord/gpt. Behavior byte-identical to Main `3257758` per spec NF2. |
+| **H1a** `HandleCommitUndo` extract | #143 `e820876` | 2026-05-07 | Step 2d (commit-undo Idle/Ready/Primed FSM, 187 LOC) extracted to private method with `KeyOutcome { Eat / Pass / Fallthrough }` enum. ProcessKeyDown 561 → 380 LOC. Chaos 55/55 PASS. Pre-merge naming fix: `kEat/kPass/kFallthrough` → `Eat/Pass/Fallthrough` to match project convention (CommitUndoState/MacroResult/AutoCapState/etc. all PascalCase no prefix). |
+| **H1b** `RunTopGuards` extract | #144 `3c06499` | 2026-05-07 | Steps 0/0b/1/1b/1c (TSF early-out / modifier track / toggle keys / excluded-app PID verification, 54 LOC) extracted. Bookkeeping (`otherKeyPressed_/altTapCount_/synth-watchdog`) stays in ProcessKeyDown post-switch — runs only on Fallthrough; excluded-app's same-PID/still-excluded paths set `otherKeyPressed_` themselves before returning Pass. ProcessKeyDown 380 → 327 LOC. `CommitUndoOutcome` renamed to generic `KeyOutcome` for sharing across H1a/H1b/H1c. Chaos 55/55 PASS. |
+| **H1c** `HandlePreDispatch` + `DispatchKeyAction` extract | #145 `659b910` | 2026-05-07 | Steps 3 / 3a-3d (English mode + auto-caps + macro tracking, ~107 LOC) → `HandlePreDispatch`. Steps 4b-10 (tempEngineOff / Ctrl-Alt-Win / alpha / bracket / VNI digit / BS / commit-trigger / fallthrough, ~158 LOC) → `DispatchKeyAction`. Cache shifted from after-step-3 to before HandlePreDispatch — byte-identical because GetKeyState within hook callback is stable. ProcessKeyDown 327 → **79 LOC** orchestrator (-86% cumulative across H1). Chaos 55/55 PASS. **HookEngine refactor backlog effectively closed.** |
 
 ---
 
@@ -69,7 +76,7 @@
 
 | ID | Item | Source | Effort | Priority |
 |---|---|---|---|---|
-| H1 | **`ProcessKeyDown` 561-LOC god-method decompose** — split per dispatch class (printable / backspace / modifier / system). HookEngine.cpp:809-1370. Biggest architectural win remaining. **Brainstorm needed before plan** — per-handler vs state-machine vs continuation pattern. | Code review #24 + survey | 1-2 days | **HIGH (architectural)** |
+| ~~H1~~ | ~~**`ProcessKeyDown` 561-LOC god-method decompose**~~ — shipped as 3 PRs: H1a (`HandleCommitUndo` #143) + H1b (`RunTopGuards` #144) + H1c (`HandlePreDispatch` + `DispatchKeyAction` #145). ProcessKeyDown 561 → 79 LOC (-86%). | — | DONE | ✅ |
 | ~~H2~~ | ~~**Delete dead code** `HookEngine::CheckConfigEvent()` + `configEvent_` member~~ | — | DONE | ✅ PR #139 `5f080ca` |
 | ~~H3~~ | ~~**`LowLevelMouseProc` race on `cachedFocusedHwnd_`**~~ | — | DONE | ✅ PR #140 `58d8f88` |
 | ~~H4~~ | ~~**Dual-route `TrackedSendInput` consolidate**~~ — REJECTED 2026-05-07: `HookEngine::TrackedSendInput` is NOT a duplicate — it's a logging adapter that wraps `Internal::TrackedSendInput` and emits `HOOK_LOG` on partial sends (renderer-drop diagnostic). Consolidation attempt at commit `794f38f` lost this observability and broke MSVC `/WX` (`[[nodiscard]]` warning C4834 at 6 call sites). Reverted at `66ae1dc`. The dual-route is justified — member adds value. | docs/TODO.md M3 | N/A | ❌ Wontfix |
@@ -89,7 +96,7 @@
 | T3 | **Phonotactics N1/N2/N3 vowel-coda compatibility** — tighter group rules | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
 | ~~T4~~ | ~~**Verify Hot-path Fix 3 ComposeAll buffer reuse**~~ — VERIFIED 2026-05-07: shipped at `TypingEngine.h:218` (`mutable std::wstring composeBuf_`) + `TypingEngine.cpp:1236-1241` | hot-path-optimization-plan.md | DONE | ✅ |
 | T5 | **Bug `cafcs → các`** — tone replacement blocked on already-toned syllable | docs/TODO.md | 1-2h | Bug (HIGH) |
-| T6 | **Bug Issue #117 `Lỗi → Lôĩ`** — fast-typing chaos timing | HANDOFF.md + Issue #117 | Hard — chaos timing | Bug (HIGH) |
+| T6 | **Bug Issue #117 `Lỗi → Lôĩ`** — fast-typing chaos timing. **Anh decision 2026-05-07 post-H1:** retest first before scheduling fix work — H1's hot-path restructure may have shifted timing enough that the race no longer reproduces. If reproducible post-H1, schedule deep work; if not, monitor + close as auto-resolved. | HANDOFF.md + Issue #117 | Hard — chaos timing | Bug (LOWER, retest gate) |
 
 > **Note on T5/T6:** Bugs strictly speaking, not refactor. Listed here because they touch engine internals. Anh quyết định fix cùng Path G T-batch hay tách bug-fix branch riêng.
 
@@ -138,19 +145,22 @@ Verified by grep on Main `3ded489` (2026-05-07):
 
 ## Section G — Recommended next steps
 
-**Already shipped today (2026-05-07):** PR #138 (Path G G-4 customKeyMap), PR #139 (cleanup H2 + H7 + T1 + T4), PR #140 (H3 atomic migration), PR #141 (H5 Macro extract). Plus tooling `2e30f82` (chaos graceful shutdown + lôĩ stress) + handoff `13ce888`. Total ~6 PRs / ~35 commits / 1 active day.
+**Already shipped today (2026-05-07):** PR #138 (Path G G-4 customKeyMap), PR #139 (cleanup H2 + H7 + T1 + T4), PR #140 (H3 atomic migration), PR #141 (H5 Macro extract), PR #142 (H5 follow-ups), PR #143 (H1a HandleCommitUndo), PR #144 (H1b RunTopGuards), PR #145 (H1c HandlePreDispatch + DispatchKeyAction). Plus tooling `2e30f82` (chaos graceful shutdown + lôĩ stress) + 2 handoff commits. Total ~9 PRs / ~50 commits / 1 active day.
 
 **Immediate (next session — start here):**
-1. **H1 — `ProcessKeyDown` decompose** — THE remaining HookEngine architectural item. The 561-LOC god-method at HookEngine.cpp:809-1370. Brainstorm strategy first (per-handler vs state-machine vs continuation pattern), then plan + execute test-first. ~1-2 days. **After H1 ships, HookEngine refactor backlog effectively closed** (H6 + H8 are roadmap-scale, defer).
+1. **T5 — Bug `cafcs → các`** — tone replacement blocked on already-toned syllable. 1-2h, HIGH. First-priority bug now that H1 closed sequencing rule.
 
-**Short-term (after H1):**
-2. **Sequencing rule satisfied → pivot to TypingEngine §D.**
+**Short-term:**
+2. **T6 retest** — try to reproduce Issue #117 `Lỗi → Lôĩ` post-H1. May have been incidentally resolved by hot-path restructure (anh's hypothesis 2026-05-07). If reproducible → deep timing work. If not → close as auto-resolved.
 3. **T2/T3 — Phonotactics deepening** — onset agreement + N-group vowel-coda rules. Builds on Path G groundwork.
-4. **T5/T6 — engine bug triage** — `cafcs → các` and Issue #117 `Lỗi → Lôĩ`.
+
+**User-facing alternatives** (out of refactor scope, but anh may pivot):
+- **G-5/G-6** — keymap UI (Sciter dialog + per-user TOML files).
+- Triage open GitHub Issues — close `wontfix` duplicates, re-classify bugs vs enhancements.
 
 **Roadmap (defer until current backlog clears):**
-5. **H6 — Sprint 4 §3 SPSC ring + watchdog** — multi-week effort. Captured in CODE_GOVERNANCE.md §3.
-6. **H8 — Sprint 1 deferred** — WaitOnAddress / ETW / fast-path foreground detection.
+4. **H6 — Sprint 4 §3 SPSC ring + watchdog** — multi-week effort. Captured in CODE_GOVERNANCE.md §3.
+5. **H8 — Sprint 1 deferred** — WaitOnAddress / ETW / fast-path foreground detection.
 
 **General checklist:**
 - Open GitHub issues triage — close any wontfix duplicates, re-triage bugs vs enhancements (Issue #92 marked `wontfix` may be closable).

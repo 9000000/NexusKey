@@ -1,22 +1,53 @@
-# NexusKey Refactor — handoff (H1 ProcessKeyDown decompose next)
+# NexusKey Refactor — handoff (T5 `cafcs→các` next; H1 closed)
+
+## 2026-05-07 — H1 ProcessKeyDown decompose CLOSED (3 PRs, Main `659b910`)
+
+**Pickup for teammate:** HookEngine refactor backlog effectively closed. Sequencing rule satisfied. Next active item is **T5** (`cafcs → các` tone replacement bug, 1-2h, HIGH).
+
+### What H1 delivered
+
+ProcessKeyDown went from a 561-LOC god-method to a **79-LOC orchestrator** (-86%) via 3 byte-identical PRs:
+
+| PR | Method extracted | Steps | LOC |
+|---|---|---|---|
+| #143 H1a `e820876` | `HandleCommitUndo` | 2d (Idle/Ready/Primed FSM) | ~190 |
+| #144 H1b `3c06499` | `RunTopGuards` | 0/0b/1/1b/1c (TSF/modifier/toggle/excluded-app) | ~50 |
+| #145 H1c `659b910` | `HandlePreDispatch` + `DispatchKeyAction` | 3/3a-3d + 4b-10 | ~107 + ~158 |
+
+Plus shared `enum class KeyOutcome : uint8_t { Eat, Pass, Fallthrough }` for outcome-based dispatch from ProcessKeyDown's helper switches.
+
+Verification across all 3 PRs: Linux 1515/1515 PASS, Windows MSVC `/WX` clean (NextKeyApp + NextKeyTests), chaos.toml 5×11 = 55/55 PASS post each PR. Behavior byte-identical confirmed empirically.
+
+### What H1 did NOT do
+
+- **No perf gain.** Helpers may even add ns from extra call frames (LTO likely inlines anyway). Chaos perf delta = noise.
+- **No new feature, no bug fix.** Pure refactor.
+
+### Bonus this session
+
+- **#142 H5 follow-ups** — fix C4244 narrowing in `tests/MacroCaseTest.cpp:145` (Linux GCC silent narrowing, Windows MSVC `/WX` block) + REFACTOR_STATUS refresh post-H5.
+
+### Pickup for next session
+
+1. **T5 — `cafcs → các`** — tone replacement blocked on already-toned syllable. 1-2h, HIGH. Test-first per project rule: write failing engine test reproducing the bug, then fix.
+2. **T6 retest** — Issue #117 `Lỗi → Lôĩ` (fast-typing chaos timing). Anh hypothesis 2026-05-07: H1 hot-path restructure may have shifted timing → race no longer reproduces. Retest first, then decide.
+3. **T2/T3** — Phonotactics deepening (onset agreement + N-group vowel-coda rules), 2-3h each, MEDIUM correctness.
+
+User-visible alternatives (out of refactor scope):
+- **G-5/G-6** — keymap UI (Sciter dialog + per-user TOML files).
+- GitHub Issues triage.
+
+**See `docs/REFACTOR_STATUS.md`** for full inventory and decision log.
+
+---
 
 ## 2026-05-07 — H5 Macro extract MERGED (PR #141, Main `a141548`)
-
-**Pickup for teammate:** Complete cleanup tasks for the H5 ship, then start H1.
-
-### Pending follow-ups (cleanup — small, independent)
-
-1. **Refresh `docs/REFACTOR_STATUS.md`:**
-   - Move H5 row from §C → §A with merge SHA `a141548` and date 2026-05-07.
-   - Update vital-signs table: HookEngine.cpp `3582 → 3428` LOC (-154); GTest count `1,477 → 1,515`; one new file group `core/MacroCase` (171 LOC) + `app/system/Win32CaseMapper.h` (28 LOC).
-   - Update §G recommended next: H5 done → **H1 ProcessKeyDown decompose** is now THE remaining HookEngine architectural item. After H1 → can pivot to §D TypingEngine TODOs.
-2. **Project memory:** append a one-liner to `project_path_g_2026-05-07.md` (or new memory) noting H5 shipped + chaos 55/55 PASS across 5 hosts, no behavior regression.
 
 ### What H5 delivered
 
 - `HookEngine::TryExpandMacro` 217 LOC body → ~50 LOC orchestrator delegating to `Macro::Plan` + `ExpandEscapesForClipboard` + `BuildSegments` (3 free helpers in new `src/core/MacroCase.h/.cpp`, Linux-portable).
 - DI seam via `Macro::CaseMapper` abstract class — production wraps `CharUpperBuffW`/`CharLowerBuffW` in `Win32CaseMapper.h`; tests use `AsciiCaseMapper`.
-- HookEngine.cpp shrinks from 3582 → 3428 LOC (-154).
+- HookEngine.cpp shrinks from 3582 → 3428 LOC (-154 — partly reclaimed by H1 verbose helper headers).
 - 38 new gtests on Linux (1,477 → 1,515 PASS); chaos.toml 55/55 PASS across notepad/notepad++/chrome/discord/gpt.
 - Behavior byte-identical to Main `3257758` per spec NF2.
 
@@ -24,22 +55,20 @@
 
 ---
 
-## 2026-05-07 — Refactor sequencing rule (READ NEXT)
+## 2026-05-07 — Refactor sequencing rule (SATISFIED post-H1)
 
 **Source of truth:** [`docs/REFACTOR_STATUS.md`](docs/REFACTOR_STATUS.md) — living inventory of all refactor work (done / in-flight / TODO / dead code / vital signs).
 
-**Sequencing rule (anh decision 2026-05-07):** Complete the HookEngine refactor backlog (REFACTOR_STATUS §C: H1-H6) BEFORE picking up TypingEngine TODO items (§D: T1-T4).
+**Sequencing rule (anh decision 2026-05-07):** Complete the HookEngine refactor backlog (REFACTOR_STATUS §C: H1-H6) BEFORE picking up TypingEngine TODO items (§D: T1-T4). **Status post-H1c: SATISFIED.** §C now contains only H6 + H8 (roadmap-scale, multi-week, defer).
 
-**Rationale:** HookEngine is the highest-risk file (was 3615 LOC, now 3428 post-H5; still hottest in codebase). Architectural decomposition is the priority. TypingEngine is in good shape post Path G G-1..G-4 — its remaining items are correctness-quality, not architecture.
-
-**Exception:** Quick wins from BOTH layers may bundle into a single cleanup PR. Bug fixes (T5/T6, new user-reported bugs) are NOT bound by the sequencing rule.
+**Rationale (historical):** HookEngine was the highest-risk file. Architectural decomposition was the priority. Now ProcessKeyDown is a 79-LOC orchestrator with named helpers, and HookEngine.cpp gets verbose helper headers but the call graph is clear.
 
 **Recommended next:**
-1. **H1 ProcessKeyDown decompose** — biggest architectural win remaining. The 557-LOC god-method should split per dispatch class (printable / backspace / modifier / system). Brainstorm strategy (per-handler vs state-machine vs continuation pattern) → plan → execute. ~1-2 days.
+1. **T5** `cafcs → các` — tone replacement bug, 1-2h, HIGH.
+2. **T6 retest** — Issue #117 may be auto-resolved by H1 timing shift; verify before scheduling deep work.
+3. **T2/T3** — Phonotactics deepening, 2-3h each.
 
-After H1 → HookEngine refactor backlog closed (H6 + H8 are roadmap-scale, defer); pivot to TypingEngine §D (T2/T3 phonotactics deepening, T5/T6 engine bugs).
-
-**2026-05-07 shipped (4 PRs + tooling commit):** PR #138 (Path G G-4 customKeyMap), PR #139 (cleanup H2+H7+T1+T4), PR #140 (H3 atomic migration), PR #141 (H5 Macro extract), `2e30f82` (chaos harness graceful shutdown + lôĩ stress test). Main HEAD: `a141548`.
+**2026-05-07 shipped (8 PRs + tooling commit):** PR #138 (Path G G-4 customKeyMap), PR #139 (cleanup H2+H7+T1+T4), PR #140 (H3 atomic migration), PR #141 (H5 Macro extract), PR #142 (H5 follow-ups), PR #143 (H1a HandleCommitUndo), PR #144 (H1b RunTopGuards), PR #145 (H1c HandlePreDispatch + DispatchKeyAction), `2e30f82` (chaos harness graceful shutdown + lôĩ stress test). Main HEAD: `659b910`.
 
 ---
 
