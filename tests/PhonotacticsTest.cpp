@@ -336,97 +336,84 @@ TEST_F(PhonotacticsIsValidSyllable, OnsetAgreementUsesFirstVowelOfDiphthong) {
 }
 
 //=============================================================================
-// IsValidSyllable — N1/N2/N3 vowel/coda group compatibility (T3).
-// Rule and "Other" lenient fall-through documented at the helper definition
-// in Phonotactics.cpp.
+// IsValidSyllable — VCPair vowel-coda compatibility (T2.1 Day-2).
+// Per-nucleus allowed-coda bitmask sourced from VietnamesePhonologyData.h
+// (canonical table, shared with the CharState path in PhonotacticsValidator).
+// Replaces the coarser N1/N2/N3 partition that lived here in T3.
+// Lenient fall-through for nuclei without a VCPair entry.
 //=============================================================================
 
-TEST_F(PhonotacticsIsValidSyllable, N1VowelAcceptsC1Coda) {
-    // N1 nuclei (e, o, ô, u, ư, ơ, ă, oă, uâ, uô, ươ, ...) + C1 (ng, c) — valid
-    EXPECT_TRUE(phon_.IsValidSyllable(L"",  L"e",       L"ng", Tone::None,  kModern));   // eng
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"\x00F4",  L"ng", Tone::None,  kModern));   // bông
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"u",       L"c",  Tone::Dot,   kModern));   // bục
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"\x0103",  L"ng", Tone::None,  kModern));   // băng
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"\x01B0",  L"c",  Tone::Acute, kModern));   // bức
+TEST_F(PhonotacticsIsValidSyllable, VCPairOpenNucleusAcceptsAnyCoda) {
+    // a, e, oa carry F_ALL — every coda is allowed.
+    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"a", L"ng", Tone::None,  kModern));   // bang
+    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"a", L"nh", Tone::None,  kModern));   // banh
+    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"a", L"ch", Tone::Acute, kModern));   // bách
+    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"a", L"c",  Tone::Acute, kModern));   // bác
+    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"e", L"nh", Tone::None,  kModern));   // VCPair e: F_ALL
+    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"e", L"ch", Tone::Acute, kModern));   // VCPair e: F_ALL
+    EXPECT_TRUE(phon_.IsValidSyllable(L"h", L"oa", L"ng", Tone::None, kModern));   // hoang
 }
 
-TEST_F(PhonotacticsIsValidSyllable, N1VowelAcceptsC3Coda) {
-    // N1 + C3 (m, n, p, t) — valid
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"e",       L"m", Tone::None,  kModern));   // bem
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"e",       L"n", Tone::None,  kModern));   // ben
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"o",       L"p", Tone::Acute, kModern));   // bóp
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"u",       L"t", Tone::Acute, kModern));   // bút
+TEST_F(PhonotacticsIsValidSyllable, VCPairRejectsCodaOutsideAllowedFinals) {
+    // â/ă/o/ô/u/ư carry F_NO_CH_NH — nh and ch are rejected, others ok.
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"o",       L"nh", Tone::None,  kModern));  // VCPair o: F_NO_CH_NH
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x0103",  L"nh", Tone::None,  kModern));  // ă: F_NO_CH_NH
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x00F4",  L"ch", Tone::Acute, kModern));  // ô: F_NO_CH_NH
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x00E2",  L"nh", Tone::None,  kModern));  // â: F_NO_CH_NH
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"u",       L"ch", Tone::Acute, kModern));  // u: F_NO_CH_NH
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"u",       L"t",  Tone::Acute, kModern));  // bút (C3 is fine)
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"\x00F4",  L"ng", Tone::None,  kModern));  // bông
 }
 
-TEST_F(PhonotacticsIsValidSyllable, N1VowelRejectsC2Coda) {
-    // N1 + C2 (nh, ch) — invalid (N1 forbids C2)
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"e",      L"nh", Tone::None,  kModern));   // benh wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"e",      L"ch", Tone::Acute, kModern));   // bech wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"o",      L"nh", Tone::None,  kModern));   // bonh wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x0103", L"nh", Tone::None,  kModern));   // bănh wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x00F4", L"ch", Tone::Acute, kModern));   // bôch wrong
+TEST_F(PhonotacticsIsValidSyllable, VCPairRestrictsCFrontVowels) {
+    // VCPair: ê has no F_ng; i has no F_ng. ê/i still accept C3 + ch (C2).
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x00EA", L"ng", Tone::None,  kModern));  // bêng wrong
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"i",      L"ng", Tone::None,  kModern));  // bing wrong
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"\x00EA", L"nh", Tone::None,  kModern));  // bênh
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"i",      L"nh", Tone::None,  kModern));  // binh
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"i",      L"ch", Tone::Acute, kModern));  // bích
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"i",      L"c",  Tone::Acute, kModern));  // VCPair i allows c
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"\x00EA", L"c",  Tone::Acute, kModern));  // VCPair ê allows c
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"i",      L"m",  Tone::None,  kModern));  // bim
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"i",      L"t",  Tone::Acute, kModern));  // bít
 }
 
-TEST_F(PhonotacticsIsValidSyllable, N2VowelAcceptsC2Coda) {
-    // N2 (ê, i, uê, uy, ua) + C2 (nh, ch) — valid
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"\x00EA", L"nh", Tone::None,  kModern));   // bênh
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"i",      L"nh", Tone::None,  kModern));   // binh
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"i",      L"ch", Tone::Acute, kModern));   // bích
-    EXPECT_TRUE(phon_.IsValidSyllable(L"h", L"uy",     L"nh", Tone::Grave, kModern));   // huỳnh
+TEST_F(PhonotacticsIsValidSyllable, VCPairTightlyConstrainsRareNuclei) {
+    // VCPair: ơ allows only m/n/p/t; y allows only t; uy carries F_ch|F_n|F_nh|F_t.
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"\x01A1", L"n",  Tone::None, kModern));   // bơn
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x01A1", L"ng", Tone::None, kModern));   // ơ rejects ng
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x01A1", L"c",  Tone::Acute, kModern));  // ơ rejects c
+    EXPECT_FALSE(phon_.IsValidSyllable(L"h", L"uy",     L"ng", Tone::None, kModern));   // uy rejects ng
+    EXPECT_FALSE(phon_.IsValidSyllable(L"h", L"uy",     L"c",  Tone::Acute, kModern));  // uy rejects c
+    EXPECT_TRUE (phon_.IsValidSyllable(L"h", L"uy",     L"nh", Tone::Grave, kModern));  // huỳnh
 }
 
-TEST_F(PhonotacticsIsValidSyllable, N2VowelAcceptsC3Coda) {
-    // N2 + C3 — valid
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"i",      L"m", Tone::None,  kModern));   // bim
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"\x00EA", L"n", Tone::None,  kModern));   // bên
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"i",      L"t", Tone::Acute, kModern));   // bít
+TEST_F(PhonotacticsIsValidSyllable, VCPairMultiVowelRules) {
+    // iê: F_c|F_m|F_n|F_ng|F_p|F_t — accepts ng but rejects nh, ch.
+    EXPECT_TRUE (phon_.IsValidSyllable(L"b", L"i\x00EA",  L"ng", Tone::None, kModern));   // biêng
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"i\x00EA",  L"nh", Tone::None, kModern));   // VCPair iê rejects nh
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"i\x00EA",  L"ch", Tone::Acute, kModern));  // VCPair iê rejects ch
+    // uô / ươ: same shape (no ch, nh).
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"u\x00F4", L"nh", Tone::None,  kModern));   // buônh wrong
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x01B0\x01A1", L"ch", Tone::Acute, kModern));  // bươch wrong
+    // oă: F_c|F_n|F_ng|F_t — accepts coda set, rejects nh/ch/m/p.
+    EXPECT_FALSE(phon_.IsValidSyllable(L"",  L"o\x0103", L"nh", Tone::None, kModern));    // oănh wrong
+    // uâ: F_n|F_ng|F_t.
+    EXPECT_FALSE(phon_.IsValidSyllable(L"t", L"u\x00E2", L"nh", Tone::None, kModern));    // tuânh wrong
+    // uê: F_ch|F_n|F_nh.
+    EXPECT_TRUE (phon_.IsValidSyllable(L"th", L"u\x00EA", L"nh", Tone::None, kModern));   // thuênh ok per VCPair
 }
 
-TEST_F(PhonotacticsIsValidSyllable, N2VowelRejectsC1Coda) {
-    // N2 + C1 (ng, c) — invalid (N2 forbids C1)
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"i",       L"ng", Tone::None,  kModern));  // bing wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x00EA",  L"ng", Tone::None,  kModern));  // bêng wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"i",       L"c",  Tone::Acute, kModern));  // bic wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x00EA",  L"c",  Tone::Acute, kModern));  // bêc wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"h", L"uy",      L"ng", Tone::None,  kModern));  // huyng wrong
+TEST_F(PhonotacticsIsValidSyllable, VCPairUnknownNucleusFallsThroughLeniently) {
+    // Nuclei that don't have a VCPair entry (e.g. orthographic loanword-friendly
+    // sequences not in the canonical table) accept any coda.
+    EXPECT_TRUE(phon_.IsValidSyllable(L"x", L"oo", L"ng", Tone::None, kModern));   // xoong (oo: F_c|F_ng → valid)
 }
 
-TEST_F(PhonotacticsIsValidSyllable, N3VowelAcceptsAllCodaGroups) {
-    // N3 (a, oa, iê, uyê) — accepts C1, C2, C3
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"a",        L"ng", Tone::None,  kModern));  // bang (C1)
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"a",        L"nh", Tone::None,  kModern));  // banh (C2)
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"a",        L"n",  Tone::None,  kModern));  // ban  (C3)
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"a",        L"ch", Tone::Acute, kModern));  // bách (C2)
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"a",        L"c",  Tone::Acute, kModern));  // bác  (C1)
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"i\x00EA",  L"ng", Tone::None,  kModern));  // biêng (iê N3 + C1)
-    EXPECT_TRUE(phon_.IsValidSyllable(L"b", L"i\x00EA",  L"nh", Tone::None,  kModern));  // biênh (iê N3 + C2)
-}
-
-TEST_F(PhonotacticsIsValidSyllable, MultiVowelN1RejectsC2) {
-    // Multi-vowel N1: oă, uô, ươ, uâ, uơ + C2 — invalid
-    EXPECT_FALSE(phon_.IsValidSyllable(L"",  L"o\x0103",       L"nh", Tone::None,  kModern));  // oănh wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"u\x00F4",       L"nh", Tone::None,  kModern));  // buônh wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x01B0\x01A1",  L"ch", Tone::Acute, kModern));  // bươch wrong
-    EXPECT_FALSE(phon_.IsValidSyllable(L"t", L"u\x00E2",       L"nh", Tone::None,  kModern));  // tuânh wrong
-}
-
-TEST_F(PhonotacticsIsValidSyllable, MultiVowelN2AcceptsC2) {
-    // Multi-vowel N2: uê, uy + C2 — valid
-    EXPECT_TRUE(phon_.IsValidSyllable(L"th", L"u\x00EA", L"nh", Tone::None,  kModern));   // thuênh (rule allows)
-    EXPECT_TRUE(phon_.IsValidSyllable(L"h",  L"uy",      L"nh", Tone::Grave, kModern));   // huỳnh
-}
-
-TEST_F(PhonotacticsIsValidSyllable, UnclassifiedVowelAllowsAnyCoda) {
-    // Lenient fall-through for nuclei not in N1/N2/N3 lists (e.g. "oo" used in
-    // loanword-style "xoong"). Closed/pending rules handle their own cases first.
-    EXPECT_TRUE(phon_.IsValidSyllable(L"x", L"oo", L"ng", Tone::None, kModern));   // xoong (real word)
-}
-
-TEST_F(PhonotacticsIsValidSyllable, ClosedVowelRuleStillFiresBeforeNGroup) {
-    // Closed-vowel rule rejects any coda regardless of N-group classification.
-    // "ai" is closed (no coda allowed). "an" + n-coda would be N3-style if allowed,
-    // but the closed-vowel rule short-circuits before reaching N-group check.
-    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"ai", L"n", Tone::None, kModern));   // bain still invalid (closed)
+TEST_F(PhonotacticsIsValidSyllable, ClosedVowelRuleStillFiresBeforeVCPair) {
+    // Closed-vowel rule rejects any coda regardless of VCPair lookup; closed
+    // check runs first.
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"ai", L"n", Tone::None, kModern));   // ai is closed → invalid
 }
 
 //=============================================================================
