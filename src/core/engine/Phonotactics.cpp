@@ -175,28 +175,21 @@ constexpr std::wstring_view kValidCodas[] = {
 // path uses, then performs one bitmask lookup. Replaces the coarser N1/N2/N3
 // approximation that lived here in T3.
 
-// Encode a single rendered vowel char into a (base_index, mod_ordinal) slot.
-// Returns 0xFF as the slot byte if the char is not a recognised vowel.
-[[nodiscard]] uint8_t VowelInfoToSlot(VowelInfo info) noexcept {
-    if (info.base == 0) return 0xFF;
-    uint8_t baseIdx = NextKey::Phonology::BaseIndex(info.base);
-    if (baseIdx == 0xFF) return 0xFF;
-    return NextKey::Phonology::VowelSlot(baseIdx, static_cast<uint8_t>(info.mod));
-}
-
 // Pack a rendered nucleus (1-3 vowels) into the same packed key the CharState
-// path uses. Returns 0 if the nucleus has the wrong slot count or contains a
-// non-vowel char — caller treats 0 as "no VCPair entry → lenient".
-[[nodiscard]] uint32_t WstringViewToVowelKey(std::wstring_view vowelSeq) noexcept {
+// path uses. Returns 0 when the nucleus is unencodable (no vowels, more than
+// 3 vowels, or a non-recognised char) — caller treats 0 as "no VCPair entry
+// → lenient pass-through".
+[[nodiscard]] constexpr uint32_t WstringViewToVowelKey(std::wstring_view vowelSeq) noexcept {
     uint8_t slots[3] = { 0, 0, 0 };
     size_t count = 0;
     for (wchar_t ch : vowelSeq) {
         VowelInfo info = Decompose(ch);
-        if (info.base == 0) continue;          // skip non-vowel defensively
+        if (info.base == 0) return 0;          // unrecognised char in nucleus
         if (count >= 3) return 0;              // too many vowels for VCPair
-        uint8_t slot = VowelInfoToSlot(info);
-        if (slot == 0xFF) return 0;
-        slots[count++] = slot;
+        uint8_t baseIdx = NextKey::Phonology::BaseIndex(info.base);
+        if (baseIdx == NextKey::Phonology::kInvalidBaseIndex) return 0;
+        slots[count++] = NextKey::Phonology::VowelSlot(baseIdx,
+                                                        static_cast<uint8_t>(info.mod));
     }
     switch (count) {
         case 1:  return NextKey::Phonology::Key1(slots[0]);
@@ -229,15 +222,18 @@ constexpr std::wstring_view kValidCodas[] = {
     return 0;
 }
 
-[[nodiscard]] bool IsCodaValidForNucleus(std::wstring_view vowelSeq,
-                                          std::wstring_view coda) noexcept {
+// Lenient by default: if any of the inputs (nucleus, coda) cannot be encoded
+// or has no entry in the VCPair table, accept the syllable. The strictness
+// applies only when both sides resolve to known, table-listed values.
+[[nodiscard]] constexpr bool IsCodaValidForNucleus(std::wstring_view vowelSeq,
+                                                    std::wstring_view coda) noexcept {
     if (coda.empty()) return true;
     uint32_t vowelKey = WstringViewToVowelKey(vowelSeq);
-    if (vowelKey == 0) return true;                       // unencodable → lenient
+    if (vowelKey == 0) return true;
     uint16_t allowed = NextKey::Phonology::GetAllowedFinals(vowelKey);
-    if (allowed == 0) return true;                        // no VCPair entry → lenient
+    if (allowed == 0) return true;
     uint16_t bit = CodaToFinalBit(coda);
-    if (bit == 0) return true;                            // unknown coda → lenient
+    if (bit == 0) return true;
     return (allowed & bit) != 0;
 }
 

@@ -44,6 +44,10 @@ namespace Phonology {
 constexpr uint8_t kA = 0, kE = 1, kI = 2, kO = 3, kU = 4, kY = 5;
 constexpr uint8_t kNone = 0, kCirc = 1, kBrev = 2, kHorn = 3;
 
+// Sentinel returned by BaseIndex / VowelSlot for non-vowel input. Distinct
+// from any valid (base << 2 | mod) packing — max legal slot is 5*4|3 = 0x17.
+constexpr uint8_t kInvalidBaseIndex = 0xFF;
+
 [[nodiscard]] constexpr uint8_t VowelSlot(uint8_t base, uint8_t mod) noexcept {
     return static_cast<uint8_t>((base << 2) | mod);
 }
@@ -56,7 +60,7 @@ constexpr uint8_t kNone = 0, kCirc = 1, kBrev = 2, kHorn = 3;
         case L'o': return kO;
         case L'u': return kU;
         case L'y': return kY;
-        default:   return 0xFF;
+        default:   return kInvalidBaseIndex;
     }
 }
 
