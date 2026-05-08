@@ -87,15 +87,14 @@ LRESULT CALLBACK RawInputSelfHealer::WndProc(HWND hwnd, UINT msg, WPARAM wParam,
             KillTimer(hwnd, SELF_HEAL_TIMER_ID);
             if (!self) return 0;
 
-            HOOK_LOG(L"  SelfHeal: timer fired — invoking reinstaller");
-            NEXTKEY_LOG(L"SelfHeal: invoking reinstaller (timer)");
+            NEXTKEY_LOG(L"  SelfHeal: timer fired — invoking reinstaller");
 
             const bool ok = self->reinstaller_ ? self->reinstaller_() : false;
 
             if (ok) {
                 self->consecutiveRawMisses_ = 0;
                 self->lastSelfHealTime_ = GetTickCount();
-                HOOK_LOG(L"  SelfHeal: reinstaller OK");
+                NEXTKEY_LOG(L"  SelfHeal: reinstaller OK");
             } else {
                 // Rule 3 fix: do NOT reset cooldown timestamp on failure.
                 // This allows future retries instead of locking the
@@ -142,21 +141,21 @@ LRESULT CALLBACK RawInputSelfHealer::WndProc(HWND hwnd, UINT msg, WPARAM wParam,
         }
 
         self->consecutiveRawMisses_++;
-        HOOK_LOG(L"  SelfHeal: LL hook miss #%u (elapsed=%ums, vk=0x%02X)",
-                 self->consecutiveRawMisses_, elapsed, raw->data.keyboard.VKey);
+        NEXTKEY_LOG(L"  SelfHeal: LL hook miss #%u (elapsed=%ums, vk=0x%02X)",
+                    self->consecutiveRawMisses_, elapsed, raw->data.keyboard.VKey);
 
         if (self->consecutiveRawMisses_ >= SELF_HEAL_MISS_THRESHOLD) {
             DWORD sinceLast = now - self->lastSelfHealTime_;
             if (sinceLast < SELF_HEAL_COOLDOWN_MS) {
-                HOOK_LOG(L"  SelfHeal: cooldown (%ums left)",
-                         SELF_HEAL_COOLDOWN_MS - sinceLast);
+                NEXTKEY_LOG(L"  SelfHeal: cooldown (%ums left)",
+                            SELF_HEAL_COOLDOWN_MS - sinceLast);
                 return DefWindowProcW(hwnd, msg, wParam, lParam);
             }
 
             // Random delay 10-50ms — avoid lockstep with hijacker reinstall.
             UINT delay = 10 + (GetTickCount() % 41);
             SetTimer(hwnd, SELF_HEAL_TIMER_ID, delay, nullptr);
-            HOOK_LOG(L"  SelfHeal: HOOK DEAD — scheduled reinstaller in %ums", delay);
+            NEXTKEY_LOG(L"  SelfHeal: HOOK DEAD — scheduled reinstaller in %ums", delay);
         }
 
         return DefWindowProcW(hwnd, msg, wParam, lParam);
