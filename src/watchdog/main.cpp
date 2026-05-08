@@ -28,7 +28,9 @@ void LogLine(const wchar_t* fmt, ...) {
     wchar_t path[MAX_PATH];
     DWORD len = GetEnvironmentVariableW(L"LOCALAPPDATA", path, MAX_PATH);
     if (len == 0 || len >= MAX_PATH) return;
-    wcscat_s(path, MAX_PATH, L"\\NexusKey\\watchdog.log");
+    wcscat_s(path, MAX_PATH, L"\\NexusKey");
+    CreateDirectoryW(path, nullptr);  // best-effort; ERROR_ALREADY_EXISTS is fine
+    wcscat_s(path, MAX_PATH, L"\\watchdog.log");
 
     HANDLE hFile = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ,
                                nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
