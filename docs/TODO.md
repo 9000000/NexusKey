@@ -1,5 +1,85 @@
 # TODO
 
+## 🟡 Architecture proposal alignment review — 4-module assessment (2026-05-08)
+
+Anh proposed a 4-module architecture (A: lock-free hook ring buffer, B:
+HWND→Profile cache, C: 2D FSM transition table, D: typing-burst test
+framework). Codebase mapping + investment decision below.
+
+### Alignment matrix
+
+| Module | Align | Status | Gap |
+|---|---|---|---|
+| A — Hook ring buffer | ~75% | LL hook + watchdog (PR #154) shipped; engine still synchronous on LL hook thread (`HookEngine.cpp:724`) | Lock-free SPSC ring buffer between Hook→Engine. Proposed in Sprint 4 §3 H6b but premise (x2 space race) unverified — see [`project_h6_premise_questioned.md`](../../home/phatmt/.claude-work/projects/-home-phatmt-code-NexusKey/memory/) |
+| B — Smart Focus / App Profile cache | ~60% | `cachedFocusedHwnd_` single-slot atomic + `ClassifyWindow` function | No HWND→Profile lookup map; re-classifies on every focus event |
+| C — Engine 2D FSM table | ~30% | If/case engine (~327 branches in `PushChar`); FSM codegen tool exists (PR #132 `4a52399`) but rewrite cancelled — codegen output ~6MB exceeds <3MB target | Table-driven FSM not viable for Vietnamese phonology dimensionality. Path G (custom keymap) replaces. |
+| D — Test framework | ~85% | `NextKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
+
+### Module C — closed, FSM table not viable
+
+FSM codegen tool (Python NFA→DFA→Hopcroft) salvaged on Main but rewrite
+cancelled: output ~6MB exceeds <3MB target (let alone <250KB proposal).
+Vietnamese phonology dimensionality (vowel × tone × modifier × position
+× prev-onset) has too many state combinations for table-driven O(1)
+approach. **No further FSM table work.** Path G (custom keymap) takes a
+different angle.
+
+### Module D — deferred (anh skip)
+
+Already 85% aligned; gap is sub-ms burst + randomized fuzzer. Reopen when
+QA driver surfaces.
+
+### Module A vs B — B wins for first invest
+
+| Criterion | A — Ring Buffer | B — HWND Profile Cache |
+|---|---|---|
+| Effort | High (~1-2 sprint, foundation rewire) | Low (~1.5 day) |
+| Risk | High — race conditions, key down/up reorder, modifier desync | Low — pure caching layer, easy to audit |
+| Premise verified? | ❌ — anh questioned H6 premise | ✅ — measurable Win32 syscall count before/after |
+| Existing partial coverage | ✅ `HookSelfHealer` + heartbeat (PR #154) | Single-slot `cachedFocusedHwnd_` only |
+| Failure mode if mistake | Lost key events / wrong order / break ALL apps | Stale cache → 1 misclassify / HWND, recover via invalidation |
+
+**Decision:** start with B. A defers until LL hook timeout / parallel
+race reproduces with hard evidence — current chaos PASS shows no signal.
+
+### Module B — implementation plan
+
+Branch `feat/hwnd-app-profile-cache`. Shape:
+
+```cpp
+// HookEngine.h (new fields)
+struct AppProfile {
+    NextKey::Output::WindowClassification classification;
+    DWORD pid;          // HWND-reuse detector: PID change → re-classify
+    uint64_t cachedAt;  // GetTickCount64; for LRU eviction
+};
+std::unordered_map<HWND, AppProfile> appProfileCache_;
+static constexpr size_t kMaxAppProfileCache = 64;
+```
+
+Wire into `ClassifyWindow` path: on focus change lookup HWND first; if
+hit + same PID → use cached; if miss / PID-mismatch → re-classify +
+cache. Invalidate on `EVENT_OBJECT_DESTROY` (AdviseHook required). LRU
+evict when full.
+
+Test plan:
+- Chaos run before/after to confirm no regression
+- Manual Alt+Tab between known apps to verify cache hits (count
+  ClassifyWindow calls per HOOK_LOG)
+
+### Module A — deferred until premise verified
+
+Reopen only when one of these surfaces:
+1. LL hook 300ms timeout warnings in logs (Windows unhooks slow callbacks)
+2. Reproducible race between physical key + synthetic re-injection on
+   modifier transitions
+3. Profile data showing engine work blocks LL hook callback >50ms p99
+
+Until then, current synchronous Hook→Engine model is acceptable; the
+watchdog + self-healer already cover the "OS unhooks us" path.
+
+---
+
 ## 🟡 Auto-cap on Enter — keystroke-FSM asymmetry vs space (2026-05-08)
 
 **Symptom:** Pressing Enter to break a line, then typing a letter → letter
