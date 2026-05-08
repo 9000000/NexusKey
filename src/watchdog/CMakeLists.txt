@@ -23,4 +23,5 @@ endif()
 
 set_target_properties(NexusKeyWatchdog PROPERTIES
     OUTPUT_NAME "NexusKeyWatchdog"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
