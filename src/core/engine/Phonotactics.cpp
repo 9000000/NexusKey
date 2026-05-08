@@ -169,80 +169,72 @@ constexpr std::wstring_view kValidCodas[] = {
     return false;
 }
 
-// Coda groups (RuleTiengViet):
-//   C1 = ng, c       (velar)
-//   C2 = nh, ch      (palatal)
-//   C3 = m, n, p, t  (labial / alveolar)
-enum class CodaGroup : uint8_t { None, C1, C2, C3 };
+// Per-nucleus allowed-coda compatibility, sourced from the canonical VCPair
+// bitmask in VietnamesePhonologyData.h (T2.1 Day-2). Encodes the rendered
+// vowelSeq + coda into the same packed-key + F_* bitmask space the CharState
+// path uses, then performs one bitmask lookup. Replaces the coarser N1/N2/N3
+// approximation that lived here in T3.
 
-[[nodiscard]] CodaGroup ClassifyCoda(std::wstring_view coda) noexcept {
-    if (coda.empty()) return CodaGroup::None;
-    if (coda == L"ng" || coda == L"c") return CodaGroup::C1;
-    if (coda == L"nh" || coda == L"ch") return CodaGroup::C2;
-    if (coda == L"m" || coda == L"n" || coda == L"p" || coda == L"t") return CodaGroup::C3;
-    return CodaGroup::None;  // unknown coda — let other rules reject if needed
+// Pack a rendered nucleus (1-3 vowels) into the same packed key the CharState
+// path uses. Returns 0 when the nucleus is unencodable (no vowels, more than
+// 3 vowels, or a non-recognised char) — caller treats 0 as "no VCPair entry
+// → lenient pass-through".
+[[nodiscard]] constexpr uint32_t WstringViewToVowelKey(std::wstring_view vowelSeq) noexcept {
+    uint8_t slots[3] = { 0, 0, 0 };
+    size_t count = 0;
+    for (wchar_t ch : vowelSeq) {
+        VowelInfo info = Decompose(ch);
+        if (info.base == 0) return 0;          // unrecognised char in nucleus
+        if (count >= 3) return 0;              // too many vowels for VCPair
+        uint8_t baseIdx = NextKey::Phonology::BaseIndex(info.base);
+        if (baseIdx == NextKey::Phonology::kInvalidBaseIndex) return 0;
+        slots[count++] = NextKey::Phonology::VowelSlot(baseIdx,
+                                                        static_cast<uint8_t>(info.mod));
+    }
+    switch (count) {
+        case 1:  return NextKey::Phonology::Key1(slots[0]);
+        case 2:  return NextKey::Phonology::Key2(slots[0], slots[1]);
+        case 3:  return NextKey::Phonology::Key3(slots[0], slots[1], slots[2]);
+        default: return 0;
+    }
 }
 
-// Vowel groups for vowel-coda compatibility (RuleTiengViet):
-//   N1 nuclei accept C1 + C3, reject C2
-//   N2 nuclei accept C2 + C3, reject C1
-//   N3 nuclei accept everything
-//   Other = nucleus not classified — lenient fall-through (allow any coda)
-//
-// Coarser than the per-nucleus `kVCPairRules` bitmask in PhonotacticsValidator.cpp,
-// which is the source-of-truth for the production CharState path. Examples of
-// where VCPair is stricter: "ơ" (only m/n/p/t — N-group says C1+C3 = also ng/c),
-// "iê" (no ch/nh — N-group says all). If/when Phonotactics::IsValidSyllable
-// gains a production caller, port the VCPair encoding rather than relying on
-// the N-group approximation here. See REFACTOR_STATUS T2.1.
-enum class VowelGroup : uint8_t { Other, N1, N2, N3 };
-
-constexpr std::wstring_view kN1Nuclei[] = {
-    L"\x00E2",                 // â
-    L"e",
-    L"o",
-    L"\x00F4",                 // ô
-    L"u",
-    L"\x01B0",                 // ư
-    L"\x01A1",                 // ơ
-    L"\x0103",                 // ă
-    L"o\x0103",                // oă
-    L"oe",
-    L"u\x00E2",                // uâ
-    L"u\x00F4",                // uô
-    L"u\x01A1",                // uơ
-    L"\x01B0\x01A1",           // ươ
-};
-
-constexpr std::wstring_view kN2Nuclei[] = {
-    L"\x00EA",                 // ê
-    L"i",
-    L"u\x00EA",                // uê
-    L"uy",
-    L"ua",
-};
-
-constexpr std::wstring_view kN3Nuclei[] = {
-    L"a",
-    L"oa",
-    L"i\x00EA",                // iê
-    L"uy\x00EA",               // uyê
-};
-
-[[nodiscard]] VowelGroup ClassifyVowelGroup(std::wstring_view vowelSeq) noexcept {
-    for (auto v : kN1Nuclei) if (v == vowelSeq) return VowelGroup::N1;
-    for (auto v : kN2Nuclei) if (v == vowelSeq) return VowelGroup::N2;
-    for (auto v : kN3Nuclei) if (v == vowelSeq) return VowelGroup::N3;
-    return VowelGroup::Other;
+// Map a rendered coda string to the F_* bitmask. Returns 0 for unknown
+// codas (caller treats as lenient pass-through).
+[[nodiscard]] constexpr uint16_t CodaToFinalBit(std::wstring_view coda) noexcept {
+    using namespace NextKey::Phonology;
+    if (coda.size() == 1) {
+        switch (coda[0]) {
+            case L'c': return F_c;
+            case L'k': return F_k;
+            case L'm': return F_m;
+            case L'n': return F_n;
+            case L'p': return F_p;
+            case L't': return F_t;
+            default:   return 0;
+        }
+    }
+    if (coda.size() == 2) {
+        if (coda == L"ch") return F_ch;
+        if (coda == L"ng") return F_ng;
+        if (coda == L"nh") return F_nh;
+    }
+    return 0;
 }
 
-[[nodiscard]] bool IsCodaCompatibleWithVowelGroup(VowelGroup group, CodaGroup codaGroup) noexcept {
-    if (group == VowelGroup::Other)  return true;   // unclassified — lenient
-    if (codaGroup == CodaGroup::None) return true;
-    if (codaGroup == CodaGroup::C3)  return true;   // C3 accepted by all groups
-    if (group == VowelGroup::N3)     return true;   // N3 accepts everything
-    if (group == VowelGroup::N1)     return codaGroup == CodaGroup::C1;
-    return codaGroup == CodaGroup::C2;              // group == N2
+// Lenient by default: if any of the inputs (nucleus, coda) cannot be encoded
+// or has no entry in the VCPair table, accept the syllable. The strictness
+// applies only when both sides resolve to known, table-listed values.
+[[nodiscard]] constexpr bool IsCodaValidForNucleus(std::wstring_view vowelSeq,
+                                                    std::wstring_view coda) noexcept {
+    if (coda.empty()) return true;
+    uint32_t vowelKey = WstringViewToVowelKey(vowelSeq);
+    if (vowelKey == 0) return true;
+    uint16_t allowed = NextKey::Phonology::GetAllowedFinals(vowelKey);
+    if (allowed == 0) return true;
+    uint16_t bit = CodaToFinalBit(coda);
+    if (bit == 0) return true;
+    return (allowed & bit) != 0;
 }
 
 // Vietnamese orthography splits c/k, g/gh, ng/ngh by vowel frontness.
@@ -451,10 +443,9 @@ bool Phonotactics::IsValidSyllable(
     // Pending vowels MUST have a coda.
     if (coda.empty() && IsPendingVowelSeq(vowelSeq)) return false;
 
-    // N1/N2/N3 vowel-coda group compatibility.
-    if (!IsCodaCompatibleWithVowelGroup(ClassifyVowelGroup(vowelSeq), ClassifyCoda(coda))) {
-        return false;
-    }
+    // VCPair vowel-coda compatibility (per-nucleus allowed-coda bitmask,
+    // shared with PhonotacticsValidator on the CharState path).
+    if (!IsCodaValidForNucleus(vowelSeq, coda)) return false;
 
     // Stop-final coda restricts tone to Acute or Dot.
     if (!ToneAllowedForCoda(coda, tone)) return false;
