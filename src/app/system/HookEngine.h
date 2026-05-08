@@ -390,7 +390,7 @@ private:
     // Returns pointer into `appProfileCache_` if HWND is cached AND its current
     // PID matches the cached entry. PID-mismatch entries are evicted in place
     // (HWND was reused by a different process). Returns nullptr on miss.
-    const AppProfile* LookupAppProfile(HWND hwnd) noexcept;
+    [[nodiscard]] const AppProfile* LookupAppProfile(HWND hwnd) noexcept;
     // Insert/update the cache entry for `hwnd`. LRU-evicts the oldest entry
     // (by `cachedAt`) when at capacity.
     void StoreAppProfile(HWND hwnd, AppProfile profile) noexcept;
