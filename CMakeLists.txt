@@ -155,6 +155,8 @@ add_executable(NextKeyApp WIN32
     src/app/system/FloatingIcon.cpp
     src/app/system/HookEngine.h
     src/app/system/HookEngine.cpp
+    src/app/system/HookSelfHealer.h
+    src/app/system/HookSelfHealer.cpp
     src/app/system/MainThreadWorker.h
     src/app/system/MainThreadWorker.cpp
     src/app/system/HotkeyManager.h
@@ -238,6 +240,8 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/FloatingIcon.cpp
         src/app/system/HookEngine.h
         src/app/system/HookEngine.cpp
+        src/app/system/HookSelfHealer.h
+        src/app/system/HookSelfHealer.cpp
         src/app/system/MainThreadWorker.h
         src/app/system/MainThreadWorker.cpp
         src/app/system/HotkeyManager.h
@@ -466,6 +470,7 @@ if(WIN32)
         src/app/output/RichEditEmReplaceSelInjector.cpp
         src/app/output/SplitDispatchInjector.cpp
         src/app/output/OutputInjectorFactory.cpp
+        src/app/system/HookSelfHealer.cpp
     )
 endif()
 
