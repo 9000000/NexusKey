@@ -1,5 +1,25 @@
 # TODO
 
+## 🟡 v3 Watchdog Smoke 4 + 5 — verify Task Scheduler at-logon trigger (2026-05-08)
+
+Phase 2 watchdog smoke 1/2/3 PASS (crash respawn, graceful, hung UI). Smoke 4 + 5 deferred because they require a real logout/login cycle to fire the `\NexusKey\Watchdog` at-logon trigger.
+
+**Smoke 4 — Kill watchdog alone:**
+- `taskkill /F /IM NexusKeyWatchdog.exe` while NexusKey runs normally.
+- NexusKey must continue functioning.
+- After logout/login: Task Scheduler must relaunch NexusKeyWatchdog automatically.
+
+**Smoke 5 — Kill both:**
+- `taskkill /F /IM NexusKey.exe NexusKeyWatchdog.exe` simultaneously.
+- After logout/login: Task Scheduler relaunches watchdog → watchdog observes events absent + process not running → respawns NexusKey.
+
+**Smoke 6 — AV scan (low priority):**
+- Run Windows Defender quick scan with watchdog active. Verify NexusKeyWatchdog.exe not quarantined / no false-positive on the small console-less WIN32 binary.
+
+**Why deferred:** logout/login is disruptive and the trigger mechanism is Windows-managed (StartupHelper just registers the task). Risk of regression from our code is low — `RegisterWatchdogTask()` already verified during first-run UAC accept. Reopen if user reports auto-launch failure.
+
+---
+
 ## 🔴 Vietnamese-rule consolidation into a phonology plugin (2026-05-08)
 
 **Project design philosophy (anh 2026-05-08):** *nhanh - gọn - nhẹ - mượt - plugin,

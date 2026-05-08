@@ -26,6 +26,8 @@ enum class StringId : uint16_t {
     MENU_SETTINGS,
     MENU_ABOUT,
     MENU_EXIT,
+    MENU_STOP_WATCHDOG,
+    MENU_ENABLE_WATCHDOG,
 
     // Tooltips
     TIP_VIETNAMESE,
@@ -82,6 +84,10 @@ enum class StringId : uint16_t {
 
     // Admin restart
     ADMIN_DEELEVATION_FAILED,
+
+    // Watchdog
+    WATCHDOG_STOPPED_BODY,
+    WATCHDOG_ENABLED_BODY,
 
     _COUNT
 };

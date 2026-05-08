@@ -10,6 +10,7 @@
 #include "core/engine/CodeTableConverter.h"
 #include "core/config/TypingConfig.h"
 #include "core/SmartSwitchManager.h"
+#include "HookSelfHealer.h"
 #include <Windows.h>
 #include <functional>
 #include <atomic>
@@ -445,22 +446,15 @@ private:
     mutable std::mutex stateMutex_;
     void HookThreadProc();                         // runs on hookThread_
 
-    // ── Self-healing: Dual-channel hook integrity detection ──
-    // Raw Input (WM_INPUT) always fires for physical keys, even if our LL hook
-    // is dead/removed. Comparing timestamps detects hook death without synthetic
-    // keys — no false positives, no blocking, no mutex.
-    HWND rawInputHwnd_ = nullptr;                    // Hidden window for WM_INPUT (hook thread only)
-    DWORD lastLlHookTime_ = 0;                       // Updated in LLKeyboardProc (same thread — no atomic)
-    uint8_t consecutiveRawMisses_ = 0;               // WM_INPUT events without LL hook activity
-    DWORD lastSelfHealTime_ = 0;                     // Cooldown tracking
-    static constexpr UINT_PTR kSelfHealTimerId = 42;          // One-shot timer ID
-    static constexpr uint8_t kSelfHealMissThreshold = 3;      // Consecutive misses to trigger
-    static constexpr DWORD kSelfHealCooldownMs = 10000;       // 10s between reinstalls
-    static constexpr DWORD kSelfHealHookFreshnessMs = 200;    // LL hook must fire within this window
+    // Self-heal — extracted to HookSelfHealer module (v3.0.0).
+    // Owned via interface for testability + future swap (e.g., out-of-process
+    // supervisor variant).
+    std::unique_ptr<IHookSelfHealer> selfHealer_;
 
-    static LRESULT CALLBACK RawInputWndProc(HWND, UINT, WPARAM, LPARAM);
-    bool CreateRawInputMonitor();
-    void DestroyRawInputMonitor();
+    // Reinstall both keyboard and mouse LL hooks. Used by HookSelfHealer
+    // when it detects the LL hook was hijacked. Returns false if either
+    // SetWindowsHookExW call fails (caller logs GetLastError).
+    [[nodiscard]] bool ReinstallKeyboardAndMouseHooks();
 
     // Modifier tracking state (for double-Alt and layout change detection)
     bool modCtrlDown_ = false;

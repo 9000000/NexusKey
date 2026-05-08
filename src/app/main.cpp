@@ -24,6 +24,7 @@
 
 #include "system/HotkeyManager.h"
 #include "system/HotkeyWiring.h"
+#include "system/HeartbeatPublisher.h"
 #include "core/ipc/SharedStateManager.h"
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "system/HookEngine.h"
@@ -59,6 +60,8 @@ static HINSTANCE g_hInstance = nullptr;
 
 static SharedStateManager g_sharedState;  // Shared memory for Settings subprocess IPC
 static HotkeyManager g_hotkeyManager;
+static HeartbeatPublisher g_heartbeat;  // 30s heartbeat for NexusKeyWatchdog auto-respawn
+static std::atomic<bool> g_watchdogEnabled{false};  // Mirrors SystemConfig::watchdogEnabled — read by tray menu state getter, written by ToggleWatchdog handler
 
 #ifdef NEXUSKEY_HOOK_ENGINE
 static HookEngine g_hookEngine;
@@ -334,6 +337,28 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         NEXTKEY_LOG(L"Startup task missing — fell back to registry, disabled admin mode in config");
     }
 
+    // Watchdog is opt-in (default OFF). Mirror config flag into the atomic the
+    // tray menu state getter reads. If user previously enabled, ensure the
+    // watchdog process is running now (skips waiting for next logon trigger —
+    // watchdog has its own single-instance mutex so a duplicate launch is a no-op).
+    g_watchdogEnabled.store(systemConfig.watchdogEnabled, std::memory_order_relaxed);
+    if (systemConfig.watchdogEnabled) {
+        wchar_t wdSelf[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, wdSelf, MAX_PATH);
+        std::wstring wdSelfStr(wdSelf);
+        auto wdSlash = wdSelfStr.find_last_of(L"\\/");
+        if (wdSlash != std::wstring::npos) {
+            std::wstring wdPath = wdSelfStr.substr(0, wdSlash) + L"\\NexusKeyWatchdog.exe";
+            STARTUPINFOW wdSi = { sizeof(wdSi) };
+            PROCESS_INFORMATION wdPi = {};
+            if (CreateProcessW(wdPath.c_str(), nullptr, nullptr, nullptr, FALSE,
+                               0, nullptr, nullptr, &wdSi, &wdPi)) {
+                CloseHandle(wdPi.hThread);
+                CloseHandle(wdPi.hProcess);
+            }
+        }
+    }
+
     // Check for update failure marker (installer failed and relaunched us)
     bool updateJustFailed = false;
     {
@@ -442,7 +467,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     });
 
-    // Wire menu state getter — reads from SharedState only (no TOML)
+    // Wire menu state getter — reads from SharedState + g_watchdogEnabled (no TOML)
     g_trayIcon.SetMenuStateGetter([]() -> TrayMenuState {
         SharedState state = g_sharedState.Read();
         uint32_t ff = state.GetFeatureFlags();
@@ -452,7 +477,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             (ff & FeatureFlags::SMART_SWITCH) != 0,
             (ff & FeatureFlags::MACRO_ENABLED) != 0,
             state.inputMethod,
-            static_cast<CodeTable>(state.codeTable)
+            static_cast<CodeTable>(state.codeTable),
+            g_watchdogEnabled.load(std::memory_order_relaxed)
         };
     });
 
@@ -492,6 +518,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     });
     g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
     g_mainThreadWorker.Start();
+
+    // Best-effort: heartbeat for NexusKeyWatchdog auto-respawn. If event
+    // creation fails (rare — e.g. session-isolation edge case) NexusKey
+    // still functions; watchdog simply won't engage.
+    if (!g_heartbeat.Start()) {
+        NEXTKEY_LOG(L"HeartbeatPublisher start failed — watchdog auto-respawn disabled");
+    }
 
     NEXTKEY_LOG(L"HookEngine started, entering message loop");
 
@@ -660,7 +693,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         g_trayIcon.SetVietnameseMode(vietnamese);
     });
 
-    // Wire menu state getter — reads from SharedState only (no TOML)
+    // Wire menu state getter — reads from SharedState + g_watchdogEnabled (no TOML)
     g_trayIcon.SetMenuStateGetter([]() -> TrayMenuState {
         SharedState state = g_sharedState.Read();
         uint32_t ff = state.GetFeatureFlags();
@@ -670,7 +703,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             (ff & FeatureFlags::SMART_SWITCH) != 0,
             (ff & FeatureFlags::MACRO_ENABLED) != 0,
             state.inputMethod,
-            static_cast<CodeTable>(state.codeTable)
+            static_cast<CodeTable>(state.codeTable),
+            g_watchdogEnabled.load(std::memory_order_relaxed)
         };
     });
 
@@ -785,6 +819,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     CoUninitialize();
 #endif
 
+    // Catch graceful exits that didn't go through the tray-Exit branch (e.g.
+    // WM_CLOSE from the updater handover) so the watchdog skips respawn.
+    // Idempotent — safe even if SignalGracefulShutdown was already called.
+    g_heartbeat.SignalGracefulShutdown();
+    g_heartbeat.Stop();
+
     NEXTKEY_LOG(L"Exiting");
     CloseHandle(hMutex);
     return 0;
@@ -891,6 +931,8 @@ void OnMenuCommand(TrayMenuId id) {
 
         case TrayMenuId::Exit:
             TerminateAllSubprocesses();
+            // Tell watchdog this is a user-initiated quit — skip respawn.
+            g_heartbeat.SignalGracefulShutdown();
             g_running.store(false, std::memory_order_relaxed);
             PostQuitMessage(0);
             break;
@@ -898,6 +940,74 @@ void OnMenuCommand(TrayMenuId id) {
         case TrayMenuId::RestartWindows:
             RestartWindowsWithPrompt(g_trayIcon.GetMessageWindow());
             break;
+
+        case TrayMenuId::ToggleWatchdog: {
+            auto cfg = ConfigManager::LoadSystemConfigOrDefault();
+
+            if (cfg.watchdogEnabled) {
+                // ── Currently ON → disable ──
+                g_heartbeat.SignalGracefulShutdown();
+
+                // Kill running watchdog (same-user same-session — no UAC).
+                {
+                    STARTUPINFOW si = { sizeof(si) };
+                    si.dwFlags = STARTF_USESHOWWINDOW;
+                    si.wShowWindow = SW_HIDE;
+                    PROCESS_INFORMATION pi = {};
+                    wchar_t cmd[] = L"taskkill /F /IM NexusKeyWatchdog.exe";
+                    if (CreateProcessW(nullptr, cmd, nullptr, nullptr, FALSE,
+                                       CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+                        WaitForSingleObject(pi.hProcess, 3000);
+                        CloseHandle(pi.hProcess);
+                        CloseHandle(pi.hThread);
+                    }
+                }
+                // Unregister Task Scheduler so logon trigger no longer fires (UAC prompt).
+                RemoveWatchdogScheduledTask();
+
+                cfg.watchdogEnabled = false;
+                (void)ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), cfg);
+                g_watchdogEnabled.store(false, std::memory_order_relaxed);
+
+                MessageBoxW(g_trayIcon.GetMessageWindow(),
+                            S(StringId::WATCHDOG_STOPPED_BODY),
+                            L"NexusKey", MB_OK | MB_ICONINFORMATION);
+            } else {
+                // ── Currently OFF → enable ──
+                // Register Task Scheduler entry first (UAC prompt). If user denies
+                // UAC, do nothing — leaves config flag false, menu still shows "Bật...".
+                if (!CreateWatchdogScheduledTask()) {
+                    NEXTKEY_LOG(L"Watchdog enable: Task Scheduler register failed (UAC denied?)");
+                    break;
+                }
+
+                cfg.watchdogEnabled = true;
+                (void)ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), cfg);
+                g_watchdogEnabled.store(true, std::memory_order_relaxed);
+
+                // Launch watchdog now so user doesn't have to logout/login.
+                // Single-instance mutex inside watchdog dedup if at-logon also fires.
+                wchar_t self[MAX_PATH] = {};
+                GetModuleFileNameW(nullptr, self, MAX_PATH);
+                std::wstring selfStr(self);
+                auto slash = selfStr.find_last_of(L"\\/");
+                if (slash != std::wstring::npos) {
+                    std::wstring wdPath = selfStr.substr(0, slash) + L"\\NexusKeyWatchdog.exe";
+                    STARTUPINFOW si = { sizeof(si) };
+                    PROCESS_INFORMATION pi = {};
+                    if (CreateProcessW(wdPath.c_str(), nullptr, nullptr, nullptr, FALSE,
+                                       0, nullptr, nullptr, &si, &pi)) {
+                        CloseHandle(pi.hThread);
+                        CloseHandle(pi.hProcess);
+                    }
+                }
+
+                MessageBoxW(g_trayIcon.GetMessageWindow(),
+                            S(StringId::WATCHDOG_ENABLED_BODY),
+                            L"NexusKey", MB_OK | MB_ICONINFORMATION);
+            }
+            break;
+        }
 
         default: {
             // Code table menu items (1010-1014)

@@ -404,6 +404,9 @@ void TrayIcon::ShowContextMenu() {
         static_cast<UINT>(TrayMenuId::About), S(StringId::MENU_ABOUT));
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hMenu, MF_STRING,
+        static_cast<UINT>(TrayMenuId::ToggleWatchdog),
+        S(state.watchdogEnabled ? StringId::MENU_STOP_WATCHDOG : StringId::MENU_ENABLE_WATCHDOG));
+    AppendMenuW(hMenu, MF_STRING,
         static_cast<UINT>(TrayMenuId::Exit), S(StringId::MENU_EXIT));
 
     POINT pt;

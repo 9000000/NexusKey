@@ -308,18 +308,23 @@ void HookEngine::HookThreadProc() {
     }
     hookStartCv_.notify_one();
 
-    // Start Raw Input monitor for self-healing hook detection (best-effort)
-    if (!CreateRawInputMonitor()) {
-        HOOK_LOG(L"HookThreadProc: Raw Input monitor FAILED (self-healing disabled)");
+    // Start Raw Input self-healer (best-effort — hook still works without it).
+    selfHealer_ = std::make_unique<RawInputSelfHealer>(
+        cachedHInstance_,
+        [this]() { return ReinstallKeyboardAndMouseHooks(); });
+    if (!selfHealer_->Start()) {
+        HOOK_LOG(L"HookThreadProc: HookSelfHealer Start FAILED (self-healing disabled)");
+        selfHealer_.reset();
     } else {
-        HOOK_LOG(L"HookThreadProc: Raw Input monitor active");
+        HOOK_LOG(L"HookThreadProc: HookSelfHealer active");
     }
 
     HOOK_LOG(L"HookThreadProc: pump started tid=%lu", hookThreadId_);
 
-    // Message pump. Besides LL hook dispatch, this thread also services the
-    // Raw Input self-heal monitor (WM_INPUT + one-shot WM_TIMER) — all
-    // lightweight, sub-microsecond handlers that won't risk LowLevelHooksTimeout.
+    // Message pump. Besides LL hook dispatch, this thread also services
+    // HookSelfHealer's hidden window (WM_INPUT + one-shot WM_TIMER, ~5-20μs
+    // handlers, well within LowLevelHooksTimeout) and WM_APP_REINSTALL_HOOKS
+    // posted by OnFocusChanged for Chromium top-of-chain priority.
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         if (msg.message == WM_APP_REINSTALL_HOOKS) {
@@ -338,8 +343,13 @@ void HookEngine::HookThreadProc() {
         DispatchMessageW(&msg);
     }
 
-    // Cleanup Raw Input monitor
-    DestroyRawInputMonitor();
+    // Self-heal teardown on the hook thread (window owner). Must run here,
+    // not in dtor — DestroyWindow requires the creating thread.
+    if (selfHealer_) {
+        selfHealer_->Stop();
+        // unique_ptr release happens in ~HookEngine; the hidden window is
+        // already destroyed by Stop() above (Stop is idempotent).
+    }
 
     // Must unhook on the same thread that installed (MSDN requirement).
     if (keyboardHook_) {
@@ -564,7 +574,7 @@ void HookEngine::ReloadFromToml() {
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
     engine_ = EngineFactory::Create(config);
     {
-        const InputMethod loggedMethod = currentMethod_.load(std::memory_order_acquire);
+        [[maybe_unused]] const InputMethod loggedMethod = currentMethod_.load(std::memory_order_acquire);
         NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
                     loggedMethod == InputMethod::VNI ? L"VNI" :
                     loggedMethod == InputMethod::Combined ? L"Combined" : L"Telex",
@@ -665,10 +675,9 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
         HookEngine* self = s_instance.load(std::memory_order_relaxed);
         auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
-        // Self-heal heartbeat: record that LL hook is alive.
-        // Same thread as RawInputWndProc — no lock, no atomic.
-        if (self) {
-            self->lastLlHookTime_ = GetTickCount();
+        // Self-heal heartbeat — delegated to HookSelfHealer (Rule 4 extraction).
+        if (self && self->selfHealer_) {
+            self->selfHealer_->RecordHookFire();
         }
 
         // Always track our own synthetic events regardless of nCode.
@@ -3436,128 +3445,29 @@ wchar_t HookEngine::VkToMacroChar(DWORD vkCode) noexcept {
     return ch ? static_cast<wchar_t>(towlower(static_cast<wchar_t>(ch))) : 0;
 }
 
-bool HookEngine::CreateRawInputMonitor() {
-    WNDCLASSEXW wc = { sizeof(wc) };
-    wc.lpfnWndProc = RawInputWndProc;
-    wc.hInstance = cachedHInstance_;
-    wc.lpszClassName = L"NexusKey_RawInputMonitor";
-    if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
-        return false;
-
-    // Hidden desktop window (NOT HWND_MESSAGE — RIDEV_INPUTSINK requires desktop hierarchy)
-    rawInputHwnd_ = CreateWindowExW(0, wc.lpszClassName, nullptr,
-                                     0, 0, 0, 0, 0,
-                                     nullptr, nullptr, cachedHInstance_, nullptr);
-    if (!rawInputHwnd_) return false;
-
-    RAWINPUTDEVICE rid = {};
-    rid.usUsagePage = 0x01;  // Generic Desktop
-    rid.usUsage     = 0x06;  // Keyboard
-    rid.dwFlags     = RIDEV_INPUTSINK;
-    rid.hwndTarget  = rawInputHwnd_;
-    if (!RegisterRawInputDevices(&rid, 1, sizeof(rid))) {
-        DestroyWindow(rawInputHwnd_);
-        rawInputHwnd_ = nullptr;
-        return false;
+bool HookEngine::ReinstallKeyboardAndMouseHooks() {
+    if (keyboardHook_) {
+        UnhookWindowsHookEx(keyboardHook_);
+        keyboardHook_ = SetWindowsHookExW(
+            WH_KEYBOARD_LL, LowLevelKeyboardProc, cachedHInstance_, 0);
+        if (!keyboardHook_) {
+            HOOK_LOG(L"  ReinstallKeyboardAndMouseHooks: keyboard hook FAILED err=%lu",
+                     GetLastError());
+            return false;
+        }
     }
+    if (mouseHook_) {
+        UnhookWindowsHookEx(mouseHook_);
+        mouseHook_ = SetWindowsHookExW(
+            WH_MOUSE_LL, LowLevelMouseProc, cachedHInstance_, 0);
+        if (!mouseHook_) {
+            HOOK_LOG(L"  ReinstallKeyboardAndMouseHooks: mouse hook FAILED err=%lu",
+                     GetLastError());
+            return false;
+        }
+    }
+    HOOK_LOG(L"  ReinstallKeyboardAndMouseHooks: both hooks reinstalled OK");
     return true;
-}
-
-void HookEngine::DestroyRawInputMonitor() {
-    if (rawInputHwnd_) {
-        KillTimer(rawInputHwnd_, kSelfHealTimerId);
-        RAWINPUTDEVICE rid = {};
-        rid.usUsagePage = 0x01;
-        rid.usUsage     = 0x06;
-        rid.dwFlags     = RIDEV_REMOVE;
-        rid.hwndTarget  = nullptr;
-        RegisterRawInputDevices(&rid, 1, sizeof(rid));
-        DestroyWindow(rawInputHwnd_);
-        rawInputHwnd_ = nullptr;
-    }
-    UnregisterClassW(L"NexusKey_RawInputMonitor", cachedHInstance_);
-}
-
-LRESULT CALLBACK HookEngine::RawInputWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    HookEngine* self = s_instance.load(std::memory_order_relaxed);
-
-    // ── WM_TIMER: deferred self-heal (one-shot, from detection below) ──
-    if (msg == WM_TIMER && wParam == kSelfHealTimerId) {
-        KillTimer(hwnd, kSelfHealTimerId);  // One-shot: cancel immediately
-        if (!self) return 0;
-
-        HOOK_LOG(L"  SelfHeal: timer fired — reinstalling hooks");
-        NEXTKEY_LOG(L"SelfHeal: reinstalling hooks (timer)");
-
-        if (self->keyboardHook_) {
-            UnhookWindowsHookEx(self->keyboardHook_);
-            self->keyboardHook_ = SetWindowsHookExW(
-                WH_KEYBOARD_LL, LowLevelKeyboardProc, self->cachedHInstance_, 0);
-        }
-        if (self->mouseHook_) {
-            UnhookWindowsHookEx(self->mouseHook_);
-            self->mouseHook_ = SetWindowsHookExW(
-                WH_MOUSE_LL, LowLevelMouseProc, self->cachedHInstance_, 0);
-        }
-
-        self->consecutiveRawMisses_ = 0;
-        self->lastSelfHealTime_ = GetTickCount();
-        HOOK_LOG(L"  SelfHeal: hooks reinstalled OK");
-        return 0;
-    }
-
-    if (msg != WM_INPUT)
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
-
-    // ── Extract Raw Input (stack-only, no allocation) ──
-    UINT size = 0;
-    GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam),
-                    RID_INPUT, nullptr, &size, sizeof(RAWINPUTHEADER));
-    if (size == 0 || size > sizeof(RAWINPUT) + 32)
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-
-    alignas(RAWINPUT) BYTE buf[sizeof(RAWINPUT) + 32];
-    if (GetRawInputData(reinterpret_cast<HRAWINPUT>(lParam),
-                        RID_INPUT, buf, &size, sizeof(RAWINPUTHEADER)) == UINT(-1))
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-
-    auto* raw = reinterpret_cast<RAWINPUT*>(buf);
-
-    // Filter: physical keyboard key-down only
-    if (raw->header.dwType != RIM_TYPEKEYBOARD) return DefWindowProcW(hwnd, msg, wParam, lParam);
-    if (raw->header.hDevice == nullptr) return DefWindowProcW(hwnd, msg, wParam, lParam);  // Skip SendInput
-    if (raw->data.keyboard.Flags & RI_KEY_BREAK) return DefWindowProcW(hwnd, msg, wParam, lParam);  // Key-up
-
-    // ── Dual-channel comparison (< 0.5μs total) ──
-    DWORD now = GetTickCount();
-    DWORD elapsed = now - self->lastLlHookTime_;
-
-    if (elapsed < kSelfHealHookFreshnessMs) {
-        self->consecutiveRawMisses_ = 0;  // Hook alive
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
-
-    // LL hook missed this key
-    self->consecutiveRawMisses_++;
-    HOOK_LOG(L"  SelfHeal: LL hook miss #%u (elapsed=%ums, vk=0x%02X)",
-             self->consecutiveRawMisses_, elapsed, raw->data.keyboard.VKey);
-
-    if (self->consecutiveRawMisses_ >= kSelfHealMissThreshold) {
-        DWORD sinceLast = now - self->lastSelfHealTime_;
-        if (sinceLast < kSelfHealCooldownMs) {
-            HOOK_LOG(L"  SelfHeal: cooldown (%ums left)", kSelfHealCooldownMs - sinceLast);
-            return DefWindowProcW(hwnd, msg, wParam, lParam);
-        }
-
-        // Schedule deferred reinstall via one-shot timer (Anti-Dorion: random 10-50ms)
-        // NEVER Sleep() on hook thread — blocks pump → Windows removes LL hooks!
-        UINT delay = 10 + (GetTickCount() % 41);
-        SetTimer(hwnd, kSelfHealTimerId, delay, nullptr);
-        HOOK_LOG(L"  SelfHeal: HOOK DEAD — scheduled reinstall in %ums", delay);
-    }
-
-    return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 }  // namespace NextKey
