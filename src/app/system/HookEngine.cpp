@@ -1647,9 +1647,6 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     //   - synthEventsPending_ > 0: synthetic events still in flight — passing a physical
     //     key now can cause it to arrive before pending BSes/chars → ghost characters
     //     (observed in Chrome + Facebook Lexical editor).
-    //   - isOutlookApp_: Outlook 2016 RichEdit drops the last char of a word when
-    //     physical Shift+letter precedes subsequent chars (e.g. "Anh em" → "An hem").
-    //     SendInput VK_PACKET path avoids the quirk (issue #97).
     //
     // Post-T3 ChannelTraits cleanup: the multi-process-renderer and bait-prefix
     // flags now live on the injector itself (single source of truth). One
@@ -1659,7 +1656,6 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     auto inj = injector_.load(std::memory_order_acquire);
     const bool electronApp = inj && inj->HasMultiProcessRenderer();
     const bool baitChar = inj && inj->NeedsBaitCharPrefix();
-    const bool outlookApp = isOutlookApp_.load(std::memory_order_acquire);
     const bool skipEmpty = skipEmptyChar_.load(std::memory_order_acquire);
     // Sprint 2 D4: editMsgPath via SettleBudget==0 proxy (RichEditEm only
     // returns 0ms today). Two reads (passthrough gate + reinjectVk gate)
@@ -1682,7 +1678,6 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     //     guards the burst-input case.
     if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
         !(hadSynthInWord_ && electronApp) &&
-        !outlookApp &&
         !editMsgPath &&
         synthEventsPending_ == 0 &&
         composition.size() == previousComposition_.size() + 1 &&
@@ -2713,7 +2708,6 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     bool localNeedBait = isBrowser;
     bool localClipboard = isVB6;
     bool localEditMsg = false;
-    bool localOutlook = false;
 
     // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
     bool isWebView2 = false;
@@ -2731,13 +2725,12 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
                 // transform instead of per BS + per char.
                 localEditMsg = true;
             } else {
-                // Outlook 2016 RichEdit has two orthogonal quirks, both derived from
-                // the same detection: (1) needs a U+202F bait char before BS (same
-                // as Excel), (2) drops the trailing char of a word when physical
-                // Shift+letter precedes other chars — passthrough must be disabled
-                // (issue #97). Single exe scan; both flags fall out.
+                // Outlook 2016 RichEdit needs a U+202F bait char before BS (same
+                // quirk as Excel). The "Anh em → An hem" passthrough flag was
+                // reverted — that symptom is Outlook AutoCorrect rewriting the
+                // text, not our IME path; user-confirmed by reproducing with the
+                // IME off (see docs/TODO.md "Outlook Anh em Fix").
                 const bool isOutlook = exeName.find(L"outlook") != std::wstring::npos;
-                localOutlook = isOutlook;
                 localNeedBait = exeName.find(L"excel") != std::wstring::npos || isOutlook;
 
                 // Tauri / WebView2-embedding apps (e.g. Dorion): detected by
@@ -2763,7 +2756,6 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // with their .load(acquire) in ProcessKeyDown).
     skipEmptyChar_.store(localSkipEmpty, std::memory_order_release);
     useClipboardPaste_.store(localClipboard, std::memory_order_release);
-    isOutlookApp_.store(localOutlook, std::memory_order_release);
 
     // Sprint 2 D3: build the IOutputInjector for this classification and
     // RCU-publish to injector_. All four branches now live: RichEdit
