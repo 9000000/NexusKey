@@ -202,8 +202,12 @@ fix landed" entry at top of file.
 ### M2 — Constants naming convention (`kFoo` vs `UPPER_SNAKE`)
 Codebase-wide pattern uses `kFoo` for file-scope `static constexpr`; Rule 9.1 prescribes `UPPER_SNAKE`. Need 3-collaborator decision: update Rule 9.1 to formalize the k-prefix convention, or rename ~10 codebase constants. Recommendation: update the rule.
 
-### M3 — Dual-route `TrackedSendInput` (HookEngine member + `Internal::` free function)
-Both bump `synthEventsPending_` via different mechanisms; no double-counting today but the dual presence is confusing for future readers. Suggested fix: route the 4 VB6/clipboard sites + reinjectVk through `Internal::TrackedSendInput`, then delete `HookEngine::TrackedSendInput` member. ~5 call sites, non-trivial.
+### ~~M3 — Dual-route `TrackedSendInput` (HookEngine member + `Internal::` free function)~~ — LANDED
+Resolved post-v3 cleanup. `HookEngine::TrackedSendInput` deleted; the
+6 in-tree callers (SendBackspaceEvents, SendCharEvents, 3× clipboard
+paste, reinjectVk) now go through `Output::Internal::TrackedSendInput`
+directly. Synth-counter wiring stays via the
+`g_synthCounterCallback` → `OnSynthDispatched` bridge.
 
 ### ~~ChannelTraits + `isElectronApp_` / `needBaitChar_` deletion~~ — LANDED
 Resolved via two virtual trait methods (`HasMultiProcessRenderer()` /
@@ -887,8 +891,8 @@ Full-source review covering engine, config/IPC, TSF, HookEngine, dialogs, Classi
 - [x] `SettingsDialog.cpp:38` — `#define TIMER_RESIZE_WINDOW` should be `static constexpr UINT_PTR` (inconsistent with `TIMER_DEFERRED_SAVE`)
 - [x] `ClassicSettingsDialog.h:118` — Add `static_assert(kSettingsCount <= kMaxControls)` to catch overflow at compile time
 - [x] `ClassicTheme.cpp:19-25` — Duplicate `IsWindows11OrGreater()` — already in `DarkModeHelper.h` which is included
-- [ ] Multi-monitor: 7 Classic dialogs + SettingsDialog + SciterSubDialog use `SM_CXSCREEN` — ignores multi-monitor. Use `MonitorFromWindow` + `GetMonitorInfo` for proper centering. Low priority — works on primary monitor.
-- [ ] `TSF_LOG` (Define.h:14-25) outputs 3 separate `OutputDebugStringW` calls per log line — non-atomic, threads can interleave. Concat into single buffer.
+- [x] ~~Multi-monitor: 7 Classic dialogs + SettingsDialog + SciterSubDialog use `SM_CXSCREEN`~~ — LANDED. `NextKey::GetCenteredPos(referenceHwnd, w, h)` helper in `helpers/AppHelpers.h` uses `MonitorFromWindow` + `GetMonitorInfoW` (rcWork) so dialogs honor the user's monitor + work area. All 9 sites migrated.
+- [x] ~~`TSF_LOG` (Define.h:14-25) outputs 3 separate `OutputDebugStringW` calls per log line~~ — LANDED. Concatenated into a single 640-wchar buffer + one `OutputDebugStringW` call. Truncation handling preserved.
 
 ---
 
