@@ -10,7 +10,6 @@
 // to keep AV happy and to be able to launch user-session UI.
 
 #include <Windows.h>
-#include <Psapi.h>
 #include <TlHelp32.h>
 #include <string>
 
