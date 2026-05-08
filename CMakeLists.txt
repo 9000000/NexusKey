@@ -157,6 +157,8 @@ add_executable(NextKeyApp WIN32
     src/app/system/HookEngine.cpp
     src/app/system/HookSelfHealer.h
     src/app/system/HookSelfHealer.cpp
+    src/app/system/HeartbeatPublisher.h
+    src/app/system/HeartbeatPublisher.cpp
     src/app/system/MainThreadWorker.h
     src/app/system/MainThreadWorker.cpp
     src/app/system/HotkeyManager.h
@@ -242,6 +244,8 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/system/HookEngine.cpp
         src/app/system/HookSelfHealer.h
         src/app/system/HookSelfHealer.cpp
+        src/app/system/HeartbeatPublisher.h
+        src/app/system/HeartbeatPublisher.cpp
         src/app/system/MainThreadWorker.h
         src/app/system/MainThreadWorker.cpp
         src/app/system/HotkeyManager.h
@@ -457,6 +461,7 @@ if(WIN32)
         tests/ConfigManagerTest.cpp
         tests/ConfigEventTest.cpp
         tests/HookSelfHealerTest.cpp
+        tests/HeartbeatPublisherTest.cpp
         # Sprint 2 T3 — IOutputInjector unit tests + impl sources for linkage.
         # NextKeyTests links NextKeyCore (which excludes output/), so impls
         # are pulled in directly here for the test binary.
@@ -471,6 +476,7 @@ if(WIN32)
         src/app/output/SplitDispatchInjector.cpp
         src/app/output/OutputInjectorFactory.cpp
         src/app/system/HookSelfHealer.cpp
+        src/app/system/HeartbeatPublisher.cpp
     )
 endif()
 
