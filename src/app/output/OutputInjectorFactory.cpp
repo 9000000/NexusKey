@@ -13,6 +13,7 @@
 #include "Win32SendInputInjector.h"
 #include "RichEditEmReplaceSelInjector.h"
 #include "SplitDispatchInjector.h"
+#include "ClipboardInjector.h"
 
 namespace NextKey::Output {
 
@@ -32,10 +33,15 @@ WindowClassification ClassifyWindow(HWND /*hwnd*/) noexcept {
 std::shared_ptr<IOutputInjector> Create(
         const WindowClassification& c) noexcept {
     // Priority order:
-    //   if c.isRichEditD2DPT  → RichEditEmReplaceSelInjector  [D2]
-    //   if c.isElectron       → SplitDispatchInjector(6)       [D3]
-    //   if c.isConsole        → SplitDispatchInjector(5)       [D3]
-    //   default               → Win32SendInputInjector(c.isChromium)
+    //   if c.useClipboard    → ClipboardInjector              [Sprint 2 follow-up]
+    //   if c.isRichEditD2DPT → RichEditEmReplaceSelInjector  [D2]
+    //   if c.isElectron      → SplitDispatchInjector(6)       [D3]
+    //   if c.isConsole       → SplitDispatchInjector(5)       [D3]
+    //   default              → Win32SendInputInjector(c.isChromium)
+    
+    if (c.useClipboard) {
+        return std::make_shared<ClipboardInjector>();
+    }
     if (c.isRichEditD2DPT) {
         return std::make_shared<RichEditEmReplaceSelInjector>();
     }

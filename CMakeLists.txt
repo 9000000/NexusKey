@@ -191,6 +191,7 @@ add_executable(NextKeyApp WIN32
     src/app/output/OutputInjectorFactory.cpp
     src/app/output/Win32SendInputInjector.h
     src/app/output/Win32SendInputInjector.cpp
+    src/app/output/ClipboardInjector.cpp
     src/app/output/RichEditEmReplaceSelInjector.h
     src/app/output/RichEditEmReplaceSelInjector.cpp
     src/app/output/SplitDispatchInjector.h
@@ -276,6 +277,7 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/output/OutputInjectorFactory.cpp
         src/app/output/Win32SendInputInjector.h
         src/app/output/Win32SendInputInjector.cpp
+        src/app/output/ClipboardInjector.cpp
         src/app/output/RichEditEmReplaceSelInjector.h
         src/app/output/RichEditEmReplaceSelInjector.cpp
         src/app/output/SplitDispatchInjector.h
@@ -473,6 +475,7 @@ if(WIN32)
         tests/output/InjectorTraitsTest.cpp
         src/app/output/Internal.cpp
         src/app/output/Win32SendInputInjector.cpp
+        src/app/output/ClipboardInjector.cpp
         src/app/output/RichEditEmReplaceSelInjector.cpp
         src/app/output/SplitDispatchInjector.cpp
         src/app/output/OutputInjectorFactory.cpp

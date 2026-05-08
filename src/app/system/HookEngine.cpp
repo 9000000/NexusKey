@@ -2489,11 +2489,14 @@ void HookEngine::ReloadAppOverrides() {
     auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
     appEncodingOverrides_.clear();
     appInputMethodOverrides_.clear();
+    appSendMethodOverrides_.clear();
     for (auto& [exe, entry] : overrides) {
         if (entry.encodingOverride >= 0)
             appEncodingOverrides_[exe] = entry.encodingOverride;
         if (entry.inputMethod >= 0)
             appInputMethodOverrides_[exe] = entry.inputMethod;
+        if (entry.sendMethod >= 0)
+            appSendMethodOverrides_[exe] = entry.sendMethod;
     }
 }
 
@@ -2704,11 +2707,19 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     bool localNeedBait = isBrowser;
     bool localClipboard = isVB6;
     bool localEditMsg = false;
+    bool localUseClipboardInjector = false;
+
+    std::wstring exeName = GetExeNameForHwnd(activeHwnd);
+    if (!exeName.empty()) {
+        auto it = appSendMethodOverrides_.find(exeName);
+        if (it != appSendMethodOverrides_.end()) {
+            if (it->second == 1) localUseClipboardInjector = true;
+        }
+    }
 
     // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
     bool isWebView2 = false;
     if (!localSkipEmpty && !localNeedBait && !localClipboard) {
-        std::wstring exeName = GetExeNameForHwnd(activeHwnd);
         if (!exeName.empty()) {
             if (_wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
                 localSkipEmpty = true;
@@ -2766,12 +2777,13 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         c.isElectron      = localElectronApp;
         c.isConsole       = localConsole;
         c.isChromium      = localNeedBait;  // bait-char hint (Chromium autocomplete-dismiss)
+        c.useClipboard    = localUseClipboardInjector;
         injector_.store(NextKey::Output::Create(c), std::memory_order_release);
     }
 
-    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d",
+    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d",
              localConsole ? 1 : 0, localSkipEmpty ? 1 : 0, localElectronApp ? 1 : 0,
-             isWebView2 ? 1 : 0, localNeedBait ? 1 : 0, localClipboard ? 1 : 0, localEditMsg ? 1 : 0);
+             isWebView2 ? 1 : 0, localNeedBait ? 1 : 0, localClipboard ? 1 : 0, localEditMsg ? 1 : 0, localUseClipboardInjector ? 1 : 0);
 
     // Re-install hooks to guarantee NexusKey remains at the top of the hook chain.
     // We only do this for Chromium-based architectures (Electron, WebView2, Browsers)
