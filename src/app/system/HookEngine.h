@@ -350,7 +350,6 @@ private:
     std::unordered_set<std::wstring> webView2PositiveCache_;  // full exe path → known WebView2 host (positive-only; see IsWebView2App)
     std::atomic<bool> skipEmptyChar_{false};  // Skip U+202F for Qt/Electron and Console apps
     std::atomic<bool> useClipboardPaste_{false};  // VB6 and legacy ANSI-internal apps need clipboard paste
-    std::atomic<bool> isOutlookApp_{false};   // Outlook 2016 RichEdit drops trailing char of a word when physical Shift+letter precedes it — force SendInput path (issue #97)
     DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
     bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
