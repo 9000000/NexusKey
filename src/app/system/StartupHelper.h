@@ -32,10 +32,12 @@ namespace NextKey {
 inline constexpr const wchar_t* STARTUP_REG_KEY = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 inline constexpr const wchar_t* STARTUP_REG_VALUE = L"NexusKey";
 inline constexpr const wchar_t* STARTUP_TASK_NAME = L"NexusKey";
+inline constexpr const wchar_t* WATCHDOG_TASK_NAME = L"\\NexusKey\\Watchdog";
 
 // Forward declaration — defined below. RemoveScheduledTask() calls this before
 // its definition appears in the file.
 [[nodiscard]] inline bool IsScheduledTaskRegistered() noexcept;
+[[nodiscard]] inline bool IsWatchdogTaskRegistered() noexcept;
 
 /// Check if the current process is running with admin privileges
 [[nodiscard]] inline bool IsRunningAsAdmin() noexcept {
@@ -182,6 +184,68 @@ inline void RemoveRegistryStartup() noexcept {
     return true;
 }
 
+/// Create the watchdog scheduled task at \NexusKey\Watchdog.
+/// Differences from CreateScheduledTaskElevated():
+///   - Action: NexusKeyWatchdog.exe (sibling of NexusKey.exe in install dir)
+///   - Trigger delay: 10s (let NexusKey come up first; main task uses 5s)
+///   - Settings: RestartCount=3, RestartInterval=1min for self-healing if
+///     the watchdog itself dies (Win10+).
+///   - Principal RunLevel: Limited (NOT Highest) — process supervisor doesn't
+///     need elevation. Keeps AV calm, no UAC needed at logon.
+///   - Task path: \NexusKey\Watchdog (user-root folder, visible in Task
+///     Scheduler MMC for user debug).
+/// Requires UAC to register under \NexusKey\ folder.
+[[nodiscard]] inline bool CreateWatchdogScheduledTask() noexcept {
+    // Build path to NexusKeyWatchdog.exe — same dir as current EXE.
+    wchar_t exePath[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    std::wstring exeStr(exePath);
+    std::wstring dirStr = exeStr.substr(0, exeStr.find_last_of(L"\\/"));
+    std::wstring watchdogPath = dirStr + L"\\NexusKeyWatchdog.exe";
+
+    // Get current username BEFORE elevation — ensures task triggers for the
+    // logged-in user, not the admin account used for UAC elevation.
+    wchar_t username[256] = {};
+    DWORD usernameSize = 256;
+    GetUserNameW(username, &usernameSize);
+
+    // PowerShell registers the task. Watchdog runs at LIMITED RunLevel
+    // (NOT Highest) — keeps AV calm, no UAC needed at logon.
+    std::wstring ps1Args = L"-NoProfile -WindowStyle Hidden -Command \"";
+    ps1Args += L"$A = New-ScheduledTaskAction -Execute '\"" + watchdogPath + L"\"' -WorkingDirectory '" + dirStr + L"'; ";
+    ps1Args += L"$T = New-ScheduledTaskTrigger -AtLogOn; ";
+    ps1Args += L"$T.Delay = 'PT10S'; ";  // 10s after logon — let NexusKey come up first
+    ps1Args += L"$S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); ";
+    ps1Args += L"$P = New-ScheduledTaskPrincipal -UserId '" + EscapePowerShellSingleQuote(username) + L"' -LogonType Interactive -RunLevel Limited; ";
+    ps1Args += L"Register-ScheduledTask -TaskName '" + std::wstring(WATCHDOG_TASK_NAME) + L"' -Action $A -Trigger $T -Settings $S -Principal $P -Force\"";
+
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.lpVerb = L"runas";  // UAC required to write \NexusKey\ Task Scheduler folder
+    sei.lpFile = L"powershell.exe";
+    sei.lpParameters = ps1Args.c_str();
+    sei.nShow = SW_HIDE;
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+
+    if (!ShellExecuteExW(&sei)) return false;
+
+    if (sei.hProcess) {
+        WaitForSingleObject(sei.hProcess, 10000);
+        DWORD exitCode = 1;
+        GetExitCodeProcess(sei.hProcess, &exitCode);
+        CloseHandle(sei.hProcess);
+        return exitCode == 0;
+    }
+    return true;
+}
+
+/// Remove the watchdog scheduled task at \NexusKey\Watchdog.
+/// No-op if task doesn't exist. Requires UAC.
+inline void RemoveWatchdogScheduledTask() noexcept {
+    if (!IsWatchdogTaskRegistered()) return;
+    std::wstring args = L"/delete /tn \"" + std::wstring(WATCHDOG_TASK_NAME) + L"\" /f";
+    (void)RunSchtasksElevated(args.c_str());
+}
+
 /// Register or unregister run-on-startup.
 ///
 /// - enable + !asAdmin → Registry entry (normal startup)
@@ -288,6 +352,31 @@ inline void SetDesktopShortcut(bool enable) {
 /// Check if the scheduled task exists (non-elevated query, no UAC prompt)
 [[nodiscard]] inline bool IsScheduledTaskRegistered() noexcept {
     std::wstring cmdLine = L"schtasks.exe /query /tn \"" + std::wstring(STARTUP_TASK_NAME) + L"\"";
+
+    STARTUPINFOW si = { sizeof(si) };
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    PROCESS_INFORMATION pi = {};
+    if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        return false;
+    }
+
+    WaitForSingleObject(pi.hProcess, 5000);
+    DWORD exitCode = 1;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    return exitCode == 0;
+}
+
+/// Check if the watchdog scheduled task exists at \NexusKey\Watchdog
+/// (non-elevated query, no UAC prompt).
+[[nodiscard]] inline bool IsWatchdogTaskRegistered() noexcept {
+    std::wstring cmdLine = L"schtasks.exe /query /tn \"" +
+                            std::wstring(WATCHDOG_TASK_NAME) + L"\"";
 
     STARTUPINFOW si = { sizeof(si) };
     si.dwFlags = STARTF_USESHOWWINDOW;
