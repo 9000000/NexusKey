@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ClassicSettingsDialog.h"
+#include "helpers/AppHelpers.h"
 #include "ClassicExcludedAppsDialog.h"
 #include "ClassicSpellExclusionsDialog.h"
 #include "ClassicAppOverridesDialog.h"
@@ -55,8 +56,6 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     LoadSettings();
 
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
-    int screenW = GetSystemMetrics(SM_CXSCREEN);
-    int screenH = GetSystemMetrics(SM_CYSCREEN);
 
     hwnd_ = CreateWindowExW(
         0,
@@ -80,9 +79,8 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     AdjustWindowRect(&rc, style, FALSE);
     int adjWidth  = rc.right - rc.left;
     int adjHeight = rc.bottom - rc.top;
-    int x = (screenW - adjWidth) / 2;
-    int y = (screenH - adjHeight) / 2;
-    SetWindowPos(hwnd_, nullptr, x, y, adjWidth, adjHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+    POINT pt = NextKey::GetCenteredPos(hwnd_, adjWidth, adjHeight);
+    SetWindowPos(hwnd_, nullptr, pt.x, pt.y, adjWidth, adjHeight, SWP_NOZORDER | SWP_NOACTIVATE);
 
     theme_.Init(hwnd_, systemConfig_.forceLightTheme);
     theme_.ApplyWindowAttributes(hwnd_);
