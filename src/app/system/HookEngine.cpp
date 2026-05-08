@@ -2651,6 +2651,40 @@ void HookEngine::RefreshFocusCache(HWND foreground) noexcept {
     }
 }
 
+const HookEngine::AppProfile* HookEngine::LookupAppProfile(HWND hwnd) noexcept {
+    auto it = appProfileCache_.find(hwnd);
+    if (it == appProfileCache_.end()) return nullptr;
+
+    // Validate: HWND values can be reused after the owning process dies.
+    // GetWindowThreadProcessId is one cheap syscall; on hit it still saves
+    // the much pricier ClassifyWindow + GetExeNameForHwnd + IsWebView2App
+    // child-window walk that we'd otherwise rerun.
+    DWORD currentPid = 0;
+    GetWindowThreadProcessId(hwnd, &currentPid);
+    if (currentPid == 0 || currentPid != it->second.pid) {
+        appProfileCache_.erase(it);
+        return nullptr;
+    }
+    return &it->second;
+}
+
+void HookEngine::StoreAppProfile(HWND hwnd, AppProfile profile) noexcept {
+    profile.cachedAt = GetTickCount64();
+
+    // Bounded cache: LRU-evict the oldest entry when at capacity. O(N) scan
+    // is fine — N is capped at kMaxAppProfileCache (64).
+    if (appProfileCache_.size() >= kMaxAppProfileCache) {
+        auto oldest = appProfileCache_.begin();
+        for (auto it = std::next(appProfileCache_.begin());
+             it != appProfileCache_.end(); ++it) {
+            if (it->second.cachedAt < oldest->second.cachedAt) oldest = it;
+        }
+        appProfileCache_.erase(oldest);
+    }
+
+    appProfileCache_[hwnd] = std::move(profile);
+}
+
 void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     ResetComposition();
     tempEngineOff_ = false;
@@ -2699,9 +2733,28 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // fields receive a single release-store after the full decision is made.
     // ClassifyWindow takes `bool&` (line 2145), incompatible with std::atomic<bool>;
     // staging through `localConsole` keeps the function signature unchanged.
-    bool isBrowser = false, isElectron = false, isQtApp = false, isVB6 = false;
-    bool localConsole = false;
-    ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, localConsole, isVB6);
+    // Cache lookup: skip ClassifyWindow + GetExeNameForHwnd + IsWebView2App
+    // when we've already classified this (HWND, PID) pair. PID re-check
+    // inside LookupAppProfile detects HWND reuse after a process dies.
+    const AppProfile* cached = LookupAppProfile(activeHwnd);
+
+    bool isBrowser, isElectron, isQtApp, isVB6, localConsole;
+    bool isWebView2 = false;
+    std::wstring exeName;
+
+    if (cached) {
+        isBrowser    = cached->isBrowser;
+        isElectron   = cached->isElectron;
+        isQtApp      = cached->isQtApp;
+        localConsole = cached->isConsole;
+        isVB6        = cached->isVB6;
+        isWebView2   = cached->isWebView2;
+        exeName      = cached->exeName;
+    } else {
+        isBrowser = false; isElectron = false; isQtApp = false; isVB6 = false; localConsole = false;
+        ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, localConsole, isVB6);
+        exeName = GetExeNameForHwnd(activeHwnd);
+    }
 
     bool localSkipEmpty = isElectron || localConsole;
     bool localNeedBait = isBrowser;
@@ -2709,7 +2762,6 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     bool localEditMsg = false;
     bool localUseClipboardInjector = false;
 
-    std::wstring exeName = GetExeNameForHwnd(activeHwnd);
     if (!exeName.empty()) {
         auto it = appSendMethodOverrides_.find(exeName);
         if (it != appSendMethodOverrides_.end()) {
@@ -2718,7 +2770,6 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
-    bool isWebView2 = false;
     if (!localSkipEmpty && !localNeedBait && !localClipboard) {
         if (!exeName.empty()) {
             if (_wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
@@ -2743,16 +2794,40 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
                 // Tauri / WebView2-embedding apps (e.g. Dorion): detected by
                 // scanning for `Chrome_WidgetWin*` descendants. WebView2 is fundamentally
                 // Chromium, so it suffers from the same autocomplete/suggest bug as Chrome.
-                // We MUST use the bait character (localNeedBait = true).
+                // We MUST use the bait character (localNeedBait = true). Cached on hit
+                // so the descendant-walk only runs once per (HWND, PID).
                 if (!localNeedBait) {
-                    std::wstring exeFullPath = GetExeFullPathForHwnd(activeHwnd);
-                    isWebView2 = IsWebView2App(activeHwnd, exeFullPath);
+                    if (!cached) {
+                        std::wstring exeFullPath = GetExeFullPathForHwnd(activeHwnd);
+                        isWebView2 = IsWebView2App(activeHwnd, exeFullPath);
+                    }
                     if (isWebView2) {
                         localNeedBait = true;
                         localSkipEmpty = false;
                     }
                 }
             }
+        }
+    }
+
+    // Cache the freshly-computed profile (only on miss). Done after the
+    // WebView2 detection so isWebView2 is known. If GetWindowThreadProcessId
+    // fails (returns 0), skip caching — invalidation invariant requires a
+    // valid PID for re-check on next lookup.
+    if (!cached) {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(activeHwnd, &pid);
+        if (pid != 0) {
+            AppProfile profile;
+            profile.pid = pid;
+            profile.exeName = exeName;
+            profile.isBrowser = isBrowser;
+            profile.isElectron = isElectron;
+            profile.isQtApp = isQtApp;
+            profile.isConsole = localConsole;
+            profile.isVB6 = isVB6;
+            profile.isWebView2 = isWebView2;
+            StoreAppProfile(activeHwnd, std::move(profile));
         }
     }
 
@@ -2781,7 +2856,8 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         injector_.store(NextKey::Output::Create(c), std::memory_order_release);
     }
 
-    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d",
+    HOOK_LOG(L"  AppDetect[%ls]: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d",
+             cached ? L"hit" : L"miss",
              localConsole ? 1 : 0, localSkipEmpty ? 1 : 0, localElectronApp ? 1 : 0,
              isWebView2 ? 1 : 0, localNeedBait ? 1 : 0, localClipboard ? 1 : 0, localEditMsg ? 1 : 0, localUseClipboardInjector ? 1 : 0);
 
