@@ -452,6 +452,7 @@ if(WIN32)
     list(APPEND NEXTKEY_TEST_SOURCES
         tests/ConfigManagerTest.cpp
         tests/ConfigEventTest.cpp
+        tests/HookSelfHealerTest.cpp
         # Sprint 2 T3 — IOutputInjector unit tests + impl sources for linkage.
         # NextKeyTests links NextKeyCore (which excludes output/), so impls
         # are pulled in directly here for the test binary.
