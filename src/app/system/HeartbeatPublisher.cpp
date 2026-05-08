@@ -16,8 +16,11 @@ HeartbeatPublisher::~HeartbeatPublisher() {
 bool HeartbeatPublisher::Start() {
     if (heartbeatEvent_) return true;  // Idempotent
 
-    // Manual-reset event — we pulse it via SetEvent + ResetEvent.
-    heartbeatEvent_ = CreateEventW(nullptr, TRUE, FALSE, HEARTBEAT_EVENT_NAME);
+    // Auto-reset event — SetEvent queues a signal that auto-clears on first
+    // waiter wakeup. Avoids the PulseEvent (manual-reset + Set+Reset) anti-
+    // pattern, which a kernel-mode APC can race past, leaving the watchdog
+    // waiter unreleased.
+    heartbeatEvent_ = CreateEventW(nullptr, FALSE, FALSE, HEARTBEAT_EVENT_NAME);
     if (!heartbeatEvent_) {
         NEXTKEY_LOG(L"HeartbeatPublisher: CreateEvent heartbeat FAILED err=%lu",
                     GetLastError());
@@ -61,14 +64,15 @@ void HeartbeatPublisher::SignalGracefulShutdown() {
 }
 
 void HeartbeatPublisher::Run() noexcept {
-    // Pulse loop: SetEvent + ResetEvent + sleep. We use Sleep (not
+    // Heartbeat loop: SetEvent + sleep. Auto-reset event clears on first
+    // waiter wakeup; if no waiter is parked yet, the signal queues until
+    // the next WaitForSingleObject call observes it. We use Sleep (not
     // condition_variable) because the cost of tearing down on shutdown
     // is at most one HEARTBEAT_INTERVAL_MS wait — acceptable for a 30s
     // interval. Stop() join blocks for ≤30s in worst case.
     while (!stopRequested_.load(std::memory_order_acquire)) {
         if (heartbeatEvent_) {
-            SetEvent(heartbeatEvent_);
-            ResetEvent(heartbeatEvent_);  // Pulse — watchdog Wait sees signaled then auto-resets-effective
+            SetEvent(heartbeatEvent_);  // Auto-reset event: clears on first waiter wakeup
         }
         // Granular sleep so Stop() returns within ~100ms instead of 30s.
         for (DWORD waited = 0; waited < HEARTBEAT_INTERVAL_MS; waited += 100) {

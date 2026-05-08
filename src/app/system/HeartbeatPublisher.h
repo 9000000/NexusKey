@@ -7,7 +7,8 @@
 // initiated quit from crash.
 //
 // Event names (Local\ session-scoped, kernel objects):
-//   Local\NexusKeyHeartbeat         — pulsed every 30s
+//   Local\NexusKeyHeartbeat         — auto-reset event, signaled every 30s
+//                                     (queues until watchdog Wait observes)
 //   Local\NexusKeyGracefulShutdown  — signaled by SignalGracefulShutdown
 //                                     before NexusKey exits via tray quit
 
@@ -43,6 +44,7 @@ public:
 
     /// Set the graceful-shutdown flag — call before tray-quit exit so
     /// the watchdog does NOT respawn NexusKey.
+    /// Caller must not call this concurrently with Stop().
     void SignalGracefulShutdown();
 
 private:
