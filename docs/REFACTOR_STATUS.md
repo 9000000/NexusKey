@@ -1,8 +1,8 @@
 # NexusKey Refactor Status — Living Inventory
 
-> **Last refresh:** 2026-05-07 (post T5 #146, Main `1ade8dc`)
+> **Last refresh:** 2026-05-08 (post T2, Main pending)
 > **Scope:** All architectural / cleanup refactor work. Excludes user-facing features (G-5/G-6 Sciter UI + keymap files, TSF Phase 2/3, etc.) — those track separately.
-> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Post-H1c the rule is satisfied; T5 also done.** Remaining: T2/T3 (phonotactics correctness) + T6 retest (likely auto-resolved by H1).
+> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Post-H1c the rule is satisfied; T5 done; T2 done.** Remaining: T3 (phonotactics correctness) + T6 retest (anh confirmed test ổn 2026-05-08, can close).
 
 ---
 
@@ -49,6 +49,7 @@
 | **H1b** `RunTopGuards` extract | #144 `3c06499` | 2026-05-07 | Steps 0/0b/1/1b/1c (TSF early-out / modifier track / toggle keys / excluded-app PID verification, 54 LOC) extracted. Bookkeeping (`otherKeyPressed_/altTapCount_/synth-watchdog`) stays in ProcessKeyDown post-switch — runs only on Fallthrough; excluded-app's same-PID/still-excluded paths set `otherKeyPressed_` themselves before returning Pass. ProcessKeyDown 380 → 327 LOC. `CommitUndoOutcome` renamed to generic `KeyOutcome` for sharing across H1a/H1b/H1c. Chaos 55/55 PASS. |
 | **H1c** `HandlePreDispatch` + `DispatchKeyAction` extract | #145 `659b910` | 2026-05-07 | Steps 3 / 3a-3d (English mode + auto-caps + macro tracking, ~107 LOC) → `HandlePreDispatch`. Steps 4b-10 (tempEngineOff / Ctrl-Alt-Win / alpha / bracket / VNI digit / BS / commit-trigger / fallthrough, ~158 LOC) → `DispatchKeyAction`. Cache shifted from after-step-3 to before HandlePreDispatch — byte-identical because GetKeyState within hook callback is stable. ProcessKeyDown 327 → **79 LOC** orchestrator (-86% cumulative across H1). Chaos 55/55 PASS. **HookEngine refactor backlog effectively closed.** |
 | **T5** Tone replacement on invalid buffer recovers validity | #146 `1ade8dc` | 2026-05-07 | New helper `TypingEngine::IsToneStopCodaMismatch()` + 3 gate-relaxations (tone gate, modifier outer gate, `WouldBeValidSyllable`). Engine no longer treats tone/modifier as literal when current buffer is Invalid solely because of huyền/hỏi/ngã + stop coda — the user is mid-correction; next tone keystroke recovers. Generic across vowels (a/e/o/ô) + Telex/VNI modifier paths. Linux 1524/1524 PASS (+9 T5 tests). Windows MSVC clean. Hot-path cost ~hundreds of ns on rare `spellCheckDisabled_` path, within Rule #11.1 1 ms budget. |
+| **T2** Phonotactics onset/vowel agreement | PR pending | 2026-05-08 | `Phonotactics::IsValidSyllable` no longer ignores `onset` arg. New helper `IsOnsetVowelAgreementValid` enforces c/k, g/gh, ng/ngh front-back agreement against first base vowel of `vowelSeq`; qu intentionally exempted (qua/quan/quát outside the canonical labial-diphthong list). Production zero-touch — interface had no production caller; this closes the contract for future consumers (spell-check overlay, dictionary lookups). Linux 1540/1540 PASS (+16 T2 tests). |
 
 ---
 
@@ -93,7 +94,8 @@
 | ID | Item | Source | Effort | Priority |
 |---|---|---|---|---|
 | ~~T1~~ | ~~**`SpellChecker.{h,cpp}` → `PhonotacticsValidator` rename**~~ | — | DONE | ✅ PR #139 `b115f75` |
-| T2 | **Phonotactics onset agreement** — c/k/qu, g/gh, ng/ngh enforcement (`IsValidSyllable` currently ignores `onset` arg) | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
+| ~~T2~~ | ~~**Phonotactics onset agreement** — c/k, g/gh, ng/ngh enforcement (qu exempted)~~ | — | DONE | ✅ PR pending |
+| T2.1 | **Onset-rule duplication between `Phonotactics.cpp` and `PhonotacticsValidator.cpp`** — both encode c/k/g/gh/ng/ngh front-back agreement; PV operates on `CharState`, P on `wstring_view`. Shared classifier `IsFrontBaseVowel` exists in both anonymous namespaces. Pre-existing; surfaced during T2. Lift to shared header (e.g. `VietnameseTables.h`) when a third validator wants the rule. | T2 review (simplify reuse agent) | 30-60min | LOW (cleanup) |
 | T3 | **Phonotactics N1/N2/N3 vowel-coda compatibility** — tighter group rules | Path G G-1 deferred | 2-3h | MEDIUM (correctness) |
 | ~~T4~~ | ~~**Verify Hot-path Fix 3 ComposeAll buffer reuse**~~ — VERIFIED 2026-05-07: shipped at `TypingEngine.h:218` (`mutable std::wstring composeBuf_`) + `TypingEngine.cpp:1236-1241` | hot-path-optimization-plan.md | DONE | ✅ |
 | ~~T5~~ | ~~**Bug `cafcs → các`**~~ | — | DONE | ✅ PR #146 `1ade8dc` |
