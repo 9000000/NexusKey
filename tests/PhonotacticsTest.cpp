@@ -5,7 +5,9 @@
 // completability. Operates on rendered Vietnamese text (wstring_view).
 
 #include <gtest/gtest.h>
+#include "core/engine/IPhonologyRules.h"
 #include "core/engine/IPhonotactics.h"
+#include "core/engine/DefaultPhonologyRules.h"
 #include "core/engine/Phonotactics.h"
 #include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
@@ -487,6 +489,90 @@ TEST(PhonotacticsDefault, ReturnsStableSingleton) {
     const Phonotactics& a = Phonotactics::Default();
     const Phonotactics& b = Phonotactics::Default();
     EXPECT_EQ(&a, &b);
+}
+
+//=============================================================================
+// IPhonologyRules DI plumbing — verifies T2.1 D3:
+// Phonotactics accepts a custom IPhonologyRules pack, rule queries flow through
+// the contract, default ctor binds to DefaultPhonologyRules.
+//=============================================================================
+
+TEST(DefaultPhonologyRules, IsSingleton) {
+    const DefaultPhonologyRules& a = DefaultPhonologyRules::Default();
+    const DefaultPhonologyRules& b = DefaultPhonologyRules::Default();
+    EXPECT_EQ(&a, &b);
+}
+
+TEST(DefaultPhonologyRules, MatchesFreeFunctionContracts) {
+    // Default impl should produce the same answers as the free functions in
+    // VietnamesePhonologyData.h (it just forwards).
+    const DefaultPhonologyRules& rules = DefaultPhonologyRules::Default();
+    EXPECT_TRUE (rules.IsFrontBaseVowel(L'e'));
+    EXPECT_TRUE (rules.IsFrontBaseVowel(L'i'));
+    EXPECT_TRUE (rules.IsFrontBaseVowel(L'y'));
+    EXPECT_FALSE(rules.IsFrontBaseVowel(L'a'));
+    EXPECT_FALSE(rules.IsFrontBaseVowel(L'o'));
+    EXPECT_FALSE(rules.IsFrontBaseVowel(L'u'));
+    // Sample VCPair lookup: a → F_ALL (all 9 finals).
+    uint32_t aKey = Key1(VowelSlot(kA, kNone));
+    EXPECT_EQ(rules.AllowedFinalsForVowelKey(aKey), F_ALL);
+    // ơ → F_m | F_n | F_p | F_t only.
+    uint32_t oHornKey = Key1(VowelSlot(kO, kHorn));
+    EXPECT_EQ(rules.AllowedFinalsForVowelKey(oHornKey), F_m | F_n | F_p | F_t);
+}
+
+namespace {
+// Stub flipping the front/back classification (a becomes front, i becomes back).
+// Used to prove the injected pack — not the default singleton — is consulted.
+class FlippedFrontVowelRules final : public IPhonologyRules {
+public:
+    [[nodiscard]] bool IsFrontBaseVowel(wchar_t base) const noexcept override {
+        return !DefaultPhonologyRules::Default().IsFrontBaseVowel(base);
+    }
+    [[nodiscard]] uint16_t AllowedFinalsForVowelKey(uint32_t key) const noexcept override {
+        return DefaultPhonologyRules::Default().AllowedFinalsForVowelKey(key);
+    }
+};
+
+// Stub returning no VCPair entry for any nucleus (forces lenient pass-through
+// on every IsCodaValidForNucleus call).
+class NoCodaRestrictionRules final : public IPhonologyRules {
+public:
+    [[nodiscard]] bool IsFrontBaseVowel(wchar_t base) const noexcept override {
+        return DefaultPhonologyRules::Default().IsFrontBaseVowel(base);
+    }
+    [[nodiscard]] uint16_t AllowedFinalsForVowelKey(uint32_t /*key*/) const noexcept override {
+        return 0;
+    }
+};
+}  // namespace
+
+TEST(PhonotacticsDI, CustomRulesFlipOnsetAgreement) {
+    FlippedFrontVowelRules flipped;
+    Phonotactics phon(flipped);
+    // Default: ke is valid (k wants front, e is front). Flipped: e is back → invalid.
+    EXPECT_FALSE(phon.IsValidSyllable(L"k", L"e", L"", Tone::None, true));
+    // Default: ka is invalid (k wants front, a is back). Flipped: a is front → valid.
+    EXPECT_TRUE (phon.IsValidSyllable(L"k", L"a", L"", Tone::None, true));
+}
+
+TEST(PhonotacticsDI, CustomRulesDropsVCPairRestrictions) {
+    NoCodaRestrictionRules lenient;
+    Phonotactics phon(lenient);
+    // Default: ơng invalid (ơ allows only m/n/p/t). Custom: returns 0 → lenient → valid.
+    EXPECT_TRUE(phon.IsValidSyllable(L"b", L"\x01A1", L"ng", Tone::None, true));
+    // Default: yng invalid (y allows only t). Custom: lenient → valid.
+    EXPECT_TRUE(phon.IsValidSyllable(L"",  L"y",      L"ng", Tone::None, true));
+}
+
+TEST(PhonotacticsDI, DefaultCtorBindsDefaultRules) {
+    // Default-constructed Phonotactics enforces canonical Vietnamese rules.
+    Phonotactics phon;
+    EXPECT_FALSE(phon.IsValidSyllable(L"k", L"a",      L"",   Tone::None, true));   // k requires front
+    EXPECT_FALSE(phon.IsValidSyllable(L"c", L"i",      L"",   Tone::None, true));   // c requires back
+    EXPECT_FALSE(phon.IsValidSyllable(L"b", L"\x01A1", L"ng", Tone::None, true));   // ơ + ng forbidden
+    EXPECT_TRUE (phon.IsValidSyllable(L"k", L"e",      L"",   Tone::None, true));   // k + e ok
+    EXPECT_TRUE (phon.IsValidSyllable(L"b", L"a",      L"ng", Tone::None, true));   // a + ng ok
 }
 
 }  // namespace
