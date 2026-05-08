@@ -2552,6 +2552,16 @@ void HookEngine::CheckLayoutChange() {
     HWND fg = GetForegroundWindow();
     if (!fg) return;
     DWORD tid = GetWindowThreadProcessId(fg, nullptr);
+
+    // Multi-process apps (MS Teams/Electron/WebView2): the focused input element
+    // may live on a different thread (renderer) than the top-level window.
+    // Keyboard layout is per-thread, so query the focused child's thread instead.
+    GUITHREADINFO gti = { sizeof(gti) };
+    if (GetGUIThreadInfo(tid, &gti) && gti.hwndFocus && gti.hwndFocus != fg) {
+        DWORD focusTid = GetWindowThreadProcessId(gti.hwndFocus, nullptr);
+        if (focusTid != 0) tid = focusTid;
+    }
+
     bool compatible = !IsIncompatibleLayout(GetKeyboardLayout(tid));
     if (compatible != cachedIsCompatLayout_) {
         cachedIsCompatLayout_ = compatible;
