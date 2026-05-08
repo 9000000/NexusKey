@@ -36,7 +36,7 @@ private:
     int Dpi(int value) const noexcept;
 
     static constexpr int kWidth = 490;
-    static constexpr int kHeight = 295;
+    static constexpr int kHeight = 330;
     static constexpr int kPadding = 12;
     static constexpr int kBtnHeight = 28;
     static constexpr int kBtnGap = 6;
@@ -51,6 +51,7 @@ private:
     HWND comboApp_ = nullptr;
     HWND comboMethod_ = nullptr;
     HWND comboEncoding_ = nullptr;
+    HWND comboSendMethod_ = nullptr;
     HWND btnAdd_ = nullptr;
     HWND btnPick_ = nullptr;
     HWND btnDelete_ = nullptr;

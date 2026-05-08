@@ -10,19 +10,25 @@ document.ready = function () {
 
 // ===== Input Method Labels =====
 var inputMethodLabels = {
-    "-1": "-",
+    "-1": "Mặc định",
     0: "Telex",
     1: "VNI",
-    2: "Simple Telex"
+    2: "Simple Telex",
+    3: "Telex + VNI"
 };
 
 var encodingLabels = {
-    "-1": "-",
+    "-1": "Mặc định",
     0: "Unicode",
     1: "TCVN3",
     2: "VNI Win",
     3: "UNI Cmp",
     4: "VN Locale"
+};
+
+var sendMethodLabels = {
+    "-1": "Mặc định",
+    1: "Clipboard"
 };
 
 // ===== Running Apps Dropdown =====
@@ -132,11 +138,13 @@ function onAddApp() {
 
     var inputMethod = document.getElementById("input-method").value;
     var encodingOverride = document.getElementById("encoding-override").value;
+    var sendMethod = document.getElementById("send-method").value;
 
     // Set hidden inputs and trigger action
     document.getElementById("val-app-name").value = appName;
     document.getElementById("val-input-method").value = inputMethod;
     document.getElementById("val-encoding-override").value = encodingOverride;
+    document.getElementById("val-send-method").value = sendMethod;
     triggerAction("add-app");
 }
 
@@ -171,7 +179,7 @@ function clearAppList() {
     if (list) list.innerHTML = "";
 }
 
-function addAppToList(appName, inputMethod, encodingOverride) {
+function addAppToList(appName, inputMethod, encodingOverride, sendMethod) {
     var list = document.getElementById("app-list");
     if (!list) return;
 
@@ -200,6 +208,13 @@ function addAppToList(appName, inputMethod, encodingOverride) {
     encodingSpan.textContent = encodingLabels[encKey] || "-";
     item.appendChild(encodingSpan);
 
+    // SendMethod column
+    var sendSpan = document.createElement("span");
+    sendSpan.className = "app-item-sendmethod";
+    var sndKey = (sendMethod === undefined || sendMethod === null) ? "-1" : String(sendMethod);
+    sendSpan.textContent = sendMethodLabels[sndKey] || "-";
+    item.appendChild(sendSpan);
+
     // Delete button (uses event delegation, no inline handler)
     var deleteBtn = document.createElement("button");
     deleteBtn.className = "app-item-delete";
@@ -226,10 +241,13 @@ function clearInput() {
     if (input) input.value = "";
 
     var methodSelect = document.getElementById("input-method");
-    if (methodSelect) methodSelect.value = "0";
+    if (methodSelect) methodSelect.value = "-1";
 
     var encodingSelect = document.getElementById("encoding-override");
-    if (encodingSelect) encodingSelect.value = "0";
+    if (encodingSelect) encodingSelect.value = "-1";
+
+    var sendSelect = document.getElementById("send-method");
+    if (sendSelect) sendSelect.value = "-1";
 }
 
 function forceRefresh(scrollToBottom) {

@@ -360,6 +360,7 @@ private:
     CodeTable currentCodeTable_ = CodeTable::Unicode;
     CodeTable globalCodeTable_ = CodeTable::Unicode;     // config value, restored when no override
     std::unordered_map<std::wstring, int8_t> appEncodingOverrides_;   // exe → encoding override (-1=inherit)
+    std::unordered_map<std::wstring, int8_t> appSendMethodOverrides_; // exe → send method override (-1=inherit)
     InputMethod globalInputMethod_ = InputMethod::Telex; // config value, restored when no override
     std::unordered_map<std::wstring, int8_t> appInputMethodOverrides_; // exe → method override (-1=inherit)
 

@@ -268,6 +268,8 @@ NexusKey is built with a lean architecture and no heavy runtime dependencies, ke
 - Testing bởi [Google Test](https://github.com/google/googletest)
 - Tham khảo rule -ing cho spell check của [Gonhanh.org](https://github.com/khaphanspace/gonhanh.org?tab=readme-ov-file#-t%C3%A0i-li%E1%BB%87u-k%E1%BB%B9-thu%E1%BA%ADt)
 - Tham khảo config TSF từ [VietType](https://github.com/dinhngtu/VietType)
+- Tham khảo cách xử lý clipboard input từ [SigmaLib](https://github.com/phamhoangnhat/SigmaLib) của Phạm Hoàng Nhật
+- Tham khảo quy tắt tiếng việt từ [dotnetkey](https://code.google.com/archive/p/dotnetkey/downloads)
 
 ### Top Testers
 Cảm ơn các thành viên cộng đồng đã test và góp ý:

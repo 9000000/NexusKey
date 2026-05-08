@@ -21,6 +21,7 @@ struct WindowClassification {
     bool isElectron      = false;  // Discord / Slack / VSCode etc
     bool isConsole       = false;  // CMD / PowerShell
     bool isChromium      = false;  // Chrome / Edge — bait-char hint
+    bool useClipboard    = false;  // User configured clipboard fallback
 };
 
 // Phase 1 — classify focused window. No shared writes.

@@ -23,7 +23,7 @@ protected:
 
 private:
     void populateList();
-    void addEntry(const std::wstring& name, int8_t encoding, int8_t inputMethod);
+    void addEntry(const std::wstring& name, int8_t encoding, int8_t inputMethod, int8_t sendMethod);
     void removeEntry(const std::wstring& name);
     void persistAndSignal();
 
