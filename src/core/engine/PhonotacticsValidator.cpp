@@ -23,6 +23,11 @@ namespace {
 // header `VietnamesePhonologyData.h` (T2.1 Day-2 consolidation). Only the
 // CharState-specific helpers (FinalConsonantBit template, kVowelTable, vowel
 // scanners) remain in this anonymous namespace.
+//
+// TODO(T2.1 D4): migrate this hot-path validator to consume rule data through
+// `IPhonologyRules` (see IPhonologyRules.h) so future RulePackId variants can
+// plug in without a parallel rewrite. D3 wired the contract on Path 2 only;
+// preserving Path 1's direct-call hot path until D4 lands the careful migration.
 
 //=============================================================================
 // Vowel nucleus table

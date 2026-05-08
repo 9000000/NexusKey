@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <string_view>
 
+#include "DefaultPhonologyRules.h"
 #include "VietnamesePhonologyData.h"
 #include "VietnameseTables.h"
 
@@ -225,12 +226,15 @@ constexpr std::wstring_view kValidCodas[] = {
 // Lenient by default: if any of the inputs (nucleus, coda) cannot be encoded
 // or has no entry in the VCPair table, accept the syllable. The strictness
 // applies only when both sides resolve to known, table-listed values.
-[[nodiscard]] constexpr bool IsCodaValidForNucleus(std::wstring_view vowelSeq,
-                                                    std::wstring_view coda) noexcept {
+// Rule data is resolved through the injected IPhonologyRules pack so future
+// dialectal variants (RulePackId factory) plug in without forking this code.
+[[nodiscard]] bool IsCodaValidForNucleus(const IPhonologyRules& rules,
+                                          std::wstring_view vowelSeq,
+                                          std::wstring_view coda) noexcept {
     if (coda.empty()) return true;
     uint32_t vowelKey = WstringViewToVowelKey(vowelSeq);
     if (vowelKey == 0) return true;
-    uint16_t allowed = NextKey::Phonology::GetAllowedFinals(vowelKey);
+    uint16_t allowed = rules.AllowedFinalsForVowelKey(vowelKey);
     if (allowed == 0) return true;
     uint16_t bit = CodaToFinalBit(coda);
     if (bit == 0) return true;
@@ -242,6 +246,7 @@ constexpr std::wstring_view kValidCodas[] = {
 // CharState path in PhonotacticsValidator.cpp (T2.1 consolidation Day-1).
 
 [[nodiscard]] bool IsOnsetVowelAgreementValid(
+        const IPhonologyRules& rules,
         std::wstring_view onset,
         std::wstring_view vowelSeq) noexcept {
     // qu intentionally exempted: book lists oa/oă/oe/uy/uơ/uô/uê/uâ as the
@@ -263,7 +268,7 @@ constexpr std::wstring_view kValidCodas[] = {
     if (firstBase == 0) return true;
 
     const bool wantsFront = (onset == L"k" || onset == L"gh" || onset == L"ngh");
-    return wantsFront == NextKey::Phonology::IsFrontBaseVowel(firstBase);
+    return wantsFront == rules.IsFrontBaseVowel(firstBase);
 }
 
 // =============================================================================
@@ -414,6 +419,12 @@ struct ParsedSyllable {
 // IPhonotactics implementation
 // =============================================================================
 
+Phonotactics::Phonotactics() noexcept
+    : rules_(DefaultPhonologyRules::Default()) {}
+
+Phonotactics::Phonotactics(const IPhonologyRules& rules) noexcept
+    : rules_(rules) {}
+
 const Phonotactics& Phonotactics::Default() noexcept {
     static const Phonotactics instance;
     return instance;
@@ -435,7 +446,7 @@ bool Phonotactics::IsValidSyllable(
     if (vowelSeq.empty()) return false;
 
     // Onset / vowel front-back agreement (c/k, g/gh, ng/ngh). qu exempted.
-    if (!IsOnsetVowelAgreementValid(onset, vowelSeq)) return false;
+    if (!IsOnsetVowelAgreementValid(rules_, onset, vowelSeq)) return false;
 
     // Closed vowels must NOT have a coda.
     if (!coda.empty() && IsClosedVowelSeq(vowelSeq)) return false;
@@ -445,7 +456,7 @@ bool Phonotactics::IsValidSyllable(
 
     // VCPair vowel-coda compatibility (per-nucleus allowed-coda bitmask,
     // shared with PhonotacticsValidator on the CharState path).
-    if (!IsCodaValidForNucleus(vowelSeq, coda)) return false;
+    if (!IsCodaValidForNucleus(rules_, vowelSeq, coda)) return false;
 
     // Stop-final coda restricts tone to Acute or Dot.
     if (!ToneAllowedForCoda(coda, tone)) return false;

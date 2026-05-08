@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "IPhonologyRules.h"
 #include "IPhonotactics.h"
 #include "PhonotacticsValidator.h"  // SyllableState + ValidateSyllableState (same Phonology namespace)
 
@@ -17,15 +18,24 @@ namespace Phonology {
 
 class Phonotactics final : public IPhonotactics {
 public:
-    Phonotactics() noexcept = default;
+    /// Default ctor binds to `DefaultPhonologyRules::Default()` — the canonical
+    /// Vietnamese rule pack from VietnamesePhonologyData.h.
+    Phonotactics() noexcept;
+
+    /// DI ctor: caller injects a custom IPhonologyRules pack. Useful for
+    /// dialectal rule packs and unit-test stubs. The reference must outlive
+    /// the Phonotactics instance.
+    explicit Phonotactics(const IPhonologyRules& rules) noexcept;
+
     ~Phonotactics() override = default;
 
     Phonotactics(const Phonotactics&) = delete;
     Phonotactics& operator=(const Phonotactics&) = delete;
 
-    /// Returns the process-wide default Phonotactics instance. Stateless and
-    /// thread-safe; used as the implicit dependency for callers that don't
-    /// inject a custom IPhonotactics (e.g. TypingEngine's single-arg ctor).
+    /// Returns the process-wide default Phonotactics instance bound to
+    /// DefaultPhonologyRules. Stateless and thread-safe; used as the implicit
+    /// dependency for callers that don't inject a custom IPhonotactics
+    /// (e.g. TypingEngine's single-arg ctor).
     [[nodiscard]] static const Phonotactics& Default() noexcept;
 
     [[nodiscard]] size_t TonePosition(
@@ -42,6 +52,9 @@ public:
 
     [[nodiscard]] bool CanComplete(
         std::wstring_view partial) const noexcept override;
+
+private:
+    const IPhonologyRules& rules_;
 };
 
 }  // namespace Phonology
