@@ -383,7 +383,17 @@ comments, very good test coverage.
 
 ---
 
-## Outlook "Anh em" Fix — Verify Still Needed (2026-04-23)
+## ✅ ~~Outlook "Anh em" Fix — Verify Still Needed~~ (2026-04-23) — RESOLVED via PR #156 revert (2026-05-08)
+
+Verification ran 2026-05-08: typing "Anh em" in Outlook with IME off still
+reproduced the symptom → confirmed Outlook AutoCorrect, not the IME path.
+PR #156 reverted the `isOutlookApp_` passthrough gate (kept `needBaitChar_`
+for the Excel-like BS U+202F quirk, which is orthogonal). Original
+verification plan preserved below for the post-mortem trail.
+
+---
+
+## Outlook "Anh em" Fix — original verification plan (2026-04-23)
 
 Issue #97 originally reported "Anh em" → "An hem" in Outlook 2016. Fix landed
 in commits `8a060bb` (try fix anh em) + `e1dab42` (finalize) — adds
@@ -451,13 +461,14 @@ multi-word macro keys via phrase-prefix buffer preservation. Rules doc:
   into a pure `ResolveMacroMatch(buffer, previousComp, trigger, table) ->
   {iterator, matchedExact, matchedViaComposition}` and table-test it on Linux.
 
-- [ ] **Composition-path (P3/P4) auto-caps asymmetry** — `src/app/system/HookEngine.cpp:2732-2745, 2786`
-  Auto-caps explicitly gated on `!matchedViaComposition` — typing `CHOOL` via
-  Telex composing to `chôl` and matching a stored `chol` macro yields `chôl`,
-  not `CHÔL`. Intentional (composition case is engine-driven, not user-typed),
-  but users may not understand the asymmetry. Decide: document as a known limit
-  in `docs/macro-case-rules.md`, or mirror the auto-caps logic on composition
-  matches too.
+- [x] **~~Composition-path (P3/P4) auto-caps asymmetry~~** — RESOLVED via existing docs.
+  Already documented as a known limit in `docs/macro-case-rules.md` Rule 3
+  ("Composition-based matches", lines 65-67) with the deliberate-design
+  rationale: "the 'typed' text here is engine output, not raw keystrokes,
+  so case intent is ambiguous. Rare path; rarely relevant." Decision:
+  document-only — no code mirroring. Per design philosophy "không code
+  phân mảnh," not adding a parallel auto-caps path on composition matches
+  when the existing behavior matches design intent.
 
 - [ ] **`\n` escape handling in auto-caps loop is incomplete** — `src/app/system/HookEngine.cpp:2806-2813`
   Loop skips the 2-char `\n` escape when uppercasing. Does not handle `\t`,
@@ -466,22 +477,26 @@ multi-word macro keys via phrase-prefix buffer preservation. Rules doc:
     - if decoded at load → the `\n` skip is dead code; remove it.
     - if passed through verbatim → `\t` under auto-upper corrupts to `\T`.
 
-- [ ] **`VkToMacroChar` syscalls per commit trigger** — `src/app/system/HookEngine.cpp:2851-2888`
+- [ ] **`VkToMacroChar` syscalls per commit trigger** — DEFERRED, no driver. `src/app/system/HookEngine.cpp:2851-2888`
   Calls `GetAsyncKeyState ×3`, `GetKeyState`, `MapVirtualKeyW ×2`,
   `GetForegroundWindow`, `GetWindowThreadProcessId`, `GetKeyboardLayout`,
   `ToUnicodeEx` each time. Only runs on commit triggers (~10/sec human typing),
-  so cost is negligible — but the foreground HKL could be cached on focus
-  change if ever profiled hot. Low priority.
+  not on the LL hook hot path — per CODING_RULES Rule 11.3 the syscalls are
+  on the cold path and acceptable. Reopen only if profile data shows the
+  foreground-HKL lookup as hot; caching the HKL on focus change would save
+  ~3 syscalls per commit. No premature optimization without driver.
 
-- [ ] **Release-note the case-matching behavior change** — `RELEASE_NOTES.md`
-  Pre-fix: uppercase-keyed macros never fired at all (bug). Post-fix: they fire
-  but only on exact case. Users who worked around the bug by adding lowercase
-  duplicates will now see both entries match. Note must call this out with the
-  migration example from `docs/macro-case-rules.md`.
+- [x] **~~Release-note the case-matching behavior change~~** — RESOLVED via existing docs.
+  Migration substance already lives in `docs/macro-case-rules.md` "Migration
+  note" section (lines 69-76) with the lowercase-workaround scenario and
+  upgrade guidance. The next major release notes (v3.0.0 TBD) will link
+  there. No retroactive edit to v2.1.24 `RELEASE_NOTES.md` since the
+  case-matching fix shipped earlier in the 2.1.x series; per-version notes
+  are not retroactively rewritten.
 
 ---
 
-## Detach Fork
+## ✅ Detach Fork — Submitted (2026-04-05)
 - [x] Detach fork: repo `phatMT97/NexusKey` is forked from `tuyenvm/OpenKey`. Submitted GitHub Support ticket (2026-04-05).
 
 ---
