@@ -8,6 +8,7 @@
 #include "core/engine/IPhonologyRules.h"
 #include "core/engine/IPhonotactics.h"
 #include "core/engine/DefaultPhonologyRules.h"
+#include "core/engine/PhonologyRulePackFactory.h"
 #include "core/engine/Phonotactics.h"
 #include "core/engine/TypingEngine.h"
 #include "core/config/TypingConfig.h"
@@ -573,6 +574,32 @@ TEST(PhonotacticsDI, DefaultCtorBindsDefaultRules) {
     EXPECT_FALSE(phon.IsValidSyllable(L"b", L"\x01A1", L"ng", Tone::None, true));   // ơ + ng forbidden
     EXPECT_TRUE (phon.IsValidSyllable(L"k", L"e",      L"",   Tone::None, true));   // k + e ok
     EXPECT_TRUE (phon.IsValidSyllable(L"b", L"a",      L"ng", Tone::None, true));   // a + ng ok
+}
+
+//=============================================================================
+// PhonologyRulePackId factory (T2.1 D4 — sprint close).
+// One factory hook for callers; future RulePackId values plug in via the
+// switch in PhonologyRulePackFactory.h without touching consumers.
+//=============================================================================
+
+TEST(PhonologyRulePackFactory, DefaultIdReturnsDefaultRules) {
+    const IPhonologyRules& fromFactory = GetRulePack(PhonologyRulePackId::Default);
+    const IPhonologyRules& direct      = DefaultPhonologyRules::Default();
+    EXPECT_EQ(&fromFactory, &direct);
+}
+
+TEST(PhonologyRulePackFactory, ReturnIsStableSingleton) {
+    const IPhonologyRules& a = GetRulePack(PhonologyRulePackId::Default);
+    const IPhonologyRules& b = GetRulePack(PhonologyRulePackId::Default);
+    EXPECT_EQ(&a, &b);
+}
+
+TEST(PhonologyRulePackFactory, FactoryUsableAsDIDependency) {
+    // Caller pattern: pull rule pack via factory, hand to Phonotactics ctor.
+    // Mirrors how IOutputInjector consumers construct from the factory result.
+    Phonotactics phon(GetRulePack(PhonologyRulePackId::Default));
+    EXPECT_TRUE (phon.IsValidSyllable(L"b", L"a", L"ng", Tone::None, true));   // a + ng ok
+    EXPECT_FALSE(phon.IsValidSyllable(L"k", L"a", L"",   Tone::None, true));   // k requires front
 }
 
 }  // namespace

@@ -1,4 +1,56 @@
-# NexusKey Refactor — handoff (T5 closed; T6 retest or T2/T3 next)
+# NexusKey Refactor — handoff (T2.1 sprint closed; engine + hook backlog clear)
+
+## 2026-05-08 — T2.1 PHONOLOGY CONSOLIDATION SPRINT CLOSED (4 PRs)
+
+**Pickup for teammate:** T2.1 Vietnamese-rule consolidation sprint complete at Day-4. Combined with H1-H7 (ProcessKeyDown decompose + cleanup) shipped 2026-05-07 and T2/T3/T5/T6 done same week, the **HookEngine + TypingEngine architectural backlogs are effectively cleared**. H6 + H8 remain as Sprint 4+ roadmap items (multi-week, deferred). Next decision is feature direction, not refactor — see "Pivot decision" below.
+
+### What T2.1 delivered
+
+Single source of truth for Vietnamese phonological rule data, exposed as a plugin contract mirroring the existing IOutputInjector pattern (`src/app/output/IOutputInjector.h`).
+
+| Day | PR | Merge SHA | Scope |
+|---|---|---|---|
+| **D1** | #150 | `dd58f1e` | New header `core/engine/VietnamesePhonologyData.h`. `IsFrontBaseVowel` lifted from PhonotacticsValidator + Phonotactics anon namespaces → shared header. Both validators consume same classifier. |
+| **D2** | #151 | `b52e29d` | `kVCPairRules` (24-nucleus allowed-coda bitmask) + packed-key encoding (`VowelSlot`, `Key1/2/3`, `BaseIndex`) + F_* coda masks lifted to shared header. PhonotacticsValidator drops -85 LOC of duplicates from anon namespace. Phonotactics (Path 2) gains wstring_view→packed-key encoder; **retires the coarser T3 N1/N2/N3 approximation**, contract now matches Path 1 production semantics. |
+| **D3** | #152 | `9d9b5a5` | `IPhonologyRules` plugin contract interface + `DefaultPhonologyRules` `final` impl + Phonotactics DI ctor (default-binds to DefaultPhonologyRules::Default()). Path 2 routes rule queries through the contract. |
+| **D4** | (PR pending) | — | `PhonologyRulePackId` enum + inline `GetRulePack` factory in new header `PhonologyRulePackFactory.h`. Reserved enum slots commented-out for future packs (StrictTextbook / LenientLoanword / SouthDialect / NorthDialect / CentralDialect). Mirrors OutputInjectorFactory shape. |
+
+**Path 1 (production hot path) intentionally untouched.** `Phonology::ValidateSyllableState` on CharState keeps direct-call free functions (`Phonology::GetAllowedFinals`, `Phonology::IsFrontBaseVowel`) for **0 ns delta** at the keystroke level. Only off-hot-path consumers (Phonotactics class today; future spell-check overlay, dialect toggle UI, dictionary autocomplete) route through `IPhonologyRules`.
+
+### User-visible benefit today: **zero**
+
+T2.1 is architectural-debt payback. App identical pre-D1 → post-D4. No spell-check change, no typing-speed change, no new feature. The plugin contract is ready for the first feature consumer; without one, T2.1's value is purely future-velocity unlock.
+
+5+ pre-existing engine duplications (Decompose vs DecomposeVietChar, kVowelTable vs kClosedVowels/kPendingVowels, kValidOnsets shape) noted by review agents but **not** in T2.1 scope — pickup-when-touching-feature, no standalone sprint justified.
+
+### Verification across the sprint
+
+| Day | Tests | Cumulative |
+|---|---|---|
+| Pre-D1 baseline | 1540 PASS | 1540 |
+| D1 | byte-identical | 1540 |
+| D2 | -11 N-group tests, +7 VCPair tests | 1547 (-4 net but tightened semantics) |
+| D3 | +5 DI tests | 1552 |
+| D4 | +3 factory tests | **1555/1555 PASS** |
+
+### Pivot decision (anh chốt next session)
+
+Hook + Engine architectural backlogs cleared. Three forward directions:
+
+1. **Ship a feature** consuming T2.1 unlock — concretely realize the architectural payback. Candidates ordered by user-visible impact:
+   - **Spell-check overlay** (gạch đỏ in compose buffer) — needs Phonotactics::IsValidSyllable wired into UI render, ~1-2 days.
+   - **Strict / Lenient mode toggle** — UI toggle + 2 IPhonologyRules impls, ~1 day.
+   - **Smart auto-restore** for English-mangled words — ~1 day.
+   - **Dialect rule packs** (Sài Gòn / Hà Nội / Trung) — UI + 3 impls, ~2-3 days.
+   - **Dictionary autocomplete suggestion** — phonotactic filter on candidates, ~3-4 days.
+
+2. **Bug / issue triage** — 11 GitHub issues open. Triage + fix priority bugs.
+
+3. **TSF Phase 2/3** — TSF DLL hybrid update landed 2026-04-22 (`c1e9ce2`); Phase 2 is the user-facing TSF re-enable (currently hook-engine-only per `project_hook_only` memory).
+
+If anh has no near-term plan to ship 1+ feature in (1), T2.1 was YAGNI under the Don't-design-for-hypothetical rule in CLAUDE.md. Worth being honest about that and either committing to a feature or accepting the architecture-debt-payback rationale standalone.
+
+---
 
 ## 2026-05-07 — T5 `cafcs → các` FIX MERGED (PR #146, Main `1ade8dc`)
 
