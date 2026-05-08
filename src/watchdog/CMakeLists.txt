@@ -13,9 +13,8 @@ target_compile_definitions(NexusKeyWatchdog PRIVATE
     UNICODE _UNICODE
 )
 
-target_link_libraries(NexusKeyWatchdog PRIVATE
-    psapi.lib
-)
+# No external libs needed — uses only kernel32 (CreateProcessW, CreateMutexW, etc.)
+# and shell APIs (Process32FirstW from TlHelp32) auto-linked via Windows.h.
 
 if(MSVC)
     target_link_options(NexusKeyWatchdog PRIVATE /SUBSYSTEM:WINDOWS,6.01 /RELEASE)
