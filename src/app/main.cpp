@@ -24,6 +24,7 @@
 
 #include "system/HotkeyManager.h"
 #include "system/HotkeyWiring.h"
+#include "system/HeartbeatPublisher.h"
 #include "core/ipc/SharedStateManager.h"
 #ifdef NEXUSKEY_HOOK_ENGINE
 #include "system/HookEngine.h"
@@ -59,6 +60,7 @@ static HINSTANCE g_hInstance = nullptr;
 
 static SharedStateManager g_sharedState;  // Shared memory for Settings subprocess IPC
 static HotkeyManager g_hotkeyManager;
+static HeartbeatPublisher g_heartbeat;  // 30s heartbeat for NexusKeyWatchdog auto-respawn
 
 #ifdef NEXUSKEY_HOOK_ENGINE
 static HookEngine g_hookEngine;
@@ -493,6 +495,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
     g_mainThreadWorker.Start();
 
+    // Best-effort: heartbeat for NexusKeyWatchdog auto-respawn. If event
+    // creation fails (rare — e.g. session-isolation edge case) NexusKey
+    // still functions; watchdog simply won't engage.
+    if (!g_heartbeat.Start()) {
+        NEXTKEY_LOG(L"HeartbeatPublisher start failed — watchdog auto-respawn disabled");
+    }
+
     NEXTKEY_LOG(L"HookEngine started, entering message loop");
 
     // Apply system config (icon style, show-on-startup)
@@ -785,6 +794,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     CoUninitialize();
 #endif
 
+    // Catch graceful exits that didn't go through the tray-Exit branch (e.g.
+    // WM_CLOSE from the updater handover) so the watchdog skips respawn.
+    // Idempotent — safe even if SignalGracefulShutdown was already called.
+    g_heartbeat.SignalGracefulShutdown();
+    g_heartbeat.Stop();
+
     NEXTKEY_LOG(L"Exiting");
     CloseHandle(hMutex);
     return 0;
@@ -891,6 +906,8 @@ void OnMenuCommand(TrayMenuId id) {
 
         case TrayMenuId::Exit:
             TerminateAllSubprocesses();
+            // Tell watchdog this is a user-initiated quit — skip respawn.
+            g_heartbeat.SignalGracefulShutdown();
             g_running.store(false, std::memory_order_relaxed);
             PostQuitMessage(0);
             break;
