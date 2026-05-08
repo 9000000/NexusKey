@@ -177,9 +177,10 @@ private:
 
     // Output — universal SendInput with KEYEVENTF_UNICODE
     void ReplaceComposition(const std::wstring& newText, DWORD reinjectVk = 0);
-    void TrackedSendInput(INPUT* events, UINT count) noexcept;
     // Sprint 2 D3 removed DispatchSendInput callers; D4 deleted body+decl.
-    // Split-vs-batch lives inside the IOutputInjector impls now.
+    // Split-vs-batch lives inside the IOutputInjector impls now. Synth dispatch
+    // goes through Output::Internal::TrackedSendInput, which routes the
+    // synth-counter via g_synthCounterCallback → OnSynthDispatched.
     void SendBackspaces(size_t count);
     void SendBackspaceEvents(size_t count);
     void SendCharEvents(const std::wstring& text);

@@ -3,6 +3,7 @@
 
 #include "SettingsDialog.h"
 #include "../resource.h"
+#include "helpers/AppHelpers.h"
 #include "system/StartupHelper.h"
 #include "system/SubprocessHelper.h"
 #include "system/TsfRegistration.h"
@@ -154,13 +155,10 @@ SettingsDialog::SettingsDialog()
     // 13. Finally, move the initialized, rendered, and themed window onscreen
     RECT rc;
     GetWindowRect(get_hwnd(), &rc);
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
     int winWidth = rc.right - rc.left;
     int winHeight = rc.bottom - rc.top;
-    int x = (screenWidth - winWidth) / 2;
-    int y = (screenHeight - winHeight) / 2;
-    SetWindowPos(get_hwnd(), HWND_NOTOPMOST, x, y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+    POINT pt = NextKey::GetCenteredPos(get_hwnd(), winWidth, winHeight);
+    SetWindowPos(get_hwnd(), HWND_NOTOPMOST, pt.x, pt.y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
 
     // Force taskbar presence while DWM transitions are still disabled (avoids flicker)
     SciterHelper::ForceTaskbarPresence(get_hwnd(), IDI_APP);

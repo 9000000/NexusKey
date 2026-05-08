@@ -91,6 +91,27 @@ inline std::wstring ToLowerAscii(std::wstring str) noexcept {
     HWND focused = GetFocusedChildHwnd(foreground);
     return focused ? focused : foreground;
 }
+
+/// Multi-monitor-aware top-left for centering a window of given size on the
+/// monitor that contains `referenceHwnd`. Falls back to the primary monitor
+/// when the reference HWND is null/invalid. Honors taskbar / docked panels
+/// by using `rcWork` instead of `rcMonitor`. Replaces the old
+/// `GetSystemMetrics(SM_CXSCREEN/SM_CYSCREEN)` pattern, which always
+/// centers on the primary screen and ignores the work area.
+[[nodiscard]] inline POINT GetCenteredPos(HWND referenceHwnd, int width, int height) noexcept {
+    HMONITOR mon = MonitorFromWindow(referenceHwnd ? referenceHwnd : GetDesktopWindow(),
+                                     MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO mi = { sizeof(mi) };
+    if (!GetMonitorInfoW(mon, &mi)) {
+        // Last-resort: primary screen metrics, ignore work area.
+        return { (GetSystemMetrics(SM_CXSCREEN) - width) / 2,
+                 (GetSystemMetrics(SM_CYSCREEN) - height) / 2 };
+    }
+    const int sx = mi.rcWork.right - mi.rcWork.left;
+    const int sy = mi.rcWork.bottom - mi.rcWork.top;
+    return { mi.rcWork.left + (sx - width) / 2,
+             mi.rcWork.top + (sy - height) / 2 };
+}
 #endif
 
 }  // namespace NextKey

@@ -77,8 +77,8 @@ bool ClassicMacroTableDialog::Init(HINSTANCE hInstance, HWND parent, bool forceL
     RECT rc = {0, 0, w, h};
     AdjustWindowRectEx(&rc, style, FALSE, WS_EX_TOPMOST);
     int aw = rc.right - rc.left, ah = rc.bottom - rc.top;
-    int sx = GetSystemMetrics(SM_CXSCREEN), sy = GetSystemMetrics(SM_CYSCREEN);
-    SetWindowPos(hwnd_, nullptr, (sx - aw) / 2, (sy - ah) / 2, aw, ah, SWP_NOZORDER);
+    POINT pt = NextKey::GetCenteredPos(hwnd_, aw, ah);
+    SetWindowPos(hwnd_, nullptr, pt.x, pt.y, aw, ah, SWP_NOZORDER);
 
     theme_.Init(hwnd_, forceLightTheme);
     theme_.ApplyWindowAttributes(hwnd_);
