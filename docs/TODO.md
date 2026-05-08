@@ -185,8 +185,14 @@ Mechanical / low-risk items addressed in the post-T3 cleanup branch:
 
 These need investigation, design work, or 3-collaborator decisions and were intentionally NOT addressed in the mechanical batch:
 
-### Pre-T3 Minor 1 — `LowLevelMouseProc` race on `cachedFocusedHwnd_`
-Investigation needed: read the exact write set in the mouse callback, decide between (a) atomic migration, (b) defer to `MainThreadWorker`, or (c) document as benign. Detailed in the §"Review (2026-05-05)" section below.
+### ~~Pre-T3 Minor 1 — `LowLevelMouseProc` race on `cachedFocusedHwnd_`~~ — LANDED
+Resolved (Sprint 3 cleanup H3, commit `58d8f88`). `cachedFocusedHwnd_`
+migrated to `std::atomic<HWND>`; mouse path uses `.store(nullptr,
+memory_order_relaxed)` and key thread uses `.load(memory_order_relaxed)`
+per CODING_RULES 11.3 cache-invalidation pattern. The companion
+`cachedFocusedClass_` wstring tuple race is documented as benign in
+`HookEngine.h:474-479` — at worst a 1-keystroke filter miss that the
+next focus change recovers. No further action.
 
 ### ~~Pre-T3 Minor 2 — `QuickSyncFromSharedState` acquires `stateMutex_` on hook hot path (Rule #11.3 violation)~~ — LANDED
 Resolved via lock-free hot-path / locked slow-path split (double-checked
@@ -309,18 +315,15 @@ Because the type is gone, anyone who uncomments these lines triggers a
 - Update audit script Check 1 comment block to point back at the trap
   rationale so future readers don't try to "clean up" again.
 
-### 🟡 Minor 1 — `LowLevelMouseProc` writes `cachedFocusedHwnd_` and calls `ResetComposition` without lock
+### ~~🟡 Minor 1 — `LowLevelMouseProc` writes `cachedFocusedHwnd_` and calls `ResetComposition` without lock~~ — LANDED
 
-**Risk:** Race with `WinEventProc` (main thread) which reads/writes the same
-state. Manifests as transient composition desync after rapid mouse-click
-near a focus boundary.
-
-**Action:** Investigate exact write set in `LowLevelMouseProc`; either
-- Migrate `cachedFocusedHwnd_` to `std::atomic<HWND>`, or
-- Defer the writes via `MainThreadWorker` (Sprint 1 D8-D10 pattern), or
-- Document the race as benign (write-write to same value in practice).
-
-Pick one based on what the writes actually do.
+Resolved (Sprint 3 cleanup H3, commit `58d8f88`). `cachedFocusedHwnd_`
+migrated to `std::atomic<HWND>`. Mouse path uses `.store(nullptr,
+memory_order_relaxed)` to invalidate the cache; key thread uses
+`.load(memory_order_relaxed)` per CODING_RULES 11.3 cache-invalidation
+pattern. Companion `cachedFocusedClass_` wstring tuple race is
+documented as benign in `HookEngine.h:474-479` — at worst a
+1-keystroke filter miss that the next focus change recovers.
 
 ### ✅ ~~🟡 Minor 2 — `ProcessKeyDown` calls `QuickSyncFromSharedState()` which acquires `stateMutex_` on hook thread (Rule #11.2/11.3 violation)~~ — LANDED
 
