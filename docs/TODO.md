@@ -20,88 +20,49 @@ Phase 2 watchdog smoke 1/2/3 PASS (crash respawn, graceful, hung UI). Smoke 4 + 
 
 ---
 
-## 🔴 Vietnamese-rule consolidation into a phonology plugin (2026-05-08)
+## 🟡 Vietnamese-rule consolidation — Path 1 migration + English-protection reuse remaining (2026-05-08, updated 2026-05-08)
 
 **Project design philosophy (anh 2026-05-08):** *nhanh - gọn - nhẹ - mượt - plugin,
-**không code phân mảnh***. The current Vietnamese-rule spread directly violates the
-last clause — this is now a **principle-grade** consolidation, not deferred polish.
+**không code phân mảnh***. Honored by the T2.1 sprint below — single rule-data
+header + plugin contract now exist; two consumers still hold local copies and
+need migrating.
 
-**Surfaced during T2 + T3 review (`Phonotactics::IsValidSyllable` interface contract closure).**
-Rule logic for "is this Vietnamese?" / "is this syllable valid?" / "where does the
-tone go?" / "is this English masquerading as Vietnamese?" is currently scattered
-across 5+ files with overlapping/duplicate concepts. Goal: a single canonical
-**phonology plugin** (matching the project's existing `IOutputInjector` /
-`CodeTableConverter` plugin patterns) that all callers consume.
+### ✅ Landed in T2.1 sprint (D1–D4)
 
-### Current spread
+| Commit | What |
+|---|---|
+| `48d25b1` | D1 — Lift `IsFrontBaseVowel` + front-vowel classifier into shared `core/engine/VietnamesePhonologyData.h` |
+| `59fd807` / `02a1b2d` | D2 — Lift `kVCPairRules` per-nucleus allowed-coda bitmask into the shared header. Path 2 (`Phonotactics`) now uses `GetAllowedFinals()`; T3 N1/N2/N3 approximation retired. |
+| `3f86c40` | D3 — `IPhonologyRules` plugin contract + `DefaultPhonologyRules` singleton. Path 2 (`Phonotactics`) consumes it via DI ctor. |
+| `1bfffb7` | D4 — `PhonologyRulePackFactory` + `RulePackId` enum (single dialect today; swap-point for future packs). |
 
-| File | Concern | Granularity |
-|---|---|---|
-| `core/engine/Phonotactics.cpp` (Path 2 / wstring_view) | `IsValidSyllable`, `TonePosition`, `CanComplete`. Now contains: T2 onset agreement (c/k/g/gh/ng/ngh), T3 N1/N2/N3 vowel-coda groups | wstring_view I/O, coarse |
-| `core/engine/PhonotacticsValidator.cpp` (Path 1 / CharState) | `ValidateSyllableState`, `kVCPairRules` per-nucleus allowed-coda bitmask, onset agreement (c/k/gh/ngh), gi/qu dual decomposition | CharState I/O, **stricter / per-nucleus** |
-| `core/engine/EnglishProtection.h` | `IsHardEnglishStart/End`, `IsInvalidVietnameseCoda`, `IsHardEnglishToneContext` (V+C+V) | states[] I/O, English bias detection |
-| `core/engine/EngineHelpers.h` | Vowel/consonant scan helpers, `FindStrokeDTarget`, edge-case prefix detection | states[] I/O, modifier targeting |
-| `core/engine/VietnameseTables.h` | `kDiphthongClassic` / `kDiphthongModern`, `IsTriphthong`, `DiphthongVowelIndex` | base-char I/O, tone-position tables |
+Result: rule data has one source of truth (`VietnamesePhonologyData.h`); the
+wstring_view hot path goes through the plugin contract; future dialectal
+variants plug in at the factory without forking validator code.
 
-### Concrete duplications already logged
+### 🟡 Remaining (~1 day total)
 
-- **T2.1 (REFACTOR_STATUS)**: onset agreement encoded twice — Path 2 wstring_view (T2) + Path 1 CharState (PV:684-715). Same rule, different input types.
-- **T2.1 (extended)**: per-nucleus allowed-coda — Path 2 N1/N2/N3 (T3, coarse) + Path 1 `kVCPairRules` bitmask (granular, stricter). Path 2 is approximation of Path 1.
-- **English-coda heuristic** in `EnglishProtection.h` reuses the `(c/m/n/p/t)` coda lexicon a third time, for the orthogonal "is this English?" axis.
-
-### Proposed direction (plugin shape)
-
-Frame the consolidation as `IPhonologyRules` plugin contract — same architectural
-pattern as `IOutputInjector` (`OutputInjectorFactory::Create`) and
-`ICodeTableConverter`. One source of truth for the Vietnamese rule data,
-adapters thin enough to be obvious wrappers.
-
-1. **Single rule-data header** (`core/engine/VietnamesePhonologyData.h`, or
-   extend `VietnameseTables.h`):
-   - Onset lexicon + onset/vowel agreement matrix (today: 2 places)
-   - **VCPair bitmask** as single source of truth for per-nucleus allowed
-     codas (today: PhonotacticsValidator only — Path 2 gets a coarser
-     N1/N2/N3 approximation in T3, must be replaced by VCPair lookup)
-   - Closed/pending vowel sets (today: only Path 2)
-   - Tone-position diphthong tables (already centralized — use as model)
-2. **Plugin contract** (`IPhonologyRules`) exposing typed queries:
-   `OnsetClass(view) → enum`, `AllowedCodaMask(nucleusKey) → uint16_t`,
-   `TonePosition(view, coda, ortho) → size_t`, etc. The two existing
-   `IPhonotactics` impls become thin adapters over this contract.
-3. **Adapter layers**:
-   - CharState path: `PhonotacticsValidator` calls into `IPhonologyRules`
-     using its packed-key encoding for fast lookup (preserve hot-path cost).
-   - wstring_view path: `Phonotactics` (Path 2) calls the same contract,
-     paying a small render→key conversion cost (off hot path).
-   - English-bias detection (`EnglishProtection.h`) consumes the same
-     onset/coda lexicons rather than re-encoding `c/m/n/p/t` a third time.
-4. **Plugin angle (future-proof)**: when NexusKey grows rule-pack-per-dialect
-   or rule-pack-per-script, `IPhonologyRules` becomes the swap-point. The
-   factory accepts a `RulePackId` (default: standard Vietnamese), opening
-   the door for dialectal variants without forking validator code.
-
-### Effort estimate
-
-2-3 days. Includes:
-- Rule-data header extraction (1 day)
-- `IPhonologyRules` contract + adapter rewrites (1 day, both validators
-  must stay byte-identical on chaos.toml)
-- English-protection consumer reuse (0.5 day, optional first pass)
-- Tests + chaos verification (0.5 day)
-
-Risk: chaos regressions on Path 1 hot path if VCPair table or onset
-agreement contents drift during the lift — discipline = preserve rule
-contents byte-for-byte, only relocate and re-export.
+1. **Path 1 (`PhonotacticsValidator`) migration** — still consumes
+   `VietnamesePhonologyData.h` directly instead of going through
+   `IPhonologyRules`. Self-documented at `PhonotacticsValidator.cpp:27-32`:
+   *"did not migrate this validator. Revisit when a dialectal rule pack is
+   actually needed."* Effort ~0.5 day. Discipline: byte-identical chaos.toml
+   output, CharState packed-key hot-path cost preserved.
+2. **English-protection consumer reuse** — `EnglishProtection.h` still
+   re-encodes the `c/m/n/p/t` Vietnamese-coda lexicon (`IsHardEnglishEnd`
+   ~line 81, `IsInvalidVietnameseCoda` ~line 289) for its English-bias
+   detection axis. Should consume the same coda data from
+   `VietnamesePhonologyData.h` rather than maintaining a parallel copy.
+   Effort ~0.5 day, orthogonal to Path 1.
 
 ### Sequencing
 
-**Per design philosophy this should land BEFORE the next phonology-touching
-feature** (spell-check overlay, dictionary lookup, dialect rule-packs). Doing
-it cold de-risks future feature work; doing it during a feature ships
-risk-on-risk.
-
-Suggested entry point after T6 closure: a `phonology-plugin` sprint mirroring
-the Sprint 2 D0–D6 cadence used for `IOutputInjector`.
+Reopen only when (a) a dialectal rule pack becomes load-bearing (forces
+Path 1 migration), or (b) the next phonology-touching feature lands and the
+parallel English-coda copy starts drifting from the shared lexicon. Until
+then current state is acceptable: the plugin shape exists, rule data is
+centralized, and the residual duplication is contained to two well-marked
+sites.
 
 ---
 
