@@ -34,6 +34,7 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/EngineHelpers.h
     src/core/engine/EnglishProtection.h
     src/core/engine/VietnameseTables.h
+    src/core/engine/VietnamesePhonologyData.h
     src/core/engine/PhonotacticsValidator.cpp
     src/core/engine/PhonotacticsValidator.h
     src/core/engine/IPhonotactics.h
