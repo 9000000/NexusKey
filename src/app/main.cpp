@@ -336,6 +336,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         NEXTKEY_LOG(L"Startup task missing — fell back to registry, disabled admin mode in config");
     }
 
+    // Register watchdog task at first run (UAC prompt once). Idempotent —
+    // CreateWatchdogScheduledTask uses Register-ScheduledTask -Force.
+    if (!IsWatchdogTaskRegistered()) {
+        NEXTKEY_LOG(L"Watchdog task not registered — prompting for UAC");
+        if (!CreateWatchdogScheduledTask()) {
+            NEXTKEY_LOG(L"Watchdog task registration FAILED — auto-respawn unavailable");
+            // Non-fatal: app still functions.
+        }
+    }
+
     // Check for update failure marker (installer failed and relaunched us)
     bool updateJustFailed = false;
     {
