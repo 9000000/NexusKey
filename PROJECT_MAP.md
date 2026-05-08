@@ -4,9 +4,15 @@
 
 ## Read First
 
-> **`docs/PHILOSOPHY.md`** — the four pillars (Nhanh / Nhẹ / Mượt / Mở rộng), test-first development, and the three pre-code questions (right place? impact? better way?). This document is the highest-level filter for all design and implementation. Read it before touching code.
+> **`docs/PHILOSOPHY.md`** — the four pillars (Nhanh / Nhẹ / Mượt / Mở rộng), test-first development, and the three pre-code questions. Highest-level filter for all design and implementation. Read before touching code.
 >
-> **`docs/CODING_RULES/index.md`** — concrete rules that operationalize the philosophy. Rule #11 (Hook System) is mandatory reading before changing anything reachable from `LowLevelKeyboardProc`.
+> **`docs/CODE_GOVERNANCE.md`** — Q1–Q5 pre-code gate (Layer / Perf / Native / No-Lock / Trade-off). MUST print answers to all five before proposing any architecture.
+>
+> **`docs/CODING_RULES/index.md`** — concrete rules operationalizing the philosophy. Rule #11 (Hook System) is mandatory before changing anything reachable from `LowLevelKeyboardProc`.
+>
+> **`docs/REFACTOR_STATUS.md`** — living inventory of refactor work (DONE / in-flight / backlog). Single source of truth — update as items ship.
+>
+> **`docs/TODO.md`** — multi-day sprint plans + open follow-ups (newest at top). Currently anchors the **T2.1 Vietnamese-rule consolidation** sprint (principle-grade per anh design philosophy 2026-05-08: *nhanh - gọn - nhẹ - mượt - plugin, không code phân mảnh*).
 >
 > **`HANDOFF.md`** — current sprint state, gates, and recent decisions.
 
@@ -31,13 +37,17 @@ NexusKey/
 │   ├── core/                          # ← NextKeyEngine + NextKeyCore
 │   │   ├── engine/                    # Pure C++ input engines
 │   │   │   ├── IInputEngine.h         # Interface: ProcessKey, GetResult, Reset
-│   │   │   ├── TelexEngine.cpp/h      # Telex typing method (34K cpp)
-│   │   │   ├── VniEngine.cpp/h        # VNI typing method (18K cpp)
-│   │   │   ├── SpellChecker.cpp/h     # Vietnamese spell checking (26K cpp)
-│   │   │   ├── CodeTableConverter.cpp/h  # Charset conversion TCVN3/VNI/Unicode (30K cpp)
-│   │   │   ├── EngineFactory.cpp/h    # Creates engine by TypingMethod enum
-│   │   │   ├── EngineHelpers.h        # Shared helper utilities
-│   │   │   └── VietnameseTables.h     # Static data: vowels, consonants, tones
+│   │   │   ├── TypingEngine.cpp/h     # Unified typing engine — Telex + VNI both routed through here (1723 LOC, post Path G unification 2026-04-16)
+│   │   │   ├── TypingAction.h         # TypingAction enum — engine output commands (Path G G-3)
+│   │   │   ├── EnglishProtection.h    # Heuristics: HardEnglishStart/End, IsInvalidVietnameseCoda, V+C+V context
+│   │   │   ├── PhonotacticsValidator.cpp/h  # Path 1 / hot-path syllable validator on CharState. Owns kVCPairRules per-nucleus allowed-coda bitmasks (T1 rename from SpellChecker, 813 LOC)
+│   │   │   ├── IPhonotactics.h        # Interface for the rendered-text rule engine (Path G G-1)
+│   │   │   ├── Phonotactics.cpp/h     # Path 2 / wstring_view rule engine — IsValidSyllable, TonePosition, CanComplete (492 LOC, T2 onset agreement + T3 N-group)
+│   │   │   ├── VietnamesePhonologyData.h  # Shared phonology data — IsFrontBaseVowel today; VCPair/onset rules will land here (T2.1 phonology consolidation)
+│   │   │   ├── CodeTableConverter.cpp/h  # Charset conversion TCVN3/VNI/Unicode (662 LOC)
+│   │   │   ├── EngineFactory.cpp/h    # Creates engine by TypingMethod enum (Combined routes to TypingEngine)
+│   │   │   ├── EngineHelpers.h        # Shared helper utilities (vowel/consonant scans, modifier targeting)
+│   │   │   └── VietnameseTables.h     # Static data: kDiphthongClassic/Modern, IsTriphthong, DiphthongVowelIndex, tone-position tables
 │   │   ├── config/                    # Configuration management
 │   │   │   ├── TypingConfig.h         # Config struct: method, spellCheck, macros etc.
 │   │   │   ├── ConfigManager.cpp/h    # TOML load/save (Win32-only, 24K cpp)
@@ -132,16 +142,29 @@ NexusKey/
 │       ├── resources.cpp              # Auto-generated packed UI (538K)
 │       └── resources/                 # Icons (ico files)
 │
-├── tests/                             # Google Test
-│   ├── TelexEngineTest.cpp            # ★ 72K — most comprehensive
-│   ├── FeatureOptionsTest.cpp         # 29K — feature flag combos
-│   ├── SpellCheckerTest.cpp           # 22K
-│   ├── CodeTableConverterTest.cpp     # 20K
-│   ├── ConfigManagerTest.cpp          # 10K — Win32 only
-│   ├── VniEngineTest.cpp              # 8K
-│   ├── EngineFactoryTest.cpp          # 8K
-│   ├── SharedStateTest.cpp            # 6K
-│   ├── ConfigEventTest.cpp            # 2K — Win32 only
+├── tests/                             # Google Test (1551 tests / 62 suites as of 2026-05-08)
+│   ├── TelexEngineTest.cpp            # ★ Most comprehensive engine suite (covers TypingEngine post-Path G; legacy filename retained)
+│   ├── VniParityTest.cpp              # VNI ↔ Telex parity through unified TypingEngine
+│   ├── CombinedEngineTest.cpp         # InputMethod::Combined routing
+│   ├── PhonotacticsTest.cpp           # Path 2 wstring_view rule engine (T2 onset agreement + T3 N-group)
+│   ├── PhonotacticsValidatorTest.cpp  # Path 1 CharState validator (T1 rename from SpellCheckerTest)
+│   ├── FeatureOptionsTest.cpp         # Feature flag combinations
+│   ├── CodeTableConverterTest.cpp     # Charset conversion correctness
+│   ├── TelexDictionaryTest.cpp        # Telex dictionary lookups
+│   ├── CustomKeyMapTest.cpp           # Path G G-4 custom keymap
+│   ├── TypingActionTest.cpp           # Path G G-3 TypingAction enum
+│   ├── MacroCaseTest.cpp              # H5 macro case-mapping (CaseMapper DI)
+│   ├── MacroPrefixTest.cpp            # Macro prefix expansion
+│   ├── MainThreadWorkerTests.cpp      # Sprint 1 D8-D10 worker queue
+│   ├── HookContextAnchorTest.cpp      # Hook seqlock anchor read/write
+│   ├── HookEngineAtomicTests.cpp      # Sprint 1 D5 atomic flag migration
+│   ├── TypingConfigRCUTests.cpp       # Sprint 1 D6 shared_ptr<TypingConfig> RCU
+│   ├── EngineBenchmarkTest.cpp        # Hot-path latency budget
+│   ├── EngineFactoryTest.cpp          # Engine construction by method enum
+│   ├── ConfigManagerTest.cpp          # Win32 only — TOML round-trip
+│   ├── SharedStateTest.cpp            # Win32 only — IPC seqlock + ABI gate
+│   ├── ConfigEventTest.cpp            # Win32 only — named-event sync
+│   ├── UpdateSecurityTest.cpp         # UpdateChecker signature verification
 │   └── TestHelper.h                   # Shared test utilities
 │
 ├── docs/                              # Documentation (see docs/index.md)
@@ -175,8 +198,11 @@ NexusKey/
 
 | Task | Go to |
 |---|---|
-| Fix typing/diacritics bug | `src/core/engine/TelexEngine.cpp` or `VniEngine.cpp` |
-| Fix spell checking | `src/core/engine/SpellChecker.cpp` |
+| Fix typing/diacritics bug | `src/core/engine/TypingEngine.cpp` (unified Telex + VNI post Path G) |
+| Fix syllable validity / tone gating | `src/core/engine/PhonotacticsValidator.cpp` (Path 1, hot, gates by `spellCheckEnabled`) |
+| Fix rendered-text rule engine (interface contract) | `src/core/engine/Phonotactics.cpp` (Path 2 / wstring_view) |
+| Adjust shared phonology rule data | `src/core/engine/VietnamesePhonologyData.h` (T2.1 consolidation in progress) |
+| Fix English bias / V+C+V detection | `src/core/engine/EnglishProtection.h` |
 | Change encoding conversion | `src/core/engine/CodeTableConverter.cpp` |
 | Add/change config option | `src/core/config/TypingConfig.h` → `ConfigManager.cpp` |
 | Fix EXE↔DLL sync | `src/core/ipc/SharedState.h` → `SharedStateManager.cpp` |
@@ -219,9 +245,9 @@ NexusKey/
 
 ---
 
-## TelexEngine Internal Architecture
+## TypingEngine Internal Architecture
 
-> Read this section before debugging any diacritics/tone bug in `TelexEngine.cpp`.
+> Read this section before debugging any diacritics/tone bug in `TypingEngine.cpp`. Telex + VNI both flow through this single engine post Path G unification (2026-04-16); the legacy `TelexEngine`/`VniEngine` files no longer exist.
 
 ### PushChar() Processing Pipeline
 
@@ -282,7 +308,7 @@ ProcessWModifier()
 | Any char after ơ | → `ApplyAutoUO()` | Auto-horns preceding 'u' (u+ơ → ư+ơ) |
 | Every PushChar/Backspace | → `UpdateSpellState()` | Sets `spellCheckDisabled_` if invalid syllable |
 | `spellCheckDisabled_` = true | Tone keys become literal chars | Free marking blocked, tone blocked |
-| Free marking crosses vowels | → `Phonology::ValidateSyllableState()` | Tentative apply + validate, undo if invalid |
+| Free marking crosses vowels | → `Phonology::ValidateSyllableState()` | Tentative apply + validate, undo if invalid (Path 1 hot-path validator in `PhonotacticsValidator.cpp`) |
 
 ### State Model (CharState)
 
@@ -290,17 +316,18 @@ Each character in the buffer is a `CharState` with: `base` (lowercase letter), `
 
 ---
 
-## Largest Files (by code complexity)
+## Largest Files (by LOC, snapshot 2026-05-08)
 
-| File | Size | Notes |
+| File | LOC | Notes |
 |---|---|---|
-| `HookEngine.cpp` | 63K | Keyboard hook fallback — most complex |
-| `SettingsDialog.cpp` | 45K | Main settings UI logic |
-| `TelexEngine.cpp` | 34K | Core Telex algorithm |
-| `CodeTableConverter.cpp` | 30K | Charset conversion tables |
-| `SpellChecker.cpp` | 26K | Vietnamese spell validation |
-| `ConfigManager.cpp` | 24K | TOML config load/save |
-| `main.cpp` | 23K | App initialization |
-| `VniEngine.cpp` | 18K | VNI typing method |
-| `EngineController.cpp` | 17K | TSF engine orchestrator |
-| `QuickConvert.cpp` | 15K | Quick consonant shortcuts |
+| `app/system/HookEngine.cpp` | 3563 | Keyboard hook + dispatch — most complex; H1 decomposed `ProcessKeyDown` 561→79 LOC orchestrator |
+| `core/engine/TypingEngine.cpp` | 1723 | Unified Telex + VNI engine (Path G) |
+| `app/dialogs/SettingsDialog.cpp` | 1430 | Main settings UI logic (Sciter) |
+| `app/main.cpp` | 973 | App initialization |
+| `core/config/ConfigManager.cpp` | 821 | TOML config load/save |
+| `core/engine/PhonotacticsValidator.cpp` | 813 | Path 1 hot-path syllable validator (T1 rename) |
+| `app/system/QuickConvert.cpp` | 698 | Quick consonant shortcuts |
+| `core/engine/CodeTableConverter.cpp` | 662 | Charset conversion tables |
+| `app/system/TrayIcon.cpp` | 631 | Tray icon + menu |
+| `tsf/EngineController.cpp` | 608 | TSF engine orchestrator |
+| `core/engine/Phonotactics.cpp` | 492 | Path 2 wstring_view rule engine (T2 + T3) |
