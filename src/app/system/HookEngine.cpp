@@ -321,9 +321,10 @@ void HookEngine::HookThreadProc() {
 
     HOOK_LOG(L"HookThreadProc: pump started tid=%lu", hookThreadId_);
 
-    // Message pump. Besides LL hook dispatch, this thread also services the
-    // Raw Input self-heal monitor (WM_INPUT + one-shot WM_TIMER) — all
-    // lightweight, sub-microsecond handlers that won't risk LowLevelHooksTimeout.
+    // Message pump. Besides LL hook dispatch, this thread also services
+    // HookSelfHealer's hidden window (WM_INPUT + one-shot WM_TIMER, ~5-20μs
+    // handlers, well within LowLevelHooksTimeout) and WM_APP_REINSTALL_HOOKS
+    // posted by OnFocusChanged for Chromium top-of-chain priority.
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         if (msg.message == WM_APP_REINSTALL_HOOKS) {
@@ -346,7 +347,8 @@ void HookEngine::HookThreadProc() {
     // not in dtor — DestroyWindow requires the creating thread.
     if (selfHealer_) {
         selfHealer_->Stop();
-        // Don't reset() yet — destructor handles release after Stop().
+        // unique_ptr release happens in ~HookEngine; the hidden window is
+        // already destroyed by Stop() above (Stop is idempotent).
     }
 
     // Must unhook on the same thread that installed (MSDN requirement).
