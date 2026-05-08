@@ -364,6 +364,37 @@ private:
     InputMethod globalInputMethod_ = InputMethod::Telex; // config value, restored when no override
     std::unordered_map<std::wstring, int8_t> appInputMethodOverrides_; // exe → method override (-1=inherit)
 
+    // Per-HWND classification cache. Each focus change normally calls
+    // ClassifyWindow + GetExeNameForHwnd + (sometimes) IsWebView2App, costing
+    // 5-10 Win32 syscalls per change. With Alt+Tab between known apps these
+    // results are stable for the (HWND, PID) pair; cache them and short-
+    // circuit on hit. PID re-check on lookup detects HWND reuse after the
+    // owning process dies (Windows can recycle HWND values).
+    //
+    // Single-threaded: only `OnFocusChanged` and `OnTickPoll` (both on the
+    // hook thread per `HookThreadProc`) read/write the cache, so no lock.
+    struct AppProfile {
+        DWORD pid = 0;
+        std::wstring exeName;       // lowercase exe name (matches override-map keys)
+        bool isBrowser   = false;
+        bool isElectron  = false;
+        bool isQtApp     = false;
+        bool isConsole   = false;
+        bool isVB6       = false;
+        bool isWebView2  = false;   // result of IsWebView2App scan (avoids child-window walk on hit)
+        uint64_t cachedAt = 0;      // GetTickCount64() — for LRU eviction
+    };
+    std::unordered_map<HWND, AppProfile> appProfileCache_;
+    static constexpr size_t kMaxAppProfileCache = 64;  // bounded; LRU evict on insert
+
+    // Returns pointer into `appProfileCache_` if HWND is cached AND its current
+    // PID matches the cached entry. PID-mismatch entries are evicted in place
+    // (HWND was reused by a different process). Returns nullptr on miss.
+    const AppProfile* LookupAppProfile(HWND hwnd) noexcept;
+    // Insert/update the cache entry for `hwnd`. LRU-evicts the oldest entry
+    // (by `cachedAt`) when at capacity.
+    void StoreAppProfile(HWND hwnd, AppProfile profile) noexcept;
+
     // Backspace-into-committed-word (re-enter composition after commit + backspace)
     // inputHistory_ records exact user keystrokes (including backspace as '\b')
     // so replay produces identical engine state. This differs from engine's rawInput_
