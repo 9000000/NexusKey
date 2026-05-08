@@ -38,8 +38,8 @@ enum class CapTrigger : uint8_t {
 /// inspecting the first non-whitespace char. Templated so the IPC path
 /// (uint16_t / UTF-16) and the TSF path (wchar_t) share one implementation.
 template <typename CharT>
-[[nodiscard]] inline CapTrigger ClassifyCapTrigger(const CharT* buf,
-                                                   std::size_t len) noexcept {
+[[nodiscard]] constexpr CapTrigger ClassifyCapTrigger(const CharT* buf,
+                                                      std::size_t len) noexcept {
     if (buf == nullptr || len == 0) return CapTrigger::DocStart;
 
     std::size_t i = len;
@@ -66,8 +66,8 @@ template <typename CharT>
 
 /// Convenience wrapper for the TSF auto-cap call site: any non-`None`
 /// trigger means the next typed letter should be capitalized.
-[[nodiscard]] inline bool ComputeShouldAutoCap(const wchar_t* buf,
-                                               std::size_t len) noexcept {
+[[nodiscard]] constexpr bool ComputeShouldAutoCap(const wchar_t* buf,
+                                                  std::size_t len) noexcept {
     return ClassifyCapTrigger(buf, len) != CapTrigger::None;
 }
 
