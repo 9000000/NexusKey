@@ -37,6 +37,7 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/VietnamesePhonologyData.h
     src/core/engine/IPhonologyRules.h
     src/core/engine/DefaultPhonologyRules.h
+    src/core/engine/PhonologyRulePackFactory.h
     src/core/engine/PhonotacticsValidator.cpp
     src/core/engine/PhonotacticsValidator.h
     src/core/engine/IPhonotactics.h

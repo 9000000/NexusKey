@@ -1,8 +1,8 @@
 # NexusKey Refactor Status — Living Inventory
 
-> **Last refresh:** 2026-05-08 (post T2 #147 + T3 #149 merge, Main `e908621`)
+> **Last refresh:** 2026-05-08 (T2.1 sprint close — D1/D2/D3 merged + D4 PR-pending, Main `9d9b5a5`)
 > **Scope:** All architectural / cleanup refactor work. Excludes user-facing features (G-5/G-6 Sciter UI + keymap files, TSF Phase 2/3, etc.) — those track separately.
-> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Post-H1c the rule is satisfied; T5 done; T2/T3 done.** Remaining: T6 retest (anh confirmed test ổn 2026-05-08, can close); T2.1 phonology-plugin consolidation (principle-grade per design philosophy 2026-05-08).
+> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Backlog effectively cleared at architectural level**: H1-H7 + T1-T6 done; H6/H8 are Sprint 4+ roadmap items (multi-week); T2.1 sprint-closed at D4. Engine + Hook architecturally complete pending feature consumers of T2.1 plugin contract.
 
 ---
 
@@ -96,11 +96,11 @@
 |---|---|---|---|---|
 | ~~T1~~ | ~~**`SpellChecker.{h,cpp}` → `PhonotacticsValidator` rename**~~ | — | DONE | ✅ PR #139 `b115f75` |
 | ~~T2~~ | ~~**Phonotactics onset agreement** — c/k, g/gh, ng/ngh enforcement (qu exempted)~~ | — | DONE | ✅ PR #147 `d723e03` |
-| T2.1 | **Phonotactics rule duplication between `Phonotactics.cpp` (Path 2) and `PhonotacticsValidator.cpp` (Path 1)** — both encode the same Vietnamese phonotactic rules: (a) c/k/g/gh/ng/ngh onset agreement (T2 / PV:684-715), (b) per-nucleus allowed-coda restrictions (T3 N1/N2/N3 / PV:159-204 `kVCPairRules` bitmask). PV bitmask is granular per-nucleus and **stricter** than T3's coarse 3-group bucketing; the wstring_view layer's N-group is an approximation. Lift to shared rule tables (e.g. `VietnameseTables.h`) when a third validator wants the rule, and prefer the bitmask granularity in any unified table. Pre-existing; surfaced during T2/T3 reviews. | T2 + T3 simplify reuse agents | 1-2h | LOW (cleanup) |
+| ~~T2.1~~ | ~~**Vietnamese-rule consolidation sprint (Day-1 → Day-4)**~~ — D1 `IsFrontBaseVowel` lift to `VietnamesePhonologyData.h` (#150 `dd58f1e`); D2 `kVCPairRules` + packed-key encoding lift, retire T3 N-group machinery on Path 2 (#151 `b52e29d`); D3 `IPhonologyRules` plugin contract + `DefaultPhonologyRules` final impl + Phonotactics DI ctor (#152 `9d9b5a5`); D4 `PhonologyRulePackId` enum + `GetRulePack` factory hook for future rule packs. Path 1 hot path intentionally untouched (direct-call free functions kept for 0 ns delta). 5+ pre-existing engine dups (Decompose vs DecomposeVietChar, kVowelTable vs kClosed/Pending, kValidOnsets shape, etc.) noted but **not** in T2.1 scope — pickup-when-touching-feature. | T2 + T3 simplify reuse agents → anh philosophy 2026-05-08 (nhanh / gọn / nhẹ / mượt / plugin / không phân mảnh) | DONE | ✅ #150 + #151 + #152 + D4 PR pending |
 | ~~T3~~ | ~~**Phonotactics N1/N2/N3 vowel-coda compatibility**~~ | — | DONE | ✅ PR #149 `e908621` (rebased reopen of #148) |
 | ~~T4~~ | ~~**Verify Hot-path Fix 3 ComposeAll buffer reuse**~~ — VERIFIED 2026-05-07: shipped at `TypingEngine.h:218` (`mutable std::wstring composeBuf_`) + `TypingEngine.cpp:1236-1241` | hot-path-optimization-plan.md | DONE | ✅ |
 | ~~T5~~ | ~~**Bug `cafcs → các`**~~ | — | DONE | ✅ PR #146 `1ade8dc` |
-| T6 | **Bug Issue #117 `Lỗi → Lôĩ`** — fast-typing chaos timing. **Anh decision 2026-05-07 post-H1:** retest first before scheduling fix work — H1's hot-path restructure may have shifted timing enough that the race no longer reproduces. If reproducible post-H1, schedule deep work; if not, monitor + close as auto-resolved. | HANDOFF.md + Issue #117 | Hard — chaos timing | Bug (LOWER, retest gate) |
+| ~~T6~~ | ~~**Bug Issue #117 `Lỗi → Lôĩ`**~~ — anh confirmed retest 2026-05-08 sees no reproduction post-H1 hot-path restructure. Auto-resolved by H1 incidentally; close issue + monitor. | HANDOFF.md + Issue #117 | DONE | ✅ Auto-resolved by H1 |
 
 > **Note on T5/T6:** Bugs strictly speaking, not refactor. Listed here because they touch engine internals. Anh quyết định fix cùng Path G T-batch hay tách bug-fix branch riêng.
 
