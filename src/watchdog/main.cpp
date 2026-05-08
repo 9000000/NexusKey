@@ -14,6 +14,8 @@
 #include <TlHelp32.h>
 #include <string>
 
+#include "RapidKillDetector.h"
+
 namespace {
 
 constexpr const wchar_t* HEARTBEAT_EVENT_NAME = L"Local\\NexusKeyHeartbeat";
@@ -109,6 +111,21 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // Initial grace — NexusKey may not be up yet at logon.
     Sleep(POST_INIT_GRACE_MS);
 
+    DWORD lastSpawnTime = 0;  // 0 = never spawned (rapid-kill detector sentinel)
+
+    auto tryRespawnOrStop = [&](const wchar_t* triggerLog) -> bool {
+        if (NextKey::ShouldStopOnRapidKill(lastSpawnTime, GetTickCount())) {
+            LogLine(L"User killed NexusKey twice within %u ms — stopping watchdog",
+                    NextKey::RAPID_KILL_THRESHOLD_MS);
+            return false;  // signal exit
+        }
+        LogLine(triggerLog);
+        if (RespawnNexusKey()) {
+            lastSpawnTime = GetTickCount();
+        }
+        return true;
+    };
+
     while (true) {
         // Open events fresh each iteration — handles publisher restart
         // (NexusKey crashed and respawned) by reattaching to new instance.
@@ -121,8 +138,9 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             if (graceful) CloseHandle(graceful);
 
             if (!IsProcessAlive(L"NexusKey.exe")) {
-                LogLine(L"Heartbeat events absent + process not running → respawn");
-                RespawnNexusKey();
+                if (!tryRespawnOrStop(L"Heartbeat events absent + process not running → respawn")) {
+                    return 0;
+                }
                 Sleep(POST_RESPAWN_GRACE_MS);
             } else {
                 Sleep(5000);  // Process exists but events not yet up — be patient
@@ -155,8 +173,9 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             continue;
         }
 
-        LogLine(L"Heartbeat stale + graceful clear + process dead → CRASH detected");
-        RespawnNexusKey();
+        if (!tryRespawnOrStop(L"Heartbeat stale + graceful clear + process dead → CRASH detected")) {
+            return 0;
+        }
         Sleep(POST_RESPAWN_GRACE_MS);
     }
 }
