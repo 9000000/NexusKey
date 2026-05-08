@@ -199,8 +199,13 @@ Resolved via lock-free hot-path / locked slow-path split (double-checked
 locking with `std::atomic<uint32_t> lastEpoch_`). See "✅ Pre-T3 Minor 2
 fix landed" entry at top of file.
 
-### M2 — Constants naming convention (`kFoo` vs `UPPER_SNAKE`)
-Codebase-wide pattern uses `kFoo` for file-scope `static constexpr`; Rule 9.1 prescribes `UPPER_SNAKE`. Need 3-collaborator decision: update Rule 9.1 to formalize the k-prefix convention, or rename ~10 codebase constants. Recommendation: update the rule.
+### ~~M2 — Constants naming convention (`kFoo` vs `UPPER_SNAKE`)~~ — RESOLVED
+Resolved by formalizing both conventions in Rule 9.1: bitmask / namespace
+flag constants stay `UPPER_SNAKE`, file/class-scope `constexpr` literals
+use `kFoo`. Codebase grep at decision time: 50 `kFoo`-style + 74
+`UPPER_SNAKE`-style — the latter dominated by Win32-mirror constants and
+`FeatureFlags::*` / `SharedFlags::*` bitmasks, which already match the
+new rule. No rename pass required.
 
 ### ~~M3 — Dual-route `TrackedSendInput` (HookEngine member + `Internal::` free function)~~ — LANDED
 Resolved post-v3 cleanup. `HookEngine::TrackedSendInput` deleted; the
@@ -216,8 +221,10 @@ Resolved via two virtual trait methods (`HasMultiProcessRenderer()` /
 diverge on the multi-process trait. See "✅ ChannelTraits cleanup
 landed" entry at top of file.
 
-### Typing bug — `cafcs → các` (spell-check tone-replacement)
-Investigation-first item: needs `nexuskey-typing-bugs` skill trace through `PushChar` + `Validate` pipeline before fix. Hypotheses captured in the dedicated section below.
+### ~~Typing bug — `cafcs → các` (spell-check tone-replacement)~~ — RESOLVED
+Verified post-T5 fix on Windows (commit `211f2e8`). Tone replacement on
+already-toned syllable now works. The longer entry below is preserved
+for the post-mortem trail.
 
 ### `--host-class` matrix harness (Sprint 2 D6 deferred)
 Sprint 2 plan §D6 Tasks 32-33 — `NextKeyTestRunner` flag for forced host-class override. Marginal value given existing 132-case natural coverage; reopen as one focused task if QA later needs forced-cell testing.
@@ -261,7 +268,7 @@ Option 4 is cleanest semantically; option 2 is least invasive. Pick during D5 al
 
 ---
 
-## Typing bug — spell-check blocks tone replacement on already-toned syllable (2026-05-05)
+## ✅ ~~Typing bug — spell-check blocks tone replacement on already-toned syllable~~ (2026-05-05) — RESOLVED in T5 (`211f2e8`), verified on Windows 2026-05-08
 
 **Repro:** Type telex sequence `c a f c s` (each char individually).
 
