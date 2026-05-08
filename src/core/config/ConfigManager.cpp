@@ -628,6 +628,7 @@ std::optional<SystemConfig> ConfigManager::LoadSystemConfig(const std::wstring& 
             config.autoCheckUpdate = (*system)["auto_check_update"].value_or(true);
             config.startupMode = static_cast<uint8_t>((*system)["startup_mode"].value_or(0));
             config.forceLightTheme = (*system)["force_light_theme"].value_or(false);
+            config.watchdogEnabled = (*system)["watchdog_enabled"].value_or(false);
         }
 
         return config;
@@ -657,6 +658,7 @@ bool ConfigManager::SaveSystemConfig(const std::wstring& path, const SystemConfi
         system.insert_or_assign("auto_check_update", config.autoCheckUpdate);
         system.insert_or_assign("startup_mode", static_cast<int64_t>(config.startupMode));
         system.insert_or_assign("force_light_theme", config.forceLightTheme);
+        system.insert_or_assign("watchdog_enabled", config.watchdogEnabled);
         tbl.insert_or_assign("system", std::move(system));
 
         return WriteToml(utf8Path, tbl);

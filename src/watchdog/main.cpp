@@ -106,6 +106,17 @@ bool RespawnNexusKey() {
 }  // namespace
 
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
+    // Single-instance guard — both NexusKey app launch and Task Scheduler
+    // at-logon trigger may try to start watchdog. The second one bails
+    // silently on ERROR_ALREADY_EXISTS so we never run two supervisors
+    // racing each other to respawn on the same heartbeat stale event.
+    HANDLE singletonMutex = CreateMutexW(nullptr, FALSE,
+                                         L"Local\\NexusKeyWatchdogSingleton");
+    if (!singletonMutex || GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (singletonMutex) CloseHandle(singletonMutex);
+        return 0;
+    }
+
     LogLine(L"Watchdog starting (pid=%lu)", GetCurrentProcessId());
 
     // Initial grace — NexusKey may not be up yet at logon.

@@ -41,8 +41,8 @@ enum class TrayMenuId : UINT {
     InputSimpleTelex = 1042,
     // Hybrid TSF update — restart prompt (only shown when any update flag is live)
     RestartWindows = 1050,
-    // Watchdog control
-    StopWatchdog = 1060,
+    // Watchdog control (toggle — label switches based on TrayMenuState::watchdogEnabled)
+    ToggleWatchdog = 1060,
 };
 
 /// Callback type for tray events
@@ -59,6 +59,7 @@ struct TrayMenuState {
     bool macroEnabled = false;
     int inputMethod = 0;       // 0=Telex, 1=VNI, 2=SimpleTelex
     CodeTable codeTable = CodeTable::Unicode;
+    bool watchdogEnabled = false;  // Auto-restart on crash (opt-in)
 };
 
 /// Callback to query current menu state (pull model — called when menu opens)

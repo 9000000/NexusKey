@@ -53,6 +53,10 @@ struct SystemConfig {
     // Auto-update
     bool autoCheckUpdate = true;   // Check for updates on startup
 
+    // Watchdog (auto-restart on crash) — opt-in. When true, NexusKeyWatchdog.exe
+    // is registered with Task Scheduler at logon and respawns NexusKey on crash.
+    bool watchdogEnabled = false;
+
     /// Get effective V color (default if custom not set)
     [[nodiscard]] uint32_t GetEffectiveColorV() const noexcept {
         return customColorV != 0 ? customColorV : DEFAULT_ICON_COLOR_V;
