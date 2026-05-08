@@ -499,3 +499,9 @@ gtest_discover_tests(NextKeyTests)
 # (sub-CMakeLists gates platform-specific targets internally)
 # ============================================================================
 add_subdirectory(tools/NextKeyTestRunner)
+
+# ============================================================================
+# Watchdog — standalone Windows-only process supervisor (NexusKeyWatchdog.exe)
+# (sub-CMakeLists return()s on non-WIN32)
+# ============================================================================
+add_subdirectory(src/watchdog)
