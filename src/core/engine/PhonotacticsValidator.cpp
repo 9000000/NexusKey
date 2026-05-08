@@ -9,6 +9,7 @@
 
 #include "PhonotacticsValidator.h"
 #include "TypingEngine.h"
+#include "VietnamesePhonologyData.h"
 #include <algorithm>
 #include <cwctype>
 
@@ -693,7 +694,7 @@ SyllableState ValidateImpl(const CharStateT* states, size_t count, bool allowZwj
 
     if (initialLen < count && states[initialLen].IsVowel()) {
         wchar_t firstVowel = states[initialLen].base;
-        bool isFrontVowel = (firstVowel == L'e' || firstVowel == L'i' || firstVowel == L'y');
+        bool isFrontVowel = Phonology::IsFrontBaseVowel(firstVowel);
 
         if (initialLen == 1) {
             wchar_t c0 = states[0].base;

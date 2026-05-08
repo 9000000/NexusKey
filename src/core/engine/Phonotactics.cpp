@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <string_view>
 
+#include "VietnamesePhonologyData.h"
 #include "VietnameseTables.h"
 
 namespace NextKey {
@@ -245,12 +246,8 @@ constexpr std::wstring_view kN3Nuclei[] = {
 }
 
 // Vietnamese orthography splits c/k, g/gh, ng/ngh by vowel frontness.
-// Mirror of the rule encoded against CharState in PhonotacticsValidator.cpp;
-// the two paths differ in input type (rendered text vs engine state) so the
-// shared classifier is the per-base helper below, not the agreement function.
-[[nodiscard]] constexpr bool IsFrontBaseVowel(wchar_t base) noexcept {
-    return base == L'e' || base == L'i' || base == L'y';
-}
+// Front-vowel classifier lives in VietnamesePhonologyData.h, shared with the
+// CharState path in PhonotacticsValidator.cpp (T2.1 consolidation Day-1).
 
 [[nodiscard]] bool IsOnsetVowelAgreementValid(
         std::wstring_view onset,
@@ -274,7 +271,7 @@ constexpr std::wstring_view kN3Nuclei[] = {
     if (firstBase == 0) return true;
 
     const bool wantsFront = (onset == L"k" || onset == L"gh" || onset == L"ngh");
-    return wantsFront == IsFrontBaseVowel(firstBase);
+    return wantsFront == NextKey::Phonology::IsFrontBaseVowel(firstBase);
 }
 
 // =============================================================================
