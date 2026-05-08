@@ -41,6 +41,8 @@ enum class TrayMenuId : UINT {
     InputSimpleTelex = 1042,
     // Hybrid TSF update — restart prompt (only shown when any update flag is live)
     RestartWindows = 1050,
+    // Watchdog control
+    StopWatchdog = 1060,
 };
 
 /// Callback type for tray events

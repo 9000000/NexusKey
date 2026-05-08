@@ -23,6 +23,7 @@ static const wchar_t* const kVietnamese[] = {
     L"Bảng điều khiển...",                            // MENU_SETTINGS
     L"Giới thiệu NexusKey",                          // MENU_ABOUT
     L"Thoát",                                        // MENU_EXIT
+    L"Tắt tự khởi động lại",                         // MENU_STOP_WATCHDOG
     L"NexusKey - Tiếng Việt",                        // TIP_VIETNAMESE
     L"NexusKey - English",                            // TIP_ENGLISH
     L"Giới thiệu NexusKey",                          // ABOUT_TITLE
@@ -67,6 +68,7 @@ static const wchar_t* const kVietnamese[] = {
     L"Không thể ghi file để xuất dữ liệu.",              // EXPORT_FILE_WRITE_FAILED
     L"Không thể tự khởi động lại để bỏ quyền Admin.\n"   // ADMIN_DEELEVATION_FAILED
     L"Vui lòng thoát và khởi động lại NexusKey thủ công.",
+    L"Đã tắt tự khởi động lại. NexusKey sẽ không tự bật lại nếu thoát đột ngột.", // WATCHDOG_STOPPED_BODY
 };
 
 // English string table
@@ -84,6 +86,7 @@ static const wchar_t* const kEnglish[] = {
     L"Settings...",                                   // MENU_SETTINGS
     L"About NexusKey",                                // MENU_ABOUT
     L"Exit",                                          // MENU_EXIT
+    L"Stop auto-restart",                             // MENU_STOP_WATCHDOG
     L"NexusKey - Vietnamese",                         // TIP_VIETNAMESE
     L"NexusKey - English",                            // TIP_ENGLISH
     L"About NexusKey",                                // ABOUT_TITLE
@@ -128,6 +131,7 @@ static const wchar_t* const kEnglish[] = {
     L"Could not write file for export.",             // EXPORT_FILE_WRITE_FAILED
     L"Could not auto-restart to drop admin rights.\n"  // ADMIN_DEELEVATION_FAILED
     L"Please exit and relaunch NexusKey manually.",
+    L"Auto-restart stopped. NexusKey will not relaunch on crash.", // WATCHDOG_STOPPED_BODY
 };
 
 static_assert(sizeof(kVietnamese) / sizeof(kVietnamese[0]) == static_cast<size_t>(StringId::_COUNT),

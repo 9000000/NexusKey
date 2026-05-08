@@ -926,6 +926,32 @@ void OnMenuCommand(TrayMenuId id) {
             RestartWindowsWithPrompt(g_trayIcon.GetMessageWindow());
             break;
 
+        case TrayMenuId::StopWatchdog: {
+            // Set graceful flag so any watchdog instance that survives the
+            // taskkill below (or relaunches before NexusKey exits) observes
+            // a clean shutdown signal on its next stale check.
+            g_heartbeat.SignalGracefulShutdown();
+
+            // Active stop: terminate watchdog process for instant feedback.
+            // Same-user same-session — no elevation needed. Hidden cmd window.
+            STARTUPINFOW si = { sizeof(si) };
+            si.dwFlags = STARTF_USESHOWWINDOW;
+            si.wShowWindow = SW_HIDE;
+            PROCESS_INFORMATION pi = {};
+            wchar_t cmd[] = L"taskkill /F /IM NexusKeyWatchdog.exe";
+            if (CreateProcessW(nullptr, cmd, nullptr, nullptr, FALSE,
+                               CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+                WaitForSingleObject(pi.hProcess, 3000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+
+            MessageBoxW(g_trayIcon.GetMessageWindow(),
+                        S(StringId::WATCHDOG_STOPPED_BODY),
+                        L"NexusKey", MB_OK | MB_ICONINFORMATION);
+            break;
+        }
+
         default: {
             // Code table menu items (1010-1014)
             auto rawId = static_cast<UINT>(id);
