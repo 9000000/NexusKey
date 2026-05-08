@@ -430,19 +430,17 @@ multi-word macro keys via phrase-prefix buffer preservation. Rules doc:
 
 ### Tech debt surfaced
 
-- [ ] **Extract `ApplyAutoCapsMacro` to pure function** — `src/app/system/HookEngine.cpp:2778-2826`
-  Auto-caps transform (expansionAllLower check, allUpper/firstUpper detection,
-  `CharUpperBuffW` loop) is inline in `TryExpandMacro` and therefore untestable
-  from Linux. Mirror of `src/core/MacroPrefix.h`: extract to `src/core/MacroCase.h`
-  with a Linux stub for `CharUpperBuffW` (or inject the case-fold fn) and add
-  gtest covering the four-quadrant matrix (stored-case × typed-case) flagged in
-  party-mode review.
+- [x] ~~**Extract `ApplyAutoCapsMacro` to pure function**~~ — LANDED via
+  `core/MacroCase.{h,cpp}::Plan()` with a `CaseMapper` DI seam (production wraps
+  `CharUpperBuffW`/`CharLowerBuffW`, tests use ASCII mappers). Auto-cap transform
+  (expansionAllLower / allUpper / firstUpper) lives in `Plan()`. Coverage:
+  `tests/MacroCaseTest.cpp` (459 lines).
 
-- [ ] **Zero unit tests on `TryExpandMacro` match logic** — `src/app/system/HookEngine.cpp:2699-2747`
-  Two-step find (`find(rawBuffer)` → `find(lowerKey)`), `matchedExact` flag, and
-  P1/P2/P3/P4 priority ordering have no coverage. Extract the matching contract
-  into a pure `ResolveMacroMatch(buffer, previousComp, trigger, table) ->
-  {iterator, matchedExact, matchedViaComposition}` and table-test it on Linux.
+- [x] ~~**Zero unit tests on `TryExpandMacro` match logic**~~ — LANDED.
+  `Macro::Plan()` in `core/MacroCase.cpp` now owns the priority-ordered match
+  (P1 raw exact → P2 lowered → P3/P4 composition). `TryExpandMacro` in
+  HookEngine becomes a thin caller. `tests/MacroCaseTest.cpp` covers the
+  matching contract on Linux.
 
 - [ ] **Composition-path (P3/P4) auto-caps asymmetry** — `src/app/system/HookEngine.cpp:2732-2745, 2786`
   Auto-caps explicitly gated on `!matchedViaComposition` — typing `CHOOL` via
@@ -452,12 +450,15 @@ multi-word macro keys via phrase-prefix buffer preservation. Rules doc:
   in `docs/macro-case-rules.md`, or mirror the auto-caps logic on composition
   matches too.
 
-- [ ] **`\n` escape handling in auto-caps loop is incomplete** — `src/app/system/HookEngine.cpp:2806-2813`
-  Loop skips the 2-char `\n` escape when uppercasing. Does not handle `\t`,
-  `\\`, or any other escape. Verify what `LoadMacros` actually does with
-  escapes at load:
-    - if decoded at load → the `\n` skip is dead code; remove it.
-    - if passed through verbatim → `\t` under auto-upper corrupts to `\T`.
+- [x] ~~**`\n` escape handling in auto-caps loop is incomplete**~~ — AUDITED 2026-05-08.
+  `ConfigManager::LoadMacros` passes values verbatim from TOML — no escape
+  decoding at load. Only `\n` is treated as an escape downstream
+  (`MacroCase.cpp::ExpandEscapesForClipboard` and `BuildSegments`). `\t`,
+  `\\`, etc. are NEVER expanded — they pass through as literal characters.
+  So the auto-caps loop's `\n` skip is correct (preserves the only special
+  escape), and `\t` "corruption to `\T`" is a non-issue because `\t` was
+  never a tab to begin with. No code action needed; this is a feature gap
+  (escape support beyond `\n` was never wired), not a bug.
 
 - [ ] **`VkToMacroChar` syscalls per commit trigger** — `src/app/system/HookEngine.cpp:2851-2888`
   Calls `GetAsyncKeyState ×3`, `GetKeyState`, `MapVirtualKeyW ×2`,
@@ -611,13 +612,12 @@ User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
   const wchar_t* IMPORT = L"import"; ... }` in a shared header so typos become
   compile errors. Pairs with the helper extraction above.
 
-- [ ] **Extract `ShouldAutoCap` logic to pure function** — `src/tsf/CompositionEditSession.h:312`
-  Auto-cap decision (skip whitespace + check punct/newline + `skippedWhitespace`
-  gate) is currently inside `InspectPrecedingTextEditSession::DoEditSession`
-  which needs TSF APIs → untestable on Linux. Extract to free
-  `bool ComputeShouldAutoCap(const wchar_t* buf, size_t len) noexcept` and
-  call from the edit session. Lets Linux tests cover the 3rd auto-cap site
-  (currently only the Hook-anchor `DeriveAnchorFromPreceding` has tests).
+- [x] ~~**Extract `ShouldAutoCap` logic to pure function**~~ — LANDED 2026-05-08.
+  `core/AutoCapDecision.h::ComputeShouldAutoCap(buf, len)` extracted from
+  `InspectPrecedingTextEditSession::DoEditSession`. 8 new tests in
+  `tests/AutoCapDecisionTest.cpp` cover empty/whitespace/newline/sentence
+  punct + space/.com domain/mid-word/non-sentence punct/newline-wins/Vietnamese.
+  Linux GTest 1555 → 1563 PASS.
 
 ---
 
