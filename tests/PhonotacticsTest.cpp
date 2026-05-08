@@ -190,6 +190,152 @@ TEST_F(PhonotacticsIsValidSyllable, OpenSyllableAllowsAnyTone) {
 }
 
 //=============================================================================
+// IsValidSyllable — onset / vowel front-back agreement.
+// Rule and qu-exemption rationale documented at the helper definition in
+// Phonotactics.cpp.
+//=============================================================================
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetCAcceptsBackVowels) {
+    // ca, cô, cu, cơ, cư, cân, căn — c + back vowel = valid
+    EXPECT_TRUE(phon_.IsValidSyllable(L"c", L"a",       L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"c", L"\x00F4",  L"",  Tone::None, kModern));   // cô
+    EXPECT_TRUE(phon_.IsValidSyllable(L"c", L"u",       L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"c", L"\x01A1",  L"",  Tone::None, kModern));   // cơ
+    EXPECT_TRUE(phon_.IsValidSyllable(L"c", L"\x01B0",  L"",  Tone::None, kModern));   // cư
+    EXPECT_TRUE(phon_.IsValidSyllable(L"c", L"\x00E2",  L"n", Tone::None, kModern));   // cân
+    EXPECT_TRUE(phon_.IsValidSyllable(L"c", L"\x0103",  L"n", Tone::None, kModern));   // căn
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetCRejectsFrontVowels) {
+    // ce, cê, ci, cy — c + front vowel = invalid (must use k)
+    EXPECT_FALSE(phon_.IsValidSyllable(L"c", L"e",       L"", Tone::None, kModern));
+    EXPECT_FALSE(phon_.IsValidSyllable(L"c", L"\x00EA",  L"", Tone::None, kModern));   // cê
+    EXPECT_FALSE(phon_.IsValidSyllable(L"c", L"i",       L"", Tone::None, kModern));
+    EXPECT_FALSE(phon_.IsValidSyllable(L"c", L"y",       L"", Tone::None, kModern));
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetKAcceptsFrontVowels) {
+    // ke, kê, ki, ky, ken, kim, kênh — k + front vowel = valid
+    EXPECT_TRUE(phon_.IsValidSyllable(L"k", L"e",       L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"k", L"\x00EA",  L"",  Tone::None, kModern));   // kê
+    EXPECT_TRUE(phon_.IsValidSyllable(L"k", L"i",       L"m", Tone::None, kModern));   // kim
+    EXPECT_TRUE(phon_.IsValidSyllable(L"k", L"y",       L"",  Tone::None, kModern));   // ky
+    EXPECT_TRUE(phon_.IsValidSyllable(L"k", L"e",       L"n", Tone::None, kModern));   // ken
+    EXPECT_TRUE(phon_.IsValidSyllable(L"k", L"\x00EA",  L"nh", Tone::None, kModern));  // kênh
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetKRejectsBackVowels) {
+    // ka, kô, ku, kơ, kư, kâu — k + back vowel = invalid
+    EXPECT_FALSE(phon_.IsValidSyllable(L"k", L"a",       L"",  Tone::None, kModern));
+    EXPECT_FALSE(phon_.IsValidSyllable(L"k", L"\x00F4",  L"",  Tone::None, kModern));   // kô
+    EXPECT_FALSE(phon_.IsValidSyllable(L"k", L"u",       L"",  Tone::None, kModern));
+    EXPECT_FALSE(phon_.IsValidSyllable(L"k", L"\x01A1",  L"",  Tone::None, kModern));   // kơ
+    EXPECT_FALSE(phon_.IsValidSyllable(L"k", L"\x01B0",  L"",  Tone::None, kModern));   // kư
+    EXPECT_FALSE(phon_.IsValidSyllable(L"k", L"\x00E2",  L"u", Tone::None, kModern));   // kâu
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetGAcceptsBackVowels) {
+    // ga, gô, gu, gơ, gan — g + back vowel = valid
+    EXPECT_TRUE(phon_.IsValidSyllable(L"g", L"a",       L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"g", L"\x00F4",  L"",  Tone::None, kModern));   // gô
+    EXPECT_TRUE(phon_.IsValidSyllable(L"g", L"u",       L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"g", L"a",       L"n", Tone::None, kModern));   // gan
+    EXPECT_TRUE(phon_.IsValidSyllable(L"g", L"\x01A1",  L"i", Tone::None, kModern));   // gơi-ish
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetGRejectsFrontVowels) {
+    // ge, gê, gi — g + front vowel = invalid (must use gh, or "gi" cluster onset)
+    EXPECT_FALSE(phon_.IsValidSyllable(L"g", L"e",      L"", Tone::None, kModern));
+    EXPECT_FALSE(phon_.IsValidSyllable(L"g", L"\x00EA", L"", Tone::None, kModern));   // gê
+    EXPECT_FALSE(phon_.IsValidSyllable(L"g", L"i",      L"", Tone::None, kModern));
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetGhAcceptsFrontVowels) {
+    // ghe, ghê, ghi, ghen — gh + front vowel = valid
+    EXPECT_TRUE(phon_.IsValidSyllable(L"gh", L"e",      L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"gh", L"\x00EA", L"",  Tone::None, kModern));  // ghê
+    EXPECT_TRUE(phon_.IsValidSyllable(L"gh", L"i",      L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"gh", L"e",      L"n", Tone::None, kModern));  // ghen
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetGhRejectsBackVowels) {
+    // gha, ghu, ghô — gh + back vowel = invalid
+    EXPECT_FALSE(phon_.IsValidSyllable(L"gh", L"a",      L"", Tone::None, kModern));
+    EXPECT_FALSE(phon_.IsValidSyllable(L"gh", L"u",      L"", Tone::None, kModern));
+    EXPECT_FALSE(phon_.IsValidSyllable(L"gh", L"\x00F4", L"", Tone::None, kModern));  // ghô
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetNgAcceptsBackVowels) {
+    // nga, ngô, ngu, ngư, ngon — ng + back = valid
+    EXPECT_TRUE(phon_.IsValidSyllable(L"ng", L"a",       L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"ng", L"\x00F4",  L"",  Tone::None, kModern));  // ngô
+    EXPECT_TRUE(phon_.IsValidSyllable(L"ng", L"u",       L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"ng", L"\x01B0",  L"",  Tone::None, kModern));  // ngư
+    EXPECT_TRUE(phon_.IsValidSyllable(L"ng", L"o",       L"n", Tone::None, kModern));  // ngon
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetNgRejectsFrontVowels) {
+    // nge, ngê, ngi — ng + front = invalid (must use ngh)
+    EXPECT_FALSE(phon_.IsValidSyllable(L"ng", L"e",      L"", Tone::None, kModern));
+    EXPECT_FALSE(phon_.IsValidSyllable(L"ng", L"\x00EA", L"", Tone::None, kModern));   // ngê
+    EXPECT_FALSE(phon_.IsValidSyllable(L"ng", L"i",      L"", Tone::None, kModern));
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetNghAcceptsFrontVowels) {
+    // nghe, nghê, nghi, nghin — ngh + front = valid
+    EXPECT_TRUE(phon_.IsValidSyllable(L"ngh", L"e",      L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"ngh", L"\x00EA", L"",  Tone::None, kModern));  // nghê
+    EXPECT_TRUE(phon_.IsValidSyllable(L"ngh", L"i",      L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"ngh", L"i",      L"n", Tone::None, kModern));  // nghin
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetNghRejectsBackVowels) {
+    // ngha, nghô, nghu — ngh + back = invalid
+    EXPECT_FALSE(phon_.IsValidSyllable(L"ngh", L"a",      L"", Tone::None, kModern));
+    EXPECT_FALSE(phon_.IsValidSyllable(L"ngh", L"\x00F4", L"", Tone::None, kModern));  // nghô
+    EXPECT_FALSE(phon_.IsValidSyllable(L"ngh", L"u",      L"", Tone::None, kModern));
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetQuFreePassByDesign) {
+    // qu agreement intentionally not enforced — see helper rationale comment.
+    EXPECT_TRUE(phon_.IsValidSyllable(L"qu", L"a",      L"",  Tone::None, kModern));   // qua
+    EXPECT_TRUE(phon_.IsValidSyllable(L"qu", L"a",      L"n", Tone::None, kModern));   // quan
+    EXPECT_TRUE(phon_.IsValidSyllable(L"qu", L"\x00EA", L"",  Tone::None, kModern));   // quê
+    EXPECT_TRUE(phon_.IsValidSyllable(L"qu", L"y",      L"",  Tone::None, kModern));   // quy
+    EXPECT_TRUE(phon_.IsValidSyllable(L"qu", L"\x00E2", L"n", Tone::None, kModern));   // quân
+    EXPECT_TRUE(phon_.IsValidSyllable(L"qu", L"\x0103", L"n", Tone::None, kModern));   // quăn
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetGiClusterUnaffected) {
+    // "gi" is its own onset cluster (giáo, giải, giờ) — not subject to g/gh agreement.
+    EXPECT_TRUE(phon_.IsValidSyllable(L"gi", L"a",      L"",  Tone::None, kModern));   // gia
+    EXPECT_TRUE(phon_.IsValidSyllable(L"gi", L"ao",     L"",  Tone::None, kModern));   // giao
+    EXPECT_TRUE(phon_.IsValidSyllable(L"gi", L"\x01A1", L"",  Tone::None, kModern));   // giờ-ish
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OtherOnsetsNotSubjectToAgreement) {
+    // b/d/h/l/m/n/p/r/s/t/v/x and ch/kh/nh/ph/th/tr accept any vowel.
+    EXPECT_TRUE(phon_.IsValidSyllable(L"b",  L"e", L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"b",  L"a", L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"th", L"e", L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"th", L"a", L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"tr", L"a", L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"tr", L"i", L"",  Tone::None, kModern));
+    EXPECT_TRUE(phon_.IsValidSyllable(L"",   L"a", L"n", Tone::None, kModern));   // vowel-initial
+}
+
+TEST_F(PhonotacticsIsValidSyllable, OnsetAgreementUsesFirstVowelOfDiphthong) {
+    // Agreement is checked against the FIRST vowel of vowelSeq.
+    EXPECT_TRUE (phon_.IsValidSyllable(L"ngh", L"i\x00EA", L"u", Tone::None, kModern));   // nghiêu (first 'i' front)
+    EXPECT_FALSE(phon_.IsValidSyllable(L"ng",  L"i\x00EA", L"u", Tone::None, kModern));   // ngiêu invalid
+    EXPECT_TRUE (phon_.IsValidSyllable(L"k",   L"i\x00EA", L"n", Tone::None, kModern));   // kiên
+    EXPECT_FALSE(phon_.IsValidSyllable(L"c",   L"i\x00EA", L"n", Tone::None, kModern));   // ciên invalid
+    EXPECT_FALSE(phon_.IsValidSyllable(L"k",   L"oa",      L"n", Tone::None, kModern));   // koan invalid (first 'o' back)
+    EXPECT_FALSE(phon_.IsValidSyllable(L"gh",  L"oa",      L"",  Tone::None, kModern));   // gh + back invalid
+    EXPECT_TRUE (phon_.IsValidSyllable(L"gh",  L"e",       L"o", Tone::None, kModern));   // gheo first 'e' front
+}
+
+//=============================================================================
 // CanComplete — partial syllable extensibility (auto-exclusion gate)
 //=============================================================================
 

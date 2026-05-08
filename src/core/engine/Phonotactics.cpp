@@ -168,6 +168,39 @@ constexpr std::wstring_view kValidCodas[] = {
     return false;
 }
 
+// Vietnamese orthography splits c/k, g/gh, ng/ngh by vowel frontness.
+// Mirror of the rule encoded against CharState in PhonotacticsValidator.cpp;
+// the two paths differ in input type (rendered text vs engine state) so the
+// shared classifier is the per-base helper below, not the agreement function.
+[[nodiscard]] constexpr bool IsFrontBaseVowel(wchar_t base) noexcept {
+    return base == L'e' || base == L'i' || base == L'y';
+}
+
+[[nodiscard]] bool IsOnsetVowelAgreementValid(
+        std::wstring_view onset,
+        std::wstring_view vowelSeq) noexcept {
+    // qu intentionally exempted: book lists oa/oă/oe/uy/uơ/uô/uê/uâ as the
+    // canonical labial diphthongs after qu, but qua/quan/quát/quanh sit
+    // outside that list and are everyday words.
+    if (onset == L"qu") return true;
+
+    const bool needsAgreement =
+        onset == L"c" || onset == L"k"  ||
+        onset == L"g" || onset == L"gh" ||
+        onset == L"ng" || onset == L"ngh";
+    if (!needsAgreement) return true;
+
+    wchar_t firstBase = 0;
+    for (wchar_t ch : vowelSeq) {
+        VowelInfo info = Decompose(ch);
+        if (info.base != 0) { firstBase = info.base; break; }
+    }
+    if (firstBase == 0) return true;
+
+    const bool wantsFront = (onset == L"k" || onset == L"gh" || onset == L"ngh");
+    return wantsFront == IsFrontBaseVowel(firstBase);
+}
+
 // =============================================================================
 // Core priority logic for tone placement: P1 horn > P2 modified > P3 diphthong /
 // triphthong > P4 rightmost. Operates on a rendered wstring_view of the vowel
@@ -329,12 +362,15 @@ size_t Phonotactics::TonePosition(
 }
 
 bool Phonotactics::IsValidSyllable(
-        std::wstring_view /*onset*/,
+        std::wstring_view onset,
         std::wstring_view vowelSeq,
         std::wstring_view coda,
         Tone tone,
         bool /*modernOrtho*/) const noexcept {
     if (vowelSeq.empty()) return false;
+
+    // Onset / vowel front-back agreement (c/k, g/gh, ng/ngh). qu exempted.
+    if (!IsOnsetVowelAgreementValid(onset, vowelSeq)) return false;
 
     // Closed vowels must NOT have a coda.
     if (!coda.empty() && IsClosedVowelSeq(vowelSeq)) return false;
