@@ -451,6 +451,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/HookEngineAtomicTests.cpp
     tests/TypingConfigRCUTests.cpp
     tests/MainThreadWorkerTests.cpp
+    tests/AutoCapDecisionTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
 )

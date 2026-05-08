@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include "core/AutoCapDecision.h"
 #include "core/config/TypingConfig.h"
 
 namespace NextKey {
@@ -94,35 +95,28 @@ inline void DeriveAnchorFromPreceding(const uint16_t* preceding, size_t len,
     out.isWordStart = (last == u' ' || last == u'\t' ||
                        last == u'\n' || last == u'\r') ? 1 : 0;
 
-    // Walk back over spaces/tabs (not newlines — newline is its own trigger).
-    // Track whether any whitespace was skipped: sentence-start requires at least one
-    // space between '.?!' and the cursor, otherwise domains/extensions like ".com"
-    // get force-capped to ".Com".
-    size_t i = len;
-    bool skippedWhitespace = false;
-    while (i > 0) {
-        uint16_t c = preceding[i - 1];
-        if (c == u' ' || c == u'\t') { --i; skippedWhitespace = true; continue; }
-        break;
-    }
-
-    if (i == 0) {
-        // Buffer is only spaces/tabs. Conservative: sentence + line start both true.
-        // (Over-cap in pathological mid-doc whitespace runs is benign.)
-        out.isSentenceStart = 1;
-        out.isLineStart     = 1;
-    } else {
-        uint16_t prev = preceding[i - 1];
-        if (prev == u'\n' || prev == u'\r') {
+    // Sentence/line classification — single source of truth lives in
+    // core/AutoCapDecision.h and is shared with the TSF auto-cap path.
+    switch (ClassifyCapTrigger(preceding, len)) {
+        case CapTrigger::DocStart:
+            // Empty / whitespace-only buffer. Conservative: sentence + line
+            // start both true. (Over-cap in pathological mid-doc whitespace
+            // runs is benign.)
+            out.isSentenceStart = 1;
+            out.isLineStart     = 1;
+            break;
+        case CapTrigger::LineStart:
             out.isSentenceStart = 0;
             out.isLineStart     = 1;
-        } else if ((prev == u'.' || prev == u'?' || prev == u'!') && skippedWhitespace) {
+            break;
+        case CapTrigger::SentenceEnd:
             out.isSentenceStart = 1;
             out.isLineStart     = 0;
-        } else {
+            break;
+        case CapTrigger::None:
             out.isSentenceStart = 0;
             out.isLineStart     = 0;
-        }
+            break;
     }
 
     // currentSyllable: non-whitespace run ending at cursor. Meaningful only when
