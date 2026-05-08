@@ -3753,11 +3753,66 @@ TEST_F(AutoRestoreTest, StrokeD_Ddp_KeepsAbbreviation) {
     EXPECT_EQ(engine_->Commit(), L"đp");
 }
 
-TEST_F(AutoRestoreTest, StrokeD_Awndd_Restores) {
-    // "awndd" → breve 'a', then "ndd" with dd blocked by spellCheck → "ăndd"
-    // invalid → auto-restore to "awndd"
+TEST_F(AutoRestoreTest, StrokeD_Awndd_ProducesAbbreviation) {
+    // "awndd" → breve 'a' + 'n' + dd→đ bypass fires (d after consonant 'n')
+    // → "ănđ". HasIntentionalStrokeD keeps it (no plain vowels after đ).
     TypeString(*engine_, L"awndd");
-    EXPECT_EQ(engine_->Commit(), L"awndd");
+    EXPECT_EQ(engine_->Peek(), L"ănđ");
+    EXPECT_EQ(engine_->Commit(), L"ănđ");
+}
+
+// ============================================================================
+// DD→Đ ABBREVIATION BYPASS TESTS
+// dd→đ bypasses spellCheckDisabled_ when 'd' follows a consonant (not vowel).
+// FindStrokeDTarget already blocks vowel-preceded 'd' (e.g., "add").
+// HasIntentionalStrokeD at commit protects abbreviations (đ + consonant only).
+// ============================================================================
+
+TEST_F(AutoRestoreTest, StrokeD_Bypass_HD_NoExclusion) {
+    // "hdd" → "hđ" without needing exclusion entry. HasIntentionalStrokeD keeps it.
+    TypeString(*engine_, L"hdd");
+    EXPECT_EQ(engine_->Peek(), L"hđ");
+    EXPECT_EQ(engine_->Commit(), L"hđ");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_Bypass_SDT_NoExclusion) {
+    // "sddt" → "sđt" — abbreviation for "số điện thoại"
+    TypeString(*engine_, L"sddt");
+    EXPECT_EQ(engine_->Peek(), L"sđt");
+    EXPECT_EQ(engine_->Commit(), L"sđt");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_Bypass_TDN_NoExclusion) {
+    // "tddn" → "tđn" — abbreviation for "tên đệm ngắn"
+    TypeString(*engine_, L"tddn");
+    EXPECT_EQ(engine_->Peek(), L"tđn");
+    EXPECT_EQ(engine_->Commit(), L"tđn");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_Bypass_Add_StillBlocked) {
+    // "add" → dd after vowel 'a' → FindStrokeDTarget returns SIZE_MAX → no bypass
+    TypeString(*engine_, L"add");
+    EXPECT_EQ(engine_->Peek(), L"add");
+    EXPECT_EQ(engine_->Commit(), L"add");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_Bypass_Odd_StillBlocked) {
+    // "odd" → dd after vowel 'o' → no bypass
+    TypeString(*engine_, L"odd");
+    EXPECT_EQ(engine_->Peek(), L"odd");
+    EXPECT_EQ(engine_->Commit(), L"odd");
+}
+
+TEST_F(AutoRestoreTest, StrokeD_Bypass_VNI_HD9) {
+    // VNI: "hd9" → "hđ" — same bypass for VNI stroke key '9'
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::VNI;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    TypingEngine eng(cfg);
+    TypeString(eng, L"hd9");
+    EXPECT_EQ(eng.Peek(), L"hđ");
+    EXPECT_EQ(eng.Commit(), L"hđ");
 }
 
 // ============================================================================
@@ -3795,10 +3850,12 @@ TEST_F(SpellExclusionTest, ExcludedPrefix_CoversDerivedWords) {
 }
 
 TEST_F(SpellExclusionTest, NonExcluded_AutoRestores) {
-    // "hhdd" → "hhđ" is NOT prefixed by "hđ" (starts with "hh") → auto-restore
+    // "hhdd" → "hhđ": dd bypass fires (d after consonant h). HasIntentionalStrokeD
+    // keeps "hhđ" (no plain vowels after đ). Exclusion "hđ" doesn't prefix-match
+    // "hhđ", but the abbreviation heuristic is the primary safety net here.
     TypeString(*engine_, L"hhdd");
-    std::wstring result = engine_->Commit();
-    EXPECT_EQ(result, L"hhdd");
+    EXPECT_EQ(engine_->Peek(), L"hhđ");
+    EXPECT_EQ(engine_->Commit(), L"hhđ");
 }
 
 TEST_F(SpellExclusionTest, SecondExclusion_Works) {
@@ -3809,14 +3866,15 @@ TEST_F(SpellExclusionTest, SecondExclusion_Works) {
 }
 
 TEST_F(SpellExclusionTest, EmptyExclusionList_NormalBehavior) {
-    // No exclusions → normal spell check applies
+    // No exclusions → dd→đ bypass fires (d after consonant), HasIntentionalStrokeD
+    // keeps "hđ" at commit time (no plain vowels after đ → abbreviation heuristic)
     TypingConfig cfg;
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     TypingEngine eng(cfg);
     TypeString(eng, L"hdd");
-    // "hđ" is invalid syllable, no exclusion → auto-restore
-    EXPECT_EQ(eng.Commit(), L"hdd");
+    EXPECT_EQ(eng.Peek(), L"hđ");
+    EXPECT_EQ(eng.Commit(), L"hđ");
 }
 
 TEST_F(SpellExclusionTest, CaseInsensitive) {
@@ -3830,15 +3888,16 @@ TEST_F(SpellExclusionTest, CaseInsensitive) {
 }
 
 TEST_F(SpellExclusionTest, SingleCharExclusion_Ignored) {
-    // Exclusion entries < 2 chars should be ignored
+    // Exclusion entries < 2 chars should be ignored, but dd→đ bypass still fires
+    // (d after consonant h → abbreviation). HasIntentionalStrokeD keeps "hđ".
     TypingConfig cfg;
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     cfg.spellExclusions = {L"đ"};  // Too short, should be ignored
     TypingEngine eng(cfg);
     TypeString(eng, L"hdd");
-    // "hđ" not matched (single-char pattern ignored) → auto-restore
-    EXPECT_EQ(eng.Commit(), L"hdd");
+    EXPECT_EQ(eng.Peek(), L"hđ");
+    EXPECT_EQ(eng.Commit(), L"hđ");
 }
 
 // PLHĐ: English Protection normally blocks dd→đ (PL = HardEnglish).
