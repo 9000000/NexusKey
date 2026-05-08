@@ -574,7 +574,7 @@ void HookEngine::ReloadFromToml() {
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
     engine_ = EngineFactory::Create(config);
     {
-        const InputMethod loggedMethod = currentMethod_.load(std::memory_order_acquire);
+        [[maybe_unused]] const InputMethod loggedMethod = currentMethod_.load(std::memory_order_acquire);
         NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
                     loggedMethod == InputMethod::VNI ? L"VNI" :
                     loggedMethod == InputMethod::Combined ? L"Combined" : L"Telex",
