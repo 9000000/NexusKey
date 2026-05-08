@@ -1,6 +1,6 @@
 # NexusKey Refactor Status — Living Inventory
 
-> **Last refresh:** 2026-05-08 (T2.1 sprint close — D1/D2/D3 merged + D4 PR-pending, Main `9d9b5a5`)
+> **Last refresh:** 2026-05-08 (T2.1 sprint closed, all 4 days merged, Main `87ad29f`)
 > **Scope:** All architectural / cleanup refactor work. Excludes user-facing features (G-5/G-6 Sciter UI + keymap files, TSF Phase 2/3, etc.) — those track separately.
 > **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Backlog effectively cleared at architectural level**: H1-H7 + T1-T6 done; H6/H8 are Sprint 4+ roadmap items (multi-week); T2.1 sprint-closed at D4. Engine + Hook architecturally complete pending feature consumers of T2.1 plugin contract.
 
@@ -96,7 +96,7 @@
 |---|---|---|---|---|
 | ~~T1~~ | ~~**`SpellChecker.{h,cpp}` → `PhonotacticsValidator` rename**~~ | — | DONE | ✅ PR #139 `b115f75` |
 | ~~T2~~ | ~~**Phonotactics onset agreement** — c/k, g/gh, ng/ngh enforcement (qu exempted)~~ | — | DONE | ✅ PR #147 `d723e03` |
-| ~~T2.1~~ | ~~**Vietnamese-rule consolidation sprint (Day-1 → Day-4)**~~ — D1 `IsFrontBaseVowel` lift to `VietnamesePhonologyData.h` (#150 `dd58f1e`); D2 `kVCPairRules` + packed-key encoding lift, retire T3 N-group machinery on Path 2 (#151 `b52e29d`); D3 `IPhonologyRules` plugin contract + `DefaultPhonologyRules` final impl + Phonotactics DI ctor (#152 `9d9b5a5`); D4 `PhonologyRulePackId` enum + `GetRulePack` factory hook for future rule packs. Path 1 hot path intentionally untouched (direct-call free functions kept for 0 ns delta). 5+ pre-existing engine dups (Decompose vs DecomposeVietChar, kVowelTable vs kClosed/Pending, kValidOnsets shape, etc.) noted but **not** in T2.1 scope — pickup-when-touching-feature. | T2 + T3 simplify reuse agents → anh philosophy 2026-05-08 (nhanh / gọn / nhẹ / mượt / plugin / không phân mảnh) | DONE | ✅ #150 + #151 + #152 + D4 PR pending |
+| ~~T2.1~~ | ~~**Vietnamese-rule consolidation sprint (Day-1 → Day-4)**~~ — D1 `IsFrontBaseVowel` lift to `VietnamesePhonologyData.h` (#150 `dd58f1e`); D2 `kVCPairRules` + packed-key encoding lift, retire T3 N-group machinery on Path 2 (#151 `b52e29d`); D3 `IPhonologyRules` plugin contract + `DefaultPhonologyRules` final impl + Phonotactics DI ctor (#152 `9d9b5a5`); D4 `PhonologyRulePackId` enum + `GetRulePack` factory hook for future rule packs (#153 `87ad29f`). Path 1 hot path intentionally untouched (direct-call free functions kept for 0 ns delta). 5+ pre-existing engine dups (Decompose vs DecomposeVietChar, kVowelTable vs kClosed/Pending, kValidOnsets shape, etc.) noted but **not** in T2.1 scope — pickup-when-touching-feature. | T2 + T3 simplify reuse agents → anh philosophy 2026-05-08 (nhanh / gọn / nhẹ / mượt / plugin / không phân mảnh) | DONE | ✅ #150 + #151 + #152 + #153 |
 | ~~T3~~ | ~~**Phonotactics N1/N2/N3 vowel-coda compatibility**~~ | — | DONE | ✅ PR #149 `e908621` (rebased reopen of #148) |
 | ~~T4~~ | ~~**Verify Hot-path Fix 3 ComposeAll buffer reuse**~~ — VERIFIED 2026-05-07: shipped at `TypingEngine.h:218` (`mutable std::wstring composeBuf_`) + `TypingEngine.cpp:1236-1241` | hot-path-optimization-plan.md | DONE | ✅ |
 | ~~T5~~ | ~~**Bug `cafcs → các`**~~ | — | DONE | ✅ PR #146 `1ade8dc` |
