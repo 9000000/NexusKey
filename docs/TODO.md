@@ -1,5 +1,90 @@
 # TODO
 
+## 🟡 Auto-cap on Enter — keystroke-FSM asymmetry vs space (2026-05-08)
+
+**Symptom:** Pressing Enter to break a line, then typing a letter → letter
+gets capitalized even when the preceding text is not a sentence end.
+Surfaced in `runner-channeltraits-chrome.log` (manual session after chaos
+runner): user typed `trong` + edits + `Enter` + `r` → engine emitted `R`.
+
+**Root cause:** `HookEngine.cpp:1258-1259` unconditionally promotes
+`autoCapState_` to `ReadyToCapitalize` on `VK_RETURN`, regardless of what
+preceded the Enter. The space branch (`:1252-1257`) has a whitespace
+gate — it only promotes when the prior state is `AfterPunct` or already
+`ReadyToCapitalize`. Enter does not have the same gate.
+
+```cpp
+} else if (vkCode == VK_SPACE &&
+           (autoCapState_ == AutoCapState::AfterPunct ||
+            autoCapState_ == AutoCapState::ReadyToCapitalize)) {
+    autoCapState_ = AutoCapState::ReadyToCapitalize;
+} else if (vkCode == VK_RETURN) {
+    autoCapState_ = AutoCapState::ReadyToCapitalize;  // ← unconditional
+}
+```
+
+**Why simple gating (Option B) is incomplete:** `AfterPunct` is sticky
+across letters (`:1260-1261` "letter key — don't reset"). So
+`chrome.com<Enter>r` would still cap because `.` set `AfterPunct` and
+`com` did not reset it; Enter would then promote to `ReadyToCapitalize`.
+
+| Case | Today (unconditional Enter) | Option B (gate Enter behind `AfterPunct`) | Desired |
+|---|---|---|---|
+| `Hello<Enter>r` | cap → `R` | no cap → `r` | no cap |
+| `Hello.<Enter>r` | cap → `R` | cap → `R` | cap |
+| `chrome.com<Enter>r` | cap → `R` | cap → `R` (sticky AfterPunct) | no cap |
+
+**IPC anchor path is correct.** `SharedState.h::DeriveAnchorFromPreceding`
+scans the buffer directly and distinguishes `prev == '.' && skippedWhitespace`
+(sentence end) from `prev == '\n'/'\r'` (line start) properly — so when
+TSF readonly is registered and anchor is available, HandleAlphaKey
+(`:1598-1606`) ignores the keystroke FSM and uses anchor truth. The
+asymmetry only bites in hook-only mode (no TSF readonly) where the
+keystroke FSM is the sole truth source.
+
+### Options
+
+| Option | Effort | Fixes `chrome.com<Enter>r` | Compat |
+|---|---|---|---|
+| A — Drop Enter trigger entirely (delete `:1258-1259`) | Trivial | ✓ | Loses "Enter = sentence start" UX for normal paragraph breaks |
+| B — Gate Enter behind `AfterPunct` (mirror space) | Trivial | ✗ (sticky `AfterPunct` through letters) | OK for `Hello<Enter>r` |
+| B' — Add `LetterAfterPunct` sub-state | Medium | ✓ | Symmetric, principled, no-regression |
+| D — Rely on TSF anchor only | None code-side; needs TSF readonly registered | ✓ (anchor logic already correct) | Only works when TSF DLL active and `TSF_READONLY` flag set |
+
+### Recommendation
+
+**B' or D.** B' is the right shape for hook-only mode (state machine
+correctness without external dependency). D is the principled
+architectural answer (single source of truth = the document), but
+requires the TSF readonly path to be active across the apps where users
+type — verify `TSF_READONLY` flag adoption in production first before
+relying on D alone.
+
+If pursuing B': add `AutoCapState::LetterAfterPunct` between `AfterPunct`
+and `Idle`. Transition: any letter at `AfterPunct` → `LetterAfterPunct`.
+Enter at `LetterAfterPunct` → `Idle` (paragraph break, not sentence end).
+Enter at `AfterPunct` → `ReadyToCapitalize` (sentence end, then break).
+
+### Verification before fix
+
+- [ ] Capture more reproductions in hook log to confirm `chrome.com<Enter>r`
+  cap pattern (today the log only shows `trong<edits><Enter>r` which is
+  ambiguous — could be intended new sentence).
+- [ ] Check `TSF_READONLY` adoption: which apps actually have the TSF DLL
+  loaded? If majority, D becomes viable. If minority, B' is required.
+- [ ] Add hook-engine-level tests covering the 3 cases in the table above
+  (currently no Linux GTest for `autoCapState_` FSM transitions).
+
+### Why this isn't urgent
+
+Behavior matches the convention of most IMEs (Microsoft IME, Google
+Pinyin, Unikey, EVKey all cap after Enter unconditionally). Users who
+type code/email handles after a line break may notice; users typing
+prose generally won't. Fix when a user complaint surfaces or as part of
+a broader auto-cap refactor.
+
+---
+
 ## 🟡 v3 Watchdog Smoke 4 + 5 — verify Task Scheduler at-logon trigger (2026-05-08)
 
 Phase 2 watchdog smoke 1/2/3 PASS (crash respawn, graceful, hung UI). Smoke 4 + 5 deferred because they require a real logout/login cycle to fire the `\NexusKey\Watchdog` at-logon trigger.
