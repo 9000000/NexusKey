@@ -19,7 +19,6 @@
 #endif
 
 #include <functional>
-#include <memory>
 
 namespace NextKey {
 

@@ -7,6 +7,8 @@
 
 #include "core/Debug.h"
 
+#include <utility>  // std::move
+
 namespace NextKey {
 
 thread_local RawInputSelfHealer* RawInputSelfHealer::tlsActive_ = nullptr;
