@@ -94,8 +94,15 @@ NexusKey/
 │       │   ├── MacroTableDialog.cpp/h # Macro editor
 │       │   ├── ConvertToolDialog.cpp/h  # Charset converter UI (18K cpp)
 │       │   └── AboutDialog.cpp/h      # About box
+│       ├── output/                    # Output injection plugin layer (Sprint 2 T3 — `IOutputInjector` pattern, the canonical plugin example for the project)
+│       │   ├── IOutputInjector.h      # Interface — Replace(bsCount, text), SendKey(vk), trait queries
+│       │   ├── OutputInjectorFactory.cpp/h  # Builds the right injector from WindowClassification (Electron / Console / RichEditD2DPT / Win32)
+│       │   ├── Win32SendInputInjector.cpp/h  # Default fast path — batch SendInput
+│       │   ├── RichEditEmReplaceSelInjector.cpp/h  # Win11 New Notepad RichEditD2DPT (Sprint 1 D12)
+│       │   ├── SplitDispatchInjector.cpp/h  # Electron (6 ms) + Console (5 ms) — split SendInput with sleep
+│       │   └── Internal.cpp/h         # Shared TrackedSendInput primitive
 │       ├── system/                    # System-level services
-│       │   ├── HookEngine.cpp/h       # Keyboard hook fallback (63K cpp — largest!)
+│       │   ├── HookEngine.cpp/h       # Keyboard hook + dispatch (3563 LOC — largest; H1 decomposed `ProcessKeyDown` 561→79 LOC)
 │       │   ├── TrayIcon.cpp/h         # System tray icon + menu (18K cpp)
 │       │   ├── QuickConvert.cpp/h     # Quick consonant shortcuts (15K cpp)
 │       │   ├── FloatingIcon.cpp/h     # Floating V/E indicator overlay
@@ -165,6 +172,13 @@ NexusKey/
 │   ├── SharedStateTest.cpp            # Win32 only — IPC seqlock + ABI gate
 │   ├── ConfigEventTest.cpp            # Win32 only — named-event sync
 │   ├── UpdateSecurityTest.cpp         # UpdateChecker signature verification
+│   ├── output/                        # Win32-only — output injector tests (Sprint 2 T3)
+│   │   ├── InjectorTestBase.h
+│   │   ├── InjectorTraitsTest.cpp     # ChannelTraits virtual-method coverage
+│   │   ├── OutputInjectorFactoryTest.cpp  # WindowClassification → injector mapping
+│   │   ├── Win32SendInputInjectorTest.cpp
+│   │   ├── RichEditEmReplaceSelInjectorTest.cpp
+│   │   └── SplitDispatchInjectorTest.cpp
 │   └── TestHelper.h                   # Shared test utilities
 │
 ├── docs/                              # Documentation (see docs/index.md)
@@ -210,6 +224,7 @@ NexusKey/
 | Fix TSF key handling | `src/tsf/KeyEventSink.cpp` |
 | Fix language bar icon | `src/tsf/LanguageBarButton.cpp` |
 | Fix hook-based input | `src/app/system/HookEngine.cpp` |
+| Add/change output channel (Electron/Console/RichEdit/Win32) | `src/app/output/` — extend `IOutputInjector`, register in `OutputInjectorFactory` |
 | Change settings UI | `src/app/dialogs/SettingsDialog.cpp` + `src/app/ui/settings/` |
 | Add new subdialog | See `docs/subdialog-checklist.md` |
 | Fix tray icon/menu | `src/app/system/TrayIcon.cpp` |
