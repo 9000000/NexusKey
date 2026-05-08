@@ -13,6 +13,11 @@ CMakeCache.txt
 CMakeFiles/
 cmake-build-*/
 
+# ===== Test runner artifacts (NextKeyTestRunner outputs at repo root) =====
+/perf-*.csv
+/report-*.xml
+**/__pycache__/
+
 # ===== IDE / Editor =====
 .vs/
 .vscode/
