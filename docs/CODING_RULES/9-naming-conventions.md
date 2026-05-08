@@ -11,11 +11,14 @@
 | Methods | PascalCase | `ProcessKey()`, `GetComposition()` |
 | Local variables | camelCase | `inputMethod`, `keyCode` |
 | Member variables | camelCase + trailing_ | `engine_`, `configVersion_` |
-| Constants | UPPER_SNAKE | `FEATURE_MACRO`, `MAX_COMPOSITION_LEN` |
+| Bitmask / namespace flag constants | UPPER_SNAKE | `FeatureFlags::AUTO_CAPS`, `SharedFlags::VIETNAMESE_MODE` |
+| File/class-scope `constexpr` literals | k-prefix camelCase | `kMaxCommitStack`, `kCommitUndoTimeoutMs`, `kBackspaceMarker` |
 | Enums (type) | PascalCase | `InputMethod`, `EngineFeature` |
 | Enums (values) | PascalCase | `InputMethod::Telex`, `EngineFeature::SpellCheck` |
 | Interfaces | IPrefix | `IInputEngine`, `IFeatureProcessor` |
 | Template params | Single uppercase | `T`, `TConfig` |
+
+**Why two conventions for constants?** Bitmask families and enum-like flag namespaces (`FeatureFlags::*`, `SharedFlags::*`) follow Win32/POSIX convention — `UPPER_SNAKE` reads as a "logical macro replacement" at a glance and matches the surrounding Win32 SDK. File-scope and class-scope `constexpr` literals (sizes, timeouts, markers, magic chars) use the `kFoo` form per the Google C++ Style Guide — distinguishes them from runtime variables without screaming. Rule of thumb: if the value would have been a `#define` in C, use `UPPER_SNAKE`; if it's a typed local-scope tunable, use `kFoo`.
 
 ## 9.2 Rename Rules When Porting
 
