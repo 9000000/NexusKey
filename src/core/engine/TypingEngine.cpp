@@ -398,6 +398,13 @@ void TypingEngine::PushChar(wchar_t c) {
                             HasEscapableModifier(states_.data(), states_.size(), Modifier::Breve);
             } else if (lower == L'd') {
                 canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Stroke, true);
+                // Allow dd→đ when 'd' is not preceded by a vowel (abbreviation bypass).
+                // FindStrokeDTarget returns SIZE_MAX when 'd' follows a vowel (e.g., "add"),
+                // so this only fires for consonant-prefixed cases like hdd→hđ, sdd→sđ.
+                // AutoRestore's HasIntentionalStrokeD provides a safety net at commit time.
+                if (!canEscape) {
+                    canEscape = (FindStrokeDTarget(states_.data(), states_.size()) != SIZE_MAX);
+                }
             } else if (IsVowelChar(c) && !states_.empty()) {
                 const CharState& last = states_.back();
                 if (last.IsVowel() && last.base == lower && last.mod == Modifier::Circumflex)
@@ -452,6 +459,11 @@ void TypingEngine::PushChar(wchar_t c) {
             Modifier escMod = ActionToVniModifier(action);
             if (escMod == Modifier::Stroke) {
                 canEscape = HasEscapableModifier(states_.data(), states_.size(), escMod, true);
+                // VNI stroke bypass: same logic as Telex 'd' — allow d9→đ when 'd'
+                // is not preceded by a vowel (abbreviation bypass).
+                if (!canEscape) {
+                    canEscape = (FindStrokeDTarget(states_.data(), states_.size()) != SIZE_MAX);
+                }
             } else if (escMod != Modifier::None) {
                 canEscape = HasEscapableModifier(states_.data(), states_.size(), escMod);
             }
