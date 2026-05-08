@@ -2336,44 +2336,6 @@ static bool IsKnownElectronExe(const wchar_t* filename) noexcept {
     return found;
 }
 
-// ── Auto-detect Electron by app.asar marker (FUTURE USE) ──────────────
-// Uncomment to replace IsKnownElectronExe() with zero-maintenance detection.
-// Checks if resources/app.asar exists next to the exe — all Electron apps ship this.
-// Performance: GetFileAttributesW is metadata-only (~0.05ms SSD), cached per exe path.
-// Risk: network drives can timeout (30s). Guard with GetDriveTypeW before using.
-//
-// #include <unordered_map>
-//
-// static bool IsElectronByMarker(const wchar_t* exeFullPath) {
-//     // Cache: one check per unique exe path, forever (exe won't change at runtime)
-//     static std::unordered_map<std::wstring, bool> cache;
-//     auto it = cache.find(exeFullPath);
-//     if (it != cache.end()) return it->second;
-//
-//     // Guard: skip network/removable drives (GetFileAttributesW can timeout 30s)
-//     if (exeFullPath[0] == L'\\' && exeFullPath[1] == L'\\') {
-//         cache[exeFullPath] = true;  // UNC path — assume Electron (safe default)
-//         return true;
-//     }
-//     wchar_t drive[4] = { exeFullPath[0], L':', L'\\', L'\0' };
-//     UINT driveType = GetDriveTypeW(drive);
-//     if (driveType != DRIVE_FIXED && driveType != DRIVE_RAMDISK) {
-//         cache[exeFullPath] = true;  // Non-fixed drive — assume Electron
-//         return true;
-//     }
-//
-//     // Local fixed drive: safe to check file system
-//     const wchar_t* lastSlash = wcsrchr(exeFullPath, L'\\');
-//     if (!lastSlash) { cache[exeFullPath] = false; return false; }
-//     std::wstring dir(exeFullPath, lastSlash);
-//     std::wstring asarPath = dir + L"\\resources\\app.asar";
-//     bool isElectron = (GetFileAttributesW(asarPath.c_str()) != INVALID_FILE_ATTRIBUTES);
-//     cache[exeFullPath] = isElectron;
-//     return isElectron;
-// }
-// Usage in ClassifyWindow: replace IsKnownElectronExe(exeName.c_str()) with
-// IsElectronByMarker(exeFullPath) — requires GetExePathForHwnd() returning full path.
-
 bool HookEngine::IsTrayOrTaskbarWindow(HWND hwnd) noexcept {
     if (!hwnd) return false;
 
