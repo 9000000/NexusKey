@@ -6,6 +6,7 @@
 #include "EditSession.h"
 #include "CompositionManager.h"
 #include "Define.h"
+#include "core/AutoCapDecision.h"
 #include "core/engine/IInputEngine.h"
 #include "core/engine/VietnameseTables.h"
 #include <algorithm>
@@ -309,23 +310,10 @@ public:
             }
         }
 
-        // Auto-cap check: skip trailing whitespace, check for sentence-ending punct.
-        // '.?!' requires at least one whitespace between punct and cursor so that
-        // domains/extensions glued to the period (".com", ".vn") are NOT capped.
-        size_t i = len;
-        bool skippedWhitespace = false;
-        while (i > 0 && (buf[i - 1] == L' ' || buf[i - 1] == L'\t')) {
-            --i;
-            skippedWhitespace = true;
-        }
-
-        if (i == 0) {
-            shouldAutoCap_ = true;
-        } else {
-            wchar_t c = buf[i - 1];
-            shouldAutoCap_ = (c == L'\n' || c == L'\r') ||
-                             ((c == L'.' || c == L'?' || c == L'!') && skippedWhitespace);
-        }
+        // Auto-cap rule extracted to core/AutoCapDecision.h for Linux GTest
+        // coverage (the buffer comes from a Win32 edit session here, but the
+        // decision is pure CPU work over a wchar_t span).
+        shouldAutoCap_ = ComputeShouldAutoCap(buf, len);
 
         return S_OK;
     }
