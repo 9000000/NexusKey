@@ -6,7 +6,7 @@
 #include "core/config/ConfigManager.h"
 #include "core/WinStrings.h"
 #include "helpers/AppHelpers.h"
-#include "vendor/toml.hpp"
+#include "toml.hpp"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <vector>

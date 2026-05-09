@@ -6,7 +6,7 @@
 #include "app/helpers/AppHelpers.h"
 #include "core/ipc/SharedStateManager.h"
 #include "core/config/ConfigEvent.h"
-#include "vendor/toml.hpp"
+#include "toml.hpp"
 
 #include <windowsx.h>
 #include <algorithm>
