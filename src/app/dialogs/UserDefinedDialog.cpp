@@ -6,11 +6,9 @@
 #include "core/config/ConfigManager.h"
 #include "core/WinStrings.h"
 #include "helpers/AppHelpers.h"
-#include "toml.hpp"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <vector>
-#include <fstream>
 
 using namespace sciter::dom;
 
@@ -149,28 +147,21 @@ void UserDefinedDialog::importKeyMap() {
     // Similar to MacroTableDialog::importMacros
     std::wstring path = ShowOpenFileDialogW(get_hwnd(), L"Keymap files (*.keymap)\0*.keymap\0All files (*.*)\0*.*\0", L"keymap");
     if (!path.empty()) {
-        auto tbl = toml::parse_file(WideToUtf8(path));
         TypingConfig dummy;
-        ConfigManager::LoadCustomKeyMap(&tbl, dummy);
-        keyMap_ = dummy.customKeyMap;
-        populateList();
-        persistAndSignal();
+        if (ConfigManager::ImportCustomKeyMap(path, dummy)) {
+            keyMap_ = dummy.customKeyMap;
+            populateList();
+            persistAndSignal();
+        }
     }
 }
 
 void UserDefinedDialog::exportKeyMap() {
     std::wstring path = ShowSaveFileDialogW(get_hwnd(), L"Keymap files (*.keymap)\0*.keymap\0", L"keymap", L"custom.keymap");
     if (!path.empty()) {
-        toml::table tbl;
         TypingConfig dummy;
         dummy.customKeyMap = keyMap_;
-        ConfigManager::SaveCustomKeyMap(&tbl, dummy);
-        
-        std::ofstream file(WideToUtf8(path));
-        if (file.is_open()) {
-            file << tbl;
-            file.close();
-        }
+        ConfigManager::ExportCustomKeyMap(path, dummy);
     }
 }
 

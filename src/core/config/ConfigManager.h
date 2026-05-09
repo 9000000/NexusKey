@@ -108,14 +108,20 @@ public:
     static bool SaveAppOverrides(const std::wstring& path,
                                                 const std::unordered_map<std::wstring, AppOverrideEntry>& entries);
 
-    // User-defined keymap helpers
-    static void LoadCustomKeyMap(const void* table_ptr, TypingConfig& config);
-    static void SaveCustomKeyMap(void* table_ptr, const TypingConfig& config);
+    /// Import custom keymap from a standalone .keymap (TOML) file
+    [[nodiscard]] static bool ImportCustomKeyMap(const std::wstring& path, TypingConfig& config);
+
+    /// Export custom keymap to a standalone .keymap (TOML) file
+    [[nodiscard]] static bool ExportCustomKeyMap(const std::wstring& path, const TypingConfig& config);
 
 private:
     static std::wstring GetExeDirectory();
     static std::wstring GetAppDataDirectory();
     static bool DirectoryWritable(const std::wstring& path);
+
+    // User-defined keymap helpers
+    static void LoadCustomKeyMap(const void* table_ptr, TypingConfig& config);
+    static void SaveCustomKeyMap(void* table_ptr, const TypingConfig& config);
 };
 
 }  // namespace NextKey

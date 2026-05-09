@@ -867,4 +867,28 @@ void ConfigManager::SaveCustomKeyMap(void* table_ptr, const TypingConfig& config
     }
 }
 
+bool ConfigManager::ImportCustomKeyMap(const std::wstring& path, TypingConfig& config) {
+    try {
+        auto tbl = toml::parse_file(WideToUtf8(path));
+        LoadCustomKeyMap(&tbl, config);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool ConfigManager::ExportCustomKeyMap(const std::wstring& path, const TypingConfig& config) {
+    try {
+        toml::table tbl;
+        SaveCustomKeyMap(&tbl, config);
+        std::ofstream file(WideToUtf8(path));
+        if (file.is_open()) {
+            file << tbl;
+            file.close();
+            return true;
+        }
+    } catch (...) {}
+    return false;
+}
+
 }  // namespace NextKey

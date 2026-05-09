@@ -6,11 +6,9 @@
 #include "app/helpers/AppHelpers.h"
 #include "core/ipc/SharedStateManager.h"
 #include "core/config/ConfigEvent.h"
-#include "toml.hpp"
 
 #include <windowsx.h>
 #include <algorithm>
-#include <fstream>
 #include <vector>
 
 namespace NextKey::Classic {
@@ -277,29 +275,21 @@ void ClassicUserDefinedDialog::LoadTemplate(bool telex) {
 void ClassicUserDefinedDialog::ImportFromFile() {
     std::wstring path = OpenFileDialog(hwnd_, L"Keymap files (*.keymap)\0*.keymap\0All files (*.*)\0*.*\0", L"Chọn file keymap");
     if (!path.empty()) {
-        try {
-            auto tbl = toml::parse_file(WideToUtf8(path));
-            TypingConfig dummy;
-            ConfigManager::LoadCustomKeyMap(&tbl, dummy);
+        TypingConfig dummy;
+        if (ConfigManager::ImportCustomKeyMap(path, dummy)) {
             keyMap_ = dummy.customKeyMap;
             SaveData();
             PopulateList();
-        } catch (...) {}
+        }
     }
 }
 
 void ClassicUserDefinedDialog::ExportToFile() {
     std::wstring path = SaveFileDialog(hwnd_, L"Keymap files (*.keymap)\0*.keymap\0", L"Lưu file keymap", L"keymap");
     if (!path.empty()) {
-        toml::table tbl;
         TypingConfig dummy;
         dummy.customKeyMap = keyMap_;
-        ConfigManager::SaveCustomKeyMap(&tbl, dummy);
-        std::ofstream file(WideToUtf8(path));
-        if (file.is_open()) {
-            file << tbl;
-            file.close();
-        }
+        ConfigManager::ExportCustomKeyMap(path, dummy);
     }
 }
 
