@@ -10,7 +10,7 @@ framework). Codebase mapping + investment decision below.
 
 | Module | Align | Status | Gap |
 |---|---|---|---|
-| A — Hook ring buffer | ~75% | LL hook + watchdog (PR #154) shipped; engine still synchronous on LL hook thread (`HookEngine.cpp:724`) | Lock-free SPSC ring buffer between Hook→Engine. Proposed in Sprint 4 §3 H6b but premise (x2 space race) unverified — see [`project_h6_premise_questioned.md`](../../home/phatmt/.claude-work/projects/-home-phatmt-code-NexusKey/memory/) |
+| A — Hook ring buffer | CLOSED 2026-05-09 | Watchdog (PR #154) shipped; SPSC ring half closed | See `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` |
 | B — Smart Focus / App Profile cache | ~60% | `cachedFocusedHwnd_` single-slot atomic + `ClassifyWindow` function | No HWND→Profile lookup map; re-classifies on every focus event |
 | C — Engine 2D FSM table | ~30% | If/case engine (~327 branches in `PushChar`); FSM codegen tool exists (PR #132 `4a52399`) but rewrite cancelled — codegen output ~6MB exceeds <3MB target | Table-driven FSM not viable for Vietnamese phonology dimensionality. Path G (custom keymap) replaces. |
 | D — Test framework | ~85% | `NextKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
@@ -67,13 +67,13 @@ Test plan:
 - Manual Alt+Tab between known apps to verify cache hits (count
   ClassifyWindow calls per HOOK_LOG)
 
-### Module A — deferred until premise verified
+### Module A — closed 2026-05-09
 
-Reopen only when one of these surfaces:
-1. LL hook 300ms timeout warnings in logs (Windows unhooks slow callbacks)
-2. Reproducible race between physical key + synthetic re-injection on
-   modifier transitions
-3. Profile data showing engine work blocks LL hook callback >50ms p99
+Decision memo: `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md`.
+Watchdog half shipped via PR #154; SPSC ring half closed with evidence
+(measured L1 p99 14–17ms × 5 hosts, 280ms `LowLevelHooksTimeout`
+headroom, async model would regress UX baseline by +1–2ms on every
+non-Vietnamese keystroke). Reversal triggers documented in the memo.
 
 Until then, current synchronous Hook→Engine model is acceptable; the
 watchdog + self-healer already cover the "OS unhooks us" path.

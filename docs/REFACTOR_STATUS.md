@@ -2,7 +2,7 @@
 
 > **Last refresh:** 2026-05-08 (T2.1 sprint closed, all 4 days merged, Main `87ad29f`)
 > **Scope:** All architectural / cleanup refactor work. Excludes user-facing features (G-5/G-6 Sciter UI + keymap files, TSF Phase 2/3, etc.) — those track separately.
-> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Backlog effectively cleared at architectural level**: H1-H7 + T1-T6 done; H6/H8 are Sprint 4+ roadmap items (multi-week); T2.1 sprint-closed at D4. Engine + Hook architecturally complete pending feature consumers of T2.1 plugin contract.
+> **Sequencing rule (anh decision 2026-05-07):** Complete HookEngine refactor backlog BEFORE picking up TypingEngine TODO items. **Backlog effectively cleared at architectural level**: H1-H7 + T1-T6 done; H6a shipped via PR #154; H6b closed 2026-05-09 (see `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md`); only H8 remains as Sprint 4+ roadmap; T2.1 sprint-closed at D4. Engine + Hook architecturally complete pending feature consumers of T2.1 plugin contract.
 
 ---
 
@@ -84,7 +84,8 @@
 | ~~H3~~ | ~~**`LowLevelMouseProc` race on `cachedFocusedHwnd_`**~~ | — | DONE | ✅ PR #140 `58d8f88` |
 | ~~H4~~ | ~~**Dual-route `TrackedSendInput` consolidate**~~ — REJECTED 2026-05-07: `HookEngine::TrackedSendInput` is NOT a duplicate — it's a logging adapter that wraps `Internal::TrackedSendInput` and emits `HOOK_LOG` on partial sends (renderer-drop diagnostic). Consolidation attempt at commit `794f38f` lost this observability and broke MSVC `/WX` (`[[nodiscard]]` warning C4834 at 6 call sites). Reverted at `66ae1dc`. The dual-route is justified — member adds value. | docs/TODO.md M3 | N/A | ❌ Wontfix |
 | ~~H5~~ | ~~**Macro extract to pure functions**~~ | — | DONE | ✅ PR #141 `a141548` |
-| H6 | **Sprint 4 §3 SPSC ring + watchdog** — Rule #11 next-stage compliance | CODE_GOVERNANCE.md §3 | Sprint scale | LOW (roadmap) |
+| ~~H6a~~ | ~~**Watchdog / self-healing**~~ — `HookSelfHealer` + `HeartbeatPublisher` + `NexusKeyWatchdog.exe` | CODE_GOVERNANCE.md §3 | DONE | ✅ PR #154 `d37d0e1` |
+| ~~H6b~~ | ~~**SPSC ring buffer Hook→Engine**~~ — CLOSED 2026-05-09 per `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md`. Latency measured 14–17ms p99 across 5 hosts (280ms `LowLevelHooksTimeout` headroom); async model would regress UX baseline (+1–2ms on every non-Vietnamese keystroke). | CODE_GOVERNANCE.md §3 | N/A | ❌ Wontfix |
 | ~~H7~~ | ~~**Strip Sprint 2 D4/T3 history comments**~~ | — | DONE | ✅ PR #139 `4042dcc` |
 | H8 | **Sprint 1 deferred** — `WaitOnAddress` for configEpoch, ETW tracing, hook fast-path foreground detection | sprint-1-single-owner-refactor.md "Open items" | Sprint scale | LOW (roadmap) |
 
@@ -162,7 +163,7 @@ Verified by grep on Main `3ded489` (2026-05-07):
 - Triage open GitHub Issues — close `wontfix` duplicates, re-classify bugs vs enhancements.
 
 **Roadmap (defer until current backlog clears):**
-4. **H6 — Sprint 4 §3 SPSC ring + watchdog** — multi-week effort. Captured in CODE_GOVERNANCE.md §3.
+4. ~~**H6 — Sprint 4 §3 SPSC ring + watchdog**~~ — H6a shipped via PR #154; H6b closed 2026-05-09 (see `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md`).
 5. **H8 — Sprint 1 deferred** — WaitOnAddress / ETW / fast-path foreground detection.
 
 **General checklist:**

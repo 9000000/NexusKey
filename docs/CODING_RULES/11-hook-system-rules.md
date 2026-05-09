@@ -6,14 +6,23 @@
 
 This rule operationalizes Pillar #1 (Nhanh) from `docs/PHILOSOPHY.md`. Violation of any clause below is a P0 reviewer-must-block issue.
 
-## 11.1 The 1 ms Budget
+## 11.1 The Two-Tier Budget
 
-The hook callback MUST return within 1 ms under all conditions:
+The hook callback budget has two tiers — an aspirational tier for state-machine work and a measured tier for total callback time including unavoidable output dispatch.
 
-- Engine processing: < 1 µs (pure CPU)
+**Tier 1 — Engine pure CPU (aspirational, < 1µs):**
+
+- Engine state-machine work: < 1µs (pure CPU)
 - State reads: atomic only (no mutex)
-- SendInput dispatch: ~0.1 ms (unavoidable)
-- Total budget: < 1 ms
+
+**Tier 2 — Total hook callback (measured, < 30ms p99):**
+
+The total callback may exceed Tier 1 because output dispatch (`SendInput`, `SendMessageTimeoutW`, deliberate `Sleep` for IPC reorder prevention) is bounded by app message-loop latency, not by Tier 1. The measured target is informed by the Sprint 1 baseline series:
+
+- Target: < 30ms p99 in `chaos.toml` across the 5 baseline hosts (Notepad Win11 RichEditD2DPT, Notepad++, Chrome omnibox, Discord Electron, ChatGPT Chromium). Current measured worst-case p99 = 14–17ms (see `docs/baselines/perf-baseline-channeltraits-chaos.md`).
+- Hard ceiling: `LowLevelHooksTimeout / 3` ≈ 100ms. Beyond this, Windows is at risk of silently dropping the hook.
+
+The aspirational 1ms total budget was retired 2026-05-09 — it never matched codebase reality (see `HookEngine.cpp:3173-3174`: *"the budget is bounded by `LowLevelHooksTimeout`, not by the channel itself"*) and the SPSC ring proposal that would have closed the gap was closed by `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` after the trade-off (sync 0ms lag for non-Vietnamese keystrokes vs async +1–2ms tax on all keystrokes) was made explicit.
 
 ```cpp
 // GOOD: Atomic read, no lock
