@@ -148,6 +148,8 @@ add_executable(NextKeyApp WIN32
     src/app/dialogs/AppOverridesDialog.cpp
     src/app/dialogs/SpellExclusionsDialog.h
     src/app/dialogs/SpellExclusionsDialog.cpp
+    src/app/dialogs/UserDefinedDialog.h
+    src/app/dialogs/UserDefinedDialog.cpp
     # system/
     src/app/system/TrayIcon.h
     src/app/system/TrayIcon.cpp
@@ -303,6 +305,8 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/classic/ClassicIconColorDialog.cpp
         src/app/classic/ClassicSpellExclusionsDialog.h
         src/app/classic/ClassicSpellExclusionsDialog.cpp
+        src/app/classic/ClassicUserDefinedDialog.h
+        src/app/classic/ClassicUserDefinedDialog.cpp
         # version
         src/core/Version.h
     )
@@ -389,6 +393,9 @@ if(PACKFOLDER_AVAILABLE)
                 ${UI_SOURCE_DIR}/convert-tool/convert-tool.js
                 ${UI_SOURCE_DIR}/about/about.html
                 ${UI_SOURCE_DIR}/about/about.css
+                ${UI_SOURCE_DIR}/userdefined/userdefined.html
+                ${UI_SOURCE_DIR}/userdefined/userdefined.css
+                ${UI_SOURCE_DIR}/userdefined/userdefined.js
                 ${UI_SOURCE_DIR}/shared/utils.js
                 ${UI_SOURCE_DIR}/shared/strings.js
                 ${UI_SOURCE_DIR}/shared/i18n.js

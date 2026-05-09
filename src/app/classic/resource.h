@@ -5,11 +5,13 @@
 
 // Dialog IDs
 #define IDD_SETTINGS_CLASSIC    1001
+#define IDD_USER_DEFINED_DIALOG 1002
 
 // ── Compact section: dropdowns ──
 #define IDC_COMBO_METHOD        2001
 #define IDC_COMBO_ENCODING      2002
 #define IDC_COMBO_SWITCHKEY     2003
+#define IDC_BTN_CUSTOM_KEYMAP   2004
 
 // ── Compact section: buttons ──
 #define IDC_BTN_CLOSE           2050
@@ -81,3 +83,15 @@
 #define IDI_TAB_MACROS          302
 #define IDI_TAB_SYSTEM          303
 #define IDI_BTN_PICK            304
+#define IDI_BTN_SETTINGS        305
+
+// ── User Defined Dialog Controls ──
+#define IDC_EDIT_KEY            2901
+#define IDC_COMBO_ACTION        2902
+#define IDC_LIST_KEYMAP         2903
+#define IDC_BTN_ADD             2904
+#define IDC_BTN_DELETE          2905
+#define IDC_BTN_LOAD_TELEX      2906
+#define IDC_BTN_LOAD_VNI        2907
+#define IDC_BTN_IMPORT          2908
+#define IDC_BTN_EXPORT          2909

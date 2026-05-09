@@ -117,6 +117,8 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
                     config.inputMethod = InputMethod::SimpleTelex;
                 } else if (methodStr == "combined") {
                     config.inputMethod = InputMethod::Combined;
+                } else if (methodStr == "user_defined") {
+                    config.inputMethod = InputMethod::UserDefined;
                 } else {
                     config.inputMethod = InputMethod::Telex;
                 }
@@ -127,6 +129,11 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
                     config.codeTable = static_cast<CodeTable>(val);
                 }
             }
+        }
+
+        // [UserDefinedKeyMap] section
+        if (auto km = table["UserDefinedKeyMap"].as_table()) {
+            LoadCustomKeyMap(km, config);
         }
 
         // [features] section — use node_view [] operator for safe access to optional keys
@@ -190,9 +197,19 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         if (config.inputMethod == InputMethod::VNI) methodStr = "vni";
         else if (config.inputMethod == InputMethod::SimpleTelex) methodStr = "simple_telex";
         else if (config.inputMethod == InputMethod::Combined) methodStr = "combined";
+        else if (config.inputMethod == InputMethod::UserDefined) methodStr = "user_defined";
         input.insert_or_assign("method", methodStr);
         input.insert_or_assign("code_table", static_cast<int64_t>(config.codeTable));
         tbl.insert_or_assign("input", std::move(input));
+
+        // [UserDefinedKeyMap] section
+        toml::table km;
+        SaveCustomKeyMap(&km, config);
+        if (!km.empty()) {
+            tbl.insert_or_assign("UserDefinedKeyMap", std::move(km));
+        } else {
+            tbl.erase("UserDefinedKeyMap");
+        }
 
         // Update [features] section
         toml::table features;
@@ -819,6 +836,34 @@ bool ConfigManager::SaveMacros(const std::wstring& path,
         return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;
+    }
+}
+
+void ConfigManager::LoadCustomKeyMap(const void* table_ptr, TypingConfig& config) {
+    const auto* km = static_cast<const toml::table*>(table_ptr);
+    if (!km) return;
+
+    for (auto& [key, val] : *km) {
+        if (key.str().empty()) continue;
+        wchar_t k = static_cast<wchar_t>(key.str()[0]);
+        if (k >= 128) continue;
+
+        if (auto actionStr = val.value<std::string>()) {
+            config.customKeyMap[static_cast<uint8_t>(k)] = StringToTypingAction(*actionStr);
+        }
+    }
+}
+
+void ConfigManager::SaveCustomKeyMap(void* table_ptr, const TypingConfig& config) {
+    auto* km = static_cast<toml::table*>(table_ptr);
+    if (!km) return;
+
+    for (size_t i = 0; i < 128; ++i) {
+        TypingAction action = config.customKeyMap[i];
+        if (action != TypingAction::None) {
+            char key[2] = { static_cast<char>(i), '\0' };
+            km->insert_or_assign(key, std::string(TypingActionToString(action)));
+        }
     }
 }
 

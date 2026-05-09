@@ -15,7 +15,7 @@ namespace NextKey {
 
 /// Per-app override settings (encoding + input method)
 struct AppOverrideEntry {
-    int8_t inputMethod = -1;       // -1=inherit global, 0=Telex, 1=VNI, 2=SimpleTelex
+    int8_t inputMethod = -1;       // -1=inherit global, 0=Telex, 1=VNI, 2=SimpleTelex, 3=Combined, 4=UserDefined
     int8_t encodingOverride = -1;  // -1=inherit global, 0-4=CodeTable value
     int8_t sendMethod = -1;        // -1=inherit, 0=SendInput, 1=Clipboard
 };
@@ -112,6 +112,10 @@ private:
     static std::wstring GetExeDirectory();
     static std::wstring GetAppDataDirectory();
     static bool DirectoryWritable(const std::wstring& path);
+
+    // User-defined keymap helpers
+    static void LoadCustomKeyMap(const void* table_ptr, TypingConfig& config);
+    static void SaveCustomKeyMap(void* table_ptr, const TypingConfig& config);
 };
 
 }  // namespace NextKey

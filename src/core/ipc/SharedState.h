@@ -234,7 +234,7 @@ struct SharedState {
     uint32_t flags;           // Runtime flags (Vietnamese mode, engine enabled, etc.)
 
     // ── Config data (3 bytes) ──
-    uint8_t  inputMethod;     // 0=Telex, 1=VNI, 2=SimpleTelex
+    uint8_t  inputMethod;     // 0=Telex, 1=VNI, 2=SimpleTelex, 3=Combined, 4=UserDefined
     uint8_t  spellCheck;      // Spell check enabled
     uint8_t  optimizeLevel;   // Optimization level
 

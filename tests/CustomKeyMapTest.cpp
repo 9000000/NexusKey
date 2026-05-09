@@ -42,7 +42,73 @@ protected:
         cfg.optimizeLevel = 0;
         return cfg;
     }
+
+    TypingConfig MakeUserDefinedConfig() {
+        TypingConfig cfg;
+        cfg.inputMethod = InputMethod::UserDefined;
+        cfg.spellCheckEnabled = false;
+        cfg.optimizeLevel = 0;
+        return cfg;
+    }
 };
+
+// =====================================================================
+// U1 — UserDefined Mode: pure hybrid (Telex + VNI actions coexist)
+// =====================================================================
+
+TEST_F(CustomKeyMapTest, UserDefinedHybridTelexAndVni) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    // 's' (Telex sharp) and '2' (VNI grave)
+    cfg.customKeyMap[static_cast<size_t>(L's')] = TypingAction::ToneAcute;
+    cfg.customKeyMap[static_cast<size_t>(L'2')] = TypingAction::ToneGrave;
+    
+    TypingEngine engine(cfg);
+    TypeString(engine, L"as");
+    EXPECT_EQ(engine.Peek(), L"á");
+    
+    TypeString(engine, L"2"); // Switch to grave
+    EXPECT_EQ(engine.Peek(), L"à");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedUndoAllMarks) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L's')] = TypingAction::ToneAcute;
+    cfg.customKeyMap[static_cast<size_t>(L'a')] = TypingAction::CircumflexA;
+    cfg.customKeyMap[static_cast<size_t>(L'z')] = TypingAction::UndoAllMarks;
+    
+    TypingEngine engine(cfg);
+    TypeString(engine, L"aas");
+    // 'a' + remapped 'a' -> â, then 's' -> ấ
+    EXPECT_EQ(engine.Peek(), L"ấ");
+    
+    TypeString(engine, L"z");
+    // 'z' is remapped to UndoAllMarks -> clears both circumflex and sharp tone.
+    // Base char 'a' remains.
+    EXPECT_EQ(engine.Peek(), L"a");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedDirectInsert) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'1')] = TypingAction::InsertABreve;
+    cfg.customKeyMap[static_cast<size_t>(L'2')] = TypingAction::InsertDStroke;
+    
+    TypingEngine engine(cfg);
+    TypeString(engine, L"12");
+    EXPECT_EQ(engine.Peek(), L"ăđ");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedCircumflexEscape) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'q')] = TypingAction::CircumflexA;
+    
+    TypingEngine engine(cfg);
+    TypeString(engine, L"aq");
+    EXPECT_EQ(engine.Peek(), L"â");
+    
+    // Problem 6: Gõ tiếp 'q' phải escape â -> aq
+    TypeString(engine, L"q");
+    EXPECT_EQ(engine.Peek(), L"aq");
+}
 
 // =====================================================================
 // G1 — Default-empty parity: customKeyMap{} → behavior unchanged
@@ -219,7 +285,24 @@ INSTANTIATE_TEST_SUITE_P(
         TypingAction::VniCircumflex,
         TypingAction::VniHorn,
         TypingAction::VniBreve,
-        TypingAction::VniStroke
+        TypingAction::VniStroke,
+        TypingAction::HornOrInsertU,
+        TypingAction::HornOrInsertUNoStart,
+        TypingAction::UndoAllMarks,
+        TypingAction::InsertABreve,
+        TypingAction::InsertABreveUpper,
+        TypingAction::InsertACircumflex,
+        TypingAction::InsertACircumflexUpper,
+        TypingAction::InsertDStroke,
+        TypingAction::InsertDStrokeUpper,
+        TypingAction::InsertECircumflex,
+        TypingAction::InsertECircumflexUpper,
+        TypingAction::InsertOCircumflex,
+        TypingAction::InsertOCircumflexUpper,
+        TypingAction::InsertOHorn,
+        TypingAction::InsertOHornUpper,
+        TypingAction::InsertUHorn,
+        TypingAction::InsertUHornUpper
     )
 );
 

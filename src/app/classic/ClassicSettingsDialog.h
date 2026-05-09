@@ -67,6 +67,7 @@ private:
     void RefreshLabels();
     void OnTabChange();
     void ShowTabPage(int tabIndex);
+    void UpdateCustomKeyMapButtonVisibility();
 
     // -- Helpers --
     HWND CreateLabel(const wchar_t* text, int x, int y, int w, int h, UINT id);
