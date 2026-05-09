@@ -217,7 +217,7 @@ void ClassicSettingsDialog::CreateCompactControls() {
     // Button to open UserDefined dialog (...)
     int btnSize = Dpi(kComboHeight);
     extraControls_[0] = CreateBtn(L"...", x1 + colW - Dpi(22), y, Dpi(22), btnSize, IDC_BTN_CUSTOM_KEYMAP);
-    theme_.ThemeButton(extraControls_[0]);
+    theme_.ThemeChildControl(extraControls_[0]);
 
     comboEncoding_ = CreateCombo(col2X, y, colW, Dpi(kComboHeight + 120), IDC_COMBO_ENCODING);
     ComboBox_AddString(comboEncoding_, L"Unicode");

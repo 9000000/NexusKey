@@ -6,6 +6,7 @@
 #include "app/helpers/AppHelpers.h"
 #include "core/ipc/SharedStateManager.h"
 #include "core/config/ConfigEvent.h"
+#include "vendor/toml.hpp"
 
 #include <windowsx.h>
 #include <algorithm>
@@ -187,7 +188,7 @@ void ClassicUserDefinedDialog::LoadData() {
 void ClassicUserDefinedDialog::SaveData() {
     auto config = ConfigManager::LoadOrDefault();
     config.customKeyMap = keyMap_;
-    ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
+    (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
     
     // Signal reload to engine
     SharedStateManager sm;
@@ -274,7 +275,7 @@ void ClassicUserDefinedDialog::LoadTemplate(bool telex) {
 }
 
 void ClassicUserDefinedDialog::ImportFromFile() {
-    std::wstring path = DialogUtils::OpenFileDialog(hwnd_, L"Keymap files (*.keymap)\0*.keymap\0All files (*.*)\0*.*\0", L"keymap");
+    std::wstring path = OpenFileDialog(hwnd_, L"Keymap files (*.keymap)\0*.keymap\0All files (*.*)\0*.*\0", L"Chọn file keymap");
     if (!path.empty()) {
         try {
             auto tbl = toml::parse_file(WideToUtf8(path));
@@ -288,13 +289,13 @@ void ClassicUserDefinedDialog::ImportFromFile() {
 }
 
 void ClassicUserDefinedDialog::ExportToFile() {
-    std::wstring path = DialogUtils::SaveFileDialog(hwnd_, L"Keymap files (*.keymap)\0*.keymap\0", L"keymap", L"custom.keymap");
+    std::wstring path = SaveFileDialog(hwnd_, L"Keymap files (*.keymap)\0*.keymap\0", L"Lưu file keymap", L"keymap");
     if (!path.empty()) {
         toml::table tbl;
         TypingConfig dummy;
         dummy.customKeyMap = keyMap_;
         ConfigManager::SaveCustomKeyMap(&tbl, dummy);
-        std::ofstream file(path);
+        std::ofstream file(WideToUtf8(path));
         if (file.is_open()) {
             file << tbl;
             file.close();

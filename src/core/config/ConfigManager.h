@@ -105,17 +105,17 @@ public:
     [[nodiscard]] static std::unordered_map<std::wstring, AppOverrideEntry> LoadAppOverrides(const std::wstring& path);
 
     /// Save per-app override entries
-    [[nodiscard]] static bool SaveAppOverrides(const std::wstring& path,
+    static bool SaveAppOverrides(const std::wstring& path,
                                                 const std::unordered_map<std::wstring, AppOverrideEntry>& entries);
+
+    // User-defined keymap helpers
+    static void LoadCustomKeyMap(const void* table_ptr, TypingConfig& config);
+    static void SaveCustomKeyMap(void* table_ptr, const TypingConfig& config);
 
 private:
     static std::wstring GetExeDirectory();
     static std::wstring GetAppDataDirectory();
     static bool DirectoryWritable(const std::wstring& path);
-
-    // User-defined keymap helpers
-    static void LoadCustomKeyMap(const void* table_ptr, TypingConfig& config);
-    static void SaveCustomKeyMap(void* table_ptr, const TypingConfig& config);
 };
 
 }  // namespace NextKey
