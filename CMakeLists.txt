@@ -214,6 +214,7 @@ add_executable(NextKeyApp WIN32
 )
 target_include_directories(NextKeyApp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/dialogs
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
@@ -311,6 +312,7 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/core/Version.h
     )
     target_include_directories(NextKeyLite PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/classic
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
