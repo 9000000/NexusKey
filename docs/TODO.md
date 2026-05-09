@@ -80,6 +80,34 @@ watchdog + self-healer already cover the "OS unhooks us" path.
 
 ---
 
+## 🟡 HeartbeatPublisherTest — strengthen `IdempotentStartWhileRunning` (2026-05-09)
+
+Surfaced during code review of the watchdog opt-in lifecycle fix
+(`docs/plans/2026-05-09-startup-ram-regression-design.md`).
+
+**Gap:** `IdempotentStartWhileRunning` test only verifies `Start()` returns
+`true` on the second call. It does **not** verify that no second thread is
+spawned. Behavior is correct today because of the
+`if (heartbeatEvent_) return true;` guard in `HeartbeatPublisher::Start()`,
+but if a future refactor removes that guard, the test would still pass —
+the regression would only surface as a thread leak (visible in Process
+Explorer threads count) or a hang on `Stop().join()` if the second thread
+is dangling.
+
+**Fix idea:** expose a thread-id getter or atomic launch counter on
+`HeartbeatPublisher`, then assert it equals 1 after a second `Start()`.
+Alternatively, expose a `IsRunning()`-style state and confirm the second
+Start observed `running == true` without re-spawning.
+
+**Effort:** ~30 min. Requires touching `HeartbeatPublisher.h` interface
+(add an internal counter or thread-id accessor for tests only).
+
+**Priority:** Low. Defer until next change to `HeartbeatPublisher` lands —
+tighten the test together with that work to avoid touching the class
+twice.
+
+---
+
 ## 🟡 Auto-cap on Enter — keystroke-FSM asymmetry vs space (2026-05-08)
 
 **Symptom:** Pressing Enter to break a line, then typing a letter → letter

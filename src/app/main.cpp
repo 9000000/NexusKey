@@ -519,11 +519,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
     g_mainThreadWorker.Start();
 
-    // Best-effort: heartbeat for NexusKeyWatchdog auto-respawn. If event
-    // creation fails (rare — e.g. session-isolation edge case) NexusKey
-    // still functions; watchdog simply won't engage.
-    if (!g_heartbeat.Start()) {
-        NEXTKEY_LOG(L"HeartbeatPublisher start failed — watchdog auto-respawn disabled");
+    // Heartbeat for NexusKeyWatchdog auto-respawn. Opt-in: only start when
+    // watchdog is enabled in config. Default config (watchdog OFF) skips the
+    // thread + 2 named events, saving ~50–80 KB Working Set. Toggle ON later
+    // → started in TrayMenuId::ToggleWatchdog handler.
+    if (systemConfig.watchdogEnabled) {
+        if (!g_heartbeat.Start()) {
+            NEXTKEY_LOG(L"HeartbeatPublisher start failed — watchdog auto-respawn disabled");
+        }
     }
 
     NEXTKEY_LOG(L"HookEngine started, entering message loop");
@@ -969,6 +972,11 @@ void OnMenuCommand(TrayMenuId id) {
                 (void)ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), cfg);
                 g_watchdogEnabled.store(false, std::memory_order_relaxed);
 
+                // Stop heartbeat thread — watchdog process is gone, no consumer
+                // remains for the pulse. Stop() joins within ≤100 ms (Sleep
+                // granularity in HeartbeatPublisher::Run).
+                g_heartbeat.Stop();
+
                 MessageBoxW(g_trayIcon.GetMessageWindow(),
                             S(StringId::WATCHDOG_STOPPED_BODY),
                             L"NexusKey", MB_OK | MB_ICONINFORMATION);
@@ -984,6 +992,13 @@ void OnMenuCommand(TrayMenuId id) {
                 cfg.watchdogEnabled = true;
                 (void)ConfigManager::SaveSystemConfig(ConfigManager::GetConfigPath(), cfg);
                 g_watchdogEnabled.store(true, std::memory_order_relaxed);
+
+                // Start heartbeat thread now that watchdog is enabled. Best-
+                // effort — if event creation fails, watchdog respawn won't
+                // engage but the rest of NexusKey functions normally.
+                if (!g_heartbeat.Start()) {
+                    NEXTKEY_LOG(L"HeartbeatPublisher start failed on toggle ON — watchdog auto-respawn disabled");
+                }
 
                 // Launch watchdog now so user doesn't have to logout/login.
                 // Single-instance mutex inside watchdog dedup if at-logon also fires.
