@@ -441,6 +441,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/SharedStateTest.cpp
     tests/HookContextAnchorTest.cpp
     tests/FeatureOptionsTest.cpp
+    tests/EnglishBypassTest.cpp
     tests/PhonotacticsValidatorTest.cpp
     tests/PhonotacticsTest.cpp
     tests/TypingActionTest.cpp

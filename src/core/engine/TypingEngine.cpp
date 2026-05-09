@@ -240,9 +240,17 @@ void TypingEngine::PushChar(wchar_t c) {
         : ClassifyKey(lower, IsTelexMode(), IsVniMode());
     if (isVniDigitSequence) action = TypingAction::None;
 
+    // "Gõ tự do" / allowEnglishBypass: when ON, treat all spell-check-driven
+    // literal-treatment gates below as if spell check were OFF — user wants
+    // tones/modifiers applied freely regardless of Vietnamese phonotactic
+    // validity. The HardEnglish-bias gates check `!config_.allowEnglishBypass`
+    // directly (separate concern: rendered-text English heuristic).
+    const bool effectiveSpellCheck =
+        config_.spellCheckEnabled && !config_.allowEnglishBypass;
+
     // 1a. Clear tone: Telex 'z' / VNI '0'
     if (action == TypingAction::ClearTone && !states_.empty()) {
-        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+        if (effectiveSpellCheck && spellCheckDisabled_) {
             ProcessChar(c);
             UpdateSpellState();
             return;
@@ -267,7 +275,7 @@ void TypingEngine::PushChar(wchar_t c) {
         size_t cachedToneTarget = SIZE_MAX;
         bool hasCachedTarget = false;
 
-        if (config_.spellCheckEnabled && spellCheckDisabled_) {
+        if (effectiveSpellCheck && spellCheckDisabled_) {
             cachedToneTarget = FindToneTarget();
             hasCachedTarget = true;
             size_t t = cachedToneTarget;
@@ -305,7 +313,7 @@ void TypingEngine::PushChar(wchar_t c) {
         // Tone escape: user pressed same tone twice — blocks Vietnamese.
         if (escape_.isEscaped())                                { asLiteral(); return; }
         // English word block: raw prefix check (Telex keys only — digits don't appear in English).
-        if (isTelexTone && config_.spellCheckEnabled &&
+        if (isTelexTone && effectiveSpellCheck &&
             IsBlockedEnglishTone(rawInput_.data(), rawInput_.size())) {
             bool overridden = false;
             if (!config_.spellExclusions.empty()) {
@@ -348,7 +356,7 @@ void TypingEngine::PushChar(wchar_t c) {
             }
         }
         // Pre-tone stop-final check (spellCheck path only):
-        if (config_.spellCheckEnabled && !spellCheckDisabled_) {
+        if (effectiveSpellCheck && !spellCheckDisabled_) {
             if (requestedTone == Tone::Grave || requestedTone == Tone::Hook ||
                     requestedTone == Tone::Tilde) {
                 if (HasStopFinalCoda(states_.data(), states_.size())) {
@@ -381,7 +389,7 @@ void TypingEngine::PushChar(wchar_t c) {
         }
         bool blockModifiers = escape_.isEscaped() ||
             (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
-        if (!blockModifiers && config_.spellCheckEnabled &&
+        if (!blockModifiers && effectiveSpellCheck &&
             IsBlockedEnglishModifier(rawInput_.data(), rawInput_.size())) {
             blockModifiers = true;
         }
@@ -391,7 +399,7 @@ void TypingEngine::PushChar(wchar_t c) {
         }
         if (blockModifiers) {
             // Don't try Telex modifiers — treat as literal
-        } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
+        } else if (effectiveSpellCheck && spellCheckDisabled_) {
             bool canEscape = false;
             if (lower == L'w') {
                 canEscape = HasEscapableModifier(states_.data(), states_.size(), Modifier::Horn) ||
@@ -453,7 +461,7 @@ void TypingEngine::PushChar(wchar_t c) {
         }
         if (blockVni) {
             // Don't try VNI modifiers — treat as literal
-        } else if (config_.spellCheckEnabled && spellCheckDisabled_) {
+        } else if (effectiveSpellCheck && spellCheckDisabled_) {
             // Allow VNI modifier escape or spell exclusion match
             bool canEscape = false;
             Modifier escMod = ActionToVniModifier(action);
