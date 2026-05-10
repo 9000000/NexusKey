@@ -1,17 +1,16 @@
-# NexusKey v2.1.24
+# NexusKey v3.0.0
 **✨ Tính năng mới & Cải tiến:**
-- Thêm icon trạng thái chạy với quyền admin (khiên vàng cạnh nút ghim)
-- Thêm option tự đổi màu icon theo giao diện Light/Dark
+- Refactor lại hook engine, tối ưu lại hiệu suất gõ và tính ổn định của app
+- Cho phép config dùng clipboard cho app
+- Thêm tính năng tự self-healing cho hook tránh tình trạng bị ghi đè hoặc mất nếu treo máy dài ngày
+- Cải thiện hiệu suất cho tính năng convert
+- Cho phép viết tắt các từ có ký tự đ. Ví dụ hđ, sđt, tđn... (không cần thêm thủ công vào danh sách loại trừ, các trường hợp khác vẫn cần)
+- Thêm tuỳ chọn export/import danh sách loại trừ cho classsic version
+- Thêm tính năng watchdog - tự chạy lại app nếu tiến trình bị kill không mong đợi (nằm ở menu chuột phải)
+- Thêm tính năng tuỳ chỉnh kiểu gõ
 
 **🛠 Sửa lỗi:**
-- Sửa lỗi bất đồng bộ khi chạy với quyền admin
-- Điều chỉnh UI macro
-- Sửa lỗi không gõ được tiếng việt trong app webview2 (Dorion)
-- Chặn app tự tắt im lặng khi có C++ exception thoát ra từ hook bàn phím / chuột, sự kiện đổi cửa sổ, tray icon, hoặc thread auto-update. Exception sẽ được log vào `_nexuskey_crash.log` cạnh file exe thay vì làm chết app (issue #103). (Nếu thấy có vấn đề hoặc có file crash log, vui lòng gửi vào [issue #103](https://github.com/phatMT97/NexusKey/issues/103) )
-
-**ℹ️ Thông tin:**
-- Tạm off nửa tháng đi du lịch chữa nành nha các bác 🐧
-- Về ký số mình có xin lại nhưng 1 tuần trôi qua chưa có phản hồi lại. Mong các bác thông cảm. Có tìm thấy bên khác mà nó ngừng nhận do quá tải =)))))
-
----
-Cảm ơn bạn đã lựa chọn NexusKey! Mọi đóng góp của bạn đều là nguồn động lực lớn giúp bộ gõ ngày càng hoàn thiện hơn. ❤️
+- Thêm thông tin về việc tương thích cho icon nổi (không tương thích với game 🐧 nhưng không sao, telex có thể chơi game mà không cần tắt)
+- Sửa lỗi vni tiếp tục đặt dấu sau ký tự số. Ví dụ E747 (bị thành Ẽ77)
+- Sửa lỗi khi bật kiểm tra chính tả không sửa lại dấu đã đặt. Ví dụ c-a-f-c-s -> càcs thay vì các
+- Sửa lỗi không tự chuyển từ V->E khi đổi layout Eng -> Japan trong MS Teams
