@@ -422,6 +422,7 @@ private:
         std::vector<wchar_t> history;   // User keystrokes for replay
         std::wstring text;              // What was on screen when committed
         std::vector<uint8_t> widths;    // Encoded widths for non-Unicode code tables
+        uint8_t extraLeadingTriggers = 0;  // Extra trigger chars typed between previous commit and this word's body — must be backspaced before this entry's commit trigger can be primed during multi-word undo
     };
 
     std::vector<wchar_t> inputHistory_;         // User keystrokes for current composition
@@ -429,6 +430,7 @@ private:
     bool pushedToStack_ = false;                 // True if last CommitComposition pushed to stack
     CommitUndoState commitUndoState_ = CommitUndoState::Idle;
     uint8_t pendingTriggerCount_ = 0;           // Extra commit triggers typed while Ready (need BS before Primed)
+    uint8_t leadingTriggersForCurrentWord_ = 0; // pendingTriggerCount_ snapshot for the in-progress word — survives Ready→Idle and replay pops
     DWORD commitReadyTime_ = 0;                 // GetTickCount() when entering Ready state
 
     // Macro expansion

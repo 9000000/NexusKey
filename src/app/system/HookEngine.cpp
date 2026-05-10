@@ -1171,7 +1171,12 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
                 CancelCommitUndo();
             }
         } else {
-            // Alpha, digit, or other key → start new word, preserve stack for multi-word backward
+            // Alpha, digit, or other key → start new word, preserve stack for multi-word backward.
+            // Carry the pending trigger count onto the in-progress word so it travels with the
+            // CommitEntry when the word commits — without this, "chịu :D " then BS×3 + 'a' would
+            // forget the ':' and cause engine/screen desync (replay fires before ':' is deleted).
+            leadingTriggersForCurrentWord_ = pendingTriggerCount_;
+            pendingTriggerCount_ = 0;
             commitUndoState_ = CommitUndoState::Idle;
         }
     }
@@ -1788,13 +1793,16 @@ bool HookEngine::CommitComposition() {
         entry.history = inputHistory_;
         entry.text = previousComposition_;
         entry.widths = previousEncodedWidths_;
+        entry.extraLeadingTriggers = leadingTriggersForCurrentWord_;
+        leadingTriggersForCurrentWord_ = 0;
         commitStack_.push_back(std::move(entry));
         // Cap stack size
         if (commitStack_.size() > kMaxCommitStack) {
             commitStack_.erase(commitStack_.begin());
         }
         pushedToStack_ = true;
-        HOOK_LOG(L"  CommitComposition: pushed to stack (size=%zu)", commitStack_.size());
+        HOOK_LOG(L"  CommitComposition: pushed to stack (size=%zu, leadingTriggers=%u)",
+                 commitStack_.size(), commitStack_.back().extraLeadingTriggers);
     }
 
     ClearWordState();
@@ -1827,12 +1835,17 @@ void HookEngine::ClearWordState() {
 void HookEngine::CancelCommitUndo() {
     commitUndoState_ = CommitUndoState::Idle;
     pendingTriggerCount_ = 0;
+    leadingTriggersForCurrentWord_ = 0;
     commitStack_.clear();
 }
 
 void HookEngine::SetCommitUndoReady() {
     commitUndoState_ = CommitUndoState::Ready;
-    pendingTriggerCount_ = 0;
+    // Inherit any extra leading triggers carried by the current word (either set when
+    // the user typed extra trigger chars between commits and then started a new word,
+    // or restored from a popped CommitEntry during multi-word replay).
+    pendingTriggerCount_ = leadingTriggersForCurrentWord_;
+    leadingTriggersForCurrentWord_ = 0;
     commitReadyTime_ = GetTickCount();
 }
 
@@ -1870,6 +1883,12 @@ void HookEngine::ReplayCommittedChars() {
     // Restore screen state so ReplaceComposition can diff correctly
     previousComposition_ = std::move(entry.text);
     previousEncodedWidths_ = std::move(entry.widths);
+
+    // Restore leading-trigger context for the now-current word: if the user BS'es the
+    // replayed word back to empty, SetCommitUndoReady() will pick this up and re-prime
+    // pendingTriggerCount_ so any extra trigger chars sitting between this word and the
+    // previous one get backspaced before the next prime.
+    leadingTriggersForCurrentWord_ = entry.extraLeadingTriggers;
 
     // Reset undo state — HandleBackspace will re-enter state 1 if engine becomes
     // empty again and stack still has entries (enabling multi-word backward).

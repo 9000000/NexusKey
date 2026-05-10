@@ -53,6 +53,9 @@ jobs:
       - name: Build TSF DLL
         run: cmake --build build --config Release --target NextKeyTSF
 
+      - name: Build Watchdog
+        run: cmake --build build --config Release --target NexusKeyWatchdog
+
       - name: Build tests
         if: github.event_name != 'workflow_dispatch' || inputs.include_tests
         # NextKeyTestRunnerTests is gitignored at repo level (.gitignore on
@@ -83,14 +86,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: powershell
         run: |
-          Get-ChildItem "build/Release/*" -Include NexusKey.exe,NextKeyTSF.dll,sciter.dll |
+          Get-ChildItem "build/Release/*" -Include NexusKey.exe,NextKeyTSF.dll,sciter.dll,NexusKeyWatchdog.exe |
             Compress-Archive -DestinationPath NexusKey.zip
 
       - name: Zip Classic Release
         if: startsWith(github.ref, 'refs/tags/')
         shell: powershell
         run: |
-          Compress-Archive -Path "build-classic/Release/NexusKeyClassic.exe" -DestinationPath NexusKeyClassic.zip
+          Compress-Archive -Path "build-classic/Release/NexusKeyClassic.exe","build/Release/NexusKeyWatchdog.exe" -DestinationPath NexusKeyClassic.zip
 
       # --- SHA-256 checksums ---
       - name: Generate SHA-256 checksums
@@ -155,3 +158,4 @@ jobs:
             build/Release/NexusKey.exe
             build/Release/NextKeyTSF.dll
             build/Release/sciter.dll
+            build/Release/NexusKeyWatchdog.exe
