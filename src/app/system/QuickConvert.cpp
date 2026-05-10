@@ -103,6 +103,20 @@ void QuickConvert::Execute() {
         // 2. Save current clipboard content
         std::wstring savedClipboard = ReadClipboard();
 
+        // Track sequence after each clipboard mutation we perform, so the
+        // bail-restore paths below can detect a third-party write (user
+        // Ctrl+C, clipboard manager) between OUR last touch and the restore.
+        DWORD ourLastSeq = GetClipboardSequenceNumber();
+        auto restoreSavedClipboardIfSafe = [&]() {
+            if (savedClipboard.empty()) return;
+            if (GetClipboardSequenceNumber() != ourLastSeq) {
+                QC_LOG(L"Skip restore: clipboard touched by 3rd party since our last write");
+                return;
+            }
+            WriteClipboard(savedClipboard);
+            // No post-write seq update: every caller returns immediately.
+        };
+
         std::wstring clipText;
         bool gotClip = false;
 
@@ -111,18 +125,22 @@ void QuickConvert::Execute() {
             if (OpenClipboardWithRetry()) {
                 EmptyClipboard();
                 CloseClipboard();
+                ourLastSeq = GetClipboardSequenceNumber();
             }
-            
+
             SimulateCopy();
-            
+
             if (WaitForClipboardUnicode(300)) {
                 clipText = ReadClipboard();
                 if (!clipText.empty()) {
                     gotClip = true;
+                    // SimulateCopy's Ctrl+C produced a clipboard write; treat
+                    // that as part of our action sequence.
+                    ourLastSeq = GetClipboardSequenceNumber();
                     break;
                 }
             }
-            
+
             QC_LOG(L"Copy attempt %d failed, retrying...", attempt + 1);
             Sleep(30 * (attempt + 1));  // 30ms -> 60ms backoff
         }
@@ -140,9 +158,7 @@ void QuickConvert::Execute() {
                 recoveryMode = true;
             } else {
                 QC_LOG(L"Clipboard empty, no text copied.");
-                if (!savedClipboard.empty()) {
-                    WriteClipboard(savedClipboard);
-                }
+                restoreSavedClipboardIfSafe();
                 return;
             }
         }
@@ -152,7 +168,7 @@ void QuickConvert::Execute() {
         if (enabledOptions.empty()) {
             QC_LOG(L"No conversions enabled");
             // No conversions enabled — restore and bail
-            WriteClipboard(savedClipboard);
+            restoreSavedClipboardIfSafe();
             return;
         }
 
@@ -238,7 +254,7 @@ void QuickConvert::Execute() {
     if (result == clipText) {
         QC_LOG(L"Result same as clip text, no action needed");
         // No change — restore original clipboard
-        WriteClipboard(savedClipboard);
+        restoreSavedClipboardIfSafe();
         return;
     }
 

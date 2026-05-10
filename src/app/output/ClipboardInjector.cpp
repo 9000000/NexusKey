@@ -1,6 +1,7 @@
 // src/app/output/ClipboardInjector.cpp
 #include "ClipboardInjector.h"
 #include "Internal.h"
+#include <atomic>
 #include <vector>
 #include <string>
 
@@ -23,10 +24,49 @@ namespace NextKey::Output {
 // for IPC; same exposure surface as if the user had typed the text via
 // clipboard paste themselves.
 namespace {
-std::wstring g_originalClipText;
-bool         g_hasOriginalClip = false;
-UINT_PTR     g_restoreTimerId  = 0;
+std::wstring       g_originalClipText;
+bool               g_hasOriginalClip = false;
+UINT_PTR           g_restoreTimerId  = 0;
+// Sequence number captured right after our last clipboard write. If
+// GetClipboardSequenceNumber() drifts from this value, someone else
+// (typically the user pressing Ctrl+C) has touched the clipboard since —
+// we must NOT clobber their copy on restore.
+std::atomic<DWORD> g_lastWrittenSeq{0};
 }  // namespace
+
+// Best-effort restore of g_originalClipText. Skips silently if a third party
+// (user Ctrl+C, clipboard manager) touched the clipboard since our last write,
+// or if we can't acquire the clipboard lock. Caller is responsible for
+// clearing g_originalClipText / g_hasOriginalClip afterward — this helper
+// does not, so it composes cleanly with both the timer-driven and the inline
+// fallback restore sites.
+static void RestoreOriginalClipboardIfSeqMatches(DWORD ourSeq) noexcept {
+    if (GetClipboardSequenceNumber() != ourSeq) return;
+    if (!OpenClipboard(nullptr)) return;
+    // TOCTOU: someone may have raced us between the pre-check above and the
+    // lock acquisition. Re-check inside the lock before EmptyClipboard wipes
+    // anything.
+    if (GetClipboardSequenceNumber() != ourSeq) {
+        CloseClipboard();
+        return;
+    }
+    EmptyClipboard();
+    if (!g_originalClipText.empty()) {
+        size_t byteCount = (g_originalClipText.length() + 1) * sizeof(wchar_t);
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, byteCount);
+        if (hMem) {
+            void* p = GlobalLock(hMem);
+            memcpy(p, g_originalClipText.data(), byteCount);
+            GlobalUnlock(hMem);
+            // SetClipboardData transfers HGLOBAL ownership on success;
+            // on failure the caller still owns it (Win32 docs).
+            if (!SetClipboardData(CF_UNICODETEXT, hMem)) {
+                GlobalFree(hMem);
+            }
+        }
+    }
+    CloseClipboard();
+}
 
 static VOID CALLBACK RestoreTimerProc(HWND, UINT, UINT_PTR idEvent, DWORD) {
     if (idEvent != g_restoreTimerId) return;
@@ -35,24 +75,7 @@ static VOID CALLBACK RestoreTimerProc(HWND, UINT, UINT_PTR idEvent, DWORD) {
 
     if (!g_hasOriginalClip) return;
 
-    if (OpenClipboard(nullptr)) {
-        EmptyClipboard();
-        if (!g_originalClipText.empty()) {
-            size_t byteCount = (g_originalClipText.length() + 1) * sizeof(wchar_t);
-            HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, byteCount);
-            if (hMem) {
-                void* p = GlobalLock(hMem);
-                memcpy(p, g_originalClipText.data(), byteCount);
-                GlobalUnlock(hMem);
-                // SetClipboardData transfers HGLOBAL ownership on success;
-                // on failure the caller still owns it (Win32 docs).
-                if (!SetClipboardData(CF_UNICODETEXT, hMem)) {
-                    GlobalFree(hMem);
-                }
-            }
-        }
-        CloseClipboard();
-    }
+    RestoreOriginalClipboardIfSeqMatches(g_lastWrittenSeq.load(std::memory_order_relaxed));
 
     g_originalClipText.clear();
     g_hasOriginalClip = false;
@@ -86,8 +109,12 @@ bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noe
         g_restoreTimerId = 0;
     }
 
-    // 1. Save original clipboard text — only on the FIRST injection per word.
-    if (!g_hasOriginalClip) {
+    // 1. Save original clipboard text — first injection per word, OR refresh
+    // when the user has copied something between our previous injection and
+    // this one (mid-word Ctrl+C). Detected via sequence-number drift.
+    const bool clipboardTouchedSinceOurWrite =
+        GetClipboardSequenceNumber() != g_lastWrittenSeq.load(std::memory_order_relaxed);
+    if (!g_hasOriginalClip || clipboardTouchedSinceOurWrite) {
         g_originalClipText.clear();
         if (OpenClipboard(nullptr)) {
             HANDLE hData = GetClipboardData(CF_UNICODETEXT);
@@ -140,6 +167,10 @@ bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noe
         }
 
         CloseClipboard();
+
+        // Snapshot sequence so we can detect any later third-party clipboard
+        // mutation (user Ctrl+C, clipboard manager, etc.) before restoring.
+        g_lastWrittenSeq.store(GetClipboardSequenceNumber(), std::memory_order_relaxed);
     }
 
     // 3. Build input sequence: Backspaces + Ctrl+V
@@ -198,26 +229,13 @@ bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noe
 
     // 5. Schedule lazy restore — fires 200ms after the LAST injection.
     g_restoreTimerId = SetTimer(nullptr, 0, 200, RestoreTimerProc);
-    if (g_restoreTimerId == 0) {
-        // Timer failed — restore immediately as fallback
-        if (g_hasOriginalClip && OpenClipboard(nullptr)) {
-            EmptyClipboard();
-            if (!g_originalClipText.empty()) {
-                size_t byteCount = (g_originalClipText.length() + 1) * sizeof(wchar_t);
-                HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, byteCount);
-                if (hMem) {
-                    void* p = GlobalLock(hMem);
-                    memcpy(p, g_originalClipText.data(), byteCount);
-                    GlobalUnlock(hMem);
-                    if (!SetClipboardData(CF_UNICODETEXT, hMem)) {
-                        GlobalFree(hMem);
-                    }
-                }
-            }
-            CloseClipboard();
-            g_originalClipText.clear();
-            g_hasOriginalClip = false;
-        }
+    if (g_restoreTimerId == 0 && g_hasOriginalClip) {
+        // Timer failed — fall back to inline restore. Helper skips silently
+        // on seq drift or lock-acquire failure; either way we drop the cache
+        // so the user keeps whatever they last copied.
+        RestoreOriginalClipboardIfSeqMatches(g_lastWrittenSeq.load(std::memory_order_relaxed));
+        g_originalClipText.clear();
+        g_hasOriginalClip = false;
     }
 
     return result;
