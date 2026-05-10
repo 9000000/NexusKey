@@ -35,10 +35,6 @@
             <!-- Input Card -->
             <div class="settings-card">
                 <div class="setting-row">
-                    <span class="setting-label" data-i18n="ud.key">Phím gõ</span>
-                    <input type="text" class="setting-input" id="key-name" placeholder="vd: s" maxlength="1">
-                </div>
-                <div class="setting-row">
                     <span class="setting-label" data-i18n="ud.action">Hành động</span>
                     <select class="setting-input" id="key-action">
                         <optgroup label="Dấu thanh" data-i18n-label="ud.group_tone">
@@ -59,6 +55,7 @@
                             <option value="HornW">Móc chung (ă,ư,ơ)</option>
                             <option value="HornInsertU">Móc cho u → ư</option>
                             <option value="HornInsertO">Móc cho o → ơ</option>
+                            <option value="VniHorn">Móc chung VNI 7 → ư,ơ</option>
                             <option value="VniBreve">Trăng cho a → ă</option>
                             <option value="HornOrInsertU">Móc hoặc chữ ư</option>
                             <option value="HornOrInsertUNoStart">Móc hoặc ư (trừ đầu từ)</option>
@@ -88,9 +85,13 @@
                         </optgroup>
                     </select>
                 </div>
+                <div class="setting-row">
+                    <span class="setting-label" data-i18n="ud.key">Phím gõ</span>
+                    <input type="text" class="setting-input" id="key-name" placeholder="vd: s" maxlength="1">
+                </div>
                 <div class="button-row">
-                    <button class="btn-action btn-primary" id="btn-add" data-i18n="add">+ Thêm</button>
-                    <button class="btn-action btn-danger" id="btn-delete" data-i18n="delete">- Xóa</button>
+                    <button class="btn-action btn-primary" id="btn-apply" data-i18n="ud.apply">Áp dụng</button>
+                    <button class="btn-action btn-danger" id="btn-clear" data-i18n="ud.clear_key">Xoá phím</button>
                 </div>
             </div>
 

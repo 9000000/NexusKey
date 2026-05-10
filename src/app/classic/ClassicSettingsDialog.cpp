@@ -618,7 +618,8 @@ void ClassicSettingsDialog::PopulateControls() {
 void ClassicSettingsDialog::ReadControlValues() {
     if (comboMethod_) {
         int sel = ComboBox_GetCurSel(comboMethod_);
-        if (sel >= 0 && sel <= 3)
+        // Telex=0, VNI=1, SimpleTelex=2, Combined=3, UserDefined=4
+        if (sel >= 0 && sel <= 4)
             config_.inputMethod = static_cast<InputMethod>(sel);
     }
     if (comboEncoding_) {
@@ -811,6 +812,7 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
             }
             return;
 
+        case IDC_BTN_CUSTOM_KEYMAP:
         case IDC_BTN_SPELL_EXCLUSIONS:
             if (code == BN_CLICKED) {
                 OnActionButton(static_cast<uint16_t>(id));

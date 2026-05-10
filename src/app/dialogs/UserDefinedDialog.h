@@ -25,6 +25,13 @@ private:
     void exportKeyMap();
     void loadTemplate(bool telex);
 
+    /// Reassign action to newKey, clearing any other key currently holding
+    /// the same action (enforces 1 action = 1 key invariant).
+    void applyAction(TypingAction action, wchar_t newKey) noexcept;
+
+    /// Clear all keys mapped to the given action.
+    void clearAction(TypingAction action) noexcept;
+
     std::array<TypingAction, 128> keyMap_;
 };
 

@@ -55,7 +55,12 @@ jobs:
 
       - name: Build tests
         if: github.event_name != 'workflow_dispatch' || inputs.include_tests
-        run: cmake --build build --config Release --target NextKeyTests
+        # Both targets are EXCLUDE_FROM_ALL but registered with CTest via
+        # gtest_discover_tests, so ctest reports _NOT_BUILT (Not Run) failures
+        # when either target is missing. Build both before ctest.
+        run: |
+          cmake --build build --config Release --target NextKeyTests
+          cmake --build build --config Release --target NextKeyTestRunnerTests
 
       - name: Run tests
         if: github.event_name != 'workflow_dispatch' || inputs.include_tests

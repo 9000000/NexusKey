@@ -7,10 +7,6 @@
 #include "core/WinStrings.h"
 #include "helpers/AppHelpers.h"
 #include "sciter-x-dom.hpp"
-#include <algorithm>
-#include <vector>
-
-using namespace sciter::dom;
 
 namespace NextKey {
 
@@ -33,25 +29,39 @@ void UserDefinedDialog::persistAndSignal() {
 }
 
 void UserDefinedDialog::populateList() {
-    sciter::dom::element root = get_root();
-    root.call_method("clearKeyMap");
+    call_function("clearKeyMap");
 
     for (size_t i = 0; i < 128; ++i) {
         TypingAction action = keyMap_[i];
-        if (action != TypingAction::None) {
-            std::wstring keyStr;
-            keyStr += static_cast<wchar_t>(i);
+        if (action == TypingAction::None) continue;
 
-            std::string actionName = std::string(TypingActionToString(action));
-            
-            // Get label from UI dropdown to show in list
-            std::wstring label = DialogUtils::GetLocalizedString((L"ud.act." + Utf8ToWide(actionName)).c_str());
-            if (label.empty()) {
-                label = Utf8ToWide(actionName);
-            }
+        std::wstring keyStr(1, static_cast<wchar_t>(i));
+        std::wstring actionName = Utf8ToWide(std::string(TypingActionToString(action)));
 
-            root.call_method("addKeyToMap", sciter::value(keyStr), sciter::value(actionName), sciter::value(label));
-        }
+        // JS resolves the localized label via t("ud.act." + action) — see userdefined.js.
+        call_function("addKeyToMap", sciter::value(keyStr), sciter::value(actionName));
+    }
+
+    // Refresh key field to reflect the currently-selected action's mapping.
+    // Needed because populateList() runs in the constructor before document.ready
+    // has wired up listeners, so the initial key display would otherwise be empty.
+    call_function("syncSelectedActionKey");
+}
+
+void UserDefinedDialog::applyAction(TypingAction action, wchar_t newKey) noexcept {
+    if (action == TypingAction::None) return;
+    for (auto& slot : keyMap_) {
+        if (slot == action) slot = TypingAction::None;
+    }
+    if (newKey < 128) {
+        keyMap_[static_cast<uint8_t>(newKey)] = action;
+    }
+}
+
+void UserDefinedDialog::clearAction(TypingAction action) noexcept {
+    if (action == TypingAction::None) return;
+    for (auto& slot : keyMap_) {
+        if (slot == action) slot = TypingAction::None;
     }
 }
 
@@ -92,31 +102,32 @@ bool UserDefinedDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
             if (!action.empty()) {
                 sciter::dom::element root = get_root();
                 
-                if (action == L"add") {
+                if (action == L"apply") {
                     sciter::dom::element keyInput = root.find_first("#val-key");
                     sciter::dom::element actionInput = root.find_first("#val-key-action");
 
                     if (keyInput.is_valid() && actionInput.is_valid()) {
                         std::wstring keyStr = keyInput.get_value().get<std::wstring>();
-                        std::string actionName = actionInput.get_value().get<std::string>();
+                        std::wstring actionName = actionInput.get_value().get<std::wstring>();
 
-                        if (!keyStr.empty()) {
+                        if (!keyStr.empty() && !actionName.empty()) {
                             wchar_t k = towlower(keyStr[0]);
-                            if (k < 128) {
-                                keyMap_[static_cast<uint8_t>(k)] = StringToTypingAction(actionName);
+                            TypingAction newAction = StringToTypingAction(WideToUtf8(actionName));
+                            if (k < 128 && newAction != TypingAction::None) {
+                                applyAction(newAction, k);
                                 populateList();
                                 persistAndSignal();
                             }
                         }
                     }
-                } else if (action == L"delete") {
-                    sciter::dom::element keyInput = root.find_first("#val-key");
-                    if (keyInput.is_valid()) {
-                        std::wstring keyStr = keyInput.get_value().get<std::wstring>();
-                        if (!keyStr.empty()) {
-                            wchar_t k = towlower(keyStr[0]);
-                            if (k < 128) {
-                                keyMap_[static_cast<uint8_t>(k)] = TypingAction::None;
+                } else if (action == L"clear_action") {
+                    sciter::dom::element actionInput = root.find_first("#val-key-action");
+                    if (actionInput.is_valid()) {
+                        std::wstring actionName = actionInput.get_value().get<std::wstring>();
+                        if (!actionName.empty()) {
+                            TypingAction target = StringToTypingAction(WideToUtf8(actionName));
+                            if (target != TypingAction::None) {
+                                clearAction(target);
                                 populateList();
                                 persistAndSignal();
                             }
@@ -139,30 +150,28 @@ bool UserDefinedDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
         }
     }
 
-    return false;
+    return sciter::window::handle_event(he, params);
 }
 
 void UserDefinedDialog::importKeyMap() {
-    // Phase 2: Placeholder for .keymap import
-    // Similar to MacroTableDialog::importMacros
     std::wstring path = ShowOpenFileDialogW(get_hwnd(), L"Keymap files (*.keymap)\0*.keymap\0All files (*.*)\0*.*\0", L"keymap");
-    if (!path.empty()) {
-        TypingConfig dummy;
-        if (ConfigManager::ImportCustomKeyMap(path, dummy)) {
-            keyMap_ = dummy.customKeyMap;
-            populateList();
-            persistAndSignal();
-        }
+    if (path.empty()) return;
+
+    TypingConfig imported;
+    if (ConfigManager::ImportCustomKeyMap(path, imported)) {
+        keyMap_ = imported.customKeyMap;
+        populateList();
+        persistAndSignal();
     }
 }
 
 void UserDefinedDialog::exportKeyMap() {
     std::wstring path = ShowSaveFileDialogW(get_hwnd(), L"Keymap files (*.keymap)\0*.keymap\0", L"keymap", L"custom.keymap");
-    if (!path.empty()) {
-        TypingConfig dummy;
-        dummy.customKeyMap = keyMap_;
-        ConfigManager::ExportCustomKeyMap(path, dummy);
-    }
+    if (path.empty()) return;
+
+    TypingConfig out;
+    out.customKeyMap = keyMap_;
+    (void)ConfigManager::ExportCustomKeyMap(path, out);
 }
 
 }  // namespace NextKey
