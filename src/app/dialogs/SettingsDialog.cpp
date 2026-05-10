@@ -503,7 +503,7 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
         }
 
         // Handle dropdown changes
-        if (id == L"input-type" || id == L"bang-ma" || id == L"modern-icon" || id == L"startup-mode") {
+        if (id == L"input-type" || id == L"bang-ma" || id == L"modern-icon" || id == L"startup-mode" || id == L"temp-off-openkey") {
             sciter::value val = el.get_value();
             int intValue = 0;
             if (val.is_int()) intValue = val.get<int>();
@@ -634,9 +634,7 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
     }
-    else if (id == L"temp-off-openkey") {
-        config_.tempOffByAlt = value;
-    }
+
     else if (id == L"use-macro") {
         config_.macroEnabled = value;
     }
@@ -787,6 +785,9 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
         systemConfig_.startupMode = static_cast<uint8_t>(value);
         saveSystemSettings();
         return;  // System setting, not typing config
+    }
+    else if (id == L"temp-off-openkey") {
+        config_.tempOffMethod = static_cast<TempOffMethod>(value);
     }
 
     saveSettings();
@@ -1021,7 +1022,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"allow-zwjf", config_.allowZwjf);
     setToggleState(L"restore-key", config_.autoRestoreEnabled);
     setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
-    setToggleState(L"temp-off-openkey", config_.tempOffByAlt);
+    setDropdownValue(L"temp-off-openkey", static_cast<int>(config_.tempOffMethod));
     setToggleState(L"use-macro", config_.macroEnabled);
     setToggleState(L"macro-english", config_.macroInEnglish);
     setToggleState(L"quick-telex", config_.quickConsonant);

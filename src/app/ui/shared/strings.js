@@ -53,8 +53,11 @@ var STRINGS = {
         "s.spell_exclusions_tooltip": "Abbreviation prefixes that bypass spell check (e.g. h\u0111, \u0111p). Prefix match, min 2 chars.",
         "s.app_encoding": "Per-app encoding",
         "s.config": "Configure",
-        "s.temp_off_alt": "Disable NexusKey with Alt",
-        "s.temp_off_alt_tooltip": "Double-tap Alt to disable Vietnamese input (avoid app menu conflicts)",
+        "s.temp_off_label": "Temp disable input",
+        "s.temp_off_tooltip": "Choose key to temp-disable Vietnamese for current word",
+        "s.temp_off_none": "No",
+        "s.temp_off_dup_alt": "Double Alt",
+        "s.temp_off_ctrl": "Press Ctrl",
 
         // Tab 2: Macro
         "s.enable_macro": "Enable macro",

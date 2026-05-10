@@ -30,6 +30,13 @@ enum class CodeTable : uint8_t {
     VietnameseLocale = 4
 };
 
+/// Method for temporarily disabling Vietnamese input
+enum class TempOffMethod : uint8_t {
+    None   = 0,  // Disabled
+    DupAlt = 1,  // Double-tap Alt
+    Ctrl   = 2   // Single-press Ctrl
+};
+
 /// Hotkey configuration for V/E toggle (internal, separate from Windows KL switching)
 struct HotkeyConfig {
     bool ctrl = false;
@@ -63,7 +70,7 @@ struct TypingConfig {
     bool autoCaps = false;      // Auto-capitalize first letter of sentence
     bool allowZwjf = false;     // z/w/j/f act as tone/modifier keys (normal Vietnamese)
     bool autoRestoreEnabled = false;  // Restore raw keys when word is invalid
-    bool tempOffByAlt = false;        // Double-Alt tap temporarily disables Vietnamese for current word
+    TempOffMethod tempOffMethod = TempOffMethod::None;  // Method to temporarily disable Vietnamese for current word
     bool macroEnabled = false;         // Allow macro/shorthand expansion
     bool macroInEnglish = false;       // Allow macros even when Vietnamese mode is off
     bool quickConsonant = false;       // Quick typing: cc→ch, gg→gi, nn→ng

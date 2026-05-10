@@ -263,26 +263,38 @@ TEST_F(SharedStateTest, FeatureFlags_SmartSwitch_Roundtrip) {
     EXPECT_TRUE(out.smartSwitch);
 }
 
-TEST_F(SharedStateTest, FeatureFlags_TempOffByAlt_Roundtrip) {
-    TypingConfig cfg{};
-    cfg.tempOffByAlt = true;
+TEST_F(SharedStateTest, FeatureFlags_TempOffMethod_Roundtrip) {
     SharedState state{};
     state.InitDefaults();
-    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
 
+    // DupAlt
+    TypingConfig cfg{};
+    cfg.tempOffMethod = TempOffMethod::DupAlt;
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
     TypingConfig out{};
     DecodeFeatureFlags(state.GetFeatureFlags(), out);
-    EXPECT_TRUE(out.tempOffByAlt);
+    EXPECT_EQ(out.tempOffMethod, TempOffMethod::DupAlt);
+
+    // Ctrl
+    cfg.tempOffMethod = TempOffMethod::Ctrl;
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_EQ(out.tempOffMethod, TempOffMethod::Ctrl);
+
+    // None
+    cfg.tempOffMethod = TempOffMethod::None;
+    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
+    DecodeFeatureFlags(state.GetFeatureFlags(), out);
+    EXPECT_EQ(out.tempOffMethod, TempOffMethod::None);
 }
 
-// All toggles ON simultaneously — verifies no bit aliasing
 TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
     TypingConfig cfg{};
     cfg.beepOnSwitch       = true;
     cfg.macroEnabled       = true;
     cfg.macroInEnglish     = true;
     cfg.smartSwitch        = true;
-    cfg.tempOffByAlt       = true;
+    cfg.tempOffMethod      = TempOffMethod::Ctrl;  // Use non-zero method
 
     SharedState state{};
     state.InitDefaults();
@@ -294,7 +306,7 @@ TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
     EXPECT_TRUE(out.macroEnabled);
     EXPECT_TRUE(out.macroInEnglish);
     EXPECT_TRUE(out.smartSwitch);
-    EXPECT_TRUE(out.tempOffByAlt);
+    EXPECT_EQ(out.tempOffMethod, TempOffMethod::Ctrl);
 }
 
 // Toggle beep OFF while others remain ON — verifies individual bit isolation

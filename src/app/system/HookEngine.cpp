@@ -106,7 +106,7 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     excludeApps_ = config.excludeApps;
     tsfApps_ = config.tsfApps;
     autoCaps_.store(config.autoCaps, std::memory_order_release);
-    tempOffByAlt_.store(config.tempOffByAlt, std::memory_order_release);
+    tempOffMethod_.store(static_cast<uint8_t>(config.tempOffMethod), std::memory_order_release);
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
     tempOffMacroByEsc_.store(config.tempOffMacroByEsc, std::memory_order_release);
@@ -1524,9 +1524,12 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                        vkCode == VK_LWIN || vkCode == VK_RWIN);
 
     if (isModifier) {
-        // Double-Alt tap: temporarily disable Vietnamese for current word
-        if (tempOffByAlt_.load(std::memory_order_acquire) &&
-            (vkCode == VK_LMENU || vkCode == VK_RMENU) &&
+        // Temp-off detection: double-Alt or single-Ctrl depending on config
+        auto method = static_cast<TempOffMethod>(tempOffMethod_.load(std::memory_order_acquire));
+        bool isAltRelease = (vkCode == VK_LMENU || vkCode == VK_RMENU);
+        bool isCtrlRelease = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL);
+
+        if (method == TempOffMethod::DupAlt && isAltRelease &&
             !otherKeyPressed_ && !modCtrlDown_ && !modShiftDown_ && !modWinDown_) {
             DWORD now = GetTickCount();
             if (altTapCount_ == 1 && (now - lastAltReleaseTime_) < DOUBLE_ALT_TIMEOUT_MS) {
@@ -1546,8 +1549,19 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                 altTapCount_ = 1;
                 lastAltReleaseTime_ = now;
             }
-        } else if (vkCode == VK_LMENU || vkCode == VK_RMENU) {
+        } else if (isAltRelease) {
             altTapCount_ = 0;  // Contaminated Alt release
+        }
+
+        if (method == TempOffMethod::Ctrl && isCtrlRelease &&
+            !otherKeyPressed_ && !modAltDown_ && !modShiftDown_ && !modWinDown_) {
+            // Single-press Ctrl: toggle immediately on clean release
+            if (engine_->Count() > 0) {
+                CommitComposition();
+            }
+            tempEngineOff_ = !tempEngineOff_;
+            CancelCommitUndo();
+            HOOK_LOG(L"  CTRL-TOGGLE: tempEngineOff_ = %d", tempEngineOff_ ? 1 : 0);
         }
 
         // Layout auto-disable: re-check on Win+Space / Ctrl+Shift / Alt+Shift key-up.

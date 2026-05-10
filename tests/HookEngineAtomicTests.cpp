@@ -12,7 +12,7 @@
 //   - 14 per-app + config bools (D5.2): isExcludedApp_, isConsoleApp_,
 //     isElectronApp_, skipEmptyChar_, needBaitChar_, useClipboardPaste_,
 //     useEditMsgPath_, isOutlookApp_, macroEnabled_, macroInEnglish_,
-//     autoCaps_, autoCapsMacro_, tempOffMacroByEsc_, tempOffByAlt_
+//     autoCaps_, autoCapsMacro_, tempOffMacroByEsc_, tempOffMethod_
 //   - excludedPid_      — std::atomic<DWORD>    (D5.2, 32-bit PID)
 //
 // This file provides:

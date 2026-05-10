@@ -150,7 +150,16 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.autoCaps = (*features)["auto_caps"].value_or(false);
             config.allowZwjf = (*features)["allow_zwjf"].value_or(false);
             config.autoRestoreEnabled = (*features)["auto_restore"].value_or(false);
-            config.tempOffByAlt = (*features)["temp_off_by_alt"].value_or(false);
+            // Migration: try new int key first, fall back to old bool key
+            if (auto method = (*features)["temp_off_method"].value<int64_t>()) {
+                int v = static_cast<int>(*method);
+                if (v >= 0 && v <= 2)
+                    config.tempOffMethod = static_cast<TempOffMethod>(v);
+            } else {
+                // Old config: temp_off_by_alt = true → DupAlt
+                bool oldAlt = (*features)["temp_off_by_alt"].value_or(false);
+                config.tempOffMethod = oldAlt ? TempOffMethod::DupAlt : TempOffMethod::None;
+            }
             config.macroEnabled = (*features)["macro_enabled"].value_or(false);
             config.macroInEnglish = (*features)["macro_in_english"].value_or(false);
             config.quickConsonant = (*features)["quick_consonant"].value_or(false);
@@ -223,7 +232,8 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("auto_caps", config.autoCaps);
         features.insert_or_assign("allow_zwjf", config.allowZwjf);
         features.insert_or_assign("auto_restore", config.autoRestoreEnabled);
-        features.insert_or_assign("temp_off_by_alt", config.tempOffByAlt);
+        features.insert_or_assign("temp_off_method", static_cast<int64_t>(config.tempOffMethod));
+        features.erase("temp_off_by_alt");  // Remove old key on save
         features.insert_or_assign("macro_enabled", config.macroEnabled);
         features.insert_or_assign("macro_in_english", config.macroInEnglish);
         features.insert_or_assign("quick_consonant", config.quickConsonant);

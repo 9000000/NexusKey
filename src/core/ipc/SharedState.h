@@ -31,8 +31,8 @@ namespace FeatureFlags {
     constexpr uint16_t AUTO_CAPS            = 0x0002;
     constexpr uint16_t ALLOW_ZWJF           = 0x0004;
     constexpr uint16_t AUTO_RESTORE         = 0x0008;
-    constexpr uint16_t TEMP_OFF_SPELL_CTRL  = 0x0010;
-    constexpr uint16_t TEMP_OFF_BY_ALT      = 0x0040;
+    constexpr uint16_t TEMP_OFF_METHOD_BIT  = 0x0010;  // Method selector: 0=DupAlt, 1=Ctrl (only when TEMP_OFF_ENABLED set)
+    constexpr uint16_t TEMP_OFF_ENABLED     = 0x0040;  // Any temp-off method active
     constexpr uint16_t BEEP_ON_SWITCH      = 0x0080;
     // Byte 1 (bits 8-15)
     constexpr uint16_t MACRO_ENABLED        = 0x0100;
@@ -367,8 +367,12 @@ static_assert(offsetof(SharedState, contextAnchor) == 1060,
     if (config.autoCaps)           flags |= FeatureFlags::AUTO_CAPS;
     if (config.allowZwjf)          flags |= FeatureFlags::ALLOW_ZWJF;
     if (config.autoRestoreEnabled) flags |= FeatureFlags::AUTO_RESTORE;
-    // Bit 0x0010 (TEMP_OFF_SPELL_CTRL) removed — now using spell exclusion list
-    if (config.tempOffByAlt)       flags |= FeatureFlags::TEMP_OFF_BY_ALT;
+    // Bit 0x0010 = method selector (0=DupAlt, 1=Ctrl); 0x0040 = any temp-off enabled
+    if (config.tempOffMethod != TempOffMethod::None) {
+        flags |= FeatureFlags::TEMP_OFF_ENABLED;
+        if (config.tempOffMethod == TempOffMethod::Ctrl)
+            flags |= FeatureFlags::TEMP_OFF_METHOD_BIT;
+    }
     if (config.beepOnSwitch)       flags |= FeatureFlags::BEEP_ON_SWITCH;
     if (config.macroEnabled)       flags |= FeatureFlags::MACRO_ENABLED;
     if (config.macroInEnglish)     flags |= FeatureFlags::MACRO_IN_ENGLISH;
@@ -389,8 +393,13 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.autoCaps           = (flags & FeatureFlags::AUTO_CAPS) != 0;
     config.allowZwjf          = (flags & FeatureFlags::ALLOW_ZWJF) != 0;
     config.autoRestoreEnabled = (flags & FeatureFlags::AUTO_RESTORE) != 0;
-    // Bit 0x0010 (TEMP_OFF_SPELL_CTRL) removed — now using spell exclusion list
-    config.tempOffByAlt       = (flags & FeatureFlags::TEMP_OFF_BY_ALT) != 0;
+    // Decode temp-off method from 2-bit encoding
+    if (flags & FeatureFlags::TEMP_OFF_ENABLED) {
+        config.tempOffMethod = (flags & FeatureFlags::TEMP_OFF_METHOD_BIT)
+            ? TempOffMethod::Ctrl : TempOffMethod::DupAlt;
+    } else {
+        config.tempOffMethod = TempOffMethod::None;
+    }
     config.beepOnSwitch       = (flags & FeatureFlags::BEEP_ON_SWITCH) != 0;
     config.macroEnabled       = (flags & FeatureFlags::MACRO_ENABLED) != 0;
     config.macroInEnglish     = (flags & FeatureFlags::MACRO_IN_ENGLISH) != 0;

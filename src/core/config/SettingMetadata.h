@@ -64,6 +64,11 @@ struct SettingMeta {
       static_cast<ptrdiff_t>(offsetof(::NextKey::SystemConfig, field)),        \
       L##vi, L##en, tip, tip_en, idc, tab, col }
 
+#define NK_TYPING_DROPDOWN(id, field, vi, en, tip, tip_en, idc, tab, col)     \
+    { L##id, ::NextKey::SettingType::Dropdown, ::NextKey::SettingOwner::Typing, \
+      static_cast<ptrdiff_t>(offsetof(::NextKey::TypingConfig, field)),        \
+      L##vi, L##en, tip, tip_en, idc, tab, col }
+
 #define NK_ACTION(id, vi, en, tip, tip_en, idc, tab, col)                    \
     { L##id, ::NextKey::SettingType::Action, ::NextKey::SettingOwner::UI,      \
       0,                                                                       \
@@ -100,10 +105,10 @@ inline constexpr SettingMeta kSettings[] = {
               "Tiếng bíp khi chuyển",   "Beep on switch",
               L"Phát âm báo khi chuyển đổi ngôn ngữ",
               L"Play sound when switching language",                     2211, 0, 1),
-    NK_TYPING("temp-off-openkey",     tempOffByAlt,
-              "Tạm tắt bộ gõ bằng Alt",    "Alt temps off Vietnamese",
-              L"Nhấn đúp phím Alt để tạm tắt tiếng Việt (tránh xung đột menu ứng dụng)",
-              L"Double-tap Alt to disable Vietnamese (avoid app menu conflicts)", 2218, 0, 1),
+    NK_TYPING_DROPDOWN("temp-off-openkey",     tempOffMethod,
+              "Tạm tắt bộ gõ",                "Temp disable input",
+              L"Chọn phím để tạm tắt tiếng Việt cho từ hiện tại",
+              L"Choose key to temp-disable Vietnamese for current word", 2218, 0, 1),
     NK_TYPING("smart-switch",         smartSwitch,
               "Lưu chế độ gõ theo app",   "Smart input switch",
               L"Tự động ghi nhớ chế độ gõ cho từng ứng dụng",
@@ -209,6 +214,7 @@ inline constexpr SettingMeta kSettings[] = {
 };
 
 #undef NK_TYPING
+#undef NK_TYPING_DROPDOWN
 #undef NK_HOTKEY
 #undef NK_SYSTEM
 #undef NK_DROPDOWN

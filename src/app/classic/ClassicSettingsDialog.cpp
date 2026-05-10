@@ -506,6 +506,11 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
                 ComboBox_AddString(combo, L"Tiếng Anh");
                 ComboBox_AddString(combo, L"Ghi nhớ");
             }
+            if (wcscmp(meta.id, L"temp-off-openkey") == 0) {
+                ComboBox_AddString(combo, L"Không");
+                ComboBox_AddString(combo, L"Nhấn đúp Alt");
+                ComboBox_AddString(combo, L"Nhấn Ctrl");
+            }
             checkControls_[i] = combo;
         }
         
@@ -590,6 +595,10 @@ void ClassicSettingsDialog::PopulateControls() {
         } else if (meta.type == SettingType::Dropdown) {
             uint8_t value = 0;
             switch (meta.owner) {
+                case SettingOwner::Typing:
+                    value = *reinterpret_cast<const uint8_t*>(
+                        reinterpret_cast<const char*>(&config_) + meta.offset);
+                    break;
                 case SettingOwner::System:
                     value = *reinterpret_cast<const uint8_t*>(
                         reinterpret_cast<const char*>(&systemConfig_) + meta.offset);
@@ -659,6 +668,10 @@ void ClassicSettingsDialog::ReadControlValues() {
             if (sel >= 0) {
                 uint8_t value = static_cast<uint8_t>(sel);
                 switch (meta.owner) {
+                    case SettingOwner::Typing:
+                        *reinterpret_cast<uint8_t*>(
+                            reinterpret_cast<char*>(&config_) + meta.offset) = value;
+                        break;
                     case SettingOwner::System:
                         *reinterpret_cast<uint8_t*>(
                             reinterpret_cast<char*>(&systemConfig_) + meta.offset) = value;
@@ -1150,6 +1163,17 @@ void ClassicSettingsDialog::RefreshLabels() {
         ComboBox_AddString(startupCombo, en ? L"English" : L"Tiếng Anh");
         ComboBox_AddString(startupCombo, en ? L"Remember" : L"Ghi nhớ");
         if (sel >= 0) ComboBox_SetCurSel(startupCombo, sel);
+    }
+
+    // Temp-off method dropdown items
+    HWND tempOffCombo = GetDlgItem(hwnd_, IDC_CHECK_TEMP_OFF_ALT);
+    if (tempOffCombo) {
+        int sel = ComboBox_GetCurSel(tempOffCombo);
+        ComboBox_ResetContent(tempOffCombo);
+        ComboBox_AddString(tempOffCombo, en ? L"No" : L"Không");
+        ComboBox_AddString(tempOffCombo, en ? L"Double Alt" : L"Nhấn đúp Alt");
+        ComboBox_AddString(tempOffCombo, en ? L"Press Ctrl" : L"Nhấn Ctrl");
+        if (sel >= 0) ComboBox_SetCurSel(tempOffCombo, sel);
     }
 
     // Report bug link

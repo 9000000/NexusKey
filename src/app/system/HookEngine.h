@@ -312,10 +312,12 @@ private:
     // sites also use .load(acquire) for uniform pattern (cost = MOV on x86).
     std::atomic<bool> autoCaps_{false};
     std::atomic<bool> autoCapsMacro_{false};
-    std::atomic<bool> tempOffByAlt_{false};
+    std::atomic<uint8_t> tempOffMethod_{0};  // TempOffMethod enum (0=None, 1=DupAlt, 2=Ctrl)
     bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word; same-thread (hook) only
     int altTapCount_ = 0;              // 0 or 1 (waiting for second tap)
     DWORD lastAltReleaseTime_ = 0;     // GetTickCount() of first Alt release
+    int ctrlTapCount_ = 0;             // For Ctrl single-press detection (reset on otherKey)
+    DWORD lastCtrlReleaseTime_ = 0;    // GetTickCount() of Ctrl release
     static constexpr DWORD DOUBLE_ALT_TIMEOUT_MS = 400;
     /// Keystroke-based auto-capitalize state machine (used when no TSF anchor truth).
     enum class AutoCapState : uint8_t {
