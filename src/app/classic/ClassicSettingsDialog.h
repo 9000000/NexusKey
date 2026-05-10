@@ -110,6 +110,7 @@ private:
     HWND editHotkey_    = nullptr;
     HWND tooltip_       = nullptr;
     HFONT fontSmall_    = nullptr;
+    HWND btnCustomKeymap_ = nullptr;
 
     // Advanced controls
     HWND tabControl_    = nullptr;

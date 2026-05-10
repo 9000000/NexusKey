@@ -216,8 +216,8 @@ void ClassicSettingsDialog::CreateCompactControls() {
 
     // Button to open UserDefined dialog (...)
     int btnSize = Dpi(kComboHeight);
-    extraControls_[0] = CreateBtn(L"...", x1 + colW - Dpi(22), y, Dpi(22), btnSize, IDC_BTN_CUSTOM_KEYMAP);
-    theme_.ThemeChildControl(extraControls_[0]);
+    btnCustomKeymap_ = CreateBtn(L"...", x1 + colW - Dpi(22), y, Dpi(22), btnSize, IDC_BTN_CUSTOM_KEYMAP);
+    theme_.ThemeChildControl(btnCustomKeymap_);
 
     comboEncoding_ = CreateCombo(col2X, y, colW, Dpi(kComboHeight + 120), IDC_COMBO_ENCODING);
     ComboBox_AddString(comboEncoding_, L"Unicode");
@@ -990,8 +990,8 @@ void ClassicSettingsDialog::UpdateSpellCheckChildren() {
     void ClassicSettingsDialog::UpdateCustomKeyMapButtonVisibility() {
     int sel = ComboBox_GetCurSel(comboMethod_);
     // UserDefined is index 4
-    if (extraControls_[0]) {
-        EnableWindow(extraControls_[0], sel == 4);
+    if (btnCustomKeymap_) {
+        EnableWindow(btnCustomKeymap_, sel == 4);
     }
     }
 
