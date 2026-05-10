@@ -121,3 +121,47 @@ as the cause.
 - If revisiting a fix, the two viable paths are: extension with DOM
   `execCommand` (proven), or TSF revival (untested end-to-end on this bug
   but the input path differs fundamentally).
+
+---
+
+## Hook-mode angles — parked (2026-05-10)
+
+Brainstorm session 2026-05-10 confirmed bug still reproduces in Floorp current
+build. Surveyed remaining hook-mode options before falling back to TSF/extension.
+
+### Tested this session
+- **Prepend ZWSP (`U+200B`) before each typed char** — `zwsp-repro.ahk` F12.
+  Hypothesis was that ZWSP would force Firefox to create a text node and detach
+  caret from `<img>`, breaking the trigger DOM state. **Result: did not fix.**
+  Eat-after-BS still consumes the next event regardless of ZWSP injection.
+
+### Untested hook-mode angles (parked, in priority order)
+
+1. **Compensating dummy event after BS.** Send `BS + <no-op event> + payload`
+   so Firefox's eat-window consumes the no-op instead of the real text. No-op
+   candidates: `VK_PROCESSKEY`, modifier-only key (e.g., LSHIFT down/up with
+   no other key), or a `VK_PACKET` of `U+FEFF` (zero-width no-break space).
+   **Cheapest to validate** — needs one new F-key in `vkpacket-full-repro.ahk`.
+   Risk: Firefox may eat a *block* of events post-BS (F2 atomic batch already
+   fails), in which case dummy compensation is futile.
+
+2. **No-BS hold-and-commit in Firefox/Gecko.** Detect Gecko process, then in
+   that process disable passthrough + correction-via-BS entirely. Engine
+   buffers composition internally; on word-boundary trigger (space/punct/Enter)
+   emits the final transformed string via `VK_PACKET` only — no BS ever sent.
+   Eliminates the bug class structurally. **Tradeoff:** user loses live echo
+   while typing — the word does not appear character-by-character, only on
+   commit. UX cost depends on how much we mitigate (e.g., near-caret tooltip
+   showing pending composition). Architecturally clean but the most invasive.
+
+3. **Scoped clipboard paste fallback.** On commit in Firefox/Gecko, copy the
+   transformed string → `SendInput Ctrl+V` → restore previous clipboard. No
+   key-events emitted, so eat-after-BS never triggers. Limit to Firefox/Gecko
+   only and ship a domain blocklist (gdocs, notion, slack, …) to avoid known
+   `onpaste` handler breakage. Risk: blocklist maintenance, and clipboard
+   restore race with fast typing.
+
+### Why parked
+User chose to capture as TODO rather than spike now (2026-05-10 session). Pick
+up when Floorp/Firefox reports become frequent enough to justify the work, or
+opportunistically when angle 1 (cheapest) fits a quiet day.
