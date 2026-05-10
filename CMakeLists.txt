@@ -511,8 +511,13 @@ gtest_discover_tests(NextKeyTests)
 # ============================================================================
 # Tools — NextKeyTestRunner: cross-platform tests + Windows-only runner exe
 # (sub-CMakeLists gates platform-specific targets internally)
+#
+# Directory is .gitignored on Main, so fresh CI checkouts may not have it.
+# Skip silently when missing — local dev with files present still configures.
 # ============================================================================
-add_subdirectory(tools/NextKeyTestRunner)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/NextKeyTestRunner/CMakeLists.txt")
+    add_subdirectory(tools/NextKeyTestRunner)
+endif()
 
 # ============================================================================
 # Watchdog — standalone Windows-only process supervisor (NexusKeyWatchdog.exe)

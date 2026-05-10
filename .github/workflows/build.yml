@@ -55,12 +55,15 @@ jobs:
 
       - name: Build tests
         if: github.event_name != 'workflow_dispatch' || inputs.include_tests
-        # Both targets are EXCLUDE_FROM_ALL but registered with CTest via
-        # gtest_discover_tests, so ctest reports _NOT_BUILT (Not Run) failures
-        # when either target is missing. Build both before ctest.
+        # NextKeyTestRunnerTests is gitignored at repo level (.gitignore on
+        # Main), so it's absent on fresh CI checkouts. CMakeLists.txt skips
+        # add_subdirectory when the dir is missing — only build it if present.
+        shell: bash
         run: |
           cmake --build build --config Release --target NextKeyTests
-          cmake --build build --config Release --target NextKeyTestRunnerTests
+          if [ -f tools/NextKeyTestRunner/CMakeLists.txt ]; then
+            cmake --build build --config Release --target NextKeyTestRunnerTests
+          fi
 
       - name: Run tests
         if: github.event_name != 'workflow_dispatch' || inputs.include_tests
