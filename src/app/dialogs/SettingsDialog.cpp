@@ -353,6 +353,11 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
+    if (msg == WM_NEXUSKEY_OPEN_USERDEFINED) {
+        SpawnSubprocess(L"NexusKey - User Defined Input", L"--userdefined");
+        return 0;
+    }
+
     // Real-time theme switch: Windows broadcasts this when user changes theme
     if (msg == WM_SETTINGCHANGE && lParam) {
         if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
@@ -824,6 +829,10 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
     }
     else if (id == L"btn-spell-exclusions") {
         PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_SPELLEXCL, 0, 0);
+        return;
+    }
+    else if (id == L"btn-userdefined") {
+        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_USERDEFINED, 0, 0);
         return;
     }
     else if (id == L"btn-reset-settings") {

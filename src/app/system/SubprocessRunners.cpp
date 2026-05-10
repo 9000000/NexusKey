@@ -11,6 +11,7 @@
 #include "dialogs/AboutDialog.h"
 #include "dialogs/AppOverridesDialog.h"
 #include "dialogs/SpellExclusionsDialog.h"
+#include "dialogs/UserDefinedDialog.h"
 #include "core/Debug.h"
 
 #include <Windows.h>
@@ -147,6 +148,19 @@ namespace NextKey {
     dialog.Show();
 
     NEXTKEY_LOG(L"Spell exclusions subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunUserDefinedSubprocess() {
+    NEXTKEY_LOG(L"Running user defined input subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    UserDefinedDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"User defined input subprocess exiting");
     ExitProcess(0);
 }
 

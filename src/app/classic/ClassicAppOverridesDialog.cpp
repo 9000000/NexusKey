@@ -163,6 +163,7 @@ void ClassicAppOverridesDialog::CreateControls() {
     ComboBox_AddString(comboMethod_, L"VNI");
     ComboBox_AddString(comboMethod_, L"Simple Telex");
     ComboBox_AddString(comboMethod_, L"Telex + VNI");
+    ComboBox_AddString(comboMethod_, L"Tự định nghĩa");
     ComboBox_SetCurSel(comboMethod_, 0);
 
     int col2X = x + lblW + comboW + gap;
@@ -210,6 +211,7 @@ static const wchar_t* MethodName(int8_t m) {
         case 1: return L"VNI";
         case 2: return L"Simple Telex";
         case 3: return L"Telex + VNI";
+        case 4: return L"Tự định nghĩa";
         default: return L"Mặc định";
     }
 }

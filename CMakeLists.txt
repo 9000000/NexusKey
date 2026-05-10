@@ -148,6 +148,8 @@ add_executable(NextKeyApp WIN32
     src/app/dialogs/AppOverridesDialog.cpp
     src/app/dialogs/SpellExclusionsDialog.h
     src/app/dialogs/SpellExclusionsDialog.cpp
+    src/app/dialogs/UserDefinedDialog.h
+    src/app/dialogs/UserDefinedDialog.cpp
     # system/
     src/app/system/TrayIcon.h
     src/app/system/TrayIcon.cpp
@@ -212,6 +214,7 @@ add_executable(NextKeyApp WIN32
 )
 target_include_directories(NextKeyApp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/dialogs
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
@@ -303,10 +306,13 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         src/app/classic/ClassicIconColorDialog.cpp
         src/app/classic/ClassicSpellExclusionsDialog.h
         src/app/classic/ClassicSpellExclusionsDialog.cpp
+        src/app/classic/ClassicUserDefinedDialog.h
+        src/app/classic/ClassicUserDefinedDialog.cpp
         # version
         src/core/Version.h
     )
     target_include_directories(NextKeyLite PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/classic
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
@@ -389,6 +395,9 @@ if(PACKFOLDER_AVAILABLE)
                 ${UI_SOURCE_DIR}/convert-tool/convert-tool.js
                 ${UI_SOURCE_DIR}/about/about.html
                 ${UI_SOURCE_DIR}/about/about.css
+                ${UI_SOURCE_DIR}/userdefined/userdefined.html
+                ${UI_SOURCE_DIR}/userdefined/userdefined.css
+                ${UI_SOURCE_DIR}/userdefined/userdefined.js
                 ${UI_SOURCE_DIR}/shared/utils.js
                 ${UI_SOURCE_DIR}/shared/strings.js
                 ${UI_SOURCE_DIR}/shared/i18n.js

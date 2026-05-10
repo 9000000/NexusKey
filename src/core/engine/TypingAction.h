@@ -11,6 +11,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 namespace NextKey {
 
@@ -43,7 +44,44 @@ enum class TypingAction : uint8_t {
     VniHorn,         // VNI 7
     VniBreve,        // VNI 8
     VniStroke,       // VNI 9
+
+    // -- Unikey-compatible actions --
+    HornOrInsertU,           // Móc a,u,o → ă,ư,ơ; fallback: chèn ư nếu không match
+    HornOrInsertUNoStart,    // Giống trên, nhưng KHÔNG chèn ư ở đầu từ
+    UndoAllMarks,            // Thoát bỏ dấu (xoá tất cả modifier + tone)
+
+    // -- Direct char insertion --
+    InsertABreve,            // Chữ ă
+    InsertABreveUpper,       // Chữ Ă
+    InsertACircumflex,       // Chữ â
+    InsertACircumflexUpper,  // Chữ Â
+    InsertDStroke,           // Chữ đ
+    InsertDStrokeUpper,      // Chữ Đ
+    InsertECircumflex,       // Chữ ê
+    InsertECircumflexUpper,  // Chữ Ê
+    InsertOCircumflex,       // Chữ ô
+    InsertOCircumflexUpper,  // Chữ Ô
+    InsertOHorn,             // Chữ ơ
+    InsertOHornUpper,        // Chữ Ơ
+    InsertUHorn,             // Chữ ư
+    InsertUHornUpper,        // Chữ Ư
 };
+
+[[nodiscard]] constexpr bool IsToneAction(TypingAction action) noexcept {
+    return action >= TypingAction::ClearTone && action <= TypingAction::ToneDot;
+}
+
+[[nodiscard]] constexpr bool IsTelexModifierAction(TypingAction action) noexcept {
+    return action >= TypingAction::CircumflexA && action <= TypingAction::StrokeD;
+}
+
+[[nodiscard]] constexpr bool IsVniModifierAction(TypingAction action) noexcept {
+    return action >= TypingAction::VniCircumflex && action <= TypingAction::VniStroke;
+}
+
+[[nodiscard]] constexpr bool IsUserDefinedOnlyAction(TypingAction action) noexcept {
+    return action >= TypingAction::HornOrInsertU && action <= TypingAction::InsertUHornUpper;
+}
 
 /// Classify a key into a TypingAction based purely on (key, mode).
 /// Pure function — no state lookup, no side effects. Returns
@@ -93,6 +131,85 @@ enum class TypingAction : uint8_t {
             default: break;
         }
     }
+    return TypingAction::None;
+}
+
+[[nodiscard]] inline std::string_view TypingActionToString(TypingAction action) noexcept {
+    switch (action) {
+        case TypingAction::None: return "None";
+        case TypingAction::ClearTone: return "ClearTone";
+        case TypingAction::ToneAcute: return "ToneAcute";
+        case TypingAction::ToneGrave: return "ToneGrave";
+        case TypingAction::ToneHook: return "ToneHook";
+        case TypingAction::ToneTilde: return "ToneTilde";
+        case TypingAction::ToneDot: return "ToneDot";
+        case TypingAction::CircumflexA: return "CircumflexA";
+        case TypingAction::CircumflexE: return "CircumflexE";
+        case TypingAction::CircumflexO: return "CircumflexO";
+        case TypingAction::HornW: return "HornW";
+        case TypingAction::HornInsertO: return "HornInsertO";
+        case TypingAction::HornInsertU: return "HornInsertU";
+        case TypingAction::StrokeD: return "StrokeD";
+        case TypingAction::VniCircumflex: return "VniCircumflex";
+        case TypingAction::VniHorn: return "VniHorn";
+        case TypingAction::VniBreve: return "VniBreve";
+        case TypingAction::VniStroke: return "VniStroke";
+        case TypingAction::HornOrInsertU: return "HornOrInsertU";
+        case TypingAction::HornOrInsertUNoStart: return "HornOrInsertUNoStart";
+        case TypingAction::UndoAllMarks: return "UndoAllMarks";
+        case TypingAction::InsertABreve: return "InsertABreve";
+        case TypingAction::InsertABreveUpper: return "InsertABreveUpper";
+        case TypingAction::InsertACircumflex: return "InsertACircumflex";
+        case TypingAction::InsertACircumflexUpper: return "InsertACircumflexUpper";
+        case TypingAction::InsertDStroke: return "InsertDStroke";
+        case TypingAction::InsertDStrokeUpper: return "InsertDStrokeUpper";
+        case TypingAction::InsertECircumflex: return "InsertECircumflex";
+        case TypingAction::InsertECircumflexUpper: return "InsertECircumflexUpper";
+        case TypingAction::InsertOCircumflex: return "InsertOCircumflex";
+        case TypingAction::InsertOCircumflexUpper: return "InsertOCircumflexUpper";
+        case TypingAction::InsertOHorn: return "InsertOHorn";
+        case TypingAction::InsertOHornUpper: return "InsertOHornUpper";
+        case TypingAction::InsertUHorn: return "InsertUHorn";
+        case TypingAction::InsertUHornUpper: return "InsertUHornUpper";
+    }
+    return "None";
+}
+
+[[nodiscard]] inline TypingAction StringToTypingAction(std::string_view s) noexcept {
+    if (s == "ClearTone") return TypingAction::ClearTone;
+    if (s == "ToneAcute") return TypingAction::ToneAcute;
+    if (s == "ToneGrave") return TypingAction::ToneGrave;
+    if (s == "ToneHook") return TypingAction::ToneHook;
+    if (s == "ToneTilde") return TypingAction::ToneTilde;
+    if (s == "ToneDot") return TypingAction::ToneDot;
+    if (s == "CircumflexA") return TypingAction::CircumflexA;
+    if (s == "CircumflexE") return TypingAction::CircumflexE;
+    if (s == "CircumflexO") return TypingAction::CircumflexO;
+    if (s == "HornW") return TypingAction::HornW;
+    if (s == "HornInsertO") return TypingAction::HornInsertO;
+    if (s == "HornInsertU") return TypingAction::HornInsertU;
+    if (s == "StrokeD") return TypingAction::StrokeD;
+    if (s == "VniCircumflex") return TypingAction::VniCircumflex;
+    if (s == "VniHorn") return TypingAction::VniHorn;
+    if (s == "VniBreve") return TypingAction::VniBreve;
+    if (s == "VniStroke") return TypingAction::VniStroke;
+    if (s == "HornOrInsertU") return TypingAction::HornOrInsertU;
+    if (s == "HornOrInsertUNoStart") return TypingAction::HornOrInsertUNoStart;
+    if (s == "UndoAllMarks") return TypingAction::UndoAllMarks;
+    if (s == "InsertABreve") return TypingAction::InsertABreve;
+    if (s == "InsertABreveUpper") return TypingAction::InsertABreveUpper;
+    if (s == "InsertACircumflex") return TypingAction::InsertACircumflex;
+    if (s == "InsertACircumflexUpper") return TypingAction::InsertACircumflexUpper;
+    if (s == "InsertDStroke") return TypingAction::InsertDStroke;
+    if (s == "InsertDStrokeUpper") return TypingAction::InsertDStrokeUpper;
+    if (s == "InsertECircumflex") return TypingAction::InsertECircumflex;
+    if (s == "InsertECircumflexUpper") return TypingAction::InsertECircumflexUpper;
+    if (s == "InsertOCircumflex") return TypingAction::InsertOCircumflex;
+    if (s == "InsertOCircumflexUpper") return TypingAction::InsertOCircumflexUpper;
+    if (s == "InsertOHorn") return TypingAction::InsertOHorn;
+    if (s == "InsertOHornUpper") return TypingAction::InsertOHornUpper;
+    if (s == "InsertUHorn") return TypingAction::InsertUHorn;
+    if (s == "InsertUHornUpper") return TypingAction::InsertUHornUpper;
     return TypingAction::None;
 }
 

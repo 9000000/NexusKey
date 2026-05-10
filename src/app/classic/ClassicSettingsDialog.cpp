@@ -8,6 +8,7 @@
 #include "ClassicSpellExclusionsDialog.h"
 #include "ClassicAppOverridesDialog.h"
 #include "ClassicMacroTableDialog.h"
+#include "ClassicUserDefinedDialog.h"
 #include "ClassicConvertToolDialog.h"
 #include "ClassicIconColorDialog.h"
 #include "core/config/ConfigManager.h"
@@ -206,11 +207,17 @@ void ClassicSettingsDialog::CreateCompactControls() {
     CreateLabel(L"Bảng mã", col2X, y, colW, Dpi(kLabelHeight), IDC_STATIC_ENCODING);
     y += Dpi(kLabelHeight + kRowGap);
 
-    comboMethod_ = CreateCombo(x1, y, colW, Dpi(kComboHeight + 120), IDC_COMBO_METHOD);
+    comboMethod_ = CreateCombo(x1, y, colW - Dpi(24), Dpi(kComboHeight + 120), IDC_COMBO_METHOD);
     ComboBox_AddString(comboMethod_, L"Telex");
     ComboBox_AddString(comboMethod_, L"VNI");
     ComboBox_AddString(comboMethod_, L"Simple Telex");
     ComboBox_AddString(comboMethod_, L"Telex + VNI");
+    ComboBox_AddString(comboMethod_, L"Tự định nghĩa");
+
+    // Button to open UserDefined dialog (...)
+    int btnSize = Dpi(kComboHeight);
+    extraControls_[0] = CreateBtn(L"...", x1 + colW - Dpi(22), y, Dpi(22), btnSize, IDC_BTN_CUSTOM_KEYMAP);
+    theme_.ThemeChildControl(extraControls_[0]);
 
     comboEncoding_ = CreateCombo(col2X, y, colW, Dpi(kComboHeight + 120), IDC_COMBO_ENCODING);
     ComboBox_AddString(comboEncoding_, L"Unicode");
@@ -551,6 +558,8 @@ void ClassicSettingsDialog::PopulateControls() {
     if (comboEncoding_)
         ComboBox_SetCurSel(comboEncoding_, static_cast<int>(config_.codeTable));
 
+    UpdateCustomKeyMapButtonVisibility();
+
     for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
         const auto& meta = kSettings[i];
         if (meta.win32Id == 0)
@@ -609,7 +618,8 @@ void ClassicSettingsDialog::PopulateControls() {
 void ClassicSettingsDialog::ReadControlValues() {
     if (comboMethod_) {
         int sel = ComboBox_GetCurSel(comboMethod_);
-        if (sel >= 0 && sel <= 3)
+        // Telex=0, VNI=1, SimpleTelex=2, Combined=3, UserDefined=4
+        if (sel >= 0 && sel <= 4)
             config_.inputMethod = static_cast<InputMethod>(sel);
     }
     if (comboEncoding_) {
@@ -784,6 +794,9 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
         case IDC_COMBO_ENCODING:
             if (code == CBN_SELCHANGE) {
                 SaveSettings();
+                if (id == IDC_COMBO_METHOD) {
+                    UpdateCustomKeyMapButtonVisibility();
+                }
             } else if (code == CBN_DROPDOWN && theme_.IsDark()) {
                 BOOL anim = FALSE;
                 SystemParametersInfoW(SPI_GETCOMBOBOXANIMATION, 0, &anim, 0);
@@ -799,6 +812,7 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
             }
             return;
 
+        case IDC_BTN_CUSTOM_KEYMAP:
         case IDC_BTN_SPELL_EXCLUSIONS:
             if (code == BN_CLICKED) {
                 OnActionButton(static_cast<uint16_t>(id));
@@ -872,6 +886,13 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
         case IDC_BTN_APP_OVERRIDES:
             ClassicAppOverridesDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
             // Reload config in case overrides changed
+            LoadSettings();
+            PopulateControls();
+            break;
+
+        case IDC_BTN_CUSTOM_KEYMAP:
+            ClassicUserDefinedDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
+            // Reload config
             LoadSettings();
             PopulateControls();
             break;
@@ -964,7 +985,15 @@ void ClassicSettingsDialog::UpdateSpellCheckChildren() {
     if (zwjf)       EnableWindow(zwjf, enable);
     if (restore)    EnableWindow(restore, enable);
     if (exclusions) EnableWindow(exclusions, enable);
-}
+    }
+
+    void ClassicSettingsDialog::UpdateCustomKeyMapButtonVisibility() {
+    int sel = ComboBox_GetCurSel(comboMethod_);
+    // UserDefined is index 4
+    if (extraControls_[0]) {
+        EnableWindow(extraControls_[0], sel == 4);
+    }
+    }
 
 // ════════════════════════════════════════════════════════════════════
 // System toggle side effects

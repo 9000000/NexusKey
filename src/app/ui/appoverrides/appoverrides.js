@@ -14,7 +14,8 @@ var inputMethodLabels = {
     0: "Telex",
     1: "VNI",
     2: "Simple Telex",
-    3: "Telex + VNI"
+    3: "Telex + VNI",
+    4: "Tự định nghĩa"
 };
 
 var encodingLabels = {
