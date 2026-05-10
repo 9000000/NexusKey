@@ -73,4 +73,6 @@ docs/*
 !docs/plans/pre-tone-stop-final-check-distillate.md
 !docs/PHILOSOPHY.md
 !docs/CODE_GOVERNANCE.md
+
 GEMINI.md
+tools/NextKeyTestRunner/
