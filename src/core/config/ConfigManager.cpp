@@ -150,6 +150,8 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.autoCaps = (*features)["auto_caps"].value_or(false);
             config.allowZwjf = (*features)["allow_zwjf"].value_or(false);
             config.autoRestoreEnabled = (*features)["auto_restore"].value_or(false);
+            // Default false: opt-in. Most users don't have CJK layouts active.
+            config.cjkAutoSwitch = (*features)["cjk_auto_switch"].value_or(false);
             // Migration: try new int key first, fall back to old bool key
             if (auto method = (*features)["temp_off_method"].value<int64_t>()) {
                 int v = static_cast<int>(*method);
@@ -232,6 +234,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("auto_caps", config.autoCaps);
         features.insert_or_assign("allow_zwjf", config.allowZwjf);
         features.insert_or_assign("auto_restore", config.autoRestoreEnabled);
+        features.insert_or_assign("cjk_auto_switch", config.cjkAutoSwitch);
         features.insert_or_assign("temp_off_method", static_cast<int64_t>(config.tempOffMethod));
         features.erase("temp_off_by_alt");  // Remove old key on save
         features.insert_or_assign("macro_enabled", config.macroEnabled);

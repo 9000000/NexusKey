@@ -464,6 +464,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/TypingConfigRCUTests.cpp
     tests/MainThreadWorkerTests.cpp
     tests/AutoCapDecisionTest.cpp
+    tests/CjkSwitchDecisionTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
 )

@@ -9,6 +9,7 @@
 #include "core/engine/CodeTableConverter.h"
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
+#include "core/CjkSwitchDecision.h"
 #include "core/MacroCase.h"
 #include "core/MacroPrefix.h"
 #include "core/ipc/SharedStateManager.h"
@@ -105,6 +106,7 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     smartSwitch_ = config.smartSwitch;
     excludeApps_ = config.excludeApps;
     tsfApps_ = config.tsfApps;
+    cjkAutoSwitch_ = config.cjkAutoSwitch;
     autoCaps_.store(config.autoCaps, std::memory_order_release);
     tempOffMethod_.store(static_cast<uint8_t>(config.tempOffMethod), std::memory_order_release);
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
@@ -2611,28 +2613,40 @@ void HookEngine::CheckLayoutChange() {
 }
 
 void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
-    if (!isCompatibleNow && !layoutSuppressed_) {
-        // Entering CJK layout: save mode, auto-switch to E
+    // Build inputs for the pure decision function (see CjkSwitchDecision.h).
+    // Gates: cjkAutoSwitch_ (user toggle) and isExcludedApp_ (excluded app
+    // owns the icon — see Win+D regression covered by
+    // CjkSwitchDecisionTest::WinDBug_LeavingExcludedReplaysLeaveCjk).
+    CjkSwitchInputs in{};
+    in.isCompatibleNow       = isCompatibleNow;
+    in.layoutSuppressed      = layoutSuppressed_;
+    in.modeBeforeCjk         = modeBeforeCjk_;
+    in.vietnameseMode        = vietnameseMode_.load(std::memory_order_acquire);
+    in.isExcluded            = isExcludedApp_.load(std::memory_order_acquire);
+    in.cjkAutoSwitchEnabled  = cjkAutoSwitch_;
+
+    const CjkSwitchOutputs out = DecideCjkSwitch(in);
+    if (out.transition == CjkTransition::None) return;
+
+    if (out.transition == CjkTransition::EnterCjk && out.needCommitComposition) {
         if (engine_->Count() > 0) CommitComposition();
         CancelCommitUndo();
-        layoutSuppressed_ = true;
-        const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
-        modeBeforeCjk_ = curMode;
-        if (curMode) {
-            vietnameseMode_.store(false, std::memory_order_release);
-            NotifyModeChange();
-            if (beepOnSwitch_) MessageBeep(MB_ICONASTERISK);
-        }
+    }
+
+    layoutSuppressed_ = out.newLayoutSuppressed;
+    modeBeforeCjk_    = out.newModeBeforeCjk;
+    if (out.newVietnameseMode != in.vietnameseMode) {
+        vietnameseMode_.store(out.newVietnameseMode, std::memory_order_release);
+    }
+    if (out.needNotifyMode) NotifyModeChange();
+    if (beepOnSwitch_) {
+        if (out.beep == CjkBeep::Ok) MessageBeep(MB_OK);
+        else if (out.beep == CjkBeep::Asterisk) MessageBeep(MB_ICONASTERISK);
+    }
+
+    if (out.transition == CjkTransition::EnterCjk) {
         HOOK_LOG(L"  CJK layout: auto-switched to E (saved=%d)", modeBeforeCjk_ ? 1 : 0);
-    } else if (isCompatibleNow && layoutSuppressed_) {
-        // Leaving CJK layout: restore saved mode
-        layoutSuppressed_ = false;
-        const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
-        if (modeBeforeCjk_ != curMode) {
-            vietnameseMode_.store(modeBeforeCjk_, std::memory_order_release);
-            if (beepOnSwitch_) MessageBeep(modeBeforeCjk_ ? MB_OK : MB_ICONASTERISK);
-        }
-        NotifyModeChange();
+    } else {
         HOOK_LOG(L"  CJK layout cleared: restored mode=%d",
                  vietnameseMode_.load(std::memory_order_acquire) ? 1 : 0);
     }
@@ -3079,9 +3093,18 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     // Leaving excluded app — effective mode changed (E → actual) even if vietnameseMode_ didn't.
-    // Idempotent if NotifyModeChange was already called above.
     if (wasExcluded) {
-        NotifyModeChange();
+        // CJK auto-switch transitions were suppressed while excluded
+        // (DecideCjkSwitch's isExcluded gate). Replay the layout check now
+        // that excluded is cleared, so a CJK→en-US transition that fired
+        // during the excluded session (e.g. Win+D → Progman shell layout)
+        // gets to restore vietnameseMode_ here instead of being lost.
+        const bool wasSuppressed = layoutSuppressed_;
+        OnLayoutChanged(cachedIsCompatLayout_);
+        // OnLayoutChanged publishes the icon when it transitions. If no
+        // transition fired (no CJK to clear), we still need to notify
+        // because clearing isExcludedApp_ flips the effective mode.
+        if (wasSuppressed == layoutSuppressed_) NotifyModeChange();
     }
 }
 

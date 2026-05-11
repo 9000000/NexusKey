@@ -306,6 +306,7 @@ private:
     bool smartSwitch_ = false;
     bool excludeApps_ = false;
     bool tsfApps_ = false;
+    bool cjkAutoSwitch_ = false;  // Opt-in via UI; ApplyConfig overrides at startup.
     // Sprint 1 D5.2: config-derived flags read on the hook callback path
     // (ProcessKeyDown / HandleAlphaKey / TryExpandMacro). Writers: ApplyConfig
     // (main thread). Readers: hook hot path uses .load(acquire); other call

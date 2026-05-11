@@ -32,6 +32,8 @@ var STRINGS = {
         "s.enable_exclude": "Exclude apps",
         "s.list": "List",
         "s.exclude_tooltip": "Disable Vietnamese for listed apps",
+        "s.cjk_auto_switch": "Auto-disable on CJK layout",
+        "s.cjk_auto_switch_tooltip": "Switch to E when a Chinese/Japanese/Korean layout is active",
         "s.enable_tsf": "Use TSF for apps",
         "s.tsf_tooltip": "Use TSF engine instead of hook for listed apps",
         "s.advanced": "Advanced settings",

@@ -495,7 +495,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
             extraControls_[i] = lbl;
             HWND combo = CreateCombo(cx + lblW + Dpi(4), cy, comboW, Dpi(kComboHeight + 60), meta.win32Id);
             if (meta.itemsVi) {
-                for (auto** p = meta.itemsVi; *p; ++p) {
+                for (auto p = meta.itemsVi; *p; ++p) {
                     ComboBox_AddString(combo, *p);
                 }
             }
@@ -1140,7 +1140,7 @@ void ClassicSettingsDialog::RefreshLabels() {
         ComboBox_ResetContent(combo);
         const wchar_t* const* items =
             (en && meta.itemsEn) ? meta.itemsEn : meta.itemsVi;
-        for (auto** p = items; *p; ++p) {
+        for (auto p = items; *p; ++p) {
             ComboBox_AddString(combo, *p);
         }
         if (sel >= 0) ComboBox_SetCurSel(combo, sel);

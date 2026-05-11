@@ -117,6 +117,11 @@ inline constexpr SettingMeta kSettings[] = {
     NK_TYPING("restore-key",          autoRestoreEnabled,
               "Tự khôi phục phím sai","Restore key on invalid",
               nullptr, nullptr,                                          2205, 0, 0),
+    NK_TYPING("cjk-auto-switch",      cjkAutoSwitch,
+              "Tự tắt khi bàn phím CJK", "Auto-disable on CJK layout",
+              L"Tự sang E khi đang dùng bàn phím Trung/Nhật/Hàn",
+              L"Switch to E when a Chinese/Japanese/Korean layout is active",
+                                                                         2209, 0, 0),
 
     // ── Tab 0: Bảng gõ — Right column (col 1) ──
     NK_TYPING("beep-sound",           beepOnSwitch,

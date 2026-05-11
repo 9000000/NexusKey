@@ -631,6 +631,9 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"restore-key") {
         config_.autoRestoreEnabled = value;
     }
+    else if (id == L"cjk-auto-switch") {
+        config_.cjkAutoSwitch = value;
+    }
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
     }
@@ -1021,6 +1024,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"auto-caps", config_.autoCaps);
     setToggleState(L"allow-zwjf", config_.allowZwjf);
     setToggleState(L"restore-key", config_.autoRestoreEnabled);
+    setToggleState(L"cjk-auto-switch", config_.cjkAutoSwitch);
     setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
     setDropdownValue(L"temp-off-openkey", static_cast<int>(config_.tempOffMethod));
     setToggleState(L"use-macro", config_.macroEnabled);

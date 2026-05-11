@@ -31,7 +31,8 @@ namespace FeatureFlags {
     constexpr uint16_t AUTO_CAPS            = 0x0002;
     constexpr uint16_t ALLOW_ZWJF           = 0x0004;
     constexpr uint16_t AUTO_RESTORE         = 0x0008;
-    // Bits 0x0010 and 0x0040 free (formerly TEMP_OFF_*; now stored as byte in SharedState.tempOffMethod)
+    constexpr uint16_t CJK_AUTO_SWITCH      = 0x0010;  // Auto-toggle V/E on Chinese/Japanese/Korean keyboard layout
+    // Bit 0x0040 free (formerly TEMP_OFF_*; now stored as byte in SharedState.tempOffMethod)
     constexpr uint16_t BEEP_ON_SWITCH      = 0x0080;
     // Byte 1 (bits 8-15)
     constexpr uint16_t MACRO_ENABLED        = 0x0100;
@@ -319,7 +320,7 @@ struct SharedState {
         inputMethod = 0;  // Telex
         spellCheck = 0;
         optimizeLevel = 0;
-        SetFeatureFlags(FeatureFlags::ALLOW_ZWJF);  // Default: tone keys enabled
+        SetFeatureFlags(FeatureFlags::ALLOW_ZWJF);  // Default: tone keys enabled (CJK auto-switch opt-in)
         codeTable = 0;  // Unicode
         hotkeyMods = 0; hotkeyKeyLo = 0; hotkeyKeyHi = 0;
         convertMods = 0; convertKeyLo = 0; convertKeyHi = 0;
@@ -366,6 +367,7 @@ static_assert(offsetof(SharedState, contextAnchor) == 1060,
     if (config.autoCaps)           flags |= FeatureFlags::AUTO_CAPS;
     if (config.allowZwjf)          flags |= FeatureFlags::ALLOW_ZWJF;
     if (config.autoRestoreEnabled) flags |= FeatureFlags::AUTO_RESTORE;
+    if (config.cjkAutoSwitch)      flags |= FeatureFlags::CJK_AUTO_SWITCH;
     if (config.beepOnSwitch)       flags |= FeatureFlags::BEEP_ON_SWITCH;
     if (config.macroEnabled)       flags |= FeatureFlags::MACRO_ENABLED;
     if (config.macroInEnglish)     flags |= FeatureFlags::MACRO_IN_ENGLISH;
@@ -386,6 +388,7 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.autoCaps           = (flags & FeatureFlags::AUTO_CAPS) != 0;
     config.allowZwjf          = (flags & FeatureFlags::ALLOW_ZWJF) != 0;
     config.autoRestoreEnabled = (flags & FeatureFlags::AUTO_RESTORE) != 0;
+    config.cjkAutoSwitch      = (flags & FeatureFlags::CJK_AUTO_SWITCH) != 0;
     config.beepOnSwitch       = (flags & FeatureFlags::BEEP_ON_SWITCH) != 0;
     config.macroEnabled       = (flags & FeatureFlags::MACRO_ENABLED) != 0;
     config.macroInEnglish     = (flags & FeatureFlags::MACRO_IN_ENGLISH) != 0;

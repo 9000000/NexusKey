@@ -70,6 +70,7 @@ struct TypingConfig {
     bool autoCaps = false;      // Auto-capitalize first letter of sentence
     bool allowZwjf = false;     // z/w/j/f act as tone/modifier keys (normal Vietnamese)
     bool autoRestoreEnabled = false;  // Restore raw keys when word is invalid
+    bool cjkAutoSwitch = false;       // Auto-suppress V mode while a CJK keyboard layout is active (opt-in)
     TempOffMethod tempOffMethod = TempOffMethod::None;  // Method to temporarily disable Vietnamese for current word
     bool macroEnabled = false;         // Allow macro/shorthand expansion
     bool macroInEnglish = false;       // Allow macros even when Vietnamese mode is off

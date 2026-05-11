@@ -30,6 +30,7 @@
 #define IDC_CHECK_SMART_SWITCH  2206
 #define IDC_CHECK_EXCLUDE_APPS  2207
 #define IDC_CHECK_ENGLISH_BYPASS 2208
+#define IDC_CHECK_CJK_AUTO_SWITCH 2209
 
 // ── Tab 0: Cơ bản — Right column ──
 #define IDC_CHECK_BEEP          2211
