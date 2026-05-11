@@ -5,9 +5,11 @@
 - Thêm tính năng tự self-healing cho hook tránh tình trạng bị ghi đè hoặc mất nếu treo máy dài ngày
 - Cải thiện hiệu suất cho tính năng convert
 - Cho phép viết tắt các từ có ký tự đ. Ví dụ hđ, sđt, tđn... (không cần thêm thủ công vào danh sách loại trừ, các trường hợp khác vẫn cần)
-- Thêm tuỳ chọn export/import danh sách loại trừ cho classsic version
+- Thêm tuỳ chọn export/import danh sách loại trừ chính tả cho classsic version
 - Thêm tính năng watchdog - tự chạy lại app nếu tiến trình bị kill không mong đợi (nằm ở menu chuột phải)
 - Thêm tính năng tuỳ chỉnh kiểu gõ
+- Tách tự động phát hiện layout CJK thành tùy chọn (mặc định off nên cần bật lại thủ công nếu đang có nhiều layout)
+- Thêm tùy chọn tắt gõ tiếng Việt tạm thời Ctrl/Dup Alt
 
 **🛠 Sửa lỗi:**
 - Thêm thông tin về việc tương thích cho icon nổi (không tương thích với game 🐧 nhưng không sao, telex có thể chơi game mà không cần tắt)

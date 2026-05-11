@@ -159,3 +159,4 @@ jobs:
             build/Release/NextKeyTSF.dll
             build/Release/sciter.dll
             build/Release/NexusKeyWatchdog.exe
+            build-classic/Release/NexusKeyClassic.exe
