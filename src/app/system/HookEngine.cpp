@@ -31,47 +31,17 @@ namespace NextKey {
 static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 
 // ═══════════════════════════════════════════════════════════
-// Debug file logger (writes to NexusKey_hook.log next to EXE)
+// HOOK_LOG → unified runtime-gated Logger (core/Logger.h).
+// Enable from Settings → System → "Bật debug log". Output file is shared
+// with NEXTKEY_LOG / TSF_LOG: NexusKey_<process>_<pid>.log next to
+// NextKeyApp.exe (falls back to %APPDATA%\NexusKey\logs\ if install dir is
+// read-only). Flushing/closing is owned by the Logger (DLL detach + EXE
+// process exit) — hook Start/Stop does NOT toggle the logger lifecycle.
 // ═══════════════════════════════════════════════════════════
-#if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
-static FILE* g_hookLog = nullptr;
-static void OpenHookLog() {
-    if (g_hookLog) return;
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    std::wstring logPath(exePath);
-    auto pos = logPath.find_last_of(L"\\/");
-    if (pos != std::wstring::npos) logPath = logPath.substr(0, pos + 1);
-    logPath += L"NexusKey_hook.log";
-    (void)_wfopen_s(&g_hookLog, logPath.c_str(), L"w, ccs=UTF-8");
-    // 8KB block buffer, flushed when CloseHookLog() runs on Stop. NextKeyTestRunner
-    // does post-mortem L1 analysis after NexusKey shuts down, so real-time
-    // visibility isn't required and we'd rather not pay per-keystroke fwrite
-    // syscalls (an earlier _IONBF attempt slowed the hook enough to mask the
-    // very stress bugs the corpus is meant to surface).
-    if (g_hookLog) setvbuf(g_hookLog, nullptr, _IOFBF, 8192);
-}
-
-static void CloseHookLog() {
-    if (g_hookLog) { fflush(g_hookLog); fclose(g_hookLog); g_hookLog = nullptr; }
-}
-
-static void HookLog(const wchar_t* format, ...) {
-    if (!g_hookLog) return;
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-    fwprintf(g_hookLog, L"[%02u:%02u:%02u.%03u] ", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
-    va_list args;
-    va_start(args, format);
-    vfwprintf(g_hookLog, format, args);
-    va_end(args);
-    fputwc(L'\n', g_hookLog);
-    // No fflush here — uses 8KB buffer, flushed on close
-}
-#define HOOK_LOG(fmt, ...) HookLog(fmt, ##__VA_ARGS__)
-#else
-#define HOOK_LOG(...) ((void)0)
-#endif
+#define HOOK_LOG(fmt, ...) do {                                              \
+    if (::NextKey::Logger::IsEnabled())                                      \
+        ::NextKey::Logger::Log(L"[Hook] " fmt, ##__VA_ARGS__);               \
+} while (0)
 
 std::atomic<HookEngine*> HookEngine::s_instance{nullptr};
 
@@ -113,16 +83,19 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
     tempOffMacroByEsc_.store(config.tempOffMacroByEsc, std::memory_order_release);
     autoCapsMacro_.store(config.autoCapsMacro, std::memory_order_release);
+    // Runtime file-logger gate (Settings → System → "Bật debug log").
+    ::NextKey::Logger::SetEnabled(config.debugLogEnabled);
 }
 
 bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
                         bool initialVietnamese, uint8_t startupMode) {
     if (keyboardHook_) return false;  // Already running
 
-#if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
-    OpenHookLog();
+    // Enable the file logger before the first HOOK_LOG so the start banner is
+    // captured when the user already had the toggle on. ApplyConfig() re-asserts
+    // this below for subsequent config reloads.
+    ::NextKey::Logger::SetEnabled(config.debugLogEnabled);
     HOOK_LOG(L"=== HookEngine::Start ===");
-#endif
 
     s_instance = this;
     // Sprint 2 D5: route the IOutputInjector → Internal::TrackedSendInput
@@ -274,9 +247,6 @@ void HookEngine::Stop() {
     layoutSuppressed_ = false;
     cachedIsCompatLayout_ = true;
     NEXTKEY_LOG(L"HookEngine stopped");
-#if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
-    CloseHookLog();
-#endif
 }
 
 void HookEngine::HookThreadProc() {

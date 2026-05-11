@@ -461,7 +461,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
         // If it's an inline action button
         bool isInlineAction = (meta.type == SettingType::Action && 
-            (wcscmp(meta.label, L"...") == 0 || meta.win32Id == IDC_BTN_CHECK_UPDATE));
+            (wcscmp(meta.label, L"...") == 0 || meta.win32Id == IDC_BTN_CHECK_UPDATE || meta.win32Id == IDC_BTN_OPEN_LOG_FOLDER));
         if (isInlineAction) {
             rowCounts[tab][col]--; // stay on the same visual row
             row--; // go back to the row we just incremented past
@@ -472,7 +472,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
         if (meta.type == SettingType::Toggle) {
             bool hasInlineNext = ((i + 1 < kSettingsCount) && kSettings[i+1].type == SettingType::Action && 
-                (wcscmp(kSettings[i+1].label, L"...") == 0 || kSettings[i+1].win32Id == IDC_BTN_CHECK_UPDATE));
+                (wcscmp(kSettings[i+1].label, L"...") == 0 || kSettings[i+1].win32Id == IDC_BTN_CHECK_UPDATE || kSettings[i+1].win32Id == IDC_BTN_OPEN_LOG_FOLDER));
             int nextBtnW = 0;
             if (hasInlineNext) {
                 nextBtnW = (wcscmp(kSettings[i+1].label, L"...") == 0) ? Dpi(26) : Dpi(70);
@@ -912,6 +912,24 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
         case IDC_BTN_MACRO_TABLE:
             ClassicMacroTableDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
             break;
+
+        case IDC_BTN_OPEN_LOG_FOLDER: {
+            std::wstring folder = ::NextKey::Logger::GetCurrentLogFolder();
+            if (folder.empty()) {
+                wchar_t buf[MAX_PATH] = {0};
+                DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+                if (n > 0) {
+                    std::wstring exePath(buf);
+                    size_t slash = exePath.find_last_of(L"\\/");
+                    if (slash != std::wstring::npos) folder = exePath.substr(0, slash);
+                }
+            }
+            if (!folder.empty()) {
+                ShellExecuteW(nullptr, L"open", folder.c_str(),
+                              nullptr, nullptr, SW_SHOWNORMAL);
+            }
+            break;
+        }
 
         case IDC_BTN_CHECK_UPDATE: {
             HWND dlgHwnd = hwnd_;

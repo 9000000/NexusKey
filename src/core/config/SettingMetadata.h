@@ -238,6 +238,14 @@ inline constexpr SettingMeta kSettings[] = {
               "Luôn dùng giao diện sáng", "Always use light theme",
               L"Bỏ qua chế độ tối của Windows, luôn hiển thị giao diện sáng",
               L"Ignore Windows dark mode, always show light theme",     2410, 2, 1),
+    NK_TYPING("debug-log",            debugLogEnabled,
+              "Bật debug log",        "Enable debug log",
+              L"Ghi log chi tiết để gửi kèm khi báo lỗi (NexusKey_*.log cạnh NexusKey.exe)",
+              L"Write detailed log to attach when reporting bugs (NexusKey_*.log next to NexusKey.exe)",
+                                                                         2411, 2, 1),
+    NK_ACTION("btn-open-log-folder",  "Mở log", "Log folder",
+              L"Mở thư mục chứa file log",
+              L"Open log folder",                                        2505, 2, 1),
 };
 
 #undef NK_SETTING

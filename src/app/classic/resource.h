@@ -61,12 +61,14 @@
 #define IDC_COMBO_ICON_STYLE    2408
 #define IDC_COMBO_STARTUP_MODE  2409
 #define IDC_CHECK_FORCE_LIGHT   2410
+#define IDC_CHECK_DEBUG_LOG     2411
 
 // ── Action buttons ──
 #define IDC_BTN_APP_OVERRIDES   2500
 #define IDC_BTN_EXCLUDE_APPS    2502
 #define IDC_BTN_MACRO_TABLE     2503
 #define IDC_BTN_CHECK_UPDATE    2504
+#define IDC_BTN_OPEN_LOG_FOLDER 2505
 
 // ── Static labels ──
 #define IDC_STATIC_METHOD       2601

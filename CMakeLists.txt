@@ -56,6 +56,8 @@ target_include_directories(NextKeyEngine PUBLIC
 # Core Library (platform layer: SharedState, Config, Debug)
 set(NEXTKEY_CORE_SOURCES
     src/core/Debug.h
+    src/core/Logger.h
+    src/core/Logger.cpp
     src/core/CrashLog.h
     src/core/CrashLog.cpp
     src/core/Strings.h
@@ -465,6 +467,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/MainThreadWorkerTests.cpp
     tests/AutoCapDecisionTest.cpp
     tests/CjkSwitchDecisionTest.cpp
+    tests/LoggerTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
 )

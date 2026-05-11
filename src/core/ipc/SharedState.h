@@ -46,6 +46,7 @@ namespace FeatureFlags {
     // Extended flags (byte 2, bits 16-23) — stored in extFeatureFlags
     constexpr uint32_t AUTO_CAPS_MACRO       = 0x00010000;
     constexpr uint32_t ALLOW_ENGLISH_BYPASS  = 0x00020000;
+    constexpr uint32_t DEBUG_LOG_ENABLED     = 0x00040000;  // Settings → System → "Bật debug log"
 }
 
 /// Document context anchor published by TSF (readonly mode) for HookEngine.
@@ -379,6 +380,7 @@ static_assert(offsetof(SharedState, contextAnchor) == 1060,
     if (config.excludeApps)         flags |= FeatureFlags::EXCLUDE_APPS;
     if (config.autoCapsMacro)       flags |= FeatureFlags::AUTO_CAPS_MACRO;
     if (config.allowEnglishBypass)  flags |= FeatureFlags::ALLOW_ENGLISH_BYPASS;
+    if (config.debugLogEnabled)     flags |= FeatureFlags::DEBUG_LOG_ENABLED;
     return flags;
 }
 
@@ -400,6 +402,7 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.excludeApps         = (flags & FeatureFlags::EXCLUDE_APPS) != 0;
     config.autoCapsMacro       = (flags & FeatureFlags::AUTO_CAPS_MACRO) != 0;
     config.allowEnglishBypass  = (flags & FeatureFlags::ALLOW_ENGLISH_BYPASS) != 0;
+    config.debugLogEnabled     = (flags & FeatureFlags::DEBUG_LOG_ENABLED) != 0;
 }
 
 }  // namespace NextKey

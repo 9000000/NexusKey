@@ -5,6 +5,7 @@
 #include "Globals.h"
 #include "TextService.h"
 #include "ComUtils.h"
+#include "core/Logger.h"
 
 namespace NextKey {
 namespace TSF {
@@ -17,12 +18,28 @@ static TextServiceFactory g_classFactory;
 
 BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID /*lpReserved*/) {
     switch (dwReason) {
-        case DLL_PROCESS_ATTACH:
+        case DLL_PROCESS_ATTACH: {
             NextKey::TSF::g_hInstance = hInstance;
             DisableThreadLibraryCalls(hInstance);
+            // Tell the Logger where the DLL lives so the file lands in the
+            // install dir (next to NextKeyApp.exe) rather than the host
+            // process's directory (chrome.exe etc., which is usually not
+            // writable). Logger falls back to %APPDATA%\NexusKey\logs if
+            // install dir is read-only.
+            wchar_t dllPath[MAX_PATH] = {0};
+            DWORD n = GetModuleFileNameW(hInstance, dllPath, MAX_PATH);
+            if (n > 0) {
+                std::wstring path(dllPath);
+                size_t slash = path.find_last_of(L"\\/");
+                if (slash != std::wstring::npos) {
+                    ::NextKey::Logger::SetInstallDir(path.substr(0, slash));
+                }
+            }
             break;
+        }
 
         case DLL_PROCESS_DETACH:
+            ::NextKey::Logger::Shutdown();
             break;
     }
     return TRUE;

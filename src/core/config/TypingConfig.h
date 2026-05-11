@@ -80,6 +80,7 @@ struct TypingConfig {
     bool tempOffMacroByEsc = false;    // Esc temporarily disables macro for next word
     bool autoCapsMacro = false;        // Auto-capitalize expansion to match typed case
     bool allowEnglishBypass = false;   // Cho phép gõ dấu tự do / Bypass English blocking (e.g. yes -> ýe)
+    bool debugLogEnabled = false;      // System → "Bật debug log" — runtime-enable NextKey::Logger
     bool macroTriggerSpace = true;     // Kích hoạt bằng phím Space
     bool macroTriggerEnter = true;     // Kích hoạt bằng phím Enter
     bool macroTriggerTab = true;       // Kích hoạt bằng phím Tab

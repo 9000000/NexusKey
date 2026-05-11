@@ -634,6 +634,9 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"cjk-auto-switch") {
         config_.cjkAutoSwitch = value;
     }
+    else if (id == L"debug-log") {
+        config_.debugLogEnabled = value;
+    }
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
     }
@@ -853,7 +856,24 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         return;
     }
     else if (id == L"btn-open-log-folder") {
-        // TODO: Open log folder in explorer
+        // Resolve to the same folder the Logger writes to. If the user just
+        // enabled the toggle, Logger::GetCurrentLogFolder() returns the
+        // resolved path (probes install dir, falls back to %APPDATA%).
+        std::wstring folder = ::NextKey::Logger::GetCurrentLogFolder();
+        if (folder.empty()) {
+            wchar_t buf[MAX_PATH] = {0};
+            DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+            if (n > 0) {
+                std::wstring exePath(buf);
+                size_t slash = exePath.find_last_of(L"\\/");
+                if (slash != std::wstring::npos) folder = exePath.substr(0, slash);
+            }
+        }
+        if (!folder.empty()) {
+            ShellExecuteW(nullptr, L"open", folder.c_str(),
+                          nullptr, nullptr, SW_SHOWNORMAL);
+        }
+        return;
     }
 }
 
@@ -1025,6 +1045,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"allow-zwjf", config_.allowZwjf);
     setToggleState(L"restore-key", config_.autoRestoreEnabled);
     setToggleState(L"cjk-auto-switch", config_.cjkAutoSwitch);
+    setToggleState(L"debug-log", config_.debugLogEnabled);
     setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
     setDropdownValue(L"temp-off-openkey", static_cast<int>(config_.tempOffMethod));
     setToggleState(L"use-macro", config_.macroEnabled);

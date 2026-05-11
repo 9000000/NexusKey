@@ -1,5 +1,57 @@
 # TODO
 
+## 🟡 Debug log toggle — perf follow-ups when bug reports come in (2026-05-11)
+
+Shipped `Settings → System → "Bật debug log"` runtime gate routing
+`NEXTKEY_LOG/HOOK_LOG/TSF_LOG` (~207 sites) into `NextKey::Logger`. File
+sink: `NexusKey_<process>_<pid>.log` next to NextKeyApp.exe (fallback
+`%APPDATA%\NexusKey\logs\`). PID-tagged so Chrome multi-process renderers
+don't tear lines.
+
+Measured perf characteristics (analytic, no Windows benchmark run yet):
+
+| State | Cost / call site | Per keystroke (~10 sites) | % CPU @ 30 keys/s |
+|---|---|---|---|
+| OFF (default) | inline atomic load + branch, args NOT evaluated, ~3-5 ns | ~30-75 ns | ~0.0002% (imperceptible) |
+| ON, normal typing | atomic + mutex + format + fputws + fflush, ~10-100 μs | ~100-1000 μs | 0.25-1% |
+| ON, burst (60 keys/s) | same | same | up to 3% (still no visible lag) |
+
+Hot path: `LowLevelKeyboardProc` budget ~100ms (Windows timeout 300ms).
+Per-callback log cost when ON ≈ 250-500 μs → 200× safety margin. Even
+worst-case AV-scan-on-write (~5ms/line) stays well under timeout.
+
+### Follow-ups (open only if real user-reported issue)
+
+- **Log rotation** — file grows ~10 MB/hour when ON. User who forgets to
+  toggle off after 8h debug session ends with 80 MB file. Decide rotation
+  threshold (5 MB? 50 MB?) + rename pattern (`.log` → `.log.1`).
+- **Relax per-line `fflush`** — current `fflush` after every line costs ~5-50 μs
+  syscall. If user reports lag while toggle ON, consider switching to
+  default buffered I/O. Trade-off: lose ~10 trailing lines on crash, but
+  cut ~90% of I/O cost. Issue #108-class bugs need the last lines so
+  current default favors reliability.
+- **Verbose-vs-normal split** — `HOOK_LOG` logs per-keystroke KEY trace
+  (5-10 lines/key). If AV + slow disk push the hook near 300ms timeout
+  on enabled state, split into a coarser "errors only" mode and a
+  "verbose key trace" mode behind a second sub-toggle.
+- **Audit dead `NEXTKEY_LOG` sites** — 100 NEXTKEY_LOG sites were
+  `((void)0)` in Release before this change. They now compile to an
+  inline gate but the args expressions still exist in the call. If any
+  has expensive arg computation that was previously dead-code-eliminated,
+  the dead code now stays in the binary (cold but adds icache pressure).
+  Quick `objdump | grep Logger::Log | wc` after a Release build catches
+  it.
+
+### UI / test gaps (not perf)
+
+- `btn-open-log-folder` click runs `SHCreateDirectoryExW` on first click
+  if APPDATA folder doesn't exist → ~50ms UI stutter. Acceptable for
+  click-once; only matters if visible to users.
+- No Win32 integration test for "toggle UI → file actually written".
+  Round-trip is covered at the encode/decode layer
+  (`FeatureFlagsTest.RoundTrip_DebugLogEnabled`). Full path needs Sciter
+  test harness — overkill until something breaks.
+
 ## 🟡 Architecture proposal alignment review — 4-module assessment (2026-05-08)
 
 Anh proposed a 4-module architecture (A: lock-free hook ring buffer, B:

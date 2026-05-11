@@ -548,6 +548,11 @@ void EngineController::ApplySharedState(const SharedState& state) {
     DecodeFeatureFlags(state.GetFeatureFlags(), config_);
     config_.tempOffMethod = static_cast<TempOffMethod>(state.tempOffMethod);
 
+    // Runtime file-logger gate. SettingsDialog persists the bit into the
+    // feature-flag bitmask via SharedState, so flipping the toggle in the
+    // EXE reaches every TSF DLL instance on the next CheckConfigEvent tick.
+    ::NextKey::Logger::SetEnabled(config_.debugLogEnabled);
+
     // Recreate engine with updated config (engine stores a copy of TypingConfig,
     // so we must recreate it whenever any config field changes)
     // Commit any pending composition before recreating

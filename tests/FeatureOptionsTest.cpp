@@ -112,6 +112,30 @@ TEST_F(FeatureFlagsTest, RoundTrip_ConfigToStateToConfig) {
     EXPECT_EQ(original.allowZwjf, decoded.allowZwjf);
 }
 
+TEST_F(FeatureFlagsTest, RoundTrip_DebugLogEnabled) {
+    // Guards FeatureFlags::DEBUG_LOG_ENABLED bit slot — if a future addition
+    // collides on the same bit, the round-trip below breaks.
+    TypingConfig original;
+    original.debugLogEnabled = true;
+
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(original));
+
+    EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::DEBUG_LOG_ENABLED);
+
+    TypingConfig decoded;
+    DecodeFeatureFlags(state.GetFeatureFlags(), decoded);
+    EXPECT_TRUE(decoded.debugLogEnabled);
+
+    // Toggling off clears the bit and the decoded bool.
+    original.debugLogEnabled = false;
+    state.SetFeatureFlags(EncodeFeatureFlags(original));
+    EXPECT_FALSE(state.GetFeatureFlags() & FeatureFlags::DEBUG_LOG_ENABLED);
+    DecodeFeatureFlags(state.GetFeatureFlags(), decoded);
+    EXPECT_FALSE(decoded.debugLogEnabled);
+}
+
 // ============================================================================
 // ConfigManager Round-Trip Tests (Windows only — needs Windows.h)
 // ============================================================================
