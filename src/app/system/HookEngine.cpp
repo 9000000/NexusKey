@@ -500,14 +500,17 @@ void HookEngine::QuickSyncFromSharedState() {
     uint8_t sc = state.spellCheck;
     uint8_t im = state.inputMethod;
     uint8_t ct = state.codeTable;
+    uint8_t tom = state.tempOffMethod;
 
     // No change → no-op (cheap: integer compares on mapped memory)
     if (ff == lastFeatureFlags_ && sc == lastSpellCheck_ &&
-        im == lastInputMethod_ && ct == lastCodeTable_) return;
+        im == lastInputMethod_ && ct == lastCodeTable_ &&
+        tom == lastTempOffMethod_) return;
     lastFeatureFlags_ = ff;
     lastSpellCheck_ = sc;
     lastInputMethod_ = im;
     lastCodeTable_ = ct;
+    lastTempOffMethod_ = tom;
 
     NEXTKEY_LOG(L"HookEngine: SharedState changed (ff=0x%04X, spell=%d, method=%d, ct=%d)", ff, sc, im, ct);
 
@@ -516,6 +519,7 @@ void HookEngine::QuickSyncFromSharedState() {
     cfg.spellCheckEnabled = sc != 0;
     cfg.inputMethod = static_cast<InputMethod>(im);
     cfg.codeTable = static_cast<CodeTable>(ct);
+    cfg.tempOffMethod = static_cast<TempOffMethod>(tom);
 
     bool methodChanged = (currentMethod_.load(std::memory_order_acquire) != cfg.inputMethod);
     bool codeTableChanged = (currentCodeTable_ != cfg.codeTable);
@@ -561,6 +565,7 @@ void HookEngine::ReloadFromToml() {
             config.inputMethod = static_cast<InputMethod>(state.inputMethod);
             config.spellCheckEnabled = state.spellCheck != 0;
             DecodeFeatureFlags(state.GetFeatureFlags(), config);
+            config.tempOffMethod = static_cast<TempOffMethod>(state.tempOffMethod);
             NEXTKEY_LOG(L"HookEngine: read SharedState (epoch=%u, featureFlags=0x%04X)",
                         state.epoch, state.GetFeatureFlags());
         }

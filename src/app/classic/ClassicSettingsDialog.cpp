@@ -494,22 +494,10 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
             HWND lbl = CreateLabel(meta.label, cx, cy + Dpi(4), lblW, Dpi(kControlHeight), 0);
             extraControls_[i] = lbl;
             HWND combo = CreateCombo(cx + lblW + Dpi(4), cy, comboW, Dpi(kComboHeight + 60), meta.win32Id);
-            if (wcscmp(meta.id, L"custom-icon-style") == 0) {
-                ComboBox_AddString(combo, L"Màu mặc định");
-                ComboBox_AddString(combo, L"Nền tối");
-                ComboBox_AddString(combo, L"Nền sáng");
-                ComboBox_AddString(combo, L"Tự chọn");
-                ComboBox_AddString(combo, L"Tự động");
-            }
-            if (wcscmp(meta.id, L"startup-mode") == 0) {
-                ComboBox_AddString(combo, L"Tiếng Việt");
-                ComboBox_AddString(combo, L"Tiếng Anh");
-                ComboBox_AddString(combo, L"Ghi nhớ");
-            }
-            if (wcscmp(meta.id, L"temp-off-openkey") == 0) {
-                ComboBox_AddString(combo, L"Không");
-                ComboBox_AddString(combo, L"Nhấn đúp Alt");
-                ComboBox_AddString(combo, L"Nhấn Ctrl");
+            if (meta.itemsVi) {
+                for (auto** p = meta.itemsVi; *p; ++p) {
+                    ComboBox_AddString(combo, *p);
+                }
             }
             checkControls_[i] = combo;
         }
@@ -715,6 +703,7 @@ void ClassicSettingsDialog::SyncToSharedState() {
             state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
             state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
+            state.tempOffMethod = static_cast<uint8_t>(config_.tempOffMethod);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
             state.SetHotkey(hotkeyConfig_);
             state.configGeneration++;
@@ -1141,39 +1130,20 @@ void ClassicSettingsDialog::RefreshLabels() {
         }
     }
 
-    // Icon style dropdown items
-    HWND iconCombo = GetDlgItem(hwnd_, IDC_COMBO_ICON_STYLE);
-    if (iconCombo) {
-        int sel = ComboBox_GetCurSel(iconCombo);
-        ComboBox_ResetContent(iconCombo);
-        ComboBox_AddString(iconCombo, en ? L"Default color" : L"Màu mặc định");
-        ComboBox_AddString(iconCombo, en ? L"Dark" : L"Nền tối");
-        ComboBox_AddString(iconCombo, en ? L"Light" : L"Nền sáng");
-        ComboBox_AddString(iconCombo, en ? L"Custom" : L"Tự chọn");
-        ComboBox_AddString(iconCombo, en ? L"Auto" : L"Tự động");
-        if (sel >= 0) ComboBox_SetCurSel(iconCombo, sel);
-    }
-
-    // Startup mode dropdown items
-    HWND startupCombo = GetDlgItem(hwnd_, IDC_COMBO_STARTUP_MODE);
-    if (startupCombo) {
-        int sel = ComboBox_GetCurSel(startupCombo);
-        ComboBox_ResetContent(startupCombo);
-        ComboBox_AddString(startupCombo, en ? L"Vietnamese" : L"Tiếng Việt");
-        ComboBox_AddString(startupCombo, en ? L"English" : L"Tiếng Anh");
-        ComboBox_AddString(startupCombo, en ? L"Remember" : L"Ghi nhớ");
-        if (sel >= 0) ComboBox_SetCurSel(startupCombo, sel);
-    }
-
-    // Temp-off method dropdown items
-    HWND tempOffCombo = GetDlgItem(hwnd_, IDC_CHECK_TEMP_OFF_ALT);
-    if (tempOffCombo) {
-        int sel = ComboBox_GetCurSel(tempOffCombo);
-        ComboBox_ResetContent(tempOffCombo);
-        ComboBox_AddString(tempOffCombo, en ? L"No" : L"Không");
-        ComboBox_AddString(tempOffCombo, en ? L"Double Alt" : L"Nhấn đúp Alt");
-        ComboBox_AddString(tempOffCombo, en ? L"Press Ctrl" : L"Nhấn Ctrl");
-        if (sel >= 0) ComboBox_SetCurSel(tempOffCombo, sel);
+    // Refresh dropdown items in the active language. Items live in metadata.
+    for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
+        const auto& meta = kSettings[i];
+        if (meta.type != SettingType::Dropdown || !meta.itemsVi) continue;
+        HWND combo = checkControls_[i];
+        if (!combo) continue;
+        int sel = ComboBox_GetCurSel(combo);
+        ComboBox_ResetContent(combo);
+        const wchar_t* const* items =
+            (en && meta.itemsEn) ? meta.itemsEn : meta.itemsVi;
+        for (auto** p = items; *p; ++p) {
+            ComboBox_AddString(combo, *p);
+        }
+        if (sel >= 0) ComboBox_SetCurSel(combo, sel);
     }
 
     // Report bug link

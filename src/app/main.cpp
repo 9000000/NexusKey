@@ -392,6 +392,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.spellCheck = config.spellCheckEnabled ? 1 : 0;
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
+        state.tempOffMethod = static_cast<uint8_t>(config.tempOffMethod);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
         if (!startVietnamese) {
             state.flags &= ~SharedFlags::VIETNAMESE_MODE;
@@ -668,6 +669,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.spellCheck = config.spellCheckEnabled ? 1 : 0;
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
+        state.tempOffMethod = static_cast<uint8_t>(config.tempOffMethod);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created and initialized (TSF_ACTIVE=1, TSF-only mode)");
@@ -850,6 +852,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
             state.inputMethod = static_cast<uint8_t>(config.inputMethod);
             state.spellCheck = config.spellCheckEnabled ? 1 : 0;
             state.codeTable = static_cast<uint8_t>(config.codeTable);
+            state.tempOffMethod = static_cast<uint8_t>(config.tempOffMethod);
             state.SetFeatureFlags(EncodeFeatureFlags(config));
             state.configGeneration++;  // HookEngine detects on next keystroke
             sm.Write(state);

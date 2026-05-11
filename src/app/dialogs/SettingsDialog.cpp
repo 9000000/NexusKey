@@ -634,7 +634,6 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
     }
-
     else if (id == L"use-macro") {
         config_.macroEnabled = value;
     }
@@ -787,6 +786,7 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
         return;  // System setting, not typing config
     }
     else if (id == L"temp-off-openkey") {
+        if (value < 0 || value > 2) return;
         config_.tempOffMethod = static_cast<TempOffMethod>(value);
     }
 
@@ -1253,6 +1253,7 @@ void SettingsDialog::syncToSharedState() {
             state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
             state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
+            state.tempOffMethod = static_cast<uint8_t>(config_.tempOffMethod);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
             state.SetHotkey(hotkeyConfig_);
             state.configGeneration++;  // HookEngine detects this on next keystroke

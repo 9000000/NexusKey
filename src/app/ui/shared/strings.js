@@ -54,8 +54,8 @@ var STRINGS = {
         "s.app_encoding": "Per-app encoding",
         "s.config": "Configure",
         "s.temp_off_label": "Temp disable input",
-        "s.temp_off_tooltip": "Choose key to temp-disable Vietnamese for current word",
-        "s.temp_off_none": "No",
+        "s.temp_off_tooltip": "Choose key to temp-disable Vietnamese for current word. Note: Ctrl triggers on a single tap — may activate accidentally.",
+        "s.temp_off_none": "Off",
         "s.temp_off_dup_alt": "Double Alt",
         "s.temp_off_ctrl": "Press Ctrl",
 

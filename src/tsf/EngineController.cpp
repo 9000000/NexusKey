@@ -546,6 +546,7 @@ void EngineController::ApplySharedState(const SharedState& state) {
     config_.spellCheckEnabled = state.spellCheck != 0;
     config_.optimizeLevel = optimizeLevel;
     DecodeFeatureFlags(state.GetFeatureFlags(), config_);
+    config_.tempOffMethod = static_cast<TempOffMethod>(state.tempOffMethod);
 
     // Recreate engine with updated config (engine stores a copy of TypingConfig,
     // so we must recreate it whenever any config field changes)

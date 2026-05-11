@@ -223,7 +223,7 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->convertKeyLo = state.convertKeyLo;
     p->convertKeyHi = state.convertKeyHi;
     p->configGeneration = state.configGeneration;
-    p->reserved0 = state.reserved0;
+    p->tempOffMethod = state.tempOffMethod;
     memcpy(p->reserved, state.reserved, sizeof(state.reserved));
 
     MemoryBarrier();

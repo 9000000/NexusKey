@@ -263,29 +263,20 @@ TEST_F(SharedStateTest, FeatureFlags_SmartSwitch_Roundtrip) {
     EXPECT_TRUE(out.smartSwitch);
 }
 
-TEST_F(SharedStateTest, FeatureFlags_TempOffMethod_Roundtrip) {
+TEST_F(SharedStateTest, TempOffMethod_ByteField_Roundtrip) {
+    // tempOffMethod is stored as a dedicated byte slot, not encoded in featureFlags.
     SharedState state{};
     state.InitDefaults();
+    EXPECT_EQ(state.tempOffMethod, 0);  // None default
 
-    // DupAlt
-    TypingConfig cfg{};
-    cfg.tempOffMethod = TempOffMethod::DupAlt;
-    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
-    TypingConfig out{};
-    DecodeFeatureFlags(state.GetFeatureFlags(), out);
-    EXPECT_EQ(out.tempOffMethod, TempOffMethod::DupAlt);
+    state.tempOffMethod = static_cast<uint8_t>(TempOffMethod::DupAlt);
+    EXPECT_EQ(static_cast<TempOffMethod>(state.tempOffMethod), TempOffMethod::DupAlt);
 
-    // Ctrl
-    cfg.tempOffMethod = TempOffMethod::Ctrl;
-    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
-    DecodeFeatureFlags(state.GetFeatureFlags(), out);
-    EXPECT_EQ(out.tempOffMethod, TempOffMethod::Ctrl);
+    state.tempOffMethod = static_cast<uint8_t>(TempOffMethod::Ctrl);
+    EXPECT_EQ(static_cast<TempOffMethod>(state.tempOffMethod), TempOffMethod::Ctrl);
 
-    // None
-    cfg.tempOffMethod = TempOffMethod::None;
-    state.SetFeatureFlags(EncodeFeatureFlags(cfg));
-    DecodeFeatureFlags(state.GetFeatureFlags(), out);
-    EXPECT_EQ(out.tempOffMethod, TempOffMethod::None);
+    state.tempOffMethod = static_cast<uint8_t>(TempOffMethod::None);
+    EXPECT_EQ(static_cast<TempOffMethod>(state.tempOffMethod), TempOffMethod::None);
 }
 
 TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
@@ -294,7 +285,6 @@ TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
     cfg.macroEnabled       = true;
     cfg.macroInEnglish     = true;
     cfg.smartSwitch        = true;
-    cfg.tempOffMethod      = TempOffMethod::Ctrl;  // Use non-zero method
 
     SharedState state{};
     state.InitDefaults();
@@ -306,7 +296,6 @@ TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
     EXPECT_TRUE(out.macroEnabled);
     EXPECT_TRUE(out.macroInEnglish);
     EXPECT_TRUE(out.smartSwitch);
-    EXPECT_EQ(out.tempOffMethod, TempOffMethod::Ctrl);
 }
 
 // Toggle beep OFF while others remain ON — verifies individual bit isolation
