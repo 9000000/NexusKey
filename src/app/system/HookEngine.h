@@ -9,6 +9,7 @@
 #include "core/engine/IInputEngine.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/config/TypingConfig.h"
+#include "core/AutoCapStateTransition.h"
 #include "core/SmartSwitchManager.h"
 #include "HookSelfHealer.h"
 #include <Windows.h>
@@ -153,7 +154,9 @@ private:
     // expansion match, Fallthrough otherwise so the dispatch chain runs next.
     [[nodiscard]] KeyOutcome HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
                                                 bool macroEng, bool tempOffMacroEsc,
-                                                bool cachedShift, bool cachedCapsLock);
+                                                bool cachedShift, bool cachedCapsLock,
+                                                bool cachedCtrl, bool cachedAlt,
+                                                bool cachedWin);
 
     // H1c (extracted from ProcessKeyDown steps 4b-10): action dispatch chain.
     // Late guards (tempEngineOff_ bypass, Ctrl/Alt/Win shortcut skip), then
@@ -319,11 +322,8 @@ private:
     DWORD lastAltReleaseTime_ = 0;     // GetTickCount() of first Alt release
     static constexpr DWORD DOUBLE_ALT_TIMEOUT_MS = 400;
     /// Keystroke-based auto-capitalize state machine (used when no TSF anchor truth).
-    enum class AutoCapState : uint8_t {
-        Idle = 0,            // normal typing
-        AfterPunct,          // just saw . ? !
-        ReadyToCapitalize,   // saw punct + space/Enter → next A-Z is the sentence start
-    };
+    /// Enum + transition rule live in core/AutoCapStateTransition.h so Linux GTest
+    /// can exercise the modifier-gate contract without depending on Win32.
     AutoCapState autoCapState_ = AutoCapState::Idle;
     std::unordered_set<std::wstring> excludedAppSet_;  // excluded apps: force English on focus
     // Sprint 1 D5.2: per-app cached + macro config flags read on hook callback

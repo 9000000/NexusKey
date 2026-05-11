@@ -1,0 +1,126 @@
+# Chaos test corpus -- 11 cases derived from the brainstorming session
+# (Phase 3 in _bmad-output/brainstorming/brainstorming-session-2026-05-03-1201.md).
+#
+# Skipped from auto-corpus (require special handling, will land in D8+):
+#   3.1, 3.2  -- random-key endurance stress (no deterministic expected)
+#   4.1, 4.2  -- manual focus-switch tests (Alt+Tab between apps)
+#
+# Run via:
+#   NextKeyTestRunner.exe --corpus corpus/chaos.toml
+#
+# All `keys` values are raw Telex sequences (post-NexusKey-hook the engine
+# should produce `expected`). Use TOML literal strings ('...') for sequences
+# containing backslash escapes -- our KeyEscapes module resolves them.
+
+# ---------------------------------------------------------------------------
+# Group 1: Ghost Key
+# ---------------------------------------------------------------------------
+
+[[tests]]
+name = "1.1-ghost-hoaf-bs-t"
+target_app = "notepad"
+keys = 'hoaf\bt'
+expected = "hot"
+inter_key_us = 10000
+budget_p99_us = 1500
+
+[[tests]]
+name = "1.2-tone-ghost-toans-bs3-i"
+target_app = "notepad"
+keys = 'toans\b\b\bi'
+expected = "ti"
+inter_key_us = 5000
+budget_p99_us = 1500
+
+[[tests]]
+name = "1.3-escape-bs-aa-b"
+target_app = "notepad"
+keys = 'aa\bb'
+expected = "b"
+inter_key_us = 5000
+budget_p99_us = 1500
+
+# ---------------------------------------------------------------------------
+# Group 2: x2 Space (mutex race / word boundary / EN-VN transition)
+# ---------------------------------------------------------------------------
+
+[[tests]]
+name = "2.1-x2-space-vieejt-nam"
+target_app = "notepad"
+keys = "vieejt nam"
+expected = "việt nam"
+inter_key_us = 1000
+budget_p99_us = 1500
+
+[[tests]]
+name = "2.2-word-boundary-xin-chao-ban"
+target_app = "notepad"
+keys = "xin chaof banj"
+expected = "xin chào bạn"
+inter_key_us = 1000
+budget_p99_us = 1500
+
+[[tests]]
+name = "2.3-en-vn-transition-hello-vieejt"
+target_app = "notepad"
+keys = "hello vieejt"
+expected = "hello việt"
+inter_key_us = 1000
+budget_p99_us = 1500
+
+# ---------------------------------------------------------------------------
+# Group 3: Hook Stress (only 3.3 deterministic; 3.1/3.2 deferred to D8+)
+# ---------------------------------------------------------------------------
+
+[[tests]]
+name = "3.3-engine-stress-truongf"
+target_app = "notepad"
+keys = "truongwf"
+expected = "trường"
+inter_key_us = 500
+budget_p99_us = 1500
+
+# ---------------------------------------------------------------------------
+# Group 5: Edge Cases
+# ---------------------------------------------------------------------------
+
+[[tests]]
+# Brainstorm called for CapsLock+G+CapsOff+iar; we substitute Shift+G to
+# avoid mutating system CapsLock state between tests. Driver emits Shift+G
+# automatically because VkKeyScanW returns the shift bit for 'G'.
+name = "5.1-case-tracking-Giar"
+target_app = "notepad"
+keys = "Giar"
+expected = "Giả"
+inter_key_us = 5000
+budget_p99_us = 1500
+
+[[tests]]
+name = "5.2-vowel-start-uongs"
+target_app = "notepad"
+keys = "uoongs"
+expected = "uống"
+inter_key_us = 5000
+budget_p99_us = 1500
+
+[[tests]]
+# Cross-word backspace replay: type "việt nam", BS x4 to wipe " nam",
+# then 's' should retrigger sắc tone on the still-visible "viet" -> "viết".
+name = "5.3-cross-word-bs-vieejt-nam-bs4-s"
+target_app = "notepad"
+keys = 'vieejt nam\b\b\b\bs'
+expected = "viết"
+inter_key_us = 1000
+budget_p99_us = 1500
+
+# ---------------------------------------------------------------------------
+# Group 6: Real-World (auto-capitalize false trigger)
+# ---------------------------------------------------------------------------
+
+[[tests]]
+name = "6.1-autocap-binh-thuongf"
+target_app = "notepad"
+keys = "binhf thuongwf"
+expected = "bình thường"
+inter_key_us = 5000
+budget_p99_us = 1500

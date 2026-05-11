@@ -1,5 +1,90 @@
 # TODO
 
+> Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
+> (full git history preserved via `git log -p docs/TODO.md`).
+
+## 🟡 `IsWebView2App` perf instrumentation — investigate when reports recur (2026-05-11)
+
+User report (1 occurrence, single user, not reproducible locally): after
+locking the machine for an extended period then unlocking, typing felt
+sluggish; Task Manager showed NexusKey at 100% CPU and several other apps
+spiking. Reporter explicitly noted: *"không chắc lỗi hoàn toàn do
+NexusKey hay không"*.
+
+Code smell identified during triage in `HookEngine::IsWebView2App`
+(`src/app/system/HookEngine.cpp:2282`):
+
+- **Pass 1**: `CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid)`
+  against the foreground process. Cross-process snapshot acquires the
+  target's loader lock briefly and is frequently intercepted by AV
+  (Defender treats cross-process module enumeration like scanner
+  behavior). Cost is bounded by `appProfileCache_` (64 entries,
+  HWND-keyed) — *each new HWND* runs the snapshot once.
+- **Pass 2** (fallback when pass 1 returns `INVALID_HANDLE_VALUE`, common
+  on AppContainer / cross-IL targets like `LockApp.exe`, `LogonUI.exe`):
+  `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)` — system-wide
+  process table snapshot. Heavier in absolute terms; runs once per HWND
+  miss when pass 1 fails.
+- No `WTSRegisterSessionNotification` → `OnTickPoll` (200ms) keeps
+  polling during lock/unlock. Lock cycle transits focus through several
+  system HWNDs (`LockApp.exe`, `LogonUI.exe`, credential UI,
+  `ShellExperienceHost.exe`…) — each new HWND triggers a snapshot pair.
+- `webView2PositiveCache_` is positive-only (line 2275 comment).
+  `appProfileCache_` *does* cache negative results by HWND, but is
+  bounded at 64 and HWND-keyed (not PID-keyed), so cache thrashing on
+  high-HWND-churn moments (lock screen, many notification toasts) can
+  re-trigger snapshots for previously-seen apps.
+
+**Why not fix preemptively:** the 4 candidate fixes (negative cache with
+TTL/generation, system-process blocklist, session-lock pause, drop pass
+2) each add either new state machinery, new lifecycle callbacks, or
+behavior changes that risk regressing Tauri/Dorion WebView2 detection
+(currently working, user-confirmed). Single anecdotal report + Windows
+post-unlock is itself a known multi-app CPU spike window (Defender
+resume scan, Search indexer wake, OneDrive sync, Edge update check) →
+attribution unclear, complexity:perf-gain ratio bad.
+
+**Shipped instead:** `HOOK_LOG` line on every cache-miss path entry,
+recording `pid`, `exe` basename, `pass1` result
+(`module_found`/`module_notfound`/`snap_fail`), `pass2` result
+(`skip`/`proc_found`/`proc_notfound`/`snap_fail`), `result`, and `dur`
+in ms. Cost when log toggle OFF = 0 (runtime-gated atomic load + branch
+short-circuits arg evaluation, per debug log toggle perf table above).
+
+### Trigger condition for opening a real fix
+
+- ≥2 independent user reports of post-unlock CPU spike, OR
+- Field log shows a single `IsWebView2App` call exceeding 100 ms, OR
+- Field log shows pass 2 (`TH32CS_SNAPPROCESS, 0`) running more than
+  once per second during normal use (cache thrash evidence).
+
+If none of the above land within ~2 months, close this entry — smell
+was over-attributed to a noisy single report.
+
+### Candidate fixes (do NOT pre-implement; design only if triggered)
+
+1. Negative cache for `IsWebView2App` keyed on `exeFullPath` with
+   generation-based invalidation (re-check on first keystroke into the
+   app, not focus). Must not break Tauri lazy-load: WebView2 may load
+   only on first embed → cache-miss-on-first-keystroke is the safe
+   invalidation point.
+2. System-process early-exit list before `IsWebView2App`: `LockApp.exe`,
+   `LogonUI.exe`, `CredentialUIBroker.exe`, `SearchHost.exe`,
+   `ShellExperienceHost.exe`, `StartMenuExperienceHost.exe`. Trade-off:
+   maintenance burden as Windows ships new shell hosts.
+3. `WTSRegisterSessionNotification(NOTIFY_FOR_THIS_SESSION)` →
+   `OnTickPoll` early-return while `sessionLocked_` flag set. RDP edge
+   cases (`WTS_REMOTE_CONNECT`/`DISCONNECT`) need test.
+4. Drop pass 2 (`TH32CS_SNAPPROCESS`) or rate-limit to once per PID per
+   N seconds. Trade-off: modern Tauri (host doesn't preload WebView2
+   DLLs, only spawns `msedgewebview2.exe` child) regresses unless
+   replaced with a cheaper signal (e.g. check for `Chrome_WidgetWin_1`
+   descendant which Tauri WebView2 also instantiates).
+
+User report origin: 2026-05-11 morning build feedback (Vietnamese:
+*"bị 1 lần sau khi lock máy 1 thời gian, đăng nhập lại thì gõ bị đơ đơ,
+mở task manager thì CPU lên 100%"*).
+
 ## 🟡 Debug log toggle — perf follow-ups when bug reports come in (2026-05-11)
 
 Shipped `Settings → System → "Bật debug log"` runtime gate routing
@@ -52,7 +137,37 @@ worst-case AV-scan-on-write (~5ms/line) stays well under timeout.
   (`FeatureFlagsTest.RoundTrip_DebugLogEnabled`). Full path needs Sciter
   test harness — overkill until something breaks.
 
-## 🟡 Architecture proposal alignment review — 4-module assessment (2026-05-08)
+---
+
+## 🟡 HeartbeatPublisherTest — strengthen `IdempotentStartWhileRunning` (2026-05-09)
+
+Surfaced during code review of the watchdog opt-in lifecycle fix
+(`docs/plans/2026-05-09-startup-ram-regression-design.md`).
+
+**Gap:** `IdempotentStartWhileRunning` test only verifies `Start()` returns
+`true` on the second call. It does **not** verify that no second thread is
+spawned. Behavior is correct today because of the
+`if (heartbeatEvent_) return true;` guard in `HeartbeatPublisher::Start()`,
+but if a future refactor removes that guard, the test would still pass —
+the regression would only surface as a thread leak (visible in Process
+Explorer threads count) or a hang on `Stop().join()` if the second thread
+is dangling.
+
+**Fix idea:** expose a thread-id getter or atomic launch counter on
+`HeartbeatPublisher`, then assert it equals 1 after a second `Start()`.
+Alternatively, expose a `IsRunning()`-style state and confirm the second
+Start observed `running == true` without re-spawning.
+
+**Effort:** ~30 min. Requires touching `HeartbeatPublisher.h` interface
+(add an internal counter or thread-id accessor for tests only).
+
+**Priority:** Low. Defer until next change to `HeartbeatPublisher` lands —
+tighten the test together with that work to avoid touching the class
+twice.
+
+---
+
+## 🟡 Architecture proposal alignment review — Module B plan (2026-05-08)
 
 Anh proposed a 4-module architecture (A: lock-free hook ring buffer, B:
 HWND→Profile cache, C: 2D FSM transition table, D: typing-burst test
@@ -64,22 +179,8 @@ framework). Codebase mapping + investment decision below.
 |---|---|---|---|
 | A — Hook ring buffer | CLOSED 2026-05-09 | Watchdog (PR #154) shipped; SPSC ring half closed | See `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` |
 | B — Smart Focus / App Profile cache | ~60% | `cachedFocusedHwnd_` single-slot atomic + `ClassifyWindow` function | No HWND→Profile lookup map; re-classifies on every focus event |
-| C — Engine 2D FSM table | ~30% | If/case engine (~327 branches in `PushChar`); FSM codegen tool exists (PR #132 `4a52399`) but rewrite cancelled — codegen output ~6MB exceeds <3MB target | Table-driven FSM not viable for Vietnamese phonology dimensionality. Path G (custom keymap) replaces. |
-| D — Test framework | ~85% | `NextKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
-
-### Module C — closed, FSM table not viable
-
-FSM codegen tool (Python NFA→DFA→Hopcroft) salvaged on Main but rewrite
-cancelled: output ~6MB exceeds <3MB target (let alone <250KB proposal).
-Vietnamese phonology dimensionality (vowel × tone × modifier × position
-× prev-onset) has too many state combinations for table-driven O(1)
-approach. **No further FSM table work.** Path G (custom keymap) takes a
-different angle.
-
-### Module D — deferred (anh skip)
-
-Already 85% aligned; gap is sub-ms burst + randomized fuzzer. Reopen when
-QA driver surfaces.
+| C — Engine 2D FSM table | CLOSED — not viable | If/case engine (~327 branches in `PushChar`); FSM codegen tool exists (PR #132 `4a52399`) but rewrite cancelled — codegen output ~6MB exceeds <3MB target | Table-driven FSM not viable for Vietnamese phonology dimensionality. Path G (custom keymap) replaces. |
+| D — Test framework | ~85% (deferred) | `NextKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
 
 ### Module A vs B — B wins for first invest
 
@@ -118,45 +219,6 @@ Test plan:
 - Chaos run before/after to confirm no regression
 - Manual Alt+Tab between known apps to verify cache hits (count
   ClassifyWindow calls per HOOK_LOG)
-
-### Module A — closed 2026-05-09
-
-Decision memo: `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md`.
-Watchdog half shipped via PR #154; SPSC ring half closed with evidence
-(measured L1 p99 14–17ms × 5 hosts, 280ms `LowLevelHooksTimeout`
-headroom, async model would regress UX baseline by +1–2ms on every
-non-Vietnamese keystroke). Reversal triggers documented in the memo.
-
-Until then, current synchronous Hook→Engine model is acceptable; the
-watchdog + self-healer already cover the "OS unhooks us" path.
-
----
-
-## 🟡 HeartbeatPublisherTest — strengthen `IdempotentStartWhileRunning` (2026-05-09)
-
-Surfaced during code review of the watchdog opt-in lifecycle fix
-(`docs/plans/2026-05-09-startup-ram-regression-design.md`).
-
-**Gap:** `IdempotentStartWhileRunning` test only verifies `Start()` returns
-`true` on the second call. It does **not** verify that no second thread is
-spawned. Behavior is correct today because of the
-`if (heartbeatEvent_) return true;` guard in `HeartbeatPublisher::Start()`,
-but if a future refactor removes that guard, the test would still pass —
-the regression would only surface as a thread leak (visible in Process
-Explorer threads count) or a hang on `Stop().join()` if the second thread
-is dangling.
-
-**Fix idea:** expose a thread-id getter or atomic launch counter on
-`HeartbeatPublisher`, then assert it equals 1 after a second `Start()`.
-Alternatively, expose a `IsRunning()`-style state and confirm the second
-Start observed `running == true` without re-spawning.
-
-**Effort:** ~30 min. Requires touching `HeartbeatPublisher.h` interface
-(add an internal counter or thread-id accessor for tests only).
-
-**Priority:** Low. Defer until next change to `HeartbeatPublisher` lands —
-tighten the test together with that work to avoid touching the class
-twice.
 
 ---
 
@@ -265,14 +327,14 @@ Phase 2 watchdog smoke 1/2/3 PASS (crash respawn, graceful, hung UI). Smoke 4 + 
 
 ---
 
-## 🟡 Vietnamese-rule consolidation — Path 1 migration + English-protection reuse remaining (2026-05-08, updated 2026-05-08)
+## 🟡 Vietnamese-rule consolidation — Path 1 migration + English-protection reuse remaining (2026-05-08)
 
 **Project design philosophy (anh 2026-05-08):** *nhanh - gọn - nhẹ - mượt - plugin,
-**không code phân mảnh***. Honored by the T2.1 sprint below — single rule-data
+**không code phân mảnh***. Honored by the T2.1 sprint — single rule-data
 header + plugin contract now exist; two consumers still hold local copies and
 need migrating.
 
-### ✅ Landed in T2.1 sprint (D1–D4)
+### Landed in T2.1 sprint (D1–D4)
 
 | Commit | What |
 |---|---|
@@ -285,7 +347,7 @@ Result: rule data has one source of truth (`VietnamesePhonologyData.h`); the
 wstring_view hot path goes through the plugin contract; future dialectal
 variants plug in at the factory without forking validator code.
 
-### 🟡 Remaining (~1 day total)
+### Remaining (~1 day total)
 
 1. **Path 1 (`PhonotacticsValidator`) migration** — still consumes
    `VietnamesePhonologyData.h` directly instead of going through
@@ -311,428 +373,27 @@ sites.
 
 ---
 
-## ✅ ChannelTraits cleanup landed (2026-05-05)
+## 🟡 Test harness — `--host-class` matrix (Sprint 2 D6 deferred, 2026-05-05)
 
-Both `isElectronApp_` and `needBaitChar_` atomic flags moved from
-HookEngine onto `IOutputInjector` as virtual trait methods. Source of
-truth now lives with the dispatch channel that picked the trait, not
-duplicated in HookEngine.
-
-Implementation:
-- `IOutputInjector` gained `HasMultiProcessRenderer()` and
-  `NeedsBaitCharPrefix()` virtual methods (default `false`).
-- `Win32SendInputInjector` overrides `NeedsBaitCharPrefix()` to expose
-  its constructor-supplied bait flag.
-- `SplitDispatchInjector` gained a 3rd constructor parameter
-  (`hasMultiProcessRenderer`) so the factory can distinguish Electron
-  (multi-process renderer = true) from Console (= false). Both injectors
-  override both trait methods.
-- `OutputInjectorFactory::Create` propagates `WindowClassification`:
-  Electron branch passes `hasMultiProcessRenderer=true`, Console branch
-  passes `false`, Win32 branch inherits the default.
-- `HookEngine::HandleAlphaKey` (passthrough + reinjectVk gates) now
-  reads via one `injector_.load()` snapshot + 2 virtual calls instead
-  of 2 separate atomic loads. `HookEngine::OnFocusChanged` no longer
-  publishes the 2 deleted flags; the `WindowClassification → factory`
-  path is now the single propagation channel.
-- Audit script `ATOMIC_BOOLS` list trimmed to drop the deleted names.
-- `tests/output/InjectorTraitsTest.cpp` (new, Win32 build) covers each
-  injector's trait response across all flag combinations + the factory
-  propagation contract end-to-end.
-
-Gates: Linux GTest 1409 / 1409 PASS, audit 5 / 5 PASS, build clean.
-Windows chaos run pending — should show no behavioural delta (the
-trait values are derived from the same `WindowClassification` inputs
-that previously fed the deleted atomic stores).
-
----
-
-## ✅ Pre-T3 Minor 2 fix landed (2026-05-05)
-
-`QuickSyncFromSharedState` hot path is now lock-free. The `stateMutex_`
-acquire moved from the top of the function to the slow-path branch only;
-the common case (no SharedState change since last call) early-returns
-after a single `std::atomic<uint32_t>` epoch comparison. Slow path
-(`configGeneration` bumped — user-paced Settings save) still locks +
-runs `ReloadFromToml`; that residual Rule #11.2 cost is bounded to one
-reload per generation bump and never hit during steady-state typing or
-chaos runs.
-
-Implementation:
-- `lastEpoch_` migrated to `std::atomic<uint32_t>` (`HookEngine.h:457`).
-- `QuickSyncFromSharedState` reordered (`HookEngine.cpp:441-470`):
-  lock-free epoch check first → return on match; otherwise acquire
-  `stateMutex_` and double-check epoch under lock before reading
-  `SharedState` and applying changes.
-- Audit script gained Check 5 (`tools/audit/check_hook_thread_no_mutex.sh`)
-  enforcing the early-return-before-lock invariant; would have caught
-  the pre-fix shape.
-
-Gates: Linux GTest 1405 / 1405 PASS, audit 5 / 5 PASS. Chaos verification
-on Windows pending (next session — needs target apps + injector harness).
-
----
-
-## ✅ Post-T3 cleanup PR — first batch landed (2026-05-05)
-
-Mechanical / low-risk items addressed in the post-T3 cleanup branch:
-
-- M1 stale comments at HookEngine.cpp:1503 + :2867 — refreshed to reference `IsSyncReplaceChannel()` / `SplitDispatchInjector` instead of the deleted `useEditMsgPath_` / `isElectronApp_` / `isConsoleApp_` flags.
-- L1 header include order in `Win32SendInputInjector.cpp`, `SplitDispatchInjector.cpp`, `RichEditEmReplaceSelInjector.cpp` — STL group now precedes project-internal `Internal.h` per Rule 1.2.
-- M4 memory ordering doc — `OnSynthDispatched` now carries an inline rationale for `memory_order_relaxed` (same-thread invariant: every increment + decrement runs on the LL hook thread).
-- Pre-T3 Critical (D4 SPIKE markers) — three commented `lock_guard<recursive_mutex>` lines updated to "REGRESSION TRAP — DO NOT UNCOMMENT" with cross-references to the audit script. Audit Check 1 comment block updated to explain the trap rather than the original "Phase B in-progress" wording.
-- Pre-T3 Minor 3 (misleading comment) — `HookEngine.cpp:802` "pure memory read, no syscall" split into fast-path (atomic) + slow-path (TOML reload + brief stateMutex_) wording, with a forward reference to the open Pre-T3 Minor 2 audit task.
-
-`tools/audit/check_hook_thread_no_mutex.sh` PASS — all 4 checks green after the changes. Linux GTest 1405 / 1405 PASS.
-
----
-
-## 🟡 Items deferred from this cleanup PR (need their own session)
-
-These need investigation, design work, or 3-collaborator decisions and were intentionally NOT addressed in the mechanical batch:
-
-### ~~Pre-T3 Minor 1 — `LowLevelMouseProc` race on `cachedFocusedHwnd_`~~ — LANDED
-Resolved (Sprint 3 cleanup H3, commit `58d8f88`). `cachedFocusedHwnd_`
-migrated to `std::atomic<HWND>`; mouse path uses `.store(nullptr,
-memory_order_relaxed)` and key thread uses `.load(memory_order_relaxed)`
-per CODING_RULES 11.3 cache-invalidation pattern. The companion
-`cachedFocusedClass_` wstring tuple race is documented as benign in
-`HookEngine.h:474-479` — at worst a 1-keystroke filter miss that the
-next focus change recovers. No further action.
-
-### ~~Pre-T3 Minor 2 — `QuickSyncFromSharedState` acquires `stateMutex_` on hook hot path (Rule #11.3 violation)~~ — LANDED
-Resolved via lock-free hot-path / locked slow-path split (double-checked
-locking with `std::atomic<uint32_t> lastEpoch_`). See "✅ Pre-T3 Minor 2
-fix landed" entry at top of file.
-
-### ~~M2 — Constants naming convention (`kFoo` vs `UPPER_SNAKE`)~~ — RESOLVED
-Resolved by formalizing both conventions in Rule 9.1: bitmask / namespace
-flag constants stay `UPPER_SNAKE`, file/class-scope `constexpr` literals
-use `kFoo`. Codebase grep at decision time: 50 `kFoo`-style + 74
-`UPPER_SNAKE`-style — the latter dominated by Win32-mirror constants and
-`FeatureFlags::*` / `SharedFlags::*` bitmasks, which already match the
-new rule. No rename pass required.
-
-### ~~M3 — Dual-route `TrackedSendInput` (HookEngine member + `Internal::` free function)~~ — LANDED
-Resolved post-v3 cleanup. `HookEngine::TrackedSendInput` deleted; the
-6 in-tree callers (SendBackspaceEvents, SendCharEvents, 3× clipboard
-paste, reinjectVk) now go through `Output::Internal::TrackedSendInput`
-directly. Synth-counter wiring stays via the
-`g_synthCounterCallback` → `OnSynthDispatched` bridge.
-
-### ~~ChannelTraits + `isElectronApp_` / `needBaitChar_` deletion~~ — LANDED
-Resolved via two virtual trait methods (`HasMultiProcessRenderer()` /
-`NeedsBaitCharPrefix()`) on `IOutputInjector`, plus a 3rd
-`SplitDispatchInjector` constructor param so Electron and Console can
-diverge on the multi-process trait. See "✅ ChannelTraits cleanup
-landed" entry at top of file.
-
-### ~~Typing bug — `cafcs → các` (spell-check tone-replacement)~~ — RESOLVED
-Verified post-T5 fix on Windows (commit `211f2e8`). Tone replacement on
-already-toned syllable now works. The longer entry below is preserved
-for the post-mortem trail.
-
-### `--host-class` matrix harness (Sprint 2 D6 deferred)
 Sprint 2 plan §D6 Tasks 32-33 — `NextKeyTestRunner` flag for forced host-class override. Marginal value given existing 132-case natural coverage; reopen as one focused task if QA later needs forced-cell testing.
 
 ---
 
-## ✅ ~~synthEventsPending_ counter broken on injector hot path~~ — FIXED in Sprint 2 D5 (`2f1b400`)
+## 🟡 `VkToMacroChar` syscalls per commit trigger (2026-04-22)
 
-Resolved by `Internal::g_synthCounterCallback` + `HookEngine::OnSynthDispatched` bridge. Win32 / Split paths now correctly bump the counter; RichEdit (sent message, no hook echo) correctly does not. Test contract captured in `Win32SendInputInjectorTest.ReplaceNotifiesSynthCounterByEventCount` and the partial-send compensating-delta tests. Original entry preserved below for the post-mortem trail.
-
----
-
-## 🔴 ~~synthEventsPending_ counter broken on injector hot path~~ (2026-05-05, found in D4 audit) — RESOLVED in D5
-
-**Severity:** medium-high. Synth-guard mechanism is silently no-op for the most common dispatch path.
-
-**Root cause:** D2 introduced `Internal::TrackedSendInput` (`src/app/output/Internal.cpp:14-17`) which doesn't increment `synthEventsPending_`. The pre-D2 `HookEngine::TrackedSendInput` member (`HookEngine.cpp:1748-1755`) WAS the integration point — it bumped the counter. D2/D3 routed all common-path dispatch (Win32 + Split injectors) through `Internal::TrackedSendInput`, leaving `synthEventsPending_` permanently at 0 on the hot path.
-
-**Symptoms (not caught by chaos):**
-- Synth-guard at `HookEngine.cpp:970` (gates physical key when synth recent + counter>0): never fires → physical keys can race with our injected chars/BS in the OS queue.
-- Re-inject gates at `:1074, :1150, :1262, :1304, :1315`: always behave as "no pending" → physical delivered immediately even when our synthetics still in flight.
-- Passthrough gate at `:1497` checks `synthEventsPending_ == 0`: always true → passthrough always allowed → mixing physical with synthetic.
-- Watchdog at `:841` doesn't trip (counter never inflates).
-
-**Why chaos didn't catch:** `NextKeyTestRunner` serializes — `Ctrl+A+C` verify between cases. No human-typing race scenario. Real Chrome + Lexical editor / Discord under fast typing very likely affected (the original `:1467` comment "ghost characters in Chrome+Lexical editor" is exactly the symptom that returns).
-
-**Fix complexity:** non-trivial. The injector lives in `src/app/output/` and shouldn't depend on `HookEngine`. Options:
-1. Pass `synthEventsPending_` ref/callback into injector (interface bloat, but minimal).
-2. Have `Internal::TrackedSendInput` accept an optional `int*` counter parameter and have HookEngine wire it via a free-standing pointer.
-3. Add `size_t LastDispatchEventCount() const` to `IOutputInjector`, HookEngine increments after each `Replace` returns.
-4. Have `IOutputInjector::Replace` return event count or `(events_sent, events_attempted)` instead of bool.
-5. RichEdit (sent message) doesn't echo back through hook → don't increment for it. Win32/Split do.
-
-Option 4 is cleanest semantically; option 2 is least invasive. Pick during D5 alongside SettleBudget integration (both touch the same dispatch code).
-
-**Test plan when fixing:**
-- Add a HookEngine integration test that mocks `Internal::g_sendInput` to capture event count, calls `inj->Replace(2, L"vi")`, then verifies `synthEventsPending_` was bumped exactly 8 (= 4 BS+chars × 2 down/up) and decremented back to 0 after we synthetically feed the same NK-marked events through the LL hook.
-- Reproduce Chrome+Lexical ghost-char manually before fix; verify gone after.
-
-**Out of scope for D4:** fix is bigger than D4's ½-day budget. Captured here so D5 can address.
+`src/app/system/HookEngine.cpp:2851-2888`. Calls `GetAsyncKeyState ×3`,
+`GetKeyState`, `MapVirtualKeyW ×2`, `GetForegroundWindow`,
+`GetWindowThreadProcessId`, `GetKeyboardLayout`, `ToUnicodeEx` each time.
+Only runs on commit triggers (~10/sec human typing), not on the LL hook
+hot path — per CODING_RULES Rule 11.3 the syscalls are on the cold path
+and acceptable. Reopen only if profile data shows the foreground-HKL
+lookup as hot; caching the HKL on focus change would save ~3 syscalls
+per commit. No premature optimization without driver.
 
 ---
 
-## ✅ ~~Typing bug — spell-check blocks tone replacement on already-toned syllable~~ (2026-05-05) — RESOLVED in T5 (`211f2e8`), verified on Windows 2026-05-08
+## 🟡 Sub-dialog Instant Apply — tech-debt items (2026-04-22)
 
-**Repro:** Type telex sequence `c a f c s` (each char individually).
-
-| Step | Keys so far | Expected | Actual |
-|------|-------------|----------|--------|
-| 1 | `c`     | `c`   | `c`    |
-| 2 | `c a`   | `ca`  | `ca`   |
-| 3 | `c a f` | `cà`  | `cà`   |
-| 4 | `c a f c` | `càc` | `càc` |
-| 5 | `c a f c s` | `các` (tone replaces huyền → sắc) | `càcs` (s emits literal, tone not applied) |
-
-**Symptom:** when a syllable already carries a tone, the second tone modifier is rejected and the modifier key emits as a plain letter instead of replacing the existing tone. User-facing it looks like spell-check (`Validate*` path) blocking the legal tone-correction.
-
-**Hypothesis to check first** — likely culprits, in order of suspicion:
-1. `SpellChecker::Validate` returning false for the candidate `các` because the engine validates after the first transform but not for the post-`s` retransform — needs to allow tone replacement even if intermediate state is also a valid syllable.
-2. `TelexEngine::PushChar` short-circuit: an already-applied tone may flag the syllable as "complete" and skip the second tone application.
-3. English-protection / abbreviation guard mistakenly catching `càc` as foreign and refusing further transforms.
-
-**Verification steps before fix:**
-- [ ] Add test case to `tests/TelexEngineTest.cpp` (or wherever tone-replacement coverage lives): `cafcs` → `các`. Per [test-first memory](../../home/phatmt/.claude-m/projects/-home-phatmt-code-NexusKey/memory/feedback_never_hand_encode_telex.md), use `Telex.h::StrToTelex` to encode the sequence — do NOT hand-write `c a f c s` as a string. Expect FAIL.
-- [ ] Use `nexuskey-typing-bugs` skill before reading code (per CLAUDE.md skill rules).
-- [ ] Trace the `PushChar` pipeline + `Validate` call per skill checklist.
-- [ ] Check whether `cosj` (other tone-replacement seqs in test corpus) shares the same path — if those pass but `cafcs` fails, the difference is a "modifier inserted between two tones" case.
-
-**Out of scope for this entry:** any actual fix. This TODO captures the bug + repro for the next session.
-
----
-
-## Review (2026-05-05) — Pre-T3 Code Review Followups (partial — Critical + Minor 3 LANDED post-T3 cleanup PR)
-
-Code review on Main `003a059` (post governance + T3 design merge, before T3
-implementation D0 commit). Critical (D4 SPIKE marker clarify) + Minor 3
-(misleading comment) landed in the post-T3 cleanup PR. Minor 1 (mouse race)
-and Minor 2 (`QuickSyncFromSharedState` Rule #11.3 violation) deferred —
-both need investigation before fix.
-
-### ✅ ~~🔴 Critical — 3 commented `// std::lock_guard<std::recursive_mutex>` lines in hook callbacks~~ — LANDED
-
-**Reviewer claim:** "Type `recursive_mutex` no longer exists since D11 changed
-`stateMutex_` to `std::mutex` — these dangling references should be deleted."
-
-**Counter-context (the reviewer didn't see this):**
-`tools/audit/check_hook_thread_no_mutex.sh` Check 1 explicitly **requires**
-`≥3` commented `lock_guard<recursive_mutex>` lines in HookEngine.cpp as
-**regression markers** (D4 SPIKE artifact, lines 50-63 of the script).
-Because the type is gone, anyone who uncomments these lines triggers a
-**compile error** — that is the intentional regression trap.
-
-**Recommended fix (not "delete entirely"):**
-- KEEP the 3 commented lines.
-- Update each comment to clarify intent, e.g.
-  `// REGRESSION TRAP: do NOT uncomment. The recursive_mutex type was
-  removed in Sprint 1 D11; uncomment triggers compile error which is
-  the intended marker. Audit Check 1 verifies these stay commented.`
-- Update audit script Check 1 comment block to point back at the trap
-  rationale so future readers don't try to "clean up" again.
-
-### ~~🟡 Minor 1 — `LowLevelMouseProc` writes `cachedFocusedHwnd_` and calls `ResetComposition` without lock~~ — LANDED
-
-Resolved (Sprint 3 cleanup H3, commit `58d8f88`). `cachedFocusedHwnd_`
-migrated to `std::atomic<HWND>`. Mouse path uses `.store(nullptr,
-memory_order_relaxed)` to invalidate the cache; key thread uses
-`.load(memory_order_relaxed)` per CODING_RULES 11.3 cache-invalidation
-pattern. Companion `cachedFocusedClass_` wstring tuple race is
-documented as benign in `HookEngine.h:474-479` — at worst a
-1-keystroke filter miss that the next focus change recovers.
-
-### ✅ ~~🟡 Minor 2 — `ProcessKeyDown` calls `QuickSyncFromSharedState()` which acquires `stateMutex_` on hook thread (Rule #11.2/11.3 violation)~~ — LANDED
-
-Resolved 2026-05-05. The original concern — unconditional `stateMutex_`
-acquire on every keystroke — fixed by reordering the function so the
-epoch check runs lock-free first (`lastEpoch_` migrated to
-`std::atomic<uint32_t>`), and the lock is taken only on the rare slow
-path when `configGeneration` actually bumped. Steady-state typing and
-chaos runs no longer touch the mutex at all.
-
-Residual: the slow-path branch still acquires `stateMutex_` and may run
-`ReloadFromToml` on the hook thread (~10–50 ms once per Settings save).
-This is user-paced and never seen by chaos / sustained typing, so it's
-not the "Mượt" jitter source. If profiling later shows the slow path
-matters, the next step is routing the bump-detect signal to
-`MainThreadWorker` (Sprint 1 D6 RCU pattern) and letting the worker do
-the reload.
-
-### ✅ ~~🟡 Minor 3 — Misleading comment at `HookEngine.cpp` line 779 ("pure memory read, no syscall")~~ — LANDED
-
-The slow path of the sync triggered around that comment includes TOML
-reload, so the "no syscall" claim is wrong on the slow path.
-
-**Action:** Trivial — split the comment into "fast path (atomic read)" vs
-"slow path (TOML reload, off-hot-path)" or remove the assertion entirely.
-Can ride along with whichever T3 D-day commit touches that file's vicinity,
-or as a one-line follow-up commit.
-
-### 🟢 Positives noted (no action)
-
-Reviewer flagged: excellent atomic migration, textbook RCU pattern,
-clean `MainThreadWorker` design, full exception safety, high-quality WHY
-comments, very good test coverage.
-
-### Order of operations
-
-1. T3 D0 → D6 ships first (single PR, tight scope).
-2. After T3 merges, open a single small PR addressing all 4 findings in
-   one batch. Each fix gets its own commit on that PR for bisect clarity:
-   - `fix: clarify D4 SPIKE regression trap markers in HookEngine`
-   - `fix: investigate + fix LowLevelMouseProc race on cachedFocusedHwnd_`
-   - `fix: remove stateMutex_ lock from ProcessKeyDown hot path` (or route via worker)
-   - `fix: correct misleading "no syscall" comment in HookEngine.cpp`
-3. Audit script (`check_hook_thread_no_mutex.sh`) Check 1 + Check 2 are
-   the regression net during the cleanup PR.
-
----
-
-## ✅ ~~Outlook "Anh em" Fix — Verify Still Needed~~ (2026-04-23) — RESOLVED via PR #156 revert (2026-05-08)
-
-Verification ran 2026-05-08: typing "Anh em" in Outlook with IME off still
-reproduced the symptom → confirmed Outlook AutoCorrect, not the IME path.
-PR #156 reverted the `isOutlookApp_` passthrough gate (kept `needBaitChar_`
-for the Excel-like BS U+202F quirk, which is orthogonal). Original
-verification plan preserved below for the post-mortem trail.
-
----
-
-## Outlook "Anh em" Fix — original verification plan (2026-04-23)
-
-Issue #97 originally reported "Anh em" → "An hem" in Outlook 2016. Fix landed
-in commits `8a060bb` (try fix anh em) + `e1dab42` (finalize) — adds
-`isOutlookApp_` flag that disables passthrough for Outlook and forces the
-SendInput VK_PACKET path (`src/app/system/HookEngine.cpp:1188`, detection at
-`:2165-2167`).
-
-Reporter `zenfas` then commented on v2.1.23 (2026-04-23):
-> Tắt bộ gõ vẫn lỗi, lỗi này nằm ở Outlook
-
-i.e. the bug reproduces **with the IME turned off** — consistent with Outlook
-AutoCorrect rewriting "Anh em" → "An hem" on its own (Unikey users report the
-same symptom). Issue now CLOSED.
-
-### Two overlapping bugs, same symptom — disambiguate before reverting
-
-1. **Outlook AutoCorrect** (what zenfas likely saw after retesting): Outlook
-   rewrites the text itself; reproduces with IME off; nothing we can fix.
-2. **Outlook RichEdit passthrough quirk** (what the fix actually targets):
-   physical Shift+letter followed by more chars drops the trailing char of
-   the previous word when passthrough is used. This is what was originally
-   reproduced when the fix was written.
-
-### Verification steps before deciding to revert
-
-- [ ] In Outlook: File → Options → Mail → Spelling & AutoCorrect → disable
-  "Replace text as you type" + "Capitalize first letter of sentences".
-- [ ] Temp build with `isOutlookApp_ = false` (comment out the assignment at
-  `src/app/system/HookEngine.cpp:2166`). Leave `needBaitChar_` alone — that's
-  the Excel-like BS path, orthogonal to passthrough.
-- [ ] Type "Anh em" in a new Outlook mail with IME on:
-    - Still "An hem" → passthrough quirk real → **keep fix**.
-    - Correct "Anh em" → only AutoCorrect was at fault → **safe to revert**
-      the `isOutlookApp_` passthrough gate (reduces SendInput overhead on
-      every Outlook keystroke).
-
-Revert scope if step 3 comes back clean: the `isOutlookApp_` field
-(`HookEngine.h:223`), the passthrough gate line (`HookEngine.cpp:1188`), and
-the assignment/reset (`:2143`, `:2166`). Keep `needBaitChar_` for Outlook and
-the `TryEditMessagePaste` redraw hardening from `e1dab42` — both are
-independent wins.
-
----
-
-## Macro Case-Matching + Multi-word Macros — Follow-ups (2026-04-22)
-
-Landed: issue #98 fix (case-insensitive match for all-lowercase keys, strict for
-keys with any uppercase), `VkToMacroChar` Shift-aware via `ToUnicodeEx`, and
-multi-word macro keys via phrase-prefix buffer preservation. Rules doc:
-`docs/macro-case-rules.md`. Design: `docs/plans/2026-04-22-multiword-macro-design.md`.
-
-### Tech debt surfaced
-
-- [x] ~~**Extract `ApplyAutoCapsMacro` to pure function**~~ — LANDED via
-  `core/MacroCase.{h,cpp}::Plan()` with a `CaseMapper` DI seam (production wraps
-  `CharUpperBuffW`/`CharLowerBuffW`, tests use ASCII mappers). Auto-cap transform
-  (expansionAllLower / allUpper / firstUpper) lives in `Plan()`. Coverage:
-  `tests/MacroCaseTest.cpp` (459 lines).
-
-- [x] ~~**Zero unit tests on `TryExpandMacro` match logic**~~ — LANDED.
-  `Macro::Plan()` in `core/MacroCase.cpp` now owns the priority-ordered match
-  (P1 raw exact → P2 lowered → P3/P4 composition). `TryExpandMacro` in
-  HookEngine becomes a thin caller. `tests/MacroCaseTest.cpp` covers the
-  matching contract on Linux.
-
-- [x] **~~Composition-path (P3/P4) auto-caps asymmetry~~** — RESOLVED via existing docs.
-  Already documented as a known limit in `docs/macro-case-rules.md` Rule 3
-  ("Composition-based matches", lines 65-67) with the deliberate-design
-  rationale: "the 'typed' text here is engine output, not raw keystrokes,
-  so case intent is ambiguous. Rare path; rarely relevant." Decision:
-  document-only — no code mirroring. Per design philosophy "không code
-  phân mảnh," not adding a parallel auto-caps path on composition matches
-  when the existing behavior matches design intent.
-
-- [x] ~~**`\n` escape handling in auto-caps loop is incomplete**~~ — AUDITED 2026-05-08.
-  `ConfigManager::LoadMacros` passes values verbatim from TOML — no escape
-  decoding at load. Only `\n` is treated as an escape downstream
-  (`MacroCase.cpp::ExpandEscapesForClipboard` and `BuildSegments`). `\t`,
-  `\\`, etc. are NEVER expanded — they pass through as literal characters.
-  So the auto-caps loop's `\n` skip is correct (preserves the only special
-  escape), and `\t` "corruption to `\T`" is a non-issue because `\t` was
-  never a tab to begin with. No code action needed; this is a feature gap
-  (escape support beyond `\n` was never wired), not a bug.
-
-- [ ] **`VkToMacroChar` syscalls per commit trigger** — DEFERRED, no driver. `src/app/system/HookEngine.cpp:2851-2888`
-  Calls `GetAsyncKeyState ×3`, `GetKeyState`, `MapVirtualKeyW ×2`,
-  `GetForegroundWindow`, `GetWindowThreadProcessId`, `GetKeyboardLayout`,
-  `ToUnicodeEx` each time. Only runs on commit triggers (~10/sec human typing),
-  not on the LL hook hot path — per CODING_RULES Rule 11.3 the syscalls are
-  on the cold path and acceptable. Reopen only if profile data shows the
-  foreground-HKL lookup as hot; caching the HKL on focus change would save
-  ~3 syscalls per commit. No premature optimization without driver.
-
-- [x] **~~Release-note the case-matching behavior change~~** — RESOLVED via existing docs.
-  Migration substance already lives in `docs/macro-case-rules.md` "Migration
-  note" section (lines 69-76) with the lowercase-workaround scenario and
-  upgrade guidance. The next major release notes (v3.0.0 TBD) will link
-  there. No retroactive edit to v2.1.24 `RELEASE_NOTES.md` since the
-  case-matching fix shipped earlier in the 2.1.x series; per-version notes
-  are not retroactively rewritten.
-
----
-
-## ✅ Detach Fork — Submitted (2026-04-05)
-- [x] Detach fork: repo `phatMT97/NexusKey` is forked from `tuyenvm/OpenKey`. Submitted GitHub Support ticket (2026-04-05).
-
----
-
-## Sub-dialog Instant Apply — Fixed (2026-04-22)
-
-User feedback (v2.1.21): adding an app to TSF list required closing Settings before
-the new entry took effect; target app stayed in Hook mode until its next focus gain.
-
-### Root cause
-`SignalConfigChange()` only bumps `configGeneration` in SharedState; main EXE's
-`HookEngine::QuickSyncFromSharedState()` is called from `ProcessKeyDown` /
-`OnFocusChanged` only — no periodic poll (the 100 ms `ConfigPollTimerProc` was
-removed in commit `fcfd9c4` when the Named-Event → generation migration landed).
-While Settings owns foreground, the target app can't fire `OnFocusChanged` → reload
-is deferred until Settings closes.
-
-### Fix — landed
-Added `WM_NEXUSKEY_HOOK_RELOAD` cross-process ping from `SignalConfigChange()` to
-the main EXE tray window. Tray forwards to a `SetHookReloadCallback` handler wired
-to a new public `HookEngine::SyncConfigFromSharedState()` (thin wrapper around the
-private `QuickSyncFromSharedState` so we don't touch the auto-reset Named Event,
-which is reserved for the TSF DLL — consuming it in the main EXE would steal the
-signal from `EngineController::CheckConfigEvent`).
-
-Applies to every sub-dialog that calls `SignalConfigChange`: TsfApps, ExcludedApps,
-AppOverrides, MacroTable, SpellExclusions, ConvertTool.
-
-### Tech-debt items surfaced
 - [ ] **`FindWindowW(L"NexusKeyTrayClass") + PostMessageW` pattern duplicated**
   Now in `AppHelpers.h::SignalConfigChange`, `SettingsDialog.cpp:548,698,1286`,
   `ClassicSettingsDialog.cpp:813,991,998,1033`. Candidate for a
@@ -748,10 +409,10 @@ AppOverrides, MacroTable, SpellExclusions, ConvertTool.
 
 ---
 
-## Auto-caps + TSF Apps Feedback — Follow-ups (2026-04-21)
+## 🟡 Auto-caps + TSF Apps Feedback — open follow-ups (2026-04-21)
 
 User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
-`7548dea`, `e53176b`, `a3f00c6`, `f89ea4d`. Remaining items below.
+`7548dea`, `e53176b`, `a3f00c6`, `f89ea4d`. Remaining below.
 
 ### Unfinished from user feedback
 
@@ -814,8 +475,6 @@ User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
   TSF revive only seeds the trailing word. No regression expected, but no
   explicit test. Add scenarios: `xinchao` + backspace-into-word + retype,
   `bưởichuối` edit sequences, commit-trigger behavior on punctuation glue.
-  Location: add to `tests/` once revive paths are testable from Linux (see
-  "Extract ShouldAutoCap to pure function" below).
 
 ### Tech debt surfaced during code review
 
@@ -840,24 +499,11 @@ User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
   const wchar_t* IMPORT = L"import"; ... }` in a shared header so typos become
   compile errors. Pairs with the helper extraction above.
 
-- [x] ~~**Extract `ShouldAutoCap` logic to pure function**~~ — LANDED 2026-05-08.
-  `core/AutoCapDecision.h::ComputeShouldAutoCap(buf, len)` extracted from
-  `InspectPrecedingTextEditSession::DoEditSession`. 8 new tests in
-  `tests/AutoCapDecisionTest.cpp` cover empty/whitespace/newline/sentence
-  punct + space/.com domain/mid-word/non-sentence punct/newline-wins/Vietnamese.
-  Linux GTest 1555 → 1563 PASS.
-
 ---
 
-## Hotkey Refactor — Deferred (2026-04-20)
+## 🟡 Hotkey Refactor — deferred items (2026-04-20)
 
-Reviewed deferred items from the HotkeyManager multi-slot refactor (commits pending). All non-blocking; fixed items already landed in the refactor.
-
-- [x] **Extract `WireHotkeys` helper** — `src/app/system/HotkeyWiring.{h,cpp}`
-  Extracted ~25 duplicate lines from main.cpp + main_lite.cpp. Lambda factory approach: captures refs to globals for config reload callback.
-
-- [x] **`HotkeyConfig::ModifiersMatch(ctrl, shift, alt, win)` helper** — `src/core/config/TypingConfig.h`
-  Added method, used by `matchCombo` and `matchModifierOnlyRelease` lambdas in HotkeyManager.cpp.
+All non-blocking; fixed items already landed in the refactor.
 
 - [ ] **`ReloadFromToml` parses 7 TOMLs per config bump** — `src/app/system/HookEngine.cpp:368-472`
   Call graph on `configGeneration` bump:
@@ -883,7 +529,7 @@ Reviewed deferred items from the HotkeyManager multi-slot refactor (commits pend
 
 ---
 
-## TSF Readonly Context — Future Phases (2026-04-19)
+## 🟡 TSF Readonly Context — Phase 2 / 3 / shared infra (2026-04-19)
 
 Phase 1 shipped: auto-cap via `HookContextAnchor` (commits `89d1add`..`b0bbb09`).
 Design doc: `docs/plans/2026-04-19-tsf-readonly-context-phase1-design.md`.
@@ -952,193 +598,6 @@ does not read the syllable field.
 
 ---
 
-## Review (2026-04-19) — TSF revive + auto-cap
+## 🟡 Earlier Findings — remaining (2026-04-11)
 
-Review after commits `7146077`..`feca899` (revive composition, auto-cap, punct
-commit-with-char, ref-count fix).
-
-### PERF
-
-- [x] **Combine read sessions for revive + auto-cap** — `src/tsf/CompositionEditSession.h`, `src/tsf/EngineController.cpp`
-  Fixed: `InspectPrecedingTextEditSession` reads text once, extracts word + auto-cap decision.
-  Auto-cap path reduced from 3 → 2 sessions. Design: `docs/plans/2026-04-20-combine-read-sessions-design.md`.
-
-### STYLE
-
-- [x] `src/tsf/CompositionEditSession.h:117` — `WCHAR buf[MAX_CHARS]` — stale (64 chars = 128 bytes is fine)
-- [x] `src/tsf/EngineController.h:116-124` — docstring repetition — stale (no duplicate, only inline comments)
-
-### Punted on TSF idiomatic rewrite
-
-Separate doc-state cache via `ITfTextEditSink::OnEndEdit` (avoid per-keystroke
-sync edit sessions) considered and skipped: current sync-read pattern IS
-TSF-supported. Not a "trick". Reconsider if per-keystroke latency becomes a
-real complaint on slower hosts.
-
----
-
-## Deep Review (2026-04-13)
-
-Full-source review covering engine, config/IPC, TSF, HookEngine, dialogs, Classic UI, and CMake.
-
-### BUG — Must fix
-
-- [x] **HookEngine fast-path missing `dwExtraInfo`** — `HookEngine.cpp:2107-2141`
-  Stack-allocated `INPUT` buffers in `ReplaceComposition` don't set `dwExtraInfo = NEXUSKEY_EXTRA_INFO`. Hook callback at line 509 checks this field to recognize synthetic events. Without it, `synthEventsPending_` increments but never decrements → leaks upward → 500ms watchdog fires repeatedly. Affects all Unicode-mode typing in standard Win32 apps.
-  **Fix**: Add `input.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;` to both `appendUnicode` and `appendVk` lambdas. Compare with heap-allocated helpers `AppendUnicodeEvent` (line 1363) and `AppendVkEvent` (line 1375) which already set it correctly.
-
-- [x] **SmartSwitchManager cross-process race** — `SmartSwitchManager.cpp:93-117, 135-151`
-  `SetAppMode()` writes `hash`, `vietnamese`, `count` with plain stores — no seqlock. Concurrent `GetAppMode()` reader can see partially-written entry (hash updated but vietnamese stale, or count incremented before entry populated). `LoadFromMap()` sets `count=0` before writing entries → reader sees empty table mid-reload. `SharedStateManager` uses proper seqlock; SmartSwitchManager does not.
-  **Fix**: Add seqlock protocol (reader checks epoch before/after, retry on mismatch) — same pattern as `SharedStateManager::Read()`. OR write entry data before incrementing `count` with a write barrier.
-
-- [x] **SharedStateManager `Write()` missing `reserved[]` copy** — `SharedStateManager.cpp:201-224`
-  Field-by-field copy skips the `reserved[21]` byte array (SharedState.h:90). Currently zeros, but if a future version stores data in reserved and forgets to update `Write()`, data silently dropped.
-  **Fix**: Add `memcpy(p->reserved, state.reserved, sizeof(state.reserved));` after the last field copy.
-
-- [x] **CompositionManager `pContext_` stored without AddRef** — `CompositionManager.cpp:94`
-  `pContext_ = pContext` without `pContext->AddRef()`. Used later in `MoveCaretToEnd()`, `ApplyDisplayAttribute()`, `EndComposition()`. If TSF releases context before these calls → dangling pointer. Currently safe (same edit session scope) but violates COM contract.
-  **Fix**: `pContext->AddRef()` in `StartComposition`, `pContext_->Release()` in `EndComposition` and `TerminateComposition`.
-
-- [x] **TextService `Activate()` leaks on failure** — `TextService.cpp:76-79`
-  When `keyEventSink_->Advise()` fails, returns `E_FAIL` without releasing `pThreadMgr_` (AddRef'd at line 62), `pCategoryMgr_`, or resetting `engineController_`. TSF may not call `Deactivate()` after failed Activate.
-  **Fix**: Add cleanup block before `return E_FAIL`: release pThreadMgr_, pCategoryMgr_, reset engineController_.
-
-- [x] **TextService `CoCreateInstance` unchecked** — `TextService.cpp:66-67`
-  HRESULT silently discarded. If fails → `pCategoryMgr_` null → no composition underline, but typing works.
-  **Fix**: Add `if (FAILED(hr)) { TSF_LOG("CategoryMgr creation failed"); }` — don't abort, just log.
-
-- [x] **LanguageBarButton `TrackPopupMenuEx` null hwnd** — `LanguageBarButton.cpp:156`
-  Uses `GetFocus()` which can return NULL (no focused window) → `TrackPopupMenuEx` fails silently, menu won't show.
-  **Fix**: `HWND hwnd = GetFocus(); if (!hwnd) hwnd = GetForegroundWindow(); if (!hwnd) hwnd = GetDesktopWindow();`
-
-- [x] **ConvertToolDialog `std::stoi` unguarded** — `ConvertToolDialog.cpp:193`
-  `getDropdownValue()` calls `std::stoi()` without try/catch. Malformed non-numeric string from Sciter JS → `std::invalid_argument` → crash subprocess.
-  **Fix**: Wrap in `try { return std::stoi(s); } catch (...) { return defaultVal; }`.
-
-- [x] **SciterHelper `SetWindowLong` vs `SetWindowLongPtr`** — `SciterHelper.cpp:33`
-  Uses `SetWindowLong`/`GetWindowLong` instead of 64-bit correct `SetWindowLongPtrW`/`GetWindowLongPtrW` for `GWL_EXSTYLE`. Currently no crash (EXSTYLE fits 32-bit) but officially wrong per MSDN, flagged by static analyzers.
-  **Fix**: Replace with `SetWindowLongPtrW(hwnd, GWL_EXSTYLE, GetWindowLongPtrW(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED)`.
-
-- [x] **WindowPicker system cursor not restored on crash** — `WindowPickerDialog.cpp:66-76` + `ClassicDialogUtils.h:143-146`
-  Fixed: Added `InstallCursorCrashHandler()` in `AppHelpers.h` using `SetUnhandledExceptionFilter`.
-  Called at startup in both `main.cpp` and `main_lite.cpp`. Restores system cursors on crash.
-
-- [x] **main_lite.cpp settings thread missing COM init** — `main_lite.cpp:85-113`
-  Settings dialog runs on detached `std::thread` without `CoInitializeEx`/`OleInitialize`. Subdialogs (ConvertTool) use clipboard via `OpenClipboard`, ChooseColor dialog needs OLE. Operations may fail silently.
-  **Fix**: Add `CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)` at start of thread lambda, `CoUninitialize()` before return.
-
-### SECURITY
-
-- [x] **UpdateInstaller ZIP path traversal** — `UpdateInstaller.cpp:132-282`
-  `CopyDirectoryContents` uses `fs::relative()` to compute destination paths. Crafted ZIP with `../../` entries could write files outside target directory. Mitigated by SHA-256 hash verification (only legit GitHub ZIPs pass), but lacks defense-in-depth.
-  **Fix**: After computing `relativePath`, reject if it contains `..`: `if (relativePath.string().find("..") != std::string::npos) continue;`. Also see existing item below about validate-ZIP-first.
-
-### PERF — Hot path optimizations
-
-- [x] **`IsSpellExcluded` heap alloc per keystroke** — `EngineHelpers.h:76-97`
-  Allocates `std::wstring` via `reserve()` + `+=` on every `PushChar()` call. Vietnamese words max ~8 chars.
-  **Fix**: Replace with stack `wchar_t buf[16]` + manual length tracking, same pattern as `BuildExclusionBuf` already uses in the same file. Eliminates heap allocation from the per-keystroke hot path.
-
-- [x] **`composeBuf_` return by value defeats optimization** — `TelexEngine.cpp:1041` + `VniEngine.cpp:391`
-  `Peek()` returns `composeBuf_` by value → copies string every call. Comment says "avoids heap alloc per Peek" but return-by-value negates this. Buffer capacity reuse only helps internally.
-  **Fix**: Change `IInputEngine::Peek()` return type to `const std::wstring&`. Both engines return `composeBuf_` by const-ref. Callers already use the result as temporary. **Note**: Interface change — update IInputEngine.h, TelexEngine, VniEngine, and all callers (EngineController, HookEngine).
-
-- [x] **`IsScintillaApp()` syscalls per keystroke** — `EngineController.cpp:320-346`
-  Calls `GetForegroundWindow()` + `GetClassNameW()` + `GetFocus()` every time Space is pressed during composition. Result only changes on focus change.
-  **Fix**: Cache the Scintilla detection result in `RefreshFlags()` (called on focus/context change). Add `bool isScintillaApp_` member, check it in `WantKey()`.
-
-- [x] **`ScaleHelper::getDpiScale()` resolves `GetProcAddress` every call** — `ScaleHelper.h:39-40`
-  `GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForSystem")` called on every DPI query. Called multiple times during window creation.
-  **Fix**: Add `static` before `auto pfn = ...` to cache the function pointer.
-
-- [x] **ClassicIconColorDialog font created/destroyed every WM_PAINT** — `ClassicIconColorDialog.cpp:170-176`
-  `CreateFontW()` + `DeleteObject()` inside paint lambda that runs twice per paint cycle.
-  **Fix**: Create the preview font once in `WM_INITDIALOG` or as a class member. Destroy in `WM_DESTROY`.
-
-- [x] **HookEngine `Sleep()` in hook callback path** — `HookEngine.cpp`
-  Fixed: Reduced Sleep delays ~40%. Electron: 10→6ms, Console: 8→5ms, cap: 20→12ms, clipboard: 15→8ms.
-  Still blocking but significantly lower latency for Electron/Console apps.
-
-### SMELL — Code quality
-
-- [x] **SmartSwitchManager `OpenReadWrite()` no existing handle check** — `SmartSwitchManager.cpp:67-88`
-  Calling `OpenReadWrite()` twice leaks the first HANDLE + mapping. SharedStateManager properly checks/cleans existing handles.
-  **Fix**: Add `if (pImpl_->hMapping) { ... cleanup ... }` at start, same pattern as SharedStateManager.
-
-- [x] **ConfigManager `LoadAllExcludedApps()` no entry count limit** — `ConfigManager.cpp:362-389`
-  `LoadMacros()` and `LoadAppOverrides()` enforce max entry limits, but excluded/english/tsf app lists do not. Crafted TOML with millions of entries → memory exhaustion.
-  **Fix**: Add `if (entries.size() >= kMaxAppEntries) break;` with a reasonable constant (e.g., 1000).
-
-- [x] **Classic dialogs inconsistent config signaling** — 4 dialogs vs SpellExclusions
-  ExcludedApps, MacroTable, AppOverrides, ConvertTool create local `ConfigEvent` + `Signal()` (skips `configGeneration` bump). SpellExclusions uses `SignalConfigChange()` from AppHelpers.h (bumps generation). HookEngine checks `configGeneration` for fast-path reload.
-  **Fix**: All Classic subdialogs should use `SignalConfigChange()` from AppHelpers.h consistently. Or inline the same 2-step pattern: bump SharedState generation + signal event.
-
-- [x] **SettingsDialog manual `BuildBodyClasses()` duplication** — `SettingsDialog.cpp:131-139, 373-380`
-  Constructor and WM_SETTINGCHANGE handler manually build CSS class string (`dark`, `win10`). `DarkModeHelper::BuildBodyClasses()` exists and is already used in SciterSubDialog.
-  **Fix**: Replace both inline blocks with `DarkModeHelper::BuildBodyClasses(dark)`.
-
-- [x] **Dead code: `kTriphthongs[]` array** — `VietnameseTables.h:150-158`
-  `kTriphthongs[]` and `kTriphthongCount` defined but never referenced. `IsTriphthong()` uses hardcoded comparisons instead.
-  **Fix**: Delete the array and count constant.
-
-- [x] **Dead code: `SwitchInputMethod`** — `EngineController.cpp:303-318`
-  Public method never called anywhere. Also has a bug (#18 in TSF review): commits via engine but not via TSF, discarding user's text. Dead code with a bug in it.
-  **Fix**: Delete the method declaration and implementation.
-
-- [x] **Dead include: `SecurityHelpers.h`** — `SharedStateManager.cpp:5`
-  Included but `MakeCreatorOnlySecurityAttributes()` never called (commented out, doesn't work for non-container objects).
-  **Fix**: Remove `#include "SecurityHelpers.h"`.
-
-- [x] **`ConfigEvent.cpp` uses `OutputDebugStringW` directly** — `ConfigEvent.cpp:43,49,51,60`
-  Should use `NEXTKEY_LOG()` which compiles out in Release. Current code outputs debug strings in production builds.
-  **Fix**: Replace `OutputDebugStringW(...)` with `NEXTKEY_LOG(...)`.
-
-- [x] **`SpellChecker::Validate()` noexcept mismatch** — `SpellChecker.cpp:775`
-  Public `Validate()` declared `noexcept`, calls `ValidateImpl()` which is NOT noexcept. If ValidateImpl ever throws → `std::terminate`.
-  **Fix**: Add `noexcept` to `ValidateImpl()` declaration and definition.
-
-- [x] **`SystemConfig::englishUI` redundant field** — `SystemConfig.h`
-  Fixed: Removed `englishUI` field, added `IsEnglishUI()` method. Updated `SettingMetadata.h` to use `language` field for offset-based UI binding.
-
-- [x] **`Debug.h` buffer overflow behavior** — `Debug.h:23`
-  Comment says "Messages longer than 1024 chars are silently truncated" but `vswprintf_s` calls invalid parameter handler (may crash) on overflow. Should use `_vsnwprintf_s` which actually truncates.
-  **Fix**: Replace `vswprintf_s(buffer, format, args)` with `_vsnwprintf_s(buffer, 1024, _TRUNCATE, format, args)`.
-
-- [x] **HookEngine redundant SharedStateManager** — `HookEngine.cpp:463-475`
-  `ReloadFromToml` creates a new stack `SharedStateManager`, opens it, reads — while `sharedStatePtr_` already exists.
-  **Fix**: Use `sharedStatePtr_` directly instead of creating a new instance.
-
-- [x] **SciterSubDialog dead container code** — `SciterSubDialog.cpp:87-93`
-  Finds `.container` element, checks validity, does nothing. Comment explains why but code is noise.
-  **Fix**: Delete the 6-line block.
-
-### STYLE — Minor cleanup
-
-- [x] `VietnameseTables.h:175,203` — `ToUpperVietnamese`/`ToLowerVietnamese` missing `noexcept`
-- [x] `VniEngine.cpp:71` — `Vni::CharState::IsVowel()` should be `constexpr` inline in header (Telex version is)
-- [x] `SettingsDialog.cpp:38` — `#define TIMER_RESIZE_WINDOW` should be `static constexpr UINT_PTR` (inconsistent with `TIMER_DEFERRED_SAVE`)
-- [x] `ClassicSettingsDialog.h:118` — Add `static_assert(kSettingsCount <= kMaxControls)` to catch overflow at compile time
-- [x] `ClassicTheme.cpp:19-25` — Duplicate `IsWindows11OrGreater()` — already in `DarkModeHelper.h` which is included
-- [x] ~~Multi-monitor: 7 Classic dialogs + SettingsDialog + SciterSubDialog use `SM_CXSCREEN`~~ — LANDED. `NextKey::GetCenteredPos(referenceHwnd, w, h)` helper in `helpers/AppHelpers.h` uses `MonitorFromWindow` + `GetMonitorInfoW` (rcWork) so dialogs honor the user's monitor + work area. All 9 sites migrated.
-- [x] ~~`TSF_LOG` (Define.h:14-25) outputs 3 separate `OutputDebugStringW` calls per log line~~ — LANDED. Concatenated into a single 640-wchar buffer + one `OutputDebugStringW` call. Truncation handling preserved.
-
----
-
-## Earlier Findings (2026-04-11)
-
-### Actual Bugs (Low severity)
-- [x] `SettingsDialog.cpp` — TSF registration MessageBox strings now use `S(StringId::TSF_REGISTER_SUCCESS)` etc.
-- [x] `TextService.cpp:66-67` — Merged into deep review BUG list above.
-- [x] `SettingsDialog.cpp:787` — Reset settings button — won't fix (user can delete config file)
-- [x] `SettingsDialog.cpp:800` — Open log folder button — won't fix (user can navigate manually)
-- [x] `ExcludedAppsDialog.cpp` — `MSG_CANNOT_EXCLUDE_SELF` now uses `S(StringId::EXCLUDED_CANNOT_SELF)`.
-
-### Defensive Improvements (nice-to-have)
-- [x] `UpdateInstaller.cpp:140-170` — Merged into deep review SECURITY list above (path traversal + validate-ZIP-first).
-- [x] `UpdateSecurity.cpp:223` — Predictable temp filename — won't fix (update is user-paced, race impossible)
 - [ ] `SettingsDialog.cpp:74-75` — IPC handle errors silently discarded with `(void)`. Add logging on failure.
-
-### Test Coverage Gaps
-- [x] Corrupted TOML recovery tests — won't fix (user deletes config, app recreates)
-- [x] Unicode surrogate pairs tests — won't fix (no real use case)
-- [x] Commit `tests/TelexDictionaryTest.cpp` — already committed (d38ba60), 8 test suites, all passing

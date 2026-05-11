@@ -855,7 +855,8 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // H1c: English-mode short-circuit + Vietnamese pre-dispatch tracking
     // (steps 3 / 3a-3d). Behavior preserved byte-identical.
     switch (HandlePreDispatch(vkCode, vnMode, macroOn, macroEng, tempOffMacroEsc,
-                              cachedShift, cachedCapsLock)) {
+                              cachedShift, cachedCapsLock,
+                              cachedCtrl, cachedAlt, cachedWin)) {
         case KeyOutcome::Eat: return true;
         case KeyOutcome::Pass: return false;
         case KeyOutcome::Fallthrough: break;
@@ -1184,7 +1185,9 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
 //   Fallthrough → continue to DispatchKeyAction (vnMode + no expansion).
 HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
                                                       bool macroEng, bool tempOffMacroEsc,
-                                                      bool cachedShift, bool cachedCapsLock) {
+                                                      bool cachedShift, bool cachedCapsLock,
+                                                      bool cachedCtrl, bool cachedAlt,
+                                                      bool cachedWin) {
     // 3. English mode — skip Vietnamese processing
     // Note: CJK layout no longer suppresses here. User controls V/E mode via toggle,
     // matching EVKey behavior. Japanese IME "A" sub-mode is indistinguishable from
@@ -1225,25 +1228,13 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
         return KeyOutcome::Pass;
     }
 
-    // 3a. Auto-caps state machine (Vietnamese mode only)
-    const bool autoCapsOn = autoCaps_.load(std::memory_order_acquire);
-    if (autoCapsOn) {
-        // '.', '?', '!'
-        if (vkCode == VK_OEM_PERIOD || (vkCode == 0xBF && cachedShift) || (vkCode == '1' && cachedShift)) {
-            autoCapState_ = AutoCapState::AfterPunct;
-        } else if (vkCode == VK_SPACE &&
-                   (autoCapState_ == AutoCapState::AfterPunct ||
-                    autoCapState_ == AutoCapState::ReadyToCapitalize)) {
-            // Promote on first space after punct; keep Ready across any number of
-            // additional spaces so ". ␣ ␣ c" still caps.
-            autoCapState_ = AutoCapState::ReadyToCapitalize;
-        } else if (vkCode == VK_RETURN) {
-            autoCapState_ = AutoCapState::ReadyToCapitalize;
-        } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            // Letter key — don't reset, HandleAlphaKey will consume it
-        } else {
-            autoCapState_ = AutoCapState::Idle;
-        }
+    // 3a. Auto-caps state machine (Vietnamese mode only). Rule + modifier gate
+    // live in core/AutoCapStateTransition.h — Ctrl+Enter / Ctrl+. / Win+. etc.
+    // are passed through unchanged so the dispatcher's step 5 modifier guard
+    // can reset composition without first arming ReadyToCapitalize.
+    if (autoCaps_.load(std::memory_order_acquire)) {
+        autoCapState_ = ComputeAutoCapStateTransition(
+            autoCapState_, vkCode, cachedShift, cachedCtrl, cachedAlt, cachedWin);
     }
 
     // 3b. Macro: track ALL typed characters (OpenKey approach).
@@ -1808,6 +1799,9 @@ void HookEngine::ResetComposition() {
     SecureZeroMemory(rawMacroBuffer_.data(), rawMacroBuffer_.size() * sizeof(wchar_t));
     ClearWordState();
     CancelCommitUndo();
+    // Mouse click, Ctrl/Alt shortcut (step 5), exception handler — all funnel here.
+    // Each is a "sentence-context broke" event, so drop any pending sentence arm.
+    autoCapState_ = AutoCapState::Idle;
     synthEventsPending_ = 0;  // Pending synthetics from old context are irrelevant after reset
     lastRealSynthTime_ = 0;
 }
@@ -2288,6 +2282,16 @@ static bool IsKnownElectronExe(const wchar_t* filename) noexcept {
     GetWindowThreadProcessId(topLevel, &pid);
     if (!pid) return false;
 
+    // Instrumentation: snapshot APIs below cross process boundaries (loader lock +
+    // potential AV hook). Logged so 1-off user reports of post-unlock CPU spikes
+    // can be triaged with evidence instead of speculation. See docs/TODO.md
+    // "IsWebView2App perf instrumentation".
+    const ULONGLONG t0 = GetTickCount64();
+    const wchar_t* slash = wcsrchr(exeFullPath.c_str(), L'\\');
+    const wchar_t* exeBase = slash ? slash + 1 : exeFullPath.c_str();
+    const wchar_t* pass1Result = L"snap_fail";
+    const wchar_t* pass2Result = L"skip";
+
     bool found = false;
 
     // Pass 1 — loaded modules in the host process.
@@ -2304,11 +2308,13 @@ static bool IsKnownElectronExe(const wchar_t* filename) noexcept {
             }
         }
         CloseHandle(modSnap);
+        pass1Result = found ? L"module_found" : L"module_notfound";
     }
 
     // Pass 2 — `msedgewebview2.exe` spawned as a child process.
     // Covers modern Tauri where the host doesn't load WebView2 DLLs itself.
     if (!found) {
+        pass2Result = L"snap_fail";
         if (HANDLE procSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
             procSnap != INVALID_HANDLE_VALUE) {
             PROCESSENTRY32W pe = { sizeof(pe) };
@@ -2320,10 +2326,15 @@ static bool IsKnownElectronExe(const wchar_t* filename) noexcept {
                 }
             }
             CloseHandle(procSnap);
+            pass2Result = found ? L"proc_found" : L"proc_notfound";
         }
     }
 
     if (found) webView2PositiveCache_.insert(exeFullPath);
+
+    HOOK_LOG(L"  IsWebView2App: pid=%u exe=\"%s\" pass1=%s pass2=%s result=%d dur=%llums",
+             pid, exeBase, pass1Result, pass2Result, found ? 1 : 0,
+             GetTickCount64() - t0);
     return found;
 }
 

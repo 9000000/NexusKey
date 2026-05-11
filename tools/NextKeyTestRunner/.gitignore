@@ -1,0 +1,3 @@
+# Runtime artifacts produced by --junit / --perf-csv flags.
+*.xml
+*.csv
