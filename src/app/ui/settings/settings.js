@@ -202,7 +202,7 @@ function updateUserDefinedButton() {
     var select = document.getElementById("input-type");
     var btn = document.getElementById("btn-userdefined");
     if (select && btn) {
-        btn.style.display = (select.value == "4") ? "block" : "none";
+        btn.style.display = (select.value == "4") ? "inline-block" : "none";
     }
 }
 

@@ -965,6 +965,10 @@
     /* Just in case for hover effect shape */
 }
 
+#btn-userdefined {
+    vertical-align: middle;
+}
+
 .btn-info > svg {
     width: 16px;
     height: 16px;
