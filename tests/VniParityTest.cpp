@@ -246,6 +246,21 @@ TEST_F(VniParityTest, Tone_Dot_5) {
     EXPECT_EQ(engine_->Peek(), L"ạ");
 }
 
+TEST_F(VniParityTest, Tone_Clear_0) {
+    TypeString(*engine_, L"ca10");
+    EXPECT_EQ(engine_->Peek(), L"ca");
+}
+
+TEST_F(VniParityTest, Tone_Clear_0_AfterCircumflex) {
+    TypeString(*engine_, L"ca610");
+    EXPECT_EQ(engine_->Peek(), L"câ");
+}
+
+TEST_F(VniParityTest, Tone_Clear_0_NoToneIsNoOp) {
+    TypeString(*engine_, L"ca0");
+    EXPECT_EQ(engine_->Peek(), L"ca0");
+}
+
 // ============================================================================
 // COMBINED MODIFIER + TONE TESTS
 // ============================================================================

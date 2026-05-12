@@ -7,6 +7,7 @@
 #include "InputScopeChecker.h"
 #include "Define.h"
 #include "core/engine/EngineFactory.h"
+#include "core/DigitLedWordDecision.h"
 #include <memory>
 
 namespace NextKey {
@@ -195,13 +196,29 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
 
     bool engineHasComp = engine_->Count() > 0;
 
+    // 1b. Digit-led word state machine — shared with HookEngine via
+    // core/DigitLedWordDecision.h. Arms when a digit lands at word start
+    // (VNI/Combined/UserDefined), bypasses subsequent keys, resets on
+    // whitespace/nav/Esc/BS/Delete. Modifiers (Ctrl/Alt/Win) handled by
+    // the early-return at line 192 above — never reach this state machine.
+    {
+        const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        DigitLedInputs in{vkCode, shift, !engineHasComp, config_.inputMethod, digitLedWord_};
+        switch (DecideDigitLed(in)) {
+            case DigitLedDecision::Arm:    digitLedWord_ = true;  return false;
+            case DigitLedDecision::Bypass:                        return false;
+            case DigitLedDecision::Reset:  digitLedWord_ = false; return false;
+            case DigitLedDecision::Continue: break;
+        }
+    }
+
     // 2. We want A-Z keys for typing processing
     if (vkCode >= 0x41 && vkCode <= 0x5A) {
         return true;
     }
 
-    // 3. VNI/Combined: digit keys 1-9 for tone/modifier (only with pending composition)
-    if (IsVniDigitKey(vkCode) && engineHasComp) {
+    // 3. VNI/Combined/UserDefined: digit keys 0-9 for tone/modifier (only with pending composition)
+    if (IsEngineDigitKey(vkCode) && engineHasComp) {
         return true;
     }
 
@@ -346,9 +363,9 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         return true;
     }
 
-    // 4. VNI/Combined: digit keys 1-9 → push to engine, update composition
-    if (IsVniDigitKey(vkCode) && engine_->Count() > 0) {
-        wchar_t ch = static_cast<wchar_t>(vkCode);  // VK '1'-'9' = 0x31-0x39 = L'1'-L'9'
+    // 4. VNI/Combined/UserDefined: digit keys 0-9 → push to engine, update composition
+    if (IsEngineDigitKey(vkCode) && engine_->Count() > 0) {
+        wchar_t ch = static_cast<wchar_t>(vkCode);  // VK '0'-'9' = 0x30-0x39 = L'0'-L'9'
         TSF_LOG(L"HandleKey: pushing VNI digit '%c'", ch);
         engine_->PushChar(ch);
 
@@ -393,6 +410,7 @@ void EngineController::Commit(ITfContext* pContext) {
 
     // Reset engine state AFTER the edit session completes (synchronous)
     engine_->Reset();
+    digitLedWord_ = false;
 
     TSF_LOG(L"Commit called, text='%ls'", committed.c_str());
 }
@@ -413,6 +431,7 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
 
     // Reset engine state AFTER the edit session completes (synchronous)
     engine_->Reset();
+    digitLedWord_ = false;
 
     TSF_LOG(L"CommitWithChar called, text='%ls'", committed.c_str());
 }
@@ -420,6 +439,7 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
 void EngineController::Reset() {
     engine_->Reset();
     compositionMgr_.TerminateComposition();
+    digitLedWord_ = false;
 }
 
 void EngineController::DetectScintillaApp() {
@@ -571,6 +591,7 @@ void EngineController::ToggleVietnameseMode() {
     sharedState_.ToggleFlag(SharedFlags::VIETNAMESE_MODE);
     // Read back actual flag to stay in sync (avoids TOCTOU with EXE toggling)
     vietnameseMode_ = (sharedState_.ReadFlags() & SharedFlags::VIETNAMESE_MODE) != 0;
+    digitLedWord_ = false;  // V/E switch ends any in-progress word
     if (langBarButton_) {
         langBarButton_->Refresh();
     }

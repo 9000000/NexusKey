@@ -468,6 +468,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/AutoCapDecisionTest.cpp
     tests/AutoCapStateTransitionTest.cpp
     tests/CjkSwitchDecisionTest.cpp
+    tests/DigitLedWordDecisionTest.cpp
     tests/LoggerTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp

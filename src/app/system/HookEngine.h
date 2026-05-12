@@ -170,7 +170,7 @@ private:
 
     // Input engine interaction
     [[nodiscard]] bool HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock);
-    [[nodiscard]] bool HandleVniDigitKey(DWORD vkCode); // VNI digit 1-9: push to engine, replace composition
+    [[nodiscard]] bool HandleVniDigitKey(DWORD vkCode); // VNI/UserDefined digit 0-9: push to engine, replace composition
     void HandleBackspace();
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
@@ -317,7 +317,16 @@ private:
     std::atomic<bool> autoCaps_{false};
     std::atomic<bool> autoCapsMacro_{false};
     std::atomic<uint8_t> tempOffMethod_{0};  // TempOffMethod (see TypingConfig.h)
-    bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word; same-thread (hook) only
+    // tempEngineOff_ / digitLedWord_: per-word "treat as English" flags.
+    // Plain bool — written from hook thread (DispatchKeyAction, ProcessKeyUp)
+    // AND main/WinEvent thread (OnFocusChanged, ToggleVietnameseMode, ClearWordState).
+    // Benign race accepted: word-aligned bool reads/writes are atomic on x86/x64,
+    // and a stale read at most delays the per-word reset by one keystroke (which
+    // the next boundary key recovers from). Promoting to std::atomic<bool> would
+    // require similar treatment of tempMacroOff_ / autoCapState_ etc. — out of
+    // scope for this change.
+    bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word (user-initiated via double-Alt / Ctrl-toggle)
+    bool digitLedWord_ = false;        // True = current word started with a digit (VNI/Combined/UserDefined) → auto-bypass (no user action)
     int altTapCount_ = 0;              // 0 or 1 (waiting for second tap)
     DWORD lastAltReleaseTime_ = 0;     // GetTickCount() of first Alt release
     static constexpr DWORD DOUBLE_ALT_TIMEOUT_MS = 400;

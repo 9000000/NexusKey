@@ -10,6 +10,7 @@
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
 #include "core/CjkSwitchDecision.h"
+#include "core/DigitLedWordDecision.h"
 #include "core/MacroCase.h"
 #include "core/MacroPrefix.h"
 #include "core/ipc/SharedStateManager.h"
@@ -366,6 +367,8 @@ void HookEngine::ToggleVietnameseMode() {
 
     // Cancel backspace-into-committed-word (replay in wrong mode would be wrong)
     CancelCommitUndo();
+    // Drop digit-led state — engine is empty so CommitComposition above did not clear it
+    digitLedWord_ = false;
 
     // Toggle is single-source (main thread only — Toggle never runs from hook
     // path), so load + negate + store is race-free for the toggle itself.
@@ -1094,11 +1097,13 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
                     : KeyOutcome::Pass;
             }
         } else if (const InputMethod method = currentMethod_.load(std::memory_order_acquire);
-                   (method == InputMethod::VNI || method == InputMethod::Combined) &&
-                   vkCode >= 0x31 && vkCode <= 0x39 &&
+                   (method == InputMethod::VNI || method == InputMethod::Combined ||
+                    method == InputMethod::UserDefined) &&
+                   vkCode >= 0x30 && vkCode <= 0x39 &&
                    !(GetKeyState(VK_SHIFT) & 0x8000)) {
-            // VNI/Combined digit key (1-9) → replay saved chars, then process as tone/modifier.
-            // Without this, "cá " + BS + '2' would produce "cá2" instead of "cà".
+            // VNI/Combined/UserDefined digit key (0-9) → replay saved chars, then process
+            // as tone/modifier. Without this, "cá " + BS + '2' would produce "cá2" instead
+            // of "cà". '0' is VNI clear-tone; UserDefined may map any digit via customKeyMap.
             HOOK_LOG(L"  commit-undo: replaying + VNI digit '%c' (stack_top='%s' stackSize=%zu prevComp='%s')",
                      static_cast<char>(vkCode),
                      commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
@@ -1304,9 +1309,11 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
     if (tempEngineOff_) {
         if (IsCommitTrigger(vkCode)) {
             tempEngineOff_ = false;
+            digitLedWord_ = false;  // Word ended — digit-led state is moot
             HOOK_LOG(L"  tempEngineOff: reset on commit trigger vk=0x%02X", vkCode);
         } else if (vkCode == VK_BACK && engine_->Count() == 0) {
             tempEngineOff_ = false;
+            digitLedWord_ = false;
             HOOK_LOG(L"  tempEngineOff: reset on backspace (engine empty)");
         }
         HOOK_LOG(L"  skip: tempEngineOff_ active=%d", tempEngineOff_ ? 1 : 0);
@@ -1319,8 +1326,36 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         // Always reset — shortcuts change text state in unpredictable ways.
         // Commit-undo is already canceled at step 2d (modifier guard), but
         // ResetComposition also clears engine, previousComposition_, inputHistory_, etc.
+        // ResetComposition → ClearWordState also drops digit-led state.
         ResetComposition();
         return KeyOutcome::Pass;
+    }
+
+    // 5b. Digit-led word state machine: arm on digit at word start (VNI/Combined/
+    // UserDefined), bypass while armed, reset on whitespace/nav/Esc/BS/Delete.
+    // Single source of truth in core/DigitLedWordDecision.h.
+    {
+        DigitLedInputs in{
+            vkCode, cachedShift,
+            engine_->Count() == 0,
+            currentMethod_.load(std::memory_order_acquire),
+            digitLedWord_,
+        };
+        switch (DecideDigitLed(in)) {
+            case DigitLedDecision::Arm:
+                digitLedWord_ = true;
+                HOOK_LOG(L"  digitLedWord: armed by vk=0x%02X", vkCode);
+                return KeyOutcome::Pass;
+            case DigitLedDecision::Bypass:
+                HOOK_LOG(L"  digitLedWord: bypass (active)");
+                return KeyOutcome::Pass;
+            case DigitLedDecision::Reset:
+                digitLedWord_ = false;
+                HOOK_LOG(L"  digitLedWord: reset on vk=0x%02X", vkCode);
+                return KeyOutcome::Pass;
+            case DigitLedDecision::Continue:
+                break;
+        }
     }
 
     // 6. A-Z keys → process with engine
@@ -1347,9 +1382,14 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         }
     }
 
-    // 6c. VNI/Combined: digit keys 1-9 → tone/modifier input (only with pending composition)
-    if ((method == InputMethod::VNI || method == InputMethod::Combined) &&
-        vkCode >= 0x31 && vkCode <= 0x39 &&
+    // 6c. VNI/Combined/UserDefined: digit keys 0-9 → tone/modifier input (only with
+    // pending composition). VNI '0' clears tone; UserDefined may remap any digit via
+    // customKeyMap (unmapped digits fall through as ProcessChar literal inside engine).
+    // The "digit at word start with engine empty" case is already armed and returned
+    // at step 5b above; this branch only sees mid-word digits.
+    if ((method == InputMethod::VNI || method == InputMethod::Combined ||
+         method == InputMethod::UserDefined) &&
+        vkCode >= 0x30 && vkCode <= 0x39 &&
         engine_->Count() > 0) {
         if (!cachedShift) {
             return HandleVniDigitKey(vkCode) ? KeyOutcome::Eat : KeyOutcome::Pass;
@@ -1710,7 +1750,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
 }
 
 bool HookEngine::HandleVniDigitKey(DWORD vkCode) {
-    wchar_t ch = static_cast<wchar_t>(vkCode);  // '1'–'9'
+    wchar_t ch = static_cast<wchar_t>(vkCode);  // '0'–'9' (VNI '0' = clear tone)
     inputHistory_.push_back(ch);
     engine_->PushChar(ch);
     std::wstring composition = engine_->Peek();
@@ -1815,6 +1855,7 @@ void HookEngine::ClearWordState() {
     macroCrossCommit_ = false;
     tempMacroOff_ = false;
     hadSynthInWord_ = false;
+    digitLedWord_ = false;
 }
 
 void HookEngine::CancelCommitUndo() {
@@ -2719,8 +2760,8 @@ void HookEngine::StoreAppProfile(HWND hwnd, AppProfile profile) noexcept {
 }
 
 void HookEngine::OnFocusChanged(HWND triggerHwnd) {
-    ResetComposition();
-    tempEngineOff_ = false;
+    ResetComposition();  // → ClearWordState resets digitLedWord_ + tempMacroOff_ etc.
+    tempEngineOff_ = false;  // Not covered by ClearWordState (user-initiated, wider scope)
     // Immediate checks on focus change — layout and config may differ in new app
     CheckLayoutChange();
     QuickSyncFromSharedState();  // Detects configGeneration changes + feature flag changes

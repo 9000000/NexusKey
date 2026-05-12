@@ -189,8 +189,8 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
     // Acceptable for an edge case essentially never hit on US QWERTY.
     bool isPunctuation = IsPunctuationKey(static_cast<UINT>(wParam));
     if (isPunctuation && pEngineController_->HasEngineBuffer()) {
-        bool isVniDigit = pEngineController_->IsVniDigitKey(static_cast<UINT>(wParam));
-        if (!isVniDigit) {
+        bool isEngineDigit = pEngineController_->IsEngineDigitKey(static_cast<UINT>(wParam));
+        if (!isEngineDigit) {
             wchar_t ch = VkToChar(static_cast<UINT>(wParam), lParam);
             if (ch != 0) {
                 *pfEaten = TRUE;
@@ -270,7 +270,7 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
     // OnTestKeyDown entirely and route keystrokes straight to OnKeyDown, so the
     // cache never gets populated. Only one ToUnicode call per keystroke either way.
     if (IsPunctuationKey(vk) && pEngineController_->HasEngineBuffer()
-        && !pEngineController_->IsVniDigitKey(vk)) {
+        && !pEngineController_->IsEngineDigitKey(vk)) {
         wchar_t ch = (vk == lastTestedVk_ && lastPunctChar_ != 0)
                        ? lastPunctChar_
                        : VkToChar(vk, lParam);
