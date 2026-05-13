@@ -51,6 +51,8 @@ var STRINGS = {
         "s.restore_key": "Auto-restore keys on wrong word",
         "s.allow_english_bypass": "Allow English bypass (e.g. yes \u2192 \u00FDe)",
         "s.allow_english_bypass_tooltip": "Allow applying Vietnamese tone marks on English words or exceptions",
+        "s.esc_restore_raw": "Esc restores raw keys",
+        "s.esc_restore_raw_tooltip": "Press Esc while typing to undo Vietnamese conversion and keep raw keys (e.g. v\u00EDu \u2192 virus)",
         "s.spell_exclusions": "Spell exclusions",
         "s.spell_exclusions_tooltip": "Abbreviation prefixes that bypass spell check (e.g. h\u0111, \u0111p). Prefix match, min 2 chars.",
         "s.app_encoding": "Per-app encoding",

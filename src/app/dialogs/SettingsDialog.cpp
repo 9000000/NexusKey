@@ -640,6 +640,9 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
     }
+    else if (id == L"esc-restore-raw") {
+        config_.escRestoreRawEnabled = value;
+    }
     else if (id == L"use-macro") {
         config_.macroEnabled = value;
     }
@@ -1047,6 +1050,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"cjk-auto-switch", config_.cjkAutoSwitch);
     setToggleState(L"debug-log", config_.debugLogEnabled);
     setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
+    setToggleState(L"esc-restore-raw", config_.escRestoreRawEnabled);
     setDropdownValue(L"temp-off-openkey", static_cast<int>(config_.tempOffMethod));
     setToggleState(L"use-macro", config_.macroEnabled);
     setToggleState(L"macro-english", config_.macroInEnglish);

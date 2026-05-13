@@ -10,6 +10,7 @@
 - Thêm tính năng tuỳ chỉnh kiểu gõ
 - Tách tự động phát hiện layout CJK thành tùy chọn (mặc định off nên cần bật lại thủ công nếu đang có nhiều layout)
 - Thêm tùy chọn tắt gõ tiếng Việt tạm thời Ctrl/Dup Alt
+- Cho phép trả lại raw key bằng phím ESC. Ví dụ: gõ v-i-r-u-s + ESC -> virus thay vì víu (lưu ý ESC trước khi space mới có tác dụng)
 
 **🛠 Sửa lỗi:**
 - Thêm thông tin về việc tương thích cho icon nổi (không tương thích với game 🐧 nhưng không sao, telex có thể chơi game mà không cần tắt)

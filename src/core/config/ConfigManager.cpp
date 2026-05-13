@@ -168,6 +168,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.quickStartConsonant = (*features)["quick_start_consonant"].value_or(false);
             config.quickEndConsonant = (*features)["quick_end_consonant"].value_or(false);
             config.tempOffMacroByEsc = (*features)["temp_off_macro_esc"].value_or(false);
+            config.escRestoreRawEnabled = (*features)["esc_restore_raw"].value_or(false);
             config.autoCapsMacro = (*features)["auto_caps_macro"].value_or(false);
             config.allowEnglishBypass = (*features)["allow_english_bypass"].value_or(false);
             config.debugLogEnabled = (*features)["debug_log"].value_or(false);
@@ -244,6 +245,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("quick_start_consonant", config.quickStartConsonant);
         features.insert_or_assign("quick_end_consonant", config.quickEndConsonant);
         features.insert_or_assign("temp_off_macro_esc", config.tempOffMacroByEsc);
+        features.insert_or_assign("esc_restore_raw", config.escRestoreRawEnabled);
         features.insert_or_assign("auto_caps_macro", config.autoCapsMacro);
         features.insert_or_assign("allow_english_bypass", config.allowEnglishBypass);
         features.insert_or_assign("debug_log", config.debugLogEnabled);

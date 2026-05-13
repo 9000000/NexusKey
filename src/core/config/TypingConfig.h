@@ -78,6 +78,7 @@ struct TypingConfig {
     bool quickStartConsonant = false;  // Quick start consonant: f→ph, j→gi, w→qu
     bool quickEndConsonant = false;    // Quick end consonant: g→ng, h→nh, k→ch
     bool tempOffMacroByEsc = false;    // Esc temporarily disables macro for next word
+    bool escRestoreRawEnabled = false; // Esc restores raw keys (e.g., víu → virus) and ends composition
     bool autoCapsMacro = false;        // Auto-capitalize expansion to match typed case
     bool allowEnglishBypass = false;   // Cho phép gõ dấu tự do / Bypass English blocking (e.g. yes -> ýe)
     bool debugLogEnabled = false;      // System → "Bật debug log" — runtime-enable NextKey::Logger

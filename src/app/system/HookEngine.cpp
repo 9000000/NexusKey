@@ -83,6 +83,7 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
     tempOffMacroByEsc_.store(config.tempOffMacroByEsc, std::memory_order_release);
+    escRestoreRawEnabled_.store(config.escRestoreRawEnabled, std::memory_order_release);
     autoCapsMacro_.store(config.autoCapsMacro, std::memory_order_release);
     // Runtime file-logger gate (Settings → System → "Bật debug log").
     ::NextKey::Logger::SetEnabled(config.debugLogEnabled);
@@ -831,6 +832,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     const bool macroOn = macroEnabled_.load(std::memory_order_acquire);
     const bool macroEng = macroInEnglish_.load(std::memory_order_acquire);
     const bool tempOffMacroEsc = tempOffMacroByEsc_.load(std::memory_order_acquire);
+    const bool escRestoreRaw = escRestoreRawEnabled_.load(std::memory_order_acquire);
     if (!vnMode &&
         commitUndoState_ == CommitUndoState::Idle &&
         !(macroOn && macroEng)) {
@@ -858,6 +860,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // H1c: English-mode short-circuit + Vietnamese pre-dispatch tracking
     // (steps 3 / 3a-3d). Behavior preserved byte-identical.
     switch (HandlePreDispatch(vkCode, vnMode, macroOn, macroEng, tempOffMacroEsc,
+                              escRestoreRaw,
                               cachedShift, cachedCapsLock,
                               cachedCtrl, cachedAlt, cachedWin)) {
         case KeyOutcome::Eat: return true;
@@ -1190,6 +1193,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
 //   Fallthrough → continue to DispatchKeyAction (vnMode + no expansion).
 HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
                                                       bool macroEng, bool tempOffMacroEsc,
+                                                      bool escRestoreRaw,
                                                       bool cachedShift, bool cachedCapsLock,
                                                       bool cachedCtrl, bool cachedAlt,
                                                       bool cachedWin) {
@@ -1255,6 +1259,17 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
             wchar_t ch = VkToMacroChar(vkCode);
             if (ch > L' ') rawMacroBuffer_ += ch;  // Printable non-space chars
         }
+    }
+
+    // 3b'. Esc-restore-raw: when enabled, bare Esc with active composition
+    // injects the user's raw keys (víu → virus) instead of the Vietnamese
+    // form, then eats the Esc so the app never sees it. Modifiers were
+    // already filtered upstream (step 5 in DispatchKeyAction), but ProcessKeyDown
+    // doesn't gate on modifiers before HandlePreDispatch — explicit guard here.
+    if (escRestoreRaw && vkCode == VK_ESCAPE
+        && !cachedCtrl && !cachedAlt && !cachedWin
+        && engine_->Count() > 0) {
+        return TryEscRestoreRaw();
     }
 
     // 3c. Temp off macro by Esc: press Esc with no pending text → skip macro for next word
@@ -3355,6 +3370,27 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     // Mark that at least one synthetic event was sent for this word.
     // Guards passthrough path in HandleAlphaKey from mixing physical+synthetic events mid-word.
     if (synthEventsPending_ > 0) hadSynthInWord_ = true;
+}
+
+HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
+    const size_t composedCount = engine_->Count();
+    if (composedCount == 0) return KeyOutcome::Fallthrough;
+
+    const std::wstring raw = engine_->PeekRaw();
+    if (raw.empty()) return KeyOutcome::Fallthrough;
+
+    auto inj = injector_.load(std::memory_order_acquire);
+    HOOK_LOG(L"  EscRestoreRaw: bs=%zu raw='%ls'", composedCount, raw.c_str());
+    if (!inj->Replace(composedCount, std::wstring_view(raw))) {
+        HOOK_LOG(L"  EscRestoreRaw: injector reported partial delivery");
+        // Don't reset on failure — next user action recovers via normal flow.
+        return KeyOutcome::Fallthrough;
+    }
+
+    engine_->Reset();
+    rawMacroBuffer_.clear();
+    tempMacroOff_ = false;
+    return KeyOutcome::Eat;
 }
 
 void HookEngine::SendBackspaces(size_t count) {

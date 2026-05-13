@@ -152,8 +152,13 @@ private:
     // auto-caps FSM, accumulates the macro buffer, handles temp-off-by-Esc, and
     // attempts macro expansion on commit triggers — returning Eat/Pass on
     // expansion match, Fallthrough otherwise so the dispatch chain runs next.
+    /// Esc-restore-raw: end composition with raw keys and inject them (víu → virus).
+    /// Returns KeyOutcome::Eat on success, Fallthrough if buffer empty / disabled.
+    [[nodiscard]] KeyOutcome TryEscRestoreRaw();
+
     [[nodiscard]] KeyOutcome HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
                                                 bool macroEng, bool tempOffMacroEsc,
+                                                bool escRestoreRaw,
                                                 bool cachedShift, bool cachedCapsLock,
                                                 bool cachedCtrl, bool cachedAlt,
                                                 bool cachedWin);
@@ -451,6 +456,7 @@ private:
     std::atomic<bool> macroEnabled_{false};
     std::atomic<bool> macroInEnglish_{false};
     std::atomic<bool> tempOffMacroByEsc_{false};  // Config: Esc can temp-disable macro
+    std::atomic<bool> escRestoreRawEnabled_{false};  // Config: Esc restores raw keys (víu → virus)
     bool tempMacroOff_ = false;       // Runtime: macro disabled for current word; same-thread (hook) only
     bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits; same-thread (hook) only
     std::unordered_map<std::wstring, std::wstring> macroTable_;

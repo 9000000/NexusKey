@@ -52,6 +52,12 @@ public:
     /// "approved", "system") by the engine's English-protection heuristics.
     /// Call AFTER SeedFromText — caller decides whether to revive composition.
     [[nodiscard]] virtual bool IsEnglishWord() const = 0;
+
+    /// Raw keys typed by the user (case-preserved), independent of any Vietnamese
+    /// transformation in the composed buffer. Used by the Esc-restore feature to
+    /// recover the original keystrokes (e.g., composed "víu" ← raw "virus").
+    /// Default no-op for engines that don't track raw input.
+    [[nodiscard]] virtual std::wstring PeekRaw() const { return {}; }
 };
 
 }  // namespace NextKey

@@ -4623,5 +4623,59 @@ TEST_F(TelexEngineTest, Seed_LatinOnlyWord_Succeeds) {
     EXPECT_EQ(engine_->Peek(), L"system");
 }
 
+// ============================================================================
+// ESC RESTORE RAW TESTS — PeekRaw() returns raw keys for Esc-restore feature
+// ============================================================================
+
+TEST_F(TelexEngineTest, EscRestoreRaw_BasicVirus) {
+    // v-i-r-u-s composes to Vietnamese form; rawInput keeps original keys
+    TypeString(*engine_, L"virus");
+    EXPECT_EQ(engine_->PeekRaw(), L"virus");
+}
+
+TEST_F(TelexEngineTest, EscRestoreRaw_PreservesUpperCase) {
+    TypeString(*engine_, L"VIRUS");
+    EXPECT_EQ(engine_->PeekRaw(), L"VIRUS");
+}
+
+TEST_F(TelexEngineTest, EscRestoreRaw_PreservesMixedCase) {
+    TypeString(*engine_, L"ViRuS");
+    EXPECT_EQ(engine_->PeekRaw(), L"ViRuS");
+}
+
+TEST_F(TelexEngineTest, EscRestoreRaw_QuickStartConsonant) {
+    // f → ph: rawInput keeps 'f' (the actual key user pressed)
+    config_.quickStartConsonant = true;
+    engine_ = std::make_unique<TypingEngine>(config_);
+    engine_->PushChar(L'f');
+    EXPECT_EQ(engine_->Peek(), L"ph");           // composed form
+    EXPECT_EQ(engine_->PeekRaw(), L"f");          // raw form
+    EXPECT_EQ(engine_->Count(), 2u);              // 2 displayed chars
+}
+
+TEST_F(TelexEngineTest, EscRestoreRaw_EmptyBufferReturnsEmpty) {
+    EXPECT_EQ(engine_->PeekRaw(), L"");
+}
+
+TEST_F(TelexEngineTest, EscRestoreRaw_ClearedAfterReset) {
+    TypeString(*engine_, L"hello");
+    ASSERT_FALSE(engine_->PeekRaw().empty());
+    engine_->Reset();
+    EXPECT_EQ(engine_->PeekRaw(), L"");
+}
+
+TEST_F(TelexEngineTest, EscRestoreRaw_DoesNotMutateState) {
+    // PeekRaw must be const-like: calling it twice gives the same result
+    // and doesn't disturb the engine.
+    TypeString(*engine_, L"virus");
+    auto first = engine_->PeekRaw();
+    auto second = engine_->PeekRaw();
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(first, L"virus");
+    // After PeekRaw, engine still works normally
+    engine_->PushChar(L's');
+    EXPECT_FALSE(engine_->Peek().empty());
+}
+
 }  // namespace
 }  // namespace NextKey

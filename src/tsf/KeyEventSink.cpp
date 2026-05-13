@@ -171,6 +171,20 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
         return S_OK;
     }
 
+    // Esc-restore-raw: end composition with the user's raw keys (víu → virus)
+    // instead of the Vietnamese form. Committing in test phase is the right
+    // pattern for action keys (per CLAUDE.md "TSF: commit-in-test-phase allowed
+    // for action keys") — no text-insert race. The same branch in OnKeyDown
+    // handles Chromium hosts that skip OnTestKeyDown.
+    if (wParam == VK_ESCAPE
+        && pEngineController_->IsEscRestoreRawEnabled()
+        && pEngineController_->HasEngineBuffer()) {
+        if (pEngineController_->CommitRawAndEnd(pContext)) {
+            *pfEaten = TRUE;
+            return S_OK;
+        }
+    }
+
     // (VK_RETURN falls through to the generic non-handled-key branch below:
     // WantKey returns false for Enter, so with a live buffer the branch commits
     // the composition and passes Enter to the host — search submits, newline
@@ -262,6 +276,19 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
     }
 
     UINT vk = static_cast<UINT>(wParam);
+
+    // Esc-restore-raw: end composition with raw keys (víu → virus) when enabled
+    // and buffer non-empty. Eat the key (don't pass to app). Falls through to
+    // standard ESC handling (commit Vietnamese + pass-through) when disabled
+    // or buffer empty.
+    if (vk == VK_ESCAPE
+        && pEngineController_->IsEscRestoreRawEnabled()
+        && pEngineController_->HasEngineBuffer()) {
+        if (pEngineController_->CommitRawAndEnd(pContext)) {
+            *pfEaten = TRUE;
+            return S_OK;
+        }
+    }
 
     // Punctuation: commit composition with this char appended (atomic, no race).
     // Prefer the char cached by OnTestKeyDown (avoids a second ToUnicode call that

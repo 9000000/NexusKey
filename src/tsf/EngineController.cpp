@@ -436,6 +436,21 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
     TSF_LOG(L"CommitWithChar called, text='%ls'", committed.c_str());
 }
 
+bool EngineController::CommitRawAndEnd(ITfContext* pContext) {
+    std::wstring raw = engine_->PeekRaw();
+    if (raw.empty()) return false;
+
+    auto* pSession = new CommitEditSession(pContext, &compositionMgr_, raw);
+    RequestEditSession(pContext, pSession);
+    pSession->Release();
+
+    engine_->Reset();
+    digitLedWord_ = false;
+
+    TSF_LOG(L"CommitRawAndEnd: raw='%ls'", raw.c_str());
+    return true;
+}
+
 void EngineController::Reset() {
     engine_->Reset();
     compositionMgr_.TerminateComposition();

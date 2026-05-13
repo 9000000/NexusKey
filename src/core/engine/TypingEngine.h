@@ -109,6 +109,9 @@ public:
     [[nodiscard]] bool IsEnglishWord() const override {
         return engProt_.bias == LanguageBias::HardEnglish;
     }
+    [[nodiscard]] std::wstring PeekRaw() const override {
+        return std::wstring(rawInput_.data(), rawInput_.size());
+    }
 
 private:
     // Mode helpers
