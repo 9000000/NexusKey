@@ -82,11 +82,11 @@ if (escRestoreRawEnabled && vnMode && engineController_->HasComposition()
 ```
 
 `EngineController::CommitRawAndEnd(ITfContext*)`:
-1. `auto raw = engine_->PeekRaw()`; nếu rỗng → return false.
-2. Request edit session `TF_ES_SYNC | TF_ES_READWRITE`.
-3. Trong edit session: replace composition range với `raw`, end composition.
-4. Edit session thành công → `engine_->Reset()`, return true.
-5. Fail → log, return false (giữ state).
+1. `auto raw = engine_->PeekRaw()`; nếu rỗng → return false (caller fallback về `Commit()` thường).
+2. `CommitEditSession` qua `RequestEditSession` với `TF_ES_SYNC | TF_ES_READWRITE` (pattern hiện có của `Commit()` / `CommitWithChar()`).
+3. Edit session set composition text = `raw` + end composition (atomic).
+4. `engine_->Reset()` + `digitLedWord_ = false` sau khi edit session trả về (sync).
+5. Return `true`. Edit session failure được log bởi `RequestEditSession` nhưng KHÔNG bubble lên caller — match existing pattern. Lý do: `TF_ES_SYNC` hiếm fail trên thực tế; nếu fail thì engine vẫn reset (giống `Commit()`), user gõ tiếp sẽ tạo composition mới, không có hệ quả lâu dài.
 
 ### Hook engine (`src/app/system/`)
 

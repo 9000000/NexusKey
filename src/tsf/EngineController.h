@@ -45,10 +45,12 @@ public:
     void CommitWithChar(ITfContext* pContext, wchar_t appendChar);
 
     /// Esc-restore: end composition with the user's RAW keys (case-preserved),
-    /// not the Vietnamese form. Returns false if buffer is empty or commit
-    /// failed — caller should fall back to standard Commit() flow.
+    /// not the Vietnamese form. Returns false if engine has no raw input —
+    /// caller should fall back to standard Commit() flow. Edit session
+    /// failures are logged (via RequestEditSession) but not propagated;
+    /// matches the existing Commit() / CommitWithChar() pattern.
     /// Resets engine state and digitLedWord_ on success.
-    bool CommitRawAndEnd(ITfContext* pContext);
+    [[nodiscard]] bool CommitRawAndEnd(ITfContext* pContext);
 
     /// Whether Esc-restore-raw is enabled in current config snapshot.
     /// Cheap getter — KeyEventSink uses this to gate the VK_ESCAPE branch.

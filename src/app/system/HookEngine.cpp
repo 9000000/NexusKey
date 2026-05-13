@@ -1263,9 +1263,9 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
 
     // 3b'. Esc-restore-raw: when enabled, bare Esc with active composition
     // injects the user's raw keys (víu → virus) instead of the Vietnamese
-    // form, then eats the Esc so the app never sees it. Modifiers were
-    // already filtered upstream (step 5 in DispatchKeyAction), but ProcessKeyDown
-    // doesn't gate on modifiers before HandlePreDispatch — explicit guard here.
+    // form, then eats the Esc so the app never sees it. DispatchKeyAction's
+    // step 5 modifier guard runs *downstream* of HandlePreDispatch — Ctrl+Esc
+    // / Alt+Esc would still reach this branch, so guard modifiers explicitly.
     if (escRestoreRaw && vkCode == VK_ESCAPE
         && !cachedCtrl && !cachedAlt && !cachedWin
         && engine_->Count() > 0) {
