@@ -94,6 +94,7 @@ TypingEngine::TypingEngine(const TypingConfig& config,
     : config_(config), phonotactics_(phonotactics) {
     states_.reserve(8);
     rawInput_.reserve(12);
+    escRawHistory_.reserve(12);
     Reset();
 }
 
@@ -1386,7 +1387,6 @@ const std::wstring& TypingEngine::ComposeAll() const {
 void TypingEngine::Backspace() {
     if (states_.empty()) return;
     escape_.clear();  // Allow đ re-trigger + Vietnamese re-trigger after user edits
-    if (!escRawHistory_.empty()) escRawHistory_.pop_back();
 
     // Undo quick start consonant: ph→f, gi→j, qu→w (collapse both chars to original)
     if (quickStartKey_ != 0 && states_.size() == 2) {
@@ -1433,6 +1433,14 @@ void TypingEngine::Backspace() {
     if (rawInput_.size() > rawTarget) {
         rawInput_.resize(rawTarget);
     }
+    // escRawHistory tracks keystrokes 1:1. Normal BS pops 1 entry — matches
+    // a user BS removing 1 displayed char. When the composition fully empties
+    // (BS reached the start of word), wipe escRawHistory_ so the next word's
+    // keystrokes don't accumulate behind stale history. Quick-start / quick-
+    // consonant undo branches return earlier and intentionally don't touch
+    // escRawHistory_ — those keep display length unchanged.
+    if (!escRawHistory_.empty()) escRawHistory_.pop_back();
+    if (states_.empty()) escRawHistory_.clear();
     UpdateSpellState();
 
     // English Protection: recalculate bias after backspace

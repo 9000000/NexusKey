@@ -4682,6 +4682,29 @@ TEST_F(TelexEngineTest, EscRestoreRaw_DoubleSToneEscape_LongerWord) {
     EXPECT_EQ(engine_->PeekRaw(), L"usser");
 }
 
+TEST_F(TelexEngineTest, EscRestoreRaw_BackspaceShrinks) {
+    // v-i-r-u-s composes "víu"; pressing BS removes one displayed char.
+    // PeekRaw must shrink by 1 to match — gives the user a coherent
+    // "what I have left" view.
+    TypeString(*engine_, L"virus");
+    ASSERT_EQ(engine_->PeekRaw(), L"virus");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->PeekRaw(), L"viru");
+}
+
+TEST_F(TelexEngineTest, EscRestoreRaw_BackspaceToEmpty_ClearsHistory) {
+    // dd → đ (1 displayed char from 2 keystrokes). BS empties states.
+    // escRawHistory must wipe too so the next word's typing doesn't
+    // accumulate behind stale 'd'.
+    engine_->PushChar(L'd');
+    engine_->PushChar(L'd');
+    ASSERT_EQ(engine_->PeekRaw(), L"dd");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->PeekRaw(), L"");
+    engine_->PushChar(L'a');
+    EXPECT_EQ(engine_->PeekRaw(), L"a");  // not "da"
+}
+
 TEST_F(TelexEngineTest, EscRestoreRaw_DoesNotMutateState) {
     // PeekRaw must be const-like: calling it twice gives the same result
     // and doesn't disturb the engine.
