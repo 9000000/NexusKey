@@ -4664,6 +4664,24 @@ TEST_F(TelexEngineTest, EscRestoreRaw_ClearedAfterReset) {
     EXPECT_EQ(engine_->PeekRaw(), L"");
 }
 
+TEST_F(TelexEngineTest, EscRestoreRaw_DoubleSToneEscape) {
+    // a-s-u-s: 1st 's' applies acute tone to 'a' (states="áu"), 2nd 's' is
+    // tone-escape — engine clears the tone and treats 's' as literal.
+    // PeekRaw must return the FULL keystroke sequence "asus" so the user can
+    // recover their original word. The pre-existing auto-restore feature uses
+    // a different buffer (rawInput_) which deliberately drops the consumed
+    // first 's' to give "aus"; ESC-restore-raw must NOT inherit that semantics.
+    TypeString(*engine_, L"asus");
+    EXPECT_EQ(engine_->PeekRaw(), L"asus");
+}
+
+TEST_F(TelexEngineTest, EscRestoreRaw_DoubleSToneEscape_LongerWord) {
+    // u-s-s-e-r: classic tone-escape case. After 2nd 's', engine shows "usser"
+    // (literal). PeekRaw must give back the full sequence "usser".
+    TypeString(*engine_, L"usser");
+    EXPECT_EQ(engine_->PeekRaw(), L"usser");
+}
+
 TEST_F(TelexEngineTest, EscRestoreRaw_DoesNotMutateState) {
     // PeekRaw must be const-like: calling it twice gives the same result
     // and doesn't disturb the engine.

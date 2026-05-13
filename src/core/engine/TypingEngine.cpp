@@ -107,6 +107,7 @@ void TypingEngine::PushChar(wchar_t keyChar) {
     // to bound growth in practice.
 
     rawInput_.push_back(keyChar);
+    escRawHistory_.push_back(keyChar);  // Independent of tone/mod-escape — see TypingEngine.h
     qc_.onlyQC = false;  // Any new char clears the flag
 
     // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
@@ -1385,6 +1386,7 @@ const std::wstring& TypingEngine::ComposeAll() const {
 void TypingEngine::Backspace() {
     if (states_.empty()) return;
     escape_.clear();  // Allow đ re-trigger + Vietnamese re-trigger after user edits
+    if (!escRawHistory_.empty()) escRawHistory_.pop_back();
 
     // Undo quick start consonant: ph→f, gi→j, qu→w (collapse both chars to original)
     if (quickStartKey_ != 0 && states_.size() == 2) {
@@ -1508,6 +1510,7 @@ std::wstring TypingEngine::Commit() {
 void TypingEngine::Reset() {
     states_.clear();
     rawInput_.clear();
+    escRawHistory_.clear();
     spellCheckDisabled_ = false;
     qc_.Reset();
     escape_.clear();

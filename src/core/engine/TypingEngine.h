@@ -110,7 +110,7 @@ public:
         return engProt_.bias == LanguageBias::HardEnglish;
     }
     [[nodiscard]] std::wstring PeekRaw() const override {
-        return std::wstring(rawInput_.data(), rawInput_.size());
+        return std::wstring(escRawHistory_.data(), escRawHistory_.size());
     }
 
 private:
@@ -229,7 +229,12 @@ private:
 
     // State
     std::vector<CharState> states_;   // Internal state buffer
-    std::vector<wchar_t> rawInput_;   // Raw keys for escape
+    std::vector<wchar_t> rawInput_;   // Internal raw buffer — consumed tone/mod keys
+                                      // are erased so auto-restore yields "user" for u-s-s-e-r.
+                                      // Do NOT use for Esc-restore-raw — use escRawHistory_ instead.
+    std::vector<wchar_t> escRawHistory_;  // Full keystroke history for PeekRaw() / Esc-restore-raw.
+                                          // Push on PushChar, pop on Backspace, clear on Reset —
+                                          // never trimmed by tone/mod-escape paths.
     TypingConfig config_;
     const Phonology::IPhonotactics& phonotactics_;  // Vietnamese rule engine
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
