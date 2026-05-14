@@ -1,4 +1,4 @@
-// NexusKey - SharedStateManager
+// VKey - SharedStateManager
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -9,7 +9,7 @@
 namespace NextKey {
 
 /// Manages shared memory IPC between Core and Engine
-/// Creates/opens "Local\\NexusKeySharedState" shared memory region
+/// Creates/opens "Local\\VKeySharedState" shared memory region
 class SharedStateManager {
 public:
     SharedStateManager();

@@ -7,9 +7,9 @@
 // initiated quit from crash.
 //
 // Event names (Local\ session-scoped, kernel objects):
-//   Local\NexusKeyHeartbeat         — auto-reset event, signaled every 30s
+//   Local\VKeyHeartbeat         — auto-reset event, signaled every 30s
 //                                     (queues until watchdog Wait observes)
-//   Local\NexusKeyGracefulShutdown  — signaled by SignalGracefulShutdown
+//   Local\VKeyGracefulShutdown  — signaled by SignalGracefulShutdown
 //                                     before VKey exits via tray quit
 
 #pragma once
@@ -22,8 +22,8 @@
 
 namespace NextKey {
 
-inline constexpr const wchar_t* HEARTBEAT_EVENT_NAME = L"Local\\NexusKeyHeartbeat";
-inline constexpr const wchar_t* GRACEFUL_SHUTDOWN_EVENT_NAME = L"Local\\NexusKeyGracefulShutdown";
+inline constexpr const wchar_t* HEARTBEAT_EVENT_NAME = L"Local\\VKeyHeartbeat";
+inline constexpr const wchar_t* GRACEFUL_SHUTDOWN_EVENT_NAME = L"Local\\VKeyGracefulShutdown";
 inline constexpr DWORD HEARTBEAT_INTERVAL_MS = 30'000;
 
 class HeartbeatPublisher {

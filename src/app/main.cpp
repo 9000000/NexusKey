@@ -271,7 +271,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // NOTE: Use default DACL (nullptr). MakeCreatorOnlySecurityAttributes() uses
     // CO (Creator Owner) SID which does NOT resolve for non-container objects like
     // mutexes — second instance gets ERROR_ACCESS_DENIED instead of ERROR_ALREADY_EXISTS.
-    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\NexusKey_Main_Mutex");
+    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\VKey_Main_Mutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         if (isAdminRestart) {
             // Admin-restart path: old instance is in the middle of cleanup.

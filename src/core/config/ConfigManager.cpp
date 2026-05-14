@@ -27,7 +27,7 @@ namespace {
 class ConfigFileLock {
 public:
     ConfigFileLock() noexcept {
-        hMutex_ = CreateMutexW(nullptr, FALSE, L"Local\\NexusKeyConfigLock");
+        hMutex_ = CreateMutexW(nullptr, FALSE, L"Local\\VKeyConfigLock");
         if (hMutex_) {
             DWORD result = WaitForSingleObject(hMutex_, 5000);
             // WAIT_OBJECT_0: acquired normally

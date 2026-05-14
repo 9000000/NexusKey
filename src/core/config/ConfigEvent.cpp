@@ -8,7 +8,7 @@
 namespace NextKey {
 
 // Named event for config change notifications
-static constexpr wchar_t kEventName[] = L"Local\\NexusKeyConfigEvent";
+static constexpr wchar_t kEventName[] = L"Local\\VKeyConfigEvent";
 
 struct ConfigEvent::Impl {
     HANDLE hEvent = nullptr;

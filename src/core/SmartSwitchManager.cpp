@@ -9,7 +9,7 @@
 
 namespace NextKey {
 
-static constexpr const wchar_t* SMART_SWITCH_MEM_NAME = L"Local\\NexusKeySmartSwitch";
+static constexpr const wchar_t* SMART_SWITCH_MEM_NAME = L"Local\\VKeySmartSwitch";
 
 struct SmartSwitchManager::Impl {
 #ifdef _WIN32

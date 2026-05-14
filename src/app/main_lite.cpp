@@ -202,7 +202,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
     }
 
     // Notify Classic settings dialog (if open) to refresh UI
-    if (HWND settingsWnd = FindWindowW(L"NexusKeyClassicSettings", nullptr)) {
+    if (HWND settingsWnd = FindWindowW(L"VKeyClassicSettings", nullptr)) {
         PostMessageW(settingsWnd, WM_VKEY_CONFIG_CHANGED, 0, 0);
     }
 }
@@ -384,7 +384,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // ── Single instance check ──
 
     // NOTE: Use default DACL (nullptr). CO SID doesn't resolve for non-container objects.
-    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\NexusKeyLite_Main_Mutex");
+    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Local\\VKeyLite_Main_Mutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         if (isAdminRestart) {
             // See main.cpp for rationale — wait for old instance to release.

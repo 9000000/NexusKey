@@ -1,7 +1,7 @@
 // VKey Watchdog - Process Supervisor
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Monitors NexusKey.exe via Local\NexusKeyHeartbeat (30s pulse, 90s
+// Monitors VKey.exe via Local\VKeyHeartbeat (30s pulse, 90s
 // timeout = 3 missed pulses). On crash detect (heartbeat stale +
 // graceful flag clear + process not in process list), respawns
 // NexusKey.exe via CreateProcessW.
@@ -15,8 +15,8 @@
 
 namespace {
 
-constexpr const wchar_t* HEARTBEAT_EVENT_NAME = L"Local\\NexusKeyHeartbeat";
-constexpr const wchar_t* GRACEFUL_SHUTDOWN_EVENT_NAME = L"Local\\NexusKeyGracefulShutdown";
+constexpr const wchar_t* HEARTBEAT_EVENT_NAME = L"Local\\VKeyHeartbeat";
+constexpr const wchar_t* GRACEFUL_SHUTDOWN_EVENT_NAME = L"Local\\VKeyGracefulShutdown";
 constexpr DWORD HEARTBEAT_TIMEOUT_MS = 90'000;  // 3× publisher interval
 constexpr DWORD POST_RESPAWN_GRACE_MS = 5'000;  // Wait this long after respawn
 constexpr DWORD POST_INIT_GRACE_MS = 30'000;    // Initial grace for VKey to start
@@ -108,7 +108,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     // silently on ERROR_ALREADY_EXISTS so we never run two supervisors
     // racing each other to respawn on the same heartbeat stale event.
     HANDLE singletonMutex = CreateMutexW(nullptr, FALSE,
-                                         L"Local\\NexusKeyWatchdogSingleton");
+                                         L"Local\\VKeyWatchdogSingleton");
     if (!singletonMutex || GetLastError() == ERROR_ALREADY_EXISTS) {
         if (singletonMutex) CloseHandle(singletonMutex);
         return 0;

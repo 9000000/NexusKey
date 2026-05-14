@@ -22,7 +22,7 @@ struct SmartSwitchEntry {
 };
 
 /// Shared memory layout for smart switch data
-/// Named shared memory: "Local\\NexusKeySmartSwitch"
+/// Named shared memory: "Local\\VKeySmartSwitch"
 struct SmartSwitchState {
     uint32_t magic;    // 'SMSW' = 0x57534D53
     uint32_t epoch;    // Change counter
