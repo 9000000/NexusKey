@@ -6,7 +6,7 @@ keep_log_macro = "NEXTKEY_LOG"
 
 [scope]
 include = [
-    "src/**/*.{cpp,h,rc,manifest,def,idl}",
+    "src/**/*.{cpp,h,rc,manifest,def,idl,in}",
     "src/app/ui/**/*.{html,js,css}",
     "tools/**/*.{cpp,h,py,sh,toml,md}",
     "CMakeLists.txt", "**/CMakeLists.txt",
@@ -30,6 +30,8 @@ exclude = [
     "extern/**", "src/vendor/**",
     "**/*.png", "**/*.jpg", "**/*.ico",
     "tools/rebrand/**",
+    "CLAUDE.md",                          # local AI-assistant guide, gitignored
+    "src/core/Version.h",                 # generated from Version.h.in
 ]
 
 [replacements.brand_string]
