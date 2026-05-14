@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    NexusKey chaos sweep harness -- drive `NextKeyTestRunner.exe` against
+    VKey chaos sweep harness -- drive `VKeyTestRunner.exe` against
     multiple host apps and aggregate per-host JUnit / perf-CSV reports.
 
 .DESCRIPTION
@@ -28,10 +28,10 @@
     -Corpus        Path to chaos TOML. Default: tools/VKeyTestRunner/
                    corpus/chaos.toml relative to repo root.
 
-    -NexusKeyExe   Path to NexusKey.exe. Default: build/Debug/NexusKey.exe.
+    -VKeyExe   Path to VKey.exe. Default: build/Debug/VKey.exe.
 
-    -RunnerExe     Path to NextKeyTestRunner.exe. Default:
-                   build/tools/Debug/NextKeyTestRunner.exe (CMake
+    -RunnerExe     Path to VKeyTestRunner.exe. Default:
+                   build/tools/Debug/VKeyTestRunner.exe (CMake
                    RUNTIME_OUTPUT_DIRECTORY="${CMAKE_BINARY_DIR}/tools").
 
     -HookLog       Path VKey writes its debug log to (must match
@@ -90,8 +90,8 @@ $ErrorActionPreference = "Stop"
 # --- Repo root + path defaults -----------------------------------------
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Corpus)      { $Corpus      = Join-Path $repoRoot "tools/VKeyTestRunner/corpus/chaos.toml" }
-if (-not $NexusKeyExe) { $NexusKeyExe = Join-Path $repoRoot "build/Debug/NexusKey.exe" }
-if (-not $RunnerExe)   { $RunnerExe   = Join-Path $repoRoot "build/tools/Debug/NextKeyTestRunner.exe" }
+if (-not $VKeyExe) { $VKeyExe = Join-Path $repoRoot "build/Debug/VKey.exe" }
+if (-not $RunnerExe)   { $RunnerExe   = Join-Path $repoRoot "build/tools/Debug/VKeyTestRunner.exe" }
 if (-not $HookLog)     { $HookLog     = Join-Path $repoRoot "build/Debug/VKey_hook.log" }
 if (-not $OutDir)      { $OutDir      = $repoRoot }
 
@@ -240,7 +240,7 @@ function Start-VKey {
     Start-Process -FilePath $VKeyExe | Out-Null
     Start-Sleep -Seconds 2
     if (-not (Get-Process -Name "VKey" -ErrorAction SilentlyContinue)) {
-        throw "NexusKey.exe failed to start -- check $NexusKeyExe"
+        throw "VKey.exe failed to start -- check $VKeyExe"
     }
 }
 

@@ -31,9 +31,9 @@ $candidates = @(
     "\\wsl`$\Ubuntu-24.04\home\phatmt\code\VKey\build\Release",
     "Z:\home\phatmt\code\VKey\build\Release"
 )
-$exeRoot = $candidates | Where-Object { Test-Path "$_\NexusKey.exe" } | Select-Object -First 1
+$exeRoot = $candidates | Where-Object { Test-Path "$_\VKey.exe" } | Select-Object -First 1
 if (-not $exeRoot) {
-    Write-Host "NexusKey.exe not found in any candidate path:" -ForegroundColor Red
+    Write-Host "VKey.exe not found in any candidate path:" -ForegroundColor Red
     $candidates | ForEach-Object { Write-Host "  $_" }
     exit 1
 }
@@ -53,7 +53,7 @@ if (-not ('SmokeWD.N' -as [type])) {
 $nkProcs = @(Get-Process VKey -ErrorAction SilentlyContinue)
 if ($nkProcs.Count -eq 0) {
     Write-Host "Starting VKey..."
-    & "$exeRoot\NexusKey.exe"
+    & "$exeRoot\VKey.exe"
     Start-Sleep -Seconds 5
     $nkProcs = @(Get-Process VKey -ErrorAction SilentlyContinue)
     if ($nkProcs.Count -eq 0) { Write-Host "VKey không start được" -ForegroundColor Red; exit 1 }
@@ -65,7 +65,7 @@ Write-Host "VKey PIDs: $($nkPids -join ', ')" -ForegroundColor Green
 $wd = Get-Process VKeyWatchdog -ErrorAction SilentlyContinue
 if (-not $wd) {
     Write-Host "Starting watchdog..."
-    & "$exeRoot\NexusKeyWatchdog.exe"
+    & "$exeRoot\VKeyWatchdog.exe"
     Write-Host "Waiting 35s for POST_INIT_GRACE_MS..."
     Start-Sleep -Seconds 35
 } else {

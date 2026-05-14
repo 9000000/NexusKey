@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $buildDir = Join-Path $root "build"
 $config = if ($Release) { "Release" } else { "Debug" }
-$exe = Join-Path $buildDir "$config\NexusKey.exe"
+$exe = Join-Path $buildDir "$config\VKey.exe"
 
 Write-Host "=== VKey App Build ===" -ForegroundColor Cyan
 Write-Host "  Root:   $root"

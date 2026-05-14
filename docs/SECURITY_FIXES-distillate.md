@@ -60,15 +60,15 @@ parts: 1
 
 ## FIX-7 — Validate ZIP Path for `--install-update`
 - **File**: `src/app/main.cpp`
-- **Vulnerability**: Arbitrary zip path → malware replaces update ZIP → copies over `NextKeyTSF.dll` → system-wide DLL injection
+- **Vulnerability**: Arbitrary zip path → malware replaces update ZIP → copies over `VKeyTSF.dll` → system-wide DLL injection
 - **Fix**: Case-insensitive prefix check that zip path starts with `GetTempPathW()` result; reject + log + return 1 if outside %TEMP%
 - **Pattern**: `std::transform` to lowercase both paths; `zipLower.substr(0, tempLower.size()) != tempLower` → reject
 
 ## Verification
 - FIX-1: Process Hacker → Object Explorer → VKeySharedState Security tab shows only SYSTEM + current user
 - FIX-2: 2MB `[macros]` in config.toml → log warning, use defaults, no crash
-- FIX-3: Create `HKCU\...\CLSID\{guid}\InprocServer32` → notepad.exe → start NexusKey → key removed
+- FIX-3: Create `HKCU\...\CLSID\{guid}\InprocServer32` → notepad.exe → start VKey → key removed
 - FIX-4: Debug breakpoint, set `state.inputMethod = 0xFF` → log + Telex fallback, no crash
 - FIX-5: Existing `SharedStateTest.cpp` tests must pass
 - FIX-6: Type word → commit → switch app → verify `commitStack_` empty
-- FIX-7: `NexusKey.exe "--install-update" "C:\Windows\evil.zip"` → rejection log, no installer run
+- FIX-7: `VKey.exe "--install-update" "C:\Windows\evil.zip"` → rejection log, no installer run
