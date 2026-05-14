@@ -16,6 +16,7 @@ class TestApplyEndToEnd(unittest.TestCase):
         subprocess.run(["git", "config", "user.email", "t@t"], cwd=self.tmp, check=True)
         subprocess.run(["git", "config", "user.name", "T"], cwd=self.tmp, check=True)
         (self.tmp / "README.md").write_text("# NexusKey\n")
+        (self.tmp / ".gitignore").write_text("tools/rebrand/out/\n")
         subprocess.run(["git", "add", "."], cwd=self.tmp, check=True)
         subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=self.tmp, check=True)
 
