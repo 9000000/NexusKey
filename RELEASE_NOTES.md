@@ -1,4 +1,6 @@
-# NexusKey v3.0.0
+# NexusKey v3.0.0 - VKey
+Rebranch lần nữa cho thân thiện hơn, giờ nó sẽ là VKey. Mọi người đang dùng version cũ cần tắt khởi động cùng windows trước khi cài version mới (xem hướng dẫn: [Gỡ Auto-Start NexusKey](docs/uninstall-autostart.md)). Version này cần tải thủ công lần đầu.
+
 **✨ Tính năng mới & Cải tiến:**
 - Refactor lại hook engine, tối ưu lại hiệu suất gõ và tính ổn định của app
 - Cho phép config dùng clipboard cho app
