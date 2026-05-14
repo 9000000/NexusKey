@@ -32,7 +32,14 @@ if ($Clean -and (Test-Path $buildDir)) {
 }
 
 # Configure (if needed)
-if (-not (Test-Path (Join-Path $buildDir "CMakeCache.txt"))) {
+$cacheFile = Join-Path $buildDir "CMakeCache.txt"
+$cmakeLists = Join-Path $root "CMakeLists.txt"
+$needConfigure = -not (Test-Path $cacheFile)
+if (-not $needConfigure -and (Get-Item $cmakeLists).LastWriteTime -gt (Get-Item $cacheFile).LastWriteTime) {
+    Write-Host "[1/3] CMakeLists.txt newer than cache — reconfiguring..." -ForegroundColor Yellow
+    $needConfigure = $true
+}
+if ($needConfigure) {
     Write-Host "[1/3] Configuring CMake..." -ForegroundColor Yellow
     cmake -S $root -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_LITE_MODE=ON
     if ($LASTEXITCODE -ne 0) { Write-Host "CMake configure FAILED" -ForegroundColor Red; exit 1 }
