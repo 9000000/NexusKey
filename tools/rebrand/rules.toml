@@ -1,0 +1,105 @@
+[meta]
+old_brand   = "NexusKey"
+new_brand   = "VKey"
+keep_namespace = "NextKey"
+keep_log_macro = "NEXTKEY_LOG"
+
+[scope]
+include = [
+    "src/**/*.{cpp,h,rc,manifest,def,idl}",
+    "src/app/ui/**/*.{html,js,css}",
+    "tools/**/*.{cpp,h,py,sh,toml,md}",
+    "CMakeLists.txt", "**/CMakeLists.txt",
+    "*.md",
+    "docs/CODING_RULES/**/*.md",
+    "docs/CODE_GOVERNANCE.md",
+    "docs/REFACTOR_STATUS.md",
+    "docs/TODO.md",
+    "docs/index.md",
+    ".github/**/*.{yml,yaml}",
+    "scripts/**/*",
+]
+exclude = [
+    "HANDOFF.md", "GEMINI.md",
+    "docs/plans/**", ".planning/**",
+    "docs/ghost-chars-chrome-investigation.md",
+    "docs/gonhanh-architecture-comparison.md",
+    ".agent/**", ".agents/**", "_bmad/**", "_bmad-output/**",
+    ".claude/**", ".claude-m/**", ".claude-work/**",
+    "build/**", "build-linux/**",
+    "extern/**", "src/vendor/**",
+    "**/*.png", "**/*.jpg", "**/*.ico",
+    "tools/rebrand/out/**",
+    "tools/rebrand/tests/fixtures/**",
+]
+
+[replacements.brand_string]
+"NexusKey"  = "VKey"
+"nexuskey"  = "vkey"
+"NEXUSKEY"  = "VKEY"
+
+[replacements.binary_name]
+"NexusKey.exe"           = "VKey.exe"
+"NexusKeyClassic.exe"    = "VKeyClassic.exe"
+"NexusKeyTSF.dll"        = "VKeyTSF.dll"
+"NexusKeyWatchdog.exe"   = "VKeyWatchdog.exe"
+"NextKey.exe"            = "VKey.exe"
+"NextKey32.exe"          = "VKey32.exe"
+"NexusKey64.exe"         = "VKey64.exe"
+"NextKeyEngine"          = "VKeyEngine"
+"NextKeyCore"            = "VKeyCore"
+"NextKeyTSF"             = "VKeyTSF"
+"NextKeyApp"             = "VKeyApp"
+"NextKeyLite"            = "VKeyLite"
+"NextKeyTests"           = "VKeyTests"
+"NextKeyTestRunner"      = "VKeyTestRunner"
+"NextKeyTestRunnerTests" = "VKeyTestRunnerTests"
+"NexusKeyWatchdog"       = "VKeyWatchdog"
+
+[replacements.runtime_ipc]
+'Local\\NexusKeySharedState' = 'Local\\VKeySharedState'
+"NexusKeyClassicSettings"    = "VKeyClassicSettings"
+
+[replacements.persistent_id]
+'Software\\NexusKey' = 'Software\\VKey'
+
+[replacements.release_artifact]
+"NexusKey.zip"                       = "VKey.zip"
+"NexusKey.zip.sha256"                = "VKey.zip.sha256"
+"NexusKey.zip.sigstore.json"         = "VKey.zip.sigstore.json"
+"NexusKeyClassic.zip"                = "VKeyClassic.zip"
+"NexusKeyClassic.zip.sha256"         = "VKeyClassic.zip.sha256"
+"NexusKeyClassic.zip.sigstore.json"  = "VKeyClassic.zip.sigstore.json"
+"NexusKey-x64"                       = "VKey-x64"
+
+[persistent_id.guids]
+old_clsid_text_service = "<paste from src/tsf/Globals.cpp before apply>"
+new_clsid_text_service = "TBD-uuidgen"
+old_profile_guid       = "<paste from src/tsf/Globals.cpp before apply>"
+new_profile_guid       = "TBD-uuidgen"
+
+[exclude_patterns.namespace_keep]
+regex = [
+    '\bnamespace\s+NextKey\b',
+    '\bNextKey::',
+    '\busing\s+NextKey::',
+    '\bNEXTKEY_LOG\s*\(',
+]
+
+[recategorize]
+brand_to_binary_regex = [
+    '--target\s+(NextKey|NexusKey)\w*',
+    'cmake\s+--build.*--target',
+]
+
+[file_renames]
+"src/app/NexusKey.exe.manifest"             = "src/app/VKey.exe.manifest"
+"src/app/NexusKey.rc"                       = "src/app/VKey.rc"
+"src/app/classic/NexusKeyLite.exe.manifest" = "src/app/classic/VKeyLite.exe.manifest"
+"src/app/classic/NexusKeyLite.rc"           = "src/app/classic/VKeyLite.rc"
+"src/tsf/NexusKeyTSF.def"                   = "src/tsf/VKeyTSF.def"
+"src/tsf/NexusKeyTSF.rc"                    = "src/tsf/VKeyTSF.rc"
+"tools/NextKeyTestRunner"                   = "tools/VKeyTestRunner"
+"docs/images/nextkey-compact.png"           = "docs/images/vkey-compact.png"
+"docs/images/nextkey-expanded.png"          = "docs/images/vkey-expanded.png"
+"docs/images/nextkey-full-UI.png"           = "docs/images/vkey-full-UI.png"
