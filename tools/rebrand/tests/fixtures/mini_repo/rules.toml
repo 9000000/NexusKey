@@ -1,0 +1,38 @@
+[meta]
+old_brand = "NexusKey"
+new_brand = "VKey"
+keep_namespace = "NextKey"
+keep_log_macro = "NEXTKEY_LOG"
+
+[scope]
+include = ["**/*.md", "src/**/*.{cpp,h}", ".github/**/*.yml"]
+exclude = ["docs/plans/**"]
+
+[replacements.brand_string]
+"NexusKey" = "VKey"
+
+[replacements.binary_name]
+"NexusKey.exe" = "VKey.exe"
+"NexusKey.zip" = "VKey.zip"
+"NextKeyApp" = "VKeyApp"
+
+[replacements.runtime_ipc]
+'Local\\NexusKeySharedState' = 'Local\\VKeySharedState'
+
+[replacements.persistent_id]
+
+[replacements.release_artifact]
+
+[persistent_id.guids]
+old_clsid_text_service = "old1"
+new_clsid_text_service = "{12345678-1234-1234-1234-123456789abc}"
+old_profile_guid = "old2"
+new_profile_guid = "{12345678-1234-1234-1234-123456789abd}"
+
+[exclude_patterns.namespace_keep]
+regex = ['\bnamespace\s+NextKey\b', '\bNextKey::']
+
+[recategorize]
+brand_to_binary_regex = ['--target\s+(NextKey|NexusKey)\w*']
+
+[file_renames]
