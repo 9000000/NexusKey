@@ -288,6 +288,9 @@ void TypingEngine::PushChar(wchar_t keyChar) {
         if (isTelexTone && effectiveSpellCheck &&
             IsBlockedEnglishTone(rawInput_.data(), rawInput_.size())) {
             bool overridden = false;
+            // Outer !empty guard skips the FindToneTarget cache fill when there are
+            // no exclusions — ToneMatchesExclusion would return false anyway, but
+            // the cache fill costs an O(n) buffer scan we'd rather avoid on this path.
             if (!config_.spellExclusions.empty()) {
                 if (!hasCachedTarget) { cachedToneTarget = FindToneTarget(); hasCachedTarget = true; }
                 overridden = ToneMatchesExclusion(cachedToneTarget, requestedTone);
@@ -502,7 +505,7 @@ bool TypingEngine::WouldModifierRecoverOrEscape(TypingAction action, wchar_t key
 // Tone Processing
 //-----------------------------------------------------------------------------
 
-bool TypingEngine::ToneMatchesExclusion(size_t targetIdx, Tone requestedTone) const {
+bool TypingEngine::ToneMatchesExclusion(size_t targetIdx, Tone requestedTone) const noexcept {
     if (config_.spellExclusions.empty() || targetIdx == SIZE_MAX) return false;
     CharState tentative = states_[targetIdx];
     tentative.tone = requestedTone;

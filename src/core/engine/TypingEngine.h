@@ -132,7 +132,7 @@ private:
     // to decide whether a user spell-exclusion entry should override a literal
     // rejection. Returns false on empty exclusions or SIZE_MAX target — caller
     // can drop the empty/sentinel guards.
-    [[nodiscard]] bool ToneMatchesExclusion(size_t targetIdx, Tone requestedTone) const;
+    [[nodiscard]] bool ToneMatchesExclusion(size_t targetIdx, Tone requestedTone) const noexcept;
 
     // Internal processing
     void ProcessChar(wchar_t keyChar, wchar_t lower, bool isUpper);
