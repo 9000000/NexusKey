@@ -13,7 +13,7 @@ CMakeCache.txt
 CMakeFiles/
 cmake-build-*/
 
-# ===== Test runner artifacts (NextKeyTestRunner outputs at repo root) =====
+# ===== Test runner artifacts (VKeyTestRunner outputs at repo root) =====
 /perf-*.csv
 /report-*.xml
 **/__pycache__/
@@ -75,4 +75,4 @@ docs/*
 !docs/CODE_GOVERNANCE.md
 
 GEMINI.md
-tools/NextKeyTestRunner/
+tools/VKeyTestRunner/

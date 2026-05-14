@@ -6,13 +6,13 @@
 [![Release](https://img.shields.io/github/v/release/phatMT97/NextKey)](https://github.com/phatMT97/NextKey/releases)
 
 <p align="center">
-  <img src="docs/images/nextkey-compact.png" alt="VKey Compact View" width="250">
-  <img src="docs/images/nextkey-expanded.png" alt="VKey Expanded View" width="550">
+  <img src="docs/images/vkey-compact.png" alt="VKey Compact View" width="250">
+  <img src="docs/images/vkey-expanded.png" alt="VKey Expanded View" width="550">
 </p>
 <p align="center"><em>Giao diện VKey: Chế độ thu gọn (trái) và Cài đặt mở rộng (phải)</em></p>
 
 <p align="center">
-  <img src="docs/images/nextkey-full-UI.png" alt="VKey Full UI" width="800">
+  <img src="docs/images/vkey-full-UI.png" alt="VKey Full UI" width="800">
 </p>
 <p align="center"><em>Giao diện đầy đủ VKey</em></p>
 
