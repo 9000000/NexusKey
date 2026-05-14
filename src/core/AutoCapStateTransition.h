@@ -1,6 +1,6 @@
-// NexusKey - Auto-Capitalization Keystroke State Machine
+// VKey - Auto-Capitalization Keystroke State Machine
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 //
 // Pure transition function: given the current state and a key event, returns
 // the next state. Used by HookEngine::HandlePreDispatch (step 3a) when there
@@ -8,7 +8,7 @@
 // document-context decision is in core/AutoCapDecision.h.
 //
 // Extracted from HookEngine.cpp for Linux GTest coverage (HookEngine.cpp is
-// Win32-only and not linked into the cross-platform NextKeyTests target). The
+// Win32-only and not linked into the cross-platform VKeyTests target). The
 // transition rule is the source of truth — HookEngine just dispatches and
 // stores the result.
 

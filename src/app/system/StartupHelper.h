@@ -1,4 +1,4 @@
-// NexusKey - Startup Helper (Windows-only)
+// VKey - Startup Helper (Windows-only)
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Manages run-on-startup registration via Registry (normal) or
@@ -30,9 +30,9 @@ namespace NextKey {
 
 /// Registry key path for user-level startup programs
 inline constexpr const wchar_t* STARTUP_REG_KEY = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-inline constexpr const wchar_t* STARTUP_REG_VALUE = L"NexusKey";
-inline constexpr const wchar_t* STARTUP_TASK_NAME = L"NexusKey";
-inline constexpr const wchar_t* WATCHDOG_TASK_NAME = L"\\NexusKey\\Watchdog";
+inline constexpr const wchar_t* STARTUP_REG_VALUE = L"VKey";
+inline constexpr const wchar_t* STARTUP_TASK_NAME = L"VKey";
+inline constexpr const wchar_t* WATCHDOG_TASK_NAME = L"\\VKey\\Watchdog";
 
 // Forward declaration — defined below. RemoveScheduledTask() calls this before
 // its definition appears in the file.
@@ -184,17 +184,17 @@ inline void RemoveRegistryStartup() noexcept {
     return true;
 }
 
-/// Create the watchdog scheduled task at \NexusKey\Watchdog.
+/// Create the watchdog scheduled task at \VKey\Watchdog.
 /// Differences from CreateScheduledTaskElevated():
 ///   - Action: NexusKeyWatchdog.exe (sibling of NexusKey.exe in install dir)
-///   - Trigger delay: 10s (let NexusKey come up first; main task uses 5s)
+///   - Trigger delay: 10s (let VKey come up first; main task uses 5s)
 ///   - Settings: RestartCount=3, RestartInterval=1min for self-healing if
 ///     the watchdog itself dies (Win10+).
 ///   - Principal RunLevel: Limited (NOT Highest) — process supervisor doesn't
 ///     need elevation. Keeps AV calm, no UAC needed at logon.
-///   - Task path: \NexusKey\Watchdog (user-root folder, visible in Task
+///   - Task path: \VKey\Watchdog (user-root folder, visible in Task
 ///     Scheduler MMC for user debug).
-/// Requires UAC to register under \NexusKey\ folder.
+/// Requires UAC to register under \VKey\ folder.
 [[nodiscard]] inline bool CreateWatchdogScheduledTask() noexcept {
     // Build path to NexusKeyWatchdog.exe — same dir as current EXE.
     wchar_t exePath[MAX_PATH] = {};
@@ -214,13 +214,13 @@ inline void RemoveRegistryStartup() noexcept {
     std::wstring ps1Args = L"-NoProfile -WindowStyle Hidden -Command \"";
     ps1Args += L"$A = New-ScheduledTaskAction -Execute '\"" + watchdogPath + L"\"' -WorkingDirectory '" + dirStr + L"'; ";
     ps1Args += L"$T = New-ScheduledTaskTrigger -AtLogOn; ";
-    ps1Args += L"$T.Delay = 'PT10S'; ";  // 10s after logon — let NexusKey come up first
+    ps1Args += L"$T.Delay = 'PT10S'; ";  // 10s after logon — let VKey come up first
     ps1Args += L"$S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); ";
     ps1Args += L"$P = New-ScheduledTaskPrincipal -UserId '" + EscapePowerShellSingleQuote(username) + L"' -LogonType Interactive -RunLevel Limited; ";
     ps1Args += L"Register-ScheduledTask -TaskName '" + std::wstring(WATCHDOG_TASK_NAME) + L"' -Action $A -Trigger $T -Settings $S -Principal $P -Force\"";
 
     SHELLEXECUTEINFOW sei = { sizeof(sei) };
-    sei.lpVerb = L"runas";  // UAC required to write \NexusKey\ Task Scheduler folder
+    sei.lpVerb = L"runas";  // UAC required to write \VKey\ Task Scheduler folder
     sei.lpFile = L"powershell.exe";
     sei.lpParameters = ps1Args.c_str();
     sei.nShow = SW_HIDE;
@@ -238,7 +238,7 @@ inline void RemoveRegistryStartup() noexcept {
     return true;
 }
 
-/// Remove the watchdog scheduled task at \NexusKey\Watchdog.
+/// Remove the watchdog scheduled task at \VKey\Watchdog.
 /// No-op if task doesn't exist. Requires UAC.
 inline void RemoveWatchdogScheduledTask() noexcept {
     if (!IsWatchdogTaskRegistered()) return;
@@ -284,7 +284,7 @@ inline void RegisterRunOnStartup(bool enable, bool asAdmin) {
 [[nodiscard]] inline std::wstring GetDesktopShortcutPath() {
     std::wstring desktop = GetDesktopPath();
     if (desktop.empty()) return {};
-    return desktop + L"\\NexusKey.lnk";
+    return desktop + L"\\VKey.lnk";
 }
 
 /// Create a desktop shortcut (.lnk) pointing to the current executable.
@@ -316,7 +316,7 @@ inline bool CreateDesktopShortcut() {
 
     pShellLink->SetPath(exePath);
     pShellLink->SetWorkingDirectory(workDir.c_str());
-    pShellLink->SetDescription(L"NexusKey Vietnamese Input");
+    pShellLink->SetDescription(L"VKey Vietnamese Input");
     pShellLink->SetIconLocation(exePath, 0);
 
     IPersistFile* pPersistFile = nullptr;
@@ -372,7 +372,7 @@ inline void SetDesktopShortcut(bool enable) {
     return exitCode == 0;
 }
 
-/// Check if the watchdog scheduled task exists at \NexusKey\Watchdog
+/// Check if the watchdog scheduled task exists at \VKey\Watchdog
 /// (non-elevated query, no UAC prompt).
 [[nodiscard]] inline bool IsWatchdogTaskRegistered() noexcept {
     std::wstring cmdLine = L"schtasks.exe /query /tn \"" +

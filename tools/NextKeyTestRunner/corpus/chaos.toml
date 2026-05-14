@@ -8,7 +8,7 @@
 # Run via:
 #   NextKeyTestRunner.exe --corpus corpus/chaos.toml
 #
-# All `keys` values are raw Telex sequences (post-NexusKey-hook the engine
+# All `keys` values are raw Telex sequences (post-VKey-hook the engine
 # should produce `expected`). Use TOML literal strings ('...') for sequences
 # containing backslash escapes -- our KeyEscapes module resolves them.
 

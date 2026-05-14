@@ -115,7 +115,7 @@ The hook callback should return as early as possible. Check conditions in this o
 ```cpp
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     // 1. Own synthetic events — return IMMEDIATELY (no processing)
-    if (pKey->dwExtraInfo == NEXUSKEY_EXTRA_INFO) return CallNextHookEx(...);
+    if (pKey->dwExtraInfo == VKEY_EXTRA_INFO) return CallNextHookEx(...);
 
     // 2. nCode < 0 — Windows says pass through
     if (nCode < 0) return CallNextHookEx(...);

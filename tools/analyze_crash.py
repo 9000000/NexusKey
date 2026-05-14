@@ -2,7 +2,7 @@ import os
 import glob
 
 # Đường dẫn trỏ tới thư mục chứa các file dump mà bạn đã tải về (đã sửa cho WSL)
-crash_dir = r"/mnt/c/Users/Admin/Downloads/Compressed/AppCrash_NexusKeyClassic"
+crash_dir = r"/mnt/c/Users/Admin/Downloads/Compressed/AppCrash_VKeyClassic"
 
 # Tìm tất cả file Report.wer trong các thư mục con
 wer_files = glob.glob(os.path.join(crash_dir, "**", "Report.wer"), recursive=True)

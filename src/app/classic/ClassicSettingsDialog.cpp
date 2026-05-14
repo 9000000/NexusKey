@@ -1,4 +1,4 @@
-// NexusKey Classic — Settings Dialog Implementation
+// VKey Classic — Settings Dialog Implementation
 // Compact (Unikey-style) + Advanced (EVKey-style) modes
 // SPDX-License-Identifier: GPL-3.0-only
 
@@ -61,7 +61,7 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
     hwnd_ = CreateWindowExW(
         0,
         kClassName,
-        L"NexusKey v" NEXUSKEY_VERSION_WSTR,
+        L"VKey v" VKEY_VERSION_WSTR,
         style,
         CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,  // temporary size
         parent, nullptr, hInstance, this
@@ -116,7 +116,7 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
             : S(StringId::UPDATE_BANNER_MISMATCH);
         // User already confirms reboot intent in THIS MessageBox; skip the
         // second prompt in RestartWindowsWithPrompt — call the no-UI variant.
-        if (MessageBoxW(hwnd_, msg, L"NexusKey",
+        if (MessageBoxW(hwnd_, msg, L"VKey",
                         MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2) == IDOK) {
             RestartWindowsNow();
         }
@@ -516,7 +516,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         GetWindowRect(tabControl_, &tcRc);
         MapWindowPoints(HWND_DESKTOP, hwnd_, reinterpret_cast<LPPOINT>(&tcRc), 2);
         linkReportBug_ = CreateWindowExW(0, WC_LINK,
-            L"<a href=\"https://github.com/phatMT97/NexusKey/issues\">Báo cáo lỗi</a>",
+            L"<a href=\"https://github.com/phatMT97/VKey/issues\">Báo cáo lỗi</a>",
             WS_CHILD | WS_VISIBLE,
             tcRc.right - Dpi(90), tcRc.bottom - Dpi(26), Dpi(80), Dpi(16),
             hwnd_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_LINK_REPORT_BUG)),
@@ -843,8 +843,8 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                     SaveSettings();
                     KillTimer(hwnd_, kTimerDeferredSave);
                     SaveToToml();
-                    HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
-                    if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
+                    HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+                    if (trayWnd) PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 0, 0);
                     return;
                 }
 
@@ -972,7 +972,7 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
                         }
                         // Signal main process to exit so the updater can replace files.
                         // Without this, updater waits 30s then proceeds while we're still running.
-                        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                        HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
                         if (trayWnd) {
                             PostMessageW(trayWnd, WM_CLOSE, 0, 0);
                         }
@@ -1045,9 +1045,9 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
         SaveToToml();
         // Restart main process to apply elevation change.
         // Startup registration handled by EnsureStartupRegistration() in new instance.
-        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
         if (trayWnd) {
-            PostMessageW(trayWnd, WM_NEXUSKEY_RESTART, 0, 0);
+            PostMessageW(trayWnd, WM_VKEY_RESTART, 0, 0);
         }
     }
     else if (wcscmp(id, L"desktop-shortcut") == 0) {
@@ -1060,15 +1060,15 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
         // Flush + notify tray to rebuild menu in new language
         KillTimer(hwnd_, kTimerDeferredSave);
         SaveToToml();
-        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
-        if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
+        HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+        if (trayWnd) PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 0, 0);
     }
     else if (wcscmp(id, L"floating-icon") == 0) {
         // Flush TOML + notify main thread to show/hide floating icon immediately
         KillTimer(hwnd_, kTimerDeferredSave);
         SaveToToml();
-        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
-        if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
+        HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+        if (trayWnd) PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 0, 0);
     }
     else if (wcscmp(id, L"force-light-theme") == 0) {
         // Re-init theme with new setting, repaint entire window
@@ -1102,8 +1102,8 @@ void ClassicSettingsDialog::OnPickIconColors() {
         // Flush + notify immediately so tray icon updates
         KillTimer(hwnd_, kTimerDeferredSave);
         SaveToToml();
-        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
-        if (trayWnd) PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
+        HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+        if (trayWnd) PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 0, 0);
     }
 }
 
@@ -1167,8 +1167,8 @@ void ClassicSettingsDialog::RefreshLabels() {
     // Report bug link
     if (linkReportBug_) {
         SetWindowTextW(linkReportBug_, en
-            ? L"<a href=\"https://github.com/phatMT97/NexusKey/issues\">Report bug</a>"
-            : L"<a href=\"https://github.com/phatMT97/NexusKey/issues\">Báo cáo lỗi</a>");
+            ? L"<a href=\"https://github.com/phatMT97/VKey/issues\">Report bug</a>"
+            : L"<a href=\"https://github.com/phatMT97/VKey/issues\">Báo cáo lỗi</a>");
     }
 
     // Tooltips
@@ -1348,7 +1348,7 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             self->OnCommand(wParam, lParam);
             return 0;
 
-        case WM_NEXUSKEY_CONFIG_CHANGED:
+        case WM_VKEY_CONFIG_CHANGED:
             self->LoadSettings();
             self->PopulateControls();
             return 0;
@@ -1376,7 +1376,7 @@ LRESULT CALLBACK ClassicSettingsDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPar
             }
             if (hdr->idFrom == IDC_LINK_REPORT_BUG && (hdr->code == NM_CLICK || hdr->code == NM_RETURN)) {
                 ShellExecuteW(nullptr, L"open",
-                    L"https://github.com/phatMT97/NexusKey/issues",
+                    L"https://github.com/phatMT97/VKey/issues",
                     nullptr, nullptr, SW_SHOW);
             }
             return 0;

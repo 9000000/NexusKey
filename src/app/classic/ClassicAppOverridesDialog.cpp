@@ -1,4 +1,4 @@
-// NexusKey Classic — App Overrides Dialog Implementation
+// VKey Classic — App Overrides Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ClassicAppOverridesDialog.h"

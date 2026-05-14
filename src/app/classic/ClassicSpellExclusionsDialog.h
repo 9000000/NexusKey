@@ -1,4 +1,4 @@
-// NexusKey Classic — Spell Check Exclusions Dialog
+// VKey Classic — Spell Check Exclusions Dialog
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -61,7 +61,7 @@ private:
     // State
     std::vector<std::wstring> entries_;
 
-    static constexpr const wchar_t* kClassName = L"NexusKeySpellExclusions";
+    static constexpr const wchar_t* kClassName = L"VKeySpellExclusions";
 };
 
 }  // namespace NextKey::Classic

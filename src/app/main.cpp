@@ -1,4 +1,4 @@
-// NexusKey - Core Application Entry Point
+// VKey - Core Application Entry Point
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "system/TrayIcon.h"
@@ -26,7 +26,7 @@
 #include "system/HotkeyWiring.h"
 #include "system/HeartbeatPublisher.h"
 #include "core/ipc/SharedStateManager.h"
-#ifdef NEXUSKEY_HOOK_ENGINE
+#ifdef VKEY_HOOK_ENGINE
 #include "system/HookEngine.h"
 #include "system/MainThreadWorker.h"
 #include "system/QuickConvert.h"
@@ -60,10 +60,10 @@ static HINSTANCE g_hInstance = nullptr;
 
 static SharedStateManager g_sharedState;  // Shared memory for Settings subprocess IPC
 static HotkeyManager g_hotkeyManager;
-static HeartbeatPublisher g_heartbeat;  // 30s heartbeat for NexusKeyWatchdog auto-respawn
+static HeartbeatPublisher g_heartbeat;  // 30s heartbeat for VKeyWatchdog auto-respawn
 static std::atomic<bool> g_watchdogEnabled{false};  // Mirrors SystemConfig::watchdogEnabled — read by tray menu state getter, written by ToggleWatchdog handler
 
-#ifdef NEXUSKEY_HOOK_ENGINE
+#ifdef VKEY_HOOK_ENGINE
 static HookEngine g_hookEngine;
 static MainThreadWorker g_mainThreadWorker;  // Sprint 1 D9: drain config-change work off main thread
 static std::unique_ptr<QuickConvert> g_quickConvert;
@@ -76,15 +76,15 @@ void OnMenuCommand(TrayMenuId id);
 
 // Settings window helpers — search by title (subprocess may or may not be open)
 static HWND GetSettingsHwnd() noexcept {
-    return FindWindowW(nullptr, L"NexusKey Settings");
+    return FindWindowW(nullptr, L"VKey Settings");
 }
 static void NotifySettingsMode(bool vietnamese) noexcept {
     if (HWND h = GetSettingsHwnd()) {
-        PostMessageW(h, WM_NEXUSKEY_MODE_CHANGED, vietnamese ? 1 : 0, 0);
+        PostMessageW(h, WM_VKEY_MODE_CHANGED, vietnamese ? 1 : 0, 0);
     }
 }
 
-#ifndef NEXUSKEY_HOOK_ENGINE
+#ifndef VKEY_HOOK_ENGINE
 // V/E icon sync: 250ms poll of SharedState flags (atomic read, no IPC)
 static constexpr UINT_PTR TIMER_ID_ICON_POLL = 100;
 
@@ -265,7 +265,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     }
 
-    // Ensure only one background instance of NexusKey runs at a time.
+    // Ensure only one background instance of VKey runs at a time.
     // We check this AFTER subprocess routing so settings/macro dialogs
     // can spawn freely, but a second background process cannot.
     // NOTE: Use default DACL (nullptr). MakeCreatorOnlySecurityAttributes() uses
@@ -292,9 +292,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             // existing instance to indicate the app is active. Otherwise, strictly silent.
             auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
             if (sysConfig.showOnStartup) {
-                HWND existingTrayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
                 if (existingTrayWnd) {
-                    PostMessageW(existingTrayWnd, WM_NEXUSKEY_SHOW_SETTINGS, 0, 0);
+                    PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
 
                     HWND existingSettings = GetSettingsHwnd();
                     if (existingSettings) {
@@ -377,7 +377,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     }
 
-#ifdef NEXUSKEY_HOOK_ENGINE
+#ifdef VKEY_HOOK_ENGINE
     // ═══════════════════════════════════════════════════════════
     // Hook Engine Mode — single process, no DLL/COM needed
     // ═══════════════════════════════════════════════════════════
@@ -419,7 +419,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     if (!g_trayIcon.Create(hInstance, startVietnamese)) {
         // MessageBox acceptable: fatal startup error, app cannot function without tray icon.
         // No matching StringId — using English string (language config not yet applied to UI).
-        MessageBoxW(nullptr, L"Failed to create tray icon", L"NexusKey", MB_ICONERROR);
+        MessageBoxW(nullptr, L"Failed to create tray icon", L"VKey", MB_ICONERROR);
         CloseHandle(hMutex);
         return 1;
     }
@@ -432,7 +432,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         WPARAM wp = vietnamese ? 1 : 0;
         HWND trayWnd = g_trayIcon.GetMessageWindow();
         if (trayWnd) {
-            PostMessageW(trayWnd, WM_NEXUSKEY_TRAY_MODE_SYNC, wp, 0);
+            PostMessageW(trayWnd, WM_VKEY_TRAY_MODE_SYNC, wp, 0);
         }
         // Floating icon: direct update (same thread, no PostMessage needed)
         g_floatingIcon.SetVietnameseMode(vietnamese);
@@ -503,7 +503,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
         // No matching StringId — using English string (language config not yet applied to UI).
         timeEndPeriod(1);
-        MessageBoxW(nullptr, L"Failed to install keyboard hook", L"NexusKey", MB_ICONERROR);
+        MessageBoxW(nullptr, L"Failed to install keyboard hook", L"VKey", MB_ICONERROR);
         CloseHandle(hMutex);
         return 1;
     }
@@ -523,7 +523,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
     g_mainThreadWorker.Start();
 
-    // Heartbeat for NexusKeyWatchdog auto-respawn. Opt-in: only start when
+    // Heartbeat for VKeyWatchdog auto-respawn. Opt-in: only start when
     // watchdog is enabled in config. Default config (watchdog OFF) skips the
     // thread + 2 named events, saving ~50–80 KB Working Set. Toggle ON later
     // → started in TrayMenuId::ToggleWatchdog handler.
@@ -579,13 +579,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                 Sleep(3000);
                 auto info = UpdateChecker::CheckForUpdate();
                 if (info.available) {
-                    HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                    HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
                     if (trayWnd) {
                         auto* pInfo = new (std::nothrow) UpdateInfo(std::move(info));
                         if (pInfo) {
                             // WndProc returns true (1) on success and takes ownership of pInfo.
                             // If window was destroyed, SendMessageW returns 0 — we still own pInfo.
-                            if (!SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                            if (!SendMessageW(trayWnd, WM_VKEY_UPDATE_AVAILABLE, 0,
                                               reinterpret_cast<LPARAM>(pInfo))) {
                                 delete pInfo;
                             }
@@ -636,10 +636,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             // No matching StringId — using English strings (first-run scenario, language not configured yet).
             int result = MessageBoxW(
                 nullptr,
-                L"NexusKey needs to register its input method.\n\n"
+                L"VKey needs to register its input method.\n\n"
                 L"This requires administrator privileges.\n"
                 L"Click OK to continue with elevation.",
-                L"NexusKey Setup",
+                L"VKey Setup",
                 MB_OKCANCEL | MB_ICONINFORMATION
             );
 
@@ -648,7 +648,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                     MessageBoxW(nullptr,
                         L"Failed to register input method.\n"
                         L"Please run as administrator.",
-                        L"NexusKey", MB_ICONERROR);
+                        L"VKey", MB_ICONERROR);
                 }
             }
         }
@@ -687,7 +687,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     if (!g_trayIcon.Create(hInstance)) {
         // MessageBox acceptable: fatal startup error, app cannot function without tray icon.
         // No matching StringId — using English string (language config not yet applied to UI).
-        MessageBoxW(nullptr, L"Failed to create tray icon", L"NexusKey", MB_ICONERROR);
+        MessageBoxW(nullptr, L"Failed to create tray icon", L"VKey", MB_ICONERROR);
         CoUninitialize();
         CloseHandle(hMutex);
         return 1;
@@ -779,13 +779,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                 Sleep(3000);
                 auto info = UpdateChecker::CheckForUpdate();
                 if (info.available) {
-                    HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                    HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
                     if (trayWnd) {
                         auto* pInfo = new (std::nothrow) UpdateInfo(std::move(info));
                         if (pInfo) {
                             // WndProc returns true (1) on success and takes ownership of pInfo.
                             // If window was destroyed, SendMessageW returns 0 — we still own pInfo.
-                            if (!SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                            if (!SendMessageW(trayWnd, WM_VKEY_UPDATE_AVAILABLE, 0,
                                               reinterpret_cast<LPARAM>(pInfo))) {
                                 delete pInfo;
                             }
@@ -867,7 +867,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
 
     // 4. Notify Settings dialog (if open) to refresh UI
     if (HWND settingsWnd = GetSettingsHwnd()) {
-        PostMessageW(settingsWnd, WM_NEXUSKEY_CONFIG_CHANGED, 0, 0);
+        PostMessageW(settingsWnd, WM_VKEY_CONFIG_CHANGED, 0, 0);
     }
 }
 
@@ -878,11 +878,11 @@ void OnMenuCommand(TrayMenuId id) {
             break;
 
         case TrayMenuId::About:
-            SpawnSubprocess(L"NexusKey - About", L"--about");
+            SpawnSubprocess(L"VKey - About", L"--about");
             break;
 
         case TrayMenuId::ToggleMode:
-#ifdef NEXUSKEY_HOOK_ENGINE
+#ifdef VKEY_HOOK_ENGINE
             g_hookEngine.ToggleVietnameseMode();
 #else
             g_sharedState.ToggleFlag(SharedFlags::VIETNAMESE_MODE);
@@ -913,14 +913,14 @@ void OnMenuCommand(TrayMenuId id) {
         }
 
         case TrayMenuId::MacroTable:
-            SpawnSubprocess(L"NexusKey - Macro Table", L"--macro");
+            SpawnSubprocess(L"VKey - Macro Table", L"--macro");
             break;
 
         case TrayMenuId::ConvertTool:
-            SpawnSubprocess(L"NexusKey - Convert Tool", L"--convert");
+            SpawnSubprocess(L"VKey - Convert Tool", L"--convert");
             break;
 
-#ifdef NEXUSKEY_HOOK_ENGINE
+#ifdef VKEY_HOOK_ENGINE
         case TrayMenuId::QuickConvert:
             if (g_quickConvert) {
                 g_quickConvert->Execute();
@@ -985,7 +985,7 @@ void OnMenuCommand(TrayMenuId id) {
 
                 MessageBoxW(g_trayIcon.GetMessageWindow(),
                             S(StringId::WATCHDOG_STOPPED_BODY),
-                            L"NexusKey", MB_OK | MB_ICONINFORMATION);
+                            L"VKey", MB_OK | MB_ICONINFORMATION);
             } else {
                 // ── Currently OFF → enable ──
                 // Register Task Scheduler entry first (UAC prompt). If user denies
@@ -1001,7 +1001,7 @@ void OnMenuCommand(TrayMenuId id) {
 
                 // Start heartbeat thread now that watchdog is enabled. Best-
                 // effort — if event creation fails, watchdog respawn won't
-                // engage but the rest of NexusKey functions normally.
+                // engage but the rest of VKey functions normally.
                 if (!g_heartbeat.Start()) {
                     NEXTKEY_LOG(L"HeartbeatPublisher start failed on toggle ON — watchdog auto-respawn disabled");
                 }
@@ -1025,7 +1025,7 @@ void OnMenuCommand(TrayMenuId id) {
 
                 MessageBoxW(g_trayIcon.GetMessageWindow(),
                             S(StringId::WATCHDOG_ENABLED_BODY),
-                            L"NexusKey", MB_OK | MB_ICONINFORMATION);
+                            L"VKey", MB_OK | MB_ICONINFORMATION);
             }
             break;
         }
@@ -1036,7 +1036,7 @@ void OnMenuCommand(TrayMenuId id) {
             if (rawId >= static_cast<UINT>(TrayMenuId::CodeTableUnicode) &&
                 rawId <= static_cast<UINT>(TrayMenuId::CodeTableCP1258)) {
                 auto ct = static_cast<CodeTable>(rawId - static_cast<UINT>(TrayMenuId::CodeTableUnicode));
-#ifdef NEXUSKEY_HOOK_ENGINE
+#ifdef VKEY_HOOK_ENGINE
                 g_hookEngine.SetCodeTable(ct);
 #endif
                 // Update SharedState immediately (source of truth at runtime)
@@ -1055,7 +1055,7 @@ void OnMenuCommand(TrayMenuId id) {
 
                 // Notify Settings dialog to refresh UI
                 if (HWND settingsWnd = GetSettingsHwnd()) {
-                    PostMessageW(settingsWnd, WM_NEXUSKEY_CONFIG_CHANGED, 0, 0);
+                    PostMessageW(settingsWnd, WM_VKEY_CONFIG_CHANGED, 0, 0);
                 }
                 NEXTKEY_LOG(L"Code table changed via tray menu: %d", static_cast<int>(ct));
             }
@@ -1069,7 +1069,7 @@ void SpawnSettingsSubprocess() {
     HWND existing = GetSettingsHwnd();
     if (existing) {
         SetForegroundWindow(existing);
-#ifdef NEXUSKEY_HOOK_ENGINE
+#ifdef VKEY_HOOK_ENGINE
         NotifySettingsMode(g_hookEngine.IsVietnameseMode());
 #endif
         return;
@@ -1081,7 +1081,7 @@ void SpawnSettingsSubprocess() {
 
     // Build command line (pass current V/E mode to subprocess)
     wchar_t cmdLine[MAX_PATH + 64];
-#ifdef NEXUSKEY_HOOK_ENGINE
+#ifdef VKEY_HOOK_ENGINE
     int mode = g_hookEngine.IsVietnameseMode() ? 1 : 0;
 #else
     int mode = (g_sharedState.ReadFlags() & SharedFlags::VIETNAMESE_MODE) ? 1 : 0;

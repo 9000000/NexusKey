@@ -1,4 +1,4 @@
-// NexusKey - Quick Convert (Hotkey-driven text conversion)
+// VKey - Quick Convert (Hotkey-driven text conversion)
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

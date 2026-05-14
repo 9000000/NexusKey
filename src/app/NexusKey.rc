@@ -1,4 +1,4 @@
-// NexusKey - Resource File
+// VKey - Resource File
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <windows.h>
@@ -26,8 +26,8 @@ IDI_VIET_OFF_BLACK   ICON    "resources/status/StatusEngBlack.ico"
 
 // Version Information
 VS_VERSION_INFO VERSIONINFO
-    FILEVERSION    NEXUSKEY_VERSION_RC
-    PRODUCTVERSION NEXUSKEY_VERSION_RC
+    FILEVERSION    VKEY_VERSION_RC
+    PRODUCTVERSION VKEY_VERSION_RC
     FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
 #ifdef _DEBUG
     FILEFLAGS      VS_FF_DEBUG
@@ -43,13 +43,13 @@ BEGIN
         BLOCK "040904B0"
         BEGIN
             VALUE "CompanyName",      "PhatMT97"
-            VALUE "FileDescription",  "NexusKey Vietnamese Input Method"
-            VALUE "FileVersion",      NEXUSKEY_VERSION_STR
-            VALUE "InternalName",     "NexusKey"
+            VALUE "FileDescription",  "VKey Vietnamese Input Method"
+            VALUE "FileVersion",      VKEY_VERSION_STR
+            VALUE "InternalName",     "VKey"
             VALUE "LegalCopyright",   "GPL-3.0-only"
             VALUE "OriginalFilename", "NexusKey.exe"
-            VALUE "ProductName",      "NexusKey"
-            VALUE "ProductVersion",   NEXUSKEY_VERSION_STR
+            VALUE "ProductName",      "VKey"
+            VALUE "ProductVersion",   VKEY_VERSION_STR
         END
     END
     BLOCK "VarFileInfo"

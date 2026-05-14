@@ -1,4 +1,4 @@
-// NexusKey - Window Picker Base Dialog Implementation
+// VKey - Window Picker Base Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "WindowPickerDialog.h"

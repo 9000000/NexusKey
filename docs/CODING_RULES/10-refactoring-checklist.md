@@ -8,7 +8,7 @@ These have been broken before by well-intentioned changes.
 - [ ] `CreateMutexW` uses **`nullptr`** for security attributes (not `MakeCreatorOnlySecurityAttributes`)
 - [ ] CO (Creator Owner) SID does NOT resolve for non-container objects (mutex, event, file mapping) — using it causes `ERROR_ACCESS_DENIED` instead of `ERROR_ALREADY_EXISTS`
 - [ ] Test: launch EXE twice rapidly — second instance must exit silently (or show existing Settings)
-- [ ] Mutex name matches between builds: `Local\NexusKey_Main_Mutex` / `Local\NexusKeyLite_Main_Mutex`
+- [ ] Mutex name matches between builds: `Local\VKey_Main_Mutex` / `Local\VKeyLite_Main_Mutex`
 
 ## 10.2 Subprocess Lifecycle
 
@@ -38,7 +38,7 @@ When extracting functions from one file to another (e.g., `SciterHelper` → `Da
 
 - [ ] All callers updated (grep for old namespace/class name)
 - [ ] Include paths updated in ALL files that used the old header
-- [ ] CMakeLists.txt updated for BOTH targets (NextKeyApp + NextKeyLite)
+- [ ] CMakeLists.txt updated for BOTH targets (VKeyApp + VKeyLite)
 - [ ] No circular includes introduced
 - [ ] Functions that were `inline` in headers remain accessible (ODR)
 - [ ] Old header still compiles (remaining functions don't depend on moved functions)

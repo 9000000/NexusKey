@@ -1,4 +1,4 @@
-// NexusKey - TSF Registration & Diagnostics
+// VKey - TSF Registration & Diagnostics
 // SPDX-License-Identifier: GPL-3.0-only
 
 // Windows/COM headers MUST come first — <msctf.h> includes <comcat.h>
@@ -156,7 +156,7 @@ void RunDiagnostics() {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
     std::wstring out;
-    out += L"=== NexusKey Diagnostics ===\n\n";
+    out += L"=== VKey Diagnostics ===\n\n";
 
     // 1. TSF Registration check
     out += IsTsfRegistered() ? L"[OK] TSF registered\n" : L"[FAIL] TSF NOT registered\n";
@@ -232,14 +232,14 @@ void RunDiagnostics() {
             out += clsidStr;
             out += L"\n";
 
-            // NexusKey CLSID for comparison
+            // VKey CLSID for comparison
             static const GUID CLSID_NK = {
-                0xD84D1E5B, 0x8F2C, 0x4B1A,
-                {0x9D, 0x3E, 0x6F, 0x7A, 0x8B, 0x9C, 0x0D, 0x1E}
+                0xDEB18BD1, 0x2331, 0x4F2A,
+                {0xB0, 0x30, 0xDA, 0x9E, 0xB0, 0x09, 0x36, 0x83}
             };
             out += IsEqualCLSID(activeProfile.clsid, CLSID_NK)
-                ? L"  → This IS NexusKey\n"
-                : L"  → This is NOT NexusKey\n";
+                ? L"  → This IS VKey\n"
+                : L"  → This is NOT VKey\n";
         } else {
             out += L"  GetActiveProfile failed\n";
         }
@@ -294,7 +294,7 @@ void RunDiagnostics() {
     }
 
     CoUninitialize();
-    MessageBoxW(nullptr, out.c_str(), L"NexusKey Diagnostics", MB_OK | MB_ICONINFORMATION);
+    MessageBoxW(nullptr, out.c_str(), L"VKey Diagnostics", MB_OK | MB_ICONINFORMATION);
 }
 
 void CleanupHkcuClsidOverride() noexcept {

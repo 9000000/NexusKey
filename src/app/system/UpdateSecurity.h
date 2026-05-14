@@ -1,4 +1,4 @@
-// NexusKey - Update Security Helpers
+// VKey - Update Security Helpers
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Security hardening for the self-update system:

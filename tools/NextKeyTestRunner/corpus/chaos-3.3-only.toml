@@ -1,7 +1,7 @@
 # Chaos 3.3 only -- single-case corpus for option C diagnostic capture.
 # Used to localize the truongwf -> trường race vs corruption shapes
 # (tờương / ờnương) under sub-1ms inter-key load. Pair with a Debug
-# build of NextKeyApp so HOOK_LOG writes NexusKey_hook.log next to
+# build of VKeyApp so HOOK_LOG writes VKey_hook.log next to
 # the EXE; that log is what the diagnostic step reads.
 #
 # Run via (from build folder):

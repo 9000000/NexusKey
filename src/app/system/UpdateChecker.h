@@ -1,4 +1,4 @@
-// NexusKey - Update Checker
+// VKey - Update Checker
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Checks GitHub Releases API for new versions, downloads updates,

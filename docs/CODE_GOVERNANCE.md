@@ -1,4 +1,4 @@
-# NexusKey Code Governance
+# VKey Code Governance
 
 > Stated by the project owner 2026-05-05. Operationalizes [`PHILOSOPHY.md`](PHILOSOPHY.md).
 > Every PR, design proposal, and architectural change MUST pass Part 1's 5-question gate before code is written.

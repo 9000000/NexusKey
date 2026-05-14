@@ -1,4 +1,4 @@
-// NexusKey - Keyboard Hook Engine
+// VKey - Keyboard Hook Engine
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Single-process Vietnamese input using WH_KEYBOARD_LL.
@@ -104,7 +104,7 @@ public:
     [[nodiscard]] bool IsRunning() const noexcept { return keyboardHook_ != nullptr; }
 
     // Magic number to mark our own SendInput events (prevents other hooks from processing them)
-    static constexpr ULONG_PTR NEXUSKEY_EXTRA_INFO = 0x4E4B;  // "NK"
+    static constexpr ULONG_PTR VKEY_EXTRA_INFO = 0x4E4B;  // "NK"
 
     // Get exe name (lowercase) from window handle — used by ClassifyWindow() and smart switch
     [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;
@@ -301,7 +301,7 @@ private:
     // Sprint 1 D5: migrated to std::atomic for hook-thread-safe read without
     // stateMutex_ (Rule #11.3 acquire/release pattern). Hook callback paths
     // (ProcessKeyDown/Up, CheckLayoutChange) use .load(acquire); main thread
-    // (ApplyConfig, ToggleVietnameseMode, SettingsDialog WM_NEXUSKEY_MODE_CHANGED
+    // (ApplyConfig, ToggleVietnameseMode, SettingsDialog WM_VKEY_MODE_CHANGED
     // → HookEngine via callback) uses .store(release).
     std::atomic<bool> vietnameseMode_{true};
     uint8_t startupMode_ = 0;  // 0=Vietnamese, 1=English, 2=Remember

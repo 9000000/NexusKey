@@ -1,4 +1,4 @@
-# fsm-codegen — NexusKey Sprint 3 FSM Table Generator
+# fsm-codegen — VKey Sprint 3 FSM Table Generator
 
 Build-time Python tool that consumes Vietnamese phonotactic rules + Telex/VNI keymaps and emits C++ `constexpr` FSM tables for the new `FsmDispatcher` engine.
 
@@ -75,7 +75,7 @@ src/core/engine/generated/
 
 ## License
 
-Tool itself: GPL-3.0-or-later (matches NexusKey).
+Tool itself: GPL-3.0-or-later (matches VKey).
 
 Vendored test/dictionary data is BSD-3-Clause (gonhanh.org). See [`../../LICENSE-3RD-PARTY.md`](../../LICENSE-3RD-PARTY.md).
 

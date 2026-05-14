@@ -1,4 +1,4 @@
-// NexusKey - User Defined Input Dialog Implementation
+// VKey - User Defined Input Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "UserDefinedDialog.h"
@@ -13,7 +13,7 @@ namespace NextKey {
 UserDefinedDialog::UserDefinedDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/userdefined/userdefined.html",
-        L"NexusKey - User Defined Input",
+        L"VKey - User Defined Input",
         460, 550, parent, true, 36, 40, true
     }) {
     TypingConfig config = ConfigManager::LoadOrDefault();

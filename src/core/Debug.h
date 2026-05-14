@@ -1,4 +1,4 @@
-// NexusKey - Debug Logging Infrastructure
+// VKey - Debug Logging Infrastructure
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Backed by NextKey::Logger — a runtime-gated file sink toggled by the user

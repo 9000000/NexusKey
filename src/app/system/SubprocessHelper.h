@@ -1,4 +1,4 @@
-// NexusKey - Subprocess Helper
+// VKey - Subprocess Helper
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Shared initialization for Sciter subprocess dialogs + subprocess spawning.

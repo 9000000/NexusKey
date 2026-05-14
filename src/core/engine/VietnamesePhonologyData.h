@@ -1,6 +1,6 @@
-// NexusKey - Vietnamese Phonology Shared Data
+// VKey - Vietnamese Phonology Shared Data
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 //
 // Single source of truth for Vietnamese phonological rule data consumed by
 // the project's two phonotactics validators:

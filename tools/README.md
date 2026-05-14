@@ -1,14 +1,14 @@
-# NexusKey Tools
+# VKey Tools
 
 ## run-chaos.ps1
 
 Drives `NextKeyTestRunner.exe` against the chaos corpus across multiple host
-apps in one shot. Replaces the per-host manual workflow (start NexusKey,
-focus target, run runner, wait for "stop NexusKey" prompt, kill, press
+apps in one shot. Replaces the per-host manual workflow (start VKey,
+focus target, run runner, wait for "stop VKey" prompt, kill, press
 Enter, rename outputs) — verifies a hook-engine change doesn't regress
 the natural-classification matrix without a full afternoon of clicking.
 
-**Requirements:** Windows PowerShell 5.1+, NexusKey + NextKeyTestRunner
+**Requirements:** Windows PowerShell 5.1+, VKey + VKeyTestRunner
 already built (`-DCMAKE_BUILD_TYPE=Debug`).
 
 ### Quick Start
@@ -29,10 +29,10 @@ powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag dev -Hosts not
 |-----------|----------|---------|-------------|
 | `-Tag` | yes | — | Identifier embedded in output filenames |
 | `-Hosts` | no | all 5 | Subset of `notepad notepadpp chrome discord gpt` |
-| `-Corpus` | no | `tools/NextKeyTestRunner/corpus/chaos.toml` | Test corpus |
+| `-Corpus` | no | `tools/VKeyTestRunner/corpus/chaos.toml` | Test corpus |
 | `-NexusKeyExe` | no | `build/Debug/NexusKey.exe` | App under test |
 | `-RunnerExe` | no | `build/tools/NextKeyTestRunner/Debug/NextKeyTestRunner.exe` | Driver |
-| `-HookLog` | no | `build/Debug/NexusKey_hook.log` | Where NexusKey writes its debug log |
+| `-HookLog` | no | `build/Debug/VKey_hook.log` | Where VKey writes its debug log |
 | `-OutDir` | no | repo root | Where reports land |
 
 ### Outputs (per host)
@@ -62,15 +62,15 @@ target focus for the full 11-case sequence.
 
 ## benchmark_ime.ps1
 
-End-to-end IME benchmark. Compares NexusKey vs UniKey (or any IME) by injecting keystrokes into Notepad and measuring latency.
+End-to-end IME benchmark. Compares VKey vs UniKey (or any IME) by injecting keystrokes into Notepad and measuring latency.
 
 **Requirements:** Windows PowerShell 5.1+ (built-in). No extra dependencies.
 
 ### Quick Start
 
 ```powershell
-# 1. Switch to NexusKey, run benchmark
-powershell -ExecutionPolicy Bypass -File .\benchmark_ime.ps1 -IME "NexusKey"
+# 1. Switch to VKey, run benchmark
+powershell -ExecutionPolicy Bypass -File .\benchmark_ime.ps1 -IME "VKey"
 
 # 2. Switch to UniKey, run again
 powershell -ExecutionPolicy Bypass -File .\benchmark_ime.ps1 -IME "UniKey"
@@ -101,7 +101,7 @@ powershell -ExecutionPolicy Bypass -File .\benchmark_ime.ps1 -Compare
 
 ```
 ============================================================
-  Vietnamese Telex - NexusKey
+  Vietnamese Telex - VKey
 ============================================================
   Round 1:    45.23 ms  (  34.2 us/key, 132 keys)
   Round 2:    43.87 ms  (  33.2 us/key, 132 keys)
@@ -113,17 +113,17 @@ powershell -ExecutionPolicy Bypass -File .\benchmark_ime.ps1 -Compare
 =================================================================
   IME COMPARISON
 =================================================================
-                          NexusKey         UniKey
+                          VKey         UniKey
                       ────────────    ────────────
 Vietnamese (avg/key)       33.7 us         35.2 us
 English (avg/key)          28.1 us         29.5 us
 
-  Vietnamese: NexusKey is 4.3% faster
+  Vietnamese: VKey is 4.3% faster
 ```
 
 ## build_lite.ps1 / build_app.ps1
 
-Build & run scripts for the two NexusKey variants.
+Build & run scripts for the two VKey variants.
 
 | Script | What it builds | Output |
 |--------|---------------|--------|

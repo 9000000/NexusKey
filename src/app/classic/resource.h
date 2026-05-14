@@ -1,4 +1,4 @@
-// NexusKey Classic UI — Control IDs
+// VKey Classic UI — Control IDs
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

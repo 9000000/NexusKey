@@ -1,14 +1,14 @@
-# NextKeyTestRunner
+# VKeyTestRunner
 
-E2E stress test harness for the NexusKey IME (Vietnamese hook engine on Windows).
+E2E stress test harness for the VKey IME (Vietnamese hook engine on Windows).
 
 For project context and Phase 1+ roadmap see [`/HANDOFF.md`](../../HANDOFF.md).
 
 ## What it does
 
-Drives Win32 SendInput against a running NexusKey hook, types raw Telex
+Drives Win32 SendInput against a running VKey hook, types raw Telex
 keystrokes from a TOML corpus, verifies clipboard contents matches an
-expected Vietnamese string, and post-mortem-parses NexusKey's debug log
+expected Vietnamese string, and post-mortem-parses VKey's debug log
 to compute per-keystroke L1 timing. Two output formats:
 
 - **JUnit XML** — for CI consumption
@@ -20,7 +20,7 @@ to compute per-keystroke L1 timing. Two output formats:
 ```bash
 cmake -B build-linux -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-linux --target NextKeyTestRunnerTests
-./build-linux/tests/NextKeyTestRunnerTests
+./build-linux/tests/VKeyTestRunnerTests
 ```
 
 ### Windows (full runner)
@@ -35,7 +35,7 @@ Output: `build/tools/Debug/NextKeyTestRunner.exe`.
 ```powershell
 NextKeyTestRunner.exe --send vieejt --raw
 ```
-Types `v-i-e-e-j-t` into focused window after 3 s. With NexusKey active,
+Types `v-i-e-e-j-t` into focused window after 3 s. With VKey active,
 target shows "việt".
 
 ### Verify single case
@@ -48,12 +48,12 @@ Selects all + copies + diffs clipboard vs expected. Exit 0 PASS, 1 FAIL.
 ### Full corpus + reports
 ```powershell
 NextKeyTestRunner.exe ^
-    --corpus    Z:\...\tools\NextKeyTestRunner\corpus\chaos.toml ^
-    --hook-log  Z:\...\build\Debug\NexusKey_hook.log ^
+    --corpus    Z:\...\tools\VKeyTestRunner\corpus\chaos.toml ^
+    --hook-log  Z:\...\build\Debug\VKey_hook.log ^
     --junit     report.xml ^
     --perf-csv  perf.csv
 ```
-After the 11 cases run, the tool prompts you to **stop NexusKey** so its
+After the 11 cases run, the tool prompts you to **stop VKey** so its
 8 KB debug log buffer flushes. Press Enter to continue → post-mortem L1
 analysis prints + reports written.
 
@@ -72,7 +72,7 @@ analysis prints + reports written.
 | `src/Encoding.h` | UTF-8 ↔ UTF-16 helpers (BMP) |
 | `src/KeyEscapes.{h,cpp}` | `\b\t\n\r\\\"` resolution for TOML literal `keys` field |
 | `src/TomlLoader.{h,cpp}` | Corpus parser (uses `extern/tomlplusplus`) |
-| `src/HookLogParser.{h,cpp}` | NexusKey debug log → `KeystrokeEntry` vector |
+| `src/HookLogParser.{h,cpp}` | VKey debug log → `KeystrokeEntry` vector |
 | `src/JunitXmlWriter.{h,cpp}` | JUnit XML report writer |
 | `src/PerfCsvWriter.{h,cpp}` | Perf CSV report writer |
 | `src/CaseResult.h` | Per-case verdict + timing struct |
@@ -93,7 +93,7 @@ inter_key_us   = 5000                # optional, default 10 000
 budget_p99_us  = 1500                # optional, 0 disables
 ```
 
-`keys` accepts raw Telex sequences (post-NexusKey-hook the engine should
+`keys` accepts raw Telex sequences (post-VKey-hook the engine should
 produce `expected`). Special chars: `\b` = backspace, `\n` / `\r` = Enter,
 `\t` = Tab, `\\` and `\"` literal.
 
@@ -102,6 +102,6 @@ produce `expected`). Special chars: `\b` = backspace, `\n` / `\r` = Enter,
 See [`/HANDOFF.md`](../../HANDOFF.md) "Known limitations" for the full list.
 The big ones:
 - Sub-ms inter-key floored at ~3 ms (driver/OS limit)
-- L1 timing post-mortem only (NexusKey hook log buffered)
+- L1 timing post-mortem only (VKey hook log buffered)
 - Heisenbug history: `_IONBF` log mode masked the very bugs the corpus
   exists to surface — see commit `d58bb4e` revert.

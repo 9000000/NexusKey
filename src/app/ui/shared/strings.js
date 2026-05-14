@@ -1,4 +1,4 @@
-// NexusKey - Localized String Dictionary (English translations)
+// VKey - Localized String Dictionary (English translations)
 // Vietnamese is the default language (text in HTML), only English needs mapping.
 // Keys match data-i18n attributes in HTML elements.
 
@@ -112,7 +112,7 @@ var STRINGS = {
         "s.dev_label": "Author:",
         "s.origin_label": "Origin:",
         "s.origin_text": "Project inspired by OpenKey and VietType, aiming to improve the UI, engine, and add new features.",
-        "s.license": "NexusKey is open-source, free, and non-profit software.",
+        "s.license": "VKey is open-source, free, and non-profit software.",
         "s.auto_update": "Auto-check for updates",
         "s.check_now": "Check now",
         "s.update_tooltip": "Check for new version on startup",
@@ -122,7 +122,7 @@ var STRINGS = {
         "update.banner.mismatch":   "Some apps still run the old version. Restart Windows to sync.",
         "update.banner.restartNow": "Restart now",
         "update.banner.later":      "Later",
-        "update.banner.confirm":    "Restart Windows now to finish the NexusKey update?",
+        "update.banner.confirm":    "Restart Windows now to finish the VKey update?",
         "s.report_issue_label": "Are you having problems?",
         "s.report_issue": "Report problem",
 
@@ -185,9 +185,9 @@ var STRINGS = {
         "ct.convert": "Convert",
 
         // ── About dialog (standalone) ──
-        "a.title": "About NexusKey",
+        "a.title": "About VKey",
         "a.tagline": "Modern Vietnamese Input Method",
-        "a.repo_nexuskey": "NexusKey Repo",
+        "a.repo_vkey": "VKey Repo",
         "a.repo_openkey": "Original OpenKey Repo",
         "a.footer": "Powered by Sciter.JS for a smooth experience.",
 

@@ -1,4 +1,4 @@
-// NexusKey - Hook Self-Healer Implementation (Windows-only)
+// VKey - Hook Self-Healer Implementation (Windows-only)
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookSelfHealer.h"
@@ -26,7 +26,7 @@ bool RawInputSelfHealer::Start() {
     WNDCLASSEXW wc = { sizeof(wc) };
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInst_;
-    wc.lpszClassName = L"NexusKey_HookSelfHealer";
+    wc.lpszClassName = L"VKey_HookSelfHealer";
     if (!RegisterClassExW(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
         return false;
     }
@@ -72,7 +72,7 @@ void RawInputSelfHealer::Stop() {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
     tlsActive_ = nullptr;
-    UnregisterClassW(L"NexusKey_HookSelfHealer", hInst_);
+    UnregisterClassW(L"VKey_HookSelfHealer", hInst_);
 }
 
 void RawInputSelfHealer::RecordHookFire() {

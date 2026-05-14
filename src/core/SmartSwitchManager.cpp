@@ -1,4 +1,4 @@
-// NexusKey - Smart Switch Shared Memory Manager Implementation
+// VKey - Smart Switch Shared Memory Manager Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SmartSwitchManager.h"

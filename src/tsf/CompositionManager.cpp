@@ -1,4 +1,4 @@
-// NexusKey - Composition Manager Implementation
+// VKey - Composition Manager Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "stdafx.h"

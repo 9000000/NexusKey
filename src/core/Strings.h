@@ -1,4 +1,4 @@
-// NexusKey - Localized String Dictionary
+// VKey - Localized String Dictionary
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

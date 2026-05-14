@@ -1,4 +1,4 @@
-// NexusKey - Windows UTF-8/Wide String Conversion Utilities
+// VKey - Windows UTF-8/Wide String Conversion Utilities
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

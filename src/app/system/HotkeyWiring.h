@@ -1,4 +1,4 @@
-// NexusKey - Hotkey Wiring Helper
+// VKey - Hotkey Wiring Helper
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

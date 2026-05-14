@@ -1,4 +1,4 @@
-// NexusKey - System Tray Icon
+// VKey - System Tray Icon
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -95,10 +95,10 @@ public:
     /// Set getter to query current state when right-click menu opens
     void SetMenuStateGetter(MenuStateGetter getter) noexcept { menuStateGetter_ = std::move(getter); }
 
-    /// Set callback when system config changes (WM_NEXUSKEY_ICON_CHANGED)
+    /// Set callback when system config changes (WM_VKEY_ICON_CHANGED)
     void SetIconConfigChangedCallback(std::function<void()> callback) noexcept { iconConfigChangedCallback_ = std::move(callback); }
 
-    /// Set callback when hook config changes (WM_NEXUSKEY_HOOK_RELOAD) — subprocess → main eager sync
+    /// Set callback when hook config changes (WM_VKEY_HOOK_RELOAD) — subprocess → main eager sync
     void SetHookReloadCallback(std::function<void()> callback) noexcept { hookReloadCallback_ = std::move(callback); }
 
     /// Non-owning pointer to the process-wide SharedStateManager. Used only to

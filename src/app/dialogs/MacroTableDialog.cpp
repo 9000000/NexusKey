@@ -1,4 +1,4 @@
-// NexusKey - Macro Table Dialog Implementation
+// VKey - Macro Table Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "MacroTableDialog.h"
@@ -18,7 +18,7 @@ namespace NextKey {
 MacroTableDialog::MacroTableDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/macro/macro.html",
-        L"NexusKey - Macro Table",
+        L"VKey - Macro Table",
         420, 600, parent, true, 36, 40, true
     }) {
     macros_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
@@ -202,7 +202,7 @@ void MacroTableDialog::exportMacros() {
         get_hwnd(),
         L"Text file (*.txt)\0*.txt\0",
         L"txt",
-        L"NexusKeyMacro"
+        L"VKeyMacro"
     );
     if (path.empty()) return;
 

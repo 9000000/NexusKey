@@ -1,4 +1,4 @@
-// NexusKey - TSF Globals Implementation
+// VKey - TSF Globals Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "stdafx.h"
@@ -14,8 +14,8 @@ HINSTANCE g_hInstance = nullptr;
 // DLL reference count
 LONG g_dllRefCount = 0;
 
-// {D84D1E5B-8F2C-4B1A-9D3E-6F7A8B9C0D1E}
-// NexusKey Text Service CLSID
+// {DEB18BD1-2331-4F2A-B030-DA9EB0093683}
+// VKey Text Service CLSID
 DEFINE_GUID(CLSID_TextService,
     0xD84D1E5B, 0x8F2C, 0x4B1A, 0x9D, 0x3E, 0x6F, 0x7A, 0x8B, 0x9C, 0x0D, 0x1E);
 

@@ -1,4 +1,4 @@
-// NexusKey - Subprocess Runner Functions
+// VKey - Subprocess Runner Functions
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SubprocessRunners.h"
@@ -65,7 +65,7 @@ namespace NextKey {
 
     InitSciterSubprocess();
 
-    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
     ExcludedAppsDialog dialog(parent);
     dialog.Show();
 
@@ -78,7 +78,7 @@ namespace NextKey {
 
     InitSciterSubprocess();
 
-    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
     TsfAppsDialog dialog(parent);
     dialog.Show();
 
@@ -91,7 +91,7 @@ namespace NextKey {
 
     InitSciterSubprocess();
 
-    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
     MacroTableDialog dialog(parent);
     dialog.Show();
 
@@ -104,7 +104,7 @@ namespace NextKey {
 
     InitSciterSubprocess();
 
-    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
     ConvertToolDialog dialog(parent);
     dialog.Show();
 
@@ -117,7 +117,7 @@ namespace NextKey {
 
     InitSciterSubprocess();
 
-    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
     AboutDialog dialog(parent);
     dialog.Show();
 
@@ -130,7 +130,7 @@ namespace NextKey {
 
     InitSciterSubprocess();
 
-    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
     AppOverridesDialog dialog(parent);
     dialog.Show();
 
@@ -143,7 +143,7 @@ namespace NextKey {
 
     InitSciterSubprocess();
 
-    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
     SpellExclusionsDialog dialog(parent);
     dialog.Show();
 
@@ -156,7 +156,7 @@ namespace NextKey {
 
     InitSciterSubprocess();
 
-    HWND parent = FindWindowW(nullptr, L"NexusKey Settings");
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
     UserDefinedDialog dialog(parent);
     dialog.Show();
 

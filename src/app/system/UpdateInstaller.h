@@ -1,4 +1,4 @@
-// NexusKey - Self-Update Installer
+// VKey - Self-Update Installer
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Handles the --install-update CLI mode: waits for processes to exit,
@@ -32,7 +32,7 @@ inline constexpr const wchar_t* OLD_VERSION_DIRNAME = L"_old_version";
 std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix = L"") noexcept;
 
 /// Run the self-update installer mode.
-/// Waits for other NexusKey processes to exit, extracts ZIP, replaces files, relaunches.
+/// Waits for other VKey processes to exit, extracts ZIP, replaces files, relaunches.
 /// Called from --install-update CLI route. Never returns.
 [[noreturn]] void RunUpdateInstaller(const std::wstring& zipPath);
 

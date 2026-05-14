@@ -1,4 +1,4 @@
-// NexusKey - Runtime-gated debug logger
+// VKey - Runtime-gated debug logger
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Single backend for NEXTKEY_LOG / HOOK_LOG / TSF_LOG. Compiled unconditionally
@@ -9,8 +9,8 @@
 // out to OutputDebugStringW so DebugView traces keep working.
 //
 // File path resolution (Win32):
-//   1. <install dir>\NexusKey_<process>_<pid>.log if writable
-//   2. %APPDATA%\NexusKey\logs\NexusKey_<process>_<pid>.log otherwise
+//   1. <install dir>\VKey_<process>_<pid>.log if writable
+//   2. %APPDATA%\VKey\logs\VKey_<process>_<pid>.log otherwise
 //
 // PID is in the filename so concurrent processes (EXE + every TSF DLL host —
 // Chrome renderers, Electron helpers) get their own file. Append-mode + a

@@ -1,4 +1,4 @@
-// NexusKey - Apply deferred TSF DLL swap at EXE startup
+// VKey - Apply deferred TSF DLL swap at EXE startup
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

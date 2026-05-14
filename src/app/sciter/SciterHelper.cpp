@@ -1,4 +1,4 @@
-// NexusKey - Sciter Window Helper Implementation
+// VKey - Sciter Window Helper Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SciterHelper.h"

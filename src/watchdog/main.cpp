@@ -1,4 +1,4 @@
-// NexusKey Watchdog - Process Supervisor
+// VKey Watchdog - Process Supervisor
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Monitors NexusKey.exe via Local\NexusKeyHeartbeat (30s pulse, 90s
@@ -19,15 +19,15 @@ constexpr const wchar_t* HEARTBEAT_EVENT_NAME = L"Local\\NexusKeyHeartbeat";
 constexpr const wchar_t* GRACEFUL_SHUTDOWN_EVENT_NAME = L"Local\\NexusKeyGracefulShutdown";
 constexpr DWORD HEARTBEAT_TIMEOUT_MS = 90'000;  // 3× publisher interval
 constexpr DWORD POST_RESPAWN_GRACE_MS = 5'000;  // Wait this long after respawn
-constexpr DWORD POST_INIT_GRACE_MS = 30'000;    // Initial grace for NexusKey to start
+constexpr DWORD POST_INIT_GRACE_MS = 30'000;    // Initial grace for VKey to start
 
-// Logging helper — append to %LOCALAPPDATA%\NexusKey\watchdog.log.
+// Logging helper — append to %LOCALAPPDATA%\VKey\watchdog.log.
 // Best-effort: silent failure if file unavailable.
 void LogLine(const wchar_t* fmt, ...) {
     wchar_t path[MAX_PATH];
     DWORD len = GetEnvironmentVariableW(L"LOCALAPPDATA", path, MAX_PATH);
     if (len == 0 || len >= MAX_PATH) return;
-    wcscat_s(path, MAX_PATH, L"\\NexusKey");
+    wcscat_s(path, MAX_PATH, L"\\VKey");
     CreateDirectoryW(path, nullptr);  // best-effort; ERROR_ALREADY_EXISTS is fine
     wcscat_s(path, MAX_PATH, L"\\watchdog.log");
 
@@ -69,8 +69,8 @@ bool IsProcessAlive(const wchar_t* exeName) {
     return found;
 }
 
-std::wstring GetNexusKeyExePath() {
-    // Watchdog and NexusKey live in the same install dir.
+std::wstring GetVKeyExePath() {
+    // Watchdog and VKey live in the same install dir.
     wchar_t self[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, self, MAX_PATH);
     std::wstring path(self);
@@ -79,8 +79,8 @@ std::wstring GetNexusKeyExePath() {
     return path.substr(0, pos) + L"\\NexusKey.exe";
 }
 
-bool RespawnNexusKey() {
-    std::wstring exePath = GetNexusKeyExePath();
+bool RespawnVKey() {
+    std::wstring exePath = GetVKeyExePath();
     if (exePath.empty()) {
         LogLine(L"RespawnNexusKey: cannot resolve NexusKey.exe path");
         return false;
@@ -91,19 +91,19 @@ bool RespawnNexusKey() {
     std::wstring cmd = L"\"" + exePath + L"\"";
     if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE,
                         0, nullptr, nullptr, &si, &pi)) {
-        LogLine(L"RespawnNexusKey: CreateProcess FAILED err=%lu", GetLastError());
+        LogLine(L"RespawnVKey: CreateProcess FAILED err=%lu", GetLastError());
         return false;
     }
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
-    LogLine(L"RespawnNexusKey: spawned PID=%lu", pi.dwProcessId);
+    LogLine(L"RespawnVKey: spawned PID=%lu", pi.dwProcessId);
     return true;
 }
 
 }  // namespace
 
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
-    // Single-instance guard — both NexusKey app launch and Task Scheduler
+    // Single-instance guard — both VKey app launch and Task Scheduler
     // at-logon trigger may try to start watchdog. The second one bails
     // silently on ERROR_ALREADY_EXISTS so we never run two supervisors
     // racing each other to respawn on the same heartbeat stale event.
@@ -116,23 +116,23 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
     LogLine(L"Watchdog starting (pid=%lu)", GetCurrentProcessId());
 
-    // Initial grace — NexusKey may not be up yet at logon.
+    // Initial grace — VKey may not be up yet at logon.
     Sleep(POST_INIT_GRACE_MS);
 
     while (true) {
         // Open events fresh each iteration — handles publisher restart
-        // (NexusKey crashed and respawned) by reattaching to new instance.
+        // (VKey crashed and respawned) by reattaching to new instance.
         HANDLE heartbeat = OpenEventW(SYNCHRONIZE, FALSE, HEARTBEAT_EVENT_NAME);
         HANDLE graceful = OpenEventW(SYNCHRONIZE, FALSE, GRACEFUL_SHUTDOWN_EVENT_NAME);
 
         if (!heartbeat || !graceful) {
-            // Events not yet created → NexusKey not running.
+            // Events not yet created → VKey not running.
             if (heartbeat) CloseHandle(heartbeat);
             if (graceful) CloseHandle(graceful);
 
             if (!IsProcessAlive(L"NexusKey.exe")) {
                 LogLine(L"Heartbeat events absent + process not running → respawn");
-                RespawnNexusKey();
+                RespawnVKey();
                 Sleep(POST_RESPAWN_GRACE_MS);
             } else {
                 Sleep(5000);  // Process exists but events not yet up — be patient
@@ -166,7 +166,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         }
 
         LogLine(L"Heartbeat stale + graceful clear + process dead → CRASH detected");
-        RespawnNexusKey();
+        RespawnVKey();
         Sleep(POST_RESPAWN_GRACE_MS);
     }
 }

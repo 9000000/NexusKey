@@ -1,4 +1,4 @@
-// NexusKey - Config Event Implementation
+// VKey - Config Event Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ConfigEvent.h"

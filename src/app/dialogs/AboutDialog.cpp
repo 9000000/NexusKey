@@ -1,4 +1,4 @@
-// NexusKey - About Dialog Implementation
+// VKey - About Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "AboutDialog.h"
@@ -8,7 +8,7 @@ namespace NextKey {
 AboutDialog::AboutDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/about/about.html",
-        L"NexusKey - About",
+        L"VKey - About",
         300, 340, parent, true, 36, 40, true
     }) {
 }

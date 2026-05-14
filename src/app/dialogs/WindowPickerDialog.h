@@ -1,4 +1,4 @@
-// NexusKey - Window Picker Base Dialog
+// VKey - Window Picker Base Dialog
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Base class for app-list dialogs that support window picking and

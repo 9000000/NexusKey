@@ -1,4 +1,4 @@
-// NexusKey - Smart Switch Shared Memory Manager
+// VKey - Smart Switch Shared Memory Manager
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

@@ -1,4 +1,4 @@
-// NexusKey - Pure decision function for "digit-led word" detection
+// VKey - Pure decision function for "digit-led word" detection
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // A digit-led word is a word that starts with a digit while the input method

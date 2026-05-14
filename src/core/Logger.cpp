@@ -1,4 +1,4 @@
-// NexusKey - Runtime-gated debug logger
+// VKey - Runtime-gated debug logger
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "core/Logger.h"
@@ -45,7 +45,7 @@ bool DirectoryWritable(const std::wstring& dir) {
     if (!(attrs & FILE_ATTRIBUTE_DIRECTORY)) return false;
     // Probe with a temp file (CREATE_ALWAYS + FILE_FLAG_DELETE_ON_CLOSE).
     wchar_t probe[MAX_PATH] = {0};
-    _snwprintf_s(probe, MAX_PATH, _TRUNCATE, L"%ls\\.nexuskey_probe_%lu",
+    _snwprintf_s(probe, MAX_PATH, _TRUNCATE, L"%ls\\.vkey_probe_%lu",
                  dir.c_str(), GetCurrentProcessId());
     HANDLE h = CreateFileW(probe, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                            nullptr, CREATE_ALWAYS,
@@ -59,7 +59,7 @@ bool DirectoryWritable(const std::wstring& dir) {
 std::wstring AppDataLogFolder() {
     wchar_t buf[MAX_PATH] = {0};
     if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, buf))) {
-        std::wstring dir = std::wstring(buf) + L"\\NexusKey\\logs";
+        std::wstring dir = std::wstring(buf) + L"\\VKey\\logs";
         // Ensure folder exists. SHCreateDirectoryExW creates intermediate dirs.
         int r = SHCreateDirectoryExW(nullptr, dir.c_str(), nullptr);
         if (r == ERROR_SUCCESS || r == ERROR_ALREADY_EXISTS || r == ERROR_FILE_EXISTS) {
@@ -109,7 +109,7 @@ std::wstring ResolvePathUnlocked() {
     if (folder.empty()) return L"";
     wchar_t pidBuf[16] = {0};
     _snwprintf_s(pidBuf, 16, _TRUNCATE, L"%lu", GetCurrentProcessId());
-    return folder + L"\\NexusKey_" + ProcessTag() + L"_" + pidBuf + L".log";
+    return folder + L"\\VKey_" + ProcessTag() + L"_" + pidBuf + L".log";
 }
 
 void OpenFileUnlocked() {
@@ -144,19 +144,19 @@ std::wstring ResolveFolderUnlocked() {
         size_t slash = p.find_last_of(L"\\/");
         return (slash == std::wstring::npos) ? L"." : p.substr(0, slash);
     }
-    return L"/tmp/nexuskey-logs";
+    return L"/tmp/vkey-logs";
 }
 
 std::wstring ResolvePathUnlocked() {
     if (!PathOverride().empty()) return PathOverride();
-    return ResolveFolderUnlocked() + L"/nexuskey.log";
+    return ResolveFolderUnlocked() + L"/vkey.log";
 }
 
 void OpenFileUnlocked() {
     if (File()) return;
     std::wstring path = ResolvePathUnlocked();
     if (path.empty()) return;
-    // Ensure parent dir exists (mkdir -p for /tmp/nexuskey-logs).
+    // Ensure parent dir exists (mkdir -p for /tmp/vkey-logs).
     std::wstring folder = ResolveFolderUnlocked();
     if (!folder.empty()) {
         std::string fnarrow = ToNarrow(folder);

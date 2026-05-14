@@ -1,6 +1,6 @@
-// NexusKey - Win32 locale-aware case mapper for Macro::CaseMapper
+// VKey - Win32 locale-aware case mapper for Macro::CaseMapper
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 //
 // Production CaseMapper that wraps CharUpperBuffW / CharLowerBuffW.
 // These are locale-aware so Vietnamese diacritics ('ô' ↔ 'Ô') flip

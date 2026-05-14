@@ -54,9 +54,9 @@ Refs: brainstorm session 2026-05-13, commit 892c9e7.
 
 User report (1 occurrence, single user, not reproducible locally): after
 locking the machine for an extended period then unlocking, typing felt
-sluggish; Task Manager showed NexusKey at 100% CPU and several other apps
+sluggish; Task Manager showed VKey at 100% CPU and several other apps
 spiking. Reporter explicitly noted: *"không chắc lỗi hoàn toàn do
-NexusKey hay không"*.
+VKey hay không"*.
 
 Code smell identified during triage in `HookEngine::IsWebView2App`
 (`src/app/system/HookEngine.cpp:2282`):
@@ -137,7 +137,7 @@ mở task manager thì CPU lên 100%"*).
 Shipped `Settings → System → "Bật debug log"` runtime gate routing
 `NEXTKEY_LOG/HOOK_LOG/TSF_LOG` (~207 sites) into `NextKey::Logger`. File
 sink: `NexusKey_<process>_<pid>.log` next to NextKeyApp.exe (fallback
-`%APPDATA%\NexusKey\logs\`). PID-tagged so Chrome multi-process renderers
+`%APPDATA%\VKey\logs\`). PID-tagged so Chrome multi-process renderers
 don't tear lines.
 
 Measured perf characteristics (analytic, no Windows benchmark run yet):
@@ -227,7 +227,7 @@ framework). Codebase mapping + investment decision below.
 | A — Hook ring buffer | CLOSED 2026-05-09 | Watchdog (PR #154) shipped; SPSC ring half closed | See `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` |
 | B — Smart Focus / App Profile cache | ~60% | `cachedFocusedHwnd_` single-slot atomic + `ClassifyWindow` function | No HWND→Profile lookup map; re-classifies on every focus event |
 | C — Engine 2D FSM table | CLOSED — not viable | If/case engine (~327 branches in `PushChar`); FSM codegen tool exists (PR #132 `4a52399`) but rewrite cancelled — codegen output ~6MB exceeds <3MB target | Table-driven FSM not viable for Vietnamese phonology dimensionality. Path G (custom keymap) replaces. |
-| D — Test framework | ~85% (deferred) | `NextKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
+| D — Test framework | ~85% (deferred) | `VKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
 
 ### Module A vs B — B wins for first invest
 
@@ -356,16 +356,16 @@ a broader auto-cap refactor.
 
 ## 🟡 v3 Watchdog Smoke 4 + 5 — verify Task Scheduler at-logon trigger (2026-05-08)
 
-Phase 2 watchdog smoke 1/2/3 PASS (crash respawn, graceful, hung UI). Smoke 4 + 5 deferred because they require a real logout/login cycle to fire the `\NexusKey\Watchdog` at-logon trigger.
+Phase 2 watchdog smoke 1/2/3 PASS (crash respawn, graceful, hung UI). Smoke 4 + 5 deferred because they require a real logout/login cycle to fire the `\VKey\Watchdog` at-logon trigger.
 
 **Smoke 4 — Kill watchdog alone:**
 - `taskkill /F /IM NexusKeyWatchdog.exe` while NexusKey runs normally.
-- NexusKey must continue functioning.
-- After logout/login: Task Scheduler must relaunch NexusKeyWatchdog automatically.
+- VKey must continue functioning.
+- After logout/login: Task Scheduler must relaunch VKeyWatchdog automatically.
 
 **Smoke 5 — Kill both:**
 - `taskkill /F /IM NexusKey.exe NexusKeyWatchdog.exe` simultaneously.
-- After logout/login: Task Scheduler relaunches watchdog → watchdog observes events absent + process not running → respawns NexusKey.
+- After logout/login: Task Scheduler relaunches watchdog → watchdog observes events absent + process not running → respawns VKey.
 
 **Smoke 6 — AV scan (low priority):**
 - Run Windows Defender quick scan with watchdog active. Verify NexusKeyWatchdog.exe not quarantined / no false-positive on the small console-less WIN32 binary.
@@ -422,7 +422,7 @@ sites.
 
 ## 🟡 Test harness — `--host-class` matrix (Sprint 2 D6 deferred, 2026-05-05)
 
-Sprint 2 plan §D6 Tasks 32-33 — `NextKeyTestRunner` flag for forced host-class override. Marginal value given existing 132-case natural coverage; reopen as one focused task if QA later needs forced-cell testing.
+Sprint 2 plan §D6 Tasks 32-33 — `VKeyTestRunner` flag for forced host-class override. Marginal value given existing 132-case natural coverage; reopen as one focused task if QA later needs forced-cell testing.
 
 ---
 
@@ -441,7 +441,7 @@ per commit. No premature optimization without driver.
 
 ## 🟡 Sub-dialog Instant Apply — tech-debt items (2026-04-22)
 
-- [ ] **`FindWindowW(L"NexusKeyTrayClass") + PostMessageW` pattern duplicated**
+- [ ] **`FindWindowW(L"VKeyTrayClass") + PostMessageW` pattern duplicated**
   Now in `AppHelpers.h::SignalConfigChange`, `SettingsDialog.cpp:548,698,1286`,
   `ClassicSettingsDialog.cpp:813,991,998,1033`. Candidate for a
   `PostToTrayWindow(UINT msg, WPARAM = 0, LPARAM = 0)` helper in `AppHelpers.h`.
@@ -467,7 +467,7 @@ User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
   UWP AppContainer rejects third-party TIP load → TSF DLL never instantiated.
   User workaround (add to TSF list) DID NOT WORK (confirmed on v2.1.21).
   Observation: when Windows Search gains focus from Edge, Input Indicator
-  auto-switches from "NexusKey Vietnamese IME" to "English (US) US Keyboard"
+  auto-switches from "VKey Vietnamese IME" to "English (US) US Keyboard"
   — indicates Windows is forcibly changing the active IME profile, not just
   blocking our TIP. Screenshot evidence in feedback 2026-04-21.
   **Actual fix path**: add both exes to a TSF-EXCLUSION list ("force Hook

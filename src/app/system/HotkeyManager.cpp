@@ -1,8 +1,8 @@
-// NexusKey - Hotkey Manager Implementation
+// VKey - Hotkey Manager Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HotkeyManager.h"
-#include "HookEngine.h"  // NEXUSKEY_EXTRA_INFO tag
+#include "HookEngine.h"  // VKEY_EXTRA_INFO tag
 #include "core/CrashLog.h"
 #include "core/Debug.h"
 
@@ -66,7 +66,7 @@ void HotkeyManager::InstallKeyboardHook(HINSTANCE hInstance) {
     }
 }
 
-// Inject VK_LCONTROL down+up tagged with NEXUSKEY_EXTRA_INFO to break Windows
+// Inject VK_LCONTROL down+up tagged with VKEY_EXTRA_INFO to break Windows
 // "Alt/Win tapped alone" detection. Without this, releasing Alt before the key
 // in combos like Alt+Z activates the browser menu bar (Firefox) or steals focus
 // (Chrome). HookEngine::LowLevelKeyboardProc passes through events with this tag.
@@ -77,13 +77,13 @@ void HotkeyManager::InjectDummyKey() noexcept {
     inputs[0].type = INPUT_KEYBOARD;
     inputs[0].ki.wVk = VK_LCONTROL;
     inputs[0].ki.wScan = scan;
-    inputs[0].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[0].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
 
     inputs[1].type = INPUT_KEYBOARD;
     inputs[1].ki.wVk = VK_LCONTROL;
     inputs[1].ki.wScan = scan;
     inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[1].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[1].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
 
     SendInput(2, inputs, sizeof(INPUT));
 }
@@ -99,7 +99,7 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
         auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
         // Pass through our own injected dummy events untouched.
-        if (pKey->dwExtraInfo == HookEngine::NEXUSKEY_EXTRA_INFO) {
+        if (pKey->dwExtraInfo == HookEngine::VKEY_EXTRA_INFO) {
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
 

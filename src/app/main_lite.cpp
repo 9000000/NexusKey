@@ -1,4 +1,4 @@
-// NexusKey Classic — Lite build entry point
+// VKey Classic — Lite build entry point
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Simplified entry point for the Classic (Win32 native) UI build.
@@ -203,7 +203,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
 
     // Notify Classic settings dialog (if open) to refresh UI
     if (HWND settingsWnd = FindWindowW(L"NexusKeyClassicSettings", nullptr)) {
-        PostMessageW(settingsWnd, WM_NEXUSKEY_CONFIG_CHANGED, 0, 0);
+        PostMessageW(settingsWnd, WM_VKEY_CONFIG_CHANGED, 0, 0);
     }
 }
 
@@ -220,10 +220,10 @@ static void OnMenuCommand(TrayMenuId id) {
         case TrayMenuId::About:
             // Lite build: simple MessageBox about dialog
             MessageBoxW(nullptr,
-                L"NexusKey Classic\n"
+                L"VKey Classic\n"
                 L"Vietnamese Input Method Editor\n\n"
                 L"https://github.com/phatMT97/NextKey",
-                L"NexusKey", MB_ICONINFORMATION);
+                L"VKey", MB_ICONINFORMATION);
             break;
 
         case TrayMenuId::ToggleMode:
@@ -484,7 +484,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // ── Tray Icon ──
 
     if (!g_trayIcon.Create(hInstance, startVietnamese)) {
-        MessageBoxW(nullptr, L"Failed to create tray icon", L"NexusKey", MB_ICONERROR);
+        MessageBoxW(nullptr, L"Failed to create tray icon", L"VKey", MB_ICONERROR);
         OleUninitialize();
         CloseHandle(hMutex);
         return 1;
@@ -497,7 +497,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         g_sharedState.SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, vietnamese);
         HWND trayWnd = g_trayIcon.GetMessageWindow();
         if (trayWnd) {
-            PostMessageW(trayWnd, WM_NEXUSKEY_TRAY_MODE_SYNC, vietnamese ? 1 : 0, 0);
+            PostMessageW(trayWnd, WM_VKEY_TRAY_MODE_SYNC, vietnamese ? 1 : 0, 0);
         }
         g_floatingIcon.SetVietnameseMode(vietnamese);
     });
@@ -558,7 +558,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
         timeEndPeriod(1);
-        MessageBoxW(nullptr, L"Failed to install keyboard hook", L"NexusKey", MB_ICONERROR);
+        MessageBoxW(nullptr, L"Failed to install keyboard hook", L"VKey", MB_ICONERROR);
         OleUninitialize();
         CloseHandle(hMutex);
         return 1;
@@ -627,13 +627,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                 Sleep(3000);
                 auto info = UpdateChecker::CheckForUpdate();
                 if (info.available) {
-                    HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+                    HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
                     if (trayWnd) {
                         auto* pInfo = new (std::nothrow) UpdateInfo(std::move(info));
                         if (pInfo) {
                             // WndProc returns true (1) on success and takes ownership of pInfo.
                             // If window was destroyed, SendMessageW returns 0 — we still own pInfo.
-                            if (!SendMessageW(trayWnd, WM_NEXUSKEY_UPDATE_AVAILABLE, 0,
+                            if (!SendMessageW(trayWnd, WM_VKEY_UPDATE_AVAILABLE, 0,
                                               reinterpret_cast<LPARAM>(pInfo))) {
                                 delete pInfo;
                             }

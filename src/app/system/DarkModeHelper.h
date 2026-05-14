@@ -1,4 +1,4 @@
-// NexusKey - Win32 Dark Mode Helper
+// VKey - Win32 Dark Mode Helper
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure Win32 utilities for dark mode detection and application.

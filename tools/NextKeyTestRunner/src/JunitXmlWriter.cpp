@@ -39,7 +39,7 @@ void Write(std::ostream& out,
     }
 
     out << R"(<?xml version="1.0" encoding="UTF-8"?>)" << '\n';
-    out << R"(<testsuites name="NextKeyTestRunner" tests=")" << results.size()
+    out << R"(<testsuites name="VKeyTestRunner" tests=")" << results.size()
         << R"(" failures=")" << failures
         << R"(" time=")";
     WriteSeconds(out, totalWallClockMs);

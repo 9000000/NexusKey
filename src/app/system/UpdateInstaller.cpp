@@ -1,4 +1,4 @@
-// NexusKey - Self-Update Installer Implementation
+// VKey - Self-Update Installer Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "UpdateInstaller.h"

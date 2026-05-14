@@ -29,7 +29,7 @@ INPUT MakeKey(WORD vk, bool keyup) noexcept {
     in.ki.wVk = vk;
     in.ki.wScan = static_cast<WORD>(::MapVirtualKeyW(vk, MAPVK_VK_TO_VSC));
     in.ki.dwFlags = keyup ? KEYEVENTF_KEYUP : 0u;
-    in.ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+    in.ki.dwExtraInfo = Internal::kVKeyExtraInfo;
     return in;
 }
 
@@ -38,7 +38,7 @@ INPUT MakeUnicodeChar(WCHAR ch, bool keyup) noexcept {
     in.type = INPUT_KEYBOARD;
     in.ki.wScan = static_cast<WORD>(ch);
     in.ki.dwFlags = KEYEVENTF_UNICODE | (keyup ? KEYEVENTF_KEYUP : 0u);
-    in.ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+    in.ki.dwExtraInfo = Internal::kVKeyExtraInfo;
     return in;
 }
 

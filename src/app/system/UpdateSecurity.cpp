@@ -1,4 +1,4 @@
-// NexusKey - Update Security Helpers Implementation
+// VKey - Update Security Helpers Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "UpdateSecurity.h"

@@ -1,4 +1,4 @@
-// NexusKey - Macro Phrase-Prefix Matcher
+// VKey - Macro Phrase-Prefix Matcher
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure, platform-free helper used by HookEngine to decide whether a

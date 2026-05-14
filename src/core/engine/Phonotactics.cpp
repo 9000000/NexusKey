@@ -1,5 +1,5 @@
-// NexusKey - Vietnamese Phonotactics Implementation
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// VKey - Vietnamese Phonotactics Implementation
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 
 #include "Phonotactics.h"
 

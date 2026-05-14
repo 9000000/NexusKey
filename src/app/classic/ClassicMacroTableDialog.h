@@ -1,4 +1,4 @@
-// NexusKey Classic — Macro Table Dialog
+// VKey Classic — Macro Table Dialog
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -69,7 +69,7 @@ private:
 
     std::unordered_map<std::wstring, std::wstring> macros_;
 
-    static constexpr const wchar_t* kClassName = L"NexusKeyMacroTable";
+    static constexpr const wchar_t* kClassName = L"VKeyMacroTable";
 };
 
 }  // namespace NextKey::Classic

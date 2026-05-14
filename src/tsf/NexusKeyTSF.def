@@ -1,4 +1,4 @@
-; NexusKey TSF DLL Module Definition File
+; VKey TSF DLL Module Definition File
 ; SPDX-License-Identifier: GPL-3.0-only
 
 LIBRARY "NextKeyTSF"

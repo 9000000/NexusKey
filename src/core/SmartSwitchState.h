@@ -1,4 +1,4 @@
-// NexusKey - Smart Switch Shared Memory State
+// VKey - Smart Switch Shared Memory State
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Fixed-size struct for shared memory IPC.

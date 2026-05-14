@@ -1,4 +1,4 @@
-// NexusKey - Heartbeat Publisher (Windows-only)
+// VKey - Heartbeat Publisher (Windows-only)
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Publishes a 30s heartbeat to a named event so NexusKeyWatchdog.exe
@@ -10,7 +10,7 @@
 //   Local\NexusKeyHeartbeat         — auto-reset event, signaled every 30s
 //                                     (queues until watchdog Wait observes)
 //   Local\NexusKeyGracefulShutdown  — signaled by SignalGracefulShutdown
-//                                     before NexusKey exits via tray quit
+//                                     before VKey exits via tray quit
 
 #pragma once
 
@@ -35,7 +35,7 @@ public:
     HeartbeatPublisher& operator=(const HeartbeatPublisher&) = delete;
 
     /// Open the named events and spawn the pulse thread. Returns false
-    /// if event creation fails (caller treats as best-effort — NexusKey
+    /// if event creation fails (caller treats as best-effort — VKey
     /// still functions, just no auto-respawn).
     [[nodiscard]] bool Start();
 
@@ -43,7 +43,7 @@ public:
     void Stop();
 
     /// Set the graceful-shutdown flag — call before tray-quit exit so
-    /// the watchdog does NOT respawn NexusKey.
+    /// the watchdog does NOT respawn VKey.
     /// Caller must not call this concurrently with Stop().
     void SignalGracefulShutdown();
 

@@ -1,4 +1,4 @@
-// NexusKey - Hotkey Wiring Helper Implementation
+// VKey - Hotkey Wiring Helper Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HotkeyWiring.h"

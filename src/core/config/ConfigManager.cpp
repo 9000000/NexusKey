@@ -1,4 +1,4 @@
-// NexusKey - Configuration Manager Implementation
+// VKey - Configuration Manager Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ConfigManager.h"
@@ -276,7 +276,7 @@ std::wstring ConfigManager::GetConfigPath() {
         return exeDir + L"\\config.toml";
     }
     
-    // Fallback: %APPDATA%/NexusKey/
+    // Fallback: %APPDATA%/VKey/
     std::wstring appDataDir = GetAppDataDirectory();
     return appDataDir + L"\\config.toml";
 }
@@ -312,7 +312,7 @@ std::wstring ConfigManager::GetAppDataDirectory() {
     wchar_t path[MAX_PATH] = {0};
     if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path))) {
         std::wstring appData(path);
-        std::wstring nexusKeyDir = appData + L"\\NexusKey";
+        std::wstring nexusKeyDir = appData + L"\\VKey";
         
         // Create directory if it doesn't exist
         CreateDirectoryW(nexusKeyDir.c_str(), nullptr);
@@ -325,7 +325,7 @@ std::wstring ConfigManager::GetAppDataDirectory() {
 bool ConfigManager::DirectoryWritable(const std::wstring& path) {
 #ifdef _WIN32
     // Try to create a temp file
-    std::wstring testFile = path + L"\\__nexuskey_test_write__.tmp";
+    std::wstring testFile = path + L"\\__vkey_test_write__.tmp";
     HANDLE hFile = CreateFileW(
         testFile.c_str(),
         GENERIC_WRITE,

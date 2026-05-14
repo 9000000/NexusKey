@@ -1,4 +1,4 @@
-// NexusKey Classic — Shared dialog utilities
+// VKey Classic — Shared dialog utilities
 // Process enumeration, window picking, file dialogs
 // SPDX-License-Identifier: GPL-3.0-only
 
@@ -59,7 +59,7 @@ inline std::wstring ToLowerAscii(const std::wstring& s) {
 // ═══════════════════════════════════════════════════════════
 
 /// Get sorted, deduplicated list of running process names (lowercase).
-/// Filters out system processes and NexusKey itself.
+/// Filters out system processes and VKey itself.
 inline std::vector<std::wstring> GetRunningApps() {
     std::vector<std::wstring> apps;
     std::unordered_set<std::wstring> seen;

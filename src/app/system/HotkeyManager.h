@@ -1,4 +1,4 @@
-// NexusKey - Hotkey Manager
+// VKey - Hotkey Manager
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -13,12 +13,12 @@
 namespace NextKey {
 
 /// Multi-slot keyboard hotkey manager. Each slot holds a HotkeyConfig + callback.
-/// NexusKey is a single-layout TIP on English — no layout switching needed.
+/// VKey is a single-layout TIP on English — no layout switching needed.
 ///
 /// Implemented via WH_KEYBOARD_LL (no RegisterHotKey) so we can:
 ///   1. Eat DOWN/UP of the target key to prevent double-activation.
 ///   2. Suppress auto-repeat while the combo is held.
-///   3. Inject a dummy key tagged with NEXUSKEY_EXTRA_INFO to break Windows
+///   3. Inject a dummy key tagged with VKEY_EXTRA_INFO to break Windows
 ///      "Alt/Win tapped alone" detection (browser menu activation bug).
 class HotkeyManager {
 public:

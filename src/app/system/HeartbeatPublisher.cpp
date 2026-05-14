@@ -1,4 +1,4 @@
-// NexusKey - Heartbeat Publisher Implementation (Windows-only)
+// VKey - Heartbeat Publisher Implementation (Windows-only)
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HeartbeatPublisher.h"

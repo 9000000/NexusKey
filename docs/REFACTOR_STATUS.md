@@ -1,4 +1,4 @@
-# NexusKey Refactor Status — Living Inventory
+# VKey Refactor Status — Living Inventory
 
 > **Last refresh:** 2026-05-08 (T2.1 sprint closed, all 4 days merged, Main `87ad29f`)
 > **Scope:** All architectural / cleanup refactor work. Excludes user-facing features (G-5/G-6 Sciter UI + keymap files, TSF Phase 2/3, etc.) — those track separately.
