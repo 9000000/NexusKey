@@ -10,6 +10,7 @@ exclude = ["docs/plans/**"]
 
 [replacements.brand_string]
 "NexusKey" = "VKey"
+"NextKey" = "VKey"
 
 [replacements.binary_name]
 "NexusKey.exe" = "VKey.exe"

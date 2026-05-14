@@ -9,13 +9,13 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import List
 
 # Make package importable when invoked as a script
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from tools.rebrand.lib.config import load_rules, Config
-from tools.rebrand.lib.scope import file_in_scope, iter_files
+from tools.rebrand.lib.scope import iter_files
 from tools.rebrand.lib.matcher import find_matches
 from tools.rebrand.lib.classifier import classify, Category, ClassifierContext
 

@@ -38,10 +38,17 @@ class TestScanEndToEnd(unittest.TestCase):
         self.assertIn("BRAND_STRING", cats)
         self.assertIn("RUNTIME_IPC", cats)
         self.assertIn("BINARY_NAME", cats)
+        self.assertIn("PERSISTENT_ID", cats)
         for e in plan["edits"]:
             self.assertNotIn("docs/plans", e["file"])
         for e in plan["edits"]:
             self.assertNotIn("NextKey::", e["before"])
+        # Namespace_keep skip: 'NextKey' matcher hits the namespace decl line in
+        # src/tsf.cpp + src/main.cpp, but classifier routes those to
+        # NAMESPACE_KEEP which is skipped from edits[] but counted in stats.
+        self.assertGreaterEqual(plan["stats"].get("NAMESPACE_KEEP", 0), 1)
+        for e in plan["edits"]:
+            self.assertNotIn("namespace NextKey", e["before"])
 
     def test_unclassified_blocks_emit(self):
         (self.tmp / "weird.xyz").write_text("NexusKey here")
