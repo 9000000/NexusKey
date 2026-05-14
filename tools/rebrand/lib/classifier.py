@@ -56,7 +56,7 @@ def classify(
     name = rel_path.name
     is_cmake = name == "CMakeLists.txt" or ext == ".cmake"
 
-    if ext in (".cpp", ".h"):
+    if ext in (".cpp", ".h", ".in"):
         for rx in ctx.namespace_keep_regex:
             if re.search(rx, line):
                 return Category.NAMESPACE_KEEP
