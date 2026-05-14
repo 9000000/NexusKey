@@ -383,6 +383,30 @@ void TypingEngine::PushChar(wchar_t keyChar) {
 
     // English Protection: re-evaluate bias after adding character
     CheckEnglishBias(states_.data(), states_.size(), engProt_);
+    // Full Telex only: P8 rewrites a leading 'w' to synthetic ư before the
+    // states-based start-cluster check sees it, hiding `wh`/`wr` from
+    // IsHardEnglishStart. Re-check against raw keystrokes here AND revert the
+    // synthetic ư back to literal 'w'.
+    //
+    // The synthetic-ư gate (tone == None) is load-bearing: once a tone key has
+    // already landed on ư (e.g. `w` then `r` → `ử`), we cannot safely revert
+    // — doing so would strip the tone the user actually wanted. That covers
+    // legitimate Vietnamese sequences that share the `wr` raw prefix:
+    //   w-r-n-g  → ửng  (tone applied at step 2, revert skipped)
+    //   w-r-i-t-e → ửite (same — pre-existing behavior preserved)
+    // SimpleTelex keeps 'w' literal (P8 gated off), so the states-based
+    // start-cluster check on the previous line already covers it.
+    if (config_.inputMethod == InputMethod::Telex &&
+        engProt_.bias != LanguageBias::HardEnglish &&
+        !states_.empty() && states_[0].synthetic &&
+        states_[0].base == L'u' && states_[0].mod == Modifier::Horn &&
+        states_[0].tone == Tone::None &&
+        IsHardEnglishRawStart(rawInput_.data(), rawInput_.size())) {
+        engProt_.bias = LanguageBias::HardEnglish;
+        states_[0].base = L'w';
+        states_[0].mod = Modifier::None;
+        states_[0].synthetic = false;
+    }
     if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 

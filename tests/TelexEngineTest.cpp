@@ -2331,6 +2331,14 @@ TEST_F(EnglishProtectionTest, HardReject_DR_Cluster) {
     EXPECT_EQ(engine_->Peek(), L"drive");
 }
 
+TEST_F(EnglishProtectionTest, HardReject_WH_Cluster_SpellOn) {
+    // Spell-check-ON parallel of the no-spell-check `where` test — the wh
+    // revert path is gated on inputMethod==Telex, not on spellCheck, so it
+    // must hold under both fixtures.
+    TypeString(*engine_, L"where");
+    EXPECT_EQ(engine_->Peek(), L"where");
+}
+
 TEST_F(EnglishProtectionTest, HardReject_CL_Cluster) {
     // "clear" starts with "cl" → impossible in Vietnamese  
     TypeString(*engine_, L"clear");
@@ -2583,6 +2591,40 @@ TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_BR_Cluster_BlocksModifier) {
 TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_SP_Cluster_BlocksTone) {
     TypeString(*engine_, L"spas");
     EXPECT_EQ(engine_->Peek(), L"spas");  // 's' literal
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_WH_Cluster_BlocksToneAndModifier) {
+    // "wh" is impossible in Vietnamese (only wr was listed; wh was missing).
+    // Without the guard, w-h-e-r-e leaks tone 'r' onto 'e' (→ whẻ) and the
+    // trailing 'e' triggers ee→ê (→ whể). Bias must lock to HardEnglish at "wh".
+    // Full Telex path: P8 rewrites 'w' → synthetic ư before the states-based
+    // start-cluster check sees it, so the raw-input fallback must catch wh.
+    TypeString(*engine_, L"where");
+    EXPECT_EQ(engine_->Peek(), L"where");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, WwEscape_StillWorks) {
+    // Regression guard: ww → literal w (Telex escape) must not be tripped
+    // by the wh start-cluster fix — IsHardEnglishStart('w','w') is false.
+    TypeString(*engine_, L"ww");
+    EXPECT_EQ(engine_->Peek(), L"w");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, WsngStaysUng) {
+    // Regression: 'w' (P8 → ư) + 's' (Sac tone) + n + g must compose to ứng.
+    // raw[0..1]='ws' is not in IsHardEnglishStart, so the wh/wr revert path
+    // must not interfere.
+    TypeString(*engine_, L"wsng");
+    EXPECT_EQ(engine_->Peek(), L"ứng");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, WrngStaysUng_ToneBlocksRevert) {
+    // Regression: 'w' (P8 → ư) + 'r' (Hoi tone) + n + g must compose to ửng,
+    // even though raw[0..1]='wr' IS in IsHardEnglishStart. The synthetic-ư
+    // revert is gated on tone==None precisely so this Vietnamese sequence
+    // (tone applied at step 2) survives.
+    TypeString(*engine_, L"wrng");
+    EXPECT_EQ(engine_->Peek(), L"ửng");
 }
 
 TEST_F(EnglishDetectionNoSpellCheckTest, ValidVietnamese_StillComposes) {
@@ -3092,6 +3134,13 @@ TEST_F(SimpleTelexTest, DD_StillWorks) {
 TEST_F(SimpleTelexTest, RealWord_Duong) {
     TypeString(*engine_, L"dduowng");
     EXPECT_EQ(engine_->Peek(), L"đương");
+}
+
+TEST_F(SimpleTelexTest, WhPrefix_IsHardEnglish) {
+    // SimpleTelex keeps 'w' literal (P8 gated off), so the states-based
+    // IsHardEnglishStart check is what catches wh here — no raw fallback needed.
+    TypeString(*engine_, L"where");
+    EXPECT_EQ(engine_->Peek(), L"where");
 }
 
 // ============================================================================
