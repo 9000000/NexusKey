@@ -128,6 +128,12 @@ private:
     bool ProcessTone(Tone tone, wchar_t keyChar, size_t cachedTarget = SIZE_MAX);
     bool ProcessClearTone();
 
+    // Tone gates ask this twice (spell-disabled gate and English-block gate)
+    // to decide whether a user spell-exclusion entry should override a literal
+    // rejection. Returns false on empty exclusions or SIZE_MAX target — caller
+    // can drop the empty/sentinel guards.
+    [[nodiscard]] bool ToneMatchesExclusion(size_t targetIdx, Tone requestedTone) const;
+
     // Internal processing
     void ProcessChar(wchar_t keyChar, wchar_t lower, bool isUpper);
     void ProcessChar(wchar_t keyChar) { ProcessChar(keyChar, towlower(keyChar), iswupper(keyChar)); }

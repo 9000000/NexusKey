@@ -267,16 +267,7 @@ void TypingEngine::PushChar(wchar_t keyChar) {
             hasCachedTarget = true;
             size_t targetIndex = cachedToneTarget;
             bool isEscape = (targetIndex != SIZE_MAX && states_[targetIndex].tone == requestedTone);
-            bool matchesExclusion = false;
-            if (!isEscape && !config_.spellExclusions.empty() && targetIndex != SIZE_MAX) {
-                CharState tentative = states_[targetIndex];
-                tentative.tone = requestedTone;
-                wchar_t tonedCh = Compose(tentative);
-                matchesExclusion = WouldToneMatchExclusion(states_.data(), states_.size(),
-                    config_.spellExclusions,
-                    [](const CharState& s) { return Compose(s); },
-                    targetIndex, tonedCh);
-            }
+            bool matchesExclusion = !isEscape && ToneMatchesExclusion(targetIndex, requestedTone);
             // T5 (docs/TODO.md): allow tone REPLACEMENT when the current invalid
             // buffer would become Valid after swapping the existing tone for the
             // requested one.
@@ -299,15 +290,7 @@ void TypingEngine::PushChar(wchar_t keyChar) {
             bool overridden = false;
             if (!config_.spellExclusions.empty()) {
                 if (!hasCachedTarget) { cachedToneTarget = FindToneTarget(); hasCachedTarget = true; }
-                if (cachedToneTarget != SIZE_MAX) {
-                    CharState tentative = states_[cachedToneTarget];
-                    tentative.tone = requestedTone;
-                    wchar_t tonedCh = Compose(tentative);
-                    overridden = WouldToneMatchExclusion(states_.data(), states_.size(),
-                        config_.spellExclusions,
-                        [](const CharState& s) { return Compose(s); },
-                        cachedToneTarget, tonedCh);
-                }
+                overridden = ToneMatchesExclusion(cachedToneTarget, requestedTone);
             }
             if (!overridden) { asLiteral(); return; }
         }
@@ -518,6 +501,17 @@ bool TypingEngine::WouldModifierRecoverOrEscape(TypingAction action, wchar_t key
 //-----------------------------------------------------------------------------
 // Tone Processing
 //-----------------------------------------------------------------------------
+
+bool TypingEngine::ToneMatchesExclusion(size_t targetIdx, Tone requestedTone) const {
+    if (config_.spellExclusions.empty() || targetIdx == SIZE_MAX) return false;
+    CharState tentative = states_[targetIdx];
+    tentative.tone = requestedTone;
+    wchar_t tonedCh = Compose(tentative);
+    return WouldToneMatchExclusion(states_.data(), states_.size(),
+        config_.spellExclusions,
+        [](const CharState& s) { return Compose(s); },
+        targetIdx, tonedCh);
+}
 
 bool TypingEngine::ProcessTone(Tone newTone, wchar_t keyChar, size_t cachedTarget) {
     if (newTone == Tone::None) return false;
