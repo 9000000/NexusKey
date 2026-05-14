@@ -1,9 +1,9 @@
 # VKey - Bộ gõ tiếng Việt hiện đại cho Windows
 
-[![Build](https://github.com/phatMT97/NextKey/actions/workflows/build.yml/badge.svg)](https://github.com/phatMT97/NextKey/actions/workflows/build.yml)
+[![Build](https://github.com/phatMT97/VKey/actions/workflows/build.yml/badge.svg)](https://github.com/phatMT97/VKey/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Engine: Dual License](https://img.shields.io/badge/Engine-Dual%20License-orange.svg)](LICENSE-COMMERCIAL)
-[![Release](https://img.shields.io/github/v/release/phatMT97/NextKey)](https://github.com/phatMT97/NextKey/releases)
+[![Release](https://img.shields.io/github/v/release/phatMT97/VKey)](https://github.com/phatMT97/VKey/releases)
 
 <p align="center">
   <img src="docs/images/vkey-compact.png" alt="VKey Compact View" width="250">
@@ -42,7 +42,7 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 * **Hoạt động offline:** Phần mềm hoạt động hoàn toàn cục bộ trên máy bạn.
 * **Mã nguồn mở:** Bạn có thể tự kiểm chứng bằng cách đọc mã nguồn.
 
-> **Lưu ý:** Dự án này được phát triển chủ yếu dựa trên nhu cầu và trải nghiệm cá nhân, vì vậy có thể vẫn tồn tại một số lỗi chưa được phát hiện hoặc khắc phục triệt để. Rất mong nhận được sự thông cảm và đóng góp ý kiến thông qua [Issue](https://github.com/phatMT97/NextKey/issues) để bộ gõ ngày càng hoàn thiện hơn.
+> **Lưu ý:** Dự án này được phát triển chủ yếu dựa trên nhu cầu và trải nghiệm cá nhân, vì vậy có thể vẫn tồn tại một số lỗi chưa được phát hiện hoặc khắc phục triệt để. Rất mong nhận được sự thông cảm và đóng góp ý kiến thông qua [Issue](https://github.com/phatMT97/VKey/issues) để bộ gõ ngày càng hoàn thiện hơn.
 
 ---
 
@@ -88,7 +88,7 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 
 ## Cài đặt
 
-1. Tải phiên bản mới nhất tại **[Releases](https://github.com/phatMT97/NextKey/releases)**.
+1. Tải phiên bản mới nhất tại **[Releases](https://github.com/phatMT97/VKey/releases)**.
 2. Giải nén và chạy `VKey.exe`.
 3. *(Khuyến nghị)* Tắt các bộ gõ khác (Unikey, EVKey) để tránh xung đột.
 
@@ -168,7 +168,7 @@ VKey được thiết kế với kiến trúc gọn nhẹ, không phụ thuộc 
 
 ### About
 
-**VKey** is an open-source Vietnamese Input Method Editor (IME) for Windows, completely rewritten from [NextKey](https://github.com/phatMT97/NextKey/tree/master) (based on [OpenKey](https://github.com/tuyenvm/OpenKey) by Mai Vu Tuyen).
+**VKey** is an open-source Vietnamese Input Method Editor (IME) for Windows, completely rewritten from [NextKey](https://github.com/phatMT97/VKey/tree/master) (based on [OpenKey](https://github.com/tuyenvm/OpenKey) by Mai Vu Tuyen).
 
 New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine phonology rules reference [Unikey](https://www.unikey.org/source.html) by Pham Kim Long.
 
@@ -224,7 +224,7 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 
 ### Installation
 
-1. Download the latest version from **[Releases](https://github.com/phatMT97/NextKey/releases)**.
+1. Download the latest version from **[Releases](https://github.com/phatMT97/VKey/releases)**.
 2. Extract and run `VKey.exe`.
 3. *(Recommended)* Disable other IMEs (Unikey, EVKey) to avoid conflicts.
 
@@ -261,7 +261,7 @@ VKey is built with a lean architecture and no heavy runtime dependencies, keepin
 
 ## Credits
 
-- Kế thừa từ [NextKey](https://github.com/phatMT97/NextKey/tree/master), lấy cảm hứng từ [OpenKey](https://github.com/tuyenvm/OpenKey) của Mai Vũ Tuyên
+- Kế thừa từ [NextKey](https://github.com/phatMT97/VKey/tree/master), lấy cảm hứng từ [OpenKey](https://github.com/tuyenvm/OpenKey) của Mai Vũ Tuyên
 - Quy tắc âm vị học tham khảo từ [Unikey](https://www.unikey.org/source.html) của Phạm Kim Long
 - Giao diện bởi [Sciter.JS](https://sciter.com/)
 - Đọc config bởi [toml++](https://github.com/marzer/tomlplusplus)

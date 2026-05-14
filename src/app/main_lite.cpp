@@ -222,7 +222,7 @@ static void OnMenuCommand(TrayMenuId id) {
             MessageBoxW(nullptr,
                 L"VKey Classic\n"
                 L"Vietnamese Input Method Editor\n\n"
-                L"https://github.com/phatMT97/NextKey",
+                L"https://github.com/phatMT97/VKey",
                 L"VKey", MB_ICONINFORMATION);
             break;
 

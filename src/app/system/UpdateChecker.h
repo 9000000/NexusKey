@@ -28,7 +28,7 @@ struct UpdateInfo {
 class UpdateChecker {
 public:
     static constexpr const wchar_t* API_URL =
-        L"https://api.github.com/repos/phatMT97/NextKey/releases/latest";
+        L"https://api.github.com/repos/phatMT97/VKey/releases/latest";
 
     /// Check GitHub Releases for a newer version (synchronous, use from background thread)
     [[nodiscard]] static UpdateInfo CheckForUpdate() noexcept;

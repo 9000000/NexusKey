@@ -39,7 +39,7 @@ TEST(EscapePowerShellSingleQuoteTest, ConsecutiveQuotes) {
 
 TEST(IsAllowedDownloadUrlWideTest, GitHubReleasesUrl) {
     EXPECT_TRUE(IsAllowedDownloadUrl(
-        L"https://github.com/phatMT97/NextKey/releases/download/v2.0.0/VKey-x64.zip"));
+        L"https://github.com/phatMT97/VKey/releases/download/v2.0.0/VKey-x64.zip"));
 }
 
 TEST(IsAllowedDownloadUrlWideTest, GitHubObjectsUrl) {
@@ -49,7 +49,7 @@ TEST(IsAllowedDownloadUrlWideTest, GitHubObjectsUrl) {
 
 TEST(IsAllowedDownloadUrlWideTest, GitHubCodeloadUrl) {
     EXPECT_TRUE(IsAllowedDownloadUrl(
-        L"https://codeload.github.com/phatMT97/NextKey/zip/refs/tags/v2.0.0"));
+        L"https://codeload.github.com/phatMT97/VKey/zip/refs/tags/v2.0.0"));
 }
 
 TEST(IsAllowedDownloadUrlWideTest, RejectsArbitraryDomain) {
@@ -70,14 +70,14 @@ TEST(IsAllowedDownloadUrlWideTest, RejectsEmpty) {
 
 TEST(IsAllowedDownloadUrlWideTest, CaseInsensitive) {
     EXPECT_TRUE(IsAllowedDownloadUrl(
-        L"HTTPS://GITHUB.COM/phatMT97/NextKey/releases/download/v2.0.0/VKey-x64.zip"));
+        L"HTTPS://GITHUB.COM/phatMT97/VKey/releases/download/v2.0.0/VKey-x64.zip"));
 }
 
 // ── SEC-003: URL domain validation (narrow) ────────────────────────────────
 
 TEST(IsAllowedDownloadUrlNarrowTest, GitHubReleasesUrl) {
     EXPECT_TRUE(IsAllowedDownloadUrl(
-        std::string("https://github.com/phatMT97/NextKey/releases/download/v2.0.0/VKey-x64.zip")));
+        std::string("https://github.com/phatMT97/VKey/releases/download/v2.0.0/VKey-x64.zip")));
 }
 
 TEST(IsAllowedDownloadUrlNarrowTest, RejectsArbitraryDomain) {
@@ -90,7 +90,7 @@ TEST(IsAllowedDownloadUrlNarrowTest, RejectsSubdomain) {
 
 TEST(IsAllowedDownloadUrlNarrowTest, CaseInsensitive) {
     EXPECT_TRUE(IsAllowedDownloadUrl(
-        std::string("HTTPS://GITHUB.COM/phatMT97/NextKey/releases/download/v2.0.0/VKey-x64.zip")));
+        std::string("HTTPS://GITHUB.COM/phatMT97/VKey/releases/download/v2.0.0/VKey-x64.zip")));
 }
 
 // ── SEC-001: ParseSha256File (cross-platform string parsing) ─────────────

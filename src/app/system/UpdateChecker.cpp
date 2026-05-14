@@ -171,15 +171,6 @@ UpdateInfo UpdateChecker::CheckForUpdate() noexcept {
         std::string assetUrl = FindAssetUrl(response, "VKeyClassic.zip");
 #else
         std::string assetUrl = FindAssetUrl(response, "VKey.zip");
-
-        // Fallback: old asset names for releases before v2.1.4
-        if (assetUrl.empty()) {
-#ifdef _WIN64
-            assetUrl = FindAssetUrl(response, "NextKey-x64.zip");
-#else
-            assetUrl = FindAssetUrl(response, "NextKey-x86.zip");
-#endif
-        }
 #endif
 
         if (assetUrl.empty()) return info;
