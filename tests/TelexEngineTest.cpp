@@ -4675,11 +4675,46 @@ TEST_F(TelexEngineTest, EscRestoreRaw_DoubleSToneEscape) {
     EXPECT_EQ(engine_->PeekRaw(), L"asus");
 }
 
-TEST_F(TelexEngineTest, EscRestoreRaw_DoubleSToneEscape_LongerWord) {
-    // u-s-s-e-r: classic tone-escape case. After 2nd 's', engine shows "usser"
-    // (literal). PeekRaw must give back the full sequence "usser".
-    TypeString(*engine_, L"usser");
-    EXPECT_EQ(engine_->PeekRaw(), L"usser");
+// Regression suite for ESC restore raw under SimpleTelex + allowZwjf=true
+// (typical real-user config). Engine's display mangles many English words
+// when tone/modifier keys get consumed; PeekRaw must always return the full
+// keystroke sequence so ESC can recover the literal.
+TEST_F(TelexEngineTest, EscRestoreRaw_SimpleTelex_EnglishWords) {
+    config_.inputMethod = InputMethod::SimpleTelex;
+    config_.allowZwjf = true;
+    engine_ = std::make_unique<TypingEngine>(config_);
+
+    struct Case { const wchar_t* keys; const wchar_t* expectRaw; };
+    Case cases[] = {
+        // Double-tone-letter English words — engine consumes 1 char from display,
+        // PeekRaw must preserve full sequence so user can recover.
+        { L"ass",     L"ass"     },
+        { L"bass",    L"bass"    },
+        { L"pass",    L"pass"    },
+        { L"mass",    L"mass"    },
+        { L"less",    L"less"    },
+        { L"miss",    L"miss"    },
+        { L"sorry",   L"sorry"   },
+        { L"error",   L"error"   },
+        // EnglishBias catches str- prefix; display + raw both match.
+        { L"stress",  L"stress"  },
+        // Non-double-tone English words with tone/modifier consumption.
+        { L"where",   L"where"   },
+        { L"users",   L"users"   },
+        { L"perfect", L"perfect" },
+        // Tone-escape gesture path (user knew r=tone, double-pressed to escape).
+        // PeekRaw returns 6 chars matching the 6 keystrokes — consistent with
+        // the asus case, even though display happens to show 5.
+        { L"wherre",  L"wherre"  },
+        // Telex-novice case — wants the original literal back.
+        { L"asus",    L"asus"    },
+    };
+    for (const auto& c : cases) {
+        engine_->Reset();
+        TypeString(*engine_, c.keys);
+        EXPECT_EQ(engine_->PeekRaw(), c.expectRaw)
+            << "input: " << std::string(c.keys, c.keys + wcslen(c.keys));
+    }
 }
 
 TEST_F(TelexEngineTest, EscRestoreRaw_BackspaceShrinks) {

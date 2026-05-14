@@ -3,30 +3,50 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
-## 🟡 Tone-escape drops display char — `a-s-u-s` → "aus" (2026-05-13)
+## 🟡 EnglishProtection chưa catch English-only onset clusters (2026-05-13)
 
-`ProcessTone` escape branch (`TypingEngine.cpp:503-514`) chỉ thêm phím tone
-thứ 2 vào `states_` như literal, KHÔNG khôi phục phím tone đầu (đã bị consume
-cho diacritic). Hệ quả: user gõ 4 phím `a-s-u-s` chỉ thấy 3 ký tự "aus" trên
-màn hình. Cùng pattern với `u-s-s-e-r → "user"` (test khoá ở
-`TelexEngineTest.cpp:3198`).
+Test probe trên SimpleTelex + allowZwjf=true cho thấy display mangle nhiều
+English word ngay cả khi không có double-tone:
 
-ESC restore raw (PR feat/esc-restore) work-around được vấn đề ở mức **commit**
-(qua `escRawHistory_` buffer riêng), nhưng **không sửa display** — user vẫn
-thấy "aus" khi đang gõ. Cần ấn ESC mới ra "asus".
+| Keys typed | Display |
+|---|---|
+| where (5) | wh? (3) — `w→ư` + `r` tone applied |
+| users (5) | ?e (2) — multi-consumption |
+| perfect (7) | p?ct (4) |
+| wherre (6) | where (5) — escape gesture cứu |
+| ass / bass / pass / mass / less / miss / sorry / error | mất 1 char |
+| stress | "stress" (5) — EnglishBias catch được `str-` ✓ |
 
-Cách fix tiềm năng:
-- Bỏ `EraseConsumedRaw` ở line 509 + 690 (auto-restore tự xử qua E-mode
-  protection sau khi `us`/`as` thành invalid Vietnamese).
-- Sửa `ProcessTone` escape branch: khôi phục phím tone đầu như literal
-  `CharState` chèn vào states_ đúng vị trí thời gian (cần track rawIdx
-  của consumed key để biết chèn ở đâu).
-- Tham khảo Unikey/EVKey — cả 2 IME đều hiển thị "asus" / "usser" sau
-  double-tone escape.
+ESC restore raw (escRawHistory_) work-around được — PeekRaw luôn trả full
+keystroke sequence. Nhưng display sai trong lúc gõ vẫn gây bối rối.
 
-Trade-off: `usser → user` test (line 3198) sẽ break — cần đổi expect thành
-"usser". Anh PhatMT đã review và cho rằng đây là behavior đúng (engine đã
-vào E-mode sau "ss" rồi, không cần EraseConsumedRaw nữa).
+**Root cause**: `IsBlockedEnglishTone` (TypingEngine.cpp:296) chỉ block khi
+`bias == HardEnglish + !allowEnglishBypass`. Onset 2-3 char như `wh-`,
+`us-`, `pe-`, `wr-`, `kn-`, `sc-`, `sp-` chưa đủ confidence để lên HardEnglish.
+
+**Fix scope** (project riêng):
+1. List English-only initial clusters: `wh`, `str`, `spr`, `scr`, `kn`, `wr`,
+   `gh`, `pn`, `ps`, ... (audit để không over-block "ph" của Vietnamese
+   quick-start `f→ph`)
+2. Map vs Vietnamese valid onsets (chỉ `kh`, `ph`, `th`, `ch`, `nh`, `ng`,
+   `ngh`, `tr`, `gi`, `qu`)
+3. Bump bias to HardEnglish khi match English-only cluster ngay từ char 2-3
+4. Tests exhaustive: Vietnamese cases không bị over-block, English bị block đủ sớm
+
+Cũng cần **block modifier keys** (w, [, ]) chứ không chỉ tone keys khi bias
+là HardEnglish. Hiện tại `w` standalone vẫn insert `ư` qua P8 dù onset
+indicate English.
+
+**Wherre case** sẽ tự fix khi EnglishProtection cải thiện: `wh-e` không apply
+tone trên 'r' → không có escape gesture cần → display = "wherre" matching
+PeekRaw → ESC consistent.
+
+**Sub-issue: Tone-escape drops display char** — `a-s-u-s` display "aus".
+`ProcessTone` escape branch (TypingEngine.cpp:503-514) chỉ thêm phím tone
+thứ 2 vào `states_`, không khôi phục phím tone đầu. Tested behavior:
+ass→as, bass→bas, etc. ESC restore raw work-around qua escRawHistory_,
+nhưng có thể fix sâu hơn ở engine (Unikey/EVKey: cả 2 keys được giữ
+literal). Cũng sẽ break `usser → user` test (TelexEngineTest.cpp:3198).
 
 Refs: brainstorm session 2026-05-13, commit 892c9e7.
 
