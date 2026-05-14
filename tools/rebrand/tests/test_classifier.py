@@ -79,3 +79,36 @@ class TestClassifier(unittest.TestCase):
                        "NexusKey",
                        in_guid_window=False, ctx=self.ctx, was_excluded=False)
         self.assertEqual(cat, Category.BRAND_STRING)
+
+    def test_unclassified_fallthrough(self):
+        # Unknown extension must route to UNCLASSIFIED so scan.py fails the gate.
+        cat = classify(Path("notes/random.txt"), 1,
+                       "NexusKey lives here", "NexusKey",
+                       in_guid_window=False, ctx=self.ctx, was_excluded=False)
+        self.assertEqual(cat, Category.UNCLASSIFIED)
+
+    def test_cpp_line_with_exe_recategorized(self):
+        # match is bare NexusKey but line contains .exe → BINARY_NAME via line scan.
+        cat = classify(Path("src/app/Updater.cpp"), 42,
+                       'ShellExecute(L"NexusKey.exe", args);', "NexusKey",
+                       in_guid_window=False, ctx=self.ctx, was_excluded=False)
+        self.assertEqual(cat, Category.BINARY_NAME)
+
+    def test_toml_artifact(self):
+        cat = classify(Path("packaging/config.toml"), 5,
+                       'installer = "NexusKey.exe"', "NexusKey.exe",
+                       in_guid_window=False, ctx=self.ctx, was_excluded=False)
+        self.assertEqual(cat, Category.BINARY_NAME)
+
+    def test_py_plain_brand(self):
+        cat = classify(Path("tools/rebrand/scan.py"), 10,
+                       '"""Scan NexusKey repo for brand hits."""', "NexusKey",
+                       in_guid_window=False, ctx=self.ctx, was_excluded=False)
+        self.assertEqual(cat, Category.BRAND_STRING)
+
+    def test_ipc_hint_beats_binary_suffix_in_cpp(self):
+        # If both fire on a .cpp line, IPC must win (spec rule order).
+        line = 'L"Local\\\\NexusKeyMutex.exe"'
+        cat = classify(Path("src/core/ipc/Locks.cpp"), 1, line, "NexusKey",
+                       in_guid_window=False, ctx=self.ctx, was_excluded=False)
+        self.assertEqual(cat, Category.RUNTIME_IPC)

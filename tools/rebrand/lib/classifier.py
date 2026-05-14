@@ -20,6 +20,9 @@ class Category(Enum):
 
 @dataclass
 class ClassifierContext:
+    # Reserved for callers that route FILENAME hits — scan.py handles file
+    # renames externally via the renames[] list, so classify() does not read
+    # this field. Kept for symmetry with the spec's classification rules.
     file_renames: Dict[str, str]
     namespace_keep_regex: List[str]
     brand_to_binary_regex: List[str]
@@ -49,7 +52,6 @@ def classify(
     if was_excluded:
         return Category.HISTORICAL_KEEP
 
-    s_path = str(rel_path).replace("\\", "/")
     ext = rel_path.suffix.lower()
     name = rel_path.name
     is_cmake = name == "CMakeLists.txt" or ext == ".cmake"
