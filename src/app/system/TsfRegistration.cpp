@@ -303,7 +303,7 @@ void CleanupHkcuClsidOverride() noexcept {
 
     LSTATUS ls = RegDeleteTreeW(HKEY_CURRENT_USER, keyPath);
     if (ls == ERROR_SUCCESS) {
-        NEXTKEY_LOG(L"[TsfRegistration] Removed HKCU CLSID override for NexusKey TSF");
+        NEXTKEY_LOG(L"[TsfRegistration] Removed HKCU CLSID override for VKey TSF");
     } else if (ls != ERROR_FILE_NOT_FOUND) {
         NEXTKEY_LOG(L"[TsfRegistration] Warning: could not remove HKCU CLSID override (error=%ld)", ls);
     }

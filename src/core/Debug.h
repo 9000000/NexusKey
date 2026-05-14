@@ -19,5 +19,5 @@
 
 #define NEXTKEY_LOG(fmt, ...) do {                                           \
     if (::NextKey::Logger::IsEnabled())                                      \
-        ::NextKey::Logger::Log(L"[NexusKey] " fmt, ##__VA_ARGS__);           \
+        ::NextKey::Logger::Log(L"[VKey] " fmt, ##__VA_ARGS__);           \
 } while (0)
