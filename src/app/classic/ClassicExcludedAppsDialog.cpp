@@ -182,7 +182,7 @@ void ClassicExcludedAppsDialog::AddApp(const std::wstring& name) {
     std::wstring lower = ToLowerAscii(name);
 
     // Block VKey itself
-    if (lower == L"nexuskey.exe" || lower == L"nexuskeylite.exe") {
+    if (lower == L"vkey.exe" || lower == L"vkeylite.exe") {
         MessageBoxW(hwnd_, L"Không thể thêm VKey vào danh sách loại trừ.",
             L"Lỗi", MB_ICONWARNING);
         return;

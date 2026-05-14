@@ -22,7 +22,7 @@ BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID /*lpReserved*/) 
             NextKey::TSF::g_hInstance = hInstance;
             DisableThreadLibraryCalls(hInstance);
             // Tell the Logger where the DLL lives so the file lands in the
-            // install dir (next to NextKeyApp.exe) rather than the host
+            // install dir (next to VKeyApp.exe) rather than the host
             // process's directory (chrome.exe etc., which is usually not
             // writable). Logger falls back to %APPDATA%\VKey\logs if
             // install dir is read-only.

@@ -103,7 +103,7 @@ var STRINGS = {
         "s.floating_icon": "Floating V/E icon",
         "s.floating_icon_tooltip": "Show floating icon. May reduce FPS in Fullscreen games (Borderless recommended)",
         "s.debug_log": "Enable debug log",
-        "s.debug_log_tooltip": "Write detailed log to a file you can attach when reporting bugs. File lives next to NexusKey.exe (NexusKey_*.log).",
+        "s.debug_log_tooltip": "Write detailed log to a file you can attach when reporting bugs. File lives next to VKey.exe (VKey_*.log).",
         "s.open_log_folder": "Open log folder",
 
         // Tab 4: About

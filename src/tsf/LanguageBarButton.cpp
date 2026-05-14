@@ -220,7 +220,7 @@ IFACEMETHODIMP LanguageBarButton::OnMenuSelect(UINT wID) {
             if (pos != std::wstring::npos) {
                 exePath = exePath.substr(0, pos + 1);
             }
-            exePath += L"NexusKey.exe";
+            exePath += L"VKey.exe";
 
             ShellExecuteW(nullptr, L"open", exePath.c_str(), L"--settings", nullptr, SW_SHOW);
             break;

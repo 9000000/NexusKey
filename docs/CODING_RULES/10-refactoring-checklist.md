@@ -20,8 +20,8 @@ These have been broken before by well-intentioned changes.
 
 ## 10.3 DPI Awareness
 
-- [ ] `NexusKey.exe.manifest` exists with `PerMonitorV2` DPI awareness
-- [ ] `NexusKeyLite.exe.manifest` exists with `PerMonitorV2` DPI awareness
+- [ ] `VKey.exe.manifest` exists with `PerMonitorV2` DPI awareness
+- [ ] `VKeyLite.exe.manifest` exists with `PerMonitorV2` DPI awareness
 - [ ] Both manifests include Common Controls v6 dependency
 - [ ] No duplicate manifest sources (don't mix `.manifest` file with `#pragma comment(linker, "/manifestdependency:...")`)
 - [ ] Test: right-click tray icon at 125%/150% — menu text must be crisp, not blurry

@@ -136,7 +136,7 @@ mở task manager thì CPU lên 100%"*).
 
 Shipped `Settings → System → "Bật debug log"` runtime gate routing
 `NEXTKEY_LOG/HOOK_LOG/TSF_LOG` (~207 sites) into `NextKey::Logger`. File
-sink: `NexusKey_<process>_<pid>.log` next to NextKeyApp.exe (fallback
+sink: `VKey_<process>_<pid>.log` next to VKeyApp.exe (fallback
 `%APPDATA%\VKey\logs\`). PID-tagged so Chrome multi-process renderers
 don't tear lines.
 
@@ -359,16 +359,16 @@ a broader auto-cap refactor.
 Phase 2 watchdog smoke 1/2/3 PASS (crash respawn, graceful, hung UI). Smoke 4 + 5 deferred because they require a real logout/login cycle to fire the `\VKey\Watchdog` at-logon trigger.
 
 **Smoke 4 — Kill watchdog alone:**
-- `taskkill /F /IM NexusKeyWatchdog.exe` while NexusKey runs normally.
+- `taskkill /F /IM VKeyWatchdog.exe` while VKey runs normally.
 - VKey must continue functioning.
 - After logout/login: Task Scheduler must relaunch VKeyWatchdog automatically.
 
 **Smoke 5 — Kill both:**
-- `taskkill /F /IM NexusKey.exe NexusKeyWatchdog.exe` simultaneously.
+- `taskkill /F /IM VKey.exe VKeyWatchdog.exe` simultaneously.
 - After logout/login: Task Scheduler relaunches watchdog → watchdog observes events absent + process not running → respawns VKey.
 
 **Smoke 6 — AV scan (low priority):**
-- Run Windows Defender quick scan with watchdog active. Verify NexusKeyWatchdog.exe not quarantined / no false-positive on the small console-less WIN32 binary.
+- Run Windows Defender quick scan with watchdog active. Verify VKeyWatchdog.exe not quarantined / no false-positive on the small console-less WIN32 binary.
 
 **Why deferred:** logout/login is disruptive and the trigger mechanism is Windows-managed (StartupHelper just registers the task). Risk of regression from our code is low — `RegisterWatchdogTask()` already verified during first-run UAC accept. Reopen if user reports auto-launch failure.
 

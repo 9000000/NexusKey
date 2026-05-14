@@ -27,7 +27,7 @@ std::wstring GetTsfDllPath() {
     if (pos != std::wstring::npos) {
         path = path.substr(0, pos + 1);
     }
-    return path + L"NextKeyTSF.dll";
+    return path + L"VKeyTSF.dll";
 }
 
 bool IsTsfRegistered() {

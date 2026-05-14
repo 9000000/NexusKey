@@ -5,7 +5,7 @@
 # diagnostic step reads.
 #
 # Run with foreground = Chrome (address bar / textarea) from build folder:
-#   NextKeyTestRunner.exe --corpus ../tools/NextKeyTestRunner/corpus/chaos-5.3-only.toml \
+#   VKeyTestRunner.exe --corpus ../tools/VKeyTestRunner/corpus/chaos-5.3-only.toml \
 #       --hook-log Debug/VKey_hook.log
 #
 # Repeat the case 3x so a single run captures both stable-corruption and

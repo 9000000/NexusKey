@@ -19,21 +19,21 @@ to compute per-keystroke L1 timing. Two output formats:
 ### Linux (cross-platform tests, no key driving)
 ```bash
 cmake -B build-linux -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-linux --target NextKeyTestRunnerTests
+cmake --build build-linux --target VKeyTestRunnerTests
 ./build-linux/tests/VKeyTestRunnerTests
 ```
 
 ### Windows (full runner)
 ```bash
-cmake --build build --target NextKeyTestRunner --config Debug
+cmake --build build --target VKeyTestRunner --config Debug
 ```
-Output: `build/tools/Debug/NextKeyTestRunner.exe`.
+Output: `build/tools/Debug/VKeyTestRunner.exe`.
 
 ## Run
 
 ### Smoke test (no verify)
 ```powershell
-NextKeyTestRunner.exe --send vieejt --raw
+VKeyTestRunner.exe --send vieejt --raw
 ```
 Types `v-i-e-e-j-t` into focused window after 3 s. With VKey active,
 target shows "việt".
@@ -41,13 +41,13 @@ target shows "việt".
 ### Verify single case
 ```powershell
 chcp 65001                                                 # for non-ASCII --expected
-NextKeyTestRunner.exe --send vieejt --raw --verify --expected "việt"
+VKeyTestRunner.exe --send vieejt --raw --verify --expected "việt"
 ```
 Selects all + copies + diffs clipboard vs expected. Exit 0 PASS, 1 FAIL.
 
 ### Full corpus + reports
 ```powershell
-NextKeyTestRunner.exe ^
+VKeyTestRunner.exe ^
     --corpus    Z:\...\tools\VKeyTestRunner\corpus\chaos.toml ^
     --hook-log  Z:\...\build\Debug\VKey_hook.log ^
     --junit     report.xml ^
@@ -59,7 +59,7 @@ analysis prints + reports written.
 
 ## CLI reference
 
-`NextKeyTestRunner.exe --help` for the full option list.
+`VKeyTestRunner.exe --help` for the full option list.
 
 ## Source layout
 

@@ -48,7 +48,7 @@
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "winmm.lib")
 
-// Common Controls v6 manifest is embedded via NexusKeyLite.rc + .exe.manifest
+// Common Controls v6 manifest is embedded via VKeyLite.rc + .exe.manifest
 // (do NOT add #pragma manifestdependency here — causes duplicate MANIFEST resource)
 
 using namespace NextKey;

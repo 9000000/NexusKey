@@ -186,7 +186,7 @@ inline void RemoveRegistryStartup() noexcept {
 
 /// Create the watchdog scheduled task at \VKey\Watchdog.
 /// Differences from CreateScheduledTaskElevated():
-///   - Action: NexusKeyWatchdog.exe (sibling of NexusKey.exe in install dir)
+///   - Action: VKeyWatchdog.exe (sibling of VKey.exe in install dir)
 ///   - Trigger delay: 10s (let VKey come up first; main task uses 5s)
 ///   - Settings: RestartCount=3, RestartInterval=1min for self-healing if
 ///     the watchdog itself dies (Win10+).
@@ -196,12 +196,12 @@ inline void RemoveRegistryStartup() noexcept {
 ///     Scheduler MMC for user debug).
 /// Requires UAC to register under \VKey\ folder.
 [[nodiscard]] inline bool CreateWatchdogScheduledTask() noexcept {
-    // Build path to NexusKeyWatchdog.exe — same dir as current EXE.
+    // Build path to VKeyWatchdog.exe — same dir as current EXE.
     wchar_t exePath[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     std::wstring exeStr(exePath);
     std::wstring dirStr = exeStr.substr(0, exeStr.find_last_of(L"\\/"));
-    std::wstring watchdogPath = dirStr + L"\\NexusKeyWatchdog.exe";
+    std::wstring watchdogPath = dirStr + L"\\VKeyWatchdog.exe";
 
     // Get current username BEFORE elevation — ensures task triggers for the
     // logged-in user, not the admin account used for UAC elevation.

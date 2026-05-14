@@ -97,7 +97,7 @@ bool TsfAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
 }
 
 void TsfAppsDialog::onWindowPicked(const std::wstring& exeName) {
-    if (exeName == L"nexuskey.exe") {
+    if (exeName == L"vkey.exe") {
         MessageBoxW(get_hwnd(), L"Không thể thêm VKey vào danh sách.",
                     L"VKey", MB_OK | MB_ICONWARNING);
     } else {

@@ -53,7 +53,7 @@ struct SystemConfig {
     // Auto-update
     bool autoCheckUpdate = true;   // Check for updates on startup
 
-    // Watchdog (auto-restart on crash) — opt-in. When true, NexusKeyWatchdog.exe
+    // Watchdog (auto-restart on crash) — opt-in. When true, VKeyWatchdog.exe
     // is registered with Task Scheduler at logon and respawns VKey on crash.
     bool watchdogEnabled = false;
 

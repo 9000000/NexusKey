@@ -34,8 +34,8 @@ public:
         return enabled_.load(std::memory_order_acquire);
     }
 
-    /// EXE/DLL init reports the install directory (parent of NextKeyApp.exe /
-    /// NextKeyTSF.dll). Logger probes writability, falls back to APPDATA.
+    /// EXE/DLL init reports the install directory (parent of VKeyApp.exe /
+    /// VKeyTSF.dll). Logger probes writability, falls back to APPDATA.
     /// If logging is currently enabled, any open file is closed and reopened
     /// at the new path on the next Log() — calling this from DllMain after
     /// EngineController already enabled the logger still routes future writes

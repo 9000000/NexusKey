@@ -4,7 +4,7 @@
 // Monitors VKey.exe via Local\VKeyHeartbeat (30s pulse, 90s
 // timeout = 3 missed pulses). On crash detect (heartbeat stale +
 // graceful flag clear + process not in process list), respawns
-// NexusKey.exe via CreateProcessW.
+// VKey.exe via CreateProcessW.
 //
 // Launched at-logon by Task Scheduler under user account (NOT SYSTEM)
 // to keep AV happy and to be able to launch user-session UI.
@@ -76,13 +76,13 @@ std::wstring GetVKeyExePath() {
     std::wstring path(self);
     auto pos = path.find_last_of(L"\\/");
     if (pos == std::wstring::npos) return {};
-    return path.substr(0, pos) + L"\\NexusKey.exe";
+    return path.substr(0, pos) + L"\\VKey.exe";
 }
 
 bool RespawnVKey() {
     std::wstring exePath = GetVKeyExePath();
     if (exePath.empty()) {
-        LogLine(L"RespawnNexusKey: cannot resolve NexusKey.exe path");
+        LogLine(L"RespawnVKey: cannot resolve VKey.exe path");
         return false;
     }
 
@@ -130,7 +130,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             if (heartbeat) CloseHandle(heartbeat);
             if (graceful) CloseHandle(graceful);
 
-            if (!IsProcessAlive(L"NexusKey.exe")) {
+            if (!IsProcessAlive(L"VKey.exe")) {
                 LogLine(L"Heartbeat events absent + process not running → respawn");
                 RespawnVKey();
                 Sleep(POST_RESPAWN_GRACE_MS);
@@ -159,7 +159,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         }
 
         // Stale + no graceful — but is process actually dead?
-        if (IsProcessAlive(L"NexusKey.exe")) {
+        if (IsProcessAlive(L"VKey.exe")) {
             LogLine(L"Heartbeat stale but process alive (UI hung?) — NOT respawning");
             Sleep(POST_RESPAWN_GRACE_MS);
             continue;

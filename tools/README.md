@@ -2,7 +2,7 @@
 
 ## run-chaos.ps1
 
-Drives `NextKeyTestRunner.exe` against the chaos corpus across multiple host
+Drives `VKeyTestRunner.exe` against the chaos corpus across multiple host
 apps in one shot. Replaces the per-host manual workflow (start VKey,
 focus target, run runner, wait for "stop VKey" prompt, kill, press
 Enter, rename outputs) — verifies a hook-engine change doesn't regress
@@ -30,8 +30,8 @@ powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag dev -Hosts not
 | `-Tag` | yes | — | Identifier embedded in output filenames |
 | `-Hosts` | no | all 5 | Subset of `notepad notepadpp chrome discord gpt` |
 | `-Corpus` | no | `tools/VKeyTestRunner/corpus/chaos.toml` | Test corpus |
-| `-NexusKeyExe` | no | `build/Debug/NexusKey.exe` | App under test |
-| `-RunnerExe` | no | `build/tools/NextKeyTestRunner/Debug/NextKeyTestRunner.exe` | Driver |
+| `-VKeyExe` | no | `build/Debug/VKey.exe` | App under test |
+| `-RunnerExe` | no | `build/tools/VKeyTestRunner/Debug/VKeyTestRunner.exe` | Driver |
 | `-HookLog` | no | `build/Debug/VKey_hook.log` | Where VKey writes its debug log |
 | `-OutDir` | no | repo root | Where reports land |
 
@@ -127,8 +127,8 @@ Build & run scripts for the two VKey variants.
 
 | Script | What it builds | Output |
 |--------|---------------|--------|
-| `build_lite.ps1` | Classic Win32 UI (no Sciter) | `build-lite\Debug\NexusKeyClassic.exe` |
-| `build_app.ps1` | Full Sciter UI | `build\Debug\NexusKey.exe` |
+| `build_lite.ps1` | Classic Win32 UI (no Sciter) | `build-lite\Debug\VKeyClassic.exe` |
+| `build_app.ps1` | Full Sciter UI | `build\Debug\VKey.exe` |
 
 ```powershell
 # Build + run Classic (Lite)

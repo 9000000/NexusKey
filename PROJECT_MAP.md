@@ -124,7 +124,7 @@ VKey/
 │       │   ├── ClassicSettingsDialog.cpp/h  # Settings dialog (Win32 native controls)
 │       │   ├── ClassicTheme.cpp/h     # Dark/light theme for Win32 controls
 │       │   ├── VKeyLite.rc        # Win32 resource file
-│       │   ├── NexusKeyLite.exe.manifest  # DPI + visual styles manifest
+│       │   ├── VKeyLite.exe.manifest  # DPI + visual styles manifest
 │       │   └── resource.h             # Resource IDs
 │       ├── main_lite.cpp              # WinMain for Lite/Classic build
 │       ├── helpers/

@@ -1,7 +1,7 @@
 // VKey - Heartbeat Publisher (Windows-only)
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Publishes a 30s heartbeat to a named event so NexusKeyWatchdog.exe
+// Publishes a 30s heartbeat to a named event so VKeyWatchdog.exe
 // can detect process liveness. Also publishes a graceful-shutdown flag
 // (named event in signaled state) so the watchdog distinguishes user-
 // initiated quit from crash.

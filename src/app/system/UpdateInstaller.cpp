@@ -232,7 +232,7 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
     DeleteFileW((exeDir + L"\\" + TSF_DLL_FILENAME + TSF_DLL_PENDING_SUFFIX).c_str());
     DeleteFileW((exeDir + L"\\" + TSF_DLL_PENDING_MARKER).c_str());
 
-    // 1. Wait for all other NexusKey.exe processes to exit (30s timeout)
+    // 1. Wait for all other VKey.exe processes to exit (30s timeout)
     WaitForOtherProcesses(30000);
 
     // 2. Move ALL .exe and .dll files to _old_version/ folder
@@ -342,8 +342,8 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
         CopyDirectoryContents(sourceDir, exeDir);
 
         // 6. Find the main executable to launch
-        // Prefer "NexusKey.exe", then "NextKey.exe", then "NextKey32.exe", then any "Nexus/Next*.exe"
-        const std::vector<std::wstring> preferredNames = { L"NexusKey.exe", L"NexusKeyClassic.exe", L"NextKey.exe", L"NextKey32.exe", L"NexusKey64.exe" };
+        // Prefer "VKey.exe", then "VKey.exe", then "VKey32.exe", then any "Nexus/Next*.exe"
+        const std::vector<std::wstring> preferredNames = { L"VKey.exe", L"VKeyClassic.exe", L"VKey.exe", L"VKey32.exe", L"VKey64.exe" };
         for (const auto& name : preferredNames) {
             std::wstring testPath = exeDir + L"\\" + name;
             if (fs::exists(testPath)) {

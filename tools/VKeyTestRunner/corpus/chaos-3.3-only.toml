@@ -5,7 +5,7 @@
 # the EXE; that log is what the diagnostic step reads.
 #
 # Run via (from build folder):
-#   NextKeyTestRunner.exe --corpus ../tools/NextKeyTestRunner/corpus/chaos-3.3-only.toml
+#   VKeyTestRunner.exe --corpus ../tools/VKeyTestRunner/corpus/chaos-3.3-only.toml
 #
 # Repeat the case 3× so a single run captures both stable-corruption
 # and flip-prone runs without restarting the runner. Each case writes

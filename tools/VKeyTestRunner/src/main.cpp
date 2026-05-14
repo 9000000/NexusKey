@@ -70,8 +70,8 @@ void PrintUsage() {
     std::printf("VKeyTestRunner v%s\n", kVersion);
     std::printf("E2E stress test harness for VKey IME (Windows-only)\n\n");
     std::printf("Usage:\n");
-    std::printf("  NextKeyTestRunner.exe                    Print this help\n");
-    std::printf("  NextKeyTestRunner.exe --send TEXT [opts] Drive SendInput\n\n");
+    std::printf("  VKeyTestRunner.exe                    Print this help\n");
+    std::printf("  VKeyTestRunner.exe --send TEXT [opts] Drive SendInput\n\n");
     std::printf("Send options:\n");
     std::printf("  --send TEXT          Vietnamese or Telex text to type\n");
     std::printf("  --inter-key-us=N     Inter-key delay in microseconds (default 10000)\n");
@@ -99,13 +99,13 @@ void PrintUsage() {
     std::printf("                       corpus `text` fields). Useful for verifying\n");
     std::printf("                       hand-written corpus segments before locking.\n");
     std::printf("                       Example:\n");
-    std::printf("                         NextKeyTestRunner.exe --convert \"việt có dấu\"\n");
+    std::printf("                         VKeyTestRunner.exe --convert \"việt có dấu\"\n");
     std::printf("                       prints:  vieejt cos daasu\n\n");
     std::printf("  --help, -h           Show this help\n\n");
     std::printf("Examples:\n");
-    std::printf("  NextKeyTestRunner.exe --send vieejt --raw\n");
+    std::printf("  VKeyTestRunner.exe --send vieejt --raw\n");
     std::printf("    Types v-i-e-e-j-t into the focused window. Visual smoke test.\n\n");
-    std::printf("  NextKeyTestRunner.exe --send vieejt --raw --verify --expected viet-with-tone\n");
+    std::printf("  VKeyTestRunner.exe --send vieejt --raw --verify --expected viet-with-tone\n");
     std::printf("    Types vieejt, selects all, copies, compares clipboard to expected.\n");
     std::printf("    Exits 0 on PASS, 1 on FAIL with a diff. Vietnamese in --expected\n");
     std::printf("    requires UTF-8 capable shell (PowerShell 7 / Windows Terminal /\n");

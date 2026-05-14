@@ -97,7 +97,7 @@ bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params
 }
 
 void ExcludedAppsDialog::onWindowPicked(const std::wstring& exeName) {
-    if (exeName == L"nexuskey.exe") {
+    if (exeName == L"vkey.exe") {
         MessageBoxW(get_hwnd(), S(StringId::EXCLUDED_CANNOT_SELF),
                     L"VKey", MB_OK | MB_ICONWARNING);
     } else {

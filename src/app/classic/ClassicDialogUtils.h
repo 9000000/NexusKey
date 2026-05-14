@@ -80,7 +80,7 @@ inline std::vector<std::wstring> GetRunningApps() {
                 name == L"smss.exe" || name == L"wininit.exe" ||
                 name == L"services.exe" || name == L"lsass.exe" ||
                 name == L"conhost.exe" || name == L"dwm.exe" ||
-                name == L"nexuskey.exe" || name == L"nexuskeylite.exe" ||
+                name == L"vkey.exe" || name == L"vkeylite.exe" ||
                 name == L"[system process]") {
                 continue;
             }

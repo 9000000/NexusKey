@@ -6,7 +6,7 @@
 # (this is what VKey's hook should produce when it processes `keys`).
 #
 # Use --list to debug-print parsed cases without sending any keystrokes:
-#   NextKeyTestRunner.exe --list tools/NextKeyTestRunner/example.toml
+#   VKeyTestRunner.exe --list tools/VKeyTestRunner/example.toml
 
 [[tests]]
 name = "ascii-passthrough"

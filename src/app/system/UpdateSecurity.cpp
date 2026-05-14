@@ -220,7 +220,7 @@ bool VerifyDownloadedZip(
         // 2. Download checksum file to temp location
         wchar_t tempDir[MAX_PATH] = {};
         GetTempPathW(MAX_PATH, tempDir);
-        std::wstring checksumPath = std::wstring(tempDir) + L"nexuskey_checksum.sha256";
+        std::wstring checksumPath = std::wstring(tempDir) + L"vkey_checksum.sha256";
 
         HRESULT hr = URLDownloadToFileW(nullptr, checksumUrl.c_str(),
             checksumPath.c_str(), 0, nullptr);

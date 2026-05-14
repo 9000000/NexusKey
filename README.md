@@ -89,7 +89,7 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 ## Cài đặt
 
 1. Tải phiên bản mới nhất tại **[Releases](https://github.com/phatMT97/NextKey/releases)**.
-2. Giải nén và chạy `NexusKey.exe`.
+2. Giải nén và chạy `VKey.exe`.
 3. *(Khuyến nghị)* Tắt các bộ gõ khác (Unikey, EVKey) để tránh xung đột.
 
 ---
@@ -100,11 +100,11 @@ Mỗi bản phát hành đều được ký bằng [Sigstore](https://sigstore.d
 
 ```bash
 # Xác minh bằng GitHub CLI
-gh attestation verify NexusKey.zip --repo PhatMT97/NexusKey
+gh attestation verify VKey.zip --repo PhatMT97/VKey
 
 # Xác minh bằng cosign
-cosign verify-blob NexusKey.zip \
-  --bundle NexusKey.zip.sigstore.json \
+cosign verify-blob VKey.zip \
+  --bundle VKey.zip.sigstore.json \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
   --certificate-identity-regexp="https://github.com/phatMT97/VKey/"
 ```
@@ -127,13 +127,13 @@ Các thư viện phụ thuộc (Sciter SDK, Google Test, toml++) đã có sẵn 
 
 ```powershell
 cmake -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release --target NextKeyApp
+cmake --build build --config Release --target VKeyApp
 ```
 
 ### Chạy test
 
 ```powershell
-cmake --build build --config Release --target NextKeyTests
+cmake --build build --config Release --target VKeyTests
 ctest --test-dir build --build-config Release --output-on-failure
 ```
 
@@ -225,7 +225,7 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 ### Installation
 
 1. Download the latest version from **[Releases](https://github.com/phatMT97/NextKey/releases)**.
-2. Extract and run `NexusKey.exe`.
+2. Extract and run `VKey.exe`.
 3. *(Recommended)* Disable other IMEs (Unikey, EVKey) to avoid conflicts.
 
 ### Building
@@ -234,7 +234,7 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 
 ```powershell
 cmake -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release --target NextKeyApp
+cmake --build build --config Release --target VKeyApp
 ```
 
 ### Architecture

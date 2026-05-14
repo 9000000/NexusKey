@@ -35,7 +35,7 @@ static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 // HOOK_LOG → unified runtime-gated Logger (core/Logger.h).
 // Enable from Settings → System → "Bật debug log". Output file is shared
 // with NEXTKEY_LOG / TSF_LOG: VKey_<process>_<pid>.log next to
-// NextKeyApp.exe (falls back to %APPDATA%\NexusKey\logs\ if install dir is
+// VKeyApp.exe (falls back to %APPDATA%\VKey\logs\ if install dir is
 // read-only). Flushing/closing is owned by the Logger (DLL detach + EXE
 // process exit) — hook Start/Stop does NOT toggle the logger lifecycle.
 // ═══════════════════════════════════════════════════════════

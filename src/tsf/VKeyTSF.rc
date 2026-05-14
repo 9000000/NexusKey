@@ -29,9 +29,9 @@ BEGIN
             VALUE "CompanyName",      "PhatMT97"
             VALUE "FileDescription",  "VKey TSF Input Processor"
             VALUE "FileVersion",      VKEY_VERSION_STR
-            VALUE "InternalName",     "NextKeyTSF"
+            VALUE "InternalName",     "VKeyTSF"
             VALUE "LegalCopyright",   "GPL-3.0-only"
-            VALUE "OriginalFilename", "NextKeyTSF.dll"
+            VALUE "OriginalFilename", "VKeyTSF.dll"
             VALUE "ProductName",      "VKey"
             VALUE "ProductVersion",   VKEY_VERSION_STR
         END

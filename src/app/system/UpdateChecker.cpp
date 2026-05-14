@@ -168,9 +168,9 @@ UpdateInfo UpdateChecker::CheckForUpdate() noexcept {
 
         // Find release asset
 #ifdef VKEY_LITE_MODE
-        std::string assetUrl = FindAssetUrl(response, "NexusKeyClassic.zip");
+        std::string assetUrl = FindAssetUrl(response, "VKeyClassic.zip");
 #else
-        std::string assetUrl = FindAssetUrl(response, "NexusKey.zip");
+        std::string assetUrl = FindAssetUrl(response, "VKey.zip");
 
         // Fallback: old asset names for releases before v2.1.4
         if (assetUrl.empty()) {
@@ -342,7 +342,7 @@ bool UpdateChecker::DownloadAndLaunchInstaller(const std::wstring& downloadUrl) 
     try {
         wchar_t tempDir[MAX_PATH] = {};
         GetTempPathW(MAX_PATH, tempDir);
-        std::wstring zipPath = std::wstring(tempDir) + L"NexusKey_update.zip";
+        std::wstring zipPath = std::wstring(tempDir) + L"VKey_update.zip";
 
         if (!DownloadFile(downloadUrl, zipPath)) return false;
 

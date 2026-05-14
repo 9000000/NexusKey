@@ -11,7 +11,7 @@
 
 namespace NextKey {
 
-/// Get path to NextKeyTSF.dll (same directory as exe)
+/// Get path to VKeyTSF.dll (same directory as exe)
 std::wstring GetTsfDllPath();
 
 /// Check if TSF is registered by looking for CLSID in registry

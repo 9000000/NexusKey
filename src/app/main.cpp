@@ -45,7 +45,7 @@
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "winmm.lib")
 
-// Common Controls v6 is declared in NexusKey.exe.manifest (DPI awareness + CC v6)
+// Common Controls v6 is declared in VKey.exe.manifest (DPI awareness + CC v6)
 
 using namespace NextKey;
 
@@ -351,7 +351,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         std::wstring wdSelfStr(wdSelf);
         auto wdSlash = wdSelfStr.find_last_of(L"\\/");
         if (wdSlash != std::wstring::npos) {
-            std::wstring wdPath = wdSelfStr.substr(0, wdSlash) + L"\\NexusKeyWatchdog.exe";
+            std::wstring wdPath = wdSelfStr.substr(0, wdSlash) + L"\\VKeyWatchdog.exe";
             STARTUPINFOW wdSi = { sizeof(wdSi) };
             PROCESS_INFORMATION wdPi = {};
             if (CreateProcessW(wdPath.c_str(), nullptr, nullptr, nullptr, FALSE,
@@ -963,7 +963,7 @@ void OnMenuCommand(TrayMenuId id) {
                     si.dwFlags = STARTF_USESHOWWINDOW;
                     si.wShowWindow = SW_HIDE;
                     PROCESS_INFORMATION pi = {};
-                    wchar_t cmd[] = L"taskkill /F /IM NexusKeyWatchdog.exe";
+                    wchar_t cmd[] = L"taskkill /F /IM VKeyWatchdog.exe";
                     if (CreateProcessW(nullptr, cmd, nullptr, nullptr, FALSE,
                                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
                         WaitForSingleObject(pi.hProcess, 3000);
@@ -1013,7 +1013,7 @@ void OnMenuCommand(TrayMenuId id) {
                 std::wstring selfStr(self);
                 auto slash = selfStr.find_last_of(L"\\/");
                 if (slash != std::wstring::npos) {
-                    std::wstring wdPath = selfStr.substr(0, slash) + L"\\NexusKeyWatchdog.exe";
+                    std::wstring wdPath = selfStr.substr(0, slash) + L"\\VKeyWatchdog.exe";
                     STARTUPINFOW si = { sizeof(si) };
                     PROCESS_INFORMATION pi = {};
                     if (CreateProcessW(wdPath.c_str(), nullptr, nullptr, nullptr, FALSE,
