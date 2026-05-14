@@ -120,6 +120,15 @@ def _apply_category(root: Path, plan: dict, label: str, regex: str, msg: str,
         print(f"[{label}] no edits, skipping")
         return
 
+    drift = _verify_plan_fresh(root, edits)
+    if drift:
+        print(f"FAIL [{label}]: plan stale, re-scan needed", file=sys.stderr)
+        for d in drift[:20]:
+            print(f"  {d}", file=sys.stderr)
+        if len(drift) > 20:
+            print(f"  ... and {len(drift) - 20} more", file=sys.stderr)
+        sys.exit(1)
+
     touched: set[Path] = set()
     if edits:
         touched |= _apply_edits(root, edits)
@@ -160,13 +169,6 @@ def main():
         if not v or v == "TBD-uuidgen":
             print(f"FAIL: GUID '{k}' not filled in plan", file=sys.stderr)
             sys.exit(1)
-
-    drift = _verify_plan_fresh(root, plan["edits"])
-    if drift:
-        print("FAIL: plan is stale, re-scan needed", file=sys.stderr)
-        for d in drift:
-            print(f"  {d}", file=sys.stderr)
-        sys.exit(1)
 
     selected = COMMIT_ORDER if args.category == "ALL" else \
                [c for c in COMMIT_ORDER if c[0] == args.category]
