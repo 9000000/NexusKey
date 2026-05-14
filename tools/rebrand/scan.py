@@ -126,6 +126,9 @@ def main():
         encoding="utf-8",
     )
 
+    from tools.rebrand.lib.reporter import render_report
+    (out_dir / "REBRAND_REPORT.md").write_text(render_report(plan), encoding="utf-8")
+
     unclassified = stats.get(Category.UNCLASSIFIED.value, 0)
     if unclassified > 0:
         print(f"FAIL: {unclassified} UNCLASSIFIED hits — see plan.json", file=sys.stderr)
