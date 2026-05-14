@@ -34,3 +34,10 @@ class TestMatcher(unittest.TestCase):
         self.assertEqual(len(hits), 2)
         self.assertEqual(hits[0].match, "NexusKey.exe")
         self.assertEqual(hits[1].match, "NexusKey")
+
+    def test_empty_key_does_not_hang(self):
+        # Defensive: an accidental "" entry in rules.toml must not infinite-loop
+        bad = {"": "x", "NexusKey": "VKey"}
+        hits = list(find_matches("NexusKey here", bad))
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0].match, "NexusKey")

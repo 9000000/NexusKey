@@ -13,7 +13,7 @@ class Match:
 
 def find_matches(line: str, replacements: Dict[str, str]) -> Iterator[Match]:
     # Sort keys longest first for greedy matching.
-    keys = sorted(replacements.keys(), key=len, reverse=True)
+    keys = sorted((k for k in replacements if k), key=len, reverse=True)
     i = 0
     while i < len(line):
         hit = None
