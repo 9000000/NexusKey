@@ -171,7 +171,7 @@ private:
     bool ProcessVniVowelModifier(Modifier targetMod, wchar_t key);
 
     // Find target for tone/modifier application — delegates to phonotactics_.
-    size_t FindToneTarget() const;
+    [[nodiscard]] size_t FindToneTarget() const noexcept;
 
     // T5 (anh 2026-05-07): true when the buffer is invalid because the existing
     // tone (huyền/hỏi/ngã) is incompatible with a stop final coda (c/ch/p/t).

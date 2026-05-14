@@ -1284,14 +1284,13 @@ bool TypingEngine::IsToneStopCodaMismatch() const noexcept {
     return false;
 }
 
-size_t TypingEngine::FindToneTarget() const {
+size_t TypingEngine::FindToneTarget() const noexcept {
     // Cap matches Phonotactics' internal vowel capacity; sequences past the cap
     // are truncated identically on both sides so the index map stays consistent.
     // Stack-only buffers — Pillar Nhanh: no heap alloc on hook hot path.
     constexpr size_t kVowelCap = 16;
     std::array<size_t, kVowelCap> vowelStateIdx{};
     std::array<wchar_t, kVowelCap> vowelSeq{};
-    size_t vowelSeqLen = 0;
     size_t vowelCount = 0;
     size_t lastVowelStateIdx = SIZE_MAX;
 
@@ -1311,7 +1310,7 @@ size_t TypingEngine::FindToneTarget() const {
         wchar_t composed = Compose(canonical);
         if (composed == 0) continue;
 
-        vowelSeq[vowelSeqLen++] = composed;
+        vowelSeq[vowelCount] = composed;
         vowelStateIdx[vowelCount++] = i;
         lastVowelStateIdx = i;
     }
@@ -1330,7 +1329,7 @@ size_t TypingEngine::FindToneTarget() const {
     }
 
     size_t vowelIdx = phonotactics_.TonePosition(
-        std::wstring_view{vowelSeq.data(), vowelSeqLen},
+        std::wstring_view{vowelSeq.data(), vowelCount},
         std::wstring_view{coda.data(), codaLen},
         config_.modernOrtho);
     if (vowelIdx == SIZE_MAX || vowelIdx >= vowelCount) return SIZE_MAX;
