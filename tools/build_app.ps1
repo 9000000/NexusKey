@@ -28,7 +28,7 @@ $cacheFile = Join-Path $buildDir "CMakeCache.txt"
 $cmakeLists = Join-Path $root "CMakeLists.txt"
 $needConfigure = -not (Test-Path $cacheFile)
 if (-not $needConfigure -and (Get-Item $cmakeLists).LastWriteTime -gt (Get-Item $cacheFile).LastWriteTime) {
-    Write-Host "[1/3] CMakeLists.txt newer than cache — reconfiguring..." -ForegroundColor Yellow
+    Write-Host "[1/3] CMakeLists.txt newer than cache -- reconfiguring..." -ForegroundColor Yellow
     $needConfigure = $true
 }
 if ($needConfigure) {
