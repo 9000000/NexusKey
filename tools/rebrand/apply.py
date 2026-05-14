@@ -80,12 +80,14 @@ def _apply_edits(root: Path, edits: list[dict]) -> set[Path]:
 
 
 def _apply_renames(root: Path, renames: list[dict]) -> set[Path]:
+    """Move files via `git mv`. Returns only NEW paths — git mv already
+    stages both old (removed) and new (added) in the index, so the caller
+    should `git add` only the new path (in case it has further content edits)."""
     touched: set[Path] = set()
     for r in renames:
         src = Path(r["from"]).as_posix().rstrip("/")
         dst = Path(r["to"]).as_posix().rstrip("/")
         move(root, Path(src), Path(dst))
-        touched.add(Path(src))
         touched.add(Path(dst))
     return touched
 
@@ -133,6 +135,21 @@ def _apply_category(root: Path, plan: dict, label: str, regex: str, msg: str,
     if edits:
         touched |= _apply_edits(root, edits)
     if renames:
+        # Translate any edited path that is about to be renamed to its new
+        # location BEFORE the move, so `git add` after `git mv` references
+        # the new path (the old one no longer exists on disk).
+        rename_map = {Path(r["from"]).as_posix().rstrip("/"):
+                      Path(r["to"]).as_posix().rstrip("/") for r in renames}
+        translated: set[Path] = set()
+        for p in touched:
+            s = p.as_posix()
+            translated.add(p)
+            for old, new in rename_map.items():
+                if s == old or s.startswith(old + "/"):
+                    translated.discard(p)
+                    translated.add(Path(s.replace(old, new, 1)))
+                    break
+        touched = translated
         touched |= _apply_renames(root, renames)
 
     stage(root, sorted(touched))
