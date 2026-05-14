@@ -8,14 +8,24 @@ keep_log_macro = "NEXTKEY_LOG"
 include = [
     "src/**/*.{cpp,h,rc,manifest,def,idl,in}",
     "src/app/ui/**/*.{html,js,css}",
-    "tools/**/*.{cpp,h,py,sh,toml,md}",
+    "tests/**/*.{cpp,h}",
+    "tools/**/*.{cpp,h,py,sh,toml,md,ps1}",
+    "rules/**/*.toml",
     "CMakeLists.txt", "**/CMakeLists.txt",
     "*.md",
+    "LICENSE-COMMERCIAL",
     "docs/CODING_RULES/**/*.md",
+    "docs/Architecture/**/*.md",
     "docs/CODE_GOVERNANCE.md",
     "docs/REFACTOR_STATUS.md",
     "docs/TODO.md",
     "docs/index.md",
+    "docs/PHILOSOPHY.md",
+    "docs/SECURITY.md",
+    "docs/SECURITY_FIXES-distillate.md",
+    "docs/macro-case-rules.md",
+    "docs/tray-icon-sync-analysis-v2-distillate.md",
+    "docs/vietnamese-phonology-spec-distillate.md",
     ".github/**/*.{yml,yaml}",
     "scripts/**/*",
 ]
@@ -104,13 +114,3 @@ brand_to_binary_regex = [
 ]
 
 [file_renames]
-"src/app/NexusKey.exe.manifest"             = "src/app/VKey.exe.manifest"
-"src/app/NexusKey.rc"                       = "src/app/VKey.rc"
-"src/app/classic/NexusKeyLite.exe.manifest" = "src/app/classic/VKeyLite.exe.manifest"
-"src/app/classic/NexusKeyLite.rc"           = "src/app/classic/VKeyLite.rc"
-"src/tsf/NexusKeyTSF.def"                   = "src/tsf/VKeyTSF.def"
-"src/tsf/NexusKeyTSF.rc"                    = "src/tsf/VKeyTSF.rc"
-"tools/NextKeyTestRunner"                   = "tools/VKeyTestRunner"
-"docs/images/nextkey-compact.png"           = "docs/images/vkey-compact.png"
-"docs/images/nextkey-expanded.png"          = "docs/images/vkey-expanded.png"
-"docs/images/nextkey-full-UI.png"           = "docs/images/vkey-full-UI.png"

@@ -87,9 +87,13 @@ def classify(
                 return Category.BINARY_NAME
         return Category.BRAND_STRING
 
-    if ext in (".html", ".js", ".css", ".py", ".sh", ".toml"):
+    if ext in (".html", ".js", ".css", ".py", ".sh", ".ps1", ".toml"):
         if _BINARY_SUFFIX_RE.search(line):
             return Category.BINARY_NAME
+        return Category.BRAND_STRING
+
+    # Plain text files (LICENSE-COMMERCIAL etc., no extension) → brand string.
+    if not ext:
         return Category.BRAND_STRING
 
     return Category.UNCLASSIFIED
