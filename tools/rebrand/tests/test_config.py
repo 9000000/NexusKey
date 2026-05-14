@@ -89,3 +89,36 @@ brand_to_binary_regex=[]
         cfg = load_rules(self._write(toml))
         with self.assertRaises(ConfigError):
             cfg.validate_for_apply()
+
+    def test_replacement_collision_raises(self):
+        toml = """
+[meta]
+old_brand="N"
+new_brand="V"
+keep_namespace="X"
+keep_log_macro="Y"
+[scope]
+include=[]
+exclude=[]
+[replacements.brand_string]
+"NexusKey" = "VKey"
+[replacements.binary_name]
+"NexusKey" = "VKeyDifferent"
+[replacements.runtime_ipc]
+[replacements.persistent_id]
+[replacements.release_artifact]
+[persistent_id.guids]
+old_clsid_text_service="o1"
+new_clsid_text_service="{12345678-1234-1234-1234-123456789abc}"
+old_profile_guid="o2"
+new_profile_guid="{12345678-1234-1234-1234-123456789abd}"
+[exclude_patterns.namespace_keep]
+regex=[]
+[recategorize]
+brand_to_binary_regex=[]
+[file_renames]
+"""
+        with self.assertRaises(ConfigError) as ctx:
+            load_rules(self._write(toml))
+        self.assertIn("NexusKey", str(ctx.exception))
+        self.assertIn("collision", str(ctx.exception).lower())
