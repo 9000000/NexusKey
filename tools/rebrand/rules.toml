@@ -73,10 +73,10 @@ exclude = [
 "NexusKey-x64"                       = "VKey-x64"
 
 [persistent_id.guids]
-old_clsid_text_service = "<paste from src/tsf/Globals.cpp before apply>"
-new_clsid_text_service = "TBD-uuidgen"
-old_profile_guid       = "<paste from src/tsf/Globals.cpp before apply>"
-new_profile_guid       = "TBD-uuidgen"
+old_clsid_text_service = "{D84D1E5B-8F2C-4B1A-9D3E-6F7A8B9C0D1E}"
+new_clsid_text_service = "{deb18bd1-2331-4f2a-b030-da9eb0093683}"
+old_profile_guid       = "{E95E2F6C-9A3D-5C2B-AE4F-7A8B9CAD1E2F}"
+new_profile_guid       = "{2fe17da4-d8e2-4b28-8566-c30e8f04bfd4}"
 
 [exclude_patterns.namespace_keep]
 regex = [
