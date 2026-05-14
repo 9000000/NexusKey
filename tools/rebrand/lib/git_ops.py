@@ -16,7 +16,10 @@ def is_clean(root: Path) -> bool:
 
 
 def stage(root: Path, paths: Iterable[Path]) -> None:
-    args = ["add", "--"] + [str(p) for p in paths]
+    # -f: force-add tracked files even when their parent dir matches a
+    # gitignore pattern. Safe because the rebrand scan already filters out
+    # truly-untracked-and-gitignored files via [scope].exclude.
+    args = ["add", "-f", "--"] + [str(p) for p in paths]
     _run(root, *args)
 
 
