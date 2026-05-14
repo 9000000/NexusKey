@@ -184,7 +184,7 @@ exception_uye = 3   # uyê → tone on ê (3rd char)
 # Same shape for hoe→hoè and huy→huỳ.
 [tone_placement_classic_vs_modern]
 diphthongs_with_variant = ["oa", "oe", "uy"]
-default_to = "classic"   # anh confirmed 2026-05-05: NexusKey default is classic
+default_to = "classic"   # anh confirmed 2026-05-05: VKey default is classic
                           # (òa, hòa). User can toggle to modern via Settings.
 
 # ─────────────────────────────────────────────────────────────────────────

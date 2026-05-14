@@ -1,9 +1,9 @@
-# NexusKey — Core Development Philosophy
+# VKey — Core Development Philosophy
 
 > Stated by the project owner 2026-05-04.
 > This document supersedes individual sprint goals. Every architectural decision, every PR, every commit must satisfy what is written here. If a tactical decision conflicts with this document, the document wins.
 
-This file is the highest-level filter for all design and implementation work in NexusKey. It has three layers:
+This file is the highest-level filter for all design and implementation work in VKey. It has three layers:
 
 1. **What we build** — the four product pillars
 2. **How we develop** — test-first
@@ -13,7 +13,7 @@ This file is the highest-level filter for all design and implementation work in 
 
 ## 1. The Four Pillars (Product DNA)
 
-NexusKey core is designed for: **Nhanh — Nhẹ — Mượt — Mở rộng cao mà không ảnh hưởng hiệu suất.**
+VKey core is designed for: **Nhanh — Nhẹ — Mượt — Mở rộng cao mà không ảnh hưởng hiệu suất.**
 
 (Fast — Light — Smooth — Highly extensible without runtime cost.)
 
@@ -54,13 +54,13 @@ COLD PATH (main thread, MainThreadWorker, settings, init):
 
 | Code change type | Test-first concretely means |
 |---|---|
-| **New feature** | Write a NextKeyTestRunner corpus case (or unit test) capturing expected output BEFORE the feature exists. Run → fails. Implement → passes. |
+| **New feature** | Write a VKeyTestRunner corpus case (or unit test) capturing expected output BEFORE the feature exists. Run → fails. Implement → passes. |
 | **Bug fix** | Add a corpus case (or unit test) reproducing the bug FIRST. Run → fails (reproduces). Fix → passes. The case stays as regression guard. |
 | **Refactor** | Existing tests are the contract. Verify they pass before refactor (lock baseline). Refactor → tests still pass. If a refactor needs to change tests, that is a behavior change, not refactor. |
 | **New infrastructure** (new class, thread, IPC) | Test file (`FooTests.cpp` with GTest) asserting lifecycle, behavior, edge cases is committed alongside or before the implementation. |
 | **Architecture change** | Snapshot baseline (chaos corpus + perf-baseline-`<sha>`). Define new contract via failing test. Make it pass. Compare new baseline against locked old. |
 
-**Why:** Concurrency bugs (race, ordering, lifetime) are silent. Code can "look correct," pass review, and ship broken. Only a test that asserts behavior catches them. Phase 0a built `tools/NextKeyTestRunner` precisely so this discipline is feasible end-to-end. Skipping it wastes the infrastructure.
+**Why:** Concurrency bugs (race, ordering, lifetime) are silent. Code can "look correct," pass review, and ship broken. Only a test that asserts behavior catches them. Phase 0a built `tools/VKeyTestRunner` precisely so this discipline is feasible end-to-end. Skipping it wastes the infrastructure.
 
 **Anti-patterns refused on sight:**
 

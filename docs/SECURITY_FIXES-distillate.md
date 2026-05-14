@@ -2,7 +2,7 @@
 type: bmad-distillate
 sources:
   - "SECURITY_FIXES.md"
-downstream_consumer: "NexusKey coding and security review"
+downstream_consumer: "VKey coding and security review"
 created: "2026-04-01"
 token_estimate: 1150
 parts: 1
@@ -25,10 +25,10 @@ parts: 1
 
 ## FIX-1 — Restricted DACL on Named Objects
 - **Files**: `src/core/ipc/SharedStateManager.cpp` (CreateFileMappingW); `src/core/config/ConfigEvent.cpp` (CreateEventW); `src/app/main.cpp` (CreateMutexW)
-- **Vulnerability**: `nullptr` security attrs → default DACL → any session process can pre-create `Local\NexusKeySharedState`, write arbitrary shared memory values, or signal config event to force reload from malware-written config.toml
+- **Vulnerability**: `nullptr` security attrs → default DACL → any session process can pre-create `Local\VKeySharedState`, write arbitrary shared memory values, or signal config event to force reload from malware-written config.toml
 - **Fix**: Create `src/core/ipc/SecurityHelpers.h` with `MakeCreatorOnlySecurityAttributes()` returning SDDL `D:PAI(A;;GA;;;SY)(A;;GA;;;CO)` — SYSTEM + Creator/Owner only; call `LocalFree(sa.lpSecurityDescriptor)` after handle creation; graceful fallback if ConvertString fails (pSD stays nullptr → default DACL)
 - **Pattern**: `auto sa = NextKey::MakeCreatorOnlySecurityAttributes(); handle = CreateXxxW(..., &sa, ...); if (sa.lpSecurityDescriptor) LocalFree(sa.lpSecurityDescriptor);`
-- **Mutex name**: `L"Local\\NexusKey_Main_Mutex"`
+- **Mutex name**: `L"Local\\VKey_Main_Mutex"`
 
 ## FIX-2 — Config File Size/Length Guards
 - **File**: `src/core/config/ConfigManager.cpp`
@@ -38,7 +38,7 @@ parts: 1
 
 ## FIX-3 — Remove HKCU CLSID Override at Startup
 - **Files**: `src/tsf/Register.cpp` or `src/app/main.cpp`
-- **Vulnerability**: Any user process writes `HKCU\Software\Classes\CLSID\{NexusKey-GUID}\InprocServer32` → HKEY_CLASSES_ROOT merges HKCU over HKLM → attacker DLL loaded into all TSF apps (Word, Chrome, etc.); no admin required
+- **Vulnerability**: Any user process writes `HKCU\Software\Classes\CLSID\{VKey-GUID}\InprocServer32` → HKEY_CLASSES_ROOT merges HKCU over HKLM → attacker DLL loaded into all TSF apps (Word, Chrome, etc.); no admin required
 - **Fix**: `CleanupHkcuClsidOverride()` — `RegOpenKeyExW(HKEY_CURRENT_USER, keyPath, ...)` → if exists, `RegDeleteTreeW` entire subtree; call from `DllRegisterServer()` and `WinMain` startup
 - **Key path**: `Software\Classes\CLSID\%s` (CLSID from Globals.cpp)
 
@@ -65,7 +65,7 @@ parts: 1
 - **Pattern**: `std::transform` to lowercase both paths; `zipLower.substr(0, tempLower.size()) != tempLower` → reject
 
 ## Verification
-- FIX-1: Process Hacker → Object Explorer → NexusKeySharedState Security tab shows only SYSTEM + current user
+- FIX-1: Process Hacker → Object Explorer → VKeySharedState Security tab shows only SYSTEM + current user
 - FIX-2: 2MB `[macros]` in config.toml → log warning, use defaults, no crash
 - FIX-3: Create `HKCU\...\CLSID\{guid}\InprocServer32` → notepad.exe → start NexusKey → key removed
 - FIX-4: Debug breakpoint, set `state.inputMethod = 0xFF` → log + Telex fallback, no crash

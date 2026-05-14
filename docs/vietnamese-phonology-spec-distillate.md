@@ -185,5 +185,5 @@ parts: 1
 
 ## Document Metadata
 
-- Version 1.2, 2026-03-30, applies to NexusKey TelexEngine
+- Version 1.2, 2026-03-30, applies to VKey TelexEngine
 - Authors: AI + Phat; v1.1 added P2 "uo" pattern, fixed P6 escape; v1.2 added §8 stop-final restriction

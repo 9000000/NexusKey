@@ -1,6 +1,6 @@
-// NexusKey - customKeyMap (G-4) Tests
+// VKey - customKeyMap (G-4) Tests
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 //
 // Tests for the per-key user override layer added in Path G G-4.
 // Spec: docs/superpowers/specs/2026-05-07-path-g-g4-customkeymap-design.md

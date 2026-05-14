@@ -1,7 +1,7 @@
-// NexusKey — ComputeAutoCapStateTransition unit tests (Linux-portable)
+// VKey — ComputeAutoCapStateTransition unit tests (Linux-portable)
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// Pinpoints the regression first surfaced in NexusKey_NexusKey_3404.log:
+// Pinpoints the regression first surfaced in VKey_VKey_3404.log:
 // Ctrl+Enter armed ReadyToCapitalize → next plain 'c' was uppercased.
 // The bug lived in HookEngine.cpp step 3a; the fix moved the rule into
 // core/AutoCapStateTransition.h and gates the whole transition by
@@ -85,7 +85,7 @@ TEST(AutoCapStateTransition, NonSentenceKeyDropsToIdle) {
 }
 
 // =====================================================================
-// Regression: NexusKey_NexusKey_3404.log
+// Regression: VKey_VKey_3404.log
 // Ctrl+Enter must NOT arm. Then plain 'c' must stay Idle.
 // =====================================================================
 

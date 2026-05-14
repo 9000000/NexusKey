@@ -2,7 +2,7 @@
 type: bmad-distillate
 sources:
   - "tray-icon-sync-analysis-v2.md"
-downstream_consumer: "NexusKey debugging — tray icon and SharedState synchronization issues"
+downstream_consumer: "VKey debugging — tray icon and SharedState synchronization issues"
 created: "2026-04-01"
 token_estimate: 1350
 parts: 1
@@ -22,10 +22,10 @@ parts: 1
 - EXE writes work (owner=true); `WantKey()` reads correctly — soft toggle works for typing behavior
 
 ## Architecture
-- EXE: `TrayIcon` (message-only HWND class `"NexusKeyTrayClass"`); `SharedStateManager::Create()` → `FILE_MAP_ALL_ACCESS`, `isOwner=true`
+- EXE: `TrayIcon` (message-only HWND class `"VKeyTrayClass"`); `SharedStateManager::Create()` → `FILE_MAP_ALL_ACCESS`, `isOwner=true`
 - DLL: `TextService::Activate()` creates `EngineController`; `Deactivate()` resets it; `SharedStateManager::Open()` → `FILE_MAP_READ`, `isOwner=false`
 - `SharedFlags::VIETNAMESE_MODE` = bit 0; seqlock IPC
-- DLL notifies EXE via `FindWindowExW(HWND_MESSAGE, nullptr, L"NexusKeyTrayClass", nullptr)` + `PostMessageW(WM_MODE_CHANGED)`
+- DLL notifies EXE via `FindWindowExW(HWND_MESSAGE, nullptr, L"VKeyTrayClass", nullptr)` + `PostMessageW(WM_MODE_CHANGED)`
 
 ## Hypotheses for Case 4 Failure
 - **H-A**: TSF may call `ITfTextInputProcessorEx::ActivateEx()` for KL picker (not `Activate()`); if unimplemented, activation may be skipped entirely
@@ -35,7 +35,7 @@ parts: 1
 - **H-E**: TextService object lifetime — ruled out; `Activate()` creates new `EngineController`, `Deactivate()` resets; re-activation handled
 
 ## Unverified Items (Need Logging)
-1. Does `TextService::Activate()` fire at all for KL picker → NexusKey?
+1. Does `TextService::Activate()` fire at all for KL picker → VKey?
 2. Does `FindWindowExW` succeed in that `Activate()` call? (log returned HWND)
 3. Does `PostMessageW` return TRUE?
 4. Does `WM_MODE_CHANGED(1)` arrive at EXE message loop? (log ALL messages)
@@ -43,7 +43,7 @@ parts: 1
 
 ## Failed Approaches (Complete History)
 1. `WM_MODE_CHANGED` from TSF Activate/Deactivate — partial; KL picker→Vi PostMessage doesn't arrive
-2. Polling timer + `IsNexusKeyHkl()` heuristic — wrong HKL heuristic + race conditions
+2. Polling timer + `IsVKeyHkl()` heuristic — wrong HKL heuristic + race conditions
 3. `RegisterShellHookWindow` + `HSHELL_LANGUAGE` — doesn't fire for same-LANGID TIP switches
 4. Fix stale SharedState if/else in Activate — fixed wrong-mode bug but PostMessage still missing
 5. Force `SetVietnameseMode(true)` in Activate — SharedState write no-op; PostMessage still fails

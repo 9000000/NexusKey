@@ -1,4 +1,4 @@
-// NexusKey — HeartbeatPublisher unit tests (Windows-only)
+// VKey — HeartbeatPublisher unit tests (Windows-only)
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>

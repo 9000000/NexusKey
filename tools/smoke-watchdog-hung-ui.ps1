@@ -1,19 +1,19 @@
 # ============================================================
 # Smoke 3 — Watchdog: UI hung but alive
 # ============================================================
-# Suspends ALL NexusKey processes (simulating UI freeze).
+# Suspends ALL VKey processes (simulating UI freeze).
 # Watchdog must observe stale heartbeat + alive process and
 # REFUSE to respawn (avoid kill-respawn loops on hangs).
 #
 # Usage:
-#   Run in PowerShell as Administrator (NexusKey may be admin):
+#   Run in PowerShell as Administrator (VKey may be admin):
 #     powershell.exe -ExecutionPolicy Bypass -File tools\smoke-watchdog-hung-ui.ps1
 #   Or paste content into elevated PS session.
 #
 # Pass criteria (auto-checked at end):
-#   - NexusKey PIDs unchanged (no respawn happened)
+#   - VKey PIDs unchanged (no respawn happened)
 #   - watchdog.log contains "Heartbeat stale but process alive"
-#   - watchdog.log does NOT contain "RespawnNexusKey: spawned"
+#   - watchdog.log does NOT contain "RespawnVKey: spawned"
 # ============================================================
 
 # 0. Admin check
@@ -25,11 +25,11 @@ if (-not $isAdmin) {
 Write-Host "PS admin OK" -ForegroundColor Green
 
 # 0b. Resolve exe root (try UNC variants + Z:)
-$logPath = "$env:LOCALAPPDATA\NexusKey\watchdog.log"
+$logPath = "$env:LOCALAPPDATA\VKey\watchdog.log"
 $candidates = @(
-    "\\wsl.localhost\Ubuntu-24.04\home\phatmt\code\NexusKey\build\Release",
-    "\\wsl`$\Ubuntu-24.04\home\phatmt\code\NexusKey\build\Release",
-    "Z:\home\phatmt\code\NexusKey\build\Release"
+    "\\wsl.localhost\Ubuntu-24.04\home\phatmt\code\VKey\build\Release",
+    "\\wsl`$\Ubuntu-24.04\home\phatmt\code\VKey\build\Release",
+    "Z:\home\phatmt\code\VKey\build\Release"
 )
 $exeRoot = $candidates | Where-Object { Test-Path "$_\NexusKey.exe" } | Select-Object -First 1
 if (-not $exeRoot) {
@@ -49,20 +49,20 @@ if (-not ('SmokeWD.N' -as [type])) {
 "@
 }
 
-# 1. Ensure NexusKey running
-$nkProcs = @(Get-Process NexusKey -ErrorAction SilentlyContinue)
+# 1. Ensure VKey running
+$nkProcs = @(Get-Process VKey -ErrorAction SilentlyContinue)
 if ($nkProcs.Count -eq 0) {
-    Write-Host "Starting NexusKey..."
+    Write-Host "Starting VKey..."
     & "$exeRoot\NexusKey.exe"
     Start-Sleep -Seconds 5
-    $nkProcs = @(Get-Process NexusKey -ErrorAction SilentlyContinue)
-    if ($nkProcs.Count -eq 0) { Write-Host "NexusKey không start được" -ForegroundColor Red; exit 1 }
+    $nkProcs = @(Get-Process VKey -ErrorAction SilentlyContinue)
+    if ($nkProcs.Count -eq 0) { Write-Host "VKey không start được" -ForegroundColor Red; exit 1 }
 }
 $nkPids = @($nkProcs | Select-Object -ExpandProperty Id)
-Write-Host "NexusKey PIDs: $($nkPids -join ', ')" -ForegroundColor Green
+Write-Host "VKey PIDs: $($nkPids -join ', ')" -ForegroundColor Green
 
 # 2. Ensure watchdog running
-$wd = Get-Process NexusKeyWatchdog -ErrorAction SilentlyContinue
+$wd = Get-Process VKeyWatchdog -ErrorAction SilentlyContinue
 if (-not $wd) {
     Write-Host "Starting watchdog..."
     & "$exeRoot\NexusKeyWatchdog.exe"
@@ -76,7 +76,7 @@ if (-not $wd) {
 $sizeBefore = if (Test-Path $logPath) { (Get-Item $logPath).Length } else { 0 }
 Write-Host "Log size before suspend: $sizeBefore bytes"
 
-# 4. Suspend all NexusKey processes
+# 4. Suspend all VKey processes
 $handles = @()
 foreach ($p in $nkPids) {
     $h = [SmokeWD.N]::OpenProcess(0x0800, $false, [uint32]$p)
@@ -97,7 +97,7 @@ Start-Sleep -Seconds 100
 
 # 6. Verify state
 Write-Host "`n--- Process state ($(Get-Date -Format 'HH:mm:ss')) ---" -ForegroundColor Cyan
-Get-Process NexusKey | Select-Object Id, StartTime | Format-Table | Out-String | Write-Host
+Get-Process VKey | Select-Object Id, StartTime | Format-Table | Out-String | Write-Host
 
 Write-Host "--- Watchdog log NEW lines ---" -ForegroundColor Cyan
 $bytes = [System.IO.File]::ReadAllBytes($logPath)
@@ -115,10 +115,10 @@ foreach ($x in $handles) {
 
 # 8. Auto verdict
 Write-Host "`n========== VERDICT ==========" -ForegroundColor Cyan
-$nowPids = @((Get-Process NexusKey -ErrorAction SilentlyContinue) | Select-Object -ExpandProperty Id)
+$nowPids = @((Get-Process VKey -ErrorAction SilentlyContinue) | Select-Object -ExpandProperty Id)
 $samePids = -not (Compare-Object $nkPids $nowPids -SyncWindow 0)
 $hasNotRespawnLog = $newLog -match "Heartbeat stale but process alive"
-$hasRespawnLog = $newLog -match "RespawnNexusKey: spawned"
+$hasRespawnLog = $newLog -match "RespawnVKey: spawned"
 
 if ($samePids -and $hasNotRespawnLog -and -not $hasRespawnLog) {
     Write-Host "Smoke 3 PASS — UI hung detected, process not respawned" -ForegroundColor Green

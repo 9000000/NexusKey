@@ -1,4 +1,4 @@
-# NexusKey App (Sciter UI) — Build & Run script
+# VKey App (Sciter UI) — Build & Run script
 # Usage: .\tools\build_app.ps1 [-Clean] [-Release] [-Run]
 
 param(
@@ -13,7 +13,7 @@ $buildDir = Join-Path $root "build"
 $config = if ($Release) { "Release" } else { "Debug" }
 $exe = Join-Path $buildDir "$config\NexusKey.exe"
 
-Write-Host "=== NexusKey App Build ===" -ForegroundColor Cyan
+Write-Host "=== VKey App Build ===" -ForegroundColor Cyan
 Write-Host "  Root:   $root"
 Write-Host "  Build:  $buildDir"
 Write-Host "  Config: $config"
@@ -32,8 +32,8 @@ if (-not (Test-Path (Join-Path $buildDir "CMakeCache.txt"))) {
     Write-Host "[1/3] CMake already configured (use -Clean to reconfigure)" -ForegroundColor DarkGray
 }
 
-Write-Host "[2/3] Building NexusKey ($config)..." -ForegroundColor Yellow
-$buildOutput = cmake --build $buildDir --target NextKeyApp --config $config 2>&1
+Write-Host "[2/3] Building VKey ($config)..." -ForegroundColor Yellow
+$buildOutput = cmake --build $buildDir --target VKeyApp --config $config 2>&1
 $buildCode = $LASTEXITCODE
 
 $buildOutput | Select-String -Pattern "error |warning C|fatal error|Build SUCCEEDED|Build FAILED" | ForEach-Object { Write-Host $_.Line }
@@ -46,9 +46,9 @@ Write-Host "Build OK: $exe" -ForegroundColor Green
 
 if ($Run) {
     Write-Host "[3/3] Launching..." -ForegroundColor Yellow
-    $proc = Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue
+    $proc = Get-Process -Name "VKey" -ErrorAction SilentlyContinue
     if ($proc) {
-        Write-Host "  Killing existing NexusKey..." -ForegroundColor DarkYellow
+        Write-Host "  Killing existing VKey..." -ForegroundColor DarkYellow
         $proc | Stop-Process -Force
         Start-Sleep -Milliseconds 500
     }

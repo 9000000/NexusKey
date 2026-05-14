@@ -6,7 +6,7 @@
 // stateMutex_).
 //
 // HookEngine.cpp is Win32-only and not linked into the cross-platform
-// NextKeyTests target, so this file does not import HookEngine.h directly.
+// VKeyTests target, so this file does not import HookEngine.h directly.
 // It exercises the std::atomic<std::shared_ptr<T>> publish/observe semantics
 // with TypingConfig as the value type — the same pattern HookEngine adopts
 // in D6.

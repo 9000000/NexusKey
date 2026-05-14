@@ -1,4 +1,4 @@
-// NexusKey - TelexEngine Unit Tests
+// VKey - TelexEngine Unit Tests
 // SPDX-License-Identifier: GPL-3.0-only
 // Story 1.2: Comprehensive Telex transformation tests (50+ tests)
 
