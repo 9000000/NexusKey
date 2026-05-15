@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(NexusKey VERSION 3.0.0 LANGUAGES CXX)
+project(VKey VERSION 3.0.0 LANGUAGES CXX)
 
 # Generate Version.h from Version.h.in — version is defined once in project() above.
 configure_file(
@@ -48,8 +48,8 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/CodeTableConverter.h
 )
 
-add_library(NextKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
-target_include_directories(NextKeyEngine PUBLIC
+add_library(VKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
+target_include_directories(VKeyEngine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
@@ -83,14 +83,14 @@ if(WIN32)
     )
 endif()
 
-add_library(NextKeyCore STATIC ${NEXTKEY_CORE_SOURCES})
-target_include_directories(NextKeyCore PRIVATE
+add_library(VKeyCore STATIC ${NEXTKEY_CORE_SOURCES})
+target_include_directories(VKeyCore PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
 )
-target_link_libraries(NextKeyCore PUBLIC NextKeyEngine)
+target_link_libraries(VKeyCore PUBLIC VKeyEngine)
 
 # TSF DLL (TIP)
-add_library(NextKeyTSF SHARED
+add_library(VKeyTSF SHARED
     src/tsf/stdafx.h
     src/tsf/Globals.h
     src/tsf/Globals.cpp
@@ -115,19 +115,19 @@ add_library(NextKeyTSF SHARED
     src/tsf/ComUtils.h
     src/tsf/Define.h
     src/tsf/resource.h
-    src/tsf/NexusKeyTSF.rc
-    src/tsf/NexusKeyTSF.def
+    src/tsf/VKeyTSF.rc
+    src/tsf/VKeyTSF.def
 )
-target_link_libraries(NextKeyTSF PRIVATE NextKeyCore)
-set_target_properties(NextKeyTSF PROPERTIES 
-    LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/src/tsf/NexusKeyTSF.def\""
+target_link_libraries(VKeyTSF PRIVATE VKeyCore)
+set_target_properties(VKeyTSF PROPERTIES 
+    LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/src/tsf/VKeyTSF.def\""
 )
 
 # Core App (EXE) - Win32 GUI application with Sciter UI
-add_executable(NextKeyApp WIN32
+add_executable(VKeyApp WIN32
     src/app/main.cpp
     src/app/resource.h
-    src/app/NexusKey.rc
+    src/app/VKey.rc
     # dialogs/
     src/app/dialogs/SciterSubDialog.h
     src/app/dialogs/SciterSubDialog.cpp
@@ -212,9 +212,9 @@ add_executable(NextKeyApp WIN32
     # other
     src/core/Version.h
     extern/sciter/include/sciter-main.cpp
-    src/app/NexusKey.exe.manifest
+    src/app/VKey.exe.manifest
 )
-target_include_directories(NextKeyApp PRIVATE
+target_include_directories(VKeyApp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/include
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app
@@ -222,25 +222,25 @@ target_include_directories(NextKeyApp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/sciter
 )
-target_compile_definitions(NextKeyApp PRIVATE SKIP_MAIN NEXUSKEY_HOOK_ENGINE $<$<CONFIG:Debug>:NEXTKEY_DEBUG>)
-target_link_libraries(NextKeyApp PRIVATE NextKeyCore)
-set_target_properties(NextKeyApp PROPERTIES OUTPUT_NAME "NexusKey")
+target_compile_definitions(VKeyApp PRIVATE SKIP_MAIN VKEY_HOOK_ENGINE $<$<CONFIG:Debug>:NEXTKEY_DEBUG>)
+target_link_libraries(VKeyApp PRIVATE VKeyCore)
+set_target_properties(VKeyApp PROPERTIES OUTPUT_NAME "VKey")
 if(MSVC)
-    target_link_options(NextKeyApp PRIVATE /SUBSYSTEM:WINDOWS,6.01)
+    target_link_options(VKeyApp PRIVATE /SUBSYSTEM:WINDOWS,6.01)
 endif()
 
 # ============================================================================
 # Classic UI (Lite build) — Win32 native, no Sciter dependency
-# Build with: cmake -B build -DNEXUSKEY_LITE_MODE=ON
+# Build with: cmake -B build -DVKEY_LITE_MODE=ON
 # ============================================================================
-option(NEXUSKEY_LITE_MODE "Build Classic (Win32 native) UI instead of Sciter" OFF)
+option(VKEY_LITE_MODE "Build Classic (Win32 native) UI instead of Sciter" OFF)
 
-if(NEXUSKEY_LITE_MODE AND WIN32)
-    add_executable(NextKeyLite WIN32
+if(VKEY_LITE_MODE AND WIN32)
+    add_executable(VKeyLite WIN32
         src/app/main_lite.cpp
         src/app/classic/resource.h
-        src/app/classic/NexusKeyLite.rc
-        src/app/classic/NexusKeyLite.exe.manifest
+        src/app/classic/VKeyLite.rc
+        src/app/classic/VKeyLite.exe.manifest
         # system/ (shared with main app)
         src/app/system/TrayIcon.h
         src/app/system/TrayIcon.cpp
@@ -313,37 +313,37 @@ if(NEXUSKEY_LITE_MODE AND WIN32)
         # version
         src/core/Version.h
     )
-    target_include_directories(NextKeyLite PRIVATE
+    target_include_directories(VKeyLite PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/classic
         ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
     )
-    target_compile_definitions(NextKeyLite PRIVATE
-        NEXUSKEY_HOOK_ENGINE
-        NEXUSKEY_LITE_MODE
+    target_compile_definitions(VKeyLite PRIVATE
+        VKEY_HOOK_ENGINE
+        VKEY_LITE_MODE
         $<$<CONFIG:Debug>:NEXTKEY_DEBUG>
     )
-    target_link_libraries(NextKeyLite PRIVATE
-        NextKeyCore
+    target_link_libraries(VKeyLite PRIVATE
+        VKeyCore
         advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt gdiplus
     )
-    set_target_properties(NextKeyLite PROPERTIES OUTPUT_NAME "NexusKeyClassic")
+    set_target_properties(VKeyLite PROPERTIES OUTPUT_NAME "VKeyClassic")
     if(MSVC)
-        target_link_options(NextKeyLite PRIVATE /SUBSYSTEM:WINDOWS,6.01)
+        target_link_options(VKeyLite PRIVATE /SUBSYSTEM:WINDOWS,6.01)
     endif()
 endif()
 
 # Link Windows libraries
 if(WIN32)
-    target_link_libraries(NextKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid shell32)
-    target_link_libraries(NextKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt)
+    target_link_libraries(VKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid shell32)
+    target_link_libraries(VKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt)
 
     # Copy sciter.dll to output directory
-    add_custom_command(TARGET NextKeyApp POST_BUILD
+    add_custom_command(TARGET VKeyApp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/bin/sciter.dll"
-            "$<TARGET_FILE_DIR:NextKeyApp>/sciter.dll"
+            "$<TARGET_FILE_DIR:VKeyApp>/sciter.dll"
         COMMENT "Copying sciter.dll to output directory"
     )
 
@@ -411,10 +411,10 @@ if(PACKFOLDER_AVAILABLE)
 
     # Custom target to ensure resources are generated
     add_custom_target(PackUIResources DEPENDS "${RESOURCES_CPP}")
-    add_dependencies(NextKeyApp PackUIResources)
+    add_dependencies(VKeyApp PackUIResources)
 
     # Enable packfolder for Release, file copy for Debug
-    target_compile_definitions(NextKeyApp PRIVATE
+    target_compile_definitions(VKeyApp PRIVATE
         $<$<CONFIG:Release>:SCITER_USE_PACKFOLDER>
         $<$<CONFIG:RelWithDebInfo>:SCITER_USE_PACKFOLDER>
     )
@@ -422,10 +422,10 @@ if(PACKFOLDER_AVAILABLE)
 endif()
 
 # Always copy UI files for Debug builds (allows live editing)
-add_custom_command(TARGET NextKeyApp POST_BUILD
+add_custom_command(TARGET VKeyApp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Debug>,copy_directory,true>
         "${UI_SOURCE_DIR}"
-        "$<TARGET_FILE_DIR:NextKeyApp>/ui"
+        "$<TARGET_FILE_DIR:VKeyApp>/ui"
     COMMENT "Copying UI files (Debug only)"
 )
 
@@ -442,7 +442,7 @@ add_subdirectory(extern/googletest EXCLUDE_FROM_ALL)
 
 enable_testing()
 
-# Tests are excluded from ALL - build explicitly with --target NextKeyTests
+# Tests are excluded from ALL - build explicitly with --target VKeyTests
 set(NEXTKEY_TEST_SOURCES
     tests/TelexEngineTest.cpp
     tests/CombinedEngineTest.cpp
@@ -482,7 +482,7 @@ if(WIN32)
         tests/HookSelfHealerTest.cpp
         tests/HeartbeatPublisherTest.cpp
         # Sprint 2 T3 — IOutputInjector unit tests + impl sources for linkage.
-        # NextKeyTests links NextKeyCore (which excludes output/), so impls
+        # VKeyTests links VKeyCore (which excludes output/), so impls
         # are pulled in directly here for the test binary.
         tests/output/Win32SendInputInjectorTest.cpp
         tests/output/RichEditEmReplaceSelInjectorTest.cpp
@@ -500,33 +500,33 @@ if(WIN32)
     )
 endif()
 
-add_executable(NextKeyTests EXCLUDE_FROM_ALL ${NEXTKEY_TEST_SOURCES})
-target_link_libraries(NextKeyTests PRIVATE NextKeyCore GTest::gtest_main)
+add_executable(VKeyTests EXCLUDE_FROM_ALL ${NEXTKEY_TEST_SOURCES})
+target_link_libraries(VKeyTests PRIVATE VKeyCore GTest::gtest_main)
 
 # Put tests in separate directory; override global /SUBSYSTEM:WINDOWS
-set_target_properties(NextKeyTests PROPERTIES
+set_target_properties(VKeyTests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
 if(MSVC)
-    target_link_options(NextKeyTests PRIVATE /SUBSYSTEM:CONSOLE)
+    target_link_options(VKeyTests PRIVATE /SUBSYSTEM:CONSOLE)
 endif()
 
 include(GoogleTest)
-gtest_discover_tests(NextKeyTests)
+gtest_discover_tests(VKeyTests)
 
 # ============================================================================
-# Tools — NextKeyTestRunner: cross-platform tests + Windows-only runner exe
+# Tools — VKeyTestRunner: cross-platform tests + Windows-only runner exe
 # (sub-CMakeLists gates platform-specific targets internally)
 #
 # Directory is .gitignored on Main, so fresh CI checkouts may not have it.
 # Skip silently when missing — local dev with files present still configures.
 # ============================================================================
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/NextKeyTestRunner/CMakeLists.txt")
-    add_subdirectory(tools/NextKeyTestRunner)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/VKeyTestRunner/CMakeLists.txt")
+    add_subdirectory(tools/VKeyTestRunner)
 endif()
 
 # ============================================================================
-# Watchdog — standalone Windows-only process supervisor (NexusKeyWatchdog.exe)
+# Watchdog — standalone Windows-only process supervisor (VKeyWatchdog.exe)
 # (sub-CMakeLists return()s on non-WIN32)
 # ============================================================================
 add_subdirectory(src/watchdog)

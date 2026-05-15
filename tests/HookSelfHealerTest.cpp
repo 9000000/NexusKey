@@ -1,4 +1,4 @@
-// NexusKey — HookSelfHealer unit tests (Linux-runnable via mock callback)
+// VKey — HookSelfHealer unit tests (Linux-runnable via mock callback)
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>

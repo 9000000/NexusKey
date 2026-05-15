@@ -1,4 +1,4 @@
-// NexusKey - TSF Common Definitions
+// VKey - TSF Common Definitions
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -6,9 +6,9 @@
 #include "core/Logger.h"
 
 // Common macros and defines for TSF module
-#define NEXUSKEY_TSF_VERSION_MAJOR 1
-#define NEXUSKEY_TSF_VERSION_MINOR 0
-#define NEXUSKEY_TSF_VERSION_PATCH 0
+#define VKEY_TSF_VERSION_MAJOR 1
+#define VKEY_TSF_VERSION_MINOR 0
+#define VKEY_TSF_VERSION_PATCH 0
 
 // TSF_LOG → unified runtime-gated Logger.
 // Enabled by Settings → System → "Bật debug log" (propagated to TSF DLL via

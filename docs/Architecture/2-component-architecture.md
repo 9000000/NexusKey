@@ -7,7 +7,7 @@
 │                         USER SPACE                               │
 │                                                                  │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │                     NexusKey Core (EXE)                     │ │
+│  │                     VKey Core (EXE)                     │ │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │ │
 │  │  │ Settings UI  │  │ Config Mgr   │  │ Shared Memory    │  │ │
 │  │  │ (Sciter)     │  │ (TOML R/W)   │  │ Writer           │  │ │
@@ -51,4 +51,4 @@
 | **SharedState** | Runtime signals between Core ↔ Engine | Config data, typing state |
 
 ---
-
+

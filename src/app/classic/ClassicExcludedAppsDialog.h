@@ -1,4 +1,4 @@
-// NexusKey Classic — Excluded Apps Dialog
+// VKey Classic — Excluded Apps Dialog
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -64,7 +64,7 @@ private:
     std::vector<std::wstring> appList_;
     WindowPicker picker_;
 
-    static constexpr const wchar_t* kClassName = L"NexusKeyExcludedApps";
+    static constexpr const wchar_t* kClassName = L"VKeyExcludedApps";
 };
 
 }  // namespace NextKey::Classic

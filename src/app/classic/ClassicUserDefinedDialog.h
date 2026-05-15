@@ -1,4 +1,4 @@
-// NexusKey Classic — User Defined Input Dialog Header
+// VKey Classic — User Defined Input Dialog Header
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -68,7 +68,7 @@ private:
 
     std::array<TypingAction, 128> keyMap_;
 
-    static constexpr const wchar_t* kClassName = L"NexusKeyUserDefinedTable";
+    static constexpr const wchar_t* kClassName = L"VKeyUserDefinedTable";
 };
 
 }  // namespace NextKey::Classic

@@ -1,4 +1,4 @@
-// NexusKey - Smart Switch Shared Memory State
+// VKey - Smart Switch Shared Memory State
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Fixed-size struct for shared memory IPC.
@@ -22,7 +22,7 @@ struct SmartSwitchEntry {
 };
 
 /// Shared memory layout for smart switch data
-/// Named shared memory: "Local\\NexusKeySmartSwitch"
+/// Named shared memory: "Local\\VKeySmartSwitch"
 struct SmartSwitchState {
     uint32_t magic;    // 'SMSW' = 0x57534D53
     uint32_t epoch;    // Change counter

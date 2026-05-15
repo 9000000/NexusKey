@@ -1,4 +1,4 @@
-// NexusKey - Smart Switch Shared Memory Manager Implementation
+// VKey - Smart Switch Shared Memory Manager Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SmartSwitchManager.h"
@@ -9,7 +9,7 @@
 
 namespace NextKey {
 
-static constexpr const wchar_t* SMART_SWITCH_MEM_NAME = L"Local\\NexusKeySmartSwitch";
+static constexpr const wchar_t* SMART_SWITCH_MEM_NAME = L"Local\\VKeySmartSwitch";
 
 struct SmartSwitchManager::Impl {
 #ifdef _WIN32

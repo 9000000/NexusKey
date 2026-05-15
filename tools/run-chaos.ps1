@@ -1,14 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    NexusKey chaos sweep harness -- drive `NextKeyTestRunner.exe` against
+    VKey chaos sweep harness -- drive `VKeyTestRunner.exe` against
     multiple host apps and aggregate per-host JUnit / perf-CSV reports.
 
 .DESCRIPTION
     Replaces the manual workflow described in the README "Run / Full
-    corpus + reports" section: per host you used to (1) start NexusKey,
+    corpus + reports" section: per host you used to (1) start VKey,
     (2) focus the target window, (3) run the runner, (4) wait for the
-    "stop NexusKey" prompt, (5) kill NexusKey, (6) press Enter, (7)
+    "stop VKey" prompt, (5) kill VKey, (6) press Enter, (7)
     rename the output. This script automates 1-6 across N hosts and
     leaves output filenames tagged with -Tag.
 
@@ -25,18 +25,18 @@
     -Hosts         Subset of @(notepad, notepadpp, chrome, discord, gpt).
                    Default: all five.
 
-    -Corpus        Path to chaos TOML. Default: tools/NextKeyTestRunner/
+    -Corpus        Path to chaos TOML. Default: tools/VKeyTestRunner/
                    corpus/chaos.toml relative to repo root.
 
-    -NexusKeyExe   Path to NexusKey.exe. Default: build/Debug/NexusKey.exe.
+    -VKeyExe   Path to VKey.exe. Default: build/Debug/VKey.exe.
 
-    -RunnerExe     Path to NextKeyTestRunner.exe. Default:
-                   build/tools/Debug/NextKeyTestRunner.exe (CMake
+    -RunnerExe     Path to VKeyTestRunner.exe. Default:
+                   build/tools/Debug/VKeyTestRunner.exe (CMake
                    RUNTIME_OUTPUT_DIRECTORY="${CMAKE_BINARY_DIR}/tools").
 
-    -HookLog       Path NexusKey writes its debug log to (must match
-                   NexusKey's compiled-in OpenHookLog target). Default:
-                   build/Debug/NexusKey_hook.log.
+    -HookLog       Path VKey writes its debug log to (must match
+                   VKey's compiled-in OpenHookLog target). Default:
+                   build/Debug/VKey_hook.log.
 
     -OutDir        Where report-*.xml + perf-*.csv land. Default: repo root.
 
@@ -79,7 +79,7 @@ param(
     [string[]]$Hosts = @("notepad","notepadpp","chrome","discord","gpt"),
 
     [string]$Corpus,
-    [string]$NexusKeyExe,
+    [string]$VKeyExe,
     [string]$RunnerExe,
     [string]$HookLog,
     [string]$OutDir
@@ -89,22 +89,22 @@ $ErrorActionPreference = "Stop"
 
 # --- Repo root + path defaults -----------------------------------------
 $repoRoot = Split-Path -Parent $PSScriptRoot
-if (-not $Corpus)      { $Corpus      = Join-Path $repoRoot "tools/NextKeyTestRunner/corpus/chaos.toml" }
-if (-not $NexusKeyExe) { $NexusKeyExe = Join-Path $repoRoot "build/Debug/NexusKey.exe" }
-if (-not $RunnerExe)   { $RunnerExe   = Join-Path $repoRoot "build/tools/Debug/NextKeyTestRunner.exe" }
-if (-not $HookLog)     { $HookLog     = Join-Path $repoRoot "build/Debug/NexusKey_hook.log" }
+if (-not $Corpus)      { $Corpus      = Join-Path $repoRoot "tools/VKeyTestRunner/corpus/chaos.toml" }
+if (-not $VKeyExe) { $VKeyExe = Join-Path $repoRoot "build/Debug/VKey.exe" }
+if (-not $RunnerExe)   { $RunnerExe   = Join-Path $repoRoot "build/tools/Debug/VKeyTestRunner.exe" }
+if (-not $HookLog)     { $HookLog     = Join-Path $repoRoot "build/Debug/VKey_hook.log" }
 if (-not $OutDir)      { $OutDir      = $repoRoot }
 
-foreach ($p in @($Corpus, $NexusKeyExe, $RunnerExe)) {
+foreach ($p in @($Corpus, $VKeyExe, $RunnerExe)) {
     if (-not (Test-Path $p)) {
-        throw "Required artefact missing: $p (build NexusKey + NextKeyTestRunner first)"
+        throw "Required artefact missing: $p (build VKey + VKeyTestRunner first)"
     }
 }
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
 
 # --- Win32 P/Invoke for window focus -----------------------------------
 # We only need: find a window by class or title-pattern, then bring it
-# to the foreground. Keystroke driving lives in NextKeyTestRunner -- the
+# to the foreground. Keystroke driving lives in VKeyTestRunner -- the
 # script never sends keys itself.
 Add-Type -TypeDefinition @"
 using System;
@@ -229,59 +229,59 @@ function Open-Host {
     return [IntPtr]::Zero
 }
 
-# --- NexusKey lifecycle ------------------------------------------------
-function Start-NexusKey {
-    if (Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue) {
+# --- VKey lifecycle ------------------------------------------------
+function Start-VKey {
+    if (Get-Process -Name "VKey" -ErrorAction SilentlyContinue) {
         # Already running -- kill first so each host starts with a fresh
         # hook-log buffer and consistent classifier state.
         # Use -Force here: we don't need the hook log from the stale instance.
-        Stop-NexusKey -Force
+        Stop-VKey -Force
     }
-    Start-Process -FilePath $NexusKeyExe | Out-Null
+    Start-Process -FilePath $VKeyExe | Out-Null
     Start-Sleep -Seconds 2
-    if (-not (Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue)) {
-        throw "NexusKey.exe failed to start -- check $NexusKeyExe"
+    if (-not (Get-Process -Name "VKey" -ErrorAction SilentlyContinue)) {
+        throw "VKey.exe failed to start -- check $VKeyExe"
     }
 }
 
-function Stop-NexusKey {
+function Stop-VKey {
     param([switch]$Force)
 
     if ($Force) {
         # Hard kill -- TerminateProcess, no buffer flush.
-        Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue |
+        Get-Process -Name "VKey" -ErrorAction SilentlyContinue |
             Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 500
         return
     }
 
-    # Graceful shutdown: send WM_CLOSE to the NexusKeyTrayClass window.
-    # Requires NexusKey built with ChangeWindowMessageFilterEx(WM_CLOSE,
-    # MSGFLT_ALLOW) so UIPI allows the message when NexusKey is elevated.
+    # Graceful shutdown: send WM_CLOSE to the VKeyTrayClass window.
+    # Requires VKey built with ChangeWindowMessageFilterEx(WM_CLOSE,
+    # MSGFLT_ALLOW) so UIPI allows the message when VKey is elevated.
     # Clean path: WM_CLOSE → PostQuitMessage → message loop exit →
     # HookEngine::Stop() → CloseHookLog() → fflush + fclose → hook log
     # buffer written to disk.
-    $nk = Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue
+    $nk = Get-Process -Name "VKey" -ErrorAction SilentlyContinue
     if (-not $nk) { return }
 
-    $trayHwnd = [Win32]::FindWindow("NexusKeyTrayClass", $null)
+    $trayHwnd = [Win32]::FindWindow("VKeyTrayClass", $null)
     if ($trayHwnd -ne [IntPtr]::Zero) {
         [void][Win32]::PostMessageW($trayHwnd, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
 
         # Wait up to 5s for graceful exit
         $deadline = (Get-Date).AddSeconds(5)
         while ((Get-Date) -lt $deadline) {
-            if (-not (Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue)) {
+            if (-not (Get-Process -Name "VKey" -ErrorAction SilentlyContinue)) {
                 Start-Sleep -Milliseconds 200   # Let OS finish flushing file handles
                 return
             }
             Start-Sleep -Milliseconds 100
         }
-        Write-Warning "NexusKey did not exit within 5s after WM_CLOSE -- force-killing"
+        Write-Warning "VKey did not exit within 5s after WM_CLOSE -- force-killing"
     }
 
     # Fallback: hard kill (no buffer flush -- hook log will be empty)
-    Get-Process -Name "NexusKey" -ErrorAction SilentlyContinue |
+    Get-Process -Name "VKey" -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
 }
@@ -292,17 +292,17 @@ function Invoke-ChaosForHost {
 
     Write-Host "`n=== HOST: $HostName ===" -ForegroundColor Cyan
 
-    Start-NexusKey
+    Start-VKey
 
     $hwnd = Open-Host -Name $HostName
     if ($hwnd -eq [IntPtr]::Zero) {
         Write-Warning "[$HostName] no target window -- skipping"
-        Stop-NexusKey -Force
+        Stop-VKey -Force
         return [PSCustomObject]@{ Host = $HostName; Tests = 0; Failures = -1; Reason = "no target window" }
     }
     if (-not (Focus-Window -Hwnd $hwnd)) {
         Write-Warning "[$HostName] failed to focus target -- skipping"
-        Stop-NexusKey -Force
+        Stop-VKey -Force
         return [PSCustomObject]@{ Host = $HostName; Tests = 0; Failures = -1; Reason = "focus failed" }
     }
 
@@ -352,9 +352,9 @@ function Invoke-ChaosForHost {
             $logWriter.WriteLine($line)
             $logWriter.Flush()
             Write-Host "[$HostName] $line" -ForegroundColor DarkGray
-            if (-not $sawStopPrompt -and ($line -match "stop NexusKey|Press Enter")) {
+            if (-not $sawStopPrompt -and ($line -match "stop VKey|Press Enter")) {
                 $sawStopPrompt = $true
-                Stop-NexusKey
+                Stop-VKey
                 $proc.StandardInput.WriteLine("")
                 $proc.StandardInput.Flush()
             }
@@ -369,7 +369,7 @@ function Invoke-ChaosForHost {
     }
 
     $exitCode = $proc.ExitCode
-    Stop-NexusKey -Force   # belt-and-braces: ensure killed even if the prompt was missed
+    Stop-VKey -Force   # belt-and-braces: ensure killed even if the prompt was missed
 
     if (-not (Test-Path $reportPath)) {
         Write-Warning "[$HostName] report file not produced (exit=$exitCode)"
@@ -392,7 +392,7 @@ try {
         $results += Invoke-ChaosForHost -HostName $h
     }
 } finally {
-    Stop-NexusKey -Force
+    Stop-VKey -Force
 }
 
 Write-Host "`n=== SUMMARY (tag=$Tag) ===" -ForegroundColor Cyan

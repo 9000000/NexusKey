@@ -1,11 +1,11 @@
 # Chaos 3.3 only -- single-case corpus for option C diagnostic capture.
 # Used to localize the truongwf -> trường race vs corruption shapes
 # (tờương / ờnương) under sub-1ms inter-key load. Pair with a Debug
-# build of NextKeyApp so HOOK_LOG writes NexusKey_hook.log next to
+# build of VKeyApp so HOOK_LOG writes VKey_hook.log next to
 # the EXE; that log is what the diagnostic step reads.
 #
 # Run via (from build folder):
-#   NextKeyTestRunner.exe --corpus ../tools/NextKeyTestRunner/corpus/chaos-3.3-only.toml
+#   VKeyTestRunner.exe --corpus ../tools/VKeyTestRunner/corpus/chaos-3.3-only.toml
 #
 # Repeat the case 3× so a single run captures both stable-corruption
 # and flip-prone runs without restarting the runner. Each case writes

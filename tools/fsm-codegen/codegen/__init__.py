@@ -1,4 +1,4 @@
-"""FSM codegen for NexusKey Sprint 3 Vietnamese typing engine.
+"""FSM codegen for VKey Sprint 3 Vietnamese typing engine.
 
 Pipeline: parse rules (parser) → NFA (nfa) → DFA (dfa) → minimize → emit C++ tables.
 Verifier exhaustively checks 20,504 valid Vietnamese syllables against generated DFA.

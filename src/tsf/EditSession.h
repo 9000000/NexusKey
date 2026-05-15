@@ -1,4 +1,4 @@
-// NexusKey - Edit Session Helper
+// VKey - Edit Session Helper
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

@@ -1,4 +1,4 @@
-// NexusKey - Excluded Apps Dialog Implementation
+// VKey - Excluded Apps Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ExcludedAppsDialog.h"
@@ -19,7 +19,7 @@ namespace NextKey {
 ExcludedAppsDialog::ExcludedAppsDialog(HWND parent)
     : WindowPickerDialog({
         L"this://app/excludedapps/excludedapps.html",
-        L"NexusKey - Excluded Apps",
+        L"VKey - Excluded Apps",
         420, 420, parent, true, 36, 40, true
     }) {
     appList_ = ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath());
@@ -97,9 +97,9 @@ bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params
 }
 
 void ExcludedAppsDialog::onWindowPicked(const std::wstring& exeName) {
-    if (exeName == L"nexuskey.exe") {
+    if (exeName == L"vkey.exe") {
         MessageBoxW(get_hwnd(), S(StringId::EXCLUDED_CANNOT_SELF),
-                    L"NexusKey", MB_OK | MB_ICONWARNING);
+                    L"VKey", MB_OK | MB_ICONWARNING);
     } else {
         addApp(exeName);
     }
@@ -183,14 +183,14 @@ void ExcludedAppsDialog::exportApps() {
         get_hwnd(),
         L"Text file (*.txt)\0*.txt\0",
         L"txt",
-        L"NexusKeyExcludedApps"
+        L"VKeyExcludedApps"
     );
     if (path.empty()) return;
 
     std::ofstream outfile(path);
     if (!outfile.is_open()) return;
 
-    outfile << ";NexusKey Excluded Apps\n";
+    outfile << ";VKey Excluded Apps\n";
 
     std::vector<std::wstring> sorted = appList_;
     std::sort(sorted.begin(), sorted.end());

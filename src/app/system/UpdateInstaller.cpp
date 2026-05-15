@@ -1,4 +1,4 @@
-// NexusKey - Self-Update Installer Implementation
+// VKey - Self-Update Installer Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "UpdateInstaller.h"
@@ -232,7 +232,7 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
     DeleteFileW((exeDir + L"\\" + TSF_DLL_FILENAME + TSF_DLL_PENDING_SUFFIX).c_str());
     DeleteFileW((exeDir + L"\\" + TSF_DLL_PENDING_MARKER).c_str());
 
-    // 1. Wait for all other NexusKey.exe processes to exit (30s timeout)
+    // 1. Wait for all other VKey.exe processes to exit (30s timeout)
     WaitForOtherProcesses(30000);
 
     // 2. Move ALL .exe and .dll files to _old_version/ folder
@@ -282,7 +282,7 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
             MoveFileW(entry.path().c_str(), destPath.c_str());
             // Track the main exe for relaunch
             if (_wcsicmp(fs::path(name).extension().c_str(), L".exe") == 0 &&
-                (name.find(L"Nexus") != std::wstring::npos || name.find(L"Next") != std::wstring::npos) &&
+                name.find(L"VKey") != std::wstring::npos &&
                 name.find(L"Update") == std::wstring::npos) {
                 restoredExePath = destPath;
             }
@@ -342,8 +342,8 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
         CopyDirectoryContents(sourceDir, exeDir);
 
         // 6. Find the main executable to launch
-        // Prefer "NexusKey.exe", then "NextKey.exe", then "NextKey32.exe", then any "Nexus/Next*.exe"
-        const std::vector<std::wstring> preferredNames = { L"NexusKey.exe", L"NexusKeyClassic.exe", L"NextKey.exe", L"NextKey32.exe", L"NexusKey64.exe" };
+        // Prefer "VKey.exe", then "VKeyClassic.exe"
+        const std::vector<std::wstring> preferredNames = { L"VKey.exe", L"VKeyClassic.exe" };
         for (const auto& name : preferredNames) {
             std::wstring testPath = exeDir + L"\\" + name;
             if (fs::exists(testPath)) {
@@ -358,8 +358,8 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
                 if (!entry.is_regular_file()) continue;
                 if (_wcsicmp(entry.path().extension().c_str(), L".exe") == 0) {
                     std::wstring name = entry.path().filename().wstring();
-                    if (name.find(L"Nexus") != std::wstring::npos || name.find(L"Next") != std::wstring::npos) {
-                        // Skip updater if it's named NextKeyUpdate.exe
+                    if (name.find(L"VKey") != std::wstring::npos) {
+                        // Skip updater if it's named VKeyUpdate.exe
                         if (name.find(L"Update") == std::wstring::npos) {
                             finalExePath = entry.path().wstring();
                             break;

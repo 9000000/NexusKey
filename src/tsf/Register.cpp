@@ -1,4 +1,4 @@
-// NexusKey - TSF DLL Registration
+// VKey - TSF DLL Registration
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "stdafx.h"

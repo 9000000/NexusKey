@@ -1,6 +1,6 @@
-// HookLogParser.h -- read NexusKey_hook.log and extract per-keystroke timing.
+// HookLogParser.h -- read VKey_hook.log and extract per-keystroke timing.
 //
-// NexusKey writes one line per LL hook callback in DEBUG / NEXTKEY_DEBUG
+// VKey writes one line per LL hook callback in DEBUG / NEXTKEY_DEBUG
 // builds (see HookEngine.cpp HOOK_LOG macro). Format:
 //
 //   [HH:MM:SS.mmm] KEY vk=0xXX scan=0xXXXX flags=0xXXXXXXXX DOWN

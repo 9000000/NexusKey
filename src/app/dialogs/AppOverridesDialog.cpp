@@ -1,4 +1,4 @@
-// NexusKey - App Overrides Dialog Implementation
+// VKey - App Overrides Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "AppOverridesDialog.h"
@@ -12,7 +12,7 @@ namespace NextKey {
 AppOverridesDialog::AppOverridesDialog(HWND parent)
     : WindowPickerDialog({
         L"this://app/appoverrides/appoverrides.html",
-        L"NexusKey - App Overrides",
+        L"VKey - App Overrides",
         400, 460, parent, true, 36, 40, true
     }) {
     entries_ = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());

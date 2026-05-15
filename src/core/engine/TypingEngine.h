@@ -1,6 +1,6 @@
-// NexusKey - Typing Engine Header (unified Telex/VNI/Combined)
+// VKey - Typing Engine Header (unified Telex/VNI/Combined)
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 // Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
 // See LICENSE and LICENSE-COMMERCIAL in the project root.
 
@@ -127,6 +127,12 @@ private:
     // Tone keys (Telex z/s/f/r/x/j, VNI 0/1/2/3/4/5) — handled inline in PushChar.
     bool ProcessTone(Tone tone, wchar_t keyChar, size_t cachedTarget = SIZE_MAX);
     bool ProcessClearTone();
+
+    // Tone gates ask this twice (spell-disabled gate and English-block gate)
+    // to decide whether a user spell-exclusion entry should override a literal
+    // rejection. Returns false on empty exclusions or SIZE_MAX target — caller
+    // can drop the empty/sentinel guards.
+    [[nodiscard]] bool ToneMatchesExclusion(size_t targetIdx, Tone requestedTone) const noexcept;
 
     // Internal processing
     void ProcessChar(wchar_t keyChar, wchar_t lower, bool isUpper);

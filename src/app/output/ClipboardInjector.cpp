@@ -93,7 +93,7 @@ bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noe
             in.type = INPUT_KEYBOARD;
             in.ki.wVk = VK_BACK;
             in.ki.wScan = static_cast<WORD>(::MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-            in.ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+            in.ki.dwExtraInfo = Internal::kVKeyExtraInfo;
             inputs.push_back(in);
             in.ki.dwFlags = KEYEVENTF_KEYUP;
             inputs.push_back(in);
@@ -182,7 +182,7 @@ bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noe
         in.type = INPUT_KEYBOARD;
         in.ki.wVk = VK_BACK;
         in.ki.wScan = static_cast<WORD>(::MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-        in.ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+        in.ki.dwExtraInfo = Internal::kVKeyExtraInfo;
         inputs.push_back(in);
         in.ki.dwFlags = KEYEVENTF_KEYUP;
         inputs.push_back(in);
@@ -192,14 +192,14 @@ bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noe
     ctrlDown.type = INPUT_KEYBOARD;
     ctrlDown.ki.wVk = VK_CONTROL;
     ctrlDown.ki.wScan = static_cast<WORD>(::MapVirtualKeyW(VK_CONTROL, MAPVK_VK_TO_VSC));
-    ctrlDown.ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+    ctrlDown.ki.dwExtraInfo = Internal::kVKeyExtraInfo;
     inputs.push_back(ctrlDown);
 
     INPUT vDown{};
     vDown.type = INPUT_KEYBOARD;
     vDown.ki.wVk = 'V';
     vDown.ki.wScan = static_cast<WORD>(::MapVirtualKeyW('V', MAPVK_VK_TO_VSC));
-    vDown.ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+    vDown.ki.dwExtraInfo = Internal::kVKeyExtraInfo;
     inputs.push_back(vDown);
 
     INPUT vUp{};
@@ -207,7 +207,7 @@ bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noe
     vUp.ki.wVk = 'V';
     vUp.ki.wScan = static_cast<WORD>(::MapVirtualKeyW('V', MAPVK_VK_TO_VSC));
     vUp.ki.dwFlags = KEYEVENTF_KEYUP;
-    vUp.ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+    vUp.ki.dwExtraInfo = Internal::kVKeyExtraInfo;
     inputs.push_back(vUp);
 
     INPUT ctrlUp{};
@@ -215,7 +215,7 @@ bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noe
     ctrlUp.ki.wVk = VK_CONTROL;
     ctrlUp.ki.wScan = static_cast<WORD>(::MapVirtualKeyW(VK_CONTROL, MAPVK_VK_TO_VSC));
     ctrlUp.ki.dwFlags = KEYEVENTF_KEYUP;
-    ctrlUp.ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+    ctrlUp.ki.dwExtraInfo = Internal::kVKeyExtraInfo;
     inputs.push_back(ctrlUp);
 
     bool result = Internal::TrackedSendInput(inputs.data(), static_cast<UINT>(inputs.size()));
@@ -246,13 +246,13 @@ void ClipboardInjector::SendKey(unsigned short vkCode) noexcept {
     in[0].type = INPUT_KEYBOARD;
     in[0].ki.wVk = vkCode;
     in[0].ki.wScan = static_cast<WORD>(::MapVirtualKeyW(vkCode, MAPVK_VK_TO_VSC));
-    in[0].ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+    in[0].ki.dwExtraInfo = Internal::kVKeyExtraInfo;
 
     in[1].type = INPUT_KEYBOARD;
     in[1].ki.wVk = vkCode;
     in[1].ki.wScan = static_cast<WORD>(::MapVirtualKeyW(vkCode, MAPVK_VK_TO_VSC));
     in[1].ki.dwFlags = KEYEVENTF_KEYUP;
-    in[1].ki.dwExtraInfo = Internal::kNexusKeyExtraInfo;
+    in[1].ki.dwExtraInfo = Internal::kVKeyExtraInfo;
 
     (void)Internal::TrackedSendInput(in, 2);
 }

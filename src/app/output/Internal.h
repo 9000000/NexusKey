@@ -44,9 +44,9 @@ extern SynthCounterFn        g_synthCounterCallback;  // null = disabled
 [[nodiscard]] bool TrackedSendInput(INPUT* events, UINT count) noexcept;
 
 // Marker dwExtraInfo so own synth events skip our own hook (Rule #11.4
-// early-return). MUST match HookEngine::NEXUSKEY_EXTRA_INFO ("NK"). If
+// early-return). MUST match HookEngine::VKEY_EXTRA_INFO ("NK"). If
 // these diverge, own synth events are not recognized as own → infinite
 // re-entry loop. The integration test (chaos corpus) catches this.
-constexpr ULONG_PTR kNexusKeyExtraInfo = 0x4E4BULL;
+constexpr ULONG_PTR kVKeyExtraInfo = 0x4E4BULL;
 
 }  // namespace NextKey::Output::Internal

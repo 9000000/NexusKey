@@ -1,6 +1,6 @@
 # Macro Case-Matching Rules
 
-How NexusKey decides whether a typed string fires a macro, and how the expansion is cased on output.
+How VKey decides whether a typed string fires a macro, and how the expansion is cased on output.
 
 ## Summary
 
@@ -98,7 +98,7 @@ Only fires on the exact stored case — won't accidentally trigger mid-sentence.
 "->" = "→"
 "<3" = "❤"
 ```
-`>`, `<`, `?`, `:`, `"`, `{`, `}`, `|`, `!`, `@`, `#`, etc. are recognized correctly — NexusKey uses `ToUnicodeEx` with the foreground window's keyboard layout, so the actual typed character (honoring Shift/Caps/AltGr) lands in the macro buffer.
+`>`, `<`, `?`, `:`, `"`, `{`, `}`, `|`, `!`, `@`, `#`, etc. are recognized correctly — VKey uses `ToUnicodeEx` with the foreground window's keyboard layout, so the actual typed character (honoring Shift/Caps/AltGr) lands in the macro buffer.
 
 Non-letter chars are never uppercase, so symbol keys are treated as lowercase (flexible matching). Auto-caps does nothing because the expansion itself has no letters to transform.
 

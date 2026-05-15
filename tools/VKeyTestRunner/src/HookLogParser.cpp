@@ -10,7 +10,7 @@ namespace NextKey::TestRunner::HookLogParser {
 
 namespace {
 
-// Skip leading UTF-8 BOM (EF BB BF) if present. NexusKey logs are written
+// Skip leading UTF-8 BOM (EF BB BF) if present. VKey logs are written
 // with `ccs=UTF-8` which prefixes a BOM.
 constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
 

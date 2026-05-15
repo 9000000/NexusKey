@@ -65,7 +65,7 @@ def test_phono_no_oo_double() -> None:
 
 
 def test_phono_classic_default() -> None:
-    """Anh 2026-05-05: NexusKey default tone placement is classic (òa)."""
+    """Anh 2026-05-05: VKey default tone placement is classic (òa)."""
     rule = RuleParser.load_phonotactics(PHONO_PATH)
     assert rule.tone_placement_default == "classic"
 

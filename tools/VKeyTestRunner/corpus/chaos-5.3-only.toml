@@ -1,12 +1,12 @@
 # Chaos 5.3 only -- single-case corpus for Sprint 2 Chrome diagnostic capture.
 # Used to localize the cross-app `viejtnam\b\b\b\bs` -> `việts` (Chrome) vs
-# `viết` (Notepad) divergence. Pair with a Debug build of NextKeyApp so
-# HOOK_LOG writes NexusKey_hook.log next to the EXE; that log is what the
+# `viết` (Notepad) divergence. Pair with a Debug build of VKeyApp so
+# HOOK_LOG writes VKey_hook.log next to the EXE; that log is what the
 # diagnostic step reads.
 #
 # Run with foreground = Chrome (address bar / textarea) from build folder:
-#   NextKeyTestRunner.exe --corpus ../tools/NextKeyTestRunner/corpus/chaos-5.3-only.toml \
-#       --hook-log Debug/NexusKey_hook.log
+#   VKeyTestRunner.exe --corpus ../tools/VKeyTestRunner/corpus/chaos-5.3-only.toml \
+#       --hook-log Debug/VKey_hook.log
 #
 # Repeat the case 3x so a single run captures both stable-corruption and
 # flip-prone runs without restarting the runner. Each case writes its own

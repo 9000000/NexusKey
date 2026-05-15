@@ -1,4 +1,4 @@
-// NexusKey Classic — Convert Tool Dialog
+// VKey Classic — Convert Tool Dialog
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -89,7 +89,7 @@ private:
 
     ConvertConfig config_{};
 
-    static constexpr const wchar_t* kClassName = L"NexusKeyConvertTool";
+    static constexpr const wchar_t* kClassName = L"VKeyConvertTool";
 };
 
 }  // namespace NextKey::Classic

@@ -5,7 +5,7 @@
 // primitive reads without stateMutex_).
 //
 // Fields under test (mirrored as freestanding atomics here, since HookEngine.cpp
-// is Win32-only and not linked into the cross-platform NextKeyTests target):
+// is Win32-only and not linked into the cross-platform VKeyTests target):
 //   - vietnameseMode_   — std::atomic<bool>     (D5)
 //   - isTsfApp_         — std::atomic<bool>     (D5.1)
 //   - currentMethod_    — std::atomic<InputMethod>  (D5.1, enum)

@@ -1,5 +1,5 @@
 // CliConvertTest.cpp -- exercises the pure helper that backs the
-// `NextKeyTestRunner --convert TEXT` flag. Verifying the helper here lets us
+// `VKeyTestRunner --convert TEXT` flag. Verifying the helper here lets us
 // keep main.cpp's argv handling thin and avoids spawning a process from tests.
 
 #include <gtest/gtest.h>

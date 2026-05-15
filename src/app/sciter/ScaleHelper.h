@@ -1,4 +1,4 @@
-// NexusKey - DPI & Resolution Scale Helper
+// VKey - DPI & Resolution Scale Helper
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Utility for scaling dialog sizes based on DPI and screen resolution.

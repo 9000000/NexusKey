@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-# NexusKey release script — bumps version, commits, tags, and pushes.
+# VKey release script — bumps version, commits, tags, and pushes.
 #
-# Version is defined ONCE in project(NexusKey VERSION ...) in CMakeLists.txt.
+# Version is defined ONCE in project(VKey VERSION ...) in CMakeLists.txt.
 # CMake auto-generates src/core/Version.h from Version.h.in at configure time.
 # No other files need manual version updates.
 
@@ -16,7 +16,7 @@ RELEASE_NOTES="$REPO_ROOT/RELEASE_NOTES.md"
 # --- Main ---
 
 # 1. Read current version from CMakeLists.txt
-current_version=$(grep -oP 'project\(NexusKey VERSION \K[0-9]+\.[0-9]+\.[0-9]+' "$CMAKE_FILE")
+current_version=$(grep -oP 'project\(VKey VERSION \K[0-9]+\.[0-9]+\.[0-9]+' "$CMAKE_FILE")
 if [ -z "$current_version" ]; then
     echo "Error: Could not read current version from $CMAKE_FILE"
     exit 1
@@ -54,7 +54,7 @@ else
     fi
 
     echo -e "\033[36mUpdating $CMAKE_FILE...\033[0m"
-    perl -i -pe "s/^(project\\(NexusKey VERSION )[0-9]+\\.[0-9]+\\.[0-9]+/\${1}$version/" "$CMAKE_FILE"
+    perl -i -pe "s/^(project\\(VKey VERSION )[0-9]+\\.[0-9]+\\.[0-9]+/\${1}$version/" "$CMAKE_FILE"
     echo -e "\033[32mCMakeLists.txt updated to $version.\033[0m"
     echo -e "\033[90m  (Version.h will be regenerated automatically on next cmake configure)\033[0m"
     need_commit=true

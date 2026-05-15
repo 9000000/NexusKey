@@ -1,16 +1,16 @@
-# NextKeyTestRunner — E2E stress test harness for NexusKey IME.
+# VKeyTestRunner — E2E stress test harness for VKey IME.
 # Two targets:
-#   - NextKeyTestRunnerTests : cross-platform GTest suite for parser/encoder logic
-#   - NextKeyTestRunner      : Windows-only console runner driving SendInput
+#   - VKeyTestRunnerTests : cross-platform GTest suite for parser/encoder logic
+#   - VKeyTestRunner      : Windows-only console runner driving SendInput
 # Both are EXCLUDE_FROM_ALL — invoke explicitly:
-#   cmake --build <dir> --target NextKeyTestRunnerTests
-#   cmake --build <dir> --target NextKeyTestRunner --config Debug
+#   cmake --build <dir> --target VKeyTestRunnerTests
+#   cmake --build <dir> --target VKeyTestRunner --config Debug
 
 # ---------------------------------------------------------------------------
 # Tests (cross-platform — Linux + Windows). Includes Telex port, key escape
 # parser, and TOML loader. None of these depend on Win32 APIs.
 # ---------------------------------------------------------------------------
-add_executable(NextKeyTestRunnerTests EXCLUDE_FROM_ALL
+add_executable(VKeyTestRunnerTests EXCLUDE_FROM_ALL
     src/CaseResult.h
     src/CliConvert.h
     src/EditDistance.h
@@ -35,30 +35,30 @@ add_executable(NextKeyTestRunnerTests EXCLUDE_FROM_ALL
     tests/TomlLoaderTest.cpp
 )
 
-target_include_directories(NextKeyTestRunnerTests PRIVATE
+target_include_directories(VKeyTestRunnerTests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/tests
     ${CMAKE_SOURCE_DIR}/extern/tomlplusplus   # toml.hpp
 )
 
-target_link_libraries(NextKeyTestRunnerTests PRIVATE GTest::gtest_main)
+target_link_libraries(VKeyTestRunnerTests PRIVATE GTest::gtest_main)
 
-set_target_properties(NextKeyTestRunnerTests PROPERTIES
+set_target_properties(VKeyTestRunnerTests PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests"
 )
 
 if(MSVC)
-    target_link_options(NextKeyTestRunnerTests PRIVATE /SUBSYSTEM:CONSOLE)
+    target_link_options(VKeyTestRunnerTests PRIVATE /SUBSYSTEM:CONSOLE)
 endif()
 
 include(GoogleTest)
-gtest_discover_tests(NextKeyTestRunnerTests)
+gtest_discover_tests(VKeyTestRunnerTests)
 
 # ---------------------------------------------------------------------------
 # Main runner — Windows-only (uses SendInput, clipboard, foreground HWND)
 # ---------------------------------------------------------------------------
 if(WIN32)
-    add_executable(NextKeyTestRunner EXCLUDE_FROM_ALL
+    add_executable(VKeyTestRunner EXCLUDE_FROM_ALL
         src/main.cpp
         src/CaseResult.h
         src/CliConvert.h
@@ -82,22 +82,22 @@ if(WIN32)
         src/TomlLoader.cpp
     )
 
-    target_include_directories(NextKeyTestRunner PRIVATE
+    target_include_directories(VKeyTestRunner PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/extern/tomlplusplus    # toml.hpp
     )
 
     # Win32 libs needed downstream (D3+: SendInput, clipboard, foreground HWND, hi-res timer)
-    target_link_libraries(NextKeyTestRunner PRIVATE
+    target_link_libraries(VKeyTestRunner PRIVATE
         user32
         winmm
     )
 
-    set_target_properties(NextKeyTestRunner PROPERTIES
+    set_target_properties(VKeyTestRunner PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tools"
     )
 
     if(MSVC)
-        target_link_options(NextKeyTestRunner PRIVATE /SUBSYSTEM:CONSOLE)
+        target_link_options(VKeyTestRunner PRIVATE /SUBSYSTEM:CONSOLE)
     endif()
 endif()

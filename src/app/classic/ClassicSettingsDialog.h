@@ -1,4 +1,4 @@
-// NexusKey Classic — Settings Dialog
+// VKey Classic — Settings Dialog
 // Compact (Unikey-style) + Advanced (EVKey-style) modes
 // SPDX-License-Identifier: GPL-3.0-only
 
@@ -139,7 +139,7 @@ private:
     static constexpr UINT_PTR kTimerDeferredSave = 1001;
     static constexpr DWORD kDeferredSaveDelayMs  = 30000;  // 30 seconds
 
-    static constexpr const wchar_t* kClassName = L"NexusKeyClassicSettings";
+    static constexpr const wchar_t* kClassName = L"VKeyClassicSettings";
 };
 
 } // namespace NextKey::Classic

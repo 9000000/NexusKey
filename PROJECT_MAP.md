@@ -1,4 +1,4 @@
-# NexusKey — Project Map
+# VKey — Project Map
 
 > Vietnamese IME for Windows. Hybrid TSF + Hook, C++20, Sciter.JS UI.
 
@@ -20,21 +20,21 @@
 
 | Target | Type | Links | Description |
 |---|---|---|---|
-| `NextKeyEngine` | Static lib | — | Pure C++ engines, no platform deps |
-| `NextKeyCore` | Static lib | NextKeyEngine | Platform layer: SharedState, Config |
-| `NextKeyTSF` | Shared lib (DLL) | NextKeyCore | TSF Text Input Processor |
-| `NextKeyApp` | Executable | NextKeyCore | Main GUI app (Sciter UI + tray) |
-| `NextKeyLite` | Executable | NextKeyCore | Classic Win32 native UI (no Sciter). Build: `-DNEXUSKEY_LITE_MODE=ON` |
-| `NextKeyTests` | Executable | NextKeyCore, GTest | Google Test suite |
+| `VKeyEngine` | Static lib | — | Pure C++ engines, no platform deps |
+| `VKeyCore` | Static lib | VKeyEngine | Platform layer: SharedState, Config |
+| `VKeyTSF` | Shared lib (DLL) | VKeyCore | TSF Text Input Processor |
+| `VKeyApp` | Executable | VKeyCore | Main GUI app (Sciter UI + tray) |
+| `VKeyLite` | Executable | VKeyCore | Classic Win32 native UI (no Sciter). Build: `-DVKEY_LITE_MODE=ON` |
+| `VKeyTests` | Executable | VKeyCore, GTest | Google Test suite |
 
 ---
 
 ## Directory Map
 
 ```
-NexusKey/
+VKey/
 ├── src/
-│   ├── core/                          # ← NextKeyEngine + NextKeyCore
+│   ├── core/                          # ← VKeyEngine + VKeyCore
 │   │   ├── engine/                    # Pure C++ input engines
 │   │   │   ├── IInputEngine.h         # Interface: ProcessKey, GetResult, Reset
 │   │   │   ├── TypingEngine.cpp/h     # Unified typing engine — Telex + VNI both routed through here (1723 LOC, post Path G unification 2026-04-16)
@@ -66,7 +66,7 @@ NexusKey/
 │   │   ├── UIConfig.h                # UI-related constants
 │   │   └── Version.h                 # Version string
 │   │
-│   ├── tsf/                           # ← NextKeyTSF (DLL)
+│   ├── tsf/                           # ← VKeyTSF (DLL)
 │   │   ├── TextService.cpp/h          # ITfTextInputProcessorEx — TSF entry point
 │   │   ├── KeyEventSink.cpp/h         # ITfKeyEventSink — keystroke handling (OnKeyDown must be self-sufficient: Chromium hosts skip OnTestKeyDown)
 │   │   ├── EngineController.cpp/h     # Owns IInputEngine, orchestrates typing (17K cpp)
@@ -83,7 +83,7 @@ NexusKey/
 │   │   ├── Define.h                  # TSF-specific constants
 │   │   └── stdafx.h                  # Precompiled header
 │   │
-│   └── app/                           # ← NextKeyApp (EXE)
+│   └── app/                           # ← VKeyApp (EXE)
 │       ├── main.cpp                   # WinMain, message loop, init (23K)
 │       ├── dialogs/                   # Sciter-based dialog windows
 │       │   ├── SettingsDialog.cpp/h   # Main settings (45K cpp — largest file)
@@ -120,11 +120,11 @@ NexusKey/
 │       │   ├── SciterHelper.cpp/h     # Init Sciter, load HTML, callbacks
 │       │   ├── SciterArchive.cpp/h    # Embedded resource archive
 │       │   └── ScaleHelper.h          # DPI scaling helpers
-│       ├── classic/                    # ← NextKeyLite (Classic Win32 UI, no Sciter)
+│       ├── classic/                    # ← VKeyLite (Classic Win32 UI, no Sciter)
 │       │   ├── ClassicSettingsDialog.cpp/h  # Settings dialog (Win32 native controls)
 │       │   ├── ClassicTheme.cpp/h     # Dark/light theme for Win32 controls
-│       │   ├── NexusKeyLite.rc        # Win32 resource file
-│       │   ├── NexusKeyLite.exe.manifest  # DPI + visual styles manifest
+│       │   ├── VKeyLite.rc        # Win32 resource file
+│       │   ├── VKeyLite.exe.manifest  # DPI + visual styles manifest
 │       │   └── resource.h             # Resource IDs
 │       ├── main_lite.cpp              # WinMain for Lite/Classic build
 │       ├── helpers/
@@ -241,7 +241,7 @@ NexusKey/
 ## Data Flow
 
 ```
-┌──────────────────── NextKeyApp (EXE) ────────────────────┐
+┌──────────────────── VKeyApp (EXE) ────────────────────┐
 │  main.cpp → TrayIcon → SettingsDialog → ConfigManager    │
 │                ↕              ↕                           │
 │         HookEngine    SciterSubDialogs                   │
@@ -250,7 +250,7 @@ NexusKey/
              │  SharedState (memory-mapped file)
              │  ConfigEvent (named event)
 ┌────────────┴─────────────────────────────────────────────┐
-│  NextKeyTSF (DLL) — loaded per-process by Windows        │
+│  VKeyTSF (DLL) — loaded per-process by Windows        │
 │  TextService → KeyEventSink → EngineController           │
 │     ↕              ↕               ↕                     │
 │  Register   CompositionManager  TelexEngine/VniEngine    │

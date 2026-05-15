@@ -1,12 +1,12 @@
-# Example test corpus for NextKeyTestRunner.
+# Example test corpus for VKeyTestRunner.
 # Schema: see TomlLoader.h.
 #
 # `keys` is the raw Telex sequence the driver types via SendInput.
 # `expected` is what the clipboard should contain after Ctrl+A + Ctrl+C
-# (this is what NexusKey's hook should produce when it processes `keys`).
+# (this is what VKey's hook should produce when it processes `keys`).
 #
 # Use --list to debug-print parsed cases without sending any keystrokes:
-#   NextKeyTestRunner.exe --list tools/NextKeyTestRunner/example.toml
+#   VKeyTestRunner.exe --list tools/VKeyTestRunner/example.toml
 
 [[tests]]
 name = "ascii-passthrough"

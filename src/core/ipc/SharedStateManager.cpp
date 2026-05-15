@@ -1,4 +1,4 @@
-// NexusKey - SharedStateManager Implementation
+// VKey - SharedStateManager Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SharedStateManager.h"
@@ -11,7 +11,7 @@
 
 namespace NextKey {
 
-static constexpr const wchar_t* SHARED_MEM_NAME = L"Local\\NexusKeySharedState";
+static constexpr const wchar_t* SHARED_MEM_NAME = L"Local\\VKeySharedState";
 static constexpr int SEQLOCK_MAX_RETRIES = 3;
 
 struct SharedStateManager::Impl {

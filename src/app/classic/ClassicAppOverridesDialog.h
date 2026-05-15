@@ -1,4 +1,4 @@
-// NexusKey Classic — App Overrides Dialog
+// VKey Classic — App Overrides Dialog
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -59,7 +59,7 @@ private:
     std::unordered_map<std::wstring, AppOverrideEntry> entries_;
     WindowPicker picker_;
 
-    static constexpr const wchar_t* kClassName = L"NexusKeyAppOverrides";
+    static constexpr const wchar_t* kClassName = L"VKeyAppOverrides";
 };
 
 }  // namespace NextKey::Classic

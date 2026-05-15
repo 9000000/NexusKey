@@ -1,4 +1,4 @@
-// NexusKey - VNI Parity Tests (TypingEngine with InputMethod::VNI)
+// VKey - VNI Parity Tests (TypingEngine with InputMethod::VNI)
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>

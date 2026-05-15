@@ -3,30 +3,50 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
-## 🟡 Tone-escape drops display char — `a-s-u-s` → "aus" (2026-05-13)
+## 🟡 EnglishProtection chưa catch English-only onset clusters (2026-05-13)
 
-`ProcessTone` escape branch (`TypingEngine.cpp:503-514`) chỉ thêm phím tone
-thứ 2 vào `states_` như literal, KHÔNG khôi phục phím tone đầu (đã bị consume
-cho diacritic). Hệ quả: user gõ 4 phím `a-s-u-s` chỉ thấy 3 ký tự "aus" trên
-màn hình. Cùng pattern với `u-s-s-e-r → "user"` (test khoá ở
-`TelexEngineTest.cpp:3198`).
+Test probe trên SimpleTelex + allowZwjf=true cho thấy display mangle nhiều
+English word ngay cả khi không có double-tone:
 
-ESC restore raw (PR feat/esc-restore) work-around được vấn đề ở mức **commit**
-(qua `escRawHistory_` buffer riêng), nhưng **không sửa display** — user vẫn
-thấy "aus" khi đang gõ. Cần ấn ESC mới ra "asus".
+| Keys typed | Display |
+|---|---|
+| where (5) | wh? (3) — `w→ư` + `r` tone applied |
+| users (5) | ?e (2) — multi-consumption |
+| perfect (7) | p?ct (4) |
+| wherre (6) | where (5) — escape gesture cứu |
+| ass / bass / pass / mass / less / miss / sorry / error | mất 1 char |
+| stress | "stress" (5) — EnglishBias catch được `str-` ✓ |
 
-Cách fix tiềm năng:
-- Bỏ `EraseConsumedRaw` ở line 509 + 690 (auto-restore tự xử qua E-mode
-  protection sau khi `us`/`as` thành invalid Vietnamese).
-- Sửa `ProcessTone` escape branch: khôi phục phím tone đầu như literal
-  `CharState` chèn vào states_ đúng vị trí thời gian (cần track rawIdx
-  của consumed key để biết chèn ở đâu).
-- Tham khảo Unikey/EVKey — cả 2 IME đều hiển thị "asus" / "usser" sau
-  double-tone escape.
+ESC restore raw (escRawHistory_) work-around được — PeekRaw luôn trả full
+keystroke sequence. Nhưng display sai trong lúc gõ vẫn gây bối rối.
 
-Trade-off: `usser → user` test (line 3198) sẽ break — cần đổi expect thành
-"usser". Anh PhatMT đã review và cho rằng đây là behavior đúng (engine đã
-vào E-mode sau "ss" rồi, không cần EraseConsumedRaw nữa).
+**Root cause**: `IsBlockedEnglishTone` (TypingEngine.cpp:296) chỉ block khi
+`bias == HardEnglish + !allowEnglishBypass`. Onset 2-3 char như `wh-`,
+`us-`, `pe-`, `wr-`, `kn-`, `sc-`, `sp-` chưa đủ confidence để lên HardEnglish.
+
+**Fix scope** (project riêng):
+1. List English-only initial clusters: `wh`, `str`, `spr`, `scr`, `kn`, `wr`,
+   `gh`, `pn`, `ps`, ... (audit để không over-block "ph" của Vietnamese
+   quick-start `f→ph`)
+2. Map vs Vietnamese valid onsets (chỉ `kh`, `ph`, `th`, `ch`, `nh`, `ng`,
+   `ngh`, `tr`, `gi`, `qu`)
+3. Bump bias to HardEnglish khi match English-only cluster ngay từ char 2-3
+4. Tests exhaustive: Vietnamese cases không bị over-block, English bị block đủ sớm
+
+Cũng cần **block modifier keys** (w, [, ]) chứ không chỉ tone keys khi bias
+là HardEnglish. Hiện tại `w` standalone vẫn insert `ư` qua P8 dù onset
+indicate English.
+
+**Wherre case** sẽ tự fix khi EnglishProtection cải thiện: `wh-e` không apply
+tone trên 'r' → không có escape gesture cần → display = "wherre" matching
+PeekRaw → ESC consistent.
+
+**Sub-issue: Tone-escape drops display char** — `a-s-u-s` display "aus".
+`ProcessTone` escape branch (TypingEngine.cpp:503-514) chỉ thêm phím tone
+thứ 2 vào `states_`, không khôi phục phím tone đầu. Tested behavior:
+ass→as, bass→bas, etc. ESC restore raw work-around qua escRawHistory_,
+nhưng có thể fix sâu hơn ở engine (Unikey/EVKey: cả 2 keys được giữ
+literal). Cũng sẽ break `usser → user` test (TelexEngineTest.cpp:3198).
 
 Refs: brainstorm session 2026-05-13, commit 892c9e7.
 
@@ -34,9 +54,9 @@ Refs: brainstorm session 2026-05-13, commit 892c9e7.
 
 User report (1 occurrence, single user, not reproducible locally): after
 locking the machine for an extended period then unlocking, typing felt
-sluggish; Task Manager showed NexusKey at 100% CPU and several other apps
+sluggish; Task Manager showed VKey at 100% CPU and several other apps
 spiking. Reporter explicitly noted: *"không chắc lỗi hoàn toàn do
-NexusKey hay không"*.
+VKey hay không"*.
 
 Code smell identified during triage in `HookEngine::IsWebView2App`
 (`src/app/system/HookEngine.cpp:2282`):
@@ -116,8 +136,8 @@ mở task manager thì CPU lên 100%"*).
 
 Shipped `Settings → System → "Bật debug log"` runtime gate routing
 `NEXTKEY_LOG/HOOK_LOG/TSF_LOG` (~207 sites) into `NextKey::Logger`. File
-sink: `NexusKey_<process>_<pid>.log` next to NextKeyApp.exe (fallback
-`%APPDATA%\NexusKey\logs\`). PID-tagged so Chrome multi-process renderers
+sink: `VKey_<process>_<pid>.log` next to VKeyApp.exe (fallback
+`%APPDATA%\VKey\logs\`). PID-tagged so Chrome multi-process renderers
 don't tear lines.
 
 Measured perf characteristics (analytic, no Windows benchmark run yet):
@@ -207,7 +227,7 @@ framework). Codebase mapping + investment decision below.
 | A — Hook ring buffer | CLOSED 2026-05-09 | Watchdog (PR #154) shipped; SPSC ring half closed | See `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` |
 | B — Smart Focus / App Profile cache | ~60% | `cachedFocusedHwnd_` single-slot atomic + `ClassifyWindow` function | No HWND→Profile lookup map; re-classifies on every focus event |
 | C — Engine 2D FSM table | CLOSED — not viable | If/case engine (~327 branches in `PushChar`); FSM codegen tool exists (PR #132 `4a52399`) but rewrite cancelled — codegen output ~6MB exceeds <3MB target | Table-driven FSM not viable for Vietnamese phonology dimensionality. Path G (custom keymap) replaces. |
-| D — Test framework | ~85% (deferred) | `NextKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
+| D — Test framework | ~85% (deferred) | `VKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
 
 ### Module A vs B — B wins for first invest
 
@@ -336,19 +356,19 @@ a broader auto-cap refactor.
 
 ## 🟡 v3 Watchdog Smoke 4 + 5 — verify Task Scheduler at-logon trigger (2026-05-08)
 
-Phase 2 watchdog smoke 1/2/3 PASS (crash respawn, graceful, hung UI). Smoke 4 + 5 deferred because they require a real logout/login cycle to fire the `\NexusKey\Watchdog` at-logon trigger.
+Phase 2 watchdog smoke 1/2/3 PASS (crash respawn, graceful, hung UI). Smoke 4 + 5 deferred because they require a real logout/login cycle to fire the `\VKey\Watchdog` at-logon trigger.
 
 **Smoke 4 — Kill watchdog alone:**
-- `taskkill /F /IM NexusKeyWatchdog.exe` while NexusKey runs normally.
-- NexusKey must continue functioning.
-- After logout/login: Task Scheduler must relaunch NexusKeyWatchdog automatically.
+- `taskkill /F /IM VKeyWatchdog.exe` while VKey runs normally.
+- VKey must continue functioning.
+- After logout/login: Task Scheduler must relaunch VKeyWatchdog automatically.
 
 **Smoke 5 — Kill both:**
-- `taskkill /F /IM NexusKey.exe NexusKeyWatchdog.exe` simultaneously.
-- After logout/login: Task Scheduler relaunches watchdog → watchdog observes events absent + process not running → respawns NexusKey.
+- `taskkill /F /IM VKey.exe VKeyWatchdog.exe` simultaneously.
+- After logout/login: Task Scheduler relaunches watchdog → watchdog observes events absent + process not running → respawns VKey.
 
 **Smoke 6 — AV scan (low priority):**
-- Run Windows Defender quick scan with watchdog active. Verify NexusKeyWatchdog.exe not quarantined / no false-positive on the small console-less WIN32 binary.
+- Run Windows Defender quick scan with watchdog active. Verify VKeyWatchdog.exe not quarantined / no false-positive on the small console-less WIN32 binary.
 
 **Why deferred:** logout/login is disruptive and the trigger mechanism is Windows-managed (StartupHelper just registers the task). Risk of regression from our code is low — `RegisterWatchdogTask()` already verified during first-run UAC accept. Reopen if user reports auto-launch failure.
 
@@ -402,7 +422,7 @@ sites.
 
 ## 🟡 Test harness — `--host-class` matrix (Sprint 2 D6 deferred, 2026-05-05)
 
-Sprint 2 plan §D6 Tasks 32-33 — `NextKeyTestRunner` flag for forced host-class override. Marginal value given existing 132-case natural coverage; reopen as one focused task if QA later needs forced-cell testing.
+Sprint 2 plan §D6 Tasks 32-33 — `VKeyTestRunner` flag for forced host-class override. Marginal value given existing 132-case natural coverage; reopen as one focused task if QA later needs forced-cell testing.
 
 ---
 
@@ -421,7 +441,7 @@ per commit. No premature optimization without driver.
 
 ## 🟡 Sub-dialog Instant Apply — tech-debt items (2026-04-22)
 
-- [ ] **`FindWindowW(L"NexusKeyTrayClass") + PostMessageW` pattern duplicated**
+- [ ] **`FindWindowW(L"VKeyTrayClass") + PostMessageW` pattern duplicated**
   Now in `AppHelpers.h::SignalConfigChange`, `SettingsDialog.cpp:548,698,1286`,
   `ClassicSettingsDialog.cpp:813,991,998,1033`. Candidate for a
   `PostToTrayWindow(UINT msg, WPARAM = 0, LPARAM = 0)` helper in `AppHelpers.h`.
@@ -447,7 +467,7 @@ User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
   UWP AppContainer rejects third-party TIP load → TSF DLL never instantiated.
   User workaround (add to TSF list) DID NOT WORK (confirmed on v2.1.21).
   Observation: when Windows Search gains focus from Edge, Input Indicator
-  auto-switches from "NexusKey Vietnamese IME" to "English (US) US Keyboard"
+  auto-switches from "VKey Vietnamese IME" to "English (US) US Keyboard"
   — indicates Windows is forcibly changing the active IME profile, not just
   blocking our TIP. Screenshot evidence in feedback 2026-04-21.
   **Actual fix path**: add both exes to a TSF-EXCLUSION list ("force Hook

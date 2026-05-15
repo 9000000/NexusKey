@@ -1,6 +1,6 @@
-// NexusKey - Default Vietnamese Phonology Rule Pack
+// VKey - Default Vietnamese Phonology Rule Pack
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 //
 // DefaultPhonologyRules — canonical Vietnamese rule pack reading from
 // VietnamesePhonologyData.h. Singleton via Default(); both phonotactics

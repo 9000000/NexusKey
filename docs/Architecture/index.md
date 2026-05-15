@@ -1,8 +1,8 @@
-# NexusKey Runtime Architecture
+# VKey Runtime Architecture
 
 ## Table of Contents
 
-- [NexusKey Runtime Architecture](#table-of-contents)
+- [VKey Runtime Architecture](#table-of-contents)
   - [1. Core Design Principles](#1-core-design-principles)
   - [2. Component Architecture](#2-component-architecture)
   - [3. Communication Architecture](#3-communication-architecture)

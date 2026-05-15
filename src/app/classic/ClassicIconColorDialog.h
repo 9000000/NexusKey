@@ -1,4 +1,4 @@
-// NexusKey Classic — Icon Color Customization Dialog
+// VKey Classic — Icon Color Customization Dialog
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -57,7 +57,7 @@ private:
     HFONT previewFont_ = nullptr;  // Cached font for icon preview painting
 
     static COLORREF customColors_[16];
-    static constexpr const wchar_t* kClassName = L"NexusKeyIconColor";
+    static constexpr const wchar_t* kClassName = L"VKeyIconColor";
 };
 
 }  // namespace NextKey::Classic

@@ -1,4 +1,4 @@
-// NexusKey - Logger tests
+// VKey - Logger tests
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Test scope:
@@ -35,7 +35,7 @@ std::wstring MakeScratchPath(const wchar_t* tag) {
     GetTempPathW(MAX_PATH, tempDir);
     wchar_t buf[MAX_PATH] = {0};
     _snwprintf_s(buf, MAX_PATH, _TRUNCATE,
-                 L"%lsnexuskey_logger_%ls_%lu.log",
+                 L"%lsvkey_logger_%ls_%lu.log",
                  tempDir, tag, GetCurrentProcessId());
     return std::wstring(buf);
 }
@@ -44,7 +44,7 @@ std::wstring MakeScratchPath(const wchar_t* tag) {
     char buf[512] = {0};
     std::string tagNarrow;
     for (const wchar_t* p = tag; *p; ++p) tagNarrow.push_back(static_cast<char>(*p));
-    std::snprintf(buf, sizeof(buf), "/tmp/nexuskey_logger_%s_%d.log",
+    std::snprintf(buf, sizeof(buf), "/tmp/vkey_logger_%s_%d.log",
                   tagNarrow.c_str(), static_cast<int>(getpid()));
     std::wstring out;
     for (char* p = buf; *p; ++p) out.push_back(static_cast<wchar_t>(*p));

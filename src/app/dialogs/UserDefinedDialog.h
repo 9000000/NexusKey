@@ -1,4 +1,4 @@
-// NexusKey - User Defined Input Dialog Header
+// VKey - User Defined Input Dialog Header
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

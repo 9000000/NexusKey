@@ -1,4 +1,4 @@
-// NexusKey - Convert Tool Dialog Implementation
+// VKey - Convert Tool Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ConvertToolDialog.h"
@@ -18,7 +18,7 @@ namespace NextKey {
 ConvertToolDialog::ConvertToolDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/convert-tool/convert-tool.html",
-        L"NexusKey - Convert Tool",
+        L"VKey - Convert Tool",
         420, 568, parent, true, 36, 40, true
     }) {
     // Load saved config (UI will be populated in DOCUMENT_COMPLETE)
@@ -356,18 +356,18 @@ void ConvertToolDialog::doConvert() {
     if (sourceType == L"file") {
         std::wstring srcPath = getHiddenValue("#val-source-file");
         if (srcPath.empty()) {
-            MessageBoxW(get_hwnd(), S(StringId::CONVERT_NO_SOURCE_FILE), L"NexusKey", MB_OK | MB_ICONWARNING);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_NO_SOURCE_FILE), L"VKey", MB_OK | MB_ICONWARNING);
             return;
         }
         input = readFileContent(srcPath, srcTable);
         if (input.empty()) {
-            MessageBoxW(get_hwnd(), S(StringId::CONVERT_READ_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_READ_ERROR), L"VKey", MB_OK | MB_ICONERROR);
             return;
         }
     } else {
         input = readClipboardText();
         if (input.empty()) {
-            MessageBoxW(get_hwnd(), S(StringId::CONVERT_CLIPBOARD_EMPTY), L"NexusKey", MB_OK | MB_ICONWARNING);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_CLIPBOARD_EMPTY), L"VKey", MB_OK | MB_ICONWARNING);
             return;
         }
     }
@@ -396,23 +396,23 @@ void ConvertToolDialog::doConvert() {
     if (sourceType == L"file") {
         std::wstring dstPath = getHiddenValue("#val-dest-file");
         if (dstPath.empty()) {
-            MessageBoxW(get_hwnd(), S(StringId::CONVERT_NO_DEST_FILE), L"NexusKey", MB_OK | MB_ICONWARNING);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_NO_DEST_FILE), L"VKey", MB_OK | MB_ICONWARNING);
             return;
         }
         if (!writeFileContent(dstPath, output, dstTable)) {
-            MessageBoxW(get_hwnd(), S(StringId::CONVERT_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_WRITE_ERROR), L"VKey", MB_OK | MB_ICONERROR);
             return;
         }
     } else {
         if (!writeClipboardText(output)) {
-            MessageBoxW(get_hwnd(), S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"NexusKey", MB_OK | MB_ICONERROR);
+            MessageBoxW(get_hwnd(), S(StringId::CONVERT_CLIPBOARD_WRITE_ERROR), L"VKey", MB_OK | MB_ICONERROR);
             return;
         }
     }
 
     // 8. Alert on completion
     if (alertDone) {
-        MessageBoxW(get_hwnd(), S(StringId::CONVERT_SUCCESS), L"NexusKey", MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(get_hwnd(), S(StringId::CONVERT_SUCCESS), L"VKey", MB_OK | MB_ICONINFORMATION);
     }
 }
 

@@ -1,4 +1,4 @@
-// NexusKey - Win32 Dark Mode Helper Implementation
+// VKey - Win32 Dark Mode Helper Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "DarkModeHelper.h"

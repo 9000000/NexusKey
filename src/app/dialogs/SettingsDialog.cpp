@@ -1,4 +1,4 @@
-// NexusKey - Settings Dialog Implementation
+// VKey - Settings Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "SettingsDialog.h"
@@ -112,7 +112,7 @@ SettingsDialog::SettingsDialog()
     // (Required for transparency/blur to work correctly)
     expand();
     // 4. Set title (icon is set at end of constructor after all Sciter calls)
-    SetWindowTextW(get_hwnd(), L"NexusKey Settings");
+    SetWindowTextW(get_hwnd(), L"VKey Settings");
 
     // 8. Subclass for window dragging and close
     SetWindowSubclass(get_hwnd(), SubclassProc, 1, reinterpret_cast<DWORD_PTR>(this));
@@ -151,6 +151,9 @@ SettingsDialog::SettingsDialog()
     // This is REQUIRED so that DWM Composition and Sciter rendering state become active.
     // Without this, the background stays solid black instead of blurred/transparent.
     expand();
+
+    // Calculate actual dimensions before centering (handles Advanced Settings width)
+    recalcWindowSize();
 
     // 13. Finally, move the initialized, rendered, and themed window onscreen
     RECT rc;
@@ -191,14 +194,14 @@ LRESULT SettingsDialog::on_load_data(LPSCN_LOAD_DATA pnmld) {
         ::SciterDataReady(pnmld->hwnd, pnmld->uri, data.start, UINT(data.length));
         return LOAD_OK;
     }
-    OutputDebugStringW(L"NexusKey: Failed to load from archive: ");
+    OutputDebugStringW(L"VKey: Failed to load from archive: ");
     OutputDebugStringW(pnmld->uri);
     OutputDebugStringW(L"\n");
     return LOAD_DISCARD;
 #else
     // Debug: Load from file system
     if (uiBasePath_.empty()) {
-        OutputDebugStringW(L"NexusKey: UI base path not set\n");
+        OutputDebugStringW(L"VKey: UI base path not set\n");
         return LOAD_DISCARD;
     }
 
@@ -212,7 +215,7 @@ LRESULT SettingsDialog::on_load_data(LPSCN_LOAD_DATA pnmld) {
     HANDLE hFile = CreateFileW(filePath.c_str(), GENERIC_READ, FILE_SHARE_READ,
                                nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (hFile == INVALID_HANDLE_VALUE) {
-        OutputDebugStringW(L"NexusKey: Failed to open: ");
+        OutputDebugStringW(L"VKey: Failed to open: ");
         OutputDebugStringW(filePath.c_str());
         OutputDebugStringW(L"\n");
         return LOAD_DISCARD;
@@ -274,7 +277,7 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     // Handle V/E mode change notification from main process.
     // Coalesce rapid messages: update the flag immediately but defer the
     // DOM update so N rapid tray clicks produce one toggle repaint, not N.
-    if (msg == WM_NEXUSKEY_MODE_CHANGED) {
+    if (msg == WM_VKEY_MODE_CHANGED) {
         if (s_instance) {
             s_instance->vietnameseMode_ = (wParam != 0);
             if (!s_instance->modeSyncPending_) {
@@ -299,7 +302,7 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     }
 
     // Handle config changed from tray menu — reload TOML and refresh UI
-    if (msg == WM_NEXUSKEY_CONFIG_CHANGED) {
+    if (msg == WM_VKEY_CONFIG_CHANGED) {
         if (s_instance) {
             s_instance->loadSettings();
             s_instance->initializeUI();
@@ -328,33 +331,33 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     // Deferred: open excluded apps dialog as subprocess
     // (must be a separate process — Sciter SOM assertion fires if a sciter::window
     //  is destroyed while the Sciter runtime is still active in this process)
-    if (msg == WM_NEXUSKEY_OPEN_EXCLUDED) {
-        SpawnSubprocess(L"NexusKey - Excluded Apps", L"--excludedapps");
+    if (msg == WM_VKEY_OPEN_EXCLUDED) {
+        SpawnSubprocess(L"VKey - Excluded Apps", L"--excludedapps");
         return 0;
     }
 
-    if (msg == WM_NEXUSKEY_OPEN_TSFAPPS) {
-        SpawnSubprocess(L"NexusKey - TSF Apps", L"--tsfapps");
+    if (msg == WM_VKEY_OPEN_TSFAPPS) {
+        SpawnSubprocess(L"VKey - TSF Apps", L"--tsfapps");
         return 0;
     }
 
-    if (msg == WM_NEXUSKEY_OPEN_MACRO) {
-        SpawnSubprocess(L"NexusKey - Macro Table", L"--macro");
+    if (msg == WM_VKEY_OPEN_MACRO) {
+        SpawnSubprocess(L"VKey - Macro Table", L"--macro");
         return 0;
     }
 
-    if (msg == WM_NEXUSKEY_OPEN_APPOVERRIDES) {
-        SpawnSubprocess(L"NexusKey - App Overrides", L"--appoverrides");
+    if (msg == WM_VKEY_OPEN_APPOVERRIDES) {
+        SpawnSubprocess(L"VKey - App Overrides", L"--appoverrides");
         return 0;
     }
 
-    if (msg == WM_NEXUSKEY_OPEN_SPELLEXCL) {
-        SpawnSubprocess(L"NexusKey - Spell Exclusions", L"--spellexclusions");
+    if (msg == WM_VKEY_OPEN_SPELLEXCL) {
+        SpawnSubprocess(L"VKey - Spell Exclusions", L"--spellexclusions");
         return 0;
     }
 
-    if (msg == WM_NEXUSKEY_OPEN_USERDEFINED) {
-        SpawnSubprocess(L"NexusKey - User Defined Input", L"--userdefined");
+    if (msg == WM_VKEY_OPEN_USERDEFINED) {
+        SpawnSubprocess(L"VKey - User Defined Input", L"--userdefined");
         return 0;
     }
 
@@ -549,9 +552,9 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         // V/E toggle: send to main process via cross-process message
         // CSS: checked=E (thumb right), unchecked=V (thumb left) — invert
         vietnameseMode_ = !value;
-        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
         if (trayWnd) {
-            PostMessageW(trayWnd, WM_NEXUSKEY_SET_MODE, vietnameseMode_ ? 1 : 0, 0);
+            PostMessageW(trayWnd, WM_VKEY_SET_MODE, vietnameseMode_ ? 1 : 0, 0);
         }
         return;  // V/E mode is not a persistent config setting
     }
@@ -579,11 +582,11 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                 setToggleState(L"tsf-apps", false);
                 MessageBoxW(get_hwnd(),
                     L"Không thể đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
-                    L"NexusKey", MB_OK | MB_ICONWARNING);
+                    L"VKey", MB_OK | MB_ICONWARNING);
                 return;  // Don't save broken state
             }
             MessageBoxW(get_hwnd(), S(StringId::TSF_REGISTER_SUCCESS),
-                L"NexusKey", MB_OK | MB_ICONINFORMATION);
+                L"VKey", MB_OK | MB_ICONINFORMATION);
         } else {
             if (IsTsfRegistered()) {
                 UnregisterTsf();
@@ -596,11 +599,11 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                     config_.tsfApps = true;
                     setToggleState(L"tsf-apps", true);
                     MessageBoxW(get_hwnd(), S(StringId::TSF_UNREGISTER_FAILED),
-                        L"NexusKey", MB_OK | MB_ICONWARNING);
+                        L"VKey", MB_OK | MB_ICONWARNING);
                     return;  // Don't save broken state
                 }
                 MessageBoxW(get_hwnd(), S(StringId::TSF_UNREGISTER_SUCCESS),
-                    L"NexusKey", MB_OK | MB_ICONINFORMATION);
+                    L"VKey", MB_OK | MB_ICONINFORMATION);
             }
         }
     }
@@ -705,9 +708,9 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         // Restart main process to apply elevation change.
         // Startup registration (Task Scheduler/Registry) is handled by
         // EnsureStartupRegistration() in the new instance — no double UAC.
-        HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+        HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
         if (trayWnd) {
-            PostMessageW(trayWnd, WM_NEXUSKEY_RESTART, 0, 0);
+            PostMessageW(trayWnd, WM_VKEY_RESTART, 0, 0);
         }
         return;
     }
@@ -806,15 +809,15 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
 void SettingsDialog::handleButtonClick(const std::wstring& id) {
     if (id == L"btn-excluded-apps") {
         // Defer dialog creation — creating a Sciter window inside handle_event causes reentrancy issues
-        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_EXCLUDED, 0, 0);
+        PostMessage(get_hwnd(), WM_VKEY_OPEN_EXCLUDED, 0, 0);
         return;
     }
     else if (id == L"btn-tsf-apps") {
-        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_TSFAPPS, 0, 0);
+        PostMessage(get_hwnd(), WM_VKEY_OPEN_TSFAPPS, 0, 0);
         return;
     }
     else if (id == L"btn-macro-table") {
-        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_MACRO, 0, 0);
+        PostMessage(get_hwnd(), WM_VKEY_OPEN_MACRO, 0, 0);
         return;
     }
     else if (id == L"btn-color-v") {
@@ -834,15 +837,15 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         return;
     }
     else if (id == L"btn-app-overrides") {
-        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_APPOVERRIDES, 0, 0);
+        PostMessage(get_hwnd(), WM_VKEY_OPEN_APPOVERRIDES, 0, 0);
         return;
     }
     else if (id == L"btn-spell-exclusions") {
-        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_SPELLEXCL, 0, 0);
+        PostMessage(get_hwnd(), WM_VKEY_OPEN_SPELLEXCL, 0, 0);
         return;
     }
     else if (id == L"btn-userdefined") {
-        PostMessage(get_hwnd(), WM_NEXUSKEY_OPEN_USERDEFINED, 0, 0);
+        PostMessage(get_hwnd(), WM_VKEY_OPEN_USERDEFINED, 0, 0);
         return;
     }
     else if (id == L"btn-reset-settings") {
@@ -854,7 +857,7 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
     }
     else if (id == L"btn-report-issue") {
         ShellExecuteW(nullptr, L"open",
-            L"https://github.com/phatMT97/NexusKey/issues",
+            L"https://github.com/phatMT97/VKey/issues",
             nullptr, nullptr, SW_SHOW);
         return;
     }
@@ -1083,12 +1086,12 @@ void SettingsDialog::initializeUI() {
     {
         sciter::dom::element verSpan = root.find_first("#app-version-number");
         if (verSpan.is_valid()) {
-            verSpan.set_text(NEXUSKEY_VERSION_WSTR);
+            verSpan.set_text(VKEY_VERSION_WSTR);
         }
         // Also update title bar version
         sciter::dom::element titleText = root.find_first(".title-text");
         if (titleText.is_valid()) {
-            titleText.set_text(L"NexusKey v" NEXUSKEY_VERSION_WSTR);
+            titleText.set_text(L"VKey v" VKEY_VERSION_WSTR);
         }
     }
 
@@ -1299,7 +1302,7 @@ void SettingsDialog::syncToSharedState() {
 void SettingsDialog::saveToToml() {
     std::wstring path = ConfigManager::GetConfigPath();
     if (!ConfigManager::SaveToFile(path, config_)) {
-        OutputDebugStringW(L"NexusKey: Failed to save config file\n");
+        OutputDebugStringW(L"VKey: Failed to save config file\n");
     }
 
     // Save hotkey config (sync switchKeyChar_ → hotkeyConfig_.key)
@@ -1334,22 +1337,22 @@ void SettingsDialog::saveUISettings() {
 
     std::wstring path = ConfigManager::GetConfigPath();
     if (!ConfigManager::SaveUIConfig(path, uiConfig)) {
-        OutputDebugStringW(L"NexusKey: Failed to save UI config\n");
+        OutputDebugStringW(L"VKey: Failed to save UI config\n");
     }
 }
 
 void SettingsDialog::saveSystemSettings() {
     std::wstring path = ConfigManager::GetConfigPath();
     if (!ConfigManager::SaveSystemConfig(path, systemConfig_)) {
-        OutputDebugStringW(L"NexusKey: Failed to save system config\n");
+        OutputDebugStringW(L"VKey: Failed to save system config\n");
     }
 }
 
 void SettingsDialog::notifyIconChanged() {
     // Notify main process to re-read icon config
-    HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+    HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
     if (trayWnd) {
-        PostMessageW(trayWnd, WM_NEXUSKEY_ICON_CHANGED, 0, 0);
+        PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 0, 0);
     }
 }
 
@@ -1458,7 +1461,7 @@ void SettingsDialog::startUpdate(const UpdateInfo& info) {
     if (!UpdateChecker::DownloadWithProgress(hwnd, info.downloadUrl)) return;
 
     // Success — signal main process to exit
-    HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr);
+    HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
     if (trayWnd) {
         PostMessageW(trayWnd, WM_CLOSE, 0, 0);
     }

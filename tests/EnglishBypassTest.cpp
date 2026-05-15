@@ -1,4 +1,4 @@
-// NexusKey - "Gõ tự do" / allowEnglishBypass tests
+// VKey - "Gõ tự do" / allowEnglishBypass tests
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Locks the contract for the `allowEnglishBypass` toggle (UI label "Gõ tự do",

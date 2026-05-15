@@ -1,4 +1,4 @@
-// NexusKey - Self-Update Installer
+// VKey - Self-Update Installer
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Handles the --install-update CLI mode: waits for processes to exit,
@@ -15,7 +15,7 @@ namespace NextKey {
 // Single source of truth for the TSF DLL filename. The update flow treats this
 // file specially (see HandleTsfDllReplace) because it is routinely mapped into
 // foreign host processes (Chrome, Word, Outlook, …) via Windows TSF.
-inline constexpr const wchar_t* TSF_DLL_FILENAME = L"NextKeyTSF.dll";
+inline constexpr const wchar_t* TSF_DLL_FILENAME = L"VKeyTSF.dll";
 
 // New DLL stashed with this suffix when the live copy can't be displaced.
 inline constexpr const wchar_t* TSF_DLL_PENDING_SUFFIX = L".pending";
@@ -32,7 +32,7 @@ inline constexpr const wchar_t* OLD_VERSION_DIRNAME = L"_old_version";
 std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix = L"") noexcept;
 
 /// Run the self-update installer mode.
-/// Waits for other NexusKey processes to exit, extracts ZIP, replaces files, relaunches.
+/// Waits for other VKey processes to exit, extracts ZIP, replaces files, relaunches.
 /// Called from --install-update CLI route. Never returns.
 [[noreturn]] void RunUpdateInstaller(const std::wstring& zipPath);
 

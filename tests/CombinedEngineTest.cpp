@@ -1,4 +1,4 @@
-// NexusKey - Combined Mode (Telex + VNI) Tests
+// VKey - Combined Mode (Telex + VNI) Tests
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>

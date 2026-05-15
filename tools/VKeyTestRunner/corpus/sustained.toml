@@ -4,7 +4,7 @@
 # binary chaos corpus cannot. See docs/plans/sprint-1-single-owner-refactor.md
 # Phase A0 for the rationale and gate criteria.
 #
-# Source paragraph: adapted from tools/NextKeyTestRunner/tests/TelexGolden.h:218
+# Source paragraph: adapted from tools/VKeyTestRunner/tests/TelexGolden.h:218
 # (golden-tested against vn-str). Two `Điều này` sentence-openers were rewritten
 # to `Việc này` because uppercase Đ (U+0110) is not typeable via VkKeyScanW on a
 # standard US keyboard layout; uppercase V is ASCII and types correctly via
@@ -37,7 +37,7 @@ threshold_pct = 99.0
 # Sprint 1 gate: post-refactor must not regress these error rates; ideal is
 # >=30 % reduction (per docs/plans/sprint-1-single-owner-refactor.md A0 D2).
 #
-# Telex citations: kTable in tools/NextKeyTestRunner/src/Telex.h:25-44 is the
+# Telex citations: kTable in tools/VKeyTestRunner/src/Telex.h:25-44 is the
 # source of truth for Vietnamese -> ASCII telex. Per-case `expected` reflects
 # the typing user's semantic intent. On first Windows run (commit 3459642,
 # 2026-05-04), engine output matched intent exactly on both cases (0.00 %

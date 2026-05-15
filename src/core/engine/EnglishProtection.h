@@ -1,6 +1,6 @@
-// NexusKey - English Protection Module (Header-Only)
+// VKey - English Protection Module (Header-Only)
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 // Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
 // See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
@@ -74,7 +74,19 @@ struct EnglishProtectionState {
            (c0 == L's' && c1 == L'c') ||
            (c0 == L's' && c1 == L'k') ||
            (c0 == L's' && c1 == L'l') ||
+           (c0 == L'w' && c1 == L'h') ||
            (c0 == L'w' && c1 == L'r');
+}
+
+/// Raw-input variant: check the first two RAW keystrokes against the same
+/// impossible-Vietnamese start-cluster table. Needed because Telex P8 rewrites
+/// a leading standalone `w` to synthetic `ư` in states_ before CheckEnglishBias
+/// sees it — so `wh`/`wr` would slip past the states-based start check.
+/// rawInput_ holds keystrokes verbatim, so the cluster is still visible there.
+[[nodiscard]] inline bool IsHardEnglishRawStart(
+        const wchar_t* raw, size_t len) noexcept {
+    if (len < 2) return false;
+    return IsHardEnglishStart(raw[0], raw[1]);
 }
 
 /// Check if a consonant is impossible at the end of a Vietnamese word.

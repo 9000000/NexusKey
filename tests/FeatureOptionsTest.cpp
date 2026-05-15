@@ -1,4 +1,4 @@
-// NexusKey - Feature Options Tests (modernOrtho, autoCaps, allowZwjf)
+// VKey - Feature Options Tests (modernOrtho, autoCaps, allowZwjf)
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Tests for the 3 feature flags:

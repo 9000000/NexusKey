@@ -1,7 +1,7 @@
-// Auto-generated from tools/NextKeyTestRunner/test_data/generate_golden.js
+// Auto-generated from tools/VKeyTestRunner/test_data/generate_golden.js
 // Source library: vn-str (https://github.com/tronghieu60s/vn-str, MIT License)
 // DO NOT EDIT MANUALLY — regenerate with:
-//   node tools/NextKeyTestRunner/test_data/generate_golden.js > tools/NextKeyTestRunner/tests/TelexGolden.h
+//   node tools/VKeyTestRunner/test_data/generate_golden.js > tools/VKeyTestRunner/tests/TelexGolden.h
 #pragma once
 
 #include <cstddef>

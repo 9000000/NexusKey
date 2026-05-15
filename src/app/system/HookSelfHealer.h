@@ -1,8 +1,8 @@
-// NexusKey - Hook Self-Healer (Windows-only)
+// VKey - Hook Self-Healer (Windows-only)
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Detects when an external app installs a higher-priority LL keyboard
-// hook above NexusKey's hook and skips CallNextHookEx (Anti-Dorion).
+// hook above VKey's hook and skips CallNextHookEx (Anti-Dorion).
 // Strategy: dual-channel comparison — Raw Input always reaches us
 // (kernel-level), so missing LL hook fires while Raw Input fires =
 // hook hijacked. Reinstall hooks via injected callback to jump back

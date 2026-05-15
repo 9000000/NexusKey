@@ -1,4 +1,4 @@
-// NexusKey Classic — Spell Check Exclusions Dialog Implementation
+// VKey Classic — Spell Check Exclusions Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ClassicSpellExclusionsDialog.h"

@@ -1,6 +1,6 @@
-// NexusKey - Typing Engine Implementation (unified Telex/VNI/Combined)
+// VKey - Typing Engine Implementation (unified Telex/VNI/Combined)
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 // Dual-licensed: GPL-3.0 for open-source use, commercial license for proprietary use.
 // See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
@@ -267,16 +267,7 @@ void TypingEngine::PushChar(wchar_t keyChar) {
             hasCachedTarget = true;
             size_t targetIndex = cachedToneTarget;
             bool isEscape = (targetIndex != SIZE_MAX && states_[targetIndex].tone == requestedTone);
-            bool matchesExclusion = false;
-            if (!isEscape && !config_.spellExclusions.empty() && targetIndex != SIZE_MAX) {
-                CharState tentative = states_[targetIndex];
-                tentative.tone = requestedTone;
-                wchar_t tonedCh = Compose(tentative);
-                matchesExclusion = WouldToneMatchExclusion(states_.data(), states_.size(),
-                    config_.spellExclusions,
-                    [](const CharState& s) { return Compose(s); },
-                    targetIndex, tonedCh);
-            }
+            bool matchesExclusion = !isEscape && ToneMatchesExclusion(targetIndex, requestedTone);
             // T5 (docs/TODO.md): allow tone REPLACEMENT when the current invalid
             // buffer would become Valid after swapping the existing tone for the
             // requested one.
@@ -297,17 +288,12 @@ void TypingEngine::PushChar(wchar_t keyChar) {
         if (isTelexTone && effectiveSpellCheck &&
             IsBlockedEnglishTone(rawInput_.data(), rawInput_.size())) {
             bool overridden = false;
+            // Outer !empty guard skips the FindToneTarget cache fill when there are
+            // no exclusions — ToneMatchesExclusion would return false anyway, but
+            // the cache fill costs an O(n) buffer scan we'd rather avoid on this path.
             if (!config_.spellExclusions.empty()) {
                 if (!hasCachedTarget) { cachedToneTarget = FindToneTarget(); hasCachedTarget = true; }
-                if (cachedToneTarget != SIZE_MAX) {
-                    CharState tentative = states_[cachedToneTarget];
-                    tentative.tone = requestedTone;
-                    wchar_t tonedCh = Compose(tentative);
-                    overridden = WouldToneMatchExclusion(states_.data(), states_.size(),
-                        config_.spellExclusions,
-                        [](const CharState& s) { return Compose(s); },
-                        cachedToneTarget, tonedCh);
-                }
+                overridden = ToneMatchesExclusion(cachedToneTarget, requestedTone);
             }
             if (!overridden) { asLiteral(); return; }
         }
@@ -383,6 +369,30 @@ void TypingEngine::PushChar(wchar_t keyChar) {
 
     // English Protection: re-evaluate bias after adding character
     CheckEnglishBias(states_.data(), states_.size(), engProt_);
+    // Full Telex only: P8 rewrites a leading 'w' to synthetic ư before the
+    // states-based start-cluster check sees it, hiding `wh`/`wr` from
+    // IsHardEnglishStart. Re-check against raw keystrokes here AND revert the
+    // synthetic ư back to literal 'w'.
+    //
+    // The synthetic-ư gate (tone == None) is load-bearing: once a tone key has
+    // already landed on ư (e.g. `w` then `r` → `ử`), we cannot safely revert
+    // — doing so would strip the tone the user actually wanted. That covers
+    // legitimate Vietnamese sequences that share the `wr` raw prefix:
+    //   w-r-n-g  → ửng  (tone applied at step 2, revert skipped)
+    //   w-r-i-t-e → ửite (same — pre-existing behavior preserved)
+    // SimpleTelex keeps 'w' literal (P8 gated off), so the states-based
+    // start-cluster check on the previous line already covers it.
+    if (config_.inputMethod == InputMethod::Telex &&
+        engProt_.bias != LanguageBias::HardEnglish &&
+        !states_.empty() && states_[0].synthetic &&
+        states_[0].base == L'u' && states_[0].mod == Modifier::Horn &&
+        states_[0].tone == Tone::None &&
+        IsHardEnglishRawStart(rawInput_.data(), rawInput_.size())) {
+        engProt_.bias = LanguageBias::HardEnglish;
+        states_[0].base = L'w';
+        states_[0].mod = Modifier::None;
+        states_[0].synthetic = false;
+    }
     if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
@@ -494,6 +504,17 @@ bool TypingEngine::WouldModifierRecoverOrEscape(TypingAction action, wchar_t key
 //-----------------------------------------------------------------------------
 // Tone Processing
 //-----------------------------------------------------------------------------
+
+bool TypingEngine::ToneMatchesExclusion(size_t targetIdx, Tone requestedTone) const noexcept {
+    if (config_.spellExclusions.empty() || targetIdx == SIZE_MAX) return false;
+    CharState tentative = states_[targetIdx];
+    tentative.tone = requestedTone;
+    wchar_t tonedCh = Compose(tentative);
+    return WouldToneMatchExclusion(states_.data(), states_.size(),
+        config_.spellExclusions,
+        [](const CharState& s) { return Compose(s); },
+        targetIdx, tonedCh);
+}
 
 bool TypingEngine::ProcessTone(Tone newTone, wchar_t keyChar, size_t cachedTarget) {
     if (newTone == Tone::None) return false;

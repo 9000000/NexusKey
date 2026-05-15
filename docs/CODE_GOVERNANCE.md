@@ -1,4 +1,4 @@
-# NexusKey Code Governance
+# VKey Code Governance
 
 > Stated by the project owner 2026-05-05. Operationalizes [`PHILOSOPHY.md`](PHILOSOPHY.md).
 > Every PR, design proposal, and architectural change MUST pass Part 1's 5-question gate before code is written.
@@ -69,7 +69,7 @@ Each section names a pattern the codebase commits to. The status tag identifies 
 
 - ~~**SPSC lock-free ring buffer** in shared memory.~~ **CLOSED 2026-05-09.** Premise (TSF+Hook double-capture causing "x2 space" race) does not hold for the current hook-only architecture (`TSF_ACTIVE` mutex enforces non-parallel capture). The historical chaos x2-space FAIL was diagnosed in Sprint 1 D12 as an `EM_REPLACESEL` sent/posted reorder, not a capture race. Latency measurements across 5 hosts (Notepad / Notepad++ / Chrome / Discord / ChatGPT — see `docs/baselines/perf-baseline-channeltraits-chaos.md`) show L1 hook-callback p99 of 14–17ms, with ~280ms headroom against `LowLevelHooksTimeout`. Async model would impose +1–2ms thread-schedule lag on **every** keystroke (incl. English / gaming / hotkey) where the sync model has zero added lag for non-Vietnamese keystrokes. Reversal triggers documented in the decision memo.
 - **Side-channel context**: TSF reads context (e.g., password field) and publishes `std::atomic<InputContext>`. FSM reads to gate behavior. *(Block on TSF Phase 2/3 revival — independent of the closed ring.)*
-- ~~**Minimal hook + watchdog**~~ — **DONE via PR #154** (`d37d0e1`, 2026-05-08): `HookSelfHealer` (re-install on hook drop) + `HeartbeatPublisher` (30s pulse) + `NexusKeyWatchdog.exe` (sidecar process). Covers the watchdog half of this section without the SPSC ring.
+- ~~**Minimal hook + watchdog**~~ — **DONE via PR #154** (`d37d0e1`, 2026-05-08): `HookSelfHealer` (re-install on hook drop) + `HeartbeatPublisher` (30s pulse) + `VKeyWatchdog.exe` (sidecar process). Covers the watchdog half of this section without the SPSC ring.
 
 ### §4 — Plugin Extension Layer &nbsp;&nbsp;`[STATUS: roadmap, Sprint 4+]`
 
@@ -93,7 +93,7 @@ Each section names a pattern the codebase commits to. The status tag identifies 
 | Part 1 — 5-question gate | **Active** | always | Print in every architectural proposal. |
 | §1 FSM engine core | Roadmap | Sprint 3 | Engine refactor; T3 (output) does not touch the engine state machine. |
 | §2 IOutputInjector | **In progress** | Sprint 2 T3 | See [`docs/plans/sprint-2-output-injector.md`](plans/sprint-2-output-injector.md) (work-in-progress). |
-| §3 SPSC + Watchdog | Watchdog shipped (PR #154); SPSC ring closed | 2026-05-08 / 2026-05-09 | Watchdog: `HookSelfHealer` + `HeartbeatPublisher` + `NexusKeyWatchdog.exe`. SPSC ring closed per `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` — measured baselines + sync-vs-async UX trade-off do not justify the rebuild. |
+| §3 SPSC + Watchdog | Watchdog shipped (PR #154); SPSC ring closed | 2026-05-08 / 2026-05-09 | Watchdog: `HookSelfHealer` + `HeartbeatPublisher` + `VKeyWatchdog.exe`. SPSC ring closed per `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` — measured baselines + sync-vs-async UX trade-off do not justify the rebuild. |
 | §4 Plugin extension | Roadmap | Sprint 4+ | Built on top of FSM (§1) and SPSC (§3). |
 | §5 Corner cases | Mixed | shipped + ongoing | Arrow / mouse / macro / toggle / clipboard already in place; cleanup pass during §1. |
 

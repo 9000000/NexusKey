@@ -76,7 +76,7 @@ TEST_F(SplitDispatchInjectorTest, SendKeyEmitsDownAndUpWithMarker) {
     inj.SendKey(VK_BACK);
     ASSERT_EQ(capturedInputs.size(), 2u);
     EXPECT_EQ(capturedInputs[0].ki.wVk, VK_BACK);
-    EXPECT_EQ(capturedInputs[0].ki.dwExtraInfo, Internal::kNexusKeyExtraInfo);
+    EXPECT_EQ(capturedInputs[0].ki.dwExtraInfo, Internal::kVKeyExtraInfo);
     EXPECT_EQ(capturedInputs[0].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
     EXPECT_NE(capturedInputs[1].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
 }

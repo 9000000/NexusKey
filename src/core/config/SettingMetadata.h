@@ -1,4 +1,4 @@
-// NexusKey - Setting Metadata Table
+// VKey - Setting Metadata Table
 // Shared mapping for dual-UI (Sciter + Classic Win32) settings binding
 // SPDX-License-Identifier: GPL-3.0-only
 
@@ -245,8 +245,8 @@ inline constexpr SettingMeta kSettings[] = {
               L"Ignore Windows dark mode, always show light theme",     2410, 2, 1),
     NK_TYPING("debug-log",            debugLogEnabled,
               "Bật debug log",        "Enable debug log",
-              L"Ghi log chi tiết để gửi kèm khi báo lỗi (NexusKey_*.log cạnh NexusKey.exe)",
-              L"Write detailed log to attach when reporting bugs (NexusKey_*.log next to NexusKey.exe)",
+              L"Ghi log chi tiết để gửi kèm khi báo lỗi (VKey_*.log cạnh VKey.exe)",
+              L"Write detailed log to attach when reporting bugs (VKey_*.log next to VKey.exe)",
                                                                          2411, 2, 1),
     NK_ACTION("btn-open-log-folder",  "Mở log", "Log folder",
               L"Mở thư mục chứa file log",

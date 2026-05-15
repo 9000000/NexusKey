@@ -1,4 +1,4 @@
-// NexusKey - Vietnamese Dictionary Coverage Tests
+// VKey - Vietnamese Dictionary Coverage Tests
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Data-driven tests covering common Vietnamese words.

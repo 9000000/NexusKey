@@ -1,4 +1,4 @@
-// NexusKey - System Configuration
+// VKey - System Configuration
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -53,8 +53,8 @@ struct SystemConfig {
     // Auto-update
     bool autoCheckUpdate = true;   // Check for updates on startup
 
-    // Watchdog (auto-restart on crash) — opt-in. When true, NexusKeyWatchdog.exe
-    // is registered with Task Scheduler at logon and respawns NexusKey on crash.
+    // Watchdog (auto-restart on crash) — opt-in. When true, VKeyWatchdog.exe
+    // is registered with Task Scheduler at logon and respawns VKey on crash.
     bool watchdogEnabled = false;
 
     /// Get effective V color (default if custom not set)

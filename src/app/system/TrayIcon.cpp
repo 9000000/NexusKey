@@ -1,4 +1,4 @@
-// NexusKey - System Tray Icon Implementation
+// VKey - System Tray Icon Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "TrayIcon.h"
@@ -45,7 +45,7 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
     wc.hInstance = hInstance;
     wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_APP));
     wc.hIconSm = LoadIconW(hInstance, MAKEINTRESOURCEW(IDI_APP));
-    wc.lpszClassName = L"NexusKeyTrayClass";
+    wc.lpszClassName = L"VKeyTrayClass";
 
     if (!RegisterClassExW(&wc)) {
         if (GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
@@ -56,7 +56,7 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
     // Create as WS_OVERLAPPEDWINDOW (like OpenKey) so Task Manager recognizes
     // the window and picks up hIcon for the process icon, then hide it.
     hwndMessage_ = CreateWindowExW(
-        0, L"NexusKeyTrayClass", L"NexusKey", WS_OVERLAPPEDWINDOW,
+        0, L"VKeyTrayClass", L"VKey", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
 
     if (!hwndMessage_) return false;
@@ -96,7 +96,7 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
     }
 
     // Allow WM_CLOSE through UIPI so the chaos test harness (run-chaos.ps1)
-    // and updater can trigger graceful shutdown even when NexusKey is elevated.
+    // and updater can trigger graceful shutdown even when VKey is elevated.
     // WM_CLOSE only triggers clean exit (PostQuitMessage), no security risk.
     ChangeWindowMessageFilterEx(hwndMessage_, WM_CLOSE, MSGFLT_ALLOW, nullptr);
 
@@ -437,13 +437,13 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     // Deferred V/E mode sync from hook callback or tray click (PostMessage pattern).
     // Settings notification is posted directly from modeChangeCallback_ (1 hop) —
     // no FindWindow needed here.
-    if (msg == WM_NEXUSKEY_TRAY_MODE_SYNC && hwnd == hwndMessage_) {
+    if (msg == WM_VKEY_TRAY_MODE_SYNC && hwnd == hwndMessage_) {
         SetVietnameseMode(wParam != 0);
         return true;
     }
 
     // Settings dialog requesting a specific V/E mode (cross-process)
-    if (msg == WM_NEXUSKEY_SET_MODE && hwnd == hwndMessage_) {
+    if (msg == WM_VKEY_SET_MODE && hwnd == hwndMessage_) {
         bool vietnamese = (wParam != 0);
         if (modeRequestCallback_) {
             modeRequestCallback_(vietnamese);
@@ -462,7 +462,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
     // Auto-update check found an available update — show TaskDialog
-    if (msg == WM_NEXUSKEY_UPDATE_AVAILABLE && hwnd == hwndMessage_) {
+    if (msg == WM_VKEY_UPDATE_AVAILABLE && hwnd == hwndMessage_) {
         auto* info = reinterpret_cast<UpdateInfo*>(lParam);
         if (info) {
             if (UpdateChecker::ShowUpdateDialog(hwnd, *info)) {
@@ -482,13 +482,13 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     // Hook config changed (TSF apps, excluded apps, macros, …) — eager reload so the
     // new list applies without waiting for a keystroke / focus change in the target app.
-    if (msg == WM_NEXUSKEY_HOOK_RELOAD && hwnd == hwndMessage_) {
+    if (msg == WM_VKEY_HOOK_RELOAD && hwnd == hwndMessage_) {
         if (hookReloadCallback_) hookReloadCallback_();
         return true;
     }
 
     // System config changed (icon style, language, etc.) — re-read from TOML and refresh
-    if (msg == WM_NEXUSKEY_ICON_CHANGED && hwnd == hwndMessage_) {
+    if (msg == WM_VKEY_ICON_CHANGED && hwnd == hwndMessage_) {
         auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
         SetIconConfig(sysConfig.iconStyle, sysConfig.customColorV, sysConfig.customColorE);
         SetLanguage(static_cast<Language>(sysConfig.language));
@@ -498,7 +498,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
     // Restart app (admin mode changed in settings)
-    if (msg == WM_NEXUSKEY_RESTART && hwnd == hwndMessage_) {
+    if (msg == WM_VKEY_RESTART && hwnd == hwndMessage_) {
         switch (RestartWithNewAdminMode()) {
             case AdminRestartResult::Restarting:
                 // New instance launched — exit via menu callback
@@ -512,7 +512,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 // unelevated child (no shell). Tell the user to restart manually
                 // so they don't think the toggle silently failed.
                 MessageBoxW(nullptr, S(StringId::ADMIN_DEELEVATION_FAILED),
-                             L"NexusKey", MB_ICONWARNING | MB_OK);
+                             L"VKey", MB_ICONWARNING | MB_OK);
                 break;
             case AdminRestartResult::NoRestartNeeded:
             case AdminRestartResult::UacDenied:
@@ -523,7 +523,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
     // Another instance tried to start and requests to show Settings
-    if (msg == WM_NEXUSKEY_SHOW_SETTINGS && hwnd == hwndMessage_) {
+    if (msg == WM_VKEY_SHOW_SETTINGS && hwnd == hwndMessage_) {
         if (menuCallback_) {
             menuCallback_(TrayMenuId::Settings);
         }

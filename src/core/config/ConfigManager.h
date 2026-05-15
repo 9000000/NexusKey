@@ -1,4 +1,4 @@
-// NexusKey - Configuration Manager
+// VKey - Configuration Manager
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

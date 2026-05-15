@@ -30,7 +30,7 @@ public:
                                        std::wstring_view text) noexcept = 0;
 
     // Re-inject a single VK as if the user pressed it (down + up, with
-    // NEXUSKEY_EXTRA_INFO marker). Used by HookEngine::InjectKey for
+    // VKEY_EXTRA_INFO marker). Used by HookEngine::InjectKey for
     // the synth-pending re-inject case (HookEngine.cpp line ~905).
     virtual void SendKey(unsigned short vkCode) noexcept = 0;
 

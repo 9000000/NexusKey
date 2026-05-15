@@ -1,6 +1,6 @@
-// NexusKey - Macro expansion decision logic
+// VKey - Macro expansion decision logic
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 //
 // Linux-portable macro expansion decision unit. Extracted from
 // HookEngine::TryExpandMacro for unit testability. Win32 case-mapping

@@ -1,4 +1,4 @@
-// NexusKey - Composition Edit Sessions
+// VKey - Composition Edit Sessions
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once

@@ -1,4 +1,4 @@
-// NexusKey - Keyboard Hook Engine Implementation
+// VKey - Keyboard Hook Engine Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookEngine.h"
@@ -34,8 +34,8 @@ static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 // ═══════════════════════════════════════════════════════════
 // HOOK_LOG → unified runtime-gated Logger (core/Logger.h).
 // Enable from Settings → System → "Bật debug log". Output file is shared
-// with NEXTKEY_LOG / TSF_LOG: NexusKey_<process>_<pid>.log next to
-// NextKeyApp.exe (falls back to %APPDATA%\NexusKey\logs\ if install dir is
+// with NEXTKEY_LOG / TSF_LOG: VKey_<process>_<pid>.log next to
+// VKeyApp.exe (falls back to %APPDATA%\VKey\logs\ if install dir is
 // read-only). Flushing/closing is owned by the Logger (DLL detach + EXE
 // process exit) — hook Start/Stop does NOT toggle the logger lifecycle.
 // ═══════════════════════════════════════════════════════════
@@ -665,7 +665,7 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
         // When nCode < 0, Windows tells us to pass the message along — but the event
         // still represents a delivered synthetic that was counted when sent.
         // Without this, synthEventsPending_ leaks on every nCode < 0 delivery.
-        if (self && pKey->dwExtraInfo == NEXUSKEY_EXTRA_INFO) {
+        if (self && pKey->dwExtraInfo == VKEY_EXTRA_INFO) {
             HOOK_LOG(L"  PASSTHRU (dwExtraInfo=NK): vk=0x%02X scan=0x%04X flags=0x%08X nCode=%d",
                      pKey->vkCode, pKey->scanCode, pKey->flags, nCode);
             if (self->synthEventsPending_ > 0) --self->synthEventsPending_;
@@ -1964,7 +1964,7 @@ static void AppendUnicodeEvent(std::vector<INPUT>& events, WORD wScan) {
     inDown.type = INPUT_KEYBOARD;
     inDown.ki.wScan = wScan;
     inDown.ki.dwFlags = KEYEVENTF_UNICODE;
-    inDown.ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inDown.ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     events.push_back(inDown);
 
     INPUT inUp = inDown;
@@ -1977,7 +1977,7 @@ static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
     inDown.type = INPUT_KEYBOARD;
     inDown.ki.wVk = wVk;
     inDown.ki.wScan = wScan;
-    inDown.ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inDown.ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     events.push_back(inDown);
 
     INPUT inUp = inDown;
@@ -1997,7 +1997,7 @@ static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
 // matching per-event decrement at LowLevelKeyboardProc:663 happen on the
 // same LL hook thread (SendInput fires the WH_KEYBOARD_LL callback
 // synchronously on the calling thread for own-injection events marked
-// with NEXUSKEY_EXTRA_INFO). No inter-thread visibility chain to
+// with VKEY_EXTRA_INFO). No inter-thread visibility chain to
 // establish. The counter is a hint for the synth-guard heuristic, not a
 // synchronization primitive — readers at HookEngine.cpp:971/1074/1150/
 // 1497 also use implicit-default ordering on `synthEventsPending_ > 0`
@@ -2113,25 +2113,25 @@ void HookEngine::ClipboardPaste(const std::wstring& text) {
             up.ki.wVk = m.vk;
             up.ki.wScan = m.scan;
             up.ki.dwFlags = KEYEVENTF_KEYUP;
-            up.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+            up.ki.dwExtraInfo = VKEY_EXTRA_INFO;
             preEvents.push_back(up);
 
             INPUT down{};
             down.type = INPUT_KEYBOARD;
             down.ki.wVk = m.vk;
             down.ki.wScan = m.scan;
-            down.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+            down.ki.dwExtraInfo = VKEY_EXTRA_INFO;
             postEvents.push_back(down);
         }
     }
 
-    // Simulate Ctrl+V — hook proc passes these through (NEXUSKEY_EXTRA_INFO marker)
+    // Simulate Ctrl+V — hook proc passes these through (VKEY_EXTRA_INFO marker)
     WORD ctrlScan = static_cast<WORD>(MapVirtualKeyW(VK_CONTROL, MAPVK_VK_TO_VSC));
     WORD vScan = static_cast<WORD>(MapVirtualKeyW('V', MAPVK_VK_TO_VSC));
     INPUT inputs[4] = {};
     for (auto& in : inputs) {
         in.type = INPUT_KEYBOARD;
-        in.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+        in.ki.dwExtraInfo = VKEY_EXTRA_INFO;
     }
     inputs[0].ki.wVk = VK_CONTROL;  inputs[0].ki.wScan = ctrlScan;
     inputs[1].ki.wVk = 'V';         inputs[1].ki.wScan = vScan;
@@ -2420,7 +2420,7 @@ bool HookEngine::IsTrayOrTaskbarWindow(HWND hwnd) noexcept {
            _wcsicmp(cls, L"MSTaskSwWClass") == 0 ||            // taskbar app buttons
            _wcsicmp(cls, L"Start") == 0 ||                     // Start button
            _wcsicmp(cls, L"Windows.UI.Core.CoreWindow") == 0 || // Start Menu / Action Center (Win 10/11)
-           _wcsicmp(cls, L"NexusKeyTrayClass") == 0;           // NexusKey own tray window
+           _wcsicmp(cls, L"VKeyTrayClass") == 0;           // VKey own tray window
            // Note: SetForegroundWindow(hwndMessage_) in ShowContextMenu fires
            // EVENT_SYSTEM_FOREGROUND synchronously, but WinEventProc is WINEVENT_OUTOFCONTEXT
            // so it's delivered asynchronously — this filter still catches it correctly.
@@ -2808,7 +2808,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     }
 
     // Classify app type — single GetClassNameW call covers all detection.
-    // Runs unconditionally so opening NexusKey BEFORE a WebView2 host (e.g.
+    // Runs unconditionally so opening VKey BEFORE a WebView2 host (e.g.
     // Dorion) doesn't leave flags stale at the initial all-zero state when
     // focus first transits through a helper window — the next keystroke would
     // otherwise route through the wrong dispatch path.
@@ -2950,7 +2950,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
              localConsole ? 1 : 0, localSkipEmpty ? 1 : 0, localElectronApp ? 1 : 0,
              isWebView2 ? 1 : 0, localNeedBait ? 1 : 0, localClipboard ? 1 : 0, localEditMsg ? 1 : 0, localUseClipboardInjector ? 1 : 0);
 
-    // Re-install hooks to guarantee NexusKey remains at the top of the hook chain.
+    // Re-install hooks to guarantee VKey remains at the top of the hook chain.
     // We only do this for Chromium-based architectures (Electron, WebView2, Browsers)
     // because they install their own WH_KEYBOARD_LL hooks that aggressively drop
     // synthetic injected events (like our Backspaces) if they sit in front of us.
@@ -3350,7 +3350,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
                 evt.type = INPUT_KEYBOARD;
                 evt.ki.wVk = static_cast<WORD>(reinjectVk);
                 evt.ki.wScan = static_cast<WORD>(MapVirtualKeyW(reinjectVk, MAPVK_VK_TO_VSC));
-                evt.ki.dwExtraInfo = NEXUSKEY_EXTRA_INFO;
+                evt.ki.dwExtraInfo = VKEY_EXTRA_INFO;
                 (void)Output::Internal::TrackedSendInput(&evt, 1);
             }
 
@@ -3442,7 +3442,7 @@ void HookEngine::TrackModifier(DWORD vkCode, bool isDown) {
 
 void HookEngine::InjectKey(DWORD vkCode) {
     // Sprint 2 D1: route through IOutputInjector. The injector knows the
-    // active host class and emits the right INPUT[] with NEXUSKEY_EXTRA_INFO
+    // active host class and emits the right INPUT[] with VKEY_EXTRA_INFO
     // marker. Engine still owns sending_ guard + lastSynthSendTime_ tracking
     // (they're synth-pressure state, not channel state).
     sending_ = true;

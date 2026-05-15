@@ -24,7 +24,7 @@
 ### 3.3 TOML Config Structure
 
 ```toml
-# ~/.nexuskey/config.toml
+# ~/.vkey/config.toml
 
 [input]
 method = "telex"          # telex, vni, viqr
@@ -90,4 +90,4 @@ struct SharedState {
 ```
 
 ---
-
+

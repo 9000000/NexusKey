@@ -1,17 +1,17 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    NexusKey vs UniKey — End-to-End IME Benchmark (PowerShell)
+    VKey vs UniKey — End-to-End IME Benchmark (PowerShell)
 .DESCRIPTION
     Measures keystroke-to-commit latency by injecting keystrokes into Notepad.
-    Run once with NexusKey, once with UniKey, compare results.
+    Run once with VKey, once with UniKey, compare results.
 
     Metrics: avg, p95, p99, min, max per-key latency.
     Verifies output contains Vietnamese characters (detects IME not active).
     Monitors CPU usage during typing.
 .USAGE
     1. Switch to the IME you want to test
-    2. Run: .\benchmark_ime.ps1 -IME "NexusKey"
+    2. Run: .\benchmark_ime.ps1 -IME "VKey"
     3. Switch IME, run: .\benchmark_ime.ps1 -IME "UniKey"
     4. Compare: .\benchmark_ime.ps1 -Compare
 .PARAMETERS
@@ -404,7 +404,7 @@ if ($Compare) {
 # --- Main benchmark ------------------------------------------------------
 
 if (-not $IME) {
-    $IME = Read-Host "Enter IME name (e.g. NexusKey, UniKey)"
+    $IME = Read-Host "Enter IME name (e.g. VKey, UniKey)"
     if (-not $IME) { $IME = "Unknown" }
 }
 

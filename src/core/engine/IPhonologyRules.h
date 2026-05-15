@@ -1,6 +1,6 @@
-// NexusKey - Vietnamese Phonology Rule-Pack Contract
+// VKey - Vietnamese Phonology Rule-Pack Contract
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 //
 // IPhonologyRules — pluggable rule-data provider for Vietnamese phonotactics.
 //

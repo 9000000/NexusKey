@@ -1,6 +1,6 @@
-// NexusKey - Vietnamese Phonology Rule-Pack Factory
+// VKey - Vietnamese Phonology Rule-Pack Factory
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-NexusKey-Commercial
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
 //
 // Factory + identifier enum for IPhonologyRules instances. Decouples callers
 // from concrete rule-pack types so new packs (dialectal, loanword-friendly,

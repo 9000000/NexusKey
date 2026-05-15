@@ -1,4 +1,4 @@
-// NexusKey - App-Layer Helper Functions
+// VKey - App-Layer Helper Functions
 // SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
@@ -55,8 +55,8 @@ inline void SignalConfigChange() noexcept {
 #ifdef _WIN32
     // Eager hook reload: tell main EXE to QuickSync now so new list applies
     // without waiting for the next keystroke / focus change in the target app.
-    if (HWND trayWnd = FindWindowW(L"NexusKeyTrayClass", nullptr)) {
-        PostMessageW(trayWnd, WM_NEXUSKEY_HOOK_RELOAD, 0, 0);
+    if (HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr)) {
+        PostMessageW(trayWnd, WM_VKEY_HOOK_RELOAD, 0, 0);
     }
 #endif
 }

@@ -1,4 +1,4 @@
-// NexusKey - Phonotactics Unit Tests
+// VKey - Phonotactics Unit Tests
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Tests for IPhonotactics rule engine: tone position, syllable validity,

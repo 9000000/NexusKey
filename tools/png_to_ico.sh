@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Convert PNG images to multi-resolution ICO files for NexusKey Classic UI.
+# Convert PNG images to multi-resolution ICO files for VKey Classic UI.
 # Uses ImageMagick with Lanczos downscaling and alpha preservation.
 #
 # Usage:

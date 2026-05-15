@@ -1,4 +1,4 @@
-# NexusKey Lite (Classic UI) — Build & Run script
+# VKey Lite (Classic UI) — Build & Run script
 # Usage: .\tools\build_lite.ps1 [-Clean] [-Release] [-Run]
 #
 # Examples:
@@ -17,9 +17,9 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $buildDir = Join-Path $root "build-lite"
 $config = if ($Release) { "Release" } else { "Debug" }
-$exe = Join-Path $buildDir "$config\NexusKeyClassic.exe"
+$exe = Join-Path $buildDir "$config\VKeyClassic.exe"
 
-Write-Host "=== NexusKey Lite Build ===" -ForegroundColor Cyan
+Write-Host "=== VKey Lite Build ===" -ForegroundColor Cyan
 Write-Host "  Root:   $root"
 Write-Host "  Build:  $buildDir"
 Write-Host "  Config: $config"
@@ -32,17 +32,24 @@ if ($Clean -and (Test-Path $buildDir)) {
 }
 
 # Configure (if needed)
-if (-not (Test-Path (Join-Path $buildDir "CMakeCache.txt"))) {
+$cacheFile = Join-Path $buildDir "CMakeCache.txt"
+$cmakeLists = Join-Path $root "CMakeLists.txt"
+$needConfigure = -not (Test-Path $cacheFile)
+if (-not $needConfigure -and (Get-Item $cmakeLists).LastWriteTime -gt (Get-Item $cacheFile).LastWriteTime) {
+    Write-Host "[1/3] CMakeLists.txt newer than cache -- reconfiguring..." -ForegroundColor Yellow
+    $needConfigure = $true
+}
+if ($needConfigure) {
     Write-Host "[1/3] Configuring CMake..." -ForegroundColor Yellow
-    cmake -S $root -B $buildDir -G "Visual Studio 18 2026" -A x64 -DNEXUSKEY_LITE_MODE=ON
+    cmake -S $root -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_LITE_MODE=ON
     if ($LASTEXITCODE -ne 0) { Write-Host "CMake configure FAILED" -ForegroundColor Red; exit 1 }
 } else {
     Write-Host "[1/3] CMake already configured (use -Clean to reconfigure)" -ForegroundColor DarkGray
 }
 
 # Build
-Write-Host "[2/3] Building NextKeyLite ($config)..." -ForegroundColor Yellow
-$buildOutput = cmake --build $buildDir --target NextKeyLite --config $config 2>&1
+Write-Host "[2/3] Building VKeyLite ($config)..." -ForegroundColor Yellow
+$buildOutput = cmake --build $buildDir --target VKeyLite --config $config 2>&1
 $buildCode = $LASTEXITCODE
 
 # Show only errors/warnings (clean output)
@@ -59,9 +66,9 @@ if ($Run) {
     Write-Host "[3/3] Launching..." -ForegroundColor Yellow
 
     # Kill existing instance
-    $proc = Get-Process -Name "NexusKeyClassic" -ErrorAction SilentlyContinue
+    $proc = Get-Process -Name "VKeyClassic" -ErrorAction SilentlyContinue
     if ($proc) {
-        Write-Host "  Killing existing NexusKeyClassic..." -ForegroundColor DarkYellow
+        Write-Host "  Killing existing VKeyClassic..." -ForegroundColor DarkYellow
         $proc | Stop-Process -Force
         Start-Sleep -Milliseconds 500
     }

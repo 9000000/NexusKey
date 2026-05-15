@@ -1,4 +1,4 @@
-// NexusKey - Quick Convert Implementation
+// VKey - Quick Convert Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "QuickConvert.h"
@@ -21,7 +21,7 @@ void QuickConvertLogToFile(const wchar_t* format, ...) {
         std::wstring logPath(exePath);
         size_t lastSlash = logPath.find_last_of(L"\\/");
         if (lastSlash != std::wstring::npos) {
-            logPath = logPath.substr(0, lastSlash + 1) + L"nexuskey_quick_convert.log";
+            logPath = logPath.substr(0, lastSlash + 1) + L"vkey_quick_convert.log";
             
             FILE* file = nullptr;
             if (_wfopen_s(&file, logPath.c_str(), L"a, ccs=UTF-8") == 0 && file) {
@@ -368,31 +368,31 @@ void QuickConvert::SimulateCopy() {
         inputs[n].type = INPUT_KEYBOARD;
         inputs[n].ki.wVk = vk;
         inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
-        inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+        inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
         n++;
     }
 
     // Ctrl+C (Ctrl down, C down, C up, Ctrl up)
     inputs[n].type = INPUT_KEYBOARD;
     inputs[n].ki.wVk = VK_CONTROL;
-    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     n++;
     
     inputs[n].type = INPUT_KEYBOARD;
     inputs[n].ki.wVk = 'C';
-    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     n++;
 
     inputs[n].type = INPUT_KEYBOARD;
     inputs[n].ki.wVk = 'C';
     inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     n++;
 
     inputs[n].type = INPUT_KEYBOARD;
     inputs[n].ki.wVk = VK_CONTROL;
     inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     n++;
 
     SendInput(n, inputs, sizeof(INPUT));
@@ -407,31 +407,31 @@ void QuickConvert::SimulatePaste() {
         inputs[n].type = INPUT_KEYBOARD;
         inputs[n].ki.wVk = vk;
         inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
-        inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+        inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
         n++;
     }
 
     // Ctrl+V (Ctrl down, V down, V up, Ctrl up)
     inputs[n].type = INPUT_KEYBOARD;
     inputs[n].ki.wVk = VK_CONTROL;
-    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     n++;
 
     inputs[n].type = INPUT_KEYBOARD;
     inputs[n].ki.wVk = 'V';
-    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     n++;
 
     inputs[n].type = INPUT_KEYBOARD;
     inputs[n].ki.wVk = 'V';
     inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     n++;
 
     inputs[n].type = INPUT_KEYBOARD;
     inputs[n].ki.wVk = VK_CONTROL;
     inputs[n].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[n].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+    inputs[n].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
     n++;
 
     SendInput(n, inputs, sizeof(INPUT));
@@ -541,26 +541,26 @@ void QuickConvert::SimulateShiftLeftSelect(int length) {
         // Shift down
         inputs[0].type = INPUT_KEYBOARD;
         inputs[0].ki.wVk = VK_SHIFT;
-        inputs[0].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+        inputs[0].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
 
         for (size_t i = 0; i < batchSize; ++i) {
             size_t base = 1 + i * 2;
             // Left down
             inputs[base].type = INPUT_KEYBOARD;
             inputs[base].ki.wVk = VK_LEFT;
-            inputs[base].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+            inputs[base].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
             // Left up
             inputs[base + 1].type = INPUT_KEYBOARD;
             inputs[base + 1].ki.wVk = VK_LEFT;
             inputs[base + 1].ki.dwFlags = KEYEVENTF_KEYUP;
-            inputs[base + 1].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+            inputs[base + 1].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
         }
 
         // Shift up
         inputs[inputCount - 1].type = INPUT_KEYBOARD;
         inputs[inputCount - 1].ki.wVk = VK_SHIFT;
         inputs[inputCount - 1].ki.dwFlags = KEYEVENTF_KEYUP;
-        inputs[inputCount - 1].ki.dwExtraInfo = HookEngine::NEXUSKEY_EXTRA_INFO;
+        inputs[inputCount - 1].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
 
         SendInput(static_cast<UINT>(inputCount), inputs.data(), sizeof(INPUT));
         sent += batchSize;

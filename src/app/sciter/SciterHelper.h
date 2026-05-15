@@ -1,4 +1,4 @@
-// NexusKey - Sciter Window Helper
+// VKey - Sciter Window Helper
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Utilities for Sciter window effects: DWM blur, acrylic, window dragging.

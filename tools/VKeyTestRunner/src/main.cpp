@@ -1,6 +1,6 @@
-// NextKeyTestRunner — E2E stress test harness for NexusKey IME.
-// Drives SendInput against a running NexusKey hook, verifies clipboard output,
-// and emits per-keystroke timing for L1 (NexusKey internal) and L2 (end-to-end).
+// VKeyTestRunner — E2E stress test harness for VKey IME.
+// Drives SendInput against a running VKey hook, verifies clipboard output,
+// and emits per-keystroke timing for L1 (VKey internal) and L2 (end-to-end).
 //
 // Phase 0a status: D4 -- clipboard verify wired. Single-test mode only;
 // multi-test loop with TOML corpus comes in D7+.
@@ -41,7 +41,7 @@ namespace NextKey::TestRunner {
 
 constexpr const char* kVersion = "0.7.0-d0-edit-distance";
 
-// GetLocalTime-derived ms-since-midnight (matches NexusKey HookLog timestamp
+// GetLocalTime-derived ms-since-midnight (matches VKey HookLog timestamp
 // format, so we can slice log entries by per-case windows).
 [[nodiscard]] uint64_t LocalTimeMs() noexcept {
     SYSTEMTIME st;
@@ -67,11 +67,11 @@ constexpr uint32_t kCtrlACtrlCDelayMs  = 50;   // between Ctrl+A and Ctrl+C
 constexpr uint32_t kClipboardSettleMs  = 150;  // after Ctrl+C, before reading
 
 void PrintUsage() {
-    std::printf("NextKeyTestRunner v%s\n", kVersion);
-    std::printf("E2E stress test harness for NexusKey IME (Windows-only)\n\n");
+    std::printf("VKeyTestRunner v%s\n", kVersion);
+    std::printf("E2E stress test harness for VKey IME (Windows-only)\n\n");
     std::printf("Usage:\n");
-    std::printf("  NextKeyTestRunner.exe                    Print this help\n");
-    std::printf("  NextKeyTestRunner.exe --send TEXT [opts] Drive SendInput\n\n");
+    std::printf("  VKeyTestRunner.exe                    Print this help\n");
+    std::printf("  VKeyTestRunner.exe --send TEXT [opts] Drive SendInput\n\n");
     std::printf("Send options:\n");
     std::printf("  --send TEXT          Vietnamese or Telex text to type\n");
     std::printf("  --inter-key-us=N     Inter-key delay in microseconds (default 10000)\n");
@@ -87,9 +87,9 @@ void PrintUsage() {
     std::printf("                       (no SendInput driving; debug helper)\n");
     std::printf("  --corpus FILE.toml   Run all tests in FILE.toml; PASS/FAIL summary\n");
     std::printf("                       (auto-enables clear-first per case)\n");
-    std::printf("  --hook-log PATH      Path to NexusKey_hook.log (debug build) -- when\n");
+    std::printf("  --hook-log PATH      Path to VKey_hook.log (debug build) -- when\n");
     std::printf("                       supplied, --corpus prompts after the run for the\n");
-    std::printf("                       user to stop NexusKey, then post-mortem parses the\n");
+    std::printf("                       user to stop VKey, then post-mortem parses the\n");
     std::printf("                       log to print L1 inter-key timing per case.\n");
     std::printf("  --junit PATH         Write JUnit-style XML report to PATH\n");
     std::printf("  --perf-csv PATH      Write per-case perf metrics as CSV to PATH\n\n");
@@ -99,13 +99,13 @@ void PrintUsage() {
     std::printf("                       corpus `text` fields). Useful for verifying\n");
     std::printf("                       hand-written corpus segments before locking.\n");
     std::printf("                       Example:\n");
-    std::printf("                         NextKeyTestRunner.exe --convert \"việt có dấu\"\n");
+    std::printf("                         VKeyTestRunner.exe --convert \"việt có dấu\"\n");
     std::printf("                       prints:  vieejt cos daasu\n\n");
     std::printf("  --help, -h           Show this help\n\n");
     std::printf("Examples:\n");
-    std::printf("  NextKeyTestRunner.exe --send vieejt --raw\n");
+    std::printf("  VKeyTestRunner.exe --send vieejt --raw\n");
     std::printf("    Types v-i-e-e-j-t into the focused window. Visual smoke test.\n\n");
-    std::printf("  NextKeyTestRunner.exe --send vieejt --raw --verify --expected viet-with-tone\n");
+    std::printf("  VKeyTestRunner.exe --send vieejt --raw --verify --expected viet-with-tone\n");
     std::printf("    Types vieejt, selects all, copies, compares clipboard to expected.\n");
     std::printf("    Exits 0 on PASS, 1 on FAIL with a diff. Vietnamese in --expected\n");
     std::printf("    requires UTF-8 capable shell (PowerShell 7 / Windows Terminal /\n");
@@ -135,7 +135,7 @@ struct RunOptions {
     std::u16string expected;
     std::u16string listFile;        // --list FILE.toml: print parsed cases, no driving
     std::u16string corpusFile;      // --corpus FILE.toml: drive every case + verify
-    std::u16string hookLogPath;     // --hook-log: NexusKey_hook.log for L1 timing
+    std::u16string hookLogPath;     // --hook-log: VKey_hook.log for L1 timing
     std::u16string junitXmlPath;    // --junit: JUnit XML report output
     std::u16string perfCsvPath;     // --perf-csv: per-case CSV output
     std::u16string convertText;     // --convert TEXT: print raw Telex, no driving
@@ -261,10 +261,10 @@ bool RunSingleCase(const TestCase& tc, uint32_t postSendMs,
     return false;
 }
 
-// After all cases run AND the user has stopped NexusKey (so its 8KB log
+// After all cases run AND the user has stopped VKey (so its 8KB log
 // buffer has been flushed by CloseHookLog), parse the full log and compute
 // L1 inter-keystroke stats per case using the windows captured during the
-// run. NexusKey's log is invisible while the process is alive (file is open
+// run. VKey's log is invisible while the process is alive (file is open
 // for writing + entries sit in the in-process buffer); a post-mortem read
 // avoids the heisenbug we'd hit with mid-run instrumentation.
 //
@@ -273,7 +273,7 @@ void RunPostMortemL1(std::vector<CaseResult>& results,
                      const std::vector<CaseWindow>& windows,
                      const std::filesystem::path& hookLog) {
     std::printf("\nTo compute L1 hook timing per case:\n");
-    std::printf("  1. Stop NexusKey (tray -> Quit) so its log buffer flushes.\n");
+    std::printf("  1. Stop VKey (tray -> Quit) so its log buffer flushes.\n");
     std::printf("  2. Press Enter to read the log (or Ctrl+C to skip).\n");
     std::printf("  > ");
     std::fflush(stdout);
@@ -287,7 +287,7 @@ void RunPostMortemL1(std::vector<CaseResult>& results,
     const auto allEntries = HookLogParser::ParseFile(hookLog);
     if (allEntries.empty()) {
         std::printf("(no entries parsed from %s -- file missing, empty,\n"
-                    " or NexusKey still has it open)\n",
+                    " or VKey still has it open)\n",
                     hookLog.string().c_str());
         return;
     }

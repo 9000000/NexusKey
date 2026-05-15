@@ -21,7 +21,7 @@ namespace {
 constexpr std::size_t kMaxBatch = 256;
 
 INPUT MakeKeyEvent(WORD vk, bool keyup,
-                   ULONG_PTR extraInfo = Internal::kNexusKeyExtraInfo) noexcept {
+                   ULONG_PTR extraInfo = Internal::kVKeyExtraInfo) noexcept {
     INPUT in{};
     in.type = INPUT_KEYBOARD;
     in.ki.wVk = vk;
@@ -32,7 +32,7 @@ INPUT MakeKeyEvent(WORD vk, bool keyup,
 }
 
 INPUT MakeUnicodeChar(WCHAR ch, bool keyup,
-                      ULONG_PTR extraInfo = Internal::kNexusKeyExtraInfo) noexcept {
+                      ULONG_PTR extraInfo = Internal::kVKeyExtraInfo) noexcept {
     INPUT in{};
     in.type = INPUT_KEYBOARD;
     in.ki.wScan = static_cast<WORD>(ch);

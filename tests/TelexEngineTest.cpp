@@ -1,4 +1,4 @@
-// NexusKey - TelexEngine Unit Tests
+// VKey - TelexEngine Unit Tests
 // SPDX-License-Identifier: GPL-3.0-only
 // Story 1.2: Comprehensive Telex transformation tests (50+ tests)
 
@@ -2331,6 +2331,14 @@ TEST_F(EnglishProtectionTest, HardReject_DR_Cluster) {
     EXPECT_EQ(engine_->Peek(), L"drive");
 }
 
+TEST_F(EnglishProtectionTest, HardReject_WH_Cluster_SpellOn) {
+    // Spell-check-ON parallel of the no-spell-check `where` test — the wh
+    // revert path is gated on inputMethod==Telex, not on spellCheck, so it
+    // must hold under both fixtures.
+    TypeString(*engine_, L"where");
+    EXPECT_EQ(engine_->Peek(), L"where");
+}
+
 TEST_F(EnglishProtectionTest, HardReject_CL_Cluster) {
     // "clear" starts with "cl" → impossible in Vietnamese  
     TypeString(*engine_, L"clear");
@@ -2583,6 +2591,40 @@ TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_BR_Cluster_BlocksModifier) {
 TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_SP_Cluster_BlocksTone) {
     TypeString(*engine_, L"spas");
     EXPECT_EQ(engine_->Peek(), L"spas");  // 's' literal
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_WH_Cluster_BlocksToneAndModifier) {
+    // "wh" is impossible in Vietnamese (only wr was listed; wh was missing).
+    // Without the guard, w-h-e-r-e leaks tone 'r' onto 'e' (→ whẻ) and the
+    // trailing 'e' triggers ee→ê (→ whể). Bias must lock to HardEnglish at "wh".
+    // Full Telex path: P8 rewrites 'w' → synthetic ư before the states-based
+    // start-cluster check sees it, so the raw-input fallback must catch wh.
+    TypeString(*engine_, L"where");
+    EXPECT_EQ(engine_->Peek(), L"where");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, WwEscape_StillWorks) {
+    // Regression guard: ww → literal w (Telex escape) must not be tripped
+    // by the wh start-cluster fix — IsHardEnglishStart('w','w') is false.
+    TypeString(*engine_, L"ww");
+    EXPECT_EQ(engine_->Peek(), L"w");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, WsngStaysUng) {
+    // Regression: 'w' (P8 → ư) + 's' (Sac tone) + n + g must compose to ứng.
+    // raw[0..1]='ws' is not in IsHardEnglishStart, so the wh/wr revert path
+    // must not interfere.
+    TypeString(*engine_, L"wsng");
+    EXPECT_EQ(engine_->Peek(), L"ứng");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, WrngStaysUng_ToneBlocksRevert) {
+    // Regression: 'w' (P8 → ư) + 'r' (Hoi tone) + n + g must compose to ửng,
+    // even though raw[0..1]='wr' IS in IsHardEnglishStart. The synthetic-ư
+    // revert is gated on tone==None precisely so this Vietnamese sequence
+    // (tone applied at step 2) survives.
+    TypeString(*engine_, L"wrng");
+    EXPECT_EQ(engine_->Peek(), L"ửng");
 }
 
 TEST_F(EnglishDetectionNoSpellCheckTest, ValidVietnamese_StillComposes) {
@@ -3092,6 +3134,13 @@ TEST_F(SimpleTelexTest, DD_StillWorks) {
 TEST_F(SimpleTelexTest, RealWord_Duong) {
     TypeString(*engine_, L"dduowng");
     EXPECT_EQ(engine_->Peek(), L"đương");
+}
+
+TEST_F(SimpleTelexTest, WhPrefix_IsHardEnglish) {
+    // SimpleTelex keeps 'w' literal (P8 gated off), so the states-based
+    // IsHardEnglishStart check is what catches wh here — no raw fallback needed.
+    TypeString(*engine_, L"where");
+    EXPECT_EQ(engine_->Peek(), L"where");
 }
 
 // ============================================================================
@@ -4675,11 +4724,49 @@ TEST_F(TelexEngineTest, EscRestoreRaw_DoubleSToneEscape) {
     EXPECT_EQ(engine_->PeekRaw(), L"asus");
 }
 
-TEST_F(TelexEngineTest, EscRestoreRaw_DoubleSToneEscape_LongerWord) {
-    // u-s-s-e-r: classic tone-escape case. After 2nd 's', engine shows "usser"
-    // (literal). PeekRaw must give back the full sequence "usser".
-    TypeString(*engine_, L"usser");
-    EXPECT_EQ(engine_->PeekRaw(), L"usser");
+// Regression suite for ESC restore raw under SimpleTelex + allowZwjf=true
+// (typical real-user config). Engine's display mangles many English words
+// when tone/modifier keys get consumed; PeekRaw must always return the full
+// keystroke sequence so ESC can recover the literal.
+TEST_F(TelexEngineTest, EscRestoreRaw_SimpleTelex_EnglishWords) {
+    config_.inputMethod = InputMethod::SimpleTelex;
+    config_.allowZwjf = true;
+    engine_ = std::make_unique<TypingEngine>(config_);
+
+    struct Case { const wchar_t* keys; const wchar_t* expectRaw; };
+    Case cases[] = {
+        // Double-tone-letter English words — engine consumes 1 char from display,
+        // PeekRaw must preserve full sequence so user can recover.
+        { L"ass",     L"ass"     },
+        { L"bass",    L"bass"    },
+        { L"pass",    L"pass"    },
+        { L"mass",    L"mass"    },
+        { L"less",    L"less"    },
+        { L"miss",    L"miss"    },
+        { L"sorry",   L"sorry"   },
+        { L"error",   L"error"   },
+        // EnglishBias catches str- prefix; display + raw both match.
+        { L"stress",  L"stress"  },
+        // Non-double-tone English words with tone/modifier consumption.
+        { L"where",   L"where"   },
+        { L"users",   L"users"   },
+        { L"perfect", L"perfect" },
+        // Tone-escape gesture path (user knew r=tone, double-pressed to escape).
+        // PeekRaw returns 6 chars matching the 6 keystrokes — consistent with
+        // the asus case, even though display happens to show 5.
+        { L"wherre",  L"wherre"  },
+        // Telex-novice case — wants the original literal back.
+        { L"asus",    L"asus"    },
+    };
+    for (const auto& c : cases) {
+        engine_->Reset();
+        TypeString(*engine_, c.keys);
+        // c.keys is always ASCII (English test words) — explicit narrow avoids
+        // MSVC /WX C4244 from std::string(wchar_t*, wchar_t*).
+        std::string narrow;
+        for (const wchar_t* p = c.keys; *p; ++p) narrow.push_back(static_cast<char>(*p));
+        EXPECT_EQ(engine_->PeekRaw(), c.expectRaw) << "input: " << narrow;
+    }
 }
 
 TEST_F(TelexEngineTest, EscRestoreRaw_BackspaceShrinks) {

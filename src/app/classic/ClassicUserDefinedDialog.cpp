@@ -1,4 +1,4 @@
-// NexusKey Classic — User Defined Input Dialog Implementation
+// VKey Classic — User Defined Input Dialog Implementation
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ClassicUserDefinedDialog.h"
