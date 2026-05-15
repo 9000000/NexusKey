@@ -312,11 +312,11 @@ std::wstring ConfigManager::GetAppDataDirectory() {
     wchar_t path[MAX_PATH] = {0};
     if (SUCCEEDED(SHGetFolderPathW(nullptr, CSIDL_APPDATA, nullptr, 0, path))) {
         std::wstring appData(path);
-        std::wstring nexusKeyDir = appData + L"\\VKey";
-        
+        std::wstring vkeyDir = appData + L"\\VKey";
+
         // Create directory if it doesn't exist
-        CreateDirectoryW(nexusKeyDir.c_str(), nullptr);
-        return nexusKeyDir;
+        CreateDirectoryW(vkeyDir.c_str(), nullptr);
+        return vkeyDir;
     }
 #endif
     return L".";

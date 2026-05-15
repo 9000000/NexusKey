@@ -282,7 +282,7 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
             MoveFileW(entry.path().c_str(), destPath.c_str());
             // Track the main exe for relaunch
             if (_wcsicmp(fs::path(name).extension().c_str(), L".exe") == 0 &&
-                (name.find(L"Nexus") != std::wstring::npos || name.find(L"Next") != std::wstring::npos) &&
+                name.find(L"VKey") != std::wstring::npos &&
                 name.find(L"Update") == std::wstring::npos) {
                 restoredExePath = destPath;
             }
@@ -342,8 +342,8 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
         CopyDirectoryContents(sourceDir, exeDir);
 
         // 6. Find the main executable to launch
-        // Prefer "VKey.exe", then "VKey.exe", then "VKey32.exe", then any "Nexus/Next*.exe"
-        const std::vector<std::wstring> preferredNames = { L"VKey.exe", L"VKeyClassic.exe", L"VKey.exe", L"VKey32.exe", L"VKey64.exe" };
+        // Prefer "VKey.exe", then "VKeyClassic.exe"
+        const std::vector<std::wstring> preferredNames = { L"VKey.exe", L"VKeyClassic.exe" };
         for (const auto& name : preferredNames) {
             std::wstring testPath = exeDir + L"\\" + name;
             if (fs::exists(testPath)) {
@@ -358,8 +358,8 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
                 if (!entry.is_regular_file()) continue;
                 if (_wcsicmp(entry.path().extension().c_str(), L".exe") == 0) {
                     std::wstring name = entry.path().filename().wstring();
-                    if (name.find(L"Nexus") != std::wstring::npos || name.find(L"Next") != std::wstring::npos) {
-                        // Skip updater if it's named NextKeyUpdate.exe
+                    if (name.find(L"VKey") != std::wstring::npos) {
+                        // Skip updater if it's named VKeyUpdate.exe
                         if (name.find(L"Update") == std::wstring::npos) {
                             finalExePath = entry.path().wstring();
                             break;
