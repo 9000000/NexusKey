@@ -88,6 +88,7 @@ LRESULT CALLBACK RawInputSelfHealer::WndProc(HWND hwnd, UINT msg, WPARAM wParam,
         if (msg == WM_TIMER && wParam == SELF_HEAL_TIMER_ID) {
             KillTimer(hwnd, SELF_HEAL_TIMER_ID);
             if (!self) return 0;
+            self->timerScheduled_ = false;  // released — next stall can re-arm
 
             NEXTKEY_LOG(L"  SelfHeal: timer fired — invoking reinstaller");
 
@@ -143,6 +144,15 @@ LRESULT CALLBACK RawInputSelfHealer::WndProc(HWND hwnd, UINT msg, WPARAM wParam,
         }
 
         self->consecutiveRawMisses_++;
+
+        // Skip log + scheduling while a reinstaller is already pending — the
+        // 135-events-in-1ms burst (field-observed) is the same stall, not new
+        // diagnostics. Counter keeps incrementing; logging resumes after
+        // WM_TIMER clears timerScheduled_.
+        if (self->timerScheduled_) {
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+
         NEXTKEY_LOG(L"  SelfHeal: LL hook miss #%u (elapsed=%ums, vk=0x%02X)",
                     self->consecutiveRawMisses_, elapsed, raw->data.keyboard.VKey);
 
@@ -156,7 +166,9 @@ LRESULT CALLBACK RawInputSelfHealer::WndProc(HWND hwnd, UINT msg, WPARAM wParam,
 
             // Random delay 10-50ms — avoid lockstep with hijacker reinstall.
             UINT delay = 10 + (GetTickCount() % 41);
-            SetTimer(hwnd, SELF_HEAL_TIMER_ID, delay, nullptr);
+            if (SetTimer(hwnd, SELF_HEAL_TIMER_ID, delay, nullptr)) {
+                self->timerScheduled_ = true;
+            }
             NEXTKEY_LOG(L"  SelfHeal: HOOK DEAD — scheduled reinstaller in %ums", delay);
         }
 

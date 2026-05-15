@@ -60,6 +60,11 @@ private:
     DWORD lastLlHookTime_ = 0;
     uint8_t consecutiveRawMisses_ = 0;
     DWORD lastSelfHealTime_ = 0;
+    // Burst-log suppression: stall-release flushes buffered Raw Input events
+    // in bulk (135 observed in 1ms in field log). Once reinstaller is scheduled,
+    // further misses in the same window add no diagnostic value — skip the
+    // log + SetTimer reset until WM_TIMER clears the flag.
+    bool timerScheduled_ = false;
 
     static constexpr UINT_PTR SELF_HEAL_TIMER_ID = 42;
     static constexpr uint8_t SELF_HEAL_MISS_THRESHOLD = 3;
