@@ -1,4 +1,0 @@
-- name: Build NexusKey
-  run: cmake --build build --target NextKeyApp
-- name: Zip
-  run: Compress-Archive -DestinationPath NexusKey.zip

@@ -1,7 +1,0 @@
-#include "tsf.h"
-DEFINE_GUID(CLSID_TextService,
-    0xAABBCCDD, 0xEEFF, 0x0011,
-    0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99);
-// NexusKey CLSID above for the Text Service
-namespace NextKey {
-}
