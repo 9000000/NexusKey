@@ -4761,8 +4761,11 @@ TEST_F(TelexEngineTest, EscRestoreRaw_SimpleTelex_EnglishWords) {
     for (const auto& c : cases) {
         engine_->Reset();
         TypeString(*engine_, c.keys);
-        EXPECT_EQ(engine_->PeekRaw(), c.expectRaw)
-            << "input: " << std::string(c.keys, c.keys + wcslen(c.keys));
+        // c.keys is always ASCII (English test words) — explicit narrow avoids
+        // MSVC /WX C4244 from std::string(wchar_t*, wchar_t*).
+        std::string narrow;
+        for (const wchar_t* p = c.keys; *p; ++p) narrow.push_back(static_cast<char>(*p));
+        EXPECT_EQ(engine_->PeekRaw(), c.expectRaw) << "input: " << narrow;
     }
 }
 
