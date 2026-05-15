@@ -152,6 +152,9 @@ SettingsDialog::SettingsDialog()
     // Without this, the background stays solid black instead of blurred/transparent.
     expand();
 
+    // Calculate actual dimensions before centering (handles Advanced Settings width)
+    recalcWindowSize();
+
     // 13. Finally, move the initialized, rendered, and themed window onscreen
     RECT rc;
     GetWindowRect(get_hwnd(), &rc);
