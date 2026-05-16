@@ -318,6 +318,17 @@ constexpr std::wstring_view kValidCodas[] = {
             }
         }
 
+        // Smart-accent intermediate triphthong (uye → uyê: chuyện/tuyết/…).
+        // See VietnameseTables.h::IsBareSmartTriphthongTail for rationale.
+        // Ortho-independent: classic and modern both render chuyện identically.
+        if (count == 3 &&
+            vowels[0].mod == VowelMod::None &&
+            vowels[1].mod == VowelMod::None &&
+            vowels[2].mod == VowelMod::None &&
+            NextKey::IsBareSmartTriphthongTail(vowels[0].base, vowels[1].base, vowels[2].base)) {
+            return count - 1;
+        }
+
         // Default pair: last two vowels.
         size_t firstPos = count - 2;
         size_t lastPos  = count - 1;

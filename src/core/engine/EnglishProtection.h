@@ -285,6 +285,13 @@ template<typename CharStateT>
         if (v0 == 2 && v1 == 1) continue;
         // Exception: y+a — part of the "uya" triphthong (khuya, đêm khuya, etc.)
         if (v0 == 5 && v1 == 0) continue;
+        // Exception: y+e — smart-accent intermediate for yê / uyê triphthong
+        // (yến, yêu, chuyện, nguyễn, tuyết, xuyến). Mirrors the i+e case:
+        // yê is the only Vietnamese nucleus that contains y+e, so a plain
+        // y+e in the buffer is an in-progress syllable, not English.
+        // Free-marking via a trailing 'e' later promotes e → ê and
+        // RelocateToneToTarget moves any tone onto the new ê.
+        if (v0 == 5 && v1 == 1) continue;
         if (kDiphthongClassic[v0][v1] == 0 && kDiphthongModern[v0][v1] == 0) {
             return true;
         }

@@ -229,6 +229,20 @@ constexpr uint8_t kDiphthongModern[6][6] = {
            (v1 == L'o' && v2 == L'a' && v3 == L'y');    // oay
 }
 
+/// Smart-accent intermediate triphthong: 3-vowel cluster that is the in-progress
+/// form of a Vietnamese triphthong where the LAST vowel needs a circumflex to
+/// complete the syllable (e.g. uye → uyê: chuyện/tuyết/nguyễn/xuyến). When the
+/// nucleus matches AND no vowel has a modifier yet, tone placement should fall
+/// on the trailing vowel (the one awaiting circumflex) so that a later
+/// free-marked `e`/`o` promotes base→modified-base and the tone stays put via
+/// P2 (modified-vowel priority). Mirrors the existing i+e and y+e exceptions
+/// in EnglishProtection.h::HasInvalidAdjacentVowelPair.
+[[nodiscard]] constexpr bool IsBareSmartTriphthongTail(
+        wchar_t v1, wchar_t v2, wchar_t v3) noexcept {
+    return (v1 == L'u' && v2 == L'y' && v3 == L'e');  // uye → uyê
+    // Extend here when more Vietnamese triphthong intermediates surface.
+}
+
 //=============================================================================
 // Vietnamese-aware uppercase conversion (shared)
 //=============================================================================

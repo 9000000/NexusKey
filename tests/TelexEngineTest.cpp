@@ -4805,5 +4805,52 @@ TEST_F(TelexEngineTest, EscRestoreRaw_DoesNotMutateState) {
     EXPECT_FALSE(engine_->Peek().empty());
 }
 
+// ============================================================================
+// uyê smart-accent intermediate — typing the syllable's final `e` AFTER the
+// coda+tone (e.g. chuyenje, tuyensje, xuyensje) should free-mark e → ê and
+// land the tone on ê via P2 priority. Mirrors the long-standing iê path
+// (bietje → biệt, chiense → chiến). Bug surfaced 2026-05-16.
+// ============================================================================
+class UyeSmartAccentTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        cfg_.inputMethod = InputMethod::Telex;
+        cfg_.spellCheckEnabled = true;
+        cfg_.modernOrtho = true;
+        engine_ = std::make_unique<TypingEngine>(cfg_);
+    }
+    TypingConfig cfg_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+
+TEST_F(UyeSmartAccentTest, Chuyenje_Nang)   { TypeString(*engine_, L"chuyenje");  EXPECT_EQ(engine_->Peek(), L"chuyện"); }
+TEST_F(UyeSmartAccentTest, Tuyenje_Nang)    { TypeString(*engine_, L"tuyenje");   EXPECT_EQ(engine_->Peek(), L"tuyện"); }
+TEST_F(UyeSmartAccentTest, Tuyetje_Nang)    { TypeString(*engine_, L"tuyetje");   EXPECT_EQ(engine_->Peek(), L"tuyệt"); }
+TEST_F(UyeSmartAccentTest, Nguyenje_Nang)   { TypeString(*engine_, L"nguyenje");  EXPECT_EQ(engine_->Peek(), L"nguyện"); }
+TEST_F(UyeSmartAccentTest, Xuyense_Sac)     { TypeString(*engine_, L"xuyense");   EXPECT_EQ(engine_->Peek(), L"xuyến"); }
+TEST_F(UyeSmartAccentTest, Nguyenxe_Nga)    { TypeString(*engine_, L"nguyenxe");  EXPECT_EQ(engine_->Peek(), L"nguyễn"); }
+// Canonical (ee first) must still work unchanged.
+TEST_F(UyeSmartAccentTest, Chuyeenj_Canonical) { TypeString(*engine_, L"chuyeenj"); EXPECT_EQ(engine_->Peek(), L"chuyện"); }
+// Regression guards: shouldn't disturb adjacent diphthong tone rules.
+TEST_F(UyeSmartAccentTest, Chuyf_ModernYHuyen) { TypeString(*engine_, L"chuyf");  EXPECT_EQ(engine_->Peek(), L"chuỳ"); }   // modern uy=SECOND keeps tone on y — fix targets uye (3-vowel), not uy (2-vowel)
+TEST_F(UyeSmartAccentTest, Khuyaj_UyaTrip)     { TypeString(*engine_, L"khuyaj"); EXPECT_EQ(engine_->Peek(), L"khuỵa"); }  // uya triphthong middle (per IsTriphthong table — tone on y unaffected by the new uye case)
+
+// Classic ortho: same fix, different 2-vowel tone placement preserved (no coda → tone on u, with coda → tone on y).
+class UyeSmartAccentClassicTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        cfg_.inputMethod = InputMethod::Telex;
+        cfg_.spellCheckEnabled = true;
+        cfg_.modernOrtho = false;  // CLASSIC
+        engine_ = std::make_unique<TypingEngine>(cfg_);
+    }
+    TypingConfig cfg_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+TEST_F(UyeSmartAccentClassicTest, Chuyenje_ClassicSameResult) { TypeString(*engine_, L"chuyenje"); EXPECT_EQ(engine_->Peek(), L"chuyện"); }
+TEST_F(UyeSmartAccentClassicTest, Tuyetje_ClassicSameResult)  { TypeString(*engine_, L"tuyetje");  EXPECT_EQ(engine_->Peek(), L"tuyệt"); }
+TEST_F(UyeSmartAccentClassicTest, Chuyf_ClassicUHuyen)        { TypeString(*engine_, L"chuyf");    EXPECT_EQ(engine_->Peek(), L"chùy"); }    // classic uy=CODA_AWARE no-coda → FIRST = u
+TEST_F(UyeSmartAccentClassicTest, Huynhf_ClassicYHuyen)       { TypeString(*engine_, L"huynhf");   EXPECT_EQ(engine_->Peek(), L"huỳnh"); }   // classic uy=CODA_AWARE with coda → SECOND = y
+
 }  // namespace
 }  // namespace NextKey
