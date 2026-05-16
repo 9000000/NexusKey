@@ -1303,6 +1303,7 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
 //             the key, Pass if it triggered passthrough mid-word).
 //   Step 6b — Telex bracket [/] → engine modifier for ơ/ư.
 //   Step 6c — VNI/Combined digit 1-9 with engine non-empty → HandleVniDigitKey.
+//   Step 6d — UserDefined OEM punctuation bound via customKeyMap → engine PushChar.
 //   Step 7  — Backspace with engine non-empty → HandleBackspace + Eat.
 //   Step 7b — Backspace with cross-commit macro buffer: update tracking,
 //             pass through (no return — falls into step 8/9/10).
@@ -1408,6 +1409,27 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         engine_->Count() > 0) {
         if (!cachedShift) {
             return HandleVniDigitKey(vkCode) ? KeyOutcome::Eat : KeyOutcome::Pass;
+        }
+    }
+
+    // 6d. UserDefined: OEM punctuation bound via customKeyMap → tone/modifier
+    // input. Without this branch OEM keys hit step 8 IsCommitTrigger first and
+    // never reach engine_->PushChar, so e.g. customKeyMap[';'] = ToneDot would
+    // be dead. UserDefined-only by design — VNI/Combined keep digit-only reach.
+    if (method == InputMethod::UserDefined &&
+        engine_->Count() > 0 &&
+        IsOemPunctVk(vkCode)) {
+        const wchar_t ch = VkToMacroChar(vkCode);
+        if (ch && ch < 128) {
+            auto cfg = config_.load(std::memory_order_acquire);
+            if (cfg->customKeyMap[static_cast<uint8_t>(ch)] != TypingAction::None) {
+                inputHistory_.push_back(ch);
+                engine_->PushChar(ch);
+                std::wstring composition = engine_->Peek();
+                HOOK_LOG(L"  UserDefined OEM '%c' → Peek()='%s'", ch, composition.c_str());
+                ReplaceComposition(composition);
+                return KeyOutcome::Eat;
+            }
         }
     }
 
@@ -3479,6 +3501,14 @@ bool HookEngine::IsCommitTrigger(DWORD vkCode) {
     // Delete, Insert
     if (vkCode == VK_DELETE || vkCode == VK_INSERT) return true;
 
+    return false;
+}
+
+bool HookEngine::IsOemPunctVk(DWORD vkCode) {
+    if (vkCode >= VK_OEM_1 && vkCode <= VK_OEM_3) return true;
+    if (vkCode >= VK_OEM_4 && vkCode <= VK_OEM_8) return true;
+    if (vkCode == VK_OEM_PLUS || vkCode == VK_OEM_COMMA ||
+        vkCode == VK_OEM_MINUS || vkCode == VK_OEM_PERIOD) return true;
     return false;
 }
 

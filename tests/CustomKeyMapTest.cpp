@@ -110,6 +110,29 @@ TEST_F(CustomKeyMapTest, UserDefinedCircumflexEscape) {
     EXPECT_EQ(engine.Peek(), L"aq");
 }
 
+// U2 — UserDefined OEM punctuation keys (HookEngine step 6d, bug 2026-05-16).
+// `;` bound to ToneDot không ăn vì HookEngine::IsCommitTrigger nuốt OEM trước.
+// Engine layer đã đúng — test này pin behaviour để routing fix không drift.
+TEST_F(CustomKeyMapTest, UserDefinedOemKeysSpanAllTones) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L';')] = TypingAction::ToneDot;
+    cfg.customKeyMap[static_cast<size_t>(L'\'')] = TypingAction::ToneAcute;
+    cfg.customKeyMap[static_cast<size_t>(L',')] = TypingAction::ToneGrave;
+    cfg.customKeyMap[static_cast<size_t>(L'.')] = TypingAction::ToneHook;
+    cfg.customKeyMap[static_cast<size_t>(L'/')] = TypingAction::ToneTilde;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"a;");
+    EXPECT_EQ(engine.Peek(), L"ạ");  // U+1EA1
+    TypeString(engine, L"\'");
+    EXPECT_EQ(engine.Peek(), L"á");
+    TypeString(engine, L",");
+    EXPECT_EQ(engine.Peek(), L"à");
+    TypeString(engine, L".");
+    EXPECT_EQ(engine.Peek(), L"ả");
+    TypeString(engine, L"/");
+    EXPECT_EQ(engine.Peek(), L"ã");
+}
+
 // =====================================================================
 // G1 — Default-empty parity: customKeyMap{} → behavior unchanged
 // =====================================================================

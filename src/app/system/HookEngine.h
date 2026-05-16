@@ -229,6 +229,9 @@ private:
     static bool IsCommitTrigger(DWORD vkCode);
     bool IsMacroTrigger(DWORD vkCode) const;
 
+    // OEM punctuation subset of IsCommitTrigger (DispatchKeyAction step 6d).
+    static bool IsOemPunctVk(DWORD vkCode);
+
     // Convert VK code to macro-usable char (for special-char macro keys).
     // Uses MapVirtualKeyW — returns unshifted character only (Shift state ignored).
     [[nodiscard]] static wchar_t VkToMacroChar(DWORD vkCode) noexcept;
