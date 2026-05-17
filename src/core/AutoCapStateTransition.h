@@ -82,9 +82,15 @@ ComputeAutoCapStateTransition(AutoCapState current,
         return AutoCapState::ReadyToCapitalize;
     }
 
-    // Letter key — preserve state; HandleAlphaKey will consume it.
+    // Letter key — preserve ONLY ReadyToCapitalize so HandleAlphaKey can
+    // consume the pending arm. A letter following AfterPunct means the
+    // punctuation was inside a token (".zip", "3.14", "a.b", "wed.day"),
+    // not a sentence end — drop to Idle so a later space does NOT arm
+    // capitalization of the next word.
     if (vkCode >= detail::kVkAUpper && vkCode <= detail::kVkZUpper) {
-        return current;
+        return current == AutoCapState::ReadyToCapitalize
+            ? current
+            : AutoCapState::Idle;
     }
 
     // Any other key — not a sentence boundary, drop to Idle.

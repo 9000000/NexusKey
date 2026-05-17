@@ -17,6 +17,11 @@ namespace {
 
 constexpr uint32_t kVkA          = 0x41;
 constexpr uint32_t kVkC          = 0x43;
+constexpr uint32_t kVkI          = 0x49;
+constexpr uint32_t kVkN          = 0x4E;
+constexpr uint32_t kVkP          = 0x50;
+constexpr uint32_t kVkV          = 0x56;
+constexpr uint32_t kVkZ          = 0x5A;
 constexpr uint32_t kVkReturn     = 0x0D;
 constexpr uint32_t kVkSpace      = 0x20;
 constexpr uint32_t kVkOemPeriod  = 0xBE;
@@ -72,11 +77,17 @@ TEST(AutoCapStateTransition, SlashWithoutShiftIsNotPunct) {
     EXPECT_EQ(s, AutoCapState::Idle);
 }
 
-TEST(AutoCapStateTransition, LetterKeyPreservesState) {
+TEST(AutoCapStateTransition, LetterKeyPreservesReadyToCapitalize) {
+    // ReadyToCapitalize must survive the letter event itself —
+    // HandleAlphaKey consumes the arm after the transition fires.
     EXPECT_EQ(Step(AutoCapState::ReadyToCapitalize, kVkC),
               AutoCapState::ReadyToCapitalize);
-    EXPECT_EQ(Step(AutoCapState::AfterPunct, kVkA),
-              AutoCapState::AfterPunct);
+}
+
+TEST(AutoCapStateTransition, LetterAfterPunctDropsToIdle) {
+    // Letter directly after '.' means the dot is inside a token
+    // (".zip", "3.14", "a.b"), not a sentence end.
+    EXPECT_EQ(Step(AutoCapState::AfterPunct, kVkA), AutoCapState::Idle);
 }
 
 TEST(AutoCapStateTransition, NonSentenceKeyDropsToIdle) {
@@ -128,7 +139,7 @@ TEST(AutoCapStateTransition, BugReport_CtrlEnter_then_plain_c_stays_Idle) {
     s = ComputeAutoCapStateTransition(s, kVkReturn, false, true, false, false);
     EXPECT_EQ(s, AutoCapState::Idle);
     // Ctrl+V (letter key with Ctrl)
-    s = ComputeAutoCapStateTransition(s, /*V*/ 0x56, false, true, false, false);
+    s = ComputeAutoCapStateTransition(s, kVkV, false, true, false, false);
     EXPECT_EQ(s, AutoCapState::Idle);
     // Plain 'c'
     s = Step(s, kVkC);
@@ -155,6 +166,24 @@ TEST(AutoCapStateTransition, BugReport_DotSpace_then_c_still_arms) {
     EXPECT_EQ(s, AutoCapState::ReadyToCapitalize);
     s = Step(s, kVkC);
     EXPECT_EQ(s, AutoCapState::ReadyToCapitalize);
+}
+
+// Regression pin: ".zip" + space + word must NOT capitalize the word.
+// Confirms the full sequence (not just the single-step transition) so
+// a future change to either the AfterPunct→letter or AfterPunct→space
+// rule can't reintroduce the bug.
+TEST(AutoCapStateTransition, BugReport_DotZipSpace_doesNotArm) {
+    auto s = AutoCapState::Idle;
+    s = Step(s, kVkOemPeriod);
+    EXPECT_EQ(s, AutoCapState::AfterPunct);
+    s = Step(s, kVkZ);
+    EXPECT_EQ(s, AutoCapState::Idle);
+    s = Step(s, kVkI);
+    s = Step(s, kVkP);
+    s = Step(s, kVkSpace);
+    EXPECT_EQ(s, AutoCapState::Idle);
+    s = Step(s, kVkN);
+    EXPECT_EQ(s, AutoCapState::Idle);
 }
 
 }  // namespace
