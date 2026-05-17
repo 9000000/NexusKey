@@ -1,0 +1,67 @@
+// VKey - Commit-undo cancellation exemption rule
+// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
+//
+// Pure predicate: given a keystroke, returns true if the key should be
+// EXEMPT from the cancel-Primed branches in
+// `HookEngine::HandleCommitUndo`. Two cancel sites share this rule:
+//
+//   1. Synth-guard (line ~1061): full `CancelCommitUndo()` when injector
+//      synth events are still in flight (`synthEventsPending_ > 0 &&
+//      elapsed < settleMs`). Non-exempt keys wipe `commitStack_`.
+//
+//   2. Catch-all else (line ~1124): plain demotion to Idle state
+//      (commitStack_ preserved) for any key not matching alpha / VNI
+//      digit / VK_BACK.
+//
+// Both sites must exempt the same key classes so the post-BS recovery
+// paths (tone-modifier replay, ESC restore-raw) can fire.
+//
+// Extracted from HookEngine.cpp for Linux GTest coverage: HookEngine.cpp
+// is Win32-only and not linked into the cross-platform VKeyTests target.
+// See `docs/plans/2026-05-17-esc-restore-raw-post-bs-design.md` §9 and
+// memory `project_commit_undo_synth_guard_exemption.md`.
+
+#pragma once
+
+#include "core/config/TypingConfig.h"  // InputMethod
+#include <cstdint>
+
+namespace NextKey {
+
+/// Returns true when `vkCode` should bypass the cancel-Primed branches.
+///
+/// Exempt classes:
+///   - Telex tone modifiers `s/f/r/x/j` (active in Telex / Combined).
+///   - VNI tone modifiers `1-5` without Shift (active in VNI / Combined).
+///     Shift is checked because Shift+digit produces punctuation on most
+///     layouts (Shift+1 = '!', etc.), which is not a tone keystroke.
+///   - VK_ESCAPE when `escRestoreRawEnabled` is on — same semantic class:
+///     the key only modifies the just-committed word (replaces composed
+///     Vietnamese with the user's raw keys).
+///
+/// All other keys (alpha letters, punctuation, navigation, F-keys, etc.)
+/// return false — caller must demote / cancel commit-undo state.
+[[nodiscard]] constexpr bool IsCommitUndoExemptKey(
+    uint32_t vkCode,
+    InputMethod method,
+    bool shiftHeld,
+    bool escRestoreRawEnabled) noexcept {
+    constexpr uint32_t kVkEscape = 0x1B;
+
+    const bool isTelexTone =
+        (method == InputMethod::Telex || method == InputMethod::Combined) &&
+        (vkCode == 'S' || vkCode == 'F' || vkCode == 'R' ||
+         vkCode == 'X' || vkCode == 'J');
+
+    const bool isVniTone =
+        (method == InputMethod::VNI || method == InputMethod::Combined) &&
+        vkCode >= '1' && vkCode <= '5' &&
+        !shiftHeld;
+
+    const bool isEscRestoreRawKey =
+        (vkCode == kVkEscape) && escRestoreRawEnabled;
+
+    return isTelexTone || isVniTone || isEscRestoreRawKey;
+}
+
+}  // namespace NextKey

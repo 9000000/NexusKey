@@ -10,6 +10,7 @@
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
 #include "core/CjkSwitchDecision.h"
+#include "core/CommitUndoExemption.h"
 #include "core/DigitLedWordDecision.h"
 #include "core/MacroCase.h"
 #include "core/MacroPrefix.h"
@@ -1040,24 +1041,16 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         // like Chrome) cancels the replay and produces `việts` instead of `viết`.
         // See docs/baselines/perf-baseline-d12-chrome-cross-app.md and the
         // S2D0_ChromeBug53_* engine-isolation tests.
+        // Exemption rule shared by the synth-guard and catch-all cancel branches:
+        // tone modifiers (Telex s/f/r/x/j, VNI 1-5) and ESC restore-raw all
+        // semantically "modify the previous word" — they must not demote / cancel
+        // commit-undo state. Extracted to core/CommitUndoExemption.h for Linux
+        // GTest coverage (HookEngine.cpp is Win32-only). See design 2026-05-17.
         const auto methodForTone = currentMethod_.load(std::memory_order_acquire);
-        const bool isTelexTone =
-            (methodForTone == InputMethod::Telex || methodForTone == InputMethod::Combined) &&
-            (vkCode == 'S' || vkCode == 'F' || vkCode == 'R' ||
-             vkCode == 'X' || vkCode == 'J');
-        const bool isVniTone =
-            (methodForTone == InputMethod::VNI || methodForTone == InputMethod::Combined) &&
-            vkCode >= '1' && vkCode <= '5' &&
-            !(GetKeyState(VK_SHIFT) & 0x8000);
-        const bool isToneModifier = isTelexTone || isVniTone;
-        // 2026-05-17: ESC with escRestoreRawEnabled is also exempt — same
-        // semantic class as tone modifiers (only modifies the previous word).
-        // Without this exemption, ESC post-BS hits the cancel branch when
-        // injector synth events are still in flight (typical on Win32 30ms
-        // settle, Electron 100ms), wiping commitStack_ before HandlePreDispatch
-        // can read the rawInput snapshot. See docs/plans/2026-05-17-...md.
-        const bool isEscRestoreRawKey = (vkCode == VK_ESCAPE) &&
-            escRestoreRawEnabled_.load(std::memory_order_acquire);
+        const bool shiftHeld = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        const bool escRestoreRawOn = escRestoreRawEnabled_.load(std::memory_order_acquire);
+        const bool isCommitUndoExempt = IsCommitUndoExemptKey(
+            vkCode, methodForTone, shiftHeld, escRestoreRawOn);
         // Sprint 2 D5: settle window is now per-host. RichEdit (0 ms) lets
         // commit-undo replay immediately; Win32 (30 ms) tightens the gate
         // ~3× vs the legacy 100 ms hardcode; Electron/Console (100 ms) keeps
@@ -1067,7 +1060,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         const DWORD settleMs = static_cast<DWORD>(
             injector_.load(std::memory_order_acquire)->SettleBudget().count());
         if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < settleMs
-            && !isToneModifier && !isEscRestoreRawKey) {
+            && !isCommitUndoExempt) {
             HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
                      synthEventsPending_.load(), vkCode);
             CancelCommitUndo();
@@ -1121,13 +1114,10 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
             ReplayCommittedChars();
             HandleBackspace();
             return KeyOutcome::Eat;
-        } else if (!isEscRestoreRawKey) {
+        } else if (!isCommitUndoExempt) {
             // Any other key → cancel commit-undo.
-            // ESC with escRestoreRawEnabled is exempt — HandlePreDispatch's ESC
-            // branch reads commitStack_.back().rawInput from Primed state to
-            // inject the user's raw keys (design 2026-05-17). Without this
-            // exemption ESC would land in this catch-all and demote state to
-            // Idle, defeating the post-BS restore path.
+            // Exempt keys (tone modifiers, ESC restore-raw) keep state Primed
+            // so the downstream replay / restore handlers can read commitStack_.
             commitUndoState_ = CommitUndoState::Idle;
         }
     }
