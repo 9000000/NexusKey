@@ -16,8 +16,8 @@
 #include "EditSession.h"
 #include "Define.h"
 
-#include <msctf.h>
 #include <string>
+#include <msctf.h>
 
 namespace NextKey {
 namespace TSF {

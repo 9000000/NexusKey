@@ -3443,7 +3443,14 @@ HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
     }
     const auto& top = commitStack_.back();
     if (top.rawInput.empty()) return KeyOutcome::Fallthrough;
-    const size_t bsCount = top.text.size();  // Primed: trailing commit-trigger already deleted by user's BS
+    // Primed: trailing commit-trigger already deleted by user's BS. BS count covers
+    // the committed body only. Non-Unicode code tables (TCVN3, VNI-Win) encode each
+    // wchar_t into multiple bytes — mirror HandleBackspace's width-sum logic.
+    size_t bsCount = top.text.size();
+    if (currentCodeTable_ != CodeTable::Unicode) {
+        bsCount = 0;
+        for (auto w : top.widths) bsCount += w;
+    }
     HOOK_LOG(L"  EscRestoreRaw[post-BS]: bs=%zu raw='%ls' text='%ls'",
              bsCount, top.rawInput.c_str(), top.text.c_str());
     if (!inj->Replace(bsCount, std::wstring_view(top.rawInput))) {
