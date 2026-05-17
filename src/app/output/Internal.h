@@ -13,6 +13,9 @@
 
 #include <windows.h>
 
+#include <cstddef>
+#include <string_view>
+
 namespace NextKey::Output::Internal {
 
 using SendInputFn          = UINT (WINAPI*)(UINT, LPINPUT, int);
@@ -48,5 +51,19 @@ extern SynthCounterFn        g_synthCounterCallback;  // null = disabled
 // these diverge, own synth events are not recognized as own → infinite
 // re-entry loop. The integration test (chaos corpus) catches this.
 constexpr ULONG_PTR kVKeyExtraInfo = 0x4E4BULL;
+
+// Chromium suggest-dismiss bait predicate, shared by Win32 + Split
+// injectors. Pure-BS (text empty) skips the bait because Edge/Chrome
+// inline autocomplete is a SELECTION inside the input — typing the
+// U+202F bait would replace it and the trailing extra-BS would eat
+// one user character ("face" + BS → "fac"). Replace operations
+// (text non-empty) keep the bait so a transform's chars don't land
+// into a stale suggestion frame.
+[[nodiscard]] constexpr bool
+ShouldEmitBait(bool needsBaitCharPrefix,
+               std::size_t bsCount,
+               std::wstring_view text) noexcept {
+    return needsBaitCharPrefix && bsCount > 0 && !text.empty();
+}
 
 }  // namespace NextKey::Output::Internal

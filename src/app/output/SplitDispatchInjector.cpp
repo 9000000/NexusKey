@@ -47,14 +47,12 @@ INPUT MakeUnicodeChar(WCHAR ch, bool keyup) noexcept {
 bool SplitDispatchInjector::Replace(std::size_t bsCount,
                                     std::wstring_view text) noexcept {
     // Batch 1: bait char (Chromium suggest-dismiss, when applicable) +
-    // backspaces. The bait fires when needsBaitCharPrefix_ AND bsCount > 0
-    // — same predicate as Win32SendInputInjector. WebView2 / Electron-on-
-    // Chromium hosts need both the split-with-Sleep channel and the bait
-    // prefix, so the responsibility lives here too rather than only in
-    // the Win32 impl.
+    // backspaces. Predicate shared with Win32SendInputInjector via
+    // Internal::ShouldEmitBait — WebView2 / Electron-on-Chromium hosts
+    // inherit the same selection-eat quirk as Edge's omnibox.
     std::array<INPUT, kMaxBatch> bsBuf{};
     std::size_t bi = 0;
-    const bool emitBait = needsBaitCharPrefix_ && bsCount > 0;
+    const bool emitBait = Internal::ShouldEmitBait(needsBaitCharPrefix_, bsCount, text);
     if (emitBait) {
         if (bi + 2 > kMaxBatch) return false;
         bsBuf[bi++] = MakeUnicodeChar(0x202F, /*keyup=*/false);

@@ -113,6 +113,22 @@ TEST_F(SplitDispatchInjectorTest, BaitCharSkippedWhenBsCountZero) {
     EXPECT_EQ(sleepDelays.size(), 0u);
 }
 
+TEST_F(SplitDispatchInjectorTest, BaitCharSkippedOnPureBackspace) {
+    // Mirror of Win32SendInputInjectorTest::BaitCharSkippedOnPureBackspace.
+    // WebView2 / Tauri / Dorion inherit the same Chromium inline-autocomplete
+    // selection-eat quirk as Edge's omnibox — pure-BS must NOT type the
+    // U+202F bait, or the selection-replace would eat one user character.
+    SplitDispatchInjector inj(/*sleepMsBetweenBatches=*/6,
+                              /*needsBaitCharPrefix=*/true);
+    EXPECT_TRUE(inj.Replace(2, L""));
+    // Expected: 2 BS × (down + up) = 4 events. No bait, no extra BS, no Sleep.
+    ASSERT_EQ(capturedInputs.size(), 4u);
+    for (size_t i = 0; i < 4; ++i) {
+        EXPECT_EQ(capturedInputs[i].ki.wVk, VK_BACK);
+    }
+    EXPECT_EQ(sleepDelays.size(), 0u);  // pure-BS → no second batch → no Sleep
+}
+
 TEST_F(SplitDispatchInjectorTest, ReplaceNotifiesSynthCounterPerBatch) {
     // D5: the split dispatch fires Internal::TrackedSendInput TWICE
     // (BS batch then char batch separated by Sleep). Each call invokes

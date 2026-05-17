@@ -33,7 +33,7 @@ TEST(OutputInjectorFactoryTest, ChromiumFlagStillWin32ButCarriesBaitHint) {
     ASSERT_NE(inj, nullptr);
     EXPECT_NE(dynamic_cast<Win32SendInputInjector*>(inj.get()), nullptr);
     // (Bait-char prefix behavior verified separately in
-    // Win32SendInputInjectorTest.BaitCharPrefixWhenFlaggedAndPureBackspace.)
+    // Win32SendInputInjectorTest.BaitCharFiresOnReplaceWithText.)
 }
 
 TEST(OutputInjectorFactoryTest, RichEditD2DPTReturnsRichEditImpl) {

@@ -37,30 +37,23 @@ TEST_F(Win32SendInputInjectorTest, ReplaceWithCharsSendsBatch) {
     EXPECT_EQ(capturedInputs[6].ki.wScan, L'i');
 }
 
-TEST_F(Win32SendInputInjectorTest, BaitCharPrefixWhenFlaggedAndPureBackspace) {
-    // Chromium variant + pure-BS request → prepends U+202F + extra BS
-    // (replicates HookEngine::SendBackspaces line ~3121).
+TEST_F(Win32SendInputInjectorTest, BaitCharSkippedOnPureBackspace) {
+    // Pure-BS skips bait — see Internal::ShouldEmitBait comment for why.
     Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
     EXPECT_TRUE(inj.Replace(2, L""));
-    // Expected: 1 bait char (down + up = 2) + 3 BS down/up (= 6) = 8 events
-    // (3 BS = original 2 + 1 extra to delete the bait)
-    ASSERT_EQ(capturedInputs.size(), 8u);
-    EXPECT_NE(capturedInputs[0].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
-    EXPECT_EQ(capturedInputs[0].ki.wScan, 0x202F);
-    EXPECT_EQ(capturedInputs[0].ki.dwFlags & KEYEVENTF_KEYUP, 0u);  // bait down
-    EXPECT_NE(capturedInputs[1].ki.dwFlags & KEYEVENTF_KEYUP, 0u);  // bait up
-    for (size_t i = 2; i < 8; ++i) {
-        EXPECT_EQ(capturedInputs[i].ki.wVk, VK_BACK);
+    // Expected: 2 BS × (down + up) = 4 events. No bait, no extra BS.
+    ASSERT_EQ(capturedInputs.size(), 4u);
+    for (size_t i = 0; i < 4; ++i) {
+        EXPECT_EQ(capturedInputs[i].ki.wVk, VK_BACK)
+            << "event[" << i << "].wVk should be VK_BACK";
     }
 }
 
-TEST_F(Win32SendInputInjectorTest, BaitCharFiresEvenWhenTextNonEmpty) {
-    // D3 contract change: the bait fires whenever bsCount > 0 on the
-    // Chromium variant — partial-replace (BS + chars) needs autocomplete
-    // dismissed too, not just pure-BS. Previously (D1) bait was gated on
-    // text.empty(). HookEngine ReplaceComposition's pre-injector logic
-    // (lines ~2891 / ~3026) already emitted bait in this configuration —
-    // the gate is moved into the injector to centralize the channel quirk.
+TEST_F(Win32SendInputInjectorTest, BaitCharFiresOnReplaceWithText) {
+    // Partial-replace (BS + chars) keeps the bait — a tone/modifier
+    // transform replaces the trailing chars and must dismiss any
+    // pending Chromium suggest first so subsequent chars land into
+    // the field, not into a stale suggestion frame.
     Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
     EXPECT_TRUE(inj.Replace(1, L"x"));
     // Expected: bait (down+up = 2) + 2 BS down/up (= 4: 1 orig + 1 extra
