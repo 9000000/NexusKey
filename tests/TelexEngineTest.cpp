@@ -4682,6 +4682,24 @@ TEST_F(TelexEngineTest, EscRestoreRaw_BasicVirus) {
     EXPECT_EQ(engine_->PeekRaw(), L"virus");
 }
 
+TEST_F(TelexEngineTest, EscRestoreRaw_PeekRawClearedByCommit) {
+    // Contract test for design 2026-05-17: callers MUST snapshot PeekRaw()
+    // BEFORE Commit() because Commit() internally calls Reset() which clears
+    // escRawHistory_. See TypingEngine.cpp:1495,1504,1539,1546 -> Reset() ->
+    // escRawHistory_.clear() (line 1553).
+    TypeString(*engine_, L"virus");
+    ASSERT_EQ(engine_->PeekRaw(), L"virus")
+        << "Sanity: raw is populated while engine has buffer";
+
+    std::wstring committed = engine_->Commit();
+    EXPECT_FALSE(committed.empty())
+        << "Commit() should return non-empty composed text";
+    EXPECT_EQ(engine_->PeekRaw(), L"")
+        << "Commit() must call Reset() which clears escRawHistory_; "
+           "callers MUST snapshot PeekRaw() BEFORE Commit().";
+    EXPECT_EQ(engine_->Count(), 0u);
+}
+
 TEST_F(TelexEngineTest, EscRestoreRaw_PreservesUpperCase) {
     TypeString(*engine_, L"VIRUS");
     EXPECT_EQ(engine_->PeekRaw(), L"VIRUS");
