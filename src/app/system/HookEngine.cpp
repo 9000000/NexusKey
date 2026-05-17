@@ -1121,8 +1121,13 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
             ReplayCommittedChars();
             HandleBackspace();
             return KeyOutcome::Eat;
-        } else {
-            // Any other key → cancel commit-undo
+        } else if (!isEscRestoreRawKey) {
+            // Any other key → cancel commit-undo.
+            // ESC with escRestoreRawEnabled is exempt — HandlePreDispatch's ESC
+            // branch reads commitStack_.back().rawInput from Primed state to
+            // inject the user's raw keys (design 2026-05-17). Without this
+            // exemption ESC would land in this catch-all and demote state to
+            // Idle, defeating the post-BS restore path.
             commitUndoState_ = CommitUndoState::Idle;
         }
     }
