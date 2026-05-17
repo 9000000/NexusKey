@@ -84,6 +84,21 @@ enum class AdminRestartResult {
     return L"\"" + std::wstring(path) + L"\"";
 }
 
+/// Get the directory of the current executable (no trailing slash).
+/// Returns empty string if GetModuleFileNameW or path parsing fails.
+[[nodiscard]] inline std::wstring GetInstallDirectory() noexcept {
+    wchar_t path[MAX_PATH] = {};
+    if (GetModuleFileNameW(nullptr, path, MAX_PATH) == 0) {
+        return {};
+    }
+    std::wstring pathStr(path);
+    auto slash = pathStr.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) {
+        return {};
+    }
+    return pathStr.substr(0, slash);
+}
+
 /// Remove the registry startup entry (HKCU\...\Run)
 inline void RemoveRegistryStartup() noexcept {
     HKEY hKey = nullptr;
@@ -196,11 +211,8 @@ inline void RemoveRegistryStartup() noexcept {
 ///     Scheduler MMC for user debug).
 /// Requires UAC to register under \VKey\ folder.
 [[nodiscard]] inline bool CreateWatchdogScheduledTask() noexcept {
-    // Build path to VKeyWatchdog.exe — same dir as current EXE.
-    wchar_t exePath[MAX_PATH] = {};
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    std::wstring exeStr(exePath);
-    std::wstring dirStr = exeStr.substr(0, exeStr.find_last_of(L"\\/"));
+    std::wstring dirStr = GetInstallDirectory();
+    if (dirStr.empty()) return false;
     std::wstring watchdogPath = dirStr + L"\\VKeyWatchdog.exe";
 
     // Get current username BEFORE elevation — ensures task triggers for the

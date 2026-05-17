@@ -28,6 +28,7 @@
 #include "system/UpdateInstaller.h"
 #include "system/PendingDllApply.h"
 #include "system/ToastPopup.h"
+#include "system/WatchdogController.h"
 #include "helpers/AppHelpers.h"
 
 #include "classic/ClassicSettingsDialog.h"
@@ -67,6 +68,7 @@ static std::unique_ptr<QuickConvert> g_quickConvert;
 static HotkeyManager g_hotkeyManager;
 static HotkeyManager::SlotId g_toggleHotkeySlot = 0;
 static HotkeyManager::SlotId g_convertHotkeySlot = 0;
+static WatchdogController g_watchdog;  // Owns heartbeat + Task Scheduler entry + VKeyWatchdog.exe lifecycle
 static HINSTANCE g_hInstance = nullptr;
 
 // Forward declarations
@@ -278,12 +280,18 @@ static void OnMenuCommand(TrayMenuId id) {
         }
 
         case TrayMenuId::Exit:
+            // Tell watchdog this is a user-initiated quit — skip respawn.
+            g_watchdog.SignalGracefulShutdown();
             g_running.store(false, std::memory_order_relaxed);
             PostQuitMessage(0);
             break;
 
         case TrayMenuId::RestartWindows:
             RestartWindowsWithPrompt(g_trayIcon.GetMessageWindow());
+            break;
+
+        case TrayMenuId::ToggleWatchdog:
+            g_watchdog.Toggle(g_trayIcon.GetMessageWindow());
             break;
 
         default: {
@@ -436,6 +444,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         NEXTKEY_LOG(L"Startup task missing — fell back to registry, disabled admin mode in config");
     }
 
+    // Watchdog is opt-in (default OFF). Init mirrors the config flag, and —
+    // if previously enabled — launches VKeyWatchdog.exe and starts the
+    // heartbeat thread (single-instance mutex inside watchdog dedups against
+    // the logon-trigger task, so re-launch is safe).
+    g_watchdog.Init(systemConfig);
+
     // Check for update failure marker
     bool updateJustFailed = false;
     {
@@ -538,7 +552,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             (ff & FeatureFlags::SMART_SWITCH) != 0,
             (ff & FeatureFlags::MACRO_ENABLED) != 0,
             state.inputMethod,
-            static_cast<CodeTable>(state.codeTable)
+            static_cast<CodeTable>(state.codeTable),
+            g_watchdog.IsEnabled()
         };
     });
 
@@ -661,6 +676,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     CleanupFloatingIcon();
     g_hotkeyManager.Uninstall();
+    // Catch graceful exits that didn't go through the tray-Exit branch (e.g.
+    // WM_CLOSE from the updater handover) so the watchdog skips respawn.
+    // Idempotent — safe even if SignalGracefulShutdown was already called.
+    g_watchdog.SignalGracefulShutdown();
     // Sprint 1 D9: stop the worker before HookEngine — handler captures
     // g_hookEngine, so any in-flight SyncConfigFromSharedState must finish
     // before HookEngine teardown.

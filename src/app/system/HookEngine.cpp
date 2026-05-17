@@ -31,6 +31,13 @@ namespace NextKey {
 /// the top of the hook chain. Defined once to avoid duplication.
 static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 
+/// `WM_APP_REINSTALL_HOOKS` wParam — labels which trigger fired the reinstall.
+/// Logged by HookThreadProc so field-collected logs can distinguish causes
+/// (e.g. confirm whether Java-trigger reinstalls are frequent enough to
+/// indicate jnativehook re-arming during a JVM session).
+static constexpr WPARAM REINSTALL_REASON_CHROMIUM = 0;
+static constexpr WPARAM REINSTALL_REASON_JAVA     = 1;
+
 // ═══════════════════════════════════════════════════════════
 // HOOK_LOG → unified runtime-gated Logger (core/Logger.h).
 // Enable from Settings → System → "Bật debug log". Output file is shared
@@ -299,7 +306,7 @@ void HookEngine::HookThreadProc() {
     // HookSelfHealer's hidden window (WM_INPUT + one-shot WM_TIMER, ~5-20μs
     // handlers, well within LowLevelHooksTimeout) and WM_APP_REINSTALL_HOOKS
     // posted by OnFocusChanged for Chromium / Java top-of-chain priority.
-    // wParam encodes reason: 0=chromium (default), 1=java.
+    // wParam carries REINSTALL_REASON_* (see top of file).
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         if (msg.message == WM_APP_REINSTALL_HOOKS) {
@@ -312,7 +319,7 @@ void HookEngine::HookThreadProc() {
                 mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, cachedHInstance_, 0);
             }
             HOOK_LOG(L"HookThreadProc: Hooks reinstalled (top of chain) reason=%ls",
-                     msg.wParam == 1 ? L"java" : L"chromium");
+                     msg.wParam == REINSTALL_REASON_JAVA ? L"java" : L"chromium");
             continue;
         }
         TranslateMessage(&msg);
@@ -1418,13 +1425,19 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
     // input. Without this branch OEM keys hit step 8 IsCommitTrigger first and
     // never reach engine_->PushChar, so e.g. customKeyMap[';'] = ToneDot would
     // be dead. UserDefined-only by design — VNI/Combined keep digit-only reach.
-    if (method == InputMethod::UserDefined &&
-        engine_->Count() > 0 &&
-        IsOemPunctVk(vkCode)) {
+    //
+    // Empty-buffer gate: tone/modifier actions need an existing vowel target,
+    // so we keep them mid-word-only. Insert-type actions (HornInsertO/U,
+    // Insert*, HornOrInsertU plain) synthesise fresh state and MUST fire at
+    // word start too — user feedback 2026-05-17: `[`/`]` bound to HornInsertO/U
+    // produced literal `[`/`]` instead of ơ/ư at word start.
+    if (method == InputMethod::UserDefined && IsOemPunctVk(vkCode)) {
         const wchar_t ch = VkToMacroChar(vkCode);
         if (ch && ch < 128) {
             auto cfg = config_.load(std::memory_order_acquire);
-            if (cfg->customKeyMap[static_cast<uint8_t>(ch)] != TypingAction::None) {
+            TypingAction act = cfg->customKeyMap[static_cast<uint8_t>(ch)];
+            if (act != TypingAction::None &&
+                (engine_->Count() > 0 || IsInsertTypeAction(act))) {
                 inputHistory_.push_back(ch);
                 engine_->PushChar(ch);
                 std::wstring composition = engine_->Peek();
@@ -2993,7 +3006,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         exeName == L"javaw.exe" ||
         exeName == L"java.exe";
     if (hookThreadId_ && (localElectronApp || isBrowser || isJavaApp)) {
-        const WPARAM reason = isJavaApp ? 1 : 0;  // 0=chromium, 1=java
+        const WPARAM reason = isJavaApp ? REINSTALL_REASON_JAVA : REINSTALL_REASON_CHROMIUM;
         PostThreadMessageW(hookThreadId_, WM_APP_REINSTALL_HOOKS, reason, 0);
     }
 

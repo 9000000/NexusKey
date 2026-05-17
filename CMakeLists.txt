@@ -163,6 +163,8 @@ add_executable(VKeyApp WIN32
     src/app/system/HookSelfHealer.cpp
     src/app/system/HeartbeatPublisher.h
     src/app/system/HeartbeatPublisher.cpp
+    src/app/system/WatchdogController.h
+    src/app/system/WatchdogController.cpp
     src/app/system/MainThreadWorker.h
     src/app/system/MainThreadWorker.cpp
     src/app/system/HotkeyManager.h
@@ -252,6 +254,8 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/system/HookSelfHealer.cpp
         src/app/system/HeartbeatPublisher.h
         src/app/system/HeartbeatPublisher.cpp
+        src/app/system/WatchdogController.h
+        src/app/system/WatchdogController.cpp
         src/app/system/MainThreadWorker.h
         src/app/system/MainThreadWorker.cpp
         src/app/system/HotkeyManager.h
