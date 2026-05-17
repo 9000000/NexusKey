@@ -159,8 +159,6 @@ add_executable(VKeyApp WIN32
     src/app/system/FloatingIcon.cpp
     src/app/system/HookEngine.h
     src/app/system/HookEngine.cpp
-    src/app/system/HookSelfHealer.h
-    src/app/system/HookSelfHealer.cpp
     src/app/system/HeartbeatPublisher.h
     src/app/system/HeartbeatPublisher.cpp
     src/app/system/WatchdogController.h
@@ -250,8 +248,6 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/system/FloatingIcon.cpp
         src/app/system/HookEngine.h
         src/app/system/HookEngine.cpp
-        src/app/system/HookSelfHealer.h
-        src/app/system/HookSelfHealer.cpp
         src/app/system/HeartbeatPublisher.h
         src/app/system/HeartbeatPublisher.cpp
         src/app/system/WatchdogController.h
@@ -483,7 +479,6 @@ if(WIN32)
     list(APPEND NEXTKEY_TEST_SOURCES
         tests/ConfigManagerTest.cpp
         tests/ConfigEventTest.cpp
-        tests/HookSelfHealerTest.cpp
         tests/HeartbeatPublisherTest.cpp
         # Sprint 2 T3 — IOutputInjector unit tests + impl sources for linkage.
         # VKeyTests links VKeyCore (which excludes output/), so impls
@@ -499,7 +494,6 @@ if(WIN32)
         src/app/output/RichEditEmReplaceSelInjector.cpp
         src/app/output/SplitDispatchInjector.cpp
         src/app/output/OutputInjectorFactory.cpp
-        src/app/system/HookSelfHealer.cpp
         src/app/system/HeartbeatPublisher.cpp
     )
 endif()

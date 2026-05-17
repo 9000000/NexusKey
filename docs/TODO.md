@@ -236,7 +236,7 @@ framework). Codebase mapping + investment decision below.
 | Effort | High (~1-2 sprint, foundation rewire) | Low (~1.5 day) |
 | Risk | High — race conditions, key down/up reorder, modifier desync | Low — pure caching layer, easy to audit |
 | Premise verified? | ❌ — anh questioned H6 premise | ✅ — measurable Win32 syscall count before/after |
-| Existing partial coverage | ✅ `HookSelfHealer` + heartbeat (PR #154) | Single-slot `cachedFocusedHwnd_` only |
+| Existing partial coverage | `HeartbeatPublisher` + `VKeyWatchdog.exe` (PR #154); `HookSelfHealer` reverted 2026-05-17 — own-process bypass | Single-slot `cachedFocusedHwnd_` only |
 | Failure mode if mistake | Lost key events / wrong order / break ALL apps | Stale cache → 1 misclassify / HWND, recover via invalidation |
 
 **Decision:** start with B. A defers until LL hook timeout / parallel

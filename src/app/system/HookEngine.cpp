@@ -289,24 +289,11 @@ void HookEngine::HookThreadProc() {
     }
     hookStartCv_.notify_one();
 
-    // Start Raw Input self-healer (best-effort — hook still works without it).
-    selfHealer_ = std::make_unique<RawInputSelfHealer>(
-        cachedHInstance_,
-        [this]() { return ReinstallKeyboardAndMouseHooks(); });
-    if (!selfHealer_->Start()) {
-        HOOK_LOG(L"HookThreadProc: HookSelfHealer Start FAILED (self-healing disabled)");
-        selfHealer_.reset();
-    } else {
-        HOOK_LOG(L"HookThreadProc: HookSelfHealer active");
-    }
-
     HOOK_LOG(L"HookThreadProc: pump started tid=%lu", hookThreadId_);
 
-    // Message pump. Besides LL hook dispatch, this thread also services
-    // HookSelfHealer's hidden window (WM_INPUT + one-shot WM_TIMER, ~5-20μs
-    // handlers, well within LowLevelHooksTimeout) and WM_APP_REINSTALL_HOOKS
-    // posted by OnFocusChanged for Chromium / Java top-of-chain priority.
-    // wParam carries REINSTALL_REASON_* (see top of file).
+    // Message pump. Besides LL hook dispatch, this thread services
+    // WM_APP_REINSTALL_HOOKS posted by OnFocusChanged for Chromium / Java
+    // top-of-chain priority. wParam carries REINSTALL_REASON_* (see top of file).
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         if (msg.message == WM_APP_REINSTALL_HOOKS) {
@@ -324,14 +311,6 @@ void HookEngine::HookThreadProc() {
         }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
-    }
-
-    // Self-heal teardown on the hook thread (window owner). Must run here,
-    // not in dtor — DestroyWindow requires the creating thread.
-    if (selfHealer_) {
-        selfHealer_->Stop();
-        // unique_ptr release happens in ~HookEngine; the hidden window is
-        // already destroyed by Stop() above (Stop is idempotent).
     }
 
     // Must unhook on the same thread that installed (MSDN requirement).
@@ -664,11 +643,6 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
     try {
         HookEngine* self = s_instance.load(std::memory_order_relaxed);
         auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
-
-        // Self-heal heartbeat — delegated to HookSelfHealer (Rule 4 extraction).
-        if (self && self->selfHealer_) {
-            self->selfHealer_->RecordHookFire();
-        }
 
         // Always track our own synthetic events regardless of nCode.
         // When nCode < 0, Windows tells us to pass the message along — but the event

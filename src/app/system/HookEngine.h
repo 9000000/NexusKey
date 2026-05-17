@@ -11,7 +11,6 @@
 #include "core/config/TypingConfig.h"
 #include "core/AutoCapStateTransition.h"
 #include "core/SmartSwitchManager.h"
-#include "HookSelfHealer.h"
 #include <Windows.h>
 #include <functional>
 #include <atomic>
@@ -499,14 +498,9 @@ private:
     mutable std::mutex stateMutex_;
     void HookThreadProc();                         // runs on hookThread_
 
-    // Self-heal — extracted to HookSelfHealer module (v3.0.0).
-    // Owned via interface for testability + future swap (e.g., out-of-process
-    // supervisor variant).
-    std::unique_ptr<IHookSelfHealer> selfHealer_;
-
-    // Reinstall both keyboard and mouse LL hooks. Used by HookSelfHealer
-    // when it detects the LL hook was hijacked. Returns false if either
-    // SetWindowsHookExW call fails (caller logs GetLastError).
+    // Reinstall both keyboard and mouse LL hooks. Used by WM_APP_REINSTALL_HOOKS
+    // path (proactive reinstall on focus → Chromium / Electron / Java). Returns
+    // false if either SetWindowsHookExW call fails (caller logs GetLastError).
     [[nodiscard]] bool ReinstallKeyboardAndMouseHooks();
 
     // Modifier tracking state (for double-Alt and layout change detection)
