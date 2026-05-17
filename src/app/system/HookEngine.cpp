@@ -1050,6 +1050,14 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
             vkCode >= '1' && vkCode <= '5' &&
             !(GetKeyState(VK_SHIFT) & 0x8000);
         const bool isToneModifier = isTelexTone || isVniTone;
+        // 2026-05-17: ESC with escRestoreRawEnabled is also exempt — same
+        // semantic class as tone modifiers (only modifies the previous word).
+        // Without this exemption, ESC post-BS hits the cancel branch when
+        // injector synth events are still in flight (typical on Win32 30ms
+        // settle, Electron 100ms), wiping commitStack_ before HandlePreDispatch
+        // can read the rawInput snapshot. See docs/plans/2026-05-17-...md.
+        const bool isEscRestoreRawKey = (vkCode == VK_ESCAPE) &&
+            escRestoreRawEnabled_.load(std::memory_order_acquire);
         // Sprint 2 D5: settle window is now per-host. RichEdit (0 ms) lets
         // commit-undo replay immediately; Win32 (30 ms) tightens the gate
         // ~3× vs the legacy 100 ms hardcode; Electron/Console (100 ms) keeps
@@ -1059,7 +1067,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         const DWORD settleMs = static_cast<DWORD>(
             injector_.load(std::memory_order_acquire)->SettleBudget().count());
         if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < settleMs
-            && !isToneModifier) {
+            && !isToneModifier && !isEscRestoreRawKey) {
             HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
                      synthEventsPending_.load(), vkCode);
             CancelCommitUndo();
