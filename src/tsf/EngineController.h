@@ -58,6 +58,22 @@ public:
         return config_.escRestoreRawEnabled;
     }
 
+    /// Commit-undo state machine for ESC-restore-raw post-BS (design 2026-05-17).
+    /// Mirrors HookEngine's state machine but lighter — single-entry cache, no replay.
+    enum class CommitUndoState : uint8_t {
+        Idle   = 0,
+        Ready  = 1,  // Just CommitWithChar'd — waiting for first BS
+        Primed = 2,  // BS happened in Ready — ESC will now restore from cache
+    };
+
+    [[nodiscard]] bool IsCommitUndoReady()  const noexcept { return commitUndoState_ == CommitUndoState::Ready; }
+    [[nodiscard]] bool IsCommitUndoPrimed() const noexcept { return commitUndoState_ == CommitUndoState::Primed; }
+    [[nodiscard]] bool WithinUndoWindow()   const noexcept;
+    void TransitionUndoReadyToPrimed() noexcept;
+    void ResetCommitUndo() noexcept;
+    void OnNonRestoreKey() noexcept;  // Any key besides BS/ESC in Ready/Primed → Idle
+    [[nodiscard]] bool TryRestoreLastCommitRaw(ITfContext* pContext);
+
     /// Reset engine state
     void Reset();
 
@@ -168,6 +184,20 @@ private:
     // consumed by HandleKey(VK_BACK). CComPtr auto-manages ref count.
     std::wstring pendingReviveWord_;
     CComPtr<ITfRange> pendingReviveRange_;
+
+    // Commit-undo cache for ESC restore-raw post-BS (design 2026-05-17).
+    struct LastCommit {
+        std::wstring text;       // What was written to document (including trailing char)
+        std::wstring rawInput;   // engine_->PeekRaw() snapshot before Commit reset
+        bool hasTrailingChar = false;
+        DWORD timestamp = 0;     // GetTickCount() at commit
+    };
+    LastCommit lastCommit_;
+    CommitUndoState commitUndoState_ = CommitUndoState::Idle;
+
+    static constexpr DWORD kCommitUndoTimeoutMs = 1500;
+
+    void RecordCommitSnapshot(std::wstring text, std::wstring rawInput, bool hasTrailingChar) noexcept;
 };
 
 }  // namespace TSF

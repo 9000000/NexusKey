@@ -114,9 +114,13 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
         if (pEngineController_) {
             pEngineController_->CheckConfigEvent();
             pEngineController_->RefreshFlags();
+            // Focus change invalidates the commit-undo window — cursor may have
+            // moved arbitrarily relative to the cached lastCommit_ text.
+            pEngineController_->ResetCommitUndo();
         }
     } else {
         TSF_LOG(L"OnSetFocus: background");
+        if (pEngineController_) pEngineController_->ResetCommitUndo();
     }
     return S_OK;
 }
@@ -133,6 +137,14 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
     if (pEngineController_->IsContextBlocked()) {
         *pfEaten = FALSE;
         return S_OK;
+    }
+
+    // Commit-undo invalidation (design 2026-05-17): any key besides BS/ESC during
+    // Ready/Primed means the user has moved on — drop the cache to prevent stale
+    // restore on a later ESC. Modifier keys (Ctrl/Alt/Win/Shift) also reset; if
+    // the user is starting a chord, the undo window is over.
+    if (wParam != VK_BACK && wParam != VK_ESCAPE) {
+        pEngineController_->OnNonRestoreKey();
     }
 
     // Safety check: recover from engine/composition desync.
@@ -176,12 +188,22 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
     // pattern for action keys (per CLAUDE.md "TSF: commit-in-test-phase allowed
     // for action keys") — no text-insert race. The same branch in OnKeyDown
     // handles Chromium hosts that skip OnTestKeyDown.
-    if (wParam == VK_ESCAPE
-        && pEngineController_->IsEscRestoreRawEnabled()
-        && pEngineController_->HasEngineBuffer()) {
-        if (pEngineController_->CommitRawAndEnd(pContext)) {
-            *pfEaten = TRUE;
-            return S_OK;
+    //
+    // Post-BS extension (design 2026-05-17): when engine is empty but commit-undo
+    // is Primed (user typed space then BS), restore raw from lastCommit_ cache
+    // via TryRestoreLastCommitRaw.
+    if (wParam == VK_ESCAPE && pEngineController_->IsEscRestoreRawEnabled()) {
+        if (pEngineController_->HasEngineBuffer()) {
+            if (pEngineController_->CommitRawAndEnd(pContext)) {
+                *pfEaten = TRUE;
+                return S_OK;
+            }
+        } else if (pEngineController_->IsCommitUndoPrimed()
+                   && pEngineController_->WithinUndoWindow()) {
+            if (pEngineController_->TryRestoreLastCommitRaw(pContext)) {
+                *pfEaten = TRUE;
+                return S_OK;
+            }
         }
     }
 
@@ -220,6 +242,30 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
     }
 
     bool wantKey = pEngineController_->WantKey(static_cast<UINT>(wParam), true);
+
+    // Commit-undo BS detection (design 2026-05-17): Ready → Primed.
+    // When the user just CommitWithChar'd a word (space appended) and then
+    // presses BS, they're undoing the just-committed word — not asking to
+    // revive it back into composition. Transition state and let BS pass
+    // through to the host (host deletes the space). ESC arriving next will
+    // restore raw via TryRestoreLastCommitRaw. Second BS in Primed → cancel.
+    // Must run BEFORE BackspaceRevive so revive doesn't compete with undo.
+    if (wParam == VK_BACK && !pEngineController_->HasEngineBuffer()) {
+        if (pEngineController_->IsCommitUndoReady()
+            && pEngineController_->WithinUndoWindow()) {
+            pEngineController_->TransitionUndoReadyToPrimed();
+            // Skip BackspaceRevive — user intent is undo, not revive.
+            *pfEaten = FALSE;
+            lastTestedVk_ = static_cast<UINT>(wParam);
+            lastWantKeyResult_ = false;
+            return S_OK;
+        }
+        if (pEngineController_->IsCommitUndoPrimed()) {
+            // Second BS — user is now deleting committed body, drop the undo window.
+            pEngineController_->ResetCommitUndo();
+            // Fall through to BackspaceRevive (it may want to claim this BS).
+        }
+    }
 
     // Backspace revive: if engine is empty and cursor is right after a Vietnamese
     // word, claim the BS and re-enter composition in HandleKey. Pre-read the word
@@ -281,12 +327,21 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
     // and buffer non-empty. Eat the key (don't pass to app). Falls through to
     // standard ESC handling (commit Vietnamese + pass-through) when disabled
     // or buffer empty.
-    if (vk == VK_ESCAPE
-        && pEngineController_->IsEscRestoreRawEnabled()
-        && pEngineController_->HasEngineBuffer()) {
-        if (pEngineController_->CommitRawAndEnd(pContext)) {
-            *pfEaten = TRUE;
-            return S_OK;
+    //
+    // Post-BS extension (design 2026-05-17): same logic as OnTestKeyDown — when
+    // engine is empty but commit-undo is Primed, restore from lastCommit_ cache.
+    if (vk == VK_ESCAPE && pEngineController_->IsEscRestoreRawEnabled()) {
+        if (pEngineController_->HasEngineBuffer()) {
+            if (pEngineController_->CommitRawAndEnd(pContext)) {
+                *pfEaten = TRUE;
+                return S_OK;
+            }
+        } else if (pEngineController_->IsCommitUndoPrimed()
+                   && pEngineController_->WithinUndoWindow()) {
+            if (pEngineController_->TryRestoreLastCommitRaw(pContext)) {
+                *pfEaten = TRUE;
+                return S_OK;
+            }
         }
     }
 

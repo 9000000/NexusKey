@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "EngineController.h"
 #include "CompositionEditSession.h"
+#include "EscRestoreLastCommitSession.h"
 #include "InputScopeChecker.h"
 #include "Define.h"
 #include "core/engine/EngineFactory.h"
@@ -401,6 +402,10 @@ void EngineController::ProcessBackspace(ITfContext* pContext) {
 void EngineController::Commit(ITfContext* pContext) {
     // VietType pattern: Get committed text, then request edit session, then reset engine.
     // This ensures TSF state and engine state are synchronized atomically.
+    //
+    // PeekRaw BEFORE engine_->Commit() — Commit() internally calls Reset() which
+    // clears escRawHistory_ (see TelexEngineTest.EscRestoreRaw_PeekRawClearedByCommit).
+    std::wstring rawSnapshot = engine_->PeekRaw();
     std::wstring committed = engine_->Commit();
 
     // Commit: set final text and end composition in one atomic operation
@@ -413,10 +418,16 @@ void EngineController::Commit(ITfContext* pContext) {
     digitLedWord_ = false;
 
     TSF_LOG(L"Commit called, text='%ls'", committed.c_str());
+
+    // Plain Commit (no trailing char) → no undo window. Caller is Enter/arrow/F-key.
+    RecordCommitSnapshot(std::move(committed), std::move(rawSnapshot), /*hasTrailingChar=*/false);
 }
 
 void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) {
     // VietType pattern: Get committed text, then request edit session, then reset engine.
+    //
+    // PeekRaw BEFORE engine_->Commit() — see Commit() comment above.
+    std::wstring rawSnapshot = engine_->PeekRaw();
     std::wstring committed = engine_->Commit();
 
     // Append the commit character (e.g., space) if provided
@@ -434,6 +445,11 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
     digitLedWord_ = false;
 
     TSF_LOG(L"CommitWithChar called, text='%ls'", committed.c_str());
+
+    // CommitWithChar always appends a trigger (space) — opens undo window.
+    // `committed` already includes the appended char (set above).
+    const bool hasTrailing = (appendChar != L'\0');
+    RecordCommitSnapshot(std::move(committed), std::move(rawSnapshot), hasTrailing);
 }
 
 bool EngineController::CommitRawAndEnd(ITfContext* pContext) {
@@ -644,6 +660,81 @@ void EngineController::UninitLanguageBar() {
         langBarButton_->Release();
         langBarButton_ = nullptr;
     }
+}
+
+// ═══════════════════════════════════════════════════════════
+// Commit-undo state machine (design 2026-05-17)
+// ═══════════════════════════════════════════════════════════
+
+void EngineController::RecordCommitSnapshot(std::wstring text,
+                                            std::wstring rawInput,
+                                            bool hasTrailingChar) noexcept {
+    if (text.empty() || rawInput.empty()) {
+        commitUndoState_ = CommitUndoState::Idle;
+        lastCommit_ = {};
+        return;
+    }
+    lastCommit_.text = std::move(text);
+    lastCommit_.rawInput = std::move(rawInput);
+    lastCommit_.hasTrailingChar = hasTrailingChar;
+    lastCommit_.timestamp = GetTickCount();
+    // Only CommitWithChar (trailing space) enters Ready. Plain Commit (Enter,
+    // arrow, F-key) means cursor moves elsewhere — no undo window.
+    commitUndoState_ = hasTrailingChar ? CommitUndoState::Ready : CommitUndoState::Idle;
+    TSF_LOG(L"RecordCommitSnapshot: state=%d text='%ls' raw='%ls'",
+            static_cast<int>(commitUndoState_), lastCommit_.text.c_str(), lastCommit_.rawInput.c_str());
+}
+
+bool EngineController::WithinUndoWindow() const noexcept {
+    if (commitUndoState_ == CommitUndoState::Idle) return false;
+    return (GetTickCount() - lastCommit_.timestamp) <= kCommitUndoTimeoutMs;
+}
+
+void EngineController::TransitionUndoReadyToPrimed() noexcept {
+    if (commitUndoState_ != CommitUndoState::Ready) return;
+    commitUndoState_ = CommitUndoState::Primed;
+    TSF_LOG(L"CommitUndo: Ready -> Primed");
+}
+
+void EngineController::ResetCommitUndo() noexcept {
+    if (commitUndoState_ == CommitUndoState::Idle) return;
+    TSF_LOG(L"CommitUndo: -> Idle (was state=%d)", static_cast<int>(commitUndoState_));
+    commitUndoState_ = CommitUndoState::Idle;
+    lastCommit_ = {};
+}
+
+void EngineController::OnNonRestoreKey() noexcept {
+    if (commitUndoState_ != CommitUndoState::Idle) ResetCommitUndo();
+}
+
+bool EngineController::TryRestoreLastCommitRaw(ITfContext* pContext) {
+    if (commitUndoState_ != CommitUndoState::Primed) return false;
+    if (!WithinUndoWindow()) {
+        TSF_LOG(L"TryRestoreLastCommitRaw: window expired (state=%d age=%ums)",
+                static_cast<int>(commitUndoState_),
+                GetTickCount() - lastCommit_.timestamp);
+        ResetCommitUndo();
+        return false;
+    }
+    if (lastCommit_.text.empty() || lastCommit_.rawInput.empty()) {
+        ResetCommitUndo();
+        return false;
+    }
+    // The Primed state means the user already deleted the trailing trigger (space).
+    // We replace just the committed body. RecordCommitSnapshot stored the full
+    // string including trailing char — strip it now.
+    std::wstring body = lastCommit_.text;
+    if (lastCommit_.hasTrailingChar && !body.empty()) {
+        body.pop_back();
+    }
+    auto* pSession = new EscRestoreLastCommitSession(pContext, body, lastCommit_.rawInput);
+    RequestEditSession(pContext, pSession);
+    pSession->Release();
+
+    // Reset state regardless of edit session outcome — session failure is logged
+    // inside DoEditSession; caller falls back to pass-through ESC.
+    ResetCommitUndo();
+    return true;
 }
 
 }  // namespace TSF

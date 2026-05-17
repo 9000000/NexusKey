@@ -108,6 +108,7 @@ add_library(VKeyTSF SHARED
     src/tsf/dllmain.cpp
     src/tsf/EditSession.h
     src/tsf/CompositionEditSession.h
+    src/tsf/EscRestoreLastCommitSession.h
     src/tsf/InputScopeChecker.h
     src/tsf/LanguageBarButton.h
     src/tsf/LanguageBarButton.cpp
