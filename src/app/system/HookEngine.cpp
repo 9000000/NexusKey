@@ -298,7 +298,8 @@ void HookEngine::HookThreadProc() {
     // Message pump. Besides LL hook dispatch, this thread also services
     // HookSelfHealer's hidden window (WM_INPUT + one-shot WM_TIMER, ~5-20μs
     // handlers, well within LowLevelHooksTimeout) and WM_APP_REINSTALL_HOOKS
-    // posted by OnFocusChanged for Chromium top-of-chain priority.
+    // posted by OnFocusChanged for Chromium / Java top-of-chain priority.
+    // wParam encodes reason: 0=chromium (default), 1=java.
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         if (msg.message == WM_APP_REINSTALL_HOOKS) {
@@ -310,7 +311,8 @@ void HookEngine::HookThreadProc() {
                 UnhookWindowsHookEx(mouseHook_);
                 mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, cachedHInstance_, 0);
             }
-            HOOK_LOG(L"HookThreadProc: Hooks reinstalled (top of chain)");
+            HOOK_LOG(L"HookThreadProc: Hooks reinstalled (top of chain) reason=%ls",
+                     msg.wParam == 1 ? L"java" : L"chromium");
             continue;
         }
         TranslateMessage(&msg);
@@ -2973,14 +2975,26 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
              isWebView2 ? 1 : 0, localNeedBait ? 1 : 0, localClipboard ? 1 : 0, localEditMsg ? 1 : 0, localUseClipboardInjector ? 1 : 0);
 
     // Re-install hooks to guarantee VKey remains at the top of the hook chain.
-    // We only do this for Chromium-based architectures (Electron, WebView2, Browsers)
-    // because they install their own WH_KEYBOARD_LL hooks that aggressively drop
-    // synthetic injected events (like our Backspaces) if they sit in front of us.
-    // Doing it conditionally avoids unnecessary unhook/rehook overhead for normal apps.
-    // We must do this even if the PID hasn't changed, because WebView2 creates child
-    // windows that trigger focus events AFTER the initial app launch and hook setup.
-    if (hookThreadId_ && (localElectronApp || isBrowser)) {
-        PostThreadMessageW(hookThreadId_, WM_APP_REINSTALL_HOOKS, 0, 0);
+    // Two distinct triggers, two distinct mechanisms:
+    //   1. Chromium-based (Electron, WebView2, Browsers): they install their own
+    //      WH_KEYBOARD_LL hooks that aggressively drop synthetic injected events
+    //      (like our Backspaces) if they sit in front of us.
+    //   2. Java apps (jp2launcher / javaw / java): commonly embed jnativehook for
+    //      global hotkeys. JVM callback bridge + GC pauses regularly exceed
+    //      Windows' 300ms LowLevelHooksTimeout → Windows drops the hook chain.
+    //      Keeping VKey on top means its fast callback completes before any
+    //      downstream stall can knock out the chain.
+    // Doing this conditionally avoids unnecessary unhook/rehook overhead for
+    // normal apps. We must do this even if the PID hasn't changed — WebView2
+    // creates child windows that trigger focus events AFTER initial hook setup,
+    // and jnativehook may re-arm itself during a JVM session.
+    const bool isJavaApp =
+        exeName == L"jp2launcher.exe" ||
+        exeName == L"javaw.exe" ||
+        exeName == L"java.exe";
+    if (hookThreadId_ && (localElectronApp || isBrowser || isJavaApp)) {
+        const WPARAM reason = isJavaApp ? 1 : 0;  // 0=chromium, 1=java
+        PostThreadMessageW(hookThreadId_, WM_APP_REINSTALL_HOOKS, reason, 0);
     }
 
     if (localClipboard || localEditMsg) {
