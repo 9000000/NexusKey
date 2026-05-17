@@ -438,6 +438,7 @@ private:
     struct CommitEntry {
         std::vector<wchar_t> history;   // User keystrokes for replay
         std::wstring text;              // What was on screen when committed
+        std::wstring rawInput;          // engine_->PeekRaw() snapshot — for Esc-restore-raw post-BS (design 2026-05-17)
         std::vector<uint8_t> widths;    // Encoded widths for non-Unicode code tables
         uint8_t extraLeadingTriggers = 0;  // Extra trigger chars typed between previous commit and this word's body — must be backspaced before this entry's commit trigger can be primed during multi-word undo
     };

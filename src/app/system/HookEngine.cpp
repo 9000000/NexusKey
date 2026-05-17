@@ -1249,9 +1249,18 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     // form, then eats the Esc so the app never sees it. DispatchKeyAction's
     // step 5 modifier guard runs *downstream* of HandlePreDispatch — Ctrl+Esc
     // / Alt+Esc would still reach this branch, so guard modifiers explicitly.
+    //
+    // Post-BS extension (design 2026-05-17): if engine is empty but commit-undo
+    // is Primed (user typed space then BS), reuse the snapshot from
+    // commitStack_.back().rawInput. TryEscRestoreRaw handles both paths.
+    const bool hasLiveComposition = engine_->Count() > 0;
+    const bool hasPrimedCommit =
+        (commitUndoState_ == CommitUndoState::Primed) &&
+        !commitStack_.empty() &&
+        !commitStack_.back().rawInput.empty();
     if (escRestoreRaw && vkCode == VK_ESCAPE
         && !cachedCtrl && !cachedAlt && !cachedWin
-        && engine_->Count() > 0) {
+        && (hasLiveComposition || hasPrimedCommit)) {
         return TryEscRestoreRaw();
     }
 
@@ -1822,6 +1831,11 @@ bool HookEngine::CommitComposition() {
     // from backward replay — backspace should act as normal OS delete.
     bool wasQuickConsonant = engine_->HasActiveQuickConsonant();
 
+    // PeekRaw BEFORE Commit() — engine_->Commit() calls Reset() which clears
+    // escRawHistory_ (see TelexEngineTest.EscRestoreRaw_PeekRawClearedByCommit).
+    // Snapshot lives in CommitEntry.rawInput for post-BS ESC restore.
+    std::wstring rawSnapshot = engine_->PeekRaw();
+
     std::wstring committed = engine_->Commit();
 
     bool restored = false;
@@ -1840,6 +1854,7 @@ bool HookEngine::CommitComposition() {
         CommitEntry entry;
         entry.history = inputHistory_;
         entry.text = previousComposition_;
+        entry.rawInput = std::move(rawSnapshot);
         entry.widths = previousEncodedWidths_;
         entry.extraLeadingTriggers = leadingTriggersForCurrentWord_;
         leadingTriggersForCurrentWord_ = 0;
@@ -3396,21 +3411,46 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
 }
 
 HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
-    const size_t composedCount = engine_->Count();
-    if (composedCount == 0) return KeyOutcome::Fallthrough;
-
-    const std::wstring raw = engine_->PeekRaw();
-    if (raw.empty()) return KeyOutcome::Fallthrough;
-
     auto inj = injector_.load(std::memory_order_acquire);
-    HOOK_LOG(L"  EscRestoreRaw: bs=%zu raw='%ls'", composedCount, raw.c_str());
-    if (!inj->Replace(composedCount, std::wstring_view(raw))) {
-        HOOK_LOG(L"  EscRestoreRaw: injector reported partial delivery");
-        // Don't reset on failure — next user action recovers via normal flow.
-        return KeyOutcome::Fallthrough;
+
+    // Path 1: live composition (existing behavior).
+    if (engine_->Count() > 0) {
+        const size_t composedCount = engine_->Count();
+        const std::wstring raw = engine_->PeekRaw();
+        if (raw.empty()) return KeyOutcome::Fallthrough;
+        HOOK_LOG(L"  EscRestoreRaw[live]: bs=%zu raw='%ls'", composedCount, raw.c_str());
+        if (!inj->Replace(composedCount, std::wstring_view(raw))) {
+            HOOK_LOG(L"  EscRestoreRaw[live]: injector reported partial delivery");
+            // Don't reset on failure — next user action recovers via normal flow.
+            return KeyOutcome::Fallthrough;
+        }
+        engine_->Reset();
+        rawMacroBuffer_.clear();
+        tempMacroOff_ = false;
+        return KeyOutcome::Eat;
     }
 
-    engine_->Reset();
+    // Path 2: post-BS (engine empty, raw snapshot in commitStack top).
+    // Engine empty here; rawInput preserved in commitStack_ from CommitComposition
+    // snapshot. CancelCommitUndo clears stack (single-word scope per design 2026-05-17).
+    if (commitUndoState_ != CommitUndoState::Primed || commitStack_.empty()) {
+        return KeyOutcome::Fallthrough;
+    }
+    if (GetTickCount() - commitReadyTime_ > kCommitUndoTimeoutMs) {
+        HOOK_LOG(L"  EscRestoreRaw[post-BS]: Primed expired (elapsed > %ums)", kCommitUndoTimeoutMs);
+        CancelCommitUndo();
+        return KeyOutcome::Fallthrough;
+    }
+    const auto& top = commitStack_.back();
+    if (top.rawInput.empty()) return KeyOutcome::Fallthrough;
+    const size_t bsCount = top.text.size();  // Primed: trailing commit-trigger already deleted by user's BS
+    HOOK_LOG(L"  EscRestoreRaw[post-BS]: bs=%zu raw='%ls' text='%ls'",
+             bsCount, top.rawInput.c_str(), top.text.c_str());
+    if (!inj->Replace(bsCount, std::wstring_view(top.rawInput))) {
+        HOOK_LOG(L"  EscRestoreRaw[post-BS]: injector reported partial delivery");
+        return KeyOutcome::Fallthrough;
+    }
+    CancelCommitUndo();
     rawMacroBuffer_.clear();
     tempMacroOff_ = false;
     return KeyOutcome::Eat;
