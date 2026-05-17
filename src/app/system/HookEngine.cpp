@@ -1435,9 +1435,9 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         const wchar_t ch = VkToMacroChar(vkCode);
         if (ch && ch < 128) {
             auto cfg = config_.load(std::memory_order_acquire);
-            TypingAction act = cfg->customKeyMap[static_cast<uint8_t>(ch)];
-            if (act != TypingAction::None &&
-                (engine_->Count() > 0 || IsInsertTypeAction(act))) {
+            const TypingAction action = cfg->customKeyMap[static_cast<uint8_t>(ch)];
+            if (action != TypingAction::None &&
+                (engine_->Count() > 0 || IsInsertTypeAction(action))) {
                 inputHistory_.push_back(ch);
                 engine_->PushChar(ch);
                 std::wstring composition = engine_->Peek();

@@ -83,6 +83,20 @@ enum class TypingAction : uint8_t {
     return action >= TypingAction::HornOrInsertU && action <= TypingAction::InsertUHornUpper;
 }
 
+/// Insert-type actions can fire on an empty engine buffer (they synthesise a
+/// fresh state). Tone/modifier actions need an existing vowel target, so the
+/// HookEngine step 6d gate keeps `engine_->Count() > 0` for those. Used by
+/// HookEngine to decide whether a customKeyMap-bound OEM punct key should be
+/// routed into the engine even at word start. Excludes `HornOrInsertUNoStart`
+/// by design — that variant explicitly suppresses word-start insertion.
+[[nodiscard]] constexpr bool IsInsertTypeAction(TypingAction action) noexcept {
+    if (action == TypingAction::HornInsertO || action == TypingAction::HornInsertU) return true;
+    if (action == TypingAction::HornOrInsertU) return true;
+    if (action == TypingAction::HornW) return true;  // Telex P8 inserts ư at empty
+    if (action >= TypingAction::InsertABreve && action <= TypingAction::InsertUHornUpper) return true;
+    return false;
+}
+
 /// Classify a key into a TypingAction based purely on (key, mode).
 /// Pure function — no state lookup, no side effects. Returns
 /// `TypingAction::None` for keys with no IME meaning under the

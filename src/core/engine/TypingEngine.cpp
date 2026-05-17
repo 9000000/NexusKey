@@ -614,17 +614,22 @@ bool TypingEngine::HandleVniStroke(TypingAction action, wchar_t c) {
 }
 
 bool TypingEngine::HandleHornOrInsertU(TypingAction action, wchar_t keyChar) {
-    // 1. Try to apply horn to existing vowel (same as HornW P1/P5/P6)
-    if (HandleHornW(TypingAction::HornW, keyChar)) {
-        return true;
-    }
-
-    // 2. If no horn target found, insert ư (like HornInsertU)
-    // HornOrInsertUNoStart skips insertion if at start of word.
+    // NoStart variant: must short-circuit BEFORE HandleHornW because HornW's
+    // P8 fallback synthesises ư at empty buffer — defeating "no insert at word
+    // start". With this guard, PushChar's outer fallthrough treats the key as
+    // a literal char (user feedback 2026-05-17: w → Ư at word start).
     if (action == TypingAction::HornOrInsertUNoStart && states_.empty()) {
         return false;
     }
 
+    // 1. Try to apply horn to existing vowel (same as HornW P1/P5/P6, plus P8
+    //    fallback for plain HornOrInsertU at empty buffer)
+    if (HandleHornW(TypingAction::HornW, keyChar)) {
+        return true;
+    }
+
+    // 2. Plain variant fallback (e.g., SimpleTelex / QU-cluster where P8
+    //    declined): insert ư as a fresh state.
     return HandleHornInsert(TypingAction::HornInsertU, keyChar);
 }
 

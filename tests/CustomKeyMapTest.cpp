@@ -133,6 +133,54 @@ TEST_F(CustomKeyMapTest, UserDefinedOemKeysSpanAllTones) {
     EXPECT_EQ(engine.Peek(), L"ã");
 }
 
+// U3 — User feedback 2026-05-17: phím W remapped to HornOrInsertUNoStart,
+// `[` `]` mapped to HornInsertO/U.
+// Reported: `[` `]` không hoạt động, W đầu từ vẫn ra Ư.
+// Engine-layer pin: verify literal/insert behaviour so we can isolate Hook
+// routing vs engine bugs.
+TEST_F(CustomKeyMapTest, UserDefinedWNoStartAtWordStartIsLiteral) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertUNoStart;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"w");
+    EXPECT_EQ(engine.Peek(), L"w");  // start-of-word: literal, NOT ư
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedBracketInsertsHornAtWordStart) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'[')] = TypingAction::HornInsertO;
+    cfg.customKeyMap[static_cast<size_t>(L']')] = TypingAction::HornInsertU;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"[");
+    EXPECT_EQ(engine.Peek(), L"ơ");
+    TypingEngine engine2(cfg);
+    TypeString(engine2, L"]");
+    EXPECT_EQ(engine2.Peek(), L"ư");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedWNoStartStillAppliesHornMidWord) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertUNoStart;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"tuw");  // u + w → ư mid-word (P5)
+    EXPECT_EQ(engine.Peek(), L"tư");
+    TypingEngine engine2(cfg);
+    TypeString(engine2, L"tow");  // o + w → ơ mid-word (P6)
+    EXPECT_EQ(engine2.Peek(), L"tơ");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedBracketInsertsHornMidWord) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'[')] = TypingAction::HornInsertO;
+    cfg.customKeyMap[static_cast<size_t>(L']')] = TypingAction::HornInsertU;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"th[");
+    EXPECT_EQ(engine.Peek(), L"thơ");
+    TypingEngine engine2(cfg);
+    TypeString(engine2, L"th]");
+    EXPECT_EQ(engine2.Peek(), L"thư");
+}
+
 // =====================================================================
 // G1 — Default-empty parity: customKeyMap{} → behavior unchanged
 // =====================================================================
