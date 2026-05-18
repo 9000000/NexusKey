@@ -492,6 +492,27 @@ bool ConfigManager::SaveHotkeyRegistry(const std::wstring& path, const HotkeyReg
         registry.SaveEnabled(state);
         tbl.insert_or_assign("hotkey_state", std::move(state));
 
+        // TSF mirror: TSF EngineController gates ESC restore-raw on
+        // SharedState ESC_RESTORE_RAW, populated from
+        // [features].esc_restore_raw via TypingConfig. Without this sync,
+        // disabling cancel-composition in the Hotkeys UI doesn't propagate
+        // to TSF hosts (Word, Edge in TSF mode, etc.) — TSF would keep
+        // restoring raw keys on Esc. Mirror reflects "Esc bare-tap is bound
+        // to CancelComposition AND the intent is enabled".
+        // Phase 2: route TSF through HotkeyRegistry directly and drop both
+        // the mirror and the legacy field.
+        constexpr uint32_t kVkEscape = 0x1B;
+        const bool escIsCancelTrigger = registry.Matches(
+            Intent::CancelComposition, kVkEscape, /*mods=*/0,
+            /*isDoubleTap=*/false, /*keyUp=*/false);
+        if (auto* features = tbl["features"].as_table()) {
+            features->insert_or_assign("esc_restore_raw", escIsCancelTrigger);
+        } else {
+            toml::table newFeatures;
+            newFeatures.insert_or_assign("esc_restore_raw", escIsCancelTrigger);
+            tbl.insert_or_assign("features", std::move(newFeatures));
+        }
+
         return WriteToml(utf8Path, tbl);
     } catch (...) {
         return false;

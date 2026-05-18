@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include "core/config/ConfigManager.h"
+#include "core/hotkey/HotkeyRegistry.h"
 #include "core/UIConfig.h"
 #include <fstream>
 #include <filesystem>
@@ -300,6 +301,78 @@ TEST_F(ConfigManagerTest, UIConfig_DefaultConstructor) {
     EXPECT_FALSE(config.showAdvanced);
     EXPECT_EQ(config.backgroundOpacity, 80);
     EXPECT_FALSE(config.pinned);
+}
+
+// ============================================================================
+// SaveHotkeyRegistry — TSF mirror of [features].esc_restore_raw
+//
+// SaveHotkeyRegistry MUST keep [features].esc_restore_raw in sync with
+// "CancelComposition intent is enabled AND has bare-Esc trigger" so the TSF
+// EngineController gate stays consistent with the v3 Hotkeys UI. Without
+// this, disabling cancel-composition in the dialog wouldn't reach TSF hosts
+// (Word, Edge in TSF mode) — they'd keep restoring raw keys on Esc.
+// Phase 2 will route TSF through HotkeyRegistry directly and drop the mirror.
+// ============================================================================
+
+namespace {
+constexpr uint32_t kVkEsc = 0x1B;
+[[nodiscard]] bool ReadEscRestoreRaw(const std::wstring& path) {
+    auto cfg = ConfigManager::LoadFromFile(path);
+    return cfg && cfg->escRestoreRawEnabled;
+}
+}  // namespace
+
+TEST_F(ConfigManagerTest, SaveHotkeyRegistry_EscBound_EnabledSetsTrue) {
+    HotkeyRegistry reg = HotkeyRegistry::Defaults();  // Esc bound + enabled
+    ASSERT_TRUE(ConfigManager::SaveHotkeyRegistry(testConfigPath_, reg));
+    EXPECT_TRUE(ReadEscRestoreRaw(testConfigPath_));
+}
+
+TEST_F(ConfigManagerTest, SaveHotkeyRegistry_EscBound_DisabledSetsFalse) {
+    HotkeyRegistry reg = HotkeyRegistry::Defaults();
+    reg.SetEnabled(Intent::CancelComposition, false);
+    ASSERT_TRUE(ConfigManager::SaveHotkeyRegistry(testConfigPath_, reg));
+    EXPECT_FALSE(ReadEscRestoreRaw(testConfigPath_))
+        << "Disabling cancel-composition must clear TSF gate even when Esc trigger still stored";
+}
+
+TEST_F(ConfigManagerTest, SaveHotkeyRegistry_NoBareEscTrigger_SetsFalse) {
+    // Only Ctrl+Esc bound (not bare Esc). TSF gate must be off because the
+    // legacy `esc_restore_raw` semantic was "bare Esc restores raw".
+    HotkeyRegistry reg;
+    reg.SetEnabled(Intent::CancelComposition, true);
+    reg.AddTrigger(Intent::CancelComposition, Trigger{kVkEsc, kModCtrl, false});
+    ASSERT_TRUE(ConfigManager::SaveHotkeyRegistry(testConfigPath_, reg));
+    EXPECT_FALSE(ReadEscRestoreRaw(testConfigPath_))
+        << "Bare-Esc binding required for TSF gate; chord doesn't count";
+}
+
+TEST_F(ConfigManagerTest, SaveHotkeyRegistry_EscPlusChord_BareEscWins) {
+    HotkeyRegistry reg;
+    reg.SetEnabled(Intent::CancelComposition, true);
+    reg.AddTrigger(Intent::CancelComposition, Trigger{kVkEsc, 0,        false});
+    reg.AddTrigger(Intent::CancelComposition, Trigger{kVkEsc, kModCtrl, false});
+    ASSERT_TRUE(ConfigManager::SaveHotkeyRegistry(testConfigPath_, reg));
+    EXPECT_TRUE(ReadEscRestoreRaw(testConfigPath_));
+}
+
+TEST_F(ConfigManagerTest, SaveHotkeyRegistry_DoesNotClobberExistingFeatures) {
+    // Pre-write [features] with unrelated keys — SaveHotkeyRegistry must
+    // merge in place, only touching esc_restore_raw.
+    WriteTestConfig(R"(
+[features]
+spell_check = true
+modern_ortho = true
+)");
+
+    HotkeyRegistry reg = HotkeyRegistry::Defaults();
+    ASSERT_TRUE(ConfigManager::SaveHotkeyRegistry(testConfigPath_, reg));
+
+    auto loaded = ConfigManager::LoadFromFile(testConfigPath_);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_TRUE(loaded->spellCheckEnabled)    << "Existing spell_check must survive merge";
+    EXPECT_TRUE(loaded->modernOrtho)          << "Existing modern_ortho must survive merge";
+    EXPECT_TRUE(loaded->escRestoreRawEnabled) << "esc_restore_raw added by mirror";
 }
 
 }  // namespace
