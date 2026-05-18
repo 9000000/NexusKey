@@ -35,28 +35,20 @@ var CODE_TO_VK = {
 };
 
 // Convert "event.code" string -> Win32 VK number. Returns 0 if unmapped.
+// Patterned codes (KeyA, Digit3, Numpad7, F12) are decoded by regex; specific
+// codes (Escape, Enter, ArrowUp...) come from CODE_TO_VK above.
 function codeToVk(code) {
     if (!code) return 0;
-    if (CODE_TO_VK.hasOwnProperty(code)) return CODE_TO_VK[code];
-    // "KeyA".."KeyZ"   -> 0x41..0x5A
-    if (code.length === 4 && code.substr(0, 3) === "Key") {
-        var c = code.charCodeAt(3);
-        if (c >= 65 && c <= 90) return c;
-    }
-    // "Digit0".."Digit9" -> 0x30..0x39
-    if (code.length === 6 && code.substr(0, 5) === "Digit") {
-        var d = code.charCodeAt(5);
-        if (d >= 48 && d <= 57) return d;
-    }
-    // "Numpad0".."Numpad9" -> VK_NUMPAD0(0x60)..VK_NUMPAD9(0x69)
-    if (code.length === 7 && code.substr(0, 6) === "Numpad") {
-        var n = code.charCodeAt(6);
-        if (n >= 48 && n <= 57) return 0x60 + (n - 48);
-    }
-    // "F1".."F24" -> VK_F1(0x70)..VK_F24(0x87)
-    if (code.length >= 2 && code.charAt(0) === "F") {
-        var num = parseInt(code.substr(1), 10);
-        if (num >= 1 && num <= 24) return 0x6F + num;
+    if (CODE_TO_VK[code]) return CODE_TO_VK[code];
+    var m = /^(Key|Digit|Numpad|F)([A-Z]|\d+)$/.exec(code);
+    if (!m) return 0;
+    var suffix = m[2];
+    switch (m[1]) {
+        case "Key":    return suffix.charCodeAt(0);              // A-Z   -> 0x41..0x5A
+        case "Digit":  return suffix.charCodeAt(0);              // 0-9   -> 0x30..0x39
+        case "Numpad": return 0x60 + parseInt(suffix, 10);       // 0-9   -> VK_NUMPAD0..9
+        case "F":      var n = parseInt(suffix, 10);
+                       return (n >= 1 && n <= 24) ? 0x6F + n : 0;  // F1..F24
     }
     return 0;
 }
