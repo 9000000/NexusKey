@@ -1681,21 +1681,47 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                 modTapCount_[modIdx] == 1 &&
                 (now - modTapLastTs_[modIdx]) < DOUBLE_TAP_TIMEOUT_MS;
 
-            if (isDoubleTap) {
-                // Prefer 2× binding when 2nd clean tap arrives in-window.
-                if (hotkeysSnap->Matches(Intent::ToggleEnabled, canonicalVk,
-                                         /*mods=*/0, /*isDoubleTap=*/true, /*keyUp=*/true)) {
-                    fireToggleEnabled(L"MOD-DOUBLE");
+            auto matches = [&](Intent intent) {
+                return hotkeysSnap->Matches(intent, canonicalVk, /*mods=*/0,
+                                            isDoubleTap, /*keyUp=*/true);
+            };
+
+            // 1. CancelComposition — same gates as the Esc-keydown path at
+            //    HandlePreDispatch step 3b': feature flag on + something to cancel.
+            if (escRestoreRawEnabled_.load(std::memory_order_acquire)
+                && matches(Intent::CancelComposition)) {
+                const bool hasLiveComposition = engine_->Count() > 0;
+                const bool hasPrimedCommit =
+                    (commitUndoState_ == CommitUndoState::Primed) &&
+                    !commitStack_.empty() &&
+                    !commitStack_.back().rawInput.empty();
+                if (hasLiveComposition || hasPrimedCommit) {
+                    (void)TryEscRestoreRaw();
+                    HOOK_LOG(L"  MOD-CANCEL (vk=0x%02X, dt=%d): composition restored",
+                             canonicalVk, isDoubleTap);
                 }
+            }
+
+            // 2. SkipMacro — same gates as HandlePreDispatch step 3c.
+            if (tempOffMacroByEsc_.load(std::memory_order_acquire)
+                && macroEnabled_.load(std::memory_order_acquire)
+                && !macroTable_.empty()
+                && engine_->Count() == 0
+                && rawMacroBuffer_.empty()
+                && matches(Intent::SkipMacro)) {
+                tempMacroOff_ = true;
+                HOOK_LOG(L"  MOD-SKIP (vk=0x%02X, dt=%d): tempMacroOff = 1",
+                         canonicalVk, isDoubleTap);
+            }
+
+            // 3. ToggleEnabled — registry is the gate (empty triggers ⇒ no-op).
+            if (matches(Intent::ToggleEnabled)) {
+                fireToggleEnabled(isDoubleTap ? L"MOD-DOUBLE" : L"MOD-SINGLE");
+            }
+
+            if (isDoubleTap) {
                 modTapCount_[modIdx] = 0;
             } else {
-                // First clean release: fire single-alone if bound, also arm 2nd-tap
-                // window. If user has BOTH single+double bound for this key, both
-                // can fire across two presses — UI should prevent that combination.
-                if (hotkeysSnap->Matches(Intent::ToggleEnabled, canonicalVk,
-                                         /*mods=*/0, /*isDoubleTap=*/false, /*keyUp=*/true)) {
-                    fireToggleEnabled(L"MOD-SINGLE");
-                }
                 modTapCount_[modIdx]  = 1;
                 modTapLastTs_[modIdx] = now;
             }
