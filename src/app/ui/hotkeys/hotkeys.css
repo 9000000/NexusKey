@@ -1,8 +1,11 @@
 .hotkey-section { padding: 10px 12px; }
 .hotkey-section-header {
-    flow: horizontal;
-    align-content: middle;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 6px;
+    min-height: 24px;
+    gap: 8px;
 }
 .hotkey-section-title { font-weight: 600; color: var(--text-primary); }
 
