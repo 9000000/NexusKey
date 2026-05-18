@@ -34,9 +34,12 @@
                    build/tools/Debug/VKeyTestRunner.exe (CMake
                    RUNTIME_OUTPUT_DIRECTORY="${CMAKE_BINARY_DIR}/tools").
 
-    -HookLog       Path VKey writes its debug log to (must match
-                   VKey's compiled-in OpenHookLog target). Default:
-                   build/Debug/VKey_hook.log.
+    -HookLog       Override path VKey writes its debug log to. By default
+                   the script auto-resolves to `<install dir>\VKey_VKey_<pid>.log`
+                   (Logger.cpp:112 format — brand prefix + process tag +
+                   actual PID of the VKey.exe process this script spawned).
+                   Pass this only if VKey writes elsewhere (e.g. when
+                   PathOverride is set or AppData fallback fires).
 
     -OutDir        Where report-*.xml + perf-*.csv land. Default: repo root.
 
@@ -92,7 +95,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Corpus)      { $Corpus      = Join-Path $repoRoot "tools/VKeyTestRunner/corpus/chaos.toml" }
 if (-not $VKeyExe) { $VKeyExe = Join-Path $repoRoot "build/Debug/VKey.exe" }
 if (-not $RunnerExe)   { $RunnerExe   = Join-Path $repoRoot "build/tools/Debug/VKeyTestRunner.exe" }
-if (-not $HookLog)     { $HookLog     = Join-Path $repoRoot "build/Debug/VKey_hook.log" }
+# $HookLog resolved per-host inside Invoke-ChaosForHost — depends on the PID
+# of the VKey.exe process spawned by Start-VKey (Logger.cpp:112 writes
+# `<install dir>\VKey_VKey_<pid>.log`). Honor explicit -HookLog if user passed
+# one (override for sideloaded log targets / PathOverride scenarios).
 if (-not $OutDir)      { $OutDir      = $repoRoot }
 
 foreach ($p in @($Corpus, $VKeyExe, $RunnerExe)) {
@@ -230,6 +236,9 @@ function Open-Host {
 }
 
 # --- VKey lifecycle ------------------------------------------------
+# Returns the PID of the spawned VKey.exe process so the caller can derive
+# the per-instance hook-log filename (Logger.cpp:112 writes
+# `<install dir>\VKey_VKey_<pid>.log`).
 function Start-VKey {
     if (Get-Process -Name "VKey" -ErrorAction SilentlyContinue) {
         # Already running -- kill first so each host starts with a fresh
@@ -237,11 +246,40 @@ function Start-VKey {
         # Use -Force here: we don't need the hook log from the stale instance.
         Stop-VKey -Force
     }
-    Start-Process -FilePath $VKeyExe | Out-Null
+    $proc = Start-Process -FilePath $VKeyExe -PassThru
     Start-Sleep -Seconds 2
-    if (-not (Get-Process -Name "VKey" -ErrorAction SilentlyContinue)) {
+    # Re-query: Start-Process returns the launcher PID; on Win11 + some
+    # AppContainer setups VKey may relaunch itself (e.g., update relaunch
+    # path). The live tray-owning process is the one Get-Process finds.
+    $alive = Get-Process -Name "VKey" -ErrorAction SilentlyContinue
+    if (-not $alive) {
         throw "VKey.exe failed to start -- check $VKeyExe"
     }
+    # If multiple VKey processes are alive (unlikely after Stop-VKey -Force
+    # above, but possible if Start-Process returned a stale launcher PID
+    # and another instance came up), prefer the one Start-Process reported
+    # when it's still alive; otherwise fall back to the newest by StartTime.
+    # NOTE: `$pid` is a PowerShell automatic variable (current process ID) —
+    # use a distinct name to avoid shadowing.
+    $vkeyPid = if ($proc -and ($alive.Id -contains $proc.Id)) {
+        $proc.Id
+    } else {
+        ($alive | Sort-Object StartTime -Descending | Select-Object -First 1).Id
+    }
+    return $vkeyPid
+}
+
+# Compute the hook-log path Logger.cpp:112 will write to for a given
+# VKey.exe PID. Caller passes -Override to honor an explicit -HookLog
+# param from the script command line (sideloaded log targets).
+function Resolve-HookLog {
+    param(
+        [int]$VKeyPid,
+        [string]$Override
+    )
+    if ($Override) { return $Override }
+    $installDir = Split-Path -Parent $VKeyExe
+    return Join-Path $installDir ("VKey_VKey_{0}.log" -f $VKeyPid)
 }
 
 function Stop-VKey {
@@ -292,7 +330,9 @@ function Invoke-ChaosForHost {
 
     Write-Host "`n=== HOST: $HostName ===" -ForegroundColor Cyan
 
-    Start-VKey
+    $vkeyPid = Start-VKey
+    $resolvedHookLog = Resolve-HookLog -VKeyPid $vkeyPid -Override $HookLog
+    Write-Host "[$HostName] VKey PID=$vkeyPid hook-log=$resolvedHookLog" -ForegroundColor DarkGray
 
     $hwnd = Open-Host -Name $HostName
     if ($hwnd -eq [IntPtr]::Zero) {
@@ -312,7 +352,7 @@ function Invoke-ChaosForHost {
 
     $argv = @(
         "--corpus", $Corpus,
-        "--hook-log", $HookLog,
+        "--hook-log", $resolvedHookLog,
         "--junit", $reportPath,
         "--perf-csv", $perfPath
     )

@@ -32,7 +32,7 @@ powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag dev -Hosts not
 | `-Corpus` | no | `tools/VKeyTestRunner/corpus/chaos.toml` | Test corpus |
 | `-VKeyExe` | no | `build/Debug/VKey.exe` | App under test |
 | `-RunnerExe` | no | `build/tools/VKeyTestRunner/Debug/VKeyTestRunner.exe` | Driver |
-| `-HookLog` | no | `build/Debug/VKey_hook.log` | Where VKey writes its debug log |
+| `-HookLog` | no | auto: `<install dir>\VKey_VKey_<pid>.log` | Override only if VKey writes elsewhere (PathOverride / AppData fallback). Script resolves the per-launch PID from the VKey.exe process it spawns. |
 | `-OutDir` | no | repo root | Where reports land |
 
 ### Outputs (per host)
