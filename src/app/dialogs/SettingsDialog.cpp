@@ -648,9 +648,6 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
     }
-    else if (id == L"esc-restore-raw") {
-        config_.escRestoreRawEnabled = value;
-    }
     else if (id == L"use-macro") {
         config_.macroEnabled = value;
     }
@@ -665,9 +662,6 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     }
     else if (id == L"quick-end") {
         config_.quickEndConsonant = value;
-    }
-    else if (id == L"temp-off-macro") {
-        config_.tempOffMacroByEsc = value;
     }
     else if (id == L"auto-caps-macro") {
         config_.autoCapsMacro = value;
@@ -802,11 +796,6 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
         saveSystemSettings();
         return;  // System setting, not typing config
     }
-    else if (id == L"temp-off-openkey") {
-        if (value < 0 || value > 2) return;
-        config_.tempOffMethod = static_cast<TempOffMethod>(value);
-    }
-
     saveSettings();
     if (onSettingsChanged_) onSettingsChanged_();
 }
@@ -1062,15 +1051,15 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"cjk-auto-switch", config_.cjkAutoSwitch);
     setToggleState(L"debug-log", config_.debugLogEnabled);
     setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
-    setToggleState(L"esc-restore-raw", config_.escRestoreRawEnabled);
-    setDropdownValue(L"temp-off-openkey", static_cast<int>(config_.tempOffMethod));
     setToggleState(L"use-macro", config_.macroEnabled);
     setToggleState(L"macro-english", config_.macroInEnglish);
     setToggleState(L"quick-telex", config_.quickConsonant);
     setToggleState(L"quick-start", config_.quickStartConsonant);
     setToggleState(L"quick-end", config_.quickEndConsonant);
-    setToggleState(L"temp-off-macro", config_.tempOffMacroByEsc);
     setToggleState(L"auto-caps-macro", config_.autoCapsMacro);
+    // esc-restore-raw / temp-off-openkey / temp-off-macro toggles were removed
+    // when the unified Hotkey Rebind dialog took over their behavior. Per-intent
+    // enable now lives in HotkeyRegistry (hotkey_state TOML section).
 
     setToggleState(L"key-ctrl", hotkeyConfig_.ctrl);
     setToggleState(L"key-alt", hotkeyConfig_.alt);

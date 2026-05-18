@@ -124,8 +124,21 @@ void HotkeysDialog::sendVkNames() {
     call_function("setVkNames", pairs);
 }
 
+void HotkeysDialog::sendEnabledStates() {
+    sciter::value pairs;
+    int i = 0;
+    for (Intent intent : kAllIntents) {
+        sciter::value pair;
+        pair.set_item(0, sciter::value(IntentLabel(intent)));
+        pair.set_item(1, sciter::value(registry_.IsEnabled(intent)));
+        pairs.set_item(i++, pair);
+    }
+    call_function("setEnabledStates", pairs);
+}
+
 void HotkeysDialog::populate() {
     call_function("clearAll");
+    sendEnabledStates();
     for (Intent intent : kAllIntents) {
         for (const Trigger& t : registry_.TriggersFor(intent)) {
             const std::wstring label = FormatTriggerLabel(t);
@@ -211,6 +224,22 @@ void HotkeysDialog::handleAction(const std::wstring& action) {
     }
     if (action == L"close") {
         PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
+        return;
+    }
+    if (action == L"set-enabled") {
+        // val-intent + val-enabled identify which intent toggle was flipped.
+        element root = get_root();
+        element intentEl  = root.find_first("#val-intent");
+        element enabledEl = root.find_first("#val-enabled");
+        if (!intentEl.is_valid() || !enabledEl.is_valid()) return;
+        sciter::value iv = intentEl.get_value();
+        sciter::value ev = enabledEl.get_value();
+        if (!iv.is_string() || !ev.is_string()) return;
+        Intent intent;
+        if (!ParseIntent(iv.get<std::wstring>(), intent)) return;
+        const auto evs = ev.get<std::wstring>();
+        registry_.SetEnabled(intent, evs == L"true" || evs == L"1");
+        persistAndSignal();   // visual class already updated by JS; no need to repopulate
         return;
     }
 

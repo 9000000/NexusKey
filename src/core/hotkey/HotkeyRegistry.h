@@ -10,6 +10,7 @@
 
 namespace toml::inline v3 {
 class array;
+class table;
 }  // namespace toml
 
 namespace NextKey {
@@ -74,6 +75,12 @@ public:
     /// Serialize current triggers into a TOML array (caller wraps as `[[hotkey]]`).
     void Save(toml::array& cfg) const;
 
+    /// Load/save per-intent enabled flags from a `[hotkey_state]` TOML table.
+    /// Missing keys default to true (enabled). Snake-case keys: cancel_composition,
+    /// skip_macro, toggle_enabled.
+    void LoadEnabled(const toml::table& tbl);
+    void SaveEnabled(toml::table& tbl) const;
+
     /// Factory bindings — restores the 3 legacy NexusKey hotkeys:
     ///   - Esc                → CancelComposition
     ///   - Esc                → SkipMacro
@@ -101,11 +108,19 @@ public:
     /// Add a trigger for `intent`. Used by UI capture mode and Load().
     void AddTrigger(Intent intent, Trigger trigger);
 
-    /// Remove all triggers (test helper / "Restore defaults" UI).
+    /// Per-intent on/off state. Bindings remain stored even when disabled
+    /// so the user can flip the toggle without losing their custom triggers.
+    /// Default = `true` for every intent (matches Defaults() expectation).
+    [[nodiscard]] bool IsEnabled(Intent intent) const noexcept;
+    void SetEnabled(Intent intent, bool enabled) noexcept;
+
+    /// Remove all triggers + reset enabled flags to true (test helper /
+    /// "Restore defaults" UI).
     void Clear() noexcept;
 
 private:
     std::unordered_map<Intent, std::vector<Trigger>> triggers_;
+    std::unordered_map<Intent, bool>                 enabled_;  // missing → true
 };
 
 /// True if `vk` is one of the 5 modifier keys (Ctrl/Shift/Alt/LWin/RWin).

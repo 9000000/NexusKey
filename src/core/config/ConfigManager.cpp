@@ -469,7 +469,10 @@ std::optional<HotkeyRegistry> ConfigManager::LoadHotkeyRegistry(const std::wstri
         if (auto arr = table["hotkeys"].as_array()) {
             registry.Load(*arr);
         }
-        // Section missing is NOT a failure — caller decides defaults vs. empty.
+        if (auto stateTbl = table["hotkey_state"].as_table()) {
+            registry.LoadEnabled(*stateTbl);
+        }
+        // Sections missing is NOT a failure — caller decides defaults vs. empty.
         return registry;
     } catch (...) {
         return std::nullopt;
@@ -485,6 +488,10 @@ bool ConfigManager::SaveHotkeyRegistry(const std::wstring& path, const HotkeyReg
         toml::array arr;
         registry.Save(arr);
         tbl.insert_or_assign("hotkeys", std::move(arr));
+
+        toml::table state;
+        registry.SaveEnabled(state);
+        tbl.insert_or_assign("hotkey_state", std::move(state));
 
         return WriteToml(utf8Path, tbl);
     } catch (...) {

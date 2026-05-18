@@ -1,5 +1,10 @@
 .hotkey-section { padding: 10px 12px; }
-.hotkey-section-title { font-weight: 600; margin-bottom: 6px; color: var(--text-primary); }
+.hotkey-section-header {
+    flow: horizontal;
+    align-content: middle;
+    margin-bottom: 6px;
+}
+.hotkey-section-title { font-weight: 600; color: var(--text-primary); }
 
 .hotkey-chips { flow: horizontal-wrap; margin-bottom: 8px; min-height: 28px; }
 

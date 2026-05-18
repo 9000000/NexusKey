@@ -104,6 +104,21 @@ function initHotkeysDialog() {
     save.addEventListener("click", function () { commitCapture(); });
     cancel.addEventListener("click", function () { closeCapture(); });
 
+    // Per-intent enable toggle — single delegated handler. data-intent on each
+    // `.toggle-switch-small` carries the matching Intent string so the C++ side
+    // can wire VALUE_CHANGED back to HotkeyRegistry::SetEnabled.
+    document.on("click", ".hotkey-section .toggle-switch-small", function (evt, toggle) {
+        var intent = toggle.getAttribute("data-intent");
+        if (!intent) return;
+        var newState = !toggle.classList.contains("checked");
+        if (newState) toggle.classList.add("checked");
+        else          toggle.classList.remove("checked");
+        document.getElementById("val-intent").value  = intent;
+        document.getElementById("val-enabled").value = newState ? "true" : "false";
+        triggerAction("set-enabled");
+        evt.stopPropagation();
+    });
+
     // Capture mode — sinking-phase keydown so Alt's menu-accelerator default
     // handler at the Sciter window level doesn't swallow our events. `^keydown`
     // dispatches root→target BEFORE the target phase where default actions
@@ -230,6 +245,20 @@ function clearAll() {
         var list = document.getElementById("chips-" + intent);
         if (list) list.innerHTML = "";
     });
+}
+
+// Receive per-intent enabled state from HotkeysDialog::sendEnabledStates.
+// Payload: [[intent:string, enabled:bool], ...].
+function setEnabledStates(pairs) {
+    if (!pairs || typeof pairs.length !== "number") return;
+    for (var i = 0; i < pairs.length; ++i) {
+        var p = pairs[i];
+        if (!p || p.length < 2) continue;
+        var toggle = document.getElementById("enable-" + p[0]);
+        if (!toggle) continue;
+        if (p[1]) toggle.classList.add("checked");
+        else      toggle.classList.remove("checked");
+    }
 }
 
 // C++ packs the 5 fields into a single sciter::value array:

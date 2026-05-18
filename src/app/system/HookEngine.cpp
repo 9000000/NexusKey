@@ -873,8 +873,6 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     const bool vnMode = vietnameseMode_.load(std::memory_order_acquire);
     const bool macroOn = macroEnabled_.load(std::memory_order_acquire);
     const bool macroEng = macroInEnglish_.load(std::memory_order_acquire);
-    const bool tempOffMacroEsc = tempOffMacroByEsc_.load(std::memory_order_acquire);
-    const bool escRestoreRaw = escRestoreRawEnabled_.load(std::memory_order_acquire);
     if (!vnMode &&
         commitUndoState_ == CommitUndoState::Idle &&
         !(macroOn && macroEng)) {
@@ -901,8 +899,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 
     // H1c: English-mode short-circuit + Vietnamese pre-dispatch tracking
     // (steps 3 / 3a-3d). Behavior preserved byte-identical.
-    switch (HandlePreDispatch(vkCode, vnMode, macroOn, macroEng, tempOffMacroEsc,
-                              escRestoreRaw,
+    switch (HandlePreDispatch(vkCode, vnMode, macroOn, macroEng,
                               cachedShift, cachedCapsLock,
                               cachedCtrl, cachedAlt, cachedWin)) {
         case KeyOutcome::Eat: return true;
@@ -1236,8 +1233,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
 //                 ExpandedPassTrigger without synth, or Esc temp-off arming).
 //   Fallthrough → continue to DispatchKeyAction (vnMode + no expansion).
 HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
-                                                      bool macroEng, bool tempOffMacroEsc,
-                                                      bool escRestoreRaw,
+                                                      bool macroEng,
                                                       bool cachedShift, bool cachedCapsLock,
                                                       bool cachedCtrl, bool cachedAlt,
                                                       bool cachedWin) {
@@ -1259,9 +1255,8 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
                 bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
                 rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
                                          : towlower(static_cast<wchar_t>(vkCode));
-            } else if (tempOffMacroEsc
-                       && hotkeysSnap->Matches(Intent::SkipMacro, vkCode, currentMods,
-                                               /*isDoubleTap=*/false, /*keyUp=*/false)
+            } else if (hotkeysSnap->Matches(Intent::SkipMacro, vkCode, currentMods,
+                                            /*isDoubleTap=*/false, /*keyUp=*/false)
                        && rawMacroBuffer_.empty()) {
                 tempMacroOff_ = true;
                 return KeyOutcome::Pass;
@@ -1329,15 +1324,17 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
         (commitUndoState_ == CommitUndoState::Primed) &&
         !commitStack_.empty() &&
         !commitStack_.back().rawInput.empty();
-    if (escRestoreRaw
-        && hotkeysSnap->Matches(Intent::CancelComposition, vkCode, currentMods,
-                                /*isDoubleTap=*/false, /*keyUp=*/false)
+    if (hotkeysSnap->Matches(Intent::CancelComposition, vkCode, currentMods,
+                             /*isDoubleTap=*/false, /*keyUp=*/false)
         && (hasLiveComposition || hasPrimedCommit)) {
         return TryEscRestoreRaw();
     }
 
-    // 3c. Temp off macro by Esc: press Esc with no pending text → skip macro for next word
-    if (tempOffMacroEsc && macroOn && !macroTable_.empty()
+    // 3c. Temp off macro by trigger: press the bound key with no pending text
+    //     → skip macro for next word. Registry's IsEnabled gates inside Matches();
+    //     the macro-system gates (macroOn, table non-empty) stay because skipping
+    //     macros is meaningless when none are loaded.
+    if (macroOn && !macroTable_.empty()
         && hotkeysSnap->Matches(Intent::SkipMacro, vkCode, currentMods,
                                 /*isDoubleTap=*/false, /*keyUp=*/false)
         && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
@@ -1687,10 +1684,9 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                                             isDoubleTap, /*keyUp=*/true);
             };
 
-            // 1. CancelComposition — same gates as the Esc-keydown path at
-            //    HandlePreDispatch step 3b': feature flag on + something to cancel.
-            if (escRestoreRawEnabled_.load(std::memory_order_acquire)
-                && matches(Intent::CancelComposition)) {
+            // 1. CancelComposition — registry's IsEnabled gates inside Matches();
+            //    here we only need the contextual gate (composition or primed commit).
+            if (matches(Intent::CancelComposition)) {
                 const int engineCount = engine_->Count();
                 const bool hasLiveComposition = engineCount > 0;
                 const bool hasPrimedCommit =
@@ -1707,9 +1703,10 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                 }
             }
 
-            // 2. SkipMacro — same gates as HandlePreDispatch step 3c.
-            if (tempOffMacroByEsc_.load(std::memory_order_acquire)
-                && macroEnabled_.load(std::memory_order_acquire)
+            // 2. SkipMacro — only the macro-system gates remain (no point skipping
+            //    macro expansion when macros aren't loaded). The intent-level
+            //    enable lives in the registry.
+            if (macroEnabled_.load(std::memory_order_acquire)
                 && !macroTable_.empty()
                 && engine_->Count() == 0
                 && rawMacroBuffer_.empty()

@@ -35,6 +35,10 @@ private:
     /// doesn't have to duplicate the lookup table maintained in HotkeysDialog.cpp.
     void sendVkNames();
 
+    /// Push per-intent enabled state to JS as `[[intent:string, enabled:bool], ...]`.
+    /// Called from populate() so toggle visual state stays in sync with the registry.
+    void sendEnabledStates();
+
     /// Read current val-intent / val-vk / val-mods / val-double-tap from DOM.
     /// Returns (intent, Trigger) parsed from the hidden inputs. `outValid` is
     /// false when any field is missing or out of range — caller must skip.

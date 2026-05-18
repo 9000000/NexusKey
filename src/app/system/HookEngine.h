@@ -163,8 +163,7 @@ private:
     [[nodiscard]] KeyOutcome TryEscRestoreRaw();
 
     [[nodiscard]] KeyOutcome HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
-                                                bool macroEng, bool tempOffMacroEsc,
-                                                bool escRestoreRaw,
+                                                bool macroEng,
                                                 bool cachedShift, bool cachedCapsLock,
                                                 bool cachedCtrl, bool cachedAlt,
                                                 bool cachedWin);

@@ -331,5 +331,61 @@ TEST(HotkeyRegistry, FromLegacyFields_UnknownTempOffValue_FallsThroughToNone) {
     EXPECT_TRUE(cfg.TriggersFor(Intent::ToggleEnabled).empty());
 }
 
+// ───────────────────────── Enabled state ─────────────────────────────────
+
+TEST(HotkeyRegistry, IsEnabled_DefaultsToTrueWhenUnset) {
+    HotkeyRegistry cfg;
+    EXPECT_TRUE(cfg.IsEnabled(Intent::CancelComposition));
+    EXPECT_TRUE(cfg.IsEnabled(Intent::SkipMacro));
+    EXPECT_TRUE(cfg.IsEnabled(Intent::ToggleEnabled));
+}
+
+TEST(HotkeyRegistry, SetEnabled_FalseBlocksMatches) {
+    auto cfg = HotkeyRegistry::Defaults();
+    // Default Esc → CancelComposition normally matches.
+    EXPECT_TRUE(cfg.Matches(Intent::CancelComposition, kVkEscape, 0, false, false));
+    cfg.SetEnabled(Intent::CancelComposition, false);
+    EXPECT_FALSE(cfg.Matches(Intent::CancelComposition, kVkEscape, 0, false, false));
+    // Other intents still fire — disable is per-intent.
+    EXPECT_TRUE(cfg.Matches(Intent::SkipMacro, kVkEscape, 0, false, false));
+}
+
+TEST(HotkeyRegistry, FromLegacyFields_EnabledMirrorsFlags) {
+    const auto on  = HotkeyRegistry::FromLegacyFields(true,  true,  1);
+    EXPECT_TRUE(on.IsEnabled(Intent::CancelComposition));
+    EXPECT_TRUE(on.IsEnabled(Intent::SkipMacro));
+    EXPECT_TRUE(on.IsEnabled(Intent::ToggleEnabled));
+
+    const auto off = HotkeyRegistry::FromLegacyFields(false, false, 0);
+    EXPECT_FALSE(off.IsEnabled(Intent::CancelComposition));
+    EXPECT_FALSE(off.IsEnabled(Intent::SkipMacro));
+    EXPECT_FALSE(off.IsEnabled(Intent::ToggleEnabled));
+}
+
+TEST(HotkeyRegistry, Clear_ResetsEnabledToDefaultTrue) {
+    HotkeyRegistry cfg;
+    cfg.SetEnabled(Intent::CancelComposition, false);
+    cfg.AddTrigger(Intent::CancelComposition, Trigger{kVkEscape, 0, false});
+    cfg.Clear();
+    EXPECT_TRUE(cfg.IsEnabled(Intent::CancelComposition));  // back to default true
+    EXPECT_TRUE(cfg.TriggersFor(Intent::CancelComposition).empty());
+}
+
+TEST(HotkeyRegistry, LoadSaveEnabled_RoundTripsThroughTomlTable) {
+    HotkeyRegistry cfg;
+    cfg.SetEnabled(Intent::CancelComposition, false);
+    cfg.SetEnabled(Intent::SkipMacro,         true);
+    cfg.SetEnabled(Intent::ToggleEnabled,     false);
+
+    toml::table tbl;
+    cfg.SaveEnabled(tbl);
+
+    HotkeyRegistry roundTrip;
+    roundTrip.LoadEnabled(tbl);
+    EXPECT_FALSE(roundTrip.IsEnabled(Intent::CancelComposition));
+    EXPECT_TRUE (roundTrip.IsEnabled(Intent::SkipMacro));
+    EXPECT_FALSE(roundTrip.IsEnabled(Intent::ToggleEnabled));
+}
+
 }  // namespace
 }  // namespace NextKey

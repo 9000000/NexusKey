@@ -37,6 +37,18 @@ constexpr uint32_t kVkEscape  = 0x1B;
     return false;
 }
 
+// Snake-case TOML key for the [hotkey_state] section. Separate from the
+// kebab-case wire format (`cancel-composition`) used in [[hotkeys]].intent
+// values — TOML keys conventionally use underscores here.
+[[nodiscard]] std::string_view IntentStateKey(Intent intent) noexcept {
+    switch (intent) {
+    case Intent::CancelComposition: return "cancel_composition";
+    case Intent::SkipMacro:         return "skip_macro";
+    case Intent::ToggleEnabled:     return "toggle_enabled";
+    }
+    return "";
+}
+
 }  // namespace
 
 bool IsModifierKey(uint32_t vk) noexcept {
@@ -49,6 +61,10 @@ bool HotkeyRegistry::Matches(Intent   intent,
                            uint32_t mods,
                            bool     isDoubleTap,
                            bool     keyUp) const noexcept {
+    // Disabled intent never fires — bindings are preserved on disk so the
+    // user can flip the toggle without losing custom triggers.
+    if (!IsEnabled(intent)) return false;
+
     // Contract: caller frames each event. Tap/Chord callers ask on DOWN
     // (keyUp=false, isDoubleTap=false). Modifier-alone callers ask only after
     // verifying a "clean" modifier up (keyUp=true, isDoubleTap=false).
@@ -95,6 +111,9 @@ HotkeyRegistry HotkeyRegistry::FromLegacyFields(
     bool    tempOffMacroByEsc,
     uint8_t tempOffMethodValue) noexcept {
     HotkeyRegistry cfg;
+    // Bindings only when the legacy toggle was ON — honors user's prior
+    // "disabled = no binding" choice. The enabled flag mirrors the same value
+    // so v2→v3 round-trips are semantically identical.
     if (escRestoreRawEnabled) {
         cfg.AddTrigger(Intent::CancelComposition, Trigger{kVkEscape, 0, false});
     }
@@ -114,6 +133,9 @@ HotkeyRegistry HotkeyRegistry::FromLegacyFields(
     default:
         break;
     }
+    cfg.SetEnabled(Intent::CancelComposition, escRestoreRawEnabled);
+    cfg.SetEnabled(Intent::SkipMacro,         tempOffMacroByEsc);
+    cfg.SetEnabled(Intent::ToggleEnabled,     tempOffMethodValue != 0);
     return cfg;
 }
 
@@ -127,8 +149,18 @@ void HotkeyRegistry::AddTrigger(Intent intent, Trigger trigger) {
     triggers_[intent].push_back(trigger);
 }
 
+bool HotkeyRegistry::IsEnabled(Intent intent) const noexcept {
+    const auto it = enabled_.find(intent);
+    return it == enabled_.end() ? true : it->second;  // missing → enabled by default
+}
+
+void HotkeyRegistry::SetEnabled(Intent intent, bool enabled) noexcept {
+    enabled_[intent] = enabled;
+}
+
 void HotkeyRegistry::Clear() noexcept {
     triggers_.clear();
+    enabled_.clear();  // back to all-enabled defaults
 }
 
 void HotkeyRegistry::Load(const toml::array& cfg) {
@@ -183,6 +215,23 @@ void HotkeyRegistry::Save(toml::array& cfg) const {
             row.insert("trigger", std::move(trig));
             cfg.push_back(std::move(row));
         }
+    }
+}
+
+void HotkeyRegistry::LoadEnabled(const toml::table& tbl) {
+    enabled_.clear();
+    for (Intent intent : kAllIntents) {
+        const std::string key{IntentStateKey(intent)};
+        if (const auto* node = tbl.get_as<bool>(key)) {
+            enabled_[intent] = node->get();
+        }
+        // Missing key → IsEnabled() defaults to true.
+    }
+}
+
+void HotkeyRegistry::SaveEnabled(toml::table& tbl) const {
+    for (Intent intent : kAllIntents) {
+        tbl.insert_or_assign(std::string{IntentStateKey(intent)}, IsEnabled(intent));
     }
 }
 
