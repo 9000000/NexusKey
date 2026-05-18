@@ -33,7 +33,7 @@ namespace FeatureFlags {
     constexpr uint16_t AUTO_RESTORE         = 0x0008;
     constexpr uint16_t CJK_AUTO_SWITCH      = 0x0010;  // Auto-toggle V/E on Chinese/Japanese/Korean keyboard layout
     constexpr uint16_t ESC_RESTORE_RAW      = 0x0020;  // Esc restores raw keys (víu → virus) and ends composition
-    // Bit 0x0040 free (formerly TEMP_OFF_*; now stored as byte in SharedState.tempOffMethod)
+    // Bit 0x0040 free (formerly TEMP_OFF_*; ToggleEnabled trigger now in HotkeyRegistry)
     constexpr uint16_t BEEP_ON_SWITCH      = 0x0080;
     // Byte 1 (bits 8-15)
     constexpr uint16_t MACRO_ENABLED        = 0x0100;
@@ -41,7 +41,8 @@ namespace FeatureFlags {
     constexpr uint16_t QUICK_CONSONANT      = 0x0400;
     constexpr uint16_t QUICK_START_CONSONANT = 0x0800;
     constexpr uint16_t QUICK_END_CONSONANT   = 0x1000;
-    constexpr uint16_t TEMP_OFF_MACRO_ESC    = 0x2000;
+    // Bit 0x2000 free (formerly TEMP_OFF_MACRO_ESC; SkipMacro trigger now lives
+    // in HotkeyRegistry, persisted to `[[hotkeys]]` + `[hotkey_state]`).
     constexpr uint16_t SMART_SWITCH          = 0x4000;
     constexpr uint16_t EXCLUDE_APPS          = 0x8000;
     // Extended flags (byte 2, bits 16-23) — stored in extFeatureFlags
@@ -260,7 +261,7 @@ struct SharedState {
     // HookEngine detects change during QuickSyncFromSharedState() and triggers full reload.
     // Replaces Named Event (ConfigEvent) — eliminates per-keystroke WaitForSingleObject syscall.
     uint8_t  configGeneration;   // Wraps at 255 — use != comparison, not >
-    uint8_t  tempOffMethod;      // TempOffMethod enum (0=None, 1=DupAlt, 2=Ctrl)
+    uint8_t  reservedByte34;     // formerly tempOffMethod (v3 cleanup: ToggleEnabled trigger lives in HotkeyRegistry). Slot kept for ABI stability — available for future reuse.
 
     // ── Reserved for future expansion (1024 bytes) ──
     // Draw from this pool for new fields; do NOT bump CURRENT_VERSION unless
@@ -327,7 +328,7 @@ struct SharedState {
         hotkeyMods = 0; hotkeyKeyLo = 0; hotkeyKeyHi = 0;
         convertMods = 0; convertKeyLo = 0; convertKeyHi = 0;
         configGeneration = 0;
-        tempOffMethod = 0;
+        reservedByte34 = 0;
         for (auto& b : reserved) b = 0;
         contextAnchor = HookContextAnchor{};  // zero all fields (generation=0=stable)
     }
@@ -335,7 +336,7 @@ struct SharedState {
 
 // Ensure SharedState layout is stable across EXE and DLL builds.
 // sizeof breakdown: 12 header + 4 epoch + 4 flags + 3 config + 3 featureFlags +
-// 1 codeTable + 6 hotkey + 2 configGen/tempOffMethod + 1024 reserved
+// 1 codeTable + 6 hotkey + 2 configGen/reservedByte34 + 1024 reserved
 //   = 1059 bytes, rounded up by 1 byte of alignment padding before contextAnchor
 //   (alignof >= 4) → contextAnchor at offset 1060 + 44 = 1104.
 static_assert(sizeof(SharedState) == 1104, "SharedState size changed — update structVersion");
@@ -377,7 +378,6 @@ static_assert(offsetof(SharedState, contextAnchor) == 1060,
     if (config.quickConsonant)     flags |= FeatureFlags::QUICK_CONSONANT;
     if (config.quickStartConsonant) flags |= FeatureFlags::QUICK_START_CONSONANT;
     if (config.quickEndConsonant)   flags |= FeatureFlags::QUICK_END_CONSONANT;
-    if (config.tempOffMacroByEsc)   flags |= FeatureFlags::TEMP_OFF_MACRO_ESC;
     if (config.smartSwitch)         flags |= FeatureFlags::SMART_SWITCH;
     if (config.excludeApps)         flags |= FeatureFlags::EXCLUDE_APPS;
     if (config.autoCapsMacro)       flags |= FeatureFlags::AUTO_CAPS_MACRO;
@@ -400,7 +400,6 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.quickConsonant     = (flags & FeatureFlags::QUICK_CONSONANT) != 0;
     config.quickStartConsonant = (flags & FeatureFlags::QUICK_START_CONSONANT) != 0;
     config.quickEndConsonant   = (flags & FeatureFlags::QUICK_END_CONSONANT) != 0;
-    config.tempOffMacroByEsc   = (flags & FeatureFlags::TEMP_OFF_MACRO_ESC) != 0;
     config.smartSwitch         = (flags & FeatureFlags::SMART_SWITCH) != 0;
     config.excludeApps         = (flags & FeatureFlags::EXCLUDE_APPS) != 0;
     config.autoCapsMacro       = (flags & FeatureFlags::AUTO_CAPS_MACRO) != 0;

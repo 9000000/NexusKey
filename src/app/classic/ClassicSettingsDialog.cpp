@@ -704,7 +704,6 @@ void ClassicSettingsDialog::SyncToSharedState() {
             state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
             state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
-            state.tempOffMethod = static_cast<uint8_t>(config_.tempOffMethod);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
             state.SetHotkey(hotkeyConfig_);
             state.configGeneration++;

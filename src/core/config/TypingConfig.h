@@ -30,13 +30,6 @@ enum class CodeTable : uint8_t {
     VietnameseLocale = 4
 };
 
-/// Method for temporarily disabling Vietnamese input
-enum class TempOffMethod : uint8_t {
-    None   = 0,  // Disabled
-    DupAlt = 1,  // Double-tap Alt
-    Ctrl   = 2   // Single-press Ctrl
-};
-
 /// Hotkey configuration for V/E toggle (internal, separate from Windows KL switching)
 struct HotkeyConfig {
     bool ctrl = false;
@@ -71,13 +64,16 @@ struct TypingConfig {
     bool allowZwjf = false;     // z/w/j/f act as tone/modifier keys (normal Vietnamese)
     bool autoRestoreEnabled = false;  // Restore raw keys when word is invalid
     bool cjkAutoSwitch = false;       // Auto-suppress V mode while a CJK keyboard layout is active (opt-in)
-    TempOffMethod tempOffMethod = TempOffMethod::None;  // Method to temporarily disable Vietnamese for current word
     bool macroEnabled = false;         // Allow macro/shorthand expansion
     bool macroInEnglish = false;       // Allow macros even when Vietnamese mode is off
     bool quickConsonant = false;       // Quick typing: cc→ch, gg→gi, nn→ng
     bool quickStartConsonant = false;  // Quick start consonant: f→ph, j→gi, w→qu
     bool quickEndConsonant = false;    // Quick end consonant: g→ng, h→nh, k→ch
-    bool tempOffMacroByEsc = false;    // Esc temporarily disables macro for next word
+    // v3 cleanup: tempOffMethod / tempOffMacroByEsc removed (HotkeyRegistry
+    // ToggleEnabled / SkipMacro intents replace them).
+    // escRestoreRawEnabled kept temporarily — still consumed by TSF
+    // EngineController. Phase 2: move TSF to read HotkeyRegistry directly,
+    // then drop this field + SharedState ESC_RESTORE_RAW flag.
     bool escRestoreRawEnabled = false; // Esc restores raw keys (e.g., víu → virus) and ends composition
     bool autoCapsMacro = false;        // Auto-capitalize expansion to match typed case
     bool allowEnglishBypass = false;   // Cho phép gõ dấu tự do / Bypass English blocking (e.g. yes -> ýe)

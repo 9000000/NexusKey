@@ -340,7 +340,6 @@ private:
     // sites also use .load(acquire) for uniform pattern (cost = MOV on x86).
     std::atomic<bool> autoCaps_{false};
     std::atomic<bool> autoCapsMacro_{false};
-    std::atomic<uint8_t> tempOffMethod_{0};  // TempOffMethod (see TypingConfig.h)
     // tempEngineOff_ / digitLedWord_: per-word "treat as English" flags.
     // Plain bool — written from hook thread (DispatchKeyAction, ProcessKeyUp)
     // AND main/WinEvent thread (OnFocusChanged, ToggleVietnameseMode, ClearWordState).
@@ -474,14 +473,14 @@ private:
     DWORD commitReadyTime_ = 0;                 // GetTickCount() when entering Ready state
 
     // Macro expansion
-    // Sprint 1 D5.2: macroEnabled_, macroInEnglish_, tempOffMacroByEsc_ migrated
-    // to std::atomic — read on hook hot path (ProcessKeyDown step 2c, alpha key
-    // path, TryExpandMacro). tempMacroOff_ / macroCrossCommit_ are per-word
-    // runtime state on the hook thread only — no atomic needed.
+    // Sprint 1 D5.2: macroEnabled_, macroInEnglish_ migrated to std::atomic —
+    // read on hook hot path (ProcessKeyDown step 2c, alpha key path,
+    // TryExpandMacro). tempMacroOff_ / macroCrossCommit_ are per-word runtime
+    // state on the hook thread only — no atomic needed.
+    // tempOffMacroByEsc_ / escRestoreRawEnabled_ removed in v3 cleanup
+    // (SkipMacro / CancelComposition triggers now live in HotkeyRegistry).
     std::atomic<bool> macroEnabled_{false};
     std::atomic<bool> macroInEnglish_{false};
-    std::atomic<bool> tempOffMacroByEsc_{false};  // Config: Esc can temp-disable macro
-    std::atomic<bool> escRestoreRawEnabled_{false};  // Config: Esc restores raw keys (víu → virus)
     bool tempMacroOff_ = false;       // Runtime: macro disabled for current word; same-thread (hook) only
     bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits; same-thread (hook) only
     std::unordered_map<std::wstring, std::wstring> macroTable_;
@@ -557,7 +556,6 @@ private:
     uint8_t lastSpellCheck_ = 0;
     uint8_t lastInputMethod_ = 0;
     uint8_t lastCodeTable_ = 0;
-    uint8_t lastTempOffMethod_ = 0;
     void QuickSyncFromSharedState();
     void ReloadFromToml();  // Full TOML reload (macros, excluded apps, hotkeys, etc.)
     // Pre-T3 Minor 2 fix (Rule #11.3): atomic for lock-free hot-path read

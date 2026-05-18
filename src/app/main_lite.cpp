@@ -192,7 +192,6 @@ static void ApplyConfigChange(const TypingConfig& config) {
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
         state.spellCheck = config.spellCheckEnabled ? 1 : 0;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
-        state.tempOffMethod = static_cast<uint8_t>(config.tempOffMethod);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
         state.configGeneration++;
         g_sharedState.Write(state);
@@ -476,7 +475,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.spellCheck = config.spellCheckEnabled ? 1 : 0;
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
-        state.tempOffMethod = static_cast<uint8_t>(config.tempOffMethod);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
         state.SetHotkey(hotkeyConfig);
         if (!startVietnamese) {

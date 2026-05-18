@@ -9,10 +9,11 @@
 //   - vietnameseMode_   — std::atomic<bool>     (D5)
 //   - isTsfApp_         — std::atomic<bool>     (D5.1)
 //   - currentMethod_    — std::atomic<InputMethod>  (D5.1, enum)
-//   - 14 per-app + config bools (D5.2): isExcludedApp_, isConsoleApp_,
+//   - 11 per-app + config bools (D5.2): isExcludedApp_, isConsoleApp_,
 //     isElectronApp_, skipEmptyChar_, needBaitChar_, useClipboardPaste_,
 //     useEditMsgPath_, isOutlookApp_, macroEnabled_, macroInEnglish_,
-//     autoCaps_, autoCapsMacro_, tempOffMacroByEsc_, tempOffMethod_
+//     autoCaps_, autoCapsMacro_ (v3 cleanup dropped tempOffMacroByEsc_,
+//     tempOffMethod_, escRestoreRawEnabled_ — now in HotkeyRegistry)
 //   - excludedPid_      — std::atomic<DWORD>    (D5.2, 32-bit PID)
 //
 // This file provides:

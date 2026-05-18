@@ -87,11 +87,8 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     tsfApps_ = config.tsfApps;
     cjkAutoSwitch_ = config.cjkAutoSwitch;
     autoCaps_.store(config.autoCaps, std::memory_order_release);
-    tempOffMethod_.store(static_cast<uint8_t>(config.tempOffMethod), std::memory_order_release);
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
-    tempOffMacroByEsc_.store(config.tempOffMacroByEsc, std::memory_order_release);
-    escRestoreRawEnabled_.store(config.escRestoreRawEnabled, std::memory_order_release);
     autoCapsMacro_.store(config.autoCapsMacro, std::memory_order_release);
     // Runtime file-logger gate (Settings → System → "Bật debug log").
     ::NextKey::Logger::SetEnabled(config.debugLogEnabled);
@@ -170,10 +167,11 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         ApplyConfig(config);
     }
     // Load unified hotkey registry. On first launch after v3 upgrade, the
-    // `[[hotkeys]]` section is missing — migrate from legacy TypingConfig
-    // fields and persist so future launches read the new schema directly.
+    // `[[hotkeys]]` section is missing — migrate reads legacy `[features]`
+    // toggles directly from TOML and persists `[hotkey_state]` so future
+    // launches read the new schema directly.
     ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
-        ConfigManager::GetConfigPath(), config));
+        ConfigManager::GetConfigPath()));
     if (macroEnabled_.load(std::memory_order_acquire)) {
         ReloadMacroTable();
     }
@@ -517,17 +515,14 @@ void HookEngine::QuickSyncFromSharedState() {
     uint8_t sc = state.spellCheck;
     uint8_t im = state.inputMethod;
     uint8_t ct = state.codeTable;
-    uint8_t tom = state.tempOffMethod;
 
     // No change → no-op (cheap: integer compares on mapped memory)
     if (ff == lastFeatureFlags_ && sc == lastSpellCheck_ &&
-        im == lastInputMethod_ && ct == lastCodeTable_ &&
-        tom == lastTempOffMethod_) return;
+        im == lastInputMethod_ && ct == lastCodeTable_) return;
     lastFeatureFlags_ = ff;
     lastSpellCheck_ = sc;
     lastInputMethod_ = im;
     lastCodeTable_ = ct;
-    lastTempOffMethod_ = tom;
 
     NEXTKEY_LOG(L"HookEngine: SharedState changed (ff=0x%04X, spell=%d, method=%d, ct=%d)", ff, sc, im, ct);
 
@@ -536,7 +531,6 @@ void HookEngine::QuickSyncFromSharedState() {
     cfg.spellCheckEnabled = sc != 0;
     cfg.inputMethod = static_cast<InputMethod>(im);
     cfg.codeTable = static_cast<CodeTable>(ct);
-    cfg.tempOffMethod = static_cast<TempOffMethod>(tom);
 
     bool methodChanged = (currentMethod_.load(std::memory_order_acquire) != cfg.inputMethod);
     bool codeTableChanged = (currentCodeTable_ != cfg.codeTable);
@@ -582,7 +576,6 @@ void HookEngine::ReloadFromToml() {
             config.inputMethod = static_cast<InputMethod>(state.inputMethod);
             config.spellCheckEnabled = state.spellCheck != 0;
             DecodeFeatureFlags(state.GetFeatureFlags(), config);
-            config.tempOffMethod = static_cast<TempOffMethod>(state.tempOffMethod);
             NEXTKEY_LOG(L"HookEngine: read SharedState (epoch=%u, featureFlags=0x%04X)",
                         state.epoch, state.GetFeatureFlags());
         }
@@ -607,7 +600,7 @@ void HookEngine::ReloadFromToml() {
     // sync when Settings dialog persists rebindings via SaveHotkeyRegistry.
     // Still runs migration (idempotent — no-op if section already populated).
     ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
-        ConfigManager::GetConfigPath(), config));
+        ConfigManager::GetConfigPath()));
     if (macroEnabled_.load(std::memory_order_acquire)) {
         ReloadMacroTable();
     } else {
@@ -1103,9 +1096,18 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         // GTest coverage (HookEngine.cpp is Win32-only). See design 2026-05-17.
         const auto methodForTone = currentMethod_.load(std::memory_order_acquire);
         const bool shiftHeld = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-        const bool escRestoreRawOn = escRestoreRawEnabled_.load(std::memory_order_acquire);
+        // Source of truth: registry snapshot — Esc only exempts when bound to
+        // CancelComposition AND the intent is enabled. Removed in v3 cleanup:
+        // legacy `escRestoreRawEnabled_` atomic. Matches() rejects modifier-vk
+        // on DOWN so passing keyUp=false is safe for plain Esc.
+        const auto hotkeysForExempt = hotkeys_.load(std::memory_order_acquire);
+        const bool escIsCancelTrigger =
+            hotkeysForExempt &&
+            hotkeysForExempt->Matches(Intent::CancelComposition, VK_ESCAPE,
+                                       /*mods=*/0, /*isDoubleTap=*/false,
+                                       /*keyUp=*/false);
         const bool isCommitUndoExempt = IsCommitUndoExemptKey(
-            vkCode, methodForTone, shiftHeld, escRestoreRawOn);
+            vkCode, methodForTone, shiftHeld, escIsCancelTrigger);
         // Sprint 2 D5: settle window is now per-host. RichEdit (0 ms) lets
         // commit-undo replay immediately; Win32 (30 ms) tightens the gate
         // ~3× vs the legacy 100 ms hardcode; Electron/Console (100 ms) keeps
@@ -1640,9 +1642,8 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
     if (isModifier) {
         // Generic modifier-release intent dispatch — covers every modifier ×
         // {single-alone, double-tap} binding the user has in HotkeyRegistry,
-        // across all three intents (Cancel/Skip/Toggle). Source of truth is the
-        // registry; legacy tempOffMethod_ no longer gates here (it stays only
-        // for the V/E QuickSync path elsewhere — Step 10 removes it entirely).
+        // across all three intents (Cancel/Skip/Toggle). Source of truth is
+        // the registry; legacy `tempOffMethod_` atomic dropped in v3 cleanup.
         const auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
         const uint32_t canonicalVk = CanonicalModifierVk(vkCode);
         const int modIdx = ModIdxFor(canonicalVk);

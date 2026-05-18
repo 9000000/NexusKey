@@ -152,22 +152,17 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.autoRestoreEnabled = (*features)["auto_restore"].value_or(false);
             // Default false: opt-in. Most users don't have CJK layouts active.
             config.cjkAutoSwitch = (*features)["cjk_auto_switch"].value_or(false);
-            // Migration: try new int key first, fall back to old bool key
-            if (auto method = (*features)["temp_off_method"].value<int64_t>()) {
-                int v = static_cast<int>(*method);
-                if (v >= 0 && v <= 2)
-                    config.tempOffMethod = static_cast<TempOffMethod>(v);
-            } else {
-                // Old config: temp_off_by_alt = true → DupAlt
-                bool oldAlt = (*features)["temp_off_by_alt"].value_or(false);
-                config.tempOffMethod = oldAlt ? TempOffMethod::DupAlt : TempOffMethod::None;
-            }
+            // v3 cleanup: `temp_off_method` / `temp_off_macro_esc` no longer
+            // loaded into TypingConfig — `MigrateLegacyHotkeysIfNeeded` reads
+            // them directly from TOML when building the registry on first run.
             config.macroEnabled = (*features)["macro_enabled"].value_or(false);
             config.macroInEnglish = (*features)["macro_in_english"].value_or(false);
             config.quickConsonant = (*features)["quick_consonant"].value_or(false);
             config.quickStartConsonant = (*features)["quick_start_consonant"].value_or(false);
             config.quickEndConsonant = (*features)["quick_end_consonant"].value_or(false);
-            config.tempOffMacroByEsc = (*features)["temp_off_macro_esc"].value_or(false);
+            // escRestoreRawEnabled kept temporarily — TSF EngineController still
+            // reads it as the ESC restore-raw gate. Phase 2: route TSF through
+            // HotkeyRegistry, then drop both the field and this loader.
             config.escRestoreRawEnabled = (*features)["esc_restore_raw"].value_or(false);
             config.autoCapsMacro = (*features)["auto_caps_macro"].value_or(false);
             config.allowEnglishBypass = (*features)["allow_english_bypass"].value_or(false);
@@ -237,14 +232,18 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("allow_zwjf", config.allowZwjf);
         features.insert_or_assign("auto_restore", config.autoRestoreEnabled);
         features.insert_or_assign("cjk_auto_switch", config.cjkAutoSwitch);
-        features.insert_or_assign("temp_off_method", static_cast<int64_t>(config.tempOffMethod));
-        features.erase("temp_off_by_alt");  // Remove old key on save
+        // v3 cleanup: stop writing `temp_off_method` / `temp_off_macro_esc` —
+        // HotkeyRegistry owns these triggers now. Stale entries on disk are
+        // harmless (loader ignores them) but we explicitly erase to keep
+        // config.toml lean for new saves.
+        features.erase("temp_off_method");
+        features.erase("temp_off_macro_esc");
+        features.erase("temp_off_by_alt");  // Pre-v2 legacy key
         features.insert_or_assign("macro_enabled", config.macroEnabled);
         features.insert_or_assign("macro_in_english", config.macroInEnglish);
         features.insert_or_assign("quick_consonant", config.quickConsonant);
         features.insert_or_assign("quick_start_consonant", config.quickStartConsonant);
         features.insert_or_assign("quick_end_consonant", config.quickEndConsonant);
-        features.insert_or_assign("temp_off_macro_esc", config.tempOffMacroByEsc);
         features.insert_or_assign("esc_restore_raw", config.escRestoreRawEnabled);
         features.insert_or_assign("auto_caps_macro", config.autoCapsMacro);
         features.insert_or_assign("allow_english_bypass", config.allowEnglishBypass);
@@ -541,9 +540,41 @@ HotkeyRegistry ConfigManager::LoadHotkeyRegistryOrDefault() {
     return *registry;
 }
 
-HotkeyRegistry ConfigManager::MigrateLegacyHotkeysIfNeeded(
-    const std::wstring& path,
-    const TypingConfig& legacyConfig) {
+namespace {
+
+/// Read the 3 pre-v3 hotkey toggles from the `[features]` TOML table without
+/// going through TypingConfig (those fields were dropped in v3 cleanup).
+/// Returns all-default values when file/section is unreadable.
+struct LegacyHotkeyToggles {
+    bool    escRestoreRaw    = false;
+    bool    tempOffMacroEsc  = false;
+    uint8_t tempOffMethod    = 0;  // 0=None, 1=DupAlt, 2=Ctrl
+};
+
+[[nodiscard]] LegacyHotkeyToggles ReadLegacyHotkeyToggles(const std::wstring& path) noexcept {
+    LegacyHotkeyToggles out;
+    try {
+        auto table = toml::parse_file(WideToUtf8(path));
+        if (auto features = table["features"].as_table()) {
+            out.escRestoreRaw   = (*features)["esc_restore_raw"].value_or(false);
+            out.tempOffMacroEsc = (*features)["temp_off_macro_esc"].value_or(false);
+            if (auto m = (*features)["temp_off_method"].value<int64_t>()) {
+                int v = static_cast<int>(*m);
+                if (v >= 0 && v <= 2) out.tempOffMethod = static_cast<uint8_t>(v);
+            } else if ((*features)["temp_off_by_alt"].value_or(false)) {
+                // Pre-v2 fallback key.
+                out.tempOffMethod = 1;  // DupAlt
+            }
+        }
+    } catch (...) {
+        // Defaults already set on `out`.
+    }
+    return out;
+}
+
+}  // namespace
+
+HotkeyRegistry ConfigManager::MigrateLegacyHotkeysIfNeeded(const std::wstring& path) {
     // Fresh install (no config file) → factory defaults, nothing to persist.
     if (!std::filesystem::exists(path)) {
         return HotkeyRegistry::Defaults();
@@ -576,20 +607,17 @@ HotkeyRegistry ConfigManager::MigrateLegacyHotkeysIfNeeded(
     // The UI then matches what runtime fires; users who genuinely want "no
     // shortcuts" can delete each binding individually (a future schema sentinel
     // can recover the explicit-clear semantic).
-    const bool legacyAllDefault = !legacyConfig.escRestoreRawEnabled
-                               && !legacyConfig.tempOffMacroByEsc
-                               && legacyConfig.tempOffMethod == TempOffMethod::None;
+    const auto legacy = ReadLegacyHotkeyToggles(path);
+    const bool legacyAllDefault = !legacy.escRestoreRaw
+                               && !legacy.tempOffMacroEsc
+                               && legacy.tempOffMethod == 0;
     auto migrated = legacyAllDefault
         ? HotkeyRegistry::Defaults()
         : HotkeyRegistry::FromLegacyFields(
-              legacyConfig.escRestoreRawEnabled,
-              legacyConfig.tempOffMacroByEsc,
-              static_cast<uint8_t>(legacyConfig.tempOffMethod));
-    NEXTKEY_LOG(L"[ConfigManager] Migrated v2→v3 hotkeys (esc=%d macro=%d method=%d legacyDefault=%d)",
-                legacyConfig.escRestoreRawEnabled,
-                legacyConfig.tempOffMacroByEsc,
-                static_cast<int>(legacyConfig.tempOffMethod),
-                legacyAllDefault);
+              legacy.escRestoreRaw, legacy.tempOffMacroEsc, legacy.tempOffMethod);
+    NEXTKEY_LOG(L"[ConfigManager] Migrated v2→v3 hotkeys (esc=%d macro=%d method=%u legacyDefault=%d)",
+                legacy.escRestoreRaw, legacy.tempOffMacroEsc,
+                static_cast<unsigned>(legacy.tempOffMethod), legacyAllDefault);
     if (!SaveHotkeyRegistry(path, migrated)) {
         NEXTKEY_LOG(L"[ConfigManager] Failed to persist migrated hotkeys to %s", path.c_str());
     }

@@ -263,21 +263,10 @@ TEST_F(SharedStateTest, FeatureFlags_SmartSwitch_Roundtrip) {
     EXPECT_TRUE(out.smartSwitch);
 }
 
-TEST_F(SharedStateTest, TempOffMethod_ByteField_Roundtrip) {
-    // tempOffMethod is stored as a dedicated byte slot, not encoded in featureFlags.
-    SharedState state{};
-    state.InitDefaults();
-    EXPECT_EQ(state.tempOffMethod, 0);  // None default
-
-    state.tempOffMethod = static_cast<uint8_t>(TempOffMethod::DupAlt);
-    EXPECT_EQ(static_cast<TempOffMethod>(state.tempOffMethod), TempOffMethod::DupAlt);
-
-    state.tempOffMethod = static_cast<uint8_t>(TempOffMethod::Ctrl);
-    EXPECT_EQ(static_cast<TempOffMethod>(state.tempOffMethod), TempOffMethod::Ctrl);
-
-    state.tempOffMethod = static_cast<uint8_t>(TempOffMethod::None);
-    EXPECT_EQ(static_cast<TempOffMethod>(state.tempOffMethod), TempOffMethod::None);
-}
+// v3 cleanup: TempOffMethod_ByteField_Roundtrip removed — the byte slot was
+// renamed `reservedByte34` (formerly tempOffMethod) and is no longer populated.
+// HotkeyRegistry's ToggleEnabled intent now owns the V/E toggle trigger; see
+// tests/HotkeyRegistryTest.cpp for the replacement coverage.
 
 TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
     TypingConfig cfg{};

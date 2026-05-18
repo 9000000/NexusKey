@@ -35,9 +35,13 @@ namespace NextKey {
 ///   - VNI tone modifiers `1-5` without Shift (active in VNI / Combined).
 ///     Shift is checked because Shift+digit produces punctuation on most
 ///     layouts (Shift+1 = '!', etc.), which is not a tone keystroke.
-///   - VK_ESCAPE when `escRestoreRawEnabled` is on — same semantic class:
+///   - VK_ESCAPE when `escIsCancelTrigger` is true — same semantic class:
 ///     the key only modifies the just-committed word (replaces composed
-///     Vietnamese with the user's raw keys).
+///     Vietnamese with the user's raw keys). v3 source of truth: hot-path
+///     snapshot of `HotkeyRegistry::Matches(Intent::CancelComposition,
+///     VK_ESCAPE, mods=0, doubleTap=false, keyUp=false)`. Disabled intent
+///     or removed Esc trigger ⇒ caller passes `false` and Esc behaves
+///     like any other non-exempt key.
 ///
 /// All other keys (alpha letters, punctuation, navigation, F-keys, etc.)
 /// return false — caller must demote / cancel commit-undo state.
@@ -45,7 +49,7 @@ namespace NextKey {
     uint32_t vkCode,
     InputMethod method,
     bool shiftHeld,
-    bool escRestoreRawEnabled) noexcept {
+    bool escIsCancelTrigger) noexcept {
     constexpr uint32_t kVkEscape = 0x1B;
 
     const bool isTelexTone =
@@ -59,7 +63,7 @@ namespace NextKey {
         !shiftHeld;
 
     const bool isEscRestoreRawKey =
-        (vkCode == kVkEscape) && escRestoreRawEnabled;
+        (vkCode == kVkEscape) && escIsCancelTrigger;
 
     return isTelexTone || isVniTone || isEscRestoreRawKey;
 }

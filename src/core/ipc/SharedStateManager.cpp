@@ -223,7 +223,8 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->convertKeyLo = state.convertKeyLo;
     p->convertKeyHi = state.convertKeyHi;
     p->configGeneration = state.configGeneration;
-    p->tempOffMethod = state.tempOffMethod;
+    // v3 cleanup: `tempOffMethod` byte slot retained for ABI stability but no
+    // longer copied — HotkeyRegistry owns the V/E toggle trigger now.
     memcpy(p->reserved, state.reserved, sizeof(state.reserved));
 
     MemoryBarrier();

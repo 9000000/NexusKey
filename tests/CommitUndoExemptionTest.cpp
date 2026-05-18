@@ -111,7 +111,8 @@ TEST(CommitUndoExemption, Vni_Digits_NotExemptInTelex) {
 }
 
 // ============================================================
-// ESC restore-raw — exempt when escRestoreRawEnabled is on
+// ESC restore-raw — exempt when escIsCancelTrigger is on
+// (snapshot of HotkeyRegistry::Matches(Intent::CancelComposition, VK_ESCAPE...))
 // ============================================================
 
 TEST(CommitUndoExemption, Esc_ExemptWhenToggleOn_AllMethods) {
@@ -171,8 +172,8 @@ TEST(CommitUndoExemption, Regression_2026_05_17_EscPostBS) {
     // line on ESC. Fix commits: 41ba120 + 351defa.
     EXPECT_TRUE(IsCommitUndoExemptKey(kVkEscape, InputMethod::Telex,
                                        /*shift=*/false, /*escEnabled=*/true))
-        << "ESC must be exempt when escRestoreRawEnabled — otherwise the catch-all "
-           "demote-to-Idle wipes Primed state before TryEscRestoreRaw runs.";
+        << "ESC must be exempt when bound to CancelComposition — otherwise the "
+           "catch-all demote-to-Idle wipes Primed state before TryEscRestoreRaw runs.";
 }
 
 }  // namespace

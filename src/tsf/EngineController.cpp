@@ -597,7 +597,8 @@ void EngineController::ApplySharedState(const SharedState& state) {
     config_.spellCheckEnabled = state.spellCheck != 0;
     config_.optimizeLevel = optimizeLevel;
     DecodeFeatureFlags(state.GetFeatureFlags(), config_);
-    config_.tempOffMethod = static_cast<TempOffMethod>(state.tempOffMethod);
+    // v3 cleanup: legacy `state.tempOffMethod` no longer decoded — TSF never
+    // consumed this field (V/E toggle path is in HookEngine/main app).
 
     // Runtime file-logger gate. SettingsDialog persists the bit into the
     // feature-flag bitmask via SharedState, so flipping the toggle in the
