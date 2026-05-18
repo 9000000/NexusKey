@@ -7,6 +7,60 @@ var VK = {
 };
 var MOD = { CTRL: 0x01, SHIFT: 0x02, ALT: 0x04, WIN: 0x08 };
 
+// Sciter delivers `event.keyCode` in its own (GLFW-derived) scheme — see
+// `extern/sciter/include/sciter-x-key-codes.h`. F1=290, LeftShift=340, etc.
+// We need Win32 VK on the C++ side (matches HookEngine + ConfigManager), so
+// we map from `event.code` (DOM Level 3 string, e.g. "KeyA", "F1", "Escape").
+// Win32 VK reference: https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+var CODE_TO_VK = {
+    "Escape":        0x1B, "Tab":           0x09, "Space":         0x20,
+    "Enter":         0x0D, "NumpadEnter":   0x0D, "Backspace":     0x08,
+    "Delete":        0x2E, "Insert":        0x2D,
+    "Home":          0x24, "End":           0x23,
+    "PageUp":        0x21, "PageDown":      0x22,
+    "ArrowLeft":     0x25, "ArrowUp":       0x26,
+    "ArrowRight":    0x27, "ArrowDown":     0x28,
+    "CapsLock":      0x14, "PrintScreen":   0x2C, "Pause":         0x13,
+    "ContextMenu":   0x5D,
+    // Modifiers — captured for completeness; bare presses are rejected.
+    "ShiftLeft":     0x10, "ShiftRight":    0x10,
+    "ControlLeft":   0x11, "ControlRight":  0x11,
+    "AltLeft":       0x12, "AltRight":      0x12,
+    "MetaLeft":      0x5B, "MetaRight":     0x5C, "OSLeft": 0x5B, "OSRight": 0x5C,
+    // OEM punctuation — common rebind candidates.
+    "Semicolon":     0xBA, "Equal":         0xBB, "Comma":         0xBC,
+    "Minus":         0xBD, "Period":        0xBE, "Slash":         0xBF,
+    "Backquote":     0xC0, "BracketLeft":   0xDB, "Backslash":     0xDC,
+    "BracketRight":  0xDD, "Quote":         0xDE,
+};
+
+// Convert "event.code" string -> Win32 VK number. Returns 0 if unmapped.
+function codeToVk(code) {
+    if (!code) return 0;
+    if (CODE_TO_VK.hasOwnProperty(code)) return CODE_TO_VK[code];
+    // "KeyA".."KeyZ"   -> 0x41..0x5A
+    if (code.length === 4 && code.substr(0, 3) === "Key") {
+        var c = code.charCodeAt(3);
+        if (c >= 65 && c <= 90) return c;
+    }
+    // "Digit0".."Digit9" -> 0x30..0x39
+    if (code.length === 6 && code.substr(0, 5) === "Digit") {
+        var d = code.charCodeAt(5);
+        if (d >= 48 && d <= 57) return d;
+    }
+    // "Numpad0".."Numpad9" -> VK_NUMPAD0(0x60)..VK_NUMPAD9(0x69)
+    if (code.length === 7 && code.substr(0, 6) === "Numpad") {
+        var n = code.charCodeAt(6);
+        if (n >= 48 && n <= 57) return 0x60 + (n - 48);
+    }
+    // "F1".."F24" -> VK_F1(0x70)..VK_F24(0x87)
+    if (code.length >= 2 && code.charAt(0) === "F") {
+        var num = parseInt(code.substr(1), 10);
+        if (num >= 1 && num <= 24) return 0x6F + num;
+    }
+    return 0;
+}
+
 // Pending capture state — only meaningful while #capture-overlay is visible.
 var pending = { vk: 0, mods: 0, label: "—" };
 
@@ -56,14 +110,19 @@ function initHotkeysDialog() {
         var overlay = document.getElementById("capture-overlay");
         if (!overlay || overlay.style.display === "none") return;
 
-        var keyCode = evt.keyCode || evt.which || 0;
-        if (!keyCode) return;
+        // Use `event.code` (string, DOM Level 3) — `event.keyCode` is Sciter's
+        // GLFW scheme, NOT Win32 VK (F1=290 there). codeToVk() maps to VK.
+        var vk = codeToVk(evt.code);
+        if (!vk) {
+            evt.preventDefault();
+            return;
+        }
 
         // Reject bare modifier presses — Sciter delivers separate events for
         // Ctrl/Shift/Alt/Win, and we want a "main key" with optional mods.
         // (Modifier-alone and double-tap rebinds are v2 work — defaults are
         // preserved for users who want Ctrl-alone / 2×Alt.)
-        if (isModifier(keyCode)) {
+        if (isModifierVk(vk)) {
             evt.preventDefault();
             return;
         }
@@ -74,9 +133,9 @@ function initHotkeysDialog() {
         if (evt.altKey)   mods |= MOD.ALT;
         if (evt.metaKey)  mods |= MOD.WIN;
 
-        pending.vk    = keyCode;
+        pending.vk    = vk;
         pending.mods  = mods;
-        pending.label = formatLabel(keyCode, mods);
+        pending.label = formatLabel(vk, mods);
 
         document.getElementById("capture-preview").textContent = pending.label;
         document.getElementById("btn-capture-save").removeAttribute("disabled");
@@ -86,7 +145,7 @@ function initHotkeysDialog() {
     });
 }
 
-function isModifier(vk) {
+function isModifierVk(vk) {
     return vk === VK.CTRL || vk === VK.SHIFT || vk === VK.ALT
         || vk === VK.LWIN || vk === VK.RWIN;
 }
