@@ -519,37 +519,34 @@ HotkeyRegistry ConfigManager::MigrateLegacyHotkeysIfNeeded(
         return HotkeyRegistry::Defaults();
     }
 
-    // Distinguish "[[hotkeys]] absent" (pre-v3 / migration path) from
-    // "[[hotkeys]] present but empty" (user cleared all bindings explicitly).
-    bool sectionPresent = false;
-    try {
-        auto table = toml::parse_file(WideToUtf8(path));
-        sectionPresent = table.contains("hotkeys");
-    } catch (...) {
-        // Parse failure: treat as missing so we fall through to migration.
+    // If the user already has any binding stored, honor what they have —
+    // they touched the UI (or carried over v2 customizations).
+    auto existing = LoadHotkeyRegistry(path);
+    const bool populated = existing && (
+        !existing->TriggersFor(Intent::CancelComposition).empty() ||
+        !existing->TriggersFor(Intent::SkipMacro).empty() ||
+        !existing->TriggersFor(Intent::ToggleEnabled).empty());
+    if (populated) {
+        return *existing;
     }
 
-    if (sectionPresent) {
-        // User has the new schema — honor whatever's there, including an
-        // explicit empty array (== "I want no shortcuts").
-        return LoadHotkeyRegistry(path).value_or(HotkeyRegistry{});
-    }
-
-    // [[hotkeys]] section missing — v2→v3 upgrade path. Derive from legacy
-    // toggles, then if ALL legacy toggles were at their default (off), promote
-    // to Defaults() so first-launch v3 users get the bindings the UI shows.
-    // Without this, the UI shows Ctrl/2×Alt/Esc/Esc (via LoadHotkeyRegistryOrDefault)
-    // but runtime sees empty registry → user thinks bindings work, they don't.
-    auto migrated = HotkeyRegistry::FromLegacyFields(
-        legacyConfig.escRestoreRawEnabled,
-        legacyConfig.tempOffMacroByEsc,
-        static_cast<uint8_t>(legacyConfig.tempOffMethod));
+    // Empty registry on disk (either `[[hotkeys]]` absent OR present-but-empty).
+    // Without a distinguishing sentinel we can't tell "explicit user clear"
+    // from "leftover from a buggy earlier persist" — and the latter actually
+    // happened in pre-758f2b4 builds. Pragmatic v1 choice: derive from legacy
+    // toggles, fall back to Defaults() when legacy fields are all at v2 defaults.
+    // The UI then matches what runtime fires; users who genuinely want "no
+    // shortcuts" can delete each binding individually (a future schema sentinel
+    // can recover the explicit-clear semantic).
     const bool legacyAllDefault = !legacyConfig.escRestoreRawEnabled
                                && !legacyConfig.tempOffMacroByEsc
                                && legacyConfig.tempOffMethod == TempOffMethod::None;
-    if (legacyAllDefault) {
-        migrated = HotkeyRegistry::Defaults();
-    }
+    auto migrated = legacyAllDefault
+        ? HotkeyRegistry::Defaults()
+        : HotkeyRegistry::FromLegacyFields(
+              legacyConfig.escRestoreRawEnabled,
+              legacyConfig.tempOffMacroByEsc,
+              static_cast<uint8_t>(legacyConfig.tempOffMethod));
     NEXTKEY_LOG(L"[ConfigManager] Migrated v2→v3 hotkeys (esc=%d macro=%d method=%d legacyDefault=%d)",
                 legacyConfig.escRestoreRawEnabled,
                 legacyConfig.tempOffMacroByEsc,
