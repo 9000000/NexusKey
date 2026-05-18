@@ -98,24 +98,13 @@ function initHotkeysDialog() {
     save.addEventListener("click", function () { commitCapture(); });
     cancel.addEventListener("click", function () { closeCapture(); });
 
-    // Capture mode — document-level Sciter idiom (per SDK docs:
-    // `document.on("keydown", ...)`). Fires regardless of focus target.
-    //
-    // Split routing by key type:
-    //   - Non-modifiers (letters, F-keys, Esc, OEM punct, ...) — KEYDOWN.
-    //     Lets us read evt.ctrlKey/shiftKey/altKey for chord detection.
-    //   - Modifiers (Ctrl/Shift/Alt/Win) — KEYUP. Alt-keydown is consumed by
-    //     Sciter window's menu-accelerator default handler before document
-    //     sees it (Win32 WM_SYSKEYDOWN). Mirrors HookEngine's DupAlt
-    //     detection which also fires on Alt RELEASE for the same reason.
-    document.on("keydown", function (evt) {
+    // Capture mode — sinking-phase keydown so Alt's menu-accelerator default
+    // handler at the Sciter window level doesn't swallow our events. `^keydown`
+    // dispatches root→target BEFORE the target phase where default actions
+    // (including the Alt→menu activation) execute. Documented in Sciter SDK
+    // `samples.sciter/input-elements/input-events-handling.htm`.
+    document.on("^keydown", function (evt) {
         var vk = codeToVk(evt.code);
-        if (isModifierVk(vk)) return;          // modifiers handled by keyup
-        captureKey(evt, vk);
-    });
-    document.on("keyup", function (evt) {
-        var vk = codeToVk(evt.code);
-        if (!isModifierVk(vk)) return;         // non-modifiers handled by keydown
         captureKey(evt, vk);
     });
 }
