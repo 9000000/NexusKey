@@ -140,7 +140,7 @@ private:
     // guards — QuickSync from SharedState, TSF early-out, modifier tracking,
     // toggle-key passthrough (Caps/Num/Scroll), excluded-app passthrough with
     // PID verification. Falls through only when the keystroke should reach
-    // the Vietnamese pipeline. Bookkeeping (otherKeyPressed_/altTapCount_/
+    // the Vietnamese pipeline. Bookkeeping (otherKeyPressed_/modTapCount_/
     // synth watchdog) stays in ProcessKeyDown after the switch — only runs
     // on Fallthrough by design (excluded-app's same-PID/still-excluded paths
     // set otherKeyPressed_ themselves before returning Pass).
@@ -352,9 +352,14 @@ private:
     // scope for this change.
     bool tempEngineOff_ = false;       // True = Vietnamese bypassed for current word (user-initiated via double-Alt / Ctrl-toggle)
     bool digitLedWord_ = false;        // True = current word started with a digit (VNI/Combined/UserDefined) → auto-bypass (no user action)
-    int altTapCount_ = 0;              // 0 or 1 (waiting for second tap)
-    DWORD lastAltReleaseTime_ = 0;     // GetTickCount() of first Alt release
-    static constexpr DWORD DOUBLE_ALT_TIMEOUT_MS = 400;
+    // Per-modifier tap tracking for HotkeyRegistry ToggleEnabled detection.
+    // Indexed by ModIdx{Ctrl=0, Shift=1, Alt=2, Win=3}. Generalizes the
+    // legacy altTapCount_/lastAltReleaseTime_ pair that only tracked Alt —
+    // the unified registry can bind 2× to any modifier, so we need 4 slots.
+    static constexpr int kModCount = 4;
+    int   modTapCount_[kModCount]   = {0, 0, 0, 0};
+    DWORD modTapLastTs_[kModCount]  = {0, 0, 0, 0};
+    static constexpr DWORD DOUBLE_TAP_TIMEOUT_MS = 400;
     /// Keystroke-based auto-capitalize state machine (used when no TSF anchor truth).
     /// Enum + transition rule live in core/AutoCapStateTransition.h so Linux GTest
     /// can exercise the modifier-gate contract without depending on Win32.

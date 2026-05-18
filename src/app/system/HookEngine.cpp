@@ -129,6 +129,19 @@ namespace {
     return mask;
 }
 
+// Canonical-VK → modTapCount_[] / modTapLastTs_[] index. Returns -1 for any
+// VK that isn't one of the 4 modifiers we track. Keeps the slots stable so
+// the array can be a flat fixed-size buffer.
+[[nodiscard]] int ModIdxFor(uint32_t canonicalVk) noexcept {
+    switch (canonicalVk) {
+    case VK_CONTROL: return 0;
+    case VK_SHIFT:   return 1;
+    case VK_MENU:    return 2;
+    case VK_LWIN:    return 3;
+    default:         return -1;
+    }
+}
+
 }  // namespace
 
 bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
@@ -833,9 +846,10 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         case KeyOutcome::Fallthrough: break;
     }
 
-    // Non-modifier key pressed — invalidate modifier-only hotkey combo
+    // Non-modifier key pressed — invalidate modifier-only hotkey combo (any
+    // pending double-tap chain on Ctrl/Shift/Alt/Win is now contaminated)
     otherKeyPressed_ = true;
-    altTapCount_ = 0;  // Break double-Alt tap chain
+    for (int i = 0; i < kModCount; ++i) modTapCount_[i] = 0;
 
     // Watchdog: reset synthEventsPending_ if stuck > 500ms.
     // Covers event loss in Electron/Console multi-process apps where synthetic
@@ -928,7 +942,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 //                 guard matched, or excluded-app cleared its PID).
 //
 // The post-guard bookkeeping in ProcessKeyDown (otherKeyPressed_=true,
-// altTapCount_=0, synth-pending watchdog) lives in the wrapper, not here, so it
+// modTapCount_[]=0, synth-pending watchdog) lives in the wrapper, not here, so it
 // runs only on Fallthrough. The excluded-app same-PID and still-excluded paths
 // set otherKeyPressed_ themselves before returning Pass, preserving the original
 // "any non-modifier key invalidates the modifier-only combo" semantics.
@@ -1627,15 +1641,13 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                        vkCode == VK_LWIN || vkCode == VK_RWIN);
 
     if (isModifier) {
-        // Temp-off detection: double-Alt or single-Ctrl. Source of truth is now
-        // the HotkeyRegistry — the legacy `tempOffMethod_` atomic is retained
-        // as a master enable (None ⇒ feature off entirely; Step 10 will remove
-        // it once Settings UI publishes via the registry exclusively).
-        auto method = static_cast<TempOffMethod>(tempOffMethod_.load(std::memory_order_acquire));
+        // Generic ToggleEnabled detection — covers every modifier × {single-alone,
+        // double-tap} binding the user has in HotkeyRegistry. Source of truth is
+        // the registry; legacy tempOffMethod_ no longer gates here (it stays only
+        // for the V/E QuickSync path elsewhere — Step 10 removes it entirely).
         const auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
         const uint32_t canonicalVk = CanonicalModifierVk(vkCode);
-        bool isAltRelease = (vkCode == VK_LMENU || vkCode == VK_RMENU);
-        bool isCtrlRelease = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL);
+        const int modIdx = ModIdxFor(canonicalVk);
 
         auto fireToggleEnabled = [&](const wchar_t* reason) {
             if (engine_->Count() > 0) {
@@ -1648,33 +1660,47 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             // Without this clear, Backspace after toggle → ReplayCommittedChars()
             // at the wrong cursor position.
             CancelCommitUndo();
-            HOOK_LOG(L"  %s: tempEngineOff_ = %d", reason, tempEngineOff_ ? 1 : 0);
+            HOOK_LOG(L"  %s (vk=0x%02X): tempEngineOff_ = %d",
+                     reason, canonicalVk, tempEngineOff_ ? 1 : 0);
         };
 
-        if (method == TempOffMethod::DupAlt && isAltRelease &&
-            !otherKeyPressed_ && !modCtrlDown_ && !modShiftDown_ && !modWinDown_) {
-            DWORD now = GetTickCount();
-            if (altTapCount_ == 1 && (now - lastAltReleaseTime_) < DOUBLE_ALT_TIMEOUT_MS) {
-                if (hotkeysSnap->Matches(Intent::ToggleEnabled, canonicalVk, /*mods=*/0,
-                                         /*isDoubleTap=*/true, /*keyUp=*/true)) {
-                    fireToggleEnabled(L"DOUBLE-ALT");
-                }
-                altTapCount_ = 0;
-            } else {
-                altTapCount_ = 1;
-                lastAltReleaseTime_ = now;
-            }
-        } else if (isAltRelease) {
-            altTapCount_ = 0;  // Contaminated Alt release
-        }
+        // Clean release = nothing else competed for this gesture.
+        // - !otherKeyPressed_: no main key was pressed while this modifier was held
+        // - all OTHER modifiers must be up (the one currently releasing is still
+        //   "down" in modXxxDown_ here — TrackModifier clears it below)
+        const bool isOnlyThisModDown =
+            (canonicalVk == VK_CONTROL || !modCtrlDown_) &&
+            (canonicalVk == VK_SHIFT   || !modShiftDown_) &&
+            (canonicalVk == VK_MENU    || !modAltDown_) &&
+            (canonicalVk == VK_LWIN    || !modWinDown_);
+        const bool cleanRelease = !otherKeyPressed_ && isOnlyThisModDown;
 
-        if (method == TempOffMethod::Ctrl && isCtrlRelease &&
-            !otherKeyPressed_ && !modAltDown_ && !modShiftDown_ && !modWinDown_) {
-            // Single-press Ctrl: toggle immediately on clean release
-            if (hotkeysSnap->Matches(Intent::ToggleEnabled, canonicalVk, /*mods=*/0,
-                                     /*isDoubleTap=*/false, /*keyUp=*/true)) {
-                fireToggleEnabled(L"CTRL-TOGGLE");
+        if (modIdx >= 0 && cleanRelease) {
+            const DWORD now = GetTickCount();
+            const bool isDoubleTap =
+                modTapCount_[modIdx] == 1 &&
+                (now - modTapLastTs_[modIdx]) < DOUBLE_TAP_TIMEOUT_MS;
+
+            if (isDoubleTap) {
+                // Prefer 2× binding when 2nd clean tap arrives in-window.
+                if (hotkeysSnap->Matches(Intent::ToggleEnabled, canonicalVk,
+                                         /*mods=*/0, /*isDoubleTap=*/true, /*keyUp=*/true)) {
+                    fireToggleEnabled(L"MOD-DOUBLE");
+                }
+                modTapCount_[modIdx] = 0;
+            } else {
+                // First clean release: fire single-alone if bound, also arm 2nd-tap
+                // window. If user has BOTH single+double bound for this key, both
+                // can fire across two presses — UI should prevent that combination.
+                if (hotkeysSnap->Matches(Intent::ToggleEnabled, canonicalVk,
+                                         /*mods=*/0, /*isDoubleTap=*/false, /*keyUp=*/true)) {
+                    fireToggleEnabled(L"MOD-SINGLE");
+                }
+                modTapCount_[modIdx]  = 1;
+                modTapLastTs_[modIdx] = now;
             }
+        } else if (modIdx >= 0) {
+            modTapCount_[modIdx] = 0;  // Contaminated release breaks the chain.
         }
 
         // Layout auto-disable: re-check on Win+Space / Ctrl+Shift / Alt+Shift key-up.
