@@ -54,7 +54,11 @@ function codeToVk(code) {
 }
 
 // Pending capture state — only meaningful while #capture-overlay is visible.
-var pending = { vk: 0, mods: 0, label: "—" };
+var pending = { vk: 0, mods: 0, doubleTap: false, label: "—" };
+
+// Double-tap detection — second same-key press within window upgrades to 2×.
+var DOUBLE_TAP_WINDOW_MS = 400;
+var lastTapVk = 0, lastTapTs = 0;
 
 document.ready = function () {
     initSubDialog();
@@ -102,32 +106,34 @@ function initHotkeysDialog() {
         var overlay = document.getElementById("capture-overlay");
         if (!overlay || overlay.style.display === "none") return;
 
+        // Ignore OS auto-repeat (holding key) — would otherwise trigger false 2× detection.
+        if (evt.repeat) { evt.preventDefault(); return; }
+
         // Use `event.code` (string, DOM Level 3) — `event.keyCode` is Sciter's
         // GLFW scheme, NOT Win32 VK (F1=290 there). codeToVk() maps to VK.
         var vk = codeToVk(evt.code);
-        if (!vk) {
-            evt.preventDefault();
-            return;
-        }
+        if (!vk) { evt.preventDefault(); return; }
 
-        // Reject bare modifier presses — Sciter delivers separate events for
-        // Ctrl/Shift/Alt/Win, and we want a "main key" with optional mods.
-        // (Modifier-alone and double-tap rebinds are v2 work — defaults are
-        // preserved for users who want Ctrl-alone / 2×Alt.)
-        if (isModifierVk(vk)) {
-            evt.preventDefault();
-            return;
-        }
+        // Double-tap: second press of same key within window → upgrade to 2×.
+        var now = Date.now();
+        var isDoubleTap = (vk === lastTapVk) && (now - lastTapTs <= DOUBLE_TAP_WINDOW_MS);
+        lastTapVk = vk;
+        lastTapTs = now;
 
+        // Modifier-alone (vk is modifier) and double-tap both imply mods=0
+        // (matches HotkeyRegistry::Trigger semantics). Otherwise collect chord flags.
         var mods = 0;
-        if (evt.ctrlKey)  mods |= MOD.CTRL;
-        if (evt.shiftKey) mods |= MOD.SHIFT;
-        if (evt.altKey)   mods |= MOD.ALT;
-        if (evt.metaKey)  mods |= MOD.WIN;
+        if (!isDoubleTap && !isModifierVk(vk)) {
+            if (evt.ctrlKey)  mods |= MOD.CTRL;
+            if (evt.shiftKey) mods |= MOD.SHIFT;
+            if (evt.altKey)   mods |= MOD.ALT;
+            if (evt.metaKey)  mods |= MOD.WIN;
+        }
 
-        pending.vk    = vk;
-        pending.mods  = mods;
-        pending.label = formatLabel(vk, mods);
+        pending.vk        = vk;
+        pending.mods      = mods;
+        pending.doubleTap = isDoubleTap;
+        pending.label     = formatLabel(vk, mods, isDoubleTap);
 
         document.getElementById("capture-preview").textContent = pending.label;
         document.getElementById("btn-capture-save").removeAttribute("disabled");
@@ -142,7 +148,8 @@ function isModifierVk(vk) {
         || vk === VK.LWIN || vk === VK.RWIN;
 }
 
-function formatLabel(vk, mods) {
+function formatLabel(vk, mods, doubleTap) {
+    if (doubleTap) return "2×" + vkName(vk);                 // 2× implies mods=0
     var parts = [];
     if (mods & MOD.CTRL)  parts.push("Ctrl");
     if (mods & MOD.SHIFT) parts.push("Shift");
@@ -152,17 +159,27 @@ function formatLabel(vk, mods) {
     return parts.join("+");
 }
 
+// Friendly names for Win32 VK codes shown on chips + capture preview.
+// Range-based codes (letters, digits, F-keys, numpad) handled below the table.
+var VK_NAMES = {
+    0x08: "Backspace", 0x09: "Tab",    0x0D: "Enter",
+    0x10: "Shift",     0x11: "Ctrl",   0x12: "Alt",
+    0x13: "Pause",     0x14: "Caps",   0x1B: "Esc",
+    0x20: "Space",
+    0x21: "PgUp",      0x22: "PgDn",   0x23: "End",   0x24: "Home",
+    0x25: "←",         0x26: "↑",      0x27: "→",     0x28: "↓",
+    0x2C: "PrtSc",     0x2D: "Insert", 0x2E: "Del",
+    0x5B: "Win",       0x5C: "Win",    0x5D: "Menu",
+    0xBA: ";",  0xBB: "=",  0xBC: ",",  0xBD: "-",  0xBE: ".",  0xBF: "/",
+    0xC0: "`",  0xDB: "[",  0xDC: "\\", 0xDD: "]",  0xDE: "'",
+};
+
 function vkName(vk) {
-    switch (vk) {
-        case VK.ESC:   return "Esc";
-        case VK.TAB:   return "Tab";
-        case VK.SPACE: return "Space";
-        case VK.ENTER: return "Enter";
-        case VK.BACK:  return "Backspace";
-    }
-    if (vk >= 0x70 && vk <= 0x7B) return "F" + (vk - 0x6F);  // F1..F12
+    if (VK_NAMES[vk]) return VK_NAMES[vk];
+    if (vk >= 0x60 && vk <= 0x69) return "Num" + (vk - 0x60);            // VK_NUMPAD0..9
+    if (vk >= 0x70 && vk <= 0x87) return "F" + (vk - 0x6F);              // F1..F24
     if ((vk >= 0x30 && vk <= 0x39) || (vk >= 0x41 && vk <= 0x5A)) {
-        return String.fromCharCode(vk);
+        return String.fromCharCode(vk);                                  // 0..9 / A..Z
     }
     return "VK_" + vk;
 }
@@ -170,7 +187,9 @@ function vkName(vk) {
 function openCapture(intent) {
     pending.vk = 0;
     pending.mods = 0;
+    pending.doubleTap = false;
     pending.label = "—";
+    lastTapVk = 0; lastTapTs = 0;  // fresh state per session
     document.getElementById("capture-preview").textContent = "—";
     document.getElementById("btn-capture-save").setAttribute("disabled", "disabled");
     document.getElementById("capture-overlay").style.display = "block";
@@ -186,7 +205,7 @@ function commitCapture() {
     if (!pending.vk) return;
     document.getElementById("val-vk").value         = String(pending.vk);
     document.getElementById("val-mods").value       = String(pending.mods);
-    document.getElementById("val-double-tap").value = "false";  // v1: no DT capture
+    document.getElementById("val-double-tap").value = pending.doubleTap ? "true" : "false";
     triggerAction("add");
     closeCapture();
 }

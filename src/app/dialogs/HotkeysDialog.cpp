@@ -9,6 +9,7 @@
 #include "sciter-x-dom.hpp"
 
 #include <string>
+#include <unordered_map>
 
 using namespace sciter::dom;
 
@@ -58,26 +59,31 @@ constexpr const wchar_t* kIntentToggle = L"toggle-enabled";
         }
     }
 
-    // Friendly name for the main key.
+    // Friendly name for the main key. Mirror of VK_NAMES in hotkeys.js.
+    static const std::unordered_map<uint32_t, const wchar_t*> kVkNames = {
+        {0x08, L"Backspace"}, {0x09, L"Tab"},   {0x0D, L"Enter"},
+        {0x10, L"Shift"},     {0x11, L"Ctrl"},  {0x12, L"Alt"},
+        {0x13, L"Pause"},     {0x14, L"Caps"},  {0x1B, L"Esc"},
+        {0x20, L"Space"},
+        {0x21, L"PgUp"},      {0x22, L"PgDn"},  {0x23, L"End"},  {0x24, L"Home"},
+        {0x25, L"←"},         {0x26, L"↑"},     {0x27, L"→"},    {0x28, L"↓"},
+        {0x2C, L"PrtSc"},     {0x2D, L"Insert"}, {0x2E, L"Del"},
+        {0x5B, L"Win"},       {0x5C, L"Win"},   {0x5D, L"Menu"},
+        {0xBA, L";"}, {0xBB, L"="}, {0xBC, L","}, {0xBD, L"-"}, {0xBE, L"."}, {0xBF, L"/"},
+        {0xC0, L"`"}, {0xDB, L"["}, {0xDC, L"\\"}, {0xDD, L"]"}, {0xDE, L"'"},
+    };
+
     std::wstring keyName;
-    switch (t.vk) {
-    case 0x1B: keyName = L"Esc"; break;
-    case 0x09: keyName = L"Tab"; break;
-    case 0x20: keyName = L"Space"; break;
-    case 0x0D: keyName = L"Enter"; break;
-    case 0x08: keyName = L"Backspace"; break;
-    case 0x11: keyName = L"Ctrl"; break;
-    case 0x10: keyName = L"Shift"; break;
-    case 0x12: keyName = L"Alt"; break;
-    case 0x5B: case 0x5C: keyName = L"Win"; break;
-    default:
-        if (t.vk >= 0x70 && t.vk <= 0x7B) {
-            keyName = L"F" + std::to_wstring(t.vk - 0x6F);  // F1..F12
-        } else if ((t.vk >= 'A' && t.vk <= 'Z') || (t.vk >= '0' && t.vk <= '9')) {
-            keyName.push_back(static_cast<wchar_t>(t.vk));
-        } else {
-            keyName = L"VK_" + std::to_wstring(t.vk);
-        }
+    if (auto it = kVkNames.find(t.vk); it != kVkNames.end()) {
+        keyName = it->second;
+    } else if (t.vk >= 0x60 && t.vk <= 0x69) {
+        keyName = L"Num" + std::to_wstring(t.vk - 0x60);                  // VK_NUMPAD0..9
+    } else if (t.vk >= 0x70 && t.vk <= 0x87) {
+        keyName = L"F" + std::to_wstring(t.vk - 0x6F);                    // F1..F24
+    } else if ((t.vk >= 'A' && t.vk <= 'Z') || (t.vk >= '0' && t.vk <= '9')) {
+        keyName.push_back(static_cast<wchar_t>(t.vk));
+    } else {
+        keyName = L"VK_" + std::to_wstring(t.vk);
     }
 
     if (t.doubleTap) {

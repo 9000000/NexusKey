@@ -18,7 +18,9 @@
     margin-left: 6px;
     cursor: pointer;
     color: var(--text-secondary, rgba(255,255,255,0.6));
-    foreground: currentColor;
+    background: transparent;
+    border: none;
+    padding: 0 4px;
 }
 .hotkey-chip .chip-delete:hover { color: rgba(240,23,23,1); }
 
