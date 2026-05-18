@@ -43,17 +43,17 @@ function initHotkeysDialog() {
         evt.stopPropagation();
     });
 
-    var overlay = document.getElementById("capture-overlay");
     var save    = document.getElementById("btn-capture-save");
     var cancel  = document.getElementById("btn-capture-cancel");
     save.addEventListener("click", function () { commitCapture(); });
     cancel.addEventListener("click", function () { closeCapture(); });
 
-    // Capture mode: listen for keydown anywhere while overlay is visible.
-    document.body.addEventListener("keydown", function (evt) {
-        var overlay = document.getElementById("capture-overlay");
-        if (!overlay || overlay.style["display"] === "none") return;
-
+    // Capture mode: keydown handler lives on the focusable <input>. Plain divs
+    // are not focusable in Sciter, so document.body listeners never fire when
+    // focus is on the "+ Thêm phím" button. Attaching to the input (which we
+    // focus() in openCapture) follows the proven pattern from spellexclusions.js.
+    var captureInput = document.getElementById("capture-input");
+    captureInput.addEventListener("keydown", function (evt) {
         var keyCode = evt.keyCode || evt.which || 0;
         if (!keyCode) return;
 
@@ -120,15 +120,15 @@ function openCapture(intent) {
     pending.label = "—";
     document.getElementById("capture-preview").textContent = "—";
     document.getElementById("btn-capture-save").setAttribute("disabled", "disabled");
-    document.getElementById("capture-overlay").style["display"] = "block";
+    document.getElementById("capture-overlay").style.display = "block";
     document.getElementById("val-intent").value = intent;
-    // Sciter requires focused element to receive keydown — focus the box.
-    var box = document.getElementById("capture-overlay");
-    if (box && box.focus) box.focus();
+    // Focus the hidden input so Sciter routes keydown events into our handler.
+    var captureInput = document.getElementById("capture-input");
+    if (captureInput && captureInput.focus) captureInput.focus();
 }
 
 function closeCapture() {
-    document.getElementById("capture-overlay").style["display"] = "none";
+    document.getElementById("capture-overlay").style.display = "none";
 }
 
 function commitCapture() {

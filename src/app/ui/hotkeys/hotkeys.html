@@ -63,6 +63,11 @@
             <div class="capture-overlay" id="capture-overlay" style="display:none">
                 <div class="capture-box">
                     <div class="capture-prompt" id="capture-prompt">Nhấn phím cần gắn…</div>
+                    <!-- Focusable input element that receives keydown events.
+                         Sciter delivers keys to the focused element; a plain
+                         <div> isn't focusable, so we hide an <input> behind the
+                         preview and focus() it when the overlay opens. -->
+                    <input type="text" id="capture-input" class="capture-input" readonly>
                     <div class="capture-preview" id="capture-preview">—</div>
                     <div class="button-row">
                         <button class="btn-action btn-primary" id="btn-capture-save" disabled>Lưu</button>

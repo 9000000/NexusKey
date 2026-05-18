@@ -405,6 +405,9 @@ if(PACKFOLDER_AVAILABLE)
                 ${UI_SOURCE_DIR}/userdefined/userdefined.html
                 ${UI_SOURCE_DIR}/userdefined/userdefined.css
                 ${UI_SOURCE_DIR}/userdefined/userdefined.js
+                ${UI_SOURCE_DIR}/hotkeys/hotkeys.html
+                ${UI_SOURCE_DIR}/hotkeys/hotkeys.css
+                ${UI_SOURCE_DIR}/hotkeys/hotkeys.js
                 ${UI_SOURCE_DIR}/shared/utils.js
                 ${UI_SOURCE_DIR}/shared/strings.js
                 ${UI_SOURCE_DIR}/shared/i18n.js
