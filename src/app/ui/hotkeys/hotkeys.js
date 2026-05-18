@@ -171,20 +171,11 @@ function formatLabel(vk, mods, doubleTap) {
     return parts.join("+");
 }
 
-// Friendly names for Win32 VK codes shown on chips + capture preview.
-// Range-based codes (letters, digits, F-keys, numpad) handled below the table.
-var VK_NAMES = {
-    0x08: "Backspace", 0x09: "Tab",    0x0D: "Enter",
-    0x10: "Shift",     0x11: "Ctrl",   0x12: "Alt",
-    0x13: "Pause",     0x14: "Caps",   0x1B: "Esc",
-    0x20: "Space",
-    0x21: "PgUp",      0x22: "PgDn",   0x23: "End",   0x24: "Home",
-    0x25: "←",         0x26: "↑",      0x27: "→",     0x28: "↓",
-    0x2C: "PrtSc",     0x2D: "Insert", 0x2E: "Del",
-    0x5B: "Win",       0x5C: "Win",    0x5D: "Menu",
-    0xBA: ";",  0xBB: "=",  0xBC: ",",  0xBD: "-",  0xBE: ".",  0xBF: "/",
-    0xC0: "`",  0xDB: "[",  0xDC: "\\", 0xDD: "]",  0xDE: "'",
-};
+// Friendly VK→name table — uploaded from C++ via setVkNames() on dialog
+// init (HotkeysDialog::sendVkNames). C++ owns the canonical list to avoid
+// drift; here we just keep the algorithmic ranges (letters / digits / F-keys
+// / numpad) since those would be redundant to ship over the wire.
+var VK_NAMES = {};
 
 function vkName(vk) {
     if (VK_NAMES[vk]) return VK_NAMES[vk];
@@ -231,6 +222,19 @@ function triggerAction(action) {
 }
 
 // ────────────────────── Called from C++ side ────────────────────────────
+
+// Receive the canonical VK→name table from HotkeysDialog::sendVkNames.
+// Payload shape: [[vk:int, name:string], ...]. We rebuild a flat object so
+// vkName() lookups stay O(1).
+function setVkNames(pairs) {
+    if (!pairs || typeof pairs.length !== "number") return;
+    var map = {};
+    for (var i = 0; i < pairs.length; ++i) {
+        var p = pairs[i];
+        if (p && p.length >= 2) map[p[0]] = p[1];
+    }
+    VK_NAMES = map;
+}
 
 function clearAll() {
     ["cancel-composition", "skip-macro", "toggle-enabled"].forEach(function (intent) {

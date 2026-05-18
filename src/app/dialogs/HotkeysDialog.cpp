@@ -38,6 +38,23 @@ constexpr const wchar_t* kIntentToggle = L"toggle-enabled";
     return false;
 }
 
+/// Canonical VK → display-name table. Source of truth — uploaded to JS via
+/// HotkeysDialog::sendVkNames() so hotkeys.js doesn't have to duplicate.
+/// Pattern-based names (letters, digits, F-keys, numpad) handled algorithmically
+/// in both layers; this table covers the irregular entries only.
+const std::unordered_map<uint32_t, const wchar_t*> kVkNames = {
+    {0x08, L"Backspace"}, {0x09, L"Tab"},   {0x0D, L"Enter"},
+    {0x10, L"Shift"},     {0x11, L"Ctrl"},  {0x12, L"Alt"},
+    {0x13, L"Pause"},     {0x14, L"Caps"},  {0x1B, L"Esc"},
+    {0x20, L"Space"},
+    {0x21, L"PgUp"},      {0x22, L"PgDn"},  {0x23, L"End"},  {0x24, L"Home"},
+    {0x25, L"←"},         {0x26, L"↑"},     {0x27, L"→"},    {0x28, L"↓"},
+    {0x2C, L"PrtSc"},     {0x2D, L"Insert"}, {0x2E, L"Del"},
+    {0x5B, L"Win"},       {0x5C, L"Win"},   {0x5D, L"Menu"},
+    {0xBA, L";"}, {0xBB, L"="}, {0xBC, L","}, {0xBD, L"-"}, {0xBE, L"."}, {0xBF, L"/"},
+    {0xC0, L"`"}, {0xDB, L"["}, {0xDC, L"\\"}, {0xDD, L"]"}, {0xDE, L"'"},
+};
+
 /// Render a Trigger as a localized chip label. Examples:
 ///   {vk=0x1B}                     → "Esc"
 ///   {vk=0x11, mods=0}             → "Ctrl (giữ-thả)" (implicit modifier-alone)
@@ -59,20 +76,6 @@ constexpr const wchar_t* kIntentToggle = L"toggle-enabled";
         case 0x5B: case 0x5C: return L"Win (giữ-thả)";
         }
     }
-
-    // Friendly name for the main key. Mirror of VK_NAMES in hotkeys.js.
-    static const std::unordered_map<uint32_t, const wchar_t*> kVkNames = {
-        {0x08, L"Backspace"}, {0x09, L"Tab"},   {0x0D, L"Enter"},
-        {0x10, L"Shift"},     {0x11, L"Ctrl"},  {0x12, L"Alt"},
-        {0x13, L"Pause"},     {0x14, L"Caps"},  {0x1B, L"Esc"},
-        {0x20, L"Space"},
-        {0x21, L"PgUp"},      {0x22, L"PgDn"},  {0x23, L"End"},  {0x24, L"Home"},
-        {0x25, L"←"},         {0x26, L"↑"},     {0x27, L"→"},    {0x28, L"↓"},
-        {0x2C, L"PrtSc"},     {0x2D, L"Insert"}, {0x2E, L"Del"},
-        {0x5B, L"Win"},       {0x5C, L"Win"},   {0x5D, L"Menu"},
-        {0xBA, L";"}, {0xBB, L"="}, {0xBC, L","}, {0xBD, L"-"}, {0xBE, L"."}, {0xBF, L"/"},
-        {0xC0, L"`"}, {0xDB, L"["}, {0xDC, L"\\"}, {0xDD, L"]"}, {0xDE, L"'"},
-    };
 
     std::wstring keyName;
     if (auto it = kVkNames.find(t.vk); it != kVkNames.end()) {
@@ -105,7 +108,20 @@ HotkeysDialog::HotkeysDialog(HWND parent)
         420, 460, parent, true, 36, 40, true
     }) {
     registry_ = ConfigManager::LoadHotkeyRegistryOrDefault();
+    sendVkNames();  // upload before populate so capture preview has the table
     populate();
+}
+
+void HotkeysDialog::sendVkNames() {
+    sciter::value pairs;
+    int i = 0;
+    for (const auto& [vk, name] : kVkNames) {
+        sciter::value pair;
+        pair.set_item(0, sciter::value(static_cast<int>(vk)));
+        pair.set_item(1, sciter::value(name));
+        pairs.set_item(i++, pair);
+    }
+    call_function("setVkNames", pairs);
 }
 
 void HotkeysDialog::populate() {

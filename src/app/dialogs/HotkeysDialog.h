@@ -30,6 +30,11 @@ private:
     void persistAndSignal();
     void handleAction(const std::wstring& action);
 
+    /// Upload the canonical VK→name table to JS as `[[vk, name], ...]` pairs.
+    /// Called once after the document is ready so hotkeys.js capture preview
+    /// doesn't have to duplicate the lookup table maintained in HotkeysDialog.cpp.
+    void sendVkNames();
+
     /// Read current val-intent / val-vk / val-mods / val-double-tap from DOM.
     /// Returns (intent, Trigger) parsed from the hidden inputs. `outValid` is
     /// false when any field is missing or out of range — caller must skip.
