@@ -499,15 +499,38 @@ bool ConfigManager::SaveHotkeyRegistry(const std::wstring& path, const HotkeyReg
     }
 }
 
+namespace {
+
+// "User has touched the v3 schema" sentinel — presence of `[hotkey_state]`
+// in config.toml. SaveHotkeyRegistry always writes it, so once the user has
+// opened the Hotkeys dialog or migration ran, this returns true on disk.
+// Used by both LoadHotkeyRegistryOrDefault and MigrateLegacyHotkeysIfNeeded
+// to distinguish "fresh / pre-v3 install" from "user explicitly cleared".
+[[nodiscard]] bool HasHotkeyStateSection(const std::wstring& path) noexcept {
+    try {
+        auto table = toml::parse_file(WideToUtf8(path));
+        return table.contains("hotkey_state");
+    } catch (...) {
+        return false;
+    }
+}
+
+}  // namespace
+
 HotkeyRegistry ConfigManager::LoadHotkeyRegistryOrDefault() {
     const std::wstring configPath = GetConfigPath();
     auto registry = LoadHotkeyRegistry(configPath);
     if (!registry) {
         return HotkeyRegistry::Defaults();
     }
-    // If `[[hotkeys]]` is absent or fully empty, return factory bindings —
-    // an empty registry would leave the user with no Esc/Ctrl/2×Alt at all,
-    // which is almost certainly not what they want on first run.
+    // If the user has the v3 schema on disk, honor what's there — including an
+    // explicit empty registry (= "I cleared everything intentionally").
+    if (HasHotkeyStateSection(configPath)) {
+        return *registry;
+    }
+    // No state section → never-touched-new-UI install. Empty result here means
+    // either fresh install or pre-v3 with no [[hotkeys]] — both cases want
+    // factory bindings as the UI's starting state.
     const bool empty =
         registry->TriggersFor(Intent::CancelComposition).empty() &&
         registry->TriggersFor(Intent::SkipMacro).empty() &&
@@ -526,8 +549,16 @@ HotkeyRegistry ConfigManager::MigrateLegacyHotkeysIfNeeded(
         return HotkeyRegistry::Defaults();
     }
 
-    // If the user already has any binding stored, honor what they have —
-    // they touched the UI (or carried over v2 customizations).
+    // User has v3 schema on disk → honor as-is, including explicit empty.
+    // SaveHotkeyRegistry writes `[hotkey_state]` on every save, so anyone who
+    // has used the new Hotkeys UI passes through here without further migration.
+    if (HasHotkeyStateSection(path)) {
+        return LoadHotkeyRegistry(path).value_or(HotkeyRegistry{});
+    }
+
+    // [hotkey_state] missing → pre-v3 install. If existing bindings sit in the
+    // [[hotkeys]] array (e.g., from earlier buggy persists or partial migration),
+    // honor them. Otherwise fall through to legacy-field migration.
     auto existing = LoadHotkeyRegistry(path);
     const bool populated = existing && (
         !existing->TriggersFor(Intent::CancelComposition).empty() ||

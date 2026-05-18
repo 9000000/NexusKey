@@ -259,9 +259,13 @@ void HotkeysDialog::handleAction(const std::wstring& action) {
         return;
     }
     if (action == L"delete") {
-        // Rebuild registry without the matching trigger.
+        // Rebuild registry without the matching trigger. Per-intent enabled
+        // state must be carried over — a fresh HotkeyRegistry defaults
+        // IsEnabled() to true, which would silently flip the user's toggles
+        // back on whenever they deleted a chip.
         HotkeyRegistry rebuilt;
         for (Intent i : kAllIntents) {
+            rebuilt.SetEnabled(i, registry_.IsEnabled(i));
             for (const Trigger& existing : registry_.TriggersFor(i)) {
                 if (i == intent && existing == t) continue;  // drop
                 rebuilt.AddTrigger(i, existing);
