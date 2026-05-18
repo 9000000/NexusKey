@@ -305,6 +305,8 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/classic/ClassicExcludedAppsDialog.cpp
         src/app/classic/ClassicMacroTableDialog.h
         src/app/classic/ClassicMacroTableDialog.cpp
+        src/app/classic/ClassicHotkeysDialog.h
+        src/app/classic/ClassicHotkeysDialog.cpp
         src/app/classic/ClassicAppOverridesDialog.h
         src/app/classic/ClassicAppOverridesDialog.cpp
         src/app/classic/ClassicConvertToolDialog.h

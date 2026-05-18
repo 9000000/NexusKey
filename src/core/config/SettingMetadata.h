@@ -59,13 +59,6 @@ inline constexpr const wchar_t* kStartupModeItemsVi[] = {
 inline constexpr const wchar_t* kStartupModeItemsEn[] = {
     L"Vietnamese", L"English", L"Remember", nullptr
 };
-inline constexpr const wchar_t* kTempOffItemsVi[] = {
-    L"Không", L"Nhấn đúp Alt", L"Nhấn Ctrl", nullptr
-};
-inline constexpr const wchar_t* kTempOffItemsEn[] = {
-    L"Off", L"Double Alt", L"Press Ctrl", nullptr
-};
-
 // ── Helper macros to reduce verbosity ──────────────────────────────
 // Master macro — every setting kind funnels through here.
 #define NK_SETTING(type_, owner_, cfg, id, field, vi, en, tip, tipE, idc, tab, col, itemsV, itemsE) \
@@ -128,17 +121,6 @@ inline constexpr SettingMeta kSettings[] = {
               "Tiếng bíp khi chuyển",   "Beep on switch",
               L"Phát âm báo khi chuyển đổi ngôn ngữ",
               L"Play sound when switching language",                     2211, 0, 1),
-    NK_TYPING("esc-restore-raw",      escRestoreRawEnabled,
-              "ESC trả lại phím gốc", "Esc restores raw keys",
-              L"Khi đang gõ, bấm Esc để hủy biến đổi tiếng Việt và giữ nguyên ký tự gốc (vd: víu → virus)",
-              L"Press Esc while typing to undo Vietnamese conversion and keep raw keys (e.g. víu → virus)",
-                                                                         2210, 0, 1),
-    NK_TYPING_DROPDOWN("temp-off-openkey",     tempOffMethod,
-              "Tạm tắt bộ gõ",                "Temp disable input",
-              L"Chọn phím tạm tắt tiếng Việt cho từ hiện tại. Lưu ý: Ctrl chỉ cần 1 nhấn nên có thể vô tình kích hoạt khi chạm phím.",
-              L"Choose key to temp-disable Vietnamese for current word. Note: Ctrl triggers on a single tap — may activate accidentally.",
-                                                                         2218, 0, 1,
-              kTempOffItemsVi, kTempOffItemsEn),
     NK_TYPING("smart-switch",         smartSwitch,
               "Lưu chế độ gõ theo app",   "Smart input switch",
               L"Tự động ghi nhớ chế độ gõ cho từng ứng dụng",
@@ -154,6 +136,10 @@ inline constexpr SettingMeta kSettings[] = {
               nullptr, nullptr,                                          2500, 0, 1),
     NK_ACTION("btn-spell-exclusions", "Loại trừ chính tả...", "Spell exclusions...",
               nullptr, nullptr,                                          2801, 0, 1),
+    NK_ACTION("btn-hotkeys",          "Cấu hình phím tắt", "Configure hotkeys",
+              L"Quản lý phím gán cho 3 thao tác: hủy đang gõ, bỏ qua gõ tắt, bật/tắt bộ gõ",
+              L"Manage triggers for 3 intents: cancel composition, skip macro, toggle IME",
+                                                                         2506, 0, 1),
 
     // ── Tab 1: Gõ tắt (col 0) ──
     NK_TYPING("use-macro",            macroEnabled,
@@ -165,10 +151,6 @@ inline constexpr SettingMeta kSettings[] = {
     NK_TYPING("auto-caps-macro",      autoCapsMacro,
               "Tự động viết hoa theo phím", "Auto capitalize macros",
               nullptr, nullptr,                                          2219, 1, 0),
-    NK_TYPING("cancel-macro-esc",     tempOffMacroByEsc,
-              "Tạm bỏ gõ tắt bằng Esc",     "Temp skip macro by Esc",
-              L"Nhấn Esc trước khi gõ để tạm bỏ qua gõ tắt cho từ tiếp theo",
-              L"Press Esc before typing to skip macro for the next word", 2220, 1, 0),
     NK_ACTION("btn-macro-table",      "Bảng gõ tắt", "Macro Table",
               nullptr, nullptr,                                          2503, 1, 0),
 

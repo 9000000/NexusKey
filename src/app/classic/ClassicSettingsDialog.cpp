@@ -10,6 +10,7 @@
 #include "ClassicMacroTableDialog.h"
 #include "ClassicUserDefinedDialog.h"
 #include "ClassicConvertToolDialog.h"
+#include "ClassicHotkeysDialog.h"
 #include "ClassicIconColorDialog.h"
 #include "core/config/ConfigManager.h"
 #include "core/ipc/SharedConstants.h"
@@ -911,6 +912,10 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
 
         case IDC_BTN_MACRO_TABLE:
             ClassicMacroTableDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
+            break;
+
+        case IDC_BTN_HOTKEYS:
+            ClassicHotkeysDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
             break;
 
         case IDC_BTN_OPEN_LOG_FOLDER: {

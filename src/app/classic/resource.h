@@ -31,7 +31,6 @@
 #define IDC_CHECK_EXCLUDE_APPS  2207
 #define IDC_CHECK_ENGLISH_BYPASS 2208
 #define IDC_CHECK_CJK_AUTO_SWITCH 2209
-#define IDC_CHECK_ESC_RESTORE_RAW 2210
 
 // ── Tab 0: Cơ bản — Right column ──
 #define IDC_CHECK_BEEP          2211
@@ -40,9 +39,7 @@
 #define IDC_CHECK_QUICK_TELEX   2214
 #define IDC_CHECK_QUICK_START   2215
 #define IDC_CHECK_QUICK_END     2216
-#define IDC_COMBO_TEMP_OFF      2218
 #define IDC_CHECK_AUTO_CAPS_MACRO 2219
-#define IDC_CHECK_CANCEL_MACRO_ESC 2220
 
 // ── Tab 1: Phím tắt ──
 #define IDC_CHECK_KEY_CTRL      2301
@@ -70,6 +67,7 @@
 #define IDC_BTN_MACRO_TABLE     2503
 #define IDC_BTN_CHECK_UPDATE    2504
 #define IDC_BTN_OPEN_LOG_FOLDER 2505
+#define IDC_BTN_HOTKEYS         2506
 
 // ── Static labels ──
 #define IDC_STATIC_METHOD       2601
