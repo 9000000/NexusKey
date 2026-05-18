@@ -3,6 +3,208 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
+## 🟡 `power → pởe` ở spell-check OFF (2026-05-18)
+
+### Triệu chứng
+
+`power` typed in Telex (hoặc UserDefined w=HornOrInsertU) với `spell_check=false`
+→ `pởe` (sai). Spell ON thì OK (`power` literal).
+
+```
+Telex spellON  "power": [p][po][pow][powe][power]   ✓
+Telex spellOFF "power": [p][po][pơ][pơe][pởe]       ✗
+UD    spellOFF "power": [p][po][pơ][pơe][pởe]       ✗ (config user thật)
+```
+
+### Root cause
+
+`IsBlockedEnglishModifier` table (`pow`/`upw` prefix) chỉ active khi
+`effectiveSpellCheck = config_.spellCheckEnabled && !allowEnglishBypass`.
+Spell OFF → gate skipped → `o + w` apply Horn (P6) → `pơ` → tone `r` rơi
+lên `ơ` → `pởe`.
+
+`IsHardEnglishStart` không bắt `po` (po có thể là tiếng Việt: pờ, pố...),
+nên TIER1 cluster check pass. Free-mark fail không trigger vì `e` đến sau
+khi đã có ư/ơ.
+
+### Fix candidates
+
+1. **Move `IsBlockedEnglishModifier` ra khỏi `effectiveSpellCheck` gate** —
+   prefix table luôn check bất kể spell. Risk: pre-existing tests dựa
+   vào behavior này có thể fail.
+2. **Mở rộng `IsHardEnglishStart`** với heuristic vowel-consonant patterns
+   khi spell OFF. Risk: over-blocking tiếng Việt.
+3. **Document limitation** — spell OFF = "Vietnamese-mode bias", users gõ
+   English nên bật spell hoặc dùng escape key.
+
+Cần probe + decision trước khi fix. Liên quan fix `customKeyMap design
+alignment` (2026-05-18) — Section 2d của `HandleModifierAction` đã có
+guard mirror 2a, nhưng `pow` không trigger bias HardEnglish ở spell OFF
+→ guard không kích hoạt.
+
+### Pointer
+
+- `src/core/engine/EnglishProtection.h:451` — `IsBlockedEnglishModifier`
+- `src/core/engine/TypingEngine.cpp:423,469` — gate sites in 2a/2d
+- Probe scenarios: see session log 2026-05-18
+
+---
+
+## 🟡 Commit-undo replay sai sau auto-restore + gõ-lại + BS (2026-05-18)
+
+### Triệu chứng (user report)
+
+Sau khi commit từ tiếng Việt rồi gõ một từ bị auto-restore (engine guess sai
+→ revert về raw), nếu user gõ thêm vài chars rồi BS xoá sạch, **engine
+"kéo" từ tiếng Việt cũ vào composition**, dính với phím alpha tiếp theo →
+phải BS tận từ cũ mới gõ tiếng Việt lại được.
+
+User quote: *"tai sao chu lieu phai BS toi tu truoc do moi go tieng viet
+lai duoc"*
+
+### Repro chính xác (từ log 2026-05-18 09:43:35)
+
+1. `t a i ␣` → commit `tài`, stack=[`tài`], state=`Ready` (HookEngine.cpp:1544)
+2. `l i e e j e u` (7 phím, có 1 `e` thừa sau `j`) → engine state lệch
+   thành `lieẹu` (dấu nặng nhảy sai vị trí). State qua `Ready→Idle` ở phím
+   `l` (line 1196).
+3. `␣` → `CommitComposition`: `Commit()` cho ra `lieẹu`, khác screen text
+   `lieẹu` → **không khác** → wait, log nói `AutoRestore: 'lieẹu' → 'lieejeu'`,
+   tức `Commit()` returns raw `lieejeu`. Không push stack (line 1923),
+   `pushedToStack_=false`. State giữ nguyên `Idle`. Stack vẫn = [`tài`].
+4. BS×7 xoá `lieejeu` trên màn hình. Engine count=0 nên BS **không** vào
+   `HandleBackspace` (line 1495 cần count>0). Mọi BS chỉ raw passthrough.
+   State vẫn `Idle`.
+5. `i i e e j` (5 alpha) → engine build state `iieej` (passthrough,
+   không transform). State `Idle`. Stack vẫn = [`tài`].
+6. BS×5 → mỗi BS đi vào `HandleBackspace` nhánh `count > 0`. Lần cuối
+   (`count=1→0`) rơi vào nhánh `count==0` của `HandleBackspace`
+   (line 1874-1892):
+   - `previousComposition_` empty → skip `SendBackspaces` block
+   - `!commitStack_.empty()` (vẫn còn `tài`) → `SetCommitUndoReady()` →
+     state=`Ready`
+   - Log: `HandleBackspace: engine empty, stack has 3 entries → state 1`
+7. BS lần nữa → `HandleCommitUndo` line 1024 match (Ready + VK_BACK + count=0)
+   → state=`Primed`, BS passthrough xoá space → screen `tài`.
+8. `l` → line 1115: state Primed + alpha + vnMode → `ReplayCommittedChars()`
+   → engine nạp `tài` từ stack, append `l` → engine state `tàil`.
+   Log: `commit-undo: replaying + alpha 'L' (stack_top='tài' stackSize=3)`.
+9. User gõ tiếp `ieeuj` mong ra `liệu`, nhưng engine state là `tàilieeuj`
+   passthrough (vì engine không thấy diphthong hợp lệ trong context `tàili...`).
+   → Phải BS×7 về `tà`, space commit, rồi gõ `lieeju` mới ra `liệu`.
+
+### Root cause
+
+`HandleBackspace` nhánh `count > 0 → 0` (line 1888) rearm
+`SetCommitUndoReady` mỗi khi engine vừa empty trong khi stack non-empty.
+Code này **giả định** stack top vẫn là từ ngay trước cursor — đúng cho
+trường hợp single-word commit, nhưng **sai** khi giữa lần push gần nhất và
+hiện tại có một auto-restored commit (push bị skip ở line 1923).
+
+Cursor lúc đó thực sự đang đứng ngay sau `tài␣` (vì user đã xoá hết phần
+sau), nên về mặt vị trí thì replay đúng — nhưng về mặt **ý định người
+dùng**, họ đã từ bỏ word đó và bắt đầu word mới, không muốn dính vào `tài`.
+
+### Liên quan: case (6) — feature đáng lẽ có nhưng chưa work
+
+Hành vi user kỳ vọng (anh nói: *"ủa con trỏ đã BS về từ tai rồi mà, thì
+phải sửa được chứ"*): sau auto-restore, BS xoá hết từ bị restore + BS thêm
+để xoá space → engine kéo từ tiếng Việt cũ ra cho user gõ tone sửa
+(`tài` + `j` → `tại`).
+
+**Hiện không work** vì sau auto-restore, mọi BS đều có engine count=0, không
+vào `HandleBackspace`, không trigger `SetCommitUndoReady`. State luôn `Idle`,
+không bao giờ qua `Ready→Primed`. Gõ alpha tiếp → start word mới.
+
+Bug ở mục trên là *side-effect* của user accidental gõ thêm `iieej` rồi BS
+sạch — chỉ đường count>0→0 mới tình cờ trigger replay.
+
+### Fix design — 2 phương án
+
+**Phương án 1 (chỉ fix bug, an toàn, ship nhanh):**
+
+Thêm `bool stackTopAdjacent_ = false;` vào HookEngine state.
+
+- `CommitComposition` line 1936 (sau push thành công): `stackTopAdjacent_ = true`
+- `CommitComposition` line 1918 (khi `restored=true`): `stackTopAdjacent_ = false`
+- `HandleBackspace` line 1888: đổi `if (!commitStack_.empty())` →
+  `if (!commitStack_.empty() && stackTopAdjacent_)`
+- `ReplayCommittedChars` sau khi pop stack:
+  - Stack rỗng → `stackTopAdjacent_ = false`
+  - Stack còn → `stackTopAdjacent_ = true` (entry tiếp theo trở thành adjacent)
+- `ResetComposition` / `CancelCommitUndo`: `stackTopAdjacent_ = false`
+
+Effect: case (6) vẫn không work (giữ status quo), bug được fix.
+
+**Phương án 2 (fix bug + add feature 6, phức tạp hơn):**
+
+Track distance từ cursor đến stack top — `int autoRestorePendingChars_`:
+
+- `CommitComposition` khi `restored=true`: set =
+  `committed.size() + leadingTriggersForCurrentWord_ + 1` (cho commit trigger).
+  Hoặc đếm theo `previousEncodedWidths_` cho code page non-Unicode.
+- Mỗi BS khi `count==0` và `autoRestorePendingChars_ > 0`: decrement.
+  Khi về 0 → cursor sát space → `SetCommitUndoReady` → state=`Ready` →
+  BS kế xoá space + Primed → alpha replay.
+- Bất kỳ alpha/digit/macro key nào khi `autoRestorePendingChars_ > 0`: set = -1
+  (invalidate, đã có user activity, không còn pure-BS-chain nữa).
+- `HandleBackspace` nhánh count>0→0 (line 1888): chỉ rearm nếu
+  `autoRestorePendingChars_ == 0` (đã consume xong) **hoặc** chưa có
+  auto-restore nào (tức stack top thực sự adjacent từ đầu).
+- `ResetComposition` / commit thường: reset về 0.
+
+Effect: cả bug và feature (6) đều work.
+
+### Constraints (rules đã đọc)
+
+- Hook rules (docs/CODING_RULES/11): không alloc, không lock, atomic-only.
+  Cả 2 fix chỉ thêm 1 int/bool state → OK.
+- Refactoring checklist (docs/CODING_RULES/10): không liên quan invariant nào.
+- HookEngine.cpp là Win32-only → không có Linux gtest cover được. Phải
+  manual test trên Windows từng case 1-6 trong báo cáo dưới.
+
+### Test plan (manual Windows)
+
+Setup: enable Telex Vietnamese mode.
+
+1. `tai␣` → ` ` (xoá space bằng BS) → `j` → kỳ vọng `tại` (single-word
+   commit-undo, không vỡ)
+2. `tai␣loi␣` → BS×6 → `i` → kỳ vọng `tải l + i` (multi-word chain)
+3. `tai␣s` → kỳ vọng `tái` (tone modifier exempt — Sprint 2 D1)
+4. `tai␣␣` → BS BS BS `j` → kỳ vọng `tại` (pendingTrigger)
+5. `tai␣` ESC → kỳ vọng raw `tai` (ESC restore exempt)
+6. `tai␣gogle␣` → BS×6 → `j`:
+   - Phương án 1: kỳ vọng `j` (fresh, không replay)
+   - Phương án 2: kỳ vọng `tại` (replay được)
+7. **Bug repro**: `tai␣lieejeu␣` → BS×7 → `iieej` → BS×5 → `l` → kỳ vọng `l`
+   (fresh, không replay `tài`). Cả 2 phương án phải pass.
+
+### Recommendation
+
+Em đề xuất **làm Phương án 1 trước** (fix bug, ship), Phương án 2 làm sau
+nếu nhiều user request case (6). Lý do:
+- Phương án 1 chỉ thêm 1 bool, 5 chỗ touch — nhỏ, dễ review
+- Phương án 2 thêm state machine mới (counter + invalidation rules) — phải
+  cover nhiều edge case (multi-byte width, leadingTriggers, code page)
+- Phương án 2 là feature mới chưa từng có → cần Sprint discussion riêng,
+  không bundle với bug fix
+
+### File chính cần đụng
+
+- `src/app/system/HookEngine.h` — thêm member
+- `src/app/system/HookEngine.cpp` — 5 chỗ (Phương án 1) hoặc 7+ chỗ (Phương án 2)
+- Manual test trên Win11 + Win10 (cả Notepad++ và Chrome omnibox để cover
+  RichEdit và editMsg channel)
+
+### Refs
+
+- Log file: được dán nguyên si trong conversation 2026-05-18 09:43
+- Existing tests: `tests/CommitUndoExemptionTest.cpp` (chỉ test pure logic
+  của `IsCommitUndoExemptKey`, không cover HookEngine state machine)
+- Related design doc: comment block ở `HookEngine.cpp:994-1003` (H1a
+  extraction note) và `HookEngine.cpp:1311-1321` (Post-BS extension design
+  2026-05-17)
+
 ## 🟡 EnglishProtection chưa catch English-only onset clusters (2026-05-13)
 
 Test probe trên SimpleTelex + allowZwjf=true cho thấy display mangle nhiều
