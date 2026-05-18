@@ -48,12 +48,14 @@ function initHotkeysDialog() {
     save.addEventListener("click", function () { commitCapture(); });
     cancel.addEventListener("click", function () { closeCapture(); });
 
-    // Capture mode: keydown handler lives on the focusable <input>. Plain divs
-    // are not focusable in Sciter, so document.body listeners never fire when
-    // focus is on the "+ Thêm phím" button. Attaching to the input (which we
-    // focus() in openCapture) follows the proven pattern from spellexclusions.js.
-    var captureInput = document.getElementById("capture-input");
-    captureInput.addEventListener("keydown", function (evt) {
+    // Capture mode: document-level keydown is the Sciter idiom (per SDK docs:
+    // `document.on("keydown", ...)`). Fires regardless of focus target, so we
+    // don't need a hidden input or to chase focus. We gate the handler on
+    // overlay visibility so it only intercepts keys during capture.
+    document.on("keydown", function (evt) {
+        var overlay = document.getElementById("capture-overlay");
+        if (!overlay || overlay.style.display === "none") return;
+
         var keyCode = evt.keyCode || evt.which || 0;
         if (!keyCode) return;
 
@@ -122,9 +124,7 @@ function openCapture(intent) {
     document.getElementById("btn-capture-save").setAttribute("disabled", "disabled");
     document.getElementById("capture-overlay").style.display = "block";
     document.getElementById("val-intent").value = intent;
-    // Focus the hidden input so Sciter routes keydown events into our handler.
-    var captureInput = document.getElementById("capture-input");
-    if (captureInput && captureInput.focus) captureInput.focus();
+    // No focus call needed — document-level keydown handler catches everything.
 }
 
 function closeCapture() {
