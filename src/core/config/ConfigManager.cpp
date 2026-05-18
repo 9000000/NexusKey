@@ -519,30 +519,42 @@ HotkeyRegistry ConfigManager::MigrateLegacyHotkeysIfNeeded(
         return HotkeyRegistry::Defaults();
     }
 
-    auto existing = LoadHotkeyRegistry(path);
-    if (existing) {
-        const bool populated =
-            !existing->TriggersFor(Intent::CancelComposition).empty() ||
-            !existing->TriggersFor(Intent::SkipMacro).empty() ||
-            !existing->TriggersFor(Intent::ToggleEnabled).empty();
-        if (populated) {
-            // User has an explicit `[[hotkeys]]` section — honor it.
-            return *existing;
-        }
+    // Distinguish "[[hotkeys]] absent" (pre-v3 / migration path) from
+    // "[[hotkeys]] present but empty" (user cleared all bindings explicitly).
+    bool sectionPresent = false;
+    try {
+        auto table = toml::parse_file(WideToUtf8(path));
+        sectionPresent = table.contains("hotkeys");
+    } catch (...) {
+        // Parse failure: treat as missing so we fall through to migration.
     }
-    // File exists but `[[hotkeys]]` is missing or empty. This is the v2-v3
-    // upgrade path: derive bindings from the legacy on/off fields the user
-    // previously configured, then persist the new schema. All-off legacy
-    // state yields an empty migrated registry — that preserves the user's
-    // explicit "disabled" choice instead of silently restoring defaults.
+
+    if (sectionPresent) {
+        // User has the new schema — honor whatever's there, including an
+        // explicit empty array (== "I want no shortcuts").
+        return LoadHotkeyRegistry(path).value_or(HotkeyRegistry{});
+    }
+
+    // [[hotkeys]] section missing — v2→v3 upgrade path. Derive from legacy
+    // toggles, then if ALL legacy toggles were at their default (off), promote
+    // to Defaults() so first-launch v3 users get the bindings the UI shows.
+    // Without this, the UI shows Ctrl/2×Alt/Esc/Esc (via LoadHotkeyRegistryOrDefault)
+    // but runtime sees empty registry → user thinks bindings work, they don't.
     auto migrated = HotkeyRegistry::FromLegacyFields(
         legacyConfig.escRestoreRawEnabled,
         legacyConfig.tempOffMacroByEsc,
         static_cast<uint8_t>(legacyConfig.tempOffMethod));
-    NEXTKEY_LOG(L"[ConfigManager] Migrated v2→v3 hotkeys (esc=%d macro=%d method=%d)",
+    const bool legacyAllDefault = !legacyConfig.escRestoreRawEnabled
+                               && !legacyConfig.tempOffMacroByEsc
+                               && legacyConfig.tempOffMethod == TempOffMethod::None;
+    if (legacyAllDefault) {
+        migrated = HotkeyRegistry::Defaults();
+    }
+    NEXTKEY_LOG(L"[ConfigManager] Migrated v2→v3 hotkeys (esc=%d macro=%d method=%d legacyDefault=%d)",
                 legacyConfig.escRestoreRawEnabled,
                 legacyConfig.tempOffMacroByEsc,
-                static_cast<int>(legacyConfig.tempOffMethod));
+                static_cast<int>(legacyConfig.tempOffMethod),
+                legacyAllDefault);
     if (!SaveHotkeyRegistry(path, migrated)) {
         NEXTKEY_LOG(L"[ConfigManager] Failed to persist migrated hotkeys to %s", path.c_str());
     }
