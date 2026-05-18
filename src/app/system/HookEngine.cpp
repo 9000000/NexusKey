@@ -122,10 +122,10 @@ namespace {
 // Pack the cached modifier booleans into a HotkeyRegistry-style bitmask.
 [[nodiscard]] uint32_t ComputeModMask(bool ctrl, bool shift, bool alt, bool win) noexcept {
     uint32_t mask = 0;
-    if (ctrl)  mask |= MOD_CTRL;
-    if (shift) mask |= MOD_SHIFT;
-    if (alt)   mask |= MOD_ALT;
-    if (win)   mask |= MOD_WIN;
+    if (ctrl)  mask |= kModCtrl;
+    if (shift) mask |= kModShift;
+    if (alt)   mask |= kModAlt;
+    if (win)   mask |= kModWin;
     return mask;
 }
 

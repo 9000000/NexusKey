@@ -21,16 +21,18 @@ enum class Intent : uint8_t {
     ToggleEnabled     = 2,  // Toggle global ENABLED flag (Ctrl alone / 2×Alt default)
 };
 
-/// Modifier bitmask. Defined independently of Win32 MOD_* constants so the
-/// type is unit-testable on Linux.
-inline constexpr uint32_t MOD_CTRL  = 0x01;
-inline constexpr uint32_t MOD_SHIFT = 0x02;
-inline constexpr uint32_t MOD_ALT   = 0x04;
-inline constexpr uint32_t MOD_WIN   = 0x08;
+/// Modifier bitmask. `kMod*` prefix (not `MOD_*`) to avoid clashing with the
+/// macros Windows.h defines for the RegisterHotKey API — those use a
+/// different bit assignment and would silently corrupt config values.
+/// Linux-portable.
+inline constexpr uint32_t kModCtrl  = 0x01;
+inline constexpr uint32_t kModShift = 0x02;
+inline constexpr uint32_t kModAlt   = 0x04;
+inline constexpr uint32_t kModWin   = 0x08;
 
 /// A single input pattern that fires an Intent. Covers:
 ///   - Single tap:       `{vk, mods=0}`
-///   - Chord:            `{vk, mods=MOD_CTRL|MOD_SHIFT}`
+///   - Chord:            `{vk, mods=kModCtrl|kModShift}`
 ///   - Double-tap:       `{vk, mods=0, doubleTap=true}`
 ///   - Modifier-alone:   `{vk=VK_CONTROL|VK_MENU|VK_SHIFT|VK_LWIN|VK_RWIN, mods=0}`
 ///                       (Matches() fires on keyUp; caller must have verified

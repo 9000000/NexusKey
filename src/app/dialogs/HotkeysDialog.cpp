@@ -5,6 +5,7 @@
 
 #include "core/config/ConfigManager.h"
 #include "core/WinStrings.h"
+#include "helpers/AppHelpers.h"
 #include "sciter-x-dom.hpp"
 
 #include <string>
@@ -42,10 +43,10 @@ constexpr const wchar_t* kIntentToggle = L"toggle-enabled";
 ///   {vk=0x56, mods=Ctrl|Shift}    → "Ctrl+Shift+V"
 [[nodiscard]] std::wstring FormatTriggerLabel(const Trigger& t) {
     std::wstring s;
-    if (t.mods & MOD_CTRL)  s += L"Ctrl+";
-    if (t.mods & MOD_SHIFT) s += L"Shift+";
-    if (t.mods & MOD_ALT)   s += L"Alt+";
-    if (t.mods & MOD_WIN)   s += L"Win+";
+    if (t.mods & kModCtrl)  s += L"Ctrl+";
+    if (t.mods & kModShift) s += L"Shift+";
+    if (t.mods & kModAlt)   s += L"Alt+";
+    if (t.mods & kModWin)   s += L"Win+";
 
     // Modifier-alone (no other mods + vk is itself a modifier):
     if (t.mods == 0 && !t.doubleTap && IsModifierKey(t.vk)) {
@@ -108,12 +109,16 @@ void HotkeysDialog::populate() {
     for (Intent intent : kAll) {
         for (const Trigger& t : registry_.TriggersFor(intent)) {
             const std::wstring label = FormatTriggerLabel(t);
-            call_function("addTrigger",
-                          sciter::value(IntentLabel(intent)),
-                          sciter::value(label.c_str()),
-                          sciter::value(static_cast<int>(t.vk)),
-                          sciter::value(static_cast<int>(t.mods)),
-                          sciter::value(t.doubleTap));
+            // Sciter's call_function caps at a few overloads — bundle the 5
+            // payload fields into a single array (intent, label, vk, mods,
+            // doubleTap). JS side unpacks via positional indexing.
+            sciter::value arr;
+            arr.set_item(0, sciter::value(IntentLabel(intent)));
+            arr.set_item(1, sciter::value(label.c_str()));
+            arr.set_item(2, sciter::value(static_cast<int>(t.vk)));
+            arr.set_item(3, sciter::value(static_cast<int>(t.mods)));
+            arr.set_item(4, sciter::value(t.doubleTap));
+            call_function("addTrigger", arr);
         }
     }
     call_function("forceRefresh");

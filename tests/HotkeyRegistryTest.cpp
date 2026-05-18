@@ -76,30 +76,30 @@ TEST(HotkeyRegistry, Tap_AnyModifierSet_DoesNotMatch) {
     // Shift+Esc must NOT fire — the chord doesn't match.
     const auto cfg = HotkeyRegistry::Defaults();
     EXPECT_FALSE(cfg.Matches(Intent::CancelComposition,
-                             kVkEscape, MOD_SHIFT, false, false));
+                             kVkEscape, kModShift, false, false));
 }
 
 // ─────────────────────────────── Chord ───────────────────────────────────
 
 TEST(HotkeyRegistry, Chord_MatchesExactModifiers) {
     HotkeyRegistry cfg;
-    cfg.AddTrigger(Intent::SkipMacro, Trigger{kVkA, MOD_CTRL | MOD_SHIFT, false});
+    cfg.AddTrigger(Intent::SkipMacro, Trigger{kVkA, kModCtrl | kModShift, false});
     EXPECT_TRUE(cfg.Matches(Intent::SkipMacro,
-                            kVkA, MOD_CTRL | MOD_SHIFT, false, false));
+                            kVkA, kModCtrl | kModShift, false, false));
 }
 
 TEST(HotkeyRegistry, Chord_MissingMod_DoesNotMatch) {
     HotkeyRegistry cfg;
-    cfg.AddTrigger(Intent::SkipMacro, Trigger{kVkA, MOD_CTRL | MOD_SHIFT, false});
+    cfg.AddTrigger(Intent::SkipMacro, Trigger{kVkA, kModCtrl | kModShift, false});
     EXPECT_FALSE(cfg.Matches(Intent::SkipMacro,
-                             kVkA, MOD_CTRL, false, false));
+                             kVkA, kModCtrl, false, false));
 }
 
 TEST(HotkeyRegistry, Chord_ExtraMod_DoesNotMatch) {
     HotkeyRegistry cfg;
-    cfg.AddTrigger(Intent::SkipMacro, Trigger{kVkA, MOD_CTRL, false});
+    cfg.AddTrigger(Intent::SkipMacro, Trigger{kVkA, kModCtrl, false});
     EXPECT_FALSE(cfg.Matches(Intent::SkipMacro,
-                             kVkA, MOD_CTRL | MOD_SHIFT, false, false));
+                             kVkA, kModCtrl | kModShift, false, false));
 }
 
 // ────────────────────────────── DoubleTap ────────────────────────────────

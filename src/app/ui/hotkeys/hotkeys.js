@@ -157,7 +157,21 @@ function clearAll() {
     });
 }
 
+// C++ packs the 5 fields into a single sciter::value array:
+//   [intent, label, vk, mods, doubleTap]
+// because sciter::host::call_function tops out below the 6 args we'd need
+// to pass them individually. We accept both shapes here so future refactors
+// (or alternative callers) can use either.
 function addTrigger(intent, label, vk, mods, doubleTap) {
+    if (typeof label === "undefined" && intent && typeof intent === "object"
+        && typeof intent.length === "number") {
+        var arr = intent;
+        intent    = arr[0];
+        label     = arr[1];
+        vk        = arr[2];
+        mods      = arr[3];
+        doubleTap = arr[4];
+    }
     var list = document.getElementById("chips-" + intent);
     if (!list) return;
 
