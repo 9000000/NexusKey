@@ -11,3 +11,4 @@
 - Sữa lỗi tự viết hoa đầu câu: ".zip Này" thay vì ".zip này"
 - Sửa lỗi không gõ được tiếng việt trong phiên bản classic 
 - Sửa lỗi space -> BS -> ESC không tra lại raw key
+- Sửa lỗi dialog không căn giữa màn hình khi bật advanced setting
