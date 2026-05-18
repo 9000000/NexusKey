@@ -1681,10 +1681,6 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                 modTapCount_[modIdx] == 1 &&
                 (now - modTapLastTs_[modIdx]) < DOUBLE_TAP_TIMEOUT_MS;
 
-            HOOK_LOG(L"  MOD release vk=0x%02X (modIdx=%d) dt=%d count=%d elapsed=%ums",
-                     canonicalVk, modIdx, isDoubleTap, modTapCount_[modIdx],
-                     now - modTapLastTs_[modIdx]);
-
             auto matches = [&](Intent intent) {
                 return hotkeysSnap->Matches(intent, canonicalVk, /*mods=*/0,
                                             isDoubleTap, /*keyUp=*/true);
