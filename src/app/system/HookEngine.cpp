@@ -1332,6 +1332,26 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
         return TryEscRestoreRaw();
     }
 
+    // 3b''. ToggleEnabled — non-modifier binding (F-key, letter+chord, Esc+mods…)
+    // fires on DOWN with exact mods match. Modifier-bound ToggleEnabled lives
+    // in ProcessKeyUp's modifier-release dispatch (modifier-alone / double-tap
+    // detection). The IsModifierKey gate avoids double-firing for modifier vk.
+    // Double-tap on non-modifier keys is currently NOT tracked by HookEngine
+    // (modTapCount_ only covers Ctrl/Shift/Alt/Win) — bindings with
+    // doubleTap=true on non-modifier vk are accepted by the Hotkeys UI but
+    // never fire here. Acceptable v3 limitation; track via Matches() with
+    // isDoubleTap=false so only single-tap triggers match.
+    if (!IsModifierKey(CanonicalModifierVk(vkCode))
+        && hotkeysSnap->Matches(Intent::ToggleEnabled, vkCode, currentMods,
+                                 /*isDoubleTap=*/false, /*keyUp=*/false)) {
+        if (engine_->Count() > 0) CommitComposition();
+        tempEngineOff_ = !tempEngineOff_;
+        CancelCommitUndo();
+        HOOK_LOG(L"  TOGGLE-DOWN (vk=0x%02X mods=0x%02X): tempEngineOff_=%d",
+                 vkCode, currentMods, tempEngineOff_ ? 1 : 0);
+        return KeyOutcome::Eat;
+    }
+
     // 3c. Temp off macro by trigger: press the bound key with no pending text
     //     → skip macro for next word. Registry's IsEnabled gates inside Matches();
     //     the macro-system gates (macroOn, table non-empty) stay because skipping
