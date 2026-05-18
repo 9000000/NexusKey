@@ -169,6 +169,78 @@ TEST_F(CustomKeyMapTest, UserDefinedWNoStartStillAppliesHornMidWord) {
     EXPECT_EQ(engine2.Peek(), L"tơ");
 }
 
+// Helper: mirror the full default UserDefined keymap that the Settings UI
+// writes when the user picks the Telex-style preset (see config.toml shipped
+// with the app). English-protection regression tests below depend on this
+// shape because bias arming relies on e/a/o being mapped to Circumflex
+// actions (free-mark fails set bias via HandleAdjacentCircumflex).
+static void FillTelexPresetCustomKeyMap(TypingConfig& cfg) {
+    cfg.customKeyMap[static_cast<size_t>(L'a')] = TypingAction::CircumflexA;
+    cfg.customKeyMap[static_cast<size_t>(L'd')] = TypingAction::StrokeD;
+    cfg.customKeyMap[static_cast<size_t>(L'e')] = TypingAction::CircumflexE;
+    cfg.customKeyMap[static_cast<size_t>(L'o')] = TypingAction::CircumflexO;
+    cfg.customKeyMap[static_cast<size_t>(L's')] = TypingAction::ToneAcute;
+    cfg.customKeyMap[static_cast<size_t>(L'r')] = TypingAction::ToneHook;
+    cfg.customKeyMap[static_cast<size_t>(L'f')] = TypingAction::ToneGrave;
+    cfg.customKeyMap[static_cast<size_t>(L'x')] = TypingAction::ToneTilde;
+    cfg.customKeyMap[static_cast<size_t>(L'j')] = TypingAction::ToneDot;
+    cfg.customKeyMap[static_cast<size_t>(L'z')] = TypingAction::ClearTone;
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertUNoStart;
+    cfg.customKeyMap[static_cast<size_t>(L'[')] = TypingAction::HornInsertO;
+    cfg.customKeyMap[static_cast<size_t>(L']')] = TypingAction::HornInsertU;
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedRespectsEnglishBias_Review) {
+    // Regression 2026-05-18: UserDefined user-only actions must honor the same
+    // English-protection guards as Telex modifier path. Without bias check in
+    // section 2d, typing "review" with w=HornOrInsertUNoStart produces
+    // `revieư` (fallback insert fires) while equivalent Telex (HornW) stays
+    // `review` (P8 skips because vowels exist + bias HardEnglish from free-mark).
+    TypingConfig cfg = MakeUserDefinedConfig();
+    FillTelexPresetCustomKeyMap(cfg);
+    TypingEngine engine(cfg);
+    TypeString(engine, L"review");
+    EXPECT_EQ(engine.Peek(), L"review");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedRespectsEnglishBias_Where) {
+    // `wh` raw start-cluster impossible in Vietnamese → IsHardEnglishStart sets
+    // bias HardEnglish on the second char. Subsequent w/e/r/e must pass
+    // through literally even in UserDefined mode.
+    TypingConfig cfg = MakeUserDefinedConfig();
+    FillTelexPresetCustomKeyMap(cfg);
+    TypingEngine engine(cfg);
+    TypeString(engine, L"where");
+    EXPECT_EQ(engine.Peek(), L"where");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedValidVietnameseStillComposes_Thuw) {
+    // Sanity guard: English-bias check must not over-block legitimate
+    // Vietnamese sequences. `thuw` is valid start cluster (`thu` + horn → `thư`).
+    TypingConfig cfg = MakeUserDefinedConfig();
+    FillTelexPresetCustomKeyMap(cfg);
+    TypingEngine engine(cfg);
+    TypeString(engine, L"thuw");
+    EXPECT_EQ(engine.Peek(), L"thư");
+    TypeString(engine, L"s");
+    EXPECT_EQ(engine.Peek(), L"thứ");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedHornOrInsertUFallback_WwFullyReverts) {
+    // Regression 2026-05-18: w + w after a no-target insertion (e.g. typing
+    // "revie" then `w` — no a/o/u to apply horn → fallback inserts ư as
+    // "revieư") must FULLY revert on the second `w`, not split ư into u+w.
+    // Mark the fallback-inserted ư as synthetic so HandleHornW P4 sees it
+    // as the ww-escape signature (synthetic + last-state) → erase + literal.
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertUNoStart;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"review");
+    EXPECT_EQ(engine.Peek(), L"revieư");  // fallback inserted ư (synthetic)
+    TypeString(engine, L"w");             // second `w` — full ww escape
+    EXPECT_EQ(engine.Peek(), L"review");  // ư replaced by literal w, no `u`
+}
+
 TEST_F(CustomKeyMapTest, UserDefinedBracketInsertsHornMidWord) {
     TypingConfig cfg = MakeUserDefinedConfig();
     cfg.customKeyMap[static_cast<size_t>(L'[')] = TypingAction::HornInsertO;
@@ -214,22 +286,28 @@ TEST_F(CustomKeyMapTest, DefaultEmptyMatchesCombined) {
 
 
 // =====================================================================
-// G2 — Replace built-in: user override always wins (precedence)
+// G2 — Replace built-in: user override applies in UserDefined mode
 // =====================================================================
+// Invariant: customKeyMap is the user-defined input method's mapping table.
+// It applies ONLY when `inputMethod == UserDefined`. Other modes use their
+// own base mapping (ClassifyKey) and ignore customKeyMap entirely — see
+// `*_IgnoredInNonUserDefinedMode` tests below for the regression guard.
 
-TEST_F(CustomKeyMapTest, RemapTelexSToToneHook) {
-    TypingConfig cfg = MakeTelexConfig();
+TEST_F(CustomKeyMapTest, RemapSToToneHook) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    // UserDefined needs its full base mapping copied — only `s` differs.
+    cfg.customKeyMap[static_cast<size_t>(L'a')] = TypingAction::CircumflexA;
     cfg.customKeyMap[static_cast<size_t>(L's')] = TypingAction::ToneHook;
     TypingEngine engine(cfg);
     TypeString(engine, L"as");
-    // Default Telex: 'a' + 's' → 'á' (sắc). With remap 's'→ToneHook: 'a' + 's' → 'ả' (hỏi).
+    // With remap 's'→ToneHook: 'a' + 's' → 'ả' (hỏi) instead of 'á' (sắc).
     EXPECT_EQ(engine.Peek(), L"ả");
 }
 
-TEST_F(CustomKeyMapTest, RemapVniDigit1ToClearTone) {
-    TypingConfig cfg = MakeVniConfig();
-    // Default VNI: '1' → ToneAcute. Remap '1' → ClearTone.
+TEST_F(CustomKeyMapTest, RemapDigit1ToClearTone) {
+    TypingConfig cfg = MakeUserDefinedConfig();
     cfg.customKeyMap[static_cast<size_t>(L'1')] = TypingAction::ClearTone;
+    cfg.customKeyMap[static_cast<size_t>(L'2')] = TypingAction::ToneGrave;
     TypingEngine engine(cfg);
     TypeString(engine, L"a2");  // 'a' + grave → 'à'
     EXPECT_EQ(engine.Peek(), L"à");
@@ -239,24 +317,67 @@ TEST_F(CustomKeyMapTest, RemapVniDigit1ToClearTone) {
 
 
 // =====================================================================
-// G3 — Gap-fill: map a key that ClassifyKey returns None for
+// G3 — Gap-fill: map a key in UserDefined mode (no base to fall back on)
 // =====================================================================
 
-TEST_F(CustomKeyMapTest, MapQToClearTone_TelexMode) {
-    TypingConfig cfg = MakeTelexConfig();
-    // 'q' is not a Telex action key — ClassifyKey returns None.
+TEST_F(CustomKeyMapTest, MapQToClearTone) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'a')] = TypingAction::CircumflexA;
+    cfg.customKeyMap[static_cast<size_t>(L's')] = TypingAction::ToneAcute;
     cfg.customKeyMap[static_cast<size_t>(L'q')] = TypingAction::ClearTone;
     TypingEngine engine(cfg);
     TypeString(engine, L"asq");  // 'a' + sắc → 'á', then 'q' clears tone → 'a'
     EXPECT_EQ(engine.Peek(), L"a");
 }
 
-TEST_F(CustomKeyMapTest, MapQToToneAcute_VniMode) {
-    TypingConfig cfg = MakeVniConfig();
-    // 'q' is not a VNI action key — ClassifyKey returns None.
+TEST_F(CustomKeyMapTest, MapQToToneAcute) {
+    TypingConfig cfg = MakeUserDefinedConfig();
     cfg.customKeyMap[static_cast<size_t>(L'q')] = TypingAction::ToneAcute;
     TypingEngine engine(cfg);
     TypeString(engine, L"aq");  // 'a' + remapped 'q' → ToneAcute → 'á'
+    EXPECT_EQ(engine.Peek(), L"á");
+}
+
+// =====================================================================
+// G2/G3 regression guard: customKeyMap MUST be ignored in non-UserDefined
+// modes. Stale `[UserDefinedKeyMap]` entries left in config.toml after a
+// mode switch must not silently affect Telex/VNI/Combined base behavior.
+// =====================================================================
+
+TEST_F(CustomKeyMapTest, CustomMapIgnoredInTelexMode) {
+    TypingConfig cfg = MakeTelexConfig();
+    // Stale entries from a previous UserDefined session.
+    cfg.customKeyMap[static_cast<size_t>(L's')] = TypingAction::ToneHook;
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertUNoStart;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"as");
+    // Telex base: 'a' + 's' → 'á' (sắc). customKeyMap ignored.
+    EXPECT_EQ(engine.Peek(), L"á");
+
+    TypingEngine engine2(cfg);
+    TypeString(engine2, L"thuw");
+    // Telex base 'w' → HornW (P5: standalone u → horn). customKeyMap ignored.
+    // Regression for user-reported bug 2026-05-18: stale customKeyMap['w']=
+    // HornOrInsertUNoStart caused 'w' to silent-drop, producing literal "thuw"
+    // → tone 's' then applied to bare 'u' producing "thúw".
+    EXPECT_EQ(engine2.Peek(), L"thư");
+}
+
+TEST_F(CustomKeyMapTest, CustomMapIgnoredInVniMode) {
+    TypingConfig cfg = MakeVniConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'1')] = TypingAction::ClearTone;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"a1");
+    // VNI base: 'a' + '1' → 'á' (ToneAcute). customKeyMap ignored.
+    EXPECT_EQ(engine.Peek(), L"á");
+}
+
+TEST_F(CustomKeyMapTest, CustomMapIgnoredInCombinedMode) {
+    TypingConfig cfg = MakeCombinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L's')] = TypingAction::ToneHook;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"as");
+    // Combined base: Telex 's' → ToneAcute → 'á'. customKeyMap ignored.
     EXPECT_EQ(engine.Peek(), L"á");
 }
 
@@ -319,13 +440,12 @@ TEST_P(CustomKeyMapAllActions, EveryTypingActionNoThrow) {
     const TypingAction action = GetParam();
     ASSERT_NE(action, TypingAction::None) << "G7 only iterates non-None actions";
 
-    // Configure: 'q' (which ClassifyKey returns None for in pure Telex mode)
-    // remapped to the parameter action. Compare composed output of typing
-    // "q" against an engine driven through the natural key for the same
-    // action. We do not assert specific Vietnamese strings here — only
-    // that dispatch reaches the correct action handler (no crash, action
-    // resolves). Engine state observation is via Peek().
-    TypingConfig cfg = MakeCombinedConfig();
+    // Configure: 'q' (which ClassifyKey returns None for) remapped to the
+    // parameter action under UserDefined mode (customKeyMap is only honored
+    // there per the gating invariant). We do not assert specific Vietnamese
+    // strings — only that dispatch reaches the correct action handler
+    // (no crash, action resolves). Engine state observation is via Peek().
+    TypingConfig cfg = MakeUserDefinedConfig();
     cfg.customKeyMap[static_cast<size_t>(L'q')] = action;
     TypingEngine engine(cfg);
     // Seed a vowel so modifier/tone actions have something to operate on.

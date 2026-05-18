@@ -217,11 +217,13 @@ void TypingEngine::PushChar(wchar_t keyChar) {
         }
     }
 
-    // 1. Classify keystroke. G-4 layers an optional per-key user override
-    // above the static rules: when customKeyMap[lower] is non-None (ASCII
-    // keys only), it wins; otherwise ClassifyKey provides the built-in
-    // Telex/VNI mapping.
-    const TypingAction overrideAction = (lower < 128)
+    // 1. Classify keystroke. `customKeyMap` is the user-defined input method's
+    // key remapping table — it ONLY applies when `inputMethod == UserDefined`.
+    // Other modes (Telex/VNI/SimpleTelex/Combined) use their own base mapping
+    // via ClassifyKey; stale customKeyMap entries left over from a previous
+    // UserDefined session must not silently override the base.
+    const TypingAction overrideAction =
+        (lower < 128 && config_.inputMethod == InputMethod::UserDefined)
         ? config_.customKeyMap[static_cast<uint8_t>(lower)]
         : TypingAction::None;
     TypingAction action = (overrideAction != TypingAction::None)
@@ -461,9 +463,20 @@ bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wc
         }
     }
 
-    // 2d. User-defined ONLY actions
+    // 2d. User-defined ONLY actions (HornOrInsertU, InsertABreve, ...)
+    // Mirror 2a's English-protection guards: stale HardEnglish bias from
+    // failed free-mark must block ư insertion just like it blocks HornW in
+    // Telex (regression 2026-05-18: `revie + w` in UserDefined with
+    // w=HornOrInsertUNoStart produced `revieư` because 2d had no bias check).
     if (userGated && isUserOnly) {
-        if (ProcessModifier(action, keyChar)) {
+        bool block = escape_.isEscaped() ||
+                     (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
+        if (!block && effectiveSpellCheck &&
+            IsBlockedEnglishModifier(rawInput_.data(), rawInput_.size())) block = true;
+        if (block && !escape_.isEscaped() && !config_.spellExclusions.empty() &&
+            WouldModifierKeyMatchExclusion(lower)) block = false;
+
+        if (!block && ProcessModifier(action, keyChar)) {
             engProt_.bias = LanguageBias::Vietnamese;
             ApplyAutoUO();
             UpdateSpellState();
@@ -629,8 +642,20 @@ bool TypingEngine::HandleHornOrInsertU(TypingAction action, wchar_t keyChar) {
     }
 
     // 2. Plain variant fallback (e.g., SimpleTelex / QU-cluster where P8
-    //    declined): insert ư as a fresh state.
-    return HandleHornInsert(TypingAction::HornInsertU, keyChar);
+    //    declined): insert ư as a fresh state. Mark it synthetic so a
+    //    subsequent press of the same key triggers the ww-style full revert
+    //    via HandleHornW P4 (synthetic + last-state → erase ư entirely, add
+    //    literal). Without this, double-press lands in the regular escape
+    //    path (ư → u + literal), producing e.g. `revie + w + w → revieuw`
+    //    instead of `review`.
+    const size_t beforeSize = states_.size();
+    if (HandleHornInsert(TypingAction::HornInsertU, keyChar)) {
+        if (states_.size() > beforeSize) {
+            states_.back().synthetic = true;
+        }
+        return true;
+    }
+    return false;
 }
 
 bool TypingEngine::HandleUndoAllMarks(TypingAction /*action*/, wchar_t /*keyChar*/) {
