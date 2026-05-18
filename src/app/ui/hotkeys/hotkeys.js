@@ -60,6 +60,12 @@ var pending = { vk: 0, mods: 0, doubleTap: false, label: "—" };
 var DOUBLE_TAP_WINDOW_MS = 400;
 var lastTapVk = 0, lastTapTs = 0;
 
+// Friendly VK→name table — uploaded from C++ via setVkNames() on dialog init
+// (HotkeysDialog::sendVkNames). C++ owns the canonical list to avoid drift;
+// we only keep the algorithmic ranges (letters / digits / F-keys / numpad)
+// below since those would be redundant to ship over the wire.
+var VK_NAMES = {};
+
 document.ready = function () {
     initSubDialog();
     initHotkeysDialog();
@@ -159,12 +165,6 @@ function formatLabel(vk, mods, doubleTap) {
     parts.push(vkName(vk));
     return parts.join("+");
 }
-
-// Friendly VK→name table — uploaded from C++ via setVkNames() on dialog
-// init (HotkeysDialog::sendVkNames). C++ owns the canonical list to avoid
-// drift; here we just keep the algorithmic ranges (letters / digits / F-keys
-// / numpad) since those would be redundant to ship over the wire.
-var VK_NAMES = {};
 
 function vkName(vk) {
     if (VK_NAMES[vk]) return VK_NAMES[vk];

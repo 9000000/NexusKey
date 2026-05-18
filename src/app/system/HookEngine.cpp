@@ -1641,9 +1641,10 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                        vkCode == VK_LWIN || vkCode == VK_RWIN);
 
     if (isModifier) {
-        // Generic ToggleEnabled detection — covers every modifier × {single-alone,
-        // double-tap} binding the user has in HotkeyRegistry. Source of truth is
-        // the registry; legacy tempOffMethod_ no longer gates here (it stays only
+        // Generic modifier-release intent dispatch — covers every modifier ×
+        // {single-alone, double-tap} binding the user has in HotkeyRegistry,
+        // across all three intents (Cancel/Skip/Toggle). Source of truth is the
+        // registry; legacy tempOffMethod_ no longer gates here (it stays only
         // for the V/E QuickSync path elsewhere — Step 10 removes it entirely).
         const auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
         const uint32_t canonicalVk = CanonicalModifierVk(vkCode);
@@ -1679,7 +1680,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             const DWORD now = GetTickCount();
             const bool isDoubleTap =
                 modTapCount_[modIdx] == 1 &&
-                (now - modTapLastTs_[modIdx]) < DOUBLE_TAP_TIMEOUT_MS;
+                (now - modTapLastTs_[modIdx]) < kDoubleTapTimeoutMs;
 
             auto matches = [&](Intent intent) {
                 return hotkeysSnap->Matches(intent, canonicalVk, /*mods=*/0,
@@ -1690,7 +1691,8 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             //    HandlePreDispatch step 3b': feature flag on + something to cancel.
             if (escRestoreRawEnabled_.load(std::memory_order_acquire)
                 && matches(Intent::CancelComposition)) {
-                const bool hasLiveComposition = engine_->Count() > 0;
+                const int engineCount = engine_->Count();
+                const bool hasLiveComposition = engineCount > 0;
                 const bool hasPrimedCommit =
                     (commitUndoState_ == CommitUndoState::Primed) &&
                     !commitStack_.empty() &&
@@ -1701,7 +1703,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                              canonicalVk, isDoubleTap);
                 } else {
                     HOOK_LOG(L"  MOD-CANCEL (vk=0x%02X, dt=%d): matched but no composition (engineCount=%d)",
-                             canonicalVk, isDoubleTap, engine_->Count());
+                             canonicalVk, isDoubleTap, engineCount);
                 }
             }
 

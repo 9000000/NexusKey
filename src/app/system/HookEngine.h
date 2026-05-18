@@ -359,7 +359,7 @@ private:
     static constexpr int kModCount = 4;
     int   modTapCount_[kModCount]   = {0, 0, 0, 0};
     DWORD modTapLastTs_[kModCount]  = {0, 0, 0, 0};
-    static constexpr DWORD DOUBLE_TAP_TIMEOUT_MS = 400;
+    static constexpr DWORD kDoubleTapTimeoutMs = 400;
     /// Keystroke-based auto-capitalize state machine (used when no TSF anchor truth).
     /// Enum + transition rule live in core/AutoCapStateTransition.h so Linux GTest
     /// can exercise the modifier-gate contract without depending on Win32.
