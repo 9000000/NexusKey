@@ -9,6 +9,7 @@
 #include "core/engine/IInputEngine.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/config/TypingConfig.h"
+#include "core/hotkey/HotkeyRegistry.h"
 #include "core/AutoCapStateTransition.h"
 #include "core/SmartSwitchManager.h"
 #include "HookSelfHealer.h"
@@ -119,6 +120,12 @@ private:
 
     // Config application (shared between Start and SyncConfigFromSharedState)
     void ApplyConfig(const TypingConfig& config);
+
+    /// Publish a new hotkey registry to the hook hot path. Atomic RCU swap —
+    /// caller may call from main thread; the hook callback picks up the new
+    /// snapshot on its next ProcessKeyDown. The previous registry stays alive
+    /// until any in-flight key event finishes its load().
+    void ApplyHotkeyRegistry(HotkeyRegistry registry);
 
     // Core processing
     bool ProcessKeyDown(DWORD vkCode, DWORD scanCode, DWORD flags);
@@ -284,6 +291,17 @@ private:
     std::atomic<std::shared_ptr<const TypingConfig>> config_{
         std::make_shared<const TypingConfig>()
     };  // Last applied config (for per-app engine recreation)
+
+    // Unified hotkey registry (cancel-composition / skip-macro / toggle-enabled).
+    // RCU pattern matching config_ above: writers (main thread) call
+    // hotkeys_.store(std::make_shared<...>(newRegistry), release); readers
+    // (hook hot path) load() once per ProcessKeyDown to dispatch all three
+    // intents against the same snapshot. Default = factory bindings
+    // (Esc/Esc/Ctrl-alone/2×Alt) so the field is never nullptr and hot path
+    // can dereference unconditionally even before ApplyConfig has run.
+    std::atomic<std::shared_ptr<const HotkeyRegistry>> hotkeys_{
+        std::make_shared<const HotkeyRegistry>(HotkeyRegistry::Defaults())
+    };
     // Sprint 2 T3: Output channel strategy. RCU-published shared_ptr to the
     // active IOutputInjector, same pattern as config_ above. Writers (main
     // thread on focus change): two-phase classify → atomic_store. Readers

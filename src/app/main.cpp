@@ -249,6 +249,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     if (lpCmdLine && wcsstr(lpCmdLine, L"--userdefined") != nullptr) {
         RunUserDefinedSubprocess();  // [[noreturn]]
     }
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--hotkeys") != nullptr) {
+        RunHotkeysSubprocess();  // [[noreturn]]
+    }
 
     // ═══════════════════════════════════════════════════════════
     // Main Process

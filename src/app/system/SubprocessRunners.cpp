@@ -12,6 +12,7 @@
 #include "dialogs/AppOverridesDialog.h"
 #include "dialogs/SpellExclusionsDialog.h"
 #include "dialogs/UserDefinedDialog.h"
+#include "dialogs/HotkeysDialog.h"
 #include "core/Debug.h"
 
 #include <Windows.h>
@@ -161,6 +162,19 @@ namespace NextKey {
     dialog.Show();
 
     NEXTKEY_LOG(L"User defined input subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunHotkeysSubprocess() {
+    NEXTKEY_LOG(L"Running hotkeys rebind subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
+    HotkeysDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"Hotkeys subprocess exiting");
     ExitProcess(0);
 }
 

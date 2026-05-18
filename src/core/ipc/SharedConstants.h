@@ -29,6 +29,7 @@ constexpr UINT WM_VKEY_OPEN_SPELLEXCL = WM_USER + 112;    // Deferred: open spel
 constexpr UINT WM_VKEY_RESTART = WM_USER + 113;           // Settings → Main: restart app (admin mode changed)
 constexpr UINT WM_VKEY_HOOK_RELOAD = WM_USER + 114;       // Subprocess → Main: eager hook reload after SignalConfigChange
 constexpr UINT WM_VKEY_OPEN_USERDEFINED = WM_USER + 115;  // Deferred: open user-defined keymap dialog
+constexpr UINT WM_VKEY_OPEN_HOTKEYS = WM_USER + 116;      // Deferred: open unified hotkey rebind dialog
 
 }  // namespace NextKey
 

@@ -17,5 +17,6 @@ namespace NextKey {
 [[noreturn]] void RunAppOverridesSubprocess();
 [[noreturn]] void RunSpellExclusionsSubprocess();
 [[noreturn]] void RunUserDefinedSubprocess();
+[[noreturn]] void RunHotkeysSubprocess();
 
 }  // namespace NextKey
