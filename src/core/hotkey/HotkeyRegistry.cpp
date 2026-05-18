@@ -168,10 +168,6 @@ void HotkeyRegistry::Load(const toml::array& cfg) {
 }
 
 void HotkeyRegistry::Save(toml::array& cfg) const {
-    // Deterministic order: iterate intents 0..N to keep config diffs stable.
-    constexpr Intent kAllIntents[] = {
-        Intent::CancelComposition, Intent::SkipMacro, Intent::ToggleEnabled,
-    };
     for (Intent intent : kAllIntents) {
         const auto it = triggers_.find(intent);
         if (it == triggers_.end()) continue;

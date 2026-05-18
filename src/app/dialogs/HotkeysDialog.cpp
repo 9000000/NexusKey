@@ -3,13 +3,14 @@
 
 #include "HotkeysDialog.h"
 
+#include <string>
+#include <unordered_map>
+
 #include "core/config/ConfigManager.h"
+#include "core/Debug.h"
 #include "core/WinStrings.h"
 #include "helpers/AppHelpers.h"
 #include "sciter-x-dom.hpp"
-
-#include <string>
-#include <unordered_map>
 
 using namespace sciter::dom;
 
@@ -109,10 +110,7 @@ HotkeysDialog::HotkeysDialog(HWND parent)
 
 void HotkeysDialog::populate() {
     call_function("clearAll");
-    constexpr Intent kAll[] = {
-        Intent::CancelComposition, Intent::SkipMacro, Intent::ToggleEnabled,
-    };
-    for (Intent intent : kAll) {
+    for (Intent intent : kAllIntents) {
         for (const Trigger& t : registry_.TriggersFor(intent)) {
             const std::wstring label = FormatTriggerLabel(t);
             // Sciter's call_function caps at a few overloads — bundle the 5
@@ -132,7 +130,12 @@ void HotkeysDialog::populate() {
 
 void HotkeysDialog::persistAndSignal() {
     auto path = ConfigManager::GetConfigPath();
-    (void)ConfigManager::SaveHotkeyRegistry(path, registry_);
+    if (!ConfigManager::SaveHotkeyRegistry(path, registry_)) {
+        // Save failure leaves the in-memory registry ahead of disk — user sees
+        // the chip but next launch will lose it. Log + still signal so the
+        // running hook engine picks up the in-memory state until next reload.
+        NEXTKEY_LOG(L"HotkeysDialog: SaveHotkeyRegistry failed for %s", path.c_str());
+    }
     SignalConfigChange();
 }
 
@@ -213,10 +216,7 @@ void HotkeysDialog::handleAction(const std::wstring& action) {
     if (action == L"delete") {
         // Rebuild registry without the matching trigger.
         HotkeyRegistry rebuilt;
-        constexpr Intent kAll[] = {
-            Intent::CancelComposition, Intent::SkipMacro, Intent::ToggleEnabled,
-        };
-        for (Intent i : kAll) {
+        for (Intent i : kAllIntents) {
             for (const Trigger& existing : registry_.TriggersFor(i)) {
                 if (i == intent && existing == t) continue;  // drop
                 rebuilt.AddTrigger(i, existing);
@@ -230,15 +230,8 @@ void HotkeysDialog::handleAction(const std::wstring& action) {
 }
 
 bool HotkeysDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
-    if (params.cmd == BUTTON_CLICK) {
-        element el(params.heTarget);
-        std::wstring id = el.get_attribute("id");
-        if (id == L"btn-close") {
-            PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
-            return true;
-        }
-    }
-
+    // btn-close is wired in hotkeys.js via triggerAction("close") which routes
+    // through VALUE_CHANGED below — no need for a duplicate BUTTON_CLICK branch.
     if (params.cmd == VALUE_CHANGED) {
         element el(params.heTarget);
         std::wstring id = el.get_attribute("id");

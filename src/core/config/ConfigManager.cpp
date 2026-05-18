@@ -539,7 +539,13 @@ HotkeyRegistry ConfigManager::MigrateLegacyHotkeysIfNeeded(
         legacyConfig.escRestoreRawEnabled,
         legacyConfig.tempOffMacroByEsc,
         static_cast<uint8_t>(legacyConfig.tempOffMethod));
-    (void)SaveHotkeyRegistry(path, migrated);
+    NEXTKEY_LOG(L"[ConfigManager] Migrated v2→v3 hotkeys (esc=%d macro=%d method=%d)",
+                legacyConfig.escRestoreRawEnabled,
+                legacyConfig.tempOffMacroByEsc,
+                static_cast<int>(legacyConfig.tempOffMethod));
+    if (!SaveHotkeyRegistry(path, migrated)) {
+        NEXTKEY_LOG(L"[ConfigManager] Failed to persist migrated hotkeys to %s", path.c_str());
+    }
     return migrated;
 }
 

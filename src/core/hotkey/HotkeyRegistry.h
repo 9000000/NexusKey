@@ -21,6 +21,15 @@ enum class Intent : uint8_t {
     ToggleEnabled     = 2,  // Toggle global ENABLED flag (Ctrl alone / 2×Alt default)
 };
 
+/// All intents in stable order — for iteration in UI population, TOML
+/// serialization, and delete-by-rebuild loops. Order matches the enum
+/// numeric values so config diffs stay deterministic.
+inline constexpr Intent kAllIntents[] = {
+    Intent::CancelComposition,
+    Intent::SkipMacro,
+    Intent::ToggleEnabled,
+};
+
 /// Modifier bitmask. `kMod*` prefix (not `MOD_*`) to avoid clashing with the
 /// macros Windows.h defines for the RegisterHotKey API — those use a
 /// different bit assignment and would silently corrupt config values.
