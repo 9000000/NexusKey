@@ -98,49 +98,61 @@ function initHotkeysDialog() {
     save.addEventListener("click", function () { commitCapture(); });
     cancel.addEventListener("click", function () { closeCapture(); });
 
-    // Capture mode: document-level keydown is the Sciter idiom (per SDK docs:
-    // `document.on("keydown", ...)`). Fires regardless of focus target, so we
-    // don't need a hidden input or to chase focus. We gate the handler on
-    // overlay visibility so it only intercepts keys during capture.
+    // Capture mode — document-level Sciter idiom (per SDK docs:
+    // `document.on("keydown", ...)`). Fires regardless of focus target.
+    //
+    // Split routing by key type:
+    //   - Non-modifiers (letters, F-keys, Esc, OEM punct, ...) — KEYDOWN.
+    //     Lets us read evt.ctrlKey/shiftKey/altKey for chord detection.
+    //   - Modifiers (Ctrl/Shift/Alt/Win) — KEYUP. Alt-keydown is consumed by
+    //     Sciter window's menu-accelerator default handler before document
+    //     sees it (Win32 WM_SYSKEYDOWN). Mirrors HookEngine's DupAlt
+    //     detection which also fires on Alt RELEASE for the same reason.
     document.on("keydown", function (evt) {
-        var overlay = document.getElementById("capture-overlay");
-        if (!overlay || overlay.style.display === "none") return;
-
-        // Ignore OS auto-repeat (holding key) — would otherwise trigger false 2× detection.
-        if (evt.repeat) { evt.preventDefault(); return; }
-
-        // Use `event.code` (string, DOM Level 3) — `event.keyCode` is Sciter's
-        // GLFW scheme, NOT Win32 VK (F1=290 there). codeToVk() maps to VK.
         var vk = codeToVk(evt.code);
-        if (!vk) { evt.preventDefault(); return; }
-
-        // Double-tap: second press of same key within window → upgrade to 2×.
-        var now = Date.now();
-        var isDoubleTap = (vk === lastTapVk) && (now - lastTapTs <= DOUBLE_TAP_WINDOW_MS);
-        lastTapVk = vk;
-        lastTapTs = now;
-
-        // Modifier-alone (vk is modifier) and double-tap both imply mods=0
-        // (matches HotkeyRegistry::Trigger semantics). Otherwise collect chord flags.
-        var mods = 0;
-        if (!isDoubleTap && !isModifierVk(vk)) {
-            if (evt.ctrlKey)  mods |= MOD.CTRL;
-            if (evt.shiftKey) mods |= MOD.SHIFT;
-            if (evt.altKey)   mods |= MOD.ALT;
-            if (evt.metaKey)  mods |= MOD.WIN;
-        }
-
-        pending.vk        = vk;
-        pending.mods      = mods;
-        pending.doubleTap = isDoubleTap;
-        pending.label     = formatLabel(vk, mods, isDoubleTap);
-
-        document.getElementById("capture-preview").textContent = pending.label;
-        document.getElementById("btn-capture-save").removeAttribute("disabled");
-
-        evt.preventDefault();
-        evt.stopPropagation();
+        if (isModifierVk(vk)) return;          // modifiers handled by keyup
+        captureKey(evt, vk);
     });
+    document.on("keyup", function (evt) {
+        var vk = codeToVk(evt.code);
+        if (!isModifierVk(vk)) return;         // non-modifiers handled by keydown
+        captureKey(evt, vk);
+    });
+}
+
+function captureKey(evt, vk) {
+    var overlay = document.getElementById("capture-overlay");
+    if (!overlay || overlay.style.display === "none") return;
+    // Ignore OS auto-repeat — would otherwise trigger false 2× detection.
+    if (evt.repeat) { evt.preventDefault(); return; }
+    if (!vk) { evt.preventDefault(); return; }
+
+    // Double-tap: second press of same key within window → upgrade to 2×.
+    var now = Date.now();
+    var isDoubleTap = (vk === lastTapVk) && (now - lastTapTs <= DOUBLE_TAP_WINDOW_MS);
+    lastTapVk = vk;
+    lastTapTs = now;
+
+    // Modifier-alone (vk is modifier) and double-tap both imply mods=0
+    // (matches HotkeyRegistry::Trigger semantics). Otherwise collect chord flags.
+    var mods = 0;
+    if (!isDoubleTap && !isModifierVk(vk)) {
+        if (evt.ctrlKey)  mods |= MOD.CTRL;
+        if (evt.shiftKey) mods |= MOD.SHIFT;
+        if (evt.altKey)   mods |= MOD.ALT;
+        if (evt.metaKey)  mods |= MOD.WIN;
+    }
+
+    pending.vk        = vk;
+    pending.mods      = mods;
+    pending.doubleTap = isDoubleTap;
+    pending.label     = formatLabel(vk, mods, isDoubleTap);
+
+    document.getElementById("capture-preview").textContent = pending.label;
+    document.getElementById("btn-capture-save").removeAttribute("disabled");
+
+    evt.preventDefault();
+    evt.stopPropagation();
 }
 
 function isModifierVk(vk) {
