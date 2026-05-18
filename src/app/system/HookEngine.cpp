@@ -345,19 +345,51 @@ void HookEngine::HookThreadProc() {
     // Message pump. Besides LL hook dispatch, this thread services
     // WM_APP_REINSTALL_HOOKS posted by OnFocusChanged for Chromium / Java
     // top-of-chain priority. wParam carries REINSTALL_REASON_* (see top of file).
+    //
+    // Reinstalls are throttled (`kMinReinstallIntervalMs`) so a burst of
+    // focus events (Alt-Tab through several Chromium/Java windows in
+    // succession) doesn't translate into a burst of unhook/rehook gaps.
+    // Each gap is microseconds-to-ms, so a single one is harmless — but
+    // five back-to-back can swallow a stray keystroke. Pending duplicate
+    // messages collapse into the throttle check.
     MSG msg;
+    DWORD lastReinstallTime = 0;
+    constexpr DWORD kMinReinstallIntervalMs = 500;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         if (msg.message == WM_APP_REINSTALL_HOOKS) {
-            if (keyboardHook_) {
-                UnhookWindowsHookEx(keyboardHook_);
-                keyboardHook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, cachedHInstance_, 0);
+            const wchar_t* reasonName =
+                msg.wParam == REINSTALL_REASON_JAVA ? L"java" : L"chromium";
+            const DWORD now = GetTickCount();
+            const DWORD sinceLast = now - lastReinstallTime;
+            if (lastReinstallTime != 0 && sinceLast < kMinReinstallIntervalMs) {
+                HOOK_LOG(L"HookThreadProc: reinstall SKIPPED (throttle %ums < %ums) reason=%ls",
+                         sinceLast, kMinReinstallIntervalMs, reasonName);
+                continue;
             }
-            if (mouseHook_) {
-                UnhookWindowsHookEx(mouseHook_);
-                mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, cachedHInstance_, 0);
+            lastReinstallTime = now;
+
+            // Unhook before re-install. Don't gate the re-install on the
+            // unhook target existing — if a prior reinstall transient-failed
+            // and left a NULL handle, we still want to attempt recovery
+            // (gating would lock out retry permanently).
+            if (keyboardHook_) UnhookWindowsHookEx(keyboardHook_);
+            keyboardHook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, cachedHInstance_, 0);
+            if (!keyboardHook_) {
+                HOOK_LOG(L"HookThreadProc: SetWindowsHookExW(WH_KEYBOARD_LL) reinstall FAILED err=%lu",
+                         GetLastError());
             }
-            HOOK_LOG(L"HookThreadProc: Hooks reinstalled (top of chain) reason=%ls",
-                     msg.wParam == REINSTALL_REASON_JAVA ? L"java" : L"chromium");
+
+            if (mouseHook_) UnhookWindowsHookEx(mouseHook_);
+            mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, cachedHInstance_, 0);
+            if (!mouseHook_) {
+                HOOK_LOG(L"HookThreadProc: SetWindowsHookExW(WH_MOUSE_LL) reinstall FAILED err=%lu",
+                         GetLastError());
+            }
+
+            HOOK_LOG(L"HookThreadProc: Hooks reinstalled reason=%ls kb=%ls mouse=%ls",
+                     reasonName,
+                     keyboardHook_ ? L"OK" : L"FAIL",
+                     mouseHook_ ? L"OK" : L"FAIL");
             continue;
         }
         TranslateMessage(&msg);
@@ -3132,8 +3164,12 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     //   2. Java apps (jp2launcher / javaw / java): commonly embed jnativehook for
     //      global hotkeys. JVM callback bridge + GC pauses regularly exceed
     //      Windows' 300ms LowLevelHooksTimeout → Windows drops the hook chain.
-    //      Keeping VKey on top means its fast callback completes before any
-    //      downstream stall can knock out the chain.
+    //      Keeping VKey on top gives us first crack at each event. For
+    //      Vietnamese-eaten keys VKey returns 1 without CallNextHookEx, so a
+    //      downstream stall is irrelevant. For pass-through keys (English
+    //      mode, modifier keys) we still call CallNextHookEx, so a slow
+    //      downstream hook still blocks our callback — partial protection
+    //      only; HookSelfHealer catches the residual case.
     // Doing this conditionally avoids unnecessary unhook/rehook overhead for
     // normal apps. We must do this even if the PID hasn't changed — WebView2
     // creates child windows that trigger focus events AFTER initial hook setup,
