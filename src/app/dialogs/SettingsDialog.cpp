@@ -361,6 +361,11 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
+    if (msg == WM_VKEY_OPEN_HOTKEYS) {
+        SpawnSubprocess(L"VKey - Phím tắt", L"--hotkeys");
+        return 0;
+    }
+
     // Real-time theme switch: Windows broadcasts this when user changes theme
     if (msg == WM_SETTINGCHANGE && lParam) {
         if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
@@ -846,6 +851,10 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
     }
     else if (id == L"btn-userdefined") {
         PostMessage(get_hwnd(), WM_VKEY_OPEN_USERDEFINED, 0, 0);
+        return;
+    }
+    else if (id == L"btn-hotkeys") {
+        PostMessage(get_hwnd(), WM_VKEY_OPEN_HOTKEYS, 0, 0);
         return;
     }
     else if (id == L"btn-reset-settings") {

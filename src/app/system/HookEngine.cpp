@@ -97,6 +97,40 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     ::NextKey::Logger::SetEnabled(config.debugLogEnabled);
 }
 
+void HookEngine::ApplyHotkeyRegistry(HotkeyRegistry registry) {
+    // RCU publish — readers (hook hot path) pick up on next load(). Old
+    // registry stays alive until any in-flight Matches() returns.
+    hotkeys_.store(std::make_shared<const HotkeyRegistry>(std::move(registry)),
+                   std::memory_order_release);
+}
+
+namespace {
+
+// Map L/R modifier VK variants down to their canonical form so HotkeyRegistry
+// triggers (stored as canonical VK_CONTROL/VK_MENU/VK_SHIFT/VK_LWIN) match
+// hook events (which report VK_LCONTROL/VK_RCONTROL etc.).
+[[nodiscard]] uint32_t CanonicalModifierVk(DWORD vk) noexcept {
+    switch (vk) {
+    case VK_LCONTROL: case VK_RCONTROL: return VK_CONTROL;
+    case VK_LMENU:    case VK_RMENU:    return VK_MENU;
+    case VK_LSHIFT:   case VK_RSHIFT:   return VK_SHIFT;
+    case VK_RWIN:                       return VK_LWIN;  // collapse to one Win
+    default:                            return vk;
+    }
+}
+
+// Pack the cached modifier booleans into a HotkeyRegistry-style bitmask.
+[[nodiscard]] uint32_t ComputeModMask(bool ctrl, bool shift, bool alt, bool win) noexcept {
+    uint32_t mask = 0;
+    if (ctrl)  mask |= MOD_CTRL;
+    if (shift) mask |= MOD_SHIFT;
+    if (alt)   mask |= MOD_ALT;
+    if (win)   mask |= MOD_WIN;
+    return mask;
+}
+
+}  // namespace
+
 bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
                         bool initialVietnamese, uint8_t startupMode) {
     if (keyboardHook_) return false;  // Already running
@@ -122,6 +156,11 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         std::lock_guard<std::mutex> _lock(stateMutex_);
         ApplyConfig(config);
     }
+    // Load unified hotkey registry. On first launch after v3 upgrade, the
+    // `[[hotkeys]]` section is missing — migrate from legacy TypingConfig
+    // fields and persist so future launches read the new schema directly.
+    ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
+        ConfigManager::GetConfigPath(), config));
     if (macroEnabled_.load(std::memory_order_acquire)) {
         ReloadMacroTable();
     }
@@ -551,6 +590,11 @@ void HookEngine::ReloadFromToml() {
                     config.modernOrtho ? 1 : 0, config.allowZwjf ? 1 : 0);
     }
     ApplyConfig(config);
+    // Reload `[[hotkeys]]` from TOML alongside main config — keeps registry in
+    // sync when Settings dialog persists rebindings via SaveHotkeyRegistry.
+    // Still runs migration (idempotent — no-op if section already populated).
+    ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
+        ConfigManager::GetConfigPath(), config));
     if (macroEnabled_.load(std::memory_order_acquire)) {
         ReloadMacroTable();
     } else {
@@ -1183,6 +1227,13 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
                                                       bool cachedShift, bool cachedCapsLock,
                                                       bool cachedCtrl, bool cachedAlt,
                                                       bool cachedWin) {
+    // Snapshot the user's hotkey registry once for this key event. RCU
+    // pattern: hot path readers grab the shared_ptr; the publisher
+    // (ApplyHotkeyRegistry) replaces the pointer without invalidating
+    // in-flight readers.
+    const auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
+    const uint32_t currentMods = ComputeModMask(cachedCtrl, cachedShift, cachedAlt, cachedWin);
+
     // 3. English mode — skip Vietnamese processing
     // Note: CJK layout no longer suppresses here. User controls V/E mode via toggle,
     // matching EVKey behavior. Japanese IME "A" sub-mode is indistinguishable from
@@ -1194,7 +1245,10 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
                 bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
                 rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
                                          : towlower(static_cast<wchar_t>(vkCode));
-            } else if (tempOffMacroEsc && vkCode == VK_ESCAPE && rawMacroBuffer_.empty()) {
+            } else if (tempOffMacroEsc
+                       && hotkeysSnap->Matches(Intent::SkipMacro, vkCode, currentMods,
+                                               /*isDoubleTap=*/false, /*keyUp=*/false)
+                       && rawMacroBuffer_.empty()) {
                 tempMacroOff_ = true;
                 return KeyOutcome::Pass;
             } else if (IsCommitTrigger(vkCode) && !tempMacroOff_) {
@@ -1261,14 +1315,17 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
         (commitUndoState_ == CommitUndoState::Primed) &&
         !commitStack_.empty() &&
         !commitStack_.back().rawInput.empty();
-    if (escRestoreRaw && vkCode == VK_ESCAPE
-        && !cachedCtrl && !cachedAlt && !cachedWin
+    if (escRestoreRaw
+        && hotkeysSnap->Matches(Intent::CancelComposition, vkCode, currentMods,
+                                /*isDoubleTap=*/false, /*keyUp=*/false)
         && (hasLiveComposition || hasPrimedCommit)) {
         return TryEscRestoreRaw();
     }
 
     // 3c. Temp off macro by Esc: press Esc with no pending text → skip macro for next word
-    if (tempOffMacroEsc && macroOn && !macroTable_.empty() && vkCode == VK_ESCAPE
+    if (tempOffMacroEsc && macroOn && !macroTable_.empty()
+        && hotkeysSnap->Matches(Intent::SkipMacro, vkCode, currentMods,
+                                /*isDoubleTap=*/false, /*keyUp=*/false)
         && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
         tempMacroOff_ = true;
         HOOK_LOG(L"  tempMacroOff: enabled by Esc");
@@ -1570,27 +1627,39 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                        vkCode == VK_LWIN || vkCode == VK_RWIN);
 
     if (isModifier) {
-        // Temp-off detection: double-Alt or single-Ctrl depending on config
+        // Temp-off detection: double-Alt or single-Ctrl. Source of truth is now
+        // the HotkeyRegistry — the legacy `tempOffMethod_` atomic is retained
+        // as a master enable (None ⇒ feature off entirely; Step 10 will remove
+        // it once Settings UI publishes via the registry exclusively).
         auto method = static_cast<TempOffMethod>(tempOffMethod_.load(std::memory_order_acquire));
+        const auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
+        const uint32_t canonicalVk = CanonicalModifierVk(vkCode);
         bool isAltRelease = (vkCode == VK_LMENU || vkCode == VK_RMENU);
         bool isCtrlRelease = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL);
+
+        auto fireToggleEnabled = [&](const wchar_t* reason) {
+            if (engine_->Count() > 0) {
+                CommitComposition();
+            }
+            tempEngineOff_ = !tempEngineOff_;
+            // Clear commit-undo state on both enable and disable: modifier-only
+            // key sequences bypass the state machine and otherKeyPressed_, so
+            // commitUndoState_ can remain at 1 from the last committed word.
+            // Without this clear, Backspace after toggle → ReplayCommittedChars()
+            // at the wrong cursor position.
+            CancelCommitUndo();
+            HOOK_LOG(L"  %s: tempEngineOff_ = %d", reason, tempEngineOff_ ? 1 : 0);
+        };
 
         if (method == TempOffMethod::DupAlt && isAltRelease &&
             !otherKeyPressed_ && !modCtrlDown_ && !modShiftDown_ && !modWinDown_) {
             DWORD now = GetTickCount();
             if (altTapCount_ == 1 && (now - lastAltReleaseTime_) < DOUBLE_ALT_TIMEOUT_MS) {
-                if (engine_->Count() > 0) {
-                    CommitComposition();
+                if (hotkeysSnap->Matches(Intent::ToggleEnabled, canonicalVk, /*mods=*/0,
+                                         /*isDoubleTap=*/true, /*keyUp=*/true)) {
+                    fireToggleEnabled(L"DOUBLE-ALT");
                 }
-                tempEngineOff_ = !tempEngineOff_;
-                // Clear commit-undo state on both enable and disable: modifier-only
-                // key sequences (Alt presses) bypass the state machine at line 515-543
-                // and bypass otherKeyPressed_, so commitUndoState_ can remain at 1
-                // from the last committed word. If not cleared, Backspace after
-                // double-Alt → ReplayCommittedChars() at the wrong cursor position.
-                CancelCommitUndo();
                 altTapCount_ = 0;
-                HOOK_LOG(L"  DOUBLE-ALT: tempEngineOff_ = %d", tempEngineOff_ ? 1 : 0);
             } else {
                 altTapCount_ = 1;
                 lastAltReleaseTime_ = now;
@@ -1602,12 +1671,10 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
         if (method == TempOffMethod::Ctrl && isCtrlRelease &&
             !otherKeyPressed_ && !modAltDown_ && !modShiftDown_ && !modWinDown_) {
             // Single-press Ctrl: toggle immediately on clean release
-            if (engine_->Count() > 0) {
-                CommitComposition();
+            if (hotkeysSnap->Matches(Intent::ToggleEnabled, canonicalVk, /*mods=*/0,
+                                     /*isDoubleTap=*/false, /*keyUp=*/true)) {
+                fireToggleEnabled(L"CTRL-TOGGLE");
             }
-            tempEngineOff_ = !tempEngineOff_;
-            CancelCommitUndo();
-            HOOK_LOG(L"  CTRL-TOGGLE: tempEngineOff_ = %d", tempEngineOff_ ? 1 : 0);
         }
 
         // Layout auto-disable: re-check on Win+Space / Ctrl+Shift / Alt+Shift key-up.

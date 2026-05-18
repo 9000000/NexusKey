@@ -456,6 +456,93 @@ HotkeyConfig ConfigManager::LoadHotkeyConfigOrDefault() {
     return HotkeyConfig{};  // Default: Ctrl+Shift
 }
 
+// ─────────────────────────── Unified HotkeyRegistry ──────────────────────
+// Stored as `[[hotkeys]]` array-of-tables (distinct from `[hotkey]` table
+// used by the V/E toggle config above). Each entry: { intent = "...", trigger = { vk, mods, double_tap? } }.
+
+std::optional<HotkeyRegistry> ConfigManager::LoadHotkeyRegistry(const std::wstring& path) {
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = toml::parse_file(utf8Path);
+
+        HotkeyRegistry registry;
+        if (auto arr = table["hotkeys"].as_array()) {
+            registry.Load(*arr);
+        }
+        // Section missing is NOT a failure — caller decides defaults vs. empty.
+        return registry;
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+bool ConfigManager::SaveHotkeyRegistry(const std::wstring& path, const HotkeyRegistry& registry) {
+    try {
+        ConfigFileLock lock;
+        std::string utf8Path = WideToUtf8(path);
+        auto tbl = LoadExistingToml(utf8Path);
+
+        toml::array arr;
+        registry.Save(arr);
+        tbl.insert_or_assign("hotkeys", std::move(arr));
+
+        return WriteToml(utf8Path, tbl);
+    } catch (...) {
+        return false;
+    }
+}
+
+HotkeyRegistry ConfigManager::LoadHotkeyRegistryOrDefault() {
+    const std::wstring configPath = GetConfigPath();
+    auto registry = LoadHotkeyRegistry(configPath);
+    if (!registry) {
+        return HotkeyRegistry::Defaults();
+    }
+    // If `[[hotkeys]]` is absent or fully empty, return factory bindings —
+    // an empty registry would leave the user with no Esc/Ctrl/2×Alt at all,
+    // which is almost certainly not what they want on first run.
+    const bool empty =
+        registry->TriggersFor(Intent::CancelComposition).empty() &&
+        registry->TriggersFor(Intent::SkipMacro).empty() &&
+        registry->TriggersFor(Intent::ToggleEnabled).empty();
+    if (empty) {
+        return HotkeyRegistry::Defaults();
+    }
+    return *registry;
+}
+
+HotkeyRegistry ConfigManager::MigrateLegacyHotkeysIfNeeded(
+    const std::wstring& path,
+    const TypingConfig& legacyConfig) {
+    // Fresh install (no config file) → factory defaults, nothing to persist.
+    if (!std::filesystem::exists(path)) {
+        return HotkeyRegistry::Defaults();
+    }
+
+    auto existing = LoadHotkeyRegistry(path);
+    if (existing) {
+        const bool populated =
+            !existing->TriggersFor(Intent::CancelComposition).empty() ||
+            !existing->TriggersFor(Intent::SkipMacro).empty() ||
+            !existing->TriggersFor(Intent::ToggleEnabled).empty();
+        if (populated) {
+            // User has an explicit `[[hotkeys]]` section — honor it.
+            return *existing;
+        }
+    }
+    // File exists but `[[hotkeys]]` is missing or empty. This is the v2-v3
+    // upgrade path: derive bindings from the legacy on/off fields the user
+    // previously configured, then persist the new schema. All-off legacy
+    // state yields an empty migrated registry — that preserves the user's
+    // explicit "disabled" choice instead of silently restoring defaults.
+    auto migrated = HotkeyRegistry::FromLegacyFields(
+        legacyConfig.escRestoreRawEnabled,
+        legacyConfig.tempOffMacroByEsc,
+        static_cast<uint8_t>(legacyConfig.tempOffMethod));
+    (void)SaveHotkeyRegistry(path, migrated);
+    return migrated;
+}
+
 std::vector<std::wstring> ConfigManager::LoadAllExcludedApps(const std::wstring& path) {
     std::vector<std::wstring> apps;
     try {

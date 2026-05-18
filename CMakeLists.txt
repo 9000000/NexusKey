@@ -64,6 +64,8 @@ set(NEXTKEY_CORE_SOURCES
     src/core/Strings.cpp
     src/core/MacroCase.h
     src/core/MacroCase.cpp
+    src/core/hotkey/HotkeyRegistry.h
+    src/core/hotkey/HotkeyRegistry.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
 )
@@ -153,6 +155,8 @@ add_executable(VKeyApp WIN32
     src/app/dialogs/SpellExclusionsDialog.cpp
     src/app/dialogs/UserDefinedDialog.h
     src/app/dialogs/UserDefinedDialog.cpp
+    src/app/dialogs/HotkeysDialog.h
+    src/app/dialogs/HotkeysDialog.cpp
     # system/
     src/app/system/TrayIcon.h
     src/app/system/TrayIcon.cpp
@@ -472,6 +476,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/CommitUndoExemptionTest.cpp
     tests/DigitLedWordDecisionTest.cpp
     tests/LoggerTest.cpp
+    tests/HotkeyRegistryTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
 )
@@ -502,6 +507,9 @@ endif()
 
 add_executable(VKeyTests EXCLUDE_FROM_ALL ${NEXTKEY_TEST_SOURCES})
 target_link_libraries(VKeyTests PRIVATE VKeyCore GTest::gtest_main)
+target_include_directories(VKeyTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
+)
 
 # Put tests in separate directory; override global /SUBSYSTEM:WINDOWS
 set_target_properties(VKeyTests PROPERTIES

@@ -10,6 +10,7 @@
 #include "TypingConfig.h"
 #include "core/UIConfig.h"
 #include "core/SystemConfig.h"
+#include "core/hotkey/HotkeyRegistry.h"
 
 namespace NextKey {
 
@@ -55,6 +56,30 @@ public:
 
     /// Load hotkey config with automatic path resolution
     [[nodiscard]] static HotkeyConfig LoadHotkeyConfigOrDefault();
+
+    /// Load unified hotkey registry (`[[hotkeys]]` TOML array) — covers
+    /// cancel-composition / skip-macro / toggle-enabled triggers. Returns
+    /// nullopt if file unreadable, fresh-defaults if section missing.
+    [[nodiscard]] static std::optional<HotkeyRegistry>
+    LoadHotkeyRegistry(const std::wstring& path);
+
+    /// Persist unified hotkey registry to `[[hotkeys]]` array (merges file).
+    [[nodiscard]] static bool
+    SaveHotkeyRegistry(const std::wstring& path, const HotkeyRegistry& registry);
+
+    /// Load registry with automatic path resolution. Returns Defaults() on
+    /// any read failure (file missing, parse error, IO error).
+    [[nodiscard]] static HotkeyRegistry LoadHotkeyRegistryOrDefault();
+
+    /// One-shot migration: if `[[hotkeys]]` is missing or empty AND the caller
+    /// supplies legacy TypingConfig fields, build a registry from those and
+    /// persist it. Returns the registry that should now be used.
+    ///
+    /// Idempotent — if the section is already populated, returns it unchanged
+    /// without rewriting the file. Safe to call on every Start/ReloadFromToml.
+    [[nodiscard]] static HotkeyRegistry MigrateLegacyHotkeysIfNeeded(
+        const std::wstring& path,
+        const TypingConfig& legacyConfig);
 
     /// Load all excluded apps (merges [excluded_apps].list + .soft for backward compat)
     [[nodiscard]] static std::vector<std::wstring> LoadAllExcludedApps(const std::wstring& path);
