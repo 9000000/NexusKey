@@ -1662,16 +1662,19 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                      reason, canonicalVk, tempEngineOff_ ? 1 : 0);
         };
 
-        // Clean release = nothing else competed for this gesture.
-        // - !otherKeyPressed_: no main key was pressed while this modifier was held
-        // - all OTHER modifiers must be up (the one currently releasing is still
-        //   "down" in modXxxDown_ here — TrackModifier clears it below)
-        const bool isOnlyThisModDown =
-            (canonicalVk == VK_CONTROL || !modCtrlDown_) &&
-            (canonicalVk == VK_SHIFT   || !modShiftDown_) &&
-            (canonicalVk == VK_MENU    || !modAltDown_) &&
-            (canonicalVk == VK_LWIN    || !modWinDown_);
-        const bool cleanRelease = !otherKeyPressed_ && isOnlyThisModDown;
+        // Clean release = no main key was pressed during the modifier window.
+        // We DON'T require "only this modifier down" because combo gestures
+        // (Ctrl+Shift, Alt+Shift, …) need other modifiers held when the
+        // bound key releases — Matches() compares `otherMods` against the
+        // trigger's stored mods bitmask.
+        const bool cleanRelease = !otherKeyPressed_;
+        // Other modifiers held at the moment of release. `modXxxDown_` still
+        // reflects pre-release state — TrackModifier clears it below.
+        const uint32_t otherMods = ComputeModMask(
+            canonicalVk != VK_CONTROL && modCtrlDown_,
+            canonicalVk != VK_SHIFT   && modShiftDown_,
+            canonicalVk != VK_MENU    && modAltDown_,
+            canonicalVk != VK_LWIN    && modWinDown_);
 
         if (modIdx >= 0 && cleanRelease) {
             const DWORD now = GetTickCount();
@@ -1680,7 +1683,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                 (now - modTapLastTs_[modIdx]) < kDoubleTapTimeoutMs;
 
             auto matches = [&](Intent intent) {
-                return hotkeysSnap->Matches(intent, canonicalVk, /*mods=*/0,
+                return hotkeysSnap->Matches(intent, canonicalVk, otherMods,
                                             isDoubleTap, /*keyUp=*/true);
             };
 

@@ -143,14 +143,16 @@ function captureKey(evt, vk) {
     lastTapVk = vk;
     lastTapTs = now;
 
-    // Modifier-alone (vk is modifier) and double-tap both imply mods=0
-    // (matches HotkeyRegistry::Trigger semantics). Otherwise collect chord flags.
+    // Collect chord modifiers from event flags, excluding the modifier we're
+    // currently capturing (so {vk=Shift, mods=Ctrl} represents "Ctrl+Shift"
+    // and not "Shift+Shift"). Double-tap clears mods entirely — `2×Ctrl+Shift`
+    // is not a supported gesture.
     var mods = 0;
-    if (!isDoubleTap && !isModifierVk(vk)) {
-        if (evt.ctrlKey)  mods |= MOD.CTRL;
-        if (evt.shiftKey) mods |= MOD.SHIFT;
-        if (evt.altKey)   mods |= MOD.ALT;
-        if (evt.metaKey)  mods |= MOD.WIN;
+    if (!isDoubleTap) {
+        if (evt.ctrlKey  && vk !== VK.CTRL)                       mods |= MOD.CTRL;
+        if (evt.shiftKey && vk !== VK.SHIFT)                      mods |= MOD.SHIFT;
+        if (evt.altKey   && vk !== VK.ALT)                        mods |= MOD.ALT;
+        if (evt.metaKey  && vk !== VK.LWIN && vk !== VK.RWIN)     mods |= MOD.WIN;
     }
 
     pending.vk        = vk;

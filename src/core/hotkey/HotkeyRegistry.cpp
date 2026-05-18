@@ -83,15 +83,16 @@ bool HotkeyRegistry::Matches(Intent   intent,
             continue;
         }
 
-        if (IsModifierKey(t.vk) && t.mods == 0) {
-            // Implicit modifier-alone fires on UP (caller verified the window
-            // was clean — no other key pressed). Must not collide with a
-            // double-tap signal for the same vk.
-            if (keyUp && !isDoubleTap) return true;
+        if (IsModifierKey(t.vk)) {
+            // Modifier-vk triggers fire on UP with exact mods match. mods=0 ⇒
+            // modifier-alone ("Ctrl alone"); mods≠0 ⇒ modifier-combo
+            // ("Ctrl+Shift" stored as {vk=Shift, mods=Ctrl}). Caller passes
+            // the OTHER held modifiers — excluding the one being released.
+            if (keyUp && !isDoubleTap && mods == t.mods) return true;
             continue;
         }
 
-        // Plain tap or chord: fire on DOWN with exact mods match.
+        // Plain tap or chord with a main key: fire on DOWN with exact mods match.
         if (!keyUp && !isDoubleTap && mods == t.mods) return true;
     }
     return false;

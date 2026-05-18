@@ -331,6 +331,32 @@ TEST(HotkeyRegistry, FromLegacyFields_UnknownTempOffValue_FallsThroughToNone) {
     EXPECT_TRUE(cfg.TriggersFor(Intent::ToggleEnabled).empty());
 }
 
+// ───────────────────────── Modifier combo (Ctrl+Shift etc.) ──────────────
+
+TEST(HotkeyRegistry, Matches_ModifierComboFiresOnReleaseWithOtherModsHeld) {
+    HotkeyRegistry cfg;
+    // Bind "Ctrl+Shift" combo as {vk=Shift, mods=Ctrl}.
+    cfg.AddTrigger(Intent::ToggleEnabled, Trigger{kVkShift, /*mods=*/0x01 /*kModCtrl*/, false});
+    // Release Shift while Ctrl still held → mods=Ctrl → matches.
+    EXPECT_TRUE(cfg.Matches(Intent::ToggleEnabled, kVkShift, /*mods=*/0x01,
+                            /*isDoubleTap=*/false, /*keyUp=*/true));
+    // Same release with no other mod held → mods=0 → must NOT match
+    // (otherwise plain Shift would silently fire the combo binding).
+    EXPECT_FALSE(cfg.Matches(Intent::ToggleEnabled, kVkShift, /*mods=*/0,
+                             /*isDoubleTap=*/false, /*keyUp=*/true));
+}
+
+TEST(HotkeyRegistry, Matches_ModifierAloneRequiresZeroMods) {
+    HotkeyRegistry cfg;
+    cfg.AddTrigger(Intent::ToggleEnabled, Trigger{kVkControl, 0, false});
+    // Plain Ctrl release, nothing else held → fires.
+    EXPECT_TRUE (cfg.Matches(Intent::ToggleEnabled, kVkControl, 0, false, true));
+    // Ctrl released while Shift still held → mods=Shift → does NOT fire
+    // (modifier-alone is a strict "this modifier only" gesture).
+    EXPECT_FALSE(cfg.Matches(Intent::ToggleEnabled, kVkControl, 0x02 /*kModShift*/,
+                             false, true));
+}
+
 // ───────────────────────── Enabled state ─────────────────────────────────
 
 TEST(HotkeyRegistry, IsEnabled_DefaultsToTrueWhenUnset) {
