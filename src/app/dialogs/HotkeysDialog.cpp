@@ -238,7 +238,10 @@ void HotkeysDialog::handleAction(const std::wstring& action) {
         Intent intent;
         if (!ParseIntent(iv.get<std::wstring>(), intent)) return;
         const auto evs = ev.get<std::wstring>();
-        registry_.SetEnabled(intent, evs == L"true" || evs == L"1");
+        const bool enabled = (evs == L"true" || evs == L"1");
+        registry_.SetEnabled(intent, enabled);
+        NEXTKEY_LOG(L"HotkeysDialog: SetEnabled intent=%s enabled=%d",
+                    iv.get<std::wstring>().c_str(), enabled);
         persistAndSignal();   // visual class already updated by JS; no need to repopulate
         return;
     }

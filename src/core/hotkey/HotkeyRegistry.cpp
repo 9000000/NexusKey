@@ -40,7 +40,7 @@ constexpr uint32_t kVkEscape  = 0x1B;
 // Snake-case TOML key for the [hotkey_state] section. Separate from the
 // kebab-case wire format (`cancel-composition`) used in [[hotkeys]].intent
 // values — TOML keys conventionally use underscores here.
-[[nodiscard]] std::string_view IntentStateKey(Intent intent) noexcept {
+[[nodiscard]] const char* IntentStateKey(Intent intent) noexcept {
     switch (intent) {
     case Intent::CancelComposition: return "cancel_composition";
     case Intent::SkipMacro:         return "skip_macro";
@@ -104,6 +104,11 @@ HotkeyRegistry HotkeyRegistry::Defaults() {
     cfg.AddTrigger(Intent::SkipMacro,         Trigger{kVkEscape, 0, false});
     cfg.AddTrigger(Intent::ToggleEnabled,     Trigger{kVkControl, 0, false});  // implicit modifier-alone
     cfg.AddTrigger(Intent::ToggleEnabled,     Trigger{kVkMenu,    0, true});   // 2×Alt
+    // Explicit enabled bits so a Save-round-trip emits them in [hotkey_state]
+    // rather than relying on IsEnabled()'s default-true fallback.
+    cfg.SetEnabled(Intent::CancelComposition, true);
+    cfg.SetEnabled(Intent::SkipMacro,         true);
+    cfg.SetEnabled(Intent::ToggleEnabled,     true);
     return cfg;
 }
 
@@ -222,8 +227,7 @@ void HotkeyRegistry::Save(toml::array& cfg) const {
 void HotkeyRegistry::LoadEnabled(const toml::table& tbl) {
     enabled_.clear();
     for (Intent intent : kAllIntents) {
-        const std::string key{IntentStateKey(intent)};
-        if (const auto* node = tbl.get_as<bool>(key)) {
+        if (const auto* node = tbl.get_as<bool>(IntentStateKey(intent))) {
             enabled_[intent] = node->get();
         }
         // Missing key → IsEnabled() defaults to true.
@@ -232,7 +236,7 @@ void HotkeyRegistry::LoadEnabled(const toml::table& tbl) {
 
 void HotkeyRegistry::SaveEnabled(toml::table& tbl) const {
     for (Intent intent : kAllIntents) {
-        tbl.insert_or_assign(std::string{IntentStateKey(intent)}, IsEnabled(intent));
+        tbl.insert_or_assign(IntentStateKey(intent), IsEnabled(intent));
     }
 }
 
