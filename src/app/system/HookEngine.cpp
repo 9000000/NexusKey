@@ -1687,7 +1687,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             // 1. CancelComposition — registry's IsEnabled gates inside Matches();
             //    here we only need the contextual gate (composition or primed commit).
             if (matches(Intent::CancelComposition)) {
-                const int engineCount = engine_->Count();
+                const size_t engineCount = engine_->Count();
                 const bool hasLiveComposition = engineCount > 0;
                 const bool hasPrimedCommit =
                     (commitUndoState_ == CommitUndoState::Primed) &&
@@ -1698,7 +1698,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                     HOOK_LOG(L"  MOD-CANCEL (vk=0x%02X, dt=%d): composition restored",
                              canonicalVk, isDoubleTap);
                 } else {
-                    HOOK_LOG(L"  MOD-CANCEL (vk=0x%02X, dt=%d): matched but no composition (engineCount=%d)",
+                    HOOK_LOG(L"  MOD-CANCEL (vk=0x%02X, dt=%d): matched but no composition (engineCount=%zu)",
                              canonicalVk, isDoubleTap, engineCount);
                 }
             }
