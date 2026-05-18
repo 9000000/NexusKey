@@ -101,11 +101,38 @@ if (-not $RunnerExe)   { $RunnerExe   = Join-Path $repoRoot "build/tools/Debug/V
 # one (override for sideloaded log targets / PathOverride scenarios).
 if (-not $OutDir)      { $OutDir      = $repoRoot }
 
-foreach ($p in @($Corpus, $VKeyExe, $RunnerExe)) {
-    if (-not (Test-Path $p)) {
-        throw "Required artefact missing: $p (build VKey + VKeyTestRunner first)"
+# Fallback search: VKey.exe + VKeyTestRunner.exe are both EXCLUDE_FROM_ALL
+# targets, so a plain `cmake --build` skips them. User may have built
+# Release instead of Debug — try common alternates before failing.
+function Find-ArtefactFallback {
+    param([string]$ExpectedPath, [string]$Pattern)
+    if (Test-Path $ExpectedPath) { return $ExpectedPath }
+    # Look in sibling Release/ dir, then anywhere under build/ matching pattern.
+    $altRelease = $ExpectedPath -replace '\\Debug\\', '\Release\'
+    if ($altRelease -ne $ExpectedPath -and (Test-Path $altRelease)) { return $altRelease }
+    $buildRoot = Join-Path $repoRoot "build"
+    if (Test-Path $buildRoot) {
+        $hit = Get-ChildItem -Path $buildRoot -Filter $Pattern -Recurse -ErrorAction SilentlyContinue |
+               Select-Object -First 1
+        if ($hit) { return $hit.FullName }
     }
+    return $null
 }
+
+$VKeyExe = Find-ArtefactFallback -ExpectedPath $VKeyExe   -Pattern "VKey.exe"
+if (-not $VKeyExe) {
+    throw "VKey.exe not found. Build it first:`n  cmake --build build --config Debug --target VKeyApp`nThen re-run, or pass -VKeyExe <path>."
+}
+$RunnerExe = Find-ArtefactFallback -ExpectedPath $RunnerExe -Pattern "VKeyTestRunner.exe"
+if (-not $RunnerExe) {
+    throw "VKeyTestRunner.exe not found. Build it first (EXCLUDE_FROM_ALL target):`n  cmake --build build --config Debug --target VKeyTestRunner`nThen re-run, or pass -RunnerExe <path>."
+}
+if (-not (Test-Path $Corpus)) {
+    throw "Corpus TOML not found: $Corpus`nCheck the path or pass -Corpus <path>."
+}
+Write-Host "VKey      : $VKeyExe"      -ForegroundColor DarkGray
+Write-Host "Runner    : $RunnerExe"    -ForegroundColor DarkGray
+Write-Host "Corpus    : $Corpus"       -ForegroundColor DarkGray
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
 
 # --- Win32 P/Invoke for window focus -----------------------------------
