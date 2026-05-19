@@ -3,6 +3,35 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
+## 🟢 Phase 3 latency edge cases (Phase 4 chaos targets)
+
+Phase 3 (`feat/config-rcu-snapshot`) shipped clean. Two latency edges
+are inherent to the deferred-reload design — worth driving deterministic
+coverage when Phase 4 replay harness lands.
+
+### A. Macro-toggle on hook thread (≤200 ms staleness)
+
+User toggles macroEnabled in Settings → continues typing in target app
+without focus switch → macro behavior takes effect only after the next
+worker tick (≤200 ms cadence). Pre-P3c was instant on next keystroke.
+Trade-off: Rule 11.2 (TOML parse off hook) wins over the 200 ms latency.
+
+Phase 4 chaos scenario candidate:
+`--inject-macro-toggle-mid-typing` — open Settings, toggle macro, hold
+focus, type 20 keystrokes within 200 ms, verify macro applies before
+the 200 ms tick boundary.
+
+### B. `pendingConfigReload_` lost on rapid Stop()
+
+Edge case: user saves Settings → hook QuickSync sets pendingConfigReload_
+→ app shutdown before worker tick drains. Config save to SharedState
+is already persisted; TOML save deferred ≤30 s — restart loads correctly.
+No data loss, just no in-session effect. Acceptable.
+
+Phase 4 scenario: `--inject-config-save-then-immediate-exit` — bump
+configGeneration, send WM_CLOSE within 50 ms, restart, verify config
+loaded from TOML/SharedState matches the bump.
+
 ## 🟢 CODING_RULES & code drift residue (2026-05-19)
 
 Mechanical refresh of CODING_RULES landed in `6171a82`. Two follow-up items

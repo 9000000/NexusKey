@@ -2913,7 +2913,12 @@ bool HookEngine::VerifyExcludedState() {
 //     isExcludedApp_ cleared (matches old ReloadExcludedApps semantics).
 //   • tsfApps_ false ⇒ snapshot's tsfAppSet stays empty.
 //   • macroEnabled_ false ⇒ snapshot's macroTable stays empty.
-void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) noexcept {
+//
+// Not `noexcept`: STL allocations + `make_shared` here can throw
+// `std::bad_alloc`. Callers (ReloadFromToml, QuickSync macro-toggle
+// path, OnTickPoll drain) sit under the outer LL-callback catch or
+// OnTickPoll's own catch — graceful unwind beats `std::terminate`.
+void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) {
     const auto configPath = ConfigManager::GetConfigPath();
 
     // Parse per-app overrides in one TOML pass; partition into the typed
@@ -3055,17 +3060,25 @@ void HookEngine::OnTickPoll() noexcept {
         Perf::Histogram::MaybeFlush();
 
         // Phase 3c: drain a deferred TOML reload posted by the hook side.
-        // The hook QuickSync slow path observes a configGeneration bump
-        // and sets pendingConfigReload_ instead of running ReloadFromToml
-        // itself (Rule 11.2). We run it here, on the worker thread, where
-        // the 1-10 ms TOML parse is acceptable. Generation re-check inside
-        // the lock guards against a worker entry to QuickSync slow path
-        // (via OnFocusChanged) racing this drain.
+        // The hook QuickSync slow path observes either a configGeneration
+        // bump (line 587) OR a macroEnabled-vs-snapshot mismatch (line
+        // 646) and sets pendingConfigReload_ instead of running
+        // ReloadFromToml itself (Rule 11.2). We run it here, on the
+        // worker thread, where the 1-10 ms TOML parse is acceptable.
+        //
+        // Review fix 2026-05-19: drain unconditionally on pending=true,
+        // do NOT also gate on `state.configGeneration != lastConfigGeneration_`.
+        // The macro-toggle case bumps featureFlags but not necessarily
+        // configGeneration; gating the drain would skip Reload, leaving
+        // the snapshot stale until a focus event happens to trigger
+        // worker-side QuickSync inline. Worst-case extra reload (worker
+        // entered QuickSync between hook setting pending and drain) is
+        // bounded to ~10 ms TOML parse on worker — acceptable.
         if (sharedStatePtr_
             && pendingConfigReload_.exchange(false, std::memory_order_acq_rel)) {
             std::lock_guard<std::mutex> _lock(stateMutex_);
             SharedState st = sharedStatePtr_->Read();
-            if (st.IsValid() && st.configGeneration != lastConfigGeneration_) {
+            if (st.IsValid()) {
                 lastConfigGeneration_ = st.configGeneration;
                 NEXTKEY_LOG(L"HookEngine: deferred config reload (gen=%u) running on worker",
                             st.configGeneration);

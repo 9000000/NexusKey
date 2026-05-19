@@ -296,7 +296,14 @@ private:
     // mutation needs the lock; the snapshot publish itself is lock-free
     // but the producer side serialises with the legacy-field writer
     // contract).
-    void RebuildSnapshotFromToml(std::uint32_t generation) noexcept;
+    //
+    // NOT `noexcept`: STL container allocations + `std::make_shared`
+    // here can throw `std::bad_alloc`. Callers (ReloadFromToml,
+    // QuickSync macro-toggle path, OnTickPoll drain) are reached from
+    // sites with outer try/catch (LL callback catch for hook-thread
+    // path; OnTickPoll's own try for worker path), so a throw unwinds
+    // gracefully instead of `std::terminate`-ing the process.
+    void RebuildSnapshotFromToml(std::uint32_t generation);
 
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
