@@ -203,5 +203,72 @@ TEST(ConfigSnapshot, ConcurrentReadersSeeConsistentView) {
            "scenario RCU is supposed to prevent.";
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Build helper (P3b) — pure function that the worker-side producer uses to
+// assemble a snapshot from raw config data. Two pieces of logic to verify:
+//   (a) `spaceMacroKeys` is derived from `macroTable` (subset of keys that
+//       contain a space). The hook reads this set to short-circuit the
+//       multi-word-macro lookup on space commit; deriving inside Build
+//       keeps the contract that snapshot fields are mutually consistent.
+//   (b) All other fields pass through by move — round-trip preserves data.
+// ──────────────────────────────────────────────────────────────────────────
+TEST(ConfigSnapshotBuild, EmptyInputsProduceEmptySnapshotWithGeneration) {
+    auto snap = ConfigSnapshot::Build(
+        /*macroTable*/    {},
+        /*excludedApps*/  {},
+        /*tsfApps*/       {},
+        /*encOverrides*/  {},
+        /*imOverrides*/   {},
+        /*generation*/    7);
+    EXPECT_TRUE(snap.macroTable.empty());
+    EXPECT_TRUE(snap.excludedAppSet.empty());
+    EXPECT_TRUE(snap.tsfAppSet.empty());
+    EXPECT_TRUE(snap.appEncodingOverrides.empty());
+    EXPECT_TRUE(snap.appInputMethodOverrides.empty());
+    EXPECT_TRUE(snap.spaceMacroKeys.empty());
+    EXPECT_EQ(snap.generation, 7u);
+}
+
+TEST(ConfigSnapshotBuild, SpaceMacroKeysDerivedFromMacroTable) {
+    std::unordered_map<std::wstring, std::wstring> macros = {
+        {L"chol",     L"chôl"},        // no space → excluded
+        {L"co the",   L"có thể"},      // has space → included
+        {L"vd",       L"ví dụ"},       // value has space, key doesn't → excluded
+        {L"co le",    L"có lẽ"},       // has space → included
+        {L"khong",    L"không"},       // no space → excluded
+    };
+    auto snap = ConfigSnapshot::Build(
+        std::move(macros), {}, {}, {}, {}, /*generation*/ 1);
+    EXPECT_EQ(snap.macroTable.size(), 5u)
+        << "all macro entries should land in macroTable verbatim";
+    EXPECT_EQ(snap.spaceMacroKeys.size(), 2u);
+    EXPECT_EQ(snap.spaceMacroKeys.count(L"co the"), 1u);
+    EXPECT_EQ(snap.spaceMacroKeys.count(L"co le"), 1u);
+    EXPECT_EQ(snap.spaceMacroKeys.count(L"chol"), 0u);
+    EXPECT_EQ(snap.spaceMacroKeys.count(L"khong"), 0u);
+}
+
+TEST(ConfigSnapshotBuild, RoundTripsAllFields) {
+    std::unordered_map<std::wstring, std::wstring> macros = {{L"vn", L"Việt Nam"}};
+    std::unordered_set<std::wstring> excluded = {L"banking.exe", L"vault.exe"};
+    std::unordered_set<std::wstring> tsf      = {L"word.exe"};
+    std::unordered_map<std::wstring, CodeTable>   enc = {{L"legacy.exe", CodeTable::TCVN3}};
+    std::unordered_map<std::wstring, InputMethod> im  = {{L"legacy.exe", InputMethod::VNI}};
+
+    auto snap = ConfigSnapshot::Build(
+        std::move(macros), std::move(excluded), std::move(tsf),
+        std::move(enc), std::move(im), /*generation*/ 99);
+
+    EXPECT_EQ(snap.generation, 99u);
+    EXPECT_EQ(snap.macroTable.at(L"vn"), L"Việt Nam");
+    EXPECT_EQ(snap.excludedAppSet.count(L"banking.exe"), 1u);
+    EXPECT_EQ(snap.excludedAppSet.count(L"vault.exe"), 1u);
+    EXPECT_EQ(snap.tsfAppSet.count(L"word.exe"), 1u);
+    EXPECT_EQ(snap.appEncodingOverrides.at(L"legacy.exe"), CodeTable::TCVN3);
+    EXPECT_EQ(snap.appInputMethodOverrides.at(L"legacy.exe"), InputMethod::VNI);
+    // No spaces in this macro's key → empty spaceMacroKeys.
+    EXPECT_TRUE(snap.spaceMacroKeys.empty());
+}
+
 }  // namespace
 }  // namespace NextKey

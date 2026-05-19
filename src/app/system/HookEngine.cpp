@@ -252,8 +252,15 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
             lastSpellCheck_ = state.spellCheck;
             lastInputMethod_ = state.inputMethod;
             lastCodeTable_ = state.codeTable;
+            lastConfigGeneration_ = state.configGeneration;
         }
     }
+
+    // Phase 3b — publish initial ConfigSnapshot from the legacy fields just
+    // populated. Dormant for readers (P3c migrates them), but ensures any
+    // hook-thread reader added between P3b and P3c sees a real snapshot
+    // instead of the empty default. Stop() will let it GC naturally.
+    PublishConfigSnapshot();
 
     // Spawn dedicated hook thread that owns keyboardHook_ + mouseHook_ and runs
     // its own GetMessage pump. This decouples LL hook dispatch from the main/UI
@@ -755,6 +762,13 @@ void HookEngine::ReloadFromToml() {
     if (configReloadCallback_) {
         configReloadCallback_();
     }
+
+    // Phase 3b — refresh the ConfigSnapshot now that the legacy maps have
+    // been repopulated from TOML. Dual-write with the legacy fields until
+    // P3c migrates readers off them and P3d deletes the legacy storage.
+    // Generation is `lastConfigGeneration_` which QuickSync slow path
+    // already advanced before calling us (line 583).
+    PublishConfigSnapshot();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2905,6 +2919,41 @@ void HookEngine::ReloadMacroTable() {
     for (const auto& [key, _] : macroTable_) {
         if (key.find(L' ') != std::wstring::npos) spaceMacroKeys_.insert(key);
     }
+}
+
+// Phase 3b — bundle the current legacy config maps into an immutable
+// ConfigSnapshot and atomic-publish for hook-thread readers. Dual-write
+// during P3b: the legacy `macroTable_` / `excludedAppSet_` / `tsfAppSet_`
+// / `app*Overrides_` fields stay populated (P3c migrates the readers off
+// them; P3d deletes the legacy storage). Caller must hold stateMutex_ so
+// the source maps don't shift mid-copy. The atomic_store of the
+// shared_ptr is the publication point — hook readers see the new
+// snapshot on their next load.
+void HookEngine::PublishConfigSnapshot() noexcept {
+    // Legacy override maps store int8_t (with -1 = "inherit"); the snapshot
+    // wants typed enums. ReloadAppOverrides already filters out -1 entries
+    // (only ≥0 reach the maps), so the cast is safe — but we keep the bound
+    // check as defence in depth: any negative slip would now turn into a
+    // nonsense enum on the hook side instead of being silently inserted.
+    std::unordered_map<std::wstring, CodeTable> encOv;
+    encOv.reserve(appEncodingOverrides_.size());
+    for (const auto& [exe, v] : appEncodingOverrides_) {
+        if (v >= 0) encOv.emplace(exe, static_cast<CodeTable>(v));
+    }
+    std::unordered_map<std::wstring, InputMethod> imOv;
+    imOv.reserve(appInputMethodOverrides_.size());
+    for (const auto& [exe, v] : appInputMethodOverrides_) {
+        if (v >= 0) imOv.emplace(exe, static_cast<InputMethod>(v));
+    }
+
+    auto snap = std::make_shared<const ConfigSnapshot>(ConfigSnapshot::Build(
+        macroTable_,
+        excludedAppSet_,
+        tsfAppSet_,
+        std::move(encOv),
+        std::move(imOv),
+        static_cast<std::uint32_t>(lastConfigGeneration_)));
+    configSnapshot_.store(std::move(snap), std::memory_order_release);
 }
 
 void HookEngine::SaveEnglishModeAppsIfDirty() {

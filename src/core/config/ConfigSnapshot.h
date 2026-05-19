@@ -84,6 +84,34 @@ struct ConfigSnapshot {
     /// this; default = 0 means "no config has been published yet"
     /// (HookEngine ctor's default snapshot).
     std::uint32_t generation{0};
+
+    /// Pure builder used by the worker-side producer (P3b). Takes ownership
+    /// of caller-built maps (move them in to avoid an extra copy) and
+    /// derives `spaceMacroKeys` from `macroTable` in one pass — that
+    /// derivation is the only piece of real logic; everything else is a
+    /// move-in. Linux-portable, gtest-covered. Wired into HookEngine's
+    /// slow-path producer at the bottom of `ReloadFromToml`.
+    [[nodiscard]] static ConfigSnapshot Build(
+        std::unordered_map<std::wstring, std::wstring> macroTable,
+        std::unordered_set<std::wstring>               excludedAppSet,
+        std::unordered_set<std::wstring>               tsfAppSet,
+        std::unordered_map<std::wstring, CodeTable>    appEncodingOverrides,
+        std::unordered_map<std::wstring, InputMethod>  appInputMethodOverrides,
+        std::uint32_t                                  generation) {
+        ConfigSnapshot snap;
+        snap.macroTable              = std::move(macroTable);
+        snap.excludedAppSet          = std::move(excludedAppSet);
+        snap.tsfAppSet               = std::move(tsfAppSet);
+        snap.appEncodingOverrides    = std::move(appEncodingOverrides);
+        snap.appInputMethodOverrides = std::move(appInputMethodOverrides);
+        snap.generation              = generation;
+        for (const auto& [key, _] : snap.macroTable) {
+            if (key.find(L' ') != std::wstring::npos) {
+                snap.spaceMacroKeys.insert(key);
+            }
+        }
+        return snap;
+    }
 };
 
 }  // namespace NextKey

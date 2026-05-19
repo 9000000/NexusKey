@@ -290,6 +290,19 @@ private:
     void ReloadMacroTable();
     void SaveEnglishModeAppsIfDirty();  // Persist English-mode apps to TOML
 
+    // Phase 3b — build a ConfigSnapshot from the current legacy fields
+    // (excludedAppSet_, tsfAppSet_, macroTable_, appEncodingOverrides_,
+    // appInputMethodOverrides_) and publish it via configSnapshot_.
+    // Called at the end of Start() and ReloadFromToml() so the snapshot
+    // and the legacy fields stay synchronised during the P3b→P3c
+    // transition (dual-write). Hook readers stay on the legacy fields in
+    // P3b; P3c switches the readers and P3d removes the legacy storage.
+    //
+    // REQUIRES: caller-held stateMutex_ (matches the existing Reload*
+    // contract — the function reads legacy maps + atomic_store the
+    // resulting shared_ptr).
+    void PublishConfigSnapshot() noexcept;
+
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
     // Sprint 1 D6: migrated to std::atomic<std::shared_ptr<const TypingConfig>>
