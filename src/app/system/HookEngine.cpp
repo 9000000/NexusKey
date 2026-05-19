@@ -3,6 +3,7 @@
 
 #include "HookEngine.h"
 #include "Win32CaseMapper.h"
+#include "PerfHistogram.h"  // Phase 1 — per-stage histogram (compiles to no-op when VKEY_PERF_HIST undef)
 #include "helpers/AppHelpers.h"
 #include "output/OutputInjectorFactory.h"  // Sprint 2 T3 — output channel strategy
 #include "output/Internal.h"  // Sprint 2 D5 — g_synthCounterCallback bridge
@@ -260,6 +261,23 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // The owning EXE wires MainThreadWorker::SetTickHandler([](){ OnTickPoll(); })
     // and SetTickInterval(200ms); Start does not own the cadence anymore.
 
+    // Phase 1 perf histogram (docs/plans/2026-05-19-architecture-review-design.md).
+    // Path: %APPDATA%\VKey\perf-histogram-<pid>-<startTs>.log. The Enabled() gate
+    // is sourced from SharedState.diagFlags inside QuickSyncFromSharedState; we
+    // seed it here from the TOML toggle so the very first keystroke is captured.
+    {
+        wchar_t pathBuf[MAX_PATH];
+        const DWORD startTs = GetTickCount();
+        const DWORD pid = GetCurrentProcessId();
+        const std::wstring base = ConfigManager::GetAppDataDirectory();
+        const int n = swprintf_s(pathBuf, MAX_PATH,
+            L"%ls\\perf-histogram-%lu-%lu.log", base.c_str(), pid, startTs);
+        if (n > 0) {
+            Perf::Histogram::SetLogPath(pathBuf);
+        }
+        Perf::Histogram::SetEnabled(config.perfHistogramEnabled);
+    }
+
     NEXTKEY_LOG(L"HookEngine started (method=%d, vietnamese=%d)",
                 static_cast<int>(currentMethod_.load(std::memory_order_acquire)),
                 vietnameseMode_.load(std::memory_order_acquire));
@@ -271,6 +289,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
 
 void HookEngine::Stop() {
     HOOK_LOG(L"=== HookEngine::Stop ===");
+    // Phase 1 perf histogram: final flush before we tear down so the
+    // last 60s window of samples reaches disk. Idempotent.
+    Perf::Histogram::Stop();
     // Persist smart switch English-mode apps to TOML before shutdown
     if (startupMode_ == 2) {  // Remember: persist per-app modes
         SaveEnglishModeAppsIfDirty();
@@ -534,6 +555,11 @@ void HookEngine::QuickSyncFromSharedState() {
     if (!state.IsValid()) return;
     lastEpoch_.store(state.epoch, std::memory_order_release);
 
+    // Phase 1: surface SharedState.diagFlags bit 0 into the perf histogram
+    // gate. Atomic store — Histogram::SetEnabled holds no lock and is safe to
+    // call inside this slow-path block (already serialised by stateMutex_).
+    Perf::Histogram::SetEnabled((state.diagFlags & DiagFlags::PERF_HISTOGRAM) != 0);
+
     // ── Config generation check: detect TOML changes from Settings/subdialogs ──
     // When configGeneration changes, do a full TOML reload (macros, excluded apps, etc.).
     // This replaces the old ConfigEvent (Named Event + WaitForSingleObject syscall).
@@ -595,6 +621,7 @@ void HookEngine::SyncConfigFromSharedState() {
 }
 
 void HookEngine::ReloadFromToml() {
+    PERF_SCOPE(::NextKey::Perf::Stage::ConfigReload);
     NEXTKEY_LOG(L"HookEngine: full TOML reload");
 
     // Read TOML for fields not in SharedState (beep, smartSwitch, excludeApps, hotkey)
@@ -719,6 +746,10 @@ void HookEngine::ReloadFromToml() {
 // ═══════════════════════════════════════════════════════════
 
 LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    // Phase 1: Tier 2 budget marker (<30ms p99). Wraps the full LL callback
+    // body so the recorded delta includes every nested stage. PERF_SCOPE
+    // compiles to (void)0 when VKEY_PERF_HIST is not defined.
+    PERF_SCOPE(::NextKey::Perf::Stage::TotalKeydown);
     // Top-level catch: a C++ throw escaping a low-level hook unwinds through
     // KiUserCallbackDispatcher and Windows raises STATUS_FATAL_USER_CALLBACK_EXCEPTION
     // (0xC000041D), terminating the process. Swallow + log so the next keystroke
@@ -969,6 +1000,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 // set otherKeyPressed_ themselves before returning Pass, preserving the original
 // "any non-modifier key invalidates the modifier-only combo" semantics.
 HookEngine::KeyOutcome HookEngine::RunTopGuards(DWORD vkCode) {
+    PERF_SCOPE(::NextKey::Perf::Stage::TopGuard);
     // 0. Sync from SharedState. Fast path (post Pre-T3 Minor 2 fix) is
     //    fully lock-free — atomic ReadEpoch + atomic load of lastEpoch_,
     //    early-return on unchanged. Cost ~5 ns. The slow path (taken
@@ -1090,7 +1122,10 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         // synthesizing would just add latency.
         if (IsSyncReplaceChannel()) {
             auto inj = injector_.load(std::memory_order_acquire);
-            if (inj->Replace(/*bs=*/1, std::wstring_view{})) {
+            bool injOk;
+            { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+              injOk = inj->Replace(/*bs=*/1, std::wstring_view{}); }
+            if (injOk) {
                 HOOK_LOG(L"  commit-undo: BS after commit via injector → Primed");
                 return KeyOutcome::Eat;
             }
@@ -1507,8 +1542,9 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         if (!cachedShift) {
             wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
             inputHistory_.push_back(ch);
-            engine_->PushChar(ch);
-            std::wstring composition = engine_->Peek();
+            std::wstring composition;
+            { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+              engine_->PushChar(ch); composition = engine_->Peek(); }
             HOOK_LOG(L"  bracket '%c' → Peek()='%s'", ch, composition.c_str());
             ReplaceComposition(composition);
             return KeyOutcome::Eat;  // Eat the original keystroke
@@ -1547,8 +1583,9 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
             if (action != TypingAction::None &&
                 (engine_->Count() > 0 || IsInsertTypeAction(action))) {
                 inputHistory_.push_back(ch);
-                engine_->PushChar(ch);
-                std::wstring composition = engine_->Peek();
+                std::wstring composition;
+                { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+                  engine_->PushChar(ch); composition = engine_->Peek(); }
                 HOOK_LOG(L"  UserDefined OEM '%c' → Peek()='%s'", ch, composition.c_str());
                 ReplaceComposition(composition);
                 return KeyOutcome::Eat;
@@ -1638,7 +1675,10 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
             const wchar_t triggerChar = VkToMacroChar(vkCode);
             if (triggerChar >= L' ') {
                 auto inj = injector_.load(std::memory_order_acquire);
-                if (inj->Replace(/*bs=*/0, std::wstring_view(&triggerChar, 1))) {
+                bool injOk;
+                { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+                  injOk = inj->Replace(/*bs=*/0, std::wstring_view(&triggerChar, 1)); }
+                if (injOk) {
                     HOOK_LOG(L"  commit trigger via injector: '%c'", triggerChar);
                     return KeyOutcome::Eat;  // Eat original — we inserted it ourselves
                 }
@@ -1867,8 +1907,9 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     }
 
     inputHistory_.push_back(ch);
-    engine_->PushChar(ch);
-    std::wstring composition = engine_->Peek();
+    std::wstring composition;
+    { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+      engine_->PushChar(ch); composition = engine_->Peek(); }
 
     HOOK_LOG(L"  HandleAlphaKey: push '%c' → Peek()='%s' (len=%zu, count=%zu, prev='%s' prevLen=%zu)",
              ch, composition.c_str(), composition.size(), engine_->Count(),
@@ -1967,8 +2008,9 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
 bool HookEngine::HandleVniDigitKey(DWORD vkCode) {
     wchar_t ch = static_cast<wchar_t>(vkCode);  // '0'–'9' (VNI '0' = clear tone)
     inputHistory_.push_back(ch);
-    engine_->PushChar(ch);
-    std::wstring composition = engine_->Peek();
+    std::wstring composition;
+    { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+      engine_->PushChar(ch); composition = engine_->Peek(); }
     HOOK_LOG(L"  VNI digit '%c' → Peek()='%s'", ch, composition.c_str());
     ReplaceComposition(composition);
     return true;
@@ -2114,12 +2156,17 @@ void HookEngine::ReplayCommittedChars() {
     HOOK_LOG(L"  ReplayCommittedChars: replaying %zu keystrokes, restoring prev='%s' (stack=%zu remaining)",
              entry.history.size(), entry.text.c_str(), commitStack_.size());
 
-    // Replay exact user keystrokes (including backspaces) to reproduce engine state
-    for (wchar_t ch : entry.history) {
-        if (ch == kBackspaceMarker) {
-            engine_->Backspace();
-        } else {
-            engine_->PushChar(ch);
+    // Replay exact user keystrokes (including backspaces) to reproduce engine state.
+    // Phase 1: the replay loop is a sustained burst of engine state-machine writes,
+    // so we wrap the whole loop (not per-call) as a single EnginePush sample.
+    {
+        PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+        for (wchar_t ch : entry.history) {
+            if (ch == kBackspaceMarker) {
+                engine_->Backspace();
+            } else {
+                engine_->PushChar(ch);
+            }
         }
     }
     // Seed inputHistory_ with the replayed word's keystrokes so that if the user
@@ -2903,6 +2950,11 @@ void HookEngine::OnTickPoll() noexcept {
     // against main-thread Toggle/SetCodeTable, and OnFocusChanged is
     // invoked unlocked because it self-locks downstream.
     try {
+        // Phase 1: drive the 60s histogram flush off this 200ms tick.
+        // MaybeFlush() honours the throttle internally — cheap when no flush
+        // is due (single steady_clock::now + atomic load).
+        Perf::Histogram::MaybeFlush();
+
         HWND fg = GetForegroundWindow();
         if (!fg) return;
 
@@ -2981,6 +3033,11 @@ void HookEngine::StoreAppProfile(HWND hwnd, AppProfile profile) noexcept {
 }
 
 void HookEngine::OnFocusChanged(HWND triggerHwnd) {
+    // Phase 1: pre-split marker. Today the whole OnFocusChanged body runs
+    // synchronously from WinEventProc (main thread); Phase 2 will split into
+    // a classify pass + an apply-on-hook pass, at which point the marker
+    // narrows to just the classification work.
+    PERF_SCOPE(::NextKey::Perf::Stage::FocusClassify);
     ResetComposition();  // → ClearWordState resets digitLedWord_ + tempMacroOff_ etc.
     tempEngineOff_ = false;  // Not covered by ClearWordState (user-initiated, wider scope)
     // Immediate checks on focus change — layout and config may differ in new app
@@ -3397,6 +3454,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 ///
 /// See OnFocusChanged() for the detection logic + injector publish.
 void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectVk) {
+    PERF_SCOPE(::NextKey::Perf::Stage::Replace);
     HWND target = GetInputTarget();
     if (!target) {
         previousComposition_ = newText;
@@ -3441,7 +3499,10 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
         if (backspaceCount > 0 || !encodedToSend.empty()) {
             sending_ = true;
             auto inj = injector_.load(std::memory_order_acquire);
-            if (!inj->Replace(backspaceCount, std::wstring_view(encodedToSend))) {
+            bool injOk;
+            { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+              injOk = inj->Replace(backspaceCount, std::wstring_view(encodedToSend)); }
+            if (!injOk) {
                 HOOK_LOG(L"  ReplaceComposition[encoded]: injector reported partial delivery");
             }
             sending_ = false;
@@ -3497,7 +3558,10 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
         int waitedMs = 0;
         auto inj = injector_.load(std::memory_order_acquire);
         for (;;) {
-            if (inj->Replace(backspaceCount, std::wstring_view(toSend))) {
+            bool injOk;
+            { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+              injOk = inj->Replace(backspaceCount, std::wstring_view(toSend)); }
+            if (injOk) {
                 previousComposition_ = newText;
                 if (synthEventsPending_ > 0) hadSynthInWord_ = true;
                 if (waitedMs > 0) {
@@ -3578,7 +3642,10 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
 
             if (backspaceCount > 0 || !toSend.empty()) {
                 auto inj = injector_.load(std::memory_order_acquire);
-                if (!inj->Replace(backspaceCount, std::wstring_view(toSend))) {
+                bool injOk;
+                { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+                  injOk = inj->Replace(backspaceCount, std::wstring_view(toSend)); }
+                if (!injOk) {
                     HOOK_LOG(L"  ReplaceComposition[send]: injector reported partial delivery");
                 }
             }
@@ -3603,7 +3670,10 @@ HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
         const std::wstring raw = engine_->PeekRaw();
         if (raw.empty()) return KeyOutcome::Fallthrough;
         HOOK_LOG(L"  EscRestoreRaw[live]: bs=%zu raw='%ls'", composedCount, raw.c_str());
-        if (!inj->Replace(composedCount, std::wstring_view(raw))) {
+        bool injOk;
+        { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+          injOk = inj->Replace(composedCount, std::wstring_view(raw)); }
+        if (!injOk) {
             HOOK_LOG(L"  EscRestoreRaw[live]: injector reported partial delivery");
             // Don't reset on failure — next user action recovers via normal flow.
             return KeyOutcome::Fallthrough;

@@ -185,6 +185,15 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             }
         }
 
+        // Hidden TOML `[debug] perf_histogram` — Phase 1 histogram gate.
+        // Lives in its own [debug] table (not [features]) so it stays out of
+        // the user-facing surface; Settings UI does not enumerate this section.
+        // Read outside the [features] block so it works even on configs that
+        // omit [features] entirely.
+        if (auto dbg = table["debug"].as_table()) {
+            config.perfHistogramEnabled = (*dbg)["perf_histogram"].value_or(false);
+        }
+
         return config;
     } catch (const toml::parse_error&) {
         // Fall through to return nullopt

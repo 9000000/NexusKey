@@ -139,9 +139,14 @@ public:
     /// Export custom keymap to a standalone .keymap (TOML) file
     [[nodiscard]] static bool ExportCustomKeyMap(const std::wstring& path, const TypingConfig& config);
 
+    /// `%APPDATA%\VKey` (creates the directory if missing). Falls back to "."
+    /// when SHGetFolderPathW fails. Public because runtime callers (HookEngine
+    /// perf-histogram log path, logger fallback, etc.) need the same well-known
+    /// per-user data root as the TOML config path.
+    static std::wstring GetAppDataDirectory();
+
 private:
     static std::wstring GetExeDirectory();
-    static std::wstring GetAppDataDirectory();
     static bool DirectoryWritable(const std::wstring& path);
 
     // User-defined keymap helpers

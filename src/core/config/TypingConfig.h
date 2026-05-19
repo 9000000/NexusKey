@@ -78,6 +78,9 @@ struct TypingConfig {
     bool autoCapsMacro = false;        // Auto-capitalize expansion to match typed case
     bool allowEnglishBypass = false;   // Cho phép gõ dấu tự do / Bypass English blocking (e.g. yes -> ýe)
     bool debugLogEnabled = false;      // System → "Bật debug log" — runtime-enable NextKey::Logger
+    bool perfHistogramEnabled = false; // Hidden TOML `[debug] perf_histogram` — Phase 1 per-stage histogram gate
+                                       // (docs/plans/2026-05-19-architecture-review-design.md). Off by default;
+                                       // overhead is ~one atomic load + branch when off, ≤1% at p99 when on.
     bool macroTriggerSpace = true;     // Kích hoạt bằng phím Space
     bool macroTriggerEnter = true;     // Kích hoạt bằng phím Enter
     bool macroTriggerTab = true;       // Kích hoạt bằng phím Tab
