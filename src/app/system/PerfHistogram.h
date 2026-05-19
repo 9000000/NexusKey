@@ -85,7 +85,6 @@ public:
     /// Caller-provided (HookEngine::Start composes
     /// `%APPDATA%/VKey/perf-histogram-<pid>-<startTs>.log`).
     static void SetLogPath(const std::wstring& path) noexcept;
-    [[nodiscard]] static const std::wstring& GetLogPath() noexcept;
 
     /// Append a full snapshot (all stages × all buckets) to the configured
     /// log path. TSV: `stage<TAB>bucket_us<TAB>count<TAB>epoch_secs`. Returns

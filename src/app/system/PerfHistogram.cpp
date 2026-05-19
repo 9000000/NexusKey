@@ -150,12 +150,6 @@ void Histogram::SetLogPath(const std::wstring& path) noexcept {
     g_logPath = path;
 }
 
-const std::wstring& Histogram::GetLogPath() noexcept {
-    // Caller is expected to coordinate with SetLogPath; we don't take the
-    // mutex here because the returned reference must outlive the call.
-    return g_logPath;
-}
-
 bool Histogram::Flush() noexcept {
     std::lock_guard<std::mutex> lock(g_flushMutex);
     if (g_logPath.empty()) return false;

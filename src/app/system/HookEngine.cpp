@@ -766,12 +766,17 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
     // body so the recorded delta includes every nested stage. PERF_SCOPE
     // compiles to (void)0 when VKEY_PERF_HIST is not defined.
     PERF_SCOPE(::NextKey::Perf::Stage::TotalKeydown);
+    // `self` declared outside the try so the catch block can call
+    // ResetComposition (Rule 11.5 — "ALWAYS reset state on exception"). Without
+    // this, a throw escaping ProcessKeyDown leaves engine_/previousComposition_
+    // in a half-updated state for the next keystroke. Re-load is cheap (atomic
+    // load) and ResetComposition asserts hook-thread (which we are, here).
+    HookEngine* self = s_instance.load(std::memory_order_relaxed);
     // Top-level catch: a C++ throw escaping a low-level hook unwinds through
     // KiUserCallbackDispatcher and Windows raises STATUS_FATAL_USER_CALLBACK_EXCEPTION
     // (0xC000041D), terminating the process. Swallow + log so the next keystroke
     // gets a fresh attempt instead of the app silently disappearing.
     try {
-        HookEngine* self = s_instance.load(std::memory_order_relaxed);
         auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
         // Always track our own synthetic events regardless of nCode.
@@ -840,8 +845,14 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
         }
     } catch (const std::exception& e) {
         CrashLog(L"HookEngine::LowLevelKeyboardProc", e.what());
+        // Rule 11.5 safety net: an exception escaping ProcessKey* leaves the
+        // engine + previousComposition + per-word flags in an undefined state.
+        // ResetComposition clears them so the next keystroke starts fresh
+        // instead of compounding the corruption.
+        if (self) self->ResetComposition();
     } catch (...) {
         CrashLog(L"HookEngine::LowLevelKeyboardProc", "(non-std exception)");
+        if (self) self->ResetComposition();
     }
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
@@ -3851,6 +3862,7 @@ void HookEngine::DrainHookCommands() {
 // IsWebView2App, CreateToolhelp32Snapshot) is in ClassifyFocusedWindow,
 // not here.
 void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls) {
+    VKEY_ASSERT_HOOK_THREAD();
     if (!cls || !cls->hwndOpaque) return;
 
     HWND activeHwnd = reinterpret_cast<HWND>(cls->hwndOpaque);
@@ -4024,6 +4036,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 // so rapid hotkey mashing collapses to one toggle per drain cycle.
 // User-visible behaviour: same as before — sub-keystroke responsive.
 void HookEngine::ApplyToggleVNOnHookThread() {
+    VKEY_ASSERT_HOOK_THREAD();
     // Excluded-app gate. PID check vs cached excludedPid_ distinguishes
     // "genuinely in excluded app" (block toggle) from "stale flag, user
     // already left" (force VN). Both atomic stores below are safe on
@@ -4109,6 +4122,7 @@ void HookEngine::ApplyConfigOnHookThread() {
 }
 
 void HookEngine::ApplyTickPollOnHookThread() {
+    VKEY_ASSERT_HOOK_THREAD();
     // CheckLayoutChange queries GetKeyboardLayout (kernel-cached, fast)
     // and may call OnLayoutChanged → layoutSuppressed_ writes + engine
     // commit. All hook-thread-safe.
