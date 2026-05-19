@@ -497,6 +497,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/FocusInterleavingTest.cpp
     tests/ThreadOwnershipTest.cpp
     tests/ConfigSnapshotTest.cpp
+    tests/ConfigReloadBurstTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
