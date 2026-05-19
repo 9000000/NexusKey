@@ -526,13 +526,15 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
     // Priority 1: Manual per-app override (set explicitly by user)
     // Check previousExe_ first as a fallback: on the first focus event after startup,
     // currentExe_ may not yet reflect the typing app.
-    auto lookupOverride = [&](const std::wstring& exe) -> const int8_t* {
-        if (exe.empty()) return nullptr;
-        auto it = appEncodingOverrides_.find(exe);
-        return (it != appEncodingOverrides_.end() && it->second >= 0) ? &it->second : nullptr;
+    // Phase 3c: read from RCU snapshot — lock-free, safe on any thread.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
+    auto lookupOverride = [&](const std::wstring& exe) -> const CodeTable* {
+        if (exe.empty() || !snap) return nullptr;
+        auto it = snap->appEncodingOverrides.find(exe);
+        return (it != snap->appEncodingOverrides.end()) ? &it->second : nullptr;
     };
-    if (auto* v = lookupOverride(previousExe_)) return static_cast<CodeTable>(*v);
-    if (auto* v = lookupOverride(currentExe_)) return static_cast<CodeTable>(*v);
+    if (auto* v = lookupOverride(previousExe_)) return *v;
+    if (auto* v = lookupOverride(currentExe_))  return *v;
 
     return currentCodeTable_;
 }
@@ -585,11 +587,24 @@ void HookEngine::QuickSyncFromSharedState() {
 
     // ── Config generation check: detect TOML changes from Settings/subdialogs ──
     // When configGeneration changes, do a full TOML reload (macros, excluded apps, etc.).
-    // This replaces the old ConfigEvent (Named Event + WaitForSingleObject syscall).
+    // Replaces the old ConfigEvent (Named Event + WaitForSingleObject syscall).
+    //
+    // Phase 3c thread-aware routing:
+    //   • Hook thread → defer to worker (Rule 11.2 — TOML parse is forbidden
+    //     here, ~1-10 ms). Set `pendingConfigReload_`; the next OnTickPoll
+    //     drains it and runs ReloadFromToml on the worker thread.
+    //   • Worker / main → run inline. Already on a thread where TOML parse
+    //     is acceptable, no point bouncing through another tick.
     if (state.configGeneration != lastConfigGeneration_) {
-        lastConfigGeneration_ = state.configGeneration;
-        NEXTKEY_LOG(L"HookEngine: configGeneration changed (%u), full TOML reload", state.configGeneration);
-        ReloadFromToml();
+        if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
+            pendingConfigReload_.store(true, std::memory_order_release);
+            NEXTKEY_LOG(L"HookEngine: configGeneration bump (%u) seen on hook — deferring Reload to worker tick",
+                        state.configGeneration);
+        } else {
+            lastConfigGeneration_ = state.configGeneration;
+            NEXTKEY_LOG(L"HookEngine: configGeneration changed (%u), full TOML reload", state.configGeneration);
+            ReloadFromToml();
+        }
     }
 
     uint32_t ff = state.GetFeatureFlags();
@@ -633,8 +648,15 @@ void HookEngine::QuickSyncFromSharedState() {
         const bool macroOn = macroEnabled_.load(std::memory_order_acquire);
         if (macroOn && macroTable_.empty()) {
             ReloadMacroTable();
+            // P3c: macro toggle off→on path mutates legacy macroTable_ —
+            // re-publish snapshot so hook readers see the new macros on
+            // their next configSnapshot_.load(). Worker entries to
+            // QuickSync slow path run this; hook entries don't reach
+            // here because ReloadFromToml is deferred (see above).
+            PublishConfigSnapshot();
         } else if (!macroOn) {
             macroTable_.clear();
+            PublishConfigSnapshot();
         }
     }
 }
@@ -700,10 +722,17 @@ void HookEngine::ReloadFromToml() {
     ReloadExcludedApps();
     ReloadTsfApps();
 
+    // Phase 3c: publish the fresh snapshot NOW, before the re-evaluate
+    // block below reads it. Earlier publish-at-end-of-function is no
+    // longer needed — the re-evaluate block is the only in-function
+    // consumer and it's now snapshot-based.
+    PublishConfigSnapshot();
+    auto rcuSnap = configSnapshot_.load(std::memory_order_acquire);
+
     // Re-evaluate excluded status for current app (set was just reloaded)
     bool newExcluded = false;
-    if (excludeApps_ && !currentExe_.empty()) {
-        newExcluded = excludedAppSet_.count(currentExe_) > 0;
+    if (excludeApps_ && !currentExe_.empty() && rcuSnap) {
+        newExcluded = rcuSnap->excludedAppSet.count(currentExe_) > 0;
         isExcludedApp_.store(newExcluded, std::memory_order_release);
     } else {
         newExcluded = isExcludedApp_.load(std::memory_order_acquire);
@@ -712,8 +741,8 @@ void HookEngine::ReloadFromToml() {
     // Re-evaluate TSF app status for current foreground app
     const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
     bool newTsfApp;
-    if (tsfApps_ && !newExcluded && !tsfAppSet_.empty() && !currentExe_.empty()) {
-        newTsfApp = tsfAppSet_.count(currentExe_) > 0;
+    if (tsfApps_ && !newExcluded && rcuSnap && !rcuSnap->tsfAppSet.empty() && !currentExe_.empty()) {
+        newTsfApp = rcuSnap->tsfAppSet.count(currentExe_) > 0;
     } else {
         newTsfApp = false;
     }
@@ -722,7 +751,7 @@ void HookEngine::ReloadFromToml() {
              newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
              currentExe_.c_str(),
              tsfApps_ ? 1 : 0,
-             (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
+             (rcuSnap && !currentExe_.empty() && rcuSnap->tsfAppSet.count(currentExe_) > 0) ? 1 : 0,
              newExcluded ? 1 : 0);
     if (tsfModeCallback_) {
         const bool tsfReadonly = !newTsfApp && !newExcluded;
@@ -734,18 +763,18 @@ void HookEngine::ReloadFromToml() {
     }
 
     // Re-apply per-app overrides for current app (OnFocusChanged may have run with stale maps)
-    if (!currentExe_.empty() && !newExcluded && !newTsfApp) {
+    if (!currentExe_.empty() && !newExcluded && !newTsfApp && rcuSnap) {
         // Encoding
         {
-            auto it = appEncodingOverrides_.find(currentExe_);
-            currentCodeTable_ = (it != appEncodingOverrides_.end())
-                ? static_cast<CodeTable>(it->second) : globalCodeTable_;
+            auto it = rcuSnap->appEncodingOverrides.find(currentExe_);
+            currentCodeTable_ = (it != rcuSnap->appEncodingOverrides.end())
+                ? it->second : globalCodeTable_;
         }
         // Input method — recreate engine only if method changed
         {
-            auto it = appInputMethodOverrides_.find(currentExe_);
-            InputMethod targetMethod = (it != appInputMethodOverrides_.end())
-                ? static_cast<InputMethod>(it->second) : globalInputMethod_;
+            auto it = rcuSnap->appInputMethodOverrides.find(currentExe_);
+            InputMethod targetMethod = (it != rcuSnap->appInputMethodOverrides.end())
+                ? it->second : globalInputMethod_;
             if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
                 currentMethod_.store(targetMethod, std::memory_order_release);
                 TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
@@ -762,13 +791,8 @@ void HookEngine::ReloadFromToml() {
     if (configReloadCallback_) {
         configReloadCallback_();
     }
-
-    // Phase 3b — refresh the ConfigSnapshot now that the legacy maps have
-    // been repopulated from TOML. Dual-write with the legacy fields until
-    // P3c migrates readers off them and P3d deletes the legacy storage.
-    // Generation is `lastConfigGeneration_` which QuickSync slow path
-    // already advanced before calling us (line 583).
-    PublishConfigSnapshot();
+    // Note: ConfigSnapshot was already published earlier (before the
+    // re-evaluate block) so this function's tail no longer needs to.
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1365,6 +1389,11 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     // (ApplyHotkeyRegistry) replaces the pointer without invalidating
     // in-flight readers.
     const auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
+    // Phase 3c: same RCU pattern for variable-size config data. One load
+    // covers every `macroTable empty?` check in this function — keeps
+    // the per-keystroke atomic op count flat against pre-P3 behaviour.
+    const auto cfgSnap = configSnapshot_.load(std::memory_order_acquire);
+    const bool hasMacros = cfgSnap && !cfgSnap->macroTable.empty();
     const uint32_t currentMods = ComputeModMask(cachedCtrl, cachedShift, cachedAlt, cachedWin);
 
     // 3. English mode — skip Vietnamese processing
@@ -1422,7 +1451,7 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     // Alpha keys AND printable special chars are accumulated so macros with
     // special characters in their key (e.g., "url\" → "URL") can be matched.
     // Skip tracking entirely when no macros are defined — avoids string ops on every keystroke.
-    if (macroOn && !macroTable_.empty()) {
+    if (macroOn && hasMacros) {
         if (vkCode >= 0x41 && vkCode <= 0x5A) {
             bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
             rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
@@ -1477,7 +1506,7 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     //     → skip macro for next word. Registry's IsEnabled gates inside Matches();
     //     the macro-system gates (macroOn, table non-empty) stay because skipping
     //     macros is meaningless when none are loaded.
-    if (macroOn && !macroTable_.empty()
+    if (macroOn && hasMacros
         && hotkeysSnap->Matches(Intent::SkipMacro, vkCode, currentMods,
                                 /*isDoubleTap=*/false, /*keyUp=*/false)
         && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
@@ -1487,7 +1516,7 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     }
 
     // 3d. Macro expansion on commit trigger (uses shared TryExpandMacro helper)
-    if (macroOn && !macroTable_.empty() && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
+    if (macroOn && hasMacros && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
         wchar_t triggerChar = VkToMacroChar(vkCode);
         auto result = TryExpandMacro(triggerChar);
         if (result == MacroResult::ExpandedEatTrigger) return KeyOutcome::Eat;
@@ -1670,11 +1699,17 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         // Also preserve across SPACE when the accumulated prefix matches a stored space-
         // containing key — enables multi-word macros like "oc om bok" = "Óoc Om Bok".
         std::wstring savedMacroBuffer;
-        if (macroOn && !macroTable_.empty() && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
+        // Phase 3c: macro presence + spaceMacroKeys come from the RCU
+        // snapshot. Local shared_ptr keeps both alive through the branch.
+        auto cfgSnap = configSnapshot_.load(std::memory_order_acquire);
+        if (macroOn && cfgSnap && !cfgSnap->macroTable.empty()
+            && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
             wchar_t ch = VkToMacroChar(vkCode);
             if (ch > L' ') {
                 savedMacroBuffer = rawMacroBuffer_;
-            } else if (ch == L' ' && IsSpaceMacroPrefix(rawMacroBuffer_ + L' ', spaceMacroKeys_)) {
+            } else if (ch == L' '
+                       && IsSpaceMacroPrefix(rawMacroBuffer_ + L' ',
+                                             cfgSnap->spaceMacroKeys)) {
                 savedMacroBuffer = rawMacroBuffer_ + L' ';
             }
         }
@@ -1857,7 +1892,10 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             //    macro expansion when macros aren't loaded). The intent-level
             //    enable lives in the registry.
             if (macroEnabled_.load(std::memory_order_acquire)
-                && !macroTable_.empty()
+                && [this] {
+                       auto s = configSnapshot_.load(std::memory_order_acquire);
+                       return s && !s->macroTable.empty();
+                   }()
                 && engine_->Count() == 0
                 && rawMacroBuffer_.empty()
                 && matches(Intent::SkipMacro)) {
@@ -3047,6 +3085,25 @@ void HookEngine::OnTickPoll() noexcept {
         // Phase 1: histogram flush stays on main (file I/O — never on hook).
         Perf::Histogram::MaybeFlush();
 
+        // Phase 3c: drain a deferred TOML reload posted by the hook side.
+        // The hook QuickSync slow path observes a configGeneration bump
+        // and sets pendingConfigReload_ instead of running ReloadFromToml
+        // itself (Rule 11.2). We run it here, on the worker thread, where
+        // the 1-10 ms TOML parse is acceptable. Generation re-check inside
+        // the lock guards against a worker entry to QuickSync slow path
+        // (via OnFocusChanged) racing this drain.
+        if (sharedStatePtr_
+            && pendingConfigReload_.exchange(false, std::memory_order_acq_rel)) {
+            std::lock_guard<std::mutex> _lock(stateMutex_);
+            SharedState st = sharedStatePtr_->Read();
+            if (st.IsValid() && st.configGeneration != lastConfigGeneration_) {
+                lastConfigGeneration_ = st.configGeneration;
+                NEXTKEY_LOG(L"HookEngine: deferred config reload (gen=%u) running on worker",
+                            st.configGeneration);
+                ReloadFromToml();
+            }
+        }
+
         // Always post a tick — hook thread runs CheckLayoutChange in the
         // drain. Coalesces against rapid ticks (rare; tick is 200ms).
         mailbox_.Post(HookCommand::kTickPoll);
@@ -3270,21 +3327,27 @@ FocusClassification HookEngine::ClassifyFocusedWindow(HWND triggerHwnd) noexcept
     // maps and let the hook side read directly.
     cls.targetCodeTable = static_cast<int>(globalCodeTable_);
     cls.targetMethod    = static_cast<int>(globalInputMethod_);
-    if (!cls.skipAppTracking && !cls.exeName.empty()) {
-        if (excludeApps_ && !excludedAppSet_.empty()) {
-            cls.isExcluded = excludedAppSet_.count(cls.exeName) > 0;
+    // Phase 3c: per-app maps move to the RCU snapshot. Single atomic load
+    // here covers all four lookups below; previously each `_set/_overrides_`
+    // read was an unprotected unordered_map access from main while Reload
+    // could rewrite the maps on hook — the snapshot publish closes that
+    // race because Reload now swaps the whole pointer.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
+    if (!cls.skipAppTracking && !cls.exeName.empty() && snap) {
+        if (excludeApps_ && !snap->excludedAppSet.empty()) {
+            cls.isExcluded = snap->excludedAppSet.count(cls.exeName) > 0;
         }
-        if (!cls.isExcluded && tsfApps_ && !tsfAppSet_.empty()) {
-            cls.isTsf = tsfAppSet_.count(cls.exeName) > 0;
+        if (!cls.isExcluded && tsfApps_ && !snap->tsfAppSet.empty()) {
+            cls.isTsf = snap->tsfAppSet.count(cls.exeName) > 0;
         }
         if (!cls.isExcluded && !cls.isTsf) {
-            auto itEnc = appEncodingOverrides_.find(cls.exeName);
-            if (itEnc != appEncodingOverrides_.end() && itEnc->second >= 0) {
-                cls.targetCodeTable = itEnc->second;
+            auto itEnc = snap->appEncodingOverrides.find(cls.exeName);
+            if (itEnc != snap->appEncodingOverrides.end()) {
+                cls.targetCodeTable = static_cast<int>(itEnc->second);
             }
-            auto itIm = appInputMethodOverrides_.find(cls.exeName);
-            if (itIm != appInputMethodOverrides_.end() && itIm->second >= 0) {
-                cls.targetMethod = itIm->second;
+            auto itIm = snap->appInputMethodOverrides.find(cls.exeName);
+            if (itIm != snap->appInputMethodOverrides.end()) {
+                cls.targetMethod = static_cast<int>(itIm->second);
             }
         }
     }
@@ -3744,11 +3807,15 @@ bool HookEngine::IsMacroTrigger(DWORD vkCode) const {
 
 HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
     Win32CaseMapper mapper;
+    // Phase 3c: macro table comes from the RCU snapshot. The shared_ptr
+    // local keeps the table alive for the duration of Macro::Plan even
+    // if a worker thread republishes mid-call.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
     Macro::PlanInputs inputs{
         .rawMacroBuffer        = rawMacroBuffer_,
         .previousComposition   = previousComposition_,
         .previousEncodedWidths = previousEncodedWidths_,
-        .macroTable            = macroTable_,
+        .macroTable            = snap->macroTable,
         .macroCrossCommit      = macroCrossCommit_,
         .currentCodeTable      = currentCodeTable_,
         .autoCapsEnabled       = autoCapsMacro_.load(std::memory_order_acquire),
@@ -3961,9 +4028,16 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // what the 200 ms focus poll catches.
     if (cls->skipAppTracking) return;
 
-    // Short-circuit when no per-app feature needs tracking.
-    if (!smartSwitch_ && !excludeApps_ && !tsfApps_
-        && appEncodingOverrides_.empty() && appInputMethodOverrides_.empty()) return;
+    // Short-circuit when no per-app feature needs tracking. Phase 3c
+    // reads the override-map presence from the RCU snapshot — same data
+    // the cls fields were resolved against in Classify.
+    {
+        auto snap = configSnapshot_.load(std::memory_order_acquire);
+        const bool noOverrides = !snap
+            || (snap->appEncodingOverrides.empty()
+                && snap->appInputMethodOverrides.empty());
+        if (!smartSwitch_ && !excludeApps_ && !tsfApps_ && noOverrides) return;
+    }
 
     if (cls->exeName.empty()) return;
 

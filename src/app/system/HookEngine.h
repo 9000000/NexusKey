@@ -626,6 +626,14 @@ private:
     // always enters the slow path (any valid SharedState epoch mismatches).
     std::atomic<uint32_t> lastEpoch_{0};  // Epoch fast path — skip full Read() when unchanged
     uint8_t lastConfigGeneration_ = 0;   // Tracks configGeneration from SharedState
+    // Phase 3c: cross-thread signal from hook slow path to worker tick.
+    // When `QuickSyncFromSharedState` is entered on the hook thread and
+    // detects a `configGeneration` bump, it MUST NOT run `ReloadFromToml`
+    // (Rule 11.2 — TOML parse on hook). Instead, it sets this flag; the
+    // next `OnTickPoll` (worker thread, 200ms cadence) drains it and
+    // runs `ReloadFromToml` off-hook. Worker / main entries to QuickSync
+    // still run Reload inline — they're already on a safe thread.
+    std::atomic<bool> pendingConfigReload_{false};
 
     // Callbacks
     ModeChangeCallback modeChangeCallback_;
