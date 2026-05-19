@@ -4,8 +4,9 @@
 
 ```cpp
 // ✅ REQUIRED: All engines implement IInputEngine
-class TelexEngine : public IInputEngine { ... };
-class VniEngine : public IInputEngine { ... };
+// Post Path G (2026-04-16): TypingEngine is the single unified impl
+// (Telex + VNI both routed through one class via InputMethod::Combined).
+class TypingEngine : public IInputEngine { ... };
 
 // ✅ TSF/Hook use interface, not concrete type
 class TextService {

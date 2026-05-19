@@ -5,10 +5,13 @@
 ```cpp
 // REQUIRED: All code MUST be under NextKey namespace
 namespace NextKey {
-// SharedState, ConfigManager, TelexEngine, VniEngine, EngineFactory, etc.
+// SharedState, ConfigManager, TypingEngine, EngineFactory, HookEngine, etc.
 // Sub-namespaces used for type isolation:
-//   NextKey::Telex, NextKey::Vni, NextKey::SpellCheck,
-//   NextKey::CodeTableConverter, NextKey::TSF
+//   NextKey::Phonology (Phonotactics + rule packs, post T1 rename)
+//   NextKey::Output    (IOutputInjector strategy + Internal::TrackedSendInput)
+//   NextKey::Macro     (MacroCase pure helpers, post H5 extract)
+//   NextKey::CodeTableConverter (charset conversion tables)
+//   NextKey::Classic   (Lite/Win32 native UI)
 // Constants-only sub-namespaces: SharedFlags, FeatureFlags
 }
 ```

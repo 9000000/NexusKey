@@ -22,14 +22,16 @@ The total callback may exceed Tier 1 because output dispatch (`SendInput`, `Send
 - Target: < 30ms p99 in `chaos.toml` across the 5 baseline hosts (Notepad Win11 RichEditD2DPT, Notepad++, Chrome omnibox, Discord Electron, ChatGPT Chromium). Current measured worst-case p99 = 14–17ms (see `docs/baselines/perf-baseline-channeltraits-chaos.md`).
 - Hard ceiling: `LowLevelHooksTimeout / 3` ≈ 100ms. Beyond this, Windows is at risk of silently dropping the hook.
 
-The aspirational 1ms total budget was retired 2026-05-09 — it never matched codebase reality (see `HookEngine.cpp:3173-3174`: *"the budget is bounded by `LowLevelHooksTimeout`, not by the channel itself"*) and the SPSC ring proposal that would have closed the gap was closed by `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` after the trade-off (sync 0ms lag for non-Vietnamese keystrokes vs async +1–2ms tax on all keystrokes) was made explicit.
+The aspirational 1ms total budget was retired 2026-05-09 — it never matched codebase reality (see `HookEngine.cpp:3494`: *"the budget is bounded by `LowLevelHooksTimeout`, not by the channel itself"*) and the SPSC ring proposal that would have closed the gap was closed by `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` after the trade-off (sync 0ms lag for non-Vietnamese keystrokes vs async +1–2ms tax on all keystrokes) was made explicit.
 
 ```cpp
 // GOOD: Atomic read, no lock
 bool isViet = vietnameseMode_.load(std::memory_order_relaxed);
 
 // FORBIDDEN: Mutex in hot path
-std::lock_guard<std::recursive_mutex> _lock(stateMutex_);  // may block 5-15 ms!
+// (stateMutex_ was downgraded from recursive_mutex to plain std::mutex
+//  in Sprint 1 D11 after Phase B replaced its needs with atomic flags + RCU.)
+std::lock_guard<std::mutex> _lock(stateMutex_);  // may block 5-15 ms!
 ```
 
 ## 11.2 Forbidden Operations in Hook Callback
@@ -168,24 +170,28 @@ return CallNextHookEx(nullptr, nCode, wParam, lParam);
 ## 11.6 SendInput Timing
 
 ```cpp
-// SendInput for standard Win32 apps: batch everything
+// SendInput for standard Win32 apps: batch everything via Win32SendInputInjector
+// (Sprint 2 T3 IOutputInjector strategy).
 bsEvents.insert(bsEvents.end(), charEvents.begin(), charEvents.end());
-TrackedSendInput(bsEvents.data(), count);  // single call, FIFO guaranteed
+Internal::TrackedSendInput(bsEvents.data(), count);  // single call, FIFO guaranteed
 
-// SendInput for Electron/Console: split with Sleep
-// ONLY in DispatchSendInput, NEVER in hook callback
-TrackedSendInput(bsEvents.data(), bsCount);
-Sleep(delayMs);  // OK here — we are past the hook return
-TrackedSendInput(charEvents.data(), charCount);
+// SendInput for Electron/Console: split with Sleep inside SplitDispatchInjector
+// (src/app/output/SplitDispatchInjector.cpp). The Sleep stays INSIDE the injector,
+// which is reached from the hook callback only AFTER the eat decision (pfEaten=TRUE)
+// has been made and composition state updates have committed.
+Internal::TrackedSendInput(bsEvents.data(), bsCount);
+Internal::g_sleep(delayMs);  // 5-6 ms inter-batch gap for Electron/Console
+Internal::TrackedSendInput(charEvents.data(), charCount);
 ```
 
-`Sleep()` is acceptable in `DispatchSendInput` because the hook has already returned `1` (eaten the key). The Sleep happens during the output phase, not the capture phase.
+`Sleep()` is acceptable inside `SplitDispatchInjector::Replace()` (and the RichEdit retry loop in `ReplaceComposition`, capped at 30 ms) because the eat decision has already been made and the Sleep duration is bounded well under `LowLevelHooksTimeout`. It is FORBIDDEN in classification, config, or guard paths.
 
 ---
 
 ## Summary: Hook Performance Checklist
 
-- [ ] Hook callback returns within 1 ms
+- [ ] Hook callback returns within Tier 2 budget (<30 ms p99 across chaos baseline hosts; hard ceiling ~100 ms = `LowLevelHooksTimeout / 3`)
+- [ ] Engine pure-CPU work stays inside Tier 1 (<1 µs) per Rule 11.1
 - [ ] No `mutex.lock()` that contends with main thread
 - [ ] No file I/O reachable from hook callback
 - [ ] No process/module enumeration in hook callback

@@ -3,11 +3,11 @@
 ## 2.1 Smart Pointers
 
 ```cpp
-// ✅ Preferred: RAII everywhere
-std::unique_ptr<IInputEngine> engine = std::make_unique<TelexEngine>();
+// ✅ Preferred: RAII via factory (Path G unified TypingEngine)
+std::unique_ptr<IInputEngine> engine = EngineFactory::Create(config);
 
 // ❌ Avoid: Raw pointers for ownership
-IInputEngine* engine = new TelexEngine();  // Who deletes?
+IInputEngine* engine = new TypingEngine(config);  // Who deletes?
 ```
 
 ## 2.2 COM Objects

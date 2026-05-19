@@ -41,21 +41,21 @@ NEXTKEY_LOG(L"Key processed");  // Becomes ((void)0) in release
 // - No NEXTKEY_DEBUG    : All debug code compiles out
 ```
 
-## 7.1 SharedState Access
+## 7.4 SharedState Access
 
 ```cpp
 // SharedState is read-heavy, write-rare
-// ✅ Use simple version check, no locks for reads
+// ✅ Use simple epoch check, no locks for reads (Rule 11.3 RCU pattern)
 void OnFocus() {
-    uint32_t currentVersion = g_sharedState->configVersion;
-    if (currentVersion != cachedVersion_) {
+    uint32_t currentEpoch = g_sharedState->ReadEpoch();
+    if (currentEpoch != cachedEpoch_) {
         ReloadConfig();
-        cachedVersion_ = currentVersion;
+        cachedEpoch_ = currentEpoch;
     }
 }
 ```
 
-## 7.2 Engine State
+## 7.5 Engine State
 
 ```cpp
 // ✅ Each TSF instance owns its engine (no sharing)
