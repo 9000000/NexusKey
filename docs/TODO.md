@@ -3,6 +3,34 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
+## 🟢 ThreadIdProvider for `pendingConfigReload_` routing tests (review 2026-05-19)
+
+Phase 3 added thread-aware routing in `QuickSyncFromSharedState`:
+```cpp
+if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
+    pendingConfigReload_.store(true, release);
+} else {
+    ReloadFromToml();  // inline on worker
+}
+```
+
+Phase 4 gtests don't cover this routing — they test the data-structure
+RCU patterns (ConfigSnapshot, IOutputInjector swap) but not the
+thread-id branching itself. Reason: HookEngine is Win32-only and not
+linked into VKeyTests; Linux gtest has no way to drive the routing.
+
+Design doc §Phase 4 mentioned the fix: a `ThreadIdProvider` interface
+(production reads `GetCurrentThreadId()`, tests inject fake IDs) —
+same pattern as Sprint 1 D5 abstractions. Not implemented in Phase 4.
+
+Behavioural verification today: Windows chaos runs (54/55 PASS across
+P3a-P3d + review cleanup) exercise the routing transparently. A
+deterministic gtest would catch routing regressions earlier.
+
+→ Defer to Phase 5 (HookEngine class split) — the split will likely
+introduce a `ThreadContext` boundary anyway, at which point this
+abstraction comes for free.
+
 ## 🟢 Phase 3 latency edge cases (Phase 4 chaos targets)
 
 Phase 3 (`feat/config-rcu-snapshot`) shipped clean. Two latency edges

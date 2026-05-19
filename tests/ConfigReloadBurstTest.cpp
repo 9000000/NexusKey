@@ -269,10 +269,14 @@ TEST(ConfigReloadBurst, ReaderHoldsSnapshotPastManyWriterCycles) {
 // ──────────────────────────────────────────────────────────────────────────
 // 5. Multi-reader long-hold + writer burst — every reader's captured
 // snapshot stays consistent for the full hold duration regardless of
-// concurrent publish pressure. Combines (1) and (2) on a single test:
-// each reader simulates ~50 hot-path field reads while writer races.
+// concurrent publish pressure. All eight readers capture the snapshot
+// BEFORE the writer's burst starts, so they all pin the same gen=1; the
+// test verifies that gen survives intact across 199 republishes. The
+// "different generations" variant (staggered reader launch so each pins
+// a different gen) is a TODO follow-up — current pattern catches the
+// dominant failure mode (mid-publish corruption of any pinned view).
 // ──────────────────────────────────────────────────────────────────────────
-TEST(ConfigReloadBurst, MultipleReadersHoldDifferentGenerationsConcurrently) {
+TEST(ConfigReloadBurst, EightReadersHoldSameSnapshotStably) {
     std::atomic<std::shared_ptr<const ConfigSnapshot>> field;
     field.store(MakeGenSnapshot(1), std::memory_order_release);
 

@@ -66,9 +66,9 @@ struct FakeInjector final : IOutputInjector {
     std::atomic<std::size_t> lastBsCount{0};
     std::wstring lastReplaceText;
 
-    bool   trait_multiProcess{false};
-    bool   trait_baitChar{false};
-    std::chrono::milliseconds trait_settleBudget{100};
+    bool   multiProcessRenderer{false};
+    bool   needsBaitChar{false};
+    std::chrono::milliseconds settleBudget{100};
 
     // Test hook — set non-zero to simulate dispatch latency inside Replace.
     std::chrono::microseconds replaceDelay{0};
@@ -91,13 +91,13 @@ struct FakeInjector final : IOutputInjector {
         lastSendKeyVk.store(vkCode, std::memory_order_release);
     }
     [[nodiscard]] std::chrono::milliseconds SettleBudget() const noexcept override {
-        return trait_settleBudget;
+        return settleBudget;
     }
     [[nodiscard]] bool HasMultiProcessRenderer() const noexcept override {
-        return trait_multiProcess;
+        return multiProcessRenderer;
     }
     [[nodiscard]] bool NeedsBaitCharPrefix() const noexcept override {
-        return trait_baitChar;
+        return needsBaitChar;
     }
 };
 
@@ -114,7 +114,9 @@ TEST(InjectorSwitch, StoreLoadRoundTrip) {
     EXPECT_EQ(loaded.get(), inj.get())
         << "load must return the same pointer the store published";
     EXPECT_TRUE(loaded->Replace(0, L""));
-    EXPECT_EQ(static_cast<FakeInjector*>(loaded.get())->replaceCount.load(), 1);
+    auto* fake = dynamic_cast<FakeInjector*>(loaded.get());
+    ASSERT_NE(fake, nullptr);
+    EXPECT_EQ(fake->replaceCount.load(), 1);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -261,19 +263,19 @@ TEST(InjectorSwitch, TraitsTrackTheActiveInjector) {
     std::atomic<std::shared_ptr<IOutputInjector>> field;
 
     auto win32 = std::make_shared<FakeInjector>("win32-batch");
-    win32->trait_multiProcess  = false;
-    win32->trait_baitChar      = false;
-    win32->trait_settleBudget  = std::chrono::milliseconds(30);
+    win32->multiProcessRenderer = false;
+    win32->needsBaitChar        = false;
+    win32->settleBudget         = std::chrono::milliseconds(30);
 
     auto split = std::make_shared<FakeInjector>("split-electron");
-    split->trait_multiProcess  = true;
-    split->trait_baitChar      = false;
-    split->trait_settleBudget  = std::chrono::milliseconds(100);
+    split->multiProcessRenderer = true;
+    split->needsBaitChar        = false;
+    split->settleBudget         = std::chrono::milliseconds(100);
 
     auto chrome = std::make_shared<FakeInjector>("chrome-bait");
-    chrome->trait_multiProcess = true;
-    chrome->trait_baitChar     = true;
-    chrome->trait_settleBudget = std::chrono::milliseconds(60);
+    chrome->multiProcessRenderer = true;
+    chrome->needsBaitChar        = true;
+    chrome->settleBudget         = std::chrono::milliseconds(60);
 
     field.store(win32, std::memory_order_release);
     {
