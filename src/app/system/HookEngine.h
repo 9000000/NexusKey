@@ -281,27 +281,22 @@ private:
     void RefreshFocusCache(HWND foreground) noexcept;
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
-    void ReloadAppOverrides();
-    void ReloadExcludedApps();   // Reload excluded app set from TOML
-    void ReloadTsfApps();        // Reload TSF app set from TOML
-    // Reload macros from TOML with keys lowercased for case-insensitive lookup.
-    // Runtime matching already lowercases the typed buffer; normalizing the
-    // map keys mirrors that so capitalized TOML keys (e.g. `Chol = "Chôl"`) match.
-    void ReloadMacroTable();
     void SaveEnglishModeAppsIfDirty();  // Persist English-mode apps to TOML
 
-    // Phase 3b — build a ConfigSnapshot from the current legacy fields
-    // (excludedAppSet_, tsfAppSet_, macroTable_, appEncodingOverrides_,
-    // appInputMethodOverrides_) and publish it via configSnapshot_.
-    // Called at the end of Start() and ReloadFromToml() so the snapshot
-    // and the legacy fields stay synchronised during the P3b→P3c
-    // transition (dual-write). Hook readers stay on the legacy fields in
-    // P3b; P3c switches the readers and P3d removes the legacy storage.
+    // Phase 3d — single source of truth for snapshot rebuild. Parses
+    // overrides/excluded/TSF/macros fresh from TOML, derives
+    // spaceMacroKeys via ConfigSnapshot::Build, and atomic-publishes the
+    // result. Replaces the four legacy Reload* methods + the dual-write
+    // PublishConfigSnapshot bridge from P3b. The `appSendMethodOverrides_`
+    // sibling field (not in ConfigSnapshot — used only by main-thread
+    // ClassifyFocusedWindow) is rewritten as a side effect of the
+    // override parse so it stays in lockstep.
     //
-    // REQUIRES: caller-held stateMutex_ (matches the existing Reload*
-    // contract — the function reads legacy maps + atomic_store the
-    // resulting shared_ptr).
-    void PublishConfigSnapshot() noexcept;
+    // REQUIRES: caller-held stateMutex_ (`appSendMethodOverrides_`
+    // mutation needs the lock; the snapshot publish itself is lock-free
+    // but the producer side serialises with the legacy-field writer
+    // contract).
+    void RebuildSnapshotFromToml(std::uint32_t generation) noexcept;
 
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
@@ -329,16 +324,14 @@ private:
     std::atomic<std::shared_ptr<const HotkeyRegistry>> hotkeys_{
         std::make_shared<const HotkeyRegistry>(HotkeyRegistry::Defaults())
     };
-    // Phase 3a — RCU snapshot of variable-size config data (excluded/TSF/
-    // macro/override maps). Default-init means HookEngine ctor publishes
-    // an empty snapshot so the hook hot path's atomic_load is always
-    // dereferenceable, even before Phase 3b's worker-side producer wires
-    // up. Phase 3a ships dormant: no producer publishes a non-empty
-    // snapshot yet, no reader migrated off the legacy `excludedAppSet_` /
-    // `tsfAppSet_` / `macroTable_` / `spaceMacroKeys_` /
-    // `appEncodingOverrides_` / `appInputMethodOverrides_` fields below.
-    // Phase 3b adds the worker producer; Phase 3c migrates the readers;
-    // Phase 3d removes the legacy fields.
+    // Phase 3 — RCU snapshot of variable-size config data. Holds the
+    // excluded-apps / TSF-apps / macro / per-app override maps that the
+    // hook hot path needs to read. Single producer is
+    // `RebuildSnapshotFromToml` (worker thread or main; never hook —
+    // hook side defers via `pendingConfigReload_`). Readers are
+    // lock-free `configSnapshot_.load(acquire)`. Default-init to an
+    // empty snapshot so the first reader before any rebuild publishes
+    // still gets a dereferenceable pointer.
     std::atomic<std::shared_ptr<const ConfigSnapshot>> configSnapshot_{
         std::make_shared<const ConfigSnapshot>()
     };
@@ -404,7 +397,12 @@ private:
     /// Enum + transition rule live in core/AutoCapStateTransition.h so Linux GTest
     /// can exercise the modifier-gate contract without depending on Win32.
     AutoCapState autoCapState_ = AutoCapState::Idle;
-    std::unordered_set<std::wstring> excludedAppSet_;  // excluded apps: force English on focus
+    // Phase 3d: legacy `excludedAppSet_` removed — readers go through
+    // configSnapshot_.load()->excludedAppSet. Same migration for
+    // tsfAppSet_, macroTable_, spaceMacroKeys_, appEncodingOverrides_,
+    // appInputMethodOverrides_ (all gone). `appSendMethodOverrides_`
+    // (below) is the remaining sibling — not in the snapshot because
+    // only ClassifyFocusedWindow on main reads it.
     // Sprint 1 D5.2: per-app cached + macro config flags read on hook callback
     // path. Writers: ApplyConfig (main), ReloadFromToml (main),
     // OnFocusChanged + RefreshFocusCache (main, via WinEventProc),
@@ -415,7 +413,7 @@ private:
     // same idiom for uniformity (cost = MOV on x86).
     std::atomic<bool> isExcludedApp_{false};      // cached: current app is excluded
     std::atomic<DWORD> excludedPid_{0};           // PID of excluded app (fast check in ProcessKeyDown)
-    std::unordered_set<std::wstring> tsfAppSet_;  // apps that should use TSF engine instead of hook
+    // (tsfAppSet_ removed — see Phase 3d note above)
     // Sprint 1 D5.1: migrated to std::atomic. Writers: ReloadFromToml (main) +
     // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +
     // ProcessKeyUp early-return gates on the hook hot path.
@@ -442,10 +440,13 @@ private:
     std::wstring previousExe_;  // Previously focused app (for tray menu context)
     CodeTable currentCodeTable_ = CodeTable::Unicode;
     CodeTable globalCodeTable_ = CodeTable::Unicode;     // config value, restored when no override
-    std::unordered_map<std::wstring, int8_t> appEncodingOverrides_;   // exe → encoding override (-1=inherit)
-    std::unordered_map<std::wstring, int8_t> appSendMethodOverrides_; // exe → send method override (-1=inherit)
+    // (appEncodingOverrides_ and appInputMethodOverrides_ removed — Phase 3d.)
+    // appSendMethodOverrides_ NOT in ConfigSnapshot: only main-thread
+    // ClassifyFocusedWindow reads it, so it stays as a HookEngine field
+    // managed by RebuildSnapshotFromToml (rewritten in lockstep with
+    // the snapshot publish).
+    std::unordered_map<std::wstring, int8_t> appSendMethodOverrides_;
     InputMethod globalInputMethod_ = InputMethod::Telex; // config value, restored when no override
-    std::unordered_map<std::wstring, int8_t> appInputMethodOverrides_; // exe → method override (-1=inherit)
 
     // Per-HWND classification cache. Each focus change normally calls
     // ClassifyWindow + GetExeNameForHwnd + (sometimes) IsWebView2App, costing
@@ -528,8 +529,8 @@ private:
     std::atomic<bool> macroInEnglish_{false};
     bool tempMacroOff_ = false;       // Runtime: macro disabled for current word; same-thread (hook) only
     bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits; same-thread (hook) only
-    std::unordered_map<std::wstring, std::wstring> macroTable_;
-    std::unordered_set<std::wstring> spaceMacroKeys_;  // subset of macroTable_ keys that contain ' '
+    // (macroTable_ + spaceMacroKeys_ removed — Phase 3d. Live in
+    // configSnapshot_->macroTable / ->spaceMacroKeys now.)
     std::wstring rawMacroBuffer_;
 
     // Hooks

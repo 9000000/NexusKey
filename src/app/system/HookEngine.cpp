@@ -211,9 +211,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // launches read the new schema directly.
     ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
         ConfigManager::GetConfigPath()));
-    if (macroEnabled_.load(std::memory_order_acquire)) {
-        ReloadMacroTable();
-    }
     autoCapState_ = AutoCapState::Idle;
     engine_ = EngineFactory::Create(config);
     vietnameseMode_.store(initialVietnamese, std::memory_order_release);
@@ -237,13 +234,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     globalCodeTable_ = config.codeTable;
     globalInputMethod_ = config.inputMethod;
 
-    // Load manual per-app overrides (encoding + input method)
-    ReloadAppOverrides();
-
-    // Load excluded apps and TSF apps
-    ReloadExcludedApps();
-    ReloadTsfApps();
-
     // Cache initial SharedState values (pointer set by main.cpp via SetSharedStateReader)
     if (sharedStatePtr_) {
         SharedState state = sharedStatePtr_->Read();
@@ -256,11 +246,10 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         }
     }
 
-    // Phase 3b — publish initial ConfigSnapshot from the legacy fields just
-    // populated. Dormant for readers (P3c migrates them), but ensures any
-    // hook-thread reader added between P3b and P3c sees a real snapshot
-    // instead of the empty default. Stop() will let it GC naturally.
-    PublishConfigSnapshot();
+    // Phase 3d — single rebuild: TOML parse for overrides/excluded/TSF/
+    // macros + atomic snapshot publish. Replaces the four legacy
+    // Reload* + PublishConfigSnapshot calls from earlier.
+    RebuildSnapshotFromToml(static_cast<std::uint32_t>(lastConfigGeneration_));
 
     // Spawn dedicated hook thread that owns keyboardHook_ + mouseHook_ and runs
     // its own GetMessage pump. This decouples LL hook dispatch from the main/UI
@@ -645,18 +634,21 @@ void HookEngine::QuickSyncFromSharedState() {
     }
 
     {
+        // Phase 3d: macroEnabled toggled but configGeneration didn't bump
+        // (typical case — user flips the macro feature switch). Compare
+        // the snapshot's macro presence against the new desired state;
+        // if they disagree, rebuild + republish. On the hook thread this
+        // path is now deferred via pendingConfigReload_ (same as the
+        // configGeneration-bump path) so TOML parse stays off-hook.
         const bool macroOn = macroEnabled_.load(std::memory_order_acquire);
-        if (macroOn && macroTable_.empty()) {
-            ReloadMacroTable();
-            // P3c: macro toggle off→on path mutates legacy macroTable_ —
-            // re-publish snapshot so hook readers see the new macros on
-            // their next configSnapshot_.load(). Worker entries to
-            // QuickSync slow path run this; hook entries don't reach
-            // here because ReloadFromToml is deferred (see above).
-            PublishConfigSnapshot();
-        } else if (!macroOn) {
-            macroTable_.clear();
-            PublishConfigSnapshot();
+        auto snap = configSnapshot_.load(std::memory_order_acquire);
+        const bool snapHasMacros = snap && !snap->macroTable.empty();
+        if (macroOn != snapHasMacros) {
+            if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
+                pendingConfigReload_.store(true, std::memory_order_release);
+            } else {
+                RebuildSnapshotFromToml(static_cast<std::uint32_t>(lastConfigGeneration_));
+            }
         }
     }
 }
@@ -705,28 +697,16 @@ void HookEngine::ReloadFromToml() {
     // Still runs migration (idempotent — no-op if section already populated).
     ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
         ConfigManager::GetConfigPath()));
-    if (macroEnabled_.load(std::memory_order_acquire)) {
-        ReloadMacroTable();
-    } else {
-        macroTable_.clear();
-    }
 
     currentCodeTable_ = config.codeTable;
     globalCodeTable_ = config.codeTable;
     globalInputMethod_ = config.inputMethod;
 
-    // Reload manual per-app overrides (encoding + input method)
-    ReloadAppOverrides();
-
-    // Reload excluded apps and TSF apps
-    ReloadExcludedApps();
-    ReloadTsfApps();
-
-    // Phase 3c: publish the fresh snapshot NOW, before the re-evaluate
-    // block below reads it. Earlier publish-at-end-of-function is no
-    // longer needed — the re-evaluate block is the only in-function
-    // consumer and it's now snapshot-based.
-    PublishConfigSnapshot();
+    // Phase 3d — one helper does it all: TOML parse for overrides /
+    // excluded apps / TSF apps / macros, ConfigSnapshot::Build (derives
+    // spaceMacroKeys), atomic publish. The re-evaluate block below reads
+    // the freshly-published snapshot for the current-app fields.
+    RebuildSnapshotFromToml(static_cast<std::uint32_t>(lastConfigGeneration_));
     auto rcuSnap = configSnapshot_.load(std::memory_order_acquire);
 
     // Re-evaluate excluded status for current app (set was just reloaded)
@@ -2899,13 +2879,17 @@ void HookEngine::NotifyModeChange() noexcept {
 
 
 bool HookEngine::VerifyExcludedState() {
-    if (!excludeApps_ || excludedAppSet_.empty()) {
+    // Phase 3c reader migration: snapshot read replaces the legacy
+    // unprotected excludedAppSet_ access. One atomic load covers both
+    // the empty check and the membership lookup.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
+    if (!excludeApps_ || !snap || snap->excludedAppSet.empty()) {
         isExcludedApp_.store(false, std::memory_order_release);
         return false;
     }
     HWND fg = GetForegroundWindow();
     std::wstring exe = GetExeNameForHwnd(fg);
-    if (exe.empty() || excludedAppSet_.count(exe)) {
+    if (exe.empty() || snap->excludedAppSet.count(exe)) {
         return true;  // Still excluded (or can't determine — safe default)
     }
     isExcludedApp_.store(false, std::memory_order_release);
@@ -2913,84 +2897,69 @@ bool HookEngine::VerifyExcludedState() {
     return false;
 }
 
-void HookEngine::ReloadAppOverrides() {
-    auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
-    appEncodingOverrides_.clear();
-    appInputMethodOverrides_.clear();
+// Phase 3d — single source of truth for ConfigSnapshot rebuild.
+//
+// Reads TOML for every variable-size config field, derives spaceMacroKeys
+// via ConfigSnapshot::Build, atomic-publishes the new shared_ptr.
+// Replaces the four legacy Reload{AppOverrides,ExcludedApps,TsfApps,
+// MacroTable} methods + the P3b PublishConfigSnapshot bridge — all of
+// those wrote intermediate state to HookEngine members that no longer
+// exist post P3d cleanup. The remaining sibling field
+// `appSendMethodOverrides_` (not in the snapshot — see HookEngine.h)
+// is rewritten as a side effect so it stays in lockstep.
+//
+// Feature gates honored:
+//   • excludeApps_ false ⇒ snapshot's excludedAppSet stays empty;
+//     isExcludedApp_ cleared (matches old ReloadExcludedApps semantics).
+//   • tsfApps_ false ⇒ snapshot's tsfAppSet stays empty.
+//   • macroEnabled_ false ⇒ snapshot's macroTable stays empty.
+void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) noexcept {
+    const auto configPath = ConfigManager::GetConfigPath();
+
+    // Parse per-app overrides in one TOML pass; partition into the typed
+    // maps the snapshot expects + the int8_t send-method map that stays
+    // on HookEngine (not in the snapshot — only main-thread reader).
+    auto overrides = ConfigManager::LoadAppOverrides(configPath);
+    std::unordered_map<std::wstring, CodeTable>   encOv;
+    std::unordered_map<std::wstring, InputMethod> imOv;
     appSendMethodOverrides_.clear();
     for (auto& [exe, entry] : overrides) {
         if (entry.encodingOverride >= 0)
-            appEncodingOverrides_[exe] = entry.encodingOverride;
+            encOv.emplace(exe, static_cast<CodeTable>(entry.encodingOverride));
         if (entry.inputMethod >= 0)
-            appInputMethodOverrides_[exe] = entry.inputMethod;
+            imOv.emplace(exe, static_cast<InputMethod>(entry.inputMethod));
         if (entry.sendMethod >= 0)
             appSendMethodOverrides_[exe] = entry.sendMethod;
     }
-}
 
-void HookEngine::ReloadExcludedApps() {
-    excludedAppSet_.clear();
+    std::unordered_set<std::wstring> excluded;
     if (excludeApps_) {
-        for (auto& app : ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath()))
-            excludedAppSet_.insert(std::move(app));
+        for (auto& app : ConfigManager::LoadAllExcludedApps(configPath))
+            excluded.insert(std::move(app));
     } else {
+        // Cached "currently in excluded app" flag must clear when the
+        // feature is off (matches old ReloadExcludedApps else-branch).
         isExcludedApp_.store(false, std::memory_order_release);
     }
-}
 
-void HookEngine::ReloadTsfApps() {
-    tsfAppSet_.clear();
+    std::unordered_set<std::wstring> tsf;
     if (tsfApps_) {
-        for (auto& app : ConfigManager::LoadTsfApps(ConfigManager::GetConfigPath()))
-            tsfAppSet_.insert(std::move(app));
+        for (auto& app : ConfigManager::LoadTsfApps(configPath))
+            tsf.insert(std::move(app));
     }
-}
 
-void HookEngine::ReloadMacroTable() {
-    // Keys are stored verbatim from TOML. The matching rule in TryExpandMacro
-    // reads the stored case to decide behavior: all-lowercase keys match any
-    // typed case; keys with any uppercase require an exact case match.
-    macroTable_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
-    // Index keys containing spaces so the save-before-commit path can cheaply
-    // decide whether to preserve the macro buffer across a space commit.
-    spaceMacroKeys_.clear();
-    for (const auto& [key, _] : macroTable_) {
-        if (key.find(L' ') != std::wstring::npos) spaceMacroKeys_.insert(key);
-    }
-}
-
-// Phase 3b — bundle the current legacy config maps into an immutable
-// ConfigSnapshot and atomic-publish for hook-thread readers. Dual-write
-// during P3b: the legacy `macroTable_` / `excludedAppSet_` / `tsfAppSet_`
-// / `app*Overrides_` fields stay populated (P3c migrates the readers off
-// them; P3d deletes the legacy storage). Caller must hold stateMutex_ so
-// the source maps don't shift mid-copy. The atomic_store of the
-// shared_ptr is the publication point — hook readers see the new
-// snapshot on their next load.
-void HookEngine::PublishConfigSnapshot() noexcept {
-    // Legacy override maps store int8_t (with -1 = "inherit"); the snapshot
-    // wants typed enums. ReloadAppOverrides already filters out -1 entries
-    // (only ≥0 reach the maps), so the cast is safe — but we keep the bound
-    // check as defence in depth: any negative slip would now turn into a
-    // nonsense enum on the hook side instead of being silently inserted.
-    std::unordered_map<std::wstring, CodeTable> encOv;
-    encOv.reserve(appEncodingOverrides_.size());
-    for (const auto& [exe, v] : appEncodingOverrides_) {
-        if (v >= 0) encOv.emplace(exe, static_cast<CodeTable>(v));
-    }
-    std::unordered_map<std::wstring, InputMethod> imOv;
-    imOv.reserve(appInputMethodOverrides_.size());
-    for (const auto& [exe, v] : appInputMethodOverrides_) {
-        if (v >= 0) imOv.emplace(exe, static_cast<InputMethod>(v));
+    std::unordered_map<std::wstring, std::wstring> macros;
+    if (macroEnabled_.load(std::memory_order_acquire)) {
+        macros = ConfigManager::LoadMacros(configPath);
     }
 
     auto snap = std::make_shared<const ConfigSnapshot>(ConfigSnapshot::Build(
-        macroTable_,
-        excludedAppSet_,
-        tsfAppSet_,
+        std::move(macros),
+        std::move(excluded),
+        std::move(tsf),
         std::move(encOv),
         std::move(imOv),
-        static_cast<std::uint32_t>(lastConfigGeneration_)));
+        generation));
     configSnapshot_.store(std::move(snap), std::memory_order_release);
 }
 
