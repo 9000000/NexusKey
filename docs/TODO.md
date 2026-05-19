@@ -3,77 +3,27 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
-## 🔴 Phase 2 left two writer paths on `engine_` (review 2026-05-19)
-
-Phase 2 (`feat/single-writer`) shipped `VKEY_ASSERT_HOOK_THREAD` on 11 composition-
-state mutation entry points, but `ReloadFromToml()` in `HookEngine.cpp:639-758`
-still runs on main/worker thread (entered via `OnFocusChanged → QuickSyncFromSharedState`
-slow path) and writes:
-
-- `engine_ = EngineFactory::Create(config)` (line 665, again at 746)
-- `currentMethod_.store(...)` (line 663)
-- `currentCodeTable_` / `globalCodeTable_` / `globalInputMethod_` (line 685-687)
-- `isExcludedApp_.store(...)` (line 700)
-- `isTsfApp_.store(...)` (line 713)
-
-Concurrently, `ApplyFocusOnHookThread` (hook thread, via drain) writes the same
-fields (line 3927, 3932-3933, 3970, 3984). `engine_` is `std::unique_ptr` (non-
-atomic). `ReloadFromToml` holds `stateMutex_`; `ApplyFocusOnHookThread` does NOT
-take it. Race window: settings save → SharedState bump → next focus event triggers
-main-side `QuickSync→ReloadFromToml` while hook-side `ApplyFocus` rebuilds `engine_`
-for per-app override → torn pointer assign / leak.
-
-**Acknowledged in design doc** `docs/plans/2026-05-19-architecture-review-design.md`
-§Phase 3 (RCU `ConfigSnapshot` + worker-thread publish). Until Phase 3, low-
-probability race exists but is masked because (a) per-app input method overrides
-are rare in practice, (b) settings save→focus race needs sub-frame timing.
-
-Chaos 55/55 PASS empirically. Phase 4 replay harness should add deterministic
-coverage for this race once it lands.
-
-→ Fix: Phase 3 will move `ReloadFromToml` parse onto worker, publish via
-`atomic<shared_ptr<TypingConfig>>`, and remove the on-focus per-app `engine_`
-recreate in favour of an injector-style RCU swap that's allocation-free on hook.
-
-## 🟡 Heap allocation reachable from `LowLevelKeyboardProc` (review 2026-05-19)
-
-Rule 11.2 forbids `malloc/new/make_shared` on hook hot path. Phase 2 moved focus
-apply onto the hook thread (drain at LL callback step 5), pulling these into
-reach:
-
-- `ApplyFocusOnHookThread:3879` — `injector_.store(Output::Create(c), release)`
-  → `make_shared<IOutputInjector>` on every focus change.
-- `ApplyFocusOnHookThread:3985` — `engine_ = EngineFactory::Create(engineConfig)`
-  + `TypingConfig engineConfig = *config_.load(...)` struct copy with string/map
-  members — fires when per-app input method override differs.
-- `ApplyConfigOnHookThread:4098` — `const TypingConfig snapshot = *cfg;` (dormant
-  in Phase 2c; Phase 3 wires it).
-
-Focus events are sparse vs keystrokes — chaos p99 still passes. But burst Alt-Tab
-during typing can put one keystroke through heap path.
-
-→ Fix candidate: pre-build a small pool of injectors at startup, focus events
-just `atomic_exchange` the pointer. Engine rebuild on per-app override can be
-deferred to first keystroke after focus (`engine_` invalidation flag) or moved
-behind a "pending swap" sentinel.
-
 ## 🟢 CODING_RULES & code drift residue (2026-05-19)
 
 Mechanical refresh of CODING_RULES landed in `6171a82`. Two follow-up items
 left out of scope (semantic / requires architecture work):
 
-### A. Rule 11.3 forbidden-pattern example matches production code
+### A. Rule 11.3 forbidden-pattern example matches production code — **RESOLVED Phase 3** (`feat/config-rcu-snapshot`)
 
-Rule 11.3 (`docs/CODING_RULES/11-hook-system-rules.md`) shows:
+Rule 11.3 (`docs/CODING_RULES/11-hook-system-rules.md`) showed:
 ```
 std::lock_guard _lock(stateMutex_);
 ReloadFromToml();  // file I/O holding lock!
 ```
-as a forbidden pattern. Production `HookEngine.cpp:521-543` does **exactly this**
-on the QuickSyncFromSharedState slow path. The rule wording is correct; the
-code is non-compliant. **Fix shipping in Phase 3** of architecture review
-design (see `docs/plans/2026-05-19-architecture-review-design.md`). Once
-Phase 3 PR lands, Rule 11.3 example will match reality again.
+as a forbidden pattern that production code did anyway on the
+QuickSyncFromSharedState slow path.
+
+**Fix landed in P3c** (`574ef2a`): hook QuickSync now sets
+`pendingConfigReload_` instead of running ReloadFromToml inline; worker
+OnTickPoll drains the flag and runs Reload on the worker thread.
+**P3d** (`ff0437b`) cleaned up by collapsing the four legacy Reload*
+methods into one `RebuildSnapshotFromToml` helper. Rule 11.3 example
+now matches reality.
 
 ### B. Inconsistent `LowLevelHooksTimeout` documentation in HookEngine comments
 
