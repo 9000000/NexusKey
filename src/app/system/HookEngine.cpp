@@ -686,10 +686,10 @@ void HookEngine::ReloadFromToml() {
     // Post-P3c, ReloadFromToml runs on the worker thread (Rule 11.2 forbids
     // TOML parse on hook), so the inline engine swap raced against the hook
     // hot path's `engine_->Peek/Push/Count` reads — UAF discovered by
-    // run-chaos.ps1 -InjectConfigReloadMs 50 (5×11 failures: composition
-    // state lost mid-word). Defer both the commit AND the engine recreate
-    // to ApplyConfigOnHookThread; the hook drain runs them between
-    // keystrokes where they're single-writer safe.
+    // run-chaos.ps1 -InjectConfigReloadMs 50 (11 / 55 failures, 5 hosts ×
+    // 11 tests: composition state lost mid-word). Defer both the commit
+    // AND the engine recreate to ApplyConfigOnHookThread; the hook drain
+    // runs them between keystrokes where they're single-writer safe.
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
     ApplyConfig(config);
     // Reload `[[hotkeys]]` from TOML alongside main config — keeps registry in
@@ -3965,8 +3965,14 @@ void HookEngine::DrainHookCommands() {
     // land on the same drain when triggered by a focus event.
     if (deferredConfigApply_.load(std::memory_order_acquire)
         && engine_ && engine_->Count() == 0) {
-        deferredConfigApply_.store(false, std::memory_order_release);
-        ApplyConfigOnHookThread();
+        // exchange(false) — defensive over load+store: even though
+        // DrainScope guarantees single-drain-at-a-time today, a future
+        // Phase 5 split could fragment the drain across classes. The
+        // CAS-style swap makes "I'm the one consuming this latch"
+        // explicit regardless of drain serialisation.
+        if (deferredConfigApply_.exchange(false, std::memory_order_acq_rel)) {
+            ApplyConfigOnHookThread();
+        }
     }
 }
 

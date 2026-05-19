@@ -77,6 +77,44 @@ truth for ConfigSnapshot rebuild", etc.).
 - HookEngine.cpp grows past 5000 LOC from unrelated work
 - Need to plug a 5th component (e.g. metrics) and lack a clean seam
 
+## 🟡 `appSendMethodOverrides_` race — last plain map not in ConfigSnapshot (review 2026-05-19)
+
+P3d moved every variable-size config map (excluded apps, TSF apps,
+macro table, encoding overrides, input-method overrides) into
+ConfigSnapshot with RCU publish. One sibling field was left behind:
+`appSendMethodOverrides_` (unordered_map<wstring, int8_t> on
+HookEngine), not in the snapshot because only main-thread
+ClassifyFocusedWindow reads it.
+
+Phase 2-3's thread split exposes the gap:
+
+- Writer: `RebuildSnapshotFromToml` on worker thread (HookEngine.cpp:2925)
+  does `appSendMethodOverrides_.clear()` then populates entry-by-entry.
+- Reader: `ClassifyFocusedWindow` on main thread (HookEngine.cpp:3220)
+  does `appSendMethodOverrides_.find(cls.exeName)`.
+
+Pre-Phase-2 both ran on main → no race. Post-Phase-2 main thread
+classify can land mid-rebuild on worker → torn read. Concretely: a
+classify happening in the ~5 ms TOML parse window can hit a freshly-
+cleared map before the entries land → user temporarily loses the
+per-app send-method override for one focus event. Self-recovering
+(next focus re-classifies after rebuild completes).
+
+Strict Rule 11.3 violation but tightly bounded.
+
+**Fix candidates:**
+
+1. Promote to ConfigSnapshot — add `unordered_map<wstring, int8_t>
+   appSendMethodOverrides;` to the struct, populate alongside the
+   encoding/method maps in `ConfigSnapshot::Build`, migrate the
+   `ClassifyFocusedWindow` reader to `snap->appSendMethodOverrides`.
+   Same pattern as Phase 3c's reader migration; ~20 LOC.
+2. Guard the map with `stateMutex_` on both sides — simpler but
+   forces main-thread Classify to take a lock that worker may
+   hold for the 5 ms rebuild → potential blip in focus-change UX.
+
+→ Recommend (1) when picking up follow-up work.
+
 ## 🟢 ThreadIdProvider for `pendingConfigReload_` routing tests (review 2026-05-19)
 
 Phase 3 added thread-aware routing in `QuickSyncFromSharedState`:
