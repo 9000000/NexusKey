@@ -85,7 +85,14 @@ param(
     [string]$VKeyExe,
     [string]$RunnerExe,
     [string]$HookLog,
-    [string]$OutDir
+    [string]$OutDir,
+
+    # Phase 4 chaos extension: bump SharedState.configGeneration every N ms
+    # during the test, forcing HookEngine through the QuickSync slow path +
+    # worker-tick deferred reload (Phase 3c contract). 0 = disabled (default).
+    # See docs/plans/2026-05-19-architecture-review-design.md §Phase 4
+    # production chaos extension.
+    [int]$InjectConfigReloadMs = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -352,6 +359,85 @@ function Stop-VKey {
 }
 
 # --- Per-host runner driver --------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 4 chaos extension — config reload injector.
+#
+# Opens the existing "Local\VKeySharedState" memory map and runs a background
+# loop that, every IntervalMs, performs the seqlock-write dance for
+# configGeneration:
+#
+#   epoch += 1   (odd → writers see "write in progress")
+#   configGeneration += 1  (the value HookEngine compares against)
+#   epoch += 1   (even → readers see stable)
+#
+# Offsets are locked by `offsetof` static_asserts in SharedState.h:
+#   epoch              → offset 12  (uint32_t)
+#   configGeneration   → offset 33  (uint8_t)
+#
+# HookEngine's QuickSync slow path sees the bump on its next call; on the
+# hook thread it sets pendingConfigReload_, the worker tick drains it →
+# ReloadFromToml runs on worker. Per Phase 3c, this exercises the
+# "TOML parse off hook" contract under typing load.
+# ──────────────────────────────────────────────────────────────────────────
+function Start-ConfigReloadInjector {
+    param([int]$IntervalMs)
+
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.ApartmentState = "STA"
+    $rs.Open()
+
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+
+    [void]$ps.AddScript({
+        param([int]$Interval)
+        $mmf = $null
+        try {
+            $mmf = [System.IO.MemoryMappedFiles.MemoryMappedFile]::OpenExisting("Local\VKeySharedState")
+        } catch {
+            # VKey not yet running, or no permission. Silent — main test
+            # will exit on its own if VKey actually failed to start.
+            return
+        }
+        $accessor = $mmf.CreateViewAccessor()
+        try {
+            while ($true) {
+                Start-Sleep -Milliseconds $Interval
+                # Seqlock: bump epoch odd → write configGeneration → bump epoch even.
+                # Matches SharedStateManager::Write() pattern (SharedStateManager.cpp:193).
+                $epoch = $accessor.ReadUInt32(12)
+                $accessor.Write(12, [uint32]($epoch + 1))   # odd: writing
+                $gen = $accessor.ReadByte(33)
+                $accessor.Write(33, [byte](($gen + 1) -band 0xFF))
+                $accessor.Write(12, [uint32]($epoch + 2))   # even: stable
+            }
+        } finally {
+            $accessor.Dispose()
+            $mmf.Dispose()
+        }
+    }).AddArgument($IntervalMs)
+
+    $handle = $ps.BeginInvoke()
+    return @{
+        PS       = $ps
+        Handle   = $handle
+        Runspace = $rs
+    }
+}
+
+function Stop-ConfigReloadInjector {
+    param($Injector)
+    if ($null -eq $Injector) { return }
+    try {
+        # Stop() aborts the runspace's busy loop + releases the MMF handle
+        # via the script's `finally` block (or our `try/finally` here as
+        # a safety net for forcible termination).
+        $Injector.PS.Stop()
+    } catch { }
+    try { $Injector.Runspace.Close() } catch { }
+    try { $Injector.PS.Dispose() } catch { }
+}
+
 function Invoke-ChaosForHost {
     param([string]$HostName)
 
@@ -408,6 +494,15 @@ function Invoke-ChaosForHost {
     # with CreateNoWindow=true depending on shell hosts.
     [void](Focus-Window -Hwnd $hwnd)
 
+    # Phase 4 chaos: spawn the config-reload injector if requested. Starts
+    # AFTER the runner is up (so VKey has registered the SharedState map)
+    # and is torn down in the finally below regardless of test outcome.
+    $configInjector = $null
+    if ($InjectConfigReloadMs -gt 0) {
+        $configInjector = Start-ConfigReloadInjector -IntervalMs $InjectConfigReloadMs
+        Write-Host "[$HostName] config-reload injector active (interval=${InjectConfigReloadMs}ms)" -ForegroundColor DarkYellow
+    }
+
     # Stream stdout line-by-line, watching for the prompt that gates the
     # report-write phase. Mirror everything to log file + console.
     $logWriter = [System.IO.StreamWriter]::new($logPath)
@@ -433,6 +528,7 @@ function Invoke-ChaosForHost {
         if ($err) { $logWriter.WriteLine("STDERR:"); $logWriter.WriteLine($err) }
     } finally {
         $logWriter.Close()
+        Stop-ConfigReloadInjector -Injector $configInjector
     }
 
     $exitCode = $proc.ExitCode

@@ -3,6 +3,44 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
+## 🟢 Phase 5 — HookEngine class split: DEFERRED (decision 2026-05-19)
+
+Design doc §Phase 5 marked the class split CONDITIONAL: "decide after
+Phase 3 ships". With Phase 2-4 now landed on `feat/architecture-review-v3.1`,
+the four service boundaries the reviewer proposed are visible:
+
+| Boundary | Existing component | Could become |
+|---|---|---|
+| Command intake | HookCommandMailbox + DrainHookCommands + drain handlers | `HookCommandQueue` class |
+| Config snapshot | ConfigSnapshot + RebuildSnapshotFromToml + pendingConfigReload_ | `ConfigSnapshotPublisher` class |
+| Output dispatch | IOutputInjector + injector_ + injector strategies | already extracted (Sprint 2 T3) |
+| State mutator | engine_ + composition fields + 8× VKEY_ASSERT_HOOK_THREAD methods | `HookStateMutator` class |
+
+HookEngine.cpp is 4239 LOC post Phase 4 — large but not unmanageable.
+Pre-Phase-2 was ~3500 LOC; net +700 LOC for mailbox infra + new method
+bodies + comments. The seams are **conceptually clear** even without
+the class boundary; readers can navigate via the section comments
+("Phase 2a — Hook-thread command drain", "Phase 3d — single source of
+truth for ConfigSnapshot rebuild", etc.).
+
+**Defer rationale:**
+
+1. Architecture review's correctness goals (Rule 11.2 + 11.3 compliance,
+   single-writer invariant, RCU for variable-size config) are already
+   met by Phase 2-4. Phase 5 is structural cleanup, not correctness.
+2. Refactor cost: 2-3 days work + high regression risk (touching 8
+   composition-state methods, the LL callback, the drain dispatch).
+3. No production signal yet that the size is a debugging burden.
+   Solo-dev workflow — anh navigates the file fine today.
+4. ThreadIdProvider (separate TODO below) would come for free with the
+   split's `ThreadContext`, but the test gap it would close is also
+   indirectly covered by Windows chaos.
+
+**Trigger to revisit:** any one of —
+- Incident debugging a Phase 2-4-touched section takes > 1 day
+- HookEngine.cpp grows past 5000 LOC from unrelated work
+- Need to plug a 5th component (e.g. metrics) and lack a clean seam
+
 ## 🟢 ThreadIdProvider for `pendingConfigReload_` routing tests (review 2026-05-19)
 
 Phase 3 added thread-aware routing in `QuickSyncFromSharedState`:

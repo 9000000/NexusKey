@@ -255,8 +255,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // its own GetMessage pump. This decouples LL hook dispatch from the main/UI
     // thread (which runs Sciter rendering, SharedState locks, config reloads).
     // Win10+ silently removes LL hooks whose installer-thread pump can't service
-    // events within LowLevelHooksTimeout (clamped to 1000ms) — keeping the hook
-    // thread minimal + dedicated avoids hitting that deadline.
+    // events within `LowLevelHooksTimeout` (default 300 ms, configurable up to
+    // ~1000 ms via `HKCU\Control Panel\Desktop\LowLevelHooksTimeout`) — keeping
+    // the hook thread minimal + dedicated avoids hitting that deadline.
     cachedHInstance_ = hInstance;
     hookThreadReady_.store(false);
     hookThread_ = std::thread(&HookEngine::HookThreadProc, this);
@@ -3497,8 +3498,9 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     // so the app's main thread has time to drain its input queue and advance
     // the caret; then retry. The hook thread holds back its own callback while
     // sleeping, so no further physical keys race in. 30 ms upper bound is well
-    // below LowLevelHooksTimeout (default 500 ms) and dwarfs the typical 5-10 ms
-    // catch-up needed at chaos 500 µs inter-key. Only invokes the SendInput
+    // below LowLevelHooksTimeout (default 300 ms per Win32 docs; max ~1000 ms
+    // via registry) and dwarfs the typical 5-10 ms catch-up needed at chaos
+    // 500 µs inter-key. Only invokes the SendInput
     // fallback if the wait is exhausted — true human-pace typing never hits it.
     if (IsSyncReplaceChannel()) {
         // RichEdit path delegates to RichEditEmReplaceSelInjector.
