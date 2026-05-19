@@ -3,6 +3,31 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
+## ✅ RESOLVED: P0 — engine_ single-writer violation (2026-05-19, P3e `8e9b5fb`)
+
+The P0 race I flagged during the Phase 3 review and deferred here with
+"Phase 3 RCU will close it" was incomplete — Phase 3c moved
+ReloadFromToml off the hook thread but kept `CommitComposition` +
+`engine_ = Create()` inline on the worker thread, racing against the
+hook hot path's unprotected `engine_->Peek/Push/Count` reads.
+
+`run-chaos.ps1 -InjectConfigReloadMs 50` surfaced this as 11/55 host
+failures: mid-word composition state loss, scrambled output (e.g.
+`uống` → `uôngs`, `trường` → `ưư`, `bình thường` → `thfươ ng`).
+
+P3e fix collapses to one writer (hook thread) via the dormant
+`ApplyConfigOnHookThread` handler P2c had pre-wired into the
+kConfigApply mailbox bit. ReloadFromToml + QuickSync slow path now
+publish the new config_ and POST kConfigApply; the hook drain runs
+CommitComposition + engine swap + currentMethod_.store atomically
+between keystrokes. Single-writer invariant restored across all
+`engine_` mutation paths.
+
+**Lesson:** "this race will be closed by Phase X" is not a safe
+deferral if Phase X doesn't actually RCU the field. Validate the
+deferred fix delivers what was promised; chaos under stress is the
+behavioral gate.
+
 ## 🟢 Phase 5 — HookEngine class split: DEFERRED (decision 2026-05-19)
 
 Design doc §Phase 5 marked the class split CONDITIONAL: "decide after
