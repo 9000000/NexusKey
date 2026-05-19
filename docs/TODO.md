@@ -580,61 +580,6 @@ twice.
 
 ---
 
-## 🟡 Architecture proposal alignment review — Module B plan (2026-05-08)
-
-Anh proposed a 4-module architecture (A: lock-free hook ring buffer, B:
-HWND→Profile cache, C: 2D FSM transition table, D: typing-burst test
-framework). Codebase mapping + investment decision below.
-
-### Alignment matrix
-
-| Module | Align | Status | Gap |
-|---|---|---|---|
-| A — Hook ring buffer | CLOSED 2026-05-09 | Watchdog (PR #154) shipped; SPSC ring half closed | See `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` |
-| B — Smart Focus / App Profile cache | ~60% | `cachedFocusedHwnd_` single-slot atomic + `ClassifyWindow` function | No HWND→Profile lookup map; re-classifies on every focus event |
-| C — Engine 2D FSM table | CLOSED — not viable | If/case engine (~327 branches in `PushChar`); FSM codegen tool exists (PR #132 `4a52399`) but rewrite cancelled — codegen output ~6MB exceeds <3MB target | Table-driven FSM not viable for Vietnamese phonology dimensionality. Path G (custom keymap) replaces. |
-| D — Test framework | ~85% (deferred) | `VKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
-
-### Module A vs B — B wins for first invest
-
-| Criterion | A — Ring Buffer | B — HWND Profile Cache |
-|---|---|---|
-| Effort | High (~1-2 sprint, foundation rewire) | Low (~1.5 day) |
-| Risk | High — race conditions, key down/up reorder, modifier desync | Low — pure caching layer, easy to audit |
-| Premise verified? | ❌ — anh questioned H6 premise | ✅ — measurable Win32 syscall count before/after |
-| Existing partial coverage | `HeartbeatPublisher` + `VKeyWatchdog.exe` (PR #154); `HookSelfHealer` reverted 2026-05-17 — own-process bypass | Single-slot `cachedFocusedHwnd_` only |
-| Failure mode if mistake | Lost key events / wrong order / break ALL apps | Stale cache → 1 misclassify / HWND, recover via invalidation |
-
-**Decision:** start with B. A defers until LL hook timeout / parallel
-race reproduces with hard evidence — current chaos PASS shows no signal.
-
-### Module B — implementation plan
-
-Branch `feat/hwnd-app-profile-cache`. Shape:
-
-```cpp
-// HookEngine.h (new fields)
-struct AppProfile {
-    NextKey::Output::WindowClassification classification;
-    DWORD pid;          // HWND-reuse detector: PID change → re-classify
-    uint64_t cachedAt;  // GetTickCount64; for LRU eviction
-};
-std::unordered_map<HWND, AppProfile> appProfileCache_;
-static constexpr size_t kMaxAppProfileCache = 64;
-```
-
-Wire into `ClassifyWindow` path: on focus change lookup HWND first; if
-hit + same PID → use cached; if miss / PID-mismatch → re-classify +
-cache. Invalidate on `EVENT_OBJECT_DESTROY` (AdviseHook required). LRU
-evict when full.
-
-Test plan:
-- Chaos run before/after to confirm no regression
-- Manual Alt+Tab between known apps to verify cache hits (count
-  ClassifyWindow calls per HOOK_LOG)
-
----
-
 ## 🟡 Auto-cap on Enter — keystroke-FSM asymmetry vs space (2026-05-08)
 
 **Symptom:** Pressing Enter to break a line, then typing a letter → letter
@@ -812,15 +757,6 @@ per commit. No premature optimization without driver.
   `ClassicSettingsDialog.cpp:813,991,998,1033`. Candidate for a
   `PostToTrayWindow(UINT msg, WPARAM = 0, LPARAM = 0)` helper in `AppHelpers.h`.
   Low priority — consistent with existing pattern.
-
-- [ ] **`HookEngine::CheckConfigEvent()` has no callers in main EXE**
-  TSF DLL uses its own `EngineController::CheckConfigEvent` (separate class).
-  Marked `// Legacy path — kept for TSF DLL compatibility` but that comment is
-  misleading: the TSF DLL never called the HookEngine version. Candidate for
-  deletion along with `configEvent_` member + `Initialize()` call at
-  `HookEngine.cpp:129`. Out of scope for this fix.
-
----
 
 ## 🟡 Auto-caps + TSF Apps Feedback — open follow-ups (2026-04-21)
 
