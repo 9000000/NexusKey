@@ -140,10 +140,35 @@ public:
         return wakePosted_.load(std::memory_order_acquire);
     }
 
+    // ── Drain-scope guard (Phase 2d) ────────────────────────────────────
+    /// True for the lifetime of a `DrainScope` somewhere. Production
+    /// fueling for debug-only `assert(!IsDraining())` checks at forbidden
+    /// re-entry points (Phase 4 replay harness will lean on this).
+    /// Atomic — readable from any thread without TSAN warnings.
+    [[nodiscard]] bool IsDraining() const noexcept {
+        return inDrain_.load(std::memory_order_acquire);
+    }
+
+    /// RAII helper claimed by `HookEngine::DrainHookCommands` for the
+    /// duration of dispatch. Flips `IsDraining()` to true on construction
+    /// and back on destruction. Asserts (debug) if a nested scope is
+    /// attempted on the same mailbox — that's the "drain handler called
+    /// DrainHookCommands recursively" bug pattern.
+    class DrainScope {
+    public:
+        explicit DrainScope(HookCommandMailbox& mb) noexcept;
+        ~DrainScope() noexcept;
+        DrainScope(const DrainScope&)            = delete;
+        DrainScope& operator=(const DrainScope&) = delete;
+    private:
+        HookCommandMailbox& mailbox_;
+    };
+
 private:
     std::atomic<std::uint32_t>                            bits_{0};
     std::atomic<std::shared_ptr<const FocusClassification>> pendingFocus_;
     std::atomic<bool>                                     wakePosted_{false};
+    std::atomic<bool>                                     inDrain_{false};
     WakeFn                                                wakeFn_;
 };
 

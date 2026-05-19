@@ -8,7 +8,30 @@
 
 #include "app/system/HookCommandMailbox.h"
 
+#include <cassert>
+
 namespace NextKey {
+
+// ────────────────────────────────────────────────────────────────────────────
+// DrainScope (Phase 2d) — RAII guard, sets IsDraining() for its lifetime.
+// Nested scope on the same mailbox trips a Debug assertion: if a drain
+// handler is somehow re-entering DrainHookCommands, we want to crash
+// immediately in dev rather than silently corrupt mailbox state.
+// ────────────────────────────────────────────────────────────────────────────
+HookCommandMailbox::DrainScope::DrainScope(HookCommandMailbox& mb) noexcept
+    : mailbox_(mb) {
+    const bool alreadyDraining =
+        mailbox_.inDrain_.exchange(true, std::memory_order_acq_rel);
+    (void)alreadyDraining;
+    assert(!alreadyDraining &&
+           "Nested DrainHookCommands — a drain handler must not call "
+           "DrainHookCommands recursively. Check the call graph from the "
+           "handler that ran when this assertion fired.");
+}
+
+HookCommandMailbox::DrainScope::~DrainScope() noexcept {
+    mailbox_.inDrain_.store(false, std::memory_order_release);
+}
 
 void HookCommandMailbox::Post(std::uint32_t bit,
                               std::shared_ptr<const FocusClassification> cls) noexcept {

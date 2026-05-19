@@ -494,6 +494,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/PerfHistogramTest.cpp
     tests/HookCommandMailboxTest.cpp
     tests/FocusInterleavingTest.cpp
+    tests/ThreadOwnershipTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp

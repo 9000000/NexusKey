@@ -19,6 +19,7 @@
 #include "core/Debug.h"
 #include "core/CrashLog.h"
 #include <algorithm>
+#include <cassert>
 #include <cstdio>
 #include <exception>
 #include <tlhelp32.h>
@@ -46,6 +47,36 @@ static constexpr UINT WM_APP_HOOK_COMMAND   = WM_APP + 2;
 /// indicate jnativehook re-arming during a JVM session).
 static constexpr WPARAM REINSTALL_REASON_CHROMIUM = 0;
 static constexpr WPARAM REINSTALL_REASON_JAVA     = 1;
+
+// ═══════════════════════════════════════════════════════════
+// VKEY_ASSERT_HOOK_THREAD — Phase 2d single-writer invariant.
+//
+// Composition-state mutation entry points (ResetComposition,
+// CommitComposition, ClearWordState, ReplaceComposition,
+// ReplayCommittedChars, HandleAlphaKey, HandleBackspace,
+// ApplyConfigOnHookThread) MUST run on the hook thread. The macro is
+// debug-only (NDEBUG elides it) — Release builds pay nothing. Pre-Start
+// is a free pass: hookThreadId_ is 0 until HookThreadProc claims it,
+// and Start() legitimately runs composition setup on main before the
+// hook thread spawns.
+// ═══════════════════════════════════════════════════════════
+#ifdef NDEBUG
+  #define VKEY_ASSERT_HOOK_THREAD() ((void)0)
+#else
+  #define VKEY_ASSERT_HOOK_THREAD()                                            \
+      do {                                                                     \
+          const DWORD _expected = hookThreadId_;                                \
+          if (_expected != 0) {                                                 \
+              const DWORD _current = GetCurrentThreadId();                      \
+              if (_current != _expected) {                                      \
+                  HOOK_LOG(L"VKEY_ASSERT_HOOK_THREAD violated: tid=%lu, expected hook tid=%lu — %hs", \
+                           _current, _expected, __func__);                      \
+                  assert(_current == _expected &&                               \
+                         "composition-state mutation must run on the hook thread"); \
+              }                                                                 \
+          }                                                                     \
+      } while (0)
+#endif
 
 // ═══════════════════════════════════════════════════════════
 // HOOK_LOG → unified runtime-gated Logger (core/Logger.h).
@@ -1853,6 +1884,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
 // ═══════════════════════════════════════════════════════════
 
 bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
+    VKEY_ASSERT_HOOK_THREAD();
     bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
     wchar_t originalCh = static_cast<wchar_t>(vkCode);
     if (!upper) originalCh = towlower(originalCh);
@@ -2015,6 +2047,7 @@ bool HookEngine::HandleVniDigitKey(DWORD vkCode) {
 }
 
 void HookEngine::HandleBackspace() {
+    VKEY_ASSERT_HOOK_THREAD();
     inputHistory_.push_back(kBackspaceMarker);
     engine_->Backspace();
 
@@ -2044,6 +2077,7 @@ void HookEngine::HandleBackspace() {
 }
 
 bool HookEngine::CommitComposition() {
+    VKEY_ASSERT_HOOK_THREAD();
     HOOK_LOG(L"  CommitComposition (count=%zu, prev='%s')", engine_->Count(), previousComposition_.c_str());
 
     // Check quick consonant BEFORE Commit() resets the engine.
@@ -2093,6 +2127,7 @@ bool HookEngine::CommitComposition() {
 }
 
 void HookEngine::ResetComposition() {
+    VKEY_ASSERT_HOOK_THREAD();
     HOOK_LOG(L"  ResetComposition (count=%zu, prev='%s')", engine_->Count(), previousComposition_.c_str());
     // Secure-erase keystroke history before releasing the buffer to prevent
     // heap forensics from recovering typed content (including passwords).
@@ -2108,6 +2143,7 @@ void HookEngine::ResetComposition() {
 }
 
 void HookEngine::ClearWordState() {
+    VKEY_ASSERT_HOOK_THREAD();
     engine_->Reset();
     previousComposition_.clear();
     previousEncodedWidths_.clear();
@@ -2141,6 +2177,7 @@ void HookEngine::SetCommitUndoReady() {
 // ═══════════════════════════════════════════════════════════
 
 void HookEngine::ReplayCommittedChars() {
+    VKEY_ASSERT_HOOK_THREAD();
     if (commitStack_.empty()) {
         HOOK_LOG(L"  ReplayCommittedChars: stack empty, nothing to replay");
         commitUndoState_ = CommitUndoState::Idle;
@@ -3263,6 +3300,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 ///
 /// See OnFocusChanged() for the detection logic + injector publish.
 void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectVk) {
+    VKEY_ASSERT_HOOK_THREAD();
     PERF_SCOPE(::NextKey::Perf::Stage::Replace);
     HWND target = GetInputTarget();
     if (!target) {
@@ -3787,6 +3825,12 @@ bool HookEngine::ReinstallKeyboardAndMouseHooks() {
 // ═══════════════════════════════════════════════════════════
 
 void HookEngine::DrainHookCommands() {
+    // Phase 2d: re-entrancy guard. Trips a Debug assertion if a drain
+    // handler somehow re-enters DrainHookCommands — that's the
+    // "ApplyFoo() called something that called DrainHookCommands again"
+    // bug pattern, which would corrupt mailbox bit state silently.
+    HookCommandMailbox::DrainScope scope(mailbox_);
+
     const std::uint32_t bits = mailbox_.DrainBits();
     if (!bits) return;  // common path — no work pending
 
@@ -4044,6 +4088,7 @@ void HookEngine::ApplyToggleVNOnHookThread() {
 // migration of the worker handler — gets correct behaviour without
 // requiring header changes.
 void HookEngine::ApplyConfigOnHookThread() {
+    VKEY_ASSERT_HOOK_THREAD();
     // Pull the freshest published config snapshot. Phase 3's RCU producer
     // will guarantee a non-null snapshot here; the null check is defensive
     // for the pre-Phase-3 transitional state.
