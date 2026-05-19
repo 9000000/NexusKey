@@ -493,6 +493,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/HotkeyRegistryTest.cpp
     tests/PerfHistogramTest.cpp
     tests/HookCommandMailboxTest.cpp
+    tests/FocusInterleavingTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp

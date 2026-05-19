@@ -60,6 +60,7 @@ namespace HookCommand {
 /// can atomically swap a newer snapshot in without copying.
 struct FocusClassification {
     std::uintptr_t hwndOpaque{0};
+    std::uint32_t  pid{0};        // GetWindowThreadProcessId result; 0 = unknown
     std::wstring   exeName;
     // Classification flags — populated by ClassifyFocusedWindow.
     bool isExcluded{false};
@@ -70,16 +71,23 @@ struct FocusClassification {
     bool isQtApp{false};
     bool isVB6{false};
     bool isWebView2{false};
+    bool isJavaApp{false};
     // Dispatch-shape flags derived from classification + per-app overrides.
     bool localSkipEmpty{false};
     bool localNeedBait{false};
     bool localClipboard{false};
     bool localEditMsg{false};
     bool localUseClipboardInjector{false};
-    // -1 = "no override; use the global value". Numeric placeholders keep
-    // the engine/encoding enums out of this header (Linux-portable).
-    int methodOverride{-1};
-    int encodingOverride{-1};
+    bool localElectronApp{false};  // (isElectron || isWebView2) && !isConsole
+    // RESOLVED target values for the focused app. Classify captures the
+    // current global on main alongside any per-app override, so the hook
+    // thread never reads `globalCodeTable_` / `globalInputMethod_`
+    // directly (those are still mutated from main by ApplyConfig /
+    // SetCodeTable / ReloadFromToml). Numeric placeholders keep the
+    // engine/encoding enums out of this header (Linux-portable);
+    // -1 means "classify ran without a window" — Apply early-returns.
+    int targetMethod{-1};      // InputMethod enum value
+    int targetCodeTable{-1};   // CodeTable enum value
     // True if the trigger HWND failed every visibility/size sanity check
     // and should be classified for dispatch but NOT update currentExe_.
     bool skipAppTracking{false};

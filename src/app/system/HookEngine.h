@@ -260,6 +260,20 @@ private:
     [[nodiscard]] bool IsWebView2App(HWND topLevel, const std::wstring& exeFullPath) noexcept;
     void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with effective mode
     bool VerifyExcludedState();        // Check if foreground is still excluded; clears stale flag if not
+    // Phase 2b — two-phase focus.
+    //
+    //   ClassifyFocusedWindow runs on the CALLER thread (today: main, via
+    //   WinEventProc / OnTickPoll). Heavy Win32 inspection lives here:
+    //   ClassifyWindow + GetExeNameForHwnd + IsWebView2App + cache lookup/
+    //   store + override-map reads. Per Rule 11.2 these MUST NOT run from
+    //   the LL hook callback (CreateToolhelp32Snapshot violates the 30ms
+    //   p99 budget). Returns a fully-populated FocusClassification POD.
+    //
+    //   OnFocusChanged is now a thin shim: classify + Post(kFocusChanged).
+    //   It stays on main; the actual state mutation runs on the hook
+    //   thread via the drain → ApplyFocusOnHookThread path (declared
+    //   alongside the mailbox above).
+    [[nodiscard]] FocusClassification ClassifyFocusedWindow(HWND triggerHwnd) noexcept;
     void OnFocusChanged(HWND triggerHwnd = nullptr);
     // Populate cachedFocusedHwnd_/cachedFocusedClass_ from `foreground` via AttachThreadInput.
     // Called from OnFocusChanged and on-demand from TryEditMessagePaste when cache is stale.
