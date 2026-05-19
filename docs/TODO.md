@@ -3,7 +3,7 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
-## ✅ RESOLVED: P0 — engine_ single-writer violation (2026-05-19, P3e `8e9b5fb`)
+## ✅ RESOLVED: P0 — engine_ single-writer violation (2026-05-19, P3e `8e9b5fb` + P3f `775487d`)
 
 The P0 race I flagged during the Phase 3 review and deferred here with
 "Phase 3 RCU will close it" was incomplete — Phase 3c moved
@@ -11,22 +11,33 @@ ReloadFromToml off the hook thread but kept `CommitComposition` +
 `engine_ = Create()` inline on the worker thread, racing against the
 hook hot path's unprotected `engine_->Peek/Push/Count` reads.
 
-`run-chaos.ps1 -InjectConfigReloadMs 50` surfaced this as 11/55 host
-failures: mid-word composition state loss, scrambled output (e.g.
-`uống` → `uôngs`, `trường` → `ưư`, `bình thường` → `thfươ ng`).
+`run-chaos.ps1 -InjectConfigReloadMs 50` surfaced this in two layers:
 
-P3e fix collapses to one writer (hook thread) via the dormant
-`ApplyConfigOnHookThread` handler P2c had pre-wired into the
-kConfigApply mailbox bit. ReloadFromToml + QuickSync slow path now
-publish the new config_ and POST kConfigApply; the hook drain runs
-CommitComposition + engine swap + currentMethod_.store atomically
-between keystrokes. Single-writer invariant restored across all
-`engine_` mutation paths.
+- **Layer 1 (UAF):** 11/55 failures — mid-word composition state loss,
+  scrambled output (e.g. `uống` → `uôngs`, `trường` → `ưư`,
+  `bình thường` → `thfươ ng`). **P3e fix:** collapse to one writer
+  (hook thread) via the dormant `ApplyConfigOnHookThread` handler P2c
+  had pre-wired into the kConfigApply mailbox bit. ReloadFromToml +
+  QuickSync slow path publish the new config_ and post kConfigApply;
+  the hook drain runs CommitComposition + engine swap +
+  currentMethod_.store atomically. UAF closed → 6/55 fails left.
+
+- **Layer 2 (mid-word reset):** P3e's drain ran ApplyConfigOnHookThread
+  unconditionally on every kConfigApply bit, recreating `engine_` even
+  when `engine_->Count() > 0` (uncommitted word). User-visible quirk:
+  partial words committed visibly. **P3f fix:** drain latches the
+  apply via `deferredConfigApply_` atomic and gates on
+  `engine_->Count() == 0`. The apply lands on the keystroke following
+  a natural word commit / backspace-empty / focus reset. Imperceptible
+  at human typing pace. Stress chaos confirms 0/55 engine bugs (only
+  the Chrome omnibox autocomplete flake remains — non-engine).
 
 **Lesson:** "this race will be closed by Phase X" is not a safe
 deferral if Phase X doesn't actually RCU the field. Validate the
 deferred fix delivers what was promised; chaos under stress is the
-behavioral gate.
+behavioral gate. AND: even when the UAF is fixed, the behavioral
+trade-off (mid-word reset on reload) is itself a visible quirk worth
+fixing. Stress chaos surfaces both layers in one run.
 
 ## 🟢 Phase 5 — HookEngine class split: DEFERRED (decision 2026-05-19)
 
