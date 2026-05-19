@@ -404,7 +404,10 @@ private:
     std::unordered_set<std::wstring> webView2PositiveCache_;  // full exe path → known WebView2 host (positive-only; see IsWebView2App)
     std::atomic<bool> skipEmptyChar_{false};  // Skip U+202F for Qt/Electron and Console apps
     std::atomic<bool> useClipboardPaste_{false};  // VB6 and legacy ANSI-internal apps need clipboard paste
-    DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)
+    // Phase 2c: atomic to lock the cross-thread access pattern explicit.
+    // Read on the worker thread inside OnTickPoll (PID-changed fallback);
+    // written on the hook thread inside ApplyFocusOnHookThread.
+    std::atomic<DWORD> lastForegroundPid_{0};
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
     bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode

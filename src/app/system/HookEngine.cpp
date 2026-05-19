@@ -464,62 +464,13 @@ void HookEngine::HookThreadProc() {
 }
 
 void HookEngine::ToggleVietnameseMode() {
-    std::lock_guard<std::mutex> _lock(stateMutex_);
-    // Block toggle in excluded apps. Use cached excludedPid_ + foreground PID
-    // to distinguish "genuinely in excluded app" from "stale flag after leaving".
-    // PID check is cheap (no OpenProcess) and immune to transient tray/taskbar focus.
-    if (excludeApps_ && isExcludedApp_.load(std::memory_order_acquire)) {
-        HWND fg = GetForegroundWindow();
-        DWORD fgPid = 0;
-        if (fg) GetWindowThreadProcessId(fg, &fgPid);
-        const DWORD cachedPid = excludedPid_.load(std::memory_order_acquire);
-        if (fgPid == cachedPid && cachedPid != 0) {
-            HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (excluded pid=%u)", cachedPid);
-            return;
-        }
-        // Different PID — user left excluded app, flag is stale.
-        // Force V: user perceived E, wants to toggle to V.
-        isExcludedApp_.store(false, std::memory_order_release);
-        vietnameseMode_.store(true, std::memory_order_release);
-        NotifyModeChange();
-        HOOK_LOG(L"  ToggleVietnameseMode: stale excluded → forced Vietnamese (fg pid=%u)", fgPid);
-        if (beepOnSwitch_) MessageBeep(MB_OK);
-        return;
-    }
-
-    // Commit any pending composition before switching (skip if CJK-suppressed — engine inactive)
-    if (!layoutSuppressed_ && engine_->Count() > 0) {
-        CommitComposition();
-    }
-
-    // Cancel backspace-into-committed-word (replay in wrong mode would be wrong)
-    CancelCommitUndo();
-    // Drop digit-led state — engine is empty so CommitComposition above did not clear it
-    digitLedWord_ = false;
-
-    // Toggle is single-source (main thread only — Toggle never runs from hook
-    // path), so load + negate + store is race-free for the toggle itself.
-    // Hook readers see one value or the other, never a torn intermediate.
-    const bool newMode = !vietnameseMode_.load(std::memory_order_acquire);
-    vietnameseMode_.store(newMode, std::memory_order_release);
-    NEXTKEY_LOG(L"HookEngine: mode = %s", newMode ? L"Vietnamese" : L"English");
-
-    // Save per-app mode
-    if (smartSwitch_) {
-        if (currentExe_.empty()) {
-            currentExe_ = GetExeNameForHwnd(GetForegroundWindow());
-        }
-        if (!currentExe_.empty()) {
-            appModeMap_[currentExe_] = newMode;
-            smartSwitchMgr_.SetAppMode(currentExe_, newMode);
-        }
-    }
-
-    if (beepOnSwitch_) {
-        MessageBeep(newMode ? MB_OK : MB_ICONASTERISK);
-    }
-
-    NotifyModeChange();
+    // Phase 2c: ToggleVietnameseMode is called from any thread (tray menu
+    // on main, hotkey on either main or the hook pump itself when fired
+    // via HotkeyRegistry, modifier-only double-tap). All composition-state
+    // writes (CommitComposition, vietnameseMode_, appModeMap_, etc.) must
+    // happen on the hook thread (Rule 11.3 single-writer). Post the bit
+    // and let the drain do the work.
+    mailbox_.Post(HookCommand::kToggleVN);
 }
 
 void HookEngine::SetCodeTable(CodeTable ct) {
@@ -2990,41 +2941,35 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
 }
 
 void HookEngine::OnTickPoll() noexcept {
-    // Sprint 1 D10: body migrated verbatim from the retired
-    // FocusPollTimerProc. Cadence (200 ms) is now owned by
-    // MainThreadWorker::SetTickInterval; the per-thread story is the
-    // same — caller is not the LL hook thread, stateMutex_ serializes
-    // against main-thread Toggle/SetCodeTable, and OnFocusChanged is
-    // invoked unlocked because it self-locks downstream.
+    // Sprint 1 D10: 200 ms cadence, owned by MainThreadWorker::SetTickInterval.
+    // Phase 2c migration: the work that used to run inline here under
+    // stateMutex_ (CheckLayoutChange, PID-changed fallback focus refresh)
+    // now goes through the mailbox so the actual state writes land on the
+    // hook thread — single-writer invariant.
     try {
-        // Phase 1: drive the 60s histogram flush off this 200ms tick.
-        // MaybeFlush() honours the throttle internally — cheap when no flush
-        // is due (single steady_clock::now + atomic load).
+        // Phase 1: histogram flush stays on main (file I/O — never on hook).
         Perf::Histogram::MaybeFlush();
 
+        // Always post a tick — hook thread runs CheckLayoutChange in the
+        // drain. Coalesces against rapid ticks (rare; tick is 200ms).
+        mailbox_.Post(HookCommand::kTickPoll);
+
+        // PID-changed fallback (catches missed/phantom focus events from
+        // EVENT_SYSTEM_FOREGROUND). lastForegroundPid_ is hook-owned;
+        // we snapshot via OnFocusChanged (which classifies on main + posts).
         HWND fg = GetForegroundWindow();
         if (!fg) return;
-
         DWORD fgPid = 0;
         GetWindowThreadProcessId(fg, &fgPid);
+        if (fgPid == 0) return;
 
-        bool needFullRefresh = false;
-        {
-            std::lock_guard<std::mutex> _lock(stateMutex_);
-            // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
-            // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
-            CheckLayoutChange();
-
-            if (fgPid == lastForegroundPid_ || fgPid == 0) return;
-            // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
-            // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
-            lastForegroundPid_ = fgPid;
-            needFullRefresh = true;
-        }  // release lock — OnFocusChanged → QuickSync will self-lock.
-
-        if (needFullRefresh) {
+        // lastForegroundPid_ is atomic — written on the hook thread inside
+        // ApplyFocusOnHookThread. Stale read here just means we re-post a
+        // focus event the hook will dedupe in classify (same activeHwnd) —
+        // benign at worst.
+        if (fgPid != lastForegroundPid_.load(std::memory_order_acquire)) {
             HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
-            OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+            OnFocusChanged(nullptr);  // classifies + posts kFocusChanged
         }
     } catch (const std::exception& e) {
         CrashLog(L"HookEngine::OnTickPoll", e.what());
@@ -3264,6 +3209,24 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // state mutations from the drain. Existing callers (WinEventProc,
     // OnTickPoll) keep the same entry point — only the threading model
     // changed.
+
+    // P2c fix (2026-05-19): re-introduce the QuickSync poke that pre-P2b
+    // OnFocusChanged used to run inline at the top of its body. SettingsDialog
+    // is the project's "live config bus": every toggle bumps configGeneration
+    // in SharedState immediately (subprocess-side; TOML save is deferred 30s
+    // or until dialog close). The hook picks this up via QuickSync. Pre-P2b,
+    // both keystrokes AND focus events triggered QuickSync; removing the
+    // focus-time call meant settings toggles only applied on the first
+    // keystroke after the user clicked back to the target app — which felt
+    // like "settings don't apply until dialog close" if the user clicked
+    // back to validate without typing first. Running QuickSync here on the
+    // SAME thread as pre-P2b (main / worker, never hook) restores the
+    // original UX without compromising the hook-thread single-writer
+    // invariant: QuickSync's slow path takes stateMutex_ and calls
+    // ApplyConfig — those writes still cross-thread the same way they did
+    // pre-Phase-2 (Phase 3 fixes that with RCU snapshots).
+    QuickSyncFromSharedState();
+
     auto cls = std::make_shared<const FocusClassification>(
         ClassifyFocusedWindow(triggerHwnd));
     if (!cls->hwndOpaque) return;  // sentinel: nothing to apply
@@ -3920,7 +3883,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     currentExe_ = cls->exeName;
 
     // Sync PID tracker so the 200 ms focus poll won't re-trigger for this app.
-    if (cls->pid) lastForegroundPid_ = cls->pid;
+    if (cls->pid) lastForegroundPid_.store(cls->pid, std::memory_order_release);
 
     isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
     isTsfApp_.store(cls->isTsf, std::memory_order_release);
@@ -4009,18 +3972,102 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     }
 }
 
-// Phase 2c will populate these (config / tick / toggle migration). Until
-// then, no producer posts the corresponding bit so these are unreachable.
+// Phase 2c — ToggleVietnameseMode body, migrated to the hook thread.
+//
+// Single-writer note: this runs from the drain only. The mailbox
+// coalesces multiple Posts before drain into one drained bit
+// (HookCommandMailboxTest §PostSameBitMultipleTimesDrainReturnsOnce),
+// so rapid hotkey mashing collapses to one toggle per drain cycle.
+// User-visible behaviour: same as before — sub-keystroke responsive.
+void HookEngine::ApplyToggleVNOnHookThread() {
+    // Excluded-app gate. PID check vs cached excludedPid_ distinguishes
+    // "genuinely in excluded app" (block toggle) from "stale flag, user
+    // already left" (force VN). Both atomic stores below are safe on
+    // hook thread now that we're single-writer.
+    if (excludeApps_ && isExcludedApp_.load(std::memory_order_acquire)) {
+        HWND fg = GetForegroundWindow();
+        DWORD fgPid = 0;
+        if (fg) GetWindowThreadProcessId(fg, &fgPid);
+        const DWORD cachedPid = excludedPid_.load(std::memory_order_acquire);
+        if (fgPid == cachedPid && cachedPid != 0) {
+            HOOK_LOG(L"  ToggleVN: BLOCKED (excluded pid=%u)", cachedPid);
+            return;
+        }
+        // Different PID — user already left excluded app, flag is stale.
+        // Force VN: user pressed toggle expecting V mode, having perceived
+        // the excluded app as English.
+        isExcludedApp_.store(false, std::memory_order_release);
+        vietnameseMode_.store(true, std::memory_order_release);
+        HOOK_LOG(L"  ToggleVN: stale excluded → forced Vietnamese (fg pid=%u)", fgPid);
+        NotifyModeChange();
+        if (beepOnSwitch_) MessageBeep(MB_OK);
+        return;
+    }
+
+    // Commit pending composition (skip if CJK-suppressed — engine inactive).
+    if (!layoutSuppressed_ && engine_->Count() > 0) {
+        CommitComposition();
+    }
+    CancelCommitUndo();
+    digitLedWord_ = false;
+
+    const bool newMode = !vietnameseMode_.load(std::memory_order_acquire);
+    vietnameseMode_.store(newMode, std::memory_order_release);
+    NEXTKEY_LOG(L"HookEngine: mode = %s (via drain)", newMode ? L"Vietnamese" : L"English");
+
+    // Smart-switch save. Drop the pre-P2c GetForegroundWindow + GetExeNameForHwnd
+    // fallback — those are Rule 11.2 forbidden on the hook thread (Toolhelp32
+    // snapshot). If currentExe_ is empty here (startup before any focus event),
+    // the next focus event will set it and the toggle takes effect for that app
+    // on its first save.
+    if (smartSwitch_ && !currentExe_.empty()) {
+        appModeMap_[currentExe_] = newMode;
+        smartSwitchMgr_.SetAppMode(currentExe_, newMode);
+    }
+
+    if (beepOnSwitch_) {
+        MessageBeep(newMode ? MB_OK : MB_ICONASTERISK);
+    }
+    NotifyModeChange();
+}
+
+// Phase 2c — config apply / tick poll handlers.
+//
+// `ApplyConfigOnHookThread` is ready but DORMANT in Phase 2c: no producer
+// posts kConfigApply yet. The worker thread's settings-save path
+// (MainThreadWorker work handler → SyncConfigFromSharedState →
+// QuickSyncFromSharedState slow path → ReloadFromToml) still runs the
+// TOML parse + ApplyConfig inline. That parse is Rule 11.2-forbidden on
+// the hook thread, so Phase 3 (RCU ConfigSnapshot + worker-thread
+// publish) wires it properly. Until then, leaving this handler functional
+// (rather than a stub) means any future caller — including an early
+// migration of the worker handler — gets correct behaviour without
+// requiring header changes.
 void HookEngine::ApplyConfigOnHookThread() {
-    HOOK_LOG(L"  ApplyConfigOnHookThread: stub (Phase 2c will populate)");
+    // Pull the freshest published config snapshot. Phase 3's RCU producer
+    // will guarantee a non-null snapshot here; the null check is defensive
+    // for the pre-Phase-3 transitional state.
+    auto cfg = config_.load(std::memory_order_acquire);
+    if (!cfg) return;
+    const TypingConfig snapshot = *cfg;
+    ApplyConfig(snapshot);
+
+    // Recreate engine if input method changed (rare; almost always a no-op).
+    const InputMethod method = currentMethod_.load(std::memory_order_acquire);
+    if (snapshot.inputMethod != method) {
+        if (engine_->Count() > 0) CommitComposition();
+        currentMethod_.store(snapshot.inputMethod, std::memory_order_release);
+        engine_ = EngineFactory::Create(snapshot);
+        HOOK_LOG(L"  ApplyConfig: engine recreated for method=%d",
+                 static_cast<int>(snapshot.inputMethod));
+    }
 }
 
 void HookEngine::ApplyTickPollOnHookThread() {
-    HOOK_LOG(L"  ApplyTickPollOnHookThread: stub (Phase 2c will populate)");
-}
-
-void HookEngine::ApplyToggleVNOnHookThread() {
-    HOOK_LOG(L"  ApplyToggleVNOnHookThread: stub (Phase 2c will populate)");
+    // CheckLayoutChange queries GetKeyboardLayout (kernel-cached, fast)
+    // and may call OnLayoutChanged → layoutSuppressed_ writes + engine
+    // commit. All hook-thread-safe.
+    CheckLayoutChange();
 }
 
 }  // namespace NextKey
