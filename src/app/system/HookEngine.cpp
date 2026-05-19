@@ -1132,6 +1132,27 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         CancelCommitUndo();
         // Fall through — Ctrl check at ProcessKeyDown step 5 will handle ResetComposition
     }
+
+    // Enter (VK_RETURN) doesn't move focus in chat/form inputs — cursor
+    // stays in the same input box on message-send / line-break. That
+    // bypasses the focus-event safety net that Tab + mouse-click rely on
+    // to clear commitStack_ via ResetComposition. Without this explicit
+    // cancel, the stack survives across message-send boundaries: user
+    // sends "không," then starts a new message with "vaf"; the BS chain
+    // they use to correct a typo in the new message replays the phantom
+    // "không" prefix into the engine; IsHardEnglishToneContext sees the
+    // concat-buffer V-CC-V pattern and blocks tone on the new word.
+    // Existing line ~1319 already cancels Enter while state==Ready;
+    // this branch guards the gap where a prior non-exempt key (e.g.
+    // SPACE) downgraded state to Idle but left the stack populated.
+    // Idempotent — no-op when state==Idle && stack already empty.
+    if (vkCode == VK_RETURN &&
+        (commitUndoState_ != CommitUndoState::Idle || !commitStack_.empty())) {
+        HOOK_LOG(L"  commit-undo: cancel — VK_RETURN (stack=%zu state=%d)",
+                 commitStack_.size(), static_cast<int>(commitUndoState_));
+        CancelCommitUndo();
+        // Fall through — Enter still passes through to the app normally.
+    }
     //
     // Auto-expire Ready after kCommitUndoTimeoutMs: cheap insurance against any cursor-movement
     // event that bypasses ResetComposition (e.g. external text change, rare edge cases).

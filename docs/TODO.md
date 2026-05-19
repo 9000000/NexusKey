@@ -188,16 +188,95 @@ OnTickPoll drains the flag and runs Reload on the worker thread.
 methods into one `RebuildSnapshotFromToml` helper. Rule 11.3 example
 now matches reality.
 
-### B. Inconsistent `LowLevelHooksTimeout` documentation in HookEngine comments
+### B. Inconsistent `LowLevelHooksTimeout` documentation — **RESOLVED** (verified 2026-05-19)
 
-Three different timeout values appear in comments without reconciliation:
-- `HookEngine.cpp:223` says "clamped to 1000ms"
-- `HookEngine.cpp:3166` says "300ms LowLevelHooksTimeout"
-- `HookEngine.cpp:3487` says "default 500 ms"
+Current state matches Win32 docs: `HookEngine.cpp:258-259` says "default
+300 ms, configurable up to ~1000 ms"; `HookEngine.cpp:3504` says "default
+300 ms per Win32 docs; max ~1000 ms". The "500 ms" the older entry
+flagged turned out to be `HookEngine.cpp:963` watchdog timer for
+`synthEventsPending_` reset — different concept, not LowLevelHooksTimeout.
+Either reconciled in an unlogged earlier cleanup or the original audit
+conflated line numbers. No action needed.
 
-Win32 docs: default is 300ms, configurable via
-`HKCU\Control Panel\Desktop\LowLevelHooksTimeout`. Comments should agree.
-Code drift, not rule drift. Single cleanup PR; 5 minutes.
+## 🟡 Commit-undo stack survive qua Enter — phantom prefix block tone word kế (2026-05-19)
+
+### Triệu chứng (user report v3.0.1 + repro confirmed)
+
+User đang chat: gõ một tin nhắn tiếng Việt → Enter để send → bắt đầu gõ
+tin nhắn mới → **chỉ ra tiếng Việt không dấu**. Tray icon vẫn V mode, screen
+hiển thị đúng những gì user gõ trong tin mới, nhưng tone/mark không apply.
+User mô tả: "đã xoá hết text rồi mà vẫn không gõ được" — phải gõ space để
+reset engine mới gõ Việt lại được.
+
+### Repro chính xác (log 2026-05-19 21:46:xx, user-supplied)
+
+1. Gõ `khoong,` → commit `không,`, push stack `[không]`, state=Ready.
+2. BS → state=Primed.
+3. Space, Shift+/, Enter → message gửi.
+4. **Enter không clear commit stack** (focus stay in cùng input box, không
+   trigger focus event → không trigger ResetComposition → stack survive).
+   commitUndoState_ về Idle nhưng commitStack_ vẫn = `[không]`.
+5. New message: gõ `a` → engine count=1. `f` → tone HUYỀN applied → `à` ✓.
+6. BS → engine count=0. "HandleBackspace: engine empty, stack has 3 entries
+   → state 1" — re-arm to Ready vì stack non-empty.
+7. BS×2 → Primed → **replay `không`** seed engine state thành `khôn`.
+   Screen vẫn empty (BS gửi tới input trống), engine state lệch khỏi UI.
+8. User gõ `v` → engine `khônv`, screen `v`. `a` → engine `khônva`. `f`
+   → **`IsHardEnglishToneContext`** thấy `HasStructuralVCVPattern` trên
+   `[k,h,ô,n,v,a]` (V-CC-V) → tone gate đóng → `f` literal → screen `vaf`.
+9. Space commit → reset engine → next word `nếu` work bình thường.
+
+### Root cause
+
+`commitStack_.clear()` chỉ chạy trong `ResetComposition()` (HookEngine.cpp
+:2200). Các trigger gọi ResetComposition: mouse click, focus change, Ctrl
+shortcut, exception. **Enter không có**.
+
+| Action key | Cancel mechanism | Status |
+|---|---|---|
+| Arrow / Home / End | Explicit `CancelCommitUndo` ở line 1308 (Ready branch) | ✓ |
+| Mouse click | `ResetComposition` line 865 | ✓ |
+| Tab | Focus event → ResetComposition | ✓ |
+| Ctrl shortcut | ResetComposition line 1554 | ✓ |
+| **Enter** | **(none — focus stays in input box)** | **✗** |
+
+phatMT97's diagnosis "rule s/f/r/x/j hoặc aa/ee/oo/dd → English, BS không
+reset" — sai object. Bias rule không phải trigger (`bias` thực sự vẫn
+Vietnamese sau replay). Gate đóng tone là `IsHardEnglishToneContext` chạy
+**structural pattern** trên states_ buffer concat 2 syllable không liên
+quan. Root cause upstream là stack survive Enter, không phải BS không reset.
+
+### Fix
+
+Pre-handler trước commit-undo dispatch block:
+
+```cpp
+if (vkCode == VK_RETURN &&
+    (commitUndoState_ != CommitUndoState::Idle || !commitStack_.empty())) {
+    CancelCommitUndo();   // line 2196 — clears stack + state + pendingTrigger
+    // Fall through to normal Enter processing.
+}
+```
+
+Trade-off: user mất khả năng `tai␣ + Enter + BS + j → tại` (recall qua
+Enter). Use case này hiếm — Enter trong chat/form thường là send/submit,
+user không kỳ vọng undo chain xuyên qua. Accept.
+
+### Test (manual Windows)
+
+1. `tai␣loi␣` → BS×6 → `i` → kỳ vọng `tải l + i` (multi-word replay không
+   break).
+2. `tai␣` → BS → `␣` → `j` → kỳ vọng `tại` (pendingTrigger không break).
+3. **Bug case**: `tai␣` → BS×3 → Enter → `vaf` → kỳ vọng `và + f` (tone
+   trên `a` apply, không bị phantom prefix block).
+4. `tai␣` → Enter → BS → `j` → kỳ vọng `j` literal (confirms feature loss
+   accepted).
+
+### Refs
+
+- Discussion: GitHub issue trên phatMT97/VKey 2026-05-19
+- Release: VKey v3.0.1
+- Log repro: user-shared 2026-05-19 21:46:52-21:47:10
 
 ## 🟡 `power → pởe` ở spell-check OFF (2026-05-18)
 
