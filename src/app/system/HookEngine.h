@@ -642,6 +642,14 @@ private:
     // runs `ReloadFromToml` off-hook. Worker / main entries to QuickSync
     // still run Reload inline — they're already on a safe thread.
     std::atomic<bool> pendingConfigReload_{false};
+    // Phase 3f: hook-thread latch — set when ApplyConfigOnHookThread can't
+    // run yet because engine_->Count() > 0 (user mid-word). Drain checks
+    // this every cycle and runs the apply once the engine empties (after
+    // commit / backspace-clear / focus reset). Without this, config
+    // reloads landing mid-word committed partial words via the engine
+    // recreate path (surfaced by chaos `-InjectConfigReloadMs 50` as
+    // `uongs` → `uôngs` instead of `uống`).
+    std::atomic<bool> deferredConfigApply_{false};
 
     // Callbacks
     ModeChangeCallback modeChangeCallback_;

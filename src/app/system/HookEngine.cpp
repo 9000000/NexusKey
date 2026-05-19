@@ -3937,12 +3937,37 @@ void HookEngine::DrainHookCommands() {
     HookCommandMailbox::DrainScope scope(mailbox_);
 
     const std::uint32_t bits = mailbox_.DrainBits();
-    if (!bits) return;  // common path — no work pending
+    // Phase 3f: even if no fresh bits, a previous drain may have deferred
+    // the config apply (engine was busy). Re-check on every drain so the
+    // apply lands as soon as the engine empties.
+    const bool hadDeferredApply = deferredConfigApply_.load(std::memory_order_acquire);
+    if (!bits && !hadDeferredApply) return;
 
-    if (bits & HookCommand::kConfigApply)  ApplyConfigOnHookThread();
+    // kConfigApply: latch the request; the actual apply runs at the tail
+    // of this function once we know whether the engine is busy. We DO
+    // NOT call ApplyConfigOnHookThread mid-drain anymore — see P3f note.
+    if (bits & HookCommand::kConfigApply) {
+        deferredConfigApply_.store(true, std::memory_order_release);
+    }
     if (bits & HookCommand::kFocusChanged) ApplyFocusOnHookThread(mailbox_.ConsumePendingFocus());
     if (bits & HookCommand::kTickPoll)     ApplyTickPollOnHookThread();
     if (bits & HookCommand::kToggleVN)     ApplyToggleVNOnHookThread();
+
+    // Phase 3f — guard the config apply against mid-word reset.
+    // ApplyConfigOnHookThread destroys engine_ and creates a fresh one;
+    // if the user has uncommitted input (engine_->Count() > 0), running
+    // the apply now would either (a) commit a partial word visibly or
+    // (b) drop the partial input. Both are user-visible quirks. Defer
+    // until the engine empties naturally — typically the next keystroke
+    // after a word commit, occasionally a backspace-to-empty or focus
+    // change. Focus change (ApplyFocusOnHookThread above) calls
+    // ResetComposition which zeros the count, so deferred applies often
+    // land on the same drain when triggered by a focus event.
+    if (deferredConfigApply_.load(std::memory_order_acquire)
+        && engine_ && engine_->Count() == 0) {
+        deferredConfigApply_.store(false, std::memory_order_release);
+        ApplyConfigOnHookThread();
+    }
 }
 
 // Phase 2b — focus apply runs on the hook thread (called from
@@ -4189,24 +4214,33 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     NotifyModeChange();
 }
 
-// P3e — config-apply drain handler. Wired into the kConfigApply mailbox bit
-// posted by ReloadFromToml on the worker. Hook-thread side of the
+// P3e/P3f — config-apply drain handler. Wired into the kConfigApply mailbox
+// bit posted by ReloadFromToml on the worker. Hook-thread side of the
 // single-writer contract: this is where composition state mutations
-// (CommitComposition, currentMethod_ store, engine_ swap) actually run.
+// (currentMethod_ store, engine_ swap) actually run.
+//
+// CONTRACT (P3f): DrainHookCommands guarantees `engine_->Count() == 0`
+// before calling this function. Any pending word is left intact in the
+// engine until natural completion (commit, backspace-empty, focus
+// reset); the drain latches kConfigApply via `deferredConfigApply_` and
+// re-checks on every cycle. This avoids the chaos-stress visible quirk
+// where a config reload landing mid-word committed a partial word (e.g.
+// `uongs` → `uôngs` instead of `uống` because the engine was reset
+// between `uong` and `s`).
 //
 // Pre-P3e (P2c→P3d): handler existed dormant; the worker's ReloadFromToml
 // performed CommitComposition + `engine_ = Create()` inline. Under
-// `-InjectConfigReloadMs 50` chaos, that race produced 11/55 failures
-// because the worker swapped `engine_` (unique_ptr) while the hook hot
-// path held a raw pointer read mid-keystroke — UAF, mid-word composition
-// state loss. The fix moves both the commit and the engine swap here.
+// `-InjectConfigReloadMs 50` chaos, that race produced 11/55 failures —
+// a UAF: worker swapped `engine_` while hook hot path held a raw
+// pointer read. P3e moved the mutation here; P3f added the engine-busy
+// gate at the drain.
 //
 // Why ALWAYS recreate (not just on method change): the engine internally
 // stores a TypingConfig copy. modernOrtho / allowZwjf / spellCheckEnabled
 // changes need a fresh engine for the new behavior to take effect. The
-// mailbox coalesces multiple Reloads to one drain, so even chaos-paced
-// 20 Hz republishes collapse to ≤5 Hz engine recreates (gated by the
-// 200 ms worker-tick → drain cadence).
+// drain's busy-gate means we don't recreate per chaos tick — we recreate
+// once per word boundary, when applicable, regardless of how many bumps
+// stacked up.
 //
 // Resolves the P0 single-writer-violation TODO item from the 2026-05-19
 // review: `engine_` had two writer paths; this collapses to one (hook).
@@ -4225,16 +4259,9 @@ void HookEngine::ApplyConfigOnHookThread() {
         if (it != snap->appInputMethodOverrides.end()) targetMethod = it->second;
     }
 
-    // Commit any in-flight composition BEFORE swapping the engine.
-    // CommitComposition asserts hook-thread (Phase 2d), so this must
-    // run here — never on worker.
-    if (engine_->Count() > 0) {
-        CommitComposition();
-    }
-
-    // Recreate engine to pick up the new config. The old engine's
-    // destructor runs synchronously inside the assignment — safe
-    // because we're the single writer and we're between keystrokes.
+    // P3f: caller (DrainHookCommands) gates on engine_->Count() == 0, so
+    // CommitComposition would be a no-op. Skip it to keep this handler
+    // purely focused on the engine swap.
     currentMethod_.store(targetMethod, std::memory_order_release);
     TypingConfig engineConfig = *cfg;
     engineConfig.inputMethod = targetMethod;
