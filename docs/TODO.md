@@ -3,6 +3,35 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
+## 🟢 CODING_RULES & code drift residue (2026-05-19)
+
+Mechanical refresh of CODING_RULES landed in `6171a82`. Two follow-up items
+left out of scope (semantic / requires architecture work):
+
+### A. Rule 11.3 forbidden-pattern example matches production code
+
+Rule 11.3 (`docs/CODING_RULES/11-hook-system-rules.md`) shows:
+```
+std::lock_guard _lock(stateMutex_);
+ReloadFromToml();  // file I/O holding lock!
+```
+as a forbidden pattern. Production `HookEngine.cpp:521-543` does **exactly this**
+on the QuickSyncFromSharedState slow path. The rule wording is correct; the
+code is non-compliant. **Fix shipping in Phase 3** of architecture review
+design (see `docs/plans/2026-05-19-architecture-review-design.md`). Once
+Phase 3 PR lands, Rule 11.3 example will match reality again.
+
+### B. Inconsistent `LowLevelHooksTimeout` documentation in HookEngine comments
+
+Three different timeout values appear in comments without reconciliation:
+- `HookEngine.cpp:223` says "clamped to 1000ms"
+- `HookEngine.cpp:3166` says "300ms LowLevelHooksTimeout"
+- `HookEngine.cpp:3487` says "default 500 ms"
+
+Win32 docs: default is 300ms, configurable via
+`HKCU\Control Panel\Desktop\LowLevelHooksTimeout`. Comments should agree.
+Code drift, not rule drift. Single cleanup PR; 5 minutes.
+
 ## 🟡 `power → pởe` ở spell-check OFF (2026-05-18)
 
 ### Triệu chứng
