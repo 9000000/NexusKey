@@ -623,10 +623,13 @@ void HookEngine::QuickSyncFromSharedState() {
     ApplyConfig(cfg);
     config_.store(std::make_shared<const TypingConfig>(cfg), std::memory_order_release);
 
+    // P3e fix: defer engine recreate to ApplyConfigOnHookThread. QuickSync's
+    // slow path runs on whichever thread called it (worker via OnTickPoll →
+    // OnFocusChanged, or main via SyncConfigFromSharedState). The engine
+    // swap + CommitComposition must run on the hook thread to avoid the
+    // race that surfaced under `-InjectConfigReloadMs 50` chaos.
     if (methodChanged) {
-        currentMethod_.store(cfg.inputMethod, std::memory_order_release);
-        if (engine_->Count() > 0) CommitComposition();
-        engine_ = EngineFactory::Create(cfg);
+        mailbox_.Post(HookCommand::kConfigApply);
     }
 
     if (codeTableChanged) {
@@ -678,20 +681,16 @@ void HookEngine::ReloadFromToml() {
         }
     }
 
-    // Recreate engine with updated config (engine stores a copy of TypingConfig)
-    if (engine_->Count() > 0) {
-        CommitComposition();
-    }
-    currentMethod_.store(config.inputMethod, std::memory_order_release);
+    // P3e fix — single-writer for `engine_`. Pre-P3e, this function called
+    // CommitComposition + `engine_ = EngineFactory::Create(...)` inline.
+    // Post-P3c, ReloadFromToml runs on the worker thread (Rule 11.2 forbids
+    // TOML parse on hook), so the inline engine swap raced against the hook
+    // hot path's `engine_->Peek/Push/Count` reads — UAF discovered by
+    // run-chaos.ps1 -InjectConfigReloadMs 50 (5×11 failures: composition
+    // state lost mid-word). Defer both the commit AND the engine recreate
+    // to ApplyConfigOnHookThread; the hook drain runs them between
+    // keystrokes where they're single-writer safe.
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
-    engine_ = EngineFactory::Create(config);
-    {
-        [[maybe_unused]] const InputMethod loggedMethod = currentMethod_.load(std::memory_order_acquire);
-        NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
-                    loggedMethod == InputMethod::VNI ? L"VNI" :
-                    loggedMethod == InputMethod::Combined ? L"Combined" : L"Telex",
-                    config.modernOrtho ? 1 : 0, config.allowZwjf ? 1 : 0);
-    }
     ApplyConfig(config);
     // Reload `[[hotkeys]]` from TOML alongside main config — keeps registry in
     // sync when Settings dialog persists rebindings via SaveHotkeyRegistry.
@@ -743,37 +742,32 @@ void HookEngine::ReloadFromToml() {
         tsfModeCallback_(newTsfApp, tsfReadonly);
     }
 
-    // Re-apply per-app overrides for current app (OnFocusChanged may have run with stale maps)
+    // Re-apply per-app encoding override for current app. Encoding is a
+    // plain enum (`CodeTable`) read on the hook hot path without locking;
+    // a worker-side write is a torn-read risk but NOT a UAF — minor
+    // staleness window only. Acceptable for an enum-sized field.
     if (!currentExe_.empty() && !newExcluded && !newTsfApp && rcuSnap) {
-        // Encoding
-        {
-            auto it = rcuSnap->appEncodingOverrides.find(currentExe_);
-            currentCodeTable_ = (it != rcuSnap->appEncodingOverrides.end())
-                ? it->second : globalCodeTable_;
-        }
-        // Input method — recreate engine only if method changed
-        {
-            auto it = rcuSnap->appInputMethodOverrides.find(currentExe_);
-            InputMethod targetMethod = (it != rcuSnap->appInputMethodOverrides.end())
-                ? it->second : globalInputMethod_;
-            if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
-                currentMethod_.store(targetMethod, std::memory_order_release);
-                TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
-                engineConfig.inputMethod = targetMethod;
-                engine_ = EngineFactory::Create(engineConfig);
-                NEXTKEY_LOG(L"HookEngine: re-applied inputMethod=%d for '%s'",
-                            static_cast<int>(targetMethod), currentExe_.c_str());
-            }
-        }
+        auto it = rcuSnap->appEncodingOverrides.find(currentExe_);
+        currentCodeTable_ = (it != rcuSnap->appEncodingOverrides.end())
+            ? it->second : globalCodeTable_;
     }
+    // P3e fix — per-app inputMethod override engine recreate moved to
+    // ApplyConfigOnHookThread (same race surface as the unconditional
+    // recreate removed above). Worker thread cannot safely swap
+    // `engine_` while hook hot path holds raw pointer reads.
 
     // Notify main process to reload hotkey / QuickConvert configs.
     // Main owns HotkeyManager slots and calls UpdateHotkey there.
     if (configReloadCallback_) {
         configReloadCallback_();
     }
-    // Note: ConfigSnapshot was already published earlier (before the
-    // re-evaluate block) so this function's tail no longer needs to.
+
+    // P3e fix — post kConfigApply to the hook mailbox so the drain runs
+    // ApplyConfigOnHookThread between keystrokes. This is the producer
+    // for the dormant handler we wired in P2c — finally lit up. The
+    // mailbox coalesces against rapid republishes (one Apply per drain
+    // cycle) so chaos `-InjectConfigReloadMs 50` doesn't queue up many.
+    mailbox_.Post(HookCommand::kConfigApply);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -4195,37 +4189,61 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     NotifyModeChange();
 }
 
-// Phase 2c — config apply / tick poll handlers.
+// P3e — config-apply drain handler. Wired into the kConfigApply mailbox bit
+// posted by ReloadFromToml on the worker. Hook-thread side of the
+// single-writer contract: this is where composition state mutations
+// (CommitComposition, currentMethod_ store, engine_ swap) actually run.
 //
-// `ApplyConfigOnHookThread` is ready but DORMANT in Phase 2c: no producer
-// posts kConfigApply yet. The worker thread's settings-save path
-// (MainThreadWorker work handler → SyncConfigFromSharedState →
-// QuickSyncFromSharedState slow path → ReloadFromToml) still runs the
-// TOML parse + ApplyConfig inline. That parse is Rule 11.2-forbidden on
-// the hook thread, so Phase 3 (RCU ConfigSnapshot + worker-thread
-// publish) wires it properly. Until then, leaving this handler functional
-// (rather than a stub) means any future caller — including an early
-// migration of the worker handler — gets correct behaviour without
-// requiring header changes.
+// Pre-P3e (P2c→P3d): handler existed dormant; the worker's ReloadFromToml
+// performed CommitComposition + `engine_ = Create()` inline. Under
+// `-InjectConfigReloadMs 50` chaos, that race produced 11/55 failures
+// because the worker swapped `engine_` (unique_ptr) while the hook hot
+// path held a raw pointer read mid-keystroke — UAF, mid-word composition
+// state loss. The fix moves both the commit and the engine swap here.
+//
+// Why ALWAYS recreate (not just on method change): the engine internally
+// stores a TypingConfig copy. modernOrtho / allowZwjf / spellCheckEnabled
+// changes need a fresh engine for the new behavior to take effect. The
+// mailbox coalesces multiple Reloads to one drain, so even chaos-paced
+// 20 Hz republishes collapse to ≤5 Hz engine recreates (gated by the
+// 200 ms worker-tick → drain cadence).
+//
+// Resolves the P0 single-writer-violation TODO item from the 2026-05-19
+// review: `engine_` had two writer paths; this collapses to one (hook).
 void HookEngine::ApplyConfigOnHookThread() {
     VKEY_ASSERT_HOOK_THREAD();
-    // Pull the freshest published config snapshot. Phase 3's RCU producer
-    // will guarantee a non-null snapshot here; the null check is defensive
-    // for the pre-Phase-3 transitional state.
     auto cfg = config_.load(std::memory_order_acquire);
     if (!cfg) return;
-    const TypingConfig snapshot = *cfg;
-    ApplyConfig(snapshot);
 
-    // Recreate engine if input method changed (rare; almost always a no-op).
-    const InputMethod method = currentMethod_.load(std::memory_order_acquire);
-    if (snapshot.inputMethod != method) {
-        if (engine_->Count() > 0) CommitComposition();
-        currentMethod_.store(snapshot.inputMethod, std::memory_order_release);
-        engine_ = EngineFactory::Create(snapshot);
-        HOOK_LOG(L"  ApplyConfig: engine recreated for method=%d",
-                 static_cast<int>(snapshot.inputMethod));
+    // Resolve target inputMethod considering per-app override (Phase 3c
+    // snapshot reader). currentExe_ is hook-owned (set in
+    // ApplyFocusOnHookThread); reading it here is single-threaded safe.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
+    InputMethod targetMethod = cfg->inputMethod;
+    if (snap && !currentExe_.empty()) {
+        auto it = snap->appInputMethodOverrides.find(currentExe_);
+        if (it != snap->appInputMethodOverrides.end()) targetMethod = it->second;
     }
+
+    // Commit any in-flight composition BEFORE swapping the engine.
+    // CommitComposition asserts hook-thread (Phase 2d), so this must
+    // run here — never on worker.
+    if (engine_->Count() > 0) {
+        CommitComposition();
+    }
+
+    // Recreate engine to pick up the new config. The old engine's
+    // destructor runs synchronously inside the assignment — safe
+    // because we're the single writer and we're between keystrokes.
+    currentMethod_.store(targetMethod, std::memory_order_release);
+    TypingConfig engineConfig = *cfg;
+    engineConfig.inputMethod = targetMethod;
+    engine_ = EngineFactory::Create(engineConfig);
+
+    HOOK_LOG(L"  ApplyConfig: engine recreated (method=%d, modernOrtho=%d, allowZwjf=%d)",
+             static_cast<int>(targetMethod),
+             cfg->modernOrtho ? 1 : 0,
+             cfg->allowZwjf ? 1 : 0);
 }
 
 void HookEngine::ApplyTickPollOnHookThread() {
