@@ -74,9 +74,15 @@ std::shared_ptr<const ConfigSnapshot> MakeGenSnapshot(std::uint32_t gen) {
         {L"app" + std::to_wstring(gen) + L".exe",
          static_cast<InputMethod>(gen % 5)}
     };
+    // appSendMethodOverrides — same gen-derived shape, codes parity-toggled
+    // so the integrity check below can pin the value to its source generation.
+    std::unordered_map<std::wstring, std::int8_t> send = {
+        {L"app" + std::to_wstring(gen) + L".exe",
+         static_cast<std::int8_t>(gen % 2)}
+    };
     return std::make_shared<const ConfigSnapshot>(ConfigSnapshot::Build(
         std::move(macros), std::move(excluded), std::move(tsf),
-        std::move(enc), std::move(im), gen));
+        std::move(enc), std::move(im), std::move(send), gen));
 }
 
 // Verify every field of a snapshot agrees with its `generation`.
@@ -95,6 +101,9 @@ bool SnapshotInternallyConsistent(const ConfigSnapshot& s) {
     auto imIt = s.appInputMethodOverrides.find(L"app" + gs + L".exe");
     if (imIt == s.appInputMethodOverrides.end()) return false;
     if (imIt->second != static_cast<InputMethod>(g % 5)) return false;
+    auto sendIt = s.appSendMethodOverrides.find(L"app" + gs + L".exe");
+    if (sendIt == s.appSendMethodOverrides.end()) return false;
+    if (sendIt->second != static_cast<std::int8_t>(g % 2)) return false;
     return true;
 }
 

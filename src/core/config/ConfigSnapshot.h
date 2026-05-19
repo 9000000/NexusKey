@@ -59,6 +59,16 @@ struct ConfigSnapshot {
     /// Per-app input-method override. Same filtering as above.
     std::unordered_map<std::wstring, InputMethod> appInputMethodOverrides;
 
+    /// Per-app send-method override (0 = SendInput, 1 = clipboard paste,
+    /// -1 = inherit global → filtered out at build time). Read on main
+    /// thread by `ClassifyFocusedWindow` to populate `FocusClassification
+    /// ::localUseClipboardInjector`. Pre-promotion lived as a plain
+    /// HookEngine member written from the worker rebuild path; Rule
+    /// 11.3 torn-read window of ~5 ms on TOML reparse. Promoting into
+    /// the snapshot puts every variable-size config map under the same
+    /// RCU contract.
+    std::unordered_map<std::wstring, int8_t> appSendMethodOverrides;
+
     /// Apps that bypass Vietnamese processing entirely (force English).
     /// Lookup is exe-name lowercase.
     std::unordered_set<std::wstring> excludedAppSet;
@@ -97,6 +107,7 @@ struct ConfigSnapshot {
         std::unordered_set<std::wstring>               tsfAppSet,
         std::unordered_map<std::wstring, CodeTable>    appEncodingOverrides,
         std::unordered_map<std::wstring, InputMethod>  appInputMethodOverrides,
+        std::unordered_map<std::wstring, std::int8_t>  appSendMethodOverrides,
         std::uint32_t                                  generation) {
         ConfigSnapshot snap;
         snap.macroTable              = std::move(macroTable);
@@ -104,6 +115,7 @@ struct ConfigSnapshot {
         snap.tsfAppSet               = std::move(tsfAppSet);
         snap.appEncodingOverrides    = std::move(appEncodingOverrides);
         snap.appInputMethodOverrides = std::move(appInputMethodOverrides);
+        snap.appSendMethodOverrides  = std::move(appSendMethodOverrides);
         snap.generation              = generation;
         for (const auto& [key, _] : snap.macroTable) {
             if (key.find(L' ') != std::wstring::npos) {

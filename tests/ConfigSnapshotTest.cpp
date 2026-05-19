@@ -47,6 +47,7 @@ TEST(ConfigSnapshot, DefaultIsEmpty) {
     ConfigSnapshot snap;
     EXPECT_TRUE(snap.appEncodingOverrides.empty());
     EXPECT_TRUE(snap.appInputMethodOverrides.empty());
+    EXPECT_TRUE(snap.appSendMethodOverrides.empty());
     EXPECT_TRUE(snap.excludedAppSet.empty());
     EXPECT_TRUE(snap.tsfAppSet.empty());
     EXPECT_TRUE(snap.macroTable.empty());
@@ -68,6 +69,7 @@ TEST(ConfigSnapshot, StoreLoadRoundTrip) {
     src.spaceMacroKeys.insert(L"co the");
     src.appEncodingOverrides[L"legacy.exe"] = CodeTable::TCVN3;
     src.appInputMethodOverrides[L"legacy.exe"] = InputMethod::VNI;
+    src.appSendMethodOverrides[L"clipboard-only.exe"] = 1;
     src.generation = 42;
 
     std::atomic<std::shared_ptr<const ConfigSnapshot>> field;
@@ -85,6 +87,8 @@ TEST(ConfigSnapshot, StoreLoadRoundTrip) {
     EXPECT_EQ(loaded->appEncodingOverrides.at(L"legacy.exe"), CodeTable::TCVN3);
     ASSERT_EQ(loaded->appInputMethodOverrides.count(L"legacy.exe"), 1u);
     EXPECT_EQ(loaded->appInputMethodOverrides.at(L"legacy.exe"), InputMethod::VNI);
+    ASSERT_EQ(loaded->appSendMethodOverrides.count(L"clipboard-only.exe"), 1u);
+    EXPECT_EQ(loaded->appSendMethodOverrides.at(L"clipboard-only.exe"), 1);
     EXPECT_EQ(loaded->generation, 42u);
 }
 
@@ -219,12 +223,14 @@ TEST(ConfigSnapshotBuild, EmptyInputsProduceEmptySnapshotWithGeneration) {
         /*tsfApps*/       {},
         /*encOverrides*/  {},
         /*imOverrides*/   {},
+        /*sendOverrides*/ {},
         /*generation*/    7);
     EXPECT_TRUE(snap.macroTable.empty());
     EXPECT_TRUE(snap.excludedAppSet.empty());
     EXPECT_TRUE(snap.tsfAppSet.empty());
     EXPECT_TRUE(snap.appEncodingOverrides.empty());
     EXPECT_TRUE(snap.appInputMethodOverrides.empty());
+    EXPECT_TRUE(snap.appSendMethodOverrides.empty());
     EXPECT_TRUE(snap.spaceMacroKeys.empty());
     EXPECT_EQ(snap.generation, 7u);
 }
@@ -238,7 +244,7 @@ TEST(ConfigSnapshotBuild, SpaceMacroKeysDerivedFromMacroTable) {
         {L"khong",    L"không"},       // no space → excluded
     };
     auto snap = ConfigSnapshot::Build(
-        std::move(macros), {}, {}, {}, {}, /*generation*/ 1);
+        std::move(macros), {}, {}, {}, {}, {}, /*generation*/ 1);
     EXPECT_EQ(snap.macroTable.size(), 5u)
         << "all macro entries should land in macroTable verbatim";
     EXPECT_EQ(snap.spaceMacroKeys.size(), 2u);
@@ -252,12 +258,17 @@ TEST(ConfigSnapshotBuild, RoundTripsAllFields) {
     std::unordered_map<std::wstring, std::wstring> macros = {{L"vn", L"Việt Nam"}};
     std::unordered_set<std::wstring> excluded = {L"banking.exe", L"vault.exe"};
     std::unordered_set<std::wstring> tsf      = {L"word.exe"};
-    std::unordered_map<std::wstring, CodeTable>   enc = {{L"legacy.exe", CodeTable::TCVN3}};
-    std::unordered_map<std::wstring, InputMethod> im  = {{L"legacy.exe", InputMethod::VNI}};
+    std::unordered_map<std::wstring, CodeTable>   enc  = {{L"legacy.exe", CodeTable::TCVN3}};
+    std::unordered_map<std::wstring, InputMethod> im   = {{L"legacy.exe", InputMethod::VNI}};
+    // P3d follow-up: appSendMethodOverrides was the last variable-size
+    // config map left on HookEngine. Now flows through the snapshot so
+    // the main-thread reader (ClassifyFocusedWindow) sees a stable view
+    // even while the worker rebuilds.
+    std::unordered_map<std::wstring, int8_t>      send = {{L"legacy.exe", 1}};
 
     auto snap = ConfigSnapshot::Build(
         std::move(macros), std::move(excluded), std::move(tsf),
-        std::move(enc), std::move(im), /*generation*/ 99);
+        std::move(enc), std::move(im), std::move(send), /*generation*/ 99);
 
     EXPECT_EQ(snap.generation, 99u);
     EXPECT_EQ(snap.macroTable.at(L"vn"), L"Việt Nam");
@@ -266,6 +277,7 @@ TEST(ConfigSnapshotBuild, RoundTripsAllFields) {
     EXPECT_EQ(snap.tsfAppSet.count(L"word.exe"), 1u);
     EXPECT_EQ(snap.appEncodingOverrides.at(L"legacy.exe"), CodeTable::TCVN3);
     EXPECT_EQ(snap.appInputMethodOverrides.at(L"legacy.exe"), InputMethod::VNI);
+    EXPECT_EQ(snap.appSendMethodOverrides.at(L"legacy.exe"), 1);
     // No spaces in this macro's key → empty spaceMacroKeys.
     EXPECT_TRUE(snap.spaceMacroKeys.empty());
 }

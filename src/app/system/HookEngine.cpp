@@ -2899,9 +2899,9 @@ bool HookEngine::VerifyExcludedState() {
 // Replaces the four legacy Reload{AppOverrides,ExcludedApps,TsfApps,
 // MacroTable} methods + the P3b PublishConfigSnapshot bridge — all of
 // those wrote intermediate state to HookEngine members that no longer
-// exist post P3d cleanup. The remaining sibling field
-// `appSendMethodOverrides_` (not in the snapshot — see HookEngine.h)
-// is rewritten as a side effect so it stays in lockstep.
+// exist post P3d cleanup. The post-P3d follow-up (2026-05-19) folded
+// `appSendMethodOverrides` into the snapshot too so every variable-size
+// config map lives under one RCU contract.
 //
 // Feature gates honored:
 //   • excludeApps_ false ⇒ snapshot's excludedAppSet stays empty;
@@ -2916,20 +2916,22 @@ bool HookEngine::VerifyExcludedState() {
 void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) {
     const auto configPath = ConfigManager::GetConfigPath();
 
-    // Parse per-app overrides in one TOML pass; partition into the typed
-    // maps the snapshot expects + the int8_t send-method map that stays
-    // on HookEngine (not in the snapshot — only main-thread reader).
+    // Parse per-app overrides in one TOML pass; partition into the three
+    // typed maps the snapshot expects (encoding, input method, send
+    // method). All three publish through the same shared_ptr swap so
+    // ClassifyFocusedWindow on main sees a consistent view even mid-
+    // rebuild on the worker thread.
     auto overrides = ConfigManager::LoadAppOverrides(configPath);
-    std::unordered_map<std::wstring, CodeTable>   encOv;
-    std::unordered_map<std::wstring, InputMethod> imOv;
-    appSendMethodOverrides_.clear();
+    std::unordered_map<std::wstring, CodeTable>    encOv;
+    std::unordered_map<std::wstring, InputMethod>  imOv;
+    std::unordered_map<std::wstring, std::int8_t>  sendOv;
     for (auto& [exe, entry] : overrides) {
         if (entry.encodingOverride >= 0)
             encOv.emplace(exe, static_cast<CodeTable>(entry.encodingOverride));
         if (entry.inputMethod >= 0)
             imOv.emplace(exe, static_cast<InputMethod>(entry.inputMethod));
         if (entry.sendMethod >= 0)
-            appSendMethodOverrides_[exe] = entry.sendMethod;
+            sendOv.emplace(exe, entry.sendMethod);
     }
 
     std::unordered_set<std::wstring> excluded;
@@ -2959,6 +2961,7 @@ void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) {
         std::move(tsf),
         std::move(encOv),
         std::move(imOv),
+        std::move(sendOv),
         generation));
     configSnapshot_.store(std::move(snap), std::memory_order_release);
 }
@@ -3223,11 +3226,17 @@ FocusClassification HookEngine::ClassifyFocusedWindow(HWND triggerHwnd) noexcept
     cls.isVB6      = isVB6;
     cls.isConsole  = localConsole;
 
-    // Per-app send-method override (clipboard injector toggle).
+    // Per-app send-method override (clipboard injector toggle). Reads
+    // the snapshot's `appSendMethodOverrides` map — RCU-published from
+    // the worker thread, so this main-thread lookup is lock-free and
+    // immune to torn reads during a TOML rebuild.
     if (!cls.exeName.empty()) {
-        auto it = appSendMethodOverrides_.find(cls.exeName);
-        if (it != appSendMethodOverrides_.end() && it->second == 1) {
-            cls.localUseClipboardInjector = true;
+        auto snap = configSnapshot_.load(std::memory_order_acquire);
+        if (snap) {
+            auto it = snap->appSendMethodOverrides.find(cls.exeName);
+            if (it != snap->appSendMethodOverrides.end() && it->second == 1) {
+                cls.localUseClipboardInjector = true;
+            }
         }
     }
 

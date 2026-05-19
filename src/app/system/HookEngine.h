@@ -287,15 +287,9 @@ private:
     // overrides/excluded/TSF/macros fresh from TOML, derives
     // spaceMacroKeys via ConfigSnapshot::Build, and atomic-publishes the
     // result. Replaces the four legacy Reload* methods + the dual-write
-    // PublishConfigSnapshot bridge from P3b. The `appSendMethodOverrides_`
-    // sibling field (not in ConfigSnapshot — used only by main-thread
-    // ClassifyFocusedWindow) is rewritten as a side effect of the
-    // override parse so it stays in lockstep.
-    //
-    // REQUIRES: caller-held stateMutex_ (`appSendMethodOverrides_`
-    // mutation needs the lock; the snapshot publish itself is lock-free
-    // but the producer side serialises with the legacy-field writer
-    // contract).
+    // PublishConfigSnapshot bridge from P3b. The 2026-05-19 follow-up
+    // also folded `appSendMethodOverrides` into the snapshot, closing
+    // the last variable-size config map that was racing across threads.
     //
     // NOT `noexcept`: STL container allocations + `std::make_shared`
     // here can throw `std::bad_alloc`. Callers (ReloadFromToml,
@@ -407,9 +401,9 @@ private:
     // Phase 3d: legacy `excludedAppSet_` removed — readers go through
     // configSnapshot_.load()->excludedAppSet. Same migration for
     // tsfAppSet_, macroTable_, spaceMacroKeys_, appEncodingOverrides_,
-    // appInputMethodOverrides_ (all gone). `appSendMethodOverrides_`
-    // (below) is the remaining sibling — not in the snapshot because
-    // only ClassifyFocusedWindow on main reads it.
+    // appInputMethodOverrides_, and `appSendMethodOverrides_`
+    // (2026-05-19 follow-up — all six variable-size config maps now
+    // publish through the snapshot).
     // Sprint 1 D5.2: per-app cached + macro config flags read on hook callback
     // path. Writers: ApplyConfig (main), ReloadFromToml (main),
     // OnFocusChanged + RefreshFocusCache (main, via WinEventProc),
@@ -447,12 +441,9 @@ private:
     std::wstring previousExe_;  // Previously focused app (for tray menu context)
     CodeTable currentCodeTable_ = CodeTable::Unicode;
     CodeTable globalCodeTable_ = CodeTable::Unicode;     // config value, restored when no override
-    // (appEncodingOverrides_ and appInputMethodOverrides_ removed — Phase 3d.)
-    // appSendMethodOverrides_ NOT in ConfigSnapshot: only main-thread
-    // ClassifyFocusedWindow reads it, so it stays as a HookEngine field
-    // managed by RebuildSnapshotFromToml (rewritten in lockstep with
-    // the snapshot publish).
-    std::unordered_map<std::wstring, int8_t> appSendMethodOverrides_;
+    // (appEncodingOverrides_, appInputMethodOverrides_, and
+    // appSendMethodOverrides_ all removed — Phase 3d + 2026-05-19
+    // follow-up. Readers go through configSnapshot_.load()->...)
     InputMethod globalInputMethod_ = InputMethod::Telex; // config value, restored when no override
 
     // Per-HWND classification cache. Each focus change normally calls
