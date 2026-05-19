@@ -26,6 +26,7 @@ endif()
 # Engine Library (pure C++17, zero platform dependencies)
 set(NEXTKEY_ENGINE_SOURCES
     src/core/config/TypingConfig.h
+    src/core/config/ConfigSnapshot.h
     src/core/engine/TypingEngine.cpp
     src/core/engine/TypingEngine.h
     src/core/engine/EngineFactory.cpp
@@ -495,6 +496,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/HookCommandMailboxTest.cpp
     tests/FocusInterleavingTest.cpp
     tests/ThreadOwnershipTest.cpp
+    tests/ConfigSnapshotTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp

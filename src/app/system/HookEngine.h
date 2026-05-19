@@ -9,6 +9,7 @@
 #include "core/engine/IInputEngine.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/config/TypingConfig.h"
+#include "core/config/ConfigSnapshot.h"
 #include "core/hotkey/HotkeyRegistry.h"
 #include "core/AutoCapStateTransition.h"
 #include "core/SmartSwitchManager.h"
@@ -314,6 +315,19 @@ private:
     // can dereference unconditionally even before ApplyConfig has run.
     std::atomic<std::shared_ptr<const HotkeyRegistry>> hotkeys_{
         std::make_shared<const HotkeyRegistry>(HotkeyRegistry::Defaults())
+    };
+    // Phase 3a — RCU snapshot of variable-size config data (excluded/TSF/
+    // macro/override maps). Default-init means HookEngine ctor publishes
+    // an empty snapshot so the hook hot path's atomic_load is always
+    // dereferenceable, even before Phase 3b's worker-side producer wires
+    // up. Phase 3a ships dormant: no producer publishes a non-empty
+    // snapshot yet, no reader migrated off the legacy `excludedAppSet_` /
+    // `tsfAppSet_` / `macroTable_` / `spaceMacroKeys_` /
+    // `appEncodingOverrides_` / `appInputMethodOverrides_` fields below.
+    // Phase 3b adds the worker producer; Phase 3c migrates the readers;
+    // Phase 3d removes the legacy fields.
+    std::atomic<std::shared_ptr<const ConfigSnapshot>> configSnapshot_{
+        std::make_shared<const ConfigSnapshot>()
     };
     // Sprint 2 T3: Output channel strategy. RCU-published shared_ptr to the
     // active IOutputInjector, same pattern as config_ above. Writers (main
