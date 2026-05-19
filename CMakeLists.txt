@@ -164,6 +164,8 @@ add_executable(VKeyApp WIN32
     src/app/system/FloatingIcon.cpp
     src/app/system/HookEngine.h
     src/app/system/HookEngine.cpp
+    src/app/system/HookCommandMailbox.h
+    src/app/system/HookCommandMailbox.cpp
     src/app/system/HeartbeatPublisher.h
     src/app/system/HeartbeatPublisher.cpp
     src/app/system/WatchdogController.h
@@ -279,6 +281,8 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/system/PendingDllApply.cpp
         src/app/system/PerfHistogram.h
         src/app/system/PerfHistogram.cpp
+        src/app/system/HookCommandMailbox.h
+        src/app/system/HookCommandMailbox.cpp
         src/app/system/StartupHelper.h
         src/app/system/SubprocessHelper.h
         src/app/system/TsfRegistration.h
@@ -488,9 +492,11 @@ set(NEXTKEY_TEST_SOURCES
     tests/LoggerTest.cpp
     tests/HotkeyRegistryTest.cpp
     tests/PerfHistogramTest.cpp
+    tests/HookCommandMailboxTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
+    src/app/system/HookCommandMailbox.cpp
 )
 
 # Windows-only tests (require ConfigManager, ConfigEvent, Win32 APIs)

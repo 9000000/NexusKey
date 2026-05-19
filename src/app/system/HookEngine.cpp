@@ -33,6 +33,13 @@ namespace NextKey {
 /// the top of the hook chain. Defined once to avoid duplication.
 static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 
+/// Phase 2a — wake trampoline for `HookCommandMailbox`. Producers on main /
+/// worker / hotkey threads call `mailbox_.Post(bit, ...)`; that fires this
+/// message once per empty→non-empty edge to break the hook thread out of
+/// `GetMessage` so it drains promptly. Subsequent posts before drain run
+/// coalesce (no extra messages) per the wakePosted latch.
+static constexpr UINT WM_APP_HOOK_COMMAND   = WM_APP + 2;
+
 /// `WM_APP_REINSTALL_HOOKS` wParam — labels which trigger fired the reinstall.
 /// Logged by HookThreadProc so field-collected logs can distinguish causes
 /// (e.g. confirm whether Java-trigger reinstalls are frequent enough to
@@ -338,6 +345,17 @@ void HookEngine::HookThreadProc() {
     // LowLevelHooksTimeout window (silent-unhook avoidance).
     hookThreadId_ = GetCurrentThreadId();
 
+    // Phase 2a: wire the mailbox wake trampoline now that we own a valid
+    // thread id. Producers on other threads call mailbox_.Post(...); the
+    // first post per empty→non-empty edge fires this lambda which kicks
+    // the pump via WM_APP_HOOK_COMMAND. Subsequent posts in the same edge
+    // coalesce (wakePosted latch). Captured `this` is safe — mailbox is
+    // a member, lifetime is HookEngine's.
+    const DWORD wakeTid = hookThreadId_;
+    mailbox_.SetWakeFn([wakeTid]{
+        PostThreadMessageW(wakeTid, WM_APP_HOOK_COMMAND, 0, 0);
+    });
+
     keyboardHook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, cachedHInstance_, 0);
     if (!keyboardHook_) {
         HOOK_LOG(L"HookThreadProc: SetWindowsHookExW(WH_KEYBOARD_LL) FAILED err=%lu", GetLastError());
@@ -411,6 +429,22 @@ void HookEngine::HookThreadProc() {
                      reasonName,
                      keyboardHook_ ? L"OK" : L"FAIL",
                      mouseHook_ ? L"OK" : L"FAIL");
+            continue;
+        }
+        if (msg.message == WM_APP_HOOK_COMMAND) {
+            // Phase 2a: wake-up posted by mailbox_.Post on a non-hook thread.
+            // The drain is also called from inside LowLevelKeyboardProc (step
+            // 5 barrier), so reaching it here means no keystroke triggered a
+            // drain between the post and the pump cycle — process the bits
+            // promptly so focus/config updates aren't deferred to the next
+            // keydown.
+            try {
+                DrainHookCommands();
+            } catch (const std::exception& e) {
+                CrashLog(L"HookThreadProc::DrainHookCommands", e.what());
+            } catch (...) {
+                CrashLog(L"HookThreadProc::DrainHookCommands", "(non-std exception)");
+            }
             continue;
         }
         TranslateMessage(&msg);
@@ -776,6 +810,19 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
                          pKey->vkCode, pKey->scanCode, pKey->flags);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
+
+            // Rule 11.4 step 5 — drain cross-thread commands BEFORE the
+            // English-mode / modifier-key dispatch chain so state mutations
+            // posted by main / worker / hotkey threads land before this
+            // keystroke is classified. Drain is cheap when nothing is
+            // pending (one atomic load + one branch).
+            //
+            // Placement constraint: MUST come after sending_ (synthetic
+            // events from injector_->Replace must not re-enter drain) and
+            // BEFORE the English-mode passthrough so an in-flight V/E
+            // toggle posted from the hotkey thread takes effect on the
+            // very next keystroke, not the one after.
+            self->DrainHookCommands();
 
             bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
             bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
@@ -3957,6 +4004,54 @@ bool HookEngine::ReinstallKeyboardAndMouseHooks() {
     }
     HOOK_LOG(L"  ReinstallKeyboardAndMouseHooks: both hooks reinstalled OK");
     return true;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Phase 2a — Hook-thread command drain
+//
+// Single-writer invariant: every mutation of the 16 composition-state
+// fields must happen on the hook thread. Producers on other threads use
+// `mailbox_.Post(bit, ...)`; this drain consumes from the LL hook callback
+// (Rule 11.4 step 5 barrier) and from the pump's WM_APP_HOOK_COMMAND
+// handler. Dispatch order follows the design doc: kConfigApply first
+// (may rebuild engine_), then kFocusChanged (resets composition), then
+// kTickPoll, then kToggleVN.
+//
+// Phase 2a ships the infrastructure ONLY. No producer calls Post yet —
+// existing OnFocusChanged / OnTickPoll / ApplyConfig / ToggleVietnameseMode
+// still mutate inline as before. Phase 2b/c migrate them onto this channel
+// one writer at a time. Until then DrainHookCommands always returns early
+// (mailbox bits=0).
+// ═══════════════════════════════════════════════════════════
+
+void HookEngine::DrainHookCommands() {
+    const std::uint32_t bits = mailbox_.DrainBits();
+    if (!bits) return;  // common path — no work pending
+
+    if (bits & HookCommand::kConfigApply)  ApplyConfigOnHookThread();
+    if (bits & HookCommand::kFocusChanged) ApplyFocusOnHookThread(mailbox_.ConsumePendingFocus());
+    if (bits & HookCommand::kTickPoll)     ApplyTickPollOnHookThread();
+    if (bits & HookCommand::kToggleVN)     ApplyToggleVNOnHookThread();
+}
+
+// Phase 2a stubs — concrete bodies land in P2b (focus) / P2c (config /
+// tick / toggle). Calling any of these now would be a no-op since no
+// producer posts the corresponding bit yet, but we log if it happens so
+// an accidental future Post is obvious in field logs.
+void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> /*cls*/) {
+    HOOK_LOG(L"  ApplyFocusOnHookThread: stub (Phase 2b will populate)");
+}
+
+void HookEngine::ApplyConfigOnHookThread() {
+    HOOK_LOG(L"  ApplyConfigOnHookThread: stub (Phase 2c will populate)");
+}
+
+void HookEngine::ApplyTickPollOnHookThread() {
+    HOOK_LOG(L"  ApplyTickPollOnHookThread: stub (Phase 2c will populate)");
+}
+
+void HookEngine::ApplyToggleVNOnHookThread() {
+    HOOK_LOG(L"  ApplyToggleVNOnHookThread: stub (Phase 2c will populate)");
 }
 
 }  // namespace NextKey

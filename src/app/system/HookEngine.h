@@ -12,6 +12,7 @@
 #include "core/hotkey/HotkeyRegistry.h"
 #include "core/AutoCapStateTransition.h"
 #include "core/SmartSwitchManager.h"
+#include "app/system/HookCommandMailbox.h"
 #include <Windows.h>
 #include <functional>
 #include <atomic>
@@ -507,6 +508,21 @@ private:
     std::mutex hookStartMutex_;                    // pairs with hookStartCv_ for handshake
     std::condition_variable hookStartCv_;
     HINSTANCE cachedHInstance_ = nullptr;          // captured in Start(), used by HookThreadProc
+
+    // Phase 2a: cross-thread mailbox. Producers (main UI thread, MainThreadWorker
+    // tick, tray/hotkey callbacks) Post a command bit + optional FocusClassification
+    // snapshot. The hook thread drains via DrainHookCommands() inside
+    // LowLevelKeyboardProc (drain barrier at Rule 11.4 step 5 — after sending_
+    // guard, before English mode dispatch). Wake trampoline (PostThreadMessage
+    // WM_APP_HOOK_COMMAND) is wired at Start. Phase 2a ships this infrastructure
+    // dormant — no producer calls Post yet; drain always sees bits=0 and returns
+    // cheap. Phase 2b/c migrate the actual writers onto it.
+    HookCommandMailbox mailbox_;
+    void DrainHookCommands();                                 // hook thread only
+    void ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);
+    void ApplyConfigOnHookThread();
+    void ApplyTickPollOnHookThread();
+    void ApplyToggleVNOnHookThread();
     // Sprint 1 D11: downgraded from recursive_mutex to plain mutex. After Phase B
     // (D5–D7), all hook-read state is atomic — hook callbacks no longer acquire
     // this mutex for reads. The remaining users are main-thread / worker-thread
