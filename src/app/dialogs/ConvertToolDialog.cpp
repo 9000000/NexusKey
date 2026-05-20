@@ -165,10 +165,7 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
             try {
                 mods = static_cast<uint32_t>(std::stoul(getHiddenValue("#val-hotkey-mods")));
             } catch (...) { mods = 0; }
-            config_.hotkey.ctrl  = (mods & 0x01) != 0;
-            config_.hotkey.shift = (mods & 0x02) != 0;
-            config_.hotkey.alt   = (mods & 0x04) != 0;
-            config_.hotkey.win   = (mods & 0x08) != 0;
+            config_.hotkey.SetModsFromMask(mods);
             needSave = true;
         }
 

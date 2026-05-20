@@ -5,9 +5,19 @@
 
 #include <cwctype>
 
+#include "core/config/TypingConfig.h"  // HotkeyConfig::ToMods bit values
 #include "core/hotkey/HotkeyRegistry.h"
 
 namespace NextKey {
+
+// Drift guard — TypingConfig.h hardcodes 0x01/0x02/0x04/0x08 for the
+// modifier bitmask to avoid pulling HotkeyRegistry.h into every config
+// consumer. This assert wires the two headers together so any divergence
+// breaks the build instead of silently mismapping flags at runtime.
+static_assert(kModCtrl  == 0x01u, "HotkeyConfig::ToMods Ctrl bit drift");
+static_assert(kModShift == 0x02u, "HotkeyConfig::ToMods Shift bit drift");
+static_assert(kModAlt   == 0x04u, "HotkeyConfig::ToMods Alt bit drift");
+static_assert(kModWin   == 0x08u, "HotkeyConfig::ToMods Win bit drift");
 
 namespace {
 

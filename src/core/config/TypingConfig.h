@@ -52,6 +52,11 @@ struct HotkeyConfig {
     /// Pack the 4 modifier flags into a HotkeyRegistry-compatible bitmask
     /// (`kModCtrl | kModShift | kModAlt | kModWin`). Helper for callers
     /// that need to format/compare with `Trigger`-style data.
+    ///
+    /// The bit values are hardcoded here rather than including
+    /// `core/hotkey/HotkeyRegistry.h` to avoid pulling `<unordered_map>`
+    /// into every TypingConfig consumer. Drift guarded by the static_assert
+    /// in HotkeyLabel.cpp where both headers do see each other.
     [[nodiscard]] uint32_t ToMods() const noexcept {
         uint32_t m = 0;
         if (ctrl)  m |= 0x01u;  // kModCtrl
@@ -59,6 +64,15 @@ struct HotkeyConfig {
         if (alt)   m |= 0x04u;  // kModAlt
         if (win)   m |= 0x08u;  // kModWin
         return m;
+    }
+
+    /// Inverse of ToMods — unpack a bitmask into the 4 boolean fields.
+    /// `vk` is untouched. Single source of truth for the kMod* ↔ flag map.
+    void SetModsFromMask(uint32_t mods) noexcept {
+        ctrl  = (mods & 0x01u) != 0;
+        shift = (mods & 0x02u) != 0;
+        alt   = (mods & 0x04u) != 0;
+        win   = (mods & 0x08u) != 0;
     }
 
     bool operator==(const HotkeyConfig&) const noexcept = default;

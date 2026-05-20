@@ -599,11 +599,15 @@ void ClassicSettingsDialog::PopulateControls() {
         }
     }
 
+    // Legacy 1-char edit box renders A-Z/0-9 + Space only. F-row / OEM
+    // bindings stored in vk survive load but show blank — V/E hotkey UI
+    // will get the shared capture overlay in a future sprint.
     if (editHotkey_) {
-        if (hotkeyConfig_.key == L' ') {
+        uint32_t vk = hotkeyConfig_.vk;
+        if (vk == 0x20) {
             SetWindowTextW(editHotkey_, L"Space");
-        } else if (hotkeyConfig_.key) {
-            wchar_t buf[2] = { hotkeyConfig_.key, 0 };
+        } else if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) {
+            wchar_t buf[2] = { static_cast<wchar_t>(vk), 0 };
             SetWindowTextW(editHotkey_, buf);
         } else {
             SetWindowTextW(editHotkey_, L"");
@@ -672,17 +676,20 @@ void ClassicSettingsDialog::ReadControlValues() {
         }
     }
 
+    // Same A-Z/0-9 + Space rule as the load side above. Anything else from
+    // a typo / paste / future input drops to vk=0 (user rebinds).
     if (editHotkey_) {
         wchar_t buf[16] = {0};
         GetWindowTextW(editHotkey_, buf, 16);
         if (wcscmp(buf, L"Space") == 0) {
-            hotkeyConfig_.key = L' ';
+            hotkeyConfig_.vk = 0x20;  // VK_SPACE
         } else if (wcslen(buf) > 0) {
-            wchar_t key = buf[0];
-            if (key >= L'a' && key <= L'z') key = key - L'a' + L'A';
-            hotkeyConfig_.key = key;
+            wchar_t c = static_cast<wchar_t>(towupper(buf[0]));
+            hotkeyConfig_.vk = ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9'))
+                ? static_cast<uint32_t>(c)
+                : 0u;
         } else {
-            hotkeyConfig_.key = 0;
+            hotkeyConfig_.vk = 0;
         }
     }
 

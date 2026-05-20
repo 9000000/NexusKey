@@ -8,7 +8,6 @@
 #include "app/helpers/AppHelpers.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/hotkey/HotkeyLabel.h"
-#include "core/hotkey/HotkeyRegistry.h"
 #include "core/Strings.h"
 
 #include <windowsx.h>
@@ -577,11 +576,8 @@ LRESULT CALLBACK ClassicConvertToolDialog::WndProc(HWND hwnd, UINT msg, WPARAM w
                     };
                     if (auto r = ShowHotkeyCaptureDialog(
                             self->hInstance_, hwnd, self->theme_, self->dpi_, opts)) {
-                        self->config_.hotkey.vk    = r->vk;
-                        self->config_.hotkey.ctrl  = (r->mods & kModCtrl)  != 0;
-                        self->config_.hotkey.shift = (r->mods & kModShift) != 0;
-                        self->config_.hotkey.alt   = (r->mods & kModAlt)   != 0;
-                        self->config_.hotkey.win   = (r->mods & kModWin)   != 0;
+                        self->config_.hotkey.vk = r->vk;
+                        self->config_.hotkey.SetModsFromMask(r->mods);
                         std::wstring label = FormatHotkeyLabel(
                             self->config_.hotkey.vk, self->config_.hotkey.ToMods());
                         SetWindowTextW(self->btnRecordHotkey_,

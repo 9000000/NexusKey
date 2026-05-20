@@ -36,6 +36,10 @@ struct HotkeyCaptureOptions {
 /// Show the modal capture dialog. Blocks until the user commits a binding
 /// or cancels (Esc / close button / WM_CLOSE). Disables `parent` for the
 /// duration. Returns nullopt on cancel.
+///
+/// Note: bare-Escape (no modifiers held) always cancels — Esc cannot be
+/// bound as a standalone hotkey via this dialog regardless of the options.
+/// Esc+modifier (e.g. Ctrl+Esc) IS captured as a normal chord.
 std::optional<HotkeyCaptureResult> ShowHotkeyCaptureDialog(
     HINSTANCE hInstance, HWND parent, ClassicTheme& theme, UINT dpi,
     const HotkeyCaptureOptions& opts = {});
