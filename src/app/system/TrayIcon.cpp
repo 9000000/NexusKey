@@ -378,6 +378,8 @@ void TrayIcon::ShowContextMenu() {
         addRadio(0, TrayMenuId::InputTelex, L"Telex");
         addRadio(1, TrayMenuId::InputVNI, L"VNI");
         addRadio(2, TrayMenuId::InputSimpleTelex, L"Simple Telex");
+        addRadio(3, TrayMenuId::InputCombined, L"Telex + VNI");
+        addRadio(4, TrayMenuId::InputUserDefined, L"Tự định nghĩa");
         AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hInputMenu), S(StringId::MENU_INPUT_METHOD));
     }
 

@@ -903,7 +903,9 @@ void OnMenuCommand(TrayMenuId id) {
 
         case TrayMenuId::InputTelex:
         case TrayMenuId::InputVNI:
-        case TrayMenuId::InputSimpleTelex: {
+        case TrayMenuId::InputSimpleTelex:
+        case TrayMenuId::InputCombined:
+        case TrayMenuId::InputUserDefined: {
             auto config = ConfigManager::LoadOrDefault();
             int method = static_cast<int>(id) - static_cast<int>(TrayMenuId::InputTelex);
             config.inputMethod = static_cast<InputMethod>(method);
