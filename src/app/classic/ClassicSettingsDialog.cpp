@@ -6,6 +6,7 @@
 #include "helpers/AppHelpers.h"
 #include "ClassicExcludedAppsDialog.h"
 #include "ClassicTsfAppsDialog.h"
+#include "system/TsfRegistration.h"
 #include "ClassicSpellExclusionsDialog.h"
 #include "ClassicAppOverridesDialog.h"
 #include "ClassicMacroTableDialog.h"
@@ -543,6 +544,11 @@ void ClassicSettingsDialog::LoadSettings() {
     hotkeyConfig_ = ConfigManager::LoadHotkeyConfigOrDefault();
     systemConfig_ = ConfigManager::LoadSystemConfigOrDefault();
 
+    // Derive tsfApps from actual DLL registration state — user may have run
+    // regsvr32 /u manually, or a prior toggle may have partially failed.
+    // Mirrors Sciter behaviour in SettingsDialog.cpp:1042.
+    config_.tsfApps = IsTsfRegistered();
+
     (void)sharedState_.OpenReadWrite();
     (void)configEvent_.Initialize();
 }
@@ -872,6 +878,20 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                     UpdateSpellCheckChildren();
                 }
 
+                // TSF-apps toggle registers/unregisters the TSF DLL.
+                // Mirrors the Sciter handler in SettingsDialog.cpp:575-610.
+                if (meta->win32Id == IDC_CHECK_TSF_APPS) {
+                    bool checked = (IsDlgButtonChecked(hwnd_, IDC_CHECK_TSF_APPS) == BST_CHECKED);
+                    if (!OnTsfAppsToggle(checked)) {
+                        // Revert checkbox + config; persist the corrected state now
+                        // so a crash or restart can't leave the visible-but-broken combo.
+                        CheckDlgButton(hwnd_, IDC_CHECK_TSF_APPS, checked ? BST_UNCHECKED : BST_CHECKED);
+                        config_.tsfApps = !checked;
+                        KillTimer(hwnd_, kTimerDeferredSave);
+                        SaveToToml();
+                    }
+                }
+
                 // System toggles have side effects beyond config save
                 if (meta->owner == SettingOwner::System && meta->type == SettingType::Toggle) {
                     bool checked = (IsDlgButtonChecked(hwnd_, meta->win32Id) == BST_CHECKED);
@@ -1100,6 +1120,48 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
     }
     // show-on-startup, check-update: saved to config,
     // main_lite.cpp reads updated config when dialog closes.
+}
+
+// ════════════════════════════════════════════════════════════════════
+// TSF-apps toggle side effect — register/unregister TSF DLL
+// ════════════════════════════════════════════════════════════════════
+
+bool ClassicSettingsDialog::OnTsfAppsToggle(bool wantsEnabled) {
+    // Synchronous regsvr32 mirrors the Sciter handler in SettingsDialog.cpp:575-610.
+    // Known limitation: blocks the UI thread for ~1s during elevation prompt; an
+    // async port (background thread + PostMessage) is tracked in docs/TODO.md.
+    if (wantsEnabled) {
+        // Always attempt full registration (not guarded by IsTsfRegistered) because
+        // a previous partial failure could leave CLSID in registry but TIP profile missing.
+        bool ok = RegisterTsf();
+        if (!ok) {
+            ok = RegisterTsfElevated();
+        }
+        if (!ok || !IsTsfRegistered()) {
+            MessageBoxW(hwnd_,
+                L"Không thể đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
+                L"VKey", MB_OK | MB_ICONWARNING);
+            return false;
+        }
+        return true;
+    }
+
+    // Disabling — only attempt unregister if currently registered.
+    if (IsTsfRegistered()) {
+        UnregisterTsf();
+        // DllUnregisterServer may return S_OK even when it can't delete HKLM keys
+        // without admin — verify actual state before deciding to elevate.
+        if (IsTsfRegistered()) {
+            UnregisterTsfElevated();
+        }
+        if (IsTsfRegistered()) {
+            MessageBoxW(hwnd_,
+                L"Không thể huỷ đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
+                L"VKey", MB_OK | MB_ICONWARNING);
+            return false;
+        }
+    }
+    return true;
 }
 
 // ════════════════════════════════════════════════════════════════════

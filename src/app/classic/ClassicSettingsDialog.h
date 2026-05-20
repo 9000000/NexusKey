@@ -62,6 +62,11 @@ private:
     void OnCommand(WPARAM wParam, LPARAM lParam);
     void OnActionButton(uint16_t controlId);
     void OnSystemToggle(const wchar_t* id, bool value);
+    /// Side-effect handler for the TSF-apps checkbox.
+    /// Registers/unregisters the TSF DLL to match the requested state.
+    /// Returns true if the DLL state now matches; false means the caller
+    /// must revert the checkbox + config (user denied UAC, regsvr32 failed, etc).
+    [[nodiscard]] bool OnTsfAppsToggle(bool wantsEnabled);
     void OnPickIconColors();
     void UpdateSpellCheckChildren();
     void RefreshLabels();

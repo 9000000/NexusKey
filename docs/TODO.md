@@ -3,6 +3,32 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
+## 🟡 TSF-apps toggle — async register/unregister (2026-05-20)
+
+`ClassicSettingsDialog::OnTsfAppsToggle` (and the parallel Sciter handler at
+`SettingsDialog.cpp:575-610`) call `RegisterTsf` / `RegisterTsfElevated`
+synchronously on the UI thread. A successful path blocks ~50ms; UAC prompts
+or COM elevation block 1–3 s with a frozen dialog.
+
+**Fix per Rule 3.4 (async user actions need UI feedback):**
+
+1. Disable checkbox + show "Đang đăng ký TSF…" status before spawning thread.
+2. Run `RegisterTsf` / `UnregisterTsf` on `std::thread` (capturing `hwnd_`).
+3. PostMessage a custom `WM_VKEY_TSF_REGISTER_DONE` with the result; the WndProc
+   handler re-enables the checkbox, reverts on failure, persists on success.
+4. Apply to BOTH Sciter and Classic in the same PR — the rule violation is
+   pre-existing in Sciter (`SettingsDialog.cpp:575-610`), not new to Classic.
+
+Marker: comment in `ClassicSettingsDialog.cpp:OnTsfAppsToggle`.
+
+## 🟡 ClassicExcludedAppsDialog — host EXE guard misses VKeyClassic.exe (2026-05-20)
+
+`ClassicExcludedAppsDialog.cpp:185` blocks `vkey.exe` + `vkeylite.exe` but the
+actual VKeyLite output name is `VKeyClassic.exe` (see `CMakeLists.txt:342`:
+`set_target_properties(VKeyLite PROPERTIES OUTPUT_NAME "VKeyClassic")`). A
+user can accidentally exclude their own host. `ClassicTsfAppsDialog.cpp:190`
+already has the correct three-name guard — mirror it back to ExcludedApps.
+
 ## 🟡 Convert-hotkey unify capture — deferred items (2026-05-20)
 
 Unified convert-tool hotkey UI with shared capture overlay landed across
