@@ -244,21 +244,21 @@ std::optional<HotkeyCaptureResult> ShowHotkeyCaptureDialog(
     HINSTANCE hInstance, HWND parent, ClassicTheme& theme, UINT dpi,
     const HotkeyCaptureOptions& opts) {
 
-    static bool s_classRegistered = false;
-    if (!s_classRegistered) {
-        WNDCLASSEXW wc{};
-        wc.cbSize        = sizeof(wc);
-        wc.style         = CS_HREDRAW | CS_VREDRAW;
-        wc.lpfnWndProc   = CaptureOverlay::WndProc;
-        wc.cbWndExtra    = sizeof(void*);
-        wc.hInstance     = hInstance;
-        wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
-        wc.lpszClassName = kClassName;
-        wc.hIcon         = LoadIconW(hInstance, MAKEINTRESOURCEW(101));
-        wc.hIconSm       = wc.hIcon;
-        RegisterClassExW(&wc);
-        s_classRegistered = true;
-    }
+    // RegisterClassExW is idempotent — duplicate registrations return 0
+    // with GetLastError() == ERROR_CLASS_ALREADY_EXISTS, which is harmless.
+    // No need to guard with a static bool (which would also swallow real
+    // first-call failures).
+    WNDCLASSEXW wc{};
+    wc.cbSize        = sizeof(wc);
+    wc.style         = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc   = CaptureOverlay::WndProc;
+    wc.cbWndExtra    = sizeof(void*);
+    wc.hInstance     = hInstance;
+    wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
+    wc.lpszClassName = kClassName;
+    wc.hIcon         = LoadIconW(hInstance, MAKEINTRESOURCEW(101));
+    wc.hIconSm       = wc.hIcon;
+    RegisterClassExW(&wc);
 
     CaptureOverlay self;
     self.theme = &theme;

@@ -20,7 +20,7 @@ ConvertToolDialog::ConvertToolDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/convert-tool/convert-tool.html",
         L"VKey - Convert Tool",
-        420, 568, parent, true, 36, 40, true
+        420, 580, parent, true, 36, 40, true
     }) {
     // Load saved config (UI will be populated in DOCUMENT_COMPLETE)
     config_ = ConfigManager::LoadConvertConfigOrDefault();

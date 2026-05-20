@@ -239,14 +239,9 @@
                 if (evt.metaKey  && vk !== VK.LWIN && vk !== VK.RWIN)    mods |= MOD.WIN;
             }
 
-            // Bare-modifier path for allowBareModifier=true callers
+            // Modifier-as-key arrives here only when allowBareModifier=true
             // (HotkeysDialog) — committed as a "modifier alone" trigger.
-            var bareModifier = isModifierVk(vk) && mods === 0 && !isDoubleTap;
-            if (bareModifier && !allowBareModifier) {
-                // Unreachable — caught above. Defensive guard kept for clarity.
-                evt.preventDefault();
-                return;
-            }
+            // The !allowBareModifier case is handled above.
 
             pending.vk        = vk;
             pending.mods      = mods;

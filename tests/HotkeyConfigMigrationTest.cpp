@@ -71,6 +71,37 @@ TEST(HotkeyConfigToMods, AllFour) {
     EXPECT_EQ(cfg.ToMods(), kModCtrl | kModShift | kModAlt | kModWin);
 }
 
+// ───────────────────────────── HotkeyConfig::SetModsFromMask ─────────────
+
+TEST(HotkeyConfigSetModsFromMask, EmptyMaskClearsAllFlags) {
+    HotkeyConfig cfg{.ctrl = true, .shift = true, .alt = true, .win = true,
+                     .vk = 0x5A};
+    cfg.SetModsFromMask(0);
+    EXPECT_FALSE(cfg.ctrl);
+    EXPECT_FALSE(cfg.shift);
+    EXPECT_FALSE(cfg.alt);
+    EXPECT_FALSE(cfg.win);
+    EXPECT_EQ(cfg.vk, 0x5Au) << "vk must NOT be touched by SetModsFromMask";
+}
+
+TEST(HotkeyConfigSetModsFromMask, CtrlShiftMask) {
+    HotkeyConfig cfg{};
+    cfg.SetModsFromMask(kModCtrl | kModShift);
+    EXPECT_TRUE(cfg.ctrl);
+    EXPECT_TRUE(cfg.shift);
+    EXPECT_FALSE(cfg.alt);
+    EXPECT_FALSE(cfg.win);
+}
+
+TEST(HotkeyConfigSetModsFromMask, RoundTripWithToMods) {
+    // Setting then re-extracting the mask must be a no-op for every subset.
+    for (uint32_t mask = 0; mask <= 0x0F; ++mask) {
+        HotkeyConfig cfg{};
+        cfg.SetModsFromMask(mask);
+        EXPECT_EQ(cfg.ToMods(), mask) << "mask=" << mask;
+    }
+}
+
 // ───────────────────────────── HasAny / ModifiersMatch after rename ──────
 
 TEST(HotkeyConfig, HasAnyTrueWhenVkSet) {

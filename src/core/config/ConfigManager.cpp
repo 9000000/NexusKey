@@ -453,7 +453,11 @@ HotkeyConfig ConfigManager::LoadHotkeyConfigOrDefault() {
     if (config) {
         return *config;
     }
-    return HotkeyConfig{};  // Default: Ctrl+Shift
+    // No config file → empty binding (all flags false, vk=0). The
+    // "Ctrl+Shift default" only kicks in when the file exists but the
+    // ctrl/shift fields are missing inside [hotkey] (see value_or(true)
+    // calls above). User must configure on fresh install.
+    return HotkeyConfig{};
 }
 
 // ─────────────────────────── Unified HotkeyRegistry ──────────────────────
