@@ -5,6 +5,7 @@
 
 #ifdef _WIN32
 
+#include "ClassicHotkeyCapture.h"
 #include "core/config/ConfigManager.h"
 #include "core/CrashLog.h"
 #include "core/Debug.h"
@@ -38,8 +39,6 @@ constexpr UINT IDC_DEL_TOGGLE    = 4124;
 constexpr UINT IDC_RESET_TOGGLE  = 4125;
 
 constexpr UINT IDC_BTN_CLOSE_HK  = 4150;
-
-constexpr DWORD kDoubleTapWindowMs = 400;
 
 // ── VK → display name table (mirrors HotkeysDialog.cpp kVkNames) ──
 const std::unordered_map<uint32_t, const wchar_t*> kVkNames = {
@@ -92,18 +91,6 @@ const std::unordered_map<uint32_t, const wchar_t*> kVkNames = {
     return prefix + keyName;
 }
 
-/// Canonicalize raw VK from WM_KEY* (LeftCtrl/RightCtrl → Ctrl, etc.) so the
-/// stored trigger matches what HotkeyRegistry::Matches() expects.
-[[nodiscard]] uint32_t CanonicalVk(uint32_t vk) noexcept {
-    switch (vk) {
-    case VK_LCONTROL: case VK_RCONTROL: return VK_CONTROL;
-    case VK_LSHIFT:   case VK_RSHIFT:   return VK_SHIFT;
-    case VK_LMENU:    case VK_RMENU:    return VK_MENU;
-    case VK_RWIN:                       return VK_LWIN;  // collapse Win family
-    default:                            return vk;
-    }
-}
-
 [[nodiscard]] bool IsModifierVk(uint32_t vk) noexcept {
     return vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU
         || vk == VK_LWIN  || vk == VK_RWIN;
@@ -112,264 +99,6 @@ const std::unordered_map<uint32_t, const wchar_t*> kVkNames = {
 [[nodiscard]] UINT IntentToIndex(Intent intent) noexcept {
     return static_cast<UINT>(intent);  // 0/1/2 — matches kAllIntents order
 }
-
-// ────────────────────────────────────────────────────────────────────
-// Capture overlay — modal popup that records the next keystroke / modifier
-// double-tap / modifier-alone release.
-// ────────────────────────────────────────────────────────────────────
-struct CaptureOverlay {
-    HWND     hwnd       = nullptr;
-    HWND     preview    = nullptr;
-    HWND     btnCancel  = nullptr;
-    Trigger  captured{};
-    bool     ok         = false;
-    bool     done       = false;
-    uint32_t pendingModVk = 0;        // first-tap candidate for double-tap detection
-    DWORD    pendingModTs = 0;
-    ClassicTheme* theme  = nullptr;
-
-    static constexpr const wchar_t* kClassName = L"VKeyClassicHotkeyCapture";
-
-    static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) try {
-        CaptureOverlay* self = nullptr;
-        if (msg == WM_NCCREATE) {
-            auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-            self = reinterpret_cast<CaptureOverlay*>(cs->lpCreateParams);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-            self->hwnd = hwnd;
-        } else {
-            self = reinterpret_cast<CaptureOverlay*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-        }
-        if (!self) return DefWindowProcW(hwnd, msg, wParam, lParam);
-
-        switch (msg) {
-        case WM_KEYDOWN:
-        case WM_SYSKEYDOWN: {
-            const uint32_t rawVk = static_cast<uint32_t>(wParam);
-            const uint32_t vk    = CanonicalVk(rawVk);
-            if (vk == VK_ESCAPE && !IsModifierVk(VK_ESCAPE)) {
-                // Esc cancels the capture overlay only when it's the bare key
-                // (no modifiers held) — otherwise treat as a valid binding.
-                const bool ctrl  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-                const bool shift = (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0;
-                const bool alt   = (GetAsyncKeyState(VK_MENU)    & 0x8000) != 0;
-                const bool win   = ((GetAsyncKeyState(VK_LWIN)   & 0x8000) != 0)
-                                || ((GetAsyncKeyState(VK_RWIN)   & 0x8000) != 0);
-                if (!ctrl && !shift && !alt && !win) {
-                    self->ok = false;
-                    self->done = true;
-                    DestroyWindow(hwnd);
-                    return 0;
-                }
-            }
-            if (IsModifierVk(vk)) {
-                // Don't commit on modifier DOWN — wait for UP so we can
-                // distinguish "Ctrl alone" / "2×Ctrl" / "Ctrl+letter".
-                return 0;
-            }
-            // Main key press — capture immediately with current modifiers.
-            uint32_t mods = 0;
-            if (GetAsyncKeyState(VK_CONTROL) & 0x8000) mods |= kModCtrl;
-            if (GetAsyncKeyState(VK_SHIFT)   & 0x8000) mods |= kModShift;
-            if (GetAsyncKeyState(VK_MENU)    & 0x8000) mods |= kModAlt;
-            if ((GetAsyncKeyState(VK_LWIN)   & 0x8000)
-             || (GetAsyncKeyState(VK_RWIN)   & 0x8000)) mods |= kModWin;
-            self->captured = Trigger{vk, mods, /*doubleTap=*/false};
-            self->ok = true;
-            self->done = true;
-            DestroyWindow(hwnd);
-            return 0;
-        }
-
-        case WM_KEYUP:
-        case WM_SYSKEYUP: {
-            const uint32_t rawVk = static_cast<uint32_t>(wParam);
-            const uint32_t vk    = CanonicalVk(rawVk);
-            if (!IsModifierVk(vk)) return 0;
-
-            const DWORD now = GetTickCount();
-            const bool isSecondTap = (self->pendingModVk == vk)
-                                  && (now - self->pendingModTs <= kDoubleTapWindowMs);
-            if (isSecondTap) {
-                // 2× modifier — store with mods=0, doubleTap=true. Cancel the
-                // single-tap fallback timer before commit; DestroyWindow auto-
-                // kills any leftovers but pairing keeps state explicit.
-                KillTimer(hwnd, 1);
-                self->captured = Trigger{vk, 0, /*doubleTap=*/true};
-                self->ok = true;
-                self->done = true;
-                DestroyWindow(hwnd);
-                return 0;
-            }
-            // First tap: arm double-tap window; also treat as modifier-alone
-            // candidate. Compute OTHER held modifiers (excluding this one).
-            uint32_t otherMods = 0;
-            if (vk != VK_CONTROL && (GetAsyncKeyState(VK_CONTROL) & 0x8000)) otherMods |= kModCtrl;
-            if (vk != VK_SHIFT   && (GetAsyncKeyState(VK_SHIFT)   & 0x8000)) otherMods |= kModShift;
-            if (vk != VK_MENU    && (GetAsyncKeyState(VK_MENU)    & 0x8000)) otherMods |= kModAlt;
-            if (vk != VK_LWIN
-                && ((GetAsyncKeyState(VK_LWIN) & 0x8000) || (GetAsyncKeyState(VK_RWIN) & 0x8000))) {
-                otherMods |= kModWin;
-            }
-            if (otherMods != 0) {
-                // Modifier-combo (e.g. Ctrl+Shift): commit immediately.
-                self->captured = Trigger{vk, otherMods, /*doubleTap=*/false};
-                self->ok = true;
-                self->done = true;
-                DestroyWindow(hwnd);
-                return 0;
-            }
-            // Pure modifier-alone candidate — start double-tap timer; commit
-            // as modifier-alone if no second tap arrives.
-            self->pendingModVk = vk;
-            self->pendingModTs = now;
-            SetTimer(hwnd, 1, kDoubleTapWindowMs + 20, nullptr);
-            // Live preview — `previewTrig` is the candidate Trigger; `self->preview`
-            // is the static HWND that shows its rendered label.
-            const Trigger previewTrig{vk, 0, false};
-            SetWindowTextW(self->preview, FormatTriggerLabel(previewTrig).c_str());
-            return 0;
-        }
-
-        case WM_TIMER: {
-            if (wParam != 1 || self->pendingModVk == 0) return 0;
-            KillTimer(hwnd, 1);
-            self->captured = Trigger{self->pendingModVk, 0, /*doubleTap=*/false};
-            self->ok = true;
-            self->done = true;
-            DestroyWindow(hwnd);
-            return 0;
-        }
-
-        case WM_COMMAND:
-            if (LOWORD(wParam) == 1) {  // btnCancel HMENU=1 — our cancel control
-                self->ok = false;
-                self->done = true;
-                DestroyWindow(hwnd);
-                return 0;
-            }
-            break;
-
-        case WM_ERASEBKGND: {
-            if (!self->theme) break;
-            HDC hdc = reinterpret_cast<HDC>(wParam);
-            RECT rc; GetClientRect(hwnd, &rc);
-            FillRect(hdc, &rc, self->theme->BrushBackground());
-            return 1;
-        }
-
-        case WM_CTLCOLORSTATIC:
-            if (self->theme) {
-                return reinterpret_cast<LRESULT>(self->theme->OnCtlColorStatic(
-                    reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam)));
-            }
-            break;
-        case WM_CTLCOLORBTN:
-            if (self->theme) {
-                return reinterpret_cast<LRESULT>(self->theme->OnCtlColorBtn(
-                    reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam)));
-            }
-            break;
-
-        case WM_CLOSE:
-            self->ok = false;
-            self->done = true;
-            DestroyWindow(hwnd);
-            return 0;
-        case WM_DESTROY:
-            return 0;
-        }
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    } catch (const std::exception& e) {
-        NextKey::CrashLog(L"CaptureOverlay::WndProc", e.what());
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    } catch (...) {
-        NextKey::CrashLog(L"CaptureOverlay::WndProc", "(non-std exception)");
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
-
-    static bool Show(HINSTANCE hInstance, HWND parent, ClassicTheme& theme, UINT dpi, Trigger& out) {
-        WNDCLASSEXW wc{};
-        wc.cbSize = sizeof(wc);
-        wc.style  = CS_HREDRAW | CS_VREDRAW;
-        wc.lpfnWndProc = WndProc;
-        wc.cbWndExtra  = sizeof(void*);
-        wc.hInstance   = hInstance;
-        wc.hCursor     = LoadCursorW(nullptr, IDC_ARROW);
-        wc.lpszClassName = kClassName;
-        wc.hIcon = LoadIconW(hInstance, MAKEINTRESOURCEW(101));
-        wc.hIconSm = wc.hIcon;
-        RegisterClassExW(&wc);
-
-        CaptureOverlay self;
-        self.theme = &theme;
-
-        auto Dpi = [dpi](int v) { return MulDiv(v, static_cast<int>(dpi), 96); };
-
-        const int w = Dpi(360);
-        const int h = Dpi(160);
-        const DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-        RECT rc{0, 0, w, h};
-        AdjustWindowRectEx(&rc, style, FALSE, 0);
-        const int aw = rc.right - rc.left, ah = rc.bottom - rc.top;
-        POINT pt = NextKey::GetCenteredPos(parent, aw, ah);
-
-        HWND hwnd = CreateWindowExW(WS_EX_DLGMODALFRAME, kClassName, L"Ghi nhận phím",
-            style, pt.x, pt.y, aw, ah, parent, nullptr, hInstance, &self);
-        if (!hwnd) return false;
-        theme.ApplyWindowAttributes(hwnd);
-
-        // Prompt + preview + cancel
-        const int pad = Dpi(14);
-        const int rowH = Dpi(20);
-        HWND prompt = CreateWindowExW(0, L"STATIC",
-            L"Nhấn phím hoặc tổ hợp phím cần gán. Nhả nhanh modifier 2 lần để gán \"2×\".",
-            WS_CHILD | WS_VISIBLE | SS_LEFT,
-            pad, pad, w - pad * 2, rowH * 2, hwnd, nullptr, hInstance, nullptr);
-        (void)prompt;
-
-        self.preview = CreateWindowExW(0, L"STATIC", L"(chờ phím...)",
-            WS_CHILD | WS_VISIBLE | SS_CENTER | SS_CENTERIMAGE,
-            pad, pad + rowH * 2 + Dpi(6), w - pad * 2, rowH, hwnd, nullptr, hInstance, nullptr);
-
-        const int btnW = Dpi(80);
-        const int btnH = Dpi(26);
-        self.btnCancel = CreateWindowExW(0, L"BUTTON", L"Hủy (Esc)",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-            w - pad - btnW, h - pad - btnH, btnW, btnH,
-            hwnd, reinterpret_cast<HMENU>(1), hInstance, nullptr);
-
-        EnumChildWindows(hwnd, [](HWND h, LPARAM lp) -> BOOL {
-            auto* t = reinterpret_cast<ClassicTheme*>(lp);
-            SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(t->Fonts().body), TRUE);
-            return TRUE;
-        }, reinterpret_cast<LPARAM>(&theme));
-        theme.ThemeAllChildren(hwnd);
-
-        ShowWindow(hwnd, SW_SHOW);
-        SetForegroundWindow(hwnd);
-        SetFocus(hwnd);
-
-        EnableWindow(parent, FALSE);
-        MSG msg{};
-        while (!self.done && GetMessageW(&msg, nullptr, 0, 0)) {
-            // Don't pass key messages through IsDialogMessage — it would
-            // consume Tab/Enter/Esc/Alt before our WndProc sees them.
-            if (msg.message != WM_KEYDOWN && msg.message != WM_KEYUP
-             && msg.message != WM_SYSKEYDOWN && msg.message != WM_SYSKEYUP
-             && IsDialogMessageW(hwnd, &msg)) {
-                continue;
-            }
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-        EnableWindow(parent, TRUE);
-        SetForegroundWindow(parent);
-
-        if (self.ok) out = self.captured;
-        return self.ok;
-    }
-};
 
 // ── Section labels ──
 struct SectionMeta {
@@ -664,7 +393,11 @@ void ClassicHotkeysDialog::OnCloseClicked() {
 }
 
 bool ClassicHotkeysDialog::CaptureTrigger(Trigger& outTrigger) {
-    return CaptureOverlay::Show(hInstance_, hwnd_, theme_, dpi_, outTrigger);
+    HotkeyCaptureOptions opts;  // defaults: allowDoubleTap=true, allowBareModifier=true
+    auto r = ShowHotkeyCaptureDialog(hInstance_, hwnd_, theme_, dpi_, opts);
+    if (!r) return false;
+    outTrigger = Trigger{r->vk, r->mods, r->doubleTap};
+    return true;
 }
 
 // ════════════════════════════════════════════════════════════

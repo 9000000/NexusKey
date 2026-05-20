@@ -65,12 +65,8 @@ private:
     HWND comboDest_ = nullptr;
 
     // Hotkey
-    HWND labelHotkey_ = nullptr;
-    HWND checkHkCtrl_ = nullptr;
-    HWND checkHkAlt_ = nullptr;
-    HWND checkHkShift_ = nullptr;
-    HWND checkHkWin_ = nullptr;
-    HWND editHkKey_ = nullptr;
+    HWND labelHotkey_      = nullptr;
+    HWND btnRecordHotkey_  = nullptr;  // shows current binding + opens capture modal
 
     // Source mode (clipboard / file)
     HWND radioClipboard_ = nullptr;
