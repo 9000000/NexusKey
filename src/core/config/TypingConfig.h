@@ -30,20 +30,35 @@ enum class CodeTable : uint8_t {
     VietnameseLocale = 4
 };
 
-/// Hotkey configuration for V/E toggle (internal, separate from Windows KL switching)
+/// Hotkey configuration for V/E toggle and quick-convert (internal,
+/// separate from Windows KL switching). `vk` is a Win32 VK_* code captured
+/// by the dialog overlay — supports printable keys, F1-F24, OEM punctuation,
+/// Numpad, etc. 0 = unassigned.
 struct HotkeyConfig {
-    bool ctrl = false;
+    bool ctrl  = false;
     bool shift = false;
-    bool alt = false;
-    bool win = false;
-    wchar_t key = 0;  // e.g. 'Z' for Alt+Z. Default: none (user must configure)
+    bool alt   = false;
+    bool win   = false;
+    uint32_t vk = 0;  // VK_*; was `wchar_t key` pre-2026-05 (ConfigManager migrates)
 
     [[nodiscard]] bool HasAny() const noexcept {
-        return ctrl || shift || alt || win || key != 0;
+        return ctrl || shift || alt || win || vk != 0;
     }
 
     [[nodiscard]] bool ModifiersMatch(bool c, bool s, bool a, bool w) const noexcept {
         return ctrl == c && shift == s && alt == a && win == w;
+    }
+
+    /// Pack the 4 modifier flags into a HotkeyRegistry-compatible bitmask
+    /// (`kModCtrl | kModShift | kModAlt | kModWin`). Helper for callers
+    /// that need to format/compare with `Trigger`-style data.
+    [[nodiscard]] uint32_t ToMods() const noexcept {
+        uint32_t m = 0;
+        if (ctrl)  m |= 0x01u;  // kModCtrl
+        if (shift) m |= 0x02u;  // kModShift
+        if (alt)   m |= 0x04u;  // kModAlt
+        if (win)   m |= 0x08u;  // kModWin
+        return m;
     }
 
     bool operator==(const HotkeyConfig&) const noexcept = default;

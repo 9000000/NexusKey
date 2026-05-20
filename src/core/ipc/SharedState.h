@@ -295,10 +295,13 @@ struct SharedState {
     }
 
     // ── Hotkey encode/decode helpers ──
+    // VK_* codes only occupy the low byte (0x00-0xFE). Hi byte reserved for
+    // future extension; we keep the 16-bit layout to avoid changing the binary
+    // SharedState struct size.
     void SetHotkey(const HotkeyConfig& hk) noexcept {
         hotkeyMods = (hk.ctrl ? 1 : 0) | (hk.shift ? 2 : 0) | (hk.alt ? 4 : 0) | (hk.win ? 8 : 0);
-        hotkeyKeyLo = static_cast<uint8_t>(hk.key);
-        hotkeyKeyHi = static_cast<uint8_t>(hk.key >> 8);
+        hotkeyKeyLo = static_cast<uint8_t>(hk.vk);
+        hotkeyKeyHi = static_cast<uint8_t>(hk.vk >> 8);
     }
     [[nodiscard]] HotkeyConfig GetHotkey() const noexcept {
         HotkeyConfig hk;
@@ -306,7 +309,8 @@ struct SharedState {
         hk.shift = (hotkeyMods & 2) != 0;
         hk.alt   = (hotkeyMods & 4) != 0;
         hk.win   = (hotkeyMods & 8) != 0;
-        hk.key   = static_cast<wchar_t>(hotkeyKeyLo | (static_cast<uint16_t>(hotkeyKeyHi) << 8));
+        hk.vk    = static_cast<uint32_t>(hotkeyKeyLo)
+                 | (static_cast<uint32_t>(hotkeyKeyHi) << 8);
         return hk;
     }
     // Convert hotkey fields are reserved for future migration.

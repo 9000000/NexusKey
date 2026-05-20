@@ -485,6 +485,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/LoggerTest.cpp
     tests/HotkeyRegistryTest.cpp
     tests/HotkeyLabelTest.cpp
+    tests/HotkeyConfigMigrationTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
 )

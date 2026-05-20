@@ -3,6 +3,8 @@
 
 #include "core/hotkey/HotkeyLabel.h"
 
+#include <cwctype>
+
 #include "core/hotkey/HotkeyRegistry.h"
 
 namespace NextKey {
@@ -72,6 +74,17 @@ std::wstring FormatHotkeyLabel(uint32_t vk, uint32_t mods) {
         AppendWithPlus(out, VkToKeyName(vk));
     }
     return out;
+}
+
+uint32_t LegacyKeyCharToVk(const std::wstring& s) noexcept {
+    if (s.size() != 1) return 0;
+    wchar_t c = static_cast<wchar_t>(std::towupper(s[0]));
+    // A-Z and 0-9 share code points with VK_A..VK_Z (0x41..0x5A)
+    // and VK_0..VK_9 (0x30..0x39). Everything else → 0 (user reassigns).
+    if ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9')) {
+        return static_cast<uint32_t>(c);
+    }
+    return 0;
 }
 
 }  // namespace NextKey

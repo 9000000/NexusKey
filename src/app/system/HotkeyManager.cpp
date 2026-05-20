@@ -14,15 +14,9 @@ HotkeyManager::~HotkeyManager() {
     Uninstall();
 }
 
-BYTE HotkeyManager::ResolveVk(wchar_t key) noexcept {
-    if (key == 0) return 0;
-    SHORT r = VkKeyScanW(key);
-    return (r == -1) ? 0 : LOBYTE(r);
-}
-
 HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config, Callback callback) {
     std::lock_guard lk(slotsMutex_);
-    slots_.push_back(Slot{config, std::move(callback), ResolveVk(config.key), false});
+    slots_.push_back(Slot{config, std::move(callback), false});
     return slots_.size() - 1;
 }
 
@@ -34,7 +28,6 @@ void HotkeyManager::UpdateHotkey(SlotId slot, const HotkeyConfig& config) {
     // comboKeyDown=false and the next auto-repeat re-fires the callback.
     if (slots_[slot].config == config) return;
     slots_[slot].config = config;
-    slots_[slot].vkCached = ResolveVk(config.key);
     slots_[slot].comboKeyDown = false;
 }
 
@@ -154,8 +147,8 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
         // ─── Combo hotkey: target key DOWN fires, UP is eaten ───
         if (!isModifier && (isDown || isUp)) {
             for (auto& slot : self.slots_) {
-                if (slot.vkCached == 0) continue;  // Modifier-only slot
-                if (vk != static_cast<DWORD>(slot.vkCached)) continue;
+                if (slot.config.vk == 0) continue;  // Modifier-only slot
+                if (vk != slot.config.vk) continue;
 
                 if (isDown) {
                     if (slot.comboKeyDown) return 1;  // Eat auto-repeat
@@ -177,7 +170,7 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
         // ─── Modifier-only hotkey: fires on modifier UP if no non-modifier was pressed ───
         if (isModifier && isUp && !preOtherKey) {
             for (auto& slot : self.slots_) {
-                if (slot.vkCached != 0) continue;  // Combo slot
+                if (slot.config.vk != 0) continue;  // Combo slot
                 const auto& c = slot.config;
                 if (!c.HasAny()) continue;  // Empty config would match everything
                 if (matchModifierOnlyRelease(c)) {

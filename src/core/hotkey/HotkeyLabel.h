@@ -34,4 +34,14 @@ namespace NextKey {
 /// (`kModCtrl | kModShift | kModAlt | kModWin`).
 [[nodiscard]] std::wstring FormatHotkeyLabel(uint32_t vk, uint32_t mods);
 
+/// Migration helper — map a legacy `HotkeyConfig::key` (single wide char,
+/// pre-2026-05 schema) to a Win32 VK code. Clean rule, no guessing:
+///   - "A".."Z" / "a".."z" → 0x41..0x5A (case-folded to uppercase)
+///   - "0".."9"            → 0x30..0x39
+///   - everything else     → 0 (user must rebind via new capture overlay)
+///
+/// Returns 0 for empty / multi-character / OEM punctuation input. Used by
+/// ConfigManager::LoadConvertConfig when reading pre-migration TOML.
+[[nodiscard]] uint32_t LegacyKeyCharToVk(const std::wstring& s) noexcept;
+
 }  // namespace NextKey

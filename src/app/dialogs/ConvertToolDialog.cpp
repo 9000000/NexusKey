@@ -49,10 +49,17 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
         setToggleUI("#hotkey-win", "#val-hotkey-win", config_.hotkey.win);
         setToggleUI("#hotkey-shift", "#val-hotkey-shift", config_.hotkey.shift);
 
-        // Set hotkey character
-        if (config_.hotkey.key != 0) {
-            wchar_t keyStr[2] = { config_.hotkey.key, 0 };
-            setHotkeyCharUI(keyStr);
+        // Set hotkey character. Legacy edit-box UI (about to be replaced in
+        // Step 5 by a capture overlay) only renders A-Z/0-9 — anything else
+        // becomes blank until the user rebinds via the new capture flow.
+        if (config_.hotkey.vk != 0) {
+            uint32_t vk = config_.hotkey.vk;
+            if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) {
+                wchar_t keyStr[2] = { static_cast<wchar_t>(vk), 0 };
+                setHotkeyCharUI(keyStr);
+            } else if (vk == 0x20) {
+                setHotkeyCharUI(L"Space");
+            }
         }
 
         // Sync sequential toggle enabled/disabled state from the actual autoPaste value.
@@ -150,15 +157,22 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
         else if (id == L"val-hotkey-alt") { config_.hotkey.alt = getToggleValue("#val-hotkey-alt"); needSave = true; }
         else if (id == L"val-hotkey-win") { config_.hotkey.win = getToggleValue("#val-hotkey-win"); needSave = true; }
         else if (id == L"val-hotkey-shift") { config_.hotkey.shift = getToggleValue("#val-hotkey-shift"); needSave = true; }
-        // Hotkey character
+        // Hotkey character — legacy single-char write path. Maps typed A-Z/0-9
+        // to the matching VK directly (VK_A..VK_Z = 0x41..0x5A share code points
+        // with uppercase ASCII; same for digits). "Space" → VK_SPACE. Step 5
+        // replaces this with the shared capture overlay (F-row + everything).
         else if (id == L"hotkey-char") {
             std::wstring keyStr = getHiddenValue("#hotkey-char");
             if (keyStr == L"Space") {
-                config_.hotkey.key = L' ';
+                config_.hotkey.vk = 0x20;  // VK_SPACE
             } else if (!keyStr.empty()) {
-                config_.hotkey.key = towupper(keyStr[0]);
+                wchar_t c = towupper(keyStr[0]);
+                config_.hotkey.vk = ((c >= L'A' && c <= L'Z') ||
+                                     (c >= L'0' && c <= L'9'))
+                    ? static_cast<uint32_t>(c)
+                    : 0u;
             } else {
-                config_.hotkey.key = 0;
+                config_.hotkey.vk = 0;
             }
             needSave = true;
         }

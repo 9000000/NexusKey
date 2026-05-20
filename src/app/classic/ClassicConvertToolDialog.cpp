@@ -291,9 +291,14 @@ void ClassicConvertToolDialog::PopulateFromConfig() {
     setCheck(checkHkShift_, config_.hotkey.shift);
     setCheck(checkHkWin_, config_.hotkey.win);
 
-    if (config_.hotkey.key) {
-        wchar_t buf[2] = {config_.hotkey.key, 0};
-        SetWindowTextW(editHkKey_, buf);
+    // Legacy edit-box only renders A-Z/0-9 — Step 6 swaps this for a modal
+    // capture dialog covering F-row, OEM, Numpad, etc.
+    if (config_.hotkey.vk) {
+        uint32_t vk = config_.hotkey.vk;
+        if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) {
+            wchar_t buf[2] = {static_cast<wchar_t>(vk), 0};
+            SetWindowTextW(editHkKey_, buf);
+        }
     }
 
     // Sequential only available when autoPaste is on
@@ -326,9 +331,14 @@ void ClassicConvertToolDialog::ReadToConfig() {
 
     wchar_t buf[2] = {};
     GetWindowTextW(editHkKey_, buf, 2);
-    wchar_t key = buf[0];
-    if (key >= L'a' && key <= L'z') key = key - L'a' + L'A';
-    config_.hotkey.key = key;
+    wchar_t c = buf[0];
+    if (c >= L'a' && c <= L'z') c = c - L'a' + L'A';
+    // VK_A..VK_Z (0x41-0x5A) and VK_0..VK_9 (0x30-0x39) share code points
+    // with uppercase ASCII; anything else from the legacy edit box is rejected
+    // (vk=0, user rebinds via Step 6 capture dialog).
+    config_.hotkey.vk = ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9'))
+        ? static_cast<uint32_t>(c)
+        : 0u;
 }
 
 void ClassicConvertToolDialog::SaveConfig() {

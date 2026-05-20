@@ -48,11 +48,10 @@ private:
     struct Slot {
         HotkeyConfig config{};
         Callback callback;
-        BYTE vkCached = 0;   // VkKeyScanW(config.key) — layout-aware target VK for combo hotkeys
         bool comboKeyDown = false;
+        // Combo target VK lives in `config.vk` (set by capture overlay).
+        // Modifier-only slot when `config.vk == 0`.
     };
-
-    static BYTE ResolveVk(wchar_t key) noexcept;
 
     void InstallKeyboardHook(HINSTANCE hInstance);
     static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
