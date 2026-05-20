@@ -1,13 +1,15 @@
 // src/app/output/OutputInjectorFactory.cpp
 //
-// D3: Create() now dispatches all four classification branches —
-// RichEditD2DPT → RichEditEmReplaceSelInjector, Electron → Split(6),
-// Console → Split(5), default → Win32(isChromium).
+// Phase 2 of the two-phase focus pipeline. Phase 1 lives in
+// `HookEngine::ClassifyFocusedWindow` (HookEngine.cpp:3175) — see the
+// header for why classification stayed in HookEngine post Phase 2b.
 //
-// ClassifyWindow remains a stub. HookEngine still owns the
-// classification logic in OnFocusChanged because the same locals feed
-// non-dispatch concerns (passthrough policy, retry-loop gating). D4
-// will lift the logic up here once those atomic flags are removed.
+// Create() dispatches all four channel branches:
+//   RichEditD2DPT → RichEditEmReplaceSelInjector
+//   Electron      → SplitDispatchInjector(6 ms, multi-process renderer)
+//   Console       → SplitDispatchInjector(5 ms, single-process)
+//   default       → Win32SendInputInjector(isChromium)
+//   useClipboard  → ClipboardInjector (highest priority, user opt-in)
 #include "OutputInjectorFactory.h"
 
 #include "Win32SendInputInjector.h"
@@ -24,11 +26,6 @@ namespace {
 constexpr int kElectronSleepMs = 6;
 constexpr int kConsoleSleepMs  = 5;
 }  // namespace
-
-WindowClassification ClassifyWindow(HWND /*hwnd*/) noexcept {
-    // D3 stub. D4 ports the full classification logic from HookEngine.
-    return WindowClassification{};
-}
 
 std::shared_ptr<IOutputInjector> Create(
         const WindowClassification& c) noexcept {
