@@ -66,6 +66,8 @@ set(NEXTKEY_CORE_SOURCES
     src/core/MacroCase.cpp
     src/core/hotkey/HotkeyRegistry.h
     src/core/hotkey/HotkeyRegistry.cpp
+    src/core/hotkey/HotkeyLabel.h
+    src/core/hotkey/HotkeyLabel.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
 )
@@ -482,6 +484,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/DigitLedWordDecisionTest.cpp
     tests/LoggerTest.cpp
     tests/HotkeyRegistryTest.cpp
+    tests/HotkeyLabelTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
 )
