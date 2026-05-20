@@ -3,6 +3,67 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
+## 🟡 Convert-hotkey unify capture — deferred items (2026-05-20)
+
+Unified convert-tool hotkey UI with shared capture overlay landed across
+`facd1c8..a65924d`. Design doc:
+`docs/plans/2026-05-20-convert-hotkey-unify-capture-design.md`. Four
+items left out of scope by design (UI-only unification, runtime untouched):
+
+### A. Migrate V/E toggle hotkey to capture overlay too
+
+`SettingsDialog.cpp` (Sciter) + `ClassicSettingsDialog.cpp` (Classic) still
+drive the V/E toggle hotkey via the legacy 1-char edit-box UI. Loads/saves
+went through `vk` migration in `8286856`, but the input element only accepts
+A-Z/0-9 + "Space" — F1-F12 / OEM / Numpad bindings persisted in TOML render
+as blank until the user rebinds.
+
+**Fix:** swap the `<input>` / Win32 EDIT for the shared `NextKeyHotkeyCapture`
+(Sciter) and `ShowHotkeyCaptureDialog` (Classic) with
+`allowDoubleTap=false, allowBareModifier=false`. Same data flow as convert-tool
+(Step 5/6). Drop `switchKeyChar_` indirection in `SettingsDialog`. Drop the
+`DrawHotkeyEditBorder` paint hook from `ClassicSettingsDialog` (theme helper
+becomes orphaned — also remove from `ClassicTheme`). 1–2 hours.
+
+### B. HotkeyManager slotsMutex on hook hot path (Rule 11.3)
+
+`src/app/system/HotkeyManager.cpp:145` acquires `std::lock_guard lk(self.slotsMutex_)`
+inside `LowLevelKeyboardProc`. Contended mutex on hook hot path violates Rule
+11.3 (same family as the Phase 3 architecture review item). Contention is
+rare (only when config reload coincides with a keystroke) but real.
+
+**Fix:** RCU-ify slots via `std::atomic<std::shared_ptr<vector<Slot>>>` —
+writers `atomic_store` a new copy, hook reads `atomic_load` lock-free. Pre-existing
+issue, not introduced by the convert-hotkey work; pairs naturally with the Phase 3
+architecture review (single-writer + off-hook config reload).
+
+### C. JS capture listener accumulation (latent)
+
+`src/app/ui/shared/hotkey-capture.js:189-194` registers a `document.on("^keydown", ...)`
+listener inside `create()`. The closure reads the instance's `isCurrentlyOpen`,
+so multiple instances coexist correctly — but if a dialog re-init flow ever
+calls `create()` twice on the same document, listeners stack with no cleanup.
+
+**Fix:** either move the listener registration to module load with a
+`currentInstance` dispatcher, OR return a `destroy()` method from `create()`
+that removes the listener. Latent only — no current dialog does re-init.
+30 minutes.
+
+### D. `LoadHotkeyConfigOrDefault` default-vs-section inconsistency
+
+`ConfigManager.cpp:450-461`: if TOML file is missing → returns
+`HotkeyConfig{}` (all flags false). If file exists with `[hotkey]` section
+but `ctrl`/`shift` fields are missing → `value_or(true)` kicks in →
+returns `{ctrl=true, shift=true, vk=0}`. Two different "defaults" for the
+same logical "no config" state.
+
+**Decision needed:** pick one product behavior (a) fresh-install gets
+`Ctrl+Shift` as the V/E default, (b) fresh-install requires explicit
+configuration, (c) the section-exists-but-empty case is impossible in
+practice (always written together with vk) so ignore. Then unify both
+paths. Pre-existing inconsistency from before this sprint. 15 minutes
+once decision is made.
+
 ## 🟢 CODING_RULES & code drift residue (2026-05-19)
 
 Mechanical refresh of CODING_RULES landed in `6171a82`. Two follow-up items
