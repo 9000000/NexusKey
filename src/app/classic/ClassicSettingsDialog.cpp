@@ -883,13 +883,16 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                 if (meta->win32Id == IDC_CHECK_TSF_APPS) {
                     bool checked = (IsDlgButtonChecked(hwnd_, IDC_CHECK_TSF_APPS) == BST_CHECKED);
                     if (!OnTsfAppsToggle(checked)) {
-                        // Revert checkbox + config; persist the corrected state now
-                        // so a crash or restart can't leave the visible-but-broken combo.
+                        // Revert checkbox + config.
                         CheckDlgButton(hwnd_, IDC_CHECK_TSF_APPS, checked ? BST_UNCHECKED : BST_CHECKED);
                         config_.tsfApps = !checked;
-                        KillTimer(hwnd_, kTimerDeferredSave);
-                        SaveToToml();
                     }
+                    // Persist immediately on BOTH success and failure paths.
+                    // Reality (registry) has already changed; if a subdialog opens
+                    // and triggers LoadSettings() before the deferred timer fires,
+                    // unrelated in-memory Typing edits would be reverted to stale TOML.
+                    KillTimer(hwnd_, kTimerDeferredSave);
+                    SaveToToml();
                 }
 
                 // System toggles have side effects beyond config save
@@ -1138,11 +1141,14 @@ bool ClassicSettingsDialog::OnTsfAppsToggle(bool wantsEnabled) {
             ok = RegisterTsfElevated();
         }
         if (!ok || !IsTsfRegistered()) {
+            // No StringId exists yet for register-failure — Sciter also hardcodes VI here.
             MessageBoxW(hwnd_,
                 L"Không thể đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
                 L"VKey", MB_OK | MB_ICONWARNING);
             return false;
         }
+        MessageBoxW(hwnd_, S(StringId::TSF_REGISTER_SUCCESS),
+            L"VKey", MB_OK | MB_ICONINFORMATION);
         return true;
     }
 
@@ -1155,11 +1161,12 @@ bool ClassicSettingsDialog::OnTsfAppsToggle(bool wantsEnabled) {
             UnregisterTsfElevated();
         }
         if (IsTsfRegistered()) {
-            MessageBoxW(hwnd_,
-                L"Không thể huỷ đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
+            MessageBoxW(hwnd_, S(StringId::TSF_UNREGISTER_FAILED),
                 L"VKey", MB_OK | MB_ICONWARNING);
             return false;
         }
+        MessageBoxW(hwnd_, S(StringId::TSF_UNREGISTER_SUCCESS),
+            L"VKey", MB_OK | MB_ICONINFORMATION);
     }
     return true;
 }
