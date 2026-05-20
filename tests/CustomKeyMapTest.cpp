@@ -253,6 +253,75 @@ TEST_F(CustomKeyMapTest, UserDefinedBracketInsertsHornMidWord) {
     EXPECT_EQ(engine2.Peek(), L"thư");
 }
 
+// UserDefined "Chữ ơ/ư" (InsertOHorn/InsertUHorn) actions must mirror Telex
+// bracket UX: doubled key reverts to literal. Without this, `[[` produces
+// `ơơ` instead of `[` and users lose the "press twice to undo" affordance
+// they expect from Telex.
+TEST_F(CustomKeyMapTest, UserDefinedInsertOHornDoubleKeyEscapes) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'[')] = TypingAction::InsertOHorn;
+    cfg.customKeyMap[static_cast<size_t>(L']')] = TypingAction::InsertUHorn;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"[[");
+    EXPECT_EQ(engine.Peek(), L"[");
+    TypingEngine engine2(cfg);
+    TypeString(engine2, L"]]");
+    EXPECT_EQ(engine2.Peek(), L"]");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedInsertOHornDoubleKeyEscapesMidWord) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'[')] = TypingAction::InsertOHorn;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"th[[");
+    EXPECT_EQ(engine.Peek(), L"th[");
+}
+
+// Generalisation guard: same escape applies to circumflex/stroke variants too.
+TEST_F(CustomKeyMapTest, UserDefinedInsertACircumflexDoubleKeyEscapes) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'q')] = TypingAction::InsertACircumflex;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"qq");
+    EXPECT_EQ(engine.Peek(), L"q");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedInsertDStrokeDoubleKeyEscapes) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'\'')] = TypingAction::InsertDStroke;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"''");
+    EXPECT_EQ(engine.Peek(), L"'");
+}
+
+// HandleHornInsert previously hardcoded the escape check against literal
+// `[` / `]`. In UserDefined mode the user can bind ANY key to HornInsertO/U,
+// and doubled-key escape must work the same — `q`→HornInsertO + `qq` must
+// produce literal `q`, not `ơơ`.
+TEST_F(CustomKeyMapTest, UserDefinedHornInsertODoubleKeyEscapesOnNonBracketKey) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'q')] = TypingAction::HornInsertO;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"qq");
+    EXPECT_EQ(engine.Peek(), L"q");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedHornInsertUDoubleKeyEscapesOnNonBracketKey) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L';')] = TypingAction::HornInsertU;
+    TypingEngine engine(cfg);
+    TypeString(engine, L";;");
+    EXPECT_EQ(engine.Peek(), L";");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedHornInsertODoubleKeyEscapesMidWord) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'q')] = TypingAction::HornInsertO;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"thqq");
+    EXPECT_EQ(engine.Peek(), L"thq");
+}
+
 // =====================================================================
 // G1 — Default-empty parity: customKeyMap{} → behavior unchanged
 // =====================================================================
