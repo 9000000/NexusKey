@@ -75,6 +75,15 @@
         if ((vk >= 0x30 && vk <= 0x39) || (vk >= 0x41 && vk <= 0x5A)) {
             return String.fromCharCode(vk);
         }
+        // Modifier-as-key — needed when a chord captured the modifier itself
+        // (e.g. {vk=VK_SHIFT, mods=Ctrl} for the "Ctrl+Shift" combo). Without
+        // these, the label falls back to "VK_16" and looks broken.
+        switch (vk) {
+            case 0x10: return "Shift";
+            case 0x11: return "Ctrl";
+            case 0x12: return "Alt";
+            case 0x5B: case 0x5C: return "Win";
+        }
         return "VK_" + vk;
     }
 
@@ -198,6 +207,27 @@
             lastTapVk = vk;
             lastTapTs = now;
 
+            // When allowBareModifier=false (convert-tool), any vk that is
+            // itself a modifier is rejected — HotkeyManager's combo loop
+            // skips modifier keypresses, so committing such a binding would
+            // produce a dead hotkey. Instead, show "Shift+…" as in-progress
+            // feedback while the user holds modifiers waiting for the real
+            // chord key. preventDefault so the OS doesn't fire menu accels.
+            if (isModifierVk(vk) && !allowBareModifier) {
+                var heldMods = 0;
+                if (evt.ctrlKey)  heldMods |= MOD.CTRL;
+                if (evt.shiftKey) heldMods |= MOD.SHIFT;
+                if (evt.altKey)   heldMods |= MOD.ALT;
+                if (evt.metaKey)  heldMods |= MOD.WIN;
+                var hint = formatLabel(0, heldMods, false);
+                var pv0 = $(previewId);
+                if (pv0) pv0.textContent = (hint ? hint + "+" : "") + "…";
+                // Save stays disabled — `pending.vk` stays 0 until a real
+                // non-modifier key arrives.
+                evt.preventDefault();
+                return;
+            }
+
             // Collect chord modifiers from event flags, excluding the
             // modifier we're currently capturing (so {vk=Shift, mods=Ctrl}
             // means "Ctrl+Shift", not "Shift+Shift"). 2× clears mods.
@@ -209,10 +239,11 @@
                 if (evt.metaKey  && vk !== VK.LWIN && vk !== VK.RWIN)    mods |= MOD.WIN;
             }
 
-            // Bare modifier press: caller decides whether to treat as a
-            // valid commit candidate (HotkeysDialog: yes; ConvertTool: no).
+            // Bare-modifier path for allowBareModifier=true callers
+            // (HotkeysDialog) — committed as a "modifier alone" trigger.
             var bareModifier = isModifierVk(vk) && mods === 0 && !isDoubleTap;
             if (bareModifier && !allowBareModifier) {
+                // Unreachable — caught above. Defensive guard kept for clarity.
                 evt.preventDefault();
                 return;
             }

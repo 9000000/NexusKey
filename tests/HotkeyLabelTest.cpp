@@ -78,6 +78,31 @@ TEST(HotkeyLabel, SpaceNamed) {
     EXPECT_EQ(FormatHotkeyLabel(kVkSpace, kModCtrl), L"Ctrl+Space");
 }
 
+// ───────────────────────────── Modifier-as-key labels ───────────────────
+// When vk IS a modifier (e.g., Ctrl+Shift chord that captured the Shift
+// release as the trigger key), the modifier needs its own friendly name —
+// otherwise the fallback prints "VK 0x0010" which looks broken.
+
+TEST(HotkeyLabel, ModifierAsKeyShift) {
+    EXPECT_EQ(FormatHotkeyLabel(0x10, kModCtrl), L"Ctrl+Shift");
+}
+
+TEST(HotkeyLabel, ModifierAsKeyCtrl) {
+    EXPECT_EQ(FormatHotkeyLabel(0x11, kModShift), L"Shift+Ctrl");
+}
+
+TEST(HotkeyLabel, ModifierAsKeyAlt) {
+    EXPECT_EQ(FormatHotkeyLabel(0x12, kModCtrl), L"Ctrl+Alt");
+}
+
+TEST(HotkeyLabel, ModifierAsKeyLWinAlone) {
+    EXPECT_EQ(FormatHotkeyLabel(0x5B, 0), L"Win");
+}
+
+TEST(HotkeyLabel, ModifierAsKeyRWinAlone) {
+    EXPECT_EQ(FormatHotkeyLabel(0x5C, 0), L"Win");
+}
+
 // ───────────────────────────── Modifier order is stable ──────────────────
 
 TEST(HotkeyLabel, ModifierOrderIsCtrlShiftAltWin) {

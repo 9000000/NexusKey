@@ -99,7 +99,23 @@ struct CaptureOverlay {
                     return 0;
                 }
             }
-            if (IsModifierVk(vk)) return 0;  // wait for KEYUP
+            if (IsModifierVk(vk)) {
+                // Modifier DOWN — live preview "Shift+…" so user sees the
+                // modifier was detected even before the chord key arrives.
+                // Commit logic still waits for KEYUP (modifier-alone /
+                // double-tap) or KEYDOWN of a non-modifier (chord).
+                uint32_t heldMods = 0;
+                if (GetAsyncKeyState(VK_CONTROL) & 0x8000) heldMods |= kModCtrl;
+                if (GetAsyncKeyState(VK_SHIFT)   & 0x8000) heldMods |= kModShift;
+                if (GetAsyncKeyState(VK_MENU)    & 0x8000) heldMods |= kModAlt;
+                if ((GetAsyncKeyState(VK_LWIN)   & 0x8000)
+                 || (GetAsyncKeyState(VK_RWIN)   & 0x8000)) heldMods |= kModWin;
+                std::wstring prefix = FormatHotkeyLabel(0, heldMods);
+                SetWindowTextW(self->preview,
+                    (prefix.empty() ? std::wstring(L"…")
+                                    : prefix + L"+…").c_str());
+                return 0;
+            }
 
             uint32_t mods = 0;
             if (GetAsyncKeyState(VK_CONTROL) & 0x8000) mods |= kModCtrl;

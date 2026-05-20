@@ -36,6 +36,13 @@ namespace {
         return s;
     }
     switch (vk) {
+    // Modifier keys — named so chord labels render as "Ctrl+Shift"
+    // (modifier-combo capture) instead of the hex fallback "VK 0x0010".
+    case 0x10: return L"Shift";
+    case 0x11: return L"Ctrl";
+    case 0x12: return L"Alt";
+    case 0x5B: case 0x5C: return L"Win";
+    // Common navigation / control keys
     case 0x08: return L"Backspace";
     case 0x09: return L"Tab";
     case 0x0D: return L"Enter";
