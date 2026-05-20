@@ -5,6 +5,7 @@
 #include "ClassicSettingsDialog.h"
 #include "helpers/AppHelpers.h"
 #include "ClassicExcludedAppsDialog.h"
+#include "ClassicTsfAppsDialog.h"
 #include "ClassicSpellExclusionsDialog.h"
 #include "ClassicAppOverridesDialog.h"
 #include "ClassicMacroTableDialog.h"
@@ -908,6 +909,10 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
 
         case IDC_BTN_EXCLUDE_APPS:
             ClassicExcludedAppsDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
+            break;
+
+        case IDC_BTN_TSF_APPS:
+            ClassicTsfAppsDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
             break;
 
         case IDC_BTN_SPELL_EXCLUSIONS:
