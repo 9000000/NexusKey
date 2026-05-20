@@ -1,70 +1,9 @@
-// Unified Hotkey Rebind Dialog JS
+// Unified Hotkey Rebind Dialog JS — drives the [+] / [×] / toggle UI and
+// delegates capture-overlay state to the shared NextKeyHotkeyCapture
+// module (../shared/hotkey-capture.js). HotkeysDialog allows double-tap
+// gestures and bare-modifier triggers (e.g. "Ctrl alone", "2×Alt").
 
-// Win32 VK constants used for friendly-name rendering and modifier classification.
-var VK = {
-    ESC: 0x1B, TAB: 0x09, SPACE: 0x20, ENTER: 0x0D, BACK: 0x08,
-    SHIFT: 0x10, CTRL: 0x11, ALT: 0x12, LWIN: 0x5B, RWIN: 0x5C,
-};
-var MOD = { CTRL: 0x01, SHIFT: 0x02, ALT: 0x04, WIN: 0x08 };
-
-// Sciter delivers `event.keyCode` in its own (GLFW-derived) scheme — see
-// `extern/sciter/include/sciter-x-key-codes.h`. F1=290, LeftShift=340, etc.
-// We need Win32 VK on the C++ side (matches HookEngine + ConfigManager), so
-// we map from `event.code` (DOM Level 3 string, e.g. "KeyA", "F1", "Escape").
-// Win32 VK reference: https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-var CODE_TO_VK = {
-    "Escape":        0x1B, "Tab":           0x09, "Space":         0x20,
-    "Enter":         0x0D, "NumpadEnter":   0x0D, "Backspace":     0x08,
-    "Delete":        0x2E, "Insert":        0x2D,
-    "Home":          0x24, "End":           0x23,
-    "PageUp":        0x21, "PageDown":      0x22,
-    "ArrowLeft":     0x25, "ArrowUp":       0x26,
-    "ArrowRight":    0x27, "ArrowDown":     0x28,
-    "CapsLock":      0x14, "PrintScreen":   0x2C, "Pause":         0x13,
-    "ContextMenu":   0x5D,
-    // Modifiers — captured for completeness; bare presses are rejected.
-    "ShiftLeft":     0x10, "ShiftRight":    0x10,
-    "ControlLeft":   0x11, "ControlRight":  0x11,
-    "AltLeft":       0x12, "AltRight":      0x12,
-    "MetaLeft":      0x5B, "MetaRight":     0x5C, "OSLeft": 0x5B, "OSRight": 0x5C,
-    // OEM punctuation — common rebind candidates.
-    "Semicolon":     0xBA, "Equal":         0xBB, "Comma":         0xBC,
-    "Minus":         0xBD, "Period":        0xBE, "Slash":         0xBF,
-    "Backquote":     0xC0, "BracketLeft":   0xDB, "Backslash":     0xDC,
-    "BracketRight":  0xDD, "Quote":         0xDE,
-};
-
-// Convert "event.code" string -> Win32 VK number. Returns 0 if unmapped.
-// Patterned codes (KeyA, Digit3, Numpad7, F12) are decoded by regex; specific
-// codes (Escape, Enter, ArrowUp...) come from CODE_TO_VK above.
-function codeToVk(code) {
-    if (!code) return 0;
-    if (CODE_TO_VK[code]) return CODE_TO_VK[code];
-    var m = /^(Key|Digit|Numpad|F)([A-Z]|\d+)$/.exec(code);
-    if (!m) return 0;
-    var suffix = m[2];
-    switch (m[1]) {
-        case "Key":    return suffix.charCodeAt(0);              // A-Z   -> 0x41..0x5A
-        case "Digit":  return suffix.charCodeAt(0);              // 0-9   -> 0x30..0x39
-        case "Numpad": return 0x60 + parseInt(suffix, 10);       // 0-9   -> VK_NUMPAD0..9
-        case "F":      var n = parseInt(suffix, 10);
-                       return (n >= 1 && n <= 24) ? 0x6F + n : 0;  // F1..F24
-    }
-    return 0;
-}
-
-// Pending capture state — only meaningful while #capture-overlay is visible.
-var pending = { vk: 0, mods: 0, doubleTap: false, label: "—" };
-
-// Double-tap detection — second same-key press within window upgrades to 2×.
-var DOUBLE_TAP_WINDOW_MS = 400;
-var lastTapVk = 0, lastTapTs = 0;
-
-// Friendly VK→name table — uploaded from C++ via setVkNames() on dialog init
-// (HotkeysDialog::sendVkNames). C++ owns the canonical list to avoid drift;
-// we only keep the algorithmic ranges (letters / digits / F-keys / numpad)
-// below since those would be redundant to ship over the wire.
-var VK_NAMES = {};
+var capture = null;  // Lazy — created on first openCapture() after DOM ready.
 
 document.ready = function () {
     initSubDialog();
@@ -99,11 +38,6 @@ function initHotkeysDialog() {
         evt.stopPropagation();
     });
 
-    var save    = document.getElementById("btn-capture-save");
-    var cancel  = document.getElementById("btn-capture-cancel");
-    save.addEventListener("click", function () { commitCapture(); });
-    cancel.addEventListener("click", function () { closeCapture(); });
-
     // Per-intent enable toggle — single delegated handler. data-intent on each
     // `.toggle-switch-small` carries the matching Intent string so the C++ side
     // can wire VALUE_CHANGED back to HotkeyRegistry::SetEnabled.
@@ -119,104 +53,22 @@ function initHotkeysDialog() {
         evt.stopPropagation();
     });
 
-    // Capture mode — sinking-phase keydown so Alt's menu-accelerator default
-    // handler at the Sciter window level doesn't swallow our events. `^keydown`
-    // dispatches root→target BEFORE the target phase where default actions
-    // (including the Alt→menu activation) execute. Documented in Sciter SDK
-    // `samples.sciter/input-elements/input-events-handling.htm`.
-    document.on("^keydown", function (evt) {
-        var vk = codeToVk(evt.code);
-        captureKey(evt, vk);
+    capture = NextKeyHotkeyCapture.create({
+        // HotkeysDialog accepts both gestures the registry supports.
+        allowDoubleTap:    true,
+        allowBareModifier: true,
+        onCommit: function (vk, mods, doubleTap, _label) {
+            document.getElementById("val-vk").value         = String(vk);
+            document.getElementById("val-mods").value       = String(mods);
+            document.getElementById("val-double-tap").value = doubleTap ? "true" : "false";
+            triggerAction("add");
+        }
     });
 }
 
-function captureKey(evt, vk) {
-    var overlay = document.getElementById("capture-overlay");
-    if (!overlay || overlay.style.display === "none") return;
-    // Ignore OS auto-repeat — would otherwise trigger false 2× detection.
-    if (evt.repeat) { evt.preventDefault(); return; }
-    if (!vk) { evt.preventDefault(); return; }
-
-    // Double-tap: second press of same key within window → upgrade to 2×.
-    var now = Date.now();
-    var isDoubleTap = (vk === lastTapVk) && (now - lastTapTs <= DOUBLE_TAP_WINDOW_MS);
-    lastTapVk = vk;
-    lastTapTs = now;
-
-    // Collect chord modifiers from event flags, excluding the modifier we're
-    // currently capturing (so {vk=Shift, mods=Ctrl} represents "Ctrl+Shift"
-    // and not "Shift+Shift"). Double-tap clears mods entirely — `2×Ctrl+Shift`
-    // is not a supported gesture.
-    var mods = 0;
-    if (!isDoubleTap) {
-        if (evt.ctrlKey  && vk !== VK.CTRL)                       mods |= MOD.CTRL;
-        if (evt.shiftKey && vk !== VK.SHIFT)                      mods |= MOD.SHIFT;
-        if (evt.altKey   && vk !== VK.ALT)                        mods |= MOD.ALT;
-        if (evt.metaKey  && vk !== VK.LWIN && vk !== VK.RWIN)     mods |= MOD.WIN;
-    }
-
-    pending.vk        = vk;
-    pending.mods      = mods;
-    pending.doubleTap = isDoubleTap;
-    pending.label     = formatLabel(vk, mods, isDoubleTap);
-
-    document.getElementById("capture-preview").textContent = pending.label;
-    document.getElementById("btn-capture-save").removeAttribute("disabled");
-
-    evt.preventDefault();
-    evt.stopPropagation();
-}
-
-function isModifierVk(vk) {
-    return vk === VK.CTRL || vk === VK.SHIFT || vk === VK.ALT
-        || vk === VK.LWIN || vk === VK.RWIN;
-}
-
-function formatLabel(vk, mods, doubleTap) {
-    if (doubleTap) return "2×" + vkName(vk);                 // 2× implies mods=0
-    var parts = [];
-    if (mods & MOD.CTRL)  parts.push("Ctrl");
-    if (mods & MOD.SHIFT) parts.push("Shift");
-    if (mods & MOD.ALT)   parts.push("Alt");
-    if (mods & MOD.WIN)   parts.push("Win");
-    parts.push(vkName(vk));
-    return parts.join("+");
-}
-
-function vkName(vk) {
-    if (VK_NAMES[vk]) return VK_NAMES[vk];
-    if (vk >= 0x60 && vk <= 0x69) return "Num" + (vk - 0x60);            // VK_NUMPAD0..9
-    if (vk >= 0x70 && vk <= 0x87) return "F" + (vk - 0x6F);              // F1..F24
-    if ((vk >= 0x30 && vk <= 0x39) || (vk >= 0x41 && vk <= 0x5A)) {
-        return String.fromCharCode(vk);                                  // 0..9 / A..Z
-    }
-    return "VK_" + vk;
-}
-
 function openCapture(intent) {
-    pending.vk = 0;
-    pending.mods = 0;
-    pending.doubleTap = false;
-    pending.label = "—";
-    lastTapVk = 0; lastTapTs = 0;  // fresh state per session
-    document.getElementById("capture-preview").textContent = "—";
-    document.getElementById("btn-capture-save").setAttribute("disabled", "disabled");
-    document.getElementById("capture-overlay").style.display = "block";
     document.getElementById("val-intent").value = intent;
-    // No focus call needed — document-level keydown handler catches everything.
-}
-
-function closeCapture() {
-    document.getElementById("capture-overlay").style.display = "none";
-}
-
-function commitCapture() {
-    if (!pending.vk) return;
-    document.getElementById("val-vk").value         = String(pending.vk);
-    document.getElementById("val-mods").value       = String(pending.mods);
-    document.getElementById("val-double-tap").value = pending.doubleTap ? "true" : "false";
-    triggerAction("add");
-    closeCapture();
+    capture.open();
 }
 
 function triggerAction(action) {
@@ -230,16 +82,10 @@ function triggerAction(action) {
 // ────────────────────── Called from C++ side ────────────────────────────
 
 // Receive the canonical VK→name table from HotkeysDialog::sendVkNames.
-// Payload shape: [[vk:int, name:string], ...]. We rebuild a flat object so
-// vkName() lookups stay O(1).
+// Forwards to the shared module so ConvertToolDialog and any future
+// dialogs share the same label dictionary.
 function setVkNames(pairs) {
-    if (!pairs || typeof pairs.length !== "number") return;
-    var map = {};
-    for (var i = 0; i < pairs.length; ++i) {
-        var p = pairs[i];
-        if (p && p.length >= 2) map[p[0]] = p[1];
-    }
-    VK_NAMES = map;
+    NextKeyHotkeyCapture.setVkNames(pairs);
 }
 
 function clearAll() {
