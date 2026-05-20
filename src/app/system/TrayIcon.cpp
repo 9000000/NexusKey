@@ -9,6 +9,7 @@
 #include "StartupHelper.h"
 #include "PendingDllApply.h"
 #include "core/config/ConfigManager.h"
+#include "core/hotkey/HotkeyLabel.h"
 #include "core/Strings.h"
 #include "core/CrashLog.h"
 #include <strsafe.h>
@@ -298,21 +299,7 @@ void TrayIcon::RefreshConvertHotkeyCache() {
 }
 
 void TrayIcon::RefreshConvertHotkeyCache(const ConvertConfig& cc) {
-    const auto& hk = cc.hotkey;
-    cachedConvertHotkeyText_.clear();
-    if (hk.HasAny()) {
-        if (hk.ctrl)  cachedConvertHotkeyText_ += L"Ctrl+";
-        if (hk.alt)   cachedConvertHotkeyText_ += L"Alt+";
-        if (hk.shift) cachedConvertHotkeyText_ += L"Shift+";
-        if (hk.win)   cachedConvertHotkeyText_ += L"Win+";
-        if (hk.key != 0) {
-            if (hk.key == L' ') {
-                cachedConvertHotkeyText_ += L"Space";
-            } else {
-                cachedConvertHotkeyText_ += static_cast<wchar_t>(towupper(hk.key));
-            }
-        }
-    }
+    cachedConvertHotkeyText_ = FormatHotkeyLabel(cc.hotkey.vk, cc.hotkey.ToMods());
 }
 
 void TrayIcon::ShowContextMenu() {
