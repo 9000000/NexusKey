@@ -305,6 +305,8 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/classic/ClassicSettingsDialog.cpp
         src/app/classic/ClassicExcludedAppsDialog.h
         src/app/classic/ClassicExcludedAppsDialog.cpp
+        src/app/classic/ClassicTsfAppsDialog.h
+        src/app/classic/ClassicTsfAppsDialog.cpp
         src/app/classic/ClassicMacroTableDialog.h
         src/app/classic/ClassicMacroTableDialog.cpp
         src/app/classic/ClassicHotkeysDialog.h
