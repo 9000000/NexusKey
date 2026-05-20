@@ -136,6 +136,12 @@ inline constexpr SettingMeta kSettings[] = {
               L"Disable Vietnamese for listed apps",                     2207, 0, 1),
     NK_ACTION("btn-exclude-apps",     "...", "",
               nullptr, nullptr,                                          2502, 0, 1),
+    NK_TYPING("tsf-apps",             tsfApps,
+              "Dùng TSF cho danh sách", "Use TSF for listed apps",
+              L"Các app trong danh sách sẽ dùng engine TSF, các app khác dùng Hook",
+              L"Listed apps use TSF engine; others use the Hook",        2210, 0, 1),
+    NK_ACTION("btn-tsf-apps",         "...", "",
+              nullptr, nullptr,                                          2507, 0, 1),
     // ── Action buttons (grouped at bottom) ──
     NK_ACTION("btn-app-overrides",    "Cấu hình từng ứng dụng", "Per-app config",
               nullptr, nullptr,                                          2500, 0, 1),
