@@ -4,6 +4,7 @@
 #include "ConvertToolDialog.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/config/ConfigManager.h"
+#include "core/hotkey/HotkeyLabel.h"
 #include "helpers/AppHelpers.h"
 #include "core/Strings.h"
 #include "sciter-x-dom.hpp"
@@ -43,23 +44,24 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
         setDropdownUI("#source-encoding", config_.sourceEncoding);
         setDropdownUI("#dest-encoding", config_.destEncoding);
 
-        // Set hotkey toggles
-        setToggleUI("#hotkey-ctrl", "#val-hotkey-ctrl", config_.hotkey.ctrl);
-        setToggleUI("#hotkey-alt", "#val-hotkey-alt", config_.hotkey.alt);
-        setToggleUI("#hotkey-win", "#val-hotkey-win", config_.hotkey.win);
-        setToggleUI("#hotkey-shift", "#val-hotkey-shift", config_.hotkey.shift);
+        // Push existing hotkey binding into the record-button display + hidden
+        // inputs. JS reads `val-hotkey-vk` / `val-hotkey-mods` only when the
+        // user records a new one — we seed them so the dialog reflects the
+        // persisted binding from boot and a no-op close doesn't clobber it.
+        {
+            uint32_t vk   = config_.hotkey.vk;
+            uint32_t mods = config_.hotkey.ToMods();
+            sciter::dom::element root2 = get_root();
+            sciter::dom::element vkEl   = root2.find_first("#val-hotkey-vk");
+            sciter::dom::element modsEl = root2.find_first("#val-hotkey-mods");
+            std::wstring vkStr   = std::to_wstring(vk);
+            std::wstring modsStr = std::to_wstring(mods);
+            if (vkEl.is_valid())   vkEl.set_value(sciter::value(vkStr.c_str()));
+            if (modsEl.is_valid()) modsEl.set_value(sciter::value(modsStr.c_str()));
 
-        // Set hotkey character. Legacy edit-box UI (about to be replaced in
-        // Step 5 by a capture overlay) only renders A-Z/0-9 — anything else
-        // becomes blank until the user rebinds via the new capture flow.
-        if (config_.hotkey.vk != 0) {
-            uint32_t vk = config_.hotkey.vk;
-            if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) {
-                wchar_t keyStr[2] = { static_cast<wchar_t>(vk), 0 };
-                setHotkeyCharUI(keyStr);
-            } else if (vk == 0x20) {
-                setHotkeyCharUI(L"Space");
-            }
+            std::wstring label = FormatHotkeyLabel(vk, mods);
+            const wchar_t* labelText = label.empty() ? L"— Chưa đặt —" : label.c_str();
+            root2.call_function("setHotkeyDisplay", sciter::value(labelText));
         }
 
         // Sync sequential toggle enabled/disabled state from the actual autoPaste value.
@@ -152,28 +154,21 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
         // Encoding dropdowns
         else if (id == L"source-encoding") { config_.sourceEncoding = static_cast<uint8_t>(getDropdownValue("#source-encoding")); needSave = true; }
         else if (id == L"dest-encoding") { config_.destEncoding = static_cast<uint8_t>(getDropdownValue("#dest-encoding")); needSave = true; }
-        // Hotkey modifiers
-        else if (id == L"val-hotkey-ctrl") { config_.hotkey.ctrl = getToggleValue("#val-hotkey-ctrl"); needSave = true; }
-        else if (id == L"val-hotkey-alt") { config_.hotkey.alt = getToggleValue("#val-hotkey-alt"); needSave = true; }
-        else if (id == L"val-hotkey-win") { config_.hotkey.win = getToggleValue("#val-hotkey-win"); needSave = true; }
-        else if (id == L"val-hotkey-shift") { config_.hotkey.shift = getToggleValue("#val-hotkey-shift"); needSave = true; }
-        // Hotkey character — legacy single-char write path. Maps typed A-Z/0-9
-        // to the matching VK directly (VK_A..VK_Z = 0x41..0x5A share code points
-        // with uppercase ASCII; same for digits). "Space" → VK_SPACE. Step 5
-        // replaces this with the shared capture overlay (F-row + everything).
-        else if (id == L"hotkey-char") {
-            std::wstring keyStr = getHiddenValue("#hotkey-char");
-            if (keyStr == L"Space") {
-                config_.hotkey.vk = 0x20;  // VK_SPACE
-            } else if (!keyStr.empty()) {
-                wchar_t c = towupper(keyStr[0]);
-                config_.hotkey.vk = ((c >= L'A' && c <= L'Z') ||
-                                     (c >= L'0' && c <= L'9'))
-                    ? static_cast<uint32_t>(c)
-                    : 0u;
-            } else {
-                config_.hotkey.vk = 0;
-            }
+        // Hotkey: shared/hotkey-capture.js writes both `val-hotkey-vk` and
+        // `val-hotkey-mods` on commit, then fires change on `val-hotkey-vk`.
+        // We read both at once to keep the binding consistent.
+        else if (id == L"val-hotkey-vk") {
+            try {
+                config_.hotkey.vk = static_cast<uint32_t>(std::stoul(getHiddenValue("#val-hotkey-vk")));
+            } catch (...) { config_.hotkey.vk = 0; }
+            uint32_t mods = 0;
+            try {
+                mods = static_cast<uint32_t>(std::stoul(getHiddenValue("#val-hotkey-mods")));
+            } catch (...) { mods = 0; }
+            config_.hotkey.ctrl  = (mods & 0x01) != 0;
+            config_.hotkey.shift = (mods & 0x02) != 0;
+            config_.hotkey.alt   = (mods & 0x04) != 0;
+            config_.hotkey.win   = (mods & 0x08) != 0;
             needSave = true;
         }
 
@@ -516,18 +511,6 @@ void ConvertToolDialog::setDropdownUI(const char* id, int value) {
     sciter::dom::element dropdown = root.find_first(id);
     if (dropdown.is_valid()) {
         dropdown.set_value(sciter::value(value));
-    }
-}
-
-void ConvertToolDialog::setHotkeyCharUI(const std::wstring& keyStr) {
-    sciter::dom::element root = get_root();
-    sciter::dom::element input = root.find_first("#hotkey-char");
-    if (input.is_valid()) {
-        if (keyStr == L" ") {
-            input.set_value(sciter::value(L"Space"));
-        } else {
-            input.set_value(sciter::value(keyStr));
-        }
     }
 }
 
