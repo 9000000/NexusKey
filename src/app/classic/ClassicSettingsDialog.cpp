@@ -61,10 +61,14 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
 
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
 
+    std::wstring title = L"VKey v" VKEY_VERSION_WSTR;
+    if (IsRunningAsAdmin())
+        title += L" - Admin";
+
     hwnd_ = CreateWindowExW(
         0,
         kClassName,
-        L"VKey v" VKEY_VERSION_WSTR,
+        title.c_str(),
         style,
         CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,  // temporary size
         parent, nullptr, hInstance, this
