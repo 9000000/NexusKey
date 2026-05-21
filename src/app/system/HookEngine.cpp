@@ -890,6 +890,20 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LO
         // autoCapState_ / previousComposition_ / per-app atomic flags.
         // (Accessing those from main would race with hook-thread writers
         // — Rule 11.3 violation.)
+        //
+        // REGRESSION TRAP — DO NOT UNCOMMENT
+        //
+        // Sprint 1 D4 originally took stateMutex_ here to guard the racing
+        // reads, before we knew this callback ran on main. Phase B (D5-
+        // D11) replaced every reader/writer with atomics, then Phase 2b
+        // (architecture-review-v3.1) closed the loop by moving every
+        // remaining write into ApplyFocusOnHookThread (hook thread).
+        // Re-introducing this lock would either deadlock (locking a mutex
+        // the hook thread now owns the write side of) or paper over a
+        // Rule 11.3 violation someone re-added. `tools/audit/check_hook
+        // _thread_no_mutex.sh` Check 1 enforces this line stays
+        // commented (one of 3 such lines across hook-touching callbacks).
+        // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
 
         if (event == EVENT_SYSTEM_MINIMIZEEND) {
             // Window restored from taskbar — re-evaluate focus with the actual foreground window.
