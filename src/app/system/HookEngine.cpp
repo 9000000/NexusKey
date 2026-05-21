@@ -1127,14 +1127,15 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         // like Chrome) cancels the replay and produces `việts` instead of `viết`.
         // See docs/baselines/perf-baseline-d12-chrome-cross-app.md and the
         // S2D0_ChromeBug53_* engine-isolation tests.
-        // Exemption rule shared by the synth-guard and catch-all cancel branches:
-        // tone modifiers (Telex/SimpleTelex/Combined s/f/r/x/j, VNI 1-5,
-        // UserDefined customKeyMap[ch] ∈ {ToneAcute..ToneDot}) and ESC
+        // Exemption rule shared by the synth-guard and catch-all cancel
+        // branches: modifier letters (Telex/SimpleTelex/Combined
+        // s/f/r/x/j/z/a/e/o/w/d), VNI digits 0-9, UserDefined keys whose
+        // customKeyMap action passes IsCommitUndoExemptAction, and ESC
         // restore-raw all semantically "modify the previous word" — they
         // must not demote / cancel commit-undo state. Extracted to
         // core/CommitUndoExemption.h for Linux GTest coverage (HookEngine.cpp
-        // is Win32-only). See design 2026-05-17.
-        const auto methodForTone = currentMethod_.load(std::memory_order_acquire);
+        // is Win32-only). See design 2026-05-17 + 2026-05-21b broadening.
+        const auto methodForExempt = currentMethod_.load(std::memory_order_acquire);
         const bool shiftHeld = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         // Source of truth: registry snapshot — Esc only exempts when bound to
         // CancelComposition AND the intent is enabled. Removed in v3 cleanup:
@@ -1151,19 +1152,19 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         // don't apply. Resolve vk → ASCII via VkToMacroChar (same path
         // step 6d uses) and ask IsCommitUndoExemptAction whether the
         // mapped action belongs to the "modifies previous word" class.
-        bool isCustomToneKey = false;
-        if (methodForTone == InputMethod::UserDefined) {
+        bool isCustomModifier = false;
+        if (methodForExempt == InputMethod::UserDefined) {
             const wchar_t ch = VkToMacroChar(vkCode);
             if (ch && ch < 128) {
                 const TypingAction action =
                     config_.load(std::memory_order_acquire)
                         ->customKeyMap[static_cast<uint8_t>(ch)];
-                isCustomToneKey = IsCommitUndoExemptAction(action);
+                isCustomModifier = IsCommitUndoExemptAction(action);
             }
         }
         const bool isCommitUndoExempt = IsCommitUndoExemptKey(
-            vkCode, methodForTone, shiftHeld, escIsCancelTrigger,
-            isCustomToneKey);
+            vkCode, methodForExempt, shiftHeld, escIsCancelTrigger,
+            isCustomModifier);
         // Sprint 2 D5: settle window is now per-host. RichEdit (0 ms) lets
         // commit-undo replay immediately; Win32 (30 ms) tightens the gate
         // ~3× vs the legacy 100 ms hardcode; Electron/Console (100 ms) keeps

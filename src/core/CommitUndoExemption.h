@@ -14,7 +14,7 @@
 //      digit / VK_BACK.
 //
 // Both sites must exempt the same key classes so the post-BS recovery
-// paths (tone-modifier replay, ESC restore-raw) can fire.
+// paths (modifier-letter replay, ESC restore-raw) can fire.
 //
 // Extracted from HookEngine.cpp for Linux GTest coverage: HookEngine.cpp
 // is Win32-only and not linked into the cross-platform VKeyTests target.
@@ -68,7 +68,7 @@ namespace NextKey {
 ///     6=circumflex, 7=horn, 8=breve, 9=stroke). Shift filters out
 ///     punctuation variants (Shift+1=`!` etc.).
 ///   - UserDefined: caller resolves `vkCode` → ASCII → customKeyMap
-///     action and passes `isCustomToneKey=IsCommitUndoExemptAction(...)`.
+///     action and passes `isCustomModifier=IsCommitUndoExemptAction(...)`.
 ///   - VK_ESCAPE when `escIsCancelTrigger` is true — same semantic class
 ///     (replaces composed Vietnamese with raw input).
 ///
@@ -80,7 +80,7 @@ namespace NextKey {
     InputMethod method,
     bool shiftHeld,
     bool escIsCancelTrigger,
-    bool isCustomToneKey = false) noexcept {
+    bool isCustomModifier = false) noexcept {
     constexpr uint32_t kVkEscape = 0x1B;
 
     // Telex modifier letter set: tones (s/f/r/x/j/z) + circumflex/horn/
@@ -102,14 +102,14 @@ namespace NextKey {
         vkCode >= '0' && vkCode <= '9' &&
         !shiftHeld;
 
-    const bool isUserDefinedTone =
-        (method == InputMethod::UserDefined) && isCustomToneKey;
+    const bool isUserDefinedModifier =
+        (method == InputMethod::UserDefined) && isCustomModifier;
 
     const bool isEscRestoreRawKey =
         (vkCode == kVkEscape) && escIsCancelTrigger;
 
     return isTelexModifierLetter || isVniModifierDigit ||
-           isUserDefinedTone || isEscRestoreRawKey;
+           isUserDefinedModifier || isEscRestoreRawKey;
 }
 
 }  // namespace NextKey

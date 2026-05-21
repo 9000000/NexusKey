@@ -97,7 +97,7 @@ TEST(CommitUndoExemption, TelexModifierLetters_NotExemptInVni) {
 
 TEST(CommitUndoExemption, TelexModifierLetters_NotExemptInUserDefined) {
     // UserDefined doesn't use the hardcoded list — caller must pass
-    // isCustomToneKey via customKeyMap lookup. Without that flag,
+    // isCustomModifier via customKeyMap lookup. Without that flag,
     // every letter (including 's/e/w/d') is treated as new-word intent.
     for (uint32_t vk : kTelexModifierVks) {
         EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::UserDefined, false, false));
@@ -112,50 +112,50 @@ TEST(CommitUndoExemption, Vni_Digits_NotExemptInSimpleTelex) {
 }
 
 // ============================================================
-// UserDefined customKeyMap tone lookup — caller computes
-// `isCustomToneKey` via customKeyMap[lowercase_ascii] ∈
-// {ToneAcute..ToneDot}; predicate trusts that flag in UserDefined.
+// UserDefined customKeyMap modifier lookup — caller passes
+// `isCustomModifier = IsCommitUndoExemptAction(customKeyMap[ch])`;
+// predicate trusts that flag in UserDefined mode only.
 // ============================================================
 
-TEST(CommitUndoExemption, UserDefined_CustomToneKey_Exempt) {
-    // Any vk can be exempt in UserDefined when isCustomToneKey=true.
+TEST(CommitUndoExemption, UserDefined_CustomModifier_Exempt) {
+    // Any vk can be exempt in UserDefined when isCustomModifier=true.
     // The predicate doesn't validate WHICH vk — that's the caller's job
     // via the customKeyMap lookup.
     for (uint32_t vk : {kVkS, kVkF, kVkR, kVkX, kVkJ, kVkA, kVkB,
                         kVk1, kVk5, kVk6, kVk0}) {
         EXPECT_TRUE(IsCommitUndoExemptKey(vk, InputMethod::UserDefined,
                                           /*shift=*/false, /*esc=*/false,
-                                          /*isCustomToneKey=*/true))
+                                          /*isCustomModifier=*/true))
             << "vk=0x" << std::hex << vk;
     }
 }
 
-TEST(CommitUndoExemption, UserDefined_CustomToneKey_FlagIgnoredOutsideUserDefined) {
-    // isCustomToneKey only applies in UserDefined mode. Setting it true
+TEST(CommitUndoExemption, UserDefined_CustomModifier_FlagIgnoredOutsideUserDefined) {
+    // isCustomModifier only applies in UserDefined mode. Setting it true
     // in Telex/VNI/Combined must not change exemption (those use their
-    // hardcoded tone-key sets).
+    // hardcoded modifier sets).
     EXPECT_FALSE(IsCommitUndoExemptKey(kVkB, InputMethod::Telex, false, false,
-                                       /*isCustomToneKey=*/true));
+                                       /*isCustomModifier=*/true));
     EXPECT_FALSE(IsCommitUndoExemptKey(kVkB, InputMethod::VNI, false, false,
-                                       /*isCustomToneKey=*/true));
+                                       /*isCustomModifier=*/true));
     EXPECT_FALSE(IsCommitUndoExemptKey(kVkB, InputMethod::SimpleTelex, false, false,
-                                       /*isCustomToneKey=*/true));
+                                       /*isCustomModifier=*/true));
     EXPECT_FALSE(IsCommitUndoExemptKey(kVkB, InputMethod::Combined, false, false,
-                                       /*isCustomToneKey=*/true));
+                                       /*isCustomModifier=*/true));
 }
 
-TEST(CommitUndoExemption, UserDefined_NoCustomTone_NotExempt) {
-    // When caller's customKeyMap lookup returns a non-tone action,
-    // isCustomToneKey=false → no exemption.
+TEST(CommitUndoExemption, UserDefined_NoCustomModifier_NotExempt) {
+    // When caller's customKeyMap lookup returns a non-modifier action,
+    // isCustomModifier=false → no exemption.
     for (uint32_t vk : {kVkS, kVkA, kVk1, kVkB}) {
         EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::UserDefined,
                                            false, false,
-                                           /*isCustomToneKey=*/false));
+                                           /*isCustomModifier=*/false));
     }
 }
 
 // ============================================================
-// VNI tone modifiers — exempt in VNI / Combined when Shift NOT held
+// VNI digits — exempt in VNI / Combined when Shift NOT held
 // ============================================================
 
 TEST(CommitUndoExemption, Vni_Digits1To5_ExemptInVni) {
@@ -270,11 +270,8 @@ TEST(CommitUndoExemption, NonAlphaKeys_NotExempt) {
 }
 
 // ============================================================
-// Cross-cut regression: 2026-05-17 bug reproduction
-// ============================================================
-
-// ============================================================
-// IsCommitUndoExemptAction — UserDefined customKeyMap lookup
+// IsCommitUndoExemptAction — semantic class predicate consumed by
+// UserDefined customKeyMap lookup at the HookEngine call site.
 // ============================================================
 
 TEST(CommitUndoExemptionAction, ToneActionsExempt) {
@@ -324,6 +321,10 @@ TEST(CommitUndoExemptionAction, DirectInsertActionsNotExempt) {
     EXPECT_FALSE(IsCommitUndoExemptAction(TypingAction::InsertUHorn));
 }
 
+// ============================================================
+// Cross-cut regression cases
+// ============================================================
+
 TEST(CommitUndoExemption, Regression_2026_05_21b_TelexPostBSCircumflex) {
     // Repro: user typed `ther + space + BS + e` on Telex method in
     // Chrome (Electron WebView2). Expected `thể` — engine on replay
@@ -364,10 +365,10 @@ TEST(CommitUndoExemption, Regression_2026_05_21_SimpleTelexPostBSTone) {
 TEST(CommitUndoExemption, Regression_2026_05_21_UserDefinedCustomTone) {
     // Same flow as above but on UserDefined with customKeyMap bound
     // (e.g. 's' → ToneAcute mimicking Telex). The caller computes
-    // isCustomToneKey via customKeyMap lookup; predicate honours it.
+    // isCustomModifier via customKeyMap lookup; predicate honours it.
     EXPECT_TRUE(IsCommitUndoExemptKey(kVkS, InputMethod::UserDefined,
                                        /*shift=*/false, /*esc=*/false,
-                                       /*isCustomToneKey=*/true))
+                                       /*isCustomModifier=*/true))
         << "UserDefined with customKeyMap['s']=ToneAcute must allow "
            "post-BS replay just like Telex.";
 }
