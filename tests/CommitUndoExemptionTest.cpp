@@ -61,8 +61,80 @@ TEST(CommitUndoExemption, Telex_ToneKeys_NotExemptInVni) {
 }
 
 TEST(CommitUndoExemption, Telex_ToneKeys_NotExemptInUserDefined) {
+    // UserDefined exemption requires caller to set `isCustomToneKey=true`
+    // after looking up customKeyMap. Without that flag (default false),
+    // s/f/r/x/j are NOT exempt in UserDefined even though they are
+    // hardcoded tones in Telex/SimpleTelex/Combined.
     for (uint32_t vk : {kVkS, kVkF, kVkR, kVkX, kVkJ}) {
         EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::UserDefined, false, false));
+    }
+}
+
+// ============================================================
+// SimpleTelex parity — Telex tone keys must behave identically
+// (regression: 2026-05-21 `khoong+space+BS+s` produced `khôngs`
+// because exemption list omitted SimpleTelex method)
+// ============================================================
+
+TEST(CommitUndoExemption, Telex_ToneKeys_ExemptInSimpleTelex) {
+    // SimpleTelex differs from Telex only in bracket/`w` handling
+    // (TypingConfig.h:19). Tone keys s/f/r/x/j route through the same
+    // engine path (IsTelexMode() in TypingEngine.h includes SimpleTelex),
+    // so the post-BS replay path must also treat them as exempt.
+    for (uint32_t vk : {kVkS, kVkF, kVkR, kVkX, kVkJ}) {
+        EXPECT_TRUE(IsCommitUndoExemptKey(vk, InputMethod::SimpleTelex, false, false))
+            << "vk=0x" << std::hex << vk
+            << " — SimpleTelex tone modifier must be exempt to allow commit-undo replay";
+    }
+}
+
+TEST(CommitUndoExemption, Vni_Digits_NotExemptInSimpleTelex) {
+    // SimpleTelex inherits Telex tone semantics — digits are NOT tone keys.
+    for (uint32_t vk = kVk1; vk <= kVk5; ++vk) {
+        EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::SimpleTelex, false, false));
+    }
+}
+
+// ============================================================
+// UserDefined customKeyMap tone lookup — caller computes
+// `isCustomToneKey` via customKeyMap[lowercase_ascii] ∈
+// {ToneAcute..ToneDot}; predicate trusts that flag in UserDefined.
+// ============================================================
+
+TEST(CommitUndoExemption, UserDefined_CustomToneKey_Exempt) {
+    // Any vk can be exempt in UserDefined when isCustomToneKey=true.
+    // The predicate doesn't validate WHICH vk — that's the caller's job
+    // via the customKeyMap lookup.
+    for (uint32_t vk : {kVkS, kVkF, kVkR, kVkX, kVkJ, kVkA, kVkB,
+                        kVk1, kVk5, kVk6, kVk0}) {
+        EXPECT_TRUE(IsCommitUndoExemptKey(vk, InputMethod::UserDefined,
+                                          /*shift=*/false, /*esc=*/false,
+                                          /*isCustomToneKey=*/true))
+            << "vk=0x" << std::hex << vk;
+    }
+}
+
+TEST(CommitUndoExemption, UserDefined_CustomToneKey_FlagIgnoredOutsideUserDefined) {
+    // isCustomToneKey only applies in UserDefined mode. Setting it true
+    // in Telex/VNI/Combined must not change exemption (those use their
+    // hardcoded tone-key sets).
+    EXPECT_FALSE(IsCommitUndoExemptKey(kVkB, InputMethod::Telex, false, false,
+                                       /*isCustomToneKey=*/true));
+    EXPECT_FALSE(IsCommitUndoExemptKey(kVkB, InputMethod::VNI, false, false,
+                                       /*isCustomToneKey=*/true));
+    EXPECT_FALSE(IsCommitUndoExemptKey(kVkB, InputMethod::SimpleTelex, false, false,
+                                       /*isCustomToneKey=*/true));
+    EXPECT_FALSE(IsCommitUndoExemptKey(kVkB, InputMethod::Combined, false, false,
+                                       /*isCustomToneKey=*/true));
+}
+
+TEST(CommitUndoExemption, UserDefined_NoCustomTone_NotExempt) {
+    // When caller's customKeyMap lookup returns a non-tone action,
+    // isCustomToneKey=false → no exemption.
+    for (uint32_t vk : {kVkS, kVkA, kVk1, kVkB}) {
+        EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::UserDefined,
+                                           false, false,
+                                           /*isCustomToneKey=*/false));
     }
 }
 
@@ -163,6 +235,33 @@ TEST(CommitUndoExemption, NonAlphaKeys_NotExempt) {
 // ============================================================
 // Cross-cut regression: 2026-05-17 bug reproduction
 // ============================================================
+
+TEST(CommitUndoExemption, Regression_2026_05_21_SimpleTelexPostBSTone) {
+    // Repro: user typed `khoong + space + BS + s` on SimpleTelex method
+    // in Notepad (Win32, 30ms settle). Expected `khống` (sắc on ô).
+    // Got `khôngs`. Hook log showed:
+    //   "commit-undo: drop stack-top 'không' for non-tone alpha 'S'
+    //    → fresh composition"
+    // Root cause: IsCommitUndoExemptKey only checked Telex + Combined
+    // for tone modifiers, omitting SimpleTelex. Engine treats SimpleTelex
+    // tone keys identically (IsTelexMode()), so the cancel branch
+    // mismatched the engine's classification and dropped the stack.
+    EXPECT_TRUE(IsCommitUndoExemptKey(kVkS, InputMethod::SimpleTelex,
+                                       /*shift=*/false, /*esc=*/false))
+        << "After SimpleTelex bug fix, 's' must be exempt so the "
+           "alpha-branch replay path fires.";
+}
+
+TEST(CommitUndoExemption, Regression_2026_05_21_UserDefinedCustomTone) {
+    // Same flow as above but on UserDefined with customKeyMap bound
+    // (e.g. 's' → ToneAcute mimicking Telex). The caller computes
+    // isCustomToneKey via customKeyMap lookup; predicate honours it.
+    EXPECT_TRUE(IsCommitUndoExemptKey(kVkS, InputMethod::UserDefined,
+                                       /*shift=*/false, /*esc=*/false,
+                                       /*isCustomToneKey=*/true))
+        << "UserDefined with customKeyMap['s']=ToneAcute must allow "
+           "post-BS replay just like Telex.";
+}
 
 TEST(CommitUndoExemption, Regression_2026_05_17_EscPostBS) {
     // Scenario: user typed `virus → space → BS → ESC`. Without ESC exemption,

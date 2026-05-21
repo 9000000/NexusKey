@@ -31,10 +31,20 @@ namespace NextKey {
 /// Returns true when `vkCode` should bypass the cancel-Primed branches.
 ///
 /// Exempt classes:
-///   - Telex tone modifiers `s/f/r/x/j` (active in Telex / Combined).
+///   - Telex tone modifiers `s/f/r/x/j` (active in Telex / SimpleTelex /
+///     Combined). SimpleTelex is identical to Telex for tone keys — it
+///     only differs in bracket / `w` handling (TypingConfig.h:19), and
+///     the engine's `IsTelexMode()` (TypingEngine.h:118) returns true
+///     for all three methods.
 ///   - VNI tone modifiers `1-5` without Shift (active in VNI / Combined).
 ///     Shift is checked because Shift+digit produces punctuation on most
 ///     layouts (Shift+1 = '!', etc.), which is not a tone keystroke.
+///   - UserDefined tone keys: caller passes `isCustomToneKey=true` when
+///     `vkCode` resolves (via lowercase ASCII) to a customKeyMap entry
+///     whose `TypingAction` is one of `ToneAcute/Grave/Hook/Tilde/Dot`.
+///     ClearTone is intentionally excluded — matches existing Telex
+///     behaviour where `z` is not exempt. Any non-UserDefined method
+///     ignores this flag.
 ///   - VK_ESCAPE when `escIsCancelTrigger` is true — same semantic class:
 ///     the key only modifies the just-committed word (replaces composed
 ///     Vietnamese with the user's raw keys). v3 source of truth: hot-path
@@ -49,11 +59,14 @@ namespace NextKey {
     uint32_t vkCode,
     InputMethod method,
     bool shiftHeld,
-    bool escIsCancelTrigger) noexcept {
+    bool escIsCancelTrigger,
+    bool isCustomToneKey = false) noexcept {
     constexpr uint32_t kVkEscape = 0x1B;
 
     const bool isTelexTone =
-        (method == InputMethod::Telex || method == InputMethod::Combined) &&
+        (method == InputMethod::Telex ||
+         method == InputMethod::SimpleTelex ||
+         method == InputMethod::Combined) &&
         (vkCode == 'S' || vkCode == 'F' || vkCode == 'R' ||
          vkCode == 'X' || vkCode == 'J');
 
@@ -62,10 +75,13 @@ namespace NextKey {
         vkCode >= '1' && vkCode <= '5' &&
         !shiftHeld;
 
+    const bool isUserDefinedTone =
+        (method == InputMethod::UserDefined) && isCustomToneKey;
+
     const bool isEscRestoreRawKey =
         (vkCode == kVkEscape) && escIsCancelTrigger;
 
-    return isTelexTone || isVniTone || isEscRestoreRawKey;
+    return isTelexTone || isVniTone || isUserDefinedTone || isEscRestoreRawKey;
 }
 
 }  // namespace NextKey
