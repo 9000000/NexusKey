@@ -9,10 +9,19 @@
 // History:
 //   - Original rule (pre-2026-05-17): only Telex `s/f/r/x/j` + VNI `1-5`
 //     were exempt (Sprint 2 D1, chaos 5.3 fix).
-//   - 2026-05-17 (this work): ESC restore-raw added. Without exemption ESC
-//     post-BS hit either cancel site (depending on synth-pending state),
-//     defeating the post-BS rawInput restore path. Bug observed
-//     on Notepad++ (log session 22:56 → 22:59 after fix).
+//   - 2026-05-17: ESC restore-raw added. Without exemption ESC post-BS
+//     hit either cancel site (depending on synth-pending state),
+//     defeating the post-BS rawInput restore path. Bug observed on
+//     Notepad++ (log session 22:56 → 22:59 after fix).
+//   - 2026-05-21a: SimpleTelex tones + UserDefined customKeyMap tone
+//     lookup added (commit 002acb9). `khoong+space+BS+s` produced
+//     `khôngs` on SimpleTelex because list omitted that method.
+//   - 2026-05-21b (this work): Broadened to ALL Telex modifier letters
+//     (s/f/r/x/j/z/a/e/o/w/d) and ALL VNI digits (0-9). `ther+space+BS+e`
+//     on Telex produced `thẻe` because `e` wasn't in the tone-only list,
+//     even though it's a circumflex modifier that "modifies previous
+//     word" (engine's ee→ê transform on replay). UserDefined now
+//     consults IsCommitUndoExemptAction (any tone/modifier action).
 
 #include <gtest/gtest.h>
 
@@ -21,76 +30,83 @@
 namespace NextKey {
 namespace {
 
-constexpr uint32_t kVkEscape = 0x1B;
 constexpr uint32_t kVkA      = 0x41;
-constexpr uint32_t kVkS      = 0x53;
-constexpr uint32_t kVkF      = 0x46;
-constexpr uint32_t kVkR      = 0x52;
-constexpr uint32_t kVkX      = 0x58;
-constexpr uint32_t kVkJ      = 0x4A;
 constexpr uint32_t kVkB      = 0x42;
+constexpr uint32_t kVkD      = 0x44;
+constexpr uint32_t kVkE      = 0x45;
+constexpr uint32_t kVkF      = 0x46;
+constexpr uint32_t kVkJ      = 0x4A;
+constexpr uint32_t kVkK      = 0x4B;
+constexpr uint32_t kVkO      = 0x4F;
+constexpr uint32_t kVkR      = 0x52;
+constexpr uint32_t kVkS      = 0x53;
+constexpr uint32_t kVkW      = 0x57;
+constexpr uint32_t kVkX      = 0x58;
+constexpr uint32_t kVkZ      = 0x5A;
+constexpr uint32_t kVk0      = 0x30;
 constexpr uint32_t kVk1      = 0x31;
 constexpr uint32_t kVk5      = 0x35;
 constexpr uint32_t kVk6      = 0x36;
-constexpr uint32_t kVk0      = 0x30;
+constexpr uint32_t kVk9      = 0x39;
+constexpr uint32_t kVkEscape = 0x1B;
 constexpr uint32_t kVkSpace  = 0x20;
 constexpr uint32_t kVkReturn = 0x0D;
 
 // ============================================================
-// Telex tone modifiers — exempt in Telex / Combined modes
+// Telex modifier letters — tone (s/f/r/x/j/z) + circumflex (a/e/o)
+// + horn (w) + đ-stroke (d). Exempt in Telex/SimpleTelex/Combined.
 // ============================================================
 
-TEST(CommitUndoExemption, Telex_ToneKeys_ExemptInTelex) {
-    for (uint32_t vk : {kVkS, kVkF, kVkR, kVkX, kVkJ}) {
+constexpr uint32_t kTelexModifierVks[] = {
+    kVkS, kVkF, kVkR, kVkX, kVkJ, kVkZ,   // tones (s/f/r/x/j/z)
+    kVkA, kVkE, kVkO,                     // circumflex (aa→â, ee→ê, oo→ô)
+    kVkW,                                 // horn (w)
+    kVkD,                                 // đ-stroke (dd→đ)
+};
+
+TEST(CommitUndoExemption, TelexModifierLetters_ExemptInTelex) {
+    for (uint32_t vk : kTelexModifierVks) {
         EXPECT_TRUE(IsCommitUndoExemptKey(vk, InputMethod::Telex, false, false))
             << "vk=0x" << std::hex << vk;
     }
 }
 
-TEST(CommitUndoExemption, Telex_ToneKeys_ExemptInCombined) {
-    for (uint32_t vk : {kVkS, kVkF, kVkR, kVkX, kVkJ}) {
+TEST(CommitUndoExemption, TelexModifierLetters_ExemptInSimpleTelex) {
+    // SimpleTelex routes the same letters through `IsTelexMode()` in the
+    // engine — only bracket / standalone-`w` semantics differ. All eleven
+    // modifier letters must be exempt to allow post-BS replay.
+    for (uint32_t vk : kTelexModifierVks) {
+        EXPECT_TRUE(IsCommitUndoExemptKey(vk, InputMethod::SimpleTelex, false, false))
+            << "vk=0x" << std::hex << vk;
+    }
+}
+
+TEST(CommitUndoExemption, TelexModifierLetters_ExemptInCombined) {
+    for (uint32_t vk : kTelexModifierVks) {
         EXPECT_TRUE(IsCommitUndoExemptKey(vk, InputMethod::Combined, false, false));
     }
 }
 
-TEST(CommitUndoExemption, Telex_ToneKeys_NotExemptInVni) {
-    for (uint32_t vk : {kVkS, kVkF, kVkR, kVkX, kVkJ}) {
+TEST(CommitUndoExemption, TelexModifierLetters_NotExemptInVni) {
+    // In VNI, letters are literal — only digits modify the previous word.
+    for (uint32_t vk : kTelexModifierVks) {
         EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::VNI, false, false))
-            << "vk=0x" << std::hex << vk << " — in VNI 's' is just a letter";
+            << "vk=0x" << std::hex << vk << " — literal in VNI";
     }
 }
 
-TEST(CommitUndoExemption, Telex_ToneKeys_NotExemptInUserDefined) {
-    // UserDefined exemption requires caller to set `isCustomToneKey=true`
-    // after looking up customKeyMap. Without that flag (default false),
-    // s/f/r/x/j are NOT exempt in UserDefined even though they are
-    // hardcoded tones in Telex/SimpleTelex/Combined.
-    for (uint32_t vk : {kVkS, kVkF, kVkR, kVkX, kVkJ}) {
+TEST(CommitUndoExemption, TelexModifierLetters_NotExemptInUserDefined) {
+    // UserDefined doesn't use the hardcoded list — caller must pass
+    // isCustomToneKey via customKeyMap lookup. Without that flag,
+    // every letter (including 's/e/w/d') is treated as new-word intent.
+    for (uint32_t vk : kTelexModifierVks) {
         EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::UserDefined, false, false));
     }
 }
 
-// ============================================================
-// SimpleTelex parity — Telex tone keys must behave identically
-// (regression: 2026-05-21 `khoong+space+BS+s` produced `khôngs`
-// because exemption list omitted SimpleTelex method)
-// ============================================================
-
-TEST(CommitUndoExemption, Telex_ToneKeys_ExemptInSimpleTelex) {
-    // SimpleTelex differs from Telex only in bracket/`w` handling
-    // (TypingConfig.h:19). Tone keys s/f/r/x/j route through the same
-    // engine path (IsTelexMode() in TypingEngine.h includes SimpleTelex),
-    // so the post-BS replay path must also treat them as exempt.
-    for (uint32_t vk : {kVkS, kVkF, kVkR, kVkX, kVkJ}) {
-        EXPECT_TRUE(IsCommitUndoExemptKey(vk, InputMethod::SimpleTelex, false, false))
-            << "vk=0x" << std::hex << vk
-            << " — SimpleTelex tone modifier must be exempt to allow commit-undo replay";
-    }
-}
-
 TEST(CommitUndoExemption, Vni_Digits_NotExemptInSimpleTelex) {
-    // SimpleTelex inherits Telex tone semantics — digits are NOT tone keys.
-    for (uint32_t vk = kVk1; vk <= kVk5; ++vk) {
+    // SimpleTelex inherits Telex semantics — digits are not modifiers there.
+    for (uint32_t vk = kVk0; vk <= kVk9; ++vk) {
         EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::SimpleTelex, false, false));
     }
 }
@@ -155,24 +171,35 @@ TEST(CommitUndoExemption, Vni_Digits1To5_ExemptInCombined) {
     }
 }
 
-TEST(CommitUndoExemption, Vni_DigitsWithShift_NotExempt) {
+TEST(CommitUndoExemption, Vni_AllDigitsWithShift_NotExempt) {
     // Shift+digit yields punctuation on US layout — not a tone keystroke.
-    for (uint32_t vk = kVk1; vk <= kVk5; ++vk) {
+    for (uint32_t vk = kVk0; vk <= kVk9; ++vk) {
         EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::VNI, /*shift=*/true, false))
             << "Shift+vk=0x" << std::hex << vk << " is punctuation, must not be exempt";
     }
 }
 
-TEST(CommitUndoExemption, Vni_Digit0_NotExempt) {
-    // VNI '0' is clear-tone, not a tone modifier — different code path in engine.
-    EXPECT_FALSE(IsCommitUndoExemptKey(kVk0, InputMethod::VNI, false, false));
+TEST(CommitUndoExemption, Vni_Digit0_ExemptInVni) {
+    // 2026-05-21b: VNI '0' is clear-tone — same semantic class as tone
+    // modifiers ("modifies previous word"). After broadening, all digits
+    // 0-9 are exempt in VNI/Combined.
+    EXPECT_TRUE(IsCommitUndoExemptKey(kVk0, InputMethod::VNI, false, false));
 }
 
-TEST(CommitUndoExemption, Vni_Digit6_NotExempt) {
-    // VNI '6/7/8/9' are modifier keys (circumflex, horn, breve), not tone —
-    // these reshape the vowel, not just add a diacritic, so they fall outside
-    // the "only modifies previous word" exemption.
-    EXPECT_FALSE(IsCommitUndoExemptKey(kVk6, InputMethod::VNI, false, false));
+TEST(CommitUndoExemption, Vni_Digits6To9_ExemptInVni) {
+    // 2026-05-21b: VNI '6/7/8/9' are vowel/consonant modifier keys
+    // (circumflex, horn, breve, stroke). They reshape the previous letter
+    // — same semantic class as tones. Now exempt to enable post-BS replay.
+    for (uint32_t vk = kVk6; vk <= kVk9; ++vk) {
+        EXPECT_TRUE(IsCommitUndoExemptKey(vk, InputMethod::VNI, false, false))
+            << "vk=0x" << std::hex << vk;
+    }
+}
+
+TEST(CommitUndoExemption, Vni_AllDigits_ExemptInCombined) {
+    for (uint32_t vk = kVk0; vk <= kVk9; ++vk) {
+        EXPECT_TRUE(IsCommitUndoExemptKey(vk, InputMethod::Combined, false, false));
+    }
 }
 
 TEST(CommitUndoExemption, Vni_Digits_NotExemptInTelex) {
@@ -214,14 +241,24 @@ TEST(CommitUndoExemption, Esc_ShiftDoesNotChangeExemption) {
 // Non-exempt keys — must always return false
 // ============================================================
 
-TEST(CommitUndoExemption, AlphaLetters_NotExempt) {
-    // Alpha keys have their own replay branch in HandleCommitUndo. The
-    // exemption rule is about the *cancel* path; alphas neither cancel
-    // nor are exempt — they replay.
+TEST(CommitUndoExemption, NonModifierLetters_NotExempt) {
+    // Letters outside the Telex modifier set (s/f/r/x/j/z/a/e/o/w/d).
+    // Examples: b, c, g, h, i, k, l, m, n, p, q, t, u, v, y. These are
+    // pure literals — typing them after BS legitimately starts a new
+    // word, no replay needed.
+    const uint32_t modifierSet[] = {
+        kVkS, kVkF, kVkR, kVkX, kVkJ, kVkZ,
+        kVkA, kVkE, kVkO, kVkW, kVkD,
+    };
+    auto isModifier = [&](uint32_t vk) {
+        for (uint32_t m : modifierSet) if (m == vk) return true;
+        return false;
+    };
     for (uint32_t vk = kVkA; vk <= kVkA + 25u; ++vk) {
-        if (vk == kVkS || vk == kVkF || vk == kVkR || vk == kVkX || vk == kVkJ) continue;
+        if (isModifier(vk)) continue;
         EXPECT_FALSE(IsCommitUndoExemptKey(vk, InputMethod::Telex, false, true))
-            << "vk=0x" << std::hex << vk;
+            << "vk=0x" << std::hex << vk
+            << " is not a Telex modifier; must NOT be exempt";
     }
 }
 
@@ -235,6 +272,78 @@ TEST(CommitUndoExemption, NonAlphaKeys_NotExempt) {
 // ============================================================
 // Cross-cut regression: 2026-05-17 bug reproduction
 // ============================================================
+
+// ============================================================
+// IsCommitUndoExemptAction — UserDefined customKeyMap lookup
+// ============================================================
+
+TEST(CommitUndoExemptionAction, ToneActionsExempt) {
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::ClearTone));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::ToneAcute));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::ToneGrave));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::ToneHook));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::ToneTilde));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::ToneDot));
+}
+
+TEST(CommitUndoExemptionAction, TelexModifierActionsExempt) {
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::CircumflexA));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::CircumflexE));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::CircumflexO));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::HornW));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::HornInsertO));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::HornInsertU));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::StrokeD));
+}
+
+TEST(CommitUndoExemptionAction, VniModifierActionsExempt) {
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::VniCircumflex));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::VniHorn));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::VniBreve));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::VniStroke));
+}
+
+TEST(CommitUndoExemptionAction, BorderlineModifiersExempt) {
+    // HornOrInsertU + variants and UndoAllMarks all "modify previous word"
+    // when there's a target — they fall in the same semantic class.
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::HornOrInsertU));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::HornOrInsertUNoStart));
+    EXPECT_TRUE(IsCommitUndoExemptAction(TypingAction::UndoAllMarks));
+}
+
+TEST(CommitUndoExemptionAction, DirectInsertActionsNotExempt) {
+    // Insert* synthesise a fresh char rather than modify the prior word.
+    // Treated as new-word intent.
+    EXPECT_FALSE(IsCommitUndoExemptAction(TypingAction::None));
+    EXPECT_FALSE(IsCommitUndoExemptAction(TypingAction::InsertABreve));
+    EXPECT_FALSE(IsCommitUndoExemptAction(TypingAction::InsertACircumflex));
+    EXPECT_FALSE(IsCommitUndoExemptAction(TypingAction::InsertDStroke));
+    EXPECT_FALSE(IsCommitUndoExemptAction(TypingAction::InsertECircumflex));
+    EXPECT_FALSE(IsCommitUndoExemptAction(TypingAction::InsertOCircumflex));
+    EXPECT_FALSE(IsCommitUndoExemptAction(TypingAction::InsertOHorn));
+    EXPECT_FALSE(IsCommitUndoExemptAction(TypingAction::InsertUHorn));
+}
+
+TEST(CommitUndoExemption, Regression_2026_05_21b_TelexPostBSCircumflex) {
+    // Repro: user typed `ther + space + BS + e` on Telex method in
+    // Chrome (Electron WebView2). Expected `thể` — engine on replay
+    // pushes 't','h','e','r' → "thẻ", then 'e' triggers ee→ê transform
+    // preserving hook tone → "thể". Got `thẻe` because `e` wasn't in
+    // the tone-only exempt list. Hook log:
+    //   "commit-undo: drop stack-top 'thẻ' for non-tone alpha 'E'
+    //    → fresh composition"
+    // Fix: broaden exempt to all Telex modifier letters (s/f/r/x/j/z/
+    // a/e/o/w/d), not just the 5 tone keys.
+    EXPECT_TRUE(IsCommitUndoExemptKey(kVkE, InputMethod::Telex,
+                                       /*shift=*/false, /*esc=*/false))
+        << "'e' must be exempt — it's a Telex circumflex modifier (ee→ê).";
+    // Same regression also fires for o/a (circumflex) and w/d/z.
+    EXPECT_TRUE(IsCommitUndoExemptKey(kVkO, InputMethod::Telex, false, false));
+    EXPECT_TRUE(IsCommitUndoExemptKey(kVkA, InputMethod::Telex, false, false));
+    EXPECT_TRUE(IsCommitUndoExemptKey(kVkW, InputMethod::Telex, false, false));
+    EXPECT_TRUE(IsCommitUndoExemptKey(kVkD, InputMethod::Telex, false, false));
+    EXPECT_TRUE(IsCommitUndoExemptKey(kVkZ, InputMethod::Telex, false, false));
+}
 
 TEST(CommitUndoExemption, Regression_2026_05_21_SimpleTelexPostBSTone) {
     // Repro: user typed `khoong + space + BS + s` on SimpleTelex method

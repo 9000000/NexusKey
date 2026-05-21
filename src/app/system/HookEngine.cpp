@@ -1146,10 +1146,11 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
             hotkeysForExempt->Matches(Intent::CancelComposition, VK_ESCAPE,
                                        /*mods=*/0, /*isDoubleTap=*/false,
                                        /*keyUp=*/false);
-        // UserDefined tone lookup: customKeyMap can bind ANY key to a tone,
-        // so the hardcoded s/f/r/x/j list doesn't apply. Resolve vk → ASCII
-        // via VkToMacroChar (same path step 6d uses) and accept only
-        // ToneAcute..ToneDot — ClearTone is excluded to mirror Telex 'z'.
+        // UserDefined modifier lookup: customKeyMap can bind any key to
+        // a tone/modifier action, so the hardcoded letter/digit lists
+        // don't apply. Resolve vk → ASCII via VkToMacroChar (same path
+        // step 6d uses) and ask IsCommitUndoExemptAction whether the
+        // mapped action belongs to the "modifies previous word" class.
         bool isCustomToneKey = false;
         if (methodForTone == InputMethod::UserDefined) {
             const wchar_t ch = VkToMacroChar(vkCode);
@@ -1157,8 +1158,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
                 const TypingAction action =
                     config_.load(std::memory_order_acquire)
                         ->customKeyMap[static_cast<uint8_t>(ch)];
-                isCustomToneKey = (action >= TypingAction::ToneAcute &&
-                                   action <= TypingAction::ToneDot);
+                isCustomToneKey = IsCommitUndoExemptAction(action);
             }
         }
         const bool isCommitUndoExempt = IsCommitUndoExemptKey(
