@@ -2226,6 +2226,33 @@ TEST_F(TelexEngineTest, Bracket_NonConsecutive_NoEscape) {
     EXPECT_EQ(engine_->Peek(), L"n\u1EDBơ");
 }
 
+// Bracket escape after a toned vowel + invalid horn target.
+// Bug 2026-05-21: spell-check ON, typing `tar]]` produced `taử]` because
+// the first `]` created invalid "aư" (spellCheckDisabled_=true), the
+// second `]` then bypassed ProcessModifier (escape unrecognised), fell
+// through to literal-char path, and RelocateToneToTarget hijacked the
+// hỏi tone from `a` onto the orphan ư. Fix: WouldModifierRecoverOrEscape
+// now detects the `[[`/`]]` doubled-trigger pattern.
+TEST_F(TelexEngineTest, BracketEscape_AfterTonedVowel_SpellOff) {
+    TypeString(*engine_, L"tar]]");
+    EXPECT_EQ(engine_->Peek(), L"tả]");
+}
+
+TEST_F(TelexEngineTest, BracketEscape_AfterTonedVowel_SpellOn) {
+    config_.spellCheckEnabled = true;
+    engine_ = std::make_unique<TypingEngine>(config_);
+    TypeString(*engine_, L"tar]]");
+    EXPECT_EQ(engine_->Peek(), L"tả]");
+}
+
+TEST_F(TelexEngineTest, BracketEscape_AfterTonedVowel_OpenBracket_SpellOn) {
+    // Mirror case for `[`: `tar[[` → tone stays on `a`, second `[` escapes.
+    config_.spellCheckEnabled = true;
+    engine_ = std::make_unique<TypingEngine>(config_);
+    TypeString(*engine_, L"tar[[");
+    EXPECT_EQ(engine_->Peek(), L"tả[");
+}
+
 TEST_F(TelexEngineTest, W_Standalone_ProducesUHorn) {
     TypeString(*engine_, L"w");
     EXPECT_EQ(engine_->Peek(), L"ư");

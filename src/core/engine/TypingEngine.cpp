@@ -499,6 +499,19 @@ bool TypingEngine::WouldModifierRecoverOrEscape(TypingAction action, wchar_t key
         } else if (IsVowelChar(keyChar) && !states_.empty()) {
             const CharState& last = states_.back();
             if (last.IsVowel() && last.base == lower && last.mod == Modifier::Circumflex) canEscape = true;
+        } else if ((action == TypingAction::HornInsertO || action == TypingAction::HornInsertU) &&
+                   !states_.empty() && rawInput_.size() >= 2 &&
+                   towlower(rawInput_[rawInput_.size() - 2]) == lower) {
+            // Bracket escape recognition: `[[`/`]]` (or any UserDefined-mapped
+            // duplicate trigger) must reach HandleHornInsert to undo the
+            // just-inserted ơ/ư. Without this, spell-check-disabled (set after
+            // first `]` makes the resulting "aư" invalid) skips ProcessModifier
+            // and the second `]` lands in the literal-char path — which calls
+            // RelocateToneToTarget and hijacks the hỏi tone from `a` onto ư
+            // (bug 2026-05-21: tar]] → taử] instead of tả]).
+            const wchar_t baseVowel = (action == TypingAction::HornInsertO) ? L'o' : L'u';
+            const CharState& last = states_.back();
+            if (last.base == baseVowel && last.mod == Modifier::Horn) canEscape = true;
         }
     } else { // VNI
         Modifier escMod = ActionToVniModifier(action);
