@@ -9,9 +9,11 @@
 #include "core/engine/IInputEngine.h"
 #include "core/engine/CodeTableConverter.h"
 #include "core/config/TypingConfig.h"
+#include "core/config/ConfigSnapshot.h"
 #include "core/hotkey/HotkeyRegistry.h"
 #include "core/AutoCapStateTransition.h"
 #include "core/SmartSwitchManager.h"
+#include "app/system/HookCommandMailbox.h"
 #include <Windows.h>
 #include <functional>
 #include <atomic>
@@ -259,20 +261,43 @@ private:
     [[nodiscard]] bool IsWebView2App(HWND topLevel, const std::wstring& exeFullPath) noexcept;
     void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with effective mode
     bool VerifyExcludedState();        // Check if foreground is still excluded; clears stale flag if not
+    // Phase 2b — two-phase focus.
+    //
+    //   ClassifyFocusedWindow runs on the CALLER thread (today: main, via
+    //   WinEventProc / OnTickPoll). Heavy Win32 inspection lives here:
+    //   ClassifyWindow + GetExeNameForHwnd + IsWebView2App + cache lookup/
+    //   store + override-map reads. Per Rule 11.2 these MUST NOT run from
+    //   the LL hook callback (CreateToolhelp32Snapshot violates the 30ms
+    //   p99 budget). Returns a fully-populated FocusClassification POD.
+    //
+    //   OnFocusChanged is now a thin shim: classify + Post(kFocusChanged).
+    //   It stays on main; the actual state mutation runs on the hook
+    //   thread via the drain → ApplyFocusOnHookThread path (declared
+    //   alongside the mailbox above).
+    [[nodiscard]] FocusClassification ClassifyFocusedWindow(HWND triggerHwnd) noexcept;
     void OnFocusChanged(HWND triggerHwnd = nullptr);
     // Populate cachedFocusedHwnd_/cachedFocusedClass_ from `foreground` via AttachThreadInput.
     // Called from OnFocusChanged and on-demand from TryEditMessagePaste when cache is stale.
     void RefreshFocusCache(HWND foreground) noexcept;
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
-    void ReloadAppOverrides();
-    void ReloadExcludedApps();   // Reload excluded app set from TOML
-    void ReloadTsfApps();        // Reload TSF app set from TOML
-    // Reload macros from TOML with keys lowercased for case-insensitive lookup.
-    // Runtime matching already lowercases the typed buffer; normalizing the
-    // map keys mirrors that so capitalized TOML keys (e.g. `Chol = "Chôl"`) match.
-    void ReloadMacroTable();
     void SaveEnglishModeAppsIfDirty();  // Persist English-mode apps to TOML
+
+    // Phase 3d — single source of truth for snapshot rebuild. Parses
+    // overrides/excluded/TSF/macros fresh from TOML, derives
+    // spaceMacroKeys via ConfigSnapshot::Build, and atomic-publishes the
+    // result. Replaces the four legacy Reload* methods + the dual-write
+    // PublishConfigSnapshot bridge from P3b. The 2026-05-19 follow-up
+    // also folded `appSendMethodOverrides` into the snapshot, closing
+    // the last variable-size config map that was racing across threads.
+    //
+    // NOT `noexcept`: STL container allocations + `std::make_shared`
+    // here can throw `std::bad_alloc`. Callers (ReloadFromToml,
+    // QuickSync macro-toggle path, OnTickPoll drain) are reached from
+    // sites with outer try/catch (LL callback catch for hook-thread
+    // path; OnTickPoll's own try for worker path), so a throw unwinds
+    // gracefully instead of `std::terminate`-ing the process.
+    void RebuildSnapshotFromToml(std::uint32_t generation);
 
     // Engine state
     std::unique_ptr<IInputEngine> engine_;
@@ -299,6 +324,17 @@ private:
     // can dereference unconditionally even before ApplyConfig has run.
     std::atomic<std::shared_ptr<const HotkeyRegistry>> hotkeys_{
         std::make_shared<const HotkeyRegistry>(HotkeyRegistry::Defaults())
+    };
+    // Phase 3 — RCU snapshot of variable-size config data. Holds the
+    // excluded-apps / TSF-apps / macro / per-app override maps that the
+    // hook hot path needs to read. Single producer is
+    // `RebuildSnapshotFromToml` (worker thread or main; never hook —
+    // hook side defers via `pendingConfigReload_`). Readers are
+    // lock-free `configSnapshot_.load(acquire)`. Default-init to an
+    // empty snapshot so the first reader before any rebuild publishes
+    // still gets a dereferenceable pointer.
+    std::atomic<std::shared_ptr<const ConfigSnapshot>> configSnapshot_{
+        std::make_shared<const ConfigSnapshot>()
     };
     // Sprint 2 T3: Output channel strategy. RCU-published shared_ptr to the
     // active IOutputInjector, same pattern as config_ above. Writers (main
@@ -362,7 +398,12 @@ private:
     /// Enum + transition rule live in core/AutoCapStateTransition.h so Linux GTest
     /// can exercise the modifier-gate contract without depending on Win32.
     AutoCapState autoCapState_ = AutoCapState::Idle;
-    std::unordered_set<std::wstring> excludedAppSet_;  // excluded apps: force English on focus
+    // Phase 3d: legacy `excludedAppSet_` removed — readers go through
+    // configSnapshot_.load()->excludedAppSet. Same migration for
+    // tsfAppSet_, macroTable_, spaceMacroKeys_, appEncodingOverrides_,
+    // appInputMethodOverrides_, and `appSendMethodOverrides_`
+    // (2026-05-19 follow-up — all six variable-size config maps now
+    // publish through the snapshot).
     // Sprint 1 D5.2: per-app cached + macro config flags read on hook callback
     // path. Writers: ApplyConfig (main), ReloadFromToml (main),
     // OnFocusChanged + RefreshFocusCache (main, via WinEventProc),
@@ -373,7 +414,7 @@ private:
     // same idiom for uniformity (cost = MOV on x86).
     std::atomic<bool> isExcludedApp_{false};      // cached: current app is excluded
     std::atomic<DWORD> excludedPid_{0};           // PID of excluded app (fast check in ProcessKeyDown)
-    std::unordered_set<std::wstring> tsfAppSet_;  // apps that should use TSF engine instead of hook
+    // (tsfAppSet_ removed — see Phase 3d note above)
     // Sprint 1 D5.1: migrated to std::atomic. Writers: ReloadFromToml (main) +
     // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +
     // ProcessKeyUp early-return gates on the hook hot path.
@@ -389,7 +430,10 @@ private:
     std::unordered_set<std::wstring> webView2PositiveCache_;  // full exe path → known WebView2 host (positive-only; see IsWebView2App)
     std::atomic<bool> skipEmptyChar_{false};  // Skip U+202F for Qt/Electron and Console apps
     std::atomic<bool> useClipboardPaste_{false};  // VB6 and legacy ANSI-internal apps need clipboard paste
-    DWORD lastForegroundPid_ = 0;  // PID of last known foreground (updated by OnFocusChanged + timer)
+    // Phase 2c: atomic to lock the cross-thread access pattern explicit.
+    // Read on the worker thread inside OnTickPoll (PID-changed fallback);
+    // written on the hook thread inside ApplyFocusOnHookThread.
+    std::atomic<DWORD> lastForegroundPid_{0};
     std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
     bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode
@@ -397,10 +441,10 @@ private:
     std::wstring previousExe_;  // Previously focused app (for tray menu context)
     CodeTable currentCodeTable_ = CodeTable::Unicode;
     CodeTable globalCodeTable_ = CodeTable::Unicode;     // config value, restored when no override
-    std::unordered_map<std::wstring, int8_t> appEncodingOverrides_;   // exe → encoding override (-1=inherit)
-    std::unordered_map<std::wstring, int8_t> appSendMethodOverrides_; // exe → send method override (-1=inherit)
+    // (appEncodingOverrides_, appInputMethodOverrides_, and
+    // appSendMethodOverrides_ all removed — Phase 3d + 2026-05-19
+    // follow-up. Readers go through configSnapshot_.load()->...)
     InputMethod globalInputMethod_ = InputMethod::Telex; // config value, restored when no override
-    std::unordered_map<std::wstring, int8_t> appInputMethodOverrides_; // exe → method override (-1=inherit)
 
     // Per-HWND classification cache. Each focus change normally calls
     // ClassifyWindow + GetExeNameForHwnd + (sometimes) IsWebView2App, costing
@@ -483,8 +527,8 @@ private:
     std::atomic<bool> macroInEnglish_{false};
     bool tempMacroOff_ = false;       // Runtime: macro disabled for current word; same-thread (hook) only
     bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits; same-thread (hook) only
-    std::unordered_map<std::wstring, std::wstring> macroTable_;
-    std::unordered_set<std::wstring> spaceMacroKeys_;  // subset of macroTable_ keys that contain ' '
+    // (macroTable_ + spaceMacroKeys_ removed — Phase 3d. Live in
+    // configSnapshot_->macroTable / ->spaceMacroKeys now.)
     std::wstring rawMacroBuffer_;
 
     // Hooks
@@ -507,6 +551,21 @@ private:
     std::mutex hookStartMutex_;                    // pairs with hookStartCv_ for handshake
     std::condition_variable hookStartCv_;
     HINSTANCE cachedHInstance_ = nullptr;          // captured in Start(), used by HookThreadProc
+
+    // Phase 2a: cross-thread mailbox. Producers (main UI thread, MainThreadWorker
+    // tick, tray/hotkey callbacks) Post a command bit + optional FocusClassification
+    // snapshot. The hook thread drains via DrainHookCommands() inside
+    // LowLevelKeyboardProc (drain barrier at Rule 11.4 step 5 — after sending_
+    // guard, before English mode dispatch). Wake trampoline (PostThreadMessage
+    // WM_APP_HOOK_COMMAND) is wired at Start. Phase 2a ships this infrastructure
+    // dormant — no producer calls Post yet; drain always sees bits=0 and returns
+    // cheap. Phase 2b/c migrate the actual writers onto it.
+    HookCommandMailbox mailbox_;
+    void DrainHookCommands();                                 // hook thread only
+    void ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);
+    void ApplyConfigOnHookThread();
+    void ApplyTickPollOnHookThread();
+    void ApplyToggleVNOnHookThread();
     // Sprint 1 D11: downgraded from recursive_mutex to plain mutex. After Phase B
     // (D5–D7), all hook-read state is atomic — hook callbacks no longer acquire
     // this mutex for reads. The remaining users are main-thread / worker-thread
@@ -566,6 +625,22 @@ private:
     // always enters the slow path (any valid SharedState epoch mismatches).
     std::atomic<uint32_t> lastEpoch_{0};  // Epoch fast path — skip full Read() when unchanged
     uint8_t lastConfigGeneration_ = 0;   // Tracks configGeneration from SharedState
+    // Phase 3c: cross-thread signal from hook slow path to worker tick.
+    // When `QuickSyncFromSharedState` is entered on the hook thread and
+    // detects a `configGeneration` bump, it MUST NOT run `ReloadFromToml`
+    // (Rule 11.2 — TOML parse on hook). Instead, it sets this flag; the
+    // next `OnTickPoll` (worker thread, 200ms cadence) drains it and
+    // runs `ReloadFromToml` off-hook. Worker / main entries to QuickSync
+    // still run Reload inline — they're already on a safe thread.
+    std::atomic<bool> pendingConfigReload_{false};
+    // Phase 3f: hook-thread latch — set when ApplyConfigOnHookThread can't
+    // run yet because engine_->Count() > 0 (user mid-word). Drain checks
+    // this every cycle and runs the apply once the engine empties (after
+    // commit / backspace-clear / focus reset). Without this, config
+    // reloads landing mid-word committed partial words via the engine
+    // recreate path (surfaced by chaos `-InjectConfigReloadMs 50` as
+    // `uongs` → `uôngs` instead of `uống`).
+    std::atomic<bool> deferredConfigApply_{false};
 
     // Callbacks
     ModeChangeCallback modeChangeCallback_;

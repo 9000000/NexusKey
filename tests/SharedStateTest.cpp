@@ -264,9 +264,23 @@ TEST_F(SharedStateTest, FeatureFlags_SmartSwitch_Roundtrip) {
 }
 
 // v3 cleanup: TempOffMethod_ByteField_Roundtrip removed — the byte slot was
-// renamed `reservedByte34` (formerly tempOffMethod) and is no longer populated.
-// HotkeyRegistry's ToggleEnabled intent now owns the V/E toggle trigger; see
-// tests/HotkeyRegistryTest.cpp for the replacement coverage.
+// renamed `reservedByte34` (formerly tempOffMethod). HotkeyRegistry's
+// ToggleEnabled intent owns the V/E toggle trigger; see
+// tests/HotkeyRegistryTest.cpp for the replacement coverage. Phase 1 perf
+// histogram (2026-05-19) reuses the same byte slot as `diagFlags` — see
+// PerfHistogramTest.cpp for the bit-0 gate coverage.
+
+TEST_F(SharedStateTest, DiagFlags_PerfHistogramBit_Roundtrip) {
+    SharedState state{};
+    state.InitDefaults();
+    EXPECT_EQ(state.diagFlags, 0u)
+        << "InitDefaults must leave all diagnostics off";
+
+    state.diagFlags = DiagFlags::PERF_HISTOGRAM;
+    EXPECT_NE(state.diagFlags & DiagFlags::PERF_HISTOGRAM, 0u);
+    EXPECT_EQ(state.diagFlags, 0x01u)
+        << "DiagFlags::PERF_HISTOGRAM is the bit-0 contract";
+}
 
 TEST_F(SharedStateTest, FeatureFlags_AllTogglesOn_NoAliasing) {
     TypingConfig cfg{};

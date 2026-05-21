@@ -3,6 +3,168 @@
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
 
+## ✅ RESOLVED: P0 — engine_ single-writer violation (2026-05-19, P3e `8e9b5fb` + P3f `775487d`)
+
+The P0 race I flagged during the Phase 3 review and deferred here with
+"Phase 3 RCU will close it" was incomplete — Phase 3c moved
+ReloadFromToml off the hook thread but kept `CommitComposition` +
+`engine_ = Create()` inline on the worker thread, racing against the
+hook hot path's unprotected `engine_->Peek/Push/Count` reads.
+
+`run-chaos.ps1 -InjectConfigReloadMs 50` surfaced this in two layers:
+
+- **Layer 1 (UAF):** 11/55 failures — mid-word composition state loss,
+  scrambled output (e.g. `uống` → `uôngs`, `trường` → `ưư`,
+  `bình thường` → `thfươ ng`). **P3e fix:** collapse to one writer
+  (hook thread) via the dormant `ApplyConfigOnHookThread` handler P2c
+  had pre-wired into the kConfigApply mailbox bit. ReloadFromToml +
+  QuickSync slow path publish the new config_ and post kConfigApply;
+  the hook drain runs CommitComposition + engine swap +
+  currentMethod_.store atomically. UAF closed → 6/55 fails left.
+
+- **Layer 2 (mid-word reset):** P3e's drain ran ApplyConfigOnHookThread
+  unconditionally on every kConfigApply bit, recreating `engine_` even
+  when `engine_->Count() > 0` (uncommitted word). User-visible quirk:
+  partial words committed visibly. **P3f fix:** drain latches the
+  apply via `deferredConfigApply_` atomic and gates on
+  `engine_->Count() == 0`. The apply lands on the keystroke following
+  a natural word commit / backspace-empty / focus reset. Imperceptible
+  at human typing pace. Stress chaos confirms 0/55 engine bugs (only
+  the Chrome omnibox autocomplete flake remains — non-engine).
+
+**Lesson:** "this race will be closed by Phase X" is not a safe
+deferral if Phase X doesn't actually RCU the field. Validate the
+deferred fix delivers what was promised; chaos under stress is the
+behavioral gate. AND: even when the UAF is fixed, the behavioral
+trade-off (mid-word reset on reload) is itself a visible quirk worth
+fixing. Stress chaos surfaces both layers in one run.
+
+## 🟢 Phase 5 — HookEngine class split: DEFERRED (decision 2026-05-19)
+
+Design doc §Phase 5 marked the class split CONDITIONAL: "decide after
+Phase 3 ships". With Phase 2-4 now landed on `feat/architecture-review-v3.1`,
+the four service boundaries the reviewer proposed are visible:
+
+| Boundary | Existing component | Could become |
+|---|---|---|
+| Command intake | HookCommandMailbox + DrainHookCommands + drain handlers | `HookCommandQueue` class |
+| Config snapshot | ConfigSnapshot + RebuildSnapshotFromToml + pendingConfigReload_ | `ConfigSnapshotPublisher` class |
+| Output dispatch | IOutputInjector + injector_ + injector strategies | already extracted (Sprint 2 T3) |
+| State mutator | engine_ + composition fields + 8× VKEY_ASSERT_HOOK_THREAD methods | `HookStateMutator` class |
+
+HookEngine.cpp is 4239 LOC post Phase 4 — large but not unmanageable.
+Pre-Phase-2 was ~3500 LOC; net +700 LOC for mailbox infra + new method
+bodies + comments. The seams are **conceptually clear** even without
+the class boundary; readers can navigate via the section comments
+("Phase 2a — Hook-thread command drain", "Phase 3d — single source of
+truth for ConfigSnapshot rebuild", etc.).
+
+**Defer rationale:**
+
+1. Architecture review's correctness goals (Rule 11.2 + 11.3 compliance,
+   single-writer invariant, RCU for variable-size config) are already
+   met by Phase 2-4. Phase 5 is structural cleanup, not correctness.
+2. Refactor cost: 2-3 days work + high regression risk (touching 8
+   composition-state methods, the LL callback, the drain dispatch).
+3. No production signal yet that the size is a debugging burden.
+   Solo-dev workflow — anh navigates the file fine today.
+4. ThreadIdProvider (separate TODO below) would come for free with the
+   split's `ThreadContext`, but the test gap it would close is also
+   indirectly covered by Windows chaos.
+
+**Trigger to revisit:** any one of —
+- Incident debugging a Phase 2-4-touched section takes > 1 day
+- HookEngine.cpp grows past 5000 LOC from unrelated work
+- Need to plug a 5th component (e.g. metrics) and lack a clean seam
+
+## ✅ RESOLVED: `appSendMethodOverrides_` race — last plain map promoted to ConfigSnapshot (2026-05-19)
+
+P3d had folded every other variable-size config map (excluded apps,
+TSF apps, macro table, encoding overrides, input-method overrides)
+into ConfigSnapshot but left `appSendMethodOverrides_` behind because
+only main-thread `ClassifyFocusedWindow` reads it. Phase 2-3's thread
+split exposed the gap: writer ran on the worker (`RebuildSnapshotFrom
+Toml` did `.clear()` then entry-by-entry insert), reader on main, no
+mutex → torn-read window of ~5 ms on every TOML reparse. Self-recovering
+quirk (next focus re-classifies), but strict Rule 11.3 violation.
+
+**Fix (option 1 from previous entry):** added `appSendMethodOverrides`
+to `ConfigSnapshot` next to the encoding / input-method maps. Extended
+`ConfigSnapshot::Build` to take + move the third override map.
+`RebuildSnapshotFromToml` now builds all three override maps locally
+during the single TOML pass and hands them to Build; the legacy
+HookEngine member is gone. Reader at `ClassifyFocusedWindow:3228`
+loads `configSnapshot_` once and reads `snap->appSendMethodOverrides`
+— lock-free, immune to torn reads.
+
+Tests: `ConfigSnapshotTest` (DefaultIsEmpty + StoreLoadRoundTrip +
+Build round-trip + EmptyInputs) all extended to cover the new field;
+`ConfigReloadBurstTest` gen-derived snapshot includes a parity-toggled
+send-method entry per generation so the integrity check pins it to
+source. 1835/1835 Linux gtest PASS. Notepad chaos baseline + stress
+(`-InjectConfigReloadMs 50`) both 11/11 PASS.
+
+**Why option 1 over option 2 (mutex guard):** option 2 would have
+forced main-thread `Classify` to take a lock that the worker holds
+for the 5 ms rebuild → potential blip in focus-change UX. Option 1
+keeps the hot side lock-free and matches the rest of the snapshot.
+
+## 🟢 ThreadIdProvider for `pendingConfigReload_` routing tests (review 2026-05-19)
+
+Phase 3 added thread-aware routing in `QuickSyncFromSharedState`:
+```cpp
+if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
+    pendingConfigReload_.store(true, release);
+} else {
+    ReloadFromToml();  // inline on worker
+}
+```
+
+Phase 4 gtests don't cover this routing — they test the data-structure
+RCU patterns (ConfigSnapshot, IOutputInjector swap) but not the
+thread-id branching itself. Reason: HookEngine is Win32-only and not
+linked into VKeyTests; Linux gtest has no way to drive the routing.
+
+Design doc §Phase 4 mentioned the fix: a `ThreadIdProvider` interface
+(production reads `GetCurrentThreadId()`, tests inject fake IDs) —
+same pattern as Sprint 1 D5 abstractions. Not implemented in Phase 4.
+
+Behavioural verification today: Windows chaos runs (54/55 PASS across
+P3a-P3d + review cleanup) exercise the routing transparently. A
+deterministic gtest would catch routing regressions earlier.
+
+→ Defer to Phase 5 (HookEngine class split) — the split will likely
+introduce a `ThreadContext` boundary anyway, at which point this
+abstraction comes for free.
+
+## 🟢 Phase 3 latency edge cases (Phase 4 chaos targets)
+
+Phase 3 (`feat/config-rcu-snapshot`) shipped clean. Two latency edges
+are inherent to the deferred-reload design — worth driving deterministic
+coverage when Phase 4 replay harness lands.
+
+### A. Macro-toggle on hook thread (≤200 ms staleness)
+
+User toggles macroEnabled in Settings → continues typing in target app
+without focus switch → macro behavior takes effect only after the next
+worker tick (≤200 ms cadence). Pre-P3c was instant on next keystroke.
+Trade-off: Rule 11.2 (TOML parse off hook) wins over the 200 ms latency.
+
+Phase 4 chaos scenario candidate:
+`--inject-macro-toggle-mid-typing` — open Settings, toggle macro, hold
+focus, type 20 keystrokes within 200 ms, verify macro applies before
+the 200 ms tick boundary.
+
+### B. `pendingConfigReload_` lost on rapid Stop()
+
+Edge case: user saves Settings → hook QuickSync sets pendingConfigReload_
+→ app shutdown before worker tick drains. Config save to SharedState
+is already persisted; TOML save deferred ≤30 s — restart loads correctly.
+No data loss, just no in-session effect. Acceptable.
+
+Phase 4 scenario: `--inject-config-save-then-immediate-exit` — bump
+configGeneration, send WM_CLOSE within 50 ms, restart, verify config
+loaded from TOML/SharedState matches the bump.
 ## 🟡 TSF-apps toggle — async register/unregister (2026-05-20)
 
 `ClassicSettingsDialog::OnTsfAppsToggle` (and the parallel Sciter handler at
@@ -95,29 +257,112 @@ once decision is made.
 Mechanical refresh of CODING_RULES landed in `6171a82`. Two follow-up items
 left out of scope (semantic / requires architecture work):
 
-### A. Rule 11.3 forbidden-pattern example matches production code
+### A. Rule 11.3 forbidden-pattern example matches production code — **RESOLVED Phase 3** (`feat/config-rcu-snapshot`)
 
-Rule 11.3 (`docs/CODING_RULES/11-hook-system-rules.md`) shows:
+Rule 11.3 (`docs/CODING_RULES/11-hook-system-rules.md`) showed:
 ```
 std::lock_guard _lock(stateMutex_);
 ReloadFromToml();  // file I/O holding lock!
 ```
-as a forbidden pattern. Production `HookEngine.cpp:521-543` does **exactly this**
-on the QuickSyncFromSharedState slow path. The rule wording is correct; the
-code is non-compliant. **Fix shipping in Phase 3** of architecture review
-design (see `docs/plans/2026-05-19-architecture-review-design.md`). Once
-Phase 3 PR lands, Rule 11.3 example will match reality again.
+as a forbidden pattern that production code did anyway on the
+QuickSyncFromSharedState slow path.
 
-### B. Inconsistent `LowLevelHooksTimeout` documentation in HookEngine comments
+**Fix landed in P3c** (`574ef2a`): hook QuickSync now sets
+`pendingConfigReload_` instead of running ReloadFromToml inline; worker
+OnTickPoll drains the flag and runs Reload on the worker thread.
+**P3d** (`ff0437b`) cleaned up by collapsing the four legacy Reload*
+methods into one `RebuildSnapshotFromToml` helper. Rule 11.3 example
+now matches reality.
 
-Three different timeout values appear in comments without reconciliation:
-- `HookEngine.cpp:223` says "clamped to 1000ms"
-- `HookEngine.cpp:3166` says "300ms LowLevelHooksTimeout"
-- `HookEngine.cpp:3487` says "default 500 ms"
+### B. Inconsistent `LowLevelHooksTimeout` documentation — **RESOLVED** (verified 2026-05-19)
 
-Win32 docs: default is 300ms, configurable via
-`HKCU\Control Panel\Desktop\LowLevelHooksTimeout`. Comments should agree.
-Code drift, not rule drift. Single cleanup PR; 5 minutes.
+Current state matches Win32 docs: `HookEngine.cpp:258-259` says "default
+300 ms, configurable up to ~1000 ms"; `HookEngine.cpp:3504` says "default
+300 ms per Win32 docs; max ~1000 ms". The "500 ms" the older entry
+flagged turned out to be `HookEngine.cpp:963` watchdog timer for
+`synthEventsPending_` reset — different concept, not LowLevelHooksTimeout.
+Either reconciled in an unlogged earlier cleanup or the original audit
+conflated line numbers. No action needed.
+
+## 🟡 Commit-undo stack survive qua Enter — phantom prefix block tone word kế (2026-05-19)
+
+### Triệu chứng (user report v3.0.1 + repro confirmed)
+
+User đang chat: gõ một tin nhắn tiếng Việt → Enter để send → bắt đầu gõ
+tin nhắn mới → **chỉ ra tiếng Việt không dấu**. Tray icon vẫn V mode, screen
+hiển thị đúng những gì user gõ trong tin mới, nhưng tone/mark không apply.
+User mô tả: "đã xoá hết text rồi mà vẫn không gõ được" — phải gõ space để
+reset engine mới gõ Việt lại được.
+
+### Repro chính xác (log 2026-05-19 21:46:xx, user-supplied)
+
+1. Gõ `khoong,` → commit `không,`, push stack `[không]`, state=Ready.
+2. BS → state=Primed.
+3. Space, Shift+/, Enter → message gửi.
+4. **Enter không clear commit stack** (focus stay in cùng input box, không
+   trigger focus event → không trigger ResetComposition → stack survive).
+   commitUndoState_ về Idle nhưng commitStack_ vẫn = `[không]`.
+5. New message: gõ `a` → engine count=1. `f` → tone HUYỀN applied → `à` ✓.
+6. BS → engine count=0. "HandleBackspace: engine empty, stack has 3 entries
+   → state 1" — re-arm to Ready vì stack non-empty.
+7. BS×2 → Primed → **replay `không`** seed engine state thành `khôn`.
+   Screen vẫn empty (BS gửi tới input trống), engine state lệch khỏi UI.
+8. User gõ `v` → engine `khônv`, screen `v`. `a` → engine `khônva`. `f`
+   → **`IsHardEnglishToneContext`** thấy `HasStructuralVCVPattern` trên
+   `[k,h,ô,n,v,a]` (V-CC-V) → tone gate đóng → `f` literal → screen `vaf`.
+9. Space commit → reset engine → next word `nếu` work bình thường.
+
+### Root cause
+
+`commitStack_.clear()` chỉ chạy trong `ResetComposition()` (HookEngine.cpp
+:2200). Các trigger gọi ResetComposition: mouse click, focus change, Ctrl
+shortcut, exception. **Enter không có**.
+
+| Action key | Cancel mechanism | Status |
+|---|---|---|
+| Arrow / Home / End | Explicit `CancelCommitUndo` ở line 1308 (Ready branch) | ✓ |
+| Mouse click | `ResetComposition` line 865 | ✓ |
+| Tab | Focus event → ResetComposition | ✓ |
+| Ctrl shortcut | ResetComposition line 1554 | ✓ |
+| **Enter** | **(none — focus stays in input box)** | **✗** |
+
+phatMT97's diagnosis "rule s/f/r/x/j hoặc aa/ee/oo/dd → English, BS không
+reset" — sai object. Bias rule không phải trigger (`bias` thực sự vẫn
+Vietnamese sau replay). Gate đóng tone là `IsHardEnglishToneContext` chạy
+**structural pattern** trên states_ buffer concat 2 syllable không liên
+quan. Root cause upstream là stack survive Enter, không phải BS không reset.
+
+### Fix
+
+Pre-handler trước commit-undo dispatch block:
+
+```cpp
+if (vkCode == VK_RETURN &&
+    (commitUndoState_ != CommitUndoState::Idle || !commitStack_.empty())) {
+    CancelCommitUndo();   // line 2196 — clears stack + state + pendingTrigger
+    // Fall through to normal Enter processing.
+}
+```
+
+Trade-off: user mất khả năng `tai␣ + Enter + BS + j → tại` (recall qua
+Enter). Use case này hiếm — Enter trong chat/form thường là send/submit,
+user không kỳ vọng undo chain xuyên qua. Accept.
+
+### Test (manual Windows)
+
+1. `tai␣loi␣` → BS×6 → `i` → kỳ vọng `tải l + i` (multi-word replay không
+   break).
+2. `tai␣` → BS → `␣` → `j` → kỳ vọng `tại` (pendingTrigger không break).
+3. **Bug case**: `tai␣` → BS×3 → Enter → `vaf` → kỳ vọng `và + f` (tone
+   trên `a` apply, không bị phantom prefix block).
+4. `tai␣` → Enter → BS → `j` → kỳ vọng `j` literal (confirms feature loss
+   accepted).
+
+### Refs
+
+- Discussion: GitHub issue trên phatMT97/VKey 2026-05-19
+- Release: VKey v3.0.1
+- Log repro: user-shared 2026-05-19 21:46:52-21:47:10
 
 ## 🟡 `power → pởe` ở spell-check OFF (2026-05-18)
 
@@ -532,61 +777,6 @@ twice.
 
 ---
 
-## 🟡 Architecture proposal alignment review — Module B plan (2026-05-08)
-
-Anh proposed a 4-module architecture (A: lock-free hook ring buffer, B:
-HWND→Profile cache, C: 2D FSM transition table, D: typing-burst test
-framework). Codebase mapping + investment decision below.
-
-### Alignment matrix
-
-| Module | Align | Status | Gap |
-|---|---|---|---|
-| A — Hook ring buffer | CLOSED 2026-05-09 | Watchdog (PR #154) shipped; SPSC ring half closed | See `docs/plans/2026-05-09-hook-engine-ring-buffer-kill.md` |
-| B — Smart Focus / App Profile cache | ~60% | `cachedFocusedHwnd_` single-slot atomic + `ClassifyWindow` function | No HWND→Profile lookup map; re-classifies on every focus event |
-| C — Engine 2D FSM table | CLOSED — not viable | If/case engine (~327 branches in `PushChar`); FSM codegen tool exists (PR #132 `4a52399`) but rewrite cancelled — codegen output ~6MB exceeds <3MB target | Table-driven FSM not viable for Vietnamese phonology dimensionality. Path G (custom keymap) replaces. |
-| D — Test framework | ~85% (deferred) | `VKeyTestRunner` + `chaos.toml` + `inter_key_us` + perf budget shipped | Sub-ms burst + randomized fuzzer (optional polish) |
-
-### Module A vs B — B wins for first invest
-
-| Criterion | A — Ring Buffer | B — HWND Profile Cache |
-|---|---|---|
-| Effort | High (~1-2 sprint, foundation rewire) | Low (~1.5 day) |
-| Risk | High — race conditions, key down/up reorder, modifier desync | Low — pure caching layer, easy to audit |
-| Premise verified? | ❌ — anh questioned H6 premise | ✅ — measurable Win32 syscall count before/after |
-| Existing partial coverage | `HeartbeatPublisher` + `VKeyWatchdog.exe` (PR #154); `HookSelfHealer` reverted 2026-05-17 — own-process bypass | Single-slot `cachedFocusedHwnd_` only |
-| Failure mode if mistake | Lost key events / wrong order / break ALL apps | Stale cache → 1 misclassify / HWND, recover via invalidation |
-
-**Decision:** start with B. A defers until LL hook timeout / parallel
-race reproduces with hard evidence — current chaos PASS shows no signal.
-
-### Module B — implementation plan
-
-Branch `feat/hwnd-app-profile-cache`. Shape:
-
-```cpp
-// HookEngine.h (new fields)
-struct AppProfile {
-    NextKey::Output::WindowClassification classification;
-    DWORD pid;          // HWND-reuse detector: PID change → re-classify
-    uint64_t cachedAt;  // GetTickCount64; for LRU eviction
-};
-std::unordered_map<HWND, AppProfile> appProfileCache_;
-static constexpr size_t kMaxAppProfileCache = 64;
-```
-
-Wire into `ClassifyWindow` path: on focus change lookup HWND first; if
-hit + same PID → use cached; if miss / PID-mismatch → re-classify +
-cache. Invalidate on `EVENT_OBJECT_DESTROY` (AdviseHook required). LRU
-evict when full.
-
-Test plan:
-- Chaos run before/after to confirm no regression
-- Manual Alt+Tab between known apps to verify cache hits (count
-  ClassifyWindow calls per HOOK_LOG)
-
----
-
 ## 🟡 Auto-cap on Enter — keystroke-FSM asymmetry vs space (2026-05-08)
 
 **Symptom:** Pressing Enter to break a line, then typing a letter → letter
@@ -764,15 +954,6 @@ per commit. No premature optimization without driver.
   `ClassicSettingsDialog.cpp:813,991,998,1033`. Candidate for a
   `PostToTrayWindow(UINT msg, WPARAM = 0, LPARAM = 0)` helper in `AppHelpers.h`.
   Low priority — consistent with existing pattern.
-
-- [ ] **`HookEngine::CheckConfigEvent()` has no callers in main EXE**
-  TSF DLL uses its own `EngineController::CheckConfigEvent` (separate class).
-  Marked `// Legacy path — kept for TSF DLL compatibility` but that comment is
-  misleading: the TSF DLL never called the HookEngine version. Candidate for
-  deletion along with `configEvent_` member + `Initialize()` call at
-  `HookEngine.cpp:129`. Out of scope for this fix.
-
----
 
 ## 🟡 Auto-caps + TSF Apps Feedback — open follow-ups (2026-04-21)
 

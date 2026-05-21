@@ -26,6 +26,7 @@ endif()
 # Engine Library (pure C++17, zero platform dependencies)
 set(NEXTKEY_ENGINE_SOURCES
     src/core/config/TypingConfig.h
+    src/core/config/ConfigSnapshot.h
     src/core/engine/TypingEngine.cpp
     src/core/engine/TypingEngine.h
     src/core/engine/EngineFactory.cpp
@@ -166,6 +167,8 @@ add_executable(VKeyApp WIN32
     src/app/system/FloatingIcon.cpp
     src/app/system/HookEngine.h
     src/app/system/HookEngine.cpp
+    src/app/system/HookCommandMailbox.h
+    src/app/system/HookCommandMailbox.cpp
     src/app/system/HeartbeatPublisher.h
     src/app/system/HeartbeatPublisher.cpp
     src/app/system/WatchdogController.h
@@ -188,6 +191,8 @@ add_executable(VKeyApp WIN32
     src/app/system/UpdateSecurity.cpp
     src/app/system/PendingDllApply.h
     src/app/system/PendingDllApply.cpp
+    src/app/system/PerfHistogram.h
+    src/app/system/PerfHistogram.cpp
     src/app/system/StartupHelper.h
     src/app/system/SubprocessHelper.h
     src/app/system/SubprocessRunners.h
@@ -229,7 +234,7 @@ target_include_directories(VKeyApp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/system
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/sciter
 )
-target_compile_definitions(VKeyApp PRIVATE SKIP_MAIN VKEY_HOOK_ENGINE $<$<CONFIG:Debug>:NEXTKEY_DEBUG>)
+target_compile_definitions(VKeyApp PRIVATE SKIP_MAIN VKEY_HOOK_ENGINE VKEY_PERF_HIST $<$<CONFIG:Debug>:NEXTKEY_DEBUG>)
 target_link_libraries(VKeyApp PRIVATE VKeyCore)
 set_target_properties(VKeyApp PROPERTIES OUTPUT_NAME "VKey")
 if(MSVC)
@@ -277,6 +282,10 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/system/UpdateSecurity.cpp
         src/app/system/PendingDllApply.h
         src/app/system/PendingDllApply.cpp
+        src/app/system/PerfHistogram.h
+        src/app/system/PerfHistogram.cpp
+        src/app/system/HookCommandMailbox.h
+        src/app/system/HookCommandMailbox.cpp
         src/app/system/StartupHelper.h
         src/app/system/SubprocessHelper.h
         src/app/system/TsfRegistration.h
@@ -335,6 +344,7 @@ if(VKEY_LITE_MODE AND WIN32)
     target_compile_definitions(VKeyLite PRIVATE
         VKEY_HOOK_ENGINE
         VKEY_LITE_MODE
+        VKEY_PERF_HIST
         $<$<CONFIG:Debug>:NEXTKEY_DEBUG>
     )
     target_link_libraries(VKeyLite PRIVATE
@@ -488,10 +498,19 @@ set(NEXTKEY_TEST_SOURCES
     tests/DigitLedWordDecisionTest.cpp
     tests/LoggerTest.cpp
     tests/HotkeyRegistryTest.cpp
+    tests/PerfHistogramTest.cpp
+    tests/HookCommandMailboxTest.cpp
+    tests/FocusInterleavingTest.cpp
+    tests/ThreadOwnershipTest.cpp
+    tests/ConfigSnapshotTest.cpp
+    tests/ConfigReloadBurstTest.cpp
+    tests/InjectorSwitchTest.cpp
     tests/HotkeyLabelTest.cpp
     tests/HotkeyConfigMigrationTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
+    src/app/system/PerfHistogram.cpp
+    src/app/system/HookCommandMailbox.cpp
 )
 
 # Windows-only tests (require ConfigManager, ConfigEvent, Win32 APIs)

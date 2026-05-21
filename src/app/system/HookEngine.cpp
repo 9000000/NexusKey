@@ -3,6 +3,7 @@
 
 #include "HookEngine.h"
 #include "Win32CaseMapper.h"
+#include "PerfHistogram.h"  // Phase 1 — per-stage histogram (compiles to no-op when VKEY_PERF_HIST undef)
 #include "helpers/AppHelpers.h"
 #include "output/OutputInjectorFactory.h"  // Sprint 2 T3 — output channel strategy
 #include "output/Internal.h"  // Sprint 2 D5 — g_synthCounterCallback bridge
@@ -18,6 +19,7 @@
 #include "core/Debug.h"
 #include "core/CrashLog.h"
 #include <algorithm>
+#include <cassert>
 #include <cstdio>
 #include <exception>
 #include <tlhelp32.h>
@@ -32,12 +34,49 @@ namespace NextKey {
 /// the top of the hook chain. Defined once to avoid duplication.
 static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 
+/// Phase 2a — wake trampoline for `HookCommandMailbox`. Producers on main /
+/// worker / hotkey threads call `mailbox_.Post(bit, ...)`; that fires this
+/// message once per empty→non-empty edge to break the hook thread out of
+/// `GetMessage` so it drains promptly. Subsequent posts before drain run
+/// coalesce (no extra messages) per the wakePosted latch.
+static constexpr UINT WM_APP_HOOK_COMMAND   = WM_APP + 2;
+
 /// `WM_APP_REINSTALL_HOOKS` wParam — labels which trigger fired the reinstall.
 /// Logged by HookThreadProc so field-collected logs can distinguish causes
 /// (e.g. confirm whether Java-trigger reinstalls are frequent enough to
 /// indicate jnativehook re-arming during a JVM session).
 static constexpr WPARAM REINSTALL_REASON_CHROMIUM = 0;
 static constexpr WPARAM REINSTALL_REASON_JAVA     = 1;
+
+// ═══════════════════════════════════════════════════════════
+// VKEY_ASSERT_HOOK_THREAD — Phase 2d single-writer invariant.
+//
+// Composition-state mutation entry points (ResetComposition,
+// CommitComposition, ClearWordState, ReplaceComposition,
+// ReplayCommittedChars, HandleAlphaKey, HandleBackspace,
+// ApplyConfigOnHookThread) MUST run on the hook thread. The macro is
+// debug-only (NDEBUG elides it) — Release builds pay nothing. Pre-Start
+// is a free pass: hookThreadId_ is 0 until HookThreadProc claims it,
+// and Start() legitimately runs composition setup on main before the
+// hook thread spawns.
+// ═══════════════════════════════════════════════════════════
+#ifdef NDEBUG
+  #define VKEY_ASSERT_HOOK_THREAD() ((void)0)
+#else
+  #define VKEY_ASSERT_HOOK_THREAD()                                            \
+      do {                                                                     \
+          const DWORD _expected = hookThreadId_;                                \
+          if (_expected != 0) {                                                 \
+              const DWORD _current = GetCurrentThreadId();                      \
+              if (_current != _expected) {                                      \
+                  HOOK_LOG(L"VKEY_ASSERT_HOOK_THREAD violated: tid=%lu, expected hook tid=%lu — %hs", \
+                           _current, _expected, __func__);                      \
+                  assert(_current == _expected &&                               \
+                         "composition-state mutation must run on the hook thread"); \
+              }                                                                 \
+          }                                                                     \
+      } while (0)
+#endif
 
 // ═══════════════════════════════════════════════════════════
 // HOOK_LOG → unified runtime-gated Logger (core/Logger.h).
@@ -178,9 +217,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // launches read the new schema directly.
     ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
         ConfigManager::GetConfigPath()));
-    if (macroEnabled_.load(std::memory_order_acquire)) {
-        ReloadMacroTable();
-    }
     autoCapState_ = AutoCapState::Idle;
     engine_ = EngineFactory::Create(config);
     vietnameseMode_.store(initialVietnamese, std::memory_order_release);
@@ -204,13 +240,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     globalCodeTable_ = config.codeTable;
     globalInputMethod_ = config.inputMethod;
 
-    // Load manual per-app overrides (encoding + input method)
-    ReloadAppOverrides();
-
-    // Load excluded apps and TSF apps
-    ReloadExcludedApps();
-    ReloadTsfApps();
-
     // Cache initial SharedState values (pointer set by main.cpp via SetSharedStateReader)
     if (sharedStatePtr_) {
         SharedState state = sharedStatePtr_->Read();
@@ -219,15 +248,22 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
             lastSpellCheck_ = state.spellCheck;
             lastInputMethod_ = state.inputMethod;
             lastCodeTable_ = state.codeTable;
+            lastConfigGeneration_ = state.configGeneration;
         }
     }
+
+    // Phase 3d — single rebuild: TOML parse for overrides/excluded/TSF/
+    // macros + atomic snapshot publish. Replaces the four legacy
+    // Reload* + PublishConfigSnapshot calls from earlier.
+    RebuildSnapshotFromToml(static_cast<std::uint32_t>(lastConfigGeneration_));
 
     // Spawn dedicated hook thread that owns keyboardHook_ + mouseHook_ and runs
     // its own GetMessage pump. This decouples LL hook dispatch from the main/UI
     // thread (which runs Sciter rendering, SharedState locks, config reloads).
     // Win10+ silently removes LL hooks whose installer-thread pump can't service
-    // events within LowLevelHooksTimeout (clamped to 1000ms) — keeping the hook
-    // thread minimal + dedicated avoids hitting that deadline.
+    // events within `LowLevelHooksTimeout` (default 300 ms, configurable up to
+    // ~1000 ms via `HKCU\Control Panel\Desktop\LowLevelHooksTimeout`) — keeping
+    // the hook thread minimal + dedicated avoids hitting that deadline.
     cachedHInstance_ = hInstance;
     hookThreadReady_.store(false);
     hookThread_ = std::thread(&HookEngine::HookThreadProc, this);
@@ -266,6 +302,23 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // The owning EXE wires MainThreadWorker::SetTickHandler([](){ OnTickPoll(); })
     // and SetTickInterval(200ms); Start does not own the cadence anymore.
 
+    // Phase 1 perf histogram (docs/plans/2026-05-19-architecture-review-design.md).
+    // Path: %APPDATA%\VKey\perf-histogram-<pid>-<startTs>.log. The Enabled() gate
+    // is sourced from SharedState.diagFlags inside QuickSyncFromSharedState; we
+    // seed it here from the TOML toggle so the very first keystroke is captured.
+    {
+        wchar_t pathBuf[MAX_PATH];
+        const DWORD startTs = GetTickCount();
+        const DWORD pid = GetCurrentProcessId();
+        const std::wstring base = ConfigManager::GetAppDataDirectory();
+        const int n = swprintf_s(pathBuf, MAX_PATH,
+            L"%ls\\perf-histogram-%lu-%lu.log", base.c_str(), pid, startTs);
+        if (n > 0) {
+            Perf::Histogram::SetLogPath(pathBuf);
+        }
+        Perf::Histogram::SetEnabled(config.perfHistogramEnabled);
+    }
+
     NEXTKEY_LOG(L"HookEngine started (method=%d, vietnamese=%d)",
                 static_cast<int>(currentMethod_.load(std::memory_order_acquire)),
                 vietnameseMode_.load(std::memory_order_acquire));
@@ -277,6 +330,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
 
 void HookEngine::Stop() {
     HOOK_LOG(L"=== HookEngine::Stop ===");
+    // Phase 1 perf histogram: final flush before we tear down so the
+    // last 60s window of samples reaches disk. Idempotent.
+    Perf::Histogram::Stop();
     // Persist smart switch English-mode apps to TOML before shutdown
     if (startupMode_ == 2) {  // Remember: persist per-app modes
         SaveEnglishModeAppsIfDirty();
@@ -322,6 +378,17 @@ void HookEngine::HookThreadProc() {
     // otherwise idle guarantees the pump stays responsive within the
     // LowLevelHooksTimeout window (silent-unhook avoidance).
     hookThreadId_ = GetCurrentThreadId();
+
+    // Phase 2a: wire the mailbox wake trampoline now that we own a valid
+    // thread id. Producers on other threads call mailbox_.Post(...); the
+    // first post per empty→non-empty edge fires this lambda which kicks
+    // the pump via WM_APP_HOOK_COMMAND. Subsequent posts in the same edge
+    // coalesce (wakePosted latch). Captured `this` is safe — mailbox is
+    // a member, lifetime is HookEngine's.
+    const DWORD wakeTid = hookThreadId_;
+    mailbox_.SetWakeFn([wakeTid]{
+        PostThreadMessageW(wakeTid, WM_APP_HOOK_COMMAND, 0, 0);
+    });
 
     keyboardHook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, cachedHInstance_, 0);
     if (!keyboardHook_) {
@@ -398,6 +465,22 @@ void HookEngine::HookThreadProc() {
                      mouseHook_ ? L"OK" : L"FAIL");
             continue;
         }
+        if (msg.message == WM_APP_HOOK_COMMAND) {
+            // Phase 2a: wake-up posted by mailbox_.Post on a non-hook thread.
+            // The drain is also called from inside LowLevelKeyboardProc (step
+            // 5 barrier), so reaching it here means no keystroke triggered a
+            // drain between the post and the pump cycle — process the bits
+            // promptly so focus/config updates aren't deferred to the next
+            // keydown.
+            try {
+                DrainHookCommands();
+            } catch (const std::exception& e) {
+                CrashLog(L"HookThreadProc::DrainHookCommands", e.what());
+            } catch (...) {
+                CrashLog(L"HookThreadProc::DrainHookCommands", "(non-std exception)");
+            }
+            continue;
+        }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
@@ -415,62 +498,13 @@ void HookEngine::HookThreadProc() {
 }
 
 void HookEngine::ToggleVietnameseMode() {
-    std::lock_guard<std::mutex> _lock(stateMutex_);
-    // Block toggle in excluded apps. Use cached excludedPid_ + foreground PID
-    // to distinguish "genuinely in excluded app" from "stale flag after leaving".
-    // PID check is cheap (no OpenProcess) and immune to transient tray/taskbar focus.
-    if (excludeApps_ && isExcludedApp_.load(std::memory_order_acquire)) {
-        HWND fg = GetForegroundWindow();
-        DWORD fgPid = 0;
-        if (fg) GetWindowThreadProcessId(fg, &fgPid);
-        const DWORD cachedPid = excludedPid_.load(std::memory_order_acquire);
-        if (fgPid == cachedPid && cachedPid != 0) {
-            HOOK_LOG(L"  ToggleVietnameseMode: BLOCKED (excluded pid=%u)", cachedPid);
-            return;
-        }
-        // Different PID — user left excluded app, flag is stale.
-        // Force V: user perceived E, wants to toggle to V.
-        isExcludedApp_.store(false, std::memory_order_release);
-        vietnameseMode_.store(true, std::memory_order_release);
-        NotifyModeChange();
-        HOOK_LOG(L"  ToggleVietnameseMode: stale excluded → forced Vietnamese (fg pid=%u)", fgPid);
-        if (beepOnSwitch_) MessageBeep(MB_OK);
-        return;
-    }
-
-    // Commit any pending composition before switching (skip if CJK-suppressed — engine inactive)
-    if (!layoutSuppressed_ && engine_->Count() > 0) {
-        CommitComposition();
-    }
-
-    // Cancel backspace-into-committed-word (replay in wrong mode would be wrong)
-    CancelCommitUndo();
-    // Drop digit-led state — engine is empty so CommitComposition above did not clear it
-    digitLedWord_ = false;
-
-    // Toggle is single-source (main thread only — Toggle never runs from hook
-    // path), so load + negate + store is race-free for the toggle itself.
-    // Hook readers see one value or the other, never a torn intermediate.
-    const bool newMode = !vietnameseMode_.load(std::memory_order_acquire);
-    vietnameseMode_.store(newMode, std::memory_order_release);
-    NEXTKEY_LOG(L"HookEngine: mode = %s", newMode ? L"Vietnamese" : L"English");
-
-    // Save per-app mode
-    if (smartSwitch_) {
-        if (currentExe_.empty()) {
-            currentExe_ = GetExeNameForHwnd(GetForegroundWindow());
-        }
-        if (!currentExe_.empty()) {
-            appModeMap_[currentExe_] = newMode;
-            smartSwitchMgr_.SetAppMode(currentExe_, newMode);
-        }
-    }
-
-    if (beepOnSwitch_) {
-        MessageBeep(newMode ? MB_OK : MB_ICONASTERISK);
-    }
-
-    NotifyModeChange();
+    // Phase 2c: ToggleVietnameseMode is called from any thread (tray menu
+    // on main, hotkey on either main or the hook pump itself when fired
+    // via HotkeyRegistry, modifier-only double-tap). All composition-state
+    // writes (CommitComposition, vietnameseMode_, appModeMap_, etc.) must
+    // happen on the hook thread (Rule 11.3 single-writer). Post the bit
+    // and let the drain do the work.
+    mailbox_.Post(HookCommand::kToggleVN);
 }
 
 void HookEngine::SetCodeTable(CodeTable ct) {
@@ -488,13 +522,15 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
     // Priority 1: Manual per-app override (set explicitly by user)
     // Check previousExe_ first as a fallback: on the first focus event after startup,
     // currentExe_ may not yet reflect the typing app.
-    auto lookupOverride = [&](const std::wstring& exe) -> const int8_t* {
-        if (exe.empty()) return nullptr;
-        auto it = appEncodingOverrides_.find(exe);
-        return (it != appEncodingOverrides_.end() && it->second >= 0) ? &it->second : nullptr;
+    // Phase 3c: read from RCU snapshot — lock-free, safe on any thread.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
+    auto lookupOverride = [&](const std::wstring& exe) -> const CodeTable* {
+        if (exe.empty() || !snap) return nullptr;
+        auto it = snap->appEncodingOverrides.find(exe);
+        return (it != snap->appEncodingOverrides.end()) ? &it->second : nullptr;
     };
-    if (auto* v = lookupOverride(previousExe_)) return static_cast<CodeTable>(*v);
-    if (auto* v = lookupOverride(currentExe_)) return static_cast<CodeTable>(*v);
+    if (auto* v = lookupOverride(previousExe_)) return *v;
+    if (auto* v = lookupOverride(currentExe_))  return *v;
 
     return currentCodeTable_;
 }
@@ -540,13 +576,31 @@ void HookEngine::QuickSyncFromSharedState() {
     if (!state.IsValid()) return;
     lastEpoch_.store(state.epoch, std::memory_order_release);
 
+    // Phase 1: surface SharedState.diagFlags bit 0 into the perf histogram
+    // gate. Atomic store — Histogram::SetEnabled holds no lock and is safe to
+    // call inside this slow-path block (already serialised by stateMutex_).
+    Perf::Histogram::SetEnabled((state.diagFlags & DiagFlags::PERF_HISTOGRAM) != 0);
+
     // ── Config generation check: detect TOML changes from Settings/subdialogs ──
     // When configGeneration changes, do a full TOML reload (macros, excluded apps, etc.).
-    // This replaces the old ConfigEvent (Named Event + WaitForSingleObject syscall).
+    // Replaces the old ConfigEvent (Named Event + WaitForSingleObject syscall).
+    //
+    // Phase 3c thread-aware routing:
+    //   • Hook thread → defer to worker (Rule 11.2 — TOML parse is forbidden
+    //     here, ~1-10 ms). Set `pendingConfigReload_`; the next OnTickPoll
+    //     drains it and runs ReloadFromToml on the worker thread.
+    //   • Worker / main → run inline. Already on a thread where TOML parse
+    //     is acceptable, no point bouncing through another tick.
     if (state.configGeneration != lastConfigGeneration_) {
-        lastConfigGeneration_ = state.configGeneration;
-        NEXTKEY_LOG(L"HookEngine: configGeneration changed (%u), full TOML reload", state.configGeneration);
-        ReloadFromToml();
+        if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
+            pendingConfigReload_.store(true, std::memory_order_release);
+            NEXTKEY_LOG(L"HookEngine: configGeneration bump (%u) seen on hook — deferring Reload to worker tick",
+                        state.configGeneration);
+        } else {
+            lastConfigGeneration_ = state.configGeneration;
+            NEXTKEY_LOG(L"HookEngine: configGeneration changed (%u), full TOML reload", state.configGeneration);
+            ReloadFromToml();
+        }
     }
 
     uint32_t ff = state.GetFeatureFlags();
@@ -575,10 +629,13 @@ void HookEngine::QuickSyncFromSharedState() {
     ApplyConfig(cfg);
     config_.store(std::make_shared<const TypingConfig>(cfg), std::memory_order_release);
 
+    // P3e fix: defer engine recreate to ApplyConfigOnHookThread. QuickSync's
+    // slow path runs on whichever thread called it (worker via OnTickPoll →
+    // OnFocusChanged, or main via SyncConfigFromSharedState). The engine
+    // swap + CommitComposition must run on the hook thread to avoid the
+    // race that surfaced under `-InjectConfigReloadMs 50` chaos.
     if (methodChanged) {
-        currentMethod_.store(cfg.inputMethod, std::memory_order_release);
-        if (engine_->Count() > 0) CommitComposition();
-        engine_ = EngineFactory::Create(cfg);
+        mailbox_.Post(HookCommand::kConfigApply);
     }
 
     if (codeTableChanged) {
@@ -587,11 +644,21 @@ void HookEngine::QuickSyncFromSharedState() {
     }
 
     {
+        // Phase 3d: macroEnabled toggled but configGeneration didn't bump
+        // (typical case — user flips the macro feature switch). Compare
+        // the snapshot's macro presence against the new desired state;
+        // if they disagree, rebuild + republish. On the hook thread this
+        // path is now deferred via pendingConfigReload_ (same as the
+        // configGeneration-bump path) so TOML parse stays off-hook.
         const bool macroOn = macroEnabled_.load(std::memory_order_acquire);
-        if (macroOn && macroTable_.empty()) {
-            ReloadMacroTable();
-        } else if (!macroOn) {
-            macroTable_.clear();
+        auto snap = configSnapshot_.load(std::memory_order_acquire);
+        const bool snapHasMacros = snap && !snap->macroTable.empty();
+        if (macroOn != snapHasMacros) {
+            if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
+                pendingConfigReload_.store(true, std::memory_order_release);
+            } else {
+                RebuildSnapshotFromToml(static_cast<std::uint32_t>(lastConfigGeneration_));
+            }
         }
     }
 }
@@ -601,6 +668,7 @@ void HookEngine::SyncConfigFromSharedState() {
 }
 
 void HookEngine::ReloadFromToml() {
+    PERF_SCOPE(::NextKey::Perf::Stage::ConfigReload);
     NEXTKEY_LOG(L"HookEngine: full TOML reload");
 
     // Read TOML for fields not in SharedState (beep, smartSwitch, excludeApps, hotkey)
@@ -619,47 +687,38 @@ void HookEngine::ReloadFromToml() {
         }
     }
 
-    // Recreate engine with updated config (engine stores a copy of TypingConfig)
-    if (engine_->Count() > 0) {
-        CommitComposition();
-    }
-    currentMethod_.store(config.inputMethod, std::memory_order_release);
+    // P3e fix — single-writer for `engine_`. Pre-P3e, this function called
+    // CommitComposition + `engine_ = EngineFactory::Create(...)` inline.
+    // Post-P3c, ReloadFromToml runs on the worker thread (Rule 11.2 forbids
+    // TOML parse on hook), so the inline engine swap raced against the hook
+    // hot path's `engine_->Peek/Push/Count` reads — UAF discovered by
+    // run-chaos.ps1 -InjectConfigReloadMs 50 (11 / 55 failures, 5 hosts ×
+    // 11 tests: composition state lost mid-word). Defer both the commit
+    // AND the engine recreate to ApplyConfigOnHookThread; the hook drain
+    // runs them between keystrokes where they're single-writer safe.
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
-    engine_ = EngineFactory::Create(config);
-    {
-        [[maybe_unused]] const InputMethod loggedMethod = currentMethod_.load(std::memory_order_acquire);
-        NEXTKEY_LOG(L"HookEngine: engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
-                    loggedMethod == InputMethod::VNI ? L"VNI" :
-                    loggedMethod == InputMethod::Combined ? L"Combined" : L"Telex",
-                    config.modernOrtho ? 1 : 0, config.allowZwjf ? 1 : 0);
-    }
     ApplyConfig(config);
     // Reload `[[hotkeys]]` from TOML alongside main config — keeps registry in
     // sync when Settings dialog persists rebindings via SaveHotkeyRegistry.
     // Still runs migration (idempotent — no-op if section already populated).
     ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
         ConfigManager::GetConfigPath()));
-    if (macroEnabled_.load(std::memory_order_acquire)) {
-        ReloadMacroTable();
-    } else {
-        macroTable_.clear();
-    }
 
     currentCodeTable_ = config.codeTable;
     globalCodeTable_ = config.codeTable;
     globalInputMethod_ = config.inputMethod;
 
-    // Reload manual per-app overrides (encoding + input method)
-    ReloadAppOverrides();
-
-    // Reload excluded apps and TSF apps
-    ReloadExcludedApps();
-    ReloadTsfApps();
+    // Phase 3d — one helper does it all: TOML parse for overrides /
+    // excluded apps / TSF apps / macros, ConfigSnapshot::Build (derives
+    // spaceMacroKeys), atomic publish. The re-evaluate block below reads
+    // the freshly-published snapshot for the current-app fields.
+    RebuildSnapshotFromToml(static_cast<std::uint32_t>(lastConfigGeneration_));
+    auto rcuSnap = configSnapshot_.load(std::memory_order_acquire);
 
     // Re-evaluate excluded status for current app (set was just reloaded)
     bool newExcluded = false;
-    if (excludeApps_ && !currentExe_.empty()) {
-        newExcluded = excludedAppSet_.count(currentExe_) > 0;
+    if (excludeApps_ && !currentExe_.empty() && rcuSnap) {
+        newExcluded = rcuSnap->excludedAppSet.count(currentExe_) > 0;
         isExcludedApp_.store(newExcluded, std::memory_order_release);
     } else {
         newExcluded = isExcludedApp_.load(std::memory_order_acquire);
@@ -668,8 +727,8 @@ void HookEngine::ReloadFromToml() {
     // Re-evaluate TSF app status for current foreground app
     const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
     bool newTsfApp;
-    if (tsfApps_ && !newExcluded && !tsfAppSet_.empty() && !currentExe_.empty()) {
-        newTsfApp = tsfAppSet_.count(currentExe_) > 0;
+    if (tsfApps_ && !newExcluded && rcuSnap && !rcuSnap->tsfAppSet.empty() && !currentExe_.empty()) {
+        newTsfApp = rcuSnap->tsfAppSet.count(currentExe_) > 0;
     } else {
         newTsfApp = false;
     }
@@ -678,7 +737,7 @@ void HookEngine::ReloadFromToml() {
              newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
              currentExe_.c_str(),
              tsfApps_ ? 1 : 0,
-             (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
+             (rcuSnap && !currentExe_.empty() && rcuSnap->tsfAppSet.count(currentExe_) > 0) ? 1 : 0,
              newExcluded ? 1 : 0);
     if (tsfModeCallback_) {
         const bool tsfReadonly = !newTsfApp && !newExcluded;
@@ -689,35 +748,32 @@ void HookEngine::ReloadFromToml() {
         tsfModeCallback_(newTsfApp, tsfReadonly);
     }
 
-    // Re-apply per-app overrides for current app (OnFocusChanged may have run with stale maps)
-    if (!currentExe_.empty() && !newExcluded && !newTsfApp) {
-        // Encoding
-        {
-            auto it = appEncodingOverrides_.find(currentExe_);
-            currentCodeTable_ = (it != appEncodingOverrides_.end())
-                ? static_cast<CodeTable>(it->second) : globalCodeTable_;
-        }
-        // Input method — recreate engine only if method changed
-        {
-            auto it = appInputMethodOverrides_.find(currentExe_);
-            InputMethod targetMethod = (it != appInputMethodOverrides_.end())
-                ? static_cast<InputMethod>(it->second) : globalInputMethod_;
-            if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
-                currentMethod_.store(targetMethod, std::memory_order_release);
-                TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
-                engineConfig.inputMethod = targetMethod;
-                engine_ = EngineFactory::Create(engineConfig);
-                NEXTKEY_LOG(L"HookEngine: re-applied inputMethod=%d for '%s'",
-                            static_cast<int>(targetMethod), currentExe_.c_str());
-            }
-        }
+    // Re-apply per-app encoding override for current app. Encoding is a
+    // plain enum (`CodeTable`) read on the hook hot path without locking;
+    // a worker-side write is a torn-read risk but NOT a UAF — minor
+    // staleness window only. Acceptable for an enum-sized field.
+    if (!currentExe_.empty() && !newExcluded && !newTsfApp && rcuSnap) {
+        auto it = rcuSnap->appEncodingOverrides.find(currentExe_);
+        currentCodeTable_ = (it != rcuSnap->appEncodingOverrides.end())
+            ? it->second : globalCodeTable_;
     }
+    // P3e fix — per-app inputMethod override engine recreate moved to
+    // ApplyConfigOnHookThread (same race surface as the unconditional
+    // recreate removed above). Worker thread cannot safely swap
+    // `engine_` while hook hot path holds raw pointer reads.
 
     // Notify main process to reload hotkey / QuickConvert configs.
     // Main owns HotkeyManager slots and calls UpdateHotkey there.
     if (configReloadCallback_) {
         configReloadCallback_();
     }
+
+    // P3e fix — post kConfigApply to the hook mailbox so the drain runs
+    // ApplyConfigOnHookThread between keystrokes. This is the producer
+    // for the dormant handler we wired in P2c — finally lit up. The
+    // mailbox coalesces against rapid republishes (one Apply per drain
+    // cycle) so chaos `-InjectConfigReloadMs 50` doesn't queue up many.
+    mailbox_.Post(HookCommand::kConfigApply);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -725,12 +781,21 @@ void HookEngine::ReloadFromToml() {
 // ═══════════════════════════════════════════════════════════
 
 LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    // Phase 1: Tier 2 budget marker (<30ms p99). Wraps the full LL callback
+    // body so the recorded delta includes every nested stage. PERF_SCOPE
+    // compiles to (void)0 when VKEY_PERF_HIST is not defined.
+    PERF_SCOPE(::NextKey::Perf::Stage::TotalKeydown);
+    // `self` declared outside the try so the catch block can call
+    // ResetComposition (Rule 11.5 — "ALWAYS reset state on exception"). Without
+    // this, a throw escaping ProcessKeyDown leaves engine_/previousComposition_
+    // in a half-updated state for the next keystroke. Re-load is cheap (atomic
+    // load) and ResetComposition asserts hook-thread (which we are, here).
+    HookEngine* self = s_instance.load(std::memory_order_relaxed);
     // Top-level catch: a C++ throw escaping a low-level hook unwinds through
     // KiUserCallbackDispatcher and Windows raises STATUS_FATAL_USER_CALLBACK_EXCEPTION
     // (0xC000041D), terminating the process. Swallow + log so the next keystroke
     // gets a fresh attempt instead of the app silently disappearing.
     try {
-        HookEngine* self = s_instance.load(std::memory_order_relaxed);
         auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
         // Always track our own synthetic events regardless of nCode.
@@ -751,6 +816,19 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
                          pKey->vkCode, pKey->scanCode, pKey->flags);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
+
+            // Rule 11.4 step 5 — drain cross-thread commands BEFORE the
+            // English-mode / modifier-key dispatch chain so state mutations
+            // posted by main / worker / hotkey threads land before this
+            // keystroke is classified. Drain is cheap when nothing is
+            // pending (one atomic load + one branch).
+            //
+            // Placement constraint: MUST come after sending_ (synthetic
+            // events from injector_->Replace must not re-enter drain) and
+            // BEFORE the English-mode passthrough so an in-flight V/E
+            // toggle posted from the hotkey thread takes effect on the
+            // very next keystroke, not the one after.
+            self->DrainHookCommands();
 
             bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
             bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
@@ -786,8 +864,14 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
         }
     } catch (const std::exception& e) {
         CrashLog(L"HookEngine::LowLevelKeyboardProc", e.what());
+        // Rule 11.5 safety net: an exception escaping ProcessKey* leaves the
+        // engine + previousComposition + per-word flags in an undefined state.
+        // ResetComposition clears them so the next keystroke starts fresh
+        // instead of compounding the corruption.
+        if (self) self->ResetComposition();
     } catch (...) {
         CrashLog(L"HookEngine::LowLevelKeyboardProc", "(non-std exception)");
+        if (self) self->ResetComposition();
     }
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
@@ -797,13 +881,15 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LO
         HookEngine* self = s_instance.load(std::memory_order_relaxed);
         if (!self) return;
 
-        // REGRESSION TRAP — DO NOT UNCOMMENT (see LowLevelKeyboardProc above
-        // for the full rationale). WinEventProc runs on the hook thread per
-        // the existing architecture; Phase B replaced its mutex needs with
-        // atomic flags + RCU. Audit Check 1 enforces this line stays
-        // commented; uncommenting also fails to compile (recursive_mutex
-        // type removed in D11).
-        // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
+        // Per WINEVENT_OUTOFCONTEXT semantics, this callback fires on the
+        // INSTALLER thread (main, where SetWinEventHook was called) — NOT
+        // the hook thread, despite what older comments here used to claim.
+        // Phase 2b makes that explicit by deferring all composition-state
+        // writes to ApplyFocusOnHookThread via the mailbox. WinEventProc
+        // is now classification-only: no engine_ access, no mutation of
+        // autoCapState_ / previousComposition_ / per-app atomic flags.
+        // (Accessing those from main would race with hook-thread writers
+        // — Rule 11.3 violation.)
 
         if (event == EVENT_SYSTEM_MINIMIZEEND) {
             // Window restored from taskbar — re-evaluate focus with the actual foreground window.
@@ -813,9 +899,7 @@ void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LO
             return;
         }
 
-        HOOK_LOG(L"FOCUS changed — resetting composition (engine count=%zu, prev='%s')",
-                 self->engine_->Count(), self->previousComposition_.c_str());
-        self->autoCapState_ = AutoCapState::Idle;
+        HOOK_LOG(L"FOCUS changed (hwnd=%p) — classifying + posting", hwnd);
         self->OnFocusChanged(hwnd);
     } catch (const std::exception& e) {
         CrashLog(L"HookEngine::WinEventProc", e.what());
@@ -975,6 +1059,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 // set otherKeyPressed_ themselves before returning Pass, preserving the original
 // "any non-modifier key invalidates the modifier-only combo" semantics.
 HookEngine::KeyOutcome HookEngine::RunTopGuards(DWORD vkCode) {
+    PERF_SCOPE(::NextKey::Perf::Stage::TopGuard);
     // 0. Sync from SharedState. Fast path (post Pre-T3 Minor 2 fix) is
     //    fully lock-free — atomic ReadEpoch + atomic load of lastEpoch_,
     //    early-return on unchanged. Cost ~5 ns. The slow path (taken
@@ -1053,6 +1138,27 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         CancelCommitUndo();
         // Fall through — Ctrl check at ProcessKeyDown step 5 will handle ResetComposition
     }
+
+    // Enter (VK_RETURN) doesn't move focus in chat/form inputs — cursor
+    // stays in the same input box on message-send / line-break. That
+    // bypasses the focus-event safety net that Tab + mouse-click rely on
+    // to clear commitStack_ via ResetComposition. Without this explicit
+    // cancel, the stack survives across message-send boundaries: user
+    // sends "không," then starts a new message with "vaf"; the BS chain
+    // they use to correct a typo in the new message replays the phantom
+    // "không" prefix into the engine; IsHardEnglishToneContext sees the
+    // concat-buffer V-CC-V pattern and blocks tone on the new word.
+    // Existing line ~1319 already cancels Enter while state==Ready;
+    // this branch guards the gap where a prior non-exempt key (e.g.
+    // SPACE) downgraded state to Idle but left the stack populated.
+    // Idempotent — no-op when state==Idle && stack already empty.
+    if (vkCode == VK_RETURN &&
+        (commitUndoState_ != CommitUndoState::Idle || !commitStack_.empty())) {
+        HOOK_LOG(L"  commit-undo: cancel — VK_RETURN (stack=%zu state=%d)",
+                 commitStack_.size(), static_cast<int>(commitUndoState_));
+        CancelCommitUndo();
+        // Fall through — Enter still passes through to the app normally.
+    }
     //
     // Auto-expire Ready after kCommitUndoTimeoutMs: cheap insurance against any cursor-movement
     // event that bypasses ResetComposition (e.g. external text change, rare edge cases).
@@ -1096,7 +1202,10 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         // synthesizing would just add latency.
         if (IsSyncReplaceChannel()) {
             auto inj = injector_.load(std::memory_order_acquire);
-            if (inj->Replace(/*bs=*/1, std::wstring_view{})) {
+            bool injOk;
+            { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+              injOk = inj->Replace(/*bs=*/1, std::wstring_view{}); }
+            if (injOk) {
                 HOOK_LOG(L"  commit-undo: BS after commit via injector → Primed");
                 return KeyOutcome::Eat;
             }
@@ -1318,6 +1427,11 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     // (ApplyHotkeyRegistry) replaces the pointer without invalidating
     // in-flight readers.
     const auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
+    // Phase 3c: same RCU pattern for variable-size config data. One load
+    // covers every `macroTable empty?` check in this function — keeps
+    // the per-keystroke atomic op count flat against pre-P3 behaviour.
+    const auto cfgSnap = configSnapshot_.load(std::memory_order_acquire);
+    const bool hasMacros = cfgSnap && !cfgSnap->macroTable.empty();
     const uint32_t currentMods = ComputeModMask(cachedCtrl, cachedShift, cachedAlt, cachedWin);
 
     // 3. English mode — skip Vietnamese processing
@@ -1375,7 +1489,7 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     // Alpha keys AND printable special chars are accumulated so macros with
     // special characters in their key (e.g., "url\" → "URL") can be matched.
     // Skip tracking entirely when no macros are defined — avoids string ops on every keystroke.
-    if (macroOn && !macroTable_.empty()) {
+    if (macroOn && hasMacros) {
         if (vkCode >= 0x41 && vkCode <= 0x5A) {
             bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
             rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
@@ -1430,7 +1544,7 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     //     → skip macro for next word. Registry's IsEnabled gates inside Matches();
     //     the macro-system gates (macroOn, table non-empty) stay because skipping
     //     macros is meaningless when none are loaded.
-    if (macroOn && !macroTable_.empty()
+    if (macroOn && hasMacros
         && hotkeysSnap->Matches(Intent::SkipMacro, vkCode, currentMods,
                                 /*isDoubleTap=*/false, /*keyUp=*/false)
         && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
@@ -1440,7 +1554,7 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     }
 
     // 3d. Macro expansion on commit trigger (uses shared TryExpandMacro helper)
-    if (macroOn && !macroTable_.empty() && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
+    if (macroOn && hasMacros && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
         wchar_t triggerChar = VkToMacroChar(vkCode);
         auto result = TryExpandMacro(triggerChar);
         if (result == MacroResult::ExpandedEatTrigger) return KeyOutcome::Eat;
@@ -1549,8 +1663,9 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         if (!cachedShift) {
             wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
             inputHistory_.push_back(ch);
-            engine_->PushChar(ch);
-            std::wstring composition = engine_->Peek();
+            std::wstring composition;
+            { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+              engine_->PushChar(ch); composition = engine_->Peek(); }
             HOOK_LOG(L"  bracket '%c' → Peek()='%s'", ch, composition.c_str());
             ReplaceComposition(composition);
             return KeyOutcome::Eat;  // Eat the original keystroke
@@ -1589,8 +1704,9 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
             if (action != TypingAction::None &&
                 (engine_->Count() > 0 || IsInsertTypeAction(action))) {
                 inputHistory_.push_back(ch);
-                engine_->PushChar(ch);
-                std::wstring composition = engine_->Peek();
+                std::wstring composition;
+                { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+                  engine_->PushChar(ch); composition = engine_->Peek(); }
                 HOOK_LOG(L"  UserDefined OEM '%c' → Peek()='%s'", ch, composition.c_str());
                 ReplaceComposition(composition);
                 return KeyOutcome::Eat;
@@ -1621,11 +1737,17 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         // Also preserve across SPACE when the accumulated prefix matches a stored space-
         // containing key — enables multi-word macros like "oc om bok" = "Óoc Om Bok".
         std::wstring savedMacroBuffer;
-        if (macroOn && !macroTable_.empty() && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
+        // Phase 3c: macro presence + spaceMacroKeys come from the RCU
+        // snapshot. Local shared_ptr keeps both alive through the branch.
+        auto cfgSnap = configSnapshot_.load(std::memory_order_acquire);
+        if (macroOn && cfgSnap && !cfgSnap->macroTable.empty()
+            && !tempMacroOff_ && !rawMacroBuffer_.empty()) {
             wchar_t ch = VkToMacroChar(vkCode);
             if (ch > L' ') {
                 savedMacroBuffer = rawMacroBuffer_;
-            } else if (ch == L' ' && IsSpaceMacroPrefix(rawMacroBuffer_ + L' ', spaceMacroKeys_)) {
+            } else if (ch == L' '
+                       && IsSpaceMacroPrefix(rawMacroBuffer_ + L' ',
+                                             cfgSnap->spaceMacroKeys)) {
                 savedMacroBuffer = rawMacroBuffer_ + L' ';
             }
         }
@@ -1680,7 +1802,10 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
             const wchar_t triggerChar = VkToMacroChar(vkCode);
             if (triggerChar >= L' ') {
                 auto inj = injector_.load(std::memory_order_acquire);
-                if (inj->Replace(/*bs=*/0, std::wstring_view(&triggerChar, 1))) {
+                bool injOk;
+                { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+                  injOk = inj->Replace(/*bs=*/0, std::wstring_view(&triggerChar, 1)); }
+                if (injOk) {
                     HOOK_LOG(L"  commit trigger via injector: '%c'", triggerChar);
                     return KeyOutcome::Eat;  // Eat original — we inserted it ourselves
                 }
@@ -1805,7 +1930,10 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             //    macro expansion when macros aren't loaded). The intent-level
             //    enable lives in the registry.
             if (macroEnabled_.load(std::memory_order_acquire)
-                && !macroTable_.empty()
+                && [this] {
+                       auto s = configSnapshot_.load(std::memory_order_acquire);
+                       return s && !s->macroTable.empty();
+                   }()
                 && engine_->Count() == 0
                 && rawMacroBuffer_.empty()
                 && matches(Intent::SkipMacro)) {
@@ -1857,6 +1985,7 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
 // ═══════════════════════════════════════════════════════════
 
 bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
+    VKEY_ASSERT_HOOK_THREAD();
     bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
     wchar_t originalCh = static_cast<wchar_t>(vkCode);
     if (!upper) originalCh = towlower(originalCh);
@@ -1909,8 +2038,9 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     }
 
     inputHistory_.push_back(ch);
-    engine_->PushChar(ch);
-    std::wstring composition = engine_->Peek();
+    std::wstring composition;
+    { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+      engine_->PushChar(ch); composition = engine_->Peek(); }
 
     HOOK_LOG(L"  HandleAlphaKey: push '%c' → Peek()='%s' (len=%zu, count=%zu, prev='%s' prevLen=%zu)",
              ch, composition.c_str(), composition.size(), engine_->Count(),
@@ -2009,14 +2139,16 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
 bool HookEngine::HandleVniDigitKey(DWORD vkCode) {
     wchar_t ch = static_cast<wchar_t>(vkCode);  // '0'–'9' (VNI '0' = clear tone)
     inputHistory_.push_back(ch);
-    engine_->PushChar(ch);
-    std::wstring composition = engine_->Peek();
+    std::wstring composition;
+    { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+      engine_->PushChar(ch); composition = engine_->Peek(); }
     HOOK_LOG(L"  VNI digit '%c' → Peek()='%s'", ch, composition.c_str());
     ReplaceComposition(composition);
     return true;
 }
 
 void HookEngine::HandleBackspace() {
+    VKEY_ASSERT_HOOK_THREAD();
     inputHistory_.push_back(kBackspaceMarker);
     engine_->Backspace();
 
@@ -2046,6 +2178,7 @@ void HookEngine::HandleBackspace() {
 }
 
 bool HookEngine::CommitComposition() {
+    VKEY_ASSERT_HOOK_THREAD();
     HOOK_LOG(L"  CommitComposition (count=%zu, prev='%s')", engine_->Count(), previousComposition_.c_str());
 
     // Check quick consonant BEFORE Commit() resets the engine.
@@ -2095,6 +2228,7 @@ bool HookEngine::CommitComposition() {
 }
 
 void HookEngine::ResetComposition() {
+    VKEY_ASSERT_HOOK_THREAD();
     HOOK_LOG(L"  ResetComposition (count=%zu, prev='%s')", engine_->Count(), previousComposition_.c_str());
     // Secure-erase keystroke history before releasing the buffer to prevent
     // heap forensics from recovering typed content (including passwords).
@@ -2110,6 +2244,7 @@ void HookEngine::ResetComposition() {
 }
 
 void HookEngine::ClearWordState() {
+    VKEY_ASSERT_HOOK_THREAD();
     engine_->Reset();
     previousComposition_.clear();
     previousEncodedWidths_.clear();
@@ -2143,6 +2278,7 @@ void HookEngine::SetCommitUndoReady() {
 // ═══════════════════════════════════════════════════════════
 
 void HookEngine::ReplayCommittedChars() {
+    VKEY_ASSERT_HOOK_THREAD();
     if (commitStack_.empty()) {
         HOOK_LOG(L"  ReplayCommittedChars: stack empty, nothing to replay");
         commitUndoState_ = CommitUndoState::Idle;
@@ -2156,12 +2292,17 @@ void HookEngine::ReplayCommittedChars() {
     HOOK_LOG(L"  ReplayCommittedChars: replaying %zu keystrokes, restoring prev='%s' (stack=%zu remaining)",
              entry.history.size(), entry.text.c_str(), commitStack_.size());
 
-    // Replay exact user keystrokes (including backspaces) to reproduce engine state
-    for (wchar_t ch : entry.history) {
-        if (ch == kBackspaceMarker) {
-            engine_->Backspace();
-        } else {
-            engine_->PushChar(ch);
+    // Replay exact user keystrokes (including backspaces) to reproduce engine state.
+    // Phase 1: the replay loop is a sustained burst of engine state-machine writes,
+    // so we wrap the whole loop (not per-call) as a single EnginePush sample.
+    {
+        PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+        for (wchar_t ch : entry.history) {
+            if (ch == kBackspaceMarker) {
+                engine_->Backspace();
+            } else {
+                engine_->PushChar(ch);
+            }
         }
     }
     // Seed inputHistory_ with the replayed word's keystrokes so that if the user
@@ -2796,13 +2937,17 @@ void HookEngine::NotifyModeChange() noexcept {
 
 
 bool HookEngine::VerifyExcludedState() {
-    if (!excludeApps_ || excludedAppSet_.empty()) {
+    // Phase 3c reader migration: snapshot read replaces the legacy
+    // unprotected excludedAppSet_ access. One atomic load covers both
+    // the empty check and the membership lookup.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
+    if (!excludeApps_ || !snap || snap->excludedAppSet.empty()) {
         isExcludedApp_.store(false, std::memory_order_release);
         return false;
     }
     HWND fg = GetForegroundWindow();
     std::wstring exe = GetExeNameForHwnd(fg);
-    if (exe.empty() || excludedAppSet_.count(exe)) {
+    if (exe.empty() || snap->excludedAppSet.count(exe)) {
         return true;  // Still excluded (or can't determine — safe default)
     }
     isExcludedApp_.store(false, std::memory_order_release);
@@ -2810,50 +2955,78 @@ bool HookEngine::VerifyExcludedState() {
     return false;
 }
 
-void HookEngine::ReloadAppOverrides() {
-    auto overrides = ConfigManager::LoadAppOverrides(ConfigManager::GetConfigPath());
-    appEncodingOverrides_.clear();
-    appInputMethodOverrides_.clear();
-    appSendMethodOverrides_.clear();
+// Phase 3d — single source of truth for ConfigSnapshot rebuild.
+//
+// Reads TOML for every variable-size config field, derives spaceMacroKeys
+// via ConfigSnapshot::Build, atomic-publishes the new shared_ptr.
+// Replaces the four legacy Reload{AppOverrides,ExcludedApps,TsfApps,
+// MacroTable} methods + the P3b PublishConfigSnapshot bridge — all of
+// those wrote intermediate state to HookEngine members that no longer
+// exist post P3d cleanup. The post-P3d follow-up (2026-05-19) folded
+// `appSendMethodOverrides` into the snapshot too so every variable-size
+// config map lives under one RCU contract.
+//
+// Feature gates honored:
+//   • excludeApps_ false ⇒ snapshot's excludedAppSet stays empty;
+//     isExcludedApp_ cleared (matches old ReloadExcludedApps semantics).
+//   • tsfApps_ false ⇒ snapshot's tsfAppSet stays empty.
+//   • macroEnabled_ false ⇒ snapshot's macroTable stays empty.
+//
+// Not `noexcept`: STL allocations + `make_shared` here can throw
+// `std::bad_alloc`. Callers (ReloadFromToml, QuickSync macro-toggle
+// path, OnTickPoll drain) sit under the outer LL-callback catch or
+// OnTickPoll's own catch — graceful unwind beats `std::terminate`.
+void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) {
+    const auto configPath = ConfigManager::GetConfigPath();
+
+    // Parse per-app overrides in one TOML pass; partition into the three
+    // typed maps the snapshot expects (encoding, input method, send
+    // method). All three publish through the same shared_ptr swap so
+    // ClassifyFocusedWindow on main sees a consistent view even mid-
+    // rebuild on the worker thread.
+    auto overrides = ConfigManager::LoadAppOverrides(configPath);
+    std::unordered_map<std::wstring, CodeTable>    encOv;
+    std::unordered_map<std::wstring, InputMethod>  imOv;
+    std::unordered_map<std::wstring, std::int8_t>  sendOv;
     for (auto& [exe, entry] : overrides) {
         if (entry.encodingOverride >= 0)
-            appEncodingOverrides_[exe] = entry.encodingOverride;
+            encOv.emplace(exe, static_cast<CodeTable>(entry.encodingOverride));
         if (entry.inputMethod >= 0)
-            appInputMethodOverrides_[exe] = entry.inputMethod;
+            imOv.emplace(exe, static_cast<InputMethod>(entry.inputMethod));
         if (entry.sendMethod >= 0)
-            appSendMethodOverrides_[exe] = entry.sendMethod;
+            sendOv.emplace(exe, entry.sendMethod);
     }
-}
 
-void HookEngine::ReloadExcludedApps() {
-    excludedAppSet_.clear();
+    std::unordered_set<std::wstring> excluded;
     if (excludeApps_) {
-        for (auto& app : ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath()))
-            excludedAppSet_.insert(std::move(app));
+        for (auto& app : ConfigManager::LoadAllExcludedApps(configPath))
+            excluded.insert(std::move(app));
     } else {
+        // Cached "currently in excluded app" flag must clear when the
+        // feature is off (matches old ReloadExcludedApps else-branch).
         isExcludedApp_.store(false, std::memory_order_release);
     }
-}
 
-void HookEngine::ReloadTsfApps() {
-    tsfAppSet_.clear();
+    std::unordered_set<std::wstring> tsf;
     if (tsfApps_) {
-        for (auto& app : ConfigManager::LoadTsfApps(ConfigManager::GetConfigPath()))
-            tsfAppSet_.insert(std::move(app));
+        for (auto& app : ConfigManager::LoadTsfApps(configPath))
+            tsf.insert(std::move(app));
     }
-}
 
-void HookEngine::ReloadMacroTable() {
-    // Keys are stored verbatim from TOML. The matching rule in TryExpandMacro
-    // reads the stored case to decide behavior: all-lowercase keys match any
-    // typed case; keys with any uppercase require an exact case match.
-    macroTable_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
-    // Index keys containing spaces so the save-before-commit path can cheaply
-    // decide whether to preserve the macro buffer across a space commit.
-    spaceMacroKeys_.clear();
-    for (const auto& [key, _] : macroTable_) {
-        if (key.find(L' ') != std::wstring::npos) spaceMacroKeys_.insert(key);
+    std::unordered_map<std::wstring, std::wstring> macros;
+    if (macroEnabled_.load(std::memory_order_acquire)) {
+        macros = ConfigManager::LoadMacros(configPath);
     }
+
+    auto snap = std::make_shared<const ConfigSnapshot>(ConfigSnapshot::Build(
+        std::move(macros),
+        std::move(excluded),
+        std::move(tsf),
+        std::move(encOv),
+        std::move(imOv),
+        std::move(sendOv),
+        generation));
+    configSnapshot_.store(std::move(snap), std::memory_order_release);
 }
 
 void HookEngine::SaveEnglishModeAppsIfDirty() {
@@ -2938,36 +3111,62 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
 }
 
 void HookEngine::OnTickPoll() noexcept {
-    // Sprint 1 D10: body migrated verbatim from the retired
-    // FocusPollTimerProc. Cadence (200 ms) is now owned by
-    // MainThreadWorker::SetTickInterval; the per-thread story is the
-    // same — caller is not the LL hook thread, stateMutex_ serializes
-    // against main-thread Toggle/SetCodeTable, and OnFocusChanged is
-    // invoked unlocked because it self-locks downstream.
+    // Sprint 1 D10: 200 ms cadence, owned by MainThreadWorker::SetTickInterval.
+    // Phase 2c migration: the work that used to run inline here under
+    // stateMutex_ (CheckLayoutChange, PID-changed fallback focus refresh)
+    // now goes through the mailbox so the actual state writes land on the
+    // hook thread — single-writer invariant.
     try {
+        // Phase 1: histogram flush stays on main (file I/O — never on hook).
+        Perf::Histogram::MaybeFlush();
+
+        // Phase 3c: drain a deferred TOML reload posted by the hook side.
+        // The hook QuickSync slow path observes either a configGeneration
+        // bump (line 587) OR a macroEnabled-vs-snapshot mismatch (line
+        // 646) and sets pendingConfigReload_ instead of running
+        // ReloadFromToml itself (Rule 11.2). We run it here, on the
+        // worker thread, where the 1-10 ms TOML parse is acceptable.
+        //
+        // Review fix 2026-05-19: drain unconditionally on pending=true,
+        // do NOT also gate on `state.configGeneration != lastConfigGeneration_`.
+        // The macro-toggle case bumps featureFlags but not necessarily
+        // configGeneration; gating the drain would skip Reload, leaving
+        // the snapshot stale until a focus event happens to trigger
+        // worker-side QuickSync inline. Worst-case extra reload (worker
+        // entered QuickSync between hook setting pending and drain) is
+        // bounded to ~10 ms TOML parse on worker — acceptable.
+        if (sharedStatePtr_
+            && pendingConfigReload_.exchange(false, std::memory_order_acq_rel)) {
+            std::lock_guard<std::mutex> _lock(stateMutex_);
+            SharedState st = sharedStatePtr_->Read();
+            if (st.IsValid()) {
+                lastConfigGeneration_ = st.configGeneration;
+                NEXTKEY_LOG(L"HookEngine: deferred config reload (gen=%u) running on worker",
+                            st.configGeneration);
+                ReloadFromToml();
+            }
+        }
+
+        // Always post a tick — hook thread runs CheckLayoutChange in the
+        // drain. Coalesces against rapid ticks (rare; tick is 200ms).
+        mailbox_.Post(HookCommand::kTickPoll);
+
+        // PID-changed fallback (catches missed/phantom focus events from
+        // EVENT_SYSTEM_FOREGROUND). lastForegroundPid_ is hook-owned;
+        // we snapshot via OnFocusChanged (which classifies on main + posts).
         HWND fg = GetForegroundWindow();
         if (!fg) return;
-
         DWORD fgPid = 0;
         GetWindowThreadProcessId(fg, &fgPid);
+        if (fgPid == 0) return;
 
-        bool needFullRefresh = false;
-        {
-            std::lock_guard<std::mutex> _lock(stateMutex_);
-            // Always check layout — catches mouse-click language bar switches (no PID change, no keystroke).
-            // GetKeyboardLayout is kernel-cached, negligible cost at 200ms interval.
-            CheckLayoutChange();
-
-            if (fgPid == lastForegroundPid_ || fgPid == 0) return;
-            // Foreground PID changed but OnFocusChanged didn't catch it (missed or phantom).
-            // Update PID first (prevents re-triggering if OnFocusChanged early-returns).
-            lastForegroundPid_ = fgPid;
-            needFullRefresh = true;
-        }  // release lock — OnFocusChanged → QuickSync will self-lock.
-
-        if (needFullRefresh) {
+        // lastForegroundPid_ is atomic — written on the hook thread inside
+        // ApplyFocusOnHookThread. Stale read here just means we re-post a
+        // focus event the hook will dedupe in classify (same activeHwnd) —
+        // benign at worst.
+        if (fgPid != lastForegroundPid_.load(std::memory_order_acquire)) {
             HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
-            OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
+            OnFocusChanged(nullptr);  // classifies + posts kFocusChanged
         }
     } catch (const std::exception& e) {
         CrashLog(L"HookEngine::OnTickPoll", e.what());
@@ -3022,63 +3221,56 @@ void HookEngine::StoreAppProfile(HWND hwnd, AppProfile profile) noexcept {
     appProfileCache_[hwnd] = std::move(profile);
 }
 
-void HookEngine::OnFocusChanged(HWND triggerHwnd) {
-    ResetComposition();  // → ClearWordState resets digitLedWord_ + tempMacroOff_ etc.
-    tempEngineOff_ = false;  // Not covered by ClearWordState (user-initiated, wider scope)
-    // Immediate checks on focus change — layout and config may differ in new app
-    CheckLayoutChange();
-    QuickSyncFromSharedState();  // Detects configGeneration changes + feature flag changes
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 2b — two-phase focus.
+//
+// ClassifyFocusedWindow runs on the CALLER thread (main, via WinEventProc
+// / OnTickPoll). Heavy Win32 inspection lives here: ClassifyWindow +
+// GetExeNameForHwnd + IsWebView2App + cache lookup/store + override-map
+// reads. None of these are safe to run from the LL hook callback (Rule
+// 11.2: CreateToolhelp32Snapshot ≥ 3 ms blows the 30 ms p99 Tier-2
+// budget).
+//
+// The result is a `FocusClassification` POD posted to mailbox_; the hook
+// thread consumes it in ApplyFocusOnHookThread and applies only the
+// composition-state writes there. This is the Rule 11.3 single-writer
+// invariant: composition state (engine_, previousComposition_, the 16
+// atomic per-app flags, currentExe_, autoCapState_) is only written from
+// the hook thread now.
+// ─────────────────────────────────────────────────────────────────────────
+FocusClassification HookEngine::ClassifyFocusedWindow(HWND triggerHwnd) noexcept {
+    PERF_SCOPE(::NextKey::Perf::Stage::FocusClassify);
+    FocusClassification cls;
 
     HWND fg = GetForegroundWindow();
-    // Use triggerHwnd (the window that fired EVENT_SYSTEM_FOREGROUND) when available.
-    // With WINEVENT_OUTOFCONTEXT, our callback is async — by the time it runs,
-    // GetForegroundWindow() may return a transient window (e.g. JumpList/taskbar) instead
-    // of the app the user is actually switching to. triggerHwnd is captured at event time.
+    // Prefer triggerHwnd (captured at WinEventProc event time): GetForegroundWindow
+    // is async-stale by the time WINEVENT_OUTOFCONTEXT dispatches, often returning
+    // a transient JumpList / taskbar HWND instead of the app the user switched to.
     HWND activeHwnd = triggerHwnd ? triggerHwnd : fg;
-    if (!activeHwnd) return;  // nothing to classify against
+    if (!activeHwnd) return cls;  // empty cls = "nothing to apply" sentinel
 
-    // Determine whether this HWND should skip the smart-switch / currentExe_
-    // update path (hidden helpers, tray, zero-size trick windows, tool windows).
-    // Classification ITSELF runs unconditionally below so dispatch flags stay
-    // consistent with the app identity — needed when focus transits through
-    // a helper HWND while the user is typing into the main window.
-    bool skipAppTracking = false;
+    cls.hwndOpaque = reinterpret_cast<std::uintptr_t>(activeHwnd);
+
+    // Hidden helpers, tray, zero-size, tool windows — still classify (so
+    // dispatch flags stay consistent when focus transits through one) but
+    // skip the smart-switch / currentExe_ update.
     if (!IsWindowVisible(activeHwnd) || IsIconic(activeHwnd) || IsTrayOrTaskbarWindow(activeHwnd)) {
-        skipAppTracking = true;
+        cls.skipAppTracking = true;
     } else {
         RECT rect;
         if (GetWindowRect(activeHwnd, &rect) &&
             (rect.right - rect.left <= 0 || rect.bottom - rect.top <= 0 || rect.left <= -20000)) {
-            skipAppTracking = true;  // trick message-pump windows (IDM et al.)
+            cls.skipAppTracking = true;  // trick message-pump windows (IDM et al.)
         } else if (GetWindowLongW(activeHwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) {
-            skipAppTracking = true;  // tooltips, context menus, floating helpers
+            cls.skipAppTracking = true;  // tooltips, context menus, floating helpers
         }
     }
 
-    // Classify app type — single GetClassNameW call covers all detection.
-    // Runs unconditionally so opening VKey BEFORE a WebView2 host (e.g.
-    // Dorion) doesn't leave flags stale at the initial all-zero state when
-    // focus first transits through a helper window — the next keystroke would
-    // otherwise route through the wrong dispatch path.
-    // U+202F (narrow no-break space) is a "bait" char inserted before BS sequences so
-    // BS always has something to delete (prevents BS being swallowed at empty positions).
-    //   - Browsers: need bait (autocomplete/address bar)
-    //   - Electron/Console: skip bait + split dispatch with Sleep (IPC reorder prevention)
-    //   - GPU-rendered (Zed): skip bait + batch dispatch (single-process, no flicker)
-    //   - VB6 (XYplorer): clipboard paste (ANSI-internal, VK_PACKET → '?')
-    // Sprint 1 D5.2: detect classification into locals first so the atomic
-    // fields receive a single release-store after the full decision is made.
-    // ClassifyWindow takes `bool&` (line 2145), incompatible with std::atomic<bool>;
-    // staging through `localConsole` keeps the function signature unchanged.
     // Cache lookup: skip ClassifyWindow + GetExeNameForHwnd + IsWebView2App
-    // when we've already classified this (HWND, PID) pair. PID re-check
-    // inside LookupAppProfile detects HWND reuse after a process dies.
+    // when (HWND, PID) already classified. PID re-check inside LookupAppProfile
+    // catches HWND reuse after a process dies.
     const AppProfile* cached = LookupAppProfile(activeHwnd);
-
-    bool isBrowser, isElectron, isQtApp, isVB6, localConsole;
-    bool isWebView2 = false;
-    std::wstring exeName;
-
+    bool isBrowser{}, isElectron{}, isQtApp{}, isVB6{}, localConsole{}, isWebView2{};
     if (cached) {
         isBrowser    = cached->isBrowser;
         isElectron   = cached->isElectron;
@@ -3086,124 +3278,128 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         localConsole = cached->isConsole;
         isVB6        = cached->isVB6;
         isWebView2   = cached->isWebView2;
-        exeName      = cached->exeName;
+        cls.exeName  = cached->exeName;
     } else {
-        isBrowser = false; isElectron = false; isQtApp = false; isVB6 = false; localConsole = false;
         ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, localConsole, isVB6);
-        exeName = GetExeNameForHwnd(activeHwnd);
+        cls.exeName = GetExeNameForHwnd(activeHwnd);
     }
+    cls.isBrowser  = isBrowser;
+    cls.isElectron = isElectron;
+    cls.isQtApp    = isQtApp;
+    cls.isVB6      = isVB6;
+    cls.isConsole  = localConsole;
 
-    bool localSkipEmpty = isElectron || localConsole;
-    bool localNeedBait = isBrowser;
-    bool localClipboard = isVB6;
-    bool localEditMsg = false;
-    bool localUseClipboardInjector = false;
-
-    if (!exeName.empty()) {
-        auto it = appSendMethodOverrides_.find(exeName);
-        if (it != appSendMethodOverrides_.end()) {
-            if (it->second == 1) localUseClipboardInjector = true;
+    // Per-app send-method override (clipboard injector toggle). Reads
+    // the snapshot's `appSendMethodOverrides` map — RCU-published from
+    // the worker thread, so this main-thread lookup is lock-free and
+    // immune to torn reads during a TOML rebuild.
+    if (!cls.exeName.empty()) {
+        auto snap = configSnapshot_.load(std::memory_order_acquire);
+        if (snap) {
+            auto it = snap->appSendMethodOverrides.find(cls.exeName);
+            if (it != snap->appSendMethodOverrides.end() && it->second == 1) {
+                cls.localUseClipboardInjector = true;
+            }
         }
     }
 
-    // Normal apps: check for GPU-rendered or apps needing bait (Excel, Outlook)
-    if (!localSkipEmpty && !localNeedBait && !localClipboard) {
-        if (!exeName.empty()) {
-            if (_wcsicmp(exeName.c_str(), L"zed.exe") == 0) {
-                localSkipEmpty = true;
-            } else if (_wcsicmp(exeName.c_str(), L"notepad.exe") == 0) {
-                // Notepad (both classic Win32 Edit and Win11 WinUI 3 RichEditBox)
-                // share exe name + root class "Notepad". The new one renders async on
-                // the compositor thread and flashes suppressed keys with the SendInput
-                // batch path; EM_REPLACESEL on the Edit/RichEdit child is atomic and
-                // fixes the flicker. Classic Notepad benefits too: one undo entry per
-                // transform instead of per BS + per char.
-                localEditMsg = true;
+    // Dispatch-shape derivation. See OnFocusChanged's pre-Phase-2b comments
+    // for the per-host rationale (bait char, split dispatch, edit message
+    // path, clipboard fallback). Preserved verbatim — this is data the
+    // hook hot path will read via the IOutputInjector picked in Apply.
+    cls.localSkipEmpty = cls.isElectron || cls.isConsole;
+    cls.localNeedBait  = cls.isBrowser;
+    cls.localClipboard = cls.isVB6;
+    if (!cls.localSkipEmpty && !cls.localNeedBait && !cls.localClipboard) {
+        if (!cls.exeName.empty()) {
+            if (_wcsicmp(cls.exeName.c_str(), L"zed.exe") == 0) {
+                cls.localSkipEmpty = true;
+            } else if (_wcsicmp(cls.exeName.c_str(), L"notepad.exe") == 0) {
+                // Win11 WinUI 3 Notepad: RichEditBox async on compositor; EM_REPLACESEL
+                // on the child Edit is atomic and avoids the flicker that SendInput
+                // batching causes here. Classic Notepad benefits too (single undo entry).
+                cls.localEditMsg = true;
             } else {
-                // Outlook 2016 RichEdit needs a U+202F bait char before BS (same
-                // quirk as Excel). The "Anh em → An hem" passthrough flag was
-                // reverted — that symptom is Outlook AutoCorrect rewriting the
-                // text, not our IME path; user-confirmed by reproducing with the
-                // IME off (see docs/TODO.md "Outlook Anh em Fix").
-                const bool isOutlook = exeName.find(L"outlook") != std::wstring::npos;
-                localNeedBait = exeName.find(L"excel") != std::wstring::npos || isOutlook;
-
-                // Tauri / WebView2-embedding apps (e.g. Dorion): detected by
-                // scanning for `Chrome_WidgetWin*` descendants. WebView2 is fundamentally
-                // Chromium, so it suffers from the same autocomplete/suggest bug as Chrome.
-                // We MUST use the bait character (localNeedBait = true). Cached on hit
-                // so the descendant-walk only runs once per (HWND, PID).
-                if (!localNeedBait) {
+                const bool isOutlook = cls.exeName.find(L"outlook") != std::wstring::npos;
+                cls.localNeedBait = cls.exeName.find(L"excel") != std::wstring::npos || isOutlook;
+                if (!cls.localNeedBait) {
                     if (!cached) {
                         std::wstring exeFullPath = GetExeFullPathForHwnd(activeHwnd);
                         isWebView2 = IsWebView2App(activeHwnd, exeFullPath);
                     }
                     if (isWebView2) {
-                        localNeedBait = true;
-                        localSkipEmpty = false;
+                        cls.localNeedBait = true;
+                        cls.localSkipEmpty = false;
                     }
                 }
             }
         }
     }
+    cls.isWebView2 = isWebView2;
+    cls.localElectronApp = (cls.isElectron || cls.isWebView2) && !cls.isConsole;
 
-    // Cache the freshly-computed profile (only on miss). Done after the
-    // WebView2 detection so isWebView2 is known. If GetWindowThreadProcessId
-    // fails (returns 0), skip caching — invalidation invariant requires a
-    // valid PID for re-check on next lookup.
-    if (!cached) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(activeHwnd, &pid);
-        if (pid != 0) {
-            AppProfile profile;
-            profile.pid = pid;
-            profile.exeName = exeName;
-            profile.isBrowser = isBrowser;
-            profile.isElectron = isElectron;
-            profile.isQtApp = isQtApp;
-            profile.isConsole = localConsole;
-            profile.isVB6 = isVB6;
-            profile.isWebView2 = isWebView2;
-            StoreAppProfile(activeHwnd, std::move(profile));
-        }
+    // Cache miss path: persist for next focus event. Skipped when
+    // GetWindowThreadProcessId fails — invariant requires PID for re-check.
+    DWORD pid = 0;
+    GetWindowThreadProcessId(activeHwnd, &pid);
+    cls.pid = static_cast<std::uint32_t>(pid);
+    if (!cached && pid != 0) {
+        AppProfile profile;
+        profile.pid = pid;
+        profile.exeName = cls.exeName;
+        profile.isBrowser  = isBrowser;
+        profile.isElectron = isElectron;
+        profile.isQtApp    = isQtApp;
+        profile.isConsole  = localConsole;
+        profile.isVB6      = isVB6;
+        profile.isWebView2 = isWebView2;
+        StoreAppProfile(activeHwnd, std::move(profile));
     }
 
-    const bool localElectronApp = (isElectron || isWebView2) && !localConsole;
-
-    // Publish all per-app cached flags atomically once the classification is final.
-    // Hook hot-path readers see consistent state (each .store(release) is paired
-    // with their .load(acquire) in ProcessKeyDown).
-    skipEmptyChar_.store(localSkipEmpty, std::memory_order_release);
-    useClipboardPaste_.store(localClipboard, std::memory_order_release);
-
-    // Sprint 2 D3: build the IOutputInjector for this classification and
-    // RCU-publish to injector_. All four branches now live: RichEdit
-    // (D2), Electron/Console (D3 SplitDispatch), and Win32 default with
-    // optional Chromium bait-char hint. Post-T3 ChannelTraits cleanup
-    // moved the multi-process-renderer + bait-prefix flags onto the
-    // injector itself; HookEngine reads via injector_->trait method on
-    // the hot path (HandleAlphaKey passthrough/reinjectVk gates).
-    {
-        NextKey::Output::WindowClassification c{};
-        c.isRichEditD2DPT = localEditMsg;
-        c.isElectron      = localElectronApp;
-        c.isConsole       = localConsole;
-        c.isChromium      = localNeedBait;  // bait-char hint (Chromium autocomplete-dismiss)
-        c.useClipboard    = localUseClipboardInjector;
-        auto newInjector = NextKey::Output::Create(c);
-        // Re-apply user setting on the freshly-built injector so the new
-        // host inherits the live "BS giữ chữ khi có gợi ý" value (factory
-        // doesn't know about it). Cheap atomic store; no lock needed.
-        if (auto cfg = config_.load(std::memory_order_acquire); cfg) {
-            newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
-        }
-        injector_.store(std::move(newInjector), std::memory_order_release);
+    // exeName fallback: triggerHwnd may have died by the time the async
+    // event dispatches; fall back to current foreground.
+    if (cls.exeName.empty() && activeHwnd != fg && fg) {
+        cls.exeName = GetExeNameForHwnd(fg);
     }
 
-    HOOK_LOG(L"  AppDetect[%ls]: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d",
-             cached ? L"hit" : L"miss",
-             localConsole ? 1 : 0, localSkipEmpty ? 1 : 0, localElectronApp ? 1 : 0,
-             isWebView2 ? 1 : 0, localNeedBait ? 1 : 0, localClipboard ? 1 : 0, localEditMsg ? 1 : 0, localUseClipboardInjector ? 1 : 0);
+    // Java detection — used to trigger top-of-chain hook reinstall (jnativehook
+    // GC stalls regularly exceed LowLevelHooksTimeout and Windows drops us).
+    cls.isJavaApp =
+        cls.exeName == L"jp2launcher.exe" ||
+        cls.exeName == L"javaw.exe" ||
+        cls.exeName == L"java.exe";
+
+    // Per-app excluded / TSF / encoding / method overrides — captured here
+    // so ApplyFocusOnHookThread doesn't need to touch the maps OR read
+    // `global{CodeTable,InputMethod}_` (both written from main; the new
+    // cross-thread read would be a race). Phase 3 will RCU-snapshot the
+    // maps and let the hook side read directly.
+    cls.targetCodeTable = static_cast<int>(globalCodeTable_);
+    cls.targetMethod    = static_cast<int>(globalInputMethod_);
+    // Phase 3c: per-app maps move to the RCU snapshot. Single atomic load
+    // here covers all four lookups below; previously each `_set/_overrides_`
+    // read was an unprotected unordered_map access from main while Reload
+    // could rewrite the maps on hook — the snapshot publish closes that
+    // race because Reload now swaps the whole pointer.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
+    if (!cls.skipAppTracking && !cls.exeName.empty() && snap) {
+        if (excludeApps_ && !snap->excludedAppSet.empty()) {
+            cls.isExcluded = snap->excludedAppSet.count(cls.exeName) > 0;
+        }
+        if (!cls.isExcluded && tsfApps_ && !snap->tsfAppSet.empty()) {
+            cls.isTsf = snap->tsfAppSet.count(cls.exeName) > 0;
+        }
+        if (!cls.isExcluded && !cls.isTsf) {
+            auto itEnc = snap->appEncodingOverrides.find(cls.exeName);
+            if (itEnc != snap->appEncodingOverrides.end()) {
+                cls.targetCodeTable = static_cast<int>(itEnc->second);
+            }
+            auto itIm = snap->appInputMethodOverrides.find(cls.exeName);
+            if (itIm != snap->appInputMethodOverrides.end()) {
+                cls.targetMethod = static_cast<int>(itIm->second);
+            }
+        }
+    }
 
     // Re-install hooks to guarantee VKey remains at the top of the hook chain.
     // Two distinct triggers, two distinct mechanisms:
@@ -3223,197 +3419,47 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // normal apps. We must do this even if the PID hasn't changed — WebView2
     // creates child windows that trigger focus events AFTER initial hook setup,
     // and jnativehook may re-arm itself during a JVM session.
-    const bool isJavaApp =
-        exeName == L"jp2launcher.exe" ||
-        exeName == L"javaw.exe" ||
-        exeName == L"java.exe";
-    if (hookThreadId_ && (localElectronApp || isBrowser || isJavaApp)) {
-        const WPARAM reason = isJavaApp ? REINSTALL_REASON_JAVA : REINSTALL_REASON_CHROMIUM;
+    //
+    // Post-Phase-2b note: the atomic publishes (skipEmptyChar_, useClipboardPaste_),
+    // IOutputInjector build, and AppDetect log all moved to
+    // ApplyFocusOnHookThread (Rule 11.3 — hook-thread-only writes). This
+    // re-install Post is harmless from any thread — just kicks the hook pump.
+    if (hookThreadId_ && (cls.localElectronApp || cls.isBrowser || cls.isJavaApp)) {
+        const WPARAM reason = cls.isJavaApp ? REINSTALL_REASON_JAVA : REINSTALL_REASON_CHROMIUM;
         PostThreadMessageW(hookThreadId_, WM_APP_REINSTALL_HOOKS, reason, 0);
     }
 
-    if (localClipboard || localEditMsg) {
-        RefreshFocusCache(activeHwnd);
-    } else {
-        cachedFocusedHwnd_.store(nullptr, std::memory_order_relaxed);
-        cachedFocusedClass_.clear();
-    }
+    return cls;
+}
 
-    // Layout auto-disable: check CJK layout on every focus change
-    CheckLayoutChange();
+void HookEngine::OnFocusChanged(HWND triggerHwnd) {
+    // Phase 2b: classify on the calling thread (main — heavy Win32 work),
+    // post to the hook thread. ApplyFocusOnHookThread runs the actual
+    // state mutations from the drain. Existing callers (WinEventProc,
+    // OnTickPoll) keep the same entry point — only the threading model
+    // changed.
 
-    // Skip the smart-switch / currentExe_ update path for helper HWNDs
-    // (hidden, tray, zero-size, tool-window). Classification already ran so
-    // dispatch flags stay correct — we just don't save SmartSwitch state or
-    // bump currentExe_ to a helper's process.
-    if (skipAppTracking) {
-        // Focus poll timer (200ms) will catch missed transitions
-        return;
-    }
+    // P2c fix (2026-05-19): re-introduce the QuickSync poke that pre-P2b
+    // OnFocusChanged used to run inline at the top of its body. SettingsDialog
+    // is the project's "live config bus": every toggle bumps configGeneration
+    // in SharedState immediately (subprocess-side; TOML save is deferred 30s
+    // or until dialog close). The hook picks this up via QuickSync. Pre-P2b,
+    // both keystrokes AND focus events triggered QuickSync; removing the
+    // focus-time call meant settings toggles only applied on the first
+    // keystroke after the user clicked back to the target app — which felt
+    // like "settings don't apply until dialog close" if the user clicked
+    // back to validate without typing first. Running QuickSync here on the
+    // SAME thread as pre-P2b (main / worker, never hook) restores the
+    // original UX without compromising the hook-thread single-writer
+    // invariant: QuickSync's slow path takes stateMutex_ and calls
+    // ApplyConfig — those writes still cross-thread the same way they did
+    // pre-Phase-2 (Phase 3 fixes that with RCU snapshots).
+    QuickSyncFromSharedState();
 
-    // Skip focus tracking entirely if no feature needs it
-    if (!smartSwitch_ && !excludeApps_ && !tsfApps_
-        && appEncodingOverrides_.empty() && appInputMethodOverrides_.empty()) return;
-
-    const bool wasExcluded = isExcludedApp_.load(std::memory_order_acquire);
-    const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
-
-    // Save mode for previous app (smart switch, skip excluded/TSF apps)
-    if (smartSwitch_ && !currentExe_.empty()
-        && !wasExcluded && !wasTsfApp) {
-        if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
-            appModeMap_.clear();
-        }
-        const bool savedMode = vietnameseMode_.load(std::memory_order_acquire);
-        appModeMap_[currentExe_] = savedMode;
-        smartSwitchMgr_.SetAppMode(currentExe_, savedMode);
-        appModeDirty_ = true;
-    }
-
-    // Get new app (save previous for tray menu context).
-    // Resolve into a local first — don't wipe currentExe_ if both paths fail,
-    // so subsequent focus events still have a valid previousExe_.
-    std::wstring newExe = GetExeNameForHwnd(activeHwnd);
-    // Fallback: triggerHwnd may be stale (destroyed/inaccessible by the time async callback runs).
-    // Try current foreground window instead.
-    if (newExe.empty() && activeHwnd != fg && fg) {
-        newExe = GetExeNameForHwnd(fg);
-        HOOK_LOG(L"  GetExeNameForHwnd: triggerHwnd failed, fallback to fg → '%s'", newExe.c_str());
-    }
-    if (newExe.empty()) return;
-
-    if (!currentExe_.empty()) {
-        previousExe_ = currentExe_;
-    }
-    currentExe_ = std::move(newExe);
-
-    // Sync PID tracker so focus poll timer won't re-trigger for this app
-    {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(activeHwnd, &pid);
-        if (pid) lastForegroundPid_ = pid;
-    }
-
-    // Check excluded apps
-    bool newExcluded;
-    if (excludeApps_ && !excludedAppSet_.empty()) {
-        newExcluded = excludedAppSet_.count(currentExe_) > 0;
-    } else {
-        newExcluded = false;
-    }
-    isExcludedApp_.store(newExcluded, std::memory_order_release);
-
-    // Check TSF apps (hook passthrough — let TSF DLL handle input)
-    // Excluded apps take priority — if both, treat as excluded (force English)
-    bool newTsfApp;
-    if (!newExcluded && tsfApps_ && !tsfAppSet_.empty()) {
-        newTsfApp = tsfAppSet_.count(currentExe_) > 0;
-    } else {
-        newTsfApp = false;
-    }
-    isTsfApp_.store(newTsfApp, std::memory_order_release);
-
-    // Always log active engine for this focus — makes it easy to tell which engine handles the app
-    HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
-             newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
-             currentExe_.c_str(),
-             tsfApps_ ? 1 : 0,
-             (!currentExe_.empty() && tsfAppSet_.count(currentExe_) > 0) ? 1 : 0,
-             newExcluded ? 1 : 0);
-
-    // Notify SharedState of TSF_ACTIVE + TSF_READONLY flags (DLL reads these).
-    // Fired on every focus change (idempotent via SetOrClearFlag).
-    if (tsfModeCallback_) {
-        const bool tsfReadonly = !newTsfApp && !newExcluded;
-        if (newTsfApp != wasTsfApp) {
-            HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
-                     wasTsfApp ? L"true" : L"false", newTsfApp ? L"true" : L"false");
-        }
-        tsfModeCallback_(newTsfApp, tsfReadonly);
-    }
-
-    if (newExcluded) {
-        // Excluded app — IME is transparent. vietnameseMode_ is never touched.
-        // Cache PID for fast per-keystroke check in ProcessKeyDown.
-        DWORD pid = 0;
-        GetWindowThreadProcessId(activeHwnd, &pid);
-        excludedPid_.store(pid, std::memory_order_release);
-        HOOK_LOG(L"  ExcludeApps: '%s' is excluded, passthrough (pid=%u)", currentExe_.c_str(), pid);
-        if (!wasExcluded) {
-            NotifyModeChange();  // Update icon to E (effective mode = false)
-        }
-        return;  // Skip smart switch restore and code table restore for excluded apps
-    }
-
-    // TSF app — hook is passive, skip smart switch/code table restore
-    if (newTsfApp) {
-        HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough", currentExe_.c_str());
-        return;
-    }
-
-    // Manual encoding override per app (restore to global if no override)
-    {
-        auto it = appEncodingOverrides_.find(currentExe_);
-        CodeTable targetTable = (it != appEncodingOverrides_.end() && it->second >= 0)
-            ? static_cast<CodeTable>(it->second) : globalCodeTable_;
-        if (targetTable != currentCodeTable_) {
-            currentCodeTable_ = targetTable;
-            HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
-                     static_cast<int>(currentCodeTable_), currentExe_.c_str());
-        }
-    }
-
-    // Manual input method override per app (restore to global if no override)
-    {
-        auto it = appInputMethodOverrides_.find(currentExe_);
-        InputMethod targetMethod = (it != appInputMethodOverrides_.end() && it->second >= 0)
-            ? static_cast<InputMethod>(it->second) : globalInputMethod_;
-        if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
-            currentMethod_.store(targetMethod, std::memory_order_release);
-            TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
-            engineConfig.inputMethod = targetMethod;
-            engine_ = EngineFactory::Create(engineConfig);
-            HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
-                     static_cast<int>(targetMethod), currentExe_.c_str());
-        }
-    }
-
-    // Smart switch: restore mode for new app.
-    // Hidden/tray windows are already filtered by the early return above.
-    if (smartSwitch_) {
-        auto it = appModeMap_.find(currentExe_);
-        if (it != appModeMap_.end()) {
-            // Known app — restore its saved mode
-            const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
-            if (it->second != curMode) {
-                vietnameseMode_.store(it->second, std::memory_order_release);
-                HOOK_LOG(L"  SmartSwitch: restored %s for '%s'",
-                         it->second ? L"Vietnamese" : L"English", currentExe_.c_str());
-                NotifyModeChange();
-            }
-        } else {
-            // Unknown app — inherit current mode (least surprising to the user)
-            HOOK_LOG(L"  SmartSwitch: inherit %s for unknown '%s'",
-                     vietnameseMode_.load(std::memory_order_acquire)
-                         ? L"Vietnamese" : L"English",
-                     currentExe_.c_str());
-        }
-    }
-
-    // Leaving excluded app — effective mode changed (E → actual) even if vietnameseMode_ didn't.
-    if (wasExcluded) {
-        // CJK auto-switch transitions were suppressed while excluded
-        // (DecideCjkSwitch's isExcluded gate). Replay the layout check now
-        // that excluded is cleared, so a CJK→en-US transition that fired
-        // during the excluded session (e.g. Win+D → Progman shell layout)
-        // gets to restore vietnameseMode_ here instead of being lost.
-        const bool wasSuppressed = layoutSuppressed_;
-        OnLayoutChanged(cachedIsCompatLayout_);
-        // OnLayoutChanged publishes the icon when it transitions. If no
-        // transition fired (no CJK to clear), we still need to notify
-        // because clearing isExcludedApp_ flips the effective mode.
-        if (wasSuppressed == layoutSuppressed_) NotifyModeChange();
-    }
+    auto cls = std::make_shared<const FocusClassification>(
+        ClassifyFocusedWindow(triggerHwnd));
+    if (!cls->hwndOpaque) return;  // sentinel: nothing to apply
+    mailbox_.Post(HookCommand::kFocusChanged, std::move(cls));
 }
 
 /// Replace on-screen text by diffing previousComposition_ vs newText.
@@ -3446,6 +3492,8 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 ///
 /// See OnFocusChanged() for the detection logic + injector publish.
 void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectVk) {
+    VKEY_ASSERT_HOOK_THREAD();
+    PERF_SCOPE(::NextKey::Perf::Stage::Replace);
     HWND target = GetInputTarget();
     if (!target) {
         previousComposition_ = newText;
@@ -3490,7 +3538,10 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
         if (backspaceCount > 0 || !encodedToSend.empty()) {
             sending_ = true;
             auto inj = injector_.load(std::memory_order_acquire);
-            if (!inj->Replace(backspaceCount, std::wstring_view(encodedToSend))) {
+            bool injOk;
+            { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+              injOk = inj->Replace(backspaceCount, std::wstring_view(encodedToSend)); }
+            if (!injOk) {
                 HOOK_LOG(L"  ReplaceComposition[encoded]: injector reported partial delivery");
             }
             sending_ = false;
@@ -3533,8 +3584,9 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     // so the app's main thread has time to drain its input queue and advance
     // the caret; then retry. The hook thread holds back its own callback while
     // sleeping, so no further physical keys race in. 30 ms upper bound is well
-    // below LowLevelHooksTimeout (default 500 ms) and dwarfs the typical 5-10 ms
-    // catch-up needed at chaos 500 µs inter-key. Only invokes the SendInput
+    // below LowLevelHooksTimeout (default 300 ms per Win32 docs; max ~1000 ms
+    // via registry) and dwarfs the typical 5-10 ms catch-up needed at chaos
+    // 500 µs inter-key. Only invokes the SendInput
     // fallback if the wait is exhausted — true human-pace typing never hits it.
     if (IsSyncReplaceChannel()) {
         // RichEdit path delegates to RichEditEmReplaceSelInjector.
@@ -3546,7 +3598,10 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
         int waitedMs = 0;
         auto inj = injector_.load(std::memory_order_acquire);
         for (;;) {
-            if (inj->Replace(backspaceCount, std::wstring_view(toSend))) {
+            bool injOk;
+            { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+              injOk = inj->Replace(backspaceCount, std::wstring_view(toSend)); }
+            if (injOk) {
                 previousComposition_ = newText;
                 if (synthEventsPending_ > 0) hadSynthInWord_ = true;
                 if (waitedMs > 0) {
@@ -3627,7 +3682,10 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
 
             if (backspaceCount > 0 || !toSend.empty()) {
                 auto inj = injector_.load(std::memory_order_acquire);
-                if (!inj->Replace(backspaceCount, std::wstring_view(toSend))) {
+                bool injOk;
+                { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+                  injOk = inj->Replace(backspaceCount, std::wstring_view(toSend)); }
+                if (!injOk) {
                     HOOK_LOG(L"  ReplaceComposition[send]: injector reported partial delivery");
                 }
             }
@@ -3652,7 +3710,10 @@ HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
         const std::wstring raw = engine_->PeekRaw();
         if (raw.empty()) return KeyOutcome::Fallthrough;
         HOOK_LOG(L"  EscRestoreRaw[live]: bs=%zu raw='%ls'", composedCount, raw.c_str());
-        if (!inj->Replace(composedCount, std::wstring_view(raw))) {
+        bool injOk;
+        { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+          injOk = inj->Replace(composedCount, std::wstring_view(raw)); }
+        if (!injOk) {
             HOOK_LOG(L"  EscRestoreRaw[live]: injector reported partial delivery");
             // Don't reset on failure — next user action recovers via normal flow.
             return KeyOutcome::Fallthrough;
@@ -3816,11 +3877,15 @@ bool HookEngine::IsMacroTrigger(DWORD vkCode) const {
 
 HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
     Win32CaseMapper mapper;
+    // Phase 3c: macro table comes from the RCU snapshot. The shared_ptr
+    // local keeps the table alive for the duration of Macro::Plan even
+    // if a worker thread republishes mid-call.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
     Macro::PlanInputs inputs{
         .rawMacroBuffer        = rawMacroBuffer_,
         .previousComposition   = previousComposition_,
         .previousEncodedWidths = previousEncodedWidths_,
-        .macroTable            = macroTable_,
+        .macroTable            = snap->macroTable,
         .macroCrossCommit      = macroCrossCommit_,
         .currentCodeTable      = currentCodeTable_,
         .autoCapsEnabled       = autoCapsMacro_.load(std::memory_order_acquire),
@@ -3936,6 +4001,390 @@ bool HookEngine::ReinstallKeyboardAndMouseHooks() {
     }
     HOOK_LOG(L"  ReinstallKeyboardAndMouseHooks: both hooks reinstalled OK");
     return true;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Phase 2a — Hook-thread command drain
+//
+// Single-writer invariant: every mutation of the 16 composition-state
+// fields must happen on the hook thread. Producers on other threads use
+// `mailbox_.Post(bit, ...)`; this drain consumes from the LL hook callback
+// (Rule 11.4 step 5 barrier) and from the pump's WM_APP_HOOK_COMMAND
+// handler. Dispatch order follows the design doc: kConfigApply first
+// (may rebuild engine_), then kFocusChanged (resets composition), then
+// kTickPoll, then kToggleVN.
+//
+// Phase 2a ships the infrastructure ONLY. No producer calls Post yet —
+// existing OnFocusChanged / OnTickPoll / ApplyConfig / ToggleVietnameseMode
+// still mutate inline as before. Phase 2b/c migrate them onto this channel
+// one writer at a time. Until then DrainHookCommands always returns early
+// (mailbox bits=0).
+// ═══════════════════════════════════════════════════════════
+
+void HookEngine::DrainHookCommands() {
+    // Phase 2d: re-entrancy guard. Trips a Debug assertion if a drain
+    // handler somehow re-enters DrainHookCommands — that's the
+    // "ApplyFoo() called something that called DrainHookCommands again"
+    // bug pattern, which would corrupt mailbox bit state silently.
+    HookCommandMailbox::DrainScope scope(mailbox_);
+
+    const std::uint32_t bits = mailbox_.DrainBits();
+    // Phase 3f: even if no fresh bits, a previous drain may have deferred
+    // the config apply (engine was busy). Re-check on every drain so the
+    // apply lands as soon as the engine empties.
+    const bool hadDeferredApply = deferredConfigApply_.load(std::memory_order_acquire);
+    if (!bits && !hadDeferredApply) return;
+
+    // kConfigApply: latch the request; the actual apply runs at the tail
+    // of this function once we know whether the engine is busy. We DO
+    // NOT call ApplyConfigOnHookThread mid-drain anymore — see P3f note.
+    if (bits & HookCommand::kConfigApply) {
+        deferredConfigApply_.store(true, std::memory_order_release);
+    }
+    if (bits & HookCommand::kFocusChanged) ApplyFocusOnHookThread(mailbox_.ConsumePendingFocus());
+    if (bits & HookCommand::kTickPoll)     ApplyTickPollOnHookThread();
+    if (bits & HookCommand::kToggleVN)     ApplyToggleVNOnHookThread();
+
+    // Phase 3f — guard the config apply against mid-word reset.
+    // ApplyConfigOnHookThread destroys engine_ and creates a fresh one;
+    // if the user has uncommitted input (engine_->Count() > 0), running
+    // the apply now would either (a) commit a partial word visibly or
+    // (b) drop the partial input. Both are user-visible quirks. Defer
+    // until the engine empties naturally — typically the next keystroke
+    // after a word commit, occasionally a backspace-to-empty or focus
+    // change. Focus change (ApplyFocusOnHookThread above) calls
+    // ResetComposition which zeros the count, so deferred applies often
+    // land on the same drain when triggered by a focus event.
+    if (deferredConfigApply_.load(std::memory_order_acquire)
+        && engine_ && engine_->Count() == 0) {
+        // exchange(false) — defensive over load+store: even though
+        // DrainScope guarantees single-drain-at-a-time today, a future
+        // Phase 5 split could fragment the drain across classes. The
+        // CAS-style swap makes "I'm the one consuming this latch"
+        // explicit regardless of drain serialisation.
+        if (deferredConfigApply_.exchange(false, std::memory_order_acq_rel)) {
+            ApplyConfigOnHookThread();
+        }
+    }
+}
+
+// Phase 2b — focus apply runs on the hook thread (called from
+// DrainHookCommands). All composition-state writes that used to live in
+// OnFocusChanged moved here. The cls parameter is the pre-computed
+// classification snapshot produced by ClassifyFocusedWindow on main.
+//
+// Must stay fast (Rule 11.2) — no syscalls beyond the cheap ones already
+// listed in the design's "may only mutate composition state + atomic
+// stores" contract. Heavy work (ClassifyWindow, GetExeNameForHwnd,
+// IsWebView2App, CreateToolhelp32Snapshot) is in ClassifyFocusedWindow,
+// not here.
+void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls) {
+    VKEY_ASSERT_HOOK_THREAD();
+    if (!cls || !cls->hwndOpaque) return;
+
+    HWND activeHwnd = reinterpret_cast<HWND>(cls->hwndOpaque);
+
+    // Reset composition + per-word state. These were the Rule 11.3-violating
+    // writes from main pre-Phase-2b.
+    ResetComposition();
+    tempEngineOff_ = false;
+    autoCapState_ = AutoCapState::Idle;
+
+    // Per-app cached flags — single release-store pair with the hot-path
+    // acquire-loads in ProcessKeyDown / HandleAlphaKey.
+    skipEmptyChar_.store(cls->localSkipEmpty, std::memory_order_release);
+    useClipboardPaste_.store(cls->localClipboard, std::memory_order_release);
+
+    // IOutputInjector swap — RCU publish so in-flight HandleAlphaKey reads
+    // see either the old or new injector cleanly.
+    {
+        NextKey::Output::WindowClassification c{};
+        c.isRichEditD2DPT = cls->localEditMsg;
+        c.isElectron      = cls->localElectronApp;
+        c.isConsole       = cls->isConsole;
+        c.isChromium      = cls->localNeedBait;
+        c.useClipboard    = cls->localUseClipboardInjector;
+        auto newInjector = NextKey::Output::Create(c);
+        // Re-apply user setting on the freshly-built injector so the new
+        // host inherits the live "BS giữ chữ khi có gợi ý" value (factory
+        // doesn't know about it). Without this, a focus change resets the
+        // suggestKeepChars flag to default false until the next ApplyConfig.
+        if (auto cfg = config_.load(std::memory_order_acquire); cfg) {
+            newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
+        }
+        injector_.store(std::move(newInjector), std::memory_order_release);
+    }
+
+    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d",
+             cls->isConsole ? 1 : 0, cls->localSkipEmpty ? 1 : 0, cls->localElectronApp ? 1 : 0,
+             cls->isWebView2 ? 1 : 0, cls->localNeedBait ? 1 : 0, cls->localClipboard ? 1 : 0,
+             cls->localEditMsg ? 1 : 0, cls->localUseClipboardInjector ? 1 : 0);
+
+    // RefreshFocusCache uses GetFocusedChildHwnd (AttachThreadInput) which
+    // is cheap (~µs). Safe on hook thread.
+    if (cls->localClipboard || cls->localEditMsg) {
+        RefreshFocusCache(activeHwnd);
+    } else {
+        cachedFocusedHwnd_.store(nullptr, std::memory_order_relaxed);
+        cachedFocusedClass_.clear();
+    }
+
+    // CJK layout check — GetKeyboardLayout is kernel-cached, single µs.
+    CheckLayoutChange();
+
+    // Helper HWNDs: classification flags applied above (so dispatch stays
+    // consistent), but skip currentExe_ / smart-switch tracking — that's
+    // what the 200 ms focus poll catches.
+    if (cls->skipAppTracking) return;
+
+    // Short-circuit when no per-app feature needs tracking. Phase 3c
+    // reads the override-map presence from the RCU snapshot — same data
+    // the cls fields were resolved against in Classify.
+    {
+        auto snap = configSnapshot_.load(std::memory_order_acquire);
+        const bool noOverrides = !snap
+            || (snap->appEncodingOverrides.empty()
+                && snap->appInputMethodOverrides.empty());
+        if (!smartSwitch_ && !excludeApps_ && !tsfApps_ && noOverrides) return;
+    }
+
+    if (cls->exeName.empty()) return;
+
+    const bool wasExcluded = isExcludedApp_.load(std::memory_order_acquire);
+    const bool wasTsfApp   = isTsfApp_.load(std::memory_order_acquire);
+
+    // Smart switch SAVE for the previous app — uses OLD currentExe_, so
+    // must run before we reassign it.
+    if (smartSwitch_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
+        if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
+            appModeMap_.clear();
+        }
+        const bool savedMode = vietnameseMode_.load(std::memory_order_acquire);
+        appModeMap_[currentExe_] = savedMode;
+        smartSwitchMgr_.SetAppMode(currentExe_, savedMode);
+        appModeDirty_ = true;
+    }
+
+    if (!currentExe_.empty()) {
+        previousExe_ = currentExe_;
+    }
+    currentExe_ = cls->exeName;
+
+    // Sync PID tracker so the 200 ms focus poll won't re-trigger for this app.
+    if (cls->pid) lastForegroundPid_.store(cls->pid, std::memory_order_release);
+
+    isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
+    isTsfApp_.store(cls->isTsf, std::memory_order_release);
+
+    HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
+             cls->isTsf ? L"TSF (hook passthrough)" : L"HOOK",
+             currentExe_.c_str(),
+             tsfApps_ ? 1 : 0,
+             cls->isTsf ? 1 : 0,
+             cls->isExcluded ? 1 : 0);
+
+    // SharedState TSF flag bridge — idempotent via SetOrClearFlag in main.
+    if (tsfModeCallback_) {
+        const bool tsfReadonly = !cls->isTsf && !cls->isExcluded;
+        if (cls->isTsf != wasTsfApp) {
+            HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
+                     wasTsfApp ? L"true" : L"false", cls->isTsf ? L"true" : L"false");
+        }
+        tsfModeCallback_(cls->isTsf, tsfReadonly);
+    }
+
+    if (cls->isExcluded) {
+        excludedPid_.store(cls->pid, std::memory_order_release);
+        HOOK_LOG(L"  ExcludeApps: '%s' is excluded, passthrough (pid=%u)",
+                 currentExe_.c_str(), cls->pid);
+        if (!wasExcluded) NotifyModeChange();
+        return;
+    }
+    if (cls->isTsf) {
+        HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough", currentExe_.c_str());
+        return;
+    }
+
+    // Per-app encoding override (target value pre-resolved in Classify
+    // against the on-main global to avoid a cross-thread read of
+    // globalCodeTable_ here).
+    {
+        const CodeTable targetTable = static_cast<CodeTable>(cls->targetCodeTable);
+        if (targetTable != currentCodeTable_) {
+            currentCodeTable_ = targetTable;
+            HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
+                     static_cast<int>(currentCodeTable_), currentExe_.c_str());
+        }
+    }
+
+    // Per-app input method override (same pattern as encoding). Recreate
+    // engine_ on change — the only heap allocation on this path.
+    {
+        const InputMethod targetMethod = static_cast<InputMethod>(cls->targetMethod);
+        if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
+            currentMethod_.store(targetMethod, std::memory_order_release);
+            TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
+            engineConfig.inputMethod = targetMethod;
+            engine_ = EngineFactory::Create(engineConfig);
+            HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
+                     static_cast<int>(targetMethod), currentExe_.c_str());
+        }
+    }
+
+    // Smart switch restore for the new app.
+    if (smartSwitch_) {
+        auto it = appModeMap_.find(currentExe_);
+        if (it != appModeMap_.end()) {
+            const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
+            if (it->second != curMode) {
+                vietnameseMode_.store(it->second, std::memory_order_release);
+                HOOK_LOG(L"  SmartSwitch: restored %s for '%s'",
+                         it->second ? L"Vietnamese" : L"English", currentExe_.c_str());
+                NotifyModeChange();
+            }
+        } else {
+            HOOK_LOG(L"  SmartSwitch: inherit %s for unknown '%s'",
+                     vietnameseMode_.load(std::memory_order_acquire)
+                         ? L"Vietnamese" : L"English",
+                     currentExe_.c_str());
+        }
+    }
+
+    // Leaving an excluded app — effective mode flipped E→actual even if
+    // vietnameseMode_ didn't move. Replay layout check so a suppressed
+    // CJK transition that fired during the excluded session restores now.
+    if (wasExcluded) {
+        const bool wasSuppressed = layoutSuppressed_;
+        OnLayoutChanged(cachedIsCompatLayout_);
+        if (wasSuppressed == layoutSuppressed_) NotifyModeChange();
+    }
+}
+
+// Phase 2c — ToggleVietnameseMode body, migrated to the hook thread.
+//
+// Single-writer note: this runs from the drain only. The mailbox
+// coalesces multiple Posts before drain into one drained bit
+// (HookCommandMailboxTest §PostSameBitMultipleTimesDrainReturnsOnce),
+// so rapid hotkey mashing collapses to one toggle per drain cycle.
+// User-visible behaviour: same as before — sub-keystroke responsive.
+void HookEngine::ApplyToggleVNOnHookThread() {
+    VKEY_ASSERT_HOOK_THREAD();
+    // Excluded-app gate. PID check vs cached excludedPid_ distinguishes
+    // "genuinely in excluded app" (block toggle) from "stale flag, user
+    // already left" (force VN). Both atomic stores below are safe on
+    // hook thread now that we're single-writer.
+    if (excludeApps_ && isExcludedApp_.load(std::memory_order_acquire)) {
+        HWND fg = GetForegroundWindow();
+        DWORD fgPid = 0;
+        if (fg) GetWindowThreadProcessId(fg, &fgPid);
+        const DWORD cachedPid = excludedPid_.load(std::memory_order_acquire);
+        if (fgPid == cachedPid && cachedPid != 0) {
+            HOOK_LOG(L"  ToggleVN: BLOCKED (excluded pid=%u)", cachedPid);
+            return;
+        }
+        // Different PID — user already left excluded app, flag is stale.
+        // Force VN: user pressed toggle expecting V mode, having perceived
+        // the excluded app as English.
+        isExcludedApp_.store(false, std::memory_order_release);
+        vietnameseMode_.store(true, std::memory_order_release);
+        HOOK_LOG(L"  ToggleVN: stale excluded → forced Vietnamese (fg pid=%u)", fgPid);
+        NotifyModeChange();
+        if (beepOnSwitch_) MessageBeep(MB_OK);
+        return;
+    }
+
+    // Commit pending composition (skip if CJK-suppressed — engine inactive).
+    if (!layoutSuppressed_ && engine_->Count() > 0) {
+        CommitComposition();
+    }
+    CancelCommitUndo();
+    digitLedWord_ = false;
+
+    const bool newMode = !vietnameseMode_.load(std::memory_order_acquire);
+    vietnameseMode_.store(newMode, std::memory_order_release);
+    NEXTKEY_LOG(L"HookEngine: mode = %s (via drain)", newMode ? L"Vietnamese" : L"English");
+
+    // Smart-switch save. Drop the pre-P2c GetForegroundWindow + GetExeNameForHwnd
+    // fallback — those are Rule 11.2 forbidden on the hook thread (Toolhelp32
+    // snapshot). If currentExe_ is empty here (startup before any focus event),
+    // the next focus event will set it and the toggle takes effect for that app
+    // on its first save.
+    if (smartSwitch_ && !currentExe_.empty()) {
+        appModeMap_[currentExe_] = newMode;
+        smartSwitchMgr_.SetAppMode(currentExe_, newMode);
+    }
+
+    if (beepOnSwitch_) {
+        MessageBeep(newMode ? MB_OK : MB_ICONASTERISK);
+    }
+    NotifyModeChange();
+}
+
+// P3e/P3f — config-apply drain handler. Wired into the kConfigApply mailbox
+// bit posted by ReloadFromToml on the worker. Hook-thread side of the
+// single-writer contract: this is where composition state mutations
+// (currentMethod_ store, engine_ swap) actually run.
+//
+// CONTRACT (P3f): DrainHookCommands guarantees `engine_->Count() == 0`
+// before calling this function. Any pending word is left intact in the
+// engine until natural completion (commit, backspace-empty, focus
+// reset); the drain latches kConfigApply via `deferredConfigApply_` and
+// re-checks on every cycle. This avoids the chaos-stress visible quirk
+// where a config reload landing mid-word committed a partial word (e.g.
+// `uongs` → `uôngs` instead of `uống` because the engine was reset
+// between `uong` and `s`).
+//
+// Pre-P3e (P2c→P3d): handler existed dormant; the worker's ReloadFromToml
+// performed CommitComposition + `engine_ = Create()` inline. Under
+// `-InjectConfigReloadMs 50` chaos, that race produced 11/55 failures —
+// a UAF: worker swapped `engine_` while hook hot path held a raw
+// pointer read. P3e moved the mutation here; P3f added the engine-busy
+// gate at the drain.
+//
+// Why ALWAYS recreate (not just on method change): the engine internally
+// stores a TypingConfig copy. modernOrtho / allowZwjf / spellCheckEnabled
+// changes need a fresh engine for the new behavior to take effect. The
+// drain's busy-gate means we don't recreate per chaos tick — we recreate
+// once per word boundary, when applicable, regardless of how many bumps
+// stacked up.
+//
+// Resolves the P0 single-writer-violation TODO item from the 2026-05-19
+// review: `engine_` had two writer paths; this collapses to one (hook).
+void HookEngine::ApplyConfigOnHookThread() {
+    VKEY_ASSERT_HOOK_THREAD();
+    auto cfg = config_.load(std::memory_order_acquire);
+    if (!cfg) return;
+
+    // Resolve target inputMethod considering per-app override (Phase 3c
+    // snapshot reader). currentExe_ is hook-owned (set in
+    // ApplyFocusOnHookThread); reading it here is single-threaded safe.
+    auto snap = configSnapshot_.load(std::memory_order_acquire);
+    InputMethod targetMethod = cfg->inputMethod;
+    if (snap && !currentExe_.empty()) {
+        auto it = snap->appInputMethodOverrides.find(currentExe_);
+        if (it != snap->appInputMethodOverrides.end()) targetMethod = it->second;
+    }
+
+    // P3f: caller (DrainHookCommands) gates on engine_->Count() == 0, so
+    // CommitComposition would be a no-op. Skip it to keep this handler
+    // purely focused on the engine swap.
+    currentMethod_.store(targetMethod, std::memory_order_release);
+    TypingConfig engineConfig = *cfg;
+    engineConfig.inputMethod = targetMethod;
+    engine_ = EngineFactory::Create(engineConfig);
+
+    HOOK_LOG(L"  ApplyConfig: engine recreated (method=%d, modernOrtho=%d, allowZwjf=%d)",
+             static_cast<int>(targetMethod),
+             cfg->modernOrtho ? 1 : 0,
+             cfg->allowZwjf ? 1 : 0);
+}
+
+void HookEngine::ApplyTickPollOnHookThread() {
+    VKEY_ASSERT_HOOK_THREAD();
+    // CheckLayoutChange queries GetKeyboardLayout (kernel-cached, fast)
+    // and may call OnLayoutChanged → layoutSuppressed_ writes + engine
+    // commit. All hook-thread-safe.
+    CheckLayoutChange();
 }
 
 }  // namespace NextKey

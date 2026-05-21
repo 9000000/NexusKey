@@ -223,8 +223,11 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->convertKeyLo = state.convertKeyLo;
     p->convertKeyHi = state.convertKeyHi;
     p->configGeneration = state.configGeneration;
-    // v3 cleanup: `tempOffMethod` byte slot retained for ABI stability but no
-    // longer copied — HotkeyRegistry owns the V/E toggle trigger now.
+    // Phase 1: the renamed byte slot (formerly `tempOffMethod`, now `diagFlags`)
+    // is back in active use. Bit 0 = perf histogram gate; main thread writes it
+    // from TypingConfig.perfHistogramEnabled on config save and hook thread
+    // reads it on QuickSyncFromSharedState's slow path.
+    p->diagFlags = state.diagFlags;
     memcpy(p->reserved, state.reserved, sizeof(state.reserved));
 
     MemoryBarrier();

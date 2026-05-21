@@ -1,21 +1,31 @@
 // src/app/output/OutputInjectorFactory.h
 //
-// Two-phase focus detection (Rule #11.3):
-//   Phase 1 — ClassifyWindow(HWND): no shared state writes, may take
-//              1-5 ms (Win32 calls, exe path lookup, process scan).
-//   Phase 2 — Create(WindowClassification): construct injector, ~1
-//              heap alloc. Caller atomic_store-publishes the result.
+// Output injector factory (Rule #11.3).
+//
+// Two-phase focus detection — but Phase 1 lives in HookEngine, not here:
+//   Phase 1 — `HookEngine::ClassifyFocusedWindow` (HookEngine.cpp:3175)
+//             runs on the CALLER thread (main, via WinEventProc /
+//             OnTickPoll). Heavy Win32 inspection happens there because
+//             the same FocusClassification feeds non-dispatch concerns
+//             (passthrough policy, retry-loop gating, per-app override
+//             reads); duplicating it here would create two sources of
+//             truth. The relevant subset is repacked into
+//             `WindowClassification` below before calling `Create`.
+//   Phase 2 — `Create(WindowClassification)` constructs the injector,
+//             ~1 heap alloc. Caller atomic_store-publishes the result
+//             to `HookEngine::injector_` (RCU).
 //
 // Spec: docs/plans/sprint-2-output-injector.md §2.6
+// Phase 2b focus refactor: docs/plans/2026-05-19-architecture-review-design.md
 #pragma once
 
 #include "IOutputInjector.h"
-#include <windows.h>
 #include <memory>
 
 namespace NextKey::Output {
 
-// Phase 1 result — pure data, no shared writes (Rule #11.3).
+// Phase 2 input — pure data, no shared writes (Rule #11.3).
+// Filled in by HookEngine's two-phase focus pipeline (see header comment).
 struct WindowClassification {
     bool isRichEditD2DPT = false;  // Win11 New Notepad
     bool isElectron      = false;  // Discord / Slack / VSCode etc
@@ -23,9 +33,6 @@ struct WindowClassification {
     bool isChromium      = false;  // Chrome / Edge — bait-char hint
     bool useClipboard    = false;  // User configured clipboard fallback
 };
-
-// Phase 1 — classify focused window. No shared writes.
-[[nodiscard]] WindowClassification ClassifyWindow(HWND hwnd) noexcept;
 
 // Phase 2 — construct injector for a classification. Always returns a
 // usable injector (default branch is Win32). Caller atomic_store-

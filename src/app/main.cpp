@@ -379,6 +379,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
+        // Phase 1 perf histogram: surface the hidden TOML toggle through the
+        // SharedState diagFlags byte so the hook thread can react via
+        // QuickSyncFromSharedState without a TOML re-parse.
+        state.diagFlags = config.perfHistogramEnabled ? DiagFlags::PERF_HISTOGRAM : 0;
         if (!startVietnamese) {
             state.flags &= ~SharedFlags::VIETNAMESE_MODE;
         }
@@ -645,6 +649,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
+        state.diagFlags = config.perfHistogramEnabled ? DiagFlags::PERF_HISTOGRAM : 0;
         g_sharedState.Write(state);
         NEXTKEY_LOG(L"SharedState created and initialized (TSF_ACTIVE=1, TSF-only mode)");
 
@@ -827,6 +832,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
             state.spellCheck = config.spellCheckEnabled ? 1 : 0;
             state.codeTable = static_cast<uint8_t>(config.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config));
+            state.diagFlags = config.perfHistogramEnabled ? DiagFlags::PERF_HISTOGRAM : 0;
             state.configGeneration++;  // HookEngine detects on next keystroke
             sm.Write(state);
         }

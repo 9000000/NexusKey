@@ -24,6 +24,15 @@ namespace SharedFlags {
     constexpr uint32_t TSF_POST_UPDATE_REBOOT = 0x0080;  // EXE: swap succeeded, hosts may still hold old DLL
 }
 
+// Diagnostic flag bit definitions (uint8_t, byte slot at SharedState.diagFlags).
+// Distinct from featureFlags — diagnostics are off-by-default, dev-/debug-facing,
+// and live in a hidden TOML `[debug]` section (no settings-UI surface). Bit 0
+// is the Phase 1 per-stage perf histogram gate
+// (docs/plans/2026-05-19-architecture-review-design.md §Phase 1).
+namespace DiagFlags {
+    constexpr uint8_t PERF_HISTOGRAM = 0x01;
+}
+
 // Feature flag bit definitions (uint32_t packed into 3 bytes: featureFlags[2] + extFeatureFlags)
 namespace FeatureFlags {
     // Byte 0 (bits 0-7)
@@ -262,7 +271,10 @@ struct SharedState {
     // HookEngine detects change during QuickSyncFromSharedState() and triggers full reload.
     // Replaces Named Event (ConfigEvent) — eliminates per-keystroke WaitForSingleObject syscall.
     uint8_t  configGeneration;   // Wraps at 255 — use != comparison, not >
-    uint8_t  reservedByte34;     // formerly tempOffMethod (v3 cleanup: ToggleEnabled trigger lives in HotkeyRegistry). Slot kept for ABI stability — available for future reuse.
+    uint8_t  diagFlags;          // Diagnostic toggles (see DiagFlags::). Reuses the
+                                 // tempOffMethod byte slot (v3 cleanup retired that
+                                 // trigger into HotkeyRegistry); zero-init means all
+                                 // diagnostics off by default — same ABI as before.
 
     // ── Reserved for future expansion (1024 bytes) ──
     // Draw from this pool for new fields; do NOT bump CURRENT_VERSION unless
@@ -333,7 +345,7 @@ struct SharedState {
         hotkeyMods = 0; hotkeyKeyLo = 0; hotkeyKeyHi = 0;
         convertMods = 0; convertKeyLo = 0; convertKeyHi = 0;
         configGeneration = 0;
-        reservedByte34 = 0;
+        diagFlags = 0;
         for (auto& b : reserved) b = 0;
         contextAnchor = HookContextAnchor{};  // zero all fields (generation=0=stable)
     }
@@ -341,7 +353,7 @@ struct SharedState {
 
 // Ensure SharedState layout is stable across EXE and DLL builds.
 // sizeof breakdown: 12 header + 4 epoch + 4 flags + 3 config + 3 featureFlags +
-// 1 codeTable + 6 hotkey + 2 configGen/reservedByte34 + 1024 reserved
+// 1 codeTable + 6 hotkey + 2 configGen/diagFlags + 1024 reserved
 //   = 1059 bytes, rounded up by 1 byte of alignment padding before contextAnchor
 //   (alignof >= 4) → contextAnchor at offset 1060 + 44 = 1104.
 static_assert(sizeof(SharedState) == 1104, "SharedState size changed — update structVersion");
