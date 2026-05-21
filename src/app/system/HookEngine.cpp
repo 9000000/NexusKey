@@ -4098,6 +4098,16 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     HWND activeHwnd = reinterpret_cast<HWND>(cls->hwndOpaque);
 
+    // Sync PID tracker UNCONDITIONALLY so the 200 ms focus poll won't re-fire
+    // for the same app. Must run before any early-return below — when
+    // skipAppTracking / no-per-app-features short-circuit / empty exeName
+    // return early, the old code left lastForegroundPid_ stale and the poll
+    // re-detected "PID changed" every cycle, calling ResetComposition() each
+    // time (L4103 is unconditional). Symptom: WebView2 apps (SearchHost, Edge,
+    // Teams) wipe the engine buffer every ~200 ms — typing "hddldd" only ever
+    // sees one char at a time, dd→Đ never composes.
+    if (cls->pid) lastForegroundPid_.store(cls->pid, std::memory_order_release);
+
     // Reset composition + per-word state. These were the Rule 11.3-violating
     // writes from main pre-Phase-2b.
     ResetComposition();
@@ -4184,8 +4194,8 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     }
     currentExe_ = cls->exeName;
 
-    // Sync PID tracker so the 200 ms focus poll won't re-trigger for this app.
-    if (cls->pid) lastForegroundPid_.store(cls->pid, std::memory_order_release);
+    // PID tracker already synced at function entry — see comment near the top
+    // of ApplyFocusOnHookThread. Re-storing here is redundant.
 
     isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
     isTsfApp_.store(cls->isTsf, std::memory_order_release);
