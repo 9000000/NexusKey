@@ -648,6 +648,9 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
     }
+    else if (id == L"suggest-keep-chars") {
+        config_.suggestKeepChars = value;
+    }
     else if (id == L"use-macro") {
         config_.macroEnabled = value;
     }
@@ -1051,6 +1054,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"cjk-auto-switch", config_.cjkAutoSwitch);
     setToggleState(L"debug-log", config_.debugLogEnabled);
     setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
+    setToggleState(L"suggest-keep-chars", config_.suggestKeepChars);
     setToggleState(L"use-macro", config_.macroEnabled);
     setToggleState(L"macro-english", config_.macroInEnglish);
     setToggleState(L"quick-telex", config_.quickConsonant);

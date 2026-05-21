@@ -37,9 +37,28 @@ TEST_F(Win32SendInputInjectorTest, ReplaceWithCharsSendsBatch) {
     EXPECT_EQ(capturedInputs[6].ki.wScan, L'i');
 }
 
-TEST_F(Win32SendInputInjectorTest, BaitCharSkippedOnPureBackspace) {
-    // Pure-BS skips bait — see Internal::ShouldEmitBait comment for why.
+TEST_F(Win32SendInputInjectorTest, BaitCharFiresOnPureBackspaceByDefault) {
+    // Default (suggestKeepChars=false): pure-BS still emits bait so a
+    // Chromium suggestion popup can't swallow the BS as a dismiss-only
+    // gesture — engine state stays in sync at the cost of a brief flicker.
     Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
+    EXPECT_TRUE(inj.Replace(2, L""));
+    // Expected: bait (down+up=2) + (2+1)=3 BS × down+up = 8 events
+    // (1 extra BS deletes the bait).
+    ASSERT_EQ(capturedInputs.size(), 8u);
+    EXPECT_NE(capturedInputs[0].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[0].ki.wScan, 0x202F);
+    for (size_t i = 2; i < 8; ++i) {
+        EXPECT_EQ(capturedInputs[i].ki.wVk, VK_BACK)
+            << "event[" << i << "].wVk should be VK_BACK";
+    }
+}
+
+TEST_F(Win32SendInputInjectorTest, BaitCharSkippedOnPureBackspaceWhenSuggestKeepCharsOn) {
+    // Opt-in setting: BS only dismisses the popup, preserves typed chars
+    // ("face" + BS → "face"). Trade-off documented on the toggle.
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
+    inj.SetSuggestKeepChars(true);
     EXPECT_TRUE(inj.Replace(2, L""));
     // Expected: 2 BS × (down + up) = 4 events. No bait, no extra BS.
     ASSERT_EQ(capturedInputs.size(), 4u);

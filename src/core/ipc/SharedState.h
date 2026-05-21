@@ -49,6 +49,7 @@ namespace FeatureFlags {
     constexpr uint32_t AUTO_CAPS_MACRO       = 0x00010000;
     constexpr uint32_t ALLOW_ENGLISH_BYPASS  = 0x00020000;
     constexpr uint32_t DEBUG_LOG_ENABLED     = 0x00040000;  // Settings → System → "Bật debug log"
+    constexpr uint32_t SUGGEST_KEEP_CHARS    = 0x00080000;  // Settings → Bảng gõ → "BS giữ chữ khi có gợi ý"
 }
 
 /// Document context anchor published by TSF (readonly mode) for HookEngine.
@@ -387,6 +388,7 @@ static_assert(offsetof(SharedState, contextAnchor) == 1060,
     if (config.autoCapsMacro)       flags |= FeatureFlags::AUTO_CAPS_MACRO;
     if (config.allowEnglishBypass)  flags |= FeatureFlags::ALLOW_ENGLISH_BYPASS;
     if (config.debugLogEnabled)     flags |= FeatureFlags::DEBUG_LOG_ENABLED;
+    if (config.suggestKeepChars)    flags |= FeatureFlags::SUGGEST_KEEP_CHARS;
     return flags;
 }
 
@@ -409,6 +411,7 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.autoCapsMacro       = (flags & FeatureFlags::AUTO_CAPS_MACRO) != 0;
     config.allowEnglishBypass  = (flags & FeatureFlags::ALLOW_ENGLISH_BYPASS) != 0;
     config.debugLogEnabled     = (flags & FeatureFlags::DEBUG_LOG_ENABLED) != 0;
+    config.suggestKeepChars    = (flags & FeatureFlags::SUGGEST_KEEP_CHARS) != 0;
 }
 
 }  // namespace NextKey

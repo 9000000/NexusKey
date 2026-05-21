@@ -167,6 +167,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.escRestoreRawEnabled = (*features)["esc_restore_raw"].value_or(false);
             config.autoCapsMacro = (*features)["auto_caps_macro"].value_or(false);
             config.allowEnglishBypass = (*features)["allow_english_bypass"].value_or(false);
+            config.suggestKeepChars = (*features)["suggest_keep_chars"].value_or(false);
             config.debugLogEnabled = (*features)["debug_log"].value_or(false);
             config.macroTriggerSpace = (*features)["macro_trigger_space"].value_or(true);
             config.macroTriggerEnter = (*features)["macro_trigger_enter"].value_or(true);
@@ -248,6 +249,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("esc_restore_raw", config.escRestoreRawEnabled);
         features.insert_or_assign("auto_caps_macro", config.autoCapsMacro);
         features.insert_or_assign("allow_english_bypass", config.allowEnglishBypass);
+        features.insert_or_assign("suggest_keep_chars", config.suggestKeepChars);
         features.insert_or_assign("debug_log", config.debugLogEnabled);
         features.insert_or_assign("macro_trigger_space", config.macroTriggerSpace);
         features.insert_or_assign("macro_trigger_enter", config.macroTriggerEnter);

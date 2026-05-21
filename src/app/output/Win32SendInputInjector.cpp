@@ -50,9 +50,11 @@ bool Win32SendInputInjector::Replace(std::size_t bsCount,
 
     // Bait-char prefix (Chromium suggest-dismiss): inserts U+202F + an
     // extra BS to delete it before the rest of the deletes/chars run.
-    // Predicate in Internal::ShouldEmitBait — see comment there for why
-    // pure-BS skips bait.
-    const bool emitBait = Internal::ShouldEmitBait(needsBaitCharPrefix_, bsCount, text);
+    // Predicate in Internal::ShouldEmitBait — pure-BS only skips bait
+    // when the user opts into the "BS giữ chữ khi có gợi ý" setting.
+    const bool emitBait = Internal::ShouldEmitBait(
+        needsBaitCharPrefix_, bsCount, text,
+        suggestKeepChars_.load(std::memory_order_acquire));
     if (emitBait) {
         if (i + 2 > kMaxBatch) return false;
         buf[i++] = MakeUnicodeChar(0x202F, /*keyup=*/false);

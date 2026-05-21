@@ -53,17 +53,25 @@ extern SynthCounterFn        g_synthCounterCallback;  // null = disabled
 constexpr ULONG_PTR kVKeyExtraInfo = 0x4E4BULL;
 
 // Chromium suggest-dismiss bait predicate, shared by Win32 + Split
-// injectors. Pure-BS (text empty) skips the bait because Edge/Chrome
-// inline autocomplete is a SELECTION inside the input — typing the
-// U+202F bait would replace it and the trailing extra-BS would eat
-// one user character ("face" + BS → "fac"). Replace operations
-// (text non-empty) keep the bait so a transform's chars don't land
-// into a stale suggestion frame.
+// injectors. The `suggestKeepChars` user setting (default false) carves
+// out pure-BS to behave like EVKey for the issue #108 "face → fac"
+// complaint: when ON and text is empty, skip the bait so Edge/Chrome
+// inline autocomplete (a SELECTION inside the input) gets dismissed
+// without losing a user char. Trade-off when ON: engine state can
+// desync after a popup-dismiss-BS in active VN composition ("nex" + BS
+// + 'x' → "neẽ"), so default OFF keeps engine sync (bait always fires;
+// "face" + BS visually flickers to "fac" but VN typing stays correct).
+// Replace operations (text non-empty) ALWAYS keep the bait regardless
+// of the setting — a transform's chars must dismiss any stale suggest
+// frame before landing.
 [[nodiscard]] constexpr bool
 ShouldEmitBait(bool needsBaitCharPrefix,
                std::size_t bsCount,
-               std::wstring_view text) noexcept {
-    return needsBaitCharPrefix && bsCount > 0 && !text.empty();
+               std::wstring_view text,
+               bool suggestKeepChars) noexcept {
+    if (!needsBaitCharPrefix || bsCount == 0) return false;
+    if (suggestKeepChars && text.empty()) return false;
+    return true;
 }
 
 }  // namespace NextKey::Output::Internal

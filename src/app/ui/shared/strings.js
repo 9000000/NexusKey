@@ -51,6 +51,8 @@ var STRINGS = {
         "s.restore_key": "Auto-restore keys on wrong word",
         "s.allow_english_bypass": "Allow English bypass (e.g. yes \u2192 \u00FDe)",
         "s.allow_english_bypass_tooltip": "Allow applying Vietnamese tone marks on English words or exceptions",
+        "s.suggest_keep_chars": "BS keeps chars on suggest",
+        "s.suggest_keep_chars_tooltip": "When dismissing a browser suggestion via Backspace, preserve typed chars. Warning: tone placement may be wrong if you keep typing right after BS.",
         "s.esc_restore_raw": "Esc restores raw keys",
         "s.esc_restore_raw_tooltip": "Press Esc while typing to undo Vietnamese conversion and keep raw keys (e.g. v\u00EDu \u2192 virus)",
         "s.spell_exclusions": "Spell exclusions",

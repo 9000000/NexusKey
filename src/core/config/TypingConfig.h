@@ -106,6 +106,14 @@ struct TypingConfig {
     bool escRestoreRawEnabled = false; // Esc restores raw keys (e.g., víu → virus) and ends composition
     bool autoCapsMacro = false;        // Auto-capitalize expansion to match typed case
     bool allowEnglishBypass = false;   // Cho phép gõ dấu tự do / Bypass English blocking (e.g. yes -> ýe)
+    // BS keeps typed chars when Chromium suggestion popup is showing.
+    // OFF (default): bait U+202F + extra BS on every Chromium replace, so BS
+    // forces a delete even if the popup tries to swallow it (engine stays in
+    // sync; trade-off: "face" + BS visually flickers to "fac"). ON: skip bait
+    // when text is empty, so BS only dismisses the popup ("face" preserved);
+    // engine/screen can desync after a popup-dismiss-BS, surfacing as wrong
+    // tone placement on the next key (e.g., "nex" + BS + 'x' → "neẽ").
+    bool suggestKeepChars = false;
     bool debugLogEnabled = false;      // System → "Bật debug log" — runtime-enable NextKey::Logger
     bool macroTriggerSpace = true;     // Kích hoạt bằng phím Space
     bool macroTriggerEnter = true;     // Kích hoạt bằng phím Enter

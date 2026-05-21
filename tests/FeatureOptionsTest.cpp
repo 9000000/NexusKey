@@ -136,6 +136,31 @@ TEST_F(FeatureFlagsTest, RoundTrip_DebugLogEnabled) {
     EXPECT_FALSE(decoded.debugLogEnabled);
 }
 
+TEST_F(FeatureFlagsTest, RoundTrip_SuggestKeepChars) {
+    // Guards FeatureFlags::SUGGEST_KEEP_CHARS bit slot. Live propagation of
+    // this toggle (Settings → Bảng gõ) depends on the bit reaching SharedState
+    // so the 100 ms config-poll timer in main.cpp can call ApplyConfig →
+    // SetSuggestKeepChars on the injector without waiting for a TOML reload.
+    TypingConfig original;
+    original.suggestKeepChars = true;
+
+    SharedState state{};
+    state.InitDefaults();
+    state.SetFeatureFlags(EncodeFeatureFlags(original));
+
+    EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::SUGGEST_KEEP_CHARS);
+
+    TypingConfig decoded;
+    DecodeFeatureFlags(state.GetFeatureFlags(), decoded);
+    EXPECT_TRUE(decoded.suggestKeepChars);
+
+    original.suggestKeepChars = false;
+    state.SetFeatureFlags(EncodeFeatureFlags(original));
+    EXPECT_FALSE(state.GetFeatureFlags() & FeatureFlags::SUGGEST_KEEP_CHARS);
+    DecodeFeatureFlags(state.GetFeatureFlags(), decoded);
+    EXPECT_FALSE(decoded.suggestKeepChars);
+}
+
 // ============================================================================
 // ConfigManager Round-Trip Tests (Windows only — needs Windows.h)
 // ============================================================================

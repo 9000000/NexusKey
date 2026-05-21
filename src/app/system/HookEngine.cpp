@@ -90,6 +90,12 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
     autoCapsMacro_.store(config.autoCapsMacro, std::memory_order_release);
+    // Push the suggestKeepChars flag to the live injector so ShouldEmitBait
+    // sees the latest user choice without needing a focus change to swap
+    // injectors. Focus-change paths re-apply this from the config snapshot.
+    if (auto inj = injector_.load(std::memory_order_acquire); inj) {
+        inj->SetSuggestKeepChars(config.suggestKeepChars);
+    }
     // Runtime file-logger gate (Settings → System → "Bật debug log").
     ::NextKey::Logger::SetEnabled(config.debugLogEnabled);
 }
@@ -3165,7 +3171,14 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         c.isConsole       = localConsole;
         c.isChromium      = localNeedBait;  // bait-char hint (Chromium autocomplete-dismiss)
         c.useClipboard    = localUseClipboardInjector;
-        injector_.store(NextKey::Output::Create(c), std::memory_order_release);
+        auto newInjector = NextKey::Output::Create(c);
+        // Re-apply user setting on the freshly-built injector so the new
+        // host inherits the live "BS giữ chữ khi có gợi ý" value (factory
+        // doesn't know about it). Cheap atomic store; no lock needed.
+        if (auto cfg = config_.load(std::memory_order_acquire); cfg) {
+            newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
+        }
+        injector_.store(std::move(newInjector), std::memory_order_release);
     }
 
     HOOK_LOG(L"  AppDetect[%ls]: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d",
