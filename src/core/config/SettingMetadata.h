@@ -125,7 +125,7 @@ inline constexpr SettingMeta kSettings[] = {
               "BS giữ chữ khi có gợi ý", "BS keeps chars on suggest",
               L"Khi tắt gợi ý của trình duyệt bằng Backspace, giữ chữ đã gõ. Cảnh báo: có thể sai dấu nếu gõ tiếp ngay sau BS.",
               L"When dismissing a browser suggestion via Backspace, preserve typed chars. Warning: tone placement may be wrong if you keep typing right after BS.",
-                                                                         2210, 0, 1),
+                                                                         2220, 0, 1),
     NK_TYPING("smart-switch",         smartSwitch,
               "Lưu chế độ gõ theo app",   "Smart input switch",
               L"Tự động ghi nhớ chế độ gõ cho từng ứng dụng",
