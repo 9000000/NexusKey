@@ -175,13 +175,17 @@
                 <input type="hidden" id="val-dest-file" value="">
                 <input type="hidden" id="val-ui-mode" value="clipboard">
 
-                <!-- Hotkey row — single record button + shared capture overlay -->
+                <!-- Hotkey row — record button + clear button + shared capture overlay -->
                 <div class="hotkey-section">
                     <span class="hotkey-label" data-i18n="ct.hotkey_label">Phím chuyển mã nhanh:</span>
-                    <button class="btn-record-hotkey" id="btn-record-hotkey">
-                        <span class="hotkey-display" id="hotkey-display" data-i18n="ct.hotkey_unset">— Chưa đặt —</span>
-                        <span class="record-hint" data-i18n="ct.hotkey_hint">Bấm để ghi</span>
-                    </button>
+                    <div class="hotkey-controls">
+                        <button class="btn-record-hotkey" id="btn-record-hotkey">
+                            <span class="hotkey-display" id="hotkey-display" data-i18n="ct.hotkey_unset">— Chưa đặt —</span>
+                            <span class="record-hint" data-i18n="ct.hotkey_hint">Bấm để ghi</span>
+                        </button>
+                        <button class="btn-clear-hotkey" id="btn-clear-hotkey" disabled
+                                data-i18n="ct.hotkey_clear">Xóa</button>
+                    </div>
                     <input type="hidden" id="val-hotkey-vk"   value="0">
                     <input type="hidden" id="val-hotkey-mods" value="0">
                 </div>

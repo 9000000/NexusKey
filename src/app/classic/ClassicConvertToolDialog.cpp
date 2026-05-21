@@ -28,6 +28,7 @@ enum {
     IDC_COMBO_SOURCE,
     IDC_COMBO_DEST,
     IDC_BTN_RECORD_HOTKEY,
+    IDC_BTN_CLEAR_HOTKEY,
     IDC_BTN_CONVERT,
     IDC_BTN_CLOSE_DLG,
     IDC_RADIO_CLIPBOARD,
@@ -229,10 +230,17 @@ void ClassicConvertToolDialog::CreateControls() {
     labelHotkey_ = label(L"Phím tắt:", x, y, cw);
     y += rowH + gap;
 
+    int clearBtnW = Dpi(64);
+    int clearGap  = Dpi(6);
+    int recordW   = cw - clearBtnW - clearGap;
     btnRecordHotkey_ = CreateWindowExW(0, L"BUTTON", L"— Chưa đặt —",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x, y, cw, rowH,
+        x, y, recordW, rowH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_RECORD_HOTKEY), hInstance_, nullptr);
+    btnClearHotkey_ = CreateWindowExW(0, L"BUTTON", L"Xóa",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        x + recordW + clearGap, y, clearBtnW, rowH,
+        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_CLEAR_HOTKEY), hInstance_, nullptr);
     y += rowH + gap * 3;
 
     // Action buttons
@@ -263,15 +271,21 @@ void ClassicConvertToolDialog::PopulateFromConfig() {
     ComboBox_SetCurSel(comboSource_, config_.sourceEncoding);
     ComboBox_SetCurSel(comboDest_, config_.destEncoding);
 
-    {
-        std::wstring label = FormatHotkeyLabel(config_.hotkey.vk,
-                                               config_.hotkey.ToMods());
-        SetWindowTextW(btnRecordHotkey_,
-                       label.empty() ? L"— Chưa đặt —" : label.c_str());
-    }
+    RefreshHotkeyDisplay();
 
     // Sequential only available when autoPaste is on
     EnableWindow(checkSequential_, config_.autoPaste ? TRUE : FALSE);
+}
+
+void ClassicConvertToolDialog::RefreshHotkeyDisplay() {
+    if (!btnRecordHotkey_) return;
+    std::wstring label = FormatHotkeyLabel(config_.hotkey.vk,
+                                           config_.hotkey.ToMods());
+    SetWindowTextW(btnRecordHotkey_,
+                   label.empty() ? L"— Chưa đặt —" : label.c_str());
+    if (btnClearHotkey_) {
+        EnableWindow(btnClearHotkey_, config_.hotkey.HasAny() ? TRUE : FALSE);
+    }
 }
 
 void ClassicConvertToolDialog::ReadToConfig() {
@@ -513,8 +527,13 @@ void ClassicConvertToolDialog::UpdateFileMode() {
     hdwp = DeferWindowPos(hdwp, labelHotkey_,     nullptr, x, y, cw, rowH,
                           SWP_NOZORDER | SWP_NOSIZE);
     y += rowH + gap;
-    hdwp = DeferWindowPos(hdwp, btnRecordHotkey_, nullptr, x, y, cw, rowH,
-                          SWP_NOZORDER | SWP_NOSIZE);
+    int clearBtnW = Dpi(64);
+    int clearGap  = Dpi(6);
+    int recordW   = cw - clearBtnW - clearGap;
+    hdwp = DeferWindowPos(hdwp, btnRecordHotkey_, nullptr, x, y, recordW, rowH,
+                          SWP_NOZORDER);
+    hdwp = DeferWindowPos(hdwp, btnClearHotkey_,  nullptr, x + recordW + clearGap, y,
+                          clearBtnW, rowH, SWP_NOZORDER);
     y += rowH + gap * 3;
 
     int halfW = (cw - Dpi(8)) / 2;
@@ -578,12 +597,16 @@ LRESULT CALLBACK ClassicConvertToolDialog::WndProc(HWND hwnd, UINT msg, WPARAM w
                             self->hInstance_, hwnd, self->theme_, self->dpi_, opts)) {
                         self->config_.hotkey.vk = r->vk;
                         self->config_.hotkey.SetModsFromMask(r->mods);
-                        std::wstring label = FormatHotkeyLabel(
-                            self->config_.hotkey.vk, self->config_.hotkey.ToMods());
-                        SetWindowTextW(self->btnRecordHotkey_,
-                            label.empty() ? L"— Chưa đặt —" : label.c_str());
+                        self->RefreshHotkeyDisplay();
                         self->SaveConfig();
                     }
+                    return 0;
+                }
+                case IDC_BTN_CLEAR_HOTKEY: {
+                    if (!self->config_.hotkey.HasAny()) return 0;
+                    self->config_.hotkey = HotkeyConfig{};
+                    self->RefreshHotkeyDisplay();
+                    self->SaveConfig();
                     return 0;
                 }
             }

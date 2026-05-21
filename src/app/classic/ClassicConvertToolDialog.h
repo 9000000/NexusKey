@@ -26,6 +26,7 @@ private:
     void PopulateFromConfig();
     void ReadToConfig();
     void SaveConfig();
+    void RefreshHotkeyDisplay();
     void DoConvert();
     void BrowseFile(bool isSource);
     void UpdateFileMode();
@@ -67,6 +68,7 @@ private:
     // Hotkey
     HWND labelHotkey_      = nullptr;
     HWND btnRecordHotkey_  = nullptr;  // shows current binding + opens capture modal
+    HWND btnClearHotkey_   = nullptr;  // clears binding (disabled when no hotkey set)
 
     // Source mode (clipboard / file)
     HWND radioClipboard_ = nullptr;

@@ -7,8 +7,28 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace NextKey {
+
+/// Render style for the irregular-VK table.
+///   - Words:         "Left", "Up", "Right", "Down", "Delete" — fits buttons
+///                    and the Classic record-button text.
+///   - CompactArrows: "←", "↑", "→", "↓", "Del" — fits HotkeysDialog chips
+///                    where width is tight.
+/// Other entries (Space, Backspace, Esc, OEM punct…) are identical across
+/// both styles — only the diverging entries above care about the choice.
+enum class VkNameStyle { Words, CompactArrows };
+
+/// Canonical VK → display-name table for irregular keys (Space, Backspace,
+/// Esc, OEM punctuation, etc.). Letters/digits/F-keys/numpad are handled
+/// algorithmically by FormatHotkeyLabel and don't appear here.
+///
+/// Single source of truth, shared between FormatHotkeyLabel (C++) and the
+/// Sciter UI (uploaded via `setVkNames` JS helper).
+[[nodiscard]] const std::vector<std::pair<uint32_t, const wchar_t*>>&
+GetVkDisplayNames(VkNameStyle style = VkNameStyle::Words);
 
 /// Render a hotkey combination as a human-readable wide string. Modifier
 /// order is always Ctrl → Shift → Alt → Win, regardless of `mods` bit order.

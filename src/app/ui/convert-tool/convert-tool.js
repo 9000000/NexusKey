@@ -186,7 +186,7 @@ function initHotkeyCapture() {
         onCommit: function (vk, mods, _doubleTap, label) {
             document.getElementById("val-hotkey-vk").value   = String(vk);
             document.getElementById("val-hotkey-mods").value = String(mods);
-            document.getElementById("hotkey-display").textContent = label;
+            setHotkeyDisplay(label);
             // Fire VALUE_CHANGED so C++ ConvertToolDialog persists immediately.
             document.getElementById("val-hotkey-vk").dispatchEvent(
                 new Event("change", { bubbles: true }));
@@ -195,6 +195,21 @@ function initHotkeyCapture() {
 
     var btn = document.getElementById("btn-record-hotkey");
     if (btn) btn.addEventListener("click", function () { capture.open(); });
+
+    // Clear button — wipes vk + mods, updates label, fires VALUE_CHANGED.
+    // C++ side reads both hidden inputs together and persists the empty
+    // HotkeyConfig (HotkeyManager skips slots with !HasAny()).
+    var clearBtn = document.getElementById("btn-clear-hotkey");
+    if (clearBtn) {
+        clearBtn.addEventListener("click", function () {
+            if (clearBtn.getAttribute("disabled")) return;
+            document.getElementById("val-hotkey-vk").value   = "0";
+            document.getElementById("val-hotkey-mods").value = "0";
+            setHotkeyDisplay("");
+            document.getElementById("val-hotkey-vk").dispatchEvent(
+                new Event("change", { bubbles: true }));
+        });
+    }
 }
 
 // Setter the C++ side calls after loading config to render the existing
@@ -202,6 +217,18 @@ function initHotkeyCapture() {
 function setHotkeyDisplay(label) {
     var el = document.getElementById("hotkey-display");
     if (el) el.textContent = label || "— Chưa đặt —";
+    // Clear button is meaningful only when a binding exists.
+    var clearBtn = document.getElementById("btn-clear-hotkey");
+    if (clearBtn) {
+        if (label && label.length) clearBtn.removeAttribute("disabled");
+        else                       clearBtn.setAttribute("disabled", "disabled");
+    }
+}
+
+// Uploaded by C++ at DOCUMENT_COMPLETE so the capture overlay can render
+// "Space" / "PgUp" etc. instead of the bare-decimal fallback "VK_32".
+function setVkNames(pairs) {
+    NextKeyHotkeyCapture.setVkNames(pairs);
 }
 
 // Trigger action via hidden input (for C++ to detect)

@@ -78,6 +78,66 @@ TEST(HotkeyLabel, SpaceNamed) {
     EXPECT_EQ(FormatHotkeyLabel(kVkSpace, kModCtrl), L"Ctrl+Space");
 }
 
+// ───────────────────────────── Numpad digits ─────────────────────────────
+// Numpad keys (VK 0x60..0x69) render as "Num0".."Num9" via the algorithmic
+// branch in VkToKeyName. Pre-2026-05-21 these fell through to the hex
+// fallback ("VK 0x0060"); this test pins the friendly rendering so a
+// careless refactor of the table doesn't silently regress it.
+
+TEST(HotkeyLabel, NumpadZero) {
+    EXPECT_EQ(FormatHotkeyLabel(0x60, 0), L"Num0");
+}
+
+TEST(HotkeyLabel, NumpadNineWithCtrl) {
+    EXPECT_EQ(FormatHotkeyLabel(0x69, kModCtrl), L"Ctrl+Num9");
+}
+
+TEST(HotkeyLabel, NumpadFiveAltShift) {
+    EXPECT_EQ(FormatHotkeyLabel(0x65, kModShift | kModAlt), L"Shift+Alt+Num5");
+}
+
+// ───────────────────────────── Style variants ────────────────────────────
+// GetVkDisplayNames(VkNameStyle) exposes the canonical irregular-VK table
+// for UI layers that need different rendering — words on wide buttons vs
+// compact arrows in tight HotkeysDialog chips.
+
+TEST(HotkeyLabel, StyleWordsHasArrowsAsWords) {
+    bool found = false;
+    for (const auto& [vk, name] : GetVkDisplayNames(VkNameStyle::Words)) {
+        if (vk == 0x25) { EXPECT_STREQ(name, L"Left");  found = true; break; }
+    }
+    EXPECT_TRUE(found);
+}
+
+TEST(HotkeyLabel, StyleCompactArrowsHasArrowsAsGlyphs) {
+    bool found = false;
+    for (const auto& [vk, name] : GetVkDisplayNames(VkNameStyle::CompactArrows)) {
+        if (vk == 0x25) { EXPECT_STREQ(name, L"←"); found = true; break; }
+    }
+    EXPECT_TRUE(found);
+}
+
+TEST(HotkeyLabel, StyleVariantsAgreeOnSharedEntries) {
+    // Space, Esc, Backspace etc. must be identical across styles.
+    const auto& words   = GetVkDisplayNames(VkNameStyle::Words);
+    const auto& arrows  = GetVkDisplayNames(VkNameStyle::CompactArrows);
+    ASSERT_EQ(words.size(), arrows.size());
+    for (const auto& [vk, name] : words) {
+        if (vk == 0x25 || vk == 0x26 || vk == 0x27 || vk == 0x28 || vk == 0x2E) {
+            continue;  // arrows + Delete intentionally diverge
+        }
+        bool foundMatch = false;
+        for (const auto& [vk2, name2] : arrows) {
+            if (vk == vk2) {
+                EXPECT_STREQ(name, name2) << "vk=0x" << std::hex << vk;
+                foundMatch = true;
+                break;
+            }
+        }
+        EXPECT_TRUE(foundMatch) << "vk=0x" << std::hex << vk << " missing from arrows table";
+    }
+}
+
 // ───────────────────────────── Modifier-as-key labels ───────────────────
 // When vk IS a modifier (e.g., Ctrl+Shift chord that captured the Shift
 // release as the trigger key), the modifier needs its own friendly name —

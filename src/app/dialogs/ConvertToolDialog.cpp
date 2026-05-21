@@ -29,6 +29,21 @@ ConvertToolDialog::ConvertToolDialog(HWND parent)
 bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
     // Document fully loaded — populate UI from saved config
     if (params.cmd == DOCUMENT_COMPLETE) {
+        // Upload canonical VK → name table to JS before any label rendering
+        // so the capture preview shows "Space" instead of falling back to
+        // "VK_32" (the bare-decimal-fallback in shared/hotkey-capture.js).
+        {
+            sciter::value pairs;
+            int i = 0;
+            for (const auto& [vk, name] : GetVkDisplayNames()) {
+                sciter::value pair;
+                pair.set_item(0, sciter::value(static_cast<int>(vk)));
+                pair.set_item(1, sciter::value(name));
+                pairs.set_item(i++, pair);
+            }
+            call_function("setVkNames", pairs);
+        }
+
         // Set toggle states
         setToggleUI("#toggle-all-caps", "#val-toggle-all-caps", config_.allCaps);
         setToggleUI("#toggle-non-caps", "#val-toggle-non-caps", config_.allLower);

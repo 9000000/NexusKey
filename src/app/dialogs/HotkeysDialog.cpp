@@ -4,10 +4,10 @@
 #include "HotkeysDialog.h"
 
 #include <string>
-#include <unordered_map>
 
 #include "core/config/ConfigManager.h"
 #include "core/Debug.h"
+#include "core/hotkey/HotkeyLabel.h"
 #include "core/WinStrings.h"
 #include "helpers/AppHelpers.h"
 #include "sciter-x-dom.hpp"
@@ -38,23 +38,6 @@ constexpr const wchar_t* kIntentToggle = L"toggle-enabled";
     return false;
 }
 
-/// Canonical VK → display-name table. Source of truth — uploaded to JS via
-/// HotkeysDialog::sendVkNames() so hotkeys.js doesn't have to duplicate.
-/// Pattern-based names (letters, digits, F-keys, numpad) handled algorithmically
-/// in both layers; this table covers the irregular entries only.
-const std::unordered_map<uint32_t, const wchar_t*> kVkNames = {
-    {0x08, L"Backspace"}, {0x09, L"Tab"},   {0x0D, L"Enter"},
-    {0x10, L"Shift"},     {0x11, L"Ctrl"},  {0x12, L"Alt"},
-    {0x13, L"Pause"},     {0x14, L"Caps"},  {0x1B, L"Esc"},
-    {0x20, L"Space"},
-    {0x21, L"PgUp"},      {0x22, L"PgDn"},  {0x23, L"End"},  {0x24, L"Home"},
-    {0x25, L"←"},         {0x26, L"↑"},     {0x27, L"→"},    {0x28, L"↓"},
-    {0x2C, L"PrtSc"},     {0x2D, L"Insert"}, {0x2E, L"Del"},
-    {0x5B, L"Win"},       {0x5C, L"Win"},   {0x5D, L"Menu"},
-    {0xBA, L";"}, {0xBB, L"="}, {0xBC, L","}, {0xBD, L"-"}, {0xBE, L"."}, {0xBF, L"/"},
-    {0xC0, L"`"}, {0xDB, L"["}, {0xDC, L"\\"}, {0xDD, L"]"}, {0xDE, L"'"},
-};
-
 /// Render a Trigger as a localized chip label. Examples:
 ///   {vk=0x1B}                     → "Esc"
 ///   {vk=0x11, mods=0}             → "Ctrl (giữ-thả)" (implicit modifier-alone)
@@ -78,16 +61,17 @@ const std::unordered_map<uint32_t, const wchar_t*> kVkNames = {
     }
 
     std::wstring keyName;
-    if (auto it = kVkNames.find(t.vk); it != kVkNames.end()) {
-        keyName = it->second;
-    } else if (t.vk >= 0x60 && t.vk <= 0x69) {
+    if (t.vk >= 0x60 && t.vk <= 0x69) {
         keyName = L"Num" + std::to_wstring(t.vk - 0x60);                  // VK_NUMPAD0..9
     } else if (t.vk >= 0x70 && t.vk <= 0x87) {
         keyName = L"F" + std::to_wstring(t.vk - 0x6F);                    // F1..F24
     } else if ((t.vk >= 'A' && t.vk <= 'Z') || (t.vk >= '0' && t.vk <= '9')) {
         keyName.push_back(static_cast<wchar_t>(t.vk));
     } else {
-        keyName = L"VK_" + std::to_wstring(t.vk);
+        for (const auto& [vk, name] : GetVkDisplayNames(VkNameStyle::CompactArrows)) {
+            if (vk == t.vk) { keyName = name; break; }
+        }
+        if (keyName.empty()) keyName = L"VK_" + std::to_wstring(t.vk);
     }
 
     if (t.doubleTap) {
@@ -115,7 +99,7 @@ HotkeysDialog::HotkeysDialog(HWND parent)
 void HotkeysDialog::sendVkNames() {
     sciter::value pairs;
     int i = 0;
-    for (const auto& [vk, name] : kVkNames) {
+    for (const auto& [vk, name] : GetVkDisplayNames(VkNameStyle::CompactArrows)) {
         sciter::value pair;
         pair.set_item(0, sciter::value(static_cast<int>(vk)));
         pair.set_item(1, sciter::value(name));

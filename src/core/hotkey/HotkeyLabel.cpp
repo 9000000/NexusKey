@@ -21,6 +21,44 @@ static_assert(kModWin   == 0x08u, "HotkeyConfig::ToMods Win bit drift");
 
 namespace {
 
+// Irregular VK → name table. Letters/digits/F-keys/numpad handled by the
+// algorithmic branches in VkToKeyName, not listed here.
+//
+// Two style variants live next to each other so a new VK entry can't be
+// added to one and forgotten in the other. Only 5 entries diverge — arrows
+// (0x25-0x28) and Delete (0x2E) — everything else mirrors verbatim.
+const std::vector<std::pair<uint32_t, const wchar_t*>>& WordsTable() {
+    static const std::vector<std::pair<uint32_t, const wchar_t*>> kPairs = {
+        {0x08, L"Backspace"}, {0x09, L"Tab"},   {0x0D, L"Enter"},
+        {0x10, L"Shift"},     {0x11, L"Ctrl"},  {0x12, L"Alt"},
+        {0x13, L"Pause"},     {0x14, L"Caps"},  {0x1B, L"Esc"},
+        {0x20, L"Space"},
+        {0x21, L"PgUp"},      {0x22, L"PgDn"},  {0x23, L"End"},    {0x24, L"Home"},
+        {0x25, L"Left"},      {0x26, L"Up"},    {0x27, L"Right"},  {0x28, L"Down"},
+        {0x2C, L"PrtSc"},     {0x2D, L"Insert"}, {0x2E, L"Delete"},
+        {0x5B, L"Win"},       {0x5C, L"Win"},   {0x5D, L"Menu"},
+        {0xBA, L";"}, {0xBB, L"="}, {0xBC, L","}, {0xBD, L"-"}, {0xBE, L"."}, {0xBF, L"/"},
+        {0xC0, L"`"}, {0xDB, L"["}, {0xDC, L"\\"}, {0xDD, L"]"}, {0xDE, L"'"},
+    };
+    return kPairs;
+}
+
+const std::vector<std::pair<uint32_t, const wchar_t*>>& ArrowsTable() {
+    static const std::vector<std::pair<uint32_t, const wchar_t*>> kPairs = {
+        {0x08, L"Backspace"}, {0x09, L"Tab"},   {0x0D, L"Enter"},
+        {0x10, L"Shift"},     {0x11, L"Ctrl"},  {0x12, L"Alt"},
+        {0x13, L"Pause"},     {0x14, L"Caps"},  {0x1B, L"Esc"},
+        {0x20, L"Space"},
+        {0x21, L"PgUp"},      {0x22, L"PgDn"},  {0x23, L"End"},    {0x24, L"Home"},
+        {0x25, L"←"},         {0x26, L"↑"},     {0x27, L"→"},      {0x28, L"↓"},
+        {0x2C, L"PrtSc"},     {0x2D, L"Insert"}, {0x2E, L"Del"},
+        {0x5B, L"Win"},       {0x5C, L"Win"},   {0x5D, L"Menu"},
+        {0xBA, L";"}, {0xBB, L"="}, {0xBC, L","}, {0xBD, L"-"}, {0xBE, L"."}, {0xBF, L"/"},
+        {0xC0, L"`"}, {0xDB, L"["}, {0xDC, L"\\"}, {0xDD, L"]"}, {0xDE, L"'"},
+    };
+    return kPairs;
+}
+
 [[nodiscard]] std::wstring VkToKeyName(uint32_t vk) {
     if (vk == 0) return L"";
 
@@ -30,35 +68,16 @@ namespace {
     if (vk >= 0x41 && vk <= 0x5A) {                  // 'A'..'Z'
         return std::wstring(1, static_cast<wchar_t>(vk));
     }
+    if (vk >= 0x60 && vk <= 0x69) {                  // Numpad0..9
+        return L"Num" + std::to_wstring(vk - 0x60);
+    }
     if (vk >= 0x70 && vk <= 0x87) {                  // F1..F24
         std::wstring s = L"F";
         s += std::to_wstring(vk - 0x6F);
         return s;
     }
-    switch (vk) {
-    // Modifier keys — named so chord labels render as "Ctrl+Shift"
-    // (modifier-combo capture) instead of the hex fallback "VK 0x0010".
-    case 0x10: return L"Shift";
-    case 0x11: return L"Ctrl";
-    case 0x12: return L"Alt";
-    case 0x5B: case 0x5C: return L"Win";
-    // Common navigation / control keys
-    case 0x08: return L"Backspace";
-    case 0x09: return L"Tab";
-    case 0x0D: return L"Enter";
-    case 0x1B: return L"Esc";
-    case 0x20: return L"Space";
-    case 0x25: return L"Left";
-    case 0x26: return L"Up";
-    case 0x27: return L"Right";
-    case 0x28: return L"Down";
-    case 0x2D: return L"Insert";
-    case 0x2E: return L"Delete";
-    case 0x24: return L"Home";
-    case 0x23: return L"End";
-    case 0x21: return L"PgUp";
-    case 0x22: return L"PgDn";
-    default: break;
+    for (const auto& [k, name] : WordsTable()) {
+        if (k == vk) return name;
     }
 
     // Fallback so users see *something* instead of a blank label.
@@ -77,6 +96,11 @@ void AppendWithPlus(std::wstring& out, std::wstring_view token) {
 }
 
 }  // namespace
+
+const std::vector<std::pair<uint32_t, const wchar_t*>>& GetVkDisplayNames(
+        VkNameStyle style) {
+    return (style == VkNameStyle::CompactArrows) ? ArrowsTable() : WordsTable();
+}
 
 std::wstring FormatHotkeyLabel(uint32_t vk, uint32_t mods) {
     std::wstring out;
