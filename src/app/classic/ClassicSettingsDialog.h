@@ -62,6 +62,11 @@ private:
     void OnCommand(WPARAM wParam, LPARAM lParam);
     void OnActionButton(uint16_t controlId);
     void OnSystemToggle(const wchar_t* id, bool value);
+    /// Side-effect handler for the TSF-apps checkbox.
+    /// Registers/unregisters the TSF DLL to match the requested state.
+    /// Returns true if the DLL state now matches; false means the caller
+    /// must revert the checkbox + config (user denied UAC, regsvr32 failed, etc).
+    [[nodiscard]] bool OnTsfAppsToggle(bool wantsEnabled);
     void OnPickIconColors();
     void UpdateSpellCheckChildren();
     void RefreshLabels();
@@ -86,7 +91,7 @@ private:
     // -- Layout constants (pixels at 96 DPI, scaled by Dpi()) --
     // All values are multiples of 4 for consistent visual rhythm
     static constexpr int kAdvancedWidth  = 490;
-    static constexpr int kAdvancedHeight = 400;
+    static constexpr int kAdvancedHeight = 440;
     static constexpr int kPadding       = 16;
     static constexpr int kControlHeight = 24;
     static constexpr int kComboHeight   = 24;

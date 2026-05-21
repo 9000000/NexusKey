@@ -67,6 +67,8 @@ set(NEXTKEY_CORE_SOURCES
     src/core/MacroCase.cpp
     src/core/hotkey/HotkeyRegistry.h
     src/core/hotkey/HotkeyRegistry.cpp
+    src/core/hotkey/HotkeyLabel.h
+    src/core/hotkey/HotkeyLabel.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
 )
@@ -312,10 +314,14 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/classic/ClassicSettingsDialog.cpp
         src/app/classic/ClassicExcludedAppsDialog.h
         src/app/classic/ClassicExcludedAppsDialog.cpp
+        src/app/classic/ClassicTsfAppsDialog.h
+        src/app/classic/ClassicTsfAppsDialog.cpp
         src/app/classic/ClassicMacroTableDialog.h
         src/app/classic/ClassicMacroTableDialog.cpp
         src/app/classic/ClassicHotkeysDialog.h
         src/app/classic/ClassicHotkeysDialog.cpp
+        src/app/classic/ClassicHotkeyCapture.h
+        src/app/classic/ClassicHotkeyCapture.cpp
         src/app/classic/ClassicAppOverridesDialog.h
         src/app/classic/ClassicAppOverridesDialog.cpp
         src/app/classic/ClassicConvertToolDialog.h
@@ -499,6 +505,8 @@ set(NEXTKEY_TEST_SOURCES
     tests/ConfigSnapshotTest.cpp
     tests/ConfigReloadBurstTest.cpp
     tests/InjectorSwitchTest.cpp
+    tests/HotkeyLabelTest.cpp
+    tests/HotkeyConfigMigrationTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp

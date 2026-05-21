@@ -3,6 +3,7 @@
 
 #include "ConfigManager.h"
 #include "core/Debug.h"
+#include "core/hotkey/HotkeyLabel.h"
 
 #define TOML_HEADER_ONLY 1
 #include "toml.hpp"
@@ -166,6 +167,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.escRestoreRawEnabled = (*features)["esc_restore_raw"].value_or(false);
             config.autoCapsMacro = (*features)["auto_caps_macro"].value_or(false);
             config.allowEnglishBypass = (*features)["allow_english_bypass"].value_or(false);
+            config.suggestKeepChars = (*features)["suggest_keep_chars"].value_or(false);
             config.debugLogEnabled = (*features)["debug_log"].value_or(false);
             config.macroTriggerSpace = (*features)["macro_trigger_space"].value_or(true);
             config.macroTriggerEnter = (*features)["macro_trigger_enter"].value_or(true);
@@ -256,6 +258,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("esc_restore_raw", config.escRestoreRawEnabled);
         features.insert_or_assign("auto_caps_macro", config.autoCapsMacro);
         features.insert_or_assign("allow_english_bypass", config.allowEnglishBypass);
+        features.insert_or_assign("suggest_keep_chars", config.suggestKeepChars);
         features.insert_or_assign("debug_log", config.debugLogEnabled);
         features.insert_or_assign("macro_trigger_space", config.macroTriggerSpace);
         features.insert_or_assign("macro_trigger_enter", config.macroTriggerEnter);
@@ -408,17 +411,21 @@ std::optional<HotkeyConfig> ConfigManager::LoadHotkeyConfig(const std::wstring& 
         HotkeyConfig config;
 
         if (auto hotkey = table["hotkey"].as_table()) {
-            config.ctrl = (*hotkey)["ctrl"].value_or(true);
+            config.ctrl  = (*hotkey)["ctrl"].value_or(true);
             config.shift = (*hotkey)["shift"].value_or(true);
-            config.alt = (*hotkey)["alt"].value_or(false);
-            config.win = (*hotkey)["win"].value_or(false);
+            config.alt   = (*hotkey)["alt"].value_or(false);
+            config.win   = (*hotkey)["win"].value_or(false);
 
-            auto keyStr = (*hotkey)["key"].value_or<std::string>("");
-            if (!keyStr.empty()) {
-                auto wideKey = Utf8ToWide(keyStr);
-                config.key = wideKey.empty() ? 0 : towupper(wideKey[0]);
+            if (auto vkNode = (*hotkey)["vk"]; vkNode.is_integer()) {
+                config.vk = static_cast<uint32_t>(vkNode.value_or<int64_t>(0));
             } else {
-                config.key = 0;
+                // Legacy schema (pre-2026-05): `key = "Z"`. See LegacyKeyCharToVk
+                // docs — A-Z/0-9 migrate cleanly, anything else drops to 0 and
+                // user rebinds via the new capture overlay.
+                auto keyStr = (*hotkey)["key"].value_or<std::string>("");
+                if (!keyStr.empty()) {
+                    config.vk = LegacyKeyCharToVk(Utf8ToWide(keyStr));
+                }
             }
         }
 
@@ -435,17 +442,13 @@ bool ConfigManager::SaveHotkeyConfig(const std::wstring& path, const HotkeyConfi
         auto tbl = LoadExistingToml(utf8Path);
 
         toml::table hotkey;
-        hotkey.insert_or_assign("ctrl", config.ctrl);
+        hotkey.insert_or_assign("ctrl",  config.ctrl);
         hotkey.insert_or_assign("shift", config.shift);
-        hotkey.insert_or_assign("alt", config.alt);
-        hotkey.insert_or_assign("win", config.win);
-
-        if (config.key != 0) {
-            std::wstring wkey(1, config.key);
-            hotkey.insert_or_assign("key", WideToUtf8(wkey));
-        } else {
-            hotkey.insert_or_assign("key", "");
-        }
+        hotkey.insert_or_assign("alt",   config.alt);
+        hotkey.insert_or_assign("win",   config.win);
+        // New schema: write `vk` as integer. Legacy `key = "..."` is dropped
+        // when we replace the sub-table below.
+        hotkey.insert_or_assign("vk", static_cast<int64_t>(config.vk));
 
         tbl.insert_or_assign("hotkey", std::move(hotkey));
 
@@ -461,7 +464,11 @@ HotkeyConfig ConfigManager::LoadHotkeyConfigOrDefault() {
     if (config) {
         return *config;
     }
-    return HotkeyConfig{};  // Default: Ctrl+Shift
+    // No config file → empty binding (all flags false, vk=0). The
+    // "Ctrl+Shift default" only kicks in when the file exists but the
+    // ctrl/shift fields are missing inside [hotkey] (see value_or(true)
+    // calls above). User must configure on fresh install.
+    return HotkeyConfig{};
 }
 
 // ─────────────────────────── Unified HotkeyRegistry ──────────────────────
@@ -934,15 +941,22 @@ std::optional<ConvertConfig> ConfigManager::LoadConvertConfig(const std::wstring
 
             // Nested [convert.hotkey] table
             if (auto hk = (*convert)["hotkey"].as_table()) {
-                config.hotkey.ctrl = (*hk)["ctrl"].value_or(false);
+                config.hotkey.ctrl  = (*hk)["ctrl"].value_or(false);
                 config.hotkey.shift = (*hk)["shift"].value_or(false);
-                config.hotkey.alt = (*hk)["alt"].value_or(false);
-                config.hotkey.win = (*hk)["win"].value_or(false);
+                config.hotkey.alt   = (*hk)["alt"].value_or(false);
+                config.hotkey.win   = (*hk)["win"].value_or(false);
 
-                auto keyStr = (*hk)["key"].value_or<std::string>("");
-                if (!keyStr.empty()) {
-                    auto wideKey = Utf8ToWide(keyStr);
-                    config.hotkey.key = wideKey.empty() ? 0 : towupper(wideKey[0]);
+                // New schema: `vk = <integer VK_*>`. Preferred.
+                if (auto vkNode = (*hk)["vk"]; vkNode.is_integer()) {
+                    config.hotkey.vk = static_cast<uint32_t>(vkNode.value_or<int64_t>(0));
+                } else {
+                    // Legacy schema (pre-2026-05): `key = "Z"` (single char).
+                    // Clean migration — A-Z/0-9 only; OEM punctuation drops to
+                    // vk=0 and user must rebind via new capture overlay.
+                    auto keyStr = (*hk)["key"].value_or<std::string>("");
+                    if (!keyStr.empty()) {
+                        config.hotkey.vk = LegacyKeyCharToVk(Utf8ToWide(keyStr));
+                    }
                 }
             }
         }
@@ -978,12 +992,10 @@ bool ConfigManager::SaveConvertConfig(const std::wstring& path, const ConvertCon
         hotkey.insert_or_assign("alt", config.hotkey.alt);
         hotkey.insert_or_assign("win", config.hotkey.win);
 
-        if (config.hotkey.key != 0) {
-            std::wstring wkey(1, config.hotkey.key);
-            hotkey.insert_or_assign("key", WideToUtf8(wkey));
-        } else {
-            hotkey.insert_or_assign("key", "");
-        }
+        // New schema: write `vk` as integer. The legacy `key = "..."` field
+        // (pre-2026-05 schema) is dropped automatically because we replace the
+        // entire `hotkey` sub-table below — no need to explicitly erase it.
+        hotkey.insert_or_assign("vk", static_cast<int64_t>(config.hotkey.vk));
 
         convert.insert_or_assign("hotkey", std::move(hotkey));
         tbl.insert_or_assign("convert", std::move(convert));

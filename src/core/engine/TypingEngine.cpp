@@ -499,6 +499,19 @@ bool TypingEngine::WouldModifierRecoverOrEscape(TypingAction action, wchar_t key
         } else if (IsVowelChar(keyChar) && !states_.empty()) {
             const CharState& last = states_.back();
             if (last.IsVowel() && last.base == lower && last.mod == Modifier::Circumflex) canEscape = true;
+        } else if ((action == TypingAction::HornInsertO || action == TypingAction::HornInsertU) &&
+                   !states_.empty() && rawInput_.size() >= 2 &&
+                   towlower(rawInput_[rawInput_.size() - 2]) == lower) {
+            // Bracket escape recognition: `[[`/`]]` (or any UserDefined-mapped
+            // duplicate trigger) must reach HandleHornInsert to undo the
+            // just-inserted ơ/ư. Without this, spell-check-disabled (set after
+            // first `]` makes the resulting "aư" invalid) skips ProcessModifier
+            // and the second `]` lands in the literal-char path — which calls
+            // RelocateToneToTarget and hijacks the hỏi tone from `a` onto ư
+            // (bug 2026-05-21: tar]] → taử] instead of tả]).
+            const wchar_t baseVowel = (action == TypingAction::HornInsertO) ? L'o' : L'u';
+            const CharState& last = states_.back();
+            if (last.base == baseVowel && last.mod == Modifier::Horn) canEscape = true;
         }
     } else { // VNI
         Modifier escMod = ActionToVniModifier(action);
@@ -678,7 +691,7 @@ bool TypingEngine::HandleUndoAllMarks(TypingAction /*action*/, wchar_t /*keyChar
     return false;
 }
 
-bool TypingEngine::HandleInsertChar(TypingAction action, wchar_t /*keyChar*/) {
+bool TypingEngine::HandleInsertChar(TypingAction action, wchar_t keyChar) {
     wchar_t base = 0;
     Modifier mod = Modifier::None;
     bool upper = false;
@@ -699,6 +712,31 @@ bool TypingEngine::HandleInsertChar(TypingAction action, wchar_t /*keyChar*/) {
         case TypingAction::InsertUHorn:            base = L'u'; mod = Modifier::Horn; break;
         case TypingAction::InsertUHornUpper:       base = L'u'; mod = Modifier::Horn; upper = true; break;
         default: return false;
+    }
+
+    // Escape: doubled action key (e.g. `[[` mapped to InsertOHorn) undoes the
+    // just-inserted glyph and emits the key literal — mirrors the Telex
+    // bracket escape in HandleHornInsert so UserDefined "Chữ ơ/ư/â/ê/ô/ă/đ"
+    // bindings respect the same press-twice-to-revert UX.
+    if (!states_.empty() && rawInput_.size() >= 2 &&
+        towlower(rawInput_[rawInput_.size() - 2]) == towlower(keyChar)) {
+        CharState& last = states_.back();
+        if (last.base == base && last.mod == mod) {
+            size_t consumedIdx = last.rawIdx;
+            states_.pop_back();
+            EraseConsumedRaw(consumedIdx);
+            ProcessChar(keyChar);
+            EscapeKind escapeKind = EscapeKind::Modifier;
+            switch (mod) {
+                case Modifier::Horn:       escapeKind = EscapeKind::Horn; break;
+                case Modifier::Circumflex: escapeKind = EscapeKind::Circumflex; break;
+                case Modifier::Breve:      escapeKind = EscapeKind::Breve; break;
+                case Modifier::Stroke:     escapeKind = EscapeKind::Stroke; break;
+                default: break;
+            }
+            escape_.escape(escapeKind);
+            return true;
+        }
     }
 
     CharState s;
@@ -729,13 +767,16 @@ bool TypingEngine::HandleHornInsert(TypingAction action, wchar_t c) {
     // SimpleTelex omits bracket keys — let `[`/`]` fall through to literal.
     if (config_.inputMethod == InputMethod::SimpleTelex) return false;
 
-    const wchar_t bracketChar = (action == TypingAction::HornInsertO) ? L'[' : L']';
-    const wchar_t baseVowel   = (action == TypingAction::HornInsertO) ? L'o' : L'u';
+    const wchar_t baseVowel = (action == TypingAction::HornInsertO) ? L'o' : L'u';
 
-    // Escape: doubled bracket (`[[` or `]]`) undoes the just-inserted ơ/ư
-    // and produces the bracket literal.
+    // Escape: doubled action key (e.g. `[[`, `]]`, or `qq` if user remapped
+    // HornInsertO in UserDefined) undoes the just-inserted ơ/ư and produces
+    // the key literal. Comparing rawInput[size-2] to `c` (instead of a
+    // hardcoded `[`/`]`) lets the escape work for any key bound to the
+    // action in UserDefined mode — Telex still hits via the same path
+    // because ClassifyKey only routes `[`/`]` to HornInsertO/U.
     if (!states_.empty() && rawInput_.size() >= 2 &&
-        rawInput_[rawInput_.size() - 2] == bracketChar) {
+        towlower(rawInput_[rawInput_.size() - 2]) == towlower(c)) {
         CharState& last = states_.back();
         if (last.base == baseVowel && last.mod == Modifier::Horn) {
             size_t consumedIdx = last.rawIdx;

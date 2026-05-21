@@ -129,6 +129,12 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
     autoCapsMacro_.store(config.autoCapsMacro, std::memory_order_release);
+    // Push the suggestKeepChars flag to the live injector so ShouldEmitBait
+    // sees the latest user choice without needing a focus change to swap
+    // injectors. Focus-change paths re-apply this from the config snapshot.
+    if (auto inj = injector_.load(std::memory_order_acquire); inj) {
+        inj->SetSuggestKeepChars(config.suggestKeepChars);
+    }
     // Runtime file-logger gate (Settings → System → "Bật debug log").
     ::NextKey::Logger::SetEnabled(config.debugLogEnabled);
 }
@@ -1230,12 +1236,15 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
         // like Chrome) cancels the replay and produces `việts` instead of `viết`.
         // See docs/baselines/perf-baseline-d12-chrome-cross-app.md and the
         // S2D0_ChromeBug53_* engine-isolation tests.
-        // Exemption rule shared by the synth-guard and catch-all cancel branches:
-        // tone modifiers (Telex s/f/r/x/j, VNI 1-5) and ESC restore-raw all
-        // semantically "modify the previous word" — they must not demote / cancel
-        // commit-undo state. Extracted to core/CommitUndoExemption.h for Linux
-        // GTest coverage (HookEngine.cpp is Win32-only). See design 2026-05-17.
-        const auto methodForTone = currentMethod_.load(std::memory_order_acquire);
+        // Exemption rule shared by the synth-guard and catch-all cancel
+        // branches: modifier letters (Telex/SimpleTelex/Combined
+        // s/f/r/x/j/z/a/e/o/w/d), VNI digits 0-9, UserDefined keys whose
+        // customKeyMap action passes IsCommitUndoExemptAction, and ESC
+        // restore-raw all semantically "modify the previous word" — they
+        // must not demote / cancel commit-undo state. Extracted to
+        // core/CommitUndoExemption.h for Linux GTest coverage (HookEngine.cpp
+        // is Win32-only). See design 2026-05-17 + 2026-05-21b broadening.
+        const auto methodForExempt = currentMethod_.load(std::memory_order_acquire);
         const bool shiftHeld = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         // Source of truth: registry snapshot — Esc only exempts when bound to
         // CancelComposition AND the intent is enabled. Removed in v3 cleanup:
@@ -1247,8 +1256,24 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
             hotkeysForExempt->Matches(Intent::CancelComposition, VK_ESCAPE,
                                        /*mods=*/0, /*isDoubleTap=*/false,
                                        /*keyUp=*/false);
+        // UserDefined modifier lookup: customKeyMap can bind any key to
+        // a tone/modifier action, so the hardcoded letter/digit lists
+        // don't apply. Resolve vk → ASCII via VkToMacroChar (same path
+        // step 6d uses) and ask IsCommitUndoExemptAction whether the
+        // mapped action belongs to the "modifies previous word" class.
+        bool isCustomModifier = false;
+        if (methodForExempt == InputMethod::UserDefined) {
+            const wchar_t ch = VkToMacroChar(vkCode);
+            if (ch && ch < 128) {
+                const TypingAction action =
+                    config_.load(std::memory_order_acquire)
+                        ->customKeyMap[static_cast<uint8_t>(ch)];
+                isCustomModifier = IsCommitUndoExemptAction(action);
+            }
+        }
         const bool isCommitUndoExempt = IsCommitUndoExemptKey(
-            vkCode, methodForTone, shiftHeld, escIsCancelTrigger);
+            vkCode, methodForExempt, shiftHeld, escIsCancelTrigger,
+            isCustomModifier);
         // Sprint 2 D5: settle window is now per-host. RichEdit (0 ms) lets
         // commit-undo replay immediately; Win32 (30 ms) tightens the gate
         // ~3× vs the legacy 100 ms hardcode; Electron/Console (100 ms) keeps
@@ -1264,10 +1289,27 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
             CancelCommitUndo();
             // Fall through — ProcessKeyDown step 10 re-injects BS if needed; alpha → step 6 HandleAlphaKey
         } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            // Alpha key → replay saved chars, then process the new key.
+            // Discriminate alpha intent at Primed: tone modifier (Telex s/f/r/x/j,
+            // per IsCommitUndoExemptKey — same "modifies previous word" semantic
+            // class used by synth-guard and catch-all branches) → REPLAY. Other
+            // alphas → user typing new word after BS-chain navigated past the
+            // committed word; DROP stack-top to prevent a later BS-into-empty
+            // from re-priming Ready for it, and fall through so the alpha enters
+            // fresh composition. Without this, catch-all replay concatenated an
+            // older stack entry into the new word (engine/screen divergence).
+            if (!isCommitUndoExempt) {
+                HOOK_LOG(L"  commit-undo: drop stack-top '%s' for non-tone alpha '%c' → fresh composition",
+                         commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
+                         static_cast<char>(vkCode));
+                if (!commitStack_.empty()) {
+                    commitStack_.pop_back();
+                }
+                commitUndoState_ = CommitUndoState::Idle;
+                return KeyOutcome::Fallthrough;
+            }
             // MUST return HandleAlphaKey's value: if it triggers passthrough (return false),
             // the original key must reach the app — ignoring it would swallow the keystroke.
-            HOOK_LOG(L"  commit-undo: replaying + alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
+            HOOK_LOG(L"  commit-undo: replaying + tone-alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
                      static_cast<char>(vkCode),
                      commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
                      commitStack_.size(),
@@ -3359,9 +3401,29 @@ FocusClassification HookEngine::ClassifyFocusedWindow(HWND triggerHwnd) noexcept
         }
     }
 
-    // Re-install hooks: keep VKey at the top of the chain for Chromium /
-    // Electron / WebView2 / Java hosts. Post is harmless from any thread —
-    // just kicks the hook pump.
+    // Re-install hooks to guarantee VKey remains at the top of the hook chain.
+    // Two distinct triggers, two distinct mechanisms:
+    //   1. Chromium-based (Electron, WebView2, Browsers): they install their own
+    //      WH_KEYBOARD_LL hooks that aggressively drop synthetic injected events
+    //      (like our Backspaces) if they sit in front of us.
+    //   2. Java apps (jp2launcher / javaw / java): commonly embed jnativehook for
+    //      global hotkeys. JVM callback bridge + GC pauses regularly exceed
+    //      Windows' 300ms LowLevelHooksTimeout → Windows drops the hook chain.
+    //      Keeping VKey on top gives us first crack at each event. For
+    //      Vietnamese-eaten keys VKey returns 1 without CallNextHookEx, so a
+    //      downstream stall is irrelevant. For pass-through keys (English
+    //      mode, modifier keys) we still call CallNextHookEx, so a slow
+    //      downstream hook still blocks our callback — partial protection
+    //      only; HookSelfHealer catches the residual case.
+    // Doing this conditionally avoids unnecessary unhook/rehook overhead for
+    // normal apps. We must do this even if the PID hasn't changed — WebView2
+    // creates child windows that trigger focus events AFTER initial hook setup,
+    // and jnativehook may re-arm itself during a JVM session.
+    //
+    // Post-Phase-2b note: the atomic publishes (skipEmptyChar_, useClipboardPaste_),
+    // IOutputInjector build, and AppDetect log all moved to
+    // ApplyFocusOnHookThread (Rule 11.3 — hook-thread-only writes). This
+    // re-install Post is harmless from any thread — just kicks the hook pump.
     if (hookThreadId_ && (cls.localElectronApp || cls.isBrowser || cls.isJavaApp)) {
         const WPARAM reason = cls.isJavaApp ? REINSTALL_REASON_JAVA : REINSTALL_REASON_CHROMIUM;
         PostThreadMessageW(hookThreadId_, WM_APP_REINSTALL_HOOKS, reason, 0);
@@ -4042,7 +4104,15 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         c.isConsole       = cls->isConsole;
         c.isChromium      = cls->localNeedBait;
         c.useClipboard    = cls->localUseClipboardInjector;
-        injector_.store(NextKey::Output::Create(c), std::memory_order_release);
+        auto newInjector = NextKey::Output::Create(c);
+        // Re-apply user setting on the freshly-built injector so the new
+        // host inherits the live "BS giữ chữ khi có gợi ý" value (factory
+        // doesn't know about it). Without this, a focus change resets the
+        // suggestKeepChars flag to default false until the next ApplyConfig.
+        if (auto cfg = config_.load(std::memory_order_acquire); cfg) {
+            newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
+        }
+        injector_.store(std::move(newInjector), std::memory_order_release);
     }
 
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d",

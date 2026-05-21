@@ -648,6 +648,9 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
     }
+    else if (id == L"suggest-keep-chars") {
+        config_.suggestKeepChars = value;
+    }
     else if (id == L"use-macro") {
         config_.macroEnabled = value;
     }
@@ -1051,6 +1054,7 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"cjk-auto-switch", config_.cjkAutoSwitch);
     setToggleState(L"debug-log", config_.debugLogEnabled);
     setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
+    setToggleState(L"suggest-keep-chars", config_.suggestKeepChars);
     setToggleState(L"use-macro", config_.macroEnabled);
     setToggleState(L"macro-english", config_.macroInEnglish);
     setToggleState(L"quick-telex", config_.quickConsonant);
@@ -1259,9 +1263,21 @@ void SettingsDialog::loadSettings() {
     backgroundOpacity_ = uiConfig.backgroundOpacity;
     isPinned_ = uiConfig.pinned;
 
-    // Load hotkey config
+    // Load hotkey config. Legacy switch-key input only renders A-Z/0-9
+    // (single-char edit box). F-row/OEM bindings persisted in vk via TOML
+    // load survive but show blank here until V/E hotkey UI gets the shared
+    // capture overlay (deferred to a future sprint).
     hotkeyConfig_ = ConfigManager::LoadHotkeyConfigOrDefault();
-    switchKeyChar_ = (hotkeyConfig_.key != 0) ? std::wstring(1, hotkeyConfig_.key) : L"";
+    {
+        uint32_t vk = hotkeyConfig_.vk;
+        if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) {
+            switchKeyChar_ = std::wstring(1, static_cast<wchar_t>(vk));
+        } else if (vk == 0x20) {
+            switchKeyChar_ = L" ";
+        } else {
+            switchKeyChar_ = L"";
+        }
+    }
 
     // Load system config
     systemConfig_ = ConfigManager::LoadSystemConfigOrDefault();
@@ -1302,8 +1318,20 @@ void SettingsDialog::saveToToml() {
         OutputDebugStringW(L"VKey: Failed to save config file\n");
     }
 
-    // Save hotkey config (sync switchKeyChar_ → hotkeyConfig_.key)
-    hotkeyConfig_.key = switchKeyChar_.empty() ? 0 : switchKeyChar_[0];
+    // Save hotkey config (sync switchKeyChar_ → hotkeyConfig_.vk).
+    // Same A-Z/0-9-only legacy edit-box rule as ConvertToolDialog (Step 5);
+    // anything else falls back to vk=0 until the V/E hotkey gets a capture
+    // overlay too.
+    {
+        wchar_t c = switchKeyChar_.empty() ? 0 : static_cast<wchar_t>(towupper(switchKeyChar_[0]));
+        if ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9')) {
+            hotkeyConfig_.vk = static_cast<uint32_t>(c);
+        } else if (c == L' ') {
+            hotkeyConfig_.vk = 0x20;  // VK_SPACE
+        } else {
+            hotkeyConfig_.vk = 0;
+        }
+    }
     (void)ConfigManager::SaveHotkeyConfig(path, hotkeyConfig_);
 
     configDirty_ = false;

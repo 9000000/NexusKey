@@ -58,6 +58,7 @@ namespace FeatureFlags {
     constexpr uint32_t AUTO_CAPS_MACRO       = 0x00010000;
     constexpr uint32_t ALLOW_ENGLISH_BYPASS  = 0x00020000;
     constexpr uint32_t DEBUG_LOG_ENABLED     = 0x00040000;  // Settings → System → "Bật debug log"
+    constexpr uint32_t SUGGEST_KEEP_CHARS    = 0x00080000;  // Settings → Bảng gõ → "BS giữ chữ khi có gợi ý"
 }
 
 /// Document context anchor published by TSF (readonly mode) for HookEngine.
@@ -307,10 +308,13 @@ struct SharedState {
     }
 
     // ── Hotkey encode/decode helpers ──
+    // VK_* codes only occupy the low byte (0x00-0xFE). Hi byte reserved for
+    // future extension; we keep the 16-bit layout to avoid changing the binary
+    // SharedState struct size.
     void SetHotkey(const HotkeyConfig& hk) noexcept {
         hotkeyMods = (hk.ctrl ? 1 : 0) | (hk.shift ? 2 : 0) | (hk.alt ? 4 : 0) | (hk.win ? 8 : 0);
-        hotkeyKeyLo = static_cast<uint8_t>(hk.key);
-        hotkeyKeyHi = static_cast<uint8_t>(hk.key >> 8);
+        hotkeyKeyLo = static_cast<uint8_t>(hk.vk);
+        hotkeyKeyHi = static_cast<uint8_t>(hk.vk >> 8);
     }
     [[nodiscard]] HotkeyConfig GetHotkey() const noexcept {
         HotkeyConfig hk;
@@ -318,7 +322,8 @@ struct SharedState {
         hk.shift = (hotkeyMods & 2) != 0;
         hk.alt   = (hotkeyMods & 4) != 0;
         hk.win   = (hotkeyMods & 8) != 0;
-        hk.key   = static_cast<wchar_t>(hotkeyKeyLo | (static_cast<uint16_t>(hotkeyKeyHi) << 8));
+        hk.vk    = static_cast<uint32_t>(hotkeyKeyLo)
+                 | (static_cast<uint32_t>(hotkeyKeyHi) << 8);
         return hk;
     }
     // Convert hotkey fields are reserved for future migration.
@@ -395,6 +400,7 @@ static_assert(offsetof(SharedState, contextAnchor) == 1060,
     if (config.autoCapsMacro)       flags |= FeatureFlags::AUTO_CAPS_MACRO;
     if (config.allowEnglishBypass)  flags |= FeatureFlags::ALLOW_ENGLISH_BYPASS;
     if (config.debugLogEnabled)     flags |= FeatureFlags::DEBUG_LOG_ENABLED;
+    if (config.suggestKeepChars)    flags |= FeatureFlags::SUGGEST_KEEP_CHARS;
     return flags;
 }
 
@@ -417,6 +423,7 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.autoCapsMacro       = (flags & FeatureFlags::AUTO_CAPS_MACRO) != 0;
     config.allowEnglishBypass  = (flags & FeatureFlags::ALLOW_ENGLISH_BYPASS) != 0;
     config.debugLogEnabled     = (flags & FeatureFlags::DEBUG_LOG_ENABLED) != 0;
+    config.suggestKeepChars    = (flags & FeatureFlags::SUGGEST_KEEP_CHARS) != 0;
 }
 
 }  // namespace NextKey

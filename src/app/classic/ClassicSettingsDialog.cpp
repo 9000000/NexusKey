@@ -5,6 +5,8 @@
 #include "ClassicSettingsDialog.h"
 #include "helpers/AppHelpers.h"
 #include "ClassicExcludedAppsDialog.h"
+#include "ClassicTsfAppsDialog.h"
+#include "system/TsfRegistration.h"
 #include "ClassicSpellExclusionsDialog.h"
 #include "ClassicAppOverridesDialog.h"
 #include "ClassicMacroTableDialog.h"
@@ -59,10 +61,14 @@ bool ClassicSettingsDialog::Show(HINSTANCE hInstance, HWND parent) {
 
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
 
+    std::wstring title = L"VKey v" VKEY_VERSION_WSTR;
+    if (IsRunningAsAdmin())
+        title += L" - Admin";
+
     hwnd_ = CreateWindowExW(
         0,
         kClassName,
-        L"VKey v" VKEY_VERSION_WSTR,
+        title.c_str(),
         style,
         CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,  // temporary size
         parent, nullptr, hInstance, this
@@ -542,6 +548,11 @@ void ClassicSettingsDialog::LoadSettings() {
     hotkeyConfig_ = ConfigManager::LoadHotkeyConfigOrDefault();
     systemConfig_ = ConfigManager::LoadSystemConfigOrDefault();
 
+    // Derive tsfApps from actual DLL registration state — user may have run
+    // regsvr32 /u manually, or a prior toggle may have partially failed.
+    // Mirrors Sciter behaviour in SettingsDialog.cpp:1042.
+    config_.tsfApps = IsTsfRegistered();
+
     (void)sharedState_.OpenReadWrite();
     (void)configEvent_.Initialize();
 }
@@ -599,11 +610,15 @@ void ClassicSettingsDialog::PopulateControls() {
         }
     }
 
+    // Legacy 1-char edit box renders A-Z/0-9 + Space only. F-row / OEM
+    // bindings stored in vk survive load but show blank — V/E hotkey UI
+    // will get the shared capture overlay in a future sprint.
     if (editHotkey_) {
-        if (hotkeyConfig_.key == L' ') {
+        uint32_t vk = hotkeyConfig_.vk;
+        if (vk == 0x20) {
             SetWindowTextW(editHotkey_, L"Space");
-        } else if (hotkeyConfig_.key) {
-            wchar_t buf[2] = { hotkeyConfig_.key, 0 };
+        } else if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) {
+            wchar_t buf[2] = { static_cast<wchar_t>(vk), 0 };
             SetWindowTextW(editHotkey_, buf);
         } else {
             SetWindowTextW(editHotkey_, L"");
@@ -672,17 +687,20 @@ void ClassicSettingsDialog::ReadControlValues() {
         }
     }
 
+    // Same A-Z/0-9 + Space rule as the load side above. Anything else from
+    // a typo / paste / future input drops to vk=0 (user rebinds).
     if (editHotkey_) {
         wchar_t buf[16] = {0};
         GetWindowTextW(editHotkey_, buf, 16);
         if (wcscmp(buf, L"Space") == 0) {
-            hotkeyConfig_.key = L' ';
+            hotkeyConfig_.vk = 0x20;  // VK_SPACE
         } else if (wcslen(buf) > 0) {
-            wchar_t key = buf[0];
-            if (key >= L'a' && key <= L'z') key = key - L'a' + L'A';
-            hotkeyConfig_.key = key;
+            wchar_t c = static_cast<wchar_t>(towupper(buf[0]));
+            hotkeyConfig_.vk = ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9'))
+                ? static_cast<uint32_t>(c)
+                : 0u;
         } else {
-            hotkeyConfig_.key = 0;
+            hotkeyConfig_.vk = 0;
         }
     }
 
@@ -864,6 +882,23 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                     UpdateSpellCheckChildren();
                 }
 
+                // TSF-apps toggle registers/unregisters the TSF DLL.
+                // Mirrors the Sciter handler in SettingsDialog.cpp:575-610.
+                if (meta->win32Id == IDC_CHECK_TSF_APPS) {
+                    bool checked = (IsDlgButtonChecked(hwnd_, IDC_CHECK_TSF_APPS) == BST_CHECKED);
+                    if (!OnTsfAppsToggle(checked)) {
+                        // Revert checkbox + config.
+                        CheckDlgButton(hwnd_, IDC_CHECK_TSF_APPS, checked ? BST_UNCHECKED : BST_CHECKED);
+                        config_.tsfApps = !checked;
+                    }
+                    // Persist immediately on BOTH success and failure paths.
+                    // Reality (registry) has already changed; if a subdialog opens
+                    // and triggers LoadSettings() before the deferred timer fires,
+                    // unrelated in-memory Typing edits would be reverted to stale TOML.
+                    KillTimer(hwnd_, kTimerDeferredSave);
+                    SaveToToml();
+                }
+
                 // System toggles have side effects beyond config save
                 if (meta->owner == SettingOwner::System && meta->type == SettingType::Toggle) {
                     bool checked = (IsDlgButtonChecked(hwnd_, meta->win32Id) == BST_CHECKED);
@@ -901,6 +936,10 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
 
         case IDC_BTN_EXCLUDE_APPS:
             ClassicExcludedAppsDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
+            break;
+
+        case IDC_BTN_TSF_APPS:
+            ClassicTsfAppsDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
             break;
 
         case IDC_BTN_SPELL_EXCLUSIONS:
@@ -1088,6 +1127,52 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
     }
     // show-on-startup, check-update: saved to config,
     // main_lite.cpp reads updated config when dialog closes.
+}
+
+// ════════════════════════════════════════════════════════════════════
+// TSF-apps toggle side effect — register/unregister TSF DLL
+// ════════════════════════════════════════════════════════════════════
+
+bool ClassicSettingsDialog::OnTsfAppsToggle(bool wantsEnabled) {
+    // Synchronous regsvr32 mirrors the Sciter handler in SettingsDialog.cpp:575-610.
+    // Known limitation: blocks the UI thread for ~1s during elevation prompt; an
+    // async port (background thread + PostMessage) is tracked in docs/TODO.md.
+    if (wantsEnabled) {
+        // Always attempt full registration (not guarded by IsTsfRegistered) because
+        // a previous partial failure could leave CLSID in registry but TIP profile missing.
+        bool ok = RegisterTsf();
+        if (!ok) {
+            ok = RegisterTsfElevated();
+        }
+        if (!ok || !IsTsfRegistered()) {
+            // No StringId exists yet for register-failure — Sciter also hardcodes VI here.
+            MessageBoxW(hwnd_,
+                L"Không thể đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
+                L"VKey", MB_OK | MB_ICONWARNING);
+            return false;
+        }
+        MessageBoxW(hwnd_, S(StringId::TSF_REGISTER_SUCCESS),
+            L"VKey", MB_OK | MB_ICONINFORMATION);
+        return true;
+    }
+
+    // Disabling — only attempt unregister if currently registered.
+    if (IsTsfRegistered()) {
+        UnregisterTsf();
+        // DllUnregisterServer may return S_OK even when it can't delete HKLM keys
+        // without admin — verify actual state before deciding to elevate.
+        if (IsTsfRegistered()) {
+            UnregisterTsfElevated();
+        }
+        if (IsTsfRegistered()) {
+            MessageBoxW(hwnd_, S(StringId::TSF_UNREGISTER_FAILED),
+                L"VKey", MB_OK | MB_ICONWARNING);
+            return false;
+        }
+        MessageBoxW(hwnd_, S(StringId::TSF_UNREGISTER_SUCCESS),
+            L"VKey", MB_OK | MB_ICONINFORMATION);
+    }
+    return true;
 }
 
 // ════════════════════════════════════════════════════════════════════

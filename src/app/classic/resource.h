@@ -31,6 +31,7 @@
 #define IDC_CHECK_EXCLUDE_APPS  2207
 #define IDC_CHECK_ENGLISH_BYPASS 2208
 #define IDC_CHECK_CJK_AUTO_SWITCH 2209
+#define IDC_CHECK_TSF_APPS      2210
 
 // ── Tab 0: Cơ bản — Right column ──
 #define IDC_CHECK_BEEP          2211
@@ -68,6 +69,7 @@
 #define IDC_BTN_CHECK_UPDATE    2504
 #define IDC_BTN_OPEN_LOG_FOLDER 2505
 #define IDC_BTN_HOTKEYS         2506
+#define IDC_BTN_TSF_APPS        2507
 
 // ── Static labels ──
 #define IDC_STATIC_METHOD       2601

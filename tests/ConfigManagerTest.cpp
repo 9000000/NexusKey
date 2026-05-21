@@ -356,6 +356,144 @@ TEST_F(ConfigManagerTest, SaveHotkeyRegistry_EscPlusChord_BareEscWins) {
     EXPECT_TRUE(ReadEscRestoreRaw(testConfigPath_));
 }
 
+// ============================================================================
+// HotkeyConfig (V/E toggle + convert) schema migration: `key` (wchar_t) →
+// `vk` (uint32_t). Both top-level [hotkey] and nested [convert.hotkey].
+// ============================================================================
+
+TEST_F(ConfigManagerTest, LoadHotkeyConfig_LegacyKeyChar_MigratesToVk) {
+    WriteTestConfig(R"(
+[hotkey]
+ctrl = false
+shift = false
+alt = true
+win = false
+key = "Z"
+)");
+    auto cfg = ConfigManager::LoadHotkeyConfig(testConfigPath_);
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_EQ(cfg->vk, 0x5Au);   // VK_Z
+    EXPECT_TRUE(cfg->alt);
+    EXPECT_FALSE(cfg->ctrl);
+}
+
+TEST_F(ConfigManagerTest, LoadHotkeyConfig_NewVkSchema_LoadedDirect) {
+    WriteTestConfig(R"(
+[hotkey]
+ctrl = true
+shift = true
+alt = false
+win = false
+vk = 112
+)");
+    auto cfg = ConfigManager::LoadHotkeyConfig(testConfigPath_);
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_EQ(cfg->vk, 0x70u);   // VK_F1
+    EXPECT_TRUE(cfg->ctrl);
+    EXPECT_TRUE(cfg->shift);
+}
+
+TEST_F(ConfigManagerTest, LoadHotkeyConfig_VkWinsOverLegacyKey) {
+    // If both `vk` and `key` are present, `vk` wins — legacy is fallback only.
+    WriteTestConfig(R"(
+[hotkey]
+ctrl = false
+shift = false
+alt = false
+win = false
+vk = 90
+key = "A"
+)");
+    auto cfg = ConfigManager::LoadHotkeyConfig(testConfigPath_);
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_EQ(cfg->vk, 0x5Au);   // VK_Z from `vk`, NOT 0x41 from `key`
+}
+
+TEST_F(ConfigManagerTest, LoadHotkeyConfig_LegacyOemDropsToZero) {
+    // ~/`/etc are OEM keys — clean rule rejects, vk=0 (user reassigns).
+    WriteTestConfig(R"(
+[hotkey]
+ctrl = false
+shift = false
+alt = true
+win = false
+key = "~"
+)");
+    auto cfg = ConfigManager::LoadHotkeyConfig(testConfigPath_);
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_EQ(cfg->vk, 0u);
+    EXPECT_TRUE(cfg->alt);       // Modifiers preserved even when vk drops.
+}
+
+TEST_F(ConfigManagerTest, SaveHotkeyConfig_RoundTripPreservesFRowVk) {
+    HotkeyConfig original{};
+    original.ctrl = true;
+    original.shift = true;
+    original.vk = 0x74;  // VK_F5
+
+    ASSERT_TRUE(ConfigManager::SaveHotkeyConfig(testConfigPath_, original));
+    auto loaded = ConfigManager::LoadHotkeyConfig(testConfigPath_);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded->vk, 0x74u);
+    EXPECT_TRUE(loaded->ctrl);
+    EXPECT_TRUE(loaded->shift);
+}
+
+TEST_F(ConfigManagerTest, SaveHotkeyConfig_DropsLegacyKeyField) {
+    // After save, the TOML file must contain `vk = N` but NOT a legacy
+    // `key = "..."` field — even if the previous file had one (we replace
+    // the [hotkey] sub-table entirely on save).
+    WriteTestConfig(R"(
+[hotkey]
+key = "Z"
+ctrl = true
+alt = false
+shift = false
+win = false
+)");
+    HotkeyConfig cfg{};
+    cfg.alt = true;
+    cfg.vk = 0x70;  // VK_F1
+    ASSERT_TRUE(ConfigManager::SaveHotkeyConfig(testConfigPath_, cfg));
+
+    std::ifstream in("test_config.toml");
+    std::string content((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+    EXPECT_NE(content.find("vk ="), std::string::npos);
+    EXPECT_EQ(content.find("key ="), std::string::npos)
+        << "Legacy `key` field must be dropped after save";
+}
+
+TEST_F(ConfigManagerTest, LoadConvertConfig_LegacyKeyChar_MigratesToVk) {
+    WriteTestConfig(R"(
+[convert.hotkey]
+ctrl = true
+shift = false
+alt = false
+win = false
+key = "1"
+)");
+    auto cfg = ConfigManager::LoadConvertConfig(testConfigPath_);
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_EQ(cfg->hotkey.vk, 0x31u);   // VK_1 (digit-1 ASCII == VK_1)
+    EXPECT_TRUE(cfg->hotkey.ctrl);
+}
+
+TEST_F(ConfigManagerTest, LoadConvertConfig_NewVkSchemaFRow) {
+    WriteTestConfig(R"(
+[convert.hotkey]
+ctrl = false
+shift = true
+alt = false
+win = false
+vk = 123
+)");
+    auto cfg = ConfigManager::LoadConvertConfig(testConfigPath_);
+    ASSERT_TRUE(cfg.has_value());
+    EXPECT_EQ(cfg->hotkey.vk, 0x7Bu);   // VK_F12
+    EXPECT_TRUE(cfg->hotkey.shift);
+}
+
 TEST_F(ConfigManagerTest, SaveHotkeyRegistry_DoesNotClobberExistingFeatures) {
     // Pre-write [features] with unrelated keys — SaveHotkeyRegistry must
     // merge in place, only touching esc_restore_raw.

@@ -13,6 +13,7 @@
 // Spec: docs/plans/sprint-2-output-injector.md §2.1
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <string_view>
@@ -72,6 +73,26 @@ public:
     [[nodiscard]] virtual bool NeedsBaitCharPrefix() const noexcept {
         return false;
     }
+
+    // Runtime-mutable user setting: when true, pure-BS (text empty)
+    // skips the U+202F bait so a Chromium suggestion popup eats the
+    // BS as a "dismiss-only" gesture, preserving typed chars
+    // ("face" + BS → "face"). When false (default), the bait fires
+    // unconditionally so BS always lands as a real delete — keeps
+    // engine state in sync at the cost of "face" + BS → "fac".
+    // HookEngine pushes the config value on focus change and live
+    // ApplyConfig; the injector reads it on every Replace() through
+    // Internal::ShouldEmitBait. Atomic for cross-thread visibility
+    // (writer = main thread / hook thread; reader = hook thread).
+    void SetSuggestKeepChars(bool enabled) noexcept {
+        suggestKeepChars_.store(enabled, std::memory_order_release);
+    }
+    [[nodiscard]] bool GetSuggestKeepChars() const noexcept {
+        return suggestKeepChars_.load(std::memory_order_acquire);
+    }
+
+protected:
+    std::atomic<bool> suggestKeepChars_{false};
 };
 
 }  // namespace NextKey::Output

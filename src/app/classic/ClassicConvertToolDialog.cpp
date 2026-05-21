@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "ClassicConvertToolDialog.h"
+#include "ClassicHotkeyCapture.h"
 #include "core/config/ConfigManager.h"
 #include "core/CrashLog.h"
 #include "app/helpers/AppHelpers.h"
 #include "core/engine/CodeTableConverter.h"
+#include "core/hotkey/HotkeyLabel.h"
 #include "core/Strings.h"
 
 #include <windowsx.h>
@@ -25,11 +27,8 @@ enum {
     IDC_CHECK_SEQUENTIAL,
     IDC_COMBO_SOURCE,
     IDC_COMBO_DEST,
-    IDC_CHECK_HK_CTRL,
-    IDC_CHECK_HK_ALT,
-    IDC_CHECK_HK_SHIFT,
-    IDC_CHECK_HK_WIN,
-    IDC_EDIT_HK_KEY,
+    IDC_BTN_RECORD_HOTKEY,
+    IDC_BTN_CLEAR_HOTKEY,
     IDC_BTN_CONVERT,
     IDC_BTN_CLOSE_DLG,
     IDC_RADIO_CLIPBOARD,
@@ -227,35 +226,21 @@ void ClassicConvertToolDialog::CreateControls() {
     }
     y += rowH + gap * 2;
 
-    // Section: Phím tắt
+    // Section: Phím tắt — single record button opens shared capture modal.
     labelHotkey_ = label(L"Phím tắt:", x, y, cw);
     y += rowH + gap;
 
-    int hkBtnW = Dpi(50);
-    checkHkCtrl_ = CreateWindowExW(0, L"BUTTON", L"Ctrl",
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        x, y, hkBtnW, rowH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_CHECK_HK_CTRL), hInstance_, nullptr);
-    checkHkAlt_ = CreateWindowExW(0, L"BUTTON", L"Alt",
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        x + hkBtnW + Dpi(4), y, hkBtnW, rowH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_CHECK_HK_ALT), hInstance_, nullptr);
-    checkHkShift_ = CreateWindowExW(0, L"BUTTON", L"Shift",
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        x + (hkBtnW + Dpi(4)) * 2, y, hkBtnW, rowH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_CHECK_HK_SHIFT), hInstance_, nullptr);
-    checkHkWin_ = CreateWindowExW(0, L"BUTTON", L"Win",
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX | WS_TABSTOP,
-        x + (hkBtnW + Dpi(4)) * 3, y, hkBtnW, rowH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_CHECK_HK_WIN), hInstance_, nullptr);
-
-    int hkEditH = Dpi(16);
-    int editYOffset = (rowH - hkEditH) / 2;
-    editHkKey_ = CreateWindowExW(0, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_UPPERCASE | ES_CENTER | ES_AUTOHSCROLL,
-        x + (hkBtnW + Dpi(4)) * 4 + Dpi(2), y + editYOffset, Dpi(30), hkEditH,
-        hwnd_, reinterpret_cast<HMENU>(IDC_EDIT_HK_KEY), hInstance_, nullptr);
-    SendMessageW(editHkKey_, EM_SETLIMITTEXT, 1, 0);
+    int clearBtnW = Dpi(64);
+    int clearGap  = Dpi(6);
+    int recordW   = cw - clearBtnW - clearGap;
+    btnRecordHotkey_ = CreateWindowExW(0, L"BUTTON", L"— Chưa đặt —",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        x, y, recordW, rowH,
+        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_RECORD_HOTKEY), hInstance_, nullptr);
+    btnClearHotkey_ = CreateWindowExW(0, L"BUTTON", L"Xóa",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        x + recordW + clearGap, y, clearBtnW, rowH,
+        hwnd_, reinterpret_cast<HMENU>(IDC_BTN_CLEAR_HOTKEY), hInstance_, nullptr);
     y += rowH + gap * 3;
 
     // Action buttons
@@ -286,18 +271,21 @@ void ClassicConvertToolDialog::PopulateFromConfig() {
     ComboBox_SetCurSel(comboSource_, config_.sourceEncoding);
     ComboBox_SetCurSel(comboDest_, config_.destEncoding);
 
-    setCheck(checkHkCtrl_, config_.hotkey.ctrl);
-    setCheck(checkHkAlt_, config_.hotkey.alt);
-    setCheck(checkHkShift_, config_.hotkey.shift);
-    setCheck(checkHkWin_, config_.hotkey.win);
-
-    if (config_.hotkey.key) {
-        wchar_t buf[2] = {config_.hotkey.key, 0};
-        SetWindowTextW(editHkKey_, buf);
-    }
+    RefreshHotkeyDisplay();
 
     // Sequential only available when autoPaste is on
     EnableWindow(checkSequential_, config_.autoPaste ? TRUE : FALSE);
+}
+
+void ClassicConvertToolDialog::RefreshHotkeyDisplay() {
+    if (!btnRecordHotkey_) return;
+    std::wstring label = FormatHotkeyLabel(config_.hotkey.vk,
+                                           config_.hotkey.ToMods());
+    SetWindowTextW(btnRecordHotkey_,
+                   label.empty() ? L"— Chưa đặt —" : label.c_str());
+    if (btnClearHotkey_) {
+        EnableWindow(btnClearHotkey_, config_.hotkey.HasAny() ? TRUE : FALSE);
+    }
 }
 
 void ClassicConvertToolDialog::ReadToConfig() {
@@ -319,16 +307,9 @@ void ClassicConvertToolDialog::ReadToConfig() {
     if (srcSel >= 0) config_.sourceEncoding = static_cast<uint8_t>(srcSel);
     if (dstSel >= 0) config_.destEncoding = static_cast<uint8_t>(dstSel);
 
-    config_.hotkey.ctrl = isChecked(IDC_CHECK_HK_CTRL);
-    config_.hotkey.alt = isChecked(IDC_CHECK_HK_ALT);
-    config_.hotkey.shift = isChecked(IDC_CHECK_HK_SHIFT);
-    config_.hotkey.win = isChecked(IDC_CHECK_HK_WIN);
-
-    wchar_t buf[2] = {};
-    GetWindowTextW(editHkKey_, buf, 2);
-    wchar_t key = buf[0];
-    if (key >= L'a' && key <= L'z') key = key - L'a' + L'A';
-    config_.hotkey.key = key;
+    // Hotkey config is written directly inside OpenCaptureModal() (see WndProc
+    // below) — no UI controls to read here. Field stays at its previous value
+    // for save flows triggered by other controls.
 }
 
 void ClassicConvertToolDialog::SaveConfig() {
@@ -543,17 +524,16 @@ void ClassicConvertToolDialog::UpdateFileMode() {
     hdwp = DeferWindowPos(hdwp, comboDest_, nullptr, x + Dpi(90), y, cw - Dpi(90), Dpi(120), SWP_NOZORDER | SWP_NOSIZE);
     y += rowH + gap * 2;
 
-    hdwp = DeferWindowPos(hdwp, labelHotkey_, nullptr, x, y, cw, rowH, SWP_NOZORDER | SWP_NOSIZE);
+    hdwp = DeferWindowPos(hdwp, labelHotkey_,     nullptr, x, y, cw, rowH,
+                          SWP_NOZORDER | SWP_NOSIZE);
     y += rowH + gap;
-
-    int hkBtnW = Dpi(50);
-    int editH = Dpi(16);
-    int editYOffset = (rowH - editH) / 2;
-    hdwp = DeferWindowPos(hdwp, checkHkCtrl_, nullptr, x, y, hkBtnW, rowH, SWP_NOZORDER | SWP_NOSIZE);
-    hdwp = DeferWindowPos(hdwp, checkHkAlt_, nullptr, x + hkBtnW + Dpi(4), y, hkBtnW, rowH, SWP_NOZORDER | SWP_NOSIZE);
-    hdwp = DeferWindowPos(hdwp, checkHkShift_, nullptr, x + (hkBtnW + Dpi(4)) * 2, y, hkBtnW, rowH, SWP_NOZORDER | SWP_NOSIZE);
-    hdwp = DeferWindowPos(hdwp, checkHkWin_, nullptr, x + (hkBtnW + Dpi(4)) * 3, y, hkBtnW, rowH, SWP_NOZORDER | SWP_NOSIZE);
-    hdwp = DeferWindowPos(hdwp, editHkKey_, nullptr, x + (hkBtnW + Dpi(4)) * 4 + Dpi(2), y + editYOffset, Dpi(30), editH, SWP_NOZORDER);
+    int clearBtnW = Dpi(64);
+    int clearGap  = Dpi(6);
+    int recordW   = cw - clearBtnW - clearGap;
+    hdwp = DeferWindowPos(hdwp, btnRecordHotkey_, nullptr, x, y, recordW, rowH,
+                          SWP_NOZORDER);
+    hdwp = DeferWindowPos(hdwp, btnClearHotkey_,  nullptr, x + recordW + clearGap, y,
+                          clearBtnW, rowH, SWP_NOZORDER);
     y += rowH + gap * 3;
 
     int halfW = (cw - Dpi(8)) / 2;
@@ -603,9 +583,35 @@ LRESULT CALLBACK ClassicConvertToolDialog::WndProc(HWND hwnd, UINT msg, WPARAM w
                 case IDC_BTN_BROWSE_DEST:    self->BrowseFile(false); return 0;
                 case IDC_RADIO_CLIPBOARD:
                 case IDC_RADIO_FILE:         self->UpdateFileMode();  return 0;
+                case IDC_BTN_RECORD_HOTKEY: {
+                    // Modal capture — combo-only (allowDoubleTap=false,
+                    // allowBareModifier=false) since the convert HotkeyManager
+                    // slot can't fire on 2×Alt or "Ctrl alone".
+                    HotkeyCaptureOptions opts{
+                        .allowDoubleTap    = false,
+                        .allowBareModifier = false,
+                        .titleText  = L"Ghi nhận phím chuyển mã",
+                        .promptText = L"Nhấn phím tắt chuyển mã (kèm Ctrl/Shift/Alt/Win). F1-F12 đều dùng được.",
+                    };
+                    if (auto r = ShowHotkeyCaptureDialog(
+                            self->hInstance_, hwnd, self->theme_, self->dpi_, opts)) {
+                        self->config_.hotkey.vk = r->vk;
+                        self->config_.hotkey.SetModsFromMask(r->mods);
+                        self->RefreshHotkeyDisplay();
+                        self->SaveConfig();
+                    }
+                    return 0;
+                }
+                case IDC_BTN_CLEAR_HOTKEY: {
+                    if (!self->config_.hotkey.HasAny()) return 0;
+                    self->config_.hotkey = HotkeyConfig{};
+                    self->RefreshHotkeyDisplay();
+                    self->SaveConfig();
+                    return 0;
+                }
             }
 
-            // Auto-save on any toggle/combo/edit change
+            // Auto-save on any toggle/combo change
             if (code == BN_CLICKED || code == CBN_SELCHANGE) {
                 self->SaveConfig();
 
@@ -615,18 +621,7 @@ LRESULT CALLBACK ClassicConvertToolDialog::WndProc(HWND hwnd, UINT msg, WPARAM w
                     EnableWindow(self->checkSequential_, ap ? TRUE : FALSE);
                 }
             }
-            if (code == EN_CHANGE && id == IDC_EDIT_HK_KEY) {
-                self->SaveConfig();
-            }
             break;
-        }
-
-        case WM_PAINT: {
-            PAINTSTRUCT ps{};
-            HDC hdc = BeginPaint(hwnd, &ps);
-            self->theme_.DrawHotkeyEditBorder(hdc, hwnd, self->editHkKey_, self->Dpi(self->kRowH));
-            EndPaint(hwnd, &ps);
-            return 0;
         }
 
         case WM_ERASEBKGND: {

@@ -35,10 +35,13 @@ enum class TrayMenuId : UINT {
     MacroTable = 1030,
     ConvertTool = 1031,
     QuickConvert = 1032,
-    // Input method submenu
+    // Input method submenu — IDs must stay contiguous; callback derives
+    // InputMethod via (id - InputTelex). Add new methods at the end.
     InputTelex = 1040,
     InputVNI = 1041,
     InputSimpleTelex = 1042,
+    InputCombined = 1043,
+    InputUserDefined = 1044,
     // Hybrid TSF update — restart prompt (only shown when any update flag is live)
     RestartWindows = 1050,
     // Watchdog control (toggle — label switches based on TrayMenuState::watchdogEnabled)
@@ -57,7 +60,7 @@ struct TrayMenuState {
     bool spellCheck = false;
     bool smartSwitch = false;
     bool macroEnabled = false;
-    int inputMethod = 0;       // 0=Telex, 1=VNI, 2=SimpleTelex
+    int inputMethod = 0;       // 0=Telex, 1=VNI, 2=SimpleTelex, 3=Combined, 4=UserDefined
     CodeTable codeTable = CodeTable::Unicode;
     bool watchdogEnabled = false;  // Auto-restart on crash (opt-in)
 };
