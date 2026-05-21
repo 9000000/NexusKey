@@ -416,7 +416,12 @@ bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wc
     if (telexGated && isTelexModifier) {
         if (action == TypingAction::StrokeD && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
             size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
-            if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
+            // Only evaluate coda-block heuristic when target is a RAW d that
+            // would BECOME Đ. An already-stroked Đ belongs to a prior abbrev
+            // segment (e.g. HĐL+d for HĐLĐ); reusing it would set HardEnglish
+            // and poison the NEXT dd→đ trigger.
+            if (dTarget != SIZE_MAX && states_[dTarget].mod == Modifier::None &&
+                IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
                 engProt_.bias = LanguageBias::HardEnglish;
             }
         }
@@ -442,7 +447,10 @@ bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wc
     if (vniGated && isVniModifier) {
         if (action == TypingAction::VniStroke && engProt_.bias != LanguageBias::HardEnglish && states_.size() >= 3) {
             size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
-            if (dTarget != SIZE_MAX && IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
+            // See 2a: only RAW d (mod=None) is a stroke target for the
+            // coda-block heuristic. Already-stroked Đ is a prior segment.
+            if (dTarget != SIZE_MAX && states_[dTarget].mod == Modifier::None &&
+                IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
                 engProt_.bias = LanguageBias::HardEnglish;
             }
         }
@@ -1207,6 +1215,12 @@ bool TypingEngine::HandleStrokeD(TypingAction /*action*/, wchar_t c) {
         target.mod = Modifier::Stroke;
         return true;
     } else if (target.mod == Modifier::Stroke) {
+        // Escape (Đ → dd) only when the existing Đ is the LAST state — i.e.,
+        // the incoming d directly follows it. With an intervening non-d char
+        // (HĐL+d for HĐLĐ, vđx+d, etc.) the Đ belongs to a prior abbreviation
+        // segment that the user has already committed; treat the new d as a
+        // fresh literal so the next dd can compose Đ again.
+        if (dIdx != states_.size() - 1) return false;
         target.mod = Modifier::None;
         escape_.escape(EscapeKind::Stroke);
         ProcessChar(c);

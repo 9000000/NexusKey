@@ -4222,6 +4222,44 @@ TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_DropdownLiteral9Keys) {
     EXPECT_EQ(engine_->Peek(), L"dropddown");
 }
 
+// Abbreviation continuation: a NEW dd→Đ trigger after an existing Đ + consonant
+// must still fire. Symptom before fix: HDDLDD → "HĐLDD" because pre-check found
+// the existing Đ as a stroke-target and tripped IsStrokeDBlockedByCoda on the
+// intervening L, then poisoned bias=HardEnglish for the next d. HĐLĐ is the
+// common abbrev for "Hợp Đồng Lao Động"; vđtđ-style chains must also work.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_AllCapsAbbreviation_HDDLDD_NoSpell) {
+    TypeString(*engine_, L"HDDLDD");
+    EXPECT_EQ(engine_->Peek(), L"HĐLĐ");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LowerAbbreviation_hddldd_NoSpell) {
+    TypeString(*engine_, L"hddldd");
+    EXPECT_EQ(engine_->Peek(), L"hđlđ");
+}
+
+TEST_F(TelexEngineTest, DModifier_AllCapsAbbreviation_HDDLDD_SpellOn) {
+    TypeString(*engine_, L"HDDLDD");
+    EXPECT_EQ(engine_->Peek(), L"HĐLĐ");
+}
+
+TEST_F(TelexEngineTest, DModifier_LowerAbbreviation_hddldd_SpellOn) {
+    TypeString(*engine_, L"hddldd");
+    EXPECT_EQ(engine_->Peek(), L"hđlđ");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_AbbreviationChain_vddtdd) {
+    // v-d-d-t-d-d → vđtđ — second dd cluster fires after Đ+consonant.
+    TypeString(*engine_, L"vddtdd");
+    EXPECT_EQ(engine_->Peek(), L"vđtđ");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_NoEscape_AcrossIntervening_ddxd) {
+    // d-d-x-d → đxd: the standalone d after Đ+x must NOT escape Đ (which would
+    // have produced "dxd"). Đ belongs to the prior segment.
+    TypeString(*engine_, L"ddxd");
+    EXPECT_EQ(engine_->Peek(), L"đxd");
+}
+
 TEST_F(EnglishDetectionNoSpellCheckTest, WModifier_EscapeUndosBothHorns) {
     // "duoww": 2 w's to escape ươ back to "duow" (2-state cycle for non h/th/kh)
     // w(1): P2 horn both → "dươ"
