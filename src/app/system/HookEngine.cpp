@@ -1155,10 +1155,27 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
             CancelCommitUndo();
             // Fall through — ProcessKeyDown step 10 re-injects BS if needed; alpha → step 6 HandleAlphaKey
         } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            // Alpha key → replay saved chars, then process the new key.
+            // Discriminate alpha intent at Primed: tone modifier (Telex s/f/r/x/j,
+            // per IsCommitUndoExemptKey — same "modifies previous word" semantic
+            // class used by synth-guard and catch-all branches) → REPLAY. Other
+            // alphas → user typing new word after BS-chain navigated past the
+            // committed word; DROP stack-top to prevent a later BS-into-empty
+            // from re-priming Ready for it, and fall through so the alpha enters
+            // fresh composition. Without this, catch-all replay concatenated an
+            // older stack entry into the new word (engine/screen divergence).
+            if (!isCommitUndoExempt) {
+                HOOK_LOG(L"  commit-undo: drop stack-top '%s' for non-tone alpha '%c' → fresh composition",
+                         commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
+                         static_cast<char>(vkCode));
+                if (!commitStack_.empty()) {
+                    commitStack_.pop_back();
+                }
+                commitUndoState_ = CommitUndoState::Idle;
+                return KeyOutcome::Fallthrough;
+            }
             // MUST return HandleAlphaKey's value: if it triggers passthrough (return false),
             // the original key must reach the app — ignoring it would swallow the keystroke.
-            HOOK_LOG(L"  commit-undo: replaying + alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
+            HOOK_LOG(L"  commit-undo: replaying + tone-alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
                      static_cast<char>(vkCode),
                      commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
                      commitStack_.size(),
