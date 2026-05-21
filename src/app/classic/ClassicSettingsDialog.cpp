@@ -22,6 +22,7 @@
 #include "system/StartupHelper.h"
 #include "system/UpdateChecker.h"
 #include "system/PendingDllApply.h"
+#include "system/DebugLogWarning.h"
 #include "core/Strings.h"
 
 #include <exception>
@@ -847,6 +848,20 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
     if (code == BN_CLICKED || code == CBN_SELCHANGE) {
         const auto* meta = FindSettingByControlId(static_cast<uint16_t>(id));
         if (meta) {
+            // Debug log security gate: confirm before *enabling*. The Win32
+            // checkbox flips state itself on click — read the post-click state
+            // and roll it back if the user picks Cancel.
+            if (meta->type == SettingType::Toggle && meta->win32Id == IDC_CHECK_DEBUG_LOG
+                && code == BN_CLICKED) {
+                bool nowChecked = (IsDlgButtonChecked(hwnd_, IDC_CHECK_DEBUG_LOG) == BST_CHECKED);
+                if (nowChecked && !config_.debugLogEnabled) {
+                    bool englishUi = (systemConfig_.language == 1);
+                    if (!::NextKey::ShowDebugLogWarning(hwnd_, englishUi)) {
+                        CheckDlgButton(hwnd_, IDC_CHECK_DEBUG_LOG, BST_UNCHECKED);
+                        return;  // skip SaveSettings — config stays at debugLogEnabled=false
+                    }
+                }
+            }
             if (meta->type == SettingType::Action) {
                 OnActionButton(meta->win32Id);
             } else {

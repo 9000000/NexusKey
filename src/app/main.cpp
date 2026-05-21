@@ -17,6 +17,7 @@
 #include "core/Strings.h"
 #include "core/Debug.h"
 #include "core/CrashLog.h"
+#include "core/Logger.h"
 
 #include "system/TsfRegistration.h"
 #include "system/StartupHelper.h"
@@ -148,6 +149,8 @@ static void CleanupFloatingIcon() noexcept {
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hInstance = hInstance;
+    // Brand the log file before anything writes to it. Modern build = Sciter UI.
+    ::NextKey::Logger::SetRoleTag(L"Modern");
     InstallCursorCrashHandler();  // Restore system cursors if we crash during window picking
 
     // Last-resort catch: if a C++ throw ever escapes all try/catch at thread boundaries

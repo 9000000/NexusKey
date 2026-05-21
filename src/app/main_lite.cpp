@@ -14,6 +14,7 @@
 #include "core/SystemConfig.h"
 #include "core/Debug.h"
 #include "core/CrashLog.h"
+#include "core/Logger.h"
 
 #include "system/HookEngine.h"
 #include "system/MainThreadWorker.h"
@@ -322,6 +323,8 @@ static void OnMenuCommand(TrayMenuId id) {
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hInstance = hInstance;
+    // Brand the log file before anything writes to it. Classic build = Win32 UI.
+    ::NextKey::Logger::SetRoleTag(L"Classic");
     InstallCursorCrashHandler();  // Restore system cursors if we crash during window picking
 
     // Last-resort catch: if a C++ throw ever escapes all try/catch at thread boundaries

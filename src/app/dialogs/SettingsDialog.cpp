@@ -14,6 +14,7 @@
 #include "sciter/ScaleHelper.h"
 #include "sciter/SciterHelper.h"
 #include "system/DarkModeHelper.h"
+#include "system/DebugLogWarning.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include "core/Debug.h"
@@ -643,6 +644,15 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         config_.cjkAutoSwitch = value;
     }
     else if (id == L"debug-log") {
+        // Security gate: confirm with user before enabling. Disabling needs
+        // no prompt — that always reduces exposure.
+        if (value && !config_.debugLogEnabled) {
+            bool englishUi = (systemConfig_.language == 1);
+            if (!::NextKey::ShowDebugLogWarning(get_hwnd(), englishUi)) {
+                setToggleState(L"debug-log", false);  // revert UI
+                return;
+            }
+        }
         config_.debugLogEnabled = value;
     }
     else if (id == L"allow-english-bypass") {
