@@ -91,7 +91,7 @@ private:
     // -- Layout constants (pixels at 96 DPI, scaled by Dpi()) --
     // All values are multiples of 4 for consistent visual rhythm
     static constexpr int kAdvancedWidth  = 490;
-    static constexpr int kAdvancedHeight = 400;
+    static constexpr int kAdvancedHeight = 440;
     static constexpr int kPadding       = 16;
     static constexpr int kControlHeight = 24;
     static constexpr int kComboHeight   = 24;
