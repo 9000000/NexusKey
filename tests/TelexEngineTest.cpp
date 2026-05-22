@@ -4198,6 +4198,36 @@ TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_Initial_WithCoda_Works) {
     EXPECT_EQ(engine_->Peek(), L"đoc");
 }
 
+// REPRO: bug 2026-05-22 — "detail"+d → "đetail" (expected "detaild").
+// Late-stroke applies to leading 'd' even though e-t-a forms V+C+V (English).
+// Coda-block pre-check has "leading-d + vowel" exception that lets this slip.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LateStroke_RejectVCV_detail) {
+    TypeString(*engine_, L"detaild");
+    EXPECT_EQ(engine_->Peek(), L"detaild");
+}
+
+// Recovery: leading-Đ escape on trailing-d when vowel sits between.
+// "ddoc" (fast-typed 'doc' with key bounce) → "đoc"; user adds 'd' to recover.
+// Vietnamese never has coda 'd', so trailing d = English/typo signal.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LeadingDdEscape_ddocd) {
+    TypeString(*engine_, L"ddocd");
+    EXPECT_EQ(engine_->Peek(), L"docd");  // User then BS once → "doc"
+}
+
+// Sanity: abbreviation chain — no vowel between leading Đ and trailing d
+// (ddxd) must keep Đ; the trailing d is a fresh literal.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LeadingDdEscape_NoVowel_ddxd) {
+    TypeString(*engine_, L"ddxd");
+    EXPECT_EQ(engine_->Peek(), L"đxd");
+}
+
+// Sanity: longer recovery — "ddong" + d → "dongd" (lose đ, gain trailing d).
+// Trade-off: rare "đôngd"-style typing loses, common fast-d-doc recovery wins.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LeadingDdEscape_ddongd) {
+    TypeString(*engine_, L"ddongd");
+    EXPECT_EQ(engine_->Peek(), L"dongd");
+}
+
 TEST_F(TelexEngineTest, DModifier_Initial_WithCoda_SpellCheckOn) {
     // Same as above with spell check ON — "docd" → "đoc" (valid syllable)
     TypeString(*engine_, L"docd");

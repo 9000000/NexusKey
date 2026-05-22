@@ -420,9 +420,18 @@ bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wc
             // would BECOME Đ. An already-stroked Đ belongs to a prior abbrev
             // segment (e.g. HĐL+d for HĐLĐ); reusing it would set HardEnglish
             // and poison the NEXT dd→đ trigger.
-            if (dTarget != SIZE_MAX && states_[dTarget].mod == Modifier::None &&
-                IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
-                engProt_.bias = LanguageBias::HardEnglish;
+            if (dTarget != SIZE_MAX && states_[dTarget].mod == Modifier::None) {
+                bool blocked = IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget);
+                // Late-stroke V+C+V guard: when the only stroke target is the
+                // leading 'd' (index 0), the coda-block heuristic has a
+                // "leading d + vowel coda" exception that lets multi-syllable
+                // English ("detail" + d → "đetail") slip through. V+C+V
+                // pattern catches it (e-t-a in detail).
+                if (!blocked && dTarget == 0 &&
+                    HasStructuralVCVPattern(states_.data(), states_.size())) {
+                    blocked = true;
+                }
+                if (blocked) engProt_.bias = LanguageBias::HardEnglish;
             }
         }
         bool block = escape_.isEscaped() || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
@@ -449,9 +458,13 @@ bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wc
             size_t dTarget = FindStrokeDTarget(states_.data(), states_.size());
             // See 2a: only RAW d (mod=None) is a stroke target for the
             // coda-block heuristic. Already-stroked Đ is a prior segment.
-            if (dTarget != SIZE_MAX && states_[dTarget].mod == Modifier::None &&
-                IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget)) {
-                engProt_.bias = LanguageBias::HardEnglish;
+            if (dTarget != SIZE_MAX && states_[dTarget].mod == Modifier::None) {
+                bool blocked = IsStrokeDBlockedByCoda(states_.data(), states_.size(), dTarget);
+                if (!blocked && dTarget == 0 &&
+                    HasStructuralVCVPattern(states_.data(), states_.size())) {
+                    blocked = true;
+                }
+                if (blocked) engProt_.bias = LanguageBias::HardEnglish;
             }
         }
         bool block = escape_.isEscaped() || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
@@ -1215,12 +1228,28 @@ bool TypingEngine::HandleStrokeD(TypingAction /*action*/, wchar_t c) {
         target.mod = Modifier::Stroke;
         return true;
     } else if (target.mod == Modifier::Stroke) {
-        // Escape (Đ → dd) only when the existing Đ is the LAST state — i.e.,
-        // the incoming d directly follows it. With an intervening non-d char
-        // (HĐL+d for HĐLĐ, vđx+d, etc.) the Đ belongs to a prior abbreviation
-        // segment that the user has already committed; treat the new d as a
-        // fresh literal so the next dd can compose Đ again.
-        if (dIdx != states_.size() - 1) return false;
+        // Escape Đ → d in two cases:
+        //   (a) Trailing Đ at the end (ddd → dd, vddd → vdd): user double-tapped
+        //       to undo; existing behavior.
+        //   (b) Leading Đ at index 0 with a vowel between it and the new d
+        //       (ddocd → docd): Vietnamese never has coda 'd', so trailing d
+        //       after a Đ-headed syllable signals user mis-pressed dd at start
+        //       (e.g. fast-typing 'doc' with bounce produced 'đoc'). The
+        //       trailing d acts as recovery — escape leading Đ to d, keep new
+        //       d as literal so user can BS once to recover original word.
+        //       Vowel guard preserves abbreviation chains: ddxd → đxd (no
+        //       vowel between Đ and d, so Đ is a prior segment).
+        //   With an intervening Đ (HĐL+d for HĐLĐ, vđx+d) Đ belongs to a prior
+        //   committed segment — push new d as fresh literal so the next dd
+        //   can compose Đ again.
+        bool isTrailing = (dIdx == states_.size() - 1);
+        bool isLeadingSyllableEscape = false;
+        if (!isTrailing && dIdx == 0 && states_.size() >= 2) {
+            for (size_t i = 1; i < states_.size(); ++i) {
+                if (states_[i].IsVowel()) { isLeadingSyllableEscape = true; break; }
+            }
+        }
+        if (!isTrailing && !isLeadingSyllableEscape) return false;
         target.mod = Modifier::None;
         escape_.escape(EscapeKind::Stroke);
         ProcessChar(c);
