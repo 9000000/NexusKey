@@ -272,6 +272,43 @@ template<typename CharStateT>
     return codaLen >= 1;
 }
 
+/// Combined pre-check: should a stroke-D attempt mark the buffer as HardEnglish?
+/// Caller has already verified dTarget != SIZE_MAX and states[dTarget].mod == None.
+///   - Coda-block heuristic catches "drop"+d (invalid coda 'p').
+///   - V+C+V structural pattern catches "detail"+d (e-t-a) which the
+///     coda-block heuristic misses due to its "leading-d + vowel coda"
+///     exception (kept so legitimate "doc"+d → "đoc" still works).
+template<typename CharStateT>
+[[nodiscard]] inline bool ShouldBlockStrokeDAsEnglish(
+        const CharStateT* states, size_t count, size_t dTarget) noexcept {
+    if (IsStrokeDBlockedByCoda(states, count, dTarget)) return true;
+    if (dTarget == 0 && HasStructuralVCVPattern(states, count)) return true;
+    return false;
+}
+
+/// Decide whether a stroke-D escape (Đ → d) should fire at the given target.
+/// Two allowed cases:
+///   (a) Trailing Đ (ddd → dd, vddd → vdd): user double-tapped to undo.
+///   (b) Leading Đ at index 0 with a vowel between it and the new d
+///       (ddocd → docd): Vietnamese never has coda 'd', so trailing d after
+///       a Đ-headed syllable is a recovery signal for mis-typed dd at start.
+///       Vowel guard preserves abbreviation chains: ddxd → đxd keeps Đ
+///       because no vowel sits between it and the trailing d.
+/// Intermediate Đ (e.g. HĐL+d for HĐLĐ, vđx+d) returns false — Đ belongs to
+/// a prior committed segment; the new d is a fresh literal so the NEXT dd
+/// can compose a new Đ.
+template<typename CharStateT>
+[[nodiscard]] inline bool IsStrokeDEscapeAllowed(
+        const CharStateT* states, size_t count, size_t dIdx) noexcept {
+    if (count > 0 && dIdx == count - 1) return true;
+    if (dIdx == 0 && count >= 2) {
+        for (size_t i = 1; i < count; ++i) {
+            if (states[i].IsVowel()) return true;
+        }
+    }
+    return false;
+}
+
 /// Does a composed buffer match any spell exclusion prefix?
 /// Buffer may be shorter than exclusion (typing in progress) or longer (prefix match).
 /// Exclusion entries are pre-lowercased at config load time; buffer is lowercased by caller.
