@@ -35,11 +35,18 @@
                    RUNTIME_OUTPUT_DIRECTORY="${CMAKE_BINARY_DIR}/tools").
 
     -HookLog       Override path VKey writes its debug log to. By default
-                   the script auto-resolves to `<install dir>\VKey_VKey_<pid>.log`
-                   (Logger.cpp:112 format — brand prefix + process tag +
-                   actual PID of the VKey.exe process this script spawned).
-                   Pass this only if VKey writes elsewhere (e.g. when
-                   PathOverride is set or AppData fallback fires).
+                   the script globs `<install dir>\VKey_*.log` (excluding
+                   `VKey_TSF-*` DLL logs) and picks the newest by mtime.
+                   Logger format post-4f8bf16:
+                   `VKey_<RoleTag>_<DDMMYYYY>_<HHMM>[_p<PID>].log` where
+                   RoleTag is `Modern` or `Classic` for the EXE. Legacy
+                   `VKey_VKey_<PID>.log` (pre-4f8bf16) is still matched
+                   for backward compat. Pass this only if VKey writes
+                   elsewhere (e.g. when PathOverride is set or AppData
+                   fallback fires), or if the "Bật debug log" toggle is
+                   off (in which case no log exists and the glob falls
+                   back to a placeholder so the parser can surface a
+                   clear "file missing" diagnostic).
 
     -OutDir        Where report-*.xml + perf-*.csv land. Default: repo root.
 
@@ -102,10 +109,11 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Corpus)      { $Corpus      = Join-Path $repoRoot "tools/VKeyTestRunner/corpus/chaos.toml" }
 if (-not $VKeyExe) { $VKeyExe = Join-Path $repoRoot "build/Debug/VKey.exe" }
 if (-not $RunnerExe)   { $RunnerExe   = Join-Path $repoRoot "build/tools/Debug/VKeyTestRunner.exe" }
-# $HookLog resolved per-host inside Invoke-ChaosForHost — depends on the PID
-# of the VKey.exe process spawned by Start-VKey (Logger.cpp:112 writes
-# `<install dir>\VKey_VKey_<pid>.log`). Honor explicit -HookLog if user passed
-# one (override for sideloaded log targets / PathOverride scenarios).
+# $HookLog resolved per-host inside Invoke-ChaosForHost via glob of
+# `<install dir>\VKey_*.log` (newest by mtime). Logger post-4f8bf16 writes
+# `VKey_<RoleTag>_<DDMMYYYY>_<HHMM>[_p<PID>].log`; legacy `VKey_VKey_<PID>.log`
+# still matched. Honor explicit -HookLog if user passed one (override for
+# sideloaded log targets / PathOverride scenarios).
 if (-not $OutDir)      { $OutDir      = $repoRoot }
 
 # Fallback search: VKey.exe + VKeyTestRunner.exe are both EXCLUDE_FROM_ALL
@@ -270,9 +278,10 @@ function Open-Host {
 }
 
 # --- VKey lifecycle ------------------------------------------------
-# Returns the PID of the spawned VKey.exe process so the caller can derive
-# the per-instance hook-log filename (Logger.cpp:112 writes
-# `<install dir>\VKey_VKey_<pid>.log`).
+# Returns the PID of the spawned VKey.exe process. Caller resolves the
+# per-launch hook log via glob (Resolve-HookLog) — Logger.cpp post-4f8bf16
+# uses timestamp-based filenames, not PID-keyed, so PID is kept here only
+# as a placeholder for legacy fallback + diagnostics.
 function Start-VKey {
     if (Get-Process -Name "VKey" -ErrorAction SilentlyContinue) {
         # Already running -- kill first so each host starts with a fresh
@@ -303,9 +312,13 @@ function Start-VKey {
     return $vkeyPid
 }
 
-# Compute the hook-log path Logger.cpp:112 will write to for a given
-# VKey.exe PID. Caller passes -Override to honor an explicit -HookLog
-# param from the script command line (sideloaded log targets).
+# Resolve the hook-log path written by the just-launched VKey.exe.
+# Post-4f8bf16 Logger uses timestamp-keyed filenames
+# (VKey_<RoleTag>_<DDMMYYYY>_<HHMM>[_p<PID>].log) — PID is no longer in the
+# EXE filename, so we glob the install dir for VKey_*.log (excluding the
+# DLL's VKey_TSF-*.log) and pick the newest by mtime. Caller passes
+# -Override to honor an explicit -HookLog param (sideloaded targets,
+# PathOverride scenarios).
 function Resolve-HookLog {
     param(
         [int]$VKeyPid,
@@ -313,7 +326,20 @@ function Resolve-HookLog {
     )
     if ($Override) { return $Override }
     $installDir = Split-Path -Parent $VKeyExe
-    return Join-Path $installDir ("VKey_VKey_{0}.log" -f $VKeyPid)
+
+    $candidates = Get-ChildItem -Path $installDir -Filter "VKey_*.log" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notlike "VKey_TSF-*" }
+
+    if (-not $candidates -or $candidates.Count -eq 0) {
+        # No log found — likely "Bật debug log" toggle is OFF, or process
+        # hasn't logged anything yet. Return a legacy-format placeholder so
+        # the parser surfaces a clear "file missing" message instead of a
+        # null path. Diagnostic hint: enable debug log via Settings → System.
+        return Join-Path $installDir ("VKey_VKey_{0}.log" -f $VKeyPid)
+    }
+
+    $newest = $candidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    return $newest.FullName
 }
 
 function Stop-VKey {
