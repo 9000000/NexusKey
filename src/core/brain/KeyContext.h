@@ -21,9 +21,11 @@ struct KeyContext {
 
     const ICompositionSession& session;     // const view, lifetime tied to HookEngine
 
-    // Optional: re-inject vk after Handled — set by PostEngine features (e.g.
-    // BackwardEdit) when they need to deliver the original keystroke alongside
-    // their BS+text intents. 0 = no reinject. PreEngine features must leave 0.
+    // Optional: re-inject vk after Handled. Populated by the CALLER (HookEngine)
+    // before invoking Brain::HandleKey — features receive ctx by const ref and
+    // can only READ this field, not write it. PostEngine features (e.g. backward
+    // edit) read it to emit Intents::Reinject alongside their BS+text intents.
+    // 0 = no reinject requested.
     std::uint16_t            reinjectVk = 0;
 };
 

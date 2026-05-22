@@ -12,10 +12,12 @@ void Brain::Register(std::unique_ptr<IFeature> feature) {
     const auto stage = feature->FeatureStage();
     auto& bucket = features_[static_cast<std::size_t>(stage)];
     bucket.push_back(std::move(feature));
-    std::sort(bucket.begin(), bucket.end(),
-              [](const std::unique_ptr<IFeature>& a, const std::unique_ptr<IFeature>& b) {
-                  return a->Priority() < b->Priority();
-              });
+    // stable_sort preserves registration order when two features share a
+    // Priority, so dispatch is deterministic across compilers/runs.
+    std::stable_sort(bucket.begin(), bucket.end(),
+                     [](const std::unique_ptr<IFeature>& a, const std::unique_ptr<IFeature>& b) {
+                         return a->Priority() < b->Priority();
+                     });
 }
 
 void Brain::RegisterGate(std::unique_ptr<IGate> gate) {
