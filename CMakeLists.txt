@@ -79,6 +79,10 @@ set(NEXTKEY_CORE_SOURCES
     src/core/brain/ICompositionSession.h
     src/core/brain/KeyContext.h
     src/core/brain/IFeature.h
+    src/core/brain/IGate.h
+    src/core/brain/gates/EnglishBiasGate.h
+    src/core/brain/gates/SpellCheckGate.h
+    src/core/brain/gates/ToneEscapeGate.h
 )
 
 # Windows-only sources (require Windows.h)
