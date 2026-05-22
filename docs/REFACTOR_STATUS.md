@@ -172,6 +172,54 @@ Verified by grep on Main `3ded489` (2026-05-07):
 
 ---
 
+## Section H — De-god probe outcome (2026-05-22)
+
+**Context:** Post-Sprint-3 file growth surfaced: HookEngine.cpp +862 LOC (24%) between 2026-05-07 architectural-close and 2026-05-22, concentrated in ConfigApply Phase 3a-3f RCU migration (~+500 LOC) and 5 commit-undo bug fixes (~+300 LOC). Closure was method-level decompose (H1a/b/c, H5), not file-level — growth signal disputes "complete" verdict for ConfigApply specifically.
+
+**Probe scope:** Two-phase selective probe per `docs/plans/2026-05-22-hookengine-degod-probe.md`:
+
+| Phase | Item | Status | Commits |
+|---|---|---|---|
+| 0 | Atomic `currentCodeTable_`/`globalCodeTable_`/`globalInputMethod_` migration | **SHIPPED** | `76511b1` + `8acef2e` code-review followup |
+| 1 | Lift `RebuildSnapshotFromToml` body to `ConfigSnapshotBuilder::BuildFromToml()` pure free fn | **SHIPPED** | `84a2b90` |
+| 2 | GATE — score Phase 1 against 5 success criteria | **PAUSE verdict** | this section |
+
+**Phase 1 GATE scorecard (5 criteria from plan Task 2.1):**
+
+| # | Criteria | Target | Actual | Verdict |
+|---|---|---|---|---|
+| 1 | Real test coverage | ≥3 new tests catch bug or reveal latent | 4 tests PASS but WIN32-only (ConfigManager Win32 dep), Linux-CI value did not materialize, no bug caught | **PARTIAL** |
+| 2 | HookEngine LOC reduction | ≥35 LOC net | -34 LOC (4429→4395) | **NEAR-MISS** (1 LOC off target) |
+| 3 | Clean seam | No new accessors / callbacks on HookEngine | None added, side-effect (`isExcludedApp_.store(false)`) preserved at caller via `if (!excludeApps_)` | **PASS** |
+| 4 | Chaos no regression | 54-55/55 baseline rate | Phase 0 verify 54/55, Phase 1 verify 54/55 — same Chrome `1.2-tone-ghost-toans-bs3-i` environmental fail both runs (tiktok.com URL autocomplete kicks in on "ti"), unchanged from pre-probe Main | **PASS** |
+| 5 | Phase 1 effort ≤ 1 day | ≤ 1 active day | ~45 min controller + subagent total (TDD path, 4 implementer-flagged plan deviations, all justified by codebase reality) | **PASS** |
+
+**Verdict: PAUSE** — 3 PASS + 1 PARTIAL + 1 NEAR-MISS = PAUSE zone per plan's decision matrix.
+
+**Reasoning:**
+1. **Linux-testability premise was wrong.** Plan assumed lifting `RebuildSnapshotFromToml` into `src/core/config/` would unlock Linux gtest coverage. Reality: `ConfigManager` uses `WinStrings.h` (Win32-only) for UTF-8↔UTF-16 conversion, making any function that calls `ConfigManager::LoadXxx` Win32-only. The lifted `BuildFromToml` and its 4 new tests are gated `#ifdef _WIN32`. Phase 3 hypothetical (`QuickSyncFromSharedState` lift) would hit the **same** Win32 wall — its state-diff pattern reads `lastFeatureFlags_/lastSpellCheck_/lastInputMethod_/lastCodeTable_` AND calls `SharedState.Read()` which is also Win32-bound.
+2. **LOC reduction marginal.** -34 LOC / 4429 = 0.8% of file. Not enough to justify the extraction cost on its own.
+3. **No latent bug caught.** Writing the 4 tests did not reveal any defect; they confirm expected behavior.
+4. **Anh design philosophy "không phân mảnh trừ khi mang lại hiệu quả"** — probe surfaced data showing further extraction does not meet the bar.
+
+**What DID pay off:**
+- **Phase 0 atomic enum** = pure win. Formalizes correctness on 3 cross-thread enum fields (worker thread writes via `ReloadFromToml → ApplyConfig`; hook thread writes via `SetCodeTable`/`QuickSync`/focus override; hot-path readers). Zero risk on x64 (was already torn-read-safe at `uint8_t`), formal UB eliminated.
+
+**What does NOT happen next:**
+- ❌ Phase 3 QuickSync diff lift — same Win32 constraint, same LOC marginal expected, not worth grind
+- ❌ Full `ConfigApplier` class extraction — `ApplyConfig` is only 19 LOC and mutates 9 HookEngine fields; extraction would need more callbacks than it removes (anti-pattern)
+- ❌ Focus/AppProfile split — Win32-heavy, low test value
+- ❌ CompositionController class extraction — `HandleCommitUndo` (H1a) already method-extracted, that level of decompose deemed sufficient
+
+**Re-open trigger conditions:**
+- If HookEngine.cpp grows ≥ 5500 LOC AND new growth is concentrated in a single concern area (>500 LOC in one ~50-line region)
+- If a specific bug class repeatedly hits the ConfigApply layer and tests would have caught it
+- If a milestone requires Linux-portable config layer (e.g. cross-platform tooling that reads VKey config)
+
+Otherwise: HookEngine refactor backlog is **architecturally closed** at 4395 LOC. Stop further cosmetic decompose.
+
+---
+
 ## How to update this doc
 
 This is a living inventory — update as items ship or scope changes:
