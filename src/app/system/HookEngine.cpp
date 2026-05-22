@@ -4251,7 +4251,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         if (targetTable != currentCodeTable_.load(std::memory_order_acquire)) {
             currentCodeTable_.store(targetTable, std::memory_order_release);
             HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
-                     static_cast<int>(currentCodeTable_.load(std::memory_order_acquire)),
+                     static_cast<int>(targetTable),
                      currentExe_.c_str());
         }
     }
