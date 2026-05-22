@@ -262,12 +262,14 @@ These are real architectural concerns anh raised, deferred to separate brainstor
 
 ## 8. Open follow-ups
 
-| # | Question | Default | Anh confirm? |
-|---|---|---|---|
-| 1 | Brain class lives where? `src/core/brain/` (new) vs `src/app/system/Brain.cpp` (current Hook neighbourhood) | `src/core/brain/` — engine-portable, TSF can reuse later | TBD |
-| 2 | Feature registration: compile-time static array vs runtime register-on-Init | Runtime register-on-Init (config-driven feature enable/disable, matches Pattern F) | TBD |
-| 3 | Engine internal rules in Wave 7 — keep `PushChar` monolithic or actually split into `IEngineRule` plugins | Split — same fractal pattern. Anh confirmed in brainstorm | Confirmed |
-| 4 | First feature to extract after Backward Edit — Commit-Undo vs Macro | Commit-Undo (highest conflict count in memos) | TBD |
+All four chốt 2026-05-22 — no follow-ups remain pre-implementation.
+
+| # | Question | Resolution |
+|---|---|---|
+| 1 | Brain class lives where? | **`src/core/brain/`** — engine-portable; TSF DLL can reuse later when EngineController parallel pipeline is brainstormed |
+| 2 | Feature registration: compile-time array vs runtime register-on-Init | **Runtime register-on-Init.** Tắt feature trong config = không register = brain không loop qua. Matches Pattern F (Pattern F = "OFF must mean 0 cost"). Virtual call overhead amortized by gate filter |
+| 3 | Wave 7 engine internal rules split into `IEngineRule` | **Split, confirmed** |
+| 4 | First feature after Backward Edit | **Commit-Undo** — highest conflict count in memos (`commit_undo_synth_guard_exemption` 2-cancel-site, `commit_undo_space` MapVirtualKey), single-feature ownership fixes both as side effect |
 
 ---
 
@@ -296,8 +298,11 @@ These are real architectural concerns anh raised, deferred to separate brainstor
 
 **Compose, do not replace.** Wave 0 of this roadmap = Phase 1+2 of review 2026-05-19. Wave 5 = Phase 3. Wave 6 = Phase 4. Phase 5 (class split) is absorbed into Waves 2-4.
 
-## Appendix C — Pre-decisions confirmed by anh 2026-05-22
+## Appendix C — Decisions confirmed by anh 2026-05-22
 
 1. De-god probe Phase 1 verification standard: Windows build pass + gtest pass (chaos run not required to close probe).
 2. Sóng 7 (fractal apply inside engine) included in roadmap, not deferred to "future possibility".
 3. Engine keeps state ownership; Brain reads through const view; intent flow one-way to OutputChannel. Sync cost = 0.
+4. Brain class location: `src/core/brain/` (engine-portable, no Win32 dependencies — testable on Linux gtest; TSF DLL can reuse later).
+5. Feature registration: runtime register-on-Init driven by config. Tắt feature = không register = brain không loop qua. Matches Pattern F (OFF = 0 cost).
+6. Extraction order after BackwardEditFeature: CommitUndoFeature is #2 (resolves `commit_undo_synth_guard_exemption` + `commit_undo_space` memos as side effect of single-owner state).
