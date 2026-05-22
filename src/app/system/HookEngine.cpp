@@ -2217,12 +2217,23 @@ bool HookEngine::CommitComposition() {
     }
 
     // Push to commit stack for multi-word backward replay.
-    // Skip if: auto-restored (word was English), quick consonant active, or empty history.
+    // Skip if: quick consonant active, or empty history.
+    // AutoRestore commits ARE pushed (with text=committed to match screen) so BS
+    // can revive Vietnamese composition — user typing 'gõt'+SPACE → AutoRestore
+    // 'goxt' was previously a dead-end (engine state discarded, raw BS bypassed
+    // engine entirely, screen/engine desync). Trade-off: English words that
+    // genuinely needed AutoRestore (e.g. 'goxle'→'goxle') become BS-undoable
+    // into broken Vietnamese state; user can ESC restore-raw or keep BS to
+    // recover. Net: Vietnamese intent (the common case) now works correctly.
     pushedToStack_ = false;
-    if (!restored && !wasQuickConsonant && !inputHistory_.empty()) {
+    if (!wasQuickConsonant && !inputHistory_.empty()) {
         CommitEntry entry;
         entry.history = inputHistory_;
-        entry.text = previousComposition_;
+        if (restored) {
+            entry.text = std::move(committed);
+        } else {
+            entry.text = previousComposition_;
+        }
         entry.rawInput = std::move(rawSnapshot);
         entry.widths = previousEncodedWidths_;
         entry.extraLeadingTriggers = leadingTriggersForCurrentWord_;
@@ -2233,8 +2244,8 @@ bool HookEngine::CommitComposition() {
             commitStack_.erase(commitStack_.begin());
         }
         pushedToStack_ = true;
-        HOOK_LOG(L"  CommitComposition: pushed to stack (size=%zu, leadingTriggers=%u)",
-                 commitStack_.size(), commitStack_.back().extraLeadingTriggers);
+        HOOK_LOG(L"  CommitComposition: pushed to stack (size=%zu, leadingTriggers=%u, restored=%d)",
+                 commitStack_.size(), commitStack_.back().extraLeadingTriggers, restored ? 1 : 0);
     }
 
     ClearWordState();
