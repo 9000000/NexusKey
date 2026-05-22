@@ -236,9 +236,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         }
     }
 
-    currentCodeTable_ = config.codeTable;
-    globalCodeTable_ = config.codeTable;
-    globalInputMethod_ = config.inputMethod;
+    currentCodeTable_.store(config.codeTable, std::memory_order_release);
+    globalCodeTable_.store(config.codeTable, std::memory_order_release);
+    globalInputMethod_.store(config.inputMethod, std::memory_order_release);
 
     // Cache initial SharedState values (pointer set by main.cpp via SetSharedStateReader)
     if (sharedStatePtr_) {
@@ -510,11 +510,11 @@ void HookEngine::ToggleVietnameseMode() {
 void HookEngine::SetCodeTable(CodeTable ct) {
     std::lock_guard<std::mutex> _lock(stateMutex_);
     // Commit any pending composition before switching
-    if (ct != currentCodeTable_ && engine_->Count() > 0) {
+    if (ct != currentCodeTable_.load(std::memory_order_acquire) && engine_->Count() > 0) {
         CommitComposition();
     }
 
-    currentCodeTable_ = ct;
+    currentCodeTable_.store(ct, std::memory_order_release);
 
 }
 
@@ -532,7 +532,7 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
     if (auto* v = lookupOverride(previousExe_)) return *v;
     if (auto* v = lookupOverride(currentExe_))  return *v;
 
-    return currentCodeTable_;
+    return currentCodeTable_.load(std::memory_order_acquire);
 }
 
 void HookEngine::QuickSyncFromSharedState() {
@@ -625,7 +625,7 @@ void HookEngine::QuickSyncFromSharedState() {
     cfg.codeTable = static_cast<CodeTable>(ct);
 
     bool methodChanged = (currentMethod_.load(std::memory_order_acquire) != cfg.inputMethod);
-    bool codeTableChanged = (currentCodeTable_ != cfg.codeTable);
+    bool codeTableChanged = (currentCodeTable_.load(std::memory_order_acquire) != cfg.codeTable);
     ApplyConfig(cfg);
     config_.store(std::make_shared<const TypingConfig>(cfg), std::memory_order_release);
 
@@ -639,8 +639,8 @@ void HookEngine::QuickSyncFromSharedState() {
     }
 
     if (codeTableChanged) {
-        currentCodeTable_ = cfg.codeTable;
-        globalCodeTable_ = cfg.codeTable;
+        currentCodeTable_.store(cfg.codeTable, std::memory_order_release);
+        globalCodeTable_.store(cfg.codeTable, std::memory_order_release);
     }
 
     {
@@ -704,9 +704,9 @@ void HookEngine::ReloadFromToml() {
     ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
         ConfigManager::GetConfigPath()));
 
-    currentCodeTable_ = config.codeTable;
-    globalCodeTable_ = config.codeTable;
-    globalInputMethod_ = config.inputMethod;
+    currentCodeTable_.store(config.codeTable, std::memory_order_release);
+    globalCodeTable_.store(config.codeTable, std::memory_order_release);
+    globalInputMethod_.store(config.inputMethod, std::memory_order_release);
 
     // Phase 3d — one helper does it all: TOML parse for overrides /
     // excluded apps / TSF apps / macros, ConfigSnapshot::Build (derives
@@ -754,8 +754,11 @@ void HookEngine::ReloadFromToml() {
     // staleness window only. Acceptable for an enum-sized field.
     if (!currentExe_.empty() && !newExcluded && !newTsfApp && rcuSnap) {
         auto it = rcuSnap->appEncodingOverrides.find(currentExe_);
-        currentCodeTable_ = (it != rcuSnap->appEncodingOverrides.end())
-            ? it->second : globalCodeTable_;
+        currentCodeTable_.store(
+            (it != rcuSnap->appEncodingOverrides.end())
+                ? it->second
+                : globalCodeTable_.load(std::memory_order_acquire),
+            std::memory_order_release);
     }
     // P3e fix — per-app inputMethod override engine recreate moved to
     // ApplyConfigOnHookThread (same race surface as the unconditional
@@ -2104,7 +2107,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     //     one EM_REPLACESEL per alpha key (~ms) which is invisible at
     //     human typing pace and well below the 30 ms wait that already
     //     guards the burst-input case.
-    if (!autoCapped && currentCodeTable_ == CodeTable::Unicode &&
+    if (!autoCapped && currentCodeTable_.load(std::memory_order_acquire) == CodeTable::Unicode &&
         !(hadSynthInWord_ && electronApp) &&
         !editMsgPath &&
         synthEventsPending_ == 0 &&
@@ -2140,7 +2143,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
                            composition.back() == originalCh &&
                            composition.compare(0, previousComposition_.size(), previousComposition_) == 0);
     DWORD reinjectVk = 0;
-    if (!isSimpleAppend && !autoCapped && currentCodeTable_ == CodeTable::Unicode &&
+    if (!isSimpleAppend && !autoCapped && currentCodeTable_.load(std::memory_order_acquire) == CodeTable::Unicode &&
         !baitChar && !skipEmpty && !editMsgPath) {
         reinjectVk = vkCode;
         previousComposition_ += originalCh;
@@ -2173,7 +2176,7 @@ void HookEngine::HandleBackspace() {
         // Engine empty — delete all displayed characters
         if (!previousComposition_.empty()) {
             size_t bsCount = previousComposition_.size();
-            if (currentCodeTable_ != CodeTable::Unicode) {
+            if (currentCodeTable_.load(std::memory_order_acquire) != CodeTable::Unicode) {
                 bsCount = 0;
                 for (auto w : previousEncodedWidths_) bsCount += w;
             }
@@ -2460,7 +2463,7 @@ void HookEngine::SendCharEvents(const std::wstring& text) {
 }
 
 bool HookEngine::ShouldUseClipboard() const noexcept {
-    if (currentCodeTable_ != CodeTable::Unicode) return false;
+    if (currentCodeTable_.load(std::memory_order_acquire) != CodeTable::Unicode) return false;
     return useClipboardPaste_.load(std::memory_order_acquire);
 }
 
@@ -3399,8 +3402,8 @@ FocusClassification HookEngine::ClassifyFocusedWindow(HWND triggerHwnd) noexcept
     // `global{CodeTable,InputMethod}_` (both written from main; the new
     // cross-thread read would be a race). Phase 3 will RCU-snapshot the
     // maps and let the hook side read directly.
-    cls.targetCodeTable = static_cast<int>(globalCodeTable_);
-    cls.targetMethod    = static_cast<int>(globalInputMethod_);
+    cls.targetCodeTable = static_cast<int>(globalCodeTable_.load(std::memory_order_acquire));
+    cls.targetMethod    = static_cast<int>(globalInputMethod_.load(std::memory_order_acquire));
     // Phase 3c: per-app maps move to the RCU snapshot. Single atomic load
     // here covers all four lookups below; previously each `_set/_overrides_`
     // read was an unprotected unordered_map access from main while Reload
@@ -3533,7 +3536,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
     }
 
     // ── Non-Unicode code table path ──
-    if (currentCodeTable_ != CodeTable::Unicode) {
+    if (currentCodeTable_.load(std::memory_order_acquire) != CodeTable::Unicode) {
         // Calculate backspace count from encoded widths of chars being replaced
         size_t backspaceCount = 0;
         for (size_t i = commonLen; i < previousEncodedWidths_.size(); ++i) {
@@ -3544,7 +3547,7 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
         std::wstring encodedToSend;
         std::vector<uint8_t> newWidths;
         for (size_t i = commonLen; i < newText.size(); ++i) {
-            auto enc = CodeTableConverter::ConvertChar(newText[i], currentCodeTable_);
+            auto enc = CodeTableConverter::ConvertChar(newText[i], currentCodeTable_.load(std::memory_order_acquire));
             encodedToSend += enc.units[0];
             if (enc.count == 2) encodedToSend += enc.units[1];
             newWidths.push_back(enc.count);
@@ -3766,7 +3769,7 @@ HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
     // the committed body only. Non-Unicode code tables (TCVN3, VNI-Win) encode each
     // wchar_t into multiple bytes — mirror HandleBackspace's width-sum logic.
     size_t bsCount = top.text.size();
-    if (currentCodeTable_ != CodeTable::Unicode) {
+    if (currentCodeTable_.load(std::memory_order_acquire) != CodeTable::Unicode) {
         bsCount = 0;
         for (auto w : top.widths) bsCount += w;
     }
@@ -3912,7 +3915,7 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
         .previousEncodedWidths = previousEncodedWidths_,
         .macroTable            = snap->macroTable,
         .macroCrossCommit      = macroCrossCommit_,
-        .currentCodeTable      = currentCodeTable_,
+        .currentCodeTable      = currentCodeTable_.load(std::memory_order_acquire),
         .autoCapsEnabled       = autoCapsMacro_.load(std::memory_order_acquire),
         .triggerChar           = triggerChar,
         .clipboardThreshold    = kMacroClipboardThreshold,
@@ -3938,7 +3941,7 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
     } else {
         sending_ = true;
         std::size_t pendingBs = plan.bsCount;
-        for (const auto& s : Macro::BuildSegments(plan.expansion, currentCodeTable_)) {
+        for (const auto& s : Macro::BuildSegments(plan.expansion, currentCodeTable_.load(std::memory_order_acquire))) {
             if (s.isReturn) {
                 if (pendingBs > 0) {
                     if (!inj->Replace(pendingBs, std::wstring_view{})) {
@@ -4245,10 +4248,11 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // globalCodeTable_ here).
     {
         const CodeTable targetTable = static_cast<CodeTable>(cls->targetCodeTable);
-        if (targetTable != currentCodeTable_) {
-            currentCodeTable_ = targetTable;
+        if (targetTable != currentCodeTable_.load(std::memory_order_acquire)) {
+            currentCodeTable_.store(targetTable, std::memory_order_release);
             HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
-                     static_cast<int>(currentCodeTable_), currentExe_.c_str());
+                     static_cast<int>(currentCodeTable_.load(std::memory_order_acquire)),
+                     currentExe_.c_str());
         }
     }
 

@@ -439,12 +439,17 @@ private:
     SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode
     std::wstring currentExe_;  // Currently focused app
     std::wstring previousExe_;  // Previously focused app (for tray menu context)
-    CodeTable currentCodeTable_ = CodeTable::Unicode;
-    CodeTable globalCodeTable_ = CodeTable::Unicode;     // config value, restored when no override
+    // Writers: worker thread (ReloadFromToml → ApplyConfig) AND hook thread
+    // (SetCodeTable, QuickSyncFromSharedState, focus override). Readers: hook
+    // hot path (HandleAlphaKey, CommitComposition, ClassifyFocusedWindow,
+    // ReplaceComposition, macro expansion). Atomic load/store with
+    // acquire/release ordering — uint8_t underlying is lock-free on x64.
+    std::atomic<CodeTable> currentCodeTable_{CodeTable::Unicode};
+    std::atomic<CodeTable> globalCodeTable_{CodeTable::Unicode};   // config value, restored when no override
     // (appEncodingOverrides_, appInputMethodOverrides_, and
     // appSendMethodOverrides_ all removed — Phase 3d + 2026-05-19
     // follow-up. Readers go through configSnapshot_.load()->...)
-    InputMethod globalInputMethod_ = InputMethod::Telex; // config value, restored when no override
+    std::atomic<InputMethod> globalInputMethod_{InputMethod::Telex}; // config value, restored when no override
 
     // Per-HWND classification cache. Each focus change normally calls
     // ClassifyWindow + GetExeNameForHwnd + (sometimes) IsWebView2App, costing
