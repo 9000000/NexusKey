@@ -74,6 +74,8 @@ set(NEXTKEY_CORE_SOURCES
     src/core/brain/Stage.h
     src/core/brain/Result.h
     src/core/brain/GateMask.h
+    src/core/brain/Intent.h
+    src/core/brain/IntentSink.h
 )
 
 # Windows-only sources (require Windows.h)
@@ -513,6 +515,8 @@ set(NEXTKEY_TEST_SOURCES
     tests/HotkeyLabelTest.cpp
     tests/HotkeyConfigMigrationTest.cpp
     tests/brain/EnumsTest.cpp
+    tests/brain/IntentTest.cpp
+    tests/brain/IntentSinkTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
