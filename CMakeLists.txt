@@ -78,6 +78,7 @@ set(NEXTKEY_CORE_SOURCES
     src/core/brain/IntentSink.h
     src/core/brain/ICompositionSession.h
     src/core/brain/KeyContext.h
+    src/core/brain/IFeature.h
 )
 
 # Windows-only sources (require Windows.h)
