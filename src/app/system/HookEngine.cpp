@@ -10,6 +10,7 @@
 #include "core/engine/CodeTableConverter.h"
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
+#include "core/config/ConfigSnapshotBuilder.h"
 #include "core/CjkSwitchDecision.h"
 #include "core/CommitUndoExemption.h"
 #include "core/DigitLedWordDecision.h"
@@ -3005,55 +3006,20 @@ bool HookEngine::VerifyExcludedState() {
 // path, OnTickPoll drain) sit under the outer LL-callback catch or
 // OnTickPoll's own catch — graceful unwind beats `std::terminate`.
 void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) {
-    const auto configPath = ConfigManager::GetConfigPath();
-
-    // Parse per-app overrides in one TOML pass; partition into the three
-    // typed maps the snapshot expects (encoding, input method, send
-    // method). All three publish through the same shared_ptr swap so
-    // ClassifyFocusedWindow on main sees a consistent view even mid-
-    // rebuild on the worker thread.
-    auto overrides = ConfigManager::LoadAppOverrides(configPath);
-    std::unordered_map<std::wstring, CodeTable>    encOv;
-    std::unordered_map<std::wstring, InputMethod>  imOv;
-    std::unordered_map<std::wstring, std::int8_t>  sendOv;
-    for (auto& [exe, entry] : overrides) {
-        if (entry.encodingOverride >= 0)
-            encOv.emplace(exe, static_cast<CodeTable>(entry.encodingOverride));
-        if (entry.inputMethod >= 0)
-            imOv.emplace(exe, static_cast<InputMethod>(entry.inputMethod));
-        if (entry.sendMethod >= 0)
-            sendOv.emplace(exe, entry.sendMethod);
-    }
-
-    std::unordered_set<std::wstring> excluded;
-    if (excludeApps_) {
-        for (auto& app : ConfigManager::LoadAllExcludedApps(configPath))
-            excluded.insert(std::move(app));
-    } else {
-        // Cached "currently in excluded app" flag must clear when the
-        // feature is off (matches old ReloadExcludedApps else-branch).
+    // Side-effect: when excludeApps is off, clear the cached "currently in
+    // excluded app" flag so a flag-disable picks up on the next focus check.
+    // This is HookEngine runtime state, not snapshot data — keep here, not in
+    // ConfigSnapshotBuilder.
+    if (!excludeApps_) {
         isExcludedApp_.store(false, std::memory_order_release);
     }
 
-    std::unordered_set<std::wstring> tsf;
-    if (tsfApps_) {
-        for (auto& app : ConfigManager::LoadTsfApps(configPath))
-            tsf.insert(std::move(app));
-    }
-
-    std::unordered_map<std::wstring, std::wstring> macros;
-    if (macroEnabled_.load(std::memory_order_acquire)) {
-        macros = ConfigManager::LoadMacros(configPath);
-    }
-
-    auto snap = std::make_shared<const ConfigSnapshot>(ConfigSnapshot::Build(
-        std::move(macros),
-        std::move(excluded),
-        std::move(tsf),
-        std::move(encOv),
-        std::move(imOv),
-        std::move(sendOv),
-        generation));
+    auto snap = ConfigSnapshotBuilder::BuildFromToml(
+        ConfigManager::GetConfigPath(),
+        excludeApps_,
+        tsfApps_,
+        macroEnabled_.load(std::memory_order_acquire),
+        generation);
     configSnapshot_.store(std::move(snap), std::memory_order_release);
 }
 

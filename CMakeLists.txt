@@ -85,6 +85,8 @@ if(WIN32)
         src/core/config/ConfigEvent.h
         src/core/config/ConfigManager.cpp
         src/core/config/ConfigManager.h
+        src/core/config/ConfigSnapshotBuilder.cpp
+        src/core/config/ConfigSnapshotBuilder.h
     )
 endif()
 
@@ -519,6 +521,7 @@ if(WIN32)
         tests/ConfigManagerTest.cpp
         tests/ConfigEventTest.cpp
         tests/HeartbeatPublisherTest.cpp
+        tests/core/config/ConfigSnapshotBuilderTest.cpp
         # Sprint 2 T3 — IOutputInjector unit tests + impl sources for linkage.
         # VKeyTests links VKeyCore (which excludes output/), so impls
         # are pulled in directly here for the test binary.
