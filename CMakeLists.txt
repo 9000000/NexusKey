@@ -83,6 +83,8 @@ set(NEXTKEY_CORE_SOURCES
     src/core/brain/gates/EnglishBiasGate.h
     src/core/brain/gates/SpellCheckGate.h
     src/core/brain/gates/ToneEscapeGate.h
+    src/core/brain/Brain.h
+    src/core/brain/Brain.cpp
 )
 
 # Windows-only sources (require Windows.h)
@@ -524,6 +526,9 @@ set(NEXTKEY_TEST_SOURCES
     tests/brain/EnumsTest.cpp
     tests/brain/IntentTest.cpp
     tests/brain/IntentSinkTest.cpp
+    tests/brain/BrainRegistryTest.cpp
+    tests/brain/BrainDispatchTest.cpp
+    tests/brain/BrainGateFilterTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
