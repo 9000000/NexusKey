@@ -71,6 +71,9 @@ set(NEXTKEY_CORE_SOURCES
     src/core/hotkey/HotkeyLabel.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
+    src/core/brain/Stage.h
+    src/core/brain/Result.h
+    src/core/brain/GateMask.h
 )
 
 # Windows-only sources (require Windows.h)
@@ -509,6 +512,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/InjectorSwitchTest.cpp
     tests/HotkeyLabelTest.cpp
     tests/HotkeyConfigMigrationTest.cpp
+    tests/brain/EnumsTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
