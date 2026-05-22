@@ -92,6 +92,8 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 2. Giải nén và chạy `VKey.exe`.
 3. *(Khuyến nghị)* Tắt các bộ gõ khác (Unikey, EVKey) để tránh xung đột.
 
+> **Ký số (Code signing):** Dự án này sử dụng [SignPath Foundation](https://signpath.org/) để ký số (Authenticode) cho file thực thi Windows. Chữ ký được cung cấp miễn phí cho các dự án mã nguồn mở.
+
 ---
 
 ## Xác minh bản tải (Verify Release)
@@ -228,6 +230,8 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 2. Extract and run `VKey.exe`.
 3. *(Recommended)* Disable other IMEs (Unikey, EVKey) to avoid conflicts.
 
+> **Code signing:** This project uses [SignPath Foundation](https://signpath.org/) for Authenticode code signing of the Windows executables. Code signing is provided free of charge for open-source projects.
+
 ### Building
 
 **Prerequisites:** Windows 10/11, Visual Studio 2022 (Desktop C++ + ATL), CMake 3.20+
@@ -270,6 +274,7 @@ VKey is built with a lean architecture and no heavy runtime dependencies, keepin
 - Tham khảo config TSF từ [VietType](https://github.com/dinhngtu/VietType)
 - Tham khảo cách xử lý clipboard input từ [SigmaLib](https://github.com/phamhoangnhat/SigmaLib) của Phạm Hoàng Nhật
 - Tham khảo quy tắt tiếng việt từ [dotnetkey](https://code.google.com/archive/p/dotnetkey/downloads)
+- Ký số Windows (Authenticode) cung cấp miễn phí bởi [SignPath Foundation](https://signpath.org/) cho dự án mã nguồn mở
 
 ### Top Testers
 Cảm ơn các thành viên cộng đồng đã test và góp ý:
