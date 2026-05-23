@@ -548,6 +548,8 @@ set(NEXTKEY_TEST_SOURCES
     tests/pipeline/OutputChannelTest.cpp
     tests/pipeline/HookCompositionSessionTest.cpp
     tests/pipeline/EnglishBiasGateTest.cpp
+    tests/pipeline/SpellCheckGateTest.cpp
+    tests/pipeline/ToneEscapeGateTest.cpp
     tests/pipeline/BackwardEditFeatureTest.cpp
     tests/pipeline/CommitUndoFeatureTest.cpp
     tests/pipeline/EscRestoreRawFeatureTest.cpp

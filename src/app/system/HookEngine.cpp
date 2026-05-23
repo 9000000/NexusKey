@@ -27,6 +27,8 @@
 #include "core/pipeline/Intent.h"
 #include "core/pipeline/KeyContext.h"
 #include "core/pipeline/gates/EnglishBiasGate.h"
+#include "core/pipeline/gates/SpellCheckGate.h"
+#include "core/pipeline/gates/ToneEscapeGate.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -119,6 +121,15 @@ HookEngine::HookEngine() {
     // derived HookEngine is still mid-construction here.
     coordinator_.RegisterGate(
         std::make_unique<NextKey::Pipeline::EnglishBiasGate>(vietnameseMode_));
+    // Wave 5: SpellCheckGate raised when engine_->IsEnglishWord() (3-tier
+    // English protection bias == HardEnglish). ToneEscapeGate raised when
+    // any EscapeKind is active. Both hold ref to the engine_ unique_ptr —
+    // safe because the ref stays valid across config reloads; only the
+    // pointee swaps. Gate dereferences on every IsRaised call.
+    coordinator_.RegisterGate(
+        std::make_unique<NextKey::Pipeline::SpellCheckGate>(engine_));
+    coordinator_.RegisterGate(
+        std::make_unique<NextKey::Pipeline::ToneEscapeGate>(engine_));
     coordinator_.Register(
         std::make_unique<NextKey::Pipeline::BackwardEditFeature>(*this));
     // Wave 3: CommitUndoFeature owns step 2d FSM dispatch. Stage::PreEngine
