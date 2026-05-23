@@ -1700,7 +1700,7 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
             { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
               engine_->PushChar(ch); composition = engine_->Peek(); }
             HOOK_LOG(L"  bracket '%c' → Peek()='%s'", ch, composition.c_str());
-            ReplaceComposition(composition);
+            DispatchCoordinator(vkCode, 0, composition);
             return KeyOutcome::Eat;  // Eat the original keystroke
         }
     }
@@ -1741,7 +1741,7 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
                 { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
                   engine_->PushChar(ch); composition = engine_->Peek(); }
                 HOOK_LOG(L"  UserDefined OEM '%c' → Peek()='%s'", ch, composition.c_str());
-                ReplaceComposition(composition);
+                DispatchCoordinator(vkCode, 0, composition);
                 return KeyOutcome::Eat;
             }
         }
@@ -2176,7 +2176,7 @@ bool HookEngine::HandleVniDigitKey(DWORD vkCode) {
     { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
       engine_->PushChar(ch); composition = engine_->Peek(); }
     HOOK_LOG(L"  VNI digit '%c' → Peek()='%s'", ch, composition.c_str());
-    ReplaceComposition(composition);
+    DispatchCoordinator(vkCode, 0, composition);
     return true;
 }
 
@@ -2187,7 +2187,7 @@ void HookEngine::HandleBackspace() {
 
     if (engine_->Count() > 0) {
         std::wstring composition = engine_->Peek();
-        ReplaceComposition(composition);
+        DispatchCoordinator(VK_BACK, 0, composition);
     } else {
         // Engine empty — delete all displayed characters
         if (!previousComposition_.empty()) {
@@ -2231,7 +2231,7 @@ bool HookEngine::CommitComposition() {
     // replace the displayed text (e.g., "gôgle" → "google")
     if (!previousComposition_.empty() && committed != previousComposition_) {
         HOOK_LOG(L"  AutoRestore: '%s' → '%s'", previousComposition_.c_str(), committed.c_str());
-        ReplaceComposition(committed);
+        DispatchCoordinator(0, 0, committed);
         restored = true;
     }
 
