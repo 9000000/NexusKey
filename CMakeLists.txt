@@ -47,6 +47,12 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/TypingAction.h
     src/core/engine/CodeTableConverter.cpp
     src/core/engine/CodeTableConverter.h
+    src/core/engine/rule/EngineRulePhase.h
+    src/core/engine/rule/EngineRuleResult.h
+    src/core/engine/rule/EngineRuleContext.h
+    src/core/engine/rule/IEngineRule.h
+    src/core/engine/rule/EngineRuleRegistry.h
+    src/core/engine/rule/EngineRuleRegistry.cpp
 )
 
 add_library(VKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
@@ -554,6 +560,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/pipeline/CommitUndoFeatureTest.cpp
     tests/pipeline/EscRestoreRawFeatureTest.cpp
     tests/pipeline/MacroFeatureTest.cpp
+    tests/engine/EngineRuleRegistryTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
