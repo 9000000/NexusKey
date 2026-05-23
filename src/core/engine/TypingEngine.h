@@ -265,8 +265,13 @@ private:
     // when applying horn to u). Restores state before returning.
     // The validator enforces the tone/mod same-vowel invariant, so this also
     // catches typos like "của" + circumflex on 'a' → c,ủ,â.
+    // `speculateRelocateTone` mirrors callers whose runtime applies the
+    // modifier AND immediately runs `RelocateToneToTarget()` (free-marking
+    // circumflex). Callers whose runtime keeps the tone on its current vowel
+    // (adjacent circumflex via ShouldRejectModifier, Breve P7) leave it false.
     [[nodiscard]] bool WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
-                                            size_t clearCircumflexIdx = SIZE_MAX);
+                                            size_t clearCircumflexIdx = SIZE_MAX,
+                                            bool speculateRelocateTone = false);
 
     // Common guard used by modifier sites (Telex adjacent/cross-vowel,
     // VNI Pass 1): reject when applying `newMod` at `targetIdx` produces an

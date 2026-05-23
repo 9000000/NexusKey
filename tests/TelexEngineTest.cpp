@@ -2547,6 +2547,16 @@ TEST_F(CircumflexFreeMarkSpellOnTest, ChieuPlusE_StillCircumflexes) {
     EXPECT_EQ(engine_->Peek(), L"chiêu");
 }
 
+// Free-marking across coda must speculate WITH tone relocation. Previously,
+// "súat" + 'a' (= raw "susata") rejected the circumflex because the
+// unrelocated speculative state had sắc on `u` of `uâ` cluster, which
+// validator marks Invalid. Runtime relocates sắc → `â` after applying
+// circumflex, so the real result `suất` is valid Vietnamese.
+TEST_F(CircumflexFreeMarkSpellOnTest, SuatPlusA_PromotesToSuat) {
+    TypeString(*engine_, L"susata");  // s u s(sắc) a t a → suất
+    EXPECT_EQ(engine_->Peek(), L"suất");
+}
+
 // Adjacent-vowel circumflex (aa/ee/oo direct) must also validate the result.
 // "của" + extra 'a' previously produced "củâ" (invalid syllable).
 TEST_F(CircumflexFreeMarkSpellOnTest, CuaPlusA_AdjacentRejected) {

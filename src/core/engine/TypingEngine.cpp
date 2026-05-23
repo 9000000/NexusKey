@@ -26,6 +26,17 @@ namespace NextKey {
 namespace {
 
 //=============================================================================
+// File-scope constants
+//=============================================================================
+
+// Vowel/state cap used wherever a stack-array snapshot of a syllable buffer
+// is needed. Picked to match Phonotactics' internal vowel-sequence capacity
+// so that truncation behaves identically on both sides of the engine/
+// validator boundary. Vietnamese syllables max out around 7-8 CharStates
+// (e.g. `nghiêng` = 7); 16 is generous defensive headroom.
+constexpr size_t kVowelCap = 16;
+
+//=============================================================================
 // Key mapping helpers
 //=============================================================================
 
@@ -1005,8 +1016,15 @@ bool TypingEngine::HandleAdjacentCircumflex(TypingAction action, wchar_t c) {
                     // transformations that produce invalid syllables.
                     // Catches "gacha" → "gâch", "bacha" → "bâch", etc.
                     // — âch/ăch are not valid Vietnamese codas.
+                    // Speculate WITH tone relocation because the runtime
+                    // below calls RelocateToneToTarget after applying the
+                    // modifier — without it, "súat" + 'a' speculates as
+                    // sắc-on-`u` of `uâ` (Invalid) and the legitimate
+                    // promotion to "suất" gets rejected.
                     size_t targetIdx = static_cast<size_t>(states_.rend() - it - 1);
-                    if (!WouldBeValidSyllable(targetIdx, Modifier::Circumflex)) break;
+                    if (!WouldBeValidSyllable(targetIdx, Modifier::Circumflex,
+                                              /*clearCircumflexIdx=*/SIZE_MAX,
+                                              /*speculateRelocateTone=*/true)) break;
                 }
                 it->mod = Modifier::Circumflex;
                 RelocateToneToTarget();
@@ -1460,10 +1478,10 @@ bool TypingEngine::IsToneStopCodaMismatch() const noexcept {
 }
 
 size_t TypingEngine::FindToneTarget() const noexcept {
-    // Cap matches Phonotactics' internal vowel capacity; sequences past the cap
-    // are truncated identically on both sides so the index map stays consistent.
+    // Cap matches Phonotactics' internal vowel capacity (see file-scope
+    // kVowelCap); sequences past the cap are truncated identically on both
+    // sides so the index map stays consistent.
     // Stack-only buffers — Pillar Nhanh: no heap alloc on hook hot path.
-    constexpr size_t kVowelCap = 16;
     std::array<size_t, kVowelCap> vowelStateIdx{};
     std::array<wchar_t, kVowelCap> vowelSeq{};
     size_t vowelCount = 0;
@@ -1971,9 +1989,46 @@ bool TypingEngine::ShouldRejectModifier(size_t targetIdx, Modifier newMod,
 }
 
 bool TypingEngine::WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
-                                        size_t clearCircumflexIdx) {
+                                        size_t clearCircumflexIdx,
+                                        bool speculateRelocateTone) {
     if (!config_.spellCheckEnabled) return true;
     if (targetIdx >= states_.size()) return true;
+
+    // Bulk snapshot path — only when the caller's runtime relocates the tone
+    // after applying the modifier. Validating without the relocation
+    // misclassifies legitimate promotions like "súat" + 'a' → "suất"
+    // (free-marking circumflex across coda 't'): unrelocated, sắc on `u` of
+    // `uâ` reads as Invalid; relocated, sắc on `â` is Valid. The stack-array
+    // snapshot is sized to the file-scope kVowelCap so the same truncation
+    // contract applies as in FindToneTarget — no heap traffic on the modifier
+    // hot path. CharState is trivially copyable; only RelocateToneToTarget
+    // mutates fields beyond .mod, and only on two indices, so a bulk snapshot/
+    // restore covers every mutation.
+    if (speculateRelocateTone) {
+        const size_t bufferLen = states_.size();
+        if (bufferLen > kVowelCap) return true;  // Defensive: oversized buffer → permissive.
+
+        std::array<CharState, kVowelCap> saved;
+        std::copy_n(states_.begin(), bufferLen, saved.begin());
+
+        states_[targetIdx].mod = newMod;
+        if (clearCircumflexIdx < bufferLen &&
+            saved[clearCircumflexIdx].mod == Modifier::Circumflex) {
+            states_[clearCircumflexIdx].mod = Modifier::None;
+        }
+        RelocateToneToTarget();
+
+        auto result = Phonology::ValidateSyllableState(states_.data(), bufferLen, config_.allowZwjf);
+        bool recoverableMismatch = (result == Phonology::SyllableState::Invalid)
+                                   && IsToneStopCodaMismatch();
+
+        std::copy_n(saved.begin(), bufferLen, states_.begin());
+        return result != Phonology::SyllableState::Invalid || recoverableMismatch;
+    }
+
+    // Mod-only path — runtime keeps tone on its current vowel (adjacent
+    // circumflex, Breve P7). Speculating relocation would over-accept by
+    // re-aligning tone the runtime never moves.
     Modifier saved = states_[targetIdx].mod;
     states_[targetIdx].mod = newMod;
     bool didClear = false;
