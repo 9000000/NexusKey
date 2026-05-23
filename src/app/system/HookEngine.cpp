@@ -20,7 +20,9 @@
 #include "core/Debug.h"
 #include "core/CrashLog.h"
 #include "core/pipeline/BackwardEditFeature.h"
+#include "core/pipeline/CommitUndoFeature.h"
 #include "core/pipeline/HookCompositionSession.h"
+#include "core/pipeline/Intent.h"
 #include "core/pipeline/KeyContext.h"
 #include "core/pipeline/gates/EnglishBiasGate.h"
 #include <algorithm>
@@ -117,6 +119,11 @@ HookEngine::HookEngine() {
         std::make_unique<NextKey::Pipeline::EnglishBiasGate>(vietnameseMode_));
     coordinator_.Register(
         std::make_unique<NextKey::Pipeline::BackwardEditFeature>(*this));
+    // Wave 3: CommitUndoFeature owns step 2d FSM dispatch. Stage::PreEngine
+    // prio 20. *this is the ICommitUndoExecutor backing — feature delegates
+    // synchronously to HandleCommitUndo(vk) which adapts to HandleCommitUndoFsm.
+    coordinator_.Register(
+        std::make_unique<NextKey::Pipeline::CommitUndoFeature>(*this));
 }
 
 HookEngine::~HookEngine() {
@@ -1028,13 +1035,34 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     }
 
     // 2d. Backspace-into-committed-word state machine (Idle/Ready/Primed).
-    // H1a: body extracted to HandleCommitUndo. Returned outcome dictates whether
-    // ProcessKeyDown short-circuits (Eat/Pass) or continues with subsequent
-    // steps (Fallthrough). Behavior preserved byte-identical to pre-H1a.
-    switch (HandleCommitUndo(vkCode, vnMode)) {
-        case KeyOutcome::Eat: return true;
-        case KeyOutcome::Pass: return false;
-        case KeyOutcome::Fallthrough: break;
+    // Wave 3: routes through Coordinator → CommitUndoFeature → ICommitUndoExecutor
+    // adapter → HandleCommitUndoFsm (the renamed FSM body). The feature emits
+    // ConsumeKey/PassThrough/nothing for Eat/Pass/Fallthrough respectively.
+    // Byte-identical to pre-W3 path; FSM body unchanged.
+    {
+        std::wstring_view engineRendered =
+            engine_ ? std::wstring_view{engine_->Peek()} : std::wstring_view{};
+        std::wstring rawSnapshot =
+            engine_ ? engine_->PeekRaw() : std::wstring{};
+        NextKey::Pipeline::HookCompositionSession session(
+            previousComposition_, engineRendered, rawSnapshot);
+        NextKey::Pipeline::KeyContext keyCtx{
+            static_cast<std::uint16_t>(vkCode),
+            L'\0',
+            false, false, false, false, false,
+            session,
+            0
+        };
+        coordinator_.HandleKeyAtStage(
+            NextKey::Pipeline::Stage::PreEngine, keyCtx, outputChannel_);
+        auto batch = outputChannel_.TakeBatch();
+        for (const auto& intent : batch) {
+            if (std::holds_alternative<NextKey::Pipeline::Intents::ConsumeKey>(intent))
+                return true;
+            if (std::holds_alternative<NextKey::Pipeline::Intents::PassThrough>(intent))
+                return false;
+        }
+        // No flow-control intent → Fallthrough: continue to step 3+.
     }
 
     // Cache key states once per keystroke (GetKeyState is a snapshot, safe to
@@ -1160,7 +1188,7 @@ HookEngine::KeyOutcome HookEngine::RunTopGuards(DWORD vkCode) {
 //   Eat         → ProcessKeyDown returns true (key consumed by undo machinery).
 //   Pass        → ProcessKeyDown returns false (key passes through to app).
 //   Fallthrough → no decision; ProcessKeyDown continues with subsequent steps.
-HookEngine::KeyOutcome HookEngine::HandleCommitUndo(DWORD vkCode, bool vnMode) {
+HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode) {
     // Ctrl/Alt/Win invalidate commit-undo: Ctrl+BS deletes entire word (not just the
     // space), Ctrl+A/C/Z change cursor/selection — all make saved commit state stale.
     // Must check BEFORE the state machine to prevent ghost key replay.
@@ -3506,6 +3534,25 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 void HookEngine::ExecuteReplace(std::wstring_view newText,
                                 std::uint16_t reinjectVk) {
     ReplaceComposition(std::wstring{newText}, static_cast<DWORD>(reinjectVk));
+}
+
+/// Wave 3 — Pipeline::ICommitUndoExecutor adapter. Delegates to the FSM
+/// body (renamed `HandleCommitUndoFsm` to disambiguate from this override).
+/// vnMode is read fresh from vietnameseMode_ atomic — slightly different
+/// from the legacy inline call site that took vnMode as a stack-local
+/// param, but byte-equivalent because vietnameseMode_ writers are async
+/// to the hook thread (main thread on toggle / config reload).
+NextKey::Pipeline::CommitUndoOutcome HookEngine::HandleCommitUndo(
+    std::uint16_t vkCode) {
+    const bool vnMode = vietnameseMode_.load(std::memory_order_acquire);
+    const KeyOutcome out =
+        HandleCommitUndoFsm(static_cast<DWORD>(vkCode), vnMode);
+    switch (out) {
+        case KeyOutcome::Eat:         return NextKey::Pipeline::CommitUndoOutcome::Eat;
+        case KeyOutcome::Pass:        return NextKey::Pipeline::CommitUndoOutcome::Pass;
+        case KeyOutcome::Fallthrough: return NextKey::Pipeline::CommitUndoOutcome::Fallthrough;
+    }
+    return NextKey::Pipeline::CommitUndoOutcome::Fallthrough;  // defensive
 }
 
 /// Wave 2 — pipeline dispatch entry point used by the six call-sites that

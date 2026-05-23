@@ -15,6 +15,7 @@
 #include "core/SmartSwitchManager.h"
 #include "app/system/HookCommandMailbox.h"
 #include "core/pipeline/IBackwardEditExecutor.h"
+#include "core/pipeline/ICommitUndoExecutor.h"
 #include "core/pipeline/Coordinator.h"
 #include "core/pipeline/OutputChannel.h"
 #include <Windows.h>
@@ -44,7 +45,9 @@ using ModeChangeCallback = std::function<void(bool vietnamese)>;
 
 /// Keyboard hook engine — intercepts keystrokes, processes Vietnamese input,
 /// outputs via SendInput backspace+retype. Absorbs HotkeyManager logic.
-class HookEngine : public NextKey::Pipeline::IBackwardEditExecutor {
+class HookEngine
+    : public NextKey::Pipeline::IBackwardEditExecutor
+    , public NextKey::Pipeline::ICommitUndoExecutor {
 public:
     HookEngine();
     ~HookEngine() override;
@@ -57,6 +60,14 @@ public:
     // pure-diff phase out into the feature and execute via OutputChannel.
     void ExecuteReplace(std::wstring_view newText,
                         std::uint16_t reinjectVk) override;
+
+    // Pipeline::ICommitUndoExecutor — Wave 3 adapter for CommitUndoFeature.
+    // Thin wrapper around the existing HandleCommitUndoFsm FSM body. Reads
+    // vnMode internally from vietnameseMode_ atomic. Maps KeyOutcome →
+    // CommitUndoOutcome at the boundary. Wave N+ will lift the FSM body
+    // into CommitUndoFeature::Try for true single-owner state.
+    [[nodiscard]] NextKey::Pipeline::CommitUndoOutcome HandleCommitUndo(
+        std::uint16_t vkCode) override;
 
     /// Start the hook engine (installs keyboard hook + focus hook)
     bool Start(HINSTANCE hInstance, const TypingConfig& config,
@@ -161,7 +172,7 @@ private:
     // (Idle/Ready/Primed) — handles backspace-into-committed-word replay.
     // Mutates commitUndoState_/pendingTriggerCount_/macroCrossCommit_/rawMacroBuffer_
     // and may call HandleAlphaKey/HandleVniDigitKey/HandleBackspace/InjectKey.
-    [[nodiscard]] KeyOutcome HandleCommitUndo(DWORD vkCode, bool vnMode);
+    [[nodiscard]] KeyOutcome HandleCommitUndoFsm(DWORD vkCode, bool vnMode);
 
     // H1c (extracted from ProcessKeyDown steps 3 / 3a-3d): English-mode short
     // circuit + Vietnamese-mode pre-dispatch tracking. When !vnMode, runs the
