@@ -53,6 +53,9 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/rule/IEngineRule.h
     src/core/engine/rule/EngineRuleRegistry.h
     src/core/engine/rule/EngineRuleRegistry.cpp
+    src/core/engine/rule/IToneExecutor.h
+    src/core/engine/rule/ToneRule.h
+    src/core/engine/rule/ToneRule.cpp
 )
 
 add_library(VKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
@@ -561,6 +564,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/pipeline/EscRestoreRawFeatureTest.cpp
     tests/pipeline/MacroFeatureTest.cpp
     tests/engine/EngineRuleRegistryTest.cpp
+    tests/engine/ToneRuleTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp

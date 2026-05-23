@@ -14,6 +14,7 @@
 #include "TypingAction.h"
 #include "core/config/TypingConfig.h"
 #include "core/engine/rule/EngineRuleRegistry.h"
+#include "core/engine/rule/IToneExecutor.h"
 #include <vector>
 #include <string>
 
@@ -82,7 +83,8 @@ struct CharState {
 /// - Escape clean (retype tone/mod to clear)
 /// - No reverse maps needed
 /// - TSF composition state always in sync
-class TypingEngine : public IInputEngine {
+class TypingEngine : public IInputEngine,
+                     public EngineRule::IToneExecutor {
 public:
     TypingEngine() : TypingEngine(TypingConfig{}) {}
     explicit TypingEngine(const TypingConfig& config);
@@ -116,6 +118,14 @@ public:
     [[nodiscard]] std::wstring PeekRaw() const override {
         return std::wstring(escRawHistory_.data(), escRawHistory_.size());
     }
+
+    // IToneExecutor — drives the W7.2 ToneRule plugin. Returns true if the
+    // tone/ClearTone action was handled (caller stops processing this key),
+    // false if no tone path applied and dispatch should fall through.
+    [[nodiscard]] bool HandleToneFsm(TypingAction action,
+                                      wchar_t keyChar,
+                                      wchar_t lower,
+                                      bool isUpper) override;
 
 private:
     // Mode helpers

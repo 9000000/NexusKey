@@ -12,8 +12,10 @@
 #include "TypingAction.h"
 #include "VietnameseTables.h"
 #include "core/engine/rule/EngineRuleContext.h"
+#include "core/engine/rule/ToneRule.h"
 #include <algorithm>
 #include <array>
+#include <memory>
 #include <string_view>
 
 namespace NextKey {
@@ -97,6 +99,7 @@ TypingEngine::TypingEngine(const TypingConfig& config,
     states_.reserve(8);
     rawInput_.reserve(12);
     escRawHistory_.reserve(12);
+    ruleRegistry_.Register(std::make_unique<EngineRule::ToneRule>(*this));
     Reset();
 }
 
@@ -264,119 +267,6 @@ void TypingEngine::PushChar(wchar_t keyChar) {
                 == EngineRule::Result::Veto) return;
     }
 
-    // "Gõ tự do" / allowEnglishBypass: when ON, treat all spell-check-driven
-    // literal-treatment gates below as if spell check were OFF — user wants
-    // tones/modifiers applied freely regardless of Vietnamese phonotactic
-    // validity. The HardEnglish-bias gates check `!config_.allowEnglishBypass`
-    // directly (separate concern: rendered-text English heuristic).
-    const bool effectiveSpellCheck =
-        config_.spellCheckEnabled && !config_.allowEnglishBypass;
-
-    // 1a. Clear tone: Telex 'z' / VNI '0'
-    if (action == TypingAction::ClearTone && !states_.empty()) {
-        if (effectiveSpellCheck && spellCheckDisabled_) {
-            ProcessChar(keyChar);
-            UpdateSpellState();
-            return;
-        }
-        if (ProcessClearTone()) {
-            UpdateSpellState();
-            return;
-        }
-    }
-
-    // 1b. Tone keys — derive Tone from action.
-    Tone requestedTone = states_.empty() ? Tone::None : ActionToTone(action);
-    bool isTelexTone = (requestedTone != Tone::None) && (lower < L'0' || lower > L'9');
-
-    if (requestedTone != Tone::None) {
-        // All "treat as literal" paths share the same two operations.
-        auto asLiteral = [&] { ProcessChar(keyChar, lower, isUpper); UpdateSpellState(); };
-
-        // Cache FindToneTarget from spell-check gate to avoid redundant call in ProcessTone.
-        size_t cachedToneTarget = SIZE_MAX;
-        bool hasCachedTarget = false;
-
-        if (effectiveSpellCheck && spellCheckDisabled_) {
-            cachedToneTarget = FindToneTarget();
-            hasCachedTarget = true;
-            size_t targetIndex = cachedToneTarget;
-            bool isEscape = (targetIndex != SIZE_MAX && states_[targetIndex].tone == requestedTone);
-            bool matchesExclusion = !isEscape && ToneMatchesExclusion(targetIndex, requestedTone);
-            // T5 (docs/TODO.md): allow tone REPLACEMENT when the current invalid
-            // buffer would become Valid after swapping the existing tone for the
-            // requested one.
-            bool wouldRecover = false;
-            if (!isEscape && !matchesExclusion && targetIndex != SIZE_MAX && states_[targetIndex].HasTone()) {
-                Tone savedTone = states_[targetIndex].tone;
-                states_[targetIndex].tone = requestedTone;
-                auto result = Phonology::ValidateSyllableState(
-                    states_.data(), states_.size(), config_.allowZwjf);
-                states_[targetIndex].tone = savedTone;
-                wouldRecover = (result == Phonology::SyllableState::Valid);
-            }
-            if (!isEscape && !matchesExclusion && !wouldRecover) { asLiteral(); return; }
-        }
-        // Tone escape: user pressed same tone twice — blocks Vietnamese.
-        if (escape_.isEscaped())                                { asLiteral(); return; }
-        // English word block: raw prefix check (Telex keys only).
-        if (isTelexTone && effectiveSpellCheck &&
-            IsBlockedEnglishTone(rawInput_.data(), rawInput_.size())) {
-            bool overridden = false;
-            // Outer !empty guard skips the FindToneTarget cache fill when there are
-            // no exclusions — ToneMatchesExclusion would return false anyway, but
-            // the cache fill costs an O(n) buffer scan we'd rather avoid on this path.
-            if (!config_.spellExclusions.empty()) {
-                if (!hasCachedTarget) { cachedToneTarget = FindToneTarget(); hasCachedTarget = true; }
-                overridden = ToneMatchesExclusion(cachedToneTarget, requestedTone);
-            }
-            if (!overridden) { asLiteral(); return; }
-        }
-        // English Protection: always active, independent of spell check.
-        if (!config_.allowEnglishBypass) {
-            if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return; }
-            if (engProt_.bias == LanguageBias::SoftEnglish) {
-                if (!UpdateToneInsistence(keyChar, engProt_))              { asLiteral(); return; }
-            }
-            // Structural V+C+V check:
-            if (isTelexTone) {
-                if (IsHardEnglishToneContext(states_.data(), states_.size(), keyChar)) {
-                    engProt_.bias = LanguageBias::HardEnglish;
-                    asLiteral(); return;
-                }
-            } else if (states_.size() >= 4) {
-                if (HasStructuralVCVPattern(states_.data(), states_.size())) {
-                    engProt_.bias = LanguageBias::HardEnglish;
-                    asLiteral(); return;
-                }
-            }
-            if (HasInvalidAdjacentVowelPair(states_.data(), states_.size())) {
-                engProt_.bias = LanguageBias::HardEnglish;
-                asLiteral(); return;
-            }
-        }
-        // Pre-tone stop-final check (spellCheck path only):
-        if (effectiveSpellCheck && !spellCheckDisabled_) {
-            if (requestedTone == Tone::Grave || requestedTone == Tone::Hook ||
-                    requestedTone == Tone::Tilde) {
-                if (HasStopFinalCoda(states_.data(), states_.size())) {
-                    asLiteral(); return;
-                }
-            }
-        }
-        if (ProcessTone(requestedTone, keyChar, hasCachedTarget ? cachedToneTarget : SIZE_MAX)) {
-            if (!escape_.isEscaped()) {
-                engProt_.bias = LanguageBias::Vietnamese;
-            } else {
-                RecalcEnglishBias(states_.data(), states_.size(), engProt_);
-                if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
-            }
-            ApplyAutoUO();
-            UpdateSpellState();
-            return;
-        }
-    }
-
     // 2. Modifier processing (Telex, VNI, or User-defined)
     if (HandleModifierAction(action, keyChar, lower, isUpper)) {
         return;
@@ -429,6 +319,131 @@ void TypingEngine::PushChar(wchar_t keyChar) {
         states_[0].synthetic = false;
     }
     if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+}
+
+//-----------------------------------------------------------------------------
+// Tone subsystem entry — W7.2 ToneRule executor target.
+//-----------------------------------------------------------------------------
+
+bool TypingEngine::HandleToneFsm(TypingAction action,
+                                  wchar_t keyChar,
+                                  wchar_t lower,
+                                  bool isUpper) {
+    // "Gõ tự do" / allowEnglishBypass: when ON, treat all spell-check-driven
+    // literal-treatment gates below as if spell check were OFF — user wants
+    // tones/modifiers applied freely regardless of Vietnamese phonotactic
+    // validity. The HardEnglish-bias gates check `!config_.allowEnglishBypass`
+    // directly (separate concern: rendered-text English heuristic).
+    const bool effectiveSpellCheck =
+        config_.spellCheckEnabled && !config_.allowEnglishBypass;
+
+    // 1a. Clear tone: Telex 'z' / VNI '0'
+    if (action == TypingAction::ClearTone && !states_.empty()) {
+        if (effectiveSpellCheck && spellCheckDisabled_) {
+            ProcessChar(keyChar);
+            UpdateSpellState();
+            return true;
+        }
+        if (ProcessClearTone()) {
+            UpdateSpellState();
+            return true;
+        }
+    }
+
+    // 1b. Tone keys — derive Tone from action.
+    Tone requestedTone = states_.empty() ? Tone::None : ActionToTone(action);
+    bool isTelexTone = (requestedTone != Tone::None) && (lower < L'0' || lower > L'9');
+
+    if (requestedTone != Tone::None) {
+        // All "treat as literal" paths share the same two operations.
+        auto asLiteral = [&] { ProcessChar(keyChar, lower, isUpper); UpdateSpellState(); };
+
+        // Cache FindToneTarget from spell-check gate to avoid redundant call in ProcessTone.
+        size_t cachedToneTarget = SIZE_MAX;
+        bool hasCachedTarget = false;
+
+        if (effectiveSpellCheck && spellCheckDisabled_) {
+            cachedToneTarget = FindToneTarget();
+            hasCachedTarget = true;
+            size_t targetIndex = cachedToneTarget;
+            bool isEscape = (targetIndex != SIZE_MAX && states_[targetIndex].tone == requestedTone);
+            bool matchesExclusion = !isEscape && ToneMatchesExclusion(targetIndex, requestedTone);
+            // T5: allow tone REPLACEMENT when the current invalid buffer would
+            // become Valid after swapping the existing tone for the requested one.
+            bool wouldRecover = false;
+            if (!isEscape && !matchesExclusion && targetIndex != SIZE_MAX && states_[targetIndex].HasTone()) {
+                Tone savedTone = states_[targetIndex].tone;
+                states_[targetIndex].tone = requestedTone;
+                auto result = Phonology::ValidateSyllableState(
+                    states_.data(), states_.size(), config_.allowZwjf);
+                states_[targetIndex].tone = savedTone;
+                wouldRecover = (result == Phonology::SyllableState::Valid);
+            }
+            if (!isEscape && !matchesExclusion && !wouldRecover) { asLiteral(); return true; }
+        }
+        // Tone escape: same tone pressed twice. Defense-in-depth — the
+        // ToneEscapeGate already keeps ToneRule out when escape is active, so
+        // this branch is only reachable if a future caller bypasses the gate.
+        if (escape_.isEscaped())                                { asLiteral(); return true; }
+        // English word block: raw prefix check (Telex keys only).
+        if (isTelexTone && effectiveSpellCheck &&
+            IsBlockedEnglishTone(rawInput_.data(), rawInput_.size())) {
+            bool overridden = false;
+            // Outer !empty guard skips the FindToneTarget cache fill when there are
+            // no exclusions — ToneMatchesExclusion would return false anyway, but
+            // the cache fill costs an O(n) buffer scan we'd rather avoid on this path.
+            if (!config_.spellExclusions.empty()) {
+                if (!hasCachedTarget) { cachedToneTarget = FindToneTarget(); hasCachedTarget = true; }
+                overridden = ToneMatchesExclusion(cachedToneTarget, requestedTone);
+            }
+            if (!overridden) { asLiteral(); return true; }
+        }
+        // English Protection: always active, independent of spell check.
+        if (!config_.allowEnglishBypass) {
+            if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return true; }
+            if (engProt_.bias == LanguageBias::SoftEnglish) {
+                if (!UpdateToneInsistence(keyChar, engProt_))              { asLiteral(); return true; }
+            }
+            // Structural V+C+V check:
+            if (isTelexTone) {
+                if (IsHardEnglishToneContext(states_.data(), states_.size(), keyChar)) {
+                    engProt_.bias = LanguageBias::HardEnglish;
+                    asLiteral(); return true;
+                }
+            } else if (states_.size() >= 4) {
+                if (HasStructuralVCVPattern(states_.data(), states_.size())) {
+                    engProt_.bias = LanguageBias::HardEnglish;
+                    asLiteral(); return true;
+                }
+            }
+            if (HasInvalidAdjacentVowelPair(states_.data(), states_.size())) {
+                engProt_.bias = LanguageBias::HardEnglish;
+                asLiteral(); return true;
+            }
+        }
+        // Pre-tone stop-final check (spellCheck path only):
+        if (effectiveSpellCheck && !spellCheckDisabled_) {
+            if (requestedTone == Tone::Grave || requestedTone == Tone::Hook ||
+                    requestedTone == Tone::Tilde) {
+                if (HasStopFinalCoda(states_.data(), states_.size())) {
+                    asLiteral(); return true;
+                }
+            }
+        }
+        if (ProcessTone(requestedTone, keyChar, hasCachedTarget ? cachedToneTarget : SIZE_MAX)) {
+            if (!escape_.isEscaped()) {
+                engProt_.bias = LanguageBias::Vietnamese;
+            } else {
+                RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+                if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+            }
+            ApplyAutoUO();
+            UpdateSpellState();
+            return true;
+        }
+    }
+
+    return false;  // No tone path consumed the key; PushChar continues.
 }
 
 bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wchar_t lower, bool /*isUpper*/) {
