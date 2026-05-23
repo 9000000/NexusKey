@@ -1092,7 +1092,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // H1c: English-mode short-circuit + Vietnamese pre-dispatch tracking
     // (steps 3 / 3a-3d). Behavior preserved byte-identical.
     switch (HandlePreDispatch(vkCode, vnMode,
-                              cachedShift, cachedCapsLock,
+                              cachedShift,
                               cachedCtrl, cachedAlt, cachedWin)) {
         case KeyOutcome::Eat: return true;
         case KeyOutcome::Pass: return false;
@@ -1495,7 +1495,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
 //                 ExpandedPassTrigger without synth, or Esc temp-off arming).
 //   Fallthrough → continue to DispatchKeyAction (vnMode + no expansion).
 HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode,
-                                                      bool cachedShift, bool cachedCapsLock,
+                                                      bool cachedShift,
                                                       bool cachedCtrl, bool cachedAlt,
                                                       bool cachedWin) {
     // Snapshot the user's hotkey registry once for this key event. RCU

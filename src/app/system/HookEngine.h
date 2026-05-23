@@ -207,7 +207,7 @@ private:
     [[nodiscard]] KeyOutcome TryEscRestoreRaw();
 
     [[nodiscard]] KeyOutcome HandlePreDispatch(DWORD vkCode, bool vnMode,
-                                                bool cachedShift, bool cachedCapsLock,
+                                                bool cachedShift,
                                                 bool cachedCtrl, bool cachedAlt,
                                                 bool cachedWin);
 
