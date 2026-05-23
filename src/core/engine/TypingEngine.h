@@ -109,6 +109,9 @@ public:
     [[nodiscard]] bool IsEnglishWord() const override {
         return engProt_.bias == LanguageBias::HardEnglish;
     }
+    [[nodiscard]] bool IsToneEscaped() const override {
+        return escape_.isEscaped();
+    }
     [[nodiscard]] std::wstring PeekRaw() const override {
         return std::wstring(escRawHistory_.data(), escRawHistory_.size());
     }

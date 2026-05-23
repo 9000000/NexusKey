@@ -53,6 +53,12 @@ public:
     /// Call AFTER SeedFromText — caller decides whether to revive composition.
     [[nodiscard]] virtual bool IsEnglishWord() const = 0;
 
+    /// Whether the engine has an active escape (tone, circumflex, horn, breve,
+    /// stroke, or modifier). When true, features that would re-apply the
+    /// escaped transform (e.g. a tone re-emit) should defer to user intent.
+    /// Default false for engines that don't track escape state.
+    [[nodiscard]] virtual bool IsToneEscaped() const { return false; }
+
     /// Raw keys typed by the user (case-preserved), independent of any Vietnamese
     /// transformation in the composed buffer. Used by the Esc-restore feature to
     /// recover the original keystrokes (e.g., composed "víu" ← raw "virus").
