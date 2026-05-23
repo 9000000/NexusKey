@@ -421,7 +421,23 @@ Breakdown of new tests added in Wave 2:
 
 Pre-W2 baseline: 1934. After W2: 1944. Net: +10 new tests, 0 regressions.
 
-### Windows build + chaos (pending — anh runs)
+### Windows chaos verified — 54/55 pass (2026-05-23)
+
+Anh ran chaos.toml at 1ms inter-key across 5 hosts:
+
+| Host | Pass | Notes |
+|---|---|---|
+| notepad | 11/11 | p99 9-17ms |
+| notepadpp | 11/11 | p99 9-22ms |
+| chrome | 10/11 | Test 1.3 fail = Chrome omnibox autocomplete contamination, NOT VKey. Hook log shows VKey typed only `a, a→â, BS, b` per spec; "actual" mojibake = Chrome suggesting Vietnamese URL/query from history. |
+| discord | 11/11 | p99 13-40ms (Electron) |
+| gpt | 11/11 | p99 11-29ms |
+
+**Effective result**: 55/55 functional. Wave 2 ships clean. Latency overhead ~50ns/call (1 virtual + 1 atomic + 1 PeekRaw wstring copy) — within budget.
+
+**Chrome 1.3 false-fail mitigation** (separate from W2): chaos runner should focus a Chrome contenteditable on a static page, or use `about:blank` + clear history, instead of the URL bar/search box. File separately if pursuing.
+
+### Windows build (original spec)
 
 Required commands:
 ```cmd
