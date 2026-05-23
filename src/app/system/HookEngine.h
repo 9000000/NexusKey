@@ -14,6 +14,7 @@
 #include "core/AutoCapStateTransition.h"
 #include "core/SmartSwitchManager.h"
 #include "app/system/HookCommandMailbox.h"
+#include "core/pipeline/IBackwardEditExecutor.h"
 #include <Windows.h>
 #include <functional>
 #include <atomic>
@@ -41,13 +42,19 @@ using ModeChangeCallback = std::function<void(bool vietnamese)>;
 
 /// Keyboard hook engine — intercepts keystrokes, processes Vietnamese input,
 /// outputs via SendInput backspace+retype. Absorbs HotkeyManager logic.
-class HookEngine {
+class HookEngine : public NextKey::Pipeline::IBackwardEditExecutor {
 public:
     HookEngine();
-    ~HookEngine();
+    ~HookEngine() override;
 
     HookEngine(const HookEngine&) = delete;
     HookEngine& operator=(const HookEngine&) = delete;
+
+    // Pipeline::IBackwardEditExecutor — Wave 2 adapter for BackwardEditFeature.
+    // Thin wrapper around the existing ReplaceComposition; Wave 3+ will split the
+    // pure-diff phase out into the feature and execute via OutputChannel.
+    void ExecuteReplace(std::wstring_view newText,
+                        std::uint16_t reinjectVk) override;
 
     /// Start the hook engine (installs keyboard hook + focus hook)
     bool Start(HINSTANCE hInstance, const TypingConfig& config,

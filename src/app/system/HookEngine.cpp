@@ -3484,6 +3484,15 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 ///   - GPU-rendered apps (Zed): batch dispatch via Win32SendInputInjector
 ///     (single-process, no IPC reorder).
 ///
+/// Wave 2 — Pipeline::IBackwardEditExecutor adapter. Thin wrapper so
+/// `BackwardEditFeature` (in `src/core/pipeline/`) can delegate the backward
+/// edit through an interface without coupling to the full HookEngine class.
+/// Wave 3+ will split this into pure-diff (feature) + Stage A–E execute path.
+void HookEngine::ExecuteReplace(std::wstring_view newText,
+                                std::uint16_t reinjectVk) {
+    ReplaceComposition(std::wstring{newText}, static_cast<DWORD>(reinjectVk));
+}
+
 /// See OnFocusChanged() for the detection logic + injector publish.
 void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectVk) {
     VKEY_ASSERT_HOOK_THREAD();
