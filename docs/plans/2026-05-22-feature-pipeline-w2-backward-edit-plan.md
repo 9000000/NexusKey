@@ -407,7 +407,46 @@ Deferred to Wave 3 or later:
 
 ## 5. Verification log
 
-(To be filled by W2.7.)
+### Linux gtest (W2.7, 2026-05-23)
+
+```
+[==========] 1944 tests from 106 test suites ran. (2986 ms total)
+[  PASSED  ] 1944 tests.
+```
+
+Breakdown of new tests added in Wave 2:
+- W2.1 HookCompositionSession: 3 tests
+- W2.2 EnglishBiasGate: 3 tests
+- W2.3 BackwardEditFeature: 4 tests
+
+Pre-W2 baseline: 1934. After W2: 1944. Net: +10 new tests, 0 regressions.
+
+### Windows build + chaos (pending — anh runs)
+
+Required commands:
+```cmd
+powershell.exe -Command "cd '\\wsl.localhost\Ubuntu-24.04\home\phatmt\code\NexusKey\build'; cmake --build . --target VKeyApp --config Debug"
+```
+
+Then manual smoke:
+1. Type "hieu" in Notepad via Telex — expect "hiệu".
+2. Type "[" then bracket-tone — expect tone applied (HandleCommitUndo path).
+3. Backspace mid-word — expect last char removed (HandleBackspace mid-word path).
+4. Commit + AutoRestore: type "gôgle" + space → expect "google" + space (CommitComposition auto-restore).
+5. Run chaos.toml at 1ms inter-key on Notepad — expect ≥ pre-W2 baseline pass rate (no regression).
+6. Specific: `hiệu→hiêj` reproduction should NOT occur (this bug was already fixed by Wave 0; W2 must not reintroduce).
+
+### Wave 2 commit chain (on `feat/architecture-review-v3.1`)
+
+```
+061df8f feat(pipeline): W2.6 — switch all ReplaceComposition call-sites to Coordinator
+d188eec feat(pipeline): W2.5 — wire Coordinator into HookEngine, canary at HandleAlphaKey
+a40e7ce feat(pipeline): W2.4 — HookEngine implements IBackwardEditExecutor
+dc1e1cb feat(pipeline): W2.3 — BackwardEditFeature thin wrapper
+95c204c feat(pipeline): W2.2 — EnglishBiasGate reads vietnameseMode_
+f916a8f feat(pipeline): W2.1 — HookCompositionSession concrete view
+14ef358 docs(pipeline): W2 plan — extract BackwardEditFeature + wire Coordinator
+```
 
 ---
 
