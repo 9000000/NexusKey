@@ -3526,7 +3526,8 @@ void HookEngine::DispatchCoordinator(DWORD vkCode, DWORD reinjectVk,
         session,
         static_cast<std::uint16_t>(reinjectVk)
     };
-    coordinator_.HandleKey(keyCtx, outputChannel_);
+    coordinator_.HandleKeyAtStage(
+        NextKey::Pipeline::Stage::PostEngine, keyCtx, outputChannel_);
     (void)outputChannel_.TakeBatch();  // W2: feature delegates synchronously, batch is empty.
 }
 
