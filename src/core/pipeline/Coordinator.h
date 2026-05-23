@@ -1,36 +1,36 @@
-// src/core/brain/Brain.h
+// src/core/pipeline/Coordinator.h
 //
 // The coordinator. Owns the feature registry per Stage + the gate registry.
 // HandleKey is the per-keystroke entry: evaluates gates, dispatches features
 // in (stage, priority) order, filtered by GateMask. Stops a stage on Handled,
 // stops all stages on Veto.
 //
-// Wave 1: Brain is linked but not called from HookEngine — registry stays
-// empty in production paths. Tests construct Brain instances directly.
+// Wave 1: Coordinator is linked but not called from HookEngine — registry stays
+// empty in production paths. Tests construct Coordinator instances directly.
 #pragma once
 
 #include <array>
 #include <memory>
 #include <vector>
-#include "core/brain/Stage.h"
-#include "core/brain/Result.h"
-#include "core/brain/GateMask.h"
-#include "core/brain/IFeature.h"
-#include "core/brain/IGate.h"
-#include "core/brain/KeyContext.h"
-#include "core/brain/IntentSink.h"
+#include "core/pipeline/Stage.h"
+#include "core/pipeline/Result.h"
+#include "core/pipeline/GateMask.h"
+#include "core/pipeline/IFeature.h"
+#include "core/pipeline/IGate.h"
+#include "core/pipeline/KeyContext.h"
+#include "core/pipeline/IntentSink.h"
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
-class Brain {
+class Coordinator {
 public:
-    Brain();
-    ~Brain();
+    Coordinator();
+    ~Coordinator();
 
-    Brain(const Brain&)            = delete;
-    Brain& operator=(const Brain&) = delete;
+    Coordinator(const Coordinator&)            = delete;
+    Coordinator& operator=(const Coordinator&) = delete;
 
-    // Take ownership; brain sorts features by Priority() at Register time.
+    // Take ownership; coordinator sorts features by Priority() at Register time.
     void Register(std::unique_ptr<IFeature> feature);
     void RegisterGate(std::unique_ptr<IGate> gate);
 
@@ -48,4 +48,4 @@ private:
     std::vector<std::unique_ptr<IGate>>                              gates_;
 };
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

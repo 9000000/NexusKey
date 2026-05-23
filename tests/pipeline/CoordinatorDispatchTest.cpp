@@ -1,12 +1,12 @@
-// tests/brain/BrainDispatchTest.cpp
+// tests/pipeline/CoordinatorDispatchTest.cpp
 #include <gtest/gtest.h>
 #include <vector>
 #include <string>
-#include "core/brain/Brain.h"
-#include "core/brain/IFeature.h"
-#include "core/brain/ICompositionSession.h"
+#include "core/pipeline/Coordinator.h"
+#include "core/pipeline/IFeature.h"
+#include "core/pipeline/ICompositionSession.h"
 
-using namespace NextKey::Brain;
+using namespace NextKey::Pipeline;
 
 namespace {
 
@@ -52,16 +52,16 @@ KeyContext makeCtx(const ICompositionSession& session) {
 
 }  // namespace
 
-TEST(BrainDispatch, StagesRunInOrder_PreEngineThenEngineThenPostEngine) {
+TEST(CoordinatorDispatch, StagesRunInOrder_PreEngineThenEngineThenPostEngine) {
     std::vector<std::string> log;
-    Brain brain;
-    brain.Register(std::make_unique<TaggingFeature>("post", Stage::PostEngine, 10, Result::Pass, log));
-    brain.Register(std::make_unique<TaggingFeature>("pre",  Stage::PreEngine,  10, Result::Pass, log));
-    brain.Register(std::make_unique<TaggingFeature>("eng",  Stage::Engine,     10, Result::Pass, log));
+    Coordinator coord;
+    coord.Register(std::make_unique<TaggingFeature>("post", Stage::PostEngine, 10, Result::Pass, log));
+    coord.Register(std::make_unique<TaggingFeature>("pre",  Stage::PreEngine,  10, Result::Pass, log));
+    coord.Register(std::make_unique<TaggingFeature>("eng",  Stage::Engine,     10, Result::Pass, log));
 
     FakeSession session;
     NullSink sink;
-    brain.HandleKey(makeCtx(session), sink);
+    coord.HandleKey(makeCtx(session), sink);
 
     ASSERT_EQ(log.size(), 3u);
     EXPECT_EQ(log[0], "pre");
@@ -69,16 +69,16 @@ TEST(BrainDispatch, StagesRunInOrder_PreEngineThenEngineThenPostEngine) {
     EXPECT_EQ(log[2], "post");
 }
 
-TEST(BrainDispatch, WithinStageRunsLowerPriorityFirst) {
+TEST(CoordinatorDispatch, WithinStageRunsLowerPriorityFirst) {
     std::vector<std::string> log;
-    Brain brain;
-    brain.Register(std::make_unique<TaggingFeature>("p20", Stage::PreEngine, 20, Result::Pass, log));
-    brain.Register(std::make_unique<TaggingFeature>("p5",  Stage::PreEngine,  5, Result::Pass, log));
-    brain.Register(std::make_unique<TaggingFeature>("p10", Stage::PreEngine, 10, Result::Pass, log));
+    Coordinator coord;
+    coord.Register(std::make_unique<TaggingFeature>("p20", Stage::PreEngine, 20, Result::Pass, log));
+    coord.Register(std::make_unique<TaggingFeature>("p5",  Stage::PreEngine,  5, Result::Pass, log));
+    coord.Register(std::make_unique<TaggingFeature>("p10", Stage::PreEngine, 10, Result::Pass, log));
 
     FakeSession session;
     NullSink sink;
-    brain.HandleKey(makeCtx(session), sink);
+    coord.HandleKey(makeCtx(session), sink);
 
     ASSERT_EQ(log.size(), 3u);
     EXPECT_EQ(log[0], "p5");
@@ -86,32 +86,32 @@ TEST(BrainDispatch, WithinStageRunsLowerPriorityFirst) {
     EXPECT_EQ(log[2], "p20");
 }
 
-TEST(BrainDispatch, HandledStopsCurrentStageButRunsLaterStages) {
+TEST(CoordinatorDispatch, HandledStopsCurrentStageButRunsLaterStages) {
     std::vector<std::string> log;
-    Brain brain;
-    brain.Register(std::make_unique<TaggingFeature>("pre-first",  Stage::PreEngine, 10, Result::Handled, log));
-    brain.Register(std::make_unique<TaggingFeature>("pre-second", Stage::PreEngine, 20, Result::Pass,    log));
-    brain.Register(std::make_unique<TaggingFeature>("post",       Stage::PostEngine, 10, Result::Pass,   log));
+    Coordinator coord;
+    coord.Register(std::make_unique<TaggingFeature>("pre-first",  Stage::PreEngine, 10, Result::Handled, log));
+    coord.Register(std::make_unique<TaggingFeature>("pre-second", Stage::PreEngine, 20, Result::Pass,    log));
+    coord.Register(std::make_unique<TaggingFeature>("post",       Stage::PostEngine, 10, Result::Pass,   log));
 
     FakeSession session;
     NullSink sink;
-    brain.HandleKey(makeCtx(session), sink);
+    coord.HandleKey(makeCtx(session), sink);
 
     ASSERT_EQ(log.size(), 2u);
     EXPECT_EQ(log[0], "pre-first");
     EXPECT_EQ(log[1], "post");
 }
 
-TEST(BrainDispatch, VetoSkipsAllRemainingStages) {
+TEST(CoordinatorDispatch, VetoSkipsAllRemainingStages) {
     std::vector<std::string> log;
-    Brain brain;
-    brain.Register(std::make_unique<TaggingFeature>("pre",  Stage::PreEngine,  10, Result::Veto,    log));
-    brain.Register(std::make_unique<TaggingFeature>("eng",  Stage::Engine,     10, Result::Pass,    log));
-    brain.Register(std::make_unique<TaggingFeature>("post", Stage::PostEngine, 10, Result::Pass,    log));
+    Coordinator coord;
+    coord.Register(std::make_unique<TaggingFeature>("pre",  Stage::PreEngine,  10, Result::Veto,    log));
+    coord.Register(std::make_unique<TaggingFeature>("eng",  Stage::Engine,     10, Result::Pass,    log));
+    coord.Register(std::make_unique<TaggingFeature>("post", Stage::PostEngine, 10, Result::Pass,    log));
 
     FakeSession session;
     NullSink sink;
-    brain.HandleKey(makeCtx(session), sink);
+    coord.HandleKey(makeCtx(session), sink);
 
     ASSERT_EQ(log.size(), 1u);
     EXPECT_EQ(log[0], "pre");

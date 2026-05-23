@@ -1,4 +1,4 @@
-// src/core/brain/ICompositionSession.h
+// src/core/pipeline/ICompositionSession.h
 //
 // Read-only view over engine composition state. Features access engine
 // data through this interface — never directly via TypingEngine fields.
@@ -8,7 +8,7 @@
 
 #include <string_view>
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
 class ICompositionSession {
 public:
@@ -28,4 +28,4 @@ public:
     [[nodiscard]] virtual std::wstring_view RawInput() const noexcept = 0;
 };
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

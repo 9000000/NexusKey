@@ -1,14 +1,14 @@
-// src/core/brain/GateMask.h
+// src/core/pipeline/GateMask.h
 //
 // Bitmask of gates a feature requires to be "allowed" (gate.IsBlocked()==false).
-// Brain evaluates all gates once per keystroke, then filters features by mask
+// Coordinator evaluates all gates once per keystroke, then filters features by mask
 // before calling them. Pattern D resolution in the design doc — features stop
-// re-checking gates inside their body; brain enforces.
+// re-checking gates inside their body; coordinator enforces.
 #pragma once
 
 #include <cstdint>
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
 enum class GateId : unsigned char {
     EnglishBias = 0,  // skip transformations when EnglishBias detects English context
@@ -28,4 +28,4 @@ using GateMask = std::uint32_t;
     return (mask & GateMaskFor(id)) != 0u;
 }
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

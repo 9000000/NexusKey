@@ -1,7 +1,7 @@
-// src/core/brain/Intent.h
+// src/core/pipeline/Intent.h
 //
 // Output intent — features emit one or more Intents per Handled keystroke.
-// Brain accumulates intents into the OutputChannel which serializes them
+// Coordinator accumulates intents into the OutputChannel which serializes them
 // into a single Win32 SendInput batch (plus injector-specific quirks).
 // Features NEVER call SendInput directly. Pattern B resolution in design.
 //
@@ -13,7 +13,7 @@
 #include <string>
 #include <variant>
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
 namespace Intents {
     struct Backspace { unsigned count; };
@@ -23,4 +23,4 @@ namespace Intents {
 
 using Intent = std::variant<Intents::Backspace, Intents::Text, Intents::Reinject>;
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

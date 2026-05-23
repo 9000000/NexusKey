@@ -1,10 +1,10 @@
-// src/core/brain/Result.h
+// src/core/pipeline/Result.h
 //
-// Per-feature dispatch outcome. Brain reads this to decide whether to
+// Per-feature dispatch outcome. Coordinator reads this to decide whether to
 // call the next feature in the stage / next stage / stop entirely.
 #pragma once
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
 enum class Result : unsigned char {
     Pass    = 0,  // feature not relevant to this key — try next feature
@@ -12,4 +12,4 @@ enum class Result : unsigned char {
     Veto    = 2,  // feature short-circuits — skip remaining stages too
 };
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

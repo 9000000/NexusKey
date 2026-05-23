@@ -1,10 +1,10 @@
-// tests/brain/EnumsTest.cpp
+// tests/pipeline/EnumsTest.cpp
 #include <gtest/gtest.h>
-#include "core/brain/Stage.h"
-#include "core/brain/Result.h"
-#include "core/brain/GateMask.h"
+#include "core/pipeline/Stage.h"
+#include "core/pipeline/Result.h"
+#include "core/pipeline/GateMask.h"
 
-using namespace NextKey::Brain;
+using namespace NextKey::Pipeline;
 
 TEST(Stage, ThreeOrderedStages) {
     EXPECT_LT(static_cast<int>(Stage::PreEngine),  static_cast<int>(Stage::Engine));

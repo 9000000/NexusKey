@@ -1,10 +1,10 @@
-// tests/brain/IntentTest.cpp
+// tests/pipeline/IntentTest.cpp
 #include <gtest/gtest.h>
 #include <variant>
 #include <string>
-#include "core/brain/Intent.h"
+#include "core/pipeline/Intent.h"
 
-using namespace NextKey::Brain;
+using namespace NextKey::Pipeline;
 
 TEST(Intent, BackspaceHoldsCount) {
     Intent i = Intents::Backspace{ .count = 2 };

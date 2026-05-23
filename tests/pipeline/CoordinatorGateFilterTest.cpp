@@ -1,13 +1,13 @@
-// tests/brain/BrainGateFilterTest.cpp
+// tests/pipeline/CoordinatorGateFilterTest.cpp
 #include <gtest/gtest.h>
 #include <vector>
 #include <string>
-#include "core/brain/Brain.h"
-#include "core/brain/IFeature.h"
-#include "core/brain/IGate.h"
-#include "core/brain/ICompositionSession.h"
+#include "core/pipeline/Coordinator.h"
+#include "core/pipeline/IFeature.h"
+#include "core/pipeline/IGate.h"
+#include "core/pipeline/ICompositionSession.h"
 
-using namespace NextKey::Brain;
+using namespace NextKey::Pipeline;
 
 namespace {
 
@@ -60,42 +60,42 @@ KeyContext makeCtx(const ICompositionSession& session) {
 
 }  // namespace
 
-TEST(BrainGateFilter, FeatureWithRequiresZeroAlwaysRuns) {
+TEST(CoordinatorGateFilter, FeatureWithRequiresZeroAlwaysRuns) {
     std::vector<std::string> log;
-    Brain brain;
-    brain.RegisterGate(std::make_unique<FixedGate>(GateId::EnglishBias, /*raised=*/true));
-    brain.Register(std::make_unique<TaggingFeature>("always", /*requires=*/0u, log));
+    Coordinator coord;
+    coord.RegisterGate(std::make_unique<FixedGate>(GateId::EnglishBias, /*raised=*/true));
+    coord.Register(std::make_unique<TaggingFeature>("always", /*requires=*/0u, log));
 
     FakeSession session;
     NullSink sink;
-    brain.HandleKey(makeCtx(session), sink);
+    coord.HandleKey(makeCtx(session), sink);
 
     ASSERT_EQ(log.size(), 1u);
     EXPECT_EQ(log[0], "always");
 }
 
-TEST(BrainGateFilter, FeatureRequiringRaisedGateIsSkipped) {
+TEST(CoordinatorGateFilter, FeatureRequiringRaisedGateIsSkipped) {
     std::vector<std::string> log;
-    Brain brain;
-    brain.RegisterGate(std::make_unique<FixedGate>(GateId::EnglishBias, /*raised=*/true));
-    brain.Register(std::make_unique<TaggingFeature>("blocked", GateMaskFor(GateId::EnglishBias), log));
+    Coordinator coord;
+    coord.RegisterGate(std::make_unique<FixedGate>(GateId::EnglishBias, /*raised=*/true));
+    coord.Register(std::make_unique<TaggingFeature>("blocked", GateMaskFor(GateId::EnglishBias), log));
 
     FakeSession session;
     NullSink sink;
-    brain.HandleKey(makeCtx(session), sink);
+    coord.HandleKey(makeCtx(session), sink);
 
     EXPECT_EQ(log.size(), 0u);
 }
 
-TEST(BrainGateFilter, FeatureRequiringUnraisedGateRuns) {
+TEST(CoordinatorGateFilter, FeatureRequiringUnraisedGateRuns) {
     std::vector<std::string> log;
-    Brain brain;
-    brain.RegisterGate(std::make_unique<FixedGate>(GateId::EnglishBias, /*raised=*/false));
-    brain.Register(std::make_unique<TaggingFeature>("ok", GateMaskFor(GateId::EnglishBias), log));
+    Coordinator coord;
+    coord.RegisterGate(std::make_unique<FixedGate>(GateId::EnglishBias, /*raised=*/false));
+    coord.Register(std::make_unique<TaggingFeature>("ok", GateMaskFor(GateId::EnglishBias), log));
 
     FakeSession session;
     NullSink sink;
-    brain.HandleKey(makeCtx(session), sink);
+    coord.HandleKey(makeCtx(session), sink);
 
     ASSERT_EQ(log.size(), 1u);
     EXPECT_EQ(log[0], "ok");

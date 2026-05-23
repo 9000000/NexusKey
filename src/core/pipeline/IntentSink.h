@@ -1,12 +1,12 @@
-// src/core/brain/IntentSink.h
+// src/core/pipeline/IntentSink.h
 //
 // Sink interface that features write into. Production impl is OutputChannel
 // (wraps IOutputInjector). Test impl is RecordingSink that buffers intents.
 #pragma once
 
-#include "core/brain/Intent.h"
+#include "core/pipeline/Intent.h"
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
 class IntentSink {
 public:
@@ -14,4 +14,4 @@ public:
     virtual void Emit(Intent intent) = 0;
 };
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

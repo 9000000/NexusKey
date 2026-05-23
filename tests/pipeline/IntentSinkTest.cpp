@@ -1,10 +1,10 @@
-// tests/brain/IntentSinkTest.cpp
+// tests/pipeline/IntentSinkTest.cpp
 #include <gtest/gtest.h>
 #include <vector>
-#include "core/brain/Intent.h"
-#include "core/brain/IntentSink.h"
+#include "core/pipeline/Intent.h"
+#include "core/pipeline/IntentSink.h"
 
-using namespace NextKey::Brain;
+using namespace NextKey::Pipeline;
 
 namespace {
 

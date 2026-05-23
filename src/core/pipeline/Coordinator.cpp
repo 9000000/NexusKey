@@ -1,14 +1,14 @@
-// src/core/brain/Brain.cpp
-#include "core/brain/Brain.h"
+// src/core/pipeline/Coordinator.cpp
+#include "core/pipeline/Coordinator.h"
 
 #include <algorithm>
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
-Brain::Brain()  = default;
-Brain::~Brain() = default;
+Coordinator::Coordinator()  = default;
+Coordinator::~Coordinator() = default;
 
-void Brain::Register(std::unique_ptr<IFeature> feature) {
+void Coordinator::Register(std::unique_ptr<IFeature> feature) {
     const auto stage = feature->FeatureStage();
     auto& bucket = features_[static_cast<std::size_t>(stage)];
     bucket.push_back(std::move(feature));
@@ -20,11 +20,11 @@ void Brain::Register(std::unique_ptr<IFeature> feature) {
                      });
 }
 
-void Brain::RegisterGate(std::unique_ptr<IGate> gate) {
+void Coordinator::RegisterGate(std::unique_ptr<IGate> gate) {
     gates_.push_back(std::move(gate));
 }
 
-GateMask Brain::EvaluateGates(const KeyContext& ctx) const {
+GateMask Coordinator::EvaluateGates(const KeyContext& ctx) const {
     GateMask raised = 0u;
     for (const auto& g : gates_) {
         if (g->IsRaised(ctx)) raised |= GateMaskFor(g->Id());
@@ -32,7 +32,7 @@ GateMask Brain::EvaluateGates(const KeyContext& ctx) const {
     return raised;
 }
 
-void Brain::HandleKey(const KeyContext& ctx, IntentSink& sink) {
+void Coordinator::HandleKey(const KeyContext& ctx, IntentSink& sink) {
     const GateMask raised = EvaluateGates(ctx);
 
     for (std::size_t s = 0; s < kStageCount; ++s) {
@@ -49,12 +49,12 @@ void Brain::HandleKey(const KeyContext& ctx, IntentSink& sink) {
     }
 }
 
-std::size_t Brain::FeatureCountAtStage(Stage s) const noexcept {
+std::size_t Coordinator::FeatureCountAtStage(Stage s) const noexcept {
     return features_[static_cast<std::size_t>(s)].size();
 }
 
-std::size_t Brain::GateCount() const noexcept {
+std::size_t Coordinator::GateCount() const noexcept {
     return gates_.size();
 }
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

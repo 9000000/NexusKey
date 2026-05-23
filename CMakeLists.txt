@@ -71,22 +71,22 @@ set(NEXTKEY_CORE_SOURCES
     src/core/hotkey/HotkeyLabel.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
-    src/core/brain/Stage.h
-    src/core/brain/Result.h
-    src/core/brain/GateMask.h
-    src/core/brain/Intent.h
-    src/core/brain/IntentSink.h
-    src/core/brain/ICompositionSession.h
-    src/core/brain/KeyContext.h
-    src/core/brain/IFeature.h
-    src/core/brain/IGate.h
-    src/core/brain/gates/EnglishBiasGate.h
-    src/core/brain/gates/SpellCheckGate.h
-    src/core/brain/gates/ToneEscapeGate.h
-    src/core/brain/Brain.h
-    src/core/brain/Brain.cpp
-    src/core/brain/OutputChannel.h
-    src/core/brain/OutputChannel.cpp
+    src/core/pipeline/Stage.h
+    src/core/pipeline/Result.h
+    src/core/pipeline/GateMask.h
+    src/core/pipeline/Intent.h
+    src/core/pipeline/IntentSink.h
+    src/core/pipeline/ICompositionSession.h
+    src/core/pipeline/KeyContext.h
+    src/core/pipeline/IFeature.h
+    src/core/pipeline/IGate.h
+    src/core/pipeline/gates/EnglishBiasGate.h
+    src/core/pipeline/gates/SpellCheckGate.h
+    src/core/pipeline/gates/ToneEscapeGate.h
+    src/core/pipeline/Coordinator.h
+    src/core/pipeline/Coordinator.cpp
+    src/core/pipeline/OutputChannel.h
+    src/core/pipeline/OutputChannel.cpp
 )
 
 # Windows-only sources (require Windows.h)
@@ -525,13 +525,13 @@ set(NEXTKEY_TEST_SOURCES
     tests/InjectorSwitchTest.cpp
     tests/HotkeyLabelTest.cpp
     tests/HotkeyConfigMigrationTest.cpp
-    tests/brain/EnumsTest.cpp
-    tests/brain/IntentTest.cpp
-    tests/brain/IntentSinkTest.cpp
-    tests/brain/BrainRegistryTest.cpp
-    tests/brain/BrainDispatchTest.cpp
-    tests/brain/BrainGateFilterTest.cpp
-    tests/brain/OutputChannelTest.cpp
+    tests/pipeline/EnumsTest.cpp
+    tests/pipeline/IntentTest.cpp
+    tests/pipeline/IntentSinkTest.cpp
+    tests/pipeline/CoordinatorRegistryTest.cpp
+    tests/pipeline/CoordinatorDispatchTest.cpp
+    tests/pipeline/CoordinatorGateFilterTest.cpp
+    tests/pipeline/OutputChannelTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp

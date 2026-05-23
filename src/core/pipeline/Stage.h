@@ -1,4 +1,4 @@
-// src/core/brain/Stage.h
+// src/core/pipeline/Stage.h
 //
 // Stage enum for Feature Pipeline dispatch ordering.
 // Spec: docs/plans/2026-05-22-feature-pipeline-framework-design.md §3
@@ -6,7 +6,7 @@
 
 #include <cstddef>
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
 enum class Stage : unsigned char {
     PreEngine  = 0,  // commit-undo, macro, ESC restore — runs BEFORE engine processes the key
@@ -16,4 +16,4 @@ enum class Stage : unsigned char {
 
 inline constexpr std::size_t kStageCount = 3u;
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

@@ -3,7 +3,7 @@
 **Date**: 2026-05-22
 **Status**: Brainstorm output — design only, no code in this session
 **Branch**: `feat/architecture-review-v3.1`
-**Scope**: Define a feature-pipeline framework (Brain coordinator + plugin-shaped features) sitting **on top of** the thread-ownership foundation from `2026-05-19-architecture-review-design.md`. Resolves entanglement between Backward Edit, Commit-Undo, EnglishBias, Quick-Consonant rules, and Macro/AppOverride pathways that today share state through `HookEngine` directly.
+**Scope**: Define a feature-pipeline framework (Brain coordinator — `Coordinator` class in code — + plugin-shaped features) sitting **on top of** the thread-ownership foundation from `2026-05-19-architecture-review-design.md`. Resolves entanglement between Backward Edit, Commit-Undo, EnglishBias, Quick-Consonant rules, and Macro/AppOverride pathways that today share state through `HookEngine` directly.
 **Triggering pain**: GH issue #178 + `hiệu → hiêj` bug observed in `[17:43:23.741] [PID:10068]` log. Architectural complaint from anh: features are wired into hook/engine, not isolated; on/off doesn't actually save cost; no standard flow → conflicts proliferate.
 
 ---
@@ -72,17 +72,17 @@ Sixteen+ features mapped to 6 recurring conflict shapes. Each pattern demands a 
 
 3. **Stage × Priority Manifest**
    - Each feature declares `(Stage, Priority, GateMask)` at registration.
-   - Brain dispatches stages in fixed order; within a stage, by priority ascending.
+   - Coordinator dispatches stages in fixed order; within a stage, by priority ascending.
    - Three stages: `PreEngine`, `Engine`, `PostEngine`. (Engine itself is one feature for now — fractal expansion in Wave 7.)
 
 4. **Gates + Composition Session View**
    - Gate = predicate object: `IsBlocked(KeyContext) → bool`. Three concrete gates today: `EnglishBiasGate`, `SpellCheckGate`, `ToneEscapeGate`.
-   - Brain checks `feature.requires()` GateMask against gates **before** calling feature. Feature can't forget.
+   - Coordinator checks `feature.requires()` GateMask against gates **before** calling feature. Feature can't forget.
    - Composition session = const view over engine state + rawInput + commit stack. Features read; never mutate directly.
 
 ---
 
-## 3. Brain shape
+## 3. Coordinator shape (the "brain" / não)
 
 ### One-keystroke flow
 
@@ -90,7 +90,7 @@ Sixteen+ features mapped to 6 recurring conflict shapes. Each pattern demands a 
 LL hook callback (TAY)
    │
    ▼
-Brain.HandleKey(vk, char, mods)                  ← single entry point
+Coordinator.HandleKey(vk, char, mods)             ← single entry point
    │
    ├─ 1. DrainMailbox()                          ← Pattern A fix
    │      handles pending FocusChanged / ConfigApply / ToggleVN before
@@ -137,16 +137,16 @@ struct IntentSink {
 
 ### Engine boundary (decision)
 
-Engine keeps state. Brain reads via const view. **No state duplication.** Decision rationale (anh 2026-05-22):
+Engine keeps state. Coordinator reads via const view. **No state duplication.** Decision rationale (anh 2026-05-22):
 > "đồng bộ thông tin với tốc độ ánh sáng để không bị delay"
 
-Single-owner state = zero marshalling cost = zero sync delay. Brain ↔ Engine = const reference, not copy. Intent flow is **one-way** (feature → OutputChannel); no back-pressure or feedback loop.
+Single-owner state = zero marshalling cost = zero sync delay. Coordinator ↔ Engine = const reference, not copy. Intent flow is **one-way** (feature → OutputChannel); no back-pressure or feedback loop.
 
-This means `TypingEngine` API stays largely as-is (`PushChar`, `Peek`, `Reset`). New: `engine.last_transform()` returns the `TypingAction` enum already shipped in Path G G-3, exposed for Brain consumption.
+This means `TypingEngine` API stays largely as-is (`PushChar`, `Peek`, `Reset`). New: `engine.last_transform()` returns the `TypingAction` enum already shipped in Path G G-3, exposed for Coordinator consumption.
 
 ### Where lives what
 
-| Concern | Hook callback | Brain | Engine | Feature plugins |
+| Concern | Hook callback | Coordinator | Engine | Feature plugins |
 |---|---|---|---|---|
 | OS key intake | ✓ | | | |
 | Synthetic event filter (`dwExtraInfo`) | ✓ | | | |
@@ -222,7 +222,7 @@ Net: ~150 LOC out of HookEngine.cpp, 80 LOC into a new file. Backward edit is te
 | Wave | Scope | Depends on | Risk | Verify gate |
 |---|---|---|---|---|
 | **0** | Architecture review **Phase 1** (per-stage histogram) + **Phase 2** (single-writer state + command mailbox + 2-phase focus) + **de-god probe Phase 1 verify** (ConfigSnapshotBuilder Windows build pass + 1903 gtest pass — closes probe) | — | Medium — touches thread ownership | Histogram baseline captured 5×11 hosts; chaos 55/55 PASS; bug `hiệu→hiêj` killed by mailbox drain alone |
-| **1** | Define **skeleton types**: `IFeature`, `Stage`, `Priority`, `GateMask`, `KeyContext`, `IntentSink`, `Intent`, `Brain` class (empty registry, dispatch loop), `OutputChannel` wrapping `IOutputInjector`, `CompositionSession` view | Wave 0 | Low — types + ~200 LOC Brain.cpp, no behaviour change | gtest registry, dispatch ordering, gate filter |
+| **1** | Define **skeleton types**: `IFeature`, `Stage`, `Priority`, `GateMask`, `KeyContext`, `IntentSink`, `Intent`, `Coordinator` class (empty registry, dispatch loop), `OutputChannel` wrapping `IOutputInjector`, `CompositionSession` view | Wave 0 | Low — types + ~200 LOC Coordinator.cpp, no behaviour change | gtest registry, dispatch ordering, gate filter |
 | **2** | Extract **BackwardEditFeature** (first plugin) | Wave 1 | Medium — must be byte-identical with `ReplaceComposition` | Chaos 55/55; 1903 gtest pass; manual `hiệu` regression test |
 | **3** | Extract **CommitUndoFeature** (FSM + stack at `Stage::PreEngine`, prio 20) — **fixes memo `commit_undo_synth_guard_exemption` 2-cancel-site bug as side effect** | Wave 2 | Medium | Commit-undo gtest suite + chaos undo scenarios |
 | **4** | Extract **MacroFeature** + **EscRestoreRawFeature** (both `Stage::PreEngine`) | Wave 3 | Low | Macro test suite + ESC variant memo coverage |
@@ -238,7 +238,7 @@ After Waves 2-4 extract three large features (Backward Edit, Commit-Undo, Macro)
 
 > "framework cần đi từ lớn tới bé, từ rộng tới hẹp, từ chung tới detail"
 
-Outer pipeline (Hook-level Brain) first → Engine-internal rules last. Waves 1-6 are outer; Wave 7 is inner.
+Outer pipeline (Hook-level Coordinator) first → Engine-internal rules last. Waves 1-6 are outer; Wave 7 is inner.
 
 ---
 
@@ -255,8 +255,8 @@ This means the framework skeleton (Wave 1) and the first extraction (Wave 2 Back
 These are real architectural concerns anh raised, deferred to separate brainstorms:
 
 1. **File layout — UI ↔ config co-location.** Today `src/app/ui/settings/` and `src/core/config/` are far apart. Reasonable refactor, but mechanical and orthogonal to feature pipeline. → Brainstorm after Wave 2 ships.
-2. **TSF DLL parallel pipeline.** `EngineController.cpp` (608 LOC) duplicates parts of `HookEngine`. Could share Brain, but TSF lifecycle/edit-session constraints differ. → Decide after Wave 6 replay harness covers Hook side.
-3. **Per-feature perf budget.** Once histogram (Wave 0) is up, each feature in the manifest can declare a budget (e.g. `<2µs at p99`). Brain enforces / logs. → Defer to Wave 6.
+2. **TSF DLL parallel pipeline.** `EngineController.cpp` (608 LOC) duplicates parts of `HookEngine`. Could share Coordinator, but TSF lifecycle/edit-session constraints differ. → Decide after Wave 6 replay harness covers Hook side.
+3. **Per-feature perf budget.** Once histogram (Wave 0) is up, each feature in the manifest can declare a budget (e.g. `<2µs at p99`). Coordinator enforces / logs. → Defer to Wave 6.
 
 ---
 
@@ -266,8 +266,8 @@ All four chốt 2026-05-22 — no follow-ups remain pre-implementation.
 
 | # | Question | Resolution |
 |---|---|---|
-| 1 | Brain class lives where? | **`src/core/brain/`** — engine-portable; TSF DLL can reuse later when EngineController parallel pipeline is brainstormed |
-| 2 | Feature registration: compile-time array vs runtime register-on-Init | **Runtime register-on-Init.** Tắt feature trong config = không register = brain không loop qua. Matches Pattern F (Pattern F = "OFF must mean 0 cost"). Virtual call overhead amortized by gate filter |
+| 1 | Coordinator class lives where? | **`src/core/pipeline/`** — engine-portable; TSF DLL can reuse later when EngineController parallel pipeline is brainstormed |
+| 2 | Feature registration: compile-time array vs runtime register-on-Init | **Runtime register-on-Init.** Tắt feature trong config = không register = coordinator không loop qua. Matches Pattern F (Pattern F = "OFF must mean 0 cost"). Virtual call overhead amortized by gate filter |
 | 3 | Wave 7 engine internal rules split into `IEngineRule` | **Split, confirmed** |
 | 4 | First feature after Backward Edit | **Commit-Undo** — highest conflict count in memos (`commit_undo_synth_guard_exemption` 2-cancel-site, `commit_undo_space` MapVirtualKey), single-feature ownership fixes both as side effect |
 
@@ -302,7 +302,7 @@ All four chốt 2026-05-22 — no follow-ups remain pre-implementation.
 
 1. De-god probe Phase 1 verification standard: Windows build pass + gtest pass (chaos run not required to close probe).
 2. Sóng 7 (fractal apply inside engine) included in roadmap, not deferred to "future possibility".
-3. Engine keeps state ownership; Brain reads through const view; intent flow one-way to OutputChannel. Sync cost = 0.
-4. Brain class location: `src/core/brain/` (engine-portable, no Win32 dependencies — testable on Linux gtest; TSF DLL can reuse later).
-5. Feature registration: runtime register-on-Init driven by config. Tắt feature = không register = brain không loop qua. Matches Pattern F (OFF = 0 cost).
+3. Engine keeps state ownership; Coordinator reads through const view; intent flow one-way to OutputChannel. Sync cost = 0.
+4. Coordinator class location: `src/core/pipeline/` (engine-portable, no Win32 dependencies — testable on Linux gtest; TSF DLL can reuse later).
+5. Feature registration: runtime register-on-Init driven by config. Tắt feature = không register = coordinator không loop qua. Matches Pattern F (OFF = 0 cost).
 6. Extraction order after BackwardEditFeature: CommitUndoFeature is #2 (resolves `commit_undo_synth_guard_exemption` + `commit_undo_space` memos as side effect of single-owner state).

@@ -1,15 +1,15 @@
-// src/core/brain/IGate.h
+// src/core/pipeline/IGate.h
 //
-// Gate predicate — Brain queries every registered gate once per keystroke,
+// Gate predicate — Coordinator queries every registered gate once per keystroke,
 // builds the cumulative GateMask of *raised* gates, then filters features
 // by Requires() vs raised mask. Features never check gates inside Try().
 
 #pragma once
 
-#include "core/brain/GateMask.h"
-#include "core/brain/KeyContext.h"
+#include "core/pipeline/GateMask.h"
+#include "core/pipeline/KeyContext.h"
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
 class IGate {
 public:
@@ -18,4 +18,4 @@ public:
     [[nodiscard]] virtual bool   IsRaised(const KeyContext&)    const noexcept = 0;
 };
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

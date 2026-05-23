@@ -1,8 +1,8 @@
-// tests/brain/OutputChannelTest.cpp
+// tests/pipeline/OutputChannelTest.cpp
 #include <gtest/gtest.h>
-#include "core/brain/OutputChannel.h"
+#include "core/pipeline/OutputChannel.h"
 
-using namespace NextKey::Brain;
+using namespace NextKey::Pipeline;
 
 TEST(OutputChannel, EmitAccumulatesInOrder) {
     OutputChannel ch;

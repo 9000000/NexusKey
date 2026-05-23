@@ -1,4 +1,4 @@
-// src/core/brain/OutputChannel.h
+// src/core/pipeline/OutputChannel.h
 //
 // Production IntentSink — accumulates feature-emitted intents per keystroke,
 // then flushes as a single batch. Wave 1 exposes the batch via TakeBatch()
@@ -10,10 +10,10 @@
 #pragma once
 
 #include <vector>
-#include "core/brain/Intent.h"
-#include "core/brain/IntentSink.h"
+#include "core/pipeline/Intent.h"
+#include "core/pipeline/IntentSink.h"
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
 class OutputChannel final : public IntentSink {
 public:
@@ -34,4 +34,4 @@ private:
     std::vector<Intent> batch_;
 };
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline

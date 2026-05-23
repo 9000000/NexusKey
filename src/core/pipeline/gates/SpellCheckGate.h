@@ -1,13 +1,13 @@
-// src/core/brain/gates/SpellCheckGate.h
+// src/core/pipeline/gates/SpellCheckGate.h
 //
 // Wave 1 shell — always unraised. Wave 2 wires this to TypingEngine's
 // spellCheckDisabled_ flag.
 
 #pragma once
 
-#include "core/brain/IGate.h"
+#include "core/pipeline/IGate.h"
 
-namespace NextKey::Brain {
+namespace NextKey::Pipeline {
 
 class SpellCheckGate final : public IGate {
 public:
@@ -15,4 +15,4 @@ public:
     [[nodiscard]] bool   IsRaised(const KeyContext&) const noexcept override { return false; }
 };
 
-}  // namespace NextKey::Brain
+}  // namespace NextKey::Pipeline
