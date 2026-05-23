@@ -22,6 +22,7 @@
 #include "core/pipeline/BackwardEditFeature.h"
 #include "core/pipeline/CommitUndoFeature.h"
 #include "core/pipeline/EscRestoreRawFeature.h"
+#include "core/pipeline/MacroFeature.h"
 #include "core/pipeline/HookCompositionSession.h"
 #include "core/pipeline/Intent.h"
 #include "core/pipeline/KeyContext.h"
@@ -130,6 +131,11 @@ HookEngine::HookEngine() {
     // CommitUndoFeature so the FSM's ESC-exemption check runs first.
     coordinator_.Register(
         std::make_unique<NextKey::Pipeline::EscRestoreRawFeature>(*this));
+    // Wave 4b: MacroFeature owns macro tracking + expansion at PreEngine
+    // prio 30 (between CommitUndo 20 and EscRestoreRaw 40). Adapter contains
+    // EN-mode + VN-mode macro logic transcribed from HandlePreDispatch.
+    coordinator_.Register(
+        std::make_unique<NextKey::Pipeline::MacroFeature>(*this));
 }
 
 HookEngine::~HookEngine() {
@@ -3551,6 +3557,117 @@ NextKey::Pipeline::CommitUndoOutcome HookEngine::HandleCommitUndo(
         case KeyOutcome::Fallthrough: return NextKey::Pipeline::CommitUndoOutcome::Fallthrough;
     }
     return NextKey::Pipeline::CommitUndoOutcome::Fallthrough;  // defensive
+}
+
+/// Wave 4b — Pipeline::IMacroExecutor adapter. Owns macro tracking +
+/// dispatch. Body transcribed 1:1 from pre-W4b HandlePreDispatch:
+///   - EN-mode block (pre-W4b lines 1512-1547)
+///   - VN-mode tracking (1559-1572)
+///   - VN SkipMacro hotkey (1602-1613)
+///   - VN expansion (1615-1624)
+/// Logic unchanged; the feature pipeline now owns the call site at step 2d.
+/// Reads vnMode/macroOn/macroEng/configSnapshot/hotkeys atomics internally.
+NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
+    std::uint16_t vkCode,
+    bool shift, bool capsLock, bool ctrl, bool alt, bool win) {
+    const DWORD vk = static_cast<DWORD>(vkCode);
+    const bool vnMode = vietnameseMode_.load(std::memory_order_acquire);
+    const bool macroOn = macroEnabled_.load(std::memory_order_acquire);
+    const auto cfgSnap = configSnapshot_.load(std::memory_order_acquire);
+    const bool hasMacros = cfgSnap && !cfgSnap->macroTable.empty();
+    auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
+    const uint32_t currentMods = ComputeModMask(ctrl, shift, alt, win);
+
+    // EN mode: only engages when macroOn && macroEng. Always returns Pass
+    // (caller passes the key to OS as English) — except macro-expand which
+    // can return Eat.
+    if (!vnMode) {
+        const bool macroEng = macroInEnglish_.load(std::memory_order_acquire);
+        if (!(macroOn && macroEng)) {
+            return NextKey::Pipeline::MacroOutcome::Fallthrough;
+        }
+        // Track macro keys in English mode.
+        if (vk >= 0x41 && vk <= 0x5A) {
+            const bool upper = shift != capsLock;  // XOR
+            rawMacroBuffer_ += upper ? static_cast<wchar_t>(vk)
+                                      : towlower(static_cast<wchar_t>(vk));
+        } else if (hotkeysSnap
+                   && hotkeysSnap->Matches(NextKey::Intent::SkipMacro, vk, currentMods,
+                                           /*isDoubleTap=*/false, /*keyUp=*/false)
+                   && rawMacroBuffer_.empty()) {
+            tempMacroOff_ = true;
+            return NextKey::Pipeline::MacroOutcome::Pass;
+        } else if (IsCommitTrigger(vk) && !tempMacroOff_) {
+            const wchar_t triggerChar = VkToMacroChar(vk);
+            if (triggerChar > L' ') rawMacroBuffer_ += triggerChar;
+            if (!rawMacroBuffer_.empty() && IsMacroTrigger(vk)) {
+                auto result = TryExpandMacro(triggerChar);
+                if (result == MacroResult::ExpandedEatTrigger) {
+                    return NextKey::Pipeline::MacroOutcome::Eat;
+                }
+                if (result == MacroResult::ExpandedPassTrigger) {
+                    if (synthEventsPending_ > 0) {
+                        InjectKey(vk);
+                        return NextKey::Pipeline::MacroOutcome::Eat;
+                    }
+                    return NextKey::Pipeline::MacroOutcome::Pass;
+                }
+            } else if (!IsMacroTrigger(vk)) {
+                // Disabled trigger still marks word boundary — clear buffer.
+                rawMacroBuffer_.clear();
+                tempMacroOff_ = false;
+            }
+        } else if (vk == VK_BACK && !rawMacroBuffer_.empty()) {
+            rawMacroBuffer_.pop_back();
+        } else if (!(vk >= 0x41 && vk <= 0x5A) && !IsCommitTrigger(vk)) {
+            rawMacroBuffer_.clear();
+            tempMacroOff_ = false;
+        }
+        // EN mode always passes to OS unless macro ate the key above.
+        return NextKey::Pipeline::MacroOutcome::Pass;
+    }
+
+    // VN mode tracking — accumulate alpha + commit-trigger chars when macros loaded.
+    if (macroOn && hasMacros) {
+        if (vk >= 0x41 && vk <= 0x5A) {
+            const bool upper = shift != capsLock;  // XOR
+            rawMacroBuffer_ += upper ? static_cast<wchar_t>(vk)
+                                      : towlower(static_cast<wchar_t>(vk));
+        } else if (IsCommitTrigger(vk)) {
+            const wchar_t ch = VkToMacroChar(vk);
+            if (ch > L' ') rawMacroBuffer_ += ch;  // Printable non-space chars
+        }
+    }
+
+    // VN SkipMacro hotkey — empty engine + empty buffer marks "skip next macro".
+    if (macroOn && hasMacros
+        && hotkeysSnap
+        && hotkeysSnap->Matches(NextKey::Intent::SkipMacro, vk, currentMods,
+                                /*isDoubleTap=*/false, /*keyUp=*/false)
+        && engine_ && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
+        tempMacroOff_ = true;
+        HOOK_LOG(L"  tempMacroOff: enabled by Esc");
+        return NextKey::Pipeline::MacroOutcome::Pass;
+    }
+
+    // VN macro expansion — runs on commit trigger when buffer non-empty.
+    if (macroOn && hasMacros && !tempMacroOff_
+        && IsMacroTrigger(vk) && !rawMacroBuffer_.empty()) {
+        const wchar_t triggerChar = VkToMacroChar(vk);
+        auto result = TryExpandMacro(triggerChar);
+        if (result == MacroResult::ExpandedEatTrigger) {
+            return NextKey::Pipeline::MacroOutcome::Eat;
+        }
+        if (result == MacroResult::ExpandedPassTrigger) {
+            if (synthEventsPending_ > 0) {
+                InjectKey(vk);
+                return NextKey::Pipeline::MacroOutcome::Eat;
+            }
+            return NextKey::Pipeline::MacroOutcome::Pass;
+        }
+    }
+
+    return NextKey::Pipeline::MacroOutcome::Fallthrough;
 }
 
 /// Wave 4a — Pipeline::IEscRestoreRawExecutor adapter. Resolves the

@@ -17,6 +17,7 @@
 #include "core/pipeline/IBackwardEditExecutor.h"
 #include "core/pipeline/ICommitUndoExecutor.h"
 #include "core/pipeline/IEscRestoreRawExecutor.h"
+#include "core/pipeline/IMacroExecutor.h"
 #include "core/pipeline/Coordinator.h"
 #include "core/pipeline/OutputChannel.h"
 #include <Windows.h>
@@ -49,7 +50,8 @@ using ModeChangeCallback = std::function<void(bool vietnamese)>;
 class HookEngine
     : public NextKey::Pipeline::IBackwardEditExecutor
     , public NextKey::Pipeline::ICommitUndoExecutor
-    , public NextKey::Pipeline::IEscRestoreRawExecutor {
+    , public NextKey::Pipeline::IEscRestoreRawExecutor
+    , public NextKey::Pipeline::IMacroExecutor {
 public:
     HookEngine();
     ~HookEngine() override;
@@ -78,6 +80,16 @@ public:
     [[nodiscard]] NextKey::Pipeline::EscRestoreOutcome TryEscRestore(
         std::uint16_t vkCode,
         bool shift, bool ctrl, bool alt, bool win) override;
+
+    // Pipeline::IMacroExecutor — Wave 4b adapter for MacroFeature.
+    // Owns macro tracking (rawMacroBuffer_ accumulation) + dispatch:
+    // EN mode (English macro), SkipMacro hotkey, expansion via TryExpandMacro.
+    // Body transcribed 1:1 from pre-W4b HandlePreDispatch macro blocks; logic
+    // unchanged. Reads vnMode/macroOn/macroEng atomics + RCU configSnapshot
+    // internally so the feature interface stays decoupled from those fields.
+    [[nodiscard]] NextKey::Pipeline::MacroOutcome HandleMacro(
+        std::uint16_t vkCode,
+        bool shift, bool capsLock, bool ctrl, bool alt, bool win) override;
 
     /// Start the hook engine (installs keyboard hook + focus hook)
     bool Start(HINSTANCE hInstance, const TypingConfig& config,
