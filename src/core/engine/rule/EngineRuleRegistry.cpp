@@ -25,6 +25,13 @@ void EngineRuleRegistry::Register(std::unique_ptr<IEngineRule> rule) {
                      });
 }
 
+// W7.5 retro note: as of 2026-05-23 only ToneEscape has an engine-layer
+// consumer (ToneRule). EnglishBias and SpellCheck bits are computed but
+// unconsumed at this layer — kept deliberately (AD-9 in W7-retro doc) to
+// avoid "remove now / re-add later" churn if a future engine rule declares
+// Requires=SpellCheck or Requires=EnglishBias. Cost is ~3 bit-ops per
+// dispatch over already-loaded ctx fields. See
+// docs/plans/2026-05-23-feature-pipeline-w7-retro.md for the full rationale.
 GateMask EngineRuleRegistry::EvaluateGates(const EngineRuleContext& ctx) const noexcept {
     GateMask raised = 0u;
     if (ctx.bias == LanguageBias::HardEnglish && !ctx.allowEnglishBypass) {
