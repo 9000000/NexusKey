@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HotkeyManager.h"
-#include "HookEngine.h"  // VKEY_EXTRA_INFO tag
+#include "HookEngine.h"  // VKEY_EXTRA_INFO tag + WM_APP_HOTKEY_FIRED forward use
 #include "core/CrashLog.h"
 #include "core/Debug.h"
 
@@ -15,6 +15,11 @@ namespace NextKey {
         ::NextKey::Logger::Log(L"[Hotkey] " fmt, ##__VA_ARGS__);               \
 } while (0)
 
+// Mirrors HookEngine.cpp's WM_APP_HOTKEY_FIRED definition. Duplicated to avoid
+// forcing HotkeyManager.h to expose it (and to keep the constant local to the
+// two TUs that actually use it).
+static constexpr UINT kWmAppHotkeyFired = WM_APP + 3;
+
 std::atomic<HotkeyManager*> HotkeyManager::s_instance{nullptr};
 
 HotkeyManager::~HotkeyManager() {
@@ -22,9 +27,17 @@ HotkeyManager::~HotkeyManager() {
 }
 
 HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config, Callback callback) {
-    std::lock_guard lk(slotsMutex_);
-    slots_.push_back(Slot{config, std::move(callback), false});
-    const SlotId id = slots_.size() - 1;
+    std::lock_guard lk(mutationMutex_);
+    auto oldBindings = bindings_.load(std::memory_order_acquire);
+    auto newBindings = oldBindings
+        ? std::make_shared<std::vector<SlotBinding>>(*oldBindings)
+        : std::make_shared<std::vector<SlotBinding>>();
+    newBindings->push_back(SlotBinding{config, std::move(callback)});
+    const SlotId id = newBindings->size() - 1;
+    // Grow slotState_ in lock-step. Safe because the LL hook is not installed
+    // until Initialize() runs after all AddHotkey calls (current usage).
+    slotState_.resize(id + 1);
+    bindings_.store(std::move(newBindings), std::memory_order_release);
     HOTKEY_LOG(L"AddHotkey slot=%zu vk=0x%02X ctrl=%d shift=%d alt=%d win=%d (%s)",
                id, config.vk, config.ctrl, config.shift, config.alt, config.win,
                config.vk == 0 ? L"modifier-only" : L"combo");
@@ -32,14 +45,20 @@ HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config, Callb
 }
 
 void HotkeyManager::UpdateHotkey(SlotId slot, const HotkeyConfig& config) {
-    std::lock_guard lk(slotsMutex_);
-    if (slot >= slots_.size()) return;
+    std::lock_guard lk(mutationMutex_);
+    auto oldBindings = bindings_.load(std::memory_order_acquire);
+    if (!oldBindings || slot >= oldBindings->size()) return;
     // Skip if config unchanged — preserves comboKeyDown across spurious reloads.
-    // Without this, a config reload while the user holds the combo resets
-    // comboKeyDown=false and the next auto-repeat re-fires the callback.
-    if (slots_[slot].config == config) return;
-    slots_[slot].config = config;
-    slots_[slot].comboKeyDown = false;
+    // Without this, a config reload while the user holds the combo would (after
+    // Wave 1) be a no-op on slotState_ anyway, but skipping also avoids
+    // publishing a redundant snapshot.
+    if ((*oldBindings)[slot].config == config) return;
+    auto newBindings = std::make_shared<std::vector<SlotBinding>>(*oldBindings);
+    (*newBindings)[slot].config = config;
+    // comboKeyDown lives in slotState_[slot] and stays put across UpdateHotkey
+    // by design — its in-flight DOWN should still be paired with the matching
+    // UP regardless of config rebinding.
+    bindings_.store(std::move(newBindings), std::memory_order_release);
     HOTKEY_LOG(L"UpdateHotkey slot=%zu vk=0x%02X ctrl=%d shift=%d alt=%d win=%d (%s)",
                slot, config.vk, config.ctrl, config.shift, config.alt, config.win,
                config.vk == 0 ? L"modifier-only" : L"combo");
@@ -48,8 +67,11 @@ void HotkeyManager::UpdateHotkey(SlotId slot, const HotkeyConfig& config) {
 void HotkeyManager::Initialize(HINSTANCE hInstance) {
     s_instance = this;
     InstallKeyboardHook(hInstance);
-    NEXTKEY_LOG(L"HotkeyManager installed (%zu slot%s)",
-                slots_.size(), slots_.size() == 1 ? L"" : L"s");
+    auto bindings = bindings_.load(std::memory_order_acquire);
+    const size_t count = bindings ? bindings->size() : 0;
+    NEXTKEY_LOG(L"HotkeyManager installed (%zu slot%s, hookTid=%lu)",
+                count, count == 1 ? L"" : L"s",
+                hookThreadId_.load(std::memory_order_acquire));
 }
 
 void HotkeyManager::Uninstall() {
@@ -61,8 +83,10 @@ void HotkeyManager::Uninstall() {
     if (s_instance == this) {
         s_instance = nullptr;
     }
-    std::lock_guard lk(slotsMutex_);
-    slots_.clear();
+    std::lock_guard lk(mutationMutex_);
+    bindings_.store(std::make_shared<std::vector<SlotBinding>>(),
+                    std::memory_order_release);
+    slotState_.clear();
 }
 
 void HotkeyManager::InstallKeyboardHook(HINSTANCE hInstance) {
@@ -94,6 +118,15 @@ void HotkeyManager::InjectDummyKey() noexcept {
     inputs[1].ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
 
     SendInput(2, inputs, sizeof(INPUT));
+}
+
+void HotkeyManager::DispatchHotkeyFromHookThread(SlotId slot) {
+    HotkeyManager* inst = s_instance.load(std::memory_order_relaxed);
+    if (!inst) return;
+    auto bindings = inst->bindings_.load(std::memory_order_acquire);
+    if (!bindings || slot >= bindings->size()) return;
+    const auto& binding = (*bindings)[slot];
+    if (binding.callback) binding.callback();
 }
 
 LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
@@ -157,24 +190,49 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
             return cfg.ModifiersMatch(preCtrl, preShift, preAlt, preWin);
         };
 
-        std::lock_guard lk(self.slotsMutex_);
+        // RCU snapshot read — lock-free. The pointee vector is immutable; mutators
+        // publish a fresh shared_ptr. slotState_ is owned by `self` (LL-thread-only
+        // mutator after Initialize), indexed in parallel with `bindings`.
+        auto bindings = self.bindings_.load(std::memory_order_acquire);
+        if (!bindings) {
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        }
+        const auto& slots = *bindings;
+        const DWORD hookTid = self.hookThreadId_.load(std::memory_order_acquire);
 
         // ─── Combo hotkey: target key DOWN fires, UP is eaten ───
         if (!isModifier && (isDown || isUp)) {
-            for (size_t i = 0; i < self.slots_.size(); ++i) {
-                auto& slot = self.slots_[i];
+            for (size_t i = 0; i < slots.size(); ++i) {
+                const auto& slot = slots[i];
                 if (slot.config.vk == 0) continue;  // Modifier-only slot
                 if (vk != slot.config.vk) continue;
 
+                // Mirror old index; slotState_ is sized in lock-step with bindings_.
+                // Defensive bound — should never trigger but cheap.
+                if (i >= self.slotState_.size()) continue;
+                auto& state = self.slotState_[i];
+
                 if (isDown) {
-                    if (slot.comboKeyDown) return 1;  // Eat auto-repeat
+                    if (state.comboKeyDown) return 1;  // Eat auto-repeat
                     if (matchCombo(slot.config)) {
-                        slot.comboKeyDown = true;
+                        state.comboKeyDown = true;
                         HOTKEY_LOG(L"combo fire slot=%zu vk=0x%02X mods=C%dS%dA%dW%d",
                                    i, vk,
                                    self.modCtrlDown_, self.modShiftDown_,
                                    self.modAltDown_, self.modWinDown_);
-                        if (slot.callback) slot.callback();
+                        // Post to hook thread when available; callback runs there
+                        // (hook-thread context, safe for engine-state writes like
+                        // HookEngine::CommitPending). Fallback: TSF-only mode runs
+                        // without a HookEngine hook thread (hookTid==0), so the
+                        // callback dispatches inline on the LL thread — that path
+                        // is safe because TSF-only callbacks are PostMessage-style
+                        // (see main.cpp:704-711, no engine-state writes).
+                        if (hookTid) {
+                            PostThreadMessageW(hookTid, kWmAppHotkeyFired,
+                                               static_cast<WPARAM>(i), 0);
+                        } else if (slot.callback) {
+                            slot.callback();
+                        }
                         if (slot.config.alt || slot.config.win) InjectDummyKey();
                         return 1;  // Eat DOWN
                     } else {
@@ -190,8 +248,8 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                                    self.modAltDown_, self.modWinDown_);
                     }
                 } else {  // isUp
-                    if (slot.comboKeyDown) {
-                        slot.comboKeyDown = false;
+                    if (state.comboKeyDown) {
+                        state.comboKeyDown = false;
                         return 1;  // Eat matching UP
                     }
                 }
@@ -200,8 +258,8 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
 
         // ─── Modifier-only hotkey: fires on modifier UP if no non-modifier was pressed ───
         if (isModifier && isUp) {
-            for (size_t i = 0; i < self.slots_.size(); ++i) {
-                auto& slot = self.slots_[i];
+            for (size_t i = 0; i < slots.size(); ++i) {
+                const auto& slot = slots[i];
                 if (slot.config.vk != 0) continue;  // Combo slot
                 const auto& c = slot.config;
                 if (!c.HasAny()) continue;  // Empty config would match everything
@@ -220,7 +278,12 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                 HOTKEY_LOG(L"modifier-only fire slot=%zu released=0x%02X pre=C%dS%dA%dW%d",
                            i, vk,
                            preCtrl, preShift, preAlt, preWin);
-                if (slot.callback) slot.callback();
+                if (hookTid) {
+                    PostThreadMessageW(hookTid, kWmAppHotkeyFired,
+                                       static_cast<WPARAM>(i), 0);
+                } else if (slot.callback) {
+                    slot.callback();
+                }
             }
         }
     } catch (const std::exception& e) {

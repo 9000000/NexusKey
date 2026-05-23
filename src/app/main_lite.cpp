@@ -580,6 +580,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         return 1;
     }
 
+    // Wave 1 — route HotkeyManager LL-callback matches to the hook thread so
+    // callbacks like hookEngine.CommitPending() obey the single-writer
+    // invariant. Must run AFTER Start() (hook thread id is only valid then).
+    g_hotkeyManager.SetHookThreadId(g_hookEngine.GetHookThreadId());
+
     // Sprint 1 D9: launch worker after HookEngine so the first Signal it
     // observes lands on a fully-initialised engine.
     g_mainThreadWorker.SetWorkHandler([]() {

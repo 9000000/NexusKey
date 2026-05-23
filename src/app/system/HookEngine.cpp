@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookEngine.h"
+#include "HotkeyManager.h"  // Wave 1 — DispatchHotkeyFromHookThread
 #include "Win32CaseMapper.h"
 #include "PerfHistogram.h"  // Phase 1 — per-stage histogram (compiles to no-op when VKEY_PERF_HIST undef)
 #include "helpers/AppHelpers.h"
@@ -51,6 +52,15 @@ static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 /// `GetMessage` so it drains promptly. Subsequent posts before drain run
 /// coalesce (no extra messages) per the wakePosted latch.
 static constexpr UINT WM_APP_HOOK_COMMAND   = WM_APP + 2;
+
+/// Wave 1 — hotkey dispatch trampoline. HotkeyManager's LL keyboard hook
+/// (running on the main UI thread that installed it) detects a slot match
+/// and posts this message with wParam = slot id. The hook thread's pump
+/// receives it and invokes HotkeyManager::DispatchHotkeyFromHookThread,
+/// which calls the per-slot callback in hook-thread context — restoring
+/// the "hook-thread-only writes to engine state" invariant for callbacks
+/// like outConvertSlot that call hookEngine.CommitPending().
+static constexpr UINT WM_APP_HOTKEY_FIRED   = WM_APP + 3;
 
 /// `WM_APP_REINSTALL_HOOKS` wParam — labels which trigger fired the reinstall.
 /// Logged by HookThreadProc so field-collected logs can distinguish causes
@@ -524,6 +534,20 @@ void HookEngine::HookThreadProc() {
                 CrashLog(L"HookThreadProc::DrainHookCommands", e.what());
             } catch (...) {
                 CrashLog(L"HookThreadProc::DrainHookCommands", "(non-std exception)");
+            }
+            continue;
+        }
+        if (msg.message == WM_APP_HOTKEY_FIRED) {
+            // Wave 1: HotkeyManager's LL hook detected a match and posted slot
+            // id in wParam. Dispatch the per-slot callback in hook-thread
+            // context so callbacks (e.g. CommitPending → stateMutex_) hold
+            // the single-writer invariant.
+            try {
+                HotkeyManager::DispatchHotkeyFromHookThread(static_cast<size_t>(msg.wParam));
+            } catch (const std::exception& e) {
+                CrashLog(L"HookThreadProc::DispatchHotkey", e.what());
+            } catch (...) {
+                CrashLog(L"HookThreadProc::DispatchHotkey", "(non-std exception)");
             }
             continue;
         }

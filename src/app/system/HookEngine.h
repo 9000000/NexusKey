@@ -136,6 +136,12 @@ public:
     /// Set SharedState pointer for direct reading (must be the global instance from main.cpp)
     void SetSharedStateReader(SharedStateManager* ptr) { sharedStatePtr_ = ptr; }
 
+    /// Wave 1 — return the dedicated hook thread id (target for PostThreadMessage).
+    /// Returns 0 before Start() completes the hook-thread handshake; callers
+    /// should query AFTER Start() returns. Used by HotkeyManager to route
+    /// matched-slot dispatch back onto the hook thread.
+    [[nodiscard]] DWORD GetHookThreadId() const noexcept { return hookThreadId_; }
+
     /// Change code table (commits pending composition, updates per-app map)
     void SetCodeTable(CodeTable ct);
 
