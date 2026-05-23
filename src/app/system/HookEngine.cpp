@@ -41,28 +41,12 @@
 
 namespace NextKey {
 
-/// Custom thread message used between OnFocusChanged (sender, main thread)
-/// and HookThreadProc (receiver, hook thread) to re-install LL hooks at
-/// the top of the hook chain. Defined once to avoid duplication.
-static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
-
-/// Phase 2a — wake trampoline for `HookCommandMailbox`. Producers on main /
-/// worker / hotkey threads call `mailbox_.Post(bit, ...)`; that fires this
-/// message once per empty→non-empty edge to break the hook thread out of
-/// `GetMessage` so it drains promptly. Subsequent posts before drain run
-/// coalesce (no extra messages) per the wakePosted latch.
-static constexpr UINT WM_APP_HOOK_COMMAND   = WM_APP + 2;
-
-// WM_APP_HOTKEY_FIRED (WM_APP + 3) — defined in HotkeyManager.h so the
-// producer (HotkeyManager LL callback) and consumer (this pump) share one
-// source of truth. See that header for the routing rationale.
-
-/// `WM_APP_REINSTALL_HOOKS` wParam — labels which trigger fired the reinstall.
-/// Logged by HookThreadProc so field-collected logs can distinguish causes
-/// (e.g. confirm whether Java-trigger reinstalls are frequent enough to
-/// indicate jnativehook re-arming during a JVM session).
-static constexpr WPARAM REINSTALL_REASON_CHROMIUM = 0;
-static constexpr WPARAM REINSTALL_REASON_JAVA     = 1;
+// Wave 3 PR 3.1 (2026-05-23) — WM_APP_REINSTALL_HOOKS / WM_APP_HOOK_COMMAND
+// definitions + REINSTALL_REASON_* constants moved into HookLifecycle (the
+// owner of the hook thread + LL hooks + mailbox that posts/consumes these
+// messages). HookEngine reaches the reinstall path via
+// `lifecycle_.PostReinstallHooks(REINSTALL_REASON_*)` — the reason constants
+// are exported from HookLifecycle.h.
 
 // ═══════════════════════════════════════════════════════════
 // VKEY_ASSERT_HOOK_THREAD — Phase 2d single-writer invariant.
@@ -81,7 +65,7 @@ static constexpr WPARAM REINSTALL_REASON_JAVA     = 1;
 #else
   #define VKEY_ASSERT_HOOK_THREAD()                                            \
       do {                                                                     \
-          const DWORD _expected = hookThreadId_;                                \
+          const DWORD _expected = lifecycle_.ThreadId();                        \
           if (_expected != 0) {                                                 \
               const DWORD _current = GetCurrentThreadId();                      \
               if (_current != _expected) {                                      \
@@ -233,7 +217,7 @@ namespace {
 
 bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
                         bool initialVietnamese, uint8_t startupMode) {
-    if (keyboardHook_) return false;  // Already running
+    if (lifecycle_.IsRunning()) return false;  // Already running
 
     // Enable the file logger before the first HOOK_LOG so the start banner is
     // captured when the user already had the toggle on. ApplyConfig() re-asserts
@@ -300,31 +284,12 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     RebuildSnapshotFromToml(
         static_cast<std::uint32_t>(lastConfigGeneration_.load(std::memory_order_acquire)));
 
-    // Spawn dedicated hook thread that owns keyboardHook_ + mouseHook_ and runs
-    // its own GetMessage pump. This decouples LL hook dispatch from the main/UI
-    // thread (which runs Sciter rendering, SharedState locks, config reloads).
-    // Win10+ silently removes LL hooks whose installer-thread pump can't service
-    // events within `LowLevelHooksTimeout` (default 300 ms, configurable up to
-    // ~1000 ms via `HKCU\Control Panel\Desktop\LowLevelHooksTimeout`) — keeping
-    // the hook thread minimal + dedicated avoids hitting that deadline.
-    cachedHInstance_ = hInstance;
-    hookThreadReady_.store(false);
-    hookThread_ = std::thread(&HookEngine::HookThreadProc, this);
-
-    // Wait for hook thread to finish installing hooks (or fail). Timeout 5s as
-    // safety — a healthy thread signals within milliseconds.
-    {
-        std::unique_lock<std::mutex> lk(hookStartMutex_);
-        hookStartCv_.wait_for(lk, std::chrono::seconds(5),
-                              [this] { return hookThreadReady_.load(); });
-    }
-    if (!keyboardHook_) {
-        NEXTKEY_LOG(L"HookEngine: Failed to install keyboard hook (hook thread returned without setting keyboardHook_)");
-        HOOK_LOG(L"FAILED to install keyboard hook (hook thread did not signal ready or SetWindowsHookExW failed)");
-        if (hookThread_.joinable()) {
-            if (hookThreadId_) PostThreadMessage(hookThreadId_, WM_QUIT, 0, 0);
-            hookThread_.join();
-        }
+    // Wave 3 PR 3.1: HookLifecycle owns the dedicated hook thread + LL hooks
+    // + mailbox. We pass our LL callbacks (still HookEngine statics via
+    // s_instance) and a drain callback that fans out to DrainHookCommands.
+    if (!lifecycle_.Start(hInstance, LowLevelKeyboardProc, LowLevelMouseProc,
+                          [this] { DrainHookCommands(); })) {
+        HOOK_LOG(L"FAILED to install keyboard hook (lifecycle Start returned false)");
         return false;
     }
 
@@ -380,17 +345,10 @@ void HookEngine::Stop() {
     if (startupMode_ == 2) {  // Remember: persist per-app modes
         SaveEnglishModeAppsIfDirty();
     }
-    // Ask hook thread to exit (it owns keyboardHook_/mouseHook_ and will
-    // UnhookWindowsHookEx them on the same thread that installed — required by
-    // LL hook semantics). WinEvent hooks + timer stay on main thread.
-    if (hookThread_.joinable()) {
-        if (hookThreadId_) PostThreadMessage(hookThreadId_, WM_QUIT, 0, 0);
-        hookThread_.join();
-    }
-    keyboardHook_ = nullptr;
-    mouseHook_ = nullptr;
-    hookThreadId_ = 0;
-    hookThreadReady_.store(false);
+    // Wave 3 PR 3.1: HookLifecycle handles thread shutdown + LL hook teardown
+    // (unhook MUST happen on the installer thread per MSDN — lifecycle owns
+    // that thread). WinEvent hooks + timer stay on main thread.
+    lifecycle_.Stop();
 
     if (focusHook_) {
         UnhookWinEvent(focusHook_);
@@ -414,145 +372,10 @@ void HookEngine::Stop() {
     NEXTKEY_LOG(L"HookEngine stopped");
 }
 
-void HookEngine::HookThreadProc() {
-    // Dedicated message-pump thread for WH_KEYBOARD_LL + WH_MOUSE_LL. These are
-    // installer-thread-bound — the callback runs on this thread, and Windows
-    // dispatches events via the thread's message queue. Keeping this thread
-    // otherwise idle guarantees the pump stays responsive within the
-    // LowLevelHooksTimeout window (silent-unhook avoidance).
-    hookThreadId_ = GetCurrentThreadId();
-
-    // Phase 2a: wire the mailbox wake trampoline now that we own a valid
-    // thread id. Producers on other threads call mailbox_.Post(...); the
-    // first post per empty→non-empty edge fires this lambda which kicks
-    // the pump via WM_APP_HOOK_COMMAND. Subsequent posts in the same edge
-    // coalesce (wakePosted latch). Captured `this` is safe — mailbox is
-    // a member, lifetime is HookEngine's.
-    const DWORD wakeTid = hookThreadId_;
-    mailbox_.SetWakeFn([wakeTid]{
-        PostThreadMessageW(wakeTid, WM_APP_HOOK_COMMAND, 0, 0);
-    });
-
-    keyboardHook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, cachedHInstance_, 0);
-    if (!keyboardHook_) {
-        HOOK_LOG(L"HookThreadProc: SetWindowsHookExW(WH_KEYBOARD_LL) FAILED err=%lu", GetLastError());
-        // Signal main thread that we tried (but failed) so it can observe
-        // keyboardHook_ == nullptr and abort Start().
-        {
-            std::lock_guard<std::mutex> lk(hookStartMutex_);
-            hookThreadReady_.store(true);
-        }
-        hookStartCv_.notify_one();
-        return;
-    }
-
-    mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, cachedHInstance_, 0);
-    // Mouse hook is best-effort — proceed even if it fails.
-
-    // Signal main: hooks installed, HHOOKs visible via keyboardHook_/mouseHook_.
-    {
-        std::lock_guard<std::mutex> lk(hookStartMutex_);
-        hookThreadReady_.store(true);
-    }
-    hookStartCv_.notify_one();
-
-    HOOK_LOG(L"HookThreadProc: pump started tid=%lu", hookThreadId_);
-
-    // Message pump. Besides LL hook dispatch, this thread services
-    // WM_APP_REINSTALL_HOOKS posted by OnFocusChanged for Chromium / Java
-    // top-of-chain priority. wParam carries REINSTALL_REASON_* (see top of file).
-    //
-    // Reinstalls are throttled (`kMinReinstallIntervalMs`) so a burst of
-    // focus events (Alt-Tab through several Chromium/Java windows in
-    // succession) doesn't translate into a burst of unhook/rehook gaps.
-    // Each gap is microseconds-to-ms, so a single one is harmless — but
-    // five back-to-back can swallow a stray keystroke. Pending duplicate
-    // messages collapse into the throttle check.
-    MSG msg;
-    DWORD lastReinstallTime = 0;
-    constexpr DWORD kMinReinstallIntervalMs = 500;
-    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
-        if (msg.message == WM_APP_REINSTALL_HOOKS) {
-            const wchar_t* reasonName =
-                msg.wParam == REINSTALL_REASON_JAVA ? L"java" : L"chromium";
-            const DWORD now = GetTickCount();
-            const DWORD sinceLast = now - lastReinstallTime;
-            if (lastReinstallTime != 0 && sinceLast < kMinReinstallIntervalMs) {
-                HOOK_LOG(L"HookThreadProc: reinstall SKIPPED (throttle %ums < %ums) reason=%ls",
-                         sinceLast, kMinReinstallIntervalMs, reasonName);
-                continue;
-            }
-            lastReinstallTime = now;
-
-            // Unhook before re-install. Don't gate the re-install on the
-            // unhook target existing — if a prior reinstall transient-failed
-            // and left a NULL handle, we still want to attempt recovery
-            // (gating would lock out retry permanently).
-            if (keyboardHook_) UnhookWindowsHookEx(keyboardHook_);
-            keyboardHook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, cachedHInstance_, 0);
-            if (!keyboardHook_) {
-                HOOK_LOG(L"HookThreadProc: SetWindowsHookExW(WH_KEYBOARD_LL) reinstall FAILED err=%lu",
-                         GetLastError());
-            }
-
-            if (mouseHook_) UnhookWindowsHookEx(mouseHook_);
-            mouseHook_ = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, cachedHInstance_, 0);
-            if (!mouseHook_) {
-                HOOK_LOG(L"HookThreadProc: SetWindowsHookExW(WH_MOUSE_LL) reinstall FAILED err=%lu",
-                         GetLastError());
-            }
-
-            HOOK_LOG(L"HookThreadProc: Hooks reinstalled reason=%ls kb=%ls mouse=%ls",
-                     reasonName,
-                     keyboardHook_ ? L"OK" : L"FAIL",
-                     mouseHook_ ? L"OK" : L"FAIL");
-            continue;
-        }
-        if (msg.message == WM_APP_HOOK_COMMAND) {
-            // Phase 2a: wake-up posted by mailbox_.Post on a non-hook thread.
-            // The drain is also called from inside LowLevelKeyboardProc (step
-            // 5 barrier), so reaching it here means no keystroke triggered a
-            // drain between the post and the pump cycle — process the bits
-            // promptly so focus/config updates aren't deferred to the next
-            // keydown.
-            try {
-                DrainHookCommands();
-            } catch (const std::exception& e) {
-                CrashLog(L"HookThreadProc::DrainHookCommands", e.what());
-            } catch (...) {
-                CrashLog(L"HookThreadProc::DrainHookCommands", "(non-std exception)");
-            }
-            continue;
-        }
-        if (msg.message == WM_APP_HOTKEY_FIRED) {
-            // Wave 1: HotkeyManager's LL hook detected a match and posted slot
-            // id in wParam. Dispatch the per-slot callback in hook-thread
-            // context so callbacks (e.g. CommitPending → stateMutex_) hold
-            // the single-writer invariant.
-            try {
-                HotkeyManager::DispatchHotkeyFromHookThread(static_cast<size_t>(msg.wParam));
-            } catch (const std::exception& e) {
-                CrashLog(L"HookThreadProc::DispatchHotkey", e.what());
-            } catch (...) {
-                CrashLog(L"HookThreadProc::DispatchHotkey", "(non-std exception)");
-            }
-            continue;
-        }
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
-
-    // Must unhook on the same thread that installed (MSDN requirement).
-    if (keyboardHook_) {
-        UnhookWindowsHookEx(keyboardHook_);
-        keyboardHook_ = nullptr;
-    }
-    if (mouseHook_) {
-        UnhookWindowsHookEx(mouseHook_);
-        mouseHook_ = nullptr;
-    }
-    HOOK_LOG(L"HookThreadProc: pump exited tid=%lu", hookThreadId_);
-}
+// Wave 3 PR 3.1 (2026-05-23) — HookThreadProc body moved to
+// HookLifecycle::ThreadProc. Same pump structure, same WM_APP_* dispatch,
+// same throttled reinstall. HookLifecycle invokes our DrainHookCommands via
+// a callback registered at lifecycle_.Start().
 
 void HookEngine::ToggleVietnameseMode() {
     // Phase 2c: ToggleVietnameseMode is called from any thread (tray menu
@@ -561,7 +384,7 @@ void HookEngine::ToggleVietnameseMode() {
     // writes (CommitComposition, vietnameseMode_, appModeMap_, etc.) must
     // happen on the hook thread (Rule 11.3 single-writer). Post the bit
     // and let the drain do the work.
-    mailbox_.Post(HookCommand::kToggleVN);
+    lifecycle_.Mailbox().Post(HookCommand::kToggleVN);
 }
 
 void HookEngine::SetCodeTable(CodeTable ct) {
@@ -665,7 +488,7 @@ void HookEngine::QuickSyncFromSharedState() {
     //   • Worker / main → run inline. Already on a thread where TOML parse
     //     is acceptable, no point bouncing through another tick.
     if (state.configGeneration != lastConfigGeneration_.load(std::memory_order_acquire)) {
-        if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
+        if (const DWORD _hookTid = lifecycle_.ThreadId(); _hookTid != 0 && GetCurrentThreadId() == _hookTid) {
             pendingConfigReload_.store(true, std::memory_order_release);
             NEXTKEY_LOG(L"HookEngine: configGeneration bump (%u) seen on hook — deferring Reload to worker tick",
                         state.configGeneration);
@@ -710,7 +533,7 @@ void HookEngine::QuickSyncFromSharedState() {
     // swap + CommitComposition must run on the hook thread to avoid the
     // race that surfaced under `-InjectConfigReloadMs 50` chaos.
     if (methodChanged) {
-        mailbox_.Post(HookCommand::kConfigApply);
+        lifecycle_.Mailbox().Post(HookCommand::kConfigApply);
     }
 
     if (codeTableChanged) {
@@ -729,7 +552,7 @@ void HookEngine::QuickSyncFromSharedState() {
         auto snap = configSnapshot_.load(std::memory_order_acquire);
         const bool snapHasMacros = snap && !snap->macroTable.empty();
         if (macroOn != snapHasMacros) {
-            if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
+            if (const DWORD _hookTid = lifecycle_.ThreadId(); _hookTid != 0 && GetCurrentThreadId() == _hookTid) {
                 pendingConfigReload_.store(true, std::memory_order_release);
             } else {
                 RebuildSnapshotFromToml(
@@ -853,7 +676,7 @@ void HookEngine::ReloadFromToml() {
     // for the dormant handler we wired in P2c — finally lit up. The
     // mailbox coalesces against rapid republishes (one Apply per drain
     // cycle) so chaos `-InjectConfigReloadMs 50` doesn't queue up many.
-    mailbox_.Post(HookCommand::kConfigApply);
+    lifecycle_.Mailbox().Post(HookCommand::kConfigApply);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3176,7 +2999,7 @@ void HookEngine::OnTickPoll() noexcept {
 
         // Always post a tick — hook thread runs CheckLayoutChange in the
         // drain. Coalesces against rapid ticks (rare; tick is 200ms).
-        mailbox_.Post(HookCommand::kTickPoll);
+        lifecycle_.Mailbox().Post(HookCommand::kTickPoll);
 
         // PID-changed fallback (catches missed/phantom focus events from
         // EVENT_SYSTEM_FOREGROUND). lastForegroundPid_ is hook-owned;
@@ -3452,9 +3275,9 @@ FocusClassification HookEngine::ClassifyFocusedWindow(HWND triggerHwnd) noexcept
     // IOutputInjector build, and AppDetect log all moved to
     // ApplyFocusOnHookThread (Rule 11.3 — hook-thread-only writes). This
     // re-install Post is harmless from any thread — just kicks the hook pump.
-    if (hookThreadId_ && (cls.localElectronApp || cls.isBrowser || cls.isJavaApp)) {
+    if (lifecycle_.ThreadId() && (cls.localElectronApp || cls.isBrowser || cls.isJavaApp)) {
         const WPARAM reason = cls.isJavaApp ? REINSTALL_REASON_JAVA : REINSTALL_REASON_CHROMIUM;
-        PostThreadMessageW(hookThreadId_, WM_APP_REINSTALL_HOOKS, reason, 0);
+        lifecycle_.PostReinstallHooks(reason);
     }
 
     return cls;
@@ -3488,7 +3311,7 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     auto cls = std::make_shared<const FocusClassification>(
         ClassifyFocusedWindow(triggerHwnd));
     if (!cls->hwndOpaque) return;  // sentinel: nothing to apply
-    mailbox_.Post(HookCommand::kFocusChanged, std::move(cls));
+    lifecycle_.Mailbox().Post(HookCommand::kFocusChanged, std::move(cls));
 }
 
 /// Replace on-screen text by diffing previousComposition_ vs newText.
@@ -4208,31 +4031,6 @@ wchar_t HookEngine::VkToMacroChar(DWORD vkCode) noexcept {
     return ch ? static_cast<wchar_t>(towlower(static_cast<wchar_t>(ch))) : 0;
 }
 
-bool HookEngine::ReinstallKeyboardAndMouseHooks() {
-    if (keyboardHook_) {
-        UnhookWindowsHookEx(keyboardHook_);
-        keyboardHook_ = SetWindowsHookExW(
-            WH_KEYBOARD_LL, LowLevelKeyboardProc, cachedHInstance_, 0);
-        if (!keyboardHook_) {
-            HOOK_LOG(L"  ReinstallKeyboardAndMouseHooks: keyboard hook FAILED err=%lu",
-                     GetLastError());
-            return false;
-        }
-    }
-    if (mouseHook_) {
-        UnhookWindowsHookEx(mouseHook_);
-        mouseHook_ = SetWindowsHookExW(
-            WH_MOUSE_LL, LowLevelMouseProc, cachedHInstance_, 0);
-        if (!mouseHook_) {
-            HOOK_LOG(L"  ReinstallKeyboardAndMouseHooks: mouse hook FAILED err=%lu",
-                     GetLastError());
-            return false;
-        }
-    }
-    HOOK_LOG(L"  ReinstallKeyboardAndMouseHooks: both hooks reinstalled OK");
-    return true;
-}
-
 // ═══════════════════════════════════════════════════════════
 // Phase 2a — Hook-thread command drain
 //
@@ -4258,7 +4056,7 @@ void HookEngine::DrainHookCommands() {
     // bug pattern, which would corrupt mailbox bit state silently.
     HookCommandMailbox::DrainScope scope(mailbox_);
 
-    const std::uint32_t bits = mailbox_.DrainBits();
+    const std::uint32_t bits = lifecycle_.Mailbox().DrainBits();
     // Phase 3f: even if no fresh bits, a previous drain may have deferred
     // the config apply (engine was busy). Re-check on every drain so the
     // apply lands as soon as the engine empties.
@@ -4271,7 +4069,7 @@ void HookEngine::DrainHookCommands() {
     if (bits & HookCommand::kConfigApply) {
         deferredConfigApply_.store(true, std::memory_order_release);
     }
-    if (bits & HookCommand::kFocusChanged) ApplyFocusOnHookThread(mailbox_.ConsumePendingFocus());
+    if (bits & HookCommand::kFocusChanged) ApplyFocusOnHookThread(lifecycle_.Mailbox().ConsumePendingFocus());
     if (bits & HookCommand::kTickPoll)     ApplyTickPollOnHookThread();
     if (bits & HookCommand::kToggleVN)     ApplyToggleVNOnHookThread();
 

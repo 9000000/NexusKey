@@ -14,6 +14,7 @@
 #include "core/AutoCapStateTransition.h"
 #include "core/SmartSwitchManager.h"
 #include "app/system/HookCommandMailbox.h"
+#include "app/system/HookLifecycle.h"
 #include "core/pipeline/IBackwardEditExecutor.h"
 #include "core/pipeline/ICommitUndoExecutor.h"
 #include "core/pipeline/IEscRestoreRawExecutor.h"
@@ -140,7 +141,7 @@ public:
     /// Returns 0 before Start() completes the hook-thread handshake; callers
     /// should query AFTER Start() returns. Used by HotkeyManager to route
     /// matched-slot dispatch back onto the hook thread.
-    [[nodiscard]] DWORD GetHookThreadId() const noexcept { return hookThreadId_; }
+    [[nodiscard]] DWORD GetHookThreadId() const noexcept { return lifecycle_.ThreadId(); }
 
     /// Change code table (commits pending composition, updates per-app map)
     void SetCodeTable(CodeTable ct);
@@ -151,7 +152,7 @@ public:
     [[nodiscard]] bool IsVietnameseMode() const noexcept {
         return vietnameseMode_.load(std::memory_order_acquire);
     }
-    [[nodiscard]] bool IsRunning() const noexcept { return keyboardHook_ != nullptr; }
+    [[nodiscard]] bool IsRunning() const noexcept { return lifecycle_.IsRunning(); }
 
     // Magic number to mark our own SendInput events (prevents other hooks from processing them)
     static constexpr ULONG_PTR VKEY_EXTRA_INFO = 0x4E4B;  // "NK"
@@ -593,35 +594,19 @@ private:
     std::wstring rawMacroBuffer_;
 
     // Hooks
-    HHOOK keyboardHook_ = nullptr;
-    HHOOK mouseHook_ = nullptr;
+    // Wave 3 PR 3.1 — hook handles, thread, mailbox moved to HookLifecycle.
     HWINEVENTHOOK focusHook_ = nullptr;     // EVENT_SYSTEM_FOREGROUND
     HWINEVENTHOOK minimizeHook_ = nullptr;  // EVENT_SYSTEM_MINIMIZEEND
     // Sprint 1 D10: 200 ms focus / CJK poll moved off SetTimer onto
     // MainThreadWorker's tick branch. The body lives in OnTickPoll().
 
-    // Dedicated hook thread: owns keyboardHook_ + mouseHook_ and runs its own
-    // GetMessage pump so LL hook callbacks never block on the main (UI) thread's
-    // message queue. Win10 silently removes LL hooks whose installer-thread pump
-    // can't service hook events within LowLevelHooksTimeout (max 1000ms). Sciter
-    // rendering, SharedState lock contention, and config reloads on main were
-    // causing that — isolating the hook thread fixes it.
-    std::thread hookThread_;
-    DWORD hookThreadId_ = 0;                       // GetCurrentThreadId() of hookThread_ (for PostThreadMessage)
-    std::atomic<bool> hookThreadReady_{false};     // true once hooks installed (or failed)
-    std::mutex hookStartMutex_;                    // pairs with hookStartCv_ for handshake
-    std::condition_variable hookStartCv_;
-    HINSTANCE cachedHInstance_ = nullptr;          // captured in Start(), used by HookThreadProc
+    // Wave 3 PR 3.1 — dedicated hook thread + WH_KEYBOARD_LL/WH_MOUSE_LL hook
+    // handles + cross-thread mailbox moved into HookLifecycle. HookEngine
+    // accesses them via `lifecycle_.ThreadId()` / `lifecycle_.IsRunning()` /
+    // `lifecycle_.Mailbox()` / `lifecycle_.PostReinstallHooks()`. Drain
+    // callback registered at lifecycle_.Start() points at DrainHookCommands.
+    HookLifecycle lifecycle_;
 
-    // Phase 2a: cross-thread mailbox. Producers (main UI thread, MainThreadWorker
-    // tick, tray/hotkey callbacks) Post a command bit + optional FocusClassification
-    // snapshot. The hook thread drains via DrainHookCommands() inside
-    // LowLevelKeyboardProc (drain barrier at Rule 11.4 step 5 — after sending_
-    // guard, before English mode dispatch). Wake trampoline (PostThreadMessage
-    // WM_APP_HOOK_COMMAND) is wired at Start. Phase 2a ships this infrastructure
-    // dormant — no producer calls Post yet; drain always sees bits=0 and returns
-    // cheap. Phase 2b/c migrate the actual writers onto it.
-    HookCommandMailbox mailbox_;
     void DrainHookCommands();                                 // hook thread only
     void ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);
     void ApplyConfigOnHookThread();
@@ -638,12 +623,11 @@ private:
     // QuickSync self-lock isn't recursive). Pillar #2 (Nhẹ): smaller primitive
     // when recursion is no longer required.
     mutable std::mutex stateMutex_;
-    void HookThreadProc();                         // runs on hookThread_
 
-    // Reinstall both keyboard and mouse LL hooks. Used by WM_APP_REINSTALL_HOOKS
-    // path (proactive reinstall on focus → Chromium / Electron / Java). Returns
-    // false if either SetWindowsHookExW call fails (caller logs GetLastError).
-    [[nodiscard]] bool ReinstallKeyboardAndMouseHooks();
+    // Wave 3 PR 3.1 (2026-05-23) — ReinstallKeyboardAndMouseHooks deleted as
+    // dead code (no callers). The actual reinstall logic lives in
+    // HookLifecycle::ThreadProc on the WM_APP_REINSTALL_HOOKS message; trigger
+    // via `lifecycle_.PostReinstallHooks(REINSTALL_REASON_*)`.
 
     // Modifier tracking state (for double-Alt and layout change detection)
     bool modCtrlDown_ = false;
