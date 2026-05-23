@@ -15,6 +15,7 @@
 #include "core/config/TypingConfig.h"
 #include "core/engine/rule/EngineRuleRegistry.h"
 #include "core/engine/rule/IToneExecutor.h"
+#include "core/engine/rule/IModifierExecutor.h"
 #include <vector>
 #include <string>
 
@@ -84,7 +85,8 @@ struct CharState {
 /// - No reverse maps needed
 /// - TSF composition state always in sync
 class TypingEngine : public IInputEngine,
-                     public EngineRule::IToneExecutor {
+                     public EngineRule::IToneExecutor,
+                     public EngineRule::IModifierExecutor {
 public:
     TypingEngine() : TypingEngine(TypingConfig{}) {}
     explicit TypingEngine(const TypingConfig& config);
@@ -127,6 +129,15 @@ public:
                                       wchar_t lower,
                                       bool isUpper) override;
 
+    // IModifierExecutor — drives the W7.3 ModifierRule plugin. Returns true
+    // if the modifier action consumed the key, false to fall through to
+    // quick-end-consonant / regular char dispatch. Body unchanged from the
+    // pre-W7.3 private dispatch helper.
+    [[nodiscard]] bool HandleModifierAction(TypingAction action,
+                                             wchar_t keyChar,
+                                             wchar_t lower,
+                                             bool isUpper) override;
+
 private:
     // Mode helpers
     [[nodiscard]] bool IsTelexMode() const noexcept {
@@ -160,8 +171,7 @@ private:
     // it's the same dispatch. Foundation for G-4 customKeyMap.
     bool ProcessModifier(TypingAction action, wchar_t keyChar);
 
-    // Dispatch helpers
-    bool HandleModifierAction(TypingAction action, wchar_t keyChar, wchar_t lower, bool isUpper);
+    // Dispatch helpers (HandleModifierAction moved to public IModifierExecutor override above)
     bool WouldModifierRecoverOrEscape(TypingAction action, wchar_t keyChar, wchar_t lower);
 
     // Per-action modifier handlers. Uniform `(TypingAction, wchar_t)`

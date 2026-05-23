@@ -13,6 +13,7 @@
 #include "VietnameseTables.h"
 #include "core/engine/rule/EngineRuleContext.h"
 #include "core/engine/rule/ToneRule.h"
+#include "core/engine/rule/ModifierRule.h"
 #include <algorithm>
 #include <array>
 #include <memory>
@@ -100,6 +101,7 @@ TypingEngine::TypingEngine(const TypingConfig& config,
     rawInput_.reserve(12);
     escRawHistory_.reserve(12);
     ruleRegistry_.Register(std::make_unique<EngineRule::ToneRule>(*this));
+    ruleRegistry_.Register(std::make_unique<EngineRule::ModifierRule>(*this));
     Reset();
 }
 
@@ -267,10 +269,8 @@ void TypingEngine::PushChar(wchar_t keyChar) {
                 == EngineRule::Result::Veto) return;
     }
 
-    // 2. Modifier processing (Telex, VNI, or User-defined)
-    if (HandleModifierAction(action, keyChar, lower, isUpper)) {
-        return;
-    }
+    // 2. Modifier processing (Telex, VNI, or User-defined) is handled by
+    // ModifierRule (PostClassify prio 20) — see ruleRegistry_ dispatch above.
 
     // 2c. Quick end consonant: g→ng, h→nh, k→ch (after vowel)
     if (config_.quickEndConsonant && !states_.empty() && states_.back().IsVowel()) {
