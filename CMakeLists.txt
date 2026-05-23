@@ -90,6 +90,7 @@ set(NEXTKEY_CORE_SOURCES
     src/core/pipeline/IEscRestoreRawExecutor.h
     src/core/pipeline/EscRestoreRawFeature.h
     src/core/pipeline/EscRestoreRawFeature.cpp
+    src/core/pipeline/IMacroExecutor.h
     src/core/pipeline/gates/EnglishBiasGate.h
     src/core/pipeline/gates/SpellCheckGate.h
     src/core/pipeline/gates/ToneEscapeGate.h
