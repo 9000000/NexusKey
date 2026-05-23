@@ -301,4 +301,47 @@ coordinator_.Register(
 
 ## 6. Verification log
 
-(To be filled by W4b.5.)
+### Linux gtest (W4b.5, 2026-05-23)
+
+```
+[==========] 1967 tests from 110 test suites ran. (3118 ms total)
+[  PASSED  ] 1967 tests.
+```
+
+Pre-W4b baseline: 1961. After W4b: 1967. Net: +6 new (W4b.2 feature tests), 0 regressions.
+
+### Wave 4b commit chain (on `feat/architecture-review-v3.1`)
+
+```
+afa99de refactor(pipeline): W4b.4 — remove macro logic from HandlePreDispatch
+28e8820 feat(pipeline): W4b.3 — HookEngine implements IMacroExecutor
+49931aa feat(pipeline): W4b.2 — MacroFeature plugin
+3bbd93d feat(pipeline): W4b.1 — IMacroExecutor + MacroOutcome enum
+022d3bd docs(pipeline): W4b plan — full extract MacroFeature (PreEngine prio 30)
+```
+
+### HookEngine.cpp net diff
+
+- W4b.3 added ~120 LOC (HandleMacro adapter + ctor registration)
+- W4b.4 removed ~85 LOC (macro blocks + cfgSnap/hasMacros locals + macroOn/macroEng params from HandlePreDispatch)
+- Net: ~+35 LOC in HookEngine.cpp; +25 LOC across new pipeline files (IMacroExecutor.h + MacroFeature.h/.cpp)
+- HandlePreDispatch body shrank ~70 LOC; single-owner discipline for macro state achieved
+
+### Windows chaos + smoke (pending — anh runs)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 `
+  -Tag w4b-release `
+  -VKeyExe build\Release\VKey.exe `
+  -RunnerExe build\tools\Release\VKeyTestRunner.exe
+```
+
+Target: ≥ 54/55 (Chrome 1.3 false-fail expected). Macro behavior must be byte-identical with pre-W4b.
+
+Manual macro scenarios:
+1. EN mode: switch to English → type `vt` + SPACE → expect VN macro expansion (if `vt` in table).
+2. VN mode: type `vt` + SPACE → expect expansion.
+3. Multi-char macro: type `aaaaa` + SPACE → no expansion (no match), buffer accumulates.
+4. SkipMacro hotkey (Esc by default): empty engine + buffer → Esc → tempMacroOff_ on → next macro skipped.
+5. Cross-commit macro: word + SPACE (commit) → immediately type macro + SPACE → expect macroCrossCommit_ behavior.
+6. EN mode pass-through: type alpha chars in EN mode WITHOUT macro engagement → expect keys pass to OS unchanged (MacroFeature returns Pass via PassThrough intent).
