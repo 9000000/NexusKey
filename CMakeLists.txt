@@ -59,6 +59,11 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/rule/IModifierExecutor.h
     src/core/engine/rule/ModifierRule.h
     src/core/engine/rule/ModifierRule.cpp
+    src/core/engine/rule/IQuickConsonantExecutor.h
+    src/core/engine/rule/QuickStartConsonantRule.h
+    src/core/engine/rule/QuickStartConsonantRule.cpp
+    src/core/engine/rule/QuickEndConsonantRule.h
+    src/core/engine/rule/QuickEndConsonantRule.cpp
 )
 
 add_library(VKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
@@ -569,6 +574,8 @@ set(NEXTKEY_TEST_SOURCES
     tests/engine/EngineRuleRegistryTest.cpp
     tests/engine/ToneRuleTest.cpp
     tests/engine/ModifierRuleTest.cpp
+    tests/engine/QuickStartConsonantRuleTest.cpp
+    tests/engine/QuickEndConsonantRuleTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp

@@ -16,6 +16,7 @@
 #include "core/engine/rule/EngineRuleRegistry.h"
 #include "core/engine/rule/IToneExecutor.h"
 #include "core/engine/rule/IModifierExecutor.h"
+#include "core/engine/rule/IQuickConsonantExecutor.h"
 #include <vector>
 #include <string>
 
@@ -86,7 +87,8 @@ struct CharState {
 /// - TSF composition state always in sync
 class TypingEngine : public IInputEngine,
                      public EngineRule::IToneExecutor,
-                     public EngineRule::IModifierExecutor {
+                     public EngineRule::IModifierExecutor,
+                     public EngineRule::IQuickConsonantExecutor {
 public:
     TypingEngine() : TypingEngine(TypingConfig{}) {}
     explicit TypingEngine(const TypingConfig& config);
@@ -138,6 +140,16 @@ public:
                                              wchar_t lower,
                                              bool isUpper) override;
 
+    // IQuickConsonantExecutor — drives the W7.4 QuickStart/QuickEnd rules.
+    // HandleQuickStartConsonant returns Veto on consumption (0a, 0b cc→ch,
+    // 0b uu→ươ); Pass otherwise (0a-cont fall-through and no-match).
+    // HandleQuickEndConsonant returns true on 2c consumption; false to
+    // fall through to regular char.
+    [[nodiscard]] EngineRule::Result HandleQuickStartConsonant(
+        wchar_t keyChar, wchar_t lower, bool isUpper) override;
+    [[nodiscard]] bool HandleQuickEndConsonant(
+        wchar_t keyChar, wchar_t lower, bool isUpper) override;
+
 private:
     // Mode helpers
     [[nodiscard]] bool IsTelexMode() const noexcept {
@@ -162,6 +174,12 @@ private:
     // Internal processing
     void ProcessChar(wchar_t keyChar, wchar_t lower, bool isUpper);
     void ProcessChar(wchar_t keyChar) { ProcessChar(keyChar, towlower(keyChar), iswupper(keyChar)); }
+
+    // W7.4: post-ProcessChar finalization (relocate tone / autoUO /
+    // UpdateSpellState / English-bias / P8 revert / ZWJF). Lifted from
+    // PushChar step 3 so 0b's cc→ch path can finalize without leaking
+    // keyChar mutation back into PushChar's locals.
+    void FinalizeRegularChar();
 
     // Unified modifier dispatch (G-3.5). Single entry point for every
     // user-mappable modifier action — both Telex and VNI. Switches on

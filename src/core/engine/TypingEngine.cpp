@@ -14,6 +14,8 @@
 #include "core/engine/rule/EngineRuleContext.h"
 #include "core/engine/rule/ToneRule.h"
 #include "core/engine/rule/ModifierRule.h"
+#include "core/engine/rule/QuickStartConsonantRule.h"
+#include "core/engine/rule/QuickEndConsonantRule.h"
 #include <algorithm>
 #include <array>
 #include <memory>
@@ -102,6 +104,8 @@ TypingEngine::TypingEngine(const TypingConfig& config,
     escRawHistory_.reserve(12);
     ruleRegistry_.Register(std::make_unique<EngineRule::ToneRule>(*this));
     ruleRegistry_.Register(std::make_unique<EngineRule::ModifierRule>(*this));
+    ruleRegistry_.Register(std::make_unique<EngineRule::QuickStartConsonantRule>(*this));
+    ruleRegistry_.Register(std::make_unique<EngineRule::QuickEndConsonantRule>(*this));
     Reset();
 }
 
@@ -118,12 +122,13 @@ void TypingEngine::PushChar(wchar_t keyChar) {
     escRawHistory_.push_back(keyChar);  // Independent of tone/mod-escape — see TypingEngine.h
     qc_.onlyQC = false;  // Any new char clears the flag
 
-    // W7.1: build engine-rule ctx + PreClassify dispatch (empty registry today).
-    const wchar_t ruleLower = towlower(keyChar);
+    // W7.1+: build engine-rule ctx + PreClassify dispatch (QuickStartConsonant).
+    const wchar_t lower = towlower(keyChar);
+    const bool isUpper = iswupper(keyChar);
     const EngineRule::EngineRuleContext ruleCtx{
         keyChar,
-        ruleLower,
-        static_cast<bool>(iswupper(keyChar)),
+        lower,
+        isUpper,
         TypingAction::None,
         spellCheckDisabled_,
         config_.allowEnglishBypass,
@@ -136,99 +141,6 @@ void TypingEngine::PushChar(wchar_t keyChar) {
     };
     if (ruleRegistry_.DispatchAtPhase(EngineRule::Phase::PreClassify, ruleCtx, *this)
             == EngineRule::Result::Veto) return;
-
-    // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
-    if (config_.quickStartConsonant && states_.empty()) {
-        wchar_t lower = towlower(keyChar);
-        wchar_t first = 0, second = 0;
-        if (lower == L'f') { first = L'p'; second = L'h'; }
-        else if (lower == L'j') { first = L'g'; second = L'i'; }
-        else if (lower == L'w') { first = L'q'; second = L'u'; }
-        if (first) {
-            bool upper = iswupper(keyChar);
-            ProcessChar(upper ? towupper(first) : first);
-            ProcessChar(second);
-            quickStartKey_ = keyChar;  // Remember original key for undo
-            UpdateSpellState();
-            return;
-        }
-    }
-
-    // 0a-cont. Undo quick start consonant if next char is not a vowel
-    // e.g., f→ph, then 't' → undo to "ft" (not "pht")
-    if (quickStartKey_ != 0) {
-        wchar_t savedKey = quickStartKey_;
-        quickStartKey_ = 0;  // Clear before any further processing
-        if (!IsVowelChar(keyChar)) {
-            states_.clear();
-            rawInput_.clear();
-            rawInput_.push_back(savedKey);
-            ProcessChar(savedKey);
-            rawInput_.push_back(keyChar);
-            // Fall through to normal processing below
-        }
-    }
-
-    // 0b. Quick consonant: cc→ch, gg→gi, nn→ng, kk→kh, qq→qu, pp→ph, tt→th
-    // Skip if backspace just undid a quick consonant (let user type the literal)
-    bool quickEscaped = qc_.escaped;
-    qc_.escaped = false;
-
-    // Suppress consecutive re-triggering: after cc→ch, skip quick consonant
-    // while the user keeps pressing the same key (e.g., cccc → chcc, not chch)
-    wchar_t lower = towlower(keyChar);
-    bool isUpper = iswupper(keyChar);
-    if (qc_.lastKey != 0) {
-        if (lower == qc_.lastKey) {
-            quickEscaped = true;  // Reuse escape flag to skip quick consonant
-        } else {
-            qc_.lastKey = 0;  // Different key, allow future expansions
-        }
-    }
-
-    if (config_.quickConsonant && !states_.empty() && !quickEscaped) {
-        const CharState& last = states_.back();
-        if (!last.IsVowel() && !last.IsD()) {
-            wchar_t replacement = 0;
-            if (last.base == L'c' && lower == L'c') replacement = L'h';
-            else if (last.base == L'g' && lower == L'g') replacement = L'i';
-            else if (last.base == L'n' && lower == L'n') replacement = L'g';
-            else if (last.base == L'k' && lower == L'k') replacement = L'h';
-            else if (last.base == L'q' && lower == L'q') replacement = L'u';
-            else if (last.base == L'p' && lower == L'p') replacement = L'h';
-            else if (last.base == L't' && lower == L't') replacement = L'h';
-            if (replacement) {
-                if (states_.size() == 1) qc_.onlyQC = true;
-                qc_.resultIndex = states_.size();  // Index of the char about to be added
-                qc_.lastKey = lower;  // Suppress re-trigger — save ORIGINAL key before update
-                keyChar = isUpper ? towupper(replacement) : replacement;
-                lower = towlower(keyChar);  // Update for downstream ProcessChar
-                isUpper = iswupper(keyChar);
-            }
-        }
-        // uu→ươ: apply horn to existing 'u', then insert 'ơ'
-        // Guard: don't expand if last 3 vowels form a triphthong (e.g., khuyu + u)
-        else if (last.IsVowel() && last.base == L'u' && last.mod == Modifier::None && lower == L'u') {
-            size_t stateCount = states_.size();
-            bool triphthong = stateCount >= 3 && states_[stateCount - 3].IsVowel() && states_[stateCount - 2].IsVowel() &&
-                              IsTriphthong(states_[stateCount - 3].base, states_[stateCount - 2].base, last.base);
-            if (!triphthong) {
-                states_.back().mod = Modifier::Horn;  // u→ư
-                CharState newState;
-                newState.base = L'o';
-                newState.mod = Modifier::Horn;  // ơ
-                newState.isUpper = isUpper;
-                newState.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
-                states_.push_back(newState);
-                qc_.resultIndex = states_.size() - 1;  // Index of the ơ just added
-                if (states_.size() == 2) qc_.onlyQC = true;
-                qc_.lastKey = lower;  // Suppress re-trigger on consecutive same key
-                UpdateSpellState();
-                return;
-            }
-            // Triphthong — fall through to normal processing
-        }
-    }
 
     // Literal digit sequence protection (VNI mode)
     // If the user types a digit immediately following a literal digit,
@@ -256,8 +168,8 @@ void TypingEngine::PushChar(wchar_t keyChar) {
         : ClassifyKey(lower, IsTelexMode(), IsVniMode());
     if (isVniDigitSequence) action = TypingAction::None;
 
-    // W7.1: PostClassify dispatch — action resolved, re-snapshot engine-local
-    // gate inputs in case PreClassify rules mutated them. Empty registry today.
+    // W7.1+: PostClassify dispatch (Tone:10, Modifier:20, QuickEndConsonant:30).
+    // Re-snapshot engine-local gate inputs in case PreClassify mutated them.
     {
         EngineRule::EngineRuleContext postCtx = ruleCtx;
         postCtx.action             = action;
@@ -269,56 +181,10 @@ void TypingEngine::PushChar(wchar_t keyChar) {
                 == EngineRule::Result::Veto) return;
     }
 
-    // 2. Modifier processing (Telex, VNI, or User-defined) is handled by
-    // ModifierRule (PostClassify prio 20) — see ruleRegistry_ dispatch above.
-
-    // 2c. Quick end consonant: g→ng, h→nh, k→ch (after vowel)
-    if (config_.quickEndConsonant && !states_.empty() && states_.back().IsVowel()) {
-        wchar_t first = 0, second = 0;
-        if (lower == L'g') { first = L'n'; second = L'g'; }
-        else if (lower == L'h') { first = L'n'; second = L'h'; }
-        else if (lower == L'k') { first = L'c'; second = L'h'; }
-        if (first) {
-            ProcessChar(first);
-            ProcessChar(second);
-            UpdateSpellState();
-            return;
-        }
-    }
-
-    // 3. Regular character
+    // 3. Regular character (Tone, Modifier, QuickStart, QuickEnd all handled
+    // via the rule registry above).
     ProcessChar(keyChar, lower, isUpper);
-    RelocateToneToTarget();
-    ApplyAutoUO();
-    UpdateSpellState();
-
-    // English Protection: re-evaluate bias after adding character
-    CheckEnglishBias(states_.data(), states_.size(), engProt_);
-    // Full Telex only: P8 rewrites a leading 'w' to synthetic ư before the
-    // states-based start-cluster check sees it, hiding `wh`/`wr` from
-    // IsHardEnglishStart. Re-check against raw keystrokes here AND revert the
-    // synthetic ư back to literal 'w'.
-    //
-    // The synthetic-ư gate (tone == None) is load-bearing: once a tone key has
-    // already landed on ư (e.g. `w` then `r` → `ử`), we cannot safely revert
-    // — doing so would strip the tone the user actually wanted. That covers
-    // legitimate Vietnamese sequences that share the `wr` raw prefix:
-    //   w-r-n-g  → ửng  (tone applied at step 2, revert skipped)
-    //   w-r-i-t-e → ửite (same — pre-existing behavior preserved)
-    // SimpleTelex keeps 'w' literal (P8 gated off), so the states-based
-    // start-cluster check on the previous line already covers it.
-    if (config_.inputMethod == InputMethod::Telex &&
-        engProt_.bias != LanguageBias::HardEnglish &&
-        !states_.empty() && states_[0].synthetic &&
-        states_[0].base == L'u' && states_[0].mod == Modifier::Horn &&
-        states_[0].tone == Tone::None &&
-        IsHardEnglishRawStart(rawInput_.data(), rawInput_.size())) {
-        engProt_.bias = LanguageBias::HardEnglish;
-        states_[0].base = L'w';
-        states_[0].mod = Modifier::None;
-        states_[0].synthetic = false;
-    }
-    if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
+    FinalizeRegularChar();
 }
 
 //-----------------------------------------------------------------------------
@@ -444,6 +310,166 @@ bool TypingEngine::HandleToneFsm(TypingAction action,
     }
 
     return false;  // No tone path consumed the key; PushChar continues.
+}
+
+//-----------------------------------------------------------------------------
+// Quick-consonant subsystem entry — W7.4 QuickStart/QuickEnd rule executor.
+//-----------------------------------------------------------------------------
+
+NextKey::EngineRule::Result
+TypingEngine::HandleQuickStartConsonant(wchar_t keyChar, wchar_t lower, bool isUpper) {
+    using NextKey::EngineRule::Result;
+
+    // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
+    if (config_.quickStartConsonant && states_.empty()) {
+        wchar_t first = 0, second = 0;
+        if (lower == L'f') { first = L'p'; second = L'h'; }
+        else if (lower == L'j') { first = L'g'; second = L'i'; }
+        else if (lower == L'w') { first = L'q'; second = L'u'; }
+        if (first) {
+            ProcessChar(isUpper ? towupper(first) : first);
+            ProcessChar(second);
+            quickStartKey_ = keyChar;  // Remember original key for undo
+            UpdateSpellState();
+            return Result::Veto;
+        }
+    }
+
+    // 0a-cont. Undo quick start consonant if next char is not a vowel
+    // e.g., f→ph, then 't' → undo to "ft" (not "pht"). Returns Pass so
+    // PushChar continues to PostClassify dispatch + step 3.
+    if (quickStartKey_ != 0) {
+        wchar_t savedKey = quickStartKey_;
+        quickStartKey_ = 0;  // Clear before any further processing
+        if (!IsVowelChar(keyChar)) {
+            states_.clear();
+            rawInput_.clear();
+            rawInput_.push_back(savedKey);
+            ProcessChar(savedKey);
+            rawInput_.push_back(keyChar);
+            // Fall through (Pass) to normal processing in PushChar.
+        }
+    }
+
+    // 0b. Quick consonant: cc→ch, gg→gi, nn→ng, kk→kh, qq→qu, pp→ph, tt→th
+    // Skip if backspace just undid a quick consonant (let user type the literal).
+    bool quickEscaped = qc_.escaped;
+    qc_.escaped = false;
+
+    // Suppress consecutive re-triggering: after cc→ch, skip quick consonant
+    // while the user keeps pressing the same key (e.g., cccc → chcc, not chch).
+    if (qc_.lastKey != 0) {
+        if (lower == qc_.lastKey) {
+            quickEscaped = true;  // Reuse escape flag to skip quick consonant
+        } else {
+            qc_.lastKey = 0;  // Different key, allow future expansions
+        }
+    }
+
+    if (config_.quickConsonant && !states_.empty() && !quickEscaped) {
+        const CharState& last = states_.back();
+        if (!last.IsVowel() && !last.IsD()) {
+            wchar_t replacement = 0;
+            if (last.base == L'c' && lower == L'c') replacement = L'h';
+            else if (last.base == L'g' && lower == L'g') replacement = L'i';
+            else if (last.base == L'n' && lower == L'n') replacement = L'g';
+            else if (last.base == L'k' && lower == L'k') replacement = L'h';
+            else if (last.base == L'q' && lower == L'q') replacement = L'u';
+            else if (last.base == L'p' && lower == L'p') replacement = L'h';
+            else if (last.base == L't' && lower == L't') replacement = L'h';
+            if (replacement) {
+                if (states_.size() == 1) qc_.onlyQC = true;
+                qc_.resultIndex = states_.size();  // Index of the char about to be added
+                qc_.lastKey = lower;  // Suppress re-trigger — save ORIGINAL key
+                wchar_t newKey = isUpper ? towupper(replacement) : replacement;
+                // Direct ProcessChar + FinalizeRegularChar replaces the
+                // pre-W7.4 "mutate caller's keyChar + fall through to step 3".
+                ProcessChar(newKey, towlower(newKey), iswupper(newKey));
+                FinalizeRegularChar();
+                return Result::Veto;
+            }
+        }
+        // uu→ươ: apply horn to existing 'u', then insert 'ơ'.
+        // Guard: don't expand if last 3 vowels form a triphthong.
+        else if (last.IsVowel() && last.base == L'u' && last.mod == Modifier::None && lower == L'u') {
+            size_t stateCount = states_.size();
+            bool triphthong = stateCount >= 3 && states_[stateCount - 3].IsVowel()
+                && states_[stateCount - 2].IsVowel()
+                && IsTriphthong(states_[stateCount - 3].base, states_[stateCount - 2].base, last.base);
+            if (!triphthong) {
+                states_.back().mod = Modifier::Horn;  // u→ư
+                CharState newState;
+                newState.base = L'o';
+                newState.mod = Modifier::Horn;  // ơ
+                newState.isUpper = isUpper;
+                newState.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
+                states_.push_back(newState);
+                qc_.resultIndex = states_.size() - 1;  // Index of the ơ just added
+                if (states_.size() == 2) qc_.onlyQC = true;
+                qc_.lastKey = lower;  // Suppress re-trigger on consecutive same key
+                UpdateSpellState();
+                return Result::Veto;
+            }
+            // Triphthong — fall through to normal processing.
+        }
+    }
+
+    return Result::Pass;
+}
+
+bool TypingEngine::HandleQuickEndConsonant(wchar_t /*keyChar*/, wchar_t lower, bool /*isUpper*/) {
+    // Pre-guards (config, vowel-tail, letter ∈ {g,h,k}) already done by
+    // QuickEndConsonantRule::Apply — this body just performs the match.
+    wchar_t first = 0, second = 0;
+    if (lower == L'g') { first = L'n'; second = L'g'; }
+    else if (lower == L'h') { first = L'n'; second = L'h'; }
+    else if (lower == L'k') { first = L'c'; second = L'h'; }
+    if (first) {
+        ProcessChar(first);
+        ProcessChar(second);
+        UpdateSpellState();
+        return true;
+    }
+    return false;
+}
+
+//-----------------------------------------------------------------------------
+// W7.4: post-ProcessChar finalization helper. Body lifted verbatim from
+// pre-W7.4 PushChar lines 290-321 (step 3 tail). Called from PushChar's
+// step 3 and from HandleQuickStartConsonant's 0b cc→ch path.
+//-----------------------------------------------------------------------------
+void TypingEngine::FinalizeRegularChar() {
+    RelocateToneToTarget();
+    ApplyAutoUO();
+    UpdateSpellState();
+
+    // English Protection: re-evaluate bias after adding character
+    CheckEnglishBias(states_.data(), states_.size(), engProt_);
+    // Full Telex only: P8 rewrites a leading 'w' to synthetic ư before the
+    // states-based start-cluster check sees it, hiding `wh`/`wr` from
+    // IsHardEnglishStart. Re-check against raw keystrokes here AND revert the
+    // synthetic ư back to literal 'w'.
+    //
+    // The synthetic-ư gate (tone == None) is load-bearing: once a tone key has
+    // already landed on ư (e.g. `w` then `r` → `ử`), we cannot safely revert
+    // — doing so would strip the tone the user actually wanted. That covers
+    // legitimate Vietnamese sequences that share the `wr` raw prefix:
+    //   w-r-n-g  → ửng  (tone applied at step 2, revert skipped)
+    //   w-r-i-t-e → ửite (same — pre-existing behavior preserved)
+    // SimpleTelex keeps 'w' literal (P8 gated off), so the states-based
+    // start-cluster check on the previous line already covers it.
+    if (config_.inputMethod == InputMethod::Telex &&
+        engProt_.bias != LanguageBias::HardEnglish &&
+        !states_.empty() && states_[0].synthetic &&
+        states_[0].base == L'u' && states_[0].mod == Modifier::Horn &&
+        states_[0].tone == Tone::None &&
+        IsHardEnglishRawStart(rawInput_.data(), rawInput_.size())) {
+        engProt_.bias = LanguageBias::HardEnglish;
+        states_[0].base = L'w';
+        states_[0].mod = Modifier::None;
+        states_[0].synthetic = false;
+    }
+    if (IsTelexMode()) CheckZwjfInitialBias(states_.data(), states_.size(), config_, engProt_);
 }
 
 bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wchar_t lower, bool /*isUpper*/) {
