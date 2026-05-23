@@ -37,6 +37,14 @@ public:
     // Per-keystroke dispatch.
     void HandleKey(const KeyContext& ctx, IntentSink& sink);
 
+    // Per-stage dispatch — runs only features registered at `stage`. Gates
+    // still evaluate once per call. Veto stops within the stage and does NOT
+    // affect later HandleKeyAtStage(...) invocations for other stages.
+    // Wave 3+: HookEngine routes step 2d through Stage::PreEngine and the
+    // existing DispatchCoordinator sites through Stage::PostEngine so the two
+    // call paths can't double-fire on the same keystroke.
+    void HandleKeyAtStage(Stage stage, const KeyContext& ctx, IntentSink& sink);
+
     // Test introspection.
     [[nodiscard]] std::size_t FeatureCountAtStage(Stage s) const noexcept;
     [[nodiscard]] std::size_t GateCount() const noexcept;

@@ -534,6 +534,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/pipeline/IntentSinkTest.cpp
     tests/pipeline/CoordinatorRegistryTest.cpp
     tests/pipeline/CoordinatorDispatchTest.cpp
+    tests/pipeline/CoordinatorStageDispatchTest.cpp
     tests/pipeline/CoordinatorGateFilterTest.cpp
     tests/pipeline/OutputChannelTest.cpp
     tests/pipeline/HookCompositionSessionTest.cpp

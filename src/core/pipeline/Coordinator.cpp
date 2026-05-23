@@ -49,6 +49,20 @@ void Coordinator::HandleKey(const KeyContext& ctx, IntentSink& sink) {
     }
 }
 
+void Coordinator::HandleKeyAtStage(Stage stage, const KeyContext& ctx, IntentSink& sink) {
+    const GateMask raised = EvaluateGates(ctx);
+    auto& bucket = features_[static_cast<std::size_t>(stage)];
+    for (auto& feature : bucket) {
+        // Skip if any required gate is raised.
+        if ((feature->Requires() & raised) != 0u) continue;
+
+        const Result r = feature->Try(ctx, sink);
+        if (r == Result::Handled) break;            // stop this stage
+        if (r == Result::Veto)    return;           // stop this stage (single-stage scope)
+        // Result::Pass — continue to next feature in this stage
+    }
+}
+
 std::size_t Coordinator::FeatureCountAtStage(Stage s) const noexcept {
     return features_[static_cast<std::size_t>(s)].size();
 }
