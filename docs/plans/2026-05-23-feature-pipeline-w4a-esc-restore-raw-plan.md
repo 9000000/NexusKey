@@ -301,7 +301,45 @@ Deferred:
 
 ## 6. Verification log
 
-(To be filled by W4a.4.)
+### Linux gtest (W4a.4, 2026-05-23)
+
+```
+[==========] 1961 tests from 109 test suites ran. (3046 ms total)
+[  PASSED  ] 1961 tests.
+```
+
+Pre-W4a baseline: 1956. After W4a: 1961. Net: +5 new (W4a.2 feature tests), 0 regressions.
+
+### Wave 4a commit chain (on `feat/architecture-review-v3.1`)
+
+```
+9684f5d feat(pipeline): W4a.3 — wire EscRestoreRawFeature, remove inline ESC from HandlePreDispatch
+15e9fc7 feat(pipeline): W4a.2 — EscRestoreRawFeature thin wrapper
+d287710 feat(pipeline): W4a.1 — IEscRestoreRawExecutor + EscRestoreOutcome
+bd111d0 docs(pipeline): W4a plan — extract EscRestoreRawFeature (PreEngine prio 40)
+```
+
+### Bonus refactor — cached modifiers lifted
+
+Step 2d's KeyContext now passes real `cachedShift/cachedCapsLock/cachedCtrl/cachedAlt/cachedWin` instead of W3's `false×5` placeholders. Required for EscRestoreRawFeature's hotkey check. The cached GetKeyState() snapshot block is now BEFORE step 2d (was after). No behavior change for HandlePreDispatch / DispatchKeyAction — they still read the same locals.
+
+### Windows chaos + smoke (pending — anh runs)
+
+Required:
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 `
+  -Tag w4a-release `
+  -VKeyExe build\Release\VKey.exe `
+  -RunnerExe build\tools\Release\VKeyTestRunner.exe
+```
+
+Target: ≥ 54/55 (Chrome 1.1+1.3 false-fail expected, omnibox autocomplete — unrelated to VKey).
+
+Manual ESC scenarios:
+1. Type "vit" → bare "vit" (no Telex transform yet) → ESC → expect raw "vit" preserved.
+2. Type "vieet" → "việt" → ESC → expect raw "vieet" restored on screen.
+3. Type "ca" + SPACE (commit) → BS → Primed state → ESC → expect raw "ca" restored from `commitStack_.back().rawInput`.
+4. MOD-CANCEL path: if anh has a modifier-release hotkey configured for CancelComposition (e.g., double-tap Ctrl), still works via line 1981 inline TryEscRestoreRaw — NOT moved to feature in W4a.
 
 ---
 
