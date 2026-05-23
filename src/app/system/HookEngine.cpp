@@ -595,18 +595,20 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
 void HookEngine::QuickSyncFromSharedState() {
     // Pre-T3 Minor 2 fix (Rule #11.3): hot path is lock-free. The common
     // case — no SharedState change since the last call — returns before
-    // any mutex acquire, eliminating the per-keystroke contention with
+    // any atomic ops, eliminating the per-keystroke contention with
     // main-thread writers (ToggleVietnameseMode, SetCodeTable, …) that
-    // showed up as p99 jitter under chaos. Slow path still takes the
-    // lock and re-checks the epoch under it (double-checked locking) so
-    // hook ↔ main both detecting a bump are serialised cleanly.
+    // showed up as p99 jitter under chaos.
     //
-    // Sprint 1 D11 contract preserved: callers must NOT hold stateMutex_.
-    // OnTickPoll releases its lock before calling OnFocusChanged, so the
-    // inner OnFocusChanged → QuickSync chain reaches the slow-path lock
-    // without recursion. ProcessKeyDown (hook thread) and
-    // SyncConfigFromSharedState (public API) call this without any lock
-    // held.
+    // Wave 2 (2026-05-23): slow path is now ALSO lock-free. Pre-Wave-2 the
+    // slow-path body ran under stateMutex_ to serialise concurrent QuickSync
+    // callers. Post-Wave-2 the body uses a CAS on lastEpoch_ to claim
+    // exclusive processing of each SharedState epoch transition — at most
+    // one caller's full apply-and-publish runs per epoch claim. Concurrent
+    // callers whose CAS fails return early; newer epochs they observed are
+    // re-processed on the next QuickSync call (bounded recovery ≤200 ms via
+    // worker tick or sooner via keystroke). The mutex is preserved on
+    // CommitPending / SetCodeTable for engine-state mutation; QuickSync no
+    // longer touches it.
     if (!sharedStatePtr_) return;
 
     // Fast path: lock-free atomic epoch check. SharedState::ReadEpoch is
@@ -617,20 +619,36 @@ void HookEngine::QuickSyncFromSharedState() {
     uint32_t seenEpoch = lastEpoch_.load(std::memory_order_acquire);
     if (epoch == seenEpoch && (epoch & 1) == 0) return;
 
-    // Slow path. Wave 2 (2026-05-23) — stateMutex_ DROPPED. All writes below
-    // are atomic (lastEpoch_, last*, config_, currentMethod_, currentCodeTable_)
-    // or RCU-published (config_ via make_shared store). ApplyConfig is now
-    // lock-free too. Concurrent QuickSync callers race on the last* CAS but
-    // converge: each writes the same value extracted from the same epoch, so
-    // the final state is consistent. Double-check on lastEpoch_ stays as the
-    // de-duplication mechanism.
+    // Slow path. Wave 2 (2026-05-23) — stateMutex_ DROPPED. The full body
+    // (last* updates, config_ publish, ApplyConfig) was serialised by the
+    // mutex pre-Wave-2; now it's serialised by a CAS on lastEpoch_ that
+    // atomically claims each epoch transition. At most one caller's CAS
+    // succeeds per (seenEpoch → state.epoch) edge; losers return without
+    // publishing. This eliminates the lost-update race possible if both
+    // callers raced their unconditional .store + RCU publishes (older
+    // store could land last, overwriting newer published config).
+    //
+    // Trade-off: a CAS loser that observed a NEWER state.epoch than the
+    // winner is dropped — but recovery is bounded ≤200 ms because the
+    // next QuickSync caller (worker tick, hook keystroke, main public-API)
+    // observes lastEpoch < SharedState.epoch and claims the missed epoch.
     epoch = sharedStatePtr_->ReadEpoch();
     seenEpoch = lastEpoch_.load(std::memory_order_acquire);
     if (epoch == seenEpoch && (epoch & 1) == 0) return;
 
     SharedState state = sharedStatePtr_->Read();
     if (!state.IsValid()) return;
-    lastEpoch_.store(state.epoch, std::memory_order_release);
+
+    // CAS claim — exclusive entry to the slow-path body for this epoch
+    // transition. If `seenEpoch` is stale (another caller already claimed),
+    // the CAS fails and we return. The expected-value contract on
+    // compare_exchange_strong overwrites `seenEpoch` with the observed
+    // value on failure; we don't use it after, so the side-effect is
+    // harmless.
+    if (!lastEpoch_.compare_exchange_strong(seenEpoch, state.epoch,
+            std::memory_order_release, std::memory_order_acquire)) {
+        return;
+    }
 
     // Phase 1: surface SharedState.diagFlags bit 0 into the perf histogram
     // gate. SetEnabled is lock-free.
