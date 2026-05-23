@@ -19,6 +19,10 @@
 #include "core/ipc/SharedStateManager.h"
 #include "core/Debug.h"
 #include "core/CrashLog.h"
+#include "core/pipeline/BackwardEditFeature.h"
+#include "core/pipeline/HookCompositionSession.h"
+#include "core/pipeline/KeyContext.h"
+#include "core/pipeline/gates/EnglishBiasGate.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -102,6 +106,17 @@ HookEngine::HookEngine() {
     // Win32SendInputInjector(needsBaitCharPrefix=false), the safest
     // mechanism (batch SendInput, no Sleep, no SendMessage).
     injector_.store(NextKey::Output::Create({}), std::memory_order_release);
+
+    // Wave 2: register the feature pipeline. vietnameseMode_ already has its
+    // in-class initializer (true), so the gate's stored reference is live as
+    // soon as this ctor body runs. *this is passed as IBackwardEditExecutor;
+    // BackwardEditFeature only stores the reference and calls ExecuteReplace
+    // later (per-keystroke), never during construction — safe even though the
+    // derived HookEngine is still mid-construction here.
+    coordinator_.RegisterGate(
+        std::make_unique<NextKey::Pipeline::EnglishBiasGate>(vietnameseMode_));
+    coordinator_.Register(
+        std::make_unique<NextKey::Pipeline::BackwardEditFeature>(*this));
 }
 
 HookEngine::~HookEngine() {
@@ -2150,7 +2165,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
         previousComposition_ += originalCh;
     }
 
-    ReplaceComposition(composition, reinjectVk);
+    DispatchCoordinator(vkCode, reinjectVk, composition);
     return true;
 }
 
@@ -3491,6 +3506,28 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
 void HookEngine::ExecuteReplace(std::wstring_view newText,
                                 std::uint16_t reinjectVk) {
     ReplaceComposition(std::wstring{newText}, static_cast<DWORD>(reinjectVk));
+}
+
+/// Wave 2 — pipeline dispatch entry point used by the six call-sites that
+/// previously invoked `ReplaceComposition` directly. Builds the per-keystroke
+/// session view + KeyContext, hands them to coordinator_, drains the channel.
+/// Modifier flags are placeholders (false) in W2 — BackwardEditFeature does
+/// not read them; future PreEngine features will need real values plumbed
+/// down from ProcessKeyDown.
+void HookEngine::DispatchCoordinator(DWORD vkCode, DWORD reinjectVk,
+                                      const std::wstring& composition) {
+    std::wstring rawSnapshot = engine_ ? engine_->PeekRaw() : std::wstring{};
+    NextKey::Pipeline::HookCompositionSession session(
+        previousComposition_, composition, rawSnapshot);
+    NextKey::Pipeline::KeyContext keyCtx{
+        static_cast<std::uint16_t>(vkCode),
+        L'\0',
+        false, false, false, false, false,
+        session,
+        static_cast<std::uint16_t>(reinjectVk)
+    };
+    coordinator_.HandleKey(keyCtx, outputChannel_);
+    (void)outputChannel_.TakeBatch();  // W2: feature delegates synchronously, batch is empty.
 }
 
 /// See OnFocusChanged() for the detection logic + injector publish.

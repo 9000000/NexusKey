@@ -15,6 +15,8 @@
 #include "core/SmartSwitchManager.h"
 #include "app/system/HookCommandMailbox.h"
 #include "core/pipeline/IBackwardEditExecutor.h"
+#include "core/pipeline/Coordinator.h"
+#include "core/pipeline/OutputChannel.h"
 #include <Windows.h>
 #include <functional>
 #include <atomic>
@@ -199,6 +201,14 @@ private:
 
     // Output — universal SendInput with KEYEVENTF_UNICODE
     void ReplaceComposition(const std::wstring& newText, DWORD reinjectVk = 0);
+
+    // Wave 2 — pipeline dispatch helper. Builds a HookCompositionSession +
+    // KeyContext from current HookEngine state, hands them to coordinator_,
+    // then drains any inadvertent intents from outputChannel_. In W2 the only
+    // registered feature is BackwardEditFeature which delegates synchronously
+    // to ExecuteReplace, so the batch is always empty after HandleKey returns.
+    void DispatchCoordinator(DWORD vkCode, DWORD reinjectVk,
+                              const std::wstring& composition);
     // Sprint 2 D3 removed DispatchSendInput callers; D4 deleted body+decl.
     // Split-vs-batch lives inside the IOutputInjector impls now. Synth dispatch
     // goes through Output::Internal::TrackedSendInput, which routes the
@@ -661,6 +671,16 @@ private:
 
     // Singleton for static callback dispatch (read from hook callback thread)
     static std::atomic<HookEngine*> s_instance;
+
+    // Wave 2 — feature pipeline. Coordinator owns registered gates/features
+    // (one of each in W2: EnglishBiasGate + BackwardEditFeature). outputChannel_
+    // is the IntentSink for emitted intents — kept as a value member so the
+    // batch buffer survives across keystrokes (TakeBatch drains it between
+    // calls). Both are constructed in the HookEngine ctor body after the
+    // injector is seeded; features are registered there with `*this` as the
+    // IBackwardEditExecutor backing.
+    NextKey::Pipeline::Coordinator   coordinator_;
+    NextKey::Pipeline::OutputChannel outputChannel_;
 };
 
 }  // namespace NextKey
