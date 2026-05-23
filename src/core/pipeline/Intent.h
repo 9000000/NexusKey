@@ -19,8 +19,16 @@ namespace Intents {
     struct Backspace { unsigned count; };
     struct Text      { std::wstring text; };
     struct Reinject  { std::uint16_t vk; };
+    // Flow-control tag intents — empty structs used by features (e.g. CommitUndoFeature)
+    // to signal to the caller (HookEngine) whether to eat the key or pass it to the OS.
+    struct ConsumeKey {};
+    struct PassThrough {};
 }
 
-using Intent = std::variant<Intents::Backspace, Intents::Text, Intents::Reinject>;
+using Intent = std::variant<Intents::Backspace,
+                            Intents::Text,
+                            Intents::Reinject,
+                            Intents::ConsumeKey,
+                            Intents::PassThrough>;
 
 }  // namespace NextKey::Pipeline

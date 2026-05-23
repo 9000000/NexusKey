@@ -23,3 +23,13 @@ TEST(Intent, ReinjectHoldsVk) {
     ASSERT_TRUE(std::holds_alternative<Intents::Reinject>(i));
     EXPECT_EQ(std::get<Intents::Reinject>(i).vk, 0x45u);
 }
+
+TEST(Intent, ConsumeKeyHoldsTag) {
+    Intent i = Intents::ConsumeKey{};
+    ASSERT_TRUE(std::holds_alternative<Intents::ConsumeKey>(i));
+}
+
+TEST(Intent, PassThroughHoldsTag) {
+    Intent i = Intents::PassThrough{};
+    ASSERT_TRUE(std::holds_alternative<Intents::PassThrough>(i));
+}
