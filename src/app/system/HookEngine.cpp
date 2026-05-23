@@ -165,17 +165,11 @@ void HookEngine::CommitPending() {
     }
 }
 
-// REQUIRES: caller holds stateMutex_. Sprint 1 D11 removed the self-lock so
-// the std::mutex transition doesn't deadlock through the
-// QuickSyncFromSharedState → ApplyConfig and ReloadFromToml → ApplyConfig
-// recursive paths. Direct callers: Start (single-threaded init, no race),
-// QuickSyncFromSharedState (locked), ReloadFromToml (caller-locked).
+// Wave 2 (2026-05-23): lock-free. Formerly required caller-held stateMutex_
+// (Sprint 1 D11 contract) because it wrote plain-bool cache fields. Those
+// fields are gone; remaining work is atomic stores + RCU-published settings
+// (injector_, Logger). Safe to call from any thread.
 void HookEngine::ApplyConfig(const TypingConfig& config) {
-    beepOnSwitch_ = config.beepOnSwitch;
-    smartSwitch_ = config.smartSwitch;
-    excludeApps_ = config.excludeApps;
-    tsfApps_ = config.tsfApps;
-    cjkAutoSwitch_ = config.cjkAutoSwitch;
     autoCaps_.store(config.autoCaps, std::memory_order_release);
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
@@ -255,13 +249,10 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     NextKey::Output::Internal::g_synthCounterCallback = &HookEngine::OnSynthDispatched;
     currentMethod_.store(config.inputMethod, std::memory_order_release);
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
-    // Sprint 1 D11: ApplyConfig requires caller-held stateMutex_. Start runs
-    // single-threaded (hookThread_ not yet spawned, no Settings dialog yet),
-    // so the lock is defensive — it documents the ApplyConfig contract.
-    {
-        std::lock_guard<std::mutex> _lock(stateMutex_);
-        ApplyConfig(config);
-    }
+    // Wave 2 (2026-05-23): ApplyConfig is now lock-free (all writes are atomic
+    // or RCU-publish). Sprint 1 D11's "caller holds stateMutex_" contract
+    // dropped. Single-threaded init here; ApplyConfig safe to call directly.
+    ApplyConfig(config);
     // Load unified hotkey registry. On first launch after v3 upgrade, the
     // `[[hotkeys]]` section is missing — migrate reads legacy `[features]`
     // toggles directly from TOML and persists `[hotkey_state]` so future
@@ -274,7 +265,7 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     startupMode_ = startupMode;
 
     // Create shared memory for smart switch and load persisted English-mode apps
-    if (smartSwitch_) {
+    if (config.smartSwitch) {
         (void)smartSwitchMgr_.Create();
         if (startupMode_ == 2) {  // Remember: load persisted per-app modes
             auto englishApps = ConfigManager::LoadEnglishModeApps(ConfigManager::GetConfigPath());
@@ -295,18 +286,19 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     if (sharedStatePtr_) {
         SharedState state = sharedStatePtr_->Read();
         if (state.IsValid()) {
-            lastFeatureFlags_ = state.GetFeatureFlags();
-            lastSpellCheck_ = state.spellCheck;
-            lastInputMethod_ = state.inputMethod;
-            lastCodeTable_ = state.codeTable;
-            lastConfigGeneration_ = state.configGeneration;
+            lastFeatureFlags_.store(state.GetFeatureFlags(), std::memory_order_release);
+            lastSpellCheck_.store(state.spellCheck, std::memory_order_release);
+            lastInputMethod_.store(state.inputMethod, std::memory_order_release);
+            lastCodeTable_.store(state.codeTable, std::memory_order_release);
+            lastConfigGeneration_.store(state.configGeneration, std::memory_order_release);
         }
     }
 
     // Phase 3d — single rebuild: TOML parse for overrides/excluded/TSF/
     // macros + atomic snapshot publish. Replaces the four legacy
     // Reload* + PublishConfigSnapshot calls from earlier.
-    RebuildSnapshotFromToml(static_cast<std::uint32_t>(lastConfigGeneration_));
+    RebuildSnapshotFromToml(
+        static_cast<std::uint32_t>(lastConfigGeneration_.load(std::memory_order_acquire)));
 
     // Spawn dedicated hook thread that owns keyboardHook_ + mouseHook_ and runs
     // its own GetMessage pump. This decouples LL hook dispatch from the main/UI
@@ -625,14 +617,13 @@ void HookEngine::QuickSyncFromSharedState() {
     uint32_t seenEpoch = lastEpoch_.load(std::memory_order_acquire);
     if (epoch == seenEpoch && (epoch & 1) == 0) return;
 
-    // Slow path: SharedState may have changed. Acquire the lock to
-    // serialise with main-thread writers (ApplyConfig, ReloadFromToml).
-    std::lock_guard<std::mutex> _lock(stateMutex_);
-
-    // Double-check inside the lock — a concurrent QuickSync caller (hook
-    // ↔ main race on configGeneration bump) may have already applied
-    // this epoch. Without the recheck both threads would run the full
-    // body and the second one would no-op only after wasted TOML reload.
+    // Slow path. Wave 2 (2026-05-23) — stateMutex_ DROPPED. All writes below
+    // are atomic (lastEpoch_, last*, config_, currentMethod_, currentCodeTable_)
+    // or RCU-published (config_ via make_shared store). ApplyConfig is now
+    // lock-free too. Concurrent QuickSync callers race on the last* CAS but
+    // converge: each writes the same value extracted from the same epoch, so
+    // the final state is consistent. Double-check on lastEpoch_ stays as the
+    // de-duplication mechanism.
     epoch = sharedStatePtr_->ReadEpoch();
     seenEpoch = lastEpoch_.load(std::memory_order_acquire);
     if (epoch == seenEpoch && (epoch & 1) == 0) return;
@@ -642,8 +633,7 @@ void HookEngine::QuickSyncFromSharedState() {
     lastEpoch_.store(state.epoch, std::memory_order_release);
 
     // Phase 1: surface SharedState.diagFlags bit 0 into the perf histogram
-    // gate. Atomic store — Histogram::SetEnabled holds no lock and is safe to
-    // call inside this slow-path block (already serialised by stateMutex_).
+    // gate. SetEnabled is lock-free.
     Perf::Histogram::SetEnabled((state.diagFlags & DiagFlags::PERF_HISTOGRAM) != 0);
 
     // ── Config generation check: detect TOML changes from Settings/subdialogs ──
@@ -656,13 +646,13 @@ void HookEngine::QuickSyncFromSharedState() {
     //     drains it and runs ReloadFromToml on the worker thread.
     //   • Worker / main → run inline. Already on a thread where TOML parse
     //     is acceptable, no point bouncing through another tick.
-    if (state.configGeneration != lastConfigGeneration_) {
+    if (state.configGeneration != lastConfigGeneration_.load(std::memory_order_acquire)) {
         if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
             pendingConfigReload_.store(true, std::memory_order_release);
             NEXTKEY_LOG(L"HookEngine: configGeneration bump (%u) seen on hook — deferring Reload to worker tick",
                         state.configGeneration);
         } else {
-            lastConfigGeneration_ = state.configGeneration;
+            lastConfigGeneration_.store(state.configGeneration, std::memory_order_release);
             NEXTKEY_LOG(L"HookEngine: configGeneration changed (%u), full TOML reload", state.configGeneration);
             ReloadFromToml();
         }
@@ -674,12 +664,14 @@ void HookEngine::QuickSyncFromSharedState() {
     uint8_t ct = state.codeTable;
 
     // No change → no-op (cheap: integer compares on mapped memory)
-    if (ff == lastFeatureFlags_ && sc == lastSpellCheck_ &&
-        im == lastInputMethod_ && ct == lastCodeTable_) return;
-    lastFeatureFlags_ = ff;
-    lastSpellCheck_ = sc;
-    lastInputMethod_ = im;
-    lastCodeTable_ = ct;
+    if (ff == lastFeatureFlags_.load(std::memory_order_acquire) &&
+        sc == lastSpellCheck_.load(std::memory_order_acquire) &&
+        im == lastInputMethod_.load(std::memory_order_acquire) &&
+        ct == lastCodeTable_.load(std::memory_order_acquire)) return;
+    lastFeatureFlags_.store(ff, std::memory_order_release);
+    lastSpellCheck_.store(sc, std::memory_order_release);
+    lastInputMethod_.store(im, std::memory_order_release);
+    lastCodeTable_.store(ct, std::memory_order_release);
 
     NEXTKEY_LOG(L"HookEngine: SharedState changed (ff=0x%04X, spell=%d, method=%d, ct=%d)", ff, sc, im, ct);
 
@@ -722,7 +714,8 @@ void HookEngine::QuickSyncFromSharedState() {
             if (hookThreadId_ != 0 && GetCurrentThreadId() == hookThreadId_) {
                 pendingConfigReload_.store(true, std::memory_order_release);
             } else {
-                RebuildSnapshotFromToml(static_cast<std::uint32_t>(lastConfigGeneration_));
+                RebuildSnapshotFromToml(
+                    static_cast<std::uint32_t>(lastConfigGeneration_.load(std::memory_order_acquire)));
             }
         }
     }
@@ -777,12 +770,13 @@ void HookEngine::ReloadFromToml() {
     // excluded apps / TSF apps / macros, ConfigSnapshot::Build (derives
     // spaceMacroKeys), atomic publish. The re-evaluate block below reads
     // the freshly-published snapshot for the current-app fields.
-    RebuildSnapshotFromToml(static_cast<std::uint32_t>(lastConfigGeneration_));
+    RebuildSnapshotFromToml(
+        static_cast<std::uint32_t>(lastConfigGeneration_.load(std::memory_order_acquire)));
     auto rcuSnap = configSnapshot_.load(std::memory_order_acquire);
 
     // Re-evaluate excluded status for current app (set was just reloaded)
     bool newExcluded = false;
-    if (excludeApps_ && !currentExe_.empty() && rcuSnap) {
+    if (config.excludeApps && !currentExe_.empty() && rcuSnap) {
         newExcluded = rcuSnap->excludedAppSet.count(currentExe_) > 0;
         isExcludedApp_.store(newExcluded, std::memory_order_release);
     } else {
@@ -792,7 +786,7 @@ void HookEngine::ReloadFromToml() {
     // Re-evaluate TSF app status for current foreground app
     const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
     bool newTsfApp;
-    if (tsfApps_ && !newExcluded && rcuSnap && !rcuSnap->tsfAppSet.empty() && !currentExe_.empty()) {
+    if (config.tsfApps && !newExcluded && rcuSnap && !rcuSnap->tsfAppSet.empty() && !currentExe_.empty()) {
         newTsfApp = rcuSnap->tsfAppSet.count(currentExe_) > 0;
     } else {
         newTsfApp = false;
@@ -801,7 +795,7 @@ void HookEngine::ReloadFromToml() {
     HOOK_LOG(L"  Engine (config reload): %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
              newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
              currentExe_.c_str(),
-             tsfApps_ ? 1 : 0,
+             config.tsfApps ? 1 : 0,
              (rcuSnap && !currentExe_.empty() && rcuSnap->tsfAppSet.count(currentExe_) > 0) ? 1 : 0,
              newExcluded ? 1 : 0);
     if (tsfModeCallback_) {
@@ -2980,8 +2974,9 @@ bool HookEngine::VerifyExcludedState() {
     // Phase 3c reader migration: snapshot read replaces the legacy
     // unprotected excludedAppSet_ access. One atomic load covers both
     // the empty check and the membership lookup.
-    auto snap = configSnapshot_.load(std::memory_order_acquire);
-    if (!excludeApps_ || !snap || snap->excludedAppSet.empty()) {
+    const auto cfg = config_.load(std::memory_order_acquire);
+    const auto snap = configSnapshot_.load(std::memory_order_acquire);
+    if (!cfg->excludeApps || !snap || snap->excludedAppSet.empty()) {
         isExcludedApp_.store(false, std::memory_order_release);
         return false;
     }
@@ -3006,10 +3001,10 @@ bool HookEngine::VerifyExcludedState() {
 // `appSendMethodOverrides` into the snapshot too so every variable-size
 // config map lives under one RCU contract.
 //
-// Feature gates honored:
-//   • excludeApps_ false ⇒ snapshot's excludedAppSet stays empty;
+// Feature gates honored (all read from config_ RCU snapshot, Wave 2):
+//   • config.excludeApps false ⇒ snapshot's excludedAppSet stays empty;
 //     isExcludedApp_ cleared (matches old ReloadExcludedApps semantics).
-//   • tsfApps_ false ⇒ snapshot's tsfAppSet stays empty.
+//   • config.tsfApps false ⇒ snapshot's tsfAppSet stays empty.
 //   • macroEnabled_ false ⇒ snapshot's macroTable stays empty.
 //
 // Not `noexcept`: STL allocations + `make_shared` here can throw
@@ -3017,25 +3012,27 @@ bool HookEngine::VerifyExcludedState() {
 // path, OnTickPoll drain) sit under the outer LL-callback catch or
 // OnTickPoll's own catch — graceful unwind beats `std::terminate`.
 void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) {
+    const auto cfg = config_.load(std::memory_order_acquire);
     // Side-effect: when excludeApps is off, clear the cached "currently in
     // excluded app" flag so a flag-disable picks up on the next focus check.
     // This is HookEngine runtime state, not snapshot data — keep here, not in
     // ConfigSnapshotBuilder.
-    if (!excludeApps_) {
+    if (!cfg->excludeApps) {
         isExcludedApp_.store(false, std::memory_order_release);
     }
 
     auto snap = ConfigSnapshotBuilder::BuildFromToml(
         ConfigManager::GetConfigPath(),
-        excludeApps_,
-        tsfApps_,
+        cfg->excludeApps,
+        cfg->tsfApps,
         macroEnabled_.load(std::memory_order_acquire),
         generation);
     configSnapshot_.store(std::move(snap), std::memory_order_release);
 }
 
 void HookEngine::SaveEnglishModeAppsIfDirty() {
-    if (!appModeDirty_ || !smartSwitch_) return;
+    if (!appModeDirty_ ||
+        !config_.load(std::memory_order_acquire)->smartSwitch) return;
     appModeDirty_ = false;
 
     std::vector<std::wstring> englishApps;
@@ -3077,16 +3074,17 @@ void HookEngine::CheckLayoutChange() {
 
 void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
     // Build inputs for the pure decision function (see CjkSwitchDecision.h).
-    // Gates: cjkAutoSwitch_ (user toggle) and isExcludedApp_ (excluded app
-    // owns the icon — see Win+D regression covered by
+    // Gates: config.cjkAutoSwitch (user toggle) and isExcludedApp_ (excluded
+    // app owns the icon — see Win+D regression covered by
     // CjkSwitchDecisionTest::WinDBug_LeavingExcludedReplaysLeaveCjk).
+    const auto cfg = config_.load(std::memory_order_acquire);
     CjkSwitchInputs in{};
     in.isCompatibleNow       = isCompatibleNow;
     in.layoutSuppressed      = layoutSuppressed_;
     in.modeBeforeCjk         = modeBeforeCjk_;
     in.vietnameseMode        = vietnameseMode_.load(std::memory_order_acquire);
     in.isExcluded            = isExcludedApp_.load(std::memory_order_acquire);
-    in.cjkAutoSwitchEnabled  = cjkAutoSwitch_;
+    in.cjkAutoSwitchEnabled  = cfg->cjkAutoSwitch;
 
     const CjkSwitchOutputs out = DecideCjkSwitch(in);
     if (out.transition == CjkTransition::None) return;
@@ -3102,7 +3100,7 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
         vietnameseMode_.store(out.newVietnameseMode, std::memory_order_release);
     }
     if (out.needNotifyMode) NotifyModeChange();
-    if (beepOnSwitch_) {
+    if (cfg->beepOnSwitch) {
         if (out.beep == CjkBeep::Ok) MessageBeep(MB_OK);
         else if (out.beep == CjkBeep::Asterisk) MessageBeep(MB_ICONASTERISK);
     }
@@ -3142,10 +3140,16 @@ void HookEngine::OnTickPoll() noexcept {
         // bounded to ~10 ms TOML parse on worker — acceptable.
         if (sharedStatePtr_
             && pendingConfigReload_.exchange(false, std::memory_order_acq_rel)) {
-            std::lock_guard<std::mutex> _lock(stateMutex_);
+            // Wave 2 (2026-05-23) — stateMutex_ DROPPED. Pre-Wave-2 this lock
+            // wrapped the 7-TOMLs parse inside ReloadFromToml (35-100 ms cold
+            // cache), blocking the hook's QuickSync slow path on any
+            // SharedState bump during reload. lastConfigGeneration_ is now
+            // std::atomic; ApplyConfig is lock-free (Wave 2 P1); ReloadFromToml
+            // writes only via RCU + atomics. Worker can parse in parallel with
+            // hook → user-typing-while-changing-setting no longer spikes.
             SharedState st = sharedStatePtr_->Read();
             if (st.IsValid()) {
-                lastConfigGeneration_ = st.configGeneration;
+                lastConfigGeneration_.store(st.configGeneration, std::memory_order_release);
                 NEXTKEY_LOG(L"HookEngine: deferred config reload (gen=%u) running on worker",
                             st.configGeneration);
                 ReloadFromToml();
@@ -3386,12 +3390,13 @@ FocusClassification HookEngine::ClassifyFocusedWindow(HWND triggerHwnd) noexcept
     // read was an unprotected unordered_map access from main while Reload
     // could rewrite the maps on hook — the snapshot publish closes that
     // race because Reload now swaps the whole pointer.
+    const auto cfg = config_.load(std::memory_order_acquire);
     auto snap = configSnapshot_.load(std::memory_order_acquire);
     if (!cls.skipAppTracking && !cls.exeName.empty() && snap) {
-        if (excludeApps_ && !snap->excludedAppSet.empty()) {
+        if (cfg->excludeApps && !snap->excludedAppSet.empty()) {
             cls.isExcluded = snap->excludedAppSet.count(cls.exeName) > 0;
         }
-        if (!cls.isExcluded && tsfApps_ && !snap->tsfAppSet.empty()) {
+        if (!cls.isExcluded && cfg->tsfApps && !snap->tsfAppSet.empty()) {
             cls.isTsf = snap->tsfAppSet.count(cls.exeName) > 0;
         }
         if (!cls.isExcluded && !cls.isTsf) {
@@ -3456,9 +3461,10 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // back to validate without typing first. Running QuickSync here on the
     // SAME thread as pre-P2b (main / worker, never hook) restores the
     // original UX without compromising the hook-thread single-writer
-    // invariant: QuickSync's slow path takes stateMutex_ and calls
-    // ApplyConfig — those writes still cross-thread the same way they did
-    // pre-Phase-2 (Phase 3 fixes that with RCU snapshots).
+    // invariant. Wave 2 (2026-05-23) — QuickSync's slow path is now lock-
+    // free (all atomics + RCU publish for config_/snapshot). The cross-
+    // thread call to ApplyConfig is safe because ApplyConfig writes only
+    // through atomics + the injector_'s own atomic suggestKeepChars_.
     QuickSyncFromSharedState();
 
     auto cls = std::make_shared<const FocusClassification>(
@@ -4288,6 +4294,8 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     VKEY_ASSERT_HOOK_THREAD();
     if (!cls || !cls->hwndOpaque) return;
 
+    const auto cfg = config_.load(std::memory_order_acquire);
+
     HWND activeHwnd = reinterpret_cast<HWND>(cls->hwndOpaque);
 
     // Sync PID tracker UNCONDITIONALLY so the 200 ms focus poll won't re-fire
@@ -4361,7 +4369,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         const bool noOverrides = !snap
             || (snap->appEncodingOverrides.empty()
                 && snap->appInputMethodOverrides.empty());
-        if (!smartSwitch_ && !excludeApps_ && !tsfApps_ && noOverrides) return;
+        if (!cfg->smartSwitch && !cfg->excludeApps && !cfg->tsfApps && noOverrides) return;
     }
 
     if (cls->exeName.empty()) return;
@@ -4371,7 +4379,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     // Smart switch SAVE for the previous app — uses OLD currentExe_, so
     // must run before we reassign it.
-    if (smartSwitch_ && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
+    if (cfg->smartSwitch && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
         if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
             appModeMap_.clear();
         }
@@ -4395,7 +4403,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
              cls->isTsf ? L"TSF (hook passthrough)" : L"HOOK",
              currentExe_.c_str(),
-             tsfApps_ ? 1 : 0,
+             cfg->tsfApps ? 1 : 0,
              cls->isTsf ? 1 : 0,
              cls->isExcluded ? 1 : 0);
 
@@ -4449,7 +4457,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     }
 
     // Smart switch restore for the new app.
-    if (smartSwitch_) {
+    if (cfg->smartSwitch) {
         auto it = appModeMap_.find(currentExe_);
         if (it != appModeMap_.end()) {
             const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
@@ -4486,11 +4494,12 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 // User-visible behaviour: same as before — sub-keystroke responsive.
 void HookEngine::ApplyToggleVNOnHookThread() {
     VKEY_ASSERT_HOOK_THREAD();
+    const auto cfg = config_.load(std::memory_order_acquire);
     // Excluded-app gate. PID check vs cached excludedPid_ distinguishes
     // "genuinely in excluded app" (block toggle) from "stale flag, user
     // already left" (force VN). Both atomic stores below are safe on
     // hook thread now that we're single-writer.
-    if (excludeApps_ && isExcludedApp_.load(std::memory_order_acquire)) {
+    if (cfg->excludeApps && isExcludedApp_.load(std::memory_order_acquire)) {
         HWND fg = GetForegroundWindow();
         DWORD fgPid = 0;
         if (fg) GetWindowThreadProcessId(fg, &fgPid);
@@ -4506,7 +4515,7 @@ void HookEngine::ApplyToggleVNOnHookThread() {
         vietnameseMode_.store(true, std::memory_order_release);
         HOOK_LOG(L"  ToggleVN: stale excluded → forced Vietnamese (fg pid=%u)", fgPid);
         NotifyModeChange();
-        if (beepOnSwitch_) MessageBeep(MB_OK);
+        if (cfg->beepOnSwitch) MessageBeep(MB_OK);
         return;
     }
 
@@ -4526,12 +4535,12 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     // snapshot). If currentExe_ is empty here (startup before any focus event),
     // the next focus event will set it and the toggle takes effect for that app
     // on its first save.
-    if (smartSwitch_ && !currentExe_.empty()) {
+    if (cfg->smartSwitch && !currentExe_.empty()) {
         appModeMap_[currentExe_] = newMode;
         smartSwitchMgr_.SetAppMode(currentExe_, newMode);
     }
 
-    if (beepOnSwitch_) {
+    if (cfg->beepOnSwitch) {
         MessageBeep(newMode ? MB_OK : MB_ICONASTERISK);
     }
     NotifyModeChange();

@@ -420,11 +420,12 @@ private:
     DWORD lastSynthSendTime_ = 0;  // GetTickCount() of last SendInput call (watchdog: reset if stuck > 500ms)
     DWORD lastRealSynthTime_ = 0;  // GetTickCount() of last typing-related dispatch (not InjectKey re-injection)
     bool hadSynthInWord_ = false;  // True if any synthetic event was sent for the current word (blocks passthrough mixing)
-    bool beepOnSwitch_ = false;
-    bool smartSwitch_ = false;
-    bool excludeApps_ = false;
-    bool tsfApps_ = false;
-    bool cjkAutoSwitch_ = false;  // Opt-in via UI; ApplyConfig overrides at startup.
+    // Wave 2 (2026-05-23) — formerly cached bool fields (beepOnSwitch_, smartSwitch_,
+    // excludeApps_, tsfApps_, cjkAutoSwitch_) deleted. Single source of truth is
+    // `config_` RCU. Hot-path readers load once per function via
+    //   `const auto cfg = config_.load(std::memory_order_acquire);`
+    // then read `cfg->beepOnSwitch` etc. Eliminates the cache/sync surface that
+    // forced ApplyConfig to run under stateMutex_.
     // Sprint 1 D5.2: config-derived flags read on the hook callback path
     // (ProcessKeyDown / HandleAlphaKey / TryExpandMacro). Writers: ApplyConfig
     // (main thread). Readers: hook hot path uses .load(acquire); other call
@@ -671,10 +672,13 @@ private:
 
     // Direct SharedState reader — pointer to the global SharedStateManager (same process)
     SharedStateManager* sharedStatePtr_ = nullptr;
-    uint32_t lastFeatureFlags_ = 0;
-    uint8_t lastSpellCheck_ = 0;
-    uint8_t lastInputMethod_ = 0;
-    uint8_t lastCodeTable_ = 0;
+    // Wave 2 (2026-05-23) — atomized so QuickSync slow path + OnTickPoll TOML
+    // drain no longer need stateMutex_ to serialize these fields with writers.
+    // Reader/writer pairs are all .load(acquire) / .store(release).
+    std::atomic<uint32_t> lastFeatureFlags_{0};
+    std::atomic<uint8_t> lastSpellCheck_{0};
+    std::atomic<uint8_t> lastInputMethod_{0};
+    std::atomic<uint8_t> lastCodeTable_{0};
     void QuickSyncFromSharedState();
     void ReloadFromToml();  // Full TOML reload (macros, excluded apps, hotkeys, etc.)
     // Pre-T3 Minor 2 fix (Rule #11.3): atomic for lock-free hot-path read
@@ -684,7 +688,7 @@ private:
     // without ever taking stateMutex_. Initialised to 0 so the first call
     // always enters the slow path (any valid SharedState epoch mismatches).
     std::atomic<uint32_t> lastEpoch_{0};  // Epoch fast path — skip full Read() when unchanged
-    uint8_t lastConfigGeneration_ = 0;   // Tracks configGeneration from SharedState
+    std::atomic<uint8_t> lastConfigGeneration_{0};   // Tracks configGeneration from SharedState (Wave 2 atomized)
     // Phase 3c: cross-thread signal from hook slow path to worker tick.
     // When `QuickSyncFromSharedState` is entered on the hook thread and
     // detects a `configGeneration` bump, it MUST NOT run `ReloadFromToml`
