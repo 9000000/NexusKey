@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HotkeyManager.h"
-#include "HookEngine.h"  // VKEY_EXTRA_INFO tag + WM_APP_HOTKEY_FIRED forward use
+#include "HookEngine.h"  // VKEY_EXTRA_INFO tag
 #include "core/CrashLog.h"
 #include "core/Debug.h"
+#include <cassert>
 
 namespace NextKey {
 
@@ -15,11 +16,6 @@ namespace NextKey {
         ::NextKey::Logger::Log(L"[Hotkey] " fmt, ##__VA_ARGS__);               \
 } while (0)
 
-// Mirrors HookEngine.cpp's WM_APP_HOTKEY_FIRED definition. Duplicated to avoid
-// forcing HotkeyManager.h to expose it (and to keep the constant local to the
-// two TUs that actually use it).
-static constexpr UINT kWmAppHotkeyFired = WM_APP + 3;
-
 std::atomic<HotkeyManager*> HotkeyManager::s_instance{nullptr};
 
 HotkeyManager::~HotkeyManager() {
@@ -27,15 +23,15 @@ HotkeyManager::~HotkeyManager() {
 }
 
 HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config, Callback callback) {
+    // Contract: AddHotkey must precede Initialize() — slotState_.resize below
+    // races with LL callback's slotState_[i] read if the hook is already up.
+    // Debug-only enforcement; release builds rely on call-site discipline.
+    assert(!keyboardHook_ && "AddHotkey called after Initialize — slotState_ resize would race with LL callback");
     std::lock_guard lk(mutationMutex_);
     auto oldBindings = bindings_.load(std::memory_order_acquire);
-    auto newBindings = oldBindings
-        ? std::make_shared<std::vector<SlotBinding>>(*oldBindings)
-        : std::make_shared<std::vector<SlotBinding>>();
+    auto newBindings = std::make_shared<std::vector<SlotBinding>>(*oldBindings);
     newBindings->push_back(SlotBinding{config, std::move(callback)});
     const SlotId id = newBindings->size() - 1;
-    // Grow slotState_ in lock-step. Safe because the LL hook is not installed
-    // until Initialize() runs after all AddHotkey calls (current usage).
     slotState_.resize(id + 1);
     bindings_.store(std::move(newBindings), std::memory_order_release);
     HOTKEY_LOG(L"AddHotkey slot=%zu vk=0x%02X ctrl=%d shift=%d alt=%d win=%d (%s)",
@@ -47,7 +43,7 @@ HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config, Callb
 void HotkeyManager::UpdateHotkey(SlotId slot, const HotkeyConfig& config) {
     std::lock_guard lk(mutationMutex_);
     auto oldBindings = bindings_.load(std::memory_order_acquire);
-    if (!oldBindings || slot >= oldBindings->size()) return;
+    if (slot >= oldBindings->size()) return;
     // Skip if config unchanged — preserves comboKeyDown across spurious reloads.
     // Without this, a config reload while the user holds the combo would (after
     // Wave 1) be a no-op on slotState_ anyway, but skipping also avoids
@@ -65,10 +61,9 @@ void HotkeyManager::UpdateHotkey(SlotId slot, const HotkeyConfig& config) {
 }
 
 void HotkeyManager::Initialize(HINSTANCE hInstance) {
-    s_instance = this;
+    s_instance.store(this, std::memory_order_release);
     InstallKeyboardHook(hInstance);
-    auto bindings = bindings_.load(std::memory_order_acquire);
-    const size_t count = bindings ? bindings->size() : 0;
+    const size_t count = bindings_.load(std::memory_order_acquire)->size();
     NEXTKEY_LOG(L"HotkeyManager installed (%zu slot%s, hookTid=%lu)",
                 count, count == 1 ? L"" : L"s",
                 hookThreadId_.load(std::memory_order_acquire));
@@ -80,8 +75,8 @@ void HotkeyManager::Uninstall() {
         keyboardHook_ = nullptr;
         HOTKEY_LOG(L"Keyboard hook uninstalled");
     }
-    if (s_instance == this) {
-        s_instance = nullptr;
+    if (s_instance.load(std::memory_order_acquire) == this) {
+        s_instance.store(nullptr, std::memory_order_release);
     }
     std::lock_guard lk(mutationMutex_);
     bindings_.store(std::make_shared<std::vector<SlotBinding>>(),
@@ -121,17 +116,17 @@ void HotkeyManager::InjectDummyKey() noexcept {
 }
 
 void HotkeyManager::DispatchHotkeyFromHookThread(SlotId slot) {
-    HotkeyManager* inst = s_instance.load(std::memory_order_relaxed);
+    HotkeyManager* inst = s_instance.load(std::memory_order_acquire);
     if (!inst) return;
     auto bindings = inst->bindings_.load(std::memory_order_acquire);
-    if (!bindings || slot >= bindings->size()) return;
+    if (slot >= bindings->size()) return;
     const auto& binding = (*bindings)[slot];
     if (binding.callback) binding.callback();
 }
 
 LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     try {
-        HotkeyManager* inst = s_instance.load(std::memory_order_relaxed);
+        HotkeyManager* inst = s_instance.load(std::memory_order_acquire);
         if (nCode != HC_ACTION || !inst) {
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
@@ -192,11 +187,9 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
 
         // RCU snapshot read — lock-free. The pointee vector is immutable; mutators
         // publish a fresh shared_ptr. slotState_ is owned by `self` (LL-thread-only
-        // mutator after Initialize), indexed in parallel with `bindings`.
-        auto bindings = self.bindings_.load(std::memory_order_acquire);
-        if (!bindings) {
-            return CallNextHookEx(nullptr, nCode, wParam, lParam);
-        }
+        // mutator after Initialize), indexed in parallel with `bindings`. bindings_
+        // is never null after default ctor — no null check needed.
+        const auto bindings = self.bindings_.load(std::memory_order_acquire);
         const auto& slots = *bindings;
         const DWORD hookTid = self.hookThreadId_.load(std::memory_order_acquire);
 
@@ -228,7 +221,7 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                         // is safe because TSF-only callbacks are PostMessage-style
                         // (see main.cpp:704-711, no engine-state writes).
                         if (hookTid) {
-                            PostThreadMessageW(hookTid, kWmAppHotkeyFired,
+                            PostThreadMessageW(hookTid, WM_APP_HOTKEY_FIRED,
                                                static_cast<WPARAM>(i), 0);
                         } else if (slot.callback) {
                             slot.callback();
@@ -279,7 +272,7 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                            i, vk,
                            preCtrl, preShift, preAlt, preWin);
                 if (hookTid) {
-                    PostThreadMessageW(hookTid, kWmAppHotkeyFired,
+                    PostThreadMessageW(hookTid, WM_APP_HOTKEY_FIRED,
                                        static_cast<WPARAM>(i), 0);
                 } else if (slot.callback) {
                     slot.callback();

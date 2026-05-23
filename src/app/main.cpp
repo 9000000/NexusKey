@@ -712,7 +712,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
     if (hotkeyOpt && hotkeyOpt->HasAny()) {
         HWND trayWnd = g_trayIcon.GetMessageWindow();
-        g_hotkeyManager.AddHotkey(*hotkeyOpt, [trayWnd]() {
+        // TSF mode: single toggle slot, never rebinding — slot id intentionally discarded.
+        (void)g_hotkeyManager.AddHotkey(*hotkeyOpt, [trayWnd]() {
             if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
         });
         g_hotkeyManager.Initialize(hInstance);

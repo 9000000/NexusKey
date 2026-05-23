@@ -13,6 +13,12 @@
 
 namespace NextKey {
 
+/// Hook-thread routing target for HotkeyManager LL-callback matches. HotkeyManager
+/// produces it (PostThreadMessageW from LL callback) and HookEngine's pump consumes
+/// it (calls DispatchHotkeyFromHookThread). Declared here so both TUs share one
+/// definition — the prior pattern (one `static constexpr` per TU) drifted easily.
+inline constexpr UINT WM_APP_HOTKEY_FIRED = WM_APP + 3;
+
 /// Multi-slot keyboard hotkey manager. Each slot holds a HotkeyConfig + callback.
 /// VKey is a single-layout TIP on English — no layout switching needed.
 ///
@@ -37,16 +43,18 @@ public:
     using Callback = std::function<void()>;
     using SlotId = size_t;
 
-    HotkeyManager() = default;
+    HotkeyManager() : bindings_(std::make_shared<std::vector<SlotBinding>>()) {}
     ~HotkeyManager();
 
     HotkeyManager(const HotkeyManager&) = delete;
     HotkeyManager& operator=(const HotkeyManager&) = delete;
 
-    /// Register a hotkey slot. MUST be called before Initialize(). Returns
-    /// the slot id for later UpdateHotkey calls. Callback runs on the hook
-    /// thread (post-Wave 1) — keep it quick.
-    SlotId AddHotkey(const HotkeyConfig& config, Callback callback);
+    /// Register a hotkey slot. MUST be called before Initialize() — AddHotkey
+    /// resizes slotState_, which races with the LL callback if the hook is
+    /// already installed (asserts when keyboardHook_ != nullptr). Returns the
+    /// slot id for later UpdateHotkey calls. Callback runs on the hook thread
+    /// (post-Wave 1) — keep it quick.
+    [[nodiscard]] SlotId AddHotkey(const HotkeyConfig& config, Callback callback);
 
     /// Replace an existing slot's config (used on config reload). Safe to
     /// call from any thread; serialized by mutationMutex_.

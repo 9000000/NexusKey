@@ -53,14 +53,9 @@ static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 /// coalesce (no extra messages) per the wakePosted latch.
 static constexpr UINT WM_APP_HOOK_COMMAND   = WM_APP + 2;
 
-/// Wave 1 — hotkey dispatch trampoline. HotkeyManager's LL keyboard hook
-/// (running on the main UI thread that installed it) detects a slot match
-/// and posts this message with wParam = slot id. The hook thread's pump
-/// receives it and invokes HotkeyManager::DispatchHotkeyFromHookThread,
-/// which calls the per-slot callback in hook-thread context — restoring
-/// the "hook-thread-only writes to engine state" invariant for callbacks
-/// like outConvertSlot that call hookEngine.CommitPending().
-static constexpr UINT WM_APP_HOTKEY_FIRED   = WM_APP + 3;
+// WM_APP_HOTKEY_FIRED (WM_APP + 3) — defined in HotkeyManager.h so the
+// producer (HotkeyManager LL callback) and consumer (this pump) share one
+// source of truth. See that header for the routing rationale.
 
 /// `WM_APP_REINSTALL_HOOKS` wParam — labels which trigger fired the reinstall.
 /// Logged by HookThreadProc so field-collected logs can distinguish causes
