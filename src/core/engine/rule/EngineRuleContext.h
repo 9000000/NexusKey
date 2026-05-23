@@ -7,6 +7,15 @@
 // Distinct from Pipeline::KeyContext because the engine sees a different
 // surface — case-resolved chars + buffer/state refs + engine-internal flags —
 // not VK codes + modifiers + ICompositionSession views.
+//
+// IMPORTANT — the `states` / `rawInput` / `config` fields are REFERENCES to
+// live engine state, not snapshots. If a rule calls into an executor that
+// mutates engine state (e.g. ProcessChar appends to states_), subsequent
+// reads of ctx.states see the new value within the same Apply() call. Rules
+// that need a stable view across an executor call must capture by value or
+// re-read AFTER the call. Scalar fields (action / bias / escapeActive / ...)
+// are by-value snapshots — they're rebuilt at the PostClassify boundary
+// (see PushChar's `postCtx = ruleCtx; postCtx.action = action;` pattern).
 #pragma once
 
 #include <vector>

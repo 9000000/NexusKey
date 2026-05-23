@@ -37,7 +37,7 @@ VKey/
 │   ├── core/                          # ← VKeyEngine + VKeyCore
 │   │   ├── engine/                    # Pure C++ input engines
 │   │   │   ├── IInputEngine.h         # Interface: ProcessKey, GetResult, Reset
-│   │   │   ├── TypingEngine.cpp/h     # Unified typing engine — Telex + VNI both routed through here (1723 LOC, post Path G unification 2026-04-16)
+│   │   │   ├── TypingEngine.cpp/h     # Unified typing engine — Telex + VNI both routed through here (2000 LOC; post W7 framework, PushChar is a 73-LOC skeleton dispatching to engine rules)
 │   │   │   ├── TypingAction.h         # TypingAction enum — engine output commands (Path G G-3)
 │   │   │   ├── EnglishProtection.h    # Heuristics: HardEnglishStart/End, IsInvalidVietnameseCoda, V+C+V context
 │   │   │   ├── PhonotacticsValidator.cpp/h  # Path 1 / hot-path syllable validator on CharState. Owns kVCPairRules per-nucleus allowed-coda bitmasks (T1 rename from SpellChecker, 813 LOC)
@@ -47,7 +47,45 @@ VKey/
 │   │   │   ├── CodeTableConverter.cpp/h  # Charset conversion TCVN3/VNI/Unicode (662 LOC)
 │   │   │   ├── EngineFactory.cpp/h    # Creates engine by TypingMethod enum (Combined routes to TypingEngine)
 │   │   │   ├── EngineHelpers.h        # Shared helper utilities (vowel/consonant scans, modifier targeting)
-│   │   │   └── VietnameseTables.h     # Static data: kDiphthongClassic/Modern, IsTriphthong, DiphthongVowelIndex, tone-position tables
+│   │   │   ├── VietnameseTables.h     # Static data: kDiphthongClassic/Modern, IsTriphthong, DiphthongVowelIndex, tone-position tables
+│   │   │   └── rule/                  # ← W7 engine-rule plugin framework (2026-05-23)
+│   │   │       ├── EngineRulePhase.h          # PreClassify / PostClassify enum
+│   │   │       ├── EngineRuleResult.h         # Pass / Handled / Veto
+│   │   │       ├── EngineRuleContext.h        # POD: keyChar, lower, isUpper, action, gate inputs + LIVE refs to states_/rawInput_/config_
+│   │   │       ├── IEngineRule.h              # Plugin interface (RulePhase / Priority / Requires / Apply)
+│   │   │       ├── EngineRuleRegistry.cpp/h   # Per-phase priority-sorted dispatch + engine-local gate eval (reuses Pipeline::GateMask)
+│   │   │       ├── IToneExecutor.h            # Executor port for ToneRule → HandleToneFsm
+│   │   │       ├── ToneRule.cpp/h             # PostClassify prio 10, Requires=ToneEscape — Clear / ApplyTone* actions
+│   │   │       ├── IModifierExecutor.h        # Executor port for ModifierRule → HandleModifierAction
+│   │   │       ├── ModifierRule.cpp/h         # PostClassify prio 20, Requires=0 — Telex / VNI / UserDefined modifiers
+│   │   │       ├── IQuickConsonantExecutor.h  # Executor port for both QuickStart and QuickEnd rules
+│   │   │       ├── QuickStartConsonantRule.cpp/h  # PreClassify prio 5, Requires=0 — 0a (f→ph, j→gi, w→qu) + 0a-cont undo + 0b (cc→ch family + uu→ươ)
+│   │   │       └── QuickEndConsonantRule.cpp/h    # PostClassify prio 30, Requires=0 — 2c (g→ng, h→nh, k→ch after vowel)
+│   │   ├── pipeline/                  # ← W1-W5 HookEngine-layer plugin framework (2026-05-22..23)
+│   │   │   ├── Stage.h                # PreEngine / Engine / PostEngine
+│   │   │   ├── Result.h               # Pass / Handled / Veto
+│   │   │   ├── GateMask.h             # GateId enum (EnglishBias / SpellCheck / ToneEscape) + GateMaskFor()
+│   │   │   ├── KeyContext.h           # POD passed to features (vk, keyChar, mods, session, reinjectVk)
+│   │   │   ├── Intent.h               # Variant: Backspace / Text / Reinject / ConsumeKey / PassThrough
+│   │   │   ├── IntentSink.h           # Output channel — Emit(Intent)
+│   │   │   ├── IFeature.h             # Plugin interface
+│   │   │   ├── IGate.h                # Gate interface — IsRaised(ctx)
+│   │   │   ├── ICompositionSession.h  # PreviousRendered / EngineRendered / RawInput views
+│   │   │   ├── HookCompositionSession.h  # ICompositionSession impl for HookEngine
+│   │   │   ├── Coordinator.cpp/h      # Owns features + gates, HandleKey / HandleKeyAtStage dispatch
+│   │   │   ├── OutputChannel.cpp/h    # Batches Intent emissions to flush at end of key
+│   │   │   ├── IBackwardEditExecutor.h    # Executor port → BackwardEditFeature
+│   │   │   ├── BackwardEditFeature.cpp/h  # PostEngine prio 10
+│   │   │   ├── ICommitUndoExecutor.h      # Executor port → CommitUndoFeature
+│   │   │   ├── CommitUndoFeature.cpp/h    # PreEngine prio 20 — backspace-into-committed-word FSM
+│   │   │   ├── IMacroExecutor.h           # Executor port → MacroFeature
+│   │   │   ├── MacroFeature.cpp/h         # PreEngine prio 30 — macro expansion
+│   │   │   ├── IEscRestoreRawExecutor.h   # Executor port → EscRestoreRawFeature
+│   │   │   ├── EscRestoreRawFeature.cpp/h # PreEngine prio 40 — ESC restores raw keystrokes
+│   │   │   └── gates/
+│   │   │       ├── EnglishBiasGate.h      # Reads vietnameseMode_ atomic
+│   │   │       ├── SpellCheckGate.h       # Reads engine_->IsEnglishWord()
+│   │   │       └── ToneEscapeGate.h       # Reads engine_->IsToneEscaped()
 │   │   ├── config/                    # Configuration management
 │   │   │   ├── TypingConfig.h         # Config struct: method, spellCheck, macros etc.
 │   │   │   ├── ConfigManager.cpp/h    # TOML load/save (Win32-only, 24K cpp)
@@ -149,7 +187,7 @@ VKey/
 │       ├── resources.cpp              # Auto-generated packed UI (538K)
 │       └── resources/                 # Icons (ico files)
 │
-├── tests/                             # Google Test (1551 tests / 62 suites as of 2026-05-08)
+├── tests/                             # Google Test (2010 tests / 117 suites as of 2026-05-23, feat/architecture-review-v3.1)
 │   ├── TelexEngineTest.cpp            # ★ Most comprehensive engine suite (covers TypingEngine post-Path G; legacy filename retained)
 │   ├── VniParityTest.cpp              # VNI ↔ Telex parity through unified TypingEngine
 │   ├── CombinedEngineTest.cpp         # InputMethod::Combined routing
@@ -179,6 +217,18 @@ VKey/
 │   │   ├── Win32SendInputInjectorTest.cpp
 │   │   ├── RichEditEmReplaceSelInjectorTest.cpp
 │   │   └── SplitDispatchInjectorTest.cpp
+│   ├── pipeline/                      # W1-W5 feature pipeline tests (HookEngine layer)
+│   │   ├── EnumsTest.cpp / IntentTest.cpp / IntentSinkTest.cpp
+│   │   ├── CoordinatorRegistryTest.cpp / CoordinatorDispatchTest.cpp
+│   │   ├── CoordinatorStageDispatchTest.cpp / CoordinatorGateFilterTest.cpp
+│   │   ├── OutputChannelTest.cpp / HookCompositionSessionTest.cpp
+│   │   ├── EnglishBiasGateTest.cpp / SpellCheckGateTest.cpp / ToneEscapeGateTest.cpp
+│   │   ├── BackwardEditFeatureTest.cpp / CommitUndoFeatureTest.cpp
+│   │   └── MacroFeatureTest.cpp / EscRestoreRawFeatureTest.cpp
+│   ├── engine/                        # W7 engine-rule tests
+│   │   ├── EngineRuleRegistryTest.cpp     # Framework dispatch + gate filter
+│   │   ├── ToneRuleTest.cpp / ModifierRuleTest.cpp
+│   │   └── QuickStartConsonantRuleTest.cpp / QuickEndConsonantRuleTest.cpp
 │   └── TestHelper.h                   # Shared test utilities
 │
 ├── docs/                              # Documentation (see docs/index.md)
@@ -264,28 +314,46 @@ VKey/
 
 > Read this section before debugging any diacritics/tone bug in `TypingEngine.cpp`. Telex + VNI both flow through this single engine post Path G unification (2026-04-16); the legacy `TelexEngine`/`VniEngine` files no longer exist.
 
-### PushChar() Processing Pipeline
+### PushChar() Processing Pipeline (post W7 framework)
+
+Since W7.4 (2026-05-23), `PushChar` is a ~73 LOC skeleton that delegates all sub-steps to engine rules via `EngineRuleRegistry`. Rules live in `src/core/engine/rule/`. **Read `docs/plans/2026-05-23-feature-pipeline-w7-retro.md` before touching this code** — it captures the 10 architecture decisions (ADs) that shape the framework.
 
 ```
 PushChar(c)
-  ├─ 0a. Quick start consonant (f→ph, j→gi, w→qu) — word start only
-  ├─ 0b. Quick consonant (cc→ch, gg→gi, nn→ng, ...) — after consonant
-  ├─ 1a. 'z' key → clear existing tone
-  ├─ 1b. Tone keys (s,f,r,x,j) → ProcessTone() → FindToneTarget()
-  ├─ 2a. Modifier keys → ProcessModifier()
-  │       ├─ Brackets: [ → ơ, ] → ư
-  │       ├─ 'w' → ProcessWModifier() (horn/breve, 8 priority levels)
-  │       ├─ Double vowel → circumflex (aa→â, ee→ê, oo→ô)
-  │       │       ├─ Direct: last char matches (e.g., "a" + 'a' → "â")
-  │       │       └─ Free marking: backward scan across intervening chars
-  │       │               (e.g., "tieng" + 'e' → "tiêng")
-  │       │               Crosses consonants freely; crosses vowels only
-  │       │               when spell check validates the result
-  │       └─ dd → đ (ProcessDModifier)
-  ├─ 2b. Quick end consonant (g→ng, h→nh, k→ch) — after vowel
-  └─ 3.  Regular character → ProcessChar()
-  Then: ApplyAutoUO() + UpdateSpellState()
+  ├─ rawInput_.push_back + escRawHistory_.push_back + qc_.onlyQC = false
+  ├─ Build EngineRuleContext (keyChar, lower, isUpper, gate inputs, live state refs)
+  ├─ ruleRegistry_.DispatchAtPhase(PreClassify)
+  │     └─ QuickStartConsonantRule (prio 5, Requires=0)
+  │           ├─ 0a:      f→ph, j→gi, w→qu (only at word start)        ↦ Veto on match
+  │           ├─ 0a-cont: undo quick start if next char ≠ vowel        ↦ Pass (fall through)
+  │           └─ 0b:      cc→ch family + uu→ươ                          ↦ Veto on match
+  │                 (cc→ch path: ProcessChar(newKey) + FinalizeRegularChar)
+  ├─ Detect VNI digit sequence (literal protection)
+  ├─ ClassifyKey(lower, mode flags) → TypingAction (Tone* / Modifier* / Insert* / None)
+  ├─ ruleRegistry_.DispatchAtPhase(PostClassify)
+  │     ├─ ToneRule (prio 10, Requires=ToneEscape)
+  │     │     └─ HandleToneFsm: ClearTone, ToneAcute/Grave/Hook/Tilde/Dot
+  │     │           ├─ Spell-check disabled path (literal-or-recover)
+  │     │           ├─ English protection (HardEnglish bias, V+C+V structural check)
+  │     │           ├─ Stop-final coda guard (block grave/hook/tilde on c/ch/p/t coda)
+  │     │           └─ ProcessTone(requestedTone, cachedTarget) → FindToneTarget()
+  │     ├─ ModifierRule (prio 20, Requires=0)
+  │     │     └─ HandleModifierAction → ProcessModifier()
+  │     │           ├─ Telex: aa→â, ee→ê, oo→ô, w→ư/ơ/ă (8 priority levels), dd→đ
+  │     │           ├─ Brackets: [ → ơ, ] → ư
+  │     │           ├─ VNI: 6→circumflex, 7→horn, 8→breve, 9→đ
+  │     │           └─ UserDefined: HornOrInsertU(NoStart) / UndoAllMarks / Insert*
+  │     └─ QuickEndConsonantRule (prio 30, Requires=0)
+  │           └─ 2c: g→ng, h→nh, k→ch (after vowel)                     ↦ Veto on match
+  └─ Step 3 (regular character — no rule consumed the key):
+        ProcessChar(c) + FinalizeRegularChar()
+              └─ RelocateToneToTarget + ApplyAutoUO + UpdateSpellState
+                  + CheckEnglishBias + P8 w→ư revert (Telex) + CheckZwjfInitialBias
 ```
+
+**Veto** semantics: rule mutated engine state and the keystroke is fully consumed → `PushChar` returns early. **Pass**: rule did not act (or 0a-cont fall-through); next rule in phase runs; if all pass → step 3.
+
+**State (qc_, quickStartKey_, escape_, engProt_) lives on TypingEngine.** Rules access via `engine.` calls inside executor bodies. Backspace + Reset + IsRestoreCandidate still own these fields (AD-7 in retro doc).
 
 ### Tone Placement Priority (FindToneTargetImpl)
 
@@ -331,12 +399,12 @@ Each character in the buffer is a `CharState` with: `base` (lowercase letter), `
 
 ---
 
-## Largest Files (by LOC, snapshot 2026-05-08)
+## Largest Files (by LOC, snapshot 2026-05-23 — feat/architecture-review-v3.1)
 
 | File | LOC | Notes |
 |---|---|---|
-| `app/system/HookEngine.cpp` | 3563 | Keyboard hook + dispatch — most complex; H1 decomposed `ProcessKeyDown` 561→79 LOC orchestrator |
-| `core/engine/TypingEngine.cpp` | 1723 | Unified Telex + VNI engine (Path G) |
+| `app/system/HookEngine.cpp` | 4588 | Keyboard hook + dispatch — most complex; H1 decomposed `ProcessKeyDown` 561→79 LOC orchestrator; W2-W4 moved features (BackwardEdit / CommitUndo / Macro / EscRestoreRaw) into `src/core/pipeline/` plugins |
+| `core/engine/TypingEngine.cpp` | 2000 | Unified Telex + VNI engine (Path G); W7 framework moved tone / modifier / quick-consonant sub-blocks into `src/core/engine/rule/` plugins. `PushChar` is now a 73-LOC skeleton (was ~210 inline). |
 | `app/dialogs/SettingsDialog.cpp` | 1430 | Main settings UI logic (Sciter) |
 | `app/main.cpp` | 973 | App initialization |
 | `core/config/ConfigManager.cpp` | 821 | TOML config load/save |
