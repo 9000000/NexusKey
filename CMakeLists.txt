@@ -84,6 +84,7 @@ set(NEXTKEY_CORE_SOURCES
     src/core/pipeline/IBackwardEditExecutor.h
     src/core/pipeline/BackwardEditFeature.h
     src/core/pipeline/BackwardEditFeature.cpp
+    src/core/pipeline/ICommitUndoExecutor.h
     src/core/pipeline/gates/EnglishBiasGate.h
     src/core/pipeline/gates/SpellCheckGate.h
     src/core/pipeline/gates/ToneEscapeGate.h
