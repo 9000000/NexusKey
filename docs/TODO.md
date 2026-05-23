@@ -2,6 +2,26 @@
 
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
+>
+> **Stale-line-number notice (2026-05-23, feat/architecture-review-v3.1)**:
+> entries below predate the W7 feature-pipeline framework rollout. Two things
+> shifted that affect code pointers throughout this file:
+>
+> 1. **LOC drift**: `HookEngine.cpp` 3563 → **4588**;
+>    `TypingEngine.cpp` 1723 → **2000**. Cited line numbers are off by 100s.
+> 2. **PushChar step labels gone**: the old "step 0a / 0b / 1a / 1b / 2a /
+>    2c / 2d" inline labels referenced in some entries no longer exist
+>    inline. They live in engine rules under `src/core/engine/rule/`:
+>      - step 0a / 0a-cont / 0b → `QuickStartConsonantRule` (PreClassify:5)
+>      - step 1a / 1b → `ToneRule` (PostClassify:10) via `HandleToneFsm`
+>      - step 2a / 2d → `ModifierRule` (PostClassify:20) via
+>        `HandleModifierAction` (now a public method on TypingEngine)
+>      - step 2c → `QuickEndConsonantRule` (PostClassify:30)
+>      - step 3 tail → private helper `TypingEngine::FinalizeRegularChar()`
+>
+> When picking up an entry: search by function name, not line number. Refer
+> to `PROJECT_MAP.md` "PushChar() Processing Pipeline" for the current shape
+> and `docs/plans/2026-05-23-feature-pipeline-w7-retro.md` for the why.
 
 ## ✅ RESOLVED: P0 — engine_ single-writer violation (2026-05-19, P3e `8e9b5fb` + P3f `775487d`)
 
@@ -52,7 +72,10 @@ the four service boundaries the reviewer proposed are visible:
 | Output dispatch | IOutputInjector + injector_ + injector strategies | already extracted (Sprint 2 T3) |
 | State mutator | engine_ + composition fields + 8× VKEY_ASSERT_HOOK_THREAD methods | `HookStateMutator` class |
 
-HookEngine.cpp is 4239 LOC post Phase 4 — large but not unmanageable.
+HookEngine.cpp is 4588 LOC as of 2026-05-23 (was 4239 post Phase 4; W2-W4
+moved features out into `src/core/pipeline/` plugins, but cleanup +
+commit-undo bug fixes pushed the file higher again) — large but not
+unmanageable.
 Pre-Phase-2 was ~3500 LOC; net +700 LOC for mailbox infra + new method
 bodies + comments. The seams are **conceptually clear** even without
 the class boundary; readers can navigate via the section comments
@@ -183,13 +206,10 @@ or COM elevation block 1–3 s with a frozen dialog.
 
 Marker: comment in `ClassicSettingsDialog.cpp:OnTsfAppsToggle`.
 
-## 🟡 ClassicExcludedAppsDialog — host EXE guard misses VKeyClassic.exe (2026-05-20)
+## ✅ RESOLVED: ClassicExcludedAppsDialog host EXE guard (2026-05-23, commit `64e71c0`)
 
-`ClassicExcludedAppsDialog.cpp:185` blocks `vkey.exe` + `vkeylite.exe` but the
-actual VKeyLite output name is `VKeyClassic.exe` (see `CMakeLists.txt:342`:
-`set_target_properties(VKeyLite PROPERTIES OUTPUT_NAME "VKeyClassic")`). A
-user can accidentally exclude their own host. `ClassicTsfAppsDialog.cpp:190`
-already has the correct three-name guard — mirror it back to ExcludedApps.
+Three-name guard mirrored from `ClassicTsfAppsDialog.cpp:185`. The exclusion
+dialog now rejects `vkey.exe`, `vkeylite.exe`, AND `vkeyclassic.exe`.
 
 ## 🟡 Convert-hotkey unify capture — deferred items (2026-05-20)
 
