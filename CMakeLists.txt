@@ -77,6 +77,7 @@ set(NEXTKEY_CORE_SOURCES
     src/core/pipeline/Intent.h
     src/core/pipeline/IntentSink.h
     src/core/pipeline/ICompositionSession.h
+    src/core/pipeline/HookCompositionSession.h
     src/core/pipeline/KeyContext.h
     src/core/pipeline/IFeature.h
     src/core/pipeline/IGate.h
@@ -532,6 +533,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/pipeline/CoordinatorDispatchTest.cpp
     tests/pipeline/CoordinatorGateFilterTest.cpp
     tests/pipeline/OutputChannelTest.cpp
+    tests/pipeline/HookCompositionSessionTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
