@@ -21,6 +21,7 @@
 #include "core/CrashLog.h"
 #include "core/pipeline/BackwardEditFeature.h"
 #include "core/pipeline/CommitUndoFeature.h"
+#include "core/pipeline/EscRestoreRawFeature.h"
 #include "core/pipeline/HookCompositionSession.h"
 #include "core/pipeline/Intent.h"
 #include "core/pipeline/KeyContext.h"
@@ -124,6 +125,11 @@ HookEngine::HookEngine() {
     // synchronously to HandleCommitUndo(vk) which adapts to HandleCommitUndoFsm.
     coordinator_.Register(
         std::make_unique<NextKey::Pipeline::CommitUndoFeature>(*this));
+    // Wave 4a: EscRestoreRawFeature handles hotkey-triggered ESC (or any
+    // CancelComposition trigger) at PreEngine prio 40 — fires AFTER
+    // CommitUndoFeature so the FSM's ESC-exemption check runs first.
+    coordinator_.Register(
+        std::make_unique<NextKey::Pipeline::EscRestoreRawFeature>(*this));
 }
 
 HookEngine::~HookEngine() {
@@ -1034,11 +1040,23 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         return false;
     }
 
-    // 2d. Backspace-into-committed-word state machine (Idle/Ready/Primed).
-    // Wave 3: routes through Coordinator → CommitUndoFeature → ICommitUndoExecutor
-    // adapter → HandleCommitUndoFsm (the renamed FSM body). The feature emits
-    // ConsumeKey/PassThrough/nothing for Eat/Pass/Fallthrough respectively.
-    // Byte-identical to pre-W3 path; FSM body unchanged.
+    // Cache key states once per keystroke (GetKeyState is a snapshot, safe to
+    // cache). Used by step 2d KeyContext (W4a), HandlePreDispatch (vnMode
+    // tracking), and DispatchKeyAction. Moved above step 2d in W4a so the
+    // PreEngine pipeline has real modifier flags for EscRestoreRawFeature's
+    // hotkey check.
+    const bool cachedShift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    const bool cachedCapsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+    const bool cachedCtrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+    const bool cachedAlt = (GetKeyState(VK_MENU) & 0x8000) != 0;
+    const bool cachedWin = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
+
+    // 2d. PreEngine pipeline dispatch.
+    //   W3: CommitUndoFeature owns the commit-undo FSM at prio 20.
+    //   W4a: EscRestoreRawFeature owns hotkey-triggered raw-input restore at prio 40.
+    // Coordinator runs features in priority order. Features emit Intents::
+    // ConsumeKey (→ return true) or PassThrough (→ return false); empty batch
+    // means fall through to step 3+.
     {
         std::wstring_view engineRendered =
             engine_ ? std::wstring_view{engine_->Peek()} : std::wstring_view{};
@@ -1049,7 +1067,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         NextKey::Pipeline::KeyContext keyCtx{
             static_cast<std::uint16_t>(vkCode),
             L'\0',
-            false, false, false, false, false,
+            cachedShift, cachedCapsLock, cachedCtrl, cachedAlt, cachedWin,
             session,
             0
         };
@@ -1064,14 +1082,6 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         }
         // No flow-control intent → Fallthrough: continue to step 3+.
     }
-
-    // Cache key states once per keystroke (GetKeyState is a snapshot, safe to
-    // cache). Used by HandlePreDispatch (vnMode tracking) and DispatchKeyAction.
-    const bool cachedShift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-    const bool cachedCapsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
-    const bool cachedCtrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-    const bool cachedAlt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-    const bool cachedWin = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
 
     // H1c: English-mode short-circuit + Vietnamese pre-dispatch tracking
     // (steps 3 / 3a-3d). Behavior preserved byte-identical.
@@ -1561,25 +1571,13 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
         }
     }
 
-    // 3b'. Esc-restore-raw: when enabled, bare Esc with active composition
-    // injects the user's raw keys (víu → virus) instead of the Vietnamese
-    // form, then eats the Esc so the app never sees it. DispatchKeyAction's
-    // step 5 modifier guard runs *downstream* of HandlePreDispatch — Ctrl+Esc
-    // / Alt+Esc would still reach this branch, so guard modifiers explicitly.
-    //
-    // Post-BS extension (design 2026-05-17): if engine is empty but commit-undo
-    // is Primed (user typed space then BS), reuse the snapshot from
-    // commitStack_.back().rawInput. TryEscRestoreRaw handles both paths.
-    const bool hasLiveComposition = engine_->Count() > 0;
-    const bool hasPrimedCommit =
-        (commitUndoState_ == CommitUndoState::Primed) &&
-        !commitStack_.empty() &&
-        !commitStack_.back().rawInput.empty();
-    if (hotkeysSnap->Matches(Intent::CancelComposition, vkCode, currentMods,
-                             /*isDoubleTap=*/false, /*keyUp=*/false)
-        && (hasLiveComposition || hasPrimedCommit)) {
-        return TryEscRestoreRaw();
-    }
+    // 3b'. Esc-restore-raw: handled at PreEngine step 2d by EscRestoreRawFeature
+    // (Wave 4a). If ESC matched the CancelComposition hotkey and had live/primed
+    // composition, the feature emitted Intents::ConsumeKey and ProcessKeyDown
+    // returned true before reaching HandlePreDispatch. If we got here, ESC did
+    // not match (or no composition was active) — fall through to ToggleEnabled.
+    // Post-W4a: MOD-CANCEL secondary site at line 1981 (modifier-release path)
+    // still calls TryEscRestoreRaw inline — different trigger flow.
 
     // 3b''. ToggleEnabled — non-modifier binding (F-key, letter+chord, Esc+mods…)
     // fires on DOWN with exact mods match. Modifier-bound ToggleEnabled lives
@@ -3553,6 +3551,45 @@ NextKey::Pipeline::CommitUndoOutcome HookEngine::HandleCommitUndo(
         case KeyOutcome::Fallthrough: return NextKey::Pipeline::CommitUndoOutcome::Fallthrough;
     }
     return NextKey::Pipeline::CommitUndoOutcome::Fallthrough;  // defensive
+}
+
+/// Wave 4a — Pipeline::IEscRestoreRawExecutor adapter. Resolves the
+/// hotkey registry (CancelComposition intent) + composition-active gate
+/// internally, then delegates to TryEscRestoreRaw. Mirrors the inline
+/// check that previously lived at HandlePreDispatch lines 1578-1582
+/// (now removed). MOD-CANCEL secondary site at line 1981 still calls
+/// TryEscRestoreRaw directly — different trigger flow (modifier release),
+/// out of W4a scope.
+NextKey::Pipeline::EscRestoreOutcome HookEngine::TryEscRestore(
+    std::uint16_t vkCode,
+    bool shift, bool ctrl, bool alt, bool win) {
+    auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
+    if (!hotkeysSnap) {
+        return NextKey::Pipeline::EscRestoreOutcome::Fallthrough;
+    }
+    const uint32_t mods =
+        (shift ? NextKey::kModShift : 0u) |
+        (ctrl  ? NextKey::kModCtrl  : 0u) |
+        (alt   ? NextKey::kModAlt   : 0u) |
+        (win   ? NextKey::kModWin   : 0u);
+    const bool hotkeyMatch = hotkeysSnap->Matches(
+        NextKey::Intent::CancelComposition,
+        static_cast<uint32_t>(vkCode),
+        mods,
+        /*isDoubleTap=*/false,
+        /*keyUp=*/false);
+    const bool hasLiveComposition = (engine_ && engine_->Count() > 0);
+    const bool hasPrimedCommit =
+        (commitUndoState_ == CommitUndoState::Primed) &&
+        !commitStack_.empty() &&
+        !commitStack_.back().rawInput.empty();
+    if (hotkeyMatch && (hasLiveComposition || hasPrimedCommit)) {
+        const KeyOutcome legacy = TryEscRestoreRaw();
+        return (legacy == KeyOutcome::Eat)
+            ? NextKey::Pipeline::EscRestoreOutcome::Eat
+            : NextKey::Pipeline::EscRestoreOutcome::Fallthrough;
+    }
+    return NextKey::Pipeline::EscRestoreOutcome::Fallthrough;
 }
 
 /// Wave 2 — pipeline dispatch entry point used by the six call-sites that

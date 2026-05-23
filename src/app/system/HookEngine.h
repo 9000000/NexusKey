@@ -16,6 +16,7 @@
 #include "app/system/HookCommandMailbox.h"
 #include "core/pipeline/IBackwardEditExecutor.h"
 #include "core/pipeline/ICommitUndoExecutor.h"
+#include "core/pipeline/IEscRestoreRawExecutor.h"
 #include "core/pipeline/Coordinator.h"
 #include "core/pipeline/OutputChannel.h"
 #include <Windows.h>
@@ -47,7 +48,8 @@ using ModeChangeCallback = std::function<void(bool vietnamese)>;
 /// outputs via SendInput backspace+retype. Absorbs HotkeyManager logic.
 class HookEngine
     : public NextKey::Pipeline::IBackwardEditExecutor
-    , public NextKey::Pipeline::ICommitUndoExecutor {
+    , public NextKey::Pipeline::ICommitUndoExecutor
+    , public NextKey::Pipeline::IEscRestoreRawExecutor {
 public:
     HookEngine();
     ~HookEngine() override;
@@ -68,6 +70,14 @@ public:
     // into CommitUndoFeature::Try for true single-owner state.
     [[nodiscard]] NextKey::Pipeline::CommitUndoOutcome HandleCommitUndo(
         std::uint16_t vkCode) override;
+
+    // Pipeline::IEscRestoreRawExecutor — Wave 4a adapter for EscRestoreRawFeature.
+    // Resolves hotkey registry (CancelComposition intent) + live/primed-commit
+    // gates internally, then calls the existing TryEscRestoreRaw body if the
+    // gate passes. Returns Eat on consume, Fallthrough otherwise.
+    [[nodiscard]] NextKey::Pipeline::EscRestoreOutcome TryEscRestore(
+        std::uint16_t vkCode,
+        bool shift, bool ctrl, bool alt, bool win) override;
 
     /// Start the hook engine (installs keyboard hook + focus hook)
     bool Start(HINSTANCE hInstance, const TypingConfig& config,
