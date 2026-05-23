@@ -13,6 +13,7 @@
 #include "Phonotactics.h"
 #include "TypingAction.h"
 #include "core/config/TypingConfig.h"
+#include "core/engine/rule/EngineRuleRegistry.h"
 #include <vector>
 #include <string>
 
@@ -252,6 +253,7 @@ private:
     wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
     EnglishProtectionState engProt_;     // 3-tier English protection state
     mutable std::wstring composeBuf_;    // Reusable buffer for ComposeAll() — avoids heap alloc per Peek()
+    EngineRule::EngineRuleRegistry ruleRegistry_;  // W7.1: empty; W7.2+ registers rules
 };
 
 }  // namespace NextKey

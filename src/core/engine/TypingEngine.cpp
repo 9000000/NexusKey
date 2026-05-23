@@ -11,6 +11,7 @@
 #include "EngineHelpers.h"
 #include "TypingAction.h"
 #include "VietnameseTables.h"
+#include "core/engine/rule/EngineRuleContext.h"
 #include <algorithm>
 #include <array>
 #include <string_view>
@@ -111,6 +112,25 @@ void TypingEngine::PushChar(wchar_t keyChar) {
     rawInput_.push_back(keyChar);
     escRawHistory_.push_back(keyChar);  // Independent of tone/mod-escape — see TypingEngine.h
     qc_.onlyQC = false;  // Any new char clears the flag
+
+    // W7.1: build engine-rule ctx + PreClassify dispatch (empty registry today).
+    const wchar_t ruleLower = towlower(keyChar);
+    const EngineRule::EngineRuleContext ruleCtx{
+        keyChar,
+        ruleLower,
+        static_cast<bool>(iswupper(keyChar)),
+        TypingAction::None,
+        spellCheckDisabled_,
+        config_.allowEnglishBypass,
+        escape_.isEscaped(),
+        engProt_.bias,
+        false,
+        states_,
+        rawInput_,
+        config_,
+    };
+    if (ruleRegistry_.DispatchAtPhase(EngineRule::Phase::PreClassify, ruleCtx, *this)
+            == EngineRule::Result::Veto) return;
 
     // 0a. Quick start consonant: f→ph, j→gi, w→qu (only at word start)
     if (config_.quickStartConsonant && states_.empty()) {
@@ -230,6 +250,19 @@ void TypingEngine::PushChar(wchar_t keyChar) {
         ? overrideAction
         : ClassifyKey(lower, IsTelexMode(), IsVniMode());
     if (isVniDigitSequence) action = TypingAction::None;
+
+    // W7.1: PostClassify dispatch — action resolved, re-snapshot engine-local
+    // gate inputs in case PreClassify rules mutated them. Empty registry today.
+    {
+        EngineRule::EngineRuleContext postCtx = ruleCtx;
+        postCtx.action             = action;
+        postCtx.isVniDigitSeq      = isVniDigitSequence;
+        postCtx.spellCheckDisabled = spellCheckDisabled_;
+        postCtx.escapeActive       = escape_.isEscaped();
+        postCtx.bias               = engProt_.bias;
+        if (ruleRegistry_.DispatchAtPhase(EngineRule::Phase::PostClassify, postCtx, *this)
+                == EngineRule::Result::Veto) return;
+    }
 
     // "Gõ tự do" / allowEnglishBypass: when ON, treat all spell-check-driven
     // literal-treatment gates below as if spell check were OFF — user wants

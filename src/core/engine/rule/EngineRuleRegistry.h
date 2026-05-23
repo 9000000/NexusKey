@@ -26,6 +26,8 @@ class TypingEngine;
 
 namespace NextKey::EngineRule {
 
+struct EngineRuleContext;  // fwd — defined in EngineRuleContext.h
+
 class EngineRuleRegistry {
 public:
     EngineRuleRegistry();

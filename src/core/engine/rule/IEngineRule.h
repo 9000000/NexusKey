@@ -13,7 +13,6 @@
 
 #include "core/engine/rule/EngineRulePhase.h"
 #include "core/engine/rule/EngineRuleResult.h"
-#include "core/engine/rule/EngineRuleContext.h"
 #include "core/pipeline/GateMask.h"
 
 namespace NextKey {
@@ -21,6 +20,8 @@ class TypingEngine;  // fwd — Apply mutates engine state directly
 }
 
 namespace NextKey::EngineRule {
+
+struct EngineRuleContext;  // fwd — defined in EngineRuleContext.h
 
 class IEngineRule {
 public:

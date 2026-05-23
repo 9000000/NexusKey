@@ -3,6 +3,8 @@
 
 #include <algorithm>
 
+#include "core/engine/rule/EngineRuleContext.h"  // full def needed for EvaluateGates field reads
+
 namespace NextKey::EngineRule {
 
 using NextKey::Pipeline::GateId;
