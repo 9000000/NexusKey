@@ -487,7 +487,55 @@ NextKey::Pipeline::CommitUndoOutcome HookEngine::HandleCommitUndo(std::uint16_t 
 
 ## 5. Verification log
 
-(To be filled by W3.7.)
+### Linux gtest (W3.7, 2026-05-23)
+
+```
+[==========] 1956 tests from 108 test suites ran. (3064 ms total)
+[  PASSED  ] 1956 tests.
+```
+
+Pre-W3 baseline: 1944. After W3: 1956. Net: +12 new tests, 0 regressions.
+
+Breakdown:
+- W3.1 Intent variants: 2 tests
+- W3.2 HandleKeyAtStage: 4 tests
+- W3.5 CommitUndoFeature: 6 tests
+
+### Wave 3 commit chain (on `feat/architecture-review-v3.1`)
+
+```
+74b86bd feat(pipeline): W3.6 — wire CommitUndoFeature, route step 2d through Coordinator
+b2a6c3c feat(pipeline): W3.5 — CommitUndoFeature thin wrapper
+f3dc5e3 feat(pipeline): W3.4 — ICommitUndoExecutor + CommitUndoOutcome
+bc0eda6 refactor(pipeline): W3.3 — DispatchCoordinator scoped to PostEngine stage
+8555f30 feat(pipeline): W3.2 — Coordinator::HandleKeyAtStage per-stage dispatch
+c92cd42 feat(pipeline): W3.1 — add ConsumeKey + PassThrough flow-control intents
+5796f8d docs(pipeline): W3 plan — extract CommitUndoFeature + per-stage Coordinator dispatch
+```
+
+### Windows chaos (pending — anh runs)
+
+Required:
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 `
+  -Tag w3-release `
+  -VKeyExe build\Release\VKey.exe `
+  -RunnerExe build\tools\Release\VKeyTestRunner.exe
+```
+
+Target: ≥ 54/55 (W2 baseline). Chrome 1.3 expected false-fail (omnibox autocomplete, not VKey — same as W2).
+
+Manual commit-undo scenarios to confirm:
+1. Type "ca" + SPACE (commit). Then BS → Primed state. Type `j` (Telex tone) → expect replay producing "cạ".
+2. Type word + SPACE × 2 (multi-space). BS × 2 → expect commit-undo state recovers correctly (multi-space fix preserved).
+3. Type word + SPACE + ESC → cancel-composition exemption (Primed state, ESC is exempt). Expect undo state cleared, no replay.
+4. Type word + SPACE + alpha → starts new word. Expect commit-undo cancelled, no replay fired.
+
+Windows gtest (optional):
+```cmd
+cmake --build build --target VKeyTests --config Debug
+build\tests\Debug\VKeyTests.exe
+```
 
 ---
 
