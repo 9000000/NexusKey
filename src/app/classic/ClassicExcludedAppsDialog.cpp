@@ -181,8 +181,10 @@ void ClassicExcludedAppsDialog::AddApp(const std::wstring& name) {
 
     std::wstring lower = ToLowerAscii(name);
 
-    // Block VKey itself
-    if (lower == L"vkey.exe" || lower == L"vkeylite.exe") {
+    // Block VKey itself — VKeyLite ships with OUTPUT_NAME=VKeyClassic
+    // (CMakeLists.txt:342). Mirror the three-name guard already used by
+    // ClassicTsfAppsDialog.cpp:185.
+    if (lower == L"vkey.exe" || lower == L"vkeylite.exe" || lower == L"vkeyclassic.exe") {
         MessageBoxW(hwnd_, L"Không thể thêm VKey vào danh sách loại trừ.",
             L"Lỗi", MB_ICONWARNING);
         return;
