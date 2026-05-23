@@ -81,6 +81,9 @@ set(NEXTKEY_CORE_SOURCES
     src/core/pipeline/KeyContext.h
     src/core/pipeline/IFeature.h
     src/core/pipeline/IGate.h
+    src/core/pipeline/IBackwardEditExecutor.h
+    src/core/pipeline/BackwardEditFeature.h
+    src/core/pipeline/BackwardEditFeature.cpp
     src/core/pipeline/gates/EnglishBiasGate.h
     src/core/pipeline/gates/SpellCheckGate.h
     src/core/pipeline/gates/ToneEscapeGate.h
@@ -535,6 +538,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/pipeline/OutputChannelTest.cpp
     tests/pipeline/HookCompositionSessionTest.cpp
     tests/pipeline/EnglishBiasGateTest.cpp
+    tests/pipeline/BackwardEditFeatureTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
