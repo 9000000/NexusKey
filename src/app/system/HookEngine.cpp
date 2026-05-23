@@ -1091,7 +1091,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 
     // H1c: English-mode short-circuit + Vietnamese pre-dispatch tracking
     // (steps 3 / 3a-3d). Behavior preserved byte-identical.
-    switch (HandlePreDispatch(vkCode, vnMode, macroOn, macroEng,
+    switch (HandlePreDispatch(vkCode, vnMode,
                               cachedShift, cachedCapsLock,
                               cachedCtrl, cachedAlt, cachedWin)) {
         case KeyOutcome::Eat: return true;
@@ -1494,8 +1494,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
 //   Pass        → ProcessKeyDown returns false (English-mode passthrough,
 //                 ExpandedPassTrigger without synth, or Esc temp-off arming).
 //   Fallthrough → continue to DispatchKeyAction (vnMode + no expansion).
-HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
-                                                      bool macroEng,
+HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode,
                                                       bool cachedShift, bool cachedCapsLock,
                                                       bool cachedCtrl, bool cachedAlt,
                                                       bool cachedWin) {
@@ -1504,51 +1503,17 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
     // (ApplyHotkeyRegistry) replaces the pointer without invalidating
     // in-flight readers.
     const auto hotkeysSnap = hotkeys_.load(std::memory_order_acquire);
-    // Phase 3c: same RCU pattern for variable-size config data. One load
-    // covers every `macroTable empty?` check in this function — keeps
-    // the per-keystroke atomic op count flat against pre-P3 behaviour.
-    const auto cfgSnap = configSnapshot_.load(std::memory_order_acquire);
-    const bool hasMacros = cfgSnap && !cfgSnap->macroTable.empty();
+    // Note: configSnapshot_ + macroTable were read here pre-W4b to gate the
+    // inline macro blocks. Those moved to MacroFeature (W4b) at step 2d so
+    // the snapshot load is no longer needed in HandlePreDispatch.
     const uint32_t currentMods = ComputeModMask(cachedCtrl, cachedShift, cachedAlt, cachedWin);
 
-    // 3. English mode — skip Vietnamese processing
-    // Note: CJK layout no longer suppresses here. User controls V/E mode via toggle,
-    // matching EVKey behavior. Japanese IME "A" sub-mode is indistinguishable from
-    // "あ" mode via GetKeyboardLayout(), so layout-based suppression is too coarse.
+    // 3. English mode — skip Vietnamese processing.
+    // EN-mode macro tracking + dispatch is now owned by MacroFeature (W4b)
+    // at PreEngine step 2d. If the feature consumed/passed the key (Eat/Pass
+    // outcomes), ProcessKeyDown returned before reaching HandlePreDispatch.
+    // Reaching here means EN mode with no macro engagement — just pass through.
     if (!vnMode) {
-        if (macroOn && macroEng) {
-            // Track macro keys (all printable chars) in English mode
-            if (vkCode >= 0x41 && vkCode <= 0x5A) {
-                bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
-                rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
-                                         : towlower(static_cast<wchar_t>(vkCode));
-            } else if (hotkeysSnap->Matches(Intent::SkipMacro, vkCode, currentMods,
-                                            /*isDoubleTap=*/false, /*keyUp=*/false)
-                       && rawMacroBuffer_.empty()) {
-                tempMacroOff_ = true;
-                return KeyOutcome::Pass;
-            } else if (IsCommitTrigger(vkCode) && !tempMacroOff_) {
-                wchar_t triggerChar = VkToMacroChar(vkCode);
-                if (triggerChar > L' ') rawMacroBuffer_ += triggerChar;
-                if (!rawMacroBuffer_.empty() && IsMacroTrigger(vkCode)) {
-                    auto result = TryExpandMacro(triggerChar);
-                    if (result == MacroResult::ExpandedEatTrigger) return KeyOutcome::Eat;
-                    if (result == MacroResult::ExpandedPassTrigger) {
-                        if (synthEventsPending_ > 0) { InjectKey(vkCode); return KeyOutcome::Eat; }
-                        return KeyOutcome::Pass;
-                    }
-                } else if (!IsMacroTrigger(vkCode)) {
-                    // Disabled trigger still marks word boundary — clear buffer
-                    rawMacroBuffer_.clear();
-                    tempMacroOff_ = false;
-                }
-            } else if (vkCode == VK_BACK && !rawMacroBuffer_.empty()) {
-                rawMacroBuffer_.pop_back();
-            } else if (!(vkCode >= 0x41 && vkCode <= 0x5A) && !IsCommitTrigger(vkCode)) {
-                rawMacroBuffer_.clear();
-                tempMacroOff_ = false;
-            }
-        }
         HOOK_LOG(L"  skip: Vietnamese mode OFF");
         return KeyOutcome::Pass;
     }
@@ -1562,20 +1527,9 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
             autoCapState_, vkCode, cachedShift, cachedCtrl, cachedAlt, cachedWin);
     }
 
-    // 3b. Macro: track ALL typed characters (OpenKey approach).
-    // Alpha keys AND printable special chars are accumulated so macros with
-    // special characters in their key (e.g., "url\" → "URL") can be matched.
-    // Skip tracking entirely when no macros are defined — avoids string ops on every keystroke.
-    if (macroOn && hasMacros) {
-        if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            bool upper = cachedShift != cachedCapsLock;  // XOR: Shift inverts Caps Lock
-            rawMacroBuffer_ += upper ? static_cast<wchar_t>(vkCode)
-                                     : towlower(static_cast<wchar_t>(vkCode));
-        } else if (IsCommitTrigger(vkCode)) {
-            wchar_t ch = VkToMacroChar(vkCode);
-            if (ch > L' ') rawMacroBuffer_ += ch;  // Printable non-space chars
-        }
-    }
+    // 3b. Macro tracking moved to MacroFeature (W4b) at PreEngine step 2d.
+    // Pre-W4b accumulated alpha + commit-trigger chars into rawMacroBuffer_ here;
+    // now the executor adapter HookEngine::HandleMacro owns that mutation.
 
     // 3b'. Esc-restore-raw: handled at PreEngine step 2d by EscRestoreRawFeature
     // (Wave 4a). If ESC matched the CancelComposition hotkey and had live/primed
@@ -1605,30 +1559,10 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode, 
         return KeyOutcome::Eat;
     }
 
-    // 3c. Temp off macro by trigger: press the bound key with no pending text
-    //     → skip macro for next word. Registry's IsEnabled gates inside Matches();
-    //     the macro-system gates (macroOn, table non-empty) stay because skipping
-    //     macros is meaningless when none are loaded.
-    if (macroOn && hasMacros
-        && hotkeysSnap->Matches(Intent::SkipMacro, vkCode, currentMods,
-                                /*isDoubleTap=*/false, /*keyUp=*/false)
-        && engine_->Count() == 0 && rawMacroBuffer_.empty()) {
-        tempMacroOff_ = true;
-        HOOK_LOG(L"  tempMacroOff: enabled by Esc");
-        return KeyOutcome::Pass;  // Let Esc pass through
-    }
-
-    // 3d. Macro expansion on commit trigger (uses shared TryExpandMacro helper)
-    if (macroOn && hasMacros && !tempMacroOff_ && IsMacroTrigger(vkCode) && !rawMacroBuffer_.empty()) {
-        wchar_t triggerChar = VkToMacroChar(vkCode);
-        auto result = TryExpandMacro(triggerChar);
-        if (result == MacroResult::ExpandedEatTrigger) return KeyOutcome::Eat;
-        if (result == MacroResult::ExpandedPassTrigger) {
-            if (synthEventsPending_ > 0) { InjectKey(vkCode); return KeyOutcome::Eat; }
-            return KeyOutcome::Pass;
-        }
-    }
-
+    // 3c, 3d. SkipMacro hotkey + macro expansion — owned by MacroFeature
+    // (W4b) at PreEngine step 2d. Reaching this point means the feature
+    // returned Fallthrough/NoOp (no macro engagement); fall through to the
+    // post-HandlePreDispatch dispatcher (step 4+).
     return KeyOutcome::Fallthrough;
 }
 

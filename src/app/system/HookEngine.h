@@ -206,8 +206,7 @@ private:
     /// Returns KeyOutcome::Eat on success, Fallthrough if buffer empty / disabled.
     [[nodiscard]] KeyOutcome TryEscRestoreRaw();
 
-    [[nodiscard]] KeyOutcome HandlePreDispatch(DWORD vkCode, bool vnMode, bool macroOn,
-                                                bool macroEng,
+    [[nodiscard]] KeyOutcome HandlePreDispatch(DWORD vkCode, bool vnMode,
                                                 bool cachedShift, bool cachedCapsLock,
                                                 bool cachedCtrl, bool cachedAlt,
                                                 bool cachedWin);
