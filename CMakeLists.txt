@@ -91,6 +91,8 @@ set(NEXTKEY_CORE_SOURCES
     src/core/pipeline/EscRestoreRawFeature.h
     src/core/pipeline/EscRestoreRawFeature.cpp
     src/core/pipeline/IMacroExecutor.h
+    src/core/pipeline/MacroFeature.h
+    src/core/pipeline/MacroFeature.cpp
     src/core/pipeline/gates/EnglishBiasGate.h
     src/core/pipeline/gates/SpellCheckGate.h
     src/core/pipeline/gates/ToneEscapeGate.h
@@ -549,6 +551,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/pipeline/BackwardEditFeatureTest.cpp
     tests/pipeline/CommitUndoFeatureTest.cpp
     tests/pipeline/EscRestoreRawFeatureTest.cpp
+    tests/pipeline/MacroFeatureTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
