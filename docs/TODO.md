@@ -431,6 +431,60 @@ guard mirror 2a, nhưng `pow` không trigger bias HardEnglish ở spell OFF
 
 ---
 
+## 🟢 `WouldBeValidSyllable` speculation parity for Horn paths (2026-05-23)
+
+### Context
+
+Commit `ad09f15` fixed the free-marking circumflex path (`susata → suất`) by
+adding a `speculateRelocateTone` opt-in to `WouldBeValidSyllable` so the
+speculative state mirrors the real runtime mutation (`mod = newMod` followed by
+`RelocateToneToTarget()`). Without parity the validator saw a half-transformed
+state with the tone stranded on the pre-promotion vowel and marked Valid
+syllables as Invalid.
+
+Two Horn callsites still rely on the mod-only speculation:
+
+- `HandleHornW` P5 — `TypingEngine.cpp:1216`, runtime calls
+  `RelocateToneToHornVowel()` after `states_[targetU].mod = Horn`.
+- `HandleHornW` P6 — `TypingEngine.cpp:1229`, same pattern.
+
+`RelocateToneToHornVowel` is a *different* relocation function from
+`RelocateToneToTarget`, so the existing `speculateRelocateTone=true` opt-in
+cannot be reused as-is.
+
+### Hypothesis
+
+The same shape of bug likely exists for `w` modifier inputs where a tone has
+been applied to a vowel that horn-promotion will displace (e.g. tone on `u`
+that becomes ư/ươ after `w`). Needs a concrete repro before deciding scope —
+do NOT speculatively widen until a real input string surfaces a wrong reject.
+
+### Plan when surfaced
+
+1. Repro: find a w-modifier input (with spell-check ON) where the runtime
+   produces a valid syllable via `RelocateToneToHornVowel` but
+   `WouldBeValidSyllable(targetU, Horn, aIdx)` returns false.
+2. Extend the param from `bool speculateRelocateTone` to an enum
+   `RelocationKind { None, TargetTone, HornVowel }` so the helper can run the
+   matching relocation function. Default stays `None` (preserves adjacent +
+   Breve P7 + ShouldRejectModifier behaviour).
+3. Update both Horn callsites and add regression tests modelled on
+   `SuatPlusA_PromotesToSuat`.
+
+### Why deferred
+
+No concrete user report yet — only a structural symmetry observation. Per
+`feedback_no_architecture_thrash`: don't widen the helper before there is a
+repro that fails today.
+
+### Refs
+
+- Memory: `project_speculate_mirror_runtime_2026-05-23.md`
+- Fix: commit `ad09f15` on `feat/architecture-review-v3.1`
+- Test added by fix: `CircumflexFreeMarkSpellOnTest.SuatPlusA_PromotesToSuat`
+
+---
+
 ## 🟡 Commit-undo replay sai sau auto-restore + gõ-lại + BS (2026-05-18)
 
 ### Triệu chứng (user report)
