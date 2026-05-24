@@ -27,13 +27,9 @@
 #include <Windows.h>
 #include <functional>
 #include <atomic>
-#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <thread>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 // Wave 3 PR 3.3 — IOutputInjector forward declaration removed; the type is
@@ -487,13 +483,11 @@ private:
     // Wave 3 PR 3.4 — commit-undo state machine extracted to CommitState.
     // Backspace-into-committed-word (re-enter composition after commit + BS)
     // is preserved byte-identical; HandleCommitUndoFsm orchestrates against
-    // `commitState_` instead of scattered fields. Type aliases keep call
-    // sites compact: `CommitUndoState` → `CommitState::State`, `CommitEntry`
-    // → `CommitState::Entry`.
-    using CommitUndoState = CommitState::State;
+    // `commitState_` instead of scattered fields. Only the aliases actually
+    // referenced in HookEngine.cpp survive PR 3.5 cleanup; everything else
+    // goes through `CommitState::` directly.
     using CommitEntry     = CommitState::Entry;
-    static constexpr wchar_t kBackspaceMarker  = CommitState::kBackspaceMarker;
-    static constexpr size_t  kMaxCommitStack   = CommitState::kMaxStack;
+    static constexpr wchar_t kBackspaceMarker     = CommitState::kBackspaceMarker;
     static constexpr DWORD   kCommitUndoTimeoutMs = CommitState::kReadyTimeoutMs;
     CommitState commitState_;
 

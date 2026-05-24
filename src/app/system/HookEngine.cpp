@@ -35,8 +35,6 @@
 #include <cstdio>
 #include <exception>
 #include <tlhelp32.h>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace NextKey {
@@ -1012,7 +1010,7 @@ HookEngine::KeyOutcome HookEngine::RunTopGuards(DWORD vkCode) {
 }
 
 // H1a: commit-undo state machine extracted from ProcessKeyDown step 2d.
-// Supports multi-word backward — stack holds up to kMaxCommitStack committed words.
+// Supports multi-word backward — stack holds up to CommitState::kMaxStack committed words.
 // Ready:  set after commit with space/enter, or when engine empties after BS with stack non-empty.
 // Primed: BS in Ready deletes the space; next alpha/BS triggers replay.
 //
