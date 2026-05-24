@@ -1,0 +1,128 @@
+# 📖 Hướng dẫn sử dụng VKey
+
+> [!TIP]
+> **💡 Quick Tips:** Bạn có thể copy toàn bộ nội dung trang này và gửi cho [ChatGPT](https://chatgpt.com) / [Gemini](https://gemini.google.com) kèm câu hỏi của bạn để được trả lời nhanh về cách sử dụng VKey.
+
+---
+
+## 📌 Mục lục
+1. [❓ Câu hỏi thường gặp (FAQ)](#faq)
+2. [⚙️ Các chức năng chính](#features)
+   - [⌨️ 1. Kiểu gõ](#typing-method)
+   - [📱 2. Cấu hình từng ứng dụng](#app-config)
+   - [🔄 3. Lưu chế độ gõ theo app](#remember-mode)
+   - [🚫 4. Loại trừ ứng dụng](#exclude-app)
+   - [🌏 5. Tự tắt khi bàn phím CJK](#cjk-layout)
+   - [🔠 6. Viết hoa chữ cái đầu câu](#auto-capitalize)
+   - [✍️ 7. Gõ tự do](#free-typing)
+   - [⬅️ 8. BS giữ chữ khi có gợi ý](#backspace-suggest)
+   - [📝 9. Kiểm tra chính tả](#spellcheck)
+   - [⚡ 10. Quản lý phím tắt](#hotkey-mgmt)
+   - [🔗 11. Sử dụng TSF](#tsf-mode)
+   - [🚀 12. Gõ tắt (Macro)](#macro)
+3. [🛡️ Cảnh báo bảo mật & Debug Log](#security-warning)
+
+---
+
+## <span id="faq">❓ Câu hỏi thường gặp (FAQ)</span>
+
+### 🎮 Q. Tôi có thể vừa gõ tiếng Việt vừa chơi game mà không sợ bị dính phím không?
+**A.** Hoàn toàn có thể! VKey được tối ưu hóa đặc biệt cho game thủ. Với cơ chế xử lý thông minh, bạn có thể thoải mái di chuyển bằng các phím `W`, `A`, `S`, `D` hoặc thao tác nhanh trong game mà không lo bị kẹt hay nuốt phím. 👉 Chi tiết xem tại phần [⌨️ Kiểu gõ](#typing-method).
+
+### 📱 Q. Tôi muốn tùy chỉnh mỗi app một kiểu gõ và bảng mã khác nhau có được không?
+**A.** Được chứ! VKey cho phép thiết lập profile riêng (bao gồm kiểu gõ và bảng mã) cho từng phần mềm. Khi bạn chuyển cửa sổ làm việc, VKey sẽ tự động nhận diện và áp dụng cấu hình tương ứng mà không cần bạn phải thao tác phím tắt thủ công. 👉 Chi tiết xem tại phần [📱 Cấu hình từng ứng dụng](#app-config).
+
+### 🚀 Q. Tôi muốn tạo các từ gõ tắt (macro) dài, phức tạp và xuống dòng thì sao?
+**A.** VKey hỗ trợ bạn tạo các macro cực dài lên tới **20.000 ký tự** và hỗ trợ xuống dòng đầy đủ, giúp bạn dễ dàng chèn nhanh các đoạn văn bản mẫu hoặc biểu mẫu phức tạp. 👉 Chi tiết xem tại phần [🚀 Gõ tắt (Macro)](#macro).
+
+### 🔄 Q. Tôi muốn khi đang gõ tiếng Việt ở app này, chuyển sang app khác thì nó tự động chuyển sang gõ tiếng Anh thì làm thế nào?
+**A.** Bạn có hai lựa chọn cực kỳ tiện lợi:
+1. Sử dụng tính năng **Lưu chế độ gõ theo app** để VKey tự động nhớ trạng thái `V` (tiếng Việt) hoặc `E` (tiếng Anh) của từng ứng dụng. 👉 Xem [🔄 Lưu chế độ gõ theo app](#remember-mode).
+2. Sử dụng tính năng **Loại trừ ứng dụng** để ép ứng dụng đó luôn gõ tiếng Anh, ngăn chặn hoàn toàn việc vô tình bật lại tiếng Việt bằng phím tắt. 👉 Xem [🚫 Loại trừ ứng dụng](#exclude-app).
+
+### 🌏 Q. Tôi dùng nhiều layout bàn phím khác nhau, VKey có thể tự động chuyển sang E mode khi tôi đổi sang bàn phím ngôn ngữ khác không?
+**A.** Có! Khi bạn bật tùy chọn **Tự tắt khi bàn phím CJK**, VKey sẽ tự động phát hiện khi bạn chuyển đổi sang các layout bàn phím Trung - Nhật - Hàn để tắt gõ tiếng Việt. Khi bạn đổi về layout US, VKey sẽ tự động kích hoạt lại chế độ tiếng Việt. 👉 Chi tiết xem tại phần [🌏 Tự tắt khi bàn phím CJK](#cjk-layout).
+
+### 🎨 Q. Tôi muốn tùy chỉnh màu sắc icon ở khay hệ thống (traybar) thì có được không?
+**A.** Hoàn toàn được. VKey cho phép bạn chọn các chế độ màu sắc icon: **Nhiều màu (Mặc định)**, **Trắng**, hoặc **Đen** và các tùy biến khác để hiển thị đẹp mắt, hài hòa nhất với theme hệ điều hành của bạn.
+
+### 🖥️ Q. Tôi dùng màn hình rời làm màn hình chính, làm sao biết được VKey đang ở chế độ gõ nào?
+**A.** VKey hỗ trợ tính năng **Icon nổi (Floating Icon)** 💬 hiển thị trực quan trạng thái gõ `V`/`E` ngay trên màn hình chính, giúp bạn dễ dàng theo dõi dù đang mở ứng dụng toàn màn hình hoặc dùng nhiều màn hình.
+
+---
+
+## <span id="features">⚙️ Các chức năng chính</span>
+
+### <span id="typing-method">⌨️ 1. Kiểu gõ</span>
+VKey cung cấp nhiều phương thức gõ linh hoạt để đáp ứng mọi nhu cầu:
+- 🔹 **Telex:** Kiểu gõ dấu bằng chữ phổ biến. Phím `w` được dùng làm chữ `ư` hoặc dấu móc cho `ư`, `ơ` và dấu mũ cho `ă`. Tối ưu hóa phản hồi phím giúp bạn chat tiếng Việt trong game mượt mà, không lo dính hay nuốt phím 🎮.
+- 🔹 **Telex + Vni:** Cho phép bạn gõ đồng thời cả 2 kiểu gõ và thoải mái kết hợp các phím đặt dấu của Telex và VNI trong cùng một từ.
+- 🔹 **Simple Telex:** Giữ nguyên giá trị gốc (raw keys) của phím `w` và cặp phím ngoặc vuông `[` `]` thay vì tự động chuyển thành `ư`, `ơ`.
+- 🔹 **Tự định nghĩa:** Cho phép bạn tùy ý gán các phím đặt dấu theo thói quen cá nhân 🛠️.
+
+### <span id="app-config">📱 2. Cấu hình từng ứng dụng</span>
+- 🔸 Hỗ trợ thiết lập profile độc lập (kiểu gõ, bảng mã) cho từng ứng dụng cụ thể.
+- 🔸 Cung cấp tùy chọn chuyển sang **"Dùng Clipboard"** 📋 cho các ứng dụng không tương thích với cơ chế phím Hook. VKey sẽ tự động khôi phục và giữ nguyên nội dung Clipboard nếu đó là văn bản thuần túy (plain text). Tuy nhiên, các dữ liệu phức tạp khác như hình ảnh trong clipboard sẽ bị xóa sạch khi bạn thực hiện gõ/xóa.
+
+### <span id="remember-mode">🔄 3. Lưu chế độ gõ theo app</span>
+- Tự động ghi nhớ trạng thái gõ tiếng Việt (`V`) hoặc tiếng Anh (`E`) cho từng ứng dụng. Khi bạn chuyển đổi qua lại giữa các ứng dụng, VKey sẽ tự động kích hoạt lại trạng thái gõ tương ứng của ứng dụng đó ✨.
+
+### <span id="exclude-app">🚫 4. Loại trừ ứng dụng</span>
+- Danh sách các ứng dụng được cấu hình luôn luôn gõ tiếng Anh. Khi hoạt động trong các ứng dụng này, VKey sẽ khóa hoàn toàn chế độ gõ tiếng Việt và bỏ qua mọi phím tắt chuyển đổi để tránh phiền toái (rất thích hợp cho các tựa game 🎮 hoặc IDE viết code 💻). Nên bật thêm tính năng lưu chế độ gõ theo app để có trải nghiệm tốt nhất.
+
+### <span id="cjk-layout">🌏 5. Tự tắt khi bàn phím CJK</span>
+- Tự động tắt chế độ tiếng Việt (chuyển sang `E` mode) khi hệ điều hành chuyển sang layout bàn phím Trung 🇨🇳 - Nhật 🇯🇵 - Hàn 🇰🇷.
+- Tự động bật lại chế độ tiếng Việt (`V` mode) ngay khi bạn quay trở lại layout US.
+
+### <span id="auto-capitalize">🔠 6. Viết hoa chữ cái đầu câu</span>
+- Tự động viết hoa chữ cái đầu tiên khi bạn bắt đầu câu mới, hỗ trợ trên cả chế độ tiếng Việt (`V` mode) lẫn tiếng Anh (`E` mode).
+- *📌 Lưu ý:* Do giới hạn kỹ thuật của hook engine, đôi lúc tính năng này có thể hoạt động chưa chính xác. Bạn có thể bật tính năng [🔗 TSF](#tsf-mode) để tăng cường khả năng nhận diện ngữ cảnh của câu.
+
+### <span id="free-typing">✍️ 7. Gõ tự do</span>
+- Vô hiệu hóa toàn bộ cơ chế kiểm tra chính tả tiếng Việt và tiếng Anh. Giúp bạn thoải mái gõ code, viết tắt, hoặc nhập các ký tự đặc biệt mà không lo bị tự động sửa hay khôi phục từ 🆓.
+
+### <span id="backspace-suggest">⬅️ 8. Phím Backspace (BS) giữ chữ khi có gợi ý</span>
+- *Mặc định: Tắt.*
+- Khi bạn nhập liệu trên thanh tìm kiếm trình duyệt 🔍 hoặc ô nhập liệu có gợi ý tự động: thông thường phím `Backspace` sẽ xóa ký tự cuối cùng và làm mất ô gợi ý.
+- Nếu bật tính năng này, nhấn `Backspace` sẽ chỉ ẩn/tắt hộp gợi ý đi mà vẫn giữ nguyên chữ bạn đã gõ. *📌 Lưu ý:* Tính năng này đôi khi có thể gây lỗi hiển thị ký tự gõ tiếp theo trên một số trình duyệt.
+
+### <span id="spellcheck">📝 9. Các tính năng kiểm tra chính tả</span>
+- ✅ **Khôi phục từ với phím sai:** Khi bạn gõ sai chính tả tiếng Việt và nhấn phím `Space`, VKey sẽ tự động hoàn trả lại đúng các ký tự gốc đã nhập. Ví dụ: gõ nhầm `pềct` + `Space` → tự động khôi phục lại thành `perfect`.
+- ✅ **Loại trừ chính tả:** Cho phép bạn thêm các từ đặc biệt, viết tắt hoặc thuật ngữ chuyên ngành vào danh sách loại trừ để bộ gõ không nhận nhầm là lỗi chính tả, giúp quá trình gõ chữ trơn tru hơn.
+
+### <span id="hotkey-mgmt">⚡ 10. Quản lý phím tắt</span>
+- 🔸 **Khôi phục từ gốc chủ động:** Cho phép thiết lập phím tắt để ngay lập tức trả lại các ký tự gốc (raw keys) mà không cần nhấn phím cách (`Space`) hoặc đợi gõ hết từ. Ví dụ: gõ `asus` → hiển thị thành `aus` → nhấn `ESC` → lập tức khôi phục lại thành `asus`.
+- 🔸 **Hotkeys hệ thống:** Tự do tùy chỉnh các tổ hợp phím để bật/tắt nhanh bộ gõ tiếng Việt hoặc bỏ qua gõ tắt tạm thời.
+
+### <span id="tsf-mode">🔗 11. Sử dụng TSF (Text Services Framework)</span>
+VKey tích hợp sâu công nghệ TSF của Windows mang lại độ tương thích tối đa:
+- 🟢 **Tăng cường ngữ cảnh (chỉ bật TSF):** Giúp VKey đọc hiểu đoạn văn xung quanh tốt hơn để sửa dấu và tự động viết hoa cực kỳ chính xác. Bộ gõ vẫn dùng Hook làm phương thức nhập chính nên bạn không lo chữ bị gạch chân khi gõ. Bạn chỉ cần bật lên mà không cần cấu hình thêm ứng dụng vào danh sách.
+- 🟡 **TSF làm phương thức nhập chính (khi thêm app vào danh sách):** Khi bạn thêm ứng dụng vào danh sách TSF, VKey sẽ chuyển hẳn sang sử dụng cơ chế nhập TSF cho ứng dụng đó.
+  - ✅ *Ưu điểm:* Gõ tiếng Việt tốt trong mọi phần mềm, kể cả ứng dụng Windows Store (UWP) hay game chống cheat nghiêm ngặt.
+  - ⚠️ *Nhược điểm:* Chữ đang gõ sẽ có đường gạch chân tạm thời của Windows trước khi được xác nhận (commit).
+
+### <span id="macro">🚀 12. Gõ tắt (Macro)</span>
+- 💬 Hỗ trợ lưu trữ các đoạn gõ tắt dài tới **20.000 ký tự**, hỗ trợ xuống dòng thoải mái.
+- 🎯 Linh hoạt tùy chọn các phím để kích hoạt (trigger) gõ tắt như: phím Cách (`Space`), `Enter`, `Tab` hoặc các phím điều hướng.
+
+---
+
+## <span id="security-warning">🛡️ Cảnh báo bảo mật & Debug Log</span>
+
+> [!CAUTION]
+> ### 🚨 Cảnh báo bảo mật — Debug Log
+>
+> Bật Debug Log sẽ **ghi lại toàn bộ thao tác bàn phím** của bạn, bao gồm cả raw key.
+> File log có thể chứa **🔑 mật khẩu** hoặc **thông tin nhạy cảm** nếu bật trong thời gian dài.
+>
+> ---
+>
+> 🔐 **Trước khi gửi file log cho ai khác:**
+>
+> | | Bước |
+> |---|---|
+> | 👀 | Mở file log và **xem lại nội dung** |
+> | 🗑️ | Xóa các dòng **không liên quan** dựa theo thời gian |
+> | ✂️ | **Chỉ gửi đoạn cần thiết** cho việc debug |
+
+📚 Để biết thêm về các biện pháp tăng cường bảo mật của dự án, vui lòng đọc tài liệu chi tiết tại [🔒 SECURITY.md](docs/SECURITY.md).
