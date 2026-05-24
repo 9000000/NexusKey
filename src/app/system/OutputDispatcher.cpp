@@ -107,7 +107,7 @@ bool IsEditCompatibleClass(const wchar_t* cls) noexcept {
 // ─────────────────────────────────────────────────────────────────────
 // Ctor / dtor / Install / Uninstall
 // ─────────────────────────────────────────────────────────────────────
-OutputDispatcher::OutputDispatcher(const FocusOwner& focus)
+OutputDispatcher::OutputDispatcher(FocusOwner& focus)
     : focus_(focus) {
     // Seed default injector via factory so the field is never null —
     // first-keystroke hot path can dereference unconditionally even

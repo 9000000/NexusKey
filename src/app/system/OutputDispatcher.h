@@ -50,7 +50,7 @@ class FocusOwner;  // forward declaration
 
 class OutputDispatcher {
 public:
-    explicit OutputDispatcher(const FocusOwner& focus);
+    explicit OutputDispatcher(FocusOwner& focus);
     ~OutputDispatcher();
 
     OutputDispatcher(const OutputDispatcher&) = delete;
@@ -178,7 +178,11 @@ private:
     /// Install / cleared in Uninstall.
     static void OnSynthDispatched(int delta) noexcept;
 
-    const FocusOwner& focus_;
+    // Non-const ref: TryEditMessagePaste calls focus_.RefreshFocusCache()
+    // on cache miss (non-const — writes cachedFocusedHwnd_/Class). All
+    // other dispatcher reads of focus_ (CachedFocusedHwnd, CachedFocusedClass)
+    // are const-safe and compatible with either const- or non-const ref.
+    FocusOwner& focus_;
 
     std::atomic<std::shared_ptr<NextKey::Output::IOutputInjector>> injector_;
     std::atomic<int>  synthEventsPending_{0};
