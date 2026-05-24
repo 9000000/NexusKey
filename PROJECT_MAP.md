@@ -35,6 +35,23 @@
 VKey/
 ├── src/
 │   ├── core/                          # ← VKeyEngine + VKeyCore
+│   │   ├── AutoCapDecision.h          # Auto-caps gate decision logic (Linux-portable)
+│   │   ├── AutoCapStateTransition.h   # Auto-caps FSM rule (Linux-portable, GTest-friendly)
+│   │   ├── CjkSwitchDecision.h        # CJK layout V/E auto-switch decision
+│   │   ├── CommitUndoExemption.h      # Commit-undo per-app exemption matcher
+│   │   ├── CrashLog.cpp/h             # Top-level exception → file log
+│   │   ├── Debug.h                    # Debug logging macros
+│   │   ├── DigitLedWordDecision.h     # Digit-led word treat-as-English decision
+│   │   ├── Logger.cpp/h               # Runtime-toggleable file logger (HOOK_LOG backend)
+│   │   ├── MacroCase.cpp/h            # Macro case-mapping (H5 CaseMapper DI seam)
+│   │   ├── MacroPrefix.h              # Macro prefix matching
+│   │   ├── SmartSwitchManager.cpp/h   # Auto V/E switch by context
+│   │   ├── SmartSwitchState.h         # State tracking for smart switch
+│   │   ├── Strings.cpp/h              # Localized string dictionary (S() lookup)
+│   │   ├── SystemConfig.h             # System-level constants
+│   │   ├── UIConfig.h                 # UI-related constants
+│   │   ├── Version.h                  # Version string
+│   │   ├── WinStrings.h               # Wstring ↔ UTF8 conversion (Win32-only)
 │   │   ├── engine/                    # Pure C++ input engines
 │   │   │   ├── IInputEngine.h         # Interface: ProcessKey, GetResult, Reset
 │   │   │   ├── TypingEngine.cpp/h     # Unified typing engine — Telex + VNI both routed through here (2000 LOC; post W7 framework, PushChar is a 73-LOC skeleton dispatching to engine rules)
@@ -94,15 +111,12 @@ VKey/
 │   │   ├── ipc/                       # EXE ↔ DLL communication
 │   │   │   ├── SharedState.h          # Memory-mapped struct: flags, config snapshot
 │   │   │   ├── SharedConstants.h      # Shared memory names, sizes
-│   │   │   └── SharedStateManager.cpp/h  # CreateFileMapping/MapViewOfFile (Win32)
-│   │   ├── SmartSwitchManager.cpp/h   # Auto V/E switch by context
-│   │   ├── SmartSwitchState.h         # State tracking for smart switch
-│   │   ├── Strings.cpp/h             # Localized string dictionary (S() lookup)
-│   │   ├── WinStrings.h              # Wstring ↔ UTF8 conversion (Win32-only)
-│   │   ├── Debug.h                    # Debug logging macros
-│   │   ├── SystemConfig.h            # System-level constants
-│   │   ├── UIConfig.h                # UI-related constants
-│   │   └── Version.h                 # Version string
+│   │   │   ├── SecurityHelpers.h      # ACL / DACL helpers for named-object hardening
+│   │   │   ├── SharedStateManager.cpp/h  # CreateFileMapping/MapViewOfFile (Win32)
+│   │   │   └── (SharedState.h hosts the 429-LOC IPC contract)
+│   │   └── hotkey/                    # Unified hotkey registry (cancel-composition / skip-macro / toggle-enabled)
+│   │       ├── HotkeyRegistry.cpp/h   # Atomic RCU-published binding table (factory defaults + slot dispatch)
+│   │       └── HotkeyLabel.cpp/h      # Human-readable binding labels for the settings UI
 │   │
 │   ├── tsf/                           # ← VKeyTSF (DLL)
 │   │   ├── TextService.cpp/h          # ITfTextInputProcessorEx — TSF entry point
@@ -140,20 +154,34 @@ VKey/
 │       │   ├── SplitDispatchInjector.cpp/h  # Electron (6 ms) + Console (5 ms) — split SendInput with sleep
 │       │   └── Internal.cpp/h         # Shared TrackedSendInput primitive
 │       ├── system/                    # System-level services
-│       │   ├── HookEngine.cpp/h       # Keyboard hook + dispatch (3563 LOC — largest; H1 decomposed `ProcessKeyDown` 561→79 LOC)
-│       │   ├── TrayIcon.cpp/h         # System tray icon + menu (18K cpp)
-│       │   ├── QuickConvert.cpp/h     # Quick consonant shortcuts (15K cpp)
-│       │   ├── FloatingIcon.cpp/h     # Floating V/E indicator overlay
+│       │   ├── HookEngine.cpp/h       # Coordinator + dispatch chain (3393 LOC post Wave 3; H1 decomposed `ProcessKeyDown` 561→79 LOC; Wave 3 carved focus / output / commit-state / lifecycle into separate owners — see below)
+│       │   │                          # ── Wave 3 owner classes (carved from HookEngine, byte-identical refactor) ──
+│       │   ├── HookLifecycle.cpp/h    # PR 3.1 — dedicated WH_KEYBOARD_LL/WH_MOUSE_LL hook thread, HHOOK handles, mailbox wake-up plumbing, start-time handshake CV
+│       │   ├── FocusOwner.cpp/h       # PR 3.2 — WinEvent hooks (FOREGROUND+MINIMIZEEND), foreground PID/exe tracker, focused-child cache, AppProfile LRU classify cache, smart-switch map, CJK layout state, WebView2 detection (640 LOC cpp)
+│       │   ├── OutputDispatcher.cpp/h # PR 3.3 — IOutputInjector RCU publish, ReplaceUnicode orchestrator (RichEdit retry → clipboard fallback → generic), synth-event counter, EM_REPLACESEL fast path, ClipboardPaste (551 LOC cpp)
+│       │   ├── CommitState.h          # PR 3.4 — header-only commit-undo state machine (Idle/Ready/Primed FSM + CommitEntry LIFO stack + leading-trigger snapshot + input-history replay buffer)
+│       │   ├── HookCommandMailbox.cpp/h  # Cross-thread bit-flag mailbox (FocusChange / ConfigReload / TickPoll / ToggleVN) — wake-once trampoline + FocusClassification POD
+│       │   ├── HotkeyManager.cpp/h    # Global hotkey registration + LL-callback slot dispatch
+│       │   ├── HotkeyWiring.cpp/h     # EXE-side hotkey ↔ feature wiring (cancel composition / skip macro / toggle V-E)
+│       │   ├── MainThreadWorker.cpp/h # Sprint 1 D10 — main-thread tick worker (200ms cadence; OnTickPoll / config-reload / heartbeat publishing)
+│       │   ├── HeartbeatPublisher.cpp/h  # Watchdog heartbeat (counter + timestamp into SharedState)
+│       │   ├── WatchdogController.cpp/h  # External watchdog process supervisor — restart on hang/crash
+│       │   ├── PendingDllApply.cpp/h  # DLL update pending-apply state (download done, waiting for reboot/relaunch)
+│       │   ├── PerfHistogram.cpp/h    # Phase 1 perf scope timer + bucketed histogram log (PERF_SCOPE macro)
+│       │   ├── DebugLogWarning.h      # `[[deprecated]]` shim — fires a build warning if a non-runtime log call sneaks in
+│       │   ├── Win32CaseMapper.h      # CaseMapper DI (H5 seam): Win32 LCMapStringEx adapter for MacroCase tests
+│       │   ├── TrayIcon.cpp/h         # System tray icon + menu (623 LOC cpp)
+│       │   ├── QuickConvert.cpp/h     # Quick consonant shortcuts (714 LOC cpp)
+│       │   ├── FloatingIcon.cpp/h     # Floating V/E indicator overlay (334 LOC cpp)
 │       │   ├── DarkModeHelper.cpp/h   # Win32 dark mode detection + DWM attributes
-│       │   ├── HotkeyManager.cpp/h    # Global hotkey registration
-│       │   ├── UpdateChecker.cpp/h    # GitHub release checker
-│       │   ├── UpdateInstaller.cpp/h  # Auto-update installer
-│       │   ├── UpdateSecurity.cpp/h   # Update signature verification
-│       │   ├── TsfRegistration.cpp/h  # Register/unregister TSF DLL
-│       │   ├── ToastPopup.cpp/h       # Toast notification popup
-│       │   ├── SubprocessRunners.cpp/h  # Launch subdialogs as child processes
+│       │   ├── UpdateChecker.cpp/h    # GitHub release checker (373 LOC cpp)
+│       │   ├── UpdateInstaller.cpp/h  # Auto-update installer (442 LOC cpp)
+│       │   ├── UpdateSecurity.cpp/h   # Update signature verification (263 LOC cpp)
+│       │   ├── TsfRegistration.cpp/h  # Register/unregister TSF DLL (312 LOC cpp)
+│       │   ├── ToastPopup.cpp/h       # Toast notification popup (259 LOC cpp)
+│       │   ├── SubprocessRunners.cpp/h  # Launch subdialogs as child processes (181 LOC cpp)
 │       │   ├── SubprocessHelper.h     # Subprocess utilities
-│       │   └── StartupHelper.h        # Windows startup registration
+│       │   └── StartupHelper.h        # Windows startup registration (646 LOC — registry helpers, manifest helpers)
 │       ├── sciter/                    # Sciter integration layer
 │       │   ├── SciterHelper.cpp/h     # Init Sciter, load HTML, callbacks
 │       │   ├── SciterArchive.cpp/h    # Embedded resource archive
@@ -187,7 +215,7 @@ VKey/
 │       ├── resources.cpp              # Auto-generated packed UI (538K)
 │       └── resources/                 # Icons (ico files)
 │
-├── tests/                             # Google Test (2010 tests / 117 suites as of 2026-05-23, feat/architecture-review-v3.1)
+├── tests/                             # Google Test (2011 tests / 117 suites as of 2026-05-24, feat/architecture-review-v3.1 post Wave 3 PR 3.5)
 │   ├── TelexEngineTest.cpp            # ★ Most comprehensive engine suite (covers TypingEngine post-Path G; legacy filename retained)
 │   ├── VniParityTest.cpp              # VNI ↔ Telex parity through unified TypingEngine
 │   ├── CombinedEngineTest.cpp         # InputMethod::Combined routing
@@ -273,7 +301,11 @@ VKey/
 | Fix TSF composition | `src/tsf/EngineController.cpp` → `CompositionManager.cpp` |
 | Fix TSF key handling | `src/tsf/KeyEventSink.cpp` |
 | Fix language bar icon | `src/tsf/LanguageBarButton.cpp` |
-| Fix hook-based input | `src/app/system/HookEngine.cpp` |
+| Fix hook-based input | `src/app/system/HookEngine.cpp` (coordinator + dispatch chain — see Wave 3 carve table below) |
+| Fix focus tracking / WinEvent / smart-switch / CJK layout | `src/app/system/FocusOwner.cpp` (Wave 3 PR 3.2) |
+| Fix output dispatch / RichEdit retry / clipboard fallback / synth-event counter | `src/app/system/OutputDispatcher.cpp` (Wave 3 PR 3.3) |
+| Fix commit-undo FSM / backspace-into-committed-word / commit stack | `src/app/system/CommitState.h` + `HookEngine.cpp::HandleCommitUndoFsm` (Wave 3 PR 3.4 — orchestration stays in HookEngine) |
+| Fix LL hook lifecycle / dedicated hook thread / hook reinstall | `src/app/system/HookLifecycle.cpp` (Wave 3 PR 3.1) |
 | Add/change output channel (Electron/Console/RichEdit/Win32) | `src/app/output/` — extend `IOutputInjector`, register in `OutputInjectorFactory` |
 | Change settings UI | `src/app/dialogs/SettingsDialog.cpp` + `src/app/ui/settings/` |
 | Add new subdialog | See `docs/subdialog-checklist.md` |
@@ -399,18 +431,36 @@ Each character in the buffer is a `CharState` with: `base` (lowercase letter), `
 
 ---
 
-## Largest Files (by LOC, snapshot 2026-05-23 — feat/architecture-review-v3.1)
+## Largest Files (by LOC, snapshot 2026-05-24 — feat/architecture-review-v3.1 post Wave 3 PR 3.5)
 
 | File | LOC | Notes |
 |---|---|---|
-| `app/system/HookEngine.cpp` | 4588 | Keyboard hook + dispatch — most complex; H1 decomposed `ProcessKeyDown` 561→79 LOC orchestrator; W2-W4 moved features (BackwardEdit / CommitUndo / Macro / EscRestoreRaw) into `src/core/pipeline/` plugins |
+| `app/system/HookEngine.cpp` | 3393 | Coordinator + dispatch chain. Wave 3 carved focus/output/commit-state/lifecycle into owner classes (~2116 LOC migrated). Pre-Wave-3: 4431. Still hosts: ProcessKeyDown orchestrator, HandleCommitUndoFsm body (289 LOC — kept for engine_ glue locality), HandlePreDispatch/DispatchKeyAction chain, hook-command drain handlers. |
 | `core/engine/TypingEngine.cpp` | 2000 | Unified Telex + VNI engine (Path G); W7 framework moved tone / modifier / quick-consonant sub-blocks into `src/core/engine/rule/` plugins. `PushChar` is now a 73-LOC skeleton (was ~210 inline). |
-| `app/dialogs/SettingsDialog.cpp` | 1430 | Main settings UI logic (Sciter) |
-| `app/main.cpp` | 973 | App initialization |
-| `core/config/ConfigManager.cpp` | 821 | TOML config load/save |
+| `app/dialogs/SettingsDialog.cpp` | 1506 | Main settings UI logic (Sciter) |
+| `core/config/ConfigManager.cpp` | 1222 | TOML config load/save (incl. Wave 2 RCU snapshot rebuild) |
+| `app/main.cpp` | 1020 | App initialization |
 | `core/engine/PhonotacticsValidator.cpp` | 813 | Path 1 hot-path syllable validator (T1 rename) |
-| `app/system/QuickConvert.cpp` | 698 | Quick consonant shortcuts |
+| `app/system/QuickConvert.cpp` | 714 | Quick consonant shortcuts |
+| `app/main_lite.cpp` | 703 | WinMain for VKeyLite (Classic Win32 UI build) |
 | `core/engine/CodeTableConverter.cpp` | 662 | Charset conversion tables |
-| `app/system/TrayIcon.cpp` | 631 | Tray icon + menu |
+| `app/system/StartupHelper.h` | 646 | Windows startup / autorun helpers (header-heavy) |
+| `app/system/FocusOwner.cpp` | 640 | Wave 3 PR 3.2 — focus/CJK/smart-switch/AppProfile cache/WebView2 detection |
+| `app/system/HookEngine.h` | 625 | Public surface + private declarations (Wave 3 trimmed 6 LOC; was 631) |
+| `app/system/TrayIcon.cpp` | 623 | Tray icon + menu |
 | `tsf/EngineController.cpp` | 608 | TSF engine orchestrator |
+| `app/system/OutputDispatcher.cpp` | 551 | Wave 3 PR 3.3 — output dispatch orchestrator (RichEdit retry / clipboard fallback / SendInput) |
+| `app/dialogs/ConvertToolDialog.cpp` | 529 | Charset converter subdialog |
 | `core/engine/Phonotactics.cpp` | 492 | Path 2 wstring_view rule engine (T2 + T3) |
+
+### Wave 3 carve table (snapshot 2026-05-24 — `feat/architecture-review-v3.1`)
+
+| PR | Owner extracted | HookEngine.cpp Δ | Owner LOC | Commit |
+|---|---|---|---|---|
+| 3.1 | `HookLifecycle` (thread + LL hooks + mailbox + reinstall pump) | baseline | 215 cpp + 112 h | `21c6afc` |
+| 3.2 | `FocusOwner` (WinEvent + classify + smart-switch + CJK + WebView2) | -563 → 3868 | 640 cpp + 226 h | `cb2bcb7` |
+| 3.3 | `OutputDispatcher` (injector RCU + ReplaceUnicode + clipboard + synth counter) | -467 → 3401 | 551 cpp + 204 h | `a109994` |
+| 3.4 | `CommitState` (Idle/Ready/Primed FSM + LIFO stack — header-only) | -6 → 3395 | 168 h | `5323850` |
+| 3.5 | Cleanup (dead aliases + header diet) | -2 → 3393 | — | `6e8bf67` |
+
+Net: ~2116 LOC migrated from HookEngine into 4 single-concern owners. Zero behavior change (byte-identical chaos 54/55 across all 4 verification runs — chrome `1.3-escape-bs-aa-b` environmental flake stable).
