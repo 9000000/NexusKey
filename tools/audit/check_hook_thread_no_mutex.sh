@@ -142,6 +142,12 @@ done
 #   * Lines containing only field name in a printf format string would also
 #     match — we accept that and recommend tightening this filter only if
 #     it triggers in practice.
+#   * Lines bearing an inline `// audit-allow: <reason>` annotation —
+#     used for legitimate pass-by-reference patterns like
+#     `make_unique<Gate>(atomic_field_)` where the receiver stores a
+#     const ref and uses `.load()` inside. The reason after the colon is
+#     mandatory so reviewers see the justification without leaving the
+#     file. See `docs/CODING_RULES/12-worker-thread-doctrine.md` §12.6.
 
 # Sprint 2 D3 deleted: isConsoleApp_ — Console selection now flows through
 # WindowClassification.isConsole → SplitDispatchInjector(5ms) by the factory.
@@ -174,8 +180,9 @@ audit_field_group() {
     #   - .load( or .store( (the migrated atomic call sites)
     #   - C++ // comment lines (whole-line comments)
     #   - field declaration ("std::atomic<...>")
+    #   - inline `// audit-allow:` annotation (see header comment above)
     #   - extra exclude (e.g. configEvent_ for the config_ check)
-    local exclude="\\.(load|store)\\s*\\(|^\\s*[0-9]+:\\s*//|std::atomic"
+    local exclude="\\.(load|store)\\s*\\(|^\\s*[0-9]+:\\s*//|std::atomic|//\\s*audit-allow:"
     if [ -n "$extra_exclude" ]; then
         exclude="$exclude|$extra_exclude"
     fi
@@ -210,7 +217,7 @@ audit_field_group "atomic<shared_ptr<TypingConfig>>" "$ATOMIC_RCU" "configEvent_
 echo
 echo "Check 4: injector_ accessed only via std::atomic_load / std::atomic_store"
 inj_violations=$(grep -nE "\binjector_\b" "$CPP" | \
-    grep -vE "\\.(load|store)\\s*\\(|^\\s*[0-9]+:\\s*//|std::atomic" || true)
+    grep -vE "\\.(load|store)\\s*\\(|^\\s*[0-9]+:\\s*//|std::atomic|//\\s*audit-allow:" || true)
 inj_count=$(echo -n "$inj_violations" | grep -c '^' || true)
 if [ "$inj_count" -gt 0 ]; then
     echo "  FAIL: $inj_count plain access(es) to injector_ outside .load()/.store()"

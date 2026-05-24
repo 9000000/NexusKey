@@ -510,9 +510,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Sprint 1 D9: launch MainThreadWorker after the hook engine is up so the
     // first config-change Signal it sees has a fully-initialised HookEngine
     // to call into. Handler runs on the worker's own thread.
+    //
+    // Wave 3 PR 3.6 (worker-thread doctrine §12.4): workHandler also drains
+    // any pending focus-classify request latched by WinEventProc. Wiring
+    // both signal targets through the same handler keeps Signal()
+    // coalescing intact — a burst of signals collapses into one wake that
+    // drains both queues.
     g_mainThreadWorker.SetWorkHandler([]() {
         g_hookEngine.SyncConfigFromSharedState();
+        g_hookEngine.DrainClassifyOnWorker();
     });
+    // Wire the doctrine §12.4 latch+signal helper: HookEngine has no direct
+    // dependency on MainThreadWorker; producers reach it through this fn.
+    g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
     // Sprint 1 D10: 200 ms periodic tick — replaces the retired
     // SetTimer(nullptr, 0, 200, FocusPollTimerProc) inside HookEngine::Start.
     // Drives CJK layout poll + foreground-PID fallback off the worker thread.

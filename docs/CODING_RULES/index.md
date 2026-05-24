@@ -55,6 +55,14 @@
     - [11.4 Early-Return Hierarchy](./11-hook-system-rules.md#114-early-return-hierarchy)
     - [11.5 Exception Safety](./11-hook-system-rules.md#115-exception-safety)
     - [11.6 SendInput Timing](./11-hook-system-rules.md#116-sendinput-timing)
+  - [12. Worker-Thread Doctrine](./12-worker-thread-doctrine.md)
+    - [12.1 Why a doctrine — not just a guideline](./12-worker-thread-doctrine.md#121-why-a-doctrine--not-just-a-guideline)
+    - [12.2 The doctrine](./12-worker-thread-doctrine.md#122-the-doctrine)
+    - [12.3 The single-owner test](./12-worker-thread-doctrine.md#123-the-single-owner-test)
+    - [12.4 The latch + signal pattern](./12-worker-thread-doctrine.md#124-the-latch--signal-pattern)
+    - [12.5 Exemptions (none silent)](./12-worker-thread-doctrine.md#125-exemptions-none-silent)
+    - [12.6 Audit-allow markers](./12-worker-thread-doctrine.md#126-audit-allow-markers)
+    - [12.7 Why this matters for Pillar #4](./12-worker-thread-doctrine.md#127-why-this-matters-for-pillar-4)
   - [Summary Checklist](#summary-checklist)
 
 > **Read first:** [`docs/PHILOSOPHY.md`](../PHILOSOPHY.md) — the four pillars (Nhanh / Nhẹ / Mượt / Mở rộng), test-first, and the three pre-code questions. Then [`docs/CODE_GOVERNANCE.md`](../CODE_GOVERNANCE.md) — the 5-question pre-code gate (mandatory before any architectural proposal) and the architectural prescriptions (FSM, IOutputInjector, SPSC, plugin layer) that the 3-collaborator team aligns on. The rules below operationalize both. If a rule conflicts with the philosophy, the philosophy wins and the rule is updated.

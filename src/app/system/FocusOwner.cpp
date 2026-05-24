@@ -353,9 +353,12 @@ std::wstring FocusOwner::GetExeNameForHwnd(HWND hwnd) noexcept {
 // launch time must not poison subsequent checks.
 //
 // Threading: `webView2PositiveCache_` is plain (not atomic). Called only
-// from Classify, which runs on either main (WinEventProc) or worker
-// (OnTickPoll) thread — never both simultaneously (both go through
-// HookEngine::OnFocusChanged which serializes via Windows message loop).
+// from Classify, which post Wave 3 PR 3.6 runs exclusively on the
+// MainThreadWorker thread per worker-thread doctrine §12.4
+// (docs/CODING_RULES/12-worker-thread-doctrine.md): WinEventProc's main-
+// thread handler is produce-only (latches HWND + signals worker), and
+// OnTickPoll already runs on the worker. Single-writer = no race on the
+// plain unordered_set.
 bool FocusOwner::IsWebView2App(HWND topLevel,
                                 const std::wstring& exeFullPath) noexcept {
     if (!topLevel || exeFullPath.empty()) return false;

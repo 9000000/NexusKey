@@ -104,7 +104,7 @@ HookEngine::HookEngine() {
     // later (per-keystroke), never during construction — safe even though the
     // derived HookEngine is still mid-construction here.
     coordinator_.RegisterGate(
-        std::make_unique<NextKey::Pipeline::EnglishBiasGate>(vietnameseMode_));
+        std::make_unique<NextKey::Pipeline::EnglishBiasGate>(vietnameseMode_));  // audit-allow: gate stores const ref, IsRaised() uses .load(acquire)
     // Wave 5: SpellCheckGate raised when engine_->IsEnglishWord() (3-tier
     // English protection bias == HardEnglish). ToneEscapeGate raised when
     // any EscapeKind is active. Both hold ref to the engine_ unique_ptr —
@@ -431,6 +431,24 @@ void HookEngine::QuickSyncFromSharedState() {
     uint32_t epoch = sharedStatePtr_->ReadEpoch();
     uint32_t seenEpoch = lastEpoch_.load(std::memory_order_acquire);
     if (epoch == seenEpoch && (epoch & 1) == 0) return;
+
+    // Wave 3 PR 3.6 — Rule 11.2 + doctrine §12.4 (worker-thread doctrine):
+    // hook thread MUST NOT execute the slow body. Two heap-allocating ops
+    // live below — `std::make_shared<TypingConfig>` (line ~518) and the
+    // `ReloadFromToml` branch behind the configGeneration check — and
+    // running either from `LowLevelKeyboardProc` violates Rule 11.2's
+    // "no malloc on hook" ceiling. Signal the worker thread so it re-runs
+    // QuickSync on its own thread; intentionally do NOT advance lastEpoch_
+    // so the worker still observes the change.
+    //
+    // Coalescing property (§12.4): a burst of SharedState changes between
+    // worker wakes collapses into one drain. The slow body sees the latest
+    // state on its single execution.
+    if (const DWORD _hookTid = lifecycle_.ThreadId();
+        _hookTid != 0 && GetCurrentThreadId() == _hookTid) {
+        if (workerSignalFn_) workerSignalFn_();
+        return;
+    }
 
     // Slow path. Wave 2 (2026-05-23) — stateMutex_ DROPPED. The full body
     // (last* updates, config_ publish, ApplyConfig) was serialised by the
@@ -2393,7 +2411,11 @@ void HookEngine::OnTickPoll() noexcept {
         // benign at worst.
         if (fgPid != focus_.LastForegroundPid()) {
             HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
-            OnFocusChanged(nullptr);  // classifies + posts kFocusChanged
+            // Doctrine §12.5 exemption #1: OnTickPoll runs on the worker
+            // thread (we ARE the MainThreadWorker tick callback), so we can
+            // call the sync body directly — skipping the latch+signal hop
+            // that WinEventProc has to use because it runs on main.
+            OnFocusChangedSyncOnWorker(nullptr);  // classifies + posts kFocusChanged
         }
     } catch (const std::exception& e) {
         CrashLog(L"HookEngine::OnTickPoll", e.what());
@@ -2408,28 +2430,57 @@ void HookEngine::OnTickPoll() noexcept {
 // below builds the ConfigContext and dispatches to focus_.Classify().
 
 void HookEngine::OnFocusChanged(HWND triggerHwnd) {
-    // Phase 2b: classify on the calling thread (main — heavy Win32 work),
-    // post to the hook thread. ApplyFocusOnHookThread runs the actual
-    // state mutations from the drain. Existing callers (WinEventProc,
-    // OnTickPoll) keep the same entry point — only the threading model
-    // changed.
+    // Worker-thread doctrine §12.4 (docs/CODING_RULES/12-worker-thread-doctrine.md).
+    //
+    // Producer side — runs on whichever thread invoked us (typically the
+    // WinEvent installer thread = main, via FocusOwner::WinEventProc).
+    // Pre-3.6 this body ran QuickSync + focus_.Classify inline. That meant
+    // focus_'s plain `appProfileCache_` / `webView2PositiveCache_` got
+    // mutated from main here AND from the worker thread inside OnTickPoll's
+    // PID-change branch — concurrent unordered_map ops = UB.
+    //
+    // Post-3.6: produce-only. Latch the trigger HWND + signal the worker;
+    // worker drains via `DrainClassifyOnWorker` on its own thread, restoring
+    // the single-writer invariant for the cache containers.
+    //
+    // Coalescing property (§12.4): a burst of WinEvent fires latches into
+    // the same slot; the worker classifies once with the latest HWND. No
+    // pile-up of redundant heavy work under focus storms (Alt-Tab spam,
+    // taskbar flyouts, JumpList transients).
+    const std::uintptr_t encoded = triggerHwnd
+        ? reinterpret_cast<std::uintptr_t>(triggerHwnd)
+        : kClassifyForeground;
+    pendingClassifyHwnd_.store(encoded, std::memory_order_release);
+    if (workerSignalFn_) workerSignalFn_();
+}
 
-    // P2c fix (2026-05-19): re-introduce the QuickSync poke that pre-P2b
-    // OnFocusChanged used to run inline at the top of its body. SettingsDialog
-    // is the project's "live config bus": every toggle bumps configGeneration
-    // in SharedState immediately (subprocess-side; TOML save is deferred 30s
-    // or until dialog close). The hook picks this up via QuickSync. Pre-P2b,
-    // both keystrokes AND focus events triggered QuickSync; removing the
-    // focus-time call meant settings toggles only applied on the first
-    // keystroke after the user clicked back to the target app — which felt
-    // like "settings don't apply until dialog close" if the user clicked
-    // back to validate without typing first. Running QuickSync here on the
-    // SAME thread as pre-P2b (main / worker, never hook) restores the
-    // original UX without compromising the hook-thread single-writer
-    // invariant. Wave 2 (2026-05-23) — QuickSync's slow path is now lock-
-    // free (all atomics + RCU publish for config_/snapshot). The cross-
-    // thread call to ApplyConfig is safe because ApplyConfig writes only
-    // through atomics + the injector_'s own atomic suggestKeepChars_.
+void HookEngine::DrainClassifyOnWorker() {
+    // Worker-thread doctrine §12.4 drain. Consumes the latch slot and runs
+    // the heavy classify body on the worker thread. Called from the
+    // workHandler wired in main.cpp.
+    const std::uintptr_t encoded = pendingClassifyHwnd_.exchange(
+        kClassifyEmpty, std::memory_order_acquire);
+    if (encoded == kClassifyEmpty) return;  // nothing pending
+    HWND hwnd = (encoded == kClassifyForeground)
+        ? nullptr
+        : reinterpret_cast<HWND>(encoded);
+    OnFocusChangedSyncOnWorker(hwnd);
+}
+
+void HookEngine::OnFocusChangedSyncOnWorker(HWND triggerHwnd) {
+    // Doctrine §12.5 exemption #1: OnTickPoll's PID-change branch already
+    // runs on the worker thread, so it calls this directly without the
+    // latch+signal hop. WinEventProc producers go through OnFocusChanged →
+    // DrainClassifyOnWorker → here.
+    //
+    // P2c fix (2026-05-19) preserved: SettingsDialog is the project's "live
+    // config bus" — every toggle bumps configGeneration in SharedState
+    // immediately. Running QuickSync at focus-change time means a user who
+    // toggles in Settings then clicks back to the target app sees the
+    // toggle apply BEFORE typing the first character. Wave 2 made
+    // QuickSync's slow path lock-free (atomics + RCU publish); 3.6
+    // additionally routes the heap-allocating slow body through the
+    // worker (this thread), so no Rule 11.2 violation is possible here.
     QuickSyncFromSharedState();
 
     FocusOwner::ConfigContext ctx{

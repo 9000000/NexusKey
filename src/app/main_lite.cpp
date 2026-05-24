@@ -587,9 +587,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Sprint 1 D9: launch worker after HookEngine so the first Signal it
     // observes lands on a fully-initialised engine.
+    //
+    // Wave 3 PR 3.6 (worker-thread doctrine §12.4): workHandler also drains
+    // pending focus-classify requests latched by WinEventProc. Mirror of
+    // main.cpp wiring — Lite mode has the same race surface (same
+    // HookEngine + FocusOwner), so the doctrine applies identically.
     g_mainThreadWorker.SetWorkHandler([]() {
         g_hookEngine.SyncConfigFromSharedState();
+        g_hookEngine.DrainClassifyOnWorker();
     });
+    g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
     // Sprint 1 D10: 200 ms tick replaces the retired SetTimer focus/CJK
     // poll that lived inside HookEngine::Start.
     g_mainThreadWorker.SetTickHandler([]() {

@@ -25,8 +25,9 @@
 #include "core/pipeline/Coordinator.h"
 #include "core/pipeline/OutputChannel.h"
 #include <Windows.h>
-#include <functional>
 #include <atomic>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -141,6 +142,25 @@ public:
     /// should query AFTER Start() returns. Used by HotkeyManager to route
     /// matched-slot dispatch back onto the hook thread.
     [[nodiscard]] DWORD GetHookThreadId() const noexcept { return lifecycle_.ThreadId(); }
+
+    /// Doctrine §12.4 (worker-thread doctrine): the wiring `main.cpp` uses to
+    /// give HookEngine a way to signal the off-hook worker thread without
+    /// taking a dependency on `MainThreadWorker`. Producers (WinEventProc
+    /// handler, hook-thread QuickSync slow-path detection) latch state into
+    /// `pendingClassifyHwnd_` (or rely on the Signal itself to mark the
+    /// QuickSync re-run) then invoke this fn so the worker drains on its
+    /// next wake. Wired once at startup, never changed.
+    using WorkerSignalFn = std::function<void()>;
+    void SetWorkerSignalFn(WorkerSignalFn fn) noexcept { workerSignalFn_ = std::move(fn); }
+
+    /// Doctrine §12.4 worker drain. Runs on the MainThreadWorker thread from
+    /// the workHandler wired in `main.cpp`. Dequeues `pendingClassifyHwnd_`
+    /// and runs the heavy classify body (QuickSync + focus_.Classify + mailbox
+    /// post). Safe to call when nothing is pending — early-returns.
+    /// PUBLIC so `main.cpp` can wire the workHandler without exposing
+    /// internal private members; intended call site is one — the workHandler
+    /// lambda. Doctrine §12.6 audit-allow not required: not an atomic field.
+    void DrainClassifyOnWorker();
 
     /// Change code table (commits pending composition, updates per-app map)
     void SetCodeTable(CodeTable ct);
@@ -288,20 +308,31 @@ private:
     // FocusOwner (focus-classification helpers; no engine state).
     void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with effective mode
     bool VerifyExcludedState();        // Check if foreground is still excluded; clears stale flag if not
-    // Phase 2b — two-phase focus.
+    // Wave 3 PR 3.6 — focus-classify routing under the worker-thread doctrine
+    // (docs/CODING_RULES/12-worker-thread-doctrine.md §12.4).
     //
-    //   FocusOwner::Classify runs on the CALLER thread (today: main, via
-    //   WinEventProc / OnTickPoll). Heavy Win32 inspection lives there:
-    //   ClassifyWindow + GetExeNameForHwnd + IsWebView2App + cache lookup/
-    //   store + override-map reads. Per Rule 11.2 these MUST NOT run from
-    //   the LL hook callback (CreateToolhelp32Snapshot violates the 30ms
-    //   p99 budget). Returns a fully-populated FocusClassification POD.
+    //   Producers (WinEventProc on main, OnTickPoll's PID-change branch on
+    //   worker) call OnFocusChanged with the trigger HWND. The body is now
+    //   produce-only: latch the HWND into `pendingClassifyHwnd_` + invoke
+    //   `workerSignalFn_` to wake the worker. The worker's workHandler
+    //   then calls `DrainClassifyOnWorker()` (public, see top of class)
+    //   which runs the heavy body — QuickSync + `focus_.Classify` +
+    //   `Post(kFocusChanged)` — on the worker thread only.
     //
-    //   OnFocusChanged is now a thin shim on HookEngine: QuickSync +
-    //   focus_.Classify(...) + Post(kFocusChanged). It stays on main; the
-    //   actual state mutation runs on the hook thread via the drain →
-    //   ApplyFocusOnHookThread path.
+    //   Why this matters: pre-3.6 `focus_.Classify()` ran on whichever
+    //   thread called `OnFocusChanged`. That meant main (WinEventProc) and
+    //   worker (OnTickPoll PID branch) could concurrently mutate the plain
+    //   `appProfileCache_` and `webView2PositiveCache_` containers on
+    //   FocusOwner. Single-writer is restored by routing both producers
+    //   through the worker.
     void OnFocusChanged(HWND triggerHwnd = nullptr);
+
+    // Worker-only entry point used by OnTickPoll's PID-change branch — that
+    // branch ALREADY runs on the worker thread (it's a tick-handler body),
+    // so it can call this directly without the latch+signal hop. Doctrine
+    // §12.5 names this the single legitimate exemption. Same body as the
+    // drain consumes; sharing prevents drift between paths.
+    void OnFocusChangedSyncOnWorker(HWND triggerHwnd);
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
     void SaveEnglishModeAppsIfDirty();  // Persist English-mode apps to TOML
@@ -531,6 +562,27 @@ private:
     // `lifecycle_.Mailbox()` / `lifecycle_.PostReinstallHooks()`. Drain
     // callback registered at lifecycle_.Start() points at DrainHookCommands.
     HookLifecycle lifecycle_;
+
+    // Wave 3 PR 3.6 — worker-thread doctrine §12.4 latch + signal slots.
+    //   pendingClassifyHwnd_ encoding (uintptr_t — atomic 8B aligned ptr-sized):
+    //     0                       = no pending request (kClassifyEmpty)
+    //     1                       = pending classify "use foreground"
+    //                               (kClassifyForeground) — what nullptr
+    //                               passes through OnFocusChanged become
+    //     other (HWND bit pattern)= pending classify for the latched HWND
+    //   Writers: OnFocusChanged (any thread, latches via release-store).
+    //   Reader: DrainClassifyOnWorker (worker thread, exchanges with
+    //   acquire). Last-writer-wins is OK — we only classify the latest
+    //   focus, older latches coalesce away (doctrine §12.4 property).
+    //
+    // QuickSync side intentionally uses no separate dirty bit: the worker
+    // workHandler already re-runs `SyncConfigFromSharedState` on every
+    // Signal, and its epoch check observes any change the hook thread saw.
+    // The Signal IS the latch.
+    static constexpr std::uintptr_t kClassifyEmpty      = 0;
+    static constexpr std::uintptr_t kClassifyForeground = 1;
+    std::atomic<std::uintptr_t> pendingClassifyHwnd_{kClassifyEmpty};
+    WorkerSignalFn workerSignalFn_;
 
     void DrainHookCommands();                                 // hook thread only
     void ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);
