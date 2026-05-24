@@ -15,6 +15,7 @@
 #include "core/SmartSwitchManager.h"
 #include "app/system/HookCommandMailbox.h"
 #include "app/system/HookLifecycle.h"
+#include "app/system/FocusOwner.h"
 #include "core/pipeline/IBackwardEditExecutor.h"
 #include "core/pipeline/ICommitUndoExecutor.h"
 #include "core/pipeline/IEscRestoreRawExecutor.h"
@@ -157,15 +158,14 @@ public:
     // Magic number to mark our own SendInput events (prevents other hooks from processing them)
     static constexpr ULONG_PTR VKEY_EXTRA_INFO = 0x4E4B;  // "NK"
 
-    // Get exe name (lowercase) from window handle — used by ClassifyWindow() and smart switch
-    [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;
+    // Wave 3 PR 3.2 — `GetExeNameForHwnd` migrated to FocusOwner alongside the
+    // rest of the focus-classification subsystem. Callers reach it via
+    // `NextKey::FocusOwner::GetExeNameForHwnd(hwnd)`.
 
 private:
-    // Hook callbacks (static → instance dispatch)
+    // Hook callbacks (static → instance dispatch). WinEventProc moved to
+    // FocusOwner (Wave 3 PR 3.2).
     static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
-    static void CALLBACK WinEventProc(HWINEVENTHOOK hHook, DWORD event, HWND hwnd,
-                                       LONG idObject, LONG idChild,
-                                       DWORD dwEventThread, DWORD dwmsEventTime);
     static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
 
     // Config application (shared between Start and SyncConfigFromSharedState)
@@ -311,30 +311,24 @@ private:
     // Clear per-word engine state (shared by CommitComposition, ResetComposition, TryExpandMacro)
     void ClearWordState();
 
-    [[nodiscard]] static bool IsTrayOrTaskbarWindow(HWND hwnd) noexcept;
-    // WebView2 host detection. Cache is positive-only (see .cpp for rationale).
-    // REQUIRES: stateMutex_ held by caller.
-    [[nodiscard]] bool IsWebView2App(HWND topLevel, const std::wstring& exeFullPath) noexcept;
+    // Wave 3 PR 3.2 — IsTrayOrTaskbarWindow + IsWebView2App migrated to
+    // FocusOwner (focus-classification helpers; no engine state).
     void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with effective mode
     bool VerifyExcludedState();        // Check if foreground is still excluded; clears stale flag if not
     // Phase 2b — two-phase focus.
     //
-    //   ClassifyFocusedWindow runs on the CALLER thread (today: main, via
-    //   WinEventProc / OnTickPoll). Heavy Win32 inspection lives here:
+    //   FocusOwner::Classify runs on the CALLER thread (today: main, via
+    //   WinEventProc / OnTickPoll). Heavy Win32 inspection lives there:
     //   ClassifyWindow + GetExeNameForHwnd + IsWebView2App + cache lookup/
     //   store + override-map reads. Per Rule 11.2 these MUST NOT run from
     //   the LL hook callback (CreateToolhelp32Snapshot violates the 30ms
     //   p99 budget). Returns a fully-populated FocusClassification POD.
     //
-    //   OnFocusChanged is now a thin shim: classify + Post(kFocusChanged).
-    //   It stays on main; the actual state mutation runs on the hook
-    //   thread via the drain → ApplyFocusOnHookThread path (declared
-    //   alongside the mailbox above).
-    [[nodiscard]] FocusClassification ClassifyFocusedWindow(HWND triggerHwnd) noexcept;
+    //   OnFocusChanged is now a thin shim on HookEngine: QuickSync +
+    //   focus_.Classify(...) + Post(kFocusChanged). It stays on main; the
+    //   actual state mutation runs on the hook thread via the drain →
+    //   ApplyFocusOnHookThread path.
     void OnFocusChanged(HWND triggerHwnd = nullptr);
-    // Populate cachedFocusedHwnd_/cachedFocusedClass_ from `foreground` via AttachThreadInput.
-    // Called from OnFocusChanged and on-demand from TryEditMessagePaste when cache is stale.
-    void RefreshFocusCache(HWND foreground) noexcept;
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
     void SaveEnglishModeAppsIfDirty();  // Persist English-mode apps to TOML
@@ -484,18 +478,12 @@ private:
     // needBaitChar_ — both flags moved onto IOutputInjector
     // (HasMultiProcessRenderer() / NeedsBaitCharPrefix()). Single source
     // of truth on the injector itself.
-    std::unordered_set<std::wstring> webView2PositiveCache_;  // full exe path → known WebView2 host (positive-only; see IsWebView2App)
+    // Wave 3 PR 3.2 — webView2PositiveCache_ moved to FocusOwner.
     std::atomic<bool> skipEmptyChar_{false};  // Skip U+202F for Qt/Electron and Console apps
     std::atomic<bool> useClipboardPaste_{false};  // VB6 and legacy ANSI-internal apps need clipboard paste
-    // Phase 2c: atomic to lock the cross-thread access pattern explicit.
-    // Read on the worker thread inside OnTickPoll (PID-changed fallback);
-    // written on the hook thread inside ApplyFocusOnHookThread.
-    std::atomic<DWORD> lastForegroundPid_{0};
-    std::unordered_map<std::wstring, bool> appModeMap_;  // exe name → vietnamese mode
-    bool appModeDirty_ = false;  // True when appModeMap_ changed since last TOML save
-    SmartSwitchManager smartSwitchMgr_;  // Shared memory for per-app mode
-    std::wstring currentExe_;  // Currently focused app
-    std::wstring previousExe_;  // Previously focused app (for tray menu context)
+    // Wave 3 PR 3.2 — lastForegroundPid_, appModeMap_/appModeDirty_/smartSwitchMgr_,
+    // currentExe_/previousExe_ moved to FocusOwner. Readers go through
+    // focus_.LastForegroundPid()/AppModeMap()/Smart()/CurrentExe()/PreviousExe().
     // Writers: worker thread (ReloadFromToml → ApplyConfig) AND hook thread
     // (SetCodeTable, QuickSyncFromSharedState, focus override). Readers: hook
     // hot path (HandleAlphaKey, CommitComposition, ClassifyFocusedWindow,
@@ -508,36 +496,8 @@ private:
     // follow-up. Readers go through configSnapshot_.load()->...)
     std::atomic<InputMethod> globalInputMethod_{InputMethod::Telex}; // config value, restored when no override
 
-    // Per-HWND classification cache. Each focus change normally calls
-    // ClassifyWindow + GetExeNameForHwnd + (sometimes) IsWebView2App, costing
-    // 5-10 Win32 syscalls per change. With Alt+Tab between known apps these
-    // results are stable for the (HWND, PID) pair; cache them and short-
-    // circuit on hit. PID re-check on lookup detects HWND reuse after the
-    // owning process dies (Windows can recycle HWND values).
-    //
-    // Single-threaded: only `OnFocusChanged` and `OnTickPoll` (both on the
-    // hook thread per `HookThreadProc`) read/write the cache, so no lock.
-    struct AppProfile {
-        DWORD pid = 0;
-        std::wstring exeName;       // lowercase exe name (matches override-map keys)
-        bool isBrowser   = false;
-        bool isElectron  = false;
-        bool isQtApp     = false;
-        bool isConsole   = false;
-        bool isVB6       = false;
-        bool isWebView2  = false;   // result of IsWebView2App scan (avoids child-window walk on hit)
-        uint64_t cachedAt = 0;      // GetTickCount64() — for LRU eviction
-    };
-    std::unordered_map<HWND, AppProfile> appProfileCache_;
-    static constexpr size_t kMaxAppProfileCache = 64;  // bounded; LRU evict on insert
-
-    // Returns pointer into `appProfileCache_` if HWND is cached AND its current
-    // PID matches the cached entry. PID-mismatch entries are evicted in place
-    // (HWND was reused by a different process). Returns nullptr on miss.
-    [[nodiscard]] const AppProfile* LookupAppProfile(HWND hwnd) noexcept;
-    // Insert/update the cache entry for `hwnd`. LRU-evicts the oldest entry
-    // (by `cachedAt`) when at capacity.
-    void StoreAppProfile(HWND hwnd, AppProfile profile) noexcept;
+    // Wave 3 PR 3.2 — AppProfile struct + appProfileCache_ + LookupAppProfile/
+    // StoreAppProfile moved to FocusOwner alongside Classify.
 
     // Backspace-into-committed-word (re-enter composition after commit + backspace)
     // inputHistory_ records exact user keystrokes (including backspace as '\b')
@@ -595,10 +555,15 @@ private:
 
     // Hooks
     // Wave 3 PR 3.1 — hook handles, thread, mailbox moved to HookLifecycle.
-    HWINEVENTHOOK focusHook_ = nullptr;     // EVENT_SYSTEM_FOREGROUND
-    HWINEVENTHOOK minimizeHook_ = nullptr;  // EVENT_SYSTEM_MINIMIZEEND
+    // Wave 3 PR 3.2 — focusHook_ / minimizeHook_ moved to FocusOwner.
     // Sprint 1 D10: 200 ms focus / CJK poll moved off SetTimer onto
     // MainThreadWorker's tick branch. The body lives in OnTickPoll().
+
+    // Wave 3 PR 3.2 — FocusOwner declared BEFORE HookLifecycle so destruction
+    // order (reverse of declaration) runs ~lifecycle_ first (joins hook
+    // thread), then ~focus_ (Uninstalls WinEvent hooks on main). Mirrors the
+    // Stop() sequence: lifecycle_.Stop() → focus_.Uninstall().
+    FocusOwner focus_;
 
     // Wave 3 PR 3.1 — dedicated hook thread + WH_KEYBOARD_LL/WH_MOUSE_LL hook
     // handles + cross-thread mailbox moved into HookLifecycle. HookEngine
@@ -636,23 +601,11 @@ private:
     bool modWinDown_ = false;
     bool otherKeyPressed_ = false;
 
-    // CJK layout auto-toggle: auto-switch to E mode when CJK detected, restore on return
-    bool layoutSuppressed_     = false;  // True when CJK layout active
-    bool modeBeforeCjk_        = true;   // Saved vietnameseMode_ before CJK auto-switch
-    bool cachedIsCompatLayout_ = true;   // Last known layout compatibility (updated in OnFocusChanged + key-up)
-
-    // Focused child HWND + class name, cached to avoid AttachThreadInput per keystroke
-    // (used by TryEditMessagePaste for VB6/ANSI apps). Refreshed in OnFocusChanged and
-    // invalidated on mouse click (within-app focus change).
-    //
-    // Cross-thread: written by LowLevelMouseProc (mouse hook thread) AND
-    // WinEventProc (window event thread); read by key thread. HWND is atomic
-    // (compiler-fence + intent doc; x64 hardware already torn-read-safe for
-    // 8B aligned pointers). Class wstring is NOT atomic — the resulting
-    // tuple race is benign: a brief stale-class read causes at worst a
-    // 1-keystroke filter miss, which the next focus change recovers.
-    std::atomic<HWND> cachedFocusedHwnd_{nullptr};
-    std::wstring cachedFocusedClass_;
+    // Wave 3 PR 3.2 — CJK layout state (layoutSuppressed_/modeBeforeCjk_/
+    // cachedIsCompatLayout_) and focused-child cache (cachedFocusedHwnd_/
+    // cachedFocusedClass_) moved to FocusOwner. Readers go through
+    // focus_.LayoutSuppressed()/ModeBeforeCjk()/CachedIsCompatLayout()/
+    // CachedFocusedHwnd()/CachedFocusedClass().
 
     // Direct SharedState reader — pointer to the global SharedStateManager (same process)
     SharedStateManager* sharedStatePtr_ = nullptr;

@@ -250,14 +250,14 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
 
     // Create shared memory for smart switch and load persisted English-mode apps
     if (config.smartSwitch) {
-        (void)smartSwitchMgr_.Create();
+        (void)focus_.Smart().Create();
         if (startupMode_ == 2) {  // Remember: load persisted per-app modes
             auto englishApps = ConfigManager::LoadEnglishModeApps(ConfigManager::GetConfigPath());
             for (auto& app : englishApps) {
-                appModeMap_[std::move(app)] = false;  // false = English mode
+                focus_.AppModeMap()[std::move(app)] = false;  // false = English mode
             }
-            if (!appModeMap_.empty()) {
-                smartSwitchMgr_.LoadFromMap(appModeMap_);
+            if (!focus_.AppModeMap().empty()) {
+                focus_.Smart().LoadFromMap(focus_.AppModeMap());
             }
         }
     }
@@ -293,18 +293,19 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         return false;
     }
 
-    // Install focus change hooks — two separate hooks for exact event targeting
-    // (avoids receiving ~20 unrelated events in the 0x0003..0x0017 range).
-    focusHook_ = SetWinEventHook(
-        EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
-        nullptr, WinEventProc,
-        0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-    // MINIMIZEEND: restoring a window from the taskbar may not fire FOREGROUND
-    // (taskbar gets the foreground event, filtered as Shell_TrayWnd).
-    minimizeHook_ = SetWinEventHook(
-        EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZEEND,
-        nullptr, WinEventProc,
-        0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    // Wave 3 PR 3.2: WinEvent hook lifecycle moved into FocusOwner. Reinstall
+    // gate stays here (we know lifecycle's runtime state); FocusOwner stays
+    // decoupled from HookLifecycle.
+    if (!focus_.Install(
+            [this](HWND hwnd) { OnFocusChanged(hwnd); },
+            [this](WPARAM reason) {
+                if (lifecycle_.ThreadId()) {
+                    lifecycle_.PostReinstallHooks(reason);
+                }
+            })) {
+        HOOK_LOG(L"FAILED to install WinEvent hook");
+        // Don't return false — focus events are nice-to-have; LL hook still works.
+    }
 
     // Sprint 1 D10: 200 ms focus / CJK poll is no longer driven by SetTimer.
     // The owning EXE wires MainThreadWorker::SetTickHandler([](){ OnTickPoll(); })
@@ -347,17 +348,10 @@ void HookEngine::Stop() {
     }
     // Wave 3 PR 3.1: HookLifecycle handles thread shutdown + LL hook teardown
     // (unhook MUST happen on the installer thread per MSDN — lifecycle owns
-    // that thread). WinEvent hooks + timer stay on main thread.
+    // that thread). Wave 3 PR 3.2: WinEvent hooks moved to FocusOwner.
     lifecycle_.Stop();
+    focus_.Uninstall();
 
-    if (focusHook_) {
-        UnhookWinEvent(focusHook_);
-        focusHook_ = nullptr;
-    }
-    if (minimizeHook_) {
-        UnhookWinEvent(minimizeHook_);
-        minimizeHook_ = nullptr;
-    }
     // Sprint 1 D10: focusPollTimer_ retired — owner stops its
     // MainThreadWorker (which owns the 200 ms tick) before us.
     // Sprint 2 D5: clear the synth-counter callback BEFORE nulling
@@ -367,8 +361,7 @@ void HookEngine::Stop() {
     if (s_instance == this) {
         s_instance = nullptr;
     }
-    layoutSuppressed_ = false;
-    cachedIsCompatLayout_ = true;
+    focus_.ResetLayoutState();
     NEXTKEY_LOG(L"HookEngine stopped");
 }
 
@@ -409,8 +402,8 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
         auto it = snap->appEncodingOverrides.find(exe);
         return (it != snap->appEncodingOverrides.end()) ? &it->second : nullptr;
     };
-    if (auto* v = lookupOverride(previousExe_)) return *v;
-    if (auto* v = lookupOverride(currentExe_))  return *v;
+    if (auto* v = lookupOverride(focus_.PreviousExe())) return *v;
+    if (auto* v = lookupOverride(focus_.CurrentExe()))  return *v;
 
     return currentCodeTable_.load(std::memory_order_acquire);
 }
@@ -616,9 +609,10 @@ void HookEngine::ReloadFromToml() {
     auto rcuSnap = configSnapshot_.load(std::memory_order_acquire);
 
     // Re-evaluate excluded status for current app (set was just reloaded)
+    const auto& curExe = focus_.CurrentExe();
     bool newExcluded = false;
-    if (config.excludeApps && !currentExe_.empty() && rcuSnap) {
-        newExcluded = rcuSnap->excludedAppSet.count(currentExe_) > 0;
+    if (config.excludeApps && !curExe.empty() && rcuSnap) {
+        newExcluded = rcuSnap->excludedAppSet.count(curExe) > 0;
         isExcludedApp_.store(newExcluded, std::memory_order_release);
     } else {
         newExcluded = isExcludedApp_.load(std::memory_order_acquire);
@@ -627,17 +621,17 @@ void HookEngine::ReloadFromToml() {
     // Re-evaluate TSF app status for current foreground app
     const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
     bool newTsfApp;
-    if (config.tsfApps && !newExcluded && rcuSnap && !rcuSnap->tsfAppSet.empty() && !currentExe_.empty()) {
-        newTsfApp = rcuSnap->tsfAppSet.count(currentExe_) > 0;
+    if (config.tsfApps && !newExcluded && rcuSnap && !rcuSnap->tsfAppSet.empty() && !curExe.empty()) {
+        newTsfApp = rcuSnap->tsfAppSet.count(curExe) > 0;
     } else {
         newTsfApp = false;
     }
     isTsfApp_.store(newTsfApp, std::memory_order_release);
     HOOK_LOG(L"  Engine (config reload): %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
              newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
-             currentExe_.c_str(),
+             curExe.c_str(),
              config.tsfApps ? 1 : 0,
-             (rcuSnap && !currentExe_.empty() && rcuSnap->tsfAppSet.count(currentExe_) > 0) ? 1 : 0,
+             (rcuSnap && !curExe.empty() && rcuSnap->tsfAppSet.count(curExe) > 0) ? 1 : 0,
              newExcluded ? 1 : 0);
     if (tsfModeCallback_) {
         const bool tsfReadonly = !newTsfApp && !newExcluded;
@@ -652,8 +646,8 @@ void HookEngine::ReloadFromToml() {
     // plain enum (`CodeTable`) read on the hook hot path without locking;
     // a worker-side write is a torn-read risk but NOT a UAF — minor
     // staleness window only. Acceptable for an enum-sized field.
-    if (!currentExe_.empty() && !newExcluded && !newTsfApp && rcuSnap) {
-        auto it = rcuSnap->appEncodingOverrides.find(currentExe_);
+    if (!curExe.empty() && !newExcluded && !newTsfApp && rcuSnap) {
+        auto it = rcuSnap->appEncodingOverrides.find(curExe);
         currentCodeTable_.store(
             (it != rcuSnap->appEncodingOverrides.end())
                 ? it->second
@@ -779,51 +773,10 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
-void CALLBACK HookEngine::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD) {
-    try {
-        HookEngine* self = s_instance.load(std::memory_order_relaxed);
-        if (!self) return;
-
-        // Per WINEVENT_OUTOFCONTEXT semantics, this callback fires on the
-        // INSTALLER thread (main, where SetWinEventHook was called) — NOT
-        // the hook thread, despite what older comments here used to claim.
-        // Phase 2b makes that explicit by deferring all composition-state
-        // writes to ApplyFocusOnHookThread via the mailbox. WinEventProc
-        // is now classification-only: no engine_ access, no mutation of
-        // autoCapState_ / previousComposition_ / per-app atomic flags.
-        // (Accessing those from main would race with hook-thread writers
-        // — Rule 11.3 violation.)
-        //
-        // REGRESSION TRAP — DO NOT UNCOMMENT
-        //
-        // Sprint 1 D4 originally took stateMutex_ here to guard the racing
-        // reads, before we knew this callback ran on main. Phase B (D5-
-        // D11) replaced every reader/writer with atomics, then Phase 2b
-        // (architecture-review-v3.1) closed the loop by moving every
-        // remaining write into ApplyFocusOnHookThread (hook thread).
-        // Re-introducing this lock would either deadlock (locking a mutex
-        // the hook thread now owns the write side of) or paper over a
-        // Rule 11.3 violation someone re-added. `tools/audit/check_hook
-        // _thread_no_mutex.sh` Check 1 enforces this line stays
-        // commented (one of 3 such lines across hook-touching callbacks).
-        // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
-
-        if (event == EVENT_SYSTEM_MINIMIZEEND) {
-            // Window restored from taskbar — re-evaluate focus with the actual foreground window.
-            // Don't use hwnd directly: the restored window may not be foreground yet.
-            HOOK_LOG(L"MINIMIZEEND (hwnd=%p) — re-evaluating focus", hwnd);
-            self->OnFocusChanged(nullptr);  // nullptr → uses GetForegroundWindow()
-            return;
-        }
-
-        HOOK_LOG(L"FOCUS changed (hwnd=%p) — classifying + posting", hwnd);
-        self->OnFocusChanged(hwnd);
-    } catch (const std::exception& e) {
-        CrashLog(L"HookEngine::WinEventProc", e.what());
-    } catch (...) {
-        CrashLog(L"HookEngine::WinEventProc", "(non-std exception)");
-    }
-}
+// Wave 3 PR 3.2 — WinEventProc moved to FocusOwner::WinEventProc. The
+// classification-only dispatch (FOREGROUND / MINIMIZEEND → OnFocusChanged)
+// runs there; HookEngine's OnFocusChanged shim is wired via the
+// FocusChangedFn callback registered in focus_.Install().
 
 LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     try {
@@ -849,8 +802,7 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
                 // Click may move focus to another control within the same app (no
                 // EVENT_SYSTEM_FOREGROUND fires) — invalidate cache so the next
                 // TryEditMessagePaste re-queries the focused HWND.
-                self->cachedFocusedHwnd_.store(nullptr, std::memory_order_relaxed);
-                self->cachedFocusedClass_.clear();  // see HWND comment in HookEngine.h: tuple race benign
+                self->focus_.InvalidateFocusCache();
             }
         }
     } catch (const std::exception& e) {
@@ -2449,17 +2401,17 @@ bool HookEngine::TryEditMessagePaste(const std::wstring& text, size_t backspaceC
 
     // Prefer cached focused HWND (populated in OnFocusChanged / invalidated on mouse click)
     // to avoid AttachThreadInput on every keystroke. Fall back to a fresh query on miss.
-    HWND hwnd = cachedFocusedHwnd_.load(std::memory_order_relaxed);
+    HWND hwnd = focus_.CachedFocusedHwnd();
     if (!hwnd || !IsWindow(hwnd)) {
-        RefreshFocusCache(GetForegroundWindow());
-        hwnd = cachedFocusedHwnd_.load(std::memory_order_relaxed);
+        focus_.RefreshFocusCache(GetForegroundWindow());
+        hwnd = focus_.CachedFocusedHwnd();
         if (!hwnd) {
             HOOK_LOG(L"  EditMsgPaste: no focused child hwnd");
             return false;
         }
     }
 
-    const wchar_t* cls = cachedFocusedClass_.c_str();
+    const wchar_t* cls = focus_.CachedFocusedClass().c_str();
     if (!IsEditCompatibleClass(cls)) {
         HOOK_LOG(L"  EditMsgPaste: incompatible class='%s'", cls);
         return false;
@@ -2540,267 +2492,11 @@ void HookEngine::RecordSynthDispatch() noexcept {
     lastRealSynthTime_ = now;
 }
 
-/// Check if a filename (without path) is a known Electron app executable.
-/// Electron apps use Chrome_WidgetWin window class (same as Chromium browsers).
-/// Unknown Chrome_WidgetWin apps default to "browser" — safer because:
-///   - Browser miss → double text (visible, user reports immediately)
-///   - Electron miss → slightly slower input (split delay absent, usually OK)
-/// This list covers the most popular Electron apps. Add new ones as needed.
-static bool IsKnownElectronExe(const wchar_t* filename) noexcept {
-    return _wcsnicmp(filename, L"code", 4) == 0 ||       // VS Code
-           _wcsnicmp(filename, L"cursor", 6) == 0 ||     // Cursor (AI code editor)
-           _wcsnicmp(filename, L"discord", 7) == 0 ||    // Discord
-           _wcsnicmp(filename, L"slack", 5) == 0 ||      // Slack
-           _wcsnicmp(filename, L"notion", 6) == 0 ||     // Notion
-           _wcsnicmp(filename, L"obsidian", 8) == 0 ||   // Obsidian
-           _wcsnicmp(filename, L"figma", 5) == 0 ||      // Figma
-           _wcsnicmp(filename, L"postman", 7) == 0 ||    // Postman
-           _wcsnicmp(filename, L"insomnia", 8) == 0 ||   // Insomnia
-           _wcsnicmp(filename, L"signal", 6) == 0 ||     // Signal
-           _wcsnicmp(filename, L"1password", 9) == 0 ||  // 1Password
-           _wcsnicmp(filename, L"bitwarden", 9) == 0 ||  // Bitwarden
-           _wcsnicmp(filename, L"gitkraken", 9) == 0 ||  // GitKraken
-           _wcsnicmp(filename, L"hyper", 5) == 0 ||      // Hyper terminal
-           _wcsnicmp(filename, L"spotify", 7) == 0 ||    // Spotify
-           _wcsnicmp(filename, L"whatsapp", 8) == 0 ||   // WhatsApp Desktop
-           _wcsnicmp(filename, L"telegram", 8) == 0 ||   // Telegram (some forks are Electron; native is Qt, caught earlier)
-           _wcsnicmp(filename, L"logseq", 6) == 0 ||     // Logseq
-           _wcsnicmp(filename, L"linear", 6) == 0 ||     // Linear
-           _wcsnicmp(filename, L"lark", 4) == 0 ||       // Lark/Feishu
-           _wcsnicmp(filename, L"zalo", 4) == 0;         // Zalo PC
-}
-
-// ── Auto-detect WebView2 apps via process inspection ──────────────────
-// Tauri apps (Dorion), Office WebView2 add-ins, and any Win32 app that
-// hosts a WebView2 control needs the Electron input treatment (skip
-// reinjectVk + split dispatch) — Chromium's untrusted-input filter drops
-// the unpaired synthetic VK keydown under some conditions.
-//
-// Two-pass detection:
-//   1. Module check: Win32 apps that load WebView2 inline into the host
-//      process will have `WebView2Loader.dll` or `embeddedbrowserwebview.dll`
-//      loaded. Cheap (~3ms) and catches most hybrid Win32 apps.
-//   2. Child-process check: Tauri v2 + modern WebView2 runtime isolate
-//      the browser into `msedgewebview2.exe` — spawned as a child of the
-//      host. The host itself may not load any WebView2 DLL. Walk the
-//      process table and look for a child with that exe name. Slower
-//      (~5-10ms over ~200 processes), so we only run it as a fallback.
-//
-// Cache strategy: positive-only. Both checks race with WebView2 runtime
-// initialization (Tauri delay-loads on first embed), so a false at app-
-// launch time must not poison subsequent checks.
-//
-// REQUIRES: caller holds stateMutex_ (all call sites go through OnFocusChanged
-// which is always under lock). webView2PositiveCache_ is a plain member and is
-// not independently thread-safe.
-[[nodiscard]] bool HookEngine::IsWebView2App(HWND topLevel, const std::wstring& exeFullPath) noexcept {
-    if (!topLevel || exeFullPath.empty()) return false;
-
-    if (webView2PositiveCache_.count(exeFullPath)) return true;
-
-    DWORD pid = 0;
-    GetWindowThreadProcessId(topLevel, &pid);
-    if (!pid) return false;
-
-    // Instrumentation: snapshot APIs below cross process boundaries (loader lock +
-    // potential AV hook). Logged so 1-off user reports of post-unlock CPU spikes
-    // can be triaged with evidence instead of speculation. See docs/TODO.md
-    // "IsWebView2App perf instrumentation".
-    const ULONGLONG t0 = GetTickCount64();
-    const wchar_t* slash = wcsrchr(exeFullPath.c_str(), L'\\');
-    const wchar_t* exeBase = slash ? slash + 1 : exeFullPath.c_str();
-    const wchar_t* pass1Result = L"snap_fail";
-    const wchar_t* pass2Result = L"skip";
-
-    bool found = false;
-
-    // Pass 1 — loaded modules in the host process.
-    // TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32 covers both native + WoW64.
-    // INVALID_HANDLE_VALUE on cross-IL / AppContainer targets → fall through.
-    if (HANDLE modSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
-        modSnap != INVALID_HANDLE_VALUE) {
-        MODULEENTRY32W me = { sizeof(me) };
-        for (BOOL ok = Module32FirstW(modSnap, &me); ok; ok = Module32NextW(modSnap, &me)) {
-            if (_wcsicmp(me.szModule, L"WebView2Loader.dll") == 0 ||
-                _wcsicmp(me.szModule, L"embeddedbrowserwebview.dll") == 0) {
-                found = true;
-                break;
-            }
-        }
-        CloseHandle(modSnap);
-        pass1Result = found ? L"module_found" : L"module_notfound";
-    }
-
-    // Pass 2 — `msedgewebview2.exe` spawned as a child process.
-    // Covers modern Tauri where the host doesn't load WebView2 DLLs itself.
-    if (!found) {
-        pass2Result = L"snap_fail";
-        if (HANDLE procSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            procSnap != INVALID_HANDLE_VALUE) {
-            PROCESSENTRY32W pe = { sizeof(pe) };
-            for (BOOL ok = Process32FirstW(procSnap, &pe); ok; ok = Process32NextW(procSnap, &pe)) {
-                if (pe.th32ParentProcessID == pid &&
-                    _wcsicmp(pe.szExeFile, L"msedgewebview2.exe") == 0) {
-                    found = true;
-                    break;
-                }
-            }
-            CloseHandle(procSnap);
-            pass2Result = found ? L"proc_found" : L"proc_notfound";
-        }
-    }
-
-    if (found) webView2PositiveCache_.insert(exeFullPath);
-
-    HOOK_LOG(L"  IsWebView2App: pid=%u exe=\"%s\" pass1=%s pass2=%s result=%d dur=%llums",
-             pid, exeBase, pass1Result, pass2Result, found ? 1 : 0,
-             GetTickCount64() - t0);
-    return found;
-}
-
-bool HookEngine::IsTrayOrTaskbarWindow(HWND hwnd) noexcept {
-    if (!hwnd) return false;
-
-    // Ignore focus switches to our own process (Settings, Menu, Tray)
-    DWORD processId;
-    GetWindowThreadProcessId(hwnd, &processId);
-    if (processId == GetCurrentProcessId()) {
-        return true;
-    }
-
-    // GetAncestor is a no-op when hwnd is already a root (e.g. from GetForegroundWindow),
-    // but needed when called with a child HWND (e.g. from WindowFromPoint).
-    HWND root = GetAncestor(hwnd, GA_ROOT);
-    if (root) hwnd = root;
-    wchar_t cls[64] = {};
-    GetClassNameW(hwnd, cls, 64);
-    return _wcsicmp(cls, L"Shell_TrayWnd") == 0 ||            // main taskbar
-           _wcsicmp(cls, L"TrayNotifyWnd") == 0 ||            // notification area
-           _wcsicmp(cls, L"NotifyIconOverflowWindow") == 0 ||  // overflow (^) Win 10
-           _wcsicmp(cls, L"TopLevelWindowForOverflowTray") == 0 || // overflow (^) Win 11
-           _wcsicmp(cls, L"Shell_SecondaryTrayWnd") == 0 ||   // secondary taskbar
-           _wcsicmp(cls, L"XamlExplorerHostIslandWindow") == 0 || // Win 11 tray popups (volume, network)
-           _wcsicmp(cls, L"#32768") == 0 ||                   // standard popup menu (right-click tray apps)
-           _wcsicmp(cls, L"MSTaskSwWClass") == 0 ||            // taskbar app buttons
-           _wcsicmp(cls, L"Start") == 0 ||                     // Start button
-           _wcsicmp(cls, L"Windows.UI.Core.CoreWindow") == 0 || // Start Menu / Action Center (Win 10/11)
-           _wcsicmp(cls, L"VKeyTrayClass") == 0;           // VKey own tray window
-           // Note: SetForegroundWindow(hwndMessage_) in ShowContextMenu fires
-           // EVENT_SYSTEM_FOREGROUND synchronously, but WinEventProc is WINEVENT_OUTOFCONTEXT
-           // so it's delivered asynchronously — this filter still catches it correctly.
-}
-
-std::wstring HookEngine::GetExeNameForHwnd(HWND hwnd) noexcept {
-    if (!hwnd) return {};
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    if (!pid) return {};
-    HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!hProc) return {};
-    wchar_t exePath[MAX_PATH] = {};
-    DWORD size = MAX_PATH;
-    std::wstring result;
-    if (QueryFullProcessImageNameW(hProc, 0, exePath, &size)) {
-        const wchar_t* filename = wcsrchr(exePath, L'\\');
-        result = ToLowerAscii(filename ? filename + 1 : exePath);
-    }
-    CloseHandle(hProc);
-    return result;
-}
-
-// Returns the full exe path (original case) for the process owning `hwnd`.
-// Empty on failure. Needed by IsWebView2App() to locate sibling DLLs.
-[[nodiscard]] static std::wstring GetExeFullPathForHwnd(HWND hwnd) noexcept {
-    if (!hwnd) return {};
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    if (!pid) return {};
-    HANDLE hProc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!hProc) return {};
-    wchar_t exePath[MAX_PATH] = {};
-    DWORD size = MAX_PATH;
-    std::wstring result;
-    if (QueryFullProcessImageNameW(hProc, 0, exePath, &size)) {
-        result.assign(exePath, size);
-    }
-    CloseHandle(hProc);
-    return result;
-}
-
-/// Classify window into app type — called from OnFocusChanged().
-/// Reads window class ONCE and determines: Browser, Electron, Qt, Console, or Normal.
-/// Results are written directly to the caller's output variables.
-///
-/// Priority order:
-///   1. Console (by window class: ConsoleWindowClass, CASCADIA, mintty, PuTTY)
-///   2. Firefox-based browser (by window class: MozillaWindowClass)
-///   3. Chrome_WidgetWin → Known Electron list or default to browser
-///   4. Qt app (by window class: Qt5*, Qt6*, QWidget)
-///   5. VB6 app (by window class: ThunderRT6*) — needs clipboard paste
-///   6. Normal Win32 app
-static void ClassifyWindow(HWND hwnd,
-                           bool& outIsBrowser,
-                           bool& outIsElectron,
-                           bool& outIsQtApp,
-                           bool& outIsConsole,
-                           bool& outIsVB6) noexcept {
-    outIsBrowser = outIsElectron = outIsQtApp = outIsConsole = outIsVB6 = false;
-
-    HWND root = GetAncestor(hwnd, GA_ROOT);
-    if (root) hwnd = root;
-
-    wchar_t className[64] = {};
-    GetClassNameW(hwnd, className, 64);
-
-    // 1a. Windows Terminal — modern DirectX renderer + ConPTY, handles batch input fine.
-    //     Treated as normal app (no flags set, batch dispatch, no bait).
-    if (_wcsicmp(className, L"CASCADIA_HOSTING_WINDOW_CLASS") == 0) {
-        return;  // No flags set → batch path
-    }
-
-    // 1b. Legacy console apps — outIsConsole triggers split dispatch in DispatchSendInput
-    if (_wcsicmp(className, L"ConsoleWindowClass") == 0 ||
-        _wcsicmp(className, L"tty") == 0 ||                            // Cygwin/MSYS
-        _wcsicmp(className, L"mintty") == 0 ||                         // Git Bash
-        _wcsicmp(className, L"PuTTY") == 0) {
-        outIsConsole = true;
-        return;
-    }
-
-    // 2. Firefox-based browsers (covers Firefox, Floorp, Tor, LibreWolf, Waterfox, Pale Moon)
-    if (_wcsicmp(className, L"MozillaWindowClass") == 0) {
-        outIsBrowser = true;
-        return;
-    }
-
-    // 3. Chrome_WidgetWin: Chromium browser OR Electron app
-    //    Disambiguate by known Electron exe list. Unknown → browser (safer default).
-    if (wcsstr(className, L"Chrome_WidgetWin")) {
-        std::wstring exeName = HookEngine::GetExeNameForHwnd(hwnd);
-        if (!exeName.empty() && IsKnownElectronExe(exeName.c_str())) {
-            outIsElectron = true;
-        } else {
-            outIsBrowser = true;  // Unknown Chrome_WidgetWin → assume browser
-        }
-        return;
-    }
-
-    // 4. Qt apps (Telegram native, KeePassXC, etc.)
-    if (wcsstr(className, L"Qt5") || wcsstr(className, L"Qt6") ||
-        wcsstr(className, L"QWidget")) {
-        outIsQtApp = true;
-        return;
-    }
-
-    // 5. VB6 apps (XYplorer, etc.): register Unicode window classes but process
-    //    messages as ANSI internally — KEYEVENTF_UNICODE / VK_PACKET chars become '?'.
-    if (_wcsnicmp(className, L"ThunderRT6", 10) == 0) {
-        outIsVB6 = true;
-        return;
-    }
-
-    // 6. Normal Win32 app (Notepad, Word, etc.) — no flags set
-}
+// Wave 3 PR 3.2 — IsKnownElectronExe (file-scope), IsWebView2App,
+// IsTrayOrTaskbarWindow, GetExeNameForHwnd, GetExeFullPathForHwnd
+// (file-scope), and ClassifyWindow (file-scope) all moved to
+// FocusOwner.cpp. They form the focus-classification subsystem and have
+// no dependency on engine state.
 
 void HookEngine::NotifyModeChange() noexcept {
     if (modeChangeCallback_) {
@@ -2822,7 +2518,7 @@ bool HookEngine::VerifyExcludedState() {
         return false;
     }
     HWND fg = GetForegroundWindow();
-    std::wstring exe = GetExeNameForHwnd(fg);
+    std::wstring exe = FocusOwner::GetExeNameForHwnd(fg);
     if (exe.empty() || snap->excludedAppSet.count(exe)) {
         return true;  // Still excluded (or can't determine — safe default)
     }
@@ -2872,12 +2568,12 @@ void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) {
 }
 
 void HookEngine::SaveEnglishModeAppsIfDirty() {
-    if (!appModeDirty_ ||
+    if (!focus_.AppModeDirty() ||
         !config_.load(std::memory_order_acquire)->smartSwitch) return;
-    appModeDirty_ = false;
+    focus_.ClearAppModeDirty();
 
     std::vector<std::wstring> englishApps;
-    for (const auto& [exe, isVietnamese] : appModeMap_) {
+    for (const auto& [exe, isVietnamese] : focus_.AppModeMap()) {
         if (!isVietnamese) {
             englishApps.push_back(exe);
         }
@@ -2907,8 +2603,8 @@ void HookEngine::CheckLayoutChange() {
     }
 
     bool compatible = !IsIncompatibleLayout(GetKeyboardLayout(tid));
-    if (compatible != cachedIsCompatLayout_) {
-        cachedIsCompatLayout_ = compatible;
+    if (compatible != focus_.CachedIsCompatLayout()) {
+        focus_.SetCachedIsCompatLayout(compatible);
         OnLayoutChanged(compatible);
     }
 }
@@ -2921,8 +2617,8 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
     const auto cfg = config_.load(std::memory_order_acquire);
     CjkSwitchInputs in{};
     in.isCompatibleNow       = isCompatibleNow;
-    in.layoutSuppressed      = layoutSuppressed_;
-    in.modeBeforeCjk         = modeBeforeCjk_;
+    in.layoutSuppressed      = focus_.LayoutSuppressed();
+    in.modeBeforeCjk         = focus_.ModeBeforeCjk();
     in.vietnameseMode        = vietnameseMode_.load(std::memory_order_acquire);
     in.isExcluded            = isExcludedApp_.load(std::memory_order_acquire);
     in.cjkAutoSwitchEnabled  = cfg->cjkAutoSwitch;
@@ -2935,8 +2631,8 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
         CancelCommitUndo();
     }
 
-    layoutSuppressed_ = out.newLayoutSuppressed;
-    modeBeforeCjk_    = out.newModeBeforeCjk;
+    focus_.SetLayoutSuppressed(out.newLayoutSuppressed);
+    focus_.SetModeBeforeCjk(out.newModeBeforeCjk);
     if (out.newVietnameseMode != in.vietnameseMode) {
         vietnameseMode_.store(out.newVietnameseMode, std::memory_order_release);
     }
@@ -2947,7 +2643,7 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
     }
 
     if (out.transition == CjkTransition::EnterCjk) {
-        HOOK_LOG(L"  CJK layout: auto-switched to E (saved=%d)", modeBeforeCjk_ ? 1 : 0);
+        HOOK_LOG(L"  CJK layout: auto-switched to E (saved=%d)", focus_.ModeBeforeCjk() ? 1 : 0);
     } else {
         HOOK_LOG(L"  CJK layout cleared: restored mode=%d",
                  vietnameseMode_.load(std::memory_order_acquire) ? 1 : 0);
@@ -3014,7 +2710,7 @@ void HookEngine::OnTickPoll() noexcept {
         // ApplyFocusOnHookThread. Stale read here just means we re-post a
         // focus event the hook will dedupe in classify (same activeHwnd) —
         // benign at worst.
-        if (fgPid != lastForegroundPid_.load(std::memory_order_acquire)) {
+        if (fgPid != focus_.LastForegroundPid()) {
             HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
             OnFocusChanged(nullptr);  // classifies + posts kFocusChanged
         }
@@ -3025,263 +2721,10 @@ void HookEngine::OnTickPoll() noexcept {
     }
 }
 
-void HookEngine::RefreshFocusCache(HWND foreground) noexcept {
-    HWND focused = ::NextKey::GetFocusedChildHwnd(foreground);
-    cachedFocusedHwnd_.store(focused, std::memory_order_relaxed);
-    if (focused) {
-        wchar_t cls[64] = {};
-        GetClassNameW(focused, cls, 64);
-        cachedFocusedClass_.assign(cls);
-    } else {
-        cachedFocusedClass_.clear();
-    }
-}
-
-const HookEngine::AppProfile* HookEngine::LookupAppProfile(HWND hwnd) noexcept {
-    auto it = appProfileCache_.find(hwnd);
-    if (it == appProfileCache_.end()) return nullptr;
-
-    // Validate: HWND values can be reused after the owning process dies.
-    // GetWindowThreadProcessId is one cheap syscall; on hit it still saves
-    // the much pricier ClassifyWindow + GetExeNameForHwnd + IsWebView2App
-    // child-window walk that we'd otherwise rerun.
-    DWORD currentPid = 0;
-    GetWindowThreadProcessId(hwnd, &currentPid);
-    if (currentPid == 0 || currentPid != it->second.pid) {
-        appProfileCache_.erase(it);
-        return nullptr;
-    }
-    return &it->second;
-}
-
-void HookEngine::StoreAppProfile(HWND hwnd, AppProfile profile) noexcept {
-    profile.cachedAt = GetTickCount64();
-
-    // Bounded cache: LRU-evict the oldest entry when at capacity. O(N) scan
-    // is fine — N is capped at kMaxAppProfileCache (64).
-    if (appProfileCache_.size() >= kMaxAppProfileCache) {
-        auto oldest = appProfileCache_.begin();
-        for (auto it = std::next(appProfileCache_.begin());
-             it != appProfileCache_.end(); ++it) {
-            if (it->second.cachedAt < oldest->second.cachedAt) oldest = it;
-        }
-        appProfileCache_.erase(oldest);
-    }
-
-    appProfileCache_[hwnd] = std::move(profile);
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Phase 2b — two-phase focus.
-//
-// ClassifyFocusedWindow runs on the CALLER thread (main, via WinEventProc
-// / OnTickPoll). Heavy Win32 inspection lives here: ClassifyWindow +
-// GetExeNameForHwnd + IsWebView2App + cache lookup/store + override-map
-// reads. None of these are safe to run from the LL hook callback (Rule
-// 11.2: CreateToolhelp32Snapshot ≥ 3 ms blows the 30 ms p99 Tier-2
-// budget).
-//
-// The result is a `FocusClassification` POD posted to mailbox_; the hook
-// thread consumes it in ApplyFocusOnHookThread and applies only the
-// composition-state writes there. This is the Rule 11.3 single-writer
-// invariant: composition state (engine_, previousComposition_, the 16
-// atomic per-app flags, currentExe_, autoCapState_) is only written from
-// the hook thread now.
-// ─────────────────────────────────────────────────────────────────────────
-FocusClassification HookEngine::ClassifyFocusedWindow(HWND triggerHwnd) noexcept {
-    PERF_SCOPE(::NextKey::Perf::Stage::FocusClassify);
-    FocusClassification cls;
-
-    HWND fg = GetForegroundWindow();
-    // Prefer triggerHwnd (captured at WinEventProc event time): GetForegroundWindow
-    // is async-stale by the time WINEVENT_OUTOFCONTEXT dispatches, often returning
-    // a transient JumpList / taskbar HWND instead of the app the user switched to.
-    HWND activeHwnd = triggerHwnd ? triggerHwnd : fg;
-    if (!activeHwnd) return cls;  // empty cls = "nothing to apply" sentinel
-
-    cls.hwndOpaque = reinterpret_cast<std::uintptr_t>(activeHwnd);
-
-    // Hidden helpers, tray, zero-size, tool windows — still classify (so
-    // dispatch flags stay consistent when focus transits through one) but
-    // skip the smart-switch / currentExe_ update.
-    if (!IsWindowVisible(activeHwnd) || IsIconic(activeHwnd) || IsTrayOrTaskbarWindow(activeHwnd)) {
-        cls.skipAppTracking = true;
-    } else {
-        RECT rect;
-        if (GetWindowRect(activeHwnd, &rect) &&
-            (rect.right - rect.left <= 0 || rect.bottom - rect.top <= 0 || rect.left <= -20000)) {
-            cls.skipAppTracking = true;  // trick message-pump windows (IDM et al.)
-        } else if (GetWindowLongW(activeHwnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) {
-            cls.skipAppTracking = true;  // tooltips, context menus, floating helpers
-        }
-    }
-
-    // Cache lookup: skip ClassifyWindow + GetExeNameForHwnd + IsWebView2App
-    // when (HWND, PID) already classified. PID re-check inside LookupAppProfile
-    // catches HWND reuse after a process dies.
-    const AppProfile* cached = LookupAppProfile(activeHwnd);
-    bool isBrowser{}, isElectron{}, isQtApp{}, isVB6{}, localConsole{}, isWebView2{};
-    if (cached) {
-        isBrowser    = cached->isBrowser;
-        isElectron   = cached->isElectron;
-        isQtApp      = cached->isQtApp;
-        localConsole = cached->isConsole;
-        isVB6        = cached->isVB6;
-        isWebView2   = cached->isWebView2;
-        cls.exeName  = cached->exeName;
-    } else {
-        ClassifyWindow(activeHwnd, isBrowser, isElectron, isQtApp, localConsole, isVB6);
-        cls.exeName = GetExeNameForHwnd(activeHwnd);
-    }
-    cls.isBrowser  = isBrowser;
-    cls.isElectron = isElectron;
-    cls.isQtApp    = isQtApp;
-    cls.isVB6      = isVB6;
-    cls.isConsole  = localConsole;
-
-    // Per-app send-method override (clipboard injector toggle). Reads
-    // the snapshot's `appSendMethodOverrides` map — RCU-published from
-    // the worker thread, so this main-thread lookup is lock-free and
-    // immune to torn reads during a TOML rebuild.
-    if (!cls.exeName.empty()) {
-        auto snap = configSnapshot_.load(std::memory_order_acquire);
-        if (snap) {
-            auto it = snap->appSendMethodOverrides.find(cls.exeName);
-            if (it != snap->appSendMethodOverrides.end() && it->second == 1) {
-                cls.localUseClipboardInjector = true;
-            }
-        }
-    }
-
-    // Dispatch-shape derivation. See OnFocusChanged's pre-Phase-2b comments
-    // for the per-host rationale (bait char, split dispatch, edit message
-    // path, clipboard fallback). Preserved verbatim — this is data the
-    // hook hot path will read via the IOutputInjector picked in Apply.
-    cls.localSkipEmpty = cls.isElectron || cls.isConsole;
-    cls.localNeedBait  = cls.isBrowser;
-    cls.localClipboard = cls.isVB6;
-    if (!cls.localSkipEmpty && !cls.localNeedBait && !cls.localClipboard) {
-        if (!cls.exeName.empty()) {
-            if (_wcsicmp(cls.exeName.c_str(), L"zed.exe") == 0) {
-                cls.localSkipEmpty = true;
-            } else if (_wcsicmp(cls.exeName.c_str(), L"notepad.exe") == 0) {
-                // Win11 WinUI 3 Notepad: RichEditBox async on compositor; EM_REPLACESEL
-                // on the child Edit is atomic and avoids the flicker that SendInput
-                // batching causes here. Classic Notepad benefits too (single undo entry).
-                cls.localEditMsg = true;
-            } else {
-                const bool isOutlook = cls.exeName.find(L"outlook") != std::wstring::npos;
-                cls.localNeedBait = cls.exeName.find(L"excel") != std::wstring::npos || isOutlook;
-                if (!cls.localNeedBait) {
-                    if (!cached) {
-                        std::wstring exeFullPath = GetExeFullPathForHwnd(activeHwnd);
-                        isWebView2 = IsWebView2App(activeHwnd, exeFullPath);
-                    }
-                    if (isWebView2) {
-                        cls.localNeedBait = true;
-                        cls.localSkipEmpty = false;
-                    }
-                }
-            }
-        }
-    }
-    cls.isWebView2 = isWebView2;
-    cls.localElectronApp = (cls.isElectron || cls.isWebView2) && !cls.isConsole;
-
-    // Cache miss path: persist for next focus event. Skipped when
-    // GetWindowThreadProcessId fails — invariant requires PID for re-check.
-    DWORD pid = 0;
-    GetWindowThreadProcessId(activeHwnd, &pid);
-    cls.pid = static_cast<std::uint32_t>(pid);
-    if (!cached && pid != 0) {
-        AppProfile profile;
-        profile.pid = pid;
-        profile.exeName = cls.exeName;
-        profile.isBrowser  = isBrowser;
-        profile.isElectron = isElectron;
-        profile.isQtApp    = isQtApp;
-        profile.isConsole  = localConsole;
-        profile.isVB6      = isVB6;
-        profile.isWebView2 = isWebView2;
-        StoreAppProfile(activeHwnd, std::move(profile));
-    }
-
-    // exeName fallback: triggerHwnd may have died by the time the async
-    // event dispatches; fall back to current foreground.
-    if (cls.exeName.empty() && activeHwnd != fg && fg) {
-        cls.exeName = GetExeNameForHwnd(fg);
-    }
-
-    // Java detection — used to trigger top-of-chain hook reinstall (jnativehook
-    // GC stalls regularly exceed LowLevelHooksTimeout and Windows drops us).
-    cls.isJavaApp =
-        cls.exeName == L"jp2launcher.exe" ||
-        cls.exeName == L"javaw.exe" ||
-        cls.exeName == L"java.exe";
-
-    // Per-app excluded / TSF / encoding / method overrides — captured here
-    // so ApplyFocusOnHookThread doesn't need to touch the maps OR read
-    // `global{CodeTable,InputMethod}_` (both written from main; the new
-    // cross-thread read would be a race). Phase 3 will RCU-snapshot the
-    // maps and let the hook side read directly.
-    cls.targetCodeTable = static_cast<int>(globalCodeTable_.load(std::memory_order_acquire));
-    cls.targetMethod    = static_cast<int>(globalInputMethod_.load(std::memory_order_acquire));
-    // Phase 3c: per-app maps move to the RCU snapshot. Single atomic load
-    // here covers all four lookups below; previously each `_set/_overrides_`
-    // read was an unprotected unordered_map access from main while Reload
-    // could rewrite the maps on hook — the snapshot publish closes that
-    // race because Reload now swaps the whole pointer.
-    const auto cfg = config_.load(std::memory_order_acquire);
-    auto snap = configSnapshot_.load(std::memory_order_acquire);
-    if (!cls.skipAppTracking && !cls.exeName.empty() && snap) {
-        if (cfg->excludeApps && !snap->excludedAppSet.empty()) {
-            cls.isExcluded = snap->excludedAppSet.count(cls.exeName) > 0;
-        }
-        if (!cls.isExcluded && cfg->tsfApps && !snap->tsfAppSet.empty()) {
-            cls.isTsf = snap->tsfAppSet.count(cls.exeName) > 0;
-        }
-        if (!cls.isExcluded && !cls.isTsf) {
-            auto itEnc = snap->appEncodingOverrides.find(cls.exeName);
-            if (itEnc != snap->appEncodingOverrides.end()) {
-                cls.targetCodeTable = static_cast<int>(itEnc->second);
-            }
-            auto itIm = snap->appInputMethodOverrides.find(cls.exeName);
-            if (itIm != snap->appInputMethodOverrides.end()) {
-                cls.targetMethod = static_cast<int>(itIm->second);
-            }
-        }
-    }
-
-    // Re-install hooks to guarantee VKey remains at the top of the hook chain.
-    // Two distinct triggers, two distinct mechanisms:
-    //   1. Chromium-based (Electron, WebView2, Browsers): they install their own
-    //      WH_KEYBOARD_LL hooks that aggressively drop synthetic injected events
-    //      (like our Backspaces) if they sit in front of us.
-    //   2. Java apps (jp2launcher / javaw / java): commonly embed jnativehook for
-    //      global hotkeys. JVM callback bridge + GC pauses regularly exceed
-    //      Windows' 300ms LowLevelHooksTimeout → Windows drops the hook chain.
-    //      Keeping VKey on top gives us first crack at each event. For
-    //      Vietnamese-eaten keys VKey returns 1 without CallNextHookEx, so a
-    //      downstream stall is irrelevant. For pass-through keys (English
-    //      mode, modifier keys) we still call CallNextHookEx, so a slow
-    //      downstream hook still blocks our callback — partial protection
-    //      only; HookSelfHealer catches the residual case.
-    // Doing this conditionally avoids unnecessary unhook/rehook overhead for
-    // normal apps. We must do this even if the PID hasn't changed — WebView2
-    // creates child windows that trigger focus events AFTER initial hook setup,
-    // and jnativehook may re-arm itself during a JVM session.
-    //
-    // Post-Phase-2b note: the atomic publishes (skipEmptyChar_, useClipboardPaste_),
-    // IOutputInjector build, and AppDetect log all moved to
-    // ApplyFocusOnHookThread (Rule 11.3 — hook-thread-only writes). This
-    // re-install Post is harmless from any thread — just kicks the hook pump.
-    if (lifecycle_.ThreadId() && (cls.localElectronApp || cls.isBrowser || cls.isJavaApp)) {
-        const WPARAM reason = cls.isJavaApp ? REINSTALL_REASON_JAVA : REINSTALL_REASON_CHROMIUM;
-        lifecycle_.PostReinstallHooks(reason);
-    }
-
-    return cls;
-}
+// Wave 3 PR 3.2 — RefreshFocusCache, LookupAppProfile, StoreAppProfile,
+// and the heavy ClassifyFocusedWindow body (now FocusOwner::Classify with
+// a ConfigContext parameter) moved to FocusOwner.cpp. OnFocusChanged
+// below builds the ConfigContext and dispatches to focus_.Classify().
 
 void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // Phase 2b: classify on the calling thread (main — heavy Win32 work),
@@ -3308,8 +2751,14 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // through atomics + the injector_'s own atomic suggestKeepChars_.
     QuickSyncFromSharedState();
 
+    FocusOwner::ConfigContext ctx{
+        config_.load(std::memory_order_acquire),
+        configSnapshot_.load(std::memory_order_acquire),
+        static_cast<int>(globalCodeTable_.load(std::memory_order_acquire)),
+        static_cast<int>(globalInputMethod_.load(std::memory_order_acquire)),
+    };
     auto cls = std::make_shared<const FocusClassification>(
-        ClassifyFocusedWindow(triggerHwnd));
+        focus_.Classify(triggerHwnd, ctx));
     if (!cls->hwndOpaque) return;  // sentinel: nothing to apply
     lifecycle_.Mailbox().Post(HookCommand::kFocusChanged, std::move(cls));
 }
@@ -4122,7 +3571,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // time (L4103 is unconditional). Symptom: WebView2 apps (SearchHost, Edge,
     // Teams) wipe the engine buffer every ~200 ms — typing "hddldd" only ever
     // sees one char at a time, dd→Đ never composes.
-    if (cls->pid) lastForegroundPid_.store(cls->pid, std::memory_order_release);
+    if (cls->pid) focus_.SetLastForegroundPid(cls->pid);
 
     // Reset composition + per-word state. These were the Rule 11.3-violating
     // writes from main pre-Phase-2b.
@@ -4162,10 +3611,9 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // RefreshFocusCache uses GetFocusedChildHwnd (AttachThreadInput) which
     // is cheap (~µs). Safe on hook thread.
     if (cls->localClipboard || cls->localEditMsg) {
-        RefreshFocusCache(activeHwnd);
+        focus_.RefreshFocusCache(activeHwnd);
     } else {
-        cachedFocusedHwnd_.store(nullptr, std::memory_order_relaxed);
-        cachedFocusedClass_.clear();
+        focus_.InvalidateFocusCache();
     }
 
     // CJK layout check — GetKeyboardLayout is kernel-cached, single µs.
@@ -4194,20 +3642,17 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     // Smart switch SAVE for the previous app — uses OLD currentExe_, so
     // must run before we reassign it.
-    if (cfg->smartSwitch && !currentExe_.empty() && !wasExcluded && !wasTsfApp) {
-        if (appModeMap_.size() >= kMaxSmartSwitchEntries) {
-            appModeMap_.clear();
+    if (cfg->smartSwitch && !focus_.CurrentExe().empty() && !wasExcluded && !wasTsfApp) {
+        if (focus_.AppModeMap().size() >= kMaxSmartSwitchEntries) {
+            focus_.AppModeMap().clear();
         }
         const bool savedMode = vietnameseMode_.load(std::memory_order_acquire);
-        appModeMap_[currentExe_] = savedMode;
-        smartSwitchMgr_.SetAppMode(currentExe_, savedMode);
-        appModeDirty_ = true;
+        focus_.AppModeMap()[focus_.CurrentExe()] = savedMode;
+        focus_.Smart().SetAppMode(focus_.CurrentExe(), savedMode);
+        focus_.MarkAppModeDirty();
     }
 
-    if (!currentExe_.empty()) {
-        previousExe_ = currentExe_;
-    }
-    currentExe_ = cls->exeName;
+    focus_.SetCurrentExe(cls->exeName);
 
     // PID tracker already synced at function entry — see comment near the top
     // of ApplyFocusOnHookThread. Re-storing here is redundant.
@@ -4217,7 +3662,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
              cls->isTsf ? L"TSF (hook passthrough)" : L"HOOK",
-             currentExe_.c_str(),
+             focus_.CurrentExe().c_str(),
              cfg->tsfApps ? 1 : 0,
              cls->isTsf ? 1 : 0,
              cls->isExcluded ? 1 : 0);
@@ -4235,12 +3680,12 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     if (cls->isExcluded) {
         excludedPid_.store(cls->pid, std::memory_order_release);
         HOOK_LOG(L"  ExcludeApps: '%s' is excluded, passthrough (pid=%u)",
-                 currentExe_.c_str(), cls->pid);
+                 focus_.CurrentExe().c_str(), cls->pid);
         if (!wasExcluded) NotifyModeChange();
         return;
     }
     if (cls->isTsf) {
-        HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough", currentExe_.c_str());
+        HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough", focus_.CurrentExe().c_str());
         return;
     }
 
@@ -4253,7 +3698,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
             currentCodeTable_.store(targetTable, std::memory_order_release);
             HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
                      static_cast<int>(targetTable),
-                     currentExe_.c_str());
+                     focus_.CurrentExe().c_str());
         }
     }
 
@@ -4267,26 +3712,26 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
             engineConfig.inputMethod = targetMethod;
             engine_ = EngineFactory::Create(engineConfig);
             HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
-                     static_cast<int>(targetMethod), currentExe_.c_str());
+                     static_cast<int>(targetMethod), focus_.CurrentExe().c_str());
         }
     }
 
     // Smart switch restore for the new app.
     if (cfg->smartSwitch) {
-        auto it = appModeMap_.find(currentExe_);
-        if (it != appModeMap_.end()) {
+        auto it = focus_.AppModeMap().find(focus_.CurrentExe());
+        if (it != focus_.AppModeMap().end()) {
             const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
             if (it->second != curMode) {
                 vietnameseMode_.store(it->second, std::memory_order_release);
                 HOOK_LOG(L"  SmartSwitch: restored %s for '%s'",
-                         it->second ? L"Vietnamese" : L"English", currentExe_.c_str());
+                         it->second ? L"Vietnamese" : L"English", focus_.CurrentExe().c_str());
                 NotifyModeChange();
             }
         } else {
             HOOK_LOG(L"  SmartSwitch: inherit %s for unknown '%s'",
                      vietnameseMode_.load(std::memory_order_acquire)
                          ? L"Vietnamese" : L"English",
-                     currentExe_.c_str());
+                     focus_.CurrentExe().c_str());
         }
     }
 
@@ -4294,9 +3739,9 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // vietnameseMode_ didn't move. Replay layout check so a suppressed
     // CJK transition that fired during the excluded session restores now.
     if (wasExcluded) {
-        const bool wasSuppressed = layoutSuppressed_;
-        OnLayoutChanged(cachedIsCompatLayout_);
-        if (wasSuppressed == layoutSuppressed_) NotifyModeChange();
+        const bool wasSuppressed = focus_.LayoutSuppressed();
+        OnLayoutChanged(focus_.CachedIsCompatLayout());
+        if (wasSuppressed == focus_.LayoutSuppressed()) NotifyModeChange();
     }
 }
 
@@ -4335,7 +3780,7 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     }
 
     // Commit pending composition (skip if CJK-suppressed — engine inactive).
-    if (!layoutSuppressed_ && engine_->Count() > 0) {
+    if (!focus_.LayoutSuppressed() && engine_->Count() > 0) {
         CommitComposition();
     }
     CancelCommitUndo();
@@ -4350,9 +3795,9 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     // snapshot). If currentExe_ is empty here (startup before any focus event),
     // the next focus event will set it and the toggle takes effect for that app
     // on its first save.
-    if (cfg->smartSwitch && !currentExe_.empty()) {
-        appModeMap_[currentExe_] = newMode;
-        smartSwitchMgr_.SetAppMode(currentExe_, newMode);
+    if (cfg->smartSwitch && !focus_.CurrentExe().empty()) {
+        focus_.AppModeMap()[focus_.CurrentExe()] = newMode;
+        focus_.Smart().SetAppMode(focus_.CurrentExe(), newMode);
     }
 
     if (cfg->beepOnSwitch) {
@@ -4401,8 +3846,8 @@ void HookEngine::ApplyConfigOnHookThread() {
     // ApplyFocusOnHookThread); reading it here is single-threaded safe.
     auto snap = configSnapshot_.load(std::memory_order_acquire);
     InputMethod targetMethod = cfg->inputMethod;
-    if (snap && !currentExe_.empty()) {
-        auto it = snap->appInputMethodOverrides.find(currentExe_);
+    if (snap && !focus_.CurrentExe().empty()) {
+        auto it = snap->appInputMethodOverrides.find(focus_.CurrentExe());
         if (it != snap->appInputMethodOverrides.end()) targetMethod = it->second;
     }
 

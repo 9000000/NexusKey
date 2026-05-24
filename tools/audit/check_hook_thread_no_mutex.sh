@@ -3,12 +3,15 @@
 # Sprint 1 D7 — Phase B compliance gate.
 #
 # Verifies three guarantees at the source level:
-#   1. The 3 hook-thread `lock_guard<recursive_mutex>` lines from D4 SPIKE
-#      are still commented (regression marker — if any is uncommented,
-#      Phase B's correctness contract is broken).
+#   1. The hook-thread `lock_guard<recursive_mutex>` regression-trap lines
+#      from D4 SPIKE are still commented — ≥2 in HookEngine.cpp
+#      (LowLevelKeyboardProc + LowLevelMouseProc). Wave 3 PR 3.2 moved
+#      WinEventProc into FocusOwner.cpp so the threshold dropped from 3 → 2.
 #   2. No uncommented `stateMutex_` reference inside any hook-callback entry
 #      function body (`LowLevelKeyboardProc`, `WinEventProc`,
-#      `LowLevelMouseProc`, `RawInputWndProc`).
+#      `LowLevelMouseProc`, `RawInputWndProc`). WinEventProc now SKIPs in
+#      HookEngine.cpp; FocusOwner has no stateMutex_, so the invariant
+#      holds vacuously there.
 #   3. All migrated atomic fields (D5 + D5.1 + D5.2 + D6) use `.load()` /
 #      `.store()` — no plain assignment or read of these fields. The atomic
 #      RCU `config_` field also obeys this rule.
@@ -48,11 +51,16 @@ echo
 # Check 1: D4 SPIKE comment integrity
 # ────────────────────────────────────────────────────────────────────────
 # REGRESSION TRAP — Phase B Sprint 1 D11 downgraded `stateMutex_` from
-# `std::recursive_mutex` to `std::mutex`. The 3 commented lock_guard
+# `std::recursive_mutex` to `std::mutex`. The original 3 commented lock_guard
 # lines in HookEngine.cpp (LowLevelKeyboardProc / WinEventProc /
-# LowLevelMouseProc) reference the old `recursive_mutex` type which no
+# LowLevelMouseProc) referenced the old `recursive_mutex` type which no
 # longer exists, so any "cleanup" attempt that uncomments them triggers
 # a compile error. That is the intended trap.
+#
+# Wave 3 PR 3.2 (2026-05-24) moved WinEventProc out of HookEngine into
+# FocusOwner.cpp; FocusOwner has no stateMutex_, so the WinEventProc trap
+# is moot there. Remaining traps in HookEngine.cpp: LowLevelKeyboardProc +
+# LowLevelMouseProc (≥2).
 #
 # This check enforces the lines stay commented — verifying both that
 # someone hasn't uncommented (which would fail compile anyway) and that
@@ -61,10 +69,10 @@ echo
 # reviewer flags these as "dangling references", point them here and
 # at the in-source comments above each line.
 
-echo "Check 1: D4 SPIKE comment integrity (≥3 commented lock_guard lines)"
+echo "Check 1: D4 SPIKE comment integrity (≥2 commented lock_guard lines, post Wave 3 PR 3.2)"
 spike_commented=$(grep -cE "^\s*//\s*std::lock_guard<std::recursive_mutex>" "$CPP")
-if [ "$spike_commented" -lt 3 ]; then
-    echo "  FAIL: expected ≥3 commented lock_guard<recursive_mutex> lines, found $spike_commented"
+if [ "$spike_commented" -lt 2 ]; then
+    echo "  FAIL: expected ≥2 commented lock_guard<recursive_mutex> lines, found $spike_commented"
     grep -nE "^\s*//\s*std::lock_guard<std::recursive_mutex>" "$CPP" || true
     errors=$((errors + 1))
 else

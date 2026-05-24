@@ -217,6 +217,8 @@ add_executable(VKeyApp WIN32
     src/app/system/HookEngine.cpp
     src/app/system/HookLifecycle.h
     src/app/system/HookLifecycle.cpp
+    src/app/system/FocusOwner.h
+    src/app/system/FocusOwner.cpp
     src/app/system/HookCommandMailbox.h
     src/app/system/HookCommandMailbox.cpp
     src/app/system/HeartbeatPublisher.h
@@ -312,6 +314,8 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/system/HookEngine.cpp
         src/app/system/HookLifecycle.h
         src/app/system/HookLifecycle.cpp
+        src/app/system/FocusOwner.h
+        src/app/system/FocusOwner.cpp
         src/app/system/HeartbeatPublisher.h
         src/app/system/HeartbeatPublisher.cpp
         src/app/system/WatchdogController.h
