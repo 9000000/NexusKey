@@ -16,6 +16,7 @@
 #include "app/system/HookCommandMailbox.h"
 #include "app/system/HookLifecycle.h"
 #include "app/system/FocusOwner.h"
+#include "app/system/OutputDispatcher.h"
 #include "core/pipeline/IBackwardEditExecutor.h"
 #include "core/pipeline/ICommitUndoExecutor.h"
 #include "core/pipeline/IEscRestoreRawExecutor.h"
@@ -34,11 +35,11 @@
 #include <unordered_set>
 #include <vector>
 
-// Forward declaration so HookEngine.h stays Linux-friendly (output/ folder
-// is Win32-only). Sprint 2 T3 — IOutputInjector is the output channel
-// strategy interface (see src/app/output/IOutputInjector.h, doc:
-// docs/plans/sprint-2-output-injector.md §2.1).
-namespace NextKey::Output { class IOutputInjector; }
+// Wave 3 PR 3.3 — IOutputInjector forward declaration removed; the type is
+// pulled in transitively via OutputDispatcher.h (which directly includes
+// output/IOutputInjector.h since it owns std::atomic<shared_ptr<IOI>>).
+// HookEngine no longer touches IOI directly — all dispatch goes through
+// dispatcher_.
 
 namespace NextKey {
 
@@ -235,10 +236,13 @@ private:
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
     void CancelCommitUndo();   // commitUndoState_ = Idle + commitStack_.clear()
-    void RecordSynthDispatch() noexcept;  // Update both lastSynthSendTime_ and lastRealSynthTime_
     void SetCommitUndoReady(); // commitUndoState_ = Ready + timestamp
 
-    // Output — universal SendInput with KEYEVENTF_UNICODE
+    // Output — universal SendInput with KEYEVENTF_UNICODE. Wave 3 PR 3.3
+    // shrank the body to a thin shim: prefix-diff + code-table encoding +
+    // previousComposition_/Widths_ update, then dispatcher_.ReplaceUnicode
+    // (Unicode path) or dispatcher_.ReplaceRaw (encoded path) handles the
+    // RichEdit retry / clipboard fallback / SendInput orchestration.
     void ReplaceComposition(const std::wstring& newText, DWORD reinjectVk = 0);
 
     // Wave 2 — pipeline dispatch helper. Builds a HookCompositionSession +
@@ -248,39 +252,11 @@ private:
     // to ExecuteReplace, so the batch is always empty after HandleKey returns.
     void DispatchCoordinator(DWORD vkCode, DWORD reinjectVk,
                               const std::wstring& composition);
-    // Sprint 2 D3 removed DispatchSendInput callers; D4 deleted body+decl.
-    // Split-vs-batch lives inside the IOutputInjector impls now. Synth dispatch
-    // goes through Output::Internal::TrackedSendInput, which routes the
-    // synth-counter via g_synthCounterCallback → OnSynthDispatched.
-    void SendBackspaces(size_t count);
-    void SendBackspaceEvents(size_t count);
-    void SendCharEvents(const std::wstring& text);
 
-    // Sprint 2 D5: Routes Internal::g_synthCounterCallback into the
-    // singleton's synthEventsPending_ atomic. Static so it can be
-    // wired as a plain function pointer (no captures); friends-of-the-
-    // class access via s_instance is sufficient. Wired in Start, no-op
-    // when s_instance is null (defensive — Start is the only writer).
-    static void OnSynthDispatched(int delta) noexcept;
-
-    // Sprint 2 D4: Returns true when the current injector publishes a
-    // synchronous channel (RichEditEmReplaceSelInjector — SettleBudget=0ms).
-    // Replaces the legacy useEditMsgPath_ atomic-bool flag for the four
-    // policy-gate sites in HandleAlphaKey / commit-undo / commit-trigger /
-    // ReplaceComposition retry-loop. Cheap: 1 atomic_load(injector_) + 1
-    // virtual call + 1 compare. Coupling caveat: relies on the contract that
-    // only RichEdit returns 0ms; if a future Win32-sync impl also returns 0ms
-    // it would misfire. D5 SettleBudget integration may revisit.
-    [[nodiscard]] bool IsSyncReplaceChannel() const noexcept;
-
-    // Clipboard paste fallback for VB6/ANSI-internal apps (can't handle KEYEVENTF_UNICODE)
-    [[nodiscard]] bool ShouldUseClipboard() const noexcept;
-    void ClipboardPaste(const std::wstring& text);
-
-    // Direct EM_REPLACESEL into focused Edit/RichEdit/VB6 TextBox — no clipboard touched.
-    // Primary VB6/ANSI-window path. Returns false if the focused control isn't a
-    // compatible Edit class; caller falls back to ClipboardPaste.
-    [[nodiscard]] bool TryEditMessagePaste(const std::wstring& text, size_t backspaceCount) noexcept;
+    // Wave 3 PR 3.3 — SendBackspaces / SendBackspaceEvents / SendCharEvents,
+    // OnSynthDispatched, IsSyncReplaceChannel, ShouldUseClipboard,
+    // ClipboardPaste, TryEditMessagePaste, RecordSynthDispatch moved to
+    // OutputDispatcher. Public surface via `dispatcher_.X()`.
 
     // Modifier state tracking (used by double-Alt and layout change detection)
     void TrackModifier(DWORD vkCode, bool isDown);
@@ -394,7 +370,8 @@ private:
     // never nullptr — hot path's atomic_load can rely on a usable injector
     // even before any focus event has fired.
     // See docs/plans/sprint-2-output-injector.md §1 for the data-flow contract.
-    std::atomic<std::shared_ptr<NextKey::Output::IOutputInjector>> injector_;
+    // Wave 3 PR 3.3 — injector_ moved to OutputDispatcher. Read via
+    // dispatcher_.GetInjector(); publish via dispatcher_.SetInjector().
     // Sprint 1 D5.1: migrated to std::atomic for hook-thread-safe read without
     // stateMutex_ (Rule #11.3 acquire/release). Writers: ApplyConfig (main),
     // QuickSyncFromSharedState (hook — same thread as readers), ReloadFromToml
@@ -410,11 +387,10 @@ private:
     // → HookEngine via callback) uses .store(release).
     std::atomic<bool> vietnameseMode_{true};
     uint8_t startupMode_ = 0;  // 0=Vietnamese, 1=English, 2=Remember
-    std::atomic<bool> sending_{false};  // True while SendInput is in progress (skip re-entrant hook calls)
-    std::atomic<int> synthEventsPending_{0};  // Count of synthetic INPUT structs sent but not yet processed by hook
-    DWORD lastSynthSendTime_ = 0;  // GetTickCount() of last SendInput call (watchdog: reset if stuck > 500ms)
-    DWORD lastRealSynthTime_ = 0;  // GetTickCount() of last typing-related dispatch (not InjectKey re-injection)
-    bool hadSynthInWord_ = false;  // True if any synthetic event was sent for the current word (blocks passthrough mixing)
+    // Wave 3 PR 3.3 — sending_, synthEventsPending_, lastSynthSendTime_,
+    // lastRealSynthTime_, hadSynthInWord_ moved to OutputDispatcher.
+    // Readers go through dispatcher_.IsSending() / SynthEventsPending() /
+    // LastSynthSendTime() / LastRealSynthTime() / HadSynthInWord().
     // Wave 2 (2026-05-23) — formerly cached bool fields (beepOnSwitch_, smartSwitch_,
     // excludeApps_, tsfApps_, cjkAutoSwitch_) deleted. Single source of truth is
     // `config_` RCU. Hot-path readers load once per function via
@@ -479,8 +455,7 @@ private:
     // (HasMultiProcessRenderer() / NeedsBaitCharPrefix()). Single source
     // of truth on the injector itself.
     // Wave 3 PR 3.2 — webView2PositiveCache_ moved to FocusOwner.
-    std::atomic<bool> skipEmptyChar_{false};  // Skip U+202F for Qt/Electron and Console apps
-    std::atomic<bool> useClipboardPaste_{false};  // VB6 and legacy ANSI-internal apps need clipboard paste
+    // Wave 3 PR 3.3 — skipEmptyChar_, useClipboardPaste_ moved to OutputDispatcher.
     // Wave 3 PR 3.2 — lastForegroundPid_, appModeMap_/appModeDirty_/smartSwitchMgr_,
     // currentExe_/previousExe_ moved to FocusOwner. Readers go through
     // focus_.LastForegroundPid()/AppModeMap()/Smart()/CurrentExe()/PreviousExe().
@@ -564,6 +539,13 @@ private:
     // thread), then ~focus_ (Uninstalls WinEvent hooks on main). Mirrors the
     // Stop() sequence: lifecycle_.Stop() → focus_.Uninstall().
     FocusOwner focus_;
+
+    // Wave 3 PR 3.3 — OutputDispatcher declared AFTER focus_ (uses const
+    // ref to focus_ for TryEditMessagePaste's CachedFocusedHwnd/Class
+    // reads) and BEFORE lifecycle_ (so destruction order joins the hook
+    // thread first, then tears down dispatch state). Stop() mirrors:
+    // lifecycle_.Stop() → dispatcher_.Uninstall() → focus_.Uninstall().
+    OutputDispatcher dispatcher_{focus_};
 
     // Wave 3 PR 3.1 — dedicated hook thread + WH_KEYBOARD_LL/WH_MOUSE_LL hook
     // handles + cross-thread mailbox moved into HookLifecycle. HookEngine

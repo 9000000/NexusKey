@@ -94,13 +94,10 @@ namespace NextKey {
 std::atomic<HookEngine*> HookEngine::s_instance{nullptr};
 
 HookEngine::HookEngine() {
-    // Sprint 2 T3: seed injector_ with the default Win32 impl so the hook
-    // hot path's std::atomic_load(&injector_) never returns nullptr — even
-    // before the first OnFocusChanged classifies the foreground window.
-    // The default classification (all flags false) maps to
-    // Win32SendInputInjector(needsBaitCharPrefix=false), the safest
-    // mechanism (batch SendInput, no Sleep, no SendMessage).
-    injector_.store(NextKey::Output::Create({}), std::memory_order_release);
+    // Wave 3 PR 3.3 — default injector seed moved into OutputDispatcher
+    // ctor (dispatcher_'s own NSDMI handles the empty-classification
+    // factory call). The hook hot path's `dispatcher_.GetInjector()` is
+    // safe to call before any focus event has fired.
 
     // Wave 2: register the feature pipeline. vietnameseMode_ already has its
     // in-class initializer (true), so the gate's stored reference is live as
@@ -161,7 +158,7 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     // Push the suggestKeepChars flag to the live injector so ShouldEmitBait
     // sees the latest user choice without needing a focus change to swap
     // injectors. Focus-change paths re-apply this from the config snapshot.
-    if (auto inj = injector_.load(std::memory_order_acquire); inj) {
+    if (auto inj = dispatcher_.GetInjector(); inj) {
         inj->SetSuggestKeepChars(config.suggestKeepChars);
     }
     // Runtime file-logger gate (Settings → System → "Bật debug log").
@@ -226,11 +223,12 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     HOOK_LOG(L"=== HookEngine::Start ===");
 
     s_instance = this;
-    // Sprint 2 D5: route the IOutputInjector → Internal::TrackedSendInput
-    // event count back into synthEventsPending_. Wired AFTER s_instance
-    // is set (callback dereferences it). Hook thread isn't installed yet
-    // so no synth dispatch can fire before this point.
-    NextKey::Output::Internal::g_synthCounterCallback = &HookEngine::OnSynthDispatched;
+    // Wave 3 PR 3.3 — OutputDispatcher owns the synth-counter wiring.
+    // Install sets dispatcher's s_instance + g_synthCounterCallback in
+    // one step. Idempotent. Wired AFTER HookEngine::s_instance so a hook
+    // thread already racing wouldn't see a half-initialized dispatcher
+    // (we're still on main here; hook thread starts further down).
+    dispatcher_.Install();
     currentMethod_.store(config.inputMethod, std::memory_order_release);
     config_.store(std::make_shared<const TypingConfig>(config), std::memory_order_release);
     // Wave 2 (2026-05-23): ApplyConfig is now lock-free (all writes are atomic
@@ -349,15 +347,16 @@ void HookEngine::Stop() {
     // Wave 3 PR 3.1: HookLifecycle handles thread shutdown + LL hook teardown
     // (unhook MUST happen on the installer thread per MSDN — lifecycle owns
     // that thread). Wave 3 PR 3.2: WinEvent hooks moved to FocusOwner.
+    // Wave 3 PR 3.3: dispatcher owns synth-counter wiring.
+    // Order: join hook thread → tear down dispatch (no in-flight SendInput
+    // can race once the thread is gone) → tear down focus state. Mirrors
+    // reverse-declaration destruction order (lifecycle → dispatcher → focus).
     lifecycle_.Stop();
+    dispatcher_.Uninstall();
     focus_.Uninstall();
 
     // Sprint 1 D10: focusPollTimer_ retired — owner stops its
     // MainThreadWorker (which owns the 200 ms tick) before us.
-    // Sprint 2 D5: clear the synth-counter callback BEFORE nulling
-    // s_instance — otherwise an in-flight Internal::TrackedSendInput
-    // could dereference s_instance after we cleared it.
-    NextKey::Output::Internal::g_synthCounterCallback = nullptr;
     if (s_instance == this) {
         s_instance = nullptr;
     }
@@ -702,13 +701,13 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
         if (self && pKey->dwExtraInfo == VKEY_EXTRA_INFO) {
             HOOK_LOG(L"  PASSTHRU (dwExtraInfo=NK): vk=0x%02X scan=0x%04X flags=0x%08X nCode=%d",
                      pKey->vkCode, pKey->scanCode, pKey->flags, nCode);
-            if (self->synthEventsPending_ > 0) --self->synthEventsPending_;
+            self->dispatcher_.DecrementSynthEvents();
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
 
         if (nCode == HC_ACTION && self) {
             // Skip events while we're sending (safety backup)
-            if (self->sending_) {
+            if (self->dispatcher_.IsSending()) {
                 HOOK_LOG(L"  PASSTHRU (sending_): vk=0x%02X scan=0x%04X flags=0x%08X",
                          pKey->vkCode, pKey->scanCode, pKey->flags);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -839,12 +838,12 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     // Covers event loss in Electron/Console multi-process apps where synthetic
     // events can be dropped under heavy CPU load, causing cascading re-injection
     // and ghost characters.
-    if (synthEventsPending_ > 0) {
-        DWORD elapsed = GetTickCount() - lastSynthSendTime_;
+    if (dispatcher_.SynthEventsPending() > 0) {
+        DWORD elapsed = GetTickCount() - dispatcher_.LastSynthSendTime();
         if (elapsed > 500) {
             HOOK_LOG(L"  watchdog: synthEventsPending_ reset from %d (stuck %ums)",
-                     synthEventsPending_.load(), elapsed);
-            synthEventsPending_ = 0;
+                     dispatcher_.SynthEventsPending(), elapsed);
+            dispatcher_.ResetSynthEvents();
         }
     }
 
@@ -1076,12 +1075,12 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
         // the phrase buffer no longer mirrors what's on screen.
         macroCrossCommit_ = false;
         rawMacroBuffer_.clear();
-        if (synthEventsPending_ > 0) {
+        if (dispatcher_.SynthEventsPending() > 0) {
             // Synthetic events still in flight (word corrections, injected commit trigger).
             // If we pass BS through now it arrives at the app BEFORE those synthetics,
             // deleting the wrong character and permanently desynchronising previousComposition_.
             // Re-inject so BS is placed AFTER the pending synthetics in the queue.
-            HOOK_LOG(L"  commit-undo: BS after commit → Primed, re-inject after synthetics (pending=%d)", synthEventsPending_.load());
+            HOOK_LOG(L"  commit-undo: BS after commit → Primed, re-inject after synthetics (pending=%d)", dispatcher_.SynthEventsPending());
             InjectKey(VK_BACK);
             return KeyOutcome::Eat;
         }
@@ -1094,8 +1093,8 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
         // The synchronous-channel injector (RichEditEm) handles commit-undo BS
         // via sent message. Default hosts let physical BS pass through naturally —
         // synthesizing would just add latency.
-        if (IsSyncReplaceChannel()) {
-            auto inj = injector_.load(std::memory_order_acquire);
+        if (dispatcher_.IsSyncReplaceChannel()) {
+            auto inj = dispatcher_.GetInjector();
             bool injOk;
             { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
               injOk = inj->Replace(/*bs=*/1, std::wstring_view{}); }
@@ -1175,11 +1174,11 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
         // here, not cached, so a focus change between commit and the next
         // BS uses the new injector's budget.
         const DWORD settleMs = static_cast<DWORD>(
-            injector_.load(std::memory_order_acquire)->SettleBudget().count());
-        if (synthEventsPending_ > 0 && (GetTickCount() - lastRealSynthTime_) < settleMs
+            dispatcher_.GetInjector()->SettleBudget().count());
+        if (dispatcher_.SynthEventsPending() > 0 && (GetTickCount() - dispatcher_.LastRealSynthTime()) < settleMs
             && !isCommitUndoExempt) {
             HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
-                     synthEventsPending_.load(), vkCode);
+                     dispatcher_.SynthEventsPending(), vkCode);
             CancelCommitUndo();
             // Fall through — ProcessKeyDown step 10 re-injects BS if needed; alpha → step 6 HandleAlphaKey
         } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
@@ -1208,7 +1207,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
                      commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
                      commitStack_.size(),
                      previousComposition_.c_str(),
-                     synthEventsPending_.load());
+                     dispatcher_.SynthEventsPending());
             ReplayCommittedChars();
             {
                 bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
@@ -1244,7 +1243,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
                      commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
                      commitStack_.size(),
                      previousComposition_.c_str(),
-                     synthEventsPending_.load());
+                     dispatcher_.SynthEventsPending());
             ReplayCommittedChars();
             HandleBackspace();
             return KeyOutcome::Eat;
@@ -1589,14 +1588,14 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
                 SetCommitUndoReady();
             }
         }
-        if (restored || synthEventsPending_ > 0) {
+        if (restored || dispatcher_.SynthEventsPending() > 0) {
             // Re-inject trigger AFTER all pending synthetic events so that:
             //   (a) auto-restore replacement arrives before the trigger, and
             //   (b) in-flight correction synthetics (e.g. from ee→ê mid-word) arrive
             //       before the trigger — preventing the trigger from slipping ahead of
             //       those backspaces/chars and causing corrupt output ("lỗiêhiênr").
             HOOK_LOG(L"  re-inject trigger vk=0x%02X (restored=%d synthPending=%d)",
-                     vkCode, restored ? 1 : 0, synthEventsPending_.load());
+                     vkCode, restored ? 1 : 0, dispatcher_.SynthEventsPending());
             InjectKey(vkCode);
             return KeyOutcome::Eat;  // Eat original trigger
         }
@@ -1614,10 +1613,10 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         // (newline, focus, cancel, cursor move) still fires.
         // Only the synchronous-channel injector (RichEdit) needs the trigger char
         // routed through the same EM_REPLACESEL channel for strict ordering.
-        if (IsSyncReplaceChannel()) {
+        if (dispatcher_.IsSyncReplaceChannel()) {
             const wchar_t triggerChar = VkToMacroChar(vkCode);
             if (triggerChar >= L' ') {
-                auto inj = injector_.load(std::memory_order_acquire);
+                auto inj = dispatcher_.GetInjector();
                 bool injOk;
                 { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
                   injOk = inj->Replace(/*bs=*/0, std::wstring_view(&triggerChar, 1)); }
@@ -1636,7 +1635,7 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
     if (engine_->Count() > 0) {
         HOOK_LOG(L"  other key vk=0x%02X with pending composition → commit", vkCode);
         bool restored = CommitComposition();
-        if (restored || synthEventsPending_ > 0) {
+        if (restored || dispatcher_.SynthEventsPending() > 0) {
             InjectKey(vkCode);
             return KeyOutcome::Eat;
         }
@@ -1647,8 +1646,8 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
     // (b) any plain backspace while synthetics from a previous word are still in flight.
     // Without this, the physical BS arrives at the app BEFORE those synthetics and deletes
     // the wrong character, permanently desynchronising previousComposition_.
-    if (vkCode == VK_BACK && synthEventsPending_ > 0) {
-        HOOK_LOG(L"  re-inject BS (engine empty, synthPending=%d)", synthEventsPending_.load());
+    if (vkCode == VK_BACK && dispatcher_.SynthEventsPending() > 0) {
+        HOOK_LOG(L"  re-inject BS (engine empty, synthPending=%d)", dispatcher_.SynthEventsPending());
         InjectKey(VK_BACK);
         return KeyOutcome::Eat;
     }
@@ -1880,17 +1879,17 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     //
     // Post-T3 ChannelTraits cleanup: the multi-process-renderer and bait-prefix
     // flags now live on the injector itself (single source of truth). One
-    // atomic_load(&injector_) snapshot covers both traits + the IsSyncReplace-
-    // Channel proxy reads injector_ separately (kept for callers outside this
+    // dispatcher_.GetInjector() snapshot covers both traits + the IsSyncReplace-
+    // Channel proxy reads the injector separately (kept for callers outside this
     // function; not worth threading the snapshot through public API).
-    auto inj = injector_.load(std::memory_order_acquire);
+    auto inj = dispatcher_.GetInjector();
     const bool electronApp = inj && inj->HasMultiProcessRenderer();
     const bool baitChar = inj && inj->NeedsBaitCharPrefix();
-    const bool skipEmpty = skipEmptyChar_.load(std::memory_order_acquire);
+    const bool skipEmpty = dispatcher_.SkipEmptyChar();
     // Sprint 2 D4: editMsgPath via SettleBudget==0 proxy (RichEditEm only
     // returns 0ms today). Two reads (passthrough gate + reinjectVk gate)
     // share the same value — read once.
-    const bool editMsgPath = IsSyncReplaceChannel();
+    const bool editMsgPath = dispatcher_.IsSyncReplaceChannel();
     //   - IsSyncReplaceChannel() (Win11 New Notepad RichEditD2DPT, etc.): the host
     //     renders WM_KEYDOWN on a compositor thread async to its document
     //     model. Letting physical keystrokes pass through means the app's
@@ -1907,9 +1906,9 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     //     human typing pace and well below the 30 ms wait that already
     //     guards the burst-input case.
     if (!autoCapped && currentCodeTable_.load(std::memory_order_acquire) == CodeTable::Unicode &&
-        !(hadSynthInWord_ && electronApp) &&
+        !(dispatcher_.HadSynthInWord() && electronApp) &&
         !editMsgPath &&
-        synthEventsPending_ == 0 &&
+        dispatcher_.SynthEventsPending() == 0 &&
         composition.size() == previousComposition_.size() + 1 &&
         composition.back() == originalCh &&
         composition.compare(0, previousComposition_.size(), previousComposition_) == 0) {
@@ -1979,7 +1978,7 @@ void HookEngine::HandleBackspace() {
                 bsCount = 0;
                 for (auto w : previousEncodedWidths_) bsCount += w;
             }
-            SendBackspaces(bsCount);
+            dispatcher_.SendBackspaces(bsCount);
             previousComposition_.clear();
             previousEncodedWidths_.clear();
         }
@@ -2066,8 +2065,8 @@ void HookEngine::ResetComposition() {
     // Mouse click, Ctrl/Alt shortcut (step 5), exception handler — all funnel here.
     // Each is a "sentence-context broke" event, so drop any pending sentence arm.
     autoCapState_ = AutoCapState::Idle;
-    synthEventsPending_ = 0;  // Pending synthetics from old context are irrelevant after reset
-    lastRealSynthTime_ = 0;
+    dispatcher_.ResetSynthEvents();  // Pending synthetics from old context are irrelevant after reset
+    dispatcher_.ResetLastRealSynthTime();
 }
 
 void HookEngine::ClearWordState() {
@@ -2079,7 +2078,7 @@ void HookEngine::ClearWordState() {
     rawMacroBuffer_.clear();
     macroCrossCommit_ = false;
     tempMacroOff_ = false;
-    hadSynthInWord_ = false;
+    dispatcher_.SetHadSynthInWord(false);
     digitLedWord_ = false;
 }
 
@@ -2175,328 +2174,19 @@ static HWND GetInputTarget() {
 // Clipboard paste threshold: macros longer than this use Ctrl+V instead of SendInput
 static constexpr size_t kMacroClipboardThreshold = 200;
 
-static void AppendUnicodeEvent(std::vector<INPUT>& events, WORD wScan) {
-    INPUT inDown = {};
-    inDown.type = INPUT_KEYBOARD;
-    inDown.ki.wScan = wScan;
-    inDown.ki.dwFlags = KEYEVENTF_UNICODE;
-    inDown.ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
-    events.push_back(inDown);
-
-    INPUT inUp = inDown;
-    inUp.ki.dwFlags |= KEYEVENTF_KEYUP;
-    events.push_back(inUp);
-}
-
-static void AppendVkEvent(std::vector<INPUT>& events, WORD wVk, WORD wScan) {
-    INPUT inDown = {};
-    inDown.type = INPUT_KEYBOARD;
-    inDown.ki.wVk = wVk;
-    inDown.ki.wScan = wScan;
-    inDown.ki.dwExtraInfo = HookEngine::VKEY_EXTRA_INFO;
-    events.push_back(inDown);
-
-    INPUT inUp = inDown;
-    inUp.ki.dwFlags |= KEYEVENTF_KEYUP;
-    events.push_back(inUp);
-}
-
-// Sprint 2 D5: Bridges Internal::g_synthCounterCallback into the
-// singleton's synthEventsPending_ atomic. Pre-D2 the increment lived
-// in HookEngine::TrackedSendInput (only entry point for synth dispatch);
-// the IOutputInjector refactor moved dispatch into Internal::TrackedSendInput
-// which has no HookEngine dependency, leaving the counter at 0 on the
-// hot path and silently disabling synth-guard everywhere. This callback
-// restores the pre-D2 behavior without re-coupling the layers.
-//
-// Memory ordering: relaxed is sufficient because every increment AND the
-// matching per-event decrement at LowLevelKeyboardProc:663 happen on the
-// same LL hook thread (SendInput fires the WH_KEYBOARD_LL callback
-// synchronously on the calling thread for own-injection events marked
-// with VKEY_EXTRA_INFO). No inter-thread visibility chain to
-// establish. The counter is a hint for the synth-guard heuristic, not a
-// synchronization primitive — readers at HookEngine.cpp:971/1074/1150/
-// 1497 also use implicit-default ordering on `synthEventsPending_ > 0`
-// comparisons, which is fine same-thread.
-void HookEngine::OnSynthDispatched(int delta) noexcept {
-    auto* self = s_instance.load(std::memory_order_relaxed);
-    if (!self) return;
-    self->synthEventsPending_.fetch_add(delta, std::memory_order_relaxed);
-}
-
-// Sprint 2 D4: Replaces useEditMsgPath_.load() at four policy gates
-// (commit-undo BS, commit trigger char, HandleAlphaKey passthrough/reinjectVk,
-// ReplaceComposition retry-loop). Returns true iff the active injector's
-// SettleBudget == 0ms — only RichEditEmReplaceSelInjector qualifies today
-// (sent-message channel, drains synchronously). See header for the leak-
-// caveat: the proxy ties policy to a perf characteristic; if a future Win32-
-// sync impl returns 0ms it would misfire.
-bool HookEngine::IsSyncReplaceChannel() const noexcept {
-    auto inj = injector_.load(std::memory_order_acquire);
-    return inj && inj->SettleBudget().count() == 0;
-}
-
-void HookEngine::SendBackspaceEvents(size_t count) {
-    WORD bsScan = static_cast<WORD>(MapVirtualKeyW(VK_BACK, MAPVK_VK_TO_VSC));
-    std::vector<INPUT> events;
-    events.reserve(count * 2);
-    for (size_t i = 0; i < count; ++i) {
-        AppendVkEvent(events, VK_BACK, bsScan);
-    }
-    sending_ = true;
-    (void)Output::Internal::TrackedSendInput(events.data(), static_cast<UINT>(events.size()));
-    sending_ = false;
-    RecordSynthDispatch();
-}
-
-void HookEngine::SendCharEvents(const std::wstring& text) {
-    std::vector<INPUT> events;
-    events.reserve(text.size() * 2);
-    for (wchar_t ch : text) {
-        AppendUnicodeEvent(events, ch);
-    }
-    sending_ = true;
-    (void)Output::Internal::TrackedSendInput(events.data(), static_cast<UINT>(events.size()));
-    sending_ = false;
-    RecordSynthDispatch();
-}
-
-bool HookEngine::ShouldUseClipboard() const noexcept {
-    if (currentCodeTable_.load(std::memory_order_acquire) != CodeTable::Unicode) return false;
-    return useClipboardPaste_.load(std::memory_order_acquire);
-}
-
-/// Write Unicode text to clipboard. Returns false on any failure.
-/// Sets ExcludeClipboardContentFromMonitorProcessing to keep Win+V clean.
-static bool SetClipboardText(const std::wstring& text) noexcept {
-    if (!OpenClipboard(nullptr)) return false;
-    EmptyClipboard();
-    size_t bytes = (text.size() + 1) * sizeof(wchar_t);
-    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, bytes);
-    if (!hMem) { CloseClipboard(); return false; }
-    auto* dest = static_cast<wchar_t*>(GlobalLock(hMem));
-    if (!dest) { GlobalFree(hMem); CloseClipboard(); return false; }
-    memcpy(dest, text.c_str(), bytes);
-    GlobalUnlock(hMem);
-    SetClipboardData(CF_UNICODETEXT, hMem);
-
-    // Exclude from Windows Clipboard History (Win+V) and cloud sync.
-    // Win10 1809+; harmless no-op on older builds.
-    static UINT cfExclude = RegisterClipboardFormat(
-        L"ExcludeClipboardContentFromMonitorProcessing");
-    if (cfExclude) {
-        HGLOBAL hExclude = GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD));
-        if (hExclude) {
-            auto* p = static_cast<DWORD*>(GlobalLock(hExclude));
-            if (p) { *p = 0; GlobalUnlock(hExclude); }
-            SetClipboardData(cfExclude, hExclude);
-        }
-    }
-
-    CloseClipboard();
-    return true;
-}
-
-void HookEngine::ClipboardPaste(const std::wstring& text) {
-    if (text.empty()) return;
-
-    if (!SetClipboardText(text)) {
-        HOOK_LOG(L"  ClipboardPaste: clipboard failed, fallback to SendInput");
-        SendCharEvents(text);
-        return;
-    }
-
-    // Release held modifiers to prevent Ctrl+Shift+V / Ctrl+Alt+V.
-    // Scenario: user triggers macro with '!' (Shift+1) — Shift still held.
-    struct ModRelease { WORD vk; WORD scan; bool wasDown; };
-    ModRelease mods[] = {
-        { VK_SHIFT, static_cast<WORD>(MapVirtualKeyW(VK_SHIFT, MAPVK_VK_TO_VSC)),
-          (GetKeyState(VK_SHIFT) & 0x8000) != 0 },
-        { VK_MENU,  static_cast<WORD>(MapVirtualKeyW(VK_MENU, MAPVK_VK_TO_VSC)),
-          (GetKeyState(VK_MENU) & 0x8000) != 0 },
-        { VK_LWIN,  static_cast<WORD>(MapVirtualKeyW(VK_LWIN, MAPVK_VK_TO_VSC)),
-          (GetKeyState(VK_LWIN) & 0x8000) != 0 },
-        { VK_RWIN,  static_cast<WORD>(MapVirtualKeyW(VK_RWIN, MAPVK_VK_TO_VSC)),
-          (GetKeyState(VK_RWIN) & 0x8000) != 0 },
-    };
-
-    std::vector<INPUT> preEvents;
-    std::vector<INPUT> postEvents;
-    for (auto& m : mods) {
-        if (m.wasDown) {
-            INPUT up{};
-            up.type = INPUT_KEYBOARD;
-            up.ki.wVk = m.vk;
-            up.ki.wScan = m.scan;
-            up.ki.dwFlags = KEYEVENTF_KEYUP;
-            up.ki.dwExtraInfo = VKEY_EXTRA_INFO;
-            preEvents.push_back(up);
-
-            INPUT down{};
-            down.type = INPUT_KEYBOARD;
-            down.ki.wVk = m.vk;
-            down.ki.wScan = m.scan;
-            down.ki.dwExtraInfo = VKEY_EXTRA_INFO;
-            postEvents.push_back(down);
-        }
-    }
-
-    // Simulate Ctrl+V — hook proc passes these through (VKEY_EXTRA_INFO marker)
-    WORD ctrlScan = static_cast<WORD>(MapVirtualKeyW(VK_CONTROL, MAPVK_VK_TO_VSC));
-    WORD vScan = static_cast<WORD>(MapVirtualKeyW('V', MAPVK_VK_TO_VSC));
-    INPUT inputs[4] = {};
-    for (auto& in : inputs) {
-        in.type = INPUT_KEYBOARD;
-        in.ki.dwExtraInfo = VKEY_EXTRA_INFO;
-    }
-    inputs[0].ki.wVk = VK_CONTROL;  inputs[0].ki.wScan = ctrlScan;
-    inputs[1].ki.wVk = 'V';         inputs[1].ki.wScan = vScan;
-    inputs[2].ki.wVk = 'V';         inputs[2].ki.wScan = vScan;     inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[3].ki.wVk = VK_CONTROL;  inputs[3].ki.wScan = ctrlScan;  inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
-
-    sending_ = true;
-    if (!preEvents.empty()) {
-        (void)Output::Internal::TrackedSendInput(preEvents.data(), static_cast<UINT>(preEvents.size()));
-    }
-    (void)Output::Internal::TrackedSendInput(inputs, 4);
-    if (!postEvents.empty()) {
-        (void)Output::Internal::TrackedSendInput(postEvents.data(), static_cast<UINT>(postEvents.size()));
-    }
-    sending_ = false;
-    RecordSynthDispatch();
-
-    HOOK_LOG(L"  ClipboardPaste: pasted %zu chars via Ctrl+V (mod-release: %zu)",
-             text.size(), preEvents.size());
-}
-
-// ═══════════════════════════════════════════════════════════
-// EM_REPLACESEL direct-paste — primary VB6/ANSI path (issue #94)
-// ═══════════════════════════════════════════════════════════
-//
-// Sends text directly into the focused Edit control via EM_REPLACESEL — no
-// clipboard, no SendInput. Preserves undo stack (wParam=TRUE).
-//
-// All SendMessage calls use SMTO_ABORTIFHUNG with a 50ms timeout — the
-// keyboard hook must never block: a hung target app would otherwise freeze
-// every keystroke system-wide.
-
-namespace {
-constexpr size_t kMaxClassName = 64;
-constexpr UINT   kEditMsgTimeoutMs = 50;
-
-// VB6 (ThunderRT6*) apps are the whole reason this path exists — check first.
-// _wcsnicmp is case-insensitive so "RichEdit" matches "RICHEDIT60W" too.
-bool IsEditCompatibleClass(const wchar_t* cls) noexcept {
-    if (!cls || !*cls) return false;
-    if (_wcsnicmp(cls, L"ThunderRT6TextBox", 17) == 0) return true;
-    if (_wcsnicmp(cls, L"ThunderRT6RichText", 18) == 0) return true;
-    if (_wcsicmp(cls, L"Edit") == 0) return true;
-    if (_wcsnicmp(cls, L"RichEdit", 8) == 0) return true;
-    return false;
-}
-}  // namespace
-
-bool HookEngine::TryEditMessagePaste(const std::wstring& text, size_t backspaceCount) noexcept {
-    if (text.empty() && backspaceCount == 0) return true;
-
-    // Prefer cached focused HWND (populated in OnFocusChanged / invalidated on mouse click)
-    // to avoid AttachThreadInput on every keystroke. Fall back to a fresh query on miss.
-    HWND hwnd = focus_.CachedFocusedHwnd();
-    if (!hwnd || !IsWindow(hwnd)) {
-        focus_.RefreshFocusCache(GetForegroundWindow());
-        hwnd = focus_.CachedFocusedHwnd();
-        if (!hwnd) {
-            HOOK_LOG(L"  EditMsgPaste: no focused child hwnd");
-            return false;
-        }
-    }
-
-    const wchar_t* cls = focus_.CachedFocusedClass().c_str();
-    if (!IsEditCompatibleClass(cls)) {
-        HOOK_LOG(L"  EditMsgPaste: incompatible class='%s'", cls);
-        return false;
-    }
-
-    constexpr UINT kFlags = SMTO_ABORTIFHUNG | SMTO_NORMAL;
-    DWORD_PTR dummy = 0;
-    DWORD newStart = 0, selEnd = 0;
-
-    // EM_GETSEL is a query — safe to call before we suppress redraw below.
-    if (backspaceCount > 0) {
-        DWORD selStart = 0;
-        if (!SendMessageTimeoutW(hwnd, EM_GETSEL,
-                                 reinterpret_cast<WPARAM>(&selStart),
-                                 reinterpret_cast<LPARAM>(&selEnd),
-                                 kFlags, kEditMsgTimeoutMs, &dummy)) {
-            HOOK_LOG(L"  EditMsgPaste: EM_GETSEL timed out (class='%s')", cls);
-            return false;
-        }
-        if (static_cast<DWORD>(backspaceCount) > selEnd) {
-            HOOK_LOG(L"  EditMsgPaste: BS=%zu > caret=%u (class='%s')",
-                     backspaceCount, selEnd, cls);
-            return false;
-        }
-        newStart = selEnd - static_cast<DWORD>(backspaceCount);
-    }
-
-    // Suppress repaint between EM_SETSEL (highlights selection) and EM_REPLACESEL —
-    // otherwise the selection renders as a blue flash before being replaced.
-    // Re-enable + InvalidateRect at the end to paint the final text once.
-    // erase=FALSE: text controls paint their own background in WM_PAINT — TRUE would
-    // cause a brief background-color flash before the text redraws on top.
-    // Only re-enable if suppression actually took effect; if the FALSE send timed out
-    // the control never entered no-redraw state, so skip the (redundant) TRUE send.
-    bool redrawSuppressed = false;
-    if (backspaceCount > 0) {
-        redrawSuppressed = SendMessageTimeoutW(hwnd, WM_SETREDRAW, FALSE, 0,
-                                               kFlags, kEditMsgTimeoutMs, &dummy) != 0;
-        if (!SendMessageTimeoutW(hwnd, EM_SETSEL,
-                                 static_cast<WPARAM>(newStart),
-                                 static_cast<LPARAM>(selEnd),
-                                 kFlags, kEditMsgTimeoutMs, &dummy)) {
-            HOOK_LOG(L"  EditMsgPaste: EM_SETSEL timed out (class='%s')", cls);
-            if (redrawSuppressed) {
-                SendMessageTimeoutW(hwnd, WM_SETREDRAW, TRUE, 0,
-                                    kFlags, kEditMsgTimeoutMs, &dummy);
-                InvalidateRect(hwnd, nullptr, FALSE);
-            }
-            return false;
-        }
-    }
-
-    // wParam=TRUE → operation goes on the undo stack (Ctrl+Z works).
-    BOOL replaceOk = SendMessageTimeoutW(hwnd, EM_REPLACESEL,
-                                         static_cast<WPARAM>(TRUE),
-                                         reinterpret_cast<LPARAM>(text.c_str()),
-                                         kFlags, kEditMsgTimeoutMs, &dummy) != 0;
-
-    if (redrawSuppressed) {
-        SendMessageTimeoutW(hwnd, WM_SETREDRAW, TRUE, 0,
-                            kFlags, kEditMsgTimeoutMs, &dummy);
-        InvalidateRect(hwnd, nullptr, FALSE);
-    }
-
-    if (!replaceOk) {
-        HOOK_LOG(L"  EditMsgPaste: EM_REPLACESEL timed out (class='%s')", cls);
-        return false;
-    }
-
-    HOOK_LOG(L"  EditMsgPaste: class='%s' sel=[%u,%u] BS=%zu text='%s' OK",
-             cls, newStart, selEnd, backspaceCount, text.c_str());
-    return true;
-}
-
-void HookEngine::RecordSynthDispatch() noexcept {
-    DWORD now = GetTickCount();
-    lastSynthSendTime_ = now;
-    lastRealSynthTime_ = now;
-}
-
 // Wave 3 PR 3.2 — IsKnownElectronExe (file-scope), IsWebView2App,
 // IsTrayOrTaskbarWindow, GetExeNameForHwnd, GetExeFullPathForHwnd
 // (file-scope), and ClassifyWindow (file-scope) all moved to
 // FocusOwner.cpp. They form the focus-classification subsystem and have
 // no dependency on engine state.
+//
+// Wave 3 PR 3.3 — AppendUnicodeEvent / AppendVkEvent (file-scope helpers),
+// SetClipboardText (file-scope), IsEditCompatibleClass (anonymous-namespace
+// helper), OnSynthDispatched, IsSyncReplaceChannel, SendBackspaceEvents,
+// SendCharEvents, ShouldUseClipboard, ClipboardPaste, TryEditMessagePaste,
+// RecordSynthDispatch, SendBackspaces all moved to OutputDispatcher.cpp.
+// They form the output-dispatch subsystem and have no dependency on
+// engine state.
 
 void HookEngine::NotifyModeChange() noexcept {
     if (modeChangeCallback_) {
@@ -2866,7 +2556,7 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
                     return NextKey::Pipeline::MacroOutcome::Eat;
                 }
                 if (result == MacroResult::ExpandedPassTrigger) {
-                    if (synthEventsPending_ > 0) {
+                    if (dispatcher_.SynthEventsPending() > 0) {
                         InjectKey(vk);
                         return NextKey::Pipeline::MacroOutcome::Eat;
                     }
@@ -2919,7 +2609,7 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
             return NextKey::Pipeline::MacroOutcome::Eat;
         }
         if (result == MacroResult::ExpandedPassTrigger) {
-            if (synthEventsPending_ > 0) {
+            if (dispatcher_.SynthEventsPending() > 0) {
                 InjectKey(vk);
                 return NextKey::Pipeline::MacroOutcome::Eat;
             }
@@ -2992,7 +2682,12 @@ void HookEngine::DispatchCoordinator(DWORD vkCode, DWORD reinjectVk,
     (void)outputChannel_.TakeBatch();  // W2: feature delegates synchronously, batch is empty.
 }
 
-/// See OnFocusChanged() for the detection logic + injector publish.
+/// Wave 3 PR 3.3 — outer shell only. Computes the prefix diff against
+/// `previousComposition_` (engine state) + encodes for non-Unicode code
+/// tables + updates `previousComposition_` / `previousEncodedWidths_`,
+/// then delegates the actual SendInput / RichEdit-retry / clipboard
+/// fallback orchestration to `dispatcher_`. Detection logic + injector
+/// publish lives in OnFocusChanged (focus_-driven).
 void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectVk) {
     VKEY_ASSERT_HOOK_THREAD();
     PERF_SCOPE(::NextKey::Perf::Stage::Replace);
@@ -3002,26 +2697,28 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
         return;
     }
 
-    // Find common prefix at Unicode level — only replace what actually changed
+    // Find common prefix at Unicode level — only replace what actually changed.
     size_t commonLen = 0;
     size_t minLen = (std::min)(previousComposition_.size(), newText.size());
     while (commonLen < minLen && previousComposition_[commonLen] == newText[commonLen]) {
         commonLen++;
     }
 
+    const CodeTable ct = currentCodeTable_.load(std::memory_order_acquire);
+
     // ── Non-Unicode code table path ──
-    if (currentCodeTable_.load(std::memory_order_acquire) != CodeTable::Unicode) {
-        // Calculate backspace count from encoded widths of chars being replaced
+    if (ct != CodeTable::Unicode) {
+        // Calculate backspace count from encoded widths of chars being replaced.
         size_t backspaceCount = 0;
         for (size_t i = commonLen; i < previousEncodedWidths_.size(); ++i) {
             backspaceCount += previousEncodedWidths_[i];
         }
 
-        // Convert new chars to encoded form
+        // Convert new chars to encoded form.
         std::wstring encodedToSend;
         std::vector<uint8_t> newWidths;
         for (size_t i = commonLen; i < newText.size(); ++i) {
-            auto enc = CodeTableConverter::ConvertChar(newText[i], currentCodeTable_.load(std::memory_order_acquire));
+            auto enc = CodeTableConverter::ConvertChar(newText[i], ct);
             encodedToSend += enc.units[0];
             if (enc.count == 2) encodedToSend += enc.units[1];
             newWidths.push_back(enc.count);
@@ -3031,33 +2728,23 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
                  previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
                  encodedToSend.size(), reinjectVk);
 
-        // Sprint 2 D3: route encoded path through the IOutputInjector.
-        // The bait-char prefix (Chromium autocomplete-dismiss) is now
-        // owned by Win32SendInputInjector and gated on its
-        // needsBaitCharPrefix_ flag, so we no longer pre-bake U+202F or
-        // an extra BS here. The injector also handles the Electron/
-        // Console split-with-Sleep when classified accordingly.
+        // Encoded path: no retry-loop, no clipboard fallback, no reinjectVk
+        // prepend (preserves pre-Wave-3-PR-3.3 semantics — reinjectVk was
+        // logged but never acted upon in the encoded branch).
         if (backspaceCount > 0 || !encodedToSend.empty()) {
-            sending_ = true;
-            auto inj = injector_.load(std::memory_order_acquire);
-            bool injOk;
-            { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
-              injOk = inj->Replace(backspaceCount, std::wstring_view(encodedToSend)); }
-            if (!injOk) {
-                HOOK_LOG(L"  ReplaceComposition[encoded]: injector reported partial delivery");
-            }
-            sending_ = false;
-            RecordSynthDispatch();
+            (void)dispatcher_.ReplaceRaw(backspaceCount,
+                                          std::wstring_view(encodedToSend));
         }
 
-        // Update widths: keep [0..commonLen), append newWidths
+        // Update widths: keep [0..commonLen), append newWidths.
         previousEncodedWidths_.resize(commonLen);
-        previousEncodedWidths_.insert(previousEncodedWidths_.end(), newWidths.begin(), newWidths.end());
+        previousEncodedWidths_.insert(previousEncodedWidths_.end(),
+                                      newWidths.begin(), newWidths.end());
         previousComposition_ = newText;
         return;
     }
 
-    // ── Unicode path (fast path, zero overhead) ──
+    // ── Unicode path ──
     size_t backspaceCount = previousComposition_.size() - commonLen;
     std::wstring toSend = newText.substr(commonLen);
 
@@ -3065,146 +2752,20 @@ void HookEngine::ReplaceComposition(const std::wstring& newText, DWORD reinjectV
              previousComposition_.c_str(), newText.c_str(), commonLen, backspaceCount,
              toSend.c_str(), reinjectVk);
 
-    // ── Async-render apps (Win11 new Notepad) ──
-    // WinUI 3 RichEditBox renders on the compositor thread async to input. SendInput
-    // BS+replace arrives a frame too late → suppressed key flashes before replacement.
-    // EM_REPLACESEL goes straight into the RichEdit child synchronously → atomic.
-    //
-    // Burst-input race (chaos 3.3 / 5.2 / 6.1, fixed C/2026-05-05): under sub-1ms
-    // inter-key, physical WM_KEYDOWN messages stack up in the app's input queue
-    // faster than the compositor renders them. When the hook fires for a
-    // tone/modifier key, the EM_GETSEL caret read inside TryEditMessagePaste is
-    // still at a stale (low) position, so the BS > caret guard refuses the
-    // replacement. The original code's "fallback to SendInput" branch was the
-    // actual corruption source: BS+chars injected into the kernel queue then
-    // interleave with the still-pending physical chars in front of them, and
-    // the next hook callback (for the next key) reads a half-applied caret. The
-    // observed shapes (tờương / ờnương for `truongwf`) are exactly that race
-    // re-rendered.
-    //
-    // Fix: when TryEditMessagePaste fails, sleep briefly in the hook callback
-    // so the app's main thread has time to drain its input queue and advance
-    // the caret; then retry. The hook thread holds back its own callback while
-    // sleeping, so no further physical keys race in. 30 ms upper bound is well
-    // below LowLevelHooksTimeout (default 300 ms per Win32 docs; max ~1000 ms
-    // via registry) and dwarfs the typical 5-10 ms catch-up needed at chaos
-    // 500 µs inter-key. Only invokes the SendInput
-    // fallback if the wait is exhausted — true human-pace typing never hits it.
-    if (IsSyncReplaceChannel()) {
-        // RichEdit path delegates to RichEditEmReplaceSelInjector.
-        // Retry-loop preserved here (not pushed into impl) because the
-        // 30 ms catch-up window is policy on the engine side: the budget is
-        // bounded by LowLevelHooksTimeout, not by the channel itself.
-        constexpr int kAsyncRenderMaxWaitMs = 30;
-        constexpr int kAsyncRenderStepMs    = 1;
-        int waitedMs = 0;
-        auto inj = injector_.load(std::memory_order_acquire);
-        for (;;) {
-            bool injOk;
-            { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
-              injOk = inj->Replace(backspaceCount, std::wstring_view(toSend)); }
-            if (injOk) {
-                previousComposition_ = newText;
-                if (synthEventsPending_ > 0) hadSynthInWord_ = true;
-                if (waitedMs > 0) {
-                    HOOK_LOG(L"  ReplaceComposition[editMsg]: caught up after %dms wait", waitedMs);
-                }
-                return;
-            }
-            if (waitedMs >= kAsyncRenderMaxWaitMs) break;
-            Sleep(kAsyncRenderStepMs);
-            waitedMs += kAsyncRenderStepMs;
-        }
-        HOOK_LOG(L"  ReplaceComposition[editMsg]: retry exhausted (%dms) — fallback to SendInput BS=%zu send='%s'",
-                 kAsyncRenderMaxWaitMs, backspaceCount, toSend.c_str());
-    }
-
-    // ── VB6 / ANSI-internal windows ──
-    // ANSI windows can't handle KEYEVENTF_UNICODE (VK_PACKET) — Vietnamese chars become '?'.
-    // Primary path: EM_REPLACESEL directly into the focused Edit/RichEdit/ThunderRT6
-    // child (no clipboard side-effect). Fallback: clipboard paste when the focused
-    // child isn't a compatible Edit control.
-    //
-    // When reinjectVk != 0: HandleAlphaKey appended originalCh to previousComposition_
-    // for game-compat tracking, but the physical key was blocked and never reached the
-    // ANSI window. Subtract 1 BS to compensate. Reinject VK itself is skipped — ANSI
-    // desktop apps (XYplorer, etc.) don't need game-style VK re-injection.
-    if (ShouldUseClipboard()) {
-        size_t bsCount = backspaceCount;
-        if (reinjectVk != 0 && bsCount > 0) bsCount--;
-
-        if (TryEditMessagePaste(toSend, bsCount)) {
-            previousComposition_ = newText;
-            if (synthEventsPending_ > 0) hadSynthInWord_ = true;
-            return;
-        }
-
-        HOOK_LOG(L"  ReplaceComposition[clipboard]: fallback BS=%zu (raw=%zu reinject=0x%X) send='%s'",
-                 bsCount, backspaceCount, reinjectVk, toSend.c_str());
-        if (bsCount > 0) {
-            SendBackspaceEvents(bsCount);
-            Sleep(8);  // Let app process deletions before clipboard paste
-        }
-        if (!toSend.empty()) {
-            ClipboardPaste(toSend);
-        }
-        previousComposition_ = newText;
-        if (synthEventsPending_ > 0) hadSynthInWord_ = true;
-        return;
-    }
-
-    {
-        // Sprint 2 D3: Unicode path now delegates to IOutputInjector for
-        // the BS + chars dispatch — bait-char prefix (Chromium) and
-        // split-with-Sleep (Electron/Console) live inside the impl,
-        // gated on the classification flags wired in OnFocusChanged.
-        //
-        // reinjectVk handling stays inline: it's a single VK keydown
-        // (no keyup — the physical key-up flows through later) prepended
-        // for game compatibility, which the (bsCount, text) interface
-        // can't carry. Rare path (only fires when HandleAlphaKey replays
-        // a held game-hotkey through a Vietnamese transform), so the
-        // extra raw SendInput call here is acceptable.
-        HOOK_LOG(L"  ReplaceComposition[send]: BS=%zu toSend='%s' skipEmpty=%d synthPending=%d reinjectVk=0x%02X",
-                 backspaceCount, toSend.c_str(),
-                 skipEmptyChar_.load(std::memory_order_acquire) ? 1 : 0,
-                 synthEventsPending_.load(), reinjectVk);
-
-        if (backspaceCount > 0 || !toSend.empty() || reinjectVk != 0) {
-            sending_ = true;
-
-            if (reinjectVk != 0) {
-                INPUT evt{};
-                evt.type = INPUT_KEYBOARD;
-                evt.ki.wVk = static_cast<WORD>(reinjectVk);
-                evt.ki.wScan = static_cast<WORD>(MapVirtualKeyW(reinjectVk, MAPVK_VK_TO_VSC));
-                evt.ki.dwExtraInfo = VKEY_EXTRA_INFO;
-                (void)Output::Internal::TrackedSendInput(&evt, 1);
-            }
-
-            if (backspaceCount > 0 || !toSend.empty()) {
-                auto inj = injector_.load(std::memory_order_acquire);
-                bool injOk;
-                { PERF_SCOPE(::NextKey::Perf::Stage::Injector);
-                  injOk = inj->Replace(backspaceCount, std::wstring_view(toSend)); }
-                if (!injOk) {
-                    HOOK_LOG(L"  ReplaceComposition[send]: injector reported partial delivery");
-                }
-            }
-
-            sending_ = false;
-            RecordSynthDispatch();
-        }
-    }
+    // Dispatcher handles the full retry+fallback orchestration:
+    //   1. IsSyncReplaceChannel? → RichEdit 30ms retry-loop, fall through on exhaust.
+    //   2. ShouldUseClipboard → TryEditMessagePaste + clipboard fallback chain
+    //      (BS-adjusts when reinjectVk != 0).
+    //   3. Generic SendInput with optional reinjectVk prepend.
+    dispatcher_.ReplaceUnicode(backspaceCount,
+                                std::wstring_view(toSend),
+                                static_cast<std::uint16_t>(reinjectVk));
 
     previousComposition_ = newText;
-    // Mark that at least one synthetic event was sent for this word.
-    // Guards passthrough path in HandleAlphaKey from mixing physical+synthetic events mid-word.
-    if (synthEventsPending_ > 0) hadSynthInWord_ = true;
 }
 
 HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
-    auto inj = injector_.load(std::memory_order_acquire);
+    auto inj = dispatcher_.GetInjector();
 
     // Path 1: live composition (existing behavior).
     if (engine_->Count() > 0) {
@@ -3259,23 +2820,6 @@ HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
     return KeyOutcome::Eat;
 }
 
-void HookEngine::SendBackspaces(size_t count) {
-    if (count == 0) return;
-
-    // Sprint 2 D2: uniform injector dispatch. The RichEdit class
-    // (Win11 New Notepad RichEditD2DPT, Sprint 1 D12 verdict) is now
-    // handled inside RichEditEmReplaceSelInjector — no useEditMsgPath_
-    // short-circuit needed. Bait-char prefix lives inside
-    // Win32SendInputInjector::Replace, gated by needsBaitCharPrefix_
-    // wired from the Chromium classification flag (D3).
-    auto inj = injector_.load(std::memory_order_acquire);
-    HOOK_LOG(L"  SendBackspaces: %zu via injector", count);
-    if (!inj->Replace(count, std::wstring_view{})) {
-        // Partial-send / channel failure — log but no further fallback;
-        // caller's commit-undo state machine handles desync on next key.
-        HOOK_LOG(L"  SendBackspaces: injector reported partial delivery");
-    }
-}
 
 // ═══════════════════════════════════════════════════════════
 // Modifier Tracking — feeds double-Alt + layout-change detection
@@ -3307,15 +2851,10 @@ void HookEngine::TrackModifier(DWORD vkCode, bool isDown) {
 // ═══════════════════════════════════════════════════════════
 
 void HookEngine::InjectKey(DWORD vkCode) {
-    // Sprint 2 D1: route through IOutputInjector. The injector knows the
-    // active host class and emits the right INPUT[] with VKEY_EXTRA_INFO
-    // marker. Engine still owns sending_ guard + lastSynthSendTime_ tracking
-    // (they're synth-pressure state, not channel state).
-    sending_ = true;
-    auto inj = injector_.load(std::memory_order_acquire);
-    inj->SendKey(static_cast<unsigned short>(vkCode));
-    sending_ = false;
-    lastSynthSendTime_ = GetTickCount();
+    // Wave 3 PR 3.3 — delegated to dispatcher. Re-entrant gate (sending_)
+    // + watchdog timestamp (lastSynthSendTime_ only — lastRealSynthTime_
+    // stays unchanged because InjectKey is re-injection, NOT typing).
+    dispatcher_.InjectKey(static_cast<std::uint16_t>(vkCode));
 }
 
 bool HookEngine::IsCommitTrigger(DWORD vkCode) {
@@ -3397,47 +2936,33 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
     auto plan = Macro::Plan(inputs, mapper);
     if (!plan.matched) return MacroResult::NoMatch;
 
-    auto inj = injector_.load(std::memory_order_acquire);
+    auto inj = dispatcher_.GetInjector();
 
     if (plan.useClipboard) {
         if (plan.bsCount > 0) {
-            sending_ = true;
-            if (!inj->Replace(plan.bsCount, std::wstring_view{})) {
-                HOOK_LOG(L"  TryExpandMacro[clipboard]: BS injector reported partial delivery");
-            }
-            sending_ = false;
-            RecordSynthDispatch();
+            (void)dispatcher_.ReplaceRaw(plan.bsCount, std::wstring_view{});
         }
         auto clipText = Macro::ExpandEscapesForClipboard(plan.expansion);
-        ClipboardPaste(clipText);
+        dispatcher_.ClipboardPasteText(clipText);
         HOOK_LOG(L"  TryExpandMacro: clipboard paste %zu chars (raw %zu)",
                  clipText.size(), plan.expansion.size());
     } else {
-        sending_ = true;
         std::size_t pendingBs = plan.bsCount;
         for (const auto& s : Macro::BuildSegments(plan.expansion, currentCodeTable_.load(std::memory_order_acquire))) {
             if (s.isReturn) {
                 if (pendingBs > 0) {
-                    if (!inj->Replace(pendingBs, std::wstring_view{})) {
-                        HOOK_LOG(L"  TryExpandMacro[send]: injector reported partial delivery");
-                    }
+                    (void)dispatcher_.ReplaceRaw(pendingBs, std::wstring_view{});
                     pendingBs = 0;
                 }
-                inj->SendKey(VK_RETURN);
+                dispatcher_.InjectKey(VK_RETURN);
             } else if (!s.text.empty()) {
-                if (!inj->Replace(pendingBs, std::wstring_view(s.text))) {
-                    HOOK_LOG(L"  TryExpandMacro[send]: injector reported partial delivery");
-                }
+                (void)dispatcher_.ReplaceRaw(pendingBs, std::wstring_view(s.text));
                 pendingBs = 0;
             }
         }
         if (pendingBs > 0) {
-            if (!inj->Replace(pendingBs, std::wstring_view{})) {
-                HOOK_LOG(L"  TryExpandMacro[send]: injector reported partial delivery");
-            }
+            (void)dispatcher_.ReplaceRaw(pendingBs, std::wstring_view{});
         }
-        sending_ = false;
-        RecordSynthDispatch();
     }
 
     ClearWordState();
@@ -3580,9 +3105,10 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     autoCapState_ = AutoCapState::Idle;
 
     // Per-app cached flags — single release-store pair with the hot-path
-    // acquire-loads in ProcessKeyDown / HandleAlphaKey.
-    skipEmptyChar_.store(cls->localSkipEmpty, std::memory_order_release);
-    useClipboardPaste_.store(cls->localClipboard, std::memory_order_release);
+    // acquire-loads in ProcessKeyDown / HandleAlphaKey. Wave 3 PR 3.3:
+    // owned by OutputDispatcher (atomic readers go through getter API).
+    dispatcher_.SetSkipEmptyChar(cls->localSkipEmpty);
+    dispatcher_.SetUseClipboardPaste(cls->localClipboard);
 
     // IOutputInjector swap — RCU publish so in-flight HandleAlphaKey reads
     // see either the old or new injector cleanly.
@@ -3600,7 +3126,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         // suggestKeepChars flag to default false until the next ApplyConfig.
         // Use the outer `cfg` loaded at function entry — no re-load needed.
         newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
-        injector_.store(std::move(newInjector), std::memory_order_release);
+        dispatcher_.SetInjector(std::move(newInjector));
     }
 
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d",
