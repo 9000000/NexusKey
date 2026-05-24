@@ -223,8 +223,15 @@ void CALLBACK FocusOwner::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd,
 
         // Per WINEVENT_OUTOFCONTEXT semantics, this callback fires on the
         // INSTALLER thread (main, where SetWinEventHook was called) — NOT
-        // the hook thread. State writes are deferred to the hook thread via
-        // the mailbox (HookEngine::OnFocusChanged → Classify → Post).
+        // the hook thread. Wave 3 PR 3.6 (worker-thread doctrine §12.4):
+        // onFocusChanged_ on this thread is produce-only — it latches the
+        // trigger HWND + signals the worker. The full chain is then
+        // `HookEngine::OnFocusChanged` (main) → latch + signal worker →
+        // worker `DrainClassifyOnWorker` → `focus_.Classify` →
+        // `Mailbox().Post` (worker → hook). State writes still land on the
+        // hook thread via the mailbox; Classify itself now runs only on
+        // the worker, restoring single-writer for the plain
+        // appProfileCache_ + webView2PositiveCache_ containers.
         if (event == EVENT_SYSTEM_MINIMIZEEND) {
             // Window restored from taskbar — re-evaluate focus with the actual foreground window.
             // Don't use hwnd directly: the restored window may not be foreground yet.

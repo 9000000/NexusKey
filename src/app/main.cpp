@@ -490,6 +490,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Share g_sharedState with HookEngine for direct reading (same process, no Open needed)
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
+    // Wave 3 PR 3.6 — wire the worker-signal callback BEFORE HookEngine::Start.
+    // Otherwise the LL hook thread (spawned inside Start) could read
+    // `workerSignalFn_` from its QuickSync slow-path bail-out while main is
+    // still mid-assign — std::function copy-assignment is NOT atomic, so a
+    // concurrent read on hook = data race = UB. Pre-Start init means the
+    // C++ thread-creation happens-before relation publishes the assigned
+    // function to the new thread safely. MainThreadWorker::Signal is safe
+    // before its own Start (latches, dispatches on first wake — see header
+    // doc), so wiring it pre-everything is fine.
+    g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
+
     // Start keyboard hook engine
     if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
         // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
@@ -520,9 +531,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         g_hookEngine.SyncConfigFromSharedState();
         g_hookEngine.DrainClassifyOnWorker();
     });
-    // Wire the doctrine §12.4 latch+signal helper: HookEngine has no direct
-    // dependency on MainThreadWorker; producers reach it through this fn.
-    g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
+    // (SetWorkerSignalFn already wired above, BEFORE HookEngine::Start —
+    //  see Wave 3 PR 3.6 comment there for the std::function race rationale.)
     // Sprint 1 D10: 200 ms periodic tick — replaces the retired
     // SetTimer(nullptr, 0, 200, FocusPollTimerProc) inside HookEngine::Start.
     // Drives CJK layout poll + foreground-PID fallback off the worker thread.

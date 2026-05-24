@@ -572,6 +572,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
+    // Wave 3 PR 3.6 — wire the worker-signal callback BEFORE HookEngine::Start.
+    // The LL hook thread (spawned inside Start) reads `workerSignalFn_` from
+    // QuickSync's hook-bail branch — std::function assignment is NOT atomic,
+    // so pre-Start init is required to publish it via the thread-creation
+    // happens-before relation. Mirror of main.cpp.
+    g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
+
     if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
         timeEndPeriod(1);
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"VKey", MB_ICONERROR);
@@ -596,7 +603,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         g_hookEngine.SyncConfigFromSharedState();
         g_hookEngine.DrainClassifyOnWorker();
     });
-    g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
+    // (SetWorkerSignalFn already wired above, BEFORE HookEngine::Start —
+    //  see Wave 3 PR 3.6 comment there for the std::function race rationale.)
     // Sprint 1 D10: 200 ms tick replaces the retired SetTimer focus/CJK
     // poll that lived inside HookEngine::Start.
     g_mainThreadWorker.SetTickHandler([]() {
