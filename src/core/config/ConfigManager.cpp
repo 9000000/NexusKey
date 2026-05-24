@@ -55,7 +55,15 @@ public:
     /// missing or parse error.
     [[nodiscard]] std::shared_ptr<const toml::table> Load(const std::string& utf8Path) {
         std::error_code ec;
-        std::filesystem::path fsPath = std::filesystem::u8path(utf8Path);
+        // C++20 deprecated std::filesystem::u8path. Construct from wstring on
+        // Windows (native encoding) so non-ASCII paths work; on Linux the
+        // native encoding IS UTF-8 so direct construction from std::string
+        // is correct.
+#ifdef _WIN32
+        const std::filesystem::path fsPath(Utf8ToWide(utf8Path));
+#else
+        const std::filesystem::path fsPath(utf8Path);
+#endif
         const auto mtime = std::filesystem::last_write_time(fsPath, ec);
         if (ec) {
             // File missing — drop any stale cache entry so a future
