@@ -278,6 +278,7 @@ Cảm ơn các thành viên cộng đồng đã test và góp ý:
 - [haihv8x](https://github.com/haihv8x)
 - [os-hoanghv](https://github.com/os-hoanghv)
 - [Shzr0](https://github.com/Shzr0)
+- [nghiabros](https://github.com/nghiabros)
 
 ## License
 
