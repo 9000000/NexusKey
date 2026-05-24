@@ -534,6 +534,11 @@ void HookEngine::QuickSyncFromSharedState() {
     {
         const HotkeyConfig newHk = state.GetHotkey();
         if (newHk != lastToggleHotkey_) {
+            NEXTKEY_LOG(L"HookEngine: toggle hotkey changed (mods=C%dS%dA%dW%d vk=0x%02X → C%dS%dA%dW%d vk=0x%02X)",
+                        lastToggleHotkey_.ctrl, lastToggleHotkey_.shift,
+                        lastToggleHotkey_.alt, lastToggleHotkey_.win,
+                        lastToggleHotkey_.vk,
+                        newHk.ctrl, newHk.shift, newHk.alt, newHk.win, newHk.vk);
             lastToggleHotkey_ = newHk;
             if (hotkeyChangedCallback_) {
                 hotkeyChangedCallback_(newHk);

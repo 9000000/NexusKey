@@ -127,10 +127,16 @@ public:
     /// SharedState is the live config bus; TOML is the persistence layer.
     /// Hotkey changes hit the live bus instantly and propagate the same way.
     ///
-    /// Threading: invoked from QuickSync's CAS-claimed slow body — runs on
-    /// the worker thread (post-PR-3.6 hook is forbidden in slow body), so
-    /// the callback's `HotkeyManager::UpdateHotkey` reaches that class's
-    /// `mutationMutex_` from a non-hook thread (the intended write thread).
+    /// Threading: invoked from QuickSync's CAS-claimed slow body — that
+    /// body runs on the worker thread (typical: workHandler signaled by
+    /// SharedState change) or the main thread (atypical: a menu command
+    /// like SpellCheck-toggle calls ApplyConfigChange which bumps
+    /// configGeneration and triggers QuickSync inline). Both paths reach
+    /// `HotkeyManager::UpdateHotkey` from a non-hook thread; UpdateHotkey
+    /// is internally serialized by `mutationMutex_`, so cross-thread
+    /// invocation is safe. Post-PR-3.6 the hook thread bails BEFORE the
+    /// slow body (worker-thread doctrine §12.4), so this callback can
+    /// never fire on the LL hook thread.
     using HotkeyChangedCallback = std::function<void(const HotkeyConfig&)>;
     void SetHotkeyChangedCallback(HotkeyChangedCallback callback) {
         hotkeyChangedCallback_ = std::move(callback);
