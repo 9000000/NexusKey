@@ -857,7 +857,7 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     const bool macroOn = macroEnabled_.load(std::memory_order_acquire);
     const bool macroEng = macroInEnglish_.load(std::memory_order_acquire);
     if (!vnMode &&
-        commitUndoState_ == CommitUndoState::Idle &&
+        commitState_.IsIdle() &&
         !(macroOn && macroEng)) {
         return false;
     }
@@ -1024,7 +1024,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
     // Ctrl/Alt/Win invalidate commit-undo: Ctrl+BS deletes entire word (not just the
     // space), Ctrl+A/C/Z change cursor/selection — all make saved commit state stale.
     // Must check BEFORE the state machine to prevent ghost key replay.
-    if (commitUndoState_ != CommitUndoState::Idle &&
+    if (!commitState_.IsIdle() &&
         ((GetKeyState(VK_CONTROL) & 0x8000) || (GetKeyState(VK_MENU) & 0x8000) ||
          (GetKeyState(VK_LWIN) & 0x8000) || (GetKeyState(VK_RWIN) & 0x8000))) {
         HOOK_LOG(L"  commit-undo: cancel — modifier key held");
@@ -1046,31 +1046,31 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
     // SPACE) downgraded state to Idle but left the stack populated.
     // Idempotent — no-op when state==Idle && stack already empty.
     if (vkCode == VK_RETURN &&
-        (commitUndoState_ != CommitUndoState::Idle || !commitStack_.empty())) {
+        (!commitState_.IsIdle() || !commitState_.StackEmpty())) {
         HOOK_LOG(L"  commit-undo: cancel — VK_RETURN (stack=%zu state=%d)",
-                 commitStack_.size(), static_cast<int>(commitUndoState_));
+                 commitState_.StackSize(), static_cast<int>(commitState_.Current()));
         CancelCommitUndo();
         // Fall through — Enter still passes through to the app normally.
     }
     //
     // Auto-expire Ready after kCommitUndoTimeoutMs: cheap insurance against any cursor-movement
     // event that bypasses ResetComposition (e.g. external text change, rare edge cases).
-    if (commitUndoState_ == CommitUndoState::Ready) {
-        DWORD elapsed = GetTickCount() - commitReadyTime_;
+    if (commitState_.IsReady()) {
+        DWORD elapsed = GetTickCount() - commitState_.ReadyTime();
         if (elapsed > kCommitUndoTimeoutMs) {
             HOOK_LOG(L"  commit-undo: Ready state expired after %u ms → Idle", elapsed);
             CancelCommitUndo();
         }
     }
-    if (commitUndoState_ == CommitUndoState::Ready && vkCode == VK_BACK && engine_->Count() == 0) {
-        if (pendingTriggerCount_ > 0) {
+    if (commitState_.IsReady() && vkCode == VK_BACK && engine_->Count() == 0) {
+        if (commitState_.PendingTriggerCount() > 0) {
             // Extra trigger chars still on screen (e.g., "a==" → need to delete both '=' before undo)
-            pendingTriggerCount_--;
-            HOOK_LOG(L"  commit-undo: BS in Ready, pendingTriggers=%u — stay Ready", pendingTriggerCount_);
+            commitState_.DecrementPendingTriggers();
+            HOOK_LOG(L"  commit-undo: BS in Ready, pendingTriggers=%u — stay Ready", commitState_.PendingTriggerCount());
             return KeyOutcome::Pass;  // Let BS pass through to delete the extra trigger char
         }
         // Backspace deletes the commit trigger (space/etc.)
-        commitUndoState_ = CommitUndoState::Primed;
+        commitState_.SetPrimed();
         // Any accumulated multi-word-macro state is stale once replay begins —
         // the phrase buffer no longer mirrors what's on screen.
         macroCrossCommit_ = false;
@@ -1107,7 +1107,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
         HOOK_LOG(L"  commit-undo: BS after commit → Primed (ready to replay)");
         return KeyOutcome::Pass;  // Let backspace pass through to delete the space
     }
-    if (commitUndoState_ == CommitUndoState::Primed && engine_->Count() == 0 && vnMode) {
+    if (commitState_.IsPrimed() && engine_->Count() == 0 && vnMode) {
         // Synth guard: if synthetic events were sent recently and are likely still
         // in the OS input queue, replaying now would set previousComposition_ to stale
         // committed text while the screen hasn't caught up — causing diff miscalculation
@@ -1192,20 +1192,20 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
             // older stack entry into the new word (engine/screen divergence).
             if (!isCommitUndoExempt) {
                 HOOK_LOG(L"  commit-undo: drop stack-top '%s' for non-tone alpha '%c' → fresh composition",
-                         commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
+                         commitState_.StackEmpty() ? L"<empty>" : commitState_.StackTop().text.c_str(),
                          static_cast<char>(vkCode));
-                if (!commitStack_.empty()) {
-                    commitStack_.pop_back();
+                if (!commitState_.StackEmpty()) {
+                    commitState_.PopStackTop();
                 }
-                commitUndoState_ = CommitUndoState::Idle;
+                commitState_.SetIdle();
                 return KeyOutcome::Fallthrough;
             }
             // MUST return HandleAlphaKey's value: if it triggers passthrough (return false),
             // the original key must reach the app — ignoring it would swallow the keystroke.
             HOOK_LOG(L"  commit-undo: replaying + tone-alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
                      static_cast<char>(vkCode),
-                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
-                     commitStack_.size(),
+                     commitState_.StackEmpty() ? L"<empty>" : commitState_.StackTop().text.c_str(),
+                     commitState_.StackSize(),
                      previousComposition_.c_str(),
                      dispatcher_.SynthEventsPending());
             ReplayCommittedChars();
@@ -1226,12 +1226,12 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
             // of "cà". '0' is VNI clear-tone; UserDefined may map any digit via customKeyMap.
             HOOK_LOG(L"  commit-undo: replaying + VNI digit '%c' (stack_top='%s' stackSize=%zu prevComp='%s')",
                      static_cast<char>(vkCode),
-                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
-                     commitStack_.size(),
+                     commitState_.StackEmpty() ? L"<empty>" : commitState_.StackTop().text.c_str(),
+                     commitState_.StackSize(),
                      previousComposition_.c_str());
             ReplayCommittedChars();
             if (engine_->Count() == 0) {
-                commitUndoState_ = CommitUndoState::Idle;
+                commitState_.SetIdle();
                 return KeyOutcome::Pass;  // Replay failed — let digit pass through
             }
             return HandleVniDigitKey(vkCode)
@@ -1240,8 +1240,8 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
         } else if (vkCode == VK_BACK) {
             // Backspace → replay saved chars, then backspace into the word
             HOOK_LOG(L"  commit-undo: replaying + backspace (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
-                     commitStack_.empty() ? L"<empty>" : commitStack_.back().text.c_str(),
-                     commitStack_.size(),
+                     commitState_.StackEmpty() ? L"<empty>" : commitState_.StackTop().text.c_str(),
+                     commitState_.StackSize(),
                      previousComposition_.c_str(),
                      dispatcher_.SynthEventsPending());
             ReplayCommittedChars();
@@ -1251,10 +1251,10 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
             // Any other key → cancel commit-undo.
             // Exempt keys (tone modifiers, ESC restore-raw) keep state Primed
             // so the downstream replay / restore handlers can read commitStack_.
-            commitUndoState_ = CommitUndoState::Idle;
+            commitState_.SetIdle();
         }
     }
-    if (commitUndoState_ == CommitUndoState::Ready) {
+    if (commitState_.IsReady()) {
         // Navigation keys move cursor → stack entries become stale, clear everything.
         if ((vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
             vkCode == VK_HOME || vkCode == VK_END ||
@@ -1269,8 +1269,8 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
             // returns L' ', which would otherwise fall into the cancel branch.
             wchar_t ch = VkToMacroChar(vkCode);
             if (ch >= L' ') {
-                pendingTriggerCount_++;
-                HOOK_LOG(L"  commit-undo: extra trigger '%c' in Ready, pendingTriggers=%u", ch, pendingTriggerCount_);
+                commitState_.IncrementPendingTriggers();
+                HOOK_LOG(L"  commit-undo: extra trigger '%c' in Ready, pendingTriggers=%u", ch, commitState_.PendingTriggerCount());
             } else {
                 // Non-printable trigger (Esc, Tab, Enter) → cancel undo
                 CancelCommitUndo();
@@ -1280,9 +1280,9 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
             // Carry the pending trigger count onto the in-progress word so it travels with the
             // CommitEntry when the word commits — without this, "chịu :D " then BS×3 + 'a' would
             // forget the ':' and cause engine/screen desync (replay fires before ':' is deleted).
-            leadingTriggersForCurrentWord_ = pendingTriggerCount_;
-            pendingTriggerCount_ = 0;
-            commitUndoState_ = CommitUndoState::Idle;
+            commitState_.SetLeadingTriggersForCurrentWord(commitState_.PendingTriggerCount());
+            commitState_.ResetPendingTriggers();
+            commitState_.SetIdle();
         }
     }
     return KeyOutcome::Fallthrough;
@@ -1477,7 +1477,7 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         (vkCode == VK_OEM_4 || vkCode == VK_OEM_6)) {
         if (!cachedShift) {
             wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
-            inputHistory_.push_back(ch);
+            commitState_.AppendHistory(ch);
             std::wstring composition;
             { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
               engine_->PushChar(ch); composition = engine_->Peek(); }
@@ -1518,7 +1518,7 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
             const TypingAction action = cfg->customKeyMap[static_cast<uint8_t>(ch)];
             if (action != TypingAction::None &&
                 (engine_->Count() > 0 || IsInsertTypeAction(action))) {
-                inputHistory_.push_back(ch);
+                commitState_.AppendHistory(ch);
                 std::wstring composition;
                 { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
                   engine_->PushChar(ch); composition = engine_->Peek(); }
@@ -1578,7 +1578,7 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         // cursor — replay would insert text at the wrong position, so exclude them.
         // Only if a new entry was just pushed (implies: not auto-restored,
         // not quick consonant, not empty history).
-        if (pushedToStack_) {
+        if (commitState_.PushedToStack()) {
             bool isNavigation = (vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
                 vkCode == VK_HOME || vkCode == VK_END ||
                 vkCode == VK_PRIOR || vkCode == VK_NEXT ||
@@ -1728,9 +1728,9 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                 const size_t engineCount = engine_->Count();
                 const bool hasLiveComposition = engineCount > 0;
                 const bool hasPrimedCommit =
-                    (commitUndoState_ == CommitUndoState::Primed) &&
-                    !commitStack_.empty() &&
-                    !commitStack_.back().rawInput.empty();
+                    (commitState_.IsPrimed()) &&
+                    !commitState_.StackEmpty() &&
+                    !commitState_.StackTop().rawInput.empty();
                 if (hasLiveComposition || hasPrimedCommit) {
                     (void)TryEscRestoreRaw();
                     HOOK_LOG(L"  MOD-CANCEL (vk=0x%02X, dt=%d): composition restored",
@@ -1852,7 +1852,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
         previousEncodedWidths_.clear();
     }
 
-    inputHistory_.push_back(ch);
+    commitState_.AppendHistory(ch);
     std::wstring composition;
     { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
       engine_->PushChar(ch); composition = engine_->Peek(); }
@@ -1953,7 +1953,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
 
 bool HookEngine::HandleVniDigitKey(DWORD vkCode) {
     wchar_t ch = static_cast<wchar_t>(vkCode);  // '0'–'9' (VNI '0' = clear tone)
-    inputHistory_.push_back(ch);
+    commitState_.AppendHistory(ch);
     std::wstring composition;
     { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
       engine_->PushChar(ch); composition = engine_->Peek(); }
@@ -1964,7 +1964,7 @@ bool HookEngine::HandleVniDigitKey(DWORD vkCode) {
 
 void HookEngine::HandleBackspace() {
     VKEY_ASSERT_HOOK_THREAD();
-    inputHistory_.push_back(kBackspaceMarker);
+    commitState_.AppendBackspaceMarker();
     engine_->Backspace();
 
     if (engine_->Count() > 0) {
@@ -1984,10 +1984,10 @@ void HookEngine::HandleBackspace() {
         }
         // Multi-word backward: re-enter undo state if stack has committed words.
         // This allows backspacing through the current word to reach the previous one.
-        if (!commitStack_.empty()) {
+        if (!commitState_.StackEmpty()) {
             SetCommitUndoReady();
             HOOK_LOG(L"  HandleBackspace: engine empty, stack has %zu entries → state 1",
-                     commitStack_.size());
+                     commitState_.StackSize());
         }
     }
 }
@@ -2026,10 +2026,10 @@ bool HookEngine::CommitComposition() {
     // genuinely needed AutoRestore (e.g. 'goxle'→'goxle') become BS-undoable
     // into broken Vietnamese state; user can ESC restore-raw or keep BS to
     // recover. Net: Vietnamese intent (the common case) now works correctly.
-    pushedToStack_ = false;
-    if (!wasQuickConsonant && !inputHistory_.empty()) {
+    commitState_.SetPushedToStack(false);
+    if (!wasQuickConsonant && !commitState_.History().empty()) {
         CommitEntry entry;
-        entry.history = inputHistory_;
+        entry.history = commitState_.History();
         if (restored) {
             entry.text = std::move(committed);
         } else {
@@ -2037,16 +2037,13 @@ bool HookEngine::CommitComposition() {
         }
         entry.rawInput = std::move(rawSnapshot);
         entry.widths = previousEncodedWidths_;
-        entry.extraLeadingTriggers = leadingTriggersForCurrentWord_;
-        leadingTriggersForCurrentWord_ = 0;
-        commitStack_.push_back(std::move(entry));
-        // Cap stack size
-        if (commitStack_.size() > kMaxCommitStack) {
-            commitStack_.erase(commitStack_.begin());
-        }
-        pushedToStack_ = true;
+        entry.extraLeadingTriggers = commitState_.LeadingTriggersForCurrentWord();
+        commitState_.SetLeadingTriggersForCurrentWord(0);
+        commitState_.PushEntry(std::move(entry));
+        // PushEntry evicts oldest entry when at capacity — no manual cap needed.
+        commitState_.SetPushedToStack(true);
         HOOK_LOG(L"  CommitComposition: pushed to stack (size=%zu, leadingTriggers=%u, restored=%d)",
-                 commitStack_.size(), commitStack_.back().extraLeadingTriggers, restored ? 1 : 0);
+                 commitState_.StackSize(), commitState_.StackTop().extraLeadingTriggers, restored ? 1 : 0);
     }
 
     ClearWordState();
@@ -2058,7 +2055,7 @@ void HookEngine::ResetComposition() {
     HOOK_LOG(L"  ResetComposition (count=%zu, prev='%s')", engine_->Count(), previousComposition_.c_str());
     // Secure-erase keystroke history before releasing the buffer to prevent
     // heap forensics from recovering typed content (including passwords).
-    SecureZeroMemory(inputHistory_.data(), inputHistory_.size() * sizeof(wchar_t));
+    SecureZeroMemory(commitState_.History().data(), commitState_.History().size() * sizeof(wchar_t));
     SecureZeroMemory(rawMacroBuffer_.data(), rawMacroBuffer_.size() * sizeof(wchar_t));
     ClearWordState();
     CancelCommitUndo();
@@ -2074,7 +2071,7 @@ void HookEngine::ClearWordState() {
     engine_->Reset();
     previousComposition_.clear();
     previousEncodedWidths_.clear();
-    inputHistory_.clear();
+    commitState_.ClearHistory();
     rawMacroBuffer_.clear();
     macroCrossCommit_ = false;
     tempMacroOff_ = false;
@@ -2083,20 +2080,16 @@ void HookEngine::ClearWordState() {
 }
 
 void HookEngine::CancelCommitUndo() {
-    commitUndoState_ = CommitUndoState::Idle;
-    pendingTriggerCount_ = 0;
-    leadingTriggersForCurrentWord_ = 0;
-    commitStack_.clear();
+    commitState_.Cancel();
 }
 
 void HookEngine::SetCommitUndoReady() {
-    commitUndoState_ = CommitUndoState::Ready;
     // Inherit any extra leading triggers carried by the current word (either set when
     // the user typed extra trigger chars between commits and then started a new word,
     // or restored from a popped CommitEntry during multi-word replay).
-    pendingTriggerCount_ = leadingTriggersForCurrentWord_;
-    leadingTriggersForCurrentWord_ = 0;
-    commitReadyTime_ = GetTickCount();
+    commitState_.SetPendingTriggers(commitState_.LeadingTriggersForCurrentWord());
+    commitState_.SetLeadingTriggersForCurrentWord(0);
+    commitState_.SetReady();  // sets state + bumps readyTime to GetTickCount()
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2105,18 +2098,18 @@ void HookEngine::SetCommitUndoReady() {
 
 void HookEngine::ReplayCommittedChars() {
     VKEY_ASSERT_HOOK_THREAD();
-    if (commitStack_.empty()) {
+    if (commitState_.StackEmpty()) {
         HOOK_LOG(L"  ReplayCommittedChars: stack empty, nothing to replay");
-        commitUndoState_ = CommitUndoState::Idle;
+        commitState_.SetIdle();
         return;
     }
 
     // Pop the most recently committed word from the stack
-    CommitEntry entry = std::move(commitStack_.back());
-    commitStack_.pop_back();
+    CommitEntry entry = std::move(commitState_.StackTop());
+    commitState_.PopStackTop();
 
     HOOK_LOG(L"  ReplayCommittedChars: replaying %zu keystrokes, restoring prev='%s' (stack=%zu remaining)",
-             entry.history.size(), entry.text.c_str(), commitStack_.size());
+             entry.history.size(), entry.text.c_str(), commitState_.StackSize());
 
     // Replay exact user keystrokes (including backspaces) to reproduce engine state.
     // Phase 1: the replay loop is a sustained burst of engine state-machine writes,
@@ -2134,7 +2127,7 @@ void HookEngine::ReplayCommittedChars() {
     // Seed inputHistory_ with the replayed word's keystrokes so that if the user
     // edits and re-commits this word, the new stack entry contains the full history
     // (not just the editing delta). Otherwise a second replay attempt would be wrong.
-    inputHistory_ = std::move(entry.history);
+    commitState_.History() = std::move(entry.history);
 
     // Restore screen state so ReplaceComposition can diff correctly
     previousComposition_ = std::move(entry.text);
@@ -2144,11 +2137,11 @@ void HookEngine::ReplayCommittedChars() {
     // replayed word back to empty, SetCommitUndoReady() will pick this up and re-prime
     // pendingTriggerCount_ so any extra trigger chars sitting between this word and the
     // previous one get backspaced before the next prime.
-    leadingTriggersForCurrentWord_ = entry.extraLeadingTriggers;
+    commitState_.SetLeadingTriggersForCurrentWord(entry.extraLeadingTriggers);
 
     // Reset undo state — HandleBackspace will re-enter state 1 if engine becomes
     // empty again and stack still has entries (enabling multi-word backward).
-    commitUndoState_ = CommitUndoState::Idle;
+    commitState_.SetIdle();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2647,9 +2640,9 @@ NextKey::Pipeline::EscRestoreOutcome HookEngine::TryEscRestore(
         /*keyUp=*/false);
     const bool hasLiveComposition = (engine_ && engine_->Count() > 0);
     const bool hasPrimedCommit =
-        (commitUndoState_ == CommitUndoState::Primed) &&
-        !commitStack_.empty() &&
-        !commitStack_.back().rawInput.empty();
+        (commitState_.IsPrimed()) &&
+        !commitState_.StackEmpty() &&
+        !commitState_.StackTop().rawInput.empty();
     if (hotkeyMatch && (hasLiveComposition || hasPrimedCommit)) {
         const KeyOutcome legacy = TryEscRestoreRaw();
         return (legacy == KeyOutcome::Eat)
@@ -2790,15 +2783,15 @@ HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
     // Path 2: post-BS (engine empty, raw snapshot in commitStack top).
     // Engine empty here; rawInput preserved in commitStack_ from CommitComposition
     // snapshot. CancelCommitUndo clears stack (single-word scope per design 2026-05-17).
-    if (commitUndoState_ != CommitUndoState::Primed || commitStack_.empty()) {
+    if (!commitState_.IsPrimed() || commitState_.StackEmpty()) {
         return KeyOutcome::Fallthrough;
     }
-    if (GetTickCount() - commitReadyTime_ > kCommitUndoTimeoutMs) {
+    if (GetTickCount() - commitState_.ReadyTime() > kCommitUndoTimeoutMs) {
         HOOK_LOG(L"  EscRestoreRaw[post-BS]: Primed expired (elapsed > %ums)", kCommitUndoTimeoutMs);
         CancelCommitUndo();
         return KeyOutcome::Fallthrough;
     }
-    const auto& top = commitStack_.back();
+    const auto& top = commitState_.StackTop();
     if (top.rawInput.empty()) return KeyOutcome::Fallthrough;
     // Primed: trailing commit-trigger already deleted by user's BS. BS count covers
     // the committed body only. Non-Unicode code tables (TCVN3, VNI-Win) encode each

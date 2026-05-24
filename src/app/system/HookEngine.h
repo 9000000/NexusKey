@@ -17,6 +17,7 @@
 #include "app/system/HookLifecycle.h"
 #include "app/system/FocusOwner.h"
 #include "app/system/OutputDispatcher.h"
+#include "app/system/CommitState.h"
 #include "core/pipeline/IBackwardEditExecutor.h"
 #include "core/pipeline/ICommitUndoExecutor.h"
 #include "core/pipeline/IEscRestoreRawExecutor.h"
@@ -474,44 +475,27 @@ private:
     // Wave 3 PR 3.2 — AppProfile struct + appProfileCache_ + LookupAppProfile/
     // StoreAppProfile moved to FocusOwner alongside Classify.
 
-    // Backspace-into-committed-word (re-enter composition after commit + backspace)
-    // inputHistory_ records exact user keystrokes (including backspace as '\b')
-    // so replay produces identical engine state. This differs from engine's rawInput_
-    // which mutates on escape sequences (EraseConsumedRaw).
-    static constexpr wchar_t kBackspaceMarker = L'\b';
-    static constexpr size_t kMaxCommitStack = 3;  // Max words to remember for backward
-    static constexpr size_t kMaxSmartSwitchEntries = 200;  // Cap per-app mode memory
-    // Auto-expire the Ready state after this many ms — cheap insurance against any
-    // cursor-movement event that bypasses ResetComposition (e.g. future edge cases).
-    static constexpr DWORD kCommitUndoTimeoutMs = 4000;
+    // Smart-switch capacity (still HookEngine — not commit-undo state).
+    static constexpr size_t kMaxSmartSwitchEntries = 200;
     // Sprint 2 D5: kSynthSettleMs (was 100 ms hardcoded for all hosts) replaced
-    // by per-injector budget — `injector_->SettleBudget()` returns 0 ms for
-    // RichEdit (sent message drains synchronously), 30 ms for Win32 batch,
-    // and 100 ms for Split (Electron/Console). Read inline at the gate sites
-    // so a focus change (re-publishing a different injector) takes effect on
-    // the next keystroke without staleness.
+    // by per-injector budget — `dispatcher_.GetInjector()->SettleBudget()`
+    // returns 0 ms for RichEdit (sent message drains synchronously), 30 ms
+    // for Win32 batch, and 100 ms for Split (Electron/Console). Read inline
+    // at the gate sites so a focus change (re-publishing a different
+    // injector) takes effect on the next keystroke without staleness.
 
-    enum class CommitUndoState : uint8_t {
-        Idle   = 0,  // No pending undo
-        Ready  = 1,  // Just committed with Space/Enter — waiting for first BS
-        Primed = 2,  // Space deleted — next Alpha/BS triggers replay
-    };
-
-    struct CommitEntry {
-        std::vector<wchar_t> history;   // User keystrokes for replay
-        std::wstring text;              // What was on screen when committed
-        std::wstring rawInput;          // engine_->PeekRaw() snapshot — for Esc-restore-raw post-BS (design 2026-05-17)
-        std::vector<uint8_t> widths;    // Encoded widths for non-Unicode code tables
-        uint8_t extraLeadingTriggers = 0;  // Extra trigger chars typed between previous commit and this word's body — must be backspaced before this entry's commit trigger can be primed during multi-word undo
-    };
-
-    std::vector<wchar_t> inputHistory_;         // User keystrokes for current composition
-    std::vector<CommitEntry> commitStack_;       // Stack of committed words (LIFO, max kMaxCommitStack)
-    bool pushedToStack_ = false;                 // True if last CommitComposition pushed to stack
-    CommitUndoState commitUndoState_ = CommitUndoState::Idle;
-    uint8_t pendingTriggerCount_ = 0;           // Extra commit triggers typed while Ready (need BS before Primed)
-    uint8_t leadingTriggersForCurrentWord_ = 0; // pendingTriggerCount_ snapshot for the in-progress word — survives Ready→Idle and replay pops
-    DWORD commitReadyTime_ = 0;                 // GetTickCount() when entering Ready state
+    // Wave 3 PR 3.4 — commit-undo state machine extracted to CommitState.
+    // Backspace-into-committed-word (re-enter composition after commit + BS)
+    // is preserved byte-identical; HandleCommitUndoFsm orchestrates against
+    // `commitState_` instead of scattered fields. Type aliases keep call
+    // sites compact: `CommitUndoState` → `CommitState::State`, `CommitEntry`
+    // → `CommitState::Entry`.
+    using CommitUndoState = CommitState::State;
+    using CommitEntry     = CommitState::Entry;
+    static constexpr wchar_t kBackspaceMarker  = CommitState::kBackspaceMarker;
+    static constexpr size_t  kMaxCommitStack   = CommitState::kMaxStack;
+    static constexpr DWORD   kCommitUndoTimeoutMs = CommitState::kReadyTimeoutMs;
+    CommitState commitState_;
 
     // Macro expansion
     // Sprint 1 D5.2: macroEnabled_, macroInEnglish_ migrated to std::atomic —
