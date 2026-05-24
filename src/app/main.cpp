@@ -521,6 +521,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
                 g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
 
+    // Wave 3 PR 3.8 — live toggle-hotkey propagation from SharedState.
+    // SettingsDialog defers the TOML save by 30s but writes the hotkey
+    // into SharedState immediately. HookEngine's QuickSync slow body
+    // detects the SharedState diff and fires this callback so the new
+    // binding reaches HotkeyManager in ~ms instead of 30s.
+    // Wired AFTER WireHotkeys so `g_toggleHotkeySlot` is valid.
+    g_hookEngine.SetHotkeyChangedCallback([](const HotkeyConfig& hk) {
+        g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
+    });
+
     // Sprint 1 D9: launch MainThreadWorker after the hook engine is up so the
     // first config-change Signal it sees has a fully-initialised HookEngine
     // to call into. Handler runs on the worker's own thread.

@@ -112,6 +112,30 @@ public:
     /// Set callback for config reload (notifies main to update QuickConvert etc.)
     void SetConfigReloadCallback(std::function<void()> callback) { configReloadCallback_ = std::move(callback); }
 
+    /// Wave 3 PR 3.8 — fast path for toggle-hotkey rebinding from SharedState.
+    ///
+    /// Pre-3.8 the only propagation path was `configReloadCallback_` fired
+    /// after `ReloadFromToml()`. But `SettingsDialog::syncToSharedState`
+    /// writes the new hotkey into SharedState immediately while deferring
+    /// the TOML save by 30 s — so HookEngine's ReloadFromToml read STALE
+    /// disk data and `HotkeyManager::UpdateHotkey` got the old binding
+    /// until the user closed the dialog (which forces TOML save).
+    ///
+    /// This callback fires from `QuickSyncFromSharedState`'s slow body
+    /// whenever the SharedState hotkey field differs from the previously-
+    /// observed value, BEFORE `ReloadFromToml()` runs. Doctrine alignment:
+    /// SharedState is the live config bus; TOML is the persistence layer.
+    /// Hotkey changes hit the live bus instantly and propagate the same way.
+    ///
+    /// Threading: invoked from QuickSync's CAS-claimed slow body — runs on
+    /// the worker thread (post-PR-3.6 hook is forbidden in slow body), so
+    /// the callback's `HotkeyManager::UpdateHotkey` reaches that class's
+    /// `mutationMutex_` from a non-hook thread (the intended write thread).
+    using HotkeyChangedCallback = std::function<void(const HotkeyConfig&)>;
+    void SetHotkeyChangedCallback(HotkeyChangedCallback callback) {
+        hotkeyChangedCallback_ = std::move(callback);
+    }
+
     /// Callback fired on focus changes. Args: (tsfActive, tsfReadonly).
     ///   tsfActive   = foreground app is in TSF list (full TIP consumes keys).
     ///   tsfReadonly = Hook handles keys; TSF DLL should publish doc anchor.
@@ -659,6 +683,16 @@ private:
     ModeChangeCallback modeChangeCallback_;
     std::function<void()> configReloadCallback_;
     std::function<void(bool, bool)> tsfModeCallback_;
+    HotkeyChangedCallback hotkeyChangedCallback_;
+
+    // Wave 3 PR 3.8 — cached SharedState toggle-hotkey value. Seeded in
+    // Start() from the initial SharedState read so the first QuickSync
+    // slow body doesn't fire a spurious callback. Subsequently written
+    // ONLY by `QuickSyncFromSharedState`'s CAS-claimed slow body (single
+    // writer at a time per Wave 2 CAS lastEpoch_ contract), so plain
+    // storage is safe. Read in the same body to compare with the freshly-
+    // observed `state.GetHotkey()`.
+    HotkeyConfig lastToggleHotkey_{};
 
     // Singleton for static callback dispatch (read from hook callback thread)
     static std::atomic<HookEngine*> s_instance;

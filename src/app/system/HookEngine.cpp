@@ -271,6 +271,12 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
             lastInputMethod_.store(state.inputMethod, std::memory_order_release);
             lastCodeTable_.store(state.codeTable, std::memory_order_release);
             lastConfigGeneration_.store(state.configGeneration, std::memory_order_release);
+            // Wave 3 PR 3.8 — seed the toggle-hotkey cache so the first
+            // QuickSync slow body doesn't fire a spurious callback. The
+            // initial HotkeyManager binding came from TOML via WireHotkeys
+            // at startup; SharedState's hotkey field matches that on a
+            // clean run (Settings dialog writes both paths in sync).
+            lastToggleHotkey_ = state.GetHotkey();
         }
     }
 
@@ -504,6 +510,34 @@ void HookEngine::QuickSyncFromSharedState() {
             lastConfigGeneration_.store(state.configGeneration, std::memory_order_release);
             NEXTKEY_LOG(L"HookEngine: configGeneration changed (%u), full TOML reload", state.configGeneration);
             ReloadFromToml();
+        }
+    }
+
+    // Wave 3 PR 3.8 — toggle-hotkey live propagation from SharedState.
+    //
+    // SettingsDialog::syncToSharedState writes the new hotkey into
+    // SharedState immediately (state.SetHotkey) but defers the TOML save
+    // by 30 s. Pre-3.8 the only reload path was `ReloadFromToml()` fired
+    // from the configGeneration check above, which read STALE TOML data
+    // and `HotkeyManager::UpdateHotkey` got the old binding until the
+    // user closed the Settings dialog (WM_CLOSE forces flush).
+    //
+    // Doctrine: SharedState is the live config bus, TOML is the
+    // persistence layer. The hotkey field lives on both — read from
+    // SharedState here so HotkeyManager sees the fresh binding within
+    // one QuickSync cycle (~ms latency vs 30 s).
+    //
+    // Must run BEFORE the ff/sc/im/ct early-return below — those four
+    // are engine-state flags; the hotkey doesn't depend on any of them,
+    // so a Settings change that only touches the hotkey would short-
+    // circuit through the early-return without our diff running.
+    {
+        const HotkeyConfig newHk = state.GetHotkey();
+        if (newHk != lastToggleHotkey_) {
+            lastToggleHotkey_ = newHk;
+            if (hotkeyChangedCallback_) {
+                hotkeyChangedCallback_(newHk);
+            }
         }
     }
 

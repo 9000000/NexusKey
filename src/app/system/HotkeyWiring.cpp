@@ -25,15 +25,22 @@ void WireHotkeys(
     quickConvert = std::make_unique<QuickConvert>(convertConfig);
 
     // Config reload callback. Captures are refs to caller's globals (static lifetime).
+    //
+    // Wave 3 PR 3.8 — toggle V/E hotkey is no longer reloaded here. The
+    // live SharedState bus (HookEngine::hotkeyChangedCallback_, wired in
+    // main.cpp / main_lite.cpp) propagates the binding in ~ms instead of
+    // ~30s (TOML deferred save). Reading toggle hotkey from TOML here
+    // would race the SharedState update and overwrite the fresh binding
+    // with a stale disk value. Convert hotkey stays here because it is
+    // not in SharedState (per `src/core/ipc/SharedState.h` comment:
+    // "Convert hotkey fields are reserved for future migration").
+    (void)outToggleSlot;  // referenced by hotkeyChangedCallback_ in caller
     hookEngine.SetConfigReloadCallback([&hotkeyManager, &trayIcon, &quickConvert,
-                                        &outToggleSlot, &outConvertSlot]() {
+                                        &outConvertSlot]() {
         auto cc = ConfigManager::LoadConvertConfigOrDefault();
         if (quickConvert) quickConvert->UpdateConfig(cc);
         hotkeyManager.UpdateHotkey(outConvertSlot, cc.hotkey);
         trayIcon.RefreshConvertHotkeyCache(cc);
-
-        auto hk = ConfigManager::LoadHotkeyConfigOrDefault();
-        hotkeyManager.UpdateHotkey(outToggleSlot, hk);
     });
 
     // Register hotkeys (toggle V/E + quick convert).

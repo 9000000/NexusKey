@@ -592,6 +592,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
                 g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
 
+    // Wave 3 PR 3.8 — live toggle-hotkey propagation from SharedState.
+    // Mirror of main.cpp wiring; same bug (Settings deferred TOML save)
+    // affects both binaries since SettingsDialog is shared.
+    g_hookEngine.SetHotkeyChangedCallback([](const HotkeyConfig& hk) {
+        g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
+    });
+
     // Sprint 1 D9: launch worker after HookEngine so the first Signal it
     // observes lands on a fully-initialised engine.
     //
