@@ -22,7 +22,9 @@ HotkeyManager::~HotkeyManager() {
     Uninstall();
 }
 
-HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config, Callback callback) {
+HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config,
+                                                Callback callback,
+                                                bool runsOnAnyThread) {
     // Contract: AddHotkey must precede Initialize() — slotState_.resize below
     // races with LL callback's slotState_[i] read if the hook is already up.
     // Debug-only enforcement; release builds rely on call-site discipline.
@@ -30,13 +32,14 @@ HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config, Callb
     std::lock_guard lk(mutationMutex_);
     auto oldBindings = bindings_.load(std::memory_order_acquire);
     auto newBindings = std::make_shared<std::vector<SlotBinding>>(*oldBindings);
-    newBindings->push_back(SlotBinding{config, std::move(callback)});
+    newBindings->push_back(SlotBinding{config, std::move(callback), runsOnAnyThread});
     const SlotId id = newBindings->size() - 1;
     slotState_.resize(id + 1);
     bindings_.store(std::move(newBindings), std::memory_order_release);
-    HOTKEY_LOG(L"AddHotkey slot=%zu vk=0x%02X ctrl=%d shift=%d alt=%d win=%d (%s)",
+    HOTKEY_LOG(L"AddHotkey slot=%zu vk=0x%02X ctrl=%d shift=%d alt=%d win=%d (%s) runsOnAnyThread=%d",
                id, config.vk, config.ctrl, config.shift, config.alt, config.win,
-               config.vk == 0 ? L"modifier-only" : L"combo");
+               config.vk == 0 ? L"modifier-only" : L"combo",
+               runsOnAnyThread ? 1 : 0);
     return id;
 }
 
@@ -60,13 +63,18 @@ void HotkeyManager::UpdateHotkey(SlotId slot, const HotkeyConfig& config) {
                config.vk == 0 ? L"modifier-only" : L"combo");
 }
 
-void HotkeyManager::Initialize(HINSTANCE hInstance) {
+void HotkeyManager::Initialize(HINSTANCE hInstance, DWORD hookThreadId) {
+    // Wave 3 PR 3.7 — publish hookThreadId BEFORE installing the LL hook.
+    // The release-store happens-before the SetWindowsHookExW call inside
+    // InstallKeyboardHook (Win32 install establishes happens-before for
+    // the dispatch thread), so the LL callback never observes a stale 0.
+    hookThreadId_.store(hookThreadId, std::memory_order_release);
     s_instance.store(this, std::memory_order_release);
     InstallKeyboardHook(hInstance);
     const size_t count = bindings_.load(std::memory_order_acquire)->size();
     NEXTKEY_LOG(L"HotkeyManager installed (%zu slot%s, hookTid=%lu)",
                 count, count == 1 ? L"" : L"s",
-                hookThreadId_.load(std::memory_order_acquire));
+                hookThreadId);
 }
 
 void HotkeyManager::Uninstall() {
@@ -213,18 +221,23 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                                    i, vk,
                                    self.modCtrlDown_, self.modShiftDown_,
                                    self.modAltDown_, self.modWinDown_);
-                        // Post to hook thread when available; callback runs there
-                        // (hook-thread context, safe for engine-state writes like
-                        // HookEngine::CommitPending). Fallback: TSF-only mode runs
-                        // without a HookEngine hook thread (hookTid==0), so the
-                        // callback dispatches inline on the LL thread — that path
-                        // is safe because TSF-only callbacks are PostMessage-style
-                        // (see main.cpp:704-711, no engine-state writes).
+                        // Wave 3 PR 3.7 — tag-based dispatch per doctrine §12.3.
+                        // Primary path: PostThreadMessage to the hook thread so
+                        // callbacks like `hookEngine.CommitPending()` reach
+                        // `engine_` on its single-writer thread (Rule 11.3).
+                        // Fallback: only callbacks the caller declared
+                        // `runsOnAnyThread=true` (e.g. lambda body is just
+                        // `PostMessageW` to a tray window — Win32 cross-thread-
+                        // safe) may invoke inline. Callbacks with thread
+                        // affinity drop silently — refusing to invoke on the
+                        // wrong thread is safer than silent UB on `engine_`.
                         if (hookTid) {
                             PostThreadMessageW(hookTid, WM_APP_HOTKEY_FIRED,
                                                static_cast<WPARAM>(i), 0);
-                        } else if (slot.callback) {
+                        } else if (slot.runsOnAnyThread && slot.callback) {
                             slot.callback();
+                        } else {
+                            HOTKEY_LOG(L"  drop slot=%zu (no hookTid + runsOnAnyThread=false)", i);
                         }
                         if (slot.config.alt || slot.config.win) InjectDummyKey();
                         return 1;  // Eat DOWN
@@ -271,11 +284,14 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                 HOTKEY_LOG(L"modifier-only fire slot=%zu released=0x%02X pre=C%dS%dA%dW%d",
                            i, vk,
                            preCtrl, preShift, preAlt, preWin);
+                // Wave 3 PR 3.7 — same tag-based gate as the combo path above.
                 if (hookTid) {
                     PostThreadMessageW(hookTid, WM_APP_HOTKEY_FIRED,
                                        static_cast<WPARAM>(i), 0);
-                } else if (slot.callback) {
+                } else if (slot.runsOnAnyThread && slot.callback) {
                     slot.callback();
+                } else {
+                    HOTKEY_LOG(L"  drop modifier-only slot=%zu (no hookTid + runsOnAnyThread=false)", i);
                 }
             }
         }

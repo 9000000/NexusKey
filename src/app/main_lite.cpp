@@ -558,11 +558,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         };
     });
 
-    // ── Hotkeys (toggle V/E + quick convert) ──
-
-    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
-                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
-
     // ── Timer resolution ──
 
     // Set 1ms timer resolution for smooth Vietnamese input
@@ -579,6 +574,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // happens-before relation. Mirror of main.cpp.
     g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
 
+    // Wave 3 PR 3.7 — Start HookEngine BEFORE WireHotkeys so its hook thread
+    // id is live by the time WireHotkeys reads it for HotkeyManager::Initialize.
+    // Mirror of main.cpp's reorder; same race motivation.
     if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
         timeEndPeriod(1);
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"VKey", MB_ICONERROR);
@@ -587,10 +585,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         return 1;
     }
 
-    // Wave 1 — route HotkeyManager LL-callback matches to the hook thread so
-    // callbacks like hookEngine.CommitPending() obey the single-writer
-    // invariant. Must run AFTER Start() (hook thread id is only valid then).
-    g_hotkeyManager.SetHookThreadId(g_hookEngine.GetHookThreadId());
+    // ── Hotkeys (toggle V/E + quick convert) ──
+
+    // HotkeyManager::Initialize inside WireHotkeys reads hookEngine.GetHookThreadId()
+    // — non-zero by here since Start above succeeded.
+    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
+                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
 
     // Sprint 1 D9: launch worker after HookEngine so the first Signal it
     // observes lands on a fully-initialised engine.

@@ -29,15 +29,38 @@ inline constexpr UINT WM_APP_HOTKEY_FIRED = WM_APP + 3;
 ///      "Alt/Win tapped alone" detection (browser menu activation bug).
 ///
 /// Wave 1 (2026-05-23) — RCU + cross-thread dispatch:
-///   * Slot bindings (config + callback) live in an RCU-published shared_ptr<vector>.
-///     The LL hook callback reads lock-free; mutators (AddHotkey/UpdateHotkey/
-///     Uninstall) publish new snapshots under `mutationMutex_`.
-///   * `comboKeyDown` moves to a parallel `slotState_` vector. Single-writer (LL
-///     thread) after Initialize() — no lock needed on the LL hot path.
-///   * Matched slots route via PostThreadMessage(hookThreadId_, WM_APP_HOTKEY_FIRED,
-///     slotId) → HookEngine pump invokes DispatchHotkeyFromHookThread on the
-///     hook thread, restoring the single-writer invariant for callbacks like
-///     `hookEngine.CommitPending()` that touch engine state.
+///   * Slot bindings (config + callback + thread-affinity flag) live in an
+///     RCU-published shared_ptr<vector>. The LL hook callback reads lock-free;
+///     mutators (AddHotkey / UpdateHotkey / Uninstall) publish new snapshots
+///     under `mutationMutex_`.
+///   * `comboKeyDown` moves to a parallel `slotState_` vector. Single-writer
+///     (LL thread) after Initialize() — no lock needed on the LL hot path.
+///   * Matched slots route via PostThreadMessage(hookThreadId_,
+///     WM_APP_HOTKEY_FIRED, slotId) → HookEngine pump invokes
+///     DispatchHotkeyFromHookThread on the hook thread, restoring the
+///     single-writer invariant for callbacks like `hookEngine.CommitPending()`
+///     that touch engine state.
+///
+/// Wave 3 PR 3.7 (2026-05-24) — tag-based protection per
+/// `docs/CODING_RULES/12-worker-thread-doctrine.md`:
+///   * `Initialize()` REQUIRES the dispatch thread id at construction time
+///     — no more late-binding `SetHookThreadId()`. The race window where the
+///     LL hook was installed before the tid was published is now structurally
+///     impossible.
+///   * Each `AddHotkey()` declares `runsOnAnyThread` for its callback:
+///       true  = callback is safe on any thread (e.g. lambda body is just
+///               `PostMessageW` — Win32 cross-thread-safe). If hookTid is
+///               unavailable, the LL callback may invoke it inline.
+///       false = callback has a thread-affinity requirement (e.g. mutates
+///               `engine_`, which is hook-thread single-writer per Rule
+///               11.3). If hookTid is unavailable, the dispatch is dropped
+///               — refusing to invoke on the wrong thread is safer than
+///               silent UB on `engine_` from the LL thread.
+///   * The `else if (slot.callback) slot.callback()` "fallback" from
+///     pre-3.7 was a fake protection: it ran ALL callbacks inline including
+///     ones that mutated `engine_`. Tag-based gating turns it into real
+///     protection — only callbacks that declared `runsOnAnyThread=true`
+///     reach the inline path.
 class HotkeyManager {
 public:
     using Callback = std::function<void()>;
@@ -52,24 +75,36 @@ public:
     /// Register a hotkey slot. MUST be called before Initialize() — AddHotkey
     /// resizes slotState_, which races with the LL callback if the hook is
     /// already installed (asserts when keyboardHook_ != nullptr). Returns the
-    /// slot id for later UpdateHotkey calls. Callback runs on the hook thread
-    /// (post-Wave 1) — keep it quick.
-    [[nodiscard]] SlotId AddHotkey(const HotkeyConfig& config, Callback callback);
+    /// slot id for later UpdateHotkey calls.
+    ///
+    /// `runsOnAnyThread` (Wave 3 PR 3.7): the caller's contract about the
+    /// callback's thread affinity. Set TRUE iff the callback is correct
+    /// when invoked from any thread (typical body: `PostMessageW` to a
+    /// window owned elsewhere — Win32 cross-thread-safe, no shared-state
+    /// writes). Set FALSE iff the callback mutates state with a single-
+    /// writer requirement (e.g. `hookEngine.CommitPending()` touches
+    /// `engine_`, which Rule 11.3 pins to the hook thread). The flag
+    /// gates the LL-thread inline-dispatch fallback used when the hook
+    /// thread is unavailable.
+    [[nodiscard]] SlotId AddHotkey(const HotkeyConfig& config,
+                                    Callback callback,
+                                    bool runsOnAnyThread);
 
     /// Replace an existing slot's config (used on config reload). Safe to
     /// call from any thread; serialized by mutationMutex_.
     void UpdateHotkey(SlotId slot, const HotkeyConfig& config);
 
-    /// Set the hook thread id to route matched-slot dispatch into. MUST
-    /// be called AFTER HookEngine::Start() returns and BEFORE Initialize()
-    /// installs the LL hook — otherwise matched slots posted before the
-    /// id is set will be dropped by PostThreadMessage(0, ...).
-    void SetHookThreadId(DWORD tid) noexcept {
-        hookThreadId_.store(tid, std::memory_order_release);
-    }
-
     /// Install the LL keyboard hook. All AddHotkey() calls must happen first.
-    void Initialize(HINSTANCE hInstance);
+    ///
+    /// `hookThreadId` is the target for `PostThreadMessage(WM_APP_HOTKEY_FIRED)`
+    /// when a hotkey matches. In hook mode pass `hookEngine.GetHookThreadId()`
+    /// AFTER HookEngine::Start() has returned (the id is only valid then).
+    /// Passing 0 disables cross-thread dispatch — only callbacks that
+    /// declared `runsOnAnyThread=true` will fire (others drop silently
+    /// rather than violate Rule 11.3). Wave 3 PR 3.7 collapsed the prior
+    /// two-step `SetHookThreadId()` + `Initialize()` contract into this
+    /// single call so the race window between the two is structurally gone.
+    void Initialize(HINSTANCE hInstance, DWORD hookThreadId);
 
     /// Unhook and clear slots.
     void Uninstall();
@@ -84,6 +119,10 @@ private:
     struct SlotBinding {
         HotkeyConfig config{};
         Callback callback;
+        /// Wave 3 PR 3.7 — caller's declaration about the callback's
+        /// thread affinity. See AddHotkey() doc above; used to gate the
+        /// LL-thread inline-dispatch fallback in the LL hook callback.
+        bool runsOnAnyThread = false;
     };
     struct SlotState {
         bool comboKeyDown = false;
@@ -109,8 +148,11 @@ private:
     // LL callback NEVER acquires this — uses atomic load on bindings_ instead.
     std::mutex mutationMutex_;
 
-    // Set via SetHookThreadId(). Read by LL callback as the PostThreadMessage
-    // target. Zero before SetHookThreadId is called — match drops silently.
+    // Wave 3 PR 3.7 — set by Initialize() at install time, never mutated
+    // after (LL hook becomes installed in the same Initialize() call, so
+    // the LL callback never observes a transition from 0 → non-zero).
+    // Reads by the LL callback. Value of 0 means "no cross-thread dispatch
+    // target available" → only `runsOnAnyThread=true` slots dispatch.
     std::atomic<DWORD> hookThreadId_{0};
 
     HHOOK keyboardHook_ = nullptr;

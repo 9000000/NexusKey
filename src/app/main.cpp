@@ -478,10 +478,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         };
     });
 
-    // Wire hotkeys (toggle V/E + quick convert) and config reload callback
-    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
-                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
-
     // Set 1ms timer resolution so Sleep(1) actually sleeps ~1ms instead of ~15ms.
     // Required for smooth Vietnamese input — backspace-then-retype needs a short gap
     // between SendInput calls for Electron/Console apps, but 15ms (default) is noticeable.
@@ -501,7 +497,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // doc), so wiring it pre-everything is fine.
     g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
 
-    // Start keyboard hook engine
+    // Wave 3 PR 3.7 — Start HookEngine BEFORE WireHotkeys so its hook
+    // thread id is published by the time WireHotkeys reads it for
+    // HotkeyManager::Initialize. The pre-3.7 ordering installed the
+    // HotkeyManager LL hook (inside WireHotkeys) before HookEngine
+    // spawned its thread, leaving a ~10 ms window where a hotkey match
+    // would inline-dispatch the convert callback on the LL thread and
+    // mutate engine_ off-thread (Rule 11.3 violation, hidden by the
+    // pre-3.7 unconditional inline fallback).
     if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
         // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
         // No matching StringId — using English string (language config not yet applied to UI).
@@ -511,12 +514,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         return 1;
     }
 
-    // Wave 1 — route HotkeyManager LL-callback matches to the hook thread so
-    // callbacks like hookEngine.CommitPending() obey the single-writer
-    // invariant. Must run AFTER Start() (hook thread id is only valid then)
-    // and ideally before the first user keystroke. Until set, matches fall
-    // back to inline LL-thread dispatch (see HotkeyManager.cpp LL callback).
-    g_hotkeyManager.SetHookThreadId(g_hookEngine.GetHookThreadId());
+    // Wire hotkeys (toggle V/E + quick convert) — HotkeyManager::Initialize
+    // inside WireHotkeys reads `hookEngine.GetHookThreadId()` (now non-zero
+    // since Start succeeded above) and publishes it BEFORE installing the
+    // LL hook, so the LL callback never observes a stale 0.
+    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
+                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
 
     // Sprint 1 D9: launch MainThreadWorker after the hook engine is up so the
     // first config-change Signal it sees has a fully-initialised HookEngine
@@ -728,15 +731,26 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Poll SharedState flags every 250ms to sync icon V/E state
     SetTimer(g_trayIcon.GetMessageWindow(), TIMER_ID_ICON_POLL, 250, IconPollTimerProc);
 
-    // Internal Hotkey — TSF mode has toggle only (no QuickConvert)
+    // Internal Hotkey — TSF mode has toggle only (no QuickConvert).
+    //
+    // Wave 3 PR 3.7 — this branch compiles when `VKEY_HOOK_ENGINE` is NOT
+    // defined (TSF-only build, no `g_hookEngine`). HotkeyManager has no
+    // cross-thread dispatch target, so `Initialize` is called with
+    // hookThreadId=0. The toggle callback's body is a single
+    // `PostMessageW` to the tray's message window (Win32 cross-thread-safe),
+    // so `runsOnAnyThread=true` is correct — the LL callback may invoke it
+    // inline on the LL thread. Any future TSF-only hotkey that mutates
+    // shared state MUST either provide its own dispatch thread or remain
+    // `runsOnAnyThread=false` (in which case it drops silently rather
+    // than risk Rule 11.3 violation on LL thread).
     auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
     if (hotkeyOpt && hotkeyOpt->HasAny()) {
         HWND trayWnd = g_trayIcon.GetMessageWindow();
         // TSF mode: single toggle slot, never rebinding — slot id intentionally discarded.
         (void)g_hotkeyManager.AddHotkey(*hotkeyOpt, [trayWnd]() {
             if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
-        });
-        g_hotkeyManager.Initialize(hInstance);
+        }, /*runsOnAnyThread=*/true);
+        g_hotkeyManager.Initialize(hInstance, /*hookThreadId=*/0);
         NEXTKEY_LOG(L"Internal hotkey installed (ctrl=%d, shift=%d, alt=%d, win=%d, key=0x%02X)",
                     hotkeyOpt->ctrl, hotkeyOpt->shift, hotkeyOpt->alt, hotkeyOpt->win, hotkeyOpt->key);
     } else {
