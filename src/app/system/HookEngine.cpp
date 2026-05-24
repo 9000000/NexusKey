@@ -4054,7 +4054,7 @@ void HookEngine::DrainHookCommands() {
     // handler somehow re-enters DrainHookCommands — that's the
     // "ApplyFoo() called something that called DrainHookCommands again"
     // bug pattern, which would corrupt mailbox bit state silently.
-    HookCommandMailbox::DrainScope scope(mailbox_);
+    HookCommandMailbox::DrainScope scope(lifecycle_.Mailbox());
 
     const std::uint32_t bits = lifecycle_.Mailbox().DrainBits();
     // Phase 3f: even if no fresh bits, a previous drain may have deferred
@@ -4149,9 +4149,8 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         // host inherits the live "BS giữ chữ khi có gợi ý" value (factory
         // doesn't know about it). Without this, a focus change resets the
         // suggestKeepChars flag to default false until the next ApplyConfig.
-        if (auto cfg = config_.load(std::memory_order_acquire); cfg) {
-            newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
-        }
+        // Use the outer `cfg` loaded at function entry — no re-load needed.
+        newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
         injector_.store(std::move(newInjector), std::memory_order_release);
     }
 
