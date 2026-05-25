@@ -695,7 +695,7 @@ bool TypingEngine::ProcessModifier(TypingAction action, wchar_t c) {
         case TypingAction::HornW:         return HandleHornW(action, c);
         case TypingAction::CircumflexA:
         case TypingAction::CircumflexE:
-        case TypingAction::CircumflexO:   return HandleAdjacentCircumflex(action, c);
+        case TypingAction::CircumflexO:   return adjacentCircumflexProposal_.tryApply(action, c);
         case TypingAction::StrokeD:       return HandleStrokeD(action, c);
         case TypingAction::VniCircumflex: return HandleVniCircumflex(action, c);
         case TypingAction::VniHorn:       return HandleVniHorn(action, c);

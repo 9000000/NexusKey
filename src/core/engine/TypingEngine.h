@@ -13,10 +13,12 @@
 #include "Phonotactics.h"
 #include "TypingAction.h"
 #include "core/config/TypingConfig.h"
+#include "core/engine/rule/AdjacentCircumflexProposal.h"
 #include "core/engine/rule/EngineRuleRegistry.h"
-#include "core/engine/rule/IToneExecutor.h"
 #include "core/engine/rule/IModifierExecutor.h"
+#include "core/engine/rule/IModifierSubExecutor.h"
 #include "core/engine/rule/IQuickConsonantExecutor.h"
+#include "core/engine/rule/IToneExecutor.h"
 #include <vector>
 #include <string>
 
@@ -88,6 +90,7 @@ struct CharState {
 class TypingEngine : public IInputEngine,
                      public EngineRule::IToneExecutor,
                      public EngineRule::IModifierExecutor,
+                     public EngineRule::IModifierSubExecutor,
                      public EngineRule::IQuickConsonantExecutor {
 public:
     TypingEngine() : TypingEngine(TypingConfig{}) {}
@@ -199,7 +202,9 @@ private:
     // behaviour where one handler covers multiple actions (HornInsert,
     // AdjacentCircumflex); ignored where it's 1:1.
     bool HandleHornInsert(TypingAction action, wchar_t keyChar);          // Telex `[`/`]`
-    bool HandleAdjacentCircumflex(TypingAction action, wchar_t keyChar);  // Telex aa/ee/oo + cross-vowel
+    // W8.1: IModifierSubExecutor override — body unchanged, called via
+    // adjacentCircumflexProposal_.tryApply() from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleAdjacentCircumflex(TypingAction action, wchar_t keyChar) override;  // Telex aa/ee/oo + cross-vowel
     bool HandleHornW(TypingAction action, wchar_t keyChar);               // Telex w (P1-P8)
     bool HandleStrokeD(TypingAction action, wchar_t keyChar);             // Telex dd / VNI 9
     bool HandleVniCircumflex(TypingAction action, wchar_t keyChar);       // VNI 6
@@ -297,6 +302,10 @@ private:
     EnglishProtectionState engProt_;     // 3-tier English protection state
     mutable std::wstring composeBuf_;    // Reusable buffer for ComposeAll() — avoids heap alloc per Peek()
     EngineRule::EngineRuleRegistry ruleRegistry_;  // W7.1: empty; W7.2+ registers rules
+    // W8.1: ModifierProposal for CircumflexA/E/O dispatch. Routes through
+    // IModifierSubExecutor — body lives in this engine, proposal layer is
+    // documentation + future-extension slot for W8.2-W8.5.
+    EngineRule::AdjacentCircumflexProposal adjacentCircumflexProposal_{*this};
 };
 
 }  // namespace NextKey
