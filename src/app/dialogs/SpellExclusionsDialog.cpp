@@ -147,20 +147,14 @@ void SpellExclusionsDialog::importExclusions() {
         entries_.clear();
     }
 
-    std::string line;
-    while (std::getline(infile, line)) {
-        // Trim CR (Windows line endings)
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        // Skip empty lines and comments
-        if (line.empty() || line[0] == ';') continue;
-
+    ParseConfigLines(infile, [&](const std::string& line) {
         std::wstring wName = Utf8ToWide(line);
-        if (wName.empty()) continue;
-        for (auto& ch : wName) ch = towlower(ch);  // Store pre-lowercased
+        if (wName.empty()) return;
+        for (auto& ch : wName) ch = towlower(ch);
         if (std::find(entries_.begin(), entries_.end(), wName) == entries_.end()) {
             entries_.push_back(wName);
         }
-    }
+    });
 
     std::sort(entries_.begin(), entries_.end());
     populateList();

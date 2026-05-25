@@ -935,15 +935,17 @@ User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
   explicit test. Add scenarios: `xinchao` + backspace-into-word + retype,
   `bưởichuối` edit sequences, commit-trigger behavior on punctuation glue.
 
-### Tech debt surfaced during code review
+### ✅ RESOLVED: shared Import line-parsing helper (2026-05-25)
 
-- [ ] **Extract shared `Import/ExportStringList` helpers** — `src/app/dialogs/DialogUtils.h`
-  4 dialogs now duplicate ~60 lines each: `ExcludedAppsDialog`,
-  `MacroTableDialog`, `SpellExclusionsDialog`, `TsfAppsDialog`. Differences
-  are: window title, default filename, file header comment, and line
-  transform. A templated helper with `std::function<std::wstring(std::string)>`
-  transform + 3 string params would unify them and prevent future drift.
-  Touching all 4 dialogs in one refactor PR — out of scope for feature work.
+`ParseConfigLines` template added to `AppHelpers.h` consolidates the
+CR-strip + UTF-8 BOM strip + empty/`;`-comment filter loop across 8
+sites (ExcludedApps / TsfApps / SpellExclusions / MacroTable × Sciter +
+Classic). Per-site logic (lowercase mode, dedup pattern, sort, error
+message, key:value split) stays in caller lambdas. Side-effect fixes:
+Classic SpellExclusions now skips `;` headers; Sciter SpellExclusions
++ Sciter MacroTable now strip UTF-8 BOM. Export side intentionally
+NOT consolidated — variation across vector vs map + format strings
+is too high to wrap cleanly. 10 portable gtests pin filter contract.
 
 ---
 

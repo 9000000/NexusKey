@@ -222,33 +222,15 @@ void ClassicSpellExclusionsDialog::ImportFromFile() {
 
     if (choice == IDYES) entries_.clear();  // Replace
 
-    std::string line;
-    bool firstLine = true;
     int added = 0;
-    while (std::getline(file, line)) {
-        // Strip CR if present
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-
-        // Strip UTF-8 BOM on first line
-        if (firstLine) {
-            firstLine = false;
-            if (line.size() >= 3 &&
-                static_cast<unsigned char>(line[0]) == 0xEF &&
-                static_cast<unsigned char>(line[1]) == 0xBB &&
-                static_cast<unsigned char>(line[2]) == 0xBF) {
-                line.erase(0, 3);
-            }
-        }
-
-        if (line.empty()) continue;
-
+    ParseConfigLines(file, [&](const std::string& line) {
         std::wstring wline = Utf8ToWide(line);
 
-        // Trim + validate
+        // Trim + min-length validate (entries < 2 chars are noise).
         size_t s = 0, e = wline.size();
         while (s < e && wline[s] == L' ') ++s;
         while (e > s && wline[e - 1] == L' ') --e;
-        if (e - s < 2) continue;
+        if (e - s < 2) return;
 
         std::wstring entry = wline.substr(s, e - s);
         for (auto& ch : entry) ch = towlower(ch);
@@ -261,7 +243,7 @@ void ClassicSpellExclusionsDialog::ImportFromFile() {
             entries_.push_back(entry);
             added++;
         }
-    }
+    });
 
     std::sort(entries_.begin(), entries_.end());
     PopulateList();

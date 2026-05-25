@@ -569,6 +569,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/InjectorSwitchTest.cpp
     tests/HotkeyLabelTest.cpp
     tests/HotkeyConfigMigrationTest.cpp
+    tests/ParseConfigLinesTest.cpp
     tests/pipeline/EnumsTest.cpp
     tests/pipeline/IntentTest.cpp
     tests/pipeline/IntentSinkTest.cpp
