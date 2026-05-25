@@ -65,6 +65,8 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/rule/AdjacentCircumflexProposal.cpp
     src/core/engine/rule/HornModifierProposal.h
     src/core/engine/rule/HornModifierProposal.cpp
+    src/core/engine/rule/StrokeDProposal.h
+    src/core/engine/rule/StrokeDProposal.cpp
     src/core/engine/rule/IQuickConsonantExecutor.h
     src/core/engine/rule/QuickStartConsonantRule.h
     src/core/engine/rule/QuickStartConsonantRule.cpp
@@ -598,6 +600,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/engine/AdjacentCircumflexProposalTest.cpp
     tests/engine/HornW_SpeculateParityProbeTest.cpp
     tests/engine/HornModifierProposalTest.cpp
+    tests/engine/StrokeDProposalTest.cpp
     tests/engine/QuickStartConsonantRuleTest.cpp
     tests/engine/QuickEndConsonantRuleTest.cpp
     src/app/system/UpdateSecurity.cpp

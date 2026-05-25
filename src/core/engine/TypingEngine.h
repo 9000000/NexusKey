@@ -15,6 +15,7 @@
 #include "core/config/TypingConfig.h"
 #include "core/engine/rule/AdjacentCircumflexProposal.h"
 #include "core/engine/rule/HornModifierProposal.h"
+#include "core/engine/rule/StrokeDProposal.h"
 #include "core/engine/rule/EngineRuleRegistry.h"
 #include "core/engine/rule/IModifierExecutor.h"
 #include "core/engine/rule/IModifierSubExecutor.h"
@@ -209,7 +210,9 @@ private:
     // W8.2: IModifierSubExecutor override — body unchanged, called via
     // hornModifierProposal_.tryApply() from ProcessModifier dispatch.
     [[nodiscard]] bool HandleHornW(TypingAction action, wchar_t keyChar) override;               // Telex w (P1-P8)
-    bool HandleStrokeD(TypingAction action, wchar_t keyChar);             // Telex dd / VNI 9
+    // W8.3: IModifierSubExecutor override — body unchanged, called via
+    // strokeDProposal_.tryApply() from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleStrokeD(TypingAction action, wchar_t keyChar) override;             // Telex dd / VNI 9
     bool HandleVniCircumflex(TypingAction action, wchar_t keyChar);       // VNI 6
     bool HandleVniHorn(TypingAction action, wchar_t keyChar);             // VNI 7
     bool HandleVniBreve(TypingAction action, wchar_t keyChar);             // VNI 8
@@ -312,6 +315,9 @@ private:
     // W8.2: ModifierProposal for HornW (Telex `w`, P1-P8). Metadata declares
     // RelocationKind::HornVowel (apply path calls RelocateToneToHornVowel).
     EngineRule::HornModifierProposal hornModifierProposal_{*this};
+    // W8.3: ModifierProposal for StrokeD (Telex `dd`, VNI `d9` → đ).
+    // Metadata declares RelocationKind::None (pure mod toggle, no relocate).
+    EngineRule::StrokeDProposal strokeDProposal_{*this};
 };
 
 }  // namespace NextKey

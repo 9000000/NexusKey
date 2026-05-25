@@ -31,6 +31,13 @@ public:
     // layer (W8.2).
     [[nodiscard]] virtual bool HandleHornW(TypingAction action,
                                             wchar_t keyChar) = 0;
+
+    // StrokeD (Telex `dd` / VNI `d9` → đ). Body lives on TypingEngine;
+    // this port lets StrokeDProposal route dispatch through the proposal
+    // layer (W8.3). HandleVniStroke is a thin forwarder; routing the
+    // StrokeD dispatch case through the proposal indirectly covers it.
+    [[nodiscard]] virtual bool HandleStrokeD(TypingAction action,
+                                              wchar_t keyChar) = 0;
 };
 
 }  // namespace NextKey::EngineRule
