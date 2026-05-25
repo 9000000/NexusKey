@@ -4975,5 +4975,80 @@ TEST_F(UyeSmartAccentClassicTest, Tuyetje_ClassicSameResult)  { TypeString(*engi
 TEST_F(UyeSmartAccentClassicTest, Chuyf_ClassicUHuyen)        { TypeString(*engine_, L"chuyf");    EXPECT_EQ(engine_->Peek(), L"chùy"); }    // classic uy=CODA_AWARE no-coda → FIRST = u
 TEST_F(UyeSmartAccentClassicTest, Huynhf_ClassicYHuyen)       { TypeString(*engine_, L"huynhf");   EXPECT_EQ(engine_->Peek(), L"huỳnh"); }   // classic uy=CODA_AWARE with coda → SECOND = y
 
+// ============================================================================
+// PROBE: tone-middle + smart-accent  (bug 2026-05-25: vijeet → vịeet)
+// ============================================================================
+// Pattern: tone key arrives BETWEEN single vowel and the smart-accent doubling.
+// Expected: when 2nd 'e' fires ee→ê, tone must relocate from i to ê.
+// "i" + tone "j" → "ị" ; then "e" + "e" → ee should promote to "iê" and
+// re-place tone (nặng) onto ê → "iệ" ; final "t" coda → "việt".
+class ToneMidSmartAccentTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        cfg_.inputMethod = InputMethod::Telex;
+        cfg_.spellCheckEnabled = true;  // bug only reported with spell-check ON
+        engine_ = std::make_unique<TypingEngine>(cfg_);
+    }
+    TypingConfig cfg_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+TEST_F(ToneMidSmartAccentTest, Vijeet_ToneBeforeSmartAccent) {
+    TypeString(*engine_, L"vijeet");
+    EXPECT_EQ(engine_->Peek(), L"việt");
+}
+TEST_F(ToneMidSmartAccentTest, Vieetj_Canonical_SpellOn) {
+    TypeString(*engine_, L"vieetj");
+    EXPECT_EQ(engine_->Peek(), L"việt");
+}
+// Probe step-by-step: does ee→ê fire after a toned vowel at all?
+TEST_F(ToneMidSmartAccentTest, Probe_Ije_NoCoda)    { TypeString(*engine_, L"ije");   EXPECT_EQ(engine_->Peek(), L"ịe"); }   // baseline: tone on i, +e
+TEST_F(ToneMidSmartAccentTest, Probe_Ijee_NoCoda)   { TypeString(*engine_, L"ijee");  EXPECT_EQ(engine_->Peek(), L"iệ"); }   // does ee promote + relocate tone?
+TEST_F(ToneMidSmartAccentTest, Probe_Vijee_NoCoda)  { TypeString(*engine_, L"vijee"); EXPECT_EQ(engine_->Peek(), L"việ"); }  // same with leading consonant
+
+// Mirror: spell-check OFF — does the same input behave the same?
+class ToneMidSmartAccentSpellOffTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        cfg_.inputMethod = InputMethod::Telex;
+        cfg_.spellCheckEnabled = false;
+        engine_ = std::make_unique<TypingEngine>(cfg_);
+    }
+    TypingConfig cfg_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+TEST_F(ToneMidSmartAccentSpellOffTest, Vijeet_SpellOff) { TypeString(*engine_, L"vijeet"); EXPECT_EQ(engine_->Peek(), L"việt"); }
+
+// Same root pattern, 'oo' family (user-reported 2026-05-25):
+//   ngufono → nguồn (free-marking 'o' works because no adjacent oo)
+//   ngufoon → should also be 'nguồn' (adjacent oo case)
+TEST_F(ToneMidSmartAccentTest, Ngufoon_ToneBeforeAdjacentOO) {
+    TypeString(*engine_, L"ngufoon");
+    EXPECT_EQ(engine_->Peek(), L"nguồn");
+}
+TEST_F(ToneMidSmartAccentTest, Ngufono_FreeMarkingControl) {
+    TypeString(*engine_, L"ngufono");
+    EXPECT_EQ(engine_->Peek(), L"nguồn");  // should already pass — free-marking, not adjacent
+}
+// Modern ortho variant — does modernOrtho flip the behavior?
+class ToneMidSmartAccentModernTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        cfg_.inputMethod = InputMethod::Telex;
+        cfg_.spellCheckEnabled = true;
+        cfg_.modernOrtho = true;
+        engine_ = std::make_unique<TypingEngine>(cfg_);
+    }
+    TypingConfig cfg_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+TEST_F(ToneMidSmartAccentModernTest, Ngufoon_Modern) {
+    TypeString(*engine_, L"ngufoon");
+    EXPECT_EQ(engine_->Peek(), L"nguồn");
+}
+TEST_F(ToneMidSmartAccentModernTest, Vijeet_Modern) {
+    TypeString(*engine_, L"vijeet");
+    EXPECT_EQ(engine_->Peek(), L"việt");
+}
+
 }  // namespace
 }  // namespace NextKey

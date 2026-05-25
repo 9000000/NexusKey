@@ -923,16 +923,43 @@ bool TypingEngine::HandleAdjacentCircumflex(TypingAction action, wchar_t c) {
             }
             return true;
         }
-        // Reject adjacent circumflex when the result is an invalid
-        // syllable — catches split tone/mod typos ("của" + 'a' → c,ủ,â)
-        // via SpellCheck's tone/mod invariant and structural invalidity
-        // ("hò" + 'a' + 'a' → h,ò,â with "âo" not in vowel table).
-        if (ShouldRejectModifier(states_.size() - 1,
-                                 Modifier::Circumflex, targetBase)) {
-            return false;  // Fall through to ProcessChar — add vowel literally
+        // Pre-state drives both validation and apply paths so the speculate
+        // path mirrors the runtime path (invariant from ad09f15).
+        //
+        //  - ValidPrefix: user is mid-construction (e.g. "vịe" → "việ", "ngùo"
+        //    → "nguồ"). Apply circumflex AND relocate tone so the resulting
+        //    diphthong (iê, uô, …) attracts the tone to the correct vowel.
+        //    Mirrors free-marking branch L1024-1030.
+        //  - Valid: syllable already complete ("của", "ca") → adjacent
+        //    modifier is most likely a typo. Keep mod-only path so
+        //    "cuara" + 'a' rejects to "cuara" instead of over-accepting
+        //    to "cuậ" (typo guard from ad09f15).
+        //  - Invalid: not a syllable at all → mod-only path rejects.
+        auto preState = Phonology::ValidateSyllableState(
+            states_.data(), states_.size(), config_.allowZwjf);
+        const bool needsRelocate =
+            (preState == Phonology::SyllableState::ValidPrefix);
+
+        if (needsRelocate) {
+            if (!WouldBeValidSyllable(states_.size() - 1, Modifier::Circumflex,
+                                      /*clearCircumflexIdx=*/SIZE_MAX,
+                                      /*speculateRelocateTone=*/true)
+                && !WouldModifierKeyMatchExclusion(c)) {
+                return false;
+            }
+        } else {
+            // Reject adjacent circumflex when the result is an invalid
+            // syllable — catches split tone/mod typos ("của" + 'a' → c,ủ,â)
+            // via SpellCheck's tone/mod invariant and structural invalidity
+            // ("hò" + 'a' + 'a' → h,ò,â with "âo" not in vowel table).
+            if (ShouldRejectModifier(states_.size() - 1,
+                                     Modifier::Circumflex, targetBase)) {
+                return false;  // Fall through to ProcessChar — add vowel literally
+            }
         }
         // Apply circumflex - PRESERVE FIRST LETTER CASE
         last.mod = Modifier::Circumflex;
+        if (needsRelocate) RelocateToneToTarget();
         return true;
     }
 
@@ -2026,9 +2053,19 @@ bool TypingEngine::WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
         return result != Phonology::SyllableState::Invalid || recoverableMismatch;
     }
 
-    // Mod-only path — runtime keeps tone on its current vowel (adjacent
-    // circumflex, Breve P7). Speculating relocation would over-accept by
-    // re-aligning tone the runtime never moves.
+    // Mod-only path — for callers whose runtime keeps the tone on its
+    // current vowel after applying the modifier. Speculating relocation
+    // here would over-accept: validator returns Valid by re-aligning a
+    // tone the runtime then leaves stranded, opening the door to typos
+    // (e.g. "của" + 'a' → cuẩ, ad09f15).
+    //
+    // Callers that DO relocate at runtime MUST opt in via
+    // speculateRelocateTone=true to keep the speculate/apply invariant
+    // (mirrors what the runtime actually mutates). See free-marking
+    // circumflex L1052 and adjacent circumflex ValidPrefix branch L944
+    // for examples. ProcessVniVowelModifier L1953 still uses this
+    // mod-only path despite relocating at runtime — tracked in
+    // docs/TODO.md as a known parity gap.
     Modifier saved = states_[targetIdx].mod;
     states_[targetIdx].mod = newMod;
     bool didClear = false;

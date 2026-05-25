@@ -351,6 +351,58 @@ repro that fails today.
 
 ---
 
+## 🟢 `WouldBeValidSyllable` speculation parity — VNI vowel modifier (2026-05-25)
+
+### Context
+
+The Telex adjacent-circumflex fix (2026-05-25 `vijeet → việt`, `ngufoon → nguồn`)
+applied a ValidPrefix-gated speculate-relocate branch to `HandleAdjacentCircumflex`.
+`ProcessVniVowelModifier` (`TypingEngine.cpp:1953`) has the **same invariant
+violation**: validates mod-only via `ShouldRejectModifier`, but the runtime
+calls `RelocateToneToTarget()` immediately after applying the modifier.
+
+```cpp
+if (ShouldRejectModifier(i, targetMod, key)) return false;
+states_[i].mod = targetMod;
+RelocateToneToTarget();   // ← runtime relocates, but validator above didn't speculate
+```
+
+### Hypothesis
+
+VNI inputs that match the Telex bug shape — tone key arriving BEFORE the
+vowel-modifier key on a buffer that will become a diphthong — should
+reproduce the same wrong-reject. Concretely the VNI parallels are:
+
+- Telex `vijeet` ↔ VNI `vi5e6t` (5 = nặng/Dot, 6 = circumflex on e)
+- Telex `ngufoon` ↔ VNI `ngu2oo6n` (2 = huyền/Grave, 6 = circumflex on o)
+
+Needs concrete repro before fixing (per `feedback_defer_with_promise`:
+validate, don't trust intent).
+
+### Plan when surfaced
+
+1. Repro: write probe tests mirroring `ToneMidSmartAccentTest.{Vijeet,Ngufoon}`
+   but with VNI input strings and `InputMethod::VNI`.
+2. Apply the same ValidPrefix-gated branch in `ProcessVniVowelModifier`
+   (Pass 1, around L1949-1958): compute `preState` once, branch on
+   `ValidPrefix` for speculate-relocate vs Valid/Invalid for mod-only.
+3. Add VNI parity tests to `VniParityTest.cpp`.
+
+### Why deferred
+
+User report (2026-05-25) was Telex-only. Scope discipline — fix what's
+reported, file what's adjacent. Defer until VNI user surfaces the same shape
+OR a quick parity sweep confirms the structural bug.
+
+### Refs
+
+- Telex fix landed: `HandleAdjacentCircumflex` (TypingEngine.cpp:923-963)
+- Test pattern to mirror: `ToneMidSmartAccentTest.Vijeet_ToneBeforeSmartAccent`,
+  `ToneMidSmartAccentTest.Ngufoon_ToneBeforeAdjacentOO`
+- Heuristic doc: comment block at `TypingEngine.cpp:926-940`
+
+---
+
 ## 🟡 Commit-undo replay sai sau auto-restore + gõ-lại + BS (2026-05-18)
 
 ### Triệu chứng (user report)
