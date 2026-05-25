@@ -697,9 +697,9 @@ bool TypingEngine::ProcessModifier(TypingAction action, wchar_t c) {
         case TypingAction::CircumflexE:
         case TypingAction::CircumflexO:   return adjacentCircumflexProposal_.tryApply(action, c);
         case TypingAction::StrokeD:       return strokeDProposal_.tryApply(action, c);
-        case TypingAction::VniCircumflex: return HandleVniCircumflex(action, c);
-        case TypingAction::VniHorn:       return HandleVniHorn(action, c);
-        case TypingAction::VniBreve:      return HandleVniBreve(action, c);
+        case TypingAction::VniCircumflex: return vniCircumflexProposal_.tryApply(action, c);
+        case TypingAction::VniHorn:       return vniHornProposal_.tryApply(action, c);
+        case TypingAction::VniBreve:      return vniBreveProposal_.tryApply(action, c);
         case TypingAction::VniStroke:     return HandleVniStroke(action, c);
 
         // -- UserDefined ONLY actions --
@@ -1941,18 +1941,39 @@ bool TypingEngine::ProcessVniVowelModifier(Modifier targetMod, wchar_t key) {
     };
 
     // Pass 1: rightmost unmodified eligible vowel → apply.
-    // Reject when the result would be an invalid syllable — catches both
-    // split tone/mod ("của" + '6' → c,ủ,â) and structural invalidity
-    // ("báo" + '6' → b,a,ô with "aô" not in vowel table). Do NOT fall back
-    // to an earlier vowel; split applications on earlier vowels would still
-    // be invalid.
+    // Pre-state drives validation + apply paths so the speculate path mirrors
+    // the runtime path (invariant from ad09f15; W8.5 ports c6369dd template
+    // from HandleAdjacentCircumflex to fix the VNI mirror: `vi5e6t → việt`,
+    // `ngu2oo6n → nguồn`).
+    //
+    //  - ValidPrefix: user is mid-construction (e.g. "vịe" → "việ" via 6).
+    //    Apply modifier AND relocate tone so the resulting diphthong
+    //    (iê, uô, …) attracts the tone to the correct vowel.
+    //  - Valid: syllable already complete ("cua" + 6 → cuâ as legitimate
+    //    ValidPrefix to cuấp/cuấn). Mod-only validate; don't relocate.
+    //    Catches split tone/mod typos ("của" + 6 → c,ủ,â) via spell check.
+    //  - Invalid: not a syllable at all → mod-only path rejects.
+    auto preState = Phonology::ValidateSyllableState(
+        states_.data(), states_.size(), config_.allowZwjf);
+    const bool needsRelocate =
+        (preState == Phonology::SyllableState::ValidPrefix);
+
     for (size_t i = states_.size(); i-- > 0;) {
         if (!states_[i].IsVowel() || !isEligible(states_[i].base)) continue;
         if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
         if (states_[i].mod == Modifier::None) {
-            if (ShouldRejectModifier(i, targetMod, key)) return false;
+            if (needsRelocate) {
+                if (!WouldBeValidSyllable(i, targetMod,
+                                          /*clearCircumflexIdx=*/SIZE_MAX,
+                                          /*speculateRelocateTone=*/true)
+                    && !WouldModifierKeyMatchExclusion(key)) {
+                    return false;
+                }
+            } else {
+                if (ShouldRejectModifier(i, targetMod, key)) return false;
+            }
             states_[i].mod = targetMod;
-            RelocateToneToTarget();
+            if (needsRelocate) RelocateToneToTarget();
             return true;
         }
     }

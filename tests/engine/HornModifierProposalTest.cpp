@@ -137,6 +137,9 @@ TEST(HornModifierProposalMetadata, ReportsHornVowelRelocation) {
         bool HandleAdjacentCircumflex(TypingAction, wchar_t) override { return false; }
         bool HandleStrokeD(TypingAction, wchar_t) override { return false; }
         bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
+        bool HandleVniCircumflex(TypingAction, wchar_t) override { return false; }
+        bool HandleVniHorn(TypingAction, wchar_t) override { return false; }
+        bool HandleVniBreve(TypingAction, wchar_t) override { return false; }
         bool HandleHornW(TypingAction, wchar_t) override { return false; }
     } stub;
     HornModifierProposal proposal(stub);
@@ -153,6 +156,9 @@ TEST(HornModifierProposalDelegation, ForwardsArgumentsAndReturnVerbatim) {
         bool HandleAdjacentCircumflex(TypingAction, wchar_t) override { return false; }
         bool HandleStrokeD(TypingAction, wchar_t) override { return false; }
         bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
+        bool HandleVniCircumflex(TypingAction, wchar_t) override { return false; }
+        bool HandleVniHorn(TypingAction, wchar_t) override { return false; }
+        bool HandleVniBreve(TypingAction, wchar_t) override { return false; }
         bool HandleHornW(TypingAction action, wchar_t c) override {
             ++calls;
             lastAction = action;

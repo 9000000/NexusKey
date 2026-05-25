@@ -17,6 +17,9 @@
 #include "core/engine/rule/BracketProposal.h"
 #include "core/engine/rule/HornModifierProposal.h"
 #include "core/engine/rule/StrokeDProposal.h"
+#include "core/engine/rule/VniBreveProposal.h"
+#include "core/engine/rule/VniCircumflexProposal.h"
+#include "core/engine/rule/VniHornProposal.h"
 #include "core/engine/rule/EngineRuleRegistry.h"
 #include "core/engine/rule/IModifierExecutor.h"
 #include "core/engine/rule/IModifierSubExecutor.h"
@@ -216,9 +219,11 @@ private:
     // W8.3: IModifierSubExecutor override — body unchanged, called via
     // strokeDProposal_.tryApply() from ProcessModifier dispatch.
     [[nodiscard]] bool HandleStrokeD(TypingAction action, wchar_t keyChar) override;             // Telex dd / VNI 9
-    bool HandleVniCircumflex(TypingAction action, wchar_t keyChar);       // VNI 6
-    bool HandleVniHorn(TypingAction action, wchar_t keyChar);             // VNI 7
-    bool HandleVniBreve(TypingAction action, wchar_t keyChar);             // VNI 8
+    // W8.5: IModifierSubExecutor overrides — bodies unchanged, called via
+    // VNI proposal members from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleVniCircumflex(TypingAction action, wchar_t keyChar) override; // VNI 6
+    [[nodiscard]] bool HandleVniHorn(TypingAction action, wchar_t keyChar) override;       // VNI 7
+    [[nodiscard]] bool HandleVniBreve(TypingAction action, wchar_t keyChar) override;      // VNI 8
     bool HandleVniStroke(TypingAction action, wchar_t keyChar);            // VNI 9
 
     // New User-defined handlers
@@ -324,6 +329,14 @@ private:
     // W8.4: ModifierProposal for HornInsert (Telex `[`/`]` → direct ơ/ư).
     // Metadata declares RelocationKind::None (append + escape pop).
     EngineRule::BracketProposal bracketProposal_{*this};
+    // W8.5: VNI proposals — Circumflex (6), Horn (7), Breve (8).
+    // All declare TargetTone or HornVowel per their RelocateToneTo* call.
+    // ProcessVniVowelModifier Pass 1 received the c6369dd ValidPrefix
+    // speculate-relocate fix in this wave (resolves TODO 2026-05-25
+    // vi5e6t / ngu2o6n wrong-reject).
+    EngineRule::VniCircumflexProposal vniCircumflexProposal_{*this};
+    EngineRule::VniHornProposal vniHornProposal_{*this};
+    EngineRule::VniBreveProposal vniBreveProposal_{*this};
 };
 
 }  // namespace NextKey

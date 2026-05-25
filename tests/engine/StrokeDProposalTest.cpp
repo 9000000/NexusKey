@@ -92,6 +92,9 @@ TEST(StrokeDProposalMetadata, ReportsNoneRelocation) {
         bool HandleHornW(TypingAction, wchar_t) override { return false; }
         bool HandleStrokeD(TypingAction, wchar_t) override { return false; }
         bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
+        bool HandleVniCircumflex(TypingAction, wchar_t) override { return false; }
+        bool HandleVniHorn(TypingAction, wchar_t) override { return false; }
+        bool HandleVniBreve(TypingAction, wchar_t) override { return false; }
     } stub;
     StrokeDProposal proposal(stub);
     EXPECT_EQ(proposal.relocationKind(), RelocationKind::None);
@@ -113,6 +116,9 @@ TEST(StrokeDProposalDelegation, ForwardsArgumentsAndReturnVerbatim) {
             return returnValue;
         }
         bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
+        bool HandleVniCircumflex(TypingAction, wchar_t) override { return false; }
+        bool HandleVniHorn(TypingAction, wchar_t) override { return false; }
+        bool HandleVniBreve(TypingAction, wchar_t) override { return false; }
     } rec;
 
     StrokeDProposal proposal(rec);

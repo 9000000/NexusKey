@@ -104,6 +104,9 @@ TEST(BracketProposalMetadata, ReportsNoneRelocation) {
         bool HandleHornW(TypingAction, wchar_t) override { return false; }
         bool HandleStrokeD(TypingAction, wchar_t) override { return false; }
         bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
+        bool HandleVniCircumflex(TypingAction, wchar_t) override { return false; }
+        bool HandleVniHorn(TypingAction, wchar_t) override { return false; }
+        bool HandleVniBreve(TypingAction, wchar_t) override { return false; }
     } stub;
     BracketProposal proposal(stub);
     EXPECT_EQ(proposal.relocationKind(), RelocationKind::None);
@@ -125,6 +128,9 @@ TEST(BracketProposalDelegation, ForwardsArgumentsAndReturnVerbatim) {
             lastChar = c;
             return returnValue;
         }
+        bool HandleVniCircumflex(TypingAction, wchar_t) override { return false; }
+        bool HandleVniHorn(TypingAction, wchar_t) override { return false; }
+        bool HandleVniBreve(TypingAction, wchar_t) override { return false; }
     } rec;
 
     BracketProposal proposal(rec);

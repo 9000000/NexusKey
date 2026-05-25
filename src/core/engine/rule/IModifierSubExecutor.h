@@ -44,6 +44,21 @@ public:
     // W8.4 port for BracketProposal.
     [[nodiscard]] virtual bool HandleHornInsert(TypingAction action,
                                                   wchar_t keyChar) = 0;
+
+    // VniCircumflex (VNI `6` → â/ê/ô). W8.5 port for VniCircumflexProposal.
+    // Body forwards to ProcessVniVowelModifier(Circumflex, key).
+    [[nodiscard]] virtual bool HandleVniCircumflex(TypingAction action,
+                                                     wchar_t keyChar) = 0;
+
+    // VniHorn (VNI `7` → ơ/ư). W8.5 port for VniHornProposal. Body
+    // implements priority order similar to HandleHornW.
+    [[nodiscard]] virtual bool HandleVniHorn(TypingAction action,
+                                              wchar_t keyChar) = 0;
+
+    // VniBreve (VNI `8` → ă). W8.5 port for VniBreveProposal. Body forwards
+    // to ProcessVniVowelModifier(Breve, key).
+    [[nodiscard]] virtual bool HandleVniBreve(TypingAction action,
+                                                wchar_t keyChar) = 0;
 };
 
 }  // namespace NextKey::EngineRule

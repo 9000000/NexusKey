@@ -166,6 +166,9 @@ TEST(AdjacentCircumflexProposalMetadata, ReportsConditionalRelocation) {
         bool HandleHornW(TypingAction, wchar_t) override { return false; }
         bool HandleStrokeD(TypingAction, wchar_t) override { return false; }
         bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
+        bool HandleVniCircumflex(TypingAction, wchar_t) override { return false; }
+        bool HandleVniHorn(TypingAction, wchar_t) override { return false; }
+        bool HandleVniBreve(TypingAction, wchar_t) override { return false; }
     } stub;
     AdjacentCircumflexProposal proposal(stub);
     EXPECT_EQ(proposal.relocationKind(), RelocationKind::Conditional);
@@ -191,6 +194,9 @@ TEST(AdjacentCircumflexProposalDelegation, ForwardsArgumentsAndReturnVerbatim) {
         bool HandleHornW(TypingAction, wchar_t) override { return false; }
         bool HandleStrokeD(TypingAction, wchar_t) override { return false; }
         bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
+        bool HandleVniCircumflex(TypingAction, wchar_t) override { return false; }
+        bool HandleVniHorn(TypingAction, wchar_t) override { return false; }
+        bool HandleVniBreve(TypingAction, wchar_t) override { return false; }
     } rec;
 
     AdjacentCircumflexProposal proposal(rec);
