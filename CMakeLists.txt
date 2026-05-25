@@ -606,11 +606,11 @@ set(NEXTKEY_TEST_SOURCES
     tests/engine/ToneRuleTest.cpp
     tests/engine/ModifierRuleTest.cpp
     tests/engine/AdjacentCircumflexProposalTest.cpp
-    tests/engine/HornW_SpeculateParityProbeTest.cpp
+    tests/engine/HornWSpeculateParityProbeTest.cpp
     tests/engine/HornModifierProposalTest.cpp
     tests/engine/StrokeDProposalTest.cpp
     tests/engine/BracketProposalTest.cpp
-    tests/engine/VniVowelModifier_SpeculateParityProbeTest.cpp
+    tests/engine/VniVowelModifierSpeculateParityProbeTest.cpp
     tests/engine/VniProposalsTest.cpp
     tests/engine/QuickStartConsonantRuleTest.cpp
     tests/engine/QuickEndConsonantRuleTest.cpp

@@ -1,4 +1,4 @@
-// tests/engine/HornW_SpeculateParityProbeTest.cpp
+// tests/engine/HornWSpeculateParityProbeTest.cpp
 //
 // W8.2 — probes for the hypothetical Horn P5/P6 speculate-relocate mismatch
 // (TODO 2026-05-23). Per `feedback_defer_with_promise` + `feedback_probe_before_theorize`,

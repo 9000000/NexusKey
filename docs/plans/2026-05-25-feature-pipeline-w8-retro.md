@@ -18,7 +18,8 @@
 | **W8.3 StrokeD** | 2026-05-25 | `b623e74` | 2090 | `StrokeDProposal` wraps `HandleStrokeD` (Telex `dd` / VNI `d9`). `relocationKind() == None`. **Re-scoped** from plan v3's "BreveProposal P7" (which sat inside HornW, already wrapped by W8.2). |
 | **W8.4 Bracket** | 2026-05-25 | `ad451cc` | 2099 | `BracketProposal` wraps `HandleHornInsert` (Telex `[`/`]`). `relocationKind() == None`. |
 | **W8.5 VNI + fix** | 2026-05-25 | `0a181d2` | 2118 | Three VNI proposals (Circumflex 6, Horn 7, Breve 8) + **real bug fix** for `ProcessVniVowelModifier` Pass 1: VNI mirror of c6369dd. Resolves TODO 2026-05-25. |
-| **W8.6 retro** | 2026-05-25 | (this commit) | — | This doc. |
+| **W8.6 retro** | 2026-05-25 | `e3bafaa` | — | Retro doc + close VNI TODO. |
+| **W8 review fix** | 2026-05-25 | (this commit) | — | Post-review corrections: VniHornProposal metadata `HornVowel` → `TargetTone` (initial declaration mis-mirrored Telex HornW; VNI Horn body calls `RelocateToneToTarget`, not `RelocateToneToHornVowel`). Stale W8.3 reference in IModifierSubExecutor header. Probe-file naming consistency. |
 
 **Net code change** across W8:
 - 12 new files in `src/core/engine/rule/` (3 interfaces/base + 7 proposal `.h+.cpp` pairs, minus 4 = 7 proposals).
@@ -89,7 +90,7 @@ Each W8.x wave is one commit with all of: interface change, new proposal `.h+.cp
 
 **Plan v3** estimated ~2 days for W8.2 bundling the HornModifierProposal + extending `WouldBeValidSyllable` with `RelocationKind` enum param (TODO 2026-05-23 hypothesis).
 
-**Reality**: 8 probes (`HornW_SpeculateParityProbeTest`) showed no concrete repro. P5/P6 fire only for STANDALONE u/o (no UA/UO/OA pair); with a single horned vowel, `RelocateToneToHornVowel` is a no-op. The existing T5 tone-stop-coda recovery absorbs grave+p/c/ch/t edges.
+**Reality**: 8 probes (`HornWSpeculateParityProbeTest`) showed no concrete repro. P5/P6 fire only for STANDALONE u/o (no UA/UO/OA pair); with a single horned vowel, `RelocateToneToHornVowel` is a no-op. The existing T5 tone-stop-coda recovery absorbs grave+p/c/ch/t edges.
 
 Per memory `feedback_defer_with_promise` ("don't widen helper without repro") and the TODO's own discipline ("validate, don't trust intent"), W8.2 shipped as proposal scaffold only. Probes stay as regression guards for the day a real input surfaces the mismatch.
 
@@ -112,7 +113,7 @@ Also corrected the TODO's transcription error: the VNI mirror of Telex `ngufoon`
 ## 4. Resolved TODOs
 
 - ✅ **`WouldBeValidSyllable` speculation parity — VNI vowel modifier (2026-05-25)** → resolved by W8.5 (`0a181d2`). Apply path now matches speculate path via `needsRelocate = preState == ValidPrefix` gating.
-- ⏸️ **`WouldBeValidSyllable` speculation parity for Horn paths (2026-05-23)** → still open. W8.2 probes ran, no repro. Documented in `HornW_SpeculateParityProbeTest.cpp` header: "if any probe begins failing, that input is the concrete repro the TODO 2026-05-23 was waiting for".
+- ⏸️ **`WouldBeValidSyllable` speculation parity for Horn paths (2026-05-23)** → still open. W8.2 probes ran, no repro. Documented in `HornWSpeculateParityProbeTest.cpp` header: "if any probe begins failing, that input is the concrete repro the TODO 2026-05-23 was waiting for".
 
 ---
 

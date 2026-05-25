@@ -4,9 +4,9 @@
 // ModifierProposal can delegate to the engine's existing per-action body
 // without lifting state mutation out of TypingEngine.
 //
-// Wave 8.1 introduces this port with a single method (HandleAdjacentCircumflex).
-// Future waves (W8.2 HornW, W8.3 Breve P7, W8.4 StrokeD/Bracket, W8.5 VNI
-// 6/7/8) extend this port with additional sub-handler methods.
+// Wave 8.1 introduced this port with a single method (HandleAdjacentCircumflex).
+// W8.2 added HornW, W8.3 StrokeD, W8.4 HornInsert (bracket keys), W8.5
+// VniCircumflex / VniHorn / VniBreve. See docs/plans/2026-05-25-feature-pipeline-w8-retro.md.
 //
 // Distinct from IModifierExecutor (W7.3): that port owns the OUTER dispatch
 // (HandleModifierAction → ProcessModifier switch); this port owns INNER

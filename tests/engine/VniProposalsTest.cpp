@@ -122,10 +122,13 @@ TEST(VniProposalsMetadata, CircumflexReportsTargetTone) {
     EXPECT_EQ(p.relocationKind(), RelocationKind::TargetTone);
 }
 
-TEST(VniProposalsMetadata, HornReportsHornVowel) {
+// HandleVniHorn calls RelocateToneToTarget on every path (not
+// RelocateToneToHornVowel as the initial W8.5 commit incorrectly claimed).
+// Bodies verified at TypingEngine.cpp:1847-1927 + ProcessVniVowelModifier.
+TEST(VniProposalsMetadata, HornReportsTargetTone) {
     AllStubs stub;
     VniHornProposal p(stub);
-    EXPECT_EQ(p.relocationKind(), RelocationKind::HornVowel);
+    EXPECT_EQ(p.relocationKind(), RelocationKind::TargetTone);
 }
 
 TEST(VniProposalsMetadata, BreveReportsTargetTone) {

@@ -1,4 +1,4 @@
-// tests/engine/VniVowelModifier_SpeculateParityProbeTest.cpp
+// tests/engine/VniVowelModifierSpeculateParityProbeTest.cpp
 //
 // W8.5 — probe TODO 2026-05-25: ProcessVniVowelModifier has the same
 // speculate-relocate invariant violation that ad09f15 + c6369dd fixed for
