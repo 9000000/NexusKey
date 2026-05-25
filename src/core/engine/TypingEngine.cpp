@@ -691,7 +691,7 @@ bool TypingEngine::ProcessClearTone() {
 bool TypingEngine::ProcessModifier(TypingAction action, wchar_t c) {
     switch (action) {
         case TypingAction::HornInsertO:
-        case TypingAction::HornInsertU:   return HandleHornInsert(action, c);
+        case TypingAction::HornInsertU:   return bracketProposal_.tryApply(action, c);
         case TypingAction::HornW:         return hornModifierProposal_.tryApply(action, c);
         case TypingAction::CircumflexA:
         case TypingAction::CircumflexE:

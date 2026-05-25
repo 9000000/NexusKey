@@ -136,6 +136,7 @@ TEST(HornModifierProposalMetadata, ReportsHornVowelRelocation) {
     struct StubExec final : IModifierSubExecutor {
         bool HandleAdjacentCircumflex(TypingAction, wchar_t) override { return false; }
         bool HandleStrokeD(TypingAction, wchar_t) override { return false; }
+        bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
         bool HandleHornW(TypingAction, wchar_t) override { return false; }
     } stub;
     HornModifierProposal proposal(stub);
@@ -151,6 +152,7 @@ TEST(HornModifierProposalDelegation, ForwardsArgumentsAndReturnVerbatim) {
         int calls = 0;
         bool HandleAdjacentCircumflex(TypingAction, wchar_t) override { return false; }
         bool HandleStrokeD(TypingAction, wchar_t) override { return false; }
+        bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
         bool HandleHornW(TypingAction action, wchar_t c) override {
             ++calls;
             lastAction = action;

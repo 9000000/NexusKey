@@ -91,6 +91,7 @@ TEST(StrokeDProposalMetadata, ReportsNoneRelocation) {
         bool HandleAdjacentCircumflex(TypingAction, wchar_t) override { return false; }
         bool HandleHornW(TypingAction, wchar_t) override { return false; }
         bool HandleStrokeD(TypingAction, wchar_t) override { return false; }
+        bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
     } stub;
     StrokeDProposal proposal(stub);
     EXPECT_EQ(proposal.relocationKind(), RelocationKind::None);
@@ -111,6 +112,7 @@ TEST(StrokeDProposalDelegation, ForwardsArgumentsAndReturnVerbatim) {
             lastChar = c;
             return returnValue;
         }
+        bool HandleHornInsert(TypingAction, wchar_t) override { return false; }
     } rec;
 
     StrokeDProposal proposal(rec);

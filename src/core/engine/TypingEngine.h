@@ -14,6 +14,7 @@
 #include "TypingAction.h"
 #include "core/config/TypingConfig.h"
 #include "core/engine/rule/AdjacentCircumflexProposal.h"
+#include "core/engine/rule/BracketProposal.h"
 #include "core/engine/rule/HornModifierProposal.h"
 #include "core/engine/rule/StrokeDProposal.h"
 #include "core/engine/rule/EngineRuleRegistry.h"
@@ -203,7 +204,9 @@ private:
     // fall through to ProcessChar (literal). `action` selects sub-
     // behaviour where one handler covers multiple actions (HornInsert,
     // AdjacentCircumflex); ignored where it's 1:1.
-    bool HandleHornInsert(TypingAction action, wchar_t keyChar);          // Telex `[`/`]`
+    // W8.4: IModifierSubExecutor override — body unchanged, called via
+    // bracketProposal_.tryApply() from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleHornInsert(TypingAction action, wchar_t keyChar) override; // Telex `[`/`]`
     // W8.1: IModifierSubExecutor override — body unchanged, called via
     // adjacentCircumflexProposal_.tryApply() from ProcessModifier dispatch.
     [[nodiscard]] bool HandleAdjacentCircumflex(TypingAction action, wchar_t keyChar) override;  // Telex aa/ee/oo + cross-vowel
@@ -318,6 +321,9 @@ private:
     // W8.3: ModifierProposal for StrokeD (Telex `dd`, VNI `d9` → đ).
     // Metadata declares RelocationKind::None (pure mod toggle, no relocate).
     EngineRule::StrokeDProposal strokeDProposal_{*this};
+    // W8.4: ModifierProposal for HornInsert (Telex `[`/`]` → direct ơ/ư).
+    // Metadata declares RelocationKind::None (append + escape pop).
+    EngineRule::BracketProposal bracketProposal_{*this};
 };
 
 }  // namespace NextKey

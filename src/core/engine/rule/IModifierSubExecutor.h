@@ -38,6 +38,12 @@ public:
     // StrokeD dispatch case through the proposal indirectly covers it.
     [[nodiscard]] virtual bool HandleStrokeD(TypingAction action,
                                               wchar_t keyChar) = 0;
+
+    // HornInsert (Telex `[` / `]` → ơ / ư direct insertion). One handler
+    // covers both HornInsertO and HornInsertU via the `action` parameter.
+    // W8.4 port for BracketProposal.
+    [[nodiscard]] virtual bool HandleHornInsert(TypingAction action,
+                                                  wchar_t keyChar) = 0;
 };
 
 }  // namespace NextKey::EngineRule
