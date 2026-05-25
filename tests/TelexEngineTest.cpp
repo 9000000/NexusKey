@@ -5050,5 +5050,22 @@ TEST_F(ToneMidSmartAccentModernTest, Vijeet_Modern) {
     EXPECT_EQ(engine_->Peek(), L"việt");
 }
 
+// Late-modifier on Valid pre-state — documented Vietnamese behavior
+// (vietnamese-phonology-spec-distillate.md, category-10 w-priority).
+// These MUST work despite c6369dd's adjacent-circumflex "Valid → reject" branch
+// because they go through HandleHornW (not HandleAdjacentCircumflex).
+TEST_F(ToneMidSmartAccentTest, Cuarw_LateHornAfterValid) {
+    TypeString(*engine_, L"cuarw");
+    EXPECT_EQ(engine_->Peek(), L"cửa");
+}
+TEST_F(ToneMidSmartAccentTest, Hoaw_LateBreveAfterValid) {
+    TypeString(*engine_, L"hoaw");
+    EXPECT_EQ(engine_->Peek(), L"hoă");
+}
+TEST_F(ToneMidSmartAccentTest, Muaw_LateHornAfterValidUaPair) {
+    TypeString(*engine_, L"muaw");
+    EXPECT_EQ(engine_->Peek(), L"mưa");
+}
+
 }  // namespace
 }  // namespace NextKey
