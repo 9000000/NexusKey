@@ -19,7 +19,8 @@
 | **W8.4 Bracket** | 2026-05-25 | `ad451cc` | 2099 | `BracketProposal` wraps `HandleHornInsert` (Telex `[`/`]`). `relocationKind() == None`. |
 | **W8.5 VNI + fix** | 2026-05-25 | `0a181d2` | 2118 | Three VNI proposals (Circumflex 6, Horn 7, Breve 8) + **real bug fix** for `ProcessVniVowelModifier` Pass 1: VNI mirror of c6369dd. Resolves TODO 2026-05-25. |
 | **W8.6 retro** | 2026-05-25 | `e3bafaa` | — | Retro doc + close VNI TODO. |
-| **W8 review fix** | 2026-05-25 | (this commit) | — | Post-review corrections: VniHornProposal metadata `HornVowel` → `TargetTone` (initial declaration mis-mirrored Telex HornW; VNI Horn body calls `RelocateToneToTarget`, not `RelocateToneToHornVowel`). Stale W8.3 reference in IModifierSubExecutor header. Probe-file naming consistency. |
+| **W8 review fix R1** | 2026-05-25 | `d69d081` | — | Post-review corrections: VniHornProposal metadata `HornVowel` → `TargetTone` (initial W8.5 declaration mis-mirrored Telex HornW). Stale W8.3 reference in IModifierSubExecutor header. Probe-file naming consistency. |
+| **W8 review fix R2** | 2026-05-25 | (this commit) | — | Round-2 review surfaced deeper issue: `TargetTone` enum doc said "unconditionally" but examples included gated calls. Adopted **Option B** crisp criterion: bodies with gated relocate (`if (needsRelocate) ...`) declare `Conditional`. Reclassified VniCircumflex/Breve/Horn from `TargetTone` to `Conditional` (Pass 1 needsRelocate-gated). Enum doc fully rewritten with classification criterion + per-proposal worked examples. |
 
 **Net code change** across W8:
 - 12 new files in `src/core/engine/rule/` (3 interfaces/base + 7 proposal `.h+.cpp` pairs, minus 4 = 7 proposals).
@@ -43,8 +44,20 @@
 
 **Why declarative metadata wins**:
 - Centralised audit surface: `grep RelocationKind:: src/core/engine/rule/` shows the policy map in 7 lines.
-- Parity tests across Telex/VNI proposals: VniCircumflexProposal must declare TargetTone (matches HandleAdjacentCircumflex free-marking branch's behavior); mismatch = a 2-line class diff in review.
+- Parity tests across Telex/VNI proposals: drift surfaces in the metadata pin test as a 2-line class diff in review.
 - Zero machinery cost — the proposal is a 15-LOC wrapper.
+
+**Current audit map (post Option B reclassification)**:
+```
+AdjacentCircumflexProposal → Conditional   # adjacent gated + free-marking ungated
+HornModifierProposal       → HornVowel     # 6 ungated RelocateToneToHornVowel calls
+StrokeDProposal            → None          # pure mod toggle, no relocate
+BracketProposal            → None          # append/pop CharState, no relocate
+VniCircumflexProposal      → Conditional   # Pass 1 gated + Pass 1.5 ungated
+VniBreveProposal           → Conditional   # same shared backing
+VniHornProposal            → Conditional   # uo/uu ungated + generic gated
+```
+The 4-count Conditional bucket is the **audit focal point** — proposals here have gated relocate calls, the historic source of speculate-apply parity bugs (ad09f15, c6369dd, W8.5). Reviewers touching any Conditional body should re-check the speculate/apply invariant.
 
 **Tradeoff acknowledged**: the ad09f15 / c6369dd invariant ("speculate path mirrors apply path") still lives in body comments + branch logic. Future contributors can drift it. Mitigation: tests pin metadata-to-body parity for each modifier, so drift is caught.
 
@@ -122,7 +135,11 @@ Also corrected the TODO's transcription error: the VNI mirror of Telex `ngufoon`
 Adding a new modifier action follows this template:
 
 1. **New IModifierSubExecutor method**: `HandleNewModifier(TypingAction, wchar_t)`.
-2. **New `XxxProposal.h+cpp`** in `src/core/engine/rule/`, inheriting `ModifierProposal`. Pick `relocationKind()` based on whether the body calls `RelocateToneTo*`.
+2. **New `XxxProposal.h+cpp`** in `src/core/engine/rule/`, inheriting `ModifierProposal`. Pick `relocationKind()` using the Option B classification criterion in `ModifierProposal.h` enum doc:
+   - No relocate calls → `None`
+   - Always RelocateToneToTarget (ungated, every path) → `TargetTone`
+   - Always RelocateToneToHornVowel (ungated, every path) → `HornVowel`
+   - Has any gated branch (`if (needsRelocate) ...`) OR mixes relocate functions → `Conditional` (the audit-focal bucket)
 3. **TypingEngine**: declare HandleNewModifier as `override` in private section, add `XxxProposal newProposal_{*this};` member.
 4. **ProcessModifier dispatch**: route the new TypingAction case via `newProposal_.tryApply(action, c)`.
 5. **CMakeLists**: add proposal `.h+.cpp` to `NEXTKEY_ENGINE_SOURCES` and test file to `NEXTKEY_TEST_SOURCES`.

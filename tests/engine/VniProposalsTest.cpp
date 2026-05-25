@@ -106,6 +106,12 @@ TEST_F(VniProposalsTest, ValidPreState_Cua6_AcceptsCircumflexMod) {
 }
 
 // --- Metadata pins -------------------------------------------------------
+//
+// Per the Option B classification criterion in ModifierProposal.h enum doc:
+// bodies with gated `if (needsRelocate)` relocate calls (or mixed gated +
+// unconditional) declare Conditional. All three VNI proposals route through
+// ProcessVniVowelModifier (Pass 1 gated, Pass 1.5 unconditional) — they
+// match the criterion.
 struct AllStubs : IModifierSubExecutor {
     bool HandleAdjacentCircumflex(TypingAction, wchar_t) override { return false; }
     bool HandleHornW(TypingAction, wchar_t) override { return false; }
@@ -116,25 +122,26 @@ struct AllStubs : IModifierSubExecutor {
     bool HandleVniBreve(TypingAction, wchar_t) override { return false; }
 };
 
-TEST(VniProposalsMetadata, CircumflexReportsTargetTone) {
+TEST(VniProposalsMetadata, CircumflexReportsConditional) {
     AllStubs stub;
     VniCircumflexProposal p(stub);
-    EXPECT_EQ(p.relocationKind(), RelocationKind::TargetTone);
+    EXPECT_EQ(p.relocationKind(), RelocationKind::Conditional);
 }
 
 // HandleVniHorn calls RelocateToneToTarget on every path (not
-// RelocateToneToHornVowel as the initial W8.5 commit incorrectly claimed).
-// Bodies verified at TypingEngine.cpp:1847-1927 + ProcessVniVowelModifier.
-TEST(VniProposalsMetadata, HornReportsTargetTone) {
+// RelocateToneToHornVowel as the initial W8.5 commit claimed). The mix of
+// unconditional uo/uu paths and gated generic-fallback path is Conditional
+// per the Option B criterion.
+TEST(VniProposalsMetadata, HornReportsConditional) {
     AllStubs stub;
     VniHornProposal p(stub);
-    EXPECT_EQ(p.relocationKind(), RelocationKind::TargetTone);
+    EXPECT_EQ(p.relocationKind(), RelocationKind::Conditional);
 }
 
-TEST(VniProposalsMetadata, BreveReportsTargetTone) {
+TEST(VniProposalsMetadata, BreveReportsConditional) {
     AllStubs stub;
     VniBreveProposal p(stub);
-    EXPECT_EQ(p.relocationKind(), RelocationKind::TargetTone);
+    EXPECT_EQ(p.relocationKind(), RelocationKind::Conditional);
 }
 
 // --- Mock delegation -----------------------------------------------------

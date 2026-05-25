@@ -32,37 +32,68 @@ namespace NextKey::EngineRule {
 // its base change. NOT enforced at the class level — the engine body's
 // actual RelocateToneTo* calls are the source of truth. Tests pin the
 // mapping so drift between metadata and body surfaces in CI.
+//
+// Classification criterion (crisp — apply when adding W9+ proposals):
+//   1. Body has NO RelocateToneTo* calls anywhere       → None
+//   2. Body calls RelocateToneToTarget ONLY, always (no per-pre-state gate
+//      and no other RelocateToneTo* function)           → TargetTone
+//   3. Body calls RelocateToneToHornVowel ONLY, always  → HornVowel
+//   4. Body has gated/branched relocate calls (`if (needsRelocate) ...`,
+//      multiple paths with different gating, or branches that mix relocate
+//      functions)                                       → Conditional
+//
+// Why crisp criterion matters: the metadata's audit-surface value depends
+// on consistent classification. W8.5's VniHorn was initially mis-declared
+// HornVowel (it actually uses TargetTone) — the fix corrected the function,
+// but post-W8 review (2026-05-25) surfaced a deeper issue: bodies with
+// `if (needsRelocate) RelocateToneToTarget()` were called TargetTone in
+// some proposals and Conditional in others. Option B (this rewrite) makes
+// "has gating" the primary discriminator so the next contributor can't
+// repeat the W8.5 mistake.
 enum class RelocationKind : uint8_t {
-    // Engine body never calls any RelocateToneTo* after applying the modifier.
-    // Tone stays on its current vowel. Example: Breve P7 (standalone-a → ă)
-    // in HandleHornW.
+    // Body never calls any RelocateToneTo* function. Tone stays where it
+    // is, or the modifier doesn't touch tone-bearing state.
+    // Examples (single-criterion: zero relocate calls in body):
+    //   - HandleStrokeD (TypingEngine.cpp:1327): mod toggle on `d`,
+    //     no vowel cluster change → no relocation needed.
+    //   - HandleHornInsert (TypingEngine.cpp:859): appends a new
+    //     Modifier::Horn state; nothing to relocate from.
     None,
 
-    // Engine body unconditionally calls RelocateToneToTarget() after applying
-    // the modifier. Examples:
-    //   - Free-marking circumflex (HandleAdjacentCircumflex free-marking
-    //     branch, TypingEngine.cpp ~L1057).
-    //   - Adjacent circumflex when pre-state is ValidPrefix (post-c6369dd
-    //     gated by needsRelocate, TypingEngine.cpp ~L962).
-    //   - VNI vowel modifier (ProcessVniVowelModifier, TypingEngine.cpp
-    //     ~L1928).
+    // Body calls RelocateToneToTarget UNCONDITIONALLY on every path that
+    // mutates state. No per-pre-state gating, no mix with other relocate
+    // functions. Currently UNUSED — every Telex/VNI proposal that uses
+    // RelocateToneToTarget has at least one gated branch and falls under
+    // Conditional. Reserved for proposals where every branch
+    // unconditionally relocates (rare; e.g., a future "always promote"
+    // modifier).
     TargetTone,
 
-    // Engine body calls RelocateToneToHornVowel() — a DIFFERENT function
-    // from RelocateToneToTarget (separate target-finding logic for the
-    // horn cluster). Example: Horn P5/P6 in HandleHornW (W8.2 will land
-    // this as HornModifierProposal).
+    // Body calls RelocateToneToHornVowel UNCONDITIONALLY on every path
+    // that mutates state. Example:
+    //   - HandleHornW (TypingEngine.cpp:1070): 6 unconditional
+    //     RelocateToneToHornVowel calls across P1/P2/P5/P6 branches.
+    //     None of them are gated by `if (needsRelocate)`.
     HornVowel,
 
-    // Engine body decides per pre-state, spanning multiple kinds above.
-    // Used today only by AdjacentCircumflexProposal because its body has
-    // two branches with different relocation behaviour:
-    //   - Adjacent branch (TypingEngine.cpp ~L905-963): TargetTone IFF
-    //     pre-state == ValidPrefix (per c6369dd needsRelocate gate); None
-    //     IFF pre-state == Valid or Invalid (mod-only typo guard).
-    //   - Free-marking branch (~L984-1057): always TargetTone after apply.
-    // Auditors checking "speculate mirrors apply" should read both
-    // branches.
+    // Body has gated relocate calls (`if (needsRelocate) ...`) OR mixes
+    // relocate functions across branches OR has branches that diverge in
+    // whether they relocate at all. Auditor MUST read the body to
+    // understand the policy — single tag is insufficient.
+    //
+    // Examples post-W8.5 (all use RelocateToneToTarget when relocating;
+    // each has at least one gated branch):
+    //   - HandleAdjacentCircumflex adjacent branch: gated by needsRelocate
+    //     (pre-state == ValidPrefix); free-marking branch: unconditional.
+    //   - ProcessVniVowelModifier Pass 1: gated by needsRelocate; Pass 1.5
+    //     (modifier switching): unconditional.
+    //   - HandleVniHorn: uo/uu paths unconditional; generic fallback
+    //     (delegates to ProcessVniVowelModifier) gated.
+    //
+    // Why this is the audit-focal bucket: gated relocate is the source of
+    // speculate-apply parity bugs (ad09f15, c6369dd, W8.5 fix). Proposals
+    // declaring Conditional are the ones reviewers should pay extra
+    // attention to when changing the body.
     Conditional,
 };
 

@@ -3,8 +3,8 @@
 // W8.5 — wraps TypingEngine::HandleVniBreve (VNI `8` modifier → ă).
 // Body forwards to ProcessVniVowelModifier(Breve, key).
 //
-// Metadata: relocationKind() == TargetTone (shared backing calls
-// RelocateToneToTarget when needsRelocate; W8.5 ValidPrefix fix).
+// Metadata: relocationKind() == Conditional (same shared backing as
+// VniCircumflex — Pass 1 gated relocate + Pass 1.5 unconditional).
 #pragma once
 
 #include "core/engine/rule/IModifierSubExecutor.h"

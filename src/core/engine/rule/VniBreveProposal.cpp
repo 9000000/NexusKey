@@ -4,7 +4,9 @@
 namespace NextKey::EngineRule {
 
 RelocationKind VniBreveProposal::relocationKind() const noexcept {
-    return RelocationKind::TargetTone;
+    // Conditional — same shared backing as VniCircumflex
+    // (ProcessVniVowelModifier with gated Pass 1 + unconditional Pass 1.5).
+    return RelocationKind::Conditional;
 }
 
 bool VniBreveProposal::tryApply(TypingAction action, wchar_t keyChar) {
