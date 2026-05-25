@@ -14,6 +14,7 @@
 #include "TypingAction.h"
 #include "core/config/TypingConfig.h"
 #include "core/engine/rule/AdjacentCircumflexProposal.h"
+#include "core/engine/rule/HornModifierProposal.h"
 #include "core/engine/rule/EngineRuleRegistry.h"
 #include "core/engine/rule/IModifierExecutor.h"
 #include "core/engine/rule/IModifierSubExecutor.h"
@@ -205,7 +206,9 @@ private:
     // W8.1: IModifierSubExecutor override — body unchanged, called via
     // adjacentCircumflexProposal_.tryApply() from ProcessModifier dispatch.
     [[nodiscard]] bool HandleAdjacentCircumflex(TypingAction action, wchar_t keyChar) override;  // Telex aa/ee/oo + cross-vowel
-    bool HandleHornW(TypingAction action, wchar_t keyChar);               // Telex w (P1-P8)
+    // W8.2: IModifierSubExecutor override — body unchanged, called via
+    // hornModifierProposal_.tryApply() from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleHornW(TypingAction action, wchar_t keyChar) override;               // Telex w (P1-P8)
     bool HandleStrokeD(TypingAction action, wchar_t keyChar);             // Telex dd / VNI 9
     bool HandleVniCircumflex(TypingAction action, wchar_t keyChar);       // VNI 6
     bool HandleVniHorn(TypingAction action, wchar_t keyChar);             // VNI 7
@@ -306,6 +309,9 @@ private:
     // IModifierSubExecutor — body lives in this engine, proposal layer is
     // documentation + future-extension slot for W8.2-W8.5.
     EngineRule::AdjacentCircumflexProposal adjacentCircumflexProposal_{*this};
+    // W8.2: ModifierProposal for HornW (Telex `w`, P1-P8). Metadata declares
+    // RelocationKind::HornVowel (apply path calls RelocateToneToHornVowel).
+    EngineRule::HornModifierProposal hornModifierProposal_{*this};
 };
 
 }  // namespace NextKey

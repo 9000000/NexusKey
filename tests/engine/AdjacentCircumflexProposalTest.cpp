@@ -163,6 +163,7 @@ TEST_F(AdjacentCircumflexProposalTest, UserDefined_QMapsToCircumflexA_DoublePres
 TEST(AdjacentCircumflexProposalMetadata, ReportsConditionalRelocation) {
     struct StubExec final : IModifierSubExecutor {
         bool HandleAdjacentCircumflex(TypingAction, wchar_t) override { return false; }
+        bool HandleHornW(TypingAction, wchar_t) override { return false; }
     } stub;
     AdjacentCircumflexProposal proposal(stub);
     EXPECT_EQ(proposal.relocationKind(), RelocationKind::Conditional);
@@ -185,6 +186,7 @@ TEST(AdjacentCircumflexProposalDelegation, ForwardsArgumentsAndReturnVerbatim) {
             lastChar = c;
             return returnValue;
         }
+        bool HandleHornW(TypingAction, wchar_t) override { return false; }
     } rec;
 
     AdjacentCircumflexProposal proposal(rec);

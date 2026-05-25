@@ -25,6 +25,12 @@ public:
     // (private virtual override) — wrap-don't-lift per W7 retro AD-1.
     [[nodiscard]] virtual bool HandleAdjacentCircumflex(TypingAction action,
                                                         wchar_t keyChar) = 0;
+
+    // HornW (Telex `w` modifier, P1-P8). Body lives on TypingEngine; this
+    // port lets HornModifierProposal route dispatch through the proposal
+    // layer (W8.2).
+    [[nodiscard]] virtual bool HandleHornW(TypingAction action,
+                                            wchar_t keyChar) = 0;
 };
 
 }  // namespace NextKey::EngineRule
