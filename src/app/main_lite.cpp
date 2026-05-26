@@ -577,7 +577,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Wave 3 PR 3.7 — Start HookEngine BEFORE WireHotkeys so its hook thread
     // id is live by the time WireHotkeys reads it for HotkeyManager::Initialize.
     // Mirror of main.cpp's reorder; same race motivation.
-    if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
+    if (!g_hookEngine.Start(hInstance, config, startVietnamese)) {
         timeEndPeriod(1);
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"VKey", MB_ICONERROR);
         OleUninitialize();

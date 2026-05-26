@@ -211,7 +211,7 @@ namespace {
 }  // namespace
 
 bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
-                        bool initialVietnamese, uint8_t startupMode) {
+                        bool initialVietnamese) {
     if (lifecycle_.IsRunning()) return false;  // Already running
 
     // Enable the file logger before the first HOOK_LOG so the start banner is
@@ -242,19 +242,20 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     autoCapState_ = AutoCapState::Idle;
     engine_ = EngineFactory::Create(config);
     vietnameseMode_.store(initialVietnamese, std::memory_order_release);
-    startupMode_ = startupMode;
 
-    // Create shared memory for smart switch and load persisted English-mode apps
+    // Create shared memory for smart switch and load persisted English-mode apps.
+    // Bug C fix (2026-05-26): persistence used to be gated on startupMode_==2
+    // (Remember) — but smart_switch is conceptually independent of the initial
+    // mode choice. With smart_switch on, the user expects per-app state to
+    // survive restarts regardless of whether startup begins in V/E/Remember.
     if (config.smartSwitch) {
         (void)focus_.Smart().Create();
-        if (startupMode_ == 2) {  // Remember: load persisted per-app modes
-            auto englishApps = ConfigManager::LoadEnglishModeApps(ConfigManager::GetConfigPath());
-            for (auto& app : englishApps) {
-                focus_.AppModeMap()[std::move(app)] = false;  // false = English mode
-            }
-            if (!focus_.AppModeMap().empty()) {
-                focus_.Smart().LoadFromMap(focus_.AppModeMap());
-            }
+        auto englishApps = ConfigManager::LoadEnglishModeApps(ConfigManager::GetConfigPath());
+        for (auto& app : englishApps) {
+            focus_.AppModeMap()[std::move(app)] = false;  // false = English mode
+        }
+        if (!focus_.AppModeMap().empty()) {
+            focus_.Smart().LoadFromMap(focus_.AppModeMap());
         }
     }
 
@@ -344,10 +345,11 @@ void HookEngine::Stop() {
     // Phase 1 perf histogram: final flush before we tear down so the
     // last 60s window of samples reaches disk. Idempotent.
     Perf::Histogram::Stop();
-    // Persist smart switch English-mode apps to TOML before shutdown
-    if (startupMode_ == 2) {  // Remember: persist per-app modes
-        SaveEnglishModeAppsIfDirty();
-    }
+    // Persist smart switch English-mode apps to TOML before shutdown.
+    // Bug C fix (2026-05-26): no longer gated on startupMode_==2 — the
+    // SaveEnglishModeAppsIfDirty body already gates on config.smartSwitch,
+    // which is the right signal. startup_mode only controls initial mode.
+    SaveEnglishModeAppsIfDirty();
     // Wave 3 PR 3.1: HookLifecycle handles thread shutdown + LL hook teardown
     // (unhook MUST happen on the installer thread per MSDN — lifecycle owns
     // that thread). Wave 3 PR 3.2: WinEvent hooks moved to FocusOwner.
@@ -397,7 +399,7 @@ void HookEngine::SetCodeTable(CodeTable ct) {
 CodeTable HookEngine::GetCodeTable() const noexcept {
     // Priority 1: Manual per-app override (set explicitly by user)
     // Check previousExe_ first as a fallback: on the first focus event after startup,
-    // currentExe_ may not yet reflect the typing app.
+    // activeExe_ may not yet reflect the typing app.
     // Phase 3c: read from RCU snapshot — lock-free, safe on any thread.
     auto snap = configSnapshot_.load(std::memory_order_acquire);
     auto lookupOverride = [&](const std::wstring& exe) -> const CodeTable* {
@@ -406,7 +408,7 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
         return (it != snap->appEncodingOverrides.end()) ? &it->second : nullptr;
     };
     if (auto* v = lookupOverride(focus_.PreviousExe())) return *v;
-    if (auto* v = lookupOverride(focus_.CurrentExe()))  return *v;
+    if (auto* v = lookupOverride(focus_.ActiveExe()))   return *v;
 
     return currentCodeTable_.load(std::memory_order_acquire);
 }
@@ -663,7 +665,7 @@ void HookEngine::ReloadFromToml() {
     auto rcuSnap = configSnapshot_.load(std::memory_order_acquire);
 
     // Re-evaluate excluded status for current app (set was just reloaded)
-    const auto& curExe = focus_.CurrentExe();
+    const auto& curExe = focus_.ActiveExe();
     bool newExcluded = false;
     if (config.excludeApps && !curExe.empty() && rcuSnap) {
         newExcluded = rcuSnap->excludedAppSet.count(curExe) > 0;
@@ -3226,9 +3228,26 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // CJK layout check — GetKeyboardLayout is kernel-cached, single µs.
     CheckLayoutChange();
 
-    // Helper HWNDs: classification flags applied above (so dispatch stays
-    // consistent), but skip currentExe_ / smart-switch tracking — that's
-    // what the 200 ms focus poll catches.
+    // Split state SmartSwitch (2026-05-26): activeExe_ tracks any focused
+    // exe (including helper windows like dock panels / SearchHost / tray);
+    // lastRealExe_ tracks only non-skipAppTracking transitions. This split
+    // resolves the tension between toggle (wants "user's current app", so
+    // notepad++ all-helper case attributes correctly) and SAVE (wants
+    // "last real app", so helper-event detours don't poison the previous
+    // real app's entry).
+    //
+    // Gates for activeExe_ update:
+    //   - non-empty exeName (classifier failed to resolve → skip)
+    //   - cls->pid != 0 (GetWindowThreadProcessId failed → skip)
+    //   - cls->pid != GetCurrentProcessId() (our own tray/menu → skip)
+    if (!cls->exeName.empty() && cls->pid != 0 &&
+        cls->pid != GetCurrentProcessId()) {
+        focus_.SetActiveExe(cls->exeName);
+    }
+
+    // Helper HWNDs: SAVE/RESTORE skipped (mode shouldn't flip on transient
+    // dock-panel focus events). activeExe_ above is already updated so the
+    // next toggle / non-skip focus event sees the right app.
     if (cls->skipAppTracking) return;
 
     // Short-circuit when no per-app feature needs tracking. Phase 3c
@@ -3247,29 +3266,32 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     const bool wasExcluded = isExcludedApp_.load(std::memory_order_acquire);
     const bool wasTsfApp   = isTsfApp_.load(std::memory_order_acquire);
 
-    // Smart switch SAVE for the previous app — uses OLD currentExe_, so
-    // must run before we reassign it.
-    if (cfg->smartSwitch && !focus_.CurrentExe().empty() && !wasExcluded && !wasTsfApp) {
+    // Smart switch SAVE for the previous real app — captured BEFORE we
+    // advance lastRealExe_ below. Uses lastRealExe_, NOT activeExe_:
+    // a helper-event detour right before this non-skip event would have
+    // moved activeExe_ to the helper's exe, while lastRealExe_ correctly
+    // still points to the app whose mode the engine state corresponds to.
+    const std::wstring oldLastReal = focus_.LastRealExe();
+    if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcluded && !wasTsfApp) {
         if (focus_.AppModeMap().size() >= kMaxSmartSwitchEntries) {
             focus_.AppModeMap().clear();
         }
         const bool savedMode = vietnameseMode_.load(std::memory_order_acquire);
-        focus_.AppModeMap()[focus_.CurrentExe()] = savedMode;
-        focus_.Smart().SetAppMode(focus_.CurrentExe(), savedMode);
+        focus_.AppModeMap()[oldLastReal] = savedMode;
+        focus_.Smart().SetAppMode(oldLastReal, savedMode);
         focus_.MarkAppModeDirty();
     }
 
-    focus_.SetCurrentExe(cls->exeName);
-
-    // PID tracker already synced at function entry — see comment near the top
-    // of ApplyFocusOnHookThread. Re-storing here is redundant.
+    // Advance lastRealExe_ to the new real app (auto-shifts previousExe_
+    // for the encoding-override fallback chain).
+    focus_.SetLastRealExe(cls->exeName);
 
     isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
     isTsfApp_.store(cls->isTsf, std::memory_order_release);
 
     HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
              cls->isTsf ? L"TSF (hook passthrough)" : L"HOOK",
-             focus_.CurrentExe().c_str(),
+             focus_.LastRealExe().c_str(),
              cfg->tsfApps ? 1 : 0,
              cls->isTsf ? 1 : 0,
              cls->isExcluded ? 1 : 0);
@@ -3287,12 +3309,13 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     if (cls->isExcluded) {
         excludedPid_.store(cls->pid, std::memory_order_release);
         HOOK_LOG(L"  ExcludeApps: '%s' is excluded, passthrough (pid=%u)",
-                 focus_.CurrentExe().c_str(), cls->pid);
+                 focus_.LastRealExe().c_str(), cls->pid);
         if (!wasExcluded) NotifyModeChange();
         return;
     }
     if (cls->isTsf) {
-        HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough", focus_.CurrentExe().c_str());
+        HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough",
+                 focus_.LastRealExe().c_str());
         return;
     }
 
@@ -3305,7 +3328,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
             currentCodeTable_.store(targetTable, std::memory_order_release);
             HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
                      static_cast<int>(targetTable),
-                     focus_.CurrentExe().c_str());
+                     focus_.LastRealExe().c_str());
         }
     }
 
@@ -3319,26 +3342,29 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
             engineConfig.inputMethod = targetMethod;
             engine_ = EngineFactory::Create(engineConfig);
             HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
-                     static_cast<int>(targetMethod), focus_.CurrentExe().c_str());
+                     static_cast<int>(targetMethod),
+                     focus_.LastRealExe().c_str());
         }
     }
 
-    // Smart switch restore for the new app.
+    // Smart switch restore for the new app — uses lastRealExe_ (just set
+    // above to cls->exeName).
     if (cfg->smartSwitch) {
-        auto it = focus_.AppModeMap().find(focus_.CurrentExe());
+        auto it = focus_.AppModeMap().find(focus_.LastRealExe());
         if (it != focus_.AppModeMap().end()) {
             const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
             if (it->second != curMode) {
                 vietnameseMode_.store(it->second, std::memory_order_release);
                 HOOK_LOG(L"  SmartSwitch: restored %s for '%s'",
-                         it->second ? L"Vietnamese" : L"English", focus_.CurrentExe().c_str());
+                         it->second ? L"Vietnamese" : L"English",
+                         focus_.LastRealExe().c_str());
                 NotifyModeChange();
             }
         } else {
             HOOK_LOG(L"  SmartSwitch: inherit %s for unknown '%s'",
                      vietnameseMode_.load(std::memory_order_acquire)
                          ? L"Vietnamese" : L"English",
-                     focus_.CurrentExe().c_str());
+                     focus_.LastRealExe().c_str());
         }
     }
 
@@ -3399,12 +3425,14 @@ void HookEngine::ApplyToggleVNOnHookThread() {
 
     // Smart-switch save. Drop the pre-P2c GetForegroundWindow + GetExeNameForHwnd
     // fallback — those are Rule 11.2 forbidden on the hook thread (Toolhelp32
-    // snapshot). If currentExe_ is empty here (startup before any focus event),
-    // the next focus event will set it and the toggle takes effect for that app
-    // on its first save.
-    if (cfg->smartSwitch && !focus_.CurrentExe().empty()) {
-        focus_.AppModeMap()[focus_.CurrentExe()] = newMode;
-        focus_.Smart().SetAppMode(focus_.CurrentExe(), newMode);
+    // snapshot). Toggle uses activeExe_ (any focused window's exe, including
+    // helper-window apps like notepad++ dock panels) so map writes attribute
+    // to the app the user is interacting with even when the focus path
+    // detours. If activeExe_ is empty here (startup before any focus event),
+    // the next focus event sets it and the toggle takes effect on first save.
+    if (cfg->smartSwitch && !focus_.ActiveExe().empty()) {
+        focus_.AppModeMap()[focus_.ActiveExe()] = newMode;
+        focus_.Smart().SetAppMode(focus_.ActiveExe(), newMode);
     }
 
     if (cfg->beepOnSwitch) {
@@ -3449,12 +3477,12 @@ void HookEngine::ApplyConfigOnHookThread() {
     if (!cfg) return;
 
     // Resolve target inputMethod considering per-app override (Phase 3c
-    // snapshot reader). currentExe_ is hook-owned (set in
+    // snapshot reader). activeExe_ is hook-owned (set in
     // ApplyFocusOnHookThread); reading it here is single-threaded safe.
     auto snap = configSnapshot_.load(std::memory_order_acquire);
     InputMethod targetMethod = cfg->inputMethod;
-    if (snap && !focus_.CurrentExe().empty()) {
-        auto it = snap->appInputMethodOverrides.find(focus_.CurrentExe());
+    if (snap && !focus_.ActiveExe().empty()) {
+        auto it = snap->appInputMethodOverrides.find(focus_.ActiveExe());
         if (it != snap->appInputMethodOverrides.end()) targetMethod = it->second;
     }
 

@@ -94,7 +94,7 @@ public:
 
     /// Start the hook engine (installs keyboard hook + focus hook)
     bool Start(HINSTANCE hInstance, const TypingConfig& config,
-               bool initialVietnamese = true, uint8_t startupMode = 0);
+               bool initialVietnamese = true);
 
     /// Stop and unhook everything
     void Stop();
@@ -444,7 +444,6 @@ private:
     // (ApplyConfig, ToggleVietnameseMode, SettingsDialog WM_VKEY_MODE_CHANGED
     // → HookEngine via callback) uses .store(release).
     std::atomic<bool> vietnameseMode_{true};
-    uint8_t startupMode_ = 0;  // 0=Vietnamese, 1=English, 2=Remember
     // Wave 3 PR 3.3 — sending_, synthEventsPending_, lastSynthSendTime_,
     // lastRealSynthTime_, hadSynthInWord_ moved to OutputDispatcher.
     // Readers go through dispatcher_.IsSending() / SynthEventsPending() /
@@ -515,8 +514,8 @@ private:
     // Wave 3 PR 3.2 — webView2PositiveCache_ moved to FocusOwner.
     // Wave 3 PR 3.3 — skipEmptyChar_, useClipboardPaste_ moved to OutputDispatcher.
     // Wave 3 PR 3.2 — lastForegroundPid_, appModeMap_/appModeDirty_/smartSwitchMgr_,
-    // currentExe_/previousExe_ moved to FocusOwner. Readers go through
-    // focus_.LastForegroundPid()/AppModeMap()/Smart()/CurrentExe()/PreviousExe().
+    // activeExe_/lastRealExe_/previousExe_ moved to FocusOwner. Readers go through
+    // focus_.LastForegroundPid()/AppModeMap()/Smart()/ActiveExe()/LastRealExe()/PreviousExe().
     // Writers: worker thread (ReloadFromToml → ApplyConfig) AND hook thread
     // (SetCodeTable, QuickSyncFromSharedState, focus override). Readers: hook
     // hot path (HandleAlphaKey, CommitComposition, ClassifyFocusedWindow,

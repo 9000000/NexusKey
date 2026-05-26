@@ -130,15 +130,32 @@ public:
         lastForegroundPid_.store(pid, std::memory_order_release);
     }
 
-    // ── Current / previous exe (hook thread only) ───────────────────────
-    [[nodiscard]] const std::wstring& CurrentExe() const noexcept { return currentExe_; }
+    // ── Active / last-real / previous exe (hook thread only) ───────────
+    // Split state model (2026-05-26 refactor):
+    //
+    //   activeExe_    — tracks the latest focused window's exe, including
+    //                   helper windows (dock panels, tooltips, taskbar).
+    //                   Used by toggle and per-app overrides so map writes
+    //                   always attribute to the app the user is actually
+    //                   interacting with — not the last non-helper app.
+    //
+    //   lastRealExe_  — tracks only non-skipAppTracking transitions. The
+    //                   app whose mode the engine state corresponds to.
+    //                   SAVE/RESTORE blocks use this so helper-event
+    //                   detours don't poison adjacent map entries.
+    //                   Auto-shifts previousExe_ for the encoding-override
+    //                   fallback chain at HookEngine.cpp:410.
+    //
+    //   previousExe_  — last lastRealExe_ value before the most recent
+    //                   real-app transition. Encoding-override fallback.
+    [[nodiscard]] const std::wstring& ActiveExe() const noexcept { return activeExe_; }
+    [[nodiscard]] const std::wstring& LastRealExe() const noexcept { return lastRealExe_; }
     [[nodiscard]] const std::wstring& PreviousExe() const noexcept { return previousExe_; }
-    /// Shift currentExe_ → previousExe_ (only if non-empty), then update
-    /// currentExe_ to `exe`. ApplyFocusOnHookThread calls this once per
-    /// transition so the tray menu's "previous app" UX stays accurate.
-    void SetCurrentExe(std::wstring exe) noexcept {
-        if (!currentExe_.empty()) previousExe_ = currentExe_;
-        currentExe_ = std::move(exe);
+
+    void SetActiveExe(std::wstring exe) noexcept { activeExe_ = std::move(exe); }
+    void SetLastRealExe(std::wstring exe) noexcept {
+        if (!lastRealExe_.empty()) previousExe_ = lastRealExe_;
+        lastRealExe_ = std::move(exe);
     }
 
     // ── Smart-switch state machine (hook thread only) ───────────────────
@@ -190,8 +207,9 @@ private:
     ReinstallFn    onReinstall_;
 
     std::atomic<DWORD> lastForegroundPid_{0};
-    std::wstring currentExe_;
-    std::wstring previousExe_;
+    std::wstring activeExe_;     // any focus (incl. helper windows)
+    std::wstring lastRealExe_;   // non-skipAppTracking focus only
+    std::wstring previousExe_;   // prev lastRealExe (encoding fallback)
 
     // HWND is atomic (8B aligned pointer — torn-read-safe on x64); class
     // wstring is NOT atomic. The resulting tuple race is benign: a brief

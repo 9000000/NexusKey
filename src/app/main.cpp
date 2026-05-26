@@ -505,7 +505,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // would inline-dispatch the convert callback on the LL thread and
     // mutate engine_ off-thread (Rule 11.3 violation, hidden by the
     // pre-3.7 unconditional inline fallback).
-    if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
+    if (!g_hookEngine.Start(hInstance, config, startVietnamese)) {
         // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
         // No matching StringId — using English string (language config not yet applied to UI).
         timeEndPeriod(1);
