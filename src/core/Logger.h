@@ -1,5 +1,5 @@
 // VKey - Runtime-gated debug logger
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Single backend for NEXTKEY_LOG / HOOK_LOG / TSF_LOG. Compiled unconditionally
 // in every build; runtime-gated by an atomic. When disabled, Log() returns

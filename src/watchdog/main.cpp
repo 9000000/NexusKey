@@ -1,5 +1,5 @@
 // VKey Watchdog - Process Supervisor
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Monitors VKey.exe via Local\VKeyHeartbeat (30s pulse, 90s
 // timeout = 3 missed pulses). On crash detect (heartbeat stale +

@@ -1,5 +1,5 @@
 // VKey - Readonly Context Provider Header
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // When TSF_READONLY flag is set (foreground app uses Hook, not TSF full TIP),
 // this class observes document edits and publishes a HookContextAnchor via

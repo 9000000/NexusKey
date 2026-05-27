@@ -1,5 +1,5 @@
 // VKey - Window Picker Base Dialog
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Base class for app-list dialogs that support window picking and
 // running-app enumeration. Eliminates duplicate code across

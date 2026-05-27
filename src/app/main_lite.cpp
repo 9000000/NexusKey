@@ -1,5 +1,5 @@
 // VKey Classic — Lite build entry point
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Simplified entry point for the Classic (Win32 native) UI build.
 // No Sciter dependency. Uses HookEngine + TrayIcon + ClassicSettingsDialog.

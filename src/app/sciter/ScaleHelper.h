@@ -1,5 +1,5 @@
 // VKey - DPI & Resolution Scale Helper
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Utility for scaling dialog sizes based on DPI and screen resolution.
 // Ensures UI looks correct across different monitors and DPI settings.

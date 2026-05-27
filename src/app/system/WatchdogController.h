@@ -1,5 +1,5 @@
 // VKey - Watchdog Controller (Windows-only)
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Owns the watchdog lifecycle: heartbeat thread + Task Scheduler entry +
 // VKeyWatchdog.exe child process.

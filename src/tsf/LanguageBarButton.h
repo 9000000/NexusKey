@@ -1,5 +1,5 @@
 // VKey - TSF Language Bar Button
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Implements ITfLangBarItemButton to show V/E toggle icon in the system tray.
 // Windows automatically shows the button when the TIP is active and hides it

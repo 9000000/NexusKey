@@ -1,5 +1,5 @@
 // src/core/config/ConfigSnapshotBuilder.h
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Pure free function: TOML config file → immutable ConfigSnapshot.
 // Lifted from HookEngine::RebuildSnapshotFromToml (HookEngine.cpp).

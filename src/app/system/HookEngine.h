@@ -1,5 +1,5 @@
 // VKey - Keyboard Hook Engine
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Single-process Vietnamese input using WH_KEYBOARD_LL.
 // Replaces TSF DLL for MVP — no COM registration, no admin elevation.

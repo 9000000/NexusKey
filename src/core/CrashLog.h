@@ -1,5 +1,5 @@
 // VKey - Always-on crash exception logger
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Appends a single-line record to `<exe_dir>\_vkey_crash.log` when an
 // exception reaches a top-level callback / thread entry. Unlike NEXTKEY_LOG

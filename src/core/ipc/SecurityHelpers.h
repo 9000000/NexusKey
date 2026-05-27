@@ -1,5 +1,5 @@
 // VKey - Security Helper Utilities
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #pragma once
 #include <windows.h>

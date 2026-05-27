@@ -1,5 +1,5 @@
 // src/core/config/ConfigSnapshotBuilder.cpp
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // ConfigSnapshotBuilder::BuildFromToml — pure TOML→ConfigSnapshot transform.
 // Lifted from HookEngine::RebuildSnapshotFromToml.

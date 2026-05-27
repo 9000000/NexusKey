@@ -1,5 +1,5 @@
 // VKey - TSF Registration & Diagnostics
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 // Windows/COM headers MUST come first — <msctf.h> includes <comcat.h>
 // which requires COM base types from <ole2.h>/<objbase.h>
