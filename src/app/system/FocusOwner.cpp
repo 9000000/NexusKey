@@ -24,6 +24,16 @@ namespace NextKey {
 
 std::atomic<FocusOwner*> FocusOwner::s_instance{nullptr};
 
+// Per-app "send method = compatibility split" sleep budgets (ms). Resolved
+// from AppOverrideEntry::sendMethod at ClassifyFocusedWindow and carried in
+// FocusClassification::localForcedSplitSleepMs → WindowClassification.
+//   sendMethod 2 — Firefox-family / local Gecko renderer drain (~one frame).
+//   sendMethod 3 — cloud / remote desktop: the gap must outlast the RDP/Citrix
+//                  round-trip so the BS batch lands before the char batch
+//                  (issue #178 — typing over cloud desktop drops/misplaces tones).
+static constexpr int kCompatSplitFirefoxMs = 6;
+static constexpr int kCompatSplitRemoteMs  = 25;
+
 // ─────────────────────────────────────────────────────────────────────────
 // File-scope helpers (moved from HookEngine.cpp). Kept anonymous-namespace-
 // free for symmetry with the originals and to keep diffs small if a future
@@ -119,7 +129,11 @@ static void ClassifyWindow(HWND hwnd,
         return;
     }
 
-    // 2. Firefox-based browsers (covers Firefox, Floorp, Tor, LibreWolf, Waterfox, Pale Moon)
+    // 2. Firefox-based browsers (covers Firefox, Floorp, Tor, LibreWolf, Waterfox, Pale Moon).
+    //    Classified as a browser so the bait-char prefix applies. Gecko's content
+    //    process can re-render React contenteditable mid-batch and drop the trailing
+    //    VK_PACKET char (Mattermost-style chat race) — users hit by that enable the
+    //    per-app "Tương thích Firefox" send-method override (split dispatch).
     if (_wcsicmp(className, L"MozillaWindowClass") == 0) {
         outIsBrowser = true;
         return;
@@ -513,14 +527,20 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
     cls.isVB6      = isVB6;
     cls.isConsole  = localConsole;
 
-    // Per-app send-method override (clipboard injector toggle). Reads
-    // the snapshot's `appSendMethodOverrides` map — RCU-published from
-    // the worker thread, so this main-thread lookup is lock-free and
-    // immune to torn reads during a TOML rebuild.
+    // Per-app send-method override. Reads the snapshot's
+    // `appSendMethodOverrides` map — RCU-published from the worker thread, so
+    // this main-thread lookup is lock-free and immune to torn reads during a
+    // TOML rebuild. Values: 1=Clipboard, 2=Firefox-compat split, 3=Cloud/Remote
+    // compat split (0/absent = default Win32 batch path).
     if (!cls.exeName.empty() && ctx.snap) {
         auto it = ctx.snap->appSendMethodOverrides.find(cls.exeName);
-        if (it != ctx.snap->appSendMethodOverrides.end() && it->second == 1) {
-            cls.localUseClipboardInjector = true;
+        if (it != ctx.snap->appSendMethodOverrides.end()) {
+            switch (it->second) {
+                case 1: cls.localUseClipboardInjector = true;                 break;
+                case 2: cls.localForcedSplitSleepMs = kCompatSplitFirefoxMs;  break;
+                case 3: cls.localForcedSplitSleepMs = kCompatSplitRemoteMs;   break;
+                default: break;  // 0=SendInput / unknown → default Win32 path
+            }
         }
     }
 

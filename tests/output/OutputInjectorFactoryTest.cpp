@@ -1,8 +1,9 @@
 // tests/output/OutputInjectorFactoryTest.cpp
 //
 // Unit tests for OutputInjectorFactory::Create dispatch. Covers the
-// 4 classification branches (RichEditD2DPT, Electron, Console, Win32
-// default). dynamic_cast asserts the right concrete impl is returned.
+// classification branches (RichEditD2DPT, Electron, Console, per-app
+// forced compat split, Win32 default). dynamic_cast asserts the right
+// concrete impl is returned; trait getters assert param inheritance.
 //
 // Why this exists (Gotcha G3 from D2 handoff): a previous attempt
 // shipped Create() still hardcoded to Win32SendInputInjector while
@@ -81,6 +82,63 @@ TEST(OutputInjectorFactoryTest, ElectronWinsOverConsole) {
     EXPECT_NE(dynamic_cast<SplitDispatchInjector*>(inj.get()), nullptr);
     // Could additionally check sleepMs by exposing a getter, but the
     // dispatch type is the contract — sleepMs is internal.
+}
+
+// Per-app "send method = compatibility split" (AppOverrideEntry::sendMethod
+// 2/3, resolved to an inter-batch sleep in FocusOwner). A forced sleep > 0
+// routes the app through SplitDispatchInjector instead of the Win32 batch
+// path — mitigates the char-drop race on Firefox-family (sendMethod=2) and
+// over cloud/remote desktop where the RDP round-trip stretches the gap
+// (sendMethod=3, issue #178). Background:
+// docs/firefox-voz-sticking-chars-investigation.md.
+TEST(OutputInjectorFactoryTest, ForcedSplitReturnsSplitDispatch) {
+    WindowClassification c{};
+    c.forcedSplitSleepMs = 6;  // sendMethod=2 (Firefox-compat)
+    auto inj = Create(c);
+    ASSERT_NE(inj, nullptr);
+    EXPECT_NE(dynamic_cast<SplitDispatchInjector*>(inj.get()), nullptr);
+}
+
+TEST(OutputInjectorFactoryTest, ForcedSplitZeroDefaultsToWin32) {
+    // Default contract: an app with no compat override (forcedSplitSleepMs==0)
+    // stays on the Win32 fast path, even if it carries the Chromium bait hint.
+    WindowClassification c{};
+    c.forcedSplitSleepMs = 0;
+    c.isChromium = true;
+    auto inj = Create(c);
+    ASSERT_NE(inj, nullptr);
+    EXPECT_NE(dynamic_cast<Win32SendInputInjector*>(inj.get()), nullptr);
+}
+
+TEST(OutputInjectorFactoryTest, ForcedSplitInheritsRendererTraits) {
+    // Firefox parity: a browser (isChromium=true) but non-Electron app forced
+    // to the compat split must keep the bait-char prefix (Firefox's URL-bar
+    // autocomplete behaves like Chromium's) and stay single-process — matching
+    // the pre-refactor Firefox path. Traits are derived, not hardcoded.
+    WindowClassification c{};
+    c.forcedSplitSleepMs = 6;
+    c.isChromium = true;
+    c.isElectron = false;
+    auto inj = Create(c);  // keep alive — .get() on a temporary would dangle
+    auto* split = dynamic_cast<SplitDispatchInjector*>(inj.get());
+    ASSERT_NE(split, nullptr);
+    EXPECT_TRUE(split->NeedsBaitCharPrefix());
+    EXPECT_FALSE(split->HasMultiProcessRenderer());
+}
+
+TEST(OutputInjectorFactoryTest, ForcedSplitWinsOverElectronButInheritsMultiProc) {
+    // Per-app explicit choice outranks auto-detected Electron, but inherits its
+    // multi-process trait so the mid-word passthrough block isn't lost when a
+    // user forces a bigger (cloud/remote) sleep on an Electron host.
+    WindowClassification c{};
+    c.forcedSplitSleepMs = 25;  // sendMethod=3 (Cloud/Remote)
+    c.isElectron = true;
+    c.isChromium = true;
+    auto inj = Create(c);  // keep alive — .get() on a temporary would dangle
+    auto* split = dynamic_cast<SplitDispatchInjector*>(inj.get());
+    ASSERT_NE(split, nullptr);
+    EXPECT_TRUE(split->HasMultiProcessRenderer());  // inherited from isElectron
+    EXPECT_TRUE(split->NeedsBaitCharPrefix());       // inherited from isChromium
 }
 
 TEST(OutputInjectorFactoryTest, SettleBudgetReflectsImpl) {

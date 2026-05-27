@@ -195,6 +195,8 @@ void ClassicAppOverridesDialog::CreateControls() {
     SendMessageW(comboSendMethod_, CB_SETITEMHEIGHT, (WPARAM)-1, comboInnerH);
     ComboBox_AddString(comboSendMethod_, L"Theo mặc định");
     ComboBox_AddString(comboSendMethod_, L"Clipboard");
+    ComboBox_AddString(comboSendMethod_, L"Tương thích Firefox");
+    ComboBox_AddString(comboSendMethod_, L"Tương thích Cloud/Remote");
     ComboBox_SetCurSel(comboSendMethod_, 0);
 
     int deleteW = Dpi(70);
@@ -230,6 +232,8 @@ static const wchar_t* EncodingName(int8_t e) {
 static const wchar_t* SendMethodName(int8_t m) {
     switch (m) {
         case 1: return L"Clipboard";
+        case 2: return L"Firefox";
+        case 3: return L"Cloud/Remote";
         default: return L"Mặc định";
     }
 }
@@ -269,7 +273,9 @@ void ClassicAppOverridesDialog::AddOverride() {
     AppOverrideEntry entry;
     entry.inputMethod = static_cast<int8_t>(methodSel - 1);   // 0="default"→-1, 1=Telex→0, etc.
     entry.encodingOverride = static_cast<int8_t>(encodingSel - 1);
-    entry.sendMethod = static_cast<int8_t>((sendSel == 1) ? 1 : -1);
+    // Combo index lines up 1:1 with the stored value (1=Clipboard,
+    // 2=Firefox-compat, 3=Cloud/Remote-compat); index 0 ("Theo mặc định") → -1.
+    entry.sendMethod = static_cast<int8_t>((sendSel >= 1) ? sendSel : -1);
 
     entries_[app] = entry;
     PopulateList();

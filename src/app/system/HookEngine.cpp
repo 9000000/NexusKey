@@ -3272,11 +3272,14 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // see either the old or new injector cleanly.
     {
         NextKey::Output::WindowClassification c{};
-        c.isRichEditD2DPT = cls->localEditMsg;
-        c.isElectron      = cls->localElectronApp;
-        c.isConsole       = cls->isConsole;
-        c.isChromium      = cls->localNeedBait;
-        c.useClipboard    = cls->localUseClipboardInjector;
+        c.isRichEditD2DPT   = cls->localEditMsg;
+        c.isElectron        = cls->localElectronApp;
+        c.isConsole         = cls->isConsole;
+        c.isChromium        = cls->localNeedBait;
+        c.useClipboard      = cls->localUseClipboardInjector;
+        // Per-app "send method = compatibility split" (sendMethod 2/3). 0 when
+        // the focused app has no such override → factory keeps the Win32 path.
+        c.forcedSplitSleepMs = cls->localForcedSplitSleepMs;
         auto newInjector = NextKey::Output::Create(c);
         // Re-apply user setting on the freshly-built injector so the new
         // host inherits the live "BS giữ chữ khi có gợi ý" value (factory
@@ -3287,10 +3290,11 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         dispatcher_.SetInjector(std::move(newInjector));
     }
 
-    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d",
+    HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d splitSleepMs=%d",
              cls->isConsole ? 1 : 0, cls->localSkipEmpty ? 1 : 0, cls->localElectronApp ? 1 : 0,
              cls->isWebView2 ? 1 : 0, cls->localNeedBait ? 1 : 0, cls->localClipboard ? 1 : 0,
-             cls->localEditMsg ? 1 : 0, cls->localUseClipboardInjector ? 1 : 0);
+             cls->localEditMsg ? 1 : 0, cls->localUseClipboardInjector ? 1 : 0,
+             cls->localForcedSplitSleepMs);
 
     // RefreshFocusCache uses GetFocusedChildHwnd (AttachThreadInput) which
     // is cheap (~µs). Safe on hook thread.
