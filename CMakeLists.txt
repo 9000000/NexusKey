@@ -15,10 +15,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
     add_compile_options(/W4 /WX /permissive- /utf-8)
     add_definitions(-DUNICODE -D_UNICODE)
+    # Size shrink. Most flags here are already implicit in MSVC's /O2 Release
+    # path (/Gy is implied by /O2; /OPT:REF and /OPT:ICF are on by default when
+    # /INCREMENTAL:NO is set, which CMake Release defaults to). We restate them
+    # explicitly so a future tweak to release flags doesn't silently turn them
+    # off. The actual NEW flag here is:
+    #   /Gw  — data-level linking: each global var in its own COMDAT so
+    #          /OPT:REF can strip unreferenced const tables and /OPT:ICF can
+    #          fold identical ones (template-emitted strings, vtables, etc.).
+    #          NOT implied by /O2 and saves measurable .rdata.
+    add_compile_options($<$<CONFIG:Release>:/Gy> $<$<CONFIG:Release>:/Gw>)
     # Linker security flags: ASLR, DEP, High-Entropy ASLR
     add_link_options(/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA)
     # PE legitimacy: checksum (reduces AV false positives)
     add_link_options(/RELEASE)
+    add_link_options($<$<CONFIG:Release>:/INCREMENTAL:NO>
+                     $<$<CONFIG:Release>:/OPT:REF>
+                     $<$<CONFIG:Release>:/OPT:ICF>)
 endif()
 
 # Per-target include directories (no global include_directories)
@@ -47,6 +60,39 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/TypingAction.h
     src/core/engine/CodeTableConverter.cpp
     src/core/engine/CodeTableConverter.h
+    src/core/engine/rule/EngineRulePhase.h
+    src/core/engine/rule/EngineRuleResult.h
+    src/core/engine/rule/EngineRuleContext.h
+    src/core/engine/rule/IEngineRule.h
+    src/core/engine/rule/EngineRuleRegistry.h
+    src/core/engine/rule/EngineRuleRegistry.cpp
+    src/core/engine/rule/IToneExecutor.h
+    src/core/engine/rule/ToneRule.h
+    src/core/engine/rule/ToneRule.cpp
+    src/core/engine/rule/IModifierExecutor.h
+    src/core/engine/rule/ModifierRule.h
+    src/core/engine/rule/ModifierRule.cpp
+    src/core/engine/rule/IModifierSubExecutor.h
+    src/core/engine/rule/ModifierProposal.h
+    src/core/engine/rule/AdjacentCircumflexProposal.h
+    src/core/engine/rule/AdjacentCircumflexProposal.cpp
+    src/core/engine/rule/HornModifierProposal.h
+    src/core/engine/rule/HornModifierProposal.cpp
+    src/core/engine/rule/StrokeDProposal.h
+    src/core/engine/rule/StrokeDProposal.cpp
+    src/core/engine/rule/BracketProposal.h
+    src/core/engine/rule/BracketProposal.cpp
+    src/core/engine/rule/VniCircumflexProposal.h
+    src/core/engine/rule/VniCircumflexProposal.cpp
+    src/core/engine/rule/VniHornProposal.h
+    src/core/engine/rule/VniHornProposal.cpp
+    src/core/engine/rule/VniBreveProposal.h
+    src/core/engine/rule/VniBreveProposal.cpp
+    src/core/engine/rule/IQuickConsonantExecutor.h
+    src/core/engine/rule/QuickStartConsonantRule.h
+    src/core/engine/rule/QuickStartConsonantRule.cpp
+    src/core/engine/rule/QuickEndConsonantRule.h
+    src/core/engine/rule/QuickEndConsonantRule.cpp
 )
 
 add_library(VKeyEngine STATIC ${NEXTKEY_ENGINE_SOURCES})
@@ -71,6 +117,35 @@ set(NEXTKEY_CORE_SOURCES
     src/core/hotkey/HotkeyLabel.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
+    src/core/pipeline/Stage.h
+    src/core/pipeline/Result.h
+    src/core/pipeline/GateMask.h
+    src/core/pipeline/Intent.h
+    src/core/pipeline/IntentSink.h
+    src/core/pipeline/ICompositionSession.h
+    src/core/pipeline/HookCompositionSession.h
+    src/core/pipeline/KeyContext.h
+    src/core/pipeline/IFeature.h
+    src/core/pipeline/IGate.h
+    src/core/pipeline/IBackwardEditExecutor.h
+    src/core/pipeline/BackwardEditFeature.h
+    src/core/pipeline/BackwardEditFeature.cpp
+    src/core/pipeline/ICommitUndoExecutor.h
+    src/core/pipeline/CommitUndoFeature.h
+    src/core/pipeline/CommitUndoFeature.cpp
+    src/core/pipeline/IEscRestoreRawExecutor.h
+    src/core/pipeline/EscRestoreRawFeature.h
+    src/core/pipeline/EscRestoreRawFeature.cpp
+    src/core/pipeline/IMacroExecutor.h
+    src/core/pipeline/MacroFeature.h
+    src/core/pipeline/MacroFeature.cpp
+    src/core/pipeline/gates/EnglishBiasGate.h
+    src/core/pipeline/gates/SpellCheckGate.h
+    src/core/pipeline/gates/ToneEscapeGate.h
+    src/core/pipeline/Coordinator.h
+    src/core/pipeline/Coordinator.cpp
+    src/core/pipeline/OutputChannel.h
+    src/core/pipeline/OutputChannel.cpp
 )
 
 # Windows-only sources (require Windows.h)
@@ -85,6 +160,8 @@ if(WIN32)
         src/core/config/ConfigEvent.h
         src/core/config/ConfigManager.cpp
         src/core/config/ConfigManager.h
+        src/core/config/ConfigSnapshotBuilder.cpp
+        src/core/config/ConfigSnapshotBuilder.h
     )
 endif()
 
@@ -167,6 +244,13 @@ add_executable(VKeyApp WIN32
     src/app/system/FloatingIcon.cpp
     src/app/system/HookEngine.h
     src/app/system/HookEngine.cpp
+    src/app/system/HookLifecycle.h
+    src/app/system/HookLifecycle.cpp
+    src/app/system/FocusOwner.h
+    src/app/system/FocusOwner.cpp
+    src/app/system/OutputDispatcher.h
+    src/app/system/OutputDispatcher.cpp
+    src/app/system/CommitState.h
     src/app/system/HookCommandMailbox.h
     src/app/system/HookCommandMailbox.cpp
     src/app/system/HeartbeatPublisher.h
@@ -260,6 +344,13 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/system/FloatingIcon.cpp
         src/app/system/HookEngine.h
         src/app/system/HookEngine.cpp
+        src/app/system/HookLifecycle.h
+        src/app/system/HookLifecycle.cpp
+        src/app/system/FocusOwner.h
+        src/app/system/FocusOwner.cpp
+        src/app/system/OutputDispatcher.h
+        src/app/system/OutputDispatcher.cpp
+        src/app/system/CommitState.h
         src/app/system/HeartbeatPublisher.h
         src/app/system/HeartbeatPublisher.cpp
         src/app/system/WatchdogController.h
@@ -491,6 +582,8 @@ set(NEXTKEY_TEST_SOURCES
     tests/HookEngineAtomicTests.cpp
     tests/TypingConfigRCUTests.cpp
     tests/MainThreadWorkerTests.cpp
+    tests/AdaptiveTickTest.cpp
+    tests/AdaptiveTickBenchmark.cpp
     tests/AutoCapDecisionTest.cpp
     tests/AutoCapStateTransitionTest.cpp
     tests/CjkSwitchDecisionTest.cpp
@@ -507,6 +600,35 @@ set(NEXTKEY_TEST_SOURCES
     tests/InjectorSwitchTest.cpp
     tests/HotkeyLabelTest.cpp
     tests/HotkeyConfigMigrationTest.cpp
+    tests/ParseConfigLinesTest.cpp
+    tests/pipeline/EnumsTest.cpp
+    tests/pipeline/IntentTest.cpp
+    tests/pipeline/IntentSinkTest.cpp
+    tests/pipeline/CoordinatorRegistryTest.cpp
+    tests/pipeline/CoordinatorDispatchTest.cpp
+    tests/pipeline/CoordinatorStageDispatchTest.cpp
+    tests/pipeline/CoordinatorGateFilterTest.cpp
+    tests/pipeline/OutputChannelTest.cpp
+    tests/pipeline/HookCompositionSessionTest.cpp
+    tests/pipeline/EnglishBiasGateTest.cpp
+    tests/pipeline/SpellCheckGateTest.cpp
+    tests/pipeline/ToneEscapeGateTest.cpp
+    tests/pipeline/BackwardEditFeatureTest.cpp
+    tests/pipeline/CommitUndoFeatureTest.cpp
+    tests/pipeline/EscRestoreRawFeatureTest.cpp
+    tests/pipeline/MacroFeatureTest.cpp
+    tests/engine/EngineRuleRegistryTest.cpp
+    tests/engine/ToneRuleTest.cpp
+    tests/engine/ModifierRuleTest.cpp
+    tests/engine/AdjacentCircumflexProposalTest.cpp
+    tests/engine/HornWSpeculateParityProbeTest.cpp
+    tests/engine/HornModifierProposalTest.cpp
+    tests/engine/StrokeDProposalTest.cpp
+    tests/engine/BracketProposalTest.cpp
+    tests/engine/VniVowelModifierSpeculateParityProbeTest.cpp
+    tests/engine/VniProposalsTest.cpp
+    tests/engine/QuickStartConsonantRuleTest.cpp
+    tests/engine/QuickEndConsonantRuleTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
@@ -519,6 +641,7 @@ if(WIN32)
         tests/ConfigManagerTest.cpp
         tests/ConfigEventTest.cpp
         tests/HeartbeatPublisherTest.cpp
+        tests/core/config/ConfigSnapshotBuilderTest.cpp
         # Sprint 2 T3 — IOutputInjector unit tests + impl sources for linkage.
         # VKeyTests links VKeyCore (which excludes output/), so impls
         # are pulled in directly here for the test binary.
@@ -542,6 +665,13 @@ target_link_libraries(VKeyTests PRIVATE VKeyCore GTest::gtest_main)
 target_include_directories(VKeyTests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
 )
+if(MSVC)
+    # Test diagnostics narrow wide strings to char for gtest's ostream
+    # (pure-ASCII filenames/timestamps, e.g. LoggerTest). Benign C4244 that the
+    # MSVC 14.50 toolchain promotes to error via the global /WX — allow it for
+    # the test target only; production targets keep /WX fully strict.
+    target_compile_options(VKeyTests PRIVATE /wd4244)
+endif()
 
 # Put tests in separate directory; override global /SUBSYSTEM:WINDOWS
 set_target_properties(VKeyTests PROPERTIES

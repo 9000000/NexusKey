@@ -32,7 +32,7 @@ powershell -ExecutionPolicy Bypass -File tools\run-chaos.ps1 -Tag dev -Hosts not
 | `-Corpus` | no | `tools/VKeyTestRunner/corpus/chaos.toml` | Test corpus |
 | `-VKeyExe` | no | `build/Debug/VKey.exe` | App under test |
 | `-RunnerExe` | no | `build/tools/VKeyTestRunner/Debug/VKeyTestRunner.exe` | Driver |
-| `-HookLog` | no | auto: `<install dir>\VKey_VKey_<pid>.log` | Override only if VKey writes elsewhere (PathOverride / AppData fallback). Script resolves the per-launch PID from the VKey.exe process it spawns. |
+| `-HookLog` | no | auto: newest `<install dir>\VKey_*.log` by mtime (excl. `VKey_TSF-*`) | Logger post-4f8bf16 uses `VKey_<RoleTag>_<DDMMYYYY>_<HHMM>[_p<PID>].log`; script globs the install dir and picks the freshest. Legacy `VKey_VKey_<PID>.log` still matched. Override only if VKey writes elsewhere (PathOverride / AppData fallback), or if you need to point at a specific log file. **Note:** if "Bật debug log" toggle is OFF in VKey settings, no log is written — enable before running chaos. |
 | `-OutDir` | no | repo root | Where reports land |
 
 ### Outputs (per host)

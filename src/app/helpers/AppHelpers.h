@@ -9,6 +9,7 @@
 #include "core/ipc/SharedConstants.h"
 #endif
 #include <cwctype>
+#include <istream>
 #include <string>
 
 #ifndef _WIN32
@@ -65,6 +66,33 @@ inline void SignalConfigChange() noexcept {
 inline std::wstring ToLowerAscii(std::wstring str) noexcept {
     for (auto& c : str) c = towlower(c);
     return str;
+}
+
+/// Iterate UTF-8 text lines from a stream. Strips trailing CR (Windows
+/// CRLF) + UTF-8 BOM on the first line (Notepad-saved files). Skips
+/// empty lines and lines starting with ';' (comment). Caller owns the
+/// stream + decides what to do with each non-empty content line. Used
+/// by dialog Import handlers — keeps the open/close/error-handling per
+/// call site since UX varies (Sciter silent on open-fail; Classic shows
+/// MessageBox).
+template <typename Handler>
+inline void ParseConfigLines(std::istream& input, Handler handler) {
+    std::string line;
+    bool firstLine = true;
+    while (std::getline(input, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (firstLine) {
+            firstLine = false;
+            if (line.size() >= 3 &&
+                static_cast<unsigned char>(line[0]) == 0xEF &&
+                static_cast<unsigned char>(line[1]) == 0xBB &&
+                static_cast<unsigned char>(line[2]) == 0xBF) {
+                line.erase(0, 3);
+            }
+        }
+        if (line.empty() || line[0] == ';') continue;
+        handler(line);
+    }
 }
 
 #ifdef _WIN32

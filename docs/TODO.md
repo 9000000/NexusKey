@@ -2,6 +2,29 @@
 
 > Active follow-ups only. Resolved/landed entries archived in `TODO-ARCHIVE.md`
 > (full git history preserved via `git log -p docs/TODO.md`).
+>
+> **Stale-line-number notice (refreshed 2026-05-25 post-Wave 3)**:
+> entries below predate the W7 feature-pipeline framework rollout AND the
+> Wave 3 HookEngine decomposition. Two things shifted that affect code
+> pointers throughout this file:
+>
+> 1. **LOC drift**: `HookEngine.cpp` 3563 → 4588 (W7 peak) → **3483**
+>    (post-Wave 3 2026-05-24); `TypingEngine.cpp` 1723 → **2055**.
+>    Cited line numbers are off by 100s in either direction depending on
+>    when the entry was filed.
+> 2. **PushChar step labels gone**: the old "step 0a / 0b / 1a / 1b / 2a /
+>    2c / 2d" inline labels referenced in some entries no longer exist
+>    inline. They live in engine rules under `src/core/engine/rule/`:
+>      - step 0a / 0a-cont / 0b → `QuickStartConsonantRule` (PreClassify:5)
+>      - step 1a / 1b → `ToneRule` (PostClassify:10) via `HandleToneFsm`
+>      - step 2a / 2d → `ModifierRule` (PostClassify:20) via
+>        `HandleModifierAction` (now a public method on TypingEngine)
+>      - step 2c → `QuickEndConsonantRule` (PostClassify:30)
+>      - step 3 tail → private helper `TypingEngine::FinalizeRegularChar()`
+>
+> When picking up an entry: search by function name, not line number. Refer
+> to `PROJECT_MAP.md` "PushChar() Processing Pipeline" for the current shape
+> and `docs/plans/2026-05-23-feature-pipeline-w7-retro.md` for the why.
 
 ## ✅ RESOLVED: P0 — engine_ single-writer violation (2026-05-19, P3e `8e9b5fb` + P3f `775487d`)
 
@@ -52,7 +75,10 @@ the four service boundaries the reviewer proposed are visible:
 | Output dispatch | IOutputInjector + injector_ + injector strategies | already extracted (Sprint 2 T3) |
 | State mutator | engine_ + composition fields + 8× VKEY_ASSERT_HOOK_THREAD methods | `HookStateMutator` class |
 
-HookEngine.cpp is 4239 LOC post Phase 4 — large but not unmanageable.
+HookEngine.cpp is 4588 LOC as of 2026-05-23 (was 4239 post Phase 4; W2-W4
+moved features out into `src/core/pipeline/` plugins, but cleanup +
+commit-undo bug fixes pushed the file higher again) — large but not
+unmanageable.
 Pre-Phase-2 was ~3500 LOC; net +700 LOC for mailbox infra + new method
 bodies + comments. The seams are **conceptually clear** even without
 the class boundary; readers can navigate via the section comments
@@ -165,31 +191,10 @@ No data loss, just no in-session effect. Acceptable.
 Phase 4 scenario: `--inject-config-save-then-immediate-exit` — bump
 configGeneration, send WM_CLOSE within 50 ms, restart, verify config
 loaded from TOML/SharedState matches the bump.
-## 🟡 TSF-apps toggle — async register/unregister (2026-05-20)
+## ✅ RESOLVED: ClassicExcludedAppsDialog host EXE guard (2026-05-23, commit `64e71c0`)
 
-`ClassicSettingsDialog::OnTsfAppsToggle` (and the parallel Sciter handler at
-`SettingsDialog.cpp:575-610`) call `RegisterTsf` / `RegisterTsfElevated`
-synchronously on the UI thread. A successful path blocks ~50ms; UAC prompts
-or COM elevation block 1–3 s with a frozen dialog.
-
-**Fix per Rule 3.4 (async user actions need UI feedback):**
-
-1. Disable checkbox + show "Đang đăng ký TSF…" status before spawning thread.
-2. Run `RegisterTsf` / `UnregisterTsf` on `std::thread` (capturing `hwnd_`).
-3. PostMessage a custom `WM_VKEY_TSF_REGISTER_DONE` with the result; the WndProc
-   handler re-enables the checkbox, reverts on failure, persists on success.
-4. Apply to BOTH Sciter and Classic in the same PR — the rule violation is
-   pre-existing in Sciter (`SettingsDialog.cpp:575-610`), not new to Classic.
-
-Marker: comment in `ClassicSettingsDialog.cpp:OnTsfAppsToggle`.
-
-## 🟡 ClassicExcludedAppsDialog — host EXE guard misses VKeyClassic.exe (2026-05-20)
-
-`ClassicExcludedAppsDialog.cpp:185` blocks `vkey.exe` + `vkeylite.exe` but the
-actual VKeyLite output name is `VKeyClassic.exe` (see `CMakeLists.txt:342`:
-`set_target_properties(VKeyLite PROPERTIES OUTPUT_NAME "VKeyClassic")`). A
-user can accidentally exclude their own host. `ClassicTsfAppsDialog.cpp:190`
-already has the correct three-name guard — mirror it back to ExcludedApps.
+Three-name guard mirrored from `ClassicTsfAppsDialog.cpp:185`. The exclusion
+dialog now rejects `vkey.exe`, `vkeylite.exe`, AND `vkeyclassic.exe`.
 
 ## 🟡 Convert-hotkey unify capture — deferred items (2026-05-20)
 
@@ -213,17 +218,12 @@ as blank until the user rebinds.
 `DrawHotkeyEditBorder` paint hook from `ClassicSettingsDialog` (theme helper
 becomes orphaned — also remove from `ClassicTheme`). 1–2 hours.
 
-### B. HotkeyManager slotsMutex on hook hot path (Rule 11.3)
+### B. ✅ RESOLVED: HotkeyManager slotsMutex on hook hot path (verified 2026-05-25)
 
-`src/app/system/HotkeyManager.cpp:145` acquires `std::lock_guard lk(self.slotsMutex_)`
-inside `LowLevelKeyboardProc`. Contended mutex on hook hot path violates Rule
-11.3 (same family as the Phase 3 architecture review item). Contention is
-rare (only when config reload coincides with a keystroke) but real.
-
-**Fix:** RCU-ify slots via `std::atomic<std::shared_ptr<vector<Slot>>>` —
-writers `atomic_store` a new copy, hook reads `atomic_load` lock-free. Pre-existing
-issue, not introduced by the convert-hotkey work; pairs naturally with the Phase 3
-architecture review (single-writer + off-hook config reload).
+`slotsMutex_` GONE. `src/app/system/HotkeyManager.cpp:196-201` uses
+`std::atomic<std::shared_ptr<std::vector<Slot>>> bindings_` — writers
+publish a new copy via `atomic_store`, hook reads `atomic_load` lock-free.
+Rule 11.3 compliant.
 
 ### C. JS capture listener accumulation (latent)
 
@@ -284,130 +284,88 @@ flagged turned out to be `HookEngine.cpp:963` watchdog timer for
 Either reconciled in an unlogged earlier cleanup or the original audit
 conflated line numbers. No action needed.
 
-## 🟡 Commit-undo stack survive qua Enter — phantom prefix block tone word kế (2026-05-19)
+## ✅ RESOLVED: Commit-undo stack survive qua Enter — phantom prefix block (verified 2026-05-25)
 
-### Triệu chứng (user report v3.0.1 + repro confirmed)
+User report v3.0.1: gõ TV → Enter → message kế gõ TV không dấu vì
+`commitStack_` survive Enter (focus stay trong input → không trigger
+`ResetComposition`). Sau đó stack non-empty + engine empty → re-arm
+`Ready` → BS chain replay từ cũ → `IsHardEnglishToneContext` đóng tone
+gate trên buffer V-CC-V → tone literal.
 
-User đang chat: gõ một tin nhắn tiếng Việt → Enter để send → bắt đầu gõ
-tin nhắn mới → **chỉ ra tiếng Việt không dấu**. Tray icon vẫn V mode, screen
-hiển thị đúng những gì user gõ trong tin mới, nhưng tone/mark không apply.
-User mô tả: "đã xoá hết text rồi mà vẫn không gõ được" — phải gõ space để
-reset engine mới gõ Việt lại được.
+**Fix landed**: `HookEngine.cpp:1103-1109` — pre-handler call
+`CancelCommitUndo()` khi `vkCode == VK_RETURN` và state non-Idle hoặc
+stack non-empty. Trade-off (mất `tai␣ + Enter + BS + j → tại` recall qua
+Enter) chấp nhận — use case hiếm.
 
-### Repro chính xác (log 2026-05-19 21:46:xx, user-supplied)
+## 🟢 `WouldBeValidSyllable` speculation parity for Horn paths (2026-05-23)
 
-1. Gõ `khoong,` → commit `không,`, push stack `[không]`, state=Ready.
-2. BS → state=Primed.
-3. Space, Shift+/, Enter → message gửi.
-4. **Enter không clear commit stack** (focus stay in cùng input box, không
-   trigger focus event → không trigger ResetComposition → stack survive).
-   commitUndoState_ về Idle nhưng commitStack_ vẫn = `[không]`.
-5. New message: gõ `a` → engine count=1. `f` → tone HUYỀN applied → `à` ✓.
-6. BS → engine count=0. "HandleBackspace: engine empty, stack has 3 entries
-   → state 1" — re-arm to Ready vì stack non-empty.
-7. BS×2 → Primed → **replay `không`** seed engine state thành `khôn`.
-   Screen vẫn empty (BS gửi tới input trống), engine state lệch khỏi UI.
-8. User gõ `v` → engine `khônv`, screen `v`. `a` → engine `khônva`. `f`
-   → **`IsHardEnglishToneContext`** thấy `HasStructuralVCVPattern` trên
-   `[k,h,ô,n,v,a]` (V-CC-V) → tone gate đóng → `f` literal → screen `vaf`.
-9. Space commit → reset engine → next word `nếu` work bình thường.
+### Context
 
-### Root cause
+Commit `ad09f15` fixed the free-marking circumflex path (`susata → suất`) by
+adding a `speculateRelocateTone` opt-in to `WouldBeValidSyllable` so the
+speculative state mirrors the real runtime mutation (`mod = newMod` followed by
+`RelocateToneToTarget()`). Without parity the validator saw a half-transformed
+state with the tone stranded on the pre-promotion vowel and marked Valid
+syllables as Invalid.
 
-`commitStack_.clear()` chỉ chạy trong `ResetComposition()` (HookEngine.cpp
-:2200). Các trigger gọi ResetComposition: mouse click, focus change, Ctrl
-shortcut, exception. **Enter không có**.
+Two Horn callsites still rely on the mod-only speculation:
 
-| Action key | Cancel mechanism | Status |
-|---|---|---|
-| Arrow / Home / End | Explicit `CancelCommitUndo` ở line 1308 (Ready branch) | ✓ |
-| Mouse click | `ResetComposition` line 865 | ✓ |
-| Tab | Focus event → ResetComposition | ✓ |
-| Ctrl shortcut | ResetComposition line 1554 | ✓ |
-| **Enter** | **(none — focus stays in input box)** | **✗** |
+- `HandleHornW` P5 — `TypingEngine.cpp:1216`, runtime calls
+  `RelocateToneToHornVowel()` after `states_[targetU].mod = Horn`.
+- `HandleHornW` P6 — `TypingEngine.cpp:1229`, same pattern.
 
-phatMT97's diagnosis "rule s/f/r/x/j hoặc aa/ee/oo/dd → English, BS không
-reset" — sai object. Bias rule không phải trigger (`bias` thực sự vẫn
-Vietnamese sau replay). Gate đóng tone là `IsHardEnglishToneContext` chạy
-**structural pattern** trên states_ buffer concat 2 syllable không liên
-quan. Root cause upstream là stack survive Enter, không phải BS không reset.
+`RelocateToneToHornVowel` is a *different* relocation function from
+`RelocateToneToTarget`, so the existing `speculateRelocateTone=true` opt-in
+cannot be reused as-is.
 
-### Fix
+### Hypothesis
 
-Pre-handler trước commit-undo dispatch block:
+The same shape of bug likely exists for `w` modifier inputs where a tone has
+been applied to a vowel that horn-promotion will displace (e.g. tone on `u`
+that becomes ư/ươ after `w`). Needs a concrete repro before deciding scope —
+do NOT speculatively widen until a real input string surfaces a wrong reject.
 
-```cpp
-if (vkCode == VK_RETURN &&
-    (commitUndoState_ != CommitUndoState::Idle || !commitStack_.empty())) {
-    CancelCommitUndo();   // line 2196 — clears stack + state + pendingTrigger
-    // Fall through to normal Enter processing.
-}
-```
+### Plan when surfaced
 
-Trade-off: user mất khả năng `tai␣ + Enter + BS + j → tại` (recall qua
-Enter). Use case này hiếm — Enter trong chat/form thường là send/submit,
-user không kỳ vọng undo chain xuyên qua. Accept.
+1. Repro: find a w-modifier input (with spell-check ON) where the runtime
+   produces a valid syllable via `RelocateToneToHornVowel` but
+   `WouldBeValidSyllable(targetU, Horn, aIdx)` returns false.
+2. Extend the param from `bool speculateRelocateTone` to an enum
+   `RelocationKind { None, TargetTone, HornVowel }` so the helper can run the
+   matching relocation function. Default stays `None` (preserves adjacent +
+   Breve P7 + ShouldRejectModifier behaviour).
+3. Update both Horn callsites and add regression tests modelled on
+   `SuatPlusA_PromotesToSuat`.
 
-### Test (manual Windows)
+### Why deferred
 
-1. `tai␣loi␣` → BS×6 → `i` → kỳ vọng `tải l + i` (multi-word replay không
-   break).
-2. `tai␣` → BS → `␣` → `j` → kỳ vọng `tại` (pendingTrigger không break).
-3. **Bug case**: `tai␣` → BS×3 → Enter → `vaf` → kỳ vọng `và + f` (tone
-   trên `a` apply, không bị phantom prefix block).
-4. `tai␣` → Enter → BS → `j` → kỳ vọng `j` literal (confirms feature loss
-   accepted).
+No concrete user report yet — only a structural symmetry observation. Per
+`feedback_no_architecture_thrash`: don't widen the helper before there is a
+repro that fails today.
 
 ### Refs
 
-- Discussion: GitHub issue trên phatMT97/VKey 2026-05-19
-- Release: VKey v3.0.1
-- Log repro: user-shared 2026-05-19 21:46:52-21:47:10
+- Memory: `project_speculate_mirror_runtime_2026-05-23.md`
+- Fix: commit `ad09f15` on `feat/architecture-review-v3.1`
+- Test added by fix: `CircumflexFreeMarkSpellOnTest.SuatPlusA_PromotesToSuat`
 
-## 🟡 `power → pởe` ở spell-check OFF (2026-05-18)
+---
 
-### Triệu chứng
+## ✅ RESOLVED — `WouldBeValidSyllable` speculation parity — VNI vowel modifier (2026-05-25)
 
-`power` typed in Telex (hoặc UserDefined w=HornOrInsertU) với `spell_check=false`
-→ `pởe` (sai). Spell ON thì OK (`power` literal).
+**Resolved by W8.5 commit `0a181d2` (2026-05-25).**
 
-```
-Telex spellON  "power": [p][po][pow][powe][power]   ✓
-Telex spellOFF "power": [p][po][pơ][pơe][pởe]       ✗
-UD    spellOFF "power": [p][po][pơ][pơe][pởe]       ✗ (config user thật)
-```
+W8.5 probed the hypothesis with `vi5e6t` and `ngu2o6n` (corrected from
+the originally-incorrect `ngu2oo6n` — VNI uses single `o`, not double).
+Both produced raw uncomposed output pre-fix, confirming the structural
+bug. Applied the c6369dd template to `ProcessVniVowelModifier` Pass 1:
+pre-state `ValidPrefix` → speculate-with-relocate; `Valid` → mod-only
+typo guard; `Invalid` → reject. Tests live at
+`tests/engine/VniVowelModifier_SpeculateParityProbeTest.cpp` (probes)
+and `tests/engine/VniProposalsTest.cpp` (FixVerify cases).
 
-### Root cause
-
-`IsBlockedEnglishModifier` table (`pow`/`upw` prefix) chỉ active khi
-`effectiveSpellCheck = config_.spellCheckEnabled && !allowEnglishBypass`.
-Spell OFF → gate skipped → `o + w` apply Horn (P6) → `pơ` → tone `r` rơi
-lên `ơ` → `pởe`.
-
-`IsHardEnglishStart` không bắt `po` (po có thể là tiếng Việt: pờ, pố...),
-nên TIER1 cluster check pass. Free-mark fail không trigger vì `e` đến sau
-khi đã có ư/ơ.
-
-### Fix candidates
-
-1. **Move `IsBlockedEnglishModifier` ra khỏi `effectiveSpellCheck` gate** —
-   prefix table luôn check bất kể spell. Risk: pre-existing tests dựa
-   vào behavior này có thể fail.
-2. **Mở rộng `IsHardEnglishStart`** với heuristic vowel-consonant patterns
-   khi spell OFF. Risk: over-blocking tiếng Việt.
-3. **Document limitation** — spell OFF = "Vietnamese-mode bias", users gõ
-   English nên bật spell hoặc dùng escape key.
-
-Cần probe + decision trước khi fix. Liên quan fix `customKeyMap design
-alignment` (2026-05-18) — Section 2d của `HandleModifierAction` đã có
-guard mirror 2a, nhưng `pow` không trigger bias HardEnglish ở spell OFF
-→ guard không kích hoạt.
-
-### Pointer
-
-- `src/core/engine/EnglishProtection.h:451` — `IsBlockedEnglishModifier`
-- `src/core/engine/TypingEngine.cpp:423,469` — gate sites in 2a/2d
-- Probe scenarios: see session log 2026-05-18
+Full suite 2118/2118 PASS; no regressions. See W8 retro doc
+`docs/plans/2026-05-25-feature-pipeline-w8-retro.md` §4.
 
 ---
 
@@ -928,33 +886,6 @@ sites.
 
 ---
 
-## 🟡 Test harness — `--host-class` matrix (Sprint 2 D6 deferred, 2026-05-05)
-
-Sprint 2 plan §D6 Tasks 32-33 — `VKeyTestRunner` flag for forced host-class override. Marginal value given existing 132-case natural coverage; reopen as one focused task if QA later needs forced-cell testing.
-
----
-
-## 🟡 `VkToMacroChar` syscalls per commit trigger (2026-04-22)
-
-`src/app/system/HookEngine.cpp:2851-2888`. Calls `GetAsyncKeyState ×3`,
-`GetKeyState`, `MapVirtualKeyW ×2`, `GetForegroundWindow`,
-`GetWindowThreadProcessId`, `GetKeyboardLayout`, `ToUnicodeEx` each time.
-Only runs on commit triggers (~10/sec human typing), not on the LL hook
-hot path — per CODING_RULES Rule 11.3 the syscalls are on the cold path
-and acceptable. Reopen only if profile data shows the foreground-HKL
-lookup as hot; caching the HKL on focus change would save ~3 syscalls
-per commit. No premature optimization without driver.
-
----
-
-## 🟡 Sub-dialog Instant Apply — tech-debt items (2026-04-22)
-
-- [ ] **`FindWindowW(L"VKeyTrayClass") + PostMessageW` pattern duplicated**
-  Now in `AppHelpers.h::SignalConfigChange`, `SettingsDialog.cpp:548,698,1286`,
-  `ClassicSettingsDialog.cpp:813,991,998,1033`. Candidate for a
-  `PostToTrayWindow(UINT msg, WPARAM = 0, LPARAM = 0)` helper in `AppHelpers.h`.
-  Low priority — consistent with existing pattern.
-
 ## 🟡 Auto-caps + TSF Apps Feedback — open follow-ups (2026-04-21)
 
 User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
@@ -1022,28 +953,17 @@ User feedback batch (v2.1.19 Hybrid-TSF testing). Fixed items landed in commits
   explicit test. Add scenarios: `xinchao` + backspace-into-word + retype,
   `bưởichuối` edit sequences, commit-trigger behavior on punctuation glue.
 
-### Tech debt surfaced during code review
+### ✅ RESOLVED: shared Import line-parsing helper (2026-05-25)
 
-- [ ] **Extract shared `Import/ExportStringList` helpers** — `src/app/dialogs/DialogUtils.h`
-  4 dialogs now duplicate ~60 lines each: `ExcludedAppsDialog`,
-  `MacroTableDialog`, `SpellExclusionsDialog`, `TsfAppsDialog`. Differences
-  are: window title, default filename, file header comment, and line
-  transform. A templated helper with `std::function<std::wstring(std::string)>`
-  transform + 3 string params would unify them and prevent future drift.
-  Touching all 4 dialogs in one refactor PR — out of scope for feature work.
-
-- [ ] **i18n the import-confirm MessageBox** — `StringId::IMPORT_KEEP_EXISTING`
-  All 4 list dialogs hardcode the Vietnamese UTF-16 escape sequence
-  `L"Bạn có muốn giữ lại danh sách hiện tại không?"` + per-dialog title.
-  Should go through `S(StringId::...)` like other user-facing strings. Pairs
-  with the helper extraction above.
-
-- [ ] **Action-string constants** — 4 dialogs
-  `handle_event` compares raw wide strings (`L"import"`, `L"export"`,
-  `L"close"`, `L"add-manual"`, `L"add-current"`, `L"delete"`,
-  `L"get-running-apps"`). Define `namespace DialogActions { inline constexpr
-  const wchar_t* IMPORT = L"import"; ... }` in a shared header so typos become
-  compile errors. Pairs with the helper extraction above.
+`ParseConfigLines` template added to `AppHelpers.h` consolidates the
+CR-strip + UTF-8 BOM strip + empty/`;`-comment filter loop across 8
+sites (ExcludedApps / TsfApps / SpellExclusions / MacroTable × Sciter +
+Classic). Per-site logic (lowercase mode, dedup pattern, sort, error
+message, key:value split) stays in caller lambdas. Side-effect fixes:
+Classic SpellExclusions now skips `;` headers; Sciter SpellExclusions
++ Sciter MacroTable now strip UTF-8 BOM. Export side intentionally
+NOT consolidated — variation across vector vs map + format strings
+is too high to wrap cleanly. 10 portable gtests pin filter contract.
 
 ---
 
@@ -1067,80 +987,11 @@ All non-blocking; fixed items already landed in the refactor.
   **7× parse of same file** per Settings Save. Cold cache ~35-100ms, warm cache <5ms.
   User-paced trigger → imperceptible. **Low priority** — profile first if perceived lag.
 
-- [ ] **`ScopedForegroundRestore` RAII helper** — `src/app/system/TrayIcon.cpp:379-396`
-  `prevFg = GetForegroundWindow()` + `SetForegroundWindow(prevFg)` pattern. Only 1 call site today; `ClassicDialogUtils.h:157` and `WindowPickerDialog.cpp:88` do similar one-shot restores but not the full save-and-restore pair. Not enough duplication to justify a helper yet — revisit if a 3rd call site appears.
-
-- [ ] **Slot removal API + `kInvalidSlotId` sentinel** — `src/app/system/HotkeyManager.h:26-42`
-  `using SlotId = size_t;` with default `0` means slot 0 is ambiguous (valid id vs. unset). Today's usage is fine (all slots registered at startup, never removed), but if slot removal is ever added, introduce `static constexpr SlotId kInvalid = SIZE_MAX;` and have `UpdateHotkey` return a bool or check against the sentinel. Low priority until a remove API is actually needed.
-
 ---
 
-## 🟡 TSF Readonly Context — Phase 2 / 3 / shared infra (2026-04-19)
+## 🟢 TSF Readonly Context — Phase 2 / 3 / shared infra: DEFERRED design (2026-04-19, moved out 2026-05-25)
 
-Phase 1 shipped: auto-cap via `HookContextAnchor` (commits `89d1add`..`b0bbb09`).
-Design doc: `docs/plans/2026-04-19-tsf-readonly-context-phase1-design.md`.
-Infra (`anchor.currentSyllable[16]`, seqlock helpers) already in place; phase 1
-does not read the syllable field.
-
-### Phase 2 — Cross-boundary tone
-
-- [ ] **Hook uses `anchor.currentSyllable` as prefix when buffer is empty**
-  Use case: document has `"hoa"` (paste, or user typed then moved cursor back to
-  end). User hits `f`. Today Hook buffer is empty → `f` typed literally →
-  `"hoaf"`. TSF full-TIP handles this via `EngineController::TryReviveOnType`
-  (`src/tsf/EngineController.cpp:105-141`) — read preceding word, seed engine,
-  commit via backspace + replace.
-
-  Phase 2 = port `TryReviveOnType` to Hook using the anchor:
-  1. In `HookEngine::HandleAlphaKey`, gate on `engine_->Count() == 0` AND
-     anchor snapshot has `syllableLen > 0` AND `!isWordStart` AND `isAvailable`.
-  2. `IInputEngine::SeedFromText(anchor.currentSyllable, syllableLen)` — API
-     already exists (`TryReviveOnType` calls it).
-  3. Push current char into engine as normal.
-  4. On commit: `SendBackspaces(syllableLen)` + `SendCharEvents(newText)`.
-
-  Risks / gates:
-  - **Stale anchor** → backspaces delete wrong chars. Mitigate: re-read anchor
-    snapshot immediately before committing and verify `generation` unchanged
-    since the read that triggered revive. Abort if changed.
-  - **English-word gate**: `TryReviveOnType` uses `IsEnglishWord()` on a
-    throwaway engine to skip English words. Hook must do the same or it'll
-    revive `"hello" + f → "helló"`.
-  - **Commit-char mismatch**: `TryReviveOnType` also handles English protection
-    (`ALLOW_ENGLISH_BYPASS`). Hook path needs parity.
-
-  Files: `src/app/system/HookEngine.cpp` (new helper `TryReviveFromAnchor`),
-  `tests/HookEngine*` (new tests for paste+tone, click+tone scenarios).
-
-### Phase 3 — Word continuation mid-word click
-
-- [ ] **Hook seeds engine from anchor when user types inside an existing word**
-  Use case: `"hu|ong"` with caret between `u` and `o`. User hits `w` expecting
-  `"hương"`. Hook today sees empty buffer → literal `w` → `"huwong"`.
-
-  Phase 3 = detect mid-word typing via `anchor.syllableLen > 0 && !isWordStart`
-  (same gate as phase 2, but NOT gated on `engine_->Count() == 0` — rather, we
-  seed on entry and continue building). Overlaps heavily with phase 2 — likely
-  merges into one code path with different commit strategies based on whether
-  the cursor is at end of word vs middle.
-
-  Additional risk: detecting cursor position inside the word. TSF gives us
-  chars before cursor, not chars after. Hook can't easily see what's after the
-  caret without another sync read (expensive + async-locked in TSF).
-  Mitigation: phase 3 may require anchor v2 that includes a few chars AFTER
-  cursor too. Design pending.
-
-### Shared infra items
-
-- [ ] **Opportunistic prime on `OnSetFocus`** — `src/tsf/ReadonlyContextProvider.cpp:228`
-  Currently we wait for first `OnEndEdit` to push an anchor after focus gain.
-  First keystroke in a newly-focused app therefore uses `isAvailable=0`
-  (cleared by previous focus-out) and falls back to keystroke state. Acceptable
-  for phase 1 but phase 2+ will miss revive on the first key after app switch.
-  Fix: request a sync read session on focus gain to prime the anchor.
-
-- [ ] **Logging instrumentation** — `src/tsf/ReadonlyContextProvider.cpp:326`
-  TODO comment in-place. Wire up once user-facing log infra lands.
+Forward-looking design moved to [`docs/plans/2026-04-19-tsf-readonly-phase2-3-deferred.md`](plans/2026-04-19-tsf-readonly-phase2-3-deferred.md). No active user complaint driving these. Trigger to revisit: user report of "paste + tone fails" (Phase 2) or "click mid-word + modifier ignored" (Phase 3).
 
 ---
 

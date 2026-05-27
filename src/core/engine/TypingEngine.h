@@ -13,6 +13,18 @@
 #include "Phonotactics.h"
 #include "TypingAction.h"
 #include "core/config/TypingConfig.h"
+#include "core/engine/rule/AdjacentCircumflexProposal.h"
+#include "core/engine/rule/BracketProposal.h"
+#include "core/engine/rule/HornModifierProposal.h"
+#include "core/engine/rule/StrokeDProposal.h"
+#include "core/engine/rule/VniBreveProposal.h"
+#include "core/engine/rule/VniCircumflexProposal.h"
+#include "core/engine/rule/VniHornProposal.h"
+#include "core/engine/rule/EngineRuleRegistry.h"
+#include "core/engine/rule/IModifierExecutor.h"
+#include "core/engine/rule/IModifierSubExecutor.h"
+#include "core/engine/rule/IQuickConsonantExecutor.h"
+#include "core/engine/rule/IToneExecutor.h"
 #include <vector>
 #include <string>
 
@@ -81,7 +93,11 @@ struct CharState {
 /// - Escape clean (retype tone/mod to clear)
 /// - No reverse maps needed
 /// - TSF composition state always in sync
-class TypingEngine : public IInputEngine {
+class TypingEngine : public IInputEngine,
+                     public EngineRule::IToneExecutor,
+                     public EngineRule::IModifierExecutor,
+                     public EngineRule::IModifierSubExecutor,
+                     public EngineRule::IQuickConsonantExecutor {
 public:
     TypingEngine() : TypingEngine(TypingConfig{}) {}
     explicit TypingEngine(const TypingConfig& config);
@@ -109,9 +125,42 @@ public:
     [[nodiscard]] bool IsEnglishWord() const override {
         return engProt_.bias == LanguageBias::HardEnglish;
     }
+    [[nodiscard]] bool IsToneEscaped() const override {
+        return escape_.isEscaped();
+    }
     [[nodiscard]] std::wstring PeekRaw() const override {
         return std::wstring(escRawHistory_.data(), escRawHistory_.size());
     }
+    [[nodiscard]] std::wstring_view PeekRawView() const noexcept override {
+        return std::wstring_view(escRawHistory_.data(), escRawHistory_.size());
+    }
+
+    // IToneExecutor — drives the W7.2 ToneRule plugin. Returns true if the
+    // tone/ClearTone action was handled (caller stops processing this key),
+    // false if no tone path applied and dispatch should fall through.
+    [[nodiscard]] bool HandleToneFsm(TypingAction action,
+                                      wchar_t keyChar,
+                                      wchar_t lower,
+                                      bool isUpper) override;
+
+    // IModifierExecutor — drives the W7.3 ModifierRule plugin. Returns true
+    // if the modifier action consumed the key, false to fall through to
+    // quick-end-consonant / regular char dispatch. Body unchanged from the
+    // pre-W7.3 private dispatch helper.
+    [[nodiscard]] bool HandleModifierAction(TypingAction action,
+                                             wchar_t keyChar,
+                                             wchar_t lower,
+                                             bool isUpper) override;
+
+    // IQuickConsonantExecutor — drives the W7.4 QuickStart/QuickEnd rules.
+    // HandleQuickStartConsonant returns Veto on consumption (0a, 0b cc→ch,
+    // 0b uu→ươ); Pass otherwise (0a-cont fall-through and no-match).
+    // HandleQuickEndConsonant returns true on 2c consumption; false to
+    // fall through to regular char.
+    [[nodiscard]] EngineRule::Result HandleQuickStartConsonant(
+        wchar_t keyChar, wchar_t lower, bool isUpper) override;
+    [[nodiscard]] bool HandleQuickEndConsonant(
+        wchar_t keyChar, wchar_t lower, bool isUpper) override;
 
 private:
     // Mode helpers
@@ -138,6 +187,12 @@ private:
     void ProcessChar(wchar_t keyChar, wchar_t lower, bool isUpper);
     void ProcessChar(wchar_t keyChar) { ProcessChar(keyChar, towlower(keyChar), iswupper(keyChar)); }
 
+    // W7.4: post-ProcessChar finalization (relocate tone / autoUO /
+    // UpdateSpellState / English-bias / P8 revert / ZWJF). Lifted from
+    // PushChar step 3 so 0b's cc→ch path can finalize without leaking
+    // keyChar mutation back into PushChar's locals.
+    void FinalizeRegularChar();
+
     // Unified modifier dispatch (G-3.5). Single entry point for every
     // user-mappable modifier action — both Telex and VNI. Switches on
     // TypingAction and forwards to the per-action handlers below. The
@@ -146,8 +201,7 @@ private:
     // it's the same dispatch. Foundation for G-4 customKeyMap.
     bool ProcessModifier(TypingAction action, wchar_t keyChar);
 
-    // Dispatch helpers
-    bool HandleModifierAction(TypingAction action, wchar_t keyChar, wchar_t lower, bool isUpper);
+    // Dispatch helpers (HandleModifierAction moved to public IModifierExecutor override above)
     bool WouldModifierRecoverOrEscape(TypingAction action, wchar_t keyChar, wchar_t lower);
 
     // Per-action modifier handlers. Uniform `(TypingAction, wchar_t)`
@@ -156,13 +210,23 @@ private:
     // fall through to ProcessChar (literal). `action` selects sub-
     // behaviour where one handler covers multiple actions (HornInsert,
     // AdjacentCircumflex); ignored where it's 1:1.
-    bool HandleHornInsert(TypingAction action, wchar_t keyChar);          // Telex `[`/`]`
-    bool HandleAdjacentCircumflex(TypingAction action, wchar_t keyChar);  // Telex aa/ee/oo + cross-vowel
-    bool HandleHornW(TypingAction action, wchar_t keyChar);               // Telex w (P1-P8)
-    bool HandleStrokeD(TypingAction action, wchar_t keyChar);             // Telex dd / VNI 9
-    bool HandleVniCircumflex(TypingAction action, wchar_t keyChar);       // VNI 6
-    bool HandleVniHorn(TypingAction action, wchar_t keyChar);             // VNI 7
-    bool HandleVniBreve(TypingAction action, wchar_t keyChar);             // VNI 8
+    // W8.4: IModifierSubExecutor override — body unchanged, called via
+    // bracketProposal_.tryApply() from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleHornInsert(TypingAction action, wchar_t keyChar) override; // Telex `[`/`]`
+    // W8.1: IModifierSubExecutor override — body unchanged, called via
+    // adjacentCircumflexProposal_.tryApply() from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleAdjacentCircumflex(TypingAction action, wchar_t keyChar) override;  // Telex aa/ee/oo + cross-vowel
+    // W8.2: IModifierSubExecutor override — body unchanged, called via
+    // hornModifierProposal_.tryApply() from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleHornW(TypingAction action, wchar_t keyChar) override;               // Telex w (P1-P8)
+    // W8.3: IModifierSubExecutor override — body unchanged, called via
+    // strokeDProposal_.tryApply() from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleStrokeD(TypingAction action, wchar_t keyChar) override;             // Telex dd / VNI 9
+    // W8.5: IModifierSubExecutor overrides — bodies unchanged, called via
+    // VNI proposal members from ProcessModifier dispatch.
+    [[nodiscard]] bool HandleVniCircumflex(TypingAction action, wchar_t keyChar) override; // VNI 6
+    [[nodiscard]] bool HandleVniHorn(TypingAction action, wchar_t keyChar) override;       // VNI 7
+    [[nodiscard]] bool HandleVniBreve(TypingAction action, wchar_t keyChar) override;      // VNI 8
     bool HandleVniStroke(TypingAction action, wchar_t keyChar);            // VNI 9
 
     // New User-defined handlers
@@ -223,8 +287,13 @@ private:
     // when applying horn to u). Restores state before returning.
     // The validator enforces the tone/mod same-vowel invariant, so this also
     // catches typos like "của" + circumflex on 'a' → c,ủ,â.
+    // `speculateRelocateTone` mirrors callers whose runtime applies the
+    // modifier AND immediately runs `RelocateToneToTarget()` (free-marking
+    // circumflex). Callers whose runtime keeps the tone on its current vowel
+    // (adjacent circumflex via ShouldRejectModifier, Breve P7) leave it false.
     [[nodiscard]] bool WouldBeValidSyllable(size_t targetIdx, Modifier newMod,
-                                            size_t clearCircumflexIdx = SIZE_MAX);
+                                            size_t clearCircumflexIdx = SIZE_MAX,
+                                            bool speculateRelocateTone = false);
 
     // Common guard used by modifier sites (Telex adjacent/cross-vowel,
     // VNI Pass 1): reject when applying `newMod` at `targetIdx` produces an
@@ -249,6 +318,28 @@ private:
     wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
     EnglishProtectionState engProt_;     // 3-tier English protection state
     mutable std::wstring composeBuf_;    // Reusable buffer for ComposeAll() — avoids heap alloc per Peek()
+    EngineRule::EngineRuleRegistry ruleRegistry_;  // W7.1: empty; W7.2+ registers rules
+    // W8.1: ModifierProposal for CircumflexA/E/O dispatch. Routes through
+    // IModifierSubExecutor — body lives in this engine, proposal layer is
+    // documentation + future-extension slot for W8.2-W8.5.
+    EngineRule::AdjacentCircumflexProposal adjacentCircumflexProposal_{*this};
+    // W8.2: ModifierProposal for HornW (Telex `w`, P1-P8). Metadata declares
+    // RelocationKind::HornVowel (apply path calls RelocateToneToHornVowel).
+    EngineRule::HornModifierProposal hornModifierProposal_{*this};
+    // W8.3: ModifierProposal for StrokeD (Telex `dd`, VNI `d9` → đ).
+    // Metadata declares RelocationKind::None (pure mod toggle, no relocate).
+    EngineRule::StrokeDProposal strokeDProposal_{*this};
+    // W8.4: ModifierProposal for HornInsert (Telex `[`/`]` → direct ơ/ư).
+    // Metadata declares RelocationKind::None (append + escape pop).
+    EngineRule::BracketProposal bracketProposal_{*this};
+    // W8.5: VNI proposals — Circumflex (6), Horn (7), Breve (8).
+    // All declare TargetTone or HornVowel per their RelocateToneTo* call.
+    // ProcessVniVowelModifier Pass 1 received the c6369dd ValidPrefix
+    // speculate-relocate fix in this wave (resolves TODO 2026-05-25
+    // vi5e6t / ngu2o6n wrong-reject).
+    EngineRule::VniCircumflexProposal vniCircumflexProposal_{*this};
+    EngineRule::VniHornProposal vniHornProposal_{*this};
+    EngineRule::VniBreveProposal vniBreveProposal_{*this};
 };
 
 }  // namespace NextKey

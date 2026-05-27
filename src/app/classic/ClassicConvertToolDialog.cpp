@@ -25,6 +25,7 @@ enum {
     IDC_CHECK_ALERT_DONE,
     IDC_CHECK_AUTO_PASTE,
     IDC_CHECK_SEQUENTIAL,
+    IDC_CHECK_ENABLE_LOG,
     IDC_COMBO_SOURCE,
     IDC_COMBO_DEST,
     IDC_BTN_RECORD_HOTKEY,
@@ -152,6 +153,7 @@ void ClassicConvertToolDialog::CreateControls() {
     y += rowH + gap;
 
     checkSequential_ = check(L"Chuyển tuần tự", x, y, IDC_CHECK_SEQUENTIAL);
+    checkEnableLog_  = check(L"Bật log debug", col2X, y, IDC_CHECK_ENABLE_LOG);
     y += rowH + gap * 2;
 
     // Section: Nguồn dữ liệu (Clipboard / File)
@@ -267,6 +269,7 @@ void ClassicConvertToolDialog::PopulateFromConfig() {
     setCheck(checkAlertDone_, config_.alertDone);
     setCheck(checkAutoPaste_, config_.autoPaste);
     setCheck(checkSequential_, config_.sequential);
+    setCheck(checkEnableLog_, config_.enableLog);
 
     ComboBox_SetCurSel(comboSource_, config_.sourceEncoding);
     ComboBox_SetCurSel(comboDest_, config_.destEncoding);
@@ -301,6 +304,7 @@ void ClassicConvertToolDialog::ReadToConfig() {
     config_.alertDone = isChecked(IDC_CHECK_ALERT_DONE);
     config_.autoPaste = isChecked(IDC_CHECK_AUTO_PASTE);
     config_.sequential = isChecked(IDC_CHECK_SEQUENTIAL);
+    config_.enableLog = isChecked(IDC_CHECK_ENABLE_LOG);
 
     int srcSel = ComboBox_GetCurSel(comboSource_);
     int dstSel = ComboBox_GetCurSel(comboDest_);

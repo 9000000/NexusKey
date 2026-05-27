@@ -5,6 +5,7 @@
 #include "HookEngine.h"  // VKEY_EXTRA_INFO tag
 #include "core/CrashLog.h"
 #include "core/Debug.h"
+#include <cassert>
 
 namespace NextKey {
 
@@ -21,35 +22,59 @@ HotkeyManager::~HotkeyManager() {
     Uninstall();
 }
 
-HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config, Callback callback) {
-    std::lock_guard lk(slotsMutex_);
-    slots_.push_back(Slot{config, std::move(callback), false});
-    const SlotId id = slots_.size() - 1;
-    HOTKEY_LOG(L"AddHotkey slot=%zu vk=0x%02X ctrl=%d shift=%d alt=%d win=%d (%s)",
+HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config,
+                                                Callback callback,
+                                                bool runsOnAnyThread) {
+    // Contract: AddHotkey must precede Initialize() — slotState_.resize below
+    // races with LL callback's slotState_[i] read if the hook is already up.
+    // Debug-only enforcement; release builds rely on call-site discipline.
+    assert(!keyboardHook_ && "AddHotkey called after Initialize — slotState_ resize would race with LL callback");
+    std::lock_guard lk(mutationMutex_);
+    auto oldBindings = bindings_.load(std::memory_order_acquire);
+    auto newBindings = std::make_shared<std::vector<SlotBinding>>(*oldBindings);
+    newBindings->push_back(SlotBinding{config, std::move(callback), runsOnAnyThread});
+    const SlotId id = newBindings->size() - 1;
+    slotState_.resize(id + 1);
+    bindings_.store(std::move(newBindings), std::memory_order_release);
+    HOTKEY_LOG(L"AddHotkey slot=%zu vk=0x%02X ctrl=%d shift=%d alt=%d win=%d (%s) runsOnAnyThread=%d",
                id, config.vk, config.ctrl, config.shift, config.alt, config.win,
-               config.vk == 0 ? L"modifier-only" : L"combo");
+               config.vk == 0 ? L"modifier-only" : L"combo",
+               runsOnAnyThread ? 1 : 0);
     return id;
 }
 
 void HotkeyManager::UpdateHotkey(SlotId slot, const HotkeyConfig& config) {
-    std::lock_guard lk(slotsMutex_);
-    if (slot >= slots_.size()) return;
+    std::lock_guard lk(mutationMutex_);
+    auto oldBindings = bindings_.load(std::memory_order_acquire);
+    if (slot >= oldBindings->size()) return;
     // Skip if config unchanged — preserves comboKeyDown across spurious reloads.
-    // Without this, a config reload while the user holds the combo resets
-    // comboKeyDown=false and the next auto-repeat re-fires the callback.
-    if (slots_[slot].config == config) return;
-    slots_[slot].config = config;
-    slots_[slot].comboKeyDown = false;
+    // Without this, a config reload while the user holds the combo would (after
+    // Wave 1) be a no-op on slotState_ anyway, but skipping also avoids
+    // publishing a redundant snapshot.
+    if ((*oldBindings)[slot].config == config) return;
+    auto newBindings = std::make_shared<std::vector<SlotBinding>>(*oldBindings);
+    (*newBindings)[slot].config = config;
+    // comboKeyDown lives in slotState_[slot] and stays put across UpdateHotkey
+    // by design — its in-flight DOWN should still be paired with the matching
+    // UP regardless of config rebinding.
+    bindings_.store(std::move(newBindings), std::memory_order_release);
     HOTKEY_LOG(L"UpdateHotkey slot=%zu vk=0x%02X ctrl=%d shift=%d alt=%d win=%d (%s)",
                slot, config.vk, config.ctrl, config.shift, config.alt, config.win,
                config.vk == 0 ? L"modifier-only" : L"combo");
 }
 
-void HotkeyManager::Initialize(HINSTANCE hInstance) {
-    s_instance = this;
+void HotkeyManager::Initialize(HINSTANCE hInstance, DWORD hookThreadId) {
+    // Wave 3 PR 3.7 — publish hookThreadId BEFORE installing the LL hook.
+    // The release-store happens-before the SetWindowsHookExW call inside
+    // InstallKeyboardHook (Win32 install establishes happens-before for
+    // the dispatch thread), so the LL callback never observes a stale 0.
+    hookThreadId_.store(hookThreadId, std::memory_order_release);
+    s_instance.store(this, std::memory_order_release);
     InstallKeyboardHook(hInstance);
-    NEXTKEY_LOG(L"HotkeyManager installed (%zu slot%s)",
-                slots_.size(), slots_.size() == 1 ? L"" : L"s");
+    const size_t count = bindings_.load(std::memory_order_acquire)->size();
+    NEXTKEY_LOG(L"HotkeyManager installed (%zu slot%s, hookTid=%lu)",
+                count, count == 1 ? L"" : L"s",
+                hookThreadId);
 }
 
 void HotkeyManager::Uninstall() {
@@ -58,11 +83,13 @@ void HotkeyManager::Uninstall() {
         keyboardHook_ = nullptr;
         HOTKEY_LOG(L"Keyboard hook uninstalled");
     }
-    if (s_instance == this) {
-        s_instance = nullptr;
+    if (s_instance.load(std::memory_order_acquire) == this) {
+        s_instance.store(nullptr, std::memory_order_release);
     }
-    std::lock_guard lk(slotsMutex_);
-    slots_.clear();
+    std::lock_guard lk(mutationMutex_);
+    bindings_.store(std::make_shared<std::vector<SlotBinding>>(),
+                    std::memory_order_release);
+    slotState_.clear();
 }
 
 void HotkeyManager::InstallKeyboardHook(HINSTANCE hInstance) {
@@ -96,9 +123,18 @@ void HotkeyManager::InjectDummyKey() noexcept {
     SendInput(2, inputs, sizeof(INPUT));
 }
 
+void HotkeyManager::DispatchHotkeyFromHookThread(SlotId slot) {
+    HotkeyManager* inst = s_instance.load(std::memory_order_acquire);
+    if (!inst) return;
+    auto bindings = inst->bindings_.load(std::memory_order_acquire);
+    if (slot >= bindings->size()) return;
+    const auto& binding = (*bindings)[slot];
+    if (binding.callback) binding.callback();
+}
+
 LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     try {
-        HotkeyManager* inst = s_instance.load(std::memory_order_relaxed);
+        HotkeyManager* inst = s_instance.load(std::memory_order_acquire);
         if (nCode != HC_ACTION || !inst) {
             return CallNextHookEx(nullptr, nCode, wParam, lParam);
         }
@@ -157,24 +193,52 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
             return cfg.ModifiersMatch(preCtrl, preShift, preAlt, preWin);
         };
 
-        std::lock_guard lk(self.slotsMutex_);
+        // RCU snapshot read — lock-free. The pointee vector is immutable; mutators
+        // publish a fresh shared_ptr. slotState_ is owned by `self` (LL-thread-only
+        // mutator after Initialize), indexed in parallel with `bindings`. bindings_
+        // is never null after default ctor — no null check needed.
+        const auto bindings = self.bindings_.load(std::memory_order_acquire);
+        const auto& slots = *bindings;
+        const DWORD hookTid = self.hookThreadId_.load(std::memory_order_acquire);
 
         // ─── Combo hotkey: target key DOWN fires, UP is eaten ───
         if (!isModifier && (isDown || isUp)) {
-            for (size_t i = 0; i < self.slots_.size(); ++i) {
-                auto& slot = self.slots_[i];
+            for (size_t i = 0; i < slots.size(); ++i) {
+                const auto& slot = slots[i];
                 if (slot.config.vk == 0) continue;  // Modifier-only slot
                 if (vk != slot.config.vk) continue;
 
+                // Mirror old index; slotState_ is sized in lock-step with bindings_.
+                // Defensive bound — should never trigger but cheap.
+                if (i >= self.slotState_.size()) continue;
+                auto& state = self.slotState_[i];
+
                 if (isDown) {
-                    if (slot.comboKeyDown) return 1;  // Eat auto-repeat
+                    if (state.comboKeyDown) return 1;  // Eat auto-repeat
                     if (matchCombo(slot.config)) {
-                        slot.comboKeyDown = true;
+                        state.comboKeyDown = true;
                         HOTKEY_LOG(L"combo fire slot=%zu vk=0x%02X mods=C%dS%dA%dW%d",
                                    i, vk,
                                    self.modCtrlDown_, self.modShiftDown_,
                                    self.modAltDown_, self.modWinDown_);
-                        if (slot.callback) slot.callback();
+                        // Wave 3 PR 3.7 — tag-based dispatch per doctrine §12.3.
+                        // Primary path: PostThreadMessage to the hook thread so
+                        // callbacks like `hookEngine.CommitPending()` reach
+                        // `engine_` on its single-writer thread (Rule 11.3).
+                        // Fallback: only callbacks the caller declared
+                        // `runsOnAnyThread=true` (e.g. lambda body is just
+                        // `PostMessageW` to a tray window — Win32 cross-thread-
+                        // safe) may invoke inline. Callbacks with thread
+                        // affinity drop silently — refusing to invoke on the
+                        // wrong thread is safer than silent UB on `engine_`.
+                        if (hookTid) {
+                            PostThreadMessageW(hookTid, WM_APP_HOTKEY_FIRED,
+                                               static_cast<WPARAM>(i), 0);
+                        } else if (slot.runsOnAnyThread && slot.callback) {
+                            slot.callback();
+                        } else {
+                            HOTKEY_LOG(L"  drop slot=%zu (no hookTid + runsOnAnyThread=false)", i);
+                        }
                         if (slot.config.alt || slot.config.win) InjectDummyKey();
                         return 1;  // Eat DOWN
                     } else {
@@ -190,8 +254,8 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                                    self.modAltDown_, self.modWinDown_);
                     }
                 } else {  // isUp
-                    if (slot.comboKeyDown) {
-                        slot.comboKeyDown = false;
+                    if (state.comboKeyDown) {
+                        state.comboKeyDown = false;
                         return 1;  // Eat matching UP
                     }
                 }
@@ -200,8 +264,8 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
 
         // ─── Modifier-only hotkey: fires on modifier UP if no non-modifier was pressed ───
         if (isModifier && isUp) {
-            for (size_t i = 0; i < self.slots_.size(); ++i) {
-                auto& slot = self.slots_[i];
+            for (size_t i = 0; i < slots.size(); ++i) {
+                const auto& slot = slots[i];
                 if (slot.config.vk != 0) continue;  // Combo slot
                 const auto& c = slot.config;
                 if (!c.HasAny()) continue;  // Empty config would match everything
@@ -220,7 +284,15 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                 HOTKEY_LOG(L"modifier-only fire slot=%zu released=0x%02X pre=C%dS%dA%dW%d",
                            i, vk,
                            preCtrl, preShift, preAlt, preWin);
-                if (slot.callback) slot.callback();
+                // Wave 3 PR 3.7 — same tag-based gate as the combo path above.
+                if (hookTid) {
+                    PostThreadMessageW(hookTid, WM_APP_HOTKEY_FIRED,
+                                       static_cast<WPARAM>(i), 0);
+                } else if (slot.runsOnAnyThread && slot.callback) {
+                    slot.callback();
+                } else {
+                    HOTKEY_LOG(L"  drop modifier-only slot=%zu (no hookTid + runsOnAnyThread=false)", i);
+                }
             }
         }
     } catch (const std::exception& e) {

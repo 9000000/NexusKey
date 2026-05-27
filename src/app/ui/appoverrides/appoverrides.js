@@ -29,7 +29,9 @@ var encodingLabels = {
 
 var sendMethodLabels = {
     "-1": "Mặc định",
-    1: "Clipboard"
+    1: "Clipboard",
+    2: "Firefox",
+    3: "Cloud/Remote"
 };
 
 // ===== Running Apps Dropdown =====

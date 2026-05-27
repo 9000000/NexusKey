@@ -17,6 +17,7 @@
 #include "core/Strings.h"
 #include "core/Debug.h"
 #include "core/CrashLog.h"
+#include "core/Logger.h"
 
 #include "system/TsfRegistration.h"
 #include "system/StartupHelper.h"
@@ -148,6 +149,8 @@ static void CleanupFloatingIcon() noexcept {
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hInstance = hInstance;
+    // Brand the log file before anything writes to it. Modern build = Sciter UI.
+    ::NextKey::Logger::SetRoleTag(L"Modern");
     InstallCursorCrashHandler();  // Restore system cursors if we crash during window picking
 
     // Last-resort catch: if a C++ throw ever escapes all try/catch at thread boundaries
@@ -475,10 +478,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         };
     });
 
-    // Wire hotkeys (toggle V/E + quick convert) and config reload callback
-    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
-                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
-
     // Set 1ms timer resolution so Sleep(1) actually sleeps ~1ms instead of ~15ms.
     // Required for smooth Vietnamese input — backspace-then-retype needs a short gap
     // between SendInput calls for Electron/Console apps, but 15ms (default) is noticeable.
@@ -487,8 +486,26 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Share g_sharedState with HookEngine for direct reading (same process, no Open needed)
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
-    // Start keyboard hook engine
-    if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
+    // Wave 3 PR 3.6 — wire the worker-signal callback BEFORE HookEngine::Start.
+    // Otherwise the LL hook thread (spawned inside Start) could read
+    // `workerSignalFn_` from its QuickSync slow-path bail-out while main is
+    // still mid-assign — std::function copy-assignment is NOT atomic, so a
+    // concurrent read on hook = data race = UB. Pre-Start init means the
+    // C++ thread-creation happens-before relation publishes the assigned
+    // function to the new thread safely. MainThreadWorker::Signal is safe
+    // before its own Start (latches, dispatches on first wake — see header
+    // doc), so wiring it pre-everything is fine.
+    g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
+
+    // Wave 3 PR 3.7 — Start HookEngine BEFORE WireHotkeys so its hook
+    // thread id is published by the time WireHotkeys reads it for
+    // HotkeyManager::Initialize. The pre-3.7 ordering installed the
+    // HotkeyManager LL hook (inside WireHotkeys) before HookEngine
+    // spawned its thread, leaving a ~10 ms window where a hotkey match
+    // would inline-dispatch the convert callback on the LL thread and
+    // mutate engine_ off-thread (Rule 11.3 violation, hidden by the
+    // pre-3.7 unconditional inline fallback).
+    if (!g_hookEngine.Start(hInstance, config, startVietnamese)) {
         // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
         // No matching StringId — using English string (language config not yet applied to UI).
         timeEndPeriod(1);
@@ -497,19 +514,57 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         return 1;
     }
 
+    // Wire hotkeys (toggle V/E + quick convert) — HotkeyManager::Initialize
+    // inside WireHotkeys reads `hookEngine.GetHookThreadId()` (now non-zero
+    // since Start succeeded above) and publishes it BEFORE installing the
+    // LL hook, so the LL callback never observes a stale 0.
+    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
+                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
+
+    // Wave 3 PR 3.8 — live toggle-hotkey propagation from SharedState.
+    // SettingsDialog defers the TOML save by 30s but writes the hotkey
+    // into SharedState immediately. HookEngine's QuickSync slow body
+    // detects the SharedState diff and fires this callback so the new
+    // binding reaches HotkeyManager in ~ms instead of 30s.
+    // Wired AFTER WireHotkeys so `g_toggleHotkeySlot` is valid.
+    g_hookEngine.SetHotkeyChangedCallback([](const HotkeyConfig& hk) {
+        g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
+    });
+
     // Sprint 1 D9: launch MainThreadWorker after the hook engine is up so the
     // first config-change Signal it sees has a fully-initialised HookEngine
     // to call into. Handler runs on the worker's own thread.
+    //
+    // Wave 3 PR 3.6 (worker-thread doctrine §12.4): workHandler also drains
+    // any pending focus-classify request latched by WinEventProc. Wiring
+    // both signal targets through the same handler keeps Signal()
+    // coalescing intact — a burst of signals collapses into one wake that
+    // drains both queues.
     g_mainThreadWorker.SetWorkHandler([]() {
         g_hookEngine.SyncConfigFromSharedState();
+        g_hookEngine.DrainClassifyOnWorker();
+        // Adaptive-tick (plan 2026-05-27): when MarkActivity wakes the worker
+        // via Signal, this is where the cadence gets retuned back to active.
+        // The Signal path doesn't run the tick handler — it runs this work
+        // handler — so RetuneCadenceIfNeeded must be invoked here too.
+        g_hookEngine.RetuneCadenceIfNeeded();
     });
+    // (SetWorkerSignalFn already wired above, BEFORE HookEngine::Start —
+    //  see Wave 3 PR 3.6 comment there for the std::function race rationale.)
     // Sprint 1 D10: 200 ms periodic tick — replaces the retired
     // SetTimer(nullptr, 0, 200, FocusPollTimerProc) inside HookEngine::Start.
     // Drives CJK layout poll + foreground-PID fallback off the worker thread.
     g_mainThreadWorker.SetTickHandler([]() {
         g_hookEngine.OnTickPoll();
     });
-    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
+    // Adaptive-tick retune callback — invoked by HookEngine when the desired
+    // cadence changes (active -> idle-short -> idle-long -> active). Updates
+    // tickInterval_ inside MainThreadWorker; the next wait_for picks up the
+    // new value at the next loop iteration.
+    g_hookEngine.SetTickRetuneFn([](std::chrono::milliseconds ms) noexcept {
+        g_mainThreadWorker.SetTickInterval(ms);
+    });
+    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(NextKey::kTickActiveMs));
     g_mainThreadWorker.Start();
 
     NEXTKEY_LOG(L"HookEngine started, entering message loop");
@@ -698,14 +753,26 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Poll SharedState flags every 250ms to sync icon V/E state
     SetTimer(g_trayIcon.GetMessageWindow(), TIMER_ID_ICON_POLL, 250, IconPollTimerProc);
 
-    // Internal Hotkey — TSF mode has toggle only (no QuickConvert)
+    // Internal Hotkey — TSF mode has toggle only (no QuickConvert).
+    //
+    // Wave 3 PR 3.7 — this branch compiles when `VKEY_HOOK_ENGINE` is NOT
+    // defined (TSF-only build, no `g_hookEngine`). HotkeyManager has no
+    // cross-thread dispatch target, so `Initialize` is called with
+    // hookThreadId=0. The toggle callback's body is a single
+    // `PostMessageW` to the tray's message window (Win32 cross-thread-safe),
+    // so `runsOnAnyThread=true` is correct — the LL callback may invoke it
+    // inline on the LL thread. Any future TSF-only hotkey that mutates
+    // shared state MUST either provide its own dispatch thread or remain
+    // `runsOnAnyThread=false` (in which case it drops silently rather
+    // than risk Rule 11.3 violation on LL thread).
     auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
     if (hotkeyOpt && hotkeyOpt->HasAny()) {
         HWND trayWnd = g_trayIcon.GetMessageWindow();
-        g_hotkeyManager.AddHotkey(*hotkeyOpt, [trayWnd]() {
+        // TSF mode: single toggle slot, never rebinding — slot id intentionally discarded.
+        (void)g_hotkeyManager.AddHotkey(*hotkeyOpt, [trayWnd]() {
             if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
-        });
-        g_hotkeyManager.Initialize(hInstance);
+        }, /*runsOnAnyThread=*/true);
+        g_hotkeyManager.Initialize(hInstance, /*hookThreadId=*/0);
         NEXTKEY_LOG(L"Internal hotkey installed (ctrl=%d, shift=%d, alt=%d, win=%d, key=0x%02X)",
                     hotkeyOpt->ctrl, hotkeyOpt->shift, hotkeyOpt->alt, hotkeyOpt->win, hotkeyOpt->key);
     } else {

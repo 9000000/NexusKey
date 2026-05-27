@@ -10,7 +10,11 @@
 
 #include <algorithm>
 #include <fstream>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <sstream>
+#include <unordered_map>
 #include <filesystem>
 
 #ifdef _WIN32
@@ -21,6 +25,103 @@
 namespace NextKey {
 
 namespace {
+
+// ─── Wave 2 (2026-05-23) — TomlFileCache ───────────────────────────────
+//
+// Lazy parse for the 7 TOML files re-read on every config bump (TODO
+// #1074). Cache keys on the UTF-8 path string; entries hold the mtime
+// at parse time + a shared_ptr<const toml::table>. If a Load() call
+// observes the same mtime as the cached entry, returns the cached
+// table — no file I/O, no parse work (~5ms saved per skipped file on
+// cold cache).
+//
+// Failure caching: a parse error caches a null table for that mtime;
+// repeated callers don't hammer the broken file until it changes.
+//
+// Thread safety: callable from main thread (settings save / dialog),
+// worker thread (ReloadFromToml drain), and startup thread (Start).
+// Internal mutex serialises map mutation. The shared_ptr<const table>
+// is RCU-style — readers hold a snapshot via the returned shared_ptr
+// even if a concurrent re-parse swaps the cache entry.
+//
+// Intra-second edit race: filesystem mtime resolution is typically
+// 1 second on FAT/exFAT and ~100ns on NTFS. On NTFS, edits within
+// the same tick window would miss; in practice each TOML write goes
+// through `WriteToml`'s rename-and-replace which always produces a
+// fresh mtime tick.
+class TomlFileCache {
+public:
+    /// Returns the cached or freshly-parsed table. nullptr on file
+    /// missing or parse error.
+    [[nodiscard]] std::shared_ptr<const toml::table> Load(const std::string& utf8Path) {
+        std::error_code ec;
+        // C++20 deprecated std::filesystem::u8path. Construct from wstring on
+        // Windows (native encoding) so non-ASCII paths work; on Linux the
+        // native encoding IS UTF-8 so direct construction from std::string
+        // is correct.
+#ifdef _WIN32
+        const std::filesystem::path fsPath(Utf8ToWide(utf8Path));
+#else
+        const std::filesystem::path fsPath(utf8Path);
+#endif
+        const auto mtime = std::filesystem::last_write_time(fsPath, ec);
+        if (ec) {
+            // File missing — drop any stale cache entry so a future
+            // re-create picks up clean.
+            std::lock_guard lk(mu_);
+            entries_.erase(utf8Path);
+            return nullptr;
+        }
+        {
+            std::lock_guard lk(mu_);
+            auto it = entries_.find(utf8Path);
+            if (it != entries_.end() && it->second.mtime == mtime) {
+                return it->second.table;  // shared_ptr copy (may be null)
+            }
+        }
+        // Re-parse. Release the cache lock during file I/O so a
+        // concurrent Load() on a different file doesn't serialise.
+        std::shared_ptr<const toml::table> parsed;
+        try {
+            parsed = std::make_shared<const toml::table>(toml::parse_file(utf8Path));
+        } catch (...) {
+            parsed = nullptr;
+        }
+        std::lock_guard lk(mu_);
+        entries_[utf8Path] = Entry{mtime, parsed};
+        return parsed;
+    }
+
+    /// Drop all cached entries (test helper).
+    void Clear() {
+        std::lock_guard lk(mu_);
+        entries_.clear();
+    }
+
+private:
+    struct Entry {
+        std::filesystem::file_time_type mtime;
+        std::shared_ptr<const toml::table> table;  // null = parse failed at this mtime
+    };
+    mutable std::mutex mu_;
+    std::unordered_map<std::string, Entry> entries_;
+};
+
+TomlFileCache g_tomlCache;
+
+/// Cached replacement for `toml::parse_file`. Returns a copy of the
+/// cached table on hit, fresh parse on miss. Throws to mirror the
+/// original `toml::parse_file` semantics — callers' try/catch blocks
+/// continue to handle errors uniformly without source changes.
+toml::table ParseTomlCached(const std::string& utf8Path) {
+    auto cached = g_tomlCache.Load(utf8Path);
+    if (cached) return *cached;
+    // Cache miss (file missing or parse error) — re-attempt parse so
+    // the caller sees a real toml::parse_error exception rather than
+    // swallowed details. Cheap because the cache lookup already
+    // confirmed parse failure; the second attempt fails the same way.
+    return toml::parse_file(utf8Path);
+}
 
 #ifdef _WIN32
 /// Named mutex to serialize TOML read-modify-write across processes.
@@ -104,7 +205,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
 
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
         
         TypingConfig config;
         
@@ -357,7 +458,7 @@ bool ConfigManager::DirectoryWritable(const std::wstring& path) {
 std::optional<UIConfig> ConfigManager::LoadUIConfig(const std::wstring& path) {
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         UIConfig config;
 
@@ -406,7 +507,7 @@ UIConfig ConfigManager::LoadUIConfigOrDefault() {
 std::optional<HotkeyConfig> ConfigManager::LoadHotkeyConfig(const std::wstring& path) {
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         HotkeyConfig config;
 
@@ -478,7 +579,7 @@ HotkeyConfig ConfigManager::LoadHotkeyConfigOrDefault() {
 std::optional<HotkeyRegistry> ConfigManager::LoadHotkeyRegistry(const std::wstring& path) {
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         HotkeyRegistry registry;
         if (auto arr = table["hotkeys"].as_array()) {
@@ -544,7 +645,7 @@ namespace {
 // to distinguish "fresh / pre-v3 install" from "user explicitly cleared".
 [[nodiscard]] bool HasHotkeyStateSection(const std::wstring& path) noexcept {
     try {
-        auto table = toml::parse_file(WideToUtf8(path));
+        auto table = ParseTomlCached(WideToUtf8(path));
         return table.contains("hotkey_state");
     } catch (...) {
         return false;
@@ -591,7 +692,7 @@ struct LegacyHotkeyToggles {
 [[nodiscard]] LegacyHotkeyToggles ReadLegacyHotkeyToggles(const std::wstring& path) noexcept {
     LegacyHotkeyToggles out;
     try {
-        auto table = toml::parse_file(WideToUtf8(path));
+        auto table = ParseTomlCached(WideToUtf8(path));
         if (auto features = table["features"].as_table()) {
             out.escRestoreRaw   = (*features)["esc_restore_raw"].value_or(false);
             out.tempOffMacroEsc = (*features)["temp_off_macro_esc"].value_or(false);
@@ -665,7 +766,7 @@ std::vector<std::wstring> ConfigManager::LoadAllExcludedApps(const std::wstring&
     std::vector<std::wstring> apps;
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         if (auto section = table["excluded_apps"].as_table()) {
             // Load [excluded_apps].list
@@ -719,7 +820,7 @@ std::vector<std::wstring> ConfigManager::LoadEnglishModeApps(const std::wstring&
     std::vector<std::wstring> apps;
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         if (auto section = table["smart_switch"].as_table()) {
             if (auto arr = (*section)["english_mode_apps"].as_array()) {
@@ -760,7 +861,7 @@ std::vector<std::wstring> ConfigManager::LoadTsfApps(const std::wstring& path) {
     std::vector<std::wstring> apps;
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         if (auto section = table["tsf_apps"].as_table()) {
             if (auto arr = (*section)["list"].as_array()) {
@@ -800,7 +901,7 @@ std::unordered_map<std::wstring, AppOverrideEntry> ConfigManager::LoadAppOverrid
     std::unordered_map<std::wstring, AppOverrideEntry> data;
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         size_t entryCount = 0;
 
@@ -850,7 +951,7 @@ bool ConfigManager::SaveAppOverrides(const std::wstring& path,
 std::optional<SystemConfig> ConfigManager::LoadSystemConfig(const std::wstring& path) {
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         SystemConfig config;
 
@@ -920,7 +1021,7 @@ SystemConfig ConfigManager::LoadSystemConfigOrDefault() {
 std::optional<ConvertConfig> ConfigManager::LoadConvertConfig(const std::wstring& path) {
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         ConvertConfig config;
 
@@ -1028,7 +1129,7 @@ std::unordered_map<std::wstring, std::wstring> ConfigManager::LoadMacros(const s
     }
     try {
         std::string utf8Path = WideToUtf8(path);
-        auto table = toml::parse_file(utf8Path);
+        auto table = ParseTomlCached(utf8Path);
 
         if (auto section = table["macros"].as_table()) {
             for (auto& [key, val] : *section) {
@@ -1096,7 +1197,7 @@ void ConfigManager::SaveCustomKeyMap(void* table_ptr, const TypingConfig& config
 
 bool ConfigManager::ImportCustomKeyMap(const std::wstring& path, TypingConfig& config) {
     try {
-        auto tbl = toml::parse_file(WideToUtf8(path));
+        auto tbl = ParseTomlCached(WideToUtf8(path));
         LoadCustomKeyMap(&tbl, config);
         return true;
     } catch (...) {

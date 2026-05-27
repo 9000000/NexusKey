@@ -24,7 +24,7 @@
 
 ---
 
-**[Giới thiệu](#giới-thiệu)** | **[Tính năng](#tính-năng)** | **[Cài đặt](#cài-đặt)** | **[Xác minh](#xác-minh-bản-tải-verify-release)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
+**[Giới thiệu](#giới-thiệu)** | **[Tính năng](#tính-năng)** | **[Hướng dẫn sử dụng](GUIDE.md)** | **[Cài đặt](#cài-đặt)** | **[Xác minh](#xác-minh-bản-tải-verify-release)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
 
 ---
 
@@ -284,6 +284,7 @@ Cảm ơn các thành viên cộng đồng đã test và góp ý:
 - [haihv8x](https://github.com/haihv8x)
 - [os-hoanghv](https://github.com/os-hoanghv)
 - [Shzr0](https://github.com/Shzr0)
+- [nghiabros](https://github.com/nghiabros)
 
 ## License
 

@@ -1618,6 +1618,42 @@ TEST_F(PhonotacticsValidatorVCPairTest, Ngh_Initial_Nghê_Valid) {
     EXPECT_EQ(V({T(L'n'), T(L'g'), T(L'h'), TM(L'e', Modifier::Circumflex)}), SyllableState::Valid);
 }
 
+// Pre-states underpinning the ValidPrefix heuristic in HandleAdjacentCircumflex
+// (bug 2026-05-25: vijeet → vịeet, ngufoon → ngùoon). The fix branches on
+// pre-state to decide whether the runtime/validator should speculate tone
+// relocation. These tests pin the values that drive that decision.
+TEST_F(PhonotacticsValidatorVCPairTest, AdjacentHeuristic_VijeBugCase) {
+    // {v, ị, e} — pre-state when 2nd 'e' arrives in vijeet → must promote to việt
+    EXPECT_EQ(V({T(L'v'), TT(L'i', Tone::Dot), T(L'e')}), SyllableState::ValidPrefix);
+}
+TEST_F(PhonotacticsValidatorVCPairTest, AdjacentHeuristic_CuaTypoGuardCase) {
+    // {c, ủ, a} — pre-state when extra 'a' arrives in cuara → must REJECT (typo)
+    EXPECT_EQ(V({T(L'c'), TT(L'u', Tone::Hook), T(L'a')}), SyllableState::Valid);
+}
+TEST_F(PhonotacticsValidatorVCPairTest, AdjacentHeuristic_NguoBugCase) {
+    // {n, g, ù, o} — pre-state when 2nd 'o' arrives in ngufoon → must promote to nguồn
+    EXPECT_EQ(V({T(L'n'), T(L'g'), TT(L'u', Tone::Grave), T(L'o')}), SyllableState::ValidPrefix);
+}
+TEST_F(PhonotacticsValidatorVCPairTest, AdjacentHeuristic_StandaloneVowelsAreValid) {
+    // Standalone aa/caa/coo/vee cases must keep mod-only path (Valid pre-state).
+    EXPECT_EQ(V({T(L'a')}),               SyllableState::Valid);
+    EXPECT_EQ(V({T(L'c'), T(L'a')}),      SyllableState::Valid);
+    EXPECT_EQ(V({T(L'v'), T(L'e')}),      SyllableState::Valid);
+    EXPECT_EQ(V({T(L'c'), T(L'o')}),      SyllableState::Valid);
+}
+TEST_F(PhonotacticsValidatorVCPairTest, AdjacentHeuristic_ChuyeIsPrefix) {
+    // {c,h,u,y,e} — chuyeenj canonical pre-state at 2nd 'e'.
+    EXPECT_EQ(V({T(L'c'), T(L'h'), T(L'u'), T(L'y'), T(L'e')}), SyllableState::ValidPrefix);
+}
+TEST_F(PhonotacticsValidatorVCPairTest, AdjacentHeuristic_ToneMisplacedIsInvalid) {
+    // {n,g,ù,ô} — what speculate-WITHOUT-relocate produces from Classic ngufoon.
+    // Validator catches the tone-on-u + uô-diphthong mismatch; this is exactly
+    // the misclassification that the ValidPrefix branch fixes by speculating
+    // WITH tone relocation.
+    EXPECT_EQ(V({T(L'n'), T(L'g'), TT(L'u', Tone::Grave), TM(L'o', Modifier::Circumflex)}),
+              SyllableState::Invalid);
+}
+
 }  // namespace
 }  // namespace NextKey
 

@@ -34,9 +34,35 @@ std::mutex& Mutex() {
 std::wstring& InstallDir() { static std::wstring s; return s; }
 std::wstring& PathOverride() { static std::wstring s; return s; }
 std::wstring& ResolvedPath() { static std::wstring s; return s; }
+std::wstring& RoleTag() { static std::wstring s; return s; }
+// Frozen by OpenFileUnlocked() at file-creation time so all log lines within
+// one enable-session land in the same file. Cleared whenever the open file
+// closes (SetEnabled(false), SetInstallDir, SetRoleTag, SetLogPathForTesting).
+// ResolvePathUnlocked() is a pure preview when this is empty — it reports
+// what the next OpenFileUnlocked() *would* create without storing anything.
+std::wstring& CachedTimestamp() { static std::wstring s; return s; }
 std::FILE*& File() { static std::FILE* f = nullptr; return f; }
 
+void ResetCachedPathStateUnlocked() {
+    ResolvedPath().clear();
+    CachedTimestamp().clear();
+}
+
 #ifdef _WIN32
+
+std::wstring CurrentTimestamp() {
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    wchar_t buf[24] = {0};
+    _snwprintf_s(buf, 24, _TRUNCATE, L"%02u%02u%04u_%02u%02u",
+                 st.wDay, st.wMonth, st.wYear, st.wHour, st.wMinute);
+    return std::wstring(buf);
+}
+
+bool FileExistsW(const std::wstring& path) {
+    DWORD a = GetFileAttributesW(path.c_str());
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
 
 bool DirectoryWritable(const std::wstring& dir) {
     if (dir.empty()) return false;
@@ -107,20 +133,52 @@ std::wstring ResolvePathUnlocked() {
     if (!PathOverride().empty()) return PathOverride();
     std::wstring folder = ResolveFolderUnlocked();
     if (folder.empty()) return L"";
+
     wchar_t pidBuf[16] = {0};
     _snwprintf_s(pidBuf, 16, _TRUNCATE, L"%lu", GetCurrentProcessId());
-    return folder + L"\\VKey_" + ProcessTag() + L"_" + pidBuf + L".log";
+
+    // Legacy fallback when SetRoleTag was never called (tests, older callers).
+    if (RoleTag().empty()) {
+        return folder + L"\\VKey_" + ProcessTag() + L"_" + pidBuf + L".log";
+    }
+
+    // Pure read: if the timestamp is already frozen (file opened in this
+    // enable-session), reuse it so the path stays stable. Otherwise compute
+    // a transient preview — OpenFileUnlocked() is the only place that *stores*
+    // the timestamp, so previews never mutate module state.
+    const std::wstring stamp = CachedTimestamp().empty()
+                                   ? CurrentTimestamp()
+                                   : CachedTimestamp();
+
+    std::wstring base = folder + L"\\VKey_" + RoleTag() + L"_" + stamp;
+    // PID suffix: TSF-* roles always need it (many DLL hosts share one timestamp
+    // minute). For other roles, only attach as a collision tiebreaker.
+    bool needPid = (RoleTag().compare(0, 4, L"TSF-") == 0);
+    std::wstring candidate = base + L".log";
+    if (!needPid && FileExistsW(candidate)) {
+        needPid = true;
+    }
+    if (needPid) {
+        candidate = base + L"_p" + pidBuf + L".log";
+    }
+    return candidate;
 }
 
 void OpenFileUnlocked() {
     if (File()) return;
+    // Freeze the timestamp before resolving the path. This is the single
+    // writer for CachedTimestamp() — any GetCurrentLogPath() previews stay
+    // pure reads. RoleTag-empty (legacy) callers ignore the stamp anyway.
+    if (CachedTimestamp().empty() && !RoleTag().empty()) {
+        CachedTimestamp() = CurrentTimestamp();
+    }
     std::wstring path = ResolvePathUnlocked();
     if (path.empty()) return;
     ResolvedPath() = path;
-    // Append mode + UTF-8 transcoding. Per-PID filename (see Logger.h) means
-    // exactly one process writes to each file → append-mode races don't apply.
-    // We still fflush after each line so a crash doesn't lose the tail of the
-    // session — issue-#108 bug reports need the last lines before failure.
+    // Append mode + UTF-8 transcoding. Filename uniqueness (role tag + minute
+    // timestamp, plus _p<PID> for TSF-* roles or same-minute collisions) means
+    // one writer per file. We still fflush after each line so a crash doesn't
+    // lose the tail of the session — issue-#108 bug reports need the last lines.
     (void)_wfopen_s(&File(), path.c_str(), L"a, ccs=UTF-8");
     if (File()) setvbuf(File(), nullptr, _IOLBF, 4096);
 }
@@ -131,6 +189,24 @@ bool DirectoryWritable(const std::wstring& /*dir*/) { return false; }
 std::wstring AppDataLogFolder() { return L""; }
 std::wstring DefaultInstallDir() { return L""; }
 std::wstring ProcessTag() { return L"test"; }
+
+std::wstring CurrentTimestamp() {
+    std::time_t now = std::time(nullptr);
+    std::tm tmv{};
+    localtime_r(&now, &tmv);
+    wchar_t buf[24] = {0};
+    swprintf(buf, 24, L"%02d%02d%04d_%02d%02d",
+             tmv.tm_mday, tmv.tm_mon + 1, tmv.tm_year + 1900,
+             tmv.tm_hour, tmv.tm_min);
+    return std::wstring(buf);
+}
+
+bool FileExistsW(const std::wstring& path) {
+    std::string narrow; narrow.reserve(path.size());
+    for (wchar_t c : path) narrow.push_back(static_cast<char>(c & 0x7F));
+    struct stat st;
+    return ::stat(narrow.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+}
 
 std::string ToNarrow(const std::wstring& w) {
     std::string s; s.reserve(w.size());
@@ -149,11 +225,41 @@ std::wstring ResolveFolderUnlocked() {
 
 std::wstring ResolvePathUnlocked() {
     if (!PathOverride().empty()) return PathOverride();
-    return ResolveFolderUnlocked() + L"/vkey.log";
+    std::wstring folder = ResolveFolderUnlocked();
+    if (folder.empty()) return L"";
+
+    wchar_t pidBuf[16] = {0};
+    swprintf(pidBuf, 16, L"%d", static_cast<int>(getpid()));
+
+    if (RoleTag().empty()) {
+        // Legacy POSIX path — keep stable name for older tests.
+        return folder + L"/vkey.log";
+    }
+
+    // Preview path stays pure — see Win32 branch / CachedTimestamp() doc above.
+    const std::wstring stamp = CachedTimestamp().empty()
+                                   ? CurrentTimestamp()
+                                   : CachedTimestamp();
+
+    std::wstring base = folder + L"/VKey_" + RoleTag() + L"_" + stamp;
+    bool needPid = (RoleTag().compare(0, 4, L"TSF-") == 0);
+    std::wstring candidate = base + L".log";
+    if (!needPid && FileExistsW(candidate)) {
+        needPid = true;
+    }
+    if (needPid) {
+        candidate = base + L"_p" + pidBuf + L".log";
+    }
+    return candidate;
 }
 
 void OpenFileUnlocked() {
     if (File()) return;
+    // Single writer for CachedTimestamp() — keeps GetCurrentLogPath() preview
+    // pure. See Win32 branch comment above.
+    if (CachedTimestamp().empty() && !RoleTag().empty()) {
+        CachedTimestamp() = CurrentTimestamp();
+    }
     std::wstring path = ResolvePathUnlocked();
     if (path.empty()) return;
     // Ensure parent dir exists (mkdir -p for /tmp/vkey-logs).
@@ -257,6 +363,10 @@ void Logger::SetEnabled(bool enabled) noexcept {
     enabled_.store(enabled, std::memory_order_release);
     if (!enabled) {
         CloseFileUnlocked();
+        // Drop the cached timestamp so the next enable-session resolves to a
+        // fresh filename (HHMM at that moment) — keeps "one file per session"
+        // for user-driven toggling.
+        ResetCachedPathStateUnlocked();
     }
     // On enable: defer file open until first Log() (lazy).
 }
@@ -269,14 +379,22 @@ void Logger::SetInstallDir(const std::wstring& dir) noexcept {
     // Previous "skip if enabled" branch left the open handle pointing at the
     // host-process directory when the DLL was loaded with the toggle on.
     CloseFileUnlocked();
-    ResolvedPath().clear();
+    ResetCachedPathStateUnlocked();
+}
+
+void Logger::SetRoleTag(const std::wstring& tag) noexcept {
+    std::lock_guard<std::mutex> lock(Mutex());
+    if (RoleTag() == tag) return;
+    RoleTag() = tag;
+    CloseFileUnlocked();
+    ResetCachedPathStateUnlocked();
 }
 
 void Logger::SetLogPathForTesting(const std::wstring& path) noexcept {
     std::lock_guard<std::mutex> lock(Mutex());
     PathOverride() = path;
     CloseFileUnlocked();
-    ResolvedPath().clear();
+    ResetCachedPathStateUnlocked();
 }
 
 std::wstring Logger::GetCurrentLogPath() noexcept {

@@ -83,12 +83,14 @@ protected:
         scratch_ = MakeScratchPath(L"unit");
         RemoveFile(scratch_);
         NextKey::Logger::SetEnabled(false);
+        NextKey::Logger::SetRoleTag(L"");
         NextKey::Logger::SetLogPathForTesting(scratch_);
     }
 
     void TearDown() override {
         NextKey::Logger::SetEnabled(false);
         NextKey::Logger::SetLogPathForTesting(L"");
+        NextKey::Logger::SetRoleTag(L"");
         RemoveFile(scratch_);
     }
 };
@@ -143,6 +145,94 @@ TEST_F(LoggerTest, IdempotentEnable) {
         ++count; ++pos;
     }
     EXPECT_EQ(count, 1u);
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Role-tag-driven filename format
+// Exercises the real ResolvePathUnlocked() (no SetLogPathForTesting override)
+// so the tests prove the production filename pattern, not the override path.
+// ────────────────────────────────────────────────────────────────────
+
+// Tests below exercise ResolvePathUnlocked() via GetCurrentLogPath() WITHOUT
+// triggering Log() so no real file is created — the unit under test is the
+// filename shaper, not the file sink. This also avoids "test pollution" if
+// the suite re-runs within the same minute as a prior run.
+class LoggerRoleTagTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        NextKey::Logger::SetEnabled(false);
+        NextKey::Logger::SetLogPathForTesting(L"");  // bypass override
+        NextKey::Logger::SetRoleTag(L"");            // start clean
+    }
+
+    void TearDown() override {
+        NextKey::Logger::SetEnabled(false);
+        NextKey::Logger::SetRoleTag(L"");
+    }
+
+    static std::wstring Basename(const std::wstring& p) {
+        size_t s = p.find_last_of(L"\\/");
+        return (s == std::wstring::npos) ? p : p.substr(s + 1);
+    }
+};
+
+TEST_F(LoggerRoleTagTest, SetRoleTagShapesFilename) {
+    NextKey::Logger::SetRoleTag(L"TestRoleX");
+
+    std::wstring path = NextKey::Logger::GetCurrentLogPath();
+    std::wstring base = Basename(path);
+    // Expected: VKey_TestRoleX_DDMMYYYY_HHMM.log  (no PID — non-TSF role,
+    // no same-minute collision in a fresh test process).
+    ASSERT_GE(base.size(), 19u) << "basename too short: width before timestamp";
+    EXPECT_EQ(base.substr(0, 15), L"VKey_TestRoleX_")
+        << "Role tag missing from filename";
+    EXPECT_EQ(base.substr(base.size() - 4), L".log");
+
+    // Strip prefix/suffix, expect "DDMMYYYY_HHMM" — 13 chars, only digits and one underscore.
+    std::wstring stamp = base.substr(15, base.size() - 15 - 4);
+    EXPECT_EQ(stamp.size(), 13u) << "Expected DDMMYYYY_HHMM (13 chars), got: "
+        << std::string(stamp.begin(), stamp.end());
+    EXPECT_EQ(stamp[8], L'_');
+    for (size_t i = 0; i < stamp.size(); ++i) {
+        if (i == 8) continue;
+        EXPECT_TRUE(stamp[i] >= L'0' && stamp[i] <= L'9')
+            << "Non-digit in timestamp at " << i;
+    }
+
+    // No PID suffix for non-TSF roles when there's no collision.
+    EXPECT_EQ(base.find(L"_p"), std::wstring::npos)
+        << "Non-TSF role should not carry _p<PID> suffix";
+}
+
+TEST_F(LoggerRoleTagTest, TsfRoleAlwaysAppendsPidSuffix) {
+    NextKey::Logger::SetRoleTag(L"TSF-chrome");
+
+    std::wstring path = NextKey::Logger::GetCurrentLogPath();
+    std::wstring base = Basename(path);
+    EXPECT_EQ(base.substr(0, 16), L"VKey_TSF-chrome_") << base.c_str();
+    EXPECT_NE(base.find(L"_p"), std::wstring::npos)
+        << "TSF-* role must include _p<PID> suffix; got: "
+        << std::string(base.begin(), base.end());
+    EXPECT_EQ(base.substr(base.size() - 4), L".log");
+}
+
+TEST_F(LoggerRoleTagTest, FallbackFormatWhenNoRoleTag) {
+    // No SetRoleTag — must fall back to the pre-change format so existing
+    // callers (and tests that don't opt in) keep their filename shape.
+    std::wstring path = NextKey::Logger::GetCurrentLogPath();
+    std::wstring base = Basename(path);
+    // Legacy format must end with .log and must NOT carry the new _p<PID>
+    // suffix that the role-tag path appends. The exact filename differs by
+    // platform (POSIX: "vkey.log"; Win32: "VKey_<ProcessTag>_<PID>.log") —
+    // the assertions focus on what the change has *not* broken.
+    EXPECT_EQ(base.substr(base.size() - 4), L".log");
+    EXPECT_EQ(base.find(L"_p"), std::wstring::npos)
+        << "Legacy format must not include _p<PID>";
+#ifdef _WIN32
+    EXPECT_EQ(base.substr(0, 5), L"VKey_") << "Win32 legacy keeps VKey_ prefix";
+#else
+    EXPECT_EQ(base, L"vkey.log") << "POSIX legacy is fixed name";
+#endif
 }
 
 TEST_F(LoggerTest, ConcurrentLogDoesNotCrash) {

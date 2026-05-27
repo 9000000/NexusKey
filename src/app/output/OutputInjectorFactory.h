@@ -27,11 +27,20 @@ namespace NextKey::Output {
 // Phase 2 input — pure data, no shared writes (Rule #11.3).
 // Filled in by HookEngine's two-phase focus pipeline (see header comment).
 struct WindowClassification {
-    bool isRichEditD2DPT = false;  // Win11 New Notepad
-    bool isElectron      = false;  // Discord / Slack / VSCode etc
-    bool isConsole       = false;  // CMD / PowerShell
-    bool isChromium      = false;  // Chrome / Edge — bait-char hint
-    bool useClipboard    = false;  // User configured clipboard fallback
+    bool isRichEditD2DPT  = false;  // Win11 New Notepad
+    bool isElectron       = false;  // Discord / Slack / VSCode etc
+    bool isConsole        = false;  // CMD / PowerShell
+    bool isChromium       = false;  // Chrome / Edge — bait-char hint
+    bool useClipboard     = false;  // User configured clipboard fallback
+    // Per-app "send method" override = compatibility split dispatch
+    // (AppOverrideEntry::sendMethod 2/3). 0 = not forced. When > 0, route
+    // through SplitDispatchInjector with this inter-batch sleep (ms) instead
+    // of the default Win32 batch path — drains the BS batch before the char
+    // batch so a laggy renderer / remote-session round-trip can't eat the
+    // trailing char. sendMethod 2 → ~6ms (Firefox-family / local Gecko),
+    // sendMethod 3 → ~25ms (cloud / remote desktop). Resolved in FocusOwner;
+    // see docs/firefox-voz-sticking-chars-investigation.md for background.
+    int forcedSplitSleepMs = 0;
 };
 
 // Phase 2 — construct injector for a classification. Always returns a

@@ -35,6 +35,21 @@ BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID /*lpReserved*/) 
                     ::NextKey::Logger::SetInstallDir(path.substr(0, slash));
                 }
             }
+            // Brand the log file with the host process so each DLL instance
+            // (chrome.exe renderer, Electron helper, …) is identifiable at a
+            // glance. PID suffix is appended by Logger because RoleTag starts
+            // with "TSF-".
+            {
+                wchar_t hostPath[MAX_PATH] = {0};
+                if (GetModuleFileNameW(nullptr, hostPath, MAX_PATH) > 0) {
+                    std::wstring p(hostPath);
+                    size_t s = p.find_last_of(L"\\/");
+                    std::wstring base = (s == std::wstring::npos) ? p : p.substr(s + 1);
+                    size_t dot = base.find_last_of(L'.');
+                    if (dot != std::wstring::npos) base.resize(dot);
+                    ::NextKey::Logger::SetRoleTag(L"TSF-" + base);
+                }
+            }
             break;
         }
 

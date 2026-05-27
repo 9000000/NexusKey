@@ -14,6 +14,7 @@
 #include "core/SystemConfig.h"
 #include "core/Debug.h"
 #include "core/CrashLog.h"
+#include "core/Logger.h"
 
 #include "system/HookEngine.h"
 #include "system/MainThreadWorker.h"
@@ -322,6 +323,8 @@ static void OnMenuCommand(TrayMenuId id) {
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hInstance = hInstance;
+    // Brand the log file before anything writes to it. Classic build = Win32 UI.
+    ::NextKey::Logger::SetRoleTag(L"Classic");
     InstallCursorCrashHandler();  // Restore system cursors if we crash during window picking
 
     // Last-resort catch: if a C++ throw ever escapes all try/catch at thread boundaries
@@ -555,11 +558,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         };
     });
 
-    // ── Hotkeys (toggle V/E + quick convert) ──
-
-    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
-                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
-
     // ── Timer resolution ──
 
     // Set 1ms timer resolution for smooth Vietnamese input
@@ -569,7 +567,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
-    if (!g_hookEngine.Start(hInstance, config, startVietnamese, systemConfig.startupMode)) {
+    // Wave 3 PR 3.6 — wire the worker-signal callback BEFORE HookEngine::Start.
+    // The LL hook thread (spawned inside Start) reads `workerSignalFn_` from
+    // QuickSync's hook-bail branch — std::function assignment is NOT atomic,
+    // so pre-Start init is required to publish it via the thread-creation
+    // happens-before relation. Mirror of main.cpp.
+    g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
+
+    // Wave 3 PR 3.7 — Start HookEngine BEFORE WireHotkeys so its hook thread
+    // id is live by the time WireHotkeys reads it for HotkeyManager::Initialize.
+    // Mirror of main.cpp's reorder; same race motivation.
+    if (!g_hookEngine.Start(hInstance, config, startVietnamese)) {
         timeEndPeriod(1);
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"VKey", MB_ICONERROR);
         OleUninitialize();
@@ -577,17 +585,46 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         return 1;
     }
 
+    // ── Hotkeys (toggle V/E + quick convert) ──
+
+    // HotkeyManager::Initialize inside WireHotkeys reads hookEngine.GetHookThreadId()
+    // — non-zero by here since Start above succeeded.
+    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
+                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
+
+    // Wave 3 PR 3.8 — live toggle-hotkey propagation from SharedState.
+    // Mirror of main.cpp wiring; same bug (Settings deferred TOML save)
+    // affects both binaries since SettingsDialog is shared.
+    g_hookEngine.SetHotkeyChangedCallback([](const HotkeyConfig& hk) {
+        g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
+    });
+
     // Sprint 1 D9: launch worker after HookEngine so the first Signal it
     // observes lands on a fully-initialised engine.
+    //
+    // Wave 3 PR 3.6 (worker-thread doctrine §12.4): workHandler also drains
+    // pending focus-classify requests latched by WinEventProc. Mirror of
+    // main.cpp wiring — Lite mode has the same race surface (same
+    // HookEngine + FocusOwner), so the doctrine applies identically.
     g_mainThreadWorker.SetWorkHandler([]() {
         g_hookEngine.SyncConfigFromSharedState();
+        g_hookEngine.DrainClassifyOnWorker();
+        // Adaptive-tick (plan 2026-05-27): retune cadence after Signal-driven
+        // wake. Same wiring as main.cpp.
+        g_hookEngine.RetuneCadenceIfNeeded();
     });
+    // (SetWorkerSignalFn already wired above, BEFORE HookEngine::Start —
+    //  see Wave 3 PR 3.6 comment there for the std::function race rationale.)
     // Sprint 1 D10: 200 ms tick replaces the retired SetTimer focus/CJK
     // poll that lived inside HookEngine::Start.
     g_mainThreadWorker.SetTickHandler([]() {
         g_hookEngine.OnTickPoll();
     });
-    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
+    // Adaptive-tick retune callback — see main.cpp for full rationale.
+    g_hookEngine.SetTickRetuneFn([](std::chrono::milliseconds ms) noexcept {
+        g_mainThreadWorker.SetTickInterval(ms);
+    });
+    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(NextKey::kTickActiveMs));
     g_mainThreadWorker.Start();
 
     NEXTKEY_LOG(L"HookEngine started (Lite mode), entering message loop");

@@ -58,6 +58,7 @@ private:
     HWND checkAlertDone_ = nullptr;
     HWND checkAutoPaste_ = nullptr;
     HWND checkSequential_ = nullptr;
+    HWND checkEnableLog_ = nullptr;
 
     // Encoding
     HWND labelEncodingSource_ = nullptr;

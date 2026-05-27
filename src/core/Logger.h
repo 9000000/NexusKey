@@ -9,13 +9,22 @@
 // out to OutputDebugStringW so DebugView traces keep working.
 //
 // File path resolution (Win32):
-//   1. <install dir>\VKey_<process>_<pid>.log if writable
-//   2. %APPDATA%\VKey\logs\VKey_<process>_<pid>.log otherwise
+//   1. <install dir>\VKey_<RoleTag>_<DDMMYYYY>_<HHMM>[_p<PID>].log if writable
+//   2. %APPDATA%\VKey\logs\... otherwise
 //
-// PID is in the filename so concurrent processes (EXE + every TSF DLL host —
-// Chrome renderers, Electron helpers) get their own file. Append-mode + a
-// per-line fflush still applies inside one process; PID prevents cross-process
-// line tearing on NTFS where C runtime `fopen("a")` isn't atomic.
+// RoleTag is set once at process init via SetRoleTag(): "Modern" (Sciter EXE),
+// "Classic" (Win32 EXE), "TSF-<host>" (DLL hosts — chrome, Electron…),
+// "Watchdog". Users tracking bug reports recognize the file at a glance.
+// If SetRoleTag is not called (tests, legacy callers) the filename falls back
+// to VKey_<ProcessTag>_<PID>.log.
+//
+// PID suffix is appended only for TSF-* roles (multiple DLL hosts per box) or
+// as a same-minute-collision fallback (toggle off→on within one minute). Main
+// EXE gets the clean form VKey_Modern_21052026_2013.log.
+//
+// Timestamp is captured at file-creation moment (first Log() after
+// SetEnabled(true)) so multiple enable/disable cycles produce distinct files.
+// Append-mode + per-line fflush still applies inside one open session.
 //
 // Linux: only used by tests via SetLogPathForTesting().
 
@@ -41,6 +50,14 @@ public:
     /// EngineController already enabled the logger still routes future writes
     /// to the install dir.
     static void SetInstallDir(const std::wstring& dir) noexcept;
+
+    /// Process role discriminator embedded in the log filename. Called once
+    /// during process init: "Modern" / "Classic" for the EXE, "TSF-<host>"
+    /// for the DLL, "Watchdog" for the supervisor. Empty string restores the
+    /// legacy VKey_<ProcessTag>_<PID>.log filename (used by tests).
+    /// Closes any currently open file so the next Log() reopens at the new
+    /// path with a fresh capture-time timestamp.
+    static void SetRoleTag(const std::wstring& tag) noexcept;
 
     /// Resolved file path for the current process. Computed lazily on first
     /// Log() while enabled; empty until then.

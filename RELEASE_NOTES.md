@@ -8,6 +8,7 @@
 - Cho phép đồng bộ với gợi ý của trình duyệt: backspace sẽ chỉ xoá gợi ý thay vì xoá ký tự.
 - Thêm TSF cho phiên bản classic
 - Tối ưu thuật toán và kiến trúc hook
+- Bổ sung hướng dẫn sử dụng và FAQ cho người dùng có thể nhanh chóng hiểu và sử dụng được ứng dụng.
 
 **🛠 Sửa lỗi:**
 - Sửa lỗi c-h-u-y-e-n-j-e không thành chuyện

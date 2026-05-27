@@ -229,20 +229,13 @@ void ClassicTsfAppsDialog::ImportFromFile() {
 
     if (choice == IDYES) appList_.clear(); // Replace
 
-    std::string line;
-    while (std::getline(file, line)) {
-        // Trim CR
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (line.empty() || line[0] == ';') continue;
-
-        std::wstring wide = Utf8ToWide(line);
-        std::wstring lower = ToLowerAscii(wide);
-        if (!lower.empty()) {
-            bool dup = false;
-            for (auto& e : appList_) { if (e == lower) { dup = true; break; } }
-            if (!dup) appList_.push_back(lower);
-        }
-    }
+    ParseConfigLines(file, [&](const std::string& line) {
+        std::wstring lower = ToLowerAscii(Utf8ToWide(line));
+        if (lower.empty()) return;
+        bool dup = false;
+        for (auto& e : appList_) { if (e == lower) { dup = true; break; } }
+        if (!dup) appList_.push_back(lower);
+    });
 
     std::sort(appList_.begin(), appList_.end());
     PopulateList();

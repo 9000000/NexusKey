@@ -160,17 +160,13 @@ void TsfAppsDialog::importApps() {
         appList_.clear();
     }
 
-    std::string line;
-    while (std::getline(infile, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (line.empty() || line[0] == ';') continue;
-
+    ParseConfigLines(infile, [&](const std::string& line) {
         std::wstring wName = ToLowerAscii(Utf8ToWide(line));
-        if (wName.empty()) continue;
+        if (wName.empty()) return;
         if (std::find(appList_.begin(), appList_.end(), wName) == appList_.end()) {
             appList_.push_back(wName);
         }
-    }
+    });
 
     populateList();
     persistAndSignal();

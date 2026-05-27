@@ -2547,6 +2547,16 @@ TEST_F(CircumflexFreeMarkSpellOnTest, ChieuPlusE_StillCircumflexes) {
     EXPECT_EQ(engine_->Peek(), L"chiêu");
 }
 
+// Free-marking across coda must speculate WITH tone relocation. Previously,
+// "súat" + 'a' (= raw "susata") rejected the circumflex because the
+// unrelocated speculative state had sắc on `u` of `uâ` cluster, which
+// validator marks Invalid. Runtime relocates sắc → `â` after applying
+// circumflex, so the real result `suất` is valid Vietnamese.
+TEST_F(CircumflexFreeMarkSpellOnTest, SuatPlusA_PromotesToSuat) {
+    TypeString(*engine_, L"susata");  // s u s(sắc) a t a → suất
+    EXPECT_EQ(engine_->Peek(), L"suất");
+}
+
 // Adjacent-vowel circumflex (aa/ee/oo direct) must also validate the result.
 // "của" + extra 'a' previously produced "củâ" (invalid syllable).
 TEST_F(CircumflexFreeMarkSpellOnTest, CuaPlusA_AdjacentRejected) {
@@ -4198,6 +4208,36 @@ TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_Initial_WithCoda_Works) {
     EXPECT_EQ(engine_->Peek(), L"đoc");
 }
 
+// REPRO: bug 2026-05-22 — "detail"+d → "đetail" (expected "detaild").
+// Late-stroke applies to leading 'd' even though e-t-a forms V+C+V (English).
+// Coda-block pre-check has "leading-d + vowel" exception that lets this slip.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LateStroke_RejectVCV_detail) {
+    TypeString(*engine_, L"detaild");
+    EXPECT_EQ(engine_->Peek(), L"detaild");
+}
+
+// Recovery: leading-Đ escape on trailing-d when vowel sits between.
+// "ddoc" (fast-typed 'doc' with key bounce) → "đoc"; user adds 'd' to recover.
+// Vietnamese never has coda 'd', so trailing d = English/typo signal.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LeadingDdEscape_ddocd) {
+    TypeString(*engine_, L"ddocd");
+    EXPECT_EQ(engine_->Peek(), L"docd");  // User then BS once → "doc"
+}
+
+// Sanity: abbreviation chain — no vowel between leading Đ and trailing d
+// (ddxd) must keep Đ; the trailing d is a fresh literal.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LeadingDdEscape_NoVowel_ddxd) {
+    TypeString(*engine_, L"ddxd");
+    EXPECT_EQ(engine_->Peek(), L"đxd");
+}
+
+// Sanity: longer recovery — "ddong" + d → "dongd" (lose đ, gain trailing d).
+// Trade-off: rare "đôngd"-style typing loses, common fast-d-doc recovery wins.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LeadingDdEscape_ddongd) {
+    TypeString(*engine_, L"ddongd");
+    EXPECT_EQ(engine_->Peek(), L"dongd");
+}
+
 TEST_F(TelexEngineTest, DModifier_Initial_WithCoda_SpellCheckOn) {
     // Same as above with spell check ON — "docd" → "đoc" (valid syllable)
     TypeString(*engine_, L"docd");
@@ -4220,6 +4260,44 @@ TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_DropdownLiteral9Keys) {
     // "dropddown" (9 keys): coda pre-check → HardEnglish → all literal
     TypeString(*engine_, L"dropddown");
     EXPECT_EQ(engine_->Peek(), L"dropddown");
+}
+
+// Abbreviation continuation: a NEW dd→Đ trigger after an existing Đ + consonant
+// must still fire. Symptom before fix: HDDLDD → "HĐLDD" because pre-check found
+// the existing Đ as a stroke-target and tripped IsStrokeDBlockedByCoda on the
+// intervening L, then poisoned bias=HardEnglish for the next d. HĐLĐ is the
+// common abbrev for "Hợp Đồng Lao Động"; vđtđ-style chains must also work.
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_AllCapsAbbreviation_HDDLDD_NoSpell) {
+    TypeString(*engine_, L"HDDLDD");
+    EXPECT_EQ(engine_->Peek(), L"HĐLĐ");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_LowerAbbreviation_hddldd_NoSpell) {
+    TypeString(*engine_, L"hddldd");
+    EXPECT_EQ(engine_->Peek(), L"hđlđ");
+}
+
+TEST_F(TelexEngineTest, DModifier_AllCapsAbbreviation_HDDLDD_SpellOn) {
+    TypeString(*engine_, L"HDDLDD");
+    EXPECT_EQ(engine_->Peek(), L"HĐLĐ");
+}
+
+TEST_F(TelexEngineTest, DModifier_LowerAbbreviation_hddldd_SpellOn) {
+    TypeString(*engine_, L"hddldd");
+    EXPECT_EQ(engine_->Peek(), L"hđlđ");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_AbbreviationChain_vddtdd) {
+    // v-d-d-t-d-d → vđtđ — second dd cluster fires after Đ+consonant.
+    TypeString(*engine_, L"vddtdd");
+    EXPECT_EQ(engine_->Peek(), L"vđtđ");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, DModifier_NoEscape_AcrossIntervening_ddxd) {
+    // d-d-x-d → đxd: the standalone d after Đ+x must NOT escape Đ (which would
+    // have produced "dxd"). Đ belongs to the prior segment.
+    TypeString(*engine_, L"ddxd");
+    EXPECT_EQ(engine_->Peek(), L"đxd");
 }
 
 TEST_F(EnglishDetectionNoSpellCheckTest, WModifier_EscapeUndosBothHorns) {
@@ -4896,6 +4974,98 @@ TEST_F(UyeSmartAccentClassicTest, Chuyenje_ClassicSameResult) { TypeString(*engi
 TEST_F(UyeSmartAccentClassicTest, Tuyetje_ClassicSameResult)  { TypeString(*engine_, L"tuyetje");  EXPECT_EQ(engine_->Peek(), L"tuyệt"); }
 TEST_F(UyeSmartAccentClassicTest, Chuyf_ClassicUHuyen)        { TypeString(*engine_, L"chuyf");    EXPECT_EQ(engine_->Peek(), L"chùy"); }    // classic uy=CODA_AWARE no-coda → FIRST = u
 TEST_F(UyeSmartAccentClassicTest, Huynhf_ClassicYHuyen)       { TypeString(*engine_, L"huynhf");   EXPECT_EQ(engine_->Peek(), L"huỳnh"); }   // classic uy=CODA_AWARE with coda → SECOND = y
+
+// ============================================================================
+// PROBE: tone-middle + smart-accent  (bug 2026-05-25: vijeet → vịeet)
+// ============================================================================
+// Pattern: tone key arrives BETWEEN single vowel and the smart-accent doubling.
+// Expected: when 2nd 'e' fires ee→ê, tone must relocate from i to ê.
+// "i" + tone "j" → "ị" ; then "e" + "e" → ee should promote to "iê" and
+// re-place tone (nặng) onto ê → "iệ" ; final "t" coda → "việt".
+class ToneMidSmartAccentTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        cfg_.inputMethod = InputMethod::Telex;
+        cfg_.spellCheckEnabled = true;  // bug only reported with spell-check ON
+        engine_ = std::make_unique<TypingEngine>(cfg_);
+    }
+    TypingConfig cfg_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+TEST_F(ToneMidSmartAccentTest, Vijeet_ToneBeforeSmartAccent) {
+    TypeString(*engine_, L"vijeet");
+    EXPECT_EQ(engine_->Peek(), L"việt");
+}
+TEST_F(ToneMidSmartAccentTest, Vieetj_Canonical_SpellOn) {
+    TypeString(*engine_, L"vieetj");
+    EXPECT_EQ(engine_->Peek(), L"việt");
+}
+// Probe step-by-step: does ee→ê fire after a toned vowel at all?
+TEST_F(ToneMidSmartAccentTest, Probe_Ije_NoCoda)    { TypeString(*engine_, L"ije");   EXPECT_EQ(engine_->Peek(), L"ịe"); }   // baseline: tone on i, +e
+TEST_F(ToneMidSmartAccentTest, Probe_Ijee_NoCoda)   { TypeString(*engine_, L"ijee");  EXPECT_EQ(engine_->Peek(), L"iệ"); }   // does ee promote + relocate tone?
+TEST_F(ToneMidSmartAccentTest, Probe_Vijee_NoCoda)  { TypeString(*engine_, L"vijee"); EXPECT_EQ(engine_->Peek(), L"việ"); }  // same with leading consonant
+
+// Mirror: spell-check OFF — does the same input behave the same?
+class ToneMidSmartAccentSpellOffTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        cfg_.inputMethod = InputMethod::Telex;
+        cfg_.spellCheckEnabled = false;
+        engine_ = std::make_unique<TypingEngine>(cfg_);
+    }
+    TypingConfig cfg_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+TEST_F(ToneMidSmartAccentSpellOffTest, Vijeet_SpellOff) { TypeString(*engine_, L"vijeet"); EXPECT_EQ(engine_->Peek(), L"việt"); }
+
+// Same root pattern, 'oo' family (user-reported 2026-05-25):
+//   ngufono → nguồn (free-marking 'o' works because no adjacent oo)
+//   ngufoon → should also be 'nguồn' (adjacent oo case)
+TEST_F(ToneMidSmartAccentTest, Ngufoon_ToneBeforeAdjacentOO) {
+    TypeString(*engine_, L"ngufoon");
+    EXPECT_EQ(engine_->Peek(), L"nguồn");
+}
+TEST_F(ToneMidSmartAccentTest, Ngufono_FreeMarkingControl) {
+    TypeString(*engine_, L"ngufono");
+    EXPECT_EQ(engine_->Peek(), L"nguồn");  // should already pass — free-marking, not adjacent
+}
+// Modern ortho variant — does modernOrtho flip the behavior?
+class ToneMidSmartAccentModernTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        cfg_.inputMethod = InputMethod::Telex;
+        cfg_.spellCheckEnabled = true;
+        cfg_.modernOrtho = true;
+        engine_ = std::make_unique<TypingEngine>(cfg_);
+    }
+    TypingConfig cfg_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+TEST_F(ToneMidSmartAccentModernTest, Ngufoon_Modern) {
+    TypeString(*engine_, L"ngufoon");
+    EXPECT_EQ(engine_->Peek(), L"nguồn");
+}
+TEST_F(ToneMidSmartAccentModernTest, Vijeet_Modern) {
+    TypeString(*engine_, L"vijeet");
+    EXPECT_EQ(engine_->Peek(), L"việt");
+}
+
+// Late-modifier on Valid pre-state — documented Vietnamese behavior
+// (vietnamese-phonology-spec-distillate.md, category-10 w-priority).
+// These MUST work despite c6369dd's adjacent-circumflex "Valid → reject" branch
+// because they go through HandleHornW (not HandleAdjacentCircumflex).
+TEST_F(ToneMidSmartAccentTest, Cuarw_LateHornAfterValid) {
+    TypeString(*engine_, L"cuarw");
+    EXPECT_EQ(engine_->Peek(), L"cửa");
+}
+TEST_F(ToneMidSmartAccentTest, Hoaw_LateBreveAfterValid) {
+    TypeString(*engine_, L"hoaw");
+    EXPECT_EQ(engine_->Peek(), L"hoă");
+}
+TEST_F(ToneMidSmartAccentTest, Muaw_LateHornAfterValidUaPair) {
+    TypeString(*engine_, L"muaw");
+    EXPECT_EQ(engine_->Peek(), L"mưa");
+}
 
 }  // namespace
 }  // namespace NextKey
