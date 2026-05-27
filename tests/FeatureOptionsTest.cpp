@@ -1,5 +1,5 @@
 // VKey - Feature Options Tests (modernOrtho, autoCaps, allowZwjf)
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Tests for the 3 feature flags:
 //   1. modernOrtho  — Modern tone placement on diphthongs (ua→uá, ue→ué)

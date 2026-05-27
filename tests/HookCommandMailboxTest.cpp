@@ -1,5 +1,5 @@
 // HookCommandMailboxTest.cpp
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Phase 2a — single-writer composition state, mailbox infra. See
 // docs/plans/2026-05-19-architecture-review-design.md §Phase 2.

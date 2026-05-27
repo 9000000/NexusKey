@@ -1,5 +1,5 @@
 // VKey - TelexEngine Unit Tests
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 // Story 1.2: Comprehensive Telex transformation tests (50+ tests)
 
 #include <gtest/gtest.h>

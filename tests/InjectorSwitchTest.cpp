@@ -1,5 +1,5 @@
 // InjectorSwitchTest.cpp
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Phase 4 — replay harness for concurrency invariants
 // (docs/plans/2026-05-19-architecture-review-design.md §Phase 4).

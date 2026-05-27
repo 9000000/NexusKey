@@ -4,7 +4,7 @@
 // HookEngine::RetuneCadenceIfNeeded.
 //
 // Plan reference: docs/plans/2026-05-27-adaptive-tick-idle-backoff.md §3.1
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include <gtest/gtest.h>
 

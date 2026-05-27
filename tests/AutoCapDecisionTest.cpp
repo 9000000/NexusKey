@@ -1,5 +1,5 @@
 // VKey — ComputeShouldAutoCap unit tests (Linux-portable)
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include <gtest/gtest.h>
 #include <string>
