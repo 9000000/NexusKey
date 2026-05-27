@@ -2507,12 +2507,22 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         : kClassifyForeground;
     pendingClassifyHwnd_.store(encoded, std::memory_order_release);
 
-    // Adaptive-tick — focus change counts as user activity (covers click-
-    // switching, Alt-Tab, mouse-driven window changes without a keystroke).
-    // workerSignalFn_ below already wakes the worker for the classify drain;
-    // the workHandler wiring runs RetuneCadenceIfNeeded after the drain so
-    // the cadence is reset to active on the same wake — no extra Signal.
-    MarkActivity();
+    // Adaptive-tick — DO NOT call MarkActivity here. Earlier draft did, but
+    // WinEventProc fires on EVERY EVENT_SYSTEM_FOREGROUND including noisy
+    // sources that are NOT user activity: tooltip popups, taskbar flyouts,
+    // background app windows (NZXT, PowerToys), notification centre, IME
+    // candidate windows. Bumping cadence on every focus event keeps the
+    // worker pinned at 200 ms tick forever on a busy desktop and the
+    // adaptive backoff never reaches the 1 s / 5 s buckets — pages stay
+    // warm, Windows can't trim. (Observed 2026-05-27: benchmark Run-2 of
+    // PR 1 stuck at 1.62 MB Private WS vs Run-1 trimming to 1.41 MB; the
+    // delta correlated with how many background apps fired focus events
+    // during the idle window.) The keystroke path (LowLevelKeyboardProc)
+    // remains the activity source — it can't be falsified by background
+    // UI noise. Trade-off: a layout/IME switch via language-bar click
+    // without a keystroke may lag up to 5 s after long idle (next tick
+    // resumes 200 ms cadence). Acceptable — the common case is
+    // keystroke-driven, and keystrokes are the activity source.
 
     if (workerSignalFn_) workerSignalFn_();
 }
