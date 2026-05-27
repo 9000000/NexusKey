@@ -1,5 +1,5 @@
 // VKey Classic — Resource file
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include "resource.h"
 #include <windows.h>
@@ -53,7 +53,7 @@ BEGIN
             VALUE "FileDescription",  "VKey Classic - Vietnamese IME"
             VALUE "FileVersion",      VKEY_VERSION_STR
             VALUE "InternalName",     "VKeyClassic"
-            VALUE "LegalCopyright",   "GPL-3.0-only"
+            VALUE "LegalCopyright",   "AGPL-3.0-only"
             VALUE "OriginalFilename", "VKeyClassic.exe"
             VALUE "ProductName",      "VKey Classic"
             VALUE "ProductVersion",   VKEY_VERSION_STR
