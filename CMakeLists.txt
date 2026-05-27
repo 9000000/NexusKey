@@ -569,6 +569,8 @@ set(NEXTKEY_TEST_SOURCES
     tests/HookEngineAtomicTests.cpp
     tests/TypingConfigRCUTests.cpp
     tests/MainThreadWorkerTests.cpp
+    tests/AdaptiveTickTest.cpp
+    tests/AdaptiveTickBenchmark.cpp
     tests/AutoCapDecisionTest.cpp
     tests/AutoCapStateTransitionTest.cpp
     tests/CjkSwitchDecisionTest.cpp

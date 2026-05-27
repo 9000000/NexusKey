@@ -770,6 +770,13 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
             }
 
+            // Adaptive-tick — mark every real user key as activity (after
+            // synth-event filter at line 758 and sending-state filter above).
+            // Rule 11.2 compliant: relaxed atomic store + branch; on idle->
+            // active transition fires one workerSignalFn_ call. See plan
+            // docs/plans/2026-05-27-adaptive-tick-idle-backoff.md §2.5.
+            self->MarkActivity();
+
             // Rule 11.4 step 5 — drain cross-thread commands BEFORE the
             // English-mode / modifier-key dispatch chain so state mutations
             // posted by main / worker / hotkey threads land before this
@@ -2458,6 +2465,13 @@ void HookEngine::OnTickPoll() noexcept {
             // that WinEventProc has to use because it runs on main.
             OnFocusChangedSyncOnWorker(nullptr);  // classifies + posts kFocusChanged
         }
+
+        // Adaptive-tick — handles the active-to-idle direction (cadence
+        // grows as MarkActivity timestamp ages). The idle-to-active direction
+        // is handled separately by MarkActivity → workerSignalFn_ →
+        // workHandler → RetuneCadenceIfNeeded.
+        // See docs/plans/2026-05-27-adaptive-tick-idle-backoff.md.
+        RetuneCadenceIfNeeded();
     } catch (const std::exception& e) {
         CrashLog(L"HookEngine::OnTickPoll", e.what());
     } catch (...) {
@@ -2492,6 +2506,14 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
         ? reinterpret_cast<std::uintptr_t>(triggerHwnd)
         : kClassifyForeground;
     pendingClassifyHwnd_.store(encoded, std::memory_order_release);
+
+    // Adaptive-tick — focus change counts as user activity (covers click-
+    // switching, Alt-Tab, mouse-driven window changes without a keystroke).
+    // workerSignalFn_ below already wakes the worker for the classify drain;
+    // the workHandler wiring runs RetuneCadenceIfNeeded after the drain so
+    // the cadence is reset to active on the same wake — no extra Signal.
+    MarkActivity();
+
     if (workerSignalFn_) workerSignalFn_();
 }
 
@@ -2506,6 +2528,49 @@ void HookEngine::DrainClassifyOnWorker() {
         ? nullptr
         : reinterpret_cast<HWND>(encoded);
     OnFocusChangedSyncOnWorker(hwnd);
+}
+
+// Adaptive-tick (plan docs/plans/2026-05-27-adaptive-tick-idle-backoff.md).
+// Callable from any thread; safe on the hook hot path per Rule 11.2.
+//
+// Hot path (already in active cadence — the common case):
+//   1 relaxed atomic store + 1 relaxed atomic load + 1 branch ≈ 5 ns.
+//
+// Cold path (idle → active transition, fires at most once per idle cycle):
+//   + 1 workerSignalFn_ invocation = MainThreadWorker::Signal which acquires
+//   an uncontended mutex (~30-50 ns) and notifies the worker CV (~50-200 ns).
+//   Worker then runs workHandler → RetuneCadenceIfNeeded → SetTickInterval.
+//
+// The currentTickIntervalMs_ gate is essential: without it, every keystroke
+// would Signal the worker → workHandler runs SyncConfigFromSharedState +
+// DrainClassifyOnWorker (~1-10 ms cold cache) on every key — wasted work
+// since cadence is already at the active 200 ms.
+void HookEngine::MarkActivity() noexcept {
+    lastActivityTickMs_.store(GetTickCount64(), std::memory_order_relaxed);
+    if (currentTickIntervalMs_.load(std::memory_order_relaxed) != NextKey::kTickActiveMs) {
+        if (workerSignalFn_) workerSignalFn_();
+    }
+}
+
+// Adaptive-tick — recomputes the desired tick interval from the elapsed time
+// since last MarkActivity and republishes it to MainThreadWorker if it
+// changed. No-op when the cadence is already correct. Called from BOTH:
+//   * OnTickPoll (worker tick path) — handles the regular age-out from
+//     active → idle as time passes.
+//   * The workHandler wired in main.cpp (worker signal path) — handles
+//     the resume from idle → active when MarkActivity signals the worker.
+// Both call sites are on the worker thread; this method is not safe to call
+// on the hook thread (tickRetuneFn_ may take MainThreadWorker's mutex).
+void HookEngine::RetuneCadenceIfNeeded() noexcept {
+    const std::uint64_t now = GetTickCount64();
+    const std::uint64_t lastAct = lastActivityTickMs_.load(std::memory_order_relaxed);
+    const std::uint64_t idleMs = (now > lastAct) ? (now - lastAct) : 0;
+    const auto desired = NextKey::ComputeTickInterval(idleMs);
+    const auto desiredMs = static_cast<std::uint32_t>(desired.count());
+    if (desiredMs != currentTickIntervalMs_.load(std::memory_order_relaxed)) {
+        currentTickIntervalMs_.store(desiredMs, std::memory_order_relaxed);
+        if (tickRetuneFn_) tickRetuneFn_(desired);
+    }
 }
 
 void HookEngine::OnFocusChangedSyncOnWorker(HWND triggerHwnd) {

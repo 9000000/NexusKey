@@ -609,6 +609,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_mainThreadWorker.SetWorkHandler([]() {
         g_hookEngine.SyncConfigFromSharedState();
         g_hookEngine.DrainClassifyOnWorker();
+        // Adaptive-tick (plan 2026-05-27): retune cadence after Signal-driven
+        // wake. Same wiring as main.cpp.
+        g_hookEngine.RetuneCadenceIfNeeded();
     });
     // (SetWorkerSignalFn already wired above, BEFORE HookEngine::Start —
     //  see Wave 3 PR 3.6 comment there for the std::function race rationale.)
@@ -617,7 +620,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_mainThreadWorker.SetTickHandler([]() {
         g_hookEngine.OnTickPoll();
     });
-    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
+    // Adaptive-tick retune callback — see main.cpp for full rationale.
+    g_hookEngine.SetTickRetuneFn([](std::chrono::milliseconds ms) noexcept {
+        g_mainThreadWorker.SetTickInterval(ms);
+    });
+    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(NextKey::kTickActiveMs));
     g_mainThreadWorker.Start();
 
     NEXTKEY_LOG(L"HookEngine started (Lite mode), entering message loop");

@@ -18,6 +18,7 @@
 #include "app/system/FocusOwner.h"
 #include "app/system/OutputDispatcher.h"
 #include "app/system/CommitState.h"
+#include "app/system/AdaptiveTick.h"
 #include "core/pipeline/IBackwardEditExecutor.h"
 #include "core/pipeline/ICommitUndoExecutor.h"
 #include "core/pipeline/IEscRestoreRawExecutor.h"
@@ -26,6 +27,7 @@
 #include "core/pipeline/OutputChannel.h"
 #include <Windows.h>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -191,6 +193,32 @@ public:
     /// internal private members; intended call site is one — the workHandler
     /// lambda. Doctrine §12.6 audit-allow not required: not an atomic field.
     void DrainClassifyOnWorker();
+
+    /// Adaptive-tick backoff (2026-05-27, plan docs/plans/2026-05-27-
+    /// adaptive-tick-idle-backoff.md). Wired once at startup from main.cpp /
+    /// main_lite.cpp; the lambda calls g_mainThreadWorker.SetTickInterval(ms).
+    /// Same callback-injection pattern as SetWorkerSignalFn — keeps HookEngine
+    /// independent of MainThreadWorker.
+    using TickRetuneFn = std::function<void(std::chrono::milliseconds)>;
+    void SetTickRetuneFn(TickRetuneFn fn) noexcept { tickRetuneFn_ = std::move(fn); }
+
+    /// Adaptive-tick — called by ProcessKeyDown (hook thread, post synth-event
+    /// filter) and FocusOwner focus-change bridge (main thread). Rule 11.2
+    /// compliant on the hook hot path: one relaxed atomic store + one
+    /// relaxed atomic load + branch ≈ 5 ns when already in active cadence.
+    /// When the gate trips (idle → active transition), one workerSignalFn_()
+    /// call wakes the worker so workHandler runs RetuneCadenceIfNeeded.
+    /// Safe to call from any thread.
+    void MarkActivity() noexcept;
+
+    /// Adaptive-tick — compares idleMs since last MarkActivity against the
+    /// AdaptiveTick thresholds; if the desired interval differs from the
+    /// currently-published one, store the new value and invoke tickRetuneFn_.
+    /// Called from BOTH OnTickPoll (the worker tick path) AND the workHandler
+    /// wired in main.cpp (the post-Signal wake path). PUBLIC for the same
+    /// reason DrainClassifyOnWorker is — main.cpp's workHandler needs to call
+    /// it without poking private members. Worker-thread only.
+    void RetuneCadenceIfNeeded() noexcept;
 
     /// Change code table (commits pending composition, updates per-app map)
     void SetCodeTable(CodeTable ct);
@@ -612,6 +640,15 @@ private:
     static constexpr std::uintptr_t kClassifyForeground = 1;
     std::atomic<std::uintptr_t> pendingClassifyHwnd_{kClassifyEmpty};
     WorkerSignalFn workerSignalFn_;
+
+    // Adaptive-tick state (2026-05-27, plan docs/plans/2026-05-27-
+    // adaptive-tick-idle-backoff.md). Both atomics are written from multiple
+    // threads (hook, main, worker) and read from worker; relaxed ordering is
+    // correct because the value is a hint that resolves on the next tick if
+    // a momentary stale read occurs — no synchronization-with required.
+    std::atomic<std::uint64_t> lastActivityTickMs_{0};
+    std::atomic<std::uint32_t> currentTickIntervalMs_{NextKey::kTickActiveMs};
+    TickRetuneFn tickRetuneFn_;
 
     void DrainHookCommands();                                 // hook thread only
     void ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);

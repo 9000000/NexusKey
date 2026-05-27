@@ -543,6 +543,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_mainThreadWorker.SetWorkHandler([]() {
         g_hookEngine.SyncConfigFromSharedState();
         g_hookEngine.DrainClassifyOnWorker();
+        // Adaptive-tick (plan 2026-05-27): when MarkActivity wakes the worker
+        // via Signal, this is where the cadence gets retuned back to active.
+        // The Signal path doesn't run the tick handler — it runs this work
+        // handler — so RetuneCadenceIfNeeded must be invoked here too.
+        g_hookEngine.RetuneCadenceIfNeeded();
     });
     // (SetWorkerSignalFn already wired above, BEFORE HookEngine::Start —
     //  see Wave 3 PR 3.6 comment there for the std::function race rationale.)
@@ -552,7 +557,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_mainThreadWorker.SetTickHandler([]() {
         g_hookEngine.OnTickPoll();
     });
-    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(200));
+    // Adaptive-tick retune callback — invoked by HookEngine when the desired
+    // cadence changes (active -> idle-short -> idle-long -> active). Updates
+    // tickInterval_ inside MainThreadWorker; the next wait_for picks up the
+    // new value at the next loop iteration.
+    g_hookEngine.SetTickRetuneFn([](std::chrono::milliseconds ms) noexcept {
+        g_mainThreadWorker.SetTickInterval(ms);
+    });
+    g_mainThreadWorker.SetTickInterval(std::chrono::milliseconds(NextKey::kTickActiveMs));
     g_mainThreadWorker.Start();
 
     NEXTKEY_LOG(L"HookEngine started, entering message loop");

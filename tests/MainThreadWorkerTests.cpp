@@ -339,5 +339,62 @@ TEST_F(MainThreadWorkerTest, HandlerExceptionDoesNotKillWorker) {
     worker_.Stop();
 }
 
+// Adaptive-tick assumption check (2026-05-27, plan §3.3): the path the
+// adaptive-tick plan depends on is:
+//   1. Hook thread (after idle) calls MarkActivity -> workerSignalFn_() ->
+//      MainThreadWorker::Signal which sets workPending_=true + notify_all.
+//   2. Worker wakes (predicate true), runs workHandler.
+//   3. workHandler (in the plan's wiring) calls RetuneCadenceIfNeeded which
+//      calls SetTickInterval(200ms) - this happens WHILE worker is outside
+//      wait_for, so it only updates tickInterval_; no wake is needed.
+//   4. workHandler returns; the worker loop iterates and the next wait_for
+//      reads the NEW tickInterval_ (200 ms), not the old one (5 s).
+//
+// This test pins step 4: after a workHandler runs that mutates tickInterval_,
+// the immediately following wait must use the new value. If it instead
+// reused the old value, the post-idle CJK detection would lag by up to 5 s.
+//
+// Note: an earlier draft of this test checked whether SetTickInterval called
+// from a *different* thread woke an in-flight wait_for. It does not (predicate
+// is still false after notify, so wait_for re-blocks until its original
+// deadline). The misleading comment at MainThreadWorker.cpp:82-86 about
+// notify_all "picking up the new interval" is technically wrong — but the
+// adaptive-tick plan doesn't rely on that path; it goes through Signal.
+TEST_F(MainThreadWorkerTest, WorkHandlerChangingTickInterval_NextWaitUsesNewValue) {
+    std::atomic<int> tickCount{0};
+    worker_.SetTickHandler([&] { tickCount.fetch_add(1, std::memory_order_relaxed); });
+
+    // workHandler mutates tickInterval_ on its first run (simulates
+    // RetuneCadenceIfNeeded shrinking back to active cadence after Signal).
+    std::atomic<int> workCount{0};
+    worker_.SetWorkHandler([this, &workCount] {
+        if (workCount.fetch_add(1, std::memory_order_relaxed) == 0) {
+            worker_.SetTickInterval(50ms);  // shrink from 5 s -> 50 ms
+        }
+    });
+
+    // Long initial interval — without the Signal path, no tick fires.
+    worker_.SetTickInterval(5'000ms);
+    worker_.Start();
+
+    // Confirm we're idle in wait_for(5s) — no tick yet.
+    std::this_thread::sleep_for(80ms);
+    EXPECT_EQ(tickCount.load(), 0);
+
+    // Signal wakes the worker (workPending_=true -> predicate true).
+    // workHandler runs and shortens tickInterval_ to 50 ms.
+    worker_.Signal();
+
+    // Within 400 ms the worker should have run workHandler (~immediate) and
+    // then completed at least one tick at the new 50 ms cadence.
+    std::this_thread::sleep_for(400ms);
+    EXPECT_EQ(workCount.load(), 1) << "workHandler did not run after Signal.";
+    EXPECT_GE(tickCount.load(), 1)
+        << "tickInterval_ mutation inside workHandler did not take effect on "
+        << "the next wait_for - adaptive plan's post-idle resume path breaks.";
+
+    worker_.Stop();
+}
+
 }  // namespace
 }  // namespace NextKey
