@@ -20,6 +20,8 @@
    - [⚡ 10. Quản lý phím tắt](#hotkey-mgmt)
    - [🔗 11. Sử dụng TSF](#tsf-mode)
    - [🚀 12. Gõ tắt (Macro)](#macro)
+   - [🔁 13. Tự khởi động lại (Watchdog)](#watchdog)
+   - [🔄 14. Công cụ chuyển mã nhanh](#convert-tool)
 3. [🛡️ Cảnh báo bảo mật & Debug Log](#security-warning)
 
 ---
@@ -104,6 +106,28 @@ VKey tích hợp sâu công nghệ TSF của Windows mang lại độ tương th
 ### <span id="macro">🚀 12. Gõ tắt (Macro)</span>
 - 💬 Hỗ trợ lưu trữ các đoạn gõ tắt dài tới **20.000 ký tự**, hỗ trợ xuống dòng thoải mái.
 - 🎯 Linh hoạt tùy chọn các phím để kích hoạt (trigger) gõ tắt như: phím Cách (`Space`), `Enter`, `Tab` hoặc các phím điều hướng.
+
+### <span id="watchdog">🔁 13. Tự khởi động lại (Watchdog)</span>
+- *Mặc định: Tắt.*
+- Khi bật tính năng này, VKey sẽ tự động khởi động lại nếu bị thoát đột ngột do crash hoặc lỗi hệ thống 🛡️.
+- VKey sử dụng một chương trình giám sát riêng (`VKeyWatchdog.exe`) chạy ngầm bên cạnh. Chương trình này liên tục theo dõi "nhịp tim" (heartbeat) của VKey — nếu VKey không phản hồi trong **90 giây** (tương đương bỏ lỡ 3 lần gửi tín hiệu), watchdog sẽ tự động khởi động lại VKey.
+- Watchdog phân biệt được giữa crash thật (tự động khởi động lại) và thoát chủ ý bởi người dùng (không khởi động lại) ✅.
+- Bạn có thể bật/tắt tính năng này từ **menu chuột phải** ở khay hệ thống (traybar) → `Bật tự khởi động lại` / `Tắt tự khởi động lại`.
+- *📌 Lưu ý:* Khi bật, VKey sẽ tạo một tác vụ trong **Task Scheduler** của Windows để watchdog tự khởi động cùng hệ thống khi bạn đăng nhập.
+
+### <span id="convert-tool">🔄 14. Công cụ chuyển mã nhanh</span>
+VKey cung cấp công cụ chuyển đổi bảng mã và biến đổi chữ cái mạnh mẽ, hỗ trợ cả giao diện đồ hoạ lẫn phím tắt nhanh:
+- **Chuyển đổi bảng mã:** Hỗ trợ các bảng mã Unicode, TCVN3 (ABC), VNI Windows, Unicode Compound và Vietnamese Locale.
+- **Biến đổi chữ cái:** Chuyển HOA, chuyển thường, Hoa đầu câu, Hoa Từng Chữ, hoặc loại bỏ dấu. Chỉ áp dụng cho tuỳ chọn lớn nhất, ví dụ bạn chọn in HOA và in Hoa Chữ Cái Đầu thì kết quả sẽ chỉ là in HOA.
+- **Phím tắt chuyển nhanh:** Đặt phím tắt tuỳ ý (VD: `Ctrl+Shift+C`) để chuyển mã mà không cần mở cửa sổ. 
+- **Tự động dán + bôi đen:** Khi bật tuỳ chọn này, sau khi chuyển mã xong, VKey sẽ tự động dán kết quả đè lên đoạn đã chọn **và bôi đen lại** đoạn chữ vừa dán. Điều này giúp bạn dễ dàng kiểm tra kết quả hoặc tiếp tục chuyển đổi mà không cần bôi đen lại thủ công.
+- **Convert tuần tự (Sequential):** Khi bật cả "Tự động dán + bôi đen" và "Convert tuần tự", mỗi lần nhấn phím tắt sẽ **lần lượt áp dụng từng phép chuyển đổi** đã bật thay vì áp dụng tất cả cùng lúc 🔄.
+  - Ví dụ: Bạn bật cả "chữ HOA" và "Loại bỏ dấu câu", bôi đen "Xin chào":
+    - Nhấn lần 1 → `XIN CHÀO` (chữ HOA)
+    - Nhấn lần 2 → `Xin chao` (loại bỏ dấu)
+    - Nhấn lần 3 → `Xin chào` (quay về bản gốc)
+  - Chu kỳ tự động hết hạn sau **5 giây** không thao tác hoặc khi bạn chọn đoạn văn bản khác.
+- *📌 Lưu ý:* Tính năng "Convert tuần tự" chỉ khả dụng khi "Tự động dán + bôi đen" đang bật.
 
 ---
 
