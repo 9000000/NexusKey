@@ -1,7 +1,7 @@
 # VKey - Bộ gõ tiếng Việt hiện đại cho Windows
 
 [![Build](https://github.com/phatMT97/VKey/actions/workflows/build.yml/badge.svg)](https://github.com/phatMT97/VKey/actions/workflows/build.yml)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Engine: Dual License](https://img.shields.io/badge/Engine-Dual%20License-orange.svg)](LICENSE-COMMERCIAL)
 [![Release](https://img.shields.io/github/v/release/phatMT97/VKey)](https://github.com/phatMT97/VKey/releases)
 [![Code signing](https://img.shields.io/badge/Code_signing-SignPath_Foundation-success)](https://signpath.org/)
@@ -24,7 +24,7 @@
 
 ---
 
-**[Giới thiệu](#giới-thiệu)** | **[Tính năng](#tính-năng)** | **[Hướng dẫn sử dụng](GUIDE.md)** | **[Cài đặt](#cài-đặt)** | **[Xác minh](#xác-minh-bản-tải-verify-release)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
+**[Giới thiệu](#giới-thiệu)** | **[Tính năng](#tính-năng)** | **[Cài đặt](#cài-đặt)** | **[Xác minh](#xác-minh-bản-tải-verify-release)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
 
 ---
 
@@ -292,11 +292,11 @@ Dự án sử dụng **dual license**:
 
 | Thành phần | License |
 |------------|---------|
-| **Engine** (`src/core/engine/*`) | [GPL-3.0](LICENSE) **hoặc** [Commercial](LICENSE-COMMERCIAL) |
-| **Tất cả phần còn lại** | [GPL-3.0](LICENSE) |
+| **Engine** (`src/core/engine/*`) | [AGPL-3.0](LICENSE) **hoặc** [Commercial](LICENSE-COMMERCIAL) |
+| **Tất cả phần còn lại** | [AGPL-3.0](LICENSE) |
 
-- **Sử dụng open-source (GPL-3.0):** Bạn có thể sử dụng, sửa đổi, phân phối lại toàn bộ mã nguồn với điều kiện giữ nguyên license GPL-3.0 cho derivative works.
-- **Sử dụng thương mại/closed-source:** Nếu muốn dùng engine VKey trong sản phẩm proprietary, vui lòng liên hệ tác giả để lấy commercial license. Xem [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
+- **Sử dụng open-source (AGPL-3.0):** Bạn có thể sử dụng, sửa đổi, phân phối lại toàn bộ mã nguồn với điều kiện giữ nguyên license AGPL-3.0 cho derivative works — bao gồm cả khi cung cấp dưới dạng dịch vụ qua mạng (SaaS).
+- **Sử dụng thương mại/closed-source:** Nếu muốn dùng engine VKey trong sản phẩm proprietary hoặc né nghĩa vụ AGPL, vui lòng liên hệ tác giả để lấy commercial license. Xem [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
 
 ## Star History
 

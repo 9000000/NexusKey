@@ -1,4 +1,0 @@
-case_name,verdict,verdict_mode,error_chars,error_pct,inter_key_us_config,wall_clock_ms,l1_count,l1_mean_ms,l1_p50_ms,l1_p95_ms,l1_p99_ms,l1_max_ms
-forward-200wpm-sustained,PASS,edit_distance,5,0.41,50000,86823,1631,52,52,58,60,67
-edit-1-inline-tone-fix-vieet-bs-jt,PASS,edit_distance,0,0.00,50000,863,7,53,53,58,58,58
-edit-2-cross-word-bs-vieejt-nam-bs4-s,PASS,edit_distance,0,0.00,50000,1228,14,53,53,59,59,59

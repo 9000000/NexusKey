@@ -56,24 +56,10 @@ skills-lock.json
 /sciter-js-sdk/
 changes.md
 .claudeignore
-# ===== Internal docs (keep only public-safe files) =====
-docs/*
-!docs/images/
-!docs/index.md
-!docs/CODING_RULES/
-!docs/telex-test-specification/
-!docs/Architecture/
-!docs/baselines/
-!docs/vietnamese-phonology-spec-distillate.md
-!docs/SECURITY.md
-!docs/SECURITY_FIXES-distillate.md
-!docs/tray-icon-sync-analysis-v2-distillate.md
-!docs/macro-case-rules.md
-!docs/plans/
-!docs/plans/pre-tone-stop-final-check-distillate.md
-!docs/PHILOSOPHY.md
-!docs/CODE_GOVERNANCE.md
-!docs/uninstall-autostart.md
-
 GEMINI.md
-tools/VKeyTestRunner/
+
+# ===== Private submodule =====
+# `internal/` is a separate private repo mounted as a submodule via .gitmodules.
+# `git submodule add` stages it bypassing this rule; this entry only prevents
+# accidental tracking of internal/ contents before submodule init.
+internal/
