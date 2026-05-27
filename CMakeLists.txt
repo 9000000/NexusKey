@@ -15,10 +15,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(MSVC)
     add_compile_options(/W4 /WX /permissive- /utf-8)
     add_definitions(-DUNICODE -D_UNICODE)
+    # Size shrink. Most flags here are already implicit in MSVC's /O2 Release
+    # path (/Gy is implied by /O2; /OPT:REF and /OPT:ICF are on by default when
+    # /INCREMENTAL:NO is set, which CMake Release defaults to). We restate them
+    # explicitly so a future tweak to release flags doesn't silently turn them
+    # off. The actual NEW flag here is:
+    #   /Gw  — data-level linking: each global var in its own COMDAT so
+    #          /OPT:REF can strip unreferenced const tables and /OPT:ICF can
+    #          fold identical ones (template-emitted strings, vtables, etc.).
+    #          NOT implied by /O2 and saves measurable .rdata.
+    add_compile_options($<$<CONFIG:Release>:/Gy> $<$<CONFIG:Release>:/Gw>)
     # Linker security flags: ASLR, DEP, High-Entropy ASLR
     add_link_options(/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA)
     # PE legitimacy: checksum (reduces AV false positives)
     add_link_options(/RELEASE)
+    add_link_options($<$<CONFIG:Release>:/INCREMENTAL:NO>
+                     $<$<CONFIG:Release>:/OPT:REF>
+                     $<$<CONFIG:Release>:/OPT:ICF>)
 endif()
 
 # Per-target include directories (no global include_directories)

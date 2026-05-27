@@ -45,7 +45,9 @@ param(
     [int]$IntervalSeconds     = 10,
     [int]$WarmupSeconds       = 8,
     [int]$CooldownSeconds     = 5,
-    [switch]$SkipPreflightKill
+    [switch]$SkipPreflightKill,
+    [switch]$OpenCloseSettings,            # Auto-open then close Settings after warmup before idle sampling
+    [int]$SettingsHoldSeconds = 3          # Time the Settings dialog stays open
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,6 +68,166 @@ if (-not (Test-Path $OutDir)) {
 
 function Format-MB([double]$bytes) {
     return [math]::Round($bytes / 1MB, 2)
+}
+
+# --- Win32 P/Invoke for Settings open/close automation -------------------
+# Namespace versioned (Win32v2) so a stale cached type from an earlier
+# script run with a buggy signature doesn't silently get reused.
+
+if (-not ("Win32v2.User32" -as [type])) {
+    Add-Type -Namespace Win32v2 -Name User32 -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern System.IntPtr FindWindowW(System.IntPtr lpClassName, System.IntPtr lpWindowName);
+
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode, EntryPoint = "FindWindowW")]
+public static extern System.IntPtr FindWindowByClass(string lpClassName, System.IntPtr lpWindowName);
+
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode, EntryPoint = "FindWindowW")]
+public static extern System.IntPtr FindWindowByTitle(System.IntPtr lpClassName, string lpWindowName);
+
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+[return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+public static extern bool PostMessageW(System.IntPtr hWnd, uint Msg, System.IntPtr wParam, System.IntPtr lParam);
+
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+[return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+public static extern bool IsWindow(System.IntPtr hWnd);
+
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint lpdwProcessId);
+
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern int GetClassNameW(System.IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern int GetWindowTextW(System.IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+public delegate bool EnumWindowsProc(System.IntPtr hWnd, System.IntPtr lParam);
+
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+[return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, System.IntPtr lParam);
+"@
+}
+
+# Enumerate every top-level window owned by $targetPid, optionally filter by
+# class name (case-insensitive). Returns first match or [IntPtr]::Zero.
+function Find-WindowByPid {
+    param([int]$TargetPid, [string]$ClassFilter = $null, [string]$TitleFilter = $null)
+
+    $script:foundHwnd = [System.IntPtr]::Zero
+    $script:targetPid = $TargetPid
+    $script:classFilter = $ClassFilter
+    $script:titleFilter = $TitleFilter
+
+    $cb = [Win32v2.User32+EnumWindowsProc] {
+        param([System.IntPtr]$hWnd, [System.IntPtr]$lParam)
+        $owner = 0
+        [void][Win32v2.User32]::GetWindowThreadProcessId($hWnd, [ref]$owner)
+        if ($owner -ne $script:targetPid) { return $true }
+
+        $sbClass = New-Object System.Text.StringBuilder 256
+        [void][Win32v2.User32]::GetClassNameW($hWnd, $sbClass, 256)
+        $cls = $sbClass.ToString()
+
+        $sbTitle = New-Object System.Text.StringBuilder 256
+        [void][Win32v2.User32]::GetWindowTextW($hWnd, $sbTitle, 256)
+        $title = $sbTitle.ToString()
+
+        $classMatch = $true
+        if ($script:classFilter -and -not ($cls -ieq $script:classFilter)) { $classMatch = $false }
+        $titleMatch = $true
+        if ($script:titleFilter -and -not ($title -ieq $script:titleFilter)) { $titleMatch = $false }
+
+        if ($classMatch -and $titleMatch) {
+            $script:foundHwnd = $hWnd
+            return $false  # stop enumeration
+        }
+        return $true
+    }
+
+    [void][Win32v2.User32]::EnumWindows($cb, [System.IntPtr]::Zero)
+    return $script:foundHwnd
+}
+
+# Diagnostic - dump every top-level window owned by $targetPid (class + title).
+function Dump-WindowsForPid {
+    param([int]$TargetPid)
+    Write-Host ("  Windows owned by PID {0}:" -f $TargetPid) -ForegroundColor DarkGray
+    $script:dumpPid = $TargetPid
+    $cb = [Win32v2.User32+EnumWindowsProc] {
+        param([System.IntPtr]$hWnd, [System.IntPtr]$lParam)
+        $owner = 0
+        [void][Win32v2.User32]::GetWindowThreadProcessId($hWnd, [ref]$owner)
+        if ($owner -ne $script:dumpPid) { return $true }
+
+        $sbClass = New-Object System.Text.StringBuilder 256
+        [void][Win32v2.User32]::GetClassNameW($hWnd, $sbClass, 256)
+        $sbTitle = New-Object System.Text.StringBuilder 256
+        [void][Win32v2.User32]::GetWindowTextW($hWnd, $sbTitle, 256)
+        Write-Host ("    hwnd=0x{0:X}  class='{1}'  title='{2}'" -f $hWnd.ToInt64(), $sbClass.ToString(), $sbTitle.ToString()) -ForegroundColor DarkGray
+        return $true
+    }
+    [void][Win32v2.User32]::EnumWindows($cb, [System.IntPtr]::Zero)
+}
+
+# WM_USER (0x0400) + 110 = WM_VKEY_SHOW_SETTINGS, per src/core/ipc/SharedConstants.h
+$script:WM_VKEY_SHOW_SETTINGS = 1024 + 110
+$script:WM_CLOSE              = 0x0010
+
+function Open-AndCloseSettings {
+    param([int]$HoldSeconds = 3, [int]$TargetPid)
+
+    # Find the tray window by class, scoped to our launched process. Survives
+    # cases where another VKey-family process also has a VKeyTrayClass window.
+    $tray = Find-WindowByPid -TargetPid $TargetPid -ClassFilter "VKeyTrayClass"
+    if ($tray -eq [System.IntPtr]::Zero) {
+        Write-Warning "  Tray window 'VKeyTrayClass' not found in PID $TargetPid. Dumping all windows for diagnostic:"
+        Dump-WindowsForPid -TargetPid $TargetPid
+        return $false
+    }
+    Write-Host ("  Tray hwnd=0x{0:X} found." -f $tray.ToInt64()) -ForegroundColor DarkGray
+
+    # Ask tray to show Settings (PostMessage WM_VKEY_SHOW_SETTINGS).
+    Write-Host "  Auto-opening Settings via WM_VKEY_SHOW_SETTINGS..." -ForegroundColor DarkGray
+    [void][Win32v2.User32]::PostMessageW($tray, [uint32]$script:WM_VKEY_SHOW_SETTINGS,
+                                         [System.IntPtr]::Zero, [System.IntPtr]::Zero)
+
+    # Poll up to 5 s for the Settings window to appear. Look for the Classic
+    # dialog class first, then a Sciter-style title fallback.
+    $settings = [System.IntPtr]::Zero
+    for ($i = 0; $i -lt 25; $i++) {
+        Start-Sleep -Milliseconds 200
+        $settings = Find-WindowByPid -TargetPid $TargetPid -ClassFilter "VKeyClassicSettings"
+        if ($settings -ne [System.IntPtr]::Zero) { break }
+        # Sciter fallback (title-based, since Sciter's window class is generic).
+        $settings = Find-WindowByPid -TargetPid $TargetPid -TitleFilter "VKey Settings"
+        if ($settings -ne [System.IntPtr]::Zero) { break }
+    }
+
+    if ($settings -eq [System.IntPtr]::Zero) {
+        Write-Warning "  Settings dialog never appeared after 5 s. Dumping windows:"
+        Dump-WindowsForPid -TargetPid $TargetPid
+        return $false
+    }
+    Write-Host ("  Settings dialog appeared (hwnd=0x{0:X}). Holding {1} s..." -f $settings.ToInt64(), $HoldSeconds) -ForegroundColor DarkGray
+    Start-Sleep -Seconds $HoldSeconds
+
+    # Close it (PostMessage WM_CLOSE).
+    [void][Win32v2.User32]::PostMessageW($settings, [uint32]$script:WM_CLOSE,
+                                         [System.IntPtr]::Zero, [System.IntPtr]::Zero)
+
+    # Wait for window to actually go away (up to 5 s).
+    for ($i = 0; $i -lt 25; $i++) {
+        Start-Sleep -Milliseconds 200
+        if (-not [Win32v2.User32]::IsWindow($settings)) { break }
+    }
+    if ([Win32v2.User32]::IsWindow($settings)) {
+        Write-Warning "  Settings window did not close cleanly after 5 s."
+        return $false
+    }
+    Write-Host "  Settings dialog closed." -ForegroundColor DarkGray
+    return $true
 }
 
 function Get-PerfCounterPath([string]$procName) {
@@ -162,6 +324,22 @@ function Run-Measurement {
         Write-Warning "  Private Working Set counter unavailable. PrivateWSMB column will be 0."
     } else {
         Write-Host ("  Counter: {0}" -f $counter)
+    }
+
+    # Optional Settings open/close before idle sampling - exercises the
+    # heap-fragmentation scenario user reported (1.7 -> 2.2 MB after opening
+    # Settings). If PR 1 adaptive backoff is sufficient, the post-close
+    # idle window should age the dialog heap pages out and Memory drops
+    # back near baseline.
+    $settingsOpenSucceeded = $false
+    if ($OpenCloseSettings) {
+        Write-Host "  Settings open/close phase (auto via WM_VKEY_SHOW_SETTINGS)..." -ForegroundColor Yellow
+        $settingsOpenSucceeded = Open-AndCloseSettings -HoldSeconds $SettingsHoldSeconds -TargetPid $proc.Id
+        if (-not $settingsOpenSucceeded) {
+            Write-Warning "  Settings open/close failed - sampling will still proceed but will not exercise the leak scenario."
+        }
+        # Give the heap a moment after dialog destruction before sampling.
+        Start-Sleep -Seconds 2
     }
 
     $totalSeconds = $DurationMinutes * 60
