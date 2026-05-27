@@ -1,7 +1,7 @@
 // Tests for DecideCjkSwitch — pure CJK auto-switch state machine.
 // Mirror pattern used by HookEngineAtomicTests: HookEngine.cpp is Windows-only,
 // so we test the extracted decision in isolation.
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include <gtest/gtest.h>
 

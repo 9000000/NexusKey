@@ -1,5 +1,5 @@
 // VKey — IsCommitUndoExemptKey unit tests (Linux-portable)
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Pin contract for the exemption rule shared by HookEngine's
 // commit-undo Primed-branch cancel sites:

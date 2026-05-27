@@ -1,5 +1,5 @@
 // VKey — ComputeAutoCapStateTransition unit tests (Linux-portable)
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Pinpoints the regression first surfaced in VKey_VKey_3404.log:
 // Ctrl+Enter armed ReadyToCapitalize → next plain 'c' was uppercased.

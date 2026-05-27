@@ -1,5 +1,5 @@
 // tests/core/config/ConfigSnapshotBuilderTest.cpp
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // TDD tests for ConfigSnapshotBuilder::BuildFromToml().
 // Phase 1 of docs/plans/2026-05-22-hookengine-degod-probe.md.

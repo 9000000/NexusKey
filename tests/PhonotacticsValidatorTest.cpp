@@ -1,5 +1,5 @@
 // VKey - PhonotacticsValidator Unit Tests
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Tests: Direct validator tests + engine integration tests
 

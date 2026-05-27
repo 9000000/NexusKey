@@ -1,5 +1,5 @@
 // VKey - Macro expansion decision unit tests
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include <gtest/gtest.h>
 #include "core/MacroCase.h"
