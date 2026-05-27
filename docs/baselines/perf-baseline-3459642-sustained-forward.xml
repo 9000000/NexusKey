@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="NextKeyTestRunner" tests="1" failures="0" time="86.743">
-  <testsuite name="chaos" tests="1" failures="0" time="86.743">
-    <testcase name="forward-200wpm-sustained" classname="chaos" time="86.743"/>
-  </testsuite>
-</testsuites>
