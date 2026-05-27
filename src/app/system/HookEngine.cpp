@@ -946,15 +946,15 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
     {
         std::wstring_view engineRendered =
             engine_ ? std::wstring_view{engine_->Peek()} : std::wstring_view{};
-        std::wstring rawSnapshot =
-            engine_ ? engine_->PeekRaw() : std::wstring{};
+        std::wstring_view rawSnapshot =
+            engine_ ? engine_->PeekRawView() : std::wstring_view{};
         NextKey::Pipeline::HookCompositionSession session(
             previousComposition_, engineRendered, rawSnapshot);
         NextKey::Pipeline::KeyContext keyCtx{
             static_cast<std::uint16_t>(vkCode),
             L'\0',
             cachedShift, cachedCapsLock, cachedCtrl, cachedAlt, cachedWin,
-            session,
+            &session,
             0
         };
         coordinator_.HandleKeyAtStage(
@@ -2825,14 +2825,14 @@ NextKey::Pipeline::EscRestoreOutcome HookEngine::TryEscRestore(
 /// down from ProcessKeyDown.
 void HookEngine::DispatchCoordinator(DWORD vkCode, DWORD reinjectVk,
                                       const std::wstring& composition) {
-    std::wstring rawSnapshot = engine_ ? engine_->PeekRaw() : std::wstring{};
+    std::wstring_view rawSnapshot = engine_ ? engine_->PeekRawView() : std::wstring_view{};
     NextKey::Pipeline::HookCompositionSession session(
         previousComposition_, composition, rawSnapshot);
     NextKey::Pipeline::KeyContext keyCtx{
         static_cast<std::uint16_t>(vkCode),
         L'\0',
         false, false, false, false, false,
-        session,
+        &session,
         static_cast<std::uint16_t>(reinjectVk)
     };
     coordinator_.HandleKeyAtStage(

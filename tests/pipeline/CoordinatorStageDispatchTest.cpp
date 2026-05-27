@@ -65,7 +65,7 @@ KeyContext makeCtx(const ICompositionSession& session) {
     return KeyContext{
         .vk = 0x41, .keyChar = L'a',
         .shift = false, .capsLock = false, .ctrl = false, .alt = false, .win = false,
-        .session = session, .reinjectVk = 0,
+        .session = &session, .reinjectVk = 0,
     };
 }
 

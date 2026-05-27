@@ -131,6 +131,9 @@ public:
     [[nodiscard]] std::wstring PeekRaw() const override {
         return std::wstring(escRawHistory_.data(), escRawHistory_.size());
     }
+    [[nodiscard]] std::wstring_view PeekRawView() const noexcept override {
+        return std::wstring_view(escRawHistory_.data(), escRawHistory_.size());
+    }
 
     // IToneExecutor — drives the W7.2 ToneRule plugin. Returns true if the
     // tone/ClearTone action was handled (caller stops processing this key),

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <cstdint>
 
 namespace NextKey {
@@ -64,6 +65,14 @@ public:
     /// recover the original keystrokes (e.g., composed "víu" ← raw "virus").
     /// Default no-op for engines that don't track raw input.
     [[nodiscard]] virtual std::wstring PeekRaw() const { return {}; }
+
+    /// Zero-copy view over the same raw key history as PeekRaw(), without the
+    /// owning allocation. Valid only until the next engine mutation
+    /// (PushChar/Backspace/Reset/Commit). Callers that must outlive a mutation
+    /// — e.g. snapshot the raw input BEFORE Commit() resets it — MUST use the
+    /// owning PeekRaw() instead. Provided for the keyboard-hook hot path, where
+    /// per-keystroke heap allocation is forbidden (CODING_RULES Rule 11).
+    [[nodiscard]] virtual std::wstring_view PeekRawView() const noexcept { return {}; }
 };
 
 }  // namespace NextKey

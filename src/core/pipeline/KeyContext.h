@@ -2,7 +2,9 @@
 //
 // Per-keystroke context handed to every feature. Built by Coordinator at the top
 // of HandleKey, then passed by const ref through the dispatch loop. POD-like
-// — no allocation, no virtual calls in construction.
+// — no allocation, no virtual calls in construction, trivially copyable (the
+// session is held by non-owning pointer, not a reference, so the struct stays
+// assignable/storable should a future feature need to queue it).
 #pragma once
 
 #include <cstdint>
@@ -19,7 +21,7 @@ struct KeyContext {
     bool                     alt;
     bool                     win;
 
-    const ICompositionSession& session;     // const view, lifetime tied to HookEngine
+    const ICompositionSession* session;     // const view (non-owning); lifetime tied to caller's session. Never null in production.
 
     // Optional: re-inject vk after Handled. Populated by the CALLER (HookEngine)
     // before invoking Coordinator::HandleKey — features receive ctx by const ref and

@@ -79,7 +79,7 @@ KeyContext makeStubCtx(const ICompositionSession& session,
     return KeyContext{
         .vk = vk, .keyChar = L'\0',
         .shift = shift, .capsLock = capsLock, .ctrl = ctrl, .alt = alt, .win = win,
-        .session = session, .reinjectVk = 0,
+        .session = &session, .reinjectVk = 0,
     };
 }
 

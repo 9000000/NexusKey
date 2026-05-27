@@ -59,7 +59,7 @@ KeyContext makeCtx(const ICompositionSession& session, std::uint16_t reinjectVk 
     return KeyContext{
         .vk = 0x41, .keyChar = L'a',
         .shift = false, .capsLock = false, .ctrl = false, .alt = false, .win = false,
-        .session = session, .reinjectVk = reinjectVk,
+        .session = &session, .reinjectVk = reinjectVk,
     };
 }
 

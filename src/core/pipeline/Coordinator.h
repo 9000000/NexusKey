@@ -5,8 +5,11 @@
 // in (stage, priority) order, filtered by GateMask. Stops a stage on Handled,
 // stops all stages on Veto.
 //
-// Wave 1: Coordinator is linked but not called from HookEngine — registry stays
-// empty in production paths. Tests construct Coordinator instances directly.
+// Wiring (W2–W5, this branch): live on the keystroke hot path. HookEngine owns
+// coordinator_ + outputChannel_, registers 3 gates + 4 features in its ctor, and
+// dispatches every keystroke — PreEngine via ProcessKeyDown step 2d, PostEngine
+// via the six DispatchCoordinator call-sites. This is NOT inert scaffold; do not
+// gut it. (Tests also construct Coordinator instances directly.)
 #pragma once
 
 #include <array>

@@ -65,7 +65,7 @@ KeyContext makeStubCtx(const ICompositionSession& session, std::uint16_t vk = 0x
     return KeyContext{
         .vk = vk, .keyChar = L'\0',
         .shift = false, .capsLock = false, .ctrl = false, .alt = false, .win = false,
-        .session = session, .reinjectVk = 0,
+        .session = &session, .reinjectVk = 0,
     };
 }
 
