@@ -1,5 +1,5 @@
 // VKey - Smart Switch Shared Memory State
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Fixed-size struct for shared memory IPC.
 // Stores per-app Vietnamese/English mode using hash-based lookup.

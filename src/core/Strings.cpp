@@ -1,5 +1,5 @@
 // VKey - Localized String Dictionary Implementation
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include "Strings.h"
 #include <atomic>
@@ -30,7 +30,7 @@ static const wchar_t* const kVietnamese[] = {
     L"Giới thiệu VKey",                          // ABOUT_TITLE
     L"VKey - Bộ gõ Tiếng Việt\n"                 // ABOUT_BODY
     L"Giải pháp gõ Tiếng Việt hiện đại cho Windows.\n\n"
-    L"SPDX-License-Identifier: GPL-3.0-only",
+    L"SPDX-License-Identifier: AGPL-3.0-only",
     L"Cập nhật",                                     // UPDATE_TITLE
     L"Có phiên bản mới!",                            // UPDATE_AVAILABLE_TITLE
     L"Phiên bản mới %s đã sẵn sàng.",               // UPDATE_AVAILABLE_BODY
@@ -95,7 +95,7 @@ static const wchar_t* const kEnglish[] = {
     L"About VKey",                                // ABOUT_TITLE
     L"VKey Vietnamese Input\n"                    // ABOUT_BODY
     L"A modern Vietnamese typing solution for Windows.\n\n"
-    L"SPDX-License-Identifier: GPL-3.0-only",
+    L"SPDX-License-Identifier: AGPL-3.0-only",
     L"Update",                                       // UPDATE_TITLE
     L"Update available!",                            // UPDATE_AVAILABLE_TITLE
     L"Version %s is available.",                     // UPDATE_AVAILABLE_BODY

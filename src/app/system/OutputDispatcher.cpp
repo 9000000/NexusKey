@@ -1,5 +1,5 @@
 // VKey - Output Dispatcher (Wave 3 PR 3.3, 2026-05-24)
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include "OutputDispatcher.h"
 

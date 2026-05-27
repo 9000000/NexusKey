@@ -1,6 +1,6 @@
 // VKey - Vietnamese Phonotactics Implementation
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
 //
 // Concrete implementation of IPhonotactics encoding RuleTiengViet rules.
 // Reuses VietnameseTables.h tables (kDiphthongClassic/Modern, IsTriphthong)

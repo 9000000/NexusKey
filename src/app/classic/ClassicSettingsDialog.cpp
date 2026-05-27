@@ -1,6 +1,6 @@
 // VKey Classic — Settings Dialog Implementation
 // Compact (Unikey-style) + Advanced (EVKey-style) modes
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include "ClassicSettingsDialog.h"
 #include "helpers/AppHelpers.h"

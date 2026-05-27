@@ -1,5 +1,5 @@
 // VKey Classic — Excluded Apps Dialog Implementation
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include "ClassicExcludedAppsDialog.h"
 #include "core/config/ConfigManager.h"

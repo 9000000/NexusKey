@@ -1,5 +1,5 @@
 // VKey - Update Security Helpers
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Security hardening for the self-update system:
 // - SHA-256 hash verification of downloaded files (SEC-001)

@@ -1,5 +1,5 @@
 // VKey - Update Checker
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Checks GitHub Releases API for new versions, downloads updates,
 // and shows TaskDialog UI for update notifications.

@@ -1,5 +1,5 @@
 // VKey - User Defined Input Dialog Implementation
-// SPDX-License-Identifier: GPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include "UserDefinedDialog.h"
 #include "DialogUtils.h"

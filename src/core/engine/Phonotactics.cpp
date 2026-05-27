@@ -1,5 +1,5 @@
 // VKey - Vietnamese Phonotactics Implementation
-// SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-VKey-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
 
 #include "Phonotactics.h"
 
