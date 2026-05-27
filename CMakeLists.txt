@@ -665,6 +665,13 @@ target_link_libraries(VKeyTests PRIVATE VKeyCore GTest::gtest_main)
 target_include_directories(VKeyTests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
 )
+if(MSVC)
+    # Test diagnostics narrow wide strings to char for gtest's ostream
+    # (pure-ASCII filenames/timestamps, e.g. LoggerTest). Benign C4244 that the
+    # MSVC 14.50 toolchain promotes to error via the global /WX — allow it for
+    # the test target only; production targets keep /WX fully strict.
+    target_compile_options(VKeyTests PRIVATE /wd4244)
+endif()
 
 # Put tests in separate directory; override global /SUBSYSTEM:WINDOWS
 set_target_properties(VKeyTests PROPERTIES
