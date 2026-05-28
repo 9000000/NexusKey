@@ -1,6 +1,7 @@
-# VKey v3.1.0
+# VKey v4.0.0
 
 **✨ Tính năng mới & Cải tiến:**
+- Refactor kiến trúc engine gõ tiếng Việt
 - Thêm watchdog cho phiên bản classic
 - Gộp các phím tắt vào 1 nơi cho dễ config và quản lý
 - Cho phép hotkey nhiều phím hơn cho công cụ chuyển mã
