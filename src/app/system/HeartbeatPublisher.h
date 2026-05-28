@@ -54,6 +54,11 @@ private:
     std::atomic<bool> stopRequested_{false};
     HANDLE heartbeatEvent_ = nullptr;
     HANDLE gracefulShutdownEvent_ = nullptr;
+    // Unnamed manual-reset event. Stop() signals it to unblock Run()'s 30s
+    // wait immediately; the wait timeout (HEARTBEAT_INTERVAL_MS) drives the
+    // heartbeat cadence. Replaces a Sleep(100) polling loop that woke the
+    // worker 300×/heartbeat just to check the stop flag — blocked idle-trim.
+    HANDLE stopEvent_ = nullptr;
 };
 
 }  // namespace NextKey
