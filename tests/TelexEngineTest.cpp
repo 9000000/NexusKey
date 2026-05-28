@@ -2682,6 +2682,56 @@ TEST_F(EnglishDetectionNoSpellCheckTest, GH_Cluster_IsVietnamese) {
     EXPECT_EQ(engine_->Peek(), L"ghé");
 }
 
+// ─── Regression guards for kn/pn/ps additions: TV onsets starting with k-/p- ─
+// Must NOT over-block legitimate Vietnamese words. k is always followed by a
+// vowel (e/ê/i/y) in TV; p is rare standalone but appears in loanwords (pin,
+// Pháp). ph is a TV digraph, not blocked.
+
+TEST_F(EnglishDetectionNoSpellCheckTest, KConsonant_KemNotBlocked) {
+    TypeString(*engine_, L"kems");  // kém = k+e+m+s(sac)
+    EXPECT_EQ(engine_->Peek(), L"kém");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, KConsonant_KinhNotBlocked) {
+    TypeString(*engine_, L"kinh");  // kinh — k+i+n+h, no tone
+    EXPECT_EQ(engine_->Peek(), L"kinh");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, KConsonant_KeetsComposesKet) {
+    TypeString(*engine_, L"keets");  // kết = k+e+e(→ê)+t+s(sac)
+    EXPECT_EQ(engine_->Peek(), L"kết");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, KConsonant_KieenComposesKien) {
+    TypeString(*engine_, L"kieen");  // kiên = k+i+e+e(→ê)+n
+    EXPECT_EQ(engine_->Peek(), L"kiên");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, PConsonant_PinNotBlocked) {
+    TypeString(*engine_, L"pin");  // loanword "pin" (battery)
+    EXPECT_EQ(engine_->Peek(), L"pin");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, PhConsonant_PhoComposesPho) {
+    TypeString(*engine_, L"phowr");  // phở = ph+o+w(→ơ)+r(hoi)
+    EXPECT_EQ(engine_->Peek(), L"phở");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, PhConsonant_PhapsComposesPhap) {
+    TypeString(*engine_, L"phaps");  // Pháp = ph+a+p+s(sac)
+    EXPECT_EQ(engine_->Peek(), L"pháp");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, KhConsonant_KhongNotBlocked) {
+    TypeString(*engine_, L"khoong");  // không = kh+o+o(→ô)+n+g
+    EXPECT_EQ(engine_->Peek(), L"không");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, PhConsonant_PhuocsComposesPhuoc) {
+    TypeString(*engine_, L"phuwowcs");  // phước = ph+u+w(→ư)+o+w(→ơ)+c+s(sac)
+    EXPECT_EQ(engine_->Peek(), L"phước");
+}
+
 TEST_F(EnglishDetectionNoSpellCheckTest, WsngStaysUng) {
     // Regression: 'w' (P8 → ư) + 's' (Sac tone) + n + g must compose to ứng.
     // raw[0..1]='ws' is not in IsHardEnglishStart, so the wh/wr revert path
