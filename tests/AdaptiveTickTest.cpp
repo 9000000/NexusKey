@@ -11,11 +11,9 @@
 #include "app/system/AdaptiveTick.h"
 
 using NextKey::ComputeTickInterval;
-using NextKey::kAfkDeepThreshMs;
 using NextKey::kIdleLongThreshMs;
 using NextKey::kIdleShortThreshMs;
 using NextKey::kTickActiveMs;
-using NextKey::kTickAfkDeepMs;
 using NextKey::kTickIdleLongMs;
 using NextKey::kTickIdleShortMs;
 
@@ -43,21 +41,11 @@ TEST(AdaptiveTickTest, AtLongThreshold_ReturnsIdleLong) {
               std::chrono::milliseconds(kTickIdleLongMs));
 }
 
-TEST(AdaptiveTickTest, JustBelowAfkDeepThreshold_ReturnsIdleLong) {
-    EXPECT_EQ(ComputeTickInterval(kAfkDeepThreshMs - 1),
-              std::chrono::milliseconds(kTickIdleLongMs));
-}
-
-TEST(AdaptiveTickTest, AtAfkDeepThreshold_ReturnsAfkDeep) {
-    EXPECT_EQ(ComputeTickInterval(kAfkDeepThreshMs),
-              std::chrono::milliseconds(kTickAfkDeepMs));
-}
-
-TEST(AdaptiveTickTest, FarPastAfkDeepThreshold_StaysAfkDeep) {
-    // 24 hours of idle — should still return the AFK-deep interval, not roll
+TEST(AdaptiveTickTest, FarPastLongThreshold_StaysIdleLong) {
+    // 24 hours of idle — should still return the long-idle interval, not roll
     // over into anything weird (catches accidental wrap or off-by-one).
     EXPECT_EQ(ComputeTickInterval(24ULL * 60 * 60 * 1000),
-              std::chrono::milliseconds(kTickAfkDeepMs));
+              std::chrono::milliseconds(kTickIdleLongMs));
 }
 
 TEST(AdaptiveTickTest, ConstantsMatchDocumentedThresholds) {
@@ -66,8 +54,6 @@ TEST(AdaptiveTickTest, ConstantsMatchDocumentedThresholds) {
     EXPECT_EQ(kTickActiveMs,      200u);
     EXPECT_EQ(kTickIdleShortMs,   1000u);
     EXPECT_EQ(kTickIdleLongMs,    5000u);
-    EXPECT_EQ(kTickAfkDeepMs,     30000u);
     EXPECT_EQ(kIdleShortThreshMs, 10000u);
     EXPECT_EQ(kIdleLongThreshMs,  60000u);
-    EXPECT_EQ(kAfkDeepThreshMs,   300000u);
 }
