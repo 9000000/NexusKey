@@ -92,6 +92,16 @@ public:
         return parsed;
     }
 
+    /// Drop the cache entry for a single path. Called by `WriteToml`
+    /// after a successful rename so a subsequent `Load()` re-parses
+    /// even when filesystem mtime resolution is too coarse to tick
+    /// between a same-tick Save→Load pair (Linux ext4 1s default,
+    /// FAT/exFAT 2s, NTFS occasionally same-tick under load).
+    void Invalidate(const std::string& utf8Path) {
+        std::lock_guard lk(mu_);
+        entries_.erase(utf8Path);
+    }
+
     /// Drop all cached entries (test helper).
     void Clear() {
         std::lock_guard lk(mu_);
@@ -181,6 +191,7 @@ bool WriteToml(const std::string& utf8Path, const toml::table& tbl) {
         return false;
     }
 #endif
+    g_tomlCache.Invalidate(utf8Path);
     return true;
 }
 

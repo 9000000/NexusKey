@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
 #include <thread>
 
 #include "app/system/HookCommandMailbox.h"
@@ -115,8 +116,11 @@ TEST(MailboxDrainScope, OtherThreadObservesDrainScope) {
         HookCommandMailbox::DrainScope scope(mb);
         startProbe.store(true, std::memory_order_release);
         // Give the probe thread a window to observe IsDraining() == true.
-        for (int i = 0; i < 1000 && !producerSawDraining.load(); ++i) {
-            std::this_thread::yield();
+        // Use sleep_for instead of pure yield so the CI runner's scheduler
+        // is guaranteed to give the probe wall-clock cycles even when the
+        // host is heavily loaded (yield-only made this flake on Windows CI).
+        for (int i = 0; i < 200 && !producerSawDraining.load(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
     stopProbe.store(true, std::memory_order_release);
