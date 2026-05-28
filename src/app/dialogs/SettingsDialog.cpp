@@ -532,6 +532,22 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
                 } else {
                     switchKeyChar_ = raw;
                 }
+
+                // Update hotkeyConfig_.vk immediately so saveSettings() and syncToSharedState() see it
+                if (switchKeyChar_.empty()) {
+                    hotkeyConfig_.vk = 0;
+                } else if (switchKeyChar_ == L" ") {
+                    hotkeyConfig_.vk = 0x20;  // VK_SPACE
+                } else {
+                    wchar_t c = switchKeyChar_[0];
+                    SHORT scan = VkKeyScanW(c);
+                    if (scan != -1) {
+                        hotkeyConfig_.vk = static_cast<uint32_t>(LOBYTE(scan));
+                    } else {
+                        hotkeyConfig_.vk = 0;
+                    }
+                }
+
                 saveSettings();
             }
             return true;
@@ -1273,17 +1289,26 @@ void SettingsDialog::loadSettings() {
     backgroundOpacity_ = uiConfig.backgroundOpacity;
     isPinned_ = uiConfig.pinned;
 
-    // Load hotkey config. Legacy switch-key input only renders A-Z/0-9
-    // (single-char edit box). F-row/OEM bindings persisted in vk via TOML
-    // load survive but show blank here until V/E hotkey UI gets the shared
-    // capture overlay (deferred to a future sprint).
+    // Load hotkey config. Single-char edit box; vk ↔ char round-trip via
+    // VkKeyScanW (save) and MapVirtualKeyW (load). Printable keys including
+    // OEM punctuation (` ~ ; , . [ ] \ ' / = -) are supported. F-row / arrows
+    // / non-printable VKs persisted in vk via TOML survive load but render
+    // blank — rebind via the unified Hotkeys dialog if needed.
     hotkeyConfig_ = ConfigManager::LoadHotkeyConfigOrDefault();
     {
         uint32_t vk = hotkeyConfig_.vk;
-        if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) {
-            switchKeyChar_ = std::wstring(1, static_cast<wchar_t>(vk));
-        } else if (vk == 0x20) {
+        if (vk == 0x20) {
             switchKeyChar_ = L" ";
+        } else if (vk != 0) {
+            // Mask bit 15 to drop the dead-key flag on layouts where the
+            // char (vd. ` ~ ^) is a deadkey — without this the cast can
+            // produce a control-range wchar that renders as garbage.
+            wchar_t c = static_cast<wchar_t>(MapVirtualKeyW(vk, MAPVK_VK_TO_CHAR) & 0x7FFF);
+            if (c != 0) {
+                switchKeyChar_ = std::wstring(1, towupper(c));
+            } else {
+                switchKeyChar_ = L"";
+            }
         } else {
             switchKeyChar_ = L"";
         }
@@ -1328,18 +1353,22 @@ void SettingsDialog::saveToToml() {
         OutputDebugStringW(L"VKey: Failed to save config file\n");
     }
 
-    // Save hotkey config (sync switchKeyChar_ → hotkeyConfig_.vk).
-    // Same A-Z/0-9-only legacy edit-box rule as ConvertToolDialog (Step 5);
-    // anything else falls back to vk=0 until the V/E hotkey gets a capture
-    // overlay too.
+    // Save hotkey config — belt-and-suspenders sync switchKeyChar_ → vk in
+    // case the textbox bypassed the live VALUE_CHANGED handler (paste / IME).
+    // Same VkKeyScanW rule as the handler; non-mappable chars drop to vk=0.
     {
-        wchar_t c = switchKeyChar_.empty() ? 0 : static_cast<wchar_t>(towupper(switchKeyChar_[0]));
-        if ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9')) {
-            hotkeyConfig_.vk = static_cast<uint32_t>(c);
-        } else if (c == L' ') {
+        if (switchKeyChar_.empty()) {
+            hotkeyConfig_.vk = 0;
+        } else if (switchKeyChar_ == L" ") {
             hotkeyConfig_.vk = 0x20;  // VK_SPACE
         } else {
-            hotkeyConfig_.vk = 0;
+            wchar_t c = switchKeyChar_[0];
+            SHORT scan = VkKeyScanW(c);
+            if (scan != -1) {
+                hotkeyConfig_.vk = static_cast<uint32_t>(LOBYTE(scan));
+            } else {
+                hotkeyConfig_.vk = 0;
+            }
         }
     }
     (void)ConfigManager::SaveHotkeyConfig(path, hotkeyConfig_);

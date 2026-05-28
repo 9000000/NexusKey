@@ -611,16 +611,24 @@ void ClassicSettingsDialog::PopulateControls() {
         }
     }
 
-    // Legacy 1-char edit box renders A-Z/0-9 + Space only. F-row / OEM
-    // bindings stored in vk survive load but show blank — V/E hotkey UI
-    // will get the shared capture overlay in a future sprint.
+    // Single-char edit box; vk ↔ char round-trip via VkKeyScanW (save) and
+    // MapVirtualKeyW (load). Printable keys including OEM punctuation are
+    // supported. F-row / arrows / non-printable VKs survive load but render
+    // blank — rebind via the unified Hotkeys dialog if needed.
     if (editHotkey_) {
         uint32_t vk = hotkeyConfig_.vk;
         if (vk == 0x20) {
             SetWindowTextW(editHotkey_, L"Space");
-        } else if ((vk >= 0x41 && vk <= 0x5A) || (vk >= 0x30 && vk <= 0x39)) {
-            wchar_t buf[2] = { static_cast<wchar_t>(vk), 0 };
-            SetWindowTextW(editHotkey_, buf);
+        } else if (vk != 0) {
+            // Mask bit 15 — drops the dead-key flag on layouts where the
+            // unshifted char (vd. ` ~ ^) is a deadkey.
+            wchar_t c = static_cast<wchar_t>(MapVirtualKeyW(vk, MAPVK_VK_TO_CHAR) & 0x7FFF);
+            if (c != 0) {
+                wchar_t buf[2] = { static_cast<wchar_t>(towupper(c)), 0 };
+                SetWindowTextW(editHotkey_, buf);
+            } else {
+                SetWindowTextW(editHotkey_, L"");
+            }
         } else {
             SetWindowTextW(editHotkey_, L"");
         }
@@ -688,18 +696,21 @@ void ClassicSettingsDialog::ReadControlValues() {
         }
     }
 
-    // Same A-Z/0-9 + Space rule as the load side above. Anything else from
-    // a typo / paste / future input drops to vk=0 (user rebinds).
+    // Same VkKeyScanW rule as the load side above. Non-mappable input
+    // (paste of multi-char, non-printable) drops to vk=0 (user rebinds).
     if (editHotkey_) {
         wchar_t buf[16] = {0};
         GetWindowTextW(editHotkey_, buf, 16);
-        if (wcscmp(buf, L"Space") == 0) {
+        if (_wcsicmp(buf, L"Space") == 0) {
             hotkeyConfig_.vk = 0x20;  // VK_SPACE
         } else if (wcslen(buf) > 0) {
-            wchar_t c = static_cast<wchar_t>(towupper(buf[0]));
-            hotkeyConfig_.vk = ((c >= L'A' && c <= L'Z') || (c >= L'0' && c <= L'9'))
-                ? static_cast<uint32_t>(c)
-                : 0u;
+            wchar_t c = buf[0];
+            SHORT scan = VkKeyScanW(c);
+            if (scan != -1) {
+                hotkeyConfig_.vk = static_cast<uint32_t>(LOBYTE(scan));
+            } else {
+                hotkeyConfig_.vk = 0;
+            }
         } else {
             hotkeyConfig_.vk = 0;
         }

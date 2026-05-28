@@ -22,3 +22,4 @@
 - Sửa lỗi đôi lúc không gõ được tiếng việt
 - Sửa lỗi [] 2 lần không trả lại phím raw
 - Sửa một số lỗi gõ tiếng Việt
+- Sửa lỗi phím chuyển không hoạt động với một số tổ hợp phím

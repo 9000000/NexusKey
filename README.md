@@ -24,9 +24,12 @@
 
 ---
 
-**[Giới thiệu](#giới-thiệu)** | **[Tính năng](#tính-năng)** | **[Cài đặt](#cài-đặt)** | **[Xác minh](#xác-minh-bản-tải-verify-release)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
+**[Giới thiệu](#giới-thiệu)** | **[Hướng dẫn sử dụng](docs/GUIDE.md)** | **[Tính năng](#tính-năng)** | **[Cài đặt](#cài-đặt)** | **[Xác minh](#xác-minh-bản-tải-verify-release)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
 
 ---
+
+> [!NOTE]
+> **📖 Hướng dẫn sử dụng:** Để xem hướng dẫn chi tiết các tính năng, phím tắt và câu hỏi thường gặp (FAQ), vui lòng đọc [Hướng dẫn sử dụng VKey (GUIDE.md)](docs/GUIDE.md).
 
 ## Giới thiệu
 
@@ -170,6 +173,9 @@ VKey được thiết kế với kiến trúc gọn nhẹ, không phụ thuộc 
 <summary>Click to expand English version</summary>
 
 ### About
+
+> [!NOTE]
+> **📖 User Guide:** For detailed usage instructions, hotkeys, and FAQ, please refer to the [VKey User Guide (docs/GUIDE.md)](docs/GUIDE.md).
 
 **VKey** is an open-source Vietnamese Input Method Editor (IME) for Windows, completely rewritten from [NextKey](https://github.com/phatMT97/VKey/tree/master) (based on [OpenKey](https://github.com/tuyenvm/OpenKey) by Mai Vu Tuyen).
 
