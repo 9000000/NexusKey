@@ -700,11 +700,11 @@ gtest_discover_tests(VKeyTests)
 # Tools — VKeyTestRunner: cross-platform tests + Windows-only runner exe
 # (sub-CMakeLists gates platform-specific targets internally)
 #
-# Directory is .gitignored on Main, so fresh CI checkouts may not have it.
-# Skip silently when missing — local dev with files present still configures.
+# Lives in the private `internal/` submodule after the public/private split
+# (commit 58960e6). Public CI clones without submodule init → skip silently.
 # ============================================================================
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/VKeyTestRunner/CMakeLists.txt")
-    add_subdirectory(tools/VKeyTestRunner)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/internal/tools/VKeyTestRunner/CMakeLists.txt")
+    add_subdirectory(internal/tools/VKeyTestRunner)
 endif()
 
 # ============================================================================
