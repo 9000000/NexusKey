@@ -246,6 +246,10 @@ add_executable(VKeyApp WIN32
     src/app/system/HookEngine.cpp
     src/app/system/HookLifecycle.h
     src/app/system/HookLifecycle.cpp
+    src/app/system/HookHijackDetector.h
+    src/app/system/HookHijackDetector.cpp
+    src/app/system/ReinstallBurstScheduler.h
+    src/app/system/ReinstallBurstScheduler.cpp
     src/app/system/FocusOwner.h
     src/app/system/FocusOwner.cpp
     src/app/system/OutputDispatcher.h
@@ -346,6 +350,10 @@ if(VKEY_LITE_MODE AND WIN32)
         src/app/system/HookEngine.cpp
         src/app/system/HookLifecycle.h
         src/app/system/HookLifecycle.cpp
+        src/app/system/HookHijackDetector.h
+        src/app/system/HookHijackDetector.cpp
+        src/app/system/ReinstallBurstScheduler.h
+        src/app/system/ReinstallBurstScheduler.cpp
         src/app/system/FocusOwner.h
         src/app/system/FocusOwner.cpp
         src/app/system/OutputDispatcher.h
@@ -593,6 +601,8 @@ set(NEXTKEY_TEST_SOURCES
     tests/HotkeyRegistryTest.cpp
     tests/PerfHistogramTest.cpp
     tests/HookCommandMailboxTest.cpp
+    tests/HookHijackDetectorTest.cpp
+    tests/ReinstallBurstSchedulerTest.cpp
     tests/FocusInterleavingTest.cpp
     tests/ThreadOwnershipTest.cpp
     tests/ConfigSnapshotTest.cpp
@@ -633,6 +643,8 @@ set(NEXTKEY_TEST_SOURCES
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
     src/app/system/HookCommandMailbox.cpp
+    src/app/system/HookHijackDetector.cpp
+    src/app/system/ReinstallBurstScheduler.cpp
 )
 
 # Windows-only tests (require ConfigManager, ConfigEvent, Win32 APIs)

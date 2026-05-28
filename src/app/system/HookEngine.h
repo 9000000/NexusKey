@@ -44,6 +44,8 @@
 namespace NextKey {
 
 class SharedStateManager;  // Forward declaration (defined in core/ipc/SharedStateManager.h)
+class HookHijackDetector;        // Forward declaration (defined in app/system/HookHijackDetector.h)
+class ReinstallBurstScheduler;   // Forward declaration (defined in app/system/ReinstallBurstScheduler.h)
 
 /// Callback when Vietnamese/English mode changes
 using ModeChangeCallback = std::function<void(bool vietnamese)>;
@@ -308,6 +310,17 @@ private:
     [[nodiscard]] bool HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock);
     [[nodiscard]] bool HandleVniDigitKey(DWORD vkCode); // VNI/UserDefined digit 0-9: push to engine, replace composition
     void HandleBackspace();
+    // Anti-Dorion v2 ghost-key recovery — invoked from the hook pump's
+    // WM_APP_GHOSTKEY dispatch when HookHijackDetector polled a keydown
+    // our LL hook missed (we were bypassed). Mirrors HandleAlphaKey's
+    // engine-mutation steps (AppendHistory + engine_->PushChar + sync
+    // previousComposition_) but DOES NOT emit SendInput output — the
+    // foreground app already received the user's keystroke as raw input
+    // (the bypass meant we couldn't suppress it, only observe). The next
+    // real keystroke through the reinstated hook will compute a correct
+    // BS+replace diff against the synced previousComposition_, so the
+    // raw char ends up overwritten cleanly with the transformed text.
+    void HandleGhostChar(wchar_t ch) noexcept;
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
     void CancelCommitUndo();   // commitUndoState_ = Idle + commitStack_.clear()
@@ -531,6 +544,25 @@ private:
     // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +
     // ProcessKeyUp early-return gates on the hook hot path.
     std::atomic<bool> isTsfApp_{false};       // cached: is current foreground app in TSF list?
+    // Anti-Dorion (hook-only): current foreground is a Chromium-class host
+    // (Electron / WebView2 / Tauri / browser). Such hosts install their own
+    // WH_KEYBOARD_LL above ours and can re-arm mid-session, starving our hook
+    // (symptom: "completely can't type, no KEY log"). Set on every focus change
+    // (ApplyFocus, before the per-app early returns); read on the mouse hot path
+    // so LowLevelMouseProc reinstalls-on-click — reclaiming the top of the chain
+    // right before the user types. Reinstall is throttled (500 ms) in
+    // HookLifecycle so click bursts don't churn.
+    std::atomic<bool> isChromiumClassApp_{false};
+    // Anti-Dorion v2: count of keydowns our LowLevelKeyboardProc was invoked
+    // for. HookHijackDetector polls GetKeyboardState and compares its observed
+    // up→down transition count against this counter to detect when our LL hook
+    // is bypassed by a higher hook in the chain (Dorion's hijack). Bumped
+    // BEFORE any early-return in the hook so synthetics (VKEY_EXTRA_INFO) and
+    // nCode<0 passthroughs count too — keeps polled vs hook counters in
+    // lockstep. Monotonically increasing (uint64 = no wrap in a session).
+    // Release store paired with acquire load on the detector thread.
+    // See docs/plans/2026-05-28-anti-dorion-detector-inject-design.md.
+    std::atomic<uint64_t> hookFireCount_{0};
     // Sprint 2 D3 deleted: dispatch flag isConsoleApp_ — Console hosts now
     // selected via WindowClassification.isConsole → SplitDispatchInjector(5)
     // by the factory; no remaining HookEngine reader. Sprint 2 D4 deleted
@@ -619,6 +651,28 @@ private:
     // `lifecycle_.Mailbox()` / `lifecycle_.PostReinstallHooks()`. Drain
     // callback registered at lifecycle_.Start() points at DrainHookCommands.
     HookLifecycle lifecycle_;
+
+    // Anti-Dorion v2 (2026-05-28) — keyboard-hook hijack detector. Polls
+    // GetKeyboardState while a Chromium-class app is foreground and triggers
+    // reinstall+ghost-inject when our LL hook is bypassed by a higher hook
+    // in the chain. Declared AFTER lifecycle_ so reverse-destruction joins
+    // the detector's polling thread BEFORE the hook lifecycle tears down
+    // (detector posts ghost keys via lifecycle_.PostGhostKey; want all
+    // pending posts drained — or the lifecycle's threadId_ cleared to 0
+    // so further posts no-op — before the pump exits). Held by unique_ptr
+    // so HookHijackDetector can stay forward-declared in this header.
+    // See docs/plans/2026-05-28-anti-dorion-detector-inject-design.md.
+    std::unique_ptr<HookHijackDetector> hijackDetector_;
+
+    // Anti-Dorion v2 primary path — staggered reinstall burst on focus-to-
+    // chromium. Dorion installs its WH_KEYBOARD_LL slightly AFTER the
+    // focus event we wake on; a single focus-time reinstall lands UNDER
+    // theirs in the chain. The burst (300/800/1500ms) ensures at least
+    // one reinstall fires AFTER Dorion's install → we end up at chain
+    // head → hook wins. hijackDetector_ above stays as safety net for
+    // the rare case where Dorion reinstalls mid-session past the burst
+    // window. Forward-declared via the header above.
+    std::unique_ptr<ReinstallBurstScheduler> reinstallBurstScheduler_;
 
     // Wave 3 PR 3.6 — worker-thread doctrine §12.4 latch + signal slots.
     //   pendingClassifyHwnd_ encoding (uintptr_t — atomic 8B aligned ptr-sized):

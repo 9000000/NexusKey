@@ -19,6 +19,12 @@ namespace NextKey {
 // in HotkeyManager.h (shared with HotkeyManager's LL callback that posts it).
 static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 static constexpr UINT WM_APP_HOOK_COMMAND    = WM_APP + 2;
+// WM_APP + 3 = WM_APP_HOTKEY_FIRED (HotkeyManager.h).
+// WM_APP + 4 = ghost-key recovery from HookHijackDetector (Anti-Dorion v2).
+// wParam carries the recovered wchar_t; lParam unused. FIFO-ordered: each
+// PostThreadMessage delivers separately (no coalescing — required for the
+// "inject N missed keys in observed order" contract).
+static constexpr UINT WM_APP_GHOSTKEY        = WM_APP + 4;
 
 HookLifecycle::HookLifecycle() = default;
 
@@ -70,11 +76,19 @@ void HookLifecycle::Stop() {
     threadId_.store(0, std::memory_order_release);
     ready_.store(false, std::memory_order_release);
     drainFn_ = nullptr;
+    ghostKeyFn_ = nullptr;
 }
 
 void HookLifecycle::PostReinstallHooks(WPARAM reason) noexcept {
     const DWORD tid = threadId_.load(std::memory_order_acquire);
     if (tid) PostThreadMessageW(tid, WM_APP_REINSTALL_HOOKS, reason, 0);
+}
+
+void HookLifecycle::PostGhostKey(wchar_t ch) noexcept {
+    const DWORD tid = threadId_.load(std::memory_order_acquire);
+    // wParam is WPARAM (uintptr_t-sized); wchar_t fits in the low 16 bits.
+    if (tid) PostThreadMessageW(tid, WM_APP_GHOSTKEY,
+                                 static_cast<WPARAM>(ch), 0);
 }
 
 void HookLifecycle::ThreadProc() {
@@ -134,21 +148,49 @@ void HookLifecycle::ThreadProc() {
     //    wParam (Wave 1). DispatchHotkeyFromHookThread invokes the per-slot
     //    callback in hook-thread context, restoring the single-writer
     //    invariant for callbacks that call hookEngine.CommitPending().
+    //  • WM_APP_GHOSTKEY — HookHijackDetector posted a recovered wchar_t
+    //    in wParam after observing a key our LL hook didn't see (bypass
+    //    by a higher LL hook, Anti-Dorion v2). Invokes ghostKeyFn_ which
+    //    typically routes into HookEngine::HandleGhostChar to advance
+    //    engine state without emitting SendInput (the app already has
+    //    the raw key as physical input). §12 doctrine: engine mutation
+    //    lands on this hook thread.
     MSG msg;
-    DWORD lastReinstallTime = 0;
-    constexpr DWORD kMinReinstallIntervalMs = 500;
+    // Anti-Dorion v2 (Pillar 3 — split throttle by reason). Pre-v2 a single
+    // 500ms throttle covered all reinstalls, which made the detector path
+    // (confirmed bypass — needs prompt recovery) wait behind a recent focus
+    // or mouse-down reinstall. Per-reason throttle lets the hijack path
+    // recover within ~100ms while focus/mouse keep their 500ms gap that
+    // prevents unhook-storms from alt-tab spam or click bursts.
+    DWORD lastReinstallTime[3] = {0, 0, 0};  // indexed by REINSTALL_REASON_*
+    constexpr DWORD kThrottleMs[3] = {
+        500,  // REINSTALL_REASON_CHROMIUM (focus / mouse-down)
+        500,  // REINSTALL_REASON_JAVA     (focus → Java)
+        100,  // REINSTALL_REASON_HIJACK   (detector confirmed bypass)
+    };
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
         if (msg.message == WM_APP_REINSTALL_HOOKS) {
+            // Defensive bounds check — reason is user-controlled (any
+            // POST_THREAD_MESSAGE caller) so a stray wParam must not OOB
+            // the throttle table. Fall back to the strictest (CHROMIUM)
+            // bucket for unknown reasons; ignore the post itself doesn't
+            // help — the hook is already wedged when we'd most need it.
+            const WPARAM rawReason = msg.wParam;
+            const size_t reasonIdx = (rawReason < 3) ? static_cast<size_t>(rawReason)
+                                                     : 0;
             const wchar_t* reasonName =
-                msg.wParam == REINSTALL_REASON_JAVA ? L"java" : L"chromium";
+                rawReason == REINSTALL_REASON_JAVA   ? L"java"
+              : rawReason == REINSTALL_REASON_HIJACK ? L"hijack"
+              : L"chromium";
             const DWORD now = GetTickCount();
-            const DWORD sinceLast = now - lastReinstallTime;
-            if (lastReinstallTime != 0 && sinceLast < kMinReinstallIntervalMs) {
+            const DWORD sinceLast = now - lastReinstallTime[reasonIdx];
+            const DWORD throttle  = kThrottleMs[reasonIdx];
+            if (lastReinstallTime[reasonIdx] != 0 && sinceLast < throttle) {
                 HOOK_LIFE_LOG(L"ThreadProc: reinstall SKIPPED (throttle %ums < %ums) reason=%ls",
-                              sinceLast, kMinReinstallIntervalMs, reasonName);
+                              sinceLast, throttle, reasonName);
                 continue;
             }
-            lastReinstallTime = now;
+            lastReinstallTime[reasonIdx] = now;
 
             // Unhook before re-install. Don't gate the re-install on the
             // unhook target existing — if a prior reinstall transient-failed
@@ -193,6 +235,24 @@ void HookLifecycle::ThreadProc() {
                 CrashLog(L"HookLifecycle::DispatchHotkey", e.what());
             } catch (...) {
                 CrashLog(L"HookLifecycle::DispatchHotkey", "(non-std exception)");
+            }
+            continue;
+        }
+        if (msg.message == WM_APP_GHOSTKEY) {
+            // Ghost-key dispatch (Anti-Dorion v2): the HookHijackDetector
+            // observed a key the hook didn't see (we were bypassed); the
+            // recovered wchar_t arrives in wParam. Invoke the handler on
+            // this hook thread — §12 single-writer doctrine for engine
+            // mutations. Handler may be unset if no detector is wired
+            // (test builds, future config disable) → no-op safely.
+            if (ghostKeyFn_) {
+                try {
+                    ghostKeyFn_(static_cast<wchar_t>(msg.wParam));
+                } catch (const std::exception& e) {
+                    CrashLog(L"HookLifecycle::DispatchGhostKey", e.what());
+                } catch (...) {
+                    CrashLog(L"HookLifecycle::DispatchGhostKey", "(non-std exception)");
+                }
             }
             continue;
         }
