@@ -2631,6 +2631,12 @@ void HookEngine::OnTickPoll() noexcept {
     // stateMutex_ (CheckLayoutChange, PID-changed fallback focus refresh)
     // now goes through the mailbox so the actual state writes land on the
     // hook thread — single-writer invariant.
+    //
+    // Cadence under AdaptiveTick.h backoff: 200 ms active → 1 s short idle →
+    // 5 s long idle → 30 s AFK-deep (>5 min idle). Any work added here must
+    // tolerate up to 30 s delay during AFK; user-keystroke / focus-change
+    // paths bypass the tick (mailbox post + cv_.notify_all wake the worker
+    // immediately), so latency-sensitive work belongs there, not here.
     try {
         // Phase 1: histogram flush stays on main (file I/O — never on hook).
         Perf::Histogram::MaybeFlush();
