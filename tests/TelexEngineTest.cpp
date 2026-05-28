@@ -2647,6 +2647,41 @@ TEST_F(EnglishDetectionNoSpellCheckTest, WwEscape_StillWorks) {
     EXPECT_EQ(engine_->Peek(), L"w");
 }
 
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_KN_Cluster_BlocksTone) {
+    // "kn" is impossible in Vietnamese (know, knee, knight, knife...)
+    TypeString(*engine_, L"knas");
+    EXPECT_EQ(engine_->Peek(), L"knas");  // 's' NOT applied as tone
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_KN_Cluster_BlocksModifier) {
+    // "know" — 'w' must stay literal, not become ư
+    TypeString(*engine_, L"know");
+    EXPECT_EQ(engine_->Peek(), L"know");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_PN_Cluster_BlocksTone) {
+    // "pn" is impossible in Vietnamese (pneumonia, pneumatic...)
+    TypeString(*engine_, L"pnas");
+    EXPECT_EQ(engine_->Peek(), L"pnas");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, HardReject_PS_Cluster_BlocksTone) {
+    // "ps" is impossible in Vietnamese (psycho, psalm, pseudo...)
+    TypeString(*engine_, L"psas");
+    EXPECT_EQ(engine_->Peek(), L"psas");
+}
+
+TEST_F(EnglishDetectionNoSpellCheckTest, GH_Cluster_IsVietnamese) {
+    // Regression guard: 'gh' IS a valid Vietnamese onset (ghế, ghi, ghen, ghê).
+    // Must NOT be in IsHardEnglishStart — 'ghes' should compose 'ghẹ' (nặng on 'e'
+    // becomes ghẹ when nucleus is plain e; here ghes → ghệ via ee→ê + s on bare e:
+    // actually just verify tone applies, not the exact diacritic shape).
+    TypeString(*engine_, L"ghes");
+    // 's' (Sac) should land on 'e' → ghé. If 'gh' were blocked, tone would be
+    // literal and Peek would equal 'ghes'.
+    EXPECT_EQ(engine_->Peek(), L"ghé");
+}
+
 TEST_F(EnglishDetectionNoSpellCheckTest, WsngStaysUng) {
     // Regression: 'w' (P8 → ư) + 's' (Sac tone) + n + g must compose to ứng.
     // raw[0..1]='ws' is not in IsHardEnglishStart, so the wh/wr revert path

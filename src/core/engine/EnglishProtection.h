@@ -75,7 +75,10 @@ struct EnglishProtectionState {
            (c0 == L's' && c1 == L'k') ||
            (c0 == L's' && c1 == L'l') ||
            (c0 == L'w' && c1 == L'h') ||
-           (c0 == L'w' && c1 == L'r');
+           (c0 == L'w' && c1 == L'r') ||
+           (c0 == L'k' && c1 == L'n') ||
+           (c0 == L'p' && c1 == L'n') ||
+           (c0 == L'p' && c1 == L's');
 }
 
 /// Raw-input variant: check the first two RAW keystrokes against the same
