@@ -89,7 +89,7 @@ HotkeysDialog::HotkeysDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/hotkeys/hotkeys.html",
         L"VKey - Phím tắt",
-        420, 460, parent, true, 36, 40, true
+        680, 340, parent, true, 36, 40, true
     }) {
     registry_ = ConfigManager::LoadHotkeyRegistryOrDefault();
     sendVkNames();  // upload before populate so capture preview has the table

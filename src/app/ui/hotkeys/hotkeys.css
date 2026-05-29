@@ -1,15 +1,53 @@
-.hotkey-section { padding: 10px 12px; }
-.hotkey-section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-    min-height: 24px;
-    gap: 8px;
+.info-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding: 4px 0 8px;
+    line-height: 1.4;
 }
-.hotkey-section-title { font-weight: 600; color: var(--text-primary); }
 
-.hotkey-chips { flow: horizontal-wrap; margin-bottom: 8px; min-height: 28px; }
+.hotkeys-grid {
+    flow: horizontal;
+    border-spacing: 10px;
+    margin-bottom: 8px;
+    width: 100%;
+    height: *;
+}
+
+.hotkey-section {
+    flow: vertical;
+    padding: 10px 12px;
+    width: *;
+    height: *;
+    margin-bottom: 0;
+}
+
+.hotkey-section-header {
+    flow: horizontal;
+    vertical-align: middle;
+    margin-bottom: 8px;
+    min-height: 24px;
+    width: 100%;
+}
+
+.hotkey-section-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: *;
+    vertical-align: middle;
+    line-height: 20px;
+}
+
+.hotkey-chips {
+    flow: horizontal-wrap;
+    margin-bottom: 8px;
+    min-height: 28px;
+    max-height: 135px;
+    overflow-y: scroll-indicator;
+}
 
 .hotkey-chip {
     flow: horizontal;
