@@ -652,6 +652,7 @@ if(WIN32)
     list(APPEND NEXTKEY_TEST_SOURCES
         tests/ConfigManagerTest.cpp
         tests/ConfigEventTest.cpp
+        tests/SmartSwitchPersistenceTest.cpp
         tests/HeartbeatPublisherTest.cpp
         tests/core/config/ConfigSnapshotBuilderTest.cpp
         # Sprint 2 T3 — IOutputInjector unit tests + impl sources for linkage.

@@ -252,13 +252,17 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // survive restarts regardless of whether startup begins in V/E/Remember.
     if (config.smartSwitch) {
         (void)focus_.Smart().Create();
-        auto englishApps = ConfigManager::LoadEnglishModeApps(ConfigManager::GetConfigPath());
-        for (auto& app : englishApps) {
-            focus_.AppModeMap()[std::move(app)] = false;  // false = English mode
-        }
+        // V2 schema (with legacy [smart_switch].english_mode_apps fallback
+        // for one-time silent migration). See
+        // docs/plans/2026-05-28-smart-switch-persistence-design.md §2.
+        auto persisted = ConfigManager::LoadSmartSwitchApps(ConfigManager::GetConfigPath());
+        focus_.AppModeMap() = std::move(persisted);
         if (!focus_.AppModeMap().empty()) {
             focus_.Smart().LoadFromMap(focus_.AppModeMap());
         }
+        // Publish initial snapshot so the worker has something to flush
+        // if dirty fires before the first map mutation.
+        focus_.PublishAppModesSnapshot();
     }
 
     currentCodeTable_.store(config.codeTable, std::memory_order_release);
@@ -480,11 +484,6 @@ void HookEngine::Stop() {
     // Phase 1 perf histogram: final flush before we tear down so the
     // last 60s window of samples reaches disk. Idempotent.
     Perf::Histogram::Stop();
-    // Persist smart switch English-mode apps to TOML before shutdown.
-    // Bug C fix (2026-05-26): no longer gated on startupMode_==2 — the
-    // SaveEnglishModeAppsIfDirty body already gates on config.smartSwitch,
-    // which is the right signal. startup_mode only controls initial mode.
-    SaveEnglishModeAppsIfDirty();
     // Wave 3 PR 3.1: HookLifecycle handles thread shutdown + LL hook teardown
     // (unhook MUST happen on the installer thread per MSDN — lifecycle owns
     // that thread). Wave 3 PR 3.2: WinEvent hooks moved to FocusOwner.
@@ -495,6 +494,13 @@ void HookEngine::Stop() {
     lifecycle_.Stop();
     dispatcher_.Uninstall();
     focus_.Uninstall();
+
+    // Smart-switch force-flush — MUST run after lifecycle_.Stop() so the
+    // hook thread is joined and reading focus_.AppModeMap() directly is
+    // safe (no concurrent mutation possible). Bug 3 fix (2026-05-28):
+    // pre-fix code ran the legacy save BEFORE lifecycle_.Stop() →
+    // cross-thread live-map read race. See design §1 + §3.
+    FlushSmartSwitchOnStop();
 
     // Sprint 1 D10: focusPollTimer_ retired — owner stops its
     // MainThreadWorker (which owns the 200 ms tick) before us.
@@ -767,6 +773,23 @@ void HookEngine::ReloadFromToml() {
             DecodeFeatureFlags(state.GetFeatureFlags(), config);
             NEXTKEY_LOG(L"HookEngine: read SharedState (epoch=%u, featureFlags=0x%04X)",
                         state.epoch, state.GetFeatureFlags());
+        }
+    }
+
+    // Smart-switch off→on transition: load persisted apps from TOML on this
+    // worker thread (Rule §11.2 — TOML parse is forbidden on hook), then
+    // stash for ApplyConfigOnHookThread to swap into the live appModeMap_.
+    // Without this, mid-session enabling of smart_switch would leave the
+    // map empty and the first focus-driven mutation would overwrite the
+    // user's existing TOML entries with an empty `[smart_switch.apps]`.
+    {
+        const auto prevCfg = config_.load(std::memory_order_acquire);
+        const bool wasOn = prevCfg && prevCfg->smartSwitch;
+        if (!wasOn && config.smartSwitch) {
+            auto loaded = std::make_shared<const std::unordered_map<std::wstring, bool>>(
+                ConfigManager::LoadSmartSwitchApps(ConfigManager::GetConfigPath()));
+            pendingAppModeMap_.store(std::move(loaded), std::memory_order_release);
+            NEXTKEY_LOG(L"SmartSwitch: smart_switch off→on detected, deferred load via ApplyConfig");
         }
     }
 
@@ -2542,25 +2565,19 @@ void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) {
     configSnapshot_.store(std::move(snap), std::memory_order_release);
 }
 
-void HookEngine::SaveEnglishModeAppsIfDirty() {
-    if (!focus_.AppModeDirty() ||
-        !config_.load(std::memory_order_acquire)->smartSwitch) return;
-    focus_.ClearAppModeDirty();
-
-    std::vector<std::wstring> englishApps;
-    for (const auto& [exe, isVietnamese] : focus_.AppModeMap()) {
-        if (!isVietnamese) {
-            englishApps.push_back(exe);
-        }
+void HookEngine::FlushSmartSwitchOnStop() {
+    if (!config_.load(std::memory_order_acquire)->smartSwitch) return;
+    // Safe to read the live map here: lifecycle_.Stop() has already joined
+    // the hook thread by the time we get called.
+    const auto& map = focus_.AppModeMap();
+    const bool ok = ConfigManager::SaveSmartSwitchApps(
+        ConfigManager::GetConfigPath(), map);
+    if (ok) {
+        focus_.ClearAppModeDirty();
+        HOOK_LOG(L"  SmartSwitch: persisted %zu entries on Stop", map.size());
+    } else {
+        HOOK_LOG(L"  SmartSwitch: persist on Stop FAILED");
     }
-
-    // Cap at shared memory limit
-    if (englishApps.size() > kMaxSmartSwitchEntries) {
-        englishApps.resize(kMaxSmartSwitchEntries);
-    }
-
-    (void)ConfigManager::SaveEnglishModeApps(ConfigManager::GetConfigPath(), englishApps);
-    HOOK_LOG(L"  SaveEnglishModeApps: persisted %zu English-mode apps", englishApps.size());
 }
 
 void HookEngine::CheckLayoutChange() {
@@ -2681,11 +2698,20 @@ void HookEngine::OnTickPoll() noexcept {
         GetWindowThreadProcessId(fg, &fgPid);
         if (fgPid == 0) return;
 
-        // lastForegroundPid_ is atomic — written on the hook thread inside
-        // ApplyFocusOnHookThread. Stale read here just means we re-post a
-        // focus event the hook will dedupe in classify (same activeHwnd) —
-        // benign at worst.
+        // Defensive PID update BEFORE OnFocusChanged — v2.1.24 pattern
+        // (commit history at v2.1.24:src/app/system/HookEngine.cpp:2302).
+        // If we update PID AFTER OnFocusChanged returns, and OnFocusChanged
+        // early-returns at the skipAppTracking branch (helper-only events
+        // for WebView2 SearchHost / Edge / Teams hosts), the next poll
+        // tick sees PID still stale → re-fires → infinite ResetComposition
+        // loop. Updating PID here defensively breaks the loop while still
+        // letting OnFocusChanged eventually reach the SmartSwitch RESTORE
+        // path once the app's MAIN window settles to foreground (Bug 1
+        // notepad++ launch — helper events don't update PID, this poll
+        // pass does, the OnFocusChanged-via-GetForegroundWindow call hits
+        // the visible main window by then).
         if (fgPid != focus_.LastForegroundPid()) {
+            focus_.SetLastForegroundPid(fgPid);
             HOOK_LOG(L"FOCUS poll — PID changed (new pid=%u), re-evaluating", fgPid);
             // Doctrine §12.5 exemption #1: OnTickPoll runs on the worker
             // thread (we ARE the MainThreadWorker tick callback), so we can
@@ -2708,6 +2734,49 @@ void HookEngine::OnTickPoll() noexcept {
         // workHandler → RetuneCadenceIfNeeded.
         // See docs/plans/2026-05-27-adaptive-tick-idle-backoff.md.
         RetuneCadenceIfNeeded();
+
+        // Smart-switch debounced persistence (worker thread side).
+        // Bug 2 + 3 fix (2026-05-28): mid-session changes (focus SAVE +
+        // manual toggle) used to live only in RAM + shared memory and
+        // were lost on crash / reset / unexpected exit. We now flush the
+        // RCU snapshot once 3 s after the last MarkDirty.
+        // See docs/plans/2026-05-28-smart-switch-persistence-design.md §3.
+        constexpr std::uint64_t kSmartSwitchDebounceMs = 3000;
+        if (focus_.AppModeDirty()) {
+            const std::uint64_t now = GetTickCount64();
+            if (now - focus_.LastDirtyTs() >= kSmartSwitchDebounceMs) {
+                // Clear BEFORE snap: if hook publishes a new snap +
+                // MarkDirty between Clear and Snap, the snap captures it
+                // (release/acquire pair). With Snap→Clear there is a
+                // window where the hook's latest mutation lands in
+                // appModesSnap_ but our Clear wipes dirty → snap stays
+                // on disk-write-pending forever until the next focus
+                // event triggers another Mark.
+                focus_.ClearAppModeDirty();
+                auto snap = focus_.SnapshotAppModes();
+                const bool ok = (snap != nullptr)
+                    ? ConfigManager::SaveSmartSwitchApps(
+                          ConfigManager::GetConfigPath(), *snap)
+                    : true;
+                if (!ok) {
+                    // Re-arm dirty AND bump LastDirtyTs so the next
+                    // retry waits a full debounce window (~3 s) instead
+                    // of next tick (~200 ms). Prevents a 5-Hz save spin
+                    // when SaveSmartSwitchApps keeps failing (AV
+                    // scanning the .toml right after MoveFileEx, or
+                    // another process holding the named mutex).
+                    focus_.MarkAppModeDirty();
+                    focus_.SetLastDirtyTs(now);
+                    if (!lastFlushFailed_) {
+                        NEXTKEY_LOG(L"SmartSwitch: persist FAILED, will retry");
+                        lastFlushFailed_ = true;
+                    }
+                } else if (lastFlushFailed_) {
+                    NEXTKEY_LOG(L"SmartSwitch: persist recovered");
+                    lastFlushFailed_ = false;
+                }
+            }
+        }
     } catch (const std::exception& e) {
         CrashLog(L"HookEngine::OnTickPoll", e.what());
     } catch (...) {
@@ -3492,15 +3561,14 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     HWND activeHwnd = reinterpret_cast<HWND>(cls->hwndOpaque);
 
-    // Sync PID tracker UNCONDITIONALLY so the 200 ms focus poll won't re-fire
-    // for the same app. Must run before any early-return below — when
-    // skipAppTracking / no-per-app-features short-circuit / empty exeName
-    // return early, the old code left lastForegroundPid_ stale and the poll
-    // re-detected "PID changed" every cycle, calling ResetComposition() each
-    // time (L4103 is unconditional). Symptom: WebView2 apps (SearchHost, Edge,
-    // Teams) wipe the engine buffer every ~200 ms — typing "hddldd" only ever
-    // sees one char at a time, dd→Đ never composes.
-    if (cls->pid) focus_.SetLastForegroundPid(cls->pid);
+    // PID update moved (2026-05-29): OnTickPoll now updates lastForegroundPid_
+    // defensively BEFORE calling OnFocusChangedSyncOnWorker (v2.1.24 pattern),
+    // which breaks the WebView2 poll-loop that commit 87a560f tried to fix by
+    // moving the update here. Updating PID at function entry blocked Bug 1's
+    // natural fallback (notepad++ launch with only helper events relies on the
+    // poll detecting a stale PID to re-classify against GetForegroundWindow
+    // once the main window settles). PID is now updated below at the end of
+    // the real-focus path — see comment near isExcludedApp_ store.
 
     // Reset composition + per-word state. These were the Rule 11.3-violating
     // writes from main pre-Phase-2b.
@@ -3624,8 +3692,19 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     }
 
     // Helper HWNDs: SAVE/RESTORE skipped (mode shouldn't flip on transient
-    // dock-panel focus events). activeExe_ above is already updated so the
-    // next toggle / non-skip focus event sees the right app.
+    // dock-panel, tray icon, splash, init helper, or shell focus events).
+    // activeExe_ above is already updated so the next toggle / non-skip
+    // focus event sees the right app.
+    //
+    // Bug 1 (notepad++ launches with helper-only events, mode never
+    // restores) is fixed via the OnTickPoll PID poll: helper events
+    // here return WITHOUT updating lastForegroundPid_, the poll detects
+    // a stale PID on its next tick (~200 ms later), updates the PID
+    // defensively, and re-fires OnFocusChanged against the foreground
+    // window — by which point the main window has typically settled
+    // and runs the real-focus SmartSwitch path below. This is the
+    // pre-2026-05-21 (v2.1.24) pattern; see commit 87a560f notes +
+    // docs/plans/2026-05-28-smart-switch-persistence-design.md §4.
     if (cls->skipAppTracking) return;
 
     // Short-circuit when no per-app feature needs tracking. Phase 3c
@@ -3653,16 +3732,26 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcluded && !wasTsfApp) {
         if (focus_.AppModeMap().size() >= kMaxSmartSwitchEntries) {
             focus_.AppModeMap().clear();
+            HOOK_LOG(L"  SmartSwitch: map cap %zu hit, cleared", kMaxSmartSwitchEntries);
         }
         const bool savedMode = vietnameseMode_.load(std::memory_order_acquire);
         focus_.AppModeMap()[oldLastReal] = savedMode;
         focus_.Smart().SetAppMode(oldLastReal, savedMode);
+        focus_.PublishAppModesSnapshot();           // RCU publish (alloc + atomic_store)
         focus_.MarkAppModeDirty();
+        focus_.SetLastDirtyTs(GetTickCount64());    // worker debounce input
     }
 
     // Advance lastRealExe_ to the new real app (auto-shifts previousExe_
     // for the encoding-override fallback chain).
     focus_.SetLastRealExe(cls->exeName);
+
+    // Real-focus PID update — moved here from function entry (v2.1.24
+    // pattern restored, see comment near top). Helper-only events that
+    // hit the skipAppTracking early-return above LEAVE PID stale on
+    // purpose so the OnTickPoll defensive update can re-fire OnFocusChanged
+    // once the app's main window settles to foreground (Bug 1 fallback).
+    if (cls->pid) focus_.SetLastForegroundPid(cls->pid);
 
     isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
     isTsfApp_.store(cls->isTsf, std::memory_order_release);
@@ -3811,6 +3900,9 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     if (cfg->smartSwitch && !focus_.ActiveExe().empty()) {
         focus_.AppModeMap()[focus_.ActiveExe()] = newMode;
         focus_.Smart().SetAppMode(focus_.ActiveExe(), newMode);
+        focus_.PublishAppModesSnapshot();
+        focus_.MarkAppModeDirty();
+        focus_.SetLastDirtyTs(GetTickCount64());
     }
 
     if (cfg->beepOnSwitch) {
@@ -3853,6 +3945,22 @@ void HookEngine::ApplyConfigOnHookThread() {
     VKEY_ASSERT_HOOK_THREAD();
     auto cfg = config_.load(std::memory_order_acquire);
     if (!cfg) return;
+
+    // Consume smart-switch off→on handoff (worker stashed loaded map in
+    // ReloadFromToml). exchange()'ing with nullptr makes the consume
+    // single-shot — a redundant ApplyConfig drain won't re-run the swap.
+    if (auto loaded = pendingAppModeMap_.exchange(nullptr, std::memory_order_acq_rel)) {
+        if (!focus_.Smart().IsConnected()) {
+            (void)focus_.Smart().Create();
+        }
+        focus_.AppModeMap() = *loaded;
+        if (!focus_.AppModeMap().empty()) {
+            focus_.Smart().LoadFromMap(focus_.AppModeMap());
+        }
+        focus_.PublishAppModesSnapshot();
+        HOOK_LOG(L"  SmartSwitch: off→on swap-in (%zu apps)",
+                 focus_.AppModeMap().size());
+    }
 
     // Resolve target inputMethod considering per-app override (Phase 3c
     // snapshot reader). activeExe_ is hook-owned (set in

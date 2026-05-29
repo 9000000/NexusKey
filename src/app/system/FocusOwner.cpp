@@ -667,4 +667,32 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
     return cls;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Smart-switch RCU snapshot — hook-thread publish, worker-thread load.
+// See SnapshotAppModes() rationale in FocusOwner.h header doc.
+// ─────────────────────────────────────────────────────────────────────────
+
+void FocusOwner::PublishAppModesSnapshot() noexcept {
+    // Hook-thread side of the RCU publish. Allocates a fresh shared_ptr
+    // holding an immutable copy of the live appModeMap_, then publishes
+    // it via std::atomic_store. The previous snapshot's refcount drops;
+    // worker threads holding it via SnapshotAppModes() keep it alive.
+    //
+    // Cost: 1 alloc + map copy (~1.5 KB at cap 200). Fires only on focus
+    // changes / mode toggles → cold path, well within Pillar 1 budget.
+    try {
+        auto fresh = std::make_shared<
+            const std::unordered_map<std::wstring, bool>>(appModeMap_);
+        appModesSnap_.store(std::move(fresh), std::memory_order_release);
+    } catch (...) {
+        // Allocation failure (OOM): leave previous snapshot in place.
+        // Worst case is a stale write window the next mutation will fix.
+    }
+}
+
+std::shared_ptr<const std::unordered_map<std::wstring, bool>>
+FocusOwner::SnapshotAppModes() const noexcept {
+    return appModesSnap_.load(std::memory_order_acquire);
+}
+
 }  // namespace NextKey

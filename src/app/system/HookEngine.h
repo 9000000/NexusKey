@@ -33,6 +33,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Wave 3 PR 3.3 — IOutputInjector forward declaration removed; the type is
@@ -406,7 +407,7 @@ private:
     void OnFocusChangedSyncOnWorker(HWND triggerHwnd);
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
-    void SaveEnglishModeAppsIfDirty();  // Persist English-mode apps to TOML
+    void FlushSmartSwitchOnStop();      // Force-flush smart-switch map to TOML on shutdown (bypass debounce).
 
     // Phase 3d — single source of truth for snapshot rebuild. Parses
     // overrides/excluded/TSF/macros fresh from TOML, derives
@@ -591,8 +592,26 @@ private:
     // Wave 3 PR 3.2 — AppProfile struct + appProfileCache_ + LookupAppProfile/
     // StoreAppProfile moved to FocusOwner alongside Classify.
 
-    // Smart-switch capacity (still HookEngine — not commit-undo state).
+    // Smart-switch capacity — runtime in-memory cap. ConfigManager's
+    // disk-load uses the more generous kMaxAppListEntries (1000); the
+    // overflow-vs-runtime-cap behavior is "clear and re-learn" — silent
+    // data loss only if a user accumulates >200 distinct apps, which
+    // hasn't happened in practice.
     static constexpr size_t kMaxSmartSwitchEntries = 200;
+
+    // Smart-switch persistence — worker-thread-only state. No atomic needed
+    // because only OnTickPoll reads/writes (single-thread invariant). Tracks
+    // the prior Flush outcome so we log only on state transitions instead
+    // of every 200 ms retry (see design §5).
+    bool lastFlushFailed_ = false;
+
+    // Smart-switch off→on cross-thread handoff. ReloadFromToml runs on the
+    // worker thread; it can't mutate appModeMap_ directly (hook-thread-owned).
+    // Pattern: worker loads from TOML, atomic-stashes here; hook's
+    // ApplyConfigOnHookThread exchange-consumes + assigns into the live map +
+    // publishes a fresh snapshot. nullptr = "no pending load".
+    std::atomic<std::shared_ptr<const std::unordered_map<std::wstring, bool>>>
+        pendingAppModeMap_;
     // Sprint 2 D5: kSynthSettleMs (was 100 ms hardcoded for all hosts) replaced
     // by per-injector budget — `dispatcher_.GetInjector()->SettleBudget()`
     // returns 0 ms for RichEdit (sent message drains synchronously), 30 ms

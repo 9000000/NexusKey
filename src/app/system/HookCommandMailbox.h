@@ -95,6 +95,10 @@ struct FocusClassification {
     int targetCodeTable{-1};   // CodeTable enum value
     // True if the trigger HWND failed every visibility/size sanity check
     // and should be classified for dispatch but NOT update currentExe_.
+    // Helper events return early in ApplyFocusOnHookThread BEFORE the
+    // late PID/exe update; the OnTickPoll defensive PID update is the
+    // fallback that catches a real app whose only initial events were
+    // helpers (Bug 1 notepad++ launch).
     bool skipAppTracking{false};
 };
 

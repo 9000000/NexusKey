@@ -165,11 +165,43 @@ public:
     [[nodiscard]] const std::unordered_map<std::wstring, bool>& AppModeMap() const noexcept {
         return appModeMap_;
     }
-    [[nodiscard]] bool AppModeDirty() const noexcept { return appModeDirty_; }
-    void MarkAppModeDirty() noexcept { appModeDirty_ = true; }
-    void ClearAppModeDirty() noexcept { appModeDirty_ = false; }
+    /// Read/write from BOTH hook thread (Mark/Clear at SAVE/toggle blocks)
+    /// AND worker thread (OnTickPoll debounce gate) — must be atomic.
+    /// Pairs with the appModesSnap_ acquire/release on the read path so a
+    /// worker observing dirty=true is guaranteed to see the snapshot from
+    /// the matching MarkAppModeDirty.
+    [[nodiscard]] bool AppModeDirty() const noexcept {
+        return appModeDirty_.load(std::memory_order_acquire);
+    }
+    void MarkAppModeDirty() noexcept {
+        appModeDirty_.store(true, std::memory_order_release);
+    }
+    void ClearAppModeDirty() noexcept {
+        appModeDirty_.store(false, std::memory_order_release);
+    }
     [[nodiscard]] SmartSwitchManager& Smart() noexcept { return smartSwitchMgr_; }
     [[nodiscard]] const SmartSwitchManager& Smart() const noexcept { return smartSwitchMgr_; }
+
+    /// Hook-thread MarkDirty timestamp (GetTickCount64 on Windows; injected
+    /// clock in tests). Worker reads to enforce debounce window.
+    [[nodiscard]] std::uint64_t LastDirtyTs() const noexcept {
+        return lastDirtyTs_.load(std::memory_order_acquire);
+    }
+    void SetLastDirtyTs(std::uint64_t ts) noexcept {
+        lastDirtyTs_.store(ts, std::memory_order_release);
+    }
+
+    /// RCU publish: hook thread copies the live `appModeMap_` into a fresh
+    /// `shared_ptr<const map>` and atomic-stores it. Cost: 1 alloc + map
+    /// copy (~1.5 KB at cap 50). Cold path (focus-change handler), not the
+    /// keystroke hot path. Must be called after every mutation to
+    /// `appModeMap_`. Pairs with `SnapshotAppModes()` on worker thread.
+    void PublishAppModesSnapshot() noexcept;
+
+    /// Worker-thread snapshot load (atomic). Returns null if no snapshot
+    /// has ever been published. Caller treats null as "nothing to write".
+    [[nodiscard]] std::shared_ptr<const std::unordered_map<std::wstring, bool>>
+    SnapshotAppModes() const noexcept;
 
     // ── CJK layout state machine (hook thread only) ─────────────────────
     [[nodiscard]] bool LayoutSuppressed() const noexcept { return layoutSuppressed_; }
@@ -223,7 +255,13 @@ private:
 
     // Smart-switch
     std::unordered_map<std::wstring, bool> appModeMap_;
-    bool appModeDirty_ = false;
+    std::atomic<bool> appModeDirty_{false};
+    std::atomic<std::uint64_t> lastDirtyTs_{0};
+    // RCU-published snapshot of appModeMap_ (worker reads this, never the
+    // live map). std::atomic<std::shared_ptr<...>> is the C++20 native
+    // form (the free std::atomic_load/store overloads are deprecated in
+    // C++20 and MSVC /WX promotes the deprecation to an error).
+    std::atomic<std::shared_ptr<const std::unordered_map<std::wstring, bool>>> appModesSnap_;
     SmartSwitchManager smartSwitchMgr_;
 
     // CJK layout

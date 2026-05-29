@@ -88,12 +88,19 @@ public:
     [[nodiscard]] static bool SaveExcludedApps(const std::wstring& path,
                                                 const std::vector<std::wstring>& apps);
 
-    /// Load persisted English-mode apps for smart switch (survives restart)
-    [[nodiscard]] static std::vector<std::wstring> LoadEnglishModeApps(const std::wstring& path);
+    /// Load V2 schema `[smart_switch.apps]` table (lowercase exe → isVietnamese).
+    /// Falls back to legacy `[smart_switch].english_mode_apps` array if V2
+    /// is absent (one-time silent migration). Returns empty map on parse
+    /// error or missing file. Unknown mode strings are skipped + logged.
+    /// Cap at kMaxSmartSwitchEntries entries.
+    [[nodiscard]] static std::unordered_map<std::wstring, bool>
+        LoadSmartSwitchApps(const std::wstring& path);
 
-    /// Save English-mode apps for smart switch (merges with existing config)
-    [[nodiscard]] static bool SaveEnglishModeApps(const std::wstring& path,
-                                                   const std::vector<std::wstring>& apps);
+    /// Save the full V2 schema. Keys sorted alphabetically (clean diffs).
+    /// Existing other TOML sections preserved. Acquires ConfigFileLock.
+    [[nodiscard]] static bool SaveSmartSwitchApps(
+        const std::wstring& path,
+        const std::unordered_map<std::wstring, bool>& apps);
 
     /// Load TSF apps list from config (apps that use TSF engine instead of hook)
     [[nodiscard]] static std::vector<std::wstring> LoadTsfApps(const std::wstring& path);

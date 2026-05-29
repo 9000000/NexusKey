@@ -827,40 +827,101 @@ bool ConfigManager::SaveExcludedApps(const std::wstring& path,
     }
 }
 
-std::vector<std::wstring> ConfigManager::LoadEnglishModeApps(const std::wstring& path) {
-    std::vector<std::wstring> apps;
+std::unordered_map<std::wstring, bool>
+ConfigManager::LoadSmartSwitchApps(const std::wstring& path) {
+    std::unordered_map<std::wstring, bool> apps;
     try {
         std::string utf8Path = WideToUtf8(path);
         auto table = ParseTomlCached(utf8Path);
 
-        if (auto section = table["smart_switch"].as_table()) {
-            if (auto arr = (*section)["english_mode_apps"].as_array()) {
+        auto lower = [](std::wstring s) {
+            for (auto& c : s) c = static_cast<wchar_t>(towlower(c));
+            return s;
+        };
+
+        // 1. V2 schema: [smart_switch.apps] inline map.
+        if (auto smart = table["smart_switch"].as_table()) {
+            if (auto appsTbl = (*smart)["apps"].as_table()) {
+                bool warnedUnknown = false;
+                bool warnedCap = false;
+                for (const auto& [keyView, node] : *appsTbl) {
+                    if (apps.size() >= kMaxAppListEntries) {
+                        if (!warnedCap) {
+                            NEXTKEY_LOG(L"[ConfigManager] LoadSmartSwitchApps: cap %zu hit, surplus dropped",
+                                        kMaxAppListEntries);
+                            warnedCap = true;
+                        }
+                        break;
+                    }
+                    auto modeStr = node.value<std::string>();
+                    if (!modeStr) continue;
+                    bool isVietnamese;
+                    if (*modeStr == "english")          isVietnamese = false;
+                    else if (*modeStr == "vietnamese")  isVietnamese = true;
+                    else {
+                        if (!warnedUnknown) {
+                            NEXTKEY_LOG(L"[ConfigManager] LoadSmartSwitchApps: unknown mode string, entry skipped");
+                            warnedUnknown = true;
+                        }
+                        continue;
+                    }
+                    auto wideKey = lower(Utf8ToWide(std::string(keyView.str())));
+                    if (wideKey.empty()) continue;
+                    apps.emplace(std::move(wideKey), isVietnamese);
+                }
+                return apps;
+            }
+
+            // 2. Legacy fallback: [smart_switch].english_mode_apps array.
+            //    One-time silent migration — first save will emit V2 schema
+            //    and the legacy section is dropped on full-rewrite.
+            if (auto arr = (*smart)["english_mode_apps"].as_array()) {
                 for (auto& item : *arr) {
                     if (apps.size() >= kMaxAppListEntries) break;
                     if (auto str = item.value<std::string>()) {
-                        apps.push_back(Utf8ToWide(*str));
+                        auto wideKey = lower(Utf8ToWide(*str));
+                        if (!wideKey.empty()) apps.emplace(std::move(wideKey), false);
                     }
                 }
             }
         }
-    } catch (...) {}
+    } catch (...) {
+        // 3. Parse error / missing file → empty map (never throw to caller).
+    }
     return apps;
 }
 
-bool ConfigManager::SaveEnglishModeApps(const std::wstring& path,
-                                         const std::vector<std::wstring>& apps) {
+bool ConfigManager::SaveSmartSwitchApps(
+    const std::wstring& path,
+    const std::unordered_map<std::wstring, bool>& apps) {
     try {
         ConfigFileLock lock;
         std::string utf8Path = WideToUtf8(path);
         auto tbl = LoadExistingToml(utf8Path);
 
-        toml::array arr;
-        for (auto& app : apps) {
-            arr.push_back(WideToUtf8(app));
+        // Sort keys alphabetically for deterministic output (clean diffs).
+        std::vector<const std::wstring*> sorted;
+        sorted.reserve(apps.size());
+        for (const auto& [k, _] : apps) sorted.push_back(&k);
+        std::sort(sorted.begin(), sorted.end(),
+                  [](const std::wstring* a, const std::wstring* b) {
+                      return *a < *b;
+                  });
+
+        toml::table appsTbl;
+        for (const auto* keyPtr : sorted) {
+            auto it = apps.find(*keyPtr);
+            if (it == apps.end()) continue;
+            appsTbl.insert(WideToUtf8(*keyPtr),
+                           std::string(it->second ? "vietnamese" : "english"));
         }
-        toml::table section;
-        section.insert_or_assign("english_mode_apps", std::move(arr));
-        tbl.insert_or_assign("smart_switch", std::move(section));
+
+        // Replace the entire [smart_switch] subtable. This drops the legacy
+        // `english_mode_apps` array on first save after migration (clean
+        // break per anh's 2026-05-28 decision).
+        toml::table smartSection;
+        smartSection.insert("apps", std::move(appsTbl));
+        tbl.insert_or_assign("smart_switch", std::move(smartSection));
 
         return WriteToml(utf8Path, tbl);
     } catch (...) {
