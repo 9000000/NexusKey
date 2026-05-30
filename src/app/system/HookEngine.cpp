@@ -2877,20 +2877,31 @@ void HookEngine::MarkActivity() noexcept {
 // Both call sites are on the worker thread; this method is not safe to call
 // on the hook thread (tickRetuneFn_ may take MainThreadWorker's mutex).
 void HookEngine::RetuneCadenceIfNeeded() noexcept {
-    // Anti-Dorion v2: while a Chromium-class app is foreground, pin the
-    // tick at the detector's required cadence (40ms). Outside chromium
-    // foreground, fall back to the activity-driven adaptive cadence (the
-    // 2026-05-27 idle-backoff design). Pin overrides backoff because the
-    // detector's correctness assumption is "we sample physical state at
-    // ~40ms"; if we backed off to 5s while in Dorion, a hijack would lose
-    // up to 5s of typing before recovery — defeats the whole point.
+    // Anti-Dorion v2: while a Chromium-class app is foreground AND the user is
+    // recently active, pin the tick at the detector's required cadence (40ms)
+    // — the detector samples physical state at ~40ms, so backing off mid-Dorion
+    // would lose keystrokes before recovery. Outside chromium, use the
+    // activity-driven adaptive cadence.
+    //
+    // Deep-idle STOP (2026-05-30) OVERRIDES the pin: after kIdleStopThreshMs
+    // with no input, ComputeTickInterval returns 0 (STOP) and we let the worker
+    // park even under chromium. The detector only matters while the user is
+    // typing; with no input there is nothing to protect, and a perpetual 40ms
+    // poll just keeps pages warm and blocks the working-set trim (the whole
+    // point of this change — v2.1.24 idle parity). The next keystroke
+    // (MarkActivity → Signal) resumes the cadence and re-arms the detector
+    // before that key is processed — a ≤1-2 key anti-Dorion residual on resume,
+    // the same trade the detector already makes. Below the stop threshold the
+    // chromium pin still wins (instant hijack recovery while active).
     constexpr auto kChromiumActiveInterval = std::chrono::milliseconds(40);
     const std::uint64_t now = GetTickCount64();
     const std::uint64_t lastAct = lastActivityTickMs_.load(std::memory_order_relaxed);
     const std::uint64_t idleMs = (now > lastAct) ? (now - lastAct) : 0;
-    const auto desired = isChromiumClassApp_.load(std::memory_order_acquire)
-        ? kChromiumActiveInterval
-        : NextKey::ComputeTickInterval(idleMs);
+    const auto desired =
+        (isChromiumClassApp_.load(std::memory_order_acquire)
+         && idleMs < NextKey::kIdleStopThreshMs)
+            ? kChromiumActiveInterval
+            : NextKey::ComputeTickInterval(idleMs);
     const auto desiredMs = static_cast<std::uint32_t>(desired.count());
     if (desiredMs != currentTickIntervalMs_.load(std::memory_order_relaxed)) {
         currentTickIntervalMs_.store(desiredMs, std::memory_order_relaxed);
