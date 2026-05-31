@@ -133,12 +133,27 @@ private:
     // Acquire-release pairing keeps the gate effects visible.
     std::atomic<bool> chromiumClassActive_{false};
 
-    // Polling-side state — accessed only from Poll()/Reset()/Establish-
-    // Baselines (caller-thread, single-caller per owner contract). No
-    // cross-thread sync needed.
+    // Baseline-reset request, latched by SetChromiumClassActive on a
+    // true→false edge (hook thread) and consumed by Poll() (worker thread).
+    // The invalidation MUST go through this atomic rather than writing the
+    // non-atomic poll-state directly: Poll() only re-checks the gate at its
+    // ENTRY, so a hook-thread write to accumulatedDrift_/pendingVkCount_ while
+    // Poll() is mid-loop would be a data race. Latching keeps all non-atomic
+    // mutation single-threaded on the Poll side (honors the contract below).
+    std::atomic<bool> pendingReset_{false};
+
+    // Polling-side state — accessed only from Poll() / EstablishBaselines (and
+    // the unused public Reset()); single-threaded on the Poll/worker side. The
+    // true→false invalidation is routed through pendingReset_ above so it is
+    // NOT touched cross-thread. No further sync needed.
     static constexpr size_t kPendingVkCap = 16;
     uint8_t  prevState_[256]                 = {};
     uint8_t  pendingVks_[kPendingVkCap]      = {};
+    // Modifier snapshot captured for each buffered VK at the poll that detected
+    // it (bit0 Shift, bit1 CapsLock-toggle, bit2 Ctrl, bit3 Alt). Used at replay
+    // so each ghost key translates with ITS OWN modifier state, not the trigger-
+    // time stateNow (Shift may have been released across polls) — see Poll().
+    uint8_t  pendingMods_[kPendingVkCap]     = {};
     uint64_t prevHookFireCount_              = 0;
     uint64_t observedKeyDowns_               = 0;
     uint64_t accumulatedDrift_               = 0;  // cumulative misses since last decay

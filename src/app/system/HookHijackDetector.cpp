@@ -54,6 +54,10 @@ constexpr uint8_t kVkBack    = 0x08;  // VK_BACK
 constexpr uint8_t kVkSpace   = 0x20;  // VK_SPACE
 constexpr uint8_t kVkOem1    = 0xBA;  // VK_OEM_1 ;:
 constexpr uint8_t kVkOem8    = 0xDF;  // VK_OEM_8 — through VK_OEM_2..7
+constexpr uint8_t kVkShift   = 0x10;  // VK_SHIFT
+constexpr uint8_t kVkControl = 0x11;  // VK_CONTROL
+constexpr uint8_t kVkMenu    = 0x12;  // VK_MENU (Alt)
+constexpr uint8_t kVkCapital = 0x14;  // VK_CAPITAL (CapsLock)
 
 // Trackable virtual-key codes — alpha A-Z, digits 0-9, space, backspace,
 // and the OEM punctuation range the engine processes. Modifier-only keys
@@ -76,6 +80,17 @@ constexpr uint8_t kVkOem8    = 0xDF;  // VK_OEM_8 — through VK_OEM_2..7
     return (b & 0x80) != 0;
 }
 
+// Pack the case-relevant modifier state out of a GetKeyboardState buffer into
+// one byte, stored per buffered VK so replay re-translates with the modifiers
+// that were live WHEN the key was pressed (not the trigger-time snapshot).
+[[nodiscard]] uint8_t PackMods(const uint8_t (&state)[256]) noexcept {
+    return static_cast<uint8_t>(
+        (IsKeyDownByte(state[kVkShift])   ? 0x01 : 0) |
+        ((state[kVkCapital] & 0x01)       ? 0x02 : 0) |
+        (IsKeyDownByte(state[kVkControl]) ? 0x04 : 0) |
+        (IsKeyDownByte(state[kVkMenu])    ? 0x08 : 0));
+}
+
 [[nodiscard]] uint32_t NowMs() noexcept {
     using namespace std::chrono;
     return static_cast<uint32_t>(
@@ -90,15 +105,15 @@ HookHijackDetector::HookHijackDetector(Callbacks callbacks) noexcept
 void HookHijackDetector::SetChromiumClassActive(bool active) noexcept {
     const bool wasActive = chromiumClassActive_.exchange(active, std::memory_order_acq_rel);
     if (wasActive != active && !active) {
-        // True → false: invalidate baselines AND drop any half-built
-        // accumulated drift / pending buffer so the next chromium session
-        // re-snapshots from a fresh state (Invariant 4). The next Poll()
-        // is guarded by the gate, so these writes are single-writer in
-        // practice — the only consumer runs from Poll which won't fire
-        // until chromiumClassActive_ flips true again.
-        baselinesValid_ = false;
-        accumulatedDrift_ = 0;
-        pendingVkCount_ = 0;
+        // True → false (hook thread): request that the NEXT chromium session
+        // re-snapshot from a fresh baseline and drop any half-built drift /
+        // pending buffer (Invariant 4). We latch an atomic instead of writing
+        // the non-atomic poll-state here: Poll() runs on the worker thread and
+        // only re-checks the gate at its ENTRY, so it may already be mid-loop
+        // mutating accumulatedDrift_ / pendingVkCount_ — writing them from this
+        // thread would be a data race. Poll() consumes the latch on its next
+        // entry, keeping all non-atomic mutation single-threaded on the Poll side.
+        pendingReset_.store(true, std::memory_order_release);
     }
 }
 
@@ -118,6 +133,16 @@ void HookHijackDetector::Poll() noexcept {
     // foreground would inject ghost keys into VKey's engine state — the
     // exact v1 RIDEV_INPUTSINK failure mode. Gate guards against that.
     if (!chromiumClassActive_.load(std::memory_order_acquire)) return;
+
+    // Consume a true→false→true reset latched by SetChromiumClassActive
+    // (Invariant 4 — fresh baseline per chromium session). Done HERE, on the
+    // Poll/worker thread, so the non-atomic poll-state is never mutated cross-
+    // thread. Falls through to the EstablishBaselines path below.
+    if (pendingReset_.exchange(false, std::memory_order_acquire)) {
+        baselinesValid_ = false;
+        accumulatedDrift_ = 0;
+        pendingVkCount_ = 0;
+    }
 
     if (!baselinesValid_) {
         EstablishBaselines();
@@ -175,10 +200,16 @@ void HookHijackDetector::Poll() noexcept {
         // can't tell which polled VKs; track drift toward trigger without
         // polluting the inject buffer to avoid double-typing.
         if (hookCountDelta == 0) {
+            // Capture this poll's modifier state once — every VK detected in
+            // this poll shares it. Stored per entry so replay translates each
+            // buffered key with the modifiers live when it was pressed.
+            const uint8_t pollMods = PackMods(stateNow);
             for (size_t i = 0;
                  i < thisPollVkCount && pendingVkCount_ < kPendingVkCap;
                  ++i) {
-                pendingVks_[pendingVkCount_++] = thisPollVks[i];
+                pendingMods_[pendingVkCount_] = pollMods;
+                pendingVks_[pendingVkCount_]  = thisPollVks[i];
+                ++pendingVkCount_;
             }
         }
     } else if (hookCountDelta > thisPollDowns) {
@@ -208,7 +239,17 @@ void HookHijackDetector::Poll() noexcept {
     // keys visible to the user is the same trade EVKey makes. Owner
     // routes both through the hook thread (single-writer §12).
     for (size_t i = 0; i < pendingVkCount_; ++i) {
-        const wchar_t ch = callbacks_.translateVkToChar(pendingVks_[i], stateNow);
+        // Rebuild the modifier state captured when THIS key was buffered, not
+        // the trigger-time stateNow (Shift/Caps may have changed across the
+        // polls that accumulated the buffer). ToUnicodeEx reads only the VK_*
+        // modifier slots from the array, so a minimal reconstruction suffices.
+        uint8_t keyState[256] = {};
+        const uint8_t m = pendingMods_[i];
+        if (m & 0x01) keyState[kVkShift]   = 0x80;
+        if (m & 0x02) keyState[kVkCapital] = 0x01;
+        if (m & 0x04) keyState[kVkControl] = 0x80;
+        if (m & 0x08) keyState[kVkMenu]    = 0x80;
+        const wchar_t ch = callbacks_.translateVkToChar(pendingVks_[i], keyState);
         if (ch != 0) callbacks_.injectGhostChar(ch);
     }
     callbacks_.requestReinstall();

@@ -79,10 +79,16 @@ void MainThreadWorker::SetTickInterval(std::chrono::milliseconds interval) noexc
         std::lock_guard<std::mutex> lock(mutex_);
         tickInterval_ = interval;
     }
-    // Wake any in-flight wait so the new interval is picked up at the
-    // next loop iteration. Without this, lengthening or shortening the
-    // interval while the worker is mid-wait would leave the old timeout
-    // running until it expires.
+    // Wake the worker. NOTE: Run()'s wait predicate is (stopRequested_ ||
+    // workPending_); a bare notify_all with neither flag set re-evaluates the
+    // predicate, finds it false, and RE-BLOCKS until the ORIGINAL wait_for
+    // deadline — so a mid-wait interval change is NOT picked up promptly here.
+    // That is acceptable for the only production caller: RetuneCadenceIfNeeded
+    // runs SetTickInterval on the worker thread itself (never mid-wait), and the
+    // idle→active resume is driven separately via Signal() (which sets
+    // workPending_, so it DOES break the wait). If a future caller needs a
+    // prompt cross-thread shorten, route it through Signal() — do not rely on
+    // this notify_all alone.
     cv_.notify_all();
 }
 

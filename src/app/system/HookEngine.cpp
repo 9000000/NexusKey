@@ -402,6 +402,14 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         });
     }
 
+    // Adaptive-tick (#2): seed the activity clock to LAUNCH time. lastActivityTickMs_
+    // is otherwise 0, so the FIRST worker tick computes idleMs = system uptime
+    // ≥ kIdleStopThreshMs and STOPS the worker ~200ms after launch — killing the
+    // CJK/Win+Space poll, the foreground-PID fallback, the config-reload drain
+    // and smart-switch persistence until the first keystroke re-arms it. Seeding
+    // here makes "idle" measure from launch, not boot. See AdaptiveTick.h.
+    lastActivityTickMs_.store(GetTickCount64(), std::memory_order_relaxed);
+
     // Anti-Dorion v2 PRIMARY path — staggered reinstall burst. On focus-to-
     // chromium-class app, schedule 3 reinstalls at 300/800/1500 ms; at least
     // one lands AFTER Dorion's own LL hook install → VKey ends up at the
@@ -410,8 +418,16 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // focus-out race. See ReinstallBurstScheduler.{h,cpp} for the contract
     // and the 6 unit tests in tests/ReinstallBurstSchedulerTest.cpp.
     {
+        // A4: dedicated timer queue so Stop() can block-drain in-flight burst
+        // callbacks before the scheduler dies. CreateTimerQueue can fail (NULL);
+        // we do NOT fall back to the default process queue, because Stop() can't
+        // drain that one (the default queue isn't deletable) and the generation_
+        // UAF would silently return. On failure we leave reinstallBurstScheduler_
+        // null (burst disabled) and rely on the drift-gated detector as the
+        // reactive net — see the guard around make_unique below.
+        burstTimerQueue_ = CreateTimerQueue();
         ReinstallBurstScheduler::Callbacks bcb;
-        bcb.schedule = [](uint32_t delayMs, std::function<void()> fire) noexcept {
+        bcb.schedule = [this](uint32_t delayMs, std::function<void()> fire) noexcept {
             // Heap context survives the synchronous return; the thread-pool
             // callback fires it after `delayMs`, then self-deletes the timer
             // handle and the context. unique_ptr handoff pattern (Rule 3):
@@ -422,8 +438,10 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
             struct TimerCtx {
                 std::function<void()> fn;
                 HANDLE handle{nullptr};
+                HANDLE queue{nullptr};
             };
-            auto ctx = std::make_unique<TimerCtx>(TimerCtx{std::move(fire), nullptr});
+            auto ctx = std::make_unique<TimerCtx>(
+                TimerCtx{std::move(fire), nullptr, burstTimerQueue_});
             const auto poolCallback = [](PVOID p, BOOLEAN /*timedOut*/) {
                 // RAII reclaim — owned destructor frees the context whether
                 // fn() throws or returns normally.
@@ -435,14 +453,15 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
                 catch (...) {
                     CrashLog(L"ReinstallBurstScheduler.fire", "(non-std exception)");
                 }
-                // Self-delete the timer queue entry. NULL on the
-                // completion-event arg = don't wait for callback (we ARE
-                // the callback) — safe non-blocking cleanup.
+                // Self-delete the timer queue entry from OUR dedicated queue
+                // (A4). NULL completion-event arg = don't wait (we ARE the
+                // callback) — safe non-blocking cleanup, and never races Stop()'s
+                // DeleteTimerQueueEx (which waits for callbacks to finish).
                 if (owned->handle) {
-                    DeleteTimerQueueTimer(nullptr, owned->handle, nullptr);
+                    DeleteTimerQueueTimer(owned->queue, owned->handle, nullptr);
                 }
             };
-            if (CreateTimerQueueTimer(&ctx->handle, nullptr, poolCallback, ctx.get(),
+            if (CreateTimerQueueTimer(&ctx->handle, burstTimerQueue_, poolCallback, ctx.get(),
                                        static_cast<DWORD>(delayMs), 0,
                                        WT_EXECUTEDEFAULT | WT_EXECUTEONLYONCE)) {
                 // Ownership transferred to Win32 (callback reclaims).
@@ -457,8 +476,14 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
             HOOK_LOG(L"  BurstReinstall: posting reinstall reason=%u", reason);
             lifecycle_.PostReinstallHooks(static_cast<WPARAM>(reason));
         };
-        reinstallBurstScheduler_ =
-            std::make_unique<ReinstallBurstScheduler>(std::move(bcb));
+        // Only wire the scheduler if we own a dedicated, drainable queue (A4).
+        if (burstTimerQueue_) {
+            reinstallBurstScheduler_ =
+                std::make_unique<ReinstallBurstScheduler>(std::move(bcb));
+        } else {
+            HOOK_LOG(L"  CreateTimerQueue FAILED err=%lu — burst reinstall disabled "
+                     L"(detector still covers hijacks)", GetLastError());
+        }
     }
 
     NEXTKEY_LOG(L"HookEngine started (method=%d, vietnamese=%d)",
@@ -481,6 +506,21 @@ void HookEngine::Stop() {
     // that's about to exit. The generation bump makes those callbacks
     // no-op when they fire; the timer queue cleans itself up.
     if (reinstallBurstScheduler_) reinstallBurstScheduler_->Cancel();
+    // A4: block-drain in-flight burst timers BEFORE reinstallBurstScheduler_ is
+    // destroyed (it lives until the HookEngine dtor). DeleteTimerQueueEx with
+    // INVALID_HANDLE_VALUE waits for any executing callback to finish and cancels
+    // unfired ones — so no thread-pool callback can read the scheduler's
+    // generation_ through a dangling object at process exit. Cancel() above
+    // already neutralizes the POST; this closes the UAF on the load itself.
+    if (burstTimerQueue_) {
+        // Timers that DeleteTimerQueueEx cancels BEFORE they fire leak their heap
+        // TimerCtx (the callback that would free it never runs) — bounded to ≤3
+        // tiny contexts, reclaimed by the OS at process exit (Stop() is
+        // shutdown-only here). Not worth handle-tracking machinery; the prior
+        // behaviour was a UAF, so this is a strict improvement.
+        DeleteTimerQueueEx(burstTimerQueue_, INVALID_HANDLE_VALUE);
+        burstTimerQueue_ = nullptr;
+    }
     // Phase 1 perf histogram: final flush before we tear down so the
     // last 60s window of samples reaches disk. Idempotent.
     Perf::Histogram::Stop();
@@ -1046,7 +1086,10 @@ LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM 
                 // reclaim the top of the chain. Throttled (500 ms) in HookLifecycle
                 // so rapid clicks don't churn; PostReinstallHooks no-ops if the hook
                 // thread isn't running.
-                if (self->isChromiumClassApp_.load(std::memory_order_acquire)) {
+                // A1: reclaim-on-click only for a known hijacker (Dorion). Plain
+                // browsers don't hijack, so clicking into Chrome shouldn't churn
+                // the hook chain.
+                if (self->isKnownHijackerApp_.load(std::memory_order_acquire)) {
                     self->lifecycle_.PostReinstallHooks(REINSTALL_REASON_CHROMIUM);
                 }
             }
@@ -1068,6 +1111,11 @@ static bool IsIncompatibleLayout(HKL hkl);
 // ═══════════════════════════════════════════════════════════
 
 bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*/) {
+    // Formula-segment tracking runs first so it observes EVERY key (including
+    // ones a guard below eats), keeping the injector's bait-suppress flag in
+    // sync with whether we're inside an Excel "=..." cell.
+    UpdateFormulaSegment(vkCode);
+
     // H1b: top-of-pipeline guards extracted to RunTopGuards (steps 0/0b/1/1b/1c).
     // Behavior preserved byte-identical — see method comment for details.
     switch (RunTopGuards(vkCode)) {
@@ -1142,7 +1190,11 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
         };
         coordinator_.HandleKeyAtStage(
             NextKey::Pipeline::Stage::PreEngine, keyCtx, outputChannel_);
-        auto batch = outputChannel_.TakeBatch();
+        // DrainBatch (not TakeBatch): empties the channel WITH capacity retained
+        // so this per-keystroke drain on the LL-hook thread does not heap-allocate
+        // (Rule 11.2). The channel is empty right after the call, so the early
+        // `return`s below don't strand intents into the next keystroke.
+        const auto& batch = outputChannel_.DrainBatch();
         for (const auto& intent : batch) {
             if (std::holds_alternative<NextKey::Pipeline::Intents::ConsumeKey>(intent))
                 return true;
@@ -2379,6 +2431,61 @@ void HookEngine::ResetComposition() {
     autoCapState_ = AutoCapState::Idle;
     dispatcher_.ResetSynthEvents();  // Pending synthetics from old context are irrelevant after reset
     dispatcher_.ResetLastRealSynthTime();
+    // A reset means the editing context broke (mouse click, shortcut, exception).
+    // We can no longer be sure we're inside a formula cell — drop to the safe
+    // default (bait enabled) and re-arm segment-start detection.
+    formulaState_ = FormulaSegmentState{};
+    SetFormulaSegment(false);
+}
+
+void HookEngine::UpdateFormulaSegment(DWORD vkCode) {
+    VKEY_ASSERT_HOOK_THREAD();
+
+    // Inert unless the focused host is a spreadsheet (Excel). Keeps the bait
+    // suppression from ever leaking into other needBait hosts (browser omnibox,
+    // Outlook) and costs one bool test per key everywhere else.
+    if (!hostIsFormulaCapable_) return;
+
+    // Classify the key, then let the pure FSM advance (testable on Linux).
+    FormulaKeyKind kind;
+    if (vkCode == VK_RETURN || vkCode == VK_TAB || vkCode == VK_ESCAPE ||
+        vkCode == VK_PRIOR || vkCode == VK_NEXT) {    // PgUp / PgDn — leave the cell
+        kind = FormulaKeyKind::Boundary;
+    } else if ((vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||  // VK_LEFT/UP/RIGHT/DOWN
+               vkCode == VK_HOME || vkCode == VK_END) {
+        // Caret move within the cell. In Excel formula "point mode" arrowing to
+        // pick a cell reference does NOT close the "=..." cell, so the FSM keeps
+        // inFormula (and the bait stays suppressed). Outside a formula it falls
+        // back to boundary behaviour (grid navigation re-arms segment-start).
+        // See FormulaSegmentDecision.h Navigate.
+        kind = FormulaKeyKind::Navigate;
+    } else if (vkCode == VK_SHIFT || vkCode == VK_CONTROL || vkCode == VK_MENU ||
+               vkCode == VK_LWIN || vkCode == VK_RWIN || vkCode == VK_CAPITAL ||
+               vkCode == VK_BACK || vkCode == VK_DELETE) {
+        kind = FormulaKeyKind::Passive;
+    } else if (formulaState_.atSegmentStart && vkCode == VK_OEM_PLUS &&
+               (GetKeyState(VK_SHIFT) & 0x8000) == 0) {
+        // GetKeyState only runs at segment start AND for the '=' key (Shift+that
+        // is '+'); every other first-content key skips the syscall.
+        // NOTE (best-effort, US-layout): assumes '=' is the unshifted VK_OEM_PLUS.
+        // On layouts where '=' is shifted/AltGr (DE/FR/...) EqualsStart never
+        // fires → bait suppression is simply OFF there (safe pre-fix behaviour),
+        // not wrong. Resolve via ToUnicode/MapVirtualKey if those users matter.
+        kind = FormulaKeyKind::EqualsStart;
+    } else {
+        kind = FormulaKeyKind::OtherContent;
+    }
+
+    formulaState_ = NextFormulaSegmentState(formulaState_, kind);
+    SetFormulaSegment(formulaState_.inFormula);
+}
+
+void HookEngine::SetFormulaSegment(bool on) {
+    if (baitSuppressed_ == on) return;  // skip redundant atomic stores
+    baitSuppressed_ = on;
+    if (auto inj = dispatcher_.GetInjector(); inj) {
+        inj->SetSuppressBait(on);
+    }
 }
 
 void HookEngine::ClearWordState() {
@@ -2481,6 +2588,19 @@ static HWND GetInputTarget() {
 
 // Clipboard paste threshold: macros longer than this use Ctrl+V instead of SendInput
 static constexpr size_t kMacroClipboardThreshold = 200;
+
+// A1 (2026-05-31): exe names known to install a competing WH_KEYBOARD_LL above
+// ours. ONLY these get the expensive anti-Dorion responses — the reinstall
+// burst, the 40ms detector tick pin, and the mouse-click reinstall. Plain
+// browsers / Electron apps do NOT hijack the hook (see the
+// only-dorion-hijacks-ll-hook decision), so paying that cost (hook churn +
+// 25 wake/sec fighting the idle-RAM trim) for them was pure waste. The drift-
+// gated HookHijackDetector still runs for ALL chromium-class apps as the
+// reactive net. Prefix match (case-insensitive), same style as
+// IsKnownElectronExe; add an entry here if a new hijacker app is found.
+static bool IsKnownHijackerExe(const std::wstring& exeName) noexcept {
+    return !exeName.empty() && _wcsnicmp(exeName.c_str(), L"dorion", 6) == 0;
+}
 
 // Wave 3 PR 3.2 — IsKnownElectronExe (file-scope), IsWebView2App,
 // IsTrayOrTaskbarWindow, GetExeNameForHwnd, GetExeFullPathForHwnd
@@ -2886,20 +3006,32 @@ void HookEngine::MarkActivity() noexcept {
 // Both call sites are on the worker thread; this method is not safe to call
 // on the hook thread (tickRetuneFn_ may take MainThreadWorker's mutex).
 void HookEngine::RetuneCadenceIfNeeded() noexcept {
-    // Anti-Dorion v2: while a Chromium-class app is foreground, pin the
-    // tick at the detector's required cadence (40ms). Outside chromium
-    // foreground, fall back to the activity-driven adaptive cadence (the
-    // 2026-05-27 idle-backoff design). Pin overrides backoff because the
-    // detector's correctness assumption is "we sample physical state at
-    // ~40ms"; if we backed off to 5s while in Dorion, a hijack would lose
-    // up to 5s of typing before recovery — defeats the whole point.
+    // Anti-Dorion v2 (+ A1): while a KNOWN hook-hijacker (Dorion) is foreground
+    // AND the user is recently active, pin the tick at the detector's required
+    // cadence (40ms) — the detector samples physical state at ~40ms, so backing
+    // off mid-Dorion would lose keystrokes before recovery. For every other app
+    // (incl. plain Chrome/Electron, which don't hijack) use the activity-driven
+    // adaptive cadence — no 40ms pin, so no wasted wakeups.
+    //
+    // Deep-idle STOP (2026-05-30) OVERRIDES the pin: after kIdleStopThreshMs
+    // with no input, ComputeTickInterval returns 0 (STOP) and we let the worker
+    // park even under chromium. The detector only matters while the user is
+    // typing; with no input there is nothing to protect, and a perpetual 40ms
+    // poll just keeps pages warm and blocks the working-set trim (the whole
+    // point of this change — v2.1.24 idle parity). The next keystroke
+    // (MarkActivity → Signal) resumes the cadence and re-arms the detector
+    // before that key is processed — a ≤1-2 key anti-Dorion residual on resume,
+    // the same trade the detector already makes. Below the stop threshold the
+    // chromium pin still wins (instant hijack recovery while active).
     constexpr auto kChromiumActiveInterval = std::chrono::milliseconds(40);
     const std::uint64_t now = GetTickCount64();
     const std::uint64_t lastAct = lastActivityTickMs_.load(std::memory_order_relaxed);
     const std::uint64_t idleMs = (now > lastAct) ? (now - lastAct) : 0;
-    const auto desired = isChromiumClassApp_.load(std::memory_order_acquire)
-        ? kChromiumActiveInterval
-        : NextKey::ComputeTickInterval(idleMs);
+    const auto desired =
+        (isKnownHijackerApp_.load(std::memory_order_acquire)
+         && idleMs < NextKey::kIdleStopThreshMs)
+            ? kChromiumActiveInterval
+            : NextKey::ComputeTickInterval(idleMs);
     const auto desiredMs = static_cast<std::uint32_t>(desired.count());
     if (desiredMs != currentTickIntervalMs_.load(std::memory_order_relaxed)) {
         currentTickIntervalMs_.store(desiredMs, std::memory_order_relaxed);
@@ -3161,7 +3293,7 @@ void HookEngine::DispatchCoordinator(DWORD vkCode, DWORD reinjectVk,
     };
     coordinator_.HandleKeyAtStage(
         NextKey::Pipeline::Stage::PostEngine, keyCtx, outputChannel_);
-    (void)outputChannel_.TakeBatch();  // W2: feature delegates synchronously, batch is empty.
+    (void)outputChannel_.DrainBatch();  // W2: feature delegates synchronously, batch is empty (no-alloc drain).
 }
 
 /// Wave 3 PR 3.3 — outer shell only. Computes the prefix diff against
@@ -3590,6 +3722,10 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // owned by OutputDispatcher (atomic readers go through getter API).
     dispatcher_.SetSkipEmptyChar(cls->localSkipEmpty);
     dispatcher_.SetUseClipboardPaste(cls->localClipboard);
+    // Formula-segment tracking arms only for spreadsheet hosts (Excel). The
+    // preceding ResetComposition already cleared formulaState_ + pushed
+    // SetSuppressBait(false), so the new host starts with the bait enabled.
+    hostIsFormulaCapable_ = cls->localFormulaHost;
 
     // IOutputInjector swap — RCU publish so in-flight HandleAlphaKey reads
     // see either the old or new injector cleanly.
@@ -3610,6 +3746,13 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         // suggestKeepChars flag to default false until the next ApplyConfig.
         // Use the outer `cfg` loaded at function entry — no re-load needed.
         newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
+        // Seed the new injector's bait-suppress flag from the current segment
+        // state. ResetComposition() ran earlier in this focus apply, so
+        // baitSuppressed_ is the safe default (false) here — a focus change
+        // starts a fresh cell; a genuine mid-formula state is re-derived on the
+        // next keystroke by UpdateFormulaSegment. Set explicitly (rather than
+        // rely on the injector's default) so the contract is visible at the swap.
+        newInjector->SetSuppressBait(baitSuppressed_);
         dispatcher_.SetInjector(std::move(newInjector));
     }
 
@@ -3629,17 +3772,24 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     const bool wasChromiumClass = isChromiumClassApp_.exchange(
         cls->localElectronApp || cls->isBrowser, std::memory_order_acq_rel);
     const bool isChromiumClass = cls->localElectronApp || cls->isBrowser;
+    // A1: the expensive responses (burst + 40ms pin + mouse-click reinstall)
+    // gate on the narrower known-hijacker flag — only Dorion installs a
+    // competing hook. The detector itself stays universal (isChromiumClass).
+    const bool isKnownHijacker = IsKnownHijackerExe(cls->exeName);
+    const bool wasKnownHijacker =
+        isKnownHijackerApp_.exchange(isKnownHijacker, std::memory_order_acq_rel);
     // Anti-Dorion v2: gate the hijack detector + retune MainThreadWorker's
     // cadence on flag transitions.
     //   - Detector gate: Poll() returns immediately when flag is false →
     //     no ghost-key work outside chromium sessions (Invariant 3 & 4).
-    //   - Cadence retune: when flag flips, signal the worker so its NEXT
-    //     workHandler runs RetuneCadenceIfNeeded promptly. Without this,
-    //     a true flip while in adaptive idle backoff would wait up to 5s
-    //     for the next tick before pinning to 40ms — defeating the
-    //     detector's "no-click recovery" promise.
+    //   - Cadence retune: when the KNOWN-HIJACKER flag flips, signal the worker
+    //     so its NEXT workHandler runs RetuneCadenceIfNeeded promptly — pinning
+    //     to (or releasing from) the detector's 40ms cadence without waiting a
+    //     full tick. Also signal on the broader chromium flip so the universal
+    //     detector starts/stops polling promptly.
     if (hijackDetector_) hijackDetector_->SetChromiumClassActive(isChromiumClass);
-    if (wasChromiumClass != isChromiumClass && workerSignalFn_) {
+    if ((wasChromiumClass != isChromiumClass || wasKnownHijacker != isKnownHijacker)
+        && workerSignalFn_) {
         workerSignalFn_();
     }
 
@@ -3660,12 +3810,13 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // On focus-out, cancel any pending burst to avoid spurious reinstalls
     // when the user is no longer typing into Dorion. See
     // docs/plans/2026-05-28-anti-dorion-detector-inject-design.md.
-    if (wasChromiumClass != isChromiumClass && reinstallBurstScheduler_) {
+    if (wasKnownHijacker != isKnownHijacker && reinstallBurstScheduler_) {
+        // A1: gate on the known-hijacker transition (Dorion), not every browser.
         // Always cancel pending callbacks on transition — clean slate.
         // Cancel is cheap (atomic generation bump) so unconditional call OK.
         reinstallBurstScheduler_->Cancel();
-        if (isChromiumClass) {
-            HOOK_LOG(L"  BurstReinstall: scheduling 600/1200/1800ms burst (chromium-fg entered)");
+        if (isKnownHijacker) {
+            HOOK_LOG(L"  BurstReinstall: scheduling 600/1200/1800ms burst (known hijacker fg entered)");
             reinstallBurstScheduler_->Schedule(
                 static_cast<uint32_t>(REINSTALL_REASON_CHROMIUM),
                 {600, 1200, 1800});

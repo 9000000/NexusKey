@@ -943,7 +943,13 @@ void SettingsDialog::recalcWindowSize() {
     GetWindowRect(hwnd, &rc);
 
     sciter::dom::element rootEl = get_root();
-    double dpiScale = ScaleHelper::getDpiScale();
+
+    // Use per-window DPI (not system DPI) — critical for multi-monitor setups
+    // where primary and secondary monitors have different DPI scaling.
+    // GetDpiForSystem() returns the primary monitor's DPI, which is wrong when
+    // the window lives on a different monitor. GetDpiForWindow() returns the
+    // correct value for the monitor the HWND is currently on.
+    double dpiScale = ScaleHelper::getDpiScaleForWindow(hwnd);
 
     // Fixed widths (must match CSS)
     int COMPACT_WIDTH = static_cast<int>(BASE_WIDTH_COLLAPSED * dpiScale);

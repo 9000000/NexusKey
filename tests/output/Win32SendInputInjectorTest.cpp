@@ -137,6 +137,37 @@ TEST_F(Win32SendInputInjectorTest, ReplaceWithBaitCountsBaitEventsToo) {
     EXPECT_EQ(synthCounterDeltas[0], 8);
 }
 
+TEST_F(Win32SendInputInjectorTest, SuppressBaitSkipsBaitAndExtraBackspace) {
+    // #15: spreadsheet-formula cell ("=...") — the bait's extra BS would eat the
+    // leading '=' and strand a U+202F glyph (Excel autocomplete is a dropdown,
+    // not an inline selection). SetSuppressBait(true) must drop the bait so the
+    // backspace count stays EXACT, even on the needsBaitCharPrefix variant.
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
+    inj.SetSuppressBait(true);
+    EXPECT_TRUE(inj.Replace(1, L"x"));
+    // Expected: 1 BS (down+up=2) + 1 char (down+up=2) = 4 events. No bait char,
+    // no extra BS (contrast BaitCharFiresOnReplaceWithText = 8 events).
+    ASSERT_EQ(capturedInputs.size(), 4u);
+    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_BACK);
+    EXPECT_NE(capturedInputs[2].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[2].ki.wScan, L'x');
+    for (const auto& e : capturedInputs)
+        EXPECT_NE(e.ki.wScan, 0x202F) << "bait char must be suppressed";
+}
+
+TEST_F(Win32SendInputInjectorTest, SuppressBaitTogglesBackOn) {
+    // #15: leaving the formula segment (SetSuppressBait(false)) re-enables the
+    // bait — the toggle is live per-keystroke, not sticky.
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
+    inj.SetSuppressBait(true);
+    inj.SetSuppressBait(false);
+    EXPECT_TRUE(inj.Replace(1, L"x"));
+    // Bait restored: bait(2) + 2 BS(4: 1 orig + 1 to delete bait) + 1 char(2) = 8.
+    ASSERT_EQ(capturedInputs.size(), 8u);
+    EXPECT_NE(capturedInputs[0].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[0].ki.wScan, 0x202F);
+}
+
 TEST_F(Win32SendInputInjectorTest, PartialSendEmitsCompensatingNegativeDelta) {
     // Renderer-drop simulation: SendInput returns 2 of 6. Callback fires
     // twice — first +6 (pre-dispatch), then -4 (recovery so the counter

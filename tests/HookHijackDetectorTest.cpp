@@ -176,6 +176,72 @@ TEST_F(HookHijackDetectorTest, ModifierKeysFiltered_NoFalsePositive) {
     EXPECT_TRUE(injectedGhosts_.empty());
 }
 
+// ── 6b. Ghost replay uses the per-key modifier state, not trigger-time ──
+// Regression for the fix: pendingVks accumulate across polls; each must be
+// translated with the modifiers live WHEN it was buffered. Shift released
+// between the buffered Shift+letter and the trigger must not lowercase it.
+TEST_F(HookHijackDetectorTest, GhostReplayUsesPerKeyModifierState) {
+    auto cb = MakeCallbacks();
+    // Case-sensitive translate: uppercase iff this key's Shift byte is set.
+    cb.translateVkToChar = [](uint8_t vk, const uint8_t (&st)[256]) -> wchar_t {
+        if (vk >= 'A' && vk <= 'Z') {
+            const bool shift = (st[kVkShift] & 0x80) != 0;
+            return static_cast<wchar_t>(shift ? vk : (vk - 'A' + 'a'));
+        }
+        return 0;
+    };
+    NextKey::HookHijackDetector detector(std::move(cb));
+    detector.SetChromiumClassActive(true);
+    detector.Poll();  // baseline
+
+    // Poll 1: Shift+A, hook ate it → drift=1 (accum=1, no trigger), 'A' buffered
+    // with Shift down.
+    PressKey(kVkShift);
+    PressKey('A');
+    detector.Poll();
+    EXPECT_EQ(reinstallCount_, 0);
+
+    // Poll 2: Shift RELEASED, B pressed, hook ate it → accum=2 > tolerance=1 →
+    // trigger. 'B' buffered with Shift up.
+    ReleaseKey(kVkShift);
+    PressKey('B');
+    detector.Poll();
+
+    EXPECT_EQ(reinstallCount_, 1);
+    ASSERT_EQ(injectedGhosts_.size(), 2u);
+    EXPECT_EQ(injectedGhosts_[0], L'A')
+        << "replay must use the modifier state captured WHEN 'A' was buffered "
+           "(Shift down), not the trigger-time snapshot (Shift already up)";
+    EXPECT_EQ(injectedGhosts_[1], L'b');
+}
+
+// ── 6c. Leaving the chromium app latches a baseline reset for the next ──
+// session (consumed on the next Poll — never written from the focus thread,
+// which would race the worker's Poll). Stale drift must not carry across.
+TEST_F(HookHijackDetectorTest, DeactivateLatchesBaselineResetForNextSession) {
+    NextKey::HookHijackDetector detector(MakeCallbacks());
+    detector.SetChromiumClassActive(true);
+    detector.Poll();  // baseline
+
+    PressKey('A');    // drift=1 buffered (no hook bump), accum=1, no trigger
+    detector.Poll();
+    EXPECT_EQ(reinstallCount_, 0);
+
+    detector.SetChromiumClassActive(false);  // latches reset (no poll-state write)
+    detector.SetChromiumClassActive(true);   // re-enter
+
+    // First poll of the new session consumes the latch and re-establishes
+    // baselines, dropping the carried accum/buffer. A single new key then
+    // stays under tolerance → no spurious trigger from stale drift.
+    PressKey('S');
+    detector.Poll();
+    PressKey('D');
+    detector.Poll();
+    EXPECT_EQ(reinstallCount_, 0)
+        << "re-entry baseline reset must drop the previous session's drift";
+    EXPECT_TRUE(injectedGhosts_.empty());
+}
+
 // ── 7. Tolerance absorbs a 1-key read-order race ──────────────────────
 // Cumulative-drift refactor: drift=1 accumulates as accum=1 (still ≤
 // tolerance, no trigger). When the hook fetch_add lands on the next

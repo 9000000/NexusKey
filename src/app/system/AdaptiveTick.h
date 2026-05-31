@@ -1,17 +1,25 @@
-// AdaptiveTick.h - idle-backoff cadence for MainThreadWorker.
+// AdaptiveTick.h - idle cadence for MainThreadWorker.
 // SPDX-License-Identifier: AGPL-3.0-only
 //
-// Pure C++, Linux-portable. Maps "milliseconds since last user activity"
-// to the desired MainThreadWorker tick interval. Used by
-// HookEngine::OnTickPoll and HookEngine::RetuneCadenceIfNeeded.
+// Pure C++, Linux-portable. Maps "milliseconds since last user activity" to
+// the MainThreadWorker tick interval. Used by HookEngine::OnTickPoll and
+// HookEngine::RetuneCadenceIfNeeded.
 //
-// Why backoff: MainThreadWorker tick (200 ms default) touches a small set
-// of pages every iteration (atomic state, mailbox, std::function vtable,
-// CV internals). Windows working-set manager can't age these pages out, so
-// idle RAM stays elevated. Stretching the tick to 1 s after 10 s idle and
-// 5 s after 60 s idle lets the aging counter advance past the trim threshold.
+// Two states only:
+//   * Active / briefly paused (idle < kIdleStopThreshMs): tick at 200 ms. The
+//     worker polls CJK layout (Win+Space), foreground PID, and the anti-Dorion
+//     detector at this cadence — so a layout switch is caught within 200 ms
+//     (the instant feel of the a8800b3f build).
+//   * Deep idle (idle >= kIdleStopThreshMs): STOP (return 0). The owner maps 0
+//     to SetTickInterval(0) → the worker blocks on cv_.wait (∞), touches no
+//     pages, and Windows trims the working set (v2.1.24 idle parity). The next
+//     keystroke resumes the cadence via HookEngine::MarkActivity → Signal.
 //
-// See docs/plans/2026-05-27-adaptive-tick-idle-backoff.md for full rationale.
+// History: the 2026-05-27 "adaptive backoff" (200ms → 1s → 5s on idle) was
+// REMOVED. It regressed CJK detection (Win+Space after a pause caught 1-5s
+// late) for ZERO RAM benefit — touching pages every few seconds never lets the
+// working set age out; only a full STOP does. See
+// docs/plans/2026-05-30-idle-ram-investigation-summary.md.
 
 #pragma once
 
@@ -20,27 +28,30 @@
 
 namespace NextKey {
 
-// Tick intervals (milliseconds). Three buckets.
-inline constexpr std::uint32_t kTickActiveMs    = 200;   // active typing / interaction
-inline constexpr std::uint32_t kTickIdleShortMs = 1000;  // brief pause (reading, thinking)
-inline constexpr std::uint32_t kTickIdleLongMs  = 5000;  // AFK / sustained idle
+// Active tick cadence (ms) — used while the user is interacting or only
+// briefly paused. 200 ms makes CJK layout (Win+Space) detection feel instant.
+inline constexpr std::uint32_t kTickActiveMs = 200;
 
-// Idle thresholds (milliseconds since last MarkActivity).
-inline constexpr std::uint64_t kIdleShortThreshMs = 10000;  // > 10 s idle → short bucket
-inline constexpr std::uint64_t kIdleLongThreshMs  = 60000;  // > 60 s idle → long bucket
+// Deep-idle threshold (ms since last MarkActivity). Past this with no input,
+// the worker STOPS (parks) so Windows can trim the working set. Tunable: lower
+// (e.g. 60000) to trim idle machines sooner, at the cost of a slightly more
+// frequent (harmless) resume refault.
+inline constexpr std::uint64_t kIdleStopThreshMs = 120000;  // 2 min
 
 /// Given milliseconds since last user activity, return the tick interval the
 /// MainThreadWorker should use. Pure function; no globals, no Win32. Boundary
 /// behavior pinned by tests/AdaptiveTickTest.cpp.
+///
+/// Returns kTickActiveMs while idle < kIdleStopThreshMs, else **0 ms = STOP**
+/// (the owner parks the worker on cv_.wait ∞ → Windows trims the WS; a
+/// keystroke resumes the cadence). 0 is the only state that actually trims;
+/// gradual backoff was removed (it broke instant CJK for no RAM gain).
 [[nodiscard]] constexpr std::chrono::milliseconds
 ComputeTickInterval(std::uint64_t idleMs) noexcept {
-    if (idleMs < kIdleShortThreshMs) {
+    if (idleMs < kIdleStopThreshMs) {
         return std::chrono::milliseconds(kTickActiveMs);
     }
-    if (idleMs < kIdleLongThreshMs) {
-        return std::chrono::milliseconds(kTickIdleShortMs);
-    }
-    return std::chrono::milliseconds(kTickIdleLongMs);
+    return std::chrono::milliseconds(0);  // deep idle → STOP (park; WS trims)
 }
 
 }  // namespace NextKey

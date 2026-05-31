@@ -12,6 +12,7 @@
 #include "core/config/ConfigSnapshot.h"
 #include "core/hotkey/HotkeyRegistry.h"
 #include "core/AutoCapStateTransition.h"
+#include "core/FormulaSegmentDecision.h"
 #include "core/SmartSwitchManager.h"
 #include "app/system/HookCommandMailbox.h"
 #include "app/system/HookLifecycle.h"
@@ -324,6 +325,12 @@ private:
     void HandleGhostChar(wchar_t ch) noexcept;
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
+    // Track whether the current cell/line segment is a spreadsheet formula
+    // ("=..."), updating `formulaSegment_` and pushing it to the live injector
+    // via SetSuppressBait. Called once per keystroke at the top of ProcessKeyDown.
+    void UpdateFormulaSegment(DWORD vkCode);
+    // Set `formulaSegment_` and propagate to the active injector if changed.
+    void SetFormulaSegment(bool on);
     void CancelCommitUndo();   // commitUndoState_ = Idle + commitStack_.clear()
     void SetCommitUndoReady(); // commitUndoState_ = Ready + timestamp
 
@@ -524,6 +531,20 @@ private:
     /// Enum + transition rule live in core/AutoCapStateTransition.h so Linux GTest
     /// can exercise the modifier-gate contract without depending on Win32.
     AutoCapState autoCapState_ = AutoCapState::Idle;
+    // Spreadsheet-formula tracking (hook-thread only — written by both
+    // ApplyFocusOnHookThread and ProcessKeyDown, which both assert hook thread).
+    // The keystroke FSM lives in core/FormulaSegmentDecision.h (Linux-testable);
+    // this owns its rolling state plus two gates:
+    //   hostIsFormulaCapable_ — focused app is a spreadsheet (Excel only). When
+    //     false, UpdateFormulaSegment is inert so suppression never leaks into
+    //     other needBait hosts (browser omnibox, Outlook).
+    //   baitSuppressed_ — last value pushed to injector->SetSuppressBait, to skip
+    //     redundant atomic stores when the formula flag doesn't change.
+    // Best-effort: clicking into a pre-existing "=..." cell isn't detected (we
+    // only observe keystrokes), so that case keeps the unchanged pre-fix behaviour.
+    FormulaSegmentState formulaState_{};
+    bool hostIsFormulaCapable_ = false;
+    bool baitSuppressed_ = false;
     // Phase 3d: legacy `excludedAppSet_` removed — readers go through
     // configSnapshot_.load()->excludedAppSet. Same migration for
     // tsfAppSet_, macroTable_, spaceMacroKeys_, appEncodingOverrides_,
@@ -562,6 +583,20 @@ private:
     // right before the user types. Reinstall is throttled (500 ms) in
     // HookLifecycle so click bursts don't churn.
     std::atomic<bool> isChromiumClassApp_{false};
+    // A1 (2026-05-31): foreground is a KNOWN LL-hook hijacker (Dorion) — a
+    // subset of isChromiumClassApp_. Gates the EXPENSIVE anti-Dorion responses
+    // (reinstall burst + 40ms detector tick pin + mouse-click reinstall) so
+    // plain Chrome/Edge/Firefox/Electron — which do NOT install a competing
+    // WH_KEYBOARD_LL — don't pay the hook-churn + wake-rate cost. The drift-
+    // gated detector itself stays universal (gated on isChromiumClassApp_) as
+    // the reactive safety net. See only-dorion-hijacks-ll-hook + IsKnownHijackerExe.
+    std::atomic<bool> isKnownHijackerApp_{false};
+    // A4: dedicated timer queue for the reinstall-burst thread-pool timers, so
+    // Stop() can DeleteTimerQueueEx(INVALID_HANDLE_VALUE) to block-drain any
+    // in-flight callback before reinstallBurstScheduler_ is destroyed (prevents
+    // a UAF on the scheduler's generation_ at process exit). NULL → timers fall
+    // back to the default process queue (loses only the teardown-drain guarantee).
+    HANDLE burstTimerQueue_{nullptr};
     // Anti-Dorion v2: count of keydowns our LowLevelKeyboardProc was invoked
     // for. HookHijackDetector polls GetKeyboardState and compares its observed
     // up→down transition count against this counter to detect when our LL hook
