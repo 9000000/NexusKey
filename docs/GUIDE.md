@@ -54,6 +54,13 @@
 ### 💤 Q. Tại sao sau một thời gian dài không sử dụng, khi bắt đầu gõ lại tôi cảm thấy có một chút độ trễ (delay)?
 **A.** Để tối ưu và tiết kiệm tài nguyên hệ thống, VKey sẽ tự động đi vào **chế độ ngủ đông sâu (deep hibernation)** nếu không có hoạt động nào trong một thời gian dài. Khi bạn gõ phím trở lại, ứng dụng sẽ cần một khoảng thời gian rất ngắn để kích hoạt lại toàn bộ các dịch vụ và tính năng, điều này có thể gây ra một chút độ trễ (delay) nhỏ đối với một số tính năng trong vài giây đầu tiên. Sau đó, ứng dụng sẽ hoạt động mượt mà bình thường.
 
+### 💾 Q. Tôi mở Task Manager thấy VKey chiếm khoảng 1.6 ~ 2 MB RAM. Mức này có cao không, sao không thấy giảm thêm?
+**A.** Không cao đâu — đây đã là mức **cực kỳ nhẹ** và gần **giới hạn kỹ thuật** của một ứng dụng nền trên Windows rồi. Vài điều nên biết để khỏi hiểu nhầm:
+- 📊 **Con số trong Task Manager không cố định.** Cột "Bộ nhớ" (*Memory / Working Set*) là phần bộ nhớ **đang hoạt động** — nó tự **lên xuống liên tục** theo lúc bạn dùng máy, chứ không phải một con số đứng yên. Thấy nó nhích lên khi bạn vừa thao tác là hoàn toàn bình thường.
+- 💤 **RAM tự giảm khi máy rảnh.** Khi bạn không gõ trong một lúc, VKey vào [chế độ ngủ đông sâu](#faq) và Windows sẽ tự "dọn" bộ nhớ xuống — có thể còn **khoảng 0.3 MB**. Đây mới là lúc con số tụt rõ, và nó **diễn ra tự động**, bạn không cần làm gì cả. Cứ để máy rảnh vài phút rồi xem lại.
+- 🧩 **Phần lớn còn lại là code dùng chung của Windows** (đã được chia sẻ với các ứng dụng khác, không phải VKey "ăn" riêng), nên không thể — và không nên — ép nó nhỏ hơn nữa: ép giảm cứng sẽ làm chậm phản hồi phím, đi ngược lại tiêu chí *nhanh & mượt* của bộ gõ.
+- ✅ **Tóm lại:** thấy ~1.7 MB lúc đang dùng là **đúng và khỏe mạnh**, không phải lỗi rò rỉ bộ nhớ. Muốn thấy mức "nghỉ" thấp nhất, để máy rảnh vài phút rồi mở lại Task Manager.
+
 ---
 
 ## <span id="features">⚙️ Các chức năng chính</span>

@@ -158,12 +158,14 @@ VKey gồm ba lớp:
 
 ### Tối ưu bộ nhớ
 
-VKey được thiết kế với kiến trúc gọn nhẹ, không phụ thuộc runtime nặng, nên bản thân chương trình đã rất tiết kiệm tài nguyên — khởi chạy chỉ chiếm khoảng **1.6 ~ 2 MB RAM**. Nhờ footprint nhỏ, hệ điều hành có thể dễ dàng trim working set xuống còn khoảng **0.3 MB** sau một thời gian idle:
+VKey được thiết kế với kiến trúc gọn nhẹ, không phụ thuộc runtime nặng, nên rất tiết kiệm tài nguyên — lúc đang chạy chỉ chiếm khoảng **1.6 ~ 2 MB RAM**. Con số này là *working set* mà Task Manager hiển thị: nó tự **lên xuống** theo mức sử dụng. Khi máy rảnh một lúc, hệ điều hành tự trim xuống còn khoảng **0.3 MB** (mức ~1.6–2 MB lúc đang dùng là hoàn toàn bình thường):
 
 <p align="center">
   <img src="docs/images/ram-optimize.png" alt="VKey RAM Usage - 0.3 MB" width="700">
 </p>
-<p align="center"><em>VKey chỉ chiếm 0.3 MB RAM — kiến trúc nhẹ, OS dễ dàng tối ưu</em></p>
+<p align="center"><em>VKey ở mức nghỉ ~0.3 MB sau khi idle — kiến trúc nhẹ, OS tự tối ưu</em></p>
+
+> ℹ️ Thấy Task Manager hiện ~1.7 MB chứ không phải 0.3 MB? Đó là *working set* lúc đang dùng — bình thường và khỏe mạnh, không phải rò rỉ bộ nhớ. Chi tiết: [GUIDE — FAQ về RAM](docs/GUIDE.md#faq).
 
 ---
 
@@ -259,12 +261,14 @@ cmake --build build --config Release --target VKeyApp
 
 #### Memory Optimization
 
-VKey is built with a lean architecture and no heavy runtime dependencies, keeping resource usage minimal — starting at only **~1.6–2 MB RAM**. Thanks to its small footprint, the OS can easily trim the working set down to as low as **0.3 MB** after idle:
+VKey is built with a lean architecture and no heavy runtime dependencies, keeping resource usage minimal — only **~1.6–2 MB RAM** while active. That figure is the *working set* shown in Task Manager: it naturally **rises and falls** with usage. After a period of inactivity the OS trims it down to as low as **0.3 MB** (seeing ~1.6–2 MB while you're typing is perfectly normal):
 
 <p align="center">
   <img src="docs/images/ram-optimize.png" alt="VKey RAM Usage - 0.3 MB" width="700">
 </p>
-<p align="center"><em>VKey at 0.3 MB RAM — lightweight architecture, easily optimized by the OS</em></p>
+<p align="center"><em>VKey at its idle floor (~0.3 MB) — lightweight architecture, trimmed automatically by the OS</em></p>
+
+> ℹ️ Task Manager shows ~1.7 MB instead of 0.3 MB? That's the active *working set* — normal and healthy, not a memory leak. Details: [GUIDE — RAM FAQ](docs/GUIDE.md#faq).
 
 </details>
 
