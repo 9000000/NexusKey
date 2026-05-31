@@ -69,8 +69,8 @@ TEST(AdaptiveTickBenchmark, GatedSignalFiresOnceOnTransition) {
     std::atomic<int> signalCount{0};
     mock.SetWorkerSignalFn([&] { signalCount.fetch_add(1, std::memory_order_relaxed); });
 
-    // Idle backoff state — gate is open.
-    mock.SetCurrentTickIntervalForTest(NextKey::kTickIdleLongMs);
+    // Stopped/parked state (interval 0) — gate is open.
+    mock.SetCurrentTickIntervalForTest(0u);
     mock.MarkActivity();
     EXPECT_EQ(signalCount.load(), 1) << "Idle->active transition didn't signal.";
 
@@ -81,8 +81,8 @@ TEST(AdaptiveTickBenchmark, GatedSignalFiresOnceOnTransition) {
     for (int i = 0; i < 1000; ++i) mock.MarkActivity();
     EXPECT_EQ(signalCount.load(), 1) << "Active-state MarkActivity must not signal.";
 
-    // Second idle->active transition.
-    mock.SetCurrentTickIntervalForTest(NextKey::kTickIdleShortMs);
+    // Second stopped->active transition.
+    mock.SetCurrentTickIntervalForTest(0u);
     mock.MarkActivity();
     EXPECT_EQ(signalCount.load(), 2);
 }
