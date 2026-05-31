@@ -85,6 +85,35 @@ TEST(FormulaSegmentDecision, BoundaryResetsState) {
     EXPECT_FALSE(s.inFormula);
 }
 
+// ── Navigate (arrows / Home / End) — Excel point-mode keeps the formula ─────
+TEST(FormulaSegmentDecision, NavigateInsideFormulaPreservesFormula) {
+    // "=SUM(" then Right/Left to point at a cell — the formula is NOT closed,
+    // so inFormula must stay true (else the bait re-emits inside the "=..." cell).
+    FormulaSegmentState s = Fold({K::EqualsStart, K::OtherContent, K::Navigate});
+    EXPECT_TRUE(s.inFormula);
+    EXPECT_FALSE(s.atSegmentStart);
+    // Subsequent content (more of the formula) stays a formula.
+    s = NextFormulaSegmentState(s, K::OtherContent);
+    EXPECT_TRUE(s.inFormula);
+}
+
+TEST(FormulaSegmentDecision, NavigateOutsideFormulaActsLikeBoundary) {
+    // Plain-text cell then an arrow = grid navigation to a fresh cell → re-arm.
+    FormulaSegmentState s = Fold({K::OtherContent, K::Navigate});
+    EXPECT_TRUE(s.atSegmentStart);
+    EXPECT_FALSE(s.inFormula);
+    // ...and the new cell can open a formula.
+    s = NextFormulaSegmentState(s, K::EqualsStart);
+    EXPECT_TRUE(s.inFormula);
+}
+
+TEST(FormulaSegmentDecision, NavigateFromArmedStaysArmed) {
+    // Arrow with nothing typed yet (grid navigation) leaves the segment armed.
+    FormulaSegmentState s = Fold({K::Navigate});
+    EXPECT_TRUE(s.atSegmentStart);
+    EXPECT_FALSE(s.inFormula);
+}
+
 // ── Full multi-cell session: Enter between cells re-arms detection ──────────
 TEST(FormulaSegmentDecision, MultiCellSessionReArmsAfterEnter) {
     // Cell 1: "=if"  → formula

@@ -183,6 +183,30 @@ TEST_F(HookCommandMailboxTest, DrainClearsWakeLatchBeforeReturning) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// ResetLatch — restart safety. A Post whose WM_APP_HOOK_COMMAND the pump
+// exited before draining leaves wakePosted_ stuck true; without a reset the
+// first Post after a restart would have its wake suppressed and strand the
+// command until an unrelated keydown drains it.
+// ──────────────────────────────────────────────────────────────────────────
+TEST_F(HookCommandMailboxTest, ResetLatchClearsBitsAndWakeLatchSoNextPostWakes) {
+    int wakes = 0;
+    mailbox_.SetWakeFn([&] { ++wakes; });
+
+    mailbox_.Post(kFocusChanged);          // sets bits + latch, fires wake #1
+    EXPECT_EQ(wakes, 1);
+    EXPECT_TRUE(mailbox_.IsWakePending());
+    EXPECT_NE(mailbox_.PeekBits(), 0u);
+
+    mailbox_.ResetLatch();                 // simulate Stop() without a drain
+    EXPECT_FALSE(mailbox_.IsWakePending());
+    EXPECT_EQ(mailbox_.PeekBits(), 0u);
+
+    mailbox_.Post(kConfigApply);           // first post of the "new session"
+    EXPECT_EQ(wakes, 2)
+        << "after ResetLatch the next Post must fire its wake (latch not stuck)";
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Concurrency stress — N producer threads pounding distinct bits while
 // one drainer thread sweeps. After all producers finish, drainer must
 // have observed at least one set instance of every producer's bit.

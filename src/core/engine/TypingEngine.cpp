@@ -137,18 +137,18 @@ void TypingEngine::PushChar(wchar_t keyChar) {
     const wchar_t lower = towlower(keyChar);
     const bool isUpper = iswupper(keyChar);
     const EngineRule::EngineRuleContext ruleCtx{
-        keyChar,
-        lower,
-        isUpper,
-        TypingAction::None,
-        spellCheckDisabled_,
-        config_.allowEnglishBypass,
-        escape_.isEscaped(),
-        engProt_.bias,
-        false,
-        states_,
-        rawInput_,
-        config_,
+        .keyChar            = keyChar,
+        .lower              = lower,
+        .isUpper            = isUpper,
+        .action             = TypingAction::None,
+        .spellCheckDisabled = spellCheckDisabled_,
+        .allowEnglishBypass = config_.allowEnglishBypass,
+        .escapeActive       = escape_.isEscaped(),
+        .bias               = engProt_.bias,
+        .isVniDigitSeq      = false,
+        .states             = states_,
+        .rawInput           = rawInput_,
+        .config             = config_,
     };
     if (ruleRegistry_.DispatchAtPhase(EngineRule::Phase::PreClassify, ruleCtx, *this)
             == EngineRule::Result::Veto) return;

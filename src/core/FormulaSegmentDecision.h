@@ -27,7 +27,8 @@ struct FormulaSegmentState {
 
 // Per-keystroke classification, computed by the caller from VK + modifiers.
 enum class FormulaKeyKind {
-    Boundary,      // Enter/Tab/Esc/arrows/Home/End/PgUp/PgDn — ends the segment
+    Boundary,      // Enter/Tab/Esc/PgUp/PgDn — leaves the cell, ends the segment
+    Navigate,      // arrows/Home/End — caret move; preserves a formula (Excel point mode)
     Passive,       // modifiers, Backspace, Delete — don't open a content segment
     EqualsStart,   // an unshifted '=' (formula trigger; only acts at segment start)
     OtherContent   // any other content key
@@ -39,6 +40,16 @@ NextFormulaSegmentState(FormulaSegmentState s, FormulaKeyKind kind) noexcept {
     switch (kind) {
         case FormulaKeyKind::Boundary:
             // New cell/line — forget formula-ness, re-arm segment-start.
+            return FormulaSegmentState{/*atSegmentStart=*/true, /*inFormula=*/false};
+        case FormulaKeyKind::Navigate:
+            // Caret move inside the current cell (arrows / Home / End). If we are
+            // already inside a formula this is Excel "point mode" — arrowing to
+            // pick a cell reference does NOT close the formula, so preserve
+            // inFormula and keep the bait suppressed (else the next Replace()
+            // re-emits the U+202F bait inside the live "=..." cell). Outside a
+            // formula it is grid navigation to a fresh cell → re-arm like Boundary.
+            if (s.inFormula)
+                return FormulaSegmentState{/*atSegmentStart=*/false, /*inFormula=*/true};
             return FormulaSegmentState{/*atSegmentStart=*/true, /*inFormula=*/false};
         case FormulaKeyKind::Passive:
             // Doesn't open content; leaves both flags untouched.

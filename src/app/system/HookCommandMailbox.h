@@ -120,6 +120,17 @@ public:
 
     void SetWakeFn(WakeFn fn) noexcept { wakeFn_ = std::move(fn); }
 
+    /// Reset the wake latch and pending bits to pristine. Call when a
+    /// HookLifecycle is stopped so a stale `wakePosted_` (a Post whose
+    /// WM_APP_HOOK_COMMAND the pump exited before draining) cannot suppress the
+    /// FIRST Post's wake after a subsequent Start — otherwise that command sits
+    /// stranded until an unrelated keydown drains it. No-op in the normal
+    /// start-once production flow; matters for restart / test-reuse paths.
+    void ResetLatch() noexcept {
+        bits_.store(0, std::memory_order_relaxed);
+        wakePosted_.store(false, std::memory_order_relaxed);
+    }
+
     /// Post a command bit (and optional focus snapshot). Lock-free, safe
     /// from any thread except the hook thread itself. Fires the wake
     /// trampoline exactly once per empty→non-empty transition.

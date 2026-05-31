@@ -45,13 +45,21 @@ void HookCommandMailbox::Post(std::uint32_t bit,
 
     // fetch_or coalesces against concurrent producers — multiple bits set
     // by parallel posts collapse into a single OR'd value.
-    bits_.fetch_or(bit, std::memory_order_release);
+    //
+    // seq_cst (not release): this fetch_or and the wakePosted_ exchange below
+    // form a Dekker/StoreLoad pair with DrainBits's store+exchange. release/
+    // acquire order StoreStore/LoadLoad/LoadStore but NOT StoreLoad, so under
+    // release this set-bit could be reordered after the wakePosted_ read and a
+    // command would strand (bit set, no wake) until the next keydown drains it.
+    // seq_cst gives a single total order across all four ops, closing it. Free
+    // on x64 (the exchange is already a LOCK'd full barrier); matters on ARM64.
+    bits_.fetch_or(bit, std::memory_order_seq_cst);
 
     // Fire wake exactly once per empty→non-empty transition. exchange
     // returns the old value; if it was already true, another producer
     // already fired wake and the hook thread will see our bit on the
     // same drain pass — no need to wake again.
-    if (!wakePosted_.exchange(true, std::memory_order_acq_rel)) {
+    if (!wakePosted_.exchange(true, std::memory_order_seq_cst)) {
         if (wakeFn_) wakeFn_();
     }
 }
@@ -77,8 +85,16 @@ std::uint32_t HookCommandMailbox::DrainBits() noexcept {
     //   T2: drain runs bits.exchange(0) — drains P's bit immediately.
     //   Result: drain catches P's bit AND wake is queued for the next
     //   drain pass (idempotent — that pass will see bits=0 and return).
-    wakePosted_.store(false, std::memory_order_release);
-    return bits_.exchange(0, std::memory_order_acquire);
+    //
+    // The "forward order is correct" reasoning above holds only if the two ops
+    // are not reordered by the CPU. They are distinct atomics, so this is a
+    // StoreLoad/Dekker pattern: release/acquire does NOT forbid the store(false)
+    // from sinking past the bits_.exchange load. seq_cst on BOTH ops (here and
+    // in Post) gives a single total order that guarantees the source order is
+    // the visible order. Free on x64 (exchange is a LOCK'd full barrier);
+    // required for correctness on weakly-ordered ISAs (Windows ARM64).
+    wakePosted_.store(false, std::memory_order_seq_cst);
+    return bits_.exchange(0, std::memory_order_seq_cst);
 }
 
 std::shared_ptr<const FocusClassification>
