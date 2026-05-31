@@ -575,6 +575,20 @@ private:
     // right before the user types. Reinstall is throttled (500 ms) in
     // HookLifecycle so click bursts don't churn.
     std::atomic<bool> isChromiumClassApp_{false};
+    // A1 (2026-05-31): foreground is a KNOWN LL-hook hijacker (Dorion) — a
+    // subset of isChromiumClassApp_. Gates the EXPENSIVE anti-Dorion responses
+    // (reinstall burst + 40ms detector tick pin + mouse-click reinstall) so
+    // plain Chrome/Edge/Firefox/Electron — which do NOT install a competing
+    // WH_KEYBOARD_LL — don't pay the hook-churn + wake-rate cost. The drift-
+    // gated detector itself stays universal (gated on isChromiumClassApp_) as
+    // the reactive safety net. See only-dorion-hijacks-ll-hook + IsKnownHijackerExe.
+    std::atomic<bool> isKnownHijackerApp_{false};
+    // A4: dedicated timer queue for the reinstall-burst thread-pool timers, so
+    // Stop() can DeleteTimerQueueEx(INVALID_HANDLE_VALUE) to block-drain any
+    // in-flight callback before reinstallBurstScheduler_ is destroyed (prevents
+    // a UAF on the scheduler's generation_ at process exit). NULL → timers fall
+    // back to the default process queue (loses only the teardown-drain guarantee).
+    HANDLE burstTimerQueue_{nullptr};
     // Anti-Dorion v2: count of keydowns our LowLevelKeyboardProc was invoked
     // for. HookHijackDetector polls GetKeyboardState and compares its observed
     // up→down transition count against this counter to detect when our LL hook

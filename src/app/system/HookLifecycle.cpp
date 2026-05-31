@@ -77,6 +77,11 @@ void HookLifecycle::Stop() {
     ready_.store(false, std::memory_order_release);
     drainFn_ = nullptr;
     ghostKeyFn_ = nullptr;
+    // #10: clear any stale wake latch / pending bits so that if this lifecycle
+    // is restarted, the first cross-thread Post fires its wake instead of being
+    // suppressed by a wakePosted_=true left over from a command the pump exited
+    // before draining. No-op in the normal start-once flow.
+    mailbox_.ResetLatch();
 }
 
 void HookLifecycle::PostReinstallHooks(WPARAM reason) noexcept {
