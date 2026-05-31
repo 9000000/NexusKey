@@ -24,6 +24,7 @@ CjkSwitchInputs MakeInputs() {
     in.modeBeforeCjk = true;
     in.vietnameseMode = true;
     in.isExcluded = false;
+    in.isForcedVietnamese = false;
     in.cjkAutoSwitchEnabled = true;
     return in;
 }
@@ -94,6 +95,37 @@ TEST(CjkSwitchDecision, Excluded_NoLeaveEvenWhenLayoutBecomesCompatible) {
     EXPECT_EQ(out.transition, CjkTransition::None);
     EXPECT_TRUE(out.newLayoutSuppressed);   // preserved for later replay
     EXPECT_FALSE(out.newVietnameseMode);    // preserved
+}
+
+TEST(CjkSwitchDecision, ForcedVietnamese_NoEnterEvenOnCjkLayout) {
+    // Per-app hard-V lock owns the mode: CJK auto-switch must not flip
+    // vietnameseMode_ to E on a JA/CN/KO layout while the app is forced-V.
+    auto in = MakeInputs();
+    in.isForcedVietnamese = true;
+    in.isCompatibleNow = false;  // CJK layout active
+
+    auto out = DecideCjkSwitch(in);
+
+    EXPECT_EQ(out.transition, CjkTransition::None);
+    EXPECT_FALSE(out.newLayoutSuppressed);
+    EXPECT_TRUE(out.newVietnameseMode);
+}
+
+TEST(CjkSwitchDecision, ForcedVietnamese_NoLeaveEvenWhenLayoutBecomesCompatible) {
+    // Symmetric to the excluded gate: preserve cached suppression state for the
+    // caller's leave-replay (OnFocusChanged re-evaluates when forced-V clears).
+    auto in = MakeInputs();
+    in.isForcedVietnamese = true;
+    in.isCompatibleNow = true;
+    in.layoutSuppressed = true;
+    in.modeBeforeCjk = true;
+    in.vietnameseMode = false;
+
+    auto out = DecideCjkSwitch(in);
+
+    EXPECT_EQ(out.transition, CjkTransition::None);
+    EXPECT_TRUE(out.newLayoutSuppressed);
+    EXPECT_FALSE(out.newVietnameseMode);
 }
 
 // ── Happy-path transitions ────────────────────────────────────────────

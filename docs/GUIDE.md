@@ -11,7 +11,7 @@
    - [⌨️ 1. Kiểu gõ](#typing-method)
    - [📱 2. Cấu hình từng ứng dụng](#app-config)
    - [🔄 3. Lưu chế độ gõ theo app](#remember-mode)
-   - [🚫 4. Loại trừ ứng dụng](#exclude-app)
+   - [🚫 4. Khoá chế độ theo ứng dụng (E / V)](#exclude-app)
    - [🌏 5. Tự tắt khi bàn phím CJK](#cjk-layout)
    - [🔠 6. Viết hoa chữ cái đầu câu](#auto-capitalize)
    - [✍️ 7. Gõ tự do](#free-typing)
@@ -40,7 +40,7 @@
 ### 🔄 Q. Tôi muốn khi đang gõ tiếng Việt ở app này, chuyển sang app khác thì nó tự động chuyển sang gõ tiếng Anh thì làm thế nào?
 **A.** Bạn có hai lựa chọn cực kỳ tiện lợi:
 1. Sử dụng tính năng **Lưu chế độ gõ theo app** để VKey tự động nhớ trạng thái `V` (tiếng Việt) hoặc `E` (tiếng Anh) của từng ứng dụng. 👉 Xem [🔄 Lưu chế độ gõ theo app](#remember-mode).
-2. Sử dụng tính năng **Loại trừ ứng dụng** để ép ứng dụng đó luôn gõ tiếng Anh, ngăn chặn hoàn toàn việc vô tình bật lại tiếng Việt bằng phím tắt. 👉 Xem [🚫 Loại trừ ứng dụng](#exclude-app).
+2. Sử dụng tính năng **Khoá chế độ theo ứng dụng** để khoá cứng ứng dụng đó vào chế độ `E` (luôn tiếng Anh) hoặc `V` (luôn tiếng Việt), ngăn chặn hoàn toàn việc vô tình chuyển chế độ bằng phím tắt. 👉 Xem [🚫 Khoá chế độ theo ứng dụng (E / V)](#exclude-app).
 
 ### 🌏 Q. Tôi dùng nhiều layout bàn phím khác nhau, VKey có thể tự động chuyển sang E mode khi tôi đổi sang bàn phím ngôn ngữ khác không?
 **A.** Có! Khi bạn bật tùy chọn **Tự tắt khi bàn phím CJK**, VKey sẽ tự động phát hiện khi bạn chuyển đổi sang các layout bàn phím Trung - Nhật - Hàn để tắt gõ tiếng Việt. Khi bạn đổi về layout US, VKey sẽ tự động kích hoạt lại chế độ tiếng Việt. 👉 Chi tiết xem tại phần [🌏 Tự tắt khi bàn phím CJK](#cjk-layout).
@@ -50,6 +50,9 @@
 
 ### 🖥️ Q. Tôi dùng màn hình rời làm màn hình chính, làm sao biết được VKey đang ở chế độ gõ nào?
 **A.** VKey hỗ trợ tính năng **Icon nổi (Floating Icon)** 💬 hiển thị trực quan trạng thái gõ `V`/`E` ngay trên màn hình chính, giúp bạn dễ dàng theo dõi dù đang mở ứng dụng toàn màn hình hoặc dùng nhiều màn hình.
+
+### 💤 Q. Tại sao sau một thời gian dài không sử dụng, khi bắt đầu gõ lại tôi cảm thấy có một chút độ trễ (delay)?
+**A.** Để tối ưu và tiết kiệm tài nguyên hệ thống, VKey sẽ tự động đi vào **chế độ ngủ đông sâu (deep hibernation)** nếu không có hoạt động nào trong một thời gian dài. Khi bạn gõ phím trở lại, ứng dụng sẽ cần một khoảng thời gian rất ngắn để kích hoạt lại toàn bộ các dịch vụ và tính năng, điều này có thể gây ra một chút độ trễ (delay) nhỏ đối với một số tính năng trong vài giây đầu tiên. Sau đó, ứng dụng sẽ hoạt động mượt mà bình thường.
 
 ---
 
@@ -69,8 +72,13 @@ VKey cung cấp nhiều phương thức gõ linh hoạt để đáp ứng mọi 
 ### <span id="remember-mode">🔄 3. Lưu chế độ gõ theo app</span>
 - Tự động ghi nhớ trạng thái gõ tiếng Việt (`V`) hoặc tiếng Anh (`E`) cho từng ứng dụng. Khi bạn chuyển đổi qua lại giữa các ứng dụng, VKey sẽ tự động kích hoạt lại trạng thái gõ tương ứng của ứng dụng đó ✨.
 
-### <span id="exclude-app">🚫 4. Loại trừ ứng dụng</span>
-- Danh sách các ứng dụng được cấu hình luôn luôn gõ tiếng Anh. Khi hoạt động trong các ứng dụng này, VKey sẽ khóa hoàn toàn chế độ gõ tiếng Việt và bỏ qua mọi phím tắt chuyển đổi để tránh phiền toái (rất thích hợp cho các tựa game 🎮 hoặc IDE viết code 💻). Nên bật thêm tính năng lưu chế độ gõ theo app để có trải nghiệm tốt nhất.
+### <span id="exclude-app">🚫 4. Khoá chế độ theo ứng dụng (E / V)</span>
+- Danh sách các ứng dụng được **khoá cứng** vào một chế độ gõ cố định khi bạn chuyển focus vào chúng. Mỗi ứng dụng trong danh sách chọn được một trong hai chế độ:
+  - **`E` — Loại trừ (tiếng Anh):** VKey trở nên hoàn toàn trong suốt, khóa chế độ tiếng Việt và bỏ qua mọi phím tắt chuyển đổi (rất thích hợp cho các tựa game 🎮 hoặc IDE viết code 💻).
+  - **`V` — Khoá tiếng Việt:** VKey luôn **ép bật tiếng Việt** khi bạn vào ứng dụng đó, và cũng khóa phím tắt chuyển đổi (rất thích hợp cho ứng dụng chat 💬 luôn gõ tiếng Việt như Zalo, Messenger).
+- Trong cả hai chế độ, phím tắt chuyển V/E bị **chặn** khi đang ở trong ứng dụng đã khoá — đúng nghĩa "khoá cứng". Khi rời ứng dụng, chế độ trở lại theo quy tắc bình thường (lưu chế độ theo app, hoặc cờ chung).
+- Với bản Sciter, bạn click vào icon `E`/`V` của ứng dụng đã thêm để đổi nhanh chế độ; với bản Classic, nhấp đúp (double click) vào dòng ứng dụng để đổi chế độ. Một ứng dụng chỉ thuộc đúng một chế độ.
+- *📌 Lưu ý:* Tính năng này áp dụng cho **hook engine**. Các ứng dụng dùng TSF (một số trình duyệt/Office) không bị ép chế độ V bởi tính năng này.
 
 ### <span id="cjk-layout">🌏 5. Tự tắt khi bàn phím CJK</span>
 - Tự động tắt chế độ tiếng Việt (chuyển sang `E` mode) khi hệ điều hành chuyển sang layout bàn phím Trung 🇨🇳 - Nhật 🇯🇵 - Hàn 🇰🇷.

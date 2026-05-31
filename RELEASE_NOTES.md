@@ -1,6 +1,7 @@
 # VKey v4.0.0
 
 **✨ Tính năng mới & Cải tiến:**
+- "Loại trừ ứng dụng" nâng cấp thành **Khoá chế độ theo ứng dụng (E / V)**: mỗi app chọn được khoá cứng `E` (luôn tiếng Anh) hoặc `V` (luôn ép tiếng Việt) — phím tắt chuyển chế độ bị khoá khi ở trong app đó.
 - Refactor kiến trúc engine gõ tiếng Việt
 - Thêm watchdog cho phiên bản classic
 - Gộp các phím tắt vào 1 nơi cho dễ config và quản lý
@@ -9,7 +10,7 @@
 - Cho phép đồng bộ với gợi ý của trình duyệt: backspace sẽ chỉ xoá gợi ý thay vì xoá ký tự.
 - Thêm TSF cho phiên bản classic
 - Tối ưu thuật toán và kiến trúc hook
-- Bổ sung hướng dẫn sử dụng và FAQ cho người dùng có thể nhanh chóng hiểu và sử dụng được ứng dụng. 
+- Bổ sung [hướng dẫn sử dụng và FAQ](docs/GUIDE.md) cho người dùng có thể nhanh chóng hiểu và sử dụng được ứng dụng.
 
 **🛠 Sửa lỗi:**
 - Sửa lỗi c-h-u-y-e-n-j-e không thành chuyện

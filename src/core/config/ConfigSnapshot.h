@@ -73,6 +73,12 @@ struct ConfigSnapshot {
     /// Lookup is exe-name lowercase.
     std::unordered_set<std::wstring> excludedAppSet;
 
+    /// Apps locked to Vietnamese (per-app hard-V: force V on focus, block the
+    /// V/E toggle while focused). Lookup is exe-name lowercase. Kept DISJOINT
+    /// from excludedAppSet at build time (excluded wins — see
+    /// core/PerAppModeDecision.h) so the runtime never sees an app in both.
+    std::unordered_set<std::wstring> forcedVietnameseAppSet;
+
     /// Apps that should use the TSF TIP instead of the LL hook engine.
     /// Same lookup as excludedAppSet.
     std::unordered_set<std::wstring> tsfAppSet;
@@ -104,6 +110,7 @@ struct ConfigSnapshot {
     [[nodiscard]] static ConfigSnapshot Build(
         std::unordered_map<std::wstring, std::wstring> macroTable,
         std::unordered_set<std::wstring>               excludedAppSet,
+        std::unordered_set<std::wstring>               forcedVietnameseAppSet,
         std::unordered_set<std::wstring>               tsfAppSet,
         std::unordered_map<std::wstring, CodeTable>    appEncodingOverrides,
         std::unordered_map<std::wstring, InputMethod>  appInputMethodOverrides,
@@ -112,6 +119,7 @@ struct ConfigSnapshot {
         ConfigSnapshot snap;
         snap.macroTable              = std::move(macroTable);
         snap.excludedAppSet          = std::move(excludedAppSet);
+        snap.forcedVietnameseAppSet  = std::move(forcedVietnameseAppSet);
         snap.tsfAppSet               = std::move(tsfAppSet);
         snap.appEncodingOverrides    = std::move(appEncodingOverrides);
         snap.appInputMethodOverrides = std::move(appInputMethodOverrides);

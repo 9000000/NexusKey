@@ -540,6 +540,14 @@ private:
     // same idiom for uniformity (cost = MOV on x86).
     std::atomic<bool> isExcludedApp_{false};      // cached: current app is excluded
     std::atomic<DWORD> excludedPid_{0};           // PID of excluded app (fast check in ProcessKeyDown)
+    // Per-app hard-V lock. Same acquire/release contract as isExcludedApp_:
+    // single-writer on the hook thread (ApplyFocusOnHookThread store(release));
+    // reader is the toggle-lock gate (ApplyToggleVNOnHookThread load(acquire)).
+    // NOT read on the per-keystroke hot path — forced-V just keeps
+    // vietnameseMode_ true, so RunTopGuards/ProcessKeyDown are unchanged.
+    // Init false: a toggle before the first focus classify is a benign no-op.
+    std::atomic<bool> isForcedVnApp_{false};      // cached: current app is locked to Vietnamese
+    std::atomic<DWORD> forcedVnPid_{0};           // PID of forced-V app (toggle-lock stale check)
     // (tsfAppSet_ removed — see Phase 3d note above)
     // Sprint 1 D5.1: migrated to std::atomic. Writers: ReloadFromToml (main) +
     // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +

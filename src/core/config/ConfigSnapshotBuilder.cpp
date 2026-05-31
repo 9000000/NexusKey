@@ -49,9 +49,18 @@ std::shared_ptr<const ConfigSnapshot> BuildFromToml(
     }
 
     std::unordered_set<std::wstring> excluded;
+    std::unordered_set<std::wstring> forcedVn;
     if (excludeAppsEnabled) {
         for (auto& app : ConfigManager::LoadAllExcludedApps(wPath))
             excluded.insert(std::move(app));
+        // Per-app hard-V list shares the excludeApps feature gate. Keep the two
+        // sets DISJOINT: an exe in both lists resolves to excluded (transparent)
+        // wins — see core/PerAppModeDecision.h. Dropping it here means the
+        // runtime never observes an app in both, so a hand-edited config can't
+        // double-lock.
+        for (auto& app : ConfigManager::LoadForcedVnApps(wPath)) {
+            if (!excluded.count(app)) forcedVn.insert(std::move(app));
+        }
     }
 
     std::unordered_set<std::wstring> tsf;
@@ -68,6 +77,7 @@ std::shared_ptr<const ConfigSnapshot> BuildFromToml(
     return std::make_shared<const ConfigSnapshot>(ConfigSnapshot::Build(
         std::move(macros),
         std::move(excluded),
+        std::move(forcedVn),
         std::move(tsf),
         std::move(encOv),
         std::move(imOv),

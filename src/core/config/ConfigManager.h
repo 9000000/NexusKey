@@ -84,8 +84,17 @@ public:
     /// Load all excluded apps (merges [excluded_apps].list + .soft for backward compat)
     [[nodiscard]] static std::vector<std::wstring> LoadAllExcludedApps(const std::wstring& path);
 
-    /// Save excluded apps list to config
+    /// Save excluded apps list to config ([excluded_apps].list — hard-E).
+    /// Preserves the sibling [excluded_apps].force_vn array.
     [[nodiscard]] static bool SaveExcludedApps(const std::wstring& path,
+                                                const std::vector<std::wstring>& apps);
+
+    /// Load apps locked to Vietnamese ([excluded_apps].force_vn — hard-V).
+    [[nodiscard]] static std::vector<std::wstring> LoadForcedVnApps(const std::wstring& path);
+
+    /// Save the hard-V app list to [excluded_apps].force_vn.
+    /// Preserves the sibling [excluded_apps].list (hard-E) array.
+    [[nodiscard]] static bool SaveForcedVnApps(const std::wstring& path,
                                                 const std::vector<std::wstring>& apps);
 
     /// Load V2 schema `[smart_switch.apps]` table (lowercase exe → isVietnamese).

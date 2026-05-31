@@ -18,6 +18,7 @@ namespace NextKey::Classic {
 enum {
     IDC_LIST_APPS = 3001,
     IDC_COMBO_RUNNING,
+    IDC_COMBO_MODE,
     IDC_BTN_ADD,
     IDC_BTN_PICK,
     IDC_BTN_DELETE,
@@ -64,7 +65,7 @@ bool ClassicExcludedAppsDialog::Init(HINSTANCE hInstance, HWND parent, bool forc
     RegisterClassExW(&wc);
 
     DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
-    hwnd_ = CreateWindowExW(WS_EX_TOPMOST, kClassName, L"Loại trừ ứng dụng",
+    hwnd_ = CreateWindowExW(WS_EX_TOPMOST, kClassName, L"Khoá chế độ theo ứng dụng (E / V)",
         style, CW_USEDEFAULT, CW_USEDEFAULT, 400, 300,
         parent, nullptr, hInstance, this);
     if (!hwnd_) return false;
@@ -117,15 +118,23 @@ void ClassicExcludedAppsDialog::CreateControls() {
         x, y, cw, listH, hwnd_, reinterpret_cast<HMENU>(IDC_LIST_APPS), hInstance_, nullptr);
     ListView_SetExtendedListViewStyle(listView_, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
+    // Column 0: app name (flex). Column 1: per-app mode (E / V).
+    int modeColW = Dpi(56);
     LVCOLUMNW col{};
     col.mask = LVCF_TEXT | LVCF_WIDTH;
     col.pszText = const_cast<wchar_t*>(L"Ứng dụng (tên .exe)");
-    col.cx = cw - Dpi(24);
+    col.cx = cw - Dpi(24) - modeColW;
     ListView_InsertColumn(listView_, 0, &col);
+    LVCOLUMNW colMode{};
+    colMode.mask = LVCF_TEXT | LVCF_WIDTH;
+    colMode.pszText = const_cast<wchar_t*>(L"Chế độ");
+    colMode.cx = modeColW;
+    ListView_InsertColumn(listView_, 1, &colMode);
     y += listH + gap;
 
-    // Row: combo running apps + add from list + pick window
-    int comboW = cw - Dpi(60 + 80) - gap * 2;
+    // Row: combo running apps + mode selector + add from list + pick window
+    int modeW = Dpi(56);
+    int comboW = cw - modeW - Dpi(60 + 80) - gap * 3;
     comboRunning_ = CreateWindowExW(0, L"COMBOBOX", L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP,
         x, y, comboW, Dpi(200), hwnd_, reinterpret_cast<HMENU>(IDC_COMBO_RUNNING), hInstance_, nullptr);
@@ -136,14 +145,22 @@ void ClassicExcludedAppsDialog::CreateControls() {
         ComboBox_AddString(comboRunning_, app.c_str());
     }
 
+    // Mode selector for the entry being added (E = excluded/English, V = force VN).
+    comboMode_ = CreateWindowExW(0, L"COMBOBOX", L"",
+        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
+        x + comboW + gap, y, modeW, Dpi(200), hwnd_, reinterpret_cast<HMENU>(IDC_COMBO_MODE), hInstance_, nullptr);
+    ComboBox_AddString(comboMode_, L"E");   // index 0 = kModeE
+    ComboBox_AddString(comboMode_, L"V");   // index 1 = kModeV
+    ComboBox_SetCurSel(comboMode_, kModeE);
+
     btnAdd_ = CreateWindowExW(0, L"BUTTON", L"Thêm",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + comboW + gap, y, Dpi(60), btnH,
+        x + comboW + modeW + gap * 2, y, Dpi(60), btnH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_ADD), hInstance_, nullptr);
 
     btnPick_ = CreateWindowExW(0, L"BUTTON", L"Chọn cửa sổ",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        x + comboW + Dpi(60) + gap * 2, y, Dpi(80), btnH,
+        x + comboW + modeW + Dpi(60) + gap * 3, y, Dpi(80), btnH,
         hwnd_, reinterpret_cast<HMENU>(IDC_BTN_PICK), hInstance_, nullptr);
     y += btnH + gap * 2;
 
@@ -167,8 +184,10 @@ void ClassicExcludedAppsDialog::PopulateList() {
         LVITEMW item{};
         item.mask = LVIF_TEXT;
         item.iItem = static_cast<int>(i);
-        item.pszText = const_cast<wchar_t*>(appList_[i].c_str());
+        item.pszText = const_cast<wchar_t*>(appList_[i].first.c_str());
         ListView_InsertItem(listView_, &item);
+        ListView_SetItemText(listView_, static_cast<int>(i), 1,
+            const_cast<wchar_t*>(appList_[i].second == kModeV ? L"V" : L"E"));
     }
 }
 
@@ -176,7 +195,7 @@ void ClassicExcludedAppsDialog::PopulateList() {
 // Actions
 // ════════════════════════════════════════════════════════════
 
-void ClassicExcludedAppsDialog::AddApp(const std::wstring& name) {
+void ClassicExcludedAppsDialog::AddApp(const std::wstring& name, int mode) {
     if (name.empty()) return;
 
     std::wstring lower = ToLowerAscii(name);
@@ -190,13 +209,15 @@ void ClassicExcludedAppsDialog::AddApp(const std::wstring& name) {
         return;
     }
 
-    // Dedup
+    // Dedup by name — if already present, just update its mode (mutual
+    // exclusion is by exe name; an app is in exactly one mode).
     for (auto& existing : appList_) {
-        if (existing == lower) return;
+        if (existing.first == lower) { existing.second = mode; PopulateList(); SaveData(); return; }
     }
 
-    appList_.push_back(lower);
-    std::sort(appList_.begin(), appList_.end());
+    appList_.emplace_back(lower, mode);
+    std::sort(appList_.begin(), appList_.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
     PopulateList();
     SaveData();
 }
@@ -207,6 +228,17 @@ void ClassicExcludedAppsDialog::DeleteSelected() {
 
     appList_.erase(appList_.begin() + sel);
     PopulateList();
+    SaveData();
+}
+
+void ClassicExcludedAppsDialog::ToggleSelectedMode() {
+    int sel = ListView_GetNextItem(listView_, -1, LVNI_SELECTED);
+    if (sel < 0 || sel >= static_cast<int>(appList_.size())) return;
+
+    appList_[sel].second = (appList_[sel].second == kModeV) ? kModeE : kModeV;
+    PopulateList();
+    ListView_SetItemState(listView_, sel, LVIS_SELECTED | LVIS_FOCUSED,
+                          LVIS_SELECTED | LVIS_FOCUSED);
     SaveData();
 }
 
@@ -232,14 +264,27 @@ void ClassicExcludedAppsDialog::ImportFromFile() {
     if (choice == IDYES) appList_.clear(); // Replace
 
     ParseConfigLines(file, [&](const std::string& line) {
-        std::wstring lower = ToLowerAscii(Utf8ToWide(line));
+        // Per-app mode tag (D4): "name|V" → force-V, plain "name" → E.
+        // Untagged lines stay E so files exported before this feature import
+        // unchanged.
+        std::wstring entry = Utf8ToWide(line);
+        int mode = kModeE;
+        auto bar = entry.find_last_of(L'|');
+        if (bar != std::wstring::npos) {
+            std::wstring tag = ToLowerAscii(entry.substr(bar + 1));
+            if (tag == L"v") mode = kModeV;
+            entry = entry.substr(0, bar);
+        }
+        std::wstring lower = ToLowerAscii(entry);
         if (lower.empty()) return;
-        bool dup = false;
-        for (auto& e : appList_) { if (e == lower) { dup = true; break; } }
-        if (!dup) appList_.push_back(lower);
+        for (auto& e : appList_) {
+            if (e.first == lower) { e.second = mode; return; }  // dedup → update mode
+        }
+        appList_.emplace_back(lower, mode);
     });
 
-    std::sort(appList_.begin(), appList_.end());
+    std::sort(appList_.begin(), appList_.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
     PopulateList();
     SaveData();
 }
@@ -256,11 +301,14 @@ void ClassicExcludedAppsDialog::ExportToFile() {
         return;
     }
 
-    file << ";VKey Excluded Apps\n";
+    file << ";VKey Excluded Apps (name = English/excluded, name|V = force Vietnamese)\n";
     auto sorted = appList_;
-    std::sort(sorted.begin(), sorted.end());
+    std::sort(sorted.begin(), sorted.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
     for (auto& app : sorted) {
-        file << WideToUtf8(app) << "\n";
+        file << WideToUtf8(app.first);
+        if (app.second == kModeV) file << "|V";
+        file << "\n";
     }
 }
 
@@ -275,12 +323,31 @@ void ClassicExcludedAppsDialog::OnPickWindow() {
 // ════════════════════════════════════════════════════════════
 
 void ClassicExcludedAppsDialog::LoadData() {
-    appList_ = ConfigManager::LoadAllExcludedApps(ConfigManager::GetConfigPath());
+    const auto path = ConfigManager::GetConfigPath();
+    appList_.clear();
+    for (auto& e : ConfigManager::LoadAllExcludedApps(path)) {
+        appList_.emplace_back(std::move(e), kModeE);
+    }
+    for (auto& v : ConfigManager::LoadForcedVnApps(path)) {
+        // Disjoint-by-name (excluded wins) — mirror ConfigSnapshotBuilder.
+        bool dup = false;
+        for (auto& e : appList_) { if (e.first == v) { dup = true; break; } }
+        if (!dup) appList_.emplace_back(std::move(v), kModeV);
+    }
+    std::sort(appList_.begin(), appList_.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
 }
 
 void ClassicExcludedAppsDialog::SaveData() {
     modified_ = true;
-    (void)ConfigManager::SaveExcludedApps(ConfigManager::GetConfigPath(), appList_);
+    // Partition the tagged list back into the two TOML arrays.
+    std::vector<std::wstring> excluded, forcedVn;
+    for (auto& app : appList_) {
+        (app.second == kModeV ? forcedVn : excluded).push_back(app.first);
+    }
+    const auto path = ConfigManager::GetConfigPath();
+    (void)ConfigManager::SaveExcludedApps(path, excluded);
+    (void)ConfigManager::SaveForcedVnApps(path, forcedVn);
     SignalConfigChange();
 }
 
@@ -321,7 +388,8 @@ LRESULT CALLBACK ClassicExcludedAppsDialog::WndProc(HWND hwnd, UINT msg, WPARAM 
                 case IDC_BTN_ADD: {
                     wchar_t buf[256] = {};
                     GetWindowTextW(self->comboRunning_, buf, 256);
-                    self->AddApp(buf);
+                    int mode = (ComboBox_GetCurSel(self->comboMode_) == kModeV) ? kModeV : kModeE;
+                    self->AddApp(buf, mode);
                     SetWindowTextW(self->comboRunning_, L"");
                     SetFocus(self->comboRunning_);
                     return 0;
@@ -338,6 +406,17 @@ LRESULT CALLBACK ClassicExcludedAppsDialog::WndProc(HWND hwnd, UINT msg, WPARAM 
                 case IDC_BTN_EXPORT:
                     self->ExportToFile();
                     return 0;
+            }
+            break;
+        }
+
+        case WM_NOTIFY: {
+            auto* hdr = reinterpret_cast<NMHDR*>(lParam);
+            // Double-click a row toggles its mode E↔V (matches the per-row
+            // selector for newly-added entries).
+            if (hdr && hdr->idFrom == IDC_LIST_APPS && hdr->code == NM_DBLCLK) {
+                self->ToggleSelectedMode();
+                return 0;
             }
             break;
         }

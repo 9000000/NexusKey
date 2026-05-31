@@ -64,6 +64,7 @@ struct FocusClassification {
     std::wstring   exeName;
     // Classification flags — populated by ClassifyFocusedWindow.
     bool isExcluded{false};
+    bool isForcedVietnamese{false};  // per-app hard-V lock (mutually exclusive with isExcluded)
     bool isTsf{false};
     bool isElectron{false};
     bool isConsole{false};

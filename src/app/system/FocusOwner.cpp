@@ -8,6 +8,7 @@
 #include "core/CrashLog.h"
 #include "core/Debug.h"
 #include "core/Logger.h"
+#include "core/PerAppModeDecision.h"
 
 #include <tlhelp32.h>
 #include <cstdint>
@@ -619,8 +620,20 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
     cls.targetCodeTable = ctx.globalCodeTable;
     cls.targetMethod    = ctx.globalInputMethod;
     if (!cls.skipAppTracking && !cls.exeName.empty() && ctx.snap && ctx.cfg) {
-        if (ctx.cfg->excludeApps && !ctx.snap->excludedAppSet.empty()) {
-            cls.isExcluded = ctx.snap->excludedAppSet.count(cls.exeName) > 0;
+        // Per-app mode lock (hard-E / hard-V) shares the excludeApps gate. The
+        // two snapshot sets are disjoint (excluded wins, enforced at build time);
+        // DecidePerAppMode is the belt-and-suspenders precedence. Forced-V apps
+        // are NOT excluded/TSF, so they still flow into the encoding/method
+        // override path below (only the smart-switch restore is overridden on
+        // the hook thread — see HookEngine::ApplyFocusOnHookThread).
+        if (ctx.cfg->excludeApps) {
+            const bool inExcl = !ctx.snap->excludedAppSet.empty()
+                                && ctx.snap->excludedAppSet.count(cls.exeName) > 0;
+            const bool inVn   = !ctx.snap->forcedVietnameseAppSet.empty()
+                                && ctx.snap->forcedVietnameseAppSet.count(cls.exeName) > 0;
+            const PerAppMode m = DecidePerAppMode(inExcl, inVn);
+            cls.isExcluded         = (m == PerAppMode::ForceEnglish);
+            cls.isForcedVietnamese = (m == PerAppMode::ForceVietnamese);
         }
         if (!cls.isExcluded && ctx.cfg->tsfApps && !ctx.snap->tsfAppSet.empty()) {
             cls.isTsf = ctx.snap->tsfAppSet.count(cls.exeName) > 0;

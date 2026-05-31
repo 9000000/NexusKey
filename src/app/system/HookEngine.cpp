@@ -2498,9 +2498,14 @@ static constexpr size_t kMacroClipboardThreshold = 200;
 
 void HookEngine::NotifyModeChange() noexcept {
     if (modeChangeCallback_) {
-        // Excluded apps always show E mode (IME is transparent to them)
+        // Excluded apps always show E mode (IME is transparent to them).
+        // Forced-V apps always show V (per-app hard-V lock) — explicit branch
+        // so the icon is right even if vietnameseMode_ momentarily lags the
+        // force-store; in practice the forced-V focus path sets it true first.
         const bool excluded = isExcludedApp_.load(std::memory_order_acquire);
-        modeChangeCallback_(!excluded && vietnameseMode_.load(std::memory_order_acquire));
+        const bool forcedV  = isForcedVnApp_.load(std::memory_order_acquire);
+        modeChangeCallback_(forcedV ||
+                            (!excluded && vietnameseMode_.load(std::memory_order_acquire)));
     }
 }
 
@@ -2554,6 +2559,9 @@ void HookEngine::RebuildSnapshotFromToml(std::uint32_t generation) {
     // ConfigSnapshotBuilder.
     if (!cfg->excludeApps) {
         isExcludedApp_.store(false, std::memory_order_release);
+        // Hard-E and hard-V share the excludeApps feature gate — clear both so
+        // a flag-disable drops any cached forced-V lock on the next focus check.
+        isForcedVnApp_.store(false, std::memory_order_release);
     }
 
     auto snap = ConfigSnapshotBuilder::BuildFromToml(
@@ -2613,6 +2621,7 @@ void HookEngine::OnLayoutChanged(bool isCompatibleNow) {
     in.modeBeforeCjk         = focus_.ModeBeforeCjk();
     in.vietnameseMode        = vietnameseMode_.load(std::memory_order_acquire);
     in.isExcluded            = isExcludedApp_.load(std::memory_order_acquire);
+    in.isForcedVietnamese    = isForcedVnApp_.load(std::memory_order_acquire);
     in.cjkAutoSwitchEnabled  = cfg->cjkAutoSwitch;
 
     const CjkSwitchOutputs out = DecideCjkSwitch(in);
@@ -3722,6 +3731,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     const bool wasExcluded = isExcludedApp_.load(std::memory_order_acquire);
     const bool wasTsfApp   = isTsfApp_.load(std::memory_order_acquire);
+    const bool wasForcedV  = isForcedVnApp_.load(std::memory_order_acquire);
 
     // Smart switch SAVE for the previous real app — captured BEFORE we
     // advance lastRealExe_ below. Uses lastRealExe_, NOT activeExe_:
@@ -3729,7 +3739,10 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // moved activeExe_ to the helper's exe, while lastRealExe_ correctly
     // still points to the app whose mode the engine state corresponds to.
     const std::wstring oldLastReal = focus_.LastRealExe();
-    if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcluded && !wasTsfApp) {
+    // !wasForcedV: a forced-V app's mode is locked to V, never the user's
+    // choice — don't persist it into appModeMap or it poisons the remembered
+    // preference (the SAVE writes the forced 'true', not a real toggle).
+    if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcluded && !wasTsfApp && !wasForcedV) {
         if (focus_.AppModeMap().size() >= kMaxSmartSwitchEntries) {
             focus_.AppModeMap().clear();
             HOOK_LOG(L"  SmartSwitch: map cap %zu hit, cleared", kMaxSmartSwitchEntries);
@@ -3755,6 +3768,11 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
     isTsfApp_.store(cls->isTsf, std::memory_order_release);
+    // Store forced-V cache flag at the SAME site as the others, BEFORE the
+    // excluded/tsf early-returns below — so switching excluded↔forced-V leaves
+    // the flag consistent. forcedVnPid_ feeds the toggle-lock PID check.
+    isForcedVnApp_.store(cls->isForcedVietnamese, std::memory_order_release);
+    if (cls->isForcedVietnamese) forcedVnPid_.store(cls->pid, std::memory_order_release);
 
     HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
              cls->isTsf ? L"TSF (hook passthrough)" : L"HOOK",
@@ -3814,9 +3832,18 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         }
     }
 
-    // Smart switch restore for the new app — uses lastRealExe_ (just set
-    // above to cls->exeName).
-    if (cfg->smartSwitch) {
+    // Per-app hard-V lock WINS over smart-switch: force V on focus regardless of
+    // any remembered preference. (D2: on LEAVING a forced-V app the normal
+    // smart-switch restore for the *next* app applies — handled on that focus.)
+    if (cls->isForcedVietnamese) {
+        if (!vietnameseMode_.load(std::memory_order_acquire)) {
+            vietnameseMode_.store(true, std::memory_order_release);
+            HOOK_LOG(L"  ForceVN: locked Vietnamese for '%s'", focus_.LastRealExe().c_str());
+            NotifyModeChange();
+        }
+    } else if (cfg->smartSwitch) {
+        // Smart switch restore for the new app — uses lastRealExe_ (just set
+        // above to cls->exeName).
         auto it = focus_.AppModeMap().find(focus_.LastRealExe());
         if (it != focus_.AppModeMap().end()) {
             const bool curMode = vietnameseMode_.load(std::memory_order_acquire);
@@ -3835,10 +3862,11 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         }
     }
 
-    // Leaving an excluded app — effective mode flipped E→actual even if
-    // vietnameseMode_ didn't move. Replay layout check so a suppressed
-    // CJK transition that fired during the excluded session restores now.
-    if (wasExcluded) {
+    // Leaving an excluded OR forced-V app — effective mode changed even if
+    // vietnameseMode_ didn't move, and CJK auto-switch was gated off while
+    // locked. Replay the layout check so a suppressed CJK transition can
+    // re-evaluate now that the lock has cleared.
+    if (wasExcluded || wasForcedV) {
         const bool wasSuppressed = focus_.LayoutSuppressed();
         OnLayoutChanged(focus_.CachedIsCompatLayout());
         if (wasSuppressed == focus_.LayoutSuppressed()) NotifyModeChange();
@@ -3877,6 +3905,22 @@ void HookEngine::ApplyToggleVNOnHookThread() {
         NotifyModeChange();
         if (cfg->beepOnSwitch) MessageBeep(MB_OK);
         return;
+    }
+    // Forced-V (per-app hard-V) gate — symmetric to the excluded gate. While
+    // genuinely in a forced-V app the toggle is locked (D1). Silent on block to
+    // match the excluded gate (D5). Stale PID → user already left → clear and
+    // fall through to a normal toggle.
+    if (cfg->excludeApps && isForcedVnApp_.load(std::memory_order_acquire)) {
+        HWND fg = GetForegroundWindow();
+        DWORD fgPid = 0;
+        if (fg) GetWindowThreadProcessId(fg, &fgPid);
+        const DWORD cachedPid = forcedVnPid_.load(std::memory_order_acquire);
+        if (fgPid == cachedPid && cachedPid != 0) {
+            HOOK_LOG(L"  ToggleVN: BLOCKED (forced-V pid=%u)", cachedPid);
+            return;
+        }
+        isForcedVnApp_.store(false, std::memory_order_release);
+        HOOK_LOG(L"  ToggleVN: stale forced-V cleared (fg pid=%u)", fgPid);
     }
 
     // Commit pending composition (skip if CJK-suppressed — engine inactive).

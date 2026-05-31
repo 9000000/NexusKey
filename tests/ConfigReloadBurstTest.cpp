@@ -81,7 +81,7 @@ std::shared_ptr<const ConfigSnapshot> MakeGenSnapshot(std::uint32_t gen) {
          static_cast<std::int8_t>(gen % 2)}
     };
     return std::make_shared<const ConfigSnapshot>(ConfigSnapshot::Build(
-        std::move(macros), std::move(excluded), std::move(tsf),
+        std::move(macros), std::move(excluded), /*forcedVn*/ {}, std::move(tsf),
         std::move(enc), std::move(im), std::move(send), gen));
 }
 

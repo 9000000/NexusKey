@@ -25,6 +25,10 @@
 //     suppresses vietnameseMode_ that the user has no way to set back.
 //     Owner of the icon while excluded is the excluded-app path; CJK stays
 //     out of the way.
+//   - isForcedVietnamese = true: the foreground app is locked to Vietnamese
+//     (per-app hard-V). The user explicitly wants V here, so CJK auto-switch
+//     (which would force E on a JA/CN/KO layout) must NOT fight it. Same gate
+//     rationale as isExcluded — the forced-V path owns the mode while focused.
 
 #pragma once
 
@@ -50,6 +54,7 @@ struct CjkSwitchInputs {
     bool modeBeforeCjk;         // current cached modeBeforeCjk_
     bool vietnameseMode;        // current vietnameseMode_
     bool isExcluded;            // current isExcludedApp_
+    bool isForcedVietnamese;    // current isForcedVnApp_ (per-app hard-V lock)
     bool cjkAutoSwitchEnabled;  // user toggle (TypingConfig::cjkAutoSwitch)
 };
 
@@ -72,7 +77,7 @@ struct CjkSwitchOutputs {
     out.newVietnameseMode   = in.vietnameseMode;
 
     if (!in.cjkAutoSwitchEnabled) return out;
-    if (in.isExcluded) return out;
+    if (in.isExcluded || in.isForcedVietnamese) return out;
 
     if (!in.isCompatibleNow && !in.layoutSuppressed) {
         // ── Entering CJK ──

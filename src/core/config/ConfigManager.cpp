@@ -817,9 +817,64 @@ bool ConfigManager::SaveExcludedApps(const std::wstring& path,
         for (auto& app : apps) {
             arr.push_back(WideToUtf8(app));
         }
-        toml::table section;
-        section.insert_or_assign("list", std::move(arr));
-        tbl.insert_or_assign("excluded_apps", std::move(section));
+        // Read-modify-write the [excluded_apps] section so the sibling
+        // `force_vn` array (per-app hard-V list) survives an E-list save.
+        // Drop the legacy `soft` key — it is merged into `list` on load.
+        if (auto* section = tbl["excluded_apps"].as_table()) {
+            section->insert_or_assign("list", std::move(arr));
+            section->erase("soft");
+        } else {
+            toml::table newSection;
+            newSection.insert_or_assign("list", std::move(arr));
+            tbl.insert_or_assign("excluded_apps", std::move(newSection));
+        }
+
+        return WriteToml(utf8Path, tbl);
+    } catch (...) {
+        return false;
+    }
+}
+
+std::vector<std::wstring> ConfigManager::LoadForcedVnApps(const std::wstring& path) {
+    std::vector<std::wstring> apps;
+    try {
+        std::string utf8Path = WideToUtf8(path);
+        auto table = ParseTomlCached(utf8Path);
+
+        // [excluded_apps].force_vn — apps locked to Vietnamese (hard-V).
+        if (auto section = table["excluded_apps"].as_table()) {
+            if (auto arr = (*section)["force_vn"].as_array()) {
+                for (auto& item : *arr) {
+                    if (apps.size() >= kMaxAppListEntries) break;
+                    if (auto str = item.value<std::string>()) {
+                        apps.push_back(Utf8ToWide(*str));
+                    }
+                }
+            }
+        }
+    } catch (...) {}
+    return apps;
+}
+
+bool ConfigManager::SaveForcedVnApps(const std::wstring& path,
+                                      const std::vector<std::wstring>& apps) {
+    try {
+        ConfigFileLock lock;
+        std::string utf8Path = WideToUtf8(path);
+        auto tbl = LoadExistingToml(utf8Path);
+
+        toml::array arr;
+        for (auto& app : apps) {
+            arr.push_back(WideToUtf8(app));
+        }
+        // Read-modify-write so the sibling `list` (E) array survives a V save.
+        if (auto* section = tbl["excluded_apps"].as_table()) {
+            section->insert_or_assign("force_vn", std::move(arr));
+        } else {
+            toml::table newSection;
+            newSection.insert_or_assign("force_vn", std::move(arr));
+            tbl.insert_or_assign("excluded_apps", std::move(newSection));
+        }
 
         return WriteToml(utf8Path, tbl);
     } catch (...) {

@@ -5,6 +5,7 @@
 #include "core/config/ConfigManager.h"
 #include "core/hotkey/HotkeyRegistry.h"
 #include "core/UIConfig.h"
+#include <algorithm>
 #include <fstream>
 #include <filesystem>
 
@@ -511,6 +512,64 @@ modern_ortho = true
     EXPECT_TRUE(loaded->spellCheckEnabled)    << "Existing spell_check must survive merge";
     EXPECT_TRUE(loaded->modernOrtho)          << "Existing modern_ortho must survive merge";
     EXPECT_TRUE(loaded->escRestoreRawEnabled) << "esc_restore_raw added by mirror";
+}
+
+// ============================================================================
+// Per-app mode lock — [excluded_apps].list (E) + .force_vn (V)
+// ============================================================================
+
+TEST_F(ConfigManagerTest, LoadForcedVnApps_ParsesForceVnArray) {
+    WriteTestConfig(R"(
+[excluded_apps]
+list = ["game.exe"]
+force_vn = ["zalo.exe", "messenger.exe"]
+)");
+    auto excluded = ConfigManager::LoadAllExcludedApps(testConfigPath_);
+    auto forcedVn = ConfigManager::LoadForcedVnApps(testConfigPath_);
+    ASSERT_EQ(excluded.size(), 1u);
+    EXPECT_EQ(excluded[0], L"game.exe");
+    ASSERT_EQ(forcedVn.size(), 2u);
+    EXPECT_NE(std::find(forcedVn.begin(), forcedVn.end(), L"zalo.exe"), forcedVn.end());
+    EXPECT_NE(std::find(forcedVn.begin(), forcedVn.end(), L"messenger.exe"), forcedVn.end());
+}
+
+TEST_F(ConfigManagerTest, LoadForcedVnApps_AbsentKeyReturnsEmpty_BackwardCompat) {
+    // A config written before this feature has only [excluded_apps].list.
+    WriteTestConfig(R"(
+[excluded_apps]
+list = ["legacy.exe"]
+)");
+    EXPECT_EQ(ConfigManager::LoadAllExcludedApps(testConfigPath_).size(), 1u);
+    EXPECT_TRUE(ConfigManager::LoadForcedVnApps(testConfigPath_).empty());
+}
+
+TEST_F(ConfigManagerTest, SaveForcedVnApps_PreservesExcludedList) {
+    WriteTestConfig(R"(
+[excluded_apps]
+list = ["game.exe", "mstsc.exe"]
+)");
+    ASSERT_TRUE(ConfigManager::SaveForcedVnApps(testConfigPath_, {L"zalo.exe"}));
+    // The E list must survive a V-only save (read-modify-write, not clobber).
+    auto excluded = ConfigManager::LoadAllExcludedApps(testConfigPath_);
+    auto forcedVn = ConfigManager::LoadForcedVnApps(testConfigPath_);
+    EXPECT_EQ(excluded.size(), 2u);
+    ASSERT_EQ(forcedVn.size(), 1u);
+    EXPECT_EQ(forcedVn[0], L"zalo.exe");
+}
+
+TEST_F(ConfigManagerTest, SaveExcludedApps_PreservesForceVnList) {
+    WriteTestConfig(R"(
+[excluded_apps]
+list = ["old.exe"]
+force_vn = ["zalo.exe"]
+)");
+    ASSERT_TRUE(ConfigManager::SaveExcludedApps(testConfigPath_, {L"game.exe"}));
+    auto excluded = ConfigManager::LoadAllExcludedApps(testConfigPath_);
+    auto forcedVn = ConfigManager::LoadForcedVnApps(testConfigPath_);
+    ASSERT_EQ(excluded.size(), 1u);
+    EXPECT_EQ(excluded[0], L"game.exe");
+    ASSERT_EQ(forcedVn.size(), 1u)  << "force_vn must survive an E-list save";
+    EXPECT_EQ(forcedVn[0], L"zalo.exe");
 }
 
 }  // namespace

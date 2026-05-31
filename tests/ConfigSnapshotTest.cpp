@@ -220,6 +220,7 @@ TEST(ConfigSnapshotBuild, EmptyInputsProduceEmptySnapshotWithGeneration) {
     auto snap = ConfigSnapshot::Build(
         /*macroTable*/    {},
         /*excludedApps*/  {},
+        /*forcedVnApps*/  {},
         /*tsfApps*/       {},
         /*encOverrides*/  {},
         /*imOverrides*/   {},
@@ -227,6 +228,7 @@ TEST(ConfigSnapshotBuild, EmptyInputsProduceEmptySnapshotWithGeneration) {
         /*generation*/    7);
     EXPECT_TRUE(snap.macroTable.empty());
     EXPECT_TRUE(snap.excludedAppSet.empty());
+    EXPECT_TRUE(snap.forcedVietnameseAppSet.empty());
     EXPECT_TRUE(snap.tsfAppSet.empty());
     EXPECT_TRUE(snap.appEncodingOverrides.empty());
     EXPECT_TRUE(snap.appInputMethodOverrides.empty());
@@ -244,7 +246,7 @@ TEST(ConfigSnapshotBuild, SpaceMacroKeysDerivedFromMacroTable) {
         {L"khong",    L"không"},       // no space → excluded
     };
     auto snap = ConfigSnapshot::Build(
-        std::move(macros), {}, {}, {}, {}, {}, /*generation*/ 1);
+        std::move(macros), {}, {}, {}, {}, {}, {}, /*generation*/ 1);
     EXPECT_EQ(snap.macroTable.size(), 5u)
         << "all macro entries should land in macroTable verbatim";
     EXPECT_EQ(snap.spaceMacroKeys.size(), 2u);
@@ -257,6 +259,7 @@ TEST(ConfigSnapshotBuild, SpaceMacroKeysDerivedFromMacroTable) {
 TEST(ConfigSnapshotBuild, RoundTripsAllFields) {
     std::unordered_map<std::wstring, std::wstring> macros = {{L"vn", L"Việt Nam"}};
     std::unordered_set<std::wstring> excluded = {L"banking.exe", L"vault.exe"};
+    std::unordered_set<std::wstring> forcedVn = {L"zalo.exe", L"messenger.exe"};
     std::unordered_set<std::wstring> tsf      = {L"word.exe"};
     std::unordered_map<std::wstring, CodeTable>   enc  = {{L"legacy.exe", CodeTable::TCVN3}};
     std::unordered_map<std::wstring, InputMethod> im   = {{L"legacy.exe", InputMethod::VNI}};
@@ -267,13 +270,15 @@ TEST(ConfigSnapshotBuild, RoundTripsAllFields) {
     std::unordered_map<std::wstring, int8_t>      send = {{L"legacy.exe", 1}};
 
     auto snap = ConfigSnapshot::Build(
-        std::move(macros), std::move(excluded), std::move(tsf),
+        std::move(macros), std::move(excluded), std::move(forcedVn), std::move(tsf),
         std::move(enc), std::move(im), std::move(send), /*generation*/ 99);
 
     EXPECT_EQ(snap.generation, 99u);
     EXPECT_EQ(snap.macroTable.at(L"vn"), L"Việt Nam");
     EXPECT_EQ(snap.excludedAppSet.count(L"banking.exe"), 1u);
     EXPECT_EQ(snap.excludedAppSet.count(L"vault.exe"), 1u);
+    EXPECT_EQ(snap.forcedVietnameseAppSet.count(L"zalo.exe"), 1u);
+    EXPECT_EQ(snap.forcedVietnameseAppSet.count(L"messenger.exe"), 1u);
     EXPECT_EQ(snap.tsfAppSet.count(L"word.exe"), 1u);
     EXPECT_EQ(snap.appEncodingOverrides.at(L"legacy.exe"), CodeTable::TCVN3);
     EXPECT_EQ(snap.appInputMethodOverrides.at(L"legacy.exe"), InputMethod::VNI);
