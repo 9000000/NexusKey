@@ -54,7 +54,8 @@ bool SplitDispatchInjector::Replace(std::size_t bsCount,
     std::size_t bi = 0;
     const bool emitBait = Internal::ShouldEmitBait(
         needsBaitCharPrefix_, bsCount, text,
-        suggestKeepChars_.load(std::memory_order_acquire));
+        suggestKeepChars_.load(std::memory_order_acquire),
+        suppressBait_.load(std::memory_order_acquire));
     if (emitBait) {
         if (bi + 2 > kMaxBatch) return false;
         bsBuf[bi++] = MakeUnicodeChar(0x202F, /*keyup=*/false);

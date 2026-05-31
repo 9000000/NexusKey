@@ -562,7 +562,12 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
                 cls.localEditMsg = true;
             } else {
                 const bool isOutlook = cls.exeName.find(L"outlook") != std::wstring::npos;
-                cls.localNeedBait = cls.exeName.find(L"excel") != std::wstring::npos || isOutlook;
+                const bool isExcel   = cls.exeName.find(L"excel") != std::wstring::npos;
+                cls.localNeedBait = isExcel || isOutlook;
+                // Formula-segment bait suppression is Excel-only: '=' opens a
+                // formula in a spreadsheet cell, but is an ordinary character in
+                // Outlook compose / browser omnibox (where the bait must stay).
+                cls.localFormulaHost = isExcel;
                 if (!cls.localNeedBait) {
                     if (!cached) {
                         std::wstring exeFullPath = GetExeFullPathForHwnd(activeHwnd);

@@ -1068,6 +1068,11 @@ static bool IsIncompatibleLayout(HKL hkl);
 // ═══════════════════════════════════════════════════════════
 
 bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*/) {
+    // Formula-segment tracking runs first so it observes EVERY key (including
+    // ones a guard below eats), keeping the injector's bait-suppress flag in
+    // sync with whether we're inside an Excel "=..." cell.
+    UpdateFormulaSegment(vkCode);
+
     // H1b: top-of-pipeline guards extracted to RunTopGuards (steps 0/0b/1/1b/1c).
     // Behavior preserved byte-identical — see method comment for details.
     switch (RunTopGuards(vkCode)) {
@@ -2379,6 +2384,51 @@ void HookEngine::ResetComposition() {
     autoCapState_ = AutoCapState::Idle;
     dispatcher_.ResetSynthEvents();  // Pending synthetics from old context are irrelevant after reset
     dispatcher_.ResetLastRealSynthTime();
+    // A reset means the editing context broke (mouse click, shortcut, exception).
+    // We can no longer be sure we're inside a formula cell — drop to the safe
+    // default (bait enabled) and re-arm segment-start detection.
+    formulaState_ = FormulaSegmentState{};
+    SetFormulaSegment(false);
+}
+
+void HookEngine::UpdateFormulaSegment(DWORD vkCode) {
+    VKEY_ASSERT_HOOK_THREAD();
+
+    // Inert unless the focused host is a spreadsheet (Excel). Keeps the bait
+    // suppression from ever leaking into other needBait hosts (browser omnibox,
+    // Outlook) and costs one bool test per key everywhere else.
+    if (!hostIsFormulaCapable_) return;
+
+    // Classify the key, then let the pure FSM advance (testable on Linux).
+    FormulaKeyKind kind;
+    if (vkCode == VK_RETURN || vkCode == VK_TAB || vkCode == VK_ESCAPE ||
+        (vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||  // VK_LEFT/UP/RIGHT/DOWN
+        vkCode == VK_HOME || vkCode == VK_END ||
+        vkCode == VK_PRIOR || vkCode == VK_NEXT) {    // PgUp / PgDn
+        kind = FormulaKeyKind::Boundary;
+    } else if (vkCode == VK_SHIFT || vkCode == VK_CONTROL || vkCode == VK_MENU ||
+               vkCode == VK_LWIN || vkCode == VK_RWIN || vkCode == VK_CAPITAL ||
+               vkCode == VK_BACK || vkCode == VK_DELETE) {
+        kind = FormulaKeyKind::Passive;
+    } else if (formulaState_.atSegmentStart && vkCode == VK_OEM_PLUS &&
+               (GetKeyState(VK_SHIFT) & 0x8000) == 0) {
+        // GetKeyState only runs at segment start AND for the '=' key (Shift+that
+        // is '+'); every other first-content key skips the syscall.
+        kind = FormulaKeyKind::EqualsStart;
+    } else {
+        kind = FormulaKeyKind::OtherContent;
+    }
+
+    formulaState_ = NextFormulaSegmentState(formulaState_, kind);
+    SetFormulaSegment(formulaState_.inFormula);
+}
+
+void HookEngine::SetFormulaSegment(bool on) {
+    if (baitSuppressed_ == on) return;  // skip redundant atomic stores
+    baitSuppressed_ = on;
+    if (auto inj = dispatcher_.GetInjector(); inj) {
+        inj->SetSuppressBait(on);
+    }
 }
 
 void HookEngine::ClearWordState() {
@@ -3592,6 +3642,10 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // owned by OutputDispatcher (atomic readers go through getter API).
     dispatcher_.SetSkipEmptyChar(cls->localSkipEmpty);
     dispatcher_.SetUseClipboardPaste(cls->localClipboard);
+    // Formula-segment tracking arms only for spreadsheet hosts (Excel). The
+    // preceding ResetComposition already cleared formulaState_ + pushed
+    // SetSuppressBait(false), so the new host starts with the bait enabled.
+    hostIsFormulaCapable_ = cls->localFormulaHost;
 
     // IOutputInjector swap — RCU publish so in-flight HandleAlphaKey reads
     // see either the old or new injector cleanly.
@@ -3612,6 +3666,9 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         // suggestKeepChars flag to default false until the next ApplyConfig.
         // Use the outer `cfg` loaded at function entry — no re-load needed.
         newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
+        // Carry the live formula-segment state onto the new injector so a focus
+        // change mid-formula doesn't transiently re-enable the bait.
+        newInjector->SetSuppressBait(baitSuppressed_);
         dispatcher_.SetInjector(std::move(newInjector));
     }
 

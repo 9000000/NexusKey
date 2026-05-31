@@ -68,8 +68,13 @@ constexpr ULONG_PTR kVKeyExtraInfo = 0x4E4BULL;
 ShouldEmitBait(bool needsBaitCharPrefix,
                std::size_t bsCount,
                std::wstring_view text,
-               bool suggestKeepChars) noexcept {
+               bool suggestKeepChars,
+               bool suppressBait) noexcept {
     if (!needsBaitCharPrefix || bsCount == 0) return false;
+    // Spreadsheet-formula segment ("=..." cell): the bait's extra BS eats the
+    // leading '=' and strands a U+202F glyph (Excel formula autocomplete is a
+    // dropdown, not an inline selection). Skip the bait so BS stays exact.
+    if (suppressBait) return false;
     if (suggestKeepChars && text.empty()) return false;
     return true;
 }

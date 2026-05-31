@@ -12,6 +12,7 @@
 #include "core/config/ConfigSnapshot.h"
 #include "core/hotkey/HotkeyRegistry.h"
 #include "core/AutoCapStateTransition.h"
+#include "core/FormulaSegmentDecision.h"
 #include "core/SmartSwitchManager.h"
 #include "app/system/HookCommandMailbox.h"
 #include "app/system/HookLifecycle.h"
@@ -324,6 +325,12 @@ private:
     void HandleGhostChar(wchar_t ch) noexcept;
     bool CommitComposition();  // Returns true if auto-restore changed text
     void ResetComposition();
+    // Track whether the current cell/line segment is a spreadsheet formula
+    // ("=..."), updating `formulaSegment_` and pushing it to the live injector
+    // via SetSuppressBait. Called once per keystroke at the top of ProcessKeyDown.
+    void UpdateFormulaSegment(DWORD vkCode);
+    // Set `formulaSegment_` and propagate to the active injector if changed.
+    void SetFormulaSegment(bool on);
     void CancelCommitUndo();   // commitUndoState_ = Idle + commitStack_.clear()
     void SetCommitUndoReady(); // commitUndoState_ = Ready + timestamp
 
@@ -524,6 +531,20 @@ private:
     /// Enum + transition rule live in core/AutoCapStateTransition.h so Linux GTest
     /// can exercise the modifier-gate contract without depending on Win32.
     AutoCapState autoCapState_ = AutoCapState::Idle;
+    // Spreadsheet-formula tracking (hook-thread only — written by both
+    // ApplyFocusOnHookThread and ProcessKeyDown, which both assert hook thread).
+    // The keystroke FSM lives in core/FormulaSegmentDecision.h (Linux-testable);
+    // this owns its rolling state plus two gates:
+    //   hostIsFormulaCapable_ — focused app is a spreadsheet (Excel only). When
+    //     false, UpdateFormulaSegment is inert so suppression never leaks into
+    //     other needBait hosts (browser omnibox, Outlook).
+    //   baitSuppressed_ — last value pushed to injector->SetSuppressBait, to skip
+    //     redundant atomic stores when the formula flag doesn't change.
+    // Best-effort: clicking into a pre-existing "=..." cell isn't detected (we
+    // only observe keystrokes), so that case keeps the unchanged pre-fix behaviour.
+    FormulaSegmentState formulaState_{};
+    bool hostIsFormulaCapable_ = false;
+    bool baitSuppressed_ = false;
     // Phase 3d: legacy `excludedAppSet_` removed — readers go through
     // configSnapshot_.load()->excludedAppSet. Same migration for
     // tsfAppSet_, macroTable_, spaceMacroKeys_, appEncodingOverrides_,

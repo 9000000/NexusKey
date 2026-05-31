@@ -75,6 +75,11 @@ struct FocusClassification {
     // Dispatch-shape flags derived from classification + per-app overrides.
     bool localSkipEmpty{false};
     bool localNeedBait{false};
+    // True only for spreadsheet hosts (Excel) where a cell starting with '=' is
+    // a formula. Gates the formula-segment bait suppression so it never leaks
+    // into other needBait hosts (browser omnibox, Outlook) — see
+    // core/FormulaSegmentDecision.h and HookEngine::UpdateFormulaSegment.
+    bool localFormulaHost{false};
     bool localClipboard{false};
     bool localEditMsg{false};
     bool localUseClipboardInjector{false};

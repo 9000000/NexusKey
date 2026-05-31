@@ -91,8 +91,27 @@ public:
         return suggestKeepChars_.load(std::memory_order_acquire);
     }
 
+    // Runtime-mutable: when true, the U+202F bait char is suppressed even in a
+    // needsBaitCharPrefix channel. HookEngine raises this while typing inside a
+    // spreadsheet-formula segment (a cell whose content starts with '='). Excel's
+    // formula autocomplete is a separate dropdown, NOT a Chromium-style inline
+    // selection, so the bait's extra backspace over-deletes (eats the leading
+    // '=') and strands a U+202F glyph in the cell (renders as tofu in fonts
+    // lacking the narrow no-break space). Suppressing the bait there keeps the
+    // backspace count exact. HookEngine pushes this per-keystroke as the formula
+    // segment opens/closes; the injector reads it on every Replace() through
+    // Internal::ShouldEmitBait. Atomic for the same cross-thread visibility
+    // reason as suggestKeepChars_.
+    void SetSuppressBait(bool enabled) noexcept {
+        suppressBait_.store(enabled, std::memory_order_release);
+    }
+    [[nodiscard]] bool GetSuppressBait() const noexcept {
+        return suppressBait_.load(std::memory_order_acquire);
+    }
+
 protected:
     std::atomic<bool> suggestKeepChars_{false};
+    std::atomic<bool> suppressBait_{false};
 };
 
 }  // namespace NextKey::Output
