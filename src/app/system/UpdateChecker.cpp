@@ -362,6 +362,7 @@ bool UpdateChecker::DownloadAndLaunchInstaller(const std::wstring& downloadUrl) 
                             CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
             // Fallback: some restricted job objects do not allow breakaway.
             // Launch without the flag to proceed with update, even if inside the same job.
+            ZeroMemory(&pi, sizeof(pi));
             if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
                                 0, nullptr, nullptr, &si, &pi)) {
                 return false;

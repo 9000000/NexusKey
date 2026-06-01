@@ -193,8 +193,8 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
                 fs::create_directories(destPath);
             } else {
                 fs::create_directories(destPath.parent_path());
-                // Preserving config.toml if it already exists:
-                if (_wcsicmp(relativePath.filename().c_str(), L"config.toml") == 0 && fs::exists(destPath)) {
+                // Preserving config.toml if it already exists at the root level:
+                if (_wcsicmp(relativePath.wstring().c_str(), L"config.toml") == 0 && fs::exists(destPath)) {
                     continue; // Skip overwriting config.toml
                 }
                 fs::copy_file(entry.path(), destPath, fs::copy_options::overwrite_existing);
@@ -306,6 +306,7 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
             if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
                                 CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi)) {
                 // Fallback: launch without breakaway if restricted by job object
+                ZeroMemory(&pi, sizeof(pi));
                 if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
                                    0, nullptr, exeDir.c_str(), &si, &pi)) {
                     CloseHandle(pi.hThread);
@@ -401,6 +402,7 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
         if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
                             CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi)) {
             // Fallback: if breakaway fails due to restricted job object, retry without it
+            ZeroMemory(&pi, sizeof(pi));
             if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
                                0, nullptr, exeDir.c_str(), &si, &pi)) {
                 CloseHandle(pi.hThread);
