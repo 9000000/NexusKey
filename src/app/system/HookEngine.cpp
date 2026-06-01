@@ -2001,7 +2001,6 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
         // (Ctrl+Shift, Alt+Shift, …) need other modifiers held when the
         // bound key releases — Matches() compares `otherMods` against the
         // trigger's stored mods bitmask.
-        const bool cleanRelease = !otherKeyPressed_;
         // Other modifiers held at the moment of release. `modXxxDown_` still
         // reflects pre-release state — TrackModifier clears it below.
         const uint32_t otherMods = ComputeModMask(
@@ -2009,6 +2008,15 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
             canonicalVk != VK_SHIFT   && modShiftDown_,
             canonicalVk != VK_MENU    && modAltDown_,
             canonicalVk != VK_LWIN    && modWinDown_);
+        // A combo's trailing release looks identical to a lone tap here:
+        // when Ctrl releases after Ctrl+Shift, Shift is already up so
+        // otherMods == 0. modComboSeen_ remembers a second modifier was held
+        // during this session; combined with otherMods == 0 it marks this as
+        // the tail of a combo, NOT a clean modifier-alone gesture. Genuine
+        // combo releases (Shift up while Ctrl held) keep otherMods != 0 and
+        // are unaffected, so registry-bound combo intents still fire. (#189)
+        const bool comboTail = modComboSeen_ && otherMods == 0;
+        const bool cleanRelease = !otherKeyPressed_ && !comboTail;
 
         if (modIdx >= 0 && cleanRelease) {
             const DWORD now = GetTickCount();
@@ -3440,23 +3448,45 @@ HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
 // ═══════════════════════════════════════════════════════════
 
 void HookEngine::TrackModifier(DWORD vkCode, bool isDown) {
+    // Snapshot the *other* modifiers before mutating, so a fresh modifier-down
+    // that joins an existing hold latches modComboSeen_ (combo contamination).
+    // Auto-repeat re-enters with the matching modXxxDown_ already true, so the
+    // inner `!modXxxDown_` guard prevents a held key from contaminating itself.
+    const bool ctrlWasDown  = modCtrlDown_;
+    const bool shiftWasDown = modShiftDown_;
+    const bool altWasDown   = modAltDown_;
+    const bool winWasDown   = modWinDown_;
     switch (vkCode) {
         case VK_LCONTROL: case VK_RCONTROL:
-            if (isDown && !modCtrlDown_) { modCtrlDown_ = true; otherKeyPressed_ = false; }
-            else if (!isDown) modCtrlDown_ = false;
+            if (isDown && !modCtrlDown_) {
+                modCtrlDown_ = true; otherKeyPressed_ = false;
+                if (shiftWasDown || altWasDown || winWasDown) modComboSeen_ = true;
+            } else if (!isDown) modCtrlDown_ = false;
             break;
         case VK_LSHIFT: case VK_RSHIFT:
-            if (isDown && !modShiftDown_) { modShiftDown_ = true; otherKeyPressed_ = false; }
-            else if (!isDown) modShiftDown_ = false;
+            if (isDown && !modShiftDown_) {
+                modShiftDown_ = true; otherKeyPressed_ = false;
+                if (ctrlWasDown || altWasDown || winWasDown) modComboSeen_ = true;
+            } else if (!isDown) modShiftDown_ = false;
             break;
         case VK_LMENU: case VK_RMENU:
-            if (isDown && !modAltDown_) { modAltDown_ = true; otherKeyPressed_ = false; }
-            else if (!isDown) modAltDown_ = false;
+            if (isDown && !modAltDown_) {
+                modAltDown_ = true; otherKeyPressed_ = false;
+                if (ctrlWasDown || shiftWasDown || winWasDown) modComboSeen_ = true;
+            } else if (!isDown) modAltDown_ = false;
             break;
         case VK_LWIN: case VK_RWIN:
-            if (isDown && !modWinDown_) { modWinDown_ = true; otherKeyPressed_ = false; }
-            else if (!isDown) modWinDown_ = false;
+            if (isDown && !modWinDown_) {
+                modWinDown_ = true; otherKeyPressed_ = false;
+                if (ctrlWasDown || shiftWasDown || altWasDown) modComboSeen_ = true;
+            } else if (!isDown) modWinDown_ = false;
             break;
+    }
+    // Session ends — and the combo latch clears — only once every modifier is
+    // up. This runs AFTER ProcessKeyUp's modifier-release matching reads the
+    // latch, so the trailing release of a combo is still seen as contaminated.
+    if (!isDown && !modCtrlDown_ && !modShiftDown_ && !modAltDown_ && !modWinDown_) {
+        modComboSeen_ = false;
     }
 }
 
@@ -3716,6 +3746,10 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     ResetComposition();
     tempEngineOff_ = false;
     autoCapState_ = AutoCapState::Idle;
+    // Clear the combo latch defensively: a focus switch (Alt+Tab) can swallow a
+    // modifier-up, stranding modComboSeen_ true and suppressing the next genuine
+    // single-modifier tap until every modifier is observed up again. (#189)
+    modComboSeen_ = false;
 
     // Per-app cached flags — single release-store pair with the hot-path
     // acquire-loads in ProcessKeyDown / HandleAlphaKey. Wave 3 PR 3.3:

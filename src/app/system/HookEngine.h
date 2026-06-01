@@ -794,6 +794,14 @@ private:
     bool modAltDown_ = false;
     bool modWinDown_ = false;
     bool otherKeyPressed_ = false;
+    // Latched true the moment a *second* modifier joins an existing modifier
+    // hold (e.g. Shift pressed while Ctrl is down), cleared when every modifier
+    // is released. Distinguishes the trailing release of a multi-modifier combo
+    // from a genuine single-modifier tap, so releasing Ctrl after a Ctrl+Shift
+    // gesture does NOT fire a modifier-alone intent. Fixes #189: Ctrl+Shift
+    // mode-toggle left the trailing Ctrl release toggling tempEngineOff_ (the
+    // default single-Ctrl toggle-enabled binding), mangling the next word.
+    bool modComboSeen_ = false;
 
     // Wave 3 PR 3.2 — CJK layout state (layoutSuppressed_/modeBeforeCjk_/
     // cachedIsCompatLayout_) and focused-child cache (cachedFocusedHwnd_/
