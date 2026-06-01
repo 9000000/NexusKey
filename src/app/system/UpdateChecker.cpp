@@ -360,7 +360,12 @@ bool UpdateChecker::DownloadAndLaunchInstaller(const std::wstring& downloadUrl) 
         // when the main process exits, preventing restart after update.
         if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
                             CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
-            return false;
+            // Fallback: some restricted job objects do not allow breakaway.
+            // Launch without the flag to proceed with update, even if inside the same job.
+            if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                                0, nullptr, nullptr, &si, &pi)) {
+                return false;
+            }
         }
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);

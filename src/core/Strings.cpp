@@ -33,7 +33,7 @@ static const wchar_t* const kVietnamese[] = {
     L"SPDX-License-Identifier: AGPL-3.0-only",
     L"Cập nhật",                                     // UPDATE_TITLE
     L"Có phiên bản mới!",                            // UPDATE_AVAILABLE_TITLE
-    L"Phiên bản mới %s đã sẵn sàng.",               // UPDATE_AVAILABLE_BODY
+    L"Phiên bản mới %s đã sẵn sàng.\n\nỨng dụng sẽ tự động đóng, cập nhật và khởi động lại.", // UPDATE_AVAILABLE_BODY
     L"Cập nhật ngay",                                // UPDATE_NOW
     L"Bỏ qua",                                      // UPDATE_SKIP
     L"Bạn đang dùng phiên bản mới nhất!",           // UPDATE_LATEST
@@ -98,7 +98,7 @@ static const wchar_t* const kEnglish[] = {
     L"SPDX-License-Identifier: AGPL-3.0-only",
     L"Update",                                       // UPDATE_TITLE
     L"Update available!",                            // UPDATE_AVAILABLE_TITLE
-    L"Version %s is available.",                     // UPDATE_AVAILABLE_BODY
+    L"Version %s is available.\n\nThe application will automatically close, update, and restart.", // UPDATE_AVAILABLE_BODY
     L"Update now",                                   // UPDATE_NOW
     L"Skip",                                         // UPDATE_SKIP
     L"You're on the latest version!",                // UPDATE_LATEST

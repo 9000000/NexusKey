@@ -193,6 +193,10 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
                 fs::create_directories(destPath);
             } else {
                 fs::create_directories(destPath.parent_path());
+                // Preserving config.toml if it already exists:
+                if (_wcsicmp(relativePath.filename().c_str(), L"config.toml") == 0 && fs::exists(destPath)) {
+                    continue; // Skip overwriting config.toml
+                }
                 fs::copy_file(entry.path(), destPath, fs::copy_options::overwrite_existing);
             }
         }
@@ -299,10 +303,18 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
             STARTUPINFOW si = { sizeof(si) };
             PROCESS_INFORMATION pi = {};
             std::wstring cmdLine = L"\"" + restoredExePath + L"\"";
-            CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
-                           CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi);
-            if (pi.hThread) CloseHandle(pi.hThread);
-            if (pi.hProcess) CloseHandle(pi.hProcess);
+            if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                                CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi)) {
+                // Fallback: launch without breakaway if restricted by job object
+                if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                                   0, nullptr, exeDir.c_str(), &si, &pi)) {
+                    CloseHandle(pi.hThread);
+                    CloseHandle(pi.hProcess);
+                }
+            } else {
+                CloseHandle(pi.hThread);
+                CloseHandle(pi.hProcess);
+            }
         }
 
         ExitProcess(1);
@@ -386,8 +398,15 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
         // Quote the path for CreateProcessW cmdline
         std::wstring cmdLine = L"\"" + finalExePath + L"\"";
         
-        if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
-                           CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi)) {
+        if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                            CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi)) {
+            // Fallback: if breakaway fails due to restricted job object, retry without it
+            if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                               0, nullptr, exeDir.c_str(), &si, &pi)) {
+                CloseHandle(pi.hThread);
+                CloseHandle(pi.hProcess);
+            }
+        } else {
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
         }

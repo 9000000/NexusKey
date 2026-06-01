@@ -674,7 +674,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             // calling thread — sibling threads in this file all call it; match them.
             CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
             try {
-                Sleep(3000);
+                Sleep(30000);
                 auto info = UpdateChecker::CheckForUpdate();
                 if (info.available) {
                     HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
