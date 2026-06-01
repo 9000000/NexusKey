@@ -164,4 +164,4 @@ VKey cung cấp công cụ chuyển đổi bảng mã và biến đổi chữ c�
 > | 🗑️ | Xóa các dòng **không liên quan** dựa theo thời gian |
 > | ✂️ | **Chỉ gửi đoạn cần thiết** cho việc debug |
 
-📚 Để biết thêm về các biện pháp tăng cường bảo mật của dự án, vui lòng đọc tài liệu chi tiết tại [🔒 SECURITY.md](docs/SECURITY.md).
+📚 Để biết thêm về các biện pháp tăng cường bảo mật của dự án, vui lòng đọc tài liệu chi tiết tại [🔒 SECURITY.md](SECURITY.md).
