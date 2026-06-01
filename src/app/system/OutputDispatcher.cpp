@@ -8,6 +8,7 @@
 #include "core/Logger.h"
 #include "output/Internal.h"
 #include "output/OutputInjectorFactory.h"
+#include "output/Win32SendInputInjector.h"
 
 #include <algorithm>
 #include <vector>
@@ -156,7 +157,14 @@ OutputDispatcher::GetInjector() const noexcept {
 
 bool OutputDispatcher::IsSyncReplaceChannel() const noexcept {
     auto inj = injector_.load(std::memory_order_acquire);
-    return inj && inj->SettleBudget().count() == 0;
+    if (!inj || inj->SettleBudget().count() != 0) return false;
+
+    HWND focusedWindow = focus_.CachedFocusedHwnd();
+    if (focusedWindow && IsWindow(focusedWindow)) {
+        const wchar_t* focusedClass = focus_.CachedFocusedClass().c_str();
+        return IsEditCompatibleClass(focusedClass);
+    }
+    return true;
 }
 
 bool OutputDispatcher::ShouldUseClipboard(CodeTable currentTable) const noexcept {
@@ -431,32 +439,75 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
     // callbacks while sleeping — no further physical keys race in) then retry.
     // 30 ms upper bound is well below LowLevelHooksTimeout (default 300 ms).
     if (IsSyncReplaceChannel()) {
-        constexpr int kAsyncRenderMaxWaitMs = 30;
-        constexpr int kAsyncRenderStepMs    = 1;
-        int waitedMs = 0;
-        auto inj = injector_.load(std::memory_order_acquire);
-        for (;;) {
-            bool injOk;
-            {
-                PERF_SCOPE(::NextKey::Perf::Stage::Injector);
-                injOk = inj->Replace(backspaceCount, text);
-            }
-            if (injOk) {
-                if (synthEventsPending_.load(std::memory_order_relaxed) > 0) {
-                    hadSynthInWord_ = true;
-                }
-                if (waitedMs > 0) {
-                    HOOK_LOG(L"  ReplaceComposition[editMsg]: caught up after %dms wait",
-                             waitedMs);
-                }
-                return;
-            }
-            if (waitedMs >= kAsyncRenderMaxWaitMs) break;
-            Sleep(kAsyncRenderStepMs);
-            waitedMs += kAsyncRenderStepMs;
+        HWND focusedWindow = focus_.CachedFocusedHwnd();
+        if (!focusedWindow || !IsWindow(focusedWindow)) {
+            focus_.RefreshFocusCache(GetForegroundWindow());
+            focusedWindow = focus_.CachedFocusedHwnd();
         }
-        HOOK_LOG(L"  ReplaceComposition[editMsg]: retry exhausted (%dms) — fallback to SendInput BS=%zu",
-                 kAsyncRenderMaxWaitMs, backspaceCount);
+
+        bool isEditCompatible = false;
+        if (focusedWindow) {
+            const wchar_t* focusedClass = focus_.CachedFocusedClass().c_str();
+            isEditCompatible = IsEditCompatibleClass(focusedClass);
+        }
+
+        bool isReplaced = false;
+        if (isEditCompatible) {
+            constexpr int kAsyncRenderMaxWaitMs = 30;
+            constexpr int kAsyncRenderStepMs    = 1;
+            int elapsedWaitTimeMs = 0;
+            auto activeInjector = injector_.load(std::memory_order_acquire);
+            for (;;) {
+                bool isInjectionSuccessful = false;
+                {
+                    PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+                    isInjectionSuccessful = activeInjector->Replace(backspaceCount, text);
+                }
+                if (isInjectionSuccessful) {
+                    if (synthEventsPending_.load(std::memory_order_relaxed) > 0) {
+                        hadSynthInWord_ = true;
+                    }
+                    if (elapsedWaitTimeMs > 0) {
+                        HOOK_LOG(L"  ReplaceComposition[editMsg]: caught up after %dms wait",
+                                 elapsedWaitTimeMs);
+                    }
+                    isReplaced = true;
+                    break;
+                }
+                if (elapsedWaitTimeMs >= kAsyncRenderMaxWaitMs) {
+                    break;
+                }
+                Sleep(kAsyncRenderStepMs);
+                elapsedWaitTimeMs += kAsyncRenderStepMs;
+            }
+        }
+
+        if (isReplaced) {
+            return;
+        }
+
+        // If not compatible or if the retry loop is exhausted, we immediately fall back to SendInput.
+        if (isEditCompatible) {
+            HOOK_LOG(L"  ReplaceComposition[editMsg]: retry exhausted (30ms) — fallback to SendInput BS=%zu",
+                     backspaceCount);
+        } else {
+            HOOK_LOG(L"  ReplaceComposition[editMsg]: class '%s' not compatible — immediate fallback to SendInput BS=%zu",
+                     focus_.CachedFocusedClass().c_str(), backspaceCount);
+        }
+
+        sending_.store(true, std::memory_order_release);
+        NextKey::Output::Win32SendInputInjector fallbackInjector(false);
+        bool isFallbackSuccessful = fallbackInjector.Replace(backspaceCount, text);
+        if (!isFallbackSuccessful) {
+            HOOK_LOG(L"  ReplaceComposition[editMsg]: fallback injector reported partial delivery");
+        }
+        sending_.store(false, std::memory_order_release);
+        RecordSynthDispatch();
+
+        if (synthEventsPending_.load(std::memory_order_relaxed) > 0) {
+            hadSynthInWord_ = true;
+        }
+        return;
     }
 
     // ── VB6 / ANSI-internal windows ──

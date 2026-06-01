@@ -27,6 +27,8 @@
 #include "Internal.h"
 #include "Win32SendInputInjector.h"
 
+#include "core/Logger.h"
+
 namespace NextKey::Output {
 
 namespace {
@@ -35,9 +37,10 @@ constexpr UINT kEditMsgFlags     = SMTO_ABORTIFHUNG | SMTO_NORMAL;
 constexpr UINT kEditMsgTimeoutMs = 50;
 
 // Class-compat check ported from HookEngine.cpp:1901. Accepts plain
-// Edit, RichEdit*, and ThunderRT6 (VB6) variants. Sprint 1 D12 fix
-// targets RichEditD2DPT specifically but the broader compat list is
-// preserved so EM_REPLACESEL works on any Edit-compatible host.
+// Edit, RichEdit*, ThunderRT6 (VB6), and modern WinUI 3 InputSiteWindowClass
+// (Notepad) variants. Sprint 1 D12 fix targets RichEditD2DPT specifically
+// but the broader compat list is preserved so EM_REPLACESEL works on any
+// Edit-compatible host.
 bool IsEditCompatibleClass(const wchar_t* cls) noexcept {
     if (!cls || !*cls) return false;
     if (_wcsnicmp(cls, L"ThunderRT6TextBox", 17) == 0) return true;
@@ -48,50 +51,70 @@ bool IsEditCompatibleClass(const wchar_t* cls) noexcept {
 }
 
 // Resolve focused HWND inside the foreground process. Mirrors
-// HookEngine::RefreshFocusCache logic but self-contained — no HookEngine
-// member access. Slightly heavier per Replace call than the cached
-// version (one AttachThreadInput cycle), but RichEditD2DPT is ~5% of
-// host classes, so the cost is amortized acceptably.
+// GetFocusedChildHwnd (AppHelpers.h) — uses AttachThreadInput + GetFocus
+// instead of GetGUIThreadInfo because the latter often returns
+// hwndFocus=NULL from the LL keyboard hook thread, causing Replace() to
+// fall back to the foreground window whose class (e.g. "Notepad") fails
+// IsEditCompatibleClass. AttachThreadInput is ~µs per call; acceptable
+// for the ~5% of host classes that use this injector.
 HWND ResolveFocusedHwnd() noexcept {
-    HWND fg = ::GetForegroundWindow();
-    if (!fg) return nullptr;
-    DWORD tid = ::GetWindowThreadProcessId(fg, nullptr);
-    GUITHREADINFO gti{};
-    gti.cbSize = sizeof(gti);
-    if (::GetGUIThreadInfo(tid, &gti) && gti.hwndFocus) return gti.hwndFocus;
-    return fg;
+    HWND foregroundWindow = ::GetForegroundWindow();
+    if (!foregroundWindow) return nullptr;
+    DWORD foregroundThreadId = ::GetWindowThreadProcessId(foregroundWindow, nullptr);
+    DWORD currentThreadId = ::GetCurrentThreadId();
+    if (foregroundThreadId == currentThreadId) return ::GetFocus();
+    HWND focusedWindow = nullptr;
+    if (::AttachThreadInput(currentThreadId, foregroundThreadId, TRUE)) {
+        focusedWindow = ::GetFocus();
+        ::AttachThreadInput(currentThreadId, foregroundThreadId, FALSE);
+    }
+    return focusedWindow ? focusedWindow : foregroundWindow;
 }
 
 }  // namespace
 
-bool RichEditEmReplaceSelInjector::Replace(std::size_t bsCount,
+bool RichEditEmReplaceSelInjector::Replace(std::size_t backspaceCount,
                                            std::wstring_view text) noexcept {
-    if (bsCount == 0 && text.empty()) return true;  // nothing to do
+    if (backspaceCount == 0 && text.empty()) return true;  // nothing to do
 
-    HWND hwnd = ResolveFocusedHwnd();
-    if (!hwnd) return false;
+    HWND targetWindow = ResolveFocusedHwnd();
+    if (!targetWindow) {
+        Win32SendInputInjector fallbackInjector(false);
+        return fallbackInjector.Replace(backspaceCount, text);
+    }
 
-    wchar_t cls[64] = {};
-    if (::GetClassNameW(hwnd, cls, _countof(cls)) == 0) return false;
-    if (!IsEditCompatibleClass(cls)) return false;
+    wchar_t className[64] = {};
+    if (::GetClassNameW(targetWindow, className, _countof(className)) == 0) {
+        Win32SendInputInjector fallbackInjector(false);
+        return fallbackInjector.Replace(backspaceCount, text);
+    }
 
-    DWORD_PTR dummy = 0;
-    DWORD     newStart = 0, selEnd = 0;
+    if (!IsEditCompatibleClass(className)) {
+        if (::NextKey::Logger::IsEnabled()) {
+            ::NextKey::Logger::Log(L"[Hook] RichEditEmReplaceSelInjector: class '%ls' not compatible, falling back to SendInput BS=%zu",
+                                   className, backspaceCount);
+        }
+        Win32SendInputInjector fallbackInjector(false);
+        return fallbackInjector.Replace(backspaceCount, text);
+    }
+
+    DWORD_PTR timeoutResult = 0;
+    DWORD     newSelectionStart = 0, selectionEnd = 0;
 
     // EM_GETSEL — query caret. Safe to call before redraw suppression.
-    if (bsCount > 0) {
-        DWORD selStart = 0;
-        if (!Internal::g_sendMessageTimeoutW(hwnd, EM_GETSEL,
-                reinterpret_cast<WPARAM>(&selStart),
-                reinterpret_cast<LPARAM>(&selEnd),
-                kEditMsgFlags, kEditMsgTimeoutMs, &dummy)) {
+    if (backspaceCount > 0) {
+        DWORD selectionStart = 0;
+        if (!Internal::g_sendMessageTimeoutW(targetWindow, EM_GETSEL,
+                reinterpret_cast<WPARAM>(&selectionStart),
+                reinterpret_cast<LPARAM>(&selectionEnd),
+                kEditMsgFlags, kEditMsgTimeoutMs, &timeoutResult)) {
             return false;  // timed out / no result
         }
-        if (static_cast<DWORD>(bsCount) > selEnd) {
+        if (static_cast<DWORD>(backspaceCount) > selectionEnd) {
             // BS would cross before the start of buffer — bail.
             return false;
         }
-        newStart = selEnd - static_cast<DWORD>(bsCount);
+        newSelectionStart = selectionEnd - static_cast<DWORD>(backspaceCount);
     }
 
     // Suppress redraw between EM_SETSEL (highlights selection) and
@@ -99,17 +122,17 @@ bool RichEditEmReplaceSelInjector::Replace(std::size_t bsCount,
     // erase=FALSE because text controls paint their own background; TRUE
     // would cause a background-color flash before text redraws.
     bool redrawSuppressed = false;
-    if (bsCount > 0) {
-        redrawSuppressed = Internal::g_sendMessageTimeoutW(hwnd, WM_SETREDRAW,
-            FALSE, 0, kEditMsgFlags, kEditMsgTimeoutMs, &dummy) != 0;
+    if (backspaceCount > 0) {
+        redrawSuppressed = Internal::g_sendMessageTimeoutW(targetWindow, WM_SETREDRAW,
+            FALSE, 0, kEditMsgFlags, kEditMsgTimeoutMs, &timeoutResult) != 0;
 
-        if (!Internal::g_sendMessageTimeoutW(hwnd, EM_SETSEL,
-                static_cast<WPARAM>(newStart), static_cast<LPARAM>(selEnd),
-                kEditMsgFlags, kEditMsgTimeoutMs, &dummy)) {
+        if (!Internal::g_sendMessageTimeoutW(targetWindow, EM_SETSEL,
+                static_cast<WPARAM>(newSelectionStart), static_cast<LPARAM>(selectionEnd),
+                kEditMsgFlags, kEditMsgTimeoutMs, &timeoutResult)) {
             if (redrawSuppressed) {
-                Internal::g_sendMessageTimeoutW(hwnd, WM_SETREDRAW, TRUE, 0,
-                    kEditMsgFlags, kEditMsgTimeoutMs, &dummy);
-                ::InvalidateRect(hwnd, nullptr, FALSE);
+                Internal::g_sendMessageTimeoutW(targetWindow, WM_SETREDRAW, TRUE, 0,
+                    kEditMsgFlags, kEditMsgTimeoutMs, &timeoutResult);
+                ::InvalidateRect(targetWindow, nullptr, FALSE);
             }
             return false;
         }
@@ -121,14 +144,14 @@ bool RichEditEmReplaceSelInjector::Replace(std::size_t bsCount,
     // acceptable. Stack-array would need a max-size cap; std::wstring is
     // simpler and small-string-optimized for typical Vietnamese words.
     std::wstring zterm(text);
-    BOOL replaceOk = Internal::g_sendMessageTimeoutW(hwnd, EM_REPLACESEL,
+    BOOL replaceOk = Internal::g_sendMessageTimeoutW(targetWindow, EM_REPLACESEL,
         static_cast<WPARAM>(TRUE), reinterpret_cast<LPARAM>(zterm.c_str()),
-        kEditMsgFlags, kEditMsgTimeoutMs, &dummy) != 0;
+        kEditMsgFlags, kEditMsgTimeoutMs, &timeoutResult) != 0;
 
     if (redrawSuppressed) {
-        Internal::g_sendMessageTimeoutW(hwnd, WM_SETREDRAW, TRUE, 0,
-            kEditMsgFlags, kEditMsgTimeoutMs, &dummy);
-        ::InvalidateRect(hwnd, nullptr, FALSE);
+        Internal::g_sendMessageTimeoutW(targetWindow, WM_SETREDRAW, TRUE, 0,
+            kEditMsgFlags, kEditMsgTimeoutMs, &timeoutResult);
+        ::InvalidateRect(targetWindow, nullptr, FALSE);
     }
 
     return replaceOk != FALSE;
