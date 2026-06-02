@@ -57,7 +57,8 @@ namespace NextKey {
 /// On any failure (download, parse, hash mismatch) returns false.
 [[nodiscard]] bool VerifyDownloadedZip(
     const std::wstring& zipUrl,
-    const std::wstring& localZipPath) noexcept;
+    const std::wstring& localZipPath,
+    std::atomic<bool>& cancelFlag) noexcept;
 
 #endif  // _WIN32
 

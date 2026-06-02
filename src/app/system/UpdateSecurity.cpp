@@ -206,11 +206,46 @@ std::string ComputeFileSha256(const std::wstring& filePath) noexcept {
     }
 }
 
+class CancelableBindStatusCallback : public IBindStatusCallback {
+private:
+    std::atomic<bool>& cancelFlag_;
+public:
+    CancelableBindStatusCallback(std::atomic<bool>& cancelFlag) : cancelFlag_(cancelFlag) {}
+
+    STDMETHODIMP QueryInterface(REFIID riid, void** ppvObject) override {
+        if (riid == IID_IUnknown || riid == IID_IBindStatusCallback) {
+            *ppvObject = static_cast<IBindStatusCallback*>(this);
+            return S_OK;
+        }
+        *ppvObject = nullptr;
+        return E_NOINTERFACE;
+    }
+    STDMETHODIMP_(ULONG) AddRef() override { return 1; }
+    STDMETHODIMP_(ULONG) Release() override { return 1; }
+
+    STDMETHODIMP OnStartBinding(DWORD, IBinding*) override { return S_OK; }
+    STDMETHODIMP GetPriority(LONG*) override { return S_OK; }
+    STDMETHODIMP OnLowResource(DWORD) override { return S_OK; }
+    STDMETHODIMP OnProgress(ULONG, ULONG, ULONG, LPCWSTR) override {
+        if (cancelFlag_.load(std::memory_order_relaxed)) {
+            return E_ABORT;
+        }
+        return S_OK;
+    }
+    STDMETHODIMP OnStopBinding(HRESULT, LPCWSTR) override { return S_OK; }
+    STDMETHODIMP GetBindInfo(DWORD*, BINDINFO*) override { return S_OK; }
+    STDMETHODIMP OnDataAvailable(DWORD, DWORD, FORMATETC*, STGMEDIUM*) override { return S_OK; }
+    STDMETHODIMP OnObjectAvailable(REFIID, IUnknown*) override { return S_OK; }
+};
+
 bool VerifyDownloadedZip(
     const std::wstring& zipUrl,
-    const std::wstring& localZipPath) noexcept
+    const std::wstring& localZipPath,
+    std::atomic<bool>& cancelFlag) noexcept
 {
     try {
+        if (cancelFlag.load(std::memory_order_relaxed)) return false;
+
         // Defense-in-depth: reject non-GitHub URLs even if caller forgot to validate
         if (!IsAllowedDownloadUrl(zipUrl)) return false;
 
@@ -222,8 +257,9 @@ bool VerifyDownloadedZip(
         GetTempPathW(MAX_PATH, tempDir);
         std::wstring checksumPath = std::wstring(tempDir) + L"vkey_checksum.sha256";
 
+        CancelableBindStatusCallback callback(cancelFlag);
         HRESULT hr = URLDownloadToFileW(nullptr, checksumUrl.c_str(),
-            checksumPath.c_str(), 0, nullptr);
+            checksumPath.c_str(), 0, &callback);
         if (FAILED(hr)) {
             DeleteFileW(checksumPath.c_str());
             return false;
