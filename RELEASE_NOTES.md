@@ -1,6 +1,9 @@
-# VKey v4.0.1
+# VKey v4.1.0
+
+[![Signed by SignPath](https://img.shields.io/badge/Signed_by-SignPath-blue)](https://signpath.io)
 
 **✨ Tính năng mới & Cải tiến:**
+- Hỗ trợ ký số (Digital Signature): Kể từ phiên bản này, tất cả các file nhị phân của VKey đều được ký số chính thức (qua chương trình SignPath Foundation). VKey tự hào là bộ gõ tiếng Việt mã nguồn mở đầu tiên trên Windows có ký số chính thức, giúp loại bỏ hoàn toàn các cảnh báo của Windows SmartScreen khi cài đặt.
 - Cải tiến chế độ tự động viết hoa phím tắt (Auto Capitalization): tự động chuyển đổi cụm từ mở rộng thành dạng viết hoa từng chữ (Title Case) khi gõ phím tắt viết hoa chữ cái đầu (Ví dụ: `lhq` -> `liên hiệp quốc` thì gõ `Lhq` -> `Liên Hiệp Quốc`, gõ `LHQ` -> `LIÊN HIỆP QUỐC`)
 - Tăng thời gian delay kiểm tra cập nhật lúc khởi động từ 3 giây lên 30 giây để đảm bảo kết nối mạng và Windows ổn định
 - Tự động sao lưu cấu hình gõ (`config.toml` sang `config.toml.bak`) trước khi cập nhật, tự động fallback sang `%APPDATA%\VKey` nếu không có quyền ghi
