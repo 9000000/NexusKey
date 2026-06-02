@@ -443,7 +443,8 @@ bool CleanupOldUpdateFiles() noexcept {
         std::wstring oldVersionDir = exeDir + L"\\_old_version";
         if (fs::exists(oldVersionDir)) {
             std::error_code ec;
-            if (fs::remove_all(oldVersionDir, ec) > 0) {
+            std::uintmax_t count = fs::remove_all(oldVersionDir, ec);
+            if (!ec && count > 0 && count != static_cast<std::uintmax_t>(-1)) {
                 cleaned = true;
             }
         }
