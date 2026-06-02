@@ -7,6 +7,8 @@
 #include "core/Strings.h"
 #include "core/WinStrings.h"
 #include "core/CrashLog.h"
+#include "core/config/ConfigManager.h"
+#include "core/Debug.h"
 
 #include <ole2.h>
 #include <urlmon.h>
@@ -324,6 +326,32 @@ bool UpdateChecker::DownloadWithProgress(HWND parent, const std::wstring& downlo
         TaskDialog(parent, nullptr, L"VKey", S(StringId::UPDATE_TITLE),
                    S(StringId::UPDATE_DOWNLOAD_FAILED), TDCBF_OK_BUTTON, TD_WARNING_ICON, nullptr);
         return false;
+    }
+
+    // Back up the current configuration file
+    std::wstring backupPath;
+    std::wstring activeConfig = ConfigManager::GetConfigPath();
+    DWORD attrs = GetFileAttributesW(activeConfig.c_str());
+    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        std::wstring primaryBackup = activeConfig + L".bak";
+        if (CopyFileW(activeConfig.c_str(), primaryBackup.c_str(), FALSE)) {
+            backupPath = primaryBackup;
+        } else {
+            std::wstring appDataDir = ConfigManager::GetAppDataDirectory();
+            std::wstring fallbackBackup = appDataDir + L"\\config.toml.bak";
+            if (CopyFileW(activeConfig.c_str(), fallbackBackup.c_str(), FALSE)) {
+                backupPath = fallbackBackup;
+            } else {
+                NEXTKEY_LOG(L"[Update] Failed to copy config to primary or fallback backup path");
+            }
+        }
+    }
+
+    if (!backupPath.empty()) {
+        wchar_t content[512] = {0};
+        swprintf_s(content, S(StringId::UPDATE_BACKUP_SUCCESS), backupPath.c_str());
+        TaskDialog(parent, nullptr, L"VKey", S(StringId::UPDATE_TITLE),
+                   content, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, nullptr);
     }
 
     return true;

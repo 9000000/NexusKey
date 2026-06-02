@@ -236,8 +236,8 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
     DeleteFileW((exeDir + L"\\" + TSF_DLL_FILENAME + TSF_DLL_PENDING_SUFFIX).c_str());
     DeleteFileW((exeDir + L"\\" + TSF_DLL_PENDING_MARKER).c_str());
 
-    // 1. Wait for all other VKey.exe processes to exit (30s timeout)
-    WaitForOtherProcesses(30000);
+    // 1. Wait for all other VKey.exe processes to exit (120s timeout)
+    WaitForOtherProcesses(120000);
 
     // 2. Move ALL .exe and .dll files to _old_version/ folder
     // This handles sciter.dll, TSF DLLs, and the main EXE regardless of name.

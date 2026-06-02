@@ -88,6 +88,7 @@ enum class StringId : uint16_t {
     // Watchdog
     WATCHDOG_STOPPED_BODY,
     WATCHDOG_ENABLED_BODY,
+    UPDATE_BACKUP_SUCCESS,
 
     _COUNT
 };

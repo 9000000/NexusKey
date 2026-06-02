@@ -71,6 +71,7 @@ static const wchar_t* const kVietnamese[] = {
     L"Vui lòng thoát và khởi động lại VKey thủ công.",
     L"Đã tắt tự khởi động lại. VKey sẽ không tự bật lại nếu thoát đột ngột.", // WATCHDOG_STOPPED_BODY
     L"Đã bật tự khởi động lại. VKey sẽ tự bật lại nếu thoát đột ngột.", // WATCHDOG_ENABLED_BODY
+    L"Cấu hình hiện tại đã được sao lưu thành công tại:\n%s\n\nỨng dụng sẽ tự động đóng để tiến hành cập nhật.", // UPDATE_BACKUP_SUCCESS
 };
 
 // English string table
@@ -136,6 +137,7 @@ static const wchar_t* const kEnglish[] = {
     L"Please exit and relaunch VKey manually.",
     L"Auto-restart stopped. VKey will not relaunch on crash.", // WATCHDOG_STOPPED_BODY
     L"Auto-restart enabled. VKey will relaunch on crash.", // WATCHDOG_ENABLED_BODY
+    L"Your current configuration has been backed up at:\n%s\n\nThe application will automatically close to perform the update.", // UPDATE_BACKUP_SUCCESS
 };
 
 static_assert(sizeof(kVietnamese) / sizeof(kVietnamese[0]) == static_cast<size_t>(StringId::_COUNT),
