@@ -81,6 +81,48 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.include_classic
         run: cmake --build build-classic --config Release --target VKeyLite
 
+      # --- SignPath Code Signing ---
+      - name: Gather unsigned binaries
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path unsigned-binaries
+          Copy-Item "build/Release/VKey.exe" "unsigned-binaries/" -Force
+          Copy-Item "build/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
+          Copy-Item "build/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
+          if (Test-Path "build-classic/Release/VKeyClassic.exe") {
+            Copy-Item "build-classic/Release/VKeyClassic.exe" "unsigned-binaries/" -Force
+          }
+
+      - name: Upload unsigned binaries for signing
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-binaries
+          path: unsigned-binaries/
+          retention-days: 1
+
+      - name: Submit signing request to SignPath
+        id: signpath-sign
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '8e66dee3-2c1d-407f-a391-0d0d3fd74913'
+          project-slug: 'VKey'
+          signing-policy-slug: 'test-signing'
+          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'signed-binaries'
+
+      - name: Replace binaries with signed versions
+        shell: powershell
+        run: |
+          Copy-Item "signed-binaries/VKey.exe" "build/Release/VKey.exe" -Force
+          Copy-Item "signed-binaries/VKeyTSF.dll" "build/Release/VKeyTSF.dll" -Force
+          Copy-Item "signed-binaries/VKeyWatchdog.exe" "build/Release/VKeyWatchdog.exe" -Force
+          if (Test-Path "signed-binaries/VKeyClassic.exe") {
+            Copy-Item "signed-binaries/VKeyClassic.exe" "build-classic/Release/VKeyClassic.exe" -Force
+          }
+
       # --- Zip releases ---
       - name: Zip Release
         if: startsWith(github.ref, 'refs/tags/')
