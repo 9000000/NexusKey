@@ -74,7 +74,28 @@ std::wstring CompactPath(const std::wstring& path, std::size_t maxLen) {
     return path.substr(0, prefixLen) + L"..." + path.substr(path.length() - suffixLen);
 }
 
+HRESULT ShowTopmostTaskDialog(HWND parent, PCWSTR title, PCWSTR mainInstruction, PCWSTR content, TASKDIALOG_COMMON_BUTTON_FLAGS buttons, PCWSTR icon) {
+    TASKDIALOGCONFIG tdc = {};
+    tdc.cbSize = sizeof(tdc);
+    tdc.hwndParent = parent;
+    tdc.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION;
+    tdc.pszWindowTitle = title;
+    tdc.pszMainInstruction = mainInstruction;
+    tdc.pszContent = content;
+    tdc.dwCommonButtons = buttons;
+    tdc.pszMainIcon = icon;
+    tdc.pfCallback = [](HWND hwnd, UINT notification, WPARAM, LPARAM, LONG_PTR) -> HRESULT {
+        if (notification == TDN_CREATED) {
+            SetForegroundWindow(hwnd);
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        }
+        return S_OK;
+    };
+    return TaskDialogIndirect(&tdc, nullptr, nullptr, nullptr);
+}
+
 }  // namespace
+
 
 std::string UpdateChecker::DownloadToString(const std::wstring& url) noexcept {
     try {
@@ -282,8 +303,12 @@ bool UpdateChecker::ShowUpdateDialog(HWND parent, const UpdateInfo& info) {
     tdc.nDefaultButton = 1001;
 
     // Hyperlink callback
-    tdc.pfCallback = [](HWND, UINT notification, WPARAM, LPARAM lParam, LONG_PTR) -> HRESULT {
-        if (notification == TDN_HYPERLINK_CLICKED) {
+    tdc.pfCallback = [](HWND hwnd, UINT notification, WPARAM, LPARAM lParam, LONG_PTR) -> HRESULT {
+        if (notification == TDN_CREATED) {
+            SetForegroundWindow(hwnd);
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        }
+        else if (notification == TDN_HYPERLINK_CLICKED) {
             ShellExecuteW(nullptr, L"open", reinterpret_cast<LPCWSTR>(lParam), nullptr, nullptr, SW_SHOW);
         }
         return S_OK;
@@ -325,6 +350,8 @@ bool UpdateChecker::ShowProgressDialog(HWND parent, const wchar_t* message,
         if (notification == TDN_CREATED) {
             SendMessageW(hwnd, TDM_SET_MARQUEE_PROGRESS_BAR, TRUE, 0);
             SendMessageW(hwnd, TDM_SET_PROGRESS_BAR_MARQUEE, TRUE, 30);
+            SetForegroundWindow(hwnd);
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
         }
         if (notification == TDN_TIMER) {
             if (c->done.load(std::memory_order_acquire)) {
@@ -369,8 +396,8 @@ bool UpdateChecker::DownloadWithProgress(HWND parent, const std::wstring& downlo
 
     if (!state->success) {
         if (!state->cancel.load(std::memory_order_acquire)) {
-            TaskDialog(parent, nullptr, L"VKey", S(StringId::UPDATE_TITLE),
-                       S(StringId::UPDATE_DOWNLOAD_FAILED), TDCBF_OK_BUTTON, TD_WARNING_ICON, nullptr);
+            ShowTopmostTaskDialog(parent, L"VKey", S(StringId::UPDATE_TITLE),
+                                  S(StringId::UPDATE_DOWNLOAD_FAILED), TDCBF_OK_BUTTON, TD_WARNING_ICON);
         }
         return false;
     }
@@ -398,8 +425,8 @@ bool UpdateChecker::DownloadWithProgress(HWND parent, const std::wstring& downlo
         wchar_t content[512] = {0};
         std::wstring compacted = CompactPath(backupPath, 60);
         swprintf_s(content, S(StringId::UPDATE_BACKUP_SUCCESS), compacted.c_str());
-        TaskDialog(parent, nullptr, L"VKey", S(StringId::UPDATE_TITLE),
-                   content, TDCBF_OK_BUTTON, TD_INFORMATION_ICON, nullptr);
+        ShowTopmostTaskDialog(parent, L"VKey", S(StringId::UPDATE_TITLE),
+                              content, TDCBF_OK_BUTTON, TD_INFORMATION_ICON);
     }
 
     return true;
