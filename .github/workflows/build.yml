@@ -108,7 +108,7 @@ jobs:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '8e66dee3-2c1d-407f-a391-0d0d3fd74913'
           project-slug: 'VKey'
-          signing-policy-slug: 'test-signing'
+          signing-policy-slug: "${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}"
           github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: 'signed-binaries'
@@ -149,23 +149,6 @@ jobs:
             "$hash  $file" | Out-File -Encoding ascii "$file.sha256"
           }
 
-      # --- Cosign keyless signing (Sigstore) ---
-      - name: Install Cosign
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: sigstore/cosign-installer@v3
-
-      - name: Sign VKey.zip
-        if: startsWith(github.ref, 'refs/tags/')
-        continue-on-error: true
-        run: |
-          cosign sign-blob VKey.zip --bundle VKey.zip.sigstore.json --yes
-
-      - name: Sign VKeyClassic.zip
-        if: startsWith(github.ref, 'refs/tags/')
-        continue-on-error: true
-        run: |
-          cosign sign-blob VKeyClassic.zip --bundle VKeyClassic.zip.sigstore.json --yes
-
       # --- GitHub build provenance attestation ---
       - name: Attest VKey
         if: startsWith(github.ref, 'refs/tags/')
@@ -187,10 +170,8 @@ jobs:
           files: |
             VKey.zip
             VKey.zip.sha256
-            VKey.zip.sigstore.json
             VKeyClassic.zip
             VKeyClassic.zip.sha256
-            VKeyClassic.zip.sigstore.json
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
