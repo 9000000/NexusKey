@@ -311,7 +311,18 @@ TEST(PlanAutoCapsDecisionTest, FirstUpperRawTransformsToFirstUpperExpansion) {
     f.autoCaps = true;
     auto p = f.Run();
     EXPECT_TRUE(p.matched);
-    EXPECT_EQ(p.expansion, L"On my way");
+    EXPECT_EQ(p.expansion, L"On My Way");
+}
+
+TEST(PlanAutoCapsDecisionTest, FirstUpperRawTransformsToTitleCaseVietnamese) {
+    PlanFixture f;
+    f.table[L"lhq"] = L"liên hiệp quốc";
+    f.raw = L"Lhq";
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"Liên Hiệp Quốc");
 }
 
 TEST(PlanAutoCapsEscapeTest, AllUpperSkipsBackslashN) {

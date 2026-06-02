@@ -1,6 +1,7 @@
 # VKey v4.0.1
 
 **✨ Tính năng mới & Cải tiến:**
+- Cải tiến chế độ tự động viết hoa phím tắt (Auto Capitalization): tự động chuyển đổi cụm từ mở rộng thành dạng viết hoa từng chữ (Title Case) khi gõ phím tắt viết hoa chữ cái đầu (Ví dụ: `lhq` -> `liên hiệp quốc` thì gõ `Lhq` -> `Liên Hiệp Quốc`, gõ `LHQ` -> `LIÊN HIỆP QUỐC`)
 - Tăng thời gian delay kiểm tra cập nhật lúc khởi động từ 3 giây lên 30 giây để đảm bảo kết nối mạng và Windows ổn định
 - Tự động sao lưu cấu hình gõ (`config.toml` sang `config.toml.bak`) trước khi cập nhật, tự động fallback sang `%APPDATA%\VKey` nếu không có quyền ghi
 - Hiển thị thông báo vị trí lưu file cấu hình dự phòng cho người dùng trước khi đóng ứng dụng để cập nhật

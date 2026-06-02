@@ -117,7 +117,21 @@ MacroPlan Plan(const PlanInputs& in, const CaseMapper& mapper) {
                     }
                 }
             } else if (firstUpper) {
-                mapper.Upper(&plan.expansion[0], 1);
+                bool newWord = true;
+                for (std::size_t i = 0; i < plan.expansion.size(); ++i) {
+                    if (plan.expansion[i] == L'\\' && i + 1 < plan.expansion.size() &&
+                        plan.expansion[i + 1] == L'n') {
+                        ++i;
+                        newWord = true;
+                    } else if (std::iswspace(plan.expansion[i])) {
+                        newWord = true;
+                    } else {
+                        if (newWord) {
+                            mapper.Upper(&plan.expansion[i], 1);
+                            newWord = false;
+                        }
+                    }
+                }
             }
         }
     }
