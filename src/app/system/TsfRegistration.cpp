@@ -301,11 +301,18 @@ void CleanupHkcuClsidOverride() noexcept {
     wchar_t keyPath[256];
     swprintf_s(keyPath, L"Software\\Classes\\CLSID\\%s", NextKey::TSF::CLSID_TEXTSERVICE_STRING);
 
-    LSTATUS ls = RegDeleteTreeW(HKEY_CURRENT_USER, keyPath);
-    if (ls == ERROR_SUCCESS) {
-        NEXTKEY_LOG(L"[TsfRegistration] Removed HKCU CLSID override for VKey TSF");
-    } else if (ls != ERROR_FILE_NOT_FOUND) {
-        NEXTKEY_LOG(L"[TsfRegistration] Warning: could not remove HKCU CLSID override (error=%ld)", ls);
+    // Only clean up HKCU override if the TSF DLL is registered in HKLM
+    HKEY hKeyHklm = nullptr;
+    LSTATUS lsHklm = RegOpenKeyExW(HKEY_LOCAL_MACHINE, keyPath, 0, KEY_READ, &hKeyHklm);
+    if (lsHklm == ERROR_SUCCESS) {
+        RegCloseKey(hKeyHklm);
+
+        LSTATUS ls = RegDeleteTreeW(HKEY_CURRENT_USER, keyPath);
+        if (ls == ERROR_SUCCESS) {
+            NEXTKEY_LOG(L"[TsfRegistration] Removed HKCU CLSID override for VKey TSF");
+        } else if (ls != ERROR_FILE_NOT_FOUND) {
+            NEXTKEY_LOG(L"[TsfRegistration] Warning: could not remove HKCU CLSID override (error=%ld)", ls);
+        }
     }
 }
 
