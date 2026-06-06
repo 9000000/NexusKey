@@ -41,6 +41,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <mutex>
 
 namespace NextKey {
 
@@ -220,6 +221,10 @@ public:
     // ── Exe-name helper (static — pure Win32 lookup, no instance state) ─
     [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;
 
+    // ── Dynamic hijackers registration & check (thread-safe) ────────────
+    void RegisterDynamicHijacker(const std::wstring& exeName) noexcept;
+    [[nodiscard]] bool IsDynamicHijacker(const std::wstring& exeName) const noexcept;
+
 private:
     static void CALLBACK WinEventProc(HWINEVENTHOOK hHook, DWORD event,
                                        HWND hwnd, LONG idObj, LONG idChild,
@@ -272,6 +277,10 @@ private:
     // WebView2 positive-only cache. Hook-thread only (same single-thread
     // invariant as appProfileCache_) — accessed only from inside Classify.
     std::unordered_set<std::wstring> webView2PositiveCache_;
+
+    // Thread-safe dynamic hijacker tracking
+    std::unordered_set<std::wstring> dynamicHijackers_;
+    mutable std::mutex dynamicHijackersMutex_;
 
     // Singleton for static WinEventProc dispatch (Win32 callback has no
     // userdata pointer). Mirror of HookLifecycle's per-instance approach

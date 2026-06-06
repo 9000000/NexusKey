@@ -12,6 +12,7 @@
 
 **🛠 Sửa lỗi:**
 - Sửa lỗi không gõ được tiếng Việt cho từ đầu sau khi nhấn hotkey
+- Tối ưu tính năng reinstall hook, tránh tranh chấp gây lag app không mong muốn
 - Sửa lỗi nuốt chữ (không gõ được) và tối ưu hóa triệt để hiện tượng lag khi gõ trong ô tìm kiếm (Search/Find dialog) của Notepad trên Windows 11
 - Sửa lỗi tự động cập nhật thất bại và không tự chạy lại sau khi cập nhật khi ứng dụng khởi chạy cùng hệ thống (do giới hạn Job Object ngăn cản breakaway)
 - Bảo vệ và tránh ghi đè file cấu hình `config.toml` của người dùng khi cập nhật phiên bản mới

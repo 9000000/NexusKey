@@ -73,6 +73,7 @@ struct FocusClassification {
     bool isVB6{false};
     bool isWebView2{false};
     bool isJavaApp{false};
+    bool isKnownHijacker{false};
     // Dispatch-shape flags derived from classification + per-app overrides.
     bool localSkipEmpty{false};
     bool localNeedBait{false};

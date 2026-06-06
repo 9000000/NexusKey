@@ -353,6 +353,13 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
             // 500ms for focus/mouse paths) since the detector has its own
             // internal cooldown and only fires on confirmed bypass.
             lifecycle_.PostReinstallHooks(REINSTALL_REASON_HIJACK);
+
+            // Dynamically register the active application as a hijacker so we
+            // proactively reinstall the hook next time it is focused.
+            const std::wstring active = focus_.ActiveExe();
+            if (!active.empty()) {
+                focus_.RegisterDynamicHijacker(active);
+            }
         };
         cb.injectGhostChar = [this](wchar_t ch) noexcept {
             HOOK_LOG(L"  HijackDet: ghost-inject ch='%c'",
@@ -2604,11 +2611,7 @@ static constexpr size_t kMacroClipboardThreshold = 200;
 // only-dorion-hijacks-ll-hook decision), so paying that cost (hook churn +
 // 25 wake/sec fighting the idle-RAM trim) for them was pure waste. The drift-
 // gated HookHijackDetector still runs for ALL chromium-class apps as the
-// reactive net. Prefix match (case-insensitive), same style as
-// IsKnownElectronExe; add an entry here if a new hijacker app is found.
-static bool IsKnownHijackerExe(const std::wstring& exeName) noexcept {
-    return !exeName.empty() && _wcsnicmp(exeName.c_str(), L"dorion", 6) == 0;
-}
+// reactive net.
 
 // Wave 3 PR 3.2 — IsKnownElectronExe (file-scope), IsWebView2App,
 // IsTrayOrTaskbarWindow, GetExeNameForHwnd, GetExeFullPathForHwnd
@@ -3809,7 +3812,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // A1: the expensive responses (burst + 40ms pin + mouse-click reinstall)
     // gate on the narrower known-hijacker flag — only Dorion installs a
     // competing hook. The detector itself stays universal (isChromiumClass).
-    const bool isKnownHijacker = IsKnownHijackerExe(cls->exeName);
+    const bool isKnownHijacker = cls->isKnownHijacker;
     const bool wasKnownHijacker =
         isKnownHijackerApp_.exchange(isKnownHijacker, std::memory_order_acq_rel);
     // Anti-Dorion v2: gate the hijack detector + retune MainThreadWorker's

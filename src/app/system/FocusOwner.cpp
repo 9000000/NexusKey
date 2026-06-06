@@ -41,6 +41,11 @@ static constexpr int kCompatSplitRemoteMs  = 25;
 // PR needs to reorder them.
 // ─────────────────────────────────────────────────────────────────────────
 
+/// Check if an exe name belongs to a known LL-hook hijacker (like Dorion).
+static bool IsKnownHijackerExe(const std::wstring& exeName) noexcept {
+    return !exeName.empty() && _wcsnicmp(exeName.c_str(), L"dorion", 6) == 0;
+}
+
 /// Check if a filename (without path) is a known Electron app executable.
 /// Electron apps use Chrome_WidgetWin window class (same as Chromium browsers).
 /// Unknown Chrome_WidgetWin apps default to "browser" — safer because:
@@ -677,7 +682,13 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
     // Wave 3 PR 3.2 — gate moved into HookEngine's onReinstall_ lambda
     // (it checks lifecycle_.ThreadId() and forwards to PostReinstallHooks).
     // FocusOwner stays decoupled from HookLifecycle's runtime state.
-    if (onReinstall_ && (cls.localElectronApp || cls.isBrowser || cls.isJavaApp)) {
+    //
+    // A1 (2026-06-06): Proactive focus-time reinstall runs ONLY for Java apps
+    // and known/dynamic hijackers. Plain browsers / Electron apps do not
+    // hijack hooks, so we avoid the synchronous unhook/rehook overhead on focus.
+    cls.isKnownHijacker = IsKnownHijackerExe(cls.exeName) || IsDynamicHijacker(cls.exeName);
+
+    if (onReinstall_ && (cls.isJavaApp || cls.isKnownHijacker)) {
         const WPARAM reason = cls.isJavaApp ? REINSTALL_REASON_JAVA : REINSTALL_REASON_CHROMIUM;
         onReinstall_(reason);
     }
@@ -711,6 +722,19 @@ void FocusOwner::PublishAppModesSnapshot() noexcept {
 std::shared_ptr<const std::unordered_map<std::wstring, bool>>
 FocusOwner::SnapshotAppModes() const noexcept {
     return appModesSnap_.load(std::memory_order_acquire);
+}
+
+void FocusOwner::RegisterDynamicHijacker(const std::wstring& exeName) noexcept {
+    if (exeName.empty()) return;
+    std::lock_guard<std::mutex> lock(dynamicHijackersMutex_);
+    dynamicHijackers_.insert(exeName);
+    FOCUS_LOG(L"Registered dynamic hijacker: %s", exeName.c_str());
+}
+
+bool FocusOwner::IsDynamicHijacker(const std::wstring& exeName) const noexcept {
+    if (exeName.empty()) return false;
+    std::lock_guard<std::mutex> lock(dynamicHijackersMutex_);
+    return dynamicHijackers_.count(exeName) > 0;
 }
 
 }  // namespace NextKey
