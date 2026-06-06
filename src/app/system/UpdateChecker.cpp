@@ -3,6 +3,7 @@
 
 #include "UpdateChecker.h"
 #include "UpdateSecurity.h"
+#include "CancelableBindStatusCallback.h"
 #include "core/Version.h"
 #include "core/Strings.h"
 #include "core/WinStrings.h"
@@ -14,6 +15,7 @@
 #include <urlmon.h>
 #include <CommCtrl.h>
 #include <ShlObj.h>
+#include <Shlwapi.h>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -22,6 +24,7 @@
 #include <memory>
 
 #pragma comment(lib, "urlmon.lib")
+#pragma comment(lib, "shlwapi.lib")
 
 namespace NextKey {
 
@@ -34,44 +37,15 @@ std::wstring GetTempFilePath(const wchar_t* filename) {
     return std::wstring(tempDir) + filename;
 }
 
-class CancelableBindStatusCallback : public IBindStatusCallback {
-private:
-    std::atomic<bool>& cancelFlag_;
-public:
-    CancelableBindStatusCallback(std::atomic<bool>& cancelFlag) : cancelFlag_(cancelFlag) {}
-
-    STDMETHODIMP QueryInterface(REFIID riid, void** ppvObject) override {
-        if (riid == IID_IUnknown || riid == IID_IBindStatusCallback) {
-            *ppvObject = static_cast<IBindStatusCallback*>(this);
-            return S_OK;
-        }
-        *ppvObject = nullptr;
-        return E_NOINTERFACE;
+/// Compact a filesystem path for display, delegating to the Win32 API
+/// which handles UNC, long, and drive-letter paths correctly.
+std::wstring CompactPath(const std::wstring& path, UINT maxChars) {
+    std::wstring buf(maxChars + 1, L'\0');
+    if (PathCompactPathExW(buf.data(), path.c_str(), maxChars + 1, 0)) {
+        buf.resize(wcslen(buf.c_str()));
+        return buf;
     }
-    STDMETHODIMP_(ULONG) AddRef() override { return 1; }
-    STDMETHODIMP_(ULONG) Release() override { return 1; }
-
-    STDMETHODIMP OnStartBinding(DWORD, IBinding*) override { return S_OK; }
-    STDMETHODIMP GetPriority(LONG*) override { return S_OK; }
-    STDMETHODIMP OnLowResource(DWORD) override { return S_OK; }
-    STDMETHODIMP OnProgress(ULONG, ULONG, ULONG, LPCWSTR) override {
-        if (cancelFlag_.load(std::memory_order_relaxed)) {
-            return E_ABORT;
-        }
-        return S_OK;
-    }
-    STDMETHODIMP OnStopBinding(HRESULT, LPCWSTR) override { return S_OK; }
-    STDMETHODIMP GetBindInfo(DWORD*, BINDINFO*) override { return S_OK; }
-    STDMETHODIMP OnDataAvailable(DWORD, DWORD, FORMATETC*, STGMEDIUM*) override { return S_OK; }
-    STDMETHODIMP OnObjectAvailable(REFIID, IUnknown*) override { return S_OK; }
-};
-
-std::wstring CompactPath(const std::wstring& path, std::size_t maxLen) {
-    if (path.length() <= maxLen) return path;
-    if (maxLen < 10) return path.substr(path.length() - maxLen);
-    std::size_t prefixLen = 3; // "C:\"
-    std::size_t suffixLen = maxLen - prefixLen - 3; // 3 for "..."
-    return path.substr(0, prefixLen) + L"..." + path.substr(path.length() - suffixLen);
+    return path;  // API failed — return original
 }
 
 HRESULT ShowTopmostTaskDialog(HWND parent, PCWSTR title, PCWSTR mainInstruction, PCWSTR content, TASKDIALOG_COMMON_BUTTON_FLAGS buttons, PCWSTR icon) {
@@ -412,6 +386,7 @@ bool UpdateChecker::DownloadWithProgress(HWND parent, const std::wstring& downlo
             backupPath = primaryBackup;
         } else {
             std::wstring appDataDir = ConfigManager::GetAppDataDirectory();
+            CreateDirectoryW(appDataDir.c_str(), nullptr);  // ensure dir exists
             std::wstring fallbackBackup = appDataDir + L"\\config.toml.bak";
             if (CopyFileW(activeConfig.c_str(), fallbackBackup.c_str(), FALSE)) {
                 backupPath = fallbackBackup;

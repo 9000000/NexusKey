@@ -155,6 +155,13 @@ OutputDispatcher::GetInjector() const noexcept {
     return injector_.load(std::memory_order_acquire);
 }
 
+// Edit-msg sync channel: SettleBudget()==0 means the injector was created for
+// an Edit-compatible host (RichEdit / ThunderRT6 / plain Edit).  We re-check
+// the focused class because a WinUI3 InputSiteWindowClass (Notepad search bar)
+// can share the same injector type but isn't EM_REPLACESEL-compatible.
+// NOTE: if a future injector with SettleBudget()==0 is NOT edit-message-based,
+// this gate must be updated (or the check moved into the injector itself via
+// a virtual like IsMessageBasedReplace()).
 bool OutputDispatcher::IsSyncReplaceChannel() const noexcept {
     auto inj = injector_.load(std::memory_order_acquire);
     if (!inj || inj->SettleBudget().count() != 0) return false;
@@ -495,6 +502,13 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
                      focus_.CachedFocusedClass().c_str(), backspaceCount);
         }
 
+        // Settle budget intentionally omitted for this fallback path:
+        // 1. The edit-msg retry loop above already waited up to 30ms, so the
+        //    target app has had time to process pending messages.
+        // 2. Adding a full SettleBudget sleep (30-100ms) here risks pushing
+        //    total hook latency past the LowLevelHooksTimeout (default 300ms).
+        // 3. Win32SendInputInjector's Replace() is a single synchronous
+        //    SendInput call — the events enter the input queue atomically.
         sending_.store(true, std::memory_order_release);
         NextKey::Output::Win32SendInputInjector fallbackInjector(false);
         bool isFallbackSuccessful = fallbackInjector.Replace(backspaceCount, text);
