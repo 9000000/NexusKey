@@ -14,6 +14,7 @@ class VniParityTest : public ::testing::Test {
 protected:
     void SetUp() override {
         config_.inputMethod = InputMethod::VNI;
+        config_.modernOrtho = false;
         engine_ = std::make_unique<TypingEngine>(config_);
     }
 
@@ -402,6 +403,7 @@ protected:
         config_.autoRestoreEnabled = true;
         config_.quickConsonant = true;
         config_.inputMethod = InputMethod::VNI;
+        config_.modernOrtho = false;
         engine_ = std::make_unique<TypingEngine>(config_);
     }
 
@@ -665,6 +667,7 @@ protected:
         config_.spellCheckEnabled = true;
         config_.autoRestoreEnabled = true;
         config_.spellExclusions = {L"kà"};
+        config_.modernOrtho = false;
         engine_ = std::make_unique<TypingEngine>(config_);
     }
 

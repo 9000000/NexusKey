@@ -259,7 +259,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.optimizeLevel = static_cast<uint8_t>(
                 (*features)["optimize_level"].value_or(0)
             );
-            config.modernOrtho = (*features)["modern_ortho"].value_or(false);
+            config.modernOrtho = (*features)["modern_ortho"].value_or(true);
             config.autoCaps = (*features)["auto_caps"].value_or(false);
             config.allowZwjf = (*features)["allow_zwjf"].value_or(false);
             config.autoRestoreEnabled = (*features)["auto_restore"].value_or(false);

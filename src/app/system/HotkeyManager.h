@@ -109,6 +109,10 @@ public:
     /// Unhook and clear slots.
     void Uninstall();
 
+    /// Reconcile modifier keys state after desktop switch / Win+L lock.
+    /// Uses GetAsyncKeyState to verify physical state and resets stuck modifiers.
+    void ReconcileModifiers() noexcept;
+
     /// Hook-thread dispatch entry point. Called by HookEngine's pump on receipt
     /// of WM_APP_HOTKEY_FIRED. Loads the binding snapshot via RCU and invokes
     /// the per-slot callback. Public + static so the pump can reach it without
@@ -157,13 +161,13 @@ private:
 
     HHOOK keyboardHook_ = nullptr;
 
-    // Modifier tracking — LL thread is the single reader/writer. No external
-    // access, so plain bool is fine (no atomicity required).
-    bool modCtrlDown_ = false;
-    bool modShiftDown_ = false;
-    bool modAltDown_ = false;
-    bool modWinDown_ = false;
-    bool otherKeyPressed_ = false;
+    // Modifier tracking — accessed cross-thread. Main thread reads/writes them
+    // in LowLevelKeyboardProc, and HookEngine's thread writes them via ReconcileModifiers.
+    std::atomic<bool> modCtrlDown_ = false;
+    std::atomic<bool> modShiftDown_ = false;
+    std::atomic<bool> modAltDown_ = false;
+    std::atomic<bool> modWinDown_ = false;
+    std::atomic<bool> otherKeyPressed_ = false;
 
     static std::atomic<HotkeyManager*> s_instance;
 };

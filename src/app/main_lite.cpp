@@ -566,6 +566,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // ── HookEngine ──
 
     g_hookEngine.SetSharedStateReader(&g_sharedState);
+    g_hookEngine.SetHotkeyManager(&g_hotkeyManager);
 
     // Wave 3 PR 3.6 — wire the worker-signal callback BEFORE HookEngine::Start.
     // The LL hook thread (spawned inside Start) reads `workerSignalFn_` from

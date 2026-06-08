@@ -31,7 +31,7 @@ using Testing::TypeString;
 
 TEST(FeatureOptionsDefaults, NewFieldsDefaults) {
     TypingConfig config;
-    EXPECT_FALSE(config.modernOrtho);
+    EXPECT_TRUE(config.modernOrtho);
     EXPECT_FALSE(config.autoCaps);
     EXPECT_FALSE(config.allowZwjf);  // Default: off (stricter spell check)
 }
@@ -45,12 +45,15 @@ class FeatureFlagsTest : public ::testing::Test {};
 TEST_F(FeatureFlagsTest, InitDefaults_FeatureFlagsAllowZwjf) {
     SharedState state{};
     state.InitDefaults();
-    EXPECT_EQ(state.GetFeatureFlags(), FeatureFlags::ALLOW_ZWJF);
+    EXPECT_EQ(state.GetFeatureFlags(), FeatureFlags::ALLOW_ZWJF | FeatureFlags::MODERN_ORTHO);
 }
 
 TEST_F(FeatureFlagsTest, Encode_ModernOrtho) {
     SharedState state{};
     state.InitDefaults();
+    state.SetFeatureFlags(state.GetFeatureFlags() & ~FeatureFlags::MODERN_ORTHO);
+    ASSERT_FALSE(state.GetFeatureFlags() & FeatureFlags::MODERN_ORTHO);
+
     state.SetFeatureFlags(state.GetFeatureFlags() | FeatureFlags::MODERN_ORTHO);
 
     EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::MODERN_ORTHO);
@@ -61,7 +64,7 @@ TEST_F(FeatureFlagsTest, Encode_ModernOrtho) {
 TEST_F(FeatureFlagsTest, Encode_AutoCaps) {
     SharedState state{};
     state.InitDefaults();
-    state.SetFeatureFlags(state.GetFeatureFlags() | FeatureFlags::AUTO_CAPS);
+    state.SetFeatureFlags((state.GetFeatureFlags() & ~FeatureFlags::MODERN_ORTHO) | FeatureFlags::AUTO_CAPS);
 
     EXPECT_FALSE(state.GetFeatureFlags() & FeatureFlags::MODERN_ORTHO);
     EXPECT_TRUE(state.GetFeatureFlags() & FeatureFlags::AUTO_CAPS);
@@ -230,7 +233,7 @@ spell_check = true
 
     auto config = ConfigManager::LoadFromFile(testConfigPath_);
     ASSERT_TRUE(config.has_value());
-    EXPECT_FALSE(config->modernOrtho);
+    EXPECT_TRUE(config->modernOrtho);
     EXPECT_FALSE(config->autoCaps);
     EXPECT_FALSE(config->allowZwjf);  // Default: off
 }
@@ -243,7 +246,7 @@ method = "vni"
 
     auto config = ConfigManager::LoadFromFile(testConfigPath_);
     ASSERT_TRUE(config.has_value());
-    EXPECT_FALSE(config->modernOrtho);
+    EXPECT_TRUE(config->modernOrtho);
     EXPECT_FALSE(config->autoCaps);
     EXPECT_FALSE(config->allowZwjf);  // Default: off
 }
@@ -694,6 +697,7 @@ protected:
     void SetUp() override {
         config_.inputMethod = InputMethod::Telex;
         config_.allowZwjf = true;  // These tests require ZWJF enabled
+        config_.modernOrtho = false;
         engine_ = std::make_unique<TypingEngine>(config_);
     }
 

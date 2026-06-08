@@ -43,7 +43,7 @@ var STRINGS = {
         "s.tab_about": "About",
 
         // Tab 1: Input
-        "s.modern_ortho": "Place diacritics: o\u00E0, u\u00FD (not \u00F2a, \u00FAy)",
+        "s.modern_ortho": "New diacritics style (o\u00E0, u\u00FD)",
         "s.auto_caps": "Auto-capitalize first letter",
         "s.allow_zwjf": "Allow \"z w j f\" as initial consonants",
         "s.allow_zwjf_tooltip": "Allowed by default. Only needed when spell check is on",

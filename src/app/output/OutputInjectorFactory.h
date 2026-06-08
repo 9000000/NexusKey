@@ -39,7 +39,7 @@ struct WindowClassification {
     // batch so a laggy renderer / remote-session round-trip can't eat the
     // trailing char. sendMethod 2 → ~6ms (Firefox-family / local Gecko),
     // sendMethod 3 → ~25ms (cloud / remote desktop). Resolved in FocusOwner;
-    // see docs/firefox-voz-sticking-chars-investigation.md for background.
+    // see docs/plans/firefox-escape-hatch-spike/firefox-voz-sticking-chars-investigation.md for background.
     int forcedSplitSleepMs = 0;
 };
 

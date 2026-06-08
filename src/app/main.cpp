@@ -486,6 +486,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Share g_sharedState with HookEngine for direct reading (same process, no Open needed)
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
+    // Wire HotkeyManager to HookEngine for modifier reconciliation on focus switch
+    g_hookEngine.SetHotkeyManager(&g_hotkeyManager);
+
     // Wave 3 PR 3.6 — wire the worker-signal callback BEFORE HookEngine::Start.
     // Otherwise the LL hook thread (spawned inside Start) could read
     // `workerSignalFn_` from its QuickSync slow-path bail-out while main is

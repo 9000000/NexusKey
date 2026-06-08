@@ -90,7 +90,7 @@ TEST(OutputInjectorFactoryTest, ElectronWinsOverConsole) {
 // path — mitigates the char-drop race on Firefox-family (sendMethod=2) and
 // over cloud/remote desktop where the RDP round-trip stretches the gap
 // (sendMethod=3, issue #178). Background:
-// docs/firefox-voz-sticking-chars-investigation.md.
+// docs/plans/firefox-escape-hatch-spike/firefox-voz-sticking-chars-investigation.md.
 TEST(OutputInjectorFactoryTest, ForcedSplitReturnsSplitDispatch) {
     WindowClassification c{};
     c.forcedSplitSleepMs = 6;  // sendMethod=2 (Firefox-compat)

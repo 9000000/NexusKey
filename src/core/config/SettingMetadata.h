@@ -90,7 +90,7 @@ inline constexpr SettingMeta kSettings[] = {
 
     // ── Tab 0: Bảng gõ — Left column (col 0) ──
     NK_TYPING("modern-ortho",         modernOrtho,
-              "Đặt dấu oà, uý",       "Modern tone placement",
+              "Đặt dấu kiểu mới (oà, uý)", "New diacritics style (oà, uý)",
               nullptr, nullptr,                                          2202, 0, 0),
     NK_TYPING("allow-english-bypass", allowEnglishBypass,
               "Gõ tự do",             "Bypass English blocking",

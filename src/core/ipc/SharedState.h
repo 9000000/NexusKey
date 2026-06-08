@@ -340,7 +340,7 @@ struct SharedState {
         inputMethod = 0;  // Telex
         spellCheck = 0;
         optimizeLevel = 0;
-        SetFeatureFlags(FeatureFlags::ALLOW_ZWJF);  // Default: tone keys enabled (CJK auto-switch opt-in)
+        SetFeatureFlags(FeatureFlags::ALLOW_ZWJF | FeatureFlags::MODERN_ORTHO);  // Default: tone keys enabled (CJK auto-switch opt-in)
         codeTable = 0;  // Unicode
         hotkeyMods = 0; hotkeyKeyLo = 0; hotkeyKeyHi = 0;
         convertMods = 0; convertKeyLo = 0; convertKeyHi = 0;

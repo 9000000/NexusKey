@@ -18,6 +18,7 @@ protected:
         config_.inputMethod = InputMethod::Telex;
         config_.spellCheckEnabled = false;
         config_.optimizeLevel = 0;
+        config_.modernOrtho = false; // Tests here expect classic behavior by default
         engine_ = std::make_unique<TypingEngine>(config_);
     }
 
@@ -2344,6 +2345,7 @@ protected:
     void SetUp() override {
         config_.spellCheckEnabled = true;
         config_.optimizeLevel = 0;
+        config_.modernOrtho = false;
         engine_ = std::make_unique<TypingEngine>(config_);
     }
     TypingConfig config_;
@@ -3277,6 +3279,7 @@ protected:
         config_.spellCheckEnabled = true;
         config_.autoRestoreEnabled = true;
         config_.optimizeLevel = 0;
+        config_.modernOrtho = false;
         engine_ = std::make_unique<TypingEngine>(config_);
     }
 

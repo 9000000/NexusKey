@@ -92,6 +92,28 @@ void HotkeyManager::Uninstall() {
     slotState_.clear();
 }
 
+void HotkeyManager::ReconcileModifiers() noexcept {
+    // If the modifier is tracked as DOWN but physically UP, reset it.
+    // GetAsyncKeyState returns MSB set if key is down.
+    if (modCtrlDown_.load(std::memory_order_acquire) && !(GetAsyncKeyState(VK_CONTROL) & 0x8000)) {
+        modCtrlDown_.store(false, std::memory_order_release);
+        HOTKEY_LOG(L"Reconcile: modCtrlDown_ reset to false");
+    }
+    if (modShiftDown_.load(std::memory_order_acquire) && !(GetAsyncKeyState(VK_SHIFT) & 0x8000)) {
+        modShiftDown_.store(false, std::memory_order_release);
+        HOTKEY_LOG(L"Reconcile: modShiftDown_ reset to false");
+    }
+    if (modAltDown_.load(std::memory_order_acquire) && !(GetAsyncKeyState(VK_MENU) & 0x8000)) {
+        modAltDown_.store(false, std::memory_order_release);
+        HOTKEY_LOG(L"Reconcile: modAltDown_ reset to false");
+    }
+    if (modWinDown_.load(std::memory_order_acquire) && !(GetAsyncKeyState(VK_LWIN) & 0x8000) && !(GetAsyncKeyState(VK_RWIN) & 0x8000)) {
+        modWinDown_.store(false, std::memory_order_release);
+        HOTKEY_LOG(L"Reconcile: modWinDown_ reset to false");
+    }
+    otherKeyPressed_.store(false, std::memory_order_release);
+}
+
 void HotkeyManager::InstallKeyboardHook(HINSTANCE hInstance) {
     keyboardHook_ = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, hInstance, 0);
     if (keyboardHook_) {
@@ -159,34 +181,49 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
 
         // Snapshot pre-update state so modifier-only release checks see the modifier
         // as "still held" (match the original per-modifier semantics).
-        const bool preCtrl = self.modCtrlDown_;
-        const bool preShift = self.modShiftDown_;
-        const bool preAlt = self.modAltDown_;
-        const bool preWin = self.modWinDown_;
-        const bool preOtherKey = self.otherKeyPressed_;
+        const bool preCtrl = self.modCtrlDown_.load(std::memory_order_acquire);
+        const bool preShift = self.modShiftDown_.load(std::memory_order_acquire);
+        const bool preAlt = self.modAltDown_.load(std::memory_order_acquire);
+        const bool preWin = self.modWinDown_.load(std::memory_order_acquire);
+        const bool preOtherKey = self.otherKeyPressed_.load(std::memory_order_acquire);
 
         // Update modifier state. Reset otherKeyPressed_ on modifier down-transition.
         if (isCtrl) {
-            if (isDown && !self.modCtrlDown_) { self.modCtrlDown_ = true; self.otherKeyPressed_ = false; }
-            else if (isUp) self.modCtrlDown_ = false;
+            if (isDown && !self.modCtrlDown_.load(std::memory_order_relaxed)) {
+                self.modCtrlDown_.store(true, std::memory_order_release);
+                self.otherKeyPressed_.store(false, std::memory_order_release);
+            }
+            else if (isUp) self.modCtrlDown_.store(false, std::memory_order_release);
         } else if (isShift) {
-            if (isDown && !self.modShiftDown_) { self.modShiftDown_ = true; self.otherKeyPressed_ = false; }
-            else if (isUp) self.modShiftDown_ = false;
+            if (isDown && !self.modShiftDown_.load(std::memory_order_relaxed)) {
+                self.modShiftDown_.store(true, std::memory_order_release);
+                self.otherKeyPressed_.store(false, std::memory_order_release);
+            }
+            else if (isUp) self.modShiftDown_.store(false, std::memory_order_release);
         } else if (isAlt) {
-            if (isDown && !self.modAltDown_) { self.modAltDown_ = true; self.otherKeyPressed_ = false; }
-            else if (isUp) self.modAltDown_ = false;
+            if (isDown && !self.modAltDown_.load(std::memory_order_relaxed)) {
+                self.modAltDown_.store(true, std::memory_order_release);
+                self.otherKeyPressed_.store(false, std::memory_order_release);
+            }
+            else if (isUp) self.modAltDown_.store(false, std::memory_order_release);
         } else if (isWin) {
-            if (isDown && !self.modWinDown_) { self.modWinDown_ = true; self.otherKeyPressed_ = false; }
-            else if (isUp) self.modWinDown_ = false;
+            if (isDown && !self.modWinDown_.load(std::memory_order_relaxed)) {
+                self.modWinDown_.store(true, std::memory_order_release);
+                self.otherKeyPressed_.store(false, std::memory_order_release);
+            }
+            else if (isUp) self.modWinDown_.store(false, std::memory_order_release);
         } else if (isDown) {
-            self.otherKeyPressed_ = true;
+            self.otherKeyPressed_.store(true, std::memory_order_release);
         }
 
         // Strict XOR: required modifiers must be held AND non-required modifiers
         // must NOT be held. Prevents Alt+Z hotkey from firing on Ctrl+Alt+Z.
         auto matchCombo = [&](const HotkeyConfig& cfg) noexcept {
-            return cfg.ModifiersMatch(self.modCtrlDown_, self.modShiftDown_,
-                                      self.modAltDown_, self.modWinDown_);
+            return cfg.ModifiersMatch(
+                self.modCtrlDown_.load(std::memory_order_acquire),
+                self.modShiftDown_.load(std::memory_order_acquire),
+                self.modAltDown_.load(std::memory_order_acquire),
+                self.modWinDown_.load(std::memory_order_acquire));
         };
 
         auto matchModifierOnlyRelease = [&](const HotkeyConfig& cfg) noexcept {
@@ -219,8 +256,10 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                         state.comboKeyDown = true;
                         HOTKEY_LOG(L"combo fire slot=%zu vk=0x%02X mods=C%dS%dA%dW%d",
                                    i, vk,
-                                   self.modCtrlDown_, self.modShiftDown_,
-                                   self.modAltDown_, self.modWinDown_);
+                                   self.modCtrlDown_.load(std::memory_order_relaxed),
+                                   self.modShiftDown_.load(std::memory_order_relaxed),
+                                   self.modAltDown_.load(std::memory_order_relaxed),
+                                   self.modWinDown_.load(std::memory_order_relaxed));
                         // Wave 3 PR 3.7 — tag-based dispatch per doctrine §12.3.
                         // Primary path: PostThreadMessage to the hook thread so
                         // callbacks like `hookEngine.CommitPending()` reach
@@ -250,8 +289,10 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                                    i, vk,
                                    slot.config.ctrl, slot.config.shift,
                                    slot.config.alt, slot.config.win,
-                                   self.modCtrlDown_, self.modShiftDown_,
-                                   self.modAltDown_, self.modWinDown_);
+                                   self.modCtrlDown_.load(std::memory_order_relaxed),
+                                   self.modShiftDown_.load(std::memory_order_relaxed),
+                                   self.modAltDown_.load(std::memory_order_relaxed),
+                                   self.modWinDown_.load(std::memory_order_relaxed));
                     }
                 } else {  // isUp
                     if (state.comboKeyDown) {

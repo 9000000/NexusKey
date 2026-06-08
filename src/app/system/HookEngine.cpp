@@ -3754,6 +3754,17 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // single-modifier tap until every modifier is observed up again. (#189)
     modComboSeen_ = false;
 
+    // Reconcile our own modifier state after desktop switch / Win+L lock
+    if (modCtrlDown_ && !(GetAsyncKeyState(VK_CONTROL) & 0x8000)) modCtrlDown_ = false;
+    if (modShiftDown_ && !(GetAsyncKeyState(VK_SHIFT) & 0x8000)) modShiftDown_ = false;
+    if (modAltDown_ && !(GetAsyncKeyState(VK_MENU) & 0x8000)) modAltDown_ = false;
+    if (modWinDown_ && !(GetAsyncKeyState(VK_LWIN) & 0x8000) && !(GetAsyncKeyState(VK_RWIN) & 0x8000)) modWinDown_ = false;
+    otherKeyPressed_ = false;
+
+    if (hotkeyManager_) {
+        hotkeyManager_->ReconcileModifiers();
+    }
+
     // Per-app cached flags — single release-store pair with the hot-path
     // acquire-loads in ProcessKeyDown / HandleAlphaKey. Wave 3 PR 3.3:
     // owned by OutputDispatcher (atomic readers go through getter API).

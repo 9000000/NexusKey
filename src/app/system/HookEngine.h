@@ -46,6 +46,7 @@
 namespace NextKey {
 
 class SharedStateManager;  // Forward declaration (defined in core/ipc/SharedStateManager.h)
+class HotkeyManager;       // Forward declaration
 class HookHijackDetector;        // Forward declaration (defined in app/system/HookHijackDetector.h)
 class ReinstallBurstScheduler;   // Forward declaration (defined in app/system/ReinstallBurstScheduler.h)
 
@@ -111,6 +112,9 @@ public:
     /// Commit any pending composition — called by hotkey callbacks before firing actions
     /// (e.g., Quick Convert) so the text in the document reflects what's on screen.
     void CommitPending();
+
+    /// Set HotkeyManager for modifier reconciliation on focus switch
+    void SetHotkeyManager(HotkeyManager* manager) noexcept { hotkeyManager_ = manager; }
 
     /// Set callback for mode changes (to update tray icon)
     void SetModeChangeCallback(ModeChangeCallback callback) { modeChangeCallback_ = std::move(callback); }
@@ -844,6 +848,9 @@ private:
     // recreate path (surfaced by chaos `-InjectConfigReloadMs 50` as
     // `uongs` → `uôngs` instead of `uống`).
     std::atomic<bool> deferredConfigApply_{false};
+
+    // External managers
+    HotkeyManager* hotkeyManager_ = nullptr;
 
     // Callbacks
     ModeChangeCallback modeChangeCallback_;
