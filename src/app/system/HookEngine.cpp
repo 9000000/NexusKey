@@ -3787,6 +3787,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         // Per-app "send method = compatibility split" (sendMethod 2/3). 0 when
         // the focused app has no such override → factory keeps the Win32 path.
         c.forcedSplitSleepMs = cls->localForcedSplitSleepMs;
+        c.forceEmReplaceSel = cls->localForceEmReplaceSel;
         auto newInjector = NextKey::Output::Create(c);
         // Re-apply user setting on the freshly-built injector so the new
         // host inherits the live "BS giữ chữ khi có gợi ý" value (factory

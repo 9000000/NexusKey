@@ -34,6 +34,7 @@ constexpr int kConsoleSleepMs  = 5;
 std::shared_ptr<IOutputInjector> Create(
         const WindowClassification& c) noexcept {
     // Priority order:
+    //   if c.forceEmReplaceSel    → RichEditEmReplaceSelInjector(true) [sendMethod=4]
     //   if c.useClipboard         → ClipboardInjector              [sendMethod=1]
     //   if c.forcedSplitSleepMs>0 → SplitDispatchInjector(compat)  [sendMethod=2/3]
     //   if c.isRichEditD2DPT      → RichEditEmReplaceSelInjector   [D2]
@@ -41,6 +42,9 @@ std::shared_ptr<IOutputInjector> Create(
     //   if c.isConsole            → SplitDispatchInjector(5)       [D3]
     //   default                   → Win32SendInputInjector(c.isChromium)
 
+    if (c.forceEmReplaceSel) {
+        return std::make_shared<RichEditEmReplaceSelInjector>(/*forced=*/true);
+    }
     if (c.useClipboard) {
         return std::make_shared<ClipboardInjector>();
     }

@@ -15,6 +15,7 @@ namespace NextKey::Output {
 
 class RichEditEmReplaceSelInjector final : public IOutputInjector {
 public:
+    explicit RichEditEmReplaceSelInjector(bool forced = false) noexcept : forced_(forced) {}
     bool Replace(std::size_t bsCount, std::wstring_view text) noexcept override;
     void SendKey(unsigned short vkCode) noexcept override;
 
@@ -23,6 +24,17 @@ public:
     std::chrono::milliseconds SettleBudget() const noexcept override {
         return std::chrono::milliseconds{0};
     }
+
+    bool IsMessageBasedReplace() const noexcept override {
+        return true;
+    }
+
+    bool IsForced() const noexcept override {
+        return forced_;
+    }
+
+private:
+    bool forced_{false};
 };
 
 }  // namespace NextKey::Output

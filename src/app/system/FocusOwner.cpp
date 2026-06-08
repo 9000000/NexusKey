@@ -545,6 +545,10 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
                 case 1: cls.localUseClipboardInjector = true;                 break;
                 case 2: cls.localForcedSplitSleepMs = kCompatSplitFirefoxMs;  break;
                 case 3: cls.localForcedSplitSleepMs = kCompatSplitRemoteMs;   break;
+                case 4:
+                    cls.localForceEmReplaceSel = true;
+                    cls.localEditMsg = true;
+                    break;
                 default: break;  // 0=SendInput / unknown → default Win32 path
             }
         }

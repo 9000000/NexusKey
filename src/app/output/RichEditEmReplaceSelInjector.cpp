@@ -89,7 +89,7 @@ bool RichEditEmReplaceSelInjector::Replace(std::size_t backspaceCount,
         return fallbackInjector.Replace(backspaceCount, text);
     }
 
-    if (!IsEditCompatibleClass(className)) {
+    if (!forced_ && !IsEditCompatibleClass(className)) {
         if (::NextKey::Logger::IsEnabled()) {
             ::NextKey::Logger::Log(L"[Hook] RichEditEmReplaceSelInjector: class '%ls' not compatible, falling back to SendInput BS=%zu",
                                    className, backspaceCount);

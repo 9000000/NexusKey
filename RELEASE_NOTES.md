@@ -1,16 +1,18 @@
-# VKey v4.1.0
+# VKey v4.1.1
 
 [![Signed by SignPath](https://img.shields.io/badge/Signed_by-SignPath-blue)](https://signpath.io)
 
 **✨ Tính năng mới & Cải tiến:**
 - Hỗ trợ ký số (Digital Signature): Kể từ phiên bản này, tất cả các file nhị phân của VKey đều được ký số chính thức (qua chương trình SignPath Foundation). VKey tự hào là bộ gõ tiếng Việt mã nguồn mở đầu tiên trên Windows có ký số chính thức, giúp loại bỏ hoàn toàn các cảnh báo của Windows SmartScreen khi cài đặt.
 - Hỗ trợ tự động fallback đăng ký TSF per-user (`HKEY_CURRENT_USER`) khi không chạy bằng quyền Administrator, giúp người dùng không có quyền admin vẫn có thể cài đặt và kích hoạt chế độ TSF bình thường.
+- Cho phép cấu hình phương thức gửi phím "Thay thế trực tiếp (EM_REPLACESEL)" cho từng ứng dụng, giúp gõ tiếng Việt mượt mà hơn trong các ô nhập liệu tương thích mà không cần thông qua clipboard hay giả lập phím vật lý.
 - Cải tiến chế độ tự động viết hoa phím tắt (Auto Capitalization): tự động chuyển đổi cụm từ mở rộng thành dạng viết hoa từng chữ (Title Case) khi gõ phím tắt viết hoa chữ cái đầu (Ví dụ: `lhq` -> `liên hiệp quốc` thì gõ `Lhq` -> `Liên Hiệp Quốc`, gõ `LHQ` -> `LIÊN HIỆP QUỐC`)
 - Tăng thời gian delay kiểm tra cập nhật lúc khởi động từ 3 giây lên 30 giây để đảm bảo kết nối mạng và Windows ổn định
 - Tự động sao lưu cấu hình gõ (`config.toml` sang `config.toml.bak`) trước khi cập nhật, tự động fallback sang `%APPDATA%\VKey` nếu không có quyền ghi
 - Hiển thị thông báo vị trí lưu file cấu hình dự phòng cho người dùng trước khi đóng ứng dụng để cập nhật
 
 **🛠 Sửa lỗi:**
+- Sửa lỗi kẹt phím nóng (hotkey) không thể hoạt động sau khi khóa màn hình (Win+L)
 - Sửa lỗi không gõ được tiếng Việt cho từ đầu sau khi nhấn hotkey
 - Tối ưu tính năng reinstall hook, tránh tranh chấp gây lag app không mong muốn
 - Sửa lỗi nuốt chữ (không gõ được) và tối ưu hóa triệt để hiện tượng lag khi gõ trong ô tìm kiếm (Search/Find dialog) của Notepad trên Windows 11

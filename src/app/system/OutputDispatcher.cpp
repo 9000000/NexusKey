@@ -166,6 +166,10 @@ bool OutputDispatcher::IsSyncReplaceChannel() const noexcept {
     auto inj = injector_.load(std::memory_order_acquire);
     if (!inj || inj->SettleBudget().count() != 0) return false;
 
+    if (inj->IsMessageBasedReplace() && inj->IsForced()) {
+        return true;
+    }
+
     HWND focusedWindow = focus_.CachedFocusedHwnd();
     if (focusedWindow && IsWindow(focusedWindow)) {
         const wchar_t* focusedClass = focus_.CachedFocusedClass().c_str();
@@ -455,7 +459,8 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
         bool isEditCompatible = false;
         if (focusedWindow) {
             const wchar_t* focusedClass = focus_.CachedFocusedClass().c_str();
-            isEditCompatible = IsEditCompatibleClass(focusedClass);
+            auto activeInjector = injector_.load(std::memory_order_acquire);
+            isEditCompatible = IsEditCompatibleClass(focusedClass) || (activeInjector && activeInjector->IsForced());
         }
 
         bool isReplaced = false;

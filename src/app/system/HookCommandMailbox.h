@@ -84,6 +84,7 @@ struct FocusClassification {
     bool localFormulaHost{false};
     bool localClipboard{false};
     bool localEditMsg{false};
+    bool localForceEmReplaceSel{false};
     bool localUseClipboardInjector{false};
     bool localElectronApp{false};  // (isElectron || isWebView2) && !isConsole
     // Per-app "send method = compatibility split" (AppOverrideEntry::sendMethod

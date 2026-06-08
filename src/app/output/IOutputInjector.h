@@ -44,6 +44,14 @@ public:
         return std::chrono::milliseconds{100};
     }
 
+    [[nodiscard]] virtual bool IsMessageBasedReplace() const noexcept {
+        return false;
+    }
+
+    [[nodiscard]] virtual bool IsForced() const noexcept {
+        return false;
+    }
+
     // ─── Channel traits (post-T3 follow-up) ──────────────────────────
     // Replaces HookEngine's duplicated isElectronApp_ / needBaitChar_
     // atomic flags. Source of truth lives with the injector — the

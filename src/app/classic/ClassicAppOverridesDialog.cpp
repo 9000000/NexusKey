@@ -197,6 +197,7 @@ void ClassicAppOverridesDialog::CreateControls() {
     ComboBox_AddString(comboSendMethod_, L"Clipboard");
     ComboBox_AddString(comboSendMethod_, L"Tương thích Firefox");
     ComboBox_AddString(comboSendMethod_, L"Tương thích Cloud/Remote");
+    ComboBox_AddString(comboSendMethod_, L"Thay thế trực tiếp (EM_REPLACESEL)");
     ComboBox_SetCurSel(comboSendMethod_, 0);
 
     int deleteW = Dpi(70);
@@ -234,6 +235,7 @@ static const wchar_t* SendMethodName(int8_t m) {
         case 1: return L"Clipboard";
         case 2: return L"Firefox";
         case 3: return L"Cloud/Remote";
+        case 4: return L"Thay thế trực tiếp";
         default: return L"Mặc định";
     }
 }

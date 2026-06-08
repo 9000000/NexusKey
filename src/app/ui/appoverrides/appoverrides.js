@@ -31,7 +31,8 @@ var sendMethodLabels = {
     "-1": "Mặc định",
     1: "Clipboard",
     2: "Firefox",
-    3: "Cloud/Remote"
+    3: "Cloud/Remote",
+    4: "Thay thế trực tiếp"
 };
 
 // ===== Running Apps Dropdown =====

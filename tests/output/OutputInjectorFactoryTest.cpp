@@ -99,6 +99,20 @@ TEST(OutputInjectorFactoryTest, ForcedSplitReturnsSplitDispatch) {
     EXPECT_NE(dynamic_cast<SplitDispatchInjector*>(inj.get()), nullptr);
 }
 
+TEST(OutputInjectorFactoryTest, ForcedEmReplaceSelReturnsRichEditImpl) {
+    WindowClassification c{};
+    c.forceEmReplaceSel = true;
+    c.isElectron = true;
+    c.useClipboard = true;
+    c.forcedSplitSleepMs = 25;
+    auto inj = Create(c);
+    ASSERT_NE(inj, nullptr);
+    auto* richEdit = dynamic_cast<RichEditEmReplaceSelInjector*>(inj.get());
+    ASSERT_NE(richEdit, nullptr);
+    EXPECT_TRUE(richEdit->IsMessageBasedReplace());
+    EXPECT_TRUE(richEdit->IsForced());
+}
+
 TEST(OutputInjectorFactoryTest, ForcedSplitZeroDefaultsToWin32) {
     // Default contract: an app with no compat override (forcedSplitSleepMs==0)
     // stays on the Win32 fast path, even if it carries the Chromium bait hint.

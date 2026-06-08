@@ -41,6 +41,7 @@ struct WindowClassification {
     // sendMethod 3 → ~25ms (cloud / remote desktop). Resolved in FocusOwner;
     // see docs/plans/firefox-escape-hatch-spike/firefox-voz-sticking-chars-investigation.md for background.
     int forcedSplitSleepMs = 0;
+    bool forceEmReplaceSel = false;
 };
 
 // Phase 2 — construct injector for a classification. Always returns a
