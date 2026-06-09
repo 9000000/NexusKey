@@ -831,6 +831,7 @@ private:
     // without ever taking stateMutex_. Initialised to 0 so the first call
     // always enters the slow path (any valid SharedState epoch mismatches).
     std::atomic<uint32_t> lastEpoch_{0};  // Epoch fast path — skip full Read() when unchanged
+    std::atomic<uint32_t> lastFlags_{0};  // Tracks SharedState.flags for TSF_TIP_ACTIVE transitions (tray icon sync)
     std::atomic<uint8_t> lastConfigGeneration_{0};   // Tracks configGeneration from SharedState (Wave 2 atomized)
     // Phase 3c: cross-thread signal from hook slow path to worker tick.
     // When `QuickSyncFromSharedState` is entered on the hook thread and

@@ -3989,6 +3989,34 @@ TEST_F(AutoRestoreTest, StrokeD_Bypass_VNI_HD9) {
     EXPECT_EQ(eng.Commit(), L"hđ");
 }
 
+// Capitalization preservation during auto-restore (backspace-revive scenario).
+// SeedFromText decomposes Vietnamese chars into lowercase bases + isUpper flag,
+// so rawInput_ contains lowercase. Without the fix, auto-restore returns the
+// lowercase raw input, destroying the user's capitalization.
+
+TEST_F(AutoRestoreTest, SeedFromText_UppercasePreserved_VKey) {
+    // Simulate backspace-revive: SeedFromText("VKey") → rawInput_ = "vkey"
+    // but composed = "VKey". Since raw=="VKey" after cap fix, skip restore.
+    EXPECT_TRUE(engine_->SeedFromText(L"VKey"));
+    // "VKey" is not a valid Vietnamese word, but after capitalizing raw[0]
+    // to match composed[0], raw == composed → return composed unchanged.
+    EXPECT_EQ(engine_->Commit(), L"VKey");
+}
+
+TEST_F(AutoRestoreTest, SeedFromText_LowercaseUnaffected) {
+    // Lowercase input: SeedFromText("vkey") → rawInput_ = "vkey",
+    // composed = "vkey". raw == composed → no restore, return as-is.
+    EXPECT_TRUE(engine_->SeedFromText(L"vkey"));
+    EXPECT_EQ(engine_->Commit(), L"vkey");
+}
+
+TEST_F(AutoRestoreTest, SeedFromText_UppercasePreserved_Facebook) {
+    // "Facebook" → after seed, raw = "facebook", composed = "Facebook".
+    // After cap fix, raw = "Facebook" == composed → return composed.
+    EXPECT_TRUE(engine_->SeedFromText(L"Facebook"));
+    EXPECT_EQ(engine_->Commit(), L"Facebook");
+}
+
 // ============================================================================
 // SPELL CHECK EXCLUSION LIST TESTS
 // Prefix-based exclusion: "hđ" in list → "hđ", "hđt" bypass spell check

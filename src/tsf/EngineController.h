@@ -58,6 +58,12 @@ public:
         return config_.escRestoreRawEnabled;
     }
 
+    [[nodiscard]] bool IsSuggestKeepCharsEnabled() const noexcept {
+        return config_.suggestKeepChars;
+    }
+
+    [[nodiscard]] bool HasNonEmptySelection(ITfContext* pContext);
+
     /// Commit-undo state machine for ESC-restore-raw post-BS (design 2026-05-17).
     /// Mirrors HookEngine's state machine but lighter — single-entry cache, no replay.
     enum class CommitUndoState : uint8_t {
@@ -129,6 +135,10 @@ public:
 
     /// Re-read flags from SharedState (call on focus)
     void RefreshFlags();
+
+    /// Publish TSF_TIP_ACTIVE flag to SharedState. Called by KeyEventSink::OnSetFocus
+    /// (foreground/background) and TextService::Deactivate (layout switch-away).
+    void SetTsfTipActive(bool active);
 
     /// Non-owning access to the SharedStateManager — shared with ReadonlyContextProvider
     /// so both can read/write the same memory-mapped region without duplicating the

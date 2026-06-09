@@ -346,6 +346,7 @@ void WriteLineUnlocked(const wchar_t* fmt, va_list args) {
     // Per-line flush. Crash before next flush loses at most one line — issue
     // #108-style bug reports need the last lines, so the cost is worth it.
     std::fflush(File());
+    CloseFileUnlocked();
 
 #if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
 #ifdef _WIN32

@@ -454,6 +454,34 @@ private:
     std::wstring word_;
     CComPtr<ITfRange> pRange_;
     wchar_t ch_;
+/// Edit session to check if the selection is non-empty (for autocomplete detection)
+class SelectionCheckEditSession : public EditSession {
+public:
+    SelectionCheckEditSession(ITfContext* pContext, bool* pHasSelection)
+        : EditSession(pContext), pHasSelection_(pHasSelection) {
+        if (pHasSelection_) *pHasSelection_ = false;
+    }
+
+    IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
+        if (pContext_ == nullptr || pHasSelection_ == nullptr) return E_FAIL;
+        *pHasSelection_ = false;
+
+        TF_SELECTION sel = {};
+        ULONG fetched = 0;
+        HRESULT hr = pContext_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched);
+        if (SUCCEEDED(hr) && fetched == 1 && sel.range != nullptr) {
+            CComPtr<ITfRange> pSelRange;
+            pSelRange.Attach(sel.range);
+            BOOL isEmpty = FALSE;
+            if (SUCCEEDED(pSelRange->IsEmpty(ec, &isEmpty))) {
+                *pHasSelection_ = (isEmpty == FALSE);
+            }
+        }
+        return S_OK;
+    }
+
+private:
+    bool* pHasSelection_;
 };
 
 }  // namespace TSF

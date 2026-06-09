@@ -467,6 +467,20 @@ bool EngineController::CommitRawAndEnd(ITfContext* pContext) {
     return true;
 }
 
+bool EngineController::HasNonEmptySelection(ITfContext* pContext) {
+    if (pContext == nullptr) return false;
+    bool hasSelection = false;
+    auto* pSession = new SelectionCheckEditSession(pContext, &hasSelection);
+    HRESULT hrSession = S_OK;
+    HRESULT hr = pContext->RequestEditSession(
+        clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
+    pSession->Release();
+    if (FAILED(hr) || FAILED(hrSession)) {
+        return false;
+    }
+    return hasSelection;
+}
+
 void EngineController::Reset() {
     engine_->Reset();
     compositionMgr_.TerminateComposition();
@@ -498,36 +512,20 @@ void EngineController::DetectScintillaApp() {
 }
 
 bool EngineController::CheckConfigEvent() {
-    // Initialize event if not already done
-    if (!configEvent_.IsValid()) {
-        configEvent_.Initialize();
-    }
-
-    // Non-blocking check for signal
-    if (!configEvent_.Wait(0)) {
-        return false;  // No signal
-    }
-
-    // Config changed - read from SharedState
-    TSF_LOG(L"Config event received, checking SharedState");
-
     if (!sharedState_.IsConnected()) {
         // Try to open SharedState if not connected
         if (!sharedState_.OpenReadWrite()) {
-            TSF_LOG(L"CheckConfigEvent: SharedState not available");
             return false;
         }
     }
 
-    SharedState state = sharedState_.Read();
-    if (!state.IsValid()) {
-        TSF_LOG(L"CheckConfigEvent: SharedState invalid");
+    uint32_t currentEpoch = sharedState_.ReadEpoch();
+    if (currentEpoch == lastEpoch_) {
         return false;
     }
 
-    // Check if epoch changed (config actually updated)
-    if (state.epoch == lastEpoch_) {
-        TSF_LOG(L"CheckConfigEvent: epoch unchanged, skipping reload");
+    SharedState state = sharedState_.Read();
+    if (!state.IsValid()) {
         return false;
     }
 
@@ -570,6 +568,13 @@ void EngineController::RefreshFlags() {
         }
     } else {
         engineEnabled_ = false;
+    }
+}
+
+void EngineController::SetTsfTipActive(bool active) {
+    if (sharedState_.IsConnected()) {
+        sharedState_.SetOrClearFlag(SharedFlags::TSF_TIP_ACTIVE, active);
+        TSF_LOG(L"SetTsfTipActive: %s", active ? L"true" : L"false");
     }
 }
 

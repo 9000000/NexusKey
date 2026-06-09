@@ -114,19 +114,26 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
         if (pEngineController_) {
             pEngineController_->CheckConfigEvent();
             pEngineController_->RefreshFlags();
+            // Publish TIP active state — EXE reads this for tray icon sync
+            pEngineController_->SetTsfTipActive(true);
             // Focus change invalidates the commit-undo window — cursor may have
             // moved arbitrarily relative to the cached lastCommit_ text.
             pEngineController_->ResetCommitUndo();
         }
     } else {
         TSF_LOG(L"OnSetFocus: background");
-        if (pEngineController_) pEngineController_->ResetCommitUndo();
+        if (pEngineController_) {
+            pEngineController_->SetTsfTipActive(false);
+            pEngineController_->ResetCommitUndo();
+        }
     }
     return S_OK;
 }
 
 IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
+
+    pEngineController_->CheckConfigEvent();
 
     // Drop any punct char cached by a previous OnTestKeyDown whose OnKeyDown pair
     // never fired (rare TSF anomaly).
@@ -136,6 +143,18 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
     pEngineController_->CheckContextBlocked(pContext);
     if (pEngineController_->IsContextBlocked()) {
         *pfEaten = FALSE;
+        return S_OK;
+    }
+
+    // Intercept VK_BACK for autocomplete suggestion dismissal
+    if (wParam == VK_BACK && pEngineController_->HasEngineBuffer() &&
+        pEngineController_->IsSuggestKeepCharsEnabled() &&
+        pEngineController_->HasNonEmptySelection(pContext)) {
+        TSF_LOG(L"OnTestKeyDown: backspace autocomplete suggestion detected -> commit and pass through");
+        pEngineController_->Commit(pContext);
+        *pfEaten = FALSE;
+        lastTestedVk_ = static_cast<UINT>(wParam);
+        lastWantKeyResult_ = false;
         return S_OK;
     }
 
@@ -312,6 +331,8 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam
 IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
 
+    pEngineController_->CheckConfigEvent();
+
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
@@ -322,6 +343,18 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
     }
 
     UINT vk = static_cast<UINT>(wParam);
+
+    // Intercept VK_BACK for autocomplete suggestion dismissal (Chromium fallback)
+    if (vk == VK_BACK && pEngineController_->HasEngineBuffer() &&
+        pEngineController_->IsSuggestKeepCharsEnabled() &&
+        pEngineController_->HasNonEmptySelection(pContext)) {
+        TSF_LOG(L"OnKeyDown: backspace autocomplete suggestion detected -> commit and pass through");
+        pEngineController_->Commit(pContext);
+        lastTestedVk_ = 0;
+        lastPunctChar_ = 0;
+        *pfEaten = FALSE;
+        return S_OK;
+    }
 
     // Esc-restore-raw: end composition with raw keys (víu → virus) when enabled
     // and buffer non-empty. Eat the key (don't pass to app). Falls through to
