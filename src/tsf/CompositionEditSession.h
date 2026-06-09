@@ -454,6 +454,8 @@ private:
     std::wstring word_;
     CComPtr<ITfRange> pRange_;
     wchar_t ch_;
+};
+
 /// Edit session to check if the selection is non-empty (for autocomplete detection)
 class SelectionCheckEditSession : public EditSession {
 public:
