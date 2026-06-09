@@ -2895,7 +2895,7 @@ void HookEngine::OnTickPoll() noexcept {
                 const bool localVn  = vietnameseMode_.load(std::memory_order_acquire);
                 if (sharedVn != localVn) {
                     vietnameseMode_.store(sharedVn, std::memory_order_release);
-                    NEXTKEY_LOG(L"OnTickPoll: synced vietnameseMode_ from SharedState (%s)",
+                    NEXTKEY_LOG(L"OnTickPoll: synced vietnamese mode from SharedState (%s)",
                                 sharedVn ? L"Vietnamese" : L"English");
                     NotifyModeChange();
                 }
