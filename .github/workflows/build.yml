@@ -26,7 +26,9 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-
+    outputs:
+      artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+      has-classic: ${{ steps.check-classic.outputs.has_classic }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -81,17 +83,21 @@ jobs:
         if: github.event_name != 'workflow_dispatch' || inputs.include_classic
         run: cmake --build build-classic --config Release --target VKeyLite
 
-      # --- SignPath Code Signing ---
+      # --- Gather unsigned binaries ---
       - name: Gather unsigned binaries
+        id: check-classic
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path unsigned-binaries
           Copy-Item "build/Release/VKey.exe" "unsigned-binaries/" -Force
           Copy-Item "build/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
           Copy-Item "build/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
+          $hasClassic = "false"
           if (Test-Path "build-classic/Release/VKeyClassic.exe") {
             Copy-Item "build-classic/Release/VKeyClassic.exe" "unsigned-binaries/" -Force
+            $hasClassic = "true"
           }
+          echo "has_classic=$hasClassic" >> $env:GITHUB_OUTPUT
 
       - name: Upload unsigned binaries for signing
         id: upload-unsigned
@@ -99,8 +105,16 @@ jobs:
         with:
           name: unsigned-binaries
           path: unsigned-binaries/
-          retention-days: 1
+          retention-days: 7
 
+  sign-and-release:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- SignPath Code Signing ---
       - name: Submit signing request to SignPath
         id: signpath-sign
         uses: signpath/github-action-submit-signing-request@v2
@@ -109,18 +123,28 @@ jobs:
           organization-id: '8e66dee3-2c1d-407f-a391-0d0d3fd74913'
           project-slug: 'VKey'
           signing-policy-slug: "${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}"
-          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
+          github-artifact-id: '${{ needs.build.outputs.artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: 'signed-binaries'
 
-      - name: Replace binaries with signed versions
+      - name: Reconstruct release layout
         shell: powershell
         run: |
-          Copy-Item "signed-binaries/VKey.exe" "build/Release/VKey.exe" -Force
-          Copy-Item "signed-binaries/VKeyTSF.dll" "build/Release/VKeyTSF.dll" -Force
-          Copy-Item "signed-binaries/VKeyWatchdog.exe" "build/Release/VKeyWatchdog.exe" -Force
-          if (Test-Path "signed-binaries/VKeyClassic.exe") {
-            Copy-Item "signed-binaries/VKeyClassic.exe" "build-classic/Release/VKeyClassic.exe" -Force
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item "signed-binaries/VKey.exe" "dist/" -Force
+          Copy-Item "signed-binaries/VKeyTSF.dll" "dist/" -Force
+          Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist/" -Force
+          Copy-Item "extern/sciter/bin/sciter.dll" "dist/" -Force
+          
+          New-Item -ItemType Directory -Force -Path upload-payload
+          Copy-Item "dist/*" "upload-payload/" -Force
+          
+          if ("${{ needs.build.outputs.has-classic }}" -eq "true") {
+            New-Item -ItemType Directory -Force -Path dist-classic
+            Copy-Item "signed-binaries/VKeyClassic.exe" "dist-classic/" -Force
+            Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist-classic/" -Force
+            
+            Copy-Item "signed-binaries/VKeyClassic.exe" "upload-payload/" -Force
           }
 
       # --- Zip releases ---
@@ -128,14 +152,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: powershell
         run: |
-          Get-ChildItem "build/Release/*" -Include VKey.exe,VKeyTSF.dll,sciter.dll,VKeyWatchdog.exe |
-            Compress-Archive -DestinationPath VKey.zip
+          Compress-Archive -Path "dist/*" -DestinationPath VKey.zip
 
       - name: Zip Classic Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-classic == 'true'
         shell: powershell
         run: |
-          Compress-Archive -Path "build-classic/Release/VKeyClassic.exe","build/Release/VKeyWatchdog.exe" -DestinationPath VKeyClassic.zip
+          Compress-Archive -Path "dist-classic/*" -DestinationPath VKeyClassic.zip
 
       # --- SHA-256 checksums ---
       - name: Generate SHA-256 checksums
@@ -144,7 +167,11 @@ jobs:
         run: |
           # Generate SHA-256 sidecars used by VerifyDownloadedZip (SEC-001)
           # Format: "<hash>  <filename>" (GNU coreutils sha256sum compatible)
-          foreach ($file in @("VKey.zip", "VKeyClassic.zip")) {
+          $files = @("VKey.zip")
+          if ("${{ needs.build.outputs.has-classic }}" -eq "true") {
+            $files += "VKeyClassic.zip"
+          }
+          foreach ($file in $files) {
             $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
             "$hash  $file" | Out-File -Encoding ascii "$file.sha256"
           }
@@ -157,7 +184,7 @@ jobs:
           subject-path: VKey.zip
 
       - name: Attest VKey Classic
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-classic == 'true'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: VKeyClassic.zip
@@ -172,14 +199,10 @@ jobs:
             VKey.zip.sha256
             VKeyClassic.zip
             VKeyClassic.zip.sha256
+          fail_on_unmatched_files: false
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: VKey-x64
-          path: |
-            build/Release/VKey.exe
-            build/Release/VKeyTSF.dll
-            build/Release/sciter.dll
-            build/Release/VKeyWatchdog.exe
-            build-classic/Release/VKeyClassic.exe
+          path: upload-payload/
