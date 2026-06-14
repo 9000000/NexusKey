@@ -22,6 +22,7 @@ namespace SharedFlags {
     constexpr uint32_t TSF_ABI_MISMATCH       = 0x0020;  // DLL: mapped SharedState layout doesn't match this DLL
     constexpr uint32_t TSF_PENDING_DLL_SWAP   = 0x0040;  // EXE: startup swap failed, reboot needed
     constexpr uint32_t TSF_POST_UPDATE_REBOOT = 0x0080;  // EXE: swap succeeded, hosts may still hold old DLL
+    constexpr uint32_t TSF_TIP_ACTIVE         = 0x0100;  // DLL: VKey TIP is the active input processor (set on focus, cleared on deactivate/bg)
 }
 
 // Diagnostic flag bit definitions (uint8_t, byte slot at SharedState.diagFlags).

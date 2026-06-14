@@ -1729,6 +1729,21 @@ std::wstring TypingEngine::Commit() {
                                 HasIntentionalStrokeD(rawInput_, composed);
             if (!keepComposed) {
                 std::wstring raw(rawInput_.begin(), rawInput_.end());
+                // Preserve first-letter capitalization from composed form.
+                // SeedFromText (backspace-revive) stores lowercase bases in
+                // rawInput_, so without this the auto-restore would return
+                // "vkey" when the user typed "VKey". Match the capitalization
+                // of the composed string's first character.
+                if (!raw.empty() && !composed.empty() && std::iswupper(composed[0])) {
+                    raw[0] = std::towupper(raw[0]);
+                }
+                // If raw now matches composed (capitalization was the only
+                // difference), skip the restore — the word is effectively
+                // unchanged and should be returned as-is.
+                if (raw == composed) {
+                    Reset();
+                    return composed;
+                }
                 if (ShouldAutoRestore(raw, composed)) {
                     Reset();
                     return raw;
@@ -1786,7 +1801,7 @@ bool TypingEngine::SeedFromText(const std::wstring& text) {
         // This is enough for Backspace/PushChar to work correctly after seeding.
         st.rawIdx = rawInput_.size();
         st.toneRawIdx = SIZE_MAX;
-        rawInput_.push_back(base);
+        rawInput_.push_back(isUpper ? std::towupper(base) : base);
         states_.push_back(st);
     }
     UpdateSpellState();

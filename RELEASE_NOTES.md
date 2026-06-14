@@ -1,4 +1,4 @@
-# VKey v4.1.1
+# VKey v4.1.0
 
 [![Signed by SignPath](https://img.shields.io/badge/Signed_by-SignPath-blue)](https://signpath.io)
 
@@ -19,3 +19,7 @@
 - Sửa lỗi tự động cập nhật thất bại và không tự chạy lại sau khi cập nhật khi ứng dụng khởi chạy cùng hệ thống (do giới hạn Job Object ngăn cản breakaway)
 - Bảo vệ và tránh ghi đè file cấu hình `config.toml` của người dùng khi cập nhật phiên bản mới
 - Tăng thời gian chờ của bộ cài đặt từ 30 giây lên 120 giây để người dùng kịp đọc và xác nhận thông báo sao lưu cấu hình
+- Sửa lỗi phím Backspace xóa sai ký tự khi đang chọn text hoặc hiện gợi ý autocomplete (Issue #195)
+- Sửa lỗi khóa file khi ghi log debug gây cản trở việc xóa file của các ứng dụng khác (Issue #196)
+- Đồng bộ hóa chính xác trạng thái icon khay hệ thống (tray icon) và tính năng Smart-Switch khi gõ trong các ứng dụng TSF (như Chrome, Edge)
+- Khắc phục lỗi mất định dạng viết hoa (ví dụ `VKey` bị đổi thành `Vkey`) khi kích hoạt tính năng tự động khôi phục (auto-restore) từ khóa không hợp lệ

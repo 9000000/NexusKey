@@ -2635,8 +2635,21 @@ void HookEngine::NotifyModeChange() noexcept {
         // force-store; in practice the forced-V focus path sets it true first.
         const bool excluded = isExcludedApp_.load(std::memory_order_acquire);
         const bool forcedV  = isForcedVnApp_.load(std::memory_order_acquire);
-        modeChangeCallback_(forcedV ||
-                            (!excluded && vietnameseMode_.load(std::memory_order_acquire)));
+        const bool isTsf    = isTsfApp_.load(std::memory_order_acquire);
+        bool displayMode = forcedV ||
+                            (!excluded && vietnameseMode_.load(std::memory_order_acquire));
+        // TSF display override: when the foreground app is a TSF app but the
+        // VKey TIP is not the active input processor (user switched to US
+        // keyboard via Win+Space), force the display to English. The logical
+        // VIETNAMESE_MODE stays unchanged in SharedState for restoration when
+        // the user switches back.
+        if (displayMode && isTsf && sharedStatePtr_) {
+            SharedState st = sharedStatePtr_->Read();
+            if (st.IsValid() && !(st.flags & SharedFlags::TSF_TIP_ACTIVE)) {
+                displayMode = false;
+            }
+        }
+        modeChangeCallback_(displayMode);
     }
 }
 
@@ -2866,6 +2879,37 @@ void HookEngine::OnTickPoll() noexcept {
         // us skip the function call entirely on non-chromium foreground.
         if (hijackDetector_ && isChromiumClassApp_.load(std::memory_order_acquire)) {
             hijackDetector_->Poll();
+        }
+
+        // TSF_TIP_ACTIVE monitoring — detect layout switches (Win+Space)
+        // and sync vietnameseMode_ / tray icon. The DLL writes this flag
+        // via SetOrClearFlag on focus/deactivate; we poll here (200ms cadence).
+        if (sharedStatePtr_) {
+            SharedState st = sharedStatePtr_->Read();
+            if (st.IsValid()) {
+                const uint32_t curFlags = st.flags;
+                const uint32_t prevFlags = lastFlags_.exchange(curFlags, std::memory_order_acq_rel);
+
+                // Sync vietnameseMode_ from SharedState — DLL may have toggled it
+                const bool sharedVn = (curFlags & SharedFlags::VIETNAMESE_MODE) != 0;
+                const bool localVn  = vietnameseMode_.load(std::memory_order_acquire);
+                if (sharedVn != localVn) {
+                    vietnameseMode_.store(sharedVn, std::memory_order_release);
+                    NEXTKEY_LOG(L"OnTickPoll: synced vietnamese mode from SharedState (%s)",
+                                sharedVn ? L"Vietnamese" : L"English");
+                    NotifyModeChange();
+                }
+
+                // TSF_TIP_ACTIVE transition → tray icon update (even if mode unchanged)
+                const bool wasTipActive = (prevFlags & SharedFlags::TSF_TIP_ACTIVE) != 0;
+                const bool isTipActive  = (curFlags  & SharedFlags::TSF_TIP_ACTIVE) != 0;
+                if (wasTipActive != isTipActive) {
+                    NEXTKEY_LOG(L"OnTickPoll: TSF_TIP_ACTIVE %s → %s",
+                                wasTipActive ? L"true" : L"false",
+                                isTipActive  ? L"true" : L"false");
+                    NotifyModeChange();
+                }
+            }
         }
 
         // Adaptive-tick — handles the active-to-idle direction (cadence
@@ -4001,13 +4045,12 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     if (cls->isTsf) {
         HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough",
                  focus_.LastRealExe().c_str());
-        return;
+        // Don't return — fall through to forced-V / smart-switch so that
+        // vietnameseMode_ stays in sync and the tray icon updates correctly.
     }
 
-    // Per-app encoding override (target value pre-resolved in Classify
-    // against the on-main global to avoid a cross-thread read of
-    // globalCodeTable_ here).
-    {
+    // Per-app encoding override — skip for TSF apps (hook-mode output only).
+    if (!cls->isTsf) {
         const CodeTable targetTable = static_cast<CodeTable>(cls->targetCodeTable);
         if (targetTable != currentCodeTable_.load(std::memory_order_acquire)) {
             currentCodeTable_.store(targetTable, std::memory_order_release);
@@ -4017,9 +4060,8 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         }
     }
 
-    // Per-app input method override (same pattern as encoding). Recreate
-    // engine_ on change — the only heap allocation on this path.
-    {
+    // Per-app input method override — skip for TSF apps (hook-mode engine only).
+    if (!cls->isTsf) {
         const InputMethod targetMethod = static_cast<InputMethod>(cls->targetMethod);
         if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
             currentMethod_.store(targetMethod, std::memory_order_release);

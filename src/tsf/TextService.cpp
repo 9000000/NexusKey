@@ -109,6 +109,11 @@ IFACEMETHODIMP TextService::Activate(ITfThreadMgr* pThreadMgr, TfClientId tfClie
 IFACEMETHODIMP TextService::Deactivate() {
     TSF_LOG(L"TextService::Deactivate");
 
+    // Clear TIP active flag before teardown — layout switched away from VKey
+    if (engineController_) {
+        engineController_->SetTsfTipActive(false);
+    }
+
     if (readonlyProvider_) {
         readonlyProvider_->Unadvise();
         readonlyProvider_.reset();
