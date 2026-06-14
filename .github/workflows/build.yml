@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: windows-2022
     outputs:
       artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
       has-classic: ${{ steps.check-classic.outputs.has_classic }}
@@ -109,7 +109,7 @@ jobs:
 
   sign-and-release:
     needs: build
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
