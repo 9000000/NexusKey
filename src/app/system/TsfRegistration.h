@@ -37,4 +37,7 @@ void RunDiagnostics();
 /// DLL loading in all TSF-aware apps. Call this at startup to clean it up.
 void CleanupHkcuClsidOverride() noexcept;
 
+/// Activate the VKey TSF profile programmatically
+bool ActivateVKeyTsfProfile();
+
 }  // namespace NextKey

@@ -58,12 +58,12 @@ public:
         return config_.escRestoreRawEnabled;
     }
 
+    /// Whether "BS keeps chars on suggest" is enabled in current config snapshot.
     [[nodiscard]] bool IsSuggestKeepCharsEnabled() const noexcept {
         return config_.suggestKeepChars;
     }
 
     [[nodiscard]] bool HasNonEmptySelection(ITfContext* pContext);
-
     /// Commit-undo state machine for ESC-restore-raw post-BS (design 2026-05-17).
     /// Mirrors HookEngine's state machine but lighter — single-entry cache, no replay.
     enum class CommitUndoState : uint8_t {

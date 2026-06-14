@@ -3,10 +3,10 @@
 
 document.on("ready", function () {
     // Enable blur-behind effect (Sciter built-in)
-    // "dark" = dark tint, "source-auto" = automatic blur source
+    // Tint must match the current theme: "dark" or "light", plus "source-auto"
     requestAnimationFrame(function() {
         if (!document.body.classList.contains("win10")) {
-            Window.this.blurBehind = "dark source-auto";
+            Window.this.blurBehind = (document.body.classList.contains("dark") ? "dark" : "light") + " source-auto";
         } else {
             Window.this.blurBehind = "none";
         }

@@ -439,6 +439,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_hookEngine.SetTsfModeCallback([](bool tsfActive, bool tsfReadonly) {
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_ACTIVE, tsfActive);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_READONLY, tsfReadonly);
+        if (tsfActive && g_hookEngine.IsVietnameseMode()) {
+            HWND trayWnd = g_trayIcon.GetMessageWindow();
+            if (trayWnd) {
+                PostMessageW(trayWnd, WM_VKEY_ACTIVATE_TSF, 0, 0);
+            }
+        }
     });
 
     // Wire hook-reload callback: sub-dialog subprocess → main EXE eager sync.

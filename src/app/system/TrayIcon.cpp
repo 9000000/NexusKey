@@ -8,6 +8,7 @@
 #include "DarkModeHelper.h"
 #include "StartupHelper.h"
 #include "PendingDllApply.h"
+#include "TsfRegistration.h"
 #include "core/config/ConfigManager.h"
 #include "core/hotkey/HotkeyLabel.h"
 #include "core/Strings.h"
@@ -428,6 +429,12 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     // no FindWindow needed here.
     if (msg == WM_VKEY_TRAY_MODE_SYNC && hwnd == hwndMessage_) {
         SetVietnameseMode(wParam != 0);
+        return true;
+    }
+
+    // Activate VKey TSF profile programmatically (on TSF app focus switch)
+    if (msg == WM_VKEY_ACTIVATE_TSF && hwnd == hwndMessage_) {
+        ActivateVKeyTsfProfile();
         return true;
     }
 

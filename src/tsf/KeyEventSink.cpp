@@ -5,6 +5,7 @@
 #include "KeyEventSink.h"
 #include "TextService.h"
 #include "EngineController.h"
+#include "CompositionEditSession.h"
 #include "ComUtils.h"
 #include "Define.h"
 
@@ -262,6 +263,23 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
 
     bool wantKey = pEngineController_->WantKey(static_cast<UINT>(wParam), true);
 
+    if (wParam == VK_BACK) {
+        bool suggestKeep = pEngineController_->IsSuggestKeepCharsEnabled();
+        bool notEmpty = false;
+        if (pContext != nullptr && suggestKeep) {
+            auto* pSession = new SelectionCheckEditSession(pContext, &notEmpty);
+            HRESULT hrSession = S_OK;
+            HRESULT hr = pContext->RequestEditSession(
+                pTextService_->GetClientId(), pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
+            pSession->Release();
+            if (SUCCEEDED(hr) && SUCCEEDED(hrSession) && notEmpty) {
+                wantKey = false;
+            }
+        }
+        TSF_LOG(L"OnTestKeyDown: VK_BACK wantKey=%d suggestKeep=%d notEmptySelection=%d",
+                wantKey, suggestKeep, notEmpty);
+    }
+
     // Commit-undo BS detection (design 2026-05-17): Ready → Primed.
     // When the user just CommitWithChar'd a word (space appended) and then
     // presses BS, they're undoing the just-committed word — not asking to
@@ -402,8 +420,27 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
         TSF_LOG(L"OnKeyDown: VkToChar failed vk=0x%02X, falling through", vk);
     }
 
-    bool wantKey = (vk == lastTestedVk_) ? lastWantKeyResult_
-                                          : pEngineController_->WantKey(vk, true);
+    bool wantKey = false;
+    if (vk == lastTestedVk_) {
+        wantKey = lastWantKeyResult_;
+    } else {
+        wantKey = pEngineController_->WantKey(vk, true);
+        if (pContext != nullptr && wantKey && vk == VK_BACK && pEngineController_->IsSuggestKeepCharsEnabled()) {
+            bool notEmpty = false;
+            auto* pSession = new SelectionCheckEditSession(pContext, &notEmpty);
+            HRESULT hrSession = S_OK;
+            HRESULT hr = pContext->RequestEditSession(
+                pTextService_->GetClientId(), pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
+            pSession->Release();
+            if (SUCCEEDED(hr) && SUCCEEDED(hrSession) && notEmpty) {
+                wantKey = false;
+            }
+        }
+    }
+    if (vk == VK_BACK) {
+        TSF_LOG(L"OnKeyDown: VK_BACK wantKey=%d lastTestedVk=%u lastWantKeyResult=%d",
+                wantKey, lastTestedVk_, lastWantKeyResult_);
+    }
     lastTestedVk_ = 0;  // Invalidate cache
     lastPunctChar_ = 0;
 

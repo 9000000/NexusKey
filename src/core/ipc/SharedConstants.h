@@ -30,6 +30,7 @@ constexpr UINT WM_VKEY_RESTART = WM_USER + 113;           // Settings → Main: 
 constexpr UINT WM_VKEY_HOOK_RELOAD = WM_USER + 114;       // Subprocess → Main: eager hook reload after SignalConfigChange
 constexpr UINT WM_VKEY_OPEN_USERDEFINED = WM_USER + 115;  // Deferred: open user-defined keymap dialog
 constexpr UINT WM_VKEY_OPEN_HOTKEYS = WM_USER + 116;      // Deferred: open unified hotkey rebind dialog
+constexpr UINT WM_VKEY_ACTIVATE_TSF = WM_USER + 117;      // Main: activate VKey TSF profile programmatically
 
 }  // namespace NextKey
 

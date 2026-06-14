@@ -3986,7 +3986,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // !wasForcedV: a forced-V app's mode is locked to V, never the user's
     // choice — don't persist it into appModeMap or it poisons the remembered
     // preference (the SAVE writes the forced 'true', not a real toggle).
-    if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcluded && !wasTsfApp && !wasForcedV) {
+    if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcluded && !wasForcedV) {
         if (focus_.AppModeMap().size() >= kMaxSmartSwitchEntries) {
             focus_.AppModeMap().clear();
             HOOK_LOG(L"  SmartSwitch: map cap %zu hit, cleared", kMaxSmartSwitchEntries);
@@ -4042,37 +4042,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         if (!wasExcluded) NotifyModeChange();
         return;
     }
-    if (cls->isTsf) {
-        HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough",
-                 focus_.LastRealExe().c_str());
-        // Don't return — fall through to forced-V / smart-switch so that
-        // vietnameseMode_ stays in sync and the tray icon updates correctly.
-    }
 
-    // Per-app encoding override — skip for TSF apps (hook-mode output only).
-    if (!cls->isTsf) {
-        const CodeTable targetTable = static_cast<CodeTable>(cls->targetCodeTable);
-        if (targetTable != currentCodeTable_.load(std::memory_order_acquire)) {
-            currentCodeTable_.store(targetTable, std::memory_order_release);
-            HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
-                     static_cast<int>(targetTable),
-                     focus_.LastRealExe().c_str());
-        }
-    }
-
-    // Per-app input method override — skip for TSF apps (hook-mode engine only).
-    if (!cls->isTsf) {
-        const InputMethod targetMethod = static_cast<InputMethod>(cls->targetMethod);
-        if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
-            currentMethod_.store(targetMethod, std::memory_order_release);
-            TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
-            engineConfig.inputMethod = targetMethod;
-            engine_ = EngineFactory::Create(engineConfig);
-            HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
-                     static_cast<int>(targetMethod),
-                     focus_.LastRealExe().c_str());
-        }
-    }
 
     // Per-app hard-V lock WINS over smart-switch: force V on focus regardless of
     // any remembered preference. (D2: on LEAVING a forced-V app the normal
@@ -4112,6 +4082,40 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         const bool wasSuppressed = focus_.LayoutSuppressed();
         OnLayoutChanged(focus_.CachedIsCompatLayout());
         if (wasSuppressed == focus_.LayoutSuppressed()) NotifyModeChange();
+    }
+
+    if (cls->isTsf) {
+        HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough",
+                 focus_.LastRealExe().c_str());
+        return;
+    }
+
+    // Per-app encoding override (target value pre-resolved in Classify
+    // against the on-main global to avoid a cross-thread read of
+    // globalCodeTable_ here).
+    {
+        const CodeTable targetTable = static_cast<CodeTable>(cls->targetCodeTable);
+        if (targetTable != currentCodeTable_.load(std::memory_order_acquire)) {
+            currentCodeTable_.store(targetTable, std::memory_order_release);
+            HOOK_LOG(L"  AppOverride: encoding=%d for '%s'",
+                     static_cast<int>(targetTable),
+                     focus_.LastRealExe().c_str());
+        }
+    }
+
+    // Per-app input method override (same pattern as encoding). Recreate
+    // engine_ on change — the only heap allocation on this path.
+    {
+        const InputMethod targetMethod = static_cast<InputMethod>(cls->targetMethod);
+        if (targetMethod != currentMethod_.load(std::memory_order_acquire)) {
+            currentMethod_.store(targetMethod, std::memory_order_release);
+            TypingConfig engineConfig = *config_.load(std::memory_order_acquire);
+            engineConfig.inputMethod = targetMethod;
+            engine_ = EngineFactory::Create(engineConfig);
+            HOOK_LOG(L"  AppOverride: inputMethod=%d for '%s'",
+                     static_cast<int>(targetMethod),
+                     focus_.LastRealExe().c_str());
+        }
     }
 }
 
