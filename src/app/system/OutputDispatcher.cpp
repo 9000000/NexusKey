@@ -502,6 +502,9 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
         if (isEditCompatible) {
             HOOK_LOG(L"  ReplaceComposition[editMsg]: retry exhausted (30ms) — fallback to SendInput BS=%zu",
                      backspaceCount);
+        } else if (!focusedWindow) {
+            HOOK_LOG(L"  ReplaceComposition[editMsg]: no valid focused window — immediate fallback to SendInput BS=%zu",
+                     backspaceCount);
         } else {
             HOOK_LOG(L"  ReplaceComposition[editMsg]: class '%s' not compatible — immediate fallback to SendInput BS=%zu",
                      focus_.CachedFocusedClass().c_str(), backspaceCount);
