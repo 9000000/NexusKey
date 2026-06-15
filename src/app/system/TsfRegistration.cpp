@@ -319,7 +319,22 @@ void CleanupHkcuClsidOverride() noexcept {
 }
 
 bool ActivateVKeyTsfProfile() {
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    // RAII COM lifetime: pairs S_OK/S_FALSE with CoUninitialize and, crucially, does
+    // NOT call CoUninitialize when CoInitializeEx failed (e.g. RPC_E_CHANGED_MODE when
+    // the calling GUI thread was already initialized with a different apartment model).
+    // An unconditional CoUninitialize on the failure path would over-decrement and tear
+    // down COM on that thread. Declared first so it destructs LAST — after the COM
+    // interface unique_ptr below releases. Mirrors StartupHelper.h ComGuard.
+    struct ComGuard {
+        bool owned;
+        ComGuard() noexcept {
+            HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+            owned = (hr == S_OK || hr == S_FALSE);
+        }
+        ~ComGuard() noexcept { if (owned) CoUninitialize(); }
+        ComGuard(const ComGuard&) = delete;
+        ComGuard& operator=(const ComGuard&) = delete;
+    } comGuard;
 
     auto comRelease = [](IUnknown* p) { if (p) p->Release(); };
 
@@ -334,7 +349,6 @@ bool ActivateVKeyTsfProfile() {
 
     if (!pProfileMgr) {
         NEXTKEY_LOG(L"[TsfRegistration] CoCreateInstance failed for ITfInputProcessorProfileMgr (hr=0x%08X)", hr);
-        CoUninitialize();
         return false;
     }
 
@@ -360,8 +374,7 @@ bool ActivateVKeyTsfProfile() {
         NEXTKEY_LOG(L"[TsfRegistration] ActivateProfile failed for VKey TSF profile (hr=0x%08X)", hr);
     }
 
-    pProfileMgr.reset();
-    CoUninitialize();
+    // pProfileMgr (Release) then comGuard (CoUninitialize) destruct here, in that order.
     return SUCCEEDED(hr);
 }
 
