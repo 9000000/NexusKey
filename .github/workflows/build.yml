@@ -92,6 +92,9 @@ jobs:
           Copy-Item "build/Release/VKey.exe" "unsigned-binaries/" -Force
           Copy-Item "build/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
           Copy-Item "build/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
+          # Bundled Sciter runtime ships unsigned from the vendor — route it through
+          # SignPath so every binary in the release ZIP is Authenticode-signed.
+          Copy-Item "extern/sciter/bin/sciter.dll" "unsigned-binaries/" -Force
           $hasClassic = "false"
           if (Test-Path "build-classic/Release/VKeyClassic.exe") {
             Copy-Item "build-classic/Release/VKeyClassic.exe" "unsigned-binaries/" -Force
@@ -134,7 +137,7 @@ jobs:
           Copy-Item "signed-binaries/VKey.exe" "dist/" -Force
           Copy-Item "signed-binaries/VKeyTSF.dll" "dist/" -Force
           Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist/" -Force
-          Copy-Item "extern/sciter/bin/sciter.dll" "dist/" -Force
+          Copy-Item "signed-binaries/sciter.dll" "dist/" -Force
           
           New-Item -ItemType Directory -Force -Path upload-payload
           Copy-Item "dist/*" "upload-payload/" -Force
