@@ -120,29 +120,34 @@ void QuickConvert::Execute() {
         std::wstring clipText;
         bool gotClip = false;
 
-        // Try copy up to 2 times with backoff
-        for (int attempt = 0; attempt < 2; ++attempt) {
-            if (OpenClipboardWithRetry()) {
-                EmptyClipboard();
-                CloseClipboard();
-                ourLastSeq = GetClipboardSequenceNumber();
-            }
+        // If the control supports EM_GETSEL and has no active selection, we skip SimulateCopy
+        bool skipCopy = (anchor.hasControl && !anchor.valid);
 
-            SimulateCopy();
-
-            if (WaitForClipboardUnicode(300)) {
-                clipText = ReadClipboard();
-                if (!clipText.empty()) {
-                    gotClip = true;
-                    // SimulateCopy's Ctrl+C produced a clipboard write; treat
-                    // that as part of our action sequence.
+        if (!skipCopy) {
+            // Try copy up to 2 times with backoff
+            for (int attempt = 0; attempt < 2; ++attempt) {
+                if (OpenClipboardWithRetry()) {
+                    EmptyClipboard();
+                    CloseClipboard();
                     ourLastSeq = GetClipboardSequenceNumber();
-                    break;
                 }
-            }
 
-            QC_LOG(L"Copy attempt %d failed, retrying...", attempt + 1);
-            Sleep(30 * (attempt + 1));  // 30ms -> 60ms backoff
+                SimulateCopy();
+
+                if (WaitForClipboardUnicode(150)) {
+                    clipText = ReadClipboard();
+                    if (!clipText.empty()) {
+                        gotClip = true;
+                        // SimulateCopy's Ctrl+C produced a clipboard write; treat
+                        // that as part of our action sequence.
+                        ourLastSeq = GetClipboardSequenceNumber();
+                        break;
+                    }
+                }
+
+                QC_LOG(L"Copy attempt %d failed, retrying...", attempt + 1);
+                Sleep(30 * (attempt + 1));  // 30ms -> 60ms backoff
+            }
         }
 
         QC_LOG(L"Copied text length: %zu", clipText.size());
@@ -156,6 +161,10 @@ void QuickConvert::Execute() {
                 SimulateShiftLeftSelect(seqState_.lastPastedLength);
                 Sleep(30);
                 recoveryMode = true;
+            } else if (!savedClipboard.empty()) {
+                QC_LOG(L"No text copied from selection. Falling back to converting clipboard content directly.");
+                clipText = savedClipboard;
+                gotClip = true;
             } else {
                 QC_LOG(L"Clipboard empty, no text copied.");
                 restoreSavedClipboardIfSafe();
@@ -464,11 +473,14 @@ SelectionAnchor QuickConvert::GetSelectionAnchor(HWND hwnd) {
     // CRITICAL: Use SendMessageTimeoutW to prevent 3-second hangs if targetCtrl is unresponsive
     LRESULT lResult = SendMessageTimeoutW(targetCtrl, EM_GETSEL, reinterpret_cast<WPARAM>(&start), reinterpret_cast<LPARAM>(&end), SMTO_ABORTIFHUNG | SMTO_NORMAL, 50, &dummy);
     
-    // If end > start, the control successfully returned a selection range
-    if (lResult != 0 && end > start) {
-        anchor.start = start;
-        anchor.end = end;
-        anchor.valid = true;
+    if (lResult != 0) {
+        anchor.hasControl = true;
+        // If end > start, the control successfully returned a selection range
+        if (end > start) {
+            anchor.start = start;
+            anchor.end = end;
+            anchor.valid = true;
+        }
     }
     return anchor;
 }

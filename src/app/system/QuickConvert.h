@@ -15,6 +15,7 @@ struct SelectionAnchor {
     DWORD start = 0;
     DWORD end = 0;
     bool valid = false;
+    bool hasControl = false; // Whether the control supports EM_GETSEL
 };
 
 /// Quick-convert engine: copy → convert → paste → re-select → toast.
