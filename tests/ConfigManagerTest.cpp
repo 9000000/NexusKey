@@ -572,5 +572,38 @@ force_vn = ["zalo.exe"]
     EXPECT_EQ(forcedVn[0], L"zalo.exe");
 }
 
+TEST_F(ConfigManagerTest, SaveAndLoad_UnicodePath) {
+    std::wstring unicodePath = L"cấu_hình_tiếng_việt.toml";
+    std::filesystem::remove(std::filesystem::path(unicodePath));
+
+    TypingConfig config;
+    config.inputMethod = InputMethod::VNI;
+    config.spellCheckEnabled = true;
+    config.optimizeLevel = 2;
+
+    EXPECT_TRUE(ConfigManager::SaveToFile(unicodePath, config));
+    
+    // Reload and verify
+    auto loaded = ConfigManager::LoadFromFile(unicodePath);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_EQ(loaded->inputMethod, InputMethod::VNI);
+    EXPECT_TRUE(loaded->spellCheckEnabled);
+    EXPECT_EQ(loaded->optimizeLevel, 2);
+
+    // Test UIConfig save/load with Unicode path
+    UIConfig uiConfig;
+    uiConfig.showAdvanced = true;
+    uiConfig.backgroundOpacity = 65;
+    EXPECT_TRUE(ConfigManager::SaveUIConfig(unicodePath, uiConfig));
+
+    auto loadedUI = ConfigManager::LoadUIConfig(unicodePath);
+    ASSERT_TRUE(loadedUI.has_value());
+    EXPECT_TRUE(loadedUI->showAdvanced);
+    EXPECT_EQ(loadedUI->backgroundOpacity, 65);
+
+    // Cleanup
+    std::filesystem::remove(std::filesystem::path(unicodePath));
+}
+
 }  // namespace
 }  // namespace NextKey

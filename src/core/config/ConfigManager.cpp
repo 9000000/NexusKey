@@ -172,7 +172,11 @@ toml::table LoadExistingToml(const std::string& utf8Path) {
 /// Write TOML table to file atomically
 bool WriteToml(const std::string& utf8Path, const toml::table& tbl) {
     std::string tempPath = utf8Path + ".tmp";
+#ifdef _WIN32
+    std::ofstream file(Utf8ToWide(tempPath));
+#else
     std::ofstream file(tempPath);
+#endif
     if (!file.is_open()) return false;
     file << tbl;
     file.close();
@@ -1336,7 +1340,11 @@ bool ConfigManager::ExportCustomKeyMap(const std::wstring& path, const TypingCon
     try {
         toml::table tbl;
         SaveCustomKeyMap(&tbl, config);
+#ifdef _WIN32
+        std::ofstream file(path);
+#else
         std::ofstream file(WideToUtf8(path));
+#endif
         if (file.is_open()) {
             file << tbl;
             file.close();
