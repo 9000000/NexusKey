@@ -197,9 +197,11 @@ var STRINGS = {
         "ao.title": "App Override",
         "ao.input_method": "Input method",
         "ao.encoding": "Encoding",
+        "ao.send_method": "Send method",
         "ao.list_app": "Application",
         "ao.list_method": "Method",
         "ao.list_encoding": "Encoding",
+        "ao.list_sendmethod": "Send method",
         "ao.app_ph": "e.g.: myapp.exe",
 
         // ── User Defined Input dialog ──
