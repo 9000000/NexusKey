@@ -23,3 +23,5 @@
 - Sửa lỗi khóa file khi ghi log debug gây cản trở việc xóa file của các ứng dụng khác (Issue #196)
 - Đồng bộ hóa chính xác trạng thái icon khay hệ thống (tray icon) và tính năng Smart-Switch khi gõ trong các ứng dụng TSF (như Chrome, Edge)
 - Khắc phục lỗi mất định dạng viết hoa (ví dụ `VKey` bị đổi thành `Vkey`) khi kích hoạt tính năng tự động khôi phục (auto-restore) từ khóa không hợp lệ
+- Sửa lỗi chuyển mã nhanh (Quick Convert): tự động fallback lấy nội dung từ clipboard nếu không có text nào được bôi đen (select) khi chạy chuyển mã nhanh, đồng thời tối ưu hóa thời gian trễ (delay). Giúp hỗ trợ dùng chung với powertoys
+- Sửa lỗi đường dẫn cấu hình chứa tiếng Việt: khắc phục hoàn toàn lỗi không lưu được cấu hình (`config.toml`) khi đường dẫn thư mục chứa ứng dụng hoặc thư mục người dùng chứa ký tự Unicode tiếng Việt có dấu
