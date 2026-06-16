@@ -2651,22 +2651,6 @@ void HookEngine::NotifyModeChange() noexcept {
         }
         modeChangeCallback_(displayMode);
     }
-
-    // #195: (re)publish TSF state once the V/E mode is RESOLVED so the VKey TSF
-    // profile is activated when entering / toggling into Vietnamese in a TSF app.
-    // The focus-time tsfModeCallback_ in ApplyFocusOnHookThread fires BEFORE the
-    // per-app force-V / smart-switch store (and never fires on a same-window E↔V
-    // toggle), so it can read the PREVIOUS app's mode and skip activation — that
-    // is why "Khóa E/V theo app" did not auto-apply to TSF. NotifyModeChange runs
-    // after every vietnameseMode_ store, so re-firing here drives the activation
-    // with the correct mode. The callback re-checks IsVietnameseMode() internally
-    // (no-op post when English) and its flag writes are idempotent. Skipped for
-    // excluded apps — the IME is transparent there.
-    if (tsfModeCallback_ &&
-        isTsfApp_.load(std::memory_order_acquire) &&
-        !isExcludedApp_.load(std::memory_order_acquire)) {
-        tsfModeCallback_(/*tsfActive=*/true, /*tsfReadonly=*/false);
-    }
 }
 
 
@@ -4103,6 +4087,17 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     if (cls->isTsf) {
         HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough",
                  focus_.LastRealExe().c_str());
+        // #195: mode is fully RESOLVED here (the force-V / smart-switch blocks above
+        // ran), so re-publish to activate the VKey TSF profile with the correct mode.
+        // The early tsfModeCallback_ near the top fires BEFORE that resolution, so on
+        // entry from an English app it would read the previous mode and skip the
+        // activation — that is why "Khoa E/V theo app" did not auto-apply to TSF.
+        // Focus-driven only (never the OnTickPoll TSF_TIP_ACTIVE/Win+Space monitor),
+        // so a deliberate switch to the US keyboard is preserved. VN-gated and
+        // idempotent inside the callback.
+        if (tsfModeCallback_) {
+            tsfModeCallback_(/*tsfActive=*/true, /*tsfReadonly=*/false);
+        }
         return;
     }
 
@@ -4215,6 +4210,13 @@ void HookEngine::ApplyToggleVNOnHookThread() {
         MessageBeep(newMode ? MB_OK : MB_ICONASTERISK);
     }
     NotifyModeChange();
+
+    // #195: a same-window E/V toggle changes no focus, so the focus-path callback
+    // above never runs — re-publish here so the VKey TSF profile follows an explicit
+    // toggle into Vietnamese while staying in a TSF app. VN-gated in the callback.
+    if (isTsfApp_.load(std::memory_order_acquire) && tsfModeCallback_) {
+        tsfModeCallback_(/*tsfActive=*/true, /*tsfReadonly=*/false);
+    }
 }
 
 // P3e/P3f — config-apply drain handler. Wired into the kConfigApply mailbox
