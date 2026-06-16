@@ -16,6 +16,9 @@ cmake-build-*/
 # ===== Test runner artifacts (VKeyTestRunner outputs at repo root) =====
 /perf-*.csv
 /report-*.xml
+/sustained-*.csv
+/sustained-*.xml
+/diff.txt
 **/__pycache__/
 
 # ===== IDE / Editor =====
