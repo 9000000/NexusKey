@@ -274,6 +274,19 @@ VKey is built with a lean architecture and no heavy runtime dependencies, keepin
 
 ---
 
+## Sponsors
+
+<table>
+  <tr>
+    <td align="center" width="80">
+      <a href="https://signpath.org/"><img src="https://signpath.org/assets/favicon-50x50.png" alt="SignPath" width="40"></a>
+    </td>
+    <td>
+      Free code signing on Windows provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>
+    </td>
+  </tr>
+</table>
+
 ## Credits
 
 - Kế thừa từ [NextKey](https://github.com/phatMT97/VKey/tree/master), lấy cảm hứng từ [OpenKey](https://github.com/tuyenvm/OpenKey) của Mai Vũ Tuyên
