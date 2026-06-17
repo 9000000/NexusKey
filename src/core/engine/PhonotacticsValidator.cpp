@@ -619,6 +619,44 @@ SyllableState ValidateImpl(const CharStateT* states, size_t count, bool allowZwj
             if (states[0].base == L'n' && states[1].base == L'g' && states[2].base == L'h' && !isFrontVowel)
                 return SyllableState::Invalid;
         }
+
+        // oe and oă only allow specific initial consonants:
+        // "", ch, h, kh, l, ng, nh, t, tr, x
+        if (initialLen + 1 < count && states[initialLen].base == L'o' && states[initialLen].mod == Modifier::None) {
+            bool isOeOrOa = false;
+            if (states[initialLen + 1].base == L'e' && states[initialLen + 1].mod == Modifier::None) {
+                isOeOrOa = true;
+            } else if (states[initialLen + 1].base == L'a' && states[initialLen + 1].mod == Modifier::Breve) {
+                isOeOrOa = true;
+            }
+
+            if (isOeOrOa) {
+                bool allowed = false;
+                if (initialLen == 0) {
+                    allowed = true;
+                } else if (initialLen == 1) {
+                    // đ decomposes to base 'd', which is never in this set, so no
+                    // stroke-d guard is needed here.
+                    wchar_t c0 = states[0].base;
+                    if (c0 == L'h' || c0 == L'l' || c0 == L't' || c0 == L'x') {
+                        allowed = true;
+                    }
+                } else if (initialLen == 2) {
+                    wchar_t c0 = states[0].base;
+                    wchar_t c1 = states[1].base;
+                    if ((c0 == L'c' && c1 == L'h') ||
+                        (c0 == L'k' && c1 == L'h') ||
+                        (c0 == L'n' && c1 == L'g') ||
+                        (c0 == L'n' && c1 == L'h') ||
+                        (c0 == L't' && c1 == L'r')) {
+                        allowed = true;
+                    }
+                }
+                if (!allowed) {
+                    return SyllableState::Invalid;
+                }
+            }
+        }
     }
 
     SyllableState result = ValidateDecomposition(states, count, initialLen);

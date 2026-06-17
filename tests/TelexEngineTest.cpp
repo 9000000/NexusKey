@@ -4302,6 +4302,16 @@ TEST_F(SpellExclusionTest, ZwjfOff_CaseInsensitive) {
     EXPECT_EQ(eng.Commit(), L"Zô");
 }
 
+TEST_F(SpellExclusionTest, SpellCheck_Rose_RestoresToRose) {
+    TypingConfig cfg;
+    cfg.spellCheckEnabled = true;
+    cfg.autoRestoreEnabled = true;
+    TypingEngine eng(cfg);
+    TypeString(eng, L"rose");
+    EXPECT_EQ(eng.Peek(), L"roé");
+    EXPECT_EQ(eng.Commit(), L"rose");
+}
+
 // =============================================================================
 // Non-initial dd→đ tests (abbreviation support)
 // =============================================================================

@@ -419,6 +419,21 @@ TEST_F(PhonotacticsIsValidSyllable, ClosedVowelRuleStillFiresBeforeVCPair) {
     EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"ai", L"n", Tone::None, kModern));   // ai is closed → invalid
 }
 
+TEST_F(PhonotacticsIsValidSyllable, OeOaOnsetRestriction) {
+    // oe and oă only accept onsets: "", ch, h, kh, l, ng, nh, t, tr, x.
+    // Allowed:
+    EXPECT_TRUE (phon_.IsValidSyllable(L"",   L"oe", L"", Tone::None, kModern));   // oe
+    EXPECT_TRUE (phon_.IsValidSyllable(L"kh", L"oe", L"", Tone::None, kModern));   // khoe
+    EXPECT_TRUE (phon_.IsValidSyllable(L"ng", L"oe", L"", Tone::None, kModern));   // ngoe
+    EXPECT_TRUE (phon_.IsValidSyllable(L"x",  L"oe", L"", Tone::None, kModern));   // xoe
+    EXPECT_TRUE (phon_.IsValidSyllable(L"x",  L"o\x0103", L"n", Tone::None, kModern)); // xoăn
+    // Rejected — onset not in the allowed set:
+    EXPECT_FALSE(phon_.IsValidSyllable(L"r",  L"oe", L"", Tone::None, kModern));   // roe (English "rose")
+    EXPECT_FALSE(phon_.IsValidSyllable(L"s",  L"oe", L"", Tone::None, kModern));   // soe
+    EXPECT_FALSE(phon_.IsValidSyllable(L"b",  L"oe", L"", Tone::None, kModern));   // boe
+    EXPECT_FALSE(phon_.IsValidSyllable(L"d",  L"o\x0103", L"n", Tone::None, kModern)); // doăn
+}
+
 //=============================================================================
 // CanComplete — partial syllable extensibility (auto-exclusion gate)
 //=============================================================================

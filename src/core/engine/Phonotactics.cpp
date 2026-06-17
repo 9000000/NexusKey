@@ -271,6 +271,19 @@ constexpr std::wstring_view kValidCodas[] = {
     return wantsFront == rules.IsFrontBaseVowel(firstBase);
 }
 
+[[nodiscard]] bool IsAllowedOnsetForOe(std::wstring_view onset) noexcept {
+    return onset.empty() ||
+           onset == L"ch" ||
+           onset == L"h" ||
+           onset == L"kh" ||
+           onset == L"l" ||
+           onset == L"ng" ||
+           onset == L"nh" ||
+           onset == L"t" ||
+           onset == L"tr" ||
+           onset == L"x";
+}
+
 // =============================================================================
 // Core priority logic for tone placement: P1 horn > P2 modified > P3 diphthong /
 // triphthong > P4 rightmost. Operates on a rendered wstring_view of the vowel
@@ -458,6 +471,11 @@ bool Phonotactics::IsValidSyllable(
 
     // Onset / vowel front-back agreement (c/k, g/gh, ng/ngh). qu exempted.
     if (!IsOnsetVowelAgreementValid(rules_, onset, vowelSeq)) return false;
+
+    // oe and oă only allow specific initial consonants
+    if (vowelSeq.starts_with(L"oe") || vowelSeq.starts_with(L"o\x0103")) { // oă
+        if (!IsAllowedOnsetForOe(onset)) return false;
+    }
 
     // Closed vowels must NOT have a coda.
     if (!coda.empty() && IsClosedVowelSeq(vowelSeq)) return false;
