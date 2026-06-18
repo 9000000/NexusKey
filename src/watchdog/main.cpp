@@ -76,13 +76,23 @@ std::wstring GetVKeyExePath() {
     std::wstring path(self);
     auto pos = path.find_last_of(L"\\/");
     if (pos == std::wstring::npos) return {};
-    return path.substr(0, pos) + L"\\VKey.exe";
+    std::wstring dir = path.substr(0, pos);
+
+    // Classic and Sciter ship in separate ZIPs, so only one EXE is present per
+    // install. Prefer VKeyClassic.exe when it exists; otherwise fall back to the
+    // Sciter VKey.exe. (If both were extracted into one folder, Classic wins.)
+    std::wstring classicPath = dir + L"\\VKeyClassic.exe";
+    DWORD attrs = GetFileAttributesW(classicPath.c_str());
+    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        return classicPath;
+    }
+    return dir + L"\\VKey.exe";
 }
 
 bool RespawnVKey() {
     std::wstring exePath = GetVKeyExePath();
     if (exePath.empty()) {
-        LogLine(L"RespawnVKey: cannot resolve VKey.exe path");
+        LogLine(L"RespawnVKey: cannot resolve VKey path");
         return false;
     }
 
@@ -130,7 +140,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             if (heartbeat) CloseHandle(heartbeat);
             if (graceful) CloseHandle(graceful);
 
-            if (!IsProcessAlive(L"VKey.exe")) {
+            if (!IsProcessAlive(L"VKey.exe") && !IsProcessAlive(L"VKeyClassic.exe")) {
                 LogLine(L"Heartbeat events absent + process not running → respawn");
                 RespawnVKey();
                 Sleep(POST_RESPAWN_GRACE_MS);
@@ -159,7 +169,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         }
 
         // Stale + no graceful — but is process actually dead?
-        if (IsProcessAlive(L"VKey.exe")) {
+        if (IsProcessAlive(L"VKey.exe") || IsProcessAlive(L"VKeyClassic.exe")) {
             LogLine(L"Heartbeat stale but process alive (UI hung?) — NOT respawning");
             Sleep(POST_RESPAWN_GRACE_MS);
             continue;

@@ -9,6 +9,7 @@
 #include "ComUtils.h"
 #include "resource.h"
 #include "core/Strings.h"
+#include "core/ipc/SharedState.h"
 #include <strsafe.h>
 #include <shellapi.h>
 
@@ -220,7 +221,14 @@ IFACEMETHODIMP LanguageBarButton::OnMenuSelect(UINT wID) {
             if (pos != std::wstring::npos) {
                 exePath = exePath.substr(0, pos + 1);
             }
-            exePath += L"VKey.exe";
+            bool useClassic = false;
+            if (controller_) {
+                SharedState state = controller_->GetSharedStateManager()->Read();
+                if (state.IsValid() && (state.flags & SharedFlags::CLASSIC_MODE)) {
+                    useClassic = true;
+                }
+            }
+            exePath += useClassic ? L"VKeyClassic.exe" : L"VKey.exe";
 
             ShellExecuteW(nullptr, L"open", exePath.c_str(), L"--settings", nullptr, SW_SHOW);
             break;

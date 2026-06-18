@@ -491,6 +491,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     if (g_sharedState.Create()) {
         SharedState state;
         state.InitDefaults();
+        state.flags |= SharedFlags::CLASSIC_MODE;
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
         state.spellCheck = config.spellCheckEnabled ? 1 : 0;
         state.optimizeLevel = config.optimizeLevel;
