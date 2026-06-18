@@ -4,7 +4,16 @@
 
 **✨ Tính năng mới & Cải tiến:**
 - Mặc định phím chuyển Ctrl+Shift và bật kiểm tra chính tả + tự động khôi phục phím, giúp đồng bộ trải nghiệm với unikey
+- Hỗ trợ cài đặt nhanh và tự động cập nhật qua WinGet cho cả 2 phiên bản (Sciter và Classic)
 
+**⚡ Cài đặt nhanh qua WinGet:**
+```powershell
+# Bản mặc định (giao diện Sciter.JS)
+winget install PhatMT97.VKey
+
+# Bản Classic (giao diện native Win32)
+winget install PhatMT97.VKey.Classic
+```
 **🛠 Sửa lỗi:**
 - Classic version không bật được TSF
 - Sửa lỗi không thoát được dấu khi viết tắt đmd

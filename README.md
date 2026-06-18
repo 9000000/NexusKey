@@ -92,9 +92,23 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 
 ## Cài đặt
 
+Bạn có thể cài đặt VKey theo các cách sau:
+
+### Cách 1: Cài đặt nhanh qua WinGet (Khuyến nghị)
+Mở Command Prompt hoặc PowerShell và chạy lệnh sau:
+```powershell
+# Cài đặt bản tiêu chuẩn (giao diện Sciter.JS)
+winget install PhatMT97.VKey
+
+# Hoặc cài đặt bản Classic (nhẹ, native Win32)
+winget install PhatMT97.VKey.Classic
+```
+
+### Cách 2: Tải file Zip trực tiếp
 1. Tải phiên bản mới nhất tại **[Releases](https://github.com/phatMT97/VKey/releases)**.
-2. Giải nén và chạy `VKey.exe`.
-3. *(Khuyến nghị)* Tắt các bộ gõ khác (Unikey, EVKey) để tránh xung đột.
+2. Giải nén và chạy `VKey.exe` (hoặc `VKeyClassic.exe` đối với bản Classic).
+
+*(Khuyến nghị)* Tắt các bộ gõ khác (Unikey, EVKey) trước khi chạy để tránh xung đột.
 
 > **Ký số (Code signing):** Dịch vụ ký số (Authenticode) trên Windows cho VKey được cung cấp miễn phí bởi [SignPath.io](https://signpath.io/), chứng chỉ ký số bởi [SignPath Foundation](https://signpath.org/).
 
@@ -235,9 +249,23 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 
 ### Installation
 
+You can install VKey using one of the following methods:
+
+#### Method 1: Via WinGet (Recommended)
+Open Command Prompt or PowerShell and run:
+```powershell
+# Install standard edition (Sciter.JS UI)
+winget install PhatMT97.VKey
+
+# Or install Classic edition (lightweight, native Win32)
+winget install PhatMT97.VKey.Classic
+```
+
+#### Method 2: Direct Zip Download
 1. Download the latest version from **[Releases](https://github.com/phatMT97/VKey/releases)**.
-2. Extract and run `VKey.exe`.
-3. *(Recommended)* Disable other IMEs (Unikey, EVKey) to avoid conflicts.
+2. Extract and run `VKey.exe` (or `VKeyClassic.exe` for the Classic edition).
+
+*(Recommended)* Disable other IMEs (Unikey, EVKey) before running to avoid conflicts.
 
 > **Code signing:** Free Authenticode code signing on Windows for VKey is provided by [SignPath.io](https://signpath.io/), with the certificate issued by [SignPath Foundation](https://signpath.org/).
 
