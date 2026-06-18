@@ -10,6 +10,10 @@ on:
         description: 'Include tests in the build'
         type: boolean
         default: false
+      include_sciter:
+        description: 'Include Sciter UI build'
+        type: boolean
+        default: true
       include_classic:
         description: 'Include Classic UI (Lite) build'
         type: boolean
@@ -32,7 +36,8 @@ jobs:
     runs-on: windows-2022
     outputs:
       artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
-      has-classic: ${{ steps.check-classic.outputs.has_classic }}
+      has-classic: ${{ steps.check-builds.outputs.has_classic }}
+      has-sciter: ${{ steps.check-builds.outputs.has_sciter }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,19 +56,23 @@ jobs:
         run: bash tools/audit/check_hook_thread_no_mutex.sh
 
       - name: Configure
+        if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
         run: cmake -B build -G "Visual Studio 17 2022" -A x64
 
       - name: Build VKey
+        if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
         run: cmake --build build --config Release --target VKeyApp
 
       - name: Build TSF DLL
+        if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
         run: cmake --build build --config Release --target VKeyTSF
 
       - name: Build Watchdog
+        if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
         run: cmake --build build --config Release --target VKeyWatchdog
 
       - name: Build tests
-        if: github.event_name != 'workflow_dispatch' || inputs.include_tests
+        if: (github.event_name != 'workflow_dispatch' || inputs.include_sciter) && (github.event_name != 'workflow_dispatch' || inputs.include_tests)
         # VKeyTestRunnerTests is gitignored at repo level (.gitignore on
         # Main), so it's absent on fresh CI checkouts. CMakeLists.txt skips
         # add_subdirectory when the dir is missing — only build it if present.
@@ -75,7 +84,7 @@ jobs:
           fi
 
       - name: Run tests
-        if: github.event_name != 'workflow_dispatch' || inputs.include_tests
+        if: (github.event_name != 'workflow_dispatch' || inputs.include_sciter) && (github.event_name != 'workflow_dispatch' || inputs.include_tests)
         run: ctest --test-dir build --build-config Release --output-on-failure
 
       # --- Classic UI (Lite) build ---
@@ -85,25 +94,44 @@ jobs:
 
       - name: Build Classic UI
         if: github.event_name != 'workflow_dispatch' || inputs.include_classic
-        run: cmake --build build-classic --config Release --target VKeyLite
+        run: |
+          cmake --build build-classic --config Release --target VKeyLite
+          cmake --build build-classic --config Release --target VKeyTSF
+          cmake --build build-classic --config Release --target VKeyWatchdog
 
       # --- Gather unsigned binaries ---
       - name: Gather unsigned binaries
-        id: check-classic
+        id: check-builds
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path unsigned-binaries
-          Copy-Item "build/Release/VKey.exe" "unsigned-binaries/" -Force
-          Copy-Item "build/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
-          Copy-Item "build/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
-          # Bundled Sciter runtime ships unsigned from the vendor — route it through
-          # SignPath so every binary in the release ZIP is Authenticode-signed.
-          Copy-Item "extern/sciter/bin/sciter.dll" "unsigned-binaries/" -Force
+          
+          $hasSciter = "false"
+          if (Test-Path "build/Release/VKey.exe") {
+            Copy-Item "build/Release/VKey.exe" "unsigned-binaries/" -Force
+            Copy-Item "build/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
+            Copy-Item "build/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
+            # Bundled Sciter runtime ships unsigned from the vendor — route it through
+            # SignPath so every binary in the release ZIP is Authenticode-signed.
+            Copy-Item "extern/sciter/bin/sciter.dll" "unsigned-binaries/" -Force
+            $hasSciter = "true"
+          }
+          
           $hasClassic = "false"
           if (Test-Path "build-classic/Release/VKeyClassic.exe") {
             Copy-Item "build-classic/Release/VKeyClassic.exe" "unsigned-binaries/" -Force
+            # VKeyTSF.dll / VKeyWatchdog.exe are identical across editions — VKEY_LITE_MODE
+            # only affects the VKeyLite app target, not the TSF DLL or watchdog. So reuse the
+            # Sciter copies when present; only fall back to the Classic build's own copies for
+            # a classic-only run (where build/ was never configured).
+            if ($hasSciter -ne "true") {
+              Copy-Item "build-classic/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
+              Copy-Item "build-classic/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
+            }
             $hasClassic = "true"
           }
+          
+          echo "has_sciter=$hasSciter" >> $env:GITHUB_OUTPUT
           echo "has_classic=$hasClassic" >> $env:GITHUB_OUTPUT
 
       - name: Upload unsigned binaries for signing
@@ -149,29 +177,40 @@ jobs:
       - name: Reconstruct release layout
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Force -Path dist
-          Copy-Item "signed-binaries/VKey.exe" "dist/" -Force
-          Copy-Item "signed-binaries/VKeyTSF.dll" "dist/" -Force
-          Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist/" -Force
-          Copy-Item "signed-binaries/sciter.dll" "dist/" -Force
-          
           New-Item -ItemType Directory -Force -Path upload-payload
-          Copy-Item "dist/*" "upload-payload/" -Force
+          
+          if ("${{ needs.build.outputs.has-sciter }}" -eq "true") {
+            New-Item -ItemType Directory -Force -Path dist
+            Copy-Item "signed-binaries/VKey.exe" "dist/" -Force
+            Copy-Item "signed-binaries/VKeyTSF.dll" "dist/" -Force
+            Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist/" -Force
+            Copy-Item "signed-binaries/sciter.dll" "dist/" -Force
+            Copy-Item "dist/*" "upload-payload/" -Force
+          }
           
           if ("${{ needs.build.outputs.has-classic }}" -eq "true") {
             New-Item -ItemType Directory -Force -Path dist-classic
             Copy-Item "signed-binaries/VKeyClassic.exe" "dist-classic/" -Force
             # VKeyTSF.dll is REQUIRED — RegisterTsf() does LoadLibrary("<exe-dir>\VKeyTSF.dll").
             # Without it the Classic build cannot register TSF even when run elevated (issue #199).
+            # The TSF DLL + watchdog are identical to the Sciter edition, so reuse the same
+            # signed root binaries instead of shipping a second signed copy.
             Copy-Item "signed-binaries/VKeyTSF.dll" "dist-classic/" -Force
             Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist-classic/" -Force
 
-            Copy-Item "signed-binaries/VKeyClassic.exe" "upload-payload/" -Force
+            # VKeyClassic.exe is the only file unique to the Classic edition. The shared
+            # TSF/watchdog are already in upload-payload from the Sciter branch; add them here
+            # only for a classic-only run where the Sciter branch didn't execute.
+            Copy-Item "dist-classic/VKeyClassic.exe" "upload-payload/" -Force
+            if ("${{ needs.build.outputs.has-sciter }}" -ne "true") {
+              Copy-Item "dist-classic/VKeyTSF.dll" "upload-payload/" -Force
+              Copy-Item "dist-classic/VKeyWatchdog.exe" "upload-payload/" -Force
+            }
           }
 
       # --- Zip releases ---
       - name: Zip Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-sciter == 'true'
         shell: powershell
         run: |
           Compress-Archive -Path "dist/*" -DestinationPath VKey.zip
@@ -189,7 +228,10 @@ jobs:
         run: |
           # Generate SHA-256 sidecars used by VerifyDownloadedZip (SEC-001)
           # Format: "<hash>  <filename>" (GNU coreutils sha256sum compatible)
-          $files = @("VKey.zip")
+          $files = @()
+          if ("${{ needs.build.outputs.has-sciter }}" -eq "true") {
+            $files += "VKey.zip"
+          }
           if ("${{ needs.build.outputs.has-classic }}" -eq "true") {
             $files += "VKeyClassic.zip"
           }
@@ -200,7 +242,7 @@ jobs:
 
       # --- GitHub build provenance attestation ---
       - name: Attest VKey
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-sciter == 'true'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: VKey.zip
@@ -222,6 +264,28 @@ jobs:
             VKeyClassic.zip
             VKeyClassic.zip.sha256
           fail_on_unmatched_files: false
+
+      # NOTE: winget-releaser only UPDATES an existing package — both
+      # PhatMT97.VKey and PhatMT97.VKey.Classic must be seeded once manually in
+      # microsoft/winget-pkgs (zip InstallerType + NestedInstaller) before these
+      # steps can succeed. Until then the action exits 1 (package not found).
+      - name: Submit VKey (Sciter) to WinGet
+        uses: vedantmgoyal9/winget-releaser@v2
+        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-sciter == 'true'
+        with:
+          identifier: PhatMT97.VKey
+          # Release assets are .zip, not installers — the default regex
+          # (exe|msi|msix|appx) matches nothing. Anchor so VKeyClassic.zip is excluded.
+          installers-regex: '^VKey\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}
+
+      - name: Submit VKey Classic to WinGet
+        uses: vedantmgoyal9/winget-releaser@v2
+        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-classic == 'true'
+        with:
+          identifier: PhatMT97.VKey.Classic
+          installers-regex: '^VKeyClassic\.zip$'
+          token: ${{ secrets.WINGET_TOKEN }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
