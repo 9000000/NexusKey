@@ -596,6 +596,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/AutoCapDecisionTest.cpp
     tests/AutoCapStateTransitionTest.cpp
     tests/CjkSwitchDecisionTest.cpp
+    tests/LeakedKeyDuringSendDecisionTest.cpp
     tests/PerAppModeDecisionTest.cpp
     tests/CommitUndoExemptionTest.cpp
     tests/DigitLedWordDecisionTest.cpp

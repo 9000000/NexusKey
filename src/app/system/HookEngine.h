@@ -611,6 +611,12 @@ private:
     // Release store paired with acquire load on the detector thread.
     // See docs/plans/2026-05-28-anti-dorion-detector-inject-design.md.
     std::atomic<uint64_t> hookFireCount_{0};
+    // vk of the key-down currently being processed (and possibly injecting for).
+    // Stamped before ProcessKeyDown; read on the re-entrant `sending_` branch to
+    // identify a physical key that leaked into the injection window as the
+    // in-flight key's own auto-repeat / key-up (issue #206 reorder fix). 0 = none.
+    // Hook-thread write, hook-thread (re-entrant) read — relaxed atomic suffices.
+    std::atomic<DWORD> sendingForVk_{0};
     // Sprint 2 D3 deleted: dispatch flag isConsoleApp_ — Console hosts now
     // selected via WindowClassification.isConsole → SplitDispatchInjector(5)
     // by the factory; no remaining HookEngine reader. Sprint 2 D4 deleted

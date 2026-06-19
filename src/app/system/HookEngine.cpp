@@ -17,6 +17,7 @@
 #include "core/CjkSwitchDecision.h"
 #include "core/CommitUndoExemption.h"
 #include "core/DigitLedWordDecision.h"
+#include "core/LeakedKeyDuringSendDecision.h"
 #include "core/MacroCase.h"
 #include "core/MacroPrefix.h"
 #include "core/ipc/SharedStateManager.h"
@@ -980,8 +981,30 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
         }
 
         if (nCode == HC_ACTION && self) {
-            // Skip events while we're sending (safety backup)
+            // Skip events while we're sending (safety backup).
             if (self->dispatcher_.IsSending()) {
+                // Issue #206: on a multi-process renderer (Electron/WebView2/RDP)
+                // a physical key that leaked into this injection window —
+                // the in-flight key's own auto-repeat key-down or its key-up —
+                // would otherwise pass through raw and interleave between our
+                // synthetic backspaces/VK_PACKET chars, which the renderer's
+                // async pipeline then reorders ("nhảy loạn"). Eat only the
+                // in-flight key's own no-intent events; any other vk (the
+                // genuinely-typed next key, a modifier release) still passes
+                // through untouched — no dropped keystroke. See
+                // LeakedKeyDuringSendDecision.h for the full rationale.
+                auto inj = self->dispatcher_.GetInjector();
+                const LeakedKeyDuringSendInputs leak{
+                    .isSending = true,
+                    .hasMultiProcessRenderer = inj && inj->HasMultiProcessRenderer(),
+                    .eventVk = pKey->vkCode,
+                    .sendingForVk = self->sendingForVk_.load(std::memory_order_relaxed),
+                };
+                if (DecideEatLeakedKeyDuringSend(leak)) {
+                    HOOK_LOG(L"  EAT (sending_ leak, multi-proc): vk=0x%02X scan=0x%04X flags=0x%08X",
+                             pKey->vkCode, pKey->scanCode, pKey->flags);
+                    return 1;  // suppress — do not interleave into the synth stream
+                }
                 HOOK_LOG(L"  PASSTHRU (sending_): vk=0x%02X scan=0x%04X flags=0x%08X",
                          pKey->vkCode, pKey->scanCode, pKey->flags);
                 return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -1029,6 +1052,10 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
             // std::lock_guard<std::recursive_mutex> _lock(self->stateMutex_);
 
             if (isDown) {
+                // Stamp the in-flight vk BEFORE ProcessKeyDown so the re-entrant
+                // `sending_` branch (above) can recognise this key's own leaked
+                // auto-repeat / key-up during the injection it is about to start.
+                self->sendingForVk_.store(pKey->vkCode, std::memory_order_relaxed);
                 if (self->ProcessKeyDown(pKey->vkCode, pKey->scanCode, pKey->flags)) {
                     HOOK_LOG(L"  → EATEN (key-down vk=0x%02X)", pKey->vkCode);
                     return 1;  // Eat the keystroke
