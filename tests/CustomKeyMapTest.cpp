@@ -169,6 +169,90 @@ TEST_F(CustomKeyMapTest, UserDefinedWNoStartStillAppliesHornMidWord) {
     EXPECT_EQ(engine2.Peek(), L"tơ");
 }
 
+// =====================================================================
+// Issue #205 — the three "Dấu móc / trăng" tiers must be distinct:
+//   HornW                ("Móc chung (ă,ư,ơ)")      → combine ONLY, w always literal
+//   HornOrInsertUNoStart ("Móc hoặc ư (trừ đầu từ)") → combine + insert ư mid-word
+//   HornOrInsertU        ("Móc hoặc ư")              → combine + insert ư everywhere
+// Reporter mapped w=HornW and got w→ư at word start (P8 firing). HornW is
+// the full-Telex `w` action; P8 must be suppressed in UserDefined so "Móc
+// chung" means combine-only. Full Telex/Combined keep P8 (separate tests).
+// =====================================================================
+
+// Tier 1 — HornW combine-only: standalone w (no a/u/o to combine) stays literal
+// EVERYWHERE — word start AND after a consonant onset (the #205 complaint).
+TEST_F(CustomKeyMapTest, Issue205_HornW_StandaloneStaysLiteral) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornW;
+
+    TypingEngine e1(cfg);
+    TypeString(e1, L"w");
+    EXPECT_EQ(e1.Peek(), L"w");   // word start: literal, NOT ư
+
+    TypingEngine e2(cfg);
+    TypeString(e2, L"W");
+    EXPECT_EQ(e2.Peek(), L"W");   // uppercase: literal W, NOT Ư
+
+    TypingEngine e3(cfg);
+    TypeString(e3, L"thw");
+    EXPECT_EQ(e3.Peek(), L"thw"); // after consonant onset: literal, NOT thư
+}
+
+// Tier 1 — HornW still combines an existing a/u/o vowel (the action's real job).
+TEST_F(CustomKeyMapTest, Issue205_HornW_StillCombinesVowel) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornW;
+
+    TypingEngine e1(cfg);
+    TypeString(e1, L"aw");
+    EXPECT_EQ(e1.Peek(), L"ă");
+
+    TypingEngine e2(cfg);
+    TypeString(e2, L"uw");
+    EXPECT_EQ(e2.Peek(), L"ư");
+
+    TypingEngine e3(cfg);
+    TypeString(e3, L"ow");
+    EXPECT_EQ(e3.Peek(), L"ơ");
+
+    // To get "thư" under combine-only the user types the vowel first: thu + w.
+    TypingEngine e4(cfg);
+    TypeString(e4, L"thuw");
+    EXPECT_EQ(e4.Peek(), L"thư");
+}
+
+// Tier 3 — HornOrInsertU keeps full-Telex insert at word start, incl. case.
+TEST_F(CustomKeyMapTest, Issue205_HornOrInsertU_InsertsEverywhere) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertU;
+
+    TypingEngine e1(cfg);
+    TypeString(e1, L"w");
+    EXPECT_EQ(e1.Peek(), L"ư");
+
+    TypingEngine e2(cfg);
+    TypeString(e2, L"W");
+    EXPECT_EQ(e2.Peek(), L"Ư");   // case preserved now insert flows via fallback
+
+    TypingEngine e3(cfg);
+    TypeString(e3, L"thw");
+    EXPECT_EQ(e3.Peek(), L"thư");
+}
+
+// Tier 2 — NoStart: literal at word start, insert ư after a consonant onset.
+TEST_F(CustomKeyMapTest, Issue205_NoStart_LiteralAtStartInsertMidWord) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertUNoStart;
+
+    TypingEngine e1(cfg);
+    TypeString(e1, L"W");
+    EXPECT_EQ(e1.Peek(), L"W");    // word start: literal
+
+    TypingEngine e2(cfg);
+    TypeString(e2, L"thw");
+    EXPECT_EQ(e2.Peek(), L"thư");  // after consonant onset: insert ư
+}
+
 // Helper: mirror the full default UserDefined keymap that the Settings UI
 // writes when the user picks the Telex-style preset (see config.toml shipped
 // with the app). English-protection regression tests below depend on this

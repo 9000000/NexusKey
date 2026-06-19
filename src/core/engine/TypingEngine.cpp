@@ -758,6 +758,10 @@ bool TypingEngine::HandleHornOrInsertU(TypingAction action, wchar_t keyChar) {
     if (HandleHornInsert(TypingAction::HornInsertU, keyChar)) {
         if (states_.size() > beforeSize) {
             states_.back().synthetic = true;
+            // HandleHornInsert ignores case (bracket keys have none). With HornW's
+            // P8 now off in UserDefined (issue #205), this fallback is the primary
+            // insert path for the "Móc hoặc ư" options — preserve W→Ư as P8 did.
+            states_.back().isUpper = iswupper(keyChar) != 0;
         }
         return true;
     }
@@ -1295,7 +1299,15 @@ bool TypingEngine::HandleHornW(TypingAction /*action*/, wchar_t c) {
     // After a non-cluster vowel (e.g., "re" + w), 'w' is treated as literal — no Vietnamese
     // word has a vowel followed by standalone ư via P8.
     // In QU cluster, don't insert standalone ư (let 'w' be literal: "quew" → "quew")
-    if (config_.inputMethod != InputMethod::SimpleTelex && !IsInQUCluster()) {
+    //
+    // UserDefined excluded (issue #205): there, HornW backs the "Móc chung
+    // (ă,ư,ơ)" option, which is combine-ONLY — `a/u/o + w` → `ă/ư/ơ`, and a
+    // standalone `w` stays literal. Inserting a fresh ư is the job of the two
+    // "Móc hoặc ư" options (HornOrInsertU / HornOrInsertUNoStart), which call
+    // HandleHornW for the combine step and then run their own HandleHornInsert
+    // fallback. Full Telex / Combined keep P8 so word-initial ư types as `w`.
+    if (config_.inputMethod != InputMethod::SimpleTelex &&
+        config_.inputMethod != InputMethod::UserDefined && !IsInQUCluster()) {
         bool hasNonClusterVowel = false;
         for (size_t i = 0; i < states_.size(); ++i) {
             if (!states_[i].IsVowel()) continue;
