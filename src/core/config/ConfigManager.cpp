@@ -117,14 +117,35 @@ private:
     std::unordered_map<std::string, Entry> entries_;
 };
 
-TomlFileCache g_tomlCache;
+/// Immortal (never-destroyed) accessor for the process-wide TOML cache.
+///
+/// MUST NOT be a plain global / Meyers static: at process exit the CRT
+/// runs static destructors on the main thread while OTHER threads are
+/// still alive — detached auto-update / toast threads in `main.cpp`
+/// (Sleep 30s / 1s, never joined) and any later-destructed global in a
+/// different TU whose dtor calls `ConfigManager::Load*`. A destructed
+/// `unordered_map` has its bucket-array pointer nulled by `~vector`
+/// while `_Mask` keeps the default 8-bucket value (7), so a post-dtor
+/// `find()` dereferences `[null + (hash & 7) * 16 + 8]` → access
+/// violation reading 0x78 (observed crash, RVA 0x73906, v4.1.0.0).
+///
+/// Leaking the instance keeps `entries_` valid for the full process
+/// lifetime — the OS reclaims the memory at exit, so there is no real
+/// leak and no use-after-destruction window.
+/// Not `noexcept`: the one-time `new` can throw `std::bad_alloc`, which
+/// must propagate to the caller's try/catch (LoadFromFile et al.) so a
+/// config read degrades to defaults rather than terminating the process.
+TomlFileCache& TomlCache() {
+    static TomlFileCache* const instance = new TomlFileCache();
+    return *instance;
+}
 
 /// Cached replacement for `toml::parse_file`. Returns a copy of the
 /// cached table on hit, fresh parse on miss. Throws to mirror the
 /// original `toml::parse_file` semantics — callers' try/catch blocks
 /// continue to handle errors uniformly without source changes.
 toml::table ParseTomlCached(const std::string& utf8Path) {
-    auto cached = g_tomlCache.Load(utf8Path);
+    auto cached = TomlCache().Load(utf8Path);
     if (cached) return *cached;
     // Cache miss (file missing or parse error) — re-attempt parse so
     // the caller sees a real toml::parse_error exception rather than
@@ -195,7 +216,7 @@ bool WriteToml(const std::string& utf8Path, const toml::table& tbl) {
         return false;
     }
 #endif
-    g_tomlCache.Invalidate(utf8Path);
+    TomlCache().Invalidate(utf8Path);
     return true;
 }
 

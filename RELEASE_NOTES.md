@@ -3,6 +3,7 @@
 [![Signed by SignPath](https://img.shields.io/badge/Signed_by-SignPath-blue)](https://signpath.io)
 
 **✨ Tính năng mới & Cải tiến:**
+- Cải thiện độ ổn định của engine
 - Mặc định phím chuyển Ctrl+Shift và bật kiểm tra chính tả + tự động khôi phục phím, giúp đồng bộ trải nghiệm với unikey
 - Hỗ trợ cài đặt nhanh và tự động cập nhật qua WinGet cho cả 2 phiên bản (Sciter và Classic)
 
@@ -19,6 +20,8 @@ winget install PhatMT97.VKey.Classic
 - Sửa lỗi không thoát được dấu khi viết tắt đmd
 - Sửa lỗi kiểm tra chính tả - tự động không phục hồi khi gõ "rose"
 - Sửa lỗi không chọn được kiểu gõ Telex + VNI/Tự định nghĩa ở phiên bản classic
+- Sửa lỗi telex tự định nghĩa hoạt động không đúng
+- Sửa lỗi báo lỗi khi thoát app bằng menu chuột phải
 
 ---
 
