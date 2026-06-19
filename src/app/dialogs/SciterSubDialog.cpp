@@ -76,6 +76,8 @@ SciterSubDialog::SciterSubDialog(const SubDialogConfig& config)
             if (!classes.empty()) {
                 body.set_attribute("class", classes.c_str());
             }
+            TypingConfig typingCfg = ConfigManager::LoadOrDefault();
+            body.set_attribute("data-enable-toast", typingCfg.enableToast ? L"true" : L"false");
         }
         if (GetLanguage() == Language::English) {
             htmlRoot.set_attribute("lang", L"en");

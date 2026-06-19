@@ -329,40 +329,55 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
+    // Helper to flush dirty settings before launching a subprocess
+    auto flushBeforeSpawn = [&]() {
+        if (s_instance && s_instance->configDirty_) {
+            KillTimer(hwnd, TIMER_DEFERRED_SAVE);
+            s_instance->saveToToml();
+        }
+    };
+
     // Deferred: open excluded apps dialog as subprocess
     // (must be a separate process — Sciter SOM assertion fires if a sciter::window
     //  is destroyed while the Sciter runtime is still active in this process)
     if (msg == WM_VKEY_OPEN_EXCLUDED) {
+        flushBeforeSpawn();
         SpawnSubprocess(L"VKey - Excluded Apps", L"--excludedapps");
         return 0;
     }
 
     if (msg == WM_VKEY_OPEN_TSFAPPS) {
+        flushBeforeSpawn();
         SpawnSubprocess(L"VKey - TSF Apps", L"--tsfapps");
         return 0;
     }
 
     if (msg == WM_VKEY_OPEN_MACRO) {
+        flushBeforeSpawn();
         SpawnSubprocess(L"VKey - Macro Table", L"--macro");
         return 0;
     }
 
     if (msg == WM_VKEY_OPEN_APPOVERRIDES) {
+        flushBeforeSpawn();
         SpawnSubprocess(L"VKey - App Overrides", L"--appoverrides");
         return 0;
     }
 
     if (msg == WM_VKEY_OPEN_SPELLEXCL) {
+        flushBeforeSpawn();
         SpawnSubprocess(L"VKey - Spell Exclusions", L"--spellexclusions");
         return 0;
     }
 
     if (msg == WM_VKEY_OPEN_USERDEFINED) {
+        flushBeforeSpawn();
         SpawnSubprocess(L"VKey - User Defined Input", L"--userdefined");
         return 0;
     }
 
     if (msg == WM_VKEY_OPEN_HOTKEYS) {
+        flushBeforeSpawn();
         SpawnSubprocess(L"VKey - Phím tắt", L"--hotkeys");
         return 0;
     }
@@ -670,6 +685,14 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
             }
         }
         config_.debugLogEnabled = value;
+    }
+    else if (id == L"enable-toast") {
+        config_.enableToast = value;
+        sciter::dom::element root = get_root();
+        sciter::dom::element body = root.find_first("body");
+        if (body.is_valid()) {
+            body.set_attribute("data-enable-toast", value ? L"true" : L"false");
+        }
     }
     else if (id == L"allow-english-bypass") {
         config_.allowEnglishBypass = value;
@@ -1085,6 +1108,13 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"restore-key", config_.autoRestoreEnabled);
     setToggleState(L"cjk-auto-switch", config_.cjkAutoSwitch);
     setToggleState(L"debug-log", config_.debugLogEnabled);
+    setToggleState(L"enable-toast", config_.enableToast);
+    {
+        sciter::dom::element body = root.find_first("body");
+        if (body.is_valid()) {
+            body.set_attribute("data-enable-toast", config_.enableToast ? L"true" : L"false");
+        }
+    }
     setToggleState(L"allow-english-bypass", config_.allowEnglishBypass);
     setToggleState(L"suggest-keep-chars", config_.suggestKeepChars);
     setToggleState(L"use-macro", config_.macroEnabled);

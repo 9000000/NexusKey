@@ -306,6 +306,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.allowEnglishBypass = (*features)["allow_english_bypass"].value_or(false);
             config.suggestKeepChars = (*features)["suggest_keep_chars"].value_or(false);
             config.debugLogEnabled = (*features)["debug_log"].value_or(false);
+            config.enableToast = (*features)["enable_toast"].value_or(true);
             config.macroTriggerSpace = (*features)["macro_trigger_space"].value_or(true);
             config.macroTriggerEnter = (*features)["macro_trigger_enter"].value_or(true);
             config.macroTriggerTab = (*features)["macro_trigger_tab"].value_or(true);
@@ -397,6 +398,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("allow_english_bypass", config.allowEnglishBypass);
         features.insert_or_assign("suggest_keep_chars", config.suggestKeepChars);
         features.insert_or_assign("debug_log", config.debugLogEnabled);
+        features.insert_or_assign("enable_toast", config.enableToast);
         features.insert_or_assign("macro_trigger_space", config.macroTriggerSpace);
         features.insert_or_assign("macro_trigger_enter", config.macroTriggerEnter);
         features.insert_or_assign("macro_trigger_tab", config.macroTriggerTab);

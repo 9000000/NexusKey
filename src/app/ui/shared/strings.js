@@ -107,6 +107,8 @@ var STRINGS = {
         "s.debug_log": "Enable debug log",
         "s.debug_log_tooltip": "Write detailed log to a file you can attach when reporting bugs. File lives next to VKey.exe (VKey_*.log).",
         "s.open_log_folder": "Open log folder",
+        "s.enable_toast": "Show notifications (toast)",
+        "s.enable_toast_tooltip": "Show small notifications at the top when settings are changed or lists are modified.",
 
         // Tab 4: About
         "s.tagline": "Modern Vietnamese Input Method",

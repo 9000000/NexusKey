@@ -2,10 +2,16 @@
 
 // Global dropdown controller instance
 var dropdownController = null;
+var isFullyLoaded = false;
 
 document.ready = function () {
     initSubDialog(".app-list");
     initExcludedAppsDialog();
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            isFullyLoaded = true;
+        });
+    });
 };
 
 function initExcludedAppsDialog() {
@@ -230,6 +236,10 @@ function addAppToList(name, mode) {
     item.appendChild(deleteBtn);
 
     list.appendChild(item);
+
+    if (isFullyLoaded && typeof showToastI18n === "function") {
+        showToastI18n("Đã thêm ứng dụng: " + name, "Added application: " + name);
+    }
 }
 
 // Called by C++ after a mode change to update a single row's badge.
@@ -244,6 +254,11 @@ function setAppItemMode(name, mode) {
             break;
         }
     }
+
+    if (isFullyLoaded && typeof showToastI18n === "function") {
+        var lockMode = (mode === 1 || mode === "1") ? "V" : "E";
+        showToastI18n("Đã khóa " + name + " ở chế độ: " + lockMode, name + " locked to: " + lockMode);
+    }
 }
 
 // Called by C++ to remove a single item without full reload
@@ -257,6 +272,10 @@ function removeAppFromList(name) {
             items[i].remove();
             break;
         }
+    }
+
+    if (isFullyLoaded && typeof showToastI18n === "function") {
+        showToastI18n("Đã xóa ứng dụng: " + name, "Removed application: " + name);
     }
 }
 

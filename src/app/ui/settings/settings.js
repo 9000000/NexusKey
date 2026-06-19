@@ -175,6 +175,31 @@ function initializeToggles() {
                 updateSpellCheckChildren(newState);
             }
 
+            // Toggling the "show toast" switch itself: apply the new value to the
+            // body attribute synchronously so the toast decision below reflects it
+            // immediately (turning ON shows a confirmation, turning OFF stays silent).
+            if (id === "enable-toast") {
+                document.body.setAttribute("data-enable-toast", newState ? "true" : "false");
+            }
+
+            // Show toast message (except show-advanced)
+            if (id !== "show-advanced" && typeof showToastI18n === "function") {
+                if (id === "toggle-language") {
+                    showToastI18n(
+                        "Chế độ gõ: " + (newState ? "Tiếng Anh" : "Tiếng Việt"),
+                        "Typing mode: " + (newState ? "English" : "Vietnamese"));
+                } else {
+                    var row = this.closest(".setting-row");
+                    var labelEl = row ? row.querySelector(".setting-label") : null;
+                    var labelText = labelEl ? labelEl.textContent.trim() : "";
+                    if (labelText) {
+                        showToastI18n(
+                            (newState ? "Đã bật: " : "Đã tắt: ") + labelText,
+                            (newState ? "Enabled: " : "Disabled: ") + labelText);
+                    }
+                }
+            }
+
             // Defer C++ notification to next frame so toggle animation starts instantly.
             requestAnimationFrame(function() {
                 var hiddenInput = document.getElementById("val-" + id);

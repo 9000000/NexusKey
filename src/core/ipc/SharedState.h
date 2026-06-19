@@ -61,6 +61,10 @@ namespace FeatureFlags {
     constexpr uint32_t ALLOW_ENGLISH_BYPASS  = 0x00020000;
     constexpr uint32_t DEBUG_LOG_ENABLED     = 0x00040000;  // Settings → System → "Bật debug log"
     constexpr uint32_t SUGGEST_KEEP_CHARS    = 0x00080000;  // Settings → Bảng gõ → "BS giữ chữ khi có gợi ý"
+    // NOTE: the "show toast" setting is intentionally NOT a feature flag — it is a
+    // UI-only (EXE-side) cosmetic option read from TOML by the Settings/sub-dialogs
+    // and never consumed by the hook/DLL/engine. Keeping it out of the cross-process
+    // bitmask preserves the scarce extFeatureFlags bits for engine features.
 }
 
 /// Document context anchor published by TSF (readonly mode) for HookEngine.

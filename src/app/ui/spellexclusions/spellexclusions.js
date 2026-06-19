@@ -1,8 +1,15 @@
 // Spell Check Exclusions Dialog JavaScript
 
+var isFullyLoaded = false;
+
 document.ready = function () {
     initSubDialog(".app-list");
     initSpellExclusionsDialog();
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            isFullyLoaded = true;
+        });
+    });
 };
 
 function initSpellExclusionsDialog() {
@@ -109,6 +116,10 @@ function addToList(name) {
     item.appendChild(deleteBtn);
 
     list.appendChild(item);
+
+    if (isFullyLoaded && typeof showToastI18n === "function") {
+        showToastI18n("Đã thêm ngoại lệ chính tả: " + name, "Added spell check exclusion: " + name);
+    }
 }
 
 // Called by C++ to remove a single item
@@ -122,6 +133,10 @@ function removeFromList(name) {
             items[i].remove();
             break;
         }
+    }
+
+    if (isFullyLoaded && typeof showToastI18n === "function") {
+        showToastI18n("Đã xóa ngoại lệ chính tả: " + name, "Removed spell check exclusion: " + name);
     }
 }
 

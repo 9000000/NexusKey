@@ -415,3 +415,43 @@ a {
 a:hover {
     color: var(--color-primary-hover);
 }
+
+/* ============================================
+   VKEY TOAST NOTIFICATIONS
+   Sleek glassmorphic capsule centered at the top
+   ============================================ */
+.vkey-toast {
+    position: fixed;
+    top: -50px; /* Start offscreen for slide-down */
+    left: 50%;
+    transform: translate(-50%, 0);
+    padding: 10px 24px; /* Distinct padding */
+    border-radius: 24px; /* Full capsule round */
+    font-family: system-ui, 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
+    font-size: 14px; /* Prominent size */
+    font-weight: 700; /* Extra bold highlight */
+    z-index: 999999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease, top 0.2s ease;
+    text-align: center;
+    white-space: nowrap;
+
+    /* Accent border, text colour, and glow follow the theme tokens (they flip
+       automatically in dark mode). The fill is kept solid/opaque — a translucent
+       background on a transparent Sciter window disables ClearType and blurs the
+       text — so only that one value is overridden per theme below. */
+    background-color: #ffffff;
+    border: 2px solid var(--color-primary);
+    color: var(--text-primary);
+    box-shadow: 0 10px 30px var(--color-primary-medium), 0 4px 12px rgba(0, 0, 0, 0.15); /* Glowing shadow */
+}
+
+.vkey-toast.visible {
+    opacity: 1;
+    top: 55px; /* Slide down to visible position */
+}
+
+body.dark .vkey-toast {
+    background-color: #1e293b; /* Opaque dark fill (see note above) */
+}

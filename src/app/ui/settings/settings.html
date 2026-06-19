@@ -710,6 +710,25 @@
                                 </div>
                                 <input type="hidden" id="val-floating-icon" value="0">
                             </div>
+                            <!-- Toast notification toggle -->
+                            <div class="setting-row tooltip-upwards" id="row-enable-toast">
+                                <span class="setting-label" data-i18n="s.enable_toast">Hiển thị thông báo (toast)</span>
+                                <button class="btn-info"
+                                    data-tooltip="Hiển thị thông báo nhỏ ở góc trên khi thay đổi cài đặt hoặc thêm/xóa dữ liệu."
+                                    data-i18n-tooltip="s.enable_toast_tooltip"><svg xmlns="http://www.w3.org/2000/svg"
+                                        width="16" height="16" viewBox="0 0 256 256" style="pointer-events: none;">
+                                        <path
+                                            d="M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm0,192a84,84,0,1,1,84-84A84.09,84.09,0,0,1,128,212Zm20-36a12,12,0,0,1-12,12,20,20,0,0,1-20-20V128a12,12,0,0,1,0-24,20,20,0,0,1,20,20v40A12,12,0,0,1,148,176ZM112,84a16,16,0,1,1,16,16A16,16,0,0,1,112,84Z">
+                                        </path>
+                                    </svg></button>
+                                <div class="spacer" style="width: *"></div>
+                                <div class="toggle-switch-small" id="enable-toast">
+                                    <span class="toggle-label-i">I</span>
+                                    <span class="toggle-label-o">O</span>
+                                    <div class="toggle-thumb-small"></div>
+                                </div>
+                                <input type="hidden" id="val-enable-toast" value="1">
+                            </div>
                             <!-- 8. Debug log -->
                             <div class="setting-row tooltip-upwards" id="row-debug-log">
                                 <span class="setting-label" data-i18n="s.debug_log">Bật debug log</span>

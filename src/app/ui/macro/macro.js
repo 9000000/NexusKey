@@ -2,6 +2,10 @@
 
 var MACRO_CLIPBOARD_THRESHOLD = 200;
 
+// True while a row is selected and the Add button acts as "Edit" (set by
+// selectMacroItem, cleared once the edit is committed / button text resets).
+var macroEditMode = false;
+
 document.ready = function () {
     initSubDialog(".macro-list");
     initMacroDialog();
@@ -97,6 +101,15 @@ function onAddMacro() {
     document.getElementById("val-macro-content").value = displayToStorage(content);
     triggerAction("add");
 
+    // Toast feedback
+    if (typeof showToastI18n === "function") {
+        if (macroEditMode) {
+            showToastI18n("Đã cập nhật gõ tắt: " + name, "Updated shortcut: " + name);
+        } else {
+            showToastI18n("Đã thêm gõ tắt: " + name, "Added shortcut: " + name);
+        }
+    }
+
     nameField.value = "";
     contentField.value = "";
     updateCharCounter();
@@ -112,6 +125,11 @@ function onDeleteMacro() {
 
     document.getElementById("val-macro-name").value = name;
     triggerAction("delete");
+
+    // Toast feedback
+    if (typeof showToastI18n === "function") {
+        showToastI18n("Đã xóa gõ tắt: " + name, "Deleted shortcut: " + name);
+    }
 
     nameField.value = "";
     document.getElementById("macro-content").value = "";
@@ -131,6 +149,7 @@ function selectMacroItem(element, name, content) {
     updateCharCounter();
 
     document.getElementById("btn-add").textContent = t("m.edit") || "+ S\u1eeda";
+    macroEditMode = true;
 }
 
 function updateAddButtonText() {
@@ -138,6 +157,7 @@ function updateAddButtonText() {
     if (btnAdd) {
         btnAdd.textContent = t("add") || "+ Th\u00eam";
     }
+    macroEditMode = false;
 }
 
 function triggerAction(action) {

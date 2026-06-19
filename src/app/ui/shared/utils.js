@@ -444,3 +444,61 @@ if (typeof document !== "undefined") {
         initCustomTooltips();
     }
 }
+
+// ============================================================
+// PREMIUM TOAST NOTIFICATION SYSTEM
+// Glassmorphic toast with smooth slide-down-and-fade animation
+// ============================================================
+var toastTimeout = null;
+
+function showToast(message) {
+    // Check if toast is enabled
+    var body = document.body;
+    var enableToast = body.getAttribute("data-enable-toast");
+    if (enableToast === "false") {
+        return;
+    }
+
+    // Remove existing toast if any to prevent overlapping
+    var existing = document.querySelector(".vkey-toast");
+    if (existing) {
+        existing.remove();
+        if (toastTimeout) {
+            clearTimeout(toastTimeout);
+            toastTimeout = null;
+        }
+    }
+
+    // Create toast element
+    var toast = document.createElement("div");
+    toast.className = "vkey-toast";
+    toast.textContent = message;
+
+    // Append to body (so it's positioned relative to the window viewport)
+    document.body.appendChild(toast);
+
+    // Fade and slide down
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            toast.classList.add("visible");
+        });
+    });
+
+    // Hide after 2 seconds
+    toastTimeout = setTimeout(function() {
+        toast.classList.remove("visible");
+        // Remove from DOM after fade out completes
+        toastTimeout = setTimeout(function() {
+            toast.remove();
+            toastTimeout = null;
+        }, 200);
+    }, 2000);
+}
+
+// Locale-aware convenience wrapper: picks the EN or VI message based on the
+// current <html lang> (defaults to "vi"). Use this instead of repeating the
+// lang lookup + showToast() guard at every call site.
+function showToastI18n(viMessage, enMessage) {
+    var lang = document.documentElement.getAttribute("lang") || "vi";
+    showToast(lang === "en" ? enMessage : viMessage);
+}

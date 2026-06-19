@@ -115,6 +115,7 @@ struct TypingConfig {
     // tone placement on the next key (e.g., "nex" + BS + 'x' → "neẽ").
     bool suggestKeepChars = false;
     bool debugLogEnabled = false;      // System → "Bật debug log" — runtime-enable NextKey::Logger
+    bool enableToast = true;           // System → "Hiển thị thông báo (toast)"
     bool perfHistogramEnabled = false; // Hidden TOML `[debug] perf_histogram` — Phase 1 per-stage histogram gate
                                        // (docs/plans/2026-05-19-architecture-review-design.md). Off by default;
                                        // overhead is ~one atomic load + branch when off, ≤1% at p99 when on.

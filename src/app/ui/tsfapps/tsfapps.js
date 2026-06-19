@@ -2,10 +2,16 @@
 
 // Global dropdown controller instance
 var dropdownController = null;
+var isFullyLoaded = false;
 
 document.ready = function () {
     initSubDialog(".app-list");
     initTsfAppsDialog();
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            isFullyLoaded = true;
+        });
+    });
 };
 
 function initTsfAppsDialog() {
@@ -179,6 +185,10 @@ function addAppToList(name) {
     item.appendChild(deleteBtn);
 
     list.appendChild(item);
+
+    if (isFullyLoaded && typeof showToastI18n === "function") {
+        showToastI18n("Đã thêm ứng dụng: " + name, "Added application: " + name);
+    }
 }
 
 // Called by C++ to remove a single item without full reload
@@ -192,6 +202,10 @@ function removeAppFromList(name) {
             items[i].remove();
             break;
         }
+    }
+
+    if (isFullyLoaded && typeof showToastI18n === "function") {
+        showToastI18n("Đã xóa ứng dụng: " + name, "Removed application: " + name);
     }
 }
 

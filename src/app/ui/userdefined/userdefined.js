@@ -62,6 +62,14 @@ function onApply() {
     document.getElementById("val-key").value = key;
     document.getElementById("val-key-action").value = action;
     triggerAction("apply");
+
+    // Toast feedback
+    var displayKey = key === " " ? "Space" : key;
+    var label = getActionLabel(action);
+    if (typeof showToastI18n === "function") {
+        showToastI18n("Đã áp dụng: " + displayKey + " -> " + label,
+                      "Applied: " + displayKey + " -> " + label);
+    }
 }
 
 function onClear() {
@@ -72,6 +80,12 @@ function onClear() {
 
     document.getElementById("val-key-action").value = action;
     triggerAction("clear_action");
+
+    // Toast feedback
+    var label = getActionLabel(action);
+    if (typeof showToastI18n === "function") {
+        showToastI18n("Đã xóa phím gán cho: " + label, "Cleared mapping for: " + label);
+    }
 }
 
 function selectKeyItem(element, key, action) {

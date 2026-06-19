@@ -1,11 +1,18 @@
 // App Overrides Dialog JavaScript
 // Handles dropdown selection and C++ communication
 
+var isFullyLoaded = false;
+
 document.ready = function () {
     initSubDialog(".app-list");  // blur + dark + scrollbar + i18n
     initRunningAppsDropdown();
     initButtons();
     initEventDelegation();
+    requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+            isFullyLoaded = true;
+        });
+    });
 };
 
 // ===== Input Method Labels =====
@@ -226,6 +233,10 @@ function addAppToList(appName, inputMethod, encodingOverride, sendMethod) {
     item.appendChild(deleteBtn);
 
     list.appendChild(item);
+
+    if (isFullyLoaded && typeof showToastI18n === "function") {
+        showToastI18n("Đã thêm cấu hình cho: " + appName, "Added override for: " + appName);
+    }
 }
 
 function removeAppFromList(appName) {
@@ -238,6 +249,10 @@ function removeAppFromList(appName) {
             item.remove();
         }
     });
+
+    if (isFullyLoaded && typeof showToastI18n === "function") {
+        showToastI18n("Đã xóa cấu hình của: " + appName, "Removed override for: " + appName);
+    }
 }
 
 function clearInput() {
