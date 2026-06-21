@@ -50,6 +50,17 @@ function initHotkeysDialog() {
         document.getElementById("val-intent").value  = intent;
         document.getElementById("val-enabled").value = newState ? "true" : "false";
         triggerAction("set-enabled");
+
+        // Toast feedback for toggle switch
+        var labels = getIntentLabel(intent);
+        if (typeof showToastI18n === "function") {
+            if (newState) {
+                showToastI18n("Đã bật: " + labels.vi, "Enabled: " + labels.en);
+            } else {
+                showToastI18n("Đã tắt: " + labels.vi, "Disabled: " + labels.en);
+            }
+        }
+
         evt.stopPropagation();
     });
 
@@ -57,11 +68,19 @@ function initHotkeysDialog() {
         // HotkeysDialog accepts both gestures the registry supports.
         allowDoubleTap:    true,
         allowBareModifier: true,
-        onCommit: function (vk, mods, doubleTap, _label) {
+        onCommit: function (vk, mods, doubleTap, label) {
             document.getElementById("val-vk").value         = String(vk);
             document.getElementById("val-mods").value       = String(mods);
             document.getElementById("val-double-tap").value = doubleTap ? "true" : "false";
             triggerAction("add");
+
+            // Toast feedback for adding a hotkey
+            var intent = document.getElementById("val-intent").value;
+            var labels = getIntentLabel(intent);
+            if (typeof showToastI18n === "function") {
+                showToastI18n("Đã thêm phím: " + label + " cho " + labels.vi,
+                              "Added key: " + label + " for " + labels.en);
+            }
         }
     });
 }
@@ -149,4 +168,21 @@ function addTrigger(intent, label, vk, mods, doubleTap) {
 
 function forceRefresh() {
     // No-op for now — chips are static after populate.
+}
+
+// Resolve an Intent string to its localized label for toast messages.
+// VI is sourced from the matching .hotkey-section-title in the DOM (single
+// source of truth — mirrors getActionLabel() in userdefined.js) so toasts
+// never drift from the section headings. EN has no DOM home (HTML is VI-only),
+// so it falls back to a small map, then to the VI label.
+function getIntentLabel(intent) {
+    var titleEl = document.querySelector(
+        '.hotkey-section[data-intent="' + intent + '"] .hotkey-section-title');
+    var vi = titleEl ? (titleEl.textContent || "").trim() : intent;
+    var en = {
+        "cancel-composition": "Cancel composition",
+        "skip-macro":         "Skip macro",
+        "toggle-enabled":     "Toggle IME state"
+    }[intent] || vi;
+    return { vi: vi, en: en };
 }
