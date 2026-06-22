@@ -235,6 +235,29 @@ TEST_F(LoggerRoleTagTest, FallbackFormatWhenNoRoleTag) {
 #endif
 }
 
+TEST_F(LoggerTest, ContentDurableWithoutShutdown) {
+    // Contract guard for the per-line-close removal (the fix for debug-log typing
+    // lag): the file stays open for the whole enable-session, and per-line fflush
+    // alone must make every line durable/readable mid-session — WITHOUT a
+    // Shutdown()/SetEnabled(false) close. Catches a regression where someone drops
+    // the fflush or re-introduces buffering that withholds lines until close.
+    NextKey::Logger::SetEnabled(true);
+    for (int i = 0; i < 100; ++i) {
+        NextKey::Logger::Log(L"durable_line_%d", i);
+    }
+    // Intentionally NO Shutdown() here — read while the handle is still open.
+    std::string contents = ReadAllNarrow(scratch_);
+    EXPECT_NE(contents.find("durable_line_0"), std::string::npos)
+        << "First line must be flushed before any close";
+    EXPECT_NE(contents.find("durable_line_99"), std::string::npos)
+        << "Last line must be flushed before any close";
+    size_t lines = 0;
+    for (char c : contents) if (c == '\n') ++lines;
+    EXPECT_EQ(lines, 100u) << "All 100 lines durable without Shutdown()";
+
+    NextKey::Logger::Shutdown();
+}
+
 TEST_F(LoggerTest, ConcurrentLogDoesNotCrash) {
     // 4 threads × 50 lines each — no torn lines, no crash. Don't test content
     // ordering (atomic append guarantees no interleave within a line, but

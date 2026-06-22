@@ -12,6 +12,7 @@
 #ifdef _WIN32
 #include <Windows.h>
 #include <ShlObj.h>
+#include <share.h>
 #else
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -177,9 +178,15 @@ void OpenFileUnlocked() {
     ResolvedPath() = path;
     // Append mode + UTF-8 transcoding. Filename uniqueness (role tag + minute
     // timestamp, plus _p<PID> for TSF-* roles or same-minute collisions) means
-    // one writer per file. We still fflush after each line so a crash doesn't
-    // lose the tail of the session — issue-#108 bug reports need the last lines.
-    (void)_wfopen_s(&File(), path.c_str(), L"a, ccs=UTF-8");
+    // one writer per file. The handle stays open for the whole enable-session
+    // (closed by SetEnabled(false)/SetInstallDir/SetRoleTag/SetLogPathForTesting
+    // /Shutdown) — opening and closing it per line was a per-keystroke open/close
+    // syscall storm in the LL keyboard hook path (root cause of debug-log typing
+    // lag). _SH_DENYWR keeps the single-writer guarantee while still letting the
+    // user open/read/copy the log while VKey appends. We still fflush after each
+    // line so a crash doesn't lose the tail — issue-#108 bug reports need the
+    // last lines.
+    File() = _wfsopen(path.c_str(), L"a, ccs=UTF-8", _SH_DENYWR);
     if (File()) setvbuf(File(), nullptr, _IOLBF, 4096);
 }
 
@@ -343,10 +350,20 @@ void WriteLineUnlocked(const wchar_t* fmt, va_list args) {
     line[totalLen + 1] = L'\0';
 
     fputws(line, File());
-    // Per-line flush. Crash before next flush loses at most one line — issue
-    // #108-style bug reports need the last lines, so the cost is worth it.
+    // Per-line flush keeps the tail crash-safe (a crash loses at most the line
+    // in flight — issue-#108 bug reports need the last lines). The file is NOT
+    // closed here: it stays open for the whole enable-session. Closing it after
+    // every line meant each keystroke paid an open/close syscall pair (plus an
+    // antivirus scan-on-close) inside the LL keyboard hook — the root cause of
+    // debug-log typing lag. Session-end teardown closes it.
+    //
+    // TODO(perf, Rule 12.2): when debug_log is ON, this fflush (a WriteFile) and
+    // the Mutex() guarding this function still put file-I/O + a lock on the LL-
+    // hook path — a Pillar #1 violation that only the OFF-by-default gate keeps
+    // tolerable. The full fix is async: the hook thread enqueues formatted lines
+    // to a lock-free MPSC queue drained by a background writer. This commit only
+    // removes the per-line open/close storm; async logging is left as a follow-up.
     std::fflush(File());
-    CloseFileUnlocked();
 
 #if defined(_DEBUG) || defined(NEXTKEY_DEBUG)
 #ifdef _WIN32
