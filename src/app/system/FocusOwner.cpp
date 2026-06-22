@@ -9,6 +9,7 @@
 #include "core/Debug.h"
 #include "core/Logger.h"
 #include "core/PerAppModeDecision.h"
+#include "core/WebView2CacheDecision.h"
 
 #include <tlhelp32.h>
 #include <cstdint>
@@ -396,11 +397,26 @@ bool FocusOwner::IsWebView2App(HWND topLevel,
     GetWindowThreadProcessId(topLevel, &pid);
     if (!pid) return false;
 
+    const ULONGLONG now = GetTickCount64();
+
+    // Negative cache: a recent "not WebView2" verdict for this exe lets us skip
+    // the ~150 ms snapshot below. Re-focusing explorer.exe etc. otherwise paid
+    // the full cross-process scan every time (only positives were cached). The
+    // TTL bounds staleness so a lazily-initialized WebView2 host is re-checked.
+    if (auto it = webView2NegativeCache_.find(exeFullPath);
+        it != webView2NegativeCache_.end()) {
+        if (IsWebView2NegativeCacheFresh(now, it->second, kWebView2NegativeTtlMs)) {
+            FOCUS_LOG(L"  IsWebView2App: pid=%u neg-cache hit (skip snapshot)", pid);
+            return false;
+        }
+        // Expired — fall through and re-scan; the store below refreshes the tick.
+    }
+
     // Instrumentation: snapshot APIs below cross process boundaries (loader lock +
     // potential AV hook). Logged so 1-off user reports of post-unlock CPU spikes
     // can be triaged with evidence instead of speculation. See docs/TODO.md
     // "IsWebView2App perf instrumentation".
-    const ULONGLONG t0 = GetTickCount64();
+    const ULONGLONG t0 = now;
     const wchar_t* slash = wcsrchr(exeFullPath.c_str(), L'\\');
     const wchar_t* exeBase = slash ? slash + 1 : exeFullPath.c_str();
     const wchar_t* pass1Result = L"snap_fail";
@@ -444,7 +460,14 @@ bool FocusOwner::IsWebView2App(HWND topLevel,
         }
     }
 
-    if (found) webView2PositiveCache_.insert(exeFullPath);
+    if (found) {
+        webView2PositiveCache_.insert(exeFullPath);
+        webView2NegativeCache_.erase(exeFullPath);  // promote out of the miss set
+    } else {
+        if (webView2NegativeCache_.size() >= kMaxWebView2NegativeCache)
+            webView2NegativeCache_.clear();          // bound growth (see header)
+        webView2NegativeCache_[exeFullPath] = now;   // remember the miss (TTL'd)
+    }
 
     FOCUS_LOG(L"  IsWebView2App: pid=%u exe=\"%s\" pass1=%s pass2=%s result=%d dur=%llums",
              pid, exeBase, pass1Result, pass2Result, found ? 1 : 0,

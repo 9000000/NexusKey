@@ -598,6 +598,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/CjkSwitchDecisionTest.cpp
     tests/LeakedKeyDuringSendDecisionTest.cpp
     tests/PerAppModeDecisionTest.cpp
+    tests/WebView2CacheDecisionTest.cpp
     tests/CommitUndoExemptionTest.cpp
     tests/DigitLedWordDecisionTest.cpp
     tests/LoggerTest.cpp

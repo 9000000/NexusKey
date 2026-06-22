@@ -274,9 +274,24 @@ private:
     bool modeBeforeCjk_        = true;
     bool cachedIsCompatLayout_ = true;
 
-    // WebView2 positive-only cache. Hook-thread only (same single-thread
+    // WebView2 positive cache. Worker-thread only (same single-thread
     // invariant as appProfileCache_) — accessed only from inside Classify.
     std::unordered_set<std::wstring> webView2PositiveCache_;
+
+    // WebView2 negative cache (exe path → tick of last "not WebView2" result).
+    // Without it, every focus change to a non-WebView2 app (explorer.exe, the
+    // VKey EXE itself, …) re-runs the ~150 ms cross-process module/process
+    // snapshot, because only positives were remembered. We cache misses for
+    // kWebView2NegativeTtlMs so repeated focus switches to the same exe are
+    // free, while the TTL still lets a lazily-initialized WebView2 host be
+    // re-detected. Worker-thread only, same invariant as webView2PositiveCache_.
+    // Freshness test lives in core/WebView2CacheDecision.h (Linux-unit-tested).
+    std::unordered_map<std::wstring, std::uint64_t> webView2NegativeCache_;
+    static constexpr std::uint64_t kWebView2NegativeTtlMs = 30'000;  // 30 s
+    // Bound growth: distinct non-WebView2 exes are few in practice, but a never-
+    // shrinking map is still unbounded. On overflow we drop the whole set (worst
+    // case: the next focus per exe re-scans once). Cheap and rarely hit.
+    static constexpr std::size_t kMaxWebView2NegativeCache = 128;
 
     // Thread-safe dynamic hijacker tracking
     std::unordered_set<std::wstring> dynamicHijackers_;
