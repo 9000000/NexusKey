@@ -40,7 +40,11 @@ GateMask EngineRuleRegistry::EvaluateGates(const EngineRuleContext& ctx) const n
     if (ctx.spellCheckDisabled && ctx.config.spellCheckEnabled && !ctx.allowEnglishBypass) {
         raised |= GateMaskFor(GateId::SpellCheck);
     }
-    if (ctx.escapeActive) {
+    // A *circumflex* escape (aaa/eee/ooo → literal aa/ee/oo) must NOT block a
+    // following tone — that is how voọc/soóc/goòng are typed (ooo→oo then a
+    // tone key). All other escape kinds (tone double-press, horn, breve,
+    // stroke) keep blocking the tone as before.
+    if (ctx.escapeActive && ctx.escapeKind != EscapeKind::Circumflex) {
         raised |= GateMaskFor(GateId::ToneEscape);
     }
     return raised;

@@ -193,6 +193,15 @@ private:
     void ProcessChar(wchar_t keyChar, wchar_t lower, bool isUpper);
     void ProcessChar(wchar_t keyChar) { ProcessChar(keyChar, towlower(keyChar), iswupper(keyChar)); }
 
+    // A tone applied to an `ooo→oo`-escaped literal "oo" is provisional: it only
+    // commits if the next key is a valid oo-coda start ('c'→ooc, 'n'→oong).
+    // Any other next key (notably a vowel) means the syllable can never close
+    // validly, so the tone reverts to its literal keystroke. This is what makes
+    // "vooojc"→voọc / "gooofng"→goòng work while "chooose"→choose (not choóe).
+    // Called at PushChar entry with the incoming key's lowercase form; mutates
+    // states_ in place when a revert is needed (no-op otherwise).
+    void RevertProvisionalOoTone(wchar_t lower);
+
     // W7.4: post-ProcessChar finalization (relocate tone / autoUO /
     // UpdateSpellState / English-bias / P8 revert / ZWJF). Lifted from
     // PushChar step 3 so 0b's cc→ch path can finalize without leaking

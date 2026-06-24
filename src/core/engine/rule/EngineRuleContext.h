@@ -35,6 +35,12 @@ struct EngineRuleContext {
     bool         spellCheckDisabled;
     bool         allowEnglishBypass;
     bool         escapeActive;
+    // Which escape kind is active (None when escapeActive is false). Lets the
+    // ToneEscape gate distinguish a *tone* escape (ss/ff → block next tone)
+    // from a *circumflex* escape (ooo→oo → next tone must still apply, so
+    // voọc/soóc/goòng are typable). Defaulted so unrelated rule tests need no
+    // change to their designated-init context builders.
+    EscapeKind   escapeKind = EscapeKind::None;
     LanguageBias bias;
     bool         isVniDigitSeq;
 

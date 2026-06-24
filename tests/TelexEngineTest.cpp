@@ -5246,5 +5246,105 @@ TEST_F(ToneMidSmartAccentTest, Muaw_LateHornAfterValidUaPair) {
     EXPECT_EQ(engine_->Peek(), L"mưa");
 }
 
+// ============================================================================
+// DOUBLE-OO LITERAL WORDS — voọc / soóc / goòng (Telex ooo→oo escape + tone)
+//
+// Telex collapses "oo" → "ô" (không, quốc, sốc), so the rare native words that
+// carry a literal "oo" nucleus (voọc=langur, soóc=shorts, goòng=mining cart)
+// can only be reached via the triple-o escape: ooo→oo, then a tone key. The
+// tone on the escaped oo is PROVISIONAL — it commits only when a valid oo-coda
+// (c→ooc, n→oong) follows, and reverts to its literal keystroke otherwise, so
+// "chooose" stays English "choose" rather than becoming "choóe".
+// ============================================================================
+
+class DoubleOoTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.inputMethod = InputMethod::Telex;
+        config_.spellCheckEnabled = true;   // realistic Vietnamese default
+        config_.optimizeLevel = 0;
+        config_.modernOrtho = false;
+        engine_ = std::make_unique<TypingEngine>(config_);
+    }
+    TypingConfig config_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+
+// --- The feature: toned literal-oo words via ooo→oo escape ---
+TEST_F(DoubleOoTest, Vooojc_ComposesVooc) {
+    TypeString(*engine_, L"vooojc");          // v + ooo(→oo) + j(dot) + c
+    EXPECT_EQ(engine_->Peek(), L"voọc");      // ọ = U+1ECD on the 2nd o
+}
+TEST_F(DoubleOoTest, Sooosc_ComposesSooc) {
+    TypeString(*engine_, L"sooosc");          // s + ooo + s(acute) + c
+    EXPECT_EQ(engine_->Peek(), L"soóc");
+}
+TEST_F(DoubleOoTest, Gooofng_ComposesGoong) {
+    TypeString(*engine_, L"gooofng");         // g + ooo + f(grave) + ng
+    EXPECT_EQ(engine_->Peek(), L"goòng");
+}
+
+// --- No-tone literal-oo words still work (already did, must not regress) ---
+TEST_F(DoubleOoTest, Xooong_ComposesXoong) {
+    TypeString(*engine_, L"xooong");          // xoong = pot
+    EXPECT_EQ(engine_->Peek(), L"xoong");
+}
+TEST_F(DoubleOoTest, Booong_ComposesBoong) {
+    TypeString(*engine_, L"booong");          // boong = (ship) deck
+    EXPECT_EQ(engine_->Peek(), L"boong");
+}
+
+// --- Provisional-tone revert: trailing vowel ⇒ stay literal (English) ---
+TEST_F(DoubleOoTest, Chooose_StaysChoose) {
+    // ooo→oo escape + 's' looks like a tone, but the following 'e' cannot close
+    // an oo syllable, so the tone reverts and 's' returns as a literal letter.
+    TypeString(*engine_, L"chooose");
+    EXPECT_EQ(engine_->Peek(), L"choose");
+}
+TEST_F(DoubleOoTest, Choooc_NoToneStaysLiteral) {
+    TypeString(*engine_, L"choooc");          // no tone key at all
+    EXPECT_EQ(engine_->Peek(), L"chooc");
+}
+
+// --- Common oo→ô words MUST be unchanged (the constraint) ---
+TEST_F(DoubleOoTest, Khoong_StaysKhong) {
+    TypeString(*engine_, L"khoong");
+    EXPECT_EQ(engine_->Peek(), L"không");
+}
+TEST_F(DoubleOoTest, Soocs_StaysSoc) {
+    TypeString(*engine_, L"soocs");           // 2 o's → ô (shock), NOT soóc
+    EXPECT_EQ(engine_->Peek(), L"sốc");
+}
+TEST_F(DoubleOoTest, Quoocs_StaysQuoc) {
+    TypeString(*engine_, L"quoocs");
+    EXPECT_EQ(engine_->Peek(), L"quốc");
+}
+
+// --- VNI mode: no oo→ô collapse, so the words type directly (no escape) ---
+class DoubleOoVniTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.inputMethod = InputMethod::VNI;
+        config_.spellCheckEnabled = true;
+        config_.optimizeLevel = 0;
+        config_.modernOrtho = false;
+        engine_ = std::make_unique<TypingEngine>(config_);
+    }
+    TypingConfig config_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+TEST_F(DoubleOoVniTest, Voo5c_ComposesVooc) {
+    TypeString(*engine_, L"voo5c");           // 5 = nặng
+    EXPECT_EQ(engine_->Peek(), L"voọc");
+}
+TEST_F(DoubleOoVniTest, Soo1c_ComposesSooc) {
+    TypeString(*engine_, L"soo1c");           // 1 = sắc
+    EXPECT_EQ(engine_->Peek(), L"soóc");
+}
+TEST_F(DoubleOoVniTest, Goo2ng_ComposesGoong) {
+    TypeString(*engine_, L"goo2ng");          // 2 = huyền
+    EXPECT_EQ(engine_->Peek(), L"goòng");
+}
+
 }  // namespace
 }  // namespace NextKey

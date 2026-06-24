@@ -136,6 +136,11 @@ void TypingEngine::PushChar(wchar_t keyChar) {
     // W7.1+: build engine-rule ctx + PreClassify dispatch (QuickStartConsonant).
     const wchar_t lower = towlower(keyChar);
     const bool isUpper = iswupper(keyChar);
+
+    // Resolve any provisional oo-tone from a prior ooo→oo escape before this
+    // key is classified (e.g. "chooo" + 's' + 'e': the 'e' reverts the tone so
+    // the result is "choose", not "choóe"; "vooo"+'j'+'c' keeps it → voọc).
+    RevertProvisionalOoTone(lower);
     const EngineRule::EngineRuleContext ruleCtx{
         .keyChar            = keyChar,
         .lower              = lower,
@@ -144,6 +149,7 @@ void TypingEngine::PushChar(wchar_t keyChar) {
         .spellCheckDisabled = spellCheckDisabled_,
         .allowEnglishBypass = config_.allowEnglishBypass,
         .escapeActive       = escape_.isEscaped(),
+        .escapeKind         = escape_.kind,
         .bias               = engProt_.bias,
         .isVniDigitSeq      = false,
         .states             = states_,
@@ -187,6 +193,7 @@ void TypingEngine::PushChar(wchar_t keyChar) {
         postCtx.isVniDigitSeq      = isVniDigitSequence;
         postCtx.spellCheckDisabled = spellCheckDisabled_;
         postCtx.escapeActive       = escape_.isEscaped();
+        postCtx.escapeKind         = escape_.kind;
         postCtx.bias               = engProt_.bias;
         if (ruleRegistry_.DispatchAtPhase(EngineRule::Phase::PostClassify, postCtx, *this)
                 == EngineRule::Result::Veto) return;
@@ -258,10 +265,12 @@ bool TypingEngine::HandleToneFsm(TypingAction action,
             }
             if (!isEscape && !matchesExclusion && !wouldRecover) { asLiteral(); return true; }
         }
-        // Tone escape: same tone pressed twice. Defense-in-depth — the
-        // ToneEscapeGate already keeps ToneRule out when escape is active, so
-        // this branch is only reachable if a future caller bypasses the gate.
-        if (escape_.isEscaped())                                { asLiteral(); return true; }
+        // Tone escape: a tone/horn/breve/stroke escape blocks the next tone.
+        // The ToneEscapeGate already keeps ToneRule out for those, so this is
+        // mostly defense-in-depth — EXCEPT for a circumflex escape (ooo→oo),
+        // which the gate deliberately lets through so a following tone applies
+        // and voọc/soóc/goòng compose. Mirror that exemption here.
+        if (escape_.isEscaped() && !escape_.isEscaped(EscapeKind::Circumflex)) { asLiteral(); return true; }
         // English word block: raw prefix check (Telex keys only).
         if (isTelexTone && effectiveSpellCheck &&
             IsBlockedEnglishTone(rawInput_.data(), rawInput_.size())) {
@@ -1404,6 +1413,42 @@ void TypingEngine::ProcessChar(wchar_t /*c*/, wchar_t lower, bool isUpper) {
     s.isUpper = isUpper;
     s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
     states_.push_back(s);
+}
+
+void TypingEngine::RevertProvisionalOoTone(wchar_t lower) {
+    const size_t count = states_.size();
+    if (count < 2) return;
+    CharState& firstO  = states_[count - 2];
+    CharState& secondO = states_[count - 1];
+    // Two LITERAL o's with no modifier only arise from the ooo→oo escape; a
+    // normal "oo" collapses to a single Circumflex ô, so this never matches a
+    // regular syllable.
+    if (firstO.base != L'o' || secondO.base != L'o') return;
+    if (firstO.mod != Modifier::None || secondO.mod != Modifier::None) return;
+    // The escape-oo tone always lands on the SECOND o (voọc/soóc/goòng). A tone
+    // on the FIRST o is an ordinary toned vowel trailed by a repeated 'o'
+    // (Telex "mó"+o, VNI "ó"+o) and must NOT be disturbed.
+    if (!secondO.HasTone() || firstO.HasTone()) return;
+    // 'c' (→ ooc) and 'n' (→ oong) are the only valid continuations; keep the
+    // tone for those so voọc/soóc/goòng compose.
+    if (lower == L'c' || lower == L'n') return;
+    // Otherwise revert: drop the tone and re-emit the consumed tone key as a
+    // literal char, recovered from rawInput_ via its tracked index. All reads
+    // off secondO happen before the push_back below — a realloc there would
+    // dangle the reference, so nothing touches it afterward.
+    const size_t consumedRawIdx = secondO.toneRawIdx;
+    const wchar_t toneKey =
+        (consumedRawIdx != SIZE_MAX && consumedRawIdx < rawInput_.size())
+            ? rawInput_[consumedRawIdx] : 0;
+    secondO.tone = Tone::None;
+    secondO.toneRawIdx = SIZE_MAX;
+    if (toneKey != 0) {
+        CharState literalToneKey;
+        literalToneKey.base = towlower(toneKey);
+        literalToneKey.isUpper = iswupper(toneKey) != 0;
+        literalToneKey.rawIdx = consumedRawIdx;
+        states_.push_back(literalToneKey);
+    }
 }
 
 //-----------------------------------------------------------------------------

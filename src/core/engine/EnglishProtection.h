@@ -295,6 +295,12 @@ template<typename CharStateT>
         // Free-marking via a trailing 'e' later promotes e → ê and
         // RelocateToneToTarget moves any tone onto the new ê.
         if (v0 == 5 && v1 == 1) continue;
+        // Exception: o+o — the only way a literal "oo" pair reaches the buffer
+        // is the ooo→oo circumflex escape (normal "oo" collapses to "ô"). "oo"
+        // is a valid Vietnamese nucleus with coda c/ng (xoong, boong, voọc,
+        // soóc, goòng), so a tone must be allowed to land on it rather than
+        // tripping the HardEnglish guard.
+        if (v0 == 3 && v1 == 3) continue;
         if (kDiphthongClassic[v0][v1] == 0 && kDiphthongModern[v0][v1] == 0) {
             return true;
         }
