@@ -6,6 +6,8 @@
 - Cải thiện độ ổn định của engine
 - Thêm toast hiển thị hành động cho phiên bản hiện đại
 - Mặc định phím chuyển Ctrl+Shift và bật kiểm tra chính tả + tự động khôi phục phím, giúp đồng bộ trải nghiệm với unikey
+- Cho phép gõ các từ như voọc, soóc,...
+- Icon TSF T(đỏ/xanh) tương ứng với mode V/E
 - Hỗ trợ cài đặt nhanh và tự động cập nhật qua WinGet cho cả 2 phiên bản (Sciter và Classic)
 
 **⚡ Cài đặt nhanh qua WinGet:**
