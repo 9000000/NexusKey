@@ -1,0 +1,18 @@
+Windows Registry Editor Version 5.00
+
+; VKey - force the Vietnamese keyboard layout (0000042a) to use the US physical key map.
+;
+; VKey registers its TSF profile under Vietnamese so the language indicator reads "VIE",
+; but VKey produces Vietnamese itself (Telex/VNI) and needs a plain US QWERTY base.
+; The stock Vietnamese layout (KBDVNTC) remaps the number row to tone vowels
+; (1->a-breve, 2->a-circumflex, 3->e-circumflex, 4->o-circumflex ...), which breaks typing.
+; This repoints 0000042a at KBDUS.DLL so the physical keys stay US.
+;
+; APPLY:  double-click this file, accept the prompt, then SIGN OUT and SIGN IN.
+; REVERT: run restore-vietnamese.reg in this folder (also needs sign-out / sign-in).
+; BACKUP (recommended) first, from an Admin Command Prompt:
+;   reg export "HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layouts\0000042a" backup-0000042a.reg
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Keyboard Layouts\0000042a]
+"Layout File"="KBDUS.DLL"
+"Layout Text"="US"

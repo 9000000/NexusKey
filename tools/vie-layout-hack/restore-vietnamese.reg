@@ -1,0 +1,11 @@
+Windows Registry Editor Version 5.00
+
+; VKey - restore the stock Vietnamese keyboard layout (0000042a) defaults.
+; Reverses enable-us-for-vietnamese.reg. SIGN OUT and SIGN IN after applying.
+;
+; If you exported a backup before applying the hack, importing that backup-0000042a.reg
+; is the exact restore and is preferred over this file.
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Keyboard Layouts\0000042a]
+"Layout File"="KBDVNTC.DLL"
+"Layout Text"="Vietnamese"

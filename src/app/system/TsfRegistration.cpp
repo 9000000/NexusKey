@@ -245,10 +245,10 @@ void RunDiagnostics() {
                 out += L"  GetActiveProfile failed\n";
             }
 
-            // 6. Enumerate all profiles for 0x0409
-            out += L"\n--- All 0x0409 Profiles ---\n";
+            // 6. Enumerate all profiles for VKey's registered langid (Vietnamese 0x042A)
+            out += L"\n--- VKey LangID Profiles ---\n";
             IEnumTfInputProcessorProfiles* pEnumRaw = nullptr;
-            hr = pProfileMgr->EnumProfiles(0x0409, &pEnumRaw);
+            hr = pProfileMgr->EnumProfiles(TSF::TEXTSERVICE_LANGID, &pEnumRaw);
             std::unique_ptr<IEnumTfInputProcessorProfiles, decltype(comRelease)>
                 pEnum(SUCCEEDED(hr) ? pEnumRaw : nullptr, comRelease);
 
@@ -363,7 +363,7 @@ bool ActivateVKeyTsfProfile() {
 
     hr = pProfileMgr->ActivateProfile(
         TF_PROFILETYPE_INPUTPROCESSOR,
-        0x0409,
+        TSF::TEXTSERVICE_LANGID,  // Vietnamese (0x042A) — must match RegisterTIP()'s langid
         CLSID_NK,
         GUID_NK_Profile,
         nullptr,
