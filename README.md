@@ -349,6 +349,15 @@ Dự án sử dụng **dual license**:
 - **Sử dụng open-source (AGPL-3.0):** Bạn có thể sử dụng, sửa đổi, phân phối lại toàn bộ mã nguồn với điều kiện giữ nguyên license AGPL-3.0 cho derivative works — bao gồm cả khi cung cấp dưới dạng dịch vụ qua mạng (SaaS).
 - **Sử dụng thương mại/closed-source:** Nếu muốn dùng engine VKey trong sản phẩm proprietary hoặc né nghĩa vụ AGPL, vui lòng liên hệ tác giả để lấy commercial license. Xem [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
 
+### Quy định về việc tham chiếu và sử dụng AI (AI Reference Policy)
+
+Các giải pháp kiến trúc, logic xử lý phím và phương pháp tối ưu trong VKey là thành quả lao động trí tuệ nghiêm túc của tác giả. Chúng tôi hoàn toàn hoan nghênh việc nghiên cứu, học hỏi mã nguồn để phát triển cộng đồng. Tuy nhiên:
+* **Yêu cầu ghi nhận Credit:** Nếu bạn sử dụng các công cụ AI (như ChatGPT, Claude, Gemini,...) hoặc các phương pháp thủ công để phân tích, trích xuất logic, sao chép giải pháp thiết kế hoặc chuyển đổi (port) các phương pháp xử lý đặc thù của VKey sang một bộ gõ/dự án khác, **bắt buộc phải ghi rõ nguồn và dẫn link (credit) tới repository VKey**.
+* **Đạo đức nguồn mở:** Việc lạm dụng AI để tái cấu trúc (refactor/port) mã nguồn VKey nhằm che giấu nguồn gốc, "lách luật" bản quyền hoặc chiếm đoạt chất xám mà không ghi công sẽ bị coi là hành vi đạo văn và vi phạm nghiêm trọng đạo đức phát triển phần mềm mã nguồn mở.
+
+> [!IMPORTANT]
+> **AI Reference Policy:** If you use AI tools (e.g., ChatGPT, Claude, Gemini) to analyze, extract, or port the logic, algorithms, or architectural designs of VKey to another project, **proper credit and a link to this repository are strictly required**. Attempting to bypass copyright or conceal the origin of our code by using AI to rewrite it without attribution is considered plagiarism and a serious breach of open-source ethics.
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/chart?repos=phatMT97/VKey&type=date&legend=top-left)](https://www.star-history.com/?repos=phatMT97%2FVKey&type=date&legend=top-left)
