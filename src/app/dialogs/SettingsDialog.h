@@ -121,6 +121,13 @@ private:
     SystemConfig systemConfig_;    // System settings (startup, admin, show on startup)
     bool vietnameseMode_ = true;   // V/E mode (synced with main process, not persisted)
     bool modeSyncPending_ = false; // Coalescing flag: deferred toggle-language DOM update in flight
+    // Re-entrancy guard for handleToggleChange(). A toggle branch may open a modal
+    // MessageBox / UAC prompt (debug-log warning, TSF register/unregister, run-admin);
+    // its nested message loop re-delivers the SAME Sciter VALUE_CHANGED event back into
+    // handle_event → handleToggleChange before config_ is updated, cascading duplicate
+    // dialogs. Incident 2026-06-24 (debug-log + tsf-apps box spam). Main-thread only, so
+    // a plain bool suffices. Do NOT remove: it keeps the whole handler non-reentrant.
+    bool handlingToggle_ = false;
     bool isExpanded_ = false;
     bool isPinned_ = false;
     bool forceLightTheme_ = false;

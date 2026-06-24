@@ -585,6 +585,18 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
 }
 
 void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
+    // Re-entrancy guard (see SettingsDialog.h::handlingToggle_). Branches below may open
+    // a modal MessageBox / UAC prompt whose nested message loop re-delivers this same
+    // VALUE_CHANGED event into handle_event → here, which would cascade duplicate dialogs
+    // (debug-log warning, TSF register box). Drop the re-entrant call. The RAII reset
+    // covers every early-return path below.
+    if (handlingToggle_) return;
+    handlingToggle_ = true;
+    struct ToggleGuard {
+        bool& flag;
+        ~ToggleGuard() { flag = false; }
+    } toggleGuard{handlingToggle_};
+
     // Map toggle IDs to settings
     if (id == L"toggle-language") {
         // V/E toggle: send to main process via cross-process message
