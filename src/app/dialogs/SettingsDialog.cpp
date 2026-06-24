@@ -11,6 +11,7 @@
 #include "system/PendingDllApply.h"
 #include "system/ToastPopup.h"
 #include "core/Version.h"
+#include "core/WinStrings.h"
 #include "sciter/ScaleHelper.h"
 #include "sciter/SciterHelper.h"
 #include "system/DarkModeHelper.h"
@@ -1150,7 +1151,8 @@ void SettingsDialog::initializeUI() {
     {
         sciter::dom::element verSpan = root.find_first("#app-version-number");
         if (verSpan.is_valid()) {
-            verSpan.set_text(VKEY_VERSION_WSTR);
+            std::wstring verStr = VKEY_VERSION_WSTR L" (Build: " + GetBuildVersion(__DATE__, __TIME__) + L")";
+            verSpan.set_text(verStr.c_str());
         }
         // Also update title bar version
         sciter::dom::element titleText = root.find_first(".title-text");

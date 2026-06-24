@@ -57,7 +57,7 @@ var STRINGS = {
         "s.esc_restore_raw_tooltip": "Press Esc while typing to undo Vietnamese conversion and keep raw keys (e.g. v\u00EDu \u2192 virus)",
         "s.spell_exclusions": "Spell exclusions",
         "s.spell_exclusions_tooltip": "Abbreviation prefixes that bypass spell check (e.g. h\u0111, \u0111p). Prefix match, min 2 chars.",
-        "s.app_encoding": "Per-app encoding",
+        "s.app_encoding": "Per-app / Clipboard",
         "s.config": "Configure",
         "s.temp_off_label": "Temp disable input",
         "s.temp_off_tooltip": "Choose key to temp-disable Vietnamese for current word. Note: Ctrl triggers on a single tap — may activate accidentally.",

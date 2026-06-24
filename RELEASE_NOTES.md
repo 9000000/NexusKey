@@ -4,6 +4,7 @@
 
 **✨ Tính năng mới & Cải tiến:**
 - Cải thiện độ ổn định của engine
+- Thêm toast hiển thị hành động cho phiên bản hiện đại
 - Mặc định phím chuyển Ctrl+Shift và bật kiểm tra chính tả + tự động khôi phục phím, giúp đồng bộ trải nghiệm với unikey
 - Hỗ trợ cài đặt nhanh và tự động cập nhật qua WinGet cho cả 2 phiên bản (Sciter và Classic)
 
@@ -28,3 +29,6 @@ winget install PhatMT97.VKey.Classic
 **Sponsors**
 
 Free code signing on Windows provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Thank you, SignPath! 🙏
+
+---
+Cảm ơn bạn đã lựa chọn VKey! Mọi đóng góp của bạn đều là nguồn động lực lớn giúp bộ gõ ngày càng hoàn thiện hơn. ❤️
