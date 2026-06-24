@@ -10,3 +10,5 @@
 #define IDI_VIET_OFF_WHITE   105
 #define IDI_VIET_ON_BLACK    106
 #define IDI_VIET_OFF_BLACK   107
+// TSF indicator — bold "T", grayscale base recolored to V/E color at runtime
+#define IDI_VIET_TSF         108

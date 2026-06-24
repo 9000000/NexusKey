@@ -13,6 +13,7 @@
 #define IDI_VIET_OFF_WHITE   105
 #define IDI_VIET_ON_BLACK    106
 #define IDI_VIET_OFF_BLACK   107
+#define IDI_VIET_TSF         108
 
 // Icons — Color (default)
 IDI_APP              ICON    "../resources/icon.ico"
@@ -24,6 +25,8 @@ IDI_VIET_OFF_WHITE   ICON    "../resources/status/StatusEng10.ico"
 // Icons — Black (for light taskbar)
 IDI_VIET_ON_BLACK    ICON    "../resources/status/StatusVietBlack.ico"
 IDI_VIET_OFF_BLACK   ICON    "../resources/status/StatusEngBlack.ico"
+// Icon — TSF indicator (grayscale "T", recolored to V/E color at runtime)
+IDI_VIET_TSF         ICON    "../resources/status/StatusTsf.ico"
 
 // Icons — Tab/button UI elements (color)
 IDI_TAB_INPUT        ICON    "../resources/tabs/tab_input.ico"

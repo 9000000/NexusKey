@@ -31,6 +31,7 @@ constexpr UINT WM_VKEY_HOOK_RELOAD = WM_USER + 114;       // Subprocess → Main
 constexpr UINT WM_VKEY_OPEN_USERDEFINED = WM_USER + 115;  // Deferred: open user-defined keymap dialog
 constexpr UINT WM_VKEY_OPEN_HOTKEYS = WM_USER + 116;      // Deferred: open unified hotkey rebind dialog
 constexpr UINT WM_VKEY_ACTIVATE_TSF = WM_USER + 117;      // Main: activate VKey TSF profile programmatically
+constexpr UINT WM_VKEY_TRAY_TSF_SYNC = WM_USER + 118;     // Deferred: sync tray icon TSF indicator (wParam: 1=focused app is TSF, 0=not)
 
 }  // namespace NextKey
 

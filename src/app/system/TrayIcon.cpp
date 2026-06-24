@@ -86,8 +86,7 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
     // Load initial icon based on style
     vietnameseMode_ = initialVietnamese;
     RefreshIcon();
-    StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip),
-                   S(initialVietnamese ? StringId::TIP_VIETNAMESE : StringId::TIP_ENGLISH));
+    UpdateTooltip();
 
     // Register "TaskbarCreated" message to detect explorer.exe restarts
     wmTaskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
@@ -124,9 +123,7 @@ void TrayIcon::SetVietnameseMode(bool enabled) noexcept {
     vietnameseMode_ = enabled;
 
     RefreshIcon();
-
-    StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip),
-        enabled ? S(StringId::TIP_VIETNAMESE) : S(StringId::TIP_ENGLISH));
+    UpdateTooltip();
 
     if (nid_.hWnd) {
         if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
@@ -134,6 +131,30 @@ void TrayIcon::SetVietnameseMode(bool enabled) noexcept {
             // Re-add to recover
             Shell_NotifyIconW(NIM_ADD, &nid_);
         }
+    }
+}
+
+void TrayIcon::SetTsfActive(bool active) noexcept {
+    if (tsfActive_ == active) return;
+    tsfActive_ = active;
+
+    RefreshIcon();
+    UpdateTooltip();
+
+    if (nid_.hWnd) {
+        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
+            Shell_NotifyIconW(NIM_ADD, &nid_);
+        }
+    }
+}
+
+void TrayIcon::UpdateTooltip() noexcept {
+    const wchar_t* base = S(vietnameseMode_ ? StringId::TIP_VIETNAMESE : StringId::TIP_ENGLISH);
+    if (tsfActive_) {
+        // Mark TSF mode so the colored "T" has a discoverable explanation on hover.
+        StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%s \x2022 TSF", base);
+    } else {
+        StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), base);
     }
 }
 
@@ -167,6 +188,24 @@ void TrayIcon::RefreshIcon() noexcept {
     if (customIcon_) {
         DestroyIcon(customIcon_);
         customIcon_ = nullptr;
+    }
+
+    // TSF indicator: when the focused app is a TSF app, show a bold "T" tinted
+    // by the current V/E color (red=Vietnamese, blue=English) — regardless of the
+    // chosen icon style. A colored tray icon itself signals "TSF mode active".
+    // Reuses the Custom-style colorize path (replaces opaque RGB, preserves alpha).
+    if (tsfActive_) {
+        const COLORREF color = static_cast<COLORREF>(
+            vietnameseMode_
+                ? (customColorV_ != 0 ? customColorV_ : DEFAULT_ICON_COLOR_V)
+                : (customColorE_ != 0 ? customColorE_ : DEFAULT_ICON_COLOR_E));
+        HICON tsfIcon = CreateColorizedIcon(IDI_VIET_TSF, color);
+        if (tsfIcon) {
+            customIcon_ = tsfIcon;  // Track for cleanup (freed at top on next refresh)
+            nid_.hIcon = tsfIcon;
+            return;
+        }
+        // Colorize failed — fall through to the normal V/E icon below.
     }
 
     HICON newIcon = nullptr;
@@ -429,6 +468,13 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     // no FindWindow needed here.
     if (msg == WM_VKEY_TRAY_MODE_SYNC && hwnd == hwndMessage_) {
         SetVietnameseMode(wParam != 0);
+        return true;
+    }
+
+    // Deferred TSF-active sync from the focus-change callback (PostMessage pattern).
+    // Marshals onto the tray message thread so Shell_NotifyIconW runs there.
+    if (msg == WM_VKEY_TRAY_TSF_SYNC && hwnd == hwndMessage_) {
+        SetTsfActive(wParam != 0);
         return true;
     }
 

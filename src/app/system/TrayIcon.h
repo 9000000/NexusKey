@@ -86,6 +86,11 @@ public:
     /// Update icon to reflect Vietnamese/English mode
     void SetVietnameseMode(bool enabled) noexcept;
 
+    /// Update icon to reflect whether the focused app is a TSF app.
+    /// When active, the tray shows a bold "T" tinted by the current V/E color
+    /// (red=Vietnamese, blue=English) regardless of the chosen icon style.
+    void SetTsfActive(bool active) noexcept;
+
     /// Set icon style and custom colors (triggers icon refresh)
     void SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE) noexcept;
 
@@ -126,6 +131,7 @@ public:
 private:
     void ShowContextMenu();
     void RefreshIcon() noexcept;  // Reload icon based on current style/mode
+    void UpdateTooltip() noexcept;  // Rebuild szTip from V/E + TSF state
     void ReAddIcon() noexcept;    // Re-register tray icon (after explorer restart or NIM_MODIFY failure)
     [[nodiscard]] HICON CreateColorizedIcon(int baseIconId, COLORREF color) noexcept;
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -133,6 +139,7 @@ private:
     HWND hwndMessage_ = nullptr;
     NOTIFYICONDATAW nid_ = {};
     bool vietnameseMode_ = true;
+    bool tsfActive_ = false;             // Focused app is a TSF app → show colored "T"
     bool toggledByClick_ = false;        // Single-click toggled — undo if double-click follows
     bool ignoreNextLButtonUp_ = false;   // Suppress WM_LBUTTONUP after WM_LBUTTONDBLCLK
     MenuCallback menuCallback_;
