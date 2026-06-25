@@ -173,7 +173,12 @@ inline void RemoveRegistryStartup() noexcept {
     // Secure memory-only PowerShell script string (No %TEMP% XML files required -> 100% secure from TOCTOU)
     // Uses Cmdlets to fully configure Triggers, Actions, and disabled Battery constraints natively.
     std::wstring ps1Args = L"-NoProfile -WindowStyle Hidden -Command \"";
-    ps1Args += L"$A = New-ScheduledTaskAction -Execute '\"" + exeStr + L"\"' -WorkingDirectory '" + dirStr + L"'; ";
+    // -Execute takes the BARE path. Task Scheduler stores it in the structured
+    // <Command> field (launched as lpApplicationName, not a command line), so
+    // embedded quotes would become literal path chars → 0x2 "cannot find the
+    // file" at logon (task fires but launches nothing). Spaces are handled by
+    // Task Scheduler itself. Do NOT wrap exeStr in \" \" (issue #210).
+    ps1Args += L"$A = New-ScheduledTaskAction -Execute '" + EscapePowerShellSingleQuote(exeStr) + L"' -WorkingDirectory '" + EscapePowerShellSingleQuote(dirStr) + L"'; ";
     ps1Args += L"$T = New-ScheduledTaskTrigger -AtLogOn; ";
     ps1Args += L"$T.Delay = 'PT5S'; ";
     ps1Args += L"$S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0; ";
@@ -224,7 +229,9 @@ inline void RemoveRegistryStartup() noexcept {
     // PowerShell registers the task. Watchdog runs at LIMITED RunLevel
     // (NOT Highest) — keeps AV calm, no UAC needed at logon.
     std::wstring ps1Args = L"-NoProfile -WindowStyle Hidden -Command \"";
-    ps1Args += L"$A = New-ScheduledTaskAction -Execute '\"" + watchdogPath + L"\"' -WorkingDirectory '" + dirStr + L"'; ";
+    // Bare path — see CreateScheduledTaskElevated() (issue #210): quotes in the
+    // <Command> field cause 0x2 "cannot find the file" at logon.
+    ps1Args += L"$A = New-ScheduledTaskAction -Execute '" + EscapePowerShellSingleQuote(watchdogPath) + L"' -WorkingDirectory '" + EscapePowerShellSingleQuote(dirStr) + L"'; ";
     ps1Args += L"$T = New-ScheduledTaskTrigger -AtLogOn; ";
     ps1Args += L"$T.Delay = 'PT10S'; ";  // 10s after logon — let VKey come up first
     ps1Args += L"$S = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1); ";
