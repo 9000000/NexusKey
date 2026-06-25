@@ -804,6 +804,14 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         notifyIconChanged();  // Main process reads updated config
         return;
     }
+    else if (id == L"tsf-indicator") {
+        // Issue #209: show colored "T" in TSF apps (opt-in). Same path as the
+        // icon-style dropdown — persist + notify the tray to re-read SystemConfig.
+        systemConfig_.showTsfIndicator = value;
+        saveSystemSettings();
+        notifyIconChanged();
+        return;
+    }
     else if (id == L"force-light-theme") {
         systemConfig_.forceLightTheme = value;
         forceLightTheme_ = value;
@@ -1154,6 +1162,7 @@ void SettingsDialog::initializeUI() {
 
     // Floating icon toggle
     setToggleState(L"floating-icon", systemConfig_.showFloatingIcon);
+    setToggleState(L"tsf-indicator", systemConfig_.showTsfIndicator);
 
     // Auto-check update toggle
     setToggleState(L"check-update", systemConfig_.autoCheckUpdate);

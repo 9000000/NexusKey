@@ -92,7 +92,7 @@ public:
     void SetTsfActive(bool active) noexcept;
 
     /// Set icon style and custom colors (triggers icon refresh)
-    void SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE) noexcept;
+    void SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bool showTsfIndicator) noexcept;
 
     /// Set callback for menu/click actions
     void SetMenuCallback(MenuCallback callback) noexcept { menuCallback_ = std::move(callback); }
@@ -153,6 +153,7 @@ private:
     uint8_t iconStyle_ = 0;              // 0=Color, 1=Dark/White, 2=Light/Black, 3=Custom
     uint32_t customColorV_ = 0;          // Custom V color (COLORREF, 0=default)
     uint32_t customColorE_ = 0;          // Custom E color (COLORREF, 0=default)
+    bool showTsfIndicator_ = false;      // Show colored "T" in TSF apps (issue #209, opt-in)
     HICON customIcon_ = nullptr;          // Cached custom-colorized icon (needs DestroyIcon)
 
     // Cached hotkey text for Quick Convert menu item (updated on config change)

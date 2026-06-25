@@ -56,8 +56,15 @@ class HotkeyManager;       // Forward declaration
 class HookHijackDetector;        // Forward declaration (defined in app/system/HookHijackDetector.h)
 class ReinstallBurstScheduler;   // Forward declaration (defined in app/system/ReinstallBurstScheduler.h)
 
-/// Callback when Vietnamese/English mode changes
-using ModeChangeCallback = std::function<void(bool vietnamese)>;
+/// Callback when Vietnamese/English mode changes.
+/// `sharedMode`  = logical V/E to persist into SharedState (drives the DLL,
+///                 OnTickPoll sync, and per-app restoration).
+/// `displayMode` = what the tray / floating / settings icon should show; equals
+///                 `sharedMode` except in a TSF app whose TIP is not active,
+///                 where the icon is forced to English while the logical mode is
+///                 preserved. Conflating the two clobbered the logical flag and
+///                 made V/E unrecoverable in TSF apps (issue #209).
+using ModeChangeCallback = std::function<void(bool sharedMode, bool displayMode)>;
 
 /// Keyboard hook engine — intercepts keystrokes, processes Vietnamese input,
 /// outputs via SendInput backspace+retype. Absorbs HotkeyManager logic.

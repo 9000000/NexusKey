@@ -12,6 +12,7 @@
 #include "core/ipc/SharedStateManager.h"
 #include "core/Debug.h"
 #include "tsf/Globals.h"
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -319,6 +320,26 @@ void CleanupHkcuClsidOverride() noexcept {
 }
 
 bool ActivateVKeyTsfProfile() {
+    // Throttle (issue #209): WM_VKEY_ACTIVATE_TSF is posted on every toggle-to-V
+    // in a TSF app, so holding/mashing Ctrl+Shift posted it dozens of times a
+    // second — each doing a full CoCreateInstance + ActivateProfile COM round
+    // trip. When the profile cannot activate (e.g. a non-admin session that
+    // cannot session-activate the VIE TIP, hr=0x80004005) the failing call was
+    // retried on every keystroke, flooding the tray message thread ("not
+    // responding"). Back off: a failed activation cools down 2s, a successful
+    // one 200ms (re-activation while already active is a no-op for TSF anyway).
+    // GetActiveProfile would itself need COM init, so a tick-based gate is the
+    // cheap guard that runs before any COM call.
+    static std::atomic<ULONGLONG> lastAttemptTick{0};
+    static std::atomic<bool> lastResult{false};
+    const ULONGLONG now = GetTickCount64();
+    const ULONGLONG prev = lastAttemptTick.load(std::memory_order_acquire);
+    const ULONGLONG cooldownMs = lastResult.load(std::memory_order_acquire) ? 200ULL : 2000ULL;
+    if (prev != 0 && now - prev < cooldownMs) {
+        return lastResult.load(std::memory_order_acquire);
+    }
+    lastAttemptTick.store(now, std::memory_order_release);
+
     // RAII COM lifetime: pairs S_OK/S_FALSE with CoUninitialize and, crucially, does
     // NOT call CoUninitialize when CoInitializeEx failed (e.g. RPC_E_CHANGED_MODE when
     // the calling GUI thread was already initialized with a different apartment model).
@@ -349,6 +370,7 @@ bool ActivateVKeyTsfProfile() {
 
     if (!pProfileMgr) {
         NEXTKEY_LOG(L"[TsfRegistration] CoCreateInstance failed for ITfInputProcessorProfileMgr (hr=0x%08X)", hr);
+        lastResult.store(false, std::memory_order_release);
         return false;
     }
 
@@ -375,7 +397,9 @@ bool ActivateVKeyTsfProfile() {
     }
 
     // pProfileMgr (Release) then comGuard (CoUninitialize) destruct here, in that order.
-    return SUCCEEDED(hr);
+    const bool ok = SUCCEEDED(hr);
+    lastResult.store(ok, std::memory_order_release);
+    return ok;
 }
 
 }  // namespace NextKey

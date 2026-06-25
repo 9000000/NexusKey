@@ -1139,6 +1139,14 @@ void ClassicSettingsDialog::OnSystemToggle(const wchar_t* id, bool value) {
         HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
         if (trayWnd) PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 0, 0);
     }
+    else if (wcscmp(id, L"tsf-indicator") == 0) {
+        // Issue #209: flush TOML + notify tray to re-read SystemConfig so the
+        // tray icon switches between "T" and plain V/E immediately.
+        KillTimer(hwnd_, kTimerDeferredSave);
+        SaveToToml();
+        HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+        if (trayWnd) PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 0, 0);
+    }
     else if (wcscmp(id, L"force-light-theme") == 0) {
         // Re-init theme with new setting, repaint entire window
         theme_.Destroy();

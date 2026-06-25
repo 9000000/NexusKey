@@ -150,20 +150,24 @@ void TrayIcon::SetTsfActive(bool active) noexcept {
 
 void TrayIcon::UpdateTooltip() noexcept {
     const wchar_t* base = S(vietnameseMode_ ? StringId::TIP_VIETNAMESE : StringId::TIP_ENGLISH);
-    if (tsfActive_) {
+    if (tsfActive_ && showTsfIndicator_) {
         // Mark TSF mode so the colored "T" has a discoverable explanation on hover.
+        // Gated with the icon (issue #209): when the T indicator is off, the
+        // tooltip stays plain V/E to match the plain icon.
         StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%s \x2022 TSF", base);
     } else {
         StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), base);
     }
 }
 
-void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE) noexcept {
-    if (iconStyle_ == style && customColorV_ == colorV && customColorE_ == colorE) return;
+void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bool showTsfIndicator) noexcept {
+    if (iconStyle_ == style && customColorV_ == colorV && customColorE_ == colorE
+        && showTsfIndicator_ == showTsfIndicator) return;
 
     iconStyle_ = style;
     customColorV_ = colorV;
     customColorE_ = colorE;
+    showTsfIndicator_ = showTsfIndicator;
 
     RefreshIcon();
 
@@ -194,7 +198,9 @@ void TrayIcon::RefreshIcon() noexcept {
     // by the current V/E color (red=Vietnamese, blue=English) — regardless of the
     // chosen icon style. A colored tray icon itself signals "TSF mode active".
     // Reuses the Custom-style colorize path (replaces opaque RGB, preserves alpha).
-    if (tsfActive_) {
+    // Opt-in (issue #209): testers preferred plain V/E, so this is gated behind
+    // showTsfIndicator_ and OFF by default — fall through to the V/E icon below.
+    if (tsfActive_ && showTsfIndicator_) {
         const COLORREF color = static_cast<COLORREF>(
             vietnameseMode_
                 ? (customColorV_ != 0 ? customColorV_ : DEFAULT_ICON_COLOR_V)
@@ -532,7 +538,8 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     // System config changed (icon style, language, etc.) — re-read from TOML and refresh
     if (msg == WM_VKEY_ICON_CHANGED && hwnd == hwndMessage_) {
         auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
-        SetIconConfig(sysConfig.iconStyle, sysConfig.customColorV, sysConfig.customColorE);
+        SetIconConfig(sysConfig.iconStyle, sysConfig.customColorV, sysConfig.customColorE,
+                      sysConfig.showTsfIndicator);
         SetLanguage(static_cast<Language>(sysConfig.language));
         RefreshConvertHotkeyCache();
         if (iconConfigChangedCallback_) iconConfigChangedCallback_();

@@ -2663,20 +2663,25 @@ void HookEngine::NotifyModeChange() noexcept {
         const bool excluded = isExcludedApp_.load(std::memory_order_acquire);
         const bool forcedV  = isForcedVnApp_.load(std::memory_order_acquire);
         const bool isTsf    = isTsfApp_.load(std::memory_order_acquire);
-        bool displayMode = forcedV ||
+        // sharedMode is the LOGICAL V/E persisted into SharedState. Excluded
+        // apps show English (IME transparent); forced-V apps lock to V.
+        const bool sharedMode = forcedV ||
                             (!excluded && vietnameseMode_.load(std::memory_order_acquire));
         // TSF display override: when the foreground app is a TSF app but the
         // VKey TIP is not the active input processor (user switched to US
-        // keyboard via Win+Space), force the display to English. The logical
-        // VIETNAMESE_MODE stays unchanged in SharedState for restoration when
-        // the user switches back.
+        // keyboard via Win+Space, or ActivateProfile failed), force the ICON to
+        // English. The logical VIETNAMESE_MODE (sharedMode) stays unchanged so
+        // OnTickPoll does not drag the real mode back to E — without this split
+        // every toggle to V in a TSF app was overwritten within one tick,
+        // leaving V/E permanently stuck (issue #209).
+        bool displayMode = sharedMode;
         if (displayMode && isTsf && sharedStatePtr_) {
             SharedState st = sharedStatePtr_->Read();
             if (st.IsValid() && !(st.flags & SharedFlags::TSF_TIP_ACTIVE)) {
                 displayMode = false;
             }
         }
-        modeChangeCallback_(displayMode);
+        modeChangeCallback_(sharedMode, displayMode);
     }
 }
 

@@ -421,19 +421,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_trayIcon.SetMenuCallback(OnMenuCommand);
     g_trayIcon.SetSharedState(&g_sharedState);  // for TSF-update restart menu item
 
-    // Wire mode change callback: HookEngine → defer icon update via PostMessage
-    g_hookEngine.SetModeChangeCallback([](bool vietnamese) {
-        g_sharedState.SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, vietnamese);
-        WPARAM wp = vietnamese ? 1 : 0;
+    // Wire mode change callback: HookEngine → defer icon update via PostMessage.
+    // sharedMode = logical V/E (→ SharedState, drives DLL + OnTickPoll sync);
+    // displayMode = what the icon shows (TSF-icon override, issue #209).
+    g_hookEngine.SetModeChangeCallback([](bool sharedMode, bool displayMode) {
+        g_sharedState.SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, sharedMode);
+        WPARAM wp = displayMode ? 1 : 0;
         HWND trayWnd = g_trayIcon.GetMessageWindow();
         if (trayWnd) {
             PostMessageW(trayWnd, WM_VKEY_TRAY_MODE_SYNC, wp, 0);
         }
         // Floating icon: direct update (same thread, no PostMessage needed)
-        g_floatingIcon.SetVietnameseMode(vietnamese);
+        g_floatingIcon.SetVietnameseMode(displayMode);
         // Notify settings dialog directly (1 hop instead of 2 via TRAY_MODE_SYNC).
         // This keeps the toggle in sync with the tray icon even on rapid clicks.
-        NotifySettingsMode(vietnamese);
+        NotifySettingsMode(displayMode);
     });
 
     // Wire TSF mode callback: HookEngine → SharedState flags for DLL.
@@ -587,7 +589,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     NEXTKEY_LOG(L"HookEngine started, entering message loop");
 
     // Apply system config (icon style, show-on-startup)
-    g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE);
+    g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE,
+                             systemConfig.showTsfIndicator);
 
     InitFloatingIcon(hInstance, systemConfig);
 
@@ -799,7 +802,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     NEXTKEY_LOG(L"Tray icon created, entering message loop");
 
     // Apply system config (icon style, show-on-startup)
-    g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE);
+    g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE,
+                             systemConfig.showTsfIndicator);
 
     InitFloatingIcon(hInstance, systemConfig);
 

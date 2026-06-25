@@ -42,6 +42,12 @@ struct SystemConfig {
     uint32_t customColorV = 0;     // Custom V color (COLORREF, 0 = use default)
     uint32_t customColorE = 0;     // Custom E color (COLORREF, 0 = use default)
 
+    // TSF "T" tray indicator. When false (default) the tray shows the normal
+    // V/E icon even in TSF apps; when true it shows a colored "T" to signal the
+    // focused app is handled by the TSF engine (issue #209 — opt-in: testers
+    // preferred plain V/E, "the main point is E/V").
+    bool showTsfIndicator = false;
+
     // Floating V/E icon overlay (draggable)
     bool showFloatingIcon = false;     // Show floating V/E indicator
     int32_t floatingIconX = INT32_MIN; // Saved X position (INT32_MIN = default)

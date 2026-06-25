@@ -691,6 +691,25 @@
                                     <button class="btn-action btn-small" id="btn-reset-colors">Reset</button>
                                 </div>
                             </div>
+                            <!-- 6c. TSF "T" indicator (issue #209, opt-in) -->
+                            <div class="setting-row tooltip-upwards" id="row-tsf-indicator">
+                                <span class="setting-label" data-i18n="s.tsf_indicator">Hiện icon chữ T cho app TSF</span>
+                                <button class="btn-info"
+                                    data-tooltip="Khi app dùng TSF, hiện icon chữ T (đỏ=V, xanh=E) thay vì icon V/E thường. Tắt để luôn thấy V/E."
+                                    data-i18n-tooltip="s.tsf_indicator_tooltip"><svg xmlns="http://www.w3.org/2000/svg"
+                                        width="16" height="16" viewBox="0 0 256 256" style="pointer-events: none;">
+                                        <path
+                                            d="M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm0,192a84,84,0,1,1,84-84A84.09,84.09,0,0,1,128,212Zm20-36a12,12,0,0,1-12,12,20,20,0,0,1-20-20V128a12,12,0,0,1,0-24,20,20,0,0,1,20,20v40A12,12,0,0,1,148,176ZM112,84a16,16,0,1,1,16,16A16,16,0,0,1,112,84Z">
+                                        </path>
+                                    </svg></button>
+                                <div class="spacer" style="width: *"></div>
+                                <div class="toggle-switch-small" id="tsf-indicator">
+                                    <span class="toggle-label-i">I</span>
+                                    <span class="toggle-label-o">O</span>
+                                    <div class="toggle-thumb-small"></div>
+                                </div>
+                                <input type="hidden" id="val-tsf-indicator" value="0">
+                            </div>
                             <!-- 7. Floating V/E icon -->
                             <div class="setting-row tooltip-upwards">
                                 <span class="setting-label" data-i18n="s.floating_icon">Icon V/E nổi</span>

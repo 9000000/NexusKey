@@ -129,7 +129,8 @@ static void SpawnSettingsDialog() {
             }
 
             // Refresh tray icon style
-            g_trayIcon.SetIconConfig(sysConfig.iconStyle, sysConfig.customColorV, sysConfig.customColorE);
+            g_trayIcon.SetIconConfig(sysConfig.iconStyle, sysConfig.customColorV, sysConfig.customColorE,
+                                     sysConfig.showTsfIndicator);
         } catch (const std::exception& e) {
             CrashLog(L"SpawnSettingsDialog::thread", e.what());
             g_settingsOpen = false;
@@ -527,14 +528,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     g_trayIcon.SetMenuCallback(OnMenuCommand);
     g_trayIcon.SetSharedState(&g_sharedState);  // for TSF-update restart menu item
 
-    // Wire mode change callback: HookEngine -> tray icon + SharedState + floating icon
-    g_hookEngine.SetModeChangeCallback([](bool vietnamese) {
-        g_sharedState.SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, vietnamese);
+    // Wire mode change callback: HookEngine -> tray icon + SharedState + floating icon.
+    // sharedMode = logical V/E (→ SharedState, drives DLL + OnTickPoll sync);
+    // displayMode = what the icon shows (TSF-icon override, issue #209).
+    g_hookEngine.SetModeChangeCallback([](bool sharedMode, bool displayMode) {
+        g_sharedState.SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, sharedMode);
         HWND trayWnd = g_trayIcon.GetMessageWindow();
         if (trayWnd) {
-            PostMessageW(trayWnd, WM_VKEY_TRAY_MODE_SYNC, vietnamese ? 1 : 0, 0);
+            PostMessageW(trayWnd, WM_VKEY_TRAY_MODE_SYNC, displayMode ? 1 : 0, 0);
         }
-        g_floatingIcon.SetVietnameseMode(vietnamese);
+        g_floatingIcon.SetVietnameseMode(displayMode);
     });
 
     // Wire TSF mode callback: HookEngine -> SharedState flags for DLL.
@@ -663,7 +666,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // ── Icon config + floating icon ──
 
-    g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE);
+    g_trayIcon.SetIconConfig(systemConfig.iconStyle, systemConfig.customColorV, systemConfig.customColorE,
+                             systemConfig.showTsfIndicator);
     InitFloatingIcon(hInstance, systemConfig);
 
     // ── Show settings on startup if configured ──
