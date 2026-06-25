@@ -25,6 +25,7 @@ winget install PhatMT97.VKey.Classic
 - Sửa lỗi không chọn được kiểu gõ Telex + VNI/Tự định nghĩa ở phiên bản classic
 - Sửa lỗi telex tự định nghĩa hoạt động không đúng
 - Sửa lỗi báo lỗi khi thoát app bằng menu chuột phải
+- Sửa lỗi không tự khởi động khi chạy quyền admin
 
 ---
 
