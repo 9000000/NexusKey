@@ -564,7 +564,15 @@ void HookEngine::Stop() {
 // same throttled reinstall. HookLifecycle invokes our DrainHookCommands via
 // a callback registered at lifecycle_.Start().
 
-void HookEngine::ToggleVietnameseMode() {
+void HookEngine::ToggleVietnameseMode() noexcept {
+    // Phase 2c/First-word fix: immediately toggle the SharedState flag
+    // so that the TSF DLL in target applications sees the new mode instantly,
+    // avoiding the race condition where the first keystroke of the word is typed
+    // as English.
+    if (sharedStatePtr_) {
+        sharedStatePtr_->ToggleFlag(SharedFlags::VIETNAMESE_MODE);
+    }
+
     // Phase 2c: ToggleVietnameseMode is called from any thread (tray menu
     // on main, hotkey on either main or the hook pump itself when fired
     // via HotkeyRegistry, modifier-only double-tap). All composition-state
@@ -4183,6 +4191,9 @@ void HookEngine::ApplyToggleVNOnHookThread() {
         const DWORD cachedPid = excludedPid_.load(std::memory_order_acquire);
         if (fgPid == cachedPid && cachedPid != 0) {
             HOOK_LOG(L"  ToggleVN: BLOCKED (excluded pid=%u)", cachedPid);
+            if (sharedStatePtr_) {
+                sharedStatePtr_->SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, false);
+            }
             return;
         }
         // Different PID — user already left excluded app, flag is stale.
@@ -4206,6 +4217,9 @@ void HookEngine::ApplyToggleVNOnHookThread() {
         const DWORD cachedPid = forcedVnPid_.load(std::memory_order_acquire);
         if (fgPid == cachedPid && cachedPid != 0) {
             HOOK_LOG(L"  ToggleVN: BLOCKED (forced-V pid=%u)", cachedPid);
+            if (sharedStatePtr_) {
+                sharedStatePtr_->SetOrClearFlag(SharedFlags::VIETNAMESE_MODE, true);
+            }
             return;
         }
         isForcedVnApp_.store(false, std::memory_order_release);
@@ -4219,7 +4233,12 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     CancelCommitUndo();
     digitLedWord_ = false;
 
-    const bool newMode = !vietnameseMode_.load(std::memory_order_acquire);
+    bool newMode = false;
+    if (sharedStatePtr_) {
+        newMode = (sharedStatePtr_->ReadFlags() & SharedFlags::VIETNAMESE_MODE) != 0;
+    } else {
+        newMode = !vietnameseMode_.load(std::memory_order_acquire);
+    }
     vietnameseMode_.store(newMode, std::memory_order_release);
     NEXTKEY_LOG(L"HookEngine: mode = %s (via drain)", newMode ? L"Vietnamese" : L"English");
 

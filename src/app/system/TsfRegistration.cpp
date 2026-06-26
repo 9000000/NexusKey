@@ -31,16 +31,40 @@ std::wstring GetTsfDllPath() {
     return path + L"VKeyTSF.dll";
 }
 
-bool IsTsfRegistered() {
-    std::wstring keyPath = L"CLSID\\";
-    keyPath += TSF::CLSID_TEXTSERVICE_STRING;
+bool IsTsfRegistered() noexcept {
+    // 1. Check if the CLSID key exists
+    std::wstring clsidPath = L"CLSID\\";
+    clsidPath += TSF::CLSID_TEXTSERVICE_STRING;
 
-    HKEY hKey;
-    LSTATUS ls = RegOpenKeyExW(HKEY_CLASSES_ROOT, keyPath.c_str(), 0, KEY_READ, &hKey);
-    if (ls == ERROR_SUCCESS) {
-        RegCloseKey(hKey);
+    HKEY hKeyClsid = nullptr;
+    LSTATUS lsClsid = RegOpenKeyExW(HKEY_CLASSES_ROOT, clsidPath.c_str(), 0, KEY_READ, &hKeyClsid);
+    if (lsClsid != ERROR_SUCCESS) {
+        return false;
+    }
+    RegCloseKey(hKeyClsid);
+
+    // 2. Check if the profile is registered under the correct language (0x0409)
+    // The profile key is Software\Microsoft\CTF\TIP\{CLSID}\LanguageProfile\0x00000409\{ProfileGUID}
+    std::wstring profilePath = L"Software\\Microsoft\\CTF\\TIP\\";
+    profilePath += TSF::CLSID_TEXTSERVICE_STRING;
+    profilePath += L"\\LanguageProfile\\0x00000409\\";
+    profilePath += TSF::GUID_PROFILE_STRING;
+
+    // Check HKEY_LOCAL_MACHINE
+    HKEY hKeyProfile = nullptr;
+    LSTATUS lsProfile = RegOpenKeyExW(HKEY_LOCAL_MACHINE, profilePath.c_str(), 0, KEY_READ, &hKeyProfile);
+    if (lsProfile == ERROR_SUCCESS) {
+        RegCloseKey(hKeyProfile);
         return true;
     }
+
+    // Check HKEY_CURRENT_USER
+    lsProfile = RegOpenKeyExW(HKEY_CURRENT_USER, profilePath.c_str(), 0, KEY_READ, &hKeyProfile);
+    if (lsProfile == ERROR_SUCCESS) {
+        RegCloseKey(hKeyProfile);
+        return true;
+    }
+
     return false;
 }
 

@@ -29,6 +29,11 @@ constexpr const wchar_t* TEXT_SERVICE_DESCRIPTION = L"VKey Vietnamese IME";
 // {DEB18BD1-2331-4F2A-B030-DA9EB0093683}
 constexpr const wchar_t* CLSID_TEXTSERVICE_STRING = L"{DEB18BD1-2331-4F2A-B030-DA9EB0093683}";
 
+// Profile GUID as string for registry checks (matches GUID_Profile in Globals.cpp)
+// {2FE17DA4-D8E2-4B28-8566-C30E8F04BFD4}
+constexpr const wchar_t* GUID_PROFILE_STRING = L"{2FE17DA4-D8E2-4B28-8566-C30E8F04BFD4}";
+
+
 // Register the profile under English (United States), 0x0409. VKey's engine assumes a US
 // QWERTY base and produces Vietnamese itself via Telex/VNI — it does not need the stock
 // Vietnamese layout (KBDVNTC, which remaps the digit row to ăâêô). 0x0409 is in EVERY

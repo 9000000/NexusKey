@@ -120,7 +120,7 @@ public:
     void Stop();
 
     /// Toggle Vietnamese/English mode
-    void ToggleVietnameseMode();
+    void ToggleVietnameseMode() noexcept;
 
     /// Commit any pending composition — called by hotkey callbacks before firing actions
     /// (e.g., Quick Convert) so the text in the document reflects what's on screen.

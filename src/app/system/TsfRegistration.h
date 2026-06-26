@@ -15,7 +15,7 @@ namespace NextKey {
 std::wstring GetTsfDllPath();
 
 /// Check if TSF is registered by looking for CLSID in registry
-bool IsTsfRegistered();
+[[nodiscard]] bool IsTsfRegistered() noexcept;
 
 /// Register TSF DLL (requires admin for HKEY_CLASSES_ROOT)
 bool RegisterTsf();
