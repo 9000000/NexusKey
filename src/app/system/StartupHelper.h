@@ -25,6 +25,7 @@
 #include "UpdateSecurity.h"
 #include "core/config/ConfigManager.h"
 #include "core/SystemConfig.h"
+#include "core/Debug.h"
 
 namespace NextKey {
 
@@ -426,21 +427,40 @@ inline void SetDesktopShortcut(bool enable) {
 
     if (runAsAdmin) {
         // ALWAYS forcefully remove the registry startup to make sure it doesn't conflict
-        // with the Scheduled Task. This prevents lingering non-elevated auto-start entries 
+        // with the Scheduled Task. This prevents lingering non-elevated auto-start entries
         // from causing UAC prompts on every logon.
         RemoveRegistryStartup();
 
         if (IsScheduledTaskRegistered()) return false;  // Task exists, all good
 
-        // Task missing — if we're already elevated, recreate it (no UAC prompt)
+        // Task missing. Only an elevated process can (re)create it without a
+        // silent-startup UAC prompt.
         if (IsRunningAsAdmin()) {
-            if (CreateScheduledTaskElevated()) {
+            // Create, then VERIFY by re-query rather than trusting the bool.
+            // PowerShell's exit code is unreliable when Register-ScheduledTask is
+            // slow (the 10s WaitForSingleObject can return STILL_ACTIVE while the
+            // task is still being written) — that false-negative is what flipped
+            // runAsAdmin off and surfaced as "ticked admin, but it un-ticks
+            // itself" (issue #210).
+            (void)CreateScheduledTaskElevated();
+            if (IsScheduledTaskRegistered()) {
                 RemoveRegistryStartup();
                 return false;
             }
+            // Elevated but the task still isn't there. Keep runAsAdmin=true — the
+            // user explicitly chose it, and silently flipping it off (forcing a
+            // re-toggle) is the worse bug. A later elevated launch retries; don't
+            // add a registry entry (it would reintroduce the double-launch UAC
+            // prompt cfb4ec1 fixed). Just log so the cause is visible in the file.
+            NEXTKEY_LOG(L"EnsureStartupRegistration: elevated but scheduled-task creation failed; keeping runAsAdmin=true, will retry next launch");
+            return false;
         }
 
-        // Not elevated or task creation failed: fall back to registry, sync config
+        // Not elevated and task missing — can't create the elevated task without a
+        // UAC prompt we must not show at silent startup. Fall back to registry so
+        // the app at least auto-starts (non-elevated), and sync config so Settings
+        // reflects reality.
+        NEXTKEY_LOG(L"EnsureStartupRegistration: not elevated and scheduled task missing; falling back to registry startup, disabling admin mode");
         (void)SetRegistryStartup();
         runAsAdmin = false;
         return true;  // Config changed, caller should save
