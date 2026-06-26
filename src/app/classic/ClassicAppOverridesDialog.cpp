@@ -193,6 +193,7 @@ void ClassicAppOverridesDialog::CreateControls() {
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_TABSTOP,
         x + lblW, y3, comboW, Dpi(120), hwnd_, reinterpret_cast<HMENU>(IDC_COMBO_SENDMETHOD), hInstance_, nullptr);
     SendMessageW(comboSendMethod_, CB_SETITEMHEIGHT, (WPARAM)-1, comboInnerH);
+    SendMessageW(comboSendMethod_, CB_SETDROPPEDWIDTH, Dpi(280), 0);
     ComboBox_AddString(comboSendMethod_, L"Theo mặc định");
     ComboBox_AddString(comboSendMethod_, L"Clipboard");
     ComboBox_AddString(comboSendMethod_, L"Tương thích Firefox");

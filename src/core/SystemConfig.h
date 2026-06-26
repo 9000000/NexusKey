@@ -18,10 +18,10 @@ enum class IconStyle : uint8_t {
 };
 
 /// Default icon colors (COLORREF format: 0x00BBGGRR)
-/// V: RGB(243, 98, 103) = #F36267
-/// E: RGB(47, 175, 218)  = #2FAFDA
-inline constexpr uint32_t DEFAULT_ICON_COLOR_V = 0x006762F3;  // BGR
-inline constexpr uint32_t DEFAULT_ICON_COLOR_E = 0x00DAAF2F;  // BGR
+/// V: RGB(232, 17, 35)  = #E81123
+/// E: RGB(0, 120, 215)  = #0078D7
+inline constexpr uint32_t DEFAULT_ICON_COLOR_V = 0x002311E8;  // BGR
+inline constexpr uint32_t DEFAULT_ICON_COLOR_E = 0x00D77800;  // BGR
 
 /// System-level configuration (EXE-only, not shared with DLL)
 /// Stored in [system] section of config.toml
