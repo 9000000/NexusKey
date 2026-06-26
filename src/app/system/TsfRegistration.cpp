@@ -246,7 +246,7 @@ void RunDiagnostics() {
                 out += L"  GetActiveProfile failed\n";
             }
 
-            // 6. Enumerate all profiles for VKey's registered langid (Vietnamese 0x042A)
+            // 6. Enumerate all profiles for VKey's registered langid (English-US 0x0409)
             out += L"\n--- VKey LangID Profiles ---\n";
             IEnumTfInputProcessorProfiles* pEnumRaw = nullptr;
             hr = pProfileMgr->EnumProfiles(TSF::TEXTSERVICE_LANGID, &pEnumRaw);
@@ -385,7 +385,7 @@ bool ActivateVKeyTsfProfile() {
 
     hr = pProfileMgr->ActivateProfile(
         TF_PROFILETYPE_INPUTPROCESSOR,
-        TSF::TEXTSERVICE_LANGID,  // Vietnamese (0x042A) — must match RegisterTIP()'s langid
+        TSF::TEXTSERVICE_LANGID,  // English-US (0x0409) — must match RegisterTIP()'s langid
         CLSID_NK,
         GUID_NK_Profile,
         nullptr,

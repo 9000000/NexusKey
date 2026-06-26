@@ -119,18 +119,12 @@ static HRESULT RegisterTIP() {
         return hr;
     }
 
-    // Declare a US substitute keyboard layout for VKey's profile. This was attempted as a
-    // way to MERGE the duplicate "VIE" switcher entry (a TIP that owns a substitute should
-    // replace the language's base layout, like MS's JP/KO IMEs). VERDICT 2026-06-24: it does
-    // NOT merge on tested Win11 — the substitute is written correctly (SubstituteLayout=
-    // 0x04090409, Enable=1) but Windows still shows a 2nd base entry under the VIE group.
-    // See Globals.h::TEXTSERVICE_LANGID — the 2nd entry is an accepted limitation. Keep this
-    // call anyway: it gives VKey's own entry a US physical base (per-TIP, scoped to VKey,
-    // complementing the machine-wide vie-layout-hack). Do NOT re-attempt the merge here.
-    //
-    // The substitute HKL MUST be a *loaded* layout — passing a raw/unloaded HKL is why an
-    // earlier RegisterProfile attempt E_FAILed (0x80004005) inside regsvr32. Load US first.
-    // KLF_NOTELLSHELL keeps it off the user's active-layout indicator.
+    // Declare a US substitute keyboard layout for VKey's profile. Under langid 0x0409 (see
+    // Globals.h::TEXTSERVICE_LANGID) the base is already US, so the substitute is redundant —
+    // kept harmless to avoid an untested registration change. The substitute HKL MUST be a
+    // *loaded* layout — passing a raw/unloaded HKL is why an earlier RegisterProfile attempt
+    // E_FAILed (0x80004005) inside regsvr32. Load US first; KLF_NOTELLSHELL keeps it off the
+    // user's active-layout indicator.
     HKL usHkl = LoadKeyboardLayoutW(L"00000409", KLF_NOTELLSHELL | KLF_SUBSTITUTE_OK);
 
     // Prefer the modern ProfileMgr::RegisterProfile so the substitute is declared ATOMICALLY
@@ -184,8 +178,8 @@ static HRESULT RegisterTIP() {
         }
     }
 
-    // The system-wide tools/vie-layout-hack/ (0000042a -> KBDUS.DLL) remains as the
-    // belt-and-braces fallback for the *physical* US map if Windows ignores the substitute.
+    // (tools/vie-layout-hack/ was the 0x042A belt-and-braces for the physical US map; it is
+    // OBSOLETE under 0x0409 — there is no Vietnamese layout to override.)
 
     // Enable the profile so it appears in the language bar / input indicator
     hr = pProfiles->EnableLanguageProfile(
