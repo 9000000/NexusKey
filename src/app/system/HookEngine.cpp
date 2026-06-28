@@ -16,6 +16,7 @@
 #include "core/config/ConfigSnapshotBuilder.h"
 #include "core/CjkSwitchDecision.h"
 #include "core/CommitUndoExemption.h"
+#include "core/CommitUndoArmDecision.h"
 #include "core/DigitLedWordDecision.h"
 #include "core/LeakedKeyDuringSendDecision.h"
 #include "core/MacroCase.h"
@@ -1914,32 +1915,22 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
             rawMacroBuffer_ = std::move(savedMacroBuffer);
             macroCrossCommit_ = true;
         }
-        // Enable backspace-into-word for printable commit triggers (space, enter,
-        // digits, punctuation). Navigation keys (arrows, Tab, ESC, etc.) move the
-        // cursor — replay would insert text at the wrong position, so exclude them.
-        // Only if a new entry was just pushed (implies: not auto-restored,
-        // not quick consonant, not empty history).
+        // Decide what happens to the commit-undo window now that a word was
+        // committed. Pure rule lives in core/CommitUndoArmDecision.h (Linux-
+        // testable; HookEngine.cpp is Win32-only). Only act when a new entry was
+        // actually pushed (implies: not auto-restored / quick-consonant / empty).
+        //   Arm   — Space / VNI digits / punctuation: word stays at caret.
+        //   Skip  — navigation keys: caret moved, keep stack but don't arm.
+        //   Clear — Enter: SENDS (chat) or NEW-LINE (editor) → word leaves the
+        //           caret; dropping the window+stack prevents a later Backspace
+        //           from replaying a now-inaccessible word (issue #210 chat
+        //           desync: "2 words stuck" → tones blocked until full delete).
         if (commitState_.PushedToStack()) {
-            bool isNavigation = (vkCode >= VK_LEFT && vkCode <= VK_DOWN) ||
-                vkCode == VK_HOME || vkCode == VK_END ||
-                vkCode == VK_PRIOR || vkCode == VK_NEXT ||
-                vkCode == VK_TAB || vkCode == VK_ESCAPE ||
-                vkCode == VK_DELETE || vkCode == VK_INSERT;
-            if (!isNavigation) {
-                SetCommitUndoReady();
+            switch (DecideCommitUndoArm(static_cast<uint32_t>(vkCode))) {
+                case CommitUndoArm::Arm:   SetCommitUndoReady(); break;
+                case CommitUndoArm::Clear: CancelCommitUndo();   break;
+                case CommitUndoArm::Skip:                        break;
             }
-        }
-        // issue #210: VK_RETURN sends the message (chat apps like Messenger/Zalo)
-        // or breaks to a new line (editors) — either way the just-committed word
-        // leaves the caret. Leaving commit-undo armed+stacked here is what desynced
-        // chat apps: a later Backspace replayed the PREVIOUS message's word back
-        // into the now-empty/new line, so the hook saw "2 words stuck together",
-        // which violates Vietnamese phonotactics → English-bias latch → tones
-        // blocked until the user deleted the whole word. Drop the undo window +
-        // stack on Enter so no stale word can be replayed. (A multiline-editor
-        // Backspace after Enter now just deletes the newline natively — correct.)
-        if (vkCode == VK_RETURN) {
-            CancelCommitUndo();
         }
         if (restored || dispatcher_.SynthEventsPending() > 0) {
             // Re-inject trigger AFTER all pending synthetic events so that:

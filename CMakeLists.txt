@@ -600,6 +600,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/PerAppModeDecisionTest.cpp
     tests/WebView2CacheDecisionTest.cpp
     tests/CommitUndoExemptionTest.cpp
+    tests/CommitUndoArmDecisionTest.cpp
     tests/DigitLedWordDecisionTest.cpp
     tests/LoggerTest.cpp
     tests/HotkeyRegistryTest.cpp
