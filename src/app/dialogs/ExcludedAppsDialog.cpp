@@ -98,6 +98,15 @@ bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params
                     if (!appName.empty()) {
                         setMode(appName, appMode);
                     }
+                } else if (action == L"add-browse") {
+                    // Pick any exe (incl. system/UWP apps not in the running list:
+                    // Windows Search, Task Manager, etc.). addApp() normalizes the
+                    // returned path to its basename. Reuses the import file dialog.
+                    std::wstring picked = ShowOpenFileDialogW(
+                        get_hwnd(),
+                        L"Ứng dụng (*.exe)\0*.exe\0Tất cả (*.*)\0*.*\0",
+                        L"exe");
+                    if (!picked.empty()) addApp(picked, appMode);
                 } else if (action == L"add-current") {
                     startWindowPicking();
                 } else if (action == L"delete") {
@@ -148,7 +157,15 @@ void ExcludedAppsDialog::populateList() {
 }
 
 void ExcludedAppsDialog::addApp(const std::wstring& name, int mode) {
-    std::wstring lower = ToLowerAscii(name);
+    // Match key is the exe basename (the classifier compares cls->exeName). A
+    // typed or browsed full path ("C:\\Windows\\System32\\Taskmgr.exe") would never
+    // match — strip the directory so path entry and the Browse button both resolve
+    // to the basename. No-op for plain names (#209: add native apps by path).
+    std::wstring base = name;
+    if (auto slash = base.find_last_of(L"\\/"); slash != std::wstring::npos) {
+        base = base.substr(slash + 1);
+    }
+    std::wstring lower = ToLowerAscii(base);
 
     // Already present → just update its mode (an app is locked to one mode).
     for (auto& a : appList_) {

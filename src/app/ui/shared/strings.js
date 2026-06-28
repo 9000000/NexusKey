@@ -156,6 +156,7 @@ var STRINGS = {
         // ── Excluded Apps dialog ──
         "ea.app_ph": "e.g.: notepad.exe",
         "ea.excluded_list": "Excluded applications",
+        "ea.browse": "📁 Browse .exe...",
         "ea.import": "Import from file...",
         "ea.export": "Export to file...",
 

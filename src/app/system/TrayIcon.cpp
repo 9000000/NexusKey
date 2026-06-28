@@ -194,13 +194,16 @@ void TrayIcon::RefreshIcon() noexcept {
         customIcon_ = nullptr;
     }
 
-    // TSF indicator: when the focused app is a TSF app, show a bold "T" tinted
-    // by the current V/E color (red=Vietnamese, blue=English) — regardless of the
-    // chosen icon style. A colored tray icon itself signals "TSF mode active".
-    // Reuses the Custom-style colorize path (replaces opaque RGB, preserves alpha).
+    // TSF indicator: show a bold "T" tinted by the current V/E color (red=Vietnamese,
+    // blue=English) — regardless of the chosen icon style. Reuses the Custom-style
+    // colorize path (replaces opaque RGB, preserves alpha).
     // Opt-in (issue #209): testers preferred plain V/E, so this is gated behind
     // showTsfIndicator_ and OFF by default — fall through to the V/E icon below.
-    if (tsfActive_ && showTsfIndicator_) {
+    // NOT gated on tsfActive_ (#209 follow-up): testers wanted the T to track the
+    // per-app lock ("Khóa E/V") AND smart-switch ("Lưu chế độ gõ") states, i.e.
+    // every app — so when enabled the T is the V/E indicator everywhere, colored by
+    // the resolved displayMode (forced-V/E locks already feed the right color).
+    if (showTsfIndicator_) {
         const COLORREF color = static_cast<COLORREF>(
             vietnameseMode_
                 ? (customColorV_ != 0 ? customColorV_ : DEFAULT_ICON_COLOR_V)

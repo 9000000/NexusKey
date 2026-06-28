@@ -73,6 +73,17 @@ function initExcludedAppsDialog() {
         });
     }
 
+    // Browse for an exe (system/UWP apps not in the running list). Carries the
+    // currently-selected E/V mode, same as manual add.
+    var btnBrowse = document.getElementById("btn-browse");
+    if (btnBrowse) {
+        btnBrowse.addEventListener("click", function () {
+            var modeSel = document.getElementById("add-mode");
+            document.getElementById("val-app-mode").value = modeSel ? modeSel.value : "0";
+            triggerAction("add-browse");
+        });
+    }
+
     var btnImport = document.getElementById("btn-import");
     var btnExport = document.getElementById("btn-export");
 
