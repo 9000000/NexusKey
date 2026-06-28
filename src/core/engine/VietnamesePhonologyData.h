@@ -116,14 +116,14 @@ constexpr VCPairRule kVCPairRules[] = {
     // === Double vowels with coda ===
     { Key2(VowelSlot(kI, kNone), VowelSlot(kE, kCirc)),  F_c | F_m | F_n | F_ng | F_p | F_t },  // iê: no ch, nh
     { Key2(VowelSlot(kO, kNone), VowelSlot(kA, kNone)),  F_ALL },                                 // oa: all finals
-    { Key2(VowelSlot(kO, kNone), VowelSlot(kA, kBrev)),  F_c | F_n | F_ng | F_t },               // oă: c, n, ng, t
+    { Key2(VowelSlot(kO, kNone), VowelSlot(kA, kBrev)),  F_c | F_m | F_n | F_ng | F_p | F_t },   // oă: c, m, n, ng, p, t (oăm: khoằm/ngoặm; oăp: ngoặp)
     { Key2(VowelSlot(kO, kNone), VowelSlot(kE, kNone)),  F_m | F_n | F_ng | F_t },               // oe: m, n, ng, t
     { Key2(VowelSlot(kO, kNone), VowelSlot(kO, kNone)),  F_c | F_ng },                            // oo: only c, ng
     { Key2(VowelSlot(kU, kNone), VowelSlot(kA, kCirc)),  F_n | F_ng | F_t },                      // uâ: n, ng, t
     { Key2(VowelSlot(kU, kNone), VowelSlot(kE, kCirc)),  F_ch | F_n | F_nh },                     // uê: ch, n, nh
     { Key2(VowelSlot(kU, kNone), VowelSlot(kO, kCirc)),  F_c | F_m | F_n | F_ng | F_p | F_t },   // uô: no ch, nh
     { Key2(VowelSlot(kU, kNone), VowelSlot(kO, kHorn)),  F_c | F_m | F_n | F_ng | F_p | F_t },   // uơ: no ch, nh
-    { Key2(VowelSlot(kU, kNone), VowelSlot(kY, kNone)),  F_ch | F_n | F_nh | F_t },              // uy: ch, n, nh, t
+    { Key2(VowelSlot(kU, kNone), VowelSlot(kY, kNone)),  F_ch | F_n | F_nh | F_p | F_t },        // uy: ch, n, nh, p, t (uyp: tuýp)
     { Key2(VowelSlot(kU, kHorn), VowelSlot(kO, kHorn)),  F_c | F_m | F_n | F_ng | F_p | F_t },   // ươ: no ch, nh
     { Key2(VowelSlot(kY, kNone), VowelSlot(kE, kCirc)),  F_c | F_m | F_n | F_ng | F_p | F_t },   // yê: same as iê
 

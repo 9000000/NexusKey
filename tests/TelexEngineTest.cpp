@@ -1437,6 +1437,22 @@ TEST_F(TelexEngineTest, RealWord_Hoan) {
     EXPECT_EQ(engine_->Peek(), L"hoằn");
 }
 
+// Issue #213: rare rhymes oăm/oăp/uyp dropped tone (oă/uy missing m/p codas).
+TEST_F(TelexEngineTest, RealWord_Khoam) {
+    TypeString(*engine_, L"khoawmf");  // khoằm (oă + m + grave)
+    EXPECT_EQ(engine_->Peek(), L"khoằm");
+}
+
+TEST_F(TelexEngineTest, RealWord_Ngoap) {
+    TypeString(*engine_, L"ngoawpj");  // ngoặp (oă + p + dot)
+    EXPECT_EQ(engine_->Peek(), L"ngoặp");
+}
+
+TEST_F(TelexEngineTest, RealWord_Tuyp) {
+    TypeString(*engine_, L"tuyps");  // tuýp (uy + p + acute, loanword)
+    EXPECT_EQ(engine_->Peek(), L"tuýp");
+}
+
 TEST_F(TelexEngineTest, RealWord_An) {
     TypeString(*engine_, L"awn");  // ăn
     EXPECT_EQ(engine_->Peek(), L"ăn");

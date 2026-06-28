@@ -1216,9 +1216,14 @@ TEST_F(PhonotacticsValidatorVCPairTest, UÊ_Nh_Valid) {
     EXPECT_EQ(V({T(L'u'), TM(L'e', Modifier::Circumflex), T(L'n'), T(L'h')}), SyllableState::Valid);
 }
 
-// --- Double vowel uy: only ch, n, nh, t ---
+// --- Double vowel uy: ch, n, nh, p, t (p for loanword tuýp, issue #213) ---
 TEST_F(PhonotacticsValidatorVCPairTest, UY_M_Invalid) {
     EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'm')}), SyllableState::Invalid);
+}
+
+TEST_F(PhonotacticsValidatorVCPairTest, UY_P_Valid) {
+    // uyp (tuýp) — issue #213
+    EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'p')}), SyllableState::Valid);
 }
 
 TEST_F(PhonotacticsValidatorVCPairTest, UY_Ng_Invalid) {
@@ -1547,7 +1552,7 @@ TEST_F(PhonotacticsValidatorVCPairTest, OE_T_Valid) {
     EXPECT_EQ(V({T(L'o'), T(L'e'), T(L't')}), SyllableState::Valid);
 }
 
-// --- Diphthong oă: c, n, ng, t allowed; ch, nh, m, p invalid ---
+// --- Diphthong oă: c, m, n, ng, p, t allowed; ch, nh invalid (issue #213) ---
 TEST_F(PhonotacticsValidatorVCPairTest, OĂ_Ch_Invalid) {
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'c'), T(L'h')}), SyllableState::Invalid);
 }
@@ -1556,12 +1561,14 @@ TEST_F(PhonotacticsValidatorVCPairTest, OĂ_Nh_Invalid) {
     EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'n'), T(L'h')}), SyllableState::Invalid);
 }
 
-TEST_F(PhonotacticsValidatorVCPairTest, OĂ_M_Invalid) {
-    EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'm')}), SyllableState::Invalid);
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_M_Valid) {
+    // oăm (khoằm, ngoặm) — issue #213
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'm')}), SyllableState::Valid);
 }
 
-TEST_F(PhonotacticsValidatorVCPairTest, OĂ_P_Invalid) {
-    EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'p')}), SyllableState::Invalid);
+TEST_F(PhonotacticsValidatorVCPairTest, OĂ_P_Valid) {
+    // oăp (ngoặp) — issue #213
+    EXPECT_EQ(V({T(L'o'), TM(L'a', Modifier::Breve), T(L'p')}), SyllableState::Valid);
 }
 
 TEST_F(PhonotacticsValidatorVCPairTest, OĂ_C_Valid) {

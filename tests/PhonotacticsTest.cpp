@@ -399,7 +399,7 @@ TEST_F(PhonotacticsIsValidSyllable, VCPairMultiVowelRules) {
     // uô / ươ: same shape (no ch, nh).
     EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"u\x00F4", L"nh", Tone::None,  kModern));   // buônh wrong
     EXPECT_FALSE(phon_.IsValidSyllable(L"b", L"\x01B0\x01A1", L"ch", Tone::Acute, kModern));  // bươch wrong
-    // oă: F_c|F_n|F_ng|F_t — accepts coda set, rejects nh/ch/m/p.
+    // oă: F_c|F_m|F_n|F_ng|F_p|F_t — accepts coda set, rejects nh/ch (issue #213: m/p now valid — khoằm/ngoặp).
     EXPECT_FALSE(phon_.IsValidSyllable(L"",  L"o\x0103", L"nh", Tone::None, kModern));    // oănh wrong
     // uâ: F_n|F_ng|F_t.
     EXPECT_FALSE(phon_.IsValidSyllable(L"t", L"u\x00E2", L"nh", Tone::None, kModern));    // tuânh wrong
