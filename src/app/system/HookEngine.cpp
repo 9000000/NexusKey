@@ -1929,6 +1929,18 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
                 SetCommitUndoReady();
             }
         }
+        // issue #210: VK_RETURN sends the message (chat apps like Messenger/Zalo)
+        // or breaks to a new line (editors) — either way the just-committed word
+        // leaves the caret. Leaving commit-undo armed+stacked here is what desynced
+        // chat apps: a later Backspace replayed the PREVIOUS message's word back
+        // into the now-empty/new line, so the hook saw "2 words stuck together",
+        // which violates Vietnamese phonotactics → English-bias latch → tones
+        // blocked until the user deleted the whole word. Drop the undo window +
+        // stack on Enter so no stale word can be replayed. (A multiline-editor
+        // Backspace after Enter now just deletes the newline natively — correct.)
+        if (vkCode == VK_RETURN) {
+            CancelCommitUndo();
+        }
         if (restored || dispatcher_.SynthEventsPending() > 0) {
             // Re-inject trigger AFTER all pending synthetic events so that:
             //   (a) auto-restore replacement arrives before the trigger, and
@@ -2683,7 +2695,14 @@ void HookEngine::NotifyModeChange() noexcept {
         // every toggle to V in a TSF app was overwritten within one tick,
         // leaving V/E permanently stuck (issue #209).
         bool displayMode = sharedMode;
-        if (displayMode && isTsf && sharedStatePtr_) {
+        // forced-V is exempt: the per-app hard-V lock owns the icon. TSF_TIP_ACTIVE
+        // is one global flag every TIP instance writes (each Edge renderer / PWA /
+        // frame-host process toggles it, last-writer-wins), so a background or
+        // torn-down TIP's Deactivate clobbers it false while the live foreground TIP
+        // is still typing V — that flicked the icon to E and, because the toggle is
+        // locked in a forced-V app, looked like a hard-lock on E (#209). The lock is
+        // the user's explicit intent; show V unconditionally.
+        if (displayMode && isTsf && !forcedV && sharedStatePtr_) {
             SharedState st = sharedStatePtr_->Read();
             if (st.IsValid() && !(st.flags & SharedFlags::TSF_TIP_ACTIVE)) {
                 displayMode = false;
@@ -3326,6 +3345,28 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
         }
     }
 
+    // Clean up macro buffer on word boundaries (commit triggers) and non-word keys in VN mode
+    if (macroOn && hasMacros) {
+        if (vk == VK_BACK && !rawMacroBuffer_.empty()) {
+            rawMacroBuffer_.pop_back();
+        } else if (IsCommitTrigger(vk)) {
+            // If the trigger was disabled, or if it was enabled but did not result in expansion,
+            // we clear the buffer unless it's a Space character that matches a multi-word macro prefix.
+            bool isSpacePrefix = false;
+            if (vk == VK_SPACE && cfgSnap) {
+                isSpacePrefix = IsSpaceMacroPrefix(rawMacroBuffer_ + L' ', cfgSnap->spaceMacroKeys);
+            }
+            if (!isSpacePrefix) {
+                rawMacroBuffer_.clear();
+                tempMacroOff_ = false;
+            }
+        } else if (!(vk >= 0x41 && vk <= 0x5A)) {
+            // Non-alphabetic and non-commit keys (like F1-F12, modifiers alone, etc.) clear the buffer.
+            rawMacroBuffer_.clear();
+            tempMacroOff_ = false;
+        }
+    }
+
     return NextKey::Pipeline::MacroOutcome::Fallthrough;
 }
 
@@ -3627,24 +3668,14 @@ bool HookEngine::IsOemPunctVk(DWORD vkCode) {
 }
 
 bool HookEngine::IsMacroTrigger(DWORD vkCode) const {
-    // If not a commit trigger natively, it shouldn't trigger macro either
-    if (!IsCommitTrigger(vkCode)) return false;
-
-    // Sprint 1 D6: snapshot the RCU shared_ptr once for the call. The loaded
-    // shared_ptr keeps the config object alive even if a writer (ApplyConfig
-    // / ReloadFromToml) publishes a new config mid-call — safe internal
-    // consistency without stateMutex_ acquisition on the hook hot path.
     auto cfg = config_.load(std::memory_order_acquire);
-    if (vkCode == VK_SPACE) return cfg->macroTriggerSpace;
-    if (vkCode == VK_RETURN) return cfg->macroTriggerEnter;
-    if (vkCode == VK_TAB) return cfg->macroTriggerTab;
-
-    // Direction / Navigation
-    if (vkCode >= VK_LEFT && vkCode <= VK_DOWN) return cfg->macroTriggerDir;
-    if (vkCode == VK_HOME || vkCode == VK_END ||
-        vkCode == VK_PRIOR || vkCode == VK_NEXT) return cfg->macroTriggerDir;
-
-    return true; // Numbers, Punctuation, Esc, etc. default to true if they are commit triggers
+    return NextKey::Macro::ShouldTrigger(
+        static_cast<uint32_t>(vkCode),
+        cfg->macroTriggerSpace,
+        cfg->macroTriggerEnter,
+        cfg->macroTriggerTab,
+        cfg->macroTriggerDir
+    );
 }
 
 HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {

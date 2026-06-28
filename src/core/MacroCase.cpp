@@ -183,4 +183,50 @@ std::vector<Segment> BuildSegments(std::wstring_view expansion, CodeTable codeTa
     return segments;
 }
 
+bool IsCommitTrigger(uint32_t vkCode) noexcept {
+    if (vkCode == 0x20 || vkCode == 0x0D || vkCode == 0x1B) return true;
+    if (vkCode == 0x09) return true;
+
+    // Arrow keys
+    if (vkCode >= 0x25 && vkCode <= 0x28) return true;
+    if (vkCode == 0x24 || vkCode == 0x23 ||
+        vkCode == 0x21 || vkCode == 0x22) return true;
+
+    // Number keys (0-9)
+    if (vkCode >= 0x30 && vkCode <= 0x39) return true;
+
+    // Numpad keys
+    if (vkCode >= 0x60 && vkCode <= 0x6F) return true;
+
+    // OEM keys (punctuation)
+    if (vkCode >= 0xBA && vkCode <= 0xC0) return true;
+    if (vkCode >= 0xDB && vkCode <= 0xDF) return true;
+    if (vkCode == 0xBB || vkCode == 0xBC ||
+        vkCode == 0xBD || vkCode == 0xBE) return true;
+
+    // Delete, Insert
+    if (vkCode == 0x2E || vkCode == 0x2D) return true;
+
+    return false;
+}
+
+bool ShouldTrigger(uint32_t vkCode,
+                   bool triggerSpace,
+                   bool triggerEnter,
+                   bool triggerTab,
+                   bool triggerDir) noexcept {
+    if (!IsCommitTrigger(vkCode)) return false;
+
+    if (vkCode == 0x20) return triggerSpace;
+    if (vkCode == 0x0D) return triggerEnter;
+    if (vkCode == 0x09) return triggerTab;
+
+    // Direction / Navigation
+    if (vkCode >= 0x25 && vkCode <= 0x28) return triggerDir;
+    if (vkCode == 0x24 || vkCode == 0x23 ||
+        vkCode == 0x21 || vkCode == 0x22) return triggerDir;
+
+    return triggerSpace || triggerEnter;
+}
+
 }  // namespace NextKey::Macro

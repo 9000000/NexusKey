@@ -22,6 +22,21 @@ namespace NextKey {
 [[noreturn]] void RunSettingsSubprocess() {
     NEXTKEY_LOG(L"Running settings subprocess");
 
+    // Single control-panel guard (#209). SpawnSettingsSubprocess() already dedups
+    // via FindWindow("VKey Settings"), but that title only exists AFTER the child
+    // creates its window — a double tray/taskbar click spawns two children that
+    // both find nothing and open two panels. The mutex is acquired before window
+    // creation, so the loser focuses the live window (best-effort) and exits.
+    // ponytail: handle leaked deliberately — ExitProcess frees it with the process.
+    HANDLE hSettingsMutex = CreateMutexW(nullptr, TRUE, L"Local\\VKey_Settings_Mutex");
+    if (hSettingsMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (HWND existing = FindWindowW(nullptr, L"VKey Settings")) {
+            SetForegroundWindow(existing);
+        }
+        NEXTKEY_LOG(L"Settings already open — focusing existing, exiting");
+        ExitProcess(0);
+    }
+
     InitSciterSubprocess();
     NEXTKEY_LOG(L"Sciter initialized, creating dialog...");
 

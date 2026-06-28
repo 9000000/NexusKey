@@ -65,4 +65,12 @@ struct Segment {
 [[nodiscard]] std::vector<Segment> BuildSegments(std::wstring_view expansion,
                                                  CodeTable codeTable);
 
+[[nodiscard]] bool IsCommitTrigger(uint32_t vkCode) noexcept;
+
+[[nodiscard]] bool ShouldTrigger(uint32_t vkCode,
+                                 bool triggerSpace,
+                                 bool triggerEnter,
+                                 bool triggerTab,
+                                 bool triggerDir) noexcept;
+
 }  // namespace NextKey::Macro

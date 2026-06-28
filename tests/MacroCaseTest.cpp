@@ -466,5 +466,49 @@ TEST(BuildSegmentsTest, NonUnicodeMultiUnitEncoding) {
     EXPECT_EQ(static_cast<uint16_t>(segs[0].text[1]), 0x00F9);
 }
 
+TEST(MacroTriggerDecisionTest, IsCommitTriggerIdentifiesWordBoundaries) {
+    EXPECT_TRUE(IsCommitTrigger(0x20));  // VK_SPACE
+    EXPECT_TRUE(IsCommitTrigger(0x0D));  // VK_RETURN
+    EXPECT_TRUE(IsCommitTrigger(0x09));  // VK_TAB
+    EXPECT_TRUE(IsCommitTrigger(0x25));  // VK_LEFT
+    EXPECT_TRUE(IsCommitTrigger(0xBE));  // VK_OEM_PERIOD
+    EXPECT_TRUE(IsCommitTrigger(0xBC));  // VK_OEM_COMMA
+    EXPECT_TRUE(IsCommitTrigger(0x2E));  // VK_DELETE
+
+    EXPECT_FALSE(IsCommitTrigger(0x41)); // 'A'
+    EXPECT_FALSE(IsCommitTrigger(0x5A)); // 'Z'
+    EXPECT_FALSE(IsCommitTrigger(0x70)); // VK_F1
+}
+
+TEST(MacroTriggerDecisionTest, ShouldTriggerRespectsTabOnly) {
+    bool triggerSpace = false;
+    bool triggerEnter = false;
+    bool triggerTab   = true;
+    bool triggerDir   = false;
+
+    EXPECT_TRUE(ShouldTrigger(0x09, triggerSpace, triggerEnter, triggerTab, triggerDir));   // VK_TAB
+
+    EXPECT_FALSE(ShouldTrigger(0x20, triggerSpace, triggerEnter, triggerTab, triggerDir));  // VK_SPACE
+    EXPECT_FALSE(ShouldTrigger(0x0D, triggerSpace, triggerEnter, triggerTab, triggerDir));  // VK_RETURN
+    EXPECT_FALSE(ShouldTrigger(0x25, triggerSpace, triggerEnter, triggerTab, triggerDir));  // VK_LEFT
+    EXPECT_FALSE(ShouldTrigger(0xBE, triggerSpace, triggerEnter, triggerTab, triggerDir));  // VK_OEM_PERIOD
+}
+
+TEST(MacroTriggerDecisionTest, ShouldTriggerRespectsSpaceAndEnter) {
+    bool triggerSpace = true;
+    bool triggerEnter = true;
+    bool triggerTab   = false;
+    bool triggerDir   = false;
+
+    EXPECT_TRUE(ShouldTrigger(0x20, triggerSpace, triggerEnter, triggerTab, triggerDir));   // VK_SPACE
+    EXPECT_TRUE(ShouldTrigger(0x0D, triggerSpace, triggerEnter, triggerTab, triggerDir));   // VK_RETURN
+
+    EXPECT_FALSE(ShouldTrigger(0x09, triggerSpace, triggerEnter, triggerTab, triggerDir));  // VK_TAB
+    EXPECT_FALSE(ShouldTrigger(0x25, triggerSpace, triggerEnter, triggerTab, triggerDir));  // VK_LEFT
+
+    EXPECT_TRUE(ShouldTrigger(0xBE, triggerSpace, triggerEnter, triggerTab, triggerDir));   // VK_OEM_PERIOD
+    EXPECT_TRUE(ShouldTrigger(0x30, triggerSpace, triggerEnter, triggerTab, triggerDir));   // '0'
+}
+
 }  // namespace
 }  // namespace NextKey::Macro
