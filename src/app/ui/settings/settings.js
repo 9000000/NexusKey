@@ -415,7 +415,7 @@ document.on("change", "#modern-icon", function (evt, select) {
     if (colorRow) {
         var value = select.value;
         // Show color row only when Custom (value=3) is selected
-        colorRow.style.display = (value == "3" || value == 3) ? "flex" : "none";
+        colorRow.style.display = (value == "3" || value == 3) ? "block" : "none";
 
         // Notify C++ to recalculate window size for the changed row
         // Use setTimeout to let Sciter update the style attribute before recalc
