@@ -31,6 +31,7 @@
 
 .list-col-name {
     flex: 1;
+    max-width: none;
 }
 
 .list-col-action {

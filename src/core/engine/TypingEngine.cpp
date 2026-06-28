@@ -286,25 +286,54 @@ bool TypingEngine::HandleToneFsm(TypingAction action,
         }
         // English Protection: always active, independent of spell check.
         if (!config_.allowEnglishBypass) {
-            if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return true; }
-            if (engProt_.bias == LanguageBias::SoftEnglish) {
-                if (!UpdateToneInsistence(keyChar, engProt_))              { asLiteral(); return true; }
-            }
-            // Structural V+C+V check:
-            if (isTelexTone) {
-                if (IsHardEnglishToneContext(states_.data(), states_.size(), keyChar)) {
+            // T6 (2026-06-28): the English-bias gates below are MONOTONIC — once
+            // `bias` latches to HardEnglish it never recovers on the forward tone
+            // path (only Backspace's RecalcEnglishBias / Reset clear it), so a
+            // transient English-looking intermediate permanently drops EVERY
+            // subsequent tone until the user deletes the whole word ("không nhận
+            // diện được bộ gõ"). Before any literal-drop, tentatively apply the
+            // requested tone: if the WHOLE buffer becomes a phonotactically Valid
+            // Vietnamese syllable, the word is unambiguously Vietnamese — let the
+            // tone land and clear the latch (the missing non-monotonic reset).
+            // Self-limiting: English words stay Invalid even with a tone, so they
+            // never qualify (dropdown/password/fá/jà all fail ValidateSyllableState).
+            // Mirrors the spell-path wouldRecover escape at ~L257-265, reusing the
+            // same ValidateSyllableState oracle — no new heuristics.
+            auto toneWouldValidate = [&]() -> bool {
+                size_t t = hasCachedTarget ? cachedToneTarget : FindToneTarget();
+                if (t == SIZE_MAX || t >= states_.size()) return false;
+                if (states_[t].tone == requestedTone) return false;  // same-tone = escape, not a save
+                Tone saved = states_[t].tone;
+                states_[t].tone = requestedTone;
+                auto r = Phonology::ValidateSyllableState(
+                    states_.data(), states_.size(), config_.allowZwjf);
+                states_[t].tone = saved;
+                return r == Phonology::SyllableState::Valid;
+            };
+
+            if (!toneWouldValidate()) {
+                if (engProt_.bias == LanguageBias::HardEnglish)         { asLiteral(); return true; }
+                if (engProt_.bias == LanguageBias::SoftEnglish) {
+                    if (!UpdateToneInsistence(keyChar, engProt_))              { asLiteral(); return true; }
+                }
+                // Structural V+C+V check:
+                if (isTelexTone) {
+                    if (IsHardEnglishToneContext(states_.data(), states_.size(), keyChar)) {
+                        engProt_.bias = LanguageBias::HardEnglish;
+                        asLiteral(); return true;
+                    }
+                } else if (states_.size() >= 4) {
+                    if (HasStructuralVCVPattern(states_.data(), states_.size())) {
+                        engProt_.bias = LanguageBias::HardEnglish;
+                        asLiteral(); return true;
+                    }
+                }
+                if (HasInvalidAdjacentVowelPair(states_.data(), states_.size())) {
                     engProt_.bias = LanguageBias::HardEnglish;
                     asLiteral(); return true;
                 }
-            } else if (states_.size() >= 4) {
-                if (HasStructuralVCVPattern(states_.data(), states_.size())) {
-                    engProt_.bias = LanguageBias::HardEnglish;
-                    asLiteral(); return true;
-                }
-            }
-            if (HasInvalidAdjacentVowelPair(states_.data(), states_.size())) {
-                engProt_.bias = LanguageBias::HardEnglish;
-                asLiteral(); return true;
+            } else {
+                engProt_.bias = LanguageBias::Vietnamese;  // clear the latch
             }
         }
         // Pre-tone stop-final check (spellCheck path only):

@@ -21,7 +21,9 @@
 /* List Header */
 .list-header {
     display: flex;
-    padding: 8px 0;
+    padding: 8px 4px;
+    padding-right: 22px;
+    /* 4px padding-right + 10px scrollbar padding-right + 8px scrollbar width */
     border-bottom: 1px solid var(--border-medium);
     font-size: 12px;
     font-weight: 600;
@@ -31,6 +33,7 @@
 
 .list-col-name {
     flex: 1;
+    max-width: none;
 }
 
 .list-col-mode {
@@ -39,12 +42,12 @@
 }
 
 .list-col-action {
-    width: 32px;
+    width: 24px;
 }
 
 /* Per-app mode selector for the entry being added (E / V). */
 .mode-select {
-    width: 132px;
+    width: 186px;
     height: 28px;
     line-height: 26px;
     padding: 0 20px 0 8px;
