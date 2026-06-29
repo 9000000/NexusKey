@@ -73,9 +73,14 @@ function Find-Dll {
         try { $candidates += (Join-Path (Split-Path $p.Path) 'VKeyTSF.dll') } catch {}
     }
     # InprocServer32 already points at the registered DLL (resolves even mid-upgrade).
+    # HKLM only (no HKCU): this script runs ELEVATED and regsvr32 below EXECUTES the
+    # DLL at this path (DllRegisterServer). HKCU\...\CLSID is user-writable, so trusting
+    # an HKCU InprocServer32 value here would let a non-admin pre-point it at a malicious
+    # DLL and have it loaded with admin rights. HKLM requires admin to write, so it is the
+    # only registry source we trust as a regsvr32 target. (HKCU CLSID is still PURGED in
+    # step 3 — deleting a user-owned key is safe; only executing its path was the risk.)
     foreach ($hive in 'HKLM:\SOFTWARE\Classes\CLSID',
-                       'HKLM:\SOFTWARE\WOW6432Node\Classes\CLSID',
-                       'HKCU:\SOFTWARE\Classes\CLSID') {
+                       'HKLM:\SOFTWARE\WOW6432Node\Classes\CLSID') {
         $ip = "$hive\$VKeyClsid\InprocServer32"
         if (Test-Path $ip) {
             $v = (Get-ItemProperty $ip -ErrorAction SilentlyContinue).'(default)'
