@@ -3345,7 +3345,13 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
             // we clear the buffer unless it's a Space character that matches a multi-word macro prefix.
             bool isSpacePrefix = false;
             if (vk == VK_SPACE && cfgSnap) {
-                isSpacePrefix = IsSpaceMacroPrefix(rawMacroBuffer_ + L' ', cfgSnap->spaceMacroKeys);
+                // Reuse the member buffer's capacity instead of materializing a
+                // temporary `rawMacroBuffer_ + L' '` on every Space (hot path,
+                // Rule 11.2). IsSpaceMacroPrefix is noexcept and read-only, so the
+                // append/pop pair restores the buffer with no per-keystroke alloc.
+                rawMacroBuffer_.push_back(L' ');
+                isSpacePrefix = IsSpaceMacroPrefix(rawMacroBuffer_, cfgSnap->spaceMacroKeys);
+                rawMacroBuffer_.pop_back();
             }
             if (!isSpacePrefix) {
                 rawMacroBuffer_.clear();
