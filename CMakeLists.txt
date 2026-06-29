@@ -32,6 +32,12 @@ if(MSVC)
     # the lib boundary into VKeyTSF/VKeyApp/VKeyLite. A /GL object forces LTCG at
     # link time regardless, so the two flags are always paired.
     add_compile_options($<$<CONFIG:Release>:/GL>)
+    # /GR-: RTTI is provably unused (0 dynamic_cast/typeid in src/; Sciter headers
+    # grep-clean). Strips type_info objects + RTTI COMDATs — most valuable here
+    # because of the many small polymorphic classes (IEngineRule/IFeature/IGate/
+    # injectors/proposals). If a future feature ever needs dynamic_cast, scope /GR
+    # back onto that one target rather than dropping this global strip.
+    add_compile_options($<$<CONFIG:Release>:/GR->)
     # Linker security flags: ASLR, DEP, High-Entropy ASLR
     add_link_options(/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA)
     # PE legitimacy: checksum (reduces AV false positives)
