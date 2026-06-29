@@ -704,6 +704,12 @@ if(MSVC)
     # MSVC 14.50 toolchain promotes to error via the global /WX — allow it for
     # the test target only; production targets keep /WX fully strict.
     target_compile_options(VKeyTests PRIVATE /wd4244)
+    # VKeyTests keeps RTTI in Release. Test code (OutputInjectorFactoryTest,
+    # InjectorSwitchTest) uses dynamic_cast to assert injector concrete types;
+    # the global $<Release:/GR-> would make that C4541 "unpredictable behavior"
+    # (and /WX-fatal). Production code has zero dynamic_cast, so /GR- still ships
+    # on VKeyTSF/VKeyApp/VKeyLite — this override is test-only.
+    target_compile_options(VKeyTests PRIVATE $<$<CONFIG:Release>:/GR>)
 endif()
 
 # Put tests in separate directory; override global /SUBSYSTEM:WINDOWS
