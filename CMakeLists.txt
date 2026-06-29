@@ -25,11 +25,19 @@ if(MSVC)
     #          fold identical ones (template-emitted strings, vtables, etc.).
     #          NOT implied by /O2 and saves measurable .rdata.
     add_compile_options($<$<CONFIG:Release>:/Gy> $<$<CONFIG:Release>:/Gw>)
+    # Whole-program optimization (Release only — Debug/Linux test loop unaffected).
+    # /GL makes each TU emit IL instead of machine code; the linker (/LTCG below)
+    # then does cross-TU inlining + whole-program dead-code elimination. /GL on the
+    # static libs (VKeyEngine/VKeyCore) is REQUIRED or there is no inlining across
+    # the lib boundary into VKeyTSF/VKeyApp/VKeyLite. A /GL object forces LTCG at
+    # link time regardless, so the two flags are always paired.
+    add_compile_options($<$<CONFIG:Release>:/GL>)
     # Linker security flags: ASLR, DEP, High-Entropy ASLR
     add_link_options(/DYNAMICBASE /NXCOMPAT /HIGHENTROPYVA)
     # PE legitimacy: checksum (reduces AV false positives)
     add_link_options(/RELEASE)
     add_link_options($<$<CONFIG:Release>:/INCREMENTAL:NO>
+                     $<$<CONFIG:Release>:/LTCG>
                      $<$<CONFIG:Release>:/OPT:REF>
                      $<$<CONFIG:Release>:/OPT:ICF>)
 endif()
