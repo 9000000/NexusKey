@@ -218,5 +218,66 @@ TEST_F(EnglishBypassNoSpellCheckTest, RawTonePrefix_BypassOn_AllowsTone) {
     EXPECT_NE(engine.Peek(), L"pasf");
 }
 
+// ============================================================================
+// Self-limiting invariant of the HardEnglish latch-recovery (TypingEngine "T6",
+// commit 8949f2c). That branch tentatively applies the requested tone and, if
+// the WHOLE buffer becomes a Valid Vietnamese syllable, clears a latched
+// HardEnglish bias so the tone lands. Its POSITIVE side (rescuing a real word)
+// is unreachable by engine-only typing — a HardEnglish latch always leaves a
+// non-VN char in the buffer and Backspace re-derives bias, so the only state it
+// guards ("bias==HardEnglish AND buffer+tone Valid") arises solely when the
+// hook injects a latched bias onto an otherwise-valid buffer (commit-undo
+// replay, #210). A 150k-sequence fix-on/off probe sweep confirmed 0 engine-level
+// diff. These tests therefore lock the SELF-LIMITING side that IS reachable:
+// English-looking input must NEVER be rescued into a toned form. They guard
+// against a future toneWouldValidate / ValidateSyllableState change that becomes
+// too permissive. Spell check OFF so only the English-Protection bias gate runs.
+// ============================================================================
+class ToneLatchSelfLimitTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        config_.inputMethod = InputMethod::Telex;
+        config_.spellCheckEnabled = false;     // isolate the bias / recovery gate
+        config_.optimizeLevel = 0;
+        config_.allowEnglishBypass = false;
+        engine_ = std::make_unique<TypingEngine>(config_);
+    }
+    TypingConfig config_;
+    std::unique_ptr<TypingEngine> engine_;
+};
+
+// "ye" -> SoftEnglish; the first tone key drops (insistence) and latches the
+// literal into HardEnglish; the SECOND tone key hits the recovery gate, whose
+// toneWouldValidate() must stay false ("yes"+tone is not a Valid VN syllable)
+// so the tone is dropped as a literal. If recovery were too permissive, the
+// trailing tone would land and the string would change.
+TEST_F(ToneLatchSelfLimitTest, YesGrave_StaysLiteral) {
+    TypeString(*engine_, L"yesf");
+    EXPECT_EQ(engine_->Peek(), L"yesf");
+}
+
+// NB: acute can't be the trailing key here — Telex acute is 's', so "yess"
+// would double the latching 's' and trigger same-key insistence (deliberate
+// "I mean it" override -> "yés"), a different path. Grave/hook/tilde below use
+// a distinct second key, so the dropped 's' cleanly latches HardEnglish first.
+TEST_F(ToneLatchSelfLimitTest, YesHook_StaysLiteral) {
+    TypeString(*engine_, L"yesr");
+    EXPECT_EQ(engine_->Peek(), L"yesr");
+}
+
+TEST_F(ToneLatchSelfLimitTest, YesTilde_StaysLiteral) {
+    TypeString(*engine_, L"yesx");
+    EXPECT_EQ(engine_->Peek(), L"yesx");
+}
+
+// Sanity: with bypass ON the same input is allowed through (the gate that the
+// self-limiting cases above lock is genuinely the thing being exercised).
+TEST_F(ToneLatchSelfLimitTest, YesGrave_BypassOn_NotLiteral) {
+    config_.allowEnglishBypass = true;
+    TypingEngine bypass(config_);
+    TypeString(bypass, L"yesf");
+    EXPECT_NE(bypass.Peek(), L"yesf");
+}
+
 }  // namespace
 }  // namespace NextKey

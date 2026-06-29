@@ -299,6 +299,16 @@ bool TypingEngine::HandleToneFsm(TypingAction action,
             // never qualify (dropdown/password/fá/jà all fail ValidateSyllableState).
             // Mirrors the spell-path wouldRecover escape at ~L257-265, reusing the
             // same ValidateSyllableState oracle — no new heuristics.
+            // NOTE (2026-06-29): the POSITIVE recovery (clearing a latched
+            // HardEnglish) is unreachable by engine-only typing — a HardEnglish
+            // latch always leaves a non-VN char in the buffer (literal s/f/r/x/j/z,
+            // bad coda, or an asLiteral'd tone key), and Backspace's
+            // RecalcEnglishBias re-derives bias, so "bias==HardEnglish AND
+            // buffer+tone Valid" only arises when the hook injects a latched bias
+            // onto an otherwise-valid buffer (commit-undo replay, #210). A
+            // 150k-sequence fix-on/off probe sweep showed 0 engine-level diff;
+            // ToneLatchSelfLimitTest can therefore only lock the self-limiting
+            // side (English input must never be rescued into a toned form).
             auto toneWouldValidate = [&]() -> bool {
                 size_t t = hasCachedTarget ? cachedToneTarget : FindToneTarget();
                 if (t == SIZE_MAX || t >= states_.size()) return false;
