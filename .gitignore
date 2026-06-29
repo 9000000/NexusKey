@@ -46,6 +46,11 @@ _bmad-output/
 *.bak
 *~
 
+# ===== Scratch issue-page downloads at repo root =====
+# Saved GitHub issue HTML (e.g. issue213.html) used as scratch reference.
+# Root-anchored so it never matches the Sciter UI pages under src/app/ui/.
+/issue*.html
+
 # ===== Testing artifacts =====
 /Testing/Temporary/
 /Testing/Cache/
