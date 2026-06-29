@@ -601,6 +601,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/WebView2CacheDecisionTest.cpp
     tests/CommitUndoExemptionTest.cpp
     tests/CommitUndoArmDecisionTest.cpp
+    tests/PathUtilTest.cpp
     tests/DigitLedWordDecisionTest.cpp
     tests/LoggerTest.cpp
     tests/HotkeyRegistryTest.cpp

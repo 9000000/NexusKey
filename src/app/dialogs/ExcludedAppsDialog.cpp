@@ -5,6 +5,7 @@
 #include "DialogUtils.h"
 #include "core/config/ConfigManager.h"
 #include "helpers/AppHelpers.h"
+#include "core/PathUtil.h"
 #include "core/Strings.h"
 #include "core/WinStrings.h"
 #include "sciter-x-dom.hpp"
@@ -161,11 +162,7 @@ void ExcludedAppsDialog::addApp(const std::wstring& name, int mode) {
     // typed or browsed full path ("C:\\Windows\\System32\\Taskmgr.exe") would never
     // match — strip the directory so path entry and the Browse button both resolve
     // to the basename. No-op for plain names (#209: add native apps by path).
-    std::wstring base = name;
-    if (auto slash = base.find_last_of(L"\\/"); slash != std::wstring::npos) {
-        base = base.substr(slash + 1);
-    }
-    std::wstring lower = ToLowerAscii(base);
+    std::wstring lower = ToLowerAscii(PathBasename(name));
 
     // Already present → just update its mode (an app is locked to one mode).
     for (auto& a : appList_) {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #include "core/Logger.h"
+#include "core/PathUtil.h"
 
 #include <clocale>
 #include <cstdio>
@@ -100,9 +101,7 @@ std::wstring ProcessTag() {
     wchar_t path[MAX_PATH] = {0};
     DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH);
     if (n == 0) return L"unknown";
-    std::wstring s(path);
-    size_t slash = s.find_last_of(L"\\/");
-    std::wstring base = (slash == std::wstring::npos) ? s : s.substr(slash + 1);
+    std::wstring base = PathBasename(path);
     size_t dot = base.find_last_of(L'.');
     if (dot != std::wstring::npos) base.resize(dot);
     return base;
