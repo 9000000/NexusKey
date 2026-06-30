@@ -1185,6 +1185,9 @@ bool ClassicSettingsDialog::OnTsfAppsToggle(bool wantsEnabled) {
                 L"VKey", MB_OK | MB_ICONWARNING);
             return false;
         }
+        // #109: add to user input list (InstallLayoutOrTip) + select now so
+        // enabling TSF works without a restart (see SettingsDialog.cpp). Idempotent.
+        ActivateVKeyTsfProfile();
         MessageBoxW(hwnd_, S(StringId::TSF_REGISTER_SUCCESS),
             L"VKey", MB_OK | MB_ICONINFORMATION);
         return true;

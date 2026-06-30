@@ -635,6 +635,10 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                     L"VKey", MB_OK | MB_ICONWARNING);
                 return;  // Don't save broken state
             }
+            // #109: registration only makes the TIP *available*. Add it to the
+            // user's input list (InstallLayoutOrTip) and select it now so enabling
+            // TSF works immediately, without a restart. Idempotent + throttled.
+            ActivateVKeyTsfProfile();
             MessageBoxW(get_hwnd(), S(StringId::TSF_REGISTER_SUCCESS),
                 L"VKey", MB_OK | MB_ICONINFORMATION);
         } else {
