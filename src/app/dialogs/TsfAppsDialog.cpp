@@ -7,6 +7,7 @@
 #include "helpers/AppHelpers.h"
 #include "core/Strings.h"
 #include "core/WinStrings.h"
+#include "core/PathUtil.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <fstream>
@@ -124,14 +125,15 @@ void TsfAppsDialog::populateList() {
 
 void TsfAppsDialog::addApp(const std::wstring& name) {
     // Match key is the exe basename (the classifier compares cls->exeName). A
-    // browsed/typed full path ("C:\\Windows\\System32\\Taskmgr.exe") would never
-    // match — strip the directory so both path entry and the Browse button resolve
-    // to the basename. No-op for a plain name (#109: add native apps by path).
-    std::wstring base = name;
-    if (auto slash = base.find_last_of(L"\\/"); slash != std::wstring::npos) {
-        base = base.substr(slash + 1);
-    }
-    std::wstring lower = ToLowerAscii(base);
+    // browsed/typed full path ("C:\\Windows\\System32\\Taskmgr.exe") must be
+    // reduced to its basename or it would never match. No-op for a plain name.
+    std::wstring lower = ToLowerAscii(PathBasename(name));
+
+    // Never add VKey to its own TSF list — covers every path (manual, browse,
+    // window-picker, import). The picker also shows a message; skip silently here
+    // so a typed/browsed/imported VKey exe can't slip through. Match the Classic
+    // dialogs: block all three VKey exe names (Sciter + Lite + Classic builds).
+    if (lower == L"vkey.exe" || lower == L"vkeylite.exe" || lower == L"vkeyclassic.exe") return;
 
     // Check for duplicates
     if (std::find(appList_.begin(), appList_.end(), lower) != appList_.end()) return;

@@ -164,6 +164,11 @@ void ExcludedAppsDialog::addApp(const std::wstring& name, int mode) {
     // to the basename. No-op for plain names (#209: add native apps by path).
     std::wstring lower = ToLowerAscii(PathBasename(name));
 
+    // Never add VKey to its own list — covers every path (manual, browse, picker,
+    // import); the window-picker also shows a message. Skip silently here. Match
+    // the Classic dialogs: block all three VKey exe names (Sciter + Lite + Classic).
+    if (lower == L"vkey.exe" || lower == L"vkeylite.exe" || lower == L"vkeyclassic.exe") return;
+
     // Already present → just update its mode (an app is locked to one mode).
     for (auto& a : appList_) {
         if (a.first == lower) { setMode(lower, mode); return; }

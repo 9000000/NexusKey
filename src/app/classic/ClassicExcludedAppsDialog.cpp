@@ -5,6 +5,7 @@
 #include "core/config/ConfigManager.h"
 #include "core/CrashLog.h"
 #include "app/helpers/AppHelpers.h"
+#include "core/PathUtil.h"
 
 #include <windowsx.h>
 #include <algorithm>
@@ -198,7 +199,9 @@ void ClassicExcludedAppsDialog::PopulateList() {
 void ClassicExcludedAppsDialog::AddApp(const std::wstring& name, int mode) {
     if (name.empty()) return;
 
-    std::wstring lower = ToLowerAscii(name);
+    // #209: normalize a pasted/typed full path to its exe basename (see
+    // ClassicTsfAppsDialog) so native apps can be added by pasting their path.
+    std::wstring lower = ToLowerAscii(PathBasename(name));
 
     // Block VKey itself — VKeyLite ships with OUTPUT_NAME=VKeyClassic
     // (CMakeLists.txt:342). Mirror the three-name guard already used by

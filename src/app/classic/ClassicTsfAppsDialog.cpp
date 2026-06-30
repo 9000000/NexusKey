@@ -5,6 +5,7 @@
 #include "core/config/ConfigManager.h"
 #include "core/CrashLog.h"
 #include "app/helpers/AppHelpers.h"
+#include "core/PathUtil.h"
 
 #include <windowsx.h>
 #include <algorithm>
@@ -179,7 +180,10 @@ void ClassicTsfAppsDialog::PopulateList() {
 void ClassicTsfAppsDialog::AddApp(const std::wstring& name) {
     if (name.empty()) return;
 
-    std::wstring lower = ToLowerAscii(name);
+    // #209: normalize a pasted/typed full path to its exe basename (the classifier
+    // compares the basename) so native apps — Taskmgr.exe, Windows Search, etc. —
+    // can be added by pasting their path into the editable box. No-op for a plain name.
+    std::wstring lower = ToLowerAscii(PathBasename(name));
 
     // Block VKey itself — adding the host process to its own TSF whitelist is meaningless
     if (lower == L"vkey.exe" || lower == L"vkeylite.exe" || lower == L"vkeyclassic.exe") {
