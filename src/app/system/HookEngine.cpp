@@ -4160,9 +4160,12 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         // The early tsfModeCallback_ near the top fires BEFORE that resolution, so on
         // entry from an English app it would read the previous mode and skip the
         // activation — that is why "Khoa E/V theo app" did not auto-apply to TSF.
-        // Focus-driven only (never the OnTickPoll TSF_TIP_ACTIVE/Win+Space monitor),
-        // so a deliberate switch to the US keyboard is preserved. VN-gated and
-        // idempotent inside the callback.
+        // Still focus-driven only (never the OnTickPoll TSF_TIP_ACTIVE/Win+Space
+        // monitor). #109: the callback (main.cpp) now (re-)activates on EVERY focus
+        // into a TSF app regardless of V/E — re-asserting on focus is what lets TIP
+        // selection recover after it is lost. Trade-off: a deliberate Win+Space→US
+        // keyboard switch inside a TSF-list app is re-grabbed on the next focus.
+        // Idempotent + throttled inside ActivateVKeyTsfProfile().
         if (tsfModeCallback_) {
             tsfModeCallback_(/*tsfActive=*/true, /*tsfReadonly=*/false);
         }
@@ -4290,9 +4293,11 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     }
     NotifyModeChange();
 
-    // #195: a same-window E/V toggle changes no focus, so the focus-path callback
-    // above never runs — re-publish here so the VKey TSF profile follows an explicit
-    // toggle into Vietnamese while staying in a TSF app. VN-gated in the callback.
+    // #195/#109: a same-window E/V toggle changes no focus, so the focus-path
+    // callback above never runs — re-publish here so the VKey TSF profile
+    // re-asserts selection on an explicit toggle (either direction) while
+    // staying in a TSF app. The callback (main.cpp) re-activates whenever the
+    // app is a TSF app, no longer gated on Vietnamese mode (#109).
     if (isTsfApp_.load(std::memory_order_acquire) && tsfModeCallback_) {
         tsfModeCallback_(/*tsfActive=*/true, /*tsfReadonly=*/false);
     }
