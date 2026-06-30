@@ -55,6 +55,13 @@ function initTsfAppsDialog() {
         });
     }
 
+    var btnBrowse = document.getElementById("btn-browse");
+    if (btnBrowse) {
+        btnBrowse.addEventListener("click", function () {
+            triggerAction("add-browse");
+        });
+    }
+
     var btnImport = document.getElementById("btn-import");
     var btnExport = document.getElementById("btn-export");
 

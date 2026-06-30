@@ -163,6 +163,7 @@ var STRINGS = {
         // ── TSF Apps dialog ──
         "tsf.app_ph": "e.g.: notepad.exe",
         "tsf.app_list": "TSF applications",
+        "tsf.browse": "📁 Browse .exe...",
         "tsf.import": "Import from file...",
         "tsf.export": "Export to file...",
 
