@@ -364,6 +364,36 @@ bool ActivateVKeyTsfProfile() {
     }
     lastAttemptTick.store(now, std::memory_order_release);
 
+    // #109/#209: ensure VKey's TIP is in the user's ENABLED input list (HKCU,
+    // per-user, NO admin) so Windows can actually select it. Registration
+    // (RegisterProfile + EnableLanguageProfile) only makes the TIP *available*;
+    // it does not add it to Control Panel\International\User Profile. Without
+    // this, after the old reset script purged that list (or on a fresh profile)
+    // the TIP existed but was UNSELECTABLE → Windows stuck on US Keyboard and the
+    // V/E toggle was dead. InstallLayoutOrTip is exported by input.dll with no
+    // import lib, so load it dynamically. Idempotent — re-adding is a no-op.
+    {
+        using InstallLayoutOrTipFn = BOOL(WINAPI*)(LPCWSTR, DWORD);
+        // "0x0409:{CLSID}{profile GUID}" — must match RegisterTIP()/Globals and
+        // the CLSID_NK / GUID_NK_Profile GUIDs below. 0x0409 = TEXTSERVICE_LANGID.
+        static constexpr wchar_t kVKeyTipId[] =
+            L"0x0409:{DEB18BD1-2331-4F2A-B030-DA9EB0093683}"
+            L"{2FE17DA4-D8E2-4B28-8566-C30E8F04BFD4}";
+        if (HMODULE hInput = ::LoadLibraryExW(L"input.dll", nullptr,
+                                              LOAD_LIBRARY_SEARCH_SYSTEM32)) {
+            if (auto pInstall = reinterpret_cast<InstallLayoutOrTipFn>(
+                    ::GetProcAddress(hInput, "InstallLayoutOrTip"))) {
+                // flags = 0: install + enable for the current user (adds it to the
+                // input list). Session SELECTION is done by ActivateProfile below.
+                const BOOL added = pInstall(kVKeyTipId, 0);
+                NEXTKEY_LOG(L"[TsfRegistration] InstallLayoutOrTip -> %d", added ? 1 : 0);
+            } else {
+                NEXTKEY_LOG(L"[TsfRegistration] InstallLayoutOrTip missing from input.dll");
+            }
+            ::FreeLibrary(hInput);
+        }
+    }
+
     // RAII COM lifetime: pairs S_OK/S_FALSE with CoUninitialize and, crucially, does
     // NOT call CoUninitialize when CoInitializeEx failed (e.g. RPC_E_CHANGED_MODE when
     // the calling GUI thread was already initialized with a different apartment model).

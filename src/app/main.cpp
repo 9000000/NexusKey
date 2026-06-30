@@ -449,22 +449,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         if (HWND tsfTrayWnd = g_trayIcon.GetMessageWindow()) {
             PostMessageW(tsfTrayWnd, WM_VKEY_TRAY_TSF_SYNC, tsfActive ? 1 : 0, 0);
         }
-        // #109: re-assert TIP selection on EVERY focus into a TSF app and on
-        // every toggle — NOT only toggle-to-V. The VKey TIP must be the
-        // OS-selected input processor for the DLL to receive keys at all; if it
-        // loses selection (Win+Space, a sibling host TIP, focus churn) the
-        // V/E switch goes dead because the EXE hook is also suppressed for
-        // TSF-list apps. Activation is FORSESSION + transient, so re-asserting
-        // on focus is what lets selection recover. Harmless in English mode
-        // (the DLL just passes keys through). ActivateVKeyTsfProfile() is
-        // throttled (TsfRegistration.cpp), so this cannot flood (#209).
-        if (tsfActive) {
-            HWND trayWnd = g_trayIcon.GetMessageWindow();
-            if (trayWnd) {
-                PostMessageW(trayWnd, WM_VKEY_ACTIVATE_TSF, 0, 0);
-            }
-        }
+        // #109: TIP activation is NO LONGER done here. It used to re-activate on
+        // every focus/toggle, which was fragile and never made the TIP reliably
+        // selectable. We now activate ONCE at startup (below) after ensuring VKey
+        // is in the user's input list (InstallLayoutOrTip). The TSF_ACTIVE flag
+        // set above still gates which apps the TIP consumes.
     });
+
+    // #109: activate VKey's TIP ONCE at startup (standard-IME model, like
+    // Unikey/Mozc) instead of re-activating per focus/toggle. The handler runs
+    // ActivateVKeyTsfProfile() which (1) adds VKey to the user's input list via
+    // InstallLayoutOrTip so it is selectable + survives reboot, then (2) selects
+    // it for the session. Gated on TSF being registered — users who never
+    // enabled TSF are not forced into it. After this, Windows owns the selection
+    // and the V/E toggle just flips a flag the (now genuinely active) TIP reads.
+    if (IsTsfRegistered()) {
+        if (HWND tsfTrayWnd = g_trayIcon.GetMessageWindow()) {
+            PostMessageW(tsfTrayWnd, WM_VKEY_ACTIVATE_TSF, 0, 0);
+        }
+    }
 
     // Wire hook-reload callback: sub-dialog subprocess → main EXE eager sync.
     // Without this, new lists (TSF apps, excluded apps, macros, …) only apply on the next

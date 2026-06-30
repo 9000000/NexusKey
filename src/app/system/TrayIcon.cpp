@@ -199,11 +199,12 @@ void TrayIcon::RefreshIcon() noexcept {
     // colorize path (replaces opaque RGB, preserves alpha).
     // Opt-in (issue #209): testers preferred plain V/E, so this is gated behind
     // showTsfIndicator_ and OFF by default — fall through to the V/E icon below.
-    // NOT gated on tsfActive_ (#209 follow-up): testers wanted the T to track the
-    // per-app lock ("Khóa E/V") AND smart-switch ("Lưu chế độ gõ") states, i.e.
-    // every app — so when enabled the T is the V/E indicator everywhere, colored by
-    // the resolved displayMode (forced-V/E locks already feed the right color).
-    if (showTsfIndicator_) {
+    // #109: ALSO gated on tsfActive_ — the "T" means "this app is handled by the
+    // TSF engine". Without the tsfActive_ gate the T stuck on screen even after
+    // TSF was disabled (Shzr0 report: T persisted through logout/restart instead
+    // of reverting to the plain V/E icon). When not in a TSF app, fall through to
+    // the normal V/E icon below.
+    if (tsfActive_ && showTsfIndicator_) {
         const COLORREF color = static_cast<COLORREF>(
             vietnameseMode_
                 ? (customColorV_ != 0 ? customColorV_ : DEFAULT_ICON_COLOR_V)

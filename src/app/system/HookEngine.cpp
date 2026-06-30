@@ -4293,14 +4293,10 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     }
     NotifyModeChange();
 
-    // #195/#109: a same-window E/V toggle changes no focus, so the focus-path
-    // callback above never runs — re-publish here so the VKey TSF profile
-    // re-asserts selection on an explicit toggle (either direction) while
-    // staying in a TSF app. The callback (main.cpp) re-activates whenever the
-    // app is a TSF app, no longer gated on Vietnamese mode (#109).
-    if (isTsfApp_.load(std::memory_order_acquire) && tsfModeCallback_) {
-        tsfModeCallback_(/*tsfActive=*/true, /*tsfReadonly=*/false);
-    }
+    // #109: TIP activation is now done ONCE at startup (main.cpp), not re-asserted
+    // per toggle. A same-window V/E toggle changes neither the focused app nor
+    // TSF_ACTIVE, so there is nothing to re-publish here — the live TIP reads the
+    // new VIETNAMESE_MODE flag on its next key (EngineController::WantKey).
 }
 
 // P3e/P3f — config-apply drain handler. Wired into the kConfigApply mailbox
