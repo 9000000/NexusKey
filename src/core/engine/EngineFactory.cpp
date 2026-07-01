@@ -7,9 +7,20 @@
 #include "EngineFactory.h"
 #include "TypingEngine.h"
 
+#ifdef VKEY_USE_RUST_ENGINE
+#include "RustInputEngine.h"
+#endif
+
 namespace NextKey {
 
 std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) {
+#ifdef VKEY_USE_RUST_ENGINE
+    // Prefer the prebuilt closed-source Rust engine when its library is present;
+    // otherwise fall back to the in-tree C++ engine below.
+    if (RustInputEngine::LibraryAvailable()) {
+        return std::make_unique<RustInputEngine>(config);
+    }
+#endif
     // All input methods route through TypingEngine (unified engine).
     // Mode dispatch happens inside TypingEngine via IsTelexMode()/IsVniMode().
     return std::make_unique<TypingEngine>(config);

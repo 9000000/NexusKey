@@ -114,6 +114,22 @@ target_include_directories(VKeyEngine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+# Route EngineFactory through the prebuilt, closed-source Rust engine (consumed
+# via its C ABI, loaded at runtime). The in-tree C++ TypingEngine stays compiled
+# as a fallback (used when the library is missing, and by the parity tests).
+option(VKEY_USE_RUST_ENGINE "Use the prebuilt closed-source Rust engine (C ABI)" ON)
+if(VKEY_USE_RUST_ENGINE)
+    target_sources(VKeyEngine PRIVATE
+        src/core/engine/RustInputEngine.h
+        src/core/engine/RustInputEngine.cpp
+    )
+    target_include_directories(VKeyEngine PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/extern/vkey_engine/include
+    )
+    target_compile_definitions(VKeyEngine PRIVATE VKEY_USE_RUST_ENGINE)
+    target_link_libraries(VKeyEngine PRIVATE ${CMAKE_DL_LIBS})
+endif()
+
 # Core Library (platform layer: SharedState, Config, Debug)
 set(NEXTKEY_CORE_SOURCES
     src/core/Debug.h
@@ -483,7 +499,22 @@ if(WIN32)
         COMMENT "Copying sciter.dll to output directory"
     )
 
-
+    # Deploy the prebuilt Rust engine next to every binary that creates engines
+    # (VKeyApp.exe and the in-process VKeyTSF.dll). RustInputEngine loads it
+    # module-relative, so co-locating it here makes it resolvable in TSF hosts.
+    if(VKEY_USE_RUST_ENGINE)
+        set(VKEY_ENGINE_DLL "${CMAKE_CURRENT_SOURCE_DIR}/extern/vkey_engine/lib/win-x64/vkey_engine.dll")
+        foreach(_tgt VKeyApp VKeyTSF VKeyLite)
+            if(TARGET ${_tgt})
+                add_custom_command(TARGET ${_tgt} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${VKEY_ENGINE_DLL}"
+                        "$<TARGET_FILE_DIR:${_tgt}>/vkey_engine.dll"
+                    COMMENT "Copying vkey_engine.dll next to ${_tgt}"
+                )
+            endif()
+        endforeach()
+    endif()
 endif()
 
 # ============================================================================
@@ -693,11 +724,18 @@ if(WIN32)
     )
 endif()
 
+if(VKEY_USE_RUST_ENGINE)
+    list(APPEND NEXTKEY_TEST_SOURCES tests/RustInputEngineTest.cpp)
+endif()
+
 add_executable(VKeyTests EXCLUDE_FROM_ALL ${NEXTKEY_TEST_SOURCES})
 target_link_libraries(VKeyTests PRIVATE VKeyCore GTest::gtest_main)
 target_include_directories(VKeyTests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
 )
+if(VKEY_USE_RUST_ENGINE)
+    target_compile_definitions(VKeyTests PRIVATE VKEY_USE_RUST_ENGINE)
+endif()
 if(MSVC)
     # Test diagnostics narrow wide strings to char for gtest's ostream
     # (pure-ASCII filenames/timestamps, e.g. LoggerTest). Benign C4244 that the
