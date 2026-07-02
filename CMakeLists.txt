@@ -509,41 +509,15 @@ set(RESOURCES_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/app/resources.cpp")
 set(UI_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/app/ui")
 
 if(PACKFOLDER_AVAILABLE)
-    # Custom command to generate resources.cpp
+    # Custom command to generate resources.cpp.
+    # GLOB keeps the dependency list complete — the old hand-maintained list
+    # had drifted (subdialog.css/toggle.css/base.css/hotkey-capture.js/logo.png
+    # missing → edits didn't trigger a repack).
+    file(GLOB_RECURSE UI_RESOURCE_FILES CONFIGURE_DEPENDS "${UI_SOURCE_DIR}/*")
     add_custom_command(
         OUTPUT "${RESOURCES_CPP}"
         COMMAND "${PACKFOLDER_EXE}" "${UI_SOURCE_DIR}" "${RESOURCES_CPP}" -v resources
-        DEPENDS ${UI_SOURCE_DIR}/settings/settings.html
-                ${UI_SOURCE_DIR}/settings/settings.css
-                ${UI_SOURCE_DIR}/settings/settings.js
-                ${UI_SOURCE_DIR}/excludedapps/excludedapps.html
-                ${UI_SOURCE_DIR}/excludedapps/excludedapps.css
-                ${UI_SOURCE_DIR}/excludedapps/excludedapps.js
-                ${UI_SOURCE_DIR}/tsfapps/tsfapps.html
-                ${UI_SOURCE_DIR}/tsfapps/tsfapps.css
-                ${UI_SOURCE_DIR}/tsfapps/tsfapps.js
-                ${UI_SOURCE_DIR}/macro/macro.html
-                ${UI_SOURCE_DIR}/macro/macro.css
-                ${UI_SOURCE_DIR}/macro/macro.js
-                ${UI_SOURCE_DIR}/appoverrides/appoverrides.html
-                ${UI_SOURCE_DIR}/appoverrides/appoverrides.css
-                ${UI_SOURCE_DIR}/appoverrides/appoverrides.js
-                ${UI_SOURCE_DIR}/convert-tool/convert-tool.html
-                ${UI_SOURCE_DIR}/convert-tool/convert-tool.css
-                ${UI_SOURCE_DIR}/convert-tool/convert-tool.js
-                ${UI_SOURCE_DIR}/about/about.html
-                ${UI_SOURCE_DIR}/about/about.css
-                ${UI_SOURCE_DIR}/userdefined/userdefined.html
-                ${UI_SOURCE_DIR}/userdefined/userdefined.css
-                ${UI_SOURCE_DIR}/userdefined/userdefined.js
-                ${UI_SOURCE_DIR}/hotkeys/hotkeys.html
-                ${UI_SOURCE_DIR}/hotkeys/hotkeys.css
-                ${UI_SOURCE_DIR}/hotkeys/hotkeys.js
-                ${UI_SOURCE_DIR}/shared/utils.js
-                ${UI_SOURCE_DIR}/shared/strings.js
-                ${UI_SOURCE_DIR}/shared/i18n.js
-                ${UI_SOURCE_DIR}/shared/theme.css
-                ${UI_SOURCE_DIR}/shared/dropdown.css
+        DEPENDS ${UI_RESOURCE_FILES}
         COMMENT "Packing UI resources into resources.cpp"
         VERBATIM
     )

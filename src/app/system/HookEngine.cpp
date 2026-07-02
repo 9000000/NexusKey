@@ -3669,33 +3669,9 @@ void HookEngine::InjectKey(DWORD vkCode) {
 }
 
 bool HookEngine::IsCommitTrigger(DWORD vkCode) {
-    // Space, Enter, Escape
-    if (vkCode == VK_SPACE || vkCode == VK_RETURN || vkCode == VK_ESCAPE) return true;
-
-    // Tab
-    if (vkCode == VK_TAB) return true;
-
-    // Arrow keys
-    if (vkCode >= VK_LEFT && vkCode <= VK_DOWN) return true;
-    if (vkCode == VK_HOME || vkCode == VK_END ||
-        vkCode == VK_PRIOR || vkCode == VK_NEXT) return true;
-
-    // Number keys (0-9)
-    if (vkCode >= 0x30 && vkCode <= 0x39) return true;
-
-    // Numpad keys
-    if (vkCode >= VK_NUMPAD0 && vkCode <= VK_DIVIDE) return true;
-
-    // OEM keys (punctuation)
-    if (vkCode >= VK_OEM_1 && vkCode <= VK_OEM_3) return true;
-    if (vkCode >= VK_OEM_4 && vkCode <= VK_OEM_8) return true;
-    if (vkCode == VK_OEM_PLUS || vkCode == VK_OEM_COMMA ||
-        vkCode == VK_OEM_MINUS || vkCode == VK_OEM_PERIOD) return true;
-
-    // Delete, Insert
-    if (vkCode == VK_DELETE || vkCode == VK_INSERT) return true;
-
-    return false;
+    // Single source of truth: Macro::IsCommitTrigger (core, Linux-tested).
+    // The VK set here was a byte-identical duplicate of that table.
+    return Macro::IsCommitTrigger(vkCode);
 }
 
 bool HookEngine::IsOemPunctVk(DWORD vkCode) {
