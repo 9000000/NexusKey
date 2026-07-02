@@ -13,6 +13,8 @@
 #include <TlHelp32.h>
 #include <string>
 
+#include "../core/RestartThrottle.h"
+
 namespace {
 
 constexpr const wchar_t* HEARTBEAT_EVENT_NAME = L"Local\\VKeyHeartbeat";
@@ -20,6 +22,13 @@ constexpr const wchar_t* GRACEFUL_SHUTDOWN_EVENT_NAME = L"Local\\VKeyGracefulShu
 constexpr DWORD HEARTBEAT_TIMEOUT_MS = 90'000;  // 3× publisher interval
 constexpr DWORD POST_RESPAWN_GRACE_MS = 5'000;  // Wait this long after respawn
 constexpr DWORD POST_INIT_GRACE_MS = 30'000;    // Initial grace for VKey to start
+
+// Restart cap: after MAX_RESTARTS respawns within RESTART_WINDOW_MS, stop
+// supervising. A repeated kill (AV quarantine, corrupt install, boot-loop crash)
+// is not a transient crash, and fighting it escalates AV behavior verdicts.
+constexpr std::size_t MAX_RESTARTS = 5;
+constexpr uint64_t RESTART_WINDOW_MS = 600'000;  // 10 minutes
+NextKey::RestartThrottle<MAX_RESTARTS> g_restartThrottle{RESTART_WINDOW_MS};
 
 // Logging helper — append to %LOCALAPPDATA%\VKey\watchdog.log.
 // Best-effort: silent failure if file unavailable.
@@ -110,6 +119,19 @@ bool RespawnVKey() {
     return true;
 }
 
+// Respawn under the restart cap. Returns false when the cap is hit, signalling
+// the supervisor to stop (do NOT fight a persistent kill source).
+bool TryRespawn() {
+    if (!g_restartThrottle.AllowRestart(GetTickCount64())) {
+        LogLine(L"Restart cap hit (%zu in %llus) — stopping respawns. Likely AV "
+                L"quarantine or corrupt install, not a transient crash. Watchdog "
+                L"exiting; will relaunch when VKey is next started.",
+                MAX_RESTARTS, RESTART_WINDOW_MS / 1000);
+        return false;
+    }
+    return RespawnVKey();
+}
+
 }  // namespace
 
 int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
@@ -142,7 +164,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
             if (!IsProcessAlive(L"VKey.exe") && !IsProcessAlive(L"VKeyClassic.exe")) {
                 LogLine(L"Heartbeat events absent + process not running → respawn");
-                RespawnVKey();
+                if (!TryRespawn()) return 0;  // cap hit → stop supervising
                 Sleep(POST_RESPAWN_GRACE_MS);
             } else {
                 Sleep(5000);  // Process exists but events not yet up — be patient
@@ -176,7 +198,7 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         }
 
         LogLine(L"Heartbeat stale + graceful clear + process dead → CRASH detected");
-        RespawnVKey();
+        if (!TryRespawn()) return 0;  // cap hit → stop supervising
         Sleep(POST_RESPAWN_GRACE_MS);
     }
 }

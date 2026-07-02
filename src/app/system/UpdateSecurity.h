@@ -56,10 +56,32 @@ namespace NextKey {
 /// 4. Returns true if hashes match
 ///
 /// On any failure (download, parse, hash mismatch) returns false.
+///
+/// NOTE: SHA-256 here proves the ZIP matches its sidecar, but the sidecar is
+/// served from the same origin as the ZIP — an attacker who controls the origin
+/// (or a compromised release) controls both halves. It defends against
+/// corruption/CDN bit-rot, NOT tampering. Tamper resistance comes from
+/// VerifyAuthenticodeSignature on the extracted binaries (below).
 [[nodiscard]] bool VerifyDownloadedZip(
     const std::wstring& zipUrl,
     const std::wstring& localZipPath,
     std::atomic<bool>& cancelFlag) noexcept;
+
+/// Verify a file carries a valid Authenticode signature via WinVerifyTrust: the
+/// signature must be intact AND chain to a trusted root CA (revocation checked
+/// on the whole chain). If `expectedSubjectSubstring` is non-empty, the signing
+/// certificate's subject must ALSO contain it (case-insensitive) — a publisher
+/// pin that stops a validly-signed-but-different-publisher binary.
+///
+/// This is the tamper-resistant check the SHA-256 path can't provide: it proves
+/// *who* signed the actual code that will run. Call it on every extracted
+/// .exe/.dll before installing/running them.
+///
+/// Returns true only if all requested checks pass; false on unsigned, untrusted,
+/// revoked, publisher-mismatch, or any API failure.
+[[nodiscard]] bool VerifyAuthenticodeSignature(
+    const std::wstring& filePath,
+    const std::wstring& expectedSubjectSubstring = L"") noexcept;
 
 #endif  // _WIN32
 

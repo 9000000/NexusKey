@@ -948,7 +948,31 @@ void HookEngine::ReloadFromToml() {
 // Static Hook Callbacks → Instance Dispatch
 // ═══════════════════════════════════════════════════════════
 
+namespace {
+// SEH filter: log the structured-exception code, then execute the handler.
+// Kept at file scope (no C++ locals) so it is safe to call from an __except
+// filter expression. Runs in the LL-hook thread of VKeyApp.
+LONG LogHookSeh(const wchar_t* where, unsigned long code) noexcept {
+    char msg[64];
+    _snprintf_s(msg, _TRUNCATE, "SEH structured exception code=0x%08lX", code);
+    ::NextKey::CrashLog(where, msg);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+}  // namespace
+
+// SEH wrapper — see header for why. Recovers by resetting composition and
+// passing the key through untranslated; VKeyApp stays alive.
 LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    __try {
+        return LowLevelKeyboardProcImpl(nCode, wParam, lParam);
+    } __except (LogHookSeh(L"HookEngine::LowLevelKeyboardProc", GetExceptionCode())) {
+        HookEngine* self = s_instance.load(std::memory_order_relaxed);
+        if (self) self->ResetComposition();
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+}
+
+LRESULT HookEngine::LowLevelKeyboardProcImpl(int nCode, WPARAM wParam, LPARAM lParam) {
     // Phase 1: Tier 2 budget marker (<30ms p99). Wraps the full LL callback
     // body so the recorded delta includes every nested stage. PERF_SCOPE
     // compiles to (void)0 when VKEY_PERF_HIST is not defined.
@@ -1095,6 +1119,16 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
 // FocusChangedFn callback registered in focus_.Install().
 
 LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    __try {
+        return LowLevelMouseProcImpl(nCode, wParam, lParam);
+    } __except (LogHookSeh(L"HookEngine::LowLevelMouseProc", GetExceptionCode())) {
+        HookEngine* self = s_instance.load(std::memory_order_relaxed);
+        if (self) self->ResetComposition();
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+}
+
+LRESULT HookEngine::LowLevelMouseProcImpl(int nCode, WPARAM wParam, LPARAM lParam) {
     try {
         if (nCode == HC_ACTION && wParam == WM_LBUTTONDOWN) {
             HookEngine* self = s_instance.load(std::memory_order_relaxed);

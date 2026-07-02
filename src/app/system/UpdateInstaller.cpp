@@ -206,6 +206,97 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
     }
 }
 
+// Publisher pin for update binaries. Leave EMPTY to enforce Authenticode (valid
+// signature chaining to a trusted root, not revoked) WITHOUT pinning a specific
+// signer — the safe default that still closes the "serve arbitrary malware"
+// hole. To also reject any other valid publisher, set this to the exact signing
+// certificate subject CN of a released VKey binary; read it with:
+//   powershell (Get-AuthenticodeSignature VKey.exe).SignerCertificate.Subject
+//   or: signtool verify /pa /v VKey.exe
+// (VKey is signed by a SignPath Foundation OSS certificate.) The pin is applied
+// ONLY to VKey-owned files below — sciter.dll ships with its own vendor
+// signature and would fail a VKey-specific pin.
+constexpr const wchar_t* kExpectedUpdateSigner = L"";
+
+// Verify every .exe/.dll in the extracted update carries a valid Authenticode
+// signature (chains to a trusted root). VKey-owned binaries additionally get the
+// publisher pin. Returns false if any binary fails or the update contains no
+// signed binaries at all (a valid VKey release always ships signed executables).
+[[nodiscard]] bool VerifyExtractedBinaries(const std::wstring& sourceDir) noexcept {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    bool sawBinary = false;
+    for (const auto& entry : fs::directory_iterator(sourceDir, ec)) {
+        if (ec) return false;
+        if (!entry.is_regular_file()) continue;
+        const auto ext = entry.path().extension().wstring();
+        if (_wcsicmp(ext.c_str(), L".exe") != 0 && _wcsicmp(ext.c_str(), L".dll") != 0) {
+            continue;
+        }
+        sawBinary = true;
+        // Pin applies to our own binaries only; third-party DLLs (sciter.dll)
+        // just need a valid signature.
+        const std::wstring name = entry.path().filename().wstring();
+        const bool vkeyOwned = (_wcsnicmp(name.c_str(), L"VKey", 4) == 0);
+        const std::wstring pin = vkeyOwned ? kExpectedUpdateSigner : L"";
+        if (!VerifyAuthenticodeSignature(entry.path().wstring(), pin)) {
+            NEXTKEY_LOG(L"VerifyExtractedBinaries: signature check FAILED for %ls — aborting update",
+                        name.c_str());
+            return false;
+        }
+    }
+    if (!sawBinary) {
+        NEXTKEY_LOG(L"VerifyExtractedBinaries: no signed binaries in update — aborting");
+    }
+    return sawBinary;
+}
+
+// Restore original binaries from _old_version/, mark the update failed, relaunch
+// the restored app, and exit. Shared by the extraction-failure and signature-
+// verification-failure paths so both recover identically.
+[[noreturn]] void RollbackRestoreAndExit(const std::wstring& exeDir,
+                                         const std::wstring& oldVersionDir) {
+    namespace fs = std::filesystem;
+    std::error_code rollbackEc;
+    std::wstring restoredExePath;
+    for (const auto& entry : fs::directory_iterator(oldVersionDir, rollbackEc)) {
+        if (!entry.is_regular_file()) continue;
+        std::wstring name = entry.path().filename().wstring();
+        std::wstring destPath = exeDir + L"\\" + name;
+        MoveFileW(entry.path().c_str(), destPath.c_str());
+        if (_wcsicmp(fs::path(name).extension().c_str(), L".exe") == 0 &&
+            name.find(L"VKey") != std::wstring::npos &&
+            name.find(L"Update") == std::wstring::npos) {
+            restoredExePath = destPath;
+        }
+    }
+
+    std::wstring markerPath = exeDir + L"\\_update_failed";
+    HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr,
+                                 CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hMarker != INVALID_HANDLE_VALUE) CloseHandle(hMarker);
+
+    if (!restoredExePath.empty()) {
+        STARTUPINFOW si = { sizeof(si) };
+        PROCESS_INFORMATION pi = {};
+        std::wstring cmdLine = L"\"" + restoredExePath + L"\"";
+        if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                            CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi)) {
+            ZeroMemory(&pi, sizeof(pi));
+            if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                               0, nullptr, exeDir.c_str(), &si, &pi)) {
+                CloseHandle(pi.hThread);
+                CloseHandle(pi.hProcess);
+            }
+        } else {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+        }
+    }
+
+    ExitProcess(1);
+}
+
 }  // namespace
 
 std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
@@ -275,50 +366,7 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
 
     bool extracted = ExtractZip(zipPath, tempDir);
     if (!extracted) {
-        // Rollback: restore original files from _old_version/ back to exeDir
-        namespace fs = std::filesystem;
-        std::error_code rollbackEc;
-        std::wstring restoredExePath;
-        for (const auto& entry : fs::directory_iterator(oldVersionDir, rollbackEc)) {
-            if (!entry.is_regular_file()) continue;
-            std::wstring name = entry.path().filename().wstring();
-            std::wstring destPath = exeDir + L"\\" + name;
-            MoveFileW(entry.path().c_str(), destPath.c_str());
-            // Track the main exe for relaunch
-            if (_wcsicmp(fs::path(name).extension().c_str(), L".exe") == 0 &&
-                name.find(L"VKey") != std::wstring::npos &&
-                name.find(L"Update") == std::wstring::npos) {
-                restoredExePath = destPath;
-            }
-        }
-
-        // Write failure marker so relaunched app can show notification
-        std::wstring markerPath = exeDir + L"\\_update_failed";
-        HANDLE hMarker = CreateFileW(markerPath.c_str(), GENERIC_WRITE, 0, nullptr,
-                                     CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (hMarker != INVALID_HANDLE_VALUE) CloseHandle(hMarker);
-
-        // Relaunch the restored app
-        if (!restoredExePath.empty()) {
-            STARTUPINFOW si = { sizeof(si) };
-            PROCESS_INFORMATION pi = {};
-            std::wstring cmdLine = L"\"" + restoredExePath + L"\"";
-            if (!CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
-                                CREATE_BREAKAWAY_FROM_JOB, nullptr, exeDir.c_str(), &si, &pi)) {
-                // Fallback: launch without breakaway if restricted by job object
-                ZeroMemory(&pi, sizeof(pi));
-                if (CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
-                                   0, nullptr, exeDir.c_str(), &si, &pi)) {
-                    CloseHandle(pi.hThread);
-                    CloseHandle(pi.hProcess);
-                }
-            } else {
-                CloseHandle(pi.hThread);
-                CloseHandle(pi.hProcess);
-            }
-        }
-
-        ExitProcess(1);
+        RollbackRestoreAndExit(exeDir, oldVersionDir);
     }
 
     // 4. Detect ZIP structure: root files or single subdirectory
@@ -335,6 +383,15 @@ std::wstring MakeParkedDllTimestamp(const wchar_t* extraSuffix) noexcept {
 
         if (entries.size() == 1 && entries[0].is_directory()) {
             sourceDir = entries[0].path().wstring();
+        }
+
+        // 5.0 Authenticode gate — verify signatures BEFORE any file is installed
+        //     or run. SHA-256 (VerifyDownloadedZip) only proves the ZIP matches a
+        //     same-origin sidecar; this proves the actual binaries are validly
+        //     signed (and, when pinned, by us). On failure, roll back like a
+        //     failed extraction rather than installing unverified code.
+        if (!VerifyExtractedBinaries(sourceDir)) {
+            RollbackRestoreAndExit(exeDir, oldVersionDir);
         }
 
         // 5a. Special-case TSF DLL (may be mapped in foreign host processes).

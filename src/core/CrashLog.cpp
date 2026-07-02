@@ -3,6 +3,8 @@
 
 #include "CrashLog.h"
 
+#include "Version.h"
+
 #ifdef _WIN32
 #include <Windows.h>
 #include <cstdio>
@@ -54,7 +56,7 @@ void CrashLog(const wchar_t* context, const char* what) noexcept {
     // portable across the Windows builds we target). Truncation is fine:
     // crash context strings are short class/method names.
     int n = _snprintf_s(line, _TRUNCATE,
-        "[%04u-%02u-%02u %02u:%02u:%02u.%03u] PID=%lu TID=%lu %ls: %s\n",
+        "[%04u-%02u-%02u %02u:%02u:%02u.%03u] v" VKEY_VERSION_STR " PID=%lu TID=%lu %ls: %s\n",
         st.wYear, st.wMonth, st.wDay,
         st.wHour, st.wMinute, st.wSecond, st.wMilliseconds,
         GetCurrentProcessId(), GetCurrentThreadId(),

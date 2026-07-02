@@ -659,6 +659,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/engine/VniProposalsTest.cpp
     tests/engine/QuickStartConsonantRuleTest.cpp
     tests/engine/QuickEndConsonantRuleTest.cpp
+    tests/RestartThrottleTest.cpp
     src/app/system/UpdateSecurity.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp

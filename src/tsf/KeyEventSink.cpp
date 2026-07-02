@@ -8,9 +8,26 @@
 #include "CompositionEditSession.h"
 #include "ComUtils.h"
 #include "Define.h"
+#include "core/CrashLog.h"
+
+#include <cstdio>
 
 namespace NextKey {
 namespace TSF {
+
+namespace {
+// SEH filter for the TSF key-event entry points. Logs the structured-exception
+// code (with app version, via CrashLog) then executes the handler. File scope,
+// no C++ locals → safe to call from an __except filter expression. Runs in the
+// host process — the crash log lands next to the module per CrashLog's path
+// logic, giving a breadcrumb for an otherwise-invisible in-host DLL crash.
+LONG LogTsfSeh(const wchar_t* where, unsigned long code) noexcept {
+    char msg[64];
+    _snprintf_s(msg, _TRUNCATE, "TSF SEH structured exception code=0x%08lX", code);
+    ::NextKey::CrashLog(where, msg);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+}  // namespace
 
 // Convert VK code + lParam to the Unicode character the active layout would produce.
 // Uses ToUnicode so it respects US QWERTY, shift state, etc. Returns 0 if not printable.
@@ -133,7 +150,17 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
 
 IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
+    *pfEaten = FALSE;  // fail-safe default
+    if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
+    __try {
+        return OnTestKeyDownImpl(pContext, wParam, lParam, pfEaten);
+    } __except (LogTsfSeh(L"KeyEventSink::OnTestKeyDown", GetExceptionCode())) {
+        *pfEaten = FALSE;  // recovered — pass key through untranslated, host survives
+        return S_OK;
+    }
+}
 
+HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     pEngineController_->CheckConfigEvent();
 
     // Drop any punct char cached by a previous OnTestKeyDown whose OnKeyDown pair
@@ -334,6 +361,8 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
 
 IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LPARAM /*lParam*/, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
+    *pfEaten = FALSE;
+    if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
     // Eat keyup for A-Z and Backspace during active composition
     // (prevents apps from seeing keyup without corresponding keydown)
     // Do NOT call WantKey() here — it has side effects (auto-cap state machine)
@@ -348,7 +377,17 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam
 
 IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
+    *pfEaten = FALSE;  // fail-safe default
+    if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
+    __try {
+        return OnKeyDownImpl(pContext, wParam, lParam, pfEaten);
+    } __except (LogTsfSeh(L"KeyEventSink::OnKeyDown", GetExceptionCode())) {
+        *pfEaten = FALSE;  // recovered — pass key through untranslated, host survives
+        return S_OK;
+    }
+}
 
+HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     pEngineController_->CheckConfigEvent();
 
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -467,6 +506,8 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
 
 IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LPARAM /*lParam*/, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
+    *pfEaten = FALSE;
+    if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
     if (pEngineController_->IsComposing()) {
         UINT vk = static_cast<UINT>(wParam);
         *pfEaten = (vk >= 0x41 && vk <= 0x5A) || vk == VK_BACK ? TRUE : FALSE;
