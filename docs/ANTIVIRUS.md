@@ -70,7 +70,7 @@ Gửi mẫu cho hãng AV để họ gỡ cảnh báo — vài ngày là có hi�
 - **Avast/AVG:** https://www.avast.com/false-positive-file-form.php
 
 Hoặc mở issue tại kho GitHub của VKey kèm **tên phát hiện** (ví dụ `PDM:Trojan.Win32…`)
-và tên phần mềm AV — nhóm phát triển sẽ nộp allowlist giúp.
+và tên phần mềm AV — tác giả sẽ nộp allowlist giúp.
 
 ---
 

@@ -20,7 +20,7 @@ winget install PhatMT97.VKey
 winget install PhatMT97.VKey.Classic
 ```
 **🛠 Sửa lỗi:**
-- Classic version không bật được TSF
+- Sửa lỗi Classic version không bật được TSF
 - Sửa lỗi không thoát được dấu khi viết tắt đmd
 - Sửa lỗi kiểm tra chính tả - tự động không phục hồi khi gõ "rose"
 - Sửa lỗi không chọn được kiểu gõ Telex + VNI/Tự định nghĩa ở phiên bản classic
