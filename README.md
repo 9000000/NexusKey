@@ -129,7 +129,9 @@ cosign verify-blob VKey.zip \
   --certificate-identity-regexp="https://github.com/phatMT97/VKey/"
 ```
 
-> **Lưu ý:** Đây không phải code signing truyền thống (Authenticode). Windows SmartScreen vẫn có thể cảnh báo khi chạy lần đầu — đây là hành vi bình thường với phần mềm mã nguồn mở chưa có chứng chỉ ký số.
+> **Lưu ý:** Ngoài attestation Sigstore ở trên (chứng minh *nguồn build*), các file thực thi của VKey còn được **ký số Authenticode** bởi [SignPath Foundation](https://signpath.org/). Kiểm tra: `(Get-AuthenticodeSignature VKey.exe).Status` phải là `Valid`, publisher `CN=SignPath Foundation`.
+>
+> Dù đã ký số, một số phần mềm diệt virus vẫn có thể cảnh báo VKey theo **hành vi** (bộ gõ nào cũng phải hook bàn phím + gửi phím) — đây là cảnh báo nhầm. Cách khôi phục & loại trừ: **[docs/ANTIVIRUS.md](docs/ANTIVIRUS.md)**.
 
 ---
 
