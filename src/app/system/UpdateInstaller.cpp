@@ -206,26 +206,26 @@ bool CopyDirectoryContents(const std::wstring& srcDir, const std::wstring& destD
     }
 }
 
-// Publisher pin for update binaries. Leave EMPTY to enforce Authenticode (valid
-// signature chaining to a trusted root, not revoked) WITHOUT pinning a specific
-// signer — the safe default that still closes the "serve arbitrary malware"
-// hole. To also reject any other valid publisher, set this to the exact signing
-// certificate subject CN of a released VKey binary; read it with:
+// Publisher pin for VKey-owned update binaries. Verified 2026-07-02 against the
+// signed v4.1.0 release: VKey.exe / VKeyTSF.dll / VKeyWatchdog.exe carry
+//   CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US
+// (free OSS Authenticode signing, issued by GlobalSign). CERT_NAME_SIMPLE_DISPLAY
+// yields "SignPath Foundation", so this substring is the pin. If VKey ever moves
+// to a different signing provider, update this (or clear it to require only a
+// valid signature) — re-read with:
 //   powershell (Get-AuthenticodeSignature VKey.exe).SignerCertificate.Subject
-//   or: signtool verify /pa /v VKey.exe
-// (VKey is signed by a SignPath Foundation OSS certificate.) The pin is applied
-// ONLY to VKey-owned files below — sciter.dll ships with its own vendor
-// signature and would fail a VKey-specific pin.
-constexpr const wchar_t* kExpectedUpdateSigner = L"";
+constexpr const wchar_t* kExpectedUpdateSigner = L"SignPath Foundation";
 
-// Verify every .exe/.dll in the extracted update carries a valid Authenticode
-// signature (chains to a trusted root). VKey-owned binaries additionally get the
-// publisher pin. Returns false if any binary fails or the update contains no
-// signed binaries at all (a valid VKey release always ships signed executables).
+// Verify VKey-owned .exe/.dll in the extracted update carry a valid Authenticode
+// signature (chains to a trusted root, not revoked) AND match the publisher pin.
+// Third-party deps (sciter.dll) ship UNSIGNED — verified against the release —
+// so they are NOT signature-checked here; their integrity rests on the SHA-256'd
+// ZIP. Returns false if any VKey binary fails, or if the update contains no VKey
+// binaries at all (a valid release always ships our signed executables).
 [[nodiscard]] bool VerifyExtractedBinaries(const std::wstring& sourceDir) noexcept {
     namespace fs = std::filesystem;
     std::error_code ec;
-    bool sawBinary = false;
+    bool sawVKeyBinary = false;
     for (const auto& entry : fs::directory_iterator(sourceDir, ec)) {
         if (ec) return false;
         if (!entry.is_regular_file()) continue;
@@ -233,22 +233,20 @@ constexpr const wchar_t* kExpectedUpdateSigner = L"";
         if (_wcsicmp(ext.c_str(), L".exe") != 0 && _wcsicmp(ext.c_str(), L".dll") != 0) {
             continue;
         }
-        sawBinary = true;
-        // Pin applies to our own binaries only; third-party DLLs (sciter.dll)
-        // just need a valid signature.
         const std::wstring name = entry.path().filename().wstring();
-        const bool vkeyOwned = (_wcsnicmp(name.c_str(), L"VKey", 4) == 0);
-        const std::wstring pin = vkeyOwned ? kExpectedUpdateSigner : L"";
-        if (!VerifyAuthenticodeSignature(entry.path().wstring(), pin)) {
-            NEXTKEY_LOG(L"VerifyExtractedBinaries: signature check FAILED for %ls — aborting update",
+        // Enforce on our own binaries only. sciter.dll is unsigned third-party.
+        if (_wcsnicmp(name.c_str(), L"VKey", 4) != 0) continue;
+        sawVKeyBinary = true;
+        if (!VerifyAuthenticodeSignature(entry.path().wstring(), kExpectedUpdateSigner)) {
+            NEXTKEY_LOG(L"VerifyExtractedBinaries: signature/publisher check FAILED for %ls — aborting update",
                         name.c_str());
             return false;
         }
     }
-    if (!sawBinary) {
-        NEXTKEY_LOG(L"VerifyExtractedBinaries: no signed binaries in update — aborting");
+    if (!sawVKeyBinary) {
+        NEXTKEY_LOG(L"VerifyExtractedBinaries: no VKey-owned signed binaries in update — aborting");
     }
-    return sawBinary;
+    return sawVKeyBinary;
 }
 
 // Restore original binaries from _old_version/, mark the update failed, relaunch
