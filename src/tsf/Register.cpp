@@ -35,7 +35,7 @@ static HRESULT RegisterCLSID(bool useHklm) {
         CLSID_TextService.Data4[6], CLSID_TextService.Data4[7]);
 
     HKEY hRoot = useHklm ? HKEY_CLASSES_ROOT : HKEY_CURRENT_USER;
-    
+
     wchar_t szFullKey[300];
     if (useHklm) {
         StringCchCopyW(szFullKey, 300, szKey);
@@ -43,39 +43,25 @@ static HRESULT RegisterCLSID(bool useHklm) {
         StringCchPrintfW(szFullKey, 300, L"Software\\Classes\\%s", szKey);
     }
 
-    HKEY hKey;
-    DWORD dwDisp;
-    LSTATUS ls = RegCreateKeyExW(hRoot, szFullKey, 0, nullptr, 
-        REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, &dwDisp);
-    if (ls != ERROR_SUCCESS) return HRESULT_FROM_WIN32(ls);
-
-    ls = RegSetValueExW(hKey, nullptr, 0, REG_SZ,
-        (const BYTE*)TEXT_SERVICE_DESCRIPTION, 
+    // RegSetKeyValueW creates missing subkeys — replaces the old
+    // RegCreateKeyEx / RegSetValueEx / RegCloseKey triples.
+    LSTATUS ls = RegSetKeyValueW(hRoot, szFullKey, nullptr, REG_SZ,
+        TEXT_SERVICE_DESCRIPTION,
         (lstrlenW(TEXT_SERVICE_DESCRIPTION) + 1) * sizeof(wchar_t));
-    if (ls != ERROR_SUCCESS) { RegCloseKey(hKey); return HRESULT_FROM_WIN32(ls); }
-    RegCloseKey(hKey);
+    if (ls != ERROR_SUCCESS) return HRESULT_FROM_WIN32(ls);
 
     // Register InprocServer32
     wchar_t szInproc[400];
-    if (useHklm) {
-        StringCchPrintfW(szInproc, 400, L"%s\\InprocServer32", szKey);
-    } else {
-        StringCchPrintfW(szInproc, 400, L"Software\\Classes\\%s\\InprocServer32", szKey);
-    }
+    StringCchPrintfW(szInproc, 400, L"%s\\InprocServer32", szFullKey);
 
-    ls = RegCreateKeyExW(hRoot, szInproc, 0, nullptr,
-        REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, &dwDisp);
+    ls = RegSetKeyValueW(hRoot, szInproc, nullptr, REG_SZ,
+        szModule, (lstrlenW(szModule) + 1) * sizeof(wchar_t));
     if (ls != ERROR_SUCCESS) return HRESULT_FROM_WIN32(ls);
 
-    ls = RegSetValueExW(hKey, nullptr, 0, REG_SZ,
-        (const BYTE*)szModule, (lstrlenW(szModule) + 1) * sizeof(wchar_t));
-    if (ls != ERROR_SUCCESS) { RegCloseKey(hKey); return HRESULT_FROM_WIN32(ls); }
-
     const wchar_t* szThreadingModel = L"Apartment";
-    ls = RegSetValueExW(hKey, L"ThreadingModel", 0, REG_SZ,
-        (const BYTE*)szThreadingModel, (lstrlenW(szThreadingModel) + 1) * sizeof(wchar_t));
-    if (ls != ERROR_SUCCESS) { RegCloseKey(hKey); return HRESULT_FROM_WIN32(ls); }
-    RegCloseKey(hKey);
+    ls = RegSetKeyValueW(hRoot, szInproc, L"ThreadingModel", REG_SZ,
+        szThreadingModel, (lstrlenW(szThreadingModel) + 1) * sizeof(wchar_t));
+    if (ls != ERROR_SUCCESS) return HRESULT_FROM_WIN32(ls);
 
     return S_OK;
 }

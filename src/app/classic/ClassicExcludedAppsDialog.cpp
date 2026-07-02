@@ -5,6 +5,7 @@
 #include "core/config/ConfigManager.h"
 #include "core/CrashLog.h"
 #include "app/helpers/AppHelpers.h"
+#include "app/helpers/ExcludedAppsStore.h"
 #include "core/PathUtil.h"
 
 #include <windowsx.h>
@@ -203,10 +204,8 @@ void ClassicExcludedAppsDialog::AddApp(const std::wstring& name, int mode) {
     // ClassicTsfAppsDialog) so native apps can be added by pasting their path.
     std::wstring lower = ToLowerAscii(PathBasename(name));
 
-    // Block VKey itself — VKeyLite ships with OUTPUT_NAME=VKeyClassic
-    // (CMakeLists.txt:342). Mirror the three-name guard already used by
-    // ClassicTsfAppsDialog.cpp:185.
-    if (lower == L"vkey.exe" || lower == L"vkeylite.exe" || lower == L"vkeyclassic.exe") {
+    // Block VKey itself.
+    if (IsVKeyOwnExe(lower)) {
         MessageBoxW(hwnd_, L"Không thể thêm VKey vào danh sách loại trừ.",
             L"Lỗi", MB_ICONWARNING);
         return;
@@ -267,23 +266,7 @@ void ClassicExcludedAppsDialog::ImportFromFile() {
     if (choice == IDYES) appList_.clear(); // Replace
 
     ParseConfigLines(file, [&](const std::string& line) {
-        // Per-app mode tag (D4): "name|V" → force-V, plain "name" → E.
-        // Untagged lines stay E so files exported before this feature import
-        // unchanged.
-        std::wstring entry = Utf8ToWide(line);
-        int mode = kModeE;
-        auto bar = entry.find_last_of(L'|');
-        if (bar != std::wstring::npos) {
-            std::wstring tag = ToLowerAscii(entry.substr(bar + 1));
-            if (tag == L"v") mode = kModeV;
-            entry = entry.substr(0, bar);
-        }
-        std::wstring lower = ToLowerAscii(entry);
-        if (lower.empty()) return;
-        for (auto& e : appList_) {
-            if (e.first == lower) { e.second = mode; return; }  // dedup → update mode
-        }
-        appList_.emplace_back(lower, mode);
+        MergeTaggedAppLine(appList_, line);
     });
 
     std::sort(appList_.begin(), appList_.end(),
@@ -304,15 +287,7 @@ void ClassicExcludedAppsDialog::ExportToFile() {
         return;
     }
 
-    file << ";VKey Excluded Apps (name = English/excluded, name|V = force Vietnamese)\n";
-    auto sorted = appList_;
-    std::sort(sorted.begin(), sorted.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
-    for (auto& app : sorted) {
-        file << WideToUtf8(app.first);
-        if (app.second == kModeV) file << "|V";
-        file << "\n";
-    }
+    WriteTaggedAppList(file, appList_);
 }
 
 void ClassicExcludedAppsDialog::OnPickWindow() {
@@ -326,32 +301,12 @@ void ClassicExcludedAppsDialog::OnPickWindow() {
 // ════════════════════════════════════════════════════════════
 
 void ClassicExcludedAppsDialog::LoadData() {
-    const auto path = ConfigManager::GetConfigPath();
-    appList_.clear();
-    for (auto& e : ConfigManager::LoadAllExcludedApps(path)) {
-        appList_.emplace_back(std::move(e), kModeE);
-    }
-    for (auto& v : ConfigManager::LoadForcedVnApps(path)) {
-        // Disjoint-by-name (excluded wins) — mirror ConfigSnapshotBuilder.
-        bool dup = false;
-        for (auto& e : appList_) { if (e.first == v) { dup = true; break; } }
-        if (!dup) appList_.emplace_back(std::move(v), kModeV);
-    }
-    std::sort(appList_.begin(), appList_.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+    appList_ = LoadTaggedAppList();
 }
 
 void ClassicExcludedAppsDialog::SaveData() {
     modified_ = true;
-    // Partition the tagged list back into the two TOML arrays.
-    std::vector<std::wstring> excluded, forcedVn;
-    for (auto& app : appList_) {
-        (app.second == kModeV ? forcedVn : excluded).push_back(app.first);
-    }
-    const auto path = ConfigManager::GetConfigPath();
-    (void)ConfigManager::SaveExcludedApps(path, excluded);
-    (void)ConfigManager::SaveForcedVnApps(path, forcedVn);
-    SignalConfigChange();
+    SaveTaggedAppList(appList_);
 }
 
 // ════════════════════════════════════════════════════════════
