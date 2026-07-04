@@ -4173,20 +4173,13 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     if (cls->isTsf) {
         HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough",
                  focus_.LastRealExe().c_str());
-        // #195: mode is fully RESOLVED here (the force-V / smart-switch blocks above
-        // ran), so re-publish to activate the VKey TSF profile with the correct mode.
-        // The early tsfModeCallback_ near the top fires BEFORE that resolution, so on
-        // entry from an English app it would read the previous mode and skip the
-        // activation — that is why "Khoa E/V theo app" did not auto-apply to TSF.
-        // Still focus-driven only (never the OnTickPoll TSF_TIP_ACTIVE/Win+Space
-        // monitor). #109: the callback (main.cpp) now (re-)activates on EVERY focus
-        // into a TSF app regardless of V/E — re-asserting on focus is what lets TIP
-        // selection recover after it is lost. Trade-off: a deliberate Win+Space→US
-        // keyboard switch inside a TSF-list app is re-grabbed on the next focus.
-        // Idempotent + throttled inside ActivateVKeyTsfProfile().
-        if (tsfModeCallback_) {
-            tsfModeCallback_(/*tsfActive=*/true, /*tsfReadonly=*/false);
-        }
+        // #195/#209: no callback re-fire here. The early tsfModeCallback_ above
+        // already published (tsfActive=true, tsfReadonly=false) and posted the
+        // TIP re-assert. The re-fire existed because the old main.cpp callback
+        // read V/E mode (resolved only by the force-V / smart-switch blocks
+        // above); since #209 the callback is mode-independent, so firing again
+        // would be an identical duplicate. Still focus-driven only (never the
+        // OnTickPoll TSF_TIP_ACTIVE/Win+Space monitor).
         return;
     }
 

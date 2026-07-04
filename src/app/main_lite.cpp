@@ -550,11 +550,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         // and revert to V/E when it isn't. Deferred to the tray message thread.
         if (HWND tsfTrayWnd = g_trayIcon.GetMessageWindow()) {
             PostMessageW(tsfTrayWnd, WM_VKEY_TRAY_TSF_SYNC, tsfActive ? 1 : 0, 0);
-        }
-        if (tsfActive && g_hookEngine.IsVietnameseMode()) {
-            HWND trayWnd = g_trayIcon.GetMessageWindow();
-            if (trayWnd) {
-                PostMessageW(trayWnd, WM_VKEY_ACTIVATE_TSF, 0, 0);
+            // #209: re-assert TIP selection on every focus into a TSF app, NOT
+            // gated on V/E — selection recovery matters in both modes (the TIP
+            // passes through in E). Throttled + idempotent inside
+            // ActivateVKeyTsfProfile(). See main.cpp for the full rationale.
+            if (tsfActive) {
+                PostMessageW(tsfTrayWnd, WM_VKEY_ACTIVATE_TSF, 0, 0);
             }
         }
     });
