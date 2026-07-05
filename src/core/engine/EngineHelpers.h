@@ -199,14 +199,24 @@ inline void UndoHornU(CharStateT* states, size_t oIndex) noexcept {
 }
 
 /// Recalculate English protection bias after backspace.
-/// Resets bias and re-checks from scratch with current states.
+/// Resets bias, then REPLAYS CheckEnglishBias incrementally over every
+/// prefix (as if each remaining char were just typed) instead of a single
+/// pass over the full buffer. CheckEnglishBias's invalid-coda check
+/// (IsInvalidVietnameseCoda) only inspects the TRAILING consonant run, so a
+/// one-shot pass over the whole buffer misses an offending cluster that is
+/// no longer trailing — e.g. "android" (correctly HardEnglish-latched at
+/// "and") minus a trailing backspace leaves "androi", where "nd" is now
+/// buried before "roi" and a one-shot check would silently un-latch it,
+/// letting a retyped 'd' misfire dd→đ ("anđroi", #209 2026-07-05). Replaying
+/// incrementally re-derives the exact bias forward typing would have
+/// produced, catching "nd" while it was still trailing at length 3.
 /// Call after Backspace() modifies the state buffer.
 template<typename CharStateT>
 inline void RecalcEnglishBias(const CharStateT* states, size_t count,
                               EnglishProtectionState& engProt) noexcept {
     engProt.Reset();
-    if (count >= 2) {
-        CheckEnglishBias(states, count, engProt);
+    for (size_t len = 2; len <= count; ++len) {
+        CheckEnglishBias(states, len, engProt);
     }
 }
 

@@ -2432,6 +2432,21 @@ TEST_F(EnglishProtectionTest, Backspace_ResetsProtection) {
     EXPECT_EQ(engine_->Peek(), L"dá");
 }
 
+TEST_F(EnglishProtectionTest, Backspace_KeepsHardEnglish_WhenOffendingClusterStillBuried) {
+    // #209 (Shzr0, 2026-07-05): "android" latches HardEnglish at "and" (invalid
+    // "nd" coda) and stays literal through the whole word. Backspacing only the
+    // TRAILING 'd' leaves "androi" — "nd" is still present, just no longer
+    // trailing. RecalcEnglishBias must not un-latch HardEnglish here: a
+    // one-shot recheck of "androi" alone misses "nd" (buffer now ends in a
+    // vowel), which used to let a retyped 'd' misfire dd→đ ("anđroi").
+    TypeString(*engine_, L"android");
+    EXPECT_EQ(engine_->Peek(), L"android");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"androi");
+    TypeString(*engine_, L"d");
+    EXPECT_EQ(engine_->Peek(), L"android");
+}
+
 TEST_F(EnglishProtectionTest, SoftReject_Effect) {
     // "effect": 'e'+'f' → spell check OK at this point (awaiting more vowels ValidPrefix).
     // 2nd 'f' = same tone escape → clears tone + adds literal 'f'.
