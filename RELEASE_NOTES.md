@@ -8,6 +8,7 @@
 - Mặc định phím chuyển Ctrl+Shift và bật kiểm tra chính tả + tự động khôi phục phím, giúp đồng bộ trải nghiệm với unikey
 - Cho phép gõ các từ như voọc, soóc,...
 - Icon TSF T(đỏ/xanh) tương ứng với mode V/E
+- Thay đổi màu sắc/kiểu của icon V/E cho rõ nét hơn
 - Tối ưu lại resource giúp giảm kích thước file
 - Hỗ trợ cài đặt nhanh và tự động cập nhật qua WinGet cho cả 2 phiên bản (Sciter và Classic)
 
