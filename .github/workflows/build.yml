@@ -214,12 +214,14 @@ jobs:
         shell: powershell
         run: |
           Compress-Archive -Path "dist/*" -DestinationPath VKey.zip
+          Copy-Item VKey.zip VKey-x64.zip -Force
 
       - name: Zip Classic Release
         if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-classic == 'true'
         shell: powershell
         run: |
           Compress-Archive -Path "dist-classic/*" -DestinationPath VKeyClassic.zip
+          Copy-Item VKeyClassic.zip VKeyClassic-x64.zip -Force
 
       # --- SHA-256 checksums ---
       - name: Generate SHA-256 checksums
@@ -231,9 +233,11 @@ jobs:
           $files = @()
           if ("${{ needs.build.outputs.has-sciter }}" -eq "true") {
             $files += "VKey.zip"
+            $files += "VKey-x64.zip"
           }
           if ("${{ needs.build.outputs.has-classic }}" -eq "true") {
             $files += "VKeyClassic.zip"
+            $files += "VKeyClassic-x64.zip"
           }
           foreach ($file in $files) {
             $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
@@ -245,13 +249,17 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-sciter == 'true'
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: VKey.zip
+          subject-path: |
+            VKey.zip
+            VKey-x64.zip
 
       - name: Attest VKey Classic
         if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-classic == 'true'
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: VKeyClassic.zip
+          subject-path: |
+            VKeyClassic.zip
+            VKeyClassic-x64.zip
 
       - name: Release
         uses: softprops/action-gh-release@v1
@@ -261,8 +269,12 @@ jobs:
           files: |
             VKey.zip
             VKey.zip.sha256
+            VKey-x64.zip
+            VKey-x64.zip.sha256
             VKeyClassic.zip
             VKeyClassic.zip.sha256
+            VKeyClassic-x64.zip
+            VKeyClassic-x64.zip.sha256
           fail_on_unmatched_files: false
 
       # NOTE: winget-releaser only UPDATES an existing package — both
@@ -275,8 +287,9 @@ jobs:
         with:
           identifier: PhatMT97.VKey
           # Release assets are .zip, not installers — the default regex
-          # (exe|msi|msix|appx) matches nothing. Anchor so VKeyClassic.zip is excluded.
-          installers-regex: '^VKey\.zip$'
+          # (exe|msi|msix|appx) matches nothing. Match the -x64.zip release asset
+          # so Komac detects the x64 architecture.
+          installers-regex: '^VKey-x64\.zip$'
           token: ${{ secrets.WINGET_TOKEN }}
 
       - name: Submit VKey Classic to WinGet
@@ -284,7 +297,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-classic == 'true'
         with:
           identifier: PhatMT97.VKey.Classic
-          installers-regex: '^VKeyClassic\.zip$'
+          installers-regex: '^VKeyClassic-x64\.zip$'
           token: ${{ secrets.WINGET_TOKEN }}
 
       - name: Upload artifacts
