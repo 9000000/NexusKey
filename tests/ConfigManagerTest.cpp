@@ -86,9 +86,9 @@ TEST_F(ConfigManagerTest, LoadOrDefault_NoFile) {
     // LoadOrDefault should return compiled defaults when no file exists
     auto config = ConfigManager::LoadOrDefault();
     
-    // Defaults are Telex, no spell check, optimize 0
+    // Defaults are Telex, spell check ON, optimize 0
     EXPECT_EQ(config.inputMethod, InputMethod::Telex);
-    EXPECT_FALSE(config.spellCheckEnabled);
+    EXPECT_TRUE(config.spellCheckEnabled);
     EXPECT_EQ(config.optimizeLevel, 0);
 }
 
