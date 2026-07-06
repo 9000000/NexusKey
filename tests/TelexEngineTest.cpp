@@ -2368,6 +2368,26 @@ protected:
     std::unique_ptr<TypingEngine> engine_;
 };
 
+TEST_F(EnglishProtectionTest, Ruou_AllUOTypedBeforeHornW) {
+    // "uou" (3 raw vowels, no modifiers yet) must validate as ValidPrefix —
+    // TryModifiedVowels used to only try flipping ONE vowel slot, missing
+    // that u+o move together under horn (→ươu). That falsely marked the
+    // syllable Invalid, which blocked 'w' entirely (WouldModifierRecoverOrEscape
+    // only allows escaping an EXISTING horn, not applying a new one).
+    TypeString(*engine_, L"ruouwj");
+    EXPECT_EQ(engine_->Peek(), L"rượu");
+}
+
+TEST_F(EnglishProtectionTest, Ruou_HornWBeforeSecondU) {
+    TypeString(*engine_, L"ruowuj");
+    EXPECT_EQ(engine_->Peek(), L"rượu");
+}
+
+TEST_F(EnglishProtectionTest, Ruou_ToneBeforeSecondU) {
+    TypeString(*engine_, L"ruowju");
+    EXPECT_EQ(engine_->Peek(), L"rượu");
+}
+
 TEST_F(EnglishProtectionTest, HardReject_DR_Cluster) {
     // "drive" starts with "dr" → impossible in Vietnamese
     // Note: "dropdown" starts with "dd" which is a Vietnamese modifier (đ);
