@@ -3137,6 +3137,26 @@ void HookEngine::DrainClassifyOnWorker() {
 void HookEngine::MarkActivity() noexcept {
     lastActivityTickMs_.store(GetTickCount64(), std::memory_order_relaxed);
     if (currentTickIntervalMs_.load(std::memory_order_relaxed) != NextKey::kTickActiveMs) {
+        // Resuming from idle/STOP. vietnameseMode_ otherwise syncs from
+        // SharedState only inside OnTickPoll (200ms worker tick) — which is
+        // exactly what was parked. workerSignalFn_() wakes the worker, but
+        // that wake + DrainClassifyOnWorker + mailbox post is async and can
+        // land after THIS keystroke already dispatched with a stale mode
+        // (2026-07 field report: first word after ~5 min idle types in the
+        // wrong V/E mode; delete+retype "fixes" it once the worker catches
+        // up). Re-sync inline here — cheap (mmap struct read, no alloc),
+        // safe on the hook thread per Rule 11.2 — so the very first resumed
+        // key already sees the right mode.
+        if (sharedStatePtr_) {
+            const SharedState st = sharedStatePtr_->Read();
+            if (st.IsValid()) {
+                const bool sharedVn = (st.flags & SharedFlags::VIETNAMESE_MODE) != 0;
+                if (sharedVn != vietnameseMode_.load(std::memory_order_acquire)) {
+                    vietnameseMode_.store(sharedVn, std::memory_order_release);
+                    NotifyModeChange();
+                }
+            }
+        }
         if (workerSignalFn_) workerSignalFn_();
     }
 }

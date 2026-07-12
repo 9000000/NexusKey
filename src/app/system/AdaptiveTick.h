@@ -36,7 +36,14 @@ inline constexpr std::uint32_t kTickActiveMs = 200;
 // the worker STOPS (parks) so Windows can trim the working set. Tunable: lower
 // (e.g. 60000) to trim idle machines sooner, at the cost of a slightly more
 // frequent (harmless) resume refault.
-inline constexpr std::uint64_t kIdleStopThreshMs = 120000;  // 2 min
+//
+// 2026-07-12: raised 2 min -> 30 min. The resume race (first keystroke after
+// STOP can see state that hasn't been re-synced by the worker yet — see
+// HookEngine::MarkActivity) is now closed inline, but a short threshold still
+// meant routine short pauses (reading, alt-tabbing) parked the worker several
+// times an hour for a RAM saving nobody asked to trade typing correctness
+// for. 30 min covers real away-from-keyboard idle without giving up the trim.
+inline constexpr std::uint64_t kIdleStopThreshMs = 1800000;  // 30 min
 
 /// Given milliseconds since last user activity, return the tick interval the
 /// MainThreadWorker should use. Pure function; no globals, no Win32. Boundary
