@@ -65,7 +65,8 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
 
     // Enable dark mode for context menus (must be called before showing any menu)
     DarkModeHelper::ApplyDarkModeForApp();
-    DarkModeHelper::SetWindowDarkMode(hwndMessage_, DarkModeHelper::IsWindowsDarkMode());
+    const bool forceLightTheme = ConfigManager::LoadSystemConfigOrDefault().forceLightTheme;
+    DarkModeHelper::SetWindowDarkMode(hwndMessage_, !forceLightTheme && DarkModeHelper::IsWindowsDarkMode());
 
     ShowWindow(hwndMessage_, SW_HIDE);
 
@@ -653,7 +654,8 @@ LRESULT CALLBACK TrayIcon::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         // Real-time theme switch for context menus + Auto tray icon (issue #104)
         if (msg == WM_SETTINGCHANGE && lParam) {
             if (wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
-                bool dark = DarkModeHelper::IsWindowsDarkMode();
+                bool dark = !ConfigManager::LoadSystemConfigOrDefault().forceLightTheme &&
+                            DarkModeHelper::IsWindowsDarkMode();
                 DarkModeHelper::SetWindowDarkMode(hwnd, dark);
 
                 if (g_trayInstance &&

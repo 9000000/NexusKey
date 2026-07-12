@@ -11,17 +11,31 @@ enum class PreferredAppMode { Default = 0, AllowDark = 1, ForceDark = 2, ForceLi
 using fnSetPreferredAppMode = PreferredAppMode(WINAPI*)(PreferredAppMode);
 using fnAllowDarkModeForWindow = bool(WINAPI*)(HWND, bool);
 using fnRefreshImmersiveColorPolicyState = void(WINAPI*)();
+using fnShouldAppsUseDarkMode = bool(WINAPI*)();
 
 namespace NextKey {
 namespace DarkModeHelper {
 
 bool IsWindowsDarkMode() noexcept {
-    DWORD value = 1;  // Default: light mode (safe fallback)
+    DWORD value = 0;
     DWORD size = sizeof(value);
-    RegGetValueW(HKEY_CURRENT_USER,
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-        L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size);
-    return value == 0;
+    if (RegGetValueW(HKEY_CURRENT_USER,
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size)
+            == ERROR_SUCCESS) {
+        return value == 0;
+    }
+
+    // Key missing/unreadable (e.g. never-personalized profile, some unactivated
+    // Win10 installs — GitHub #219). Ask uxtheme.dll directly instead of
+    // silently assuming light.
+    if (HMODULE hUxTheme = GetModuleHandleW(L"uxtheme.dll")) {
+        // Ordinal 132: ShouldAppsUseDarkMode (Windows 1809+)
+        auto shouldDark = reinterpret_cast<fnShouldAppsUseDarkMode>(
+            GetProcAddress(hUxTheme, MAKEINTRESOURCEA(132)));
+        if (shouldDark) return shouldDark();
+    }
+    return false;  // safe fallback: light
 }
 
 bool IsTaskbarDark() noexcept {

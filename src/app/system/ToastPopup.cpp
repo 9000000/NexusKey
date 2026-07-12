@@ -5,6 +5,7 @@
 #include "DarkModeHelper.h"
 #include "../resource.h"
 #include "core/CrashLog.h"
+#include "core/config/ConfigManager.h"
 #include <exception>
 #include <shellapi.h>
 
@@ -97,7 +98,9 @@ void ToastPopup::Show(const std::wstring& message, DWORD durationMs) {
     }
 
     // Store initial theme
-    SetPropW(hwnd, L"dark", reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(DarkModeHelper::IsWindowsDarkMode() ? 1 : 0)));
+    bool initialDark = !ConfigManager::LoadSystemConfigOrDefault().forceLightTheme &&
+                        DarkModeHelper::IsWindowsDarkMode();
+    SetPropW(hwnd, L"dark", reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(initialDark ? 1 : 0)));
 
     SetLayeredWindowAttributes(hwnd, 0, TOAST_ALPHA, LWA_ALPHA);
 
@@ -219,7 +222,8 @@ LRESULT CALLBACK ToastPopup::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
         case WM_SETTINGCHANGE: {
             // Real-time theme switch: Windows broadcasts this when user changes theme
             if (lParam && wcscmp(reinterpret_cast<LPCWSTR>(lParam), L"ImmersiveColorSet") == 0) {
-                bool newDark = DarkModeHelper::IsWindowsDarkMode();
+                bool newDark = !ConfigManager::LoadSystemConfigOrDefault().forceLightTheme &&
+                               DarkModeHelper::IsWindowsDarkMode();
                 bool oldDark = reinterpret_cast<LONG_PTR>(GetPropW(hwnd, L"dark")) != 0;
                 if (newDark != oldDark) {
                     SetPropW(hwnd, L"dark", reinterpret_cast<HANDLE>(static_cast<LONG_PTR>(newDark ? 1 : 0)));
