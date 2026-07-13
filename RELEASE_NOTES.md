@@ -6,6 +6,8 @@
 
 **🛠 Sửa lỗi:**
 - Sửa lỗi typing ruouwj không đặt dấu được
+- Sửa lỗi theme hoạt động chưa tối ưu
+- Sửa lỗi app tiến vào trạng thái idle quá nhanh
 
 ---
 
