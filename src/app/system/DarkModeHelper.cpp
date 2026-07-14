@@ -11,49 +11,46 @@ enum class PreferredAppMode { Default = 0, AllowDark = 1, ForceDark = 2, ForceLi
 using fnSetPreferredAppMode = PreferredAppMode(WINAPI*)(PreferredAppMode);
 using fnAllowDarkModeForWindow = bool(WINAPI*)(HWND, bool);
 using fnRefreshImmersiveColorPolicyState = void(WINAPI*)();
+using fnShouldAppsUseDarkMode = bool(WINAPI*)();
 
 namespace NextKey {
 namespace DarkModeHelper {
 
 bool IsWindowsDarkMode() noexcept {
-    HKEY hKey;
-    DWORD value = 1;  // Default: light mode (safe fallback)
+    DWORD value = 0;
     DWORD size = sizeof(value);
-
-    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+    if (RegGetValueW(HKEY_CURRENT_USER,
             L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        RegQueryValueExW(hKey, L"AppsUseLightTheme", nullptr, nullptr,
-                         reinterpret_cast<LPBYTE>(&value), &size);
-        RegCloseKey(hKey);
+            L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size)
+            == ERROR_SUCCESS) {
+        return value == 0;
     }
 
-    return value == 0;
+    // Key missing/unreadable (e.g. never-personalized profile, some unactivated
+    // Win10 installs — GitHub #219). Ask uxtheme.dll directly instead of
+    // silently assuming light.
+    if (HMODULE hUxTheme = GetModuleHandleW(L"uxtheme.dll")) {
+        // Ordinal 132: ShouldAppsUseDarkMode (Windows 1809+)
+        auto shouldDark = reinterpret_cast<fnShouldAppsUseDarkMode>(
+            GetProcAddress(hUxTheme, MAKEINTRESOURCEA(132)));
+        if (shouldDark) return shouldDark();
+    }
+    return false;  // safe fallback: light
 }
 
 bool IsTaskbarDark() noexcept {
-    HKEY hKey;
+    // SystemUsesLightTheme was added in Win10 1903. On older builds the value
+    // is absent — fall back to the app theme so behavior stays sensible.
+    // RRF_RT_REG_DWORD rejects a tampered/corrupt value of another type.
     DWORD value = 0;
     DWORD size = sizeof(value);
-    DWORD type = 0;
-    bool found = false;
-
-    if (RegOpenKeyExW(HKEY_CURRENT_USER,
+    if (RegGetValueW(HKEY_CURRENT_USER,
             L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-            0, KEY_READ, &hKey) == ERROR_SUCCESS) {
-        // SystemUsesLightTheme was added in Win10 1903. On older builds the value
-        // is absent — fall back to the app theme so behavior stays sensible.
-        // Also require REG_DWORD: a tampered/corrupt value of another type would
-        // otherwise feed garbage bytes into `value`.
-        if (RegQueryValueExW(hKey, L"SystemUsesLightTheme", nullptr, &type,
-                             reinterpret_cast<LPBYTE>(&value), &size) == ERROR_SUCCESS
-            && type == REG_DWORD && size == sizeof(value)) {
-            found = true;
-        }
-        RegCloseKey(hKey);
+            L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size)
+            == ERROR_SUCCESS) {
+        return value == 0;
     }
-
-    return found ? (value == 0) : IsWindowsDarkMode();
+    return IsWindowsDarkMode();
 }
 
 bool IsWindows11OrGreater() noexcept {

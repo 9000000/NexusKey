@@ -948,7 +948,37 @@ void HookEngine::ReloadFromToml() {
 // Static Hook Callbacks → Instance Dispatch
 // ═══════════════════════════════════════════════════════════
 
+namespace {
+// Hard cap on the raw macro-tracking buffer. No macro key is remotely this long
+// (config caps keys at 32), so a buffer past this can't match anything — clear it
+// rather than let a trigger-less keystroke stream grow it unbounded and slow the
+// per-key macro lookup on the hot path.
+constexpr size_t kMaxRawMacroBuffer = 128;
+
+// SEH filter: log the structured-exception code, then execute the handler.
+// Kept at file scope (no C++ locals) so it is safe to call from an __except
+// filter expression. Runs in the LL-hook thread of VKeyApp.
+LONG LogHookSeh(const wchar_t* where, unsigned long code) noexcept {
+    char msg[64];
+    _snprintf_s(msg, _TRUNCATE, "SEH structured exception code=0x%08lX", code);
+    ::NextKey::CrashLog(where, msg);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+}  // namespace
+
+// SEH wrapper — see header for why. Recovers by resetting composition and
+// passing the key through untranslated; VKeyApp stays alive.
 LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    __try {
+        return LowLevelKeyboardProcImpl(nCode, wParam, lParam);
+    } __except (LogHookSeh(L"HookEngine::LowLevelKeyboardProc", GetExceptionCode())) {
+        HookEngine* self = s_instance.load(std::memory_order_relaxed);
+        if (self) self->ResetComposition();
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+}
+
+LRESULT HookEngine::LowLevelKeyboardProcImpl(int nCode, WPARAM wParam, LPARAM lParam) {
     // Phase 1: Tier 2 budget marker (<30ms p99). Wraps the full LL callback
     // body so the recorded delta includes every nested stage. PERF_SCOPE
     // compiles to (void)0 when VKEY_PERF_HIST is not defined.
@@ -1095,6 +1125,16 @@ LRESULT CALLBACK HookEngine::LowLevelKeyboardProc(int nCode, WPARAM wParam, LPAR
 // FocusChangedFn callback registered in focus_.Install().
 
 LRESULT CALLBACK HookEngine::LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    __try {
+        return LowLevelMouseProcImpl(nCode, wParam, lParam);
+    } __except (LogHookSeh(L"HookEngine::LowLevelMouseProc", GetExceptionCode())) {
+        HookEngine* self = s_instance.load(std::memory_order_relaxed);
+        if (self) self->ResetComposition();
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+}
+
+LRESULT HookEngine::LowLevelMouseProcImpl(int nCode, WPARAM wParam, LPARAM lParam) {
     try {
         if (nCode == HC_ACTION && wParam == WM_LBUTTONDOWN) {
             HookEngine* self = s_instance.load(std::memory_order_relaxed);
@@ -3097,6 +3137,26 @@ void HookEngine::DrainClassifyOnWorker() {
 void HookEngine::MarkActivity() noexcept {
     lastActivityTickMs_.store(GetTickCount64(), std::memory_order_relaxed);
     if (currentTickIntervalMs_.load(std::memory_order_relaxed) != NextKey::kTickActiveMs) {
+        // Resuming from idle/STOP. vietnameseMode_ otherwise syncs from
+        // SharedState only inside OnTickPoll (200ms worker tick) — which is
+        // exactly what was parked. workerSignalFn_() wakes the worker, but
+        // that wake + DrainClassifyOnWorker + mailbox post is async and can
+        // land after THIS keystroke already dispatched with a stale mode
+        // (2026-07 field report: first word after ~5 min idle types in the
+        // wrong V/E mode; delete+retype "fixes" it once the worker catches
+        // up). Re-sync inline here — cheap (mmap struct read, no alloc),
+        // safe on the hook thread per Rule 11.2 — so the very first resumed
+        // key already sees the right mode.
+        if (sharedStatePtr_) {
+            const SharedState st = sharedStatePtr_->Read();
+            if (st.IsValid()) {
+                const bool sharedVn = (st.flags & SharedFlags::VIETNAMESE_MODE) != 0;
+                if (sharedVn != vietnameseMode_.load(std::memory_order_acquire)) {
+                    vietnameseMode_.store(sharedVn, std::memory_order_release);
+                    NotifyModeChange();
+                }
+            }
+        }
         if (workerSignalFn_) workerSignalFn_();
     }
 }
@@ -3260,6 +3320,7 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
             const bool upper = shift != capsLock;  // XOR
             rawMacroBuffer_ += upper ? static_cast<wchar_t>(vk)
                                       : towlower(static_cast<wchar_t>(vk));
+            if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) rawMacroBuffer_.clear();
         } else if (hotkeysSnap
                    && hotkeysSnap->Matches(NextKey::Intent::SkipMacro, vk, currentMods,
                                            /*isDoubleTap=*/false, /*keyUp=*/false)
@@ -3302,6 +3363,7 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
             const bool upper = shift != capsLock;  // XOR
             rawMacroBuffer_ += upper ? static_cast<wchar_t>(vk)
                                       : towlower(static_cast<wchar_t>(vk));
+            if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) rawMacroBuffer_.clear();
         } else if (IsCommitTrigger(vk)) {
             const wchar_t ch = VkToMacroChar(vk);
             if (ch > L' ') rawMacroBuffer_ += ch;  // Printable non-space chars
@@ -3627,33 +3689,9 @@ void HookEngine::InjectKey(DWORD vkCode) {
 }
 
 bool HookEngine::IsCommitTrigger(DWORD vkCode) {
-    // Space, Enter, Escape
-    if (vkCode == VK_SPACE || vkCode == VK_RETURN || vkCode == VK_ESCAPE) return true;
-
-    // Tab
-    if (vkCode == VK_TAB) return true;
-
-    // Arrow keys
-    if (vkCode >= VK_LEFT && vkCode <= VK_DOWN) return true;
-    if (vkCode == VK_HOME || vkCode == VK_END ||
-        vkCode == VK_PRIOR || vkCode == VK_NEXT) return true;
-
-    // Number keys (0-9)
-    if (vkCode >= 0x30 && vkCode <= 0x39) return true;
-
-    // Numpad keys
-    if (vkCode >= VK_NUMPAD0 && vkCode <= VK_DIVIDE) return true;
-
-    // OEM keys (punctuation)
-    if (vkCode >= VK_OEM_1 && vkCode <= VK_OEM_3) return true;
-    if (vkCode >= VK_OEM_4 && vkCode <= VK_OEM_8) return true;
-    if (vkCode == VK_OEM_PLUS || vkCode == VK_OEM_COMMA ||
-        vkCode == VK_OEM_MINUS || vkCode == VK_OEM_PERIOD) return true;
-
-    // Delete, Insert
-    if (vkCode == VK_DELETE || vkCode == VK_INSERT) return true;
-
-    return false;
+    // Single source of truth: Macro::IsCommitTrigger (core, Linux-tested).
+    // The VK set here was a byte-identical duplicate of that table.
+    return Macro::IsCommitTrigger(vkCode);
 }
 
 bool HookEngine::IsOemPunctVk(DWORD vkCode) {
@@ -4155,20 +4193,13 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     if (cls->isTsf) {
         HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough",
                  focus_.LastRealExe().c_str());
-        // #195: mode is fully RESOLVED here (the force-V / smart-switch blocks above
-        // ran), so re-publish to activate the VKey TSF profile with the correct mode.
-        // The early tsfModeCallback_ near the top fires BEFORE that resolution, so on
-        // entry from an English app it would read the previous mode and skip the
-        // activation — that is why "Khoa E/V theo app" did not auto-apply to TSF.
-        // Still focus-driven only (never the OnTickPoll TSF_TIP_ACTIVE/Win+Space
-        // monitor). #109: the callback (main.cpp) now (re-)activates on EVERY focus
-        // into a TSF app regardless of V/E — re-asserting on focus is what lets TIP
-        // selection recover after it is lost. Trade-off: a deliberate Win+Space→US
-        // keyboard switch inside a TSF-list app is re-grabbed on the next focus.
-        // Idempotent + throttled inside ActivateVKeyTsfProfile().
-        if (tsfModeCallback_) {
-            tsfModeCallback_(/*tsfActive=*/true, /*tsfReadonly=*/false);
-        }
+        // #195/#209: no callback re-fire here. The early tsfModeCallback_ above
+        // already published (tsfActive=true, tsfReadonly=false) and posted the
+        // TIP re-assert. The re-fire existed because the old main.cpp callback
+        // read V/E mode (resolved only by the force-V / smart-switch blocks
+        // above); since #209 the callback is mode-independent, so firing again
+        // would be an identical duplicate. Still focus-driven only (never the
+        // OnTickPoll TSF_TIP_ACTIVE/Win+Space monitor).
         return;
     }
 

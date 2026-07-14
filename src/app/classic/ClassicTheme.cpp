@@ -48,12 +48,7 @@ void ClassicTheme::DetectDarkMode() {
         isDark_ = false;
         return;
     }
-    DWORD value = 1;  // default light
-    DWORD size = sizeof(value);
-    RegGetValueW(HKEY_CURRENT_USER,
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-        L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size);
-    isDark_ = (value == 0);
+    isDark_ = DarkModeHelper::IsWindowsDarkMode();
 }
 
 void ClassicTheme::RefreshColors() {

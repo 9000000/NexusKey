@@ -867,21 +867,6 @@
     vertical-align: middle;
 }
 
-.app-link {
-    display: inline-block;
-    padding: 8px 16px;
-    background: var(--color-primary);
-    color: white;
-    text-decoration: none;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.app-link:hover {
-    background: var(--color-primary-hover);
-}
-
 /* ============================================
    CUSTOM OPACITY SLIDER - Pink Theme
    ============================================ */

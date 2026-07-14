@@ -12,7 +12,8 @@ IME cục bộ trên Windows cá nhân. Kẻ tấn công chính: phần mềm đ
 
 | Biện pháp | Mô tả |
 |-----------|-------|
-| **SHA-256 hash verification** | Mỗi bản cập nhật đi kèm file `.sha256`. Sau khi tải, VKey tính hash thực tế bằng Windows CNG (bcrypt) và so khớp trước khi giải nén |
+| **Authenticode signature + publisher pin** | Trước khi cài, mỗi file `.exe`/`.dll` **của VKey** được xác minh qua `WinVerifyTrust` (chuỗi tin cậy tới root + kiểm tra thu hồi) và ghim đúng publisher `SignPath Foundation`. Đây là lớp chống giả mạo thật sự — chứng minh *ai* đã ký mã sắp chạy. `sciter.dll` (bên thứ ba, phát hành **không ký**) không bị bắt buộc ký; toàn vẹn của nó dựa vào hash ZIP |
+| **SHA-256 hash verification** | Mỗi bản cập nhật đi kèm file `.sha256`. Sau khi tải, VKey tính hash thực tế bằng Windows CNG (bcrypt) và so khớp trước khi giải nén. *Lưu ý:* sidecar `.sha256` tải cùng nguồn với ZIP → chỉ chống **hỏng file/CDN**, không chống giả mạo (nguồn bị chiếm là chiếm cả hai). Chống giả mạo do lớp Authenticode ở trên đảm nhận |
 | **URL domain whitelist** | Chỉ chấp nhận tải từ `https://github.com/`, `https://objects.githubusercontent.com/`, `https://codeload.github.com/`. Từ chối HTTP và domain lạ |
 | **PowerShell command escaping** | Escape ký tự `'` trong đường dẫn trước khi truyền vào `Expand-Archive`, chống command injection |
 | **ZIP path validation** | Tham số `--install-update` chỉ chấp nhận file trong `%TEMP%`. Dùng `GetFullPathNameW()` để resolve path traversal (`..\..\evil.zip`) |
@@ -21,7 +22,7 @@ IME cục bộ trên Windows cá nhân. Kẻ tấn công chính: phần mềm đ
 
 | Biện pháp | Mô tả |
 |-----------|-------|
-| **Restricted DACL** | Shared memory, config event, mutex đều dùng SDDL `D:PAI(A;;GA;;;SY)(A;;GA;;;CO)` — chỉ SYSTEM và Creator/Owner được truy cập. Chặn pre-create attack từ process khác |
+| **DACL & session scope** | Shared memory, config event, mutex dùng **default DACL** (creator user SID + SYSTEM + Admins) + prefix `Local\` (session scope) → chặn truy cập **chéo-user** và **chéo-session**. *Lưu ý (2026-07-02):* KHÔNG dùng SDDL giới hạn `CreatorOwner` (`MakeCreatorOnlySecurityAttributes` là dead code) — SID `CO` chặn cả subprocess **cùng user**, mà TSF DLL chạy trong process host khác lại cần đọc. Hệ quả: malware **cùng user session** vẫn mở được các named object này. Đây là giới hạn chấp nhận được: attacker cùng user đã có năng lực tương đương (đọc config, inject vào VKey) bằng cách khác |
 | **Session-scoped names** | Tất cả named objects dùng prefix `Local\` — không expose ra session khác |
 | **Seqlock protocol** | Reader/writer dùng epoch + `std::atomic_thread_fence(acquire)` đảm bảo đọc ghi không bị race condition, tương thích cả x86 và ARM |
 | **Magic number validation** | SharedState kiểm tra magic `0x4E4B4559` ('NKEY'), version và size trước khi sử dụng |

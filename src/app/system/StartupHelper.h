@@ -112,11 +112,31 @@ inline void RemoveRegistryStartup() noexcept {
 /// Set the registry startup entry (HKCU\...\Run)
 [[nodiscard]] inline bool SetRegistryStartup() noexcept {
     HKEY hKey = nullptr;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, STARTUP_REG_KEY, 0, KEY_SET_VALUE, &hKey) != ERROR_SUCCESS) {
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, STARTUP_REG_KEY, 0,
+                      KEY_SET_VALUE | KEY_QUERY_VALUE, &hKey) != ERROR_SUCCESS) {
         return false;
     }
 
     std::wstring exePath = GetQuotedExePath();
+
+    // Idempotent: skip the write when the value already matches. Rewriting the
+    // same HKCU\Run value on every toggle/launch reads as autorun-key churn to
+    // AV behavior heuristics — a persistence signal we don't need to emit.
+    {
+        std::wstring current(exePath.size() + 1, L'\0');
+        DWORD cb = static_cast<DWORD>(current.size() * sizeof(wchar_t));
+        DWORD type = 0;
+        LSTATUS q = RegQueryValueExW(hKey, STARTUP_REG_VALUE, nullptr, &type,
+            reinterpret_cast<BYTE*>(current.data()), &cb);
+        if (q == ERROR_SUCCESS && type == REG_SZ) {
+            current.resize(wcslen(current.c_str()));
+            if (current == exePath) {
+                RegCloseKey(hKey);
+                return true;  // already correct — no write
+            }
+        }
+    }
+
     LSTATUS status = RegSetValueExW(
         hKey, STARTUP_REG_VALUE, 0, REG_SZ,
         reinterpret_cast<const BYTE*>(exePath.c_str()),

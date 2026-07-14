@@ -343,6 +343,19 @@ bool TryModifiedVowels(const CharStateT* vowelStates, size_t vowelLen, Pred pred
             if (tryEntry && pred(tryEntry)) return true;
         }
     }
+
+    // u+o moves together under horn (ư+ơ) — a raw "uo" pair inside a 3-vowel
+    // nucleus (uou→ươu, uoi→ươi) only becomes valid when BOTH slots flip at
+    // once. The single-slot loop above can't find that: a lone o→ơ or u→ư
+    // never matches those table entries, so "ruou"+w wrongly validated
+    // Invalid and blocked the horn modifier (issue: ruouwj).
+    if (vowelLen == 3 && bases[0] == kU && bases[1] == kO &&
+        mods[0] == kNone && mods[1] == kNone) {
+        uint32_t tryKey = Key3(VowelSlot(bases[0], kHorn), VowelSlot(bases[1], kHorn),
+                                VowelSlot(bases[2], mods[2]));
+        const VowelEntry* tryEntry = FindVowel(tryKey);
+        if (tryEntry && pred(tryEntry)) return true;
+    }
     return false;
 }
 

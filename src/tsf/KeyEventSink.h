@@ -35,6 +35,15 @@ public:
     IFACEMETHODIMP OnPreservedKey(ITfContext* pContext, REFGUID rguid, BOOL* pfEaten) override;
 
 private:
+    // SEH-wrapped implementations for the two doc-mutating hot paths. The public
+    // OnKeyDown / OnTestKeyDown are thin __try/__except wrappers (no unwindable
+    // locals) that null-guard pEngineController_ and, on a structured or C++
+    // exception in engine / edit-session code, log a crash breadcrumb and fail
+    // safe (pass the key through) instead of taking down the host process
+    // (Word / Chrome). __try and C++ unwinding can't share one function (C2712).
+    HRESULT OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten);
+    HRESULT OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten);
+
     ULONG refCount_ = 1;
     TextService* pTextService_ = nullptr;
     EngineController* pEngineController_ = nullptr;

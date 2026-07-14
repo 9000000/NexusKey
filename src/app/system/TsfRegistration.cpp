@@ -364,6 +364,17 @@ bool ActivateVKeyTsfProfile() {
     }
     lastAttemptTick.store(now, std::memory_order_release);
 
+    // Never install/activate an unregistered TIP: if the DLL registration was
+    // removed externally (regsvr32 /u, failed update) while the TOML tsf_apps
+    // flag stayed on, InstallLayoutOrTip below would add a phantom input-list
+    // entry for a dead CLSID. Fail fast; the 2s fail cooldown keeps the
+    // per-focus retries cheap (one registry read).
+    if (!IsTsfRegistered()) {
+        NEXTKEY_LOG(L"[TsfRegistration] ActivateVKeyTsfProfile skipped: TSF not registered");
+        lastResult.store(false, std::memory_order_release);
+        return false;
+    }
+
     // #109/#209: ensure VKey's TIP is in the user's ENABLED input list (HKCU,
     // per-user, NO admin) so Windows can actually select it. Registration
     // (RegisterProfile + EnableLanguageProfile) only makes the TIP *available*;

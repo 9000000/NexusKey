@@ -61,6 +61,11 @@
 - 🧩 **Phần lớn còn lại là code dùng chung của Windows** (đã được chia sẻ với các ứng dụng khác, không phải VKey "ăn" riêng), nên không thể — và không nên — ép nó nhỏ hơn nữa: ép giảm cứng sẽ làm chậm phản hồi phím, đi ngược lại tiêu chí *nhanh & mượt* của bộ gõ.
 - ✅ **Tóm lại:** thấy ~1.7 MB lúc đang dùng là **đúng và khỏe mạnh**, không phải lỗi rò rỉ bộ nhớ. Muốn thấy mức "nghỉ" thấp nhất, để máy rảnh vài phút rồi mở lại Task Manager.
 
+### 🔄 Q. Tôi mới cập nhật phiên bản mới của VKey nhưng tính năng "Khởi động cùng Windows" (Auto-start) không hoạt động. Làm cách nào để khắc phục?
+**A.** Nếu bạn vừa cập nhật lên phiên bản mới và tính năng tự khởi động không hoạt động, hãy thử **tắt tùy chọn này đi, sau đó bật lại** trong giao diện Settings. Hành động này sẽ cập nhật lại Registry hoặc Task Scheduler với đường dẫn đến file chạy mới.
+
+Nếu vẫn không khắc phục được (ví dụ do file cũ bị kẹt hoặc xung đột quyền Admin), bạn có thể gỡ bỏ hoàn toàn cấu hình khởi động cũ bằng cách thực hiện các lệnh Command Line thủ công theo hướng dẫn chi tiết tại tài liệu: [Gỡ Auto-Start VKey bằng Command Line](uninstall-autostart.md).
+
 ---
 
 ## <span id="features">⚙️ Các chức năng chính</span>

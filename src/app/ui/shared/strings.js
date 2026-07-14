@@ -53,17 +53,10 @@ var STRINGS = {
         "s.allow_english_bypass_tooltip": "Allow applying Vietnamese tone marks on English words or exceptions",
         "s.suggest_keep_chars": "BS keeps chars on suggest",
         "s.suggest_keep_chars_tooltip": "When dismissing a browser suggestion via Backspace, preserve typed chars. Warning: tone placement may be wrong if you keep typing right after BS.",
-        "s.esc_restore_raw": "Esc restores raw keys",
-        "s.esc_restore_raw_tooltip": "Press Esc while typing to undo Vietnamese conversion and keep raw keys (e.g. v\u00EDu \u2192 virus)",
         "s.spell_exclusions": "Spell exclusions",
         "s.spell_exclusions_tooltip": "Abbreviation prefixes that bypass spell check (e.g. h\u0111, \u0111p). Prefix match, min 2 chars.",
         "s.app_encoding": "Per-app / Clipboard",
         "s.config": "Configure",
-        "s.temp_off_label": "Temp disable input",
-        "s.temp_off_tooltip": "Choose key to temp-disable Vietnamese for current word. Note: Ctrl triggers on a single tap — may activate accidentally.",
-        "s.temp_off_none": "Off",
-        "s.temp_off_dup_alt": "Double Alt",
-        "s.temp_off_ctrl": "Press Ctrl",
 
         // Tab 2: Macro
         "s.enable_macro": "Enable macro",
@@ -75,8 +68,6 @@ var STRINGS = {
         "s.quick_start_tooltip": "f\u2192ph, j\u2192gi, w\u2192qu",
         "s.quick_end": "Quick end consonant",
         "s.quick_end_tooltip": "g\u2192ng, h\u2192nh, k\u2192ch",
-        "s.temp_off_macro": "Skip macro with Esc",
-        "s.temp_off_macro_tooltip": "Press Esc before typing to skip macro for next word",
         "s.macro_table_btn": "Macro table...",
 
         // Tab 3: System
@@ -130,7 +121,6 @@ var STRINGS = {
         "update.banner.mismatch":   "Some apps still run the old version. Restart Windows to sync.",
         "update.banner.restartNow": "Restart now",
         "update.banner.later":      "Later",
-        "update.banner.confirm":    "Restart Windows now to finish the VKey update?",
         "s.report_issue_label": "Are you having problems?",
         "s.report_issue": "Report problem",
 
@@ -199,7 +189,6 @@ var STRINGS = {
         "a.tagline": "Modern Vietnamese Input Method",
         "a.repo_vkey": "VKey Repo",
         "a.repo_openkey": "Original OpenKey Repo",
-        "a.footer": "Powered by Sciter.JS for a smooth experience.",
 
         // ── App Overrides dialog ──
         "ao.title": "App Override",

@@ -2368,6 +2368,26 @@ protected:
     std::unique_ptr<TypingEngine> engine_;
 };
 
+TEST_F(EnglishProtectionTest, Ruou_AllUOTypedBeforeHornW) {
+    // "uou" (3 raw vowels, no modifiers yet) must validate as ValidPrefix —
+    // TryModifiedVowels used to only try flipping ONE vowel slot, missing
+    // that u+o move together under horn (→ươu). That falsely marked the
+    // syllable Invalid, which blocked 'w' entirely (WouldModifierRecoverOrEscape
+    // only allows escaping an EXISTING horn, not applying a new one).
+    TypeString(*engine_, L"ruouwj");
+    EXPECT_EQ(engine_->Peek(), L"rượu");
+}
+
+TEST_F(EnglishProtectionTest, Ruou_HornWBeforeSecondU) {
+    TypeString(*engine_, L"ruowuj");
+    EXPECT_EQ(engine_->Peek(), L"rượu");
+}
+
+TEST_F(EnglishProtectionTest, Ruou_ToneBeforeSecondU) {
+    TypeString(*engine_, L"ruowju");
+    EXPECT_EQ(engine_->Peek(), L"rượu");
+}
+
 TEST_F(EnglishProtectionTest, HardReject_DR_Cluster) {
     // "drive" starts with "dr" → impossible in Vietnamese
     // Note: "dropdown" starts with "dd" which is a Vietnamese modifier (đ);
@@ -2430,6 +2450,21 @@ TEST_F(EnglishProtectionTest, Backspace_ResetsProtection) {
     TypeString(*engine_, L"das");
     // "da" + "s" = "dá" (Vietnamese, bias reset)
     EXPECT_EQ(engine_->Peek(), L"dá");
+}
+
+TEST_F(EnglishProtectionTest, Backspace_KeepsHardEnglish_WhenOffendingClusterStillBuried) {
+    // #209 (Shzr0, 2026-07-05): "android" latches HardEnglish at "and" (invalid
+    // "nd" coda) and stays literal through the whole word. Backspacing only the
+    // TRAILING 'd' leaves "androi" — "nd" is still present, just no longer
+    // trailing. RecalcEnglishBias must not un-latch HardEnglish here: a
+    // one-shot recheck of "androi" alone misses "nd" (buffer now ends in a
+    // vowel), which used to let a retyped 'd' misfire dd→đ ("anđroi").
+    TypeString(*engine_, L"android");
+    EXPECT_EQ(engine_->Peek(), L"android");
+    engine_->Backspace();
+    EXPECT_EQ(engine_->Peek(), L"androi");
+    TypeString(*engine_, L"d");
+    EXPECT_EQ(engine_->Peek(), L"android");
 }
 
 TEST_F(EnglishProtectionTest, SoftReject_Effect) {

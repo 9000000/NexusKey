@@ -5,6 +5,7 @@
 #include "DialogUtils.h"
 #include "core/config/ConfigManager.h"
 #include "helpers/AppHelpers.h"
+#include "helpers/ExcludedAppsStore.h"
 #include "core/PathUtil.h"
 #include "core/Strings.h"
 #include "core/WinStrings.h"
@@ -23,31 +24,12 @@ ExcludedAppsDialog::ExcludedAppsDialog(HWND parent)
         L"VKey - Excluded Apps",
         420, 420, parent, true, 36, 40, true
     }) {
-    const auto path = ConfigManager::GetConfigPath();
-    for (auto& e : ConfigManager::LoadAllExcludedApps(path)) {
-        appList_.emplace_back(std::move(e), kModeE);
-    }
-    for (auto& v : ConfigManager::LoadForcedVnApps(path)) {
-        // Disjoint by name (excluded wins) — mirror ConfigSnapshotBuilder.
-        bool dup = false;
-        for (auto& a : appList_) { if (a.first == v) { dup = true; break; } }
-        if (!dup) appList_.emplace_back(std::move(v), kModeV);
-    }
-    std::sort(appList_.begin(), appList_.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
+    appList_ = LoadTaggedAppList();
     populateList();
 }
 
 void ExcludedAppsDialog::persistAndSignal() {
-    // Partition the tagged list back into the two TOML arrays.
-    std::vector<std::wstring> excluded, forcedVn;
-    for (auto& app : appList_) {
-        (app.second == kModeV ? forcedVn : excluded).push_back(app.first);
-    }
-    const auto path = ConfigManager::GetConfigPath();
-    (void)ConfigManager::SaveExcludedApps(path, excluded);
-    (void)ConfigManager::SaveForcedVnApps(path, forcedVn);
-    SignalConfigChange();
+    SaveTaggedAppList(appList_);
 }
 
 bool ExcludedAppsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
@@ -165,9 +147,8 @@ void ExcludedAppsDialog::addApp(const std::wstring& name, int mode) {
     std::wstring lower = ToLowerAscii(PathBasename(name));
 
     // Never add VKey to its own list — covers every path (manual, browse, picker,
-    // import); the window-picker also shows a message. Skip silently here. Match
-    // the Classic dialogs: block all three VKey exe names (Sciter + Lite + Classic).
-    if (lower == L"vkey.exe" || lower == L"vkeylite.exe" || lower == L"vkeyclassic.exe") return;
+    // import); the window-picker also shows a message. Skip silently here.
+    if (IsVKeyOwnExe(lower)) return;
 
     // Already present → just update its mode (an app is locked to one mode).
     for (auto& a : appList_) {
@@ -232,20 +213,7 @@ void ExcludedAppsDialog::importApps() {
     }
 
     ParseConfigLines(infile, [&](const std::string& line) {
-        // Per-app mode tag (D4): "name|V" → force-V, plain "name" → E.
-        std::wstring entry = Utf8ToWide(line);
-        int mode = kModeE;
-        auto bar = entry.find_last_of(L'|');
-        if (bar != std::wstring::npos) {
-            if (ToLowerAscii(entry.substr(bar + 1)) == L"v") mode = kModeV;
-            entry = entry.substr(0, bar);
-        }
-        std::wstring wName = ToLowerAscii(entry);
-        if (wName.empty()) return;
-        for (auto& a : appList_) {
-            if (a.first == wName) { a.second = mode; return; }  // dedup → update mode
-        }
-        appList_.emplace_back(wName, mode);
+        MergeTaggedAppLine(appList_, line);
     });
 
     std::sort(appList_.begin(), appList_.end(),
@@ -266,16 +234,7 @@ void ExcludedAppsDialog::exportApps() {
     std::ofstream outfile(path);
     if (!outfile.is_open()) return;
 
-    outfile << ";VKey Excluded Apps (name = English/excluded, name|V = force Vietnamese)\n";
-
-    auto sorted = appList_;
-    std::sort(sorted.begin(), sorted.end(),
-              [](const auto& a, const auto& b) { return a.first < b.first; });
-    for (auto& app : sorted) {
-        outfile << WideToUtf8(app.first);
-        if (app.second == kModeV) outfile << "|V";
-        outfile << "\n";
-    }
+    WriteTaggedAppList(outfile, appList_);
 }
 
 }  // namespace NextKey

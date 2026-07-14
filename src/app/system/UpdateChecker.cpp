@@ -205,9 +205,15 @@ UpdateInfo UpdateChecker::CheckForUpdate() noexcept {
 
         // Find release asset
 #ifdef VKEY_LITE_MODE
-        std::string assetUrl = FindAssetUrl(response, "VKeyClassic.zip");
+        std::string assetUrl = FindAssetUrl(response, "VKeyClassic-x64.zip");
+        if (assetUrl.empty()) {
+            assetUrl = FindAssetUrl(response, "VKeyClassic.zip");
+        }
 #else
-        std::string assetUrl = FindAssetUrl(response, "VKey.zip");
+        std::string assetUrl = FindAssetUrl(response, "VKey-x64.zip");
+        if (assetUrl.empty()) {
+            assetUrl = FindAssetUrl(response, "VKey.zip");
+        }
 #endif
 
         if (assetUrl.empty()) return info;

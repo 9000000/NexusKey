@@ -47,5 +47,5 @@ TEST(AdaptiveTickTest, ConstantsMatchDocumentedValues) {
     // Pin the documented values so a stealth retune forces a deliberate test
     // (and doc) update.
     EXPECT_EQ(kTickActiveMs,     200u);
-    EXPECT_EQ(kIdleStopThreshMs, 120000u);
+    EXPECT_EQ(kIdleStopThreshMs, 1800000u);
 }

@@ -5,6 +5,7 @@
 
 #include "core/config/ConfigEvent.h"
 #include "core/ipc/SharedStateManager.h"
+#include "core/CrashLog.h"
 #ifdef _WIN32
 #include "core/ipc/SharedConstants.h"
 #endif
@@ -21,8 +22,13 @@ inline void InstallCursorCrashHandler() noexcept {}
 /// Crash handler that restores system cursors if app crashes during window picking.
 /// SetSystemCursor() changes cursors globally — if we crash mid-pick, the crosshair
 /// cursor stays until logoff. This handler restores defaults on any unhandled exception.
-inline LONG WINAPI CursorCrashHandler(EXCEPTION_POINTERS*) noexcept {
+inline LONG WINAPI CursorCrashHandler(EXCEPTION_POINTERS* ep) noexcept {
     SystemParametersInfoW(SPI_SETCURSORS, 0, nullptr, 0);
+    // D1: fatal crash breadcrumb + minidump next to the crash log. Without this a
+    // top-level crash left no stack — undiagnosable for a pre-release with no
+    // telemetry. Runs as the process is dying; both calls are best-effort.
+    ::NextKey::CrashLog(L"UnhandledException", "fatal — minidump written alongside");
+    ::NextKey::WriteCrashDump(ep, L"_vkey_crash");
     return EXCEPTION_CONTINUE_SEARCH;  // Let debugger/WER handle it
 }
 

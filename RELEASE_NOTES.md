@@ -1,31 +1,13 @@
-# VKey v4.1.1
+# VKey v4.2.1
 
 [![Signed by SignPath](https://img.shields.io/badge/Signed_by-SignPath-blue)](https://signpath.io)
 
 **✨ Tính năng mới & Cải tiến:**
-- Cải thiện độ ổn định của engine
-- Thêm toast hiển thị hành động cho phiên bản hiện đại
-- Mặc định phím chuyển Ctrl+Shift và bật kiểm tra chính tả + tự động khôi phục phím, giúp đồng bộ trải nghiệm với unikey
-- Cho phép gõ các từ như voọc, soóc,...
-- Icon TSF T(đỏ/xanh) tương ứng với mode V/E
-- Hỗ trợ cài đặt nhanh và tự động cập nhật qua WinGet cho cả 2 phiên bản (Sciter và Classic)
 
-**⚡ Cài đặt nhanh qua WinGet:**
-```powershell
-# Bản mặc định (giao diện Sciter.JS)
-winget install PhatMT97.VKey
-
-# Bản Classic (giao diện native Win32)
-winget install PhatMT97.VKey.Classic
-```
 **🛠 Sửa lỗi:**
-- Classic version không bật được TSF
-- Sửa lỗi không thoát được dấu khi viết tắt đmd
-- Sửa lỗi kiểm tra chính tả - tự động không phục hồi khi gõ "rose"
-- Sửa lỗi không chọn được kiểu gõ Telex + VNI/Tự định nghĩa ở phiên bản classic
-- Sửa lỗi telex tự định nghĩa hoạt động không đúng
-- Sửa lỗi báo lỗi khi thoát app bằng menu chuột phải
-- Sửa lỗi không tự khởi động khi chạy quyền admin
+- Sửa lỗi typing ruouwj không đặt dấu được
+- Sửa lỗi theme hoạt động chưa tối ưu
+- Sửa lỗi app tiến vào trạng thái idle quá nhanh
 
 ---
 

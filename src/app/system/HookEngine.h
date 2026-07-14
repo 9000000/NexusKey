@@ -262,8 +262,18 @@ public:
 private:
     // Hook callbacks (static → instance dispatch). WinEventProc moved to
     // FocusOwner (Wave 3 PR 3.2).
+    //
+    // Each public proc is a thin SEH wrapper (no unwindable locals) around an
+    // *Impl that holds the real body + its C++ try/catch. The wrapper exists
+    // because under /EHsc `catch(...)` does NOT catch structured exceptions
+    // (access violations): an AV in hook code would otherwise unwind through
+    // KiUserCallbackDispatcher and terminate VKeyApp — which the watchdog then
+    // respawns, feeding the AV self-defense signal. __try/__except and C++
+    // unwinding can't coexist in one function (C2712), hence the split.
     static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
+    static LRESULT LowLevelKeyboardProcImpl(int nCode, WPARAM wParam, LPARAM lParam);
+    static LRESULT LowLevelMouseProcImpl(int nCode, WPARAM wParam, LPARAM lParam);
 
     // Config application (shared between Start and SyncConfigFromSharedState)
     void ApplyConfig(const TypingConfig& config);
