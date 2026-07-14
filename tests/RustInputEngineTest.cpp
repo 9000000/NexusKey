@@ -162,6 +162,55 @@ TEST_F(RustInputEngineTest, LastCommitWasCorrectedFalseWhenSpellSuggestDisabled)
     EXPECT_FALSE(engine.LastCommitWasCorrected());
 }
 
+// Proves the ABI v4 custom-keymap wiring end-to-end: a physical key remapped
+// to a non-Telex/VNI action must actually apply that action through the Rust
+// engine, not silently fall back to Telex (VKey-rs ADR-0007).
+TEST_F(RustInputEngineTest, UserDefinedCustomKeymapAppliesRemappedAction) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::UserDefined;
+    config.customKeyMap[static_cast<uint8_t>(L'p')] = TypingAction::StrokeD;  // 'p' -> đ
+    config.customKeyMap[static_cast<uint8_t>(L'q')] = TypingAction::ToneAcute;  // 'q' -> sắc
+    RustInputEngine engine(config);
+
+    for (const wchar_t c : std::wstring(L"dpaq")) {  // d, stroke(p), a, acute(q)
+        engine.PushChar(c);
+    }
+
+    EXPECT_EQ(engine.Peek(), L"đá");
+}
+
+TEST_F(RustInputEngineTest, UserDefinedUnboundKeyStaysLiteral) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::UserDefined;
+    // No bindings installed: every key must type as itself.
+    RustInputEngine engine(config);
+
+    for (const wchar_t c : std::wstring(L"das")) {
+        engine.PushChar(c);
+    }
+
+    EXPECT_EQ(engine.Peek(), L"das");
+}
+
+// Tier 2 (byte codes 18-34): Unikey-compatibility actions. Proves the newly
+// vendored engine actually decodes these, not just the tier-1 Telex/VNI remap.
+TEST_F(RustInputEngineTest, UserDefinedTier2DirectInsertAndHornOrInsertU) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::UserDefined;
+    config.customKeyMap[static_cast<uint8_t>(L'p')] = TypingAction::InsertDStroke;    // 'p' -> đ
+    config.customKeyMap[static_cast<uint8_t>(L'y')] = TypingAction::HornOrInsertU;    // 'y' -> ư (or horn on u/o)
+    RustInputEngine engine(config);
+
+    engine.PushChar(L'p');
+    EXPECT_EQ(engine.Peek(), L"đ");
+    engine.PushChar(L'p');  // repeat escapes back to literal 'p'
+    EXPECT_EQ(engine.Peek(), L"p");
+
+    engine.Reset();
+    engine.PushChar(L'y');  // no target -> standalone insert fallback
+    EXPECT_EQ(engine.Peek(), L"ư");
+}
+
 }  // namespace
 }  // namespace NextKey
 

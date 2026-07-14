@@ -570,8 +570,16 @@ void HookEngine::ToggleVietnameseMode() noexcept {
     // so that the TSF DLL in target applications sees the new mode instantly,
     // avoiding the race condition where the first keystroke of the word is typed
     // as English.
+    //
+    // #221: capture the definitive post-toggle value from ToggleFlag's return
+    // (not a separate re-read) and stash it in pendingToggleMode_ for the
+    // drain. A re-read at drain time could observe a value some intervening
+    // NotifyModeChange() already clobbered back to the pre-toggle state,
+    // silently no-op'ing the user's toggle.
     if (sharedStatePtr_) {
-        sharedStatePtr_->ToggleFlag(SharedFlags::VIETNAMESE_MODE);
+        const uint32_t newFlags = sharedStatePtr_->ToggleFlag(SharedFlags::VIETNAMESE_MODE);
+        pendingToggleMode_.store((newFlags & SharedFlags::VIETNAMESE_MODE) ? 1 : 0,
+                                  std::memory_order_release);
     }
 
     // Phase 2c: ToggleVietnameseMode is called from any thread (tray menu
@@ -4244,6 +4252,10 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 // User-visible behaviour: same as before — sub-keystroke responsive.
 void HookEngine::ApplyToggleVNOnHookThread() {
     VKEY_ASSERT_HOOK_THREAD();
+    // #221: consume this drain's pending explicit toggle target up front —
+    // exchange(-1) so it can't leak into a later, unrelated drain. Discarded
+    // below if this toggle turns out to be blocked (excluded / forced-V app).
+    const int8_t pendingToggleMode = pendingToggleMode_.exchange(-1, std::memory_order_acq_rel);
     const auto cfg = config_.load(std::memory_order_acquire);
     // Excluded-app gate. PID check vs cached excludedPid_ distinguishes
     // "genuinely in excluded app" (block toggle) from "stale flag, user
@@ -4298,8 +4310,15 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     CancelCommitUndo();
     digitLedWord_ = false;
 
+    // #221: prefer the value this exact ToggleVietnameseMode() call computed
+    // (pendingToggleMode) over a fresh SharedState read — a NotifyModeChange()
+    // firing between the eager flip and this drain could have already
+    // overwritten SharedState with the stale pre-toggle value, which would
+    // silently revert the toggle if we re-read it here instead.
     bool newMode = false;
-    if (sharedStatePtr_) {
+    if (pendingToggleMode >= 0) {
+        newMode = (pendingToggleMode != 0);
+    } else if (sharedStatePtr_) {
         newMode = (sharedStatePtr_->ReadFlags() & SharedFlags::VIETNAMESE_MODE) != 0;
     } else {
         newMode = !vietnameseMode_.load(std::memory_order_acquire);

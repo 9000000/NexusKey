@@ -469,15 +469,26 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // #109: activate VKey's TIP at startup (standard-IME model, like
     // Unikey/Mozc). The handler runs ActivateVKeyTsfProfile() which (1) adds
     // VKey to the user's input list via InstallLayoutOrTip so it is selectable +
-    // survives reboot, then (2) selects it for the session. Gated on TSF being
-    // registered — users who never enabled TSF are not forced into it. The
-    // tsfModeCallback_ above additionally re-asserts selection on each focus
-    // into a TSF app (#209 mid-session selection loss); this startup call covers
-    // the window before any TSF-app focus happens.
-    if (IsTsfRegistered()) {
+    // survives reboot, then (2) selects it for the session. Gated on
+    // config.tsfApps AND TSF being registered — users who never enabled TSF
+    // are not forced into it. Checking only IsTsfRegistered() (pre-#221 fix)
+    // silently re-opted tsf_apps=false users into VKey as their OS input
+    // method whenever registry remnants from an earlier enable/disable cycle
+    // were still present (UnregisterTsf never removed the input-list entry —
+    // now fixed below). The tsfModeCallback_ above additionally re-asserts
+    // selection on each focus into a TSF app (#209 mid-session selection
+    // loss); this startup call covers the window before any TSF-app focus
+    // happens.
+    if (config.tsfApps && IsTsfRegistered()) {
         if (HWND tsfTrayWnd = g_trayIcon.GetMessageWindow()) {
             PostMessageW(tsfTrayWnd, WM_VKEY_ACTIVATE_TSF, 0, 0);
         }
+    } else if (!config.tsfApps && IsTsfRegistered()) {
+        // #221: clean up a phantom input-list entry left by an earlier
+        // enable/disable cycle (e.g. non-admin UnregisterTsf couldn't remove
+        // the CLSID, or an older build auto-registered TSF) so Windows stops
+        // offering VKey as a selectable input method the user didn't ask for.
+        RemoveVKeyTsfFromInputList();
     }
 
     // Wire hook-reload callback: sub-dialog subprocess → main EXE eager sync.

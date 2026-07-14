@@ -255,13 +255,19 @@ uint32_t SharedStateManager::ReadFlags() const noexcept {
     return 0;
 }
 
-void SharedStateManager::ToggleFlag(uint32_t flagBit) noexcept {
+uint32_t SharedStateManager::ToggleFlag(uint32_t flagBit) noexcept {
 #ifdef _WIN32
-    if (!pImpl_->pState || pImpl_->pState->magic != SharedState::MAGIC_VALUE) return;
+    if (!pImpl_->pState || pImpl_->pState->magic != SharedState::MAGIC_VALUE) return 0;
 
-    // Atomic 32-bit XOR — safe for concurrent DLL/EXE access
+    // Atomic 32-bit XOR — safe for concurrent DLL/EXE access. InterlockedXor
+    // returns the value from BEFORE the XOR; XOR-ing that with flagBit again
+    // gives the value immediately after — no separate re-read needed.
     auto* flagsAddr = &(const_cast<SharedState*>(pImpl_->pState)->flags);
-    InterlockedXor(reinterpret_cast<volatile LONG*>(flagsAddr), static_cast<LONG>(flagBit));
+    const LONG prev = InterlockedXor(reinterpret_cast<volatile LONG*>(flagsAddr), static_cast<LONG>(flagBit));
+    return static_cast<uint32_t>(prev) ^ flagBit;
+#else
+    (void)flagBit;
+    return 0;
 #endif
 }
 

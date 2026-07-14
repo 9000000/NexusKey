@@ -89,6 +89,8 @@ struct EngineApi {
     bool (*seed_text_utf16)(VKeyEngine*, const uint16_t*, size_t) = nullptr;
     // ABI v3 host query surface.
     bool (*last_commit_was_corrected)(const VKeyEngine*) = nullptr;
+    // ABI v4: user-defined custom keymap.
+    void (*set_custom_keymap)(VKeyEngine*, const uint8_t*, size_t) = nullptr;
     bool ok = false;
     std::wstring reason;  // diagnostic when !ok; empty when ok
 };
@@ -169,11 +171,14 @@ const EngineApi& Api() {
             Resolve<decltype(a.seed_text_utf16)>(lib, "vkey_engine_seed_text_utf16");
         a.last_commit_was_corrected = Resolve<decltype(a.last_commit_was_corrected)>(
             lib, "vkey_engine_last_commit_was_corrected");
+        a.set_custom_keymap = Resolve<decltype(a.set_custom_keymap)>(
+            lib, "vkey_engine_set_custom_keymap");
         const bool symbolsResolved =
             a.create && a.destroy && a.reset && a.push_char && a.backspace &&
             a.peek_utf16 && a.commit_utf16 && a.count && a.abi_version &&
             a.is_english_word && a.is_tone_escaped && a.has_active_quick_consonant &&
-            a.peek_raw_utf16 && a.seed_text_utf16 && a.last_commit_was_corrected;
+            a.peek_raw_utf16 && a.seed_text_utf16 && a.last_commit_was_corrected &&
+            a.set_custom_keymap;
         if (!symbolsResolved) {
             a.reason = L"vkey_engine library is missing a required exported symbol";
             return a;
@@ -198,8 +203,9 @@ uint32_t MapMethod(InputMethod method) {
             return VKEY_METHOD_SIMPLE_TELEX;
         case InputMethod::Combined:
             return VKEY_METHOD_COMBINED;
+        case InputMethod::UserDefined:
+            return VKEY_METHOD_USER_DEFINED;
         case InputMethod::Telex:
-        case InputMethod::UserDefined:  // no engine equivalent yet -> Telex
         default:
             return VKEY_METHOD_TELEX;
     }
@@ -212,7 +218,7 @@ uint32_t MapFeatures(const TypingConfig& c) {
     if (c.quickConsonant) f |= VKEY_FEAT_QUICK_CONSONANT;
     if (c.quickEndConsonant) f |= VKEY_FEAT_QUICK_END_CONSONANT;
     if (c.spellCheckEnabled) f |= VKEY_FEAT_SPELL_CHECK;
-    if (c.spellSuggestEnabled) f |= VKEY_FEAT_SPELL_SUGGEST;
+    if (c.spellSuggestEnabled && c.autoRestoreEnabled) f |= VKEY_FEAT_SPELL_SUGGEST;
     if (c.allowEnglishBypass) f |= VKEY_FEAT_ALLOW_ENGLISH_BYPASS;
     if (c.allowZwjf) f |= VKEY_FEAT_ALLOW_ZWJF;
     return f;
@@ -254,6 +260,12 @@ RustInputEngine::RustInputEngine(const TypingConfig& config) {
     const EngineApi& api = Api();
     if (api.ok) {
         handle_ = api.create(MapMethod(config.inputMethod), MapFeatures(config));
+        if (handle_ && config.inputMethod == InputMethod::UserDefined) {
+            api.set_custom_keymap(
+                static_cast<VKeyEngine*>(handle_),
+                reinterpret_cast<const uint8_t*>(config.customKeyMap.data()),
+                config.customKeyMap.size());
+        }
     }
     // Rule 11 (hook hot path): pre-size the buffers so the per-keystroke Refresh()
     // assigns reuse capacity and never allocate (composition is bounded to

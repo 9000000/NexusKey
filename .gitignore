@@ -35,6 +35,9 @@ Thumbs.db
 .agents/
 .claude/
 .claude-m/
+.gemini/
+.mcp.json
+.instantgrep/
 _bmad/
 _bmad-output/
 

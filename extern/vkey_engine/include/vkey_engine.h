@@ -19,13 +19,14 @@ extern "C" {
 #endif
 
 /* Bump when the ABI changes; check against vkey_engine_abi_version(). */
-#define VKEY_ENGINE_ABI_VERSION 3u
+#define VKEY_ENGINE_ABI_VERSION 4u
 
 /* Input methods (the `method` argument to vkey_engine_create). */
 #define VKEY_METHOD_TELEX        0u
 #define VKEY_METHOD_VNI          1u
 #define VKEY_METHOD_SIMPLE_TELEX 2u
 #define VKEY_METHOD_COMBINED     3u
+#define VKEY_METHOD_USER_DEFINED 4u
 
 /* Feature flags (OR together into the `features` argument). */
 #define VKEY_FEAT_MODERN_ORTHOGRAPHY   (1u << 0)
@@ -128,6 +129,63 @@ size_t vkey_engine_suggest_count(const VKeyEngine *engine);
  * Returns 0 if index >= vkey_engine_suggest_count(). */
 size_t vkey_engine_suggest_utf16(const VKeyEngine *engine, size_t index,
                                   uint16_t *buf, size_t cap);
+
+/* --- ABI v4: user-defined custom keymap ------------------------------------
+ * Added in ABI 4. Present only when vkey_engine_abi_version() >= 4. Only
+ * consulted when the engine was created with VKEY_METHOD_USER_DEFINED. */
+
+/* One canonical Vietnamese input action a key can be bound to under
+ * VKEY_METHOD_USER_DEFINED. Every action already exists as a fixed Telex or
+ * VNI key; binding it to another key changes nothing about how it behaves.
+ * Values are pinned and cross the ABI as raw bytes: never renumber existing
+ * codes when adding new ones. Unikey-style compatibility actions (fallback
+ * insert without a modifier target, direct precomposed-character insertion)
+ * are not part of this action set yet. */
+#define VKEY_KEY_ACTION_NONE            0u  /* Unbound: types as a literal. */
+#define VKEY_KEY_ACTION_CLEAR_TONE      1u
+#define VKEY_KEY_ACTION_TONE_ACUTE      2u
+#define VKEY_KEY_ACTION_TONE_GRAVE      3u
+#define VKEY_KEY_ACTION_TONE_HOOK       4u
+#define VKEY_KEY_ACTION_TONE_TILDE      5u
+#define VKEY_KEY_ACTION_TONE_DOT        6u
+#define VKEY_KEY_ACTION_CIRCUMFLEX_A    7u
+#define VKEY_KEY_ACTION_CIRCUMFLEX_E    8u
+#define VKEY_KEY_ACTION_CIRCUMFLEX_O    9u
+#define VKEY_KEY_ACTION_HORN_W          10u /* Telex-style: horn on u/o, breve-on-lone-a and standalone-insert-ư fallback. */
+#define VKEY_KEY_ACTION_HORN_INSERT_O   11u /* Always inserts a fresh o-horn (o+). */
+#define VKEY_KEY_ACTION_HORN_INSERT_U   12u /* Always inserts a fresh u-horn (u+). */
+#define VKEY_KEY_ACTION_STROKE_D        13u
+#define VKEY_KEY_ACTION_VNI_CIRCUMFLEX  14u
+#define VKEY_KEY_ACTION_VNI_HORN        15u /* Same transform as HORN_W; no standalone-insert fallback. */
+#define VKEY_KEY_ACTION_VNI_BREVE       16u
+#define VKEY_KEY_ACTION_VNI_STROKE      17u
+#define VKEY_KEY_ACTION_HORN_OR_INSERT_U           18u
+#define VKEY_KEY_ACTION_HORN_OR_INSERT_U_NO_START  19u
+#define VKEY_KEY_ACTION_UNDO_ALL_MARKS             20u
+#define VKEY_KEY_ACTION_INSERT_A_BREVE             21u
+#define VKEY_KEY_ACTION_INSERT_A_BREVE_UPPER       22u
+#define VKEY_KEY_ACTION_INSERT_A_CIRCUMFLEX        23u
+#define VKEY_KEY_ACTION_INSERT_A_CIRCUMFLEX_UPPER  24u
+#define VKEY_KEY_ACTION_INSERT_D_STROKE            25u
+#define VKEY_KEY_ACTION_INSERT_D_STROKE_UPPER      26u
+#define VKEY_KEY_ACTION_INSERT_E_CIRCUMFLEX        27u
+#define VKEY_KEY_ACTION_INSERT_E_CIRCUMFLEX_UPPER  28u
+#define VKEY_KEY_ACTION_INSERT_O_CIRCUMFLEX        29u
+#define VKEY_KEY_ACTION_INSERT_O_CIRCUMFLEX_UPPER  30u
+#define VKEY_KEY_ACTION_INSERT_O_HORN              31u
+#define VKEY_KEY_ACTION_INSERT_O_HORN_UPPER        32u
+#define VKEY_KEY_ACTION_INSERT_U_HORN              33u
+#define VKEY_KEY_ACTION_INSERT_U_HORN_UPPER        34u
+/* Byte codes 35-255 are reserved for future actions; this build maps any of
+ * them to VKEY_KEY_ACTION_NONE rather than rejecting them. */
+
+/* Installs the per-key action table for `engine` (one VKEY_KEY_ACTION_* byte
+ * per ASCII key code, index = lowercased key). Bytes beyond the first 128 are
+ * ignored; a shorter `len` leaves the remaining keys unbound. Pass NULL/0 to
+ * clear all bindings back to VKEY_KEY_ACTION_NONE (pure literal passthrough).
+ * Resets active composition, same as changing any other engine setting.
+ * Ignored while the engine's method is not VKEY_METHOD_USER_DEFINED. */
+void vkey_engine_set_custom_keymap(VKeyEngine *engine, const uint8_t *entries, size_t len);
 
 #ifdef __cplusplus
 } /* extern "C" */

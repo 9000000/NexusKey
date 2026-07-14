@@ -43,9 +43,12 @@ public:
     /// Read flags directly from memory-mapped region (zero-copy, for hot path)
     [[nodiscard]] uint32_t ReadFlags() const noexcept;
 
-    /// Toggle a flag bit atomically (safe for concurrent access from DLL/EXE)
-    /// Requires OpenReadWrite() or Create()
-    void ToggleFlag(uint32_t flagBit) noexcept;
+    /// Toggle a flag bit atomically (safe for concurrent access from DLL/EXE).
+    /// Requires OpenReadWrite() or Create(). Returns the flags value
+    /// immediately after the toggle so the caller knows the definitive
+    /// result without a separate re-read, which could race a concurrent
+    /// writer (issue #221). Returns 0 if the shared memory isn't connected.
+    uint32_t ToggleFlag(uint32_t flagBit) noexcept;
 
     /// Set or clear a flag bit atomically (safe for concurrent access)
     /// Requires OpenReadWrite() or Create()

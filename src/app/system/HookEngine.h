@@ -520,6 +520,15 @@ private:
     // (ApplyConfig, ToggleVietnameseMode, SettingsDialog WM_VKEY_MODE_CHANGED
     // → HookEngine via callback) uses .store(release).
     std::atomic<bool> vietnameseMode_{true};
+    // #221: carries the definitive post-toggle mode from ToggleVietnameseMode()
+    // (main/tray thread) to ApplyToggleVNOnHookThread's drain (hook thread).
+    // -1 = no pending explicit toggle; 0/1 = target mode. Needed because the
+    // drain used to re-read SharedFlags::VIETNAMESE_MODE, which a
+    // NotifyModeChange() landing between the eager SharedState flip and the
+    // drain (e.g. from an intervening focus event) could have already
+    // overwritten with the stale pre-toggle value — silently reverting the
+    // toggle. Consumed via exchange(-1) at the top of the drain.
+    std::atomic<int8_t> pendingToggleMode_{-1};
     // Wave 3 PR 3.3 — sending_, synthEventsPending_, lastSynthSendTime_,
     // lastRealSynthTime_, hadSynthInWord_ moved to OutputDispatcher.
     // Readers go through dispatcher_.IsSending() / SynthEventsPending() /

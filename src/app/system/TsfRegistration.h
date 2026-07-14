@@ -40,4 +40,10 @@ void CleanupHkcuClsidOverride() noexcept;
 /// Activate the VKey TSF profile programmatically
 bool ActivateVKeyTsfProfile();
 
+/// Remove VKey's TIP from the user's enabled input list (undoes
+/// ActivateVKeyTsfProfile's InstallLayoutOrTip add). Safe to call even if it
+/// was never added. Call whenever TSF is being disabled so Windows stops
+/// offering VKey as a selectable input method the user no longer wants.
+void RemoveVKeyTsfFromInputList() noexcept;
+
 }  // namespace NextKey
