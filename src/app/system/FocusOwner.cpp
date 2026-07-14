@@ -74,6 +74,8 @@ static bool IsKnownElectronExe(const wchar_t* filename) noexcept {
            _wcsnicmp(filename, L"logseq", 6) == 0 ||     // Logseq
            _wcsnicmp(filename, L"linear", 6) == 0 ||     // Linear
            _wcsnicmp(filename, L"lark", 4) == 0 ||       // Lark/Feishu
+           _wcsnicmp(filename, L"legcord", 7) == 0 ||    // Legcord
+           _wcsnicmp(filename, L"vesktop", 7) == 0 ||    // Vesktop
            _wcsnicmp(filename, L"zalo", 4) == 0;         // Zalo PC
 }
 
