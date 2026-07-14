@@ -111,6 +111,7 @@ jobs:
             Copy-Item "build/Release/VKey.exe" "unsigned-binaries/" -Force
             Copy-Item "build/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
             Copy-Item "build/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
+            Copy-Item "build/Release/vkey_engine.dll" "unsigned-binaries/" -Force
             # Bundled Sciter runtime ships unsigned from the vendor — route it through
             # SignPath so every binary in the release ZIP is Authenticode-signed.
             Copy-Item "extern/sciter/bin/sciter.dll" "unsigned-binaries/" -Force
@@ -127,6 +128,7 @@ jobs:
             if ($hasSciter -ne "true") {
               Copy-Item "build-classic/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
               Copy-Item "build-classic/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
+              Copy-Item "build-classic/Release/vkey_engine.dll" "unsigned-binaries/" -Force
             }
             $hasClassic = "true"
           }
@@ -185,6 +187,7 @@ jobs:
             Copy-Item "signed-binaries/VKeyTSF.dll" "dist/" -Force
             Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist/" -Force
             Copy-Item "signed-binaries/sciter.dll" "dist/" -Force
+            Copy-Item "signed-binaries/vkey_engine.dll" "dist/" -Force
             Copy-Item "dist/*" "upload-payload/" -Force
           }
           
@@ -197,6 +200,7 @@ jobs:
             # signed root binaries instead of shipping a second signed copy.
             Copy-Item "signed-binaries/VKeyTSF.dll" "dist-classic/" -Force
             Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist-classic/" -Force
+            Copy-Item "signed-binaries/vkey_engine.dll" "dist-classic/" -Force
 
             # VKeyClassic.exe is the only file unique to the Classic edition. The shared
             # TSF/watchdog are already in upload-payload from the Sciter branch; add them here
@@ -205,6 +209,7 @@ jobs:
             if ("${{ needs.build.outputs.has-sciter }}" -ne "true") {
               Copy-Item "dist-classic/VKeyTSF.dll" "upload-payload/" -Force
               Copy-Item "dist-classic/VKeyWatchdog.exe" "upload-payload/" -Force
+              Copy-Item "dist-classic/vkey_engine.dll" "upload-payload/" -Force
             }
           }
 
