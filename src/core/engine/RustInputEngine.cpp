@@ -87,7 +87,10 @@ struct EngineApi {
     bool (*has_active_quick_consonant)(const VKeyEngine*) = nullptr;
     size_t (*peek_raw_utf16)(const VKeyEngine*, uint16_t*, size_t) = nullptr;
     bool (*seed_text_utf16)(VKeyEngine*, const uint16_t*, size_t) = nullptr;
+    // ABI v3 host query surface.
+    bool (*last_commit_was_corrected)(const VKeyEngine*) = nullptr;
     bool ok = false;
+    std::wstring reason;  // diagnostic when !ok; empty when ok
 };
 
 void* OpenLibrary() {
@@ -95,9 +98,15 @@ void* OpenLibrary() {
     // module (the only path that works for the in-process TSF DLL) → bare name
     // via the OS search path as a last resort.
 #if defined(_WIN32)
-    if (const wchar_t* path = _wgetenv(L"VKEY_ENGINE_LIB")) {
-        if (HMODULE h = ::LoadLibraryW(path)) {
-            return h;
+    {
+        wchar_t* path = nullptr;
+        size_t len = 0;
+        if (_wdupenv_s(&path, &len, L"VKEY_ENGINE_LIB") == 0 && path) {
+            HMODULE h = ::LoadLibraryW(path);
+            free(path);
+            if (h) {
+                return h;
+            }
         }
     }
     if (const std::wstring sibling = SiblingLibraryPath(); !sibling.empty()) {
@@ -136,6 +145,7 @@ const EngineApi& Api() {
         EngineApi a;
         void* lib = OpenLibrary();
         if (!lib) {
+            a.reason = L"failed to load vkey_engine library (dlopen/LoadLibrary)";
             return a;
         }
         a.create = Resolve<decltype(a.create)>(lib, "vkey_engine_create");
@@ -157,11 +167,24 @@ const EngineApi& Api() {
             Resolve<decltype(a.peek_raw_utf16)>(lib, "vkey_engine_peek_raw_utf16");
         a.seed_text_utf16 =
             Resolve<decltype(a.seed_text_utf16)>(lib, "vkey_engine_seed_text_utf16");
-        a.ok = a.create && a.destroy && a.reset && a.push_char && a.backspace &&
-               a.peek_utf16 && a.commit_utf16 && a.count && a.abi_version &&
-               a.is_english_word && a.is_tone_escaped && a.has_active_quick_consonant &&
-               a.peek_raw_utf16 && a.seed_text_utf16 &&
-               a.abi_version() == VKEY_ENGINE_ABI_VERSION;
+        a.last_commit_was_corrected = Resolve<decltype(a.last_commit_was_corrected)>(
+            lib, "vkey_engine_last_commit_was_corrected");
+        const bool symbolsResolved =
+            a.create && a.destroy && a.reset && a.push_char && a.backspace &&
+            a.peek_utf16 && a.commit_utf16 && a.count && a.abi_version &&
+            a.is_english_word && a.is_tone_escaped && a.has_active_quick_consonant &&
+            a.peek_raw_utf16 && a.seed_text_utf16 && a.last_commit_was_corrected;
+        if (!symbolsResolved) {
+            a.reason = L"vkey_engine library is missing a required exported symbol";
+            return a;
+        }
+        const uint32_t libVersion = a.abi_version();
+        if (libVersion != VKEY_ENGINE_ABI_VERSION) {
+            a.reason = L"vkey_engine ABI version mismatch (lib=" + std::to_wstring(libVersion) +
+                        L", expected=" + std::to_wstring(VKEY_ENGINE_ABI_VERSION) + L")";
+            return a;
+        }
+        a.ok = true;
         return a;
     }();
     return api;
@@ -189,6 +212,7 @@ uint32_t MapFeatures(const TypingConfig& c) {
     if (c.quickConsonant) f |= VKEY_FEAT_QUICK_CONSONANT;
     if (c.quickEndConsonant) f |= VKEY_FEAT_QUICK_END_CONSONANT;
     if (c.spellCheckEnabled) f |= VKEY_FEAT_SPELL_CHECK;
+    if (c.spellSuggestEnabled) f |= VKEY_FEAT_SPELL_SUGGEST;
     if (c.allowEnglishBypass) f |= VKEY_FEAT_ALLOW_ENGLISH_BYPASS;
     if (c.allowZwjf) f |= VKEY_FEAT_ALLOW_ZWJF;
     return f;
@@ -220,6 +244,10 @@ constexpr size_t kTextCap = 256;
 
 bool RustInputEngine::LibraryAvailable() {
     return Api().ok;
+}
+
+std::wstring RustInputEngine::UnavailableReason() {
+    return Api().reason;
 }
 
 RustInputEngine::RustInputEngine(const TypingConfig& config) {
@@ -312,6 +340,10 @@ bool RustInputEngine::IsEnglishWord() const {
 
 bool RustInputEngine::IsToneEscaped() const {
     return handle_ && Api().is_tone_escaped(static_cast<VKeyEngine*>(handle_));
+}
+
+bool RustInputEngine::LastCommitWasCorrected() const {
+    return handle_ && Api().last_commit_was_corrected(static_cast<VKeyEngine*>(handle_));
 }
 
 bool RustInputEngine::SeedFromText(const std::wstring& text) {

@@ -277,6 +277,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
         // [features] section — use node_view [] operator for safe access to optional keys
         if (auto features = table["features"].as_table()) {
             config.spellCheckEnabled = (*features)["spell_check"].value_or(true);
+            config.spellSuggestEnabled = (*features)["spell_suggest"].value_or(false);
             config.beepOnSwitch = (*features)["beep_on_switch"].value_or(false);
             config.smartSwitch = (*features)["smart_switch"].value_or(false);
             config.excludeApps = (*features)["exclude_apps"].value_or(false);
@@ -371,6 +372,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         // Update [features] section
         toml::table features;
         features.insert_or_assign("spell_check", config.spellCheckEnabled);
+        features.insert_or_assign("spell_suggest", config.spellSuggestEnabled);
         features.insert_or_assign("beep_on_switch", config.beepOnSwitch);
         features.insert_or_assign("smart_switch", config.smartSwitch);
         features.insert_or_assign("exclude_apps", config.excludeApps);

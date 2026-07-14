@@ -28,9 +28,12 @@ enum class TrayMenuId : UINT {
     CodeTableCompound = 1013,
     CodeTableCP1258 = 1014,
     // Feature toggles
-    SpellCheck = 1020,
     SmartSwitch = 1021,
     MacroEnabled = 1022,
+    // Spell-check level submenu (1023-1025 = SpellCheckLevel enum values + offset)
+    SpellCheckOff = 1023,
+    SpellCheckStandard = 1024,
+    SpellCheckAdvanced = 1025,
     // Tools
     MacroTable = 1030,
     ConvertTool = 1031,
@@ -57,7 +60,7 @@ using ModeRequestCallback = std::function<void(bool vietnamese)>;
 /// Snapshot of current state for right-click menu checkmarks
 struct TrayMenuState {
     bool vietnamese = true;
-    bool spellCheck = false;
+    SpellCheckLevel spellCheckLevel = SpellCheckLevel::Standard;
     bool smartSwitch = false;
     bool macroEnabled = false;
     int inputMethod = 0;       // 0=Telex, 1=VNI, 2=SimpleTelex, 3=Combined, 4=UserDefined

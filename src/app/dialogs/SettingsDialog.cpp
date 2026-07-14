@@ -528,7 +528,7 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
         }
 
         // Handle dropdown changes
-        if (id == L"input-type" || id == L"bang-ma" || id == L"modern-icon" || id == L"startup-mode" || id == L"temp-off-openkey") {
+        if (id == L"input-type" || id == L"bang-ma" || id == L"spell-check-level" || id == L"modern-icon" || id == L"startup-mode" || id == L"temp-off-openkey") {
             sciter::value val = el.get_value();
             int intValue = 0;
             if (val.is_int()) intValue = val.get<int>();
@@ -660,9 +660,6 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                     L"VKey", MB_OK | MB_ICONINFORMATION);
             }
         }
-    }
-    else if (id == L"spell-check") {
-        config_.spellCheckEnabled = value;
     }
     else if (id == L"key-ctrl") {
         hotkeyConfig_.ctrl = value;
@@ -861,6 +858,9 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
     }
     else if (id == L"bang-ma") {
         config_.codeTable = static_cast<CodeTable>(value);
+    }
+    else if (id == L"spell-check-level") {
+        config_.SetSpellCheckLevel(static_cast<SpellCheckLevel>(value));
     }
     else if (id == L"modern-icon") {
         systemConfig_.iconStyle = static_cast<uint8_t>(value);
@@ -1124,9 +1124,10 @@ void SettingsDialog::initializeUI() {
     // Sync TSF toggle with actual DLL registration state (not just saved config)
     config_.tsfApps = IsTsfRegistered();
     setToggleState(L"tsf-apps", config_.tsfApps);
-    setToggleState(L"spell-check", config_.spellCheckEnabled);
+    setDropdownValue(L"spell-check-level", static_cast<int>(config_.GetSpellCheckLevel()));
     // Sync spell check child toggles (allow-zwjf, restore-key, exclusions button)
-    call_function("updateSpellCheckChildren", sciter::value(config_.spellCheckEnabled));
+    call_function("updateSpellCheckChildren",
+                   sciter::value(config_.GetSpellCheckLevel() != SpellCheckLevel::Off));
     setToggleState(L"modern-ortho", config_.modernOrtho);
     setToggleState(L"auto-caps", config_.autoCaps);
     setToggleState(L"allow-zwjf", config_.allowZwjf);
@@ -1318,12 +1319,6 @@ void SettingsDialog::onInputMethodChange(int method) {
     if (onSettingsChanged_) onSettingsChanged_();
 }
 
-void SettingsDialog::onSpellCheckChange(bool enabled) {
-    config_.spellCheckEnabled = enabled;
-    saveSettings();
-    if (onSettingsChanged_) onSettingsChanged_();
-}
-
 void SettingsDialog::onExpandChange(bool expanded) {
     isExpanded_ = expanded;
     // Set timer to resize window after CSS transition completes
@@ -1395,7 +1390,7 @@ void SettingsDialog::syncToSharedState() {
         SharedState state = sharedState_.Read();
         if (state.IsValid()) {
             state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
-            state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
+            state.spellCheck = static_cast<uint8_t>(config_.GetSpellCheckLevel());
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
             state.SetHotkey(hotkeyConfig_);

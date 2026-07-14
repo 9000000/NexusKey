@@ -170,11 +170,6 @@ function initializeToggles() {
             }
 
 
-            // Spell check controls child toggles (zwjf, restore-key, exclusions button)
-            if (id === "spell-check") {
-                updateSpellCheckChildren(newState);
-            }
-
             // Toggling the "show toast" switch itself: apply the new value to the
             // body attribute synchronously so the toast decision below reflects it
             // immediately (turning ON shows a confirmation, turning OFF stays silent).
@@ -213,10 +208,10 @@ function initializeToggles() {
         };
     });
 
-    // Initial state: sync child toggles with spell-check parent
-    var spellToggle = document.getElementById("spell-check");
-    if (spellToggle) {
-        updateSpellCheckChildren(spellToggle.classList.contains("checked"));
+    // Initial state: sync child toggles with spell-check-level parent
+    var spellLevel = document.getElementById("spell-check-level");
+    if (spellLevel) {
+        updateSpellCheckChildren(parseInt(spellLevel.value) !== 0);
     }
 
     // Initial state: sync userdefined button
@@ -379,6 +374,10 @@ document.on("change", "select", function (evt, select) {
 
     if (id === "input-type") {
         updateUserDefinedButton();
+    }
+
+    if (id === "spell-check-level") {
+        updateSpellCheckChildren(value !== 0);
     }
 });
 

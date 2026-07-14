@@ -518,6 +518,28 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         }
     }
 
+    // Spell-check level (Off/Standard/Advanced) — hand-wired like comboMethod_/
+    // comboEncoding_ rather than table-driven, since TypingConfig exposes it as
+    // a computed GetSpellCheckLevel()/SetSpellCheckLevel() view over two bools,
+    // not an offsetof-addressable field. Placed at the next free row in Tab 0
+    // col 0, right after that column's table-driven checkboxes.
+    {
+        int tab = 0, col = 0;
+        int row = rowCounts[tab][col]++;
+        int cx = contentLeft + col * (colWidth + Dpi(8));
+        int cy = contentTop + row * Dpi(kControlHeight + kRowGap);
+        int lblW = Dpi(115);
+        int comboW = colWidth - lblW - Dpi(4);
+
+        lblSpellCheckLevel_ = CreateLabel(L"Kiểm tra chính tả", cx, cy + Dpi(4), lblW, Dpi(kControlHeight), 0);
+        comboSpellCheckLevel_ = CreateCombo(cx + lblW + Dpi(4), cy, comboW, Dpi(kComboHeight + 60), IDC_COMBO_SPELL_CHECK);
+        ComboBox_AddString(comboSpellCheckLevel_, L"Tắt");
+        ComboBox_AddString(comboSpellCheckLevel_, L"Cơ bản");
+        ComboBox_AddString(comboSpellCheckLevel_, L"Nâng cao");
+        ShowWindow(lblSpellCheckLevel_, SW_HIDE);
+        ShowWindow(comboSpellCheckLevel_, SW_HIDE);
+    }
+
     // "Báo cáo lỗi" link below tab control
     {
         RECT tcRc;
@@ -563,6 +585,8 @@ void ClassicSettingsDialog::PopulateControls() {
         ComboBox_SetCurSel(comboMethod_, static_cast<int>(config_.inputMethod));
     if (comboEncoding_)
         ComboBox_SetCurSel(comboEncoding_, static_cast<int>(config_.codeTable));
+    if (comboSpellCheckLevel_)
+        ComboBox_SetCurSel(comboSpellCheckLevel_, static_cast<int>(config_.GetSpellCheckLevel()));
 
     UpdateCustomKeyMapButtonVisibility();
 
@@ -649,6 +673,11 @@ void ClassicSettingsDialog::ReadControlValues() {
         if (sel >= 0 && sel <= 4)
             config_.codeTable = static_cast<CodeTable>(sel);
     }
+    if (comboSpellCheckLevel_) {
+        int sel = ComboBox_GetCurSel(comboSpellCheckLevel_);
+        if (sel >= 0 && sel <= 2)
+            config_.SetSpellCheckLevel(static_cast<SpellCheckLevel>(sel));
+    }
 
     for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
         const auto& meta = kSettings[i];
@@ -732,7 +761,7 @@ void ClassicSettingsDialog::SyncToSharedState() {
         SharedState state = sharedState_.Read();
         if (state.IsValid()) {
             state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
-            state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
+            state.spellCheck = static_cast<uint8_t>(config_.GetSpellCheckLevel());
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
             state.SetHotkey(hotkeyConfig_);
@@ -797,6 +826,11 @@ void ClassicSettingsDialog::ShowTabPage(int tabIndex) {
             ShowWindow(extraControls_[i], showCmd);
         }
     }
+
+    // Hand-wired spell-check-level combo (not table-driven — see CreateAdvancedControls).
+    int spellShowCmd = (tabIndex == 0) ? SW_SHOW : SW_HIDE;
+    if (lblSpellCheckLevel_) ShowWindow(lblSpellCheckLevel_, spellShowCmd);
+    if (comboSpellCheckLevel_) ShowWindow(comboSpellCheckLevel_, spellShowCmd);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -824,10 +858,13 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
 
         case IDC_COMBO_METHOD:
         case IDC_COMBO_ENCODING:
+        case IDC_COMBO_SPELL_CHECK:
             if (code == CBN_SELCHANGE) {
                 SaveSettings();
                 if (id == IDC_COMBO_METHOD) {
                     UpdateCustomKeyMapButtonVisibility();
+                } else if (id == IDC_COMBO_SPELL_CHECK) {
+                    UpdateSpellCheckChildren();
                 }
             } else if (code == CBN_DROPDOWN && theme_.IsDark()) {
                 BOOL anim = FALSE;
@@ -902,11 +939,6 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                 }
 
                 SaveSettings();
-
-                // Spell check controls child toggles (zwjf, auto-restore, exclusions button)
-                if (meta->win32Id == IDC_CHECK_SPELL) {
-                    UpdateSpellCheckChildren();
-                }
 
                 // TSF-apps toggle registers/unregisters the TSF DLL.
                 // Mirrors the Sciter handler in SettingsDialog.cpp:575-610.
@@ -1063,7 +1095,7 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
 // ════════════════════════════════════════════════════════════════════
 
 void ClassicSettingsDialog::UpdateSpellCheckChildren() {
-    bool spellOn = (IsDlgButtonChecked(hwnd_, IDC_CHECK_SPELL) == BST_CHECKED);
+    bool spellOn = comboSpellCheckLevel_ && ComboBox_GetCurSel(comboSpellCheckLevel_) != 0;
     BOOL enable = spellOn ? TRUE : FALSE;
 
     // Child toggles: "Cho phép zwjf" and "Tự khôi phục phím sai"

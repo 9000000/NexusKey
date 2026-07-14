@@ -120,6 +120,11 @@ private:
     // Advanced controls
     HWND tabControl_    = nullptr;
     HWND linkReportBug_ = nullptr;
+    HWND lblSpellCheckLevel_   = nullptr;
+    HWND comboSpellCheckLevel_ = nullptr;  // Off / Standard / Advanced — hand-wired
+                                            // like comboMethod_/comboEncoding_, not
+                                            // table-driven (see SpellCheckLevel design
+                                            // note in TypingConfig.h)
     bool advancedCreated_ = false;
     int currentTab_     = 0;
 

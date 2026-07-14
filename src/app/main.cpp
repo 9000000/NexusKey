@@ -381,7 +381,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         SharedState state;
         state.InitDefaults();
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
-        state.spellCheck = config.spellCheckEnabled ? 1 : 0;
+        state.spellCheck = static_cast<uint8_t>(config.GetSpellCheckLevel());
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
@@ -508,7 +508,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         uint32_t ff = state.GetFeatureFlags();
         return {
             g_hookEngine.IsVietnameseMode(),
-            state.spellCheck != 0,
+            static_cast<SpellCheckLevel>(state.spellCheck),
             (ff & FeatureFlags::SMART_SWITCH) != 0,
             (ff & FeatureFlags::MACRO_ENABLED) != 0,
             state.inputMethod,
@@ -743,7 +743,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         // TSF-only mode: DLL is the only engine, always active
         state.flags |= SharedFlags::TSF_ACTIVE;
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
-        state.spellCheck = config.spellCheckEnabled ? 1 : 0;
+        state.spellCheck = static_cast<uint8_t>(config.GetSpellCheckLevel());
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
@@ -784,7 +784,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         uint32_t ff = state.GetFeatureFlags();
         return {
             (state.flags & SharedFlags::VIETNAMESE_MODE) != 0,
-            state.spellCheck != 0,
+            static_cast<SpellCheckLevel>(state.spellCheck),
             (ff & FeatureFlags::SMART_SWITCH) != 0,
             (ff & FeatureFlags::MACRO_ENABLED) != 0,
             state.inputMethod,
@@ -940,7 +940,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
         SharedState state = sm.Read();
         if (state.IsValid()) {
             state.inputMethod = static_cast<uint8_t>(config.inputMethod);
-            state.spellCheck = config.spellCheckEnabled ? 1 : 0;
+            state.spellCheck = static_cast<uint8_t>(config.GetSpellCheckLevel());
             state.codeTable = static_cast<uint8_t>(config.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config));
             state.diagFlags = config.perfHistogramEnabled ? DiagFlags::PERF_HISTOGRAM : 0;
@@ -981,9 +981,23 @@ void OnMenuCommand(TrayMenuId id) {
 #endif
             break;
 
-        case TrayMenuId::SpellCheck: {
+        case TrayMenuId::SpellCheckOff: {
             auto config = ConfigManager::LoadOrDefault();
-            config.spellCheckEnabled = !config.spellCheckEnabled;
+            config.SetSpellCheckLevel(SpellCheckLevel::Off);
+            ApplyConfigChange(config);
+            break;
+        }
+
+        case TrayMenuId::SpellCheckStandard: {
+            auto config = ConfigManager::LoadOrDefault();
+            config.SetSpellCheckLevel(SpellCheckLevel::Standard);
+            ApplyConfigChange(config);
+            break;
+        }
+
+        case TrayMenuId::SpellCheckAdvanced: {
+            auto config = ConfigManager::LoadOrDefault();
+            config.SetSpellCheckLevel(SpellCheckLevel::Advanced);
             ApplyConfigChange(config);
             break;
         }

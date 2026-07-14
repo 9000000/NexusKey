@@ -765,7 +765,7 @@ void HookEngine::QuickSyncFromSharedState() {
 
     TypingConfig cfg = *config_.load(std::memory_order_acquire);
     DecodeFeatureFlags(ff, cfg);
-    cfg.spellCheckEnabled = sc != 0;
+    cfg.SetSpellCheckLevel(static_cast<SpellCheckLevel>(sc));
     cfg.inputMethod = static_cast<InputMethod>(im);
     cfg.codeTable = static_cast<CodeTable>(ct);
 
@@ -826,7 +826,7 @@ void HookEngine::ReloadFromToml() {
         SharedState state = sharedStatePtr_->Read();
         if (state.IsValid()) {
             config.inputMethod = static_cast<InputMethod>(state.inputMethod);
-            config.spellCheckEnabled = state.spellCheck != 0;
+            config.SetSpellCheckLevel(static_cast<SpellCheckLevel>(state.spellCheck));
             DecodeFeatureFlags(state.GetFeatureFlags(), config);
             NEXTKEY_LOG(L"HookEngine: read SharedState (epoch=%u, featureFlags=0x%04X)",
                         state.epoch, state.GetFeatureFlags());
@@ -2467,6 +2467,9 @@ bool HookEngine::CommitComposition() {
     std::wstring rawSnapshot = engine_->PeekRaw();
 
     std::wstring committed = engine_->Commit();
+    if (engine_->LastCommitWasCorrected()) {
+        HOOK_LOG(L"  CommitComposition: lexicon-corrected, text='%s'", committed.c_str());
+    }
 
     bool restored = false;
     // Auto-restore: if Commit() returned different text than what's on screen,

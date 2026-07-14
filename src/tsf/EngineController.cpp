@@ -407,6 +407,9 @@ void EngineController::Commit(ITfContext* pContext) {
     // clears escRawHistory_ (see TelexEngineTest.EscRestoreRaw_PeekRawClearedByCommit).
     std::wstring rawSnapshot = engine_->PeekRaw();
     std::wstring committed = engine_->Commit();
+    if (engine_->LastCommitWasCorrected()) {
+        TSF_LOG(L"Commit: lexicon-corrected, text='%ls'", committed.c_str());
+    }
 
     // Commit: set final text and end composition in one atomic operation
     auto* pSession = new CommitEditSession(pContext, &compositionMgr_, committed);
@@ -429,6 +432,9 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
     // PeekRaw BEFORE engine_->Commit() — see Commit() comment above.
     std::wstring rawSnapshot = engine_->PeekRaw();
     std::wstring committed = engine_->Commit();
+    if (engine_->LastCommitWasCorrected()) {
+        TSF_LOG(L"CommitWithChar: lexicon-corrected, text='%ls'", committed.c_str());
+    }
 
     // Append the commit character (e.g., space) if provided
     if (appendChar != L'\0') {
@@ -599,7 +605,7 @@ void EngineController::ApplySharedState(const SharedState& state) {
     }
 
     config_.inputMethod = newMethod;
-    config_.spellCheckEnabled = state.spellCheck != 0;
+    config_.SetSpellCheckLevel(static_cast<SpellCheckLevel>(state.spellCheck));
     config_.optimizeLevel = optimizeLevel;
     DecodeFeatureFlags(state.GetFeatureFlags(), config_);
     // v3 cleanup: legacy `state.tempOffMethod` no longer decoded — TSF never

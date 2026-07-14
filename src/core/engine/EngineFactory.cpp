@@ -6,6 +6,7 @@
 
 #include "EngineFactory.h"
 #include "TypingEngine.h"
+#include "core/Logger.h"
 
 #ifdef VKEY_USE_RUST_ENGINE
 #include "RustInputEngine.h"
@@ -18,8 +19,11 @@ std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) 
     // Prefer the prebuilt closed-source Rust engine when its library is present;
     // otherwise fall back to the in-tree C++ engine below.
     if (RustInputEngine::LibraryAvailable()) {
+        Logger::Log(L"[Engine] Using Rust engine");
         return std::make_unique<RustInputEngine>(config);
     }
+    Logger::Log(L"[Engine] Rust engine unavailable (%ls), falling back to TypingEngine",
+                RustInputEngine::UnavailableReason().c_str());
 #endif
     // All input methods route through TypingEngine (unified engine).
     // Mode dispatch happens inside TypingEngine via IsTelexMode()/IsVniMode().

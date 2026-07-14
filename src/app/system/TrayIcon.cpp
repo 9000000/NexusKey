@@ -380,8 +380,17 @@ void TrayIcon::ShowContextMenu() {
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
     // ── Section 2: Feature toggles ──
-    AppendMenuW(hMenu, checked(state.spellCheck),
-        static_cast<UINT>(TrayMenuId::SpellCheck), S(StringId::MENU_SPELL_CHECK));
+    HMENU hSpellCheckMenu = CreatePopupMenu();
+    if (hSpellCheckMenu) {
+        auto addSC = [&](SpellCheckLevel level, TrayMenuId id, const wchar_t* label) {
+            UINT flags = MF_STRING | (state.spellCheckLevel == level ? MF_CHECKED : 0);
+            AppendMenuW(hSpellCheckMenu, flags, static_cast<UINT>(id), label);
+        };
+        addSC(SpellCheckLevel::Off, TrayMenuId::SpellCheckOff, L"Tắt");
+        addSC(SpellCheckLevel::Standard, TrayMenuId::SpellCheckStandard, L"Cơ bản");
+        addSC(SpellCheckLevel::Advanced, TrayMenuId::SpellCheckAdvanced, L"Nâng cao");
+        AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSpellCheckMenu), S(StringId::MENU_SPELL_CHECK));
+    }
     AppendMenuW(hMenu, checked(state.smartSwitch),
         static_cast<UINT>(TrayMenuId::SmartSwitch), S(StringId::MENU_SMART_SWITCH));
     AppendMenuW(hMenu, checked(state.macroEnabled),

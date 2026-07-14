@@ -42,10 +42,15 @@ public:
     [[nodiscard]] bool IsToneEscaped() const override;
     [[nodiscard]] std::wstring PeekRaw() const override { return raw_; }
     [[nodiscard]] std::wstring_view PeekRawView() const noexcept override { return raw_; }
+    [[nodiscard]] bool LastCommitWasCorrected() const override;
 
     /// Whether the prebuilt engine library loaded and its ABI version matched.
     /// EngineFactory uses this to fall back to the in-tree C++ engine.
     [[nodiscard]] static bool LibraryAvailable();
+
+    /// Empty when LibraryAvailable(); otherwise a short diagnostic of why the
+    /// library didn't load (dlopen failure, missing symbol, or ABI mismatch).
+    [[nodiscard]] static std::wstring UnavailableReason();
 
 private:
     void* handle_ = nullptr;  // opaque VKeyEngine*

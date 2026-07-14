@@ -53,7 +53,6 @@ public:
 
     // SOM functions exposed to JavaScript
     void onInputMethodChange(int method);  // 0=Telex, 1=VNI
-    void onSpellCheckChange(bool enabled);
     void onExpandChange(bool expanded);
     void onToggleChange(sciter::string id, bool checked);  // Direct toggle → C++ (bypasses DOM events)
     void onClose();
@@ -63,7 +62,6 @@ public:
     SOM_PASSPORT_BEGIN(SettingsDialog)
         SOM_FUNCS(
             SOM_FUNC(onInputMethodChange),
-            SOM_FUNC(onSpellCheckChange),
             SOM_FUNC(onExpandChange),
             SOM_FUNC(onToggleChange),
             SOM_FUNC(onClose),

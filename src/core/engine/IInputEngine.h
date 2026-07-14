@@ -73,6 +73,12 @@ public:
     /// owning PeekRaw() instead. Provided for the keyboard-hook hot path, where
     /// per-keystroke heap allocation is forbidden (CODING_RULES Rule 11).
     [[nodiscard]] virtual std::wstring_view PeekRawView() const noexcept { return {}; }
+
+    /// Whether the most recently committed text was silently auto-corrected
+    /// against the engine's dictionary (e.g. a mistyped Telex sequence
+    /// restored to the intended Vietnamese word). Cleared by the next
+    /// commit. Default false for engines without a correction concept.
+    [[nodiscard]] virtual bool LastCommitWasCorrected() const { return false; }
 };
 
 }  // namespace NextKey

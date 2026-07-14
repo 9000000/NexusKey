@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 /* Bump when the ABI changes; check against vkey_engine_abi_version(). */
-#define VKEY_ENGINE_ABI_VERSION 2u
+#define VKEY_ENGINE_ABI_VERSION 3u
 
 /* Input methods (the `method` argument to vkey_engine_create). */
 #define VKEY_METHOD_TELEX        0u
@@ -35,6 +35,7 @@ extern "C" {
 #define VKEY_FEAT_SPELL_CHECK          (1u << 4)
 #define VKEY_FEAT_ALLOW_ENGLISH_BYPASS (1u << 5)
 #define VKEY_FEAT_ALLOW_ZWJF           (1u << 6)
+#define VKEY_FEAT_SPELL_SUGGEST        (1u << 7)
 
 /* Opaque engine handle. */
 typedef struct VKeyEngine VKeyEngine;
@@ -60,7 +61,11 @@ void vkey_engine_backspace(VKeyEngine *engine);
 size_t vkey_engine_peek_utf16(const VKeyEngine *engine, uint16_t *buf, size_t cap);
 
 /* Commit the composition, reset the engine, and copy the committed text into
- * `buf` as UTF-16; returns the committed UTF-16 length. */
+ * `buf` as UTF-16; returns the committed UTF-16 length. Unlike the peek calls,
+ * this CONSUMES the composition, so the buf=NULL,cap=0 length-query idiom does
+ * not work (it would commit and discard the text). If cap is shorter than the
+ * return value the copy is silently truncated and the rest is unrecoverable, so
+ * pass a buffer large enough up front; a 256-unit buffer always fits. */
 size_t vkey_engine_commit_utf16(VKeyEngine *engine, uint16_t *buf, size_t cap);
 
 /* Number of Unicode scalars in the current rendered composition. */
@@ -95,6 +100,34 @@ size_t vkey_engine_peek_raw_utf16(const VKeyEngine *engine, uint16_t *buf, size_
  * capacity overflow. Re-applying a tone/modifier to seeded glyphs is NOT
  * faithfully supported — that needs a raw snapshot captured at commit time. */
 bool vkey_engine_seed_text_utf16(VKeyEngine *engine, const uint16_t *buf, size_t len);
+
+/* --- ABI v3: lexicon smart-restore -----------------------------------------
+ * Added in ABI 3. Present only when vkey_engine_abi_version() >= 3. The
+ * library ships with an embedded lexicon (VKEY_FEAT_SPELL_SUGGEST just needs
+ * to be set); hosts normally never call vkey_engine_set_lexicon. */
+
+/* Replace the process-wide lexicon (VKLX format, see vkey_lexicon) used by
+ * engines created AFTER this call; engines already created keep whatever
+ * lexicon they were given at vkey_engine_create() time. The library
+ * copies/owns the bytes, so the caller may free `blob` immediately after
+ * this returns. Returns false on a malformed blob, leaving the current
+ * lexicon (embedded default, or a previously installed override) in place. */
+bool vkey_engine_set_lexicon(const uint8_t *blob, size_t len);
+
+/* Whether the most recent vkey_engine_commit_utf16() emitted a lexicon
+ * correction instead of a raw restore. Cleared by the next commit. */
+bool vkey_engine_last_commit_was_corrected(const VKeyEngine *engine);
+
+/* Diagnostics/UI surface: candidates computed for the last corrected commit.
+ * Count is 0 unless vkey_engine_last_commit_was_corrected() is true. */
+size_t vkey_engine_suggest_count(const VKeyEngine *engine);
+
+/* Copy the `index`-th ranked correction candidate (index 0 is the word that
+ * was actually emitted) into `buf` as UTF-16 (up to `cap` code units);
+ * returns the total UTF-16 length. Pass buf=NULL, cap=0 to query the length.
+ * Returns 0 if index >= vkey_engine_suggest_count(). */
+size_t vkey_engine_suggest_utf16(const VKeyEngine *engine, size_t index,
+                                  uint16_t *buf, size_t cap);
 
 #ifdef __cplusplus
 } /* extern "C" */

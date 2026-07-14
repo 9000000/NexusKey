@@ -133,6 +133,35 @@ TEST_F(RustInputEngineTest, QuickConsonantReported) {
     EXPECT_TRUE(engine.HasActiveQuickConsonant());
 }
 
+TEST_F(RustInputEngineTest, LastCommitWasCorrectedReported) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    RustInputEngine engine(config);
+
+    for (const wchar_t c : std::wstring(L"gnuwowif")) {
+        engine.PushChar(c);
+    }
+    const std::wstring committed = engine.Commit();
+    EXPECT_FALSE(committed.empty());
+    EXPECT_TRUE(engine.LastCommitWasCorrected());
+}
+
+TEST_F(RustInputEngineTest, LastCommitWasCorrectedFalseWhenSpellSuggestDisabled) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = false;
+    RustInputEngine engine(config);
+
+    for (const wchar_t c : std::wstring(L"gnuwowif")) {
+        engine.PushChar(c);
+    }
+    (void)engine.Commit();
+    EXPECT_FALSE(engine.LastCommitWasCorrected());
+}
+
 }  // namespace
 }  // namespace NextKey
 

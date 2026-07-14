@@ -30,6 +30,15 @@ enum class CodeTable : uint8_t {
     VietnameseLocale = 4
 };
 
+/// User-facing spell-check strength. Off/Standard preserve the original
+/// on/off `spellCheckEnabled` behavior; Advanced additionally turns on
+/// lexicon-based auto-correct on commit (`spellSuggestEnabled`).
+enum class SpellCheckLevel : uint8_t {
+    Off = 0,
+    Standard = 1,
+    Advanced = 2
+};
+
 /// Hotkey configuration for V/E toggle and quick-convert (internal,
 /// separate from Windows KL switching). `vk` is a Win32 VK_* code captured
 /// by the dialog overlay — supports printable keys, F1-F24, OEM punctuation,
@@ -83,6 +92,7 @@ struct TypingConfig {
     InputMethod inputMethod = InputMethod::Telex;
     CodeTable codeTable = CodeTable::Unicode;
     bool spellCheckEnabled = true;
+    bool spellSuggestEnabled = false;  // Advanced: lexicon auto-correct on commit
     bool beepOnSwitch = false;
     bool smartSwitch = false;
     bool excludeApps = false;  // Exclude apps feature toggle
@@ -132,6 +142,22 @@ struct TypingConfig {
 
     // Default constructor for compiled defaults (FR8 - engine autonomy)
     TypingConfig() = default;
+
+    /// Presentation-layer view of spellCheckEnabled/spellSuggestEnabled as a
+    /// single 3-way level, for the Settings/Tray UI. Internal Vietnamese
+    /// composition logic keeps reading the two bools directly — see
+    /// SetSpellCheckLevel for the inverse.
+    [[nodiscard]] SpellCheckLevel GetSpellCheckLevel() const noexcept {
+        if (!spellCheckEnabled) return SpellCheckLevel::Off;
+        return spellSuggestEnabled ? SpellCheckLevel::Advanced : SpellCheckLevel::Standard;
+    }
+
+    /// Inverse of GetSpellCheckLevel — unpack a UI-chosen level into the two
+    /// underlying bools.
+    void SetSpellCheckLevel(SpellCheckLevel level) noexcept {
+        spellCheckEnabled = level != SpellCheckLevel::Off;
+        spellSuggestEnabled = level == SpellCheckLevel::Advanced;
+    }
 };
 
 /// Configuration for quick-convert hotkey feature

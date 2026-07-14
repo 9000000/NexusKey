@@ -351,16 +351,15 @@
                                 <input type="hidden" id="val-suggest-keep-chars" value="0">
                             </div>
                             <!-- KIỂM TRA CHÍNH TẢ -->
-                            <!-- 4. Spell check -->
+                            <!-- 4. Spell check level: Off / Standard / Advanced (lexicon auto-correct) -->
                             <div class="setting-row">
                                 <span class="setting-label" data-i18n="s.spell_check">Kiểm tra chính tả</span>
                                 <div class="spacer" style="width: *"></div>
-                                <div class="toggle-switch-small" id="spell-check">
-                                    <span class="toggle-label-i">I</span>
-                                    <span class="toggle-label-o">O</span>
-                                    <div class="toggle-thumb-small"></div>
-                                </div>
-                                <input type="hidden" id="val-spell-check" value="0">
+                                <select class="setting-dropdown" id="spell-check-level">
+                                    <option value="0">Tắt</option>
+                                    <option value="1">Cơ bản</option>
+                                    <option value="2">Nâng cao</option>
+                                </select>
                             </div>
                             <!-- 5. Allow ZWJF consonants (sub-option of spell check) -->
                             <div class="setting-row child-setting-row">
