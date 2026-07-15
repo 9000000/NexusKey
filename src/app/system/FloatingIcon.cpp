@@ -171,13 +171,14 @@ bool FloatingIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
 
     if (posX_ == INT32_MIN || posY_ == INT32_MIN)
         ComputeDefaultPosition();
-    ClampToWorkArea();
+    int x = posX_, y = posY_;
+    ClampToWorkArea(x, y);
 
-    SetWindowPos(hwnd_, HWND_TOPMOST, posX_, posY_, ICON_SIZE, ICON_SIZE,
+    SetWindowPos(hwnd_, HWND_TOPMOST, x, y, ICON_SIZE, ICON_SIZE,
                  SWP_NOACTIVATE | SWP_NOSIZE);
     ApplyBitmap();
 
-    NEXTKEY_LOG(L"FloatingIcon created at (%d,%d)", posX_, posY_);
+    NEXTKEY_LOG(L"FloatingIcon created at (%d,%d)", x, y);
     return true;
 }
 
@@ -226,29 +227,37 @@ void FloatingIcon::SetPosition(int x, int y) noexcept {
     if (hwnd_) {
         if (posX_ == INT32_MIN || posY_ == INT32_MIN)
             ComputeDefaultPosition();
-        ClampToWorkArea();
-        SetWindowPos(hwnd_, HWND_TOPMOST, posX_, posY_, ICON_SIZE, ICON_SIZE,
+        int cx = posX_, cy = posY_;
+        ClampToWorkArea(cx, cy);
+        SetWindowPos(hwnd_, HWND_TOPMOST, cx, cy, ICON_SIZE, ICON_SIZE,
                      SWP_NOACTIVATE | SWP_NOSIZE);
         if (visible_) ApplyBitmap();
     }
 }
 
 void FloatingIcon::ComputeDefaultPosition() noexcept {
-    RECT workArea;
-    SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
-    posX_ = workArea.right - ICON_SIZE - MARGIN;
-    posY_ = workArea.bottom - ICON_SIZE - MARGIN;
+    // Default corner is relative to whichever monitor the user is currently
+    // on (matches ToastPopup's convention), not always the primary monitor.
+    POINT cursor;
+    GetCursorPos(&cursor);
+    HMONITOR mon = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfoW(mon, &mi);
+    posX_ = mi.rcWork.right - ICON_SIZE - MARGIN;
+    posY_ = mi.rcWork.bottom - ICON_SIZE - MARGIN;
 }
 
-void FloatingIcon::ClampToWorkArea() noexcept {
-    RECT workArea;
-    SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
-    int maxX = workArea.right - ICON_SIZE;
-    int maxY = workArea.bottom - ICON_SIZE;
-    if (posX_ < workArea.left) posX_ = workArea.left;
-    if (posY_ < workArea.top) posY_ = workArea.top;
-    if (posX_ > maxX) posX_ = maxX;
-    if (posY_ > maxY) posY_ = maxY;
+void FloatingIcon::ClampToWorkArea(int& x, int& y) noexcept {
+    POINT pt = { x, y };
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfoW(mon, &mi);
+    const int maxX = mi.rcWork.right - ICON_SIZE;
+    const int maxY = mi.rcWork.bottom - ICON_SIZE;
+    if (x < mi.rcWork.left) x = mi.rcWork.left;
+    if (y < mi.rcWork.top) y = mi.rcWork.top;
+    if (x > maxX) x = maxX;
+    if (y > maxY) y = maxY;
 }
 
 void FloatingIcon::ApplyBitmap() noexcept {
@@ -307,17 +316,25 @@ LRESULT CALLBACK FloatingIcon::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         }
         return 0;
 
+    case WM_SETTINGCHANGE:
+        // Taskbar autohide/reveal and similar work-area-only changes come
+        // through here (not WM_DISPLAYCHANGE) with wParam == SPI_SETWORKAREA.
+        if (wParam != SPI_SETWORKAREA)
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        [[fallthrough]];
     case WM_DISPLAYCHANGE:
-        if (g_floatingInstance) {
-            g_floatingInstance->ClampToWorkArea();
-            if (g_floatingInstance->hwnd_) {
-                SetWindowPos(g_floatingInstance->hwnd_, HWND_TOPMOST,
-                             g_floatingInstance->posX_, g_floatingInstance->posY_,
-                             FloatingIcon::ICON_SIZE, FloatingIcon::ICON_SIZE,
-                             SWP_NOACTIVATE | SWP_NOSIZE);
-                if (g_floatingInstance->visible_)
-                    g_floatingInstance->ApplyBitmap();
-            }
+        if (g_floatingInstance && g_floatingInstance->hwnd_) {
+            // Reclamp a copy of the preferred position — posX_/posY_ itself
+            // is left untouched so a shrink (e.g. a game switching resolution)
+            // followed by a restore snaps back to the original spot instead
+            // of staying wherever the shrink clamped it to.
+            int x = g_floatingInstance->posX_, y = g_floatingInstance->posY_;
+            FloatingIcon::ClampToWorkArea(x, y);
+            SetWindowPos(g_floatingInstance->hwnd_, HWND_TOPMOST, x, y,
+                         FloatingIcon::ICON_SIZE, FloatingIcon::ICON_SIZE,
+                         SWP_NOACTIVATE | SWP_NOSIZE);
+            if (g_floatingInstance->visible_)
+                g_floatingInstance->ApplyBitmap();
         }
         return 0;
     }
