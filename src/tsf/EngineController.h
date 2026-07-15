@@ -208,6 +208,12 @@ private:
     static constexpr DWORD kCommitUndoTimeoutMs = 1500;
 
     void RecordCommitSnapshot(std::wstring text, std::wstring rawInput, bool hasTrailingChar) noexcept;
+
+    /// Returns the raw keystrokes that produced `word`, if `word` is exactly the
+    /// most recently committed text (lastCommit_, trailing char stripped) and
+    /// still within kCommitUndoTimeoutMs. Empty otherwise — callers should fall
+    /// back to IInputEngine::SeedFromText, which can't re-tone on continued edit.
+    [[nodiscard]] std::wstring MatchingRawForCommittedWord(const std::wstring& word) const;
 };
 
 }  // namespace TSF

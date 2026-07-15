@@ -336,6 +336,31 @@ private:
     bool atDocStart_ = false;
 };
 
+/// Seeds `engine` to reproduce `word`, preferring an exact raw-keystroke replay
+/// over SeedFromText's literal-glyph decomposition. `SeedFromText` restores enough
+/// for the English-word check and continued typing/backspace, but can't recover
+/// which raw key produced which diacritic — a modifier re-applied after reviving
+/// from text alone silently fails to re-tone (see ADR: reopen-word raw replay).
+/// When `rawInput` (the engine's own PeekRaw() snapshot at the moment this word
+/// was committed) is available and still reproduces `word` exactly, replaying it
+/// through the same PushChar path used for live typing is fully faithful. Falls
+/// back to SeedFromText if there's no snapshot, or it no longer reproduces `word`
+/// (e.g. input method/config changed between commit and revive).
+inline bool SeedRevivedWord(IInputEngine* engine, const std::wstring& word,
+                            const std::wstring& rawInput) {
+    if (!rawInput.empty()) {
+        engine->Reset();
+        for (wchar_t c : rawInput) {
+            engine->PushChar(c);
+        }
+        if (engine->Peek() == word) {
+            return true;
+        }
+        engine->Reset();
+    }
+    return engine->SeedFromText(word);
+}
+
 /// Revive-composition edit session: starts a composition over an existing range that
 /// covers a previously-committed Vietnamese word, seeds the engine from that word,
 /// then deletes the last char (since this fires from VK_BACK). The resulting
@@ -349,9 +374,9 @@ class ReviveCompositionEditSession : public EditSession {
 public:
     ReviveCompositionEditSession(ITfContext* pContext, CompositionManager* pMgr,
                                  IInputEngine* pEngine, const std::wstring& word,
-                                 ITfRange* pRange)
+                                 ITfRange* pRange, const std::wstring& rawInput = std::wstring{})
         : EditSession(pContext), pMgr_(pMgr), pEngine_(pEngine), word_(word),
-          pRange_(pRange) {  // CComPtr assignment AddRefs automatically
+          pRange_(pRange), rawInput_(rawInput) {  // CComPtr assignment AddRefs automatically
     }
 
     IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
@@ -361,8 +386,8 @@ public:
         if (word_.empty()) return E_FAIL;
 
         // Seed engine_ fresh (English gate already passed upstream via a temp engine).
-        if (!pEngine_->SeedFromText(word_)) {
-            TSF_LOG(L"ReviveCompositionEditSession: SeedFromText failed on '%ls'",
+        if (!SeedRevivedWord(pEngine_, word_, rawInput_)) {
+            TSF_LOG(L"ReviveCompositionEditSession: seeding failed on '%ls'",
                     word_.c_str());
             return E_FAIL;
         }
@@ -399,6 +424,7 @@ private:
     IInputEngine* pEngine_;
     std::wstring word_;
     CComPtr<ITfRange> pRange_;
+    std::wstring rawInput_;
 };
 
 /// Revive-and-type edit session: user typed a character while engine was empty
@@ -409,9 +435,10 @@ class ReviveAndTypeEditSession : public EditSession {
 public:
     ReviveAndTypeEditSession(ITfContext* pContext, CompositionManager* pMgr,
                              IInputEngine* pEngine, const std::wstring& word,
-                             ITfRange* pRange, wchar_t ch)
+                             ITfRange* pRange, wchar_t ch,
+                             const std::wstring& rawInput = std::wstring{})
         : EditSession(pContext), pMgr_(pMgr), pEngine_(pEngine),
-          word_(word), pRange_(pRange), ch_(ch) {
+          word_(word), pRange_(pRange), ch_(ch), rawInput_(rawInput) {
     }
 
     IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
@@ -420,8 +447,8 @@ public:
             return E_FAIL;
         }
 
-        if (!pEngine_->SeedFromText(word_)) {
-            TSF_LOG(L"ReviveAndTypeEditSession: SeedFromText failed on '%ls'",
+        if (!SeedRevivedWord(pEngine_, word_, rawInput_)) {
+            TSF_LOG(L"ReviveAndTypeEditSession: seeding failed on '%ls'",
                     word_.c_str());
             return E_FAIL;
         }
@@ -460,6 +487,7 @@ private:
     std::wstring word_;
     CComPtr<ITfRange> pRange_;
     wchar_t ch_;
+    std::wstring rawInput_;
 };
 
 /// Edit session to check if the selection is non-empty (for autocomplete detection)

@@ -3415,18 +3415,25 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
             rawMacroBuffer_.pop_back();
         } else if (IsCommitTrigger(vk)) {
             // If the trigger was disabled, or if it was enabled but did not result in expansion,
-            // we clear the buffer unless it's a Space character that matches a multi-word macro prefix.
-            bool isSpacePrefix = false;
+            // we clear the buffer unless it's a Space character that matches a multi-word macro
+            // prefix, or an enabled printable (non-space) trigger — e.g. the '.' in "n.a" — which
+            // DispatchKeyAction step 8's savedMacroBuffer/macroCrossCommit_ already knows how to
+            // carry across the commit so the whole key can still match once the rest is typed.
+            // (Regressed by 71b673d: this cleanup runs in HandleMacro, earlier in the pipeline
+            // than step 8, so an unconditional clear here left step 8 nothing to preserve.)
+            bool preserve = false;
             if (vk == VK_SPACE && cfgSnap) {
                 // Reuse the member buffer's capacity instead of materializing a
                 // temporary `rawMacroBuffer_ + L' '` on every Space (hot path,
                 // Rule 11.2). IsSpaceMacroPrefix is noexcept and read-only, so the
                 // append/pop pair restores the buffer with no per-keystroke alloc.
                 rawMacroBuffer_.push_back(L' ');
-                isSpacePrefix = IsSpaceMacroPrefix(rawMacroBuffer_, cfgSnap->spaceMacroKeys);
+                preserve = IsSpaceMacroPrefix(rawMacroBuffer_, cfgSnap->spaceMacroKeys);
                 rawMacroBuffer_.pop_back();
+            } else if (IsMacroTrigger(vk)) {
+                preserve = VkToMacroChar(vk) > L' ';
             }
-            if (!isSpacePrefix) {
+            if (!preserve) {
                 rawMacroBuffer_.clear();
                 tempMacroOff_ = false;
             }

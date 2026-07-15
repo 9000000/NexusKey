@@ -697,6 +697,20 @@ void EngineController::RecordCommitSnapshot(std::wstring text,
             static_cast<int>(commitUndoState_), lastCommit_.text.c_str(), lastCommit_.rawInput.c_str());
 }
 
+std::wstring EngineController::MatchingRawForCommittedWord(const std::wstring& word) const {
+    if (word.empty() || lastCommit_.text.empty() || lastCommit_.rawInput.empty()) {
+        return {};
+    }
+    if ((GetTickCount() - lastCommit_.timestamp) > kCommitUndoTimeoutMs) {
+        return {};
+    }
+    std::wstring body = lastCommit_.text;
+    if (lastCommit_.hasTrailingChar && !body.empty()) {
+        body.pop_back();
+    }
+    return body == word ? lastCommit_.rawInput : std::wstring{};
+}
+
 bool EngineController::WithinUndoWindow() const noexcept {
     if (commitUndoState_ == CommitUndoState::Idle) return false;
     return (GetTickCount() - lastCommit_.timestamp) <= kCommitUndoTimeoutMs;
