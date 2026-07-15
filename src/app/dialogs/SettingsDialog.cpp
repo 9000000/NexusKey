@@ -875,6 +875,12 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
                 L"VKey", MB_YESNO | MB_ICONQUESTION);
             if (result == IDYES) {
                 saveSettings();
+                // Flush synchronously — saveSettings() only arms the 30s deferred
+                // timer, and the app is about to close (racing with the tray's own
+                // WM_CLOSE across processes). Waiting for the timer or this window's
+                // WM_CLOSE handler risks losing the write if the tray process wins.
+                KillTimer(get_hwnd(), TIMER_DEFERRED_SAVE);
+                saveToToml();
                 HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
                 if (trayWnd) {
                     PostMessageW(trayWnd, WM_CLOSE, 0, 0);
