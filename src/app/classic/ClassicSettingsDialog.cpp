@@ -837,6 +837,25 @@ void ClassicSettingsDialog::ShowTabPage(int tabIndex) {
 // Command handler
 // ════════════════════════════════════════════════════════════════════
 
+// Suppresses the Win32 combo-box open/close animation while dark theme is
+// active (it paints with light-theme colors for one frame otherwise).
+void ClassicSettingsDialog::HandleComboDarkModeAnimation(UINT code, LPARAM lParam) {
+    HWND combo = reinterpret_cast<HWND>(lParam);
+    if (code == CBN_DROPDOWN && theme_.IsDark()) {
+        BOOL anim = FALSE;
+        SystemParametersInfoW(SPI_GETCOMBOBOXANIMATION, 0, &anim, 0);
+        if (anim) {
+            SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)FALSE, 0);
+            SetPropW(combo, L"WasAnim", reinterpret_cast<HANDLE>(1));
+        }
+    } else if (code == CBN_CLOSEUP) {
+        if (GetPropW(combo, L"WasAnim")) {
+            SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)TRUE, 0);
+            RemovePropW(combo, L"WasAnim");
+        }
+    }
+}
+
 void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
     UINT code = HIWORD(wParam);
     UINT id   = LOWORD(wParam);
@@ -858,26 +877,51 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
 
         case IDC_COMBO_METHOD:
         case IDC_COMBO_ENCODING:
-        case IDC_COMBO_SPELL_CHECK:
             if (code == CBN_SELCHANGE) {
                 SaveSettings();
                 if (id == IDC_COMBO_METHOD) {
                     UpdateCustomKeyMapButtonVisibility();
-                } else if (id == IDC_COMBO_SPELL_CHECK) {
-                    UpdateSpellCheckChildren();
                 }
-            } else if (code == CBN_DROPDOWN && theme_.IsDark()) {
-                BOOL anim = FALSE;
-                SystemParametersInfoW(SPI_GETCOMBOBOXANIMATION, 0, &anim, 0);
-                if (anim) {
-                    SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)FALSE, 0);
-                    SetPropW(reinterpret_cast<HWND>(lParam), L"WasAnim", reinterpret_cast<HANDLE>(1));
+            } else {
+                HandleComboDarkModeAnimation(code, lParam);
+            }
+            return;
+
+        case IDC_COMBO_SPELL_CHECK:
+            if (code == CBN_SELCHANGE) {
+                SpellCheckLevel oldLevel = config_.GetSpellCheckLevel();
+                int sel = ComboBox_GetCurSel(comboSpellCheckLevel_);
+                if (sel >= 0 && sel <= 2) {
+                    SpellCheckLevel newLevel = static_cast<SpellCheckLevel>(sel);
+
+                    if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
+                        MessageBoxW(hwnd_, S(StringId::SPELL_ADVANCED_ENGINE_INFO),
+                            L"VKey", MB_OK | MB_ICONINFORMATION);
+                    }
+
+                    config_.SetSpellCheckLevel(newLevel);
+
+                    if (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced) {
+                        int result = MessageBoxW(hwnd_, S(StringId::SPELL_ADVANCED_CLOSE_APP),
+                            L"VKey", MB_YESNO | MB_ICONQUESTION);
+                        if (result == IDYES) {
+                            SaveSettings();
+                            KillTimer(hwnd_, kTimerDeferredSave);
+                            SaveToToml();
+
+                            HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+                            if (trayWnd) {
+                                PostMessageW(trayWnd, WM_CLOSE, 0, 0);
+                            }
+                            DestroyWindow(hwnd_);
+                            return;
+                        }
+                    }
                 }
-            } else if (code == CBN_CLOSEUP) {
-                if (GetPropW(reinterpret_cast<HWND>(lParam), L"WasAnim")) {
-                    SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)TRUE, 0);
-                    RemovePropW(reinterpret_cast<HWND>(lParam), L"WasAnim");
-                }
+                SaveSettings();
+                UpdateSpellCheckChildren();
+            } else {
+                HandleComboDarkModeAnimation(code, lParam);
             }
             return;
 

@@ -860,7 +860,29 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
         config_.codeTable = static_cast<CodeTable>(value);
     }
     else if (id == L"spell-check-level") {
-        config_.SetSpellCheckLevel(static_cast<SpellCheckLevel>(value));
+        SpellCheckLevel oldLevel = config_.GetSpellCheckLevel();
+        SpellCheckLevel newLevel = static_cast<SpellCheckLevel>(value);
+
+        if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
+            MessageBoxW(get_hwnd(), S(StringId::SPELL_ADVANCED_ENGINE_INFO),
+                L"VKey", MB_OK | MB_ICONINFORMATION);
+        }
+
+        config_.SetSpellCheckLevel(newLevel);
+
+        if (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced) {
+            int result = MessageBoxW(get_hwnd(), S(StringId::SPELL_ADVANCED_CLOSE_APP),
+                L"VKey", MB_YESNO | MB_ICONQUESTION);
+            if (result == IDYES) {
+                saveSettings();
+                HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+                if (trayWnd) {
+                    PostMessageW(trayWnd, WM_CLOSE, 0, 0);
+                }
+                onClose();
+                return;
+            }
+        }
     }
     else if (id == L"modern-icon") {
         systemConfig_.iconStyle = static_cast<uint8_t>(value);

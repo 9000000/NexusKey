@@ -16,14 +16,14 @@ namespace NextKey {
 
 std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) {
 #ifdef VKEY_USE_RUST_ENGINE
-    // Prefer the prebuilt closed-source Rust engine when its library is present;
-    // otherwise fall back to the in-tree C++ engine below.
-    if (RustInputEngine::LibraryAvailable()) {
+    if (config.spellSuggestEnabled && RustInputEngine::LibraryAvailable()) {
         Logger::Log(L"[Engine] Using Rust engine");
         return std::make_unique<RustInputEngine>(config);
     }
-    Logger::Log(L"[Engine] Rust engine unavailable (%ls), falling back to TypingEngine",
-                RustInputEngine::UnavailableReason().c_str());
+    if (config.spellSuggestEnabled) {
+        Logger::Log(L"[Engine] Rust engine unavailable (%ls), falling back to TypingEngine",
+                    RustInputEngine::UnavailableReason().c_str());
+    }
 #endif
     // All input methods route through TypingEngine (unified engine).
     // Mode dispatch happens inside TypingEngine via IsTelexMode()/IsVniMode().

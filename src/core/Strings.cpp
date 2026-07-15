@@ -72,6 +72,8 @@ static const wchar_t* const kVietnamese[] = {
     L"Đã tắt tự khởi động lại. VKey sẽ không tự bật lại nếu thoát đột ngột.", // WATCHDOG_STOPPED_BODY
     L"Đã bật tự khởi động lại. VKey sẽ tự bật lại nếu thoát đột ngột.", // WATCHDOG_ENABLED_BODY
     L"Cấu hình hiện tại đã được sao lưu thành công tại:\n%s\n\nỨng dụng sẽ tự động đóng để tiến hành cập nhật.", // UPDATE_BACKUP_SUCCESS
+    L"Chế độ Nâng cao sử dụng VKey Engine (Rust).\nEngine sẽ được nạp vào bộ nhớ.",  // SPELL_ADVANCED_ENGINE_INFO
+    L"Bạn cần đóng VKey để giải phóng VKey Engine khỏi bộ nhớ.\nBạn có muốn đóng VKey ngay?",  // SPELL_ADVANCED_CLOSE_APP
 };
 
 // English string table
@@ -138,6 +140,8 @@ static const wchar_t* const kEnglish[] = {
     L"Auto-restart stopped. VKey will not relaunch on crash.", // WATCHDOG_STOPPED_BODY
     L"Auto-restart enabled. VKey will relaunch on crash.", // WATCHDOG_ENABLED_BODY
     L"Your current configuration has been backed up at:\n%s\n\nThe application will automatically close to perform the update.", // UPDATE_BACKUP_SUCCESS
+    L"Advanced mode uses VKey Engine (Rust).\nThe engine will be loaded into memory.",  // SPELL_ADVANCED_ENGINE_INFO
+    L"VKey needs to close to release VKey Engine from memory.\nDo you want to close VKey now?",  // SPELL_ADVANCED_CLOSE_APP
 };
 
 static_assert(sizeof(kVietnamese) / sizeof(kVietnamese[0]) == static_cast<size_t>(StringId::_COUNT),

@@ -972,6 +972,32 @@ static void ApplyConfigChange(const TypingConfig& config) {
     }
 }
 
+/// Applies a spell-check level chosen from the tray menu. Entering Advanced
+/// loads the Rust engine into memory (info prompt); leaving Advanced needs a
+/// restart to release it (Yes/No prompt). The level change itself always
+/// applies — declining the restart just defers releasing the engine.
+static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
+    auto config = ConfigManager::LoadOrDefault();
+    SpellCheckLevel oldLevel = config.GetSpellCheckLevel();
+
+    if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
+        MessageBoxW(g_trayIcon.GetMessageWindow(), S(StringId::SPELL_ADVANCED_ENGINE_INFO),
+            L"VKey", MB_OK | MB_ICONINFORMATION);
+    } else if (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced) {
+        int result = MessageBoxW(g_trayIcon.GetMessageWindow(), S(StringId::SPELL_ADVANCED_CLOSE_APP),
+            L"VKey", MB_YESNO | MB_ICONQUESTION);
+        if (result == IDYES) {
+            config.SetSpellCheckLevel(newLevel);
+            ApplyConfigChange(config);
+            PostMessageW(g_trayIcon.GetMessageWindow(), WM_CLOSE, 0, 0);
+            return;
+        }
+    }
+
+    config.SetSpellCheckLevel(newLevel);
+    ApplyConfigChange(config);
+}
+
 void OnMenuCommand(TrayMenuId id) {
     switch (id) {
         case TrayMenuId::Settings:
@@ -992,26 +1018,17 @@ void OnMenuCommand(TrayMenuId id) {
 #endif
             break;
 
-        case TrayMenuId::SpellCheckOff: {
-            auto config = ConfigManager::LoadOrDefault();
-            config.SetSpellCheckLevel(SpellCheckLevel::Off);
-            ApplyConfigChange(config);
+        case TrayMenuId::SpellCheckOff:
+            ApplySpellCheckLevel(SpellCheckLevel::Off);
             break;
-        }
 
-        case TrayMenuId::SpellCheckStandard: {
-            auto config = ConfigManager::LoadOrDefault();
-            config.SetSpellCheckLevel(SpellCheckLevel::Standard);
-            ApplyConfigChange(config);
+        case TrayMenuId::SpellCheckStandard:
+            ApplySpellCheckLevel(SpellCheckLevel::Standard);
             break;
-        }
 
-        case TrayMenuId::SpellCheckAdvanced: {
-            auto config = ConfigManager::LoadOrDefault();
-            config.SetSpellCheckLevel(SpellCheckLevel::Advanced);
-            ApplyConfigChange(config);
+        case TrayMenuId::SpellCheckAdvanced:
+            ApplySpellCheckLevel(SpellCheckLevel::Advanced);
             break;
-        }
 
         case TrayMenuId::SmartSwitch: {
             auto config = ConfigManager::LoadOrDefault();
