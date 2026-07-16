@@ -282,7 +282,7 @@ RustInputEngine::RustInputEngine(const TypingConfig& config) {
                 }
                 api.set_spell_exclusions_utf16(
                     static_cast<VKeyEngine*>(handle_),
-                    exclusions_text.data(),
+                    reinterpret_cast<const uint16_t*>(exclusions_text.data()),
                     exclusions_text.size());
             }
         }
