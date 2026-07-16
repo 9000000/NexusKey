@@ -91,6 +91,8 @@ struct EngineApi {
     bool (*last_commit_was_corrected)(const VKeyEngine*) = nullptr;
     // ABI v4: user-defined custom keymap.
     void (*set_custom_keymap)(VKeyEngine*, const uint8_t*, size_t) = nullptr;
+    // ABI v5: spell-check exclusions.
+    bool (*set_spell_exclusions_utf16)(VKeyEngine*, const uint16_t*, size_t) = nullptr;
     bool ok = false;
     std::wstring reason;  // diagnostic when !ok; empty when ok
 };
@@ -173,12 +175,14 @@ const EngineApi& Api() {
             lib, "vkey_engine_last_commit_was_corrected");
         a.set_custom_keymap = Resolve<decltype(a.set_custom_keymap)>(
             lib, "vkey_engine_set_custom_keymap");
+        a.set_spell_exclusions_utf16 = Resolve<decltype(a.set_spell_exclusions_utf16)>(
+            lib, "vkey_engine_set_spell_exclusions_utf16");
         const bool symbolsResolved =
             a.create && a.destroy && a.reset && a.push_char && a.backspace &&
             a.peek_utf16 && a.commit_utf16 && a.count && a.abi_version &&
             a.is_english_word && a.is_tone_escaped && a.has_active_quick_consonant &&
             a.peek_raw_utf16 && a.seed_text_utf16 && a.last_commit_was_corrected &&
-            a.set_custom_keymap;
+            a.set_custom_keymap && a.set_spell_exclusions_utf16;
         if (!symbolsResolved) {
             a.reason = L"vkey_engine library is missing a required exported symbol";
             return a;
@@ -260,11 +264,27 @@ RustInputEngine::RustInputEngine(const TypingConfig& config) {
     const EngineApi& api = Api();
     if (api.ok) {
         handle_ = api.create(MapMethod(config.inputMethod), MapFeatures(config));
-        if (handle_ && config.inputMethod == InputMethod::UserDefined) {
-            api.set_custom_keymap(
-                static_cast<VKeyEngine*>(handle_),
-                reinterpret_cast<const uint8_t*>(config.customKeyMap.data()),
-                config.customKeyMap.size());
+        if (handle_) {
+            if (config.inputMethod == InputMethod::UserDefined) {
+                api.set_custom_keymap(
+                    static_cast<VKeyEngine*>(handle_),
+                    reinterpret_cast<const uint8_t*>(config.customKeyMap.data()),
+                    config.customKeyMap.size());
+            }
+            if (!config.spellExclusions.empty()) {
+                // Concatenate exclusions as newline-delimited UTF-16 text.
+                std::wstring exclusions_text;
+                for (size_t i = 0; i < config.spellExclusions.size(); ++i) {
+                    if (i > 0) {
+                        exclusions_text += L'\n';
+                    }
+                    exclusions_text += config.spellExclusions[i];
+                }
+                api.set_spell_exclusions_utf16(
+                    static_cast<VKeyEngine*>(handle_),
+                    exclusions_text.data(),
+                    exclusions_text.size());
+            }
         }
     }
     // Rule 11 (hook hot path): pre-size the buffers so the per-keystroke Refresh()

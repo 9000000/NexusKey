@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 /* Bump when the ABI changes; check against vkey_engine_abi_version(). */
-#define VKEY_ENGINE_ABI_VERSION 4u
+#define VKEY_ENGINE_ABI_VERSION 5u
 
 /* Input methods (the `method` argument to vkey_engine_create). */
 #define VKEY_METHOD_TELEX        0u
@@ -186,6 +186,16 @@ size_t vkey_engine_suggest_utf16(const VKeyEngine *engine, size_t index,
  * Resets active composition, same as changing any other engine setting.
  * Ignored while the engine's method is not VKEY_METHOD_USER_DEFINED. */
 void vkey_engine_set_custom_keymap(VKeyEngine *engine, const uint8_t *entries, size_t len);
+
+/* --- ABI v5: spell-check exclusions --------------------------------------------
+ * Added in ABI 5. Present only when vkey_engine_abi_version() >= 5. */
+
+/* Install a spell-check exclusion list (UTF-16 words, newline-delimited; one word per line).
+ * Users may exclude words (e.g. acronyms "đcđt") from spell-check corrections.
+ * The engine copies/owns the bytes, so the caller may free `blob` immediately after.
+ * Pass NULL/0 to clear all exclusions. Resets active composition.
+ * Only affects behavior when spell_check_enabled is true. */
+void vkey_engine_set_spell_exclusions_utf16(VKeyEngine *engine, const uint16_t *buf, size_t len);
 
 #ifdef __cplusplus
 } /* extern "C" */
