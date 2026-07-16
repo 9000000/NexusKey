@@ -228,6 +228,17 @@ static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
         if (result == IDYES) {
             config.SetSpellCheckLevel(newLevel);
             ApplyConfigChange(config);
+            wchar_t exePath[MAX_PATH] = {};
+            GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+            wchar_t cmdLine[MAX_PATH + 64] = {};
+            swprintf_s(cmdLine, L"\"%s\" %s", exePath, ADMIN_RESTART_FLAG);
+            STARTUPINFOW si = { sizeof(si) };
+            PROCESS_INFORMATION pi = {};
+            if (CreateProcessW(exePath, cmdLine, nullptr, nullptr, FALSE,
+                               CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
             PostMessageW(g_trayIcon.GetMessageWindow(), WM_CLOSE, 0, 0);
             return;
         }

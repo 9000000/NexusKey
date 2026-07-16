@@ -909,6 +909,18 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                             KillTimer(hwnd_, kTimerDeferredSave);
                             SaveToToml();
 
+                            wchar_t exePath[MAX_PATH] = {};
+                            GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+                            wchar_t cmdLine[MAX_PATH + 64] = {};
+                            swprintf_s(cmdLine, L"\"%s\" %s", exePath, ADMIN_RESTART_FLAG);
+                            STARTUPINFOW si = { sizeof(si) };
+                            PROCESS_INFORMATION pi = {};
+                            if (CreateProcessW(exePath, cmdLine, nullptr, nullptr, FALSE,
+                                               CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
+                                CloseHandle(pi.hProcess);
+                                CloseHandle(pi.hThread);
+                            }
+
                             HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
                             if (trayWnd) {
                                 PostMessageW(trayWnd, WM_CLOSE, 0, 0);
