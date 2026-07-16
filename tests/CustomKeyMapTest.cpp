@@ -274,6 +274,18 @@ static void FillTelexPresetCustomKeyMap(TypingConfig& cfg) {
     cfg.customKeyMap[static_cast<size_t>(L']')] = TypingAction::HornInsertU;
 }
 
+// Regression 2026-07-16: with the full Telex-style preset mapped (matches
+// the Settings UI default), "view" has only one 'e' — never arms the
+// cross-consonant free-mark HardEnglish bias that UserDefinedRespectsEnglishBias_Review
+// relies on below. HasNonClusterVowel() must catch it independent of bias.
+TEST_F(CustomKeyMapTest, UserDefinedHornOrInsertUNoStart_View_FullPreset) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    FillTelexPresetCustomKeyMap(cfg);
+    TypingEngine engine(cfg);
+    TypeString(engine, L"view");
+    EXPECT_EQ(engine.Peek(), L"view");
+}
+
 TEST_F(CustomKeyMapTest, UserDefinedRespectsEnglishBias_Review) {
     // Regression 2026-05-18: UserDefined user-only actions must honor the same
     // English-protection guards as Telex modifier path. Without bias check in
@@ -310,19 +322,37 @@ TEST_F(CustomKeyMapTest, UserDefinedValidVietnameseStillComposes_Thuw) {
     EXPECT_EQ(engine.Peek(), L"thứ");
 }
 
-TEST_F(CustomKeyMapTest, UserDefinedHornOrInsertUFallback_WwFullyReverts) {
-    // Regression 2026-05-18: w + w after a no-target insertion (e.g. typing
-    // "revie" then `w` — no a/o/u to apply horn → fallback inserts ư as
-    // "revieư") must FULLY revert on the second `w`, not split ư into u+w.
-    // Mark the fallback-inserted ư as synthetic so HandleHornW P4 sees it
-    // as the ww-escape signature (synthetic + last-state) → erase + literal.
+TEST_F(CustomKeyMapTest, UserDefinedHornOrInsertUFallback_SkipsInsertAfterExistingVowel) {
+    // Regression 2026-07-16: "view"/"review" — the fallback insert step must
+    // apply the same "no Vietnamese word has a vowel followed by standalone ư"
+    // rule as HornW's P8 (HasNonClusterVowel). Without it, the first `w` after
+    // an existing non-cluster vowel (i, e...) wrongly inserted ư (e.g. "vieư"),
+    // requiring a second `w` press just to recover the literal English word.
+    // Single press must now produce the literal word directly.
     TypingConfig cfg = MakeUserDefinedConfig();
     cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertUNoStart;
     TypingEngine engine(cfg);
-    TypeString(engine, L"review");
-    EXPECT_EQ(engine.Peek(), L"revieư");  // fallback inserted ư (synthetic)
-    TypeString(engine, L"w");             // second `w` — full ww escape
-    EXPECT_EQ(engine.Peek(), L"review");  // ư replaced by literal w, no `u`
+    TypeString(engine, L"view");
+    EXPECT_EQ(engine.Peek(), L"view");
+    TypingEngine engine2(cfg);
+    TypeString(engine2, L"review");
+    EXPECT_EQ(engine2.Peek(), L"review");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedHornOrInsertUFallback_WwFullyReverts) {
+    // w + w after a no-target insertion where NO vowel precedes it yet (e.g.
+    // "th" — consonant onset only, HasNonClusterVowel() is false) still goes
+    // through the fallback-insert path ("thư") and must FULLY revert on the
+    // second `w`, not split ư into u+w. Mark the fallback-inserted ư as
+    // synthetic so HandleHornW P4 sees it as the ww-escape signature
+    // (synthetic + last-state) → erase + literal.
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertUNoStart;
+    TypingEngine engine(cfg);
+    TypeString(engine, L"thw");
+    EXPECT_EQ(engine.Peek(), L"thư");  // fallback inserted ư (synthetic)
+    TypeString(engine, L"w");          // second `w` — full ww escape
+    EXPECT_EQ(engine.Peek(), L"thw");  // ư replaced by literal w, no `u`
 }
 
 TEST_F(CustomKeyMapTest, UserDefinedBracketInsertsHornMidWord) {

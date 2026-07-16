@@ -795,13 +795,19 @@ bool TypingEngine::HandleHornOrInsertU(TypingAction action, wchar_t keyChar) {
         return true;
     }
 
-    // 2. Plain variant fallback (e.g., SimpleTelex / QU-cluster where P8
-    //    declined): insert ư as a fresh state. Mark it synthetic so a
-    //    subsequent press of the same key triggers the ww-style full revert
-    //    via HandleHornW P4 (synthetic + last-state → erase ư entirely, add
-    //    literal). Without this, double-press lands in the regular escape
-    //    path (ư → u + literal), producing e.g. `revie + w + w → revieuw`
-    //    instead of `review`.
+    // 2. Plain variant fallback (consonant-onset-only buffer, e.g. "th" + w):
+    //    insert ư as a fresh state. Mark it synthetic so a subsequent press
+    //    of the same key triggers the ww-style full revert via HandleHornW
+    //    P4 (synthetic + last-state → erase ư entirely, add literal).
+    //    Without this, double-press lands in the regular escape path
+    //    (ư → u + literal), producing e.g. `th + w + w → thuw` instead of `thw`.
+    //
+    // Same "no Vietnamese word has a vowel followed by standalone ư" rule as
+    // HornW's P8 (see HasNonClusterVowel) — without it, English words with a
+    // vowel already in the buffer (view, review, new, know...) get a bogus
+    // ư appended on the first press instead of staying literal.
+    if (HasNonClusterVowel()) return false;
+
     const size_t beforeSize = states_.size();
     if (HandleHornInsert(TypingAction::HornInsertU, keyChar)) {
         if (states_.size() > beforeSize) {
@@ -1116,6 +1122,23 @@ bool TypingEngine::HandleAdjacentCircumflex(TypingAction action, wchar_t c) {
 }
 
 //-----------------------------------------------------------------------------
+// HasNonClusterVowel — true if the buffer already has a vowel that isn't the
+// 'i' of a potential "gi" consonant cluster. Shared by HandleHornW's P8 and
+// HandleHornOrInsertU's insert fallback: standalone ư never follows a vowel
+// like this in real Vietnamese (no word has a vowel + standalone ư).
+//-----------------------------------------------------------------------------
+
+bool TypingEngine::HasNonClusterVowel() const noexcept {
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (!states_[i].IsVowel()) continue;
+        // 'i' after 'g' is a potential "gi" cluster consonant — don't count it
+        if (states_[i].base == L'i' && i > 0 && states_[i - 1].base == L'g') continue;
+        return true;
+    }
+    return false;
+}
+
+//-----------------------------------------------------------------------------
 // HandleHornW — Telex `w` modifier (EXPLICIT PRIORITY ORDER P1-P8)
 //-----------------------------------------------------------------------------
 
@@ -1356,15 +1379,7 @@ bool TypingEngine::HandleHornW(TypingAction /*action*/, wchar_t c) {
     // fallback. Full Telex / Combined keep P8 so word-initial ư types as `w`.
     if (config_.inputMethod != InputMethod::SimpleTelex &&
         config_.inputMethod != InputMethod::UserDefined && !IsInQUCluster()) {
-        bool hasNonClusterVowel = false;
-        for (size_t i = 0; i < states_.size(); ++i) {
-            if (!states_[i].IsVowel()) continue;
-            // 'i' after 'g' is a potential "gi" cluster consonant — don't count it
-            if (states_[i].base == L'i' && i > 0 && states_[i - 1].base == L'g') continue;
-            hasNonClusterVowel = true;
-            break;
-        }
-        if (!hasNonClusterVowel) {
+        if (!HasNonClusterVowel()) {
             CharState s;
             s.base = L'u';
             s.mod = Modifier::Horn;

@@ -234,6 +234,7 @@ private:
     // W8.2: IModifierSubExecutor override — body unchanged, called via
     // hornModifierProposal_.tryApply() from ProcessModifier dispatch.
     [[nodiscard]] bool HandleHornW(TypingAction action, wchar_t keyChar) override;               // Telex w (P1-P8)
+    [[nodiscard]] bool HasNonClusterVowel() const noexcept;  // shared by HornW P8 + HornOrInsertU fallback
     // W8.3: IModifierSubExecutor override — body unchanged, called via
     // strokeDProposal_.tryApply() from ProcessModifier dispatch.
     [[nodiscard]] bool HandleStrokeD(TypingAction action, wchar_t keyChar) override;             // Telex dd / VNI 9
