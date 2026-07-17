@@ -43,6 +43,38 @@ TEST_F(RustInputEngineTest, TelexComposesAndCommits) {
     EXPECT_EQ(engine.Count(), 0u);
 }
 
+TEST_F(RustInputEngineTest, ToneEscape_UppercaseR_Issue209Comment) {
+    // #209 comment (Shzr0): "TeR" → "Tẻ", second R must escape → "TeR".
+    // C++ TypingEngine passes this (TelexEngineTest.Escape_ToneHoi_UppercaseR).
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    RustInputEngine engine(config);
+
+    engine.PushChar(L'T');
+    engine.PushChar(L'e');
+    engine.PushChar(L'R');
+    EXPECT_EQ(engine.Peek(), L"Tẻ");
+    engine.PushChar(L'R');
+    EXPECT_EQ(engine.Peek(), L"TeR");
+}
+
+TEST_F(RustInputEngineTest, ToneEscape_LowercaseR_Parity) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    RustInputEngine engine(config);
+
+    engine.PushChar(L't');
+    engine.PushChar(L'e');
+    engine.PushChar(L'r');
+    EXPECT_EQ(engine.Peek(), L"tẻ");
+    engine.PushChar(L'r');
+    EXPECT_EQ(engine.Peek(), L"ter");
+}
+
 TEST_F(RustInputEngineTest, BackspaceShrinksComposition) {
     TypingConfig config;
     config.inputMethod = InputMethod::Telex;

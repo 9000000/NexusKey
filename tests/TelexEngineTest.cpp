@@ -777,6 +777,32 @@ TEST_F(TelexEngineTest, Escape_ToneAcute_FullWord) {
     EXPECT_EQ(engine_->Peek(), L"test");
 }
 
+TEST(TelexEscapeSpellOnTest, ToneHoi_UppercaseR_SpellCheckOn) {
+    // #209 comment repro attempt with app-default config (spell check ON)
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::Telex;
+    cfg.spellCheckEnabled = true;
+    TypingEngine engine(cfg);
+    Testing::TypeString(engine, L"TeR");
+    EXPECT_EQ(engine.Peek(), L"Tẻ");
+    Testing::TypeString(engine, L"R");
+    EXPECT_EQ(engine.Peek(), L"TeR");
+    Testing::TypeString(engine, L"iRi");
+    EXPECT_EQ(engine.Peek(), L"TeRiRi");
+}
+
+TEST_F(TelexEngineTest, Escape_ToneHoi_UppercaseR) {
+    // Issue #209 comment (Shzr0): "TeR" → "Tẻ", second R must escape → "TeR"
+    TypeString(*engine_, L"TeRR");
+    EXPECT_EQ(engine_->Peek(), L"TeR");
+}
+
+TEST_F(TelexEngineTest, Escape_ToneHoi_UppercaseR_FullWord) {
+    // "TeRRiRi" → "TeRiRi" (first R pair escapes; latch keeps later R literal)
+    TypeString(*engine_, L"TeRRiRi");
+    EXPECT_EQ(engine_->Peek(), L"TeRiRi");
+}
+
 TEST_F(TelexEngineTest, Escape_Circumflex) {
     // "eee" → ê(from ee) + e(escape) = "ee"
     TypeString(*engine_, L"eee");
