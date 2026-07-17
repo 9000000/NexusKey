@@ -45,6 +45,7 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 * **Không thu thập dữ liệu:** Không có dữ liệu cá nhân nào được gửi lên server.
 * **Hoạt động offline:** Phần mềm hoạt động hoàn toàn cục bộ trên máy bạn.
 * **Mã nguồn mở:** Bạn có thể tự kiểm chứng bằng cách đọc mã nguồn.
+* **Minh bạch về Engine Kiểm tra Chính tả Nâng cao:** Từ phiên bản v4.3, VKey tích hợp thêm một thư viện nguồn đóng tùy chọn viết bằng Rust phục vụ riêng cho chức năng tự sửa lỗi chính tả nâng cao. Tính năng này mặc định được tắt và người dùng có toàn quyền kiểm soát hoặc xóa bỏ. Chi tiết lý do và tính minh bạch được giải thích tại **[Tìm hiểu về Engine đóng gói (RUST_ENGINE.md)](docs/RUST_ENGINE.md)**.
 
 > **Lưu ý:** Dự án này được phát triển chủ yếu dựa trên nhu cầu và trải nghiệm cá nhân, vì vậy có thể vẫn tồn tại một số lỗi chưa được phát hiện hoặc khắc phục triệt để. Rất mong nhận được sự thông cảm và đóng góp ý kiến thông qua [Issue](https://github.com/phatMT97/VKey/issues) để bộ gõ ngày càng hoàn thiện hơn.
 
@@ -204,6 +205,7 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 * **No Data Collection:** No personal data is sent to any server.
 * **Offline First:** The software operates entirely locally on your machine.
 * **Open Source:** You can verify this behavior by reviewing our source code.
+* **Transparency on Advanced Spell Check Engine:** Starting from v4.3, VKey integrates an optional closed-source Rust library for advanced spelling auto-correction features. This library is completely optional, disabled by default, and can be deleted by the user at any time. For more information, please read **[Rust Engine FAQ (RUST_ENGINE.md)](docs/RUST_ENGINE.md)**.
 
 ### Features
 
