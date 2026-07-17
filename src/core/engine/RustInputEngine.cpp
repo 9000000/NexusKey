@@ -91,8 +91,9 @@ struct EngineApi {
     bool (*last_commit_was_corrected)(const VKeyEngine*) = nullptr;
     // ABI v4: user-defined custom keymap.
     void (*set_custom_keymap)(VKeyEngine*, const uint8_t*, size_t) = nullptr;
-    // ABI v5: spell-check exclusions.
-    bool (*set_spell_exclusions_utf16)(VKeyEngine*, const uint16_t*, size_t) = nullptr;
+    // ABI v5: spell-check exclusions. Process-global (no engine handle) --
+    // must be called before create() to affect the engine being constructed.
+    bool (*set_spell_exclusions_utf16)(const uint16_t*, size_t) = nullptr;
     bool ok = false;
     std::wstring reason;  // diagnostic when !ok; empty when ok
 };
@@ -263,28 +264,29 @@ std::wstring RustInputEngine::UnavailableReason() {
 RustInputEngine::RustInputEngine(const TypingConfig& config) {
     const EngineApi& api = Api();
     if (api.ok) {
-        handle_ = api.create(MapMethod(config.inputMethod), MapFeatures(config));
-        if (handle_) {
-            if (config.inputMethod == InputMethod::UserDefined) {
-                api.set_custom_keymap(
-                    static_cast<VKeyEngine*>(handle_),
-                    reinterpret_cast<const uint8_t*>(config.customKeyMap.data()),
-                    config.customKeyMap.size());
-            }
-            if (!config.spellExclusions.empty()) {
-                // Concatenate exclusions as newline-delimited UTF-16 text.
-                std::wstring exclusions_text;
-                for (size_t i = 0; i < config.spellExclusions.size(); ++i) {
-                    if (i > 0) {
-                        exclusions_text += L'\n';
-                    }
-                    exclusions_text += config.spellExclusions[i];
+        // Process-global spell exclusions must be set before create() -- the
+        // Rust side snapshots the active set into the engine at creation time.
+        if (config.spellExclusions.empty()) {
+            api.set_spell_exclusions_utf16(nullptr, 0);
+        } else {
+            // Concatenate exclusions as newline-delimited UTF-16 text.
+            std::wstring exclusions_text;
+            for (size_t i = 0; i < config.spellExclusions.size(); ++i) {
+                if (i > 0) {
+                    exclusions_text += L'\n';
                 }
-                api.set_spell_exclusions_utf16(
-                    static_cast<VKeyEngine*>(handle_),
-                    reinterpret_cast<const uint16_t*>(exclusions_text.data()),
-                    exclusions_text.size());
+                exclusions_text += config.spellExclusions[i];
             }
+            api.set_spell_exclusions_utf16(
+                reinterpret_cast<const uint16_t*>(exclusions_text.data()),
+                exclusions_text.size());
+        }
+        handle_ = api.create(MapMethod(config.inputMethod), MapFeatures(config));
+        if (handle_ && config.inputMethod == InputMethod::UserDefined) {
+            api.set_custom_keymap(
+                static_cast<VKeyEngine*>(handle_),
+                reinterpret_cast<const uint8_t*>(config.customKeyMap.data()),
+                config.customKeyMap.size());
         }
     }
     // Rule 11 (hook hot path): pre-size the buffers so the per-keystroke Refresh()

@@ -162,6 +162,25 @@ TEST_F(RustInputEngineTest, LastCommitWasCorrectedFalseWhenSpellSuggestDisabled)
     EXPECT_FALSE(engine.LastCommitWasCorrected());
 }
 
+// Regression: vkey_engine_set_spell_exclusions_utf16 is a process-global 2-arg
+// (buf, len) FFI call with no engine handle. The adapter previously called it
+// through a bogus 3-arg (engine, buf, len) function pointer, which shifts every
+// argument register under the Win64 ABI -- Rust read the engine handle as `buf`
+// and the real buffer's address as `len`, then read far out of bounds. That
+// crashed instantly whenever config.spellExclusions was non-empty.
+TEST_F(RustInputEngineTest, SpellExclusionsDoNotCrashConstruction) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    config.spellExclusions = {L"đcđt", L"hđ"};
+    RustInputEngine engine(config);
+
+    engine.PushChar(L'a');
+    engine.PushChar(L'a');
+    EXPECT_EQ(engine.Peek(), L"â");
+}
+
 // Proves the ABI v4 custom-keymap wiring end-to-end: a physical key remapped
 // to a non-Telex/VNI action must actually apply that action through the Rust
 // engine, not silently fall back to Telex (VKey-rs ADR-0007).

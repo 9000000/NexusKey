@@ -195,7 +195,7 @@ void vkey_engine_set_custom_keymap(VKeyEngine *engine, const uint8_t *entries, s
  * The engine copies/owns the bytes, so the caller may free `blob` immediately after.
  * Pass NULL/0 to clear all exclusions. Resets active composition.
  * Only affects behavior when spell_check_enabled is true. */
-void vkey_engine_set_spell_exclusions_utf16(VKeyEngine *engine, const uint16_t *buf, size_t len);
+bool vkey_engine_set_spell_exclusions_utf16(const uint16_t *buf, size_t len);
 
 #ifdef __cplusplus
 } /* extern "C" */
