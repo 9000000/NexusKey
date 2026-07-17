@@ -160,10 +160,13 @@ static void InitFloatingIcon(HINSTANCE hInstance, const SystemConfig& sc) {
         }
     }
 
-    g_trayIcon.SetIconConfigChangedCallback([]() {
+    g_trayIcon.SetIconConfigChangedCallback([](WPARAM wParam) {
         auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
         if (sysConfig.showFloatingIcon) {
             EnsureFloatingIconCreated();
+            if (wParam == 1) {
+                g_floatingIcon.SetPosition(INT32_MIN, INT32_MIN);
+            }
             g_floatingIcon.SetVisible(true);
         } else {
             g_floatingIcon.Destroy();

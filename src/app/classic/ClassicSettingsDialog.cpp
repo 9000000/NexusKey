@@ -469,7 +469,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
         // If it's an inline action button
         bool isInlineAction = (meta.type == SettingType::Action && 
-            (wcscmp(meta.label, L"...") == 0 || meta.win32Id == IDC_BTN_CHECK_UPDATE || meta.win32Id == IDC_BTN_OPEN_LOG_FOLDER));
+            (wcscmp(meta.label, L"...") == 0 || meta.win32Id == IDC_BTN_CHECK_UPDATE || meta.win32Id == IDC_BTN_OPEN_LOG_FOLDER || meta.win32Id == IDC_BTN_RESET_FLOATING));
         if (isInlineAction) {
             rowCounts[tab][col]--; // stay on the same visual row
             row--; // go back to the row we just incremented past
@@ -480,7 +480,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
         if (meta.type == SettingType::Toggle) {
             bool hasInlineNext = ((i + 1 < kSettingsCount) && kSettings[i+1].type == SettingType::Action && 
-                (wcscmp(kSettings[i+1].label, L"...") == 0 || kSettings[i+1].win32Id == IDC_BTN_CHECK_UPDATE || kSettings[i+1].win32Id == IDC_BTN_OPEN_LOG_FOLDER));
+                (wcscmp(kSettings[i+1].label, L"...") == 0 || kSettings[i+1].win32Id == IDC_BTN_CHECK_UPDATE || kSettings[i+1].win32Id == IDC_BTN_OPEN_LOG_FOLDER || kSettings[i+1].win32Id == IDC_BTN_RESET_FLOATING));
             int nextBtnW = 0;
             if (hasInlineNext) {
                 nextBtnW = (wcscmp(kSettings[i+1].label, L"...") == 0) ? Dpi(26) : Dpi(70);
@@ -1068,6 +1068,16 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
 
         case IDC_BTN_HOTKEYS:
             ClassicHotkeysDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
+            break;
+
+        case IDC_BTN_RESET_FLOATING:
+            systemConfig_.floatingIconX = INT32_MIN;
+            systemConfig_.floatingIconY = INT32_MIN;
+            SaveToToml();
+            {
+                HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+                if (trayWnd) PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 1, 0); // 1 = reset position
+            }
             break;
 
         case IDC_BTN_OPEN_LOG_FOLDER: {

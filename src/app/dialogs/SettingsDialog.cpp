@@ -964,6 +964,13 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         PostMessage(get_hwnd(), WM_VKEY_OPEN_HOTKEYS, 0, 0);
         return;
     }
+    else if (id == L"btn-reset-floating-icon") {
+        systemConfig_.floatingIconX = INT32_MIN;
+        systemConfig_.floatingIconY = INT32_MIN;
+        saveSystemSettings();
+        notifyIconChanged(1); // 1 = reset position
+        return;
+    }
     else if (id == L"btn-reset-settings") {
         // TODO: Reset all settings to defaults
     }
@@ -1511,11 +1518,11 @@ void SettingsDialog::saveSystemSettings() {
     }
 }
 
-void SettingsDialog::notifyIconChanged() {
+void SettingsDialog::notifyIconChanged(WPARAM wParam) {
     // Notify main process to re-read icon config
     HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
     if (trayWnd) {
-        PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 0, 0);
+        PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, wParam, 0);
     }
 }
 

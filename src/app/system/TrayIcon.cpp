@@ -556,7 +556,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                       sysConfig.showTsfIndicator);
         SetLanguage(static_cast<Language>(sysConfig.language));
         RefreshConvertHotkeyCache();
-        if (iconConfigChangedCallback_) iconConfigChangedCallback_();
+        if (iconConfigChangedCallback_) iconConfigChangedCallback_(wParam);
         return true;
     }
 

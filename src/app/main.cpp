@@ -124,11 +124,13 @@ static void InitFloatingIcon(HINSTANCE hInstance, const SystemConfig& sc) {
     // survives Destroy()/Create() cycles. Persisted to TOML at app exit only.
 
     // Re-read config when Settings changes icon/system config
-    g_trayIcon.SetIconConfigChangedCallback([]() {
+    g_trayIcon.SetIconConfigChangedCallback([](WPARAM wParam) {
         auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
         if (sysConfig.showFloatingIcon) {
             EnsureFloatingIconCreated();
-            // Don't overwrite in-memory position — object already knows where it was
+            if (wParam == 1) {
+                g_floatingIcon.SetPosition(INT32_MIN, INT32_MIN);
+            }
             g_floatingIcon.SetVisible(true);
         } else {
             g_floatingIcon.Destroy();

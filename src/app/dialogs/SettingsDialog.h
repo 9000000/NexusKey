@@ -97,7 +97,7 @@ private:
     void recalcWindowSize();  // Measure DOM and resize window to fit content
 
     // Icon customization helpers
-    void notifyIconChanged();           // Post WM_VKEY_ICON_CHANGED to main process
+    void notifyIconChanged(WPARAM wParam = 0);           // Post WM_VKEY_ICON_CHANGED to main process
     void openColorPicker(bool forVietnamese);  // Open Windows ChooseColor dialog
     void updateColorSwatches();         // Update btn-color-v/e background colors
 

@@ -71,6 +71,7 @@
 #define IDC_BTN_OPEN_LOG_FOLDER 2505
 #define IDC_BTN_HOTKEYS         2506
 #define IDC_BTN_TSF_APPS        2507
+#define IDC_BTN_RESET_FLOATING  2508
 
 // ── Static labels ──
 #define IDC_STATIC_METHOD       2601

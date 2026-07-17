@@ -95,6 +95,7 @@ var STRINGS = {
         "s.color_e": "Choose E color",
         "s.floating_icon": "Floating V/E icon",
         "s.floating_icon_tooltip": "Show floating icon. May reduce FPS in Fullscreen games (Borderless recommended)",
+        "s.reset_position": "Reset position",
         "s.tsf_indicator": "Show \"T\" icon for TSF apps",
         "s.tsf_indicator_tooltip": "When an app uses TSF, show a \"T\" icon (red=V, blue=E) instead of the usual V/E icon. Turn off to always see V/E.",
         "s.debug_log": "Enable debug log",

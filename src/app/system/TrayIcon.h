@@ -107,7 +107,7 @@ public:
     void SetMenuStateGetter(MenuStateGetter getter) noexcept { menuStateGetter_ = std::move(getter); }
 
     /// Set callback when system config changes (WM_VKEY_ICON_CHANGED)
-    void SetIconConfigChangedCallback(std::function<void()> callback) noexcept { iconConfigChangedCallback_ = std::move(callback); }
+    void SetIconConfigChangedCallback(std::function<void(WPARAM)> callback) noexcept { iconConfigChangedCallback_ = std::move(callback); }
 
     /// Set callback when hook config changes (WM_VKEY_HOOK_RELOAD) — subprocess → main eager sync
     void SetHookReloadCallback(std::function<void()> callback) noexcept { hookReloadCallback_ = std::move(callback); }
@@ -148,7 +148,7 @@ private:
     MenuCallback menuCallback_;
     ModeRequestCallback modeRequestCallback_;
     MenuStateGetter menuStateGetter_;
-    std::function<void()> iconConfigChangedCallback_;
+    std::function<void(WPARAM)> iconConfigChangedCallback_;
     std::function<void()> hookReloadCallback_;
     SharedStateManager* sharedState_ = nullptr;  // non-owning; for TSF-update flag checks
 
