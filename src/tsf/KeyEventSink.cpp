@@ -394,7 +394,14 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
 
+    // Modifiers -> commit and pass through. Mirrors OnTestKeyDown — Chromium
+    // hosts skip the test phase, so without this Ctrl+A/C/X hit a live
+    // composition (select-all breaks around the pre-edit word). Idempotent in
+    // classic hosts: test phase already committed, buffer is empty.
     if (ctrl || alt || win) {
+        if (pEngineController_->HasEngineBuffer()) {
+            pEngineController_->Commit(pContext);
+        }
         *pfEaten = FALSE;
         return S_OK;
     }
