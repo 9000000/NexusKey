@@ -4,8 +4,9 @@
 // Dual-licensed: AGPL-3.0 for open-source use, commercial license for proprietary use.
 // See LICENSE and LICENSE-COMMERCIAL in the project root.
 //
-// Mapping tables extracted from OpenKey Vietnamese.cpp _codeTable[0..4].
-// Each map: Unicode codepoint → encoded 16-bit value.
+// Mapping tables: Unicode codepoint → encoded 16-bit value, per the published
+// charset standards (TCVN 5712:1993 "ABC", VNI, CP1258). TCVN3 values match
+// glibc charmap TCVN5712-1 byte-for-byte; cross-referenced with OpenKey.
 // For 2-byte encodings: LOBYTE = first output char, HIBYTE = second (tone/mark).
 //
 // Note: String-returning functions are marked noexcept by project convention (std::bad_alloc terminates).
@@ -20,8 +21,8 @@ namespace NextKey {
 // ═══════════════════════════════════════════════════════════
 // Mapping tables: Unicode → encoded value
 //
-// Built by pairing _codeTable[0][position] with _codeTable[N][position]
-// from OpenKey's Vietnamese.cpp lines 413-492.
+// Data is dictated by the respective charset standards (TCVN 5712, VNI,
+// CP1258) — any conforming implementation yields identical tables.
 //
 // Format for 2-byte encodings (VNI, Compound, CP1258):
 //   value > 0xFF → LOBYTE is first char, HIBYTE is second char

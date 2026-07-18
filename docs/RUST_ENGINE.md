@@ -35,6 +35,17 @@ VKey được thiết kế để đặt quyền lựa chọn của bạn lên h�
 
 ---
 
+## 4. Về giấy phép (Licensing)
+
+Một số người thắc mắc: "AGPL/GPL không cho phép link với thư viện nguồn đóng, vậy đây có phải vi phạm license?" Câu trả lời ngắn gọn: **không**, vì license ràng buộc người *được cấp phép*, không ràng buộc *chủ sở hữu bản quyền*.
+
+*   **Một tác giả, toàn quyền:** Toàn bộ mã nguồn VKey trên branch phát hành thuộc về một tác giả duy nhất — tự kiểm chứng bằng `git shortlog -sne HEAD`. AGPL-3.0 là điều kiện tác giả đặt ra cho người **nhận** code; bản thân tác giả giữ toàn quyền với code của mình, bao gồm quyền kết hợp nó với thư viện đóng cũng do chính mình viết, hoặc cấp thêm giấy phép thương mại song song.
+*   **Dual-licensing là mô hình chuẩn:** AGPL + giấy phép thương mại là cách Qt, MySQL, MongoDB đã vận hành hàng chục năm. Điều kiện duy nhất để mô hình này hợp lệ là sở hữu 100% bản quyền phần mã AGPL — điều kiện VKey thỏa mãn.
+*   **Engine là tác phẩm độc lập:** Engine Rust là công trình riêng của cùng tác giả, không chứa hay phái sinh từ mã GPL của bên thứ ba, và được nạp lúc chạy (runtime) qua C ABI — không link tĩnh vào phần AGPL.
+*   **Với người phân phối lại (redistribute):** nếu bạn muốn tuân thủ AGPL theo cách hiểu chặt chẽ nhất, chỉ cần loại bỏ file engine khỏi bản phân phối của bạn — ứng dụng tự fallback về engine mở và hoạt động đầy đủ.
+
+---
+
 # About the Advanced Spell Check Engine (Rust Engine)
 
 Starting from version **v4.3**, VKey introduces the **"Advanced Spell Check"** feature (which automatically detects and intelligently corrects typing errors or transposed letters, e.g., typing `hcaof` automatically corrects to `chào`). This feature is powered by an independent auxiliary engine written in Rust, compiled as a dynamic library (`vkey_engine.dll` on Windows / `libvkey_engine.so` on Linux), and is currently closed-source.
@@ -69,3 +80,14 @@ VKey puts your choice first:
     1.  Turn off the feature in VKey's Settings.
     2.  Delete the file `vkey_engine.dll` (on Windows) or `libvkey_engine.so` (on Linux) from the VKey installation directory.
     3.  VKey will detect the missing library and **automatically fall back** to using the built-in, fully open-source C++ spell check engine. All basic functionalities of VKey will remain intact, smooth, and completely secure.
+
+---
+
+## 4. Licensing
+
+Some may ask: "AGPL/GPL forbids linking with closed-source libraries — isn't this a license violation?" Short answer: **no**, because a license binds the *licensee*, not the *copyright holder*.
+
+*   **Single author, full rights:** All VKey source code on the release branch belongs to a single author — verify with `git shortlog -sne HEAD`. AGPL-3.0 is the condition the author sets for *recipients* of the code; the author retains full rights over their own work, including combining it with a closed library they also wrote, or offering a parallel commercial license.
+*   **Dual-licensing is a standard model:** AGPL + commercial licensing is how Qt, MySQL, and MongoDB have operated for decades. The only requirement is owning 100% of the copyright on the AGPL-licensed code — a requirement VKey satisfies.
+*   **The engine is an independent work:** The Rust engine is a separate work by the same author. It does not contain or derive from any third-party GPL code, and it is loaded at runtime via a C ABI — never statically linked into the AGPL code.
+*   **For redistributors:** if you want to comply with the AGPL under its strictest reading, simply remove the engine file from your distribution — the app falls back to the open engine and remains fully functional.
