@@ -224,6 +224,8 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     // Modifiers -> commit and pass through
     if (ctrl || alt || win) {
         if (pEngineController_->HasEngineBuffer()) {
+            TSF_LOG(L"OnTestKeyDown: modifier chord vk=0x%02X with live buffer → Commit",
+                    static_cast<UINT>(wParam));
             pEngineController_->Commit(pContext);
         }
         *pfEaten = FALSE;
@@ -390,6 +392,25 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
 HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     pEngineController_->CheckConfigEvent();
 
+    // Desync recovery — mirrors OnTestKeyDown. Chromium hosts skip the test
+    // phase, so OnKeyDown must self-heal too: every commit guard below checks
+    // HasEngineBuffer(), so a stale composition with an empty engine (state B)
+    // would survive all of them and the pre-edit gets stuck — Ctrl+A, Enter,
+    // arrows all pass through against a live composition (#209 Ctrl+A report).
+    // Idempotent in classic hosts: test phase already recovered, both checks
+    // are consistent by the time we run.
+    {
+        bool isComposing = pEngineController_->IsComposing();
+        bool hasBuffer = pEngineController_->HasEngineBuffer();
+        if (!isComposing && hasBuffer) {
+            TSF_LOG(L"OnKeyDown: desync A (composition gone, buffer live) → Reset");
+            pEngineController_->Reset();
+        } else if (isComposing && !hasBuffer) {
+            TSF_LOG(L"OnKeyDown: desync B (composition live, buffer empty) → Commit");
+            pEngineController_->Commit(pContext);
+        }
+    }
+
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
@@ -400,6 +421,8 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     // classic hosts: test phase already committed, buffer is empty.
     if (ctrl || alt || win) {
         if (pEngineController_->HasEngineBuffer()) {
+            TSF_LOG(L"OnKeyDown: modifier chord vk=0x%02X with live buffer → Commit",
+                    static_cast<UINT>(wParam));
             pEngineController_->Commit(pContext);
         }
         *pfEaten = FALSE;
