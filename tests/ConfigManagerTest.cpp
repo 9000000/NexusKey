@@ -572,6 +572,78 @@ force_vn = ["zalo.exe"]
     EXPECT_EQ(forcedVn[0], L"zalo.exe");
 }
 
+// ============================================================================
+// #224 — pre-v3 `[excludedApps]` (camelCase) list must still be honored.
+// The 713f862f rename to `[excluded_apps]` never carried old entries over
+// (unlike hotkeys' MigrateLegacyHotkeysIfNeeded), so any app excluded before
+// that rename silently fell out of enforcement on upgrade.
+// ============================================================================
+
+TEST_F(ConfigManagerTest, LoadAllExcludedApps_MergesLegacyCamelCaseSection) {
+    WriteTestConfig(R"(
+[excludedApps]
+enabled = true
+list = ["Palworld-Win64-Shipping.exe", "D2R.exe"]
+
+[excluded_apps]
+list = ["cs2.exe"]
+)");
+    auto excluded = ConfigManager::LoadAllExcludedApps(testConfigPath_);
+    ASSERT_EQ(excluded.size(), 3u);
+    EXPECT_NE(std::find(excluded.begin(), excluded.end(), L"cs2.exe"), excluded.end());
+    // Legacy entries merge in lowercased — runtime exe-name matching is
+    // always-lowercase (FocusOwner::GetExeNameForHwnd).
+    EXPECT_NE(std::find(excluded.begin(), excluded.end(), L"palworld-win64-shipping.exe"),
+              excluded.end());
+    EXPECT_NE(std::find(excluded.begin(), excluded.end(), L"d2r.exe"), excluded.end());
+}
+
+TEST_F(ConfigManagerTest, LoadAllExcludedApps_LegacySectionDisabled_NotMerged) {
+    WriteTestConfig(R"(
+[excludedApps]
+enabled = false
+list = ["oldgame.exe"]
+
+[excluded_apps]
+list = ["cs2.exe"]
+)");
+    auto excluded = ConfigManager::LoadAllExcludedApps(testConfigPath_);
+    ASSERT_EQ(excluded.size(), 1u);
+    EXPECT_EQ(excluded[0], L"cs2.exe");
+}
+
+TEST_F(ConfigManagerTest, LoadAllExcludedApps_LegacyDuplicateNotDoubled) {
+    WriteTestConfig(R"(
+[excludedApps]
+enabled = true
+list = ["CS2.exe"]
+
+[excluded_apps]
+list = ["cs2.exe"]
+)");
+    auto excluded = ConfigManager::LoadAllExcludedApps(testConfigPath_);
+    ASSERT_EQ(excluded.size(), 1u);
+    EXPECT_EQ(excluded[0], L"cs2.exe");
+}
+
+TEST_F(ConfigManagerTest, SaveExcludedApps_DropsLegacyCamelCaseSection) {
+    WriteTestConfig(R"(
+[excludedApps]
+enabled = true
+list = ["oldgame.exe"]
+
+[excluded_apps]
+list = ["cs2.exe"]
+)");
+    ASSERT_TRUE(ConfigManager::SaveExcludedApps(testConfigPath_, {L"cs2.exe", L"oldgame.exe"}));
+
+    std::ifstream in("test_config.toml");
+    std::string content((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+    EXPECT_EQ(content.find("excludedApps"), std::string::npos)
+        << "Legacy [excludedApps] section must be dropped after save";
+}
+
 TEST_F(ConfigManagerTest, SaveAndLoad_UnicodePath) {
     std::wstring unicodePath = L"cấu_hình_tiếng_việt.toml";
     std::filesystem::remove(std::filesystem::path(unicodePath));
