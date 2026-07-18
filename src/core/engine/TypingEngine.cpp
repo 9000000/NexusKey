@@ -560,6 +560,14 @@ bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wc
         }
         bool block = escape_.isEscaped() || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
         if (!block && effectiveSpellCheck && IsBlockedEnglishModifier(rawInput_.data(), rawInput_.size())) block = true;
+        // Vowel-less buffer + stroke-d = abbreviation chain (PLHDD→PLHĐ, #221):
+        // the hard-onset bias (pl/cl/…) exists to protect English words, and no
+        // English word lacks a vowel. Mirrors the Rust engine rule (parity:
+        // plhdd→plhđ, pladd stays literal).
+        if (block && !escape_.isEscaped() && action == TypingAction::StrokeD &&
+            !HasVowelState(states_.data(), states_.size())) {
+            block = false;
+        }
         if (block && !escape_.isEscaped() && !config_.spellExclusions.empty() && WouldModifierKeyMatchExclusion(lower)) block = false;
 
         if (!block) {
@@ -588,6 +596,11 @@ bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wc
             }
         }
         bool block = escape_.isEscaped() || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
+        // See 2a: vowel-less abbreviation chain exception for stroke-d (#221).
+        if (block && !escape_.isEscaped() && action == TypingAction::VniStroke &&
+            !HasVowelState(states_.data(), states_.size())) {
+            block = false;
+        }
         if (block && !escape_.isEscaped() && !config_.spellExclusions.empty() && WouldModifierKeyMatchExclusion(lower)) block = false;
 
         if (!block) {

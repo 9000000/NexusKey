@@ -263,6 +263,17 @@ template<typename CharStateT>
     return dIdx;
 }
 
+/// Does the composed buffer contain any vowel? Vowel-less buffers are
+/// abbreviation chains (PLHĐ, CLĐ, HĐLĐ) — no English word lacks a vowel,
+/// so English-protection bias carries no signal for them.
+template<typename CharStateT>
+[[nodiscard]] inline bool HasVowelState(const CharStateT* states, size_t count) noexcept {
+    for (size_t i = 0; i < count; ++i) {
+        if (states[i].IsVowel()) return true;
+    }
+    return false;
+}
+
 /// Pre-check for stroke-D modifier: returns true if applying đ would create an
 /// invalid consonant cluster (e.g., "drop" + d → "đrop" with coda "p" already present).
 /// When onset 'd' (position 0) is immediately followed by a vowel (e.g. "doc"),

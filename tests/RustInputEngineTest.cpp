@@ -262,6 +262,24 @@ TEST_F(RustInputEngineTest, UserDefinedTier2DirectInsertAndHornOrInsertU) {
     EXPECT_EQ(engine.Peek(), L"ư");
 }
 
+// #221 parity: vowel-less abbreviation chain (PLHĐ) must compose despite the
+// pl- hard-English onset; a vowel in the buffer keeps the block (pladd literal).
+// C++ twin: TelexEngineTest.StrokeD_AbbrevChain_*.
+TEST_F(RustInputEngineTest, StrokeD_AbbrevChain_PLHD_Parity) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    RustInputEngine engine(config);
+
+    for (wchar_t c : std::wstring(L"plhdd")) engine.PushChar(c);
+    EXPECT_EQ(engine.Peek(), L"plhđ");
+
+    engine.Reset();
+    for (wchar_t c : std::wstring(L"pladd")) engine.PushChar(c);
+    EXPECT_EQ(engine.Peek(), L"pladd");
+}
+
 }  // namespace
 }  // namespace NextKey
 

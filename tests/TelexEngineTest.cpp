@@ -4205,24 +4205,25 @@ TEST_F(SpellExclusionTest, SingleCharExclusion_Ignored) {
     EXPECT_EQ(eng.Commit(), L"hđ");
 }
 
-// PLHĐ: English Protection normally blocks dd→đ (PL = HardEnglish).
-// With exclusions, dd→đ is allowed through the English Protection gate.
-TEST_F(SpellExclusionTest, PLHDD_NoExclusion_Blocked) {
-    // No exclusions → English Protection blocks dd→đ → literal "plhdd"
+// PLHĐ (#221): vowel-less abbreviation chains compose WITHOUT an exclusion —
+// the pl- hard-onset block is lifted when the buffer has no vowel (English
+// words always carry one). Supersedes the pre-#221 "blocked unless excluded"
+// design; mirrors the Rust engine rule.
+TEST_F(SpellExclusionTest, PLHDD_NoExclusion_Composes) {
     TypingConfig cfg;
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     TypingEngine eng(cfg);
     TypeString(eng, L"plhdd");
-    EXPECT_EQ(eng.Peek(), L"plhdd");
+    EXPECT_EQ(eng.Peek(), L"plhđ");
 }
 
-TEST_F(SpellExclusionTest, PLHDD_ExclHD_PrefixMismatch) {
-    // "hđ" in exclusion list — "plhđ" doesn't prefix-match "hđ"
-    // → dd→đ blocked at typing time too (precise bypass)
+TEST_F(SpellExclusionTest, PLHDD_ComposesRegardlessOfExclusions) {
+    // Pre-#221 this asserted the precise-bypass block ("hđ" doesn't prefix-match
+    // "plhđ"). The vowel-less chain rule now composes independent of exclusions.
     TypeString(*engine_, L"plhdd");
-    EXPECT_EQ(engine_->Peek(), L"plhdd");
-    EXPECT_EQ(engine_->Commit(), L"plhdd");
+    EXPECT_EQ(engine_->Peek(), L"plhđ");
+    EXPECT_EQ(engine_->Commit(), L"plhđ");
 }
 
 TEST_F(SpellExclusionTest, Dropdown_ExclHD_NotBypassed) {
@@ -5421,6 +5422,34 @@ TEST_F(DoubleOoVniTest, Soo1c_ComposesSooc) {
 TEST_F(DoubleOoVniTest, Goo2ng_ComposesGoong) {
     TypeString(*engine_, L"goo2ng");          // 2 = huyền
     EXPECT_EQ(engine_->Peek(), L"goòng");
+}
+
+// ============================================================================
+// #221: PL-onset abbreviation chains — vowel-less buffer lifts the hard-English
+// onset block for stroke-d (rule mirrors the Rust engine: plhdd→plhđ,
+// pladd stays literal).
+// ============================================================================
+
+TEST_F(TelexEngineTest, StrokeD_AbbrevChain_PLHD_Upper) {
+    TypeString(*engine_, L"PLHDD");
+    EXPECT_EQ(engine_->Peek(), L"PLHĐ");
+}
+
+TEST_F(TelexEngineTest, StrokeD_AbbrevChain_PLHD_Lower) {
+    TypeString(*engine_, L"plhdd");
+    EXPECT_EQ(engine_->Peek(), L"plhđ");
+}
+
+TEST_F(TelexEngineTest, StrokeD_AbbrevChain_CLD) {
+    TypeString(*engine_, L"cldd");
+    EXPECT_EQ(engine_->Peek(), L"clđ");
+}
+
+TEST_F(TelexEngineTest, StrokeD_VowelBuffer_EnglishStaysProtected) {
+    // "pla" carries a vowel → hard-onset protection must keep blocking
+    // (play, plaid, …): dd stays literal.
+    TypeString(*engine_, L"pladd");
+    EXPECT_EQ(engine_->Peek(), L"pladd");
 }
 
 }  // namespace
