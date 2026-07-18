@@ -2176,8 +2176,13 @@ TEST_F(TelexEngineTest, RealWord_Hap) {
 }
 
 TEST_F(TelexEngineTest, Freestyles) {
+    // Nonsense mash of repeated 'e' after "lè" — pins the circumflex
+    // apply/escape cycling behavior rather than a real word. Tone now
+    // follows the circumflexed vowel (P1/P2 always attracts, see
+    // RelocateToneToTarget's unconditional call) instead of staying
+    // anchored to whichever vowel happened to be toned first.
     TypeString(*engine_, L"lefeeee");  // lefeeee
-    EXPECT_EQ(engine_->Peek(), L"lèee");
+    EXPECT_EQ(engine_->Peek(), L"leèe");
 }
 
 TEST_F(TelexEngineTest, TestUych) {
@@ -2641,6 +2646,18 @@ TEST_F(CircumflexFreeMarkSpellOnTest, SuatPlusA_PromotesToSuat) {
 TEST_F(CircumflexFreeMarkSpellOnTest, CuaPlusA_AdjacentRejected) {
     TypeString(*engine_, L"cuara");  // của + extra 'a'
     EXPECT_EQ(engine_->Peek(), L"củaa");
+}
+
+// Regression: adjacent circumflex on a Valid (already-complete) syllable
+// must relocate the tone immediately, not just on a later keystroke.
+// "lụa" (tone on 'u') + 'a' → 'a' promotes to 'â'; without an immediate
+// relocate the tone was left stranded on 'u' ("lụâ") until a following
+// char's FinalizeRegularChar happened to fix it up.
+TEST_F(TelexEngineTest, LuaPlusA_RelocatesToneImmediately) {
+    TypeString(*engine_, L"luaja");  // lụa + extra 'a'
+    EXPECT_EQ(engine_->Peek(), L"luậ");
+    TypeString(*engine_, L"t");
+    EXPECT_EQ(engine_->Peek(), L"luật");
 }
 
 TEST_F(CircumflexFreeMarkSpellOnTest, CuaPlusA_Grave_AdjacentRejected) {

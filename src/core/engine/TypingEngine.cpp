@@ -1030,7 +1030,15 @@ bool TypingEngine::HandleAdjacentCircumflex(TypingAction action, wchar_t c) {
         }
         // Apply circumflex - PRESERVE FIRST LETTER CASE
         last.mod = Modifier::Circumflex;
-        if (needsRelocate) RelocateToneToTarget();
+        // Always relocate (not just when needsRelocate/ValidPrefix): with
+        // spell check off, the Valid branch above skips WouldBeValidSyllable
+        // entirely, so a tone already sitting on the pre-modifier vowel (e.g.
+        // "lụa" + 'a' → tone on 'u') would otherwise stay stranded there
+        // ("lụâ") until a later keystroke's FinalizeRegularChar relocated it.
+        // RelocateToneToTarget() is already a no-op when the tone is absent
+        // or already on the right vowel, so this is safe for the mod-only
+        // (spell-check-on, non-relocate) path too.
+        RelocateToneToTarget();
         return true;
     }
 
