@@ -5,7 +5,9 @@
  * All text crosses as UTF-16 to match Windows wchar_t.
  *
  * Lifetime: vkey_engine_create() returns an owning handle; release it once
- * with vkey_engine_destroy(). Every other call borrows the handle.
+ * with vkey_engine_destroy(). Every other call borrows the handle. Calls that
+ * mutate one handle must be serialized by the caller and must not overlap
+ * any other access to that handle.
  */
 #ifndef VKEY_ENGINE_H
 #define VKEY_ENGINE_H
@@ -107,12 +109,12 @@ bool vkey_engine_seed_text_utf16(VKeyEngine *engine, const uint16_t *buf, size_t
  * library ships with an embedded lexicon (VKEY_FEAT_SPELL_SUGGEST just needs
  * to be set); hosts normally never call vkey_engine_set_lexicon. */
 
-/* Replace the process-wide lexicon (VKLX format, see vkey_lexicon) used by
- * engines created AFTER this call; engines already created keep whatever
- * lexicon they were given at vkey_engine_create() time. The library
- * copies/owns the bytes, so the caller may free `blob` immediately after
- * this returns. Returns false on a malformed blob, leaving the current
- * lexicon (embedded default, or a previously installed override) in place. */
+/* Install the process-wide lexicon (VKLX format, see vkey_lexicon) used by
+ * engines created AFTER this call; existing engines are unchanged. This is
+ * one-shot: only the first successful call installs an override. `len` must
+ * be 1..1,048,576 bytes. The library validates before making its sole
+ * process-lifetime copy, so the caller may free `blob` immediately. Returns
+ * false for an empty, oversized, malformed, or already-installed blob. */
 bool vkey_engine_set_lexicon(const uint8_t *blob, size_t len);
 
 /* Whether the most recent vkey_engine_commit_utf16() emitted a lexicon
@@ -138,9 +140,7 @@ size_t vkey_engine_suggest_utf16(const VKeyEngine *engine, size_t index,
  * VKEY_METHOD_USER_DEFINED. Every action already exists as a fixed Telex or
  * VNI key; binding it to another key changes nothing about how it behaves.
  * Values are pinned and cross the ABI as raw bytes: never renumber existing
- * codes when adding new ones. Unikey-style compatibility actions (fallback
- * insert without a modifier target, direct precomposed-character insertion)
- * are not part of this action set yet. */
+ * codes when adding new ones. */
 #define VKEY_KEY_ACTION_NONE            0u  /* Unbound: types as a literal. */
 #define VKEY_KEY_ACTION_CLEAR_TONE      1u
 #define VKEY_KEY_ACTION_TONE_ACUTE      2u
@@ -181,8 +181,9 @@ size_t vkey_engine_suggest_utf16(const VKeyEngine *engine, size_t index,
 
 /* Installs the per-key action table for `engine` (one VKEY_KEY_ACTION_* byte
  * per ASCII key code, index = lowercased key). Bytes beyond the first 128 are
- * ignored; a shorter `len` leaves the remaining keys unbound. Pass NULL/0 to
- * clear all bindings back to VKEY_KEY_ACTION_NONE (pure literal passthrough).
+ * ignored (and need not be readable); a shorter `len` leaves the remaining
+ * keys unbound. Pass NULL/0 to clear all bindings back to
+ * VKEY_KEY_ACTION_NONE (pure literal passthrough).
  * Resets active composition, same as changing any other engine setting.
  * Ignored while the engine's method is not VKEY_METHOD_USER_DEFINED. */
 void vkey_engine_set_custom_keymap(VKeyEngine *engine, const uint8_t *entries, size_t len);
@@ -190,11 +191,12 @@ void vkey_engine_set_custom_keymap(VKeyEngine *engine, const uint8_t *entries, s
 /* --- ABI v5: spell-check exclusions --------------------------------------------
  * Added in ABI 5. Present only when vkey_engine_abi_version() >= 5. */
 
-/* Install a spell-check exclusion list (UTF-16 words, newline-delimited; one word per line).
- * Users may exclude words (e.g. acronyms "đcđt") from spell-check corrections.
- * The engine copies/owns the bytes, so the caller may free `blob` immediately after.
- * Pass NULL/0 to clear all exclusions. Resets active composition.
- * Only affects behavior when spell_check_enabled is true. */
+/* Install a process-global spell-check exclusion list (UTF-16 words,
+ * newline-delimited; one word per line). The engine parses and copies the
+ * bounded list during this call, so the caller may free `buf` immediately.
+ * Pass NULL/0 to clear it. Only engines created AFTER the call receive the
+ * new list; existing engines are unchanged. Only affects behavior when
+ * VKEY_FEAT_SPELL_CHECK is set. */
 bool vkey_engine_set_spell_exclusions_utf16(const uint16_t *buf, size_t len);
 
 #ifdef __cplusplus
