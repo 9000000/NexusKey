@@ -86,6 +86,34 @@ TEST_F(Win32SendInputInjectorTest, BaitCharFiresOnReplaceWithText) {
     EXPECT_EQ(capturedInputs[6].ki.wScan, L'x');
 }
 
+TEST_F(Win32SendInputInjectorTest, HeldShiftIsReleasedAroundBackspaceReplacement) {
+    // Issue #225: Edge Excel Web interprets a synthetic Backspace while the
+    // user holds Shift for Telex Shift+dd -> Đ as a destructive editor
+    // command. The injector must make the replacement modifier-neutral and
+    // restore the physical Shift state afterward.
+    Internal::g_getKeyState = [](int vk) -> SHORT {
+        return vk == VK_SHIFT ? static_cast<SHORT>(-32768) : 0;
+    };
+
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
+    EXPECT_TRUE(inj.Replace(1, L"Đ"));
+
+    // Shift-up, bait, two Backspaces (bait + original D), Đ, Shift-down.
+    ASSERT_EQ(capturedInputs.size(), 10u);
+    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_SHIFT);
+    EXPECT_NE(capturedInputs[0].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
+    EXPECT_NE(capturedInputs[1].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[1].ki.wScan, 0x202F);
+    EXPECT_EQ(capturedInputs[3].ki.wVk, VK_BACK);
+    EXPECT_EQ(capturedInputs[5].ki.wVk, VK_BACK);
+    EXPECT_NE(capturedInputs[7].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[7].ki.wScan, L'Đ');
+    EXPECT_EQ(capturedInputs[9].ki.wVk, VK_SHIFT);
+    EXPECT_EQ(capturedInputs[9].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
+    for (const auto& input : capturedInputs) {
+        EXPECT_EQ(input.ki.dwExtraInfo, Internal::kVKeyExtraInfo);
+    }
+}
 TEST_F(Win32SendInputInjectorTest, BaitCharSkippedWhenBsCountZero) {
     // Pure-typing (no deletions) on the Chromium variant: no bait,
     // no extra BS — just the chars. Autocomplete-dismiss isn't needed

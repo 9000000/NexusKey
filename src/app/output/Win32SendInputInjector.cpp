@@ -48,6 +48,19 @@ bool Win32SendInputInjector::Replace(std::size_t bsCount,
     std::array<INPUT, kMaxBatch> buf{};
     std::size_t i = 0;
 
+    // A Telex transform can run while the user is holding Shift (for example,
+    // Shift+dd -> Đ). The physical Shift state otherwise turns our synthetic
+    // VK_BACK events into Shift+Backspace in browser editors; Excel Web treats
+    // that as a destructive selection/edit command. Keep the entire synthetic
+    // replacement modifier-neutral, then restore the user's held Shift before
+    // the hook resumes physical input. No backspaces means no such command and
+    // no need to perturb modifier state.
+    const bool releaseShift = bsCount > 0 &&
+        (Internal::g_getKeyState(VK_SHIFT) & 0x8000) != 0;
+    if (releaseShift) {
+        if (i + 1 > kMaxBatch) return false;
+        buf[i++] = MakeKeyEvent(VK_SHIFT, /*keyup=*/true);
+    }
     // Bait-char prefix (Chromium suggest-dismiss): inserts U+202F + an
     // extra BS to delete it before the rest of the deletes/chars run.
     // Predicate in Internal::ShouldEmitBait — pure-BS only skips bait
@@ -75,6 +88,10 @@ bool Win32SendInputInjector::Replace(std::size_t bsCount,
         if (i + 2 > kMaxBatch) return false;
         buf[i++] = MakeUnicodeChar(ch, /*keyup=*/false);
         buf[i++] = MakeUnicodeChar(ch, /*keyup=*/true);
+    }
+    if (releaseShift) {
+        if (i + 1 > kMaxBatch) return false;
+        buf[i++] = MakeKeyEvent(VK_SHIFT, /*keyup=*/false);
     }
 
     if (i == 0) return true;  // nothing to do (bsCount=0, text empty)

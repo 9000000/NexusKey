@@ -52,6 +52,15 @@ bool SplitDispatchInjector::Replace(std::size_t bsCount,
     // inherit the same selection-eat quirk as Edge's omnibox.
     std::array<INPUT, kMaxBatch> bsBuf{};
     std::size_t bi = 0;
+    // See Win32SendInputInjector::Replace: synthetic Backspace must not inherit
+    // a physically held Shift (notably Shift+dd -> Đ in Excel Web). Restore
+    // Shift in this first batch before the optional inter-batch sleep.
+    const bool releaseShift = bsCount > 0 &&
+        (Internal::g_getKeyState(VK_SHIFT) & 0x8000) != 0;
+    if (releaseShift) {
+        if (bi + 1 > kMaxBatch) return false;
+        bsBuf[bi++] = MakeKey(VK_SHIFT, /*keyup=*/true);
+    }
     const bool emitBait = Internal::ShouldEmitBait(
         needsBaitCharPrefix_, bsCount, text,
         suggestKeepChars_.load(std::memory_order_acquire),
@@ -66,6 +75,10 @@ bool SplitDispatchInjector::Replace(std::size_t bsCount,
         if (bi + 2 > kMaxBatch) return false;
         bsBuf[bi++] = MakeKey(VK_BACK, /*keyup=*/false);
         bsBuf[bi++] = MakeKey(VK_BACK, /*keyup=*/true);
+    }
+    if (releaseShift) {
+        if (bi + 1 > kMaxBatch) return false;
+        bsBuf[bi++] = MakeKey(VK_SHIFT, /*keyup=*/false);
     }
     if (bi > 0) {
         if (!Internal::TrackedSendInput(bsBuf.data(), static_cast<UINT>(bi))) {

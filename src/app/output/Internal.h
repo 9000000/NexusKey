@@ -19,6 +19,7 @@
 namespace NextKey::Output::Internal {
 
 using SendInputFn          = UINT (WINAPI*)(UINT, LPINPUT, int);
+using GetKeyStateFn        = SHORT (WINAPI*)(int);
 using SendMessageWFn       = LRESULT (WINAPI*)(HWND, UINT, WPARAM, LPARAM);
 using SendMessageTimeoutWFn = LRESULT (WINAPI*)(HWND, UINT, WPARAM, LPARAM,
                                                 UINT, UINT, PDWORD_PTR);
@@ -34,6 +35,7 @@ using SynthCounterFn       = void (*)(int delta) noexcept;
 
 // Test seams. Production initializes to the real Win32 APIs.
 extern SendInputFn           g_sendInput;
+extern GetKeyStateFn         g_getKeyState;
 extern SendMessageWFn        g_sendMessageW;
 extern SendMessageTimeoutWFn g_sendMessageTimeoutW;
 extern SleepFn               g_sleep;

@@ -7,6 +7,7 @@
 namespace NextKey::Output::Internal {
 
 SendInputFn           g_sendInput           = ::SendInput;
+GetKeyStateFn         g_getKeyState         = ::GetKeyState;
 SendMessageWFn        g_sendMessageW        = ::SendMessageW;
 SendMessageTimeoutWFn g_sendMessageTimeoutW = ::SendMessageTimeoutW;
 SleepFn               g_sleep               = ::Sleep;

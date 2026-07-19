@@ -103,6 +103,30 @@ TEST_F(SplitDispatchInjectorTest, BaitCharFiresOnChromiumElectronWhenBsPositive)
     EXPECT_EQ(sleepDelays[0], 6u);
 }
 
+TEST_F(SplitDispatchInjectorTest, HeldShiftIsReleasedAroundBackspaceBatch) {
+    Internal::g_getKeyState = [](int vk) -> SHORT {
+        return vk == VK_SHIFT ? static_cast<SHORT>(-32768) : 0;
+    };
+
+    SplitDispatchInjector inj(/*sleepMsBetweenBatches=*/6,
+                              /*needsBaitCharPrefix=*/true);
+    EXPECT_TRUE(inj.Replace(1, L"Đ"));
+
+    // First batch: Shift-up, bait, two Backspaces, Shift-down. The text is
+    // sent in the second batch after the normal renderer-settle delay.
+    ASSERT_EQ(capturedInputs.size(), 10u);
+    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_SHIFT);
+    EXPECT_NE(capturedInputs[0].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
+    EXPECT_NE(capturedInputs[1].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[3].ki.wVk, VK_BACK);
+    EXPECT_EQ(capturedInputs[5].ki.wVk, VK_BACK);
+    EXPECT_EQ(capturedInputs[7].ki.wVk, VK_SHIFT);
+    EXPECT_EQ(capturedInputs[7].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
+    EXPECT_NE(capturedInputs[8].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[8].ki.wScan, L'Đ');
+    ASSERT_EQ(sleepDelays.size(), 1u);
+    EXPECT_EQ(sleepDelays[0], 6u);
+}
 TEST_F(SplitDispatchInjectorTest, BaitCharSkippedWhenBsCountZero) {
     SplitDispatchInjector inj(6, /*needsBaitCharPrefix=*/true);
     EXPECT_TRUE(inj.Replace(0, L"y"));
