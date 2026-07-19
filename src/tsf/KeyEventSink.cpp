@@ -134,6 +134,7 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
             pEngineController_->RefreshFlags();
             // Publish TIP active state — EXE reads this for tray icon sync
             pEngineController_->SetTsfTipActive(true);
+            pEngineController_->ClearMacroTracking();
             // Focus change invalidates the commit-undo window — cursor may have
             // moved arbitrarily relative to the cached lastCommit_ text.
             pEngineController_->ResetCommitUndo();
@@ -142,6 +143,7 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
         TSF_LOG(L"OnSetFocus: background");
         if (pEngineController_) {
             pEngineController_->SetTsfTipActive(false);
+            pEngineController_->ClearMacroTracking();
             pEngineController_->ResetCommitUndo();
         }
     }
@@ -166,10 +168,13 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     // Drop any punct char cached by a previous OnTestKeyDown whose OnKeyDown pair
     // never fired (rare TSF anomaly).
     lastPunctChar_ = 0;
+    lastEnglishMacroObservedVk_ = 0;
+    lastMacroHandledVk_ = 0;
 
     // Check if this context blocks input (password, PIN, email fields)
     pEngineController_->CheckContextBlocked(pContext);
     if (pEngineController_->IsContextBlocked()) {
+        pEngineController_->ClearMacroTracking();
         *pfEaten = FALSE;
         return S_OK;
     }
@@ -256,6 +261,7 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
         }
     }
 
+    const UINT vk = static_cast<UINT>(wParam);
     // (VK_RETURN falls through to the generic non-handled-key branch below:
     // WantKey returns false for Enter, so with a live buffer the branch commits
     // the composition and passes Enter to the host — search submits, newline
@@ -291,6 +297,29 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     }
 
     bool wantKey = pEngineController_->WantKey(static_cast<UINT>(wParam), true);
+
+    if (pEngineController_->IsEnglishMacroTrackingActive()) {
+        if (vk >= 0x41 && vk <= 0x5A) {
+            pEngineController_->TrackMacroCharacter(VkToChar(vk, lParam));
+            lastEnglishMacroObservedVk_ = vk;
+        } else if (vk == VK_BACK) {
+            pEngineController_->TrackMacroBackspace();
+            lastEnglishMacroObservedVk_ = vk;
+        } else if (pEngineController_->IsMacroCommitTrigger(vk)) {
+            const auto macroResult = pEngineController_->HandleMacroTrigger(
+                pContext, vk, VkToChar(vk, lParam));
+            lastEnglishMacroObservedVk_ = vk;
+            if (macroResult != EngineController::MacroResult::NoMatch) {
+                lastMacroHandledVk_ = vk;
+                lastMacroHandledEat_ =
+                    macroResult == EngineController::MacroResult::ExpandedEatTrigger;
+                *pfEaten = lastMacroHandledEat_ ? TRUE : FALSE;
+                return S_OK;
+            }
+        } else {
+            pEngineController_->ClearMacroTracking();
+        }
+    }
 
     if (wParam == VK_BACK) {
         bool suggestKeep = pEngineController_->IsSuggestKeepCharsEnabled();
@@ -346,6 +375,22 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     lastTestedVk_ = static_cast<UINT>(wParam);
     lastWantKeyResult_ = wantKey;
 
+    // Enter, Tab, and navigation keys pass through, so expand before the
+    // generic commit-and-pass branch when a composed macro is pending.
+    if (!wantKey && !pEngineController_->IsEnglishMacroTrackingActive()
+        && pEngineController_->HasMacroCandidate()
+        && pEngineController_->IsMacroCommitTrigger(vk)) {
+        const auto macroResult = pEngineController_->HandleMacroTrigger(
+            pContext, vk, VkToChar(vk, lParam));
+        if (macroResult != EngineController::MacroResult::NoMatch) {
+            lastMacroHandledVk_ = vk;
+            lastMacroHandledEat_ =
+                macroResult == EngineController::MacroResult::ExpandedEatTrigger;
+            *pfEaten = lastMacroHandledEat_ ? TRUE : FALSE;
+            return S_OK;
+        }
+    }
+
     // Non-handled key with active buffer → commit and pass through. Action and
     // navigation keys (arrows, Escape, F-keys, Home/End, Delete) take effect on
     // a single press. Printable keys that could race with commit text are
@@ -392,6 +437,13 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
 HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     pEngineController_->CheckConfigEvent();
 
+    pEngineController_->CheckContextBlocked(pContext);
+    if (pEngineController_->IsContextBlocked()) {
+        pEngineController_->ClearMacroTracking();
+        *pfEaten = FALSE;
+        return S_OK;
+    }
+
     // Desync recovery — mirrors OnTestKeyDown. Chromium hosts skip the test
     // phase, so OnKeyDown must self-heal too: every commit guard below checks
     // HasEngineBuffer(), so a stale composition with an empty engine (state B)
@@ -431,6 +483,46 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
 
     UINT vk = static_cast<UINT>(wParam);
 
+    if (vk == lastMacroHandledVk_) {
+        const bool eat = lastMacroHandledEat_;
+        lastMacroHandledVk_ = 0;
+        lastMacroHandledEat_ = false;
+        lastEnglishMacroObservedVk_ = 0;
+        *pfEaten = eat ? TRUE : FALSE;
+        return S_OK;
+    }
+
+    if (pEngineController_->IsEnglishMacroTrackingActive()) {
+        const bool observedInTest = vk == lastEnglishMacroObservedVk_;
+        lastEnglishMacroObservedVk_ = 0;
+        if (vk >= 0x41 && vk <= 0x5A) {
+            if (!observedInTest) {
+                pEngineController_->TrackMacroCharacter(VkToChar(vk, lParam));
+            }
+            *pfEaten = FALSE;
+            return S_OK;
+        }
+        if (vk == VK_BACK) {
+            if (!observedInTest) pEngineController_->TrackMacroBackspace();
+            *pfEaten = FALSE;
+            return S_OK;
+        }
+        if (pEngineController_->IsMacroCommitTrigger(vk)) {
+            if (!observedInTest) {
+                const auto macroResult = pEngineController_->HandleMacroTrigger(
+                    pContext, vk, VkToChar(vk, lParam));
+                if (macroResult != EngineController::MacroResult::NoMatch) {
+                    *pfEaten = macroResult == EngineController::MacroResult::ExpandedEatTrigger
+                        ? TRUE : FALSE;
+                    return S_OK;
+                }
+            }
+            *pfEaten = FALSE;
+            return S_OK;
+        }
+        pEngineController_->ClearMacroTracking();
+    }
+
     // Intercept VK_BACK for autocomplete suggestion dismissal (Chromium fallback)
     if (vk == VK_BACK && pEngineController_->HasEngineBuffer() &&
         pEngineController_->IsSuggestKeepCharsEnabled() &&
@@ -462,6 +554,21 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
                 *pfEaten = TRUE;
                 return S_OK;
             }
+        }
+    }
+
+    // Space and printable punctuation are eaten by the TIP, so expand them
+    // here and include any pass-through character in the committed text.
+    if (pEngineController_->HasMacroCandidate()
+        && pEngineController_->IsMacroCommitTrigger(vk)) {
+        const wchar_t triggerChar = (vk == lastTestedVk_ && lastPunctChar_ != 0)
+            ? lastPunctChar_ : VkToChar(vk, lParam);
+        const auto macroResult = pEngineController_->HandleMacroTrigger(
+            pContext, vk, triggerChar);
+        if (macroResult != EngineController::MacroResult::NoMatch) {
+            *pfEaten = macroResult == EngineController::MacroResult::ExpandedEatTrigger
+                ? TRUE : FALSE;
+            return S_OK;
         }
     }
 

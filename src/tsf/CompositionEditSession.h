@@ -12,6 +12,7 @@
 #include "EditSession.h"
 #include "CompositionManager.h"
 #include "Define.h"
+#include <cstddef>
 #include "core/AutoCapDecision.h"
 #include "core/engine/IInputEngine.h"
 #include "core/engine/VietnameseTables.h"
@@ -119,6 +120,52 @@ public:
 private:
     CompositionManager* pMgr_;
     std::wstring finalText_;
+};
+
+/// Replace a known number of text units immediately before an empty selection.
+class ReplacePrecedingTextEditSession : public EditSession {
+public:
+    ReplacePrecedingTextEditSession(ITfContext* pContext, std::size_t characterCount,
+                                    const std::wstring& replacement, bool* replaced)
+        : EditSession(pContext), characterCount_(characterCount), replacement_(replacement),
+          replaced_(replaced) {}
+
+    IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
+        if (replaced_) *replaced_ = false;
+        if (pContext_ == nullptr || characterCount_ == 0 || replaced_ == nullptr) return E_INVALIDARG;
+
+        TF_SELECTION selection = {};
+        ULONG fetched = 0;
+        HRESULT hr = pContext_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
+        if (FAILED(hr) || fetched != 1 || selection.range == nullptr) return E_FAIL;
+
+        CComPtr<ITfRange> range;
+        range.Attach(selection.range);
+        BOOL isEmpty = FALSE;
+        if (FAILED(range->IsEmpty(ec, &isEmpty)) || !isEmpty) return E_FAIL;
+
+        TF_HALTCOND halt = {nullptr, TF_ANCHOR_START, TF_HF_OBJECT};
+        LONG shifted = 0;
+        hr = range->ShiftStart(ec, -static_cast<LONG>(characterCount_), &shifted, &halt);
+        if (FAILED(hr) || shifted != -static_cast<LONG>(characterCount_)) return E_FAIL;
+
+        hr = range->SetText(ec, 0, replacement_.c_str(), static_cast<LONG>(replacement_.size()));
+        if (SUCCEEDED(hr)) {
+            hr = range->Collapse(ec, TF_ANCHOR_END);
+            if (SUCCEEDED(hr)) {
+                selection.style.ase = TF_AE_END;
+                selection.style.fInterimChar = FALSE;
+                (void)pContext_->SetSelection(ec, 1, &selection);
+                *replaced_ = true;
+            }
+        }
+        return hr;
+    }
+
+private:
+    std::size_t characterCount_;
+    std::wstring replacement_;
+    bool* replaced_;
 };
 
 /// Read-only edit session: fetch up to N chars preceding the caret.

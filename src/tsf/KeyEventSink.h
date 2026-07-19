@@ -55,6 +55,12 @@ private:
     // Cached punct char from OnTestKeyDown's ToUnicode call. Avoids calling ToUnicode
     // twice per keystroke (ToUnicode can mutate kernel dead-key state on some layouts).
     wchar_t lastPunctChar_ = 0;
+
+    // English-mode macros pass ordinary keys through to the host. These caches
+    // keep a TestKeyDown/KeyDown pair from processing the same key twice.
+    UINT lastEnglishMacroObservedVk_ = 0;
+    UINT lastMacroHandledVk_ = 0;
+    bool lastMacroHandledEat_ = false;
 };
 
 }  // namespace TSF

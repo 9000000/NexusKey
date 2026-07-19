@@ -13,6 +13,8 @@
 #include "LanguageBarButton.h"
 #include <memory>
 #include <msctf.h>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace NextKey {
 namespace TSF {
@@ -20,6 +22,12 @@ namespace TSF {
 /// Controller bridging TSF events and the Telex engine
 class EngineController {
 public:
+    enum class MacroResult : uint8_t {
+        NoMatch,
+        ExpandedEatTrigger,
+        ExpandedPassTrigger,
+    };
+
     EngineController();
     ~EngineController();
 
@@ -37,6 +45,16 @@ public:
 
     /// Process backspace
     void ProcessBackspace(ITfContext* pContext);
+
+    void TrackMacroCharacter(wchar_t ch);
+    void TrackMacroBackspace() noexcept;
+    void ClearMacroTracking() noexcept;
+    [[nodiscard]] bool IsMacroCommitTrigger(UINT vkCode) const noexcept;
+    [[nodiscard]] bool HasMacroCandidate() const noexcept;
+    [[nodiscard]] bool IsEnglishMacroTrackingActive() const noexcept;
+    [[nodiscard]] MacroResult HandleMacroTrigger(ITfContext* pContext,
+                                                  UINT vkCode,
+                                                  wchar_t triggerChar);
 
     /// Commit current composition
     void Commit(ITfContext* pContext);
@@ -166,6 +184,13 @@ public:
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
 
+    void ReloadMacros(uint8_t generation);
+    void ClearMacroTrackingAfterCommit() noexcept;
+    [[nodiscard]] bool IsMacroTrackingEnabled() const noexcept;
+    [[nodiscard]] bool ReplacePrecedingText(ITfContext* pContext,
+                                            std::size_t characterCount,
+                                            const std::wstring& replacement);
+
     /// Detect if current app is Scintilla-based (cached, updated on context change)
     void DetectScintillaApp();
 
@@ -189,6 +214,15 @@ private:
     bool contextBlocked_ = false;        // True if current context blocks input (password, etc.)
     bool isScintillaApp_ = false;        // Cached: current app is Scintilla-based (Notepad++, etc.)
     bool digitLedWord_ = false;          // True = current word started with a digit (VNI/Combined/UserDefined) → treat whole word as English (pass through; no composition)
+
+    // Macros are not represented in SharedState because the table is variable
+    // sized. TSF reloads this local snapshot whenever configGeneration changes.
+    std::unordered_map<std::wstring, std::wstring> macroTable_;
+    std::unordered_set<std::wstring> spaceMacroKeys_;
+    std::wstring rawMacroBuffer_;
+    uint8_t macroGeneration_ = 0;
+    bool macroConfigLoaded_ = false;
+    bool macroCrossCommit_ = false;
 
     // Pending Backspace revive — set by PrepareBackspaceRevive (called from OnTestKeyDown),
     // consumed by HandleKey(VK_BACK). CComPtr auto-manages ref count.
