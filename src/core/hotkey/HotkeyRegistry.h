@@ -81,11 +81,13 @@ public:
     void LoadEnabled(const toml::table& tbl);
     void SaveEnabled(toml::table& tbl) const;
 
-    /// Factory bindings — restores the 3 legacy NexusKey hotkeys:
+    /// Factory bindings — retains the 3 legacy NexusKey hotkeys as suggestions:
     ///   - Esc                → CancelComposition
     ///   - Esc                → SkipMacro
     ///   - Ctrl alone         → ToggleEnabled
     ///   - 2×Alt              → ToggleEnabled
+    /// All intents start disabled. A user must explicitly enable an intent
+    /// before its bindings can intercept input.
     [[nodiscard]] static HotkeyRegistry Defaults();
 
     /// Migration helper — build a registry from the three legacy TypingConfig
@@ -110,12 +112,13 @@ public:
 
     /// Per-intent on/off state. Bindings remain stored even when disabled
     /// so the user can flip the toggle without losing their custom triggers.
-    /// Default = `true` for every intent (matches Defaults() expectation).
+    /// Missing persisted state defaults to `true` for backward compatibility;
+    /// Defaults() always writes an explicit state for a fresh configuration.
     [[nodiscard]] bool IsEnabled(Intent intent) const noexcept;
     void SetEnabled(Intent intent, bool enabled) noexcept;
 
-    /// Remove all triggers + reset enabled flags to true (test helper /
-    /// "Restore defaults" UI).
+    /// Remove all triggers and explicit enabled flags. An unbound registry's
+    /// missing-state fallback remains `true`; use Defaults() to restore UI defaults.
     void Clear() noexcept;
 
 private:

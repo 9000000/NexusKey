@@ -324,17 +324,17 @@ constexpr uint32_t kVkEsc = 0x1B;
 }  // namespace
 
 TEST_F(ConfigManagerTest, SaveHotkeyRegistry_EscBound_EnabledSetsTrue) {
-    HotkeyRegistry reg = HotkeyRegistry::Defaults();  // Esc bound + enabled
+    HotkeyRegistry reg = HotkeyRegistry::Defaults();
+    reg.SetEnabled(Intent::CancelComposition, true);
     ASSERT_TRUE(ConfigManager::SaveHotkeyRegistry(testConfigPath_, reg));
     EXPECT_TRUE(ReadEscRestoreRaw(testConfigPath_));
 }
 
-TEST_F(ConfigManagerTest, SaveHotkeyRegistry_EscBound_DisabledSetsFalse) {
+TEST_F(ConfigManagerTest, SaveHotkeyRegistry_DefaultEscBound_DisabledSetsFalse) {
     HotkeyRegistry reg = HotkeyRegistry::Defaults();
-    reg.SetEnabled(Intent::CancelComposition, false);
     ASSERT_TRUE(ConfigManager::SaveHotkeyRegistry(testConfigPath_, reg));
     EXPECT_FALSE(ReadEscRestoreRaw(testConfigPath_))
-        << "Disabling cancel-composition must clear TSF gate even when Esc trigger still stored";
+        << "Fresh defaults must leave TSF ESC restoration off even though Esc remains stored";
 }
 
 TEST_F(ConfigManagerTest, SaveHotkeyRegistry_NoBareEscTrigger_SetsFalse) {
@@ -505,6 +505,7 @@ modern_ortho = true
 )");
 
     HotkeyRegistry reg = HotkeyRegistry::Defaults();
+    reg.SetEnabled(Intent::CancelComposition, true);
     ASSERT_TRUE(ConfigManager::SaveHotkeyRegistry(testConfigPath_, reg));
 
     auto loaded = ConfigManager::LoadFromFile(testConfigPath_);
