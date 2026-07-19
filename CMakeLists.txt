@@ -502,18 +502,31 @@ if(WIN32)
     # Deploy the prebuilt Rust engine next to every binary that creates engines
     # (VKeyApp.exe and the in-process VKeyTSF.dll). RustInputEngine loads it
     # module-relative, so co-locating it here makes it resolvable in TSF hosts.
+    # Keep this as an explicit dependency target: a TARGET POST_BUILD command is
+    # skipped when only the vendored DLL changes and the executable is up to date.
     if(VKEY_USE_RUST_ENGINE)
         set(VKEY_ENGINE_DLL "${CMAKE_CURRENT_SOURCE_DIR}/extern/vkey_engine/lib/win-x64/vkey_engine.dll")
+        get_property(_vkey_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+        if(_vkey_multi_config)
+            set(_vkey_engine_output_dir "${CMAKE_BINARY_DIR}/$<CONFIG>")
+        else()
+            set(_vkey_engine_output_dir "${CMAKE_BINARY_DIR}")
+        endif()
+        add_custom_target(VKeyEngineRuntimeDeploy
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VKEY_ENGINE_DLL}"
+                "${_vkey_engine_output_dir}/vkey_engine.dll"
+            DEPENDS "${VKEY_ENGINE_DLL}"
+            COMMENT "Deploying vkey_engine.dll to the runtime output directory"
+            VERBATIM
+        )
         foreach(_tgt VKeyApp VKeyTSF VKeyLite)
             if(TARGET ${_tgt})
-                add_custom_command(TARGET ${_tgt} POST_BUILD
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${VKEY_ENGINE_DLL}"
-                        "$<TARGET_FILE_DIR:${_tgt}>/vkey_engine.dll"
-                    COMMENT "Copying vkey_engine.dll next to ${_tgt}"
-                )
+                add_dependencies(${_tgt} VKeyEngineRuntimeDeploy)
             endif()
         endforeach()
+        unset(_vkey_engine_output_dir)
+        unset(_vkey_multi_config)
     endif()
 endif()
 

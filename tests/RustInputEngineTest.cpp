@@ -128,6 +128,35 @@ TEST_F(RustInputEngineTest, ToneEscapeReported) {
     EXPECT_TRUE(engine.IsToneEscaped());
 }
 
+TEST_F(RustInputEngineTest, RepeatedWModifierEscapeSurvivesEnglishWordTail) {
+    TypingConfig config;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    config.autoRestoreEnabled = true;
+
+    for (const InputMethod method : {
+             InputMethod::Telex,
+             InputMethod::SimpleTelex,
+             InputMethod::Combined,
+         }) {
+        config.inputMethod = method;
+        for (const auto& [raw, expected] : {
+                 std::pair{std::wstring_view(L"dowwnload"), std::wstring_view(L"download")},
+                 std::pair{std::wstring_view(L"powwershell"), std::wstring_view(L"powershell")},
+             }) {
+            RustInputEngine engine(config);
+            for (const wchar_t c : raw) {
+                engine.PushChar(c);
+            }
+
+            EXPECT_EQ(engine.Peek(), expected);
+            EXPECT_TRUE(engine.IsToneEscaped());
+            EXPECT_EQ(engine.PeekRaw(), raw);  // ESC restore still needs physical keys.
+            EXPECT_EQ(engine.Commit(), expected);
+        }
+    }
+}
+
 TEST_F(RustInputEngineTest, EnglishWordFlag) {
     TypingConfig config;
     config.inputMethod = InputMethod::Telex;

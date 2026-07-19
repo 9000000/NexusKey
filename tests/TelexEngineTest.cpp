@@ -3323,6 +3323,17 @@ TEST_F(SimpleTelexTest, W_InDuoc_IsModifier) {
     EXPECT_EQ(engine_->Peek(), L"được");
 }
 
+TEST_F(SimpleTelexTest, RepeatedWModifierEscapeSurvivesEnglishWordTail) {
+    for (const auto& [raw, expected] : {
+             std::pair{std::wstring_view(L"dowwnload"), std::wstring_view(L"download")},
+             std::pair{std::wstring_view(L"powwershell"), std::wstring_view(L"powershell")},
+         }) {
+        TypeString(*engine_, std::wstring(raw));
+        EXPECT_EQ(engine_->Peek(), expected);
+        engine_->Reset();
+    }
+}
+
 TEST_F(SimpleTelexTest, W_AfterI_IsLiteral) {
     // 'i' is a vowel but not a/o/u, so 'w' should be literal
     TypeString(*engine_, L"iw");
