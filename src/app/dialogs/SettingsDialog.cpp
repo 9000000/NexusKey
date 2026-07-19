@@ -971,9 +971,6 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         notifyIconChanged(1); // 1 = reset position
         return;
     }
-    else if (id == L"btn-reset-settings") {
-        // TODO: Reset all settings to defaults
-    }
     else if (id == L"btn-check-update") {
         startUpdateCheck();
         return;

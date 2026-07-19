@@ -4,9 +4,9 @@
 
 #include "core/MacroCase.h"
 
-#include "core/engine/CodeTableConverter.h"
-
 #include <cwctype>
+
+#include "core/engine/CodeTableConverter.h"
 
 namespace NextKey::Macro {
 
@@ -208,6 +208,11 @@ bool IsCommitTrigger(uint32_t vkCode) noexcept {
     if (vkCode == 0x2E || vkCode == 0x2D) return true;
 
     return false;
+}
+
+bool IsTextProducingTrigger(uint32_t vkCode, wchar_t triggerChar) noexcept {
+    return IsCommitTrigger(vkCode)
+        && (vkCode == 0x20 || triggerChar > L' ');
 }
 
 bool ShouldTrigger(uint32_t vkCode,

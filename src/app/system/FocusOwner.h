@@ -9,7 +9,7 @@
 //   * Smart-switch per-app mode map + persistence
 //   * CJK layout state (suppressed/modeBeforeCjk/cachedIsCompatLayout)
 //   * WebView2 positive-only detection cache
-//   * Window classification helpers (ClassifyFocusedWindow + ClassifyWindow)
+//   * Window classification helpers (Classify + file-local ClassifyWindow)
 //
 // HookEngine still owns the *reactions* to focus events
 // (ApplyFocusOnHookThread / OnLayoutChanged / OnFocusChanged orchestration);

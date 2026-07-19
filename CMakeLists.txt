@@ -63,12 +63,8 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/EnglishProtection.h
     src/core/engine/VietnameseTables.h
     src/core/engine/VietnamesePhonologyData.h
-    src/core/engine/IPhonologyRules.h
-    src/core/engine/DefaultPhonologyRules.h
-    src/core/engine/PhonologyRulePackFactory.h
     src/core/engine/PhonotacticsValidator.cpp
     src/core/engine/PhonotacticsValidator.h
-    src/core/engine/IPhonotactics.h
     src/core/engine/Phonotactics.cpp
     src/core/engine/Phonotactics.h
     src/core/engine/TypingAction.h

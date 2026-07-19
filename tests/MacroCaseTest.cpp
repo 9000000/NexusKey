@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #include <gtest/gtest.h>
+
 #include "core/MacroCase.h"
 
 namespace NextKey::Macro {
@@ -478,6 +479,18 @@ TEST(MacroTriggerDecisionTest, IsCommitTriggerIdentifiesWordBoundaries) {
     EXPECT_FALSE(IsCommitTrigger(0x41)); // 'A'
     EXPECT_FALSE(IsCommitTrigger(0x5A)); // 'Z'
     EXPECT_FALSE(IsCommitTrigger(0x70)); // VK_F1
+}
+
+TEST(MacroTriggerDecisionTest, TextProducingTriggerSeparatesPrintableFromActionKeys) {
+    EXPECT_TRUE(IsTextProducingTrigger(0x20, L' '));  // VK_SPACE
+    EXPECT_TRUE(IsTextProducingTrigger(0x31, L'1'));  // number row
+    EXPECT_TRUE(IsTextProducingTrigger(0xBE, L'.'));  // VK_OEM_PERIOD
+
+    EXPECT_FALSE(IsTextProducingTrigger(0x0D, 0));    // VK_RETURN
+    EXPECT_FALSE(IsTextProducingTrigger(0x09, 0));    // VK_TAB
+    EXPECT_FALSE(IsTextProducingTrigger(0x25, 0));    // VK_LEFT
+    EXPECT_FALSE(IsTextProducingTrigger(0x2E, 0));    // VK_DELETE
+    EXPECT_FALSE(IsTextProducingTrigger(0x41, L'a')); // not a commit trigger
 }
 
 TEST(MacroTriggerDecisionTest, ShouldTriggerRespectsTabOnly) {

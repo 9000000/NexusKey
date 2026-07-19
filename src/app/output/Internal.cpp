@@ -7,13 +7,13 @@
 namespace NextKey::Output::Internal {
 
 SendInputFn           g_sendInput           = ::SendInput;
-GetKeyStateFn         g_getKeyState         = ::GetKeyState;
+GetAsyncKeyStateFn    g_getAsyncKeyState    = ::GetAsyncKeyState;
 SendMessageWFn        g_sendMessageW        = ::SendMessageW;
 SendMessageTimeoutWFn g_sendMessageTimeoutW = ::SendMessageTimeoutW;
 SleepFn               g_sleep               = ::Sleep;
 SynthCounterFn        g_synthCounterCallback = nullptr;
 
-bool TrackedSendInput(INPUT* events, UINT count) noexcept {
+bool TrackedSendInput(INPUT* events, UINT count, UINT* sentCount) noexcept {
     // Pre-increment the synth counter BEFORE SendInput. The Win32
     // callback fires synchronously during SendInput on the same thread —
     // if we incremented after, the LL hook proc could decrement the
@@ -23,6 +23,7 @@ bool TrackedSendInput(INPUT* events, UINT count) noexcept {
         g_synthCounterCallback(static_cast<int>(count));
     }
     UINT sent = g_sendInput(count, events, sizeof(INPUT));
+    if (sentCount != nullptr) *sentCount = sent;
     if (sent < count && g_synthCounterCallback) {
         // Compensate: the (count - sent) events never reached the OS
         // queue, so they won't round-trip through the hook to balance

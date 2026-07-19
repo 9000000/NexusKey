@@ -9,9 +9,6 @@
 // where C₁ is initial consonant, V is vowel nucleus, C₂ is final consonant.
 //
 // Template API is structural over CharState (TypingEngine's shared struct).
-//
-// Lives in `NextKey::Phonology` alongside the wstring-based IPhonotactics
-// interface; this is the structural-input half of the same rule engine.
 
 #pragma once
 

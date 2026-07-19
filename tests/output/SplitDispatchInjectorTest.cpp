@@ -71,6 +71,26 @@ TEST_F(SplitDispatchInjectorTest, PartialFirstSendReturnsFalseAndStopsSecondBatc
     EXPECT_EQ(capturedInputs[0].ki.wVk, VK_BACK);
 }
 
+TEST_F(SplitDispatchInjectorTest, PartialFirstBatchAfterShiftUpAttemptsShiftRestore) {
+    Internal::g_getAsyncKeyState = [](int vk) -> SHORT {
+        return vk == VK_LSHIFT ? static_cast<SHORT>(-32768) : 0;
+    };
+    sendInputReturnOverride = 1;  // only the leading Shift-up was delivered
+
+    SplitDispatchInjector inj(/*sleepMsBetweenBatches=*/6);
+    EXPECT_FALSE(inj.Replace(1, L"x"));
+
+    // Initial four-event BS batch plus a one-event best-effort Shift-down.
+    ASSERT_EQ(capturedInputs.size(), 5u);
+    EXPECT_EQ(capturedInputs.back().ki.wVk, VK_LSHIFT);
+    EXPECT_EQ(capturedInputs.back().ki.dwFlags & KEYEVENTF_KEYUP, 0u);
+    EXPECT_TRUE(sleepDelays.empty());
+    ASSERT_EQ(synthCounterDeltas.size(), 3u);
+    EXPECT_EQ(synthCounterDeltas[0], 4);
+    EXPECT_EQ(synthCounterDeltas[1], -3);
+    EXPECT_EQ(synthCounterDeltas[2], 1);
+}
+
 TEST_F(SplitDispatchInjectorTest, SendKeyEmitsDownAndUpWithMarker) {
     SplitDispatchInjector inj(6);
     inj.SendKey(VK_BACK);
@@ -104,8 +124,8 @@ TEST_F(SplitDispatchInjectorTest, BaitCharFiresOnChromiumElectronWhenBsPositive)
 }
 
 TEST_F(SplitDispatchInjectorTest, HeldShiftIsReleasedAroundBackspaceBatch) {
-    Internal::g_getKeyState = [](int vk) -> SHORT {
-        return vk == VK_SHIFT ? static_cast<SHORT>(-32768) : 0;
+    Internal::g_getAsyncKeyState = [](int vk) -> SHORT {
+        return vk == VK_RSHIFT ? static_cast<SHORT>(-32768) : 0;
     };
 
     SplitDispatchInjector inj(/*sleepMsBetweenBatches=*/6,
@@ -115,18 +135,38 @@ TEST_F(SplitDispatchInjectorTest, HeldShiftIsReleasedAroundBackspaceBatch) {
     // First batch: Shift-up, bait, two Backspaces, Shift-down. The text is
     // sent in the second batch after the normal renderer-settle delay.
     ASSERT_EQ(capturedInputs.size(), 10u);
-    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_SHIFT);
+    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_RSHIFT);
     EXPECT_NE(capturedInputs[0].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
     EXPECT_NE(capturedInputs[1].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
     EXPECT_EQ(capturedInputs[3].ki.wVk, VK_BACK);
     EXPECT_EQ(capturedInputs[5].ki.wVk, VK_BACK);
-    EXPECT_EQ(capturedInputs[7].ki.wVk, VK_SHIFT);
+    EXPECT_EQ(capturedInputs[7].ki.wVk, VK_RSHIFT);
     EXPECT_EQ(capturedInputs[7].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
     EXPECT_NE(capturedInputs[8].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
     EXPECT_EQ(capturedInputs[8].ki.wScan, L'Đ');
     ASSERT_EQ(sleepDelays.size(), 1u);
     EXPECT_EQ(sleepDelays[0], 6u);
 }
+
+TEST_F(SplitDispatchInjectorTest, BothShiftKeysRetainTheirIdentity) {
+    Internal::g_getAsyncKeyState = [](int vk) -> SHORT {
+        return vk == VK_LSHIFT || vk == VK_RSHIFT
+            ? static_cast<SHORT>(-32768)
+            : 0;
+    };
+
+    SplitDispatchInjector inj(/*sleepMsBetweenBatches=*/6);
+    EXPECT_TRUE(inj.Replace(1, L""));
+
+    ASSERT_EQ(capturedInputs.size(), 6u);
+    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_LSHIFT);
+    EXPECT_EQ(capturedInputs[1].ki.wVk, VK_RSHIFT);
+    EXPECT_EQ(capturedInputs[2].ki.wVk, VK_BACK);
+    EXPECT_EQ(capturedInputs[3].ki.wVk, VK_BACK);
+    EXPECT_EQ(capturedInputs[4].ki.wVk, VK_LSHIFT);
+    EXPECT_EQ(capturedInputs[5].ki.wVk, VK_RSHIFT);
+}
+
 TEST_F(SplitDispatchInjectorTest, BaitCharSkippedWhenBsCountZero) {
     SplitDispatchInjector inj(6, /*needsBaitCharPrefix=*/true);
     EXPECT_TRUE(inj.Replace(0, L"y"));

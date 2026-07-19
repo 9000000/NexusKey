@@ -67,6 +67,11 @@ struct Segment {
 
 [[nodiscard]] bool IsCommitTrigger(uint32_t vkCode) noexcept;
 
+/// True when a commit trigger would insert text into the document. TSF uses
+/// this to defer printable macro expansion from OnTestKeyDown to OnKeyDown.
+[[nodiscard]] bool IsTextProducingTrigger(uint32_t vkCode,
+                                          wchar_t triggerChar) noexcept;
+
 [[nodiscard]] bool ShouldTrigger(uint32_t vkCode,
                                  bool triggerSpace,
                                  bool triggerEnter,

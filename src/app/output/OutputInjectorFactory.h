@@ -2,8 +2,8 @@
 //
 // Output injector factory (Rule #11.3).
 //
-// Two-phase focus detection — but Phase 1 lives in HookEngine, not here:
-//   Phase 1 — `HookEngine::ClassifyFocusedWindow` (HookEngine.cpp:3175)
+// Two-phase focus detection — Phase 1 lives in FocusOwner, not here:
+//   Phase 1 — `FocusOwner::Classify`
 //             runs on the CALLER thread (main, via WinEventProc /
 //             OnTickPoll). Heavy Win32 inspection happens there because
 //             the same FocusClassification feeds non-dispatch concerns
@@ -25,7 +25,7 @@
 namespace NextKey::Output {
 
 // Phase 2 input — pure data, no shared writes (Rule #11.3).
-// Filled in by HookEngine's two-phase focus pipeline (see header comment).
+// Filled in by the FocusOwner/HookEngine focus pipeline (see header comment).
 struct WindowClassification {
     bool isRichEditD2DPT  = false;  // Win11 New Notepad
     bool isElectron       = false;  // Discord / Slack / VSCode etc

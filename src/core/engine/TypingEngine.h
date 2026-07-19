@@ -16,7 +16,6 @@
 #include "EngineHelpers.h"
 #include "PhonotacticsValidator.h"
 #include "EnglishProtection.h"
-#include "Phonotactics.h"
 #include "TypingAction.h"
 #include "core/config/TypingConfig.h"
 #include "core/engine/rule/AdjacentCircumflexProposal.h"
@@ -107,13 +106,6 @@ class TypingEngine : public IInputEngine,
 public:
     TypingEngine() : TypingEngine(TypingConfig{}) {}
     explicit TypingEngine(const TypingConfig& config);
-    /// DI ctor — accepts a custom phonotactics rule engine. Lets tests inject
-    /// mocks and lets future engines (e.g. user-defined keymaps) supply their
-    /// own rule set. The reference must outlive this TypingEngine; the
-    /// single-arg ctor binds it to `Phonology::Phonotactics::Default()`, a
-    /// static singleton with process lifetime.
-    TypingEngine(const TypingConfig& config,
-                 const Phonology::IPhonotactics& phonotactics);
     ~TypingEngine() override = default;
 
     TypingEngine(const TypingEngine&) = delete;
@@ -256,7 +248,7 @@ private:
     // dispatch entry points that supply the right Modifier.
     bool ProcessVniVowelModifier(Modifier targetMod, wchar_t key);
 
-    // Find target for tone/modifier application — delegates to phonotactics_.
+    // Find target for tone/modifier application.
     [[nodiscard]] size_t FindToneTarget() const noexcept;
 
     // T5 (anh 2026-05-07): true when the buffer is invalid because the existing
@@ -327,7 +319,6 @@ private:
                                           // Push on PushChar, pop on Backspace, clear on Reset —
                                           // never trimmed by tone/mod-escape paths.
     TypingConfig config_;
-    const Phonology::IPhonotactics& phonotactics_;  // Vietnamese rule engine
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
     QuickConsonantState qc_;              // Quick consonant expansion state
     EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_

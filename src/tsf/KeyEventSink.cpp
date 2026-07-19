@@ -2,15 +2,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #include "stdafx.h"
+
 #include "KeyEventSink.h"
+
+#include <cstdio>
+
 #include "TextService.h"
 #include "EngineController.h"
 #include "CompositionEditSession.h"
 #include "ComUtils.h"
 #include "Define.h"
 #include "core/CrashLog.h"
-
-#include <cstdio>
+#include "core/MacroCase.h"
 
 namespace NextKey {
 namespace TSF {
@@ -130,7 +133,7 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
         TSF_LOG(L"OnSetFocus: foreground");
         // Re-read SharedState on focus to pick up ENGINE_ENABLED/VIETNAMESE_MODE changes
         if (pEngineController_) {
-            pEngineController_->CheckConfigEvent();
+            pEngineController_->CheckConfigEvent(/*allowMacroDiskRead=*/true);
             pEngineController_->RefreshFlags();
             // Publish TIP active state — EXE reads this for tray icon sync
             pEngineController_->SetTsfTipActive(true);
@@ -165,9 +168,9 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
 HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     pEngineController_->CheckConfigEvent();
 
-    // Drop any punct char cached by a previous OnTestKeyDown whose OnKeyDown pair
-    // never fired (rare TSF anomaly).
-    lastPunctChar_ = 0;
+    // Drop any translated char cached by a previous OnTestKeyDown whose
+    // OnKeyDown pair never fired (rare TSF anomaly).
+    lastTranslatedChar_ = 0;
     lastEnglishMacroObservedVk_ = 0;
     lastMacroHandledVk_ = 0;
 
@@ -287,7 +290,7 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
                 *pfEaten = TRUE;
                 lastTestedVk_ = static_cast<UINT>(wParam);
                 lastWantKeyResult_ = true;
-                lastPunctChar_ = ch;  // OnKeyDown reads this — no second ToUnicode call.
+                lastTranslatedChar_ = ch;
                 return S_OK;
             }
             TSF_LOG(L"OnTestKeyDown: VkToChar failed vk=0x%02X, passthrough (no eat)",
@@ -306,8 +309,20 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
             pEngineController_->TrackMacroBackspace();
             lastEnglishMacroObservedVk_ = vk;
         } else if (pEngineController_->IsMacroCommitTrigger(vk)) {
+            const wchar_t triggerChar = VkToChar(vk, lParam);
+            if (Macro::IsTextProducingTrigger(vk, triggerChar)
+                && pEngineController_->WouldExpandMacroTrigger(vk, triggerChar)) {
+                // Printable keys must not change document text during the test
+                // phase. Claim the event and cache its translation so OnKeyDown
+                // performs the edit without a second stateful ToUnicode call.
+                lastTestedVk_ = vk;
+                lastWantKeyResult_ = true;
+                lastTranslatedChar_ = triggerChar;
+                *pfEaten = TRUE;
+                return S_OK;
+            }
             const auto macroResult = pEngineController_->HandleMacroTrigger(
-                pContext, vk, VkToChar(vk, lParam));
+                pContext, vk, triggerChar);
             lastEnglishMacroObservedVk_ = vk;
             if (macroResult != EngineController::MacroResult::NoMatch) {
                 lastMacroHandledVk_ = vk;
@@ -499,23 +514,36 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
             if (!observedInTest) {
                 pEngineController_->TrackMacroCharacter(VkToChar(vk, lParam));
             }
+            lastTestedVk_ = 0;
+            lastTranslatedChar_ = 0;
             *pfEaten = FALSE;
             return S_OK;
         }
         if (vk == VK_BACK) {
             if (!observedInTest) pEngineController_->TrackMacroBackspace();
+            lastTestedVk_ = 0;
+            lastTranslatedChar_ = 0;
             *pfEaten = FALSE;
             return S_OK;
         }
         if (pEngineController_->IsMacroCommitTrigger(vk)) {
             if (!observedInTest) {
+                const wchar_t triggerChar =
+                    (vk == lastTestedVk_ && lastTranslatedChar_ != 0)
+                        ? lastTranslatedChar_
+                        : VkToChar(vk, lParam);
+                lastTestedVk_ = 0;
+                lastTranslatedChar_ = 0;
                 const auto macroResult = pEngineController_->HandleMacroTrigger(
-                    pContext, vk, VkToChar(vk, lParam));
+                    pContext, vk, triggerChar);
                 if (macroResult != EngineController::MacroResult::NoMatch) {
                     *pfEaten = macroResult == EngineController::MacroResult::ExpandedEatTrigger
                         ? TRUE : FALSE;
                     return S_OK;
                 }
+            } else {
+                lastTestedVk_ = 0;
+                lastTranslatedChar_ = 0;
             }
             *pfEaten = FALSE;
             return S_OK;
@@ -530,7 +558,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         TSF_LOG(L"OnKeyDown: backspace autocomplete suggestion detected -> commit and pass through");
         pEngineController_->Commit(pContext);
         lastTestedVk_ = 0;
-        lastPunctChar_ = 0;
+        lastTranslatedChar_ = 0;
         *pfEaten = FALSE;
         return S_OK;
     }
@@ -561,8 +589,10 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     // here and include any pass-through character in the committed text.
     if (pEngineController_->HasMacroCandidate()
         && pEngineController_->IsMacroCommitTrigger(vk)) {
-        const wchar_t triggerChar = (vk == lastTestedVk_ && lastPunctChar_ != 0)
-            ? lastPunctChar_ : VkToChar(vk, lParam);
+        const wchar_t triggerChar =
+            (vk == lastTestedVk_ && lastTranslatedChar_ != 0)
+                ? lastTranslatedChar_
+                : VkToChar(vk, lParam);
         const auto macroResult = pEngineController_->HandleMacroTrigger(
             pContext, vk, triggerChar);
         if (macroResult != EngineController::MacroResult::NoMatch) {
@@ -580,13 +610,13 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     // cache never gets populated. Only one ToUnicode call per keystroke either way.
     if (IsPunctuationKey(vk) && pEngineController_->HasEngineBuffer()
         && !pEngineController_->IsEngineDigitKey(vk)) {
-        wchar_t ch = (vk == lastTestedVk_ && lastPunctChar_ != 0)
-                       ? lastPunctChar_
+        wchar_t ch = (vk == lastTestedVk_ && lastTranslatedChar_ != 0)
+                       ? lastTranslatedChar_
                        : VkToChar(vk, lParam);
         if (ch != 0) {
             pEngineController_->CommitWithChar(pContext, ch);
             lastTestedVk_ = 0;
-            lastPunctChar_ = 0;
+            lastTranslatedChar_ = 0;
             *pfEaten = TRUE;
             return S_OK;
         }
@@ -618,7 +648,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
                 wantKey, lastTestedVk_, lastWantKeyResult_);
     }
     lastTestedVk_ = 0;  // Invalidate cache
-    lastPunctChar_ = 0;
+    lastTranslatedChar_ = 0;
 
     // Non-handled key with active buffer → commit composition and pass the key
     // through so action keys (Enter submits, Escape cancels, F-keys, arrows,

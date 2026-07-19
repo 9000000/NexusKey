@@ -9,15 +9,16 @@
 
 #pragma once
 
-#include "EditSession.h"
+#include <algorithm>
+#include <cstddef>
+#include <string>
+
 #include "CompositionManager.h"
 #include "Define.h"
-#include <cstddef>
+#include "EditSession.h"
 #include "core/AutoCapDecision.h"
 #include "core/engine/IInputEngine.h"
 #include "core/engine/VietnameseTables.h"
-#include <algorithm>
-#include <string>
 
 namespace NextKey {
 namespace TSF {
@@ -151,12 +152,15 @@ public:
 
         hr = range->SetText(ec, 0, replacement_.c_str(), static_cast<LONG>(replacement_.size()));
         if (SUCCEEDED(hr)) {
+            // SetText is irreversible within this edit session. Record the
+            // document mutation even if the subsequent caret update fails so
+            // the caller does not pass an already-consumed trigger to the host.
+            *replaced_ = true;
             hr = range->Collapse(ec, TF_ANCHOR_END);
             if (SUCCEEDED(hr)) {
                 selection.style.ase = TF_AE_END;
                 selection.style.fInterimChar = FALSE;
-                (void)pContext_->SetSelection(ec, 1, &selection);
-                *replaced_ = true;
+                hr = pContext_->SetSelection(ec, 1, &selection);
             }
         }
         return hr;

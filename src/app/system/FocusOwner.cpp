@@ -27,7 +27,7 @@ namespace NextKey {
 std::atomic<FocusOwner*> FocusOwner::s_instance{nullptr};
 
 // Per-app "send method = compatibility split" sleep budgets (ms). Resolved
-// from AppOverrideEntry::sendMethod at ClassifyFocusedWindow and carried in
+// from AppOverrideEntry::sendMethod in Classify and carried in
 // FocusClassification::localForcedSplitSleepMs → WindowClassification.
 //   sendMethod 2 — Firefox-family / local Gecko renderer drain (~one frame).
 //   sendMethod 3 — cloud / remote desktop: the gap must outlast the RDP/Citrix

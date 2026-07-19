@@ -19,8 +19,10 @@ TSF macro handling keeps action-key behavior intact because Enter, Tab, and
 navigation keys may need test-phase handling to preserve single-press host
 behavior. Printable English macro triggers are different: `OnTestKeyDown`
 will claim the key without changing document text, and `OnKeyDown` will run the
-existing macro expansion edit session. A small core decision helper classifies
-text-producing triggers and is covered by platform-neutral tests.
+existing macro expansion edit session. The translated character is cached
+between the two callbacks because `ToUnicode` mutates keyboard-layout state. A
+small core decision helper classifies text-producing triggers and is covered by
+platform-neutral tests.
 
 Macro TOML reloads are removed from keystroke callbacks. Shared-memory scalar
 configuration still applies immediately, but a changed macro generation marks
@@ -38,9 +40,11 @@ are deleted. Existing tone-placement and full engine regression tests remain.
 
 ## Error handling
 
-`ReplacePrecedingTextEditSession` reports success only if both replacement and
-caret selection succeed. Output injectors retain the held-Shift workaround but
-also record how many synthetic events Win32 accepted. If a partial batch
+`ReplacePrecedingTextEditSession` records a successful text mutation before its
+caret update. A later selection failure is still surfaced through the edit
+session HRESULT, but the macro remains consumed because the document change
+cannot be rolled back safely. Output injectors retain the held-Shift workaround
+but also record how many synthetic events Win32 accepted. If a partial batch
 delivered the leading Shift-up, the injector sends a best-effort marked
 Shift-down before returning failure. A zero-event failure does not inject an
 unnecessary modifier event.

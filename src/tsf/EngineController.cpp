@@ -2,18 +2,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #include "stdafx.h"
+
 #include "EngineController.h"
-#include "CompositionEditSession.h"
-#include "EscRestoreLastCommitSession.h"
-#include "InputScopeChecker.h"
-#include "Define.h"
-#include "core/engine/EngineFactory.h"
-#include "core/DigitLedWordDecision.h"
+
 #include <memory>
 
+#include "CompositionEditSession.h"
+#include "Define.h"
+#include "EscRestoreLastCommitSession.h"
+#include "InputScopeChecker.h"
+#include "core/DigitLedWordDecision.h"
 #include "core/MacroCase.h"
 #include "core/MacroPrefix.h"
 #include "core/config/ConfigManager.h"
+#include "core/engine/EngineFactory.h"
 
 namespace {
 
@@ -59,7 +61,7 @@ EngineController::EngineController() {
             // Step 2: ABI OK; try a seqlock Read for the full config.
             SharedState state = sharedState_.Read();
             if (state.IsValid()) {
-                ApplySharedState(state);
+                ApplySharedState(state, /*allowMacroDiskRead=*/true);
                 lastEpoch_ = state.epoch;
                 TSF_LOG(L"EngineController initialized from SharedState (epoch=%u, method=%d)",
                         state.epoch, state.inputMethod);
@@ -599,12 +601,52 @@ bool EngineController::ReplacePrecedingText(ITfContext* pContext,
         clientId_, pSession, TF_ES_SYNC | TF_ES_READWRITE, &hrSession);
     pSession->Release();
 
-    if (FAILED(hr) || FAILED(hrSession) || !replaced) {
+    if (!replaced) {
         TSF_LOG(L"ReplacePrecedingText: failed (request=0x%08X, session=0x%08X)",
                 hr, hrSession);
         return false;
     }
+    if (FAILED(hr) || FAILED(hrSession)) {
+        // SetText already succeeded, so the trigger must stay consumed even if
+        // collapsing the range or restoring the caret failed afterward.
+        TSF_LOG(L"ReplacePrecedingText: text replaced; caret update failed "
+                L"(request=0x%08X, session=0x%08X)", hr, hrSession);
+    }
     return true;
+}
+
+bool EngineController::WouldExpandMacroTrigger(UINT vkCode,
+                                                wchar_t triggerChar) const {
+    if (!Macro::IsCommitTrigger(vkCode) || !IsMacroTrackingEnabled()) return false;
+
+    const std::wstring previousComposition = engine_ ? engine_->Peek() : std::wstring{};
+    if (rawMacroBuffer_.empty() && previousComposition.empty()) return false;
+
+    std::wstring candidate = rawMacroBuffer_;
+    if (triggerChar > L' ') {
+        candidate += triggerChar;
+        if (candidate.size() > kMaxRawMacroBuffer) return false;
+    }
+    if (!Macro::ShouldTrigger(
+            vkCode, config_.macroTriggerSpace, config_.macroTriggerEnter,
+            config_.macroTriggerTab, config_.macroTriggerDir)) {
+        return false;
+    }
+
+    const std::vector<uint8_t> encodedWidths;
+    const TsfCaseMapper caseMapper;
+    const Macro::PlanInputs inputs{
+        .rawMacroBuffer = candidate,
+        .previousComposition = previousComposition,
+        .previousEncodedWidths = encodedWidths,
+        .macroTable = macroTable_,
+        .macroCrossCommit = macroCrossCommit_,
+        .currentCodeTable = CodeTable::Unicode,
+        .autoCapsEnabled = config_.autoCapsMacro,
+        .triggerChar = triggerChar,
+        .clipboardThreshold = kMacroClipboardThreshold,
+    };
+    return Macro::Plan(inputs, caseMapper).matched;
 }
 
 EngineController::MacroResult EngineController::HandleMacroTrigger(
@@ -742,7 +784,7 @@ void EngineController::DetectScintillaApp() {
     isScintillaApp_ = false;
 }
 
-bool EngineController::CheckConfigEvent() {
+bool EngineController::CheckConfigEvent(bool allowMacroDiskRead) {
     if (!sharedState_.IsConnected()) {
         // Try to open SharedState if not connected
         if (!sharedState_.OpenReadWrite()) {
@@ -752,6 +794,10 @@ bool EngineController::CheckConfigEvent() {
 
     uint32_t currentEpoch = sharedState_.ReadEpoch();
     if (currentEpoch == lastEpoch_) {
+        if (allowMacroDiskRead && !macroConfigLoaded_) {
+            ReloadMacros(macroGeneration_);
+            return true;
+        }
         return false;
     }
 
@@ -763,7 +809,7 @@ bool EngineController::CheckConfigEvent() {
     // Apply new config
     TSF_LOG(L"Config changed: epoch %u -> %u", lastEpoch_, state.epoch);
     lastEpoch_ = state.epoch;
-    ApplySharedState(state);
+    ApplySharedState(state, allowMacroDiskRead);
 
     return true;
 }
@@ -825,7 +871,7 @@ void EngineController::RefreshFlags() {
 
         if (!wasEnabled && engineEnabled_) {
             TSF_LOG(L"Engine re-enabled (app started)");
-            ApplySharedState(state);
+            ApplySharedState(state, /*allowMacroDiskRead=*/true);
         } else if (wasEnabled && !engineEnabled_) {
             TSF_LOG(L"Engine disabled (app exited)");
         }
@@ -848,8 +894,10 @@ void EngineController::SetTsfTipActive(bool active) {
     }
 }
 
-void EngineController::ApplySharedState(const SharedState& state) {
+void EngineController::ApplySharedState(const SharedState& state,
+                                        bool allowMacroDiskRead) {
     const bool wasVietnameseMode = vietnameseMode_;
+    const bool wasMacroEnabled = config_.macroEnabled;
     // Update runtime flags
     engineEnabled_ = (state.flags & SharedFlags::ENGINE_ENABLED) != 0;
     vietnameseMode_ = (state.flags & SharedFlags::VIETNAMESE_MODE) != 0;
@@ -874,6 +922,7 @@ void EngineController::ApplySharedState(const SharedState& state) {
     config_.optimizeLevel = optimizeLevel;
     DecodeFeatureFlags(state.GetFeatureFlags(), config_);
     if (wasVietnameseMode != vietnameseMode_) ClearMacroTracking();
+    if (wasMacroEnabled != config_.macroEnabled) macroConfigLoaded_ = false;
     // v3 cleanup: legacy `state.tempOffMethod` no longer decoded — TSF never
     // consumed this field (V/E toggle path is in HookEngine/main app).
 
@@ -881,7 +930,19 @@ void EngineController::ApplySharedState(const SharedState& state) {
     // feature-flag bitmask via SharedState, so flipping the toggle in the
     // EXE reaches every TSF DLL instance on the next CheckConfigEvent tick.
     ::NextKey::Logger::SetEnabled(config_.debugLogEnabled);
-    ReloadMacros(state.configGeneration);
+    if (allowMacroDiskRead) {
+        ReloadMacros(state.configGeneration);
+    } else if (!macroConfigLoaded_ || macroGeneration_ != state.configGeneration
+               || !config_.macroEnabled) {
+        // A key callback may consume the shared-memory config but must not touch
+        // TOML or ConfigManager's cache mutex. Drop stale entries now; focus or
+        // initialization will repopulate them outside the typing path.
+        macroConfigLoaded_ = false;
+        macroGeneration_ = state.configGeneration;
+        ClearMacroTracking();
+        macroTable_.clear();
+        spaceMacroKeys_.clear();
+    }
 
     // Recreate engine with updated config (engine stores a copy of TypingConfig,
     // so we must recreate it whenever any config field changes)

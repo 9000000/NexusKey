@@ -8,7 +8,14 @@
 // FindToneTarget(), bounded ApplyAutoUO(), pre-reserved buffers.
 
 #include "TypingEngine.h"
+
+#include <algorithm>
+#include <array>
+#include <memory>
+#include <string_view>
+
 #include "EngineHelpers.h"
+#include "Phonotactics.h"
 #include "TypingAction.h"
 #include "VietnameseTables.h"
 #include "core/engine/rule/EngineRuleContext.h"
@@ -16,10 +23,6 @@
 #include "core/engine/rule/ModifierRule.h"
 #include "core/engine/rule/QuickStartConsonantRule.h"
 #include "core/engine/rule/QuickEndConsonantRule.h"
-#include <algorithm>
-#include <array>
-#include <memory>
-#include <string_view>
 
 namespace NextKey {
 
@@ -30,9 +33,9 @@ namespace {
 //=============================================================================
 
 // Vowel/state cap used wherever a stack-array snapshot of a syllable buffer
-// is needed. Picked to match Phonotactics' internal vowel-sequence capacity
-// so that truncation behaves identically on both sides of the engine/
-// validator boundary. Vietnamese syllables max out around 7-8 CharStates
+// is needed. Matches FindTonePosition's fixed vowel-sequence capacity so that
+// truncation behaves identically on both sides. Vietnamese syllables max out
+// around 7-8 CharStates
 // (e.g. `nghiêng` = 7); 16 is generous defensive headroom.
 constexpr size_t kVowelCap = 16;
 
@@ -105,11 +108,7 @@ constexpr int ToneIndex(Tone tone) noexcept {
 //=============================================================================
 
 TypingEngine::TypingEngine(const TypingConfig& config)
-    : TypingEngine(config, Phonology::Phonotactics::Default()) {}
-
-TypingEngine::TypingEngine(const TypingConfig& config,
-                           const Phonology::IPhonotactics& phonotactics)
-    : config_(config), phonotactics_(phonotactics) {
+    : config_(config) {
     states_.reserve(8);
     rawInput_.reserve(12);
     escRawHistory_.reserve(12);
@@ -1615,10 +1614,10 @@ void TypingEngine::RelocateToneToTarget() {
 }
 
 //-----------------------------------------------------------------------------
-// Tone Target Finding — delegates rule logic to phonotactics_.
+// Tone Target Finding
 // Builds a vowel sequence + state-index map from states_ (skipping cluster
 // consonants like the 'i' in "gi" and the 'u' in "qu"), composes each vowel
-// state without its tone diacritic so Phonotactics::Decompose sees only the
+// state without its tone diacritic so FindTonePosition sees only the
 // modifier+base char, then maps Phonotactics' returned vowel-sequence index
 // back to a state index.
 //-----------------------------------------------------------------------------
@@ -1646,9 +1645,8 @@ bool TypingEngine::IsToneStopCodaMismatch() const noexcept {
 }
 
 size_t TypingEngine::FindToneTarget() const noexcept {
-    // Cap matches Phonotactics' internal vowel capacity (see file-scope
-    // kVowelCap); sequences past the cap are truncated identically on both
-    // sides so the index map stays consistent.
+    // Cap matches FindTonePosition's fixed vowel capacity (see file-scope
+    // kVowelCap), so the index map stays consistent for pathological inputs.
     // Stack-only buffers — Pillar Nhanh: no heap alloc on hook hot path.
     std::array<size_t, kVowelCap> vowelStateIdx{};
     std::array<wchar_t, kVowelCap> vowelSeq{};
@@ -1660,7 +1658,7 @@ size_t TypingEngine::FindToneTarget() const noexcept {
         if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
         if (vowelCount >= kVowelCap) break;
 
-        // Compose without tone and without case — Phonotactics::Decompose
+        // Compose without tone and without case — FindTonePosition
         // matches lowercase rendered modifier+base (e.g. L'\x01B0' for ư).
         // Using towlower() on Vietnamese chars is locale-dependent and
         // unreliable on Linux; clearing isUpper produces the canonical
@@ -1689,7 +1687,7 @@ size_t TypingEngine::FindToneTarget() const noexcept {
         if (composed != 0) coda[codaLen++] = composed;
     }
 
-    size_t vowelIdx = phonotactics_.TonePosition(
+    size_t vowelIdx = Phonology::FindTonePosition(
         std::wstring_view{vowelSeq.data(), vowelCount},
         std::wstring_view{coda.data(), codaLen},
         config_.modernOrtho);

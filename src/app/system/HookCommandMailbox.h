@@ -89,7 +89,7 @@ struct FocusClassification {
     bool localElectronApp{false};  // (isElectron || isWebView2) && !isConsole
     // Per-app "send method = compatibility split" (AppOverrideEntry::sendMethod
     // 2/3). 0 = not forced; >0 = inter-batch sleep (ms) for SplitDispatchInjector.
-    // Resolved from snap->appSendMethodOverrides in ClassifyFocusedWindow; the
+    // Resolved from snap->appSendMethodOverrides in FocusOwner::Classify; the
     // hook thread copies it into Output::WindowClassification::forcedSplitSleepMs.
     int localForcedSplitSleepMs{0};
     // RESOLVED target values for the focused app. Classify captures the

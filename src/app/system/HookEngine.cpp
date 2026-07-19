@@ -3888,12 +3888,12 @@ void HookEngine::DrainHookCommands() {
 // Phase 2b — focus apply runs on the hook thread (called from
 // DrainHookCommands). All composition-state writes that used to live in
 // OnFocusChanged moved here. The cls parameter is the pre-computed
-// classification snapshot produced by ClassifyFocusedWindow on main.
+// classification snapshot produced by FocusOwner::Classify.
 //
 // Must stay fast (Rule 11.2) — no syscalls beyond the cheap ones already
 // listed in the design's "may only mutate composition state + atomic
 // stores" contract. Heavy work (ClassifyWindow, GetExeNameForHwnd,
-// IsWebView2App, CreateToolhelp32Snapshot) is in ClassifyFocusedWindow,
+// IsWebView2App, CreateToolhelp32Snapshot) is in FocusOwner::Classify,
 // not here.
 void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls) {
     VKEY_ASSERT_HOOK_THREAD();

@@ -4,17 +4,19 @@
 #pragma once
 
 #include "stdafx.h"
-#include "core/engine/IInputEngine.h"
-#include "core/config/TypingConfig.h"
-#include "core/config/ConfigEvent.h"
-#include "core/ipc/SharedStateManager.h"
+
+#include <msctf.h>
+
+#include <memory>
+#include <unordered_map>
+#include <unordered_set>
+
 #include "CompositionManager.h"
 #include "EditSession.h"
 #include "LanguageBarButton.h"
-#include <memory>
-#include <msctf.h>
-#include <unordered_map>
-#include <unordered_set>
+#include "core/config/TypingConfig.h"
+#include "core/engine/IInputEngine.h"
+#include "core/ipc/SharedStateManager.h"
 
 namespace NextKey {
 namespace TSF {
@@ -52,6 +54,8 @@ public:
     [[nodiscard]] bool IsMacroCommitTrigger(UINT vkCode) const noexcept;
     [[nodiscard]] bool HasMacroCandidate() const noexcept;
     [[nodiscard]] bool IsEnglishMacroTrackingActive() const noexcept;
+    [[nodiscard]] bool WouldExpandMacroTrigger(UINT vkCode,
+                                               wchar_t triggerChar) const;
     [[nodiscard]] MacroResult HandleMacroTrigger(ITfContext* pContext,
                                                   UINT vkCode,
                                                   wchar_t triggerChar);
@@ -126,9 +130,10 @@ public:
     /// Reset only engine buffer (for sync recovery)
     void ResetEngine() { engine_->Reset(); }
 
-    /// Check for config changes (call periodically, e.g., on focus)
+    /// Check for config changes (call periodically, e.g., on focus).
+    /// Disk-backed macro reload is allowed only outside key callbacks.
     /// Returns true if config was reloaded
-    bool CheckConfigEvent();
+    bool CheckConfigEvent(bool allowMacroDiskRead = false);
 
     /// Check if engine is enabled (app is running)
     [[nodiscard]] bool IsEnabled() const noexcept { return engineEnabled_; }
@@ -195,14 +200,13 @@ private:
     void DetectScintillaApp();
 
     /// Apply config from SharedState
-    void ApplySharedState(const SharedState& state);
+    void ApplySharedState(const SharedState& state, bool allowMacroDiskRead);
 
     std::unique_ptr<IInputEngine> engine_;
     CompositionManager compositionMgr_;
     TypingConfig config_;
     InputMethod currentMethod_ = InputMethod::Telex;
     TfClientId clientId_ = TF_CLIENTID_NULL;
-    ConfigEvent configEvent_;       // For detecting config changes
     SharedStateManager sharedState_; // For reading config from App
     uint32_t lastEpoch_ = 0;        // Last seen config epoch
     bool engineEnabled_ = true;     // ENGINE_ENABLED flag from SharedState

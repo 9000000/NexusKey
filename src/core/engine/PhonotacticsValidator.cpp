@@ -18,18 +18,8 @@ namespace Phonology {
 
 namespace {
 
-// Packed-key encoding (VowelSlot, kA-kY, kNone-kHorn, BaseIndex, Key1/2/3) +
-// VCPair rule data (F_*, kVCPairRules, GetAllowedFinals) live in the shared
-// header `VietnamesePhonologyData.h` (T2.1 Day-2 consolidation). Only the
-// CharState-specific helpers (FinalConsonantBit template, kVowelTable, vowel
-// scanners) remain in this anonymous namespace.
-//
-// TODO: migrate this hot-path validator to consume rule data through
-// `IPhonologyRules` (see IPhonologyRules.h) so future RulePackId variants can
-// plug in without a parallel rewrite. T2.1 D3 wired the contract on Path 2;
-// Path 1's direct-call hot path was preserved at sprint close (D4 shipped
-// the RulePackId factory but did not migrate this validator). Revisit when a
-// dialectal rule pack is actually needed.
+// Packed-key encoding and VCPair rule data live in
+// VietnamesePhonologyData.h. CharState-specific scanners stay local here.
 
 //=============================================================================
 // Vowel nucleus table

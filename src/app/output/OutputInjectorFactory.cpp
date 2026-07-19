@@ -1,8 +1,7 @@
 // src/app/output/OutputInjectorFactory.cpp
 //
-// Phase 2 of the two-phase focus pipeline. Phase 1 lives in
-// `HookEngine::ClassifyFocusedWindow` (HookEngine.cpp:3175) — see the
-// header for why classification stayed in HookEngine post Phase 2b.
+// Phase 2 of the two-phase focus pipeline. FocusOwner::Classify owns the
+// heavy Win32 inspection and passes this factory a compact snapshot.
 //
 // Create() dispatches channel branches in priority order:
 //   useClipboard         → ClipboardInjector              (per-app sendMethod=1)

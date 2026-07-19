@@ -91,8 +91,8 @@ TEST_F(Win32SendInputInjectorTest, HeldShiftIsReleasedAroundBackspaceReplacement
     // user holds Shift for Telex Shift+dd -> Đ as a destructive editor
     // command. The injector must make the replacement modifier-neutral and
     // restore the physical Shift state afterward.
-    Internal::g_getKeyState = [](int vk) -> SHORT {
-        return vk == VK_SHIFT ? static_cast<SHORT>(-32768) : 0;
+    Internal::g_getAsyncKeyState = [](int vk) -> SHORT {
+        return vk == VK_RSHIFT ? static_cast<SHORT>(-32768) : 0;
     };
 
     Win32SendInputInjector inj(/*needsBaitCharPrefix=*/true);
@@ -100,7 +100,7 @@ TEST_F(Win32SendInputInjectorTest, HeldShiftIsReleasedAroundBackspaceReplacement
 
     // Shift-up, bait, two Backspaces (bait + original D), Đ, Shift-down.
     ASSERT_EQ(capturedInputs.size(), 10u);
-    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_SHIFT);
+    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_RSHIFT);
     EXPECT_NE(capturedInputs[0].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
     EXPECT_NE(capturedInputs[1].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
     EXPECT_EQ(capturedInputs[1].ki.wScan, 0x202F);
@@ -108,12 +108,32 @@ TEST_F(Win32SendInputInjectorTest, HeldShiftIsReleasedAroundBackspaceReplacement
     EXPECT_EQ(capturedInputs[5].ki.wVk, VK_BACK);
     EXPECT_NE(capturedInputs[7].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
     EXPECT_EQ(capturedInputs[7].ki.wScan, L'Đ');
-    EXPECT_EQ(capturedInputs[9].ki.wVk, VK_SHIFT);
+    EXPECT_EQ(capturedInputs[9].ki.wVk, VK_RSHIFT);
     EXPECT_EQ(capturedInputs[9].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
     for (const auto& input : capturedInputs) {
         EXPECT_EQ(input.ki.dwExtraInfo, Internal::kVKeyExtraInfo);
     }
 }
+
+TEST_F(Win32SendInputInjectorTest, BothShiftKeysRetainTheirIdentity) {
+    Internal::g_getAsyncKeyState = [](int vk) -> SHORT {
+        return vk == VK_LSHIFT || vk == VK_RSHIFT
+            ? static_cast<SHORT>(-32768)
+            : 0;
+    };
+
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/false);
+    EXPECT_TRUE(inj.Replace(1, L""));
+
+    ASSERT_EQ(capturedInputs.size(), 6u);
+    EXPECT_EQ(capturedInputs[0].ki.wVk, VK_LSHIFT);
+    EXPECT_EQ(capturedInputs[1].ki.wVk, VK_RSHIFT);
+    EXPECT_EQ(capturedInputs[2].ki.wVk, VK_BACK);
+    EXPECT_EQ(capturedInputs[3].ki.wVk, VK_BACK);
+    EXPECT_EQ(capturedInputs[4].ki.wVk, VK_LSHIFT);
+    EXPECT_EQ(capturedInputs[5].ki.wVk, VK_RSHIFT);
+}
+
 TEST_F(Win32SendInputInjectorTest, BaitCharSkippedWhenBsCountZero) {
     // Pure-typing (no deletions) on the Chromium variant: no bait,
     // no extra BS — just the chars. Autocomplete-dismiss isn't needed
@@ -129,6 +149,25 @@ TEST_F(Win32SendInputInjectorTest, ReplaceReturnsFalseOnPartialSend) {
     Win32SendInputInjector inj(/*needsBaitCharPrefix=*/false);
     sendInputReturnOverride = 2;  // simulate partial: 2 events delivered out of 6
     EXPECT_FALSE(inj.Replace(3, L""));
+}
+
+TEST_F(Win32SendInputInjectorTest, PartialSendAfterShiftUpAttemptsShiftRestore) {
+    Internal::g_getAsyncKeyState = [](int vk) -> SHORT {
+        return vk == VK_LSHIFT ? static_cast<SHORT>(-32768) : 0;
+    };
+    sendInputReturnOverride = 1;  // only the leading Shift-up was delivered
+
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/false);
+    EXPECT_FALSE(inj.Replace(1, L"x"));
+
+    // Initial six-event batch plus a one-event best-effort Shift-down recovery.
+    ASSERT_EQ(capturedInputs.size(), 7u);
+    EXPECT_EQ(capturedInputs.back().ki.wVk, VK_LSHIFT);
+    EXPECT_EQ(capturedInputs.back().ki.dwFlags & KEYEVENTF_KEYUP, 0u);
+    ASSERT_EQ(synthCounterDeltas.size(), 3u);
+    EXPECT_EQ(synthCounterDeltas[0], 6);
+    EXPECT_EQ(synthCounterDeltas[1], -5);
+    EXPECT_EQ(synthCounterDeltas[2], 1);
 }
 
 TEST_F(Win32SendInputInjectorTest, SendKeyEmitsDownAndUpWithMarker) {

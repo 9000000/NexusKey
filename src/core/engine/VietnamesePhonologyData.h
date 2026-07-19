@@ -2,18 +2,9 @@
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
 //
-// Single source of truth for Vietnamese phonological rule data consumed by
-// the project's two phonotactics validators:
-//   - core/engine/Phonotactics.cpp           (wstring_view path / Path 2)
-//   - core/engine/PhonotacticsValidator.cpp  (CharState path / Path 1, hot)
-//
-// This header anchors the T2.1 phonology consolidation work (see
-// docs/TODO.md "Vietnamese-rule consolidation"). All entries are
-// `constexpr` / `noexcept` — zero runtime cost, no allocation.
-//
-// Day-1 lifted IsFrontBaseVowel.
-// Day-2 lifts VowelSlot/Key1-3 packed-key encoding + F_* coda bitmasks +
-// kVCPairRules per-nucleus allowed-coda table + GetAllowedFinals lookup.
+// Canonical constexpr data for the hot-path CharState validator. Keeping the
+// table separate from traversal code makes the rule set auditable without a
+// runtime interface, allocation, or virtual dispatch.
 
 #pragma once
 
@@ -24,7 +15,7 @@ namespace NextKey {
 namespace Phonology {
 
 // =============================================================================
-// Front-vowel classifier (Day-1)
+// Front-vowel classifier
 // =============================================================================
 // Front vowels for orthographic rules (c/k, g/gh, ng/ngh agreement).
 // Modifier marks (ê = e+circumflex, etc.) do not change the front/back class:
@@ -34,12 +25,11 @@ namespace Phonology {
 }
 
 // =============================================================================
-// Vowel nucleus packed-key encoding (Day-2 lift from PhonotacticsValidator)
+// Vowel nucleus packed-key encoding
 // =============================================================================
 // Each vowel slot packs (base_index << 2) | mod_ordinal into a uint8_t.
 // 1-3 slots are then packed into a uint32_t with a top-byte length prefix
-// (prevents Key1/Key2/Key3 collisions). Both validators encode their input
-// into the same key space and share a single rule table below.
+// (prevents Key1/Key2/Key3 collisions).
 
 constexpr uint8_t kA = 0, kE = 1, kI = 2, kO = 3, kU = 4, kY = 5;
 constexpr uint8_t kNone = 0, kCirc = 1, kBrev = 2, kHorn = 3;
@@ -75,7 +65,7 @@ constexpr uint8_t kInvalidBaseIndex = 0xFF;
 }
 
 // =============================================================================
-// Final-consonant bitmask + per-nucleus allowed-coda table (Day-2 lift)
+// Final-consonant bitmask + per-nucleus allowed-coda table
 // =============================================================================
 // Bitmask encoding for coda consonants. Each phonotactic rule entry below
 // lists which finals are allowed after a given vowel nucleus.
@@ -134,8 +124,7 @@ constexpr VCPairRule kVCPairRules[] = {
 constexpr size_t kVCPairRuleCount = sizeof(kVCPairRules) / sizeof(kVCPairRules[0]);
 
 // Look up allowed finals for a vowel key. Returns 0 if the nucleus has no
-// VCPair entry — caller decides whether to treat that as "no restriction"
-// (Path 1 lenient default) or to require an entry (stricter validation).
+// VCPair entry; the validator uses a lenient default for unknown nuclei.
 [[nodiscard]] constexpr uint16_t GetAllowedFinals(uint32_t vowelKey) noexcept {
     for (size_t i = 0; i < kVCPairRuleCount; ++i) {
         if (kVCPairRules[i].vowelKey == vowelKey) return kVCPairRules[i].allowedFinals;
