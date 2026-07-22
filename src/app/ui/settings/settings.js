@@ -276,26 +276,6 @@ function initializeAdvancedPanel() {
     });
 }
 
-// Fix Sciter animation lag caused by hover hit-testing on transparent windows.
-// On WS_EX_LAYERED windows, every mouse move triggers hit-test → style recalc →
-// full surface repaint.  During animation this doubles the render cost.
-// Strategy: suppress BOTH pointer hit-testing AND all hover transitions so that
-// mouse movement over children is essentially free (no style changes → no repaints).
-var animTimeout = null;
-function lockPointerEvents(duration) {
-    var container = document.getElementById("main-container");
-    if (!container) return;
-
-    container.classList.add("animating");
-    container.state.disabled = true;
-    if (animTimeout) clearTimeout(animTimeout);
-
-    animTimeout = setTimeout(function() {
-        container.state.disabled = false;
-        container.classList.remove("animating");
-    }, duration);
-}
-
 function updateTabIndicator(activeTab) {
     var indicator = document.getElementById("tab-indicator");
     if (!indicator || !activeTab) return;
@@ -321,9 +301,6 @@ function initializeTabPanels() {
             panel.state.collapsed = true;
         }
     });
-
-    // Lock pointer events during tab panel slide/fade transition
-    lockPointerEvents(250);
 }
 
 // Switch between tabs - using Sciter native state pattern
@@ -343,6 +320,8 @@ function switchTab(tabIndex) {
     if (activeTab) updateTabIndicator(activeTab);
 
     // Update tab panels using Sciter native state (no flicker)
+    // Window size is fixed to fit the tallest tab (see SettingsDialog::recalcWindowSize),
+    // so switching tabs no longer needs to notify C++ to resize (#226).
     const tabPanels = document.querySelectorAll(".tab-panel");
     tabPanels.forEach(function (panel) {
         const panelIndex = panel.id.replace("tab-panel-", "");
@@ -354,13 +333,6 @@ function switchTab(tabIndex) {
             panel.state.collapsed = true;
         }
     });
-
-    // Notify C++ to recalculate window size for new tab content
-    const tabChangeInput = document.getElementById("val-tab-change");
-    if (tabChangeInput) {
-        tabChangeInput.value = tabIndex;
-        tabChangeInput.dispatchEvent(new Event("change", { bubbles: true }));
-    }
 }
 
 // Handle dropdown changes (already works via C++ VALUE_CHANGED handler)

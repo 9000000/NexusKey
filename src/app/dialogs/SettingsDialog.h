@@ -95,6 +95,7 @@ private:
     void setToggleState(const std::wstring& id, bool checked);
     void setDropdownValue(const std::wstring& id, int value);
     void recalcWindowSize();  // Measure DOM and resize window to fit content
+    int measureMaxAdvancedContentHeight(double dpiScale);  // #226: max height across all tab panels (fixed window height)
 
     // Notify main process to re-read system settings (theme/language changes).
     void notifySystemConfigChanged(WPARAM wParam = 0);
@@ -127,6 +128,15 @@ private:
     bool isExpanded_ = false;
     bool isPinned_ = false;
     bool forceLightTheme_ = false;
+
+    // #226: cached result of measureMaxAdvancedContentHeight(), computed once the
+    // first time the Advanced panel is actually shown (measuring needs the panel's
+    // display:block, so it can't happen for free while collapsed). Keeps the window
+    // height fixed across tab switches instead of resizing per tab. Invalidated
+    // (set back to 0) on language switch; scoped to cachedAdvancedHeightDpiScale_
+    // so moving the dialog to a different-DPI monitor forces a fresh measurement.
+    int cachedMaxAdvancedHeight_ = 0;
+    double cachedAdvancedHeightDpiScale_ = 0.0;
 
     // UI settings (saved to config)
     uint8_t backgroundOpacity_ = 80;  // 0-100

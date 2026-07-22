@@ -534,14 +534,6 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
             return true;
         }
 
-        // Handle tab change
-        if (id == L"val-tab-change") {
-            if (isExpanded_) {
-                SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 50, NULL);
-            }
-            return true;
-        }
-
         // Handle dropdown changes
         if (id == L"input-type" || id == L"bang-ma" || id == L"spell-check-level" || id == L"startup-mode" || id == L"temp-off-openkey") {
             sciter::value val = el.get_value();
@@ -809,6 +801,12 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         systemConfig_.language = value ? 1 : 0;
         SetLanguage(value ? Language::English : Language::Vietnamese);
         saveSystemSettings();
+        // Translated labels can wrap to a different number of lines, changing
+        // which tab is tallest — invalidate the #226 cached height and remeasure.
+        cachedMaxAdvancedHeight_ = 0;
+        if (isExpanded_) {
+            SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 50, NULL);
+        }
         // JS already switched lang attribute + called applyTranslations()
         // Notify main process to update language for tray menu / toasts
         notifySystemConfigChanged();
@@ -1026,7 +1024,7 @@ void SettingsDialog::recalcWindowSize() {
 
     // Use the #main-container as the source of truth for total height
     sciter::dom::element container = rootEl.find_first("#main-container");
-    
+
     int newWidth = COMPACT_WIDTH;
     if (isExpanded_) {
         newWidth = COMPACT_WIDTH + ADVANCED_WIDTH;
@@ -1035,15 +1033,43 @@ void SettingsDialog::recalcWindowSize() {
     int newHeight = static_cast<int>(BASE_HEIGHT_COLLAPSED * dpiScale);
 
     if (container.is_valid()) {
+        // Collapsing: clear any inline height pinned while expanded BEFORE measuring,
+        // otherwise this reads the stale pinned value instead of the natural compact
+        // height (Codex review caught this — the old code cleared it only *after*
+        // already computing newHeight from the still-pinned measurement).
+        if (!isExpanded_) {
+            container.set_style_attribute("height", L"");
+            rootEl.update(false);
+        }
+
         RECT r = container.get_location_ppx(BORDER_BOX);
         int w = r.right - r.left;
-        int h = r.bottom - r.top;
-        
+        // #226: window height must not change per active tab (was resizing on every
+        // tab click, causing a visible "jump"). Fix it to whichever tab needs the
+        // most vertical space instead of the currently active one.
+        int h = isExpanded_ ? measureMaxAdvancedContentHeight(dpiScale)
+                             : (r.bottom - r.top);
+
         // Safety fallback: if DOM hasn't fully layed out yet or window is minimized,
         // bounds might be 0 or heavily distorted. We fallback to predefined constants
         // (COMPACT_WIDTH/ADVANCED_WIDTH and BASE_HEIGHT_COLLAPSED) unless > 100px.
         if (w > 100) newWidth = w;
         if (h > 100) newHeight = h;
+
+        // #226 follow-up: .container has `height: auto`, so it still shrinks to fit
+        // whichever tab is CURRENTLY shown even though the HWND is now fixed to the
+        // tallest tab. On every tab shorter than the max this left the card's own
+        // background/rounded corners ending above the window's real bottom edge,
+        // exposing transparent/blurred desktop underneath ("bottom lệch"). Pin the
+        // container's own height to match so the card always fills the window.
+        // (ScaleHelper.h documents that Sciter auto-scales CSS px by window DPI, so
+        // "px" — not "dip" — matches every other dimension already set this way in
+        // this same stylesheet, e.g. .container.expanded { width: 750px }.)
+        if (isExpanded_ && h > 100) {
+            wchar_t heightStr[16];
+            swprintf_s(heightStr, L"%.2fpx", h / dpiScale);
+            container.set_style_attribute("height", heightStr);
+        }
     }
 
     if (!DarkModeHelper::IsWindows11OrGreater()) {
@@ -1063,6 +1089,78 @@ void SettingsDialog::recalcWindowSize() {
     rootEl.update(false);
     rootEl.remove_attribute("force-paint");
     rootEl.update(false);
+}
+
+// #226: measure #main-container's height with each of the 4 tab panels expanded
+// in turn, returning the tallest. Result is cached per DPI scale (get_location_ppx
+// returns physical pixels, and this dialog is per-monitor-DPI-aware) — recomputed
+// only on the first measurement at a given scale, or after saveSettings()-triggered
+// cache invalidation (e.g. language switch, see "english-ui" in handleToggleChange).
+int SettingsDialog::measureMaxAdvancedContentHeight(double dpiScale) {
+    if (cachedMaxAdvancedHeight_ > 0 && cachedAdvancedHeightDpiScale_ == dpiScale) {
+        return cachedMaxAdvancedHeight_;
+    }
+
+    sciter::dom::element rootEl = get_root();
+    sciter::dom::element container = rootEl.find_first("#main-container");
+    if (!container.is_valid()) return 0;
+
+    // Clear any height pinned by a previous measurement before remeasuring — the
+    // container's own inline height would otherwise clamp BORDER_BOX to that stale
+    // value for every tab, so every panel would appear the same (wrong) height and
+    // remeasurement could never detect an actual change (Codex review catch).
+    container.set_style_attribute("height", L"");
+    rootEl.update(false);
+
+    static const char* kPanelSelectors[] = {
+        "#tab-panel-1", "#tab-panel-2", "#tab-panel-3", "#tab-panel-4"
+    };
+    constexpr int kPanelCount = 4;
+
+    sciter::dom::element panels[kPanelCount];
+    int currentIndex = -1;
+    for (int i = 0; i < kPanelCount; ++i) {
+        panels[i] = rootEl.find_first(kPanelSelectors[i]);
+        if (panels[i].is_valid() && panels[i].get_state(STATE_EXPANDED)) {
+            currentIndex = i;
+        }
+    }
+    const int originalIndex = currentIndex;
+
+    int maxHeight = 0;
+    for (int i = 0; i < kPanelCount; ++i) {
+        if (!panels[i].is_valid()) continue;
+
+        if (i != currentIndex) {
+            if (currentIndex >= 0 && panels[currentIndex].is_valid()) {
+                panels[currentIndex].set_state(STATE_COLLAPSED, STATE_EXPANDED, false);
+            }
+            panels[i].set_state(STATE_EXPANDED, STATE_COLLAPSED, false);
+            currentIndex = i;
+            rootEl.update(false);  // force synchronous re-layout before measuring
+        }
+
+        RECT r = container.get_location_ppx(BORDER_BOX);
+        int h = r.bottom - r.top;
+        if (h > maxHeight) maxHeight = h;
+    }
+
+    // Restore whichever tab was actually active before we started measuring. If
+    // none was expanded yet (this can run before JS's ready-time
+    // initializeTabPanels() has executed — load() is async), fall back to tab 0,
+    // the default active tab per settings.html, instead of stranding the last
+    // panel we measured (tab 4) as the visibly-expanded one.
+    const int restoreIndex = (originalIndex >= 0) ? originalIndex : 0;
+    if (restoreIndex != currentIndex &&
+        panels[restoreIndex].is_valid() && panels[currentIndex].is_valid()) {
+        panels[currentIndex].set_state(STATE_COLLAPSED, STATE_EXPANDED, false);
+        panels[restoreIndex].set_state(STATE_EXPANDED, STATE_COLLAPSED, false);
+        rootEl.update(false);
+    }
+
+    cachedMaxAdvancedHeight_ = maxHeight;
+    cachedAdvancedHeightDpiScale_ = dpiScale;
+    return maxHeight;
 }
 
 void SettingsDialog::setToggleState(const std::wstring& id, bool checked) {

@@ -8,28 +8,13 @@
     padding: 0;
     background: var(--bg-glass);
     /* background: rgba(255, 255, 255, 0.05); */
-    border-radius: 0px; /* Let Windows 11 DWM handle the rounded corners to avoid sub-pixel clash */
+    border-radius: 0px;
+    /* Let Windows 11 DWM handle the rounded corners to avoid sub-pixel clash */
     box-shadow: var(--shadow-card);
     overflow: hidden;
     /* No width transition - instant resize prevents blur ghost */
     font-size: 0;
     /* Eliminate inline-block whitespace */
-}
-
-/* During animation: kill hover hit-testing AND all child transitions.
-   On WS_EX_LAYERED windows every mouse-move triggers full surface repaint;
-   disabling transitions means hover style recalc produces no repaint work. */
-.animating {
-    pointer-events: none;
-}
-
-#main-container:disabled {
-    opacity: 1;
-    filter: none;
-}
-
-.animating * {
-    transition: none !important;
 }
 
 /* Title Bar - spans full width, larger drag zone */
@@ -435,6 +420,7 @@
 .setting-row.disabled {
     opacity: 0.4;
 }
+
 .setting-row.disabled .btn-action {
     cursor: not-allowed;
 }
@@ -513,7 +499,8 @@
     color: var(--text-primary);
     cursor: pointer;
     outline: none;
-    width: 130px; /* Match width of input-type-dropdown */
+    width: 130px;
+    /* Match width of input-type-dropdown */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -598,7 +585,8 @@
     justify-content: center;
     width: max-content;
     padding: 5px;
-    margin: 0 * 9px *; /* 9px margin (was 14px) pulls card 2 UP to natively align with card 1 */
+    margin: 0 * 9px *;
+    /* 9px margin (was 14px) pulls card 2 UP to natively align with card 1 */
     background: var(--bg-card-solid);
     border-radius: 14px;
     box-shadow:
@@ -652,23 +640,13 @@
     /* Replaces flex: 1 */
 }
 
-/* Tab Panels - with fade and slide transition */
-/* behavior:layer buffers subtree into offscreen bitmap for hardware BitBlt during animation */
+/* Tab Panels - instant switch (#226: fade/slide transition felt sluggish) */
 .tab-panel {
     visibility: none;
-    opacity: 0;
-    transform: translate(0, 10px);
-    transition:
-        opacity 0.2s ease,
-        transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-    behavior: layer;
-    image-rendering: optimize-speed;
 }
 
 .tab-panel:expanded {
     visibility: visible;
-    opacity: 1;
-    transform: translate(0, 0);
 }
 
 .tab-title {
@@ -725,13 +703,6 @@
     font-size: 13px;
     color: var(--text-dark);
     margin-bottom: 8px;
-}
-
-.app-origin {
-    font-size: 12px;
-    color: var(--text-light);
-    margin-bottom: 8px;
-    line-height: 1.5;
 }
 
 .app-license {
@@ -880,7 +851,7 @@
     vertical-align: middle;
 }
 
-.btn-info > svg {
+.btn-info>svg {
     width: 16px;
     height: 16px;
     fill: var(--text-primary);
@@ -890,7 +861,7 @@
         transform 0.2s ease;
 }
 
-.btn-info:hover > svg {
+.btn-info:hover>svg {
     fill: var(--color-primary);
     /* Highlight color on hover */
     transform: scale(1.1);
@@ -921,14 +892,17 @@
 .update-banner {
     flow: horizontal;
     padding: 8px 12px;
-    background: rgba(242, 199, 110, 0.28);  /* --color-warning at 28% */
+    background: rgba(242, 199, 110, 0.28);
+    /* --color-warning at 28% */
     border-bottom: 1px solid var(--color-warning);
     color: #5e4a00;
     font-size: 12px;
 }
+
 .update-banner__icon {
     flow: block;
-    width: 16px; height: 16px;
+    width: 16px;
+    height: 16px;
     border-radius: 8px;
     background: var(--color-warning);
     color: white;
@@ -938,11 +912,14 @@
     font-weight: bold;
     font-size: 11px;
 }
+
 .update-banner__text {
     flow: block;
     padding-right: 12px;
-    size: * *;  /* take remaining horizontal space */
+    size: * *;
+    /* take remaining horizontal space */
 }
+
 .update-banner__btn-primary,
 .update-banner__btn-ghost {
     margin-left: 6px;
@@ -951,19 +928,23 @@
     font-size: 11px;
     cursor: pointer;
 }
+
 .update-banner__btn-primary {
     background: var(--color-warning);
     color: white;
     border: none;
 }
+
 .update-banner__btn-primary:hover {
     background: #D9A94A;
 }
+
 .update-banner__btn-ghost {
     background: transparent;
     color: #5e4a00;
     border: 1px solid var(--color-warning);
 }
+
 .update-banner__btn-ghost:hover {
     background: rgba(242, 199, 110, 0.18);
 }

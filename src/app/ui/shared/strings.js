@@ -113,8 +113,6 @@ var STRINGS = {
         "s.tagline": "Modern Vietnamese Input Method",
         "s.version_label": "Version:",
         "s.dev_label": "Author:",
-        "s.origin_label": "Origin:",
-        "s.origin_text": "Project inspired by OpenKey and VietType, aiming to improve the UI, engine, and add new features.",
         "s.license": "VKey is open-source, free, and non-profit software.",
         "s.auto_update": "Auto-check for updates",
         "s.check_now": "Check now",
