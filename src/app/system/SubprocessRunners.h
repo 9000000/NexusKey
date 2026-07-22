@@ -18,5 +18,6 @@ namespace NextKey {
 [[noreturn]] void RunSpellExclusionsSubprocess();
 [[noreturn]] void RunUserDefinedSubprocess();
 [[noreturn]] void RunHotkeysSubprocess();
+[[noreturn]] void RunIconSettingsSubprocess();
 
 }  // namespace NextKey

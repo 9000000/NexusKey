@@ -32,6 +32,8 @@ constexpr UINT WM_VKEY_OPEN_USERDEFINED = WM_USER + 115;  // Deferred: open user
 constexpr UINT WM_VKEY_OPEN_HOTKEYS = WM_USER + 116;      // Deferred: open unified hotkey rebind dialog
 constexpr UINT WM_VKEY_ACTIVATE_TSF = WM_USER + 117;      // Main: activate VKey TSF profile programmatically
 constexpr UINT WM_VKEY_TRAY_TSF_SYNC = WM_USER + 118;     // Deferred: sync tray icon TSF indicator (wParam: 1=focused app is TSF, 0=not)
+constexpr UINT WM_VKEY_OPEN_ICON_SETTINGS = WM_USER + 119; // Deferred: open icon customization dialog
+constexpr UINT WM_VKEY_ICON_SETTINGS_CHANGED = WM_USER + 120; // Icon dialog → Settings: refresh cached SystemConfig only
 
 }  // namespace NextKey
 

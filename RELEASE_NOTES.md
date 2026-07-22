@@ -5,10 +5,20 @@
 Bản cập nhật này mang đến cải tiến đột phá về khả năng tự động sửa lỗi chính tả cùng các sửa lỗi quan trọng giúp nâng cao độ ổn định.
 
 ### ✨ Tính năng mới & Cải tiến nổi bật
-*   **Chế độ "Kiểm tra chính tả nâng cao"**:
-    *   **Engine Rust mạnh mẽ**: Tích hợp công cụ kiểm tra chính tả được viết bằng Rust cho hiệu năng tối ưu và độ chính xác cao.
-    *   **Tự sửa lỗi gõ sai**: Nhận diện và sửa lỗi gõ phím nhanh/đảo ký tự thông minh (ví dụ: gõ `hcaof` tự động sửa thành `chào`).
-    *   **Linh hoạt & Minh bạch**: Tính năng này mặc định được tắt và chỉ hoạt động khi bạn bật thủ công. Nếu không muốn sử dụng engine đóng gói đi kèm, bạn có thể xóa file engine đó; VKey sẽ tự động chuyển đổi (fallback) về engine C++ mã nguồn mở truyền thống. Xem chi tiết lý do và tính minh bạch tại **[Tìm hiểu về Engine đóng gói (RUST_ENGINE.md)](docs/RUST_ENGINE.md)**.
+
+* **Tinh chỉnh UI tab "Hệ thống"**: Gom nhóm tuỳ chọn icon để giúp UI gọn hơn (chỉ ở giao diện hiện đại)
+* **Chế độ "Kiểm tra chính tả nâng cao"**
+    * **Engine Rust hiệu năng cao**: Bổ sung engine kiểm tra chính tả mới được viết bằng Rust, tập trung vào hiệu năng và khả năng nhận diện lỗi.
+    * **Tự sửa lỗi gõ nhanh**: Phát hiện và sửa các lỗi gõ nhanh hoặc đảo ký tự (ví dụ: `hcaof` → `chào`).
+    * **Hoạt động theo lựa chọn của người dùng**: Tính năng mặc định được tắt và chỉ được kích hoạt khi bạn chủ động bật trong cài đặt.
+    * **Tương thích với engine mã nguồn mở**: Nếu engine nâng cao không có hoặc bị gỡ bỏ, VKey sẽ tự động sử dụng engine C++ mã nguồn mở đi kèm mà không ảnh hưởng đến các chức năng gõ tiếng Việt thông thường.
+
+> ℹ️ **Tìm hiểu thêm**
+>
+> Để biết thêm về kiến trúc của engine nâng cao, cách phân phối, lý do thiết kế, cũng như các vấn đề liên quan đến mã nguồn và giấy phép, vui lòng xem:
+>
+> - [ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md)
+> - [Giải thích về kiến trúc, license và nguồn gốc của VKey](docs/ENGINE_FAQ.md)
 ---
 
 ### 🛠 Các lỗi đã được khắc phục
@@ -16,6 +26,8 @@ Bản cập nhật này mang đến cải tiến đột phá về khả năng t�
 *   **Sửa lỗi gõ từ tiếng Anh**: Khắc phục hiện tượng gõ từ `view` bị chuyển nhầm thành `vieư`.
 *   **Tối ưu hóa trạng thái hoạt động**: Sửa lỗi ứng dụng chuyển sang trạng thái chờ (idle) quá nhanh gây ảnh hưởng đến trải nghiệm người dùng.
 *   **Cải tiến giao diện**: Tối ưu hóa hiệu năng hiển thị và chuyển đổi của các bộ giao diện (theme).
+*   **Sửa lỗi excel online**: Khắc phục lỗi mất từ trước đó khi dùng shift để viết hoa từ tiếng Việt. 
+*   **Sửa lỗi macro TSF**: Macro đã hoạt động với TSF
 ---
 ### 💖 Sponsors
 

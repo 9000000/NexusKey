@@ -32,8 +32,13 @@ public:
     /// Save config to file, returns true on success
     [[nodiscard]] static bool SaveToFile(const std::wstring& path, const TypingConfig& config);
 
-    /// Get the config file path (exe dir or %APPDATA% fallback)
-    [[nodiscard]] static std::wstring GetConfigPath();
+    /// Get the config file path (exe dir or %APPDATA% fallback).
+    /// `moduleHint`: HMODULE of the calling module, or nullptr for the current
+    /// process's main executable. Pass a DLL's own module handle (e.g. the TSF
+    /// DLL's g_hInstance) when calling from code that may be loaded in-process
+    /// into a foreign host (nullptr there resolves to the HOST exe's directory,
+    /// not VKey's install dir — see EngineController::ReloadMacros).
+    [[nodiscard]] static std::wstring GetConfigPath(void* moduleHint = nullptr);
 
     /// Load config with automatic path resolution
     /// Returns compiled defaults if no config file found
@@ -162,7 +167,7 @@ public:
     static std::wstring GetAppDataDirectory();
 
 private:
-    static std::wstring GetExeDirectory();
+    static std::wstring GetExeDirectory(void* moduleHint = nullptr);
     static bool DirectoryWritable(const std::wstring& path);
 
     // User-defined keymap helpers

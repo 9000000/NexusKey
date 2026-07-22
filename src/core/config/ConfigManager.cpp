@@ -421,9 +421,9 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
     }
 }
 
-std::wstring ConfigManager::GetConfigPath() {
+std::wstring ConfigManager::GetConfigPath(void* moduleHint) {
     // Primary: exe directory
-    std::wstring exeDir = GetExeDirectory();
+    std::wstring exeDir = GetExeDirectory(moduleHint);
     if (DirectoryWritable(exeDir)) {
         return exeDir + L"\\config.toml";
     }
@@ -444,10 +444,10 @@ TypingConfig ConfigManager::LoadOrDefault() {
     return TypingConfig{};
 }
 
-std::wstring ConfigManager::GetExeDirectory() {
+std::wstring ConfigManager::GetExeDirectory(void* moduleHint) {
 #ifdef _WIN32
     wchar_t path[MAX_PATH] = {0};
-    DWORD len = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    DWORD len = GetModuleFileNameW(static_cast<HMODULE>(moduleHint), path, MAX_PATH);
     if (len > 0) {
         std::wstring fullPath(path);
         size_t lastSlash = fullPath.find_last_of(L"\\/");

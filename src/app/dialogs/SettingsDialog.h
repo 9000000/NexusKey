@@ -96,10 +96,8 @@ private:
     void setDropdownValue(const std::wstring& id, int value);
     void recalcWindowSize();  // Measure DOM and resize window to fit content
 
-    // Icon customization helpers
-    void notifyIconChanged(WPARAM wParam = 0);           // Post WM_VKEY_ICON_CHANGED to main process
-    void openColorPicker(bool forVietnamese);  // Open Windows ChooseColor dialog
-    void updateColorSwatches();         // Update btn-color-v/e background colors
+    // Notify main process to re-read system settings (theme/language changes).
+    void notifySystemConfigChanged(WPARAM wParam = 0);
 
     // Update helpers
     void startUpdateCheck();            // Check for updates with progress dialog

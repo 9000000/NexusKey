@@ -102,6 +102,13 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
     // WM_CLOSE only triggers clean exit (PostQuitMessage), no security risk.
     ChangeWindowMessageFilterEx(hwndMessage_, WM_CLOSE, MSGFLT_ALLOW, nullptr);
 
+    // The Sciter settings dialogs may run at a lower integrity level than the
+    // main process (for example when VKey itself is elevated). Custom WM_USER
+    // messages are blocked by UIPI unless the receiver explicitly allows them.
+    // This message carries no payload or pointer; it only asks the main process
+    // to re-read SystemConfig and redraw the tray icon.
+    ChangeWindowMessageFilterEx(hwndMessage_, WM_VKEY_ICON_CHANGED, MSGFLT_ALLOW, nullptr);
+
     // Always visible
     Shell_NotifyIconW(NIM_ADD, &nid_);
     RefreshConvertHotkeyCache();

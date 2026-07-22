@@ -10,6 +10,7 @@
 #include "CompositionEditSession.h"
 #include "Define.h"
 #include "EscRestoreLastCommitSession.h"
+#include "Globals.h"
 #include "InputScopeChecker.h"
 #include "core/DigitLedWordDecision.h"
 #include "core/MacroCase.h"
@@ -824,7 +825,14 @@ void EngineController::ReloadMacros(uint8_t generation) {
     spaceMacroKeys_.clear();
     if (!config_.macroEnabled) return;
 
-    const std::wstring configPath = ConfigManager::GetConfigPath();
+    // g_hInstance (this DLL's own module handle) — NOT nullptr. TSF loads this
+    // DLL in-process inside a foreign host (msedge.exe, notepad++.exe, ...);
+    // GetConfigPath()'s default resolves nullptr to the CURRENT PROCESS's exe,
+    // which inside a host means the host's install dir, not VKey's — silently
+    // finding zero macros there (confirmed via TSF_LOG: "ReloadMacros: loaded 0
+    // entries" while the real config.toml has entries). See LanguageBarButton.cpp
+    // for the same g_hInstance-vs-nullptr fix applied to icon loading.
+    const std::wstring configPath = ConfigManager::GetConfigPath(g_hInstance);
     if (const auto diskConfig = ConfigManager::LoadFromFile(configPath)) {
         // Trigger choices live only in TOML; SharedState carries feature bits.
         config_.macroTriggerSpace = diskConfig->macroTriggerSpace;

@@ -263,6 +263,8 @@ add_executable(VKeyApp WIN32
     src/app/dialogs/UserDefinedDialog.cpp
     src/app/dialogs/HotkeysDialog.h
     src/app/dialogs/HotkeysDialog.cpp
+    src/app/dialogs/IconSettingsDialog.h
+    src/app/dialogs/IconSettingsDialog.cpp
     # system/
     src/app/system/TrayIcon.h
     src/app/system/TrayIcon.cpp

@@ -13,6 +13,7 @@
 #include "dialogs/SpellExclusionsDialog.h"
 #include "dialogs/UserDefinedDialog.h"
 #include "dialogs/HotkeysDialog.h"
+#include "dialogs/IconSettingsDialog.h"
 #include "core/Debug.h"
 
 #include <Windows.h>
@@ -190,6 +191,19 @@ namespace NextKey {
     dialog.Show();
 
     NEXTKEY_LOG(L"Hotkeys subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunIconSettingsSubprocess() {
+    NEXTKEY_LOG(L"Running icon settings subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
+    IconSettingsDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"Icon settings subprocess exiting");
     ExitProcess(0);
 }
 

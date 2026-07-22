@@ -24,7 +24,6 @@
 #include "sciter-x-dom.hpp"
 #include "sciter-x-host-callback.h"
 #include <dwmapi.h>
-#include <commdlg.h>
 #include <commctrl.h>
 #include <windowsx.h>
 #include <memory>
@@ -312,6 +311,16 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
+    // The icon sub-dialog writes only SystemConfig. Refresh the cached value
+    // without reinitializing the whole main dialog: programmatic control
+    // updates can otherwise emit VALUE_CHANGED and mutate unrelated options.
+    if (msg == WM_VKEY_ICON_SETTINGS_CHANGED) {
+        if (s_instance) {
+            s_instance->systemConfig_ = ConfigManager::LoadSystemConfigOrDefault();
+        }
+        return 0;
+    }
+
     // Handle timer for window resize after CSS transition
     if (msg == WM_TIMER && wParam == TIMER_RESIZE_WINDOW) {
         KillTimer(hwnd, TIMER_RESIZE_WINDOW);
@@ -380,6 +389,12 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     if (msg == WM_VKEY_OPEN_HOTKEYS) {
         flushBeforeSpawn();
         SpawnSubprocess(L"VKey - Phím tắt", L"--hotkeys");
+        return 0;
+    }
+
+    if (msg == WM_VKEY_OPEN_ICON_SETTINGS) {
+        flushBeforeSpawn();
+        SpawnSubprocess(L"VKey - Tùy chỉnh icon", L"--icon-settings");
         return 0;
     }
 
@@ -528,7 +543,7 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
         }
 
         // Handle dropdown changes
-        if (id == L"input-type" || id == L"bang-ma" || id == L"spell-check-level" || id == L"modern-icon" || id == L"startup-mode" || id == L"temp-off-openkey") {
+        if (id == L"input-type" || id == L"bang-ma" || id == L"spell-check-level" || id == L"startup-mode" || id == L"temp-off-openkey") {
             sciter::value val = el.get_value();
             int intValue = 0;
             if (val.is_int()) intValue = val.get<int>();
@@ -796,21 +811,7 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         saveSystemSettings();
         // JS already switched lang attribute + called applyTranslations()
         // Notify main process to update language for tray menu / toasts
-        notifyIconChanged();
-        return;
-    }
-    else if (id == L"floating-icon") {
-        systemConfig_.showFloatingIcon = value;
-        saveSystemSettings();
-        notifyIconChanged();  // Main process reads updated config
-        return;
-    }
-    else if (id == L"tsf-indicator") {
-        // Issue #209: show colored "T" in TSF apps (opt-in). Same path as the
-        // icon-style dropdown — persist + notify the tray to re-read SystemConfig.
-        systemConfig_.showTsfIndicator = value;
-        saveSystemSettings();
-        notifyIconChanged();
+        notifySystemConfigChanged();
         return;
     }
     else if (id == L"force-light-theme") {
@@ -903,12 +904,6 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
             }
         }
     }
-    else if (id == L"modern-icon") {
-        systemConfig_.iconStyle = static_cast<uint8_t>(value);
-        saveSystemSettings();
-        notifyIconChanged();
-        return;  // System setting, not typing config
-    }
     else if (id == L"startup-mode") {
         systemConfig_.startupMode = static_cast<uint8_t>(value);
         saveSystemSettings();
@@ -932,22 +927,6 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         PostMessage(get_hwnd(), WM_VKEY_OPEN_MACRO, 0, 0);
         return;
     }
-    else if (id == L"btn-color-v") {
-        openColorPicker(true);
-        return;
-    }
-    else if (id == L"btn-color-e") {
-        openColorPicker(false);
-        return;
-    }
-    else if (id == L"btn-reset-colors") {
-        systemConfig_.customColorV = 0;
-        systemConfig_.customColorE = 0;
-        updateColorSwatches();
-        saveSystemSettings();
-        notifyIconChanged();
-        return;
-    }
     else if (id == L"btn-app-overrides") {
         PostMessage(get_hwnd(), WM_VKEY_OPEN_APPOVERRIDES, 0, 0);
         return;
@@ -964,11 +943,8 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         PostMessage(get_hwnd(), WM_VKEY_OPEN_HOTKEYS, 0, 0);
         return;
     }
-    else if (id == L"btn-reset-floating-icon") {
-        systemConfig_.floatingIconX = INT32_MIN;
-        systemConfig_.floatingIconY = INT32_MIN;
-        saveSystemSettings();
-        notifyIconChanged(1); // 1 = reset position
+    else if (id == L"btn-icon-settings") {
+        PostMessage(get_hwnd(), WM_VKEY_OPEN_ICON_SETTINGS, 0, 0);
         return;
     }
     else if (id == L"btn-check-update") {
@@ -1210,10 +1186,6 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"desktop-shortcut", systemConfig_.desktopShortcut);
     setToggleState(L"english-ui", systemConfig_.language == 1);
 
-    // Floating icon toggle
-    setToggleState(L"floating-icon", systemConfig_.showFloatingIcon);
-    setToggleState(L"tsf-indicator", systemConfig_.showTsfIndicator);
-
     // Auto-check update toggle
     setToggleState(L"check-update", systemConfig_.autoCheckUpdate);
     setToggleState(L"force-light-theme", systemConfig_.forceLightTheme);
@@ -1232,19 +1204,8 @@ void SettingsDialog::initializeUI() {
         }
     }
 
-    // Icon style dropdown
-    setDropdownValue(L"modern-icon", static_cast<int>(systemConfig_.iconStyle));
     // Startup mode dropdown
     setDropdownValue(L"startup-mode", static_cast<int>(systemConfig_.startupMode));
-
-    // Color swatches: set initial background colors + show custom row if needed
-    updateColorSwatches();
-    if (systemConfig_.iconStyle == 3) {
-        sciter::dom::element colorRow = root.find_first("#custom-color-row");
-        if (colorRow.is_valid()) {
-            colorRow.set_style_attribute("display", L"flex");
-        }
-    }
 
     // Set switch key character (display "Space" for space char)
     sciter::dom::element switchKeyInput = root.find_first("#switch-key-char");
@@ -1515,60 +1476,12 @@ void SettingsDialog::saveSystemSettings() {
     }
 }
 
-void SettingsDialog::notifyIconChanged(WPARAM wParam) {
+void SettingsDialog::notifySystemConfigChanged(WPARAM wParam) {
     // Notify main process to re-read icon config
     HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
     if (trayWnd) {
         PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, wParam, 0);
     }
-}
-
-void SettingsDialog::openColorPicker(bool forVietnamese) {
-    COLORREF current = static_cast<COLORREF>(
-        forVietnamese ? systemConfig_.GetEffectiveColorV() : systemConfig_.GetEffectiveColorE());
-
-    static COLORREF custColors[16] = {};
-
-    CHOOSECOLORW cc = {};
-    cc.lStructSize = sizeof(cc);
-    cc.hwndOwner = get_hwnd();
-    cc.lpCustColors = custColors;
-    cc.rgbResult = current;
-    cc.Flags = CC_FULLOPEN | CC_RGBINIT;
-
-    if (ChooseColorW(&cc)) {
-        if (forVietnamese) {
-            systemConfig_.customColorV = static_cast<uint32_t>(cc.rgbResult);
-        } else {
-            systemConfig_.customColorE = static_cast<uint32_t>(cc.rgbResult);
-        }
-
-        updateColorSwatches();
-        saveSystemSettings();
-        notifyIconChanged();
-    }
-}
-
-void SettingsDialog::updateColorSwatches() {
-    sciter::dom::element root = get_root();
-
-    // Get effective colors (default if 0)
-    COLORREF colorV = static_cast<COLORREF>(systemConfig_.GetEffectiveColorV());
-    COLORREF colorE = static_cast<COLORREF>(systemConfig_.GetEffectiveColorE());
-
-    // COLORREF is BGR, CSS needs RGB
-    auto setSwatchColor = [&](const char* selector, COLORREF color) {
-        sciter::dom::element btn = root.find_first(selector);
-        if (btn.is_valid()) {
-            wchar_t css[64];
-            swprintf_s(css, L"rgb(%d,%d,%d)",
-                GetRValue(color), GetGValue(color), GetBValue(color));
-            btn.set_style_attribute("background-color", css);
-        }
-    };
-
-    setSwatchColor("#btn-color-v", colorV);
-    setSwatchColor("#btn-color-e", colorE);
 }
 
 void SettingsDialog::setUpdateButtonEnabled(bool enabled) {
