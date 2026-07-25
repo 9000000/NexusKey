@@ -15,6 +15,7 @@
 #include "core/DigitLedWordDecision.h"
 #include "core/MacroCase.h"
 #include "core/MacroPrefix.h"
+#include "core/MacroTableDecision.h"
 #include "core/config/ConfigManager.h"
 #include "core/engine/EngineFactory.h"
 
@@ -882,13 +883,6 @@ bool EngineController::CheckConfigEvent(bool allowMacroDiskRead) {
 void EngineController::ReloadMacros(uint8_t generation) {
     if (macroConfigLoaded_ && macroGeneration_ == generation) return;
 
-    macroConfigLoaded_ = true;
-    macroGeneration_ = generation;
-    ClearMacroTracking();
-    macroTable_.clear();
-    spaceMacroKeys_.clear();
-    if (!config_.macroEnabled) return;
-
     // g_hInstance (this DLL's own module handle) — NOT nullptr. TSF loads this
     // DLL in-process inside a foreign host (msedge.exe, notepad++.exe, ...);
     // GetConfigPath()'s default resolves nullptr to the CURRENT PROCESS's exe,
@@ -897,13 +891,37 @@ void EngineController::ReloadMacros(uint8_t generation) {
     // entries" while the real config.toml has entries). See LanguageBarButton.cpp
     // for the same g_hInstance-vs-nullptr fix applied to icon loading.
     const std::wstring configPath = ConfigManager::GetConfigPath(g_hInstance);
-    if (const auto diskConfig = ConfigManager::LoadFromFile(configPath)) {
-        // Trigger choices live only in TOML; SharedState carries feature bits.
-        config_.macroTriggerSpace = diskConfig->macroTriggerSpace;
-        config_.macroTriggerEnter = diskConfig->macroTriggerEnter;
-        config_.macroTriggerTab = diskConfig->macroTriggerTab;
-        config_.macroTriggerDir = diskConfig->macroTriggerDir;
+    const auto diskConfig = ConfigManager::LoadFromFile(configPath);
+    if (!diskConfig) {
+        // Read failed, not "no macros configured": a settings save renames a
+        // temp file over config.toml, so a read racing that swap transiently
+        // sees the file as missing/locked. Latching that as a successful load
+        // pinned an empty table for the whole generation (observed in the wild
+        // as "loaded 0 entries" right after a save, while a sibling host read
+        // 3 entries at the same generation). Keep the current table and leave
+        // macroConfigLoaded_ false so the next focus/init tick retries.
+        TSF_LOG(L"ReloadMacros: config unreadable, keeping %zu entries (retry pending)",
+                macroTable_.size());
+        // Track the generation even though the read failed: the retry goes
+        // through ReloadMacros(macroGeneration_), and the load guard keys off
+        // macroConfigLoaded_, so this records what we're aiming at without
+        // suppressing the retry.
+        macroGeneration_ = generation;
+        return;
     }
+
+    macroConfigLoaded_ = true;
+    macroGeneration_ = generation;
+    ClearMacroTracking();
+    macroTable_.clear();
+    spaceMacroKeys_.clear();
+    if (!config_.macroEnabled) return;
+
+    // Trigger choices live only in TOML; SharedState carries feature bits.
+    config_.macroTriggerSpace = diskConfig->macroTriggerSpace;
+    config_.macroTriggerEnter = diskConfig->macroTriggerEnter;
+    config_.macroTriggerTab = diskConfig->macroTriggerTab;
+    config_.macroTriggerDir = diskConfig->macroTriggerDir;
 
     macroTable_ = ConfigManager::LoadMacros(configPath);
     for (const auto& [key, value] : macroTable_) {
@@ -1002,18 +1020,23 @@ void EngineController::ApplySharedState(const SharedState& state,
     // feature-flag bitmask via SharedState, so flipping the toggle in the
     // EXE reaches every TSF DLL instance on the next CheckConfigEvent tick.
     ::NextKey::Logger::SetEnabled(config_.debugLogEnabled);
-    if (allowMacroDiskRead) {
-        ReloadMacros(state.configGeneration);
-    } else if (!macroConfigLoaded_ || macroGeneration_ != state.configGeneration
-               || !config_.macroEnabled) {
-        // A key callback may consume the shared-memory config but must not touch
-        // TOML or ConfigManager's cache mutex. Drop stale entries now; focus or
-        // initialization will repopulate them outside the typing path.
-        macroConfigLoaded_ = false;
-        macroGeneration_ = state.configGeneration;
-        ClearMacroTracking();
-        macroTable_.clear();
-        spaceMacroKeys_.clear();
+    switch (DecideMacroTable({.loaded = macroConfigLoaded_,
+                              .loadedGen = macroGeneration_,
+                              .stateGen = state.configGeneration,
+                              .allowDiskRead = allowMacroDiskRead})) {
+        case MacroTableAction::None:
+            break;
+        case MacroTableAction::Reload:
+            ReloadMacros(state.configGeneration);
+            break;
+        case MacroTableAction::KeepStale:
+            // Reached only when this generation's read already failed from the
+            // key path: macroConfigLoaded_/macroGeneration_ are set the way the
+            // retry needs them, and the table we keep serving is the newest one
+            // that ever loaded. Deliberately nothing to do — clearing it here is
+            // what killed every macro for the rest of the session in hosts that
+            // never fire another OnSetFocus (#227/#231).
+            break;
     }
 
     // Recreate engine with updated config (engine stores a copy of TypingConfig,
