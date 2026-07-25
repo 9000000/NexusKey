@@ -1,5 +1,5 @@
 // VKey - CommitUndoArmDecision unit tests
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Locks in the issue #210 fix: Enter must CLEAR commit-undo (never arm), so a
 // Backspace after Enter cannot replay a word that the host already sent (chat)
@@ -55,10 +55,52 @@ TEST(CommitUndoArmDecisionTest, VniDigitsAndPunctuation_Arm) {
 
 TEST(CommitUndoArmDecisionTest, NavigationKeys_Skip) {
     for (uint32_t vk : {VK_LEFT_, VK_UP_, VK_RIGHT_, VK_DOWN_, VK_HOME_, VK_END_,
-                        VK_PRIOR_, VK_NEXT_, VK_TAB_, VK_ESCAPE_, VK_INSERT_,
+                        VK_PRIOR_, VK_NEXT_, VK_ESCAPE_, VK_INSERT_,
                         VK_DELETE_}) {
         EXPECT_EQ(DecideCommitUndoArm(vk), CommitUndoArm::Skip) << "vk=" << vk;
     }
+}
+
+// --- Replay-context boundary policy ----------------------------------------
+// Single source of truth for "this key LEAVES the editing context, so a replay
+// window must never survive it". Enforced at one choke point in ProcessKeyDown
+// (CommitState::DiscardReplayContext) because the post-commit switch below is
+// unreachable when the engine is empty, when the commit is quick-consonant, or
+// when no stack entry is pushed — and HandleBackspace re-arms replay from any
+// stack that survives.
+
+TEST(CommitUndoArmDecisionTest, ReplayContextBoundary_IsEnterAndTabOnly) {
+    EXPECT_TRUE(NextKey::IsReplayContextBoundary(VK_RETURN_));
+    EXPECT_TRUE(NextKey::IsReplayContextBoundary(VK_TAB_));
+
+    // Same-field navigation is NOT a boundary — multi-word backward replay
+    // legitimately depends on the stack surviving these.
+    for (uint32_t vk : {VK_LEFT_, VK_UP_, VK_RIGHT_, VK_DOWN_, VK_HOME_, VK_END_,
+                        VK_PRIOR_, VK_NEXT_, VK_ESCAPE_, VK_INSERT_, VK_DELETE_,
+                        VK_SPACE_}) {
+        EXPECT_FALSE(NextKey::IsReplayContextBoundary(vk)) << "vk=" << vk;
+    }
+}
+
+TEST(CommitUndoArmDecisionTest, BoundaryKeysAgreeWithArmDecision) {
+    // The two must not drift: every boundary key must also map to Clear, so the
+    // post-commit switch stays consistent defense-in-depth for the choke point.
+    for (uint32_t vk = 0; vk < 0x100; ++vk) {
+        if (NextKey::IsReplayContextBoundary(vk)) {
+            EXPECT_EQ(DecideCommitUndoArm(vk), CommitUndoArm::Clear)
+                << "boundary key must also Clear, vk=" << vk;
+        }
+    }
+}
+
+// --- Tab clears (unlike same-field navigation, Tab commonly moves focus to
+// a DIFFERENT control) -------------------------------------------------------
+
+TEST(CommitUndoArmDecisionTest, Tab_Clears) {
+    // Regression: Skip previously kept commitStack_ alive across a Tab-driven
+    // focus change, so backspacing-to-empty in the NEW field could re-arm
+    // Ready from the OLD field's stack entry and replay its text there.
+    EXPECT_EQ(DecideCommitUndoArm(VK_TAB_), CommitUndoArm::Clear);
 }
 
 // --- Enter is NOT misclassified as navigation ------------------------------

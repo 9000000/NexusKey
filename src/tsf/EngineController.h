@@ -212,7 +212,14 @@ private:
     bool engineEnabled_ = true;     // ENGINE_ENABLED flag from SharedState
     bool tsfActive_ = false;        // TSF_ACTIVE flag from SharedState (foreground app in TSF list)
     bool vietnameseMode_ = true;    // VIETNAMESE_MODE flag from SharedState
-    bool abiOk_ = true;             // false → SharedState layout mismatch, disable TSF for this process
+    // true only once IsAbiCompatible() has actually been observed to pass —
+    // NOT "assumed fine until proven otherwise". Defaulting true let an
+    // instance that never got a chance to check (e.g. constructed while
+    // SharedState was momentarily unavailable) skip validation forever,
+    // since CheckConfigEvent's recovery path only runs when this is false.
+    // Unchecked and confirmed-incompatible must both disable TSF the same
+    // way, so they share the same falsy default.
+    bool abiOk_ = false;
     LanguageBarButton* langBarButton_ = nullptr;  // Owned, Release'd in UninitLanguageBar
     ITfContext* lastContext_ = nullptr;   // Last seen context (AddRef'd for safe identity comparison)
     bool contextBlocked_ = false;        // True if current context blocks input (password, etc.)

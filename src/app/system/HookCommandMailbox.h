@@ -74,6 +74,33 @@ struct FocusClassification {
     bool isWebView2{false};
     bool isJavaApp{false};
     bool isKnownHijacker{false};
+    // True only when a recognized Edit/RichEdit/Scintilla control reported
+    // whole-document length 0 and caret position 0 during cold-path focus
+    // classification. Unknown controls and failed/timeout probes stay false.
+    bool isKnownEmptyDocument{false};
+    // GetTickCount64 captured immediately before the empty-document probe.
+    // Hook apply combines it with HWND/PID + last-input checks so delayed
+    // mailbox evidence fails closed instead of arming auto-cap late.
+    std::uint64_t emptyDocumentProbeStartedAtMs{0};
+    // True when the focused control is a recognized Edit/RichEdit with
+    // ES_PASSWORD. Suppresses the keystroke-based auto-cap FSM for this
+    // focus session — that FSM has no per-field awareness of its own.
+    bool isPasswordFieldFocused{false};
+    // The specific child HWND (opaque) that isPasswordFieldFocused/
+    // isKnownEmptyDocument were computed against. WH_MOUSE_LL fires before
+    // the click is delivered to the target app, so the worker's probe can
+    // race the app's own SetFocus() — the hook thread re-checks this HWND
+    // is still the focused child before trusting either verdict.
+    std::uintptr_t focusedChildHwndOpaque{0};
+    // True when this classification was requested by the hook thread purely to
+    // refresh control metadata within the SAME top-level window (a click, which
+    // already ran ResetComposition synchronously; or a Tab, where an async wipe
+    // would destroy whatever the user has since typed). Carried per-snapshot
+    // rather than held in a shared marker on the hook thread: two rapid
+    // refreshes can produce two classifications, and a single shared marker is
+    // consumed by whichever applies first, leaving the second to reset
+    // composition mid-word.
+    bool isSameWindowRefresh{false};
     // Dispatch-shape flags derived from classification + per-app overrides.
     bool localSkipEmpty{false};
     bool localNeedBait{false};

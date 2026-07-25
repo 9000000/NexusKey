@@ -43,14 +43,26 @@ private:
 
 class MockCommitUndoExecutor final : public ICommitUndoExecutor {
 public:
-    CommitUndoOutcome HandleCommitUndo(std::uint16_t vkCode) override {
+    CommitUndoOutcome HandleCommitUndo(std::uint16_t vkCode,
+                                       bool shift, bool capsLock,
+                                       bool ctrl, bool alt, bool win) override {
         last_vk_ = vkCode;
+        last_shift_ = shift;
+        last_capsLock_ = capsLock;
+        last_ctrl_ = ctrl;
+        last_alt_ = alt;
+        last_win_ = win;
         ++calls_;
         return outcome_;
     }
 
     CommitUndoOutcome outcome_ = CommitUndoOutcome::Fallthrough;
     std::uint16_t     last_vk_ = 0;
+    bool              last_shift_ = false;
+    bool              last_capsLock_ = false;
+    bool              last_ctrl_ = false;
+    bool              last_alt_ = false;
+    bool              last_win_ = false;
     int               calls_ = 0;
 };
 
@@ -162,4 +174,33 @@ TEST(CommitUndoFeature, MultipleCallsAreStateless) {
     EXPECT_EQ(exec.calls_, 2);
     ASSERT_EQ(sink.intents_.size(), 2u);
     EXPECT_TRUE(std::holds_alternative<Intents::PassThrough>(sink.intents_[1]));
+}
+
+// The FSM must never re-read modifier state itself: on Windows it runs inside
+// the low-level keyboard hook callback, after a drain that can call
+// AttachThreadInput — documented to reset what GetKeyState reports for the
+// calling thread, so a same-callback read can see a held Ctrl/Alt/Win as up.
+// The caller's pre-drain snapshot therefore has to reach it intact.
+TEST(CommitUndoFeature, ForwardsCallerModifierSnapshotToExecutor) {
+    MockCommitUndoExecutor exec;
+    CommitUndoFeature feature(exec);
+    StubSession session(L"", L"", L"");
+    RecordingSink sink;
+
+    KeyContext ctx = makeStubCtx(session, 0x09 /*VK_TAB*/);
+    ctx.shift = true;
+    ctx.capsLock = false;
+    ctx.ctrl = true;
+    ctx.alt = false;
+    ctx.win = true;
+
+    feature.Try(ctx, sink);
+
+    EXPECT_EQ(exec.calls_, 1);
+    EXPECT_EQ(exec.last_vk_, 0x09);
+    EXPECT_TRUE(exec.last_shift_);
+    EXPECT_FALSE(exec.last_capsLock_);
+    EXPECT_TRUE(exec.last_ctrl_);
+    EXPECT_FALSE(exec.last_alt_);
+    EXPECT_TRUE(exec.last_win_);
 }

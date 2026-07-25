@@ -66,12 +66,23 @@ public:
     /// Check if connected to valid shared memory
     [[nodiscard]] bool IsConnected() const noexcept;
 
-    /// Check ABI compatibility without going through the seqlock-protected
-    /// Read() path. magic / structVersion / structSize are written once at
-    /// Create() and never mutated, so a direct aligned 32-bit read is correct
-    /// and — unlike Read() — cannot spuriously report mismatch under contention.
-    /// Used by the TSF DLL to decide whether to passthrough.
-    [[nodiscard]] bool IsAbiCompatible() const noexcept;
+    /// Compatible: header confirmed to match. Incompatible: header confirmed
+    /// NOT to match (genuine version/size mismatch). Retry: the seqlock
+    /// couldn't get a stable header read (e.g. Create() reinit or a Write() in
+    /// progress) — compatibility is genuinely unknown, NOT a confirmed
+    /// mismatch. Callers must not latch a sticky user-facing warning from Retry.
+    enum class AbiCheckResult : uint8_t {
+        Compatible,
+        Incompatible,
+        Retry,
+    };
+
+    /// Check ABI compatibility via the epoch seqlock (same protocol as
+    /// Read()/Write()) — magic/structVersion/structSize are written once at
+    /// Create() and never mutated afterward, but Create() can reinitialize an
+    /// already-live mapping (VKeyApp.exe restart), so a stable read still
+    /// needs the seqlock. Used by the TSF DLL to decide whether to passthrough.
+    [[nodiscard]] AbiCheckResult CheckAbiCompatibility() const noexcept;
 
 private:
     struct Impl;

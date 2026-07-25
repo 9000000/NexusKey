@@ -45,11 +45,12 @@ namespace TSF {
 EngineController::EngineController() {
     // Try to open SharedState from main app (read-write for flag toggling)
     if (sharedState_.OpenReadWrite()) {
-        // Step 1: ABI check — direct header read, immune to seqlock contention.
-        // magic/structVersion/structSize never change after Create(), so this
-        // answer is stable and cannot spuriously flip TSF_ABI_MISMATCH under
-        // concurrent writer activity.
-        if (!sharedState_.IsAbiCompatible()) {
+        // Step 1: ABI check — seqlock-protected header read. CheckConfigEvent
+        // re-evaluates a Retry/failed result because an older creator may have
+        // exposed magic before finishing this header, or Create() may still be
+        // mid-reinit.
+        const auto abiResult = sharedState_.CheckAbiCompatibility();
+        if (abiResult == SharedStateManager::AbiCheckResult::Incompatible) {
             abiOk_ = false;
             sharedState_.SetOrClearFlag(SharedFlags::TSF_ABI_MISMATCH, true);
             config_.inputMethod = InputMethod::Telex;
@@ -58,8 +59,19 @@ EngineController::EngineController() {
             currentMethod_ = InputMethod::Telex;
             engine_ = EngineFactory::Create(config_);
             TSF_LOG(L"EngineController: SharedState ABI mismatch — passthrough");
+        } else if (abiResult == SharedStateManager::AbiCheckResult::Retry) {
+            // Seqlock contention, not a confirmed mismatch — do NOT raise the
+            // sticky TSF_ABI_MISMATCH banner for this. CheckConfigEvent retries.
+            abiOk_ = false;
+            config_.inputMethod = InputMethod::Telex;
+            config_.spellCheckEnabled = false;
+            config_.optimizeLevel = 0;
+            currentMethod_ = InputMethod::Telex;
+            engine_ = EngineFactory::Create(config_);
+            TSF_LOG(L"EngineController: SharedState ABI check contention, using defaults");
         } else {
             // Step 2: ABI OK; try a seqlock Read for the full config.
+            abiOk_ = true;
             SharedState state = sharedState_.Read();
             if (state.IsValid()) {
                 ApplySharedState(state, /*allowMacroDiskRead=*/true);
@@ -793,8 +805,43 @@ bool EngineController::CheckConfigEvent(bool allowMacroDiskRead) {
         }
     }
 
+    // A mapping becomes visible as soon as CreateFileMappingW succeeds. Older
+    // creators wrote magic before structVersion/structSize, so a TSF instance
+    // could observe a transient ABI mismatch during startup and latch abiOk_
+    // false for its entire lifetime. Re-check before the epoch fast path so the
+    // next key/focus self-heals once initialization completes.
+    bool recoveredAbi = false;
+    if (!abiOk_) {
+        const auto abiResult = sharedState_.CheckAbiCompatibility();
+        if (abiResult == SharedStateManager::AbiCheckResult::Incompatible) {
+            // Genuinely still incompatible, not just transient contention —
+            // SharedState::InitDefaults() resets flags (including
+            // TSF_ABI_MISMATCH) on every Create(), so a VKeyApp.exe restart
+            // (e.g. a version-skewed rebuild while this TSF host stayed
+            // loaded) silently clears the banner even though THIS host is
+            // still passthrough-only. Re-raise it so the UI reflects reality.
+            sharedState_.SetOrClearFlag(SharedFlags::TSF_ABI_MISMATCH, true);
+            return false;
+        }
+        if (abiResult != SharedStateManager::AbiCheckResult::Compatible) {
+            return false;  // Retry — transient contention, try again next tick
+        }
+        abiOk_ = true;
+        recoveredAbi = true;
+        // Deliberately do NOT clear TSF_ABI_MISMATCH here. It is a single
+        // process-shared bit, but every TSF host (one per document/thread,
+        // possibly a different DLL version mid-update) has its own abiOk_.
+        // Clearing it just because THIS host recovered could hide a genuine,
+        // still-active mismatch in another host — this host already resumed
+        // typing via its own abiOk_/recoveredAbi regardless of the shared
+        // banner bit. The bit only clears on a fresh SharedStateManager::
+        // Create() (VKeyApp.exe restart), which is the same action the
+        // banner asks the user to take.
+        TSF_LOG(L"EngineController: SharedState ABI recovered");
+    }
+
     uint32_t currentEpoch = sharedState_.ReadEpoch();
-    if (currentEpoch == lastEpoch_) {
+    if (!recoveredAbi && currentEpoch == lastEpoch_) {
         if (allowMacroDiskRead && !macroConfigLoaded_) {
             ReloadMacros(macroGeneration_);
             return true;
@@ -804,13 +851,30 @@ bool EngineController::CheckConfigEvent(bool allowMacroDiskRead) {
 
     SharedState state = sharedState_.Read();
     if (!state.IsValid()) {
+        // Epoch moved but Read() couldn't produce a valid snapshot. Two very
+        // different causes look identical here: ordinary seqlock contention
+        // (retry next tick, no action needed) vs. the EXE having recreated
+        // the mapping with an incompatible layout while this host stayed
+        // abiOk_==true from before (a version-skewed restart mid-update).
+        // Only the latter is a confirmed mismatch — reuse the same
+        // epoch-protected header check the constructor/recovery path already
+        // trust, instead of silently keeping this host on stale config
+        // forever with no user-visible signal.
+        if (sharedState_.CheckAbiCompatibility() == SharedStateManager::AbiCheckResult::Incompatible) {
+            abiOk_ = false;
+            sharedState_.SetOrClearFlag(SharedFlags::TSF_ABI_MISMATCH, true);
+            TSF_LOG(L"EngineController: SharedState ABI mismatch after epoch change — passthrough");
+        }
         return false;
     }
 
     // Apply new config
     TSF_LOG(L"Config changed: epoch %u -> %u", lastEpoch_, state.epoch);
     lastEpoch_ = state.epoch;
-    ApplySharedState(state, allowMacroDiskRead);
+    // ABI recovery is a rare, one-time event per TSF instance (not a per-key
+    // occurrence) — worth the one disk read here so macros come back with
+    // typing instead of staying empty until the next OnSetFocus.
+    ApplySharedState(state, allowMacroDiskRead || recoveredAbi);
 
     return true;
 }

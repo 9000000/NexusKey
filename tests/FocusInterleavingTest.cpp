@@ -54,6 +54,9 @@ struct DrainHarness {
     int configHits = 0;
     int tickHits = 0;
     int toggleHits = 0;
+    // Mirrors ApplyFocusOnHookThread's reset decision: reset unless THIS
+    // snapshot is flagged as a same-window metadata refresh.
+    int resetHits = 0;
 
     void Drain() {
         const std::uint32_t bits = mailbox.DrainBits();
@@ -66,6 +69,9 @@ struct DrainHarness {
             lastConsumedFocus = mailbox.ConsumePendingFocus();
             log.emplace_back("focus");
             ++focusHits;
+            if (lastConsumedFocus && !lastConsumedFocus->isSameWindowRefresh) {
+                ++resetHits;
+            }
         }
         if (bits & kTickPoll) {
             log.emplace_back("tick");
@@ -81,7 +87,14 @@ struct DrainHarness {
 class FocusInterleavingTest : public ::testing::Test {
 protected:
     HookCommandMailbox mailbox_;
-    DrainHarness       harness_{mailbox_, {}, nullptr, 0, 0, 0, 0};
+    DrainHarness       harness_{mailbox_, {}, nullptr, 0, 0, 0, 0, 0};
+
+    static std::shared_ptr<const FocusClassification> MakeCls(bool sameWindowRefresh) {
+        FocusClassification cls{};
+        cls.hwndOpaque = 0x1234;
+        cls.isSameWindowRefresh = sameWindowRefresh;
+        return std::make_shared<const FocusClassification>(std::move(cls));
+    }
 };
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -117,6 +130,48 @@ TEST_F(FocusInterleavingTest, DrainOrderHoldsForSingleBitAsWell) {
 // ──────────────────────────────────────────────────────────────────────────
 // pendingFocus consumption — exactly once per drained kFocusChanged bit
 // ──────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────
+// Same-window-refresh intent must ride on EACH classification, not on a
+// shared marker. Two rapid refreshes (e.g. Tab, Tab through a form) can
+// produce two classifications with a drain between them. A single shared
+// "next apply is a refresh" marker is consumed by whichever applies first,
+// so the second apply resets composition — wiping a word the user started
+// typing in between. Locking the per-snapshot contract here.
+// ──────────────────────────────────────────────────────────────────────────
+TEST_F(FocusInterleavingTest, TwoSequentialRefreshesBothSuppressReset) {
+    mailbox_.Post(kFocusChanged, MakeCls(/*sameWindowRefresh=*/true));
+    harness_.Drain();
+    mailbox_.Post(kFocusChanged, MakeCls(/*sameWindowRefresh=*/true));
+    harness_.Drain();
+
+    EXPECT_EQ(harness_.focusHits, 2);
+    EXPECT_EQ(harness_.resetHits, 0)
+        << "second refresh must NOT reset — a shared one-shot marker would "
+           "have been consumed by the first apply, resetting mid-word here";
+}
+
+TEST_F(FocusInterleavingTest, RealFocusChangeAfterRefreshStillResets) {
+    mailbox_.Post(kFocusChanged, MakeCls(/*sameWindowRefresh=*/true));
+    harness_.Drain();
+    mailbox_.Post(kFocusChanged, MakeCls(/*sameWindowRefresh=*/false));
+    harness_.Drain();
+
+    EXPECT_EQ(harness_.resetHits, 1)
+        << "a genuine focus change must still reset even right after a refresh";
+}
+
+TEST_F(FocusInterleavingTest, RefreshFlagDoesNotLeakAcrossCoalescedPosts) {
+    // Refresh posted first, real change coalesces over it (latest wins) —
+    // the surviving snapshot is the real change, so the reset must happen.
+    mailbox_.Post(kFocusChanged, MakeCls(/*sameWindowRefresh=*/true));
+    mailbox_.Post(kFocusChanged, MakeCls(/*sameWindowRefresh=*/false));
+    harness_.Drain();
+
+    EXPECT_EQ(harness_.focusHits, 1) << "coalesced into one dispatch";
+    EXPECT_EQ(harness_.resetHits, 1)
+        << "surviving snapshot is the real change — must reset";
+}
+
 TEST_F(FocusInterleavingTest, FocusConsumedExactlyOncePerDrainedBit) {
     auto cls = std::make_shared<const FocusClassification>();
     auto raw = cls.get();
