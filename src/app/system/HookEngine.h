@@ -439,19 +439,19 @@ private:
     //   `appProfileCache_` and `webView2PositiveCache_` containers on
     //   FocusOwner. Single-writer is restored by routing both producers
     //   through the worker.
-    /// sameWindowRefresh: this request only refreshes control metadata within
-    /// the current top-level window (mouse click / Tab), so the resulting apply
-    /// must not reset composition. Honored only when triggerHwnd is nullptr,
-    /// which is what both refresh producers pass; a request naming an explicit
-    /// HWND always counts as a real focus change (the safe direction).
-    void OnFocusChanged(HWND triggerHwnd = nullptr, bool sameWindowRefresh = false);
+    //
+    //   NOT for same-window control changes (mouse click / Tab): the whole
+    //   classify+apply chain is too heavy for the input path — see
+    //   LowLevelMouseProcImpl, which clears the auto-cap latch directly
+    //   instead.
+    void OnFocusChanged(HWND triggerHwnd = nullptr);
 
     // Worker-only entry point used by OnTickPoll's PID-change branch — that
     // branch ALREADY runs on the worker thread (it's a tick-handler body),
     // so it can call this directly without the latch+signal hop. Doctrine
     // §12.5 names this the single legitimate exemption. Same body as the
     // drain consumes; sharing prevents drift between paths.
-    void OnFocusChangedSyncOnWorker(HWND triggerHwnd, bool sameWindowRefresh = false);
+    void OnFocusChangedSyncOnWorker(HWND triggerHwnd);
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
     void FlushSmartSwitchOnStop();      // Force-flush smart-switch map to TOML on shutdown (bypass debounce).
@@ -584,12 +584,11 @@ private:
     // change (ApplyFocusOnHookThread, hook thread only). Suppresses the
     // keystroke-based auto-cap FSM in HandleAlphaKey for the current focus —
     // the FSM itself has no per-field awareness (see AutoCapStateTransition.h).
+    // Also cleared directly (permissive direction) by the mouse-click and Tab
+    // paths, which can move focus to another control with no WinEvent fired;
+    // HandleAlphaKey re-suppresses synchronously if the new control is itself
+    // a password field.
     bool suppressAutoCapForPasswordSafety_ = false;
-    // (No hook-thread refresh marker: the "this is a same-window metadata
-    // refresh, don't reset composition" intent rides on each
-    // FocusClassification instead — see its isSameWindowRefresh field. A
-    // shared marker desyncs when two rapid refreshes produce two
-    // classifications, since whichever applies first consumes it.)
     // Spreadsheet-formula tracking (hook-thread only — written by both
     // ApplyFocusOnHookThread and ProcessKeyDown, which both assert hook thread).
     // The keystroke FSM lives in core/FormulaSegmentDecision.h (Linux-testable);
@@ -807,14 +806,6 @@ private:
     //     1                       = pending classify "use foreground"
     //                               (kClassifyForeground) — what nullptr
     //                               passes through OnFocusChanged become
-    //     2                       = same as 1, but flagged as a same-window
-    //                               metadata refresh (kClassifyForegroundRefresh)
-    //                               so the apply knows not to reset composition.
-    //                               Both refresh producers (mouse click, Tab)
-    //                               pass triggerHwnd=nullptr, so this needs no
-    //                               assumption about spare bits in a real HWND —
-    //                               just one more reserved sentinel, exactly like
-    //                               kClassifyForeground already is.
     //     other (HWND bit pattern)= pending classify for the latched HWND
     //   Writers: OnFocusChanged (any thread, latches via release-store).
     //   Reader: DrainClassifyOnWorker (worker thread, exchanges with
@@ -827,7 +818,6 @@ private:
     // The Signal IS the latch.
     static constexpr std::uintptr_t kClassifyEmpty      = 0;
     static constexpr std::uintptr_t kClassifyForeground = 1;
-    static constexpr std::uintptr_t kClassifyForegroundRefresh = 2;
     std::atomic<std::uintptr_t> pendingClassifyHwnd_{kClassifyEmpty};
     WorkerSignalFn workerSignalFn_;
 

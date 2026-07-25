@@ -92,15 +92,6 @@ struct FocusClassification {
     // race the app's own SetFocus() — the hook thread re-checks this HWND
     // is still the focused child before trusting either verdict.
     std::uintptr_t focusedChildHwndOpaque{0};
-    // True when this classification was requested by the hook thread purely to
-    // refresh control metadata within the SAME top-level window (a click, which
-    // already ran ResetComposition synchronously; or a Tab, where an async wipe
-    // would destroy whatever the user has since typed). Carried per-snapshot
-    // rather than held in a shared marker on the hook thread: two rapid
-    // refreshes can produce two classifications, and a single shared marker is
-    // consumed by whichever applies first, leaving the second to reset
-    // composition mid-word.
-    bool isSameWindowRefresh{false};
     // Dispatch-shape flags derived from classification + per-app overrides.
     bool localSkipEmpty{false};
     bool localNeedBait{false};

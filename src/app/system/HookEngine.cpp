@@ -1189,21 +1189,29 @@ LRESULT HookEngine::LowLevelMouseProcImpl(int nCode, WPARAM wParam, LPARAM lPara
                 // EVENT_SYSTEM_FOREGROUND fires) — invalidate cache so the next
                 // TryEditMessagePaste re-queries the focused HWND.
                 self->focus_.InvalidateFocusCache();
-                // Same reason, different consumer: FocusClassification's
-                // isPasswordFieldFocused/isKnownEmptyDocument were computed
-                // against whatever child control was focused at the LAST
-                // EVENT_SYSTEM_FOREGROUND — a click into a different field in
-                // the same window (e.g. tabbing from a username box into a
-                // password box) never re-probes them otherwise, so the stale
-                // classification (e.g. "not a password field") would keep
-                // applying to the newly-focused control. Re-trigger the same
-                // async worker-thread classify+post pipeline foreground
-                // changes already use (cheap produce-only latch, no
-                // AttachThreadInput/SendMessage on this thread).
-                // sameWindowRefresh=true tells the resulting apply "reset
-                // already happened here, synchronously, just above" so it
-                // doesn't redo it asynchronously and land mid-word.
-                self->OnFocusChanged(nullptr, /*sameWindowRefresh=*/true);
+                // Same reason, different consumer: suppressAutoCapForPassword-
+                // Safety_ was computed against whatever child control was
+                // focused at the LAST EVENT_SYSTEM_FOREGROUND, so a click from
+                // a password box into a normal field would leave auto-cap
+                // suppressed indefinitely. Clearing the latch is the whole fix
+                // needed here — HandleAlphaKey re-checks the focused control
+                // synchronously right before it actually capitalizes and
+                // re-suppresses if it IS a password field, so the permissive
+                // direction is the safe one to reset to.
+                //
+                // Deliberately NOT a full OnFocusChanged() refresh (was
+                // a68c617b, reverted): that routed every left click through
+                // focus_.Classify() — documented as too heavy for the input
+                // path (CreateToolhelp32Snapshot, hook-chain reinstall for
+                // Java/hijacker hosts) — plus an ApplyFocusOnHookThread that
+                // spends two AttachThreadInput round-trips on THIS thread, the
+                // one that owns WH_MOUSE_LL. Each click queued work in front of
+                // the next click's LowLevelHooksTimeout window: system-wide
+                // click lag, independent of whether auto-cap was enabled.
+                // Cost of not refreshing: clicking into an empty document no
+                // longer arms auto-cap for its first letter until the next real
+                // foreground change.
+                self->suppressAutoCapForPasswordSafety_ = false;
 
                 // Anti-Dorion (hook-only): Chromium / Electron / Tauri hosts (e.g.
                 // Dorion) install their own WH_KEYBOARD_LL above ours and re-arm
@@ -1261,29 +1269,21 @@ bool HookEngine::ProcessKeyDown(DWORD vkCode, DWORD /*scanCode*/, DWORD /*flags*
 
     // Tab/Shift+Tab MAY move focus to a different child control without any
     // WinEvent firing (the top-level foreground window doesn't change), so
-    // nothing else would ever refresh suppressAutoCapForPasswordSafety_ /
-    // isKnownEmptyDocument for the newly-focused control — tabbing OUT of a
-    // password box would leave auto-cap suppressed indefinitely, and tabbing
-    // INTO one would leave it enabled. Request the same async reclassification
-    // the mouse-click path uses.
+    // nothing else would ever refresh suppressAutoCapForPasswordSafety_ for
+    // the newly-focused control — tabbing OUT of a password box would leave
+    // auto-cap suppressed indefinitely. Same treatment as the mouse-click path
+    // (LowLevelMouseProcImpl): drop the cache and the latch, let HandleAlphaKey's
+    // synchronous pre-capitalize check re-suppress if the new control is itself
+    // a password field. Deliberately NOT a full OnFocusChanged() refresh — see
+    // the click path's comment for why that cost lands on the input thread.
     //
-    // Do NOT resolve the focused child here: GetFocusedChildHwnd's
-    // cross-thread path calls AttachThreadInput, documented as resetting what
-    // GetKeyState reports for this thread, and Ctrl/Alt/Win are read for this
-    // very keystroke. OnFocusChanged() itself is safe — produce-only (one
-    // atomic store + a worker signal), with the heavy classify on the worker
-    // and the AttachThreadInput-using apply covered by the caller's pre-drain
-    // modifier snapshot.
-    //
-    // Composition is deliberately NOT reset for Tab (see the marker's use in
-    // ApplyFocusOnHookThread): a wipe landing asynchronously would destroy
-    // whatever the user has since typed, and hosts that use Tab for
-    // indentation never change focus at all. The cross-field commit-undo leak
-    // that would otherwise need is closed durably instead by
-    // DecideCommitUndoArm returning Clear for Tab.
+    // Composition is deliberately NOT reset for Tab: a wipe would destroy
+    // whatever the user has typed, and hosts that use Tab for indentation never
+    // change focus at all. The cross-field commit-undo leak that would
+    // otherwise need is closed durably instead by DiscardReplayContext above.
     if (vkCode == VK_TAB) {
         focus_.InvalidateFocusCache();
-        OnFocusChanged(nullptr, /*sameWindowRefresh=*/true);
+        suppressAutoCapForPasswordSafety_ = false;
     }
 
     // H1b: top-of-pipeline guards extracted to RunTopGuards (steps 0/0b/1/1b/1c).
@@ -3183,7 +3183,7 @@ void HookEngine::OnTickPoll() noexcept {
 // a ConfigContext parameter) moved to FocusOwner.cpp. OnFocusChanged
 // below builds the ConfigContext and dispatches to focus_.Classify().
 
-void HookEngine::OnFocusChanged(HWND triggerHwnd, bool sameWindowRefresh) {
+void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // Worker-thread doctrine §12.4 (docs/CODING_RULES/12-worker-thread-doctrine.md).
     //
     // Producer side — runs on whichever thread invoked us (typically the
@@ -3201,15 +3201,9 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd, bool sameWindowRefresh) {
     // the same slot; the worker classifies once with the latest HWND. No
     // pile-up of redundant heavy work under focus storms (Alt-Tab spam,
     // taskbar flyouts, JumpList transients).
-    // Coalescing note for the refresh flag: last-writer-wins applies to it too.
-    // A real focus change landing after a refresh downgrades the slot to
-    // "not a refresh" → the apply resets, which is the safe direction. The
-    // reverse (refresh overwriting a real change) skips the reset, which is
-    // already correct for both refresh producers: the click reset
-    // synchronously, and Tab deliberately preserves live composition.
     const std::uintptr_t encoded = triggerHwnd
         ? reinterpret_cast<std::uintptr_t>(triggerHwnd)
-        : (sameWindowRefresh ? kClassifyForegroundRefresh : kClassifyForeground);
+        : kClassifyForeground;
     pendingClassifyHwnd_.store(encoded, std::memory_order_release);
 
     // Adaptive-tick — DO NOT call MarkActivity here. Earlier draft did, but
@@ -3239,11 +3233,10 @@ void HookEngine::DrainClassifyOnWorker() {
     const std::uintptr_t encoded = pendingClassifyHwnd_.exchange(
         kClassifyEmpty, std::memory_order_acquire);
     if (encoded == kClassifyEmpty) return;  // nothing pending
-    const bool sameWindowRefresh = (encoded == kClassifyForegroundRefresh);
-    HWND hwnd = (encoded == kClassifyForeground || sameWindowRefresh)
+    HWND hwnd = (encoded == kClassifyForeground)
         ? nullptr
         : reinterpret_cast<HWND>(encoded);
-    OnFocusChangedSyncOnWorker(hwnd, sameWindowRefresh);
+    OnFocusChangedSyncOnWorker(hwnd);
 }
 
 // Adaptive-tick (plan docs/plans/2026-05-27-adaptive-tick-idle-backoff.md).
@@ -3331,7 +3324,7 @@ void HookEngine::RetuneCadenceIfNeeded() noexcept {
     }
 }
 
-void HookEngine::OnFocusChangedSyncOnWorker(HWND triggerHwnd, bool sameWindowRefresh) {
+void HookEngine::OnFocusChangedSyncOnWorker(HWND triggerHwnd) {
     // Doctrine §12.5 exemption #1: OnTickPoll's PID-change branch already
     // runs on the worker thread, so it calls this directly without the
     // latch+signal hop. WinEventProc producers go through OnFocusChanged →
@@ -3353,9 +3346,8 @@ void HookEngine::OnFocusChangedSyncOnWorker(HWND triggerHwnd, bool sameWindowRef
         static_cast<int>(globalCodeTable_.load(std::memory_order_acquire)),
         static_cast<int>(globalInputMethod_.load(std::memory_order_acquire)),
     };
-    FocusClassification classified = focus_.Classify(triggerHwnd, ctx);
-    classified.isSameWindowRefresh = sameWindowRefresh;
-    auto cls = std::make_shared<const FocusClassification>(std::move(classified));
+    auto cls = std::make_shared<const FocusClassification>(
+        focus_.Classify(triggerHwnd, ctx));
     if (!cls->hwndOpaque) return;  // sentinel: nothing to apply
     lifecycle_.Mailbox().Post(HookCommand::kFocusChanged, std::move(cls));
 }
@@ -4042,75 +4034,52 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     const std::uintptr_t currentFocusedChildOpaque =
         reinterpret_cast<std::uintptr_t>(currentFocusedChild);
 
-    // Reset composition + per-word state (baseline behavior: unconditional).
-    // The ONE exception is a same-window control refresh that this process
-    // itself requested from the hook thread (a click, which already ran
-    // ResetComposition synchronously; or a Tab, where wiping live composition
-    // asynchronously would be worse than the staleness it fixes — Tab's
-    // commit-undo leak is closed durably by DecideCommitUndoArm's Clear
-    // instead). The intent rides on THIS snapshot, so N refresh requests
-    // produce N correctly-labeled classifications. Two earlier designs failed
-    // here: inferring "same window" from HWND/PID equality (Windows recycles
-    // HWND values, so an unrelated new window could look like a refresh and
-    // skip a needed reset), and a single shared hook-thread marker (two rapid
-    // refreshes produce two classifications; whichever applied first consumed
-    // the marker, leaving the second to reset composition mid-word).
-    const bool isSameWindowRefresh = cls->isSameWindowRefresh;
-    if (!isSameWindowRefresh) {
-        ResetComposition();
-        tempEngineOff_ = false;
-    }
+    // Reset composition + per-word state. These were the Rule 11.3-violating
+    // writes from main pre-Phase-2b.
+    ResetComposition();
+    tempEngineOff_ = false;
 
     suppressAutoCapForPasswordSafety_ = ShouldSuppressAutoCapForPasswordSafety(
         cls->isPasswordFieldFocused, cls->focusedChildHwndOpaque, currentFocusedChildOpaque);
 
-    // Declared at function scope (not inside the gate below) — the
-    // HOOK_LOG diagnostic further down reports it regardless of whether
-    // this call actually re-armed anything.
+    // Validate worker-produced empty-document evidence at consumption time.
+    // The HWND/PID/child check extends the existing latest-focus mailbox
+    // pattern; the activity clock catches a key that overtook the worker probe
+    // because LowLevelKeyboardProc calls MarkActivity before DrainHookCommands.
     bool shouldArmAutoCap = false;
-    // Only (re)arm the keystroke FSM on a genuine switch, or on a refresh
-    // that lands before any typing started (engine_ still empty) — never
-    // stomp what real keystrokes already decided for an in-progress word.
-    if (!isSameWindowRefresh || engine_->Count() == 0) {
-        // Validate worker-produced empty-document evidence at consumption
-        // time. The HWND/PID/child check extends the existing latest-focus
-        // mailbox pattern; the activity clock catches a key that overtook
-        // the worker probe because LowLevelKeyboardProc calls MarkActivity
-        // before DrainHookCommands.
-        if (cfg->autoCaps && cls->isKnownEmptyDocument) {
-            const HWND foregroundHwnd = GetForegroundWindow();
-            DWORD foregroundPid = 0;
-            if (foregroundHwnd != nullptr) {
-                GetWindowThreadProcessId(foregroundHwnd, &foregroundPid);
-            }
-            const std::uint64_t nowMs = GetTickCount64();
-            const bool foregroundStayedStable =
-                GetForegroundWindow() == foregroundHwnd;
-            const AutoCapFocusEvidence evidence{
-                .isKnownEmptyDocument = true,
-                .hwndOpaque = cls->hwndOpaque,
-                .focusedChildHwndOpaque = cls->focusedChildHwndOpaque,
-                .pid = cls->pid,
-                .probeStartedAtMs = cls->emptyDocumentProbeStartedAtMs,
-            };
-            const AutoCapFocusContext current{
-                .hwndOpaque = foregroundStayedStable
-                    ? reinterpret_cast<std::uintptr_t>(foregroundHwnd)
-                    : 0,
-                .focusedChildHwndOpaque = foregroundStayedStable
-                    ? currentFocusedChildOpaque
-                    : 0,
-                .pid = static_cast<std::uint32_t>(foregroundPid),
-                .lastInputAtMs = lastActivityTickMs_.load(std::memory_order_relaxed),
-                .nowMs = nowMs,
-            };
-            shouldArmAutoCap = ShouldArmAutoCapFromFocusEvidence(
-                evidence, current, kAutoCapFocusEvidenceMaxAgeMs);
+    if (cfg->autoCaps && cls->isKnownEmptyDocument) {
+        const HWND foregroundHwnd = GetForegroundWindow();
+        DWORD foregroundPid = 0;
+        if (foregroundHwnd != nullptr) {
+            GetWindowThreadProcessId(foregroundHwnd, &foregroundPid);
         }
-        autoCapState_ = shouldArmAutoCap
-            ? AutoCapState::ReadyToCapitalize
-            : AutoCapState::Idle;
+        const std::uint64_t nowMs = GetTickCount64();
+        const bool foregroundStayedStable =
+            GetForegroundWindow() == foregroundHwnd;
+        const AutoCapFocusEvidence evidence{
+            .isKnownEmptyDocument = true,
+            .hwndOpaque = cls->hwndOpaque,
+            .focusedChildHwndOpaque = cls->focusedChildHwndOpaque,
+            .pid = cls->pid,
+            .probeStartedAtMs = cls->emptyDocumentProbeStartedAtMs,
+        };
+        const AutoCapFocusContext current{
+            .hwndOpaque = foregroundStayedStable
+                ? reinterpret_cast<std::uintptr_t>(foregroundHwnd)
+                : 0,
+            .focusedChildHwndOpaque = foregroundStayedStable
+                ? currentFocusedChildOpaque
+                : 0,
+            .pid = static_cast<std::uint32_t>(foregroundPid),
+            .lastInputAtMs = lastActivityTickMs_.load(std::memory_order_relaxed),
+            .nowMs = nowMs,
+        };
+        shouldArmAutoCap = ShouldArmAutoCapFromFocusEvidence(
+            evidence, current, kAutoCapFocusEvidenceMaxAgeMs);
     }
+    autoCapState_ = shouldArmAutoCap
+        ? AutoCapState::ReadyToCapitalize
+        : AutoCapState::Idle;
     // Clear the combo latch defensively: a focus switch (Alt+Tab) can swallow a
     // modifier-up, stranding modComboSeen_ true and suppressing the next genuine
     // single-modifier tap until every modifier is observed up again. (#189)
