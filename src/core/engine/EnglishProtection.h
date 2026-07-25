@@ -1,8 +1,6 @@
 // VKey - English Protection Module (Header-Only)
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
-// Dual-licensed: AGPL-3.0 for open-source use, commercial license for proprietary use.
-// See LICENSE and LICENSE-COMMERCIAL in the project root.
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // 3-Tier English Protection System:
 //   TIER 1: Hard reject impossible patterns (cl, cr, ending x/r/z/f)

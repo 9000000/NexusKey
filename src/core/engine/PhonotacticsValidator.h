@@ -1,8 +1,6 @@
 // VKey - PhonotacticsValidator (Vietnamese Syllable Structure Validation)
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
-// Dual-licensed: AGPL-3.0 for open-source use, commercial license for proprietary use.
-// See LICENSE and LICENSE-COMMERCIAL in the project root.
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Validates that a character buffer forms a valid Vietnamese syllable:
 //   [C₁] + V + [C₂]

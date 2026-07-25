@@ -1,8 +1,6 @@
 // VKey - Shared Engine Helper Functions
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
-// Dual-licensed: AGPL-3.0 for open-source use, commercial license for proprietary use.
-// See LICENSE and LICENSE-COMMERCIAL in the project root.
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Template helpers used by TypingEngine (Telex, VNI, and Combined input methods).
 // Templated so call sites stay structural-only against CharState.

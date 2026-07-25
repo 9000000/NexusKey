@@ -53,9 +53,9 @@ Về nguyên tắc copyright/license, cần tách quyền của người nhận 
 
 Nói cách khác, license như GPL hoặc AGPL ràng buộc người nhận mã nguồn theo license đó. Nó không tước quyền của chủ sở hữu copyright đối với phần mã nguồn mà họ thật sự sở hữu.
 
-Nếu một người sở hữu toàn bộ copyright của phần mã nguồn đó, họ có quyền phát hành theo AGPL, phát hành song song theo commercial license, hoặc kết hợp với thành phần đóng nguồn do chính họ sở hữu. Đây là mô hình dual licensing đã được nhiều dự án sử dụng, chẳng hạn Qt, MySQL hoặc MongoDB.
+Nếu một người nắm toàn bộ quyền tác giả của phần mã nguồn đó, họ có quyền phát hành theo AGPL, hoặc kết hợp với một thành phần đóng nguồn do chính họ sở hữu, miễn là phần mã nguồn AGPL vẫn được phân phối đúng theo điều kiện của AGPL. Trên cơ sở đó, VKey — được phát hành theo AGPL — có thể nạp một Rust Engine đóng nguồn do cùng tác giả sở hữu.
 
-Commercial license trong trường hợp này không có nghĩa là VKey đang được vận hành như một sản phẩm trả phí cho người dùng cuối. Nó là một lựa chọn cấp phép thay thế nếu một cá nhân hoặc tổ chức muốn tích hợp, phân phối hoặc sử dụng mã nguồn theo điều kiện khác với AGPL. Bản phát hành công khai của VKey vẫn được cung cấp miễn phí.
+VKey từng có thêm một file LICENSE-COMMERCIAL, cung cấp một lựa chọn cấp phép thay cho AGPL khi cần tích hợp theo điều kiện khác. Trong thực tế, đến nay chưa có nhu cầu thực tế cụ thể cho lựa chọn này — người dùng bộ gõ tiếng Việt quen với việc sử dụng miễn phí hoặc ủng hộ tự nguyện, không phải mua license — nên mình đã bỏ file này. VKey hiện chỉ phát hành theo một license duy nhất: AGPL-3.0.
 
 Điều kiện quan trọng là người phát hành phải thật sự sở hữu copyright của phần mã nguồn liên quan. Điểm này có thể kiểm chứng trực tiếp từ repository:
 
@@ -245,7 +245,7 @@ Mình không kỳ vọng mọi người phải đồng ý với mọi quyết đ
 
 Điều mình mong muốn là các trao đổi về license, copyright, nguồn gốc dự án hoặc phạm vi tham khảo nên dựa trên thông tin có thể kiểm chứng: repository, lịch sử commit, tài liệu công khai và các phép so sánh cụ thể.
 
-VKey là dự án mình phát triển từ nhu cầu cá nhân trước khi chia sẻ cho cộng đồng. Mình không thu phí người dùng, không chạy quảng cáo, không kêu gọi sponsor và không bắt buộc ai sử dụng. Nếu có commercial license, đó là một lựa chọn pháp lý cho các trường hợp cần điều kiện cấp phép khác AGPL, không phải mô hình kinh doanh chính của bản VKey phát hành công khai.
+VKey là dự án mình phát triển từ nhu cầu cá nhân trước khi chia sẻ cho cộng đồng. Mình không thu phí người dùng, không chạy quảng cáo, không kêu gọi tài trợ. Việc sử dụng VKey hoàn toàn do mỗi người tự quyết định. Các bản phát hành công khai của VKey hiện chỉ được phát hành theo giấy phép AGPL-3.0.
 
 Nếu VKey phù hợp với nhu cầu của bạn, mình rất vui vì dự án có thể mang lại giá trị. Nếu không phù hợp, vẫn còn nhiều bộ gõ chất lượng khác để lựa chọn.
 

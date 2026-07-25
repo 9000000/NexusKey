@@ -1,6 +1,6 @@
 // VKey - Vietnamese Phonology Shared Data
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Canonical constexpr data for the hot-path CharState validator. Keeping the
 // table separate from traversal code makes the rule set auditable without a

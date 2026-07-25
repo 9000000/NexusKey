@@ -1,8 +1,6 @@
 // VKey - Typing Engine Implementation (unified Telex/VNI/Combined)
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
-// Dual-licensed: AGPL-3.0 for open-source use, commercial license for proprietary use.
-// See LICENSE and LICENSE-COMMERCIAL in the project root.
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // V3 changes: flat constexpr arrays for O(1) Compose(), stack-allocated
 // FindToneTarget(), bounded ApplyAutoUO(), pre-reserved buffers.

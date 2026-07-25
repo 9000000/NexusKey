@@ -1,5 +1,5 @@
 // VKey - Vietnamese tone-placement rules
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include "Phonotactics.h"
 
