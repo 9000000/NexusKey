@@ -1,10 +1,41 @@
-/* Macro Dialog Styles */
+/* Macro Dialog Styles (Sciter CSS) */
 /* base.css + subdialog.css loaded via <link> in HTML */
 
-/* Content Section override - smaller padding */
+/* Content Section override - Sciter flow: vertical, fills remaining height */
 .content-section {
+    flow: vertical;
     padding: 10px;
-    min-height: 0;
+    height: *;
+    overflow: hidden;
+}
+
+/* Two Column Layout Container (Sciter flow: horizontal) */
+.macro-layout-container {
+    flow: horizontal;
+    border-spacing: 10px;
+    width: 100%;
+    height: *;
+}
+
+/* Left Column: Form & Triggers */
+.macro-form-col {
+    flow: vertical;
+    width: 320px;
+    height: *;
+    overflow: hidden;
+}
+
+/* First card (Input form card) expands to fill available height in left column */
+.macro-form-col > .settings-card:first-child {
+    flow: vertical;
+    height: *;
+}
+
+/* Right Column: Search & List */
+.macro-list-col {
+    flow: vertical;
+    width: *;
+    height: *;
 }
 
 /* Settings Card override - solid background for macro */
@@ -12,64 +43,140 @@
     background: var(--bg-card-solid);
 }
 
+/* Search Card */
+.settings-card.search-card {
+    padding: 6px 10px;
+    width: 100%;
+}
+
+.search-input-wrapper {
+    flow: horizontal;
+    vertical-align: middle;
+    width: 100%;
+}
+
+.search-icon {
+    vertical-align: middle;
+}
+
+.macro-search-input {
+    width: *;
+    margin-left: 6px;
+}
+
+/* Form Button Row */
+.form-button-row {
+    flow: horizontal;
+    border-spacing: 6px;
+    padding-top: 6px;
+    width: 100%;
+}
+
+.form-button-row .btn-action {
+    width: *;
+}
+
+/* Trigger Card */
+.trigger-card {
+    padding: 8px 12px;
+    flow: vertical;
+    margin-top: 8px;
+}
+
+.trigger-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    margin-bottom: 4px;
+}
+
+.trigger-checkboxes {
+    flow: horizontal-wrap;
+    border-spacing: 10px;
+    width: 100%;
+}
+
+.trigger-checkbox-item {
+    flow: horizontal;
+    vertical-align: middle;
+    cursor: pointer;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.trigger-checkbox-item input {
+    margin-right: 4px;
+}
+
 /* Flexible height container for the list */
 .settings-card.list-card {
+    flow: vertical;
+    width: 100%;
     height: *;
-    display: flex;
-    flex-direction: column;
-    min-height: 40px;
     overflow: hidden;
 }
 
 /* Footer row override */
 .footer-row {
+    flow: horizontal;
+    border-spacing: 6px;
     width: 100%;
-    flex-shrink: 0;
+    margin-top: 8px;
 }
 
-/* Footer buttons are smaller */
 .footer-row .btn-action {
+    width: *;
     font-size: 11px;
     padding: 6px 4px;
 }
 
 /* List Header */
 .list-header {
-    display: flex;
+    flow: horizontal;
     padding: 8px 0;
     border-bottom: 1px solid var(--border-medium);
     font-size: 12px;
     font-weight: 600;
     color: var(--text-secondary);
-    flex-shrink: 0;
+    width: 100%;
 }
 
 .list-col-name {
-    width: 100px;
-    flex-shrink: 0;
+    width: 110px;
 }
 
 .list-col-content {
-    flex: 1;
+    width: *;
 }
 
 /* Macro List - Flexible height with scroll */
 .macro-list {
     display: block;
     height: *;
-    min-height: 40px;
+    width: 100%;
     overflow-y: scroll-indicator;
     overflow-x: hidden;
     vertical-scrollbar: pink-scroll-indicator;
     padding-right: 10px;
 }
 
+.macro-list-empty {
+    padding: 20px 10px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 .macro-item {
-    display: flex;
+    flow: horizontal;
     padding: 8px 0;
     cursor: pointer;
     transition: background 0.15s ease;
     border-bottom: 1px solid var(--border-row-light);
+    width: 100%;
 }
 
 .macro-item:hover {
@@ -81,13 +188,21 @@
 }
 
 .macro-item-name {
-    min-width: 60px;
-    max-width: 80px;
-    flex-shrink: 0;
+    width: 110px;
     font-size: 12px;
-    font-weight: 400;
+    font-weight: 600;
     color: var(--text-primary);
     word-break: break-all;
+    padding-right: 6px;
+}
+
+.macro-item-content {
+    width: *;
+    font-size: 12px;
+    color: var(--text-secondary);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.3;
 }
 
 /* Newline hint below content input */
@@ -117,20 +232,21 @@
     border-radius: 2px;
 }
 
-.macro-item-content {
-    flex: 1;
-    font-size: 12px;
-    color: var(--text-secondary);
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    line-height: 1.3;
+/* Content row fills vertical space for textarea */
+.content-row {
+    flow: vertical;
+    height: *;
 }
 
-/* Textarea for multi-line macro content */
+.content-row .setting-label {
+    margin-bottom: 0;
+}
+
+/* Textarea for multi-line macro content - stretches to fill available height */
 textarea.setting-input.macro-textarea {
-    height: 80px !important;
-    min-height: 60px !important;
-    max-height: 120px !important;
+    height: * !important;
+    min-height: 80px !important;
+    max-height: none !important;
     font-family: monospace;
     font-size: 12px;
     resize: none;
@@ -140,17 +256,6 @@ textarea.setting-input.macro-textarea {
     white-space: pre-wrap !important;
     width: 100% !important;
     padding: 6px !important;
-}
-
-/* Content row needs vertical layout for textarea */
-.content-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-}
-
-.content-row .setting-label {
-    margin-bottom: 0;
 }
 
 .char-counter.near-limit {
@@ -170,4 +275,3 @@ textarea.setting-input.macro-textarea {
 .clipboard-hint.visible {
     display: block;
 }
-

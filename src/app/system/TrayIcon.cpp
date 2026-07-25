@@ -613,6 +613,9 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch (LOWORD(lParam)) {
         case WM_RBUTTONUP:
         case WM_CONTEXTMENU:
+            // Drop any leftover IDC_APPSTARTING before the menu takes capture —
+            // the popup window belongs to this thread, so our cursor applies
+            SetCursor(LoadCursor(nullptr, IDC_ARROW));
             ShowContextMenu();
             return true;
         case WM_LBUTTONUP:

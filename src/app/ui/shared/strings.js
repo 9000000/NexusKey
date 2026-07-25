@@ -6,6 +6,7 @@ var STRINGS = {
     en: {
         // ── Common (shared across dialogs) ──
         "close": "Close",
+        "cancel": "Cancel",
         "add": "+ Add",
         "delete": "- Delete",
         "application": "Application",
@@ -136,7 +137,9 @@ var STRINGS = {
         "m.content_ph": "e.g.: by the way",
         "m.import": "Import from file...",
         "m.export": "Export to file...",
-        "m.edit": "+ Edit",
+        "m.btn_edit": "\u270E Edit",
+        "m.search_ph": "Search shortcut or content...",
+        "m.deselect": "Clear selection",
         "m.hint_enter": "Press Enter for a new line",
         "m.hint_clipboard": "Long macros use Clipboard to paste (current Clipboard content will be overwritten)",
         "m.trigger_keys": "Trigger keys:",

@@ -30,72 +30,97 @@
             </button>
         </div>
 
-        <!-- Main Content Section -->
+        <!-- Main Content Section: Two Column Layout -->
         <div class="content-section">
-            <!-- Input Card -->
-            <div class="settings-card">
-                <div class="setting-row">
-                    <span class="setting-label" data-i18n="m.shortcut">Từ gõ tắt</span>
-                    <input type="text" class="setting-input" id="macro-name" placeholder="vd: btw" data-i18n-ph="m.shortcut_ph">
-                </div>
-                <div class="setting-row content-row">
-                    <span class="setting-label" data-i18n="m.content">Nội dung đầy đủ</span>
-                    <textarea class="setting-input macro-textarea" id="macro-content"
-                        placeholder="vd: by the way" data-i18n-ph="m.content_ph"
-                        maxlength="20480"></textarea>
-                </div>
-                <div class="hint-row">
-                    <span class="hint-text" data-i18n="m.hint_enter">Nhấn Enter để xuống dòng</span>
-                    <span class="char-counter" id="char-counter">0 / 20480</span>
-                </div>
-                <div class="clipboard-hint" id="clipboard-hint">
-                    <span class="hint-text" data-i18n="m.hint_clipboard">Macro dài sẽ dùng Clipboard để dán (nội dung Clipboard hiện tại sẽ bị ghi đè)</span>
-                </div>
-                <div class="button-row">
-                    <button class="btn-action btn-primary" id="btn-add" data-i18n="add">+ Thêm</button>
-                    <button class="btn-action btn-danger" id="btn-delete" data-i18n="delete">- Xóa</button>
-                </div>
-            </div>
+            <div class="macro-layout-container">
+                <!-- Left Column: Form & Triggers -->
+                <div class="macro-form-col">
+                    <!-- Input Card -->
+                    <div class="settings-card">
+                        <div class="setting-row">
+                            <span class="setting-label" data-i18n="m.shortcut">Từ gõ tắt</span>
+                            <input type="text" class="setting-input" id="macro-name" placeholder="vd: btw" data-i18n-ph="m.shortcut_ph">
+                        </div>
+                        <div class="setting-row content-row">
+                            <span class="setting-label" data-i18n="m.content">Nội dung đầy đủ</span>
+                            <textarea class="setting-input macro-textarea" id="macro-content"
+                                placeholder="vd: by the way" data-i18n-ph="m.content_ph"
+                                maxlength="20480"></textarea>
+                        </div>
+                        <div class="hint-row">
+                            <span class="hint-text" data-i18n="m.hint_enter">Nhấn Enter để xuống dòng</span>
+                            <span class="char-counter" id="char-counter">0 / 20480</span>
+                        </div>
+                        <div class="clipboard-hint" id="clipboard-hint">
+                            <span class="hint-text" data-i18n="m.hint_clipboard">Macro dài sẽ dùng Clipboard để dán (nội dung Clipboard hiện tại sẽ bị ghi đè)</span>
+                        </div>
+                        <div class="button-row form-button-row">
+                            <button class="btn-action btn-primary" id="btn-add" data-i18n="add">+ Thêm</button>
+                            <button class="btn-action btn-secondary" id="btn-edit" style="display:none;" data-i18n="m.btn_edit">✎ Sửa</button>
+                            <button class="btn-action btn-danger" id="btn-delete" style="display:none;" data-i18n="delete">- Xóa</button>
+                            <button class="btn-action btn-secondary btn-clear" id="btn-clear" style="display:none;" data-i18n="m.deselect">Hủy chọn</button>
+                        </div>
+                    </div>
 
-            <!-- Trigger Card -->
-            <div class="settings-card" style="padding: 12px 16px; display: flex; flex-direction: row; align-items: center; gap: 12px;">
-                <span class="setting-label" style="white-space: nowrap; margin-right: 16px;" data-i18n="m.trigger_keys">Phím kích hoạt:</span>
-                <div style="display: flex; flex-direction: row; gap: 12px; flex-wrap: wrap;">
-                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
-                        <input type="checkbox" id="cfg-macro_trigger_space" checked> Space
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
-                        <input type="checkbox" id="cfg-macro_trigger_enter" checked> Enter
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
-                        <input type="checkbox" id="cfg-macro_trigger_tab" checked> Tab
-                    </label>
-                    <label style="display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap;">
-                        <input type="checkbox" id="cfg-macro_trigger_dir" checked> <span data-i18n="m.trigger_arrows">Điều hướng</span>
-                    </label>
-                </div>
-            </div>
+                    <!-- Trigger Card -->
+                    <div class="settings-card trigger-card">
+                        <span class="setting-label trigger-label" data-i18n="m.trigger_keys">Phím kích hoạt:</span>
+                        <div class="trigger-checkboxes">
+                            <label class="trigger-checkbox-item">
+                                <input type="checkbox" id="cfg-macro_trigger_space" checked> Space
+                            </label>
+                            <label class="trigger-checkbox-item">
+                                <input type="checkbox" id="cfg-macro_trigger_enter" checked> Enter
+                            </label>
+                            <label class="trigger-checkbox-item">
+                                <input type="checkbox" id="cfg-macro_trigger_tab" checked> Tab
+                            </label>
+                            <label class="trigger-checkbox-item">
+                                <input type="checkbox" id="cfg-macro_trigger_dir" checked> <span data-i18n="m.trigger_arrows">Điều hướng</span>
+                            </label>
+                        </div>
+                    </div>
 
-            <!-- List Card -->
-            <div class="settings-card list-card">
-                <div class="list-header">
-                    <span class="list-col-name" data-i18n="m.shortcut">Từ gõ tắt</span>
-                    <span class="list-col-content" data-i18n="m.content">Nội dung đầy đủ</span>
+                    <!-- Footer Buttons -->
+                    <div class="button-row footer-row">
+                        <button class="btn-action btn-secondary" id="btn-import" data-i18n="m.import">Nạp từ file...</button>
+                        <button class="btn-action btn-secondary" id="btn-export" data-i18n="m.export">Xuất ra file...</button>
+                    </div>
                 </div>
-                <div class="macro-list" id="macro-list">
-                    <!-- Items inserted by C++ -->
-                </div>
-            </div>
 
-            <!-- Footer Buttons -->
-            <div class="button-row footer-row">
-                <button class="btn-action btn-secondary" id="btn-import" data-i18n="m.import">Nạp từ file...</button>
-                <button class="btn-action btn-secondary" id="btn-export" data-i18n="m.export">Xuất ra file...</button>
+                <!-- Right Column: Search & Macro List -->
+                <div class="macro-list-col">
+                    <!-- Search Card -->
+                    <div class="settings-card search-card">
+                        <div class="search-input-wrapper">
+                            <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="var(--text-secondary)">
+                                <path d="M18.031 16.6168L22.3637 20.9495L20.9495 22.3637L16.6168 18.031C15.0769 19.263 13.124 20 11 20C6.032 20 2 15.968 2 11C2 6.032 6.032 2 11 2C15.968 2 20 6.032 20 11C20 13.124 19.263 15.0769 18.031 16.6168ZM16.0247 15.8743C17.2475 14.6146 18 12.8956 18 11C18 7.132 14.868 4 11 4C7.132 4 4 7.132 4 11C4 14.868 7.132 18 11 18C12.8956 18 14.6146 17.2475 15.8743 16.0247L16.0247 15.8743Z"></path>
+                            </svg>
+                            <input type="text" class="setting-input macro-search-input" id="macro-search-input"
+                                placeholder="Tìm kiếm từ gõ tắt hoặc nội dung đầy đủ..." data-i18n-ph="m.search_ph">
+                        </div>
+                    </div>
+
+                    <!-- List Card -->
+                    <div class="settings-card list-card">
+                        <div class="list-header">
+                            <span class="list-col-name" data-i18n="m.shortcut">Từ gõ tắt</span>
+                            <span class="list-col-content" data-i18n="m.content">Nội dung đầy đủ</span>
+                        </div>
+                        <div class="macro-list" id="macro-list">
+                            <!-- Items rendered by JS -->
+                        </div>
+                        <div class="macro-list-empty" id="macro-list-empty" style="display:none;" data-i18n="no_matching">
+                            Không tìm thấy kết quả
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <!-- Hidden inputs for C++ -->
         <input type="hidden" id="val-action" value="">
+        <input type="hidden" id="val-old-macro-name" value="">
         <input type="hidden" id="val-macro-name" value="">
         <input type="hidden" id="val-macro-content" value="">
         <input type="hidden" id="val-trigger-id" value="">

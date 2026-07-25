@@ -74,6 +74,7 @@ static const wchar_t* const kVietnamese[] = {
     L"Cấu hình hiện tại đã được sao lưu thành công tại:\n%s\n\nỨng dụng sẽ tự động đóng để tiến hành cập nhật.", // UPDATE_BACKUP_SUCCESS
     L"Chế độ Nâng cao sử dụng VKey Engine (Rust).\nEngine sẽ được nạp vào bộ nhớ.",  // SPELL_ADVANCED_ENGINE_INFO
     L"Bạn cần khởi động lại VKey để giải phóng VKey Engine khỏi bộ nhớ.\nBạn có muốn khởi động lại VKey ngay?",  // SPELL_ADVANCED_CLOSE_APP
+    L"Bạn có muốn xóa gõ tắt này không?",             // MACRO_CONFIRM_DELETE
 };
 
 // English string table
@@ -142,6 +143,7 @@ static const wchar_t* const kEnglish[] = {
     L"Your current configuration has been backed up at:\n%s\n\nThe application will automatically close to perform the update.", // UPDATE_BACKUP_SUCCESS
     L"Advanced mode uses VKey Engine (Rust).\nThe engine will be loaded into memory.",  // SPELL_ADVANCED_ENGINE_INFO
     L"VKey needs to restart to release VKey Engine from memory.\nDo you want to restart VKey now?",  // SPELL_ADVANCED_CLOSE_APP
+    L"Delete this shortcut?",                        // MACRO_CONFIRM_DELETE
 };
 
 static_assert(sizeof(kVietnamese) / sizeof(kVietnamese[0]) == static_cast<size_t>(StringId::_COUNT),
