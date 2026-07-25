@@ -4028,9 +4028,30 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // delivers the click to the target app, so Classify() can run before
     // (or after) that app finishes moving focus to the control the user
     // actually clicked — the child probed may not be the one now focused.
-    // RefreshFocusCache below already establishes GetFocusedChildHwnd
-    // (AttachThreadInput) is cheap (~µs) and safe at this exact call site.
-    const HWND currentFocusedChild = ::NextKey::GetFocusedChildHwnd(activeHwnd);
+    //
+    // Two skips, because GetFocusedChildHwnd IS AttachThreadInput: it briefly
+    // serialises THIS thread's input queue with the foreground thread's, and
+    // this is the thread that owns WH_MOUSE_LL. "Cheap (~µs)" measured alone
+    // is not the cost that matters — who we serialise against is.
+    //   * auto-cap off — both consumers below are auto-cap-only, so the probe
+    //     buys nothing at any price.
+    //   * tray/taskbar foreground — that attaches us to explorer.exe's taskbar
+    //     thread, the very thread that must itself detect the tray icon's
+    //     double-click. Lose that race and WM_LBUTTONDBLCLK degrades into two
+    //     WM_LBUTTONUPs, so a double-click only toggles V/E and never opens
+    //     Settings (#209: "left-click 3 lần... phải click thêm 3 lần nữa";
+    //     right-click via the menu was unaffected, which is what pinned the
+    //     fault to double-click DETECTION rather than to opening the dialog).
+    //     Nothing is ever typed into the taskbar, so there is no Vietnamese
+    //     state to validate there.
+    // Both skips leave suppressAutoCapForPasswordSafety_ permissive rather
+    // than latched: it is re-derived on the next real foreground change, and
+    // HandleAlphaKey re-probes the focused control synchronously before it
+    // capitalizes, re-suppressing if that control IS a password field.
+    const bool needsChildProbe =
+        cfg->autoCaps && !FocusOwner::IsTrayOrTaskbarWindow(activeHwnd);
+    const HWND currentFocusedChild =
+        needsChildProbe ? ::NextKey::GetFocusedChildHwnd(activeHwnd) : nullptr;
     const std::uintptr_t currentFocusedChildOpaque =
         reinterpret_cast<std::uintptr_t>(currentFocusedChild);
 
@@ -4039,8 +4060,12 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     ResetComposition();
     tempEngineOff_ = false;
 
-    suppressAutoCapForPasswordSafety_ = ShouldSuppressAutoCapForPasswordSafety(
-        cls->isPasswordFieldFocused, cls->focusedChildHwndOpaque, currentFocusedChildOpaque);
+    // Skipped probe ⇒ permissive (see needsChildProbe above); never latch a
+    // suppression we derived from an HWND we deliberately did not read.
+    suppressAutoCapForPasswordSafety_ = needsChildProbe
+        && ShouldSuppressAutoCapForPasswordSafety(
+               cls->isPasswordFieldFocused, cls->focusedChildHwndOpaque,
+               currentFocusedChildOpaque);
 
     // Validate worker-produced empty-document evidence at consumption time.
     // The HWND/PID/child check extends the existing latest-focus mailbox
