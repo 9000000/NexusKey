@@ -7,6 +7,7 @@ var MACRO_CLIPBOARD_THRESHOLD = 200;
 var allMacros = new Map();
 var selectedMacroName = null;
 var checkedMacroNames = new Set();
+var lastClickedKey = null;
 var searchQuery = "";
 
 document.ready = function () {
@@ -184,6 +185,7 @@ function updateButtonStates() {
 function clearSelection() {
     selectedMacroName = null;
     checkedMacroNames.clear();
+    lastClickedKey = null;
 
     var nameField = document.getElementById("macro-name");
     var contentField = document.getElementById("macro-content");
@@ -320,6 +322,7 @@ function triggerAction(action) {
 // Called by C++ to start populating list
 function clearMacroList() {
     allMacros.clear();
+    lastClickedKey = null;
     var list = document.getElementById("macro-list");
     if (list) list.innerHTML = "";
     var emptyEl = document.getElementById("macro-list-empty");
@@ -334,6 +337,19 @@ function addMacroToList(name, content) {
 // Called by C++ after adding all items
 function finishMacroList() {
     renderMacroList();
+}
+
+function updateCheckboxesUI() {
+    var list = document.getElementById("macro-list");
+    if (!list) return;
+    var items = list.querySelectorAll(".macro-item");
+    for (var i = 0; i < items.length; i++) {
+        var name = items[i].getAttribute("data-name");
+        var chk = items[i].querySelector(".chk-item");
+        if (chk) {
+            chk.checked = checkedMacroNames.has(name);
+        }
+    }
 }
 
 function renderMacroList() {
@@ -358,6 +374,10 @@ function renderMacroList() {
         if (nameField) nameField.value = "";
         if (contentField) contentField.value = "";
         updateCharCounter();
+    }
+
+    if (lastClickedKey && !allMacros.has(lastClickedKey)) {
+        lastClickedKey = null;
     }
 
     var sortedKeys = Array.from(allMacros.keys()).sort();
@@ -403,10 +423,29 @@ function renderMacroList() {
             (function (n) {
                 chk.addEventListener("click", function (e) {
                     e.stopPropagation();
-                    if (this.checked) {
-                        checkedMacroNames.add(n);
+                    var visibleKeys = getVisibleMacroKeys();
+                    var currentIdx = visibleKeys.indexOf(n);
+                    var anchorIdx = lastClickedKey ? visibleKeys.indexOf(lastClickedKey) : -1;
+
+                    if (e.shiftKey && anchorIdx !== -1 && currentIdx !== -1) {
+                        var start = Math.min(anchorIdx, currentIdx);
+                        var end = Math.max(anchorIdx, currentIdx);
+                        var shouldCheck = this.checked;
+                        for (var k = start; k <= end; k++) {
+                            if (shouldCheck) {
+                                checkedMacroNames.add(visibleKeys[k]);
+                            } else {
+                                checkedMacroNames.delete(visibleKeys[k]);
+                            }
+                        }
+                        updateCheckboxesUI();
                     } else {
-                        checkedMacroNames.delete(n);
+                        if (this.checked) {
+                            checkedMacroNames.add(n);
+                        } else {
+                            checkedMacroNames.delete(n);
+                        }
+                        lastClickedKey = n;
                     }
                     updateButtonStates();
                 });
@@ -414,8 +453,32 @@ function renderMacroList() {
         }
 
         (function (el, n, c) {
-            el.addEventListener("click", function () {
-                selectMacroItem(el, n, c);
+            el.addEventListener("click", function (e) {
+                var visibleKeys = getVisibleMacroKeys();
+                var currentIdx = visibleKeys.indexOf(n);
+                var anchorIdx = lastClickedKey ? visibleKeys.indexOf(lastClickedKey) : -1;
+
+                if (e.shiftKey && anchorIdx !== -1 && currentIdx !== -1) {
+                    var start = Math.min(anchorIdx, currentIdx);
+                    var end = Math.max(anchorIdx, currentIdx);
+                    for (var k = start; k <= end; k++) {
+                        checkedMacroNames.add(visibleKeys[k]);
+                    }
+                    updateCheckboxesUI();
+                    updateButtonStates();
+                } else if (e.ctrlKey) {
+                    if (checkedMacroNames.has(n)) {
+                        checkedMacroNames.delete(n);
+                    } else {
+                        checkedMacroNames.add(n);
+                    }
+                    lastClickedKey = n;
+                    updateCheckboxesUI();
+                    updateButtonStates();
+                } else {
+                    lastClickedKey = n;
+                    selectMacroItem(el, n, c);
+                }
             });
         })(item, name, content);
 
