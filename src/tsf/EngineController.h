@@ -8,12 +8,14 @@
 #include <msctf.h>
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 
 #include "CompositionManager.h"
 #include "EditSession.h"
 #include "LanguageBarButton.h"
+#include "core/MacroContextMatch.h"
 #include "core/config/TypingConfig.h"
 #include "core/engine/IInputEngine.h"
 #include "core/ipc/SharedStateManager.h"
@@ -54,7 +56,8 @@ public:
     [[nodiscard]] bool IsMacroCommitTrigger(UINT vkCode) const noexcept;
     [[nodiscard]] bool HasMacroCandidate() const noexcept;
     [[nodiscard]] bool IsEnglishMacroTrackingActive() const noexcept;
-    [[nodiscard]] bool WouldExpandMacroTrigger(UINT vkCode,
+    [[nodiscard]] bool WouldExpandMacroTrigger(ITfContext* pContext,
+                                               UINT vkCode,
                                                wchar_t triggerChar) const;
     [[nodiscard]] MacroResult HandleMacroTrigger(ITfContext* pContext,
                                                   UINT vkCode,
@@ -195,6 +198,15 @@ private:
     [[nodiscard]] bool ReplacePrecedingText(ITfContext* pContext,
                                             std::size_t characterCount,
                                             const std::wstring& replacement);
+    [[nodiscard]] std::wstring ReadPrecedingTextFromContext(ITfContext* pContext,
+                                                            LONG maxChars = 64) const;
+    /// Plan against an explicitly assembled raw buffer. Callers that must not
+    /// mutate state (WouldExpandMacroTrigger) pass a local copy.
+    [[nodiscard]] Macro::MacroPlan EvaluateMacroPlan(const std::wstring& rawBuffer,
+                                                    wchar_t triggerChar) const;
+    /// Fallback for when rawMacroBuffer_ no longer mirrors the document.
+    [[nodiscard]] std::optional<Macro::ContextMatch> LookupMacroInContext(
+        ITfContext* pContext, wchar_t triggerChar) const;
 
     /// Detect if current app is Scintilla-based (cached, updated on context change)
     void DetectScintillaApp();
@@ -230,6 +242,8 @@ private:
     // sized. TSF reloads this local snapshot whenever configGeneration changes.
     std::unordered_map<std::wstring, std::wstring> macroTable_;
     std::unordered_set<std::wstring> spaceMacroKeys_;
+    // Bounds the backward scan of document text in LookupMacroInContext.
+    std::size_t maxMacroKeyLen_ = 0;
     std::wstring rawMacroBuffer_;
     bool wasFirstCharAutoCapped_ = false;
     uint8_t macroGeneration_ = 0;

@@ -5,7 +5,11 @@
 
 #include "EngineController.h"
 
+#include <algorithm>
 #include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 #include "CompositionEditSession.h"
 #include "Define.h"
@@ -14,6 +18,7 @@
 #include "InputScopeChecker.h"
 #include "core/DigitLedWordDecision.h"
 #include "core/MacroCase.h"
+#include "core/MacroContextMatch.h"
 #include "core/MacroPrefix.h"
 #include "core/MacroTableDecision.h"
 #include "core/config/ConfigManager.h"
@@ -639,39 +644,79 @@ bool EngineController::ReplacePrecedingText(ITfContext* pContext,
     return true;
 }
 
-bool EngineController::WouldExpandMacroTrigger(UINT vkCode,
-                                                wchar_t triggerChar) const {
-    if (!Macro::IsCommitTrigger(vkCode) || !IsMacroTrackingEnabled()) return false;
+std::wstring EngineController::ReadPrecedingTextFromContext(ITfContext* pContext,
+                                                            LONG maxChars) const {
+    if (pContext == nullptr || isScintillaApp_) return {};
+    auto* pSession = new ReadPrecedingCharsEditSession(pContext, maxChars);
+    HRESULT hrSession = S_OK;
+    HRESULT hr = pContext->RequestEditSession(
+        clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
+    std::wstring text;
+    if (SUCCEEDED(hr) && SUCCEEDED(hrSession)) {
+        text = pSession->Text();
+    }
+    pSession->Release();
+    return text;
+}
 
+std::optional<Macro::ContextMatch> EngineController::LookupMacroInContext(
+    ITfContext* pContext, wchar_t triggerChar) const {
+    if (pContext == nullptr || macroTable_.empty() || maxMacroKeyLen_ == 0) {
+        return std::nullopt;
+    }
+    // Reading one char more than the longest key lets the boundary guard see
+    // the character in front of a full-length candidate.
+    const LONG want = static_cast<LONG>(
+        (std::min)(maxMacroKeyLen_ + 1, static_cast<std::size_t>(64)));
+    const std::wstring text = ReadPrecedingTextFromContext(pContext, want);
+    if (text.empty()) return std::nullopt;   // unsupported host, or caret at doc start
+
+    const TsfCaseMapper caseMapper;
+    return Macro::MatchInPrecedingText(text, triggerChar, macroTable_, maxMacroKeyLen_,
+                                       config_.autoCapsMacro, kMacroClipboardThreshold,
+                                       caseMapper);
+}
+
+Macro::MacroPlan EngineController::EvaluateMacroPlan(const std::wstring& rawBuffer,
+                                                    wchar_t triggerChar) const {
     const std::wstring previousComposition = engine_ ? engine_->Peek() : std::wstring{};
-    if (rawMacroBuffer_.empty() && previousComposition.empty()) return false;
-
-    std::wstring candidate = rawMacroBuffer_;
-    if (triggerChar > L' ') {
-        candidate += triggerChar;
-        if (candidate.size() > kMaxRawMacroBuffer) return false;
-    }
-    if (!Macro::ShouldTrigger(
-            vkCode, config_.macroTriggerSpace, config_.macroTriggerEnter,
-            config_.macroTriggerTab, config_.macroTriggerDir)) {
-        return false;
-    }
+    if (rawBuffer.empty() && previousComposition.empty()) return {};
 
     const std::vector<uint8_t> encodedWidths;
     const TsfCaseMapper caseMapper;
     const Macro::PlanInputs inputs{
-        .rawMacroBuffer = candidate,
+        .rawMacroBuffer = rawBuffer,
         .previousComposition = previousComposition,
         .previousEncodedWidths = encodedWidths,
         .macroTable = macroTable_,
         .macroCrossCommit = macroCrossCommit_,
+        // TSF writes Unicode through ITfRange, so match document character counts.
         .currentCodeTable = CodeTable::Unicode,
         .autoCapsEnabled = config_.autoCapsMacro,
         .wasFirstCharAutoCapped = wasFirstCharAutoCapped_,
         .triggerChar = triggerChar,
         .clipboardThreshold = kMacroClipboardThreshold,
     };
-    return Macro::Plan(inputs, caseMapper).matched;
+    return Macro::Plan(inputs, caseMapper);
+}
+
+bool EngineController::WouldExpandMacroTrigger(ITfContext* pContext,
+                                                UINT vkCode,
+                                                wchar_t triggerChar) const {
+    if (!Macro::IsCommitTrigger(vkCode) || !IsMacroTrackingEnabled()) return false;
+    if (!Macro::ShouldTrigger(vkCode, config_.macroTriggerSpace, config_.macroTriggerEnter,
+                              config_.macroTriggerTab, config_.macroTriggerDir)) {
+        return false;
+    }
+
+    std::wstring candidate = rawMacroBuffer_;
+    if (triggerChar > L' ') {
+        candidate += triggerChar;
+        if (candidate.size() > kMaxRawMacroBuffer) return false;
+    }
+    if (EvaluateMacroPlan(candidate, triggerChar).matched) return true;
+
+    return LookupMacroInContext(pContext, triggerChar).has_value();
 }
 
 EngineController::MacroResult EngineController::HandleMacroTrigger(
@@ -682,20 +727,8 @@ EngineController::MacroResult EngineController::HandleMacroTrigger(
         return MacroResult::NoMatch;
     }
 
-    const std::wstring previousComposition = engine_ ? engine_->Peek() : std::wstring{};
-    if (rawMacroBuffer_.empty() && previousComposition.empty()) return MacroResult::NoMatch;
-
-    if (triggerChar > L' ') {
-        rawMacroBuffer_ += triggerChar;
-        if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) {
-            ClearMacroTracking();
-            return MacroResult::NoMatch;
-        }
-    }
-    const bool shouldExpand = Macro::ShouldTrigger(
-        vkCode, config_.macroTriggerSpace, config_.macroTriggerEnter,
-        config_.macroTriggerTab, config_.macroTriggerDir);
-    if (!shouldExpand) {
+    if (!Macro::ShouldTrigger(vkCode, config_.macroTriggerSpace, config_.macroTriggerEnter,
+                              config_.macroTriggerTab, config_.macroTriggerDir)) {
         if (vkCode == VK_SPACE && !rawMacroBuffer_.empty()) {
             rawMacroBuffer_.push_back(L' ');
             const bool keep = IsSpaceMacroPrefix(rawMacroBuffer_, spaceMacroKeys_);
@@ -710,22 +743,35 @@ EngineController::MacroResult EngineController::HandleMacroTrigger(
         return MacroResult::NoMatch;
     }
 
-    const std::vector<uint8_t> encodedWidths;
-    const TsfCaseMapper caseMapper;
-    const Macro::PlanInputs inputs{
-        .rawMacroBuffer = rawMacroBuffer_,
-        .previousComposition = previousComposition,
-        .previousEncodedWidths = encodedWidths,
-        .macroTable = macroTable_,
-        .macroCrossCommit = macroCrossCommit_,
-        // TSF writes Unicode through ITfRange, so match document character counts.
-        .currentCodeTable = CodeTable::Unicode,
-        .autoCapsEnabled = config_.autoCapsMacro,
-        .wasFirstCharAutoCapped = wasFirstCharAutoCapped_,
-        .triggerChar = triggerChar,
-        .clipboardThreshold = kMacroClipboardThreshold,
-    };
-    const Macro::MacroPlan plan = Macro::Plan(inputs, caseMapper);
+    // The trigger character has to stay in the tracked buffer: punctuation can
+    // be part of a shortcut, so a later boundary must still be able to match it.
+    // Only extend an already-live candidate — a trigger pressed with nothing
+    // tracked must not seed the buffer, or the context fallback below becomes
+    // the only thing that can ever clear it again.
+    const bool haveTrackedCandidate =
+        !rawMacroBuffer_.empty() || (engine_ && engine_->Count() > 0);
+    if (haveTrackedCandidate && triggerChar > L' ') {
+        rawMacroBuffer_ += triggerChar;
+        if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) {
+            ClearMacroTracking();
+            return MacroResult::NoMatch;
+        }
+    }
+
+    // Primary path: the tracked buffer still mirrors the document.
+    Macro::MacroPlan plan = EvaluateMacroPlan(rawMacroBuffer_, triggerChar);
+
+    // Fallback: rebuild the candidate from document text before the caret, for
+    // when tracking drifted (composition interrupted, characters deleted,
+    // shortcut re-typed). The shortcut is committed text at that point, so the
+    // expansion must replace document characters rather than a composition.
+    if (!plan.matched) {
+        if (auto match = LookupMacroInContext(pContext, triggerChar)) {
+            plan = match->plan;
+            macroCrossCommit_ = true;
+        }
+    }
+
     if (!plan.matched) {
         if (vkCode == VK_SPACE && !rawMacroBuffer_.empty()) {
             rawMacroBuffer_.push_back(L' ');
@@ -747,6 +793,7 @@ EngineController::MacroResult EngineController::HandleMacroTrigger(
         return MacroResult::NoMatch;
     }
 
+    const std::wstring previousComposition = engine_ ? engine_->Peek() : std::wstring{};
     std::wstring replacement = Macro::ExpandEscapesForClipboard(plan.expansion);
     bool eatTrigger = plan.isPartOfMacro;
     if (!eatTrigger && (vkCode == VK_SPACE || triggerChar > L' ')) {
@@ -927,6 +974,7 @@ void EngineController::ReloadMacros(uint8_t generation) {
     ClearMacroTracking();
     macroTable_.clear();
     spaceMacroKeys_.clear();
+    maxMacroKeyLen_ = 0;
     if (!config_.macroEnabled) return;
 
     // Trigger choices live only in TOML; SharedState carries feature bits.
@@ -940,6 +988,7 @@ void EngineController::ReloadMacros(uint8_t generation) {
         (void)value;
         if (key.find(L' ') != std::wstring::npos) spaceMacroKeys_.insert(key);
     }
+    maxMacroKeyLen_ = Macro::LongestMacroKeyLength(macroTable_);
     TSF_LOG(L"ReloadMacros: loaded %zu entries (generation=%u)",
             macroTable_.size(), static_cast<unsigned>(generation));
 }

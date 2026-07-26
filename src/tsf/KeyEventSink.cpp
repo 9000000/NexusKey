@@ -322,7 +322,7 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
         } else if (pEngineController_->IsMacroCommitTrigger(vk)) {
             const wchar_t triggerChar = VkToChar(vk, lParam);
             if (Macro::IsTextProducingTrigger(vk, triggerChar)
-                && pEngineController_->WouldExpandMacroTrigger(vk, triggerChar)) {
+                && pEngineController_->WouldExpandMacroTrigger(pContext, vk, triggerChar)) {
                 // Printable keys must not change document text during the test
                 // phase. Claim the event and cache its translation so OnKeyDown
                 // performs the edit without a second stateful ToUnicode call.
