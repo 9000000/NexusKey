@@ -60,6 +60,41 @@ TEST_F(RustInputEngineTest, ToneEscape_UppercaseR_Issue209Comment) {
     EXPECT_EQ(engine.Peek(), L"TeR");
 }
 
+TEST_F(RustInputEngineTest, ToneEscape_MixedCase_rThenShiftR) {
+    // #209 (2026-07-26): Te + r → Tẻ, then Shift+R must escape → "TeR".
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    RustInputEngine engine(config);
+
+    engine.PushChar(L'T');
+    engine.PushChar(L'e');
+    engine.PushChar(L'r');
+    EXPECT_EQ(engine.Peek(), L"Tẻ");
+    engine.PushChar(L'R');
+    EXPECT_EQ(engine.Peek(), L"TeR");
+}
+
+TEST_F(RustInputEngineTest, ReviveRawReplay_PreservesToneEscape) {
+    // Invariant behind SeedRevivedWord()'s raw-replay branch (#209 Shift+R):
+    // replaying the raw keys of a revived word keeps the tone escapable, so the
+    // next tone key escapes on the FIRST press. Glyph-seeding via
+    // SeedFromText(L"Tẻ") does NOT — this engine swallows that first press when
+    // spell-suggest is on (engine-repo gap), which is why the TSF revive path
+    // must pass MatchingRawForCommittedWord().
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    RustInputEngine engine(config);
+
+    for (const wchar_t c : std::wstring(L"Ter")) engine.PushChar(c);  // raw replay
+    ASSERT_EQ(engine.Peek(), L"Tẻ");
+    engine.PushChar(L'R');
+    EXPECT_EQ(engine.Peek(), L"TeR");
+}
+
 TEST_F(RustInputEngineTest, ToneEscape_LowercaseR_Parity) {
     TypingConfig config;
     config.inputMethod = InputMethod::Telex;

@@ -43,6 +43,17 @@ static wchar_t VkToChar(UINT vk, LPARAM lParam) {
     return (result == 1 && buf[0] != 0) ? buf[0] : 0;
 }
 
+// A bare Shift/CapsLock keydown produces no text and no navigation, so the
+// "non-handled key with live buffer → commit" branches must skip it: committing
+// there silently throws away the raw-keystroke state the Telex escape needs
+// (#209 — "Tẻ" + Shift+R stayed "Tẻ" because Shift chopped the composition and
+// the follow-up revive could only reseed from the rendered glyphs). Ctrl/Alt/Win
+// keep their own deliberate chord commit earlier in both handlers.
+static bool IsBareModifierKey(UINT vkCode) noexcept {
+    return vkCode == VK_SHIFT || vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
+           vkCode == VK_CAPITAL;
+}
+
 // Helper function to check if a key is punctuation/number that should trigger commit
 static bool IsPunctuationKey(UINT vkCode) {
     // Number keys (0-9)
@@ -410,8 +421,8 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     // navigation keys (arrows, Escape, F-keys, Home/End, Delete) take effect on
     // a single press. Printable keys that could race with commit text are
     // handled by earlier branches (punct above, A-Z/space via HandleKey), so
-    // they don't reach here.
-    if (!wantKey && pEngineController_->HasEngineBuffer()) {
+    // they don't reach here. Bare Shift/CapsLock is excluded — see IsBareModifierKey.
+    if (!wantKey && !IsBareModifierKey(vk) && pEngineController_->HasEngineBuffer()) {
         pEngineController_->Commit(pContext);
         *pfEaten = FALSE;
         return S_OK;
@@ -656,7 +667,8 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     // affects printable keys racing with commit text; those are already handled
     // (punct via the branch above, A-Z/space via HandleKey), so nothing text-
     // inserting reaches this point. Works whether OnTestKeyDown fired or not.
-    if (!wantKey && pEngineController_->HasEngineBuffer()) {
+    // Bare Shift/CapsLock is excluded — see IsBareModifierKey.
+    if (!wantKey && !IsBareModifierKey(vk) && pEngineController_->HasEngineBuffer()) {
         pEngineController_->Commit(pContext);
         *pfEaten = FALSE;
         return S_OK;

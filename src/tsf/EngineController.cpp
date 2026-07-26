@@ -317,7 +317,8 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         if (HasPendingRevive()) {
             auto* pSession = new ReviveCompositionEditSession(
                 pContext, &compositionMgr_, engine_.get(),
-                pendingReviveWord_, pendingReviveRange_);
+                pendingReviveWord_, pendingReviveRange_,
+                MatchingRawForCommittedWord(pendingReviveWord_));
             RequestEditSession(pContext, pSession);
             pSession->Release();
             ClearPendingRevive();
@@ -364,8 +365,13 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
             if (!word.empty() && wordRange) {
                 auto tempEngine = EngineFactory::Create(config_);
                 if (tempEngine && tempEngine->SeedFromText(word) && !tempEngine->IsEnglishWord()) {
+                    // Raw replay over glyph-seeding: SeedFromText loses which key
+                    // produced which diacritic, so a tone key pressed right after
+                    // the revive can't escape it (#209 Shift+R: "Tẻ" + R stayed
+                    // "Tẻ" under the Rust engine instead of escaping to "TeR").
                     auto* pRevive = new ReviveAndTypeEditSession(
-                        pContext, &compositionMgr_, engine_.get(), word, wordRange, ch);
+                        pContext, &compositionMgr_, engine_.get(), word, wordRange, ch,
+                        MatchingRawForCommittedWord(word));
                     RequestEditSession(pContext, pRevive);
                     pRevive->Release();
                     TSF_LOG(L"HandleKey: revive '%ls' + '%lc'", word.c_str(), ch);
@@ -1125,9 +1131,11 @@ std::wstring EngineController::MatchingRawForCommittedWord(const std::wstring& w
     if (word.empty() || lastCommit_.text.empty() || lastCommit_.rawInput.empty()) {
         return {};
     }
-    if ((GetTickCount() - lastCommit_.timestamp) > kCommitUndoTimeoutMs) {
-        return {};
-    }
+    // Deliberately NOT age-gated (kCommitUndoTimeoutMs guards the undo window,
+    // a different feature): a revive minutes later still needs the raw keys, and
+    // an exact text match plus SeedRevivedWord's post-replay Peek()==word check
+    // are the real guards. Worst case the raw came from another occurrence of the
+    // same word — replaying it reproduces that word identically anyway.
     std::wstring body = lastCommit_.text;
     if (lastCommit_.hasTrailingChar && !body.empty()) {
         body.pop_back();
