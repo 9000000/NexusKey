@@ -6,6 +6,7 @@ var MACRO_CLIPBOARD_THRESHOLD = 200;
 // name like "__proto__" would silently fail to store in an object literal.
 var allMacros = new Map();
 var selectedMacroName = null;
+var checkedMacroNames = new Set();
 var searchQuery = "";
 
 document.ready = function () {
@@ -23,6 +24,7 @@ function initMacroDialog() {
     var btnClose = document.getElementById("btn-close");
     var macroContent = document.getElementById("macro-content");
     var searchInput = document.getElementById("macro-search-input");
+    var chkSelectAll = document.getElementById("chk-select-all");
 
     if (btnAdd) btnAdd.onclick = function () { onAddMacro(); };
     if (btnEdit) btnEdit.onclick = function () { onEditMacro(); };
@@ -31,6 +33,12 @@ function initMacroDialog() {
     if (btnImport) btnImport.onclick = function () { triggerAction("import"); };
     if (btnExport) btnExport.onclick = function () { triggerAction("export"); };
     if (btnClose) btnClose.onclick = function () { triggerAction("close"); };
+
+    if (chkSelectAll) {
+        chkSelectAll.addEventListener("change", function () {
+            onToggleSelectAll(this.checked);
+        });
+    }
 
     if (searchInput) {
         searchInput.addEventListener("input", function () {
@@ -58,6 +66,35 @@ function initMacroDialog() {
     }
 
     updateButtonStates();
+}
+
+function getVisibleMacroKeys() {
+    var sortedKeys = Array.from(allMacros.keys()).sort();
+    var result = [];
+    for (var i = 0; i < sortedKeys.length; i++) {
+        var name = sortedKeys[i];
+        var content = allMacros.get(name);
+        var displayContent = storageToDisplay(content);
+        if (searchQuery !== "") {
+            var matchName = name.toLowerCase().indexOf(searchQuery) !== -1;
+            var matchContent = displayContent.toLowerCase().indexOf(searchQuery) !== -1;
+            if (!matchName && !matchContent) continue;
+        }
+        result.push(name);
+    }
+    return result;
+}
+
+function onToggleSelectAll(isChecked) {
+    var visibleKeys = getVisibleMacroKeys();
+    for (var i = 0; i < visibleKeys.length; i++) {
+        if (isChecked) {
+            checkedMacroNames.add(visibleKeys[i]);
+        } else {
+            checkedMacroNames.delete(visibleKeys[i]);
+        }
+    }
+    renderMacroList();
 }
 
 // Case-insensitive lookup for duplicate macro shortcuts
@@ -107,19 +144,58 @@ function updateCharCounter() {
     }
 }
 
-// Edit / Delete / Clear only exist while a row is selected — hiding them is the
-// whole gate, so the handlers need no disabled-state bookkeeping.
 function updateButtonStates() {
-    var display = selectedMacroName ? "block" : "none";
-    var ids = ["btn-edit", "btn-delete", "btn-clear"];
-    for (var i = 0; i < ids.length; i++) {
-        var el = document.getElementById(ids[i]);
-        if (el) el.style.display = display;
+    var btnEdit = document.getElementById("btn-edit");
+    var btnDelete = document.getElementById("btn-delete");
+    var btnClear = document.getElementById("btn-clear");
+
+    var checkedCount = checkedMacroNames.size;
+
+    if (checkedCount > 0) {
+        if (btnEdit) btnEdit.style.display = (checkedCount === 1 && selectedMacroName) ? "block" : "none";
+        if (btnDelete) {
+            btnDelete.style.display = "block";
+            btnDelete.textContent = "- Xóa (" + checkedCount + ")";
+        }
+        if (btnClear) btnClear.style.display = "block";
+    } else if (selectedMacroName) {
+        if (btnEdit) btnEdit.style.display = "block";
+        if (btnDelete) {
+            btnDelete.style.display = "block";
+            btnDelete.textContent = "- Xóa";
+        }
+        if (btnClear) btnClear.style.display = "block";
+    } else {
+        if (btnEdit) btnEdit.style.display = "none";
+        if (btnDelete) {
+            btnDelete.style.display = "none";
+            btnDelete.textContent = "- Xóa";
+        }
+        if (btnClear) btnClear.style.display = "none";
+    }
+
+    // Sync header select-all checkbox
+    var chkSelectAll = document.getElementById("chk-select-all");
+    if (chkSelectAll) {
+        var visibleKeys = getVisibleMacroKeys();
+        if (visibleKeys.length === 0) {
+            chkSelectAll.checked = false;
+        } else {
+            var allChecked = true;
+            for (var i = 0; i < visibleKeys.length; i++) {
+                if (!checkedMacroNames.has(visibleKeys[i])) {
+                    allChecked = false;
+                    break;
+                }
+            }
+            chkSelectAll.checked = allChecked;
+        }
     }
 }
 
 function clearSelection() {
     selectedMacroName = null;
+    checkedMacroNames.clear();
 
     var nameField = document.getElementById("macro-name");
     var contentField = document.getElementById("macro-content");
@@ -128,12 +204,17 @@ function clearSelection() {
     if (contentField) contentField.value = "";
 
     updateCharCounter();
-    updateButtonStates();
 
     var items = document.querySelectorAll(".macro-item");
     for (var i = 0; i < items.length; i++) {
         items[i].classList.remove("selected");
     }
+
+    var chkSelectAll = document.getElementById("chk-select-all");
+    if (chkSelectAll) chkSelectAll.checked = false;
+
+    updateButtonStates();
+    renderMacroList();
 }
 
 function onAddMacro() {
@@ -209,9 +290,16 @@ function onEditMacro() {
 }
 
 function onDeleteMacro() {
-    if (!selectedMacroName) return;
+    var targets = [];
+    if (checkedMacroNames.size > 0) {
+        targets = Array.from(checkedMacroNames);
+    } else if (selectedMacroName) {
+        targets = [selectedMacroName];
+    }
 
-    document.getElementById("val-macro-name").value = selectedMacroName;
+    if (targets.length === 0) return;
+
+    document.getElementById("val-macro-name").value = targets.join(";");
     triggerAction("delete");
 }
 
@@ -265,11 +353,21 @@ function renderMacroList() {
 
     list.innerHTML = "";
 
-    // Every C++ refresh (delete, import-replace) funnels through here, so this is
-    // where a selection pointing at a macro that no longer exists gets dropped —
-    // otherwise Edit would write the stale name straight back into the table.
+    // Clean up checkedMacroNames for items that no longer exist
+    var checkedArr = Array.from(checkedMacroNames);
+    for (var k = 0; k < checkedArr.length; k++) {
+        if (!allMacros.has(checkedArr[k])) {
+            checkedMacroNames.delete(checkedArr[k]);
+        }
+    }
+
     if (selectedMacroName && !allMacros.has(selectedMacroName)) {
-        clearSelection();
+        selectedMacroName = null;
+        var nameField = document.getElementById("macro-name");
+        var contentField = document.getElementById("macro-content");
+        if (nameField) nameField.value = "";
+        if (contentField) contentField.value = "";
+        updateCharCounter();
     }
 
     var sortedKeys = Array.from(allMacros.keys()).sort();
@@ -299,13 +397,31 @@ function renderMacroList() {
             item.classList.add("selected");
         }
 
+        var isChecked = checkedMacroNames.has(name);
         var preview = formatPreview(content);
-        item.innerHTML = '<span class="macro-item-name">' + escapeHtml(name) + '</span>' +
+        item.innerHTML =
+            '<span class="macro-item-check"><input type="checkbox" class="chk-item"' + (isChecked ? ' checked' : '') + '></span>' +
+            '<span class="macro-item-name">' + escapeHtml(name) + '</span>' +
             '<span class="macro-item-content">' + preview + '</span>';
 
         var tooltipText = displayContent;
         if (tooltipText.length > 500) tooltipText = tooltipText.substring(0, 500) + "...";
         item.setAttribute("title", tooltipText);
+
+        var chk = item.querySelector(".chk-item");
+        if (chk) {
+            (function (n) {
+                chk.addEventListener("click", function (e) {
+                    e.stopPropagation();
+                    if (this.checked) {
+                        checkedMacroNames.add(n);
+                    } else {
+                        checkedMacroNames.delete(n);
+                    }
+                    updateButtonStates();
+                });
+            })(name);
+        }
 
         (function (el, n, c) {
             el.addEventListener("click", function () {

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <vector>
 #include <fstream>
+#include <sstream>
 
 using namespace sciter::dom;
 
@@ -100,17 +101,38 @@ bool MacroTableDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) 
                     }
                 } else if (action == L"delete") {
                     if (!macroName.empty()) {
-                        std::wstring msg = S(StringId::MACRO_CONFIRM_DELETE);
-                        msg += L"\n\n";
-                        msg += macroName;
-                        int msgboxID = MessageBoxW(
-                            get_hwnd(),
-                            msg.c_str(),
-                            L"VKey",
-                            MB_ICONQUESTION | MB_YESNO
-                        );
-                        if (msgboxID == IDYES) {
-                            removeMacro(macroName);
+                        std::vector<std::wstring> toDelete;
+                        std::wstringstream ss(macroName);
+                        std::wstring item;
+                        while (std::getline(ss, item, L';')) {
+                            if (!item.empty()) {
+                                toDelete.push_back(item);
+                            }
+                        }
+
+                        if (!toDelete.empty()) {
+                            std::wstring msg;
+                            if (toDelete.size() == 1) {
+                                msg = S(StringId::MACRO_CONFIRM_DELETE);
+                                msg += L"\n\n";
+                                msg += toDelete[0];
+                            } else {
+                                msg = L"Bạn có chắc chắn muốn xóa " + std::to_wstring(toDelete.size()) + L" từ gõ tắt đã chọn?";
+                            }
+
+                            int msgboxID = MessageBoxW(
+                                get_hwnd(),
+                                msg.c_str(),
+                                L"VKey",
+                                MB_ICONQUESTION | MB_YESNO
+                            );
+                            if (msgboxID == IDYES) {
+                                for (const auto& name : toDelete) {
+                                    macros_.erase(name);
+                                }
+                                populateList();
+                                persistAndSignal();
+                            }
                         }
                     }
                 } else if (action == L"import") {

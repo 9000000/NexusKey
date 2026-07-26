@@ -143,6 +143,13 @@
     width: 100%;
 }
 
+.list-col-check {
+    width: 28px;
+    vertical-align: middle;
+    text-align: center;
+    padding-left: 4px;
+}
+
 .list-col-name {
     width: 110px;
 }
@@ -185,6 +192,19 @@
 
 .macro-item.selected {
     background: var(--color-primary-medium);
+}
+
+.macro-item-check {
+    width: 28px;
+    vertical-align: middle;
+    text-align: center;
+    padding-left: 4px;
+}
+
+.macro-item-check input {
+    margin: 0;
+    vertical-align: middle;
+    cursor: pointer;
 }
 
 .macro-item-name {
