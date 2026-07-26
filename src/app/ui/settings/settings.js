@@ -170,6 +170,10 @@ function initializeToggles() {
             }
 
 
+            if (id === "auto-caps") {
+                updateAutoCapsChildren(newState);
+            }
+
             // Toggling the "show toast" switch itself: apply the new value to the
             // body attribute synchronously so the toast decision below reflects it
             // immediately (turning ON shows a confirmation, turning OFF stays silent).
@@ -214,8 +218,28 @@ function initializeToggles() {
         updateSpellCheckChildren(parseInt(spellLevel.value) !== 0);
     }
 
+    // Initial state: sync child toggle for auto-caps
+    var autoCaps = document.getElementById("auto-caps");
+    if (autoCaps) {
+        updateAutoCapsChildren(autoCaps.classList.contains("checked"));
+    }
+
     // Initial state: sync userdefined button
     updateUserDefinedButton();
+}
+
+function updateAutoCapsChildren(autoCapsEnabled) {
+    var toggle = document.getElementById("auto-caps-raw-macro");
+    if (!toggle) return;
+    var row = toggle.closest(".setting-row");
+
+    if (autoCapsEnabled) {
+        toggle.classList.remove("disabled");
+        if (row) row.classList.remove("disabled");
+    } else {
+        toggle.classList.add("disabled");
+        if (row) row.classList.add("disabled");
+    }
 }
 
 function updateUserDefinedButton() {

@@ -558,6 +558,7 @@ private:
     // sites also use .load(acquire) for uniform pattern (cost = MOV on x86).
     std::atomic<bool> autoCaps_{false};
     std::atomic<bool> autoCapsMacro_{false};
+    std::atomic<bool> autoCapsRawMacro_{false};
     // tempEngineOff_ / digitLedWord_: per-word "treat as English" flags.
     // Plain bool — written from hook thread (DispatchKeyAction, ProcessKeyUp)
     // AND main/WinEvent thread (OnFocusChanged, ToggleVietnameseMode, ClearWordState).

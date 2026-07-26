@@ -379,14 +379,16 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
                 }
             }
 
+            const wchar_t rawCh = ch;
             // Auto-cap if revive didn't happen
             if (config_.autoCaps && shouldAutoCap) {
                 ch = towupper(ch);
                 TSF_LOG(L"HandleKey: auto-cap → '%lc'", ch);
             }
+            TrackMacroCharacter(config_.autoCapsRawMacro ? rawCh : ch);
+        } else {
+            TrackMacroCharacter(ch);
         }
-
-        TrackMacroCharacter(ch);
         TSF_LOG(L"HandleKey: pushing char '%c'", ch);
         engine_->PushChar(ch);
         

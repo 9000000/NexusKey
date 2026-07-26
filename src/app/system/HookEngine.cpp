@@ -158,6 +158,7 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
     autoCapsMacro_.store(config.autoCapsMacro, std::memory_order_release);
+    autoCapsRawMacro_.store(config.autoCapsRawMacro, std::memory_order_release);
     // Push the suggestKeepChars flag to the live injector so ShouldEmitBait
     // sees the latest user choice without needing a focus change to swap
     // injectors. Focus-change paths re-apply this from the config snapshot.
@@ -2346,7 +2347,8 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
         // auto-cap is decided before the macro character is tracked (single
         // function, no stage split). Without this, a macro typed right after
         // auto-cap fires would recap differently than in TSF for the same input.
-        if (autoCapped && !rawMacroBuffer_.empty()) {
+        if (autoCapped && !rawMacroBuffer_.empty() &&
+            !autoCapsRawMacro_.load(std::memory_order_acquire)) {
             rawMacroBuffer_.back() = ch;
         }
     }
