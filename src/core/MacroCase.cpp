@@ -15,6 +15,13 @@ namespace {
     for (auto& c : s) c = static_cast<wchar_t>(std::towlower(c));
     return s;
 }
+
+[[nodiscard]] bool HasUpper(std::wstring_view s) noexcept {
+    for (wchar_t c : s) {
+        if (std::iswupper(c)) return true;
+    }
+    return false;
+}
 }  // namespace
 
 MacroPlan Plan(const PlanInputs& in, const CaseMapper& mapper) {
@@ -91,8 +98,13 @@ MacroPlan Plan(const PlanInputs& in, const CaseMapper& mapper) {
 
     // Auto-capitalize expansion to match typed case.
     plan.expansion = it->second;
-    if (in.autoCapsEnabled && !matchedExact && !matchedViaComposition &&
-        !in.rawMacroBuffer.empty() && !plan.expansion.empty()) {
+    // An exact match on a key that itself carries uppercase (e.g. "nMa") is the user
+    // spelling out the casing they want — leave the stored expansion alone. An exact
+    // match on an all-lowercase key still needs the recap pass, because the raw buffer
+    // may be lowercase only by virtue of holding the pre-auto-cap character.
+    if (in.autoCapsEnabled && !matchedViaComposition &&
+        !in.rawMacroBuffer.empty() && !plan.expansion.empty() &&
+        !(matchedExact && HasUpper(it->first))) {
         std::wstring expansionLower = plan.expansion;
         mapper.Lower(expansionLower.data(), expansionLower.size());
         const bool expansionAllLower = (expansionLower == plan.expansion);
@@ -105,7 +117,8 @@ MacroPlan Plan(const PlanInputs& in, const CaseMapper& mapper) {
                 if (!std::iswupper(c)) { allUpper = false; break; }
             }
             allUpper = allUpper && anyAlpha && in.rawMacroBuffer.size() > 1;
-            const bool firstUpper = std::iswupper(in.rawMacroBuffer[0]) != 0;
+            const bool firstUpper =
+                (std::iswupper(in.rawMacroBuffer[0]) != 0) || in.wasFirstCharAutoCapped;
             if (allUpper) {
                 // Skip \n escape: uppercasing 'n' breaks newline detection downstream.
                 for (std::size_t i = 0; i < plan.expansion.size(); ++i) {

@@ -158,7 +158,6 @@ void HookEngine::ApplyConfig(const TypingConfig& config) {
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
     autoCapsMacro_.store(config.autoCapsMacro, std::memory_order_release);
-    autoCapsRawMacro_.store(config.autoCapsRawMacro, std::memory_order_release);
     // Push the suggestKeepChars flag to the live injector so ShouldEmitBait
     // sees the latest user choice without needing a focus change to swap
     // injectors. Focus-change paths re-apply this from the config snapshot.
@@ -1547,7 +1546,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
         // Any accumulated multi-word-macro state is stale once replay begins —
         // the phrase buffer no longer mirrors what's on screen.
         macroCrossCommit_ = false;
-        rawMacroBuffer_.clear();
+        ClearMacroBuffer();
         if (dispatcher_.SynthEventsPending() > 0) {
             // Synthetic events still in flight (word corrections, injected commit trigger).
             // If we pass BS through now it arrives at the app BEFORE those synthetics,
@@ -2025,6 +2024,11 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         // Also preserve across SPACE when the accumulated prefix matches a stored space-
         // containing key — enables multi-word macros like "oc om bok" = "Óoc Om Bok".
         std::wstring savedMacroBuffer;
+        // ClearWordState() inside CommitComposition() resets the auto-cap flag, so it
+        // has to ride along with the buffer — otherwise a space/punctuation macro typed
+        // at sentence start expands lowercase in the hook while TSF (which gates the
+        // reset on macroCrossCommit_) title-cases it.
+        const bool savedAutoCapped = wasFirstCharAutoCapped_;
         // Phase 3c: macro presence + spaceMacroKeys come from the RCU
         // snapshot. Local shared_ptr keeps both alive through the branch.
         auto cfgSnap = configSnapshot_.load(std::memory_order_acquire);
@@ -2045,6 +2049,7 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         if (!savedMacroBuffer.empty()) {
             rawMacroBuffer_ = std::move(savedMacroBuffer);
             macroCrossCommit_ = true;
+            wasFirstCharAutoCapped_ = savedAutoCapped;
         }
         // Decide what happens to the commit-undo window now that a word was
         // committed. Pure rule lives in core/CommitUndoArmDecision.h (Linux-
@@ -2340,16 +2345,13 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
         if (anchorUsed || keystrokePending) {
             autoCapState_ = AutoCapState::Idle;
         }
-        // HandleMacro (PreEngine stage) already appended this key's physical
-        // case to rawMacroBuffer_ before this Engine-stage auto-cap decision
-        // ran. Patch it in place so the macro system sees the same case the
-        // user sees — matching TSF's EngineController::HandleKey, where
-        // auto-cap is decided before the macro character is tracked (single
-        // function, no stage split). Without this, a macro typed right after
-        // auto-cap fires would recap differently than in TSF for the same input.
-        if (autoCapped && !rawMacroBuffer_.empty() &&
-            !autoCapsRawMacro_.load(std::memory_order_acquire)) {
-            rawMacroBuffer_.back() = ch;
+        // rawMacroBuffer_ keeps the physical case HandleMacro (PreEngine stage) already
+        // appended, so keys like "nMa" still match their exact-case entry. Record the
+        // auto-cap separately instead: MacroCase::Plan needs to know the first character
+        // is capitalized on screen (to title-case the expansion) without that leaking
+        // into the lookup key. Mirrors TSF's EngineController::HandleKey.
+        if (autoCapped) {
+            wasFirstCharAutoCapped_ = true;
         }
     }
 
@@ -2709,11 +2711,16 @@ void HookEngine::ClearWordState() {
     previousComposition_.clear();
     previousEncodedWidths_.clear();
     commitState_.ClearHistory();
-    rawMacroBuffer_.clear();
+    ClearMacroBuffer();
     macroCrossCommit_ = false;
     tempMacroOff_ = false;
     dispatcher_.SetHadSynthInWord(false);
     digitLedWord_ = false;
+}
+
+void HookEngine::ClearMacroBuffer() noexcept {
+    rawMacroBuffer_.clear();
+    wasFirstCharAutoCapped_ = false;
 }
 
 void HookEngine::CancelCommitUndo() {
@@ -3444,7 +3451,7 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
             const bool upper = shift != capsLock;  // XOR
             rawMacroBuffer_ += upper ? static_cast<wchar_t>(vk)
                                       : towlower(static_cast<wchar_t>(vk));
-            if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) rawMacroBuffer_.clear();
+            if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) ClearMacroBuffer();
         } else if (hotkeysSnap
                    && hotkeysSnap->Matches(NextKey::Intent::SkipMacro, vk, currentMods,
                                            /*isDoubleTap=*/false, /*keyUp=*/false)
@@ -3468,13 +3475,13 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
                 }
             } else if (!IsMacroTrigger(vk)) {
                 // Disabled trigger still marks word boundary — clear buffer.
-                rawMacroBuffer_.clear();
+                ClearMacroBuffer();
                 tempMacroOff_ = false;
             }
         } else if (vk == VK_BACK && !rawMacroBuffer_.empty()) {
             rawMacroBuffer_.pop_back();
         } else if (!(vk >= 0x41 && vk <= 0x5A) && !IsCommitTrigger(vk)) {
-            rawMacroBuffer_.clear();
+            ClearMacroBuffer();
             tempMacroOff_ = false;
         }
         // EN mode always passes to OS unless macro ate the key above.
@@ -3487,7 +3494,7 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
             const bool upper = shift != capsLock;  // XOR
             rawMacroBuffer_ += upper ? static_cast<wchar_t>(vk)
                                       : towlower(static_cast<wchar_t>(vk));
-            if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) rawMacroBuffer_.clear();
+            if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) ClearMacroBuffer();
         } else if (IsCommitTrigger(vk)) {
             const wchar_t ch = VkToMacroChar(vk);
             if (ch > L' ') rawMacroBuffer_ += ch;  // Printable non-space chars
@@ -3547,12 +3554,12 @@ NextKey::Pipeline::MacroOutcome HookEngine::HandleMacro(
                 preserve = VkToMacroChar(vk) > L' ';
             }
             if (!preserve) {
-                rawMacroBuffer_.clear();
+                ClearMacroBuffer();
                 tempMacroOff_ = false;
             }
         } else if (!(vk >= 0x41 && vk <= 0x5A)) {
             // Non-alphabetic and non-commit keys (like F1-F12, modifiers alone, etc.) clear the buffer.
-            rawMacroBuffer_.clear();
+            ClearMacroBuffer();
             tempMacroOff_ = false;
         }
     }
@@ -3722,7 +3729,7 @@ HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
             return KeyOutcome::Fallthrough;
         }
         engine_->Reset();
-        rawMacroBuffer_.clear();
+        ClearMacroBuffer();
         tempMacroOff_ = false;
         return KeyOutcome::Eat;
     }
@@ -3755,7 +3762,7 @@ HookEngine::KeyOutcome HookEngine::TryEscRestoreRaw() {
         return KeyOutcome::Fallthrough;
     }
     CancelCommitUndo();
-    rawMacroBuffer_.clear();
+    ClearMacroBuffer();
     tempMacroOff_ = false;
     return KeyOutcome::Eat;
 }
@@ -3858,6 +3865,7 @@ HookEngine::MacroResult HookEngine::TryExpandMacro(wchar_t triggerChar) {
         .macroCrossCommit      = macroCrossCommit_,
         .currentCodeTable      = currentCodeTable_.load(std::memory_order_acquire),
         .autoCapsEnabled       = autoCapsMacro_.load(std::memory_order_acquire),
+        .wasFirstCharAutoCapped = wasFirstCharAutoCapped_,
         .triggerChar           = triggerChar,
         .clipboardThreshold    = kMacroClipboardThreshold,
     };

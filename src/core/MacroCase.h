@@ -36,6 +36,7 @@ struct PlanInputs {
     bool macroCrossCommit;
     CodeTable currentCodeTable;
     bool autoCapsEnabled;
+    bool wasFirstCharAutoCapped{false};
     wchar_t triggerChar;
     std::size_t clipboardThreshold;     // = HookEngine kMacroClipboardThreshold (200)
 };

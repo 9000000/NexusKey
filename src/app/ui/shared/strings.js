@@ -46,8 +46,6 @@ var STRINGS = {
         // Tab 1: Input
         "s.modern_ortho": "New diacritics style (o\u00E0, u\u00FD)",
         "s.auto_caps": "Auto-capitalize first letter",
-        "s.auto_caps_raw_macro": "Preserve raw keys for macros",
-        "s.auto_caps_raw_macro_tooltip": "Preserve physical raw keys during sentence auto-capitalization so custom macro shortcuts remain matched (e.g. typing nMa matches nMa even when n becomes N)",
         "s.allow_zwjf": "Allow \"z w j f\" as initial consonants",
         "s.allow_zwjf_tooltip": "Allowed by default. Only needed when spell check is on",
         "s.spell_check": "Spell check",

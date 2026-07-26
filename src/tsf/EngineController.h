@@ -231,6 +231,7 @@ private:
     std::unordered_map<std::wstring, std::wstring> macroTable_;
     std::unordered_set<std::wstring> spaceMacroKeys_;
     std::wstring rawMacroBuffer_;
+    bool wasFirstCharAutoCapped_ = false;
     uint8_t macroGeneration_ = 0;
     bool macroConfigLoaded_ = false;
     bool macroCrossCommit_ = false;

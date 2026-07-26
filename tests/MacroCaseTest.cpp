@@ -29,6 +29,7 @@ struct PlanFixture {
     bool crossCommit = false;
     CodeTable codeTable = CodeTable::Unicode;
     bool autoCaps = false;
+    bool wasFirstCharAutoCapped = false;
     wchar_t trigger = L' ';
     std::size_t threshold = 200;
 
@@ -41,6 +42,7 @@ struct PlanFixture {
             .macroCrossCommit      = crossCommit,
             .currentCodeTable      = codeTable,
             .autoCapsEnabled       = autoCaps,
+            .wasFirstCharAutoCapped = wasFirstCharAutoCapped,
             .triggerChar           = trigger,
             .clipboardThreshold    = threshold,
         };
@@ -324,6 +326,60 @@ TEST(PlanAutoCapsDecisionTest, FirstUpperRawTransformsToTitleCaseVietnamese) {
     auto p = f.Run();
     EXPECT_TRUE(p.matched);
     EXPECT_EQ(p.expansion, L"Liên Hiệp Quốc");
+}
+
+TEST(PlanAutoCapsDecisionTest, FirstCharAutoCappedTransformsToLowercaseMacro) {
+    PlanFixture f;
+    f.table[L"omw"] = L"on my way";
+    f.raw = L"omw";
+    f.wasFirstCharAutoCapped = true;
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"On My Way");
+}
+
+// The old guard was `!matchedExact`, which skipped the recap pass for every exact
+// match. Now only upper-carrying keys skip it, so an all-lowercase exact match with
+// no auto-cap must still come out untouched.
+TEST(PlanAutoCapsDecisionTest, LowercaseExactMatchWithoutAutoCapStaysLowercase) {
+    PlanFixture f;
+    f.table[L"omw"] = L"on my way";
+    f.raw = L"omw";
+    f.wasFirstCharAutoCapped = false;
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"on my way");
+}
+
+// Space-containing keys survive a commit (macroCrossCommit_), and the hook has to
+// carry wasFirstCharAutoCapped across that commit — see HookEngine step 8.
+TEST(PlanAutoCapsDecisionTest, FirstCharAutoCappedAppliesAcrossCrossCommit) {
+    PlanFixture f;
+    f.table[L"oc om bok"] = L"ooc om bok";   // ASCII: AsciiCaseMapper can't upper 'ó'
+    f.raw = L"oc om bok";
+    f.crossCommit = true;
+    f.wasFirstCharAutoCapped = true;
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"Ooc Om Bok");
+}
+
+TEST(PlanAutoCapsDecisionTest, FirstCharAutoCappedPreservesExactMatch) {
+    PlanFixture f;
+    f.table[L"oMw"] = L"on My way";
+    f.raw = L"oMw";
+    f.wasFirstCharAutoCapped = true;
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"on My way");
 }
 
 TEST(PlanAutoCapsEscapeTest, AllUpperSkipsBackslashN) {

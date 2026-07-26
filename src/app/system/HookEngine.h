@@ -418,6 +418,11 @@ private:
     // Clear per-word engine state (shared by CommitComposition, ResetComposition, TryExpandMacro)
     void ClearWordState();
 
+    // Drop the raw macro buffer. wasFirstCharAutoCapped_ is only meaningful while the
+    // buffer still starts at the word's first character, so the two must die together —
+    // a surviving flag would title-case a macro matched by a restarted buffer.
+    void ClearMacroBuffer() noexcept;
+
     // Wave 3 PR 3.2 — IsTrayOrTaskbarWindow + IsWebView2App migrated to
     // FocusOwner (focus-classification helpers; no engine state).
     void NotifyModeChange() noexcept;  // Fire modeChangeCallback_ with effective mode
@@ -558,7 +563,6 @@ private:
     // sites also use .load(acquire) for uniform pattern (cost = MOV on x86).
     std::atomic<bool> autoCaps_{false};
     std::atomic<bool> autoCapsMacro_{false};
-    std::atomic<bool> autoCapsRawMacro_{false};
     // tempEngineOff_ / digitLedWord_: per-word "treat as English" flags.
     // Plain bool — written from hook thread (DispatchKeyAction, ProcessKeyUp)
     // AND main/WinEvent thread (OnFocusChanged, ToggleVietnameseMode, ClearWordState).
@@ -749,6 +753,7 @@ private:
     std::atomic<bool> macroInEnglish_{false};
     bool tempMacroOff_ = false;       // Runtime: macro disabled for current word; same-thread (hook) only
     bool macroCrossCommit_ = false;   // rawMacroBuffer_ spans multiple engine commits; same-thread (hook) only
+    bool wasFirstCharAutoCapped_ = false;  // First char of current word was auto-capitalized by AutoCaps
     // (macroTable_ + spaceMacroKeys_ removed — Phase 3d. Live in
     // configSnapshot_->macroTable / ->spaceMacroKeys now.)
     std::wstring rawMacroBuffer_;

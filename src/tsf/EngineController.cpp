@@ -383,9 +383,10 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
             // Auto-cap if revive didn't happen
             if (config_.autoCaps && shouldAutoCap) {
                 ch = towupper(ch);
+                wasFirstCharAutoCapped_ = true;
                 TSF_LOG(L"HandleKey: auto-cap → '%lc'", ch);
             }
-            TrackMacroCharacter(config_.autoCapsRawMacro ? rawCh : ch);
+            TrackMacroCharacter(rawCh);
         } else {
             TrackMacroCharacter(ch);
         }
@@ -589,6 +590,7 @@ bool EngineController::HasMacroCandidate() const noexcept {
 
 void EngineController::ClearMacroTracking() noexcept {
     rawMacroBuffer_.clear();
+    wasFirstCharAutoCapped_ = false;
     macroCrossCommit_ = false;
 }
 
@@ -665,6 +667,7 @@ bool EngineController::WouldExpandMacroTrigger(UINT vkCode,
         .macroCrossCommit = macroCrossCommit_,
         .currentCodeTable = CodeTable::Unicode,
         .autoCapsEnabled = config_.autoCapsMacro,
+        .wasFirstCharAutoCapped = wasFirstCharAutoCapped_,
         .triggerChar = triggerChar,
         .clipboardThreshold = kMacroClipboardThreshold,
     };
@@ -718,6 +721,7 @@ EngineController::MacroResult EngineController::HandleMacroTrigger(
         // TSF writes Unicode through ITfRange, so match document character counts.
         .currentCodeTable = CodeTable::Unicode,
         .autoCapsEnabled = config_.autoCapsMacro,
+        .wasFirstCharAutoCapped = wasFirstCharAutoCapped_,
         .triggerChar = triggerChar,
         .clipboardThreshold = kMacroClipboardThreshold,
     };

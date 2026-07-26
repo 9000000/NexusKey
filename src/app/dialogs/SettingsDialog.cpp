@@ -686,9 +686,6 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     else if (id == L"auto-caps") {
         config_.autoCaps = value;
     }
-    else if (id == L"auto-caps-raw-macro") {
-        config_.autoCapsRawMacro = value;
-    }
     else if (id == L"allow-zwjf") {
         config_.allowZwjf = value;
     }
@@ -1252,8 +1249,6 @@ void SettingsDialog::initializeUI() {
                    sciter::value(config_.GetSpellCheckLevel() != SpellCheckLevel::Off));
     setToggleState(L"modern-ortho", config_.modernOrtho);
     setToggleState(L"auto-caps", config_.autoCaps);
-    call_function("updateAutoCapsChildren", sciter::value(config_.autoCaps));
-    setToggleState(L"auto-caps-raw-macro", config_.autoCapsRawMacro);
     setToggleState(L"allow-zwjf", config_.allowZwjf);
     setToggleState(L"restore-key", config_.autoRestoreEnabled);
     setToggleState(L"cjk-auto-switch", config_.cjkAutoSwitch);

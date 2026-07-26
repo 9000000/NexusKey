@@ -169,11 +169,6 @@ function initializeToggles() {
                 }
             }
 
-
-            if (id === "auto-caps") {
-                updateAutoCapsChildren(newState);
-            }
-
             // Toggling the "show toast" switch itself: apply the new value to the
             // body attribute synchronously so the toast decision below reflects it
             // immediately (turning ON shows a confirmation, turning OFF stays silent).
@@ -218,9 +213,6 @@ function initializeToggles() {
         updateSpellCheckChildren(parseInt(spellLevel.value) !== 0);
     }
 
-    // auto-caps children are synced by initializeUI's call_function, after C++ has
-    // pushed the real toggle state — reading the DOM here would always see unchecked.
-
     // Initial state: sync userdefined button
     updateUserDefinedButton();
 }
@@ -239,10 +231,6 @@ function setToggleRowEnabled(id, enabled) {
         toggle.classList.add("disabled");
         if (row) row.classList.add("disabled");
     }
-}
-
-function updateAutoCapsChildren(autoCapsEnabled) {
-    setToggleRowEnabled("auto-caps-raw-macro", autoCapsEnabled);
 }
 
 function updateUserDefinedButton() {

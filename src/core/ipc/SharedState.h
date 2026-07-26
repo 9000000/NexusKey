@@ -61,7 +61,6 @@ namespace FeatureFlags {
     constexpr uint32_t ALLOW_ENGLISH_BYPASS  = 0x00020000;
     constexpr uint32_t DEBUG_LOG_ENABLED     = 0x00040000;  // Settings → System → "Bật debug log"
     constexpr uint32_t SUGGEST_KEEP_CHARS    = 0x00080000;  // Settings → Bảng gõ → "BS giữ chữ khi có gợi ý"
-    constexpr uint32_t AUTO_CAPS_RAW_MACRO   = 0x00100000;  // Settings → Bảng gõ → "Giữ phím gốc cho gõ tắt"
     // NOTE: the "show toast" setting is intentionally NOT a feature flag — it is a
     // UI-only (EXE-side) cosmetic option read from TOML by the Settings/sub-dialogs
     // and never consumed by the hook/DLL/engine. Keeping it out of the cross-process
@@ -408,7 +407,6 @@ static_assert(offsetof(SharedState, contextAnchor) == 1060,
     if (config.allowEnglishBypass)  flags |= FeatureFlags::ALLOW_ENGLISH_BYPASS;
     if (config.debugLogEnabled)     flags |= FeatureFlags::DEBUG_LOG_ENABLED;
     if (config.suggestKeepChars)    flags |= FeatureFlags::SUGGEST_KEEP_CHARS;
-    if (config.autoCapsRawMacro)    flags |= FeatureFlags::AUTO_CAPS_RAW_MACRO;
     return flags;
 }
 
@@ -432,7 +430,6 @@ inline void DecodeFeatureFlags(uint32_t flags, TypingConfig& config) noexcept {
     config.allowEnglishBypass  = (flags & FeatureFlags::ALLOW_ENGLISH_BYPASS) != 0;
     config.debugLogEnabled     = (flags & FeatureFlags::DEBUG_LOG_ENABLED) != 0;
     config.suggestKeepChars    = (flags & FeatureFlags::SUGGEST_KEEP_CHARS) != 0;
-    config.autoCapsRawMacro    = (flags & FeatureFlags::AUTO_CAPS_RAW_MACRO) != 0;
 }
 
 }  // namespace NextKey

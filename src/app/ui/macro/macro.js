@@ -97,15 +97,10 @@ function onToggleSelectAll(isChecked) {
     renderMacroList();
 }
 
-// Case-insensitive lookup for duplicate macro shortcuts
+// Exact-case lookup for duplicate macro shortcuts (C++ engine supports distinct case entries like nma vs nMa)
 function hasMacroKey(key) {
     if (!key) return false;
-    var lowerKey = key.toLowerCase();
-    var keys = Array.from(allMacros.keys());
-    for (var i = 0; i < keys.length; i++) {
-        if (keys[i].toLowerCase() === lowerKey) return true;
-    }
-    return false;
+    return allMacros.has(key);
 }
 
 // Convert storage format (\n literal) → real newlines for textarea display
@@ -261,8 +256,8 @@ function onEditMacro() {
 
     if (name === "" || content === "") return;
 
-    // Check for target shortcut collision if key name was changed (case-insensitive)
-    if (name.toLowerCase() !== selectedMacroName.toLowerCase() && hasMacroKey(name)) {
+    // Check for target shortcut collision if key name was changed (case-sensitive)
+    if (name !== selectedMacroName && hasMacroKey(name)) {
         showDuplicateWarning();
         return;
     }
