@@ -30,7 +30,8 @@ Bản cập nhật này mang đến cải tiến đột phá về khả năng t�
 *   **Cải tiến giao diện**: Tối ưu hóa hiệu năng hiển thị và chuyển đổi của các bộ giao diện (theme).
 *   **Sửa lỗi excel online**: Khắc phục lỗi mất từ trước đó khi dùng shift để viết hoa từ tiếng Việt. 
 *   **Sửa lỗi macro TSF**: Macro đã hoạt động với TSF
-*   **Sửa các lỗi khác**: Sửa một số lỗi khác.
+*   **Xóa nhiều gõ tắt cùng lúc**: Thêm ô chọn ở bảng Macro để chọn và xóa nhiều từ gõ tắt trong một lần.
+*   **Giữ phím gốc cho gõ tắt**: Tùy chọn mới trong "Viết hoa chữ cái đầu" — giữ phím bấm thực tế để gõ tắt không bị lệch khi tự động viết hoa đầu câu.
 ---
 ### 💖 Sponsors
 

@@ -218,28 +218,31 @@ function initializeToggles() {
         updateSpellCheckChildren(parseInt(spellLevel.value) !== 0);
     }
 
-    // Initial state: sync child toggle for auto-caps
-    var autoCaps = document.getElementById("auto-caps");
-    if (autoCaps) {
-        updateAutoCapsChildren(autoCaps.classList.contains("checked"));
-    }
+    // auto-caps children are synced by initializeUI's call_function, after C++ has
+    // pushed the real toggle state — reading the DOM here would always see unchecked.
 
     // Initial state: sync userdefined button
     updateUserDefinedButton();
 }
 
-function updateAutoCapsChildren(autoCapsEnabled) {
-    var toggle = document.getElementById("auto-caps-raw-macro");
+// Grey out a child toggle + its row when the parent option is off.
+// The .disabled class is also what blocks the click in the toggle handler.
+function setToggleRowEnabled(id, enabled) {
+    var toggle = document.getElementById(id);
     if (!toggle) return;
     var row = toggle.closest(".setting-row");
 
-    if (autoCapsEnabled) {
+    if (enabled) {
         toggle.classList.remove("disabled");
         if (row) row.classList.remove("disabled");
     } else {
         toggle.classList.add("disabled");
         if (row) row.classList.add("disabled");
     }
+}
+
+function updateAutoCapsChildren(autoCapsEnabled) {
+    setToggleRowEnabled("auto-caps-raw-macro", autoCapsEnabled);
 }
 
 function updateUserDefinedButton() {
@@ -252,19 +255,8 @@ function updateUserDefinedButton() {
 
 // Enable/disable spell check child options based on parent state
 function updateSpellCheckChildren(spellEnabled) {
-    var childIds = ["allow-zwjf", "restore-key"];
-    childIds.forEach(function(id) {
-        var toggle = document.getElementById(id);
-        if (!toggle) return;
-        var row = toggle.closest(".setting-row");
-
-        if (spellEnabled) {
-            toggle.classList.remove("disabled");
-            if (row) row.classList.remove("disabled");
-        } else {
-            toggle.classList.add("disabled");
-            if (row) row.classList.add("disabled");
-        }
+    ["allow-zwjf", "restore-key"].forEach(function(id) {
+        setToggleRowEnabled(id, spellEnabled);
     });
 
     // Exclusions button

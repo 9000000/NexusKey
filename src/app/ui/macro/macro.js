@@ -151,28 +151,21 @@ function updateButtonStates() {
 
     var checkedCount = checkedMacroNames.size;
 
-    if (checkedCount > 0) {
-        if (btnEdit) btnEdit.style.display = (checkedCount === 1 && selectedMacroName) ? "block" : "none";
-        if (btnDelete) {
-            btnDelete.style.display = "block";
-            btnDelete.textContent = "- Xóa (" + checkedCount + ")";
-        }
-        if (btnClear) btnClear.style.display = "block";
-    } else if (selectedMacroName) {
-        if (btnEdit) btnEdit.style.display = "block";
-        if (btnDelete) {
-            btnDelete.style.display = "block";
-            btnDelete.textContent = "- Xóa";
-        }
-        if (btnClear) btnClear.style.display = "block";
-    } else {
-        if (btnEdit) btnEdit.style.display = "none";
-        if (btnDelete) {
-            btnDelete.style.display = "none";
-            btnDelete.textContent = "- Xóa";
-        }
-        if (btnClear) btnClear.style.display = "none";
-    }
+    // Checkboxes win over row selection as the Delete target, so Edit only shows
+    // when both agree on one macro — otherwise Edit and Delete would silently act
+    // on different rows while the form fields display the selected one.
+    var canEdit = checkedCount === 0
+        ? !!selectedMacroName
+        : (checkedCount === 1 && checkedMacroNames.has(selectedMacroName));
+
+    if (btnEdit) btnEdit.style.display = canEdit ? "block" : "none";
+    if (btnDelete) btnDelete.style.display = (checkedCount > 0 || selectedMacroName) ? "block" : "none";
+    if (btnClear) btnClear.style.display = (checkedCount > 0 || selectedMacroName) ? "block" : "none";
+
+    // Count lives in its own span: applyTranslations() rewrites the sibling
+    // [data-i18n] span only, so the label stays translated and the count survives.
+    var deleteCount = document.getElementById("delete-count");
+    if (deleteCount) deleteCount.textContent = checkedCount > 0 ? " (" + checkedCount + ")" : "";
 
     // Sync header select-all checkbox
     var chkSelectAll = document.getElementById("chk-select-all");
@@ -299,7 +292,9 @@ function onDeleteMacro() {
 
     if (targets.length === 0) return;
 
-    document.getElementById("val-macro-name").value = targets.join(";");
+    // '\n' delimiter: a shortcut may contain any printable char (';' included),
+    // but never a newline — the name field is a single-line <input>.
+    document.getElementById("val-macro-name").value = targets.join("\n");
     triggerAction("delete");
 }
 

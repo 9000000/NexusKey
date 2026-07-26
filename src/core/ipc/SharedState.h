@@ -408,7 +408,7 @@ static_assert(offsetof(SharedState, contextAnchor) == 1060,
     if (config.allowEnglishBypass)  flags |= FeatureFlags::ALLOW_ENGLISH_BYPASS;
     if (config.debugLogEnabled)     flags |= FeatureFlags::DEBUG_LOG_ENABLED;
     if (config.suggestKeepChars)    flags |= FeatureFlags::SUGGEST_KEEP_CHARS;
-    if (config.autoCapsRawMacro)   flags |= FeatureFlags::AUTO_CAPS_RAW_MACRO;
+    if (config.autoCapsRawMacro)    flags |= FeatureFlags::AUTO_CAPS_RAW_MACRO;
     return flags;
 }
 

@@ -101,10 +101,14 @@ bool MacroTableDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) 
                     }
                 } else if (action == L"delete") {
                     if (!macroName.empty()) {
+                        // Newline-delimited, not ';' — a shortcut may legally contain
+                        // any printable char (HookEngine feeds punctuation into the
+                        // macro buffer too), so ";;"-style names would split apart.
+                        // An <input> can't hold a newline, so '\n' is collision-free.
                         std::vector<std::wstring> toDelete;
                         std::wstringstream ss(macroName);
                         std::wstring item;
-                        while (std::getline(ss, item, L';')) {
+                        while (std::getline(ss, item)) {
                             if (!item.empty()) {
                                 toDelete.push_back(item);
                             }
@@ -117,7 +121,10 @@ bool MacroTableDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) 
                                 msg += L"\n\n";
                                 msg += toDelete[0];
                             } else {
-                                msg = L"Bạn có chắc chắn muốn xóa " + std::to_wstring(toDelete.size()) + L" từ gõ tắt đã chọn?";
+                                wchar_t buf[256];
+                                swprintf_s(buf, S(StringId::MACRO_CONFIRM_DELETE_MULTI),
+                                           static_cast<int>(toDelete.size()));
+                                msg = buf;
                             }
 
                             int msgboxID = MessageBoxW(
@@ -185,12 +192,6 @@ void MacroTableDialog::populateList() {
 
 void MacroTableDialog::addMacro(const std::wstring& name, const std::wstring& content) {
     macros_[name] = content;
-    populateList();
-    persistAndSignal();
-}
-
-void MacroTableDialog::removeMacro(const std::wstring& name) {
-    macros_.erase(name);
     populateList();
     persistAndSignal();
 }
