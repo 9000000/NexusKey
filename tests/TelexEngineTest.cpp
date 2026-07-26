@@ -791,6 +791,18 @@ TEST(TelexEscapeSpellOnTest, ToneHoi_UppercaseR_SpellCheckOn) {
     EXPECT_EQ(engine.Peek(), L"TeRiRi");
 }
 
+TEST(TelexEscapeSpellOnTest, ToneHoi_MixedCase_rThenShiftR) {
+    // #209 (2026-07-26): Te + r → Tẻ, then Shift+R must escape → "TeR".
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::Telex;
+    cfg.spellCheckEnabled = true;
+    TypingEngine engine(cfg);
+    Testing::TypeString(engine, L"Ter");
+    EXPECT_EQ(engine.Peek(), L"Tẻ");
+    Testing::TypeString(engine, L"R");
+    EXPECT_EQ(engine.Peek(), L"TeR");
+}
+
 TEST_F(TelexEngineTest, Escape_ToneHoi_UppercaseR) {
     // Issue #209 comment (Shzr0): "TeR" → "Tẻ", second R must escape → "TeR"
     TypeString(*engine_, L"TeRR");
@@ -5407,6 +5419,26 @@ TEST_F(DoubleOoTest, Chooose_StaysChoose) {
     TypeString(*engine_, L"chooose");
     EXPECT_EQ(engine_->Peek(), L"choose");
 }
+TEST_F(DoubleOoTest, Pooorr_RepeatedToneKeyEscapesToPoor) {
+    // The repeated tone key is the Telex escape: the revert re-emits the first
+    // 'r' as a literal, so the second must be swallowed (not re-tone the pair).
+    TypeString(*engine_, L"pooorr");
+    EXPECT_EQ(engine_->Peek(), L"poor");
+    EXPECT_EQ(engine_->Commit(), L"poor");
+}
+TEST_F(DoubleOoTest, Pooor_UnresolvedToneRevertsOnCommit) {
+    // Provisional while typing (the 'c'/'ng' coda could still arrive)…
+    TypeString(*engine_, L"pooor");
+    EXPECT_EQ(engine_->Peek(), L"poỏ");
+    // …but a word boundary is the last chance for it, so commit reverts. Without
+    // the revert the non-ASCII "poỏ" also triggers auto-restore → "pooor".
+    EXPECT_EQ(engine_->Commit(), L"poor");
+}
+TEST_F(DoubleOoTest, Sooosc_CommitKeepsSooc) {
+    TypeString(*engine_, L"sooosc");
+    EXPECT_EQ(engine_->Commit(), L"soóc");
+}
+
 TEST_F(DoubleOoTest, Choooc_NoToneStaysLiteral) {
     TypeString(*engine_, L"choooc");          // no tone key at all
     EXPECT_EQ(engine_->Peek(), L"chooc");

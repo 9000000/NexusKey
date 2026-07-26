@@ -137,7 +137,11 @@ void TypingEngine::PushChar(wchar_t keyChar) {
     // Resolve any provisional oo-tone from a prior ooo→oo escape before this
     // key is classified (e.g. "chooo" + 's' + 'e': the 'e' reverts the tone so
     // the result is "choose", not "choóe"; "vooo"+'j'+'c' keeps it → voọc).
-    RevertProvisionalOoTone(lower);
+    if (RevertProvisionalOoTone(lower)) {
+        UpdateSpellState();
+        RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+        return;
+    }
     const EngineRule::EngineRuleContext ruleCtx{
         .keyChar            = keyChar,
         .lower              = lower,
@@ -1487,23 +1491,23 @@ void TypingEngine::ProcessChar(wchar_t /*c*/, wchar_t lower, bool isUpper) {
     states_.push_back(s);
 }
 
-void TypingEngine::RevertProvisionalOoTone(wchar_t lower) {
+bool TypingEngine::RevertProvisionalOoTone(wchar_t lower) {
     const size_t count = states_.size();
-    if (count < 2) return;
+    if (count < 2) return false;
     CharState& firstO  = states_[count - 2];
     CharState& secondO = states_[count - 1];
     // Two LITERAL o's with no modifier only arise from the ooo→oo escape; a
     // normal "oo" collapses to a single Circumflex ô, so this never matches a
     // regular syllable.
-    if (firstO.base != L'o' || secondO.base != L'o') return;
-    if (firstO.mod != Modifier::None || secondO.mod != Modifier::None) return;
+    if (firstO.base != L'o' || secondO.base != L'o') return false;
+    if (firstO.mod != Modifier::None || secondO.mod != Modifier::None) return false;
     // The escape-oo tone always lands on the SECOND o (voọc/soóc/goòng). A tone
     // on the FIRST o is an ordinary toned vowel trailed by a repeated 'o'
     // (Telex "mó"+o, VNI "ó"+o) and must NOT be disturbed.
-    if (!secondO.HasTone() || firstO.HasTone()) return;
+    if (!secondO.HasTone() || firstO.HasTone()) return false;
     // 'c' (→ ooc) and 'n' (→ oong) are the only valid continuations; keep the
     // tone for those so voọc/soóc/goòng compose.
-    if (lower == L'c' || lower == L'n') return;
+    if (lower == L'c' || lower == L'n') return false;
     // Otherwise revert: drop the tone and re-emit the consumed tone key as a
     // literal char, recovered from rawInput_ via its tracked index. All reads
     // off secondO happen before the push_back below — a realloc there would
@@ -1521,6 +1525,14 @@ void TypingEngine::RevertProvisionalOoTone(wchar_t lower) {
         literalToneKey.rawIdx = consumedRawIdx;
         states_.push_back(literalToneKey);
     }
+    // Same tone key again = the Telex escape (rr, jj, …). The revert above already
+    // put that keystroke back as a literal, so the repeat must be swallowed rather
+    // than re-toning the pair, and the escape latch keeps a third press literal.
+    if (toneKey != 0 && towlower(toneKey) == lower) {
+        escape_.escape(EscapeKind::Tone);
+        return true;
+    }
+    return false;
 }
 
 //-----------------------------------------------------------------------------
@@ -1816,6 +1828,12 @@ const std::wstring& TypingEngine::Peek() const {
 }
 
 std::wstring TypingEngine::Commit() {
+    // Word boundary = last chance for the oo-coda, so an unresolved provisional
+    // oo-tone can never close validly (voọc/soóc/goòng already have their 'c'/
+    // 'ng' by now). Drop it so "pooor" commits as "poor", not "poỏ" — and so
+    // the auto-restore below sees plain ASCII and keeps the escaped form
+    // instead of replaying every raw keystroke ("pooor").
+    (void)RevertProvisionalOoTone(L' ');
     std::wstring composed = ComposeAll();
 
     // Single quick-start consonant alone (f->ph, j->gi, w->qu) — always restore

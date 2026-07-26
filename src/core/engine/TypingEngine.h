@@ -188,9 +188,13 @@ private:
     // Any other next key (notably a vowel) means the syllable can never close
     // validly, so the tone reverts to its literal keystroke. This is what makes
     // "vooojc"→voọc / "gooofng"→goòng work while "chooose"→choose (not choóe).
-    // Called at PushChar entry with the incoming key's lowercase form; mutates
-    // states_ in place when a revert is needed (no-op otherwise).
-    void RevertProvisionalOoTone(wchar_t lower);
+    // Called at PushChar entry with the incoming key's lowercase form, and at
+    // Commit() with a sentinel (a word boundary is the last chance for a coda);
+    // mutates states_ in place when a revert is needed (no-op otherwise).
+    // Returns true when `lower` is the same tone key again — that repeat is the
+    // Telex escape, already re-emitted by the revert, so PushChar must swallow
+    // it instead of re-toning the pair ("pooorr" → poor, not poỏr).
+    [[nodiscard]] bool RevertProvisionalOoTone(wchar_t lower);
 
     // W7.4: post-ProcessChar finalization (relocate tone / autoUO /
     // UpdateSpellState / English-bias / P8 revert / ZWJF). Lifted from
