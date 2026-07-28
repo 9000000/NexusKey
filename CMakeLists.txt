@@ -133,6 +133,7 @@ set(NEXTKEY_CORE_SOURCES
     src/core/Logger.cpp
     src/core/CrashLog.h
     src/core/CrashLog.cpp
+    src/core/FocusApplyDecision.h
     src/core/Strings.h
     src/core/Strings.cpp
     src/core/MacroCase.h
@@ -641,6 +642,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/HookCommandMailboxTest.cpp
     tests/HookHijackDetectorTest.cpp
     tests/ReinstallBurstSchedulerTest.cpp
+    tests/FocusApplyDecisionTest.cpp
     tests/FocusInterleavingTest.cpp
     tests/ThreadOwnershipTest.cpp
     tests/ConfigSnapshotTest.cpp

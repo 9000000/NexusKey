@@ -62,6 +62,16 @@ struct FocusClassification {
     std::uintptr_t hwndOpaque{0};
     std::uint32_t  pid{0};        // GetWindowThreadProcessId result; 0 = unknown
     std::wstring   exeName;
+    // Identity of the WinEvent/tick request that started this classification.
+    // The hook compares requestSerial with HookEngine's latest published
+    // request so a completed result for an older foreground can never apply
+    // after a newer focus event.
+    std::uint64_t requestSerial{0};
+    // Physical key-down epoch captured at request publication time. If the
+    // hook has advanced this epoch while the worker was classifying, applying
+    // the typing context in the middle of a live composition must be deferred
+    // until engine_->Count() returns to zero.
+    std::uint64_t inputEpochAtRequest{0};
     // Classification flags — populated by ClassifyFocusedWindow.
     bool isExcluded{false};
     bool isForcedVietnamese{false};  // per-app hard-V lock (mutually exclusive with isExcluded)
