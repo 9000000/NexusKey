@@ -3396,9 +3396,41 @@ void HookEngine::OnFocusChangedSyncOnWorker(
         focus_.Classify(request.triggerHwnd, ctx);
     classified.requestSerial = request.requestSerial;
     classified.inputEpochAtRequest = request.inputEpochAtRequest;
+
+    if (!classified.hwndOpaque) return;  // sentinel: nothing to apply
+
+    // A newer request may arrive while Classify() is doing HWND/app probes.
+    // Reject here as well as on the hook thread so stale UI context is never
+    // published and the mailbox avoids carrying work it already knows is old.
+    if (request.requestSerial !=
+        latestFocusRequestSerial_.load(std::memory_order_relaxed)) {
+        return;
+    }
+
+    // Tooltip publication belongs on the worker: formatting and the tray
+    // snapshot allocation must never enter the low-level keyboard callback.
+    // Unlike ApplyFocusOnHookThread's per-app fast-path gate, this runs for
+    // ordinary apps too, which is required for the app name to stay current
+    // under the default (all per-app features disabled) configuration.
+    if (focusAppContextCallback_ &&
+        !classified.skipAppTracking &&
+        !classified.exeName.empty()) {
+        std::wstring_view ruleText;
+        if (classified.isExcluded) {
+            ruleText = L"Lock E";
+        } else if (classified.isForcedVietnamese) {
+            ruleText = L"Lock V";
+        } else if (ctx.cfg && ctx.cfg->smartSwitch) {
+            ruleText = L"Smart Switch";
+        }
+        const bool isRustEngine =
+            ctx.cfg && EngineFactory::WillUseRustEngine(*ctx.cfg);
+        focusAppContextCallback_(
+            classified.exeName, ruleText, classified.isTsf, isRustEngine);
+    }
+
     auto cls = std::make_shared<const FocusClassification>(
         std::move(classified));
-    if (!cls->hwndOpaque) return;  // sentinel: nothing to apply
     lifecycle_.Mailbox().Post(HookCommand::kFocusChanged, std::move(cls));
 }
 
@@ -4471,22 +4503,6 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
                      wasTsfApp ? L"true" : L"false", cls->isTsf ? L"true" : L"false");
         }
         tsfModeCallback_(cls->isTsf, tsfReadonly);
-    }
-
-    if (focusAppContextCallback_) {
-        std::wstring ruleText;
-        if (cls->isExcluded) {
-            ruleText = L"Lock E";
-        } else if (cls->isForcedVietnamese) {
-            ruleText = L"Lock V";
-        } else if (cfg->smartSwitch) {
-            ruleText = L"Smart Switch";
-        }
-
-        std::wstring exe = focus_.LastRealExe();
-        if (exe.empty()) exe = focus_.ActiveExe();
-
-        focusAppContextCallback_(exe, ruleText, cls->isTsf, cfg->spellSuggestEnabled);
     }
 
     if (cls->isExcluded) {

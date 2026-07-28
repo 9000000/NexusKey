@@ -605,19 +605,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     });
 
-    g_hookEngine.SetFocusAppContextCallback([](const std::wstring& exe, const std::wstring& rule, bool isTsf, bool isRust) {
-        if (HWND trayWnd = g_trayIcon.GetMessageWindow()) {
-            auto* msgData = new (std::nothrow) TrayAppContextMsg();
-            if (msgData) {
-                wcsncpy_s(msgData->exe, exe.c_str(), _TRUNCATE);
-                wcsncpy_s(msgData->rule, rule.c_str(), _TRUNCATE);
-                msgData->isTsf = isTsf;
-                msgData->isRust = isRust;
-                if (!PostMessageW(trayWnd, WM_VKEY_TRAY_APP_SYNC, 0, reinterpret_cast<LPARAM>(msgData))) {
-                    delete msgData;
-                }
-            }
-        }
+    g_hookEngine.SetFocusAppContextCallback([](
+            std::wstring_view exe, std::wstring_view rule,
+            bool isTsf, bool isRust) {
+        g_trayIcon.QueueAppContext(exe, rule, isTsf, isRust);
     });
 
     // Wire settings dialog -> HookEngine mode set

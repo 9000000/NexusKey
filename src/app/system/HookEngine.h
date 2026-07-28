@@ -40,6 +40,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -174,9 +175,11 @@ public:
         tsfModeCallback_ = std::move(callback);
     }
 
-    /// Callback fired on focus changes with app context info for TrayIcon 1-line status tooltip.
-    /// Args: (exeName, ruleText, isTsf, isRustEngine)
-    using FocusAppContextCallback = std::function<void(const std::wstring&, const std::wstring&, bool, bool)>;
+    /// Worker-thread callback fired after a current real-app classification.
+    /// Args: (exeName, ruleText, isTsf, isRustEngine). Implementations may
+    /// allocate because this never runs in the keyboard-hook callback.
+    using FocusAppContextCallback =
+        std::function<void(std::wstring_view, std::wstring_view, bool, bool)>;
     void SetFocusAppContextCallback(FocusAppContextCallback callback) {
         focusAppContextCallback_ = std::move(callback);
     }

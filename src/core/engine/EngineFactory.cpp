@@ -12,9 +12,18 @@
 
 namespace NextKey {
 
+bool EngineFactory::WillUseRustEngine(const TypingConfig& config) {
+#ifdef VKEY_USE_RUST_ENGINE
+    return config.spellSuggestEnabled && RustInputEngine::LibraryAvailable();
+#else
+    (void)config;
+    return false;
+#endif
+}
+
 std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) {
 #ifdef VKEY_USE_RUST_ENGINE
-    if (config.spellSuggestEnabled && RustInputEngine::LibraryAvailable()) {
+    if (WillUseRustEngine(config)) {
         Logger::Log(L"[Engine] Using Rust engine");
         return std::make_unique<RustInputEngine>(config);
     }

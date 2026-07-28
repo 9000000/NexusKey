@@ -131,75 +131,63 @@ void TrayIcon::SetVietnameseMode(bool enabled) noexcept {
     vietnameseMode_ = enabled;
 
     RefreshIcon();
-    UpdateTooltip();
-
-    if (nid_.hWnd) {
-        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
-            // Icon may have been lost (explorer restart, GDI quota, etc.)
-            // Re-add to recover
-            Shell_NotifyIconW(NIM_ADD, &nid_);
-        }
-    }
+    NotifyIconChanged();
 }
 
 void TrayIcon::SetTsfActive(bool active) noexcept {
     if (tsfActive_ == active) return;
     tsfActive_ = active;
+    appContext_.isTsf = active;
 
     RefreshIcon();
     UpdateTooltip();
-
-    if (nid_.hWnd) {
-        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
-            Shell_NotifyIconW(NIM_ADD, &nid_);
-        }
-    }
+    NotifyIconChanged();
 }
 
-void TrayIcon::SetAppContext(const wchar_t* exeName, const wchar_t* ruleText, bool isRustEngine) noexcept try {
-    std::wstring exe = exeName ? exeName : L"";
-    std::wstring rule = ruleText ? ruleText : L"";
-    if (activeExe_ == exe && appRule_ == rule && isRustEngine_ == isRustEngine) return;
-
-    activeExe_ = std::move(exe);
-    appRule_ = std::move(rule);
-    isRustEngine_ = isRustEngine;
-
-    UpdateTooltip();
-
-    if (nid_.hWnd) {
-        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
-            Shell_NotifyIconW(NIM_ADD, &nid_);
-        }
+void TrayIcon::QueueAppContext(std::wstring_view exeName,
+                               std::wstring_view ruleText,
+                               bool isTsf,
+                               bool isRustEngine) noexcept try {
+    auto context = std::make_shared<const TrayStatusContext>(
+        TrayStatusContext{
+            .exeName = std::wstring{exeName},
+            .ruleText = std::wstring{ruleText},
+            .isTsf = isTsf,
+            .isRustEngine = isRustEngine,
+        });
+    pendingAppContext_.store(std::move(context), std::memory_order_release);
+    if (const HWND hwnd = hwndMessage_) {
+        PostMessageW(hwnd, WM_VKEY_TRAY_APP_SYNC, 0, 0);
     }
 } catch (...) {}
 
-void TrayIcon::UpdateTooltip() noexcept {
-    const wchar_t* engineStr = isRustEngine_ ? L"Rust" : L"C++";
-    const wchar_t* methodStr = tsfActive_ ? L"TSF" : L"Hook";
+void TrayIcon::SetAppContext(const TrayStatusContext& context) noexcept try {
+    if (appContext_ == context) return;
 
-    if (!activeExe_.empty()) {
-        if (!appRule_.empty()) {
-            // Format: "chrome.exe — Rust • TSF • Smart Switch"
-            StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls \x2014 %ls \x2022 %ls \x2022 %ls",
-                             activeExe_.c_str(), engineStr, methodStr, appRule_.c_str());
-        } else {
-            // Format: "notepad.exe — C++ • Hook"
-            StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls \x2014 %ls \x2022 %ls",
-                             activeExe_.c_str(), engineStr, methodStr);
-        }
-    } else {
-        if (!appRule_.empty()) {
-            // Format: "Rust • TSF • Smart Switch"
-            StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls \x2022 %ls \x2022 %ls",
-                             engineStr, methodStr, appRule_.c_str());
-        } else {
-            // Format: "Rust • TSF"
-            StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls \x2022 %ls",
-                             engineStr, methodStr);
+    TrayStatusContext next = context;
+    const bool tsfChanged = tsfActive_ != context.isTsf;
+    appContext_ = std::move(next);
+    tsfActive_ = context.isTsf;
+
+    if (tsfChanged) RefreshIcon();
+    UpdateTooltip();
+    NotifyIconChanged();
+} catch (...) {}
+
+void TrayIcon::NotifyIconChanged() noexcept {
+    if (nid_.hWnd) {
+        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
+            // Icon may have been lost (explorer restart, GDI quota, etc.)
+            Shell_NotifyIconW(NIM_ADD, &nid_);
         }
     }
 }
+
+void TrayIcon::UpdateTooltip() noexcept try {
+    const std::wstring text = FormatTrayStatusText(appContext_);
+    StringCchPrintfW(
+        nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls", text.c_str());
+} catch (...) {}
 
 void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bool showTsfIndicator) noexcept {
     if (iconStyle_ == style && customColorV_ == colorV && customColorE_ == colorE
@@ -540,11 +528,9 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     // Deferred App Context sync for 1-line status tooltip
     if (msg == WM_VKEY_TRAY_APP_SYNC && hwnd == hwndMessage_) {
-        if (lParam) {
-            auto* msgData = reinterpret_cast<const TrayAppContextMsg*>(lParam);
-            SetTsfActive(msgData->isTsf);
-            SetAppContext(msgData->exe, msgData->rule, msgData->isRust);
-            delete msgData;
+        if (auto context = pendingAppContext_.exchange(
+                nullptr, std::memory_order_acq_rel)) {
+            SetAppContext(*context);
         }
         return true;
     }

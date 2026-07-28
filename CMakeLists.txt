@@ -269,6 +269,7 @@ add_executable(VKeyApp WIN32
     # system/
     src/app/system/TrayIcon.h
     src/app/system/TrayIcon.cpp
+    src/app/system/TrayStatusText.h
     src/app/system/FloatingIcon.h
     src/app/system/FloatingIcon.cpp
     src/app/system/HookEngine.h
@@ -373,6 +374,7 @@ if(VKEY_LITE_MODE AND WIN32)
         # system/ (shared with main app)
         src/app/system/TrayIcon.h
         src/app/system/TrayIcon.cpp
+        src/app/system/TrayStatusText.h
         src/app/system/FloatingIcon.h
         src/app/system/FloatingIcon.cpp
         src/app/system/HookEngine.h
@@ -606,6 +608,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/VniParityTest.cpp
     tests/TelexDictionaryTest.cpp
     tests/EngineFactoryTest.cpp
+    tests/TrayStatusTextTest.cpp
     tests/SharedStateTest.cpp
     tests/HookContextAnchorTest.cpp
     tests/FeatureOptionsTest.cpp

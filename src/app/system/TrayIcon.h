@@ -3,15 +3,18 @@
 
 #pragma once
 
+#include "TrayStatusText.h"
 #include "core/ipc/SharedConstants.h"
 #include "core/ipc/SharedStateManager.h"
 #include "core/config/TypingConfig.h"
 #include "core/SystemConfig.h"
 #include <Windows.h>
 #include <shellapi.h>
+#include <atomic>
 #include <functional>
-#include <utility>
+#include <memory>
 #include <string>
+#include <utility>
 
 namespace NextKey {
 
@@ -94,9 +97,13 @@ public:
     /// (red=Vietnamese, blue=English) regardless of the chosen icon style.
     void SetTsfActive(bool active) noexcept;
 
-    /// Set active application context and classification rule for 1-line status tooltip:
-    /// e.g. exeName = "chrome.exe", ruleText = "Smart Switch", isRustEngine = true
-    void SetAppContext(const wchar_t* exeName, const wchar_t* ruleText, bool isRustEngine) noexcept;
+    /// Publish app context from the focus worker. The latest immutable
+    /// snapshot is consumed by the tray window, so the producer never passes
+    /// raw heap ownership through LPARAM.
+    void QueueAppContext(std::wstring_view exeName,
+                         std::wstring_view ruleText,
+                         bool isTsf,
+                         bool isRustEngine) noexcept;
 
     /// Set icon style and custom colors (triggers icon refresh)
     void SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bool showTsfIndicator) noexcept;
@@ -138,7 +145,9 @@ public:
 private:
     void ShowContextMenu();
     void RefreshIcon() noexcept;  // Reload icon based on current style/mode
-    void UpdateTooltip() noexcept;  // Rebuild szTip from V/E + TSF state
+    void SetAppContext(const TrayStatusContext& context) noexcept;
+    void UpdateTooltip() noexcept;  // Rebuild the 1-line app/engine/method/rule status
+    void NotifyIconChanged() noexcept;
     void ReAddIcon() noexcept;    // Re-register tray icon (after explorer restart or NIM_MODIFY failure)
     [[nodiscard]] HICON CreateColorizedIcon(int baseIconId, COLORREF color) noexcept;
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -166,9 +175,8 @@ private:
     // Cached hotkey text for Quick Convert menu item (updated on config change)
     std::wstring cachedConvertHotkeyText_;
 
-    std::wstring activeExe_;
-    std::wstring appRule_;
-    bool isRustEngine_ = false;
+    TrayStatusContext appContext_;
+    std::atomic<std::shared_ptr<const TrayStatusContext>> pendingAppContext_;
 
     static constexpr UINT WM_TRAYICON = WM_USER + 1;
     UINT wmTaskbarCreated_ = 0;           // Registered "TaskbarCreated" message ID

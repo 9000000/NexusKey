@@ -13,6 +13,11 @@ namespace NextKey {
 /// Factory for creating input method engines
 class EngineFactory {
 public:
+    /// Whether Create(config) will select the Rust-backed implementation.
+    /// Kept beside Create so status/reporting code cannot drift from fallback
+    /// behavior when the runtime library is unavailable.
+    [[nodiscard]] static bool WillUseRustEngine(const TypingConfig& config);
+
     /// Create an engine based on configuration
     [[nodiscard]] static std::unique_ptr<IInputEngine> Create(const TypingConfig& config);
 
