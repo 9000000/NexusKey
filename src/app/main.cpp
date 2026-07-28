@@ -471,6 +471,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     });
 
+    g_hookEngine.SetFocusAppContextCallback([](const std::wstring& exe, const std::wstring& rule, bool isTsf, bool isRust) {
+        if (HWND trayWnd = g_trayIcon.GetMessageWindow()) {
+            auto* msgData = new (std::nothrow) TrayAppContextMsg();
+            if (msgData) {
+                wcsncpy_s(msgData->exe, exe.c_str(), _TRUNCATE);
+                wcsncpy_s(msgData->rule, rule.c_str(), _TRUNCATE);
+                msgData->isTsf = isTsf;
+                msgData->isRust = isRust;
+                if (!PostMessageW(trayWnd, WM_VKEY_TRAY_APP_SYNC, 0, reinterpret_cast<LPARAM>(msgData))) {
+                    delete msgData;
+                }
+            }
+        }
+    });
+
     // #109: activate VKey's TIP at startup (standard-IME model, like
     // Unikey/Mozc). The handler runs ActivateVKeyTsfProfile() which (1) adds
     // VKey to the user's input list via InstallLayoutOrTip so it is selectable +

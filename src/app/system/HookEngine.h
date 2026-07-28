@@ -174,6 +174,13 @@ public:
         tsfModeCallback_ = std::move(callback);
     }
 
+    /// Callback fired on focus changes with app context info for TrayIcon 1-line status tooltip.
+    /// Args: (exeName, ruleText, isTsf, isRustEngine)
+    using FocusAppContextCallback = std::function<void(const std::wstring&, const std::wstring&, bool, bool)>;
+    void SetFocusAppContextCallback(FocusAppContextCallback callback) {
+        focusAppContextCallback_ = std::move(callback);
+    }
+
     /// Re-read SharedState and reload TOML if configGeneration changed.
     /// Safe cross-process: uses the configGeneration counter, not the Named Event
     /// (which is auto-reset and reserved for the TSF DLL).
@@ -201,14 +208,14 @@ public:
     /// give HookEngine a way to signal the off-hook worker thread without
     /// taking a dependency on `MainThreadWorker`. Producers (WinEventProc
     /// handler, hook-thread QuickSync slow-path detection) latch state into
-    /// `pendingClassifyHwnd_` (or rely on the Signal itself to mark the
+    /// `pendingClassifyRequest_` (or rely on the Signal itself to mark the
     /// QuickSync re-run) then invoke this fn so the worker drains on its
     /// next wake. Wired once at startup, never changed.
     using WorkerSignalFn = std::function<void()>;
     void SetWorkerSignalFn(WorkerSignalFn fn) noexcept { workerSignalFn_ = std::move(fn); }
 
     /// Doctrine §12.4 worker drain. Runs on the MainThreadWorker thread from
-    /// the workHandler wired in `main.cpp`. Dequeues `pendingClassifyHwnd_`
+    /// the workHandler wired in `main.cpp`. Dequeues `pendingClassifyRequest_`
     /// and runs the heavy classify body (QuickSync + focus_.Classify + mailbox
     /// post). Safe to call when nothing is pending — early-returns.
     /// PUBLIC so `main.cpp` can wire the workHandler without exposing
@@ -261,6 +268,12 @@ public:
     // `NextKey::FocusOwner::GetExeNameForHwnd(hwnd)`.
 
 private:
+    struct FocusClassifyRequest {
+        HWND triggerHwnd{nullptr};
+        std::uint64_t requestSerial{0};
+        std::uint64_t inputEpochAtRequest{0};
+    };
+
     // Hook callbacks (static → instance dispatch). WinEventProc moved to
     // FocusOwner (Wave 3 PR 3.2).
     //
@@ -431,8 +444,9 @@ private:
     // (docs/CODING_RULES/12-worker-thread-doctrine.md §12.4).
     //
     //   Producers (WinEventProc on main, OnTickPoll's PID-change branch on
-    //   worker) call OnFocusChanged with the trigger HWND. The body is now
-    //   produce-only: latch the HWND into `pendingClassifyHwnd_` + invoke
+    //   worker) capture an immutable request containing the trigger HWND,
+    //   request serial and current physical-input epoch. OnFocusChanged is
+    //   produce-only: latch that request + invoke
     //   `workerSignalFn_` to wake the worker. The worker's workHandler
     //   then calls `DrainClassifyOnWorker()` (public, see top of class)
     //   which runs the heavy body — QuickSync + `focus_.Classify` +
@@ -456,7 +470,9 @@ private:
     // so it can call this directly without the latch+signal hop. Doctrine
     // §12.5 names this the single legitimate exemption. Same body as the
     // drain consumes; sharing prevents drift between paths.
-    void OnFocusChangedSyncOnWorker(HWND triggerHwnd);
+    [[nodiscard]] FocusClassifyRequest CaptureFocusClassifyRequest(
+        HWND triggerHwnd) noexcept;
+    void OnFocusChangedSyncOnWorker(const FocusClassifyRequest& request);
     void OnLayoutChanged(bool isCompatibleNow);
     void CheckLayoutChange();  // Query current layout and call OnLayoutChanged if it changed
     void FlushSmartSwitchOnStop();      // Force-flush smart-switch map to TOML on shutdown (bypass debounce).
@@ -806,26 +822,32 @@ private:
     // window. Forward-declared via the header above.
     std::unique_ptr<ReinstallBurstScheduler> reinstallBurstScheduler_;
 
-    // Wave 3 PR 3.6 — worker-thread doctrine §12.4 latch + signal slots.
-    //   pendingClassifyHwnd_ encoding (uintptr_t — atomic 8B aligned ptr-sized):
-    //     0                       = no pending request (kClassifyEmpty)
-    //     1                       = pending classify "use foreground"
-    //                               (kClassifyForeground) — what nullptr
-    //                               passes through OnFocusChanged become
-    //     other (HWND bit pattern)= pending classify for the latched HWND
-    //   Writers: OnFocusChanged (any thread, latches via release-store).
-    //   Reader: DrainClassifyOnWorker (worker thread, exchanges with
-    //   acquire). Last-writer-wins is OK — we only classify the latest
-    //   focus, older latches coalesce away (doctrine §12.4 property).
+    // Wave 3 PR 3.6 worker latch, extended with generation evidence for
+    // delayed-focus safety. A request is larger than one pointer, so doctrine
+    // §12.4's immutable atomic<shared_ptr> RCU pattern keeps HWND + both
+    // generations consistent without a lock or a torn two-atomic pair.
+    // Writers: OnFocusChanged (WinEvent/main). Reader: worker.
+    // Last-writer-wins coalescing is deliberate under focus storms.
     //
     // QuickSync side intentionally uses no separate dirty bit: the worker
     // workHandler already re-runs `SyncConfigFromSharedState` on every
     // Signal, and its epoch check observes any change the hook thread saw.
     // The Signal IS the latch.
-    static constexpr std::uintptr_t kClassifyEmpty      = 0;
-    static constexpr std::uintptr_t kClassifyForeground = 1;
-    std::atomic<std::uintptr_t> pendingClassifyHwnd_{kClassifyEmpty};
+    std::atomic<std::shared_ptr<const FocusClassifyRequest>>
+        pendingClassifyRequest_;
     WorkerSignalFn workerSignalFn_;
+
+    // Delayed focus-classification ordering:
+    //   latestFocusRequestSerial_ — incremented at request publication on
+    //     main/worker; hook rejects results for any older foreground.
+    //   physicalInputEpoch_ — hook increments once per real key-down AFTER
+    //     DrainHookCommands, so the current key cannot falsely overtake a
+    //     fresh result while earlier physical keys are detected precisely.
+    //   deferredFocusApply_ — hook-thread-owned latest typing-context
+    //     transaction retained until engine_->Count() reaches zero.
+    std::atomic<std::uint64_t> latestFocusRequestSerial_{0};
+    std::atomic<std::uint64_t> physicalInputEpoch_{0};
+    std::shared_ptr<const FocusClassification> deferredFocusApply_;
 
     // Adaptive-tick state (2026-05-27, plan docs/plans/2026-05-27-
     // adaptive-tick-idle-backoff.md). Both atomics are written from multiple
@@ -837,6 +859,10 @@ private:
     TickRetuneFn tickRetuneFn_;
 
     void DrainHookCommands();                                 // hook thread only
+    void RouteFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);
+    void TryApplyDeferredFocusOnHookThread();
+    void ApplyFocusOperationalProtectionOnHookThread(
+        const FocusClassification& cls);
     void ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);
     void ApplyConfigOnHookThread();
     void ApplyTickPollOnHookThread();
@@ -923,6 +949,7 @@ private:
     ModeChangeCallback modeChangeCallback_;
     std::function<void()> configReloadCallback_;
     std::function<void(bool, bool)> tsfModeCallback_;
+    FocusAppContextCallback focusAppContextCallback_;
     HotkeyChangedCallback hotkeyChangedCallback_;
 
     // Wave 3 PR 3.8 — cached SharedState toggle-hotkey value. Seeded in

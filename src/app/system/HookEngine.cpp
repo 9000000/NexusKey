@@ -19,6 +19,7 @@
 #include "core/CommitUndoExemption.h"
 #include "core/CommitUndoArmDecision.h"
 #include "core/DigitLedWordDecision.h"
+#include "core/FocusApplyDecision.h"
 #include "core/LeakedKeyDuringSendDecision.h"
 #include "core/MacroCase.h"
 #include "core/MacroPrefix.h"
@@ -1099,6 +1100,18 @@ LRESULT HookEngine::LowLevelKeyboardProcImpl(int nCode, WPARAM wParam, LPARAM lP
             // toggle posted from the hotkey thread takes effect on the
             // very next keystroke, not the one after.
             self->DrainHookCommands();
+
+            // Delayed-focus ordering epoch. Advance only for a real physical
+            // key-down and only AFTER the drain: a focus result already queued
+            // before the first key in a new context must be allowed to reset
+            // the old composition before that key is processed. Earlier
+            // physical key-downs have already advanced the epoch, so a worker
+            // result that they overtook is deferred instead of wiping their
+            // live word. One relaxed RMW; synthetic/sending events returned
+            // above and never reach this point.
+            if (isDown) {
+                self->physicalInputEpoch_.fetch_add(1, std::memory_order_relaxed);
+            }
 
             HOOK_LOG(L"KEY vk=0x%02X scan=0x%04X flags=0x%08X %s",
                      pKey->vkCode, pKey->scanCode, pKey->flags,
@@ -3089,7 +3102,8 @@ void HookEngine::OnTickPoll() noexcept {
             // thread (we ARE the MainThreadWorker tick callback), so we can
             // call the sync body directly — skipping the latch+signal hop
             // that WinEventProc has to use because it runs on main.
-            OnFocusChangedSyncOnWorker(nullptr);  // classifies + posts kFocusChanged
+            const auto request = CaptureFocusClassifyRequest(nullptr);
+            OnFocusChangedSyncOnWorker(request);  // classifies + posts kFocusChanged
         }
 
         // Anti-Dorion v2: drive the hijack detector from this same tick
@@ -3192,6 +3206,21 @@ void HookEngine::OnTickPoll() noexcept {
 // a ConfigContext parameter) moved to FocusOwner.cpp. OnFocusChanged
 // below builds the ConfigContext and dispatches to focus_.Classify().
 
+HookEngine::FocusClassifyRequest
+HookEngine::CaptureFocusClassifyRequest(HWND triggerHwnd) noexcept {
+    // Serial publication is the invalidation point. A result already in the
+    // worker/mailbox becomes stale as soon as a newer foreground request is
+    // captured, even before the newer heavy classification completes.
+    const std::uint64_t serial =
+        latestFocusRequestSerial_.fetch_add(1, std::memory_order_relaxed) + 1;
+    return FocusClassifyRequest{
+        .triggerHwnd = triggerHwnd,
+        .requestSerial = serial,
+        .inputEpochAtRequest =
+            physicalInputEpoch_.load(std::memory_order_relaxed),
+    };
+}
+
 void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // Worker-thread doctrine §12.4 (docs/CODING_RULES/12-worker-thread-doctrine.md).
     //
@@ -3202,18 +3231,19 @@ void HookEngine::OnFocusChanged(HWND triggerHwnd) {
     // mutated from main here AND from the worker thread inside OnTickPoll's
     // PID-change branch — concurrent unordered_map ops = UB.
     //
-    // Post-3.6: produce-only. Latch the trigger HWND + signal the worker;
+    // Post-3.6: produce-only. Latch an immutable request + signal the worker;
     // worker drains via `DrainClassifyOnWorker` on its own thread, restoring
-    // the single-writer invariant for the cache containers.
+    // the single-writer invariant for the cache containers. The request also
+    // carries ordering evidence used by the hook to reject/defer a result that
+    // completed after newer focus/input activity.
     //
     // Coalescing property (§12.4): a burst of WinEvent fires latches into
     // the same slot; the worker classifies once with the latest HWND. No
     // pile-up of redundant heavy work under focus storms (Alt-Tab spam,
     // taskbar flyouts, JumpList transients).
-    const std::uintptr_t encoded = triggerHwnd
-        ? reinterpret_cast<std::uintptr_t>(triggerHwnd)
-        : kClassifyForeground;
-    pendingClassifyHwnd_.store(encoded, std::memory_order_release);
+    auto request = std::make_shared<const FocusClassifyRequest>(
+        CaptureFocusClassifyRequest(triggerHwnd));
+    pendingClassifyRequest_.store(std::move(request), std::memory_order_release);
 
     // Adaptive-tick — DO NOT call MarkActivity here. Earlier draft did, but
     // WinEventProc fires on EVERY EVENT_SYSTEM_FOREGROUND including noisy
@@ -3239,13 +3269,10 @@ void HookEngine::DrainClassifyOnWorker() {
     // Worker-thread doctrine §12.4 drain. Consumes the latch slot and runs
     // the heavy classify body on the worker thread. Called from the
     // workHandler wired in main.cpp.
-    const std::uintptr_t encoded = pendingClassifyHwnd_.exchange(
-        kClassifyEmpty, std::memory_order_acquire);
-    if (encoded == kClassifyEmpty) return;  // nothing pending
-    HWND hwnd = (encoded == kClassifyForeground)
-        ? nullptr
-        : reinterpret_cast<HWND>(encoded);
-    OnFocusChangedSyncOnWorker(hwnd);
+    auto request = pendingClassifyRequest_.exchange(
+        nullptr, std::memory_order_acquire);
+    if (!request) return;
+    OnFocusChangedSyncOnWorker(*request);
 }
 
 // Adaptive-tick (plan docs/plans/2026-05-27-adaptive-tick-idle-backoff.md).
@@ -3333,7 +3360,8 @@ void HookEngine::RetuneCadenceIfNeeded() noexcept {
     }
 }
 
-void HookEngine::OnFocusChangedSyncOnWorker(HWND triggerHwnd) {
+void HookEngine::OnFocusChangedSyncOnWorker(
+        const FocusClassifyRequest& request) {
     // Doctrine §12.5 exemption #1: OnTickPoll's PID-change branch already
     // runs on the worker thread, so it calls this directly without the
     // latch+signal hop. WinEventProc producers go through OnFocusChanged →
@@ -3347,6 +3375,15 @@ void HookEngine::OnFocusChangedSyncOnWorker(HWND triggerHwnd) {
     // QuickSync's slow path lock-free (atomics + RCU publish); 3.6
     // additionally routes the heap-allocating slow body through the
     // worker (this thread), so no Rule 11.2 violation is possible here.
+    // Coalescing can leave an older request already dequeued when a newer
+    // WinEvent arrives. Avoid its heavy classify entirely when possible. A
+    // newer event can still arrive during Classify(); the hook-side serial
+    // check below remains the final authority.
+    if (request.requestSerial !=
+        latestFocusRequestSerial_.load(std::memory_order_relaxed)) {
+        return;
+    }
+
     QuickSyncFromSharedState();
 
     FocusOwner::ConfigContext ctx{
@@ -3355,8 +3392,12 @@ void HookEngine::OnFocusChangedSyncOnWorker(HWND triggerHwnd) {
         static_cast<int>(globalCodeTable_.load(std::memory_order_acquire)),
         static_cast<int>(globalInputMethod_.load(std::memory_order_acquire)),
     };
+    FocusClassification classified =
+        focus_.Classify(request.triggerHwnd, ctx);
+    classified.requestSerial = request.requestSerial;
+    classified.inputEpochAtRequest = request.inputEpochAtRequest;
     auto cls = std::make_shared<const FocusClassification>(
-        focus_.Classify(triggerHwnd, ctx));
+        std::move(classified));
     if (!cls->hwndOpaque) return;  // sentinel: nothing to apply
     lifecycle_.Mailbox().Post(HookCommand::kFocusChanged, std::move(cls));
 }
@@ -3948,9 +3989,9 @@ wchar_t HookEngine::VkToMacroChar(DWORD vkCode) noexcept {
 // fields must happen on the hook thread. Producers on other threads use
 // `mailbox_.Post(bit, ...)`; this drain consumes from the LL hook callback
 // (Rule 11.4 step 5 barrier) and from the pump's WM_APP_HOOK_COMMAND
-// handler. Dispatch order follows the design doc: kConfigApply first
-// (may rebuild engine_), then kFocusChanged (resets composition), then
-// kTickPoll, then kToggleVN.
+// handler. Dispatch order follows the design doc: latch kConfigApply, route
+// kFocusChanged (drop/defer/apply), retry a previously deferred focus at a
+// safe word boundary, then kTickPoll and kToggleVN.
 //
 // Phase 2a ships the infrastructure ONLY. No producer calls Post yet —
 // existing OnFocusChanged / OnTickPoll / ApplyConfig / ToggleVietnameseMode
@@ -3968,10 +4009,14 @@ void HookEngine::DrainHookCommands() {
 
     const std::uint32_t bits = lifecycle_.Mailbox().DrainBits();
     // Phase 3f: even if no fresh bits, a previous drain may have deferred
-    // the config apply (engine was busy). Re-check on every drain so the
-    // apply lands as soon as the engine empties.
-    const bool hadDeferredApply = deferredConfigApply_.load(std::memory_order_acquire);
-    if (!bits && !hadDeferredApply) return;
+    // config or focus apply (engine was busy). Re-check on every natural
+    // drain so the apply lands as soon as the engine empties. No extra wake is
+    // posted from the hook thread: doing so would add a PostThreadMessage
+    // syscall per word and violate Rule 11.2.
+    const bool hadDeferredConfig =
+        deferredConfigApply_.load(std::memory_order_acquire);
+    const bool hadDeferredFocus = static_cast<bool>(deferredFocusApply_);
+    if (!bits && !hadDeferredConfig && !hadDeferredFocus) return;
 
     // kConfigApply: latch the request; the actual apply runs at the tail
     // of this function once we know whether the engine is busy. We DO
@@ -3979,7 +4024,13 @@ void HookEngine::DrainHookCommands() {
     if (bits & HookCommand::kConfigApply) {
         deferredConfigApply_.store(true, std::memory_order_release);
     }
-    if (bits & HookCommand::kFocusChanged) ApplyFocusOnHookThread(lifecycle_.Mailbox().ConsumePendingFocus());
+    if (bits & HookCommand::kFocusChanged) {
+        RouteFocusOnHookThread(lifecycle_.Mailbox().ConsumePendingFocus());
+    }
+    // Preserve the established focus-before-tick-before-toggle ordering. If a
+    // prior word has committed since the result was deferred, its complete
+    // typing-context transaction lands here before the next key is dispatched.
+    TryApplyDeferredFocusOnHookThread();
     if (bits & HookCommand::kTickPoll)     ApplyTickPollOnHookThread();
     if (bits & HookCommand::kToggleVN)     ApplyToggleVNOnHookThread();
 
@@ -4002,6 +4053,131 @@ void HookEngine::DrainHookCommands() {
         // explicit regardless of drain serialisation.
         if (deferredConfigApply_.exchange(false, std::memory_order_acq_rel)) {
             ApplyConfigOnHookThread();
+        }
+    }
+}
+
+void HookEngine::RouteFocusOnHookThread(
+        std::shared_ptr<const FocusClassification> cls) {
+    VKEY_ASSERT_HOOK_THREAD();
+    if (!cls || !cls->hwndOpaque) return;
+
+    const bool hasComposition =
+        (engine_ && engine_->Count() > 0) || !rawMacroBuffer_.empty();
+    const FocusApplyInputs inputs{
+        .snapshotRequestSerial = cls->requestSerial,
+        .latestRequestSerial =
+            latestFocusRequestSerial_.load(std::memory_order_relaxed),
+        .snapshotInputEpoch = cls->inputEpochAtRequest,
+        .currentInputEpoch =
+            physicalInputEpoch_.load(std::memory_order_relaxed),
+        .hasComposition = hasComposition,
+    };
+
+    switch (DecideFocusApply(inputs)) {
+        case FocusApplyDisposition::DropStale:
+            HOOK_LOG(L"  FocusApply: drop stale request=%llu latest=%llu",
+                     static_cast<unsigned long long>(inputs.snapshotRequestSerial),
+                     static_cast<unsigned long long>(inputs.latestRequestSerial));
+            return;
+
+        case FocusApplyDisposition::DeferUntilBoundary:
+            // Hook protection is orthogonal to composition and must become
+            // active promptly (especially Dorion). All state that changes
+            // typing semantics remains an atomic transaction in the deferred
+            // snapshot.
+            ApplyFocusOperationalProtectionOnHookThread(*cls);
+            deferredFocusApply_ = std::move(cls);
+            HOOK_LOG(L"  FocusApply: defer request=%llu input=%llu->%llu count=%zu macro=%zu",
+                     static_cast<unsigned long long>(inputs.snapshotRequestSerial),
+                     static_cast<unsigned long long>(inputs.snapshotInputEpoch),
+                     static_cast<unsigned long long>(inputs.currentInputEpoch),
+                     engine_ ? engine_->Count() : 0,
+                     rawMacroBuffer_.size());
+            return;
+
+        case FocusApplyDisposition::ApplyNow:
+            // A current snapshot supersedes any retained older transaction.
+            deferredFocusApply_.reset();
+            ApplyFocusOperationalProtectionOnHookThread(*cls);
+            ApplyFocusOnHookThread(std::move(cls));
+            return;
+    }
+}
+
+void HookEngine::TryApplyDeferredFocusOnHookThread() {
+    VKEY_ASSERT_HOOK_THREAD();
+    if (!deferredFocusApply_) return;
+
+    const auto& cls = deferredFocusApply_;
+    const bool hasComposition =
+        (engine_ && engine_->Count() > 0) || !rawMacroBuffer_.empty();
+    const FocusApplyInputs inputs{
+        .snapshotRequestSerial = cls->requestSerial,
+        .latestRequestSerial =
+            latestFocusRequestSerial_.load(std::memory_order_relaxed),
+        .snapshotInputEpoch = cls->inputEpochAtRequest,
+        .currentInputEpoch =
+            physicalInputEpoch_.load(std::memory_order_relaxed),
+        .hasComposition = hasComposition,
+    };
+
+    switch (DecideFocusApply(inputs)) {
+        case FocusApplyDisposition::DropStale:
+            HOOK_LOG(L"  FocusApply: drop deferred request=%llu latest=%llu",
+                     static_cast<unsigned long long>(inputs.snapshotRequestSerial),
+                     static_cast<unsigned long long>(inputs.latestRequestSerial));
+            deferredFocusApply_.reset();
+            return;
+        case FocusApplyDisposition::DeferUntilBoundary:
+            return;
+        case FocusApplyDisposition::ApplyNow: {
+            auto ready = std::move(deferredFocusApply_);
+            deferredFocusApply_.reset();
+            // Operational protection was already applied when the result was
+            // first deferred; the helper is idempotent, so re-running it also
+            // covers future code paths that may seed this slot directly.
+            ApplyFocusOperationalProtectionOnHookThread(*ready);
+            HOOK_LOG(L"  FocusApply: apply deferred request=%llu at boundary",
+                     static_cast<unsigned long long>(inputs.snapshotRequestSerial));
+            ApplyFocusOnHookThread(std::move(ready));
+            return;
+        }
+    }
+}
+
+void HookEngine::ApplyFocusOperationalProtectionOnHookThread(
+        const FocusClassification& cls) {
+    VKEY_ASSERT_HOOK_THREAD();
+
+    // This slice is deliberately independent from the typing-context
+    // transaction below. Delaying it until a long word commits would leave
+    // Dorion's competing-hook protection disabled precisely while that word is
+    // being typed. It is idempotent and changes no composition, injector,
+    // SmartSwitch, TSF, excluded-app, code-table or input-method state.
+    const bool isChromiumClass = cls.localElectronApp || cls.isBrowser;
+    const bool wasChromiumClass = isChromiumClassApp_.exchange(
+        isChromiumClass, std::memory_order_acq_rel);
+    const bool isKnownHijacker = cls.isKnownHijacker;
+    const bool wasKnownHijacker =
+        isKnownHijackerApp_.exchange(isKnownHijacker, std::memory_order_acq_rel);
+
+    if (hijackDetector_) {
+        hijackDetector_->SetChromiumClassActive(isChromiumClass);
+    }
+    if ((wasChromiumClass != isChromiumClass ||
+         wasKnownHijacker != isKnownHijacker) &&
+        workerSignalFn_) {
+        workerSignalFn_();
+    }
+
+    if (wasKnownHijacker != isKnownHijacker && reinstallBurstScheduler_) {
+        reinstallBurstScheduler_->Cancel();
+        if (isKnownHijacker) {
+            HOOK_LOG(L"  BurstReinstall: scheduling 600/1200/1800ms burst (known hijacker fg entered)");
+            reinstallBurstScheduler_->Schedule(
+                static_cast<uint32_t>(REINSTALL_REASON_CHROMIUM),
+                {600, 1200, 1800});
         }
     }
 }
@@ -4178,67 +4354,6 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
              cls->localForcedSplitSleepMs, cls->isKnownEmptyDocument ? 1 : 0,
              shouldArmAutoCap ? 1 : 0);
 
-    // Anti-Dorion (hook-only): cache whether the foreground is a Chromium-class
-    // host so LowLevelMouseProc can reinstall-on-click. Placed HERE (before the
-    // skipAppTracking guard at :3350 and the config-gate below) deliberately —
-    // empirically the function returns early for Dorion's main window between
-    // those guards (23:10 vs 09:14 logs proved it). Moving the store past the
-    // guards leaves the flag stale and breaks mouse-down reinstall for Dorion.
-    // Helper-window transient flips self-correct on the next real focus event.
-    const bool wasChromiumClass = isChromiumClassApp_.exchange(
-        cls->localElectronApp || cls->isBrowser, std::memory_order_acq_rel);
-    const bool isChromiumClass = cls->localElectronApp || cls->isBrowser;
-    // A1: the expensive responses (burst + 40ms pin + mouse-click reinstall)
-    // gate on the narrower known-hijacker flag — only Dorion installs a
-    // competing hook. The detector itself stays universal (isChromiumClass).
-    const bool isKnownHijacker = cls->isKnownHijacker;
-    const bool wasKnownHijacker =
-        isKnownHijackerApp_.exchange(isKnownHijacker, std::memory_order_acq_rel);
-    // Anti-Dorion v2: gate the hijack detector + retune MainThreadWorker's
-    // cadence on flag transitions.
-    //   - Detector gate: Poll() returns immediately when flag is false →
-    //     no ghost-key work outside chromium sessions (Invariant 3 & 4).
-    //   - Cadence retune: when the KNOWN-HIJACKER flag flips, signal the worker
-    //     so its NEXT workHandler runs RetuneCadenceIfNeeded promptly — pinning
-    //     to (or releasing from) the detector's 40ms cadence without waiting a
-    //     full tick. Also signal on the broader chromium flip so the universal
-    //     detector starts/stops polling promptly.
-    if (hijackDetector_) hijackDetector_->SetChromiumClassActive(isChromiumClass);
-    if ((wasChromiumClass != isChromiumClass || wasKnownHijacker != isKnownHijacker)
-        && workerSignalFn_) {
-        workerSignalFn_();
-    }
-
-    // Anti-Dorion v2 PRIMARY path — fire a reinstall burst when focus first
-    // lands on a chromium-class app. The single focus-time reinstall above
-    // (PostReinstallHooks reason=chromium, triggered earlier in the focus
-    // pipeline) often lands BEFORE Dorion's own LL hook install completes;
-    // the burst covers the install window so at least one of our reinstalls
-    // lands AFTER theirs → VKey at chain head, hook wins.
-    //
-    // Delays chosen to clear the 500 ms chromium throttle in HookLifecycle:
-    // the focus-time reinstall just ran at ~t=0, so a 300 ms burst step
-    // gets SKIPPED (throttled). 600 / 1200 / 1800 ms put each step safely
-    // past the throttle boundary (≥ 500 ms gap from any prior reinstall)
-    // so all three execute. Total span 1200 ms covers the typical Dorion
-    // renderer-init window (100-500 ms) plus headroom.
-    //
-    // On focus-out, cancel any pending burst to avoid spurious reinstalls
-    // when the user is no longer typing into Dorion. See
-    // docs/plans/2026-05-28-anti-dorion-detector-inject-design.md.
-    if (wasKnownHijacker != isKnownHijacker && reinstallBurstScheduler_) {
-        // A1: gate on the known-hijacker transition (Dorion), not every browser.
-        // Always cancel pending callbacks on transition — clean slate.
-        // Cancel is cheap (atomic generation bump) so unconditional call OK.
-        reinstallBurstScheduler_->Cancel();
-        if (isKnownHijacker) {
-            HOOK_LOG(L"  BurstReinstall: scheduling 600/1200/1800ms burst (known hijacker fg entered)");
-            reinstallBurstScheduler_->Schedule(
-                static_cast<uint32_t>(REINSTALL_REASON_CHROMIUM),
-                {600, 1200, 1800});
-        }
-    }
-
     // RefreshFocusCache uses GetFocusedChildHwnd (AttachThreadInput) which
     // is cheap (~µs). Safe on hook thread.
     if (cls->localClipboard || cls->localEditMsg) {
@@ -4356,6 +4471,22 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
                      wasTsfApp ? L"true" : L"false", cls->isTsf ? L"true" : L"false");
         }
         tsfModeCallback_(cls->isTsf, tsfReadonly);
+    }
+
+    if (focusAppContextCallback_) {
+        std::wstring ruleText;
+        if (cls->isExcluded) {
+            ruleText = L"Lock E";
+        } else if (cls->isForcedVietnamese) {
+            ruleText = L"Lock V";
+        } else if (cfg->smartSwitch) {
+            ruleText = L"Smart Switch";
+        }
+
+        std::wstring exe = focus_.LastRealExe();
+        if (exe.empty()) exe = focus_.ActiveExe();
+
+        focusAppContextCallback_(exe, ruleText, cls->isTsf, cfg->spellSuggestEnabled);
     }
 
     if (cls->isExcluded) {

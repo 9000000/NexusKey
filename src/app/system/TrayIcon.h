@@ -94,6 +94,10 @@ public:
     /// (red=Vietnamese, blue=English) regardless of the chosen icon style.
     void SetTsfActive(bool active) noexcept;
 
+    /// Set active application context and classification rule for 1-line status tooltip:
+    /// e.g. exeName = "chrome.exe", ruleText = "Smart Switch", isRustEngine = true
+    void SetAppContext(const wchar_t* exeName, const wchar_t* ruleText, bool isRustEngine) noexcept;
+
     /// Set icon style and custom colors (triggers icon refresh)
     void SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bool showTsfIndicator) noexcept;
 
@@ -161,6 +165,10 @@ private:
 
     // Cached hotkey text for Quick Convert menu item (updated on config change)
     std::wstring cachedConvertHotkeyText_;
+
+    std::wstring activeExe_;
+    std::wstring appRule_;
+    bool isRustEngine_ = false;
 
     static constexpr UINT WM_TRAYICON = WM_USER + 1;
     UINT wmTaskbarCreated_ = 0;           // Registered "TaskbarCreated" message ID

@@ -156,15 +156,48 @@ void TrayIcon::SetTsfActive(bool active) noexcept {
     }
 }
 
+void TrayIcon::SetAppContext(const wchar_t* exeName, const wchar_t* ruleText, bool isRustEngine) noexcept try {
+    std::wstring exe = exeName ? exeName : L"";
+    std::wstring rule = ruleText ? ruleText : L"";
+    if (activeExe_ == exe && appRule_ == rule && isRustEngine_ == isRustEngine) return;
+
+    activeExe_ = std::move(exe);
+    appRule_ = std::move(rule);
+    isRustEngine_ = isRustEngine;
+
+    UpdateTooltip();
+
+    if (nid_.hWnd) {
+        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
+            Shell_NotifyIconW(NIM_ADD, &nid_);
+        }
+    }
+} catch (...) {}
+
 void TrayIcon::UpdateTooltip() noexcept {
-    const wchar_t* base = S(vietnameseMode_ ? StringId::TIP_VIETNAMESE : StringId::TIP_ENGLISH);
-    if (tsfActive_ && showTsfIndicator_) {
-        // Mark TSF mode so the colored "T" has a discoverable explanation on hover.
-        // Gated with the icon (issue #209): when the T indicator is off, the
-        // tooltip stays plain V/E to match the plain icon.
-        StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%s \x2022 TSF", base);
+    const wchar_t* engineStr = isRustEngine_ ? L"Rust" : L"C++";
+    const wchar_t* methodStr = tsfActive_ ? L"TSF" : L"Hook";
+
+    if (!activeExe_.empty()) {
+        if (!appRule_.empty()) {
+            // Format: "chrome.exe — Rust • TSF • Smart Switch"
+            StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls \x2014 %ls \x2022 %ls \x2022 %ls",
+                             activeExe_.c_str(), engineStr, methodStr, appRule_.c_str());
+        } else {
+            // Format: "notepad.exe — C++ • Hook"
+            StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls \x2014 %ls \x2022 %ls",
+                             activeExe_.c_str(), engineStr, methodStr);
+        }
     } else {
-        StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), base);
+        if (!appRule_.empty()) {
+            // Format: "Rust • TSF • Smart Switch"
+            StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls \x2022 %ls \x2022 %ls",
+                             engineStr, methodStr, appRule_.c_str());
+        } else {
+            // Format: "Rust • TSF"
+            StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls \x2022 %ls",
+                             engineStr, methodStr);
+        }
     }
 }
 
@@ -502,6 +535,17 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     // Marshals onto the tray message thread so Shell_NotifyIconW runs there.
     if (msg == WM_VKEY_TRAY_TSF_SYNC && hwnd == hwndMessage_) {
         SetTsfActive(wParam != 0);
+        return true;
+    }
+
+    // Deferred App Context sync for 1-line status tooltip
+    if (msg == WM_VKEY_TRAY_APP_SYNC && hwnd == hwndMessage_) {
+        if (lParam) {
+            auto* msgData = reinterpret_cast<const TrayAppContextMsg*>(lParam);
+            SetTsfActive(msgData->isTsf);
+            SetAppContext(msgData->exe, msgData->rule, msgData->isRust);
+            delete msgData;
+        }
         return true;
     }
 
