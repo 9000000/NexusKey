@@ -83,6 +83,7 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
     nid_.uID = 1;
     nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid_.uCallbackMessage = WM_TRAYICON;
+    pendingAppContextTarget_.store(hwndMessage_, std::memory_order_release);
 
     // Load initial icon based on style
     vietnameseMode_ = initialVietnamese;
@@ -120,6 +121,7 @@ void TrayIcon::Destroy() noexcept {
         Shell_NotifyIconW(NIM_DELETE, &nid_);
     }
     ZeroMemory(&nid_, sizeof(nid_));
+    pendingAppContextTarget_.store(nullptr, std::memory_order_release);
     if (hwndMessage_) {
         DestroyWindow(hwndMessage_);
         hwndMessage_ = nullptr;
@@ -131,6 +133,7 @@ void TrayIcon::SetVietnameseMode(bool enabled) noexcept {
     vietnameseMode_ = enabled;
 
     RefreshIcon();
+    UpdateTooltip();
     NotifyIconChanged();
 }
 
@@ -156,7 +159,9 @@ void TrayIcon::QueueAppContext(std::wstring_view exeName,
             .isRustEngine = isRustEngine,
         });
     pendingAppContext_.store(std::move(context), std::memory_order_release);
-    if (const HWND hwnd = hwndMessage_) {
+    // Snapshot once: hwndMessage_ is a plain HWND written on the main thread,
+    // and this producer runs on the focus worker.
+    if (const HWND hwnd = pendingAppContextTarget_.load(std::memory_order_acquire)) {
         PostMessageW(hwnd, WM_VKEY_TRAY_APP_SYNC, 0, 0);
     }
 } catch (...) {}
@@ -184,9 +189,10 @@ void TrayIcon::NotifyIconChanged() noexcept {
 }
 
 void TrayIcon::UpdateTooltip() noexcept try {
-    const std::wstring text = FormatTrayStatusText(appContext_);
-    StringCchPrintfW(
-        nid_.szTip, ARRAYSIZE(nid_.szTip), L"%ls", text.c_str());
+    const std::wstring text = FormatTrayStatusText(
+        S(vietnameseMode_ ? StringId::TIP_VIETNAMESE : StringId::TIP_ENGLISH),
+        appContext_, showTsfIndicator_);
+    StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), text.c_str());
 } catch (...) {}
 
 void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bool showTsfIndicator) noexcept {
@@ -199,12 +205,8 @@ void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bo
     showTsfIndicator_ = showTsfIndicator;
 
     RefreshIcon();
-
-    if (nid_.hWnd) {
-        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
-            Shell_NotifyIconW(NIM_ADD, &nid_);
-        }
-    }
+    UpdateTooltip();  // #209: the indicator setting also gates the method text
+    NotifyIconChanged();
 }
 
 void TrayIcon::ReAddIcon() noexcept {

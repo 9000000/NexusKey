@@ -4,7 +4,6 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
-#include <chrono>
 
 #include "core/FocusApplyDecision.h"
 
@@ -111,30 +110,11 @@ TEST(FocusApplyDecisionTest, ExhaustiveOrderingMatrixMatchesPolicy) {
 }
 
 static_assert(noexcept(DecideFocusApply(FocusApplyInputs{})));
+// The hook hot path cost of the epoch is exactly this property. A wall-clock
+// benchmark here measured ~1 ns against a 50 ns bar — it could never fail for a
+// real regression, only for a loaded CI box, so the static_assert is the check.
 static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
               "focus input epoch must stay lock-free on the hook hot path");
-
-TEST(FocusEpochBenchmark, RelaxedIncrementStaysWithinHookBudget) {
-    std::atomic<std::uint64_t> epoch{0};
-    constexpr int kIterations = 1'000'000;
-
-    const auto started = std::chrono::steady_clock::now();
-    for (int i = 0; i < kIterations; ++i) {
-        epoch.fetch_add(1, std::memory_order_relaxed);
-    }
-    const auto elapsedNs =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now() - started)
-            .count();
-    const auto nsPerIncrement = elapsedNs / kIterations;
-
-    EXPECT_EQ(epoch.load(std::memory_order_relaxed),
-              static_cast<std::uint64_t>(kIterations));
-    EXPECT_LT(nsPerIncrement, 50)
-        << "physical-input epoch increment exceeds the established hook "
-           "hot-path budget. Per increment: "
-        << nsPerIncrement << " ns";
-}
 
 }  // namespace
 }  // namespace NextKey

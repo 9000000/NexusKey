@@ -177,6 +177,9 @@ private:
 
     TrayStatusContext appContext_;
     std::atomic<std::shared_ptr<const TrayStatusContext>> pendingAppContext_;
+    // Cross-thread copy of hwndMessage_ for QueueAppContext, which runs on the
+    // focus worker while hwndMessage_ itself is main-thread-owned.
+    std::atomic<HWND> pendingAppContextTarget_{nullptr};
 
     static constexpr UINT WM_TRAYICON = WM_USER + 1;
     UINT wmTaskbarCreated_ = 0;           // Registered "TaskbarCreated" message ID

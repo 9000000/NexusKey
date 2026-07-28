@@ -4141,14 +4141,16 @@ void HookEngine::TryApplyDeferredFocusOnHookThread() {
     VKEY_ASSERT_HOOK_THREAD();
     if (!deferredFocusApply_) return;
 
-    const auto& cls = deferredFocusApply_;
+    // Read the fields out before any branch can move the member — the ApplyNow
+    // case moves out of deferredFocusApply_, so a reference bound to it would
+    // go null mid-function.
     const bool hasComposition =
         (engine_ && engine_->Count() > 0) || !rawMacroBuffer_.empty();
     const FocusApplyInputs inputs{
-        .snapshotRequestSerial = cls->requestSerial,
+        .snapshotRequestSerial = deferredFocusApply_->requestSerial,
         .latestRequestSerial =
             latestFocusRequestSerial_.load(std::memory_order_relaxed),
-        .snapshotInputEpoch = cls->inputEpochAtRequest,
+        .snapshotInputEpoch = deferredFocusApply_->inputEpochAtRequest,
         .currentInputEpoch =
             physicalInputEpoch_.load(std::memory_order_relaxed),
         .hasComposition = hasComposition,
@@ -4156,6 +4158,14 @@ void HookEngine::TryApplyDeferredFocusOnHookThread() {
 
     switch (DecideFocusApply(inputs)) {
         case FocusApplyDisposition::DropStale:
+            // Dropping is safe only because the superseding request is
+            // guaranteed to produce its own apply OR to leave the tick poll
+            // able to retry: a classification that early-returns for a helper
+            // window deliberately does NOT update lastForegroundPid_ (see the
+            // comment in ApplyFocusOnHookThread), so OnTickPoll's stale-PID
+            // fallback re-fires within one tick. Do not "simplify" that PID
+            // handling without revisiting this branch — otherwise a transient
+            // focus event can strand the real app's typing context.
             HOOK_LOG(L"  FocusApply: drop deferred request=%llu latest=%llu",
                      static_cast<unsigned long long>(inputs.snapshotRequestSerial),
                      static_cast<unsigned long long>(inputs.latestRequestSerial));
@@ -4165,7 +4175,6 @@ void HookEngine::TryApplyDeferredFocusOnHookThread() {
             return;
         case FocusApplyDisposition::ApplyNow: {
             auto ready = std::move(deferredFocusApply_);
-            deferredFocusApply_.reset();
             // Operational protection was already applied when the result was
             // first deferred; the helper is idempotent, so re-running it also
             // covers future code paths that may seed this slot directly.

@@ -79,6 +79,26 @@ with a live word takes the defer branch and returns control to the unchanged key
 dispatch. If evidence is stale or incomplete, the safe behavior is to preserve
 the current word and wait for a newer classification.
 
+## Known Ceilings
+
+Deferral buys word integrity by delaying the context switch, which leaves two
+bounded windows. Both are preferable to the race they replace, but they are the
+new failure modes and should be recognised rather than re-derived.
+
+1. **Uncommitted word carried across an app switch.** If the user leaves a word
+   open, switches app, and types into the new app before the classification
+   lands, those keys extend the old buffer under the old app's rules until the
+   next word boundary. Bounded by that boundary; a click or commit ends it. The
+   alternative is wiping a visible word, which is the bug this design fixes.
+
+2. **A transient focus event can strand a deferred transaction.** Any newer
+   request serial drops the retained snapshot. When that newer request
+   classifies to a helper window, `ApplyFocusOnHookThread` early-returns and the
+   real app's typing context never applies from this path. Recovery is
+   `OnTickPoll`'s stale-PID fallback (≤ one tick), which works only because the
+   helper path deliberately leaves `lastForegroundPid_` unchanged. That coupling
+   is load-bearing: changing where the PID is updated re-opens this window.
+
 ## Verification
 
 - Pure exhaustive matrix for serial, input epoch and live-context combinations.
