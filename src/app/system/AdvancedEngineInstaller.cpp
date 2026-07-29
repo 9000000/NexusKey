@@ -302,7 +302,9 @@ AdvancedEngineStatus AdvancedEngineInstaller::EnsureInstalledWithUi(HWND parent)
             InstallResult result = InstallResult::StorageFailure;
         };
         auto state = std::make_shared<State>();
-        std::thread worker([state]() {
+        // jthread, not thread: anything throwing between here and join() would
+        // hit a joinable std::thread destructor and std::terminate the process.
+        std::jthread worker([state]() {
             try {
                 state->result = InstallEngine(state->cancel);
             } catch (const std::exception& error) {

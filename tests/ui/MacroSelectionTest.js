@@ -98,14 +98,13 @@ function testFilterBoundaryKeepsChecksButRequiresFreshAnchor() {
 
     assert.equal(checked(state), "45678");
     assert.equal(state.lastClickedKey, null);
-    assert.equal(state.lastShiftRangeKeys, null);
     assert.equal(state.shiftBaseMacroNames, null);
     assert.equal(state.shiftCtrlOverrides, null);
 
     state.applyShiftRange("5");
     assert.equal(checked(state), "45678");
     assert.equal(state.lastClickedKey, "5");
-    assert.equal(state.lastShiftRangeKeys, null);
+    assert.equal(state.shiftBaseMacroNames, null);
 }
 
 function testPlainCheckboxClickEndsShiftSession() {
@@ -117,7 +116,6 @@ function testPlainCheckboxClickEndsShiftSession() {
 
     assert.equal(checked(state), "4578");
     assert.equal(state.lastClickedKey, "6");
-    assert.equal(state.lastShiftRangeKeys, null);
     assert.equal(state.shiftBaseMacroNames, null);
     assert.equal(state.shiftCtrlOverrides, null);
 }

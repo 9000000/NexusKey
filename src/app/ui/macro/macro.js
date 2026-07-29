@@ -8,7 +8,6 @@ var allMacros = new Map();
 var selectedMacroName = null;
 var checkedMacroNames = new Set();
 var lastClickedKey = null;
-var lastShiftRangeKeys = null;
 var shiftBaseMacroNames = null;
 var shiftCtrlOverrides = null;
 var searchQuery = "";
@@ -366,7 +365,6 @@ function updateCheckboxesUI() {
 }
 
 function resetShiftSelectionSession(clearAnchor) {
-    lastShiftRangeKeys = null;
     shiftBaseMacroNames = null;
     shiftCtrlOverrides = null;
     if (clearAnchor) {
@@ -384,7 +382,7 @@ function setMacroChecked(name, isChecked, isCtrlClick) {
     if (isCtrlClick) {
         // Ctrl is an overlay on the current range. Recording the resulting
         // state keeps the one-row toggle intact when Shift later resizes.
-        if (lastShiftRangeKeys && shiftCtrlOverrides) {
+        if (shiftCtrlOverrides) {
             shiftCtrlOverrides.set(name, isChecked);
         }
         return;
@@ -406,7 +404,7 @@ function applyShiftRange(currentKey) {
         return;
     }
 
-    if (!lastShiftRangeKeys || !shiftBaseMacroNames || !shiftCtrlOverrides) {
+    if (!shiftBaseMacroNames || !shiftCtrlOverrides) {
         // Preserve everything selected before the first Shift gesture. Range
         // resizing then replaces only the range layer, not independent picks.
         shiftBaseMacroNames = new Set(checkedMacroNames);
@@ -415,10 +413,6 @@ function applyShiftRange(currentKey) {
 
     var start = Math.min(anchorIdx, currentIdx);
     var end = Math.max(anchorIdx, currentIdx);
-    var newRangeKeys = new Set();
-    for (var k = start; k <= end; k++) {
-        newRangeKeys.add(visibleKeys[k]);
-    }
 
     checkedMacroNames.clear();
 
@@ -427,9 +421,8 @@ function applyShiftRange(currentKey) {
         checkedMacroNames.add(baseKeys[b]);
     }
 
-    var newKeysArr = Array.from(newRangeKeys);
-    for (var n = 0; n < newKeysArr.length; n++) {
-        checkedMacroNames.add(newKeysArr[n]);
+    for (var k = start; k <= end; k++) {
+        checkedMacroNames.add(visibleKeys[k]);
     }
 
     shiftCtrlOverrides.forEach(function (overrideChecked, name) {
@@ -439,8 +432,6 @@ function applyShiftRange(currentKey) {
             checkedMacroNames.delete(name);
         }
     });
-
-    lastShiftRangeKeys = newRangeKeys;
 }
 
 function renderMacroList() {

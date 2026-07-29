@@ -13,14 +13,15 @@ remove any part of the old range. Hidden rows also remained delete targets.
 
 ## Decision
 
-One Shift session has three layers:
+One Shift session has two stored layers plus the live range:
 
 - `shiftBaseMacroNames`: snapshot of all checked macros before its first range.
-- `lastShiftRangeKeys`: the current inclusive range between anchor and endpoint.
+  Non-null means a session is open.
 - `shiftCtrlOverrides`: explicit one-row states chosen with Ctrl during the
   session.
 
-Each Shift resize rebuilds the checked set as:
+The range itself is not stored — it is recomputed from the anchor and the
+current endpoint on every resize. Each Shift resize rebuilds the checked set as:
 
 `base selection ∪ current range`, followed by the Ctrl overrides.
 
