@@ -45,6 +45,9 @@ function initMacroDialog() {
     if (searchInput) {
         searchInput.addEventListener("input", function () {
             searchQuery = this.value.trim().toLowerCase();
+            // The range is indexed against the old visible set — resizing it
+            // after a filter change would uncheck rows the user can't see.
+            lastShiftRangeKeys = null;
             renderMacroList();
         });
     }
@@ -439,8 +442,8 @@ function renderMacroList() {
 
         // Filter by search query on both shortcut name and content
         if (searchQuery !== "") {
-            var matchName = name.toLowerCase().indexOf(searchQuery) !== -1;
-            var matchContent = displayContent.toLowerCase().indexOf(searchQuery) !== -1;
+            const matchName = name.toLowerCase().indexOf(searchQuery) !== -1;
+            const matchContent = displayContent.toLowerCase().indexOf(searchQuery) !== -1;
             if (!matchName && !matchContent) {
                 continue;
             }
@@ -456,22 +459,22 @@ function renderMacroList() {
             item.classList.add("selected");
         }
 
-        var isChecked = checkedMacroNames.has(name);
+        const isChecked = checkedMacroNames.has(name);
         if (isChecked) {
             item.classList.add("checked");
         }
 
-        var preview = formatPreview(content);
+        const preview = formatPreview(content);
         item.innerHTML =
             '<span class="macro-item-check"><input type="checkbox" class="chk-item"' + (isChecked ? ' checked' : '') + '></span>' +
             '<span class="macro-item-name">' + escapeHtml(name) + '</span>' +
             '<span class="macro-item-content">' + preview + '</span>';
 
-        var tooltipText = displayContent;
+        let tooltipText = displayContent;
         if (tooltipText.length > 500) tooltipText = tooltipText.substring(0, 500) + "...";
         item.setAttribute("title", tooltipText);
 
-        var chk = item.querySelector(".chk-item");
+        const chk = item.querySelector(".chk-item");
         if (chk) {
             chk.addEventListener("click", function (e) {
                 e.stopPropagation();

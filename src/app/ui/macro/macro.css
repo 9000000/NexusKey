@@ -136,6 +136,8 @@
 .list-header {
     flow: horizontal;
     padding: 8px 0;
+    /* Match .macro-item's selection stripe so the columns stay aligned. */
+    border-left: 3px solid transparent;
     border-bottom: 1px solid var(--border-medium);
     font-size: 12px;
     font-weight: 600;
