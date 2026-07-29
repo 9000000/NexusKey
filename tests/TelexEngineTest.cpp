@@ -3390,6 +3390,19 @@ TEST_F(SimpleTelexTest, RealWord_Duong) {
     EXPECT_EQ(engine_->Peek(), L"đương");
 }
 
+TEST_F(SimpleTelexTest, RetypeAfterDeletingToAutoCappedInitialPreservesCase) {
+    TypeString(*engine_, L"Khoong");
+    ASSERT_EQ(engine_->Peek(), L"Không");
+
+    while (engine_->Peek().size() > 1) {
+        engine_->Backspace();
+    }
+    ASSERT_EQ(engine_->Peek(), L"K");
+
+    TypeString(*engine_, L"hoong");
+    EXPECT_EQ(engine_->Peek(), L"Không");
+}
+
 TEST_F(SimpleTelexTest, WhPrefix_IsHardEnglish) {
     // SimpleTelex keeps 'w' literal (P8 gated off), so the states-based
     // IsHardEnglishStart check is what catches wh here — no raw fallback needed.

@@ -56,6 +56,17 @@ TEST(AutoCapDecision, MidWordContinuationDoesNotCap) {
     EXPECT_FALSE(Decide(L"abc def "));
 }
 
+TEST(AutoCapDecision, TsfProbeRequiresDocumentStartOrReadableText) {
+    EXPECT_TRUE(ComputeShouldAutoCapFromTsfProbe(
+        /*atDocumentStart=*/true, /*textAvailable=*/false, nullptr, 0));
+    EXPECT_FALSE(ComputeShouldAutoCapFromTsfProbe(
+        /*atDocumentStart=*/false, /*textAvailable=*/false, nullptr, 0));
+    EXPECT_FALSE(ComputeShouldAutoCapFromTsfProbe(
+        /*atDocumentStart=*/false, /*textAvailable=*/true, L"middle ", 7));
+    EXPECT_TRUE(ComputeShouldAutoCapFromTsfProbe(
+        /*atDocumentStart=*/false, /*textAvailable=*/true, L"Done. ", 6));
+}
+
 TEST(AutoCapDecision, NonSentencePunctDoesNotCap) {
     // Comma, semicolon, colon, parens — not sentence-ending.
     EXPECT_FALSE(Decide(L"abc, "));

@@ -25,11 +25,22 @@ public:
     // ITfCompositionSink
     IFACEMETHODIMP OnCompositionTerminated(TfEditCookie ec, ITfComposition* pComposition) override;
 
-    /// Start a new composition
-    bool StartComposition(ITfContext* pContext, TfEditCookie ec, ITfComposition** ppComposition);
+    /// Insert initial text and start a new composition over the inserted range.
+    [[nodiscard]] bool StartComposition(ITfContext* pContext, TfEditCookie ec,
+                                        const std::wstring& initialText);
+
+    /// Start a composition over an exact existing document range.
+    [[nodiscard]] bool StartCompositionOnRange(
+        ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
+        const std::wstring& existingText);
 
     /// Set text in current composition
-    bool SetCompositionText(TfEditCookie ec, const std::wstring& text);
+    [[nodiscard]] bool SetCompositionText(TfEditCookie ec,
+                                          const std::wstring& text);
+
+    [[nodiscard]] bool CurrentTextEquals(const std::wstring& text) const noexcept {
+        return currentText_ == text;
+    }
 
     /// End composition (commits text)
     void EndComposition(TfEditCookie ec);
@@ -47,6 +58,10 @@ public:
     void SetEngineController(EngineController* pEngineController) { pEngineController_ = pEngineController; }
 
 private:
+    [[nodiscard]] bool BeginCompositionOnRange(
+        ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
+        const std::wstring& currentText);
+
     /// Apply invisible display attribute to range
     void ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange);
 
@@ -60,6 +75,7 @@ private:
     ITfContext* pContext_ = nullptr;  // Current context
     ITfCategoryMgr* pCategoryMgr_ = nullptr;  // Not owned, don't release
     EngineController* pEngineController_ = nullptr; // Not owned, don't release
+    std::wstring currentText_;
     TfGuidAtom gaDisplayAttribute_ = TF_INVALID_GUIDATOM;
     ULONG refCount_ = 1;
 };

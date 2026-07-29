@@ -26,124 +26,121 @@ IFACEMETHODIMP CompositionManager::QueryInterface(REFIID riid, void** ppvObj) {
 // ITfCompositionSink - called when app or system terminates our composition
 IFACEMETHODIMP CompositionManager::OnCompositionTerminated(TfEditCookie /*ec*/, ITfComposition* pComposition) {
     TSF_LOG(L"OnCompositionTerminated called by system");
-    if (pComposition == pComposition_) {
-        pComposition_->Release();
+    const bool terminatedCurrent = pComposition == pComposition_;
+    if (terminatedCurrent) {
+        ITfComposition* ownedComposition = pComposition_;
+        ITfContext* ownedContext = pContext_;
         pComposition_ = nullptr;
+        pContext_ = nullptr;
+        currentText_.clear();
+        ownedComposition->Release();
+        if (ownedContext != nullptr) ownedContext->Release();
     }
 
-    // Always reset engine to stay in sync whenever a composition ends
-    if (pEngineController_) {
+    if (terminatedCurrent && pEngineController_) {
         pEngineController_->Reset();
     }
     return S_OK;
 }
 
-bool CompositionManager::StartComposition(ITfContext* pContext, TfEditCookie ec, ITfComposition** ppComposition) {
-    if (pContext == nullptr || ppComposition == nullptr) {
-        TSF_LOG(L"StartComposition: ERROR - null context or pointer");
+bool CompositionManager::StartComposition(ITfContext* pContext, TfEditCookie ec,
+                                          const std::wstring& initialText) {
+    if (pContext == nullptr || initialText.empty()) {
+        TSF_LOG(L"StartComposition: ERROR - null context or empty text");
         return false;
     }
 
-    // End any existing composition first
     if (pComposition_) {
         TSF_LOG(L"StartComposition: Ending existing composition first");
         EndComposition(ec);
     }
 
-    // Get context composition interface
-    ITfContextComposition* pContextComposition = nullptr;
-    HRESULT hr = pContext->QueryInterface(IID_ITfContextComposition, (void**)&pContextComposition);
-    if (FAILED(hr) || pContextComposition == nullptr) {
-        TSF_LOG(L"StartComposition: Failed ITfContextComposition, hr=0x%08X", hr);
-        return false;
-    }
-
-    // Get insertion interface
-    ITfInsertAtSelection* pInsertAtSelection = nullptr;
-    hr = pContext->QueryInterface(IID_ITfInsertAtSelection, (void**)&pInsertAtSelection);
-    if (FAILED(hr) || pInsertAtSelection == nullptr) {
-        pContextComposition->Release();
+    CComPtr<ITfInsertAtSelection> pInsertAtSelection;
+    HRESULT hr = pContext->QueryInterface(IID_ITfInsertAtSelection,
+                                          reinterpret_cast<void**>(&pInsertAtSelection));
+    if (FAILED(hr) || !pInsertAtSelection) {
         TSF_LOG(L"StartComposition: Failed ITfInsertAtSelection, hr=0x%08X", hr);
         return false;
     }
 
-    // Query insertion point (TF_IAS_QUERYONLY)
-    ITfRange* pRange = nullptr;
-    hr = pInsertAtSelection->InsertTextAtSelection(ec, TF_IAS_QUERYONLY, nullptr, 0, &pRange);
-    pInsertAtSelection->Release();
-
-    if (FAILED(hr) || pRange == nullptr) {
-        pContextComposition->Release();
+    CComPtr<ITfRange> pRange;
+    hr = pInsertAtSelection->InsertTextAtSelection(
+        ec, TF_IAS_NO_DEFAULT_COMPOSITION, initialText.c_str(),
+        static_cast<LONG>(initialText.size()), &pRange);
+    if (FAILED(hr) || !pRange) {
         TSF_LOG(L"StartComposition: Failed InsertTextAtSelection, hr=0x%08X", hr);
         return false;
     }
 
-    // Start composition at this range (pass this as sink to receive termination events)
-    ITfComposition* pComposition = nullptr;
-    hr = pContextComposition->StartComposition(ec, pRange, this, &pComposition);
-    pContextComposition->Release();
-
-    if (FAILED(hr) || pComposition == nullptr) {
-        pRange->Release();
-        TSF_LOG(L"StartComposition: StartComposition FAILED, hr=0x%08X", hr);
+    if (!BeginCompositionOnRange(pContext, ec, pRange, initialText)) {
+        const HRESULT rollbackHr = pRange->SetText(ec, 0, L"", 0);
+        TSF_LOG(L"StartComposition: composition rejected; rollback hr=0x%08X",
+                rollbackHr);
         return false;
     }
 
-    // StartComposition returned ONE ref in `pComposition`. We must hold our own ref
-    // in pComposition_ (it outlives this call) AND the caller also needs a ref for
-    // their own use. AddRef once more so caller owning a CComPtr/raw ref can safely
-    // Release without freeing the composition while we still hold pComposition_.
-    pComposition_ = pComposition;      // takes the one ref from StartComposition
-    pComposition_->AddRef();           // now 2 refs total — one for us, one for caller
-    pContext_ = pContext;
-    pContext_->AddRef();
-
-    // Set selection to the insertion range (VietType pattern - helps apps properly track insertion point)
-    TF_SELECTION sel;
-    sel.range = pRange;
-    sel.style.ase = TF_AE_NONE;
-    sel.style.fInterimChar = FALSE;
-    pContext->SetSelection(ec, 1, &sel);
-
-    pRange->Release();
-    *ppComposition = pComposition;     // caller owns 1 ref, must Release (or CComPtr does it)
-
+    MoveCaretToEnd(ec);
     TSF_LOG(L"StartComposition: SUCCESS");
     return true;
 }
 
-bool CompositionManager::SetCompositionText(TfEditCookie ec, const std::wstring& text) {
+bool CompositionManager::StartCompositionOnRange(
+    ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
+    const std::wstring& existingText) {
+    if (pContext == nullptr || pRange == nullptr || existingText.empty()) {
+        return false;
+    }
+    if (pComposition_) EndComposition(ec);
+    return BeginCompositionOnRange(pContext, ec, pRange, existingText);
+}
+
+bool CompositionManager::BeginCompositionOnRange(
+    ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
+    const std::wstring& currentText) {
+    CComPtr<ITfContextComposition> pContextComposition;
+    HRESULT hr = pContext->QueryInterface(
+        IID_ITfContextComposition, reinterpret_cast<void**>(&pContextComposition));
+    if (FAILED(hr) || !pContextComposition) {
+        TSF_LOG(L"BeginCompositionOnRange: Failed ITfContextComposition, hr=0x%08X", hr);
+        return false;
+    }
+
+    ITfComposition* pComposition = nullptr;
+    hr = pContextComposition->StartComposition(ec, pRange, this, &pComposition);
+    if (FAILED(hr) || pComposition == nullptr) {
+        TSF_LOG(L"BeginCompositionOnRange: StartComposition FAILED, hr=0x%08X", hr);
+        return false;
+    }
+
+    pComposition_ = pComposition;
+    pContext_ = pContext;
+    pContext_->AddRef();
+    currentText_ = currentText;
+    return true;
+}
+
+bool CompositionManager::SetCompositionText(
+    TfEditCookie ec, const std::wstring& text) {
     if (pComposition_ == nullptr) {
         TSF_LOG(L"SetCompositionText: ERROR - No active composition");
         return false;
     }
 
-    // Get the composition's range (this is the authoritative range)
-    ITfRange* pRange = nullptr;
+    CComPtr<ITfRange> pRange;
     HRESULT hr = pComposition_->GetRange(&pRange);
-    if (FAILED(hr) || pRange == nullptr) {
+    if (FAILED(hr) || !pRange) {
         TSF_LOG(L"SetCompositionText: Failed to get range, hr=0x%08X", hr);
         return false;
     }
 
-    // Set text in the composition range (use TF_ST_CORRECTION for proper text handling)
-    // This flag helps prevent the composition from overwriting adjacent text
-    hr = pRange->SetText(ec, TF_ST_CORRECTION, text.c_str(), static_cast<LONG>(text.length()));
-
+    hr = pRange->SetText(ec, 0, text.c_str(), static_cast<LONG>(text.length()));
     if (FAILED(hr)) {
-        pRange->Release();
         TSF_LOG(L"SetCompositionText: SetText FAILED, hr=0x%08X", hr);
         return false;
     }
 
-    // Skip display attribute - some apps (like Notepad++ with Scintilla) don't handle it well
-    // and it can cause visual overlay issues
-    // ApplyDisplayAttribute(ec, pRange);
-
-    // Sync cursor
+    currentText_ = text;
     MoveCaretToEnd(ec);
-
-    pRange->Release();
 
     TSF_LOG(L"SetCompositionText: text='%ls'", text.c_str());
     return true;
@@ -154,24 +151,22 @@ void CompositionManager::EndComposition(TfEditCookie ec) {
 
     TSF_LOG(L"EndComposition: Finalizing and releasing to app");
 
-    ITfRange* pRange = nullptr;
+    CComPtr<ITfRange> pRange;
     if (SUCCEEDED(pComposition_->GetRange(&pRange)) && pRange) {
-        // Clear display attributes BEFORE ending
         ClearDisplayAttribute(ec, pRange);
-        pRange->Release();
     }
 
-    // Note: Don't call MoveCaretToEnd here - it's already called in SetCompositionText
-    // Calling it again can interfere with cursor positioning in some apps (like Notepad++)
-
-    // Inform TSF that the composition is finished
-    pComposition_->EndComposition(ec);
-    pComposition_->Release();
+    ITfComposition* ownedComposition = pComposition_;
+    ITfContext* ownedContext = pContext_;
     pComposition_ = nullptr;
-    pContext_->Release();
     pContext_ = nullptr;
+    currentText_.clear();
 
-    TSF_LOG(L"EndComposition: COMPLETED");
+    const HRESULT hr = ownedComposition->EndComposition(ec);
+    ownedComposition->Release();
+    if (ownedContext != nullptr) ownedContext->Release();
+
+    TSF_LOG(L"EndComposition: COMPLETED hr=0x%08X", hr);
 }
 
 void CompositionManager::TerminateComposition() {
@@ -185,6 +180,7 @@ void CompositionManager::TerminateComposition() {
         pContext_->Release();
         pContext_ = nullptr;
     }
+    currentText_.clear();
 }
 
 void CompositionManager::ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange) {

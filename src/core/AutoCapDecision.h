@@ -168,4 +168,15 @@ template <typename CharT>
     return ClassifyCapTrigger(buf, len) != CapTrigger::None;
 }
 
+/// TSF document reads are best-effort. An unavailable range must not reuse
+/// ComputeShouldAutoCap's empty-buffer=DocStart convention: only an independently
+/// verified document-start range is authoritative when no text was retrieved.
+[[nodiscard]] constexpr bool ComputeShouldAutoCapFromTsfProbe(
+    bool atDocumentStart, bool textAvailable, const wchar_t* buf,
+    std::size_t len) noexcept {
+    if (atDocumentStart) return true;
+    return textAvailable && buf != nullptr && len != 0
+        && ComputeShouldAutoCap(buf, len);
+}
+
 }  // namespace NextKey

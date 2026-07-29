@@ -17,6 +17,7 @@
 #include "Define.h"
 #include "EditSession.h"
 #include "core/AutoCapDecision.h"
+#include "core/TsfEditDecision.h"
 #include "core/engine/IInputEngine.h"
 #include "core/engine/VietnameseTables.h"
 
@@ -32,14 +33,9 @@ public:
     IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
         if (pMgr_ == nullptr || pContext_ == nullptr) return E_FAIL;
 
-        CComPtr<ITfComposition> pComposition;
-        if (!pMgr_->StartComposition(pContext_, ec, &pComposition)) {
+        if (!pMgr_->StartComposition(pContext_, ec, text_)) {
             TSF_LOG(L"StartCompositionEditSession: Failed to start composition");
             return E_FAIL;
-        }
-
-        if (!text_.empty()) {
-            pMgr_->SetCompositionText(ec, text_);
         }
 
         TSF_LOG(L"StartCompositionEditSession: Success");
@@ -62,14 +58,13 @@ public:
 
         if (!pMgr_->IsComposing()) {
             TSF_LOG(L"UpdateCompositionEditSession: Not composing, starting new");
-            CComPtr<ITfComposition> pComposition;
-            if (!pMgr_->StartComposition(pContext_, ec, &pComposition)) {
+            if (!pMgr_->StartComposition(pContext_, ec, text_)) {
                 return E_FAIL;
             }
+            return S_OK;
         }
 
-        // Replace composition text
-        pMgr_->SetCompositionText(ec, text_);
+        if (!pMgr_->SetCompositionText(ec, text_)) return E_FAIL;
 
         TSF_LOG(L"UpdateCompositionEditSession: Success");
         return S_OK;
@@ -108,7 +103,10 @@ public:
         if (pMgr_ == nullptr) return E_FAIL;
 
         if (pMgr_->IsComposing()) {
-            pMgr_->SetCompositionText(ec, finalText_);
+            if (!pMgr_->CurrentTextEquals(finalText_)
+                && !pMgr_->SetCompositionText(ec, finalText_)) {
+                return E_FAIL;
+            }
             pMgr_->EndComposition(ec);
         } else {
             TSF_LOG(L"CommitEditSession: composition externally terminated, text dropped: %s",
@@ -282,7 +280,11 @@ public:
         if (wordlen == 0) return S_OK;
 
         LONG shifted2 = 0;
-        if (FAILED(pSelRange->ShiftStart(ec, -wordlen, &shifted2, &haltcond))) return S_OK;
+        if (FAILED(pSelRange->ShiftStart(ec, -wordlen, &shifted2, &haltcond))
+            || !IsExactBackwardRangeShift(
+                static_cast<std::size_t>(wordlen), shifted2)) {
+            return S_OK;
+        }
 
         word_.assign(&buf[retrieved - wordlen], wordlen);
         pRange_ = pSelRange;  // CComPtr assignment — AddRefs for the member.
@@ -332,8 +334,16 @@ public:
         if (FAILED(pPeek->ShiftStart(ec, -MAX_CHARS, &shifted, &haltcond))) return S_OK;
 
         if (shifted == 0) {
-            atDocStart_ = true;
-            shouldAutoCap_ = true;
+            CComPtr<ITfRange> pDocumentStart;
+            BOOL isDocumentStart = FALSE;
+            if (SUCCEEDED(pContext_->GetStart(ec, &pDocumentStart)) && pDocumentStart
+                && SUCCEEDED(pSelRange->IsEqualStart(
+                    ec, pDocumentStart, TF_ANCHOR_START, &isDocumentStart))
+                && isDocumentStart) {
+                atDocStart_ = true;
+                shouldAutoCap_ = ComputeShouldAutoCapFromTsfProbe(
+                    /*atDocumentStart=*/true, /*textAvailable=*/false, nullptr, 0);
+            }
             return S_OK;
         }
         if (shifted > 0) return S_OK;
@@ -361,7 +371,9 @@ public:
             CComPtr<ITfRange> pWordRange;
             if (SUCCEEDED(pSelRange->Clone(&pWordRange)) && pWordRange) {
                 LONG shifted2 = 0;
-                if (SUCCEEDED(pWordRange->ShiftStart(ec, -wordLen, &shifted2, &haltcond))) {
+                if (SUCCEEDED(pWordRange->ShiftStart(ec, -wordLen, &shifted2, &haltcond))
+                    && IsExactBackwardRangeShift(
+                        static_cast<std::size_t>(wordLen), shifted2)) {
                     wordRange_ = pWordRange;
                 }
             }
@@ -370,7 +382,8 @@ public:
         // Auto-cap rule extracted to core/AutoCapDecision.h for Linux GTest
         // coverage (the buffer comes from a Win32 edit session here, but the
         // decision is pure CPU work over a wchar_t span).
-        shouldAutoCap_ = ComputeShouldAutoCap(buf, len);
+        shouldAutoCap_ = ComputeShouldAutoCapFromTsfProbe(
+            /*atDocumentStart=*/false, /*textAvailable=*/true, buf, len);
 
         return S_OK;
     }
@@ -443,24 +456,19 @@ public:
             return E_FAIL;
         }
 
-        CComPtr<ITfComposition> pComposition;
-        if (!pMgr_->StartComposition(pContext_, ec, &pComposition)) {
+        if (!pMgr_->StartCompositionOnRange(pContext_, ec, pRange_, word_)) {
             TSF_LOG(L"ReviveCompositionEditSession: StartComposition failed");
             pEngine_->Reset();
             return E_FAIL;
         }
 
-        HRESULT hr = pComposition->ShiftStart(ec, pRange_);
-        if (FAILED(hr)) {
-            TSF_LOG(L"ReviveCompositionEditSession: ShiftStart failed hr=0x%08X", hr);
-            pEngine_->Reset();
-            pMgr_->EndComposition(ec);
-            return hr;
-        }
-
         pEngine_->Backspace();
         const std::wstring& composed = pEngine_->Peek();
-        pMgr_->SetCompositionText(ec, composed);
+        if (!pMgr_->SetCompositionText(ec, composed)) {
+            pEngine_->Reset();
+            pMgr_->EndComposition(ec);
+            return E_FAIL;
+        }
 
         if (pEngine_->Count() == 0) {
             pMgr_->EndComposition(ec);
@@ -504,24 +512,19 @@ public:
             return E_FAIL;
         }
 
-        CComPtr<ITfComposition> pComposition;
-        if (!pMgr_->StartComposition(pContext_, ec, &pComposition)) {
+        if (!pMgr_->StartCompositionOnRange(pContext_, ec, pRange_, word_)) {
             TSF_LOG(L"ReviveAndTypeEditSession: StartComposition failed");
             pEngine_->Reset();
             return E_FAIL;
         }
 
-        HRESULT hr = pComposition->ShiftStart(ec, pRange_);
-        if (FAILED(hr)) {
-            TSF_LOG(L"ReviveAndTypeEditSession: ShiftStart failed hr=0x%08X", hr);
-            pEngine_->Reset();
-            pMgr_->EndComposition(ec);
-            return hr;
-        }
-
         pEngine_->PushChar(ch_);
         const std::wstring& composed = pEngine_->Peek();
-        pMgr_->SetCompositionText(ec, composed);
+        if (!pMgr_->SetCompositionText(ec, composed)) {
+            pEngine_->Reset();
+            pMgr_->EndComposition(ec);
+            return E_FAIL;
+        }
 
         if (pEngine_->Count() == 0) {
             pMgr_->EndComposition(ec);

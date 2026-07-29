@@ -14,6 +14,7 @@
 #include "Define.h"
 #include "core/CrashLog.h"
 #include "core/MacroCase.h"
+#include "core/TsfEditDecision.h"
 
 namespace NextKey {
 namespace TSF {
@@ -85,6 +86,16 @@ KeyEventSink::~KeyEventSink() {
     Unadvise();
 }
 
+void KeyEventSink::RememberClaimedPrintableKeyDown(
+    UINT vk, LPARAM lParam) noexcept {
+    constexpr uint32_t kPreviousKeyState = 1u << 30;
+    const auto keyData =
+        static_cast<uint32_t>(static_cast<uintptr_t>(lParam));
+    if (vk == VK_SPACE && (keyData & kPreviousKeyState) == 0) {
+        pendingClaimedPrintableVk_ = vk;
+    }
+}
+
 bool KeyEventSink::Advise(ITfThreadMgr* pThreadMgr) {
     if (pThreadMgr == nullptr) return false;
 
@@ -140,6 +151,7 @@ IFACEMETHODIMP_(ULONG) KeyEventSink::Release() {
 }
 
 IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
+    pendingClaimedPrintableVk_ = 0;
     if (fForeground) {
         TSF_LOG(L"OnSetFocus: foreground");
         // Re-read SharedState on focus to pick up ENGINE_ENABLED/VIETNAMESE_MODE changes
@@ -178,12 +190,23 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
 
 HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     pEngineController_->CheckConfigEvent();
+    const UINT vk = static_cast<UINT>(wParam);
 
     // Drop any translated char cached by a previous OnTestKeyDown whose
     // OnKeyDown pair never fired (rare TSF anomaly).
     lastTranslatedChar_ = 0;
     lastEnglishMacroObservedVk_ = 0;
     lastMacroHandledVk_ = 0;
+
+    if (pendingClaimedPrintableVk_ != 0 && pendingClaimedPrintableVk_ != vk) {
+        pendingClaimedPrintableVk_ = 0;
+    }
+    if (ShouldSuppressClaimedPrintableKeyDown(
+            pendingClaimedPrintableVk_, vk,
+            static_cast<uint32_t>(static_cast<uintptr_t>(lParam)))) {
+        *pfEaten = TRUE;
+        return S_OK;
+    }
 
     // Check if this context blocks input (password, PIN, email fields)
     pEngineController_->CheckContextBlocked(pContext);
@@ -275,7 +298,6 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
         }
     }
 
-    const UINT vk = static_cast<UINT>(wParam);
     // (VK_RETURN falls through to the generic non-handled-key branch below:
     // WantKey returns false for Enter, so with a live buffer the branch commits
     // the composition and passes Enter to the host — search submits, newline
@@ -436,6 +458,10 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam
     if (pfEaten == nullptr) return E_INVALIDARG;
     *pfEaten = FALSE;
     if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
+    if (pendingClaimedPrintableVk_ == static_cast<UINT>(wParam)) {
+        *pfEaten = TRUE;
+        return S_OK;
+    }
     // Eat keyup for A-Z and Backspace during active composition
     // (prevents apps from seeing keyup without corresponding keydown)
     // Do NOT call WantKey() here — it has side effects (auto-cap state machine)
@@ -462,6 +488,17 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
 
 HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     pEngineController_->CheckConfigEvent();
+    const UINT vk = static_cast<UINT>(wParam);
+
+    if (pendingClaimedPrintableVk_ != 0 && pendingClaimedPrintableVk_ != vk) {
+        pendingClaimedPrintableVk_ = 0;
+    }
+    if (ShouldSuppressClaimedPrintableKeyDown(
+            pendingClaimedPrintableVk_, vk,
+            static_cast<uint32_t>(static_cast<uintptr_t>(lParam)))) {
+        *pfEaten = TRUE;
+        return S_OK;
+    }
 
     pEngineController_->CheckContextBlocked(pContext);
     if (pEngineController_->IsContextBlocked()) {
@@ -507,13 +544,12 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         return S_OK;
     }
 
-    UINT vk = static_cast<UINT>(wParam);
-
     if (vk == lastMacroHandledVk_) {
         const bool eat = lastMacroHandledEat_;
         lastMacroHandledVk_ = 0;
         lastMacroHandledEat_ = false;
         lastEnglishMacroObservedVk_ = 0;
+        if (eat) RememberClaimedPrintableKeyDown(vk, lParam);
         *pfEaten = eat ? TRUE : FALSE;
         return S_OK;
     }
@@ -548,8 +584,10 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
                 const auto macroResult = pEngineController_->HandleMacroTrigger(
                     pContext, vk, triggerChar);
                 if (macroResult != EngineController::MacroResult::NoMatch) {
-                    *pfEaten = macroResult == EngineController::MacroResult::ExpandedEatTrigger
-                        ? TRUE : FALSE;
+                    const bool eat =
+                        macroResult == EngineController::MacroResult::ExpandedEatTrigger;
+                    if (eat) RememberClaimedPrintableKeyDown(vk, lParam);
+                    *pfEaten = eat ? TRUE : FALSE;
                     return S_OK;
                 }
             } else {
@@ -607,8 +645,10 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         const auto macroResult = pEngineController_->HandleMacroTrigger(
             pContext, vk, triggerChar);
         if (macroResult != EngineController::MacroResult::NoMatch) {
-            *pfEaten = macroResult == EngineController::MacroResult::ExpandedEatTrigger
-                ? TRUE : FALSE;
+            const bool eat =
+                macroResult == EngineController::MacroResult::ExpandedEatTrigger;
+            if (eat) RememberClaimedPrintableKeyDown(vk, lParam);
+            *pfEaten = eat ? TRUE : FALSE;
             return S_OK;
         }
     }
@@ -679,7 +719,9 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         return S_OK;
     }
 
-    *pfEaten = pEngineController_->HandleKey(pContext, vk) ? TRUE : FALSE;
+    const bool handled = pEngineController_->HandleKey(pContext, vk);
+    if (handled) RememberClaimedPrintableKeyDown(vk, lParam);
+    *pfEaten = handled ? TRUE : FALSE;
     return S_OK;
 }
 
@@ -687,6 +729,11 @@ IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LP
     if (pfEaten == nullptr) return E_INVALIDARG;
     *pfEaten = FALSE;
     if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
+    if (pendingClaimedPrintableVk_ == static_cast<UINT>(wParam)) {
+        pendingClaimedPrintableVk_ = 0;
+        *pfEaten = TRUE;
+        return S_OK;
+    }
     if (pEngineController_->IsComposing()) {
         UINT vk = static_cast<UINT>(wParam);
         *pfEaten = (vk >= 0x41 && vk <= 0x5A) || vk == VK_BACK ? TRUE : FALSE;
