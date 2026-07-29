@@ -338,8 +338,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
 #if defined(VKEY_USE_RUST_ENGINE)
     // Repair before HookEngine can cache a failed first load for this process.
+    // Only a declined prompt rewrites the stored level — a network or storage
+    // failure leaves Advanced set so the next launch retries (the release ZIP
+    // omits the engine, so this runs after every engine-changing update).
     if (config.GetSpellCheckLevel() == SpellCheckLevel::Advanced &&
-        !AdvancedEngineInstaller::EnsureInstalledWithUi(nullptr)) {
+        AdvancedEngineInstaller::EnsureInstalledWithUi(nullptr) == AdvancedEngineStatus::Declined) {
         config.SetSpellCheckLevel(SpellCheckLevel::Standard);
         (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
     }
@@ -1005,7 +1008,8 @@ static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
 
 #if defined(VKEY_USE_RUST_ENGINE)
     if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
-        if (!AdvancedEngineInstaller::EnsureInstalledWithUi(g_trayIcon.GetMessageWindow())) {
+        if (AdvancedEngineInstaller::EnsureInstalledWithUi(g_trayIcon.GetMessageWindow()) !=
+            AdvancedEngineStatus::Ready) {
             return;
         }
     }

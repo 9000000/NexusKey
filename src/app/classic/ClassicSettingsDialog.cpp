@@ -899,7 +899,7 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
 
 #if defined(VKEY_USE_RUST_ENGINE)
                     if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
-                        if (!AdvancedEngineInstaller::EnsureInstalledWithUi(hwnd_)) {
+                        if (AdvancedEngineInstaller::EnsureInstalledWithUi(hwnd_) != AdvancedEngineStatus::Ready) {
                             ComboBox_SetCurSel(comboSpellCheckLevel_, static_cast<int>(oldLevel));
                             UpdateSpellCheckChildren();
                             return;

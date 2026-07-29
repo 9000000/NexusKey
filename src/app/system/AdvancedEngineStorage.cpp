@@ -60,6 +60,10 @@ bool AdvancedEngineStagingFile::Create(const std::wstring& directory) {
 }
 
 bool AdvancedEngineStagingFile::ActivateAs(const std::wstring& destination) {
+    if (handle_ == INVALID_HANDLE_VALUE || destination.empty()) {
+        return false;
+    }
+
     const size_t nameBytes = destination.size() * sizeof(wchar_t);
     const size_t infoBytes = offsetof(FILE_RENAME_INFO, FileName) + nameBytes;
     if (nameBytes > (std::numeric_limits<DWORD>::max)() || infoBytes > (std::numeric_limits<DWORD>::max)()) {

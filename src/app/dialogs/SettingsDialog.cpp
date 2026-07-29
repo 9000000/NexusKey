@@ -867,7 +867,7 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
 
 #if defined(VKEY_USE_RUST_ENGINE)
         if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
-            if (!AdvancedEngineInstaller::EnsureInstalledWithUi(get_hwnd())) {
+            if (AdvancedEngineInstaller::EnsureInstalledWithUi(get_hwnd()) != AdvancedEngineStatus::Ready) {
                 setDropdownValue(L"spell-check-level", static_cast<int>(oldLevel));
                 return;
             }

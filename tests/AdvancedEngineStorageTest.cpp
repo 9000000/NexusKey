@@ -3,6 +3,7 @@
 
 #include "app/system/AdvancedEngineStorage.h"
 #include "app/system/AdvancedEngineDownloadPolicy.h"
+#include "core/WinFileSystem.h"
 #include "core/engine/RustEngineTrust.h"
 
 #include <gtest/gtest.h>
@@ -10,29 +11,9 @@
 #include <array>
 #include <cstddef>
 #include <string>
-#include <vector>
 
 namespace NextKey {
 namespace {
-
-class UniqueFile final {
-public:
-    explicit UniqueFile(HANDLE value = INVALID_HANDLE_VALUE) noexcept : value_(value) {}
-    ~UniqueFile() {
-        if (value_ != INVALID_HANDLE_VALUE) {
-            ::CloseHandle(value_);
-        }
-    }
-
-    UniqueFile(const UniqueFile&) = delete;
-    UniqueFile& operator=(const UniqueFile&) = delete;
-
-    [[nodiscard]] HANDLE get() const noexcept { return value_; }
-    [[nodiscard]] bool valid() const noexcept { return value_ != INVALID_HANDLE_VALUE; }
-
-private:
-    HANDLE value_;
-};
 
 class TempDirectory final {
 public:
@@ -70,23 +51,6 @@ private:
     std::wstring destination_;
 };
 
-std::wstring ExecutableDirectory() {
-    std::vector<wchar_t> buffer(512);
-    while (buffer.size() <= 32768) {
-        const DWORD length = ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-        if (length == 0) {
-            return {};
-        }
-        if (static_cast<size_t>(length) < buffer.size()) {
-            std::wstring path(buffer.data(), length);
-            const size_t slash = path.find_last_of(L"\\/");
-            return slash == std::wstring::npos ? std::wstring{} : path.substr(0, slash);
-        }
-        buffer.resize(buffer.size() * 2);
-    }
-    return {};
-}
-
 bool CopyIntoHandle(const std::wstring& sourcePath, HANDLE destination) {
     UniqueFile source(::CreateFileW(sourcePath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                                     FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
@@ -116,7 +80,7 @@ bool CopyIntoHandle(const std::wstring& sourcePath, HANDLE destination) {
 }
 
 TEST(AdvancedEngineStorageTest, ReplacesUntrustedDestinationWithNormalTrustedFile) {
-    const std::wstring executableDirectory = ExecutableDirectory();
+    const std::wstring executableDirectory = ModuleDirectory(nullptr);
     ASSERT_FALSE(executableDirectory.empty());
     const std::wstring trustedSource = executableDirectory + L"\\" + kAdvancedEngineAssetName;
 

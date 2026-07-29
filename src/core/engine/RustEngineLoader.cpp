@@ -8,14 +8,13 @@
 #include "vkey_engine.h"
 
 #include <string>
-#include <vector>
 
 static_assert(VKEY_ENGINE_ABI_VERSION == NextKey::VKeyEngineLock::kAbiVersion,
               "vkey_engine.h and engine.lock must come from the same sync");
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "core/WinFileSystem.h"
 #else
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -29,25 +28,6 @@ namespace {
 const volatile int kModuleAnchor = 0;
 
 #if defined(_WIN32)
-
-class UniqueFile final {
-public:
-    explicit UniqueFile(HANDLE value = INVALID_HANDLE_VALUE) noexcept : value_(value) {}
-    ~UniqueFile() {
-        if (value_ != INVALID_HANDLE_VALUE) {
-            ::CloseHandle(value_);
-        }
-    }
-
-    UniqueFile(const UniqueFile&) = delete;
-    UniqueFile& operator=(const UniqueFile&) = delete;
-
-    [[nodiscard]] HANDLE get() const noexcept { return value_; }
-    [[nodiscard]] bool valid() const noexcept { return value_ != INVALID_HANDLE_VALUE; }
-
-private:
-    HANDLE value_;
-};
 
 class UniqueModule final {
 public:
@@ -72,21 +52,6 @@ private:
     HMODULE value_;
 };
 
-std::wstring ModulePath(HMODULE module) {
-    std::vector<wchar_t> buffer(512);
-    while (buffer.size() <= 32768) {
-        const DWORD length = ::GetModuleFileNameW(module, buffer.data(), static_cast<DWORD>(buffer.size()));
-        if (length == 0) {
-            return {};
-        }
-        if (static_cast<size_t>(length) < buffer.size()) {
-            return std::wstring(buffer.data(), length);
-        }
-        buffer.resize(buffer.size() * 2);
-    }
-    return {};
-}
-
 std::wstring SiblingLibraryPath() {
     HMODULE self = nullptr;
     if (!::GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -94,14 +59,11 @@ std::wstring SiblingLibraryPath() {
         return {};
     }
 
-    std::wstring path = ModulePath(self);
-    const size_t slash = path.find_last_of(L"\\/");
-    if (slash == std::wstring::npos) {
+    const std::wstring directory = ModuleDirectory(self);
+    if (directory.empty()) {
         return {};
     }
-    path.resize(slash + 1);
-    path += L"vkey_engine.dll";
-    return path;
+    return directory + L"\\vkey_engine.dll";
 }
 
 bool SameFile(HANDLE expected, HMODULE module) {
@@ -183,6 +145,9 @@ RustEngineLibraryResult LoadRustEngineLibrary() {
         if (path.empty()) {
             return {nullptr, L"cannot resolve the module-relative engine path"};
         }
+        // No hash/identity gate here: Linux is a test-only target for this
+        // engine, and the trust path (CNG, LoadLibraryExW, FILE_RENAME_INFO) is
+        // Windows-only. Shipping Linux means porting the checks first.
         if (void* module = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL)) {
             return {module, {}};
         }

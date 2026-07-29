@@ -9,6 +9,7 @@
 #include "core/CrashLog.h"
 #include "core/Strings.h"
 #include "core/Version.h"
+#include "core/WinFileSystem.h"
 #include "core/engine/RustEngineTrust.h"
 
 #include <winhttp.h>
@@ -59,46 +60,10 @@ private:
     HINTERNET value_;
 };
 
-class UniqueFile final {
-public:
-    explicit UniqueFile(HANDLE value = INVALID_HANDLE_VALUE) noexcept : value_(value) {}
-    ~UniqueFile() {
-        if (value_ != INVALID_HANDLE_VALUE) {
-            ::CloseHandle(value_);
-        }
-    }
-
-    UniqueFile(const UniqueFile&) = delete;
-    UniqueFile& operator=(const UniqueFile&) = delete;
-
-    [[nodiscard]] HANDLE get() const noexcept { return value_; }
-    [[nodiscard]] bool valid() const noexcept { return value_ != INVALID_HANDLE_VALUE; }
-
-private:
-    HANDLE value_;
-};
-
 struct ParsedUrl {
     std::wstring host;
     std::wstring resource;
 };
-
-std::wstring ExecutableDirectory() {
-    std::vector<wchar_t> buffer(512);
-    while (buffer.size() <= 32768) {
-        const DWORD length = ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-        if (length == 0) {
-            return {};
-        }
-        if (static_cast<size_t>(length) < buffer.size()) {
-            std::wstring path(buffer.data(), length);
-            const size_t slash = path.find_last_of(L"\\/");
-            return slash == std::wstring::npos ? std::wstring{} : path.substr(0, slash);
-        }
-        buffer.resize(buffer.size() * 2);
-    }
-    return {};
-}
 
 std::wstring EnginePath(const std::wstring& directory) { return directory + L"\\" + kAdvancedEngineAssetName; }
 
@@ -275,7 +240,7 @@ InstallResult DownloadToFile(HANDLE file, std::atomic<bool>& cancel) {
 
 InstallResult InstallEngine(std::atomic<bool>& cancel) noexcept {
     try {
-        const std::wstring directory = ExecutableDirectory();
+        const std::wstring directory = ModuleDirectory(nullptr);
         if (directory.empty()) {
             return InstallResult::StorageFailure;
         }
@@ -319,16 +284,16 @@ void ShowInstallFailure(HWND parent, InstallResult result) {
 
 } // namespace
 
-bool AdvancedEngineInstaller::EnsureInstalledWithUi(HWND parent) {
+AdvancedEngineStatus AdvancedEngineInstaller::EnsureInstalledWithUi(HWND parent) {
     try {
-        const std::wstring directory = ExecutableDirectory();
+        const std::wstring directory = ModuleDirectory(nullptr);
         if (!directory.empty() && IsTrustedInstalledEngine(EnginePath(directory))) {
-            return true;
+            return AdvancedEngineStatus::Ready;
         }
 
         if (::MessageBoxW(parent, S(StringId::SPELL_ADVANCED_DOWNLOAD_PROMPT), L"VKey",
                           MB_YESNO | MB_ICONINFORMATION) != IDYES) {
-            return false;
+            return AdvancedEngineStatus::Declined;
         }
 
         struct State {
@@ -337,7 +302,7 @@ bool AdvancedEngineInstaller::EnsureInstalledWithUi(HWND parent) {
             InstallResult result = InstallResult::StorageFailure;
         };
         auto state = std::make_shared<State>();
-        std::jthread worker([state]() {
+        std::thread worker([state]() {
             try {
                 state->result = InstallEngine(state->cancel);
             } catch (const std::exception& error) {
@@ -356,23 +321,24 @@ bool AdvancedEngineInstaller::EnsureInstalledWithUi(HWND parent) {
             state->cancel.store(true, std::memory_order_release);
         }
         worker.join();
-        if (!completed)
-            return false;
-
+        // Result first: cancel is only polled at read-loop boundaries, so a
+        // download that finished as the user dismissed the dialog is installed
+        // and must not be thrown away.
         if (state->result == InstallResult::Installed) {
-            return true;
+            return AdvancedEngineStatus::Ready;
         }
-        if (state->result != InstallResult::Cancelled) {
-            ShowInstallFailure(parent, state->result);
+        if (!completed || state->result == InstallResult::Cancelled) {
+            return AdvancedEngineStatus::Declined;
         }
-        return false;
+        ShowInstallFailure(parent, state->result);
+        return AdvancedEngineStatus::Unavailable;
     } catch (const std::exception& error) {
         CrashLog(L"AdvancedEngineInstaller::EnsureInstalledWithUi", error.what());
     } catch (...) {
         CrashLog(L"AdvancedEngineInstaller::EnsureInstalledWithUi", "(non-std exception)");
     }
     ShowInstallFailure(parent, InstallResult::StorageFailure);
-    return false;
+    return AdvancedEngineStatus::Unavailable;
 }
 
 } // namespace NextKey
