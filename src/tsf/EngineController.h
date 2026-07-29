@@ -38,9 +38,6 @@ public:
     /// Set the TSF client ID for edit sessions
     void SetClientId(TfClientId clientId) { clientId_ = clientId; }
 
-    /// Set the category manager for display attributes
-    void SetCategoryMgr(ITfCategoryMgr* pCategoryMgr) { compositionMgr_.SetCategoryMgr(pCategoryMgr); }
-
     /// Check if we want to handle this key
     bool WantKey(UINT vkCode, bool isKeyDown);
 
@@ -153,7 +150,7 @@ public:
     /// Set code table (updates config, no persistence yet)
     void SetCodeTable(CodeTable ct) noexcept { config_.codeTable = ct; }
 
-    /// Initialize language bar button (call after SetClientId/SetCategoryMgr)
+    /// Initialize language bar button (call after SetClientId)
     bool InitLanguageBar(ITfThreadMgr* pThreadMgr);
 
     /// Cleanup language bar button

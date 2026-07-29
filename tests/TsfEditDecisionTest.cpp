@@ -4,7 +4,6 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
-#include <limits>
 
 #include "core/TsfEditDecision.h"
 
@@ -19,16 +18,13 @@ TEST(TsfEditDecision, PartialOrForwardShiftRejectsReviveRange) {
     EXPECT_FALSE(IsExactBackwardRangeShift(/*requestedChars=*/5, /*shiftedChars=*/-4));
     EXPECT_FALSE(IsExactBackwardRangeShift(/*requestedChars=*/5, /*shiftedChars=*/0));
     EXPECT_FALSE(IsExactBackwardRangeShift(/*requestedChars=*/5, /*shiftedChars=*/5));
-    EXPECT_FALSE(IsExactBackwardRangeShift(
-        static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)()) + 1,
-        (std::numeric_limits<std::int32_t>::min)()));
+    EXPECT_FALSE(IsExactBackwardRangeShift(/*requestedChars=*/0, /*shiftedChars=*/0));
 }
 
-TEST(TsfEditDecision, DuplicateInitialPrintableKeyDownIsSuppressed) {
+TEST(TsfEditDecision, DuplicateInitialKeyDownIsSuppressed) {
     constexpr uint32_t vkSpace = 0x20;
     constexpr uint32_t initialKeyDown = 0;
-    EXPECT_TRUE(ShouldSuppressClaimedPrintableKeyDown(
-        vkSpace, vkSpace, initialKeyDown));
+    EXPECT_TRUE(ShouldSuppressClaimedKeyDown(vkSpace, vkSpace, initialKeyDown));
 }
 
 TEST(TsfEditDecision, AutoRepeatAndDifferentKeysAreNotSuppressed) {
@@ -36,12 +32,9 @@ TEST(TsfEditDecision, AutoRepeatAndDifferentKeysAreNotSuppressed) {
     constexpr uint32_t vkA = 0x41;
     constexpr uint32_t previousKeyState = 1u << 30;
 
-    EXPECT_FALSE(ShouldSuppressClaimedPrintableKeyDown(
-        vkSpace, vkSpace, previousKeyState));
-    EXPECT_FALSE(ShouldSuppressClaimedPrintableKeyDown(
-        vkSpace, vkA, /*lParam=*/0));
-    EXPECT_FALSE(ShouldSuppressClaimedPrintableKeyDown(
-        /*pendingVk=*/0, vkSpace, /*lParam=*/0));
+    EXPECT_FALSE(ShouldSuppressClaimedKeyDown(vkSpace, vkSpace, previousKeyState));
+    EXPECT_FALSE(ShouldSuppressClaimedKeyDown(vkSpace, vkA, /*lParam=*/0));
+    EXPECT_FALSE(ShouldSuppressClaimedKeyDown(/*pendingVk=*/0, vkSpace, /*lParam=*/0));
 }
 
 }  // namespace

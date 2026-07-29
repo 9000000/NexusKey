@@ -43,7 +43,7 @@ private:
     // (Word / Chrome). __try and C++ unwinding can't share one function (C2712).
     HRESULT OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten);
     HRESULT OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten);
-    void RememberClaimedPrintableKeyDown(UINT vk, LPARAM lParam) noexcept;
+    void RememberClaimedSpaceKeyDown(UINT vk, LPARAM lParam) noexcept;
 
     ULONG refCount_ = 1;
     TextService* pTextService_ = nullptr;
@@ -63,9 +63,14 @@ private:
     UINT lastMacroHandledVk_ = 0;
     bool lastMacroHandledEat_ = false;
 
-    // A printable key committed into the composition is owned by the TIP until
-    // its key-up. Some legacy hosts can repeat the initial keydown callback.
-    UINT pendingClaimedPrintableVk_ = 0;
+    // A Space committed into the composition is owned by the TIP until its
+    // key-up. Some legacy hosts can repeat the initial keydown callback.
+    // Two latches, not one: the key-down claim is dropped by the first key-up
+    // phase to observe it, while the paired key-up eat lives on separately —
+    // one latch would either leak into the next Space press or leave the host
+    // seeing a key-up with no key-down.
+    UINT pendingClaimedSpaceVk_ = 0;
+    UINT claimedSpaceKeyUpVk_ = 0;
 };
 
 }  // namespace TSF

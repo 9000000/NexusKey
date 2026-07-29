@@ -281,8 +281,7 @@ public:
 
         LONG shifted2 = 0;
         if (FAILED(pSelRange->ShiftStart(ec, -wordlen, &shifted2, &haltcond))
-            || !IsExactBackwardRangeShift(
-                static_cast<std::size_t>(wordlen), shifted2)) {
+            || !IsExactBackwardRangeShift(wordlen, shifted2)) {
             return S_OK;
         }
 
@@ -341,8 +340,7 @@ public:
                     ec, pDocumentStart, TF_ANCHOR_START, &isDocumentStart))
                 && isDocumentStart) {
                 atDocStart_ = true;
-                shouldAutoCap_ = ComputeShouldAutoCapFromTsfProbe(
-                    /*atDocumentStart=*/true, /*textAvailable=*/false, nullptr, 0);
+                shouldAutoCap_ = true;
             }
             return S_OK;
         }
@@ -372,8 +370,7 @@ public:
             if (SUCCEEDED(pSelRange->Clone(&pWordRange)) && pWordRange) {
                 LONG shifted2 = 0;
                 if (SUCCEEDED(pWordRange->ShiftStart(ec, -wordLen, &shifted2, &haltcond))
-                    && IsExactBackwardRangeShift(
-                        static_cast<std::size_t>(wordLen), shifted2)) {
+                    && IsExactBackwardRangeShift(wordLen, shifted2)) {
                     wordRange_ = pWordRange;
                 }
             }
@@ -381,9 +378,11 @@ public:
 
         // Auto-cap rule extracted to core/AutoCapDecision.h for Linux GTest
         // coverage (the buffer comes from a Win32 edit session here, but the
-        // decision is pure CPU work over a wchar_t span).
-        shouldAutoCap_ = ComputeShouldAutoCapFromTsfProbe(
-            /*atDocumentStart=*/false, /*textAvailable=*/true, buf, len);
+        // decision is pure CPU work over a wchar_t span). Reaching this point
+        // means len != 0, so ComputeShouldAutoCap's empty-buffer=DocStart
+        // convention can't fire off an unreadable range — a failed GetText
+        // returned above with shouldAutoCap_ still false.
+        shouldAutoCap_ = ComputeShouldAutoCap(buf, len);
 
         return S_OK;
     }
@@ -410,6 +409,24 @@ private:
 /// through the same PushChar path used for live typing is fully faithful. Falls
 /// back to SeedFromText if there's no snapshot, or it no longer reproduces `word`
 /// (e.g. input method/config changed between commit and revive).
+/// ITfRange::SetText flags for the two revive sessions below. They replace text
+/// that ALREADY EXISTS in the document (a previously committed word), unlike the
+/// start/update paths which write fresh pre-edit. TF_ST_CORRECTION tells the
+/// host "this is a correction of existing text", so rich-text hosts (Word,
+/// WordPad, Outlook) preserve the replaced run's properties — bold, font,
+/// colour — instead of resetting them.
+///
+/// Kept at 0 (2026-07-29, issue #234): the composition lifecycle was reworked
+/// for plain-text hosts and the flag was not re-validated on this path, so
+/// adding it now would change the freshly-fixed path untested. Notepad/Chrome/
+/// Scintilla are plain text — no observable difference either way.
+///
+/// TO FIX (one edit): if reopening a *formatted* word loses its formatting —
+/// WordPad, type a bold Vietnamese word, Space, then Backspace back into it —
+/// set this to TF_ST_CORRECTION, then re-run the four #234 Notepad repros to
+/// confirm the pre-edit range behaviour didn't regress.
+constexpr DWORD kReviveSetTextFlags = 0;
+
 inline bool SeedRevivedWord(IInputEngine* engine, const std::wstring& word,
                             const std::wstring& rawInput) {
     if (!rawInput.empty()) {
@@ -464,7 +481,7 @@ public:
 
         pEngine_->Backspace();
         const std::wstring& composed = pEngine_->Peek();
-        if (!pMgr_->SetCompositionText(ec, composed)) {
+        if (!pMgr_->SetCompositionText(ec, composed, kReviveSetTextFlags)) {
             pEngine_->Reset();
             pMgr_->EndComposition(ec);
             return E_FAIL;
@@ -520,7 +537,7 @@ public:
 
         pEngine_->PushChar(ch_);
         const std::wstring& composed = pEngine_->Peek();
-        if (!pMgr_->SetCompositionText(ec, composed)) {
+        if (!pMgr_->SetCompositionText(ec, composed, kReviveSetTextFlags)) {
             pEngine_->Reset();
             pMgr_->EndComposition(ec);
             return E_FAIL;

@@ -86,13 +86,13 @@ KeyEventSink::~KeyEventSink() {
     Unadvise();
 }
 
-void KeyEventSink::RememberClaimedPrintableKeyDown(
+void KeyEventSink::RememberClaimedSpaceKeyDown(
     UINT vk, LPARAM lParam) noexcept {
     constexpr uint32_t kPreviousKeyState = 1u << 30;
     const auto keyData =
         static_cast<uint32_t>(static_cast<uintptr_t>(lParam));
     if (vk == VK_SPACE && (keyData & kPreviousKeyState) == 0) {
-        pendingClaimedPrintableVk_ = vk;
+        pendingClaimedSpaceVk_ = vk;
     }
 }
 
@@ -151,7 +151,8 @@ IFACEMETHODIMP_(ULONG) KeyEventSink::Release() {
 }
 
 IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
-    pendingClaimedPrintableVk_ = 0;
+    pendingClaimedSpaceVk_ = 0;
+    claimedSpaceKeyUpVk_ = 0;
     if (fForeground) {
         TSF_LOG(L"OnSetFocus: foreground");
         // Re-read SharedState on focus to pick up ENGINE_ENABLED/VIETNAMESE_MODE changes
@@ -198,11 +199,12 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     lastEnglishMacroObservedVk_ = 0;
     lastMacroHandledVk_ = 0;
 
-    if (pendingClaimedPrintableVk_ != 0 && pendingClaimedPrintableVk_ != vk) {
-        pendingClaimedPrintableVk_ = 0;
+    if (vk != pendingClaimedSpaceVk_) {
+        pendingClaimedSpaceVk_ = 0;
+        claimedSpaceKeyUpVk_ = 0;
     }
-    if (ShouldSuppressClaimedPrintableKeyDown(
-            pendingClaimedPrintableVk_, vk,
+    if (ShouldSuppressClaimedKeyDown(
+            pendingClaimedSpaceVk_, vk,
             static_cast<uint32_t>(static_cast<uintptr_t>(lParam)))) {
         *pfEaten = TRUE;
         return S_OK;
@@ -458,7 +460,12 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam
     if (pfEaten == nullptr) return E_INVALIDARG;
     *pfEaten = FALSE;
     if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
-    if (pendingClaimedPrintableVk_ == static_cast<UINT>(wParam)) {
+    // The key-down claim ends here, not in OnKeyUp: a host that skips the
+    // non-test key-up phase (mirror of Chromium skipping OnTestKeyDown) would
+    // otherwise leave the latch armed and silently eat the next Space press.
+    if (pendingClaimedSpaceVk_ == static_cast<UINT>(wParam)) {
+        pendingClaimedSpaceVk_ = 0;
+        claimedSpaceKeyUpVk_ = static_cast<UINT>(wParam);
         *pfEaten = TRUE;
         return S_OK;
     }
@@ -490,11 +497,12 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     pEngineController_->CheckConfigEvent();
     const UINT vk = static_cast<UINT>(wParam);
 
-    if (pendingClaimedPrintableVk_ != 0 && pendingClaimedPrintableVk_ != vk) {
-        pendingClaimedPrintableVk_ = 0;
+    if (vk != pendingClaimedSpaceVk_) {
+        pendingClaimedSpaceVk_ = 0;
+        claimedSpaceKeyUpVk_ = 0;
     }
-    if (ShouldSuppressClaimedPrintableKeyDown(
-            pendingClaimedPrintableVk_, vk,
+    if (ShouldSuppressClaimedKeyDown(
+            pendingClaimedSpaceVk_, vk,
             static_cast<uint32_t>(static_cast<uintptr_t>(lParam)))) {
         *pfEaten = TRUE;
         return S_OK;
@@ -549,7 +557,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         lastMacroHandledVk_ = 0;
         lastMacroHandledEat_ = false;
         lastEnglishMacroObservedVk_ = 0;
-        if (eat) RememberClaimedPrintableKeyDown(vk, lParam);
+        if (eat) RememberClaimedSpaceKeyDown(vk, lParam);
         *pfEaten = eat ? TRUE : FALSE;
         return S_OK;
     }
@@ -586,7 +594,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
                 if (macroResult != EngineController::MacroResult::NoMatch) {
                     const bool eat =
                         macroResult == EngineController::MacroResult::ExpandedEatTrigger;
-                    if (eat) RememberClaimedPrintableKeyDown(vk, lParam);
+                    if (eat) RememberClaimedSpaceKeyDown(vk, lParam);
                     *pfEaten = eat ? TRUE : FALSE;
                     return S_OK;
                 }
@@ -647,7 +655,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         if (macroResult != EngineController::MacroResult::NoMatch) {
             const bool eat =
                 macroResult == EngineController::MacroResult::ExpandedEatTrigger;
-            if (eat) RememberClaimedPrintableKeyDown(vk, lParam);
+            if (eat) RememberClaimedSpaceKeyDown(vk, lParam);
             *pfEaten = eat ? TRUE : FALSE;
             return S_OK;
         }
@@ -720,7 +728,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     }
 
     const bool handled = pEngineController_->HandleKey(pContext, vk);
-    if (handled) RememberClaimedPrintableKeyDown(vk, lParam);
+    if (handled) RememberClaimedSpaceKeyDown(vk, lParam);
     *pfEaten = handled ? TRUE : FALSE;
     return S_OK;
 }
@@ -729,8 +737,10 @@ IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LP
     if (pfEaten == nullptr) return E_INVALIDARG;
     *pfEaten = FALSE;
     if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
-    if (pendingClaimedPrintableVk_ == static_cast<UINT>(wParam)) {
-        pendingClaimedPrintableVk_ = 0;
+    const UINT upVk = static_cast<UINT>(wParam);
+    if (pendingClaimedSpaceVk_ == upVk || claimedSpaceKeyUpVk_ == upVk) {
+        pendingClaimedSpaceVk_ = 0;
+        claimedSpaceKeyUpVk_ = 0;
         *pfEaten = TRUE;
         return S_OK;
     }

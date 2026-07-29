@@ -120,7 +120,7 @@ bool CompositionManager::BeginCompositionOnRange(
 }
 
 bool CompositionManager::SetCompositionText(
-    TfEditCookie ec, const std::wstring& text) {
+    TfEditCookie ec, const std::wstring& text, DWORD setTextFlags) {
     if (pComposition_ == nullptr) {
         TSF_LOG(L"SetCompositionText: ERROR - No active composition");
         return false;
@@ -133,7 +133,8 @@ bool CompositionManager::SetCompositionText(
         return false;
     }
 
-    hr = pRange->SetText(ec, 0, text.c_str(), static_cast<LONG>(text.length()));
+    hr = pRange->SetText(ec, setTextFlags, text.c_str(),
+                         static_cast<LONG>(text.length()));
     if (FAILED(hr)) {
         TSF_LOG(L"SetCompositionText: SetText FAILED, hr=0x%08X", hr);
         return false;
@@ -181,32 +182,6 @@ void CompositionManager::TerminateComposition() {
         pContext_ = nullptr;
     }
     currentText_.clear();
-}
-
-void CompositionManager::ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange) {
-    if (pRange == nullptr || pContext_ == nullptr) return;
-
-    // Get display attribute property
-    ITfProperty* pProperty = nullptr;
-    if (FAILED(pContext_->GetProperty(GUID_PROP_ATTRIBUTE, &pProperty)) || pProperty == nullptr) {
-        return;
-    }
-
-    // Register GUID with CategoryMgr each time (VietType pattern)
-    if (pCategoryMgr_ != nullptr) {
-        TfGuidAtom atom = TF_INVALID_GUIDATOM;
-        HRESULT hr = pCategoryMgr_->RegisterGUID(GUID_DisplayAttribute_Input, &atom);
-        if (SUCCEEDED(hr) && atom != TF_INVALID_GUIDATOM) {
-            // Set the display attribute on the range
-            VARIANT var;
-            var.vt = VT_I4;
-            var.lVal = atom;
-            pProperty->SetValue(ec, pRange, &var);
-            TSF_LOG(L"Applied display attribute");
-        }
-    }
-
-    pProperty->Release();
 }
 
 void CompositionManager::ClearDisplayAttribute(TfEditCookie ec, ITfRange* pRange) {

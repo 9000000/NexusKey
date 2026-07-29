@@ -3,20 +3,19 @@
 
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
-#include <limits>
 
 namespace NextKey {
 
+/// A revive range is only safe when the backward shift covered exactly the
+/// characters asked for — a partial shift would put the composition over the
+/// wrong text.
 [[nodiscard]] constexpr bool IsExactBackwardRangeShift(
-    std::size_t requestedChars, std::int32_t shiftedChars) noexcept {
-    return requestedChars <=
-            static_cast<std::size_t>((std::numeric_limits<std::int32_t>::max)())
-        && shiftedChars == -static_cast<std::int32_t>(requestedChars);
+    std::int32_t requestedChars, std::int32_t shiftedChars) noexcept {
+    return requestedChars > 0 && shiftedChars == -requestedChars;
 }
 
-[[nodiscard]] constexpr bool ShouldSuppressClaimedPrintableKeyDown(
+[[nodiscard]] constexpr bool ShouldSuppressClaimedKeyDown(
     uint32_t pendingVk, uint32_t currentVk, uint32_t lParam) noexcept {
     constexpr uint32_t kPreviousKeyState = 1u << 30;
     return pendingVk != 0
