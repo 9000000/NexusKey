@@ -111,11 +111,7 @@ body {
 }
 
 .credit-row.clickable-copy:hover {
-    background: rgba(0, 0, 0, 0.05);
-}
-
-body.dark .credit-row.clickable-copy:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--bg-hover);
 }
 
 .copy-icon-inline {

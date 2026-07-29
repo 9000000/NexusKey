@@ -28,16 +28,16 @@ document.on("ready", function () {
 // Initialize click-to-copy for version info
 function initializeVersionCopy() {
     var container = document.getElementById("version-copy-container");
-    if (container) {
-        container.on("click", function () {
-            var verSpan = document.getElementById("app-version-number");
-            var verText = verSpan ? verSpan.textContent.trim() : "";
-            var fullStr = "VKey v" + verText;
-            if (copyToClipboard(fullStr)) {
-                showToastI18n("Đã sao chép thông tin phiên bản vào bộ nhớ tạm", "Copied version info to clipboard");
-            }
-        });
-    }
+    if (!container) return;
+    container.onclick = function () {
+        var verSpan = document.getElementById("app-version-number");
+        var verText = verSpan ? verSpan.textContent.trim() : "";
+        if (copyToClipboard("VKey v" + verText)) {
+            showToastI18n("Đã sao chép thông tin phiên bản vào bộ nhớ tạm", "Copied version info to clipboard");
+        } else {
+            showToastI18n("Không sao chép được thông tin phiên bản", "Could not copy version info");
+        }
+    };
 }
 
 // Set tooltip on all dropdowns to show only the selected item text

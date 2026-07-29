@@ -123,6 +123,8 @@
             var fullStr = "VKey v" + ver + " (Build: " + build + ")";
             if (copyToClipboard(fullStr)) {
                 showToastI18n("Đã sao chép thông tin phiên bản vào bộ nhớ tạm", "Copied version info to clipboard");
+            } else {
+                showToastI18n("Không sao chép được thông tin phiên bản", "Could not copy version info");
             }
         }
 
