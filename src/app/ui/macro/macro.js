@@ -8,6 +8,7 @@ var allMacros = new Map();
 var selectedMacroName = null;
 var checkedMacroNames = new Set();
 var lastClickedKey = null;
+var lastShiftRangeKeys = null;
 var searchQuery = "";
 
 document.ready = function () {
@@ -87,6 +88,7 @@ function getVisibleMacroKeys() {
 }
 
 function onToggleSelectAll(isChecked) {
+    lastShiftRangeKeys = null;
     var visibleKeys = getVisibleMacroKeys();
     for (var i = 0; i < visibleKeys.length; i++) {
         if (isChecked) {
@@ -186,6 +188,7 @@ function clearSelection() {
     selectedMacroName = null;
     checkedMacroNames.clear();
     lastClickedKey = null;
+    lastShiftRangeKeys = null;
 
     var nameField = document.getElementById("macro-name");
     var contentField = document.getElementById("macro-content");
@@ -323,6 +326,7 @@ function triggerAction(action) {
 function clearMacroList() {
     allMacros.clear();
     lastClickedKey = null;
+    lastShiftRangeKeys = null;
     var list = document.getElementById("macro-list");
     if (list) list.innerHTML = "";
     var emptyEl = document.getElementById("macro-list-empty");
@@ -346,10 +350,54 @@ function updateCheckboxesUI() {
     for (var i = 0; i < items.length; i++) {
         var name = items[i].getAttribute("data-name");
         var chk = items[i].querySelector(".chk-item");
+        var isChecked = checkedMacroNames.has(name);
         if (chk) {
-            chk.checked = checkedMacroNames.has(name);
+            chk.checked = isChecked;
+        }
+        if (isChecked) {
+            items[i].classList.add("checked");
+        } else {
+            items[i].classList.remove("checked");
         }
     }
+}
+
+function applyShiftRange(currentKey) {
+    var visibleKeys = getVisibleMacroKeys();
+    var currentIdx = visibleKeys.indexOf(currentKey);
+    var anchorIdx = lastClickedKey ? visibleKeys.indexOf(lastClickedKey) : -1;
+
+    if (anchorIdx === -1 || currentIdx === -1) {
+        checkedMacroNames.add(currentKey);
+        lastClickedKey = currentKey;
+        lastShiftRangeKeys = null;
+        return;
+    }
+
+    var start = Math.min(anchorIdx, currentIdx);
+    var end = Math.max(anchorIdx, currentIdx);
+    var newRangeKeys = new Set();
+    for (var k = start; k <= end; k++) {
+        newRangeKeys.add(visibleKeys[k]);
+    }
+
+    // Uncheck items from previous shift range that are outside the updated range
+    if (lastShiftRangeKeys) {
+        var prevKeysArr = Array.from(lastShiftRangeKeys);
+        for (var p = 0; p < prevKeysArr.length; p++) {
+            if (!newRangeKeys.has(prevKeysArr[p])) {
+                checkedMacroNames.delete(prevKeysArr[p]);
+            }
+        }
+    }
+
+    // Add all keys in the new range
+    var newKeysArr = Array.from(newRangeKeys);
+    for (var n = 0; n < newKeysArr.length; n++) {
+        checkedMacroNames.add(newKeysArr[n]);
+    }
+
+    lastShiftRangeKeys = newRangeKeys;
 }
 
 function renderMacroList() {
@@ -378,15 +426,16 @@ function renderMacroList() {
 
     if (lastClickedKey && !allMacros.has(lastClickedKey)) {
         lastClickedKey = null;
+        lastShiftRangeKeys = null;
     }
 
     var sortedKeys = Array.from(allMacros.keys()).sort();
     var matchCount = 0;
 
     for (var i = 0; i < sortedKeys.length; i++) {
-        var name = sortedKeys[i];
-        var content = allMacros.get(name);
-        var displayContent = storageToDisplay(content);
+        const name = sortedKeys[i];
+        const content = allMacros.get(name);
+        const displayContent = storageToDisplay(content);
 
         // Filter by search query on both shortcut name and content
         if (searchQuery !== "") {
@@ -398,7 +447,7 @@ function renderMacroList() {
         }
 
         matchCount++;
-        var item = document.createElement("div");
+        const item = document.createElement("div");
         item.className = "macro-item";
         item.setAttribute("data-name", name);
         item.setAttribute("data-content", content);
@@ -408,6 +457,10 @@ function renderMacroList() {
         }
 
         var isChecked = checkedMacroNames.has(name);
+        if (isChecked) {
+            item.classList.add("checked");
+        }
+
         var preview = formatPreview(content);
         item.innerHTML =
             '<span class="macro-item-check"><input type="checkbox" class="chk-item"' + (isChecked ? ' checked' : '') + '></span>' +
@@ -420,67 +473,47 @@ function renderMacroList() {
 
         var chk = item.querySelector(".chk-item");
         if (chk) {
-            (function (n) {
-                chk.addEventListener("click", function (e) {
-                    e.stopPropagation();
-                    var visibleKeys = getVisibleMacroKeys();
-                    var currentIdx = visibleKeys.indexOf(n);
-                    var anchorIdx = lastClickedKey ? visibleKeys.indexOf(lastClickedKey) : -1;
-
-                    if (e.shiftKey && anchorIdx !== -1 && currentIdx !== -1) {
-                        var start = Math.min(anchorIdx, currentIdx);
-                        var end = Math.max(anchorIdx, currentIdx);
-                        var shouldCheck = this.checked;
-                        for (var k = start; k <= end; k++) {
-                            if (shouldCheck) {
-                                checkedMacroNames.add(visibleKeys[k]);
-                            } else {
-                                checkedMacroNames.delete(visibleKeys[k]);
-                            }
-                        }
-                        updateCheckboxesUI();
-                    } else {
-                        if (this.checked) {
-                            checkedMacroNames.add(n);
-                        } else {
-                            checkedMacroNames.delete(n);
-                        }
-                        lastClickedKey = n;
+            chk.addEventListener("click", function (e) {
+                e.stopPropagation();
+                if (e.shiftKey) {
+                    applyShiftRange(name);
+                } else {
+                    // Ctrl+click only toggles this item. Keep the existing Shift
+                    // anchor/range so the next Shift+click can still resize it.
+                    if (!e.ctrlKey) {
+                        lastShiftRangeKeys = null;
+                        lastClickedKey = name;
                     }
-                    updateButtonStates();
-                });
-            })(name);
+                    if (this.checked) {
+                        checkedMacroNames.add(name);
+                    } else {
+                        checkedMacroNames.delete(name);
+                    }
+                }
+                updateCheckboxesUI();
+                updateButtonStates();
+            });
         }
 
-        (function (el, n, c) {
-            el.addEventListener("click", function (e) {
-                var visibleKeys = getVisibleMacroKeys();
-                var currentIdx = visibleKeys.indexOf(n);
-                var anchorIdx = lastClickedKey ? visibleKeys.indexOf(lastClickedKey) : -1;
-
-                if (e.shiftKey && anchorIdx !== -1 && currentIdx !== -1) {
-                    var start = Math.min(anchorIdx, currentIdx);
-                    var end = Math.max(anchorIdx, currentIdx);
-                    for (var k = start; k <= end; k++) {
-                        checkedMacroNames.add(visibleKeys[k]);
-                    }
-                    updateCheckboxesUI();
-                    updateButtonStates();
-                } else if (e.ctrlKey) {
-                    if (checkedMacroNames.has(n)) {
-                        checkedMacroNames.delete(n);
-                    } else {
-                        checkedMacroNames.add(n);
-                    }
-                    lastClickedKey = n;
-                    updateCheckboxesUI();
-                    updateButtonStates();
+        item.addEventListener("click", function (e) {
+            if (e.shiftKey) {
+                applyShiftRange(name);
+                updateCheckboxesUI();
+                updateButtonStates();
+            } else if (e.ctrlKey) {
+                if (checkedMacroNames.has(name)) {
+                    checkedMacroNames.delete(name);
                 } else {
-                    lastClickedKey = n;
-                    selectMacroItem(el, n, c);
+                    checkedMacroNames.add(name);
                 }
-            });
-        })(item, name, content);
+                updateCheckboxesUI();
+                updateButtonStates();
+            } else {
+                lastShiftRangeKeys = null;
+                lastClickedKey = name;
+                selectMacroItem(item, name, content);
+            }
+        });
 
         list.appendChild(item);
     }

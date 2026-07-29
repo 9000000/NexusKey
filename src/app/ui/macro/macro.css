@@ -181,8 +181,9 @@
     flow: horizontal;
     padding: 8px 0;
     cursor: pointer;
-    transition: background 0.15s ease;
+    transition: background 0.15s ease, border-left 0.15s ease;
     border-bottom: 1px solid var(--border-row-light);
+    border-left: 3px solid transparent;
     width: 100%;
 }
 
@@ -190,8 +191,18 @@
     background: var(--bg-primary-hover);
 }
 
-.macro-item.selected {
+.macro-item.checked {
+    background: var(--color-primary-light);
+}
+
+.macro-item.checked:hover {
+    background: var(--color-primary-light-hover);
+}
+
+.macro-item.selected,
+.macro-item.selected.checked {
     background: var(--color-primary-medium);
+    border-left: 3px solid var(--color-primary);
 }
 
 .macro-item-check {
