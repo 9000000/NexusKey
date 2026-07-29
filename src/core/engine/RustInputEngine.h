@@ -11,17 +11,7 @@
 
 namespace NextKey {
 
-/// IInputEngine backed by the prebuilt, closed-source `vkey_engine` library,
-/// reached through its C ABI (v2) and loaded at runtime (no link-time toolchain
-/// matching). The NexusKey pipeline keeps talking to IInputEngine unchanged;
-/// this adapter is the only component that knows the Rust engine exists.
-///
-/// The full IInputEngine surface is wired to the engine: composition loop plus
-/// the host query surface (IsEnglishWord, IsToneEscaped, PeekRaw, quick-consonant
-/// state). SeedFromText performs a literal restore — enough for the English-word
-/// check and continued typing/backspace into a committed word; re-applying a
-/// tone/modifier to the restored glyphs is not faithfully supported (that needs
-/// a raw snapshot captured at commit time in the engine).
+/// IInputEngine adapter for the trusted, runtime-loaded vkey_engine C ABI.
 class RustInputEngine : public IInputEngine {
 public:
     explicit RustInputEngine(const TypingConfig& config);
@@ -44,12 +34,10 @@ public:
     [[nodiscard]] std::wstring_view PeekRawView() const noexcept override { return raw_; }
     [[nodiscard]] bool LastCommitWasCorrected() const override;
 
-    /// Whether the prebuilt engine library loaded and its ABI version matched.
-    /// EngineFactory uses this to fall back to the in-tree C++ engine.
+    /// Whether the library passed artifact, ABI and runtime-identity checks.
     [[nodiscard]] static bool LibraryAvailable();
 
-    /// Empty when LibraryAvailable(); otherwise a short diagnostic of why the
-    /// library didn't load (dlopen failure, missing symbol, or ABI mismatch).
+    /// Empty when LibraryAvailable(); otherwise a bounded diagnostic.
     [[nodiscard]] static std::wstring UnavailableReason();
 
 private:

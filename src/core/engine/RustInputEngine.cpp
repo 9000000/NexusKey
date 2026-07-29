@@ -4,10 +4,12 @@
 
 #include "RustInputEngine.h"
 
+#include "RustEngineLoader.h"
+
 #include "vkey_engine.h"  // vendored C ABI (extern/vkey_engine/include)
 
 #include <cstdint>
-#include <cstdlib>
+#include <utility>
 #include <vector>
 
 #if defined(_WIN32)
@@ -23,53 +25,6 @@
 namespace NextKey {
 namespace {
 
-// Anchor whose address sits inside *this* module — used to locate the library
-// next to whichever binary linked the adapter (VKeyApp.exe or, crucially, the
-// in-process VKeyTSF.dll loaded into arbitrary host apps like Chrome/Word).
-const int kModuleAnchor = 0;
-
-// Absolute path of `vkey_engine` next to the module containing this code, or
-// empty if it can't be determined. A bare LoadLibrary/dlopen would search the
-// *host* process directory, which never holds the engine for the TSF DLL.
-#if defined(_WIN32)
-std::wstring SiblingLibraryPath() {
-    HMODULE self = nullptr;
-    if (!::GetModuleHandleExW(
-            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-            reinterpret_cast<LPCWSTR>(&kModuleAnchor), &self)) {
-        return {};
-    }
-    wchar_t path[MAX_PATH];
-    DWORD n = ::GetModuleFileNameW(self, path, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) {
-        return {};
-    }
-    std::wstring p(path, n);
-    const size_t slash = p.find_last_of(L"\\/");
-    if (slash == std::wstring::npos) {
-        return {};
-    }
-    p.resize(slash + 1);
-    p += L"vkey_engine.dll";
-    return p;
-}
-#else
-std::string SiblingLibraryPath() {
-    Dl_info info{};
-    if (::dladdr(&kModuleAnchor, &info) == 0 || !info.dli_fname) {
-        return {};
-    }
-    std::string p(info.dli_fname);
-    const size_t slash = p.find_last_of('/');
-    if (slash == std::string::npos) {
-        return {};
-    }
-    p.resize(slash + 1);
-    p += "libvkey_engine.so";
-    return p;
-}
-#endif
-
 // Resolved entry points of the prebuilt library. Loaded once, lazily.
 struct EngineApi {
     VKeyEngine* (*create)(uint32_t, uint32_t) = nullptr;
@@ -81,6 +36,7 @@ struct EngineApi {
     size_t (*commit_utf16)(VKeyEngine*, uint16_t*, size_t) = nullptr;
     size_t (*count)(const VKeyEngine*) = nullptr;
     uint32_t (*abi_version)(void) = nullptr;
+    uint32_t (*runtime_status)(void) = nullptr;
     // ABI v2 host query surface.
     bool (*is_english_word)(const VKeyEngine*) = nullptr;
     bool (*is_tone_escaped)(const VKeyEngine*) = nullptr;
@@ -98,43 +54,6 @@ struct EngineApi {
     std::wstring reason;  // diagnostic when !ok; empty when ok
 };
 
-void* OpenLibrary() {
-    // Resolution order: explicit VKEY_ENGINE_LIB override (tests) → next to this
-    // module (the only path that works for the in-process TSF DLL) → bare name
-    // via the OS search path as a last resort.
-#if defined(_WIN32)
-    {
-        wchar_t* path = nullptr;
-        size_t len = 0;
-        if (_wdupenv_s(&path, &len, L"VKEY_ENGINE_LIB") == 0 && path) {
-            HMODULE h = ::LoadLibraryW(path);
-            free(path);
-            if (h) {
-                return h;
-            }
-        }
-    }
-    if (const std::wstring sibling = SiblingLibraryPath(); !sibling.empty()) {
-        if (HMODULE h = ::LoadLibraryW(sibling.c_str())) {
-            return h;
-        }
-    }
-    return ::LoadLibraryW(L"vkey_engine.dll");
-#else
-    if (const char* path = std::getenv("VKEY_ENGINE_LIB")) {
-        if (void* h = ::dlopen(path, RTLD_NOW | RTLD_LOCAL)) {
-            return h;
-        }
-    }
-    if (const std::string sibling = SiblingLibraryPath(); !sibling.empty()) {
-        if (void* h = ::dlopen(sibling.c_str(), RTLD_NOW | RTLD_LOCAL)) {
-            return h;
-        }
-    }
-    return ::dlopen("libvkey_engine.so", RTLD_NOW | RTLD_LOCAL);
-#endif
-}
-
 template <typename Fn>
 Fn Resolve(void* lib, const char* name) {
 #if defined(_WIN32)
@@ -145,14 +64,15 @@ Fn Resolve(void* lib, const char* name) {
 }
 
 const EngineApi& Api() {
-    // C++11 "magic static": initialized once, thread-safe.
+    // Trust verification and symbol resolution happen once per process, never per key.
     static const EngineApi api = [] {
         EngineApi a;
-        void* lib = OpenLibrary();
-        if (!lib) {
-            a.reason = L"failed to load vkey_engine library (dlopen/LoadLibrary)";
+        RustEngineLibraryResult loaded = LoadRustEngineLibrary();
+        if (!loaded.handle) {
+            a.reason = std::move(loaded.reason);
             return a;
         }
+        void* lib = loaded.handle;
         a.create = Resolve<decltype(a.create)>(lib, "vkey_engine_create");
         a.destroy = Resolve<decltype(a.destroy)>(lib, "vkey_engine_destroy");
         a.reset = Resolve<decltype(a.reset)>(lib, "vkey_engine_reset");
@@ -162,6 +82,8 @@ const EngineApi& Api() {
         a.commit_utf16 = Resolve<decltype(a.commit_utf16)>(lib, "vkey_engine_commit_utf16");
         a.count = Resolve<decltype(a.count)>(lib, "vkey_engine_count");
         a.abi_version = Resolve<decltype(a.abi_version)>(lib, "vkey_engine_abi_version");
+        a.runtime_status =
+            Resolve<decltype(a.runtime_status)>(lib, "vkey_engine_runtime_status");
         a.is_english_word =
             Resolve<decltype(a.is_english_word)>(lib, "vkey_engine_is_english_word");
         a.is_tone_escaped =
@@ -180,18 +102,27 @@ const EngineApi& Api() {
             lib, "vkey_engine_set_spell_exclusions_utf16");
         const bool symbolsResolved =
             a.create && a.destroy && a.reset && a.push_char && a.backspace &&
-            a.peek_utf16 && a.commit_utf16 && a.count && a.abi_version &&
+            a.peek_utf16 && a.commit_utf16 && a.count && a.abi_version && a.runtime_status &&
             a.is_english_word && a.is_tone_escaped && a.has_active_quick_consonant &&
             a.peek_raw_utf16 && a.seed_text_utf16 && a.last_commit_was_corrected &&
             a.set_custom_keymap && a.set_spell_exclusions_utf16;
         if (!symbolsResolved) {
+            CloseRustEngineLibrary(lib);
             a.reason = L"vkey_engine library is missing a required exported symbol";
             return a;
         }
         const uint32_t libVersion = a.abi_version();
         if (libVersion != VKEY_ENGINE_ABI_VERSION) {
+            CloseRustEngineLibrary(lib);
             a.reason = L"vkey_engine ABI version mismatch (lib=" + std::to_wstring(libVersion) +
                         L", expected=" + std::to_wstring(VKEY_ENGINE_ABI_VERSION) + L")";
+            return a;
+        }
+        const uint32_t runtimeStatus = a.runtime_status();
+        if (runtimeStatus != VKEY_ENGINE_RUNTIME_OK) {
+            CloseRustEngineLibrary(lib);
+            a.reason = L"vkey_engine runtime identity check failed (status=" +
+                       std::to_wstring(runtimeStatus) + L")";
             return a;
         }
         a.ok = true;

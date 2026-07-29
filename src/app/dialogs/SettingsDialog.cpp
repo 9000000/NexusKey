@@ -7,6 +7,9 @@
 #include "system/StartupHelper.h"
 #include "system/SubprocessHelper.h"
 #include "system/TsfRegistration.h"
+#if defined(VKEY_USE_RUST_ENGINE)
+#include "system/AdvancedEngineInstaller.h"
+#endif
 #include "system/UpdateChecker.h"
 #include "system/PendingDllApply.h"
 #include "system/ToastPopup.h"
@@ -862,10 +865,14 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
         SpellCheckLevel oldLevel = config_.GetSpellCheckLevel();
         SpellCheckLevel newLevel = static_cast<SpellCheckLevel>(value);
 
+#if defined(VKEY_USE_RUST_ENGINE)
         if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
-            MessageBoxW(get_hwnd(), S(StringId::SPELL_ADVANCED_ENGINE_INFO),
-                L"VKey", MB_OK | MB_ICONINFORMATION);
+            if (!AdvancedEngineInstaller::EnsureInstalledWithUi(get_hwnd())) {
+                setDropdownValue(L"spell-check-level", static_cast<int>(oldLevel));
+                return;
+            }
         }
+#endif
 
         config_.SetSpellCheckLevel(newLevel);
 

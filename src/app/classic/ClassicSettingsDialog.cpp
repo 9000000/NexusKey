@@ -19,6 +19,9 @@
 #include "core/Debug.h"
 #include "core/CrashLog.h"
 #include "core/Version.h"
+#if defined(VKEY_USE_RUST_ENGINE)
+#include "system/AdvancedEngineInstaller.h"
+#endif
 #include "system/StartupHelper.h"
 #include "system/UpdateChecker.h"
 #include "system/PendingDllApply.h"
@@ -894,10 +897,15 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                 if (sel >= 0 && sel <= 2) {
                     SpellCheckLevel newLevel = static_cast<SpellCheckLevel>(sel);
 
+#if defined(VKEY_USE_RUST_ENGINE)
                     if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
-                        MessageBoxW(hwnd_, S(StringId::SPELL_ADVANCED_ENGINE_INFO),
-                            L"VKey", MB_OK | MB_ICONINFORMATION);
+                        if (!AdvancedEngineInstaller::EnsureInstalledWithUi(hwnd_)) {
+                            ComboBox_SetCurSel(comboSpellCheckLevel_, static_cast<int>(oldLevel));
+                            UpdateSpellCheckChildren();
+                            return;
+                        }
                     }
+#endif
 
                     config_.SetSpellCheckLevel(newLevel);
 

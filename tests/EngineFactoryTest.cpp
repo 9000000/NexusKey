@@ -172,6 +172,17 @@ TEST_F(EngineFactoryTest, AdvancedSpellCheckReportsRuntimeAvailability) {
 #endif
 }
 
+TEST_F(EngineFactoryTest, AdvancedConfigKeepsTypingAvailable) {
+    TypingConfig config;
+    config.spellSuggestEnabled = true;
+
+    auto engine = EngineFactory::Create(config);
+    engine->PushChar(L'a');
+    engine->PushChar(L'a');
+
+    EXPECT_EQ(engine->Peek(), L"â");
+}
+
 // ============================================================================
 // ApplySharedState Simulation Tests (Bug Regression)
 // These tests simulate the EngineController::ApplySharedState logic

@@ -21,7 +21,12 @@ extern "C" {
 #endif
 
 /* Bump when the ABI changes; check against vkey_engine_abi_version(). */
-#define VKEY_ENGINE_ABI_VERSION 5u
+#define VKEY_ENGINE_ABI_VERSION 6u
+
+/* ABI v6 runtime-artifact identity status. */
+#define VKEY_ENGINE_RUNTIME_OK                   0u
+#define VKEY_ENGINE_RUNTIME_WRONG_FILENAME       1u
+#define VKEY_ENGINE_RUNTIME_IDENTITY_UNAVAILABLE 2u
 
 /* Input methods (the `method` argument to vkey_engine_create). */
 #define VKEY_METHOD_TELEX        0u
@@ -43,7 +48,8 @@ extern "C" {
 /* Opaque engine handle. */
 typedef struct VKeyEngine VKeyEngine;
 
-/* Create an engine for `method` with the `features` bitmask. */
+/* Create an engine for `method` with the `features` bitmask. Returns NULL when
+ * vkey_engine_runtime_status() is not VKEY_ENGINE_RUNTIME_OK. */
 VKeyEngine *vkey_engine_create(uint32_t method, uint32_t features);
 
 /* Destroy a handle from vkey_engine_create(). NULL is ignored. */
@@ -76,6 +82,12 @@ size_t vkey_engine_count(const VKeyEngine *engine);
 
 /* ABI revision implemented by this library. */
 uint32_t vkey_engine_abi_version(void);
+
+/* Cached runtime-artifact identity status. A dynamically loaded artifact must
+ * be named vkey_engine.dll on Windows (ASCII case-insensitive) or
+ * libvkey_engine.so on Linux (exact case). Static linkage remains supported.
+ * vkey_engine_create() returns NULL whenever this status is not OK. */
+uint32_t vkey_engine_runtime_status(void);
 
 /* --- ABI v2: host query surface --------------------------------------------
  * Added in ABI 2. Present only when vkey_engine_abi_version() >= 2. */

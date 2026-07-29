@@ -4,11 +4,7 @@
 // Covers the FFI plumbing in the adapter (UTF-16 widening, peek/commit/backspace,
 // stub contract) — NOT Vietnamese typing correctness, which the engine repo owns.
 //
-// The adapter only does real work when the prebuilt vkey_engine library is on
-// the load path, so these skip by default (keeping the rest of the suite on the
-// in-tree C++ engine). To run them against the real engine, point the env var
-// at the vendored artifact, e.g.:
-//   VKEY_ENGINE_LIB=extern/vkey_engine/lib/linux-x64/libvkey_engine.so ./VKeyTests
+// CMake copies the trusted vendored engine next to VKeyTests.
 
 #ifdef VKEY_USE_RUST_ENGINE
 
@@ -19,11 +15,16 @@
 namespace NextKey {
 namespace {
 
+TEST(RustInputEngineTrustTest, VendoredLibraryPassesTrustChecks) {
+    EXPECT_TRUE(RustInputEngine::LibraryAvailable())
+        << ::testing::PrintToString(RustInputEngine::UnavailableReason());
+}
+
 class RustInputEngineTest : public ::testing::Test {
 protected:
     void SetUp() override {
         if (!RustInputEngine::LibraryAvailable()) {
-            GTEST_SKIP() << "vkey_engine library not loaded; set VKEY_ENGINE_LIB to run";
+            GTEST_SKIP() << "trusted vkey_engine library did not load";
         }
     }
 };

@@ -72,7 +72,11 @@ static const wchar_t* const kVietnamese[] = {
     L"Đã tắt tự khởi động lại. VKey sẽ không tự bật lại nếu thoát đột ngột.", // WATCHDOG_STOPPED_BODY
     L"Đã bật tự khởi động lại. VKey sẽ tự bật lại nếu thoát đột ngột.", // WATCHDOG_ENABLED_BODY
     L"Cấu hình hiện tại đã được sao lưu thành công tại:\n%s\n\nỨng dụng sẽ tự động đóng để tiến hành cập nhật.", // UPDATE_BACKUP_SUCCESS
-    L"Chế độ Nâng cao sử dụng VKey Engine (Rust).\nEngine sẽ được nạp vào bộ nhớ.",  // SPELL_ADVANCED_ENGINE_INFO
+    L"Chế độ Nâng cao cần VKey Engine. VKey sẽ tải đúng vkey_engine.dll của phiên bản này từ GitHub và kiểm tra toàn vẹn trước khi dùng.\n\nTải ngay?", // SPELL_ADVANCED_DOWNLOAD_PROMPT
+    L"Đang tải và xác minh VKey Engine...",          // SPELL_ADVANCED_DOWNLOADING
+    L"Không thể tải VKey Engine. Hãy kiểm tra kết nối mạng rồi thử lại.", // SPELL_ADVANCED_NETWORK_FAILED
+    L"File VKey Engine tải về không khớp bản tin cậy. Chế độ Nâng cao chưa được bật.", // SPELL_ADVANCED_VERIFY_FAILED
+    L"Không thể cài vkey_engine.dll cạnh VKey. Hãy đóng các phiên bản VKey khác và kiểm tra quyền ghi của thư mục rồi thử lại.", // SPELL_ADVANCED_INSTALL_FAILED
     L"Bạn cần khởi động lại VKey để giải phóng VKey Engine khỏi bộ nhớ.\nBạn có muốn khởi động lại VKey ngay?",  // SPELL_ADVANCED_CLOSE_APP
     L"Bạn có muốn xóa gõ tắt này không?",             // MACRO_CONFIRM_DELETE
     L"Bạn có chắc chắn muốn xóa %d từ gõ tắt đã chọn?", // MACRO_CONFIRM_DELETE_MULTI
@@ -142,7 +146,11 @@ static const wchar_t* const kEnglish[] = {
     L"Auto-restart stopped. VKey will not relaunch on crash.", // WATCHDOG_STOPPED_BODY
     L"Auto-restart enabled. VKey will relaunch on crash.", // WATCHDOG_ENABLED_BODY
     L"Your current configuration has been backed up at:\n%s\n\nThe application will automatically close to perform the update.", // UPDATE_BACKUP_SUCCESS
-    L"Advanced mode uses VKey Engine (Rust).\nThe engine will be loaded into memory.",  // SPELL_ADVANCED_ENGINE_INFO
+    L"Advanced mode requires VKey Engine. VKey will download this version's exact vkey_engine.dll from GitHub and verify it before use.\n\nDownload now?", // SPELL_ADVANCED_DOWNLOAD_PROMPT
+    L"Downloading and verifying VKey Engine...",     // SPELL_ADVANCED_DOWNLOADING
+    L"Unable to download VKey Engine. Check your network connection and try again.", // SPELL_ADVANCED_NETWORK_FAILED
+    L"The downloaded VKey Engine does not match the trusted build. Advanced mode was not enabled.", // SPELL_ADVANCED_VERIFY_FAILED
+    L"Unable to install vkey_engine.dll next to VKey. Close other VKey instances, check the folder's write permission, and try again.", // SPELL_ADVANCED_INSTALL_FAILED
     L"VKey needs to restart to release VKey Engine from memory.\nDo you want to restart VKey now?",  // SPELL_ADVANCED_CLOSE_APP
     L"Delete this shortcut?",                        // MACRO_CONFIRM_DELETE
     L"Delete the %d selected shortcuts?",            // MACRO_CONFIRM_DELETE_MULTI

@@ -1,0 +1,12 @@
+// Generated from extern/vkey_engine/engine.lock by CMake.
+#pragma once
+
+#include <cstdint>
+
+namespace NextKey::VKeyEngineLock {
+
+inline constexpr std::uint32_t kAbiVersion = @VKEY_ENGINE_LOCK_ABI@u;
+inline constexpr std::uint64_t kByteLength = @VKEY_ENGINE_LOCK_BYTES@ull;
+inline constexpr char kSha256[] = "@VKEY_ENGINE_LOCK_SHA256@";
+
+}  // namespace NextKey::VKeyEngineLock

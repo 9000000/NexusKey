@@ -26,6 +26,9 @@
 #include "system/FloatingIcon.h"
 #include "system/TsfRegistration.h"
 #include "system/StartupHelper.h"
+#if defined(VKEY_USE_RUST_ENGINE)
+#include "system/AdvancedEngineInstaller.h"
+#endif
 #include "system/UpdateChecker.h"
 #include "system/UpdateInstaller.h"
 #include "system/PendingDllApply.h"
@@ -215,17 +218,21 @@ static void ApplyConfigChange(const TypingConfig& config) {
 }
 
 /// Applies a spell-check level chosen from the tray menu. Entering Advanced
-/// loads the Rust engine into memory (info prompt); leaving Advanced needs a
+/// installs the trusted Rust engine if needed; leaving Advanced needs a
 /// restart to release it (Yes/No prompt). The level change itself always
 /// applies — declining the restart just defers releasing the engine.
 static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
     auto config = ConfigManager::LoadOrDefault();
     SpellCheckLevel oldLevel = config.GetSpellCheckLevel();
 
+#if defined(VKEY_USE_RUST_ENGINE)
     if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
-        MessageBoxW(g_trayIcon.GetMessageWindow(), S(StringId::SPELL_ADVANCED_ENGINE_INFO),
-            L"VKey", MB_OK | MB_ICONINFORMATION);
-    } else if (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced) {
+        if (!AdvancedEngineInstaller::EnsureInstalledWithUi(g_trayIcon.GetMessageWindow())) {
+            return;
+        }
+    }
+#endif
+    if (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced) {
         int result = MessageBoxW(g_trayIcon.GetMessageWindow(), S(StringId::SPELL_ADVANCED_CLOSE_APP),
             L"VKey", MB_YESNO | MB_ICONQUESTION);
         if (result == IDYES) {
@@ -494,6 +501,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Initialize UI language
     auto systemConfig = ConfigManager::LoadSystemConfigOrDefault();
     SetLanguage(static_cast<Language>(systemConfig.language));
+
+#if defined(VKEY_USE_RUST_ENGINE)
+    // Repair before HookEngine can cache a failed first load for this process.
+    if (config.GetSpellCheckLevel() == SpellCheckLevel::Advanced &&
+        !AdvancedEngineInstaller::EnsureInstalledWithUi(nullptr)) {
+        config.SetSpellCheckLevel(SpellCheckLevel::Standard);
+        (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
+    }
+#endif
 
     // Apply any deferred TSF DLL swap before CleanupOldUpdateFiles removes
     // _old_version/ (the parking dir used by ApplyPendingDllUpdate).
