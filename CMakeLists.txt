@@ -122,6 +122,12 @@ if(VKEY_USE_RUST_ENGINE)
         message(FATAL_ERROR "Run the VKey-rs engine sync before configuring NexusKey")
     endif()
 
+    # The lock is a configure-time input baked into VKeyEngineLock.h. Without
+    # this, a plain `cmake --build` after an engine sync keeps the stale hash and
+    # the freshly vendored DLL fails the trust check → silent C++ fallback.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${VKEY_ENGINE_LOCK_PATH}" "${VKEY_ENGINE_DLL}")
+
     file(READ "${VKEY_ENGINE_LOCK_PATH}" _vkey_engine_lock LIMIT 1025)
     string(LENGTH "${_vkey_engine_lock}" _vkey_engine_lock_length)
     set(_vkey_engine_lock_pattern

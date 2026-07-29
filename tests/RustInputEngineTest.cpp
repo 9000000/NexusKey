@@ -329,6 +329,25 @@ TEST_F(RustInputEngineTest, UserDefinedTier2DirectInsertAndHornOrInsertU) {
 
 // #221 parity: vowel-less abbreviation chain (PLHĐ) must compose despite the
 // pl- hard-English onset; a vowel in the buffer keeps the block (pladd literal).
+// Doubled-modifier escape consumes the third `a`; the verbatim literal
+// fallback must not replay it. Also guards against a stale vendored engine
+// binary — this passed in VKey-rs source while the shipped .so/.dll lagged.
+// C++ twin: TelexEngineTest.Escape_Circumflex_A.
+TEST_F(RustInputEngineTest, CircumflexEscapeStaysOutOfLiteralFallback) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    RustInputEngine engine(config);
+
+    for (wchar_t c : std::wstring(L"aaaccj")) engine.PushChar(c);
+    EXPECT_EQ(engine.Peek(), L"aaccj");
+
+    engine.Reset();
+    for (wchar_t c : std::wstring(L"aaardvark")) engine.PushChar(c);
+    EXPECT_EQ(engine.Peek(), L"aardvark");
+}
+
 // C++ twin: TelexEngineTest.StrokeD_AbbrevChain_*.
 TEST_F(RustInputEngineTest, StrokeD_AbbrevChain_PLHD_Parity) {
     TypingConfig config;
