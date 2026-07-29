@@ -34,13 +34,23 @@
 
         <!-- Credits block -->
         <div class="credits-section">
-            <div class="credit-row">
+            <div class="credit-row clickable-copy" id="row-version" title="Click để sao chép thông tin phiên bản" data-i18n-title="s.click_to_copy">
                 <span class="credit-label">Version:</span>
                 <span class="credit-value" id="val-version">-</span>
+                <span class="copy-icon-inline">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 256 256">
+                        <path fill="currentColor" d="M216 32H88a16 16 0 0 0-16 16v40H48a16 16 0 0 0-16 16v112a16 16 0 0 0 16 16h128a16 16 0 0 0 16-16v-40h40a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16m-40 184H48V104h128Zm40-56h-24V96a16 16 0 0 0-16-16H88V48h128Z"/>
+                    </svg>
+                </span>
             </div>
-            <div class="credit-row">
+            <div class="credit-row clickable-copy" id="row-build-time" title="Click để sao chép thông tin phiên bản" data-i18n-title="s.click_to_copy">
                 <span class="credit-label">Build time:</span>
                 <span class="credit-value" id="val-build-time">-</span>
+                <span class="copy-icon-inline">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 256 256">
+                        <path fill="currentColor" d="M216 32H88a16 16 0 0 0-16 16v40H48a16 16 0 0 0-16 16v112a16 16 0 0 0 16 16h128a16 16 0 0 0 16-16v-40h40a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16m-40 184H48V104h128Zm40-56h-24V96a16 16 0 0 0-16-16H88V48h128Z"/>
+                    </svg>
+                </span>
             </div>
             <div class="credit-row">
                 <span class="credit-label">Author:</span>
@@ -104,6 +114,23 @@
                 }
             };
         });
+
+        function copyAboutVersionInfo() {
+            var verEl = document.getElementById("val-version");
+            var buildEl = document.getElementById("val-build-time");
+            var ver = verEl ? verEl.textContent.trim() : "";
+            var build = buildEl ? buildEl.textContent.trim() : "";
+            var fullStr = "VKey v" + ver + " (Build: " + build + ")";
+            if (copyToClipboard(fullStr)) {
+                showToastI18n("Đã sao chép thông tin phiên bản vào bộ nhớ tạm", "Copied version info to clipboard");
+            }
+        }
+
+        var rowVer = document.getElementById("row-version");
+        if (rowVer) rowVer.onclick = copyAboutVersionInfo;
+
+        var rowBuild = document.getElementById("row-build-time");
+        if (rowBuild) rowBuild.onclick = copyAboutVersionInfo;
     </script>
 </body>
 

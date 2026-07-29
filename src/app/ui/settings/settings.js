@@ -22,7 +22,23 @@ document.on("ready", function () {
     initializeSwitchKeyDisplay();
     initializeTabPanels();
     initializeDropdownTooltips();
+    initializeVersionCopy();
 });
+
+// Initialize click-to-copy for version info
+function initializeVersionCopy() {
+    var container = document.getElementById("version-copy-container");
+    if (container) {
+        container.on("click", function () {
+            var verSpan = document.getElementById("app-version-number");
+            var verText = verSpan ? verSpan.textContent.trim() : "";
+            var fullStr = "VKey v" + verText;
+            if (copyToClipboard(fullStr)) {
+                showToastI18n("Đã sao chép thông tin phiên bản vào bộ nhớ tạm", "Copied version info to clipboard");
+            }
+        });
+    }
+}
 
 // Set tooltip on all dropdowns to show only the selected item text
 function initializeDropdownTooltips() {

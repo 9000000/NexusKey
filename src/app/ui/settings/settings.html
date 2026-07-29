@@ -719,8 +719,17 @@
                         <div class="tab-body about-content">
                             <p class="app-name">VKey</p>
                             <p class="app-tagline" data-i18n="s.tagline">Bộ gõ Tiếng Việt giao diện hiện đại</p>
-                            <p class="app-version"><span data-i18n="s.version_label">Phiên bản:</span> <span
-                                    id="app-version-number">X.X.X</span> (Sciter Edition)</p>
+                            <p class="app-version clickable-version" id="version-copy-container"
+                                title="Click để sao chép thông tin phiên bản" data-i18n-title="s.click_to_copy"><span
+                                    data-i18n="s.version_label">Phiên bản:</span> <span
+                                    id="app-version-number">X.X.X</span> (Sciter Edition)
+                                <span class="copy-badge">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 256 256">
+                                        <path fill="currentColor"
+                                            d="M216 32H88a16 16 0 0 0-16 16v40H48a16 16 0 0 0-16 16v112a16 16 0 0 0 16 16h128a16 16 0 0 0 16-16v-40h40a16 16 0 0 0 16-16V48a16 16 0 0 0-16-16m-40 184H48V104h128Zm40-56h-24V96a16 16 0 0 0-16-16H88V48h128Z"/>
+                                    </svg>
+                                </span>
+                            </p>
                             <p class="app-author"><span data-i18n="s.dev_label">Author:</span>
                                 <strong>PhatMT97</strong>
                             </p>

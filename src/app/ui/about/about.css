@@ -103,6 +103,33 @@ body {
     font-weight: 700;
 }
 
+.credit-row.clickable-copy {
+    cursor: pointer;
+    border-radius: 4px;
+    padding: 6px 4px;
+    transition: background 0.15s ease;
+}
+
+.credit-row.clickable-copy:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+body.dark .credit-row.clickable-copy:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.copy-icon-inline {
+    margin-left: 6px;
+    opacity: 0.4;
+    vertical-align: middle;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.credit-row.clickable-copy:hover .copy-icon-inline {
+    opacity: 1;
+    transform: scale(1.15);
+}
+
 .buttons-section {
     flow: horizontal;
     justify-content: center;

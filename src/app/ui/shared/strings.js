@@ -118,6 +118,9 @@ var STRINGS = {
         "s.auto_update": "Auto-check for updates",
         "s.check_now": "Check now",
         "s.update_tooltip": "Check for new version on startup",
+        "s.click_to_copy": "Click to copy version info",
+        "s.copy_version_tooltip": "Copy version & build info",
+        "s.copied_version": "Copied version info to clipboard",
         "s.sponsor_p1": "Free code signing on Windows provided by",
         "s.sponsor_p2": ", certificate by",
 
