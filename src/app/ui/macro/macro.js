@@ -9,6 +9,8 @@ var selectedMacroName = null;
 var checkedMacroNames = new Set();
 var lastClickedKey = null;
 var lastShiftRangeKeys = null;
+var shiftBaseMacroNames = null;
+var shiftCtrlOverrides = null;
 var searchQuery = "";
 
 document.ready = function () {
@@ -45,9 +47,9 @@ function initMacroDialog() {
     if (searchInput) {
         searchInput.addEventListener("input", function () {
             searchQuery = this.value.trim().toLowerCase();
-            // The range is indexed against the old visible set — resizing it
-            // after a filter change would uncheck rows the user can't see.
-            lastShiftRangeKeys = null;
+            // A range is indexed against the previous visible set. Keep the
+            // checked items, but require a fresh anchor in the filtered list.
+            resetShiftSelectionSession(true);
             renderMacroList();
         });
     }
@@ -91,7 +93,7 @@ function getVisibleMacroKeys() {
 }
 
 function onToggleSelectAll(isChecked) {
-    lastShiftRangeKeys = null;
+    resetShiftSelectionSession(true);
     var visibleKeys = getVisibleMacroKeys();
     for (var i = 0; i < visibleKeys.length; i++) {
         if (isChecked) {
@@ -190,8 +192,7 @@ function updateButtonStates() {
 function clearSelection() {
     selectedMacroName = null;
     checkedMacroNames.clear();
-    lastClickedKey = null;
-    lastShiftRangeKeys = null;
+    resetShiftSelectionSession(true);
 
     var nameField = document.getElementById("macro-name");
     var contentField = document.getElementById("macro-content");
@@ -328,8 +329,7 @@ function triggerAction(action) {
 // Called by C++ to start populating list
 function clearMacroList() {
     allMacros.clear();
-    lastClickedKey = null;
-    lastShiftRangeKeys = null;
+    resetShiftSelectionSession(true);
     var list = document.getElementById("macro-list");
     if (list) list.innerHTML = "";
     var emptyEl = document.getElementById("macro-list-empty");
@@ -365,6 +365,35 @@ function updateCheckboxesUI() {
     }
 }
 
+function resetShiftSelectionSession(clearAnchor) {
+    lastShiftRangeKeys = null;
+    shiftBaseMacroNames = null;
+    shiftCtrlOverrides = null;
+    if (clearAnchor) {
+        lastClickedKey = null;
+    }
+}
+
+function setMacroChecked(name, isChecked, isCtrlClick) {
+    if (isChecked) {
+        checkedMacroNames.add(name);
+    } else {
+        checkedMacroNames.delete(name);
+    }
+
+    if (isCtrlClick) {
+        // Ctrl is an overlay on the current range. Recording the resulting
+        // state keeps the one-row toggle intact when Shift later resizes.
+        if (lastShiftRangeKeys && shiftCtrlOverrides) {
+            shiftCtrlOverrides.set(name, isChecked);
+        }
+        return;
+    }
+
+    resetShiftSelectionSession(false);
+    lastClickedKey = name;
+}
+
 function applyShiftRange(currentKey) {
     var visibleKeys = getVisibleMacroKeys();
     var currentIdx = visibleKeys.indexOf(currentKey);
@@ -372,9 +401,16 @@ function applyShiftRange(currentKey) {
 
     if (anchorIdx === -1 || currentIdx === -1) {
         checkedMacroNames.add(currentKey);
+        resetShiftSelectionSession(false);
         lastClickedKey = currentKey;
-        lastShiftRangeKeys = null;
         return;
+    }
+
+    if (!lastShiftRangeKeys || !shiftBaseMacroNames || !shiftCtrlOverrides) {
+        // Preserve everything selected before the first Shift gesture. Range
+        // resizing then replaces only the range layer, not independent picks.
+        shiftBaseMacroNames = new Set(checkedMacroNames);
+        shiftCtrlOverrides = new Map();
     }
 
     var start = Math.min(anchorIdx, currentIdx);
@@ -384,21 +420,25 @@ function applyShiftRange(currentKey) {
         newRangeKeys.add(visibleKeys[k]);
     }
 
-    // Uncheck items from previous shift range that are outside the updated range
-    if (lastShiftRangeKeys) {
-        var prevKeysArr = Array.from(lastShiftRangeKeys);
-        for (var p = 0; p < prevKeysArr.length; p++) {
-            if (!newRangeKeys.has(prevKeysArr[p])) {
-                checkedMacroNames.delete(prevKeysArr[p]);
-            }
-        }
+    checkedMacroNames.clear();
+
+    var baseKeys = Array.from(shiftBaseMacroNames);
+    for (var b = 0; b < baseKeys.length; b++) {
+        checkedMacroNames.add(baseKeys[b]);
     }
 
-    // Add all keys in the new range
     var newKeysArr = Array.from(newRangeKeys);
     for (var n = 0; n < newKeysArr.length; n++) {
         checkedMacroNames.add(newKeysArr[n]);
     }
+
+    shiftCtrlOverrides.forEach(function (overrideChecked, name) {
+        if (overrideChecked) {
+            checkedMacroNames.add(name);
+        } else {
+            checkedMacroNames.delete(name);
+        }
+    });
 
     lastShiftRangeKeys = newRangeKeys;
 }
@@ -428,8 +468,7 @@ function renderMacroList() {
     }
 
     if (lastClickedKey && !allMacros.has(lastClickedKey)) {
-        lastClickedKey = null;
-        lastShiftRangeKeys = null;
+        resetShiftSelectionSession(true);
     }
 
     var sortedKeys = Array.from(allMacros.keys()).sort();
@@ -481,17 +520,7 @@ function renderMacroList() {
                 if (e.shiftKey) {
                     applyShiftRange(name);
                 } else {
-                    // Ctrl+click only toggles this item. Keep the existing Shift
-                    // anchor/range so the next Shift+click can still resize it.
-                    if (!e.ctrlKey) {
-                        lastShiftRangeKeys = null;
-                        lastClickedKey = name;
-                    }
-                    if (this.checked) {
-                        checkedMacroNames.add(name);
-                    } else {
-                        checkedMacroNames.delete(name);
-                    }
+                    setMacroChecked(name, this.checked, e.ctrlKey);
                 }
                 updateCheckboxesUI();
                 updateButtonStates();
@@ -504,15 +533,11 @@ function renderMacroList() {
                 updateCheckboxesUI();
                 updateButtonStates();
             } else if (e.ctrlKey) {
-                if (checkedMacroNames.has(name)) {
-                    checkedMacroNames.delete(name);
-                } else {
-                    checkedMacroNames.add(name);
-                }
+                setMacroChecked(name, !checkedMacroNames.has(name), true);
                 updateCheckboxesUI();
                 updateButtonStates();
             } else {
-                lastShiftRangeKeys = null;
+                resetShiftSelectionSession(false);
                 lastClickedKey = name;
                 selectMacroItem(item, name, content);
             }

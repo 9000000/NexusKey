@@ -669,6 +669,17 @@ add_subdirectory(extern/googletest EXCLUDE_FROM_ALL)
 
 enable_testing()
 
+# Sciter's macro selection state is plain JavaScript. Register its regression
+# suite with CTest when Node is available (including GitHub's Windows runners).
+find_program(VKEY_NODE_EXECUTABLE NAMES node nodejs)
+if(VKEY_NODE_EXECUTABLE)
+    add_test(
+        NAME MacroSelectionJsTest
+        COMMAND "${VKEY_NODE_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/ui/MacroSelectionTest.js"
+    )
+endif()
+
 # Tests are excluded from ALL - build explicitly with --target VKeyTests
 set(NEXTKEY_TEST_SOURCES
     tests/TelexEngineTest.cpp
