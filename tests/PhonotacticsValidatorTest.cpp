@@ -1207,6 +1207,19 @@ TEST_F(PhonotacticsValidatorVCPairTest, UÊ_Ch_Valid) {
     EXPECT_EQ(V({T(L'u'), TM(L'e', Modifier::Circumflex), T(L'c'), T(L'h')}), SyllableState::Valid);
 }
 
+TEST_F(PhonotacticsValidatorVCPairTest, UÊ_C_PrefixOfUêch) {
+    // "uêc" is no rime, but a lone c can still grow into the allowed "ch".
+    // Invalid here would latch spell check off and kill "khuếch" when the
+    // circumflex is typed before the coda's 'h' (khuecehs).
+    EXPECT_EQ(V({T(L'u'), TM(L'e', Modifier::Circumflex), T(L'c')}),
+              SyllableState::ValidPrefix);
+}
+
+TEST_F(PhonotacticsValidatorVCPairTest, UY_C_PrefixOfUych) {
+    // Same for "huých" when the tone lands before the 'h' (huycsh).
+    EXPECT_EQ(V({T(L'u'), T(L'y'), T(L'c')}), SyllableState::ValidPrefix);
+}
+
 TEST_F(PhonotacticsValidatorVCPairTest, UÊ_N_Valid) {
     EXPECT_EQ(V({T(L'u'), TM(L'e', Modifier::Circumflex), T(L'n')}), SyllableState::Valid);
 }

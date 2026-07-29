@@ -2677,6 +2677,19 @@ TEST_F(CircumflexFreeMarkSpellOnTest, CuaPlusA_Grave_AdjacentRejected) {
     EXPECT_EQ(engine_->Peek(), L"cùaa");
 }
 
+// Mark/tone typed before the coda's 'h' must still reach the ch-final word —
+// "khuêc"/"huyc" are prefixes of "khuếch"/"huých", not dead ends. Rust engine
+// already allowed these orders; the C++ engine latched spell check off.
+TEST_F(CircumflexFreeMarkSpellOnTest, KhuechEarlyCircumflex_ReachesKhuech) {
+    TypeString(*engine_, L"khuecehs");  // circumflex before the 'h'
+    EXPECT_EQ(engine_->Peek(), L"khuếch");
+}
+
+TEST_F(CircumflexFreeMarkSpellOnTest, HuychEarlyTone_ReachesHuych) {
+    TypeString(*engine_, L"huycsh");  // sắc before the 'h'
+    EXPECT_EQ(engine_->Peek(), L"huých");
+}
+
 // Regression: legitimate adjacent circumflex still applies.
 TEST_F(CircumflexFreeMarkSpellOnTest, BaPlusA_AdjacentCircumflexes) {
     TypeString(*engine_, L"baa");  // ba + a → bâ

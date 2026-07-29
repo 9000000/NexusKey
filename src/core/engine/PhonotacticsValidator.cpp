@@ -479,7 +479,18 @@ SyllableState ValidateDecomposition(const CharStateT* states, size_t count,
     if (allowed != 0) {
         uint16_t finalBit = FinalConsonantBit(&states[pos], finalLen);
         if (finalBit != 0 && !(allowed & finalBit)) {
-            return SyllableState::Invalid;
+            // A lone c/n can still grow into an allowed 2-letter final
+            // (c→ch, n→ng/nh). "khuêc"/"huyc" are no syllables, but they are
+            // the only route to "khuếch"/"huých" when the mark or tone is
+            // typed before the coda's 'h' — Invalid here latches spell check
+            // off and the promotion never happens (Rust engine allows it).
+            uint16_t grown = 0;
+            if (finalLen == 1) {
+                if (states[pos].base == L'c') grown = F_ch;
+                else if (states[pos].base == L'n') grown = F_ng | F_nh;
+            }
+            if (grown == 0 || !(allowed & grown)) return SyllableState::Invalid;
+            return SyllableState::ValidPrefix;
         }
     }
 
