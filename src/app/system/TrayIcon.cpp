@@ -189,9 +189,11 @@ void TrayIcon::NotifyIconChanged() noexcept {
 }
 
 void TrayIcon::UpdateTooltip() noexcept try {
+    // Not a StringId: "V"/"E" reads the same in both UI languages, and the
+    // localized TIP_* strings still have to spell the mode out for the TSF
+    // language-bar button, which has no app/engine line to give a letter meaning.
     const std::wstring text = FormatTrayStatusText(
-        S(vietnameseMode_ ? StringId::TIP_VIETNAMESE : StringId::TIP_ENGLISH),
-        appContext_);
+        vietnameseMode_ ? L"VKey - V" : L"VKey - E", appContext_);
     StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), text.c_str());
 } catch (...) {}
 
@@ -205,7 +207,6 @@ void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bo
     showTsfIndicator_ = showTsfIndicator;
 
     RefreshIcon();
-    UpdateTooltip();
     NotifyIconChanged();
 }
 

@@ -93,17 +93,7 @@ static bool g_settingsOpen = false;
 
 static void SpawnSettingsDialog() {
     if (g_settingsOpen) {
-        // Already open — try to bring to front
-        HWND existing = FindWindowW(L"VKeyClassicSettings", nullptr);
-        if (existing) {
-            if (IsIconic(existing)) {
-                ShowWindow(existing, SW_RESTORE);
-            } else {
-                ShowWindow(existing, SW_SHOW);
-            }
-            SetForegroundWindow(existing);
-            BringWindowToTop(existing);
-        }
+        FocusExistingWindow(FindWindowW(L"VKeyClassicSettings", nullptr));
         return;
     }
 
@@ -501,8 +491,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                 GetWindowThreadProcessId(existingTrayWnd, &existingPid);
                 if (existingPid != 0) {
                     AllowSetForegroundWindow(existingPid);
-                } else {
-                    AllowSetForegroundWindow(ASFW_ANY);
                 }
                 PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
             }

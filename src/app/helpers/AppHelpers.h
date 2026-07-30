@@ -160,6 +160,16 @@ inline void ParseConfigLines(std::istream& input, Handler handler) {
 /// by using `rcWork` instead of `rcMonitor`. Replaces the old
 /// `GetSystemMetrics(SM_CXSCREEN/SM_CYSCREEN)` pattern, which always
 /// centers on the primary screen and ignores the work area.
+/// Surface an already-open window (settings, sub-dialogs) instead of spawning a
+/// second one. SetForegroundWindow only lands if this process holds the
+/// foreground privilege — a background process must be granted it first via
+/// AllowSetForegroundWindow() from whoever is currently foreground.
+inline void FocusExistingWindow(HWND hwnd) noexcept {
+    if (!hwnd) return;
+    ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+    SetForegroundWindow(hwnd);
+}
+
 [[nodiscard]] inline POINT GetCenteredPos(HWND referenceHwnd, int width, int height) noexcept {
     HMONITOR mon = MonitorFromWindow(referenceHwnd ? referenceHwnd : GetDesktopWindow(),
                                      MONITOR_DEFAULTTOPRIMARY);

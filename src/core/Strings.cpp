@@ -25,8 +25,8 @@ static const wchar_t* const kVietnamese[] = {
     L"Thoát",                                        // MENU_EXIT
     L"Tắt tự khởi động lại",                         // MENU_STOP_WATCHDOG
     L"Bật tự khởi động lại",                         // MENU_ENABLE_WATCHDOG
-    L"VKey - V",                                    // TIP_VIETNAMESE
-    L"VKey - E",                                    // TIP_ENGLISH
+    L"VKey - Tiếng Việt",                        // TIP_VIETNAMESE
+    L"VKey - English",                            // TIP_ENGLISH
     L"Giới thiệu VKey",                          // ABOUT_TITLE
     L"VKey - Bộ gõ Tiếng Việt\n"                 // ABOUT_BODY
     L"Giải pháp gõ Tiếng Việt hiện đại cho Windows.\n\n"
@@ -113,8 +113,8 @@ static const wchar_t* const kEnglish[] = {
     L"Exit",                                          // MENU_EXIT
     L"Stop auto-restart",                             // MENU_STOP_WATCHDOG
     L"Enable auto-restart",                           // MENU_ENABLE_WATCHDOG
-    L"VKey - V",                                    // TIP_VIETNAMESE
-    L"VKey - E",                                    // TIP_ENGLISH
+    L"VKey - Vietnamese",                         // TIP_VIETNAMESE
+    L"VKey - English",                            // TIP_ENGLISH
     L"About VKey",                                // ABOUT_TITLE
     L"VKey Vietnamese Input\n"                    // ABOUT_BODY
     L"A modern Vietnamese typing solution for Windows.\n\n"

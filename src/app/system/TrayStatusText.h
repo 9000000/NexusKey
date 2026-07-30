@@ -20,11 +20,8 @@ struct TrayStatusContext {
     bool operator==(const TrayStatusContext&) const = default;
 };
 
-/// `modeLabel` is the localized V/E line (StringId::TIP_VIETNAMESE / _ENGLISH),
-/// passed in rather than looked up so this stays pure and language-independent.
-///
-/// `modeLabel` is the localized V/E line (StringId::TIP_VIETNAMESE / _ENGLISH),
-/// passed in rather than looked up so this stays pure and language-independent.
+/// `modeLabel` is the leading V/E line, passed in rather than looked up so this
+/// stays pure and language-independent.
 ///
 /// An empty exeName means no focus classification has landed yet (cold start).
 /// Report the mode alone instead of guessing engine/method — the first

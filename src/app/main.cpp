@@ -307,27 +307,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             // Surface the settings dialog of the existing instance to indicate the app is active.
             HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
             if (existingTrayWnd) {
-                // Grant foreground privilege to the existing instance process (and any processes it spawns)
+                // Hand our foreground privilege to the existing instance (and to
+                // the settings subprocess it spawns) before asking it to show the
+                // dialog — it is a background process and cannot take foreground
+                // on its own. Focusing the dialog from here instead would race:
+                // the posted message has not been handled yet, so the window
+                // usually does not exist at this point.
                 DWORD existingPid = 0;
                 GetWindowThreadProcessId(existingTrayWnd, &existingPid);
                 if (existingPid != 0) {
                     AllowSetForegroundWindow(existingPid);
-                } else {
-                    AllowSetForegroundWindow(ASFW_ANY);
                 }
-
                 PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
-
-                HWND existingSettings = GetSettingsHwnd();
-                if (existingSettings) {
-                    if (IsIconic(existingSettings)) {
-                        ShowWindow(existingSettings, SW_RESTORE);
-                    } else {
-                        ShowWindow(existingSettings, SW_SHOW);
-                    }
-                    SetForegroundWindow(existingSettings);
-                    BringWindowToTop(existingSettings);
-                }
             }
 
             NEXTKEY_LOG(L"Another instance is already running. Exiting.");
@@ -1201,13 +1192,7 @@ void SpawnSettingsSubprocess() {
     // Check if already open (single-instance)
     HWND existing = GetSettingsHwnd();
     if (existing) {
-        if (IsIconic(existing)) {
-            ShowWindow(existing, SW_RESTORE);
-        } else {
-            ShowWindow(existing, SW_SHOW);
-        }
-        SetForegroundWindow(existing);
-        BringWindowToTop(existing);
+        FocusExistingWindow(existing);
 #ifdef VKEY_HOOK_ENGINE
         NotifySettingsMode(g_hookEngine.IsVietnameseMode());
 #endif
