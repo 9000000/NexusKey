@@ -1008,15 +1008,18 @@ static void ApplyConfigChange(const TypingConfig& config) {
 }
 
 /// Applies a spell-check level chosen from the tray menu. Entering Advanced
-/// installs the trusted Rust engine if needed; leaving Advanced needs a
-/// restart to release it (Yes/No prompt). The level change itself always
-/// applies — declining the restart just defers releasing the engine.
+/// installs the trusted Rust engine if needed; either crossing of the Advanced
+/// boundary needs a restart to load or release it (Yes/No prompt). The level
+/// change itself always applies — declining the restart just defers loading the
+/// engine into hosts that are already running (VKey itself picks it up live).
 static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
     auto config = ConfigManager::LoadOrDefault();
     SpellCheckLevel oldLevel = config.GetSpellCheckLevel();
+    const bool enteringAdvanced =
+        newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced;
 
 #if defined(VKEY_USE_RUST_ENGINE)
-    if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
+    if (enteringAdvanced) {
         const HWND parent = g_trayIcon.GetMessageWindow();
         const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(parent);
         if (status != AdvancedEngineStatus::Ready) {
@@ -1031,8 +1034,10 @@ static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
         }
     }
 #endif
-    if (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced) {
-        int result = MessageBoxW(g_trayIcon.GetMessageWindow(), S(StringId::SPELL_ADVANCED_CLOSE_APP),
+    if (enteringAdvanced ||
+        (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced)) {
+        int result = MessageBoxW(g_trayIcon.GetMessageWindow(),
+            S(enteringAdvanced ? StringId::SPELL_ADVANCED_LOAD_APP : StringId::SPELL_ADVANCED_CLOSE_APP),
             L"VKey", MB_YESNO | MB_ICONQUESTION);
         if (result == IDYES) {
             config.SetSpellCheckLevel(newLevel);

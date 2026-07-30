@@ -91,6 +91,7 @@ static const wchar_t* const kVietnamese[] = {
     L"File VKey Engine tải về không khớp bản tin cậy. Chế độ Nâng cao chưa được bật.", // SPELL_ADVANCED_VERIFY_FAILED
     L"Không thể cài vkey_engine.dll cạnh VKey. Hãy đóng các phiên bản VKey khác và kiểm tra quyền ghi của thư mục rồi thử lại.", // SPELL_ADVANCED_INSTALL_FAILED
     L"Bạn cần khởi động lại VKey để giải phóng VKey Engine khỏi bộ nhớ.\nBạn có muốn khởi động lại VKey ngay?",  // SPELL_ADVANCED_CLOSE_APP
+    L"Chế độ Nâng cao sử dụng VKey Engine (Rust).\nKhởi động lại VKey để engine được nạp cho cả những ứng dụng đang mở.\nBạn có muốn khởi động lại VKey ngay?",  // SPELL_ADVANCED_LOAD_APP
     L"Bạn có muốn xóa gõ tắt này không?",             // MACRO_CONFIRM_DELETE
     L"Bạn có chắc chắn muốn xóa %d từ gõ tắt đã chọn?", // MACRO_CONFIRM_DELETE_MULTI
 };
@@ -178,6 +179,7 @@ static const wchar_t* const kEnglish[] = {
     L"The downloaded VKey Engine does not match the trusted build. Advanced mode was not enabled.", // SPELL_ADVANCED_VERIFY_FAILED
     L"Unable to install vkey_engine.dll next to VKey. Close other VKey instances, check the folder's write permission, and try again.", // SPELL_ADVANCED_INSTALL_FAILED
     L"VKey needs to restart to release VKey Engine from memory.\nDo you want to restart VKey now?",  // SPELL_ADVANCED_CLOSE_APP
+    L"Advanced mode uses VKey Engine (Rust).\nRestart VKey so the engine also loads for apps that are already open.\nDo you want to restart VKey now?",  // SPELL_ADVANCED_LOAD_APP
     L"Delete this shortcut?",                        // MACRO_CONFIRM_DELETE
     L"Delete the %d selected shortcuts?",            // MACRO_CONFIRM_DELETE_MULTI
 };

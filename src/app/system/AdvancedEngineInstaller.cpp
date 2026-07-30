@@ -7,10 +7,12 @@
 #include "AdvancedEngineStorage.h"
 #include "UpdateChecker.h"
 #include "core/CrashLog.h"
+#include "core/Logger.h"
 #include "core/Strings.h"
 #include "core/Version.h"
 #include "core/WinFileSystem.h"
 #include "core/engine/RustEngineTrust.h"
+#include "core/engine/RustInputEngine.h"
 
 #include <commctrl.h>
 #include <shellapi.h>
@@ -468,13 +470,28 @@ InstallChoice ShowInstallFailure(HWND parent, InstallResult result) noexcept {
     return button == kManualButtonId ? InstallChoice::Manual : InstallChoice::Standard;
 }
 
+/// Trusted on disk is not the same as usable in this process: an ABI or symbol
+/// mismatch — or a load failure this process already latched — leaves
+/// EngineFactory on TypingEngine, so Advanced would read as enabled and do
+/// nothing at all. Resolve the library here, while there is still UI to report
+/// through, instead of failing silently on the first keystroke.
+AdvancedEngineStatus ReadyIfLoadable(HWND parent) {
+    if (RustInputEngine::LibraryAvailable()) {
+        return AdvancedEngineStatus::Ready;
+    }
+    Logger::Log(L"[Engine] Advanced rejected: %ls", RustInputEngine::UnavailableReason().c_str());
+    return ShowInstallFailure(parent, InstallResult::ActivationFailure) == InstallChoice::Manual
+        ? AdvancedEngineStatus::ManualRequested
+        : AdvancedEngineStatus::Unavailable;
+}
+
 } // namespace
 
 AdvancedEngineStatus AdvancedEngineInstaller::EnsureInstalledWithUi(HWND parent) {
     try {
         const std::wstring directory = ModuleDirectory(nullptr);
         if (!directory.empty() && IsTrustedInstalledEngine(EnginePath(directory))) {
-            return AdvancedEngineStatus::Ready;
+            return ReadyIfLoadable(parent);
         }
 
         const InstallChoice choice = ShowInstallChoice(parent);
@@ -516,7 +533,7 @@ AdvancedEngineStatus AdvancedEngineInstaller::EnsureInstalledWithUi(HWND parent)
         // download that finished as the user dismissed the dialog is installed
         // and must not be thrown away.
         if (state->result == InstallResult::Installed) {
-            return AdvancedEngineStatus::Ready;
+            return ReadyIfLoadable(parent);
         }
         if (!completed || state->result == InstallResult::Cancelled) {
             return AdvancedEngineStatus::Declined;

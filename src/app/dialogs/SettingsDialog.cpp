@@ -864,9 +864,11 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
     else if (id == L"spell-check-level") {
         SpellCheckLevel oldLevel = config_.GetSpellCheckLevel();
         SpellCheckLevel newLevel = static_cast<SpellCheckLevel>(value);
+        const bool enteringAdvanced =
+            newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced;
 
 #if defined(VKEY_USE_RUST_ENGINE)
-        if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
+        if (enteringAdvanced) {
             const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(get_hwnd());
             if (status != AdvancedEngineStatus::Ready) {
                 // oldLevel, not Standard: the guard above allows Off here, and a
@@ -890,8 +892,10 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
 
         config_.SetSpellCheckLevel(newLevel);
 
-        if (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced) {
-            int result = MessageBoxW(get_hwnd(), S(StringId::SPELL_ADVANCED_CLOSE_APP),
+        if (enteringAdvanced ||
+            (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced)) {
+            int result = MessageBoxW(get_hwnd(),
+                S(enteringAdvanced ? StringId::SPELL_ADVANCED_LOAD_APP : StringId::SPELL_ADVANCED_CLOSE_APP),
                 L"VKey", MB_YESNO | MB_ICONQUESTION);
             if (result == IDYES) {
                 saveSettings();
