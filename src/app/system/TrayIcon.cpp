@@ -191,7 +191,7 @@ void TrayIcon::NotifyIconChanged() noexcept {
 void TrayIcon::UpdateTooltip() noexcept try {
     const std::wstring text = FormatTrayStatusText(
         S(vietnameseMode_ ? StringId::TIP_VIETNAMESE : StringId::TIP_ENGLISH),
-        appContext_, showTsfIndicator_);
+        appContext_);
     StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), text.c_str());
 } catch (...) {}
 
@@ -205,7 +205,7 @@ void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bo
     showTsfIndicator_ = showTsfIndicator;
 
     RefreshIcon();
-    UpdateTooltip();  // #209: the indicator setting also gates the method text
+    UpdateTooltip();
     NotifyIconChanged();
 }
 

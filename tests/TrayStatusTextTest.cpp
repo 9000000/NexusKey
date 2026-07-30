@@ -8,22 +8,22 @@
 namespace NextKey {
 namespace {
 
-constexpr std::wstring_view kModeV = L"VKey - Vietnamese";
-constexpr std::wstring_view kModeE = L"VKey - English";
+constexpr std::wstring_view kModeV = L"VKey - V";
+constexpr std::wstring_view kModeE = L"VKey - E";
 
 // Cold start: no focus classification has landed, so the tooltip must stay the
 // plain mode line rather than guess an engine/method it has not observed.
 TEST(TrayStatusTextTest, EmptyAppContextShowsModeOnly) {
-    EXPECT_EQ(FormatTrayStatusText(kModeV, TrayStatusContext{}, true), kModeV);
-    EXPECT_EQ(FormatTrayStatusText(kModeE, TrayStatusContext{}, false), kModeE);
+    EXPECT_EQ(FormatTrayStatusText(kModeV, TrayStatusContext{}), kModeV);
+    EXPECT_EQ(FormatTrayStatusText(kModeE, TrayStatusContext{}), kModeE);
 }
 
 TEST(TrayStatusTextTest, ModeLabelAlwaysLeadsTheLine) {
     const TrayStatusContext context{.exeName = L"notepad.exe"};
 
     EXPECT_EQ(
-        FormatTrayStatusText(kModeE, context, true),
-        L"VKey - English \x2014 notepad.exe \x2022 C++ \x2022 Hook");
+        FormatTrayStatusText(kModeE, context),
+        L"VKey - E \x2014 notepad.exe \x2022 C++ \x2022 Hook");
 }
 
 TEST(TrayStatusTextTest, FullContextUsesStableSingleLineOrder) {
@@ -35,14 +35,12 @@ TEST(TrayStatusTextTest, FullContextUsesStableSingleLineOrder) {
     };
 
     EXPECT_EQ(
-        FormatTrayStatusText(kModeV, context, true),
-        L"VKey - Vietnamese \x2014 chrome.exe \x2022 Rust \x2022 TSF "
+        FormatTrayStatusText(kModeV, context),
+        L"VKey - V \x2014 chrome.exe \x2022 Rust \x2022 TSF "
         L"\x2022 Smart Switch");
 }
 
-// #209: with the "T" indicator off the icon is plain V/E, so the tooltip must
-// not mention the input method either — in TSF hosts or Hook hosts.
-TEST(TrayStatusTextTest, MethodTextIsGatedByTheIndicatorSetting) {
+TEST(TrayStatusTextTest, MethodTextIsAlwaysIncluded) {
     const TrayStatusContext tsf{
         .exeName = L"chrome.exe",
         .isTsf = true,
@@ -50,16 +48,16 @@ TEST(TrayStatusTextTest, MethodTextIsGatedByTheIndicatorSetting) {
     };
 
     EXPECT_EQ(
-        FormatTrayStatusText(kModeV, tsf, false),
-        L"VKey - Vietnamese \x2014 chrome.exe \x2022 Rust");
+        FormatTrayStatusText(kModeV, tsf),
+        L"VKey - V \x2014 chrome.exe \x2022 Rust \x2022 TSF");
 
     const TrayStatusContext hook{.exeName = L"chrome.exe"};
     EXPECT_EQ(
-        FormatTrayStatusText(kModeV, hook, false),
-        L"VKey - Vietnamese \x2014 chrome.exe \x2022 C++");
+        FormatTrayStatusText(kModeV, hook),
+        L"VKey - V \x2014 chrome.exe \x2022 C++ \x2022 Hook");
 }
 
-TEST(TrayStatusTextTest, RuleSurvivesTheGatedMethod) {
+TEST(TrayStatusTextTest, RuleSurvivesWithMethod) {
     const TrayStatusContext context{
         .exeName = L"cmd.exe",
         .ruleText = L"Lock E",
@@ -67,8 +65,8 @@ TEST(TrayStatusTextTest, RuleSurvivesTheGatedMethod) {
     };
 
     EXPECT_EQ(
-        FormatTrayStatusText(kModeE, context, false),
-        L"VKey - English \x2014 cmd.exe \x2022 Rust \x2022 Lock E");
+        FormatTrayStatusText(kModeE, context),
+        L"VKey - E \x2014 cmd.exe \x2022 Rust \x2022 Hook \x2022 Lock E");
 }
 
 }  // namespace

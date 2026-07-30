@@ -23,17 +23,15 @@ struct TrayStatusContext {
 /// `modeLabel` is the localized V/E line (StringId::TIP_VIETNAMESE / _ENGLISH),
 /// passed in rather than looked up so this stays pure and language-independent.
 ///
-/// `showMethod` mirrors the icon's TSF-indicator setting (#209): when the "T"
-/// indicator is off the tooltip must not talk about the input method at all, so
-/// it matches the plain V/E icon it is attached to.
+/// `modeLabel` is the localized V/E line (StringId::TIP_VIETNAMESE / _ENGLISH),
+/// passed in rather than looked up so this stays pure and language-independent.
 ///
 /// An empty exeName means no focus classification has landed yet (cold start).
 /// Report the mode alone instead of guessing engine/method — the first
 /// classification arrives within one worker tick and fills the rest in.
 [[nodiscard]] inline std::wstring
 FormatTrayStatusText(std::wstring_view modeLabel,
-                     const TrayStatusContext& context,
-                     bool showMethod) {
+                     const TrayStatusContext& context) {
     if (context.exeName.empty()) return std::wstring{modeLabel};
 
     constexpr std::wstring_view kAppSeparator = L" \x2014 ";
@@ -50,10 +48,8 @@ FormatTrayStatusText(std::wstring_view modeLabel,
     text.append(context.exeName);
     text.append(kPartSeparator);
     text.append(engine);
-    if (showMethod) {
-        text.append(kPartSeparator);
-        text.append(method);
-    }
+    text.append(kPartSeparator);
+    text.append(method);
     if (!context.ruleText.empty()) {
         text.append(kPartSeparator);
         text.append(context.ruleText);
