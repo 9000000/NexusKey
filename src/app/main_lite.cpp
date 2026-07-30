@@ -227,8 +227,16 @@ static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
 
 #if defined(VKEY_USE_RUST_ENGINE)
     if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
-        if (AdvancedEngineInstaller::EnsureInstalledWithUi(g_trayIcon.GetMessageWindow()) !=
-            AdvancedEngineStatus::Ready) {
+        const HWND parent = g_trayIcon.GetMessageWindow();
+        const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(parent);
+        if (status != AdvancedEngineStatus::Ready) {
+            // oldLevel, not Standard: the guard above allows Off here, and a
+            // declined download is not a request to switch spell check on.
+            config.SetSpellCheckLevel(oldLevel);
+            ApplyConfigChange(config);
+            if (status == AdvancedEngineStatus::ManualRequested) {
+                AdvancedEngineInstaller::ShowManualInstallWithUi(parent);
+            }
             return;
         }
     }
@@ -505,13 +513,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
 #if defined(VKEY_USE_RUST_ENGINE)
     // Repair before HookEngine can cache a failed first load for this process.
-    // Only a declined prompt rewrites the stored level — a network or storage
-    // failure leaves Advanced set so the next launch retries (the release ZIP
-    // omits the engine, so this runs after every engine-changing update).
-    if (config.GetSpellCheckLevel() == SpellCheckLevel::Advanced &&
-        AdvancedEngineInstaller::EnsureInstalledWithUi(nullptr) == AdvancedEngineStatus::Declined) {
-        config.SetSpellCheckLevel(SpellCheckLevel::Standard);
-        (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
+    // Ready is the only state allowed to keep Advanced persisted. Decline,
+    // manual install, cancellation, and install failures all return to Standard
+    // so startup never repeats the prompt without another explicit selection.
+    if (config.GetSpellCheckLevel() == SpellCheckLevel::Advanced) {
+        const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(nullptr);
+        if (status != AdvancedEngineStatus::Ready) {
+            config.SetSpellCheckLevel(SpellCheckLevel::Standard);
+            (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
+            if (status == AdvancedEngineStatus::ManualRequested) {
+                AdvancedEngineInstaller::ShowManualInstallWithUi(nullptr);
+            }
+        }
     }
 #endif
 

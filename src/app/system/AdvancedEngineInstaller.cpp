@@ -12,6 +12,8 @@
 #include "core/WinFileSystem.h"
 #include "core/engine/RustEngineTrust.h"
 
+#include <commctrl.h>
+#include <shellapi.h>
 #include <winhttp.h>
 
 #include <array>
@@ -41,6 +43,17 @@ enum class InstallResult : std::uint8_t {
     StorageFailure,
     ActivationFailure,
 };
+
+enum class InstallChoice : std::uint8_t {
+    Automatic,
+    Manual,
+    Standard,
+};
+
+constexpr int kAutomaticButtonId = 1001;
+constexpr int kManualButtonId = 1002;
+constexpr int kStandardButtonId = 1003;
+constexpr int kOpenFolderButtonId = 1004;
 
 class UniqueInternet final {
 public:
@@ -272,14 +285,187 @@ InstallResult InstallEngine(std::atomic<bool>& cancel) noexcept {
     }
 }
 
-void ShowInstallFailure(HWND parent, InstallResult result) {
+[[nodiscard]] bool OpenShellTarget(HWND parent, LPCWSTR target) noexcept {
+    if (!target || *target == L'\0') {
+        return false;
+    }
+    const auto result = ::ShellExecuteW(parent, L"open", target, nullptr, nullptr, SW_SHOW);
+    return reinterpret_cast<INT_PTR>(result) > 32;
+}
+
+void ShowOpenTargetFailure(HWND parent, LPCWSTR target) noexcept {
+    try {
+        std::wstring content = S(StringId::SPELL_ADVANCED_OPEN_TARGET_FAILED);
+        if (target && *target != L'\0') {
+            content += L"\n\n";
+            content += target;
+        }
+        ::MessageBoxW(parent, content.c_str(), L"VKey", MB_OK | MB_ICONWARNING);
+    } catch (...) {
+        ::MessageBoxW(parent, S(StringId::SPELL_ADVANCED_OPEN_TARGET_FAILED), L"VKey", MB_OK | MB_ICONWARNING);
+    }
+}
+
+HRESULT CALLBACK AdvancedEngineDialogCallback(
+    HWND hwnd, UINT notification, WPARAM, LPARAM lParam, LONG_PTR) noexcept {
+    if (notification == TDN_CREATED) {
+        ::SetForegroundWindow(hwnd);
+        ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+    } else if (notification == TDN_HYPERLINK_CLICKED) {
+        const auto target = reinterpret_cast<LPCWSTR>(lParam);
+        if (!OpenShellTarget(hwnd, target)) {
+            ShowOpenTargetFailure(hwnd, target);
+        }
+    }
+    return S_OK;
+}
+
+void OpenManualInstallFlow(HWND parent) {
+    const std::wstring url = BuildAdvancedEngineReleaseUrl();
+    const std::wstring directory = ModuleDirectory(nullptr);
+
+    // Delegates the request to the default browser. VKey performs no network
+    // operation in the manual flow.
+    if (!OpenShellTarget(parent, url.c_str())) {
+        ShowOpenTargetFailure(parent, url.c_str());
+    }
+
+    std::wstring content = S(StringId::SPELL_ADVANCED_MANUAL_BODY);
+    content += directory.empty() ? L"-" : directory;
+    content += L"\n\n";
+    content += S(StringId::SPELL_ADVANCED_MANUAL_FINISH);
+    content += L"\n\nURL:\n";
+    content += url;
+
+    std::wstring footer = L"<a href=\"";
+    footer += url;
+    footer += L"\">";
+    footer += S(StringId::SPELL_ADVANCED_MANUAL_LINK);
+    footer += L"</a>";
+
+    TASKDIALOG_BUTTON buttons[] = {
+        {kOpenFolderButtonId, S(StringId::SPELL_ADVANCED_OPEN_FOLDER)},
+    };
+
+    TASKDIALOGCONFIG dialog{};
+    dialog.cbSize = sizeof(dialog);
+    dialog.hwndParent = parent;
+    dialog.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_ENABLE_HYPERLINKS | TDF_USE_COMMAND_LINKS;
+    dialog.dwCommonButtons = TDCBF_CLOSE_BUTTON;
+    dialog.pszWindowTitle = L"VKey";
+    dialog.pszMainIcon = TD_INFORMATION_ICON;
+    dialog.pszMainInstruction = S(StringId::SPELL_ADVANCED_MANUAL_TITLE);
+    dialog.pszContent = content.c_str();
+    dialog.pszFooter = footer.c_str();
+    dialog.pszFooterIcon = TD_INFORMATION_ICON;
+    dialog.pButtons = buttons;
+    dialog.cButtons = static_cast<UINT>(std::size(buttons));
+    dialog.nDefaultButton = IDCLOSE;
+    dialog.pfCallback = AdvancedEngineDialogCallback;
+
+    int button = 0;
+    if (FAILED(::TaskDialogIndirect(&dialog, &button, nullptr, nullptr))) {
+        content += L"\n\n";
+        content += S(StringId::SPELL_ADVANCED_OPEN_FOLDER);
+        content += L"?";
+        button = ::MessageBoxW(parent, content.c_str(), L"VKey", MB_YESNO | MB_ICONINFORMATION) == IDYES
+            ? kOpenFolderButtonId
+            : IDCLOSE;
+    }
+    if (button == kOpenFolderButtonId && !directory.empty()) {
+        if (!OpenShellTarget(parent, directory.c_str())) {
+            ShowOpenTargetFailure(parent, directory.c_str());
+        }
+    }
+}
+
+InstallChoice ShowInstallChoice(HWND parent) {
+    TASKDIALOG_BUTTON buttons[] = {
+        {kAutomaticButtonId, S(StringId::SPELL_ADVANCED_DOWNLOAD_AUTO)},
+        {kManualButtonId, S(StringId::SPELL_ADVANCED_INSTALL_MANUAL)},
+        {kStandardButtonId, S(StringId::SPELL_ADVANCED_USE_STANDARD)},
+    };
+
+    TASKDIALOGCONFIG dialog{};
+    dialog.cbSize = sizeof(dialog);
+    dialog.hwndParent = parent;
+    dialog.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS;
+    dialog.pszWindowTitle = L"VKey";
+    dialog.pszMainIcon = TD_INFORMATION_ICON;
+    dialog.pszMainInstruction = S(StringId::SPELL_ADVANCED_REQUIRED_TITLE);
+    dialog.pszContent = S(StringId::SPELL_ADVANCED_DOWNLOAD_PROMPT);
+    dialog.pButtons = buttons;
+    dialog.cButtons = static_cast<UINT>(std::size(buttons));
+    dialog.nDefaultButton = kAutomaticButtonId;
+    dialog.pfCallback = AdvancedEngineDialogCallback;
+
+    int button = 0;
+    if (FAILED(::TaskDialogIndirect(&dialog, &button, nullptr, nullptr))) {
+        std::wstring content = S(StringId::SPELL_ADVANCED_DOWNLOAD_PROMPT);
+        content += L"\n\n";
+        content += S(StringId::SPELL_ADVANCED_FALLBACK_CHOICE);
+        const int fallback =
+            ::MessageBoxW(parent, content.c_str(), L"VKey", MB_YESNOCANCEL | MB_ICONINFORMATION);
+        if (fallback == IDYES) {
+            return InstallChoice::Automatic;
+        }
+        if (fallback == IDNO) {
+            return InstallChoice::Manual;
+        }
+        return InstallChoice::Standard;
+    }
+    if (button == kAutomaticButtonId) {
+        return InstallChoice::Automatic;
+    }
+    if (button == kManualButtonId) {
+        return InstallChoice::Manual;
+    }
+    return InstallChoice::Standard;
+}
+
+InstallChoice ShowInstallFailure(HWND parent, InstallResult result) noexcept {
     StringId message = StringId::SPELL_ADVANCED_INSTALL_FAILED;
     if (result == InstallResult::NetworkFailure) {
         message = StringId::SPELL_ADVANCED_NETWORK_FAILED;
     } else if (result == InstallResult::VerificationFailure) {
         message = StringId::SPELL_ADVANCED_VERIFY_FAILED;
     }
-    ::MessageBoxW(parent, S(message), L"VKey", MB_OK | MB_ICONWARNING);
+
+    TASKDIALOG_BUTTON buttons[] = {
+        {kManualButtonId, S(StringId::SPELL_ADVANCED_INSTALL_MANUAL)},
+        {kStandardButtonId, S(StringId::SPELL_ADVANCED_USE_STANDARD)},
+    };
+
+    TASKDIALOGCONFIG dialog{};
+    dialog.cbSize = sizeof(dialog);
+    dialog.hwndParent = parent;
+    dialog.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS;
+    dialog.pszWindowTitle = L"VKey";
+    dialog.pszMainIcon = TD_WARNING_ICON;
+    dialog.pszMainInstruction = S(StringId::SPELL_ADVANCED_NOT_ENABLED_TITLE);
+    dialog.pszContent = S(message);
+    dialog.pButtons = buttons;
+    dialog.cButtons = static_cast<UINT>(std::size(buttons));
+    dialog.nDefaultButton = kManualButtonId;
+    dialog.pfCallback = AdvancedEngineDialogCallback;
+
+    int button = 0;
+    if (FAILED(::TaskDialogIndirect(&dialog, &button, nullptr, nullptr))) {
+        try {
+            std::wstring content = S(message);
+            content += L"\n\n";
+            content += S(StringId::SPELL_ADVANCED_FAILURE_FALLBACK_CHOICE);
+            return ::MessageBoxW(parent, content.c_str(), L"VKey", MB_YESNO | MB_ICONWARNING) == IDYES
+                ? InstallChoice::Manual
+                : InstallChoice::Standard;
+        } catch (...) {
+            return ::MessageBoxW(parent, S(StringId::SPELL_ADVANCED_FAILURE_FALLBACK_CHOICE), L"VKey",
+                                 MB_YESNO | MB_ICONWARNING) == IDYES
+                ? InstallChoice::Manual
+                : InstallChoice::Standard;
+        }
+    }
+    return button == kManualButtonId ? InstallChoice::Manual : InstallChoice::Standard;
 }
 
 } // namespace
@@ -291,8 +477,11 @@ AdvancedEngineStatus AdvancedEngineInstaller::EnsureInstalledWithUi(HWND parent)
             return AdvancedEngineStatus::Ready;
         }
 
-        if (::MessageBoxW(parent, S(StringId::SPELL_ADVANCED_DOWNLOAD_PROMPT), L"VKey",
-                          MB_YESNO | MB_ICONINFORMATION) != IDYES) {
+        const InstallChoice choice = ShowInstallChoice(parent);
+        if (choice == InstallChoice::Manual) {
+            return AdvancedEngineStatus::ManualRequested;
+        }
+        if (choice != InstallChoice::Automatic) {
             return AdvancedEngineStatus::Declined;
         }
 
@@ -332,15 +521,29 @@ AdvancedEngineStatus AdvancedEngineInstaller::EnsureInstalledWithUi(HWND parent)
         if (!completed || state->result == InstallResult::Cancelled) {
             return AdvancedEngineStatus::Declined;
         }
-        ShowInstallFailure(parent, state->result);
-        return AdvancedEngineStatus::Unavailable;
+        return ShowInstallFailure(parent, state->result) == InstallChoice::Manual
+            ? AdvancedEngineStatus::ManualRequested
+            : AdvancedEngineStatus::Unavailable;
     } catch (const std::exception& error) {
         CrashLog(L"AdvancedEngineInstaller::EnsureInstalledWithUi", error.what());
     } catch (...) {
         CrashLog(L"AdvancedEngineInstaller::EnsureInstalledWithUi", "(non-std exception)");
     }
-    ShowInstallFailure(parent, InstallResult::StorageFailure);
-    return AdvancedEngineStatus::Unavailable;
+    return ShowInstallFailure(parent, InstallResult::StorageFailure) == InstallChoice::Manual
+        ? AdvancedEngineStatus::ManualRequested
+        : AdvancedEngineStatus::Unavailable;
+}
+
+void AdvancedEngineInstaller::ShowManualInstallWithUi(HWND parent) {
+    try {
+        OpenManualInstallFlow(parent);
+    } catch (const std::exception& error) {
+        CrashLog(L"AdvancedEngineInstaller::ShowManualInstallWithUi", error.what());
+        ::MessageBoxW(parent, S(StringId::SPELL_ADVANCED_INSTALL_FAILED), L"VKey", MB_OK | MB_ICONWARNING);
+    } catch (...) {
+        CrashLog(L"AdvancedEngineInstaller::ShowManualInstallWithUi", "(non-std exception)");
+        ::MessageBoxW(parent, S(StringId::SPELL_ADVANCED_INSTALL_FAILED), L"VKey", MB_OK | MB_ICONWARNING);
+    }
 }
 
 } // namespace NextKey

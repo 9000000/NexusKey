@@ -867,8 +867,22 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
 
 #if defined(VKEY_USE_RUST_ENGINE)
         if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
-            if (AdvancedEngineInstaller::EnsureInstalledWithUi(get_hwnd()) != AdvancedEngineStatus::Ready) {
+            const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(get_hwnd());
+            if (status != AdvancedEngineStatus::Ready) {
+                // oldLevel, not Standard: the guard above allows Off here, and a
+                // declined download is not a request to switch spell check on.
+                // It also keeps the child toggles correct — setDropdownValue()
+                // does not fire the change event that re-runs
+                // updateSpellCheckChildren().
+                config_.SetSpellCheckLevel(oldLevel);
                 setDropdownValue(L"spell-check-level", static_cast<int>(oldLevel));
+                saveSettings();
+                KillTimer(get_hwnd(), TIMER_DEFERRED_SAVE);
+                saveToToml();
+                if (status == AdvancedEngineStatus::ManualRequested) {
+                    AdvancedEngineInstaller::ShowManualInstallWithUi(get_hwnd());
+                }
+                if (onSettingsChanged_) onSettingsChanged_();
                 return;
             }
         }

@@ -72,7 +72,20 @@ static const wchar_t* const kVietnamese[] = {
     L"Đã tắt tự khởi động lại. VKey sẽ không tự bật lại nếu thoát đột ngột.", // WATCHDOG_STOPPED_BODY
     L"Đã bật tự khởi động lại. VKey sẽ tự bật lại nếu thoát đột ngột.", // WATCHDOG_ENABLED_BODY
     L"Cấu hình hiện tại đã được sao lưu thành công tại:\n%s\n\nỨng dụng sẽ tự động đóng để tiến hành cập nhật.", // UPDATE_BACKUP_SUCCESS
-    L"Chế độ Nâng cao cần VKey Engine. VKey sẽ tải đúng vkey_engine.dll của phiên bản này từ GitHub và kiểm tra toàn vẹn trước khi dùng.\n\nTải ngay?", // SPELL_ADVANCED_DOWNLOAD_PROMPT
+    L"Cần VKey Engine",                              // SPELL_ADVANCED_REQUIRED_TITLE
+    L"Chế độ Nâng cao cần vkey_engine.dll đúng phiên bản. VKey luôn kiểm tra tính toàn vẹn của file trước khi nạp.", // SPELL_ADVANCED_DOWNLOAD_PROMPT
+    L"Tải và cài đặt tự động\nTải đúng engine từ GitHub và xác minh trước khi sử dụng.", // SPELL_ADVANCED_DOWNLOAD_AUTO
+    L"Cài đặt thủ công\nMở file bằng trình duyệt; phù hợp khi firewall chặn truy cập Internet của VKey.", // SPELL_ADVANCED_INSTALL_MANUAL
+    L"Tiếp tục dùng chế độ Cơ bản\nKhông tải và không hỏi lại khi VKey khởi động.", // SPELL_ADVANCED_USE_STANDARD
+    L"Không thể bật chế độ Nâng cao",                // SPELL_ADVANCED_NOT_ENABLED_TITLE
+    L"Cài đặt VKey Engine thủ công",                 // SPELL_ADVANCED_MANUAL_TITLE
+    L"1. VKey vừa mở trình duyệt để tải vkey_engine.dll đúng với phiên bản hiện tại. Nếu trình duyệt cảnh báo file .dll, hãy chọn Giữ lại (Keep).\n\n2. Đặt file vừa tải vào thư mục chứa VKey.exe:\n", // SPELL_ADVANCED_MANUAL_BODY
+    L"3. Quay lại VKey và chọn Kiểm tra chính tả: Nâng cao lần nữa. VKey sẽ xác minh file trước khi nạp.", // SPELL_ADVANCED_MANUAL_FINISH
+    L"Tải lại vkey_engine.dll bằng trình duyệt",     // SPELL_ADVANCED_MANUAL_LINK
+    L"Mở thư mục VKey",                              // SPELL_ADVANCED_OPEN_FOLDER
+    L"Windows không thể mở mục này. Hãy sao chép liên kết hoặc đường dẫn bên dưới và mở thủ công:", // SPELL_ADVANCED_OPEN_TARGET_FAILED
+    L"Chọn Yes để tải tự động, No để cài thủ công hoặc Cancel để tiếp tục dùng chế độ Cơ bản.", // SPELL_ADVANCED_FALLBACK_CHOICE
+    L"Chọn Yes để cài thủ công hoặc No để tiếp tục dùng chế độ Cơ bản.", // SPELL_ADVANCED_FAILURE_FALLBACK_CHOICE
     L"Đang tải và xác minh VKey Engine...",          // SPELL_ADVANCED_DOWNLOADING
     L"Không thể tải VKey Engine. Hãy kiểm tra kết nối mạng rồi thử lại.", // SPELL_ADVANCED_NETWORK_FAILED
     L"File VKey Engine tải về không khớp bản tin cậy. Chế độ Nâng cao chưa được bật.", // SPELL_ADVANCED_VERIFY_FAILED
@@ -146,7 +159,20 @@ static const wchar_t* const kEnglish[] = {
     L"Auto-restart stopped. VKey will not relaunch on crash.", // WATCHDOG_STOPPED_BODY
     L"Auto-restart enabled. VKey will relaunch on crash.", // WATCHDOG_ENABLED_BODY
     L"Your current configuration has been backed up at:\n%s\n\nThe application will automatically close to perform the update.", // UPDATE_BACKUP_SUCCESS
-    L"Advanced mode requires VKey Engine. VKey will download this version's exact vkey_engine.dll from GitHub and verify it before use.\n\nDownload now?", // SPELL_ADVANCED_DOWNLOAD_PROMPT
+    L"VKey Engine required",                         // SPELL_ADVANCED_REQUIRED_TITLE
+    L"Advanced mode requires the correct version of vkey_engine.dll. VKey always verifies the file's integrity before loading it.", // SPELL_ADVANCED_DOWNLOAD_PROMPT
+    L"Download and install automatically\nDownload the exact engine from GitHub and verify it before use.", // SPELL_ADVANCED_DOWNLOAD_AUTO
+    L"Install manually\nOpen the file in your browser; suitable when a firewall blocks VKey's Internet access.", // SPELL_ADVANCED_INSTALL_MANUAL
+    L"Continue with Standard mode\nDo not download or ask again when VKey starts.", // SPELL_ADVANCED_USE_STANDARD
+    L"Unable to enable Advanced mode",               // SPELL_ADVANCED_NOT_ENABLED_TITLE
+    L"Install VKey Engine manually",                 // SPELL_ADVANCED_MANUAL_TITLE
+    L"1. VKey just opened your browser to download the vkey_engine.dll matching this version. If your browser warns about the .dll, choose Keep.\n\n2. Place the downloaded file in the folder containing VKey.exe:\n", // SPELL_ADVANCED_MANUAL_BODY
+    L"3. Return to VKey and select Spell check: Advanced again. VKey will verify the file before loading it.", // SPELL_ADVANCED_MANUAL_FINISH
+    L"Download vkey_engine.dll again in your browser", // SPELL_ADVANCED_MANUAL_LINK
+    L"Open VKey folder",                             // SPELL_ADVANCED_OPEN_FOLDER
+    L"Windows could not open this item. Copy the link or path below and open it manually:", // SPELL_ADVANCED_OPEN_TARGET_FAILED
+    L"Choose Yes to download automatically, No to install manually, or Cancel to continue with Standard mode.", // SPELL_ADVANCED_FALLBACK_CHOICE
+    L"Choose Yes to install manually or No to continue with Standard mode.", // SPELL_ADVANCED_FAILURE_FALLBACK_CHOICE
     L"Downloading and verifying VKey Engine...",     // SPELL_ADVANCED_DOWNLOADING
     L"Unable to download VKey Engine. Check your network connection and try again.", // SPELL_ADVANCED_NETWORK_FAILED
     L"The downloaded VKey Engine does not match the trusted build. Advanced mode was not enabled.", // SPELL_ADVANCED_VERIFY_FAILED

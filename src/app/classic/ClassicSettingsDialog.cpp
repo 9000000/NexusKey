@@ -899,9 +899,20 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
 
 #if defined(VKEY_USE_RUST_ENGINE)
                     if (newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced) {
-                        if (AdvancedEngineInstaller::EnsureInstalledWithUi(hwnd_) != AdvancedEngineStatus::Ready) {
+                        const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(hwnd_);
+                        if (status != AdvancedEngineStatus::Ready) {
+                            // oldLevel, not Standard: the guard above allows Off
+                            // here, and a declined download is not a request to
+                            // switch spell check on.
+                            config_.SetSpellCheckLevel(oldLevel);
                             ComboBox_SetCurSel(comboSpellCheckLevel_, static_cast<int>(oldLevel));
+                            SaveSettings();
+                            KillTimer(hwnd_, kTimerDeferredSave);
+                            SaveToToml();
                             UpdateSpellCheckChildren();
+                            if (status == AdvancedEngineStatus::ManualRequested) {
+                                AdvancedEngineInstaller::ShowManualInstallWithUi(hwnd_);
+                            }
                             return;
                         }
                     }

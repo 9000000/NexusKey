@@ -2,11 +2,12 @@
 
 Từ **VKey v4.3**, VKey có thêm **Kiểm tra Chính tả Nâng cao**. Đây là tính năng tùy chọn, dùng để phát hiện và sửa một số lỗi gõ phổ biến, chẳng hạn gõ nhanh bị đảo chữ cái: `hcaof` có thể được sửa thành `chào`.
 
-Tính năng này được hỗ trợ bởi một engine phụ trợ viết bằng Rust, phân phối dưới dạng thư viện động: `vkey_engine.dll` trên Windows hoặc `libvkey_engine.so` trên Linux.
+Tính năng này được hỗ trợ bởi một engine phụ trợ viết bằng Rust, phân phối dưới dạng thư viện động: `vkey_engine.dll` trên Windows.
 
 Engine này:
 
 - tắt mặc định;
+- không đi kèm sẵn trong file ZIP phát hành (người dùng cần chủ động bật trong cài đặt để ứng dụng tải về);
 - chạy hoàn toàn trên máy người dùng;
 - không có chức năng mạng;
 - có thể gỡ bỏ bất cứ lúc nào;
@@ -24,9 +25,13 @@ Với các câu hỏi về license, copyright hoặc lý do thiết kế chi ti�
 
 Không. VKey hoạt động bình thường nếu không dùng Kiểm tra Chính tả Nâng cao.
 
+## Engine này có đi kèm sẵn trong file ZIP phát hành không?
+
+Không. Để giữ file ZIP phát hành nhẹ và tối ưu, engine không được đóng gói sẵn trong file ZIP. Người dùng cần chủ động bật **Kiểm tra Chính tả Nâng cao** trong Cài đặt, lúc đó VKey mới tự động tải file engine từ nguồn chính thức (GitHub Release) và kiểm tra tính toàn vẹn (SHA-256) trước khi sử dụng.
+
 ## Tôi có thể gỡ engine này không?
 
-Có. Chỉ cần xóa `vkey_engine.dll` trên Windows hoặc `libvkey_engine.so` trên Linux khỏi thư mục cài đặt.
+Có. Chỉ cần xóa `vkey_engine.dll` khỏi thư mục cài đặt.
 
 ## Engine này có gửi phím gõ của tôi đi đâu không?
 
@@ -76,7 +81,11 @@ Các phần sau nằm trong mã nguồn mở của VKey:
 
 Nhờ đó, người dùng có thể kiểm tra VKey gửi dữ liệu gì vào engine và nhận lại dữ liệu gì.
 
-Engine Rust hoạt động như một thư viện cục bộ. Nó không giao tiếp với máy chủ bên ngoài. Ứng dụng VKey chính cũng được ký mã thông qua SignPath Open Source Signing Program, giúp người dùng xác minh tính xác thực của các bản phát hành chính thức.
+Engine Rust hoạt động như một thư viện cục bộ. Nó không giao tiếp với máy chủ bên ngoài.
+
+Nếu bạn vẫn quan ngại về bảo mật và không có khả năng hoặc thời gian tự kiểm tra mã nguồn, bạn hoàn toàn có thể **chặn quyền truy cập Internet** của VKey bằng Windows Firewall hoặc phần mềm tường lửa bất kỳ. Quy tắc tường lửa áp dụng cho file thực thi `VKey.exe`; `vkey_engine.dll` chạy bên trong tiến trình đó nên không cần (và cũng không thể) thêm quy tắc riêng cho DLL.
+
+Việc gõ tiếng Việt và kiểm tra chính tả hoạt động hoàn toàn cục bộ, nên chặn Internet không ảnh hưởng tới các tính năng này. Chỉ hai chức năng cần mạng sẽ ngừng hoạt động: kiểm tra cập nhật, và tải engine tự động. Với chế độ Nâng cao, hãy chọn **Cài đặt thủ công** trong hộp thoại để tự tải `vkey_engine.dll` bằng trình duyệt và đặt vào thư mục chứa `VKey.exe`.
 
 ---
 
@@ -84,10 +93,7 @@ Engine Rust hoạt động như một thư viện cục bộ. Nó không giao ti
 
 Người dùng luôn có quyền quyết định có dùng Kiểm tra Chính tả Nâng cao hay không.
 
-Để không dùng engine tùy chọn:
-
-1. Tắt Kiểm tra Chính tả Nâng cao trong Settings.
-2. Xóa `vkey_engine.dll` trên Windows hoặc `libvkey_engine.so` trên Linux.
+Để không dùng engine tùy chọn: xóa `vkey_engine.dll` khỏi thư mục cài đặt.
 
 Sau đó, VKey sẽ tự động dùng engine C++ mã nguồn mở. Không cần cấu hình thêm.
 
@@ -105,11 +111,12 @@ Nếu bạn quan tâm đến lý do engine hiện chưa mở nguồn, dual licen
 
 Starting with **VKey v4.3**, VKey includes **Advanced Spell Check**. This optional feature detects and corrects some common typing mistakes, such as transposed letters from fast typing: `hcaof` can become `chào`.
 
-The feature is powered by an auxiliary Rust engine distributed as a dynamic library: `vkey_engine.dll` on Windows or `libvkey_engine.so` on Linux.
+The feature is powered by an auxiliary Rust engine distributed as a dynamic library: `vkey_engine.dll` on Windows.
 
 The engine is:
 
 - disabled by default;
+- not bundled in the release ZIP by default (users need to explicitly enable it in Settings for VKey to download it);
 - fully local;
 - built without networking functionality;
 - removable at any time;
@@ -127,9 +134,13 @@ For licensing, copyright, and broader design rationale, see **[ENGINE_FAQ.md](EN
 
 No. VKey works normally without Advanced Spell Check.
 
+## Is the engine included in the release ZIP?
+
+No. To keep the release ZIP lightweight, the engine is omitted from the ZIP file by default. Users need to explicitly enable **Advanced Spell Check** in Settings, after which VKey automatically downloads the official engine binary from GitHub Releases and verifies its integrity (SHA-256) before loading.
+
 ## Can I remove the engine?
 
-Yes. Delete `vkey_engine.dll` on Windows or `libvkey_engine.so` on Linux from the installation directory.
+Yes. Delete `vkey_engine.dll` from the installation directory.
 
 ## Does it send my keystrokes anywhere?
 
@@ -179,7 +190,11 @@ The following parts are implemented in VKey's open-source codebase:
 
 This lets users inspect what data VKey passes to the engine and what data it receives back.
 
-The Rust engine runs as a local library. It does not communicate with external servers. The main VKey application is also code signed through the SignPath Open Source Signing Program to help users verify the authenticity of official releases.
+The Rust engine runs as a local library. It does not communicate with external servers.
+
+If you still have privacy or security concerns and lack the technical capability or time to audit the code yourself, you can **block internet access** for VKey using Windows Firewall or any firewall software. Firewall rules apply to the `VKey.exe` executable; `vkey_engine.dll` runs inside that process, so it needs no separate rule (and cannot be given one).
+
+Typing and spell checking run entirely locally, so blocking internet access does not affect them. Only two network features stop working: update checks, and the automatic engine download. For Advanced mode, choose **Install manually** in the dialog to download `vkey_engine.dll` yourself in a browser and place it in the folder containing `VKey.exe`.
 
 ---
 
@@ -187,10 +202,7 @@ The Rust engine runs as a local library. It does not communicate with external s
 
 Users remain in control of whether Advanced Spell Check is used.
 
-To stop using the optional engine:
-
-1. Disable Advanced Spell Check in Settings.
-2. Delete `vkey_engine.dll` on Windows or `libvkey_engine.so` on Linux.
+To stop using the optional engine: Delete `vkey_engine.dll` from the installation directory.
 
 VKey will then automatically use the built-in open-source C++ engine. No additional configuration is required.
 
