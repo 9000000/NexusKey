@@ -18,6 +18,10 @@ on:
         description: 'Include Classic UI (Lite) build'
         type: boolean
         default: false
+      include_engine:
+        description: 'Include vkey_engine.dll in artifact output'
+        type: boolean
+        default: true
       sign_binaries:
         description: 'Sign binaries via SignPath (test-signing). Uncheck to use unsigned build output.'
         type: boolean
@@ -242,9 +246,13 @@ jobs:
           }
 
       - name: Stage external engine asset
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.include_engine)
         shell: powershell
-        run: Copy-Item "extern/vkey_engine/lib/win-x64/vkey_engine.dll" "vkey_engine.dll" -Force
+        run: |
+          Copy-Item "extern/vkey_engine/lib/win-x64/vkey_engine.dll" "vkey_engine.dll" -Force
+          if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.include_engine }}" -eq "true") {
+            Copy-Item "extern/vkey_engine/lib/win-x64/vkey_engine.dll" "upload-payload/vkey_engine.dll" -Force
+          }
 
       - name: Assert engine remains outside app packages
         if: startsWith(github.ref, 'refs/tags/')
