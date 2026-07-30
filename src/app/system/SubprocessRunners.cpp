@@ -32,7 +32,13 @@ namespace NextKey {
     HANDLE hSettingsMutex = CreateMutexW(nullptr, TRUE, L"Local\\VKey_Settings_Mutex");
     if (hSettingsMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
         if (HWND existing = FindWindowW(nullptr, L"VKey Settings")) {
+            if (IsIconic(existing)) {
+                ShowWindow(existing, SW_RESTORE);
+            } else {
+                ShowWindow(existing, SW_SHOW);
+            }
             SetForegroundWindow(existing);
+            BringWindowToTop(existing);
         }
         NEXTKEY_LOG(L"Settings already open — focusing existing, exiting");
         ExitProcess(0);

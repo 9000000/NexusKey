@@ -94,6 +94,16 @@ static bool g_settingsOpen = false;
 static void SpawnSettingsDialog() {
     if (g_settingsOpen) {
         // Already open — try to bring to front
+        HWND existing = FindWindowW(L"VKeyClassicSettings", nullptr);
+        if (existing) {
+            if (IsIconic(existing)) {
+                ShowWindow(existing, SW_RESTORE);
+            } else {
+                ShowWindow(existing, SW_SHOW);
+            }
+            SetForegroundWindow(existing);
+            BringWindowToTop(existing);
+        }
         return;
     }
 
@@ -484,14 +494,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                          r == WAIT_ABANDONED ? L"abandoned" : L"released");
         } else {
             // Another VKey (Classic or Sciter) is already running. Surface the
-            // running instance's settings if "show on startup" is configured,
-            // then exit silently — mirrors main.cpp.
-            auto sysCfg = ConfigManager::LoadSystemConfigOrDefault();
-            if (sysCfg.showOnStartup) {
-                HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
-                if (existingTrayWnd) {
-                    PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
+            // running instance's settings, then exit silently — mirrors main.cpp.
+            HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+            if (existingTrayWnd) {
+                DWORD existingPid = 0;
+                GetWindowThreadProcessId(existingTrayWnd, &existingPid);
+                if (existingPid != 0) {
+                    AllowSetForegroundWindow(existingPid);
+                } else {
+                    AllowSetForegroundWindow(ASFW_ANY);
                 }
+                PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
             }
             NEXTKEY_LOG(L"Another VKey instance is already running. Exiting.");
             CloseHandle(hMutex);

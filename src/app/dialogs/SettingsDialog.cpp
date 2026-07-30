@@ -166,6 +166,8 @@ SettingsDialog::SettingsDialog()
     int winHeight = rc.bottom - rc.top;
     POINT pt = NextKey::GetCenteredPos(get_hwnd(), winWidth, winHeight);
     SetWindowPos(get_hwnd(), HWND_NOTOPMOST, pt.x, pt.y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+    SetForegroundWindow(get_hwnd());
+    BringWindowToTop(get_hwnd());
 
     // Force taskbar presence while DWM transitions are still disabled (avoids flicker)
     SciterHelper::ForceTaskbarPresence(get_hwnd(), IDI_APP);

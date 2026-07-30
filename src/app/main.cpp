@@ -304,18 +304,29 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                          r == WAIT_ABANDONED ? L"abandoned" : L"released");
         } else {
             // Another background instance is already running.
-            // If the user has "show on startup" configured, popup the settings dialog of the
-            // existing instance to indicate the app is active. Otherwise, strictly silent.
-            auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
-            if (sysConfig.showOnStartup) {
-                HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
-                if (existingTrayWnd) {
-                    PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
+            // Surface the settings dialog of the existing instance to indicate the app is active.
+            HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+            if (existingTrayWnd) {
+                // Grant foreground privilege to the existing instance process (and any processes it spawns)
+                DWORD existingPid = 0;
+                GetWindowThreadProcessId(existingTrayWnd, &existingPid);
+                if (existingPid != 0) {
+                    AllowSetForegroundWindow(existingPid);
+                } else {
+                    AllowSetForegroundWindow(ASFW_ANY);
+                }
 
-                    HWND existingSettings = GetSettingsHwnd();
-                    if (existingSettings) {
-                        SetForegroundWindow(existingSettings);
+                PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
+
+                HWND existingSettings = GetSettingsHwnd();
+                if (existingSettings) {
+                    if (IsIconic(existingSettings)) {
+                        ShowWindow(existingSettings, SW_RESTORE);
+                    } else {
+                        ShowWindow(existingSettings, SW_SHOW);
                     }
+                    SetForegroundWindow(existingSettings);
+                    BringWindowToTop(existingSettings);
                 }
             }
 
@@ -1190,7 +1201,13 @@ void SpawnSettingsSubprocess() {
     // Check if already open (single-instance)
     HWND existing = GetSettingsHwnd();
     if (existing) {
+        if (IsIconic(existing)) {
+            ShowWindow(existing, SW_RESTORE);
+        } else {
+            ShowWindow(existing, SW_SHOW);
+        }
         SetForegroundWindow(existing);
+        BringWindowToTop(existing);
 #ifdef VKEY_HOOK_ENGINE
         NotifySettingsMode(g_hookEngine.IsVietnameseMode());
 #endif
@@ -1217,6 +1234,7 @@ void SpawnSettingsSubprocess() {
     NEXTKEY_LOG(L"Spawning settings with cmdLine: %s", cmdLine);
 
     if (CreateProcessW(nullptr, cmdLine, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        AllowSetForegroundWindow(pi.dwProcessId);
         CloseHandle(pi.hThread);
         TrackChildProcess(pi.hProcess);
         NEXTKEY_LOG(L"Settings subprocess spawned successfully");
