@@ -1,0 +1,87 @@
+LICENSE FOR THE FILES IN extern/vkey_engine/
+============================================
+
+READ THIS BEFORE USING OR REDISTRIBUTING THESE FILES.
+
+The files in this directory are NOT covered by NexusKey's AGPL-3.0 license.
+They are a separately licensed third-party component, aggregated here as an
+optional build input in the sense of AGPL-3.0 section 5. NexusKey's AGPL grant
+does not extend to them, and nothing in NexusKey's LICENSE grants you any right
+in them.
+
+Covered files:
+
+    include/vkey_engine.h
+    lib/win-x64/vkey_engine.dll
+    lib/win-x64/libvkey_engine.dll.a
+    lib/linux-x64/libvkey_engine.so
+    engine.lock
+
+
+1. LICENSE
+----------
+
+Copyright 2026 PhatMT (https://github.com/phatMT97). All rights reserved.
+
+These artifacts are built from the closed-source `vkey-rs` repository and are
+licensed under the PolyForm Noncommercial License 1.0.0:
+
+    https://polyformproject.org/licenses/noncommercial/1.0.0
+
+    Required Notice: Copyright 2026 PhatMT (https://github.com/phatMT97)
+
+You may use, run and redistribute them for any NONCOMMERCIAL purpose. You may
+NOT use them for commercial purposes.
+
+
+2. THE NONCOMMERCIAL TERM IS INHERITED, NOT CHOSEN
+--------------------------------------------------
+
+The compiled engine embeds a Vietnamese syllable dictionary derived from the
+Leipzig Corpora Collection corpus `vie_news_2020_1M`, which is distributed under
+Creative Commons Attribution-NonCommercial (CC BY-NC).
+
+Commercial rights in that data are therefore not the copyright holder's to
+grant, and cannot be granted by any license placed on this directory. This is
+why the noncommercial term cannot be waived on request.
+
+If you are forking NexusKey and intend any commercial use, you must build with
+`-DVKEY_USE_RUST_ENGINE=OFF` and not redistribute these files. NexusKey is
+fully functional on its in-tree C++ engine without them.
+
+
+3. REQUIRED ATTRIBUTION FOR THE EMBEDDED DATA
+---------------------------------------------
+
+If you redistribute the compiled engine, these notices must travel with it.
+
+Vietnamese syllable dictionary and news frequencies
+  Leipzig Corpora Collection, corpus `vie_news_2020_1M`. License: CC BY-NC.
+  Required citation: Dirk Goldhahn, Thomas Eckart, and Uwe Quasthoff. 2012.
+  Building Large Monolingual Dictionaries at the Leipzig Corpora Collection:
+  From 100 to 200 Languages. In Proceedings of the Eighth International
+  Conference on Language Resources and Evaluation (LREC'12), pages 759-765,
+  Istanbul, Turkey. ELRA. https://aclanthology.org/L12-1154/
+
+Spoken-register frequency evidence (frequencies only, never vocabulary)
+  hermitdave/FrequencyWords, from OpenSubtitles2018 via OPUS.
+  License: MIT, Copyright (c) 2016 Hermit Dave.
+  Corpus citation: Pierre Lison and Jorg Tiedemann. 2016. OpenSubtitles2016:
+  Extracting Large Parallel Corpora from Movie and TV Subtitles. LREC'16.
+
+English word-membership list
+  SCOWL (Spell Checking Oriented Word Lists) size tier 70, Kevin Atkinson.
+  Collective work Copyright 2000-2011 by Kevin Atkinson; its permission notice
+  requires this copyright notice to appear in all copies. Components reachable
+  at size 70 requiring attribution: WordNet 1.6 Copyright 1997 by Princeton
+  University, all rights reserved; VARCON / Ispell word lists Copyright 1993
+  Geoff Kuenning, Granada Hills, CA, all rights reserved. Binary
+  redistributions must reproduce those notices and their disclaimers in the
+  documentation or other materials provided with the distribution.
+
+
+4. NO WARRANTY
+--------------
+
+These artifacts are provided as is, without warranty or condition of any kind.
+See the PolyForm Noncommercial License 1.0.0 for the full terms.

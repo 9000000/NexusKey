@@ -113,7 +113,11 @@ target_include_directories(VKeyEngine PUBLIC
 # Route EngineFactory through the prebuilt, closed-source Rust engine (consumed
 # via its C ABI, loaded at runtime). The in-tree C++ TypingEngine stays compiled
 # as a fallback (used when the library is missing, and by the parity tests).
-option(VKEY_USE_RUST_ENGINE "Use the prebuilt closed-source Rust engine (C ABI)" ON)
+# Defaults OFF on purpose. The prebuilt engine in extern/vkey_engine/ is NOT
+# covered by this project's AGPL-3.0 license and embeds CC BY-NC data, so a
+# plain `cmake -B build` must not require it — see extern/vkey_engine/LICENSE.
+# Official builds opt in explicitly with -DVKEY_USE_RUST_ENGINE=ON in CI.
+option(VKEY_USE_RUST_ENGINE "Use the prebuilt closed-source Rust engine (C ABI)" OFF)
 if(VKEY_USE_RUST_ENGINE)
     set(VKEY_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extern/vkey_engine")
     set(VKEY_ENGINE_LOCK_PATH "${VKEY_ENGINE_ROOT}/engine.lock")
@@ -178,6 +182,18 @@ if(VKEY_USE_RUST_ENGINE)
     if(WIN32)
         target_link_libraries(VKeyEngine PRIVATE bcrypt)
     endif()
+else()
+    # Warn, do not stay silent. RustInputEngineTest.cpp and part of
+    # EngineFactoryTest.cpp are inside `#ifdef VKEY_USE_RUST_ENGINE`, so with the
+    # option off they compile away to nothing and ctest still reports success.
+    # Anyone running the test suite as a gate needs to know coverage shrank.
+    message(WARNING
+        "VKEY_USE_RUST_ENGINE=OFF: building against the in-tree C++ engine only. "
+        "RustInputEngineTest and the Rust half of EngineFactoryTest are NOT "
+        "compiled, so a green ctest does not cover the Rust engine. "
+        "Maintainers: configure with -DVKEY_USE_RUST_ENGINE=ON. "
+        "Forks: this is the correct default — see extern/vkey_engine/LICENSE, "
+        "those artifacts are not AGPL and are noncommercial-only.")
 endif()
 
 # Core Library (platform layer: SharedState, Config, Debug)

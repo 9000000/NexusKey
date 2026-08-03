@@ -69,7 +69,7 @@ jobs:
 
       - name: Configure
         if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DVKEY_USE_RUST_ENGINE=ON
 
       - name: Build VKey
         if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
@@ -127,7 +127,7 @@ jobs:
       # --- Classic UI (Lite) build ---
       - name: Configure Classic UI
         if: github.event_name != 'workflow_dispatch' || inputs.include_classic
-        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DVKEY_LITE_MODE=ON
+        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DVKEY_LITE_MODE=ON -DVKEY_USE_RUST_ENGINE=ON
 
       - name: Build Classic UI
         if: github.event_name != 'workflow_dispatch' || inputs.include_classic
