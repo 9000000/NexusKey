@@ -55,6 +55,12 @@ jobs:
         shell: bash
         run: bash tools/audit/check_hook_thread_no_mutex.sh
 
+      # Refuses font files outright and requires every other binary asset to have
+      # a recorded origin. Guards the "forgotten file" failure: an unlicensed
+      # asset left in the tree is a liability even when nothing renders with it.
+      - name: Check asset provenance
+        run: python3 tools/audit/check_asset_provenance.py
+
       - name: Configure
         if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
         run: cmake -B build -G "Visual Studio 17 2022" -A x64
@@ -212,6 +218,13 @@ jobs:
               Copy-Item "dist-classic/VKeyWatchdog.exe" "upload-payload/" -Force
             }
           }
+
+      # Last gate before anything is archived: the payload is exactly what a
+      # licensing scanner downloads and inspects, so check it rather than trusting
+      # that the tracked-file gate covered everything that reached it.
+      - name: Check release payload for unlicensed assets
+        shell: bash
+        run: python3 tools/audit/check_asset_provenance.py --dir upload-payload
 
       # --- Zip releases ---
       - name: Zip Release
