@@ -705,16 +705,13 @@ bool TypingEngine::ProcessTone(Tone newTone, wchar_t keyChar, size_t cachedTarge
 
     CharState& target = states_[targetIdx];
 
-    // Escape: same tone → clear tone and add key as character
+    // Escape: same tone → clear tone and put the consumed key back as a literal
     if (target.tone == newTone) {
         target.tone = Tone::None;
-        // Remove consumed first-tone entry from rawInput_ so auto-restore
-        // gives "user" instead of "usser" for u-s-s-e-r
-        if (target.toneRawIdx != SIZE_MAX) {
-            EraseConsumedRaw(target.toneRawIdx);
-        }
+        const size_t consumedRawIdx = target.toneRawIdx;
         target.toneRawIdx = SIZE_MAX;
-        ProcessChar(keyChar);
+        // Invalidates `target` (states_ may grow) — nothing below reads it.
+        RestoreConsumedKeyInPlace(consumedRawIdx, keyChar);
         escape_.escape(EscapeKind::Tone);  // Signal caller: user canceled tone
         return true;
     }
@@ -1477,6 +1474,38 @@ void TypingEngine::EraseConsumedRaw(size_t idx) {
         if (s.rawIdx > idx) s.rawIdx--;
         if (s.toneRawIdx != SIZE_MAX && s.toneRawIdx > idx) s.toneRawIdx--;
     }
+}
+
+void TypingEngine::RestoreConsumedKeyInPlace(size_t consumedRawIdx, wchar_t escapeKey) {
+    // No snapshot of the consumed key, or this keypress is not the one sitting at
+    // the tail of rawInput_ — keep the old append-at-end behaviour.
+    if (consumedRawIdx == SIZE_MAX || consumedRawIdx >= rawInput_.size() ||
+        rawInput_.empty() || towlower(rawInput_.back()) != towlower(escapeKey)) {
+        if (consumedRawIdx != SIZE_MAX && consumedRawIdx < rawInput_.size()) {
+            EraseConsumedRaw(consumedRawIdx);
+        }
+        ProcessChar(escapeKey);
+        return;
+    }
+
+    // Position-only fix: WHICH character surfaces is unchanged (the escaping key,
+    // so `Te`+`r`+`R` still yields "TeR" and Combined-mode `a`+`s`+`1` still
+    // yields "a1") — it just lands in the consumed key's slot instead of the tail.
+    // Erasing the tail can't shift any state's rawIdx — no state was built from it.
+    EraseConsumedRaw(rawInput_.size() - 1);
+    rawInput_[consumedRawIdx] = escapeKey;  // keep rawInput_ in the rendered order
+
+    CharState s;
+    s.base = towlower(escapeKey);
+    s.isUpper = iswupper(escapeKey) != 0;
+    s.rawIdx = consumedRawIdx;
+
+    // Everything typed after the consumed key stays after it.
+    size_t at = states_.size();
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (states_[i].rawIdx > consumedRawIdx) { at = i; break; }
+    }
+    states_.insert(states_.begin() + static_cast<ptrdiff_t>(at), s);
 }
 
 //-----------------------------------------------------------------------------

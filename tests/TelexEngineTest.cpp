@@ -803,6 +803,32 @@ TEST(TelexEscapeSpellOnTest, ToneHoi_MixedCase_rThenShiftR) {
     EXPECT_EQ(engine.Peek(), L"TeR");
 }
 
+TEST(TelexEscapeSpellOnTest, ToneEscape_RestoresKeyAtConsumedPosition) {
+    // #209: the escape key belongs in the slot the consumed tone key occupied, not
+    // after everything typed since — "t-e-r-i-r" is "teri", never "teir".
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::Telex;
+    cfg.spellCheckEnabled = true;
+    TypingEngine engine(cfg);
+    Testing::TypeString(engine, L"ter");
+    EXPECT_EQ(engine.Peek(), L"tẻ");
+    Testing::TypeString(engine, L"i");
+    Testing::TypeString(engine, L"r");
+    EXPECT_EQ(engine.Peek(), L"teri");
+    Testing::TypeString(engine, L"r");  // third press: plain literal
+    EXPECT_EQ(engine.Peek(), L"terir");
+}
+
+TEST(TelexEscapeSpellOnTest, ToneEscape_ConsumedPositionKeepsShiftedCase) {
+    // Same reposition, uppercase escape key: "TeRiR" → "TeRi" (was "TeiR").
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::Telex;
+    cfg.spellCheckEnabled = true;
+    TypingEngine engine(cfg);
+    Testing::TypeString(engine, L"TeRiR");
+    EXPECT_EQ(engine.Peek(), L"TeRi");
+}
+
 TEST_F(TelexEngineTest, Escape_ToneHoi_UppercaseR) {
     // Issue #209 comment (Shzr0): "TeR" → "Tẻ", second R must escape → "TeR"
     TypeString(*engine_, L"TeRR");

@@ -183,6 +183,13 @@ private:
     void ProcessChar(wchar_t keyChar, wchar_t lower, bool isUpper);
     void ProcessChar(wchar_t keyChar) { ProcessChar(keyChar, towlower(keyChar), iswupper(keyChar)); }
 
+    // Escape restore: emits `escapeKey` as a literal in the slot the consumed
+    // tone/modifier keystroke occupied, rather than appending it after everything
+    // typed since — t-e-r-i-r is "teri", not "teir" (#209). Which character
+    // surfaces is unchanged; only its position is. Falls back to appending when
+    // `consumedRawIdx` is unusable.
+    void RestoreConsumedKeyInPlace(size_t consumedRawIdx, wchar_t escapeKey);
+
     // A tone applied to an `ooo→oo`-escaped literal "oo" is provisional: it only
     // commits if the next key is a valid oo-coda start ('c'→ooc, 'n'→oong).
     // Any other next key (notably a vowel) means the syllable can never close
