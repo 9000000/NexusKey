@@ -250,8 +250,14 @@ jobs:
         shell: powershell
         run: |
           Copy-Item "extern/vkey_engine/lib/win-x64/vkey_engine.dll" "vkey_engine.dll" -Force
+          # The engine is not covered by this repository's AGPL-3.0 license and
+          # embeds CC BY-NC data, so its license text has to travel with the
+          # binary wherever the binary goes — as a sibling release asset for a
+          # tag, and inside the payload for a workflow_dispatch test build.
+          Copy-Item "extern/vkey_engine/LICENSE" "vkey_engine.LICENSE.txt" -Force
           if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.include_engine }}" -eq "true") {
             Copy-Item "extern/vkey_engine/lib/win-x64/vkey_engine.dll" "upload-payload/vkey_engine.dll" -Force
+            Copy-Item "extern/vkey_engine/LICENSE" "upload-payload/vkey_engine.LICENSE.txt" -Force
           }
 
       - name: Assert engine remains outside app packages
@@ -271,6 +277,11 @@ jobs:
           }
           if (-not (Test-Path "vkey_engine.dll")) {
             throw "external engine release asset is missing"
+          }
+          # The engine is noncommercial-only and embeds CC BY-NC data. Shipping it
+          # without its license text is the failure this assertion exists to stop.
+          if (-not (Test-Path "vkey_engine.LICENSE.txt")) {
+            throw "external engine license is missing next to the release asset"
           }
 
       # --- Zip releases ---
@@ -349,6 +360,7 @@ jobs:
             VKeyClassic-x64.zip.sha256
             vkey_engine.dll
             vkey_engine.dll.sha256
+            vkey_engine.LICENSE.txt
           fail_on_unmatched_files: false
 
       # NOTE: winget-releaser only UPDATES an existing package — both
