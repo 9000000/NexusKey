@@ -185,6 +185,10 @@ jobs:
             Copy-Item "signed-binaries/VKeyTSF.dll" "dist/" -Force
             Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist/" -Force
             Copy-Item "signed-binaries/sciter.dll" "dist/" -Force
+            # Required: Sciter.JS is BSD 3-Clause, whose clause 2 makes the
+            # notice a condition of binary redistribution. It has to be inside
+            # the archive, not only in the source repo.
+            Copy-Item "THIRD_PARTY_NOTICES.txt" "dist/" -Force
             Copy-Item "dist/*" "upload-payload/" -Force
           }
           
@@ -197,6 +201,7 @@ jobs:
             # signed root binaries instead of shipping a second signed copy.
             Copy-Item "signed-binaries/VKeyTSF.dll" "dist-classic/" -Force
             Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist-classic/" -Force
+            Copy-Item "THIRD_PARTY_NOTICES.txt" "dist-classic/" -Force
 
             # VKeyClassic.exe is the only file unique to the Classic edition. The shared
             # TSF/watchdog are already in upload-payload from the Sciter branch; add them here
