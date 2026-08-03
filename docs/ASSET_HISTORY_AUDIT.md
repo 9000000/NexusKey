@@ -86,7 +86,7 @@ nobody had written that down, or enforced it.
 - `THIRD_PARTY_NOTICES.txt` — notices that ship inside the release archives,
   including the Sciter.JS BSD 3-Clause text and the fluentui-emoji MIT terms.
 - `tools/audit/assets_allowlist.txt` — every binary asset with its recorded
-  origin. One entry, the SignPath logo, is deliberately marked unresolved rather
-  than rubber-stamped.
+  origin. The one third-party trademark in the set, the SignPath logo, is
+  recorded with its permission: use confirmed by SignPath on 2026-08-03.
 - `extern/vkey_engine/LICENSE` (branch `engine/rust-engine-lib`) — the prebuilt
   engine is not AGPL-3.0 and is noncommercial-only.
