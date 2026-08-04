@@ -6,6 +6,7 @@
 #   .\vkey.cmd local -NoRun       ... build only, do not launch
 #   .\vkey.cmd local -FullLog     ... with the full CMake and MSBuild output
 #   .\vkey.cmd test               release the current engine and start a test build
+#   .\vkey.cmd test -DryRun       ... say what that would do, push nothing
 #
 # Go through vkey.cmd. PowerShell refuses unsigned scripts, and this repository
 # usually sits on a mapped WSL drive, which Windows treats as remote - so even
@@ -27,7 +28,9 @@ param(
     # -Debug itself is a PowerShell common parameter and cannot be redefined.
     [switch]$DebugBuild,
     # -Verbose is a common parameter too, hence the name.
-    [switch]$FullLog
+    [switch]$FullLog,
+    # test only: print what would happen, push nothing.
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
@@ -125,6 +128,10 @@ elseif ($mode -eq "test") {
     # commit, push, and dispatch the build.
     $python = Find-Python
     $ship = Join-Path $vkeyRs "tools\ship_engine.py"
+    if ($DryRun) {
+        & $python $ship --nexuskey $root --build --dry-run
+        exit $LASTEXITCODE
+    }
     & $python $ship --nexuskey $root --build
     if ($LASTEXITCODE -ne 0) { Fail "shipping the engine failed - nothing further was started" }
 
@@ -145,6 +152,7 @@ VKey
   .\vkey.cmd local -NoRun       ... build only, do not launch
   .\vkey.cmd local -FullLog     ... with the full CMake and MSBuild output
   .\vkey.cmd test               release the current engine and start a test build
+  .\vkey.cmd test -DryRun       ... say what that would do, push nothing
 
 local  builds on this machine against the engine named in
        extern/vkey_engine/engine.release, fetching it once. -DebugBuild copies
