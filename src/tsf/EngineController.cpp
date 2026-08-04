@@ -366,10 +366,17 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
             bool shouldAutoCap = pInspect->ShouldAutoCap();
             pInspect->Release();
 
-            // Try revive if Vietnamese word found
+            // Try revive if a seedable word is found. No English-word gate here
+            // (unlike PrepareBackspaceRevive): continuing to type into an English
+            // word is exactly when the engine needs the whole word in its buffer.
+            // Blocking it left the tail alone in a fresh buffer, so English
+            // protection couldn't see the prefix and the tone key landed on it —
+            // "test" + "er" → "testẻ" instead of "tester". The BS path keeps its
+            // gate: reviving there is followed by Backspace(), which re-renders a
+            // raw replay as Vietnamese ("tester" → "tết").
             if (!word.empty() && wordRange) {
                 auto tempEngine = EngineFactory::Create(config_);
-                if (tempEngine && tempEngine->SeedFromText(word) && !tempEngine->IsEnglishWord()) {
+                if (tempEngine && tempEngine->SeedFromText(word)) {
                     // Raw replay over glyph-seeding: SeedFromText loses which key
                     // produced which diacritic, so a tone key pressed right after
                     // the revive can't escape it (#209 Shift+R: "Tẻ" + R stayed
