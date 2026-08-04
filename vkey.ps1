@@ -1,13 +1,20 @@
-# VKey — one entry point.
+# VKey - one entry point.
 #
-#   vkey local              build and run here, with the Rust engine
-#   vkey local -DebugBuild  ... Debug, which serves the Sciter UI from files
-#   vkey local -Clean       ... after wiping the CMake cache
-#   vkey local -NoRun       ... build only, do not launch
-#   vkey test               release the current engine and start a test build
+#   .\vkey.cmd local              build and run here, with the Rust engine
+#   .\vkey.cmd local -DebugBuild  ... Debug, which serves the Sciter UI from files
+#   .\vkey.cmd local -Clean       ... after wiping the CMake cache
+#   .\vkey.cmd local -NoRun       ... build only, do not launch
+#   .\vkey.cmd test               release the current engine and start a test build
 #
-# Run it through vkey.cmd (just `vkey local`) — PowerShell refuses unsigned
-# scripts on a mapped drive, and the .cmd sidesteps that for one process.
+# Go through vkey.cmd. PowerShell refuses unsigned scripts, and this repository
+# usually sits on a mapped WSL drive, which Windows treats as remote - so even
+# RemoteSigned blocks it. The .cmd is a batch file, which the policy does not
+# cover.
+#
+# Kept to plain ASCII and to constructs Windows PowerShell 5.1 accepts: no
+# here-string passed straight to a command (5.1 reads the @ as splatting), and no
+# nested double quotes inside a subexpression in a string. PowerShell 7 accepts
+# both, so a parse check there does not prove this runs on 5.1.
 #
 # Everything else under tools/ is machinery this calls. You should not need it.
 
@@ -42,90 +49,101 @@ function Find-Python {
     return $found
 }
 
-switch ($mode) {
+if ($mode -eq "local") {
 
-    "local" {
-        Write-Host "=== VKey — local build ===" -ForegroundColor Cyan
+    Write-Host "=== VKey - local build ===" -ForegroundColor Cyan
 
-        if ($Clean -and (Test-Path $buildDir)) {
-            Write-Host "[1/4] wiping the CMake cache" -ForegroundColor Yellow
-            Remove-Item -Recurse -Force (Join-Path $buildDir "CMakeCache.txt"),
-                                        (Join-Path $buildDir "CMakeFiles") -ErrorAction SilentlyContinue
-        }
-
-        Write-Host "[2/4] engine" -ForegroundColor Yellow
-        & (Join-Path $root "tools\fetch-engine.ps1")
-        if ($LASTEXITCODE -ne 0) { Fail "could not get the engine" }
-
-        Write-Host "[3/4] configure" -ForegroundColor Yellow
-        cmake -B $buildDir -G "Visual Studio 18 2026" -A x64 `
-              -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot"
-        if ($LASTEXITCODE -ne 0) { Fail "configure failed" }
-
-        # Debug serves the Sciter UI from ui/ next to the exe instead of the
-        # packfolder blob compiled into it, so editing HTML or CSS only needs the
-        # app restarted, not rebuilt. Release embeds it.
-        $config = if ($DebugBuild) { "Debug" } else { "Release" }
-        Write-Host "[4/4] build ($config)" -ForegroundColor Yellow
-        cmake --build $buildDir --config $config
-        if ($LASTEXITCODE -ne 0) { Fail "build failed" }
-
-        $exe = Join-Path $buildDir "$config\VKey.exe"
-        Write-Host "`nbuilt: $exe" -ForegroundColor Green
-        if ($DebugBuild) {
-            Write-Host "Sciter UI is served from $(Join-Path $buildDir "$config\ui") — edit and restart, no rebuild." -ForegroundColor DarkGray
-        }
-        if (-not $NoRun) {
-            Write-Host "starting it — close it to return here" -ForegroundColor DarkGray
-            & $exe
-        }
+    if ($Clean -and (Test-Path $buildDir)) {
+        Write-Host "[1/4] wiping the CMake cache" -ForegroundColor Yellow
+        $cache = Join-Path $buildDir "CMakeCache.txt"
+        $cacheDir = Join-Path $buildDir "CMakeFiles"
+        Remove-Item -Recurse -Force $cache, $cacheDir -ErrorAction SilentlyContinue
     }
 
-    "test" {
-        Write-Host "=== VKey — release the engine and start a test build ===" -ForegroundColor Cyan
+    Write-Host "[2/4] engine" -ForegroundColor Yellow
+    $fetch = Join-Path $root "tools\fetch-engine.ps1"
+    & $fetch
+    if ($LASTEXITCODE -ne 0) { Fail "could not get the engine" }
 
-        if (-not (Test-Path $vkeyRs)) { Fail "no VKey-rs beside this repository (looked in $vkeyRs)" }
-        if (-not $env:VKEY_ENGINE_TOKEN) {
-            Fail @"
-VKEY_ENGINE_TOKEN is not set.
-  setx VKEY_ENGINE_TOKEN "<token>"     # then open a new terminal
-"@
-        }
+    Write-Host "[3/4] configure" -ForegroundColor Yellow
+    cmake -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot"
+    if ($LASTEXITCODE -ne 0) { Fail "configure failed" }
 
-        # ship_engine.py does the whole chain: bump the engine version, tag, wait
-        # for the release workflow, publish, repoint this repository's lock and
-        # tag, commit, push, and dispatch the build.
-        $python = Find-Python
-        & $python (Join-Path $vkeyRs "tools\ship_engine.py") --nexuskey $root --build
-        if ($LASTEXITCODE -ne 0) { Fail "shipping the engine failed — nothing further was started" }
+    # Debug serves the Sciter UI from ui/ next to the exe instead of the
+    # packfolder blob compiled into it, so editing HTML or CSS only needs the app
+    # restarted, not rebuilt. Release embeds it.
+    $config = "Release"
+    if ($DebugBuild) { $config = "Debug" }
 
-        Write-Host "`nthe test build is running." -ForegroundColor Green
-        Write-Host "watch it:  gh run list --workflow=build.yml"
-        Write-Host "when it finishes, the artifact is on the run page for testers to download."
+    Write-Host "[4/4] build ($config)" -ForegroundColor Yellow
+    cmake --build $buildDir --config $config
+    if ($LASTEXITCODE -ne 0) { Fail "build failed" }
+
+    $exe = Join-Path $buildDir "$config\VKey.exe"
+    Write-Host ""
+    Write-Host "built: $exe" -ForegroundColor Green
+
+    if ($DebugBuild) {
+        $uiDir = Join-Path $buildDir "$config\ui"
+        Write-Host "Sciter UI is served from $uiDir" -ForegroundColor DarkGray
+        Write-Host "edit HTML/CSS there and restart the app - no rebuild needed" -ForegroundColor DarkGray
     }
 
-    default {
-        Write-Host @"
+    if (-not $NoRun) {
+        Write-Host "starting it - close it to return here" -ForegroundColor DarkGray
+        & $exe
+    }
+
+}
+elseif ($mode -eq "test") {
+
+    Write-Host "=== VKey - release the engine and start a test build ===" -ForegroundColor Cyan
+
+    if (-not (Test-Path $vkeyRs)) { Fail "no VKey-rs beside this repository (looked in $vkeyRs)" }
+    if (-not $env:VKEY_ENGINE_TOKEN) {
+        $line1 = "VKEY_ENGINE_TOKEN is not set."
+        $line2 = '  setx VKEY_ENGINE_TOKEN "<token>"     # then open a new terminal'
+        Fail ($line1 + [Environment]::NewLine + $line2)
+    }
+
+    # ship_engine.py does the whole chain: bump the engine version, tag, wait for
+    # the release workflow, publish, repoint this repository's lock and tag,
+    # commit, push, and dispatch the build.
+    $python = Find-Python
+    $ship = Join-Path $vkeyRs "tools\ship_engine.py"
+    & $python $ship --nexuskey $root --build
+    if ($LASTEXITCODE -ne 0) { Fail "shipping the engine failed - nothing further was started" }
+
+    Write-Host ""
+    Write-Host "the test build is running." -ForegroundColor Green
+    Write-Host "watch it:  gh run list --workflow=build.yml"
+    Write-Host "when it finishes, the artifact is on the run page for testers to download."
+
+}
+else {
+
+    $help = @'
 VKey
 
-  vkey local              build and run here, with the Rust engine
-  vkey local -DebugBuild  ... Debug, which serves the Sciter UI from files
-  vkey local -Clean       ... after wiping the CMake cache
-  vkey local -NoRun       ... build only, do not launch
-  vkey test               release the current engine and start a test build
+  .\vkey.cmd local              build and run here, with the Rust engine
+  .\vkey.cmd local -DebugBuild  ... Debug, which serves the Sciter UI from files
+  .\vkey.cmd local -Clean       ... after wiping the CMake cache
+  .\vkey.cmd local -NoRun       ... build only, do not launch
+  .\vkey.cmd test               release the current engine and start a test build
 
 local  builds on this machine against the engine named in
-       extern/vkey_engine/engine.release, fetching it once. -DebugBuild copies the
-       Sciter UI beside the exe instead of embedding it, so HTML and CSS edits
-       need only a restart.
+       extern/vkey_engine/engine.release, fetching it once. -DebugBuild copies
+       the Sciter UI beside the exe instead of embedding it, so HTML and CSS
+       edits need only a restart.
 
 test   cuts the next engine release from VKey-rs, points this repository at it,
        pushes, and starts the GitHub build whose artifact testers download.
-       Use this when an engine change needs to reach someone else — pushing a
+       Use this when an engine change needs to reach someone else - pushing a
        NexusKey commit alone does not carry one.
 
 Both need VKEY_ENGINE_TOKEN; the engine release repository is private.
-"@
-        if ($mode) { exit 1 }
-    }
+'@
+    Write-Host $help
+    if ($mode) { exit 1 }
+
 }

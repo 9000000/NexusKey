@@ -3,12 +3,14 @@
 ## Short version
 
 ```powershell
-vkey local              # build and run here, with the Rust engine
-vkey local -DebugBuild  # ... Debug, which serves the Sciter UI from files
-vkey test               # release the engine and start the build testers download
+.\vkey.cmd local              # build and run here, with the Rust engine
+.\vkey.cmd local -DebugBuild  # ... Debug, which serves the Sciter UI from files
+.\vkey.cmd test               # release the engine and start the build testers download
 ```
 
-Use `vkey`, not `.\vkey.ps1`. PowerShell refuses unsigned scripts, and this
+Use `.\vkey.cmd`, not `.\vkey.ps1`. PowerShell does not run commands from the
+current directory, so the `.\` is required, and naming the `.cmd` avoids it
+picking the `.ps1` sitting beside it. PowerShell refuses unsigned scripts, and this
 repository usually sits on a mapped WSL drive, which Windows treats as remote —
 so even `RemoteSigned` blocks it. `vkey.cmd` is a batch file, which the execution
 policy does not apply to, and it starts PowerShell with the policy bypassed for
@@ -31,7 +33,7 @@ drive the pieces yourself when something needs unpicking.
 The one thing worth knowing before you need it: **pushing a NexusKey commit does
 not carry an engine change with it.** The engine is fetched from the release
 named in `extern/vkey_engine/engine.release`, so getting engine work in front of
-a tester means `vkey test`, not `git push`.
+a tester means `.\vkey.cmd test`, not `git push`.
 
 ---
 
