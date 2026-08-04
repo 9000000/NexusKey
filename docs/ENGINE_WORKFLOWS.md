@@ -25,6 +25,22 @@ looks like a build problem — the message names the token, so read it.
 
 ## 1. Build and run locally
 
+Driving CMake yourself is two extra pieces: fetch the engine once, and say you
+want it. **A bare `cmake -B build` now builds without the Rust engine** — the
+option defaults off so a fork does not need the noncommercial artifact — so a
+command that used to include the engine silently stops doing so.
+
+```powershell
+.\tools\fetch-engine.ps1                          # once; no-op afterwards
+cmake -B build -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT=build-engine
+cmake --build build --config Release
+```
+
+Only the configure line needs the two flags; rebuilds are unchanged because the
+cache remembers them. You only revisit this after deleting `CMakeCache.txt`.
+
+Or let a script do all three:
+
 ```powershell
 .\internal\tools\build_app.ps1 -Release -Run      # Sciter edition
 .\internal\tools\build_lite.ps1 -Release -Run     # Classic edition
