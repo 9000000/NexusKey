@@ -3,5 +3,5 @@ abi_version=6
 target=windows-x86_64
 asset_name=vkey_engine.dll
 installed_name=vkey_engine.dll
-byte_len=1264128
-sha256=73a58e9fc26623f2414430be96cb8c78e71f8c24a04163e9aee4eb3b44a40809
+byte_len=1143296
+sha256=7b7a08a1c5a8ef7cdff1a7dd018454fdd37acbb6602c3c0814f57c806eff9a31

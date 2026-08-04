@@ -67,9 +67,32 @@ jobs:
         shell: bash
         run: bash tools/audit/check_hook_thread_no_mutex.sh
 
+      # The engine libraries are no longer committed: they embed CC BY-NC data and
+      # are not covered by this repository's AGPL-3.0 licence. They are fetched
+      # from the exact release named in extern/vkey_engine/engine.release and
+      # verified against the committed extern/vkey_engine/engine.lock, which is
+      # the trust anchor — not the download.
+      - name: Fetch prebuilt engine
+        env:
+          ENGINE_TOKEN: ${{ secrets.VKEY_ENGINE_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${ENGINE_TOKEN}" ]; then
+            echo "VKEY_ENGINE_TOKEN is unset or empty." >&2
+            echo "The engine release lives in a private repository, so the fetch needs a token." >&2
+            echo "Set the secret, or build without the engine: -DVKEY_USE_RUST_ENGINE=OFF." >&2
+            exit 1
+          fi
+          python tools/fetch_engine.py \
+            --lock extern/vkey_engine/engine.lock \
+            --dest "${{ github.workspace }}/build-engine" \
+            --repo phatMT97/VKey-rs \
+            --tag "$(tr -d '[:space:]' < extern/vkey_engine/engine.release)" \
+            --token "${ENGINE_TOKEN}"
+
       - name: Configure
         if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DVKEY_USE_RUST_ENGINE=ON
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="${{ github.workspace }}/build-engine"
 
       - name: Build VKey
         if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
@@ -127,7 +150,7 @@ jobs:
       # --- Classic UI (Lite) build ---
       - name: Configure Classic UI
         if: github.event_name != 'workflow_dispatch' || inputs.include_classic
-        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DVKEY_LITE_MODE=ON -DVKEY_USE_RUST_ENGINE=ON
+        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DVKEY_LITE_MODE=ON -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="${{ github.workspace }}/build-engine"
 
       - name: Build Classic UI
         if: github.event_name != 'workflow_dispatch' || inputs.include_classic
@@ -245,18 +268,41 @@ jobs:
             }
           }
 
+      # The engine libraries are no longer committed: they embed CC BY-NC data and
+      # are not covered by this repository's AGPL-3.0 licence. They are fetched
+      # from the exact release named in extern/vkey_engine/engine.release and
+      # verified against the committed extern/vkey_engine/engine.lock, which is
+      # the trust anchor — not the download.
+      - name: Fetch prebuilt engine
+        env:
+          ENGINE_TOKEN: ${{ secrets.VKEY_ENGINE_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${ENGINE_TOKEN}" ]; then
+            echo "VKEY_ENGINE_TOKEN is unset or empty." >&2
+            echo "The engine release lives in a private repository, so the fetch needs a token." >&2
+            echo "Set the secret, or build without the engine: -DVKEY_USE_RUST_ENGINE=OFF." >&2
+            exit 1
+          fi
+          python tools/fetch_engine.py \
+            --lock extern/vkey_engine/engine.lock \
+            --dest "${{ github.workspace }}/build-engine" \
+            --repo phatMT97/VKey-rs \
+            --tag "$(tr -d '[:space:]' < extern/vkey_engine/engine.release)" \
+            --token "${ENGINE_TOKEN}"
+
       - name: Stage external engine asset
         if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.include_engine)
         shell: powershell
         run: |
-          Copy-Item "extern/vkey_engine/lib/win-x64/vkey_engine.dll" "vkey_engine.dll" -Force
+          Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "vkey_engine.dll" -Force
           # The engine is not covered by this repository's AGPL-3.0 license and
           # embeds CC BY-NC data, so its license text has to travel with the
           # binary wherever the binary goes — as a sibling release asset for a
           # tag, and inside the payload for a workflow_dispatch test build.
           Copy-Item "extern/vkey_engine/LICENSE" "vkey_engine.LICENSE.txt" -Force
           if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.include_engine }}" -eq "true") {
-            Copy-Item "extern/vkey_engine/lib/win-x64/vkey_engine.dll" "upload-payload/vkey_engine.dll" -Force
+            Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "upload-payload/vkey_engine.dll" -Force
             Copy-Item "extern/vkey_engine/LICENSE" "upload-payload/vkey_engine.LICENSE.txt" -Force
           }
 

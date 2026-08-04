@@ -74,3 +74,8 @@ GEMINI.md
 # `git submodule add` stages it bypassing this rule; this entry only prevents
 # accidental tracking of internal/ contents before submodule init.
 internal/
+
+# Prebuilt engine libraries: not AGPL, embed CC BY-NC data, fetched per release.
+# See extern/vkey_engine/LICENSE and tools/fetch_engine.py.
+extern/vkey_engine/lib/
+build-engine/

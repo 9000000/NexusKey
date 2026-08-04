@@ -2,7 +2,51 @@
 
 `vkey_engine` is the portable core engine for Vietnamese text processing used by **VKey**. The engine logic is written in Rust (housed in the closed-source `vkey-rs` repository) and compiled into a standalone dynamic library (`vkey_engine.dll` on Windows / `libvkey_engine.so` on Linux) exposing a pure C ABI defined in `include/vkey_engine.h`.
 
-This directory contains prebuilt binaries, C headers, and security lock manifests required to use or embed `vkey_engine`.
+This directory contains the C header and the security lock manifest. **It no
+longer contains the prebuilt libraries.**
+
+## The libraries are fetched, not committed
+
+`vkey_engine.dll`, `libvkey_engine.dll.a` and `libvkey_engine.so` were removed on
+2026-08-03 and `lib/` is gitignored. They embed a Vietnamese syllable dictionary
+derived from a CC BY-NC corpus, so they are not covered by this repository's
+AGPL-3.0 licence and do not belong in a tree whose licence tells recipients the
+opposite. See [`LICENSE`](LICENSE): noncommercial use only, and that restriction
+is inherited rather than chosen.
+
+What stays committed is text that carries no corpus data and pins what a download
+must be:
+
+| File | Role |
+| --- | --- |
+| `engine.lock` | ABI version, byte length and SHA-256 of the exact library. The trust anchor — a download is checked against this, never the other way round. |
+| `engine.release` | The exact release tag to fetch. Kept beside the lock so the two cannot drift apart. |
+| `include/vkey_engine.h` | The C ABI. |
+
+To populate `lib/`:
+
+```bash
+python3 tools/fetch_engine.py \
+    --lock extern/vkey_engine/engine.lock \
+    --dest build-engine \
+    --repo phatMT97/VKey-rs \
+    --tag "$(cat extern/vkey_engine/engine.release)" \
+    --token "$GH_ENGINE_TOKEN"
+```
+
+Then configure with `-DVKEY_ENGINE_ROOT=build-engine`. CI does exactly this. The
+release repository is private, so the fetch needs a token with read access to it.
+Without one, build with `-DVKEY_USE_RUST_ENGINE=OFF`: that is the default, and
+VKey runs on its in-tree C++ engine, fully functional.
+
+The released library is built with **MSVC** on a Windows runner.
+`tools/sync_nexuskey_engine.sh` in VKey-rs cross-compiles **mingw** instead, so
+its output is a different binary with a different hash and will not satisfy a
+released lock. That script stays a local development convenience; the release
+workflow is the authority for anything published.
+
+The CMake snippet below links the import library. VKey itself does not do that —
+see the note under it — and the import library is no longer in the tree.
 
 ---
 
