@@ -194,7 +194,7 @@ TEST(CommitUndoFeature, ForwardsCallerModifierSnapshotToExecutor) {
     ctx.alt = false;
     ctx.win = true;
 
-    feature.Try(ctx, sink);
+    (void)feature.Try(ctx, sink);
 
     EXPECT_EQ(exec.calls_, 1);
     EXPECT_EQ(exec.last_vk_, 0x09);
