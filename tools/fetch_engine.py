@@ -2,11 +2,18 @@
 """Download the prebuilt engine described by engine.lock and verify it.
 
 Usage:
-  fetch_engine.py --lock extern/vkey_engine/engine.lock --dest build/vkey_engine
+  fetch_engine.py --lock ... --dest ... --repo OWNER/NAME --tag engine-v1.0.0
   fetch_engine.py --lock ... --dest ... --base-url https://host/path
   fetch_engine.py --lock ... --dest ... --from-file /local/vkey_engine.dll
 
 Then configure with `-DVKEY_ENGINE_ROOT=<dest>`.
+
+Use `--repo/--tag` when the release lives in a private repository: its
+`releases/download/<tag>/<asset>` URL answers 404 even to a valid bearer token,
+because that path authenticates a browser session rather than a token. The asset
+has to be resolved through the API and fetched by its id with an
+`application/octet-stream` Accept header. `--base-url` remains correct for a
+public release, where the plain download URL works.
 
 Why this exists: `vkey_engine.dll` embeds a syllable dictionary derived from a
 CC BY-NC corpus, so it is not licensed under this repository's AGPL-3.0 and does
@@ -29,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 import shutil
 import sys
@@ -52,6 +60,7 @@ MAX_LOCK_BYTES = 1024
 # reaches the disk rather than after.
 MAX_ENGINE_BYTES = 8 * 1024 * 1024
 ALLOWED_HOSTS = {
+    "api.github.com",
     "github.com",
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com",
@@ -90,9 +99,33 @@ class CheckedRedirects(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def download(url: str, target: Path, token: str | None) -> None:
+def asset_url(repo: str, tag: str, asset: str, token: str | None) -> str:
+    """Resolve a release asset to its API download URL.
+
+    A private repository's releases/download/<tag>/<asset> path returns 404 to a
+    bearer token, so the asset id has to come from the API first.
+    """
+    url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
     check_url(url)
     request = urllib.request.Request(url)
+    request.add_header("Accept", "application/vnd.github+json")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(request, timeout=60) as response:
+        release = json.load(response)
+    for candidate in release.get("assets", []):
+        if candidate.get("name") == asset:
+            return f"https://api.github.com/repos/{repo}/releases/assets/{candidate['id']}"
+    names = ", ".join(sorted(a.get("name", "?") for a in release.get("assets", [])))
+    raise FetchError(f"release {tag} has no asset named {asset!r}; it has: {names}")
+
+
+def download(url: str, target: Path, token: str | None, api: bool = False) -> None:
+    check_url(url)
+    request = urllib.request.Request(url)
+    # The API returns release metadata as JSON unless the octet-stream is asked
+    # for by name, in which case it redirects to the storage host.
+    request.add_header("Accept", "application/octet-stream" if api else "*/*")
     if token:
         request.add_header("Authorization", f"Bearer {token}")
     opener = urllib.request.build_opener(CheckedRedirects)
@@ -122,9 +155,16 @@ def main() -> int:
     parser.add_argument("--lock", type=Path, required=True)
     parser.add_argument("--dest", type=Path, required=True, help="engine root to populate")
     parser.add_argument("--base-url", help="HTTPS prefix; asset_name is appended")
+    parser.add_argument("--repo", help="OWNER/NAME holding the release (API mode)")
+    parser.add_argument("--tag", help="exact release tag; never `latest`")
     parser.add_argument("--from-file", type=Path, help="copy a local file instead")
     parser.add_argument("--token", help="bearer token for a private release asset")
     args = parser.parse_args()
+
+    if bool(args.repo) != bool(args.tag):
+        parser.error("--repo and --tag go together")
+    if args.repo and not args.token:
+        parser.error("--repo needs --token; a private release asset is not anonymous")
 
     try:
         lock = read_lock(args.lock)
@@ -140,10 +180,13 @@ def main() -> int:
     try:
         if args.from_file:
             shutil.copyfile(args.from_file, staging)
+        elif args.repo:
+            url = asset_url(args.repo, args.tag, lock["asset"], args.token)
+            download(url, staging, args.token, api=True)
         elif args.base_url:
             download(f"{args.base_url.rstrip('/')}/{lock['asset']}", staging, args.token)
         else:
-            raise FetchError("need --base-url or --from-file")
+            raise FetchError("need --repo/--tag, --base-url or --from-file")
         verify(staging, lock)
     except (OSError, urllib.error.URLError, FetchError) as error:
         staging.unlink(missing_ok=True)
