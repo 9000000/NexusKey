@@ -34,12 +34,27 @@ if (-not $env:VKEY_ENGINE_TOKEN) {
     exit 1
 }
 
-# python3 is not a thing on Windows; py is the launcher. Take whichever exists.
-$python = @("python", "py", "python3") |
-    Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } |
-    Select-Object -First 1
+# Windows ships a Microsoft Store stub at WindowsApps\python.exe: Get-Command
+# finds it and running it prints an advert, so existence is not enough. Each
+# candidate has to actually report a Python 3 version.
+$python = $null
+foreach ($candidate in @("py", "python", "python3")) {
+    if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
+    $reported = & $candidate --version 2>&1
+    if ($LASTEXITCODE -eq 0 -and "$reported" -match "^Python 3") { $python = $candidate; break }
+}
 if (-not $python) {
-    Write-Host "no python interpreter on PATH (tried python, py, python3)" -ForegroundColor Red
+    Write-Host "No working Python on PATH." -ForegroundColor Red
+    Write-Host "  py, python and python3 were tried; any that exist only answered with"
+    Write-Host "  the Microsoft Store stub, which is not Python."
+    Write-Host ""
+    Write-Host "Either install Python for Windows (python.org, tick 'Add to PATH'),"
+    Write-Host "or fetch the engine from WSL instead:"
+    Write-Host ""
+    Write-Host '  cd ~/code/NexusKey && python3 tools/fetch_engine.py \'
+    Write-Host '      --lock extern/vkey_engine/engine.lock --dest build-engine \'
+    Write-Host '      --repo phatMT97/VKey-rs --tag $(cat extern/vkey_engine/engine.release) \'
+    Write-Host '      --token $VKEY_ENGINE_TOKEN'
     exit 1
 }
 

@@ -48,11 +48,31 @@ function Fail($message) {
 }
 
 function Find-Python {
-    $found = @("python", "py", "python3") |
-        Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } |
-        Select-Object -First 1
-    if (-not $found) { Fail "no python on PATH (tried python, py, python3)" }
-    return $found
+    # Windows ships a Microsoft Store stub at WindowsApps\python.exe. Get-Command
+    # finds it, and running it prints an advert and exits, so existence is not
+    # enough - each candidate has to actually report a Python 3 version.
+    foreach ($candidate in @("py", "python", "python3")) {
+        if (-not (Get-Command $candidate -ErrorAction SilentlyContinue)) { continue }
+        $reported = & $candidate --version 2>&1
+        if ($LASTEXITCODE -eq 0 -and "$reported" -match "^Python 3") { return $candidate }
+    }
+    return $null
+}
+
+function Get-PythonOrFail($whatFor) {
+    $found = Find-Python
+    if ($found) { return $found }
+    $lines = @(
+        "No working Python on PATH.",
+        "  py, python and python3 were tried; any that exist only answered with the",
+        "  Microsoft Store stub, which is not Python.",
+        "",
+        "Either install Python for Windows (python.org, tick 'Add to PATH'),",
+        "or run this one step inside WSL instead:",
+        "",
+        "  " + $whatFor
+    )
+    Fail ($lines -join [Environment]::NewLine)
 }
 
 if ($mode -eq "local") {
@@ -126,7 +146,7 @@ elseif ($mode -eq "test") {
     # ship_engine.py does the whole chain: bump the engine version, tag, wait for
     # the release workflow, publish, repoint this repository's lock and tag,
     # commit, push, and dispatch the build.
-    $python = Find-Python
+    $python = Get-PythonOrFail "cd ~/code/VKey-rs && python3 tools/ship_engine.py --nexuskey ~/code/NexusKey --build"
     $ship = Join-Path $vkeyRs "tools\ship_engine.py"
     if ($DryRun) {
         & $python $ship --nexuskey $root --build --dry-run
