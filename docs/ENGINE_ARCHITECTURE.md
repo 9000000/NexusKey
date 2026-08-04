@@ -1,215 +1,116 @@
-# Giới thiệu về Kiểm tra Chính tả Nâng cao
+# Kiến trúc Engine Xử lý Tiếng Việt trong VKey
 
-Từ **VKey v4.3**, VKey có thêm **Kiểm tra Chính tả Nâng cao**. Đây là tính năng tùy chọn, dùng để phát hiện và sửa một số lỗi gõ phổ biến, chẳng hạn gõ nhanh bị đảo chữ cái: `hcaof` có thể được sửa thành `chào`.
-
-Tính năng này được hỗ trợ bởi một engine phụ trợ viết bằng Rust, phân phối dưới dạng thư viện động: `vkey_engine.dll` trên Windows.
-
-Engine này:
-
-- tắt mặc định;
-- không đi kèm sẵn trong file ZIP phát hành (người dùng cần chủ động bật trong cài đặt để ứng dụng tải về);
-- chạy hoàn toàn trên máy người dùng;
-- không có chức năng mạng;
-- có thể gỡ bỏ bất cứ lúc nào;
-- không ảnh hưởng đến chức năng gõ tiếng Việt cốt lõi của VKey.
-
-Nếu engine Rust không khả dụng, VKey sẽ tự động quay lại engine C++ mã nguồn mở tích hợp sẵn.
-
-Với các câu hỏi về license, copyright hoặc lý do thiết kế chi tiết hơn, xem **[ENGINE_FAQ.md](ENGINE_FAQ.md)**.
+Tài liệu này mô tả chi tiết kiến trúc tổng quan, mô hình Engine kép (Dual-Engine), cơ chế nạp động an toàn (Dynamic Loading), giao diện C ABI và mô hình bảo mật ngoại tuyến (100% Offline) của **VKey**.
 
 ---
 
-# Trả lời nhanh
+## 1. Tóm tắt Nhanh (Dành cho Người dùng)
 
-## Tính năng này có bắt buộc không?
+Để xử lý ký tự người dùng gõ từ bàn phím thành chữ tiếng Việt có dấu (ví dụ: gõ `v` `i` `e` `t` `s` thành `việt`), VKey tách biệt làm 2 phần:
 
-Không. VKey hoạt động bình thường nếu không dùng Kiểm tra Chính tả Nâng cao.
+1. **Hạ tầng tiếp nhận phím (VKey Shell)**: Đảm nhận việc hứng phím từ hệ điều hành Windows (thông qua TSF hoặc Hook), hiển thị giao diện và gửi chuỗi phím tới Engine xử lý.
+2. **Bộ xử lý ngôn ngữ (Typing Engine)**: Kiểm tra các quy tắc chính tả tiếng Việt, tính toán vị trí đặt dấu thanh và trả lại kết quả chuỗi ký tự đã bỏ dấu.
 
-## Engine này có đi kèm sẵn trong file ZIP phát hành không?
+VKey hỗ trợ **mô hình Engine kép**:
+- **Engine C++ (Tích hợp sẵn)**: Là engine mặc định, mã nguồn mở 100%, đi kèm sẵn trong ứng dụng. Xử lý đầy đủ các kiểu gõ Telex, VNI và quy tắc chính tả tiêu chuẩn.
+- **Engine Rust Nâng cao (Tùy chọn)**: Là thư viện mở rộng (`vkey_engine.dll`), bổ sung tính năng **Kiểm tra Chính tả Nâng cao** giúp tự động sửa lỗi gõ nhanh bị đảo phím (ví dụ: `hcaof` → `chào`), đề xuất từ vựng và xử lý ngữ cảnh nâng cao.
 
-Không. Để giữ file ZIP phát hành nhẹ và tối ưu, engine không được đóng gói sẵn trong file ZIP. Người dùng cần chủ động bật **Kiểm tra Chính tả Nâng cao** trong Cài đặt, lúc đó VKey mới tự động tải file engine từ nguồn chính thức (GitHub Release) và kiểm tra tính toàn vẹn (SHA-256) trước khi sử dụng.
-
-## Tôi có thể gỡ engine này không?
-
-Có. Chỉ cần xóa `vkey_engine.dll` khỏi thư mục cài đặt.
-
-## Engine này có gửi phím gõ của tôi đi đâu không?
-
-Không. Engine chạy cục bộ và không có chức năng mạng.
-
-## Nếu gỡ engine, VKey còn gõ tiếng Việt được không?
-
-Có. Việc gỡ engine chỉ tắt Kiểm tra Chính tả Nâng cao. Các chức năng gõ tiếng Việt thông thường vẫn tiếp tục hoạt động qua engine C++ mã nguồn mở.
+> **Tự động chuyển đổi (Fallback)**: Nếu Engine Rust không có mặt hoặc bị gỡ bỏ, VKey sẽ tự động dùng Engine C++ mặc định. Việc gõ tiếng Việt của bạn luôn đảm bảo thông suốt và không bao giờ bị gián đoạn.
 
 ---
 
-# Vì sao engine được phân phối riêng?
+## 2. Kiến trúc Tổng quan (System Architecture)
 
-Advanced Spell Check Engine được phát triển như một thành phần độc lập với ứng dụng VKey cốt lõi.
+Sơ đồ luồng dữ liệu xử lý phím gõ trong VKey:
 
-Cách tách riêng này giúp engine có thể phát triển theo nhịp riêng, trong khi đường đi nhập liệu chính của VKey vẫn là mã nguồn mở và có thể kiểm tra độc lập. Phần mã nguồn mở của VKey vẫn chịu trách nhiệm nạp thư viện, truyền dữ liệu vào engine, nhận kết quả trả về và quyết định khi nào dùng engine nào.
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Hệ điều hành Windows                            │
+│                 (Windows TSF IME / Low-Level Hook)                     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Phím gõ (Virtual Key / Char)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                              VKey Host                                 │
+│          (Coordinator / Key Event Pipeline / UI Sciter)                │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ Chuỗi phím UTF-16
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                   TypingEngine Abstraction Interface                   │
+└─────────────────┬──────────────────────────────────┬───────────────────┘
+                  │                                  │
+      (Bật Advanced Spell Check)              (Mặc định / Fallback)
+                  │                                  │
+                  ▼                                  ▼
+┌──────────────────────────────────┐ ┌──────────────────────────────────┐
+│       Rust Engine (C ABI)        │ │        C++ Engine (Built-in)     │
+│   (Thư viện tùy chọn: DLL/SO)    │ │      (Mã nguồn mở tích hợp)      │
+└──────────────────────────────────┘ └──────────────────────────────────┘
+```
 
-Việc phân phối riêng cũng giúp VKey giữ lại một phần giá trị phát triển của dự án, hạn chế các bản phân phối đổi tên sơ sài, đồng thời cho phép ứng dụng chính tiếp tục được cung cấp miễn phí cho mọi người.
-
----
-
-# Rust Engine khác gì engine C++ mặc định?
-
-Engine C++ là engine mã nguồn mở tích hợp sẵn của VKey. Đây là engine mặc định, xử lý các chức năng gõ tiếng Việt thông thường và vẫn hoạt động đầy đủ nếu Rust Engine không có mặt.
-
-Rust Engine không thay thế toàn bộ engine C++. Nó chỉ được dùng khi người dùng bật Kiểm tra Chính tả Nâng cao, với mục tiêu xử lý thêm các lỗi gõ mà engine mặc định không cố sửa, chẳng hạn lỗi gõ nhanh, đảo vị trí chữ cái hoặc một số trường hợp cần kiểm tra chính tả kỹ hơn.
-
-Nói ngắn gọn:
-
-- nếu bạn chỉ cần gõ tiếng Việt bình thường, engine C++ là đủ;
-- nếu bạn muốn VKey tự phát hiện và sửa thêm một số lỗi đánh máy, có thể bật Kiểm tra Chính tả Nâng cao để dùng Rust Engine;
-- nếu tắt hoặc gỡ Rust Engine, VKey vẫn quay lại engine C++ và tiếp tục gõ tiếng Việt bình thường.
-
----
-
-# Minh bạch, quyền riêng tư và bảo mật
-
-Vì bộ gõ xử lý dữ liệu nhập từ bàn phím, phần tích hợp giữa VKey và engine được thiết kế để có thể kiểm tra trực tiếp.
-
-Các phần sau nằm trong mã nguồn mở của VKey:
-
-- nạp thư viện động;
-- giao tiếp với engine;
-- truyền dữ liệu đầu vào;
-- nhận kết quả đầu ra;
-- tự động quay lại engine C++ khi engine Rust không khả dụng.
-
-Nhờ đó, người dùng có thể kiểm tra VKey gửi dữ liệu gì vào engine và nhận lại dữ liệu gì.
-
-Engine Rust hoạt động như một thư viện cục bộ. Nó không giao tiếp với máy chủ bên ngoài.
-
-Nếu bạn vẫn quan ngại về bảo mật và không có khả năng hoặc thời gian tự kiểm tra mã nguồn, bạn hoàn toàn có thể **chặn quyền truy cập Internet** của VKey bằng Windows Firewall hoặc phần mềm tường lửa bất kỳ. Quy tắc tường lửa áp dụng cho file thực thi `VKey.exe`; `vkey_engine.dll` chạy bên trong tiến trình đó nên không cần (và cũng không thể) thêm quy tắc riêng cho DLL.
-
-Việc gõ tiếng Việt và kiểm tra chính tả hoạt động hoàn toàn cục bộ, nên chặn Internet không ảnh hưởng tới các tính năng này. Chỉ hai chức năng cần mạng sẽ ngừng hoạt động: kiểm tra cập nhật, và tải engine tự động. Với chế độ Nâng cao, hãy chọn **Cài đặt thủ công** trong hộp thoại để tự tải `vkey_engine.dll` bằng trình duyệt và đặt vào thư mục chứa `VKey.exe`.
+### Các thành phần chính:
+- **`Coordinator`**: Tiếp nhận sự kiện bàn phím từ TSF (`NextKeyTSF.dll`) hoặc Hook (`NextKeyHook.dll`), điều phối trạng thái gõ và quản lý bộ đệm composition buffer.
+- **`ITypingEngine` Interface**: Lớp trừu tượng định nghĩa các hàm xử lý phím chuẩn (`PushChar`, `Backspace`, `Reset`, `PeekText`, `CommitText`).
+- **`CppEngine`**: Implementation viết bằng C++20 tích hợp trực tiếp trong mã nguồn VKey.
+- **`RustEngineLoader`**: Component chịu trách nhiệm kiểm tra an toàn, nạp động file `vkey_engine.dll` tại runtime và ánh xạ các hàm C ABI sang `ITypingEngine`.
 
 ---
 
-# Cách tắt hoặc gỡ bỏ
+## 3. Giao diện C ABI & Nạp Động (C ABI Specification)
 
-Người dùng luôn có quyền quyết định có dùng Kiểm tra Chính tả Nâng cao hay không.
+Engine Rust được đóng gói dưới dạng thư viện liên kết động (`vkey_engine.dll` trên Windows / `libvkey_engine.so` trên Linux) và giao tiếp với VKey thông qua giao diện **C ABI** chuẩn định nghĩa tại `extern/vkey_engine/include/vkey_engine.h`.
 
-Để không dùng engine tùy chọn: xóa `vkey_engine.dll` khỏi thư mục cài đặt.
+### Đặc điểm thiết kế C ABI:
+1. **Truyền nhận UTF-16**: Tất cả chuỗi ký tự đi qua ranh giới ABI đều sử dụng mảng `uint16_t*` (tương thích trực tiếp với `wchar_t` trên Windows), giúp triệt tiêu hoàn toàn chi phí chuyển đổi bảng mã (transcoding).
+2. **Không cấp phát bộ nhớ chéo (Zero cross-boundary allocation)**: VKey tự quản lý và cấp phát bộ đệm (caller-allocated buffer), Engine chỉ ghi kết quả vào bộ đệm được truyền sang.
+3. **Quản lý con trỏ ẩn (Opaque Handle)**: Engine trả về con trỏ `VKeyEngine*` ẩn state bên trong, đảm bảo an toàn bộ nhớ giữa C++ và Rust.
 
-Sau đó, VKey sẽ tự động dùng engine C++ mã nguồn mở. Không cần cấu hình thêm.
+### Bảng tóm tắt hàm C ABI cốt lõi:
 
----
-
-# Tìm hiểu thêm
-
-Nếu bạn quan tâm đến lý do engine hiện chưa mở nguồn, dual licensing, copyright, khả năng tương thích với AGPL, lịch sử dự án hoặc các lý do kỹ thuật khác, vui lòng xem:
-
-- **[ENGINE_FAQ.md](ENGINE_FAQ.md)**
-
----
-
-# About Advanced Spell Check
-
-Starting with **VKey v4.3**, VKey includes **Advanced Spell Check**. This optional feature detects and corrects some common typing mistakes, such as transposed letters from fast typing: `hcaof` can become `chào`.
-
-The feature is powered by an auxiliary Rust engine distributed as a dynamic library: `vkey_engine.dll` on Windows.
-
-The engine is:
-
-- disabled by default;
-- not bundled in the release ZIP by default (users need to explicitly enable it in Settings for VKey to download it);
-- fully local;
-- built without networking functionality;
-- removable at any time;
-- not required for VKey's core Vietnamese input functionality.
-
-If the Rust engine is unavailable, VKey automatically falls back to the built-in open-source C++ engine.
-
-For licensing, copyright, and broader design rationale, see **[ENGINE_FAQ.md](ENGINE_FAQ.md)**.
+| Hàm C ABI | Chức năng |
+| :--- | :--- |
+| `vkey_engine_create(method, flags)` | Khởi tạo một instance engine (Telex/VNI) với các cờ tính năng. |
+| `vkey_engine_push_char(engine, codepoint)` | Đưa một ký tự Unicode (ASCII key) vào bộ đệm xử lý. |
+| `vkey_engine_backspace(engine)` | Xóa ký tự cuối cùng trong bộ đệm đang gõ. |
+| `vkey_engine_peek_utf16(engine, buf, cap)` | Đọc chuỗi ký tự tiếng Việt đang soạn thảo (composition). |
+| `vkey_engine_commit_utf16(engine, buf, cap)` | Chốt chuỗi ký tự ra ứng dụng đích và xóa bộ đệm engine. |
+| `vkey_engine_reset(engine)` | Xóa sạch bộ đệm gõ ngay lập tức. |
+| `vkey_engine_destroy(engine)` | Giải phóng bộ nhớ của instance engine. |
+| `vkey_engine_runtime_status()` | Kiểm tra tính hợp lệ và tên file thực thi của thư viện tại runtime. |
 
 ---
 
-# Quick Answers
+## 4. Mô hình Bảo mật & Kiểm tra An toàn File (Security & Trust Model)
 
-## Is this feature required?
+Vì `vkey_engine.dll` là file thư viện động được nạp vào tiến trình `VKeyApp.exe`, VKey áp dụng cơ chế bảo mật nhiều lớp (Defense-in-Depth) để chống lại các nguy cơ đánh tráo file, DLL Hijacking hoặc chỉnh sửa trái phép:
 
-No. VKey works normally without Advanced Spell Check.
+### 1. Ghim mã Hash SHA-256 khi Biên dịch (`engine.lock`)
+Thông tin file DLL chính thức (kích thước file chính xác và mã băm SHA-256) được định nghĩa trong file `engine.lock` và được nhúng trực tiếp vào file thực thi `VKeyApp.exe` khi biên dịch.
 
-## Is the engine included in the release ZIP?
+### 2. Chống tranh chấp dữ liệu & Đánh tráo file (TOCTOU Protection)
+Khi kiểm tra file `vkey_engine.dll`:
+1. VKey mở file bằng hàm `CreateFileW` với quyền truy cập độc quyền ghi/xóa (`FILE_SHARE_READ`). Việc này khóa chặt file trên ổ cứng, ngăn các tiến trình độc hại khác sửa đổi file trong lúc VKey đang kiểm tra.
+2. VKey dùng Windows CNG API (`BCryptHashData`) để tính mã băm SHA-256 của file thực tế trên đĩa.
+3. Mã băm được so sánh với mã ghim sẵn trong thời gian cố định (constant-time comparison) để chống tấn công phân tích thời gian (side-channel timing attack).
 
-No. To keep the release ZIP lightweight, the engine is omitted from the ZIP file by default. Users need to explicitly enable **Advanced Spell Check** in Settings, after which VKey automatically downloads the official engine binary from GitHub Releases and verifies its integrity (SHA-256) before loading.
-
-## Can I remove the engine?
-
-Yes. Delete `vkey_engine.dll` from the installation directory.
-
-## Does it send my keystrokes anywhere?
-
-No. The engine runs locally and contains no networking functionality.
-
-## Will Vietnamese input still work if I remove it?
-
-Yes. Removing the engine only disables Advanced Spell Check. Standard Vietnamese input features continue to work through the open-source C++ engine.
+### 3. Nạp an toàn & Định danh File (File Identity Binding)
+1. Hàm `LoadLibraryExW` chỉ nạp DLL từ thư mục ứng dụng hoặc `System32` (`LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32`), loại bỏ hoàn toàn nguy cơ tấn công qua đường dẫn `PATH` hoặc CWD.
+2. Sau khi nạp, VKey kiểm tra chỉ số định danh file trên đĩa (`dwVolumeSerialNumber`, `nFileIndexHigh`, `nFileIndexLow`) thông qua `GetFileInformationByHandle` để đảm bảo Windows đã nạp đúng file đã được xác thực SHA-256 trước đó.
 
 ---
 
-# Why is the engine distributed separately?
+## 5. Quyền riêng tư & Hoạt động Ngoại tuyến (100% Offline Privacy)
 
-The Advanced Spell Check Engine is developed as an independent component from the core VKey application.
+Bộ gõ bàn phím là phần mềm nhạy cảm vì tiếp nhận toàn bộ phím gõ của người dùng. VKey được thiết kế tuân thủ nghiêm ngặt nguyên tắc bảo vệ quyền riêng tư:
 
-Keeping it separate lets the engine evolve independently while VKey's main input path remains open source and independently auditable. VKey's open-source code is still responsible for loading the library, passing input to the engine, receiving output, and deciding which engine to use.
-
-Separate distribution also helps VKey preserve part of the project's own development value, reduce low-effort rebranded redistributions, and keep the main application freely available to everyone.
-
----
-
-# How is the Rust engine different from the default C++ engine?
-
-The C++ engine is VKey's built-in open-source engine. It is the default engine, handles normal Vietnamese input, and continues to work fully when the Rust engine is not present.
-
-The Rust engine does not replace the entire C++ engine. It is only used when Advanced Spell Check is enabled, and its role is to handle additional typo-correction cases that the default engine does not try to fix, such as fast typing mistakes, transposed letters, or cases that need stricter spelling checks.
-
-In short:
-
-- if you only need normal Vietnamese input, the C++ engine is enough;
-- if you want VKey to detect and fix some typing mistakes automatically, you can enable Advanced Spell Check to use the Rust engine;
-- if the Rust engine is disabled or removed, VKey falls back to the C++ engine and normal Vietnamese input continues to work.
+- **100% Offline (Không kết nối mạng)**: Cả Engine C++ lẫn Engine Rust đều chạy hoàn toàn cục bộ trong bộ nhớ của tiến trình `VKeyApp.exe`. Engine Rust không chứa bất kỳ mã nguồn hay thư viện mạng nào.
+- **Tương thích Tường lửa (Firewall Friendly)**: Người dùng có thể chủ động chặn toàn bộ truy cập Internet của file `VKey.exe` bằng Windows Firewall. Việc gõ tiếng Việt và kiểm tra chính tả vẫn hoạt động hoàn hảo 100%.
+- **Kiểm chứng mã nguồn (Auditable)**: Toàn bộ mã nguồn tiếp nhận bàn phím, cơ chế kiểm tra SHA-256 và luồng truyền dữ liệu phím gõ của VKey đều được công khai minh bạch trên GitHub để cộng đồng tự kiểm tra.
 
 ---
 
-# Transparency, Privacy, and Security
+## 6. Tài liệu Liên quan
 
-Because keyboard input software handles sensitive user input, the integration between VKey and the engine is designed to be directly inspectable.
-
-The following parts are implemented in VKey's open-source codebase:
-
-- loading the dynamic library;
-- communicating with the engine;
-- passing input data;
-- receiving output;
-- falling back to the C++ engine when the Rust engine is unavailable.
-
-This lets users inspect what data VKey passes to the engine and what data it receives back.
-
-The Rust engine runs as a local library. It does not communicate with external servers.
-
-If you still have privacy or security concerns and lack the technical capability or time to audit the code yourself, you can **block internet access** for VKey using Windows Firewall or any firewall software. Firewall rules apply to the `VKey.exe` executable; `vkey_engine.dll` runs inside that process, so it needs no separate rule (and cannot be given one).
-
-Typing and spell checking run entirely locally, so blocking internet access does not affect them. Only two network features stop working: update checks, and the automatic engine download. For Advanced mode, choose **Install manually** in the dialog to download `vkey_engine.dll` yourself in a browser and place it in the folder containing `VKey.exe`.
-
----
-
-# How to Disable or Remove It
-
-Users remain in control of whether Advanced Spell Check is used.
-
-To stop using the optional engine: Delete `vkey_engine.dll` from the installation directory.
-
-VKey will then automatically use the built-in open-source C++ engine. No additional configuration is required.
-
----
-
-# Learn More
-
-For more context on why the engine is currently closed source, dual licensing, copyright ownership, AGPL compatibility, project history, and other technical rationale, see:
-
-- **[ENGINE_FAQ.md](ENGINE_FAQ.md)**
+- **[ENGINE_FAQ.md](ENGINE_FAQ.md)**: Giải đáp các câu hỏi thường gặp về cách sử dụng, cài đặt, gỡ bỏ và giấy phép.
+- **`extern/vkey_engine/README.md`**: Tài liệu kỹ thuật chi tiết dành cho lập trình viên muốn tích hợp C ABI.
