@@ -2,26 +2,61 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #include "stdafx.h"
-#include "EngineController.h"
-#include "CompositionEditSession.h"
-#include "EscRestoreLastCommitSession.h"
-#include "InputScopeChecker.h"
-#include "Define.h"
-#include "core/engine/EngineFactory.h"
-#include "core/DigitLedWordDecision.h"
-#include <memory>
 
+#include "EngineController.h"
+
+#include <algorithm>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "CompositionEditSession.h"
+#include "Define.h"
+#include "EscRestoreLastCommitSession.h"
+#include "Globals.h"
+#include "InputScopeChecker.h"
+#include "core/DigitLedWordDecision.h"
+#include "core/MacroCase.h"
+#include "core/MacroContextMatch.h"
+#include "core/MacroPrefix.h"
+#include "core/MacroTableDecision.h"
+#include "core/config/ConfigManager.h"
+#include "core/engine/EngineFactory.h"
+
+namespace {
+
+constexpr std::size_t kMaxRawMacroBuffer = 128;
+constexpr std::size_t kMacroClipboardThreshold = 200;
+
+class TsfCaseMapper final : public NextKey::Macro::CaseMapper {
+public:
+    void Upper(wchar_t* buffer, std::size_t count) const override {
+        if (buffer != nullptr && count != 0) {
+            CharUpperBuffW(buffer, static_cast<DWORD>(count));
+        }
+    }
+
+    void Lower(wchar_t* buffer, std::size_t count) const override {
+        if (buffer != nullptr && count != 0) {
+            CharLowerBuffW(buffer, static_cast<DWORD>(count));
+        }
+    }
+};
+
+}  // namespace
 namespace NextKey {
 namespace TSF {
 
 EngineController::EngineController() {
     // Try to open SharedState from main app (read-write for flag toggling)
     if (sharedState_.OpenReadWrite()) {
-        // Step 1: ABI check — direct header read, immune to seqlock contention.
-        // magic/structVersion/structSize never change after Create(), so this
-        // answer is stable and cannot spuriously flip TSF_ABI_MISMATCH under
-        // concurrent writer activity.
-        if (!sharedState_.IsAbiCompatible()) {
+        // Step 1: ABI check — seqlock-protected header read. CheckConfigEvent
+        // re-evaluates a Retry/failed result because an older creator may have
+        // exposed magic before finishing this header, or Create() may still be
+        // mid-reinit.
+        const auto abiResult = sharedState_.CheckAbiCompatibility();
+        if (abiResult == SharedStateManager::AbiCheckResult::Incompatible) {
             abiOk_ = false;
             sharedState_.SetOrClearFlag(SharedFlags::TSF_ABI_MISMATCH, true);
             config_.inputMethod = InputMethod::Telex;
@@ -30,11 +65,22 @@ EngineController::EngineController() {
             currentMethod_ = InputMethod::Telex;
             engine_ = EngineFactory::Create(config_);
             TSF_LOG(L"EngineController: SharedState ABI mismatch — passthrough");
+        } else if (abiResult == SharedStateManager::AbiCheckResult::Retry) {
+            // Seqlock contention, not a confirmed mismatch — do NOT raise the
+            // sticky TSF_ABI_MISMATCH banner for this. CheckConfigEvent retries.
+            abiOk_ = false;
+            config_.inputMethod = InputMethod::Telex;
+            config_.spellCheckEnabled = false;
+            config_.optimizeLevel = 0;
+            currentMethod_ = InputMethod::Telex;
+            engine_ = EngineFactory::Create(config_);
+            TSF_LOG(L"EngineController: SharedState ABI check contention, using defaults");
         } else {
             // Step 2: ABI OK; try a seqlock Read for the full config.
+            abiOk_ = true;
             SharedState state = sharedState_.Read();
             if (state.IsValid()) {
-                ApplySharedState(state);
+                ApplySharedState(state, /*allowMacroDiskRead=*/true);
                 lastEpoch_ = state.epoch;
                 TSF_LOG(L"EngineController initialized from SharedState (epoch=%u, method=%d)",
                         state.epoch, state.inputMethod);
@@ -155,17 +201,22 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
     //    reboots — Settings dialog + tray render a banner via TSF_ABI_MISMATCH.
     if (!abiOk_) return false;
 
-    // 1. Check if engine should process keys
     if (sharedState_.IsConnected()) {
         // Read flags directly from shared memory (live, zero-copy)
         uint32_t flags = sharedState_.ReadFlags();
-        if (!(flags & SharedFlags::ENGINE_ENABLED)) return false;
+        const bool newEngineEnabled = (flags & SharedFlags::ENGINE_ENABLED) != 0;
+        if (newEngineEnabled != engineEnabled_) {
+            engineEnabled_ = newEngineEnabled;
+            ClearMacroTracking();
+        }
+        if (!engineEnabled_) return false;
 
         // [Checkpoint: TSF_ACTIVE] Only process keys when foreground app is in TSF list
         // EXE sets this flag on foreground change — prevents double-processing with hook
         bool newTsfActive = (flags & SharedFlags::TSF_ACTIVE) != 0;
         if (newTsfActive != tsfActive_) {
             tsfActive_ = newTsfActive;
+            ClearMacroTracking();
             TSF_LOG(L"[Checkpoint] TSF_ACTIVE: %s", tsfActive_ ? L"ON (processing keys)" : L"OFF (passthrough)");
         }
         if (!tsfActive_) return false;
@@ -174,6 +225,7 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
         bool newVietnameseMode = (flags & SharedFlags::VIETNAMESE_MODE) != 0;
         if (newVietnameseMode != vietnameseMode_) {
             vietnameseMode_ = newVietnameseMode;
+            ClearMacroTracking();
             if (langBarButton_) langBarButton_->Refresh();
         }
 
@@ -270,7 +322,8 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         if (HasPendingRevive()) {
             auto* pSession = new ReviveCompositionEditSession(
                 pContext, &compositionMgr_, engine_.get(),
-                pendingReviveWord_, pendingReviveRange_);
+                pendingReviveWord_, pendingReviveRange_,
+                MatchingRawForCommittedWord(pendingReviveWord_));
             RequestEditSession(pContext, pSession);
             pSession->Release();
             ClearPendingRevive();
@@ -313,12 +366,24 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
             bool shouldAutoCap = pInspect->ShouldAutoCap();
             pInspect->Release();
 
-            // Try revive if Vietnamese word found
+            // Try revive if a seedable word is found. No English-word gate here
+            // (unlike PrepareBackspaceRevive): continuing to type into an English
+            // word is exactly when the engine needs the whole word in its buffer.
+            // Blocking it left the tail alone in a fresh buffer, so English
+            // protection couldn't see the prefix and the tone key landed on it —
+            // "test" + "er" → "testẻ" instead of "tester". The BS path keeps its
+            // gate: reviving there is followed by Backspace(), which re-renders a
+            // raw replay as Vietnamese ("tester" → "tết").
             if (!word.empty() && wordRange) {
                 auto tempEngine = EngineFactory::Create(config_);
-                if (tempEngine && tempEngine->SeedFromText(word) && !tempEngine->IsEnglishWord()) {
+                if (tempEngine && tempEngine->SeedFromText(word)) {
+                    // Raw replay over glyph-seeding: SeedFromText loses which key
+                    // produced which diacritic, so a tone key pressed right after
+                    // the revive can't escape it (#209 Shift+R: "Tẻ" + R stayed
+                    // "Tẻ" under the Rust engine instead of escaping to "TeR").
                     auto* pRevive = new ReviveAndTypeEditSession(
-                        pContext, &compositionMgr_, engine_.get(), word, wordRange, ch);
+                        pContext, &compositionMgr_, engine_.get(), word, wordRange, ch,
+                        MatchingRawForCommittedWord(word));
                     RequestEditSession(pContext, pRevive);
                     pRevive->Release();
                     TSF_LOG(L"HandleKey: revive '%ls' + '%lc'", word.c_str(), ch);
@@ -326,13 +391,17 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
                 }
             }
 
+            const wchar_t rawCh = ch;
             // Auto-cap if revive didn't happen
             if (config_.autoCaps && shouldAutoCap) {
                 ch = towupper(ch);
+                wasFirstCharAutoCapped_ = true;
                 TSF_LOG(L"HandleKey: auto-cap → '%lc'", ch);
             }
+            TrackMacroCharacter(rawCh);
+        } else {
+            TrackMacroCharacter(ch);
         }
-
         TSF_LOG(L"HandleKey: pushing char '%c'", ch);
         engine_->PushChar(ch);
         
@@ -383,6 +452,7 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
 }
 
 void EngineController::ProcessBackspace(ITfContext* pContext) {
+    TrackMacroBackspace();
     engine_->Backspace();
 
     if (engine_->Count() > 0) {
@@ -407,6 +477,9 @@ void EngineController::Commit(ITfContext* pContext) {
     // clears escRawHistory_ (see TelexEngineTest.EscRestoreRaw_PeekRawClearedByCommit).
     std::wstring rawSnapshot = engine_->PeekRaw();
     std::wstring committed = engine_->Commit();
+    if (engine_->LastCommitWasCorrected()) {
+        TSF_LOG(L"Commit: lexicon-corrected, text='%ls'", committed.c_str());
+    }
 
     // Commit: set final text and end composition in one atomic operation
     auto* pSession = new CommitEditSession(pContext, &compositionMgr_, committed);
@@ -416,6 +489,7 @@ void EngineController::Commit(ITfContext* pContext) {
     // Reset engine state AFTER the edit session completes (synchronous)
     engine_->Reset();
     digitLedWord_ = false;
+    ClearMacroTracking();
 
     TSF_LOG(L"Commit called, text='%ls'", committed.c_str());
 
@@ -429,6 +503,9 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
     // PeekRaw BEFORE engine_->Commit() — see Commit() comment above.
     std::wstring rawSnapshot = engine_->PeekRaw();
     std::wstring committed = engine_->Commit();
+    if (engine_->LastCommitWasCorrected()) {
+        TSF_LOG(L"CommitWithChar: lexicon-corrected, text='%ls'", committed.c_str());
+    }
 
     // Append the commit character (e.g., space) if provided
     if (appendChar != L'\0') {
@@ -443,6 +520,7 @@ void EngineController::CommitWithChar(ITfContext* pContext, wchar_t appendChar) 
     // Reset engine state AFTER the edit session completes (synchronous)
     engine_->Reset();
     digitLedWord_ = false;
+    ClearMacroTrackingAfterCommit();
 
     TSF_LOG(L"CommitWithChar called, text='%ls'", committed.c_str());
 
@@ -462,6 +540,7 @@ bool EngineController::CommitRawAndEnd(ITfContext* pContext) {
 
     engine_->Reset();
     digitLedWord_ = false;
+    ClearMacroTracking();
 
     TSF_LOG(L"CommitRawAndEnd: raw='%ls'", raw.c_str());
     return true;
@@ -482,9 +561,283 @@ bool EngineController::HasNonEmptySelection(ITfContext* pContext) {
 }
 
 void EngineController::Reset() {
+    ClearMacroTracking();
     engine_->Reset();
     compositionMgr_.TerminateComposition();
     digitLedWord_ = false;
+}
+
+bool EngineController::IsMacroTrackingEnabled() const noexcept {
+    if (!abiOk_ || contextBlocked_ || !config_.macroEnabled || macroTable_.empty()
+        || !sharedState_.IsConnected()) {
+        return false;
+    }
+    const uint32_t flags = sharedState_.ReadFlags();
+    const bool liveVietnameseMode = (flags & SharedFlags::VIETNAMESE_MODE) != 0;
+    return (flags & SharedFlags::ENGINE_ENABLED) != 0
+        && (flags & SharedFlags::TSF_ACTIVE) != 0
+        && (liveVietnameseMode || config_.macroInEnglish);
+}
+
+bool EngineController::IsEnglishMacroTrackingActive() const noexcept {
+    if (!abiOk_ || contextBlocked_ || !config_.macroInEnglish
+        || !config_.macroEnabled || macroTable_.empty()
+        || !sharedState_.IsConnected()) {
+        return false;
+    }
+    const uint32_t flags = sharedState_.ReadFlags();
+    return (flags & SharedFlags::ENGINE_ENABLED) != 0
+        && (flags & SharedFlags::TSF_ACTIVE) != 0
+        && (flags & SharedFlags::VIETNAMESE_MODE) == 0;
+}
+
+bool EngineController::IsMacroCommitTrigger(UINT vkCode) const noexcept {
+    return Macro::IsCommitTrigger(vkCode);
+}
+
+bool EngineController::HasMacroCandidate() const noexcept {
+    return IsMacroTrackingEnabled()
+        && (!rawMacroBuffer_.empty() || (engine_ && engine_->Count() > 0));
+}
+
+void EngineController::ClearMacroTracking() noexcept {
+    rawMacroBuffer_.clear();
+    wasFirstCharAutoCapped_ = false;
+    macroCrossCommit_ = false;
+}
+
+void EngineController::ClearMacroTrackingAfterCommit() noexcept {
+    if (!macroCrossCommit_) ClearMacroTracking();
+}
+
+void EngineController::TrackMacroCharacter(wchar_t ch) {
+    if (!IsMacroTrackingEnabled() || ch == 0) return;
+
+    rawMacroBuffer_ += ch;
+    if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) ClearMacroTracking();
+}
+
+void EngineController::TrackMacroBackspace() noexcept {
+    if (!IsMacroTrackingEnabled() || rawMacroBuffer_.empty()) return;
+
+    rawMacroBuffer_.pop_back();
+    if (rawMacroBuffer_.empty()) macroCrossCommit_ = false;
+}
+
+bool EngineController::ReplacePrecedingText(ITfContext* pContext,
+                                             std::size_t characterCount,
+                                             const std::wstring& replacement) {
+    if (pContext == nullptr || characterCount == 0) return false;
+
+    bool replaced = false;
+    auto* pSession = new ReplacePrecedingTextEditSession(
+        pContext, characterCount, replacement, &replaced);
+    HRESULT hrSession = S_OK;
+    HRESULT hr = pContext->RequestEditSession(
+        clientId_, pSession, TF_ES_SYNC | TF_ES_READWRITE, &hrSession);
+    pSession->Release();
+
+    if (!replaced) {
+        TSF_LOG(L"ReplacePrecedingText: failed (request=0x%08X, session=0x%08X)",
+                hr, hrSession);
+        return false;
+    }
+    if (FAILED(hr) || FAILED(hrSession)) {
+        // SetText already succeeded, so the trigger must stay consumed even if
+        // collapsing the range or restoring the caret failed afterward.
+        TSF_LOG(L"ReplacePrecedingText: text replaced; caret update failed "
+                L"(request=0x%08X, session=0x%08X)", hr, hrSession);
+    }
+    return true;
+}
+
+std::wstring EngineController::ReadPrecedingTextFromContext(ITfContext* pContext,
+                                                            LONG maxChars) const {
+    if (pContext == nullptr || isScintillaApp_) return {};
+    auto* pSession = new ReadPrecedingCharsEditSession(pContext, maxChars);
+    HRESULT hrSession = S_OK;
+    HRESULT hr = pContext->RequestEditSession(
+        clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
+    std::wstring text;
+    if (SUCCEEDED(hr) && SUCCEEDED(hrSession)) {
+        text = pSession->Text();
+    }
+    pSession->Release();
+    return text;
+}
+
+std::optional<Macro::ContextMatch> EngineController::LookupMacroInContext(
+    ITfContext* pContext, wchar_t triggerChar) const {
+    if (pContext == nullptr || macroTable_.empty() || maxMacroKeyLen_ == 0) {
+        return std::nullopt;
+    }
+    // Reading one char more than the longest key lets the boundary guard see
+    // the character in front of a full-length candidate.
+    const LONG want = static_cast<LONG>(
+        (std::min)(maxMacroKeyLen_ + 1, static_cast<std::size_t>(64)));
+    const std::wstring text = ReadPrecedingTextFromContext(pContext, want);
+    if (text.empty()) return std::nullopt;   // unsupported host, or caret at doc start
+
+    const TsfCaseMapper caseMapper;
+    return Macro::MatchInPrecedingText(text, triggerChar, macroTable_, maxMacroKeyLen_,
+                                       config_.autoCapsMacro, kMacroClipboardThreshold,
+                                       caseMapper);
+}
+
+Macro::MacroPlan EngineController::EvaluateMacroPlan(const std::wstring& rawBuffer,
+                                                    wchar_t triggerChar) const {
+    const std::wstring previousComposition = engine_ ? engine_->Peek() : std::wstring{};
+    if (rawBuffer.empty() && previousComposition.empty()) return {};
+
+    const std::vector<uint8_t> encodedWidths;
+    const TsfCaseMapper caseMapper;
+    const Macro::PlanInputs inputs{
+        .rawMacroBuffer = rawBuffer,
+        .previousComposition = previousComposition,
+        .previousEncodedWidths = encodedWidths,
+        .macroTable = macroTable_,
+        .macroCrossCommit = macroCrossCommit_,
+        // TSF writes Unicode through ITfRange, so match document character counts.
+        .currentCodeTable = CodeTable::Unicode,
+        .autoCapsEnabled = config_.autoCapsMacro,
+        .wasFirstCharAutoCapped = wasFirstCharAutoCapped_,
+        .triggerChar = triggerChar,
+        .clipboardThreshold = kMacroClipboardThreshold,
+    };
+    return Macro::Plan(inputs, caseMapper);
+}
+
+bool EngineController::WouldExpandMacroTrigger(ITfContext* pContext,
+                                                UINT vkCode,
+                                                wchar_t triggerChar) const {
+    if (!Macro::IsCommitTrigger(vkCode) || !IsMacroTrackingEnabled()) return false;
+    if (!Macro::ShouldTrigger(vkCode, config_.macroTriggerSpace, config_.macroTriggerEnter,
+                              config_.macroTriggerTab, config_.macroTriggerDir)) {
+        return false;
+    }
+
+    std::wstring candidate = rawMacroBuffer_;
+    if (triggerChar > L' ') {
+        candidate += triggerChar;
+        if (candidate.size() > kMaxRawMacroBuffer) return false;
+    }
+    if (EvaluateMacroPlan(candidate, triggerChar).matched) return true;
+
+    return LookupMacroInContext(pContext, triggerChar).has_value();
+}
+
+EngineController::MacroResult EngineController::HandleMacroTrigger(
+    ITfContext* pContext, UINT vkCode, wchar_t triggerChar) {
+    if (!Macro::IsCommitTrigger(vkCode)) return MacroResult::NoMatch;
+    if (!IsMacroTrackingEnabled()) {
+        ClearMacroTracking();
+        return MacroResult::NoMatch;
+    }
+
+    if (!Macro::ShouldTrigger(vkCode, config_.macroTriggerSpace, config_.macroTriggerEnter,
+                              config_.macroTriggerTab, config_.macroTriggerDir)) {
+        if (vkCode == VK_SPACE && !rawMacroBuffer_.empty()) {
+            rawMacroBuffer_.push_back(L' ');
+            const bool keep = IsSpaceMacroPrefix(rawMacroBuffer_, spaceMacroKeys_);
+            rawMacroBuffer_.pop_back();
+            if (keep) {
+                rawMacroBuffer_ += L' ';
+                macroCrossCommit_ = true;
+                return MacroResult::NoMatch;
+            }
+        }
+        ClearMacroTracking();
+        return MacroResult::NoMatch;
+    }
+
+    // The trigger character has to stay in the tracked buffer: punctuation can
+    // be part of a shortcut, so a later boundary must still be able to match it.
+    // Only extend an already-live candidate — a trigger pressed with nothing
+    // tracked must not seed the buffer, or the context fallback below becomes
+    // the only thing that can ever clear it again.
+    const bool haveTrackedCandidate =
+        !rawMacroBuffer_.empty() || (engine_ && engine_->Count() > 0);
+    if (haveTrackedCandidate && triggerChar > L' ') {
+        rawMacroBuffer_ += triggerChar;
+        if (rawMacroBuffer_.size() > kMaxRawMacroBuffer) {
+            ClearMacroTracking();
+            return MacroResult::NoMatch;
+        }
+    }
+
+    // Primary path: the tracked buffer still mirrors the document.
+    Macro::MacroPlan plan = EvaluateMacroPlan(rawMacroBuffer_, triggerChar);
+
+    // Fallback: rebuild the candidate from document text before the caret, for
+    // when tracking drifted (composition interrupted, characters deleted,
+    // shortcut re-typed). The shortcut is committed text at that point, so the
+    // expansion must replace document characters rather than a composition.
+    if (!plan.matched) {
+        if (auto match = LookupMacroInContext(pContext, triggerChar)) {
+            plan = match->plan;
+            macroCrossCommit_ = true;
+        }
+    }
+
+    if (!plan.matched) {
+        if (vkCode == VK_SPACE && !rawMacroBuffer_.empty()) {
+            rawMacroBuffer_.push_back(L' ');
+            const bool keep = IsSpaceMacroPrefix(rawMacroBuffer_, spaceMacroKeys_);
+            rawMacroBuffer_.pop_back();
+            if (keep) {
+                rawMacroBuffer_ += L' ';
+                macroCrossCommit_ = true;
+                return MacroResult::NoMatch;
+            }
+        } else if (triggerChar > L' '
+                   && !(IsEngineDigitKey(vkCode) && engine_ && engine_->Count() > 0)) {
+            // A later boundary can still match a punctuation-containing key.
+            macroCrossCommit_ = true;
+            return MacroResult::NoMatch;
+        }
+
+        ClearMacroTracking();
+        return MacroResult::NoMatch;
+    }
+
+    const std::wstring previousComposition = engine_ ? engine_->Peek() : std::wstring{};
+    std::wstring replacement = Macro::ExpandEscapesForClipboard(plan.expansion);
+    bool eatTrigger = plan.isPartOfMacro;
+    if (!eatTrigger && (vkCode == VK_SPACE || triggerChar > L' ')) {
+        replacement += (vkCode == VK_SPACE) ? L' ' : triggerChar;
+        eatTrigger = true;
+    }
+
+    bool replaced = false;
+    if (macroCrossCommit_ || !compositionMgr_.IsComposing()) {
+        if (compositionMgr_.IsComposing()) {
+            auto* pSession = new CommitEditSession(pContext, &compositionMgr_, previousComposition);
+            RequestEditSession(pContext, pSession);
+            pSession->Release();
+            engine_->Reset();
+            digitLedWord_ = false;
+        }
+        replaced = ReplacePrecedingText(pContext, plan.bsCount, replacement);
+    } else {
+        auto* pSession = new CommitEditSession(pContext, &compositionMgr_, replacement);
+        RequestEditSession(pContext, pSession);
+        pSession->Release();
+        replaced = !compositionMgr_.IsComposing();
+    }
+
+    if (!replaced) {
+        TSF_LOG(L"HandleMacroTrigger: expansion edit failed for '%ls'", rawMacroBuffer_.c_str());
+        ClearMacroTracking();
+        return MacroResult::NoMatch;
+    }
+
+    engine_->Reset();
+    digitLedWord_ = false;
+    ClearMacroTracking();
+    ResetCommitUndo();
+    TSF_LOG(L"HandleMacroTrigger: expanded macro");
+    return eatTrigger ? MacroResult::ExpandedEatTrigger
+                      : MacroResult::ExpandedPassTrigger;
 }
 
 void EngineController::DetectScintillaApp() {
@@ -511,7 +864,7 @@ void EngineController::DetectScintillaApp() {
     isScintillaApp_ = false;
 }
 
-bool EngineController::CheckConfigEvent() {
+bool EngineController::CheckConfigEvent(bool allowMacroDiskRead) {
     if (!sharedState_.IsConnected()) {
         // Try to open SharedState if not connected
         if (!sharedState_.OpenReadWrite()) {
@@ -519,22 +872,132 @@ bool EngineController::CheckConfigEvent() {
         }
     }
 
+    // A mapping becomes visible as soon as CreateFileMappingW succeeds. Older
+    // creators wrote magic before structVersion/structSize, so a TSF instance
+    // could observe a transient ABI mismatch during startup and latch abiOk_
+    // false for its entire lifetime. Re-check before the epoch fast path so the
+    // next key/focus self-heals once initialization completes.
+    bool recoveredAbi = false;
+    if (!abiOk_) {
+        const auto abiResult = sharedState_.CheckAbiCompatibility();
+        if (abiResult == SharedStateManager::AbiCheckResult::Incompatible) {
+            // Genuinely still incompatible, not just transient contention —
+            // SharedState::InitDefaults() resets flags (including
+            // TSF_ABI_MISMATCH) on every Create(), so a VKeyApp.exe restart
+            // (e.g. a version-skewed rebuild while this TSF host stayed
+            // loaded) silently clears the banner even though THIS host is
+            // still passthrough-only. Re-raise it so the UI reflects reality.
+            sharedState_.SetOrClearFlag(SharedFlags::TSF_ABI_MISMATCH, true);
+            return false;
+        }
+        if (abiResult != SharedStateManager::AbiCheckResult::Compatible) {
+            return false;  // Retry — transient contention, try again next tick
+        }
+        abiOk_ = true;
+        recoveredAbi = true;
+        // Deliberately do NOT clear TSF_ABI_MISMATCH here. It is a single
+        // process-shared bit, but every TSF host (one per document/thread,
+        // possibly a different DLL version mid-update) has its own abiOk_.
+        // Clearing it just because THIS host recovered could hide a genuine,
+        // still-active mismatch in another host — this host already resumed
+        // typing via its own abiOk_/recoveredAbi regardless of the shared
+        // banner bit. The bit only clears on a fresh SharedStateManager::
+        // Create() (VKeyApp.exe restart), which is the same action the
+        // banner asks the user to take.
+        TSF_LOG(L"EngineController: SharedState ABI recovered");
+    }
+
     uint32_t currentEpoch = sharedState_.ReadEpoch();
-    if (currentEpoch == lastEpoch_) {
+    if (!recoveredAbi && currentEpoch == lastEpoch_) {
+        if (allowMacroDiskRead && !macroConfigLoaded_) {
+            ReloadMacros(macroGeneration_);
+            return true;
+        }
         return false;
     }
 
     SharedState state = sharedState_.Read();
     if (!state.IsValid()) {
+        // Epoch moved but Read() couldn't produce a valid snapshot. Two very
+        // different causes look identical here: ordinary seqlock contention
+        // (retry next tick, no action needed) vs. the EXE having recreated
+        // the mapping with an incompatible layout while this host stayed
+        // abiOk_==true from before (a version-skewed restart mid-update).
+        // Only the latter is a confirmed mismatch — reuse the same
+        // epoch-protected header check the constructor/recovery path already
+        // trust, instead of silently keeping this host on stale config
+        // forever with no user-visible signal.
+        if (sharedState_.CheckAbiCompatibility() == SharedStateManager::AbiCheckResult::Incompatible) {
+            abiOk_ = false;
+            sharedState_.SetOrClearFlag(SharedFlags::TSF_ABI_MISMATCH, true);
+            TSF_LOG(L"EngineController: SharedState ABI mismatch after epoch change — passthrough");
+        }
         return false;
     }
 
     // Apply new config
     TSF_LOG(L"Config changed: epoch %u -> %u", lastEpoch_, state.epoch);
     lastEpoch_ = state.epoch;
-    ApplySharedState(state);
+    // ABI recovery is a rare, one-time event per TSF instance (not a per-key
+    // occurrence) — worth the one disk read here so macros come back with
+    // typing instead of staying empty until the next OnSetFocus.
+    ApplySharedState(state, allowMacroDiskRead || recoveredAbi);
 
     return true;
+}
+
+void EngineController::ReloadMacros(uint8_t generation) {
+    if (macroConfigLoaded_ && macroGeneration_ == generation) return;
+
+    // g_hInstance (this DLL's own module handle) — NOT nullptr. TSF loads this
+    // DLL in-process inside a foreign host (msedge.exe, notepad++.exe, ...);
+    // GetConfigPath()'s default resolves nullptr to the CURRENT PROCESS's exe,
+    // which inside a host means the host's install dir, not VKey's — silently
+    // finding zero macros there (confirmed via TSF_LOG: "ReloadMacros: loaded 0
+    // entries" while the real config.toml has entries). See LanguageBarButton.cpp
+    // for the same g_hInstance-vs-nullptr fix applied to icon loading.
+    const std::wstring configPath = ConfigManager::GetConfigPath(g_hInstance);
+    const auto diskConfig = ConfigManager::LoadFromFile(configPath);
+    if (!diskConfig) {
+        // Read failed, not "no macros configured": a settings save renames a
+        // temp file over config.toml, so a read racing that swap transiently
+        // sees the file as missing/locked. Latching that as a successful load
+        // pinned an empty table for the whole generation (observed in the wild
+        // as "loaded 0 entries" right after a save, while a sibling host read
+        // 3 entries at the same generation). Keep the current table and leave
+        // macroConfigLoaded_ false so the next focus/init tick retries.
+        TSF_LOG(L"ReloadMacros: config unreadable, keeping %zu entries (retry pending)",
+                macroTable_.size());
+        // Track the generation even though the read failed: the retry goes
+        // through ReloadMacros(macroGeneration_), and the load guard keys off
+        // macroConfigLoaded_, so this records what we're aiming at without
+        // suppressing the retry.
+        macroGeneration_ = generation;
+        return;
+    }
+
+    macroConfigLoaded_ = true;
+    macroGeneration_ = generation;
+    ClearMacroTracking();
+    macroTable_.clear();
+    spaceMacroKeys_.clear();
+    maxMacroKeyLen_ = 0;
+    if (!config_.macroEnabled) return;
+
+    // Trigger choices live only in TOML; SharedState carries feature bits.
+    config_.macroTriggerSpace = diskConfig->macroTriggerSpace;
+    config_.macroTriggerEnter = diskConfig->macroTriggerEnter;
+    config_.macroTriggerTab = diskConfig->macroTriggerTab;
+    config_.macroTriggerDir = diskConfig->macroTriggerDir;
+
+    macroTable_ = ConfigManager::LoadMacros(configPath);
+    for (const auto& [key, value] : macroTable_) {
+        (void)value;
+        if (key.find(L' ') != std::wstring::npos) spaceMacroKeys_.insert(key);
+    }
+    maxMacroKeyLen_ = Macro::LongestMacroKeyLength(macroTable_);
+    TSF_LOG(L"ReloadMacros: loaded %zu entries (generation=%u)",
+            macroTable_.size(), static_cast<unsigned>(generation));
 }
 
 void EngineController::RefreshFlags() {
@@ -542,7 +1005,9 @@ void EngineController::RefreshFlags() {
     if (!sharedState_.IsConnected()) {
         // Try to reconnect (EXE may have restarted)
         if (!sharedState_.OpenReadWrite()) {
+            if (engineEnabled_ || tsfActive_) ClearMacroTracking();
             engineEnabled_ = false;
+            tsfActive_ = false;
             return;
         }
         TSF_LOG(L"Reconnected to SharedState");
@@ -550,14 +1015,21 @@ void EngineController::RefreshFlags() {
 
     SharedState state = sharedState_.Read();
     if (state.IsValid()) {
-        bool wasEnabled = engineEnabled_;
-        bool wasVietnamese = vietnameseMode_;
+        const bool wasEnabled = engineEnabled_;
+        const bool wasTsfActive = tsfActive_;
+        const bool wasVietnamese = vietnameseMode_;
         engineEnabled_ = (state.flags & SharedFlags::ENGINE_ENABLED) != 0;
+        tsfActive_ = (state.flags & SharedFlags::TSF_ACTIVE) != 0;
         vietnameseMode_ = (state.flags & SharedFlags::VIETNAMESE_MODE) != 0;
+
+        if (wasEnabled != engineEnabled_ || wasTsfActive != tsfActive_
+            || wasVietnamese != vietnameseMode_) {
+            ClearMacroTracking();
+        }
 
         if (!wasEnabled && engineEnabled_) {
             TSF_LOG(L"Engine re-enabled (app started)");
-            ApplySharedState(state);
+            ApplySharedState(state, /*allowMacroDiskRead=*/true);
         } else if (wasEnabled && !engineEnabled_) {
             TSF_LOG(L"Engine disabled (app exited)");
         }
@@ -567,7 +1039,9 @@ void EngineController::RefreshFlags() {
             langBarButton_->Refresh();
         }
     } else {
+        if (engineEnabled_ || tsfActive_) ClearMacroTracking();
         engineEnabled_ = false;
+        tsfActive_ = false;
     }
 }
 
@@ -578,7 +1052,10 @@ void EngineController::SetTsfTipActive(bool active) {
     }
 }
 
-void EngineController::ApplySharedState(const SharedState& state) {
+void EngineController::ApplySharedState(const SharedState& state,
+                                        bool allowMacroDiskRead) {
+    const bool wasVietnameseMode = vietnameseMode_;
+    const bool wasMacroEnabled = config_.macroEnabled;
     // Update runtime flags
     engineEnabled_ = (state.flags & SharedFlags::ENGINE_ENABLED) != 0;
     vietnameseMode_ = (state.flags & SharedFlags::VIETNAMESE_MODE) != 0;
@@ -599,9 +1076,11 @@ void EngineController::ApplySharedState(const SharedState& state) {
     }
 
     config_.inputMethod = newMethod;
-    config_.spellCheckEnabled = state.spellCheck != 0;
+    config_.SetSpellCheckLevel(static_cast<SpellCheckLevel>(state.spellCheck));
     config_.optimizeLevel = optimizeLevel;
     DecodeFeatureFlags(state.GetFeatureFlags(), config_);
+    if (wasVietnameseMode != vietnameseMode_) ClearMacroTracking();
+    if (wasMacroEnabled != config_.macroEnabled) macroConfigLoaded_ = false;
     // v3 cleanup: legacy `state.tempOffMethod` no longer decoded — TSF never
     // consumed this field (V/E toggle path is in HookEngine/main app).
 
@@ -609,6 +1088,24 @@ void EngineController::ApplySharedState(const SharedState& state) {
     // feature-flag bitmask via SharedState, so flipping the toggle in the
     // EXE reaches every TSF DLL instance on the next CheckConfigEvent tick.
     ::NextKey::Logger::SetEnabled(config_.debugLogEnabled);
+    switch (DecideMacroTable({.loaded = macroConfigLoaded_,
+                              .loadedGen = macroGeneration_,
+                              .stateGen = state.configGeneration,
+                              .allowDiskRead = allowMacroDiskRead})) {
+        case MacroTableAction::None:
+            break;
+        case MacroTableAction::Reload:
+            ReloadMacros(state.configGeneration);
+            break;
+        case MacroTableAction::KeepStale:
+            // Reached only when this generation's read already failed from the
+            // key path: macroConfigLoaded_/macroGeneration_ are set the way the
+            // retry needs them, and the table we keep serving is the newest one
+            // that ever loaded. Deliberately nothing to do — clearing it here is
+            // what killed every macro for the rest of the session in hosts that
+            // never fire another OnSetFocus (#227/#231).
+            break;
+    }
 
     // Recreate engine with updated config (engine stores a copy of TypingConfig,
     // so we must recreate it whenever any config field changes)
@@ -629,6 +1126,7 @@ void EngineController::ToggleVietnameseMode() {
     // Read back actual flag to stay in sync (avoids TOCTOU with EXE toggling)
     vietnameseMode_ = (sharedState_.ReadFlags() & SharedFlags::VIETNAMESE_MODE) != 0;
     digitLedWord_ = false;  // V/E switch ends any in-progress word
+    ClearMacroTracking();
     if (langBarButton_) {
         langBarButton_->Refresh();
     }
@@ -689,6 +1187,22 @@ void EngineController::RecordCommitSnapshot(std::wstring text,
     commitUndoState_ = hasTrailingChar ? CommitUndoState::Ready : CommitUndoState::Idle;
     TSF_LOG(L"RecordCommitSnapshot: state=%d text='%ls' raw='%ls'",
             static_cast<int>(commitUndoState_), lastCommit_.text.c_str(), lastCommit_.rawInput.c_str());
+}
+
+std::wstring EngineController::MatchingRawForCommittedWord(const std::wstring& word) const {
+    if (word.empty() || lastCommit_.text.empty() || lastCommit_.rawInput.empty()) {
+        return {};
+    }
+    // Deliberately NOT age-gated (kCommitUndoTimeoutMs guards the undo window,
+    // a different feature): a revive minutes later still needs the raw keys, and
+    // an exact text match plus SeedRevivedWord's post-replay Peek()==word check
+    // are the real guards. Worst case the raw came from another occurrence of the
+    // same word — replaying it reproduces that word identically anyway.
+    std::wstring body = lastCommit_.text;
+    if (lastCommit_.hasTrailingChar && !body.empty()) {
+        body.pop_back();
+    }
+    return body == word ? lastCommit_.rawInput : std::wstring{};
 }
 
 bool EngineController::WithinUndoWindow() const noexcept {

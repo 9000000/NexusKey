@@ -1,14 +1,19 @@
 // VKey - Typing Engine Implementation (unified Telex/VNI/Combined)
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
-// Dual-licensed: AGPL-3.0 for open-source use, commercial license for proprietary use.
-// See LICENSE and LICENSE-COMMERCIAL in the project root.
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // V3 changes: flat constexpr arrays for O(1) Compose(), stack-allocated
 // FindToneTarget(), bounded ApplyAutoUO(), pre-reserved buffers.
 
 #include "TypingEngine.h"
+
+#include <algorithm>
+#include <array>
+#include <memory>
+#include <string_view>
+
 #include "EngineHelpers.h"
+#include "Phonotactics.h"
 #include "TypingAction.h"
 #include "VietnameseTables.h"
 #include "core/engine/rule/EngineRuleContext.h"
@@ -16,10 +21,6 @@
 #include "core/engine/rule/ModifierRule.h"
 #include "core/engine/rule/QuickStartConsonantRule.h"
 #include "core/engine/rule/QuickEndConsonantRule.h"
-#include <algorithm>
-#include <array>
-#include <memory>
-#include <string_view>
 
 namespace NextKey {
 
@@ -30,9 +31,9 @@ namespace {
 //=============================================================================
 
 // Vowel/state cap used wherever a stack-array snapshot of a syllable buffer
-// is needed. Picked to match Phonotactics' internal vowel-sequence capacity
-// so that truncation behaves identically on both sides of the engine/
-// validator boundary. Vietnamese syllables max out around 7-8 CharStates
+// is needed. Matches FindTonePosition's fixed vowel-sequence capacity so that
+// truncation behaves identically on both sides. Vietnamese syllables max out
+// around 7-8 CharStates
 // (e.g. `nghiêng` = 7); 16 is generous defensive headroom.
 constexpr size_t kVowelCap = 16;
 
@@ -105,11 +106,7 @@ constexpr int ToneIndex(Tone tone) noexcept {
 //=============================================================================
 
 TypingEngine::TypingEngine(const TypingConfig& config)
-    : TypingEngine(config, Phonology::Phonotactics::Default()) {}
-
-TypingEngine::TypingEngine(const TypingConfig& config,
-                           const Phonology::IPhonotactics& phonotactics)
-    : config_(config), phonotactics_(phonotactics) {
+    : config_(config) {
     states_.reserve(8);
     rawInput_.reserve(12);
     escRawHistory_.reserve(12);
@@ -140,7 +137,11 @@ void TypingEngine::PushChar(wchar_t keyChar) {
     // Resolve any provisional oo-tone from a prior ooo→oo escape before this
     // key is classified (e.g. "chooo" + 's' + 'e': the 'e' reverts the tone so
     // the result is "choose", not "choóe"; "vooo"+'j'+'c' keeps it → voọc).
-    RevertProvisionalOoTone(lower);
+    if (RevertProvisionalOoTone(lower)) {
+        UpdateSpellState();
+        RecalcEnglishBias(states_.data(), states_.size(), engProt_);
+        return;
+    }
     const EngineRule::EngineRuleContext ruleCtx{
         .keyChar            = keyChar,
         .lower              = lower,
@@ -560,6 +561,14 @@ bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wc
         }
         bool block = escape_.isEscaped() || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
         if (!block && effectiveSpellCheck && IsBlockedEnglishModifier(rawInput_.data(), rawInput_.size())) block = true;
+        // Vowel-less buffer + stroke-d = abbreviation chain (PLHDD→PLHĐ, #221):
+        // the hard-onset bias (pl/cl/…) exists to protect English words, and no
+        // English word lacks a vowel. Mirrors the Rust engine rule (parity:
+        // plhdd→plhđ, pladd stays literal).
+        if (block && !escape_.isEscaped() && action == TypingAction::StrokeD &&
+            !HasVowelState(states_.data(), states_.size())) {
+            block = false;
+        }
         if (block && !escape_.isEscaped() && !config_.spellExclusions.empty() && WouldModifierKeyMatchExclusion(lower)) block = false;
 
         if (!block) {
@@ -588,6 +597,11 @@ bool TypingEngine::HandleModifierAction(TypingAction action, wchar_t keyChar, wc
             }
         }
         bool block = escape_.isEscaped() || (!config_.allowEnglishBypass && engProt_.bias == LanguageBias::HardEnglish);
+        // See 2a: vowel-less abbreviation chain exception for stroke-d (#221).
+        if (block && !escape_.isEscaped() && action == TypingAction::VniStroke &&
+            !HasVowelState(states_.data(), states_.size())) {
+            block = false;
+        }
         if (block && !escape_.isEscaped() && !config_.spellExclusions.empty() && WouldModifierKeyMatchExclusion(lower)) block = false;
 
         if (!block) {
@@ -691,16 +705,13 @@ bool TypingEngine::ProcessTone(Tone newTone, wchar_t keyChar, size_t cachedTarge
 
     CharState& target = states_[targetIdx];
 
-    // Escape: same tone → clear tone and add key as character
+    // Escape: same tone → clear tone and put the consumed key back as a literal
     if (target.tone == newTone) {
         target.tone = Tone::None;
-        // Remove consumed first-tone entry from rawInput_ so auto-restore
-        // gives "user" instead of "usser" for u-s-s-e-r
-        if (target.toneRawIdx != SIZE_MAX) {
-            EraseConsumedRaw(target.toneRawIdx);
-        }
+        const size_t consumedRawIdx = target.toneRawIdx;
         target.toneRawIdx = SIZE_MAX;
-        ProcessChar(keyChar);
+        // Invalidates `target` (states_ may grow) — nothing below reads it.
+        RestoreConsumedKeyInPlace(consumedRawIdx, keyChar);
         escape_.escape(EscapeKind::Tone);  // Signal caller: user canceled tone
         return true;
     }
@@ -795,13 +806,19 @@ bool TypingEngine::HandleHornOrInsertU(TypingAction action, wchar_t keyChar) {
         return true;
     }
 
-    // 2. Plain variant fallback (e.g., SimpleTelex / QU-cluster where P8
-    //    declined): insert ư as a fresh state. Mark it synthetic so a
-    //    subsequent press of the same key triggers the ww-style full revert
-    //    via HandleHornW P4 (synthetic + last-state → erase ư entirely, add
-    //    literal). Without this, double-press lands in the regular escape
-    //    path (ư → u + literal), producing e.g. `revie + w + w → revieuw`
-    //    instead of `review`.
+    // 2. Plain variant fallback (consonant-onset-only buffer, e.g. "th" + w):
+    //    insert ư as a fresh state. Mark it synthetic so a subsequent press
+    //    of the same key triggers the ww-style full revert via HandleHornW
+    //    P4 (synthetic + last-state → erase ư entirely, add literal).
+    //    Without this, double-press lands in the regular escape path
+    //    (ư → u + literal), producing e.g. `th + w + w → thuw` instead of `thw`.
+    //
+    // Same "no Vietnamese word has a vowel followed by standalone ư" rule as
+    // HornW's P8 (see HasNonClusterVowel) — without it, English words with a
+    // vowel already in the buffer (view, review, new, know...) get a bogus
+    // ư appended on the first press instead of staying literal.
+    if (HasNonClusterVowel()) return false;
+
     const size_t beforeSize = states_.size();
     if (HandleHornInsert(TypingAction::HornInsertU, keyChar)) {
         if (states_.size() > beforeSize) {
@@ -1011,7 +1028,15 @@ bool TypingEngine::HandleAdjacentCircumflex(TypingAction action, wchar_t c) {
         }
         // Apply circumflex - PRESERVE FIRST LETTER CASE
         last.mod = Modifier::Circumflex;
-        if (needsRelocate) RelocateToneToTarget();
+        // Always relocate (not just when needsRelocate/ValidPrefix): with
+        // spell check off, the Valid branch above skips WouldBeValidSyllable
+        // entirely, so a tone already sitting on the pre-modifier vowel (e.g.
+        // "lụa" + 'a' → tone on 'u') would otherwise stay stranded there
+        // ("lụâ") until a later keystroke's FinalizeRegularChar relocated it.
+        // RelocateToneToTarget() is already a no-op when the tone is absent
+        // or already on the right vowel, so this is safe for the mod-only
+        // (spell-check-on, non-relocate) path too.
+        RelocateToneToTarget();
         return true;
     }
 
@@ -1111,6 +1136,23 @@ bool TypingEngine::HandleAdjacentCircumflex(TypingAction action, wchar_t c) {
             }
             break;
         }
+    }
+    return false;
+}
+
+//-----------------------------------------------------------------------------
+// HasNonClusterVowel — true if the buffer already has a vowel that isn't the
+// 'i' of a potential "gi" consonant cluster. Shared by HandleHornW's P8 and
+// HandleHornOrInsertU's insert fallback: standalone ư never follows a vowel
+// like this in real Vietnamese (no word has a vowel + standalone ư).
+//-----------------------------------------------------------------------------
+
+bool TypingEngine::HasNonClusterVowel() const noexcept {
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (!states_[i].IsVowel()) continue;
+        // 'i' after 'g' is a potential "gi" cluster consonant — don't count it
+        if (states_[i].base == L'i' && i > 0 && states_[i - 1].base == L'g') continue;
+        return true;
     }
     return false;
 }
@@ -1356,15 +1398,7 @@ bool TypingEngine::HandleHornW(TypingAction /*action*/, wchar_t c) {
     // fallback. Full Telex / Combined keep P8 so word-initial ư types as `w`.
     if (config_.inputMethod != InputMethod::SimpleTelex &&
         config_.inputMethod != InputMethod::UserDefined && !IsInQUCluster()) {
-        bool hasNonClusterVowel = false;
-        for (size_t i = 0; i < states_.size(); ++i) {
-            if (!states_[i].IsVowel()) continue;
-            // 'i' after 'g' is a potential "gi" cluster consonant — don't count it
-            if (states_[i].base == L'i' && i > 0 && states_[i - 1].base == L'g') continue;
-            hasNonClusterVowel = true;
-            break;
-        }
-        if (!hasNonClusterVowel) {
+        if (!HasNonClusterVowel()) {
             CharState s;
             s.base = L'u';
             s.mod = Modifier::Horn;
@@ -1442,6 +1476,38 @@ void TypingEngine::EraseConsumedRaw(size_t idx) {
     }
 }
 
+void TypingEngine::RestoreConsumedKeyInPlace(size_t consumedRawIdx, wchar_t escapeKey) {
+    // No snapshot of the consumed key, or this keypress is not the one sitting at
+    // the tail of rawInput_ — keep the old append-at-end behaviour.
+    if (consumedRawIdx == SIZE_MAX || consumedRawIdx >= rawInput_.size() ||
+        rawInput_.empty() || towlower(rawInput_.back()) != towlower(escapeKey)) {
+        if (consumedRawIdx != SIZE_MAX && consumedRawIdx < rawInput_.size()) {
+            EraseConsumedRaw(consumedRawIdx);
+        }
+        ProcessChar(escapeKey);
+        return;
+    }
+
+    // Position-only fix: WHICH character surfaces is unchanged (the escaping key,
+    // so `Te`+`r`+`R` still yields "TeR" and Combined-mode `a`+`s`+`1` still
+    // yields "a1") — it just lands in the consumed key's slot instead of the tail.
+    // Erasing the tail can't shift any state's rawIdx — no state was built from it.
+    EraseConsumedRaw(rawInput_.size() - 1);
+    rawInput_[consumedRawIdx] = escapeKey;  // keep rawInput_ in the rendered order
+
+    CharState s;
+    s.base = towlower(escapeKey);
+    s.isUpper = iswupper(escapeKey) != 0;
+    s.rawIdx = consumedRawIdx;
+
+    // Everything typed after the consumed key stays after it.
+    size_t at = states_.size();
+    for (size_t i = 0; i < states_.size(); ++i) {
+        if (states_[i].rawIdx > consumedRawIdx) { at = i; break; }
+    }
+    states_.insert(states_.begin() + static_cast<ptrdiff_t>(at), s);
+}
+
 //-----------------------------------------------------------------------------
 // Character Processing
 //-----------------------------------------------------------------------------
@@ -1454,23 +1520,23 @@ void TypingEngine::ProcessChar(wchar_t /*c*/, wchar_t lower, bool isUpper) {
     states_.push_back(s);
 }
 
-void TypingEngine::RevertProvisionalOoTone(wchar_t lower) {
+bool TypingEngine::RevertProvisionalOoTone(wchar_t lower) {
     const size_t count = states_.size();
-    if (count < 2) return;
+    if (count < 2) return false;
     CharState& firstO  = states_[count - 2];
     CharState& secondO = states_[count - 1];
     // Two LITERAL o's with no modifier only arise from the ooo→oo escape; a
     // normal "oo" collapses to a single Circumflex ô, so this never matches a
     // regular syllable.
-    if (firstO.base != L'o' || secondO.base != L'o') return;
-    if (firstO.mod != Modifier::None || secondO.mod != Modifier::None) return;
+    if (firstO.base != L'o' || secondO.base != L'o') return false;
+    if (firstO.mod != Modifier::None || secondO.mod != Modifier::None) return false;
     // The escape-oo tone always lands on the SECOND o (voọc/soóc/goòng). A tone
     // on the FIRST o is an ordinary toned vowel trailed by a repeated 'o'
     // (Telex "mó"+o, VNI "ó"+o) and must NOT be disturbed.
-    if (!secondO.HasTone() || firstO.HasTone()) return;
+    if (!secondO.HasTone() || firstO.HasTone()) return false;
     // 'c' (→ ooc) and 'n' (→ oong) are the only valid continuations; keep the
     // tone for those so voọc/soóc/goòng compose.
-    if (lower == L'c' || lower == L'n') return;
+    if (lower == L'c' || lower == L'n') return false;
     // Otherwise revert: drop the tone and re-emit the consumed tone key as a
     // literal char, recovered from rawInput_ via its tracked index. All reads
     // off secondO happen before the push_back below — a realloc there would
@@ -1488,6 +1554,14 @@ void TypingEngine::RevertProvisionalOoTone(wchar_t lower) {
         literalToneKey.rawIdx = consumedRawIdx;
         states_.push_back(literalToneKey);
     }
+    // Same tone key again = the Telex escape (rr, jj, …). The revert above already
+    // put that keystroke back as a literal, so the repeat must be swallowed rather
+    // than re-toning the pair, and the escape latch keeps a third press literal.
+    if (toneKey != 0 && towlower(toneKey) == lower) {
+        escape_.escape(EscapeKind::Tone);
+        return true;
+    }
+    return false;
 }
 
 //-----------------------------------------------------------------------------
@@ -1579,10 +1653,10 @@ void TypingEngine::RelocateToneToTarget() {
 }
 
 //-----------------------------------------------------------------------------
-// Tone Target Finding — delegates rule logic to phonotactics_.
+// Tone Target Finding
 // Builds a vowel sequence + state-index map from states_ (skipping cluster
 // consonants like the 'i' in "gi" and the 'u' in "qu"), composes each vowel
-// state without its tone diacritic so Phonotactics::Decompose sees only the
+// state without its tone diacritic so FindTonePosition sees only the
 // modifier+base char, then maps Phonotactics' returned vowel-sequence index
 // back to a state index.
 //-----------------------------------------------------------------------------
@@ -1610,9 +1684,8 @@ bool TypingEngine::IsToneStopCodaMismatch() const noexcept {
 }
 
 size_t TypingEngine::FindToneTarget() const noexcept {
-    // Cap matches Phonotactics' internal vowel capacity (see file-scope
-    // kVowelCap); sequences past the cap are truncated identically on both
-    // sides so the index map stays consistent.
+    // Cap matches FindTonePosition's fixed vowel capacity (see file-scope
+    // kVowelCap), so the index map stays consistent for pathological inputs.
     // Stack-only buffers — Pillar Nhanh: no heap alloc on hook hot path.
     std::array<size_t, kVowelCap> vowelStateIdx{};
     std::array<wchar_t, kVowelCap> vowelSeq{};
@@ -1624,7 +1697,7 @@ size_t TypingEngine::FindToneTarget() const noexcept {
         if (IsClusterConsonant(states_.data(), states_.size(), i)) continue;
         if (vowelCount >= kVowelCap) break;
 
-        // Compose without tone and without case — Phonotactics::Decompose
+        // Compose without tone and without case — FindTonePosition
         // matches lowercase rendered modifier+base (e.g. L'\x01B0' for ư).
         // Using towlower() on Vietnamese chars is locale-dependent and
         // unreliable on Linux; clearing isUpper produces the canonical
@@ -1653,7 +1726,7 @@ size_t TypingEngine::FindToneTarget() const noexcept {
         if (composed != 0) coda[codaLen++] = composed;
     }
 
-    size_t vowelIdx = phonotactics_.TonePosition(
+    size_t vowelIdx = Phonology::FindTonePosition(
         std::wstring_view{vowelSeq.data(), vowelCount},
         std::wstring_view{coda.data(), codaLen},
         config_.modernOrtho);
@@ -1784,6 +1857,12 @@ const std::wstring& TypingEngine::Peek() const {
 }
 
 std::wstring TypingEngine::Commit() {
+    // Word boundary = last chance for the oo-coda, so an unresolved provisional
+    // oo-tone can never close validly (voọc/soóc/goòng already have their 'c'/
+    // 'ng' by now). Drop it so "pooor" commits as "poor", not "poỏ" — and so
+    // the auto-restore below sees plain ASCII and keeps the escaped form
+    // instead of replaying every raw keystroke ("pooor").
+    (void)RevertProvisionalOoTone(L' ');
     std::wstring composed = ComposeAll();
 
     // Single quick-start consonant alone (f->ph, j->gi, w->qu) — always restore

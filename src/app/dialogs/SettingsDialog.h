@@ -53,7 +53,6 @@ public:
 
     // SOM functions exposed to JavaScript
     void onInputMethodChange(int method);  // 0=Telex, 1=VNI
-    void onSpellCheckChange(bool enabled);
     void onExpandChange(bool expanded);
     void onToggleChange(sciter::string id, bool checked);  // Direct toggle → C++ (bypasses DOM events)
     void onClose();
@@ -63,7 +62,6 @@ public:
     SOM_PASSPORT_BEGIN(SettingsDialog)
         SOM_FUNCS(
             SOM_FUNC(onInputMethodChange),
-            SOM_FUNC(onSpellCheckChange),
             SOM_FUNC(onExpandChange),
             SOM_FUNC(onToggleChange),
             SOM_FUNC(onClose),
@@ -97,11 +95,10 @@ private:
     void setToggleState(const std::wstring& id, bool checked);
     void setDropdownValue(const std::wstring& id, int value);
     void recalcWindowSize();  // Measure DOM and resize window to fit content
+    int measureMaxAdvancedContentHeight(double dpiScale);  // #226: max height across all tab panels (fixed window height)
 
-    // Icon customization helpers
-    void notifyIconChanged();           // Post WM_VKEY_ICON_CHANGED to main process
-    void openColorPicker(bool forVietnamese);  // Open Windows ChooseColor dialog
-    void updateColorSwatches();         // Update btn-color-v/e background colors
+    // Notify main process to re-read system settings (theme/language changes).
+    void notifySystemConfigChanged(WPARAM wParam = 0);
 
     // Update helpers
     void startUpdateCheck();            // Check for updates with progress dialog
@@ -131,6 +128,15 @@ private:
     bool isExpanded_ = false;
     bool isPinned_ = false;
     bool forceLightTheme_ = false;
+
+    // #226: cached result of measureMaxAdvancedContentHeight(), computed once the
+    // first time the Advanced panel is actually shown (measuring needs the panel's
+    // display:block, so it can't happen for free while collapsed). Keeps the window
+    // height fixed across tab switches instead of resizing per tab. Invalidated
+    // (set back to 0) on language switch; scoped to cachedAdvancedHeightDpiScale_
+    // so moving the dialog to a different-DPI monitor forces a fresh measurement.
+    int cachedMaxAdvancedHeight_ = 0;
+    double cachedAdvancedHeightDpiScale_ = 0.0;
 
     // UI settings (saved to config)
     uint8_t backgroundOpacity_ = 80;  // 0-100

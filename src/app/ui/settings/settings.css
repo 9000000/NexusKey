@@ -8,28 +8,13 @@
     padding: 0;
     background: var(--bg-glass);
     /* background: rgba(255, 255, 255, 0.05); */
-    border-radius: 0px; /* Let Windows 11 DWM handle the rounded corners to avoid sub-pixel clash */
+    border-radius: 0px;
+    /* Let Windows 11 DWM handle the rounded corners to avoid sub-pixel clash */
     box-shadow: var(--shadow-card);
     overflow: hidden;
     /* No width transition - instant resize prevents blur ghost */
     font-size: 0;
     /* Eliminate inline-block whitespace */
-}
-
-/* During animation: kill hover hit-testing AND all child transitions.
-   On WS_EX_LAYERED windows every mouse-move triggers full surface repaint;
-   disabling transitions means hover style recalc produces no repaint work. */
-.animating {
-    pointer-events: none;
-}
-
-#main-container:disabled {
-    opacity: 1;
-    filter: none;
-}
-
-.animating * {
-    transition: none !important;
 }
 
 /* Title Bar - spans full width, larger drag zone */
@@ -435,6 +420,7 @@
 .setting-row.disabled {
     opacity: 0.4;
 }
+
 .setting-row.disabled .btn-action {
     cursor: not-allowed;
 }
@@ -513,7 +499,8 @@
     color: var(--text-primary);
     cursor: pointer;
     outline: none;
-    width: 130px; /* Match width of input-type-dropdown */
+    width: 130px;
+    /* Match width of input-type-dropdown */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -569,71 +556,6 @@
     color: white;
 }
 
-/* Small button style */
-.btn-action.btn-small {
-    padding: 4px 10px;
-    font-size: 11px;
-    height: 24px;
-}
-
-/* Reset colors button - pink styling */
-#btn-reset-colors {
-    color: var(--color-danger);
-    border-color: var(--color-danger);
-    height: auto;
-    /* Override btn-small height to match original */
-    padding: 4px 10px;
-}
-
-#btn-reset-colors:hover {
-    background: var(--color-danger);
-    color: white;
-}
-
-/* Color picker group layout */
-.color-picker-group {
-    flow: horizontal;
-    vertical-align: middle;
-    border-spacing: 6px;
-}
-
-.color-picker-label {
-    font-size: 12px;
-    font-weight: 400;
-    color: var(--text-secondary);
-    vertical-align: middle;
-    line-height: 24px;
-}
-
-/* Color swatch button styling */
-.color-swatch {
-    width: 28px;
-    height: 24px;
-    border: 2px solid var(--border-input);
-    border-radius: 4px;
-    padding: 0;
-    cursor: pointer;
-    background: #f36267;
-    margin-right: 8px;
-    vertical-align: middle;
-    /* Default color - will be updated via style */
-}
-
-.color-swatch:hover {
-    border-color: var(--color-primary);
-    transform: scale(1.1);
-}
-
-#btn-color-v {
-    background-color: #f36267;
-    /* Default V color - Pink RGB(243,98,103) */
-}
-
-#btn-color-e {
-    background-color: #2fafda;
-    /* Default E color - Blue RGB(47,175,218) */
-}
-
 /* Fix Check Update button layout */
 #btn-check-update {
     padding: 0px 8px;
@@ -663,7 +585,8 @@
     justify-content: center;
     width: max-content;
     padding: 5px;
-    margin: 0 * 9px *; /* 9px margin (was 14px) pulls card 2 UP to natively align with card 1 */
+    margin: 0 * 9px *;
+    /* 9px margin (was 14px) pulls card 2 UP to natively align with card 1 */
     background: var(--bg-card-solid);
     border-radius: 14px;
     box-shadow:
@@ -717,23 +640,13 @@
     /* Replaces flex: 1 */
 }
 
-/* Tab Panels - with fade and slide transition */
-/* behavior:layer buffers subtree into offscreen bitmap for hardware BitBlt during animation */
+/* Tab Panels - instant switch (#226: fade/slide transition felt sluggish) */
 .tab-panel {
     visibility: none;
-    opacity: 0;
-    transform: translate(0, 10px);
-    transition:
-        opacity 0.2s ease,
-        transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-    behavior: layer;
-    image-rendering: optimize-speed;
 }
 
 .tab-panel:expanded {
     visibility: visible;
-    opacity: 1;
-    transform: translate(0, 0);
 }
 
 .tab-title {
@@ -757,20 +670,6 @@
 }
 
 /* Reuse setting-row styles in advanced section - Inherit 5px padding from left panel! */
-
-/* Placeholder for macro list */
-.macro-list-placeholder {
-    padding: 20px;
-    text-align: center;
-    background: var(--bg-hover-subtle);
-    border-radius: 8px;
-    margin-top: 12px;
-}
-
-.placeholder-text {
-    font-size: 12px;
-    color: var(--text-muted);
-}
 
 /* About content styles */
 .about-content {
@@ -804,13 +703,6 @@
     font-size: 13px;
     color: var(--text-dark);
     margin-bottom: 8px;
-}
-
-.app-origin {
-    font-size: 12px;
-    color: var(--text-light);
-    margin-bottom: 8px;
-    line-height: 1.5;
 }
 
 .app-license {
@@ -959,7 +851,7 @@
     vertical-align: middle;
 }
 
-.btn-info > svg {
+.btn-info>svg {
     width: 16px;
     height: 16px;
     fill: var(--text-primary);
@@ -969,7 +861,7 @@
         transform 0.2s ease;
 }
 
-.btn-info:hover > svg {
+.btn-info:hover>svg {
     fill: var(--color-primary);
     /* Highlight color on hover */
     transform: scale(1.1);
@@ -1000,14 +892,17 @@
 .update-banner {
     flow: horizontal;
     padding: 8px 12px;
-    background: rgba(242, 199, 110, 0.28);  /* --color-warning at 28% */
+    background: rgba(242, 199, 110, 0.28);
+    /* --color-warning at 28% */
     border-bottom: 1px solid var(--color-warning);
     color: #5e4a00;
     font-size: 12px;
 }
+
 .update-banner__icon {
     flow: block;
-    width: 16px; height: 16px;
+    width: 16px;
+    height: 16px;
     border-radius: 8px;
     background: var(--color-warning);
     color: white;
@@ -1017,11 +912,14 @@
     font-weight: bold;
     font-size: 11px;
 }
+
 .update-banner__text {
     flow: block;
     padding-right: 12px;
-    size: * *;  /* take remaining horizontal space */
+    size: * *;
+    /* take remaining horizontal space */
 }
+
 .update-banner__btn-primary,
 .update-banner__btn-ghost {
     margin-left: 6px;
@@ -1030,19 +928,49 @@
     font-size: 11px;
     cursor: pointer;
 }
+
 .update-banner__btn-primary {
     background: var(--color-warning);
     color: white;
     border: none;
 }
+
 .update-banner__btn-primary:hover {
     background: #D9A94A;
 }
+
 .update-banner__btn-ghost {
     background: transparent;
     color: #5e4a00;
     border: 1px solid var(--color-warning);
 }
+
 .update-banner__btn-ghost:hover {
     background: rgba(242, 199, 110, 0.18);
+}
+
+/* Clickable Version Info */
+.clickable-version {
+    cursor: pointer;
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 6px;
+    transition: background 0.2s ease;
+}
+
+.clickable-version:hover {
+    background: var(--bg-hover);
+}
+
+.clickable-version .copy-badge {
+    display: inline-block;
+    margin-left: 6px;
+    vertical-align: middle;
+    opacity: 0.5;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.clickable-version:hover .copy-badge {
+    opacity: 1;
+    transform: scale(1.15);
 }

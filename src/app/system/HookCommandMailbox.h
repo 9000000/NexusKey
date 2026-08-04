@@ -62,6 +62,16 @@ struct FocusClassification {
     std::uintptr_t hwndOpaque{0};
     std::uint32_t  pid{0};        // GetWindowThreadProcessId result; 0 = unknown
     std::wstring   exeName;
+    // Identity of the WinEvent/tick request that started this classification.
+    // The hook compares requestSerial with HookEngine's latest published
+    // request so a completed result for an older foreground can never apply
+    // after a newer focus event.
+    std::uint64_t requestSerial{0};
+    // Physical key-down epoch captured at request publication time. If the
+    // hook has advanced this epoch while the worker was classifying, applying
+    // the typing context in the middle of a live composition must be deferred
+    // until engine_->Count() returns to zero.
+    std::uint64_t inputEpochAtRequest{0};
     // Classification flags — populated by ClassifyFocusedWindow.
     bool isExcluded{false};
     bool isForcedVietnamese{false};  // per-app hard-V lock (mutually exclusive with isExcluded)
@@ -74,6 +84,24 @@ struct FocusClassification {
     bool isWebView2{false};
     bool isJavaApp{false};
     bool isKnownHijacker{false};
+    // True only when a recognized Edit/RichEdit/Scintilla control reported
+    // whole-document length 0 and caret position 0 during cold-path focus
+    // classification. Unknown controls and failed/timeout probes stay false.
+    bool isKnownEmptyDocument{false};
+    // GetTickCount64 captured immediately before the empty-document probe.
+    // Hook apply combines it with HWND/PID + last-input checks so delayed
+    // mailbox evidence fails closed instead of arming auto-cap late.
+    std::uint64_t emptyDocumentProbeStartedAtMs{0};
+    // True when the focused control is a recognized Edit/RichEdit with
+    // ES_PASSWORD. Suppresses the keystroke-based auto-cap FSM for this
+    // focus session — that FSM has no per-field awareness of its own.
+    bool isPasswordFieldFocused{false};
+    // The specific child HWND (opaque) that isPasswordFieldFocused/
+    // isKnownEmptyDocument were computed against. WH_MOUSE_LL fires before
+    // the click is delivered to the target app, so the worker's probe can
+    // race the app's own SetFocus() — the hook thread re-checks this HWND
+    // is still the focused child before trusting either verdict.
+    std::uintptr_t focusedChildHwndOpaque{0};
     // Dispatch-shape flags derived from classification + per-app overrides.
     bool localSkipEmpty{false};
     bool localNeedBait{false};
@@ -89,7 +117,7 @@ struct FocusClassification {
     bool localElectronApp{false};  // (isElectron || isWebView2) && !isConsole
     // Per-app "send method = compatibility split" (AppOverrideEntry::sendMethod
     // 2/3). 0 = not forced; >0 = inter-batch sleep (ms) for SplitDispatchInjector.
-    // Resolved from snap->appSendMethodOverrides in ClassifyFocusedWindow; the
+    // Resolved from snap->appSendMethodOverrides in FocusOwner::Classify; the
     // hook thread copies it into Output::WindowClassification::forcedSplitSleepMs.
     int localForcedSplitSleepMs{0};
     // RESOLVED target values for the focused app. Classify captures the

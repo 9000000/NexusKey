@@ -20,6 +20,24 @@ namespace NextKey {
 
 using DllRegisterServerFn = HRESULT(STDAPICALLTYPE*)();
 
+namespace {
+
+// "0x0409:{CLSID}{profile GUID}" — must match RegisterTIP()/Globals and the
+// CLSID_NK / GUID_NK_Profile GUIDs in ActivateVKeyTsfProfile() below. Shared
+// by ActivateVKeyTsfProfile (install) and RemoveVKeyTsfFromInputList
+// (uninstall) so the two can't drift apart.
+constexpr wchar_t kVKeyTipId[] =
+    L"0x0409:{DEB18BD1-2331-4F2A-B030-DA9EB0093683}"
+    L"{2FE17DA4-D8E2-4B28-8566-C30E8F04BFD4}";
+
+// Not defined in a public header (see InstallLayoutOrTip docs) — same as
+// ILOT_DISABLED, removes the layout/TIP from the user's enabled input list.
+constexpr DWORD kIlotUninstall = 0x00000001;
+
+using InstallLayoutOrTipFn = BOOL(WINAPI*)(LPCWSTR, DWORD);
+
+}  // namespace
+
 std::wstring GetTsfDllPath() {
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
@@ -117,6 +135,13 @@ bool UnregisterTsf() {
     }
 
     FreeLibrary(hDll);
+
+    // DllUnregisterServer only removes the CLSID/profile registration — it
+    // never touches the user's enabled-input-list entry that
+    // ActivateVKeyTsfProfile's InstallLayoutOrTip added. Without this, VKey
+    // stays selectable (and re-selectable via Win+Space / the OS input-switch
+    // hotkey) as a Windows input method even after the user turns TSF off.
+    RemoveVKeyTsfFromInputList();
 
     // Don't trust DllUnregisterServer return value — it always returns S_OK.
     // Check actual registry state instead.
@@ -343,6 +368,21 @@ void CleanupHkcuClsidOverride() noexcept {
     }
 }
 
+void RemoveVKeyTsfFromInputList() noexcept {
+    if (HMODULE hInput = ::LoadLibraryExW(L"input.dll", nullptr,
+                                          LOAD_LIBRARY_SEARCH_SYSTEM32)) {
+        if (auto pInstall = reinterpret_cast<InstallLayoutOrTipFn>(
+                ::GetProcAddress(hInput, "InstallLayoutOrTip"))) {
+            // No-op if the entry was never added (e.g. user turned tsf_apps
+            // off without ever having it selected) — InstallLayoutOrTip
+            // simply returns FALSE for an absent entry, nothing to clean up.
+            const BOOL removed = pInstall(kVKeyTipId, kIlotUninstall);
+            NEXTKEY_LOG(L"[TsfRegistration] InstallLayoutOrTip(uninstall) -> %d", removed ? 1 : 0);
+        }
+        ::FreeLibrary(hInput);
+    }
+}
+
 bool ActivateVKeyTsfProfile() {
     // Throttle (issue #209): WM_VKEY_ACTIVATE_TSF is posted on every toggle-to-V
     // in a TSF app, so holding/mashing Ctrl+Shift posted it dozens of times a
@@ -384,12 +424,6 @@ bool ActivateVKeyTsfProfile() {
     // V/E toggle was dead. InstallLayoutOrTip is exported by input.dll with no
     // import lib, so load it dynamically. Idempotent — re-adding is a no-op.
     {
-        using InstallLayoutOrTipFn = BOOL(WINAPI*)(LPCWSTR, DWORD);
-        // "0x0409:{CLSID}{profile GUID}" — must match RegisterTIP()/Globals and
-        // the CLSID_NK / GUID_NK_Profile GUIDs below. 0x0409 = TEXTSERVICE_LANGID.
-        static constexpr wchar_t kVKeyTipId[] =
-            L"0x0409:{DEB18BD1-2331-4F2A-B030-DA9EB0093683}"
-            L"{2FE17DA4-D8E2-4B28-8566-C30E8F04BFD4}";
         if (HMODULE hInput = ::LoadLibraryExW(L"input.dll", nullptr,
                                               LOAD_LIBRARY_SEARCH_SYSTEM32)) {
             if (auto pInstall = reinterpret_cast<InstallLayoutOrTipFn>(

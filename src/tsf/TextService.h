@@ -46,7 +46,6 @@ public:
 private:
     ULONG refCount_ = 1;
     ITfThreadMgr* pThreadMgr_ = nullptr;
-    ITfCategoryMgr* pCategoryMgr_ = nullptr;
     TfClientId clientId_ = TF_CLIENTID_NULL;
 
     std::unique_ptr<KeyEventSink> keyEventSink_;

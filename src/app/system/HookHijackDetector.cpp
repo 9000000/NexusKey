@@ -219,7 +219,6 @@ void HookHijackDetector::Poll() noexcept {
         // initial press. Decay accumulated drift; if drift drops to zero,
         // the buffered VKs were "covered" by the hook eventually — drop
         // them so a future trigger doesn't double-inject stale keys.
-        observedKeyDowns_ = observedKeyDowns_;  // touch to silence -Wunused (kept for future use)
         const uint64_t overshoot = hookCountDelta - thisPollDowns;
         if (accumulatedDrift_ > overshoot) {
             accumulatedDrift_ -= overshoot;
@@ -266,7 +265,6 @@ void HookHijackDetector::EstablishBaselines() noexcept {
         for (auto& b : prevState_) b = 0;
     }
     prevHookFireCount_ = callbacks_.readHookFireCount();
-    observedKeyDowns_ = 0;
     accumulatedDrift_ = 0;
     pendingVkCount_ = 0;
     lastReinstallTickMs_ = 0;

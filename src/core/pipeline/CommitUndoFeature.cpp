@@ -6,7 +6,8 @@
 namespace NextKey::Pipeline {
 
 Result CommitUndoFeature::Try(const KeyContext& ctx, IntentSink& sink) {
-    const CommitUndoOutcome outcome = exec_.HandleCommitUndo(ctx.vk);
+    const CommitUndoOutcome outcome = exec_.HandleCommitUndo(
+        ctx.vk, ctx.shift, ctx.capsLock, ctx.ctrl, ctx.alt, ctx.win);
     switch (outcome) {
         case CommitUndoOutcome::Eat:
             sink.Emit(Intents::ConsumeKey{});

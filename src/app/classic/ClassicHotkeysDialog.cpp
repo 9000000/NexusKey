@@ -116,7 +116,7 @@ constexpr SectionMeta kSectionMeta[3] = {
       IDC_ENABLE_CANCEL, IDC_LIST_CANCEL, IDC_ADD_CANCEL, IDC_DEL_CANCEL, IDC_RESET_CANCEL },
     { Intent::SkipMacro,         L"Bỏ qua gõ tắt",
       IDC_ENABLE_SKIP,   IDC_LIST_SKIP,   IDC_ADD_SKIP,   IDC_DEL_SKIP,   IDC_RESET_SKIP   },
-    { Intent::ToggleEnabled,     L"Bật / tắt bộ gõ",
+    { Intent::ToggleEnabled,     L"Tạm tắt / bật bộ gõ",
       IDC_ENABLE_TOGGLE, IDC_LIST_TOGGLE, IDC_ADD_TOGGLE, IDC_DEL_TOGGLE, IDC_RESET_TOGGLE },
 };
 

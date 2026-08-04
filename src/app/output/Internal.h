@@ -19,6 +19,7 @@
 namespace NextKey::Output::Internal {
 
 using SendInputFn          = UINT (WINAPI*)(UINT, LPINPUT, int);
+using GetAsyncKeyStateFn   = SHORT (WINAPI*)(int);
 using SendMessageWFn       = LRESULT (WINAPI*)(HWND, UINT, WPARAM, LPARAM);
 using SendMessageTimeoutWFn = LRESULT (WINAPI*)(HWND, UINT, WPARAM, LPARAM,
                                                 UINT, UINT, PDWORD_PTR);
@@ -34,6 +35,7 @@ using SynthCounterFn       = void (*)(int delta) noexcept;
 
 // Test seams. Production initializes to the real Win32 APIs.
 extern SendInputFn           g_sendInput;
+extern GetAsyncKeyStateFn    g_getAsyncKeyState;
 extern SendMessageWFn        g_sendMessageW;
 extern SendMessageTimeoutWFn g_sendMessageTimeoutW;
 extern SleepFn               g_sleep;
@@ -43,8 +45,10 @@ extern SynthCounterFn        g_synthCounterCallback;  // null = disabled
 // iff all events delivered; false on partial (renderer drop case —
 // detected when SendInput returns fewer events than requested). Fires
 // g_synthCounterCallback (when non-null) before SendInput with +count,
-// then again with -(count-sent) on partial.
-[[nodiscard]] bool TrackedSendInput(INPUT* events, UINT count) noexcept;
+// then again with -(count-sent) on partial. `sentCount`, when provided,
+// receives the exact SendInput return value for state-recovery decisions.
+[[nodiscard]] bool TrackedSendInput(INPUT* events, UINT count,
+                                    UINT* sentCount = nullptr) noexcept;
 
 // Marker dwExtraInfo so own synth events skip our own hook (Rule #11.4
 // early-return). MUST match HookEngine::VKEY_EXTRA_INFO ("NK"). If

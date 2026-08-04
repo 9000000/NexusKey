@@ -5,6 +5,7 @@
 #include "HookLifecycle.h"  // REINSTALL_REASON_CHROMIUM / _JAVA
 #include "PerfHistogram.h"  // PERF_SCOPE
 #include "helpers/AppHelpers.h"  // ToLowerAscii, GetFocusedChildHwnd
+#include "core/AutoCapDecision.h"
 #include "core/CrashLog.h"
 #include "core/Debug.h"
 #include "core/Logger.h"
@@ -13,6 +14,7 @@
 
 #include <tlhelp32.h>
 #include <cstdint>
+#include <iterator>
 #include <utility>
 
 namespace NextKey {
@@ -27,7 +29,7 @@ namespace NextKey {
 std::atomic<FocusOwner*> FocusOwner::s_instance{nullptr};
 
 // Per-app "send method = compatibility split" sleep budgets (ms). Resolved
-// from AppOverrideEntry::sendMethod at ClassifyFocusedWindow and carried in
+// from AppOverrideEntry::sendMethod in Classify and carried in
 // FocusClassification::localForcedSplitSleepMs → WindowClassification.
 //   sendMethod 2 — Firefox-family / local Gecko renderer drain (~one frame).
 //   sendMethod 3 — cloud / remote desktop: the gap must outlast the RDP/Citrix
@@ -35,6 +37,9 @@ std::atomic<FocusOwner*> FocusOwner::s_instance{nullptr};
 //                  (issue #178 — typing over cloud desktop drops/misplaces tones).
 static constexpr int kCompatSplitFirefoxMs = 6;
 static constexpr int kCompatSplitRemoteMs  = 25;
+static constexpr UINT kControlProbeTimeoutMs = 20;
+static constexpr UINT kSciGetLength = 2006;
+static constexpr UINT kSciGetCurrentPos = 2008;
 
 // ─────────────────────────────────────────────────────────────────────────
 // File-scope helpers (moved from HookEngine.cpp). Kept anonymous-namespace-
@@ -46,6 +51,66 @@ static constexpr int kCompatSplitRemoteMs  = 25;
 static bool IsKnownHijackerExe(const std::wstring& exeName) noexcept {
     return !exeName.empty() && _wcsnicmp(exeName.c_str(), L"dorion", 6) == 0;
 }
+
+[[nodiscard]] static bool TrySendControlQuery(HWND control,
+                                               UINT message,
+                                               DWORD_PTR& result) noexcept {
+    result = 0;
+    return SendMessageTimeoutW(
+        control, message, 0, 0,
+        SMTO_ABORTIFHUNG | SMTO_BLOCK | SMTO_ERRORONEXIT,
+        kControlProbeTimeoutMs, &result) != 0;
+}
+
+/// Query document length + caret only for controls with documented scalar
+/// messages. This runs on the worker focus-classification path, never inside
+/// LowLevelKeyboardProc. Unsupported/custom controls fail closed. `focused`
+/// is resolved once by the caller (Classify) and shared with
+/// IsFocusedControlPassword to avoid two AttachThreadInput round-trips.
+[[nodiscard]] static bool IsKnownEmptyFocusedDocument(HWND foreground, HWND focused) noexcept {
+    if (foreground == nullptr || GetForegroundWindow() != foreground) return false;
+    if (focused == nullptr || GetAncestor(focused, GA_ROOT) != foreground) return false;
+
+    wchar_t className[64] = {};
+    if (GetClassNameW(focused, className, static_cast<int>(std::size(className))) <= 0) {
+        return false;
+    }
+
+    AutoCapControlProbe probe{};
+    DWORD_PTR textLength = 0;
+    DWORD_PTR caretPosition = 0;
+    UINT lengthMessage = 0;
+    UINT caretMessage = 0;
+    if (_wcsicmp(className, L"Edit") == 0
+        || _wcsnicmp(className, L"RichEdit", 8) == 0) {
+        if ((GetWindowLongPtrW(focused, GWL_STYLE) & ES_PASSWORD) != 0) {
+            return false;
+        }
+        probe.isSupportedControl = true;
+        lengthMessage = WM_GETTEXTLENGTH;
+        caretMessage = EM_GETSEL;
+    } else if (wcsstr(className, L"Scintilla") != nullptr) {
+        probe.isSupportedControl = true;
+        lengthMessage = kSciGetLength;
+        caretMessage = kSciGetCurrentPos;
+    }
+
+    if (!probe.isSupportedControl) return false;
+    probe.textLengthKnown = TrySendControlQuery(
+        focused, lengthMessage, textLength);
+    probe.textLength = static_cast<std::uint64_t>(textLength);
+    if (!probe.textLengthKnown || probe.textLength != 0) return false;
+
+    probe.caretPositionKnown = TrySendControlQuery(
+        focused, caretMessage, caretPosition);
+    probe.caretPosition = static_cast<std::uint64_t>(caretPosition);
+    return GetForegroundWindow() == foreground
+        && ComputeShouldAutoCapFromControlProbe(probe);
+}
+
+// IsFocusedControlPassword moved to helpers/AppHelpers.h — HandleAlphaKey
+// (HookEngine.cpp) needs the same cheap check for a fresh, synchronous
+// re-validation right before auto-capitalizing (see its call site comment).
 
 /// Check if a filename (without path) is a known Electron app executable.
 /// Electron apps use Chrome_WidgetWin window class (same as Chromium browsers).
@@ -74,6 +139,8 @@ static bool IsKnownElectronExe(const wchar_t* filename) noexcept {
            _wcsnicmp(filename, L"logseq", 6) == 0 ||     // Logseq
            _wcsnicmp(filename, L"linear", 6) == 0 ||     // Linear
            _wcsnicmp(filename, L"lark", 4) == 0 ||       // Lark/Feishu
+           _wcsnicmp(filename, L"legcord", 7) == 0 ||    // Legcord
+           _wcsnicmp(filename, L"vesktop", 7) == 0 ||    // Vesktop
            _wcsnicmp(filename, L"zalo", 4) == 0;         // Zalo PC
 }
 
@@ -683,6 +750,29 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
             auto itIm = ctx.snap->appInputMethodOverrides.find(cls.exeName);
             if (itIm != ctx.snap->appInputMethodOverrides.end()) {
                 cls.targetMethod = static_cast<int>(itIm->second);
+            }
+        }
+    }
+
+    // Hook-only auto-cap fallback: ask only when the result can be consumed.
+    // Custom controls, TSF/excluded apps, helper windows, disabled auto-cap,
+    // and stale foreground identities all remain conservative. The focused
+    // child is resolved once here and carried in the classification so the
+    // hook thread can re-check it's still current before trusting this
+    // verdict — the worker can run before or after the app that owns
+    // `activeHwnd` finishes moving focus to it (WH_MOUSE_LL fires before
+    // the click is delivered), so the control probed here may not be the
+    // one actually focused by the time this classification is applied.
+    if (!cls.skipAppTracking && !cls.isExcluded && !cls.isTsf
+        && ctx.cfg && ctx.cfg->autoCaps) {
+        const HWND focusedChild = ::NextKey::GetFocusedChildHwnd(activeHwnd);
+        cls.focusedChildHwndOpaque = reinterpret_cast<std::uintptr_t>(focusedChild);
+        cls.isPasswordFieldFocused = IsFocusedControlPassword(activeHwnd, focusedChild);
+        if (!cls.isPasswordFieldFocused) {
+            const std::uint64_t probeStartedAtMs = GetTickCount64();
+            cls.isKnownEmptyDocument = IsKnownEmptyFocusedDocument(activeHwnd, focusedChild);
+            if (cls.isKnownEmptyDocument) {
+                cls.emptyDocumentProbeStartedAtMs = probeStartedAtMs;
             }
         }
     }

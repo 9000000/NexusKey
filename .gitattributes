@@ -1,0 +1,3 @@
+# CMake parses engine.lock with an exact-\n regex and fails the configure step
+# on CRLF. Git-for-Windows defaults core.autocrlf=true, so pin the line endings.
+extern/vkey_engine/engine.lock -text

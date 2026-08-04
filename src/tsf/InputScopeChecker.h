@@ -4,6 +4,10 @@
 // Checks if a TSF context should block Vietnamese input:
 // - GUID_COMPARTMENT_KEYBOARD_DISABLED compartment
 // - Input scopes: password, PIN, email, login fields
+//
+// Mechanism is the standard ITfInputScope API usage (GetAppProperty →
+// GetInputScopes). Blocked-scope set references VietType's EditBlocked.cpp
+// (github.com/dinhngtu/VietType) — credited in README "Tham khảo".
 
 #pragma once
 

@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       include_tests:
+        # Default true: a tag push always builds the tests, so anything that only
+        # breaks them stays invisible across every dispatch and then fails the
+        # release. That is exactly what the [[nodiscard]] break in
+        # CommitUndoFeatureTest did. Untick this for a deliberately quick build,
+        # not as the normal setting.
         description: 'Include tests in the build'
         type: boolean
-        default: false
+        default: true
       include_sciter:
         description: 'Include Sciter UI build'
         type: boolean
@@ -18,6 +23,10 @@ on:
         description: 'Include Classic UI (Lite) build'
         type: boolean
         default: false
+      include_engine:
+        description: 'Include vkey_engine.dll in artifact output'
+        type: boolean
+        default: true
       sign_binaries:
         description: 'Sign binaries via SignPath (test-signing). Uncheck to use unsigned build output.'
         type: boolean
@@ -42,6 +51,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate release tag matches the compiled version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          version="$(sed -n 's/^project(VKey VERSION \([^ ]*\).*/\1/p' CMakeLists.txt)"
+          test -n "$version"
+          test "$GITHUB_REF_NAME" = "v$version"
+
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -61,9 +78,32 @@ jobs:
       - name: Check asset provenance
         run: python3 tools/audit/check_asset_provenance.py
 
+      # The engine libraries are no longer committed: they embed CC BY-NC data and
+      # are not covered by this repository's AGPL-3.0 licence. They are fetched
+      # from the exact release named in extern/vkey_engine/engine.release and
+      # verified against the committed extern/vkey_engine/engine.lock, which is
+      # the trust anchor — not the download.
+      - name: Fetch prebuilt engine
+        env:
+          ENGINE_TOKEN: ${{ secrets.VKEY_ENGINE_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${ENGINE_TOKEN}" ]; then
+            echo "VKEY_ENGINE_TOKEN is unset or empty." >&2
+            echo "The engine release lives in a private repository, so the fetch needs a token." >&2
+            echo "Set the secret, or build without the engine: -DVKEY_USE_RUST_ENGINE=OFF." >&2
+            exit 1
+          fi
+          python tools/fetch_engine.py \
+            --lock extern/vkey_engine/engine.lock \
+            --dest "${{ github.workspace }}/build-engine" \
+            --repo phatMT97/VKey-rs \
+            --tag "$(tr -d '[:space:]' < extern/vkey_engine/engine.release)" \
+            --token "${ENGINE_TOKEN}"
+
       - name: Configure
         if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
-        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="${{ github.workspace }}/build-engine"
 
       - name: Build VKey
         if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
@@ -93,10 +133,35 @@ jobs:
         if: (github.event_name != 'workflow_dispatch' || inputs.include_sciter) && (github.event_name != 'workflow_dispatch' || inputs.include_tests)
         run: ctest --test-dir build --build-config Release --output-on-failure
 
+      - name: Reject a same-name tampered engine
+        if: (github.event_name != 'workflow_dispatch' || inputs.include_sciter) && (github.event_name != 'workflow_dispatch' || inputs.include_tests)
+        shell: powershell
+        run: |
+          $engine = "build/tests/Release/vkey_engine.dll"
+          $bytes = [System.IO.File]::ReadAllBytes($engine)
+          $bytes[$bytes.Length - 1] = $bytes[$bytes.Length - 1] -bxor 1
+          [System.IO.File]::WriteAllBytes($engine, $bytes)
+
+          $output = & "build/tests/Release/VKeyTests.exe" `
+            --gtest_filter=RustInputEngineTrustTest.VendoredLibraryPassesTrustChecks 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            throw "tampered vkey_engine.dll was accepted"
+          }
+          if (($output -join "`n") -notmatch "SHA-256 does not match") {
+            $output | Write-Output
+            throw "engine rejection did not report the expected trust failure"
+          }
+
+          & "build/tests/Release/VKeyTests.exe" `
+            --gtest_filter=EngineFactoryTest.AdvancedConfigKeepsTypingAvailable
+          if ($LASTEXITCODE -ne 0) {
+            throw "C++ fallback failed after rejecting the tampered engine"
+          }
+
       # --- Classic UI (Lite) build ---
       - name: Configure Classic UI
         if: github.event_name != 'workflow_dispatch' || inputs.include_classic
-        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DVKEY_LITE_MODE=ON
+        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DVKEY_LITE_MODE=ON -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="${{ github.workspace }}/build-engine"
 
       - name: Build Classic UI
         if: github.event_name != 'workflow_dispatch' || inputs.include_classic
@@ -219,6 +284,69 @@ jobs:
             }
           }
 
+      # The engine libraries are no longer committed: they embed CC BY-NC data and
+      # are not covered by this repository's AGPL-3.0 licence. They are fetched
+      # from the exact release named in extern/vkey_engine/engine.release and
+      # verified against the committed extern/vkey_engine/engine.lock, which is
+      # the trust anchor — not the download.
+      - name: Fetch prebuilt engine
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.include_engine)
+        env:
+          ENGINE_TOKEN: ${{ secrets.VKEY_ENGINE_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${ENGINE_TOKEN}" ]; then
+            echo "VKEY_ENGINE_TOKEN is unset or empty." >&2
+            echo "The engine release lives in a private repository, so the fetch needs a token." >&2
+            echo "Set the secret, or build without the engine: -DVKEY_USE_RUST_ENGINE=OFF." >&2
+            exit 1
+          fi
+          python tools/fetch_engine.py \
+            --lock extern/vkey_engine/engine.lock \
+            --dest "${{ github.workspace }}/build-engine" \
+            --repo phatMT97/VKey-rs \
+            --tag "$(tr -d '[:space:]' < extern/vkey_engine/engine.release)" \
+            --token "${ENGINE_TOKEN}"
+
+      - name: Stage external engine asset
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.include_engine)
+        shell: powershell
+        run: |
+          Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "vkey_engine.dll" -Force
+          # The engine is not covered by this repository's AGPL-3.0 license and
+          # embeds CC BY-NC data, so its license text has to travel with the
+          # binary wherever the binary goes — as a sibling release asset for a
+          # tag, and inside the payload for a workflow_dispatch test build.
+          Copy-Item "extern/vkey_engine/LICENSE" "vkey_engine.LICENSE.txt" -Force
+          if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.include_engine }}" -eq "true") {
+            Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "upload-payload/vkey_engine.dll" -Force
+            Copy-Item "extern/vkey_engine/LICENSE" "upload-payload/vkey_engine.LICENSE.txt" -Force
+          }
+
+      - name: Assert engine remains outside app packages
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
+        run: |
+          $forbidden = @(
+            "unsigned-binaries/vkey_engine.dll",
+            "signed-binaries/vkey_engine.dll",
+            "dist/vkey_engine.dll",
+            "dist-classic/vkey_engine.dll"
+          )
+          foreach ($path in $forbidden) {
+            if (Test-Path $path) {
+              throw "external engine entered app packaging: $path"
+            }
+          }
+          if (-not (Test-Path "vkey_engine.dll")) {
+            throw "external engine release asset is missing"
+          }
+          # The engine is noncommercial-only and embeds CC BY-NC data. Shipping it
+          # without its license text is the failure this assertion exists to stop.
+          if (-not (Test-Path "vkey_engine.LICENSE.txt")) {
+            throw "external engine license is missing next to the release asset"
+          }
+
       # Last gate before anything is archived: the payload is exactly what a
       # licensing scanner downloads and inspects, so check it rather than trusting
       # that the tracked-file gate covered everything that reached it.
@@ -257,6 +385,7 @@ jobs:
             $files += "VKeyClassic.zip"
             $files += "VKeyClassic-x64.zip"
           }
+          $files += "vkey_engine.dll"
           foreach ($file in $files) {
             $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
             "$hash  $file" | Out-File -Encoding ascii "$file.sha256"
@@ -279,6 +408,12 @@ jobs:
             VKeyClassic.zip
             VKeyClassic-x64.zip
 
+      - name: Attest external engine
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: vkey_engine.dll
+
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -293,6 +428,9 @@ jobs:
             VKeyClassic.zip.sha256
             VKeyClassic-x64.zip
             VKeyClassic-x64.zip.sha256
+            vkey_engine.dll
+            vkey_engine.dll.sha256
+            vkey_engine.LICENSE.txt
           fail_on_unmatched_files: false
 
       # NOTE: winget-releaser only UPDATES an existing package — both

@@ -155,6 +155,24 @@ public:
         stack_.clear();
     }
 
+    /// Strong discard for a replay-context boundary (Enter / Tab — see
+    /// core/CommitUndoArmDecision.h IsReplayContextBoundary). Everything
+    /// Cancel() drops, PLUS the in-progress keystroke history and the
+    /// pushedToStack_ latch.
+    ///
+    /// Clearing inputHistory_ is what makes this safe to call at the TOP of a
+    /// keystroke: CommitComposition only pushes a replay entry when
+    /// History() is non-empty, so a boundary key that goes on to commit the
+    /// current word later in the same keystroke cannot repopulate the very
+    /// stack this discard exists to drop. Does NOT touch live engine
+    /// composition — the word still commits and renders normally; only its
+    /// replay entry is forfeited.
+    void DiscardReplayContext() noexcept {
+        Cancel();
+        inputHistory_.clear();
+        pushedToStack_ = false;
+    }
+
 private:
     State                  state_                          = State::Idle;
     std::vector<Entry>     stack_;          ///< LIFO; max kMaxStack entries

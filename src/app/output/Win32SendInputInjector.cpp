@@ -48,6 +48,27 @@ bool Win32SendInputInjector::Replace(std::size_t bsCount,
     std::array<INPUT, kMaxBatch> buf{};
     std::size_t i = 0;
 
+    // A Telex transform can run while the user is holding Shift (for example,
+    // Shift+dd -> Đ). The physical Shift state otherwise turns our synthetic
+    // VK_BACK events into Shift+Backspace in browser editors; Excel Web treats
+    // that as a destructive selection/edit command. Keep the entire synthetic
+    // replacement modifier-neutral, then restore the user's held Shift before
+    // the hook resumes physical input. No backspaces means no such command and
+    // no need to perturb modifier state.
+    std::array<WORD, 2> heldShifts{};
+    std::size_t heldShiftCount = 0;
+    if (bsCount > 0
+        && (Internal::g_getAsyncKeyState(VK_LSHIFT) & 0x8000) != 0) {
+        heldShifts[heldShiftCount++] = VK_LSHIFT;
+    }
+    if (bsCount > 0
+        && (Internal::g_getAsyncKeyState(VK_RSHIFT) & 0x8000) != 0) {
+        heldShifts[heldShiftCount++] = VK_RSHIFT;
+    }
+    for (std::size_t k = 0; k < heldShiftCount; ++k) {
+        if (i + 1 > kMaxBatch) return false;
+        buf[i++] = MakeKeyEvent(heldShifts[k], /*keyup=*/true);
+    }
     // Bait-char prefix (Chromium suggest-dismiss): inserts U+202F + an
     // extra BS to delete it before the rest of the deletes/chars run.
     // Predicate in Internal::ShouldEmitBait — pure-BS only skips bait
@@ -76,9 +97,35 @@ bool Win32SendInputInjector::Replace(std::size_t bsCount,
         buf[i++] = MakeUnicodeChar(ch, /*keyup=*/false);
         buf[i++] = MakeUnicodeChar(ch, /*keyup=*/true);
     }
+    for (std::size_t k = 0; k < heldShiftCount; ++k) {
+        if (i + 1 > kMaxBatch) return false;
+        buf[i++] = MakeKeyEvent(heldShifts[k], /*keyup=*/false);
+    }
 
     if (i == 0) return true;  // nothing to do (bsCount=0, text empty)
-    return Internal::TrackedSendInput(buf.data(), static_cast<UINT>(i));
+
+    UINT sent = 0;
+    const bool delivered = Internal::TrackedSendInput(
+        buf.data(), static_cast<UINT>(i), &sent);
+    if (!delivered && heldShiftCount > 0 && sent > 0) {
+        std::array<INPUT, 2> restoreShifts{};
+        std::size_t restoreCount = 0;
+        const std::size_t restoreStart = i - heldShiftCount;
+        const std::size_t sentCount = static_cast<std::size_t>(sent);
+        for (std::size_t k = 0; k < heldShiftCount; ++k) {
+            const bool released = sentCount > k;
+            const bool restoredInBatch = sentCount > restoreStart + k;
+            if (released && !restoredInBatch) {
+                restoreShifts[restoreCount++] =
+                    MakeKeyEvent(heldShifts[k], /*keyup=*/false);
+            }
+        }
+        if (restoreCount > 0) {
+            (void)Internal::TrackedSendInput(
+                restoreShifts.data(), static_cast<UINT>(restoreCount));
+        }
+    }
+    return delivered;
 }
 
 void Win32SendInputInjector::SendKey(unsigned short vkCode) noexcept {

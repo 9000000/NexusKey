@@ -845,5 +845,16 @@ TEST_F(VniParityTest, NumericInterference_Mixed) {
     EXPECT_EQ(engine_->Peek(), L"11");
 }
 
+// #221: vowel-less abbreviation chain lifts the hard-English onset block for
+// VNI stroke (d9) — mirrors the Telex dd rule and the Rust engine.
+TEST_F(VniParityTest, Stroke9_AbbrevChain_PLHD) {
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::VNI;
+    cfg.spellCheckEnabled = true;
+    TypingEngine eng(cfg);
+    TypeString(eng, L"plhd9");
+    EXPECT_EQ(eng.Peek(), L"plhđ");
+}
+
 }  // namespace
 }  // namespace NextKey

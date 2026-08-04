@@ -25,8 +25,16 @@ public:
 
     // Process a keystroke through the commit-undo FSM. The implementation
     // reads vnMode internally (vietnameseMode_ atomic on HookEngine).
+    //
+    // Modifier state is PASSED IN, never re-read inside the FSM: on Windows
+    // the FSM runs synchronously inside the low-level keyboard hook callback,
+    // after a command drain that can call AttachThreadInput — documented to
+    // reset what GetKeyState reports for the calling thread. A same-callback
+    // GetKeyState after that drain can therefore report a held Ctrl/Alt/Win
+    // as up. The caller supplies the snapshot it captured before the drain.
     [[nodiscard]] virtual CommitUndoOutcome HandleCommitUndo(
-        std::uint16_t vkCode) = 0;
+        std::uint16_t vkCode,
+        bool shift, bool capsLock, bool ctrl, bool alt, bool win) = 0;
 };
 
 }  // namespace NextKey::Pipeline

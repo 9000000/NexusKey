@@ -155,7 +155,6 @@ private:
     // time stateNow (Shift may have been released across polls) — see Poll().
     uint8_t  pendingMods_[kPendingVkCap]     = {};
     uint64_t prevHookFireCount_              = 0;
-    uint64_t observedKeyDowns_               = 0;
     uint64_t accumulatedDrift_               = 0;  // cumulative misses since last decay
     size_t   pendingVkCount_                 = 0;  // length of pendingVks_
     uint32_t lastReinstallTickMs_            = 0;

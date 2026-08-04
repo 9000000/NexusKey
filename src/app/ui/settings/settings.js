@@ -22,7 +22,23 @@ document.on("ready", function () {
     initializeSwitchKeyDisplay();
     initializeTabPanels();
     initializeDropdownTooltips();
+    initializeVersionCopy();
 });
+
+// Initialize click-to-copy for version info
+function initializeVersionCopy() {
+    var container = document.getElementById("version-copy-container");
+    if (!container) return;
+    container.onclick = function () {
+        var verSpan = document.getElementById("app-version-number");
+        var verText = verSpan ? verSpan.textContent.trim() : "";
+        if (copyToClipboard("VKey v" + verText)) {
+            showToastI18n("Đã sao chép thông tin phiên bản vào bộ nhớ tạm", "Copied version info to clipboard");
+        } else {
+            showToastI18n("Không sao chép được thông tin phiên bản", "Could not copy version info");
+        }
+    };
+}
 
 // Set tooltip on all dropdowns to show only the selected item text
 function initializeDropdownTooltips() {
@@ -169,12 +185,6 @@ function initializeToggles() {
                 }
             }
 
-
-            // Spell check controls child toggles (zwjf, restore-key, exclusions button)
-            if (id === "spell-check") {
-                updateSpellCheckChildren(newState);
-            }
-
             // Toggling the "show toast" switch itself: apply the new value to the
             // body attribute synchronously so the toast decision below reflects it
             // immediately (turning ON shows a confirmation, turning OFF stays silent).
@@ -213,14 +223,30 @@ function initializeToggles() {
         };
     });
 
-    // Initial state: sync child toggles with spell-check parent
-    var spellToggle = document.getElementById("spell-check");
-    if (spellToggle) {
-        updateSpellCheckChildren(spellToggle.classList.contains("checked"));
+    // Initial state: sync child toggles with spell-check-level parent
+    var spellLevel = document.getElementById("spell-check-level");
+    if (spellLevel) {
+        updateSpellCheckChildren(parseInt(spellLevel.value) !== 0);
     }
 
     // Initial state: sync userdefined button
     updateUserDefinedButton();
+}
+
+// Grey out a child toggle + its row when the parent option is off.
+// The .disabled class is also what blocks the click in the toggle handler.
+function setToggleRowEnabled(id, enabled) {
+    var toggle = document.getElementById(id);
+    if (!toggle) return;
+    var row = toggle.closest(".setting-row");
+
+    if (enabled) {
+        toggle.classList.remove("disabled");
+        if (row) row.classList.remove("disabled");
+    } else {
+        toggle.classList.add("disabled");
+        if (row) row.classList.add("disabled");
+    }
 }
 
 function updateUserDefinedButton() {
@@ -233,19 +259,8 @@ function updateUserDefinedButton() {
 
 // Enable/disable spell check child options based on parent state
 function updateSpellCheckChildren(spellEnabled) {
-    var childIds = ["allow-zwjf", "restore-key"];
-    childIds.forEach(function(id) {
-        var toggle = document.getElementById(id);
-        if (!toggle) return;
-        var row = toggle.closest(".setting-row");
-
-        if (spellEnabled) {
-            toggle.classList.remove("disabled");
-            if (row) row.classList.remove("disabled");
-        } else {
-            toggle.classList.add("disabled");
-            if (row) row.classList.add("disabled");
-        }
+    ["allow-zwjf", "restore-key"].forEach(function(id) {
+        setToggleRowEnabled(id, spellEnabled);
     });
 
     // Exclusions button
@@ -281,26 +296,6 @@ function initializeAdvancedPanel() {
     });
 }
 
-// Fix Sciter animation lag caused by hover hit-testing on transparent windows.
-// On WS_EX_LAYERED windows, every mouse move triggers hit-test → style recalc →
-// full surface repaint.  During animation this doubles the render cost.
-// Strategy: suppress BOTH pointer hit-testing AND all hover transitions so that
-// mouse movement over children is essentially free (no style changes → no repaints).
-var animTimeout = null;
-function lockPointerEvents(duration) {
-    var container = document.getElementById("main-container");
-    if (!container) return;
-
-    container.classList.add("animating");
-    container.state.disabled = true;
-    if (animTimeout) clearTimeout(animTimeout);
-
-    animTimeout = setTimeout(function() {
-        container.state.disabled = false;
-        container.classList.remove("animating");
-    }, duration);
-}
-
 function updateTabIndicator(activeTab) {
     var indicator = document.getElementById("tab-indicator");
     if (!indicator || !activeTab) return;
@@ -326,9 +321,6 @@ function initializeTabPanels() {
             panel.state.collapsed = true;
         }
     });
-
-    // Lock pointer events during tab panel slide/fade transition
-    lockPointerEvents(250);
 }
 
 // Switch between tabs - using Sciter native state pattern
@@ -348,6 +340,8 @@ function switchTab(tabIndex) {
     if (activeTab) updateTabIndicator(activeTab);
 
     // Update tab panels using Sciter native state (no flicker)
+    // Window size is fixed to fit the tallest tab (see SettingsDialog::recalcWindowSize),
+    // so switching tabs no longer needs to notify C++ to resize (#226).
     const tabPanels = document.querySelectorAll(".tab-panel");
     tabPanels.forEach(function (panel) {
         const panelIndex = panel.id.replace("tab-panel-", "");
@@ -359,13 +353,6 @@ function switchTab(tabIndex) {
             panel.state.collapsed = true;
         }
     });
-
-    // Notify C++ to recalculate window size for new tab content
-    const tabChangeInput = document.getElementById("val-tab-change");
-    if (tabChangeInput) {
-        tabChangeInput.value = tabIndex;
-        tabChangeInput.dispatchEvent(new Event("change", { bubbles: true }));
-    }
 }
 
 // Handle dropdown changes (already works via C++ VALUE_CHANGED handler)
@@ -379,6 +366,10 @@ document.on("change", "select", function (evt, select) {
 
     if (id === "input-type") {
         updateUserDefinedButton();
+    }
+
+    if (id === "spell-check-level") {
+        updateSpellCheckChildren(value !== 0);
     }
 });
 
@@ -407,33 +398,6 @@ document.on("input", "#switch-key-char", function (evt, input) {
     if (input.value === " ") {
         input.value = "Space";
     }
-});
-
-// Handle icon dropdown change - show/hide custom color row
-document.on("change", "#modern-icon", function (evt, select) {
-    var colorRow = document.getElementById("custom-color-row");
-    if (colorRow) {
-        var value = select.value;
-        // Show color row only when Custom (value=3) is selected
-        colorRow.style.display = (value == "3" || value == 3) ? "block" : "none";
-
-        // Notify C++ to recalculate window size for the changed row
-        // Use setTimeout to let Sciter update the style attribute before recalc
-        setTimeout(function () {
-            const tabChangeInput = document.getElementById("val-tab-change");
-            if (tabChangeInput) {
-                tabChangeInput.value = "icon-change";
-                tabChangeInput.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-        }, 50);
-    }
-});
-
-// Handle button clicks
-document.on("click", "button", function (evt, button) {
-    const id = button.id || button.getAttribute("id");
-    // Color buttons (btn-color-v, btn-color-e, btn-reset-colors) are handled by C++
-    // which opens Windows ChooseColor dialog
 });
 
 // ============================================

@@ -5,6 +5,9 @@
 #include "core/engine/EngineFactory.h"
 #include "core/engine/IInputEngine.h"
 #include "core/engine/TypingEngine.h"
+#ifdef VKEY_USE_RUST_ENGINE
+#include "core/engine/RustInputEngine.h"
+#endif
 
 namespace NextKey {
 namespace {
@@ -147,6 +150,36 @@ TEST_F(EngineFactoryTest, DefaultConfig_IsTelex) {
     // Default should be Telex (aa -> â)
     engine->PushChar(L'a');
     engine->PushChar(L'a');
+    EXPECT_EQ(engine->Peek(), L"â");
+}
+
+TEST_F(EngineFactoryTest, RustSelectionIsDisabledWithStandardSpellCheck) {
+    TypingConfig config;
+    config.spellSuggestEnabled = false;
+
+    EXPECT_FALSE(EngineFactory::WillUseRustEngine(config));
+}
+
+TEST_F(EngineFactoryTest, AdvancedSpellCheckReportsRuntimeAvailability) {
+    TypingConfig config;
+    config.spellSuggestEnabled = true;
+
+#ifdef VKEY_USE_RUST_ENGINE
+    EXPECT_EQ(EngineFactory::WillUseRustEngine(config),
+              RustInputEngine::LibraryAvailable());
+#else
+    EXPECT_FALSE(EngineFactory::WillUseRustEngine(config));
+#endif
+}
+
+TEST_F(EngineFactoryTest, AdvancedConfigKeepsTypingAvailable) {
+    TypingConfig config;
+    config.spellSuggestEnabled = true;
+
+    auto engine = EngineFactory::Create(config);
+    engine->PushChar(L'a');
+    engine->PushChar(L'a');
+
     EXPECT_EQ(engine->Peek(), L"â");
 }
 

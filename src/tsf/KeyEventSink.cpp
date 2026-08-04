@@ -2,15 +2,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #include "stdafx.h"
+
 #include "KeyEventSink.h"
+
+#include <cstdio>
+
 #include "TextService.h"
 #include "EngineController.h"
 #include "CompositionEditSession.h"
 #include "ComUtils.h"
 #include "Define.h"
 #include "core/CrashLog.h"
-
-#include <cstdio>
+#include "core/MacroCase.h"
+#include "core/TsfEditDecision.h"
 
 namespace NextKey {
 namespace TSF {
@@ -38,6 +42,17 @@ static wchar_t VkToChar(UINT vk, LPARAM lParam) {
     wchar_t buf[4] = {};
     int result = ToUnicode(vk, scanCode, keyState, buf, 4, 0);
     return (result == 1 && buf[0] != 0) ? buf[0] : 0;
+}
+
+// A bare Shift/CapsLock keydown produces no text and no navigation, so the
+// "non-handled key with live buffer → commit" branches must skip it: committing
+// there silently throws away the raw-keystroke state the Telex escape needs
+// (#209 — "Tẻ" + Shift+R stayed "Tẻ" because Shift chopped the composition and
+// the follow-up revive could only reseed from the rendered glyphs). Ctrl/Alt/Win
+// keep their own deliberate chord commit earlier in both handlers.
+static bool IsBareModifierKey(UINT vkCode) noexcept {
+    return vkCode == VK_SHIFT || vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
+           vkCode == VK_CAPITAL;
 }
 
 // Helper function to check if a key is punctuation/number that should trigger commit
@@ -69,6 +84,16 @@ KeyEventSink::KeyEventSink(TextService* pTextService, EngineController* pEngineC
 
 KeyEventSink::~KeyEventSink() {
     Unadvise();
+}
+
+void KeyEventSink::RememberClaimedSpaceKeyDown(
+    UINT vk, LPARAM lParam) noexcept {
+    constexpr uint32_t kPreviousKeyState = 1u << 30;
+    const auto keyData =
+        static_cast<uint32_t>(static_cast<uintptr_t>(lParam));
+    if (vk == VK_SPACE && (keyData & kPreviousKeyState) == 0) {
+        pendingClaimedSpaceVk_ = vk;
+    }
 }
 
 bool KeyEventSink::Advise(ITfThreadMgr* pThreadMgr) {
@@ -126,14 +151,17 @@ IFACEMETHODIMP_(ULONG) KeyEventSink::Release() {
 }
 
 IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
+    pendingClaimedSpaceVk_ = 0;
+    claimedSpaceKeyUpVk_ = 0;
     if (fForeground) {
         TSF_LOG(L"OnSetFocus: foreground");
         // Re-read SharedState on focus to pick up ENGINE_ENABLED/VIETNAMESE_MODE changes
         if (pEngineController_) {
-            pEngineController_->CheckConfigEvent();
+            pEngineController_->CheckConfigEvent(/*allowMacroDiskRead=*/true);
             pEngineController_->RefreshFlags();
             // Publish TIP active state — EXE reads this for tray icon sync
             pEngineController_->SetTsfTipActive(true);
+            pEngineController_->ClearMacroTracking();
             // Focus change invalidates the commit-undo window — cursor may have
             // moved arbitrarily relative to the cached lastCommit_ text.
             pEngineController_->ResetCommitUndo();
@@ -142,6 +170,7 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
         TSF_LOG(L"OnSetFocus: background");
         if (pEngineController_) {
             pEngineController_->SetTsfTipActive(false);
+            pEngineController_->ClearMacroTracking();
             pEngineController_->ResetCommitUndo();
         }
     }
@@ -162,14 +191,29 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
 
 HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     pEngineController_->CheckConfigEvent();
+    const UINT vk = static_cast<UINT>(wParam);
 
-    // Drop any punct char cached by a previous OnTestKeyDown whose OnKeyDown pair
-    // never fired (rare TSF anomaly).
-    lastPunctChar_ = 0;
+    // Drop any translated char cached by a previous OnTestKeyDown whose
+    // OnKeyDown pair never fired (rare TSF anomaly).
+    lastTranslatedChar_ = 0;
+    lastEnglishMacroObservedVk_ = 0;
+    lastMacroHandledVk_ = 0;
+
+    if (vk != pendingClaimedSpaceVk_) {
+        pendingClaimedSpaceVk_ = 0;
+        claimedSpaceKeyUpVk_ = 0;
+    }
+    if (ShouldSuppressClaimedKeyDown(
+            pendingClaimedSpaceVk_, vk,
+            static_cast<uint32_t>(static_cast<uintptr_t>(lParam)))) {
+        *pfEaten = TRUE;
+        return S_OK;
+    }
 
     // Check if this context blocks input (password, PIN, email fields)
     pEngineController_->CheckContextBlocked(pContext);
     if (pEngineController_->IsContextBlocked()) {
+        pEngineController_->ClearMacroTracking();
         *pfEaten = FALSE;
         return S_OK;
     }
@@ -224,6 +268,8 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     // Modifiers -> commit and pass through
     if (ctrl || alt || win) {
         if (pEngineController_->HasEngineBuffer()) {
+            TSF_LOG(L"OnTestKeyDown: modifier chord vk=0x%02X with live buffer → Commit",
+                    static_cast<UINT>(wParam));
             pEngineController_->Commit(pContext);
         }
         *pfEaten = FALSE;
@@ -279,7 +325,7 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
                 *pfEaten = TRUE;
                 lastTestedVk_ = static_cast<UINT>(wParam);
                 lastWantKeyResult_ = true;
-                lastPunctChar_ = ch;  // OnKeyDown reads this — no second ToUnicode call.
+                lastTranslatedChar_ = ch;
                 return S_OK;
             }
             TSF_LOG(L"OnTestKeyDown: VkToChar failed vk=0x%02X, passthrough (no eat)",
@@ -289,6 +335,41 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     }
 
     bool wantKey = pEngineController_->WantKey(static_cast<UINT>(wParam), true);
+
+    if (pEngineController_->IsEnglishMacroTrackingActive()) {
+        if (vk >= 0x41 && vk <= 0x5A) {
+            pEngineController_->TrackMacroCharacter(VkToChar(vk, lParam));
+            lastEnglishMacroObservedVk_ = vk;
+        } else if (vk == VK_BACK) {
+            pEngineController_->TrackMacroBackspace();
+            lastEnglishMacroObservedVk_ = vk;
+        } else if (pEngineController_->IsMacroCommitTrigger(vk)) {
+            const wchar_t triggerChar = VkToChar(vk, lParam);
+            if (Macro::IsTextProducingTrigger(vk, triggerChar)
+                && pEngineController_->WouldExpandMacroTrigger(pContext, vk, triggerChar)) {
+                // Printable keys must not change document text during the test
+                // phase. Claim the event and cache its translation so OnKeyDown
+                // performs the edit without a second stateful ToUnicode call.
+                lastTestedVk_ = vk;
+                lastWantKeyResult_ = true;
+                lastTranslatedChar_ = triggerChar;
+                *pfEaten = TRUE;
+                return S_OK;
+            }
+            const auto macroResult = pEngineController_->HandleMacroTrigger(
+                pContext, vk, triggerChar);
+            lastEnglishMacroObservedVk_ = vk;
+            if (macroResult != EngineController::MacroResult::NoMatch) {
+                lastMacroHandledVk_ = vk;
+                lastMacroHandledEat_ =
+                    macroResult == EngineController::MacroResult::ExpandedEatTrigger;
+                *pfEaten = lastMacroHandledEat_ ? TRUE : FALSE;
+                return S_OK;
+            }
+        } else {
+            pEngineController_->ClearMacroTracking();
+        }
+    }
 
     if (wParam == VK_BACK) {
         bool suggestKeep = pEngineController_->IsSuggestKeepCharsEnabled();
@@ -344,12 +425,28 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     lastTestedVk_ = static_cast<UINT>(wParam);
     lastWantKeyResult_ = wantKey;
 
+    // Enter, Tab, and navigation keys pass through, so expand before the
+    // generic commit-and-pass branch when a composed macro is pending.
+    if (!wantKey && !pEngineController_->IsEnglishMacroTrackingActive()
+        && pEngineController_->HasMacroCandidate()
+        && pEngineController_->IsMacroCommitTrigger(vk)) {
+        const auto macroResult = pEngineController_->HandleMacroTrigger(
+            pContext, vk, VkToChar(vk, lParam));
+        if (macroResult != EngineController::MacroResult::NoMatch) {
+            lastMacroHandledVk_ = vk;
+            lastMacroHandledEat_ =
+                macroResult == EngineController::MacroResult::ExpandedEatTrigger;
+            *pfEaten = lastMacroHandledEat_ ? TRUE : FALSE;
+            return S_OK;
+        }
+    }
+
     // Non-handled key with active buffer → commit and pass through. Action and
     // navigation keys (arrows, Escape, F-keys, Home/End, Delete) take effect on
     // a single press. Printable keys that could race with commit text are
     // handled by earlier branches (punct above, A-Z/space via HandleKey), so
-    // they don't reach here.
-    if (!wantKey && pEngineController_->HasEngineBuffer()) {
+    // they don't reach here. Bare Shift/CapsLock is excluded — see IsBareModifierKey.
+    if (!wantKey && !IsBareModifierKey(vk) && pEngineController_->HasEngineBuffer()) {
         pEngineController_->Commit(pContext);
         *pfEaten = FALSE;
         return S_OK;
@@ -363,6 +460,15 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam
     if (pfEaten == nullptr) return E_INVALIDARG;
     *pfEaten = FALSE;
     if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
+    // The key-down claim ends here, not in OnKeyUp: a host that skips the
+    // non-test key-up phase (mirror of Chromium skipping OnTestKeyDown) would
+    // otherwise leave the latch armed and silently eat the next Space press.
+    if (pendingClaimedSpaceVk_ == static_cast<UINT>(wParam)) {
+        pendingClaimedSpaceVk_ = 0;
+        claimedSpaceKeyUpVk_ = static_cast<UINT>(wParam);
+        *pfEaten = TRUE;
+        return S_OK;
+    }
     // Eat keyup for A-Z and Backspace during active composition
     // (prevents apps from seeing keyup without corresponding keydown)
     // Do NOT call WantKey() here — it has side effects (auto-cap state machine)
@@ -389,17 +495,118 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
 
 HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     pEngineController_->CheckConfigEvent();
+    const UINT vk = static_cast<UINT>(wParam);
+
+    if (vk != pendingClaimedSpaceVk_) {
+        pendingClaimedSpaceVk_ = 0;
+        claimedSpaceKeyUpVk_ = 0;
+    }
+    if (ShouldSuppressClaimedKeyDown(
+            pendingClaimedSpaceVk_, vk,
+            static_cast<uint32_t>(static_cast<uintptr_t>(lParam)))) {
+        *pfEaten = TRUE;
+        return S_OK;
+    }
+
+    pEngineController_->CheckContextBlocked(pContext);
+    if (pEngineController_->IsContextBlocked()) {
+        pEngineController_->ClearMacroTracking();
+        *pfEaten = FALSE;
+        return S_OK;
+    }
+
+    // Desync recovery — mirrors OnTestKeyDown. Chromium hosts skip the test
+    // phase, so OnKeyDown must self-heal too: every commit guard below checks
+    // HasEngineBuffer(), so a stale composition with an empty engine (state B)
+    // would survive all of them and the pre-edit gets stuck — Ctrl+A, Enter,
+    // arrows all pass through against a live composition (#209 Ctrl+A report).
+    // Idempotent in classic hosts: test phase already recovered, both checks
+    // are consistent by the time we run.
+    {
+        bool isComposing = pEngineController_->IsComposing();
+        bool hasBuffer = pEngineController_->HasEngineBuffer();
+        if (!isComposing && hasBuffer) {
+            TSF_LOG(L"OnKeyDown: desync A (composition gone, buffer live) → Reset");
+            pEngineController_->Reset();
+        } else if (isComposing && !hasBuffer) {
+            TSF_LOG(L"OnKeyDown: desync B (composition live, buffer empty) → Commit");
+            pEngineController_->Commit(pContext);
+        }
+    }
 
     bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
     bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
     bool win = (GetKeyState(VK_LWIN) & 0x8000) != 0 || (GetKeyState(VK_RWIN) & 0x8000) != 0;
 
+    // Modifiers -> commit and pass through. Mirrors OnTestKeyDown — Chromium
+    // hosts skip the test phase, so without this Ctrl+A/C/X hit a live
+    // composition (select-all breaks around the pre-edit word). Idempotent in
+    // classic hosts: test phase already committed, buffer is empty.
     if (ctrl || alt || win) {
+        if (pEngineController_->HasEngineBuffer()) {
+            TSF_LOG(L"OnKeyDown: modifier chord vk=0x%02X with live buffer → Commit",
+                    static_cast<UINT>(wParam));
+            pEngineController_->Commit(pContext);
+        }
         *pfEaten = FALSE;
         return S_OK;
     }
 
-    UINT vk = static_cast<UINT>(wParam);
+    if (vk == lastMacroHandledVk_) {
+        const bool eat = lastMacroHandledEat_;
+        lastMacroHandledVk_ = 0;
+        lastMacroHandledEat_ = false;
+        lastEnglishMacroObservedVk_ = 0;
+        if (eat) RememberClaimedSpaceKeyDown(vk, lParam);
+        *pfEaten = eat ? TRUE : FALSE;
+        return S_OK;
+    }
+
+    if (pEngineController_->IsEnglishMacroTrackingActive()) {
+        const bool observedInTest = vk == lastEnglishMacroObservedVk_;
+        lastEnglishMacroObservedVk_ = 0;
+        if (vk >= 0x41 && vk <= 0x5A) {
+            if (!observedInTest) {
+                pEngineController_->TrackMacroCharacter(VkToChar(vk, lParam));
+            }
+            lastTestedVk_ = 0;
+            lastTranslatedChar_ = 0;
+            *pfEaten = FALSE;
+            return S_OK;
+        }
+        if (vk == VK_BACK) {
+            if (!observedInTest) pEngineController_->TrackMacroBackspace();
+            lastTestedVk_ = 0;
+            lastTranslatedChar_ = 0;
+            *pfEaten = FALSE;
+            return S_OK;
+        }
+        if (pEngineController_->IsMacroCommitTrigger(vk)) {
+            if (!observedInTest) {
+                const wchar_t triggerChar =
+                    (vk == lastTestedVk_ && lastTranslatedChar_ != 0)
+                        ? lastTranslatedChar_
+                        : VkToChar(vk, lParam);
+                lastTestedVk_ = 0;
+                lastTranslatedChar_ = 0;
+                const auto macroResult = pEngineController_->HandleMacroTrigger(
+                    pContext, vk, triggerChar);
+                if (macroResult != EngineController::MacroResult::NoMatch) {
+                    const bool eat =
+                        macroResult == EngineController::MacroResult::ExpandedEatTrigger;
+                    if (eat) RememberClaimedSpaceKeyDown(vk, lParam);
+                    *pfEaten = eat ? TRUE : FALSE;
+                    return S_OK;
+                }
+            } else {
+                lastTestedVk_ = 0;
+                lastTranslatedChar_ = 0;
+            }
+            *pfEaten = FALSE;
+            return S_OK;
+        }
+        pEngineController_->ClearMacroTracking();
+    }
 
     // Intercept VK_BACK for autocomplete suggestion dismissal (Chromium fallback)
     if (vk == VK_BACK && pEngineController_->HasEngineBuffer() &&
@@ -408,7 +615,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         TSF_LOG(L"OnKeyDown: backspace autocomplete suggestion detected -> commit and pass through");
         pEngineController_->Commit(pContext);
         lastTestedVk_ = 0;
-        lastPunctChar_ = 0;
+        lastTranslatedChar_ = 0;
         *pfEaten = FALSE;
         return S_OK;
     }
@@ -435,6 +642,25 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         }
     }
 
+    // Space and printable punctuation are eaten by the TIP, so expand them
+    // here and include any pass-through character in the committed text.
+    if (pEngineController_->HasMacroCandidate()
+        && pEngineController_->IsMacroCommitTrigger(vk)) {
+        const wchar_t triggerChar =
+            (vk == lastTestedVk_ && lastTranslatedChar_ != 0)
+                ? lastTranslatedChar_
+                : VkToChar(vk, lParam);
+        const auto macroResult = pEngineController_->HandleMacroTrigger(
+            pContext, vk, triggerChar);
+        if (macroResult != EngineController::MacroResult::NoMatch) {
+            const bool eat =
+                macroResult == EngineController::MacroResult::ExpandedEatTrigger;
+            if (eat) RememberClaimedSpaceKeyDown(vk, lParam);
+            *pfEaten = eat ? TRUE : FALSE;
+            return S_OK;
+        }
+    }
+
     // Punctuation: commit composition with this char appended (atomic, no race).
     // Prefer the char cached by OnTestKeyDown (avoids a second ToUnicode call that
     // could mutate kernel dead-key state on some layouts). Fall back to a direct
@@ -443,13 +669,13 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     // cache never gets populated. Only one ToUnicode call per keystroke either way.
     if (IsPunctuationKey(vk) && pEngineController_->HasEngineBuffer()
         && !pEngineController_->IsEngineDigitKey(vk)) {
-        wchar_t ch = (vk == lastTestedVk_ && lastPunctChar_ != 0)
-                       ? lastPunctChar_
+        wchar_t ch = (vk == lastTestedVk_ && lastTranslatedChar_ != 0)
+                       ? lastTranslatedChar_
                        : VkToChar(vk, lParam);
         if (ch != 0) {
             pEngineController_->CommitWithChar(pContext, ch);
             lastTestedVk_ = 0;
-            lastPunctChar_ = 0;
+            lastTranslatedChar_ = 0;
             *pfEaten = TRUE;
             return S_OK;
         }
@@ -481,7 +707,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
                 wantKey, lastTestedVk_, lastWantKeyResult_);
     }
     lastTestedVk_ = 0;  // Invalidate cache
-    lastPunctChar_ = 0;
+    lastTranslatedChar_ = 0;
 
     // Non-handled key with active buffer → commit composition and pass the key
     // through so action keys (Enter submits, Escape cancels, F-keys, arrows,
@@ -489,7 +715,8 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     // affects printable keys racing with commit text; those are already handled
     // (punct via the branch above, A-Z/space via HandleKey), so nothing text-
     // inserting reaches this point. Works whether OnTestKeyDown fired or not.
-    if (!wantKey && pEngineController_->HasEngineBuffer()) {
+    // Bare Shift/CapsLock is excluded — see IsBareModifierKey.
+    if (!wantKey && !IsBareModifierKey(vk) && pEngineController_->HasEngineBuffer()) {
         pEngineController_->Commit(pContext);
         *pfEaten = FALSE;
         return S_OK;
@@ -500,7 +727,9 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         return S_OK;
     }
 
-    *pfEaten = pEngineController_->HandleKey(pContext, vk) ? TRUE : FALSE;
+    const bool handled = pEngineController_->HandleKey(pContext, vk);
+    if (handled) RememberClaimedSpaceKeyDown(vk, lParam);
+    *pfEaten = handled ? TRUE : FALSE;
     return S_OK;
 }
 
@@ -508,6 +737,13 @@ IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LP
     if (pfEaten == nullptr) return E_INVALIDARG;
     *pfEaten = FALSE;
     if (pEngineController_ == nullptr) return S_OK;  // init/deactivate race (C3)
+    const UINT upVk = static_cast<UINT>(wParam);
+    if (pendingClaimedSpaceVk_ == upVk || claimedSpaceKeyUpVk_ == upVk) {
+        pendingClaimedSpaceVk_ = 0;
+        claimedSpaceKeyUpVk_ = 0;
+        *pfEaten = TRUE;
+        return S_OK;
+    }
     if (pEngineController_->IsComposing()) {
         UINT vk = static_cast<UINT>(wParam);
         *pfEaten = (vk >= 0x41 && vk <= 0x5A) || vk == VK_BACK ? TRUE : FALSE;

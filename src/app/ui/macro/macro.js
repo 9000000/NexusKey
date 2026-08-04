@@ -2,9 +2,15 @@
 
 var MACRO_CLIPBOARD_THRESHOLD = 200;
 
-// True while a row is selected and the Add button acts as "Edit" (set by
-// selectMacroItem, cleared once the edit is committed / button text resets).
-var macroEditMode = false;
+// Map, not a plain object: macro names come from a user-editable TOML, and a
+// name like "__proto__" would silently fail to store in an object literal.
+var allMacros = new Map();
+var selectedMacroName = null;
+var checkedMacroNames = new Set();
+var lastClickedKey = null;
+var shiftBaseMacroNames = null;
+var shiftCtrlOverrides = null;
+var searchQuery = "";
 
 document.ready = function () {
     initSubDialog(".macro-list");
@@ -13,24 +19,41 @@ document.ready = function () {
 
 function initMacroDialog() {
     var btnAdd = document.getElementById("btn-add");
+    var btnEdit = document.getElementById("btn-edit");
     var btnDelete = document.getElementById("btn-delete");
+    var btnClear = document.getElementById("btn-clear");
     var btnImport = document.getElementById("btn-import");
     var btnExport = document.getElementById("btn-export");
     var btnClose = document.getElementById("btn-close");
-    var macroName = document.getElementById("macro-name");
     var macroContent = document.getElementById("macro-content");
+    var searchInput = document.getElementById("macro-search-input");
+    var chkSelectAll = document.getElementById("chk-select-all");
 
-    if (btnAdd) btnAdd.addEventListener("click", function () { onAddMacro(); });
-    if (btnDelete) btnDelete.addEventListener("click", function () { onDeleteMacro(); });
-    if (btnImport) btnImport.addEventListener("click", function () { triggerAction("import"); });
-    if (btnExport) btnExport.addEventListener("click", function () { triggerAction("export"); });
-    if (btnClose) btnClose.addEventListener("click", function () { triggerAction("close"); });
+    if (btnAdd) btnAdd.onclick = function () { onAddMacro(); };
+    if (btnEdit) btnEdit.onclick = function () { onEditMacro(); };
+    if (btnDelete) btnDelete.onclick = function () { onDeleteMacro(); };
+    if (btnClear) btnClear.onclick = function () { clearSelection(); };
+    if (btnImport) btnImport.onclick = function () { triggerAction("import"); };
+    if (btnExport) btnExport.onclick = function () { triggerAction("export"); };
+    if (btnClose) btnClose.onclick = function () { triggerAction("close"); };
 
-    if (macroName) {
-        macroName.addEventListener("change", function () { updateAddButtonText(); });
+    if (chkSelectAll) {
+        chkSelectAll.addEventListener("change", function () {
+            onToggleSelectAll(this.checked);
+        });
     }
 
-    // Bind triggers
+    if (searchInput) {
+        searchInput.addEventListener("input", function () {
+            searchQuery = this.value.trim().toLowerCase();
+            // A range is indexed against the previous visible set. Keep the
+            // checked items, but require a fresh anchor in the filtered list.
+            resetShiftSelectionSession(true);
+            renderMacroList();
+        });
+    }
+
+    // Bind trigger checkboxes
     var triggers = ["cfg-macro_trigger_space", "cfg-macro_trigger_enter", "cfg-macro_trigger_tab", "cfg-macro_trigger_dir"];
     for (var i = 0; i < triggers.length; i++) {
         var el = document.getElementById(triggers[i]);
@@ -47,15 +70,55 @@ function initMacroDialog() {
     if (macroContent) {
         macroContent.addEventListener("input", function () { updateCharCounter(); });
     }
+
+    updateButtonStates();
+}
+
+function getVisibleMacroKeys() {
+    var sortedKeys = Array.from(allMacros.keys()).sort();
+    var result = [];
+    for (var i = 0; i < sortedKeys.length; i++) {
+        var name = sortedKeys[i];
+        var content = allMacros.get(name);
+        var displayContent = storageToDisplay(content);
+        if (searchQuery !== "") {
+            var matchName = name.toLowerCase().indexOf(searchQuery) !== -1;
+            var matchContent = displayContent.toLowerCase().indexOf(searchQuery) !== -1;
+            if (!matchName && !matchContent) continue;
+        }
+        result.push(name);
+    }
+    return result;
+}
+
+function onToggleSelectAll(isChecked) {
+    resetShiftSelectionSession(true);
+    var visibleKeys = getVisibleMacroKeys();
+    for (var i = 0; i < visibleKeys.length; i++) {
+        if (isChecked) {
+            checkedMacroNames.add(visibleKeys[i]);
+        } else {
+            checkedMacroNames.delete(visibleKeys[i]);
+        }
+    }
+    renderMacroList();
+}
+
+// Exact-case lookup for duplicate macro shortcuts (C++ engine supports distinct case entries like nma vs nMa)
+function hasMacroKey(key) {
+    if (!key) return false;
+    return allMacros.has(key);
 }
 
 // Convert storage format (\n literal) → real newlines for textarea display
 function storageToDisplay(text) {
+    if (!text) return "";
     return text.replace(/\\n/g, "\n");
 }
 
 // Convert real newlines → storage format (\n literal) for C++
 function displayToStorage(text) {
+    if (!text) return "";
     return text.replace(/\n/g, "\\n");
 }
 
@@ -65,7 +128,6 @@ function updateCharCounter() {
     var clipHint = document.getElementById("clipboard-hint");
     if (!content || !counter) return;
 
-    // Count storage-format length (what C++ will receive)
     var storageLen = displayToStorage(content.value).length;
     counter.textContent = storageLen + " / 20480";
 
@@ -75,7 +137,6 @@ function updateCharCounter() {
         counter.classList.remove("near-limit");
     }
 
-    // Show clipboard hint when macro will use clipboard paste
     if (clipHint) {
         if (storageLen > MACRO_CLIPBOARD_THRESHOLD) {
             clipHint.classList.add("visible");
@@ -83,6 +144,73 @@ function updateCharCounter() {
             clipHint.classList.remove("visible");
         }
     }
+}
+
+function updateButtonStates() {
+    var btnEdit = document.getElementById("btn-edit");
+    var btnDelete = document.getElementById("btn-delete");
+    var btnClear = document.getElementById("btn-clear");
+
+    var checkedCount = checkedMacroNames.size;
+
+    // Checkboxes win over row selection as the Delete target, so Edit only shows
+    // when both agree on one macro — otherwise Edit and Delete would silently act
+    // on different rows while the form fields display the selected one.
+    var canEdit = checkedCount === 0
+        ? !!selectedMacroName
+        : (checkedCount === 1 && checkedMacroNames.has(selectedMacroName));
+
+    if (btnEdit) btnEdit.style.display = canEdit ? "block" : "none";
+    if (btnDelete) btnDelete.style.display = (checkedCount > 0 || selectedMacroName) ? "block" : "none";
+    if (btnClear) btnClear.style.display = (checkedCount > 0 || selectedMacroName) ? "block" : "none";
+
+    // Count lives in its own span: applyTranslations() rewrites the sibling
+    // [data-i18n] span only, so the label stays translated and the count survives.
+    var deleteCount = document.getElementById("delete-count");
+    if (deleteCount) deleteCount.textContent = checkedCount > 0 ? " (" + checkedCount + ")" : "";
+
+    // Sync header select-all checkbox
+    var chkSelectAll = document.getElementById("chk-select-all");
+    if (chkSelectAll) {
+        var visibleKeys = getVisibleMacroKeys();
+        if (visibleKeys.length === 0) {
+            chkSelectAll.checked = false;
+        } else {
+            var allChecked = true;
+            for (var i = 0; i < visibleKeys.length; i++) {
+                if (!checkedMacroNames.has(visibleKeys[i])) {
+                    allChecked = false;
+                    break;
+                }
+            }
+            chkSelectAll.checked = allChecked;
+        }
+    }
+}
+
+function clearSelection() {
+    selectedMacroName = null;
+    checkedMacroNames.clear();
+    resetShiftSelectionSession(true);
+
+    var nameField = document.getElementById("macro-name");
+    var contentField = document.getElementById("macro-content");
+
+    if (nameField) nameField.value = "";
+    if (contentField) contentField.value = "";
+
+    updateCharCounter();
+
+    var items = document.querySelectorAll(".macro-item");
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.remove("selected");
+    }
+
+    var chkSelectAll = document.getElementById("chk-select-all");
+    if (chkSelectAll) chkSelectAll.checked = false;
+
+    updateButtonStates();
+    renderMacroList();
 }
 
 function onAddMacro() {
@@ -96,44 +224,81 @@ function onAddMacro() {
 
     if (name === "" || content === "") return;
 
-    // Convert real newlines to \n storage format before sending to C++
+    // Check for duplicate shortcut key (case-insensitive)
+    if (hasMacroKey(name)) {
+        showDuplicateWarning();
+        return;
+    }
+
+    document.getElementById("val-old-macro-name").value = "";
     document.getElementById("val-macro-name").value = name;
     document.getElementById("val-macro-content").value = displayToStorage(content);
     triggerAction("add");
 
-    // Toast feedback
     if (typeof showToastI18n === "function") {
-        if (macroEditMode) {
-            showToastI18n("Đã cập nhật gõ tắt: " + name, "Updated shortcut: " + name);
-        } else {
-            showToastI18n("Đã thêm gõ tắt: " + name, "Added shortcut: " + name);
-        }
+        showToastI18n("Đã thêm gõ tắt: " + name, "Added shortcut: " + name);
     }
 
-    nameField.value = "";
-    contentField.value = "";
-    updateCharCounter();
+    clearSelection();
     nameField.focus();
 }
 
-function onDeleteMacro() {
+function showDuplicateWarning() {
+    if (typeof showToastI18n !== "function") return;
+    showToastI18n(
+        "Từ gõ tắt này đã tồn tại. Hãy chọn macro đó để sửa hoặc dùng từ gõ tắt khác.",
+        "This shortcut already exists. Select it to edit or use another shortcut."
+    );
+}
+
+function onEditMacro() {
+    if (!selectedMacroName) return;
+
     var nameField = document.getElementById("macro-name");
-    if (!nameField) return;
+    var contentField = document.getElementById("macro-content");
+
+    if (!nameField || !contentField) return;
 
     var name = nameField.value.trim();
-    if (name === "") return;
+    var content = contentField.value.trim();
 
-    document.getElementById("val-macro-name").value = name;
-    triggerAction("delete");
+    if (name === "" || content === "") return;
 
-    // Toast feedback
-    if (typeof showToastI18n === "function") {
-        showToastI18n("Đã xóa gõ tắt: " + name, "Deleted shortcut: " + name);
+    // Check for target shortcut collision if key name was changed (case-sensitive)
+    if (name !== selectedMacroName && hasMacroKey(name)) {
+        showDuplicateWarning();
+        return;
     }
 
-    nameField.value = "";
-    document.getElementById("macro-content").value = "";
-    updateCharCounter();
+    document.getElementById("val-old-macro-name").value = selectedMacroName;
+    document.getElementById("val-macro-name").value = name;
+    document.getElementById("val-macro-content").value = displayToStorage(content);
+
+    // Move the selection to the new name BEFORE the trigger: C++ repopulates the
+    // list synchronously inside it, and renderMacroList drops a selection whose
+    // name no longer exists in the table.
+    selectedMacroName = name;
+    triggerAction("edit");
+
+    if (typeof showToastI18n === "function") {
+        showToastI18n("Đã cập nhật gõ tắt: " + name, "Updated shortcut: " + name);
+    }
+}
+
+function onDeleteMacro() {
+    var targets = [];
+    if (checkedMacroNames.size > 0) {
+        targets = Array.from(checkedMacroNames);
+    } else if (selectedMacroName) {
+        targets = [selectedMacroName];
+    }
+
+    if (targets.length === 0) return;
+
+    // '\n' delimiter: a shortcut may contain any printable char (';' included),
+    // but never a newline — the name field is a single-line <input>.
+    document.getElementById("val-macro-name").value = targets.join("\n");
+    triggerAction("delete");
 }
 
 function selectMacroItem(element, name, content) {
@@ -141,23 +306,14 @@ function selectMacroItem(element, name, content) {
     for (var i = 0; i < items.length; i++) {
         items[i].classList.remove("selected");
     }
-    element.classList.add("selected");
 
-    // content from C++ is in storage format — convert to real newlines for textarea
+    element.classList.add("selected");
+    selectedMacroName = name;
+
     document.getElementById("macro-name").value = name;
     document.getElementById("macro-content").value = storageToDisplay(content);
     updateCharCounter();
-
-    document.getElementById("btn-add").textContent = t("m.edit") || "+ S\u1eeda";
-    macroEditMode = true;
-}
-
-function updateAddButtonText() {
-    var btnAdd = document.getElementById("btn-add");
-    if (btnAdd) {
-        btnAdd.textContent = t("add") || "+ Th\u00eam";
-    }
-    macroEditMode = false;
+    updateButtonStates();
 }
 
 function triggerAction(action) {
@@ -169,44 +325,233 @@ function triggerAction(action) {
     }
 }
 
-// Called by C++ to add items to the list
+// Called by C++ to start populating list
+function clearMacroList() {
+    allMacros.clear();
+    resetShiftSelectionSession(true);
+    var list = document.getElementById("macro-list");
+    if (list) list.innerHTML = "";
+    var emptyEl = document.getElementById("macro-list-empty");
+    if (emptyEl) emptyEl.style.display = "none";
+}
+
+// Called by C++ for each item
 function addMacroToList(name, content) {
+    allMacros.set(name, content);
+}
+
+// Called by C++ after adding all items
+function finishMacroList() {
+    renderMacroList();
+}
+
+function updateCheckboxesUI() {
     var list = document.getElementById("macro-list");
     if (!list) return;
+    var items = list.querySelectorAll(".macro-item");
+    for (var i = 0; i < items.length; i++) {
+        var name = items[i].getAttribute("data-name");
+        var chk = items[i].querySelector(".chk-item");
+        var isChecked = checkedMacroNames.has(name);
+        if (chk) {
+            chk.checked = isChecked;
+        }
+        if (isChecked) {
+            items[i].classList.add("checked");
+        } else {
+            items[i].classList.remove("checked");
+        }
+    }
+}
 
-    var item = document.createElement("div");
-    item.className = "macro-item";
-    item.setAttribute("data-name", name);
-    item.setAttribute("data-content", content);
+function resetShiftSelectionSession(clearAnchor) {
+    shiftBaseMacroNames = null;
+    shiftCtrlOverrides = null;
+    if (clearAnchor) {
+        lastClickedKey = null;
+    }
+}
 
-    // Preview: first line, max 60 chars, line count badge
-    var preview = formatPreview(content);
-    item.innerHTML = '<span class="macro-item-name">' + escapeHtml(name) + '</span>' +
-        '<span class="macro-item-content">' + preview + '</span>';
+function setMacroChecked(name, isChecked, isCtrlClick) {
+    if (isChecked) {
+        checkedMacroNames.add(name);
+    } else {
+        checkedMacroNames.delete(name);
+    }
 
-    // Tooltip: first 500 chars of content with real newlines
-    var tooltipText = storageToDisplay(content);
-    if (tooltipText.length > 500) tooltipText = tooltipText.substring(0, 500) + "...";
-    item.setAttribute("title", tooltipText);
+    if (isCtrlClick) {
+        // Ctrl is an overlay on the current range. Recording the resulting
+        // state keeps the one-row toggle intact when Shift later resizes.
+        if (shiftCtrlOverrides) {
+            shiftCtrlOverrides.set(name, isChecked);
+        }
+        return;
+    }
 
-    item.addEventListener("click", function () {
-        selectMacroItem(this, name, content);
+    resetShiftSelectionSession(false);
+    lastClickedKey = name;
+}
+
+function applyShiftRange(currentKey) {
+    var visibleKeys = getVisibleMacroKeys();
+    var currentIdx = visibleKeys.indexOf(currentKey);
+    var anchorIdx = lastClickedKey ? visibleKeys.indexOf(lastClickedKey) : -1;
+
+    if (anchorIdx === -1 || currentIdx === -1) {
+        checkedMacroNames.add(currentKey);
+        resetShiftSelectionSession(false);
+        lastClickedKey = currentKey;
+        return;
+    }
+
+    if (!shiftBaseMacroNames || !shiftCtrlOverrides) {
+        // Preserve everything selected before the first Shift gesture. Range
+        // resizing then replaces only the range layer, not independent picks.
+        shiftBaseMacroNames = new Set(checkedMacroNames);
+        shiftCtrlOverrides = new Map();
+    }
+
+    var start = Math.min(anchorIdx, currentIdx);
+    var end = Math.max(anchorIdx, currentIdx);
+
+    checkedMacroNames.clear();
+
+    var baseKeys = Array.from(shiftBaseMacroNames);
+    for (var b = 0; b < baseKeys.length; b++) {
+        checkedMacroNames.add(baseKeys[b]);
+    }
+
+    for (var k = start; k <= end; k++) {
+        checkedMacroNames.add(visibleKeys[k]);
+    }
+
+    shiftCtrlOverrides.forEach(function (overrideChecked, name) {
+        if (overrideChecked) {
+            checkedMacroNames.add(name);
+        } else {
+            checkedMacroNames.delete(name);
+        }
     });
+}
 
-    list.appendChild(item);
+function renderMacroList() {
+    var list = document.getElementById("macro-list");
+    var emptyEl = document.getElementById("macro-list-empty");
+    if (!list) return;
+
+    list.innerHTML = "";
+
+    // Clean up checkedMacroNames for items that no longer exist
+    var checkedArr = Array.from(checkedMacroNames);
+    for (var k = 0; k < checkedArr.length; k++) {
+        if (!allMacros.has(checkedArr[k])) {
+            checkedMacroNames.delete(checkedArr[k]);
+        }
+    }
+
+    if (selectedMacroName && !allMacros.has(selectedMacroName)) {
+        selectedMacroName = null;
+        var nameField = document.getElementById("macro-name");
+        var contentField = document.getElementById("macro-content");
+        if (nameField) nameField.value = "";
+        if (contentField) contentField.value = "";
+        updateCharCounter();
+    }
+
+    if (lastClickedKey && !allMacros.has(lastClickedKey)) {
+        resetShiftSelectionSession(true);
+    }
+
+    var sortedKeys = Array.from(allMacros.keys()).sort();
+    var matchCount = 0;
+
+    for (var i = 0; i < sortedKeys.length; i++) {
+        const name = sortedKeys[i];
+        const content = allMacros.get(name);
+        const displayContent = storageToDisplay(content);
+
+        // Filter by search query on both shortcut name and content
+        if (searchQuery !== "") {
+            const matchName = name.toLowerCase().indexOf(searchQuery) !== -1;
+            const matchContent = displayContent.toLowerCase().indexOf(searchQuery) !== -1;
+            if (!matchName && !matchContent) {
+                continue;
+            }
+        }
+
+        matchCount++;
+        const item = document.createElement("div");
+        item.className = "macro-item";
+        item.setAttribute("data-name", name);
+        item.setAttribute("data-content", content);
+
+        if (name === selectedMacroName) {
+            item.classList.add("selected");
+        }
+
+        const isChecked = checkedMacroNames.has(name);
+        if (isChecked) {
+            item.classList.add("checked");
+        }
+
+        const preview = formatPreview(content);
+        item.innerHTML =
+            '<span class="macro-item-check"><input type="checkbox" class="chk-item"' + (isChecked ? ' checked' : '') + '></span>' +
+            '<span class="macro-item-name">' + escapeHtml(name) + '</span>' +
+            '<span class="macro-item-content">' + preview + '</span>';
+
+        let tooltipText = displayContent;
+        if (tooltipText.length > 500) tooltipText = tooltipText.substring(0, 500) + "...";
+        item.setAttribute("title", tooltipText);
+
+        const chk = item.querySelector(".chk-item");
+        if (chk) {
+            chk.addEventListener("click", function (e) {
+                e.stopPropagation();
+                if (e.shiftKey) {
+                    applyShiftRange(name);
+                } else {
+                    setMacroChecked(name, this.checked, e.ctrlKey);
+                }
+                updateCheckboxesUI();
+                updateButtonStates();
+            });
+        }
+
+        item.addEventListener("click", function (e) {
+            if (e.shiftKey) {
+                applyShiftRange(name);
+                updateCheckboxesUI();
+                updateButtonStates();
+            } else if (e.ctrlKey) {
+                setMacroChecked(name, !checkedMacroNames.has(name), true);
+                updateCheckboxesUI();
+                updateButtonStates();
+            } else {
+                resetShiftSelectionSession(false);
+                lastClickedKey = name;
+                selectMacroItem(item, name, content);
+            }
+        });
+
+        list.appendChild(item);
+    }
+
+    if (emptyEl) {
+        emptyEl.style.display = matchCount === 0 ? "block" : "none";
+    }
+
+    updateButtonStates();
 }
 
 function formatPreview(content) {
-    // Split on \n escape sequences
     var lines = content.split("\\n");
     var firstLine = lines[0];
     var lineCount = lines.length;
 
-    // Truncate before escaping to avoid cutting HTML entities mid-way
     if (firstLine.length > 60) firstLine = firstLine.substring(0, 60) + "...";
     var display = escapeHtml(firstLine);
 
-    // Add line count badge if multi-line
     if (lineCount > 1) {
         display += ' <span style="opacity:0.5; font-size:10px">\u23CE' + lineCount + '</span>';
     }
@@ -214,15 +559,8 @@ function formatPreview(content) {
     return display;
 }
 
-function clearMacroList() {
-    var list = document.getElementById("macro-list");
-    if (list) list.innerHTML = "";
-}
-
 function escapeHtml(text) {
     var div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
 }
-
-// setBackgroundOpacity is provided by shared/utils.js

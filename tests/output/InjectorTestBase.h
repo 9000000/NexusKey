@@ -58,6 +58,9 @@ protected:
             synthCounterDeltas.push_back(delta);
         };
 
+        Internal::g_getAsyncKeyState = [](int) -> SHORT {
+            return 0;
+        };
         Internal::g_sendInput = [](UINT n, LPINPUT inputs, int) -> UINT {
             for (UINT i = 0; i < n; ++i) capturedInputs.push_back(inputs[i]);
             return sendInputReturnOverride > 0 ? sendInputReturnOverride : n;
@@ -84,6 +87,7 @@ protected:
 
     void TearDown() override {
         Internal::g_sendInput             = ::SendInput;
+        Internal::g_getAsyncKeyState      = ::GetAsyncKeyState;
         Internal::g_sleep                 = ::Sleep;
         Internal::g_sendMessageW          = ::SendMessageW;
         Internal::g_sendMessageTimeoutW   = ::SendMessageTimeoutW;

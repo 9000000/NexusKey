@@ -1,0 +1,145 @@
+.content-section {
+    padding: 14px 16px 16px;
+}
+
+.dialog-description {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.45;
+    margin: 0 0 12px;
+}
+
+.section-label {
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    margin: 2px 4px 6px;
+    text-transform: uppercase;
+}
+
+.icon-card {
+    margin-bottom: 12px;
+    padding: 4px 12px;
+}
+
+.setting-row {
+    min-height: 48px;
+    padding: 8px 0;
+}
+
+.row-divider {
+    border-top: 1px solid var(--border-light);
+}
+
+.setting-copy {
+    display: block;
+    width: *;
+    padding-right: 12px;
+}
+
+.setting-label {
+    display: block;
+    max-width: none;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.setting-hint {
+    display: block;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 15px;
+    margin-top: 2px;
+}
+
+.setting-dropdown {
+    width: 154px;
+    height: 30px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 6px;
+    box-shadow: inset 0 0 0 1px var(--border-input);
+    background: var(--bg-card-solid);
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+.setting-dropdown:focus,
+.toggle-switch-small:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+.custom-color-row {
+    padding: 8px 0 10px;
+    border-top: 1px solid var(--border-light);
+}
+
+.custom-color-row .setting-label {
+    margin-bottom: 8px;
+}
+
+.color-picker-group {
+    flow: horizontal;
+    vertical-align: middle;
+    border-spacing: 8px;
+}
+
+.color-picker-label {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 30px;
+}
+
+.color-swatch {
+    width: 36px;
+    height: 30px;
+    padding: 3px;
+    border: 2px solid var(--border-input);
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    flow: vertical;
+    horizontal-align: center;
+    vertical-align: middle;
+}
+
+.color-swatch:hover,
+.color-swatch:focus {
+    border-color: var(--color-primary);
+}
+
+.color-swatch-preview {
+    display: block;
+    width: 26px;
+    height: 20px;
+    border-radius: 3px;
+    pointer-events: none;
+}
+
+#preview-color-v { background: #e81123; }
+#preview-color-e { background: #0078d7; }
+
+.btn-compact {
+    flex: none;
+    height: 30px;
+    padding: 5px 10px;
+}
+
+.secondary-action-row {
+    padding: 0 0 10px;
+    text-align: right;
+}
+
+#btn-reset-floating-icon {
+    display: inline-block;
+    width: auto;
+    padding: 6px 12px;
+}
+
+.toggle-switch-small {
+    flex-shrink: 0;
+}

@@ -26,6 +26,9 @@
 #include "system/FloatingIcon.h"
 #include "system/TsfRegistration.h"
 #include "system/StartupHelper.h"
+#if defined(VKEY_USE_RUST_ENGINE)
+#include "system/AdvancedEngineInstaller.h"
+#endif
 #include "system/UpdateChecker.h"
 #include "system/UpdateInstaller.h"
 #include "system/PendingDllApply.h"
@@ -90,7 +93,7 @@ static bool g_settingsOpen = false;
 
 static void SpawnSettingsDialog() {
     if (g_settingsOpen) {
-        // Already open — try to bring to front
+        FocusExistingWindow(FindWindowW(L"VKeyClassicSettings", nullptr));
         return;
     }
 
@@ -160,10 +163,13 @@ static void InitFloatingIcon(HINSTANCE hInstance, const SystemConfig& sc) {
         }
     }
 
-    g_trayIcon.SetIconConfigChangedCallback([]() {
+    g_trayIcon.SetIconConfigChangedCallback([](WPARAM wParam) {
         auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
         if (sysConfig.showFloatingIcon) {
             EnsureFloatingIconCreated();
+            if (wParam == 1) {
+                g_floatingIcon.SetPosition(INT32_MIN, INT32_MIN);
+            }
             g_floatingIcon.SetVisible(true);
         } else {
             g_floatingIcon.Destroy();
@@ -193,7 +199,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
     SharedState state = g_sharedState.Read();
     if (state.IsValid()) {
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
-        state.spellCheck = config.spellCheckEnabled ? 1 : 0;
+        state.spellCheck = static_cast<uint8_t>(config.GetSpellCheckLevel());
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
         state.configGeneration++;
@@ -209,6 +215,61 @@ static void ApplyConfigChange(const TypingConfig& config) {
     if (HWND settingsWnd = FindWindowW(L"VKeyClassicSettings", nullptr)) {
         PostMessageW(settingsWnd, WM_VKEY_CONFIG_CHANGED, 0, 0);
     }
+}
+
+/// Applies a spell-check level chosen from the tray menu. Entering Advanced
+/// installs the trusted Rust engine if needed; either crossing of the Advanced
+/// boundary needs a restart to load or release it (Yes/No prompt). The level
+/// change itself always applies — declining the restart just defers loading the
+/// engine into hosts that are already running (VKey itself picks it up live).
+static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
+    auto config = ConfigManager::LoadOrDefault();
+    SpellCheckLevel oldLevel = config.GetSpellCheckLevel();
+    const bool enteringAdvanced =
+        newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced;
+
+#if defined(VKEY_USE_RUST_ENGINE)
+    if (enteringAdvanced) {
+        const HWND parent = g_trayIcon.GetMessageWindow();
+        const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(parent);
+        if (status != AdvancedEngineStatus::Ready) {
+            // oldLevel, not Standard: the guard above allows Off here, and a
+            // declined download is not a request to switch spell check on.
+            config.SetSpellCheckLevel(oldLevel);
+            ApplyConfigChange(config);
+            if (status == AdvancedEngineStatus::ManualRequested) {
+                AdvancedEngineInstaller::ShowManualInstallWithUi(parent);
+            }
+            return;
+        }
+    }
+#endif
+    if (enteringAdvanced ||
+        (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced)) {
+        int result = MessageBoxW(g_trayIcon.GetMessageWindow(),
+            S(enteringAdvanced ? StringId::SPELL_ADVANCED_LOAD_APP : StringId::SPELL_ADVANCED_CLOSE_APP),
+            L"VKey", MB_YESNO | MB_ICONQUESTION);
+        if (result == IDYES) {
+            config.SetSpellCheckLevel(newLevel);
+            ApplyConfigChange(config);
+            wchar_t exePath[MAX_PATH] = {};
+            GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+            wchar_t cmdLine[MAX_PATH + 64] = {};
+            swprintf_s(cmdLine, L"\"%s\" %s", exePath, ADMIN_RESTART_FLAG);
+            STARTUPINFOW si = { sizeof(si) };
+            PROCESS_INFORMATION pi = {};
+            if (CreateProcessW(exePath, cmdLine, nullptr, nullptr, FALSE,
+                               CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+            PostMessageW(g_trayIcon.GetMessageWindow(), WM_CLOSE, 0, 0);
+            return;
+        }
+    }
+
+    config.SetSpellCheckLevel(newLevel);
+    ApplyConfigChange(config);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -236,12 +297,17 @@ static void OnMenuCommand(TrayMenuId id) {
             g_hookEngine.ToggleVietnameseMode();
             break;
 
-        case TrayMenuId::SpellCheck: {
-            auto config = ConfigManager::LoadOrDefault();
-            config.spellCheckEnabled = !config.spellCheckEnabled;
-            ApplyConfigChange(config);
+        case TrayMenuId::SpellCheckOff:
+            ApplySpellCheckLevel(SpellCheckLevel::Off);
             break;
-        }
+
+        case TrayMenuId::SpellCheckStandard:
+            ApplySpellCheckLevel(SpellCheckLevel::Standard);
+            break;
+
+        case TrayMenuId::SpellCheckAdvanced:
+            ApplySpellCheckLevel(SpellCheckLevel::Advanced);
+            break;
 
         case TrayMenuId::SmartSwitch: {
             auto config = ConfigManager::LoadOrDefault();
@@ -418,14 +484,15 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                          r == WAIT_ABANDONED ? L"abandoned" : L"released");
         } else {
             // Another VKey (Classic or Sciter) is already running. Surface the
-            // running instance's settings if "show on startup" is configured,
-            // then exit silently — mirrors main.cpp.
-            auto sysCfg = ConfigManager::LoadSystemConfigOrDefault();
-            if (sysCfg.showOnStartup) {
-                HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
-                if (existingTrayWnd) {
-                    PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
+            // running instance's settings, then exit silently — mirrors main.cpp.
+            HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+            if (existingTrayWnd) {
+                DWORD existingPid = 0;
+                GetWindowThreadProcessId(existingTrayWnd, &existingPid);
+                if (existingPid != 0) {
+                    AllowSetForegroundWindow(existingPid);
                 }
+                PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
             }
             NEXTKEY_LOG(L"Another VKey instance is already running. Exiting.");
             CloseHandle(hMutex);
@@ -449,6 +516,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Initialize UI language
     auto systemConfig = ConfigManager::LoadSystemConfigOrDefault();
     SetLanguage(static_cast<Language>(systemConfig.language));
+
+#if defined(VKEY_USE_RUST_ENGINE)
+    // Repair before HookEngine can cache a failed first load for this process.
+    // Ready is the only state allowed to keep Advanced persisted. Decline,
+    // manual install, cancellation, and install failures all return to Standard
+    // so startup never repeats the prompt without another explicit selection.
+    if (config.GetSpellCheckLevel() == SpellCheckLevel::Advanced) {
+        const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(nullptr);
+        if (status != AdvancedEngineStatus::Ready) {
+            config.SetSpellCheckLevel(SpellCheckLevel::Standard);
+            (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
+            if (status == AdvancedEngineStatus::ManualRequested) {
+                AdvancedEngineInstaller::ShowManualInstallWithUi(nullptr);
+            }
+        }
+    }
+#endif
 
     // Apply any deferred TSF DLL swap before CleanupOldUpdateFiles removes
     // _old_version/ (the parking dir used by ApplyPendingDllUpdate).
@@ -496,7 +580,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         state.InitDefaults();
         state.flags |= SharedFlags::CLASSIC_MODE;
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
-        state.spellCheck = config.spellCheckEnabled ? 1 : 0;
+        state.spellCheck = static_cast<uint8_t>(config.GetSpellCheckLevel());
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
@@ -560,6 +644,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     });
 
+    g_hookEngine.SetFocusAppContextCallback([](
+            std::wstring_view exe, std::wstring_view rule,
+            bool isTsf, bool isRust) {
+        g_trayIcon.QueueAppContext(exe, rule, isTsf, isRust);
+    });
+
     // Wire settings dialog -> HookEngine mode set
     g_trayIcon.SetModeRequestCallback([](bool vietnamese) {
         if (g_hookEngine.IsVietnameseMode() != vietnamese) {
@@ -584,7 +674,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         uint32_t ff = state.GetFeatureFlags();
         return {
             g_hookEngine.IsVietnameseMode(),
-            state.spellCheck != 0,
+            static_cast<SpellCheckLevel>(state.spellCheck),
             (ff & FeatureFlags::SMART_SWITCH) != 0,
             (ff & FeatureFlags::MACRO_ENABLED) != 0,
             state.inputMethod,

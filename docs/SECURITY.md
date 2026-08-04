@@ -12,7 +12,7 @@ IME cục bộ trên Windows cá nhân. Kẻ tấn công chính: phần mềm đ
 
 | Biện pháp | Mô tả |
 |-----------|-------|
-| **Authenticode signature + publisher pin** | Trước khi cài, mỗi file `.exe`/`.dll` **của VKey** được xác minh qua `WinVerifyTrust` (chuỗi tin cậy tới root + kiểm tra thu hồi) và ghim đúng publisher `SignPath Foundation`. Đây là lớp chống giả mạo thật sự — chứng minh *ai* đã ký mã sắp chạy. `sciter.dll` (bên thứ ba, phát hành **không ký**) không bị bắt buộc ký; toàn vẹn của nó dựa vào hash ZIP |
+| **Authenticode signature + publisher pin** | Trước khi cài, mỗi file `.exe`/`.dll` trong gói ứng dụng VKey đã ký được xác minh qua `WinVerifyTrust` (chuỗi tin cậy tới root + kiểm tra thu hồi) và ghim đúng publisher `SignPath Foundation`. Đây là lớp chống giả mạo thật sự — chứng minh *ai* đã ký mã sắp chạy. `sciter.dll` (bên thứ ba) và optional `vkey_engine.dll` phát hành ngoài ZIP là ngoại lệ **không ký**; engine được xác thực bằng pin đã compile như mô tả ở mục 4 |
 | **SHA-256 hash verification** | Mỗi bản cập nhật đi kèm file `.sha256`. Sau khi tải, VKey tính hash thực tế bằng Windows CNG (bcrypt) và so khớp trước khi giải nén. *Lưu ý:* sidecar `.sha256` tải cùng nguồn với ZIP → chỉ chống **hỏng file/CDN**, không chống giả mạo (nguồn bị chiếm là chiếm cả hai). Chống giả mạo do lớp Authenticode ở trên đảm nhận |
 | **URL domain whitelist** | Chỉ chấp nhận tải từ `https://github.com/`, `https://objects.githubusercontent.com/`, `https://codeload.github.com/`. Từ chối HTTP và domain lạ |
 | **PowerShell command escaping** | Escape ký tự `'` trong đường dẫn trước khi truyền vào `Expand-Archive`, chống command injection |
@@ -43,6 +43,7 @@ IME cục bộ trên Windows cá nhân. Kẻ tấn công chính: phần mềm đ
 |-----------|-------|
 | **HKCU CLSID cleanup** | Xóa `HKCU\Software\Classes\CLSID\{GUID}` mỗi lần khởi động + đăng ký DLL. Chặn DLL hijack qua HKCU override — kẻ tấn công không thể chèn DLL vào Word, Chrome qua registry |
 | **Safe DLL loading** | `LoadLibraryW()` dùng full path, không dựa vào search path |
+| **Trusted Advanced engine** | Khi người dùng bật Advanced, VKey chỉ tải asset `vkey_engine.dll` từ tag release trùng phiên bản đang chạy. WinHTTP tắt redirect tự động, giới hạn redirect ở HTTPS GitHub/CDN đã duyệt, giới hạn đúng byte length đã compile, ghi vào staging cùng thư mục và chỉ atomic-rename sau khi SHA-256 khớp `engine.lock`. Loader chỉ nạp file cạnh module, bỏ qua env/PATH/CWD, giữ handle chống write/delete qua bước `LoadLibraryExW`, rồi đối chiếu file identity và ABI/runtime status. Sai bất kỳ bước nào thì Advanced không được bật hoặc engine C++ được dùng làm fallback |
 | **DisableThreadLibraryCalls** | Tắt thông báo DLL_THREAD_ATTACH/DETACH không cần thiết |
 
 ## 5. Memory Safety
@@ -85,11 +86,18 @@ IME cục bộ trên Windows cá nhân. Kẻ tấn công chính: phần mềm đ
 
 ## Testing
 
-33 unit test chuyên cho bảo mật trong `tests/UpdateSecurityTest.cpp`:
+Các test bảo mật update và Advanced engine bao phủ:
 - PowerShell escaping (6 tests)
 - URL whitelist validation (14 tests)
 - SHA-256 hash parsing (7 tests)
 - Edge cases: empty string, invalid hex, oversized hash, case normalization
+- Exact-tag engine URL và redirect-origin policy
+- Same-name engine tampering và C++ fallback
+- Windows storage/activation: tạo staging `CREATE_NEW`, thay nguyên tử một DLL giả, xác minh lại hash/size, và bảo đảm file cuối không có `FILE_ATTRIBUTE_TEMPORARY`
+
+Trust path dùng CNG, `LoadLibraryExW` và `FILE_RENAME_INFO` là Windows-only. Windows CI chạy regression test storage/activation và tamper gate; một suite Linux xanh không phải bằng chứng cho các nhánh này.
+
+`vkey_engine.dll` hiện được phát hành nguyên trạng như asset riêng và không đi qua SignPath. SHA-256 pin đã compile ngăn VKey thực thi một DLL bị thay thế, nhưng không tạo Authenticode reputation; antivirus vẫn có thể đánh giá một DLL không ký nằm cạnh EXE đã ký là đáng ngờ. Windows/AV release smoke còn là release gate, không phải thuộc tính đã được chứng minh bởi unit test.
 
 ---
 

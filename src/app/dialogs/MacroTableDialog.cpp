@@ -4,12 +4,14 @@
 #include "MacroTableDialog.h"
 #include "DialogUtils.h"
 #include "core/config/ConfigManager.h"
+#include "core/Strings.h"
 #include "core/WinStrings.h"
 #include "helpers/AppHelpers.h"
 #include "sciter-x-dom.hpp"
 #include <algorithm>
 #include <vector>
 #include <fstream>
+#include <sstream>
 
 using namespace sciter::dom;
 
@@ -19,7 +21,7 @@ MacroTableDialog::MacroTableDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/macro/macro.html",
         L"VKey - Macro Table",
-        420, 600, parent, true, 36, 40, true
+        700, 420, parent, true, 36, 40, true
     }) {
     macros_ = ConfigManager::LoadMacros(ConfigManager::GetConfigPath());
     populateList();
@@ -66,11 +68,17 @@ bool MacroTableDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) 
             if (!action.empty()) {
                 // Read macro name and content from hidden inputs
                 sciter::dom::element root = get_root();
+                sciter::dom::element oldNameInput = root.find_first("#val-old-macro-name");
                 sciter::dom::element nameInput = root.find_first("#val-macro-name");
                 sciter::dom::element contentInput = root.find_first("#val-macro-content");
 
+                std::wstring oldMacroName;
                 std::wstring macroName;
                 std::wstring macroContent;
+                if (oldNameInput.is_valid()) {
+                    sciter::value ov = oldNameInput.get_value();
+                    oldMacroName = ov.is_string() ? ov.get<std::wstring>() : L"";
+                }
                 if (nameInput.is_valid()) {
                     sciter::value nv = nameInput.get_value();
                     macroName = nv.is_string() ? nv.get<std::wstring>() : L"";
@@ -84,9 +92,55 @@ bool MacroTableDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) 
                     if (!macroName.empty() && !macroContent.empty()) {
                         addMacro(macroName, macroContent);
                     }
+                } else if (action == L"edit") {
+                    if (!macroName.empty() && !macroContent.empty()) {
+                        if (!oldMacroName.empty() && oldMacroName != macroName) {
+                            macros_.erase(oldMacroName);
+                        }
+                        addMacro(macroName, macroContent);
+                    }
                 } else if (action == L"delete") {
                     if (!macroName.empty()) {
-                        removeMacro(macroName);
+                        // Newline-delimited, not ';' — a shortcut may legally contain
+                        // any printable char (HookEngine feeds punctuation into the
+                        // macro buffer too), so ";;"-style names would split apart.
+                        // An <input> can't hold a newline, so '\n' is collision-free.
+                        std::vector<std::wstring> toDelete;
+                        std::wstringstream ss(macroName);
+                        std::wstring item;
+                        while (std::getline(ss, item)) {
+                            if (!item.empty()) {
+                                toDelete.push_back(item);
+                            }
+                        }
+
+                        if (!toDelete.empty()) {
+                            std::wstring msg;
+                            if (toDelete.size() == 1) {
+                                msg = S(StringId::MACRO_CONFIRM_DELETE);
+                                msg += L"\n\n";
+                                msg += toDelete[0];
+                            } else {
+                                wchar_t buf[256];
+                                swprintf_s(buf, S(StringId::MACRO_CONFIRM_DELETE_MULTI),
+                                           static_cast<int>(toDelete.size()));
+                                msg = buf;
+                            }
+
+                            int msgboxID = MessageBoxW(
+                                get_hwnd(),
+                                msg.c_str(),
+                                L"VKey",
+                                MB_ICONQUESTION | MB_YESNO
+                            );
+                            if (msgboxID == IDYES) {
+                                for (const auto& name : toDelete) {
+                                    macros_.erase(name);
+                                }
+                                populateList();
+                                persistAndSignal();
+                            }
+                        }
                     }
                 } else if (action == L"import") {
                     importMacros();
@@ -132,16 +186,12 @@ void MacroTableDialog::populateList() {
     for (auto& [name, content] : sorted) {
         call_function("addMacroToList", sciter::value(name.c_str()), sciter::value(content.c_str()));
     }
+
+    call_function("finishMacroList");
 }
 
 void MacroTableDialog::addMacro(const std::wstring& name, const std::wstring& content) {
     macros_[name] = content;
-    populateList();
-    persistAndSignal();
-}
-
-void MacroTableDialog::removeMacro(const std::wstring& name) {
-    macros_.erase(name);
     populateList();
     persistAndSignal();
 }
@@ -156,8 +206,8 @@ void MacroTableDialog::importMacros() {
 
     int msgboxID = MessageBoxW(
         get_hwnd(),
-        L"B\u1EA1n c\u00F3 mu\u1ED1n gi\u1EEF l\u1EA1i d\u1EEF li\u1EC7u hi\u1EC7n t\u1EA1i kh\u00F4ng?",
-        L"D\u1EEF li\u1EC7u g\u00F5 t\u1EAFt",
+        S(StringId::IMPORT_KEEP_EXISTING),
+        L"VKey",
         MB_ICONEXCLAMATION | MB_YESNO
     );
 

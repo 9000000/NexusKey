@@ -69,6 +69,10 @@ private:
     [[nodiscard]] bool OnTsfAppsToggle(bool wantsEnabled);
     void OnPickIconColors();
     void UpdateSpellCheckChildren();
+    /// Shared CBN_DROPDOWN/CBN_CLOSEUP combo-box animation suppression
+    /// (dark-mode-only Win32 visual glitch workaround), used by every
+    /// hand-wired combo case in OnCommand.
+    void HandleComboDarkModeAnimation(UINT code, LPARAM lParam);
     void RefreshLabels();
     void OnTabChange();
     void ShowTabPage(int tabIndex);
@@ -120,6 +124,11 @@ private:
     // Advanced controls
     HWND tabControl_    = nullptr;
     HWND linkReportBug_ = nullptr;
+    HWND lblSpellCheckLevel_   = nullptr;
+    HWND comboSpellCheckLevel_ = nullptr;  // Off / Standard / Advanced — hand-wired
+                                            // like comboMethod_/comboEncoding_, not
+                                            // table-driven (see SpellCheckLevel design
+                                            // note in TypingConfig.h)
     bool advancedCreated_ = false;
     int currentTab_     = 0;
 

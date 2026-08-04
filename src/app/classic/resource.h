@@ -22,7 +22,7 @@
 #define IDC_TAB_ADVANCED        2100
 
 // ── Tab 0: Cơ bản — Left column ──
-#define IDC_CHECK_SPELL         2201
+#define IDC_COMBO_SPELL_CHECK   2201  // Off/Standard/Advanced dropdown (was a checkbox)
 #define IDC_CHECK_MODERN_ORTHO  2202
 #define IDC_CHECK_AUTO_CAPS     2203
 #define IDC_CHECK_ALLOW_ZWJF    2204
@@ -71,6 +71,7 @@
 #define IDC_BTN_OPEN_LOG_FOLDER 2505
 #define IDC_BTN_HOTKEYS         2506
 #define IDC_BTN_TSF_APPS        2507
+#define IDC_BTN_RESET_FLOATING  2508
 
 // ── Static labels ──
 #define IDC_STATIC_METHOD       2601

@@ -13,6 +13,7 @@
 #include "dialogs/SpellExclusionsDialog.h"
 #include "dialogs/UserDefinedDialog.h"
 #include "dialogs/HotkeysDialog.h"
+#include "dialogs/IconSettingsDialog.h"
 #include "core/Debug.h"
 
 #include <Windows.h>
@@ -30,9 +31,7 @@ namespace NextKey {
     // ponytail: handle leaked deliberately — ExitProcess frees it with the process.
     HANDLE hSettingsMutex = CreateMutexW(nullptr, TRUE, L"Local\\VKey_Settings_Mutex");
     if (hSettingsMutex && GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (HWND existing = FindWindowW(nullptr, L"VKey Settings")) {
-            SetForegroundWindow(existing);
-        }
+        FocusExistingWindow(FindWindowW(nullptr, L"VKey Settings"));
         NEXTKEY_LOG(L"Settings already open — focusing existing, exiting");
         ExitProcess(0);
     }
@@ -190,6 +189,19 @@ namespace NextKey {
     dialog.Show();
 
     NEXTKEY_LOG(L"Hotkeys subprocess exiting");
+    ExitProcess(0);
+}
+
+[[noreturn]] void RunIconSettingsSubprocess() {
+    NEXTKEY_LOG(L"Running icon settings subprocess");
+
+    InitSciterSubprocess();
+
+    HWND parent = FindWindowW(nullptr, L"VKey Settings");
+    IconSettingsDialog dialog(parent);
+    dialog.Show();
+
+    NEXTKEY_LOG(L"Icon settings subprocess exiting");
     ExitProcess(0);
 }
 

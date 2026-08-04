@@ -4,15 +4,21 @@
 #pragma once
 
 #include "stdafx.h"
-#include "core/engine/IInputEngine.h"
-#include "core/config/TypingConfig.h"
-#include "core/config/ConfigEvent.h"
-#include "core/ipc/SharedStateManager.h"
+
+#include <msctf.h>
+
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <unordered_set>
+
 #include "CompositionManager.h"
 #include "EditSession.h"
 #include "LanguageBarButton.h"
-#include <memory>
-#include <msctf.h>
+#include "core/MacroContextMatch.h"
+#include "core/config/TypingConfig.h"
+#include "core/engine/IInputEngine.h"
+#include "core/ipc/SharedStateManager.h"
 
 namespace NextKey {
 namespace TSF {
@@ -20,14 +26,17 @@ namespace TSF {
 /// Controller bridging TSF events and the Telex engine
 class EngineController {
 public:
+    enum class MacroResult : uint8_t {
+        NoMatch,
+        ExpandedEatTrigger,
+        ExpandedPassTrigger,
+    };
+
     EngineController();
     ~EngineController();
 
     /// Set the TSF client ID for edit sessions
     void SetClientId(TfClientId clientId) { clientId_ = clientId; }
-
-    /// Set the category manager for display attributes
-    void SetCategoryMgr(ITfCategoryMgr* pCategoryMgr) { compositionMgr_.SetCategoryMgr(pCategoryMgr); }
 
     /// Check if we want to handle this key
     bool WantKey(UINT vkCode, bool isKeyDown);
@@ -37,6 +46,19 @@ public:
 
     /// Process backspace
     void ProcessBackspace(ITfContext* pContext);
+
+    void TrackMacroCharacter(wchar_t ch);
+    void TrackMacroBackspace() noexcept;
+    void ClearMacroTracking() noexcept;
+    [[nodiscard]] bool IsMacroCommitTrigger(UINT vkCode) const noexcept;
+    [[nodiscard]] bool HasMacroCandidate() const noexcept;
+    [[nodiscard]] bool IsEnglishMacroTrackingActive() const noexcept;
+    [[nodiscard]] bool WouldExpandMacroTrigger(ITfContext* pContext,
+                                               UINT vkCode,
+                                               wchar_t triggerChar) const;
+    [[nodiscard]] MacroResult HandleMacroTrigger(ITfContext* pContext,
+                                                  UINT vkCode,
+                                                  wchar_t triggerChar);
 
     /// Commit current composition
     void Commit(ITfContext* pContext);
@@ -108,9 +130,10 @@ public:
     /// Reset only engine buffer (for sync recovery)
     void ResetEngine() { engine_->Reset(); }
 
-    /// Check for config changes (call periodically, e.g., on focus)
+    /// Check for config changes (call periodically, e.g., on focus).
+    /// Disk-backed macro reload is allowed only outside key callbacks.
     /// Returns true if config was reloaded
-    bool CheckConfigEvent();
+    bool CheckConfigEvent(bool allowMacroDiskRead = false);
 
     /// Check if engine is enabled (app is running)
     [[nodiscard]] bool IsEnabled() const noexcept { return engineEnabled_; }
@@ -127,7 +150,7 @@ public:
     /// Set code table (updates config, no persistence yet)
     void SetCodeTable(CodeTable ct) noexcept { config_.codeTable = ct; }
 
-    /// Initialize language bar button (call after SetClientId/SetCategoryMgr)
+    /// Initialize language bar button (call after SetClientId)
     bool InitLanguageBar(ITfThreadMgr* pThreadMgr);
 
     /// Cleanup language bar button
@@ -166,29 +189,63 @@ public:
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
 
+    void ReloadMacros(uint8_t generation);
+    void ClearMacroTrackingAfterCommit() noexcept;
+    [[nodiscard]] bool IsMacroTrackingEnabled() const noexcept;
+    [[nodiscard]] bool ReplacePrecedingText(ITfContext* pContext,
+                                            std::size_t characterCount,
+                                            const std::wstring& replacement);
+    [[nodiscard]] std::wstring ReadPrecedingTextFromContext(ITfContext* pContext,
+                                                            LONG maxChars = 64) const;
+    /// Plan against an explicitly assembled raw buffer. Callers that must not
+    /// mutate state (WouldExpandMacroTrigger) pass a local copy.
+    [[nodiscard]] Macro::MacroPlan EvaluateMacroPlan(const std::wstring& rawBuffer,
+                                                    wchar_t triggerChar) const;
+    /// Fallback for when rawMacroBuffer_ no longer mirrors the document.
+    [[nodiscard]] std::optional<Macro::ContextMatch> LookupMacroInContext(
+        ITfContext* pContext, wchar_t triggerChar) const;
+
     /// Detect if current app is Scintilla-based (cached, updated on context change)
     void DetectScintillaApp();
 
     /// Apply config from SharedState
-    void ApplySharedState(const SharedState& state);
+    void ApplySharedState(const SharedState& state, bool allowMacroDiskRead);
 
     std::unique_ptr<IInputEngine> engine_;
     CompositionManager compositionMgr_;
     TypingConfig config_;
     InputMethod currentMethod_ = InputMethod::Telex;
     TfClientId clientId_ = TF_CLIENTID_NULL;
-    ConfigEvent configEvent_;       // For detecting config changes
     SharedStateManager sharedState_; // For reading config from App
     uint32_t lastEpoch_ = 0;        // Last seen config epoch
     bool engineEnabled_ = true;     // ENGINE_ENABLED flag from SharedState
     bool tsfActive_ = false;        // TSF_ACTIVE flag from SharedState (foreground app in TSF list)
     bool vietnameseMode_ = true;    // VIETNAMESE_MODE flag from SharedState
-    bool abiOk_ = true;             // false → SharedState layout mismatch, disable TSF for this process
+    // true only once IsAbiCompatible() has actually been observed to pass —
+    // NOT "assumed fine until proven otherwise". Defaulting true let an
+    // instance that never got a chance to check (e.g. constructed while
+    // SharedState was momentarily unavailable) skip validation forever,
+    // since CheckConfigEvent's recovery path only runs when this is false.
+    // Unchecked and confirmed-incompatible must both disable TSF the same
+    // way, so they share the same falsy default.
+    bool abiOk_ = false;
     LanguageBarButton* langBarButton_ = nullptr;  // Owned, Release'd in UninitLanguageBar
     ITfContext* lastContext_ = nullptr;   // Last seen context (AddRef'd for safe identity comparison)
     bool contextBlocked_ = false;        // True if current context blocks input (password, etc.)
     bool isScintillaApp_ = false;        // Cached: current app is Scintilla-based (Notepad++, etc.)
     bool digitLedWord_ = false;          // True = current word started with a digit (VNI/Combined/UserDefined) → treat whole word as English (pass through; no composition)
+
+    // Macros are not represented in SharedState because the table is variable
+    // sized. TSF reloads this local snapshot whenever configGeneration changes.
+    std::unordered_map<std::wstring, std::wstring> macroTable_;
+    std::unordered_set<std::wstring> spaceMacroKeys_;
+    // Bounds the backward scan of document text in LookupMacroInContext.
+    std::size_t maxMacroKeyLen_ = 0;
+    std::wstring rawMacroBuffer_;
+    bool wasFirstCharAutoCapped_ = false;
+    uint8_t macroGeneration_ = 0;
+    bool macroConfigLoaded_ = false;
+    bool macroCrossCommit_ = false;
 
     // Pending Backspace revive — set by PrepareBackspaceRevive (called from OnTestKeyDown),
     // consumed by HandleKey(VK_BACK). CComPtr auto-manages ref count.
@@ -208,6 +265,12 @@ private:
     static constexpr DWORD kCommitUndoTimeoutMs = 1500;
 
     void RecordCommitSnapshot(std::wstring text, std::wstring rawInput, bool hasTrailingChar) noexcept;
+
+    /// Returns the raw keystrokes that produced `word`, if `word` is exactly the
+    /// most recently committed text (lastCommit_, trailing char stripped). Empty
+    /// otherwise — callers should fall back to IInputEngine::SeedFromText, which
+    /// can't re-tone on continued edit.
+    [[nodiscard]] std::wstring MatchingRawForCommittedWord(const std::wstring& word) const;
 };
 
 }  // namespace TSF

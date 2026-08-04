@@ -9,7 +9,7 @@
 //   * Smart-switch per-app mode map + persistence
 //   * CJK layout state (suppressed/modeBeforeCjk/cachedIsCompatLayout)
 //   * WebView2 positive-only detection cache
-//   * Window classification helpers (ClassifyFocusedWindow + ClassifyWindow)
+//   * Window classification helpers (Classify + file-local ClassifyWindow)
 //
 // HookEngine still owns the *reactions* to focus events
 // (ApplyFocusOnHookThread / OnLayoutChanged / OnFocusChanged orchestration);
@@ -183,6 +183,15 @@ public:
     [[nodiscard]] SmartSwitchManager& Smart() noexcept { return smartSwitchMgr_; }
     [[nodiscard]] const SmartSwitchManager& Smart() const noexcept { return smartSwitchMgr_; }
 
+    /// Taskbar / tray / Start / tray-popup window, or any window of our own
+    /// process. Pure predicate over the HWND's class — no AttachThreadInput,
+    /// no message send, so it is safe to call before deciding whether a more
+    /// expensive cross-thread probe is worth it. Public because
+    /// HookEngine::ApplyFocusOnHookThread uses it as exactly that gate: it must
+    /// never AttachThreadInput to explorer.exe's taskbar thread, which owns the
+    /// tray icon's own double-click detection (#209).
+    [[nodiscard]] static bool IsTrayOrTaskbarWindow(HWND hwnd) noexcept;
+
     /// Hook-thread MarkDirty timestamp (GetTickCount64 on Windows; injected
     /// clock in tests). Worker reads to enforce debounce window.
     [[nodiscard]] std::uint64_t LastDirtyTs() const noexcept {
@@ -232,7 +241,6 @@ private:
 
     [[nodiscard]] const AppProfile* LookupAppProfile(HWND hwnd) noexcept;
     void StoreAppProfile(HWND hwnd, AppProfile profile) noexcept;
-    [[nodiscard]] static bool IsTrayOrTaskbarWindow(HWND hwnd) noexcept;
     /// Two-pass WebView2 detection (loaded modules + child-process scan).
     /// Hook-thread only — `webView2PositiveCache_` is plain (not atomic).
     [[nodiscard]] bool IsWebView2App(HWND topLevel,

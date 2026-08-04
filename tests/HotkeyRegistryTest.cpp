@@ -23,31 +23,33 @@ constexpr uint32_t kVkF1      = 0x70;
 
 // ───────────────────────────── Defaults ──────────────────────────────────
 
-TEST(HotkeyRegistry, Defaults_CancelComposition_MatchesEscDown) {
+TEST(HotkeyRegistry, Defaults_CancelComposition_IsBoundButDisabled) {
     const auto cfg = HotkeyRegistry::Defaults();
-    EXPECT_TRUE(cfg.Matches(Intent::CancelComposition,
-                            kVkEscape, /*mods=*/0,
-                            /*isDoubleTap=*/false, /*keyUp=*/false));
+    EXPECT_FALSE(cfg.IsEnabled(Intent::CancelComposition));
+    EXPECT_FALSE(cfg.Matches(Intent::CancelComposition,
+                             kVkEscape, /*mods=*/0,
+                             /*isDoubleTap=*/false, /*keyUp=*/false));
+    EXPECT_EQ(cfg.TriggersFor(Intent::CancelComposition).size(), 1u);
 }
 
-TEST(HotkeyRegistry, Defaults_SkipMacro_MatchesEscDown) {
+TEST(HotkeyRegistry, Defaults_SkipMacro_IsBoundButDisabled) {
     const auto cfg = HotkeyRegistry::Defaults();
-    EXPECT_TRUE(cfg.Matches(Intent::SkipMacro,
-                            kVkEscape, 0, false, false));
+    EXPECT_FALSE(cfg.IsEnabled(Intent::SkipMacro));
+    EXPECT_FALSE(cfg.Matches(Intent::SkipMacro,
+                             kVkEscape, 0, false, false));
+    EXPECT_EQ(cfg.TriggersFor(Intent::SkipMacro).size(), 1u);
 }
 
-TEST(HotkeyRegistry, Defaults_ToggleEnabled_MatchesCtrlAloneOnKeyUp) {
+TEST(HotkeyRegistry, Defaults_ToggleEnabled_IsBoundButDisabled) {
     const auto cfg = HotkeyRegistry::Defaults();
-    EXPECT_TRUE(cfg.Matches(Intent::ToggleEnabled,
-                            kVkControl, 0,
-                            /*isDoubleTap=*/false, /*keyUp=*/true));
-}
-
-TEST(HotkeyRegistry, Defaults_ToggleEnabled_MatchesDoubleTapAlt) {
-    const auto cfg = HotkeyRegistry::Defaults();
-    EXPECT_TRUE(cfg.Matches(Intent::ToggleEnabled,
-                            kVkMenu, 0,
-                            /*isDoubleTap=*/true, /*keyUp=*/false));
+    EXPECT_FALSE(cfg.IsEnabled(Intent::ToggleEnabled));
+    EXPECT_FALSE(cfg.Matches(Intent::ToggleEnabled,
+                             kVkControl, 0,
+                             /*isDoubleTap=*/false, /*keyUp=*/true));
+    EXPECT_FALSE(cfg.Matches(Intent::ToggleEnabled,
+                             kVkMenu, 0,
+                             /*isDoubleTap=*/true, /*keyUp=*/false));
+    EXPECT_EQ(cfg.TriggersFor(Intent::ToggleEnabled).size(), 2u);
 }
 
 TEST(HotkeyRegistry, Defaults_TriggersFor_Returns4TotalBindings) {
@@ -60,13 +62,15 @@ TEST(HotkeyRegistry, Defaults_TriggersFor_Returns4TotalBindings) {
 // ───────────────────────── Single-key Tap matching ───────────────────────
 
 TEST(HotkeyRegistry, Tap_DoesNotFireOnKeyUp) {
-    const auto cfg = HotkeyRegistry::Defaults();
+    auto cfg = HotkeyRegistry::Defaults();
+    cfg.SetEnabled(Intent::CancelComposition, true);
     EXPECT_FALSE(cfg.Matches(Intent::CancelComposition,
                              kVkEscape, 0, false, /*keyUp=*/true));
 }
 
 TEST(HotkeyRegistry, Tap_WrongVk_DoesNotMatch) {
-    const auto cfg = HotkeyRegistry::Defaults();
+    auto cfg = HotkeyRegistry::Defaults();
+    cfg.SetEnabled(Intent::CancelComposition, true);
     EXPECT_FALSE(cfg.Matches(Intent::CancelComposition,
                              kVkF1, 0, false, false));
 }
@@ -74,7 +78,8 @@ TEST(HotkeyRegistry, Tap_WrongVk_DoesNotMatch) {
 TEST(HotkeyRegistry, Tap_AnyModifierSet_DoesNotMatch) {
     // User rebinds CancelComposition to plain Esc (mods=0). Pressing
     // Shift+Esc must NOT fire — the chord doesn't match.
-    const auto cfg = HotkeyRegistry::Defaults();
+    auto cfg = HotkeyRegistry::Defaults();
+    cfg.SetEnabled(Intent::CancelComposition, true);
     EXPECT_FALSE(cfg.Matches(Intent::CancelComposition,
                              kVkEscape, kModShift, false, false));
 }
@@ -105,7 +110,8 @@ TEST(HotkeyRegistry, Chord_ExtraMod_DoesNotMatch) {
 // ────────────────────────────── DoubleTap ────────────────────────────────
 
 TEST(HotkeyRegistry, DoubleTap_DoesNotFireOnSingleTap) {
-    const auto cfg = HotkeyRegistry::Defaults();
+    auto cfg = HotkeyRegistry::Defaults();
+    cfg.SetEnabled(Intent::ToggleEnabled, true);
     EXPECT_FALSE(cfg.Matches(Intent::ToggleEnabled,
                              kVkMenu, 0,
                              /*isDoubleTap=*/false, /*keyUp=*/false));
@@ -115,7 +121,8 @@ TEST(HotkeyRegistry, DoubleTap_FiresOnKeyUp_WhenIsDoubleTapSet) {
     // NexusKey's 2×Alt UX fires on the 2nd Alt RELEASE. Caller signals via
     // isDoubleTap=true after detecting timing — Matches() trusts the signal
     // regardless of keyUp.
-    const auto cfg = HotkeyRegistry::Defaults();
+    auto cfg = HotkeyRegistry::Defaults();
+    cfg.SetEnabled(Intent::ToggleEnabled, true);
     EXPECT_TRUE(cfg.Matches(Intent::ToggleEnabled,
                             kVkMenu, 0,
                             /*isDoubleTap=*/true, /*keyUp=*/true));
@@ -124,7 +131,8 @@ TEST(HotkeyRegistry, DoubleTap_FiresOnKeyUp_WhenIsDoubleTapSet) {
 TEST(HotkeyRegistry, DoubleTap_AlsoFiresOnKeyDown_WhenCallerSetsIsDoubleTap) {
     // Symmetric: if caller chose to fire on the 2nd DOWN (alternative UX),
     // Matches() honours that too. Caller owns the framing decision.
-    const auto cfg = HotkeyRegistry::Defaults();
+    auto cfg = HotkeyRegistry::Defaults();
+    cfg.SetEnabled(Intent::ToggleEnabled, true);
     EXPECT_TRUE(cfg.Matches(Intent::ToggleEnabled,
                             kVkMenu, 0,
                             /*isDoubleTap=*/true, /*keyUp=*/false));
@@ -133,7 +141,8 @@ TEST(HotkeyRegistry, DoubleTap_AlsoFiresOnKeyDown_WhenCallerSetsIsDoubleTap) {
 // ────────────────────────── Modifier-alone ───────────────────────────────
 
 TEST(HotkeyRegistry, ModifierAlone_DoesNotFireOnDown) {
-    const auto cfg = HotkeyRegistry::Defaults();
+    auto cfg = HotkeyRegistry::Defaults();
+    cfg.SetEnabled(Intent::ToggleEnabled, true);
     EXPECT_FALSE(cfg.Matches(Intent::ToggleEnabled,
                              kVkControl, 0,
                              /*isDoubleTap=*/false, /*keyUp=*/false));
@@ -142,7 +151,8 @@ TEST(HotkeyRegistry, ModifierAlone_DoesNotFireOnDown) {
 TEST(HotkeyRegistry, ModifierAlone_DoesNotFireOnIsDoubleTap) {
     // Caller wouldn't normally set both, but defensive check: if event is
     // flagged as DoubleTap, modifier-alone path must not also fire.
-    const auto cfg = HotkeyRegistry::Defaults();
+    auto cfg = HotkeyRegistry::Defaults();
+    cfg.SetEnabled(Intent::ToggleEnabled, true);
     EXPECT_FALSE(cfg.Matches(Intent::ToggleEnabled,
                              kVkControl, 0,
                              /*isDoubleTap=*/true, /*keyUp=*/true));
@@ -245,16 +255,19 @@ TEST(HotkeyRegistry, Load_MissingTrigger_Skipped) {
 TEST(HotkeyRegistry, Save_Defaults_ProducesParseableRoundTrip) {
     const auto src = HotkeyRegistry::Defaults();
     toml::array arr;
+    toml::table state;
     src.Save(arr);
+    src.SaveEnabled(state);
 
     HotkeyRegistry dst;
     dst.Load(arr);
+    dst.LoadEnabled(state);
 
-    // Each default trigger must match again in the round-tripped config.
-    EXPECT_TRUE(dst.Matches(Intent::CancelComposition, kVkEscape, 0, false, false));
-    EXPECT_TRUE(dst.Matches(Intent::SkipMacro,         kVkEscape, 0, false, false));
-    EXPECT_TRUE(dst.Matches(Intent::ToggleEnabled,     kVkControl, 0, false, /*keyUp=*/true));
-    EXPECT_TRUE(dst.Matches(Intent::ToggleEnabled,     kVkMenu,    0, /*isDoubleTap=*/true, false));
+    // Full config round-trip keeps the suggested bindings and disabled state.
+    EXPECT_FALSE(dst.Matches(Intent::CancelComposition, kVkEscape, 0, false, false));
+    EXPECT_FALSE(dst.Matches(Intent::SkipMacro,         kVkEscape, 0, false, false));
+    EXPECT_FALSE(dst.Matches(Intent::ToggleEnabled,     kVkControl, 0, false, /*keyUp=*/true));
+    EXPECT_FALSE(dst.Matches(Intent::ToggleEnabled,     kVkMenu,    0, /*isDoubleTap=*/true, false));
     EXPECT_EQ(dst.TriggersFor(Intent::ToggleEnabled).size(), 2u);
 }
 
@@ -368,7 +381,9 @@ TEST(HotkeyRegistry, IsEnabled_DefaultsToTrueWhenUnset) {
 
 TEST(HotkeyRegistry, SetEnabled_FalseBlocksMatches) {
     auto cfg = HotkeyRegistry::Defaults();
-    // Default Esc → CancelComposition normally matches.
+    cfg.SetEnabled(Intent::CancelComposition, true);
+    cfg.SetEnabled(Intent::SkipMacro, true);
+    // An explicitly enabled Esc → CancelComposition matches.
     EXPECT_TRUE(cfg.Matches(Intent::CancelComposition, kVkEscape, 0, false, false));
     cfg.SetEnabled(Intent::CancelComposition, false);
     EXPECT_FALSE(cfg.Matches(Intent::CancelComposition, kVkEscape, 0, false, false));

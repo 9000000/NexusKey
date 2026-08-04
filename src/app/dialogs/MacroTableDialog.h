@@ -20,7 +20,6 @@ public:
 private:
     void populateList();
     void addMacro(const std::wstring& name, const std::wstring& content);
-    void removeMacro(const std::wstring& name);
     void persistAndSignal();
     void importMacros();
     void exportMacros();

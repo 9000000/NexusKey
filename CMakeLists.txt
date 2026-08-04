@@ -63,12 +63,8 @@ set(NEXTKEY_ENGINE_SOURCES
     src/core/engine/EnglishProtection.h
     src/core/engine/VietnameseTables.h
     src/core/engine/VietnamesePhonologyData.h
-    src/core/engine/IPhonologyRules.h
-    src/core/engine/DefaultPhonologyRules.h
-    src/core/engine/PhonologyRulePackFactory.h
     src/core/engine/PhonotacticsValidator.cpp
     src/core/engine/PhonotacticsValidator.h
-    src/core/engine/IPhonotactics.h
     src/core/engine/Phonotactics.cpp
     src/core/engine/Phonotactics.h
     src/core/engine/TypingAction.h
@@ -114,6 +110,104 @@ target_include_directories(VKeyEngine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+# Route EngineFactory through the prebuilt, closed-source Rust engine (consumed
+# via its C ABI, loaded at runtime). The in-tree C++ TypingEngine stays compiled
+# as a fallback (used when the library is missing, and by the parity tests).
+# Defaults OFF on purpose. The prebuilt engine in extern/vkey_engine/ is NOT
+# covered by this project's AGPL-3.0 license and embeds CC BY-NC data, so a
+# plain `cmake -B build` must not require it — see extern/vkey_engine/LICENSE.
+# Official builds opt in explicitly with -DVKEY_USE_RUST_ENGINE=ON in CI.
+option(VKEY_USE_RUST_ENGINE "Use the prebuilt closed-source Rust engine (C ABI)" OFF)
+if(VKEY_USE_RUST_ENGINE)
+    # Overridable so the libraries need not be committed: tools/fetch_engine.py
+    # populates a directory from a published engine release, and the build is
+    # pointed at it with -DVKEY_ENGINE_ROOT=<dir>. engine.lock and the header stay
+    # in the tree — they are text and carry no corpus data — while the libraries,
+    # which embed CC BY-NC data, do not have to.
+    set(VKEY_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extern/vkey_engine" CACHE PATH
+        "Directory holding the prebuilt engine: engine.lock, include/, lib/")
+    set(VKEY_ENGINE_LOCK_PATH "${VKEY_ENGINE_ROOT}/engine.lock")
+    set(VKEY_ENGINE_DLL "${VKEY_ENGINE_ROOT}/lib/win-x64/vkey_engine.dll")
+    if(NOT EXISTS "${VKEY_ENGINE_LOCK_PATH}" OR NOT EXISTS "${VKEY_ENGINE_DLL}")
+        message(FATAL_ERROR
+            "No prebuilt engine at ${VKEY_ENGINE_ROOT}. Either run the VKey-rs "
+            "engine sync, or fetch a published one:\n"
+            "  python3 tools/fetch_engine.py --lock extern/vkey_engine/engine.lock "
+            "--dest build/vkey_engine --base-url <engine release URL>\n"
+            "then configure with -DVKEY_ENGINE_ROOT=build/vkey_engine.\n"
+            "To build without it: -DVKEY_USE_RUST_ENGINE=OFF.")
+    endif()
+
+    # The lock is a configure-time input baked into VKeyEngineLock.h. Without
+    # this, a plain `cmake --build` after an engine sync keeps the stale hash and
+    # the freshly vendored DLL fails the trust check → silent C++ fallback.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${VKEY_ENGINE_LOCK_PATH}" "${VKEY_ENGINE_DLL}")
+
+    file(READ "${VKEY_ENGINE_LOCK_PATH}" _vkey_engine_lock LIMIT 1025)
+    string(LENGTH "${_vkey_engine_lock}" _vkey_engine_lock_length)
+    set(_vkey_engine_lock_pattern
+        "^VKEY-ENGINE-LOCK-V1\nabi_version=([0-9]+)\ntarget=windows-x86_64\nasset_name=vkey_engine[.]dll\ninstalled_name=vkey_engine[.]dll\nbyte_len=([0-9]+)\nsha256=([0-9a-f]+)\n$")
+    string(REGEX MATCH "${_vkey_engine_lock_pattern}" _vkey_engine_lock_match
+        "${_vkey_engine_lock}")
+    if(_vkey_engine_lock_length GREATER 1024 OR
+       NOT "${_vkey_engine_lock_match}" STREQUAL "${_vkey_engine_lock}")
+        message(FATAL_ERROR "extern/vkey_engine/engine.lock is not canonical V1")
+    endif()
+    set(VKEY_ENGINE_LOCK_ABI "${CMAKE_MATCH_1}")
+    set(VKEY_ENGINE_LOCK_BYTES "${CMAKE_MATCH_2}")
+    set(VKEY_ENGINE_LOCK_SHA256 "${CMAKE_MATCH_3}")
+    string(LENGTH "${VKEY_ENGINE_LOCK_SHA256}" _vkey_engine_sha256_length)
+    if(NOT _vkey_engine_sha256_length EQUAL 64)
+        message(FATAL_ERROR "extern/vkey_engine/engine.lock has an invalid SHA-256")
+    endif()
+
+    file(SIZE "${VKEY_ENGINE_DLL}" _vkey_engine_dll_bytes)
+    file(SHA256 "${VKEY_ENGINE_DLL}" _vkey_engine_dll_sha256)
+    if(NOT "${_vkey_engine_dll_bytes}" STREQUAL "${VKEY_ENGINE_LOCK_BYTES}" OR
+       NOT "${_vkey_engine_dll_sha256}" STREQUAL "${VKEY_ENGINE_LOCK_SHA256}")
+        message(FATAL_ERROR "vendored vkey_engine.dll does not match engine.lock")
+    endif()
+
+    set(VKEY_ENGINE_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/vkey_engine")
+    file(MAKE_DIRECTORY "${VKEY_ENGINE_GENERATED_DIR}")
+    configure_file(
+        src/core/engine/VKeyEngineLock.h.in
+        "${VKEY_ENGINE_GENERATED_DIR}/VKeyEngineLock.h"
+        @ONLY
+    )
+
+    target_sources(VKeyEngine PRIVATE
+        src/core/engine/RustInputEngine.h
+        src/core/engine/RustInputEngine.cpp
+        src/core/engine/RustEngineLoader.h
+        src/core/engine/RustEngineLoader.cpp
+        src/core/engine/RustEngineTrust.h
+        src/core/engine/RustEngineTrust.cpp
+    )
+    target_include_directories(VKeyEngine PRIVATE
+        ${VKEY_ENGINE_ROOT}/include
+        ${VKEY_ENGINE_GENERATED_DIR}
+    )
+    target_compile_definitions(VKeyEngine PRIVATE VKEY_USE_RUST_ENGINE)
+    target_link_libraries(VKeyEngine PRIVATE ${CMAKE_DL_LIBS})
+    if(WIN32)
+        target_link_libraries(VKeyEngine PRIVATE bcrypt)
+    endif()
+else()
+    # Warn, do not stay silent. RustInputEngineTest.cpp and part of
+    # EngineFactoryTest.cpp are inside `#ifdef VKEY_USE_RUST_ENGINE`, so with the
+    # option off they compile away to nothing and ctest still reports success.
+    # Anyone running the test suite as a gate needs to know coverage shrank.
+    message(WARNING
+        "VKEY_USE_RUST_ENGINE=OFF: building against the in-tree C++ engine only. "
+        "RustInputEngineTest and the Rust half of EngineFactoryTest are NOT "
+        "compiled, so a green ctest does not cover the Rust engine. "
+        "Maintainers: configure with -DVKEY_USE_RUST_ENGINE=ON. "
+        "Forks: this is the correct default — see extern/vkey_engine/LICENSE, "
+        "those artifacts are not AGPL and are noncommercial-only.")
+endif()
+
 # Core Library (platform layer: SharedState, Config, Debug)
 set(NEXTKEY_CORE_SOURCES
     src/core/Debug.h
@@ -121,6 +215,7 @@ set(NEXTKEY_CORE_SOURCES
     src/core/Logger.cpp
     src/core/CrashLog.h
     src/core/CrashLog.cpp
+    src/core/FocusApplyDecision.h
     src/core/Strings.h
     src/core/Strings.cpp
     src/core/MacroCase.h
@@ -251,9 +346,12 @@ add_executable(VKeyApp WIN32
     src/app/dialogs/UserDefinedDialog.cpp
     src/app/dialogs/HotkeysDialog.h
     src/app/dialogs/HotkeysDialog.cpp
+    src/app/dialogs/IconSettingsDialog.h
+    src/app/dialogs/IconSettingsDialog.cpp
     # system/
     src/app/system/TrayIcon.h
     src/app/system/TrayIcon.cpp
+    src/app/system/TrayStatusText.h
     src/app/system/FloatingIcon.h
     src/app/system/FloatingIcon.cpp
     src/app/system/HookEngine.h
@@ -337,6 +435,17 @@ target_include_directories(VKeyApp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/app/sciter
 )
 target_compile_definitions(VKeyApp PRIVATE SKIP_MAIN VKEY_HOOK_ENGINE VKEY_PERF_HIST $<$<CONFIG:Debug>:NEXTKEY_DEBUG>)
+if(VKEY_USE_RUST_ENGINE)
+    target_sources(VKeyApp PRIVATE
+        src/app/system/AdvancedEngineDownloadPolicy.h
+        src/app/system/AdvancedEngineDownloadPolicy.cpp
+        src/app/system/AdvancedEngineStorage.h
+        src/app/system/AdvancedEngineStorage.cpp
+        src/app/system/AdvancedEngineInstaller.h
+        src/app/system/AdvancedEngineInstaller.cpp
+    )
+    target_compile_definitions(VKeyApp PRIVATE VKEY_USE_RUST_ENGINE)
+endif()
 target_link_libraries(VKeyApp PRIVATE VKeyCore)
 set_target_properties(VKeyApp PROPERTIES OUTPUT_NAME "VKey")
 if(MSVC)
@@ -358,6 +467,7 @@ if(VKEY_LITE_MODE AND WIN32)
         # system/ (shared with main app)
         src/app/system/TrayIcon.h
         src/app/system/TrayIcon.cpp
+        src/app/system/TrayStatusText.h
         src/app/system/FloatingIcon.h
         src/app/system/FloatingIcon.cpp
         src/app/system/HookEngine.h
@@ -460,9 +570,20 @@ if(VKEY_LITE_MODE AND WIN32)
         VKEY_PERF_HIST
         $<$<CONFIG:Debug>:NEXTKEY_DEBUG>
     )
+    if(VKEY_USE_RUST_ENGINE)
+        target_sources(VKeyLite PRIVATE
+            src/app/system/AdvancedEngineDownloadPolicy.h
+            src/app/system/AdvancedEngineDownloadPolicy.cpp
+            src/app/system/AdvancedEngineStorage.h
+            src/app/system/AdvancedEngineStorage.cpp
+            src/app/system/AdvancedEngineInstaller.h
+            src/app/system/AdvancedEngineInstaller.cpp
+        )
+        target_compile_definitions(VKeyLite PRIVATE VKEY_USE_RUST_ENGINE)
+    endif()
     target_link_libraries(VKeyLite PRIVATE
         VKeyCore
-        advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt gdiplus
+        advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt gdiplus winhttp
     )
     set_target_properties(VKeyLite PROPERTIES OUTPUT_NAME "VKeyClassic")
     if(MSVC)
@@ -473,7 +594,7 @@ endif()
 # Link Windows libraries
 if(WIN32)
     target_link_libraries(VKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid shell32)
-    target_link_libraries(VKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt)
+    target_link_libraries(VKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt winhttp)
 
     # Copy sciter.dll to output directory
     add_custom_command(TARGET VKeyApp POST_BUILD
@@ -483,7 +604,34 @@ if(WIN32)
         COMMENT "Copying sciter.dll to output directory"
     )
 
-
+    # Deploy the prebuilt Rust engine next to every binary that creates engines
+    # (VKeyApp.exe and the in-process VKeyTSF.dll). RustInputEngine loads it
+    # module-relative, so co-locating it here makes it resolvable in TSF hosts.
+    # Keep this as an explicit dependency target: a TARGET POST_BUILD command is
+    # skipped when only the vendored DLL changes and the executable is up to date.
+    if(VKEY_USE_RUST_ENGINE)
+        get_property(_vkey_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+        if(_vkey_multi_config)
+            set(_vkey_engine_output_dir "${CMAKE_BINARY_DIR}/$<CONFIG>")
+        else()
+            set(_vkey_engine_output_dir "${CMAKE_BINARY_DIR}")
+        endif()
+        add_custom_target(VKeyEngineRuntimeDeploy
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${VKEY_ENGINE_DLL}"
+                "${_vkey_engine_output_dir}/vkey_engine.dll"
+            DEPENDS "${VKEY_ENGINE_DLL}"
+            COMMENT "Deploying vkey_engine.dll to the runtime output directory"
+            VERBATIM
+        )
+        foreach(_tgt VKeyApp VKeyTSF VKeyLite)
+            if(TARGET ${_tgt})
+                add_dependencies(${_tgt} VKeyEngineRuntimeDeploy)
+            endif()
+        endforeach()
+        unset(_vkey_engine_output_dir)
+        unset(_vkey_multi_config)
+    endif()
 endif()
 
 # ============================================================================
@@ -555,6 +703,17 @@ add_subdirectory(extern/googletest EXCLUDE_FROM_ALL)
 
 enable_testing()
 
+# Sciter's macro selection state is plain JavaScript. Register its regression
+# suite with CTest when Node is available (including GitHub's Windows runners).
+find_program(VKEY_NODE_EXECUTABLE NAMES node nodejs)
+if(VKEY_NODE_EXECUTABLE)
+    add_test(
+        NAME MacroSelectionJsTest
+        COMMAND "${VKEY_NODE_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/ui/MacroSelectionTest.js"
+    )
+endif()
+
 # Tests are excluded from ALL - build explicitly with --target VKeyTests
 set(NEXTKEY_TEST_SOURCES
     tests/TelexEngineTest.cpp
@@ -563,6 +722,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/VniParityTest.cpp
     tests/TelexDictionaryTest.cpp
     tests/EngineFactoryTest.cpp
+    tests/TrayStatusTextTest.cpp
     tests/SharedStateTest.cpp
     tests/HookContextAnchorTest.cpp
     tests/FeatureOptionsTest.cpp
@@ -573,15 +733,19 @@ set(NEXTKEY_TEST_SOURCES
     tests/CustomKeyMapTest.cpp
     tests/CodeTableConverterTest.cpp
     tests/UpdateSecurityTest.cpp
+    tests/AdvancedEngineDownloadPolicyTest.cpp
     tests/EngineBenchmarkTest.cpp
     tests/MacroPrefixTest.cpp
     tests/MacroCaseTest.cpp
+    tests/MacroContextMatchTest.cpp
+    tests/MacroTableDecisionTest.cpp
     tests/HookEngineAtomicTests.cpp
     tests/TypingConfigRCUTests.cpp
     tests/MainThreadWorkerTests.cpp
     tests/AdaptiveTickTest.cpp
     tests/AdaptiveTickBenchmark.cpp
     tests/AutoCapDecisionTest.cpp
+    tests/TsfEditDecisionTest.cpp
     tests/AutoCapStateTransitionTest.cpp
     tests/CjkSwitchDecisionTest.cpp
     tests/LeakedKeyDuringSendDecisionTest.cpp
@@ -597,6 +761,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/HookCommandMailboxTest.cpp
     tests/HookHijackDetectorTest.cpp
     tests/ReinstallBurstSchedulerTest.cpp
+    tests/FocusApplyDecisionTest.cpp
     tests/FocusInterleavingTest.cpp
     tests/ThreadOwnershipTest.cpp
     tests/ConfigSnapshotTest.cpp
@@ -635,6 +800,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/engine/QuickEndConsonantRuleTest.cpp
     tests/RestartThrottleTest.cpp
     src/app/system/UpdateSecurity.cpp
+    src/app/system/AdvancedEngineDownloadPolicy.cpp
     src/app/system/MainThreadWorker.cpp
     src/app/system/PerfHistogram.cpp
     src/app/system/HookCommandMailbox.cpp
@@ -668,11 +834,42 @@ if(WIN32)
     )
 endif()
 
+if(VKEY_USE_RUST_ENGINE)
+    list(APPEND NEXTKEY_TEST_SOURCES tests/RustInputEngineTest.cpp)
+endif()
+
+if(WIN32 AND VKEY_USE_RUST_ENGINE)
+    list(APPEND NEXTKEY_TEST_SOURCES
+        tests/AdvancedEngineStorageTest.cpp
+        src/app/system/AdvancedEngineStorage.cpp
+    )
+endif()
+
 add_executable(VKeyTests EXCLUDE_FROM_ALL ${NEXTKEY_TEST_SOURCES})
 target_link_libraries(VKeyTests PRIVATE VKeyCore GTest::gtest_main)
 target_include_directories(VKeyTests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
 )
+if(VKEY_USE_RUST_ENGINE)
+    target_compile_definitions(VKeyTests PRIVATE VKEY_USE_RUST_ENGINE)
+    if(WIN32)
+        set(_vkey_test_engine "${VKEY_ENGINE_DLL}")
+        set(_vkey_test_engine_name "vkey_engine.dll")
+    else()
+        set(_vkey_test_engine
+            "${VKEY_ENGINE_ROOT}/lib/linux-x64/libvkey_engine.so")
+        set(_vkey_test_engine_name "libvkey_engine.so")
+    endif()
+    add_custom_command(TARGET VKeyTests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${_vkey_test_engine}"
+            "$<TARGET_FILE_DIR:VKeyTests>/${_vkey_test_engine_name}"
+        COMMENT "Deploying trusted engine for VKeyTests"
+        VERBATIM
+    )
+    unset(_vkey_test_engine)
+    unset(_vkey_test_engine_name)
+endif()
 if(MSVC)
     # Test diagnostics narrow wide strings to char for gtest's ostream
     # (pure-ASCII filenames/timestamps, e.g. LoggerTest). Benign C4244 that the

@@ -1,5 +1,5 @@
 // VKey - Commit-undo arming decision (post commit-trigger)
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Pure decision: after a commit trigger fires and a word was pushed onto the
 // commit-undo stack, what should happen to the undo window?
@@ -39,10 +39,31 @@ enum class CommitUndoArm : uint8_t {
     Clear,
 };
 
-/// `vkCode` is the Win32 virtual-key of the commit trigger that just fired.
-[[nodiscard]] constexpr CommitUndoArm DecideCommitUndoArm(uint32_t vkCode) noexcept {
+/// Keys that LEAVE the editing context entirely, so the committed word is no
+/// longer at the caret and replaying it later would inject text somewhere it
+/// does not belong: Enter (word moves to the previous line, or is SENT in a
+/// chat app) and Tab (focus can move to an entirely different control).
+///
+/// Single source of truth for that policy. It is enforced at ONE choke point —
+/// ProcessKeyDown calls CommitState::DiscardReplayContext() for these keys
+/// before any guard can eat or pass the key — rather than relying on the
+/// post-commit DecideCommitUndoArm switch, which is reachable only when a
+/// commit trigger fires with a non-empty engine AND a new stack entry was
+/// actually pushed. Quick-consonant commits, empty-history commits and
+/// "Tab pressed with an empty engine but a populated stack" all bypass that
+/// switch, and HandleBackspace re-arms replay from any surviving stack.
+///
+/// Same-field navigation (arrows / Home / End / PgUp / PgDn) is deliberately
+/// NOT a boundary: the caret stays in the field and multi-word backward replay
+/// legitimately depends on the stack surviving those keys.
+[[nodiscard]] constexpr bool IsReplayContextBoundary(uint32_t vkCode) noexcept {
     constexpr uint32_t kVkReturn = 0x0D;
     constexpr uint32_t kVkTab    = 0x09;
+    return vkCode == kVkReturn || vkCode == kVkTab;
+}
+
+/// `vkCode` is the Win32 virtual-key of the commit trigger that just fired.
+[[nodiscard]] constexpr CommitUndoArm DecideCommitUndoArm(uint32_t vkCode) noexcept {
     constexpr uint32_t kVkEscape = 0x1B;
     constexpr uint32_t kVkPrior  = 0x21;  // Page Up
     constexpr uint32_t kVkNext   = 0x22;  // Page Down
@@ -53,14 +74,18 @@ enum class CommitUndoArm : uint8_t {
     constexpr uint32_t kVkInsert = 0x2D;
     constexpr uint32_t kVkDelete = 0x2E;
 
-    // Enter leaves the caret (send / new line) → never replay the prior word.
-    if (vkCode == kVkReturn) return CommitUndoArm::Clear;
+    // Enter (leaves the line / sends) and Tab (can leave the control) — the
+    // committed word is no longer at the caret, so never keep a replay window.
+    // Defense-in-depth only: correctness comes from the DiscardReplayContext
+    // choke point in ProcessKeyDown, which also covers the paths that never
+    // reach this switch. Shares IsReplayContextBoundary so the two can't drift.
+    if (IsReplayContextBoundary(vkCode)) return CommitUndoArm::Clear;
 
     const bool isNavigation =
         (vkCode >= kVkLeft && vkCode <= kVkDown) ||
         vkCode == kVkHome || vkCode == kVkEnd ||
         vkCode == kVkPrior || vkCode == kVkNext ||
-        vkCode == kVkTab || vkCode == kVkEscape ||
+        vkCode == kVkEscape ||
         vkCode == kVkDelete || vkCode == kVkInsert;
     if (isNavigation) return CommitUndoArm::Skip;
 

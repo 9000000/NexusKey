@@ -1,8 +1,6 @@
 // VKey - Shared Engine Helper Functions
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
-// Dual-licensed: AGPL-3.0 for open-source use, commercial license for proprietary use.
-// See LICENSE and LICENSE-COMMERCIAL in the project root.
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Template helpers used by TypingEngine (Telex, VNI, and Combined input methods).
 // Templated so call sites stay structural-only against CharState.
@@ -261,6 +259,17 @@ template<typename CharStateT>
         if (checkIdx > 0 && states[checkIdx - 1].IsVowel()) return SIZE_MAX;
     }
     return dIdx;
+}
+
+/// Does the composed buffer contain any vowel? Vowel-less buffers are
+/// abbreviation chains (PLHĐ, CLĐ, HĐLĐ) — no English word lacks a vowel,
+/// so English-protection bias carries no signal for them.
+template<typename CharStateT>
+[[nodiscard]] inline bool HasVowelState(const CharStateT* states, size_t count) noexcept {
+    for (size_t i = 0; i < count; ++i) {
+        if (states[i].IsVowel()) return true;
+    }
+    return false;
 }
 
 /// Pre-check for stroke-D modifier: returns true if applying đ would create an

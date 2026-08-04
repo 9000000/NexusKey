@@ -104,11 +104,13 @@ HotkeyRegistry HotkeyRegistry::Defaults() {
     cfg.AddTrigger(Intent::SkipMacro,         Trigger{kVkEscape, 0, false});
     cfg.AddTrigger(Intent::ToggleEnabled,     Trigger{kVkControl, 0, false});  // implicit modifier-alone
     cfg.AddTrigger(Intent::ToggleEnabled,     Trigger{kVkMenu,    0, true});   // 2×Alt
-    // Explicit enabled bits so a Save-round-trip emits them in [hotkey_state]
-    // rather than relying on IsEnabled()'s default-true fallback.
-    cfg.SetEnabled(Intent::CancelComposition, true);
-    cfg.SetEnabled(Intent::SkipMacro,         true);
-    cfg.SetEnabled(Intent::ToggleEnabled,     true);
+    // Preserve the familiar bindings as UI suggestions, but require an
+    // explicit user opt-in before any global key is intercepted. Store each
+    // bit so a fresh-config Save emits the disabled state rather than relying
+    // on IsEnabled()'s legacy missing-key=true fallback.
+    cfg.SetEnabled(Intent::CancelComposition, false);
+    cfg.SetEnabled(Intent::SkipMacro,         false);
+    cfg.SetEnabled(Intent::ToggleEnabled,     false);
     return cfg;
 }
 

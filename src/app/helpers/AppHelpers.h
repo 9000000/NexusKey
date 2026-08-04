@@ -11,6 +11,7 @@
 #endif
 #include <cwctype>
 #include <istream>
+#include <iterator>
 #include <string>
 
 #ifndef _WIN32
@@ -104,6 +105,11 @@ inline void ParseConfigLines(std::istream& input, Handler handler) {
 #ifdef _WIN32
 /// Get the focused child window within a foreground top-level HWND.
 /// Uses AttachThreadInput for cross-thread queries — SLOW, avoid per-keystroke.
+/// GetGUIThreadInfo was tried as an AttachThreadInput-free alternative and
+/// rejected: RichEditEmReplaceSelInjector.cpp's ResolveFocusedHwnd() found it
+/// often returns hwndFocus=NULL when called from the LL keyboard hook thread
+/// specifically — do not "fix" this function to use it without re-verifying
+/// that constraint no longer applies.
 /// Returns nullptr if GetFocus() fails or foreground is null.
 [[nodiscard]] inline HWND GetFocusedChildHwnd(HWND foreground) noexcept {
     if (!foreground) return nullptr;
@@ -126,12 +132,44 @@ inline void ParseConfigLines(std::istream& input, Handler handler) {
     return focused ? focused : foreground;
 }
 
+/// Cheap style-bit check (no message send, no timeout) — an Edit/RichEdit
+/// control with ES_PASSWORD. Safe to call synchronously on the hook thread,
+/// including inline in LowLevelKeyboardProc's call chain, when `foreground`/
+/// `focused` are resolved fresh at the call site (not a cached/latched
+/// value) — unlike GetFocusedChildHwnd's own AttachThreadInput cost, this
+/// adds no further syscalls beyond the two already spent resolving those
+/// HWNDs. Unknown/custom controls default to "not a password field" — a
+/// safety NARROWING, not a detector of every possible password widget.
+[[nodiscard]] inline bool IsFocusedControlPassword(HWND foreground, HWND focused) noexcept {
+    if (foreground == nullptr || GetForegroundWindow() != foreground) return false;
+    if (focused == nullptr || GetAncestor(focused, GA_ROOT) != foreground) return false;
+
+    wchar_t className[64] = {};
+    if (GetClassNameW(focused, className, static_cast<int>(std::size(className))) <= 0) {
+        return false;
+    }
+    if (_wcsicmp(className, L"Edit") != 0 && _wcsnicmp(className, L"RichEdit", 8) != 0) {
+        return false;
+    }
+    return (GetWindowLongPtrW(focused, GWL_STYLE) & ES_PASSWORD) != 0;
+}
+
 /// Multi-monitor-aware top-left for centering a window of given size on the
 /// monitor that contains `referenceHwnd`. Falls back to the primary monitor
 /// when the reference HWND is null/invalid. Honors taskbar / docked panels
 /// by using `rcWork` instead of `rcMonitor`. Replaces the old
 /// `GetSystemMetrics(SM_CXSCREEN/SM_CYSCREEN)` pattern, which always
 /// centers on the primary screen and ignores the work area.
+/// Surface an already-open window (settings, sub-dialogs) instead of spawning a
+/// second one. SetForegroundWindow only lands if this process holds the
+/// foreground privilege — a background process must be granted it first via
+/// AllowSetForegroundWindow() from whoever is currently foreground.
+inline void FocusExistingWindow(HWND hwnd) noexcept {
+    if (!hwnd) return;
+    ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+    SetForegroundWindow(hwnd);
+}
+
 [[nodiscard]] inline POINT GetCenteredPos(HWND referenceHwnd, int width, int height) noexcept {
     HMONITOR mon = MonitorFromWindow(referenceHwnd ? referenceHwnd : GetDesktopWindow(),
                                      MONITOR_DEFAULTTOPRIMARY);

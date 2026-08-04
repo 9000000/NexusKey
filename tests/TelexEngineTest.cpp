@@ -777,6 +777,70 @@ TEST_F(TelexEngineTest, Escape_ToneAcute_FullWord) {
     EXPECT_EQ(engine_->Peek(), L"test");
 }
 
+TEST(TelexEscapeSpellOnTest, ToneHoi_UppercaseR_SpellCheckOn) {
+    // #209 comment repro attempt with app-default config (spell check ON)
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::Telex;
+    cfg.spellCheckEnabled = true;
+    TypingEngine engine(cfg);
+    Testing::TypeString(engine, L"TeR");
+    EXPECT_EQ(engine.Peek(), L"Tẻ");
+    Testing::TypeString(engine, L"R");
+    EXPECT_EQ(engine.Peek(), L"TeR");
+    Testing::TypeString(engine, L"iRi");
+    EXPECT_EQ(engine.Peek(), L"TeRiRi");
+}
+
+TEST(TelexEscapeSpellOnTest, ToneHoi_MixedCase_rThenShiftR) {
+    // #209 (2026-07-26): Te + r → Tẻ, then Shift+R must escape → "TeR".
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::Telex;
+    cfg.spellCheckEnabled = true;
+    TypingEngine engine(cfg);
+    Testing::TypeString(engine, L"Ter");
+    EXPECT_EQ(engine.Peek(), L"Tẻ");
+    Testing::TypeString(engine, L"R");
+    EXPECT_EQ(engine.Peek(), L"TeR");
+}
+
+TEST(TelexEscapeSpellOnTest, ToneEscape_RestoresKeyAtConsumedPosition) {
+    // #209: the escape key belongs in the slot the consumed tone key occupied, not
+    // after everything typed since — "t-e-r-i-r" is "teri", never "teir".
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::Telex;
+    cfg.spellCheckEnabled = true;
+    TypingEngine engine(cfg);
+    Testing::TypeString(engine, L"ter");
+    EXPECT_EQ(engine.Peek(), L"tẻ");
+    Testing::TypeString(engine, L"i");
+    Testing::TypeString(engine, L"r");
+    EXPECT_EQ(engine.Peek(), L"teri");
+    Testing::TypeString(engine, L"r");  // third press: plain literal
+    EXPECT_EQ(engine.Peek(), L"terir");
+}
+
+TEST(TelexEscapeSpellOnTest, ToneEscape_ConsumedPositionKeepsShiftedCase) {
+    // Same reposition, uppercase escape key: "TeRiR" → "TeRi" (was "TeiR").
+    TypingConfig cfg;
+    cfg.inputMethod = InputMethod::Telex;
+    cfg.spellCheckEnabled = true;
+    TypingEngine engine(cfg);
+    Testing::TypeString(engine, L"TeRiR");
+    EXPECT_EQ(engine.Peek(), L"TeRi");
+}
+
+TEST_F(TelexEngineTest, Escape_ToneHoi_UppercaseR) {
+    // Issue #209 comment (Shzr0): "TeR" → "Tẻ", second R must escape → "TeR"
+    TypeString(*engine_, L"TeRR");
+    EXPECT_EQ(engine_->Peek(), L"TeR");
+}
+
+TEST_F(TelexEngineTest, Escape_ToneHoi_UppercaseR_FullWord) {
+    // "TeRRiRi" → "TeRiRi" (first R pair escapes; latch keeps later R literal)
+    TypeString(*engine_, L"TeRRiRi");
+    EXPECT_EQ(engine_->Peek(), L"TeRiRi");
+}
+
 TEST_F(TelexEngineTest, Escape_Circumflex) {
     // "eee" → ê(from ee) + e(escape) = "ee"
     TypeString(*engine_, L"eee");
@@ -2150,8 +2214,13 @@ TEST_F(TelexEngineTest, RealWord_Hap) {
 }
 
 TEST_F(TelexEngineTest, Freestyles) {
+    // Nonsense mash of repeated 'e' after "lè" — pins the circumflex
+    // apply/escape cycling behavior rather than a real word. Tone now
+    // follows the circumflexed vowel (P1/P2 always attracts, see
+    // RelocateToneToTarget's unconditional call) instead of staying
+    // anchored to whichever vowel happened to be toned first.
     TypeString(*engine_, L"lefeeee");  // lefeeee
-    EXPECT_EQ(engine_->Peek(), L"lèee");
+    EXPECT_EQ(engine_->Peek(), L"leèe");
 }
 
 TEST_F(TelexEngineTest, TestUych) {
@@ -2617,9 +2686,34 @@ TEST_F(CircumflexFreeMarkSpellOnTest, CuaPlusA_AdjacentRejected) {
     EXPECT_EQ(engine_->Peek(), L"củaa");
 }
 
+// Regression: adjacent circumflex on a Valid (already-complete) syllable
+// must relocate the tone immediately, not just on a later keystroke.
+// "lụa" (tone on 'u') + 'a' → 'a' promotes to 'â'; without an immediate
+// relocate the tone was left stranded on 'u' ("lụâ") until a following
+// char's FinalizeRegularChar happened to fix it up.
+TEST_F(TelexEngineTest, LuaPlusA_RelocatesToneImmediately) {
+    TypeString(*engine_, L"luaja");  // lụa + extra 'a'
+    EXPECT_EQ(engine_->Peek(), L"luậ");
+    TypeString(*engine_, L"t");
+    EXPECT_EQ(engine_->Peek(), L"luật");
+}
+
 TEST_F(CircumflexFreeMarkSpellOnTest, CuaPlusA_Grave_AdjacentRejected) {
     TypeString(*engine_, L"cufaa");  // cùa + extra 'a'
     EXPECT_EQ(engine_->Peek(), L"cùaa");
+}
+
+// Mark/tone typed before the coda's 'h' must still reach the ch-final word —
+// "khuêc"/"huyc" are prefixes of "khuếch"/"huých", not dead ends. Rust engine
+// already allowed these orders; the C++ engine latched spell check off.
+TEST_F(CircumflexFreeMarkSpellOnTest, KhuechEarlyCircumflex_ReachesKhuech) {
+    TypeString(*engine_, L"khuecehs");  // circumflex before the 'h'
+    EXPECT_EQ(engine_->Peek(), L"khuếch");
+}
+
+TEST_F(CircumflexFreeMarkSpellOnTest, HuychEarlyTone_ReachesHuych) {
+    TypeString(*engine_, L"huycsh");  // sắc before the 'h'
+    EXPECT_EQ(engine_->Peek(), L"huých");
 }
 
 // Regression: legitimate adjacent circumflex still applies.
@@ -3280,6 +3374,17 @@ TEST_F(SimpleTelexTest, W_InDuoc_IsModifier) {
     EXPECT_EQ(engine_->Peek(), L"được");
 }
 
+TEST_F(SimpleTelexTest, RepeatedWModifierEscapeSurvivesEnglishWordTail) {
+    for (const auto& [raw, expected] : {
+             std::pair{std::wstring_view(L"dowwnload"), std::wstring_view(L"download")},
+             std::pair{std::wstring_view(L"powwershell"), std::wstring_view(L"powershell")},
+         }) {
+        TypeString(*engine_, std::wstring(raw));
+        EXPECT_EQ(engine_->Peek(), expected);
+        engine_->Reset();
+    }
+}
+
 TEST_F(SimpleTelexTest, W_AfterI_IsLiteral) {
     // 'i' is a vowel but not a/o/u, so 'w' should be literal
     TypeString(*engine_, L"iw");
@@ -3309,6 +3414,19 @@ TEST_F(SimpleTelexTest, DD_StillWorks) {
 TEST_F(SimpleTelexTest, RealWord_Duong) {
     TypeString(*engine_, L"dduowng");
     EXPECT_EQ(engine_->Peek(), L"đương");
+}
+
+TEST_F(SimpleTelexTest, RetypeAfterDeletingToAutoCappedInitialPreservesCase) {
+    TypeString(*engine_, L"Khoong");
+    ASSERT_EQ(engine_->Peek(), L"Không");
+
+    while (engine_->Peek().size() > 1) {
+        engine_->Backspace();
+    }
+    ASSERT_EQ(engine_->Peek(), L"K");
+
+    TypeString(*engine_, L"hoong");
+    EXPECT_EQ(engine_->Peek(), L"Không");
 }
 
 TEST_F(SimpleTelexTest, WhPrefix_IsHardEnglish) {
@@ -4179,24 +4297,25 @@ TEST_F(SpellExclusionTest, SingleCharExclusion_Ignored) {
     EXPECT_EQ(eng.Commit(), L"hđ");
 }
 
-// PLHĐ: English Protection normally blocks dd→đ (PL = HardEnglish).
-// With exclusions, dd→đ is allowed through the English Protection gate.
-TEST_F(SpellExclusionTest, PLHDD_NoExclusion_Blocked) {
-    // No exclusions → English Protection blocks dd→đ → literal "plhdd"
+// PLHĐ (#221): vowel-less abbreviation chains compose WITHOUT an exclusion —
+// the pl- hard-onset block is lifted when the buffer has no vowel (English
+// words always carry one). Supersedes the pre-#221 "blocked unless excluded"
+// design; mirrors the Rust engine rule.
+TEST_F(SpellExclusionTest, PLHDD_NoExclusion_Composes) {
     TypingConfig cfg;
     cfg.spellCheckEnabled = true;
     cfg.autoRestoreEnabled = true;
     TypingEngine eng(cfg);
     TypeString(eng, L"plhdd");
-    EXPECT_EQ(eng.Peek(), L"plhdd");
+    EXPECT_EQ(eng.Peek(), L"plhđ");
 }
 
-TEST_F(SpellExclusionTest, PLHDD_ExclHD_PrefixMismatch) {
-    // "hđ" in exclusion list — "plhđ" doesn't prefix-match "hđ"
-    // → dd→đ blocked at typing time too (precise bypass)
+TEST_F(SpellExclusionTest, PLHDD_ComposesRegardlessOfExclusions) {
+    // Pre-#221 this asserted the precise-bypass block ("hđ" doesn't prefix-match
+    // "plhđ"). The vowel-less chain rule now composes independent of exclusions.
     TypeString(*engine_, L"plhdd");
-    EXPECT_EQ(engine_->Peek(), L"plhdd");
-    EXPECT_EQ(engine_->Commit(), L"plhdd");
+    EXPECT_EQ(engine_->Peek(), L"plhđ");
+    EXPECT_EQ(engine_->Commit(), L"plhđ");
 }
 
 TEST_F(SpellExclusionTest, Dropdown_ExclHD_NotBypassed) {
@@ -5352,6 +5471,26 @@ TEST_F(DoubleOoTest, Chooose_StaysChoose) {
     TypeString(*engine_, L"chooose");
     EXPECT_EQ(engine_->Peek(), L"choose");
 }
+TEST_F(DoubleOoTest, Pooorr_RepeatedToneKeyEscapesToPoor) {
+    // The repeated tone key is the Telex escape: the revert re-emits the first
+    // 'r' as a literal, so the second must be swallowed (not re-tone the pair).
+    TypeString(*engine_, L"pooorr");
+    EXPECT_EQ(engine_->Peek(), L"poor");
+    EXPECT_EQ(engine_->Commit(), L"poor");
+}
+TEST_F(DoubleOoTest, Pooor_UnresolvedToneRevertsOnCommit) {
+    // Provisional while typing (the 'c'/'ng' coda could still arrive)…
+    TypeString(*engine_, L"pooor");
+    EXPECT_EQ(engine_->Peek(), L"poỏ");
+    // …but a word boundary is the last chance for it, so commit reverts. Without
+    // the revert the non-ASCII "poỏ" also triggers auto-restore → "pooor".
+    EXPECT_EQ(engine_->Commit(), L"poor");
+}
+TEST_F(DoubleOoTest, Sooosc_CommitKeepsSooc) {
+    TypeString(*engine_, L"sooosc");
+    EXPECT_EQ(engine_->Commit(), L"soóc");
+}
+
 TEST_F(DoubleOoTest, Choooc_NoToneStaysLiteral) {
     TypeString(*engine_, L"choooc");          // no tone key at all
     EXPECT_EQ(engine_->Peek(), L"chooc");
@@ -5395,6 +5534,34 @@ TEST_F(DoubleOoVniTest, Soo1c_ComposesSooc) {
 TEST_F(DoubleOoVniTest, Goo2ng_ComposesGoong) {
     TypeString(*engine_, L"goo2ng");          // 2 = huyền
     EXPECT_EQ(engine_->Peek(), L"goòng");
+}
+
+// ============================================================================
+// #221: PL-onset abbreviation chains — vowel-less buffer lifts the hard-English
+// onset block for stroke-d (rule mirrors the Rust engine: plhdd→plhđ,
+// pladd stays literal).
+// ============================================================================
+
+TEST_F(TelexEngineTest, StrokeD_AbbrevChain_PLHD_Upper) {
+    TypeString(*engine_, L"PLHDD");
+    EXPECT_EQ(engine_->Peek(), L"PLHĐ");
+}
+
+TEST_F(TelexEngineTest, StrokeD_AbbrevChain_PLHD_Lower) {
+    TypeString(*engine_, L"plhdd");
+    EXPECT_EQ(engine_->Peek(), L"plhđ");
+}
+
+TEST_F(TelexEngineTest, StrokeD_AbbrevChain_CLD) {
+    TypeString(*engine_, L"cldd");
+    EXPECT_EQ(engine_->Peek(), L"clđ");
+}
+
+TEST_F(TelexEngineTest, StrokeD_VowelBuffer_EnglishStaysProtected) {
+    // "pla" carries a vowel → hard-onset protection must keep blocking
+    // (play, plaid, …): dd stays literal.
+    TypeString(*engine_, L"pladd");
+    EXPECT_EQ(engine_->Peek(), L"pladd");
 }
 
 }  // namespace

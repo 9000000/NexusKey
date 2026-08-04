@@ -7,6 +7,9 @@
 #include "system/StartupHelper.h"
 #include "system/SubprocessHelper.h"
 #include "system/TsfRegistration.h"
+#if defined(VKEY_USE_RUST_ENGINE)
+#include "system/AdvancedEngineInstaller.h"
+#endif
 #include "system/UpdateChecker.h"
 #include "system/PendingDllApply.h"
 #include "system/ToastPopup.h"
@@ -24,7 +27,6 @@
 #include "sciter-x-dom.hpp"
 #include "sciter-x-host-callback.h"
 #include <dwmapi.h>
-#include <commdlg.h>
 #include <commctrl.h>
 #include <windowsx.h>
 #include <memory>
@@ -164,6 +166,7 @@ SettingsDialog::SettingsDialog()
     int winHeight = rc.bottom - rc.top;
     POINT pt = NextKey::GetCenteredPos(get_hwnd(), winWidth, winHeight);
     SetWindowPos(get_hwnd(), HWND_NOTOPMOST, pt.x, pt.y, 0, 0, SWP_NOSIZE | SWP_SHOWWINDOW);
+    SetForegroundWindow(get_hwnd());
 
     // Force taskbar presence while DWM transitions are still disabled (avoids flicker)
     SciterHelper::ForceTaskbarPresence(get_hwnd(), IDI_APP);
@@ -312,6 +315,16 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
         return 0;
     }
 
+    // The icon sub-dialog writes only SystemConfig. Refresh the cached value
+    // without reinitializing the whole main dialog: programmatic control
+    // updates can otherwise emit VALUE_CHANGED and mutate unrelated options.
+    if (msg == WM_VKEY_ICON_SETTINGS_CHANGED) {
+        if (s_instance) {
+            s_instance->systemConfig_ = ConfigManager::LoadSystemConfigOrDefault();
+        }
+        return 0;
+    }
+
     // Handle timer for window resize after CSS transition
     if (msg == WM_TIMER && wParam == TIMER_RESIZE_WINDOW) {
         KillTimer(hwnd, TIMER_RESIZE_WINDOW);
@@ -380,6 +393,12 @@ LRESULT CALLBACK SettingsDialog::SubclassProc(
     if (msg == WM_VKEY_OPEN_HOTKEYS) {
         flushBeforeSpawn();
         SpawnSubprocess(L"VKey - Phím tắt", L"--hotkeys");
+        return 0;
+    }
+
+    if (msg == WM_VKEY_OPEN_ICON_SETTINGS) {
+        flushBeforeSpawn();
+        SpawnSubprocess(L"VKey - Tùy chỉnh icon", L"--icon-settings");
         return 0;
     }
 
@@ -519,16 +538,8 @@ bool SettingsDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
             return true;
         }
 
-        // Handle tab change
-        if (id == L"val-tab-change") {
-            if (isExpanded_) {
-                SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 50, NULL);
-            }
-            return true;
-        }
-
         // Handle dropdown changes
-        if (id == L"input-type" || id == L"bang-ma" || id == L"modern-icon" || id == L"startup-mode" || id == L"temp-off-openkey") {
+        if (id == L"input-type" || id == L"bang-ma" || id == L"spell-check-level" || id == L"startup-mode" || id == L"temp-off-openkey") {
             sciter::value val = el.get_value();
             int intValue = 0;
             if (val.is_int()) intValue = val.get<int>();
@@ -660,9 +671,6 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                     L"VKey", MB_OK | MB_ICONINFORMATION);
             }
         }
-    }
-    else if (id == L"spell-check") {
-        config_.spellCheckEnabled = value;
     }
     else if (id == L"key-ctrl") {
         hotkeyConfig_.ctrl = value;
@@ -797,23 +805,15 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
         systemConfig_.language = value ? 1 : 0;
         SetLanguage(value ? Language::English : Language::Vietnamese);
         saveSystemSettings();
+        // Translated labels can wrap to a different number of lines, changing
+        // which tab is tallest — invalidate the #226 cached height and remeasure.
+        cachedMaxAdvancedHeight_ = 0;
+        if (isExpanded_) {
+            SetTimer(get_hwnd(), TIMER_RESIZE_WINDOW, 50, NULL);
+        }
         // JS already switched lang attribute + called applyTranslations()
         // Notify main process to update language for tray menu / toasts
-        notifyIconChanged();
-        return;
-    }
-    else if (id == L"floating-icon") {
-        systemConfig_.showFloatingIcon = value;
-        saveSystemSettings();
-        notifyIconChanged();  // Main process reads updated config
-        return;
-    }
-    else if (id == L"tsf-indicator") {
-        // Issue #209: show colored "T" in TSF apps (opt-in). Same path as the
-        // icon-style dropdown — persist + notify the tray to re-read SystemConfig.
-        systemConfig_.showTsfIndicator = value;
-        saveSystemSettings();
-        notifyIconChanged();
+        notifySystemConfigChanged();
         return;
     }
     else if (id == L"force-light-theme") {
@@ -862,11 +862,71 @@ void SettingsDialog::handleDropdownChange(const std::wstring& id, int value) {
     else if (id == L"bang-ma") {
         config_.codeTable = static_cast<CodeTable>(value);
     }
-    else if (id == L"modern-icon") {
-        systemConfig_.iconStyle = static_cast<uint8_t>(value);
-        saveSystemSettings();
-        notifyIconChanged();
-        return;  // System setting, not typing config
+    else if (id == L"spell-check-level") {
+        SpellCheckLevel oldLevel = config_.GetSpellCheckLevel();
+        SpellCheckLevel newLevel = static_cast<SpellCheckLevel>(value);
+        const bool enteringAdvanced =
+            newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced;
+
+#if defined(VKEY_USE_RUST_ENGINE)
+        if (enteringAdvanced) {
+            const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(get_hwnd());
+            if (status != AdvancedEngineStatus::Ready) {
+                // oldLevel, not Standard: the guard above allows Off here, and a
+                // declined download is not a request to switch spell check on.
+                // It also keeps the child toggles correct — setDropdownValue()
+                // does not fire the change event that re-runs
+                // updateSpellCheckChildren().
+                config_.SetSpellCheckLevel(oldLevel);
+                setDropdownValue(L"spell-check-level", static_cast<int>(oldLevel));
+                saveSettings();
+                KillTimer(get_hwnd(), TIMER_DEFERRED_SAVE);
+                saveToToml();
+                if (status == AdvancedEngineStatus::ManualRequested) {
+                    AdvancedEngineInstaller::ShowManualInstallWithUi(get_hwnd());
+                }
+                if (onSettingsChanged_) onSettingsChanged_();
+                return;
+            }
+        }
+#endif
+
+        config_.SetSpellCheckLevel(newLevel);
+
+        if (enteringAdvanced ||
+            (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced)) {
+            int result = MessageBoxW(get_hwnd(),
+                S(enteringAdvanced ? StringId::SPELL_ADVANCED_LOAD_APP : StringId::SPELL_ADVANCED_CLOSE_APP),
+                L"VKey", MB_YESNO | MB_ICONQUESTION);
+            if (result == IDYES) {
+                saveSettings();
+                // Flush synchronously — saveSettings() only arms the 30s deferred
+                // timer, and the app is about to close (racing with the tray's own
+                // WM_CLOSE across processes). Waiting for the timer or this window's
+                // WM_CLOSE handler risks losing the write if the tray process wins.
+                KillTimer(get_hwnd(), TIMER_DEFERRED_SAVE);
+                saveToToml();
+
+                wchar_t exePath[MAX_PATH] = {};
+                GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+                wchar_t cmdLine[MAX_PATH + 64] = {};
+                swprintf_s(cmdLine, L"\"%s\" %s", exePath, ADMIN_RESTART_FLAG);
+                STARTUPINFOW si = { sizeof(si) };
+                PROCESS_INFORMATION pi = {};
+                if (CreateProcessW(exePath, cmdLine, nullptr, nullptr, FALSE,
+                                   CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                }
+
+                HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+                if (trayWnd) {
+                    PostMessageW(trayWnd, WM_CLOSE, 0, 0);
+                }
+                onClose();
+                return;
+            }
+        }
     }
     else if (id == L"startup-mode") {
         systemConfig_.startupMode = static_cast<uint8_t>(value);
@@ -891,22 +951,6 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         PostMessage(get_hwnd(), WM_VKEY_OPEN_MACRO, 0, 0);
         return;
     }
-    else if (id == L"btn-color-v") {
-        openColorPicker(true);
-        return;
-    }
-    else if (id == L"btn-color-e") {
-        openColorPicker(false);
-        return;
-    }
-    else if (id == L"btn-reset-colors") {
-        systemConfig_.customColorV = 0;
-        systemConfig_.customColorE = 0;
-        updateColorSwatches();
-        saveSystemSettings();
-        notifyIconChanged();
-        return;
-    }
     else if (id == L"btn-app-overrides") {
         PostMessage(get_hwnd(), WM_VKEY_OPEN_APPOVERRIDES, 0, 0);
         return;
@@ -923,8 +967,9 @@ void SettingsDialog::handleButtonClick(const std::wstring& id) {
         PostMessage(get_hwnd(), WM_VKEY_OPEN_HOTKEYS, 0, 0);
         return;
     }
-    else if (id == L"btn-reset-settings") {
-        // TODO: Reset all settings to defaults
+    else if (id == L"btn-icon-settings") {
+        PostMessage(get_hwnd(), WM_VKEY_OPEN_ICON_SETTINGS, 0, 0);
+        return;
     }
     else if (id == L"btn-check-update") {
         startUpdateCheck();
@@ -1005,7 +1050,7 @@ void SettingsDialog::recalcWindowSize() {
 
     // Use the #main-container as the source of truth for total height
     sciter::dom::element container = rootEl.find_first("#main-container");
-    
+
     int newWidth = COMPACT_WIDTH;
     if (isExpanded_) {
         newWidth = COMPACT_WIDTH + ADVANCED_WIDTH;
@@ -1014,15 +1059,43 @@ void SettingsDialog::recalcWindowSize() {
     int newHeight = static_cast<int>(BASE_HEIGHT_COLLAPSED * dpiScale);
 
     if (container.is_valid()) {
+        // Collapsing: clear any inline height pinned while expanded BEFORE measuring,
+        // otherwise this reads the stale pinned value instead of the natural compact
+        // height (Codex review caught this — the old code cleared it only *after*
+        // already computing newHeight from the still-pinned measurement).
+        if (!isExpanded_) {
+            container.set_style_attribute("height", L"");
+            rootEl.update(false);
+        }
+
         RECT r = container.get_location_ppx(BORDER_BOX);
         int w = r.right - r.left;
-        int h = r.bottom - r.top;
-        
+        // #226: window height must not change per active tab (was resizing on every
+        // tab click, causing a visible "jump"). Fix it to whichever tab needs the
+        // most vertical space instead of the currently active one.
+        int h = isExpanded_ ? measureMaxAdvancedContentHeight(dpiScale)
+                             : (r.bottom - r.top);
+
         // Safety fallback: if DOM hasn't fully layed out yet or window is minimized,
         // bounds might be 0 or heavily distorted. We fallback to predefined constants
         // (COMPACT_WIDTH/ADVANCED_WIDTH and BASE_HEIGHT_COLLAPSED) unless > 100px.
         if (w > 100) newWidth = w;
         if (h > 100) newHeight = h;
+
+        // #226 follow-up: .container has `height: auto`, so it still shrinks to fit
+        // whichever tab is CURRENTLY shown even though the HWND is now fixed to the
+        // tallest tab. On every tab shorter than the max this left the card's own
+        // background/rounded corners ending above the window's real bottom edge,
+        // exposing transparent/blurred desktop underneath ("bottom lệch"). Pin the
+        // container's own height to match so the card always fills the window.
+        // (ScaleHelper.h documents that Sciter auto-scales CSS px by window DPI, so
+        // "px" — not "dip" — matches every other dimension already set this way in
+        // this same stylesheet, e.g. .container.expanded { width: 750px }.)
+        if (isExpanded_ && h > 100) {
+            wchar_t heightStr[16];
+            swprintf_s(heightStr, L"%.2fpx", h / dpiScale);
+            container.set_style_attribute("height", heightStr);
+        }
     }
 
     if (!DarkModeHelper::IsWindows11OrGreater()) {
@@ -1042,6 +1115,78 @@ void SettingsDialog::recalcWindowSize() {
     rootEl.update(false);
     rootEl.remove_attribute("force-paint");
     rootEl.update(false);
+}
+
+// #226: measure #main-container's height with each of the 4 tab panels expanded
+// in turn, returning the tallest. Result is cached per DPI scale (get_location_ppx
+// returns physical pixels, and this dialog is per-monitor-DPI-aware) — recomputed
+// only on the first measurement at a given scale, or after saveSettings()-triggered
+// cache invalidation (e.g. language switch, see "english-ui" in handleToggleChange).
+int SettingsDialog::measureMaxAdvancedContentHeight(double dpiScale) {
+    if (cachedMaxAdvancedHeight_ > 0 && cachedAdvancedHeightDpiScale_ == dpiScale) {
+        return cachedMaxAdvancedHeight_;
+    }
+
+    sciter::dom::element rootEl = get_root();
+    sciter::dom::element container = rootEl.find_first("#main-container");
+    if (!container.is_valid()) return 0;
+
+    // Clear any height pinned by a previous measurement before remeasuring — the
+    // container's own inline height would otherwise clamp BORDER_BOX to that stale
+    // value for every tab, so every panel would appear the same (wrong) height and
+    // remeasurement could never detect an actual change (Codex review catch).
+    container.set_style_attribute("height", L"");
+    rootEl.update(false);
+
+    static const char* kPanelSelectors[] = {
+        "#tab-panel-1", "#tab-panel-2", "#tab-panel-3", "#tab-panel-4"
+    };
+    constexpr int kPanelCount = 4;
+
+    sciter::dom::element panels[kPanelCount];
+    int currentIndex = -1;
+    for (int i = 0; i < kPanelCount; ++i) {
+        panels[i] = rootEl.find_first(kPanelSelectors[i]);
+        if (panels[i].is_valid() && panels[i].get_state(STATE_EXPANDED)) {
+            currentIndex = i;
+        }
+    }
+    const int originalIndex = currentIndex;
+
+    int maxHeight = 0;
+    for (int i = 0; i < kPanelCount; ++i) {
+        if (!panels[i].is_valid()) continue;
+
+        if (i != currentIndex) {
+            if (currentIndex >= 0 && panels[currentIndex].is_valid()) {
+                panels[currentIndex].set_state(STATE_COLLAPSED, STATE_EXPANDED, false);
+            }
+            panels[i].set_state(STATE_EXPANDED, STATE_COLLAPSED, false);
+            currentIndex = i;
+            rootEl.update(false);  // force synchronous re-layout before measuring
+        }
+
+        RECT r = container.get_location_ppx(BORDER_BOX);
+        int h = r.bottom - r.top;
+        if (h > maxHeight) maxHeight = h;
+    }
+
+    // Restore whichever tab was actually active before we started measuring. If
+    // none was expanded yet (this can run before JS's ready-time
+    // initializeTabPanels() has executed — load() is async), fall back to tab 0,
+    // the default active tab per settings.html, instead of stranding the last
+    // panel we measured (tab 4) as the visibly-expanded one.
+    const int restoreIndex = (originalIndex >= 0) ? originalIndex : 0;
+    if (restoreIndex != currentIndex &&
+        panels[restoreIndex].is_valid() && panels[currentIndex].is_valid()) {
+        panels[currentIndex].set_state(STATE_COLLAPSED, STATE_EXPANDED, false);
+        panels[restoreIndex].set_state(STATE_EXPANDED, STATE_COLLAPSED, false);
+        rootEl.update(false);
+    }
+
+    cachedMaxAdvancedHeight_ = maxHeight;
+    cachedAdvancedHeightDpiScale_ = dpiScale;
+    return maxHeight;
 }
 
 void SettingsDialog::setToggleState(const std::wstring& id, bool checked) {
@@ -1124,9 +1269,10 @@ void SettingsDialog::initializeUI() {
     // Sync TSF toggle with actual DLL registration state (not just saved config)
     config_.tsfApps = IsTsfRegistered();
     setToggleState(L"tsf-apps", config_.tsfApps);
-    setToggleState(L"spell-check", config_.spellCheckEnabled);
+    setDropdownValue(L"spell-check-level", static_cast<int>(config_.GetSpellCheckLevel()));
     // Sync spell check child toggles (allow-zwjf, restore-key, exclusions button)
-    call_function("updateSpellCheckChildren", sciter::value(config_.spellCheckEnabled));
+    call_function("updateSpellCheckChildren",
+                   sciter::value(config_.GetSpellCheckLevel() != SpellCheckLevel::Off));
     setToggleState(L"modern-ortho", config_.modernOrtho);
     setToggleState(L"auto-caps", config_.autoCaps);
     setToggleState(L"allow-zwjf", config_.allowZwjf);
@@ -1164,10 +1310,6 @@ void SettingsDialog::initializeUI() {
     setToggleState(L"desktop-shortcut", systemConfig_.desktopShortcut);
     setToggleState(L"english-ui", systemConfig_.language == 1);
 
-    // Floating icon toggle
-    setToggleState(L"floating-icon", systemConfig_.showFloatingIcon);
-    setToggleState(L"tsf-indicator", systemConfig_.showTsfIndicator);
-
     // Auto-check update toggle
     setToggleState(L"check-update", systemConfig_.autoCheckUpdate);
     setToggleState(L"force-light-theme", systemConfig_.forceLightTheme);
@@ -1186,19 +1328,8 @@ void SettingsDialog::initializeUI() {
         }
     }
 
-    // Icon style dropdown
-    setDropdownValue(L"modern-icon", static_cast<int>(systemConfig_.iconStyle));
     // Startup mode dropdown
     setDropdownValue(L"startup-mode", static_cast<int>(systemConfig_.startupMode));
-
-    // Color swatches: set initial background colors + show custom row if needed
-    updateColorSwatches();
-    if (systemConfig_.iconStyle == 3) {
-        sciter::dom::element colorRow = root.find_first("#custom-color-row");
-        if (colorRow.is_valid()) {
-            colorRow.set_style_attribute("display", L"flex");
-        }
-    }
 
     // Set switch key character (display "Space" for space char)
     sciter::dom::element switchKeyInput = root.find_first("#switch-key-char");
@@ -1318,12 +1449,6 @@ void SettingsDialog::onInputMethodChange(int method) {
     if (onSettingsChanged_) onSettingsChanged_();
 }
 
-void SettingsDialog::onSpellCheckChange(bool enabled) {
-    config_.spellCheckEnabled = enabled;
-    saveSettings();
-    if (onSettingsChanged_) onSettingsChanged_();
-}
-
 void SettingsDialog::onExpandChange(bool expanded) {
     isExpanded_ = expanded;
     // Set timer to resize window after CSS transition completes
@@ -1395,7 +1520,7 @@ void SettingsDialog::syncToSharedState() {
         SharedState state = sharedState_.Read();
         if (state.IsValid()) {
             state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
-            state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
+            state.spellCheck = static_cast<uint8_t>(config_.GetSpellCheckLevel());
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
             state.SetHotkey(hotkeyConfig_);
@@ -1475,60 +1600,12 @@ void SettingsDialog::saveSystemSettings() {
     }
 }
 
-void SettingsDialog::notifyIconChanged() {
+void SettingsDialog::notifySystemConfigChanged(WPARAM wParam) {
     // Notify main process to re-read icon config
     HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
     if (trayWnd) {
-        PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 0, 0);
+        PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, wParam, 0);
     }
-}
-
-void SettingsDialog::openColorPicker(bool forVietnamese) {
-    COLORREF current = static_cast<COLORREF>(
-        forVietnamese ? systemConfig_.GetEffectiveColorV() : systemConfig_.GetEffectiveColorE());
-
-    static COLORREF custColors[16] = {};
-
-    CHOOSECOLORW cc = {};
-    cc.lStructSize = sizeof(cc);
-    cc.hwndOwner = get_hwnd();
-    cc.lpCustColors = custColors;
-    cc.rgbResult = current;
-    cc.Flags = CC_FULLOPEN | CC_RGBINIT;
-
-    if (ChooseColorW(&cc)) {
-        if (forVietnamese) {
-            systemConfig_.customColorV = static_cast<uint32_t>(cc.rgbResult);
-        } else {
-            systemConfig_.customColorE = static_cast<uint32_t>(cc.rgbResult);
-        }
-
-        updateColorSwatches();
-        saveSystemSettings();
-        notifyIconChanged();
-    }
-}
-
-void SettingsDialog::updateColorSwatches() {
-    sciter::dom::element root = get_root();
-
-    // Get effective colors (default if 0)
-    COLORREF colorV = static_cast<COLORREF>(systemConfig_.GetEffectiveColorV());
-    COLORREF colorE = static_cast<COLORREF>(systemConfig_.GetEffectiveColorE());
-
-    // COLORREF is BGR, CSS needs RGB
-    auto setSwatchColor = [&](const char* selector, COLORREF color) {
-        sciter::dom::element btn = root.find_first(selector);
-        if (btn.is_valid()) {
-            wchar_t css[64];
-            swprintf_s(css, L"rgb(%d,%d,%d)",
-                GetRValue(color), GetGValue(color), GetBValue(color));
-            btn.set_style_attribute("background-color", css);
-        }
-    };
-
-    setSwatchColor("#btn-color-v", colorV);
-    setSwatchColor("#btn-color-e", colorE);
 }
 
 void SettingsDialog::setUpdateButtonEnabled(bool enabled) {

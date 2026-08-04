@@ -46,7 +46,12 @@ private:
     void RenderCachedBitmaps() noexcept;
     void ApplyBitmap() noexcept;
     void ComputeDefaultPosition() noexcept;
-    void ClampToWorkArea() noexcept;
+    /// Clamp (x,y) into the work area of the monitor nearest that point.
+    /// Static/stateless so it never overwrites the caller's preferred position —
+    /// only the copy passed in is adjusted (issue #223: clamping used to
+    /// destructively overwrite posX_/posY_ against the *primary* monitor only,
+    /// so it was both non-restorable and wrong on multi-monitor setups).
+    static void ClampToWorkArea(int& x, int& y) noexcept;
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
     HWND hwnd_ = nullptr;

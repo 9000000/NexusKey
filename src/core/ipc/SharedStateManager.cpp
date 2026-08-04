@@ -68,9 +68,38 @@ bool SharedStateManager::Create() {
         return false;
     }
 
-    // Initialize with defaults (epoch starts at 0 = even = stable)
+    // Publish initialization through the SAME odd/even epoch seqlock Write()
+    // uses, not a magic on/off toggle. CreateFileMapping makes a new
+    // zero-filled mapping discoverable before this process initializes it;
+    // on restart it may also reopen a mapping kept alive by a TSF host, whose
+    // reader could already have observed the OLD epoch. A fixed magic value
+    // is an ABA hazard here — it reads identical before and after a reinit a
+    // descheduled reader straddled entirely, so a torn structVersion/
+    // structSize combination could still pass. epoch strictly increases
+    // (never reused), so "before == after" only holds when nothing changed.
     auto* p = const_cast<SharedState*>(pImpl_->pState);
-    p->InitDefaults();
+    auto* magicAddress = reinterpret_cast<volatile LONG*>(&p->magic);
+    auto* epochAddress = reinterpret_cast<volatile LONG*>(&p->epoch);
+    const uint32_t priorEpoch = p->epoch;
+    const uint32_t writingEpoch = priorEpoch | 1;   // force odd = write in progress
+    const uint32_t doneEpoch = writingEpoch + 1;    // even, strictly > priorEpoch
+
+    // Epoch goes odd BEFORE magic is touched, and magic is restored BEFORE
+    // epoch goes even — both writes must happen strictly inside the odd
+    // window. Doing it in the other order (as a prior version of this code
+    // did) opens two windows where epoch reads stable-and-even while magic
+    // reads 0: readers there don't retry (epoch looks fine) and get a
+    // confirmed-but-wrong Incompatible verdict instead of Retry.
+    InterlockedExchange(epochAddress, static_cast<LONG>(writingEpoch));
+    InterlockedExchange(magicAddress, 0);
+    SharedState initialState{};
+    initialState.InitDefaults();
+    initialState.magic = 0;
+    initialState.epoch = writingEpoch;
+    *p = initialState;
+    MemoryBarrier();
+    InterlockedExchange(magicAddress, static_cast<LONG>(SharedState::MAGIC_VALUE));
+    InterlockedExchange(epochAddress, static_cast<LONG>(doneEpoch));
     pImpl_->isOwner = true;
     pImpl_->isWritable = true;
 
@@ -255,13 +284,19 @@ uint32_t SharedStateManager::ReadFlags() const noexcept {
     return 0;
 }
 
-void SharedStateManager::ToggleFlag(uint32_t flagBit) noexcept {
+uint32_t SharedStateManager::ToggleFlag(uint32_t flagBit) noexcept {
 #ifdef _WIN32
-    if (!pImpl_->pState || pImpl_->pState->magic != SharedState::MAGIC_VALUE) return;
+    if (!pImpl_->pState || pImpl_->pState->magic != SharedState::MAGIC_VALUE) return 0;
 
-    // Atomic 32-bit XOR — safe for concurrent DLL/EXE access
+    // Atomic 32-bit XOR — safe for concurrent DLL/EXE access. InterlockedXor
+    // returns the value from BEFORE the XOR; XOR-ing that with flagBit again
+    // gives the value immediately after — no separate re-read needed.
     auto* flagsAddr = &(const_cast<SharedState*>(pImpl_->pState)->flags);
-    InterlockedXor(reinterpret_cast<volatile LONG*>(flagsAddr), static_cast<LONG>(flagBit));
+    const LONG prev = InterlockedXor(reinterpret_cast<volatile LONG*>(flagsAddr), static_cast<LONG>(flagBit));
+    return static_cast<uint32_t>(prev) ^ flagBit;
+#else
+    (void)flagBit;
+    return 0;
 #endif
 }
 
@@ -315,20 +350,39 @@ bool SharedStateManager::IsConnected() const noexcept {
 #endif
 }
 
-bool SharedStateManager::IsAbiCompatible() const noexcept {
+SharedStateManager::AbiCheckResult SharedStateManager::CheckAbiCompatibility() const noexcept {
 #ifdef _WIN32
-    if (!pImpl_->pState) return false;
-    // Direct aligned 32-bit reads — these three fields are set once by
-    // Create()'s InitDefaults() before the mapping becomes observable to any
-    // other process and never change afterwards, so no seqlock is required.
-    const uint32_t magic = pImpl_->pState->magic;
-    const uint32_t ver   = pImpl_->pState->structVersion;
-    const uint32_t size  = pImpl_->pState->structSize;
-    return magic == SharedState::MAGIC_VALUE
-        && ver <= SharedState::CURRENT_VERSION
-        && size >= 24;
+    if (!pImpl_->pState) return AbiCheckResult::Incompatible;
+    // Create() can reinitialize an already-live mapping (e.g. VKeyApp.exe
+    // restarts while a TSF host stays open). A fixed magic value is an ABA
+    // hazard as the before/after sentinel here: it reads identical on both
+    // sides of a reinit a descheduled reader straddled entirely, so a torn
+    // structVersion/structSize combination could still pass. epoch is the
+    // same monotonic counter Write()/Read() already use — it strictly
+    // increases on every Create()/Write(), so "before == after" (and even)
+    // only holds when nothing changed underneath these three reads.
+    for (int i = 0; i < SEQLOCK_MAX_RETRIES; ++i) {
+        const uint32_t before = pImpl_->pState->epoch;
+        std::atomic_thread_fence(std::memory_order_acquire);
+        const uint32_t magic = pImpl_->pState->magic;
+        const uint32_t ver   = pImpl_->pState->structVersion;
+        const uint32_t size  = pImpl_->pState->structSize;
+        std::atomic_thread_fence(std::memory_order_acquire);
+        const uint32_t after = pImpl_->pState->epoch;
+        if (before == after && (before & 1) == 0) {
+            const bool compatible = magic == SharedState::MAGIC_VALUE
+                && ver <= SharedState::CURRENT_VERSION
+                && size >= 24;
+            return compatible ? AbiCheckResult::Compatible : AbiCheckResult::Incompatible;
+        }
+        YieldProcessor();
+    }
+    // Retries exhausted mid-reinit/write — genuinely unknown, NOT a confirmed
+    // mismatch. Callers must not latch a sticky mismatch flag from this; they
+    // already retry on later ticks (constructor / CheckConfigEvent).
+    return AbiCheckResult::Retry;
 #else
-    return false;
+    return AbiCheckResult::Incompatible;
 #endif
 }
 

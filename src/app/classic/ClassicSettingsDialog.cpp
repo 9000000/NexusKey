@@ -19,6 +19,9 @@
 #include "core/Debug.h"
 #include "core/CrashLog.h"
 #include "core/Version.h"
+#if defined(VKEY_USE_RUST_ENGINE)
+#include "system/AdvancedEngineInstaller.h"
+#endif
 #include "system/StartupHelper.h"
 #include "system/UpdateChecker.h"
 #include "system/PendingDllApply.h"
@@ -469,7 +472,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
         // If it's an inline action button
         bool isInlineAction = (meta.type == SettingType::Action && 
-            (wcscmp(meta.label, L"...") == 0 || meta.win32Id == IDC_BTN_CHECK_UPDATE || meta.win32Id == IDC_BTN_OPEN_LOG_FOLDER));
+            (wcscmp(meta.label, L"...") == 0 || meta.win32Id == IDC_BTN_CHECK_UPDATE || meta.win32Id == IDC_BTN_OPEN_LOG_FOLDER || meta.win32Id == IDC_BTN_RESET_FLOATING));
         if (isInlineAction) {
             rowCounts[tab][col]--; // stay on the same visual row
             row--; // go back to the row we just incremented past
@@ -480,7 +483,7 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
 
         if (meta.type == SettingType::Toggle) {
             bool hasInlineNext = ((i + 1 < kSettingsCount) && kSettings[i+1].type == SettingType::Action && 
-                (wcscmp(kSettings[i+1].label, L"...") == 0 || kSettings[i+1].win32Id == IDC_BTN_CHECK_UPDATE || kSettings[i+1].win32Id == IDC_BTN_OPEN_LOG_FOLDER));
+                (wcscmp(kSettings[i+1].label, L"...") == 0 || kSettings[i+1].win32Id == IDC_BTN_CHECK_UPDATE || kSettings[i+1].win32Id == IDC_BTN_OPEN_LOG_FOLDER || kSettings[i+1].win32Id == IDC_BTN_RESET_FLOATING));
             int nextBtnW = 0;
             if (hasInlineNext) {
                 nextBtnW = (wcscmp(kSettings[i+1].label, L"...") == 0) ? Dpi(26) : Dpi(70);
@@ -516,6 +519,28 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         if (extraControls_[i]) {
             ShowWindow(extraControls_[i], SW_HIDE);
         }
+    }
+
+    // Spell-check level (Off/Standard/Advanced) — hand-wired like comboMethod_/
+    // comboEncoding_ rather than table-driven, since TypingConfig exposes it as
+    // a computed GetSpellCheckLevel()/SetSpellCheckLevel() view over two bools,
+    // not an offsetof-addressable field. Placed at the next free row in Tab 0
+    // col 0, right after that column's table-driven checkboxes.
+    {
+        int tab = 0, col = 0;
+        int row = rowCounts[tab][col]++;
+        int cx = contentLeft + col * (colWidth + Dpi(8));
+        int cy = contentTop + row * Dpi(kControlHeight + kRowGap);
+        int lblW = Dpi(115);
+        int comboW = colWidth - lblW - Dpi(4);
+
+        lblSpellCheckLevel_ = CreateLabel(L"Kiểm tra chính tả", cx, cy + Dpi(4), lblW, Dpi(kControlHeight), 0);
+        comboSpellCheckLevel_ = CreateCombo(cx + lblW + Dpi(4), cy, comboW, Dpi(kComboHeight + 60), IDC_COMBO_SPELL_CHECK);
+        ComboBox_AddString(comboSpellCheckLevel_, L"Tắt");
+        ComboBox_AddString(comboSpellCheckLevel_, L"Cơ bản");
+        ComboBox_AddString(comboSpellCheckLevel_, L"Nâng cao");
+        ShowWindow(lblSpellCheckLevel_, SW_HIDE);
+        ShowWindow(comboSpellCheckLevel_, SW_HIDE);
     }
 
     // "Báo cáo lỗi" link below tab control
@@ -563,6 +588,8 @@ void ClassicSettingsDialog::PopulateControls() {
         ComboBox_SetCurSel(comboMethod_, static_cast<int>(config_.inputMethod));
     if (comboEncoding_)
         ComboBox_SetCurSel(comboEncoding_, static_cast<int>(config_.codeTable));
+    if (comboSpellCheckLevel_)
+        ComboBox_SetCurSel(comboSpellCheckLevel_, static_cast<int>(config_.GetSpellCheckLevel()));
 
     UpdateCustomKeyMapButtonVisibility();
 
@@ -649,6 +676,11 @@ void ClassicSettingsDialog::ReadControlValues() {
         if (sel >= 0 && sel <= 4)
             config_.codeTable = static_cast<CodeTable>(sel);
     }
+    if (comboSpellCheckLevel_) {
+        int sel = ComboBox_GetCurSel(comboSpellCheckLevel_);
+        if (sel >= 0 && sel <= 2)
+            config_.SetSpellCheckLevel(static_cast<SpellCheckLevel>(sel));
+    }
 
     for (size_t i = 0; i < kSettingsCount && i < kMaxControls; ++i) {
         const auto& meta = kSettings[i];
@@ -732,7 +764,7 @@ void ClassicSettingsDialog::SyncToSharedState() {
         SharedState state = sharedState_.Read();
         if (state.IsValid()) {
             state.inputMethod = static_cast<uint8_t>(config_.inputMethod);
-            state.spellCheck = config_.spellCheckEnabled ? 1 : 0;
+            state.spellCheck = static_cast<uint8_t>(config_.GetSpellCheckLevel());
             state.codeTable = static_cast<uint8_t>(config_.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config_));
             state.SetHotkey(hotkeyConfig_);
@@ -797,11 +829,35 @@ void ClassicSettingsDialog::ShowTabPage(int tabIndex) {
             ShowWindow(extraControls_[i], showCmd);
         }
     }
+
+    // Hand-wired spell-check-level combo (not table-driven — see CreateAdvancedControls).
+    int spellShowCmd = (tabIndex == 0) ? SW_SHOW : SW_HIDE;
+    if (lblSpellCheckLevel_) ShowWindow(lblSpellCheckLevel_, spellShowCmd);
+    if (comboSpellCheckLevel_) ShowWindow(comboSpellCheckLevel_, spellShowCmd);
 }
 
 // ════════════════════════════════════════════════════════════════════
 // Command handler
 // ════════════════════════════════════════════════════════════════════
+
+// Suppresses the Win32 combo-box open/close animation while dark theme is
+// active (it paints with light-theme colors for one frame otherwise).
+void ClassicSettingsDialog::HandleComboDarkModeAnimation(UINT code, LPARAM lParam) {
+    HWND combo = reinterpret_cast<HWND>(lParam);
+    if (code == CBN_DROPDOWN && theme_.IsDark()) {
+        BOOL anim = FALSE;
+        SystemParametersInfoW(SPI_GETCOMBOBOXANIMATION, 0, &anim, 0);
+        if (anim) {
+            SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)FALSE, 0);
+            SetPropW(combo, L"WasAnim", reinterpret_cast<HANDLE>(1));
+        }
+    } else if (code == CBN_CLOSEUP) {
+        if (GetPropW(combo, L"WasAnim")) {
+            SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)TRUE, 0);
+            RemovePropW(combo, L"WasAnim");
+        }
+    }
+}
 
 void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
     UINT code = HIWORD(wParam);
@@ -829,18 +885,79 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                 if (id == IDC_COMBO_METHOD) {
                     UpdateCustomKeyMapButtonVisibility();
                 }
-            } else if (code == CBN_DROPDOWN && theme_.IsDark()) {
-                BOOL anim = FALSE;
-                SystemParametersInfoW(SPI_GETCOMBOBOXANIMATION, 0, &anim, 0);
-                if (anim) {
-                    SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)FALSE, 0);
-                    SetPropW(reinterpret_cast<HWND>(lParam), L"WasAnim", reinterpret_cast<HANDLE>(1));
+            } else {
+                HandleComboDarkModeAnimation(code, lParam);
+            }
+            return;
+
+        case IDC_COMBO_SPELL_CHECK:
+            if (code == CBN_SELCHANGE) {
+                SpellCheckLevel oldLevel = config_.GetSpellCheckLevel();
+                int sel = ComboBox_GetCurSel(comboSpellCheckLevel_);
+                if (sel >= 0 && sel <= 2) {
+                    SpellCheckLevel newLevel = static_cast<SpellCheckLevel>(sel);
+                    const bool enteringAdvanced = newLevel == SpellCheckLevel::Advanced &&
+                                                  oldLevel != SpellCheckLevel::Advanced;
+
+#if defined(VKEY_USE_RUST_ENGINE)
+                    if (enteringAdvanced) {
+                        const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(hwnd_);
+                        if (status != AdvancedEngineStatus::Ready) {
+                            // oldLevel, not Standard: the guard above allows Off
+                            // here, and a declined download is not a request to
+                            // switch spell check on.
+                            config_.SetSpellCheckLevel(oldLevel);
+                            ComboBox_SetCurSel(comboSpellCheckLevel_, static_cast<int>(oldLevel));
+                            SaveSettings();
+                            KillTimer(hwnd_, kTimerDeferredSave);
+                            SaveToToml();
+                            UpdateSpellCheckChildren();
+                            if (status == AdvancedEngineStatus::ManualRequested) {
+                                AdvancedEngineInstaller::ShowManualInstallWithUi(hwnd_);
+                            }
+                            return;
+                        }
+                    }
+#endif
+
+                    config_.SetSpellCheckLevel(newLevel);
+
+                    if (enteringAdvanced ||
+                        (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced)) {
+                        int result = MessageBoxW(hwnd_,
+                            S(enteringAdvanced ? StringId::SPELL_ADVANCED_LOAD_APP
+                                               : StringId::SPELL_ADVANCED_CLOSE_APP),
+                            L"VKey", MB_YESNO | MB_ICONQUESTION);
+                        if (result == IDYES) {
+                            SaveSettings();
+                            KillTimer(hwnd_, kTimerDeferredSave);
+                            SaveToToml();
+
+                            wchar_t exePath[MAX_PATH] = {};
+                            GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+                            wchar_t cmdLine[MAX_PATH + 64] = {};
+                            swprintf_s(cmdLine, L"\"%s\" %s", exePath, ADMIN_RESTART_FLAG);
+                            STARTUPINFOW si = { sizeof(si) };
+                            PROCESS_INFORMATION pi = {};
+                            if (CreateProcessW(exePath, cmdLine, nullptr, nullptr, FALSE,
+                                               CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
+                                CloseHandle(pi.hProcess);
+                                CloseHandle(pi.hThread);
+                            }
+
+                            HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+                            if (trayWnd) {
+                                PostMessageW(trayWnd, WM_CLOSE, 0, 0);
+                            }
+                            DestroyWindow(hwnd_);
+                            return;
+                        }
+                    }
                 }
-            } else if (code == CBN_CLOSEUP) {
-                if (GetPropW(reinterpret_cast<HWND>(lParam), L"WasAnim")) {
-                    SystemParametersInfoW(SPI_SETCOMBOBOXANIMATION, 0, (PVOID)TRUE, 0);
-                    RemovePropW(reinterpret_cast<HWND>(lParam), L"WasAnim");
-                }
+                SaveSettings();
+                UpdateSpellCheckChildren();
+            } else {
+                HandleComboDarkModeAnimation(code, lParam);
             }
             return;
 
@@ -902,11 +1019,6 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                 }
 
                 SaveSettings();
-
-                // Spell check controls child toggles (zwjf, auto-restore, exclusions button)
-                if (meta->win32Id == IDC_CHECK_SPELL) {
-                    UpdateSpellCheckChildren();
-                }
 
                 // TSF-apps toggle registers/unregisters the TSF DLL.
                 // Mirrors the Sciter handler in SettingsDialog.cpp:575-610.
@@ -980,6 +1092,16 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
 
         case IDC_BTN_HOTKEYS:
             ClassicHotkeysDialog::Show(hInstance_, hwnd_, systemConfig_.forceLightTheme);
+            break;
+
+        case IDC_BTN_RESET_FLOATING:
+            systemConfig_.floatingIconX = INT32_MIN;
+            systemConfig_.floatingIconY = INT32_MIN;
+            SaveToToml();
+            {
+                HWND trayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+                if (trayWnd) PostMessageW(trayWnd, WM_VKEY_ICON_CHANGED, 1, 0); // 1 = reset position
+            }
             break;
 
         case IDC_BTN_OPEN_LOG_FOLDER: {
@@ -1063,7 +1185,7 @@ void ClassicSettingsDialog::OnActionButton(uint16_t controlId) {
 // ════════════════════════════════════════════════════════════════════
 
 void ClassicSettingsDialog::UpdateSpellCheckChildren() {
-    bool spellOn = (IsDlgButtonChecked(hwnd_, IDC_CHECK_SPELL) == BST_CHECKED);
+    bool spellOn = comboSpellCheckLevel_ && ComboBox_GetCurSel(comboSpellCheckLevel_) != 0;
     BOOL enable = spellOn ? TRUE : FALSE;
 
     // Child toggles: "Cho phép zwjf" and "Tự khôi phục phím sai"

@@ -277,6 +277,7 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
         // [features] section — use node_view [] operator for safe access to optional keys
         if (auto features = table["features"].as_table()) {
             config.spellCheckEnabled = (*features)["spell_check"].value_or(true);
+            config.spellSuggestEnabled = (*features)["spell_suggest"].value_or(false);
             config.beepOnSwitch = (*features)["beep_on_switch"].value_or(false);
             config.smartSwitch = (*features)["smart_switch"].value_or(false);
             config.excludeApps = (*features)["exclude_apps"].value_or(false);
@@ -371,6 +372,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         // Update [features] section
         toml::table features;
         features.insert_or_assign("spell_check", config.spellCheckEnabled);
+        features.insert_or_assign("spell_suggest", config.spellSuggestEnabled);
         features.insert_or_assign("beep_on_switch", config.beepOnSwitch);
         features.insert_or_assign("smart_switch", config.smartSwitch);
         features.insert_or_assign("exclude_apps", config.excludeApps);
@@ -419,9 +421,9 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
     }
 }
 
-std::wstring ConfigManager::GetConfigPath() {
+std::wstring ConfigManager::GetConfigPath(void* moduleHint) {
     // Primary: exe directory
-    std::wstring exeDir = GetExeDirectory();
+    std::wstring exeDir = GetExeDirectory(moduleHint);
     if (DirectoryWritable(exeDir)) {
         return exeDir + L"\\config.toml";
     }
@@ -442,10 +444,10 @@ TypingConfig ConfigManager::LoadOrDefault() {
     return TypingConfig{};
 }
 
-std::wstring ConfigManager::GetExeDirectory() {
+std::wstring ConfigManager::GetExeDirectory(void* moduleHint) {
 #ifdef _WIN32
     wchar_t path[MAX_PATH] = {0};
-    DWORD len = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    DWORD len = GetModuleFileNameW(static_cast<HMODULE>(moduleHint), path, MAX_PATH);
     if (len > 0) {
         std::wstring fullPath(path);
         size_t lastSlash = fullPath.find_last_of(L"\\/");
@@ -814,6 +816,18 @@ std::vector<std::wstring> ConfigManager::LoadAllExcludedApps(const std::wstring&
         std::string utf8Path = WideToUtf8(path);
         auto table = ParseTomlCached(utf8Path);
 
+        auto lower = [](std::wstring s) {
+            for (auto& c : s) c = static_cast<wchar_t>(towlower(c));
+            return s;
+        };
+        auto mergeUnique = [&](std::wstring wide) {
+            if (apps.size() >= kMaxAppListEntries) return;
+            wide = lower(std::move(wide));
+            if (std::find(apps.begin(), apps.end(), wide) == apps.end()) {
+                apps.push_back(std::move(wide));
+            }
+        };
+
         if (auto section = table["excluded_apps"].as_table()) {
             // Load [excluded_apps].list
             if (auto arr = (*section)["list"].as_array()) {
@@ -832,6 +846,29 @@ std::vector<std::wstring> ConfigManager::LoadAllExcludedApps(const std::wstring&
                         auto wide = Utf8ToWide(*str);
                         if (std::find(apps.begin(), apps.end(), wide) == apps.end()) {
                             apps.push_back(std::move(wide));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Pre-v3 (Feb 2026, 713f862f) schema used `[excludedApps]` (camelCase),
+        // gated on its own `enabled` flag. That rename dropped the list itself —
+        // unlike hotkeys (MigrateLegacyHotkeysIfNeeded), nothing ever carried the
+        // old entries over, so any app added before the rename silently fell out
+        // of enforcement (#224: user's live `[excluded_apps]` lacked an app that
+        // was still excluded per the old `[excludedApps]`, so VKey kept processing
+        // keystrokes in it). Merge forever on load (mirrors the `soft` merge
+        // above) — lowercased, since old-UI entries predate the lowercase-on-save
+        // normalization ExcludedAppsDialog applies today.
+        if (auto legacy = table["excludedApps"].as_table()) {
+            const auto* enabledNode = legacy->get_as<bool>("enabled");
+            if (!enabledNode || enabledNode->get()) {
+                if (auto arr = (*legacy)["list"].as_array()) {
+                    for (auto& item : *arr) {
+                        if (apps.size() >= kMaxAppListEntries) break;
+                        if (auto str = item.value<std::string>()) {
+                            mergeUnique(Utf8ToWide(*str));
                         }
                     }
                 }
@@ -863,6 +900,10 @@ bool ConfigManager::SaveExcludedApps(const std::wstring& path,
             newSection.insert_or_assign("list", std::move(arr));
             tbl.insert_or_assign("excluded_apps", std::move(newSection));
         }
+        // Drop the pre-v3 `[excludedApps]` section — its `list` is merged in
+        // on every load (see LoadAllExcludedApps), so once a save round-trips
+        // that merge into `[excluded_apps]`, the old section is dead weight.
+        tbl.erase("excludedApps");
 
         return WriteToml(utf8Path, tbl);
     } catch (...) {

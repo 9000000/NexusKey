@@ -83,6 +83,7 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
     nid_.uID = 1;
     nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid_.uCallbackMessage = WM_TRAYICON;
+    pendingAppContextTarget_.store(hwndMessage_, std::memory_order_release);
 
     // Load initial icon based on style
     vietnameseMode_ = initialVietnamese;
@@ -102,6 +103,13 @@ bool TrayIcon::Create(HINSTANCE hInstance, bool initialVietnamese) {
     // WM_CLOSE only triggers clean exit (PostQuitMessage), no security risk.
     ChangeWindowMessageFilterEx(hwndMessage_, WM_CLOSE, MSGFLT_ALLOW, nullptr);
 
+    // The Sciter settings dialogs may run at a lower integrity level than the
+    // main process (for example when VKey itself is elevated). Custom WM_USER
+    // messages are blocked by UIPI unless the receiver explicitly allows them.
+    // This message carries no payload or pointer; it only asks the main process
+    // to re-read SystemConfig and redraw the tray icon.
+    ChangeWindowMessageFilterEx(hwndMessage_, WM_VKEY_ICON_CHANGED, MSGFLT_ALLOW, nullptr);
+
     // Always visible
     Shell_NotifyIconW(NIM_ADD, &nid_);
     RefreshConvertHotkeyCache();
@@ -113,6 +121,7 @@ void TrayIcon::Destroy() noexcept {
         Shell_NotifyIconW(NIM_DELETE, &nid_);
     }
     ZeroMemory(&nid_, sizeof(nid_));
+    pendingAppContextTarget_.store(nullptr, std::memory_order_release);
     if (hwndMessage_) {
         DestroyWindow(hwndMessage_);
         hwndMessage_ = nullptr;
@@ -125,41 +134,68 @@ void TrayIcon::SetVietnameseMode(bool enabled) noexcept {
 
     RefreshIcon();
     UpdateTooltip();
-
-    if (nid_.hWnd) {
-        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
-            // Icon may have been lost (explorer restart, GDI quota, etc.)
-            // Re-add to recover
-            Shell_NotifyIconW(NIM_ADD, &nid_);
-        }
-    }
+    NotifyIconChanged();
 }
 
 void TrayIcon::SetTsfActive(bool active) noexcept {
     if (tsfActive_ == active) return;
     tsfActive_ = active;
+    appContext_.isTsf = active;
 
     RefreshIcon();
     UpdateTooltip();
+    NotifyIconChanged();
+}
 
+void TrayIcon::QueueAppContext(std::wstring_view exeName,
+                               std::wstring_view ruleText,
+                               bool isTsf,
+                               bool isRustEngine) noexcept try {
+    auto context = std::make_shared<const TrayStatusContext>(
+        TrayStatusContext{
+            .exeName = std::wstring{exeName},
+            .ruleText = std::wstring{ruleText},
+            .isTsf = isTsf,
+            .isRustEngine = isRustEngine,
+        });
+    pendingAppContext_.store(std::move(context), std::memory_order_release);
+    // Snapshot once: hwndMessage_ is a plain HWND written on the main thread,
+    // and this producer runs on the focus worker.
+    if (const HWND hwnd = pendingAppContextTarget_.load(std::memory_order_acquire)) {
+        PostMessageW(hwnd, WM_VKEY_TRAY_APP_SYNC, 0, 0);
+    }
+} catch (...) {}
+
+void TrayIcon::SetAppContext(const TrayStatusContext& context) noexcept try {
+    if (appContext_ == context) return;
+
+    TrayStatusContext next = context;
+    const bool tsfChanged = tsfActive_ != context.isTsf;
+    appContext_ = std::move(next);
+    tsfActive_ = context.isTsf;
+
+    if (tsfChanged) RefreshIcon();
+    UpdateTooltip();
+    NotifyIconChanged();
+} catch (...) {}
+
+void TrayIcon::NotifyIconChanged() noexcept {
     if (nid_.hWnd) {
         if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
+            // Icon may have been lost (explorer restart, GDI quota, etc.)
             Shell_NotifyIconW(NIM_ADD, &nid_);
         }
     }
 }
 
-void TrayIcon::UpdateTooltip() noexcept {
-    const wchar_t* base = S(vietnameseMode_ ? StringId::TIP_VIETNAMESE : StringId::TIP_ENGLISH);
-    if (tsfActive_ && showTsfIndicator_) {
-        // Mark TSF mode so the colored "T" has a discoverable explanation on hover.
-        // Gated with the icon (issue #209): when the T indicator is off, the
-        // tooltip stays plain V/E to match the plain icon.
-        StringCchPrintfW(nid_.szTip, ARRAYSIZE(nid_.szTip), L"%s \x2022 TSF", base);
-    } else {
-        StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), base);
-    }
-}
+void TrayIcon::UpdateTooltip() noexcept try {
+    // Not a StringId: "V"/"E" reads the same in both UI languages, and the
+    // localized TIP_* strings still have to spell the mode out for the TSF
+    // language-bar button, which has no app/engine line to give a letter meaning.
+    const std::wstring text = FormatTrayStatusText(
+        vietnameseMode_ ? L"VKey - V" : L"VKey - E", appContext_);
+    StringCchCopyW(nid_.szTip, ARRAYSIZE(nid_.szTip), text.c_str());
+} catch (...) {}
 
 void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bool showTsfIndicator) noexcept {
     if (iconStyle_ == style && customColorV_ == colorV && customColorE_ == colorE
@@ -171,12 +207,7 @@ void TrayIcon::SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bo
     showTsfIndicator_ = showTsfIndicator;
 
     RefreshIcon();
-
-    if (nid_.hWnd) {
-        if (!Shell_NotifyIconW(NIM_MODIFY, &nid_)) {
-            Shell_NotifyIconW(NIM_ADD, &nid_);
-        }
-    }
+    NotifyIconChanged();
 }
 
 void TrayIcon::ReAddIcon() noexcept {
@@ -380,8 +411,17 @@ void TrayIcon::ShowContextMenu() {
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
     // ── Section 2: Feature toggles ──
-    AppendMenuW(hMenu, checked(state.spellCheck),
-        static_cast<UINT>(TrayMenuId::SpellCheck), S(StringId::MENU_SPELL_CHECK));
+    HMENU hSpellCheckMenu = CreatePopupMenu();
+    if (hSpellCheckMenu) {
+        auto addSC = [&](SpellCheckLevel level, TrayMenuId id, const wchar_t* label) {
+            UINT flags = MF_STRING | (state.spellCheckLevel == level ? MF_CHECKED : 0);
+            AppendMenuW(hSpellCheckMenu, flags, static_cast<UINT>(id), label);
+        };
+        addSC(SpellCheckLevel::Off, TrayMenuId::SpellCheckOff, L"Tắt");
+        addSC(SpellCheckLevel::Standard, TrayMenuId::SpellCheckStandard, L"Cơ bản");
+        addSC(SpellCheckLevel::Advanced, TrayMenuId::SpellCheckAdvanced, L"Nâng cao");
+        AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSpellCheckMenu), S(StringId::MENU_SPELL_CHECK));
+    }
     AppendMenuW(hMenu, checked(state.smartSwitch),
         static_cast<UINT>(TrayMenuId::SmartSwitch), S(StringId::MENU_SMART_SWITCH));
     AppendMenuW(hMenu, checked(state.macroEnabled),
@@ -489,6 +529,15 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return true;
     }
 
+    // Deferred App Context sync for 1-line status tooltip
+    if (msg == WM_VKEY_TRAY_APP_SYNC && hwnd == hwndMessage_) {
+        if (auto context = pendingAppContext_.exchange(
+                nullptr, std::memory_order_acq_rel)) {
+            SetAppContext(*context);
+        }
+        return true;
+    }
+
     // Activate VKey TSF profile programmatically (on TSF app focus switch)
     if (msg == WM_VKEY_ACTIVATE_TSF && hwnd == hwndMessage_) {
         ActivateVKeyTsfProfile();
@@ -547,7 +596,7 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
                       sysConfig.showTsfIndicator);
         SetLanguage(static_cast<Language>(sysConfig.language));
         RefreshConvertHotkeyCache();
-        if (iconConfigChangedCallback_) iconConfigChangedCallback_();
+        if (iconConfigChangedCallback_) iconConfigChangedCallback_(wParam);
         return true;
     }
 
@@ -597,6 +646,9 @@ bool TrayIcon::ProcessMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch (LOWORD(lParam)) {
         case WM_RBUTTONUP:
         case WM_CONTEXTMENU:
+            // Drop any leftover IDC_APPSTARTING before the menu takes capture —
+            // the popup window belongs to this thread, so our cursor applies
+            SetCursor(LoadCursor(nullptr, IDC_ARROW));
             ShowContextMenu();
             return true;
         case WM_LBUTTONUP:

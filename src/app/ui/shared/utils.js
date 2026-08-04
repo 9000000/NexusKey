@@ -502,3 +502,18 @@ function showToastI18n(viMessage, enMessage) {
     var lang = document.documentElement.getAttribute("lang") || "vi";
     showToast(lang === "en" ? enMessage : viMessage);
 }
+
+// Copy text to the system clipboard. Sciter exposes the Clipboard global; the
+// guard is for the older engine builds that don't, so a copy button degrades to
+// a toast instead of a script error.
+function copyToClipboard(text) {
+    try {
+        if (typeof Clipboard !== "undefined" && Clipboard.writeText) {
+            Clipboard.writeText(text);
+            return true;
+        }
+    } catch (e) {
+        console.log("copyToClipboard error:", e);
+    }
+    return false;
+}

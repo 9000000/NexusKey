@@ -9,14 +9,17 @@
 
 #pragma once
 
-#include "EditSession.h"
+#include <algorithm>
+#include <cstddef>
+#include <string>
+
 #include "CompositionManager.h"
 #include "Define.h"
+#include "EditSession.h"
 #include "core/AutoCapDecision.h"
+#include "core/TsfEditDecision.h"
 #include "core/engine/IInputEngine.h"
 #include "core/engine/VietnameseTables.h"
-#include <algorithm>
-#include <string>
 
 namespace NextKey {
 namespace TSF {
@@ -30,14 +33,9 @@ public:
     IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
         if (pMgr_ == nullptr || pContext_ == nullptr) return E_FAIL;
 
-        CComPtr<ITfComposition> pComposition;
-        if (!pMgr_->StartComposition(pContext_, ec, &pComposition)) {
+        if (!pMgr_->StartComposition(pContext_, ec, text_)) {
             TSF_LOG(L"StartCompositionEditSession: Failed to start composition");
             return E_FAIL;
-        }
-
-        if (!text_.empty()) {
-            pMgr_->SetCompositionText(ec, text_);
         }
 
         TSF_LOG(L"StartCompositionEditSession: Success");
@@ -60,14 +58,13 @@ public:
 
         if (!pMgr_->IsComposing()) {
             TSF_LOG(L"UpdateCompositionEditSession: Not composing, starting new");
-            CComPtr<ITfComposition> pComposition;
-            if (!pMgr_->StartComposition(pContext_, ec, &pComposition)) {
+            if (!pMgr_->StartComposition(pContext_, ec, text_)) {
                 return E_FAIL;
             }
+            return S_OK;
         }
 
-        // Replace composition text
-        pMgr_->SetCompositionText(ec, text_);
+        if (!pMgr_->SetCompositionText(ec, text_)) return E_FAIL;
 
         TSF_LOG(L"UpdateCompositionEditSession: Success");
         return S_OK;
@@ -106,7 +103,10 @@ public:
         if (pMgr_ == nullptr) return E_FAIL;
 
         if (pMgr_->IsComposing()) {
-            pMgr_->SetCompositionText(ec, finalText_);
+            if (!pMgr_->CurrentTextEquals(finalText_)
+                && !pMgr_->SetCompositionText(ec, finalText_)) {
+                return E_FAIL;
+            }
             pMgr_->EndComposition(ec);
         } else {
             TSF_LOG(L"CommitEditSession: composition externally terminated, text dropped: %s",
@@ -119,6 +119,55 @@ public:
 private:
     CompositionManager* pMgr_;
     std::wstring finalText_;
+};
+
+/// Replace a known number of text units immediately before an empty selection.
+class ReplacePrecedingTextEditSession : public EditSession {
+public:
+    ReplacePrecedingTextEditSession(ITfContext* pContext, std::size_t characterCount,
+                                    const std::wstring& replacement, bool* replaced)
+        : EditSession(pContext), characterCount_(characterCount), replacement_(replacement),
+          replaced_(replaced) {}
+
+    IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
+        if (replaced_) *replaced_ = false;
+        if (pContext_ == nullptr || characterCount_ == 0 || replaced_ == nullptr) return E_INVALIDARG;
+
+        TF_SELECTION selection = {};
+        ULONG fetched = 0;
+        HRESULT hr = pContext_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
+        if (FAILED(hr) || fetched != 1 || selection.range == nullptr) return E_FAIL;
+
+        CComPtr<ITfRange> range;
+        range.Attach(selection.range);
+        BOOL isEmpty = FALSE;
+        if (FAILED(range->IsEmpty(ec, &isEmpty)) || !isEmpty) return E_FAIL;
+
+        TF_HALTCOND halt = {nullptr, TF_ANCHOR_START, TF_HF_OBJECT};
+        LONG shifted = 0;
+        hr = range->ShiftStart(ec, -static_cast<LONG>(characterCount_), &shifted, &halt);
+        if (FAILED(hr) || shifted != -static_cast<LONG>(characterCount_)) return E_FAIL;
+
+        hr = range->SetText(ec, 0, replacement_.c_str(), static_cast<LONG>(replacement_.size()));
+        if (SUCCEEDED(hr)) {
+            // SetText is irreversible within this edit session. Record the
+            // document mutation even if the subsequent caret update fails so
+            // the caller does not pass an already-consumed trigger to the host.
+            *replaced_ = true;
+            hr = range->Collapse(ec, TF_ANCHOR_END);
+            if (SUCCEEDED(hr)) {
+                selection.style.ase = TF_AE_END;
+                selection.style.fInterimChar = FALSE;
+                hr = pContext_->SetSelection(ec, 1, &selection);
+            }
+        }
+        return hr;
+    }
+
+private:
+    std::size_t characterCount_;
+    std::wstring replacement_;
+    bool* replaced_;
 };
 
 /// Read-only edit session: fetch up to N chars preceding the caret.
@@ -231,7 +280,10 @@ public:
         if (wordlen == 0) return S_OK;
 
         LONG shifted2 = 0;
-        if (FAILED(pSelRange->ShiftStart(ec, -wordlen, &shifted2, &haltcond))) return S_OK;
+        if (FAILED(pSelRange->ShiftStart(ec, -wordlen, &shifted2, &haltcond))
+            || !IsExactBackwardRangeShift(wordlen, shifted2)) {
+            return S_OK;
+        }
 
         word_.assign(&buf[retrieved - wordlen], wordlen);
         pRange_ = pSelRange;  // CComPtr assignment — AddRefs for the member.
@@ -281,8 +333,15 @@ public:
         if (FAILED(pPeek->ShiftStart(ec, -MAX_CHARS, &shifted, &haltcond))) return S_OK;
 
         if (shifted == 0) {
-            atDocStart_ = true;
-            shouldAutoCap_ = true;
+            CComPtr<ITfRange> pDocumentStart;
+            BOOL isDocumentStart = FALSE;
+            if (SUCCEEDED(pContext_->GetStart(ec, &pDocumentStart)) && pDocumentStart
+                && SUCCEEDED(pSelRange->IsEqualStart(
+                    ec, pDocumentStart, TF_ANCHOR_START, &isDocumentStart))
+                && isDocumentStart) {
+                atDocStart_ = true;
+                shouldAutoCap_ = true;
+            }
             return S_OK;
         }
         if (shifted > 0) return S_OK;
@@ -310,7 +369,8 @@ public:
             CComPtr<ITfRange> pWordRange;
             if (SUCCEEDED(pSelRange->Clone(&pWordRange)) && pWordRange) {
                 LONG shifted2 = 0;
-                if (SUCCEEDED(pWordRange->ShiftStart(ec, -wordLen, &shifted2, &haltcond))) {
+                if (SUCCEEDED(pWordRange->ShiftStart(ec, -wordLen, &shifted2, &haltcond))
+                    && IsExactBackwardRangeShift(wordLen, shifted2)) {
                     wordRange_ = pWordRange;
                 }
             }
@@ -318,7 +378,10 @@ public:
 
         // Auto-cap rule extracted to core/AutoCapDecision.h for Linux GTest
         // coverage (the buffer comes from a Win32 edit session here, but the
-        // decision is pure CPU work over a wchar_t span).
+        // decision is pure CPU work over a wchar_t span). Reaching this point
+        // means len != 0, so ComputeShouldAutoCap's empty-buffer=DocStart
+        // convention can't fire off an unreadable range — a failed GetText
+        // returned above with shouldAutoCap_ still false.
         shouldAutoCap_ = ComputeShouldAutoCap(buf, len);
 
         return S_OK;
@@ -336,6 +399,49 @@ private:
     bool atDocStart_ = false;
 };
 
+/// Seeds `engine` to reproduce `word`, preferring an exact raw-keystroke replay
+/// over SeedFromText's literal-glyph decomposition. `SeedFromText` restores enough
+/// for the English-word check and continued typing/backspace, but can't recover
+/// which raw key produced which diacritic — a modifier re-applied after reviving
+/// from text alone silently fails to re-tone (see ADR: reopen-word raw replay).
+/// When `rawInput` (the engine's own PeekRaw() snapshot at the moment this word
+/// was committed) is available and still reproduces `word` exactly, replaying it
+/// through the same PushChar path used for live typing is fully faithful. Falls
+/// back to SeedFromText if there's no snapshot, or it no longer reproduces `word`
+/// (e.g. input method/config changed between commit and revive).
+/// ITfRange::SetText flags for the two revive sessions below. They replace text
+/// that ALREADY EXISTS in the document (a previously committed word), unlike the
+/// start/update paths which write fresh pre-edit. TF_ST_CORRECTION tells the
+/// host "this is a correction of existing text", so rich-text hosts (Word,
+/// WordPad, Outlook) preserve the replaced run's properties — bold, font,
+/// colour — instead of resetting them.
+///
+/// Kept at 0 (2026-07-29, issue #234): the composition lifecycle was reworked
+/// for plain-text hosts and the flag was not re-validated on this path, so
+/// adding it now would change the freshly-fixed path untested. Notepad/Chrome/
+/// Scintilla are plain text — no observable difference either way.
+///
+/// TO FIX (one edit): if reopening a *formatted* word loses its formatting —
+/// WordPad, type a bold Vietnamese word, Space, then Backspace back into it —
+/// set this to TF_ST_CORRECTION, then re-run the four #234 Notepad repros to
+/// confirm the pre-edit range behaviour didn't regress.
+constexpr DWORD kReviveSetTextFlags = 0;
+
+inline bool SeedRevivedWord(IInputEngine* engine, const std::wstring& word,
+                            const std::wstring& rawInput) {
+    if (!rawInput.empty()) {
+        engine->Reset();
+        for (wchar_t c : rawInput) {
+            engine->PushChar(c);
+        }
+        if (engine->Peek() == word) {
+            return true;
+        }
+        engine->Reset();
+    }
+    return engine->SeedFromText(word);
+}
+
 /// Revive-composition edit session: starts a composition over an existing range that
 /// covers a previously-committed Vietnamese word, seeds the engine from that word,
 /// then deletes the last char (since this fires from VK_BACK). The resulting
@@ -349,9 +455,9 @@ class ReviveCompositionEditSession : public EditSession {
 public:
     ReviveCompositionEditSession(ITfContext* pContext, CompositionManager* pMgr,
                                  IInputEngine* pEngine, const std::wstring& word,
-                                 ITfRange* pRange)
+                                 ITfRange* pRange, const std::wstring& rawInput = std::wstring{})
         : EditSession(pContext), pMgr_(pMgr), pEngine_(pEngine), word_(word),
-          pRange_(pRange) {  // CComPtr assignment AddRefs automatically
+          pRange_(pRange), rawInput_(rawInput) {  // CComPtr assignment AddRefs automatically
     }
 
     IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
@@ -361,30 +467,25 @@ public:
         if (word_.empty()) return E_FAIL;
 
         // Seed engine_ fresh (English gate already passed upstream via a temp engine).
-        if (!pEngine_->SeedFromText(word_)) {
-            TSF_LOG(L"ReviveCompositionEditSession: SeedFromText failed on '%ls'",
+        if (!SeedRevivedWord(pEngine_, word_, rawInput_)) {
+            TSF_LOG(L"ReviveCompositionEditSession: seeding failed on '%ls'",
                     word_.c_str());
             return E_FAIL;
         }
 
-        CComPtr<ITfComposition> pComposition;
-        if (!pMgr_->StartComposition(pContext_, ec, &pComposition)) {
+        if (!pMgr_->StartCompositionOnRange(pContext_, ec, pRange_, word_)) {
             TSF_LOG(L"ReviveCompositionEditSession: StartComposition failed");
             pEngine_->Reset();
             return E_FAIL;
         }
 
-        HRESULT hr = pComposition->ShiftStart(ec, pRange_);
-        if (FAILED(hr)) {
-            TSF_LOG(L"ReviveCompositionEditSession: ShiftStart failed hr=0x%08X", hr);
-            pEngine_->Reset();
-            pMgr_->EndComposition(ec);
-            return hr;
-        }
-
         pEngine_->Backspace();
         const std::wstring& composed = pEngine_->Peek();
-        pMgr_->SetCompositionText(ec, composed);
+        if (!pMgr_->SetCompositionText(ec, composed, kReviveSetTextFlags)) {
+            pEngine_->Reset();
+            pMgr_->EndComposition(ec);
+            return E_FAIL;
+        }
 
         if (pEngine_->Count() == 0) {
             pMgr_->EndComposition(ec);
@@ -399,6 +500,7 @@ private:
     IInputEngine* pEngine_;
     std::wstring word_;
     CComPtr<ITfRange> pRange_;
+    std::wstring rawInput_;
 };
 
 /// Revive-and-type edit session: user typed a character while engine was empty
@@ -409,9 +511,10 @@ class ReviveAndTypeEditSession : public EditSession {
 public:
     ReviveAndTypeEditSession(ITfContext* pContext, CompositionManager* pMgr,
                              IInputEngine* pEngine, const std::wstring& word,
-                             ITfRange* pRange, wchar_t ch)
+                             ITfRange* pRange, wchar_t ch,
+                             const std::wstring& rawInput = std::wstring{})
         : EditSession(pContext), pMgr_(pMgr), pEngine_(pEngine),
-          word_(word), pRange_(pRange), ch_(ch) {
+          word_(word), pRange_(pRange), ch_(ch), rawInput_(rawInput) {
     }
 
     IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
@@ -420,30 +523,25 @@ public:
             return E_FAIL;
         }
 
-        if (!pEngine_->SeedFromText(word_)) {
-            TSF_LOG(L"ReviveAndTypeEditSession: SeedFromText failed on '%ls'",
+        if (!SeedRevivedWord(pEngine_, word_, rawInput_)) {
+            TSF_LOG(L"ReviveAndTypeEditSession: seeding failed on '%ls'",
                     word_.c_str());
             return E_FAIL;
         }
 
-        CComPtr<ITfComposition> pComposition;
-        if (!pMgr_->StartComposition(pContext_, ec, &pComposition)) {
+        if (!pMgr_->StartCompositionOnRange(pContext_, ec, pRange_, word_)) {
             TSF_LOG(L"ReviveAndTypeEditSession: StartComposition failed");
             pEngine_->Reset();
             return E_FAIL;
         }
 
-        HRESULT hr = pComposition->ShiftStart(ec, pRange_);
-        if (FAILED(hr)) {
-            TSF_LOG(L"ReviveAndTypeEditSession: ShiftStart failed hr=0x%08X", hr);
-            pEngine_->Reset();
-            pMgr_->EndComposition(ec);
-            return hr;
-        }
-
         pEngine_->PushChar(ch_);
         const std::wstring& composed = pEngine_->Peek();
-        pMgr_->SetCompositionText(ec, composed);
+        if (!pMgr_->SetCompositionText(ec, composed, kReviveSetTextFlags)) {
+            pEngine_->Reset();
+            pMgr_->EndComposition(ec);
+            return E_FAIL;
+        }
 
         if (pEngine_->Count() == 0) {
             pMgr_->EndComposition(ec);
@@ -460,6 +558,7 @@ private:
     std::wstring word_;
     CComPtr<ITfRange> pRange_;
     wchar_t ch_;
+    std::wstring rawInput_;
 };
 
 /// Edit session to check if the selection is non-empty (for autocomplete detection)

@@ -25,11 +25,25 @@ public:
     // ITfCompositionSink
     IFACEMETHODIMP OnCompositionTerminated(TfEditCookie ec, ITfComposition* pComposition) override;
 
-    /// Start a new composition
-    bool StartComposition(ITfContext* pContext, TfEditCookie ec, ITfComposition** ppComposition);
+    /// Insert initial text and start a new composition over the inserted range.
+    [[nodiscard]] bool StartComposition(ITfContext* pContext, TfEditCookie ec,
+                                        const std::wstring& initialText);
 
-    /// Set text in current composition
-    bool SetCompositionText(TfEditCookie ec, const std::wstring& text);
+    /// Start a composition over an exact existing document range.
+    [[nodiscard]] bool StartCompositionOnRange(
+        ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
+        const std::wstring& existingText);
+
+    /// Set text in current composition. setTextFlags is passed straight to
+    /// ITfRange::SetText — see kReviveSetTextFlags in CompositionEditSession.h
+    /// for why the revive paths may need TF_ST_CORRECTION here.
+    [[nodiscard]] bool SetCompositionText(TfEditCookie ec,
+                                          const std::wstring& text,
+                                          DWORD setTextFlags = 0);
+
+    [[nodiscard]] bool CurrentTextEquals(const std::wstring& text) const noexcept {
+        return currentText_ == text;
+    }
 
     /// End composition (commits text)
     void EndComposition(TfEditCookie ec);
@@ -40,15 +54,13 @@ public:
     /// Check if composition is active
     bool IsComposing() const { return pComposition_ != nullptr; }
 
-    /// Set the category manager for display attributes
-    void SetCategoryMgr(ITfCategoryMgr* pCategoryMgr) { pCategoryMgr_ = pCategoryMgr; }
-
     /// Set engine controller for state synchronization
     void SetEngineController(EngineController* pEngineController) { pEngineController_ = pEngineController; }
 
 private:
-    /// Apply invisible display attribute to range
-    void ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange);
+    [[nodiscard]] bool BeginCompositionOnRange(
+        ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
+        const std::wstring& currentText);
 
     /// Clear display attribute from range (on end composition)
     void ClearDisplayAttribute(TfEditCookie ec, ITfRange* pRange);
@@ -58,9 +70,8 @@ private:
 
     ITfComposition* pComposition_ = nullptr;
     ITfContext* pContext_ = nullptr;  // Current context
-    ITfCategoryMgr* pCategoryMgr_ = nullptr;  // Not owned, don't release
     EngineController* pEngineController_ = nullptr; // Not owned, don't release
-    TfGuidAtom gaDisplayAttribute_ = TF_INVALID_GUIDATOM;
+    std::wstring currentText_;
     ULONG refCount_ = 1;
 };
 

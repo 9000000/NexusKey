@@ -20,9 +20,7 @@ namespace {
 
 constexpr std::size_t kMaxBatch = 256;
 
-// Helpers duplicated from Win32SendInputInjector.cpp. D4 cleanup may
-// extract into Internal.h if profiling shows the factor-out is worth
-// the cross-TU dependency. Kept intentionally local for now.
+// Helpers are intentionally local so each injector owns its event construction.
 INPUT MakeKey(WORD vk, bool keyup) noexcept {
     INPUT in{};
     in.type = INPUT_KEYBOARD;
@@ -52,6 +50,23 @@ bool SplitDispatchInjector::Replace(std::size_t bsCount,
     // inherit the same selection-eat quirk as Edge's omnibox.
     std::array<INPUT, kMaxBatch> bsBuf{};
     std::size_t bi = 0;
+    // See Win32SendInputInjector::Replace: synthetic Backspace must not inherit
+    // a physically held Shift (notably Shift+dd -> Đ in Excel Web). Restore
+    // Shift in this first batch before the optional inter-batch sleep.
+    std::array<WORD, 2> heldShifts{};
+    std::size_t heldShiftCount = 0;
+    if (bsCount > 0
+        && (Internal::g_getAsyncKeyState(VK_LSHIFT) & 0x8000) != 0) {
+        heldShifts[heldShiftCount++] = VK_LSHIFT;
+    }
+    if (bsCount > 0
+        && (Internal::g_getAsyncKeyState(VK_RSHIFT) & 0x8000) != 0) {
+        heldShifts[heldShiftCount++] = VK_RSHIFT;
+    }
+    for (std::size_t k = 0; k < heldShiftCount; ++k) {
+        if (bi + 1 > kMaxBatch) return false;
+        bsBuf[bi++] = MakeKey(heldShifts[k], /*keyup=*/true);
+    }
     const bool emitBait = Internal::ShouldEmitBait(
         needsBaitCharPrefix_, bsCount, text,
         suggestKeepChars_.load(std::memory_order_acquire),
@@ -67,8 +82,32 @@ bool SplitDispatchInjector::Replace(std::size_t bsCount,
         bsBuf[bi++] = MakeKey(VK_BACK, /*keyup=*/false);
         bsBuf[bi++] = MakeKey(VK_BACK, /*keyup=*/true);
     }
+    for (std::size_t k = 0; k < heldShiftCount; ++k) {
+        if (bi + 1 > kMaxBatch) return false;
+        bsBuf[bi++] = MakeKey(heldShifts[k], /*keyup=*/false);
+    }
     if (bi > 0) {
-        if (!Internal::TrackedSendInput(bsBuf.data(), static_cast<UINT>(bi))) {
+        UINT sent = 0;
+        if (!Internal::TrackedSendInput(
+                bsBuf.data(), static_cast<UINT>(bi), &sent)) {
+            if (heldShiftCount > 0 && sent > 0) {
+                std::array<INPUT, 2> restoreShifts{};
+                std::size_t restoreCount = 0;
+                const std::size_t restoreStart = bi - heldShiftCount;
+                const std::size_t sentCount = static_cast<std::size_t>(sent);
+                for (std::size_t k = 0; k < heldShiftCount; ++k) {
+                    const bool released = sentCount > k;
+                    const bool restoredInBatch = sentCount > restoreStart + k;
+                    if (released && !restoredInBatch) {
+                        restoreShifts[restoreCount++] =
+                            MakeKey(heldShifts[k], /*keyup=*/false);
+                    }
+                }
+                if (restoreCount > 0) {
+                    (void)Internal::TrackedSendInput(
+                        restoreShifts.data(), static_cast<UINT>(restoreCount));
+                }
+            }
             return false;
         }
     }

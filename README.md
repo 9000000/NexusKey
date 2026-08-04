@@ -2,7 +2,6 @@
 
 [![Build](https://github.com/phatMT97/VKey/actions/workflows/build.yml/badge.svg)](https://github.com/phatMT97/VKey/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Engine: Dual License](https://img.shields.io/badge/Engine-Dual%20License-orange.svg)](LICENSE-COMMERCIAL)
 [![Release](https://img.shields.io/github/v/release/phatMT97/VKey)](https://github.com/phatMT97/VKey/releases)
 [![Code signing](https://img.shields.io/badge/Code_signing-SignPath_Foundation-success)](https://signpath.org/)
 
@@ -45,6 +44,7 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 * **Không thu thập dữ liệu:** Không có dữ liệu cá nhân nào được gửi lên server.
 * **Hoạt động offline:** Phần mềm hoạt động hoàn toàn cục bộ trên máy bạn.
 * **Mã nguồn mở:** Bạn có thể tự kiểm chứng bằng cách đọc mã nguồn.
+* **Minh bạch về Engine Kiểm tra Chính tả Nâng cao:** Từ phiên bản v4.3, VKey tích hợp thêm một thư viện nguồn đóng tùy chọn viết bằng Rust phục vụ riêng cho chức năng tự sửa lỗi chính tả nâng cao. Tính năng này mặc định được tắt và người dùng có toàn quyền kiểm soát hoặc xóa bỏ. Chi tiết lý do và tính minh bạch được giải thích tại **[ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md)** và **[ENGINE_FAQ.md](docs/ENGINE_FAQ.md)**.
 
 > **Lưu ý:** Dự án này được phát triển chủ yếu dựa trên nhu cầu và trải nghiệm cá nhân, vì vậy có thể vẫn tồn tại một số lỗi chưa được phát hiện hoặc khắc phục triệt để. Rất mong nhận được sự thông cảm và đóng góp ý kiến thông qua [Issue](https://github.com/phatMT97/VKey/issues) để bộ gõ ngày càng hoàn thiện hơn.
 
@@ -204,6 +204,7 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 * **No Data Collection:** No personal data is sent to any server.
 * **Offline First:** The software operates entirely locally on your machine.
 * **Open Source:** You can verify this behavior by reviewing our source code.
+* **Transparency on Advanced Spell Check Engine:** Starting from v4.3, VKey integrates an optional closed-source Rust library for advanced spelling auto-correction features. This library is completely optional, disabled by default, and can be deleted by the user at any time. For more information, please read **[ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md)** and **[ENGINE_FAQ.md](docs/ENGINE_FAQ.md)** (Vietnamese).
 
 ### Features
 
@@ -341,15 +342,9 @@ Cảm ơn các thành viên cộng đồng đã test và góp ý:
 
 ## License
 
-Dự án sử dụng **dual license**:
+VKey được phát hành theo **[AGPL-3.0](LICENSE)**.
 
-| Thành phần | License |
-|------------|---------|
-| **Engine** (`src/core/engine/*`) | [AGPL-3.0](LICENSE) **hoặc** [Commercial](LICENSE-COMMERCIAL) |
-| **Tất cả phần còn lại** | [AGPL-3.0](LICENSE) |
-
-- **Sử dụng open-source (AGPL-3.0):** Bạn có thể sử dụng, sửa đổi, phân phối lại toàn bộ mã nguồn với điều kiện giữ nguyên license AGPL-3.0 cho derivative works — bao gồm cả khi cung cấp dưới dạng dịch vụ qua mạng (SaaS).
-- **Sử dụng thương mại/closed-source:** Nếu muốn dùng engine VKey trong sản phẩm proprietary hoặc né nghĩa vụ AGPL, vui lòng liên hệ tác giả để lấy commercial license. Xem [LICENSE-COMMERCIAL](LICENSE-COMMERCIAL).
+Bạn có thể sử dụng, sửa đổi, phân phối lại toàn bộ mã nguồn với điều kiện giữ nguyên license AGPL-3.0 cho derivative works — bao gồm cả khi cung cấp dưới dạng dịch vụ qua mạng (SaaS).
 
 ### Quy định về việc tham chiếu và sử dụng AI (AI Reference Policy)
 

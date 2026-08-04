@@ -5,6 +5,9 @@
 #include "system/FloatingIcon.h"
 #include "system/SubprocessHelper.h"
 #include "system/SubprocessRunners.h"
+#if defined(VKEY_USE_RUST_ENGINE)
+#include "system/AdvancedEngineInstaller.h"
+#endif
 #include "system/UpdateChecker.h"
 #include "system/UpdateInstaller.h"
 #include "system/PendingDllApply.h"
@@ -124,11 +127,13 @@ static void InitFloatingIcon(HINSTANCE hInstance, const SystemConfig& sc) {
     // survives Destroy()/Create() cycles. Persisted to TOML at app exit only.
 
     // Re-read config when Settings changes icon/system config
-    g_trayIcon.SetIconConfigChangedCallback([]() {
+    g_trayIcon.SetIconConfigChangedCallback([](WPARAM wParam) {
         auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
         if (sysConfig.showFloatingIcon) {
             EnsureFloatingIconCreated();
-            // Don't overwrite in-memory position — object already knows where it was
+            if (wParam == 1) {
+                g_floatingIcon.SetPosition(INT32_MIN, INT32_MIN);
+            }
             g_floatingIcon.SetVisible(true);
         } else {
             g_floatingIcon.Destroy();
@@ -254,6 +259,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     if (lpCmdLine && wcsstr(lpCmdLine, L"--hotkeys") != nullptr) {
         RunHotkeysSubprocess();  // [[noreturn]]
     }
+    if (lpCmdLine && wcsstr(lpCmdLine, L"--icon-settings") != nullptr) {
+        RunIconSettingsSubprocess();  // [[noreturn]]
+    }
 
     // ═══════════════════════════════════════════════════════════
     // Main Process
@@ -296,19 +304,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                          r == WAIT_ABANDONED ? L"abandoned" : L"released");
         } else {
             // Another background instance is already running.
-            // If the user has "show on startup" configured, popup the settings dialog of the
-            // existing instance to indicate the app is active. Otherwise, strictly silent.
-            auto sysConfig = ConfigManager::LoadSystemConfigOrDefault();
-            if (sysConfig.showOnStartup) {
-                HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
-                if (existingTrayWnd) {
-                    PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
-
-                    HWND existingSettings = GetSettingsHwnd();
-                    if (existingSettings) {
-                        SetForegroundWindow(existingSettings);
-                    }
+            // Surface the settings dialog of the existing instance to indicate the app is active.
+            HWND existingTrayWnd = FindWindowW(L"VKeyTrayClass", nullptr);
+            if (existingTrayWnd) {
+                // Hand our foreground privilege to the existing instance (and to
+                // the settings subprocess it spawns) before asking it to show the
+                // dialog — it is a background process and cannot take foreground
+                // on its own. Focusing the dialog from here instead would race:
+                // the posted message has not been handled yet, so the window
+                // usually does not exist at this point.
+                DWORD existingPid = 0;
+                GetWindowThreadProcessId(existingTrayWnd, &existingPid);
+                if (existingPid != 0) {
+                    AllowSetForegroundWindow(existingPid);
                 }
+                PostMessageW(existingTrayWnd, WM_VKEY_SHOW_SETTINGS, 0, 0);
             }
 
             NEXTKEY_LOG(L"Another instance is already running. Exiting.");
@@ -327,6 +337,27 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Initialize UI language from system config
     auto systemConfig = ConfigManager::LoadSystemConfigOrDefault();
     SetLanguage(static_cast<Language>(systemConfig.language));
+
+#if defined(VKEY_USE_RUST_ENGINE)
+    // Repair before HookEngine can cache a failed first load for this process.
+    // Ready is the only state allowed to keep Advanced persisted. Decline,
+    // manual install, cancellation, and install failures all return to Standard
+    // so startup never repeats the prompt without another explicit selection.
+    if (config.GetSpellCheckLevel() == SpellCheckLevel::Advanced) {
+        // ShowManualInstallWithUi reaches ShellExecuteW, which needs an
+        // initialized apartment. The tray path only calls CoInitializeEx inside
+        // the TSF branch below, so hook builds would otherwise have none.
+        (void)::OleInitialize(nullptr);
+        const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(nullptr);
+        if (status != AdvancedEngineStatus::Ready) {
+            config.SetSpellCheckLevel(SpellCheckLevel::Standard);
+            (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
+            if (status == AdvancedEngineStatus::ManualRequested) {
+                AdvancedEngineInstaller::ShowManualInstallWithUi(nullptr);
+            }
+        }
+    }
+#endif
 
     // Apply any deferred TSF DLL swap before the generic update-file cleanup
     // (which removes _old_version/ and would delete the parked copy if the
@@ -381,7 +412,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         SharedState state;
         state.InitDefaults();
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
-        state.spellCheck = config.spellCheckEnabled ? 1 : 0;
+        state.spellCheck = static_cast<uint8_t>(config.GetSpellCheckLevel());
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
@@ -466,18 +497,35 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         }
     });
 
+    g_hookEngine.SetFocusAppContextCallback([](
+            std::wstring_view exe, std::wstring_view rule,
+            bool isTsf, bool isRust) {
+        g_trayIcon.QueueAppContext(exe, rule, isTsf, isRust);
+    });
+
     // #109: activate VKey's TIP at startup (standard-IME model, like
     // Unikey/Mozc). The handler runs ActivateVKeyTsfProfile() which (1) adds
     // VKey to the user's input list via InstallLayoutOrTip so it is selectable +
-    // survives reboot, then (2) selects it for the session. Gated on TSF being
-    // registered — users who never enabled TSF are not forced into it. The
-    // tsfModeCallback_ above additionally re-asserts selection on each focus
-    // into a TSF app (#209 mid-session selection loss); this startup call covers
-    // the window before any TSF-app focus happens.
-    if (IsTsfRegistered()) {
+    // survives reboot, then (2) selects it for the session. Gated on
+    // config.tsfApps AND TSF being registered — users who never enabled TSF
+    // are not forced into it. Checking only IsTsfRegistered() (pre-#221 fix)
+    // silently re-opted tsf_apps=false users into VKey as their OS input
+    // method whenever registry remnants from an earlier enable/disable cycle
+    // were still present (UnregisterTsf never removed the input-list entry —
+    // now fixed below). The tsfModeCallback_ above additionally re-asserts
+    // selection on each focus into a TSF app (#209 mid-session selection
+    // loss); this startup call covers the window before any TSF-app focus
+    // happens.
+    if (config.tsfApps && IsTsfRegistered()) {
         if (HWND tsfTrayWnd = g_trayIcon.GetMessageWindow()) {
             PostMessageW(tsfTrayWnd, WM_VKEY_ACTIVATE_TSF, 0, 0);
         }
+    } else if (!config.tsfApps && IsTsfRegistered()) {
+        // #221: clean up a phantom input-list entry left by an earlier
+        // enable/disable cycle (e.g. non-admin UnregisterTsf couldn't remove
+        // the CLSID, or an older build auto-registered TSF) so Windows stops
+        // offering VKey as a selectable input method the user didn't ask for.
+        RemoveVKeyTsfFromInputList();
     }
 
     // Wire hook-reload callback: sub-dialog subprocess → main EXE eager sync.
@@ -508,7 +556,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         uint32_t ff = state.GetFeatureFlags();
         return {
             g_hookEngine.IsVietnameseMode(),
-            state.spellCheck != 0,
+            static_cast<SpellCheckLevel>(state.spellCheck),
             (ff & FeatureFlags::SMART_SWITCH) != 0,
             (ff & FeatureFlags::MACRO_ENABLED) != 0,
             state.inputMethod,
@@ -743,7 +791,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         // TSF-only mode: DLL is the only engine, always active
         state.flags |= SharedFlags::TSF_ACTIVE;
         state.inputMethod = static_cast<uint8_t>(config.inputMethod);
-        state.spellCheck = config.spellCheckEnabled ? 1 : 0;
+        state.spellCheck = static_cast<uint8_t>(config.GetSpellCheckLevel());
         state.optimizeLevel = config.optimizeLevel;
         state.codeTable = static_cast<uint8_t>(config.codeTable);
         state.SetFeatureFlags(EncodeFeatureFlags(config));
@@ -784,7 +832,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         uint32_t ff = state.GetFeatureFlags();
         return {
             (state.flags & SharedFlags::VIETNAMESE_MODE) != 0,
-            state.spellCheck != 0,
+            static_cast<SpellCheckLevel>(state.spellCheck),
             (ff & FeatureFlags::SMART_SWITCH) != 0,
             (ff & FeatureFlags::MACRO_ENABLED) != 0,
             state.inputMethod,
@@ -940,7 +988,7 @@ static void ApplyConfigChange(const TypingConfig& config) {
         SharedState state = sm.Read();
         if (state.IsValid()) {
             state.inputMethod = static_cast<uint8_t>(config.inputMethod);
-            state.spellCheck = config.spellCheckEnabled ? 1 : 0;
+            state.spellCheck = static_cast<uint8_t>(config.GetSpellCheckLevel());
             state.codeTable = static_cast<uint8_t>(config.codeTable);
             state.SetFeatureFlags(EncodeFeatureFlags(config));
             state.diagFlags = config.perfHistogramEnabled ? DiagFlags::PERF_HISTOGRAM : 0;
@@ -959,6 +1007,61 @@ static void ApplyConfigChange(const TypingConfig& config) {
     if (HWND settingsWnd = GetSettingsHwnd()) {
         PostMessageW(settingsWnd, WM_VKEY_CONFIG_CHANGED, 0, 0);
     }
+}
+
+/// Applies a spell-check level chosen from the tray menu. Entering Advanced
+/// installs the trusted Rust engine if needed; either crossing of the Advanced
+/// boundary needs a restart to load or release it (Yes/No prompt). The level
+/// change itself always applies — declining the restart just defers loading the
+/// engine into hosts that are already running (VKey itself picks it up live).
+static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
+    auto config = ConfigManager::LoadOrDefault();
+    SpellCheckLevel oldLevel = config.GetSpellCheckLevel();
+    const bool enteringAdvanced =
+        newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced;
+
+#if defined(VKEY_USE_RUST_ENGINE)
+    if (enteringAdvanced) {
+        const HWND parent = g_trayIcon.GetMessageWindow();
+        const AdvancedEngineStatus status = AdvancedEngineInstaller::EnsureInstalledWithUi(parent);
+        if (status != AdvancedEngineStatus::Ready) {
+            // oldLevel, not Standard: the guard above allows Off here, and a
+            // declined download is not a request to switch spell check on.
+            config.SetSpellCheckLevel(oldLevel);
+            ApplyConfigChange(config);
+            if (status == AdvancedEngineStatus::ManualRequested) {
+                AdvancedEngineInstaller::ShowManualInstallWithUi(parent);
+            }
+            return;
+        }
+    }
+#endif
+    if (enteringAdvanced ||
+        (oldLevel == SpellCheckLevel::Advanced && newLevel != SpellCheckLevel::Advanced)) {
+        int result = MessageBoxW(g_trayIcon.GetMessageWindow(),
+            S(enteringAdvanced ? StringId::SPELL_ADVANCED_LOAD_APP : StringId::SPELL_ADVANCED_CLOSE_APP),
+            L"VKey", MB_YESNO | MB_ICONQUESTION);
+        if (result == IDYES) {
+            config.SetSpellCheckLevel(newLevel);
+            ApplyConfigChange(config);
+            wchar_t exePath[MAX_PATH] = {};
+            GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+            wchar_t cmdLine[MAX_PATH + 64] = {};
+            swprintf_s(cmdLine, L"\"%s\" %s", exePath, ADMIN_RESTART_FLAG);
+            STARTUPINFOW si = { sizeof(si) };
+            PROCESS_INFORMATION pi = {};
+            if (CreateProcessW(exePath, cmdLine, nullptr, nullptr, FALSE,
+                               CREATE_BREAKAWAY_FROM_JOB, nullptr, nullptr, &si, &pi)) {
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+            PostMessageW(g_trayIcon.GetMessageWindow(), WM_CLOSE, 0, 0);
+            return;
+        }
+    }
+
+    config.SetSpellCheckLevel(newLevel);
+    ApplyConfigChange(config);
 }
 
 void OnMenuCommand(TrayMenuId id) {
@@ -981,12 +1084,17 @@ void OnMenuCommand(TrayMenuId id) {
 #endif
             break;
 
-        case TrayMenuId::SpellCheck: {
-            auto config = ConfigManager::LoadOrDefault();
-            config.spellCheckEnabled = !config.spellCheckEnabled;
-            ApplyConfigChange(config);
+        case TrayMenuId::SpellCheckOff:
+            ApplySpellCheckLevel(SpellCheckLevel::Off);
             break;
-        }
+
+        case TrayMenuId::SpellCheckStandard:
+            ApplySpellCheckLevel(SpellCheckLevel::Standard);
+            break;
+
+        case TrayMenuId::SpellCheckAdvanced:
+            ApplySpellCheckLevel(SpellCheckLevel::Advanced);
+            break;
 
         case TrayMenuId::SmartSwitch: {
             auto config = ConfigManager::LoadOrDefault();
@@ -1084,7 +1192,7 @@ void SpawnSettingsSubprocess() {
     // Check if already open (single-instance)
     HWND existing = GetSettingsHwnd();
     if (existing) {
-        SetForegroundWindow(existing);
+        FocusExistingWindow(existing);
 #ifdef VKEY_HOOK_ENGINE
         NotifySettingsMode(g_hookEngine.IsVietnameseMode());
 #endif
@@ -1111,6 +1219,7 @@ void SpawnSettingsSubprocess() {
     NEXTKEY_LOG(L"Spawning settings with cmdLine: %s", cmdLine);
 
     if (CreateProcessW(nullptr, cmdLine, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        AllowSetForegroundWindow(pi.dwProcessId);
         CloseHandle(pi.hThread);
         TrackChildProcess(pi.hProcess);
         NEXTKEY_LOG(L"Settings subprocess spawned successfully");

@@ -1,6 +1,6 @@
 // VKey - Macro expansion decision logic
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Linux-portable macro expansion decision unit. Extracted from
 // HookEngine::TryExpandMacro for unit testability. Win32 case-mapping
@@ -36,6 +36,7 @@ struct PlanInputs {
     bool macroCrossCommit;
     CodeTable currentCodeTable;
     bool autoCapsEnabled;
+    bool wasFirstCharAutoCapped{false};
     wchar_t triggerChar;
     std::size_t clipboardThreshold;     // = HookEngine kMacroClipboardThreshold (200)
 };
@@ -66,6 +67,11 @@ struct Segment {
                                                  CodeTable codeTable);
 
 [[nodiscard]] bool IsCommitTrigger(uint32_t vkCode) noexcept;
+
+/// True when a commit trigger would insert text into the document. TSF uses
+/// this to defer printable macro expansion from OnTestKeyDown to OnKeyDown.
+[[nodiscard]] bool IsTextProducingTrigger(uint32_t vkCode,
+                                          wchar_t triggerChar) noexcept;
 
 [[nodiscard]] bool ShouldTrigger(uint32_t vkCode,
                                  bool triggerSpace,

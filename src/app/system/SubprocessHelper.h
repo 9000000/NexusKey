@@ -8,6 +8,7 @@
 
 #include "sciter/SciterArchive.h"
 #include "system/DarkModeHelper.h"
+#include "helpers/AppHelpers.h"
 #include "core/config/ConfigManager.h"
 #include "core/Strings.h"
 #include "sciter-x.h"
@@ -112,9 +113,8 @@ inline void InitSciterSubprocess() {
 /// If a window with the given title already exists, brings it to front.
 /// Tracks the process handle for cleanup via TerminateAllSubprocesses().
 inline void SpawnSubprocess(const wchar_t* windowTitle, const wchar_t* cliArgs) {
-    HWND existing = FindWindowW(nullptr, windowTitle);
-    if (existing) {
-        SetForegroundWindow(existing);
+    if (HWND existing = FindWindowW(nullptr, windowTitle)) {
+        FocusExistingWindow(existing);
         return;
     }
 

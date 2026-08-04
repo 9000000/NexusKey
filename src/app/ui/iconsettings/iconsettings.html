@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="vi" window-frame="transparent" window-resizable="false">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tùy chỉnh icon</title>
+    <link rel="stylesheet" href="../shared/theme.css">
+    <link rel="stylesheet" href="../shared/base.css">
+    <link rel="stylesheet" href="../shared/toggle.css">
+    <link rel="stylesheet" href="../shared/subdialog.css">
+    <link rel="stylesheet" href="iconsettings.css">
+    <script src="../shared/strings.js"></script>
+    <script src="../shared/i18n.js"></script>
+    <script src="../shared/utils.js"></script>
+    <script src="iconsettings.js"></script>
+</head>
+
+<body>
+    <div class="container" id="main-container">
+        <div class="title-bar">
+            <span class="title-text" data-i18n="is.title">Tùy chỉnh icon</span>
+            <button class="btn-close" id="btn-close" title="Đóng" data-i18n-title="close">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"
+                    fill="rgba(240,23,23,1)">
+                    <path
+                        d="M12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22ZM12 10.5858L9.17157 7.75736L7.75736 9.17157L10.5858 12L7.75736 14.8284L9.17157 16.2426L12 13.4142L14.8284 16.2426L16.2426 14.8284L13.4142 12L16.2426 9.17157L14.8284 7.75736L12 10.5858Z">
+                    </path>
+                </svg>
+            </button>
+        </div>
+
+        <div class="content-section">
+            <p class="dialog-description" data-i18n="is.description">
+                Tùy chỉnh icon khay hệ thống, TSF và chỉ báo nổi.
+            </p>
+
+            <div class="section-label" data-i18n="is.tray_section">Icon khay hệ thống</div>
+            <div class="settings-card icon-card">
+                <div class="setting-row">
+                    <div class="setting-copy">
+                        <span class="setting-label" data-i18n="s.icon_style">Tuỳ chỉnh icon</span>
+                    </div>
+                    <select class="setting-dropdown" id="modern-icon">
+                        <option value="0" data-i18n="s.icon_style_color">Màu mặc định</option>
+                        <option value="1" data-i18n="s.icon_style_dark">Nền tối</option>
+                        <option value="2" data-i18n="s.icon_style_light">Nền sáng</option>
+                        <option value="3" data-i18n="s.icon_style_custom">Tự chọn</option>
+                        <option value="4" data-i18n="s.icon_style_auto">Tự động</option>
+                    </select>
+                </div>
+
+                <div class="custom-color-row" id="custom-color-row" style="display:none">
+                    <span class="setting-label" data-i18n="s.custom_colors">Màu icon tùy chỉnh</span>
+                    <div class="color-picker-group">
+                        <label class="color-picker-label">V</label>
+                        <button class="color-swatch" id="btn-color-v" title="Chọn màu V"
+                            data-i18n-title="s.color_v">
+                            <span class="color-swatch-preview" id="preview-color-v"></span>
+                        </button>
+                        <label class="color-picker-label">E</label>
+                        <button class="color-swatch" id="btn-color-e" title="Chọn màu E"
+                            data-i18n-title="s.color_e">
+                            <span class="color-swatch-preview" id="preview-color-e"></span>
+                        </button>
+                        <button class="btn-action btn-secondary btn-compact" id="btn-reset-colors"
+                            data-i18n="is.reset_colors">Mặc định</button>
+                    </div>
+                </div>
+
+                <div class="setting-row row-divider">
+                    <div class="setting-copy">
+                        <span class="setting-label" id="label-tsf-indicator"
+                            data-i18n="s.tsf_indicator">Hiện icon chữ T cho app TSF</span>
+                        <span class="setting-hint" data-i18n="s.tsf_indicator_tooltip">
+                            Khi app dùng TSF, hiện T thay cho V/E thường.
+                        </span>
+                    </div>
+                    <div class="toggle-switch-small" id="tsf-indicator" role="switch" tabindex="0"
+                        aria-labelledby="label-tsf-indicator" aria-checked="false">
+                        <span class="toggle-label-i">I</span>
+                        <span class="toggle-label-o">O</span>
+                        <div class="toggle-thumb-small"></div>
+                    </div>
+                    <input type="hidden" id="val-tsf-indicator" value="0">
+                </div>
+            </div>
+
+            <div class="section-label" data-i18n="is.floating_section">Chỉ báo nổi</div>
+            <div class="settings-card icon-card">
+                <div class="setting-row">
+                    <div class="setting-copy">
+                        <span class="setting-label" id="label-floating-icon"
+                            data-i18n="s.floating_icon">Icon V/E nổi</span>
+                        <span class="setting-hint" data-i18n="s.floating_icon_tooltip">
+                            Hiện icon nổi; có thể giảm FPS trong game toàn màn hình.
+                        </span>
+                    </div>
+                    <div class="toggle-switch-small" id="floating-icon" role="switch" tabindex="0"
+                        aria-labelledby="label-floating-icon" aria-checked="false">
+                        <span class="toggle-label-i">I</span>
+                        <span class="toggle-label-o">O</span>
+                        <div class="toggle-thumb-small"></div>
+                    </div>
+                    <input type="hidden" id="val-floating-icon" value="0">
+                </div>
+                <div class="secondary-action-row">
+                    <button class="btn-action btn-secondary" id="btn-reset-floating-icon"
+                        data-i18n="s.reset_position">Đặt lại vị trí</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>

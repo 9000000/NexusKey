@@ -1,8 +1,6 @@
 // VKey - PhonotacticsValidator Implementation
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
-// Dual-licensed: AGPL-3.0 for open-source use, commercial license for proprietary use.
-// See LICENSE and LICENSE-COMMERCIAL in the project root.
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Vietnamese syllable structure: [C₁] + V + [C₂]
 // Uses greedy consonant matching and packed-key vowel nucleus table (linear scan).
@@ -18,18 +16,8 @@ namespace Phonology {
 
 namespace {
 
-// Packed-key encoding (VowelSlot, kA-kY, kNone-kHorn, BaseIndex, Key1/2/3) +
-// VCPair rule data (F_*, kVCPairRules, GetAllowedFinals) live in the shared
-// header `VietnamesePhonologyData.h` (T2.1 Day-2 consolidation). Only the
-// CharState-specific helpers (FinalConsonantBit template, kVowelTable, vowel
-// scanners) remain in this anonymous namespace.
-//
-// TODO: migrate this hot-path validator to consume rule data through
-// `IPhonologyRules` (see IPhonologyRules.h) so future RulePackId variants can
-// plug in without a parallel rewrite. T2.1 D3 wired the contract on Path 2;
-// Path 1's direct-call hot path was preserved at sprint close (D4 shipped
-// the RulePackId factory but did not migrate this validator). Revisit when a
-// dialectal rule pack is actually needed.
+// Packed-key encoding and VCPair rule data live in
+// VietnamesePhonologyData.h. CharState-specific scanners stay local here.
 
 //=============================================================================
 // Vowel nucleus table
@@ -491,7 +479,18 @@ SyllableState ValidateDecomposition(const CharStateT* states, size_t count,
     if (allowed != 0) {
         uint16_t finalBit = FinalConsonantBit(&states[pos], finalLen);
         if (finalBit != 0 && !(allowed & finalBit)) {
-            return SyllableState::Invalid;
+            // A lone c/n can still grow into an allowed 2-letter final
+            // (c→ch, n→ng/nh). "khuêc"/"huyc" are no syllables, but they are
+            // the only route to "khuếch"/"huých" when the mark or tone is
+            // typed before the coda's 'h' — Invalid here latches spell check
+            // off and the promotion never happens (Rust engine allows it).
+            uint16_t grown = 0;
+            if (finalLen == 1) {
+                if (states[pos].base == L'c') grown = F_ch;
+                else if (states[pos].base == L'n') grown = F_ng | F_nh;
+            }
+            if (grown == 0 || !(allowed & grown)) return SyllableState::Invalid;
+            return SyllableState::ValidPrefix;
         }
     }
 

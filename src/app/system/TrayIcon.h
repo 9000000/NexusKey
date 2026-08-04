@@ -3,15 +3,18 @@
 
 #pragma once
 
+#include "TrayStatusText.h"
 #include "core/ipc/SharedConstants.h"
 #include "core/ipc/SharedStateManager.h"
 #include "core/config/TypingConfig.h"
 #include "core/SystemConfig.h"
 #include <Windows.h>
 #include <shellapi.h>
+#include <atomic>
 #include <functional>
-#include <utility>
+#include <memory>
 #include <string>
+#include <utility>
 
 namespace NextKey {
 
@@ -28,9 +31,12 @@ enum class TrayMenuId : UINT {
     CodeTableCompound = 1013,
     CodeTableCP1258 = 1014,
     // Feature toggles
-    SpellCheck = 1020,
     SmartSwitch = 1021,
     MacroEnabled = 1022,
+    // Spell-check level submenu (1023-1025 = SpellCheckLevel enum values + offset)
+    SpellCheckOff = 1023,
+    SpellCheckStandard = 1024,
+    SpellCheckAdvanced = 1025,
     // Tools
     MacroTable = 1030,
     ConvertTool = 1031,
@@ -57,7 +63,7 @@ using ModeRequestCallback = std::function<void(bool vietnamese)>;
 /// Snapshot of current state for right-click menu checkmarks
 struct TrayMenuState {
     bool vietnamese = true;
-    bool spellCheck = false;
+    SpellCheckLevel spellCheckLevel = SpellCheckLevel::Standard;
     bool smartSwitch = false;
     bool macroEnabled = false;
     int inputMethod = 0;       // 0=Telex, 1=VNI, 2=SimpleTelex, 3=Combined, 4=UserDefined
@@ -91,6 +97,14 @@ public:
     /// (red=Vietnamese, blue=English) regardless of the chosen icon style.
     void SetTsfActive(bool active) noexcept;
 
+    /// Publish app context from the focus worker. The latest immutable
+    /// snapshot is consumed by the tray window, so the producer never passes
+    /// raw heap ownership through LPARAM.
+    void QueueAppContext(std::wstring_view exeName,
+                         std::wstring_view ruleText,
+                         bool isTsf,
+                         bool isRustEngine) noexcept;
+
     /// Set icon style and custom colors (triggers icon refresh)
     void SetIconConfig(uint8_t style, uint32_t colorV, uint32_t colorE, bool showTsfIndicator) noexcept;
 
@@ -104,7 +118,7 @@ public:
     void SetMenuStateGetter(MenuStateGetter getter) noexcept { menuStateGetter_ = std::move(getter); }
 
     /// Set callback when system config changes (WM_VKEY_ICON_CHANGED)
-    void SetIconConfigChangedCallback(std::function<void()> callback) noexcept { iconConfigChangedCallback_ = std::move(callback); }
+    void SetIconConfigChangedCallback(std::function<void(WPARAM)> callback) noexcept { iconConfigChangedCallback_ = std::move(callback); }
 
     /// Set callback when hook config changes (WM_VKEY_HOOK_RELOAD) — subprocess → main eager sync
     void SetHookReloadCallback(std::function<void()> callback) noexcept { hookReloadCallback_ = std::move(callback); }
@@ -131,7 +145,9 @@ public:
 private:
     void ShowContextMenu();
     void RefreshIcon() noexcept;  // Reload icon based on current style/mode
-    void UpdateTooltip() noexcept;  // Rebuild szTip from V/E + TSF state
+    void SetAppContext(const TrayStatusContext& context) noexcept;
+    void UpdateTooltip() noexcept;  // Rebuild the 1-line app/engine/method/rule status
+    void NotifyIconChanged() noexcept;
     void ReAddIcon() noexcept;    // Re-register tray icon (after explorer restart or NIM_MODIFY failure)
     [[nodiscard]] HICON CreateColorizedIcon(int baseIconId, COLORREF color) noexcept;
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -145,7 +161,7 @@ private:
     MenuCallback menuCallback_;
     ModeRequestCallback modeRequestCallback_;
     MenuStateGetter menuStateGetter_;
-    std::function<void()> iconConfigChangedCallback_;
+    std::function<void(WPARAM)> iconConfigChangedCallback_;
     std::function<void()> hookReloadCallback_;
     SharedStateManager* sharedState_ = nullptr;  // non-owning; for TSF-update flag checks
 
@@ -158,6 +174,12 @@ private:
 
     // Cached hotkey text for Quick Convert menu item (updated on config change)
     std::wstring cachedConvertHotkeyText_;
+
+    TrayStatusContext appContext_;
+    std::atomic<std::shared_ptr<const TrayStatusContext>> pendingAppContext_;
+    // Cross-thread copy of hwndMessage_ for QueueAppContext, which runs on the
+    // focus worker while hwndMessage_ itself is main-thread-owned.
+    std::atomic<HWND> pendingAppContextTarget_{nullptr};
 
     static constexpr UINT WM_TRAYICON = WM_USER + 1;
     UINT wmTaskbarCreated_ = 0;           // Registered "TaskbarCreated" message ID

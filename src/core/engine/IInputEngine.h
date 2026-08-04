@@ -1,8 +1,6 @@
 // VKey - Input Engine Interface
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-VKey-Commercial
-// Dual-licensed: AGPL-3.0 for open-source use, commercial license for proprietary use.
-// See LICENSE and LICENSE-COMMERCIAL in the project root.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #pragma once
 
@@ -73,6 +71,12 @@ public:
     /// owning PeekRaw() instead. Provided for the keyboard-hook hot path, where
     /// per-keystroke heap allocation is forbidden (CODING_RULES Rule 11).
     [[nodiscard]] virtual std::wstring_view PeekRawView() const noexcept { return {}; }
+
+    /// Whether the most recently committed text was silently auto-corrected
+    /// against the engine's dictionary (e.g. a mistyped Telex sequence
+    /// restored to the intended Vietnamese word). Cleared by the next
+    /// commit. Default false for engines without a correction concept.
+    [[nodiscard]] virtual bool LastCommitWasCorrected() const { return false; }
 };
 
 }  // namespace NextKey

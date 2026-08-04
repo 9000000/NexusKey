@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #include <gtest/gtest.h>
+
 #include "core/MacroCase.h"
 
 namespace NextKey::Macro {
@@ -28,6 +29,7 @@ struct PlanFixture {
     bool crossCommit = false;
     CodeTable codeTable = CodeTable::Unicode;
     bool autoCaps = false;
+    bool wasFirstCharAutoCapped = false;
     wchar_t trigger = L' ';
     std::size_t threshold = 200;
 
@@ -40,6 +42,7 @@ struct PlanFixture {
             .macroCrossCommit      = crossCommit,
             .currentCodeTable      = codeTable,
             .autoCapsEnabled       = autoCaps,
+            .wasFirstCharAutoCapped = wasFirstCharAutoCapped,
             .triggerChar           = trigger,
             .clipboardThreshold    = threshold,
         };
@@ -325,6 +328,60 @@ TEST(PlanAutoCapsDecisionTest, FirstUpperRawTransformsToTitleCaseVietnamese) {
     EXPECT_EQ(p.expansion, L"Liên Hiệp Quốc");
 }
 
+TEST(PlanAutoCapsDecisionTest, FirstCharAutoCappedTransformsToLowercaseMacro) {
+    PlanFixture f;
+    f.table[L"omw"] = L"on my way";
+    f.raw = L"omw";
+    f.wasFirstCharAutoCapped = true;
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"On My Way");
+}
+
+// The old guard was `!matchedExact`, which skipped the recap pass for every exact
+// match. Now only upper-carrying keys skip it, so an all-lowercase exact match with
+// no auto-cap must still come out untouched.
+TEST(PlanAutoCapsDecisionTest, LowercaseExactMatchWithoutAutoCapStaysLowercase) {
+    PlanFixture f;
+    f.table[L"omw"] = L"on my way";
+    f.raw = L"omw";
+    f.wasFirstCharAutoCapped = false;
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"on my way");
+}
+
+// Space-containing keys survive a commit (macroCrossCommit_), and the hook has to
+// carry wasFirstCharAutoCapped across that commit — see HookEngine step 8.
+TEST(PlanAutoCapsDecisionTest, FirstCharAutoCappedAppliesAcrossCrossCommit) {
+    PlanFixture f;
+    f.table[L"oc om bok"] = L"ooc om bok";   // ASCII: AsciiCaseMapper can't upper 'ó'
+    f.raw = L"oc om bok";
+    f.crossCommit = true;
+    f.wasFirstCharAutoCapped = true;
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"Ooc Om Bok");
+}
+
+TEST(PlanAutoCapsDecisionTest, FirstCharAutoCappedPreservesExactMatch) {
+    PlanFixture f;
+    f.table[L"oMw"] = L"on My way";
+    f.raw = L"oMw";
+    f.wasFirstCharAutoCapped = true;
+    f.trigger = L' ';
+    f.autoCaps = true;
+    auto p = f.Run();
+    EXPECT_TRUE(p.matched);
+    EXPECT_EQ(p.expansion, L"on My way");
+}
+
 TEST(PlanAutoCapsEscapeTest, AllUpperSkipsBackslashN) {
     PlanFixture f;
     f.table[L"sig"] = L"name\\nemail";   // \n escape inside expansion
@@ -478,6 +535,18 @@ TEST(MacroTriggerDecisionTest, IsCommitTriggerIdentifiesWordBoundaries) {
     EXPECT_FALSE(IsCommitTrigger(0x41)); // 'A'
     EXPECT_FALSE(IsCommitTrigger(0x5A)); // 'Z'
     EXPECT_FALSE(IsCommitTrigger(0x70)); // VK_F1
+}
+
+TEST(MacroTriggerDecisionTest, TextProducingTriggerSeparatesPrintableFromActionKeys) {
+    EXPECT_TRUE(IsTextProducingTrigger(0x20, L' '));  // VK_SPACE
+    EXPECT_TRUE(IsTextProducingTrigger(0x31, L'1'));  // number row
+    EXPECT_TRUE(IsTextProducingTrigger(0xBE, L'.'));  // VK_OEM_PERIOD
+
+    EXPECT_FALSE(IsTextProducingTrigger(0x0D, 0));    // VK_RETURN
+    EXPECT_FALSE(IsTextProducingTrigger(0x09, 0));    // VK_TAB
+    EXPECT_FALSE(IsTextProducingTrigger(0x25, 0));    // VK_LEFT
+    EXPECT_FALSE(IsTextProducingTrigger(0x2E, 0));    // VK_DELETE
+    EXPECT_FALSE(IsTextProducingTrigger(0x41, L'a')); // not a commit trigger
 }
 
 TEST(MacroTriggerDecisionTest, ShouldTriggerRespectsTabOnly) {
