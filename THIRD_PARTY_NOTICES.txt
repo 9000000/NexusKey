@@ -1,0 +1,152 @@
+================================================================================
+VKey - THIRD-PARTY NOTICES
+================================================================================
+
+This file lists third-party software distributed together with VKey and
+reproduces the notices those licenses require. It is shipped inside the release
+archive because some of these licenses require the notice to travel with the
+binaries, not merely to exist in a source repository.
+
+VKey itself is licensed under the GNU Affero General Public License version 3.
+See the LICENSE file in the source repository:
+
+    https://github.com/phatMT97/VKey
+
+VKey was rewritten from NextKey, which is based on OpenKey by Mai Vu Tuyen
+(https://github.com/tuyenvm/OpenKey).
+
+
+================================================================================
+1. Sciter.JS  --  sciter.dll
+================================================================================
+
+The file `sciter.dll` in this archive is the Sciter.JS engine, obtained from
+the official Sciter.JS SDK:
+
+    https://gitlab.com/sciter-engine/sciter-js-sdk
+
+It is unmodified and is redistributed under the BSD 3-Clause License. The
+notice, conditions and disclaimer below are reproduced in full as that license
+requires for redistribution in binary form.
+
+--------------------------------------------------------------------------------
+BSD 3-Clause License
+
+Copyright (c) 2020, Andrew Fedoniouk @ Terra Informatica Software, Inc.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+--------------------------------------------------------------------------------
+
+Note on clause 3: this notice is a license requirement, not an endorsement.
+Terra Informatica Software, Inc. does not endorse or promote VKey.
+
+
+================================================================================
+2. vkey_engine.dll  --  only if present in this archive
+================================================================================
+
+Some releases publish an optional Vietnamese processing engine,
+`vkey_engine.dll`, as a separate asset. It is NOT part of the AGPL-3.0 licensed
+VKey application and is NOT covered by VKey's LICENSE.
+
+If you obtained `vkey_engine.dll`, it is licensed under the PolyForm
+Noncommercial License 1.0.0 and may be used for noncommercial purposes only:
+
+    https://polyformproject.org/licenses/noncommercial/1.0.0
+
+    Required Notice: Copyright 2026 PhatMT (https://github.com/phatMT97)
+
+The noncommercial term is inherited, not chosen: the engine embeds a Vietnamese
+syllable dictionary derived from a CC BY-NC corpus, so commercial rights in it
+cannot be granted. The attribution that data requires:
+
+  Vietnamese syllable dictionary and news frequencies
+    Leipzig Corpora Collection, corpus `vie_news_2020_1M`. License: CC BY-NC.
+    Dirk Goldhahn, Thomas Eckart, and Uwe Quasthoff. 2012. Building Large
+    Monolingual Dictionaries at the Leipzig Corpora Collection: From 100 to 200
+    Languages. In Proceedings of the Eighth International Conference on
+    Language Resources and Evaluation (LREC'12), pages 759-765, Istanbul,
+    Turkey. ELRA.  https://aclanthology.org/L12-1154/
+
+  Spoken-register frequency evidence (frequencies only, never vocabulary)
+    hermitdave/FrequencyWords, from OpenSubtitles2018 via OPUS.
+    License: MIT, Copyright (c) 2016 Hermit Dave.
+    Pierre Lison and Jorg Tiedemann. 2016. OpenSubtitles2016: Extracting Large
+    Parallel Corpora from Movie and TV Subtitles. LREC'16.
+
+  English word-membership list
+    SCOWL (Spell Checking Oriented Word Lists) size tier 70, Kevin Atkinson.
+    The collective work is Copyright 2000-2011 by Kevin Atkinson, whose
+    permission notice requires that this copyright notice appear in all copies.
+    Components reachable at size 70 that require attribution:
+      WordNet 1.6 Copyright 1997 by Princeton University. All rights reserved.
+      VARCON / Ispell word lists Copyright 1993, Geoff Kuenning, Granada Hills,
+      CA. All rights reserved. Binary redistributions must reproduce that
+      notice, its list of conditions and its disclaimer in the documentation or
+      other materials provided with the distribution.
+
+  Both notices above are reproduced from the upstream copyright files, which are
+  kept verbatim in the engine's source repository.
+
+
+================================================================================
+3. Application icons
+================================================================================
+
+The VKey logo, application icon and status/tray icons are original to this
+project.
+
+Four settings-tab icons in the Sciter edition are derived from
+microsoft/fluentui-emoji (MIT):
+
+    https://github.com/microsoft/fluentui-emoji
+
+    MIT License. Copyright (c) Microsoft Corporation.
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+
+================================================================================
+Reporting a missing notice
+================================================================================
+
+If you believe a component is distributed here without its required notice,
+please open an issue at https://github.com/phatMT97/VKey/issues and it will be
+corrected.
