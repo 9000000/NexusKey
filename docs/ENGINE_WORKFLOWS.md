@@ -31,7 +31,7 @@ drive the pieces yourself when something needs unpicking.
 The one thing worth knowing before you need it: **pushing a NexusKey commit does
 not carry an engine change with it.** The engine is fetched from the release
 named in `extern/vkey_engine/engine.release`, so getting engine work in front of
-a tester means `.\vkey.ps1 test`, not `git push`.
+a tester means `vkey test`, not `git push`.
 
 ---
 
