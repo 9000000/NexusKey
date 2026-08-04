@@ -63,18 +63,29 @@ a release:
 
 ```bash
 cd ~/code/VKey-rs
-bash tools/sync_nexuskey_engine.sh          # builds mingw, copies it, rewrites the lock
+bash tools/sync_nexuskey_engine.sh          # builds mingw into NexusKey/build-engine/
 ```
 
-Then build as in §1. **Do not commit the `engine.lock` it rewrites.** That lock
-describes your local mingw build; the released engine is MSVC and a different
-binary, so committing it makes the tree disagree with `engine.release` and CI's
-fetch fails its hash check. To go back:
+Then build against it:
+
+```powershell
+cmake -B build -G "Visual Studio 17 2022" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT=build-engine
+```
+
+It writes to the gitignored `build-engine/`, including that build's own
+`engine.lock`, so nothing tracked changes and there is no committed lock to
+restore. The lock in `extern/vkey_engine/` keeps describing the published
+release, which is what CI fetches and verifies.
+
+Back to the released engine:
 
 ```bash
-git checkout -- extern/vkey_engine/engine.lock
-rm -rf build-engine
+rm -rf build-engine        # the next build fetches it again
 ```
+
+Your local build is mingw and the released one is MSVC, so the two have different
+hashes. That is expected, and it is exactly why the local build gets its own lock
+in its own directory rather than overwriting the committed one.
 
 ## 4. Move to a new engine release
 
@@ -102,7 +113,7 @@ beside a new tag fails with a hash mismatch that reads like a corrupt download.
 | --- | --- |
 | `VKEY_ENGINE_TOKEN is unset or empty` | no token, or it expired |
 | `HTTP 404 — wrong tag, or the token cannot read that repository` | tag typo, or the PAT is not scoped to VKey-rs |
-| `sha256 mismatch` / `byte length mismatch` | `engine.lock` and `engine.release` disagree — usually a locally synced mingw lock, see §3 |
+| `sha256 mismatch` / `byte length mismatch` | `engine.lock` and `engine.release` disagree; use `update_engine.py` (§4) rather than editing either by hand |
 | `No prebuilt engine at ...` | nothing fetched yet; §1, or build with `-DVKEY_USE_RUST_ENGINE=OFF` |
 | `is still a draft` | publish the release first |
 
