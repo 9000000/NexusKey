@@ -119,11 +119,23 @@ target_include_directories(VKeyEngine PUBLIC
 # Official builds opt in explicitly with -DVKEY_USE_RUST_ENGINE=ON in CI.
 option(VKEY_USE_RUST_ENGINE "Use the prebuilt closed-source Rust engine (C ABI)" OFF)
 if(VKEY_USE_RUST_ENGINE)
-    set(VKEY_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extern/vkey_engine")
+    # Overridable so the libraries need not be committed: tools/fetch_engine.py
+    # populates a directory from a published engine release, and the build is
+    # pointed at it with -DVKEY_ENGINE_ROOT=<dir>. engine.lock and the header stay
+    # in the tree — they are text and carry no corpus data — while the libraries,
+    # which embed CC BY-NC data, do not have to.
+    set(VKEY_ENGINE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/extern/vkey_engine" CACHE PATH
+        "Directory holding the prebuilt engine: engine.lock, include/, lib/")
     set(VKEY_ENGINE_LOCK_PATH "${VKEY_ENGINE_ROOT}/engine.lock")
     set(VKEY_ENGINE_DLL "${VKEY_ENGINE_ROOT}/lib/win-x64/vkey_engine.dll")
     if(NOT EXISTS "${VKEY_ENGINE_LOCK_PATH}" OR NOT EXISTS "${VKEY_ENGINE_DLL}")
-        message(FATAL_ERROR "Run the VKey-rs engine sync before configuring NexusKey")
+        message(FATAL_ERROR
+            "No prebuilt engine at ${VKEY_ENGINE_ROOT}. Either run the VKey-rs "
+            "engine sync, or fetch a published one:\n"
+            "  python3 tools/fetch_engine.py --lock extern/vkey_engine/engine.lock "
+            "--dest build/vkey_engine --base-url <engine release URL>\n"
+            "then configure with -DVKEY_ENGINE_ROOT=build/vkey_engine.\n"
+            "To build without it: -DVKEY_USE_RUST_ENGINE=OFF.")
     endif()
 
     # The lock is a configure-time input baked into VKeyEngineLock.h. Without
