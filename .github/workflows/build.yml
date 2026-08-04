@@ -7,9 +7,14 @@ on:
   workflow_dispatch:
     inputs:
       include_tests:
+        # Default true: a tag push always builds the tests, so anything that only
+        # breaks them stays invisible across every dispatch and then fails the
+        # release. That is exactly what the [[nodiscard]] break in
+        # CommitUndoFeatureTest did. Untick this for a deliberately quick build,
+        # not as the normal setting.
         description: 'Include tests in the build'
         type: boolean
-        default: false
+        default: true
       include_sciter:
         description: 'Include Sciter UI build'
         type: boolean
