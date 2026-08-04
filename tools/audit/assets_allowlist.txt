@@ -1,0 +1,29 @@
+# Binary assets and where they came from. One per line: path<TAB>origin.
+# Adding a binary fails CI until it is listed here — see
+# check_asset_provenance.py for why. Record the real upstream and its
+# license, or `own` for something original to this project.
+#
+# Font files are never listed here; they are refused outright.
+
+docs/images/nexus-classic.png	own — screenshot of this application
+docs/images/ram-optimize.png	own — screenshot of this application
+docs/images/vkey-compact.png	own — screenshot of this application
+docs/images/vkey-expanded.png	own — screenshot of this application
+docs/images/vkey-full-UI.png	own — screenshot of this application
+extern/sciter/bin/packfolder.exe	Sciter.JS SDK (BSD 3-Clause, (c) 2020 Terra Informatica Software) from gitlab.com/sciter-engine/sciter-js-sdk — notice in THIRD_PARTY_NOTICES.txt
+extern/sciter/bin/sciter.dll	Sciter.JS SDK (BSD 3-Clause, (c) 2020 Terra Informatica Software) from gitlab.com/sciter-engine/sciter-js-sdk, unmodified, ships in every release ZIP — notice in THIRD_PARTY_NOTICES.txt
+src/app/resources/icon.ico	own — owner-generated with an image model
+src/app/resources/status/StatusEng.ico	own — owner-generated with an image model
+src/app/resources/status/StatusEng10.ico	own — owner-generated with an image model
+src/app/resources/status/StatusEngBlack.ico	own — owner-generated with an image model
+src/app/resources/status/StatusTsf.ico	own — owner-generated with an image model
+src/app/resources/status/StatusViet.ico	own — owner-generated with an image model
+src/app/resources/status/StatusViet10.ico	own — owner-generated with an image model
+src/app/resources/status/StatusVietBlack.ico	own — owner-generated with an image model
+src/app/resources/tabs/btn_pick.ico	microsoft/fluentui-emoji (MIT) Bullseye/3D/bullseye_3d.png, pinned commit 62ecdc0d — notice in THIRD_PARTY_NOTICES.txt
+src/app/resources/tabs/tab_input.ico	microsoft/fluentui-emoji (MIT) Memo/3D/memo_3d.png, pinned commit 62ecdc0d — notice in THIRD_PARTY_NOTICES.txt
+src/app/resources/tabs/tab_macros.ico	microsoft/fluentui-emoji (MIT) Rocket/3D/rocket_3d.png, pinned commit 62ecdc0d — notice in THIRD_PARTY_NOTICES.txt
+src/app/resources/tabs/tab_system.ico	microsoft/fluentui-emoji (MIT) Gear/3D/gear_3d.png, pinned commit 62ecdc0d — notice in THIRD_PARTY_NOTICES.txt
+src/app/ui/about/logo.png	own — owner-generated with an image model
+src/app/ui/about/signpath.png	THIRD-PARTY TRADEMARK — SignPath logo, credits the code-signing sponsorship. Use confirmed by SignPath (owner-reported, 2026-08-03). Trademark, not a copyright license: it credits the sponsor and does not imply endorsement of VKey.
+src/app/ui/shared/signpath.png	THIRD-PARTY TRADEMARK — SignPath logo, same basis and same confirmation as src/app/ui/about/signpath.png

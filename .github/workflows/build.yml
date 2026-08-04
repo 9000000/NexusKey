@@ -72,6 +72,12 @@ jobs:
         shell: bash
         run: bash tools/audit/check_hook_thread_no_mutex.sh
 
+      # Refuses font files outright and requires every other binary asset to have
+      # a recorded origin. Guards the "forgotten file" failure: an unlicensed
+      # asset left in the tree is a liability even when nothing renders with it.
+      - name: Check asset provenance
+        run: python3 tools/audit/check_asset_provenance.py
+
       # The engine libraries are no longer committed: they embed CC BY-NC data and
       # are not covered by this repository's AGPL-3.0 licence. They are fetched
       # from the exact release named in extern/vkey_engine/engine.release and
@@ -250,6 +256,10 @@ jobs:
             Copy-Item "signed-binaries/VKeyTSF.dll" "dist/" -Force
             Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist/" -Force
             Copy-Item "signed-binaries/sciter.dll" "dist/" -Force
+            # Required: Sciter.JS is BSD 3-Clause, whose clause 2 makes the
+            # notice a condition of binary redistribution. It has to be inside
+            # the archive, not only in the source repo.
+            Copy-Item "THIRD_PARTY_NOTICES.txt" "dist/" -Force
             Copy-Item "dist/*" "upload-payload/" -Force
           }
           
@@ -262,6 +272,7 @@ jobs:
             # signed root binaries instead of shipping a second signed copy.
             Copy-Item "signed-binaries/VKeyTSF.dll" "dist-classic/" -Force
             Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist-classic/" -Force
+            Copy-Item "THIRD_PARTY_NOTICES.txt" "dist-classic/" -Force
 
             # VKeyClassic.exe is the only file unique to the Classic edition. The shared
             # TSF/watchdog are already in upload-payload from the Sciter branch; add them here
@@ -335,6 +346,13 @@ jobs:
           if (-not (Test-Path "vkey_engine.LICENSE.txt")) {
             throw "external engine license is missing next to the release asset"
           }
+
+      # Last gate before anything is archived: the payload is exactly what a
+      # licensing scanner downloads and inspects, so check it rather than trusting
+      # that the tracked-file gate covered everything that reached it.
+      - name: Check release payload for unlicensed assets
+        shell: bash
+        run: python3 tools/audit/check_asset_provenance.py --dir upload-payload
 
       # --- Zip releases ---
       - name: Zip Release
