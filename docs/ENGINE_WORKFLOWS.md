@@ -1,8 +1,30 @@
 # Engine Workflows
 
-What to run, for each of the four things you actually do. The prebuilt engine is
-no longer committed — `extern/vkey_engine/lib/` is gitignored — so every path
-below either fetches it or does not need it.
+## Short version
+
+```powershell
+.\vkey.ps1 local      # build and run here, with the Rust engine
+.\vkey.ps1 test       # release the engine and start the build testers download
+```
+
+Once, in a new terminal afterwards:
+
+```powershell
+setx VKEY_ENGINE_TOKEN "<token>"
+```
+
+That is the whole day-to-day. Everything below is what those two do and how to
+drive the pieces yourself when something needs unpicking.
+
+The one thing worth knowing before you need it: **pushing a NexusKey commit does
+not carry an engine change with it.** The engine is fetched from the release
+named in `extern/vkey_engine/engine.release`, so getting engine work in front of
+a tester means `.\vkey.ps1 test`, not `git push`.
+
+---
+
+The prebuilt engine is no longer committed — `extern/vkey_engine/lib/` is
+gitignored — so every path below either fetches it or does not need it.
 
 ## One-time setup
 
