@@ -4,6 +4,7 @@
 #   .\vkey.cmd local -DebugBuild  ... Debug, which serves the Sciter UI from files
 #   .\vkey.cmd local -Clean       ... after wiping the CMake cache
 #   .\vkey.cmd local -NoRun       ... build only, do not launch
+#   .\vkey.cmd local -FullLog     ... with the full CMake and MSBuild output
 #   .\vkey.cmd test               release the current engine and start a test build
 #
 # Go through vkey.cmd. PowerShell refuses unsigned scripts, and this repository
@@ -24,7 +25,9 @@ param(
     [switch]$Clean,
     [switch]$NoRun,
     # -Debug itself is a PowerShell common parameter and cannot be redefined.
-    [switch]$DebugBuild
+    [switch]$DebugBuild,
+    # -Verbose is a common parameter too, hence the name.
+    [switch]$FullLog
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,8 +68,19 @@ if ($mode -eq "local") {
     & $fetch
     if ($LASTEXITCODE -ne 0) { Fail "could not get the engine" }
 
+    # Quiet by default. --log-level=WARNING drops CMake's STATUS chatter, and
+    # MSBuild's ErrorsOnly console logger drops the per-file compile spam. Nothing
+    # that matters is lost: CMakeLists sets /W4 /WX globally, so any warning worth
+    # seeing has already become an error and still prints. -FullLog restores both.
+    $cmakeQuiet = @()
+    $buildQuiet = @()
+    if (-not $FullLog) {
+        $cmakeQuiet = @("--log-level=WARNING")
+        $buildQuiet = @("--", "/nologo", "/clp:ErrorsOnly;Summary")
+    }
+
     Write-Host "[3/4] configure" -ForegroundColor Yellow
-    cmake -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot"
+    cmake -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot" @cmakeQuiet
     if ($LASTEXITCODE -ne 0) { Fail "configure failed" }
 
     # Debug serves the Sciter UI from ui/ next to the exe instead of the
@@ -76,8 +90,8 @@ if ($mode -eq "local") {
     if ($DebugBuild) { $config = "Debug" }
 
     Write-Host "[4/4] build ($config)" -ForegroundColor Yellow
-    cmake --build $buildDir --config $config
-    if ($LASTEXITCODE -ne 0) { Fail "build failed" }
+    cmake --build $buildDir --config $config @buildQuiet
+    if ($LASTEXITCODE -ne 0) { Fail "build failed (re-run with -FullLog to see everything)" }
 
     $exe = Join-Path $buildDir "$config\VKey.exe"
     Write-Host ""
@@ -129,6 +143,7 @@ VKey
   .\vkey.cmd local -DebugBuild  ... Debug, which serves the Sciter UI from files
   .\vkey.cmd local -Clean       ... after wiping the CMake cache
   .\vkey.cmd local -NoRun       ... build only, do not launch
+  .\vkey.cmd local -FullLog     ... with the full CMake and MSBuild output
   .\vkey.cmd test               release the current engine and start a test build
 
 local  builds on this machine against the engine named in
@@ -140,6 +155,9 @@ test   cuts the next engine release from VKey-rs, points this repository at it,
        pushes, and starts the GitHub build whose artifact testers download.
        Use this when an engine change needs to reach someone else - pushing a
        NexusKey commit alone does not carry one.
+
+Build output is errors only. /W4 /WX is set globally, so a warning that matters
+is already an error and still prints; -FullLog brings back everything.
 
 Both need VKEY_ENGINE_TOKEN; the engine release repository is private.
 '@
