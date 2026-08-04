@@ -3,9 +3,21 @@
 ## Short version
 
 ```powershell
-.\vkey.ps1 local      # build and run here, with the Rust engine
-.\vkey.ps1 test       # release the engine and start the build testers download
+vkey local              # build and run here, with the Rust engine
+vkey local -DebugBuild  # ... Debug, which serves the Sciter UI from files
+vkey test               # release the engine and start the build testers download
 ```
+
+Use `vkey`, not `.\vkey.ps1`. PowerShell refuses unsigned scripts, and this
+repository usually sits on a mapped WSL drive, which Windows treats as remote —
+so even `RemoteSigned` blocks it. `vkey.cmd` is a batch file, which the execution
+policy does not apply to, and it starts PowerShell with the policy bypassed for
+that one process. Nothing about the machine changes.
+
+`-DebugBuild` builds Debug, where CMake copies the Sciter UI beside the exe
+instead of embedding it with packfolder. Editing HTML or CSS then needs the app
+restarted, not rebuilt. (`-Debug` is a PowerShell common parameter, hence the
+name.)
 
 Once, in a new terminal afterwards:
 

@@ -1,9 +1,13 @@
 # VKey — one entry point.
 #
-#   .\vkey.ps1 local           build and run here, with the Rust engine
-#   .\vkey.ps1 local -Clean    ... after wiping the CMake cache
-#   .\vkey.ps1 local -NoRun    ... build only, do not launch
-#   .\vkey.ps1 test            release the current engine and start a test build
+#   vkey local              build and run here, with the Rust engine
+#   vkey local -DebugBuild  ... Debug, which serves the Sciter UI from files
+#   vkey local -Clean       ... after wiping the CMake cache
+#   vkey local -NoRun       ... build only, do not launch
+#   vkey test               release the current engine and start a test build
+#
+# Run it through vkey.cmd (just `vkey local`) — PowerShell refuses unsigned
+# scripts on a mapped drive, and the .cmd sidesteps that for one process.
 #
 # Everything else under tools/ is machinery this calls. You should not need it.
 
@@ -11,7 +15,9 @@ param(
     [Parameter(Position = 0)]
     [string]$Mode,
     [switch]$Clean,
-    [switch]$NoRun
+    [switch]$NoRun,
+    # -Debug itself is a PowerShell common parameter and cannot be redefined.
+    [switch]$DebugBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,12 +62,19 @@ switch ($mode) {
               -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot"
         if ($LASTEXITCODE -ne 0) { Fail "configure failed" }
 
-        Write-Host "[4/4] build" -ForegroundColor Yellow
-        cmake --build $buildDir --config Release
+        # Debug serves the Sciter UI from ui/ next to the exe instead of the
+        # packfolder blob compiled into it, so editing HTML or CSS only needs the
+        # app restarted, not rebuilt. Release embeds it.
+        $config = if ($DebugBuild) { "Debug" } else { "Release" }
+        Write-Host "[4/4] build ($config)" -ForegroundColor Yellow
+        cmake --build $buildDir --config $config
         if ($LASTEXITCODE -ne 0) { Fail "build failed" }
 
-        $exe = Join-Path $buildDir "Release\VKey.exe"
+        $exe = Join-Path $buildDir "$config\VKey.exe"
         Write-Host "`nbuilt: $exe" -ForegroundColor Green
+        if ($DebugBuild) {
+            Write-Host "Sciter UI is served from $(Join-Path $buildDir "$config\ui") — edit and restart, no rebuild." -ForegroundColor DarkGray
+        }
         if (-not $NoRun) {
             Write-Host "starting it — close it to return here" -ForegroundColor DarkGray
             & $exe
@@ -95,13 +108,16 @@ VKEY_ENGINE_TOKEN is not set.
         Write-Host @"
 VKey
 
-  .\vkey.ps1 local           build and run here, with the Rust engine
-  .\vkey.ps1 local -Clean    ... after wiping the CMake cache
-  .\vkey.ps1 local -NoRun    ... build only, do not launch
-  .\vkey.ps1 test            release the current engine and start a test build
+  vkey local              build and run here, with the Rust engine
+  vkey local -DebugBuild  ... Debug, which serves the Sciter UI from files
+  vkey local -Clean       ... after wiping the CMake cache
+  vkey local -NoRun       ... build only, do not launch
+  vkey test               release the current engine and start a test build
 
 local  builds on this machine against the engine named in
-       extern/vkey_engine/engine.release, fetching it once.
+       extern/vkey_engine/engine.release, fetching it once. -DebugBuild copies the
+       Sciter UI beside the exe instead of embedding it, so HTML and CSS edits
+       need only a restart.
 
 test   cuts the next engine release from VKey-rs, points this repository at it,
        pushes, and starts the GitHub build whose artifact testers download.
