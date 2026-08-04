@@ -103,6 +103,29 @@ Your local build is mingw and the released one is MSVC, so the two have differen
 hashes. That is expected, and it is exactly why the local build gets its own lock
 in its own directory rather than overwriting the committed one.
 
+## 3b. Get an engine change in front of testers
+
+The engine is not committed here, so pushing a NexusKey commit does not carry an
+engine change with it — CI fetches whatever `engine.release` names. Shipping a
+change to testers means cutting an engine release and repointing this repository
+at it. One command, from VKey-rs:
+
+```bash
+cd ~/code/VKey-rs
+python3 tools/ship_engine.py --build
+```
+
+It bumps the patch version, tags, waits for the release workflow, publishes as a
+prerelease, updates this repository's `engine.lock` and `engine.release`, commits
+and pushes them, and starts the test build. Roughly five minutes, mostly the
+Windows runner.
+
+Version numbers are not meaningful in this loop — they exist so a build pins an
+exact one. `--version X.Y.Z` if you want to choose.
+
+VKey-rs must have a clean tree: a tag points at HEAD, so uncommitted engine work
+would not be in the release.
+
 ## 4. Move to a new engine release
 
 After cutting and **publishing** `engine-vX.Y.Z` in VKey-rs (draft assets are not
@@ -120,6 +143,11 @@ restores the previous lock and changes nothing.
 Commit `engine.lock` and `engine.release` **together** — they are two files that
 have to agree, and nothing at build time can tell you they do not. A stale lock
 beside a new tag fails with a hash mismatch that reads like a corrupt download.
+
+Cutting a product release does this for you: `internal/tools/release_tag.sh`
+compares the pin against the newest engine release and offers to update it before
+the version-bump commit, so a release does not quietly ship whatever engine
+happened to be pinned last.
 
 ---
 
