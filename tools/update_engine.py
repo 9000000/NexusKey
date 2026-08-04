@@ -34,6 +34,23 @@ ENGINE_DIR = ROOT / "extern" / "vkey_engine"
 REPO = "phatMT97/VKey-rs"
 
 
+def gh_token() -> str:
+    """The gh CLI credential, if this machine has one.
+
+    CI passes --token explicitly. A developer has usually already authenticated
+    gh against the same account that owns the private engine repository, so
+    asking them to mint and export a second credential for the same access is
+    friction with no security benefit.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"], capture_output=True, text=True, timeout=15
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def api(url: str, token: str, accept: str) -> urllib.request.addinfourl:
     request = urllib.request.Request(url)
     request.add_header("Accept", accept)
@@ -46,14 +63,18 @@ def main() -> int:
     parser.add_argument("tag", help="engine release tag, e.g. engine-v1.1.0")
     parser.add_argument(
         "--token",
-        default=os.environ.get("VKEY_ENGINE_TOKEN", ""),
-        help="defaults to $VKEY_ENGINE_TOKEN",
+        default="",
+        help="defaults to $VKEY_ENGINE_TOKEN, then to `gh auth token`",
     )
     args = parser.parse_args()
 
+    args.token = args.token or os.environ.get("VKEY_ENGINE_TOKEN", "") or gh_token()
+
     if not args.token:
         print(
-            "no token. The engine release repository is private:\n"
+            "no token, and `gh auth token` produced none either. The engine\n"
+            "release repository is private, so this needs one:\n"
+            "  gh auth login                  (simplest, reuses your GitHub login)\n"
             "  export VKEY_ENGINE_TOKEN=...   (or pass --token)",
             file=sys.stderr,
         )
