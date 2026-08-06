@@ -41,9 +41,10 @@ VKey có cơ chế **tự động chuyển đổi (Fallback)** thông minh: nế
 ### Sau khi cập nhật VKey, tính năng nâng cao mất trong Chrome / Word nhưng vẫn chạy ở nơi khác?
 Hãy **khởi động lại Windows**, tính năng sẽ trở lại.
 
-Nguyên nhân: VKey xử lý phím trong các ứng dụng đó bằng một thư viện riêng (`VKeyTSF.dll`) nạp thẳng vào ứng dụng. Windows không cho phép ghi đè một thư viện đang được ứng dụng khác sử dụng, nên khi cập nhật, file này được hoãn thay tới lần khởi động kế tiếp. Trong lúc chờ, nó vẫn là bản cũ và chỉ tin đúng bản engine đi cùng lứa với nó, nên tạm thời quay về Engine C++ — bạn vẫn gõ tiếng Việt bình thường, chỉ thiếu phần sửa lỗi gõ nhanh.
+Nguyên nhân: trong các ứng dụng đó, VKey xử lý phím bằng một thư viện riêng (`VKeyTSF.dll`) nạp thẳng vào ứng dụng. Windows không cho ghi đè một thư viện đang được ứng dụng khác sử dụng, nên khi cập nhật, file này được hoãn thay tới lần khởi động kế tiếp — và những ứng dụng đang mở vẫn giữ bản cũ trong bộ nhớ cho tới khi chúng đóng lại.
 
-VKey nhận biết được tình trạng này và hiển thị thông báo đề nghị khởi động lại trong cửa sổ Cài đặt cũng như menu ở khay hệ thống.
+Từ bản dùng chữ ký số, bản `VKeyTSF.dll` cũ vẫn nạp được engine mới, nên trường hợp này hiếm đi nhiều. Nếu vẫn xảy ra, thường là thiếu file `vkey_engine.dll.sig` bên cạnh engine. Dù thế nào bạn vẫn gõ tiếng Việt bình thường, chỉ thiếu phần sửa lỗi gõ nhanh, và VKey sẽ hiển thị thông báo đề nghị khởi động lại trong cửa sổ Cài đặt cũng như menu khay hệ thống.
+
 ---
 
 ## 2. An toàn, Bảo mật & Quyền riêng tư
@@ -58,10 +59,18 @@ Bạn có thể tự kiểm tra bằng 2 cách đơn giản sau:
 1. **Dùng Tường lửa (Windows Firewall)**: Bạn có thể tạo quy tắc chặn hoàn toàn kết nối Internet của file `VKey.exe`. VKey và tính năng gõ tiếng Việt / kiểm tra chính tả vẫn hoạt động hoàn hảo 100%.
 2. **Kiểm tra mã nguồn**: Toàn bộ mã nguồn phần tiếp nhận bàn phím, giao tiếp thư viện và hiển thị giao diện của VKey đều được mở công khai trên GitHub để bất kỳ ai cũng có thể đọc và audit.
 
-### Vì sao VKey lại kiểm tra mã SHA-256 trước khi nạp file `vkey_engine.dll`?
-Đây là cơ chế bảo vệ an toàn cho máy tính của bạn. Việc kiểm tra mã SHA-256 giúp VKey đảm bảo file `vkey_engine.dll` đúng là file chính thức phát hành bởi dự án, chưa bị mã độc hoặc vi rút chỉnh sửa hay thay thế trên máy tính của bạn.
+### Vì sao VKey phải kiểm tra `vkey_engine.dll` trước khi nạp?
+Vì file này chạy **bên trong** ứng dụng bạn đang gõ. Nếu nạp bừa, ai đặt được một file cùng tên vào thư mục cài VKey là chạy được mã của họ trong mọi ô nhập liệu của bạn. Nên VKey chỉ nạp engine khi chứng minh được nó đúng là bản do dự án phát hành.
 
-Đánh đổi của cách làm này: mã băm được ghim cứng lúc biên dịch, nên VKey chỉ tin đúng bản engine đi cùng lứa với nó. Đó là lý do một bản cập nhật thay được `vkey_engine.dll` nhưng chưa thay được `VKeyTSF.dll` sẽ tạm mất tính năng nâng cao cho tới khi bạn khởi động lại Windows (xem câu hỏi ở mục 1). Chi tiết kỹ thuật và hướng cải tiến bằng chữ ký số nằm trong [ENGINE_ARCHITECTURE.md](ENGINE_ARCHITECTURE.md#4-mô-hình-bảo-mật--kiểm-tra-an-toàn-file-security--trust-model).
+### VKey kiểm bằng cách nào?
+Bằng **chữ ký số**. Mỗi bản engine phát hành đi kèm một file nhỏ `vkey_engine.dll.sig` (72 byte) — chữ ký ECDSA P-256 do dự án ký. Khoá công khai để kiểm chữ ký đó được nhúng sẵn trong `VKey.exe` và `VKeyTSF.dll` lúc biên dịch, nên không ai thay được từ bên ngoài. Trước khi nạp, VKey tự tính lại mã băm của engine trên đĩa rồi đối chiếu với chữ ký; sai một byte là từ chối.
+
+Vì vậy **`vkey_engine.dll.sig` phải luôn nằm cạnh `vkey_engine.dll`** — chép engine đi đâu thì chép cả file này theo, thiếu nó VKey sẽ quay về Engine C++.
+
+### Trước đây nghe nói kiểm SHA-256, giờ khác gì?
+Cách cũ ghim mã băm của đúng một file, nên `VKey.exe` và `VKeyTSF.dll` buộc phải cùng lứa build với engine — chỉ cần một file bị bỏ lại trong lúc cập nhật là tính năng nâng cao tắt ngấm. Chữ ký ghim *người phát hành* thay vì một file cụ thể, nên bản cũ vẫn nạp được engine mới và tình trạng đó không còn.
+
+Kèm theo là số thứ tự bản phát hành nằm trong phần được ký, nên không thể lấy một bản engine cũ (dù chữ ký thật) để đắp ngược lại.
 
 ---
 
@@ -75,13 +84,12 @@ Bạn có thể tự kiểm tra bằng 2 cách đơn giản sau:
 2. Lựa chọn **Kiểm tra chính tả nâng cao**.
 
 ### Làm thế nào để gỡ bỏ hoàn toàn Engine Rust?
-Nếu không muốn tiếp tục sử dụng, bạn chỉ cần thực hiện 1 bước đơn giản:
-- Mở thư mục cài đặt VKey và xóa file `vkey_engine.dll`.
+Mở thư mục cài đặt VKey và xóa hai file: `vkey_engine.dll` và `vkey_engine.dll.sig`.
 
 Sau khi xóa, VKey sẽ tự động quay về sử dụng Engine C++ mặc định mà không cần cấu hình gì thêm.
 
 ### Máy tính của tôi không có mạng, tôi có thể cài đặt Engine Rust thủ công không?
-**Có**. Bạn có thể tải file `vkey_engine.dll` từ trang [GitHub Release](https://github.com/phatMT97/VKey/releases) thức của VKey bằng một máy tính khác, sau đó chép file này vào cùng thư mục chứa file `VKey.exe`.
+**Có**. Tải **cả hai** file `vkey_engine.dll` và `vkey_engine.dll.sig` từ trang [GitHub Release](https://github.com/phatMT97/VKey/releases) chính thức bằng một máy khác, rồi chép cả hai vào cùng thư mục chứa `VKey.exe`. Thiếu file `.sig` thì VKey không xác thực được engine và sẽ dùng Engine C++.
 
 ---
 
@@ -95,7 +103,7 @@ Toàn bộ mã nguồn cốt lõi của VKey bao gồm:
 - Hạ tầng tiếp nhận sự kiện bàn phím từ hệ điều hành (Windows TSF IME & Low-Level Hook).
 - Hệ thống điều phối sự kiện (Coordinator) và giao diện người dùng (Sciter UI).
 - Engine xử lý tiếng Việt C++ (Built-in C++ Engine).
-- Cơ chế nạp động an toàn, xác thực SHA-256 và giao diện C ABI.
+- Cơ chế nạp động an toàn, xác thực chữ ký số ECDSA P-256 và giao diện C ABI.
 
 Tất cả đều được công khai minh bạch tại repository GitHub của dự án.
 

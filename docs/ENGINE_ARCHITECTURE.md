@@ -83,29 +83,73 @@ Engine Rust được đóng gói dưới dạng thư viện liên kết động 
 
 ## 4. Mô hình Bảo mật & Kiểm tra An toàn File (Security & Trust Model)
 
-Vì `vkey_engine.dll` là file thư viện động được nạp vào tiến trình `VKeyApp.exe`, VKey áp dụng cơ chế bảo mật nhiều lớp (Defense-in-Depth) để chống lại các nguy cơ đánh tráo file, DLL Hijacking hoặc chỉnh sửa trái phép:
+`vkey_engine.dll` được nạp thẳng vào tiến trình đang gõ (VKey.exe ở chế độ Hook, và cả Chrome/Word... ở chế độ TSF, vì `VKeyTSF.dll` chạy bên trong ứng dụng đó). Một file như vậy mà nạp bừa thì ai đặt được file cùng tên vào thư mục cài là chạy được mã của họ trong mọi ứng dụng anh gõ. Nên trước khi nạp, VKey phải trả lời được: **file này có đúng do dự án phát hành không?**
 
-### 1. Ghim mã Hash SHA-256 khi Biên dịch (`engine.lock`)
-Thông tin file DLL chính thức (kích thước file chính xác và mã băm SHA-256) được định nghĩa trong file `engine.lock` và được nhúng trực tiếp vào file thực thi `VKeyApp.exe` khi biên dịch.
+### 1. Câu trả lời: chữ ký số rời, không phải mã băm cố định
 
-### 2. Chống tranh chấp dữ liệu & Đánh tráo file (TOCTOU Protection)
-Khi kiểm tra file `vkey_engine.dll`:
-1. VKey mở file bằng hàm `CreateFileW` với quyền truy cập độc quyền ghi/xóa (`FILE_SHARE_READ`). Việc này khóa chặt file trên ổ cứng, ngăn các tiến trình độc hại khác sửa đổi file trong lúc VKey đang kiểm tra.
-2. VKey dùng Windows CNG API (`BCryptHashData`) để tính mã băm SHA-256 của file thực tế trên đĩa.
-3. Mã băm được so sánh với mã ghim sẵn trong thời gian cố định (constant-time comparison) để chống tấn công phân tích thời gian (side-channel timing attack).
+Mỗi bản engine phát hành đi kèm một file `vkey_engine.dll.sig` dài đúng **72 byte**:
 
-### 3. Hệ quả: `VKey.exe` và `VKeyTSF.dll` phải cùng một lứa build
-Mã băm được ghim **tại thời điểm biên dịch**, nên mọi binary nạp engine (`VKey.exe` cho chế độ Hook, `VKeyTSF.dll` cho chế độ TSF) đều mang bản ghim riêng của lứa build đó. Nếu một file bị bỏ lại ở bản cũ — thường gặp nhất là `VKeyTSF.dll`, vì Windows không cho ghi đè DLL đang được ứng dụng khác nạp nên bước cập nhật phải hoãn sang lần khởi động sau — thì file đó sẽ từ chối `vkey_engine.dll` mới và **tự động quay về Engine C++**, dù engine mới hoàn toàn hợp lệ.
+```text
+abi      u32 little-endian   (4 byte)   phiên bản C ABI
+counter  u32 little-endian   (4 byte)   số thứ tự bản phát hành
+sig      r || s              (64 byte)  chữ ký ECDSA P-256
+```
 
-Biểu hiện: tính năng nâng cao (ví dụ `hcaof` → `chào`) biến mất trong các ứng dụng dùng TSF, nhưng vẫn hoạt động ở chế độ Hook. Cách xử lý: **khởi động lại Windows** — lần khởi động kế tiếp sẽ áp bản DLL đang chờ và buộc các tiến trình đang giữ DLL cũ nhả ra.
+Chữ ký ký lên chuỗi:
 
-Để tình trạng này không diễn ra âm thầm, `EngineController` phát cờ `TSF_ENGINE_UNTRUSTED` qua SharedState khi Kiểm tra Chính tả Nâng cao đang bật mà engine không nạp được; Cài đặt và khay hệ thống hiển thị banner đề nghị khởi động lại.
+```text
+"VKEYENG1"  ||  sha256(vkey_engine.dll)  ||  abi  ||  counter
+```
 
-> **Kế hoạch (chưa triển khai)**: thay việc ghim mã băm bằng **xác thực chữ ký số** (ECDSA P-256, khoá công khai nhúng trong binary, chữ ký rời `vkey_engine.dll.sig` kèm số thứ tự bản phát hành để chặn hạ cấp). Chữ ký ghim *người phát hành* thay vì *một file cụ thể*, nên binary lứa cũ vẫn nạp được engine mới và ràng buộc cùng lứa build ở trên biến mất.
+Khoá riêng do dự án giữ (chỉ workflow phát hành của VKey-rs dùng tới). Khoá công khai tương ứng nằm ở `extern/vkey_engine/engine.pub` và được **nhúng thẳng vào `VKey.exe` / `VKeyTSF.dll` lúc biên dịch**.
 
-### 4. Nạp an toàn & Định danh File (File Identity Binding)
-1. Hàm `LoadLibraryExW` chỉ nạp DLL từ thư mục ứng dụng hoặc `System32` (`LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32`), loại bỏ hoàn toàn nguy cơ tấn công qua đường dẫn `PATH` hoặc CWD.
-2. Sau khi nạp, VKey kiểm tra chỉ số định danh file trên đĩa (`dwVolumeSerialNumber`, `nFileIndexHigh`, `nFileIndexLow`) thông qua `GetFileInformationByHandle` để đảm bảo Windows đã nạp đúng file đã được xác thực SHA-256 trước đó.
+### 2. Năm bước khi nạp engine
+
+```text
+1. Mở vkey_engine.dll với FILE_SHARE_READ   -> khoá không cho ai ghi/xoá trong lúc kiểm
+2. Tự tính SHA-256 từ chính handle đang mở  -> không tin bất kỳ con số nào file .sig khai
+3. Đọc .sig (phải đúng 72 byte)             -> sai độ dài là loại, không đọc tiếp byte nào
+4. abi >= abi của bản build, counter >= floor -> chặn engine cũ hơn
+5. ECDSA verify chuỗi ở mục 1 bằng khoá nhúng -> chỉ khoá của dự án mới ký được
+```
+
+Sau đó `LoadLibraryExW` nạp file với `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32` (không đi qua `PATH`/CWD), rồi đối chiếu `dwVolumeSerialNumber` + `nFileIndexHigh/Low` để chắc chắn Windows nạp **đúng file vừa được xác thực**, không phải file khác vừa bị tráo vào.
+
+### 3. Vì sao là chữ ký chứ không phải mã băm
+
+Cách cũ ghim mã băm của **một file cụ thể** vào lúc biên dịch. Hệ quả: `VKey.exe` và `VKeyTSF.dll` buộc phải cùng lứa build với engine. Mà Windows không cho ghi đè một DLL đang được ứng dụng khác nạp, nên khi cập nhật, `VKeyTSF.dll` thường bị hoãn thay tới lần khởi động sau — trong lúc đó nó ôm mã băm cũ, từ chối engine mới hoàn toàn hợp lệ, và âm thầm quay về Engine C++. Biểu hiện: `hcaof` → `chào` mất trong Chrome/Word nhưng vẫn chạy ở chế độ Hook.
+
+Chữ ký ghim **người phát hành** thay vì một file, nên một `VKeyTSF.dll` cũ vẫn nạp được engine mới. Ràng buộc cùng lứa build biến mất, và người dùng không phải khởi động lại chỉ để lấy lại tính năng.
+
+Đổi lại, chữ ký thì có giá trị mãi mãi — nên `counter` tồn tại: mỗi bản phát hành tăng một, bản build ghim mức sàn, và engine cũ hơn mức sàn bị từ chối dù chữ ký vẫn hợp lệ. Đó là thứ mà cách ghim mã băm có sẵn miễn phí.
+
+`abi` chuyển từ `==` sang `>=` cũng vì lý do đó: một binary cũ phải nạp được engine mới. An toàn vì mọi symbol nó cần đều được phân giải theo tên lúc nạp, và C ABI của engine chỉ thêm chứ không đổi nghĩa symbol cũ.
+
+### 4. Chặn được gì, không chặn được gì
+
+| Tình huống | Kết quả |
+| :--- | :--- |
+| Thay engine bằng file khác, tự ký bằng khoá lạ | Từ chối — khoá công khai nhúng sẵn không khớp |
+| Giữ chữ ký thật, tráo engine | Từ chối — mã băm trong chuỗi ký không khớp |
+| Sửa `abi`/`counter` trong file `.sig` cho qua mức sàn | Từ chối — hai trường đó nằm trong chuỗi đã ký |
+| Đắp lại bản engine cũ (chữ ký thật) | Từ chối nếu `counter` dưới mức sàn |
+| Tráo file giữa lúc kiểm và lúc nạp | Từ chối — khoá ghi/xoá khi mở, và đối chiếu định danh file sau khi nạp |
+| **Sửa thẳng `VKeyTSF.dll` / `VKey.exe`** | **Không chặn được** |
+| **Lộ khoá riêng** | **Không chặn được** cho tới khi phát hành khoá công khai mới |
+
+Hai dòng cuối là giới hạn thật của mô hình: kẻ ghi được vào thư mục cài cũng ghi được lên chính phần đi kiểm tra. Cách ghim mã băm trước đây cũng vậy, nên đây không phải bước lùi.
+
+### 5. `engine.lock` giờ còn dùng để làm gì
+
+Vẫn còn, nhưng hạ vai trò:
+
+- **Bản build Debug** chấp nhận thêm engine khớp mã băm trong lock. Bản engine dựng tại máy không có chữ ký (khoá nằm ở workflow phát hành), nên nếu không có đường này thì không dev được. Nhánh này **không được biên dịch vào bản Release** — trên máy người dùng, chữ ký là đường duy nhất.
+- **`tools/fetch_engine.py`** đối chiếu file tải về với lock trước khi ghi vào đĩa.
+- **`counter` trong lock** chính là mức sàn được nhúng vào bản build.
+
+### 6. Khi engine không nạp được
+
+Không im lặng nữa. `EngineController` phát cờ `TSF_ENGINE_UNTRUSTED` qua SharedState khi Kiểm tra Chính tả Nâng cao đang bật mà engine không dùng được; Cài đặt và menu khay hệ thống hiển thị banner đề nghị khởi động lại Windows. Lý do bật cờ nằm trong log (`Logger`), gồm cả trường hợp thiếu `.sig`, sai chữ ký, hay engine cũ hơn mức sàn.
 
 ---
 
