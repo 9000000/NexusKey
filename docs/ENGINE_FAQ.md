@@ -96,6 +96,22 @@ Sau khi xóa, VKey sẽ tự động quay về sử dụng Engine C++ mặc đ�
 ### VKey được phát hành theo giấy phép mã nguồn mở nào?
 VKey được phát hành dưới giấy phép mã nguồn mở **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
+### Trong thư mục cài có mấy file license, chúng là gì?
+Hai file, và chúng nói về hai thứ khác nhau:
+
+| File | Nội dung |
+| :--- | :--- |
+| `THIRD_PARTY_NOTICES.txt` | Danh sách thư viện của bên thứ ba đi kèm VKey (Sciter…) và các thông báo mà giấy phép của họ bắt buộc phải kèm theo bản phân phối, chứ không chỉ nằm trong mã nguồn. |
+| `vkey_engine.LICENSE.txt` | Giấy phép riêng của Engine Rust nâng cao. Engine **không** thuộc giấy phép AGPL-3.0 của VKey — xem câu dưới. |
+
+Chúng đi kèm bản tải về vì chính các giấy phép đó yêu cầu thông báo phải đi cùng file nhị phân. Bạn không cần làm gì với hai file này, nhưng đừng xoá khi chia sẻ lại bản cài cho người khác.
+
+### Tôi dùng VKey cho mục đích thương mại (công ty, dịch vụ) được không?
+- **Bản thân VKey**: được, theo điều khoản AGPL-3.0 (bao gồm nghĩa vụ công khai mã nguồn nếu bạn phân phối bản sửa đổi hoặc cung cấp dịch vụ qua mạng).
+- **Engine Rust nâng cao**: **không**. Engine nhúng từ điển âm tiết tiếng Việt dẫn xuất từ corpus Leipzig `vie_news_2020_1M` phát hành theo **CC BY-NC** (phi thương mại). Quyền thương mại với dữ liệu đó không thuộc về tác giả VKey nên không thể cấp cho bạn, và điều khoản này không thể xin miễn trừ.
+
+Nếu bạn cần dùng thương mại: tắt **Kiểm tra Chính tả Nâng cao** và xoá `vkey_engine.dll` + `vkey_engine.dll.sig`. VKey vẫn gõ tiếng Việt đầy đủ bằng Engine C++ tích hợp. Nếu bạn fork mã nguồn, build với `-DVKEY_USE_RUST_ENGINE=OFF` và không phát hành lại các file engine.
+
 ### Phần nào của VKey là mã nguồn mở?
 Toàn bộ mã nguồn cốt lõi của VKey bao gồm:
 - Hạ tầng tiếp nhận sự kiện bàn phím từ hệ điều hành (Windows TSF IME & Low-Level Hook).
