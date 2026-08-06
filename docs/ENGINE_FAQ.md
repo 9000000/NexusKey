@@ -106,8 +106,15 @@ Hai file, và chúng nói về hai thứ khác nhau:
 
 Chúng đi kèm bản tải về vì chính các giấy phép đó yêu cầu thông báo phải đi cùng file nhị phân. Bạn không cần làm gì với hai file này, nhưng đừng xoá khi chia sẻ lại bản cài cho người khác.
 
-### Tôi dùng VKey cho mục đích thương mại (công ty, dịch vụ) được không?
-- **Bản thân VKey**: được, theo điều khoản AGPL-3.0 (bao gồm nghĩa vụ công khai mã nguồn nếu bạn phân phối bản sửa đổi hoặc cung cấp dịch vụ qua mạng).
+### Công ty tôi cài VKey cho nhân viên dùng có sao không?
+**Không sao cả.** AGPL-3.0 ràng buộc việc *phân phối* phần mềm, không ràng buộc việc *dùng*. Cài VKey cho nhân viên gõ tiếng Việt là sử dụng bình thường: không phải công khai gì, không phải xin phép, và không ảnh hưởng tới bất kỳ phần mềm nội bộ nào của công ty — VKey là ứng dụng chạy độc lập, không nhúng vào sản phẩm của bạn.
+
+Nghĩa vụ chỉ phát sinh nếu bạn **phát hành lại** VKey ra bên ngoài (nguyên bản hoặc đã sửa): khi đó phải kèm mã nguồn tương ứng theo AGPL-3.0.
+
+Lưu ý riêng cho Engine nâng cao: xem câu ngay dưới.
+
+### Tôi dùng VKey cho mục đích thương mại (bán kèm, dịch vụ) được không?
+- **Bản thân VKey**: được, theo điều khoản AGPL-3.0. AGPL không cấm thương mại — nó chỉ buộc kèm mã nguồn khi phân phối, và với dịch vụ qua mạng thì cấp mã nguồn cho người dùng dịch vụ (§13).
 - **Engine Rust nâng cao**: **không**. Engine nhúng từ điển âm tiết tiếng Việt dẫn xuất từ corpus Leipzig `vie_news_2020_1M` phát hành theo **CC BY-NC** (phi thương mại). Quyền thương mại với dữ liệu đó không thuộc về tác giả VKey nên không thể cấp cho bạn, và điều khoản này không thể xin miễn trừ.
 
 Nếu bạn cần dùng thương mại: tắt **Kiểm tra Chính tả Nâng cao** và xoá `vkey_engine.dll` + `vkey_engine.dll.sig`. VKey vẫn gõ tiếng Việt đầy đủ bằng Engine C++ tích hợp. Nếu bạn fork mã nguồn, build với `-DVKEY_USE_RUST_ENGINE=OFF` và không phát hành lại các file engine.
