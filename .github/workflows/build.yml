@@ -320,7 +320,10 @@ jobs:
           # engine without it is unloadable. Fail here rather than ship half of it.
           $sig = "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll.sig"
           if (-not (Test-Path $sig)) {
-            throw "vkey_engine.dll.sig is missing — the pinned engine release predates signing"
+            # ASCII only inside a PowerShell string: `shell: powershell` is 5.1 and
+            # reads the generated .ps1 as ANSI, so an em dash decodes to a smart
+            # quote that closes the string and breaks the parser.
+            throw "vkey_engine.dll.sig is missing - the pinned engine release predates signing"
           }
           Copy-Item $sig "vkey_engine.dll.sig" -Force
           # The engine is not covered by this repository's AGPL-3.0 license and
