@@ -125,7 +125,9 @@ RustEngineLibraryResult LoadRustEngineLibrary() {
             return {nullptr, L"vkey_engine.dll is not installed next to the host module"};
         }
 
-        const RustEngineTrustStatus trust = VerifyRustEngineFileHandle(file.get());
+        const std::wstring signaturePath = path + L".sig";
+        const RustEngineTrustStatus trust =
+            VerifyRustEngineFileHandle(file.get(), signaturePath.c_str());
         if (trust != RustEngineTrustStatus::Trusted) {
             return {nullptr, RustEngineTrustReason(trust)};
         }

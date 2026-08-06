@@ -111,11 +111,17 @@ const EngineApi& Api() {
             a.reason = L"vkey_engine library is missing a required exported symbol";
             return a;
         }
+        // A floor, not an equality: this binary must be able to load an engine
+        // newer than the header it was built against, otherwise a VKeyTSF.dll left
+        // behind by a deferred update refuses the engine installed beside it and
+        // drops to the C++ engine with no user-visible sign. Safe because the ABI
+        // only ever gains symbols, and every symbol this build needs was already
+        // resolved by name above.
         const uint32_t libVersion = a.abi_version();
-        if (libVersion != VKEY_ENGINE_ABI_VERSION) {
+        if (libVersion < VKEY_ENGINE_ABI_VERSION) {
             CloseRustEngineLibrary(lib);
-            a.reason = L"vkey_engine ABI version mismatch (lib=" + std::to_wstring(libVersion) +
-                        L", expected=" + std::to_wstring(VKEY_ENGINE_ABI_VERSION) + L")";
+            a.reason = L"vkey_engine ABI is older than this build (lib=" + std::to_wstring(libVersion) +
+                        L", needs>=" + std::to_wstring(VKEY_ENGINE_ABI_VERSION) + L")";
             return a;
         }
         const uint32_t runtimeStatus = a.runtime_status();

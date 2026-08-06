@@ -147,7 +147,10 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             throw "tampered vkey_engine.dll was accepted"
           }
-          if (($output -join "`n") -notmatch "SHA-256 does not match") {
+          # Release verifies the detached signature, so a flipped byte now fails as
+          # a bad signature rather than a bad hash. "is missing or unreadable" here
+          # means the pinned engine release predates signing — cut a new one.
+          if (($output -join "`n") -notmatch "was not produced by the VKey engine key") {
             $output | Write-Output
             throw "engine rejection did not report the expected trust failure"
           }
@@ -313,6 +316,13 @@ jobs:
         shell: powershell
         run: |
           Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "vkey_engine.dll" -Force
+          # Release builds verify this signature instead of the lock hash, so the
+          # engine without it is unloadable. Fail here rather than ship half of it.
+          $sig = "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll.sig"
+          if (-not (Test-Path $sig)) {
+            throw "vkey_engine.dll.sig is missing — the pinned engine release predates signing"
+          }
+          Copy-Item $sig "vkey_engine.dll.sig" -Force
           # The engine is not covered by this repository's AGPL-3.0 license and
           # embeds CC BY-NC data, so its license text has to travel with the
           # binary wherever the binary goes — as a sibling release asset for a
@@ -320,6 +330,7 @@ jobs:
           Copy-Item "extern/vkey_engine/LICENSE" "vkey_engine.LICENSE.txt" -Force
           if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.include_engine }}" -eq "true") {
             Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "upload-payload/vkey_engine.dll" -Force
+            Copy-Item $sig "upload-payload/vkey_engine.dll.sig" -Force
             Copy-Item "extern/vkey_engine/LICENSE" "upload-payload/vkey_engine.LICENSE.txt" -Force
           }
 
@@ -331,7 +342,11 @@ jobs:
             "unsigned-binaries/vkey_engine.dll",
             "signed-binaries/vkey_engine.dll",
             "dist/vkey_engine.dll",
-            "dist-classic/vkey_engine.dll"
+            "dist-classic/vkey_engine.dll",
+            "unsigned-binaries/vkey_engine.dll.sig",
+            "signed-binaries/vkey_engine.dll.sig",
+            "dist/vkey_engine.dll.sig",
+            "dist-classic/vkey_engine.dll.sig"
           )
           foreach ($path in $forbidden) {
             if (Test-Path $path) {
@@ -340,6 +355,9 @@ jobs:
           }
           if (-not (Test-Path "vkey_engine.dll")) {
             throw "external engine release asset is missing"
+          }
+          if (-not (Test-Path "vkey_engine.dll.sig")) {
+            throw "external engine signature is missing next to the release asset"
           }
           # The engine is noncommercial-only and embeds CC BY-NC data. Shipping it
           # without its license text is the failure this assertion exists to stop.

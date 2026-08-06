@@ -46,13 +46,14 @@ import urllib.request
 from pathlib import Path
 
 LOCK_PATTERN = re.compile(
-    r"^VKEY-ENGINE-LOCK-V1\n"
+    r"^VKEY-ENGINE-LOCK-V2\n"
     r"abi_version=(?P<abi>[0-9]+)\n"
     r"target=(?P<target>windows-x86_64)\n"
     r"asset_name=(?P<asset>vkey_engine\.dll)\n"
     r"installed_name=vkey_engine\.dll\n"
     r"byte_len=(?P<bytes>[0-9]+)\n"
-    r"sha256=(?P<sha>[0-9a-f]{64})\n$"
+    r"sha256=(?P<sha>[0-9a-f]{64})\n"
+    r"counter=(?P<counter>[0-9]+)\n$"
 )
 
 MAX_LOCK_BYTES = 1024
@@ -77,7 +78,7 @@ def read_lock(path: Path) -> dict[str, str]:
         raise FetchError(f"{path} is larger than {MAX_LOCK_BYTES} bytes")
     match = LOCK_PATTERN.match(raw.decode("utf-8"))
     if not match:
-        raise FetchError(f"{path} is not a canonical VKEY-ENGINE-LOCK-V1 file")
+        raise FetchError(f"{path} is not a canonical VKEY-ENGINE-LOCK-V2 file")
     return match.groupdict()
 
 
@@ -196,6 +197,32 @@ def main() -> int:
 
     staging.replace(final)
 
+    # The signature is what a Release build actually verifies — the lock hash only
+    # backs Debug. Fetch it beside the DLL. A release predating signing has none;
+    # say so rather than leaving a silent gap for the loader to trip over.
+    signature = f"{lock['asset']}.sig"
+    signature_staging = dest_dir / f".{signature}.partial"
+    try:
+        if args.from_file:
+            source = args.from_file.with_name(args.from_file.name + ".sig")
+            if source.exists():
+                shutil.copyfile(source, signature_staging)
+            else:
+                raise FetchError(f"no signature beside {args.from_file}")
+        elif args.repo:
+            url = asset_url(args.repo, args.tag, signature, args.token)
+            download(url, signature_staging, args.token, api=True)
+        else:
+            download(f"{args.base_url.rstrip('/')}/{signature}", signature_staging, args.token)
+        if signature_staging.stat().st_size != 72:
+            raise FetchError(f"{signature} must be exactly 72 bytes")
+        signature_staging.replace(dest_dir / signature)
+    except (OSError, urllib.error.URLError, FetchError) as error:
+        signature_staging.unlink(missing_ok=True)
+        print(f"fetch_engine: warning — no usable {signature} ({error}).", file=sys.stderr)
+        print("Debug builds still load this engine via the lock hash; Release will not.",
+              file=sys.stderr)
+
     # The lock and header are committed, so copy them beside the library only when
     # the destination is a different directory than the one they live in.
     source_root = args.lock.resolve().parent
@@ -212,7 +239,8 @@ def main() -> int:
             )
 
     print(
-        f"fetch_engine: ok — {final} ({lock['bytes']} bytes, abi {lock['abi']})\n"
+        f"fetch_engine: ok — {final} ({lock['bytes']} bytes, abi {lock['abi']}, "
+        f"counter {lock['counter']})\n"
         f"configure with -DVKEY_ENGINE_ROOT={args.dest}"
     )
     return 0

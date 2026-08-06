@@ -128,6 +128,9 @@ if(VKEY_USE_RUST_ENGINE)
         "Directory holding the prebuilt engine: engine.lock, include/, lib/")
     set(VKEY_ENGINE_LOCK_PATH "${VKEY_ENGINE_ROOT}/engine.lock")
     set(VKEY_ENGINE_DLL "${VKEY_ENGINE_ROOT}/lib/win-x64/vkey_engine.dll")
+    # The public key is committed here, never fetched: fetching the thing that
+    # decides what to trust alongside the thing being trusted proves nothing.
+    set(VKEY_ENGINE_PUBKEY_PATH "${CMAKE_CURRENT_SOURCE_DIR}/extern/vkey_engine/engine.pub")
     if(NOT EXISTS "${VKEY_ENGINE_LOCK_PATH}" OR NOT EXISTS "${VKEY_ENGINE_DLL}")
         message(FATAL_ERROR
             "No prebuilt engine at ${VKEY_ENGINE_ROOT}. Either run the VKey-rs "
@@ -142,24 +145,42 @@ if(VKEY_USE_RUST_ENGINE)
     # this, a plain `cmake --build` after an engine sync keeps the stale hash and
     # the freshly vendored DLL fails the trust check → silent C++ fallback.
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-        "${VKEY_ENGINE_LOCK_PATH}" "${VKEY_ENGINE_DLL}")
+        "${VKEY_ENGINE_LOCK_PATH}" "${VKEY_ENGINE_DLL}" "${VKEY_ENGINE_PUBKEY_PATH}")
 
     file(READ "${VKEY_ENGINE_LOCK_PATH}" _vkey_engine_lock LIMIT 1025)
     string(LENGTH "${_vkey_engine_lock}" _vkey_engine_lock_length)
     set(_vkey_engine_lock_pattern
-        "^VKEY-ENGINE-LOCK-V1\nabi_version=([0-9]+)\ntarget=windows-x86_64\nasset_name=vkey_engine[.]dll\ninstalled_name=vkey_engine[.]dll\nbyte_len=([0-9]+)\nsha256=([0-9a-f]+)\n$")
+        "^VKEY-ENGINE-LOCK-V2\nabi_version=([0-9]+)\ntarget=windows-x86_64\nasset_name=vkey_engine[.]dll\ninstalled_name=vkey_engine[.]dll\nbyte_len=([0-9]+)\nsha256=([0-9a-f]+)\ncounter=([0-9]+)\n$")
     string(REGEX MATCH "${_vkey_engine_lock_pattern}" _vkey_engine_lock_match
         "${_vkey_engine_lock}")
     if(_vkey_engine_lock_length GREATER 1024 OR
        NOT "${_vkey_engine_lock_match}" STREQUAL "${_vkey_engine_lock}")
-        message(FATAL_ERROR "extern/vkey_engine/engine.lock is not canonical V1")
+        message(FATAL_ERROR "extern/vkey_engine/engine.lock is not canonical V2")
     endif()
     set(VKEY_ENGINE_LOCK_ABI "${CMAKE_MATCH_1}")
     set(VKEY_ENGINE_LOCK_BYTES "${CMAKE_MATCH_2}")
     set(VKEY_ENGINE_LOCK_SHA256 "${CMAKE_MATCH_3}")
+    set(VKEY_ENGINE_LOCK_COUNTER "${CMAKE_MATCH_4}")
     string(LENGTH "${VKEY_ENGINE_LOCK_SHA256}" _vkey_engine_sha256_length)
     if(NOT _vkey_engine_sha256_length EQUAL 64)
         message(FATAL_ERROR "extern/vkey_engine/engine.lock has an invalid SHA-256")
+    endif()
+
+    # The counter in the lock becomes the downgrade floor baked into this build:
+    # a signed but older engine is refused even though its signature is valid.
+    if(NOT EXISTS "${VKEY_ENGINE_PUBKEY_PATH}")
+        message(FATAL_ERROR
+            "extern/vkey_engine/engine.pub is missing — it is the key Release builds "
+            "verify the engine signature against.")
+    endif()
+    file(READ "${VKEY_ENGINE_PUBKEY_PATH}" _vkey_engine_pubkey)
+    string(STRIP "${_vkey_engine_pubkey}" VKEY_ENGINE_PUBKEY)
+    # CMake's regex flavour has no {n} repetition, so length is checked separately.
+    string(LENGTH "${VKEY_ENGINE_PUBKEY}" _vkey_engine_pubkey_length)
+    if(NOT _vkey_engine_pubkey_length EQUAL 128 OR
+       NOT VKEY_ENGINE_PUBKEY MATCHES "^[0-9a-fA-F]+$")
+        message(FATAL_ERROR
+            "extern/vkey_engine/engine.pub must be 128 hex characters (P-256 X||Y)")
     endif()
 
     file(SIZE "${VKEY_ENGINE_DLL}" _vkey_engine_dll_bytes)
@@ -178,6 +199,7 @@ if(VKEY_USE_RUST_ENGINE)
     )
 
     target_sources(VKeyEngine PRIVATE
+        src/core/engine/EngineSignature.h
         src/core/engine/RustInputEngine.h
         src/core/engine/RustInputEngine.cpp
         src/core/engine/RustEngineLoader.h
@@ -190,6 +212,11 @@ if(VKEY_USE_RUST_ENGINE)
         ${VKEY_ENGINE_GENERATED_DIR}
     )
     target_compile_definitions(VKeyEngine PRIVATE VKEY_USE_RUST_ENGINE)
+    # Debug also accepts an engine whose hash matches engine.lock, so a locally
+    # synced build (which has no signature — the release workflow holds the key)
+    # stays usable. Release gets no such branch compiled in at all: on a shipped
+    # build the signature is the only way past the trust gate.
+    target_compile_definitions(VKeyEngine PRIVATE $<$<CONFIG:Debug>:VKEY_ENGINE_TRUST_DEV>)
     target_link_libraries(VKeyEngine PRIVATE ${CMAKE_DL_LIBS})
     if(WIN32)
         target_link_libraries(VKeyEngine PRIVATE bcrypt)
@@ -616,10 +643,18 @@ if(WIN32)
         else()
             set(_vkey_engine_output_dir "${CMAKE_BINARY_DIR}")
         endif()
+        # The .sig is not optional baggage: Release verifies it instead of the
+        # lock hash, so an output directory with the DLL alone silently falls back
+        # to the C++ engine. Copied through a conditional because a locally synced
+        # engine has none — that case is exactly what the Debug hash path covers.
         add_custom_target(VKeyEngineRuntimeDeploy
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${VKEY_ENGINE_DLL}"
                 "${_vkey_engine_output_dir}/vkey_engine.dll"
+            COMMAND ${CMAKE_COMMAND}
+                -DSOURCE=${VKEY_ENGINE_DLL}.sig
+                -DDESTINATION=${_vkey_engine_output_dir}/vkey_engine.dll.sig
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyIfPresent.cmake"
             DEPENDS "${VKEY_ENGINE_DLL}"
             COMMENT "Deploying vkey_engine.dll to the runtime output directory"
             VERBATIM
@@ -722,6 +757,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/VniParityTest.cpp
     tests/TelexDictionaryTest.cpp
     tests/EngineFactoryTest.cpp
+    tests/EngineSignatureTest.cpp
     tests/TrayStatusTextTest.cpp
     tests/SharedStateTest.cpp
     tests/HookContextAnchorTest.cpp
@@ -864,6 +900,10 @@ if(VKEY_USE_RUST_ENGINE)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${_vkey_test_engine}"
             "$<TARGET_FILE_DIR:VKeyTests>/${_vkey_test_engine_name}"
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE=${_vkey_test_engine}.sig
+            -DDESTINATION=$<TARGET_FILE_DIR:VKeyTests>/${_vkey_test_engine_name}.sig
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyIfPresent.cmake"
         COMMENT "Deploying trusted engine for VKeyTests"
         VERBATIM
     )

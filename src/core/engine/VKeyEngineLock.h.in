@@ -9,4 +9,14 @@ inline constexpr std::uint32_t kAbiVersion = @VKEY_ENGINE_LOCK_ABI@u;
 inline constexpr std::uint64_t kByteLength = @VKEY_ENGINE_LOCK_BYTES@ull;
 inline constexpr char kSha256[] = "@VKEY_ENGINE_LOCK_SHA256@";
 
+// Lowest release counter this build accepts. A signature stays valid forever, so
+// without a floor an attacker could reinstate an older signed engine carrying a
+// fixed bug; the hash pin got this for free by naming one exact file.
+inline constexpr std::uint32_t kCounterFloor = @VKEY_ENGINE_LOCK_COUNTER@u;
+
+// P-256 public key as X||Y hex. What a Release build trusts: any engine this key
+// signed, not one exact artifact — which is what lets a VKeyTSF.dll left behind
+// by a deferred update still load the engine installed beside it.
+inline constexpr char kEnginePublicKey[] = "@VKEY_ENGINE_PUBKEY@";
+
 }  // namespace NextKey::VKeyEngineLock

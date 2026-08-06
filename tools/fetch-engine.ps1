@@ -18,7 +18,11 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $engineRoot = Join-Path $root "build-engine"
 $engineDll = Join-Path $engineRoot "lib\win-x64\vkey_engine.dll"
 
-if ((Test-Path $engineDll) -and -not $Force) {
+$engineSig = "$engineDll.sig"
+
+# A DLL without its signature is only half an engine: Release verifies the
+# signature and refuses the hash, so treat a missing .sig as "not fetched".
+if ((Test-Path $engineDll) -and (Test-Path $engineSig) -and -not $Force) {
     Write-Host "engine already present: $engineDll" -ForegroundColor DarkGray
     Write-Host "configure with -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT=build-engine"
     exit 0
