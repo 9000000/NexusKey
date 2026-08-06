@@ -24,6 +24,7 @@ namespace SharedFlags {
     constexpr uint32_t TSF_POST_UPDATE_REBOOT = 0x0080;  // EXE: swap succeeded, hosts may still hold old DLL
     constexpr uint32_t TSF_TIP_ACTIVE         = 0x0100;  // DLL: VKey TIP is the active input processor (set on focus, cleared on deactivate/bg)
     constexpr uint32_t CLASSIC_MODE           = 0x0200;  // EXE: running in Classic UI (Lite) mode
+    constexpr uint32_t TSF_ENGINE_UNTRUSTED   = 0x0400;  // DLL: Advanced spell-check on, but the sibling vkey_engine.dll failed the trust gate → silent C++ fallback
 }
 
 // Diagnostic flag bit definitions (uint8_t, byte slot at SharedState.diagFlags).

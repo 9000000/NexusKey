@@ -21,6 +21,15 @@ bool EngineFactory::WillUseRustEngine(const TypingConfig& config) {
 #endif
 }
 
+bool EngineFactory::RustEngineExpectedButUnavailable(const TypingConfig& config) {
+#ifdef VKEY_USE_RUST_ENGINE
+    return config.spellSuggestEnabled && !RustInputEngine::LibraryAvailable();
+#else
+    (void)config;
+    return false;
+#endif
+}
+
 std::unique_ptr<IInputEngine> EngineFactory::Create(const TypingConfig& config) {
 #ifdef VKEY_USE_RUST_ENGINE
     if (WillUseRustEngine(config)) {

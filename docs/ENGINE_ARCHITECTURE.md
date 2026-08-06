@@ -94,7 +94,16 @@ Khi kiểm tra file `vkey_engine.dll`:
 2. VKey dùng Windows CNG API (`BCryptHashData`) để tính mã băm SHA-256 của file thực tế trên đĩa.
 3. Mã băm được so sánh với mã ghim sẵn trong thời gian cố định (constant-time comparison) để chống tấn công phân tích thời gian (side-channel timing attack).
 
-### 3. Nạp an toàn & Định danh File (File Identity Binding)
+### 3. Hệ quả: `VKey.exe` và `VKeyTSF.dll` phải cùng một lứa build
+Mã băm được ghim **tại thời điểm biên dịch**, nên mọi binary nạp engine (`VKey.exe` cho chế độ Hook, `VKeyTSF.dll` cho chế độ TSF) đều mang bản ghim riêng của lứa build đó. Nếu một file bị bỏ lại ở bản cũ — thường gặp nhất là `VKeyTSF.dll`, vì Windows không cho ghi đè DLL đang được ứng dụng khác nạp nên bước cập nhật phải hoãn sang lần khởi động sau — thì file đó sẽ từ chối `vkey_engine.dll` mới và **tự động quay về Engine C++**, dù engine mới hoàn toàn hợp lệ.
+
+Biểu hiện: tính năng nâng cao (ví dụ `hcaof` → `chào`) biến mất trong các ứng dụng dùng TSF, nhưng vẫn hoạt động ở chế độ Hook. Cách xử lý: **khởi động lại Windows** — lần khởi động kế tiếp sẽ áp bản DLL đang chờ và buộc các tiến trình đang giữ DLL cũ nhả ra.
+
+Để tình trạng này không diễn ra âm thầm, `EngineController` phát cờ `TSF_ENGINE_UNTRUSTED` qua SharedState khi Kiểm tra Chính tả Nâng cao đang bật mà engine không nạp được; Cài đặt và khay hệ thống hiển thị banner đề nghị khởi động lại.
+
+> **Kế hoạch (chưa triển khai)**: thay việc ghim mã băm bằng **xác thực chữ ký số** (ECDSA P-256, khoá công khai nhúng trong binary, chữ ký rời `vkey_engine.dll.sig` kèm số thứ tự bản phát hành để chặn hạ cấp). Chữ ký ghim *người phát hành* thay vì *một file cụ thể*, nên binary lứa cũ vẫn nạp được engine mới và ràng buộc cùng lứa build ở trên biến mất.
+
+### 4. Nạp an toàn & Định danh File (File Identity Binding)
 1. Hàm `LoadLibraryExW` chỉ nạp DLL từ thư mục ứng dụng hoặc `System32` (`LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32`), loại bỏ hoàn toàn nguy cơ tấn công qua đường dẫn `PATH` hoặc CWD.
 2. Sau khi nạp, VKey kiểm tra chỉ số định danh file trên đĩa (`dwVolumeSerialNumber`, `nFileIndexHigh`, `nFileIndexLow`) thông qua `GetFileInformationByHandle` để đảm bảo Windows đã nạp đúng file đã được xác thực SHA-256 trước đó.
 

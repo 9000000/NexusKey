@@ -299,5 +299,29 @@ TEST_F(EngineFactoryTest, ApplySharedState_MultipleApplies_SameMethod_NoRecreate
     EXPECT_EQ(sim.GetEngine()->Count(), 1);
 }
 
+// ============================================================================
+// Restart-banner condition (TSF_ENGINE_UNTRUSTED)
+// ============================================================================
+
+// The banner must fire exactly when Advanced spell-check is on and Create()
+// silently fell back to the C++ engine — never in a build that ships no Rust
+// engine, where that fallback is the intended backend.
+TEST_F(EngineFactoryTest, RustEngineExpectedButUnavailable_MatchesFallback) {
+    TypingConfig config;
+    config.spellSuggestEnabled = true;
+#ifdef VKEY_USE_RUST_ENGINE
+    EXPECT_EQ(EngineFactory::RustEngineExpectedButUnavailable(config),
+              !EngineFactory::WillUseRustEngine(config));
+#else
+    EXPECT_FALSE(EngineFactory::RustEngineExpectedButUnavailable(config));
+#endif
+}
+
+TEST_F(EngineFactoryTest, RustEngineExpectedButUnavailable_SilentWhenSuggestOff) {
+    TypingConfig config;
+    config.spellSuggestEnabled = false;
+    EXPECT_FALSE(EngineFactory::RustEngineExpectedButUnavailable(config));
+}
+
 }  // namespace
 }  // namespace NextKey

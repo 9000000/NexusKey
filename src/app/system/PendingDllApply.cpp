@@ -143,7 +143,11 @@ UpdateBannerState GetUpdateBannerState(const SharedStateManager& shared) noexcep
     if (!shared.IsConnected()) return UpdateBannerState::Hide;
     const uint32_t flags = shared.ReadFlags();
     if (flags & SharedFlags::TSF_PENDING_DLL_SWAP) return UpdateBannerState::PendingSwap;
-    if (flags & (SharedFlags::TSF_POST_UPDATE_REBOOT | SharedFlags::TSF_ABI_MISMATCH)) {
+    // TSF_ENGINE_UNTRUSTED shares this banner deliberately: its cause is the same
+    // stale-DLL skew, and UPDATE_BANNER_MISMATCH already tells the user to restart
+    // Windows — which is exactly the fix.
+    if (flags & (SharedFlags::TSF_POST_UPDATE_REBOOT | SharedFlags::TSF_ABI_MISMATCH |
+                 SharedFlags::TSF_ENGINE_UNTRUSTED)) {
         return UpdateBannerState::Mismatch;
     }
     return UpdateBannerState::Hide;

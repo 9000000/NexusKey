@@ -18,6 +18,14 @@ public:
     /// behavior when the runtime library is unavailable.
     [[nodiscard]] static bool WillUseRustEngine(const TypingConfig& config);
 
+    /// True when the config asks for the Rust engine and this build ships it,
+    /// yet the library cannot be used (missing, untrusted, ABI mismatch) — so
+    /// Create() silently falls back to TypingEngine and Advanced spell-check
+    /// loses lexicon auto-correct. Drives the restart banner; without it the
+    /// only trace is a log line. Always false in builds compiled without the
+    /// Rust engine, where the C++ engine is the intended backend.
+    [[nodiscard]] static bool RustEngineExpectedButUnavailable(const TypingConfig& config);
+
     /// Create an engine based on configuration
     [[nodiscard]] static std::unique_ptr<IInputEngine> Create(const TypingConfig& config);
 

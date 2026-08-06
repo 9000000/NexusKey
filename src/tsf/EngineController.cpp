@@ -1116,6 +1116,25 @@ void EngineController::ApplySharedState(const SharedState& state,
 
     currentMethod_ = newMethod;
     engine_ = EngineFactory::Create(config_);
+    // This DLL can be a different build than VKey.exe (update deferred because a
+    // host process held the old DLL), so it may bake a different engine.lock hash
+    // than the installed vkey_engine.dll and lose the Rust engine while the EXE
+    // keeps it. Publish it — otherwise the user only sees features quietly missing
+    // in TSF apps.
+    //
+    // Set-only while the feature is on, for the reason spelled out at the
+    // TSF_ABI_MISMATCH recovery above: every TSF host has its own copy of this DLL
+    // and they can be different builds mid-update, so a host that loaded the engine
+    // fine must not clear a bit another host raised for real. The bit clears when
+    // VKeyApp.exe recreates SharedState — the restart the banner asks for. Turning
+    // Advanced spell-check off does clear it: nothing is degraded any more, and
+    // leaving a restart banner up after the user disabled the feature is a false
+    // alarm.
+    if (EngineFactory::RustEngineExpectedButUnavailable(config_)) {
+        sharedState_.SetOrClearFlag(SharedFlags::TSF_ENGINE_UNTRUSTED, true);
+    } else if (!config_.spellSuggestEnabled) {
+        sharedState_.SetOrClearFlag(SharedFlags::TSF_ENGINE_UNTRUSTED, false);
+    }
     TSF_LOG(L"Engine recreated (%s, modernOrtho=%d, allowZwjf=%d)",
             newMethod == InputMethod::VNI ? L"VNI" : L"Telex",
             config_.modernOrtho ? 1 : 0, config_.allowZwjf ? 1 : 0);

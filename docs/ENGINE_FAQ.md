@@ -37,6 +37,13 @@ Tính năng này giúp phát hiện và tự động sửa một số lỗi gõ 
 
 ### Nếu tôi bật Kiểm tra Chính tả Nâng cao mà file engine bị thiếu hoặc bị lỗi thì sao?
 VKey có cơ chế **tự động chuyển đổi (Fallback)** thông minh: nếu file `vkey_engine.dll` không tồn tại hoặc bị lỗi, VKey sẽ ngay lập tức quay lại sử dụng Engine C++ mặc định. Quá trình gõ tiếng Việt của bạn sẽ không bao giờ bị ngắt quãng.
+
+### Sau khi cập nhật VKey, tính năng nâng cao mất trong Chrome / Word nhưng vẫn chạy ở nơi khác?
+Hãy **khởi động lại Windows**, tính năng sẽ trở lại.
+
+Nguyên nhân: VKey xử lý phím trong các ứng dụng đó bằng một thư viện riêng (`VKeyTSF.dll`) nạp thẳng vào ứng dụng. Windows không cho phép ghi đè một thư viện đang được ứng dụng khác sử dụng, nên khi cập nhật, file này được hoãn thay tới lần khởi động kế tiếp. Trong lúc chờ, nó vẫn là bản cũ và chỉ tin đúng bản engine đi cùng lứa với nó, nên tạm thời quay về Engine C++ — bạn vẫn gõ tiếng Việt bình thường, chỉ thiếu phần sửa lỗi gõ nhanh.
+
+VKey nhận biết được tình trạng này và hiển thị thông báo đề nghị khởi động lại trong cửa sổ Cài đặt cũng như menu ở khay hệ thống.
 ---
 
 ## 2. An toàn, Bảo mật & Quyền riêng tư
@@ -53,6 +60,8 @@ Bạn có thể tự kiểm tra bằng 2 cách đơn giản sau:
 
 ### Vì sao VKey lại kiểm tra mã SHA-256 trước khi nạp file `vkey_engine.dll`?
 Đây là cơ chế bảo vệ an toàn cho máy tính của bạn. Việc kiểm tra mã SHA-256 giúp VKey đảm bảo file `vkey_engine.dll` đúng là file chính thức phát hành bởi dự án, chưa bị mã độc hoặc vi rút chỉnh sửa hay thay thế trên máy tính của bạn.
+
+Đánh đổi của cách làm này: mã băm được ghim cứng lúc biên dịch, nên VKey chỉ tin đúng bản engine đi cùng lứa với nó. Đó là lý do một bản cập nhật thay được `vkey_engine.dll` nhưng chưa thay được `VKeyTSF.dll` sẽ tạm mất tính năng nâng cao cho tới khi bạn khởi động lại Windows (xem câu hỏi ở mục 1). Chi tiết kỹ thuật và hướng cải tiến bằng chữ ký số nằm trong [ENGINE_ARCHITECTURE.md](ENGINE_ARCHITECTURE.md#4-mô-hình-bảo-mật--kiểm-tra-an-toàn-file-security--trust-model).
 
 ---
 
