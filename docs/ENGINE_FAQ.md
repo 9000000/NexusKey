@@ -36,7 +36,7 @@ Tính năng này giúp phát hiện và tự động sửa một số lỗi gõ 
 **Không**. VKey hoạt động hoàn toàn độc lập và đáp ứng 100% nhu cầu gõ tiếng Việt thông thường chỉ với Engine C++ mặc định. Bạn có thể sử dụng VKey ngay sau khi tải về mà không cần bật hay cài đặt thêm bất kỳ thành phần nào.
 
 ### Nếu tôi bật Kiểm tra Chính tả Nâng cao mà file engine bị thiếu hoặc bị lỗi thì sao?
-VKey có cơ chế **tự động chuyển đổi (Fallback)** thông minh: nếu file `vkey_engine.dll` không tồn tại hoặc bị lỗi, VKey sẽ ngay lập tức quay lại sử dụng Engine C++ mặc định. Quá trình gõ tiếng Việt của bạn sẽ không bao giờ bị ngắt quãng.
+VKey có cơ chế **tự động chuyển đổi (Fallback)** thông minh: nếu file `vkey_engine.dll` không tồn tại, bị lỗi, hoặc thiếu file chữ ký `vkey_engine.dll.sig` đi kèm, VKey sẽ ngay lập tức quay lại sử dụng Engine C++ mặc định. Quá trình gõ tiếng Việt của bạn sẽ không bao giờ bị ngắt quãng.
 
 ### Sau khi cập nhật VKey, tính năng nâng cao mất trong Chrome / Word nhưng vẫn chạy ở nơi khác?
 Hãy **khởi động lại Windows**, tính năng sẽ trở lại.
@@ -72,7 +72,10 @@ Cách cũ ghim mã băm của đúng một file, nên `VKey.exe` và `VKeyTSF.dl
 
 Kèm theo là số thứ tự bản phát hành nằm trong phần được ký, nên không thể lấy một bản engine cũ (dù chữ ký thật) để đắp ngược lại.
 
----
+### Chữ ký này bảo vệ được tới đâu?
+Nó chặn mọi cách tráo **riêng file engine**: thay bằng file khác, tự ký bằng khoá lạ, sửa số hiệu trong file chữ ký, hay đắp lại bản cũ — đều bị từ chối.
+
+Nó **không** bảo vệ được khi máy bạn đã bị chiếm quyền ghi vào thư mục cài VKey: kẻ sửa được `VKeyTSF.dll` thì cũng sửa được chính đoạn mã đi kiểm tra. Không cơ chế nào ở tầng này ngăn được điều đó — hãy giữ máy sạch và chỉ tải VKey từ trang phát hành chính thức.
 
 ## 3. Quản lý, Cài đặt & Gỡ bỏ
 
@@ -108,7 +111,11 @@ Toàn bộ mã nguồn cốt lõi của VKey bao gồm:
 Tất cả đều được công khai minh bạch tại repository GitHub của dự án.
 
 ### Tôi là lập trình viên, tôi có thể tự viết Engine riêng hoặc tích hợp VKey với bộ xử lý khác không?
-**Có**. VKey định nghĩa một giao diện C ABI chuẩn (`include/vkey_engine.h`). Bất kỳ thư viện nào tuân thủ giao diện C ABI này đều có thể nạp và sử dụng cùng với VKey. Bạn có thể tham khảo thêm tài liệu [ENGINE_ARCHITECTURE.md](ENGINE_ARCHITECTURE.md) để biết chi tiết kỹ thuật.
+**Có, nhưng phải tự build VKey.** Giao diện C ABI là chuẩn mở (`include/vkey_engine.h`), viết engine tuân thủ nó là đủ về mặt kỹ thuật.
+
+Tuy nhiên **bản VKey phát hành sẵn sẽ không nạp engine của bạn**: nó chỉ chấp nhận engine mang chữ ký của dự án, và đó chính là thứ ngăn người khác đặt một DLL tuỳ ý vào thư mục cài trên máy người dùng. Để chạy engine của mình, bạn build VKey từ mã nguồn với khoá công khai của chính bạn (`extern/vkey_engine/engine.pub`), hoặc dùng bản Debug — bản Debug còn chấp nhận engine khớp mã băm khai trong `engine.lock`.
+
+Chi tiết kỹ thuật trong [ENGINE_ARCHITECTURE.md](ENGINE_ARCHITECTURE.md).
 
 ---
 
