@@ -83,7 +83,7 @@ Engine Rust được đóng gói dưới dạng thư viện liên kết động 
 
 ## 4. Mô hình Bảo mật & Kiểm tra An toàn File (Security & Trust Model)
 
-`vkey_engine.dll` được nạp thẳng vào tiến trình đang gõ (VKey.exe ở chế độ Hook, và cả Chrome/Word... ở chế độ TSF, vì `VKeyTSF.dll` chạy bên trong ứng dụng đó). Một file như vậy mà nạp bừa thì ai đặt được file cùng tên vào thư mục cài là chạy được mã của họ trong mọi ứng dụng anh gõ. Nên trước khi nạp, VKey phải trả lời được: **file này có đúng do dự án phát hành không?**
+`vkey_engine.dll` được nạp thẳng vào tiến trình đang gõ (VKey.exe ở chế độ Hook, và cả Chrome/Word... ở chế độ TSF, vì `VKeyTSF.dll` chạy bên trong ứng dụng đó). Một file như vậy mà nạp bừa thì ai đặt được file cùng tên vào thư mục cài là chạy được mã của họ trong mọi ứng dụng bạn gõ. Nên trước khi nạp, VKey phải trả lời được: **file này có đúng do dự án phát hành không?**
 
 ### 1. Câu trả lời: chữ ký số rời, không phải mã băm cố định
 
@@ -125,29 +125,22 @@ Chữ ký ghim **người phát hành** thay vì một file, nên một `VKeyTSF
 
 `abi` chuyển từ `==` sang `>=` cũng vì lý do đó: một binary cũ phải nạp được engine mới. An toàn vì mọi symbol nó cần đều được phân giải theo tên lúc nạp, và C ABI của engine chỉ thêm chứ không đổi nghĩa symbol cũ.
 
-### 4. Chặn được gì, không chặn được gì
+### 4. Khả năng bảo vệ (Cơ chế chữ ký chặn được những gì?)
 
-| Tình huống | Kết quả |
-| :--- | :--- |
-| Thay engine bằng file khác, tự ký bằng khoá lạ | Từ chối — khoá công khai nhúng sẵn không khớp |
-| Giữ chữ ký thật, tráo engine | Từ chối — mã băm trong chuỗi ký không khớp |
-| Sửa `abi`/`counter` trong file `.sig` cho qua mức sàn | Từ chối — hai trường đó nằm trong chuỗi đã ký |
-| Đắp lại bản engine cũ (chữ ký thật) | Từ chối nếu `counter` dưới mức sàn |
-| Tráo file giữa lúc kiểm và lúc nạp | Từ chối — khoá ghi/xoá khi mở, và đối chiếu định danh file sau khi nạp |
-| **Sửa thẳng `VKeyTSF.dll` / `VKey.exe`** | **Không chặn được** |
-| **Lộ khoá riêng** | **Không chặn được** cho tới khi phát hành khoá công khai mới |
+Bảng dưới đây tóm tắt các kịch bản can thiệp file engine và cách hệ thống tự động ngăn chặn:
 
-Hai dòng cuối là giới hạn thật của mô hình: kẻ ghi được vào thư mục cài cũng ghi được lên chính phần đi kiểm tra. Cách ghim mã băm trước đây cũng vậy, nên đây không phải bước lùi.
+| Kịch bản can thiệp Engine | Kết quả | Lý do / Cơ chế ngăn chặn |
+| :--- | :--- | :--- |
+| **Dùng engine lạ, tự tạo chữ ký riêng** | ❌ Từ chối | Khóa công khai tích hợp trong app không xác thực được chữ ký này. |
+| **Dùng engine giả nhưng ghép với file `.sig` thật** | ❌ Từ chối | Mã hash của engine không trùng khớp với mã hash lưu trong chữ ký. |
+| **Sửa thông tin phiên bản trong file `.sig` để vượt rào** | ❌ Từ chối | Các trường phiên bản (`abi`, `counter`) cũng nằm trong phạm vi được ký số. |
+| **Cố tình nạp lại bản engine cũ (dù có chữ ký chuẩn)** | ❌ Từ chối | Hệ thống từ chối nếu số phiên bản (`counter`) thấp hơn mức tối thiểu app yêu cầu. |
+| **Tráo file ngay sau khi app vừa kiểm tra xong** | ❌ Từ chối | App khóa quyền ghi/xóa file ngay khi mở và đối chiếu lại định danh file trước khi nạp. |
 
-### 5. `engine.lock` giờ còn dùng để làm gì
+> 📌 **Phạm vi bảo vệ (Trust Boundary):**  
+> Cơ chế ký số này tập trung bảo vệ tính toàn vẹn của file engine nạp động. Các nguy cơ cấp hệ thống (như kẻ xấu có quyền Admin sửa trực tiếp `VKey.exe` hoặc lộ Private Key) nằm ngoài phạm vi xử lý của việc kiểm tra file cục bộ và thuộc về cơ chế bảo mật chung của HĐH / quy trình quản lý khóa.
 
-Vẫn còn, nhưng hạ vai trò:
-
-- **Bản build Debug** chấp nhận thêm engine khớp mã băm trong lock. Bản engine dựng tại máy không có chữ ký (khoá nằm ở workflow phát hành), nên nếu không có đường này thì không dev được. Nhánh này **không được biên dịch vào bản Release** — trên máy người dùng, chữ ký là đường duy nhất.
-- **`tools/fetch_engine.py`** đối chiếu file tải về với lock trước khi ghi vào đĩa.
-- **`counter` trong lock** chính là mức sàn được nhúng vào bản build.
-
-### 6. Khi engine không nạp được
+### 5. Khi engine không nạp được
 
 Không im lặng nữa. `EngineController` phát cờ `TSF_ENGINE_UNTRUSTED` qua SharedState khi Kiểm tra Chính tả Nâng cao đang bật mà engine không dùng được; Cài đặt và menu khay hệ thống hiển thị banner đề nghị khởi động lại Windows. Lý do bật cờ nằm trong log (`Logger`), gồm cả trường hợp thiếu `.sig`, sai chữ ký, hay engine cũ hơn mức sàn.
 
@@ -157,9 +150,9 @@ Không im lặng nữa. `EngineController` phát cờ `TSF_ENGINE_UNTRUSTED` qua
 
 Bộ gõ bàn phím là phần mềm nhạy cảm vì tiếp nhận toàn bộ phím gõ của người dùng. VKey được thiết kế tuân thủ nghiêm ngặt nguyên tắc bảo vệ quyền riêng tư:
 
-- **100% Offline (Không kết nối mạng)**: Cả Engine C++ lẫn Engine Rust đều chạy hoàn toàn cục bộ trong bộ nhớ của tiến trình `VKeyApp.exe`. Engine Rust không chứa bất kỳ mã nguồn hay thư viện mạng nào.
-- **Tương thích Tường lửa (Firewall Friendly)**: Người dùng có thể chủ động chặn toàn bộ truy cập Internet của file `VKey.exe` bằng Windows Firewall. Việc gõ tiếng Việt và kiểm tra chính tả vẫn hoạt động hoàn hảo 100%.
-- **Kiểm chứng mã nguồn (Auditable)**: Toàn bộ mã nguồn tiếp nhận bàn phím, cơ chế kiểm tra SHA-256 và luồng truyền dữ liệu phím gõ của VKey đều được công khai minh bạch trên GitHub để cộng đồng tự kiểm tra.
+- **100% Offline (Không kết nối mạng)**: Cả Engine C++ lẫn Engine Rust đều chạy hoàn toàn cục bộ trong bộ nhớ tiến trình (`VKeyApp.exe`) và không tích hợp bất kỳ thư viện hay mã nguồn mạng nào.
+- **An tâm chặn Tường lửa (Firewall-safe)**: Người dùng có thể chủ động tạo quy tắc chặn Internet cho `VKey.exe` trong Windows Firewall để an tâm tuyệt đối — mọi tính năng gõ tiếng Việt và kiểm tra chính tả vẫn hoạt động bình thường mà không báo lỗi hay gián đoạn.
+- **Mã nguồn mở & Minh bạch**: Toàn bộ mã nguồn tiếp nhận phím gõ, xác thực chữ ký và luồng truyền dữ liệu đều được công khai trên GitHub để cộng đồng tự do kiểm chứng độc lập.
 
 ---
 

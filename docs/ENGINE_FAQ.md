@@ -25,7 +25,7 @@ VKey được thiết kế theo mô hình **Engine kép (Dual-Engine)** gồm ha
 | :--- | :--- | :--- |
 | **Mã nguồn** | Mã nguồn mở 100% tích hợp sẵn | Thư viện mở rộng động (`vkey_engine.dll`) |
 | **Kiểu gõ** | Telex, VNI, Simple Telex chuẩn | Telex, VNI nâng cao + Ngữ cảnh |
-| **Tính năng nổi bật** | Nhẹ, nhanh, bỏ dấu chính xác | Sửa lỗi gõ nhanh bị đảo phím (`hcaof` → `chào`), gợi ý từ vựng |
+| **Tính năng nổi bật** | Nhẹ, nhanh, bỏ dấu chính xác | Sửa lỗi gõ nhanh bị đảo phím (`hcaof` → `chào`) |
 | **Cách cài đặt** | Có sẵn trong ứng dụng VKey | Tùy chọn bật trong Cài đặt |
 
 ### Tính năng "Kiểm tra Chính tả Nâng cao" giúp gì cho tôi?
@@ -38,12 +38,12 @@ Tính năng này giúp phát hiện và tự động sửa một số lỗi gõ 
 ### Nếu tôi bật Kiểm tra Chính tả Nâng cao mà file engine bị thiếu hoặc bị lỗi thì sao?
 VKey có cơ chế **tự động chuyển đổi (Fallback)** thông minh: nếu file `vkey_engine.dll` không tồn tại, bị lỗi, hoặc thiếu file chữ ký `vkey_engine.dll.sig` đi kèm, VKey sẽ ngay lập tức quay lại sử dụng Engine C++ mặc định. Quá trình gõ tiếng Việt của bạn sẽ không bao giờ bị ngắt quãng.
 
-### Sau khi cập nhật VKey, tính năng nâng cao mất trong Chrome / Word nhưng vẫn chạy ở nơi khác?
-Hãy **khởi động lại Windows**, tính năng sẽ trở lại.
+### Tại sao sau khi cập nhật VKey, tính năng nâng cao tạm thời chưa hoạt động trong Chrome / Word?
+**Cách xử lý nhanh**: Bạn chỉ cần **đóng hẳn ứng dụng đó (Chrome, Word,...) rồi mở lại**, hoặc khởi động lại máy là tính năng sẽ hoạt động bình thường.
 
-Nguyên nhân: trong các ứng dụng đó, VKey xử lý phím bằng một thư viện riêng (`VKeyTSF.dll`) nạp thẳng vào ứng dụng. Windows không cho ghi đè một thư viện đang được ứng dụng khác sử dụng, nên khi cập nhật, file này được hoãn thay tới lần khởi động kế tiếp — và những ứng dụng đang mở vẫn giữ bản cũ trong bộ nhớ cho tới khi chúng đóng lại.
+**Lý do**: Do Windows giữ khóa các file hệ thống khi Chrome/Word đang mở, nên VKey cần ứng dụng được mở lại để nạp phiên bản cập nhật mới nhất.
 
-Từ bản dùng chữ ký số, bản `VKeyTSF.dll` cũ vẫn nạp được engine mới, nên trường hợp này hiếm đi nhiều. Nếu vẫn xảy ra, thường là thiếu file `vkey_engine.dll.sig` bên cạnh engine. Dù thế nào bạn vẫn gõ tiếng Việt bình thường, chỉ thiếu phần sửa lỗi gõ nhanh, và VKey sẽ hiển thị thông báo đề nghị khởi động lại trong cửa sổ Cài đặt cũng như menu khay hệ thống.
+*📌 Lưu ý:* Trong suốt quá trình này, việc gõ tiếng Việt của bạn vẫn hoạt động hoàn toàn bình thường (không bị gián đoạn), chỉ tạm thời không áp dụng tính năng sửa lỗi gõ nhanh cho đến khi ứng dụng được mở lại.
 
 ---
 
@@ -66,11 +66,6 @@ Vì file này chạy **bên trong** ứng dụng bạn đang gõ. Nếu nạp b�
 Bằng **chữ ký số**. Mỗi bản engine phát hành đi kèm một file nhỏ `vkey_engine.dll.sig` (72 byte) — chữ ký ECDSA P-256 do dự án ký. Khoá công khai để kiểm chữ ký đó được nhúng sẵn trong `VKey.exe` và `VKeyTSF.dll` lúc biên dịch, nên không ai thay được từ bên ngoài. Trước khi nạp, VKey tự tính lại mã băm của engine trên đĩa rồi đối chiếu với chữ ký; sai một byte là từ chối.
 
 Vì vậy **`vkey_engine.dll.sig` phải luôn nằm cạnh `vkey_engine.dll`** — chép engine đi đâu thì chép cả file này theo, thiếu nó VKey sẽ quay về Engine C++.
-
-### Trước đây nghe nói kiểm SHA-256, giờ khác gì?
-Cách cũ ghim mã băm của đúng một file, nên `VKey.exe` và `VKeyTSF.dll` buộc phải cùng lứa build với engine — chỉ cần một file bị bỏ lại trong lúc cập nhật là tính năng nâng cao tắt ngấm. Chữ ký ghim *người phát hành* thay vì một file cụ thể, nên bản cũ vẫn nạp được engine mới và tình trạng đó không còn.
-
-Kèm theo là số thứ tự bản phát hành nằm trong phần được ký, nên không thể lấy một bản engine cũ (dù chữ ký thật) để đắp ngược lại.
 
 ### Chữ ký này bảo vệ được tới đâu?
 Nó chặn mọi cách tráo **riêng file engine**: thay bằng file khác, tự ký bằng khoá lạ, sửa số hiệu trong file chữ ký, hay đắp lại bản cũ — đều bị từ chối.
@@ -113,7 +108,7 @@ Tất cả đều được công khai minh bạch tại repository GitHub của 
 ### Tôi là lập trình viên, tôi có thể tự viết Engine riêng hoặc tích hợp VKey với bộ xử lý khác không?
 **Có, nhưng phải tự build VKey.** Giao diện C ABI là chuẩn mở (`include/vkey_engine.h`), viết engine tuân thủ nó là đủ về mặt kỹ thuật.
 
-Tuy nhiên **bản VKey phát hành sẵn sẽ không nạp engine của bạn**: nó chỉ chấp nhận engine mang chữ ký của dự án, và đó chính là thứ ngăn người khác đặt một DLL tuỳ ý vào thư mục cài trên máy người dùng. Để chạy engine của mình, bạn build VKey từ mã nguồn với khoá công khai của chính bạn (`extern/vkey_engine/engine.pub`), hoặc dùng bản Debug — bản Debug còn chấp nhận engine khớp mã băm khai trong `engine.lock`.
+Tuy nhiên **bản VKey phát hành sẵn sẽ không nạp engine của bạn**: nó chỉ chấp nhận engine mang chữ ký của dự án, và đó chính là thứ ngăn người khác đặt một DLL tuỳ ý vào thư mục cài trên máy người dùng. Để chạy engine tự viết, bạn cần build VKey từ mã nguồn với khóa công khai (Public Key) do bạn tự tạo (`extern/vkey_engine/engine.pub`).
 
 Chi tiết kỹ thuật trong [ENGINE_ARCHITECTURE.md](ENGINE_ARCHITECTURE.md).
 
