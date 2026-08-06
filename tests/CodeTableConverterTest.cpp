@@ -1,5 +1,5 @@
 // VKey - CodeTableConverter Unit Tests
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>
 #include "core/engine/CodeTableConverter.h"

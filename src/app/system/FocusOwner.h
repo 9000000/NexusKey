@@ -1,5 +1,5 @@
 // VKey - Focus Owner (Wave 3 PR 3.2, 2026-05-24)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Owns the focus-tracking subsystem extracted from HookEngine:
 //   * WinEvent hooks (EVENT_SYSTEM_FOREGROUND + EVENT_SYSTEM_MINIMIZEEND)

@@ -114,7 +114,7 @@ target_include_directories(VKeyEngine PUBLIC
 # via its C ABI, loaded at runtime). The in-tree C++ TypingEngine stays compiled
 # as a fallback (used when the library is missing, and by the parity tests).
 # Defaults OFF on purpose. The prebuilt engine in extern/vkey_engine/ is NOT
-# covered by this project's AGPL-3.0 license and embeds CC BY-NC data, so a
+# covered by this project's GPL-3.0 license and embeds CC BY-NC data, so a
 # plain `cmake -B build` must not require it — see extern/vkey_engine/LICENSE.
 # Official builds opt in explicitly with -DVKEY_USE_RUST_ENGINE=ON in CI.
 option(VKEY_USE_RUST_ENGINE "Use the prebuilt closed-source Rust engine (C ABI)" OFF)
@@ -232,7 +232,7 @@ else()
         "compiled, so a green ctest does not cover the Rust engine. "
         "Maintainers: configure with -DVKEY_USE_RUST_ENGINE=ON. "
         "Forks: this is the correct default — see extern/vkey_engine/LICENSE, "
-        "those artifacts are not AGPL and are noncommercial-only.")
+        "those artifacts are not GPL and are noncommercial-only.")
 endif()
 
 # Core Library (platform layer: SharedState, Config, Debug)

@@ -1,7 +1,7 @@
 // Tests for IsWebView2NegativeCacheFresh — pure WebView2 negative-cache TTL rule.
 // FocusOwner::IsWebView2App is Windows-only (CreateToolhelp32Snapshot); the
 // freshness decision is extracted so the TTL behaviour is verified on Linux.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>
 

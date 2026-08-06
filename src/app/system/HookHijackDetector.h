@@ -1,5 +1,5 @@
 // VKey - Hook Hijack Detector (Anti-Dorion v2, 2026-05-28)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Stateless processor (no thread of its own — Pillar 2 "Nhẹ": one worker
 // thread covers many responsibilities, one thread per responsibility is

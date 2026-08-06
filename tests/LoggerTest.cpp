@@ -1,5 +1,5 @@
 // VKey - Logger tests
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Test scope:
 //  - Runtime gate: Log() is noop when disabled, writes when enabled.

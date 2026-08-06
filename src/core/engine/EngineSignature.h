@@ -1,6 +1,6 @@
 // VKey - vkey_engine.dll detached signature: layout and floor checks
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
 

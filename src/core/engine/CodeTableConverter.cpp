@@ -1,6 +1,6 @@
 // VKey - Code Table Converter Implementation
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Mapping tables: Unicode codepoint → encoded 16-bit value, per the published
 // charset standards (TCVN 5712:1993 "ABC", VNI, CP1258). TCVN3 values match

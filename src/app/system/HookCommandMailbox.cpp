@@ -1,5 +1,5 @@
 // VKey - Hook command mailbox impl (Phase 2a)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // See HookCommandMailbox.h for the design contract. This .cpp is
 // intentionally minimal — all the load-bearing logic is the memory-order

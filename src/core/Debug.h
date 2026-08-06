@@ -1,5 +1,5 @@
 // VKey - Debug Logging Infrastructure
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Backed by NextKey::Logger — a runtime-gated file sink toggled by the user
 // from Settings → System → "Bật debug log".

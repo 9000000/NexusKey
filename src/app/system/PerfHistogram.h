@@ -1,5 +1,5 @@
 // VKey - Per-stage performance histogram
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Phase 1 of the 2026-05-19 architecture review design
 // (docs/plans/2026-05-19-architecture-review-design.md). Captures p50/p95/p99/

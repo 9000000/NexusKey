@@ -1,7 +1,7 @@
 # VKey - Bộ gõ tiếng Việt hiện đại cho Windows
 
 [![Build](https://github.com/phatMT97/VKey/actions/workflows/build.yml/badge.svg)](https://github.com/phatMT97/VKey/actions/workflows/build.yml)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPLv3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Release](https://img.shields.io/github/v/release/phatMT97/VKey)](https://github.com/phatMT97/VKey/releases)
 [![Code signing](https://img.shields.io/badge/Code_signing-SignPath_Foundation-success)](https://signpath.org/)
 
@@ -342,9 +342,11 @@ Cảm ơn các thành viên cộng đồng đã test và góp ý:
 
 ## License
 
-VKey được phát hành theo **[AGPL-3.0](LICENSE)**.
+VKey được phát hành theo **[GPL-3.0](LICENSE)**.
 
-Bạn có thể sử dụng, sửa đổi, phân phối lại toàn bộ mã nguồn với điều kiện giữ nguyên license AGPL-3.0 cho derivative works — bao gồm cả khi cung cấp dưới dạng dịch vụ qua mạng (SaaS).
+Bạn có thể sử dụng, sửa đổi, phân phối lại toàn bộ mã nguồn với điều kiện giữ nguyên license GPL-3.0 cho derivative works. Việc **dùng** VKey (kể cả trong doanh nghiệp) không phát sinh nghĩa vụ nào — GPL chỉ ràng buộc khi bạn phân phối lại.
+
+Riêng Engine Rust nâng cao (`vkey_engine.dll`) **không** thuộc GPL-3.0: nó nhúng dữ liệu CC BY-NC nên chỉ dùng phi thương mại. Xem `extern/vkey_engine/LICENSE`.
 
 ### Quy định về việc tham chiếu và sử dụng AI (AI Reference Policy)
 

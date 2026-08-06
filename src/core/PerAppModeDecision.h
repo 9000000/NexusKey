@@ -1,5 +1,5 @@
 // VKey - Pure decision function for the per-app mode lock (hard-E / hard-V).
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // "Excluded apps" historically forced English by making the IME fully
 // transparent (hook passthrough + TSF dormant). The per-app mode lock

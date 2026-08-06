@@ -1,5 +1,5 @@
 // ThreadOwnershipTest.cpp
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Phase 2d — single-writer thread-ownership invariants. See
 // docs/plans/2026-05-19-architecture-review-design.md §Phase 2.

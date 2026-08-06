@@ -1,6 +1,6 @@
 // VKey - Shared Engine Helper Functions
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Template helpers used by TypingEngine (Telex, VNI, and Combined input methods).
 // Templated so call sites stay structural-only against CharState.

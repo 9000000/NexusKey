@@ -1,5 +1,5 @@
 // VKey - Hook Hijack Detector Implementation (Anti-Dorion v2, 2026-05-28)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Linux-portable: no <Windows.h>. Platform interactions (GetKeyboardState,
 // ToUnicodeEx) come in via Callbacks — production wires them in HookEngine

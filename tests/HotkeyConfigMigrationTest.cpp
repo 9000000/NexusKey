@@ -1,6 +1,6 @@
 // VKey — HotkeyConfig schema migration (wchar_t key → uint32_t vk).
 // Verifies the legacy-character → VK rule: clean (A-Z/0-9), nothing else.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>
 

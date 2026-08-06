@@ -1,5 +1,5 @@
 // Tests for the MarkActivity gate logic + hot-path budget (plan §3.6.1).
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // HookEngine.cpp is Win32-only and not linked into VKeyTests, so we mirror
 // the MarkActivity gate here as a freestanding mock — same atomics, same

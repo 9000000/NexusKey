@@ -1,5 +1,5 @@
 // VKey - Commit-undo cancellation exemption rule
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure predicate: given a keystroke, returns true if the key should be
 // EXEMPT from the cancel-Primed branches in

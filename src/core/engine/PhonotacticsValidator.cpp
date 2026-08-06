@@ -1,6 +1,6 @@
 // VKey - PhonotacticsValidator Implementation
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Vietnamese syllable structure: [C₁] + V + [C₂]
 // Uses greedy consonant matching and packed-key vowel nucleus table (linear scan).

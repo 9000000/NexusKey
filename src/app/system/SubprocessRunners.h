@@ -1,5 +1,5 @@
 // VKey - Subprocess Runner Functions
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Each Run*Subprocess() is [[noreturn]] — called from command-line routing
 // in wWinMain, runs a Sciter dialog, then ExitProcess(0).

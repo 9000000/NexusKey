@@ -1,5 +1,5 @@
 // VKey - Pure decision function for spreadsheet-formula segment tracking
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // A "segment" is the run of keystrokes since the last cell/line boundary
 // (Enter / Tab / Esc / navigation / context reset). In a spreadsheet host

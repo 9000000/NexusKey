@@ -1,6 +1,6 @@
 // VKey - Macro Table Refresh Decision
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure decision: given the macro table's load state and the generation the
 // EXE published in SharedState, decide whether the TSF DLL should re-read the

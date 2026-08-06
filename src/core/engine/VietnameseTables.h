@@ -1,6 +1,6 @@
 // VKey - Shared Vietnamese Lookup Tables
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Flat constexpr arrays for O(1) composition lookups.
 // Used by TypingEngine (Telex, VNI, and Combined input methods).

@@ -1,5 +1,5 @@
 // VKey - delayed focus-classification apply decision
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Focus classification is intentionally asynchronous: WinEvent publishes a
 // request, the worker performs the heavy HWND/app probes, then the hook thread

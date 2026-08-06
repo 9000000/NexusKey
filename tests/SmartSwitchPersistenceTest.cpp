@@ -1,5 +1,5 @@
 // VKey - Smart Switch Persistence + ConfigManager V2 schema Tests
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Regression coverage for Bug 2 (V toggles silently dropped on Stop)
 // and Bug 3 (machine reset loses runtime state) from the 2026-05-28

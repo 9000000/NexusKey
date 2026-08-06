@@ -1,5 +1,5 @@
 // ReinstallBurstSchedulerTest.cpp
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Anti-Dorion v2 (2026-05-28) — burst-reinstall primary path.
 //

@@ -1,5 +1,5 @@
 // PerfHistogramTest.cpp
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Phase 1 (per-stage histogram) verification — see
 // docs/plans/2026-05-19-architecture-review-design.md §Phase 1.

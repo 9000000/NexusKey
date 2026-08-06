@@ -1,7 +1,7 @@
 // Tests for DecideEatLeakedKeyDuringSend — pure decision for the "nhảy loạn"
 // reorder fix (issue #206). HookEngine.cpp is Windows-only, so we test the
 // extracted decision in isolation (same pattern as CjkSwitchDecisionTest).
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>
 

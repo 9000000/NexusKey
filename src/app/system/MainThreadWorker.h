@@ -1,5 +1,5 @@
 // VKey - MainThreadWorker
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Sprint 1 Phase C — single home for non-hot-path work that previously
 // executed on the hook thread (config reload, focus poll, heartbeat,

@@ -1,5 +1,5 @@
 // VKey - Floating V/E Icon Overlay Implementation
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure GDI + direct pixel math — no GDI+ dependency.
 // Draggable via WM_NCHITTEST → HTCAPTION.

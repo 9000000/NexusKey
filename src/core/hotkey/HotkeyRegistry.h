@@ -1,6 +1,6 @@
 // VKey — Unified hotkey registry (single source of truth for user-rebindable
 // hotkey triggers). Pure Linux-portable: VK codes treated as plain integers.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
 

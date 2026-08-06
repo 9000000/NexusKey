@@ -1,5 +1,5 @@
 // VKey - PathUtil tests
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Locks PathBasename — the testable home for path->basename normalization that
 // ExcludedAppsDialog::addApp (#209 browse-to-add) and Logger route through.

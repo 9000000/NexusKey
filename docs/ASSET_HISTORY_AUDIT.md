@@ -89,4 +89,4 @@ nobody had written that down, or enforced it.
   origin. The one third-party trademark in the set, the SignPath logo, is
   recorded with its permission: use confirmed by SignPath on 2026-08-03.
 - `extern/vkey_engine/LICENSE` (branch `engine/rust-engine-lib`) — the prebuilt
-  engine is not AGPL-3.0 and is noncommercial-only.
+  engine is not GPL-3.0 and is noncommercial-only.

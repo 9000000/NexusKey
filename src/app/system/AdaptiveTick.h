@@ -1,5 +1,5 @@
 // AdaptiveTick.h - idle cadence for MainThreadWorker.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure C++, Linux-portable. Maps "milliseconds since last user activity" to
 // the MainThreadWorker tick interval. Used by HookEngine::OnTickPoll and

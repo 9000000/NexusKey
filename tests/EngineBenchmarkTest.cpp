@@ -1,5 +1,5 @@
 // VKey - Engine CPU Benchmark Tests
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 // Measures per-keystroke latency and throughput for Telex and VNI input methods.
 
 #include <gtest/gtest.h>

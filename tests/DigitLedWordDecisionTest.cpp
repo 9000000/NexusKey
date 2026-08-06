@@ -7,7 +7,7 @@
 // step 5 / TSF EngineController WantKey step 1) early-returns on Ctrl/Alt/Win
 // before reaching DecideDigitLed. Only Shift is forwarded as an input field
 // because Shift+digit produces punctuation (!@#…) and must not arm.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>
 

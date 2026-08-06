@@ -1,5 +1,5 @@
 // VKey - Cancelable IBindStatusCallback for URLDownloadToFileW
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Stack-allocated COM callback that aborts URLDownloadToFileW when a cancel
 // flag is set.  Shared between UpdateChecker (ZIP download) and

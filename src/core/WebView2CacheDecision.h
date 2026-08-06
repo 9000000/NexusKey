@@ -1,5 +1,5 @@
 // VKey - Pure WebView2 negative-cache freshness predicate
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // FocusOwner::IsWebView2App is Win32-only (CreateToolhelp32Snapshot). The TTL
 // rule that decides whether a cached "not WebView2" verdict may still be reused

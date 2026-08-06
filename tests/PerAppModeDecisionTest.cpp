@@ -1,7 +1,7 @@
 // Tests for DecidePerAppMode — pure per-app mode-lock resolution.
 // HookEngine/FocusOwner are Windows-only; the decision is extracted so the
 // precedence rule is verified in isolation on Linux.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>
 

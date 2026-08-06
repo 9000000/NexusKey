@@ -1,5 +1,5 @@
 // VKey - Windows file handle and module path helpers
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
 

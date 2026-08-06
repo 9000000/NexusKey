@@ -1,5 +1,5 @@
 // MainThreadWorkerTests.cpp
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Sprint 1 D8: scaffolding contract tests for MainThreadWorker.
 //

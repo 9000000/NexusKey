@@ -1,6 +1,6 @@
 // VKey Classic — Shared dialog utilities
 // Process enumeration, window picking, file dialogs
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
 

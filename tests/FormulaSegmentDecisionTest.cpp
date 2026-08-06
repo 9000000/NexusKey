@@ -1,5 +1,5 @@
 // VKey - Tests for the spreadsheet-formula segment FSM
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Proves the formula-detection state machine is fully deterministic — the
 // transitions HookEngine::UpdateFormulaSegment relies on. (HookEngine itself

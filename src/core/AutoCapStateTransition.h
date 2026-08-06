@@ -1,6 +1,6 @@
 // VKey - Auto-Capitalization Keystroke State Machine
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure transition function: given the current state and a key event, returns
 // the next state. Used by HookEngine::HandlePreDispatch (step 3a) when there

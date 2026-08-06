@@ -1,5 +1,5 @@
 // VKey - Reinstall Burst Scheduler (Anti-Dorion v2, 2026-05-28)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Primary path for the Anti-Dorion problem (see also HookHijackDetector
 // which is now the safety net). Dorion installs its WH_KEYBOARD_LL

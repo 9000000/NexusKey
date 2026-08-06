@@ -1,5 +1,5 @@
 // VKey - Commit-undo arming decision (post commit-trigger)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure decision: after a commit trigger fires and a word was pushed onto the
 // commit-undo stack, what should happen to the undo window?

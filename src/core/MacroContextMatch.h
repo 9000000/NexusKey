@@ -1,5 +1,5 @@
 // VKey - Macro lookup over the document text preceding the caret
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure, platform-free helper. TSF falls back to this when the tracked raw
 // macro buffer no longer mirrors the document — composition interrupted by

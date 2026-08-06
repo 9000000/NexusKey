@@ -1,5 +1,5 @@
 // VKey - Heartbeat Publisher (Windows-only)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Publishes a 30s heartbeat to a named event so VKeyWatchdog.exe
 // can detect process liveness. Also publishes a graceful-shutdown flag

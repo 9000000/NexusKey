@@ -1,7 +1,7 @@
 // VKey — Hotkey label formatter. Linux-portable: VK codes are plain integers.
 // Single source of truth for VK+mods → "Ctrl+Shift+F5" strings, shared between
 // TrayIcon binding text, Sciter dialog C++ side, and the Classic Win32 UI.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
 

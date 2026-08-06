@@ -3,7 +3,7 @@
 // MainThreadWorker cadence retune in HookEngine::RetuneCadenceIfNeeded.
 //
 // Plan reference: docs/plans/2026-05-30-idle-ram-investigation-summary.md
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include <gtest/gtest.h>
 

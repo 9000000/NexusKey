@@ -10,7 +10,7 @@ longer contains the prebuilt libraries.**
 `vkey_engine.dll`, `libvkey_engine.dll.a` and `libvkey_engine.so` were removed on
 2026-08-03 and `lib/` is gitignored. They embed a Vietnamese syllable dictionary
 derived from a CC BY-NC corpus, so they are not covered by this repository's
-AGPL-3.0 licence and do not belong in a tree whose licence tells recipients the
+GPL-3.0 licence and do not belong in a tree whose licence tells recipients the
 opposite. See [`LICENSE`](LICENSE): noncommercial use only, and that restriction
 is inherited rather than chosen.
 

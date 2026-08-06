@@ -1,5 +1,5 @@
 // VKey - TSF Registration & Diagnostics
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Functions for registering/unregistering the TSF input method DLL,
 // and diagnostic output. Used by EXE to manage DLL registration

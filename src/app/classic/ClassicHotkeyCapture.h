@@ -1,7 +1,7 @@
 // VKey Classic — Shared hotkey capture modal. Used by ClassicHotkeysDialog
 // (full feature: double-tap, modifier-alone) and ClassicConvertToolDialog
 // (combo-only: a chord that includes a non-modifier key).
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #pragma once
 

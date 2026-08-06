@@ -1,5 +1,5 @@
 // VKey - Pure decision function for "digit-led word" detection
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // A digit-led word is a word that starts with a digit while the input method
 // is VNI / Combined / UserDefined. The entire word — up to the next word

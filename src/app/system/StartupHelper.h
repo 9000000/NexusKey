@@ -1,5 +1,5 @@
 // VKey - Startup Helper (Windows-only)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Manages run-on-startup registration via Registry (normal) or
 // Task Scheduler (admin/elevated). Pattern from OpenKey.

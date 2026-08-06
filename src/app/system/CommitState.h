@@ -1,5 +1,5 @@
 // VKey - Commit State (Wave 3 PR 3.4, 2026-05-24)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Owns the per-word commit / undo state machine extracted from HookEngine:
 //   * State enum: Idle → Ready → Primed FSM

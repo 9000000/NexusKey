@@ -1,5 +1,5 @@
 // VKey - Excluded / Forced-VN app list store
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure data logic for the per-app E/V list, shared by the Sciter dialog
 // (ExcludedAppsDialog) and the Classic dialog (ClassicExcludedAppsDialog).

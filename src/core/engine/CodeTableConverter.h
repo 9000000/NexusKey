@@ -1,6 +1,6 @@
 // VKey - Code Table Converter
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Converts Unicode Vietnamese characters to legacy encodings
 // (TCVN3, VNI Windows, Unicode Compound, CP 1258).

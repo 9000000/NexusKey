@@ -1,5 +1,5 @@
 // VKey - ESC Restore Last Commit Edit Session
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Edit session that restores raw keys for the most recent commit when user
 // presses ESC after backspacing the commit trigger (design 2026-05-17).

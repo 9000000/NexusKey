@@ -1,5 +1,5 @@
 // VKey - Reinstall Burst Scheduler Implementation (Anti-Dorion v2, 2026-05-28)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Linux-portable: no <Windows.h>. Production wires the schedule callback
 // to Win32 CreateTimerQueueTimer; tests inject a deterministic mock.

@@ -1,5 +1,5 @@
 // VKey - Self-Update Installer
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Handles the --install-update CLI mode: waits for processes to exit,
 // replaces files from ZIP, and relaunches.

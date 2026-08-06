@@ -1,5 +1,5 @@
 // VKey - Debug Log enable-confirmation popup
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Shown when the user clicks the "Bật debug log" toggle to ON in either UI
 // (Modern Sciter, Classic Win32). The log captures raw key events and may

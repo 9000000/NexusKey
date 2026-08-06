@@ -1,5 +1,5 @@
 // MacroTableDecisionTest.cpp
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Regression coverage for the macro-table refresh rule behind #227 / #231 /
 // #209: a settings save bumps configGeneration, and the TSF DLL must pick the

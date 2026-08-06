@@ -7,7 +7,7 @@ reproduces the notices those licenses require. It is shipped inside the release
 archive because some of these licenses require the notice to travel with the
 binaries, not merely to exist in a source repository.
 
-VKey itself is licensed under the GNU Affero General Public License version 3.
+VKey itself is licensed under the GNU General Public License version 3.
 See the LICENSE file in the source repository:
 
     https://github.com/phatMT97/VKey
@@ -70,7 +70,7 @@ Terra Informatica Software, Inc. does not endorse or promote VKey.
 ================================================================================
 
 Some releases publish an optional Vietnamese processing engine,
-`vkey_engine.dll`, as a separate asset. It is NOT part of the AGPL-3.0 licensed
+`vkey_engine.dll`, as a separate asset. It is NOT part of the GPL-3.0 licensed
 VKey application and is NOT covered by VKey's LICENSE.
 
 If you obtained `vkey_engine.dll`, it is licensed under the PolyForm

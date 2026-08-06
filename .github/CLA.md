@@ -10,7 +10,7 @@ This Contributor License Agreement ("Agreement") clarifies the intellectual prop
 
 ## 2. Copyright License
 
-You hereby grant to the Maintainer a perpetual, worldwide, non-exclusive, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, distribute, and sublicense Your Contributions and such derivative works, **and to license or relicense Your Contributions under any license terms the Maintainer chooses, including open-source licenses and proprietary or commercial licenses** (the Project is dual-licensed under AGPL-3.0 and a commercial license).
+You hereby grant to the Maintainer a perpetual, worldwide, non-exclusive, royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly display, publicly perform, distribute, and sublicense Your Contributions and such derivative works, **and to license or relicense Your Contributions under any license terms the Maintainer chooses, including open-source licenses and proprietary or commercial licenses** (the Project is released under GPL-3.0).
 
 You retain ownership of the copyright in Your Contributions. This Agreement is a license grant, not a copyright assignment; You remain free to use Your Contributions for any other purpose.
 

@@ -16,7 +16,7 @@ has to be resolved through the API and fetched by its id with an
 public release, where the plain download URL works.
 
 Why this exists: `vkey_engine.dll` embeds a syllable dictionary derived from a
-CC BY-NC corpus, so it is not licensed under this repository's AGPL-3.0 and does
+CC BY-NC corpus, so it is not licensed under this repository's GPL-3.0 and does
 not belong in a tree whose license tells recipients the opposite. `engine.lock`
 and `include/vkey_engine.h` stay committed — they are text, carry no corpus data,
 and the lock is the trust anchor this script checks against.

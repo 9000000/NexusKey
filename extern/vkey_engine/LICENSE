@@ -3,9 +3,9 @@ LICENSE FOR THE FILES IN extern/vkey_engine/
 
 READ THIS BEFORE USING OR REDISTRIBUTING THESE FILES.
 
-The files in this directory are NOT covered by NexusKey's AGPL-3.0 license.
+The files in this directory are NOT covered by NexusKey's GPL-3.0 license.
 They are a separately licensed third-party component, aggregated here as an
-optional build input in the sense of AGPL-3.0 section 5. NexusKey's AGPL grant
+optional build input in the sense of GPL-3.0 section 5. NexusKey's GPL grant
 does not extend to them, and nothing in NexusKey's LICENSE grants you any right
 in them.
 

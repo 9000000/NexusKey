@@ -1,6 +1,6 @@
 // VKey - Macro expansion decision logic implementation
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "core/MacroCase.h"
 

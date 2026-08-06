@@ -1,5 +1,5 @@
 // VKey - CommitUndoArmDecision unit tests
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Locks in the issue #210 fix: Enter must CLEAR commit-undo (never arm), so a
 // Backspace after Enter cannot replay a word that the host already sent (chat)

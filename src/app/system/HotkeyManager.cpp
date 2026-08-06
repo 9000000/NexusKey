@@ -1,5 +1,5 @@
 // VKey - Hotkey Manager Implementation
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "HotkeyManager.h"
 #include "HookEngine.h"  // VKEY_EXTRA_INFO tag

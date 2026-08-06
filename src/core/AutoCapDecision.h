@@ -1,6 +1,6 @@
 // VKey - Auto-Capitalization Decision
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Pure decision: given a snapshot of text up to (but not including) the
 // caret, classify which "should the next char start fresh" trigger applies.

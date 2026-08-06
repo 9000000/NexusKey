@@ -1,5 +1,5 @@
 // VKey - RustInputEngine adapter tests
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Covers the FFI plumbing in the adapter (UTF-16 widening, peek/commit/backspace,
 // stub contract) — NOT Vietnamese typing correctness, which the engine repo owns.

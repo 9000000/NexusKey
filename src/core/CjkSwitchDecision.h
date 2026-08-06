@@ -1,5 +1,5 @@
 // VKey - Pure decision function for CJK auto-switch state machine
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Extracted from HookEngine::OnLayoutChanged so the state-machine logic can
 // be unit-tested on Linux (HookEngine.cpp itself is Windows-only).

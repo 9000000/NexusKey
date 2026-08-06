@@ -1,5 +1,5 @@
 // VKey - SharedStateManager Implementation
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "SharedStateManager.h"
 

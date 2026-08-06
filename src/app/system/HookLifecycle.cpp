@@ -1,5 +1,5 @@
 // VKey - Hook Lifecycle Implementation
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookLifecycle.h"
 #include "HotkeyManager.h"  // WM_APP_HOTKEY_FIRED + DispatchHotkeyFromHookThread

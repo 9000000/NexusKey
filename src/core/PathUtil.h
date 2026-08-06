@@ -1,5 +1,5 @@
 // VKey - Path string helpers
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Tiny cross-platform path-splitting helper. Lives in src/core so it is covered
 // by the Linux VKeyTests target — the src/app inline copies (e.g.

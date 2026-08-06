@@ -1,6 +1,6 @@
 // VKey - Pure decision: should a physical key that leaked into the injection
 // window be eaten, on a multi-process renderer?
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Extracted from HookEngine::LowLevelKeyboardProc so the logic can be unit-
 // tested on Linux (HookEngine.cpp itself is Windows-only). Mirrors the

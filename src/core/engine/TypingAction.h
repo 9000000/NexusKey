@@ -1,6 +1,6 @@
 // VKey - User-mappable input actions
 // Copyright (c) 2024-2026 PhatMT. All rights reserved.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Action vocabulary for TypingEngine dispatch and (future) per-user keymap.
 // Header is intentionally dependency-free so TypingConfig can hold a

@@ -1,5 +1,5 @@
 // VKey - Hook Lifecycle (Wave 3 PR 3.1, 2026-05-23)
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 //
 // Owns the dedicated WH_KEYBOARD_LL + WH_MOUSE_LL hook thread, the HHOOK
 // handles, the mailbox wake-up plumbing, and the start-time handshake CV.

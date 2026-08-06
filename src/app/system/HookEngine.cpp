@@ -1,5 +1,5 @@
 // VKey - Keyboard Hook Engine Implementation
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookEngine.h"
 #include "HookHijackDetector.h"  // Anti-Dorion v2 — keyboard-hook hijack detector (safety net)
