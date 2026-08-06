@@ -35,6 +35,10 @@ std::wstring BuildAdvancedEngineReleaseUrl() {
            L"v" VKEY_VERSION_WSTR L"/vkey_engine.dll";
 }
 
+std::wstring BuildAdvancedEngineSignatureUrl() {
+    return BuildAdvancedEngineReleaseUrl() + L".sig";
+}
+
 bool IsAllowedAdvancedEngineUrl(std::wstring_view url) noexcept {
     constexpr std::wstring_view scheme = L"https://";
     if (url.size() <= scheme.size() || !EqualsAsciiIgnoreCase(url.substr(0, scheme.size()), scheme)) {

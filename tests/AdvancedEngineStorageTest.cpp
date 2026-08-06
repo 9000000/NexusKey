@@ -83,6 +83,9 @@ TEST(AdvancedEngineStorageTest, ReplacesUntrustedDestinationWithNormalTrustedFil
     const std::wstring executableDirectory = ModuleDirectory(nullptr);
     ASSERT_FALSE(executableDirectory.empty());
     const std::wstring trustedSource = executableDirectory + L"\\" + kAdvancedEngineAssetName;
+    // The signature covers the engine's bytes, not its path, so the one deployed
+    // beside the test binary verifies a staged copy of the same file.
+    const std::wstring trustedSignature = trustedSource + L".sig";
 
     TempDirectory directory;
     ASSERT_TRUE(directory.Create());
@@ -101,7 +104,7 @@ TEST(AdvancedEngineStorageTest, ReplacesUntrustedDestinationWithNormalTrustedFil
         AdvancedEngineStagingFile staging;
         ASSERT_TRUE(staging.Create(directory.path()));
         ASSERT_TRUE(CopyIntoHandle(trustedSource, staging.get()));
-        ASSERT_EQ(VerifyRustEngineFileHandle(staging.get()), RustEngineTrustStatus::Trusted);
+        ASSERT_EQ(VerifyRustEngineFileHandle(staging.get(), trustedSignature.c_str()), RustEngineTrustStatus::Trusted);
         ASSERT_TRUE(::FlushFileBuffers(staging.get()));
         ASSERT_TRUE(staging.ActivateAs(directory.destination()));
     }
@@ -109,7 +112,7 @@ TEST(AdvancedEngineStorageTest, ReplacesUntrustedDestinationWithNormalTrustedFil
     UniqueFile installed(::CreateFileW(directory.destination().c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
     ASSERT_TRUE(installed.valid());
-    EXPECT_EQ(VerifyRustEngineFileHandle(installed.get()), RustEngineTrustStatus::Trusted);
+    EXPECT_EQ(VerifyRustEngineFileHandle(installed.get(), trustedSignature.c_str()), RustEngineTrustStatus::Trusted);
 
     const DWORD attributes = ::GetFileAttributesW(directory.destination().c_str());
     ASSERT_NE(attributes, INVALID_FILE_ATTRIBUTES);

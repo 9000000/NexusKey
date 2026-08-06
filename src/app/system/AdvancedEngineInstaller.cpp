@@ -82,10 +82,14 @@ struct ParsedUrl {
 
 std::wstring EnginePath(const std::wstring& directory) { return directory + L"\\" + kAdvancedEngineAssetName; }
 
+std::wstring SignaturePath(const std::wstring& directory) { return EnginePath(directory) + L".sig"; }
+
 bool IsTrustedInstalledEngine(const std::wstring& path) noexcept {
     UniqueFile file(::CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                                   FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
-    return file.valid() && VerifyRustEngineFileHandle(file.get()) == RustEngineTrustStatus::Trusted;
+    const std::wstring signature = path + L".sig";
+    return file.valid() &&
+           VerifyRustEngineFileHandle(file.get(), signature.c_str()) == RustEngineTrustStatus::Trusted;
 }
 
 bool ParseHttpsUrl(const std::wstring& url, ParsedUrl& parsed) {
@@ -193,7 +197,7 @@ InstallResult StreamResponseToFile(HINTERNET request, HANDLE file, std::atomic<b
     return totalBytes == expectedBytes ? InstallResult::Installed : InstallResult::VerificationFailure;
 }
 
-InstallResult DownloadToFile(HANDLE file, std::atomic<bool>& cancel) {
+InstallResult DownloadToFile(HANDLE file, std::wstring startUrl, std::atomic<bool>& cancel) {
     UniqueInternet session(::WinHttpOpen(L"VKey/" VKEY_VERSION_WSTR, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                          WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     if (!session.get() ||
@@ -201,7 +205,7 @@ InstallResult DownloadToFile(HANDLE file, std::atomic<bool>& cancel) {
         return InstallResult::NetworkFailure;
     }
 
-    std::wstring url = BuildAdvancedEngineReleaseUrl();
+    std::wstring url = std::move(startUrl);
     for (unsigned redirectCount = 0; redirectCount <= kMaxRedirects; ++redirectCount) {
         if (cancel.load(std::memory_order_relaxed)) {
             return InstallResult::Cancelled;
@@ -265,11 +269,33 @@ InstallResult InstallEngine(std::atomic<bool>& cancel) noexcept {
             return InstallResult::StorageFailure;
         }
 
-        const InstallResult download = DownloadToFile(staging.get(), cancel);
+        const InstallResult download =
+            DownloadToFile(staging.get(), BuildAdvancedEngineReleaseUrl(), cancel);
         if (download != InstallResult::Installed) {
             return download;
         }
-        if (VerifyRustEngineFileHandle(staging.get()) != RustEngineTrustStatus::Trusted) {
+
+        // The signature has to land before the engine is verified, and it has to
+        // be the one published beside this engine — an installed pair from an
+        // older release would verify each other but not this download.
+        AdvancedEngineStagingFile signatureStaging;
+        if (!signatureStaging.Create(directory)) {
+            return InstallResult::StorageFailure;
+        }
+        const InstallResult signatureDownload =
+            DownloadToFile(signatureStaging.get(), BuildAdvancedEngineSignatureUrl(), cancel);
+        if (signatureDownload != InstallResult::Installed) {
+            return signatureDownload;
+        }
+        if (!::FlushFileBuffers(signatureStaging.get())) {
+            return InstallResult::StorageFailure;
+        }
+        if (!signatureStaging.ActivateAs(SignaturePath(directory))) {
+            return InstallResult::ActivationFailure;
+        }
+
+        if (VerifyRustEngineFileHandle(staging.get(), SignaturePath(directory).c_str()) !=
+            RustEngineTrustStatus::Trusted) {
             return InstallResult::VerificationFailure;
         }
         if (!::FlushFileBuffers(staging.get())) {
