@@ -57,6 +57,8 @@ private:
     TF_PRESERVEDKEY quickConvertPreservedKey_{};
     HotkeyConfig registeredQuickConvertHotkey_{};
     bool quickConvertKeyRegistered_ = false;
+    // Latched when the host refuses TF_ES_SYNC — see OnPreservedKeyImpl.
+    bool quickConvertSyncUnsupported_ = false;
     bool isForeground_ = false;
     TsfQuickConvertSequenceState quickConvertSequence_;
 

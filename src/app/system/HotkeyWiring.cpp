@@ -20,7 +20,9 @@ void PublishConvertConfig(SharedStateManager& sharedState,
     sharedState.SetOrClearFlag(SharedFlags::TSF_NATIVE_CONVERT_READY, false);
     SharedState state = sharedState.Read();
     if (!state.IsValid()) return;
-    state.flags &= ~SharedFlags::TSF_NATIVE_CONVERT_READY;
+    // No point clearing the bit in `state` — Write() carves TSF_NATIVE_CONVERT_READY
+    // out of the snapshot and keeps the live value. The SetOrClearFlag calls that
+    // bracket this block are what actually drop it.
     state.SetConvertConfig(config);
     sharedState.Write(state);
     // Close the narrow race where the old preserved-key owner republishes

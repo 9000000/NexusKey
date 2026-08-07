@@ -165,12 +165,14 @@ void KeyEventSink::ClearQuickConvertPreservedKey() noexcept {
     quickConvertKeyRegistered_ = false;
     quickConvertPreservedKey_ = {};
     registeredQuickConvertHotkey_ = {};
+    quickConvertSyncUnsupported_ = false;
     quickConvertSequence_.Reset();
 }
 
 void KeyEventSink::PublishQuickConvertCapability() noexcept {
     if (pEngineController_ == nullptr) return;
     const bool ready = isForeground_ && quickConvertKeyRegistered_
+        && !quickConvertSyncUnsupported_
         && pEngineController_->IsEnabled() && pEngineController_->IsTsfActive();
     pEngineController_->SetTsfNativeConvertReady(ready);
 }
@@ -900,6 +902,14 @@ HRESULT KeyEventSink::OnPreservedKeyImpl(
         TSF_LOG(L"QuickConvert edit session failed request=0x%08X session=0x%08X",
                 requestResult, sessionResult);
         quickConvertSequence_.Reset();
+        // A host that refuses a synchronous RW lock will keep refusing it, and
+        // the chord is already eaten here — the hook can no longer take over on
+        // this press. Latch the refusal and withdraw readiness so the next press
+        // is routed to the clipboard backend instead of dying silently.
+        if (requestResult == TF_E_SYNCHRONOUS) {
+            quickConvertSyncUnsupported_ = true;
+            PublishQuickConvertCapability();
+        }
         return S_OK;
     }
 

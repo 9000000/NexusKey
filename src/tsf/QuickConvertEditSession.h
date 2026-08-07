@@ -109,7 +109,19 @@ public:
         }
 
         hasResult_ = result_ != selectedText;
-        if (!hasResult_ || !config_.autoPaste) return S_OK;
+        if (!hasResult_) {
+            // A step that changes nothing (Upper on already-upper text) still
+            // has to leave a cycle marker behind. Without it the next press
+            // sees an empty selectedRange, reads that as a fresh selection,
+            // resets currentIndex to 0 and locks the cycle on this option.
+            if (config_.sequential && config_.autoPaste && sequenceState_ != nullptr) {
+                sequenceState_->context = pContext_;
+                sequenceState_->selectedRange = selectedRange;
+                sequenceState_->lastResult = result_;
+            }
+            return S_OK;
+        }
+        if (!config_.autoPaste) return S_OK;
 
         // Preserve the original start with backward gravity. SetText may resize
         // or collapse the source range differently between hosts; rebuilding

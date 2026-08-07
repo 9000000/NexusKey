@@ -237,10 +237,12 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->magic = state.magic;
     p->structVersion = state.structVersion;
     p->structSize = state.structSize;
-    // Native-convert readiness is DLL-owned. Preserve the live atomic value;
-    // callers that intentionally invalidate routing clear it via SetOrClearFlag
-    // before/after Write(). This prevents unrelated config writes from reviving
-    // or dropping a stale snapshot of the capability bit.
+    // Native-convert readiness is DLL-owned. Keep the live value instead of the
+    // caller's stale snapshot; callers that intentionally invalidate routing
+    // clear it via SetOrClearFlag before/after Write(). This read-modify-write
+    // is not atomic against the DLL's InterlockedOr, so a publish landing inside
+    // it is lost — that direction is safe (routing falls back to the hook) and
+    // the DLL republishes on its next focus or keystroke.
     constexpr uint32_t dllOwnedFlags = SharedFlags::TSF_NATIVE_CONVERT_READY;
     p->flags = (state.flags & ~dllOwnedFlags) | (p->flags & dllOwnedFlags);
     p->inputMethod = state.inputMethod;
