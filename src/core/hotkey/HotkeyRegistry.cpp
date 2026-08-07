@@ -26,6 +26,7 @@ constexpr uint32_t kVkEscape  = 0x1B;
     case Intent::CancelComposition: return "cancel-composition";
     case Intent::SkipMacro:         return "skip-macro";
     case Intent::ToggleEnabled:     return "toggle-enabled";
+    case Intent::ToggleGameMode:    return "toggle-game-mode";
     }
     return "";
 }
@@ -34,6 +35,7 @@ constexpr uint32_t kVkEscape  = 0x1B;
     if (s == "cancel-composition") { out = Intent::CancelComposition; return true; }
     if (s == "skip-macro")         { out = Intent::SkipMacro;         return true; }
     if (s == "toggle-enabled")     { out = Intent::ToggleEnabled;     return true; }
+    if (s == "toggle-game-mode")   { out = Intent::ToggleGameMode;    return true; }
     return false;
 }
 
@@ -45,6 +47,7 @@ constexpr uint32_t kVkEscape  = 0x1B;
     case Intent::CancelComposition: return "cancel_composition";
     case Intent::SkipMacro:         return "skip_macro";
     case Intent::ToggleEnabled:     return "toggle_enabled";
+    case Intent::ToggleGameMode:    return "toggle_game_mode";
     }
     return "";
 }
@@ -111,6 +114,9 @@ HotkeyRegistry HotkeyRegistry::Defaults() {
     cfg.SetEnabled(Intent::CancelComposition, false);
     cfg.SetEnabled(Intent::SkipMacro,         false);
     cfg.SetEnabled(Intent::ToggleEnabled,     false);
+    // No factory trigger for ToggleGameMode — see the enum comment. Users bind
+    // it themselves from the Hotkeys dialog.
+    cfg.SetEnabled(Intent::ToggleGameMode,    false);
     return cfg;
 }
 
@@ -144,6 +150,8 @@ HotkeyRegistry HotkeyRegistry::FromLegacyFields(
     cfg.SetEnabled(Intent::CancelComposition, escRestoreRawEnabled);
     cfg.SetEnabled(Intent::SkipMacro,         tempOffMacroByEsc);
     cfg.SetEnabled(Intent::ToggleEnabled,     tempOffMethodValue != 0);
+    // Post-dates the legacy schema entirely: nothing to migrate from.
+    cfg.SetEnabled(Intent::ToggleGameMode,    false);
     return cfg;
 }
 

@@ -20,6 +20,12 @@ enum class Intent : uint8_t {
     CancelComposition = 0,  // End current composition + restore raw keys (Esc default)
     SkipMacro         = 1,  // Skip macro expansion for the next word (Esc default)
     ToggleEnabled     = 2,  // Toggle global ENABLED flag (Ctrl alone / 2×Alt default)
+    ToggleGameMode    = 3,  // Add/remove the FOREGROUND app from the game-mode
+                            // list (per-app send method 5). No default binding:
+                            // it exists to be pressed from inside a fullscreen
+                            // game where alt-tabbing to Settings is painful, and
+                            // any combo we picked would collide with something
+                            // that game already uses.
 };
 
 /// All intents in stable order — for iteration in UI population, TOML
@@ -29,6 +35,7 @@ inline constexpr Intent kAllIntents[] = {
     Intent::CancelComposition,
     Intent::SkipMacro,
     Intent::ToggleEnabled,
+    Intent::ToggleGameMode,
 };
 
 /// Modifier bitmask. `kMod*` prefix (not `MOD_*`) to avoid clashing with the

@@ -38,6 +38,12 @@ constexpr UINT IDC_ADD_TOGGLE    = 4123;
 constexpr UINT IDC_DEL_TOGGLE    = 4124;
 constexpr UINT IDC_RESET_TOGGLE  = 4125;
 
+constexpr UINT IDC_ENABLE_GAME   = 4131;
+constexpr UINT IDC_LIST_GAME     = 4132;
+constexpr UINT IDC_ADD_GAME      = 4133;
+constexpr UINT IDC_DEL_GAME      = 4134;
+constexpr UINT IDC_RESET_GAME    = 4135;
+
 constexpr UINT IDC_BTN_CLOSE_HK  = 4150;
 
 // ── VK → display name table (mirrors HotkeysDialog.cpp kVkNames) ──
@@ -111,13 +117,15 @@ struct SectionMeta {
     UINT             idReset;
 };
 
-constexpr SectionMeta kSectionMeta[3] = {
+constexpr SectionMeta kSectionMeta[4] = {
     { Intent::CancelComposition, L"Hủy phiên đang gõ",
       IDC_ENABLE_CANCEL, IDC_LIST_CANCEL, IDC_ADD_CANCEL, IDC_DEL_CANCEL, IDC_RESET_CANCEL },
     { Intent::SkipMacro,         L"Bỏ qua gõ tắt",
       IDC_ENABLE_SKIP,   IDC_LIST_SKIP,   IDC_ADD_SKIP,   IDC_DEL_SKIP,   IDC_RESET_SKIP   },
     { Intent::ToggleEnabled,     L"Tạm tắt / bật bộ gõ",
       IDC_ENABLE_TOGGLE, IDC_LIST_TOGGLE, IDC_ADD_TOGGLE, IDC_DEL_TOGGLE, IDC_RESET_TOGGLE },
+    { Intent::ToggleGameMode,    L"Bật / tắt chế độ game cho app đang mở",
+      IDC_ENABLE_GAME,   IDC_LIST_GAME,   IDC_ADD_GAME,   IDC_DEL_GAME,   IDC_RESET_GAME   },
 };
 
 }  // namespace
@@ -436,13 +444,15 @@ LRESULT CALLBACK ClassicHotkeysDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPara
 
         // Enable checkboxes
         if (code == BN_CLICKED) {
-            if (id == IDC_ENABLE_CANCEL || id == IDC_ENABLE_SKIP || id == IDC_ENABLE_TOGGLE) {
+            if (id == IDC_ENABLE_CANCEL || id == IDC_ENABLE_SKIP
+                || id == IDC_ENABLE_TOGGLE || id == IDC_ENABLE_GAME) {
                 const HWND ck = reinterpret_cast<HWND>(lParam);
                 const bool checked = SendMessageW(ck, BM_GETCHECK, 0, 0) == BST_CHECKED;
                 Intent intent =
                     (id == IDC_ENABLE_CANCEL) ? Intent::CancelComposition :
                     (id == IDC_ENABLE_SKIP)   ? Intent::SkipMacro :
-                                                 Intent::ToggleEnabled;
+                    (id == IDC_ENABLE_TOGGLE) ? Intent::ToggleEnabled :
+                                                 Intent::ToggleGameMode;
                 self->OnEnableToggled(intent, checked);
                 return 0;
             }
@@ -452,9 +462,11 @@ LRESULT CALLBACK ClassicHotkeysDialog::WndProc(HWND hwnd, UINT msg, WPARAM wPara
         case IDC_ADD_CANCEL:   self->OnAddClicked(Intent::CancelComposition); return 0;
         case IDC_ADD_SKIP:     self->OnAddClicked(Intent::SkipMacro);         return 0;
         case IDC_ADD_TOGGLE:   self->OnAddClicked(Intent::ToggleEnabled);     return 0;
+        case IDC_ADD_GAME:     self->OnAddClicked(Intent::ToggleGameMode);    return 0;
         case IDC_DEL_CANCEL:   self->OnDeleteSelected(Intent::CancelComposition); return 0;
         case IDC_DEL_SKIP:     self->OnDeleteSelected(Intent::SkipMacro);         return 0;
         case IDC_DEL_TOGGLE:   self->OnDeleteSelected(Intent::ToggleEnabled);     return 0;
+        case IDC_DEL_GAME:     self->OnDeleteSelected(Intent::ToggleGameMode);    return 0;
         case IDC_RESET_CANCEL: self->OnResetClicked(Intent::CancelComposition); return 0;
         case IDC_RESET_SKIP:   self->OnResetClicked(Intent::SkipMacro);         return 0;
         case IDC_RESET_TOGGLE: self->OnResetClicked(Intent::ToggleEnabled);     return 0;

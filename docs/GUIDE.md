@@ -29,7 +29,24 @@
 ## <span id="faq">❓ Câu hỏi thường gặp (FAQ)</span>
 
 ### 🎮 Q. Tôi có thể vừa gõ tiếng Việt vừa chơi game mà không sợ bị dính phím không?
-**A.** Hoàn toàn có thể! VKey được tối ưu hóa đặc biệt cho game thủ. Với cơ chế xử lý thông minh, bạn có thể thoải mái di chuyển bằng các phím `W`, `A`, `S`, `D` hoặc thao tác nhanh trong game mà không lo bị kẹt hay nuốt phím. 👉 Chi tiết xem tại phần [⌨️ Kiểu gõ](#typing-method).
+**A.** Được, nhưng cần bật **Chế độ game** cho game đó trước.
+
+Bình thường khi bạn gõ một phím tạo dấu (ví dụ `w` trong `tuw` → `tư`), VKey phải nuốt phím đó để thay bằng chữ có dấu — nên game không nhìn thấy cú nhấn `w` và nhân vật không di chuyển. Chế độ game gửi lại phím gốc cho game ngay trong cùng lượt, nên `W` `A` `S` `D` vẫn chạy bình thường trong khi bạn vẫn gõ được tiếng Việt.
+
+Có hai cách bật, chọn cách nào cũng được vì cả hai ghi vào **cùng một danh sách**:
+
+1. **Nhấn phím tắt ngay trong game** (tiện nhất, không cần thoát ra): vào [⚡ Quản lý phím tắt](#hotkey-mgmt) gán một tổ hợp cho `Bật / tắt chế độ game cho app đang mở`. Sau đó cứ ở trong game nhấn tổ hợp đó — game hiện tại được thêm vào danh sách. Nhấn lần nữa để gỡ ra.
+2. **Chọn thủ công**: vào [📱 Cấu hình từng ứng dụng](#app-config), thêm file `.exe` của game và đặt mục "Cách gửi" thành `Chế độ game`.
+
+Bạn xem lại và xoá bất cứ lúc nào trong bảng Cấu hình từng ứng dụng.
+
+> ⚠️ Phím tắt này **không có tổ hợp mặc định** — game nào cũng đã dùng gần hết bàn phím, nên VKey để bạn tự chọn tổ hợp không đụng hàng.
+>
+> ⚠️ Nếu game chạy bằng quyền Administrator (thường gặp ở game có anti-cheat), Windows chặn VKey đọc phím của game — cả phím tắt lẫn việc gõ tiếng Việt trong game đều không hoạt động. Trường hợp này cần chạy VKey bằng quyền Administrator.
+>
+> 💡 Nếu bạn không gõ tiếng Việt trong game, đơn giản hơn là cứ chuyển sang chế độ `E` trước khi chơi.
+
+👉 Chi tiết xem tại phần [⌨️ Kiểu gõ](#typing-method).
 
 ### 📱 Q. Tôi muốn tùy chỉnh mỗi app một kiểu gõ và bảng mã khác nhau có được không?
 **A.** Được chứ! VKey cho phép thiết lập profile riêng (bao gồm kiểu gõ và bảng mã) cho từng phần mềm. Khi bạn chuyển cửa sổ làm việc, VKey sẽ tự động nhận diện và áp dụng cấu hình tương ứng mà không cần bạn phải thao tác phím tắt thủ công. 👉 Chi tiết xem tại phần [📱 Cấu hình từng ứng dụng](#app-config).
@@ -72,7 +89,7 @@ Nếu vẫn không khắc phục được (ví dụ do file cũ bị kẹt hoặ
 
 ### <span id="typing-method">⌨️ 1. Kiểu gõ</span>
 VKey cung cấp nhiều phương thức gõ linh hoạt để đáp ứng mọi nhu cầu:
-- 🔹 **Telex:** Kiểu gõ dấu bằng chữ phổ biến. Phím `w` được dùng làm chữ `ư` hoặc dấu móc cho `ư`, `ơ` và dấu mũ cho `ă`. Tối ưu hóa phản hồi phím giúp bạn chat tiếng Việt trong game mượt mà, không lo dính hay nuốt phím 🎮.
+- 🔹 **Telex:** Kiểu gõ dấu bằng chữ phổ biến. Phím `w` được dùng làm chữ `ư` hoặc dấu móc cho `ư`, `ơ` và dấu mũ cho `ă`. 🎮 Muốn vừa chat tiếng Việt vừa dùng `W` `A` `S` `D` trong game thì bật thêm [Chế độ game](#app-config) cho game đó — xem [câu hỏi về chơi game](#faq).
 - 🔹 **Telex + Vni:** Cho phép bạn gõ đồng thời cả 2 kiểu gõ và thoải mái kết hợp các phím đặt dấu của Telex và VNI trong cùng một từ.
 - 🔹 **Simple Telex:** Giữ nguyên giá trị gốc (raw keys) của phím `w` và cặp phím ngoặc vuông `[` `]` thay vì tự động chuyển thành `ư`, `ơ`.
 - 🔹 **Tự định nghĩa:** Cho phép bạn tùy ý gán các phím đặt dấu theo thói quen cá nhân 🛠️.
@@ -80,6 +97,8 @@ VKey cung cấp nhiều phương thức gõ linh hoạt để đáp ứng mọi 
 ### <span id="app-config">📱 2. Cấu hình từng ứng dụng</span>
 - 🔸 Hỗ trợ thiết lập profile độc lập (kiểu gõ, bảng mã) cho từng ứng dụng cụ thể.
 - 🔸 Cung cấp tùy chọn chuyển sang **"Dùng Clipboard"** 📋 cho các ứng dụng không tương thích với cơ chế phím Hook. VKey sẽ tự động khôi phục và giữ nguyên nội dung Clipboard nếu đó là văn bản thuần túy (plain text). Tuy nhiên, các dữ liệu phức tạp khác như hình ảnh trong clipboard sẽ bị xóa sạch khi bạn thực hiện gõ/xóa.
+- 🔸 Mục **"Cách gửi"** còn có 🎮 **Chế độ game** — gửi lại phím gốc cho ứng dụng để `W` `A` `S` `D` vẫn hoạt động khi bạn gõ tiếng Việt trong game. Chỉ nên bật cho game: với ứng dụng thường nó gây nháy chữ mà không đem lại lợi ích gì. Xem thêm ở [câu hỏi về chơi game](#faq).
+- 🔸 Mỗi ứng dụng chỉ chọn được **một** giá trị "Cách gửi" — bật Chế độ game sẽ thay thế lựa chọn Clipboard / Firefox / Cloud-Remote / Thay thế trực tiếp trước đó của ứng dụng đó.
 
 ### <span id="remember-mode">🔄 3. Lưu chế độ gõ theo app</span>
 - Tự động ghi nhớ trạng thái gõ tiếng Việt (`V`) hoặc tiếng Anh (`E`) cho từng ứng dụng. Khi bạn chuyển đổi qua lại giữa các ứng dụng, VKey sẽ tự động kích hoạt lại trạng thái gõ tương ứng của ứng dụng đó ✨.
@@ -116,6 +135,7 @@ VKey cung cấp nhiều phương thức gõ linh hoạt để đáp ứng mọi 
 ### <span id="hotkey-mgmt">⚡ 10. Quản lý phím tắt</span>
 - 🔸 **Khôi phục từ gốc chủ động:** Cho phép thiết lập phím tắt để ngay lập tức trả lại các ký tự gốc (raw keys) mà không cần nhấn phím cách (`Space`) hoặc đợi gõ hết từ. Ví dụ: gõ `asus` → hiển thị thành `aus` → nhấn `ESC` → lập tức khôi phục lại thành `asus`.
 - 🔸 **Hotkeys hệ thống:** Tự do tùy chỉnh các tổ hợp phím để bật/tắt nhanh bộ gõ tiếng Việt hoặc bỏ qua gõ tắt tạm thời.
+- 🔸 🎮 **Bật / tắt chế độ game cho app đang mở:** Nhấn ngay khi đang ở trong game để thêm game đó vào danh sách [Cấu hình từng ứng dụng](#app-config) với "Cách gửi" là Chế độ game; nhấn lần nữa để gỡ. Dành cho lúc đang chơi fullscreen, khỏi phải thoát ra vào Cài đặt. Mục này **không có tổ hợp mặc định** — bạn tự chọn tổ hợp không trùng với phím đã gán trong game.
 
 ### <span id="tsf-mode">🔗 11. Sử dụng TSF (Text Services Framework)</span>
 VKey tích hợp sâu công nghệ TSF của Windows mang lại độ tương thích tối đa:

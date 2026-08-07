@@ -627,7 +627,7 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
     // `appSendMethodOverrides` map — RCU-published from the worker thread, so
     // this main-thread lookup is lock-free and immune to torn reads during a
     // TOML rebuild. Values: 1=Clipboard, 2=Firefox-compat split, 3=Cloud/Remote
-    // compat split (0/absent = default Win32 batch path).
+    // compat split, 5=game re-inject (0/absent = default Win32 batch path).
     if (!cls.exeName.empty() && ctx.snap) {
         auto it = ctx.snap->appSendMethodOverrides.find(cls.exeName);
         if (it != ctx.snap->appSendMethodOverrides.end()) {
@@ -639,6 +639,11 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
                     cls.localForceEmReplaceSel = true;
                     cls.localEditMsg = true;
                     break;
+                // Mutually exclusive with 1-4 by construction (one value per
+                // app), which is what keeps "game + clipboard" and
+                // "game + EM_REPLACESEL" — combinations whose re-inject
+                // accounting has no sensible answer — unreachable.
+                case 5: cls.localGameReinject = true;                         break;
                 default: break;  // 0=SendInput / unknown → default Win32 path
             }
         }

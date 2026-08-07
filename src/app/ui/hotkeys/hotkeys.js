@@ -108,7 +108,7 @@ function setVkNames(pairs) {
 }
 
 function clearAll() {
-    ["cancel-composition", "skip-macro", "toggle-enabled"].forEach(function (intent) {
+    ["cancel-composition", "skip-macro", "toggle-enabled", "toggle-game-mode"].forEach(function (intent) {
         var list = document.getElementById("chips-" + intent);
         if (list) list.innerHTML = "";
     });
@@ -182,7 +182,8 @@ function getIntentLabel(intent) {
     var en = {
         "cancel-composition": "Cancel composition",
         "skip-macro":         "Skip macro",
-        "toggle-enabled":     "Toggle IME state"
+        "toggle-enabled":     "Toggle IME state",
+        "toggle-game-mode":   "Toggle game mode for current app"
     }[intent] || vi;
     return { vi: vi, en: en };
 }

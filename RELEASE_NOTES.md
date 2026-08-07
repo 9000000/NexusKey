@@ -1,7 +1,5 @@
 # VKey v4.3
 
-[![Signed by SignPath](https://img.shields.io/badge/Signed_by-SignPath-blue)](https://signpath.io)
-
 Bản cập nhật này mang đến cải tiến đột phá về khả năng tự động sửa lỗi chính tả cùng các sửa lỗi quan trọng giúp nâng cao độ ổn định.
 
 ### ✨ Tính năng mới & Cải tiến nổi bật
@@ -22,6 +20,13 @@ Bản cập nhật này mang đến cải tiến đột phá về khả năng t�
 >
 > - [ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md)
 > - [Giải thích về kiến trúc, license và nguồn gốc của VKey](docs/ENGINE_FAQ.md)
+
+* **🎮 Chế độ game (thay đổi hành vi mặc định — game thủ vui lòng đọc)**
+    * **Trước đây**: cơ chế giữ phím cho game được bật ngầm cho **mọi** ứng dụng Win32 thông thường (Notepad, Word, Windows Terminal…). Mỗi lần bỏ dấu, VKey nhả ký tự gốc ra màn hình rồi mới xoá đi. Việc này gây nháy chữ và tình trạng đôi lúc không đặt được dấu đúng mong đợi.
+    * **Từ bản này**: mặc định mọi ứng dụng dùng cách gõ thông thường (xoá rồi thay). Cơ chế giữ phím cho game trở thành **tuỳ chọn**, bật riêng cho từng ứng dụng.
+    * **Cách bật**: chọn `Chế độ game` trong mục "Cách gửi" ở **Cấu hình từng ứng dụng**, hoặc gán một phím tắt cho `Bật / tắt chế độ game cho app đang mở` trong **Quản lý phím tắt** rồi nhấn ngay khi đang ở trong game — ứng dụng đó sẽ được thêm vào danh sách, nhấn lần nữa để gỡ.
+    * Phím tắt này **không có tổ hợp mặc định**: bất cứ tổ hợp nào chọn sẵn cũng sẽ đụng phím đã gán trong game, nên bạn tự chọn.
+    * Ứng dụng nào đã cấu hình sẵn "Cách gửi" khác (Clipboard, Firefox, Cloud/Remote…) không bị ảnh hưởng.
 ---
 
 ### 🛠 Các lỗi đã được khắc phục
@@ -31,10 +36,7 @@ Bản cập nhật này mang đến cải tiến đột phá về khả năng t�
 *   **Cải tiến giao diện**: Tối ưu hóa hiệu năng hiển thị và chuyển đổi của các bộ giao diện (theme).
 *   **Sửa lỗi excel online**: Khắc phục lỗi mất từ trước đó khi dùng shift để viết hoa từ tiếng Việt. 
 *   **Sửa lỗi macro TSF**: Macro đã hoạt động với TSF
----
-### 💖 Sponsors
-
-Free code signing on Windows provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Thank you, SignPath! 🙏
+*   **Sửa lỗi mất dấu không hồi phục được**: Khắc phục lỗi thỉnh thoảng gõ `khoong` ra thẳng `khoong` thay vì `không`, và sau đó xoá đi gõ lại vẫn không tạo được dấu.
 
 ---
 

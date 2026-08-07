@@ -120,6 +120,13 @@ struct FocusClassification {
     // Resolved from snap->appSendMethodOverrides in FocusOwner::Classify; the
     // hook thread copies it into Output::WindowClassification::forcedSplitSleepMs.
     int localForcedSplitSleepMs{0};
+    // Per-app "send method = Chế độ game" (sendMethod 5). Opts this app into
+    // the game-compat VK re-inject in HandleAlphaKey. Off by default: the
+    // re-inject makes bsCount assume a raw char that was dispatched
+    // separately, and every host that drops or reorders it desyncs the
+    // engine from the document permanently. Games are the only place the
+    // trade is worth taking.
+    bool localGameReinject{false};
     // RESOLVED target values for the focused app. Classify captures the
     // current global on main alongside any per-app override, so the hook
     // thread never reads `globalCodeTable_` / `globalInputMethod_`

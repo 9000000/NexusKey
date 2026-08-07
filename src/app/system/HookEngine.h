@@ -226,6 +226,22 @@ public:
     /// lambda. Doctrine §12.6 audit-allow not required: not an atomic field.
     void DrainClassifyOnWorker();
 
+    /// Doctrine §12.4 worker drain, same contract as DrainClassifyOnWorker:
+    /// the hook thread only latches a flag + calls workerSignalFn_, and this
+    /// does the actual work off the hot path. Toggles the FOREGROUND app in
+    /// the per-app override table between send method 5 (game) and no entry,
+    /// then persists + signals. File I/O is why it cannot run inline in the
+    /// hook (Rule 11.1's 1 ms budget); SaveAppOverrides writes TOML
+    /// immediately rather than through the deferred 30 s save, which is what
+    /// the caller wants — a game that exits seconds later must not lose it.
+    ///
+    /// The foreground app is re-derived here rather than captured at press
+    /// time: passing a wstring across the hook boundary would need a lock the
+    /// hook thread is not allowed to take. The user is looking at the app they
+    /// mean to tag, and the worker wakes within a tick, so the window where
+    /// this could tag the wrong app is not reachable in practice.
+    void DrainGameModeToggleOnWorker();
+
     /// Adaptive-tick backoff (2026-05-27, plan docs/plans/2026-05-27-
     /// adaptive-tick-idle-backoff.md). Wired once at startup from main.cpp /
     /// main_lite.cpp; the lambda calls g_mainThreadWorker.SetTickInterval(ms).
@@ -628,6 +644,10 @@ private:
     FormulaSegmentState formulaState_{};
     bool hostIsFormulaCapable_ = false;
     bool baitSuppressed_ = false;
+    // Focused app opted into the game-compat VK re-inject (per-app send
+    // method 5). Same hook-thread-only ownership as hostIsFormulaCapable_
+    // above — written by ApplyFocusOnHookThread, read by HandleAlphaKey.
+    bool hostWantsGameReinject_ = false;
     // Phase 3d: legacy `excludedAppSet_` removed — readers go through
     // configSnapshot_.load()->excludedAppSet. Same migration for
     // tsfAppSet_, macroTable_, spaceMacroKeys_, appEncodingOverrides_,
@@ -840,6 +860,11 @@ private:
     std::atomic<std::shared_ptr<const FocusClassifyRequest>>
         pendingClassifyRequest_;
     WorkerSignalFn workerSignalFn_;
+    // Latched by the hook thread when Intent::ToggleGameMode fires; drained by
+    // DrainGameModeToggleOnWorker. Plain flag, no payload — see that method.
+    std::atomic<bool> pendingGameModeToggle_{false};
+    /// Hook-thread producer half of the game-mode toggle. Latch + signal only.
+    void RequestGameModeToggle() noexcept;
 
     // Delayed focus-classification ordering:
     //   latestFocusRequestSerial_ — incremented at request publication on

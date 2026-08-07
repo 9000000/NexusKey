@@ -53,7 +53,7 @@ private:
 
     // -- Layout constants (96 DPI baseline) --
     static constexpr int kWidth        = 460;
-    static constexpr int kHeight       = 540;
+    static constexpr int kHeight       = 698;  // 4 × (kSectionH + kSectionGap) + footer
     static constexpr int kPadding      = 14;
     static constexpr int kSectionGap   = 10;
     static constexpr int kSectionH     = 148;
@@ -86,7 +86,7 @@ private:
     bool modified_ = false;
 
     HotkeyRegistry registry_;
-    std::array<SectionUI, 3> sections_{};   // indexed by Intent value
+    std::array<SectionUI, 4> sections_{};   // indexed by Intent value
     HWND btnClose_ = nullptr;
 };
 

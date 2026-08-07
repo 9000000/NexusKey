@@ -733,6 +733,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // main.cpp wiring — Lite mode has the same race surface (same
     // HookEngine + FocusOwner), so the doctrine applies identically.
     g_mainThreadWorker.SetWorkHandler([]() {
+        // Game-mode hotkey drains FIRST: the hook thread only latched a flag,
+        // and the TOML read/modify/write happens here off the 1 ms hook budget.
+        // Ordering matters — it bumps the config generation, so running it
+        // after SyncConfigFromSharedState would leave the change unseen until
+        // some later worker wake (seconds, once the idle backoff kicks in).
+        g_hookEngine.DrainGameModeToggleOnWorker();
         g_hookEngine.SyncConfigFromSharedState();
         g_hookEngine.DrainClassifyOnWorker();
         // Adaptive-tick (plan 2026-05-27): retune cadence after Signal-driven

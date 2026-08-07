@@ -428,5 +428,65 @@ TEST(HotkeyRegistry, LoadSaveEnabled_RoundTripsThroughTomlTable) {
     EXPECT_FALSE(roundTrip.IsEnabled(Intent::ToggleEnabled));
 }
 
+// ── ToggleGameMode ───────────────────────────────────────────────────
+// The intent is only reachable through config + UI, so the wire format is
+// the whole contract: a name that fails to round-trip silently drops the
+// user's binding on the next load with no error anywhere.
+
+TEST(HotkeyRegistryTest, ToggleGameModeSurvivesTriggerRoundTrip) {
+    HotkeyRegistry cfg;
+    cfg.AddTrigger(Intent::ToggleGameMode, Trigger{0x47, kModCtrl | kModShift, false});  // Ctrl+Shift+G
+    cfg.SetEnabled(Intent::ToggleGameMode, true);
+
+    toml::array arr;
+    cfg.Save(arr);
+    HotkeyRegistry roundTrip;
+    roundTrip.Load(arr);
+
+    ASSERT_EQ(roundTrip.TriggersFor(Intent::ToggleGameMode).size(), 1u);
+    EXPECT_EQ(roundTrip.TriggersFor(Intent::ToggleGameMode)[0],
+              (Trigger{0x47, kModCtrl | kModShift, false}));
+}
+
+TEST(HotkeyRegistryTest, ToggleGameModeEnabledStateSurvivesRoundTrip) {
+    HotkeyRegistry cfg;
+    cfg.SetEnabled(Intent::ToggleGameMode, true);
+
+    toml::table tbl;
+    cfg.SaveEnabled(tbl);
+    HotkeyRegistry roundTrip;
+    roundTrip.LoadEnabled(tbl);
+
+    EXPECT_TRUE(roundTrip.IsEnabled(Intent::ToggleGameMode));
+}
+
+TEST(HotkeyRegistryTest, ToggleGameModeHasNoFactoryBindingAndStartsOff) {
+    // No default combo on purpose: this is pressed inside fullscreen games,
+    // where anything we picked would collide with something already bound.
+    const HotkeyRegistry cfg = HotkeyRegistry::Defaults();
+    EXPECT_TRUE(cfg.TriggersFor(Intent::ToggleGameMode).empty());
+    EXPECT_FALSE(cfg.IsEnabled(Intent::ToggleGameMode));
+}
+
+TEST(HotkeyRegistryTest, ToggleGameModeIsInAllIntents) {
+    // kAllIntents drives UI population and the delete-by-rebuild loops; an
+    // intent missing from it is invisible and unsavable.
+    bool found = false;
+    for (Intent i : kAllIntents) {
+        if (i == Intent::ToggleGameMode) found = true;
+    }
+    EXPECT_TRUE(found);
+}
+
+TEST(HotkeyRegistryTest, ToggleGameModeDoesNotFireOnOtherIntentsTriggers) {
+    HotkeyRegistry cfg;
+    cfg.AddTrigger(Intent::ToggleEnabled, Trigger{0x47, kModCtrl, false});
+    cfg.SetEnabled(Intent::ToggleEnabled,  true);
+    cfg.SetEnabled(Intent::ToggleGameMode, true);
+
+    EXPECT_TRUE (cfg.Matches(Intent::ToggleEnabled,  0x47, kModCtrl, false, false));
+    EXPECT_FALSE(cfg.Matches(Intent::ToggleGameMode, 0x47, kModCtrl, false, false));
+}
+
 }  // namespace
 }  // namespace NextKey

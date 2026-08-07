@@ -1875,6 +1875,19 @@ HookEngine::KeyOutcome HookEngine::HandlePreDispatch(DWORD vkCode, bool vnMode,
         return KeyOutcome::Eat;
     }
 
+    // 3b'''. ToggleGameMode — same non-modifier DOWN shape as ToggleEnabled
+    // above. Deliberately does NOT eat the key: a game-mode binding is meant to
+    // be pressed inside a game, and swallowing it would hide whatever the game
+    // has bound to the same combo. The action is idempotent per press, so a
+    // duplicate delivery to the game is the safer failure.
+    if (!IsModifierKey(CanonicalModifierVk(vkCode))
+        && hotkeysSnap->Matches(Intent::ToggleGameMode, vkCode, currentMods,
+                                 /*isDoubleTap=*/false, /*keyUp=*/false)) {
+        RequestGameModeToggle();
+        HOOK_LOG(L"  GAMEMODE-DOWN (vk=0x%02X mods=0x%02X): queued for worker",
+                 vkCode, currentMods);
+    }
+
     // 3c, 3d. SkipMacro hotkey + macro expansion — owned by MacroFeature
     // (W4b) at PreEngine step 2d. Reaching this point means the feature
     // returned Fallthrough/NoOp (no macro engagement); fall through to the
@@ -2278,6 +2291,16 @@ bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
                 fireToggleEnabled(isDoubleTap ? L"MOD-DOUBLE" : L"MOD-SINGLE");
             }
 
+            // 4. ToggleGameMode — modifier-alone / double-tap bindings. Games
+            //    hold modifiers constantly, so this shape is a poor choice for
+            //    a game binding; it is wired anyway so the intent behaves like
+            //    every other one if a user picks it.
+            if (matches(Intent::ToggleGameMode)) {
+                RequestGameModeToggle();
+                HOOK_LOG(L"  GAMEMODE-MOD (vk=0x%02X, dt=%d): queued for worker",
+                         canonicalVk, isDoubleTap);
+            }
+
             if (isDoubleTap) {
                 modTapCount_[modIdx] = 0;
             } else {
@@ -2476,13 +2499,28 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     // to ReplaceComposition which prepends a VK keydown to the SAME SendInput batch.
     // Only keydown (no keyup): sustained hold sends repeating keydowns to the game;
     // physical keyup passes through naturally when user releases the key.
-    // Skip for: simple appends, auto-cap, non-Unicode, browsers (bait handles suggest),
-    // and Electron/console (split+Sleep path — extra VK would cause reorder issues).
+    //
+    // OPT-IN (per-app send method 5, `hostWantsGameReinject_`). This used to be a
+    // negative gate — on for every app that wasn't a browser/Electron/console/
+    // edit-message host — which meant Notepad, Word and Windows Terminal all paid
+    // for it. The cost is not just the visible flicker of painting the raw char
+    // before deleting it: `previousComposition_ += originalCh` below makes the
+    // NEXT bsCount assume that char reached the document, so any host that drops
+    // or reorders the dispatch desyncs the engine from the screen permanently
+    // (the "khoong" instead of "không" report). Worth it in a game, where the
+    // alternative is a dead movement key. Not worth it anywhere else — those
+    // users switch to English mode or take UniKey's behaviour, which is what
+    // they now get by default.
+    //
+    // The remaining guards still apply on top: they are auto-detected host
+    // traits, so marking e.g. a browser-based game as send-method 5 must not
+    // resurrect the bait/suggest race.
     bool isSimpleAppend = (composition.size() == previousComposition_.size() + 1 &&
                            composition.back() == originalCh &&
                            composition.compare(0, previousComposition_.size(), previousComposition_) == 0);
     DWORD reinjectVk = 0;
-    if (!isSimpleAppend && !autoCapped && currentCodeTable_.load(std::memory_order_acquire) == CodeTable::Unicode &&
+    if (hostWantsGameReinject_ &&
+        !isSimpleAppend && !autoCapped && currentCodeTable_.load(std::memory_order_acquire) == CodeTable::Unicode &&
         !baitChar && !skipEmpty && !editMsgPath) {
         reinjectVk = vkCode;
         previousComposition_ += originalCh;
@@ -3288,6 +3326,69 @@ void HookEngine::DrainClassifyOnWorker() {
         nullptr, std::memory_order_acquire);
     if (!request) return;
     OnFocusChangedSyncOnWorker(*request);
+}
+
+void HookEngine::RequestGameModeToggle() noexcept {
+    VKEY_ASSERT_HOOK_THREAD();
+    // Rule 11.2: one release store + one std::function call. Everything
+    // expensive (TOML read/modify/write) happens in the worker drain.
+    pendingGameModeToggle_.store(true, std::memory_order_release);
+    if (workerSignalFn_) workerSignalFn_();
+}
+
+void HookEngine::DrainGameModeToggleOnWorker() {
+    if (!pendingGameModeToggle_.exchange(false, std::memory_order_acquire)) return;
+
+    const std::wstring exe = FocusOwner::GetExeNameForHwnd(GetForegroundWindow());
+    if (exe.empty()) {
+        Logger::Log(L"[VKey] GameMode toggle: no foreground exe — ignored");
+        return;
+    }
+
+    const auto path = ConfigManager::GetConfigPath();
+    auto entries = ConfigManager::LoadAppOverrides(path);
+
+    // Toggle. Send method 5 is one slot in a single-value-per-app field, so
+    // turning game mode ON discards any other send-method override the user
+    // had for this exe — which is the honest outcome, since 5 and 1-4 are
+    // mutually exclusive by construction. Turning it OFF drops the entry only
+    // when nothing else is configured on it; otherwise it falls back to -1 so
+    // the app's input-method / encoding overrides survive.
+    auto it = entries.find(exe);
+    const bool wasGame = (it != entries.end() && it->second.sendMethod == 5);
+    if (wasGame) {
+        if (it->second.inputMethod < 0 && it->second.encodingOverride < 0) {
+            entries.erase(it);
+        } else {
+            it->second.sendMethod = -1;
+        }
+    } else {
+        entries[exe].sendMethod = 5;
+    }
+
+    if (!ConfigManager::SaveAppOverrides(path, entries)) {
+        Logger::Log(L"[VKey] GameMode toggle: save failed for '%ls'", exe.c_str());
+        return;
+    }
+    SignalConfigChange();
+
+    // Persisting is not enough to make the change felt, and waiting for the
+    // ordinary paths costs seconds the user experiences as "the hotkey didn't
+    // work yet":
+    //   • The config snapshot only rebuilds when a later worker wake notices
+    //     the generation bump — and the wake cadence backs off while idle.
+    //   • `hostWantsGameReinject_` is published by ApplyFocus, and OnTickPoll
+    //     only re-classifies when the foreground PID *changes*. Pressing a
+    //     hotkey inside a game changes nothing, so without forcing it here the
+    //     new value would not land until the user alt-tabbed away and back.
+    // Both are safe to run inline: we are on the worker thread, which is the
+    // §12.5 exemption OnTickPoll already relies on for the same call.
+    RebuildSnapshotFromToml(
+        static_cast<std::uint32_t>(lastConfigGeneration_.load(std::memory_order_acquire)));
+    OnFocusChangedSyncOnWorker(CaptureFocusClassifyRequest(nullptr));
+
+    Logger::Log(L"[VKey] GameMode toggle: '%ls' → %ls (applied)", exe.c_str(),
+                wasGame ? L"off" : L"on");
 }
 
 // Adaptive-tick (plan docs/plans/2026-05-27-adaptive-tick-idle-backoff.md).
@@ -4372,6 +4473,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // preceding ResetComposition already cleared formulaState_ + pushed
     // SetSuppressBait(false), so the new host starts with the bait enabled.
     hostIsFormulaCapable_ = cls->localFormulaHost;
+    hostWantsGameReinject_ = cls->localGameReinject;
 
     // IOutputInjector swap — RCU publish so in-flight HandleAlphaKey reads
     // see either the old or new injector cleanly.

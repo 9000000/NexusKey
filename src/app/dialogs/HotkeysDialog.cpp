@@ -21,12 +21,14 @@ namespace {
 constexpr const wchar_t* kIntentCancel = L"cancel-composition";
 constexpr const wchar_t* kIntentSkip   = L"skip-macro";
 constexpr const wchar_t* kIntentToggle = L"toggle-enabled";
+constexpr const wchar_t* kIntentGame   = L"toggle-game-mode";
 
 [[nodiscard]] const wchar_t* IntentLabel(Intent intent) noexcept {
     switch (intent) {
     case Intent::CancelComposition: return kIntentCancel;
     case Intent::SkipMacro:         return kIntentSkip;
     case Intent::ToggleEnabled:     return kIntentToggle;
+    case Intent::ToggleGameMode:    return kIntentGame;
     }
     return L"";
 }
@@ -35,6 +37,7 @@ constexpr const wchar_t* kIntentToggle = L"toggle-enabled";
     if (s == kIntentCancel) { out = Intent::CancelComposition; return true; }
     if (s == kIntentSkip)   { out = Intent::SkipMacro;         return true; }
     if (s == kIntentToggle) { out = Intent::ToggleEnabled;     return true; }
+    if (s == kIntentGame)   { out = Intent::ToggleGameMode;    return true; }
     return false;
 }
 
