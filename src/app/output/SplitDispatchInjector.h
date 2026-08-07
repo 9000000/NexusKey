@@ -24,7 +24,8 @@ public:
           needsBaitCharPrefix_(needsBaitCharPrefix),
           hasMultiProcessRenderer_(hasMultiProcessRenderer) {}
 
-    bool Replace(std::size_t bsCount, std::wstring_view text) noexcept override;
+    bool Replace(std::size_t bsCount, std::wstring_view text,
+                 unsigned short reinjectVk = 0) noexcept override;
     void SendKey(unsigned short vkCode) noexcept override;
 
     // Covers split Sleep (5-6 ms) + Electron / Qt event-loop (~30-90 ms).

@@ -232,4 +232,44 @@ TEST_F(SplitDispatchInjectorTest, PartialFirstBatchEmitsCompensatingNegativeDelt
     EXPECT_EQ(synthCounterDeltas[1], -3);
 }
 
+// ── Game-compat re-inject ────────────────────────────────────────────
+// Reached only through the per-app "compatibility split" override on a
+// non-Electron, non-console host; auto-detected Electron/console zero
+// reinjectVk upstream via localSkipEmpty.
+
+TEST_F(SplitDispatchInjectorTest, ReinjectVkLeadsTheBackspaceBatch) {
+    SplitDispatchInjector inj(/*sleepMsBetweenBatches=*/6);
+    EXPECT_TRUE(inj.Replace(2, L"ô", /*reinjectVk=*/'O'));
+
+    // Batch 1: re-inject + BS×2 (5 events). Batch 2: 1 char (2 events).
+    ASSERT_EQ(capturedInputs.size(), 7u);
+    EXPECT_EQ(capturedInputs[0].ki.wVk, 'O');
+    EXPECT_EQ(capturedInputs[0].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
+    EXPECT_EQ(capturedInputs[1].ki.wVk, VK_BACK);
+    ASSERT_EQ(sleepDelays.size(), 1u);
+    EXPECT_EQ(sleepDelays[0], 6u);
+    // capturedInputs is flattened across calls, so it cannot see the batch
+    // boundary — an impl that dispatched the re-inject on its own would emit
+    // the same 7 events and pass. The counter deltas are per TrackedSendInput
+    // call, so they do pin it: batch 1 = re-inject + 4 BS, batch 2 = 1 char.
+    ASSERT_EQ(synthCounterDeltas.size(), 2u);
+    EXPECT_EQ(synthCounterDeltas[0], 5);
+    EXPECT_EQ(synthCounterDeltas[1], 2);
+}
+
+TEST_F(SplitDispatchInjectorTest, LoneReinjectDoesNotBuyInterBatchSleep) {
+    // A re-inject key-down is not a deletion. Letting it satisfy the
+    // "batch 1 is non-empty" test would charge sleepMs_ to a path that
+    // has no backspaces to drain.
+    SplitDispatchInjector inj(/*sleepMsBetweenBatches=*/6);
+    EXPECT_TRUE(inj.Replace(0, L"x", /*reinjectVk=*/'X'));
+
+    ASSERT_EQ(capturedInputs.size(), 3u);  // re-inject + char down/up
+    EXPECT_EQ(capturedInputs[0].ki.wVk, 'X');
+    EXPECT_TRUE(sleepDelays.empty());
+    ASSERT_EQ(synthCounterDeltas.size(), 2u);
+    EXPECT_EQ(synthCounterDeltas[0], 1);
+    EXPECT_EQ(synthCounterDeltas[1], 2);
+}
+
 }  // namespace NextKey::Output::Test

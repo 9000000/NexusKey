@@ -15,6 +15,7 @@ extern const GUID CLSID_TextService;
 extern const GUID GUID_Profile;
 extern const GUID GUID_DisplayAttribute_Input;
 extern const GUID GUID_LangBarItem_Toggle;
+extern const GUID GUID_PreservedKey_QuickConvert;
 
 // Module instance handle
 extern HINSTANCE g_hInstance;

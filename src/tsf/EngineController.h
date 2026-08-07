@@ -111,6 +111,14 @@ public:
     /// Check if TSF composition is active
     bool IsComposing() const { return compositionMgr_.IsComposing(); }
 
+    /// Whether this foreground application is configured for the TSF backend.
+    [[nodiscard]] bool IsTsfActive() const noexcept { return tsfActive_; }
+
+    /// Quick-convert config snapshot delivered by the main process.
+    [[nodiscard]] const ConvertConfig& GetConvertConfig() const noexcept {
+        return convertConfig_;
+    }
+
     /// Check if engine has buffer (for sync check)
     bool HasEngineBuffer() const { return engine_->Count() > 0; }
 
@@ -163,6 +171,10 @@ public:
     /// (foreground/background) and TextService::Deactivate (layout switch-away).
     void SetTsfTipActive(bool active);
 
+    /// Publish whether this foreground TIP instance has successfully preserved
+    /// the native quick-convert hotkey. The EXE uses this as a routing handshake.
+    void SetTsfNativeConvertReady(bool ready);
+
     /// Non-owning access to the SharedStateManager — shared with ReadonlyContextProvider
     /// so both can read/write the same memory-mapped region without duplicating the
     /// mapping handle.
@@ -214,6 +226,7 @@ private:
     std::unique_ptr<IInputEngine> engine_;
     CompositionManager compositionMgr_;
     TypingConfig config_;
+    ConvertConfig convertConfig_;
     InputMethod currentMethod_ = InputMethod::Telex;
     TfClientId clientId_ = TF_CLIENTID_NULL;
     SharedStateManager sharedState_; // For reading config from App

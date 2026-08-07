@@ -6,13 +6,35 @@
 #include "TrayIcon.h"
 #include "QuickConvert.h"
 #include "core/config/ConfigManager.h"
+#include "core/ipc/SharedStateManager.h"
 
 namespace NextKey {
+
+namespace {
+
+void PublishConvertConfig(SharedStateManager& sharedState,
+                          const ConvertConfig& config) noexcept {
+    // Drop the native-routing handshake before changing the binding. Until the
+    // foreground TSF DLL preserves the new key and raises readiness again, the
+    // low-level hook remains the lossless fallback.
+    sharedState.SetOrClearFlag(SharedFlags::TSF_NATIVE_CONVERT_READY, false);
+    SharedState state = sharedState.Read();
+    if (!state.IsValid()) return;
+    state.flags &= ~SharedFlags::TSF_NATIVE_CONVERT_READY;
+    state.SetConvertConfig(config);
+    sharedState.Write(state);
+    // Close the narrow race where the old preserved-key owner republishes
+    // readiness while the new config snapshot is being written.
+    sharedState.SetOrClearFlag(SharedFlags::TSF_NATIVE_CONVERT_READY, false);
+}
+
+}  // namespace
 
 void WireHotkeys(
     HotkeyManager& hotkeyManager,
     HookEngine& hookEngine,
     TrayIcon& trayIcon,
+    SharedStateManager& sharedState,
     std::unique_ptr<QuickConvert>& quickConvert,
     HotkeyManager::SlotId& outToggleSlot,
     HotkeyManager::SlotId& outConvertSlot,
@@ -23,6 +45,7 @@ void WireHotkeys(
     auto convertConfig = ConfigManager::LoadConvertConfigOrDefault();
     HotkeyConfig convertHotkeyCfg = convertConfig.hotkey;
     quickConvert = std::make_unique<QuickConvert>(convertConfig);
+    PublishConvertConfig(sharedState, convertConfig);
 
     // Config reload callback. Captures are refs to caller's globals (static lifetime).
     //
@@ -31,15 +54,16 @@ void WireHotkeys(
     // main.cpp / main_lite.cpp) propagates the binding in ~ms instead of
     // ~30s (TOML deferred save). Reading toggle hotkey from TOML here
     // would race the SharedState update and overwrite the fresh binding
-    // with a stale disk value. Convert hotkey stays here because it is
-    // not in SharedState (per `src/core/ipc/SharedState.h` comment:
-    // "Convert hotkey fields are reserved for future migration").
+    // with a stale disk value. Convert config is also published to SharedState
+    // here so the in-process TSF backend can refresh its preserved key and
+    // transformation options from the same snapshot.
     (void)outToggleSlot;  // referenced by hotkeyChangedCallback_ in caller
-    hookEngine.SetConfigReloadCallback([&hotkeyManager, &trayIcon, &quickConvert,
+    hookEngine.SetConfigReloadCallback([&hotkeyManager, &trayIcon, &sharedState, &quickConvert,
                                         &outConvertSlot]() {
         auto cc = ConfigManager::LoadConvertConfigOrDefault();
         if (quickConvert) quickConvert->UpdateConfig(cc);
         hotkeyManager.UpdateHotkey(outConvertSlot, cc.hotkey);
+        PublishConvertConfig(sharedState, cc);
         trayIcon.RefreshConvertHotkeyCache(cc);
     });
 
@@ -66,7 +90,9 @@ void WireHotkeys(
     outConvertSlot = hotkeyManager.AddHotkey(convertHotkeyCfg, [&hookEngine, &quickConvert]() {
         hookEngine.CommitPending();
         if (quickConvert) quickConvert->Execute();
-    }, /*runsOnAnyThread=*/false);
+    }, /*runsOnAnyThread=*/false, [&hookEngine]() noexcept {
+        return hookEngine.ShouldUseNativeQuickConvert();
+    });
 
     // Wave 3 PR 3.7 — caller must pass HookEngine's hook-thread id at
     // Initialize time. Prereq: caller has already invoked

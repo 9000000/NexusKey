@@ -32,6 +32,18 @@ UINT_PTR           g_restoreTimerId  = 0;
 // (typically the user pressing Ctrl+C) has touched the clipboard since —
 // we must NOT clobber their copy on restore.
 std::atomic<DWORD> g_lastWrittenSeq{0};
+
+// Game-compat re-inject key-down (no key-up — the physical up flows through
+// the hook when the user releases). Prepended to whichever INPUT batch this
+// channel is about to dispatch.
+INPUT MakeReinjectDown(unsigned short vk) noexcept {
+    INPUT in{};
+    in.type = INPUT_KEYBOARD;
+    in.ki.wVk = static_cast<WORD>(vk);
+    in.ki.wScan = static_cast<WORD>(::MapVirtualKeyW(vk, MAPVK_VK_TO_VSC));
+    in.ki.dwExtraInfo = Internal::kVKeyExtraInfo;
+    return in;
+}
 }  // namespace
 
 // Best-effort restore of g_originalClipText. Skips silently if a third party
@@ -81,13 +93,22 @@ static VOID CALLBACK RestoreTimerProc(HWND, UINT, UINT_PTR idEvent, DWORD) {
     g_hasOriginalClip = false;
 }
 
-bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noexcept {
-    if (bsCount == 0 && text.empty()) return true;
+bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text,
+                                unsigned short reinjectVk) noexcept {
+    // reinjectVk is reachable here despite OutputDispatcher's clipboard branch
+    // handling it separately: that branch keys off `useClipboardPaste_`
+    // (= localClipboard, auto-detected VB6) while the factory picks this
+    // injector off `localUseClipboardInjector` (= the per-app "send method =
+    // Clipboard" override). A user setting that override on a non-VB6 app
+    // lands here through the generic branch, which does NOT subtract the
+    // compensating backspace — so dropping the VK would over-delete one char.
+    if (bsCount == 0 && text.empty() && reinjectVk == 0) return true;
 
     // Fast path: backspace-only — no clipboard IPC needed
     if (text.empty()) {
         std::vector<INPUT> inputs;
-        inputs.reserve(bsCount * 2);
+        inputs.reserve(bsCount * 2 + 1);
+        if (reinjectVk != 0) inputs.push_back(MakeReinjectDown(reinjectVk));
         for (std::size_t i = 0; i < bsCount; ++i) {
             INPUT in{};
             in.type = INPUT_KEYBOARD;
@@ -173,9 +194,11 @@ bool ClipboardInjector::Replace(std::size_t bsCount, std::wstring_view text) noe
         g_lastWrittenSeq.store(GetClipboardSequenceNumber(), std::memory_order_relaxed);
     }
 
-    // 3. Build input sequence: Backspaces + Ctrl+V
+    // 3. Build input sequence: re-inject + Backspaces + Ctrl+V
     std::vector<INPUT> inputs;
-    inputs.reserve(bsCount * 2 + 4);
+    inputs.reserve(bsCount * 2 + 5);
+
+    if (reinjectVk != 0) inputs.push_back(MakeReinjectDown(reinjectVk));
 
     for (std::size_t i = 0; i < bsCount; ++i) {
         INPUT in{};

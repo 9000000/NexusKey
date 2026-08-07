@@ -477,19 +477,42 @@ TEST(CodeTableConverter, ToSentenceCase_Empty) {
     EXPECT_EQ(CodeTableConverter::ToSentenceCase(L""), L"");
 }
 
-TEST(CodeTableConverter, ToSentenceCase_FromUppercase) {
-    EXPECT_EQ(CodeTableConverter::ToSentenceCase(L"HELLO WORLD"), L"Hello world");
+TEST(CodeTableConverter, ToSentenceCase_PreservesExistingUppercase) {
+    EXPECT_EQ(CodeTableConverter::ToSentenceCase(L"hELLO VKey API"), L"HELLO VKey API");
 }
 
-TEST(CodeTableConverter, ToSentenceCase_Vietnamese_Uppercase) {
-    // "VIỆT NAM ĐẸP" → "Việt nam đẹp"
+TEST(CodeTableConverter, ToSentenceCase_Vietnamese_PreservesExistingUppercase) {
     std::wstring input = L"VI\x1EC6T NAM \x0110\x1EB8P";
     auto result = CodeTableConverter::ToSentenceCase(input);
-    EXPECT_EQ(result, L"Vi\x1EC7t nam \x0111\x1EB9p");
+    EXPECT_EQ(result, input);
 }
 
 TEST(CodeTableConverter, ToSentenceCase_MixedPunctuation) {
-    EXPECT_EQ(CodeTableConverter::ToSentenceCase(L"HELLO.\nWORLD"), L"Hello.\nWorld");
+    EXPECT_EQ(CodeTableConverter::ToSentenceCase(L"hELLO.\nwORLD"), L"HELLO.\nWORLD");
+}
+
+TEST(CodeTableConverter, ToSentenceCase_DoesNotCapitalizeDomainSegment) {
+    EXPECT_EQ(CodeTableConverter::ToSentenceCase(L"vkey.com"), L"Vkey.com");
+}
+
+TEST(CodeTableConverter, ToSentenceCase_RequiresWhitespaceAfterPunctuation) {
+    EXPECT_EQ(CodeTableConverter::ToSentenceCase(L"vkey.com 3.14 v4.1beta"),
+              L"Vkey.com 3.14 v4.1beta");
+}
+
+TEST(CodeTableConverter, ToSentenceCase_AfterSentencePunctuationAndWhitespace) {
+    EXPECT_EQ(CodeTableConverter::ToSentenceCase(L"hello! next? yes. done"),
+              L"Hello! Next? Yes. Done");
+}
+
+TEST(CodeTableConverter, ToSentenceCase_AllowsClosingQuoteBeforeWhitespace) {
+    EXPECT_EQ(CodeTableConverter::ToSentenceCase(L"he said \"done.\" next day"),
+              L"He said \"done.\" Next day");
+}
+
+TEST(CodeTableConverter, ToSentenceCase_UnicodeEllipsis) {
+    EXPECT_EQ(CodeTableConverter::ToSentenceCase(L"wait\x2026 next"),
+              L"Wait\x2026 Next");
 }
 
 // --- ToTitleCase tests ---

@@ -12,6 +12,7 @@
 #include "CompositionEditSession.h"
 #include "ComUtils.h"
 #include "Define.h"
+#include "Globals.h"
 #include "core/CrashLog.h"
 #include "core/MacroCase.h"
 #include "core/TsfEditDecision.h"
@@ -30,6 +31,33 @@ LONG LogTsfSeh(const wchar_t* where, unsigned long code) noexcept {
     _snprintf_s(msg, _TRUNCATE, "TSF SEH structured exception code=0x%08lX", code);
     ::NextKey::CrashLog(where, msg);
     return EXCEPTION_EXECUTE_HANDLER;
+}
+
+bool WriteUnicodeClipboard(const std::wstring& text) noexcept {
+    if (!OpenClipboard(nullptr)) return false;
+
+    struct ClipboardCloser {
+        ~ClipboardCloser() { CloseClipboard(); }
+    } closer;
+
+    const SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (memory == nullptr) return false;
+
+    void* destination = GlobalLock(memory);
+    if (destination == nullptr) {
+        GlobalFree(memory);
+        return false;
+    }
+    memcpy(destination, text.c_str(), bytes);
+    GlobalUnlock(memory);
+
+    if (!EmptyClipboard() || SetClipboardData(CF_UNICODETEXT, memory) == nullptr) {
+        GlobalFree(memory);
+        return false;
+    }
+    // SetClipboardData owns memory after success.
+    return true;
 }
 }  // namespace
 
@@ -113,16 +141,78 @@ bool KeyEventSink::Advise(ITfThreadMgr* pThreadMgr) {
         return false;
     }
 
+    RefreshQuickConvertPreservedKey();
     TSF_LOG(L"KeyEventSink advised");
     return true;
 }
 
 void KeyEventSink::Unadvise() {
+    isForeground_ = false;
+    PublishQuickConvertCapability();
+    ClearQuickConvertPreservedKey();
     if (pKeystrokeMgr_) {
         pKeystrokeMgr_->UnadviseKeyEventSink(pTextService_->GetClientId());
         SafeRelease(pKeystrokeMgr_);
     }
     TSF_LOG(L"KeyEventSink unadvised");
+}
+
+void KeyEventSink::ClearQuickConvertPreservedKey() noexcept {
+    if (pKeystrokeMgr_ != nullptr && quickConvertKeyRegistered_) {
+        (void)pKeystrokeMgr_->UnpreserveKey(
+            GUID_PreservedKey_QuickConvert, &quickConvertPreservedKey_);
+    }
+    quickConvertKeyRegistered_ = false;
+    quickConvertPreservedKey_ = {};
+    registeredQuickConvertHotkey_ = {};
+    quickConvertSequence_.Reset();
+}
+
+void KeyEventSink::PublishQuickConvertCapability() noexcept {
+    if (pEngineController_ == nullptr) return;
+    const bool ready = isForeground_ && quickConvertKeyRegistered_
+        && pEngineController_->IsEnabled() && pEngineController_->IsTsfActive();
+    pEngineController_->SetTsfNativeConvertReady(ready);
+}
+
+void KeyEventSink::RefreshQuickConvertPreservedKey() {
+    if (pKeystrokeMgr_ == nullptr || pEngineController_ == nullptr) return;
+
+    const HotkeyConfig desired = pEngineController_->GetConvertConfig().hotkey;
+    if (quickConvertKeyRegistered_ && desired == registeredQuickConvertHotkey_) {
+        PublishQuickConvertCapability();
+        return;
+    }
+
+    pEngineController_->SetTsfNativeConvertReady(false);
+    ClearQuickConvertPreservedKey();
+
+    // TSF preserved keys have no Windows-key modifier and require a concrete
+    // virtual key. These bindings intentionally remain on the hook backend.
+    if (desired.vk == 0 || desired.vk > 0xFFu || desired.win) return;
+
+    TF_PRESERVEDKEY preserved{};
+    preserved.uVKey = static_cast<UINT>(desired.vk);
+    if (desired.alt) preserved.uModifiers |= TF_MOD_ALT;
+    if (desired.ctrl) preserved.uModifiers |= TF_MOD_CONTROL;
+    if (desired.shift) preserved.uModifiers |= TF_MOD_SHIFT;
+
+    constexpr wchar_t description[] = L"VKey Quick Convert";
+    const HRESULT hr = pKeystrokeMgr_->PreserveKey(
+        pTextService_->GetClientId(),
+        GUID_PreservedKey_QuickConvert,
+        &preserved,
+        description,
+        static_cast<ULONG>(std::size(description) - 1));
+    if (FAILED(hr)) {
+        TSF_LOG(L"QuickConvert PreserveKey failed hr=0x%08X", hr);
+        return;
+    }
+
+    quickConvertPreservedKey_ = preserved;
+    registeredQuickConvertHotkey_ = desired;
+    quickConvertKeyRegistered_ = true;
+    PublishQuickConvertCapability();
 }
 
 IFACEMETHODIMP KeyEventSink::QueryInterface(REFIID riid, void** ppvObj) {
@@ -151,6 +241,7 @@ IFACEMETHODIMP_(ULONG) KeyEventSink::Release() {
 }
 
 IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
+    isForeground_ = fForeground != FALSE;
     pendingClaimedSpaceVk_ = 0;
     claimedSpaceKeyUpVk_ = 0;
     if (fForeground) {
@@ -159,6 +250,7 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
         if (pEngineController_) {
             pEngineController_->CheckConfigEvent(/*allowMacroDiskRead=*/true);
             pEngineController_->RefreshFlags();
+            RefreshQuickConvertPreservedKey();
             // Publish TIP active state — EXE reads this for tray icon sync
             pEngineController_->SetTsfTipActive(true);
             pEngineController_->ClearMacroTracking();
@@ -169,6 +261,7 @@ IFACEMETHODIMP KeyEventSink::OnSetFocus(BOOL fForeground) {
     } else {
         TSF_LOG(L"OnSetFocus: background");
         if (pEngineController_) {
+            PublishQuickConvertCapability();
             pEngineController_->SetTsfTipActive(false);
             pEngineController_->ClearMacroTracking();
             pEngineController_->ResetCommitUndo();
@@ -190,7 +283,9 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyDown(ITfContext* pContext, WPARAM wParam, 
 }
 
 HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
-    pEngineController_->CheckConfigEvent();
+    if (pEngineController_->CheckConfigEvent()) {
+        RefreshQuickConvertPreservedKey();
+    }
     const UINT vk = static_cast<UINT>(wParam);
 
     // Drop any translated char cached by a previous OnTestKeyDown whose
@@ -494,7 +589,9 @@ IFACEMETHODIMP KeyEventSink::OnKeyDown(ITfContext* pContext, WPARAM wParam, LPAR
 }
 
 HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
-    pEngineController_->CheckConfigEvent();
+    if (pEngineController_->CheckConfigEvent()) {
+        RefreshQuickConvertPreservedKey();
+    }
     const UINT vk = static_cast<UINT>(wParam);
 
     if (vk != pendingClaimedSpaceVk_) {
@@ -753,9 +850,64 @@ IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LP
     return S_OK;
 }
 
-IFACEMETHODIMP KeyEventSink::OnPreservedKey(ITfContext* /*pContext*/, REFGUID /*rguid*/, BOOL* pfEaten) {
+IFACEMETHODIMP KeyEventSink::OnPreservedKey(ITfContext* pContext, REFGUID rguid, BOOL* pfEaten) {
     if (pfEaten == nullptr) return E_INVALIDARG;
-    *pfEaten = FALSE;
+    *pfEaten = FALSE;  // fail-safe default
+    if (pEngineController_ == nullptr) return S_OK;
+    __try {
+        return OnPreservedKeyImpl(pContext, rguid, pfEaten);
+    } __except (LogTsfSeh(L"KeyEventSink::OnPreservedKey", GetExceptionCode())) {
+        *pfEaten = TRUE;  // the registered VKey chord must not leak to the host
+        return S_OK;
+    }
+}
+
+HRESULT KeyEventSink::OnPreservedKeyImpl(
+    ITfContext* pContext, REFGUID rguid, BOOL* pfEaten) {
+    if (!IsEqualGUID(rguid, GUID_PreservedKey_QuickConvert)) return S_OK;
+    *pfEaten = TRUE;
+    if (pContext == nullptr || !isForeground_) return S_OK;
+
+    // A stale preserved-key callback can race a config change. Refreshing first
+    // keeps the next press correctly routed; the old binding is consumed once.
+    if (pEngineController_->CheckConfigEvent()) {
+        RefreshQuickConvertPreservedKey();
+        return S_OK;
+    }
+    if (!quickConvertKeyRegistered_ || !pEngineController_->IsEnabled()
+        || !pEngineController_->IsTsfActive()) {
+        PublishQuickConvertCapability();
+        return S_OK;
+    }
+
+    pEngineController_->CheckContextBlocked(pContext);
+    if (pEngineController_->IsContextBlocked()) return S_OK;
+    if (pEngineController_->HasEngineBuffer()) pEngineController_->Commit(pContext);
+
+    const ConvertConfig config = pEngineController_->GetConvertConfig();
+    auto* session = new QuickConvertEditSession(
+        pContext, config, &quickConvertSequence_);
+    HRESULT sessionResult = E_FAIL;
+    const HRESULT requestResult = pContext->RequestEditSession(
+        pTextService_->GetClientId(), session,
+        TF_ES_SYNC | TF_ES_READWRITE, &sessionResult);
+    const bool hasResult = session->HasResult();
+    const bool replaced = session->Replaced();
+    const std::wstring result = session->Result();
+    session->Release();
+
+    if (FAILED(requestResult) || FAILED(sessionResult)) {
+        TSF_LOG(L"QuickConvert edit session failed request=0x%08X session=0x%08X",
+                requestResult, sessionResult);
+        quickConvertSequence_.Reset();
+        return S_OK;
+    }
+
+    if (hasResult && !config.autoPaste && !WriteUnicodeClipboard(result)) {
+        TSF_LOG(L"QuickConvert clipboard write failed");
+    } else if (replaced) {
+        TSF_LOG(L"QuickConvert replaced selected text (%zu chars)", result.size());
+    }
     return S_OK;
 }
 

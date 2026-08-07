@@ -25,6 +25,7 @@ namespace SharedFlags {
     constexpr uint32_t TSF_TIP_ACTIVE         = 0x0100;  // DLL: VKey TIP is the active input processor (set on focus, cleared on deactivate/bg)
     constexpr uint32_t CLASSIC_MODE           = 0x0200;  // EXE: running in Classic UI (Lite) mode
     constexpr uint32_t TSF_ENGINE_UNTRUSTED   = 0x0400;  // DLL: Advanced spell-check on, but the sibling vkey_engine.dll failed the trust gate → silent C++ fallback
+    constexpr uint32_t TSF_NATIVE_CONVERT_READY = 0x0800;  // DLL: foreground TSF host supports native selected-text conversion
 }
 
 // Diagnostic flag bit definitions (uint8_t, byte slot at SharedState.diagFlags).
@@ -242,6 +243,9 @@ inline void WriteAnchorSeqlock(volatile HookContextAnchor* dst,
 ///
 /// HookContextAnchor uses its own independent seqlock (generation field).
 struct SharedState {
+    // reserved[5..8] starts at an aligned struct offset and is atomically
+    // published by the foreground TSF DLL as the native-convert route owner.
+    static constexpr std::size_t NATIVE_CONVERT_OWNER_OFFSET = 5;
     // ── Header (12 bytes) ──
     uint32_t magic;           // Magic identifier: 'NKEY' = 0x59454B4E
     uint32_t structVersion;   // Struct layout version (increment on layout change)
@@ -333,9 +337,64 @@ struct SharedState {
                  | (static_cast<uint32_t>(hotkeyKeyHi) << 8);
         return hk;
     }
-    // Convert hotkey fields are reserved for future migration.
-    // Currently convert hotkey is managed by ConvertToolDialog (separate subprocess)
-    // and read from TOML only. Wire here when ConvertToolDialog gets SharedState access.
+
+    void SetConvertConfig(const ConvertConfig& config) noexcept {
+        convertMods = static_cast<uint8_t>(config.hotkey.ToMods());
+        convertKeyLo = static_cast<uint8_t>(config.hotkey.vk);
+        convertKeyHi = static_cast<uint8_t>(config.hotkey.vk >> 8);
+
+        uint16_t convertFlags = 0;
+        if (config.allCaps) convertFlags |= 1u << 0;
+        if (config.allLower) convertFlags |= 1u << 1;
+        if (config.capsFirst) convertFlags |= 1u << 2;
+        if (config.capsEach) convertFlags |= 1u << 3;
+        if (config.removeMark) convertFlags |= 1u << 4;
+        if (config.alertDone) convertFlags |= 1u << 5;
+        if (config.autoPaste) convertFlags |= 1u << 6;
+        if (config.sequential) convertFlags |= 1u << 7;
+        if (config.enableLog) convertFlags |= 1u << 8;
+        reserved[0] = static_cast<uint8_t>(convertFlags);
+        reserved[1] = static_cast<uint8_t>(convertFlags >> 8);
+        reserved[2] = config.sourceEncoding;
+        reserved[3] = config.destEncoding;
+    }
+
+    [[nodiscard]] ConvertConfig GetConvertConfig() const noexcept {
+        ConvertConfig config{};
+        const uint16_t convertFlags = static_cast<uint16_t>(reserved[0])
+            | static_cast<uint16_t>(reserved[1] << 8);
+        config.allCaps = (convertFlags & (1u << 0)) != 0;
+        config.allLower = (convertFlags & (1u << 1)) != 0;
+        config.capsFirst = (convertFlags & (1u << 2)) != 0;
+        config.capsEach = (convertFlags & (1u << 3)) != 0;
+        config.removeMark = (convertFlags & (1u << 4)) != 0;
+        config.alertDone = (convertFlags & (1u << 5)) != 0;
+        config.autoPaste = (convertFlags & (1u << 6)) != 0;
+        config.sequential = (convertFlags & (1u << 7)) != 0;
+        config.enableLog = (convertFlags & (1u << 8)) != 0;
+        config.sourceEncoding = reserved[2] <= 4 ? reserved[2] : 0;
+        config.destEncoding = reserved[3] <= 4 ? reserved[3] : 0;
+        config.hotkey.SetModsFromMask(convertMods & 0x0Fu);
+        config.hotkey.vk = static_cast<uint32_t>(convertKeyLo)
+                         | (static_cast<uint32_t>(convertKeyHi) << 8);
+        return config;
+    }
+
+    void SetNativeConvertOwnerProcessId(uint32_t processId) noexcept {
+        for (std::size_t i = 0; i < sizeof(processId); ++i) {
+            reserved[NATIVE_CONVERT_OWNER_OFFSET + i] =
+                static_cast<uint8_t>(processId >> (i * 8));
+        }
+    }
+
+    [[nodiscard]] uint32_t GetNativeConvertOwnerProcessId() const noexcept {
+        uint32_t processId = 0;
+        for (std::size_t i = 0; i < sizeof(processId); ++i) {
+            processId |= static_cast<uint32_t>(
+                reserved[NATIVE_CONVERT_OWNER_OFFSET + i]) << (i * 8);
+        }
+        return processId;
+    }
 
     /// Initialize with defaults
     void InitDefaults() noexcept {
@@ -386,6 +445,9 @@ static_assert(offsetof(SharedState, configGeneration) == 33,
 // requires alignof >= 4 so lands at 1060).
 static_assert(offsetof(SharedState, contextAnchor) == 1060,
               "contextAnchor offset frozen (must account for reserved[1024] + pad)");
+static_assert((offsetof(SharedState, reserved)
+               + SharedState::NATIVE_CONVERT_OWNER_OFFSET) % alignof(uint32_t) == 0,
+              "native-convert owner PID must stay 32-bit aligned");
 
 /// Encode TypingConfig feature bools → uint32_t bitmask (3 bytes used)
 [[nodiscard]] inline uint32_t EncodeFeatureFlags(const TypingConfig& config) noexcept {

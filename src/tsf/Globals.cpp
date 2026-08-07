@@ -34,5 +34,10 @@ const GUID GUID_DisplayAttribute_Input =
 const GUID GUID_LangBarItem_Toggle =
     { 0x2c77a81e, 0x41cc, 0x4178, { 0xa3, 0xa7, 0x5f, 0x8a, 0x98, 0x75, 0x68, 0xe1 } };
 
+// {10C4089E-C01D-4E77-93E4-3780D98E018B}
+// Preserved key used by the TSF-native quick-convert backend.
+const GUID GUID_PreservedKey_QuickConvert =
+    { 0x10c4089e, 0xc01d, 0x4e77, { 0x93, 0xe4, 0x37, 0x80, 0xd9, 0x8e, 0x01, 0x8b } };
+
 }  // namespace TSF
 }  // namespace NextKey

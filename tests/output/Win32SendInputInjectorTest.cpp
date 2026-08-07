@@ -248,4 +248,60 @@ TEST_F(Win32SendInputInjectorTest, PartialSendEmitsCompensatingNegativeDelta) {
     EXPECT_EQ(synthCounterDeltas[1], -4);
 }
 
+// ── Game-compat re-inject atomicity ──────────────────────────────────
+// HandleAlphaKey pre-adds the raw char to previousComposition_ before
+// calling here, so bsCount already assumes the re-injected char is on
+// screen. Splitting the VK and the backspaces across two SendInput calls
+// lets a host land one and drop the other, leaving the app with the raw
+// char while the engine believes it was replaced ("khoong" for "không").
+
+TEST_F(Win32SendInputInjectorTest, ReinjectVkRidesTheSameSendInputBatch) {
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/false);
+    EXPECT_TRUE(inj.Replace(2, L"ô", /*reinjectVk=*/'O'));
+
+    // 1 re-inject down + 2 BS × (down+up) + 1 char × (down+up) = 7 events.
+    ASSERT_EQ(capturedInputs.size(), 7u);
+    // Exactly ONE dispatch. Two entries here would mean the re-inject went
+    // out separately again — the regression this test exists to catch.
+    ASSERT_EQ(synthCounterDeltas.size(), 1u);
+    EXPECT_EQ(synthCounterDeltas[0], 7);
+
+    EXPECT_EQ(capturedInputs[0].ki.wVk, 'O');
+    EXPECT_EQ(capturedInputs[0].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
+    EXPECT_EQ(capturedInputs[1].ki.wVk, VK_BACK);
+    EXPECT_NE(capturedInputs[5].ki.dwFlags & KEYEVENTF_UNICODE, 0u);
+    EXPECT_EQ(capturedInputs[5].ki.wScan, L'ô');
+}
+
+TEST_F(Win32SendInputInjectorTest, ReinjectVkEmitsNoKeyUp) {
+    // Key-down only: a sustained hold keeps feeding downs to the game, and
+    // the physical key-up passes through the hook when the user releases.
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/false);
+    EXPECT_TRUE(inj.Replace(1, L"â", /*reinjectVk=*/'A'));
+    for (const auto& ev : capturedInputs) {
+        if (ev.ki.wVk == 'A') {
+            EXPECT_EQ(ev.ki.dwFlags & KEYEVENTF_KEYUP, 0u)
+                << "re-inject must never emit a key-up";
+        }
+    }
+}
+
+TEST_F(Win32SendInputInjectorTest, ReinjectVkKeepsHeldShiftRestoreIndexHonest) {
+    // Shift-releases sit AFTER the re-inject key-down. If the partial-send
+    // recovery still assumed they start at index 0 it would read "shift was
+    // released" from a send that only delivered the re-inject, and press a
+    // Shift that was never lifted — a stuck modifier.
+    Internal::g_getAsyncKeyState = [](int vk) -> SHORT {
+        return vk == VK_LSHIFT ? static_cast<SHORT>(0x8000) : SHORT{0};
+    };
+    sendInputReturnOverride = 1;  // only the re-inject key-down landed
+
+    Win32SendInputInjector inj(/*needsBaitCharPrefix=*/false);
+    EXPECT_FALSE(inj.Replace(2, L"ô", /*reinjectVk=*/'O'));
+
+    // Batch: [reinject, LShift up, BS×4, char×2, LShift down] = 9 events.
+    // No compensating restore batch may follow, so nothing beyond those 9.
+    EXPECT_EQ(capturedInputs.size(), 9u);
+}
+
 }  // namespace NextKey::Output::Test

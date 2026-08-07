@@ -64,6 +64,7 @@ inline constexpr UINT WM_APP_HOTKEY_FIRED = WM_APP + 3;
 class HotkeyManager {
 public:
     using Callback = std::function<void()>;
+    using PassThroughPredicate = std::function<bool()>;
     using SlotId = size_t;
 
     HotkeyManager() : bindings_(std::make_shared<std::vector<SlotBinding>>()) {}
@@ -88,7 +89,8 @@ public:
     /// thread is unavailable.
     [[nodiscard]] SlotId AddHotkey(const HotkeyConfig& config,
                                     Callback callback,
-                                    bool runsOnAnyThread);
+                                    bool runsOnAnyThread,
+                                    PassThroughPredicate passThrough = {});
 
     /// Replace an existing slot's config (used on config reload). Safe to
     /// call from any thread; serialized by mutationMutex_.
@@ -127,9 +129,11 @@ private:
         /// thread affinity. See AddHotkey() doc above; used to gate the
         /// LL-thread inline-dispatch fallback in the LL hook callback.
         bool runsOnAnyThread = false;
+        PassThroughPredicate passThrough;
     };
     struct SlotState {
         bool comboKeyDown = false;
+        bool comboPassedThrough = false;
     };
 
     void InstallKeyboardHook(HINSTANCE hInstance);

@@ -54,6 +54,8 @@ endif()
 set(NEXTKEY_ENGINE_SOURCES
     src/core/config/TypingConfig.h
     src/core/config/ConfigSnapshot.h
+    src/core/QuickConvertLogic.cpp
+    src/core/QuickConvertLogic.h
     src/core/engine/TypingEngine.cpp
     src/core/engine/TypingEngine.h
     src/core/engine/EngineFactory.cpp
@@ -327,6 +329,7 @@ add_library(VKeyTSF SHARED
     src/tsf/EditSession.h
     src/tsf/CompositionEditSession.h
     src/tsf/EscRestoreLastCommitSession.h
+    src/tsf/QuickConvertEditSession.h
     src/tsf/InputScopeChecker.h
     src/tsf/LanguageBarButton.h
     src/tsf/LanguageBarButton.cpp
@@ -768,6 +771,7 @@ set(NEXTKEY_TEST_SOURCES
     tests/TypingActionTest.cpp
     tests/CustomKeyMapTest.cpp
     tests/CodeTableConverterTest.cpp
+    tests/QuickConvertLogicTest.cpp
     tests/UpdateSecurityTest.cpp
     tests/AdvancedEngineDownloadPolicyTest.cpp
     tests/EngineBenchmarkTest.cpp

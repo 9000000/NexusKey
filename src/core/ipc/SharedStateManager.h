@@ -43,6 +43,15 @@ public:
     /// Read flags directly from memory-mapped region (zero-copy, for hot path)
     [[nodiscard]] uint32_t ReadFlags() const noexcept;
 
+    /// Read the PID of the foreground TSF instance that owns the native
+    /// quick-convert preserved key. Zero means no current owner.
+    [[nodiscard]] uint32_t ReadNativeConvertOwnerProcessId() const noexcept;
+
+    /// Atomically publish/withdraw this process as the native quick-convert
+    /// route owner. Withdrawal only clears a matching owner, so a background
+    /// DLL cannot clobber a newer foreground DLL's readiness.
+    void PublishNativeConvertCapability(uint32_t processId, bool ready) noexcept;
+
     /// Toggle a flag bit atomically (safe for concurrent access from DLL/EXE).
     /// Requires OpenReadWrite() or Create(). Returns the flags value
     /// immediately after the toggle so the caller knows the definitive

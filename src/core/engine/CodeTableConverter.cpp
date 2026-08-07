@@ -651,16 +651,55 @@ std::wstring CodeTableConverter::ToLower(const std::wstring& input) noexcept {
 std::wstring CodeTableConverter::ToSentenceCase(const std::wstring& input) noexcept {
     std::wstring output;
     output.reserve(input.size());
-    bool atSentenceStart = true;
+
+    // Only raise sentence initials; preserve the user's existing casing in the
+    // rest of the text (VKey, API, etc.). Punctuation becomes a boundary only
+    // after a separator, so dots inside domains/decimals/versions stay inline.
+    bool capitalizeNext = true;
+    bool pendingSentenceEnd = false;
+
+    const auto isSentenceEnd = [](wchar_t ch) noexcept {
+        return ch == L'.' || ch == L'!' || ch == L'?' || ch == L'\x2026';
+    };
+    const auto isHorizontalWhitespace = [](wchar_t ch) noexcept {
+        return ch == L' ' || ch == L'\t' || ch == L'\v' || ch == L'\f';
+    };
+    const auto isClosingPunctuation = [](wchar_t ch) noexcept {
+        switch (ch) {
+            case L'\'': case L'"':
+            case L')': case L']': case L'}':
+            case L'\x2019': case L'\x201D':
+            case L'\x00BB':
+                return true;
+            default:
+                return false;
+        }
+    };
+
     for (wchar_t ch : input) {
-        if (atSentenceStart && IsAlpha(ch)) {
+        if (capitalizeNext && IsAlpha(ch)) {
             output += ToUpperVietnamese(ch);
-            atSentenceStart = false;
-        } else {
-            output += IsAlpha(ch) ? ToLowerVietnamese(ch) : ch;
-            if (ch == L'.' || ch == L'!' || ch == L'?' || ch == L'\n') {
-                atSentenceStart = true;
+            capitalizeNext = false;
+            pendingSentenceEnd = false;
+            continue;
+        }
+
+        output += ch;
+        if (ch == L'\n' || ch == L'\r') {
+            capitalizeNext = true;
+            pendingSentenceEnd = false;
+            continue;
+        }
+
+        if (pendingSentenceEnd) {
+            if (isHorizontalWhitespace(ch)) {
+                capitalizeNext = true;
+                pendingSentenceEnd = false;
+            } else if (!isSentenceEnd(ch) && !isClosingPunctuation(ch)) {
+                pendingSentenceEnd = false;
             }
+        } else if (isSentenceEnd(ch)) {
+            pendingSentenceEnd = true;
         }
     }
     return output;

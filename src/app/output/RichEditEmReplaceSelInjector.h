@@ -16,7 +16,12 @@ namespace NextKey::Output {
 class RichEditEmReplaceSelInjector final : public IOutputInjector {
 public:
     explicit RichEditEmReplaceSelInjector(bool forced = false) noexcept : forced_(forced) {}
-    bool Replace(std::size_t bsCount, std::wstring_view text) noexcept override;
+    // reinjectVk is honoured: forwarded to the SendInput fallbacks, and on
+    // the EM_REPLACESEL path compensated as one fewer backspace (no key
+    // stream exists there). The editMsgPath gate does NOT guarantee it is
+    // zero — see the impl.
+    bool Replace(std::size_t bsCount, std::wstring_view text,
+                 unsigned short reinjectVk = 0) noexcept override;
     void SendKey(unsigned short vkCode) noexcept override;
 
     // SendMessage is synchronous — by the time it returns, the edit is

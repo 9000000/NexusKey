@@ -24,7 +24,8 @@ HotkeyManager::~HotkeyManager() {
 
 HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config,
                                                 Callback callback,
-                                                bool runsOnAnyThread) {
+                                                bool runsOnAnyThread,
+                                                PassThroughPredicate passThrough) {
     // Contract: AddHotkey must precede Initialize() — slotState_.resize below
     // races with LL callback's slotState_[i] read if the hook is already up.
     // Debug-only enforcement; release builds rely on call-site discipline.
@@ -32,7 +33,8 @@ HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config,
     std::lock_guard lk(mutationMutex_);
     auto oldBindings = bindings_.load(std::memory_order_acquire);
     auto newBindings = std::make_shared<std::vector<SlotBinding>>(*oldBindings);
-    newBindings->push_back(SlotBinding{config, std::move(callback), runsOnAnyThread});
+    newBindings->push_back(SlotBinding{
+        config, std::move(callback), runsOnAnyThread, std::move(passThrough)});
     const SlotId id = newBindings->size() - 1;
     slotState_.resize(id + 1);
     bindings_.store(std::move(newBindings), std::memory_order_release);
@@ -253,7 +255,15 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                 if (isDown) {
                     if (state.comboKeyDown) return 1;  // Eat auto-repeat
                     if (matchCombo(slot.config)) {
+                        if (slot.passThrough && slot.passThrough()) {
+                            // Keep the down latch so repeats are suppressed, but
+                            // remember that the paired key-up belongs to TSF/host.
+                            state.comboKeyDown = true;
+                            state.comboPassedThrough = true;
+                            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+                        }
                         state.comboKeyDown = true;
+                        state.comboPassedThrough = false;
                         HOTKEY_LOG(L"combo fire slot=%zu vk=0x%02X mods=C%dS%dA%dW%d",
                                    i, vk,
                                    self.modCtrlDown_.load(std::memory_order_relaxed),
@@ -296,7 +306,12 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                     }
                 } else {  // isUp
                     if (state.comboKeyDown) {
+                        const bool passedThrough = state.comboPassedThrough;
                         state.comboKeyDown = false;
+                        state.comboPassedThrough = false;
+                        if (passedThrough) {
+                            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+                        }
                         return 1;  // Eat matching UP
                     }
                 }
@@ -311,6 +326,8 @@ LRESULT CALLBACK HotkeyManager::LowLevelKeyboardProc(int nCode, WPARAM wParam, L
                 const auto& c = slot.config;
                 if (!c.HasAny()) continue;  // Empty config would match everything
                 if (!matchModifierOnlyRelease(c)) continue;
+
+                if (slot.passThrough && slot.passThrough()) continue;
 
                 if (preOtherKey) {
                     // Diagnostic: modifier set matched but a non-modifier key

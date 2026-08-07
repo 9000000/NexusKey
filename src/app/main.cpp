@@ -608,7 +608,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // inside WireHotkeys reads `hookEngine.GetHookThreadId()` (now non-zero
     // since Start succeeded above) and publishes it BEFORE installing the
     // LL hook, so the LL callback never observes a stale 0.
-    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_quickConvert,
+    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_sharedState, g_quickConvert,
                 g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
 
     // Wave 3 PR 3.8 — live toggle-hotkey propagation from SharedState.

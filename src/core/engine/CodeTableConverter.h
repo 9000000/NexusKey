@@ -43,7 +43,8 @@ namespace CodeTableConverter {
 /// Vietnamese-aware lowercase conversion.
 [[nodiscard]] std::wstring ToLower(const std::wstring& input) noexcept;
 
-/// Capitalize first letter of each sentence (after .!?\n), lowercasing the rest.
+/// Capitalize sentence initials while preserving other casing. Punctuation is
+/// a sentence boundary only when followed by whitespace; line breaks always are.
 [[nodiscard]] std::wstring ToSentenceCase(const std::wstring& input) noexcept;
 
 /// Capitalize first letter of each word, lowercasing the rest.

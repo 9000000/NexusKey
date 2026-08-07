@@ -261,6 +261,7 @@ public:
     [[nodiscard]] bool IsVietnameseMode() const noexcept {
         return vietnameseMode_.load(std::memory_order_acquire);
     }
+    [[nodiscard]] bool ShouldUseNativeQuickConvert() const noexcept;
     [[nodiscard]] bool IsRunning() const noexcept { return lifecycle_.IsRunning(); }
 
     // Magic number to mark our own SendInput events (prevents other hooks from processing them)

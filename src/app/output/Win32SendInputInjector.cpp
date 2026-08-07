@@ -44,9 +44,18 @@ INPUT MakeUnicodeChar(WCHAR ch, bool keyup,
 }  // namespace
 
 bool Win32SendInputInjector::Replace(std::size_t bsCount,
-                                     std::wstring_view text) noexcept {
+                                     std::wstring_view text,
+                                     unsigned short reinjectVk) noexcept {
     std::array<INPUT, kMaxBatch> buf{};
     std::size_t i = 0;
+
+    // Game-compat re-inject leads the batch (see IOutputInjector::Replace).
+    // Key-down only: a sustained hold keeps sending downs to the game, and
+    // the physical key-up passes through the hook on release.
+    const std::size_t reinjectCount = (reinjectVk != 0) ? 1u : 0u;
+    if (reinjectCount != 0) {
+        buf[i++] = MakeKeyEvent(static_cast<WORD>(reinjectVk), /*keyup=*/false);
+    }
 
     // A Telex transform can run while the user is holding Shift (for example,
     // Shift+dd -> Đ). The physical Shift state otherwise turns our synthetic
@@ -113,7 +122,11 @@ bool Win32SendInputInjector::Replace(std::size_t bsCount,
         const std::size_t restoreStart = i - heldShiftCount;
         const std::size_t sentCount = static_cast<std::size_t>(sent);
         for (std::size_t k = 0; k < heldShiftCount; ++k) {
-            const bool released = sentCount > k;
+            // Shift-releases sit at [reinjectCount, reinjectCount+heldShiftCount);
+            // the re-inject key-down occupies index 0 when present. Dropping
+            // the offset here would mis-read a partial send as "shift already
+            // released" and strand the modifier down.
+            const bool released = sentCount > reinjectCount + k;
             const bool restoredInBatch = sentCount > restoreStart + k;
             if (released && !restoredInBatch) {
                 restoreShifts[restoreCount++] =

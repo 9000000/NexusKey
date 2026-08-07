@@ -100,6 +100,43 @@ TEST_F(RichEditEmReplaceSelInjectorTest, BsCountZeroSkipsSetSel) {
     EXPECT_EQ(CountMessagesOf(EM_REPLACESEL), 1u);
 }
 
+TEST_F(RichEditEmReplaceSelInjectorTest, ReinjectVkIsNeverSilentlyDropped) {
+    // HandleAlphaKey adds the raw char to previousComposition_ before
+    // dispatching, so bsCount counts a character this channel may never have
+    // delivered. Both exits have to account for it or one real character too
+    // many gets deleted:
+    //   • SendInput fallback  → the VK rides the batch, bsCount stays whole.
+    //   • EM_REPLACESEL path  → no key stream, so bsCount loses one instead.
+    // Which exit runs depends on whether the environment has a focusable
+    // window; assert whichever one fired, never skip both.
+    Internal::g_sendMessageTimeoutW = [](HWND h, UINT m, WPARAM w, LPARAM l,
+                                         UINT, UINT, PDWORD_PTR result) -> LRESULT {
+        capturedMsgs.emplace_back(h, m, w, l);
+        if (m == EM_GETSEL) {
+            if (w) *reinterpret_cast<DWORD*>(w) = 10;
+            if (l) *reinterpret_cast<DWORD*>(l) = 10;
+        }
+        if (result) *result = 0;
+        return 1;
+    };
+
+    RichEditEmReplaceSelInjector inj;
+    inj.Replace(2, L"ô", /*reinjectVk=*/'O');
+
+    if (!capturedInputs.empty()) {
+        EXPECT_EQ(capturedInputs[0].ki.wVk, 'O')
+            << "SendInput fallback must carry the re-inject, not drop it";
+        EXPECT_EQ(capturedInputs[0].ki.dwFlags & KEYEVENTF_KEYUP, 0u);
+    } else {
+        ASSERT_FALSE(capturedMsgs.empty()) << "neither exit was taken";
+        const int iSetSel = IndexOfMessage(EM_SETSEL);
+        ASSERT_GE(iSetSel, 0);
+        // caret 10, bsCount 2 compensated down to 1 → selection starts at 9.
+        // Without the compensation this would be 8 and eat a real character.
+        EXPECT_EQ(std::get<2>(capturedMsgs[static_cast<size_t>(iSetSel)]), 9u);
+    }
+}
+
 TEST_F(RichEditEmReplaceSelInjectorTest, SendMessageReturningZeroOnReplaceSelReturnsFalse) {
     Internal::g_sendMessageTimeoutW = [](HWND h, UINT m, WPARAM w, LPARAM l,
                                          UINT, UINT, PDWORD_PTR result) -> LRESULT {

@@ -19,7 +19,8 @@ public:
     explicit Win32SendInputInjector(bool needsBaitCharPrefix) noexcept
         : needsBaitCharPrefix_(needsBaitCharPrefix) {}
 
-    bool Replace(std::size_t bsCount, std::wstring_view text) noexcept override;
+    bool Replace(std::size_t bsCount, std::wstring_view text,
+                 unsigned short reinjectVk = 0) noexcept override;
     void SendKey(unsigned short vkCode) noexcept override;
 
     // Batch SendInput drains within ~20-25 ms on real hosts under load.

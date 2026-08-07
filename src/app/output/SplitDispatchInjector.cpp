@@ -43,13 +43,23 @@ INPUT MakeUnicodeChar(WCHAR ch, bool keyup) noexcept {
 }  // namespace
 
 bool SplitDispatchInjector::Replace(std::size_t bsCount,
-                                    std::wstring_view text) noexcept {
+                                    std::wstring_view text,
+                                    unsigned short reinjectVk) noexcept {
     // Batch 1: bait char (Chromium suggest-dismiss, when applicable) +
     // backspaces. Predicate shared with Win32SendInputInjector via
     // Internal::ShouldEmitBait — WebView2 / Electron-on-Chromium hosts
     // inherit the same selection-eat quirk as Edge's omnibox.
     std::array<INPUT, kMaxBatch> bsBuf{};
     std::size_t bi = 0;
+    // Game-compat re-inject leads batch 1 so it can never be separated from
+    // the backspaces that delete it. Reached only via the per-app
+    // "compatibility split" override (sendMethod 2/3) on a non-Electron,
+    // non-console host — auto-detected Electron/console set localSkipEmpty,
+    // which zeroes reinjectVk upstream in HandleAlphaKey.
+    const std::size_t reinjectCount = (reinjectVk != 0) ? 1u : 0u;
+    if (reinjectCount != 0) {
+        bsBuf[bi++] = MakeKey(static_cast<WORD>(reinjectVk), /*keyup=*/false);
+    }
     // See Win32SendInputInjector::Replace: synthetic Backspace must not inherit
     // a physically held Shift (notably Shift+dd -> Đ in Excel Web). Restore
     // Shift in this first batch before the optional inter-batch sleep.
@@ -96,7 +106,9 @@ bool SplitDispatchInjector::Replace(std::size_t bsCount,
                 const std::size_t restoreStart = bi - heldShiftCount;
                 const std::size_t sentCount = static_cast<std::size_t>(sent);
                 for (std::size_t k = 0; k < heldShiftCount; ++k) {
-                    const bool released = sentCount > k;
+                    // Offset by the re-inject key-down at index 0 — see the
+                    // matching comment in Win32SendInputInjector::Replace.
+                    const bool released = sentCount > reinjectCount + k;
                     const bool restoredInBatch = sentCount > restoreStart + k;
                     if (released && !restoredInBatch) {
                         restoreShifts[restoreCount++] =
@@ -114,8 +126,10 @@ bool SplitDispatchInjector::Replace(std::size_t bsCount,
 
     // Batch 2: chars (only if text non-empty). Sleep only when both
     // batches present — pure-BS or pure-text needs no inter-batch gap.
+    // A lone re-inject key-down is not a deletion, so it must not buy the
+    // gap on its own: that would add sleepMs_ to a path that never had it.
     if (!text.empty()) {
-        if (bi > 0) {
+        if (bi > reinjectCount) {
             Internal::g_sleep(static_cast<DWORD>(sleepMs_));
         }
         std::array<INPUT, kMaxBatch> charBuf{};

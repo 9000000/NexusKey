@@ -197,6 +197,70 @@ TEST_F(SharedStateTest, ReservedSpace_ZeroInitialized) {
     }
 }
 
+TEST_F(SharedStateTest, ConvertConfig_Roundtrip) {
+    ConvertConfig input{};
+    input.allCaps = true;
+    input.capsFirst = true;
+    input.removeMark = true;
+    input.alertDone = true;
+    input.autoPaste = true;
+    input.sequential = true;
+    input.enableLog = true;
+    input.sourceEncoding = 2;
+    input.destEncoding = 4;
+    input.hotkey = HotkeyConfig{
+        .ctrl = true, .shift = true, .alt = false, .win = false, .vk = 0x7B};
+
+    SharedState state{};
+    state.InitDefaults();
+    state.SetConvertConfig(input);
+    const ConvertConfig output = state.GetConvertConfig();
+
+    EXPECT_TRUE(output.allCaps);
+    EXPECT_FALSE(output.allLower);
+    EXPECT_TRUE(output.capsFirst);
+    EXPECT_FALSE(output.capsEach);
+    EXPECT_TRUE(output.removeMark);
+    EXPECT_TRUE(output.alertDone);
+    EXPECT_TRUE(output.autoPaste);
+    EXPECT_TRUE(output.sequential);
+    EXPECT_TRUE(output.enableLog);
+    EXPECT_EQ(output.sourceEncoding, 2);
+    EXPECT_EQ(output.destEncoding, 4);
+    EXPECT_EQ(output.hotkey, input.hotkey);
+}
+
+TEST_F(SharedStateTest, ConvertConfig_DefaultsRoundtripAsDisabled) {
+    SharedState state{};
+    state.InitDefaults();
+
+    const ConvertConfig output = state.GetConvertConfig();
+    EXPECT_FALSE(output.allCaps);
+    EXPECT_FALSE(output.allLower);
+    EXPECT_FALSE(output.capsFirst);
+    EXPECT_FALSE(output.capsEach);
+    EXPECT_FALSE(output.removeMark);
+    EXPECT_FALSE(output.autoPaste);
+    EXPECT_FALSE(output.sequential);
+    EXPECT_FALSE(output.hotkey.HasAny());
+}
+
+TEST_F(SharedStateTest, NativeConvertOwnerPid_RoundtripDoesNotOverlapConvertConfig) {
+    SharedState state{};
+    state.InitDefaults();
+    ConvertConfig config{};
+    config.capsFirst = true;
+    config.hotkey.ctrl = true;
+    config.hotkey.vk = 'J';
+    state.SetConvertConfig(config);
+
+    state.SetNativeConvertOwnerProcessId(0x89ABCDEFu);
+
+    EXPECT_EQ(state.GetNativeConvertOwnerProcessId(), 0x89ABCDEFu);
+    EXPECT_EQ(state.GetConvertConfig().hotkey, config.hotkey);
+    EXPECT_TRUE(state.GetConvertConfig().capsFirst);
+}
+
 // ============================================================================
 // Feature Flags Encode/Decode Roundtrip Tests
 // These cover every toggle in Settings dialog.
@@ -382,12 +446,17 @@ TEST_F(SharedStateTest, SharedFlags_NewUpdateBitsDoNotCollide) {
     EXPECT_NE(SharedFlags::TSF_ABI_MISMATCH, 0u);
     EXPECT_NE(SharedFlags::TSF_PENDING_DLL_SWAP, 0u);
     EXPECT_NE(SharedFlags::TSF_POST_UPDATE_REBOOT, 0u);
+    EXPECT_NE(SharedFlags::TSF_NATIVE_CONVERT_READY, 0u);
     EXPECT_EQ(SharedFlags::TSF_ABI_MISMATCH & existing, 0u);
     EXPECT_EQ(SharedFlags::TSF_PENDING_DLL_SWAP & existing, 0u);
     EXPECT_EQ(SharedFlags::TSF_POST_UPDATE_REBOOT & existing, 0u);
     EXPECT_EQ(SharedFlags::TSF_ABI_MISMATCH & SharedFlags::TSF_PENDING_DLL_SWAP, 0u);
     EXPECT_EQ(SharedFlags::TSF_ABI_MISMATCH & SharedFlags::TSF_POST_UPDATE_REBOOT, 0u);
     EXPECT_EQ(SharedFlags::TSF_PENDING_DLL_SWAP & SharedFlags::TSF_POST_UPDATE_REBOOT, 0u);
+    EXPECT_EQ(SharedFlags::TSF_NATIVE_CONVERT_READY & existing, 0u);
+    EXPECT_EQ(SharedFlags::TSF_NATIVE_CONVERT_READY & SharedFlags::TSF_ABI_MISMATCH, 0u);
+    EXPECT_EQ(SharedFlags::TSF_NATIVE_CONVERT_READY & SharedFlags::TSF_PENDING_DLL_SWAP, 0u);
+    EXPECT_EQ(SharedFlags::TSF_NATIVE_CONVERT_READY & SharedFlags::TSF_POST_UPDATE_REBOOT, 0u);
 }
 
 }  // namespace

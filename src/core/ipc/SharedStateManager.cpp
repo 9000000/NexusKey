@@ -237,7 +237,12 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     p->magic = state.magic;
     p->structVersion = state.structVersion;
     p->structSize = state.structSize;
-    p->flags = state.flags;
+    // Native-convert readiness is DLL-owned. Preserve the live atomic value;
+    // callers that intentionally invalidate routing clear it via SetOrClearFlag
+    // before/after Write(). This prevents unrelated config writes from reviving
+    // or dropping a stale snapshot of the capability bit.
+    constexpr uint32_t dllOwnedFlags = SharedFlags::TSF_NATIVE_CONVERT_READY;
+    p->flags = (state.flags & ~dllOwnedFlags) | (p->flags & dllOwnedFlags);
     p->inputMethod = state.inputMethod;
     p->spellCheck = state.spellCheck;
     p->optimizeLevel = state.optimizeLevel;
@@ -257,7 +262,13 @@ void SharedStateManager::Write(const SharedState& state) noexcept {
     // from TypingConfig.perfHistogramEnabled on config save and hook thread
     // reads it on QuickSyncFromSharedState's slow path.
     p->diagFlags = state.diagFlags;
-    memcpy(p->reserved, state.reserved, sizeof(state.reserved));
+    // The native-convert owner PID is atomically DLL-owned, like contextAnchor.
+    // Copy the config bytes around it without clobbering the live route owner.
+    constexpr std::size_t ownerOffset = SharedState::NATIVE_CONVERT_OWNER_OFFSET;
+    constexpr std::size_t afterOwner = ownerOffset + sizeof(uint32_t);
+    memcpy(p->reserved, state.reserved, ownerOffset);
+    memcpy(p->reserved + afterOwner, state.reserved + afterOwner,
+           sizeof(state.reserved) - afterOwner);
 
     MemoryBarrier();
     p->epoch = seq + 1;  // Now even = done
@@ -282,6 +293,50 @@ uint32_t SharedStateManager::ReadFlags() const noexcept {
     }
 #endif
     return 0;
+}
+
+uint32_t SharedStateManager::ReadNativeConvertOwnerProcessId() const noexcept {
+#ifdef _WIN32
+    if (!pImpl_->pState || pImpl_->pState->magic != SharedState::MAGIC_VALUE) return 0;
+    auto* owner = reinterpret_cast<volatile LONG*>(
+        &(const_cast<SharedState*>(pImpl_->pState)
+              ->reserved[SharedState::NATIVE_CONVERT_OWNER_OFFSET]));
+    return static_cast<uint32_t>(InterlockedCompareExchange(owner, 0, 0));
+#else
+    return 0;
+#endif
+}
+
+void SharedStateManager::PublishNativeConvertCapability(
+    uint32_t processId, bool ready) noexcept {
+#ifdef _WIN32
+    if (!pImpl_->pState || !pImpl_->isWritable
+        || pImpl_->pState->magic != SharedState::MAGIC_VALUE
+        || processId == 0) {
+        return;
+    }
+
+    auto* state = const_cast<SharedState*>(pImpl_->pState);
+    auto* owner = reinterpret_cast<volatile LONG*>(
+        &state->reserved[SharedState::NATIVE_CONVERT_OWNER_OFFSET]);
+    auto* flags = reinterpret_cast<volatile LONG*>(&state->flags);
+    if (ready) {
+        InterlockedExchange(owner, static_cast<LONG>(processId));
+        InterlockedOr(flags, static_cast<LONG>(SharedFlags::TSF_NATIVE_CONVERT_READY));
+        return;
+    }
+
+    if (static_cast<uint32_t>(InterlockedCompareExchange(owner, 0, 0)) != processId) {
+        return;
+    }
+    // Clear readiness before releasing ownership. A new owner publishes PID
+    // first and readiness second, so either interleaving ends in a safe state.
+    InterlockedAnd(flags, ~static_cast<LONG>(SharedFlags::TSF_NATIVE_CONVERT_READY));
+    (void)InterlockedCompareExchange(owner, 0, static_cast<LONG>(processId));
+#else
+    (void)processId;
+    (void)ready;
+#endif
 }
 
 uint32_t SharedStateManager::ToggleFlag(uint32_t flagBit) noexcept {

@@ -74,19 +74,25 @@ HWND ResolveFocusedHwnd() noexcept {
 }  // namespace
 
 bool RichEditEmReplaceSelInjector::Replace(std::size_t backspaceCount,
-                                           std::wstring_view text) noexcept {
-    if (backspaceCount == 0 && text.empty()) return true;  // nothing to do
+                                           std::wstring_view text,
+                                           unsigned short reinjectVk) noexcept {
+    // reinjectVk is reachable despite HandleAlphaKey's editMsgPath gate:
+    // that gate reads OutputDispatcher::IsSyncReplaceChannel(), which for a
+    // non-forced instance also requires the *currently focused child class*
+    // to be edit-compatible. When it isn't, editMsgPath is false, reinjectVk
+    // gets set, and the generic branch dispatches through this injector.
+    if (backspaceCount == 0 && text.empty() && reinjectVk == 0) return true;
 
     HWND targetWindow = ResolveFocusedHwnd();
     if (!targetWindow) {
         Win32SendInputInjector fallbackInjector(false);
-        return fallbackInjector.Replace(backspaceCount, text);
+        return fallbackInjector.Replace(backspaceCount, text, reinjectVk);
     }
 
     wchar_t className[64] = {};
     if (::GetClassNameW(targetWindow, className, _countof(className)) == 0) {
         Win32SendInputInjector fallbackInjector(false);
-        return fallbackInjector.Replace(backspaceCount, text);
+        return fallbackInjector.Replace(backspaceCount, text, reinjectVk);
     }
 
     if (!forced_ && !IsEditCompatibleClass(className)) {
@@ -95,8 +101,15 @@ bool RichEditEmReplaceSelInjector::Replace(std::size_t backspaceCount,
                                    className, backspaceCount);
         }
         Win32SendInputInjector fallbackInjector(false);
-        return fallbackInjector.Replace(backspaceCount, text);
+        return fallbackInjector.Replace(backspaceCount, text, reinjectVk);
     }
+
+    // EM_REPLACESEL edits the document directly — there is no key stream to
+    // re-inject into, so the raw char HandleAlphaKey already added to
+    // previousComposition_ never reaches this control. Drop the backspace
+    // that was counted for it, or we delete one real character too many.
+    // Same compensation OutputDispatcher applies on its clipboard branch.
+    if (reinjectVk != 0 && backspaceCount > 0) --backspaceCount;
 
     DWORD_PTR timeoutResult = 0;
     DWORD     newSelectionStart = 0, selectionEnd = 0;

@@ -1052,6 +1052,13 @@ void EngineController::SetTsfTipActive(bool active) {
     }
 }
 
+void EngineController::SetTsfNativeConvertReady(bool ready) {
+    if (sharedState_.IsConnected()) {
+        sharedState_.PublishNativeConvertCapability(GetCurrentProcessId(), ready);
+        TSF_LOG(L"SetTsfNativeConvertReady: %s", ready ? L"true" : L"false");
+    }
+}
+
 void EngineController::ApplySharedState(const SharedState& state,
                                         bool allowMacroDiskRead) {
     const bool wasVietnameseMode = vietnameseMode_;
@@ -1059,6 +1066,7 @@ void EngineController::ApplySharedState(const SharedState& state,
     // Update runtime flags
     engineEnabled_ = (state.flags & SharedFlags::ENGINE_ENABLED) != 0;
     vietnameseMode_ = (state.flags & SharedFlags::VIETNAMESE_MODE) != 0;
+    convertConfig_ = state.GetConvertConfig();
 
     // Validate inputMethod (valid range: 0–2) before casting to enum
     InputMethod newMethod = InputMethod::Telex;  // safe default

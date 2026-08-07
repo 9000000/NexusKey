@@ -64,6 +64,7 @@ struct FakeInjector final : IOutputInjector {
     std::atomic<int> sendKeyCount{0};
     std::atomic<unsigned short> lastSendKeyVk{0};
     std::atomic<std::size_t> lastBsCount{0};
+    std::atomic<unsigned short> lastReinjectVk{0};
     std::wstring lastReplaceText;
 
     bool   multiProcessRenderer{false};
@@ -75,9 +76,11 @@ struct FakeInjector final : IOutputInjector {
 
     explicit FakeInjector(std::string label) : id(std::move(label)) {}
 
-    bool Replace(std::size_t bsCount, std::wstring_view text) noexcept override {
+    bool Replace(std::size_t bsCount, std::wstring_view text,
+                 unsigned short reinjectVk = 0) noexcept override {
         replaceCount.fetch_add(1, std::memory_order_acq_rel);
         lastBsCount.store(bsCount, std::memory_order_release);
+        lastReinjectVk.store(reinjectVk, std::memory_order_release);
         // Note: this copy is fine for test scope; production
         // `Replace` impls don't copy because dispatch is to OS calls.
         lastReplaceText.assign(text.begin(), text.end());

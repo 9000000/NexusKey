@@ -23,6 +23,7 @@
 #include "core/LeakedKeyDuringSendDecision.h"
 #include "core/MacroCase.h"
 #include "core/MacroPrefix.h"
+#include "core/QuickConvertLogic.h"
 #include "core/ipc/SharedStateManager.h"
 #include "core/Debug.h"
 #include "core/CrashLog.h"
@@ -619,6 +620,20 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
     if (auto* v = lookupOverride(focus_.ActiveExe()))   return *v;
 
     return currentCodeTable_.load(std::memory_order_acquire);
+}
+
+bool HookEngine::ShouldUseNativeQuickConvert() const noexcept {
+    const bool isTsfApp = isTsfApp_.load(std::memory_order_acquire);
+    const uint32_t flags = sharedStatePtr_ ? sharedStatePtr_->ReadFlags() : 0;
+    const uint32_t ownerPid = sharedStatePtr_
+        ? sharedStatePtr_->ReadNativeConvertOwnerProcessId()
+        : 0;
+    return DecideQuickConvertBackend(
+        isTsfApp,
+        (flags & SharedFlags::TSF_NATIVE_CONVERT_READY) != 0
+            && ownerPid != 0
+            && ownerPid == focus_.LastForegroundPid())
+        == QuickConvertBackend::TsfNative;
 }
 
 void HookEngine::QuickSyncFromSharedState() {

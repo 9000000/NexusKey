@@ -27,8 +27,22 @@ public:
     // Replace caret region: delete bsCount chars, then insert text.
     // Returns true if delivered; false if caller should fall back to
     // passthrough (today's TryEditMessagePaste failure semantics).
+    //
+    // reinjectVk != 0 prepends one game-compat VK key-down (no key-up —
+    // the physical up flows through later) to the SAME batch as the
+    // backspaces and chars. It MUST NOT be a separate SendInput call:
+    // HandleAlphaKey has already added the raw char to
+    // previousComposition_, so bsCount assumes the re-injected char is on
+    // screen. If the two halves are dispatched separately and the second
+    // is dropped or reordered by the host, the app keeps the raw char
+    // while the engine believes it was replaced — a desync that never
+    // self-heals (the "khoong" instead of "không" report). EVERY channel must
+    // account for it — none may ignore it. A channel with no key stream of its
+    // own (EM_REPLACESEL) instead deletes one fewer character, which is the
+    // same compensation OutputDispatcher applies on its clipboard branch.
     [[nodiscard]] virtual bool Replace(std::size_t bsCount,
-                                       std::wstring_view text) noexcept = 0;
+                                       std::wstring_view text,
+                                       unsigned short reinjectVk = 0) noexcept = 0;
 
     // Re-inject a single VK as if the user pressed it (down + up, with
     // VKEY_EXTRA_INFO marker). Used by HookEngine::InjectKey for

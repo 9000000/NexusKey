@@ -4,6 +4,7 @@
 #pragma once
 
 #include "stdafx.h"
+#include "QuickConvertEditSession.h"
 
 namespace NextKey {
 namespace TSF {
@@ -43,12 +44,21 @@ private:
     // (Word / Chrome). __try and C++ unwinding can't share one function (C2712).
     HRESULT OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten);
     HRESULT OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM lParam, BOOL* pfEaten);
+    HRESULT OnPreservedKeyImpl(ITfContext* pContext, REFGUID rguid, BOOL* pfEaten);
     void RememberClaimedSpaceKeyDown(UINT vk, LPARAM lParam) noexcept;
+    void RefreshQuickConvertPreservedKey();
+    void ClearQuickConvertPreservedKey() noexcept;
+    void PublishQuickConvertCapability() noexcept;
 
     ULONG refCount_ = 1;
     TextService* pTextService_ = nullptr;
     EngineController* pEngineController_ = nullptr;
     ITfKeystrokeMgr* pKeystrokeMgr_ = nullptr;
+    TF_PRESERVEDKEY quickConvertPreservedKey_{};
+    HotkeyConfig registeredQuickConvertHotkey_{};
+    bool quickConvertKeyRegistered_ = false;
+    bool isForeground_ = false;
+    TsfQuickConvertSequenceState quickConvertSequence_;
 
     // Cached WantKey result from OnTestKeyDown to avoid double state-machine advance
     UINT lastTestedVk_ = 0;

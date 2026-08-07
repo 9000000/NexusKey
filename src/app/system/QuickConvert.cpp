@@ -5,7 +5,7 @@
 #include "ToastPopup.h"
 #include "HookEngine.h"
 #include "helpers/AppHelpers.h"
-#include "core/engine/CodeTableConverter.h"
+#include "core/QuickConvertLogic.h"
 #include "core/Debug.h"
 #include "core/CrashLog.h"
 #include <exception>
@@ -50,16 +50,6 @@ void QuickConvertLogToFile(const wchar_t* format, ...) {
     } while(0)
 
 namespace NextKey {
-
-// Conversion option indices (matching plan)
-enum ConvertOption : int {
-    kEncoding = 0,
-    kToUpper = 1,
-    kToLower = 2,
-    kCapsFirst = 3,
-    kCapsEach = 4,
-    kRemoveDiacritics = 5
-};
 
 QuickConvert::QuickConvert(const ConvertConfig& config)
     : config_(config) {
@@ -214,48 +204,33 @@ void QuickConvert::Execute() {
             toastMsg = L"\x2192 G\x1ED1" L"c";  // → Gốc
             QC_LOG(L"Restoring original text");
         } else {
-            int optIdx = enabledOptions[seqState_.currentIndex];
-            result = ApplyConversion(seqState_.originText, optIdx);
-            toastMsg = GetOptionName(optIdx);
-            QC_LOG(L"Applied conversion option %d", optIdx);
+            const auto option = enabledOptions[seqState_.currentIndex];
+            result = ApplyConversion(seqState_.originText, option);
+            toastMsg = GetOptionName(option);
+            QC_LOG(L"Applied conversion option %d", static_cast<int>(option));
         }
 
         // Update hash for next comparison
         seqState_.contentHash = std::hash<std::wstring>{}(result);
     } else {
         // Non-sequential mode: apply all enabled conversions at once
-        result = clipText;
+        result = ApplyQuickConvertConfig(clipText, config_);
 
-        // Encoding conversion first (if source != dest)
-        if (config_.sourceEncoding != config_.destEncoding) {
-            auto srcTable = static_cast<CodeTable>(config_.sourceEncoding);
-            auto dstTable = static_cast<CodeTable>(config_.destEncoding);
-            std::wstring unicode = CodeTableConverter::DecodeString(result, srcTable);
-            result = CodeTableConverter::EncodeString(unicode, dstTable);
-        }
-
-        // Text transformations (mutually exclusive case options, removeMark is independent)
-        if (config_.removeMark) {
-            result = CodeTableConverter::RemoveDiacritics(result);
-            toastMsg = GetOptionName(kRemoveDiacritics);
-        }
         if (config_.allCaps) {
-            result = CodeTableConverter::ToUpper(result);
-            toastMsg = GetOptionName(kToUpper);
+            toastMsg = GetOptionName(QuickConvertOption::Upper);
         } else if (config_.allLower) {
-            result = CodeTableConverter::ToLower(result);
-            toastMsg = GetOptionName(kToLower);
+            toastMsg = GetOptionName(QuickConvertOption::Lower);
         } else if (config_.capsFirst) {
-            result = CodeTableConverter::ToSentenceCase(result);
-            toastMsg = GetOptionName(kCapsFirst);
+            toastMsg = GetOptionName(QuickConvertOption::SentenceCase);
         } else if (config_.capsEach) {
-            result = CodeTableConverter::ToTitleCase(result);
-            toastMsg = GetOptionName(kCapsEach);
+            toastMsg = GetOptionName(QuickConvertOption::TitleCase);
+        } else if (config_.removeMark) {
+            toastMsg = GetOptionName(QuickConvertOption::RemoveDiacritics);
         }
 
         // If only encoding conversion, show encoding toast
         if (!toastMsg && config_.sourceEncoding != config_.destEncoding) {
-            toastMsg = GetOptionName(kEncoding);
+            toastMsg = GetOptionName(QuickConvertOption::Encoding);
         }
     }
 
@@ -587,64 +562,17 @@ void QuickConvert::SimulateShiftLeftSelect(int length) {
 // Conversion logic
 // ═══════════════════════════════════════════════════════════
 
-std::wstring QuickConvert::ApplyConversion(const std::wstring& input, int optionIndex) const {
-    switch (optionIndex) {
-        case kEncoding: {
-            auto srcTable = static_cast<CodeTable>(config_.sourceEncoding);
-            auto dstTable = static_cast<CodeTable>(config_.destEncoding);
-            std::wstring unicode = CodeTableConverter::DecodeString(input, srcTable);
-            return CodeTableConverter::EncodeString(unicode, dstTable);
-        }
-        case kToUpper:
-            return CodeTableConverter::ToUpper(input);
-        case kToLower:
-            return CodeTableConverter::ToLower(input);
-        case kCapsFirst:
-            return CodeTableConverter::ToSentenceCase(input);
-        case kCapsEach:
-            return CodeTableConverter::ToTitleCase(input);
-        case kRemoveDiacritics:
-            return CodeTableConverter::RemoveDiacritics(input);
-        default:
-            return input;
-    }
+std::wstring QuickConvert::ApplyConversion(const std::wstring& input,
+                                           QuickConvertOption option) const {
+    return ApplyQuickConvertOption(input, option, config_);
 }
 
-const wchar_t* QuickConvert::GetOptionName(int optionIndex) {
-    switch (optionIndex) {
-        case kEncoding:        return L"\x2192 Chuy\x1EC3n m\x00E3";              // → Chuyển mã
-        case kToUpper:         return L"\x2192 ch\x1EEF HOA";                     // → chữ HOA
-        case kToLower:         return L"\x2192 ch\x1EEF th\x01B0\x1EDD" L"ng";   // → chữ thường
-        case kCapsFirst:       return L"\x2192 Hoa \x0111\x1EA7u c\x00E2u";      // → Hoa đầu câu
-        case kCapsEach:        return L"\x2192 Hoa T\x1EEB" L"ng Ch\x1EEF";      // → Hoa Từng Chữ
-        case kRemoveDiacritics:return L"\x2192 B\x1ECF d\x1EA5u";                // → Bỏ dấu
-        default:               return L"\x2192 Chuy\x1EC3" L"n m\x00E3 xong";    // → Chuyển mã xong
-    }
+const wchar_t* QuickConvert::GetOptionName(QuickConvertOption option) {
+    return GetQuickConvertOptionName(option);
 }
 
-std::vector<int> QuickConvert::GetEnabledOptions() const {
-    std::vector<int> options;
-
-    if (config_.sourceEncoding != config_.destEncoding) {
-        options.push_back(kEncoding);
-    }
-    if (config_.allCaps) {
-        options.push_back(kToUpper);
-    }
-    if (config_.allLower) {
-        options.push_back(kToLower);
-    }
-    if (config_.capsFirst) {
-        options.push_back(kCapsFirst);
-    }
-    if (config_.capsEach) {
-        options.push_back(kCapsEach);
-    }
-    if (config_.removeMark) {
-        options.push_back(kRemoveDiacritics);
-    }
-
-    return options;
+std::vector<QuickConvertOption> QuickConvert::GetEnabledOptions() const {
+    return GetEnabledQuickConvertOptions(config_);
 }
 
 // ═══════════════════════════════════════════════════════════

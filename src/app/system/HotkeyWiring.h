@@ -11,6 +11,7 @@ namespace NextKey {
 class HookEngine;
 class TrayIcon;
 class QuickConvert;
+class SharedStateManager;
 struct HotkeyConfig;
 
 /// Wire toggle and quick-convert hotkeys. Creates QuickConvert, sets config
@@ -24,6 +25,7 @@ void WireHotkeys(
     HotkeyManager& hotkeyManager,
     HookEngine& hookEngine,
     TrayIcon& trayIcon,
+    SharedStateManager& sharedState,
     std::unique_ptr<QuickConvert>& quickConvert,
     HotkeyManager::SlotId& outToggleSlot,
     HotkeyManager::SlotId& outConvertSlot,

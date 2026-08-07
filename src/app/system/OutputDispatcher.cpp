@@ -449,7 +449,16 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
     // injector reports failure, sleep briefly (hook thread holds back further
     // callbacks while sleeping — no further physical keys race in) then retry.
     // 30 ms upper bound is well below LowLevelHooksTimeout (default 300 ms).
-    if (IsSyncReplaceChannel()) {
+    // reinjectVk != 0 skips this branch entirely. HandleAlphaKey only sets it
+    // after reading IsSyncReplaceChannel() itself, but that predicate is
+    // re-evaluated here and can flip in between (the cached child HWND is
+    // destroyed → the focused-window test fails → it now returns true), so
+    // "reinject implies not-sync-channel" is not an invariant. Forwarding the
+    // VK into the loop below is not the fix either: it retries Replace up to
+    // 30 times and would re-inject the raw char on every pass. Falling through
+    // to the generic branch lets the active injector resolve it exactly once —
+    // RichEditEmReplaceSelInjector already compensates or forwards it.
+    if (reinjectVk == 0 && IsSyncReplaceChannel()) {
         HWND focusedWindow = focus_.CachedFocusedHwnd();
         if (!focusedWindow || !IsWindow(focusedWindow)) {
             focus_.RefreshFocusCache(GetForegroundWindow());
@@ -579,10 +588,12 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
     // split-with-Sleep live inside the impl, gated on classification flags
     // wired in OnFocusChanged).
     //
-    // reinjectVk handling: prepended as a single VK keydown (no keyup — the
-    // physical key-up flows through later) for game compatibility. Rare
-    // path (only fires when HandleAlphaKey replays a held game-hotkey
-    // through a Vietnamese transform).
+    // reinjectVk handling: forwarded into the injector so the VK keydown
+    // rides the SAME SendInput batch as the backspaces that delete it. It
+    // used to be a separate TrackedSendInput call here, which broke the
+    // atomicity HandleAlphaKey assumes when it pre-adds the raw char to
+    // previousComposition_ — see IOutputInjector::Replace for the desync
+    // that leaks out when only one of the two batches lands.
     HOOK_LOG(L"  ReplaceComposition[send]: BS=%zu toSend='%.*s' skipEmpty=%d synthPending=%d reinjectVk=0x%02X",
              backspaceCount, static_cast<int>(text.size()), text.data(),
              skipEmptyChar_.load(std::memory_order_acquire) ? 1 : 0,
@@ -591,25 +602,14 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
     if (backspaceCount > 0 || !text.empty() || reinjectVk != 0) {
         sending_.store(true, std::memory_order_release);
 
-        if (reinjectVk != 0) {
-            INPUT evt{};
-            evt.type = INPUT_KEYBOARD;
-            evt.ki.wVk = static_cast<WORD>(reinjectVk);
-            evt.ki.wScan = static_cast<WORD>(MapVirtualKeyW(reinjectVk, MAPVK_VK_TO_VSC));
-            evt.ki.dwExtraInfo = kVKeyExtraInfo;
-            (void)NextKey::Output::Internal::TrackedSendInput(&evt, 1);
+        auto inj = injector_.load(std::memory_order_acquire);
+        bool injOk;
+        {
+            PERF_SCOPE(::NextKey::Perf::Stage::Injector);
+            injOk = inj->Replace(backspaceCount, text, reinjectVk);
         }
-
-        if (backspaceCount > 0 || !text.empty()) {
-            auto inj = injector_.load(std::memory_order_acquire);
-            bool injOk;
-            {
-                PERF_SCOPE(::NextKey::Perf::Stage::Injector);
-                injOk = inj->Replace(backspaceCount, text);
-            }
-            if (!injOk) {
-                HOOK_LOG(L"  ReplaceComposition[send]: injector reported partial delivery");
-            }
+        if (!injOk) {
+            HOOK_LOG(L"  ReplaceComposition[send]: injector reported partial delivery");
         }
 
         sending_.store(false, std::memory_order_release);

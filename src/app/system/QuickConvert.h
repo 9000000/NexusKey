@@ -4,6 +4,7 @@
 #pragma once
 
 #include "core/config/TypingConfig.h"
+#include "core/QuickConvertLogic.h"
 #include <string>
 #include <vector>
 #include <atomic>
@@ -51,13 +52,14 @@ private:
     static void SimulateShiftLeftSelect(int length);
 
     // Apply a single conversion option to text
-    [[nodiscard]] std::wstring ApplyConversion(const std::wstring& input, int optionIndex) const;
+    [[nodiscard]] std::wstring ApplyConversion(
+        const std::wstring& input, QuickConvertOption option) const;
 
     // Get display name for a conversion option (for toast)
-    [[nodiscard]] static const wchar_t* GetOptionName(int optionIndex);
+    [[nodiscard]] static const wchar_t* GetOptionName(QuickConvertOption option);
 
     // Get list of enabled option indices
-    [[nodiscard]] std::vector<int> GetEnabledOptions() const;
+    [[nodiscard]] std::vector<QuickConvertOption> GetEnabledOptions() const;
 
     // Sequential state
     struct SequentialState {
