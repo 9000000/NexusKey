@@ -31,6 +31,61 @@
     letter-spacing: 0.5px;
 }
 
+/* Pin Button in Title Bar - absolute positioned before close button */
+.btn-pin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    right: 36px;
+    top: 6px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0;
+    outline: none;
+    border-radius: 50%;
+    transition:
+        background 0.2s ease,
+        transform 0.2s ease;
+}
+
+.btn-pin:hover {
+    background: rgba(62, 197, 75, 0.15);
+    transform: scale(1.1);
+}
+
+.btn-pin:focus {
+    outline: none;
+    border: none;
+}
+
+/* Pin button icons - unpinned state (default) */
+.btn-pin .icon-unpin {
+    display: block;
+    fill: #3ec54b;
+}
+
+.btn-pin .icon-pin {
+    display: none;
+    fill: #fcb745;
+}
+
+/* Pin button icons - pinned state */
+.btn-pin.pinned .icon-unpin {
+    display: none;
+}
+
+.btn-pin.pinned .icon-pin {
+    display: block;
+}
+
+.btn-pin.pinned:hover {
+    background: rgba(252, 183, 69, 0.15);
+}
+
 /* Close Button in Title Bar */
 .btn-close {
     display: flex;

@@ -20,15 +20,22 @@ ConvertToolDialog::ConvertToolDialog(HWND parent)
     : SciterSubDialog({
         L"this://app/convert-tool/convert-tool.html",
         L"VKey - Convert Tool",
-        420, 580, parent, true, 36, 40, true
+        420, 580, parent, true, 36, 70, true
     }) {
     // Load saved config (UI will be populated in DOCUMENT_COMPLETE)
     config_ = ConfigManager::LoadConvertConfigOrDefault();
+    isPinned_ = config().topmost;
 }
 
 bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params) {
     // Document fully loaded — populate UI from saved config
     if (params.cmd == DOCUMENT_COMPLETE) {
+        sciter::dom::element root = get_root();
+        sciter::dom::element pinBtn = root.find_first("#btn-pin");
+        if (pinBtn.is_valid() && isPinned_) {
+            pinBtn.set_attribute("class", L"btn-pin pinned");
+        }
+
         // Upload canonical VK → name table to JS before any label rendering
         // so the capture preview shows "Space" instead of falling back to
         // "VK_32" (the bare-decimal-fallback in shared/hotkey-capture.js).
@@ -98,6 +105,10 @@ bool ConvertToolDialog::handle_event(HELEMENT he, BEHAVIOR_EVENT_PARAMS& params)
 
         if (id == L"btn-close") {
             PostMessage(get_hwnd(), WM_CLOSE, 0, 0);
+            return true;
+        }
+        if (id == L"btn-pin") {
+            togglePin();
             return true;
         }
         if (id == L"btn-convert") {
@@ -523,6 +534,22 @@ void ConvertToolDialog::setDropdownUI(const char* id, int value) {
     sciter::dom::element dropdown = root.find_first(id);
     if (dropdown.is_valid()) {
         dropdown.set_value(sciter::value(value));
+    }
+}
+
+void ConvertToolDialog::togglePin() {
+    HWND hwnd = get_hwnd();
+    if (!hwnd) return;
+
+    isPinned_ = !isPinned_;
+
+    SetWindowPos(hwnd, isPinned_ ? HWND_TOPMOST : HWND_NOTOPMOST,
+                 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+
+    sciter::dom::element root = get_root();
+    sciter::dom::element pinBtn = root.find_first("#btn-pin");
+    if (pinBtn.is_valid()) {
+        pinBtn.set_attribute("class", isPinned_ ? L"btn-pin pinned" : L"btn-pin");
     }
 }
 

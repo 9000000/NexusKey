@@ -19,6 +19,7 @@ public:
 
 private:
     void doConvert();
+    void togglePin();
     void browseFile(bool isSource);
     [[nodiscard]] bool getToggleValue(const char* id);
     [[nodiscard]] int getDropdownValue(const char* id);
@@ -33,6 +34,7 @@ private:
     void setDropdownUI(const char* id, int value);
 
     ConvertConfig config_;
+    bool isPinned_ = false;
 };
 
 }  // namespace NextKey
