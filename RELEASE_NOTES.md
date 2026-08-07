@@ -1,5 +1,10 @@
 # VKey v4.3
 
+> ⚠️ **Lưu ý quan trọng về Chữ ký số & Cập nhật tự động (Code Signing & Auto-Update)**
+>
+> 1. **Chưa có chữ ký số**: Phiên bản v4.3 hiện tại **chưa được ký số** do vướng một số vấn đề điều khoản ký số với phía SignPath (liên quan đến việc tích hợp thư viện Sciter mã nguồn đóng). Do đó, tệp cài đặt/chạy có thể bị Windows SmartScreen cảnh báo hoặc một số phần mềm diệt virus tự động xóa/chặn (bạn có thể chọn *More info* → *Run anyway* để tiếp tục sử dụng).
+> 2. **Cần tải bản v4.3 thủ công**: Do v4.2 yêu cầu kiểm tra chữ ký số an toàn khi nâng cấp, tính năng cập nhật tự động từ v4.2 lên v4.3 sẽ không hoạt động. Người dùng đang ở phiên bản v4.2 vui lòng **tải và cài đặt bản v4.3 thủ công** từ trang phát hành GitHub Release.
+
 Bản cập nhật này mang đến cải tiến đột phá về khả năng tự động sửa lỗi chính tả cùng các sửa lỗi quan trọng giúp nâng cao độ ổn định.
 
 ### ✨ Tính năng mới & Cải tiến nổi bật
@@ -16,10 +21,10 @@ Bản cập nhật này mang đến cải tiến đột phá về khả năng t�
 
 > ℹ️ **Tìm hiểu thêm**
 >
-> Để biết thêm về kiến trúc của engine nâng cao, cách phân phối, lý do thiết kế, cũng như các vấn đề liên quan đến mã nguồn và giấy phép, vui lòng xem:
+> Để biết thêm chi tiết về kiến trúc engine nâng cao, cơ chế phân phối, lý do thiết kế cũng như các vấn đề về mã nguồn & giấy phép (license), vui lòng tham khảo:
 >
-> - [ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md)
-> - [Giải thích về kiến trúc, license và nguồn gốc của VKey](docs/ENGINE_FAQ.md)
+> - [Kiến trúc kỹ thuật Engine nâng cao](docs/ENGINE_ARCHITECTURE.md)
+> - [Giải đáp FAQ về kiến trúc, giấy phép & nguồn gốc VKey](docs/ENGINE_FAQ.md)
 
 * **🎮 Chế độ game (thay đổi hành vi mặc định — game thủ vui lòng đọc)**
     * **Trước đây**: cơ chế giữ phím cho game được bật ngầm cho **mọi** ứng dụng Win32 thông thường (Notepad, Word, Windows Terminal…). Mỗi lần bỏ dấu, VKey nhả ký tự gốc ra màn hình rồi mới xoá đi. Việc này gây nháy chữ và tình trạng đôi lúc không đặt được dấu đúng mong đợi.
