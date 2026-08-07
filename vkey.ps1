@@ -1,6 +1,7 @@
 # VKey - one entry point.
 #
 #   .\vkey.cmd local              build and run here, with the Rust engine
+#   .\vkey.cmd local -Lite        ... the Classic Win32 UI (VKeyClassic.exe)
 #   .\vkey.cmd local -DebugBuild  ... Debug, which serves the Sciter UI from files
 #   .\vkey.cmd local -Clean       ... after wiping the CMake cache
 #   .\vkey.cmd local -NoRun       ... build only, do not launch
@@ -25,6 +26,10 @@ param(
     [string]$Mode,
     [switch]$Clean,
     [switch]$NoRun,
+    # Classic Win32 UI instead of Sciter. CMakeLists only declares the VKeyLite
+    # target under VKEY_LITE_MODE, so this has to reach configure, not just the
+    # build step.
+    [switch]$Lite,
     # -Debug itself is a PowerShell common parameter and cannot be redefined.
     [switch]$DebugBuild,
     # -Verbose is a common parameter too, hence the name.
@@ -37,7 +42,14 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $vkeyRs = Join-Path (Split-Path -Parent $root) "VKey-rs"
 $engineRoot = Join-Path $root "build-engine"
-$buildDir = Join-Path $root "build"
+# -Lite builds into its own tree. The two configurations differ by
+# VKEY_LITE_MODE, so sharing one cache would force a full reconfigure every
+# time you switched. build-lite is the same directory
+# internal/tools/build_lite.ps1 uses, with the same engine root, so the two
+# scripts share a cache rather than fighting over one.
+$buildName = "build"
+if ($Lite) { $buildName = "build-lite" }
+$buildDir = Join-Path $root $buildName
 
 # Accept local / --local / -local, and the same for test.
 $mode = ($Mode -replace '^-+', '').ToLower()
@@ -77,7 +89,9 @@ function Get-PythonOrFail($whatFor) {
 
 if ($mode -eq "local") {
 
-    Write-Host "=== VKey - local build ===" -ForegroundColor Cyan
+    $uiName = "Sciter"
+    if ($Lite) { $uiName = "Classic" }
+    Write-Host "=== VKey - local build ($uiName UI) ===" -ForegroundColor Cyan
 
     if ($Clean -and (Test-Path $buildDir)) {
         Write-Host "[1/4] wiping the CMake cache" -ForegroundColor Yellow
@@ -102,8 +116,17 @@ if ($mode -eq "local") {
         $buildQuiet = @("--", "/nologo", "/clp:ErrorsOnly;Summary")
     }
 
+    $liteConfigure = @()
+    $liteTarget = @()
+    if ($Lite) {
+        $liteConfigure = @("-DVKEY_LITE_MODE=ON")
+        # Without an explicit target this would build every target the lite
+        # cache declares, VKeyTSF and the tests included.
+        $liteTarget = @("--target", "VKeyLite")
+    }
+
     Write-Host "[3/4] configure" -ForegroundColor Yellow
-    cmake -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot" @cmakeQuiet
+    cmake -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot" @liteConfigure @cmakeQuiet
     if ($LASTEXITCODE -ne 0) { Fail "configure failed" }
 
     # Debug serves the Sciter UI from ui/ next to the exe instead of the
@@ -113,14 +136,19 @@ if ($mode -eq "local") {
     if ($DebugBuild) { $config = "Debug" }
 
     Write-Host "[4/4] build ($config)" -ForegroundColor Yellow
-    cmake --build $buildDir --config $config @buildQuiet
+    cmake --build $buildDir --config $config @liteTarget @buildQuiet
     if ($LASTEXITCODE -ne 0) { Fail "build failed (re-run with -FullLog to see everything)" }
 
-    $exe = Join-Path $buildDir "$config\VKey.exe"
+    # CMakeLists sets OUTPUT_NAME "VKeyClassic" on the VKeyLite target.
+    $exeName = "VKey.exe"
+    if ($Lite) { $exeName = "VKeyClassic.exe" }
+    $exe = Join-Path $buildDir "$config\$exeName"
     Write-Host ""
     Write-Host "built: $exe" -ForegroundColor Green
 
-    if ($DebugBuild) {
+    # Classic draws its dialogs with native Win32 calls, so there is no ui/
+    # directory to serve from and nothing about -DebugBuild to explain.
+    if ($DebugBuild -and -not $Lite) {
         $uiDir = Join-Path $buildDir "$config\ui"
         Write-Host "Sciter UI is served from $uiDir" -ForegroundColor DarkGray
         Write-Host "edit HTML/CSS there and restart the app - no rebuild needed" -ForegroundColor DarkGray
