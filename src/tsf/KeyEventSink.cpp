@@ -83,6 +83,35 @@ static bool IsBareModifierKey(UINT vkCode) noexcept {
            vkCode == VK_CAPITAL;
 }
 
+// Deferred Enter repost — see the VK_RETURN branch in OnKeyDownImpl for why.
+// A plain PostMessage was measured as too early: Chromium batches input per
+// ~16ms frame, so the reposted Enter still reached the page in the same batch as
+// compositionend. One frame of slack puts it in the next batch.
+// ponytail: fixed 30ms, single pending key, no queue — Enter is not autorepeat
+// -spammed in practice. If some host still swallows it, raise the constant
+// before adding machinery.
+constexpr UINT kEnterRepostDelayMs = 30;
+
+namespace {
+struct PendingEnterRepost {
+    HWND hwnd = nullptr;
+    LPARAM lParam = 0;
+};
+// Thread-local: the timer callback runs on the same UI thread that posted it.
+thread_local PendingEnterRepost g_pendingEnterRepost;
+
+VOID CALLBACK RepostEnterTimerProc(HWND, UINT, UINT_PTR idEvent, DWORD) {
+    ::KillTimer(nullptr, idEvent);
+    const HWND hwnd = g_pendingEnterRepost.hwnd;
+    if (hwnd == nullptr) return;
+    g_pendingEnterRepost.hwnd = nullptr;
+    // The window can be gone by now (focus change, tab closed) — IsWindow keeps
+    // the stale Enter from landing somewhere the user never pressed it.
+    if (!::IsWindow(hwnd)) return;
+    ::PostMessageW(hwnd, WM_KEYDOWN, VK_RETURN, g_pendingEnterRepost.lParam);
+}
+}  // namespace
+
 // Helper function to check if a key is punctuation/number that should trigger commit
 static bool IsPunctuationKey(UINT vkCode) {
     // Number keys (0-9)
@@ -817,6 +846,34 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     // Bare Shift/CapsLock is excluded — see IsBareModifierKey.
     if (!wantKey && !IsBareModifierKey(vk) && pEngineController_->HasEngineBuffer()) {
         pEngineController_->Commit(pContext);
+        // Reaching here with a live buffer means the host skipped OnTestKeyDown
+        // (Chromium family) — in every other host the test phase already
+        // committed, so the buffer is empty and this branch never runs there.
+        // Consequence for Enter: the composition ends inside the very key event
+        // the page is about to receive. Web editors clear their own "composing"
+        // flag one tick AFTER compositionend (the standard Safari workaround), so
+        // an Enter landing in that same tick is skipped by the send handler and
+        // falls through to the editor's default line break — Gemini's composer
+        // types a newline instead of sending. Measured on Gemini: compositionend
+        // and the Enter keydown were 1 ms apart, and Enter after any other commit
+        // trigger (arrow key) sends correctly. Reposting Enter puts it in a later
+        // message, i.e. a later renderer task, past that tick.
+        // Same-process PostMessage: no UIPI, and low-level hooks don't see it, so
+        // a concurrently running HookEngine can't process the key twice. No loop
+        // either — the reposted key finds an empty buffer. Only the real WM_KEYUP
+        // follows; the app sees one press either way.
+        if (vk == VK_RETURN) {
+            if (HWND hwndFocus = ::GetFocus()) {
+                g_pendingEnterRepost = {hwndFocus, lParam};
+                const UINT_PTR timer = ::SetTimer(
+                    nullptr, 0, kEnterRepostDelayMs, RepostEnterTimerProc);
+                if (timer != 0) {
+                    *pfEaten = TRUE;
+                    return S_OK;
+                }
+                g_pendingEnterRepost.hwnd = nullptr;  // timer failed → pass through
+            }
+        }
         *pfEaten = FALSE;
         return S_OK;
     }
