@@ -75,7 +75,26 @@ GEMINI.md
 # accidental tracking of internal/ contents before submodule init.
 internal/
 
-# Prebuilt engine libraries: not AGPL, embed CC BY-NC data, fetched per release.
+# ===== Public/private placement guard =====
+# These are maintainer/agent working materials. Their canonical home is the
+# private internal/ submodule; ignoring them here prevents an accidental
+# reintroduction after the public/private split. CI independently audits the
+# tracked tree, so `git add -f` cannot bypass the boundary silently.
+/docs/plans/
+/docs/archive/
+/docs/baselines/
+/docs/superpowers/
+/docs/Architecture/
+/docs/CODING_RULES/
+/.planning/
+/rules/
+/HANDOFF.md
+/PROJECT_MAP.md
+/TODO.md
+/REFACTOR_STATUS.md
+/tools/update_engine.py
+
+# Prebuilt engine libraries: not GPL, embed CC BY-NC data, fetched per release.
 # See extern/vkey_engine/LICENSE and tools/fetch_engine.py.
 extern/vkey_engine/lib/
 build-engine/

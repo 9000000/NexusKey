@@ -51,6 +51,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check public/private file placement
+        run: python3 tools/audit/check_public_tree.py
+
       - name: Validate release tag matches the compiled version
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
@@ -79,7 +82,7 @@ jobs:
         run: python3 tools/audit/check_asset_provenance.py
 
       # The engine libraries are no longer committed: they embed CC BY-NC data and
-      # are not covered by this repository's AGPL-3.0 licence. They are fetched
+      # are not covered by this repository's GPL-3.0 licence. They are fetched
       # from the exact release named in extern/vkey_engine/engine.release and
       # verified against the committed extern/vkey_engine/engine.lock, which is
       # the trust anchor — not the download.
@@ -288,7 +291,7 @@ jobs:
           }
 
       # The engine libraries are no longer committed: they embed CC BY-NC data and
-      # are not covered by this repository's AGPL-3.0 licence. They are fetched
+      # are not covered by this repository's GPL-3.0 licence. They are fetched
       # from the exact release named in extern/vkey_engine/engine.release and
       # verified against the committed extern/vkey_engine/engine.lock, which is
       # the trust anchor — not the download.
@@ -326,7 +329,7 @@ jobs:
             throw "vkey_engine.dll.sig is missing - the pinned engine release predates signing"
           }
           Copy-Item $sig "vkey_engine.dll.sig" -Force
-          # The engine is not covered by this repository's AGPL-3.0 license and
+          # The engine is not covered by this repository's GPL-3.0 license and
           # embeds CC BY-NC data, so its license text has to travel with the
           # binary wherever the binary goes — as a sibling release asset for a
           # tag, and inside the payload for a workflow_dispatch test build.

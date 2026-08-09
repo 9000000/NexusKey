@@ -7,7 +7,6 @@
 .\vkey.cmd local -Engine Released
                               # Release + published, signed engine
 .\vkey.cmd local -DebugBuild  # ... Debug, which serves the Sciter UI from files
-.\vkey.cmd test               # release the engine and start the build testers download
 ```
 
 Use `.\vkey.cmd`, not `.\vkey.ps1`. PowerShell does not run commands from the
@@ -23,20 +22,15 @@ instead of embedding it with packfolder. Editing HTML or CSS then needs the app
 restarted, not rebuilt. (`-Debug` is a PowerShell common parameter, hence the
 name.)
 
-Only the published-engine and test workflows need a token. Set it once, then
-open a new terminal:
+Only the published-engine workflow needs a token. Set it once, then open a new
+terminal:
 
 ```powershell
 setx VKEY_ENGINE_TOKEN "<token>"
 ```
 
-That is the whole day-to-day. Everything below is what those two do and how to
+That is the whole day-to-day. Everything below explains what those modes do and how to
 drive the pieces yourself when something needs unpicking.
-
-The one thing worth knowing before you need it: **pushing a NexusKey commit does
-not carry an engine change with it.** The engine is fetched from the release
-named in `extern/vkey_engine/engine.release`, so getting engine work in front of
-a tester means `.\vkey.cmd test`, not `git push`.
 
 ---
 
@@ -120,16 +114,6 @@ cmake --build build --config Release
 Only the configure line needs the two flags; rebuilds are unchanged because the
 cache remembers them. You only revisit this after deleting `CMakeCache.txt`.
 
-Or let a script do all three:
-
-```powershell
-.\internal\tools\build_app.ps1 -Release -Run      # Sciter edition
-.\internal\tools\build_lite.ps1 -Release -Run     # Classic edition
-```
-
-Each fetches the engine into `build-engine/` on first use and skips it after, so
-the edit-build loop is unchanged. Add `-Clean` to reconfigure from scratch.
-
 Working on something unrelated to the engine? Skip it entirely and skip the token
 with it:
 
@@ -187,52 +171,6 @@ in its own directory rather than overwriting the committed one.
 To switch back without deleting anything, use `-Engine Released`. To make the
 default local mode work again afterwards, rerun the sync command.
 
-## 3b. Get an engine change in front of testers
-
-The engine is not committed here, so pushing a NexusKey commit does not carry an
-engine change with it — CI fetches whatever `engine.release` names. Shipping a
-change to testers means cutting an engine release and repointing this repository
-at it. One command, from VKey-rs:
-
-```bash
-cd ~/code/VKey-rs
-python3 tools/ship_engine.py --build
-```
-
-It bumps the patch version, tags, waits for the release workflow, publishes as a
-prerelease, updates this repository's `engine.lock` and `engine.release`, commits
-and pushes them, and starts the test build. Roughly five minutes, mostly the
-Windows runner.
-
-Version numbers are not meaningful in this loop — they exist so a build pins an
-exact one. `--version X.Y.Z` if you want to choose.
-
-VKey-rs must have a clean tree: a tag points at HEAD, so uncommitted engine work
-would not be in the release.
-
-## 4. Move to a new engine release
-
-After cutting and **publishing** `engine-vX.Y.Z` in VKey-rs (draft assets are not
-downloadable by tag):
-
-```bash
-python3 tools/update_engine.py engine-vX.Y.Z
-```
-
-It writes the release's own `engine.lock` and the tag into
-`extern/vkey_engine/`, then proves the pair by fetching the library through the
-normal path. If the release's lock does not verify against its own library it
-restores the previous lock and changes nothing.
-
-Commit `engine.lock` and `engine.release` **together** — they are two files that
-have to agree, and nothing at build time can tell you they do not. A stale lock
-beside a new tag fails with a hash mismatch that reads like a corrupt download.
-
-Cutting a product release does this for you: `internal/tools/release_tag.sh`
-compares the pin against the newest engine release and offers to update it before
-the version-bump commit, so a release does not quietly ship whatever engine
-happened to be pinned last.
-
 ---
 
 ## When something fails
@@ -241,10 +179,8 @@ happened to be pinned last.
 | --- | --- |
 | `VKEY_ENGINE_TOKEN is unset or empty` | no token, or it expired |
 | `HTTP 404 — wrong tag, or the token cannot read that repository` | tag typo, or the PAT is not scoped to VKey-rs |
-| `sha256 mismatch` / `byte length mismatch` | `engine.lock` and `engine.release` disagree; use `update_engine.py` (§4) rather than editing either by hand |
+| `sha256 mismatch` / `byte length mismatch` | `engine.lock` and `engine.release` disagree; do not edit either file independently |
 | `No prebuilt engine at ...` | nothing fetched yet; §1, or build with `-DVKEY_USE_RUST_ENGINE=OFF` |
-| `is still a draft` | publish the release first |
 
 Related: [`../extern/vkey_engine/LICENSE`](../extern/vkey_engine/LICENSE) for why
-the engine is noncommercial-only, and the engine release runbook in VKey-rs for
-cutting a release in the first place.
+the engine is noncommercial-only.

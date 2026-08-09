@@ -56,7 +56,7 @@ BEGIN
             VALUE "FileDescription",  "VKey Classic - Vietnamese IME"
             VALUE "FileVersion",      VKEY_VERSION_STR
             VALUE "InternalName",     "VKeyClassic"
-            VALUE "LegalCopyright",   "AGPL-3.0-only"
+            VALUE "LegalCopyright",   "GPL-3.0-only"
             VALUE "OriginalFilename", "VKeyClassic.exe"
             VALUE "ProductName",      "VKey Classic"
             VALUE "ProductVersion",   VKEY_VERSION_STR

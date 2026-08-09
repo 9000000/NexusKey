@@ -1,0 +1,8 @@
+# Public tools and why a user, contributor, build, or public CI needs them.
+# Directory entries end in /. Any new top-level tool fails the public-tree
+# audit until its public purpose is reviewed and recorded here.
+
+tools/audit/	PUBLIC COMPLIANCE — CI gates must remain inspectable in Main.
+tools/fetch-engine.ps1	PUBLIC BUILD — fetches the pinned signed engine on Windows.
+tools/fetch_engine.py	PUBLIC BUILD/CI — downloads and verifies the pinned engine artifact.
+tools/vie-layout-hack/	USER SUPPORT — documented registry helpers for the Vietnamese layout.
