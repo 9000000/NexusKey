@@ -21,6 +21,7 @@
 #include "core/MacroContextMatch.h"
 #include "core/MacroPrefix.h"
 #include "core/MacroTableDecision.h"
+#include "core/TsfEditDecision.h"
 #include "core/config/ConfigManager.h"
 #include "core/engine/EngineFactory.h"
 
@@ -168,29 +169,47 @@ bool EngineController::PrepareBackspaceRevive(ITfContext* pContext) {
 }
 
 void EngineController::CheckContextBlocked(ITfContext* pContext) {
-    if (pContext == lastContext_) return;  // Same context, use cached result
+    static_assert(
+        static_cast<uint32_t>(TF_SD_READONLY) == kTsfReadOnlyDocumentFlag,
+        "pure TSF status decision must match the Windows SDK");
 
-    // Release old context, AddRef new one (safe identity comparison)
-    if (lastContext_) lastContext_->Release();
-    lastContext_ = pContext;
-    if (lastContext_) lastContext_->AddRef();
-    contextBlocked_ = false;
+    const bool contextChanged = pContext != lastContext_;
+    if (contextChanged) {
+        // Input scopes are stable for the lifetime of the focused context, so
+        // keep their edit-session result cached. Document status is dynamic and
+        // is deliberately refreshed below for every key event.
+        if (lastContext_) lastContext_->Release();
+        lastContext_ = pContext;
+        if (lastContext_) lastContext_->AddRef();
+        scopeBlocked_ = false;
 
-    if (!pContext) return;
+        if (pContext) {
+            auto* pSession = new InputScopeCheckSession(pContext, &scopeBlocked_);
+            HRESULT hrSession = S_OK;
+            HRESULT hr = pContext->RequestEditSession(
+                clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
+            pSession->Release();
 
-    auto* pSession = new InputScopeCheckSession(pContext, &contextBlocked_);
-    HRESULT hrSession = S_OK;
-    HRESULT hr = pContext->RequestEditSession(
-        clientId_, pSession, TF_ES_SYNC | TF_ES_READ, &hrSession);
-    pSession->Release();
-
-    if (FAILED(hr) || FAILED(hrSession)) {
-        // If we can't check, assume not blocked
-        contextBlocked_ = false;
+            if (FAILED(hr) || FAILED(hrSession)) {
+                // If the scope cannot be checked, fail open so normal typing is
+                // not disabled. The read-only status gate still runs below.
+                scopeBlocked_ = false;
+            }
+        }
     }
 
+    bool readOnly = false;
+    if (pContext) {
+        TF_STATUS status{};
+        if (SUCCEEDED(pContext->GetStatus(&status))) {
+            readOnly = IsReadOnlyTsfDocument(status.dwDynamicFlags);
+        }
+    }
+    contextBlocked_ = scopeBlocked_ || readOnly;
+
     if (contextBlocked_) {
-        TSF_LOG(L"Context blocked (password/PIN/email field)");
+        TSF_LOG(L"Context blocked (%s)",
+                readOnly ? L"read-only document" : L"password/PIN/email field");
     }
 }
 

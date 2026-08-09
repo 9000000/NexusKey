@@ -10,6 +10,16 @@
 namespace NextKey {
 namespace {
 
+TEST(TsfEditDecision, ReadOnlyDocumentBlocksComposition) {
+    EXPECT_TRUE(IsReadOnlyTsfDocument(kTsfReadOnlyDocumentFlag));
+    EXPECT_TRUE(IsReadOnlyTsfDocument(kTsfReadOnlyDocumentFlag | 0x2u));
+}
+
+TEST(TsfEditDecision, WritableOrLoadingDocumentAllowsComposition) {
+    EXPECT_FALSE(IsReadOnlyTsfDocument(/*dynamicStatusFlags=*/0));
+    EXPECT_FALSE(IsReadOnlyTsfDocument(/*loadingFlag=*/0x2u));
+}
+
 TEST(TsfEditDecision, ExactBackwardShiftAcceptsWholeWordRange) {
     EXPECT_TRUE(IsExactBackwardRangeShift(/*requestedChars=*/5, /*shiftedChars=*/-5));
 }

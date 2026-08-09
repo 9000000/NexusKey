@@ -7,6 +7,18 @@
 
 namespace NextKey {
 
+// TS_SD_READONLY / TF_SD_READONLY from textstor.h. Keep the pure decision
+// Windows-header-free so it can be covered by the cross-platform test target.
+inline constexpr uint32_t kTsfReadOnlyDocumentFlag = 0x1u;
+
+/// A read-only TSF document is often an empty text store exposed while focus is
+/// on non-editable UI (for example a shell file list). Claiming an alpha key in
+/// that context makes Windows open its fallback "Finalize the string" UI.
+[[nodiscard]] constexpr bool IsReadOnlyTsfDocument(
+    uint32_t dynamicStatusFlags) noexcept {
+    return (dynamicStatusFlags & kTsfReadOnlyDocumentFlag) != 0;
+}
+
 /// A revive range is only safe when the backward shift covered exactly the
 /// characters asked for — a partial shift would put the composition over the
 /// wrong text.

@@ -244,7 +244,8 @@ private:
     bool abiOk_ = false;
     LanguageBarButton* langBarButton_ = nullptr;  // Owned, Release'd in UninitLanguageBar
     ITfContext* lastContext_ = nullptr;   // Last seen context (AddRef'd for safe identity comparison)
-    bool contextBlocked_ = false;        // True if current context blocks input (password, etc.)
+    bool scopeBlocked_ = false;          // Cached password/PIN/email result for lastContext_
+    bool contextBlocked_ = false;        // True if scope-blocked or document is currently read-only
     bool isScintillaApp_ = false;        // Cached: current app is Scintilla-based (Notepad++, etc.)
     bool digitLedWord_ = false;          // True = current word started with a digit (VNI/Combined/UserDefined) → treat whole word as English (pass through; no composition)
 
