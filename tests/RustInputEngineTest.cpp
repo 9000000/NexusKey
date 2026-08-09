@@ -218,6 +218,66 @@ TEST_F(RustInputEngineTest, SeedFromTextLiteralRestore) {
     EXPECT_FALSE(engine.IsToneEscaped());  // seeding is not a tone escape
 }
 
+TEST_F(RustInputEngineTest, CorrectedCommitCanBeSeededBeforeLiteralSuffix) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    config.autoRestoreEnabled = true;
+    RustInputEngine engine(config);
+
+    for (const wchar_t c : std::wstring(L"sauwr")) engine.PushChar(c);
+    const std::wstring committed = engine.Commit();
+    ASSERT_EQ(committed, L"sử");
+    ASSERT_TRUE(engine.LastCommitWasCorrected());
+
+    // Hook replay sees the physical typo again, so it must detect the mismatch
+    // and seed the committed screen text before applying the user's next key.
+    for (const wchar_t c : std::wstring(L"sauwr")) engine.PushChar(c);
+    ASSERT_NE(engine.Peek(), committed);
+    ASSERT_TRUE(engine.SeedFromText(committed));
+    engine.PushChar(L'a');
+    EXPECT_EQ(engine.Peek(), L"sửa");
+}
+
+TEST_F(RustInputEngineTest, CorrectedCommitCanBeEditedAcrossRepeatedReopen) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    config.autoRestoreEnabled = true;
+    RustInputEngine engine(config);
+
+    const auto reopenVisible = [&engine](const std::wstring& history,
+                                         const std::wstring& visible) {
+        engine.Reset();
+        for (const wchar_t c : history) engine.PushChar(c);
+        if (engine.Peek() != visible) {
+            EXPECT_TRUE(engine.SeedFromText(visible));
+        }
+        EXPECT_EQ(engine.Peek(), visible);
+    };
+
+    for (const wchar_t c : std::wstring(L"sauwr")) engine.PushChar(c);
+    const std::wstring corrected = engine.Commit();
+    ASSERT_EQ(corrected, L"sử");
+
+    reopenVisible(L"sauwr", corrected);
+    engine.PushChar(L'a');
+    ASSERT_EQ(engine.Commit(), L"sửa");
+    EXPECT_FALSE(engine.LastCommitWasCorrected());
+
+    // A text-seeded replay replaces the stale typo history with the visible
+    // word. Reopening that edited commit must still let the user revise only
+    // its suffix instead of deleting the whole word to escape stale state.
+    reopenVisible(L"sửa", L"sửa");
+    engine.Backspace();
+    engine.Backspace();
+    for (const wchar_t c : std::wstring(L"uwax")) engine.PushChar(c);
+    EXPECT_EQ(engine.Commit(), L"sữa");
+    EXPECT_FALSE(engine.LastCommitWasCorrected());
+}
+
 TEST_F(RustInputEngineTest, QuickConsonantReported) {
     TypingConfig config;
     config.inputMethod = InputMethod::Telex;

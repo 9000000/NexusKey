@@ -420,7 +420,7 @@ private:
     void TrackModifier(DWORD vkCode, bool isDown);
 
     // Backspace-into-committed-word: replay saved chars to restore engine state
-    void ReplayCommittedChars();
+    [[nodiscard]] bool ReplayCommittedChars();
 
     // Commit trigger check
     static bool IsCommitTrigger(DWORD vkCode);

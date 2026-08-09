@@ -1708,7 +1708,9 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
                      commitState_.StackSize(),
                      previousComposition_.c_str(),
                      dispatcher_.SynthEventsPending());
-            ReplayCommittedChars();
+            if (!ReplayCommittedChars()) {
+                return KeyOutcome::Pass;
+            }
             {
                 bool shift = cachedShift;
                 bool caps = cachedCapsLock;
@@ -1729,8 +1731,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
                      commitState_.StackEmpty() ? L"<empty>" : commitState_.StackTop().text.c_str(),
                      commitState_.StackSize(),
                      previousComposition_.c_str());
-            ReplayCommittedChars();
-            if (engine_->Count() == 0) {
+            if (!ReplayCommittedChars() || engine_->Count() == 0) {
                 commitState_.SetIdle();
                 return KeyOutcome::Pass;  // Replay failed — let digit pass through
             }
@@ -1744,7 +1745,9 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
                      commitState_.StackSize(),
                      previousComposition_.c_str(),
                      dispatcher_.SynthEventsPending());
-            ReplayCommittedChars();
+            if (!ReplayCommittedChars()) {
+                return KeyOutcome::Pass;
+            }
             HandleBackspace();
             return KeyOutcome::Eat;
         } else if (!isCommitUndoExempt) {
@@ -2806,12 +2809,12 @@ void HookEngine::SetCommitUndoReady() {
 // Backspace-into-committed-word: replay saved chars from stack
 // ═══════════════════════════════════════════════════════════
 
-void HookEngine::ReplayCommittedChars() {
+bool HookEngine::ReplayCommittedChars() {
     VKEY_ASSERT_HOOK_THREAD();
     if (commitState_.StackEmpty()) {
         HOOK_LOG(L"  ReplayCommittedChars: stack empty, nothing to replay");
         commitState_.SetIdle();
-        return;
+        return false;
     }
 
     // Pop the most recently committed word from the stack
@@ -2824,13 +2827,37 @@ void HookEngine::ReplayCommittedChars() {
     // Replay exact user keystrokes (including backspaces) to reproduce engine state.
     // Phase 1: the replay loop is a sustained burst of engine state-machine writes,
     // so we wrap the whole loop (not per-call) as a single EnginePush sample.
-    {
-        PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+    auto replayHistory = [&]() {
         for (wchar_t ch : entry.history) {
             if (ch == kBackspaceMarker) {
                 engine_->Backspace();
             } else {
                 engine_->PushChar(ch);
+            }
+        }
+    };
+    {
+        PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+        replayHistory();
+
+        // A spell-corrected commit can differ from its physical keystrokes
+        // (for example, sauwr commits as "sử"). Replaying those keys restores
+        // the pre-commit typo, not the text that is still on screen. Continue
+        // from the committed glyphs in that case, matching the TSF revive path.
+        if (engine_->Peek() != entry.text) {
+            if (engine_->SeedFromText(entry.text)) {
+                entry.history.assign(entry.text.begin(), entry.text.end());
+                HOOK_LOG(L"  ReplayCommittedChars: raw replay differed; seeded committed text '%s'",
+                         entry.text.c_str());
+            } else {
+                // Never continue from an engine state that disagrees with the
+                // visible word. Let the physical key edit the host text instead.
+                engine_->Reset();
+                commitState_.ClearHistory();
+                commitState_.SetIdle();
+                HOOK_LOG(L"  ReplayCommittedChars: committed-text seed failed for '%s'",
+                         entry.text.c_str());
+                return false;
             }
         }
     }
@@ -2852,6 +2879,7 @@ void HookEngine::ReplayCommittedChars() {
     // Reset undo state — HandleBackspace will re-enter state 1 if engine becomes
     // empty again and stack still has entries (enabling multi-word backward).
     commitState_.SetIdle();
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════════
