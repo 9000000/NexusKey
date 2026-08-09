@@ -227,14 +227,17 @@ TEST_F(RustInputEngineTest, CorrectedCommitCanBeSeededBeforeLiteralSuffix) {
     config.autoRestoreEnabled = true;
     RustInputEngine engine(config);
 
-    for (const wchar_t c : std::wstring(L"sauwr")) engine.PushChar(c);
+    // Keep this as a genuinely corrected commit. The key-conserving correction
+    // policy now preserves the `a` in `sauwr` and correctly commits it as
+    // "sửa", so that former fixture no longer exercises corrected-text seeding.
+    for (const wchar_t c : std::wstring(L"suwrr")) engine.PushChar(c);
     const std::wstring committed = engine.Commit();
     ASSERT_EQ(committed, L"sử");
     ASSERT_TRUE(engine.LastCommitWasCorrected());
 
     const auto restored = RestoreCommittedText(
         engine, committed, [](IInputEngine& replayEngine) {
-            for (const wchar_t c : std::wstring_view(L"sauwr")) replayEngine.PushChar(c);
+            for (const wchar_t c : std::wstring_view(L"suwrr")) replayEngine.PushChar(c);
         });
     ASSERT_EQ(restored, CommittedTextRestoreResult::SeededVisibleText);
     engine.PushChar(L'a');
@@ -259,11 +262,11 @@ TEST_F(RustInputEngineTest, CorrectedCommitCanBeEditedAcrossRepeatedReopen) {
         return restored;
     };
 
-    for (const wchar_t c : std::wstring(L"sauwr")) engine.PushChar(c);
+    for (const wchar_t c : std::wstring(L"suwrr")) engine.PushChar(c);
     const std::wstring corrected = engine.Commit();
     ASSERT_EQ(corrected, L"sử");
 
-    EXPECT_EQ(reopenVisible(L"sauwr", corrected),
+    EXPECT_EQ(reopenVisible(L"suwrr", corrected),
               CommittedTextRestoreResult::SeededVisibleText);
     engine.PushChar(L'a');
     ASSERT_EQ(engine.Commit(), L"sửa");
