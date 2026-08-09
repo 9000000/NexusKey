@@ -359,4 +359,10 @@ Các giải pháp kiến trúc, logic xử lý phím và phương pháp tối ư
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/chart?repos=phatMT97/VKey&type=date&legend=top-left)](https://www.star-history.com/?repos=phatMT97%2FVKey&type=date&legend=top-left)
+<a href="https://www.star-history.com/?repos=phatMT97%2FVKey&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=phatMT97/VKey&type=date&theme=dark&legend=top-left&sealed_token=kgX6Iw_TFShYwESajXBogx1YXo56uMQh_XormakfAlfmXCCgeLZgHtgaHLa9kq4KuQFhAodk4toQ3H7VJacu7yFCSXCSxwUfWqP1K9O6IM-ml2-ExEEA3hlvHQofEXfys3L6QCfePCnTWs1uiJMpBb6vt9LCzlXHJoyMKk5bIU5tOtlaTidW26hxkJOo" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=phatMT97/VKey&type=date&legend=top-left&sealed_token=kgX6Iw_TFShYwESajXBogx1YXo56uMQh_XormakfAlfmXCCgeLZgHtgaHLa9kq4KuQFhAodk4toQ3H7VJacu7yFCSXCSxwUfWqP1K9O6IM-ml2-ExEEA3hlvHQofEXfys3L6QCfePCnTWs1uiJMpBb6vt9LCzlXHJoyMKk5bIU5tOtlaTidW26hxkJOo" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=phatMT97/VKey&type=date&legend=top-left&sealed_token=kgX6Iw_TFShYwESajXBogx1YXo56uMQh_XormakfAlfmXCCgeLZgHtgaHLa9kq4KuQFhAodk4toQ3H7VJacu7yFCSXCSxwUfWqP1K9O6IM-ml2-ExEEA3hlvHQofEXfys3L6QCfePCnTWs1uiJMpBb6vt9LCzlXHJoyMKk5bIU5tOtlaTidW26hxkJOo" />
+ </picture>
+</a>
