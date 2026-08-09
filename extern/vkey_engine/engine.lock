@@ -4,5 +4,5 @@ target=windows-x86_64
 asset_name=vkey_engine.dll
 installed_name=vkey_engine.dll
 byte_len=758272
-sha256=1870cf91f39a3fe31db123f6e0de5b2caa2a3e6bbe6524aca01a210df594d1e3
-counter=1000002
+sha256=4d2af890d0176b1b677161e2c3f86064f6165eca7f1600550dc606ccd9b2d32f
+counter=1000000
