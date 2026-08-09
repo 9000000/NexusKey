@@ -30,10 +30,10 @@ enum class RustEngineTrustStatus : std::uint8_t {
 /// what lets a VKeyTSF.dll left behind by a deferred update load the newer engine
 /// installed next to it instead of silently dropping to the C++ engine.
 ///
-/// Debug additionally accepts an exact match against the committed engine.lock
-/// hash, because a locally synced engine has no signature — the release workflow
-/// holds the key. That path is compiled out of Release, so no machine running a
-/// shipped build has a way around the signature.
+/// Development builds additionally accept an exact match against engine.lock,
+/// because a locally synced engine has no signature — the release workflow holds
+/// the key. Debug enables that path automatically. An optimized local Release
+/// build can opt in explicitly; official builds leave it compiled out.
 ///
 /// `signaturePath` is a wide, NUL-terminated path; nullptr means "no signature".
 [[nodiscard]] RustEngineTrustStatus VerifyRustEngineFileHandle(void* fileHandle,

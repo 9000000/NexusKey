@@ -120,6 +120,12 @@ target_include_directories(VKeyEngine PUBLIC
 # plain `cmake -B build` must not require it — see extern/vkey_engine/LICENSE.
 # Official builds opt in explicitly with -DVKEY_USE_RUST_ENGINE=ON in CI.
 option(VKEY_USE_RUST_ENGINE "Use the prebuilt closed-source Rust engine (C ABI)" OFF)
+option(VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE
+    "Allow a Release development build to trust the exact engine.lock hash" OFF)
+if(VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE AND NOT VKEY_USE_RUST_ENGINE)
+    message(FATAL_ERROR
+        "VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=ON requires VKEY_USE_RUST_ENGINE=ON")
+endif()
 if(VKEY_USE_RUST_ENGINE)
     # Overridable so the libraries need not be committed: tools/fetch_engine.py
     # populates a directory from a published engine release, and the build is
@@ -214,11 +220,20 @@ if(VKEY_USE_RUST_ENGINE)
         ${VKEY_ENGINE_GENERATED_DIR}
     )
     target_compile_definitions(VKeyEngine PRIVATE VKEY_USE_RUST_ENGINE)
-    # Debug also accepts an engine whose hash matches engine.lock, so a locally
-    # synced build (which has no signature — the release workflow holds the key)
-    # stays usable. Release gets no such branch compiled in at all: on a shipped
-    # build the signature is the only way past the trust gate.
-    target_compile_definitions(VKeyEngine PRIVATE $<$<CONFIG:Debug>:VKEY_ENGINE_TRUST_DEV>)
+    # Debug accepts an engine whose hash matches engine.lock, so a locally synced
+    # build (which has no signature — the release workflow holds the key) stays
+    # usable. A maintainer may explicitly enable the same exact-hash path in a
+    # local Release build to test optimized engine code. The option defaults OFF
+    # and official builds never set it, so shipped Release builds still accept
+    # only signed engines.
+    if(VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE)
+        message(WARNING
+            "VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=ON: this local Release build accepts "
+            "only the exact DLL hash in VKEY_ENGINE_ROOT/engine.lock. Do not ship it.")
+        target_compile_definitions(VKeyEngine PRIVATE VKEY_ENGINE_TRUST_DEV)
+    else()
+        target_compile_definitions(VKeyEngine PRIVATE $<$<CONFIG:Debug>:VKEY_ENGINE_TRUST_DEV>)
+    endif()
     target_link_libraries(VKeyEngine PRIVATE ${CMAKE_DL_LIBS})
     if(WIN32)
         target_link_libraries(VKeyEngine PRIVATE bcrypt)

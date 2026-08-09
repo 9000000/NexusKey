@@ -1,6 +1,8 @@
 # VKey - one entry point.
 #
-#   .\vkey.cmd local              build and run here, with the Rust engine
+#   .\vkey.cmd local              Release build with the locally synced Rust engine
+#   .\vkey.cmd local -Engine Released
+#                                ... Release build with the published, signed engine
 #   .\vkey.cmd local -Lite        ... the Classic Win32 UI (VKeyClassic.exe)
 #   .\vkey.cmd local -DebugBuild  ... Debug, which serves the Sciter UI from files
 #   .\vkey.cmd local -Clean       ... after wiping the CMake cache
@@ -24,6 +26,8 @@
 param(
     [Parameter(Position = 0)]
     [string]$Mode,
+    [ValidateSet("Local", "Released")]
+    [string]$Engine = "Local",
     [switch]$Clean,
     [switch]$NoRun,
     # Classic Win32 UI instead of Sciter. CMakeLists only declares the VKeyLite
@@ -100,10 +104,52 @@ if ($mode -eq "local") {
         Remove-Item -Recurse -Force $cache, $cacheDir -ErrorAction SilentlyContinue
     }
 
-    Write-Host "[2/4] engine" -ForegroundColor Yellow
-    $fetch = Join-Path $root "tools\fetch-engine.ps1"
-    & $fetch
-    if ($LASTEXITCODE -ne 0) { Fail "could not get the engine" }
+    Write-Host "[2/4] engine ($Engine)" -ForegroundColor Yellow
+    $allowUnsignedLocalEngine = "OFF"
+    if ($Engine -eq "Local") {
+        $engineDll = Join-Path $engineRoot "lib\win-x64\vkey_engine.dll"
+        $engineHeader = Join-Path $engineRoot "include\vkey_engine.h"
+        $engineLock = Join-Path $engineRoot "engine.lock"
+        if (-not (Test-Path $engineDll) -or
+            -not (Test-Path $engineHeader) -or
+            -not (Test-Path $engineLock)) {
+            $lines = @(
+                "The local engine has not been synced to build-engine.",
+                "Run this in WSL first:",
+                "",
+                "  cd ~/code/VKey-rs",
+                "  bash tools/sync_nexuskey_engine.sh",
+                "",
+                "To use the published engine instead:",
+                "  .\vkey.cmd local -Engine Released"
+            )
+            Fail ($lines -join [Environment]::NewLine)
+        }
+
+        # sync_nexuskey_engine.sh deliberately gives development locks counter 1.
+        # Refuse a released/stale build-engine directory instead of silently
+        # claiming that it is the engine from the adjacent source checkout.
+        $lockText = Get-Content $engineLock -Raw
+        if ($lockText -notmatch "(?m)^counter=1\r?$") {
+            $lines = @(
+                "build-engine does not contain a locally synced engine (counter=1).",
+                "Sync it from VKey-rs, or select the published engine explicitly:",
+                "  .\vkey.cmd local -Engine Released"
+            )
+            Fail ($lines -join [Environment]::NewLine)
+        }
+
+        # A local DLL is unsigned. This opt-in keeps the Release optimizer while
+        # binding the loader to the exact byte length and SHA-256 in engine.lock.
+        $allowUnsignedLocalEngine = "ON"
+        Write-Host "using locally synced engine: $engineDll" -ForegroundColor DarkGray
+        Write-Host "Release will trust only the exact hash in build-engine\engine.lock" -ForegroundColor DarkGray
+    }
+    else {
+        $fetch = Join-Path $root "tools\fetch-engine.ps1"
+        & $fetch
+        if ($LASTEXITCODE -ne 0) { Fail "could not get the released engine" }
+    }
 
     # Quiet by default. --log-level=WARNING drops CMake's STATUS chatter, and
     # MSBuild's ErrorsOnly console logger drops the per-file compile spam. Nothing
@@ -126,7 +172,7 @@ if ($mode -eq "local") {
     }
 
     Write-Host "[3/4] configure" -ForegroundColor Yellow
-    cmake -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot" @liteConfigure @cmakeQuiet
+    cmake -S $root -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot" "-DVKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=$allowUnsignedLocalEngine" @liteConfigure @cmakeQuiet
     if ($LASTEXITCODE -ne 0) { Fail "configure failed" }
 
     # Debug serves the Sciter UI from ui/ next to the exe instead of the
@@ -194,7 +240,9 @@ else {
     $help = @'
 VKey
 
-  .\vkey.cmd local              build and run here, with the Rust engine
+  .\vkey.cmd local              Release build with the locally synced Rust engine
+  .\vkey.cmd local -Engine Released
+                                ... use the published, signed Rust engine
   .\vkey.cmd local -DebugBuild  ... Debug, which serves the Sciter UI from files
   .\vkey.cmd local -Clean       ... after wiping the CMake cache
   .\vkey.cmd local -NoRun       ... build only, do not launch
@@ -202,10 +250,11 @@ VKey
   .\vkey.cmd test               release the current engine and start a test build
   .\vkey.cmd test -DryRun       ... say what that would do, push nothing
 
-local  builds on this machine against the engine named in
-       extern/vkey_engine/engine.release, fetching it once. -DebugBuild copies
-       the Sciter UI beside the exe instead of embedding it, so HTML and CSS
-       edits need only a restart.
+local  builds on this machine. It uses the engine synced from the adjacent
+       VKey-rs checkout by default, keeps the Release optimizer, and never
+       replaces that engine with a download. Use -Engine Released to fetch and
+       use the engine named in extern/vkey_engine/engine.release instead.
+       -DebugBuild still selects Debug and serves the Sciter UI from files.
 
 test   cuts the next engine release from VKey-rs, points this repository at it,
        pushes, and starts the GitHub build whose artifact testers download.
@@ -215,7 +264,7 @@ test   cuts the next engine release from VKey-rs, points this repository at it,
 Build output is errors only. /W4 /WX is set globally, so a warning that matters
 is already an error and still prints; -FullLog brings back everything.
 
-Both need VKEY_ENGINE_TOKEN; the engine release repository is private.
+Released and test need VKEY_ENGINE_TOKEN; the engine release repository is private.
 '@
     Write-Host $help
     if ($mode) { exit 1 }

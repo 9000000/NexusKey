@@ -312,8 +312,9 @@ RustEngineTrustStatus VerifyRustEngineFileHandle(void* fileHandle,
         }
 
 #ifdef VKEY_ENGINE_TRUST_DEV
-        // Debug only: a locally synced engine carries no signature, because the
-        // release workflow holds the key. Compiled out of Release entirely.
+        // Development trust: a locally synced engine carries no signature,
+        // because the release workflow holds the key. Enabled automatically in
+        // Debug, or explicitly for an optimized local-only Release build.
         if (static_cast<std::uint64_t>(byteLength.QuadPart) == VKeyEngineLock::kByteLength &&
             HashMatches(digest)) {
             return RustEngineTrustStatus::Trusted;

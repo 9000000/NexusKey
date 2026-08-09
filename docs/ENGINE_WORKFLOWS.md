@@ -3,7 +3,9 @@
 ## Short version
 
 ```powershell
-.\vkey.cmd local              # build and run here, with the Rust engine
+.\vkey.cmd local              # Release + engine synced from local VKey-rs
+.\vkey.cmd local -Engine Released
+                              # Release + published, signed engine
 .\vkey.cmd local -DebugBuild  # ... Debug, which serves the Sciter UI from files
 .\vkey.cmd test               # release the engine and start the build testers download
 ```
@@ -21,7 +23,8 @@ instead of embedding it with packfolder. Editing HTML or CSS then needs the app
 restarted, not rebuilt. (`-Debug` is a PowerShell common parameter, hence the
 name.)
 
-Once, in a new terminal afterwards:
+Only the published-engine and test workflows need a token. Set it once, then
+open a new terminal:
 
 ```powershell
 setx VKEY_ENGINE_TOKEN "<token>"
@@ -61,6 +64,37 @@ looks like a build problem — the message names the token, so read it.
 
 ## 1. Build and run locally
 
+`local` means the engine from the adjacent `VKey-rs` source checkout. Sync it
+first in WSL:
+
+```bash
+cd ~/code/VKey-rs
+bash tools/sync_nexuskey_engine.sh
+```
+
+Then build the optimized app from PowerShell:
+
+```powershell
+cd Z:\home\phatmt\code\NexusKey
+.\vkey.cmd local
+```
+
+This is still a Release build. Because a locally built engine has no release
+signature, this command explicitly enables exact-hash development trust: the DLL
+must match `build-engine/engine.lock`. That opt-in is off by default in CMake and
+is never used by official builds. The command does not call the fetcher and will
+not replace the local DLL.
+
+To build locally against the published engine instead:
+
+```powershell
+.\vkey.cmd local -Engine Released
+```
+
+That mode fetches the signed engine once and needs `VKEY_ENGINE_TOKEN`.
+
+### Driving CMake directly
+
 Driving CMake yourself is two extra pieces: fetch the engine once, and say you
 want it. **A bare `cmake -B build` now builds without the Rust engine** — the
 option defaults off so a fork does not need the noncommercial artifact — so a
@@ -69,6 +103,17 @@ command that used to include the engine silently stops doing so.
 ```powershell
 .\tools\fetch-engine.ps1                          # once; no-op afterwards
 cmake -B build -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT=build-engine
+cmake --build build --config Release
+```
+
+For an unsigned local engine in an optimized build, make the trust opt-in
+explicit:
+
+```powershell
+cmake -B build -G "Visual Studio 18 2026" -A x64 `
+  -DVKEY_USE_RUST_ENGINE=ON `
+  -DVKEY_ENGINE_ROOT=build-engine `
+  -DVKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=ON
 cmake --build build --config Release
 ```
 
@@ -121,7 +166,7 @@ bash tools/sync_nexuskey_engine.sh          # builds mingw into NexusKey/build-e
 Then build against it:
 
 ```powershell
-cmake -B build -G "Visual Studio 17 2022" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT=build-engine
+.\vkey.cmd local
 ```
 
 It writes to the gitignored `build-engine/`, including that build's own
@@ -138,6 +183,9 @@ rm -rf build-engine        # the next build fetches it again
 Your local build is mingw and the released one is MSVC, so the two have different
 hashes. That is expected, and it is exactly why the local build gets its own lock
 in its own directory rather than overwriting the committed one.
+
+To switch back without deleting anything, use `-Engine Released`. To make the
+default local mode work again afterwards, rerun the sync command.
 
 ## 3b. Get an engine change in front of testers
 
