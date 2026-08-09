@@ -8,9 +8,9 @@
 
 #include "vkey_engine.h"  // vendored C ABI (extern/vkey_engine/include)
 
+#include <array>
 #include <cstdint>
 #include <utility>
-#include <vector>
 
 #if defined(_WIN32)
 #  define WIN32_LEAN_AND_MEAN
@@ -166,27 +166,41 @@ uint32_t MapFeatures(const TypingConfig& c) {
     return f;
 }
 
-// Encode a wstring as UTF-16 code units for the ABI. On Windows wchar_t is
-// already UTF-16; on Linux it is a 32-bit scalar, so widen surrogates here.
-// Vietnamese is entirely BMP, so the surrogate branch is defensive only.
-std::vector<uint16_t> ToUtf16(const std::wstring& text) {
-    std::vector<uint16_t> out;
-    out.reserve(text.size());
+// Bounded engine: the active composition never exceeds this many UTF-16 units.
+constexpr size_t kTextCap = 256;
+
+struct Utf16Text {
+    std::array<uint16_t, kTextCap> units{};
+    size_t length = 0;
+    bool valid = true;
+};
+
+// Stack-only encoding keeps SeedFromText safe on the low-level hook path.
+Utf16Text ToUtf16(const std::wstring& text) {
+    Utf16Text out;
     for (const wchar_t wc : text) {
         const uint32_t c = static_cast<uint32_t>(wc);
         if (c <= 0xFFFF) {
-            out.push_back(static_cast<uint16_t>(c));
+            if (out.length == out.units.size()) {
+                out.valid = false;
+                break;
+            }
+            out.units[out.length++] = static_cast<uint16_t>(c);
         } else if (c <= 0x10FFFF) {
+            if (out.length + 2 > out.units.size()) {
+                out.valid = false;
+                break;
+            }
             const uint32_t v = c - 0x10000;
-            out.push_back(static_cast<uint16_t>(0xD800 + (v >> 10)));
-            out.push_back(static_cast<uint16_t>(0xDC00 + (v & 0x3FF)));
+            out.units[out.length++] = static_cast<uint16_t>(0xD800 + (v >> 10));
+            out.units[out.length++] = static_cast<uint16_t>(0xDC00 + (v & 0x3FF));
+        } else {
+            out.valid = false;
+            break;
         }
     }
     return out;
 }
-
-// Bounded engine: the active composition never exceeds this many UTF-16 units.
-constexpr size_t kTextCap = 256;
 
 }  // namespace
 
@@ -326,9 +340,13 @@ bool RustInputEngine::SeedFromText(const std::wstring& text) {
     // and continued typing/backspace work. Re-toning the restored glyphs is not
     // faithfully supported (needs a raw snapshot). On failure the engine is left
     // reset, per the IInputEngine contract.
-    const std::vector<uint16_t> units = ToUtf16(text);
-    const bool ok =
-        Api().seed_text_utf16(static_cast<VKeyEngine*>(handle_), units.data(), units.size());
+    const Utf16Text units = ToUtf16(text);
+    if (!units.valid) {
+        Reset();
+        return false;
+    }
+    const bool ok = Api().seed_text_utf16(
+        static_cast<VKeyEngine*>(handle_), units.units.data(), units.length);
     Refresh();
     return ok;
 }

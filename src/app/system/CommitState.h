@@ -59,12 +59,17 @@ public:
     static constexpr wchar_t kBackspaceMarker = L'\b';
     /// Max stacked commits (LIFO). Limits backward-undo depth and memory.
     static constexpr std::size_t kMaxStack = 3;
+    /// Cold-reserved capacity for engine-supported committed text/history.
+    static constexpr std::size_t kReplayHistoryReserve = 256;
     /// Auto-expire Ready after this many ms — cheap insurance against any
     /// cursor-movement event that bypasses ResetComposition (e.g. future
     /// edge cases).
     static constexpr DWORD kReadyTimeoutMs = 4000;
 
-    CommitState() = default;
+    CommitState() {
+        inputHistory_.reserve(kReplayHistoryReserve);
+        stack_.reserve(kMaxStack);
+    }
     ~CommitState() = default;
 
     CommitState(const CommitState&) = delete;

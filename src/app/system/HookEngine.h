@@ -419,8 +419,9 @@ private:
     // Modifier state tracking (used by double-Alt and layout change detection)
     void TrackModifier(DWORD vkCode, bool isDown);
 
-    // Backspace-into-committed-word: replay saved chars to restore engine state
-    [[nodiscard]] bool ReplayCommittedChars();
+    // Restore a committed word for another edit. Backspace prefers the visible
+    // glyph state; tone/modifier keys preserve raw replay provenance.
+    [[nodiscard]] bool ReplayCommittedChars(bool preferVisibleText = false);
 
     // Commit trigger check
     static bool IsCommitTrigger(DWORD vkCode);

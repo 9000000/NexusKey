@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/engine/CommittedTextRestore.h"
 #include "core/engine/RustInputEngine.h"
 
 namespace NextKey {
@@ -231,11 +232,11 @@ TEST_F(RustInputEngineTest, CorrectedCommitCanBeSeededBeforeLiteralSuffix) {
     ASSERT_EQ(committed, L"sử");
     ASSERT_TRUE(engine.LastCommitWasCorrected());
 
-    // Hook replay sees the physical typo again, so it must detect the mismatch
-    // and seed the committed screen text before applying the user's next key.
-    for (const wchar_t c : std::wstring(L"sauwr")) engine.PushChar(c);
-    ASSERT_NE(engine.Peek(), committed);
-    ASSERT_TRUE(engine.SeedFromText(committed));
+    const auto restored = RestoreCommittedText(
+        engine, committed, [](IInputEngine& replayEngine) {
+            for (const wchar_t c : std::wstring_view(L"sauwr")) replayEngine.PushChar(c);
+        });
+    ASSERT_EQ(restored, CommittedTextRestoreResult::SeededVisibleText);
     engine.PushChar(L'a');
     EXPECT_EQ(engine.Peek(), L"sửa");
 }
@@ -248,21 +249,22 @@ TEST_F(RustInputEngineTest, CorrectedCommitCanBeEditedAcrossRepeatedReopen) {
     config.autoRestoreEnabled = true;
     RustInputEngine engine(config);
 
-    const auto reopenVisible = [&engine](const std::wstring& history,
+    const auto reopenVisible = [&engine](const std::wstring_view history,
                                          const std::wstring& visible) {
-        engine.Reset();
-        for (const wchar_t c : history) engine.PushChar(c);
-        if (engine.Peek() != visible) {
-            EXPECT_TRUE(engine.SeedFromText(visible));
-        }
-        EXPECT_EQ(engine.Peek(), visible);
+        const auto restored = RestoreCommittedText(
+            engine, visible, [history](IInputEngine& replayEngine) {
+                for (const wchar_t c : history) replayEngine.PushChar(c);
+            });
+        EXPECT_NE(restored, CommittedTextRestoreResult::Failed);
+        return restored;
     };
 
     for (const wchar_t c : std::wstring(L"sauwr")) engine.PushChar(c);
     const std::wstring corrected = engine.Commit();
     ASSERT_EQ(corrected, L"sử");
 
-    reopenVisible(L"sauwr", corrected);
+    EXPECT_EQ(reopenVisible(L"sauwr", corrected),
+              CommittedTextRestoreResult::SeededVisibleText);
     engine.PushChar(L'a');
     ASSERT_EQ(engine.Commit(), L"sửa");
     EXPECT_FALSE(engine.LastCommitWasCorrected());
@@ -270,12 +272,89 @@ TEST_F(RustInputEngineTest, CorrectedCommitCanBeEditedAcrossRepeatedReopen) {
     // A text-seeded replay replaces the stale typo history with the visible
     // word. Reopening that edited commit must still let the user revise only
     // its suffix instead of deleting the whole word to escape stale state.
-    reopenVisible(L"sửa", L"sửa");
+    EXPECT_EQ(reopenVisible(L"sửa", L"sửa"),
+              CommittedTextRestoreResult::ReplayedHistory);
     engine.Backspace();
     engine.Backspace();
     for (const wchar_t c : std::wstring(L"uwax")) engine.PushChar(c);
     EXPECT_EQ(engine.Commit(), L"sữa");
     EXPECT_FALSE(engine.LastCommitWasCorrected());
+}
+
+TEST_F(RustInputEngineTest, BackspacedAttemptsNormalizeBeforeCommittedBackspace) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    RustInputEngine engine(config);
+
+    // The first attempt is erased before typing the visible word. Replaying
+    // this whole history renders the right text but leaves a stale undo stack:
+    // the next Backspace can jump from "sửa" to "su" instead of deleting "a".
+    const std::wstring history = L"saw\b\bsuawr";
+    const auto restored = RestoreCommittedText(
+        engine, L"sửa", [&history](IInputEngine& replayEngine) {
+            for (const wchar_t c : history) {
+                if (c == L'\b') {
+                    replayEngine.Backspace();
+                } else {
+                    replayEngine.PushChar(c);
+                }
+            }
+        },
+        CommittedTextRestorePreference::VisibleText);
+
+    ASSERT_EQ(restored, CommittedTextRestoreResult::SeededVisibleText);
+    engine.Backspace();
+    EXPECT_EQ(engine.Peek(), L"sử");
+}
+
+TEST_F(RustInputEngineTest, BackspacedAttemptsKeepRawReplayForToneEdit) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    RustInputEngine engine(config);
+
+    const std::wstring history = L"saw\b\bsuawr";
+    const auto restored = RestoreCommittedText(
+        engine, L"sửa", [&history](IInputEngine& replayEngine) {
+            for (const wchar_t c : history) {
+                if (c == L'\b') {
+                    replayEngine.Backspace();
+                } else {
+                    replayEngine.PushChar(c);
+                }
+            }
+        });
+
+    ASSERT_EQ(restored, CommittedTextRestoreResult::ReplayedHistory);
+    engine.PushChar(L'x');
+    EXPECT_EQ(engine.Peek(), L"sữa");
+}
+
+TEST_F(RustInputEngineTest, CommittedTextRestoreFailureLeavesEngineReset) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    RustInputEngine engine(config);
+
+    const std::wstring beyondEngineCapacity(65, L'a');
+    const auto restored = RestoreCommittedText(
+        engine, beyondEngineCapacity, [](IInputEngine& replayEngine) {
+            replayEngine.PushChar(L'x');
+        });
+
+    EXPECT_EQ(restored, CommittedTextRestoreResult::Failed);
+    EXPECT_TRUE(engine.Peek().empty());
+    EXPECT_EQ(engine.Count(), 0u);
+}
+
+TEST_F(RustInputEngineTest, SeedFromTextRejectsAdapterOverflowWithoutStaleState) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    RustInputEngine engine(config);
+    engine.PushChar(L'x');
+
+    const std::wstring beyondAdapterCapacity(257, L'a');
+    EXPECT_FALSE(engine.SeedFromText(beyondAdapterCapacity));
+    EXPECT_TRUE(engine.Peek().empty());
+    EXPECT_EQ(engine.Count(), 0u);
 }
 
 TEST_F(RustInputEngineTest, QuickConsonantReported) {

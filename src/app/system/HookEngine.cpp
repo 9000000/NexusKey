@@ -11,6 +11,7 @@
 #include "output/OutputInjectorFactory.h"  // Sprint 2 T3 — output channel strategy
 #include "output/Internal.h"  // Sprint 2 D5 — g_synthCounterCallback bridge
 #include "core/engine/CodeTableConverter.h"
+#include "core/engine/CommittedTextRestore.h"
 #include "core/engine/EngineFactory.h"
 #include "core/config/ConfigManager.h"
 #include "core/config/ConfigSnapshotBuilder.h"
@@ -1745,7 +1746,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
                      commitState_.StackSize(),
                      previousComposition_.c_str(),
                      dispatcher_.SynthEventsPending());
-            if (!ReplayCommittedChars()) {
+            if (!ReplayCommittedChars(/*preferVisibleText=*/true)) {
                 return KeyOutcome::Pass;
             }
             HandleBackspace();
@@ -2809,7 +2810,7 @@ void HookEngine::SetCommitUndoReady() {
 // Backspace-into-committed-word: replay saved chars from stack
 // ═══════════════════════════════════════════════════════════
 
-bool HookEngine::ReplayCommittedChars() {
+bool HookEngine::ReplayCommittedChars(bool preferVisibleText) {
     VKEY_ASSERT_HOOK_THREAD();
     if (commitState_.StackEmpty()) {
         HOOK_LOG(L"  ReplayCommittedChars: stack empty, nothing to replay");
@@ -2824,47 +2825,42 @@ bool HookEngine::ReplayCommittedChars() {
     HOOK_LOG(L"  ReplayCommittedChars: replaying %zu keystrokes, restoring prev='%s' (stack=%zu remaining)",
              entry.history.size(), entry.text.c_str(), commitState_.StackSize());
 
-    // Replay exact user keystrokes (including backspaces) to reproduce engine state.
-    // Phase 1: the replay loop is a sustained burst of engine state-machine writes,
-    // so we wrap the whole loop (not per-call) as a single EnginePush sample.
-    auto replayHistory = [&]() {
-        for (wchar_t ch : entry.history) {
-            if (ch == kBackspaceMarker) {
-                engine_->Backspace();
-            } else {
-                engine_->PushChar(ch);
-            }
-        }
-    };
+    CommittedTextRestoreResult restored;
     {
         PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
-        replayHistory();
-
-        // A spell-corrected commit can differ from its physical keystrokes
-        // (for example, sauwr commits as "sử"). Replaying those keys restores
-        // the pre-commit typo, not the text that is still on screen. Continue
-        // from the committed glyphs in that case, matching the TSF revive path.
-        if (engine_->Peek() != entry.text) {
-            if (engine_->SeedFromText(entry.text)) {
-                entry.history.assign(entry.text.begin(), entry.text.end());
-                HOOK_LOG(L"  ReplayCommittedChars: raw replay differed; seeded committed text '%s'",
-                         entry.text.c_str());
-            } else {
-                // Never continue from an engine state that disagrees with the
-                // visible word. Let the physical key edit the host text instead.
-                engine_->Reset();
-                commitState_.ClearHistory();
-                commitState_.SetIdle();
-                HOOK_LOG(L"  ReplayCommittedChars: committed-text seed failed for '%s'",
-                         entry.text.c_str());
-                return false;
-            }
-        }
+        restored = RestoreCommittedText(
+            *engine_, entry.text, [&entry](IInputEngine& replayEngine) {
+                for (const wchar_t ch : entry.history) {
+                    if (ch == kBackspaceMarker) {
+                        replayEngine.Backspace();
+                    } else {
+                        replayEngine.PushChar(ch);
+                    }
+                }
+            },
+            preferVisibleText ? CommittedTextRestorePreference::VisibleText
+                              : CommittedTextRestorePreference::ReplayHistory);
     }
-    // Seed inputHistory_ with the replayed word's keystrokes so that if the user
-    // edits and re-commits this word, the new stack entry contains the full history
-    // (not just the editing delta). Otherwise a second replay attempt would be wrong.
-    commitState_.History() = std::move(entry.history);
+    if (restored == CommittedTextRestoreResult::Failed) {
+        commitState_.ClearHistory();
+        commitState_.SetIdle();
+        HOOK_LOG(L"  ReplayCommittedChars: committed-text restore failed for '%s'",
+                 entry.text.c_str());
+        return false;
+    }
+    if (restored == CommittedTextRestoreResult::SeededVisibleText) {
+        HOOK_LOG(L"  ReplayCommittedChars: seeded committed visible text '%s'",
+                 entry.text.c_str());
+    }
+
+    // A corrected commit becomes literal visible history so reopening it again
+    // cannot resurrect the stale physical typo.
+    auto& currentHistory = commitState_.History();
+    if (restored == CommittedTextRestoreResult::SeededVisibleText) {
+        currentHistory.assign(entry.text.begin(), entry.text.end());
+    } else {
+        currentHistory.assign(entry.history.begin(), entry.history.end());
+    }
 
     // Restore screen state so ReplaceComposition can diff correctly
     previousComposition_ = std::move(entry.text);

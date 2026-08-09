@@ -12,6 +12,7 @@
 #include "EditSession.h"
 #include "core/AutoCapDecision.h"
 #include "core/TsfEditDecision.h"
+#include "core/engine/CommittedTextRestore.h"
 #include "core/engine/IInputEngine.h"
 #include "core/engine/VietnameseTables.h"
 
@@ -423,17 +424,11 @@ constexpr DWORD kReviveSetTextFlags = 0;
 
 inline bool SeedRevivedWord(IInputEngine* engine, const std::wstring& word,
                             const std::wstring& rawInput) {
-    if (!rawInput.empty()) {
-        engine->Reset();
-        for (wchar_t c : rawInput) {
-            engine->PushChar(c);
-        }
-        if (engine->Peek() == word) {
-            return true;
-        }
-        engine->Reset();
-    }
-    return engine->SeedFromText(word);
+    if (engine == nullptr) return false;
+    return RestoreCommittedText(
+               *engine, word, [&rawInput](IInputEngine& replayEngine) {
+                   for (const wchar_t c : rawInput) replayEngine.PushChar(c);
+               }) != CommittedTextRestoreResult::Failed;
 }
 
 /// Revive-composition edit session: starts a composition over an existing range that

@@ -38,13 +38,14 @@ public:
     /// Check if a quick consonant expansion (e.g., nn->ng, cc->ch) is currently active
     [[nodiscard]] virtual bool HasActiveQuickConsonant() const = 0;
 
-    /// Seed engine state from existing Vietnamese text (e.g., when user BS back into
-    /// committed text). Decomposes each char into base + modifier + tone and rebuilds
-    /// CharState array. State is fully reset before seeding.
+    /// Seed engine state from already-rendered text (e.g., when the user backspaces
+    /// into a committed word). State is fully reset before seeding. Backends may
+    /// restore glyphs literally rather than reconstructing their original modifier
+    /// provenance, so callers should prefer exact raw-history replay and verify that
+    /// it reproduces the visible text before falling back to this method.
     ///
-    /// Returns false if any char isn't a recognized Vietnamese letter — caller should
-    /// pass a single syllable with no whitespace/punctuation/digits. On failure the
-    /// engine is left in Reset() state.
+    /// Returns false when the backend cannot represent the supplied text. On failure
+    /// the engine is left in Reset() state.
     [[nodiscard]] virtual bool SeedFromText(const std::wstring& text) = 0;
 
     /// Whether current buffer is flagged as a hard-English word (e.g., "hello",
