@@ -196,6 +196,20 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
                 scopeBlocked_ = false;
             }
         }
+
+        // #242: hosts whose focus is a file list (One Commander, shell views)
+        // hand out a context that accepts composition but has nowhere to draw
+        // it, so Windows opens its own "Finalize the string" box. It is not
+        // flagged read-only, so dump the full status + focus class here to find
+        // the flag that tells it apart from a real edit field.
+        if (pContext) {
+            TF_STATUS status{};
+            const HRESULT hrStatus = pContext->GetStatus(&status);
+            wchar_t focusClass[64] = {};
+            ::GetClassNameW(::GetFocus(), focusClass, 64);
+            TSF_LOG(L"Context switch: status=0x%08lX dyn=0x%08lX static=0x%08lX focus='%ls'",
+                    hrStatus, status.dwDynamicFlags, status.dwStaticFlags, focusClass);
+        }
     }
 
     bool readOnly = false;
