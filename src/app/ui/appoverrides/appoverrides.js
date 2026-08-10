@@ -31,7 +31,7 @@ var encodingLabels = {
     1: "TCVN3",
     2: "VNI Win",
     3: "UNI Cmp",
-    4: "VN Locale"
+    4: "CP 1258"
 };
 
 var sendMethodLabels = {

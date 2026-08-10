@@ -191,6 +191,12 @@ var STRINGS = {
         "ct.dest": "Destination",
         "ct.swap": "Swap encoding",
         "ct.convert": "Convert",
+        "ct.unicode": "Unicode",
+        "ct.tcvn3": "TCVN3 (ABC)",
+        "ct.tcvn3_short": "TCVN3",
+        "ct.vni": "VNI Windows",
+        "ct.compound": "Unicode Compound",
+        "ct.cp1258": "Vietnamese Locale",
 
         // ── About dialog (standalone) ──
         "a.title": "About VKey",
@@ -200,6 +206,7 @@ var STRINGS = {
 
         // ── App Overrides dialog ──
         "ao.title": "App Override",
+        "ao.default": "Default",
         "ao.input_method": "Input method",
         "ao.encoding": "Encoding",
         "ao.send_method": "Send method",
