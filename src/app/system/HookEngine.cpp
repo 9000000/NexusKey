@@ -4616,7 +4616,12 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         tsfModeCallback_(cls->isTsf, tsfReadonly);
     }
 
-    if (cls->skipAppTracking) return;
+    if (cls->skipAppTracking) {
+        // Say it, or the log just goes quiet: #242 was read as "no focus event
+        // for explorer.exe" when the event had in fact arrived and stopped here.
+        HOOK_LOG(L"  SmartSwitch/overrides skipped (helper or hidden window)");
+        return;
+    }
 
     // Short-circuit when no per-app feature needs tracking. Phase 3c
     // reads the override-map presence from the RCU snapshot — same data
@@ -4629,7 +4634,11 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         if (!cfg->smartSwitch && !cfg->excludeApps && !cfg->tsfApps && noOverrides) return;
     }
 
-    if (cls->exeName.empty()) return;
+    if (cls->exeName.empty()) {
+        HOOK_LOG(L"  Focus exe unresolved (hwnd=%p) — per-app tracking skipped",
+                 reinterpret_cast<void*>(cls->hwndOpaque));
+        return;
+    }
 
     // Smart switch SAVE for the previous real app — captured BEFORE we
     // advance lastRealExe_ below. Uses lastRealExe_, NOT activeExe_:

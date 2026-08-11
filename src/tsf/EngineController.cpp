@@ -222,13 +222,18 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
             transitory = IsTransitoryOnlyTsfDocument(status.dwStaticFlags);
         }
     }
+    const bool wasBlocked = contextBlocked_;
     contextBlocked_ = scopeBlocked_ || readOnly || transitory;
 
-    if (contextBlocked_) {
-        TSF_LOG(L"Context blocked (%s)",
-                readOnly    ? L"read-only document"
-                : transitory ? L"transitory document (no text store)"
-                             : L"password/PIN/email field");
+    // Transitions only. This runs per keystroke, and a line per key buries the
+    // one thing a reader needs — when the block started and why.
+    if (contextBlocked_ != wasBlocked) {
+        TSF_LOG(L"Context %s",
+                !contextBlocked_ ? L"unblocked"
+                : readOnly       ? L"blocked (read-only document)"
+                : transitory     ? L"blocked (transitory document — no text store, "
+                                   L"Windows would draw its own composition box)"
+                                 : L"blocked (password/PIN/email field)");
     }
 }
 

@@ -3,6 +3,7 @@
 
 #include "core/Logger.h"
 #include "core/PathUtil.h"
+#include "core/Version.h"
 
 #include <clocale>
 #include <cstdio>
@@ -64,6 +65,33 @@ std::wstring CurrentTimestamp() {
 bool FileExistsW(const std::wstring& path) {
     DWORD a = GetFileAttributesW(path.c_str());
     return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+// First line of every log file. A bug report that arrives without it costs a
+// round trip asking which build and which Windows the reporter is on — and the
+// answers routinely disagree with what the issue template says. The host exe
+// matters too: the same log line means different things coming from VKey.exe
+// and from the TIP loaded inside a browser.
+void WriteSessionBannerUnlocked() {
+    OSVERSIONINFOW os{};
+    os.dwOSVersionInfoSize = sizeof(os);
+    // GetVersionEx lies without a matching manifest; RtlGetVersion does not.
+    if (HMODULE ntdll = GetModuleHandleW(L"ntdll.dll")) {
+        using RtlGetVersionPtr = LONG(WINAPI*)(OSVERSIONINFOW*);
+        auto rtlGetVersion = reinterpret_cast<RtlGetVersionPtr>(
+            GetProcAddress(ntdll, "RtlGetVersion"));
+        if (rtlGetVersion == nullptr || rtlGetVersion(&os) != 0) os = {};
+    }
+    wchar_t host[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, host, MAX_PATH);
+    const wchar_t* hostName = wcsrchr(host, L'\\');
+    hostName = (hostName != nullptr) ? hostName + 1 : host;
+
+    fwprintf(File(),
+             L"=== VKey v%hs | Windows %lu.%lu.%lu | host %ls | PID %lu ===\n",
+             VKEY_VERSION_STR, os.dwMajorVersion, os.dwMinorVersion,
+             os.dwBuildNumber, hostName, GetCurrentProcessId());
+    std::fflush(File());
 }
 
 bool DirectoryWritable(const std::wstring& dir) {
@@ -186,7 +214,10 @@ void OpenFileUnlocked() {
     // line so a crash doesn't lose the tail — issue-#108 bug reports need the
     // last lines.
     File() = _wfsopen(path.c_str(), L"a, ccs=UTF-8", _SH_DENYWR);
-    if (File()) setvbuf(File(), nullptr, _IOLBF, 4096);
+    if (File()) {
+        setvbuf(File(), nullptr, _IOLBF, 4096);
+        WriteSessionBannerUnlocked();
+    }
 }
 
 #else  // POSIX (tests only)
