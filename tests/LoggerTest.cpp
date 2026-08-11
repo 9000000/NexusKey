@@ -65,6 +65,19 @@ std::string ReadAllNarrow(const std::wstring& wpath) {
     return ss.str();
 }
 
+// Line counts below are assertions about Log() output: one call, one line, all
+// of them durable. On Win32 each opened file also carries a "=== VKey v… ==="
+// session banner, which is not Log() output and must not be counted.
+size_t CountLoggedLines(const std::string& contents) {
+    size_t lines = 0;
+    for (char c : contents) if (c == '\n') ++lines;
+    for (size_t at = contents.find("=== VKey v"); at != std::string::npos;
+         at = contents.find("=== VKey v", at + 1)) {
+        --lines;
+    }
+    return lines;
+}
+
 void RemoveFile(const std::wstring& wpath) {
 #ifdef _WIN32
     DeleteFileW(wpath.c_str());
@@ -251,9 +264,8 @@ TEST_F(LoggerTest, ContentDurableWithoutShutdown) {
         << "First line must be flushed before any close";
     EXPECT_NE(contents.find("durable_line_99"), std::string::npos)
         << "Last line must be flushed before any close";
-    size_t lines = 0;
-    for (char c : contents) if (c == '\n') ++lines;
-    EXPECT_EQ(lines, 100u) << "All 100 lines durable without Shutdown()";
+    EXPECT_EQ(CountLoggedLines(contents), 100u)
+        << "All 100 lines durable without Shutdown()";
 
     NextKey::Logger::Shutdown();
 }
@@ -275,10 +287,8 @@ TEST_F(LoggerTest, ConcurrentLogDoesNotCrash) {
     NextKey::Logger::Shutdown();
 
     std::string contents = ReadAllNarrow(scratch_);
-    // Expect 200 lines total — count line breaks.
-    size_t lines = 0;
-    for (char c : contents) if (c == '\n') ++lines;
-    EXPECT_EQ(lines, 200u) << "Each Log() call must produce exactly one line";
+    EXPECT_EQ(CountLoggedLines(contents), 200u)
+        << "Each Log() call must produce exactly one line";
 }
 
 }  // namespace
