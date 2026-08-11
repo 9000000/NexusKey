@@ -20,6 +20,20 @@ TEST(TsfEditDecision, WritableOrLoadingDocumentAllowsComposition) {
     EXPECT_FALSE(IsReadOnlyTsfDocument(/*loadingFlag=*/0x2u));
 }
 
+// Static-flag values observed in the #242 logs and in the text stores of the
+// hosts VKey has to keep working (Chromium, Firefox, WPF).
+TEST(TsfEditDecision, TransitoryOnlyDocumentBlocksComposition) {
+    EXPECT_TRUE(IsTransitoryOnlyTsfDocument(/*explorerListView=*/0x4u));
+    EXPECT_TRUE(IsTransitoryOnlyTsfDocument(/*oneCommanderWindow=*/0x4u));
+}
+
+TEST(TsfEditDecision, RealTextStoresAllowComposition) {
+    EXPECT_FALSE(IsTransitoryOnlyTsfDocument(/*chromium=*/0x4u | 0x8u));
+    EXPECT_FALSE(IsTransitoryOnlyTsfDocument(/*firefox=*/0x8u));
+    EXPECT_FALSE(IsTransitoryOnlyTsfDocument(/*wpf=*/0x2u));
+    EXPECT_FALSE(IsTransitoryOnlyTsfDocument(/*noStaticFlags=*/0));
+}
+
 TEST(TsfEditDecision, ExactBackwardShiftAcceptsWholeWordRange) {
     EXPECT_TRUE(IsExactBackwardRangeShift(/*requestedChars=*/5, /*shiftedChars=*/-5));
 }

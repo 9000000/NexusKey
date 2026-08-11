@@ -728,7 +728,13 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
     // the atomics on the caller thread and hands the resolved values in).
     cls.targetCodeTable = ctx.globalCodeTable;
     cls.targetMethod    = ctx.globalInputMethod;
-    if (!cls.skipAppTracking && !cls.exeName.empty() && ctx.snap && ctx.cfg) {
+    // No skipAppTracking gate on the excluded / TSF resolution: those two decide
+    // which engine owns the app, and ApplyFocusOnHookThread publishes them for
+    // every focus event including helper windows (#242 — a skipped focus event
+    // used to leave TSF_ACTIVE pointing at the previous app). The per-app
+    // encoding / method overrides stay gated: they feed the typing state, which
+    // is exactly what must not flip on a transient helper.
+    if (!cls.exeName.empty() && ctx.snap && ctx.cfg) {
         // Per-app mode lock (hard-E / hard-V) shares the excludeApps gate. The
         // two snapshot sets are disjoint (excluded wins, enforced at build time);
         // DecidePerAppMode is the belt-and-suspenders precedence. Forced-V apps
@@ -747,7 +753,7 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
         if (!cls.isExcluded && ctx.cfg->tsfApps && !ctx.snap->tsfAppSet.empty()) {
             cls.isTsf = ctx.snap->tsfAppSet.count(cls.exeName) > 0;
         }
-        if (!cls.isExcluded && !cls.isTsf) {
+        if (!cls.isExcluded && !cls.isTsf && !cls.skipAppTracking) {
             auto itEnc = ctx.snap->appEncodingOverrides.find(cls.exeName);
             if (itEnc != ctx.snap->appEncodingOverrides.end()) {
                 cls.targetCodeTable = static_cast<int>(itEnc->second);

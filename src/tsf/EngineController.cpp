@@ -172,6 +172,9 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
     static_assert(
         static_cast<uint32_t>(TF_SD_READONLY) == kTsfReadOnlyDocumentFlag,
         "pure TSF status decision must match the Windows SDK");
+    static_assert(
+        static_cast<uint32_t>(TF_SS_TRANSITORY) == kTsfTransitoryDocumentFlag,
+        "pure TSF status decision must match the Windows SDK");
 
     const bool contextChanged = pContext != lastContext_;
     if (contextChanged) {
@@ -197,12 +200,10 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
             }
         }
 
-        // #242: hosts whose focus is a file list (One Commander, shell views)
-        // hand out a context that accepts composition but has nowhere to draw
-        // it, so Windows opens its own "Finalize the string" box. It is not
-        // flagged read-only, so dump the full status + focus class here to find
-        // the flag that tells it apart from a real edit field.
-        if (pContext) {
+        // Keep this: the transitory gate below is decided from these two flags,
+        // and a host that reports them differently than the ones checked in
+        // #242 shows up here as "typing stopped working" with no other trace.
+        if (pContext && ::NextKey::Logger::IsEnabled()) {
             TF_STATUS status{};
             const HRESULT hrStatus = pContext->GetStatus(&status);
             wchar_t focusClass[64] = {};
@@ -213,17 +214,21 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
     }
 
     bool readOnly = false;
+    bool transitory = false;
     if (pContext) {
         TF_STATUS status{};
         if (SUCCEEDED(pContext->GetStatus(&status))) {
             readOnly = IsReadOnlyTsfDocument(status.dwDynamicFlags);
+            transitory = IsTransitoryOnlyTsfDocument(status.dwStaticFlags);
         }
     }
-    contextBlocked_ = scopeBlocked_ || readOnly;
+    contextBlocked_ = scopeBlocked_ || readOnly || transitory;
 
     if (contextBlocked_) {
         TSF_LOG(L"Context blocked (%s)",
-                readOnly ? L"read-only document" : L"password/PIN/email field");
+                readOnly    ? L"read-only document"
+                : transitory ? L"transitory document (no text store)"
+                             : L"password/PIN/email field");
     }
 }
 

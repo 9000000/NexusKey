@@ -4578,6 +4578,44 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // and runs the real-focus SmartSwitch path below. This is the
     // pre-2026-05-21 (v2.1.24) pattern; see commit 87a560f notes +
     // docs/plans/2026-05-28-smart-switch-persistence-design.md §4.
+    //
+    // Engine ownership (which of hook / TIP consumes keys for this app) is the
+    // one thing that must NOT wait for that: it is derived from the exe alone,
+    // and leaving it stale hands the app to the wrong engine. #242 — focus went
+    // from One Commander (a tsf_apps entry) to Explorer's file list, that event
+    // returned here, so TSF_ACTIVE stayed ON and the TIP kept composing in a
+    // shell list view, which is where Windows opens its "Finalize the string"
+    // box. An unidentified window resolves to isTsf=false on purpose: the hook
+    // works everywhere, the TIP only where it was whitelisted.
+    const bool wasExcludedApp = isExcludedApp_.load(std::memory_order_acquire);
+    const bool wasTsfAppFlag  = isTsfApp_.load(std::memory_order_acquire);
+    const bool wasForcedVnApp = isForcedVnApp_.load(std::memory_order_acquire);
+
+    isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
+    isTsfApp_.store(cls->isTsf, std::memory_order_release);
+    // Store forced-V cache flag at the SAME site as the others, BEFORE the
+    // excluded/tsf early-returns below — so switching excluded↔forced-V leaves
+    // the flag consistent. forcedVnPid_ feeds the toggle-lock PID check.
+    isForcedVnApp_.store(cls->isForcedVietnamese, std::memory_order_release);
+    if (cls->isForcedVietnamese) forcedVnPid_.store(cls->pid, std::memory_order_release);
+
+    HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
+             cls->isTsf ? L"TSF (hook passthrough)" : L"HOOK",
+             cls->exeName.empty() ? L"<unknown>" : cls->exeName.c_str(),
+             cfg->tsfApps ? 1 : 0,
+             cls->isTsf ? 1 : 0,
+             cls->isExcluded ? 1 : 0);
+
+    // SharedState TSF flag bridge — idempotent via SetOrClearFlag in main.
+    if (tsfModeCallback_) {
+        const bool tsfReadonly = !cls->isTsf && !cls->isExcluded;
+        if (cls->isTsf != wasTsfAppFlag) {
+            HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
+                     wasTsfAppFlag ? L"true" : L"false", cls->isTsf ? L"true" : L"false");
+        }
+        tsfModeCallback_(cls->isTsf, tsfReadonly);
+    }
+
     if (cls->skipAppTracking) return;
 
     // Short-circuit when no per-app feature needs tracking. Phase 3c
@@ -4593,10 +4631,6 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     if (cls->exeName.empty()) return;
 
-    const bool wasExcluded = isExcludedApp_.load(std::memory_order_acquire);
-    const bool wasTsfApp   = isTsfApp_.load(std::memory_order_acquire);
-    const bool wasForcedV  = isForcedVnApp_.load(std::memory_order_acquire);
-
     // Smart switch SAVE for the previous real app — captured BEFORE we
     // advance lastRealExe_ below. Uses lastRealExe_, NOT activeExe_:
     // a helper-event detour right before this non-skip event would have
@@ -4606,7 +4640,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // !wasForcedV: a forced-V app's mode is locked to V, never the user's
     // choice — don't persist it into appModeMap or it poisons the remembered
     // preference (the SAVE writes the forced 'true', not a real toggle).
-    if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcluded && !wasForcedV) {
+    if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcludedApp && !wasForcedVnApp) {
         if (focus_.AppModeMap().size() >= kMaxSmartSwitchEntries) {
             focus_.AppModeMap().clear();
             HOOK_LOG(L"  SmartSwitch: map cap %zu hit, cleared", kMaxSmartSwitchEntries);
@@ -4630,36 +4664,11 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // once the app's main window settles to foreground (Bug 1 fallback).
     if (cls->pid) focus_.SetLastForegroundPid(cls->pid);
 
-    isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
-    isTsfApp_.store(cls->isTsf, std::memory_order_release);
-    // Store forced-V cache flag at the SAME site as the others, BEFORE the
-    // excluded/tsf early-returns below — so switching excluded↔forced-V leaves
-    // the flag consistent. forcedVnPid_ feeds the toggle-lock PID check.
-    isForcedVnApp_.store(cls->isForcedVietnamese, std::memory_order_release);
-    if (cls->isForcedVietnamese) forcedVnPid_.store(cls->pid, std::memory_order_release);
-
-    HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
-             cls->isTsf ? L"TSF (hook passthrough)" : L"HOOK",
-             focus_.LastRealExe().c_str(),
-             cfg->tsfApps ? 1 : 0,
-             cls->isTsf ? 1 : 0,
-             cls->isExcluded ? 1 : 0);
-
-    // SharedState TSF flag bridge — idempotent via SetOrClearFlag in main.
-    if (tsfModeCallback_) {
-        const bool tsfReadonly = !cls->isTsf && !cls->isExcluded;
-        if (cls->isTsf != wasTsfApp) {
-            HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
-                     wasTsfApp ? L"true" : L"false", cls->isTsf ? L"true" : L"false");
-        }
-        tsfModeCallback_(cls->isTsf, tsfReadonly);
-    }
-
     if (cls->isExcluded) {
         excludedPid_.store(cls->pid, std::memory_order_release);
         HOOK_LOG(L"  ExcludeApps: '%s' is excluded, passthrough (pid=%u)",
                  focus_.LastRealExe().c_str(), cls->pid);
-        if (!wasExcluded) NotifyModeChange();
+        if (!wasExcludedApp) NotifyModeChange();
         return;
     }
 
@@ -4698,7 +4707,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // vietnameseMode_ didn't move, and CJK auto-switch was gated off while
     // locked. Replay the layout check so a suppressed CJK transition can
     // re-evaluate now that the lock has cleared.
-    if (wasExcluded || wasForcedV) {
+    if (wasExcludedApp || wasForcedVnApp) {
         const bool wasSuppressed = focus_.LayoutSuppressed();
         OnLayoutChanged(focus_.CachedIsCompatLayout());
         if (wasSuppressed == focus_.LayoutSuppressed()) NotifyModeChange();
