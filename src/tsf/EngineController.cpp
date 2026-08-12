@@ -200,24 +200,15 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
             }
         }
 
-        // Keep this: the transitory gate below is decided from these two flags,
-        // and a host that reports them differently than the ones checked in
-        // #242 shows up here as "typing stopped working" with no other trace.
-        if (pContext && ::NextKey::Logger::IsEnabled()) {
-            TF_STATUS status{};
-            const HRESULT hrStatus = pContext->GetStatus(&status);
-            wchar_t focusClass[64] = {};
-            ::GetClassNameW(::GetFocus(), focusClass, 64);
-            TSF_LOG(L"Context switch: status=0x%08lX dyn=0x%08lX static=0x%08lX focus='%ls'",
-                    hrStatus, status.dwDynamicFlags, status.dwStaticFlags, focusClass);
-        }
     }
 
     bool readOnly = false;
     bool transitory = false;
+    TF_STATUS status{};
+    HRESULT hrStatus = E_POINTER;
     if (pContext) {
-        TF_STATUS status{};
-        if (SUCCEEDED(pContext->GetStatus(&status))) {
+        hrStatus = pContext->GetStatus(&status);
+        if (SUCCEEDED(hrStatus)) {
             readOnly = IsReadOnlyTsfDocument(status.dwDynamicFlags);
             transitory = IsTransitoryOnlyTsfDocument(status.dwStaticFlags);
         }
@@ -225,15 +216,25 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
     const bool wasBlocked = contextBlocked_;
     contextBlocked_ = scopeBlocked_ || readOnly || transitory;
 
-    // Transitions only. This runs per keystroke, and a line per key buries the
-    // one thing a reader needs — when the block started and why.
-    if (contextBlocked_ != wasBlocked) {
-        TSF_LOG(L"Context %s",
-                !contextBlocked_ ? L"unblocked"
+    // Transitions and context switches only — this runs per keystroke, and a
+    // line per key buries the one thing a reader needs. Both flags and the
+    // focused window class go on the line that reports the verdict: which field
+    // the user was in, what the host claimed about it, and what VKey did with
+    // it, without needing a second line to correlate against. A host that
+    // reports these flags differently than the ones checked in #242 shows up
+    // as "typing stopped working" with no other trace.
+    if ((contextBlocked_ != wasBlocked || contextChanged) &&
+        ::NextKey::Logger::IsEnabled()) {
+        wchar_t focusClass[64] = {};
+        ::GetClassNameW(::GetFocus(), focusClass, 64);
+        TSF_LOG(L"Context %ls: focus='%ls' status=0x%08lX dyn=0x%08lX static=0x%08lX",
+                !contextBlocked_ ? L"open"
                 : readOnly       ? L"blocked (read-only document)"
-                : transitory     ? L"blocked (transitory document — no text store, "
-                                   L"Windows would draw its own composition box)"
-                                 : L"blocked (password/PIN/email field)");
+                : transitory     ? L"blocked (transitory — no text store, Windows "
+                                   L"would draw its own composition box)"
+                : scopeBlocked_  ? L"blocked (password/PIN/email field)"
+                                 : L"blocked",
+                focusClass, hrStatus, status.dwDynamicFlags, status.dwStaticFlags);
     }
 }
 
