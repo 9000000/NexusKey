@@ -450,8 +450,8 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
                         // ReviveAndTypeEditSession: the host has to establish the
                         // composition over the committed word before anyone
                         // writes into it.
-                        auto* pUpdate = new UpdateCompositionEditSession(
-                            pContext, &compositionMgr_, composed);
+                        auto* pUpdate = new UpdateRevivedCompositionEditSession(
+                            pContext, &compositionMgr_, engine_.get(), composed);
                         RequestEditSession(pContext, pUpdate);
                         pUpdate->Release();
                         TSF_LOG(L"HandleKey: revive '%ls' + '%lc'", word.c_str(), ch);

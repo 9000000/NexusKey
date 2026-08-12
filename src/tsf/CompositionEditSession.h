@@ -576,6 +576,47 @@ private:
     bool revived_ = false;
 };
 
+/// Writes the revived word's new text into the composition that
+/// ReviveAndTypeEditSession established in the previous edit session.
+///
+/// Deliberately NOT UpdateCompositionEditSession: that one starts a fresh
+/// composition at the caret when none is active, which here would insert the
+/// whole word beside the one still sitting in the document — the exact
+/// corruption #245 is about, and indistinguishable from it in a bug report. A
+/// host that tore the composition down in between (a web editor that blurs or
+/// re-renders on composition start) leaves nothing safe to write, since whether
+/// the word was replaced is then unknowable.
+/// ponytail: that race drops the keystroke; revisit if a log ever shows the line.
+class UpdateRevivedCompositionEditSession : public EditSession {
+public:
+    UpdateRevivedCompositionEditSession(ITfContext* pContext, CompositionManager* pMgr,
+                                        IInputEngine* pEngine, const std::wstring& text)
+        : EditSession(pContext), pMgr_(pMgr), pEngine_(pEngine), text_(text) {}
+
+    IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
+        if (pMgr_ == nullptr || pEngine_ == nullptr) return E_FAIL;
+
+        if (!pMgr_->IsComposing()) {
+            TSF_LOG(L"UpdateRevivedCompositionEditSession: composition gone, dropping '%ls'",
+                    text_.c_str());
+            pEngine_->Reset();
+            return E_FAIL;
+        }
+
+        if (!pMgr_->SetCompositionText(ec, text_, kReviveSetTextFlags)) {
+            pEngine_->Reset();
+            pMgr_->EndComposition(ec);
+            return E_FAIL;
+        }
+        return S_OK;
+    }
+
+private:
+    CompositionManager* pMgr_;
+    IInputEngine* pEngine_;
+    std::wstring text_;
+};
+
 /// Edit session to check if the selection is non-empty (for autocomplete detection)
 class SelectionCheckEditSession : public EditSession {
 public:
