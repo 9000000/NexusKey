@@ -246,6 +246,7 @@ private:
     ITfContext* lastContext_ = nullptr;   // Last seen context (AddRef'd for safe identity comparison)
     bool scopeBlocked_ = false;          // Cached password/PIN/email result for lastContext_
     bool contextBlocked_ = false;        // True if scope-blocked or document is currently read-only
+    bool verdictLogged_ = false;         // Context verdict already logged for this enable-session
     bool isScintillaApp_ = false;        // Cached: current app is Scintilla-based (Notepad++, etc.)
     bool digitLedWord_ = false;          // True = current word started with a digit (VNI/Combined/UserDefined) → treat whole word as English (pass through; no composition)
 

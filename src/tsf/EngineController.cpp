@@ -223,8 +223,16 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
     // it, without needing a second line to correlate against. A host that
     // reports these flags differently than the ones checked in #242 shows up
     // as "typing stopped working" with no other trace.
-    if ((contextBlocked_ != wasBlocked || contextChanged) &&
-        ::NextKey::Logger::IsEnabled()) {
+    //
+    // The `!verdictLogged_` arm is what makes a user-supplied log usable: a
+    // reporter turns debug logging on from the tray while already focused in the
+    // field they are about to type in, so the context never changes afterwards
+    // and the verdict line would never appear (#242's Legcord log has zero of
+    // them). Emit once for the context in hand, then go back to transitions.
+    const bool logOn = ::NextKey::Logger::IsEnabled();
+    if (!logOn) verdictLogged_ = false;
+    if (logOn && (contextBlocked_ != wasBlocked || contextChanged || !verdictLogged_)) {
+        verdictLogged_ = true;
         wchar_t focusClass[64] = {};
         ::GetClassNameW(::GetFocus(), focusClass, 64);
         TSF_LOG(L"Context %ls: focus='%ls' status=0x%08lX dyn=0x%08lX static=0x%08lX",
