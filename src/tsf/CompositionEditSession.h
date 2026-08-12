@@ -535,20 +535,24 @@ public:
             return S_OK;
         }
 
+        // Deliberately no SetCompositionText here — the new text goes in a
+        // SECOND edit session. Chromium only hands a composition placed over
+        // committed text to Blink as a real reconversion
+        // (SetCompositionFromExistingText over the range it was given) when the
+        // text service wrote nothing in the session that started it; its
+        // TSFTextStore gates that on `string_pending_insertion_.empty()`. Write
+        // the text here and it takes the replace-text path instead, where the
+        // amount of committed text to delete is guessed as
+        // `last_composition_start - replace_text_range_.start()` — Chromium's
+        // cached selection, not our range. In Legcord that guess came out one
+        // character short and left the old word behind: "dec" + 'e' → "dedêc"
+        // (#245). Leaving this session empty makes the host establish the
+        // composition first, so the update below is an ordinary one.
         pEngine_->PushChar(ch_);
-        const std::wstring& composed = pEngine_->Peek();
-        if (!pMgr_->SetCompositionText(ec, composed, kReviveSetTextFlags)) {
-            pEngine_->Reset();
-            pMgr_->EndComposition(ec);
-            return E_FAIL;
-        }
+        composed_ = pEngine_->Peek();
 
-        if (pEngine_->Count() == 0) {
-            pMgr_->EndComposition(ec);
-        }
-
-        TSF_LOG(L"ReviveAndTypeEditSession: '%ls' + '%lc' → '%ls'",
-                word_.c_str(), ch_, composed.c_str());
+        TSF_LOG(L"ReviveAndTypeEditSession: '%ls' + '%lc' → '%ls' (text follows)",
+                word_.c_str(), ch_, composed_.c_str());
         revived_ = true;
         return S_OK;
     }
@@ -558,6 +562,9 @@ public:
     /// normal path so auto-cap and macro tracking still run.
     [[nodiscard]] bool Revived() const noexcept { return revived_; }
 
+    /// The composition text the caller must write in a follow-up edit session.
+    [[nodiscard]] const std::wstring& Composed() const noexcept { return composed_; }
+
 private:
     CompositionManager* pMgr_;
     IInputEngine* pEngine_;
@@ -565,6 +572,7 @@ private:
     CComPtr<ITfRange> pRange_;
     wchar_t ch_;
     std::wstring rawInput_;
+    std::wstring composed_;
     bool revived_ = false;
 };
 
