@@ -288,7 +288,7 @@ static void OnMenuCommand(TrayMenuId id) {
                                      L"Vietnamese Input Method Editor\n"
                                      L"Build: " + GetBuildVersion(__DATE__, __TIME__) + L"\n\n"
                                      L"https://github.com/phatMT97/VKey\n\n"
-                                     L"Dịch vụ ký số trên Windows được cung cấp miễn phí bởi SignPath.io, chứng chỉ bởi SignPath Foundation.";
+                                     L"Dịch vụ ký số trên Windows cho v4.0–v4.2 được cung cấp miễn phí bởi SignPath.io, chứng chỉ bởi SignPath Foundation.";
             MessageBoxW(nullptr, aboutText.c_str(), L"VKey", MB_ICONINFORMATION);
             break;
         }

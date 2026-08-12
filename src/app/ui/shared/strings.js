@@ -119,7 +119,7 @@ var STRINGS = {
         "s.check_now": "Check now",
         "s.update_tooltip": "Check for new version on startup",
         "s.click_to_copy": "Click to copy version info",
-        "s.sponsor_p1": "Free code signing on Windows provided by",
+        "s.sponsor_p1": "Free code signing on Windows for v4.0–v4.2 provided by",
         "s.sponsor_p2": ", certificate by",
 
         // ── Restart banner (hybrid TSF DLL update) ──

@@ -3,7 +3,6 @@
 [![Build](https://github.com/phatMT97/VKey/actions/workflows/build.yml/badge.svg)](https://github.com/phatMT97/VKey/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Release](https://img.shields.io/github/v/release/phatMT97/VKey)](https://github.com/phatMT97/VKey/releases)
-[![Code signing](https://img.shields.io/badge/Code_signing-SignPath_Foundation-success)](https://signpath.org/)
 
 <p align="center">
   <img src="docs/images/vkey-compact.png" alt="VKey Compact View" width="250">
@@ -110,7 +109,7 @@ winget install PhatMT97.VKey.Classic
 
 *(Khuyến nghị)* Tắt các bộ gõ khác (Unikey, EVKey) trước khi chạy để tránh xung đột.
 
-> **Ký số (Code signing):** Dịch vụ ký số (Authenticode) trên Windows cho VKey được cung cấp miễn phí bởi [SignPath.io](https://signpath.io/), chứng chỉ ký số bởi [SignPath Foundation](https://signpath.org/).
+> **Ký số (Code signing):** Bản **v4.3 chưa được ký số** — Windows SmartScreen có thể cảnh báo khi chạy lần đầu (chọn *More info* → *Run anyway*). Các bản v4.0–v4.2 trước đó được ký số Authenticode miễn phí bởi [SignPath.io](https://signpath.io/) với chứng chỉ của [SignPath Foundation](https://signpath.org/); việc ký số hiện đang tạm dừng trong lúc chúng tôi làm rõ điều khoản của chương trình. Cách xác minh bản tải hiện nay: xem mục [Xác minh bản tải](#xác-minh-bản-tải-verify-release) bên dưới.
 
 ---
 
@@ -129,9 +128,9 @@ cosign verify-blob VKey.zip \
   --certificate-identity-regexp="https://github.com/phatMT97/VKey/"
 ```
 
-> **Lưu ý:** Ngoài attestation Sigstore ở trên (chứng minh *nguồn build*), các file thực thi của VKey còn được **ký số Authenticode** bởi [SignPath Foundation](https://signpath.org/). Kiểm tra: `(Get-AuthenticodeSignature VKey.exe).Status` phải là `Valid`, publisher `CN=SignPath Foundation`.
+> **Lưu ý:** Attestation Sigstore ở trên là cách xác minh chính thức cho bản **v4.3** — nó chứng minh file được build từ đúng mã nguồn trong repo này. Bản v4.3 **không** có chữ ký Authenticode, nên `(Get-AuthenticodeSignature VKey.exe).Status` sẽ **không** trả về `Valid`; đó là điều bình thường với bản này, không phải dấu hiệu file giả. (Các bản v4.0–v4.2 có ký Authenticode với publisher `CN=SignPath Foundation`.)
 >
-> Dù đã ký số, một số phần mềm diệt virus vẫn có thể cảnh báo VKey theo **hành vi** (bộ gõ nào cũng phải hook bàn phím + gửi phím) — đây là cảnh báo nhầm. Cách khôi phục & loại trừ: **[docs/ANTIVIRUS.md](docs/ANTIVIRUS.md)**.
+> Một số phần mềm diệt virus có thể cảnh báo VKey theo **hành vi** (bộ gõ nào cũng phải hook bàn phím + gửi phím) — đây là cảnh báo nhầm, và bản không ký số dễ bị cảnh báo hơn. Cách khôi phục & loại trừ: **[docs/ANTIVIRUS.md](docs/ANTIVIRUS.md)**.
 
 ---
 
@@ -270,7 +269,7 @@ winget install PhatMT97.VKey.Classic
 
 *(Recommended)* Disable other IMEs (Unikey, EVKey) before running to avoid conflicts.
 
-> **Code signing:** Free Authenticode code signing on Windows for VKey is provided by [SignPath.io](https://signpath.io/), with the certificate issued by [SignPath Foundation](https://signpath.org/).
+> **Code signing:** **v4.3 is not code-signed** — Windows SmartScreen may warn on first run (*More info* → *Run anyway*). Releases v4.0–v4.2 were Authenticode-signed free of charge by [SignPath.io](https://signpath.io/) with a certificate from [SignPath Foundation](https://signpath.org/); signing is currently paused while we clarify the programme's terms. To verify a download today, use the Sigstore attestation described above.
 
 ### Building
 
@@ -313,7 +312,7 @@ VKey is built with a lean architecture and no heavy runtime dependencies, keepin
       <a href="https://signpath.org/"><img src="https://signpath.org/assets/favicon-50x50.png" alt="SignPath" width="40"></a>
     </td>
     <td>
-      Free code signing on Windows provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>
+      Free code signing on Windows for releases v4.0–v4.2 provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>
     </td>
   </tr>
 </table>
@@ -329,7 +328,7 @@ VKey is built with a lean architecture and no heavy runtime dependencies, keepin
 - Tham khảo config TSF từ [VietType](https://github.com/dinhngtu/VietType)
 - Tham khảo cách xử lý clipboard input từ [SigmaLib](https://github.com/phamhoangnhat/SigmaLib) của Phạm Hoàng Nhật
 - Tham khảo quy tắt tiếng việt từ [dotnetkey](https://code.google.com/archive/p/dotnetkey/downloads)
-- Dịch vụ ký số (Authenticode) trên Windows cung cấp miễn phí bởi [SignPath.io](https://signpath.io/), chứng chỉ ký số bởi [SignPath Foundation](https://signpath.org/)
+- Dịch vụ ký số (Authenticode) trên Windows cho các bản v4.0–v4.2 cung cấp miễn phí bởi [SignPath.io](https://signpath.io/), chứng chỉ ký số bởi [SignPath Foundation](https://signpath.org/)
 
 ### Top Testers
 Cảm ơn các thành viên cộng đồng đã test và góp ý:
