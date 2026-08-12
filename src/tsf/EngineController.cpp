@@ -429,9 +429,19 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
                         pContext, &compositionMgr_, engine_.get(), word, wordRange, ch,
                         MatchingRawForCommittedWord(word));
                     RequestEditSession(pContext, pRevive);
+                    // A refused revive (host wouldn't compose over committed text,
+                    // or TF_ES_SYNC was denied) leaves the document untouched, so
+                    // the eaten key still has to land. Falling through — rather
+                    // than typing it inside the session — keeps auto-cap and
+                    // macro tracking on the same code path as any other keystroke.
+                    const bool revived = pRevive->Revived();
                     pRevive->Release();
-                    TSF_LOG(L"HandleKey: revive '%ls' + '%lc'", word.c_str(), ch);
-                    return true;
+                    if (revived) {
+                        TSF_LOG(L"HandleKey: revive '%ls' + '%lc'", word.c_str(), ch);
+                        return true;
+                    }
+                    TSF_LOG(L"HandleKey: revive of '%ls' refused, typing '%lc' alone",
+                            word.c_str(), ch);
                 }
             }
 

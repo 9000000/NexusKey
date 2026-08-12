@@ -463,9 +463,18 @@ public:
         }
 
         if (!pMgr_->StartCompositionOnRange(pContext_, ec, pRange_, word_)) {
-            TSF_LOG(L"ReviveCompositionEditSession: StartComposition failed");
+            // Host refused to compose over the committed word (#245). The key was
+            // already eaten upstream, so do the deletion as a plain range edit —
+            // the word stays committed instead of reopening, but the Backspace
+            // still lands. ponytail: plain SetText, revisit if a host mangles
+            // that too.
+            TSF_LOG(L"ReviveCompositionEditSession: no range composition, plain-edit backspace");
+            pEngine_->Backspace();
+            const std::wstring& shortened = pEngine_->Peek();
+            const HRESULT hr = pRange_->SetText(ec, 0, shortened.c_str(),
+                                                static_cast<LONG>(shortened.size()));
             pEngine_->Reset();
-            return E_FAIL;
+            return hr;
         }
 
         pEngine_->Backspace();
@@ -515,13 +524,15 @@ public:
         if (!SeedRevivedWord(pEngine_, word_, rawInput_)) {
             TSF_LOG(L"ReviveAndTypeEditSession: seeding failed on '%ls'",
                     word_.c_str());
-            return E_FAIL;
+            pEngine_->Reset();
+            return S_OK;  // Revived() stays false — caller types the char normally
         }
 
         if (!pMgr_->StartCompositionOnRange(pContext_, ec, pRange_, word_)) {
-            TSF_LOG(L"ReviveAndTypeEditSession: StartComposition failed");
+            TSF_LOG(L"ReviveAndTypeEditSession: host refused range composition on '%ls'",
+                    word_.c_str());
             pEngine_->Reset();
-            return E_FAIL;
+            return S_OK;
         }
 
         pEngine_->PushChar(ch_);
@@ -538,8 +549,14 @@ public:
 
         TSF_LOG(L"ReviveAndTypeEditSession: '%ls' + '%lc' → '%ls'",
                 word_.c_str(), ch_, composed.c_str());
+        revived_ = true;
         return S_OK;
     }
+
+    /// False when the word was left committed and untouched — the caller still
+    /// owes the document the character it ate, and must type it through the
+    /// normal path so auto-cap and macro tracking still run.
+    [[nodiscard]] bool Revived() const noexcept { return revived_; }
 
 private:
     CompositionManager* pMgr_;
@@ -548,6 +565,7 @@ private:
     CComPtr<ITfRange> pRange_;
     wchar_t ch_;
     std::wstring rawInput_;
+    bool revived_ = false;
 };
 
 /// Edit session to check if the selection is non-empty (for autocomplete detection)
