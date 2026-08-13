@@ -1668,6 +1668,12 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
         const bool isCommitUndoExempt = IsCommitUndoExemptKey(
             vkCode, methodForExempt, shiftHeld, escIsCancelTrigger,
             isCustomModifier);
+        // Second exemption class, wider than the semantic one above: a literal
+        // coda the engine says keeps the committed word a live Vietnamese shape
+        // ('n' after 'nghieej'). It is safe under the same synth-guard argument
+        // for a *weaker* reason — an append diffs to zero BS plus one char, so
+        // it cannot mis-BS against a screen that has not drained yet, whereas a
+        // tone modifier rewrites in place and needs the exact post-drain state.
         bool isValidCommittedContinuation = false;
         if (!isCommitUndoExempt && vkCode >= 0x41 && vkCode <= 0x5A &&
             !commitState_.StackEmpty()) {

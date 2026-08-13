@@ -9,6 +9,7 @@
 #ifdef VKEY_USE_RUST_ENGINE
 
 #include <gtest/gtest.h>
+#include <vkey_engine.h>  // VKEY_ENGINE_ABI_VERSION — gates the v7-only assertions
 
 #include "core/engine/CommittedTextRestore.h"
 #include "core/engine/RustInputEngine.h"
@@ -159,14 +160,32 @@ TEST_F(RustInputEngineTest, CommittedLiteralCodaReplayUsesEnginePhonology) {
     config.spellCheckEnabled = true;
     RustInputEngine engine(config);
 
-    EXPECT_TRUE(engine.ShouldReplayCommittedKey(L"nghieej", L'n'));
-    EXPECT_FALSE(engine.ShouldReplayCommittedKey(L"test", L'b'));
-    EXPECT_TRUE(engine.Peek().empty());
-
     for (const wchar_t c : std::wstring_view(L"nghieej")) engine.PushChar(c);
     engine.PushChar(L'n');
     engine.PushChar(L'z');
     EXPECT_EQ(engine.Peek(), L"nghiên");
+}
+
+TEST_F(RustInputEngineTest, CommittedLiteralCodaReplayVerdict) {
+    // The verdict rides on the ABI v7 export, and the adapter deliberately
+    // still loads a pre-v7 engine that lacks it (fail-closed to false). Skip
+    // loudly rather than assert: against the vendored v6 artifact the verdict
+    // is a no-op by design, and a green EXPECT here would be a lie.
+    // if constexpr, not if: a plain constant comparison is C4127 under the
+    // global /W4 /WX.
+    if constexpr (VKEY_ENGINE_ABI_VERSION < 7u) {
+        GTEST_SKIP() << "engine header pins ABI " << VKEY_ENGINE_ABI_VERSION
+                     << "; committed-replay verdict needs v7";
+    }
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    RustInputEngine engine(config);
+
+    EXPECT_TRUE(engine.ShouldReplayCommittedKey(L"nghiee", L'n'));
+    EXPECT_TRUE(engine.ShouldReplayCommittedKey(L"nghieej", L'n'));
+    EXPECT_FALSE(engine.ShouldReplayCommittedKey(L"test", L'b'));
+    EXPECT_TRUE(engine.Peek().empty());
 }
 
 TEST_F(RustInputEngineTest, ToneEscapeReported) {

@@ -907,6 +907,10 @@ target_include_directories(VKeyTests PRIVATE
 )
 if(VKEY_USE_RUST_ENGINE)
     target_compile_definitions(VKeyTests PRIVATE VKEY_USE_RUST_ENGINE)
+    # RustInputEngineTest reads VKEY_ENGINE_ABI_VERSION to skip assertions the
+    # vendored artifact cannot satisfy yet. Compile-time visible on purpose: an
+    # unreachable header breaks the build instead of silently skipping.
+    target_include_directories(VKeyTests PRIVATE ${VKEY_ENGINE_ROOT}/include)
     if(WIN32)
         set(_vkey_test_engine "${VKEY_ENGINE_DLL}")
         set(_vkey_test_engine_name "vkey_engine.dll")
