@@ -73,6 +73,16 @@ public:
     /// per-keystroke heap allocation is forbidden (CODING_RULES Rule 11).
     [[nodiscard]] virtual std::wstring_view PeekRawView() const noexcept { return {}; }
 
+    /// Whether a committed physical-key snapshot should be reopened before
+    /// applying a decoded key. Backends that do not expose a bounded
+    /// phonology-aware preview keep the conservative false default.
+    [[nodiscard]] virtual bool ShouldReplayCommittedKey(
+        std::wstring_view rawInput, wchar_t key) const {
+        (void)rawInput;
+        (void)key;
+        return false;
+    }
+
     /// Whether the most recently committed text was silently auto-corrected
     /// against the engine's dictionary (e.g. a mistyped Telex sequence
     /// restored to the intended Vietnamese word). Cleared by the next

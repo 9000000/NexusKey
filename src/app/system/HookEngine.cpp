@@ -1668,6 +1668,16 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
         const bool isCommitUndoExempt = IsCommitUndoExemptKey(
             vkCode, methodForExempt, shiftHeld, escIsCancelTrigger,
             isCustomModifier);
+        bool isValidCommittedContinuation = false;
+        if (!isCommitUndoExempt && vkCode >= 0x41 && vkCode <= 0x5A &&
+            !commitState_.StackEmpty()) {
+            wchar_t continuation = static_cast<wchar_t>(vkCode);
+            if (cachedShift == cachedCapsLock) continuation = towlower(continuation);
+            isValidCommittedContinuation = engine_->ShouldReplayCommittedKey(
+                commitState_.StackTop().rawInput, continuation);
+        }
+        const bool shouldReplayCommittedWord =
+            isCommitUndoExempt || isValidCommittedContinuation;
         // Sprint 2 D5: settle window is now per-host. RichEdit (0 ms) lets
         // commit-undo replay immediately; Win32 (30 ms) tightens the gate
         // ~3× vs the legacy 100 ms hardcode; Electron/Console (100 ms) keeps
@@ -1677,21 +1687,20 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
         const DWORD settleMs = static_cast<DWORD>(
             dispatcher_.GetInjector()->SettleBudget().count());
         if (dispatcher_.SynthEventsPending() > 0 && (GetTickCount() - dispatcher_.LastRealSynthTime()) < settleMs
-            && !isCommitUndoExempt) {
+            && !shouldReplayCommittedWord) {
             HOOK_LOG(L"  commit-undo: cancel Primed — synthPending=%d, vk=0x%02X",
                      dispatcher_.SynthEventsPending(), vkCode);
             CancelCommitUndo();
             // Fall through — ProcessKeyDown step 10 re-injects BS if needed; alpha → step 6 HandleAlphaKey
         } else if (vkCode >= 0x41 && vkCode <= 0x5A) {
-            // Discriminate alpha intent at Primed: tone modifier (Telex s/f/r/x/j,
-            // per IsCommitUndoExemptKey — same "modifies previous word" semantic
-            // class used by synth-guard and catch-all branches) → REPLAY. Other
-            // alphas → user typing new word after BS-chain navigated past the
-            // committed word; DROP stack-top to prevent a later BS-into-empty
-            // from re-priming Ready for it, and fall through so the alpha enters
-            // fresh composition. Without this, catch-all replay concatenated an
-            // older stack entry into the new word (engine/screen divergence).
-            if (!isCommitUndoExempt) {
+            // Discriminate alpha intent at Primed: a semantic modifier or an
+            // engine-approved literal continuation of the committed raw input
+            // reopens the word. Other alphas mean the user started a new word;
+            // DROP stack-top to prevent a later BS-into-empty from re-priming
+            // Ready for it, then let the alpha enter fresh composition. Without
+            // this, catch-all replay concatenated an older stack entry into the
+            // new word (engine/screen divergence).
+            if (!shouldReplayCommittedWord) {
                 HOOK_LOG(L"  commit-undo: drop stack-top '%s' for non-tone alpha '%c' → fresh composition",
                          commitState_.StackEmpty() ? L"<empty>" : commitState_.StackTop().text.c_str(),
                          static_cast<char>(vkCode));
@@ -1703,7 +1712,7 @@ HookEngine::KeyOutcome HookEngine::HandleCommitUndoFsm(DWORD vkCode, bool vnMode
             }
             // MUST return HandleAlphaKey's value: if it triggers passthrough (return false),
             // the original key must reach the app — ignoring it would swallow the keystroke.
-            HOOK_LOG(L"  commit-undo: replaying + tone-alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
+            HOOK_LOG(L"  commit-undo: replaying + eligible alpha '%c' (stack_top='%s' stackSize=%zu prevComp='%s' synthPending=%d)",
                      static_cast<char>(vkCode),
                      commitState_.StackEmpty() ? L"<empty>" : commitState_.StackTop().text.c_str(),
                      commitState_.StackSize(),

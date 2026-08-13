@@ -32,6 +32,8 @@ public:
     [[nodiscard]] bool IsToneEscaped() const override;
     [[nodiscard]] std::wstring PeekRaw() const override { return raw_; }
     [[nodiscard]] std::wstring_view PeekRawView() const noexcept override { return raw_; }
+    [[nodiscard]] bool ShouldReplayCommittedKey(
+        std::wstring_view rawInput, wchar_t key) const override;
     [[nodiscard]] bool LastCommitWasCorrected() const override;
 
     /// Whether the library passed artifact, ABI and runtime-identity checks.

@@ -153,6 +153,22 @@ TEST_F(RustInputEngineTest, RawKeystrokesPreserved) {
     EXPECT_EQ(engine.PeekRawView(), std::wstring_view(L"as"));
 }
 
+TEST_F(RustInputEngineTest, CommittedLiteralCodaReplayUsesEnginePhonology) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    config.spellCheckEnabled = true;
+    RustInputEngine engine(config);
+
+    EXPECT_TRUE(engine.ShouldReplayCommittedKey(L"nghieej", L'n'));
+    EXPECT_FALSE(engine.ShouldReplayCommittedKey(L"test", L'b'));
+    EXPECT_TRUE(engine.Peek().empty());
+
+    for (const wchar_t c : std::wstring_view(L"nghieej")) engine.PushChar(c);
+    engine.PushChar(L'n');
+    engine.PushChar(L'z');
+    EXPECT_EQ(engine.Peek(), L"nghiên");
+}
+
 TEST_F(RustInputEngineTest, ToneEscapeReported) {
     TypingConfig config;
     config.inputMethod = InputMethod::Telex;

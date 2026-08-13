@@ -50,6 +50,9 @@ struct EngineApi {
     // ABI v5: spell-check exclusions. Process-global (no engine handle) --
     // must be called before create() to affect the engine being constructed.
     bool (*set_spell_exclusions_utf16)(const uint16_t*, size_t) = nullptr;
+    // ABI v7: bounded committed-word replay eligibility.
+    bool (*should_replay_key_after_raw_utf16)(
+        const VKeyEngine*, const uint16_t*, size_t, uint32_t) = nullptr;
     bool ok = false;
     std::wstring reason;  // diagnostic when !ok; empty when ok
 };
@@ -100,12 +103,16 @@ const EngineApi& Api() {
             lib, "vkey_engine_set_custom_keymap");
         a.set_spell_exclusions_utf16 = Resolve<decltype(a.set_spell_exclusions_utf16)>(
             lib, "vkey_engine_set_spell_exclusions_utf16");
+        a.should_replay_key_after_raw_utf16 =
+            Resolve<decltype(a.should_replay_key_after_raw_utf16)>(
+                lib, "vkey_engine_should_replay_key_after_raw_utf16");
         const bool symbolsResolved =
             a.create && a.destroy && a.reset && a.push_char && a.backspace &&
             a.peek_utf16 && a.commit_utf16 && a.count && a.abi_version && a.runtime_status &&
             a.is_english_word && a.is_tone_escaped && a.has_active_quick_consonant &&
             a.peek_raw_utf16 && a.seed_text_utf16 && a.last_commit_was_corrected &&
-            a.set_custom_keymap && a.set_spell_exclusions_utf16;
+            a.set_custom_keymap && a.set_spell_exclusions_utf16 &&
+            (VKEY_ENGINE_ABI_VERSION < 7u || a.should_replay_key_after_raw_utf16);
         if (!symbolsResolved) {
             CloseRustEngineLibrary(lib);
             a.reason = L"vkey_engine library is missing a required exported symbol";
@@ -175,8 +182,8 @@ struct Utf16Text {
     bool valid = true;
 };
 
-// Stack-only encoding keeps SeedFromText safe on the low-level hook path.
-Utf16Text ToUtf16(const std::wstring& text) {
+// Stack-only encoding keeps hook-path UTF-16 conversion allocation-free.
+Utf16Text ToUtf16(std::wstring_view text) {
     Utf16Text out;
     for (const wchar_t wc : text) {
         const uint32_t c = static_cast<uint32_t>(wc);
@@ -329,6 +336,18 @@ bool RustInputEngine::IsToneEscaped() const {
 
 bool RustInputEngine::LastCommitWasCorrected() const {
     return handle_ && Api().last_commit_was_corrected(static_cast<VKeyEngine*>(handle_));
+}
+
+bool RustInputEngine::ShouldReplayCommittedKey(
+    std::wstring_view rawInput, wchar_t key) const {
+    const EngineApi& api = Api();
+    if (!handle_ || !api.should_replay_key_after_raw_utf16) {
+        return false;
+    }
+    const Utf16Text raw = ToUtf16(rawInput);
+    return raw.valid && api.should_replay_key_after_raw_utf16(
+        static_cast<const VKeyEngine*>(handle_), raw.units.data(), raw.length,
+        static_cast<uint32_t>(key));
 }
 
 bool RustInputEngine::SeedFromText(const std::wstring& text) {
