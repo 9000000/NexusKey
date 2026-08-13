@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 /* Bump when the ABI changes; check against vkey_engine_abi_version(). */
-#define VKEY_ENGINE_ABI_VERSION 6u
+#define VKEY_ENGINE_ABI_VERSION 7u
 
 /* ABI v6 runtime-artifact identity status. */
 #define VKEY_ENGINE_RUNTIME_OK                   0u
@@ -210,6 +210,20 @@ void vkey_engine_set_custom_keymap(VKeyEngine *engine, const uint8_t *entries, s
  * new list; existing engines are unchanged. Only affects behavior when
  * VKEY_FEAT_SPELL_CHECK is set. */
 bool vkey_engine_set_spell_exclusions_utf16(const uint16_t *buf, size_t len);
+
+/* --- ABI v7: committed-word replay eligibility ----------------------------
+ * Added in ABI 7. Present only when vkey_engine_abi_version() >= 7. */
+
+/* Whether a session owner should reopen a committed word before applying
+ * `codepoint`. `raw` is the case-preserved physical-key snapshot captured at
+ * commit time. Returns true when the key transforms the word or appends a
+ * literal that keeps a live Vietnamese shape; false for invalid UTF-16,
+ * invalid codepoints, capacity overflow, or an unrelated new-word key.
+ * The engine and caller buffer are not mutated. */
+bool vkey_engine_should_replay_key_after_raw_utf16(const VKeyEngine *engine,
+                                                    const uint16_t *raw,
+                                                    size_t raw_len,
+                                                    uint32_t codepoint);
 
 #ifdef __cplusplus
 } /* extern "C" */
