@@ -229,6 +229,30 @@ TEST_F(RustInputEngineTest, RepeatedWModifierEscapeSurvivesEnglishWordTail) {
     }
 }
 
+TEST_F(RustInputEngineTest, AmbiguousToneEscapeResolvesPositionIssue248) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::SimpleTelex;
+    config.spellCheckEnabled = true;
+    config.spellSuggestEnabled = true;
+    config.autoRestoreEnabled = true;
+
+    for (const auto& [raw, expected] : {
+             std::pair{std::wstring_view(L"position"), std::wstring_view(L"position")},
+             std::pair{std::wstring_view(L"posSition"), std::wstring_view(L"posSition")},
+             std::pair{std::wstring_view(L"poSsition"), std::wstring_view(L"poSsition")},
+             std::pair{std::wstring_view(L"possition"), std::wstring_view(L"position")},
+         }) {
+        RustInputEngine engine(config);
+        for (const wchar_t c : raw) {
+            engine.PushChar(c);
+        }
+
+        EXPECT_EQ(engine.Peek(), expected);
+        EXPECT_EQ(engine.PeekRaw(), raw);
+        EXPECT_EQ(engine.Commit(), expected);
+    }
+}
+
 TEST_F(RustInputEngineTest, EnglishWordFlag) {
     TypingConfig config;
     config.inputMethod = InputMethod::Telex;
