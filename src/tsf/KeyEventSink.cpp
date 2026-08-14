@@ -129,9 +129,6 @@ static bool IsPunctuationKey(UINT vkCode) {
     if (vkCode == VK_OEM_PLUS || vkCode == VK_OEM_COMMA ||
         vkCode == VK_OEM_MINUS || vkCode == VK_OEM_PERIOD) return true;
 
-    // Tab key
-    if (vkCode == VK_TAB) return true;
-
     return false;
 }
 
@@ -447,15 +444,17 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
         bool isEngineDigit = pEngineController_->IsEngineDigitKey(static_cast<UINT>(wParam));
         if (!isEngineDigit) {
             wchar_t ch = VkToChar(static_cast<UINT>(wParam), lParam);
-            if (ch != 0) {
+            if (Macro::IsTextProducingTrigger(vk, ch)) {
                 *pfEaten = TRUE;
                 lastTestedVk_ = static_cast<UINT>(wParam);
                 lastWantKeyResult_ = true;
                 lastTranslatedChar_ = ch;
                 return S_OK;
             }
-            TSF_LOG(L"OnTestKeyDown: VkToChar failed vk=0x%02X, passthrough (no eat)",
-                    (UINT)wParam);
+            if (ch == 0) {
+                TSF_LOG(L"OnTestKeyDown: VkToChar failed vk=0x%02X, passthrough (no eat)",
+                        (UINT)wParam);
+            }
             // Fall through to WantKey / normal flow — no doc mutation in test phase.
         }
     }
@@ -800,17 +799,18 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         wchar_t ch = (vk == lastTestedVk_ && lastTranslatedChar_ != 0)
                        ? lastTranslatedChar_
                        : VkToChar(vk, lParam);
-        if (ch != 0) {
+        if (Macro::IsTextProducingTrigger(vk, ch)) {
             pEngineController_->CommitWithChar(pContext, ch);
             lastTestedVk_ = 0;
             lastTranslatedChar_ = 0;
             *pfEaten = TRUE;
             return S_OK;
         }
-        // VkToChar failed (dead key / non-printable punct mapping). Fall through
-        // to normal flow — worst case the punct arrives at the caret after the
-        // composition, which is what would happen without any IME anyway.
-        TSF_LOG(L"OnKeyDown: VkToChar failed vk=0x%02X, falling through", vk);
+        // Action keys such as Tab intentionally fall through. If VkToChar failed
+        // for punctuation, normal flow likewise leaves the key to the host.
+        if (ch == 0) {
+            TSF_LOG(L"OnKeyDown: VkToChar failed vk=0x%02X, falling through", vk);
+        }
     }
 
     bool wantKey = false;

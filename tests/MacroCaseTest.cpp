@@ -544,6 +544,7 @@ TEST(MacroTriggerDecisionTest, TextProducingTriggerSeparatesPrintableFromActionK
 
     EXPECT_FALSE(IsTextProducingTrigger(0x0D, 0));    // VK_RETURN
     EXPECT_FALSE(IsTextProducingTrigger(0x09, 0));    // VK_TAB
+    EXPECT_FALSE(IsTextProducingTrigger(0x09, L'\t'));  // VK_TAB translated by ToUnicode
     EXPECT_FALSE(IsTextProducingTrigger(0x25, 0));    // VK_LEFT
     EXPECT_FALSE(IsTextProducingTrigger(0x2E, 0));    // VK_DELETE
     EXPECT_FALSE(IsTextProducingTrigger(0x41, L'a')); // not a commit trigger
