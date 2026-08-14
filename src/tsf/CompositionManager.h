@@ -29,9 +29,9 @@ public:
     [[nodiscard]] bool StartComposition(ITfContext* pContext, TfEditCookie ec,
                                         const std::wstring& initialText);
 
-    /// Start a composition over an exact existing document range. Fails — leaving
-    /// the document untouched — if the host hands back a composition that does
-    /// not actually cover `existingText` (see CompositionCoversText).
+    /// Start a composition over an exact existing document range. A host can
+    /// accept this, report the range back correctly, and still not honour it —
+    /// see the revive note in CompositionEditSession.h (#245).
     [[nodiscard]] bool StartCompositionOnRange(
         ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
         const std::wstring& existingText);
@@ -63,13 +63,6 @@ private:
     [[nodiscard]] bool BeginCompositionOnRange(
         ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
         const std::wstring& currentText);
-
-    /// Read the active composition's range back from the host and compare it to
-    /// the text we asked it to cover. Always logs what came back — the returned
-    /// range is the only evidence we can get about how a host really handled a
-    /// composition placed over already-committed text (#245).
-    [[nodiscard]] bool CompositionCoversText(TfEditCookie ec,
-                                             const std::wstring& expected) const;
 
     /// Clear display attribute from range (on end composition)
     void ClearDisplayAttribute(TfEditCookie ec, ITfRange* pRange);

@@ -505,6 +505,22 @@ private:
 /// and cursor sat right after a Vietnamese word. Starts composition over the word,
 /// seeds the engine, then PushChar'es the incoming char — so e.g. "gõ" + 'f'
 /// re-enters composition and produces "gò" (grave tone replaces tilde).
+///
+/// KNOWN HOST LIMITATION, do not try to fix from here (#245, closed 2026-08-14):
+/// Legcord/Electron duplicates the word instead of replacing it — "chuyen" +
+/// Space + Left + 'e' lands "chuyenchuyên". Everything TSF can observe says the
+/// composition is right: StartComposition on the range returns S_OK, reading the
+/// composition's range back returns exactly the word, SetText returns S_OK, and
+/// the pre-edit visibly wraps the correct text. The host's own layer inserts
+/// rather than replaces. Two shapes were tried and neither helped: verifying the
+/// range read-back (it always agreed) and splitting into two edit sessions so the
+/// host establishes the composition before any text is written (Chromium gates
+/// its SetCompositionFromExistingText path on the IME writing nothing in that
+/// session — taking it only changed the corruption from dropping the word's last
+/// character to dropping none). Both were reverted. Before touching this again,
+/// get a log line proving VKey asked for the wrong thing — the four earlier
+/// theories about *why* were all wrong, while "the host ignores the range" held
+/// from the first report.
 class ReviveAndTypeEditSession : public EditSession {
 public:
     ReviveAndTypeEditSession(ITfContext* pContext, CompositionManager* pMgr,
@@ -535,24 +551,20 @@ public:
             return S_OK;
         }
 
-        // Deliberately no SetCompositionText here — the new text goes in a
-        // SECOND edit session. Chromium only hands a composition placed over
-        // committed text to Blink as a real reconversion
-        // (SetCompositionFromExistingText over the range it was given) when the
-        // text service wrote nothing in the session that started it; its
-        // TSFTextStore gates that on `string_pending_insertion_.empty()`. Write
-        // the text here and it takes the replace-text path instead, where the
-        // amount of committed text to delete is guessed as
-        // `last_composition_start - replace_text_range_.start()` — Chromium's
-        // cached selection, not our range. In Legcord that guess came out one
-        // character short and left the old word behind: "dec" + 'e' → "dedêc"
-        // (#245). Leaving this session empty makes the host establish the
-        // composition first, so the update below is an ordinary one.
         pEngine_->PushChar(ch_);
-        composed_ = pEngine_->Peek();
+        const std::wstring& composed = pEngine_->Peek();
+        if (!pMgr_->SetCompositionText(ec, composed, kReviveSetTextFlags)) {
+            pEngine_->Reset();
+            pMgr_->EndComposition(ec);
+            return E_FAIL;
+        }
 
-        TSF_LOG(L"ReviveAndTypeEditSession: '%ls' + '%lc' → '%ls' (text follows)",
-                word_.c_str(), ch_, composed_.c_str());
+        if (pEngine_->Count() == 0) {
+            pMgr_->EndComposition(ec);
+        }
+
+        TSF_LOG(L"ReviveAndTypeEditSession: '%ls' + '%lc' → '%ls'",
+                word_.c_str(), ch_, composed.c_str());
         revived_ = true;
         return S_OK;
     }
@@ -562,9 +574,6 @@ public:
     /// normal path so auto-cap and macro tracking still run.
     [[nodiscard]] bool Revived() const noexcept { return revived_; }
 
-    /// The composition text the caller must write in a follow-up edit session.
-    [[nodiscard]] const std::wstring& Composed() const noexcept { return composed_; }
-
 private:
     CompositionManager* pMgr_;
     IInputEngine* pEngine_;
@@ -572,49 +581,7 @@ private:
     CComPtr<ITfRange> pRange_;
     wchar_t ch_;
     std::wstring rawInput_;
-    std::wstring composed_;
     bool revived_ = false;
-};
-
-/// Writes the revived word's new text into the composition that
-/// ReviveAndTypeEditSession established in the previous edit session.
-///
-/// Deliberately NOT UpdateCompositionEditSession: that one starts a fresh
-/// composition at the caret when none is active, which here would insert the
-/// whole word beside the one still sitting in the document — the exact
-/// corruption #245 is about, and indistinguishable from it in a bug report. A
-/// host that tore the composition down in between (a web editor that blurs or
-/// re-renders on composition start) leaves nothing safe to write, since whether
-/// the word was replaced is then unknowable.
-/// ponytail: that race drops the keystroke; revisit if a log ever shows the line.
-class UpdateRevivedCompositionEditSession : public EditSession {
-public:
-    UpdateRevivedCompositionEditSession(ITfContext* pContext, CompositionManager* pMgr,
-                                        IInputEngine* pEngine, const std::wstring& text)
-        : EditSession(pContext), pMgr_(pMgr), pEngine_(pEngine), text_(text) {}
-
-    IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
-        if (pMgr_ == nullptr || pEngine_ == nullptr) return E_FAIL;
-
-        if (!pMgr_->IsComposing()) {
-            TSF_LOG(L"UpdateRevivedCompositionEditSession: composition gone, dropping '%ls'",
-                    text_.c_str());
-            pEngine_->Reset();
-            return E_FAIL;
-        }
-
-        if (!pMgr_->SetCompositionText(ec, text_, kReviveSetTextFlags)) {
-            pEngine_->Reset();
-            pMgr_->EndComposition(ec);
-            return E_FAIL;
-        }
-        return S_OK;
-    }
-
-private:
-    CompositionManager* pMgr_;
-    IInputEngine* pEngine_;
-    std::wstring text_;
 };
 
 /// Edit session to check if the selection is non-empty (for autocomplete detection)

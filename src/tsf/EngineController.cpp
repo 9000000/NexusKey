@@ -443,17 +443,8 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
                     // than typing it inside the session — keeps auto-cap and
                     // macro tracking on the same code path as any other keystroke.
                     const bool revived = pRevive->Revived();
-                    const std::wstring composed = pRevive->Composed();
                     pRevive->Release();
                     if (revived) {
-                        // Second session on purpose — see the comment in
-                        // ReviveAndTypeEditSession: the host has to establish the
-                        // composition over the committed word before anyone
-                        // writes into it.
-                        auto* pUpdate = new UpdateRevivedCompositionEditSession(
-                            pContext, &compositionMgr_, engine_.get(), composed);
-                        RequestEditSession(pContext, pUpdate);
-                        pUpdate->Release();
                         TSF_LOG(L"HandleKey: revive '%ls' + '%lc'", word.c_str(), ch);
                         return true;
                     }

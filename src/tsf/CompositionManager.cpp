@@ -91,51 +91,7 @@ bool CompositionManager::StartCompositionOnRange(
         return false;
     }
     if (pComposition_) EndComposition(ec);
-    if (!BeginCompositionOnRange(pContext, ec, pRange, existingText)) return false;
-
-    // StartComposition succeeding does not mean the host put the composition
-    // where we asked. Legcord/Electron reopens a committed word and then writes
-    // the pre-edit at the caret instead of over the word, so the word survives
-    // and the composition lands next to it ("chuyen" + g → "chuyenchuyeng",
-    // #245). Nothing has been written yet at this point, so ending the
-    // composition here leaves the document exactly as the user left it.
-    if (!CompositionCoversText(ec, existingText)) {
-        EndComposition(ec);
-        return false;
-    }
-    return true;
-}
-
-bool CompositionManager::CompositionCoversText(TfEditCookie ec,
-                                               const std::wstring& expected) const {
-    if (pComposition_ == nullptr) return false;
-
-    CComPtr<ITfRange> pRange;
-    if (FAILED(pComposition_->GetRange(&pRange)) || !pRange) {
-        TSF_LOG(L"CompositionCoversText: GetRange failed for '%ls'", expected.c_str());
-        return false;
-    }
-
-    // Room for one char past the word: a host that widened the range would
-    // otherwise match on the prefix alone and pass as correct.
-    std::wstring actual(expected.size() + 1, L'\0');
-    ULONG len = 0;
-    const HRESULT hr = pRange->GetText(ec, 0, actual.data(),
-                                       static_cast<ULONG>(actual.size()), &len);
-    if (FAILED(hr)) {
-        // An unreadable range is not evidence of a misplaced one — hosts that
-        // never supported reading back a composition kept working for years on
-        // this path. Log it and trust the range as before.
-        TSF_LOG(L"CompositionCoversText: GetText failed hr=0x%08X for '%ls', assuming ok",
-                hr, expected.c_str());
-        return true;
-    }
-    actual.resize(len);
-
-    const bool covers = actual == expected;
-    TSF_LOG(L"CompositionCoversText: asked '%ls', host returned '%ls' → %ls",
-            expected.c_str(), actual.c_str(), covers ? L"ok" : L"MISMATCH");
-    return covers;
+    return BeginCompositionOnRange(pContext, ec, pRange, existingText);
 }
 
 bool CompositionManager::BeginCompositionOnRange(
