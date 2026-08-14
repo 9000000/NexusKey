@@ -236,6 +236,24 @@ TEST_F(RustInputEngineTest, AmbiguousToneEscapeResolvesPositionIssue248) {
     config.spellSuggestEnabled = true;
     config.autoRestoreEnabled = true;
 
+    RustInputEngine progression(config);
+    for (const wchar_t c : std::wstring_view(L"poss")) progression.PushChar(c);
+    EXPECT_EQ(progression.Peek(), L"pos");
+    progression.PushChar(L'i');
+    EXPECT_EQ(progression.Peek(), L"posi");
+    progression.PushChar(L't');
+    EXPECT_EQ(progression.Peek(), L"posit");
+    for (const wchar_t c : std::wstring_view(L"ion")) progression.PushChar(c);
+    EXPECT_EQ(progression.Peek(), L"position");
+
+    RustInputEngine backspace(config);
+    for (const wchar_t c : std::wstring_view(L"possi")) backspace.PushChar(c);
+    EXPECT_EQ(backspace.Peek(), L"posi");
+    backspace.Backspace();
+    EXPECT_EQ(backspace.Peek(), L"pos");
+    backspace.PushChar(L'i');
+    EXPECT_EQ(backspace.Peek(), L"posi");
+
     for (const auto& [raw, expected] : {
              std::pair{std::wstring_view(L"position"), std::wstring_view(L"position")},
              std::pair{std::wstring_view(L"posSition"), std::wstring_view(L"posSition")},
@@ -251,6 +269,27 @@ TEST_F(RustInputEngineTest, AmbiguousToneEscapeResolvesPositionIssue248) {
         EXPECT_EQ(engine.PeekRaw(), raw);
         EXPECT_EQ(engine.Commit(), expected);
     }
+}
+
+TEST_F(RustInputEngineTest, ExactAsusEscapeRequiresSpellCheck) {
+    TypingConfig guardedConfig;
+    guardedConfig.inputMethod = InputMethod::SimpleTelex;
+    guardedConfig.spellCheckEnabled = true;
+    guardedConfig.spellSuggestEnabled = true;
+    guardedConfig.autoRestoreEnabled = true;
+
+    for (const std::wstring_view raw : {L"asus", L"ASUS", L"Asus"}) {
+        RustInputEngine engine(guardedConfig);
+        for (const wchar_t c : raw) engine.PushChar(c);
+        EXPECT_EQ(engine.Peek(), raw);
+        EXPECT_EQ(engine.PeekRaw(), raw);
+    }
+
+    TypingConfig ordinaryConfig = guardedConfig;
+    ordinaryConfig.spellCheckEnabled = false;
+    RustInputEngine ordinary(ordinaryConfig);
+    for (const wchar_t c : std::wstring_view(L"asus")) ordinary.PushChar(c);
+    EXPECT_EQ(ordinary.Peek(), L"asu");
 }
 
 TEST_F(RustInputEngineTest, EnglishWordFlag) {
