@@ -4,6 +4,10 @@
 // Covers the FFI plumbing in the adapter (UTF-16 widening, peek/commit/backspace,
 // stub contract) — NOT Vietnamese typing correctness, which the engine repo owns.
 //
+// One exception: the English-guard escape tests re-run engine cases here because
+// the engine's own tests inject a fixture word list, so only this side exercises
+// them against the SCOWL set that actually ships.
+//
 // CMake copies the trusted vendored engine next to VKeyTests.
 
 #ifdef VKEY_USE_RUST_ENGINE
@@ -236,6 +240,8 @@ TEST_F(RustInputEngineTest, AmbiguousToneEscapeResolvesPositionIssue248) {
     config.spellSuggestEnabled = true;
     config.autoRestoreEnabled = true;
 
+    // Needs the sticky-escape engine (VKey-rs "stabilize ambiguous tone
+    // escapes"); the earlier build restored the literal at `possi`.
     RustInputEngine progression(config);
     for (const wchar_t c : std::wstring_view(L"poss")) progression.PushChar(c);
     EXPECT_EQ(progression.Peek(), L"pos");
@@ -245,6 +251,17 @@ TEST_F(RustInputEngineTest, AmbiguousToneEscapeResolvesPositionIssue248) {
     EXPECT_EQ(progression.Peek(), L"posit");
     for (const wchar_t c : std::wstring_view(L"ion")) progression.PushChar(c);
     EXPECT_EQ(progression.Peek(), L"position");
+
+    // The other half of the branch: `posib` stops being an English prefix, so
+    // the physical double-s has to come back. Only the shipped SCOWL set can
+    // prove that — the engine's own test injects a fixture word list.
+    RustInputEngine literalRestore(config);
+    for (const wchar_t c : std::wstring_view(L"possi")) literalRestore.PushChar(c);
+    EXPECT_EQ(literalRestore.Peek(), L"posi");
+    literalRestore.PushChar(L'b');
+    EXPECT_EQ(literalRestore.Peek(), L"possib");
+    for (const wchar_t c : std::wstring_view(L"le")) literalRestore.PushChar(c);
+    EXPECT_EQ(literalRestore.Peek(), L"possible");
 
     RustInputEngine backspace(config);
     for (const wchar_t c : std::wstring_view(L"possi")) backspace.PushChar(c);
