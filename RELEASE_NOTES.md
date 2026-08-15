@@ -2,8 +2,9 @@
 
 > ⚠️ **Lưu ý quan trọng về Chữ ký số & Cập nhật tự động (Code Signing & Auto-Update)**
 >
-> 1. **Chưa có chữ ký số**: Phiên bản v4.3 hiện tại **chưa được ký số** do vướng một số vấn đề điều khoản ký số với phía SignPath (liên quan đến việc tích hợp thư viện Sciter mã nguồn đóng). Do đó, tệp cài đặt/chạy có thể bị Windows SmartScreen cảnh báo hoặc một số phần mềm diệt virus tự động xóa/chặn (bạn có thể chọn *More info* → *Run anyway* để tiếp tục sử dụng).
-> 2. **Cần tải bản v4.3 thủ công**: Do v4.2 yêu cầu kiểm tra chữ ký số an toàn khi nâng cấp, tính năng cập nhật tự động từ v4.2 lên v4.3 sẽ không hoạt động. Người dùng đang ở phiên bản v4.2 vui lòng **tải và cài đặt bản v4.3 thủ công** từ trang phát hành GitHub Release.
+> 1. **Chữ ký số theo phiên bản**: Trong phiên bản v4.3, **chỉ có bản Classic (`VKeyClassic.exe`) là được ký số Authenticode đầy đủ** (bởi SignPath Foundation). Bản tiêu chuẩn (giao diện Sciter UI) hiện **chưa được ký số** do vướng một số vấn đề điều khoản ký số với phía SignPath (liên quan đến việc tích hợp thư viện Sciter). Do đó, tệp cài đặt/chạy của bản tiêu chuẩn có thể bị Windows SmartScreen cảnh báo hoặc một số phần mềm diệt virus cảnh báo nhầm (bạn có thể chọn *More info* → *Run anyway* để tiếp tục sử dụng).
+> 2. **Bản Classic là 100% mã nguồn mở (Open Source)**: Bản Classic là phiên bản hoàn toàn thuần mã nguồn mở 100%, siêu nhẹ, độc lập và **không bao gồm cũng như không thể sử dụng engine Rust** (tạm thời do engine Rust đang ở dạng closed-source).
+> 3. **Cần tải bản v4.3 thủ công**: Do v4.2 yêu cầu kiểm tra chữ ký số an toàn khi nâng cấp, tính năng cập nhật tự động từ v4.2 lên v4.3 (bản tiêu chuẩn) sẽ không hoạt động. Người dùng đang ở phiên bản v4.2 vui lòng **tải và cài đặt bản v4.3 thủ công** từ trang phát hành GitHub Release.
 
 Bản cập nhật này mang đến cải tiến đột phá về khả năng tự động sửa lỗi chính tả cùng các sửa lỗi quan trọng giúp nâng cao độ ổn định.
 
@@ -15,7 +16,8 @@ Bản cập nhật này mang đến cải tiến đột phá về khả năng t�
     * **Xóa nhiều gõ tắt cùng lúc**: Thêm ô chọn ở bảng Macro để chọn và xóa nhiều từ gõ tắt trong một lần.
 * **Chế độ "Kiểm tra chính tả nâng cao"**
     * **Engine Rust hiệu năng cao**: Bổ sung engine kiểm tra chính tả mới được viết bằng Rust, tập trung vào hiệu năng và khả năng nhận diện lỗi.
-    * **Tự sửa lỗi gõ nhanh**: Phát hiện và sửa các lỗi gõ nhanh hoặc đảo ký tự (ví dụ: `hcaof` → `chào`).
+    * **Tự sửa lỗi gõ nhanh**: Phát hiện và sửa các lỗi gõ nhanh, đảo ký tự hoặc nhầm ký tự (ví dụ: `hcaof` → `chào`, `xywr` → `xử`).
+    * **Gõ từ tiếng Anh & thương hiệu mượt mà**: Có thể viết các từ như `asus`, `status`... mà không cần gõ 3 chữ `s` (`assus`) hay thao tác phục hồi phức tạp — chỉ cần gõ đúng thứ tự `a-s-u-s` là engine tự nhận diện và xuất đúng từ.
     * **Hoạt động theo lựa chọn của người dùng**: Tính năng mặc định được tắt và chỉ được kích hoạt khi bạn chủ động bật trong cài đặt.
     * **Tương thích với engine mã nguồn mở**: Nếu engine nâng cao không có hoặc bị gỡ bỏ, VKey sẽ tự động sử dụng engine C++ mã nguồn mở đi kèm mà không ảnh hưởng đến các chức năng gõ tiếng Việt thông thường.
 

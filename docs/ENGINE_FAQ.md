@@ -18,19 +18,36 @@ Tài liệu này giải đáp các câu hỏi thường gặp liên quan đến 
 ### VKey Engine là gì?
 VKey Engine là "bộ não" xử lý quy tắc ngôn ngữ của bộ gõ. Khi bạn gõ các phím từ bàn phím (như `v`, `i`, `e`, `t`, `s`), Engine có nhiệm vụ phân tích và chuyển đổi chuỗi phím này thành từ tiếng Việt hoàn chỉnh có dấu (`việt`).
 
-### VKey có mấy bộ xử lý (engine)? Sự khác biệt là gì?
+### VKey có mấy bộ xử lý (engine)? Sự khác biệt giữa Engine C++ và Engine Rust Nâng cao là gì?
 VKey được thiết kế theo mô hình **Engine kép (Dual-Engine)** gồm hai bộ xử lý:
 
 | Tiêu chí | Engine C++ (Mặc định) | Engine Rust Nâng cao (Tùy chọn) |
 | :--- | :--- | :--- |
-| **Mã nguồn** | Mã nguồn mở 100% tích hợp sẵn | Thư viện mở rộng động (`vkey_engine.dll`) |
-| **Kiểu gõ** | Telex, VNI, Simple Telex chuẩn | Telex, VNI nâng cao + Ngữ cảnh |
-| **Tính năng nổi bật** | Nhẹ, nhanh, bỏ dấu chính xác | Sửa lỗi gõ nhanh bị đảo phím (`hcaof` → `chào`) |
+| **Mã nguồn** | Mã nguồn mở 100% tích hợp sẵn | Thư viện mở rộng động (`vkey_engine.dll`), tạm thời closed-source |
+| **Phiên bản hỗ trợ** | Cả bản Tiêu chuẩn (Sciter UI) & bản Classic | Chỉ có trên bản Tiêu chuẩn (khi người dùng chủ động bật) |
+| **Kiểu gõ** | Telex, VNI, Simple Telex chuẩn | Telex, VNI nâng cao + Tự sửa lỗi |
+| **Kiểm tra chính tả** | Cơ bản (theo luật âm vị học tĩnh) | Nâng cao (từ điển âm tiết + phân tích ngữ cảnh) |
+| **Tự sửa lỗi gõ nhanh** | Không hỗ trợ | Tự sửa lỗi đảo ký tự hoặc nhầm ký tự (`hcaof` → `chào`, `xywr` → `xử`) |
+| **Gõ từ tiếng Anh (asus...)** | Cần gõ thoát hoặc lặp phím (`assus`) | Tự động nhận diện (`a-s-u-s` → `asus`) |
 | **Cách cài đặt** | Có sẵn trong ứng dụng VKey | Tùy chọn bật trong Cài đặt |
 
-### Tính năng "Kiểm tra Chính tả Nâng cao" giúp gì cho tôi?
-Tính năng này giúp phát hiện và tự động sửa một số lỗi gõ phổ biến khi bạn thao tác nhanh trên bàn phím. 
-- *Ví dụ*: Khi bạn gõ lướt phím nhanh từ `chào`, tay bạn có thể bấm nhầm thứ tự thành `hcaof`. Engine Nâng cao sẽ nhận biết được đây là lỗi đảo ký tự và tự động khôi phục đúng thành `chào`.
+**Chi tiết sự khác biệt:**
+- **Engine C++ (Built-in C++ Engine)**: Là engine cốt lõi, 100% mã nguồn mở và được tích hợp trực tiếp trong VKey. Engine này xử lý việc bỏ dấu tiếng Việt dựa trên các quy tắc ngữ âm học chuẩn (phụ âm đầu, nguyên âm ghép, thanh điệu, phụ âm cuối). Ưu điểm là siêu nhẹ, tốc độ xử lý tức thì, ổn định tuyệt đối và có mặt trên tất cả các phiên bản (kể cả bản Classic).
+- **Engine Rust Nâng cao (Advanced Rust Engine)**: Là module thư viện mở rộng (`vkey_engine.dll`), được viết bằng ngôn ngữ Rust hiện đại nhằm tối ưu hóa an toàn bộ nhớ và hiệu năng xử lý từ vựng. Engine này trang bị thêm từ điển âm tiết và các thuật toán nhận diện lỗi gõ thông minh, giúp tự động sửa lỗi đảo ký tự hoặc nhầm ký tự khi gõ lướt phím tốc độ cao và hỗ trợ gõ mượt mà các từ tiếng Anh / thương hiệu phổ biến.
+
+### Chế độ "Kiểm tra chính tả nâng cao" khác gì với "Kiểm tra chính tả cơ bản"?
+Hai chế độ này phục vụ các mục tiêu khác nhau trong trải nghiệm gõ:
+
+1. **Kiểm tra chính tả cơ bản (Basic Spell Check - trên Engine C++)**:
+   - **Nguyên lý hoạt động**: Dựa trên bộ quy tắc kết hợp âm vị học tiếng Việt (cấu trúc ngữ âm tĩnh: phụ âm đầu hợp lệ + nguyên âm hợp lệ + thanh điệu + phụ âm cuối hợp lệ).
+   - **Tác dụng**: Ngăn chặn việc bỏ dấu sai vào các từ không hợp lệ hoặc các từ tiếng Anh chứa phím dấu/mũ Telex (ví dụ: gõ `for`, `star` không bị bỏ nhầm dấu hỏi thành `fỏ`, `stả`; gõ `show` không bị biến thành `shơ`).
+   - **Hạn chế**: Khi bạn gõ phím quá nhanh dẫn đến đảo ký tự hoặc nhầm ký tự (như `hcaof`, `xywr`), chế độ cơ bản sẽ coi đó là từ sai luật và giữ nguyên hoặc cho ra kết quả không mong muốn. Với các từ tiếng Anh có kết thúc bằng phím dấu (như `asus` có `s` là dấu sắc trong Telex), bạn thường phải gõ lặp phím `s` (`assus`) hoặc dùng phím khôi phục/thoát từ để giữ nguyên dạng `asus`.
+
+2. **Kiểm tra chính tả nâng cao (Advanced Spell Check - trên Engine Rust)**:
+   - **Nguyên lý hoạt động**: Sử dụng Engine Rust kết hợp từ điển âm tiết tiếng Việt và thuật toán phân tích mẫu lỗi gõ (typing pattern & transposition correction).
+   - **Tự sửa lỗi gõ nhanh / đảo ký tự hoặc nhầm ký tự**: Tự động nhận diện và sửa lại đúng các từ bị đảo thứ tự hoặc nhầm ký tự do thao tác lướt phím nhanh (ví dụ: `hcaof` → tự động sửa thành `chào`, `xywr` → `xử`).
+   - **Gõ từ tiếng Anh & thương hiệu mượt mà**: Nhận diện thông minh các từ tiếng Anh hoặc tên thương hiệu thông dụng như `asus`, `status`, `plus`... Bạn chỉ cần gõ đúng chuỗi ký tự theo thứ tự `a-s-u-s` là engine tự nhận biết và xuất ra `asus` mà không bị biến thành `asú` hay bắt buộc phải gõ 3 chữ `s` (`assus`).
+   - **Trải nghiệm gõ liền mạch**: Giúp bạn gõ tự nhiên ở tốc độ cao mà không bị khựng lại hay phải liên tục nhấn Backspace để sửa các lỗi đảo phím thường gặp.
 
 ### Tôi có bắt buộc phải cài đặt hay dùng Engine Rust Nâng cao không?
 **Không**. VKey hoạt động hoàn toàn độc lập và đáp ứng 100% nhu cầu gõ tiếng Việt thông thường chỉ với Engine C++ mặc định. Bạn có thể sử dụng VKey ngay sau khi tải về mà không cần bật hay cài đặt thêm bất kỳ thành phần nào.
@@ -127,6 +144,9 @@ Toàn bộ mã nguồn cốt lõi của VKey bao gồm:
 - Cơ chế nạp động an toàn, xác thực chữ ký số ECDSA P-256 và giao diện C ABI.
 
 Tất cả đều được công khai minh bạch tại repository GitHub của dự án.
+
+### Phiên bản VKey Classic có sử dụng được Engine Rust Nâng cao không?
+**Không.** Phiên bản **VKey Classic là phiên bản 100% mã nguồn mở (Open Source)**, thuần Win32 native siêu nhẹ, và được ký số Authenticode đầy đủ trong v4.3. Bản Classic chỉ sử dụng duy nhất Engine C++ mã nguồn mở tích hợp sẵn và hoàn toàn không bao gồm cũng như không hỗ trợ nạp Engine Rust (tạm thời do Engine Rust đang ở dạng closed-source). Người dùng cần sự tối giản tuyệt đối, dung lượng siêu nhẹ và thuần 100% Open Source hoàn toàn có thể yên tâm sử dụng bản Classic.
 
 ### Tôi là lập trình viên, tôi có thể tự viết Engine riêng hoặc tích hợp VKey với bộ xử lý khác không?
 **Có, nhưng phải tự build VKey.** Giao diện C ABI là chuẩn mở (`include/vkey_engine.h`), viết engine tuân thủ nó là đủ về mặt kỹ thuật.
