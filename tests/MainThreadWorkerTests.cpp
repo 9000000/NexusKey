@@ -202,6 +202,37 @@ TEST_F(MainThreadWorkerTest, SignalAfterStop_NoOp) {
     EXPECT_EQ(latch.count.load(), 0);
 }
 
+TEST_F(MainThreadWorkerTest, SignalAfterStop_DoesNotRunAfterRestart) {
+    HandlerLatch latch;
+    worker_.SetWorkHandler([&latch] { latch.Fire(); });
+    ASSERT_TRUE(worker_.Start());
+    worker_.Stop();
+
+    worker_.Signal();
+    ASSERT_TRUE(worker_.Start());
+    std::this_thread::sleep_for(20ms);
+    EXPECT_EQ(latch.count.load(), 0);
+
+    worker_.Signal();
+    EXPECT_TRUE(latch.WaitFor(1, 50ms));
+    worker_.Stop();
+}
+
+TEST_F(MainThreadWorkerTest, SignalAfterStopBeforeFirstStart_DoesNotLatch) {
+    HandlerLatch latch;
+    worker_.SetWorkHandler([&latch] { latch.Fire(); });
+
+    worker_.Stop();
+    worker_.Signal();
+    ASSERT_TRUE(worker_.Start());
+    std::this_thread::sleep_for(20ms);
+    EXPECT_EQ(latch.count.load(), 0);
+
+    worker_.Signal();
+    EXPECT_TRUE(latch.WaitFor(1, 50ms));
+    worker_.Stop();
+}
+
 TEST_F(MainThreadWorkerTest, SetHandlerWhileRunning_NewHandlerSeenOnNextSignal) {
     HandlerLatch latchA, latchB;
     worker_.SetWorkHandler([&latchA] { latchA.Fire(); });

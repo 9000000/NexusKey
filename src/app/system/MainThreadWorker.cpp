@@ -34,6 +34,7 @@ void MainThreadWorker::Stop() noexcept {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!running_.load(std::memory_order_acquire) && !thread_.joinable()) {
             // Stop without ever Start — drop any latched pre-Start signal.
+            stopRequested_ = true;
             workPending_ = false;
             return;
         }
@@ -64,6 +65,7 @@ void MainThreadWorker::SetWorkHandler(WorkHandler handler) {
 void MainThreadWorker::Signal() noexcept {
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (stopRequested_) return;
         workPending_ = true;
     }
     cv_.notify_all();
