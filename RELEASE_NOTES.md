@@ -12,6 +12,7 @@ Bản cập nhật này mang đến cải tiến đột phá về khả năng t�
 
 ### ✨ Tính năng mới & Cải tiến nổi bật
 
+* **🌐 Ra mắt trang thông tin chính thức**: Chính thức ra mắt website tại [www.vkey.qd.je](https://www.vkey.qd.je/) giúp người dùng dễ dàng tra cứu thông tin tính năng, hướng dẫn sử dụng và tải về các bản phát hành.
 * **Tinh chỉnh UI**  (chỉ ở giao diện hiện đại)
     * **Tab "Hệ thống"**: Gom nhóm tuỳ chọn icon để giúp UI gọn hơn
     * **Tab "Macro"**: Tách riêng các nút hành động (Lưu, Test, Xóa, Nhập) và cải thiện bố cục danh sách macro để dễ sử dụng hơn.
