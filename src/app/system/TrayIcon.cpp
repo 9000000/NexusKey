@@ -419,7 +419,11 @@ void TrayIcon::ShowContextMenu() {
         };
         addSC(SpellCheckLevel::Off, TrayMenuId::SpellCheckOff, L"Tắt");
         addSC(SpellCheckLevel::Standard, TrayMenuId::SpellCheckStandard, L"Cơ bản");
+#if defined(VKEY_USE_RUST_ENGINE)
+        // Official Classic is compiled without this definition. The item stays
+        // available to Sciter and the explicit Classic + Rust dev variant.
         addSC(SpellCheckLevel::Advanced, TrayMenuId::SpellCheckAdvanced, L"Nâng cao");
+#endif
         AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hSpellCheckMenu), S(StringId::MENU_SPELL_CHECK));
     }
     AppendMenuW(hMenu, checked(state.smartSwitch),

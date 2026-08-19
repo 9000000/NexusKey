@@ -125,7 +125,7 @@ private:
     HWND tabControl_    = nullptr;
     HWND linkReportBug_ = nullptr;
     HWND lblSpellCheckLevel_   = nullptr;
-    HWND comboSpellCheckLevel_ = nullptr;  // Off / Standard / Advanced — hand-wired
+    HWND comboSpellCheckLevel_ = nullptr;  // Off / Standard; Advanced only in Rust dev builds
                                             // like comboMethod_/comboEncoding_, not
                                             // table-driven (see SpellCheckLevel design
                                             // note in TypingConfig.h)

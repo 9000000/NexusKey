@@ -224,6 +224,13 @@ static void ApplyConfigChange(const TypingConfig& config) {
 /// engine into hosts that are already running (VKey itself picks it up live).
 static void ApplySpellCheckLevel(SpellCheckLevel newLevel) {
     auto config = ConfigManager::LoadOrDefault();
+#if !defined(VKEY_USE_RUST_ENGINE)
+    // Defense in depth: official Classic hides the Advanced menu item, but an
+    // unexpected internal command must still never persist a Rust-only mode.
+    if (newLevel == SpellCheckLevel::Advanced) {
+        newLevel = SpellCheckLevel::Standard;
+    }
+#endif
     SpellCheckLevel oldLevel = config.GetSpellCheckLevel();
     const bool enteringAdvanced =
         newLevel == SpellCheckLevel::Advanced && oldLevel != SpellCheckLevel::Advanced;
@@ -287,8 +294,12 @@ static void OnMenuCommand(TrayMenuId id) {
             std::wstring aboutText = L"VKey Classic v" VKEY_VERSION_WSTR L"\n"
                                      L"Vietnamese Input Method Editor\n"
                                      L"Build: " + GetBuildVersion(__DATE__, __TIME__) + L"\n\n"
-                                     L"https://github.com/phatMT97/VKey\n\n"
-                                     L"Dịch vụ ký số trên Windows cho v4.0–v4.2 được cung cấp miễn phí bởi SignPath.io, chứng chỉ bởi SignPath Foundation.";
+                                     L"https://github.com/phatMT97/VKey\n\n";
+#if defined(VKEY_USE_RUST_ENGINE)
+            aboutText += L"Bản Classic + Rust dành riêng cho kiểm thử; không phải artifact phát hành và không được SignPath ký.";
+#else
+            aboutText += L"VKey Classic v4.3 được ký số miễn phí bởi SignPath.io, chứng chỉ bởi SignPath Foundation.";
+#endif
             MessageBoxW(nullptr, aboutText.c_str(), L"VKey", MB_ICONINFORMATION);
             break;
         }
@@ -531,6 +542,14 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
                 AdvancedEngineInstaller::ShowManualInstallWithUi(nullptr);
             }
         }
+    }
+#else
+    // A preference may have been left by Sciter or a development build. The
+    // official Classic product boundary is C++-only, so normalize it before
+    // HookEngine can create an engine in this process.
+    if (config.GetSpellCheckLevel() == SpellCheckLevel::Advanced) {
+        config.SetSpellCheckLevel(SpellCheckLevel::Standard);
+        (void)ConfigManager::SaveToFile(ConfigManager::GetConfigPath(), config);
     }
 #endif
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(VKey VERSION 4.2.0 LANGUAGES CXX)
+project(VKey VERSION 4.3.0 LANGUAGES CXX)
 
 # Generate Version.h from Version.h.in — version is defined once in project() above.
 configure_file(
@@ -118,10 +118,28 @@ target_include_directories(VKeyEngine PUBLIC
 # Defaults OFF on purpose. The prebuilt engine in extern/vkey_engine/ is NOT
 # covered by this project's GPL-3.0 license and embeds CC BY-NC data, so a
 # plain `cmake -B build` must not require it — see extern/vkey_engine/LICENSE.
-# Official builds opt in explicitly with -DVKEY_USE_RUST_ENGINE=ON in CI.
+# Official Sciter builds opt in explicitly with -DVKEY_USE_RUST_ENGINE=ON in CI.
+# Classic declares its product boundary here too, before any engine artifact is
+# inspected, so an accidental Classic + Rust release configuration fails early.
+option(VKEY_LITE_MODE "Build Classic (Win32 native) UI instead of Sciter" OFF)
 option(VKEY_USE_RUST_ENGINE "Use the prebuilt closed-source Rust engine (C ABI)" OFF)
 option(VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE
     "Allow a Release development build to trust the exact engine.lock hash" OFF)
+option(VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV
+    "Allow a manual, non-release Classic development build to use the Rust engine" OFF)
+if(VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV AND
+   (NOT VKEY_LITE_MODE OR NOT VKEY_USE_RUST_ENGINE))
+    message(FATAL_ERROR
+        "VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV=ON requires both "
+        "VKEY_LITE_MODE=ON and VKEY_USE_RUST_ENGINE=ON")
+endif()
+if(VKEY_LITE_MODE AND VKEY_USE_RUST_ENGINE AND
+   NOT VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV)
+    message(FATAL_ERROR
+        "Official VKey Classic is C++-only. Use -DVKEY_USE_RUST_ENGINE=OFF. "
+        "Maintainers testing the non-release variant must also opt in with "
+        "-DVKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV=ON.")
+endif()
 if(VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE AND NOT VKEY_USE_RUST_ENGINE)
     message(FATAL_ERROR
         "VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=ON requires VKEY_USE_RUST_ENGINE=ON")
@@ -243,13 +261,19 @@ else()
     # EngineFactoryTest.cpp are inside `#ifdef VKEY_USE_RUST_ENGINE`, so with the
     # option off they compile away to nothing and ctest still reports success.
     # Anyone running the test suite as a gate needs to know coverage shrank.
-    message(WARNING
-        "VKEY_USE_RUST_ENGINE=OFF: building against the in-tree C++ engine only. "
-        "RustInputEngineTest and the Rust half of EngineFactoryTest are NOT "
-        "compiled, so a green ctest does not cover the Rust engine. "
-        "Maintainers: configure with -DVKEY_USE_RUST_ENGINE=ON. "
-        "Forks: this is the correct default — see extern/vkey_engine/LICENSE, "
-        "those artifacts are not GPL and are noncommercial-only.")
+    if(VKEY_LITE_MODE)
+        message(STATUS
+            "VKey Classic: enforcing the built-in C++ engine only; the Rust "
+            "loader, installer and artifact are excluded from the official build.")
+    else()
+        message(WARNING
+            "VKEY_USE_RUST_ENGINE=OFF: building against the in-tree C++ engine only. "
+            "RustInputEngineTest and the Rust half of EngineFactoryTest are NOT "
+            "compiled, so a green ctest does not cover the Rust engine. "
+            "Maintainers: configure Sciter with -DVKEY_USE_RUST_ENGINE=ON. "
+            "Forks: this is the correct default — see extern/vkey_engine/LICENSE, "
+            "those artifacts are not GPL and are noncommercial-only.")
+    endif()
 endif()
 
 # Core Library (platform layer: SharedState, Config, Debug)
@@ -499,10 +523,10 @@ endif()
 
 # ============================================================================
 # Classic UI (Lite build) — Win32 native, no Sciter dependency
-# Build with: cmake -B build -DVKEY_LITE_MODE=ON
+# Official build: cmake -B build -DVKEY_LITE_MODE=ON -DVKEY_USE_RUST_ENGINE=OFF
+# A Classic + Rust build requires VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV=ON and
+# is explicitly a local development variant, never a release artifact.
 # ============================================================================
-option(VKEY_LITE_MODE "Build Classic (Win32 native) UI instead of Sciter" OFF)
-
 if(VKEY_LITE_MODE AND WIN32)
     add_executable(VKeyLite WIN32
         src/app/main_lite.cpp
@@ -616,6 +640,8 @@ if(VKEY_LITE_MODE AND WIN32)
         $<$<CONFIG:Debug>:NEXTKEY_DEBUG>
     )
     if(VKEY_USE_RUST_ENGINE)
+        # Reachable only through VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV. Official
+        # Classic CI configures Rust OFF and therefore omits these sources.
         target_sources(VKeyLite PRIVATE
             src/app/system/AdvancedEngineDownloadPolicy.h
             src/app/system/AdvancedEngineDownloadPolicy.cpp

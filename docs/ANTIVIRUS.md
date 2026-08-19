@@ -1,8 +1,9 @@
 # VKey và phần mềm diệt virus (Antivirus false positives)
 
-> **TL;DR:** VKey là bộ gõ mã nguồn mở. Bản **v4.3 chưa được ký số** (các bản
-> v4.0–v4.2 có ký Authenticode bởi SignPath Foundation) — xác minh bản tải bằng
-> **Sigstore attestation**, xem mục *Kiểm chứng* bên dưới. Một số phần mềm diệt
+> **TL;DR:** VKey là bộ gõ mã nguồn mở. Ở v4.3, **chỉ bản Classic được ký số**
+> Authenticode bởi SignPath Foundation; bản tiêu chuẩn Sciter chưa được ký — hãy
+> xác minh bản tải bằng **Sigstore attestation**, xem mục *Kiểm chứng* bên dưới.
+> Một số phần mềm diệt
 > virus (Kaspersky, Bitdefender, Avast…) đôi khi
 > cảnh báo VKey theo **hành vi** (behavior detection) chứ không phải chữ ký virus —
 > vì bộ gõ nào cũng phải hook bàn phím + gửi phím, trông "giống keylogger". Đây là
@@ -13,8 +14,9 @@
 ## Vì sao bị cảnh báo?
 
 Ký số (code signing) giúp Windows SmartScreen và các bộ quét **theo chữ ký** tin
-tưởng file — và bản v4.3 hiện không có, nên khả năng bị cảnh báo cao hơn các bản
-trước. Nhưng ngay cả khi đã ký số, phần mềm diệt virus vẫn có lớp
+tưởng file. Bản tiêu chuẩn Sciter v4.3 không có chữ ký nên khả năng bị cảnh báo
+cao hơn; bản Classic có chữ ký vẫn có thể gặp phát hiện theo hành vi. Ngay cả khi
+đã ký số, phần mềm diệt virus vẫn có lớp
 **phát hiện theo hành vi** —
 chấm điểm những gì tiến trình *làm khi chạy*, không quan tâm ai ký. Bộ gõ tiếng
 Việt về bản chất phải:
@@ -34,8 +36,9 @@ lặp lại).
 
 ## Kiểm chứng VKey là bản thật (khuyên dùng trước khi loại trừ)
 
-Bản v4.3 không có chữ ký Authenticode, nên cách xác minh là **Sigstore
-attestation** — nó chứng minh file được build từ đúng mã nguồn trong repo này:
+Bản tiêu chuẩn Sciter v4.3 không có chữ ký Authenticode, nên cách xác minh là
+**Sigstore attestation** — nó chứng minh file được build từ đúng mã nguồn trong
+repo này:
 
 ```bash
 gh attestation verify VKey.zip --repo PhatMT97/VKey
@@ -43,14 +46,14 @@ gh attestation verify VKey.zip --repo PhatMT97/VKey
 
 Nếu lệnh trên báo lỗi → **không** dùng file đó, tải lại từ trang phát hành chính thức.
 
-> Với các bản **v4.0–v4.2** (có ký số), cách kiểm tra là:
+> Với các bản **v4.0–v4.2** và bản **Classic v4.3** (có ký số), cách kiểm tra là:
 > ```powershell
 > (Get-AuthenticodeSignature "C:\path\to\VKey.exe").Status          # → Valid
 > (Get-AuthenticodeSignature "C:\path\to\VKey.exe").SignerCertificate.Subject
 > # → CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US
 > ```
-> Chạy lệnh này trên bản v4.3 sẽ trả về `NotSigned` — đó là điều bình thường với
-> bản này, không phải dấu hiệu file giả.
+> Chạy lệnh này trên `VKey.exe` của bản tiêu chuẩn v4.3 sẽ trả về `NotSigned` —
+> đó là điều bình thường với bản Sciter, không phải dấu hiệu file giả.
 
 ## Khôi phục khi VKey bị cách ly (quarantine)
 
@@ -87,15 +90,16 @@ và tên phần mềm AV — tác giả sẽ nộp allowlist giúp.
 
 ## English (short)
 
-VKey is an open-source Vietnamese IME. **v4.3 is not code-signed** (v4.0–v4.2 were,
-by SignPath Foundation). Some antivirus products flag it by **behavior detection**
+VKey is an open-source Vietnamese IME. In **v4.3 only the Classic edition is
+code-signed** by SignPath Foundation; the standard Sciter edition is unsigned.
+Some antivirus products flag it by **behavior detection**
 (not signature) because every IME must hook the keyboard, synthesize keystrokes,
 autostart, and self-supervise — a cluster that looks keylogger-shaped. It is a
 **false positive**; VKey processes everything locally and never sends your
 keystrokes anywhere. An unsigned build is more likely to trip these heuristics.
 
 - **Verify authenticity:** `gh attestation verify VKey.zip --repo PhatMT97/VKey`
-  (Sigstore build attestation). On v4.0–v4.2 you can additionally check
+  (Sigstore build attestation). On v4.0–v4.2 and Classic v4.3 you can additionally check
   `(Get-AuthenticodeSignature VKey.exe).SignerCertificate.Subject` →
   `CN=SignPath Foundation, …`.
 - **Restore + exclude:** open your AV's Quarantine, restore VKey, add the install

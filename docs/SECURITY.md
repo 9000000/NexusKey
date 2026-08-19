@@ -12,7 +12,7 @@ IME cục bộ trên Windows cá nhân. Kẻ tấn công chính: phần mềm đ
 
 | Biện pháp | Mô tả |
 |-----------|-------|
-| **Authenticode signature + publisher pin** | Trước khi cài, mỗi file `.exe`/`.dll` trong gói ứng dụng VKey đã ký được xác minh qua `WinVerifyTrust` (chuỗi tin cậy tới root + kiểm tra thu hồi) và ghim đúng publisher `SignPath Foundation`. Đây là lớp chống giả mạo thật sự — chứng minh *ai* đã ký mã sắp chạy. `sciter.dll` (bên thứ ba) và optional `vkey_engine.dll` phát hành ngoài ZIP là ngoại lệ **không ký**; engine được xác thực bằng pin đã compile như mô tả ở mục 4.<br>**Hiện trạng v4.3:** bản phát hành không được ký số, nên pin này **từ chối** gói cập nhật và **cập nhật tự động không hoạt động** — người dùng phải tải và cài thủ công. Đây là fail-closed đúng thiết kế (thà không cập nhật còn hơn cài mã chưa xác minh), nhưng là một cổng đang đóng chứ không phải một lớp đang bảo vệ. Thay pin này bằng chữ ký ECDSA của chính dự án là việc còn dang dở |
+| **Authenticode signature + publisher pin** | Trước khi cài, mỗi file `.exe`/`.dll` trong gói ứng dụng đã ký được xác minh qua `WinVerifyTrust` (chuỗi tin cậy tới root + kiểm tra thu hồi) và ghim đúng publisher `SignPath Foundation`. Đây là lớp chống giả mạo thật sự — chứng minh *ai* đã ký mã sắp chạy.<br>**Hiện trạng v4.3:** chỉ gói Classic C++-only (`VKeyClassic.exe`, `VKeyTSF.dll`, `VKeyWatchdog.exe`) đi qua SignPath. Gói tiêu chuẩn Sciter và optional `vkey_engine.dll` phát hành ngoài ZIP không ký Authenticode; engine được xác thực bằng pin đã compile như mô tả ở mục 4. Vì bản Sciter không qua publisher pin, cập nhật tự động lên bản đó **không hoạt động** và người dùng phải cài thủ công. Đây là fail-closed đúng thiết kế |
 | **SHA-256 hash verification** | Mỗi bản cập nhật đi kèm file `.sha256`. Sau khi tải, VKey tính hash thực tế bằng Windows CNG (bcrypt) và so khớp trước khi giải nén. *Lưu ý:* sidecar `.sha256` tải cùng nguồn với ZIP → chỉ chống **hỏng file/CDN**, không chống giả mạo (nguồn bị chiếm là chiếm cả hai). Chống giả mạo do lớp Authenticode ở trên đảm nhận |
 | **URL domain whitelist** | Chỉ chấp nhận tải từ `https://github.com/`, `https://objects.githubusercontent.com/`, `https://codeload.github.com/`. Từ chối HTTP và domain lạ |
 | **PowerShell command escaping** | Escape ký tự `'` trong đường dẫn trước khi truyền vào `Expand-Archive`, chống command injection |
@@ -97,7 +97,7 @@ Các test bảo mật update và Advanced engine bao phủ:
 
 Trust path dùng CNG, `LoadLibraryExW` và `FILE_RENAME_INFO` là Windows-only. Windows CI chạy regression test storage/activation và tamper gate; một suite Linux xanh không phải bằng chứng cho các nhánh này.
 
-`vkey_engine.dll` hiện được phát hành nguyên trạng như asset riêng và không đi qua SignPath. SHA-256 pin đã compile ngăn VKey thực thi một DLL bị thay thế, nhưng không tạo Authenticode reputation; antivirus vẫn có thể đánh giá một DLL không ký nằm cạnh EXE đã ký là đáng ngờ. Windows/AV release smoke còn là release gate, không phải thuộc tính đã được chứng minh bởi unit test.
+`vkey_engine.dll` hiện được phát hành nguyên trạng như asset riêng và không đi qua SignPath. SHA-256 pin đã compile ngăn VKey thực thi một DLL bị thay thế, nhưng không tạo Authenticode reputation. Workflow v4.3 giữ engine ngoài cả hai ZIP; bản Classic còn được build trong cây Rust-OFF riêng và có gate từ chối mọi engine artifact. Windows/AV release smoke còn là release gate, không phải thuộc tính đã được chứng minh bởi unit test.
 
 ---
 

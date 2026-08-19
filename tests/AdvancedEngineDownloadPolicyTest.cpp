@@ -15,14 +15,14 @@ TEST(AdvancedEngineDownloadPolicyTest, UsesCurrentReleaseTagAndExactAssetName) {
 
 TEST(AdvancedEngineDownloadPolicyTest, AllowsOnlyRequiredHttpsOrigins) {
     EXPECT_TRUE(IsAllowedAdvancedEngineUrl(L"https://github.com/phatMT97/VKey/releases/"
-                                           L"download/v4.2.0/vkey_engine.dll"));
+                                           L"download/v4.3.0/vkey_engine.dll"));
     EXPECT_TRUE(IsAllowedAdvancedEngineUrl(L"https://objects.githubusercontent.com/"
                                            L"github-production-release-asset/test"));
     EXPECT_TRUE(IsAllowedAdvancedEngineUrl(L"HTTPS://RELEASE-ASSETS.GITHUBUSERCONTENT.COM/"
                                            L"github-production-release-asset/test"));
 
     EXPECT_FALSE(IsAllowedAdvancedEngineUrl(L"http://github.com/phatMT97/VKey/releases/"
-                                            L"download/v4.2.0/vkey_engine.dll"));
+                                            L"download/v4.3.0/vkey_engine.dll"));
     EXPECT_FALSE(IsAllowedAdvancedEngineUrl(L"https://github.com.evil.example/vkey_engine.dll"));
     EXPECT_FALSE(IsAllowedAdvancedEngineUrl(L"https://github.com@evil.example/vkey_engine.dll"));
     EXPECT_FALSE(IsAllowedAdvancedEngineUrl(L"https://release-assets.githubusercontent.com.evil.example/"

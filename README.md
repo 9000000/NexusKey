@@ -1,5 +1,6 @@
 # VKey - Bộ gõ tiếng Việt hiện đại cho Windows
 
+[![Website](https://img.shields.io/badge/Website-www.vkey.qd.je-orange?style=flat&logo=cloudflare&logoColor=white)](https://www.vkey.qd.je)
 [![Build](https://github.com/phatMT97/VKey/actions/workflows/build.yml/badge.svg)](https://github.com/phatMT97/VKey/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Release](https://img.shields.io/github/v/release/phatMT97/VKey)](https://github.com/phatMT97/VKey/releases)
@@ -22,7 +23,7 @@
 
 ---
 
-**[Giới thiệu](#giới-thiệu)** | **[Hướng dẫn sử dụng](docs/GUIDE.md)** | **[Tính năng](#tính-năng)** | **[Cài đặt](#cài-đặt)** | **[Xác minh](#xác-minh-bản-tải-verify-release)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
+**[Trang chủ](https://www.vkey.qd.je)** | **[Giới thiệu](#giới-thiệu)** | **[Hướng dẫn sử dụng](docs/GUIDE.md)** | **[Tính năng](#tính-năng)** | **[Cài đặt](#cài-đặt)** | **[Xác minh](#xác-minh-bản-tải-verify-release)** | **[Build](#build-từ-mã-nguồn)** | **[Kiến trúc](#kiến-trúc)** | **[English](#english-version)** | **[Credits](#credits)**
 
 ---
 
@@ -43,7 +44,7 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 * **Không thu thập dữ liệu:** Không có dữ liệu cá nhân nào được gửi lên server.
 * **Hoạt động offline:** Phần mềm hoạt động hoàn toàn cục bộ trên máy bạn.
 * **Mã nguồn mở:** Bạn có thể tự kiểm chứng bằng cách đọc mã nguồn.
-* **Minh bạch về Engine Kiểm tra Chính tả Nâng cao:** Từ phiên bản v4.3, VKey tích hợp thêm một thư viện nguồn đóng tùy chọn viết bằng Rust phục vụ riêng cho chức năng tự sửa lỗi chính tả nâng cao. Tính năng này mặc định được tắt và người dùng có toàn quyền kiểm soát hoặc xóa bỏ. Riêng **phiên bản Classic là 100% mã nguồn mở (Open Source)**, hoàn toàn không bao gồm và không thể sử dụng engine Rust này (tạm thời do engine Rust đang closed-source). Chi tiết lý do và tính minh bạch được giải thích tại **[ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md)** và **[ENGINE_FAQ.md](docs/ENGINE_FAQ.md)**.
+* **Minh bạch về Engine Kiểm tra Chính tả Nâng cao:** Từ phiên bản v4.3, VKey tích hợp thêm một thư viện nguồn đóng tùy chọn viết bằng Rust phục vụ riêng cho chức năng tự sửa lỗi chính tả nâng cao. Tính năng này mặc định được tắt và người dùng có toàn quyền kiểm soát hoặc xóa bỏ. Riêng **bản Classic phát hành chính thức là 100% mã nguồn mở (Open Source)**, được build độc lập với Rust tắt hoàn toàn và không thể nạp engine này. Maintainer có thể tạo một biến thể Classic + Rust chỉ để kiểm thử bằng manual workflow, nhưng biến thể đó không được ký và không phải sản phẩm Classic chính thức. Chi tiết lý do và tính minh bạch được giải thích tại **[ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md)** và **[ENGINE_FAQ.md](docs/ENGINE_FAQ.md)**.
 
 > **Lưu ý:** Dự án này được phát triển chủ yếu dựa trên nhu cầu và trải nghiệm cá nhân, vì vậy có thể vẫn tồn tại một số lỗi chưa được phát hiện hoặc khắc phục triệt để. Rất mong nhận được sự thông cảm và đóng góp ý kiến thông qua [Issue](https://github.com/phatMT97/VKey/issues) để bộ gõ ngày càng hoàn thiện hơn.
 
@@ -110,7 +111,7 @@ winget install PhatMT97.VKey.Classic
 *(Khuyến nghị)* Tắt các bộ gõ khác (Unikey, EVKey) trước khi chạy để tránh xung đột.
 
 > **Ký số (Code signing) & Bản Classic:** 
-> - Trong bản **v4.3, chỉ có bản Classic (`VKeyClassic.exe`) là được ký số Authenticode đầy đủ** (bởi SignPath Foundation). Bản Classic là phiên bản **100% mã nguồn mở (Open Source)**, nhẹ, thuần Win32 native, hoàn toàn không bao gồm và không thể sử dụng Engine Rust (tạm thời do Engine Rust đang closed-source).
+> - Trong bản **v4.3, chỉ có bản Classic chính thức (`VKeyClassic.exe`) là được ký số Authenticode đầy đủ** (bởi SignPath Foundation). Artifact này là **100% mã nguồn mở (Open Source)**, nhẹ, thuần Win32 native và được build với Engine Rust tắt hoàn toàn.
 > - Bản tiêu chuẩn (Sciter UI) v4.3 **chưa được ký số** do vướng điều khoản ký số với SignPath về thư viện bên thứ ba Sciter — Windows SmartScreen có thể cảnh báo khi chạy lần đầu (chọn *More info* → *Run anyway*). Các bản v4.0–v4.2 trước đó đều được ký Authenticode đầy đủ.
 > - Cách xác minh bản tải hiện nay: xem mục [Xác minh bản tải](#xác-minh-bản-tải-verify-release) bên dưới.
 
@@ -195,7 +196,7 @@ VKey được thiết kế với kiến trúc gọn nhẹ, không phụ thuộc 
 ### About
 
 > [!NOTE]
-> **📖 User Guide:** For detailed usage instructions, hotkeys, and FAQ, please refer to the [VKey User Guide (docs/GUIDE.md)](docs/GUIDE.md).
+> **🌐 Official Website:** [https://www.vkey.qd.je](https://www.vkey.qd.je) | **📖 User Guide:** [docs/GUIDE.md](docs/GUIDE.md)
 
 **VKey** is an open-source Vietnamese Input Method Editor (IME) for Windows, completely rewritten from [NextKey](https://github.com/phatMT97/VKey/tree/master) (based on [OpenKey](https://github.com/tuyenvm/OpenKey) by Mai Vu Tuyen).
 
@@ -206,7 +207,7 @@ New engine, new architecture, C++20, high performance, Glassmorphism UI. Engine 
 * **No Data Collection:** No personal data is sent to any server.
 * **Offline First:** The software operates entirely locally on your machine.
 * **Open Source:** You can verify this behavior by reviewing our source code.
-* **Transparency on Advanced Spell Check Engine:** Starting from v4.3, VKey integrates an optional closed-source Rust library for advanced spelling auto-correction features. This library is completely optional, disabled by default, and can be deleted by the user at any time. The **Classic edition is 100% open-source** and does not include or support the Rust engine (temporarily because the Rust engine is closed-source). For more information, please read **[ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md)** and **[ENGINE_FAQ.md](docs/ENGINE_FAQ.md)** (Vietnamese).
+* **Transparency on Advanced Spell Check Engine:** Starting from v4.3, VKey integrates an optional closed-source Rust library for advanced spelling auto-correction features. This library is completely optional, disabled by default, and can be deleted by the user at any time. The **official Classic edition is 100% open-source**, built independently with Rust disabled, and cannot load the Rust engine. Maintainers can produce an unsigned Classic + Rust variant through the manual workflow strictly for testing; it is not an official Classic release. For more information, please read **[ENGINE_ARCHITECTURE.md](docs/ENGINE_ARCHITECTURE.md)** and **[ENGINE_FAQ.md](docs/ENGINE_FAQ.md)** (Vietnamese).
 
 ### Features
 
@@ -272,7 +273,7 @@ winget install PhatMT97.VKey.Classic
 
 *(Recommended)* Disable other IMEs (Unikey, EVKey) before running to avoid conflicts.
 
-> **Code signing & Classic edition:** In **v4.3, only the Classic edition (`VKeyClassic.exe`) is Authenticode-signed** (SignPath Foundation). The Classic edition is **100% open-source**, lightweight, native Win32, and does not include or support the Rust engine (temporarily as the Rust engine is closed-source). The standard edition (Sciter UI) in v4.3 **is not code-signed** due to SignPath policy restrictions regarding the third-party Sciter library — Windows SmartScreen may warn on first run (*More info* → *Run anyway*). Releases v4.0–v4.2 were Authenticode-signed. To verify a download today, use the Sigstore attestation described above.
+> **Code signing & Classic edition:** In **v4.3, only the official Classic edition (`VKeyClassic.exe`) is Authenticode-signed** (SignPath Foundation). That artifact is **100% open-source**, lightweight, native Win32, and built with the Rust engine disabled. A manual Classic + Rust test artifact is explicitly labeled `DEV` and is never submitted to SignPath. The standard edition (Sciter UI) in v4.3 **is not code-signed** due to SignPath policy restrictions regarding the third-party Sciter library — Windows SmartScreen may warn on first run (*More info* → *Run anyway*). Releases v4.0–v4.2 were Authenticode-signed. To verify a download today, use the Sigstore attestation described above.
 
 ### Building
 
@@ -315,7 +316,7 @@ VKey is built with a lean architecture and no heavy runtime dependencies, keepin
       <a href="https://signpath.org/"><img src="https://signpath.org/assets/favicon-50x50.png" alt="SignPath" width="40"></a>
     </td>
     <td>
-      Free code signing on Windows for releases v4.0–v4.2 provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>
+      Free code signing on Windows for releases v4.0–v4.2 and v4.3 (Classic) provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>
     </td>
   </tr>
 </table>
@@ -331,7 +332,7 @@ VKey is built with a lean architecture and no heavy runtime dependencies, keepin
 - Tham khảo config TSF từ [VietType](https://github.com/dinhngtu/VietType)
 - Tham khảo cách xử lý clipboard input từ [SigmaLib](https://github.com/phamhoangnhat/SigmaLib) của Phạm Hoàng Nhật
 - Tham khảo quy tắt tiếng việt từ [dotnetkey](https://code.google.com/archive/p/dotnetkey/downloads)
-- Dịch vụ ký số (Authenticode) trên Windows cho các bản v4.0–v4.2 cung cấp miễn phí bởi [SignPath.io](https://signpath.io/), chứng chỉ ký số bởi [SignPath Foundation](https://signpath.org/)
+- Dịch vụ ký số (Authenticode) trên Windows cho các bản v4.0–v4.2 và v4.3 (Classic) cung cấp miễn phí bởi [SignPath.io](https://signpath.io/), chứng chỉ ký số bởi [SignPath Foundation](https://signpath.org/)
 
 ### Top Testers
 Cảm ơn các thành viên cộng đồng đã test và góp ý:

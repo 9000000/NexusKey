@@ -538,7 +538,10 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
         comboSpellCheckLevel_ = CreateCombo(cx + lblW + Dpi(4), cy, comboW, Dpi(kComboHeight + 60), IDC_COMBO_SPELL_CHECK);
         ComboBox_AddString(comboSpellCheckLevel_, L"Tắt");
         ComboBox_AddString(comboSpellCheckLevel_, L"Cơ bản");
+#if defined(VKEY_USE_RUST_ENGINE)
+        // This exists only in the explicitly opted-in local development variant.
         ComboBox_AddString(comboSpellCheckLevel_, L"Nâng cao");
+#endif
         ShowWindow(lblSpellCheckLevel_, SW_HIDE);
         ShowWindow(comboSpellCheckLevel_, SW_HIDE);
     }
@@ -588,8 +591,15 @@ void ClassicSettingsDialog::PopulateControls() {
         ComboBox_SetCurSel(comboMethod_, static_cast<int>(config_.inputMethod));
     if (comboEncoding_)
         ComboBox_SetCurSel(comboEncoding_, static_cast<int>(config_.codeTable));
-    if (comboSpellCheckLevel_)
-        ComboBox_SetCurSel(comboSpellCheckLevel_, static_cast<int>(config_.GetSpellCheckLevel()));
+    if (comboSpellCheckLevel_) {
+        SpellCheckLevel level = config_.GetSpellCheckLevel();
+#if !defined(VKEY_USE_RUST_ENGINE)
+        if (level == SpellCheckLevel::Advanced) {
+            level = SpellCheckLevel::Standard;
+        }
+#endif
+        ComboBox_SetCurSel(comboSpellCheckLevel_, static_cast<int>(level));
+    }
 
     UpdateCustomKeyMapButtonVisibility();
 
@@ -678,7 +688,12 @@ void ClassicSettingsDialog::ReadControlValues() {
     }
     if (comboSpellCheckLevel_) {
         int sel = ComboBox_GetCurSel(comboSpellCheckLevel_);
-        if (sel >= 0 && sel <= 2)
+#if defined(VKEY_USE_RUST_ENGINE)
+        constexpr int kMaxSpellCheckLevel = static_cast<int>(SpellCheckLevel::Advanced);
+#else
+        constexpr int kMaxSpellCheckLevel = static_cast<int>(SpellCheckLevel::Standard);
+#endif
+        if (sel >= 0 && sel <= kMaxSpellCheckLevel)
             config_.SetSpellCheckLevel(static_cast<SpellCheckLevel>(sel));
     }
 
@@ -894,7 +909,12 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
             if (code == CBN_SELCHANGE) {
                 SpellCheckLevel oldLevel = config_.GetSpellCheckLevel();
                 int sel = ComboBox_GetCurSel(comboSpellCheckLevel_);
-                if (sel >= 0 && sel <= 2) {
+#if defined(VKEY_USE_RUST_ENGINE)
+                constexpr int kMaxSpellCheckLevel = static_cast<int>(SpellCheckLevel::Advanced);
+#else
+                constexpr int kMaxSpellCheckLevel = static_cast<int>(SpellCheckLevel::Standard);
+#endif
+                if (sel >= 0 && sel <= kMaxSpellCheckLevel) {
                     SpellCheckLevel newLevel = static_cast<SpellCheckLevel>(sel);
                     const bool enteringAdvanced = newLevel == SpellCheckLevel::Advanced &&
                                                   oldLevel != SpellCheckLevel::Advanced;

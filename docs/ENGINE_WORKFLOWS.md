@@ -129,13 +129,33 @@ from that build does not cover the Rust engine.
 
 **Actions → Build → Run workflow.** Nothing to install, no token on your machine.
 
-The defaults are the ones you want: tests on, engine included, Sciter edition.
-Untick `sign_binaries` for a quick build that skips SignPath.
+The defaults build the Sciter edition with tests and the external engine. Sciter
+stays unsigned in v4.3. Select `include_classic` to run its independent Rust-OFF
+build; only that Classic artifact is submitted to SignPath. Untick
+`sign_binaries` for an unsigned Classic test build. For a manual maintainer test,
+`classic_rust` opts Classic into Rust, labels the uploaded artifact `DEV`, and
+forcibly bypasses SignPath. Tag builds cannot enable that development path.
 
-The artifact carries the app, `sciter.dll`, the engine, and both notice files —
-`THIRD_PARTY_NOTICES.txt` for Sciter and the icons, `vkey_engine.LICENSE.txt` for
-the engine. Those are licence conditions, not decoration; do not hand someone the
-binaries without them.
+The uploaded workflow artifact keeps `sciter/` and `classic/` in separate
+directories because their same-named `VKeyTSF.dll` files have different engine
+capabilities. A manual Sciter artifact carries `sciter.dll`, the optional engine,
+and both notice files. Official Classic never carries the Rust DLL, signature or
+license file.
+
+For local builds the product choices are explicit:
+
+```powershell
+.\vkey.cmd local                         # Sciter + local Rust engine
+.\vkey.cmd local -Lite                   # official-style Classic, C++ only
+.\vkey.cmd local -Lite -ClassicRust      # non-release Classic + Rust dev variant
+.\vkey.cmd local -Lite -ClassicRust -Engine Released
+```
+
+The Rust-enabled Classic variant is maintainer test material, not the official
+Classic product and must never be submitted to SignPath or redistributed as
+`VKeyClassic.zip`. Local outputs are separated as `build-lite-cpp/` and
+`build-lite-rust/` so switching variants cannot leave a stale engine DLL beside
+the C++-only binary.
 
 ## 3. Change the engine itself
 

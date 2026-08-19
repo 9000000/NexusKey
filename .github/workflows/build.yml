@@ -23,12 +23,16 @@ on:
         description: 'Include Classic UI (Lite) build'
         type: boolean
         default: false
+      classic_rust:
+        description: 'DEV ONLY: allow Rust in a manual Classic build (never signed or released)'
+        type: boolean
+        default: false
       include_engine:
-        description: 'Include vkey_engine.dll in artifact output'
+        description: 'Include vkey_engine.dll with Sciter artifact output'
         type: boolean
         default: true
       sign_binaries:
-        description: 'Sign binaries via SignPath (test-signing). Uncheck to use unsigned build output.'
+        description: 'Sign Classic via SignPath (ignored when Classic is excluded or classic_rust is enabled).'
         type: boolean
         default: true
 
@@ -41,12 +45,8 @@ permissions:
   attestations: write   # GitHub native attestation
 
 jobs:
-  build:
-    runs-on: windows-2022
-    outputs:
-      artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
-      has-classic: ${{ steps.check-builds.outputs.has_classic }}
-      has-sciter: ${{ steps.check-builds.outputs.has_sciter }}
+  validate:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,24 +62,33 @@ jobs:
           test -n "$version"
           test "$GITHUB_REF_NAME" = "v$version"
 
+      - name: Validate manual Classic options
+        if: github.event_name == 'workflow_dispatch' && inputs.classic_rust && !inputs.include_classic
+        shell: bash
+        run: |
+          echo "classic_rust requires include_classic=true" >&2
+          exit 1
+
+      - name: Audit hook-thread Rule #11.3 compliance
+        run: bash tools/audit/check_hook_thread_no_mutex.sh
+
+      - name: Check asset provenance
+        run: python3 tools/audit/check_asset_provenance.py
+
+  # Sciter and Classic intentionally use separate build trees and artifacts.
+  # Sciter opts into Rust and remains unsigned in v4.3.
+  build-sciter:
+    needs: validate
+    if: startsWith(github.ref, 'refs/tags/') || inputs.include_sciter
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-
-      # Sprint 1 D7 — Phase B compliance gate.
-      # Fails the build if any hook callback regains a stateMutex_ acquisition
-      # or if any migrated atomic field gets a plain assignment/read.
-      # See tools/audit/check_hook_thread_no_mutex.sh + plan §B D7.
-      - name: Audit hook-thread Rule #11.3 compliance
-        shell: bash
-        run: bash tools/audit/check_hook_thread_no_mutex.sh
-
-      # Refuses font files outright and requires every other binary asset to have
-      # a recorded origin. Guards the "forgotten file" failure: an unlicensed
-      # asset left in the tree is a liability even when nothing renders with it.
-      - name: Check asset provenance
-        run: python3 tools/audit/check_asset_provenance.py
 
       # The engine libraries are no longer committed: they embed CC BY-NC data and
       # are not covered by this repository's GPL-3.0 licence. They are fetched
@@ -105,39 +114,34 @@ jobs:
             --token "${ENGINE_TOKEN}"
 
       - name: Configure
-        if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
         run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="${{ github.workspace }}/build-engine"
 
       - name: Build VKey
-        if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
         run: cmake --build build --config Release --target VKeyApp
 
       - name: Build TSF DLL
-        if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
         run: cmake --build build --config Release --target VKeyTSF
 
       - name: Build Watchdog
-        if: github.event_name != 'workflow_dispatch' || inputs.include_sciter
         run: cmake --build build --config Release --target VKeyWatchdog
 
       - name: Build tests
-        if: (github.event_name != 'workflow_dispatch' || inputs.include_sciter) && (github.event_name != 'workflow_dispatch' || inputs.include_tests)
-        # VKeyTestRunnerTests is gitignored at repo level (.gitignore on
-        # Main), so it's absent on fresh CI checkouts. CMakeLists.txt skips
-        # add_subdirectory when the dir is missing — only build it if present.
+        if: github.event_name != 'workflow_dispatch' || inputs.include_tests
+        # VKeyTestRunner lives in the optional private internal submodule.
+        # Public CI checkouts omit it; maintainer checkouts build it when present.
         shell: bash
         run: |
           cmake --build build --config Release --target VKeyTests
-          if [ -f tools/VKeyTestRunner/CMakeLists.txt ]; then
+          if [ -f internal/tools/VKeyTestRunner/CMakeLists.txt ]; then
             cmake --build build --config Release --target VKeyTestRunnerTests
           fi
 
       - name: Run tests
-        if: (github.event_name != 'workflow_dispatch' || inputs.include_sciter) && (github.event_name != 'workflow_dispatch' || inputs.include_tests)
+        if: github.event_name != 'workflow_dispatch' || inputs.include_tests
         run: ctest --test-dir build --build-config Release --output-on-failure
 
       - name: Reject a same-name tampered engine
-        if: (github.event_name != 'workflow_dispatch' || inputs.include_sciter) && (github.event_name != 'workflow_dispatch' || inputs.include_tests)
+        if: github.event_name != 'workflow_dispatch' || inputs.include_tests
         shell: powershell
         run: |
           $engine = "build/tests/Release/vkey_engine.dll"
@@ -164,129 +168,237 @@ jobs:
             throw "C++ fallback failed after rejecting the tampered engine"
           }
 
-      # --- Classic UI (Lite) build ---
-      - name: Configure Classic UI
-        if: github.event_name != 'workflow_dispatch' || inputs.include_classic
-        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DVKEY_LITE_MODE=ON -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="${{ github.workspace }}/build-engine"
+      - name: Gather unsigned Sciter binaries
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path unsigned-sciter-binaries
+          Copy-Item "build/Release/VKey.exe" "unsigned-sciter-binaries/" -Force
+          Copy-Item "build/Release/VKeyTSF.dll" "unsigned-sciter-binaries/" -Force
+          Copy-Item "build/Release/VKeyWatchdog.exe" "unsigned-sciter-binaries/" -Force
+          Copy-Item "extern/sciter/bin/sciter.dll" "unsigned-sciter-binaries/" -Force
 
-      - name: Build Classic UI
-        if: github.event_name != 'workflow_dispatch' || inputs.include_classic
+      - name: Upload unsigned Sciter binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-sciter-binaries
+          path: unsigned-sciter-binaries/
+          retention-days: 7
+
+  # Official Classic is built without Rust in an independent tree. Its TSF DLL
+  # is therefore edition-specific and must never be reused from the Sciter job.
+  build-classic:
+    needs: validate
+    if: startsWith(github.ref, 'refs/tags/') || inputs.include_classic
+    runs-on: windows-2022
+    outputs:
+      artifact-id: ${{ steps.upload-classic.outputs.artifact-id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Fetch prebuilt engine for Classic development variant
+        if: github.event_name == 'workflow_dispatch' && inputs.classic_rust
+        env:
+          ENGINE_TOKEN: ${{ secrets.VKEY_ENGINE_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${ENGINE_TOKEN}" ]; then
+            echo "VKEY_ENGINE_TOKEN is required for the Classic + Rust development variant." >&2
+            exit 1
+          fi
+          python tools/fetch_engine.py \
+            --lock extern/vkey_engine/engine.lock \
+            --dest "${{ github.workspace }}/build-engine" \
+            --repo phatMT97/VKey-rs \
+            --tag "$(tr -d '[:space:]' < extern/vkey_engine/engine.release)" \
+            --token "${ENGINE_TOKEN}"
+
+      - name: Configure Classic UI (C++ engine only)
+        if: github.event_name != 'workflow_dispatch' || !inputs.classic_rust
+        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DVKEY_LITE_MODE=ON -DVKEY_USE_RUST_ENGINE=OFF
+
+      - name: Configure Classic + Rust development variant
+        if: github.event_name == 'workflow_dispatch' && inputs.classic_rust
+        run: cmake -B build-classic -G "Visual Studio 17 2022" -A x64 -DVKEY_LITE_MODE=ON -DVKEY_USE_RUST_ENGINE=ON -DVKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV=ON -DVKEY_ENGINE_ROOT="${{ github.workspace }}/build-engine"
+
+      - name: Build Classic UI and its edition-specific TSF DLL
         run: |
           cmake --build build-classic --config Release --target VKeyLite
           cmake --build build-classic --config Release --target VKeyTSF
           cmake --build build-classic --config Release --target VKeyWatchdog
 
-      # --- Gather unsigned binaries ---
-      - name: Gather unsigned binaries
-        id: check-builds
+      - name: Build Classic tests
+        if: github.event_name != 'workflow_dispatch' || inputs.include_tests
+        shell: bash
+        run: |
+          cmake --build build-classic --config Release --target VKeyTests
+          if [ -f internal/tools/VKeyTestRunner/CMakeLists.txt ]; then
+            cmake --build build-classic --config Release --target VKeyTestRunnerTests
+          fi
+
+      - name: Run Classic tests
+        if: github.event_name != 'workflow_dispatch' || inputs.include_tests
+        run: ctest --test-dir build-classic --build-config Release --output-on-failure
+
+      - name: Assert Classic build has no Rust engine artifact
+        if: github.event_name != 'workflow_dispatch' || !inputs.classic_rust
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Force -Path unsigned-binaries
-          
-          $hasSciter = "false"
-          if (Test-Path "build/Release/VKey.exe") {
-            Copy-Item "build/Release/VKey.exe" "unsigned-binaries/" -Force
-            Copy-Item "build/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
-            Copy-Item "build/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
-            # Bundled Sciter runtime ships unsigned from the vendor — route it through
-            # SignPath so every binary in the release ZIP is Authenticode-signed.
-            Copy-Item "extern/sciter/bin/sciter.dll" "unsigned-binaries/" -Force
-            $hasSciter = "true"
+          $forbidden = Get-ChildItem "build-classic/Release" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -in @("vkey_engine.dll", "vkey_engine.dll.sig", "vkey_engine.LICENSE.txt") }
+          if ($forbidden) {
+            $forbidden.FullName | Write-Output
+            throw "official Classic build contains a Rust engine artifact"
           }
-          
-          $hasClassic = "false"
-          if (Test-Path "build-classic/Release/VKeyClassic.exe") {
-            Copy-Item "build-classic/Release/VKeyClassic.exe" "unsigned-binaries/" -Force
-            # VKeyTSF.dll / VKeyWatchdog.exe are identical across editions — VKEY_LITE_MODE
-            # only affects the VKeyLite app target, not the TSF DLL or watchdog. So reuse the
-            # Sciter copies when present; only fall back to the Classic build's own copies for
-            # a classic-only run (where build/ was never configured).
-            if ($hasSciter -ne "true") {
-              Copy-Item "build-classic/Release/VKeyTSF.dll" "unsigned-binaries/" -Force
-              Copy-Item "build-classic/Release/VKeyWatchdog.exe" "unsigned-binaries/" -Force
-            }
-            $hasClassic = "true"
-          }
-          
-          echo "has_sciter=$hasSciter" >> $env:GITHUB_OUTPUT
-          echo "has_classic=$hasClassic" >> $env:GITHUB_OUTPUT
 
-      - name: Upload unsigned binaries for signing
-        id: upload-unsigned
+      - name: Assert Classic development build has the Rust engine artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.classic_rust
+        shell: powershell
+        run: |
+          foreach ($path in @(
+            "build-engine/lib/win-x64/vkey_engine.dll",
+            "build-engine/lib/win-x64/vkey_engine.dll.sig"
+          )) {
+            if (-not (Test-Path $path)) {
+              throw "Classic + Rust development build is missing $path"
+            }
+          }
+
+      - name: Gather Classic binaries for signing
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path unsigned-classic-binaries
+          Copy-Item "build-classic/Release/VKeyClassic.exe" "unsigned-classic-binaries/" -Force
+          Copy-Item "build-classic/Release/VKeyTSF.dll" "unsigned-classic-binaries/" -Force
+          Copy-Item "build-classic/Release/VKeyWatchdog.exe" "unsigned-classic-binaries/" -Force
+          if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.classic_rust }}" -eq "true") {
+            Copy-Item "build-engine/lib/win-x64/vkey_engine.dll" "unsigned-classic-binaries/" -Force
+            Copy-Item "build-engine/lib/win-x64/vkey_engine.dll.sig" "unsigned-classic-binaries/" -Force
+            Copy-Item "extern/vkey_engine/LICENSE" "unsigned-classic-binaries/vkey_engine.LICENSE.txt" -Force
+          }
+
+      - name: Upload Classic binaries for signing
+        id: upload-classic
         uses: actions/upload-artifact@v4
         with:
-          name: unsigned-binaries
-          path: unsigned-binaries/
+          name: unsigned-classic-binaries
+          path: unsigned-classic-binaries/
           retention-days: 7
 
   sign-and-release:
-    needs: build
+    needs: [validate, build-sciter, build-classic]
+    if: >-
+      always() &&
+      needs.validate.result == 'success' &&
+      (needs.build-sciter.result == 'success' || needs.build-classic.result == 'success') &&
+      (needs.build-sciter.result == 'success' || needs.build-sciter.result == 'skipped') &&
+      (needs.build-classic.result == 'success' || needs.build-classic.result == 'skipped')
     runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- SignPath Code Signing ---
-      # Tag pushes always sign (release-signing). Manual runs sign with
-      # test-signing only when the `sign_binaries` input is checked; otherwise
-      # the unsigned build output is downloaded into signed-binaries/ instead so
-      # the steps below are identical regardless of whether signing ran.
-      - name: Submit signing request to SignPath
+      - name: Download unsigned Sciter binaries
+        if: needs.build-sciter.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-sciter-binaries
+          path: sciter-binaries
+
+      # SignPath receives only the independently built, C++-only Classic
+      # artifact. Sciter and its third-party runtime never cross this boundary.
+      - name: Submit Classic signing request to SignPath
         id: signpath-sign
-        if: startsWith(github.ref, 'refs/tags/') || inputs.sign_binaries
+        if: needs.build-classic.result == 'success' && (startsWith(github.ref, 'refs/tags/') || (inputs.sign_binaries && !inputs.classic_rust))
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '8e66dee3-2c1d-407f-a391-0d0d3fd74913'
           project-slug: 'VKey'
           signing-policy-slug: "${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}"
-          github-artifact-id: '${{ needs.build.outputs.artifact-id }}'
+          github-artifact-id: '${{ needs.build-classic.outputs.artifact-id }}'
           wait-for-completion: true
-          output-artifact-directory: 'signed-binaries'
+          output-artifact-directory: 'classic-binaries'
 
-      - name: Use unsigned binaries (signing skipped)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.sign_binaries }}
+      - name: Use unsigned Classic binaries (signing skipped)
+        if: needs.build-classic.result == 'success' && !startsWith(github.ref, 'refs/tags/') && (!inputs.sign_binaries || inputs.classic_rust)
         uses: actions/download-artifact@v4
         with:
-          name: unsigned-binaries
-          path: signed-binaries
+          name: unsigned-classic-binaries
+          path: classic-binaries
 
       - name: Reconstruct release layout
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path upload-payload
           
-          if ("${{ needs.build.outputs.has-sciter }}" -eq "true") {
+          if ("${{ needs.build-sciter.result }}" -eq "success") {
             New-Item -ItemType Directory -Force -Path dist
-            Copy-Item "signed-binaries/VKey.exe" "dist/" -Force
-            Copy-Item "signed-binaries/VKeyTSF.dll" "dist/" -Force
-            Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist/" -Force
-            Copy-Item "signed-binaries/sciter.dll" "dist/" -Force
+            Copy-Item "sciter-binaries/VKey.exe" "dist/" -Force
+            Copy-Item "sciter-binaries/VKeyTSF.dll" "dist/" -Force
+            Copy-Item "sciter-binaries/VKeyWatchdog.exe" "dist/" -Force
+            Copy-Item "sciter-binaries/sciter.dll" "dist/" -Force
             # Required: Sciter.JS is BSD 3-Clause, whose clause 2 makes the
             # notice a condition of binary redistribution. It has to be inside
             # the archive, not only in the source repo.
             Copy-Item "THIRD_PARTY_NOTICES.txt" "dist/" -Force
-            Copy-Item "dist/*" "upload-payload/" -Force
+            New-Item -ItemType Directory -Force -Path upload-payload/sciter
+            Copy-Item "dist/*" "upload-payload/sciter/" -Force
           }
           
-          if ("${{ needs.build.outputs.has-classic }}" -eq "true") {
+          if ("${{ needs.build-classic.result }}" -eq "success") {
             New-Item -ItemType Directory -Force -Path dist-classic
-            Copy-Item "signed-binaries/VKeyClassic.exe" "dist-classic/" -Force
+            Copy-Item "classic-binaries/VKeyClassic.exe" "dist-classic/" -Force
             # VKeyTSF.dll is REQUIRED — RegisterTsf() does LoadLibrary("<exe-dir>\VKeyTSF.dll").
             # Without it the Classic build cannot register TSF even when run elevated (issue #199).
-            # The TSF DLL + watchdog are identical to the Sciter edition, so reuse the same
-            # signed root binaries instead of shipping a second signed copy.
-            Copy-Item "signed-binaries/VKeyTSF.dll" "dist-classic/" -Force
-            Copy-Item "signed-binaries/VKeyWatchdog.exe" "dist-classic/" -Force
+            # This TSF DLL comes from the Rust-OFF Classic tree; never reuse the
+            # same-named Rust-enabled DLL produced by the Sciter job.
+            Copy-Item "classic-binaries/VKeyTSF.dll" "dist-classic/" -Force
+            Copy-Item "classic-binaries/VKeyWatchdog.exe" "dist-classic/" -Force
             Copy-Item "THIRD_PARTY_NOTICES.txt" "dist-classic/" -Force
+            if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.classic_rust }}" -eq "true") {
+              Copy-Item "classic-binaries/vkey_engine.dll" "dist-classic/" -Force
+              Copy-Item "classic-binaries/vkey_engine.dll.sig" "dist-classic/" -Force
+              Copy-Item "classic-binaries/vkey_engine.LICENSE.txt" "dist-classic/" -Force
+            }
+            New-Item -ItemType Directory -Force -Path upload-payload/classic
+            Copy-Item "dist-classic/*" "upload-payload/classic/" -Force
+          }
 
-            # VKeyClassic.exe is the only file unique to the Classic edition. The shared
-            # TSF/watchdog are already in upload-payload from the Sciter branch; add them here
-            # only for a classic-only run where the Sciter branch didn't execute.
-            Copy-Item "dist-classic/VKeyClassic.exe" "upload-payload/" -Force
-            if ("${{ needs.build.outputs.has-sciter }}" -ne "true") {
-              Copy-Item "dist-classic/VKeyTSF.dll" "upload-payload/" -Force
-              Copy-Item "dist-classic/VKeyWatchdog.exe" "upload-payload/" -Force
+      - name: Assert v4.3 signing boundary
+        shell: powershell
+        run: |
+          if ("${{ needs.build-sciter.result }}" -eq "success") {
+            foreach ($path in @("dist/VKey.exe", "dist/VKeyTSF.dll", "dist/VKeyWatchdog.exe")) {
+              $signature = Get-AuthenticodeSignature $path
+              if ($signature.Status -ne "NotSigned") {
+                throw "Sciter-owned binary must remain unsigned: $path ($($signature.Status))"
+              }
+            }
+          }
+
+          if ("${{ needs.build-classic.result }}" -eq "success") {
+            $expectSignature = "${{ startsWith(github.ref, 'refs/tags/') || (inputs.sign_binaries && !inputs.classic_rust) }}" -eq "true"
+            foreach ($path in @("dist-classic/VKeyClassic.exe", "dist-classic/VKeyTSF.dll", "dist-classic/VKeyWatchdog.exe")) {
+              $signature = Get-AuthenticodeSignature $path
+              if ($expectSignature) {
+                if ($signature.Status -eq "NotSigned" -or
+                    $signature.SignerCertificate.Subject -notmatch "SignPath") {
+                  throw "Classic binary was not signed by SignPath: $path ($($signature.Status))"
+                }
+                if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true" -and
+                    $signature.Status -ne "Valid") {
+                  throw "release Classic signature is not valid: $path ($($signature.Status))"
+                }
+              }
+              elseif ($signature.Status -ne "NotSigned") {
+                throw "manual unsigned Classic build unexpectedly carries a signature: $path"
+              }
             }
           }
 
@@ -296,7 +408,7 @@ jobs:
       # verified against the committed extern/vkey_engine/engine.lock, which is
       # the trust anchor — not the download.
       - name: Fetch prebuilt engine
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.include_engine)
+        if: needs.build-sciter.result == 'success' && (startsWith(github.ref, 'refs/tags/') || inputs.include_engine)
         env:
           ENGINE_TOKEN: ${{ secrets.VKEY_ENGINE_TOKEN }}
         shell: bash
@@ -315,7 +427,7 @@ jobs:
             --token "${ENGINE_TOKEN}"
 
       - name: Stage external engine asset
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.include_engine)
+        if: needs.build-sciter.result == 'success' && (startsWith(github.ref, 'refs/tags/') || inputs.include_engine)
         shell: powershell
         run: |
           Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "vkey_engine.dll" -Force
@@ -335,9 +447,9 @@ jobs:
           # tag, and inside the payload for a workflow_dispatch test build.
           Copy-Item "extern/vkey_engine/LICENSE" "vkey_engine.LICENSE.txt" -Force
           if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.include_engine }}" -eq "true") {
-            Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "upload-payload/vkey_engine.dll" -Force
-            Copy-Item $sig "upload-payload/vkey_engine.dll.sig" -Force
-            Copy-Item "extern/vkey_engine/LICENSE" "upload-payload/vkey_engine.LICENSE.txt" -Force
+            Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "upload-payload/sciter/vkey_engine.dll" -Force
+            Copy-Item $sig "upload-payload/sciter/vkey_engine.dll.sig" -Force
+            Copy-Item "extern/vkey_engine/LICENSE" "upload-payload/sciter/vkey_engine.LICENSE.txt" -Force
           }
 
       - name: Assert engine remains outside app packages
@@ -345,12 +457,10 @@ jobs:
         shell: powershell
         run: |
           $forbidden = @(
-            "unsigned-binaries/vkey_engine.dll",
-            "signed-binaries/vkey_engine.dll",
+            "classic-binaries/vkey_engine.dll",
+            "classic-binaries/vkey_engine.dll.sig",
             "dist/vkey_engine.dll",
             "dist-classic/vkey_engine.dll",
-            "unsigned-binaries/vkey_engine.dll.sig",
-            "signed-binaries/vkey_engine.dll.sig",
             "dist/vkey_engine.dll.sig",
             "dist-classic/vkey_engine.dll.sig"
           )
@@ -380,14 +490,14 @@ jobs:
 
       # --- Zip releases ---
       - name: Zip Release
-        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-sciter == 'true'
+        if: startsWith(github.ref, 'refs/tags/') && needs.build-sciter.result == 'success'
         shell: powershell
         run: |
           Compress-Archive -Path "dist/*" -DestinationPath VKey.zip
           Copy-Item VKey.zip VKey-x64.zip -Force
 
       - name: Zip Classic Release
-        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-classic == 'true'
+        if: startsWith(github.ref, 'refs/tags/') && needs.build-classic.result == 'success'
         shell: powershell
         run: |
           Compress-Archive -Path "dist-classic/*" -DestinationPath VKeyClassic.zip
@@ -401,11 +511,11 @@ jobs:
           # Generate SHA-256 sidecars used by VerifyDownloadedZip (SEC-001)
           # Format: "<hash>  <filename>" (GNU coreutils sha256sum compatible)
           $files = @()
-          if ("${{ needs.build.outputs.has-sciter }}" -eq "true") {
+          if ("${{ needs.build-sciter.result }}" -eq "success") {
             $files += "VKey.zip"
             $files += "VKey-x64.zip"
           }
-          if ("${{ needs.build.outputs.has-classic }}" -eq "true") {
+          if ("${{ needs.build-classic.result }}" -eq "success") {
             $files += "VKeyClassic.zip"
             $files += "VKeyClassic-x64.zip"
           }
@@ -417,7 +527,7 @@ jobs:
 
       # --- GitHub build provenance attestation ---
       - name: Attest VKey
-        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-sciter == 'true'
+        if: startsWith(github.ref, 'refs/tags/') && needs.build-sciter.result == 'success'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
@@ -425,7 +535,7 @@ jobs:
             VKey-x64.zip
 
       - name: Attest VKey Classic
-        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-classic == 'true'
+        if: startsWith(github.ref, 'refs/tags/') && needs.build-classic.result == 'success'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
@@ -463,7 +573,7 @@ jobs:
       # steps can succeed. Until then the action exits 1 (package not found).
       - name: Submit VKey (Sciter) to WinGet
         uses: vedantmgoyal9/winget-releaser@v2
-        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-sciter == 'true'
+        if: startsWith(github.ref, 'refs/tags/') && needs.build-sciter.result == 'success'
         with:
           identifier: PhatMT97.VKey
           # Release assets are .zip, not installers — the default regex
@@ -474,7 +584,7 @@ jobs:
 
       - name: Submit VKey Classic to WinGet
         uses: vedantmgoyal9/winget-releaser@v2
-        if: startsWith(github.ref, 'refs/tags/') && needs.build.outputs.has-classic == 'true'
+        if: startsWith(github.ref, 'refs/tags/') && needs.build-classic.result == 'success'
         with:
           identifier: PhatMT97.VKey.Classic
           installers-regex: '^VKeyClassic-x64\.zip$'
@@ -483,5 +593,5 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: VKey-x64
+          name: ${{ inputs.classic_rust && 'VKey-Classic-Rust-DEV-x64' || 'VKey-x64' }}
           path: upload-payload/

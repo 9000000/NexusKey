@@ -3,7 +3,9 @@
 #   .\vkey.cmd local              Release build with the locally synced Rust engine
 #   .\vkey.cmd local -Engine Released
 #                                ... Release build with the published, signed engine
-#   .\vkey.cmd local -Lite        ... the Classic Win32 UI (VKeyClassic.exe)
+#   .\vkey.cmd local -Lite        ... official-style Classic, C++ engine only
+#   .\vkey.cmd local -Lite -ClassicRust
+#                                ... non-release Classic development variant
 #   .\vkey.cmd local -DebugBuild  ... Debug, which serves the Sciter UI from files
 #   .\vkey.cmd local -Clean       ... after wiping the CMake cache
 #   .\vkey.cmd local -NoRun       ... build only, do not launch
@@ -32,6 +34,9 @@ param(
     # target under VKEY_LITE_MODE, so this has to reach configure, not just the
     # build step.
     [switch]$Lite,
+    # Explicit escape hatch for testing Classic against Rust. Official Classic
+    # release CI never enables the matching CMake development-only option.
+    [switch]$ClassicRust,
     # -Debug itself is a PowerShell common parameter and cannot be redefined.
     [switch]$DebugBuild,
     # -Verbose is a common parameter too, hence the name.
@@ -41,13 +46,12 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $engineRoot = Join-Path $root "build-engine"
-# -Lite builds into its own tree. The two configurations differ by
-# VKEY_LITE_MODE, so sharing one cache would force a full reconfigure every
-# time you switched. build-lite is the same directory
-# internal/tools/build_lite.ps1 uses, with the same engine root, so the two
-# scripts share a cache rather than fighting over one.
+# Each product configuration has its own tree. Besides avoiding repeated cache
+# flips, build-lite-rust prevents a development engine DLL from remaining beside
+# a later C++-only Classic build.
 $buildName = "build"
-if ($Lite) { $buildName = "build-lite" }
+if ($Lite) { $buildName = "build-lite-cpp" }
+if ($ClassicRust) { $buildName = "build-lite-rust" }
 $buildDir = Join-Path $root $buildName
 
 # Accept local / --local / -local.
@@ -60,6 +64,10 @@ function Fail($message) {
 
 if ($mode -eq "local") {
 
+    if ($ClassicRust -and -not $Lite) {
+        Fail "-ClassicRust requires -Lite. Sciter builds already use the Rust engine."
+    }
+
     $uiName = "Sciter"
     if ($Lite) { $uiName = "Classic" }
     Write-Host "=== VKey - local build ($uiName UI) ===" -ForegroundColor Cyan
@@ -71,9 +79,14 @@ if ($mode -eq "local") {
         Remove-Item -Recurse -Force $cache, $cacheDir -ErrorAction SilentlyContinue
     }
 
-    Write-Host "[2/4] engine ($Engine)" -ForegroundColor Yellow
+    $engineEnabled = -not $Lite -or $ClassicRust
     $allowUnsignedLocalEngine = "OFF"
-    if ($Engine -eq "Local") {
+    if (-not $engineEnabled) {
+        Write-Host "[2/4] engine (built-in C++ only)" -ForegroundColor Yellow
+        Write-Host "Official Classic never fetches, links, or loads the Rust engine." -ForegroundColor DarkGray
+    }
+    elseif ($Engine -eq "Local") {
+        Write-Host "[2/4] engine ($Engine)" -ForegroundColor Yellow
         $engineDll = Join-Path $engineRoot "lib\win-x64\vkey_engine.dll"
         $engineHeader = Join-Path $engineRoot "include\vkey_engine.h"
         $engineLock = Join-Path $engineRoot "engine.lock"
@@ -113,6 +126,7 @@ if ($mode -eq "local") {
         Write-Host "Release will trust only the exact hash in build-engine\engine.lock" -ForegroundColor DarkGray
     }
     else {
+        Write-Host "[2/4] engine ($Engine)" -ForegroundColor Yellow
         $fetch = Join-Path $root "tools\fetch-engine.ps1"
         & $fetch
         if ($LASTEXITCODE -ne 0) { Fail "could not get the released engine" }
@@ -131,15 +145,22 @@ if ($mode -eq "local") {
 
     $liteConfigure = @()
     $liteTarget = @()
+    $engineConfigure = @("-DVKEY_USE_RUST_ENGINE=ON", "-DVKEY_ENGINE_ROOT=$engineRoot", "-DVKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=$allowUnsignedLocalEngine")
     if ($Lite) {
         $liteConfigure = @("-DVKEY_LITE_MODE=ON")
+        if ($ClassicRust) {
+            $liteConfigure += "-DVKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV=ON"
+        }
+        else {
+            $engineConfigure = @("-DVKEY_USE_RUST_ENGINE=OFF")
+        }
         # Without an explicit target this would build every target the lite
         # cache declares, VKeyTSF and the tests included.
         $liteTarget = @("--target", "VKeyLite")
     }
 
     Write-Host "[3/4] configure" -ForegroundColor Yellow
-    cmake -S $root -B $buildDir -G "Visual Studio 18 2026" -A x64 -DVKEY_USE_RUST_ENGINE=ON -DVKEY_ENGINE_ROOT="$engineRoot" "-DVKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=$allowUnsignedLocalEngine" @liteConfigure @cmakeQuiet
+    cmake -S $root -B $buildDir -G "Visual Studio 18 2026" -A x64 @engineConfigure @liteConfigure @cmakeQuiet
     if ($LASTEXITCODE -ne 0) { Fail "configure failed" }
 
     # Debug serves the Sciter UI from ui/ next to the exe instead of the
@@ -181,6 +202,9 @@ VKey
   .\vkey.cmd local              Release build with the locally synced Rust engine
   .\vkey.cmd local -Engine Released
                                 ... use the published, signed Rust engine
+  .\vkey.cmd local -Lite        ... Classic with the built-in C++ engine only
+  .\vkey.cmd local -Lite -ClassicRust
+                                ... non-release Classic + Rust development build
   .\vkey.cmd local -DebugBuild  ... Debug, which serves the Sciter UI from files
   .\vkey.cmd local -Clean       ... after wiping the CMake cache
   .\vkey.cmd local -NoRun       ... build only, do not launch
@@ -191,6 +215,10 @@ local  builds on this machine. It uses the engine synced from the adjacent
        replaces that engine with a download. Use -Engine Released to fetch and
        use the engine named in extern/vkey_engine/engine.release instead.
        -DebugBuild still selects Debug and serves the Sciter UI from files.
+
+Classic C++ output is isolated in build-lite-cpp. The explicit -ClassicRust
+development variant uses build-lite-rust so a previously copied engine DLL
+cannot leak into an official-style Classic output directory.
 
 Build output is errors only. /W4 /WX is set globally, so a warning that matters
 is already an error and still prints; -FullLog brings back everything.
