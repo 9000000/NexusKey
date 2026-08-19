@@ -273,9 +273,12 @@ TEST_F(RustInputEngineTest, AmbiguousToneEscapeResolvesPositionIssue248) {
 
     for (const auto& [raw, expected] : {
              std::pair{std::wstring_view(L"position"), std::wstring_view(L"position")},
-             std::pair{std::wstring_view(L"posSition"), std::wstring_view(L"posSition")},
-             std::pair{std::wstring_view(L"poSsition"), std::wstring_view(L"poSsition")},
              std::pair{std::wstring_view(L"possition"), std::wstring_view(L"position")},
+             std::pair{std::wstring_view(L"posSition"), std::wstring_view(L"position")},
+             std::pair{std::wstring_view(L"poSsition"), std::wstring_view(L"position")},
+             std::pair{std::wstring_view(L"poSSition"), std::wstring_view(L"position")},
+             std::pair{std::wstring_view(L"PosSition"), std::wstring_view(L"Position")},
+             std::pair{std::wstring_view(L"POSSITION"), std::wstring_view(L"POSITION")},
          }) {
         RustInputEngine engine(config);
         for (const wchar_t c : raw) {
