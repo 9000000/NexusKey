@@ -97,6 +97,15 @@ static_assert(sizeof(BrowserContextState) <= 384);
     return std::strcmp(state.browserExe, foregroundExe) == 0;
 }
 
+[[nodiscard]] constexpr bool IsBrowserContextOwnedBy(
+        const BrowserContextState& state,
+        std::uint32_t ownerProcessId,
+        std::uint64_t ownerNonce) noexcept {
+    return ownerProcessId != 0 && ownerNonce != 0
+        && state.ownerProcessId == ownerProcessId
+        && state.ownerNonce == ownerNonce;
+}
+
 [[nodiscard]] constexpr bool ResolveEffectiveTsf(
         bool configuredTsf, bool excluded, bool tsfFeatureEnabled,
         BrowserRoute route) noexcept {

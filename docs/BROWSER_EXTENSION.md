@@ -36,8 +36,10 @@ unsupported executable names, and non-hostname characters.
 The host publishes a fixed-size versioned seqlock mapping. HookEngine normally
 checks one 32-bit generation value per key; JSON parsing and browser APIs stay
 outside the keyboard hook. State expires after five seconds if a browser or
-extension crashes, and an app-level exclusion still has higher precedence than
-a domain route.
+extension crashes. Blur/EOF clears only state owned by that native connection,
+so an unfocused browser's heartbeat cannot erase the currently focused
+browser's route. An app-level exclusion still has higher precedence than a
+domain route.
 
 ## Address-bar limitation (#100)
 

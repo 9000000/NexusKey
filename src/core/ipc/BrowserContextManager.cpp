@@ -139,7 +139,7 @@ void BrowserContextManager::ClearIfOwned(
     const DWORD wait = WaitForSingleObject(impl_->writeMutex, 1000);
     if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return;
     auto* state = const_cast<BrowserContextState*>(impl_->state);
-    if (state->ownerProcessId == ownerProcessId && state->ownerNonce == ownerNonce) {
+    if (IsBrowserContextOwnedBy(*state, ownerProcessId, ownerNonce)) {
         auto* generation = reinterpret_cast<volatile LONG*>(&state->generation);
         InterlockedIncrement(generation);
         state->focused = 0;

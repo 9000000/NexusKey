@@ -52,9 +52,17 @@ int main() {
             WriteFrame("{\"ok\":false,\"error\":\"" + error + "\"}");
             continue;
         }
-        const bool ok = context.Publish(processId, nonce, GetTickCount64(),
-                                        message.focused, message.route,
-                                        message.browserExe, message.hostname);
+        bool ok = true;
+        if (message.focused) {
+            ok = context.Publish(processId, nonce, GetTickCount64(), true,
+                                 message.route, message.browserExe,
+                                 message.hostname);
+        } else {
+            // An unfocused Chrome profile must not overwrite the route most
+            // recently published by a focused Firefox/Edge profile. Clear is
+            // owner-conditional for exactly this multi-browser heartbeat race.
+            context.ClearIfOwned(processId, nonce, GetTickCount64());
+        }
         WriteFrame(ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"publish\"}");
     }
 

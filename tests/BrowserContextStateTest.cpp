@@ -41,5 +41,16 @@ TEST(BrowserContextStateTest, DomainRouteHasExpectedPrecedence) {
     EXPECT_FALSE(ResolveEffectiveTsf(false, false, false, BrowserRoute::ForceTsf));
 }
 
+TEST(BrowserContextStateTest, BlurCannotClearAnotherBrowserConnection) {
+    BrowserContextState state{};
+    state.ownerProcessId = 101;
+    state.ownerNonce = 1001;
+
+    EXPECT_TRUE(IsBrowserContextOwnedBy(state, 101, 1001));
+    EXPECT_FALSE(IsBrowserContextOwnedBy(state, 202, 2002));
+    EXPECT_FALSE(IsBrowserContextOwnedBy(state, 101, 2002));
+    EXPECT_FALSE(IsBrowserContextOwnedBy(state, 0, 1001));
+}
+
 } // namespace
 } // namespace NextKey
