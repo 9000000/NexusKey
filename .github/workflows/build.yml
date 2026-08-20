@@ -81,6 +81,8 @@ jobs:
     needs: validate
     if: startsWith(github.ref, 'refs/tags/') || inputs.include_sciter
     runs-on: windows-2022
+    outputs:
+      artifact-id: ${{ steps.upload-sciter.outputs.artifact-id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -182,6 +184,7 @@ jobs:
           Copy-Item "extern/sciter/bin/sciter.dll" "unsigned-sciter-binaries/" -Force
 
       - name: Upload unsigned Sciter binaries
+        id: upload-sciter
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-sciter-binaries
@@ -305,6 +308,11 @@ jobs:
       (needs.build-sciter.result == 'success' || needs.build-sciter.result == 'skipped') &&
       (needs.build-classic.result == 'success' || needs.build-classic.result == 'skipped')
     runs-on: windows-2022
+    permissions:
+      actions: write
+      attestations: write
+      contents: write
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -621,8 +629,47 @@ jobs:
           installers-regex: '^VKeyClassic-x64\.zip$'
           token: ${{ secrets.WINGET_TOKEN }}
 
-      - name: Upload artifacts
+      - name: Select final artifact name
+        id: artifact-name
+        shell: bash
+        run: |
+          has_sciter="${{ needs.build-sciter.result == 'success' }}"
+          has_classic="${{ needs.build-classic.result == 'success' }}"
+          has_classic_rust="${{ inputs.classic_rust }}"
+
+          if [[ "$has_sciter" == "true" && "$has_classic" == "true" ]]; then
+            if [[ "$has_classic_rust" == "true" ]]; then
+              name="VKey-Sciter-Classic-Rust-DEV-x64"
+            else
+              name="VKey-Sciter-Classic-x64"
+            fi
+          elif [[ "$has_sciter" == "true" ]]; then
+            name="VKey-Sciter-x64"
+          elif [[ "$has_classic_rust" == "true" ]]; then
+            name="VKey-Classic-Rust-DEV-x64"
+          else
+            name="VKey-Classic-x64"
+          fi
+
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload final artifact
+        id: upload-final
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.classic_rust && 'VKey-Classic-Rust-DEV-x64' || 'VKey-x64' }}
+          name: ${{ steps.artifact-name.outputs.name }}
           path: upload-payload/
+
+      - name: Delete intermediate artifacts
+        if: always() && steps.upload-final.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SCITER_ARTIFACT_ID: ${{ needs.build-sciter.outputs.artifact-id }}
+          CLASSIC_ARTIFACT_ID: ${{ needs.build-classic.outputs.artifact-id }}
+        run: |
+          for artifact_id in "$SCITER_ARTIFACT_ID" "$CLASSIC_ARTIFACT_ID"; do
+            if [[ -n "$artifact_id" ]]; then
+              gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id"
+            fi
+          done
