@@ -146,7 +146,7 @@ Toàn bộ mã nguồn cốt lõi của VKey bao gồm:
 Tất cả đều được công khai minh bạch tại repository GitHub của dự án.
 
 ### Phiên bản VKey Classic có sử dụng được Engine Rust Nâng cao không?
-**Không, đối với bản Classic phát hành chính thức.** Phiên bản **VKey Classic là phiên bản 100% mã nguồn mở (Open Source)**, thuần Win32 native siêu nhẹ, và được ký số Authenticode đầy đủ trong v4.3. Bản Classic chính thức chỉ sử dụng Engine C++ mã nguồn mở tích hợp sẵn; workflow build nó trong cây Rust-OFF riêng và từ chối mọi artifact Engine Rust. Maintainer có một cờ opt-in để thử Classic với Rust khi phát triển, nhưng binary thử nghiệm đó không phải sản phẩm Classic chính thức, không được gửi tới SignPath và không được phát hành dưới tên `VKeyClassic.zip`.
+**Không, đối với bản Classic phát hành chính thức.** Phiên bản **VKey Classic là phiên bản 100% mã nguồn mở (Open Source)**, thuần Win32 native siêu nhẹ. Trong v4.3, phạm vi Authenticode của SignPath Foundation chỉ gồm `VKeyClassic.exe`, `VKeyTSF.dll` và `VKeyWatchdog.exe`. Cả ba được build cùng nhau từ cấu hình Foundation riêng, compile-out Rust hoàn toàn và không có Sciter; `VKeyBrowserHost.exe` không thuộc phạm vi ký này. Maintainer có một cờ opt-in để thử Classic với Rust khi phát triển, nhưng binary thử nghiệm đó không phải sản phẩm Classic chính thức, không được gửi tới SignPath và không được phát hành dưới tên `VKeyClassic.zip`.
 
 ### Tôi là lập trình viên, tôi có thể tự viết Engine riêng hoặc tích hợp VKey với bộ xử lý khác không?
 **Có, nhưng phải tự build VKey.** Giao diện C ABI là chuẩn mở (`include/vkey_engine.h`), viết engine tuân thủ nó là đủ về mặt kỹ thuật.

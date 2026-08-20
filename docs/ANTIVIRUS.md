@@ -1,7 +1,8 @@
 # VKey và phần mềm diệt virus (Antivirus false positives)
 
-> **TL;DR:** VKey là bộ gõ mã nguồn mở. Ở v4.3, **chỉ bản Classic được ký số**
-> Authenticode bởi SignPath Foundation; bản tiêu chuẩn Sciter chưa được ký — hãy
+> **TL;DR:** VKey là bộ gõ mã nguồn mở. Ở v4.3, SignPath Foundation chỉ ký
+> `VKeyClassic.exe`, `VKeyTSF.dll` và `VKeyWatchdog.exe` trong gói Classic;
+> bản tiêu chuẩn Sciter và `VKeyBrowserHost.exe` không thuộc phạm vi này — hãy
 > xác minh bản tải bằng **Sigstore attestation**, xem mục *Kiểm chứng* bên dưới.
 > Một số phần mềm diệt
 > virus (Kaspersky, Bitdefender, Avast…) đôi khi
@@ -46,10 +47,10 @@ gh attestation verify VKey.zip --repo PhatMT97/VKey
 
 Nếu lệnh trên báo lỗi → **không** dùng file đó, tải lại từ trang phát hành chính thức.
 
-> Với các bản **v4.0–v4.2** và bản **Classic v4.3** (có ký số), cách kiểm tra là:
+> Với các bản **v4.0–v4.2** và ba binary Foundation của **Classic v4.3**, cách kiểm tra là:
 > ```powershell
-> (Get-AuthenticodeSignature "C:\path\to\VKey.exe").Status          # → Valid
-> (Get-AuthenticodeSignature "C:\path\to\VKey.exe").SignerCertificate.Subject
+> (Get-AuthenticodeSignature "C:\path\to\VKeyClassic.exe").Status # → Valid
+> (Get-AuthenticodeSignature "C:\path\to\VKeyClassic.exe").SignerCertificate.Subject
 > # → CN=SignPath Foundation, O=SignPath Foundation, L=Lewes, S=Delaware, C=US
 > ```
 > Chạy lệnh này trên `VKey.exe` của bản tiêu chuẩn v4.3 sẽ trả về `NotSigned` —
@@ -90,8 +91,9 @@ và tên phần mềm AV — tác giả sẽ nộp allowlist giúp.
 
 ## English (short)
 
-VKey is an open-source Vietnamese IME. In **v4.3 only the Classic edition is
-code-signed** by SignPath Foundation; the standard Sciter edition is unsigned.
+VKey is an open-source Vietnamese IME. In **v4.3 SignPath Foundation signing is
+limited to `VKeyClassic.exe`, `VKeyTSF.dll`, and `VKeyWatchdog.exe`**; the
+standard Sciter edition and `VKeyBrowserHost.exe` are outside that scope.
 Some antivirus products flag it by **behavior detection**
 (not signature) because every IME must hook the keyboard, synthesize keystrokes,
 autostart, and self-supervise — a cluster that looks keylogger-shaped. It is a
@@ -99,8 +101,9 @@ autostart, and self-supervise — a cluster that looks keylogger-shaped. It is a
 keystrokes anywhere. An unsigned build is more likely to trip these heuristics.
 
 - **Verify authenticity:** `gh attestation verify VKey.zip --repo PhatMT97/VKey`
-  (Sigstore build attestation). On v4.0–v4.2 and Classic v4.3 you can additionally check
-  `(Get-AuthenticodeSignature VKey.exe).SignerCertificate.Subject` →
+  (Sigstore build attestation). On v4.0–v4.2 and the three approved Classic v4.3
+  binaries you can additionally check
+  `(Get-AuthenticodeSignature VKeyClassic.exe).SignerCertificate.Subject` →
   `CN=SignPath Foundation, …`.
 - **Restore + exclude:** open your AV's Quarantine, restore VKey, add the install
   folder to Exclusions. Re-enable "Run at startup" in VKey settings if the autorun

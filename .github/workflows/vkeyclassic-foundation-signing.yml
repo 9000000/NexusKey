@@ -1,0 +1,181 @@
+name: VKeyClassic Foundation signing review
+
+# This workflow is intentionally manual and independent from build.yml.
+# Until SignPath Foundation approves this boundary, it uses test-signing only.
+on:
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build-and-submit-vkeyclassic:
+    name: Build and submit VKeyClassic only
+    runs-on: windows-2022
+    steps:
+      - name: Checkout public GPL-3.0 source
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Check public/private file placement
+        run: python3 tools/audit/check_public_tree.py
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure dedicated Foundation build
+        run: >-
+          cmake -S . -B build-foundation
+          -G "Visual Studio 17 2022" -A x64
+          -DVKEY_FOUNDATION_BUILD=ON
+          -DVKEY_LITE_MODE=ON
+          -DVKEY_USE_RUST_ENGINE=OFF
+          -DVKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV=OFF
+          -DVKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=OFF
+
+      - name: Verify Foundation configuration is engine-free and Sciter-free
+        shell: powershell
+        run: |
+          $cache = Get-Content "build-foundation/CMakeCache.txt" -Raw
+          foreach ($required in @(
+            "VKEY_FOUNDATION_BUILD:BOOL=ON",
+            "VKEY_LITE_MODE:BOOL=ON",
+            "VKEY_USE_RUST_ENGINE:BOOL=OFF",
+            "VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV:BOOL=OFF",
+            "VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE:BOOL=OFF"
+          )) {
+            if ($cache -notmatch [regex]::Escape($required)) {
+              throw "Foundation CMake cache is missing: $required"
+            }
+          }
+
+          foreach ($forbiddenProject in @(
+            "build-foundation/VKeyApp.vcxproj",
+            "build-foundation/VKeyBrowserHost.vcxproj",
+            "build-foundation/PackUIResources.vcxproj"
+          )) {
+            if (Test-Path $forbiddenProject) {
+              throw "Forbidden target entered the Foundation build graph: $forbiddenProject"
+            }
+          }
+
+      - name: Build the three approved binaries
+        run: >-
+          cmake --build build-foundation --config Release
+          --target VKeyLite VKeyTSF VKeyWatchdog
+
+      - name: Stage exact SignPath input artifact
+        shell: powershell
+        run: |
+          $stage = "unsigned-vkeyclassic-foundation"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+          $approved = @(
+            "VKeyClassic.exe",
+            "VKeyTSF.dll",
+            "VKeyWatchdog.exe"
+          )
+          foreach ($name in $approved) {
+            $source = Join-Path "build-foundation/Release" $name
+            if (-not (Test-Path $source -PathType Leaf)) {
+              throw "Approved Foundation binary is missing: $source"
+            }
+            Copy-Item $source $stage -Force
+          }
+
+          $actual = @(Get-ChildItem $stage -File | Select-Object -ExpandProperty Name | Sort-Object)
+          $expected = @($approved | Sort-Object)
+          if (Compare-Object $expected $actual) {
+            $actual | Write-Output
+            throw "SignPath input must contain exactly the three approved binaries"
+          }
+
+          foreach ($name in $approved) {
+            $path = Join-Path $stage $name
+            $imports = (& dumpbin /DEPENDENTS $path 2>&1) -join "`n"
+            if ($LASTEXITCODE -ne 0) {
+              $imports | Write-Output
+              throw "dumpbin failed for $path"
+            }
+            if ($imports -match "(?i)(sciter|vkey_engine)[.]dll") {
+              $imports | Write-Output
+              throw "Foundation binary imports a forbidden runtime: $path"
+            }
+          }
+
+      - name: Upload isolated unsigned VKeyClassic artifact
+        id: upload-vkeyclassic
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-vkeyclassic-foundation
+          path: unsigned-vkeyclassic-foundation/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Submit VKeyClassic-only review request to SignPath
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '8e66dee3-2c1d-407f-a391-0d0d3fd74913'
+          project-slug: 'VKey'
+          artifact-configuration-slug: 'vkeyclassic-foundation'
+          signing-policy-slug: 'test-signing'
+          github-artifact-id: '${{ steps.upload-vkeyclassic.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'signed-vkeyclassic-foundation'
+
+      - name: Verify signed result still has the exact boundary
+        shell: powershell
+        run: |
+          $approved = @(
+            "VKeyClassic.exe",
+            "VKeyTSF.dll",
+            "VKeyWatchdog.exe"
+          )
+          $actual = @(
+            Get-ChildItem "signed-vkeyclassic-foundation" -File |
+              Select-Object -ExpandProperty Name |
+              Sort-Object
+          )
+          $expected = @($approved | Sort-Object)
+          if (Compare-Object $expected $actual) {
+            $actual | Write-Output
+            throw "Signed result does not contain exactly the approved binaries"
+          }
+
+          foreach ($name in $approved) {
+            $path = Join-Path "signed-vkeyclassic-foundation" $name
+            $signature = Get-AuthenticodeSignature $path
+            if ($signature.Status -eq "NotSigned" -or -not $signature.SignerCertificate) {
+              throw "SignPath did not sign $path"
+            }
+          }
+
+      - name: Upload signed review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-vkeyclassic-foundation-review
+          path: signed-vkeyclassic-foundation/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Record review links
+        shell: bash
+        run: |
+          {
+            echo "## VKeyClassic Foundation signing review"
+            echo
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- GitHub Actions run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- SignPath request: ${{ steps.signpath.outputs.signing-request-web-url }}"
+            echo "- Signing policy: \`test-signing\` (review only)"
+            echo "- Artifact configuration: \`vkeyclassic-foundation\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,11 +1,11 @@
 # VKey v4.3
 
-[![Signed by SignPath](https://img.shields.io/badge/Signed_by-SignPath-blue)](https://signpath.io)
+[![VKeyClassic binaries signed by SignPath](https://img.shields.io/badge/SignPath-VKeyClassic_binaries_only-blue)](https://signpath.io)
 
 > ⚠️ **Lưu ý quan trọng về Chữ ký số & Cập nhật tự động (Code Signing & Auto-Update)**
 >
-> 1. **Chữ ký số theo phiên bản**: Trong phiên bản v4.3, **chỉ có bản Classic (`VKeyClassic.exe`) là được ký số Authenticode đầy đủ** (bởi SignPath Foundation). Bản tiêu chuẩn (giao diện Sciter UI) hiện **chưa được ký số** do vướng một số vấn đề điều khoản ký số với phía SignPath (liên quan đến việc tích hợp thư viện Sciter). Do đó, tệp cài đặt/chạy của bản tiêu chuẩn có thể bị Windows SmartScreen cảnh báo hoặc một số phần mềm diệt virus cảnh báo nhầm (bạn có thể chọn *More info* → *Run anyway* để tiếp tục sử dụng).
-> 2. **Bản Classic chính thức là 100% mã nguồn mở (Open Source)**: Artifact Classic phát hành là phiên bản thuần mã nguồn mở 100%, siêu nhẹ, độc lập, được build với Rust tắt hoàn toàn và **không thể nạp engine Rust**. Biến thể Classic + Rust trên manual workflow chỉ dành cho maintainer kiểm thử, không ký số và không được phát hành.
+> 1. **Phạm vi ký Foundation**: Trong phiên bản v4.3, SignPath Foundation chỉ ký ba binary GPL-3.0 của gói Classic chính thức: `VKeyClassic.exe`, `VKeyTSF.dll` và `VKeyWatchdog.exe`. `VKey.exe`/VKeyApp, `sciter.dll`, installer, Engine Rust (`vkey_engine.dll`) và mọi thành phần proprietary đều nằm ngoài phạm vi ký này. `VKeyBrowserHost.exe` cũng là mã nguồn GPL-3.0 công khai nhưng không nằm trong request ba file hiện tại. Bản tiêu chuẩn (Sciter UI) chưa được ký Authenticode nên có thể bị Windows SmartScreen hoặc phần mềm diệt virus cảnh báo (chọn *More info* → *Run anyway* để tiếp tục sử dụng).
+> 2. **Bản Classic chính thức là 100% mã nguồn mở (Open Source)**: Ba binary được ký được build cùng nhau từ cấu hình Foundation riêng, với Rust bị compile-out hoàn toàn và không include, link, load, bundle, install hoặc download Rust/Sciter. Biến thể Classic + Rust trên manual workflow chỉ dành cho maintainer kiểm thử, không ký số và không được phát hành.
 > 3. **Cần tải bản v4.3 thủ công**: Do v4.2 yêu cầu kiểm tra chữ ký số an toàn khi nâng cấp, tính năng cập nhật tự động từ v4.2 lên v4.3 (bản tiêu chuẩn) sẽ không hoạt động. Người dùng đang ở phiên bản v4.2 vui lòng **tải và cài đặt bản v4.3 thủ công** từ trang phát hành GitHub Release.
 
 Bản cập nhật này mang đến cải tiến đột phá về khả năng tự động sửa lỗi chính tả cùng các sửa lỗi quan trọng giúp nâng cao độ ổn định.
@@ -61,7 +61,7 @@ Bản cập nhật này mang đến cải tiến đột phá về khả năng t�
 
 **Sponsors**
 
-Free code signing on Windows provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Thank you, SignPath! 🙏
+Free code signing for the three approved VKeyClassic binaries is provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Thank you, SignPath! 🙏
 
 ---
 

@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <!-- Install this configuration in SignPath with slug
+       "vkeyclassic-foundation". Each approved file is mandatory and must match
+       exactly once. The dedicated workflow rejects every additional file before
+       uploading this ZIP. -->
   <zip-file>
-    <pe-file-set>
-      <include path="VKey.exe" min-matches="0" />
-      <include path="VKeyClassic.exe" min-matches="0" />
-      <include path="VKeyTSF.dll" min-matches="0" />
-      <include path="VKeyWatchdog.exe" min-matches="0" />
-      <include path="VKeyBrowserHost.exe" min-matches="0" />
-      <!-- Bundled Sciter runtime ships unsigned from the vendor; sign it so every PE
-           in the release ZIP is Authenticode-signed. -->
-      <include path="sciter.dll" min-matches="0" />
-      <for-each>
-        <authenticode-sign />
-      </for-each>
-    </pe-file-set>
+    <pe-file path="VKeyClassic.exe">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="VKeyTSF.dll">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="VKeyWatchdog.exe">
+      <authenticode-sign />
+    </pe-file>
   </zip-file>
 </artifact-configuration>

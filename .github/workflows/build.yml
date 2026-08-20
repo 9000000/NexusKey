@@ -31,10 +31,6 @@ on:
         description: 'Include vkey_engine.dll with Sciter artifact output'
         type: boolean
         default: true
-      sign_binaries:
-        description: 'Sign Classic via SignPath (ignored when Classic is excluded or classic_rust is enabled).'
-        type: boolean
-        default: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -191,11 +187,13 @@ jobs:
           path: unsigned-sciter-binaries/
           retention-days: 7
 
-  # Official Classic is built without Rust in an independent tree. Its TSF DLL
-  # is therefore edition-specific and must never be reused from the Sciter job.
+  # Manual Classic builds remain available for unsigned development checks.
+  # Official Foundation review/signing uses the isolated
+  # vkeyclassic-foundation-signing.yml workflow instead; tag releases must not
+  # obtain Classic binaries from this mixed workflow.
   build-classic:
     needs: validate
-    if: startsWith(github.ref, 'refs/tags/') || inputs.include_classic
+    if: github.event_name == 'workflow_dispatch' && inputs.include_classic
     runs-on: windows-2022
     outputs:
       artifact-id: ${{ steps.upload-classic.outputs.artifact-id }}
@@ -277,7 +275,7 @@ jobs:
             }
           }
 
-      - name: Gather Classic binaries for signing
+      - name: Gather unsigned Classic binaries
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path unsigned-classic-binaries
@@ -291,7 +289,7 @@ jobs:
             Copy-Item "extern/vkey_engine/LICENSE" "unsigned-classic-binaries/vkey_engine.LICENSE.txt" -Force
           }
 
-      - name: Upload Classic binaries for signing
+      - name: Upload unsigned Classic binaries
         id: upload-classic
         uses: actions/upload-artifact@v4
         with:
@@ -299,7 +297,7 @@ jobs:
           path: unsigned-classic-binaries/
           retention-days: 7
 
-  sign-and-release:
+  package-and-release:
     needs: [validate, build-sciter, build-classic]
     if: >-
       always() &&
@@ -324,23 +322,11 @@ jobs:
           name: unsigned-sciter-binaries
           path: sciter-binaries
 
-      # SignPath receives only the independently built, C++-only Classic
-      # artifact. Sciter and its third-party runtime never cross this boundary.
-      - name: Submit Classic signing request to SignPath
-        id: signpath-sign
-        if: needs.build-classic.result == 'success' && (startsWith(github.ref, 'refs/tags/') || (inputs.sign_binaries && !inputs.classic_rust))
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-          organization-id: '8e66dee3-2c1d-407f-a391-0d0d3fd74913'
-          project-slug: 'VKey'
-          signing-policy-slug: "${{ startsWith(github.ref, 'refs/tags/') && 'release-signing' || 'test-signing' }}"
-          github-artifact-id: '${{ needs.build-classic.outputs.artifact-id }}'
-          wait-for-completion: true
-          output-artifact-directory: 'classic-binaries'
-
-      - name: Use unsigned Classic binaries (signing skipped)
-        if: needs.build-classic.result == 'success' && !startsWith(github.ref, 'refs/tags/') && (!inputs.sign_binaries || inputs.classic_rust)
+      # Foundation signing is deliberately unavailable in this mixed workflow.
+      # Only vkeyclassic-foundation-signing.yml may submit the isolated three-file
+      # artifact after configuring VKEY_FOUNDATION_BUILD=ON.
+      - name: Download unsigned Classic binaries
+        if: needs.build-classic.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: unsigned-classic-binaries
@@ -409,7 +395,7 @@ jobs:
             }
           }
 
-      - name: Assert v4.3 signing boundary
+      - name: Assert combined workflow remains unsigned
         shell: powershell
         run: |
           if ("${{ needs.build-sciter.result }}" -eq "success") {
@@ -422,21 +408,10 @@ jobs:
           }
 
           if ("${{ needs.build-classic.result }}" -eq "success") {
-            $expectSignature = "${{ startsWith(github.ref, 'refs/tags/') || (inputs.sign_binaries && !inputs.classic_rust) }}" -eq "true"
             foreach ($path in @("dist-classic/VKeyClassic.exe", "dist-classic/VKeyTSF.dll", "dist-classic/VKeyWatchdog.exe", "dist-classic/VKeyBrowserHost.exe")) {
               $signature = Get-AuthenticodeSignature $path
-              if ($expectSignature) {
-                if ($signature.Status -eq "NotSigned" -or
-                    $signature.SignerCertificate.Subject -notmatch "SignPath") {
-                  throw "Classic binary was not signed by SignPath: $path ($($signature.Status))"
-                }
-                if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true" -and
-                    $signature.Status -ne "Valid") {
-                  throw "release Classic signature is not valid: $path ($($signature.Status))"
-                }
-              }
-              elseif ($signature.Status -ne "NotSigned") {
-                throw "manual unsigned Classic build unexpectedly carries a signature: $path"
+              if ($signature.Status -ne "NotSigned") {
+                throw "combined workflow must not carry a Foundation signature: $path"
               }
             }
           }

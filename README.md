@@ -139,8 +139,8 @@ là **Luôn gõ English**. Khi chuyển qua lại hai tab, VKey tự áp dụng 
 lỗi kết nối tại [docs/BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md).
 
 > **Ký số (Code signing) & Bản Classic:** 
-> - Trong bản **v4.3, chỉ có bản Classic chính thức (`VKeyClassic.exe`) là được ký số Authenticode đầy đủ** (bởi SignPath Foundation). Artifact này là **100% mã nguồn mở (Open Source)**, nhẹ, thuần Win32 native và được build với Engine Rust tắt hoàn toàn.
-> - Bản tiêu chuẩn (Sciter UI) v4.3 **chưa được ký số** do vướng điều khoản ký số với SignPath về thư viện bên thứ ba Sciter — Windows SmartScreen có thể cảnh báo khi chạy lần đầu (chọn *More info* → *Run anyway*). Các bản v4.0–v4.2 trước đó đều được ký Authenticode đầy đủ.
+> - Trong bản **v4.3, SignPath Foundation chỉ ký ba binary GPL-3.0 của gói Classic chính thức**: `VKeyClassic.exe`, `VKeyTSF.dll` và `VKeyWatchdog.exe`. Cả ba được tạo cùng nhau từ cấu hình Foundation riêng, với Engine Rust bị compile-out hoàn toàn và không có Sciter.
+> - Phạm vi ký Foundation **không áp dụng** cho `VKey.exe`/VKeyApp, `sciter.dll`, installer, Engine Rust (`vkey_engine.dll`) hoặc bất kỳ thành phần proprietary nào. `VKeyBrowserHost.exe` có mã nguồn GPL-3.0 công khai nhưng không nằm trong request ba file hiện tại. Bản tiêu chuẩn (Sciter UI) v4.3 chưa được ký Authenticode; Windows SmartScreen có thể cảnh báo khi chạy lần đầu (chọn *More info* → *Run anyway*). Các bản v4.0–v4.2 trước đó đều được ký Authenticode đầy đủ.
 > - Cách xác minh bản tải hiện nay: xem mục [Xác minh bản tải](#xác-minh-bản-tải-verify-release) bên dưới.
 
 ---
@@ -160,7 +160,7 @@ cosign verify-blob VKey.zip \
   --certificate-identity-regexp="https://github.com/phatMT97/VKey/"
 ```
 
-> **Lưu ý:** Attestation Sigstore ở trên là cách xác minh chính thức cho bản **v4.3 tiêu chuẩn** — nó chứng minh file được build từ đúng mã nguồn trong repo này. Riêng bản **v4.3 Classic** đã được ký Authenticode đầy đủ (`CN=SignPath Foundation`). Bản v4.3 tiêu chuẩn (Sciter) **không** có chữ ký Authenticode, nên `(Get-AuthenticodeSignature VKey.exe).Status` sẽ **không** trả về `Valid`; đó là điều bình thường với bản tiêu chuẩn v4.3, không phải dấu hiệu file giả. (Các bản v4.0–v4.2 có ký Authenticode với publisher `CN=SignPath Foundation`.)
+> **Lưu ý:** Attestation Sigstore ở trên là cách xác minh chính thức cho bản **v4.3 tiêu chuẩn** — nó chứng minh file được build từ đúng mã nguồn trong repo này. Trong gói **v4.3 Classic**, chỉ `VKeyClassic.exe`, `VKeyTSF.dll` và `VKeyWatchdog.exe` thuộc phạm vi Authenticode của Foundation (`CN=SignPath Foundation`). Bản v4.3 tiêu chuẩn (Sciter) và `VKeyBrowserHost.exe` **không** thuộc phạm vi này, nên `(Get-AuthenticodeSignature VKey.exe).Status` sẽ không trả về `Valid`; đó là điều bình thường với bản tiêu chuẩn v4.3, không phải dấu hiệu file giả. (Các bản v4.0–v4.2 có ký Authenticode với publisher `CN=SignPath Foundation`.)
 >
 > Một số phần mềm diệt virus có thể cảnh báo VKey theo **hành vi** (bộ gõ nào cũng phải hook bàn phím + gửi phím) — đây là cảnh báo nhầm, và bản không ký số dễ bị cảnh báo hơn. Cách khôi phục & loại trừ: **[docs/ANTIVIRUS.md](docs/ANTIVIRUS.md)**.
 
@@ -301,7 +301,7 @@ winget install PhatMT97.VKey.Classic
 
 *(Recommended)* Disable other IMEs (Unikey, EVKey) before running to avoid conflicts.
 
-> **Code signing & Classic edition:** In **v4.3, only the official Classic edition (`VKeyClassic.exe`) is Authenticode-signed** (SignPath Foundation). That artifact is **100% open-source**, lightweight, native Win32, and built with the Rust engine disabled. A manual Classic + Rust test artifact is explicitly labeled `DEV` and is never submitted to SignPath. The standard edition (Sciter UI) in v4.3 **is not code-signed** due to SignPath policy restrictions regarding the third-party Sciter library — Windows SmartScreen may warn on first run (*More info* → *Run anyway*). Releases v4.0–v4.2 were Authenticode-signed. To verify a download today, use the Sigstore attestation described above.
+> **Code signing & Classic edition:** In **v4.3, SignPath Foundation signing applies only to the three GPL-3.0 binaries in the official Classic package**: `VKeyClassic.exe`, `VKeyTSF.dll`, and `VKeyWatchdog.exe`. They are built together by a dedicated Foundation configuration with the Rust engine compiled out and no Sciter dependency. Foundation signing does **not** apply to `VKey.exe`/VKeyApp, `sciter.dll`, installers, `vkey_engine.dll`, or any proprietary component. `VKeyBrowserHost.exe` is public GPL-3.0 code but is outside the current three-file request. The standard Sciter edition is therefore not Authenticode-signed and may trigger Windows SmartScreen. Releases v4.0–v4.2 were Authenticode-signed. To verify any download, use the Sigstore attestation described above.
 
 ### Building
 
@@ -344,7 +344,7 @@ VKey is built with a lean architecture and no heavy runtime dependencies, keepin
       <a href="https://signpath.org/"><img src="https://signpath.org/assets/favicon-50x50.png" alt="SignPath" width="40"></a>
     </td>
     <td>
-      Free code signing on Windows for releases v4.0–v4.2 and v4.3 (Classic) provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>
+      Free code signing on Windows for releases v4.0–v4.2 and, in v4.3, only the three approved VKeyClassic binaries, provided by <a href="https://signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>
     </td>
   </tr>
 </table>
@@ -360,7 +360,7 @@ VKey is built with a lean architecture and no heavy runtime dependencies, keepin
 - Tham khảo config TSF từ [VietType](https://github.com/dinhngtu/VietType)
 - Tham khảo cách xử lý clipboard input từ [SigmaLib](https://github.com/phamhoangnhat/SigmaLib) của Phạm Hoàng Nhật
 - Tham khảo quy tắt tiếng việt từ [dotnetkey](https://code.google.com/archive/p/dotnetkey/downloads)
-- Dịch vụ ký số (Authenticode) trên Windows cho các bản v4.0–v4.2 và v4.3 (Classic) cung cấp miễn phí bởi [SignPath.io](https://signpath.io/), chứng chỉ ký số bởi [SignPath Foundation](https://signpath.org/)
+- Dịch vụ ký số (Authenticode) trên Windows cho các bản v4.0–v4.2 và riêng ba binary được phê duyệt của VKeyClassic trong v4.3 cung cấp miễn phí bởi [SignPath.io](https://signpath.io/), chứng chỉ ký số bởi [SignPath Foundation](https://signpath.org/)
 
 ### Top Testers
 Cảm ơn các thành viên cộng đồng đã test và góp ý:

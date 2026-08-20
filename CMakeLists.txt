@@ -127,6 +127,24 @@ option(VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE
     "Allow a Release development build to trust the exact engine.lock hash" OFF)
 option(VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV
     "Allow a manual, non-release Classic development build to use the Rust engine" OFF)
+option(VKEY_FOUNDATION_BUILD
+    "Build only the GPL-3.0 VKeyClassic targets approved for Foundation signing" OFF)
+if(VKEY_FOUNDATION_BUILD)
+    if(NOT VKEY_LITE_MODE)
+        message(FATAL_ERROR
+            "VKEY_FOUNDATION_BUILD=ON requires VKEY_LITE_MODE=ON")
+    endif()
+    if(VKEY_USE_RUST_ENGINE OR VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV OR
+       VKEY_ALLOW_UNSIGNED_LOCAL_ENGINE)
+        message(FATAL_ERROR
+            "VKEY_FOUNDATION_BUILD=ON forbids every Rust engine option. Use "
+            "-DVKEY_USE_RUST_ENGINE=OFF "
+            "-DVKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV=OFF "
+            "-DVKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=OFF.")
+    endif()
+    message(STATUS
+        "Foundation build: Rust engine, Sciter app, and browser host are excluded")
+endif()
 if(VKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV AND
    (NOT VKEY_LITE_MODE OR NOT VKEY_USE_RUST_ENGINE))
     message(FATAL_ERROR
@@ -389,7 +407,7 @@ set_target_properties(VKeyTSF PROPERTIES
     LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/src/tsf/VKeyTSF.def\""
 )
 
-if(WIN32)
+if(WIN32 AND NOT VKEY_FOUNDATION_BUILD)
     add_executable(VKeyBrowserHost
         src/browser_host/main.cpp
         src/browser_host/NativeMessaging.cpp
@@ -399,6 +417,7 @@ if(WIN32)
 endif()
 
 # Core App (EXE) - Win32 GUI application with Sciter UI
+if(NOT VKEY_FOUNDATION_BUILD)
 add_executable(VKeyApp WIN32
     src/app/main.cpp
     src/app/resource.h
@@ -533,6 +552,7 @@ target_link_libraries(VKeyApp PRIVATE VKeyCore)
 set_target_properties(VKeyApp PROPERTIES OUTPUT_NAME "VKey")
 if(MSVC)
     target_link_options(VKeyApp PRIVATE /SUBSYSTEM:WINDOWS,6.01)
+endif()
 endif()
 
 # ============================================================================
@@ -679,15 +699,17 @@ endif()
 # Link Windows libraries
 if(WIN32)
     target_link_libraries(VKeyTSF PRIVATE advapi32 user32 ole32 oleaut32 uuid shell32)
-    target_link_libraries(VKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt winhttp)
+    if(TARGET VKeyApp)
+        target_link_libraries(VKeyApp PRIVATE advapi32 user32 ole32 shell32 dwmapi uuid urlmon version comctl32 winmm bcrypt winhttp)
 
-    # Copy sciter.dll to output directory
-    add_custom_command(TARGET VKeyApp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/bin/sciter.dll"
-            "$<TARGET_FILE_DIR:VKeyApp>/sciter.dll"
-        COMMENT "Copying sciter.dll to output directory"
-    )
+        # Copy sciter.dll to output directory
+        add_custom_command(TARGET VKeyApp POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/extern/sciter/bin/sciter.dll"
+                "$<TARGET_FILE_DIR:VKeyApp>/sciter.dll"
+            COMMENT "Copying sciter.dll to output directory"
+        )
+    endif()
 
     # Deploy the prebuilt Rust engine next to every binary that creates engines
     # (VKeyApp.exe and the in-process VKeyTSF.dll). RustInputEngine loads it
@@ -727,6 +749,8 @@ if(WIN32)
     endif()
 endif()
 
+# Sciter UI resources do not exist in the Foundation build graph.
+if(TARGET VKeyApp)
 # ============================================================================
 # Sciter UI Resources
 # Release: Embed UI files into exe using packfolder
@@ -782,6 +806,7 @@ add_custom_command(TARGET VKeyApp POST_BUILD
         "$<TARGET_FILE_DIR:VKeyApp>/ui"
     COMMENT "Copying UI files (Debug only)"
 )
+endif()
 
 # ============================================================================
 # Testing with Google Test (vendored in extern/)
