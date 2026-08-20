@@ -12,6 +12,15 @@ Bản cập nhật này mang đến cải tiến đột phá về khả năng t�
 
 ### ✨ Tính năng mới & Cải tiến nổi bật
 
+* **🧪 VKey Browser — tự chuyển chế độ theo website (thử nghiệm)**
+    * Thêm extension đồng hành [VKey-Browser](https://github.com/phatMT97/VKey-Browser) và `VKeyBrowserHost.exe` để áp dụng **Theo VKey**, **English** hoặc **TSF tương thích** theo từng tên miền.
+    * Chuyển tab hoặc chuyển cửa sổ sẽ tự cập nhật chế độ. Ví dụ có thể dùng V trên `google.com` và tự chuyển E trên `voz.vn` mà không làm thay đổi trạng thái V/E gốc.
+    * Có công tắc bật/tắt toàn cục: tắt sẽ tạm dừng mọi rule nhưng vẫn giữ nguyên cấu hình để bật lại sau.
+    * Popup hiển thị trạng thái kết nối native host và dùng icon VKey; gói Chromium/Firefox có manifest riêng để tương thích Manifest V3.
+    * Chế độ TSF theo tên miền hỗ trợ các editor/forum Firefox bị dính chữ sau emoji/inline image; composition được đặt kiểu hiển thị không gạch chân.
+    * Extension chỉ gửi hostname, browser, trạng thái focus và route cục bộ; không gửi URL đầy đủ, nội dung trang hoặc phím gõ.
+    * Hiện cài bằng Developer mode/Load unpacked và chưa phát hành trên Chrome Web Store hoặc Firefox AMO. Extension không thể đọc nội dung đang gõ trong address bar trước khi navigation.
+    * Hướng dẫn cài đặt: [docs/BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md).
 * **🌐 Ra mắt trang thông tin chính thức**: Chính thức ra mắt website tại [www.vkey.qd.je](https://www.vkey.qd.je/) giúp người dùng dễ dàng tra cứu thông tin tính năng, hướng dẫn sử dụng và tải về các bản phát hành.
 * **Tinh chỉnh UI**  (chỉ ở giao diện hiện đại)
     * **Tab "Hệ thống"**: Gom nhóm tuỳ chọn icon để giúp UI gọn hơn

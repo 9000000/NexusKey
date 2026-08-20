@@ -55,6 +55,10 @@ Engine mới, kiến trúc mới, C++20, hiệu năng cao, giao diện Glassmorp
 * **Smart Switch per app**
   Tự động nhớ chế độ Việt/Anh theo từng ứng dụng
 
+* **VKey Browser (thử nghiệm)**
+  Tự động áp dụng chế độ mặc định, English hoặc TSF theo từng tên miền và đổi
+  ngay khi chuyển tab. [Cài đặt extension](docs/BROWSER_EXTENSION.md)
+
 * **App Exclusion (Hard / Soft)**
   Linh hoạt kiểm soát bật/tắt tiếng Việt theo app (phù hợp game, tool đặc thù)
 
@@ -109,6 +113,30 @@ winget install PhatMT97.VKey.Classic
 2. Giải nén và chạy `VKey.exe` (hoặc `VKeyClassic.exe` đối với bản Classic).
 
 *(Khuyến nghị)* Tắt các bộ gõ khác (Unikey, EVKey) trước khi chạy để tránh xung đột.
+
+### Extension trình duyệt thử nghiệm
+
+> [!WARNING]
+> Đây là tính năng thử nghiệm. Bản VKey sử dụng phải có
+> `VKeyBrowserHost.exe` nằm cạnh `VKey.exe` hoặc `VKeyClassic.exe`.
+
+1. Chạy VKey một lần để đăng ký native-messaging host.
+2. Tải và giải nén [VKey-Browser](https://github.com/phatMT97/VKey-Browser).
+3. Bật Developer mode tại `chrome://extensions`, `edge://extensions` hoặc
+   `brave://extensions`, chọn **Load unpacked** rồi chọn thư mục có
+   `manifest.json`. Với Firefox, chạy `npm run build:firefox`, mở
+   `about:debugging#/runtime/this-firefox`, chọn **Load Temporary Add-on** và
+   chọn `dist/firefox/manifest.json`.
+4. Mở một website, bấm icon VKey Browser và chọn **Theo VKey**,
+   **Luôn gõ English** hoặc **TSF tương thích**.
+
+Công tắc **Bật điều hướng theo website** được bật mặc định. Có thể tắt để tạm
+ngừng mọi rule mà không xóa cấu hình; VKey sẽ trở về hành vi bình thường.
+
+Ví dụ: giữ VKey ở chế độ V, để `google.com` là **Theo VKey** và đặt `voz.vn`
+là **Luôn gõ English**. Khi chuyển qua lại hai tab, VKey tự áp dụng V/E tương
+ứng mà không thay đổi trạng thái V/E gốc. Xem hướng dẫn, giới hạn và cách xử lý
+lỗi kết nối tại [docs/BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md).
 
 > **Ký số (Code signing) & Bản Classic:** 
 > - Trong bản **v4.3, chỉ có bản Classic chính thức (`VKeyClassic.exe`) là được ký số Authenticode đầy đủ** (bởi SignPath Foundation). Artifact này là **100% mã nguồn mở (Open Source)**, nhẹ, thuần Win32 native và được build với Engine Rust tắt hoàn toàn.
