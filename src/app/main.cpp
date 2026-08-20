@@ -472,26 +472,28 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Wire TSF mode callback: HookEngine → SharedState flags for DLL.
     // TSF_ACTIVE   = DLL consumes keys (foreground app in TSF list).
     // TSF_READONLY = DLL publishes HookContextAnchor for auto-cap (ordinary app).
-    g_hookEngine.SetTsfModeCallback([](bool tsfActive, bool tsfReadonly) {
+    g_hookEngine.SetTsfModeCallback([](
+            bool tsfActive, bool tsfReadonly, bool shouldActivateProfile) {
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_ACTIVE, tsfActive);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_READONLY, tsfReadonly);
         // Tray icon: show the colored "T" indicator while a TSF app is focused,
         // and revert to V/E when it isn't. Deferred to the tray message thread.
         if (HWND tsfTrayWnd = g_trayIcon.GetMessageWindow()) {
             PostMessageW(tsfTrayWnd, WM_VKEY_TRAY_TSF_SYNC, tsfActive ? 1 : 0, 0);
-            // #209 (Shzr0 2026-07-04): re-assert TIP selection on every focus INTO
-            // a TSF app. Startup-only activation left the selection unrecoverable
+            // #209 (Shzr0 2026-07-04): re-assert TIP selection on focus INTO a
+            // new TSF target. Startup-only activation left selection unrecoverable
             // when Windows/the user flipped the Input Indicator mid-session
             // (manual Win+Space, Edge losing selection after copying an image) —
             // VKey stayed on "US Keyboard" until restart. Re-asserting per focus
             // is safe now that ActivateVKeyTsfProfile() also runs
             // InstallLayoutOrTip (the TIP is always selectable — the pre-bb7e3ad
-            // fragility is gone) and is throttled (200ms ok / 2s fail) +
-            // idempotent. Deliberately NOT gated on V/E mode: the TIP passes
+            // fragility is gone). Same-HWND poll classifications are filtered by
+            // HookEngine before reaching this branch. Deliberately NOT gated on
+            // V/E mode: the TIP passes
             // through in E mode, and per-app E/V lock must restore the TIP either
             // way. An in-place Input Indicator switch (no focus change) stands
             // until the next refocus — matches tester-expected semantics.
-            if (tsfActive) {
+            if (tsfActive && shouldActivateProfile) {
                 PostMessageW(tsfTrayWnd, WM_VKEY_ACTIVATE_TSF, 0, 0);
             }
         }

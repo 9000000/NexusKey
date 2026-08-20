@@ -646,18 +646,19 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Wire TSF mode callback: HookEngine -> SharedState flags for DLL.
     // TSF_ACTIVE   = DLL consumes keys (foreground app in TSF list).
     // TSF_READONLY = DLL publishes HookContextAnchor for auto-cap (ordinary app).
-    g_hookEngine.SetTsfModeCallback([](bool tsfActive, bool tsfReadonly) {
+    g_hookEngine.SetTsfModeCallback([](
+            bool tsfActive, bool tsfReadonly, bool shouldActivateProfile) {
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_ACTIVE, tsfActive);
         g_sharedState.SetOrClearFlag(SharedFlags::TSF_READONLY, tsfReadonly);
         // Tray icon: show the colored "T" indicator while a TSF app is focused,
         // and revert to V/E when it isn't. Deferred to the tray message thread.
         if (HWND tsfTrayWnd = g_trayIcon.GetMessageWindow()) {
             PostMessageW(tsfTrayWnd, WM_VKEY_TRAY_TSF_SYNC, tsfActive ? 1 : 0, 0);
-            // #209: re-assert TIP selection on every focus into a TSF app, NOT
+            // #209: re-assert TIP selection on focus into a new TSF target, NOT
             // gated on V/E — selection recovery matters in both modes (the TIP
-            // passes through in E). Throttled + idempotent inside
-            // ActivateVKeyTsfProfile(). See main.cpp for the full rationale.
-            if (tsfActive) {
+            // passes through in E). Same-HWND poll classifications are filtered
+            // by HookEngine. See main.cpp for the full rationale.
+            if (tsfActive && shouldActivateProfile) {
                 PostMessageW(tsfTrayWnd, WM_VKEY_ACTIVATE_TSF, 0, 0);
             }
         }

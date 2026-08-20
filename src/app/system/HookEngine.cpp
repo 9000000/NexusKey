@@ -936,7 +936,8 @@ void HookEngine::ReloadFromToml() {
             HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
                      wasTsfApp ? L"true" : L"false", newTsfApp ? L"true" : L"false");
         }
-        tsfModeCallback_(newTsfApp, tsfReadonly);
+        tsfModeCallback_(newTsfApp, tsfReadonly,
+                         newTsfApp && !wasTsfApp);
     }
 
     // Re-apply per-app encoding override for current app. Encoding is a
@@ -4608,6 +4609,8 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
     isTsfApp_.store(cls->isTsf, std::memory_order_release);
+    const bool shouldActivateTsfProfile = ShouldActivateTsfProfileForFocus(
+        tsfFocusActivationState_, cls->isTsf, cls->hwndOpaque);
     // Store forced-V cache flag at the SAME site as the others, BEFORE the
     // excluded/tsf early-returns below — so switching excluded↔forced-V leaves
     // the flag consistent. forcedVnPid_ feeds the toggle-lock PID check.
@@ -4628,7 +4631,8 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
             HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
                      wasTsfAppFlag ? L"true" : L"false", cls->isTsf ? L"true" : L"false");
         }
-        tsfModeCallback_(cls->isTsf, tsfReadonly);
+        tsfModeCallback_(cls->isTsf, tsfReadonly,
+                         shouldActivateTsfProfile);
     }
 
     if (cls->skipAppTracking) {

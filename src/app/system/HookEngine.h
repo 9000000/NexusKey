@@ -12,6 +12,7 @@
 #include "core/config/ConfigSnapshot.h"
 #include "core/hotkey/HotkeyRegistry.h"
 #include "core/AutoCapStateTransition.h"
+#include "core/FocusApplyDecision.h"
 #include "core/FormulaSegmentDecision.h"
 #include "core/SmartSwitchManager.h"
 #include "app/system/HookCommandMailbox.h"
@@ -161,11 +162,15 @@ public:
         hotkeyChangedCallback_ = std::move(callback);
     }
 
-    /// Callback fired on focus changes. Args: (tsfActive, tsfReadonly).
+    /// Callback fired when focus/config changes TSF ownership.
+    /// Args: (tsfActive, tsfReadonly, shouldActivateProfile).
     ///   tsfActive   = foreground app is in TSF list (full TIP consumes keys).
     ///   tsfReadonly = Hook handles keys; TSF DLL should publish doc anchor.
-    /// Fires on every focus change (SetOrClearFlag is idempotent).
-    void SetTsfModeCallback(std::function<void(bool, bool)> callback) {
+    ///   shouldActivateProfile = focus entered a new TSF HWND, or config made
+    ///                           the current app a TSF target.
+    /// Fires on every applied focus change (SetOrClearFlag is idempotent).
+    using TsfModeCallback = std::function<void(bool, bool, bool)>;
+    void SetTsfModeCallback(TsfModeCallback callback) {
         tsfModeCallback_ = std::move(callback);
     }
 
@@ -672,6 +677,9 @@ private:
     // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +
     // ProcessKeyUp early-return gates on the hook hot path.
     std::atomic<bool> isTsfApp_{false};       // cached: is current foreground app in TSF list?
+    // Hook-thread owned. Focus polls can classify the same HWND every 200 ms;
+    // only the first application may request the expensive TIP re-activation.
+    TsfFocusActivationState tsfFocusActivationState_{};
     // Anti-Dorion (hook-only): current foreground is a Chromium-class host
     // (Electron / WebView2 / Tauri / browser). Such hosts install their own
     // WH_KEYBOARD_LL above ours and can re-arm mid-session, starving our hook
@@ -972,7 +980,7 @@ private:
     // Callbacks
     ModeChangeCallback modeChangeCallback_;
     std::function<void()> configReloadCallback_;
-    std::function<void(bool, bool)> tsfModeCallback_;
+    TsfModeCallback tsfModeCallback_;
     FocusAppContextCallback focusAppContextCallback_;
     HotkeyChangedCallback hotkeyChangedCallback_;
 
