@@ -196,12 +196,31 @@ static HRESULT RegisterCategory() {
         CLSCTX_INPROC_SERVER, IID_ITfCategoryMgr, (void**)&pCategoryMgr);
     if (FAILED(hr)) return hr;
 
-    // Register as keyboard TIP
+    // Register as keyboard TIP.
     hr = pCategoryMgr->RegisterCategory(
         CLSID_TextService,
         GUID_TFCAT_TIP_KEYBOARD,
         CLSID_TextService
     );
+
+    // Let TSF resolve GUID_DisplayAttribute_Input through this text service.
+    // CompositionManager writes the corresponding GUID atom onto each active
+    // range; the provider returns TF_LS_NONE so hosts do not draw pre-edit
+    // underline/highlight.
+    if (SUCCEEDED(hr)) {
+        hr = pCategoryMgr->RegisterCategory(
+            CLSID_TextService,
+            GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
+            CLSID_TextService
+        );
+        if (FAILED(hr)) {
+            (void)pCategoryMgr->UnregisterCategory(
+                CLSID_TextService,
+                GUID_TFCAT_TIP_KEYBOARD,
+                CLSID_TextService
+            );
+        }
+    }
 
     pCategoryMgr->Release();
     return hr;
@@ -213,6 +232,12 @@ static HRESULT UnregisterCategory() {
         CLSCTX_INPROC_SERVER, IID_ITfCategoryMgr, (void**)&pCategoryMgr);
     if (FAILED(hr)) return hr;
 
+    const HRESULT displayHr = pCategoryMgr->UnregisterCategory(
+        CLSID_TextService,
+        GUID_TFCAT_DISPLAYATTRIBUTEPROVIDER,
+        CLSID_TextService
+    );
+
     hr = pCategoryMgr->UnregisterCategory(
         CLSID_TextService,
         GUID_TFCAT_TIP_KEYBOARD,
@@ -220,7 +245,7 @@ static HRESULT UnregisterCategory() {
     );
 
     pCategoryMgr->Release();
-    return hr;
+    return FAILED(hr) ? hr : displayHr;
 }
 
 static void CleanupHkcuClsidOverride() noexcept {

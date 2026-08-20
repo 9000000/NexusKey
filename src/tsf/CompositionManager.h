@@ -64,6 +64,12 @@ private:
         ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
         const std::wstring& currentText);
 
+    /// Attach VKey's TF_LS_NONE display attribute to the live composition
+    /// range. Without the GUID atom property, hosts fall back to their default
+    /// pre-edit underline even though DisplayAttributeInfo advertises an
+    /// invisible style.
+    [[nodiscard]] bool ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange);
+
     /// Clear display attribute from range (on end composition)
     void ClearDisplayAttribute(TfEditCookie ec, ITfRange* pRange);
 

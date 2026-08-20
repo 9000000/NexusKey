@@ -116,6 +116,12 @@ bool CompositionManager::BeginCompositionOnRange(
     pContext_ = pContext;
     pContext_->AddRef();
     currentText_ = currentText;
+    if (!ApplyDisplayAttribute(ec, pRange)) {
+        // Styling is best-effort for host compatibility. The text edit and
+        // composition are already live, so failing the edit session here would
+        // report a false insertion failure after mutating the document.
+        TSF_LOG(L"BeginCompositionOnRange: invisible display attribute unavailable");
+    }
     return true;
 }
 
@@ -141,6 +147,9 @@ bool CompositionManager::SetCompositionText(
     }
 
     currentText_ = text;
+    if (!ApplyDisplayAttribute(ec, pRange)) {
+        TSF_LOG(L"SetCompositionText: invisible display attribute unavailable");
+    }
     MoveCaretToEnd(ec);
 
     TSF_LOG(L"SetCompositionText: text='%ls'", text.c_str());
@@ -168,6 +177,44 @@ void CompositionManager::EndComposition(TfEditCookie ec) {
     if (ownedContext != nullptr) ownedContext->Release();
 
     TSF_LOG(L"EndComposition: COMPLETED hr=0x%08X", hr);
+}
+
+bool CompositionManager::ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange) {
+    if (pRange == nullptr || pContext_ == nullptr) return false;
+
+    CComPtr<ITfCategoryMgr> categoryMgr;
+    HRESULT hr = categoryMgr.CoCreateInstance(CLSID_TF_CategoryMgr);
+    if (FAILED(hr) || !categoryMgr) {
+        TSF_LOG(L"ApplyDisplayAttribute: category manager unavailable hr=0x%08X", hr);
+        return false;
+    }
+
+    TfGuidAtom atom = TF_INVALID_GUIDATOM;
+    hr = categoryMgr->RegisterGUID(GUID_DisplayAttribute_Input, &atom);
+    if (FAILED(hr) || atom == TF_INVALID_GUIDATOM) {
+        TSF_LOG(L"ApplyDisplayAttribute: RegisterGUID failed hr=0x%08X", hr);
+        return false;
+    }
+
+    CComPtr<ITfProperty> property;
+    hr = pContext_->GetProperty(GUID_PROP_ATTRIBUTE, &property);
+    if (FAILED(hr) || !property) {
+        TSF_LOG(L"ApplyDisplayAttribute: GUID_PROP_ATTRIBUTE unavailable hr=0x%08X", hr);
+        return false;
+    }
+
+    VARIANT value;
+    VariantInit(&value);
+    value.vt = VT_I4;
+    value.lVal = static_cast<LONG>(atom);
+    hr = property->SetValue(ec, pRange, &value);
+    VariantClear(&value);
+    if (FAILED(hr)) {
+        TSF_LOG(L"ApplyDisplayAttribute: SetValue failed hr=0x%08X", hr);
+        return false;
+    }
+
+    return true;
 }
 
 void CompositionManager::TerminateComposition() {
