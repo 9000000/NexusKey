@@ -332,7 +332,7 @@ jobs:
           name: unsigned-classic-binaries
           path: classic-binaries
 
-      - name: Reconstruct release layout
+      - name: Reconstruct artifact layout
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path upload-payload
@@ -347,8 +347,13 @@ jobs:
             # notice a condition of binary redistribution. It has to be inside
             # the archive, not only in the source repo.
             Copy-Item "THIRD_PARTY_NOTICES.txt" "dist/" -Force
-            New-Item -ItemType Directory -Force -Path upload-payload/sciter
-            Copy-Item "dist/*" "upload-payload/sciter/" -Force
+            if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
+              New-Item -ItemType Directory -Force -Path upload-payload/sciter
+              Copy-Item "dist/*" "upload-payload/sciter/" -Force
+            }
+            else {
+              Copy-Item "dist/*" "upload-payload/" -Force
+            }
           }
           
           if ("${{ needs.build-classic.result }}" -eq "success") {
@@ -366,8 +371,26 @@ jobs:
               Copy-Item "classic-binaries/vkey_engine.dll.sig" "dist-classic/" -Force
               Copy-Item "classic-binaries/vkey_engine.LICENSE.txt" "dist-classic/" -Force
             }
-            New-Item -ItemType Directory -Force -Path upload-payload/classic
-            Copy-Item "dist-classic/*" "upload-payload/classic/" -Force
+            if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
+              New-Item -ItemType Directory -Force -Path upload-payload/classic
+              Copy-Item "dist-classic/*" "upload-payload/classic/" -Force
+            }
+            else {
+              # Manual artifacts keep the historical flat layout. When both
+              # editions are selected, Sciter owns the same-named TSF/watchdog;
+              # Classic contributes only its edition-specific executable.
+              if ("${{ needs.build-sciter.result }}" -ne "success") {
+                Copy-Item "dist-classic/*" "upload-payload/" -Force
+              }
+              else {
+                Copy-Item "dist-classic/VKeyClassic.exe" "upload-payload/" -Force
+                if ("${{ inputs.classic_rust }}" -eq "true") {
+                  Copy-Item "dist-classic/vkey_engine.dll" "upload-payload/" -Force
+                  Copy-Item "dist-classic/vkey_engine.dll.sig" "upload-payload/" -Force
+                  Copy-Item "dist-classic/vkey_engine.LICENSE.txt" "upload-payload/" -Force
+                }
+              }
+            }
           }
 
       - name: Assert v4.3 signing boundary
@@ -447,9 +470,9 @@ jobs:
           # tag, and inside the payload for a workflow_dispatch test build.
           Copy-Item "extern/vkey_engine/LICENSE" "vkey_engine.LICENSE.txt" -Force
           if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.include_engine }}" -eq "true") {
-            Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "upload-payload/sciter/vkey_engine.dll" -Force
-            Copy-Item $sig "upload-payload/sciter/vkey_engine.dll.sig" -Force
-            Copy-Item "extern/vkey_engine/LICENSE" "upload-payload/sciter/vkey_engine.LICENSE.txt" -Force
+            Copy-Item "${{ github.workspace }}/build-engine/lib/win-x64/vkey_engine.dll" "upload-payload/vkey_engine.dll" -Force
+            Copy-Item $sig "upload-payload/vkey_engine.dll.sig" -Force
+            Copy-Item "extern/vkey_engine/LICENSE" "upload-payload/vkey_engine.LICENSE.txt" -Force
           }
 
       - name: Assert engine remains outside app packages
