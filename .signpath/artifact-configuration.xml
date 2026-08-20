@@ -6,6 +6,7 @@
       <include path="VKeyClassic.exe" min-matches="0" />
       <include path="VKeyTSF.dll" min-matches="0" />
       <include path="VKeyWatchdog.exe" min-matches="0" />
+      <include path="VKeyBrowserHost.exe" min-matches="0" />
       <!-- Bundled Sciter runtime ships unsigned from the vendor; sign it so every PE
            in the release ZIP is Authenticode-signed. -->
       <include path="sciter.dll" min-matches="0" />

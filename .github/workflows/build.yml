@@ -175,6 +175,7 @@ jobs:
           Copy-Item "build/Release/VKey.exe" "unsigned-sciter-binaries/" -Force
           Copy-Item "build/Release/VKeyTSF.dll" "unsigned-sciter-binaries/" -Force
           Copy-Item "build/Release/VKeyWatchdog.exe" "unsigned-sciter-binaries/" -Force
+          Copy-Item "build/Release/VKeyBrowserHost.exe" "unsigned-sciter-binaries/" -Force
           Copy-Item "extern/sciter/bin/sciter.dll" "unsigned-sciter-binaries/" -Force
 
       - name: Upload unsigned Sciter binaries
@@ -276,6 +277,7 @@ jobs:
           Copy-Item "build-classic/Release/VKeyClassic.exe" "unsigned-classic-binaries/" -Force
           Copy-Item "build-classic/Release/VKeyTSF.dll" "unsigned-classic-binaries/" -Force
           Copy-Item "build-classic/Release/VKeyWatchdog.exe" "unsigned-classic-binaries/" -Force
+          Copy-Item "build-classic/Release/VKeyBrowserHost.exe" "unsigned-classic-binaries/" -Force
           if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.classic_rust }}" -eq "true") {
             Copy-Item "build-engine/lib/win-x64/vkey_engine.dll" "unsigned-classic-binaries/" -Force
             Copy-Item "build-engine/lib/win-x64/vkey_engine.dll.sig" "unsigned-classic-binaries/" -Force
@@ -342,6 +344,7 @@ jobs:
             Copy-Item "sciter-binaries/VKey.exe" "dist/" -Force
             Copy-Item "sciter-binaries/VKeyTSF.dll" "dist/" -Force
             Copy-Item "sciter-binaries/VKeyWatchdog.exe" "dist/" -Force
+            Copy-Item "sciter-binaries/VKeyBrowserHost.exe" "dist/" -Force
             Copy-Item "sciter-binaries/sciter.dll" "dist/" -Force
             # Required: Sciter.JS is BSD 3-Clause, whose clause 2 makes the
             # notice a condition of binary redistribution. It has to be inside
@@ -365,6 +368,7 @@ jobs:
             # same-named Rust-enabled DLL produced by the Sciter job.
             Copy-Item "classic-binaries/VKeyTSF.dll" "dist-classic/" -Force
             Copy-Item "classic-binaries/VKeyWatchdog.exe" "dist-classic/" -Force
+            Copy-Item "classic-binaries/VKeyBrowserHost.exe" "dist-classic/" -Force
             Copy-Item "THIRD_PARTY_NOTICES.txt" "dist-classic/" -Force
             if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.classic_rust }}" -eq "true") {
               Copy-Item "classic-binaries/vkey_engine.dll" "dist-classic/" -Force
@@ -397,7 +401,7 @@ jobs:
         shell: powershell
         run: |
           if ("${{ needs.build-sciter.result }}" -eq "success") {
-            foreach ($path in @("dist/VKey.exe", "dist/VKeyTSF.dll", "dist/VKeyWatchdog.exe")) {
+            foreach ($path in @("dist/VKey.exe", "dist/VKeyTSF.dll", "dist/VKeyWatchdog.exe", "dist/VKeyBrowserHost.exe")) {
               $signature = Get-AuthenticodeSignature $path
               if ($signature.Status -ne "NotSigned") {
                 throw "Sciter-owned binary must remain unsigned: $path ($($signature.Status))"
@@ -407,7 +411,7 @@ jobs:
 
           if ("${{ needs.build-classic.result }}" -eq "success") {
             $expectSignature = "${{ startsWith(github.ref, 'refs/tags/') || (inputs.sign_binaries && !inputs.classic_rust) }}" -eq "true"
-            foreach ($path in @("dist-classic/VKeyClassic.exe", "dist-classic/VKeyTSF.dll", "dist-classic/VKeyWatchdog.exe")) {
+            foreach ($path in @("dist-classic/VKeyClassic.exe", "dist-classic/VKeyTSF.dll", "dist-classic/VKeyWatchdog.exe", "dist-classic/VKeyBrowserHost.exe")) {
               $signature = Get-AuthenticodeSignature $path
               if ($expectSignature) {
                 if ($signature.Status -eq "NotSigned" -or

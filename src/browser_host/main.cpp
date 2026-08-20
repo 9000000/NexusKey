@@ -1,0 +1,63 @@
+// VKey browser native-messaging host
+// SPDX-License-Identifier: GPL-3.0-only
+
+#include "NativeMessaging.h"
+#include "core/ipc/BrowserContextManager.h"
+
+#include <Windows.h>
+#include <fcntl.h>
+#include <io.h>
+
+#include <cstdint>
+#include <iostream>
+#include <string>
+
+namespace {
+
+bool ReadFrame(std::string& payload) {
+    std::uint32_t size = 0;
+    if (!std::cin.read(reinterpret_cast<char*>(&size), sizeof(size))) return false;
+    if (size == 0 || size > NextKey::BrowserHost::kMaxNativeMessageBytes) return false;
+    payload.resize(size);
+    return static_cast<bool>(std::cin.read(payload.data(), size));
+}
+
+void WriteFrame(std::string_view payload) {
+    const auto size = static_cast<std::uint32_t>(payload.size());
+    std::cout.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    std::cout.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+    std::cout.flush();
+}
+
+} // namespace
+
+int main() {
+    (void)_setmode(_fileno(stdin), _O_BINARY);
+    (void)_setmode(_fileno(stdout), _O_BINARY);
+
+    NextKey::BrowserContextManager context;
+    if (!context.Create()) return 2;
+
+    const std::uint32_t processId = GetCurrentProcessId();
+    LARGE_INTEGER counter{};
+    QueryPerformanceCounter(&counter);
+    const std::uint64_t nonce = static_cast<std::uint64_t>(counter.QuadPart)
+        ^ (static_cast<std::uint64_t>(processId) << 32);
+
+    std::string payload;
+    while (ReadFrame(payload)) {
+        NextKey::BrowserHost::NativeMessage message;
+        std::string error;
+        if (!NextKey::BrowserHost::ParseNativeMessage(payload, message, error)) {
+            WriteFrame("{\"ok\":false,\"error\":\"" + error + "\"}");
+            continue;
+        }
+        const bool ok = context.Publish(processId, nonce, GetTickCount64(),
+                                        message.focused, message.route,
+                                        message.browserExe, message.hostname);
+        WriteFrame(ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"publish\"}");
+    }
+
+    context.ClearIfOwned(processId, nonce, GetTickCount64());
+    return 0;
+}

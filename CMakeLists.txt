@@ -294,6 +294,7 @@ set(NEXTKEY_CORE_SOURCES
     src/core/hotkey/HotkeyLabel.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
+    src/core/ipc/BrowserContextState.h
     src/core/pipeline/Stage.h
     src/core/pipeline/Result.h
     src/core/pipeline/GateMask.h
@@ -330,6 +331,10 @@ if(WIN32)
     list(APPEND NEXTKEY_CORE_SOURCES
         src/core/ipc/SharedStateManager.cpp
         src/core/ipc/SharedStateManager.h
+        src/core/ipc/BrowserContextManager.cpp
+        src/core/ipc/BrowserContextManager.h
+        src/browser_host/Registration.cpp
+        src/browser_host/Registration.h
         src/core/SmartSwitchManager.cpp
         src/core/SmartSwitchManager.h
         src/core/SmartSwitchState.h
@@ -383,6 +388,15 @@ target_link_libraries(VKeyTSF PRIVATE VKeyCore)
 set_target_properties(VKeyTSF PROPERTIES 
     LINK_FLAGS "/DEF:\"${CMAKE_CURRENT_SOURCE_DIR}/src/tsf/VKeyTSF.def\""
 )
+
+if(WIN32)
+    add_executable(VKeyBrowserHost
+        src/browser_host/main.cpp
+        src/browser_host/NativeMessaging.cpp
+        src/browser_host/NativeMessaging.h
+    )
+    target_link_libraries(VKeyBrowserHost PRIVATE VKeyCore advapi32)
+endif()
 
 # Core App (EXE) - Win32 GUI application with Sciter UI
 add_executable(VKeyApp WIN32
@@ -843,6 +857,9 @@ set(NEXTKEY_TEST_SOURCES
     tests/HookHijackDetectorTest.cpp
     tests/ReinstallBurstSchedulerTest.cpp
     tests/FocusApplyDecisionTest.cpp
+    tests/BrowserContextStateTest.cpp
+    tests/NativeMessagingTest.cpp
+    src/browser_host/NativeMessaging.cpp
     tests/FocusInterleavingTest.cpp
     tests/ThreadOwnershipTest.cpp
     tests/ConfigSnapshotTest.cpp

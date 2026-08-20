@@ -16,6 +16,7 @@
 #include "core/Debug.h"
 #include "core/CrashLog.h"
 #include "core/Logger.h"
+#include "browser_host/Registration.h"
 
 #include "system/HookEngine.h"
 #include "system/MainThreadWorker.h"
@@ -510,6 +511,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             return 0;
         }
     }
+
+    (void)BrowserHost::RegisterNativeMessagingHost();
 
     // ── Initialization ──
 

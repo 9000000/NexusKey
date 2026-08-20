@@ -157,6 +157,7 @@ void HookEngine::CommitPending() {
 // fields are gone; remaining work is atomic stores + RCU-published settings
 // (injector_, Logger). Safe to call from any thread.
 void HookEngine::ApplyConfig(const TypingConfig& config) {
+    tsfFeatureEnabled_.store(config.tsfApps, std::memory_order_release);
     autoCaps_.store(config.autoCaps, std::memory_order_release);
     macroEnabled_.store(config.macroEnabled, std::memory_order_release);
     macroInEnglish_.store(config.macroInEnglish, std::memory_order_release);
@@ -241,6 +242,9 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // or RCU-publish). Sprint 1 D11's "caller holds stateMutex_" contract
     // dropped. Single-threaded init here; ApplyConfig safe to call directly.
     ApplyConfig(config);
+    if (!browserContext_.Create()) {
+        HOOK_LOG(L"BrowserContext: shared mapping unavailable; extension routing disabled");
+    }
     // Load unified hotkey registry. On first launch after v3 upgrade, the
     // `[[hotkeys]]` section is missing — migrate reads legacy `[features]`
     // toggles directly from TOML and persists `[hotkey_state]` so future
@@ -624,7 +628,7 @@ CodeTable HookEngine::GetCodeTable() const noexcept {
 }
 
 bool HookEngine::ShouldUseNativeQuickConvert() const noexcept {
-    const bool isTsfApp = isTsfApp_.load(std::memory_order_acquire);
+    const bool isTsfApp = IsEffectiveTsf();
     const uint32_t flags = sharedStatePtr_ ? sharedStatePtr_->ReadFlags() : 0;
     const uint32_t ownerPid = sharedStatePtr_
         ? sharedStatePtr_->ReadNativeConvertOwnerProcessId()
@@ -907,6 +911,7 @@ void HookEngine::ReloadFromToml() {
 
     // Re-evaluate excluded status for current app (set was just reloaded)
     const auto& curExe = focus_.ActiveExe();
+    const bool wasExcluded = isExcludedApp_.load(std::memory_order_acquire);
     bool newExcluded = false;
     if (config.excludeApps && !curExe.empty() && rcuSnap) {
         newExcluded = rcuSnap->excludedAppSet.count(curExe) > 0;
@@ -917,6 +922,9 @@ void HookEngine::ReloadFromToml() {
 
     // Re-evaluate TSF app status for current foreground app
     const bool wasTsfApp = isTsfApp_.load(std::memory_order_acquire);
+    const BrowserRoute browserRoute = browserRoute_.load(std::memory_order_acquire);
+    const bool wasEffectiveTsf = ResolveEffectiveTsf(
+        wasTsfApp, wasExcluded, config.tsfApps, browserRoute);
     bool newTsfApp;
     if (config.tsfApps && !newExcluded && rcuSnap && !rcuSnap->tsfAppSet.empty() && !curExe.empty()) {
         newTsfApp = rcuSnap->tsfAppSet.count(curExe) > 0;
@@ -924,6 +932,8 @@ void HookEngine::ReloadFromToml() {
         newTsfApp = false;
     }
     isTsfApp_.store(newTsfApp, std::memory_order_release);
+    const bool newEffectiveTsf = ResolveEffectiveTsf(
+        newTsfApp, newExcluded, config.tsfApps, browserRoute);
     HOOK_LOG(L"  Engine (config reload): %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
              newTsfApp ? L"TSF (hook passthrough)" : L"HOOK",
              curExe.c_str(),
@@ -931,20 +941,21 @@ void HookEngine::ReloadFromToml() {
              (rcuSnap && !curExe.empty() && rcuSnap->tsfAppSet.count(curExe) > 0) ? 1 : 0,
              newExcluded ? 1 : 0);
     if (tsfModeCallback_) {
-        const bool tsfReadonly = !newTsfApp && !newExcluded;
-        if (newTsfApp != wasTsfApp) {
+        const bool tsfReadonly = !newEffectiveTsf && !newExcluded;
+        if (newEffectiveTsf != wasEffectiveTsf) {
             HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
-                     wasTsfApp ? L"true" : L"false", newTsfApp ? L"true" : L"false");
+                     wasEffectiveTsf ? L"true" : L"false",
+                     newEffectiveTsf ? L"true" : L"false");
         }
-        tsfModeCallback_(newTsfApp, tsfReadonly,
-                         newTsfApp && !wasTsfApp);
+        tsfModeCallback_(newEffectiveTsf, tsfReadonly,
+                         newEffectiveTsf && !wasEffectiveTsf);
     }
 
     // Re-apply per-app encoding override for current app. Encoding is a
     // plain enum (`CodeTable`) read on the hook hot path without locking;
     // a worker-side write is a torn-read risk but NOT a UAF — minor
     // staleness window only. Acceptable for an enum-sized field.
-    if (!curExe.empty() && !newExcluded && !newTsfApp && rcuSnap) {
+    if (!curExe.empty() && !newExcluded && !newEffectiveTsf && rcuSnap) {
         auto it = rcuSnap->appEncodingOverrides.find(curExe);
         currentCodeTable_.store(
             (it != rcuSnap->appEncodingOverrides.end())
@@ -1463,8 +1474,13 @@ HookEngine::KeyOutcome HookEngine::RunTopGuards(DWORD vkCode) {
     //    config tweaking). Steady-state typing never reaches it.
     QuickSyncFromSharedState();
 
+    // Extension updates normally cost one mapped 32-bit generation load. A
+    // changed generation copies the bounded snapshot and publishes any TSF
+    // ownership transition before this physical key reaches the target app.
+    RefreshBrowserRouteOnHookThread(false, true);
+
     // 0b. TSF app — let TSF DLL handle all input, hook does nothing
-    if (isTsfApp_.load(std::memory_order_acquire)) return KeyOutcome::Pass;
+    if (IsEffectiveTsf()) return KeyOutcome::Pass;
 
     // 1. Track modifiers for hotkey detection
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
@@ -1483,6 +1499,12 @@ HookEngine::KeyOutcome HookEngine::RunTopGuards(DWORD vkCode) {
     // Without this bypass, CapsLock would hit step 9 ("any other key → commit"),
     // splitting the word and producing wrong tone placement (Gỉa instead of Giả).
     if (vkCode == VK_CAPITAL || vkCode == VK_NUMLOCK || vkCode == VK_SCROLL) {
+        return KeyOutcome::Pass;
+    }
+
+    // Domain-English is an overlay, not a mutation of the user's logical V/E
+    // mode. Modifier tracking remains live so global VKey hotkeys still work.
+    if (browserRoute_.load(std::memory_order_acquire) == BrowserRoute::ForceEnglish) {
         return KeyOutcome::Pass;
     }
 
@@ -2207,7 +2229,7 @@ static bool IsIncompatibleLayout(HKL hkl) {
 
 bool HookEngine::ProcessKeyUp(DWORD vkCode, DWORD /*flags*/) {
     // TSF app — let TSF DLL handle all input
-    if (isTsfApp_.load(std::memory_order_acquire)) return false;
+    if (IsEffectiveTsf()) return false;
 
     bool isModifier = (vkCode == VK_LCONTROL || vkCode == VK_RCONTROL ||
                        vkCode == VK_LSHIFT || vkCode == VK_RSHIFT ||
@@ -2948,7 +2970,8 @@ void HookEngine::NotifyModeChange() noexcept {
         // force-store; in practice the forced-V focus path sets it true first.
         const bool excluded = isExcludedApp_.load(std::memory_order_acquire);
         const bool forcedV  = isForcedVnApp_.load(std::memory_order_acquire);
-        const bool isTsf    = isTsfApp_.load(std::memory_order_acquire);
+        const BrowserRoute browserRoute = browserRoute_.load(std::memory_order_acquire);
+        const bool isTsf    = IsEffectiveTsf();
         // sharedMode is the LOGICAL V/E persisted into SharedState. Excluded
         // apps show English (IME transparent); forced-V apps lock to V.
         const bool sharedMode = forcedV ||
@@ -2961,6 +2984,9 @@ void HookEngine::NotifyModeChange() noexcept {
         // every toggle to V in a TSF app was overwritten within one tick,
         // leaving V/E permanently stuck (issue #209).
         bool displayMode = sharedMode;
+        if (browserRoute == BrowserRoute::ForceEnglish) {
+            displayMode = false;
+        }
         // forced-V is exempt: the per-app hard-V lock owns the icon. TSF_TIP_ACTIVE
         // is one global flag every TIP instance writes (each Edge renderer / PWA /
         // frame-host process toggles it, last-writer-wins), so a background or
@@ -4606,11 +4632,16 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     const bool wasExcludedApp = isExcludedApp_.load(std::memory_order_acquire);
     const bool wasTsfAppFlag  = isTsfApp_.load(std::memory_order_acquire);
     const bool wasForcedVnApp = isForcedVnApp_.load(std::memory_order_acquire);
+    const bool wasEffectiveTsf = ResolveEffectiveTsf(
+        wasTsfAppFlag, wasExcludedApp, cfg->tsfApps,
+        browserRoute_.load(std::memory_order_acquire));
 
     isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
     isTsfApp_.store(cls->isTsf, std::memory_order_release);
+    RefreshBrowserRouteOnHookThread(true, false);
+    const bool effectiveTsf = IsEffectiveTsf();
     const bool shouldActivateTsfProfile = ShouldActivateTsfProfileForFocus(
-        tsfFocusActivationState_, cls->isTsf, cls->hwndOpaque);
+        tsfFocusActivationState_, effectiveTsf, cls->hwndOpaque);
     // Store forced-V cache flag at the SAME site as the others, BEFORE the
     // excluded/tsf early-returns below — so switching excluded↔forced-V leaves
     // the flag consistent. forcedVnPid_ feeds the toggle-lock PID check.
@@ -4626,12 +4657,13 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
 
     // SharedState TSF flag bridge — idempotent via SetOrClearFlag in main.
     if (tsfModeCallback_) {
-        const bool tsfReadonly = !cls->isTsf && !cls->isExcluded;
-        if (cls->isTsf != wasTsfAppFlag) {
+        const bool tsfReadonly = !effectiveTsf && !cls->isExcluded;
+        if (effectiveTsf != wasEffectiveTsf) {
             HOOK_LOG(L"  TSF_ACTIVE flag: %s → %s",
-                     wasTsfAppFlag ? L"true" : L"false", cls->isTsf ? L"true" : L"false");
+                     wasEffectiveTsf ? L"true" : L"false",
+                     effectiveTsf ? L"true" : L"false");
         }
-        tsfModeCallback_(cls->isTsf, tsfReadonly,
+        tsfModeCallback_(effectiveTsf, tsfReadonly,
                          shouldActivateTsfProfile);
     }
 
@@ -4741,7 +4773,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
         if (wasSuppressed == focus_.LayoutSuppressed()) NotifyModeChange();
     }
 
-    if (cls->isTsf) {
+    if (effectiveTsf) {
         HOOK_LOG(L"  TsfApps: '%s' uses TSF engine, hook passthrough",
                  focus_.LastRealExe().c_str());
         // #195/#209: no callback re-fire here. The early tsfModeCallback_ above
@@ -4969,10 +5001,65 @@ void HookEngine::ApplyConfigOnHookThread() {
 
 void HookEngine::ApplyTickPollOnHookThread() {
     VKEY_ASSERT_HOOK_THREAD();
+    // Force a full read so a crashed/suspended extension expires after the TTL
+    // even when no new generation is published.
+    RefreshBrowserRouteOnHookThread(true, true);
     // CheckLayoutChange queries GetKeyboardLayout (kernel-cached, fast)
     // and may call OnLayoutChanged → layoutSuppressed_ writes + engine
     // commit. All hook-thread-safe.
     CheckLayoutChange();
+}
+
+bool HookEngine::IsEffectiveTsf() const noexcept {
+    return ResolveEffectiveTsf(
+        isTsfApp_.load(std::memory_order_acquire),
+        isExcludedApp_.load(std::memory_order_acquire),
+        tsfFeatureEnabled_.load(std::memory_order_acquire),
+        browserRoute_.load(std::memory_order_acquire));
+}
+
+void HookEngine::RefreshBrowserRouteOnHookThread(bool forceRead, bool notifyCallback) {
+    VKEY_ASSERT_HOOK_THREAD();
+    const std::uint32_t generation = browserContext_.ReadGeneration();
+    if (!forceRead && generation == lastBrowserContextGeneration_) return;
+    lastBrowserContextGeneration_ = generation;
+
+    BrowserRoute next = BrowserRoute::Default;
+    BrowserContextState state{};
+    if (browserContext_.Read(state)) {
+        const std::wstring& activeExe = focus_.ActiveExe();
+        char foregroundExe[32]{};
+        bool ascii = !activeExe.empty() && activeExe.size() < sizeof(foregroundExe);
+        if (ascii) {
+            for (std::size_t i = 0; i < activeExe.size(); ++i) {
+                if (activeExe[i] < 0 || activeExe[i] > 0x7f) { ascii = false; break; }
+                foregroundExe[i] = static_cast<char>(activeExe[i]);
+            }
+        }
+        if (ascii && IsBrowserContextApplicable(state, foregroundExe, GetTickCount64())) {
+            next = state.route;
+        }
+    }
+
+    const BrowserRoute previous = browserRoute_.exchange(next, std::memory_order_acq_rel);
+    if (previous == next) return;
+
+    if (engine_ && engine_->Count() > 0) CommitComposition();
+    const bool configured = isTsfApp_.load(std::memory_order_acquire);
+    const bool excluded = isExcludedApp_.load(std::memory_order_acquire);
+    const bool tsfFeatureEnabled = tsfFeatureEnabled_.load(std::memory_order_acquire);
+    const bool wasEffective = ResolveEffectiveTsf(
+        configured, excluded, tsfFeatureEnabled, previous);
+    const bool isEffective = ResolveEffectiveTsf(
+        configured, excluded, tsfFeatureEnabled, next);
+    HOOK_LOG(L"  BrowserRoute: %u -> %u effectiveTsf=%d",
+             static_cast<unsigned>(previous), static_cast<unsigned>(next),
+             isEffective ? 1 : 0);
+    if (notifyCallback && tsfModeCallback_) {
+        tsfModeCallback_(isEffective, !isEffective && !excluded,
+                         isEffective && !wasEffective);
+    }
+    NotifyModeChange();
 }
 
 }  // namespace NextKey

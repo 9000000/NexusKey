@@ -15,6 +15,7 @@
 #include "core/FocusApplyDecision.h"
 #include "core/FormulaSegmentDecision.h"
 #include "core/SmartSwitchManager.h"
+#include "core/ipc/BrowserContextManager.h"
 #include "app/system/HookCommandMailbox.h"
 #include "app/system/HookLifecycle.h"
 #include "app/system/FocusOwner.h"
@@ -677,6 +678,12 @@ private:
     // OnFocusChanged (main, via WinEventProc). Readers: ProcessKeyDown +
     // ProcessKeyUp early-return gates on the hook hot path.
     std::atomic<bool> isTsfApp_{false};       // cached: is current foreground app in TSF list?
+    std::atomic<bool> tsfFeatureEnabled_{false}; // TIP is registered/enabled for domain routing
+    // Browser extension overlay. The manager maps one fixed-size seqlock state;
+    // the hook hot path normally reads only its 32-bit generation.
+    BrowserContextManager browserContext_;
+    std::atomic<BrowserRoute> browserRoute_{BrowserRoute::Default};
+    std::uint32_t lastBrowserContextGeneration_{0}; // hook-thread owned
     // Hook-thread owned. Focus polls can classify the same HWND every 200 ms;
     // only the first application may request the expensive TIP re-activation.
     TsfFocusActivationState tsfFocusActivationState_{};
@@ -896,6 +903,8 @@ private:
     void ApplyFocusOperationalProtectionOnHookThread(
         const FocusClassification& cls);
     void ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);
+    void RefreshBrowserRouteOnHookThread(bool forceRead, bool notifyCallback);
+    [[nodiscard]] bool IsEffectiveTsf() const noexcept;
     void ApplyConfigOnHookThread();
     void ApplyTickPollOnHookThread();
     void ApplyToggleVNOnHookThread();

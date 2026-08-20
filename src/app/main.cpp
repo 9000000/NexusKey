@@ -21,6 +21,7 @@
 #include "core/Debug.h"
 #include "core/CrashLog.h"
 #include "core/Logger.h"
+#include "browser_host/Registration.h"
 
 #include "system/TsfRegistration.h"
 #include "system/StartupHelper.h"
@@ -326,6 +327,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
             return 0;
         }
     }
+
+    // Per-user and idempotent. A portable build without the companion binary
+    // simply skips registration; normal VKey startup must never depend on the
+    // browser extension being installed.
+    (void)BrowserHost::RegisterNativeMessagingHost();
 
     // Remove any HKCU CLSID override that malware may have planted to hijack TSF DLL loading
     CleanupHkcuClsidOverride();
