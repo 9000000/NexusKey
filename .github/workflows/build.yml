@@ -125,6 +125,9 @@ jobs:
       - name: Build Watchdog
         run: cmake --build build --config Release --target VKeyWatchdog
 
+      - name: Build browser host
+        run: cmake --build build --config Release --target VKeyBrowserHost
+
       - name: Build tests
         if: github.event_name != 'workflow_dispatch' || inputs.include_tests
         # VKeyTestRunner lives in the optional private internal submodule.
@@ -232,6 +235,7 @@ jobs:
           cmake --build build-classic --config Release --target VKeyLite
           cmake --build build-classic --config Release --target VKeyTSF
           cmake --build build-classic --config Release --target VKeyWatchdog
+          cmake --build build-classic --config Release --target VKeyBrowserHost
 
       - name: Build Classic tests
         if: github.event_name != 'workflow_dispatch' || inputs.include_tests
