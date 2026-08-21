@@ -182,22 +182,27 @@ void CompositionManager::EndComposition(TfEditCookie ec) {
 bool CompositionManager::ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange) {
     if (pRange == nullptr || pContext_ == nullptr) return false;
 
-    CComPtr<ITfCategoryMgr> categoryMgr;
-    HRESULT hr = categoryMgr.CoCreateInstance(CLSID_TF_CategoryMgr);
-    if (FAILED(hr) || !categoryMgr) {
-        TSF_LOG(L"ApplyDisplayAttribute: category manager unavailable hr=0x%08X", hr);
-        return false;
-    }
-
-    TfGuidAtom atom = TF_INVALID_GUIDATOM;
-    hr = categoryMgr->RegisterGUID(GUID_DisplayAttribute_Input, &atom);
-    if (FAILED(hr) || atom == TF_INVALID_GUIDATOM) {
-        TSF_LOG(L"ApplyDisplayAttribute: RegisterGUID failed hr=0x%08X", hr);
-        return false;
+    // Resolved once per instance: this runs on every keystroke of a live
+    // composition, and CoCreateInstance + RegisterGUID per key is real hot-path
+    // cost. The atom is stable for the process lifetime.
+    if (displayAttributeAtom_ == TF_INVALID_GUIDATOM) {
+        CComPtr<ITfCategoryMgr> categoryMgr;
+        HRESULT atomHr = categoryMgr.CoCreateInstance(CLSID_TF_CategoryMgr);
+        if (FAILED(atomHr) || !categoryMgr) {
+            TSF_LOG(L"ApplyDisplayAttribute: category manager unavailable hr=0x%08X", atomHr);
+            return false;
+        }
+        atomHr = categoryMgr->RegisterGUID(GUID_DisplayAttribute_Input,
+                                           &displayAttributeAtom_);
+        if (FAILED(atomHr) || displayAttributeAtom_ == TF_INVALID_GUIDATOM) {
+            TSF_LOG(L"ApplyDisplayAttribute: RegisterGUID failed hr=0x%08X", atomHr);
+            displayAttributeAtom_ = TF_INVALID_GUIDATOM;
+            return false;
+        }
     }
 
     CComPtr<ITfProperty> property;
-    hr = pContext_->GetProperty(GUID_PROP_ATTRIBUTE, &property);
+    HRESULT hr = pContext_->GetProperty(GUID_PROP_ATTRIBUTE, &property);
     if (FAILED(hr) || !property) {
         TSF_LOG(L"ApplyDisplayAttribute: GUID_PROP_ATTRIBUTE unavailable hr=0x%08X", hr);
         return false;
@@ -206,7 +211,7 @@ bool CompositionManager::ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange
     VARIANT value;
     VariantInit(&value);
     value.vt = VT_I4;
-    value.lVal = static_cast<LONG>(atom);
+    value.lVal = static_cast<LONG>(displayAttributeAtom_);
     hr = property->SetValue(ec, pRange, &value);
     VariantClear(&value);
     if (FAILED(hr)) {

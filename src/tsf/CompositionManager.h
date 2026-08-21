@@ -80,6 +80,7 @@ private:
     ITfContext* pContext_ = nullptr;  // Current context
     EngineController* pEngineController_ = nullptr; // Not owned, don't release
     std::wstring currentText_;
+    TfGuidAtom displayAttributeAtom_ = TF_INVALID_GUIDATOM;
     ULONG refCount_ = 1;
 };
 

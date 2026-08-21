@@ -339,6 +339,10 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     // backend. Keep those hosts a true passthrough: context inspection can
     // request synchronous edit sessions and visibly stall shell/game keys
     // such as Win, Alt+Tab and Win+Tab (#250).
+    // No Commit() here on purpose: a commit edit session in the test phase
+    // races the passed-through printable key (CLAUDE.md "Chrome cursor race").
+    // OnKeyDown closes the composition instead — it fires in every host,
+    // including the Chromium ones that skip this phase entirely.
     if (!routeToTsf) {
         ClearInactiveKeyState();
         return S_OK;
@@ -649,7 +653,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     }
 
     if (!routeToTsf) {
-        ClearInactiveKeyState();
+        CommitBeforeInactiveBypass(pContext);
         return S_OK;
     }
 
@@ -926,6 +930,20 @@ IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LP
         *pfEaten = FALSE;
     }
     return S_OK;
+}
+
+void KeyEventSink::CommitBeforeInactiveBypass(ITfContext* pContext) {
+    // Routing can drop mid-word (engine toggled off, app removed from the TSF
+    // list, VKey.exe stopped). Before going passthrough, close whatever this
+    // TIP still owns — the pre-bypass path used to commit via the
+    // non-handled-key branch, and skipping it leaves a pre-edit stuck open
+    // with no key able to reach it again. IsComposing() is a local bool, so
+    // passive hosts (#250: Explorer, Start/Search, games) never composed and
+    // still pay nothing here.
+    if (pEngineController_->IsComposing() || pEngineController_->HasEngineBuffer()) {
+        pEngineController_->Commit(pContext);
+    }
+    ClearInactiveKeyState();
 }
 
 void KeyEventSink::ClearInactiveKeyState() noexcept {

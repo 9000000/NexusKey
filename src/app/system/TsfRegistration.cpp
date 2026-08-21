@@ -493,6 +493,14 @@ bool ActivateVKeyTsfProfile() {
 
     if (FAILED(hr)) {
         NEXTKEY_LOG(L"[TsfRegistration] ActivateProfile failed for VKey TSF profile (hr=0x%08X)", hr);
+    } else if (hr != S_OK) {
+        // S_FALSE = "language profile is not enabled": the call returned without
+        // selecting the TIP. Logged separately because it is indistinguishable
+        // from success in the old log, which is exactly the state a #109-style
+        // report ("VKey does nothing") needs to show. Left counting as success
+        // for the throttle — no caller reads the return value.
+        NEXTKEY_LOG(L"[TsfRegistration] ActivateProfile returned S_FALSE — VKey TSF "
+                    L"profile is not enabled, the TIP will not receive keys");
     }
 
     // pProfileMgr (Release) then comGuard (CoUninitialize) destruct here, in that order.

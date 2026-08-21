@@ -49,6 +49,7 @@ private:
     void RefreshQuickConvertPreservedKey();
     void ClearQuickConvertPreservedKey() noexcept;
     void PublishQuickConvertCapability() noexcept;
+    void CommitBeforeInactiveBypass(ITfContext* pContext);
     void ClearInactiveKeyState() noexcept;
 
     ULONG refCount_ = 1;
