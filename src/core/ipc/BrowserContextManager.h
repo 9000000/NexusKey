@@ -16,13 +16,14 @@ public:
     ~BrowserContextManager();
     BrowserContextManager(const BrowserContextManager&) = delete;
     BrowserContextManager& operator=(const BrowserContextManager&) = delete;
-    BrowserContextManager(BrowserContextManager&&) noexcept;
-    BrowserContextManager& operator=(BrowserContextManager&&) noexcept;
+    // Non-movable on purpose: every accessor dereferences impl_ unchecked, so
+    // a moved-from instance would be a null-deref waiting to happen.
+    BrowserContextManager(BrowserContextManager&&) = delete;
+    BrowserContextManager& operator=(BrowserContextManager&&) = delete;
 
-    /// VKey owner side: create or reopen the per-session mapping.
+    /// Create or reopen the per-session mapping. Both VKey and the native host
+    /// call this: whichever starts first owns creation.
     [[nodiscard]] bool Create();
-    /// Native-host side: open the mapping created by the running VKey process.
-    [[nodiscard]] bool OpenReadWrite();
     [[nodiscard]] std::uint32_t ReadGeneration() const noexcept;
     [[nodiscard]] bool Read(BrowserContextState& out) const noexcept;
 

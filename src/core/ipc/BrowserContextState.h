@@ -77,6 +77,11 @@ static_assert(sizeof(BrowserContextState) <= 384);
             out.browserExe[i] = source->browserExe[i];
         for (std::size_t i = 0; i < sizeof(out.hostname); ++i)
             out.hostname[i] = source->hostname[i];
+        // Publish() bounds both strings, but the mapping is writable by any
+        // same-user process. Force termination so the strcmp below cannot run
+        // off browserExe into hostname.
+        out.browserExe[sizeof(out.browserExe) - 1] = '\0';
+        out.hostname[sizeof(out.hostname) - 1] = '\0';
 
         std::atomic_thread_fence(std::memory_order_acquire);
         if (before == source->generation) return out.HasValidHeader();

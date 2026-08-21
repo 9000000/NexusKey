@@ -36,9 +36,6 @@ BrowserContextManager::~BrowserContextManager() {
 #endif
 }
 
-BrowserContextManager::BrowserContextManager(BrowserContextManager&&) noexcept = default;
-BrowserContextManager& BrowserContextManager::operator=(BrowserContextManager&&) noexcept = default;
-
 bool BrowserContextManager::Create() {
 #ifdef _WIN32
     if (impl_->state) return true;
@@ -56,21 +53,6 @@ bool BrowserContextManager::Create() {
         new (state) BrowserContextState{};
     }
     return true;
-#else
-    return false;
-#endif
-}
-
-bool BrowserContextManager::OpenReadWrite() {
-#ifdef _WIN32
-    if (impl_->state) return true;
-    impl_->mapping = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, kMappingName);
-    if (!impl_->mapping) return false;
-    impl_->state = static_cast<volatile BrowserContextState*>(
-        MapViewOfFile(impl_->mapping, FILE_MAP_ALL_ACCESS, 0, 0,
-                      sizeof(BrowserContextState)));
-    impl_->writeMutex = CreateMutexW(nullptr, FALSE, kMutexName);
-    return impl_->state != nullptr && impl_->writeMutex != nullptr;
 #else
     return false;
 #endif
