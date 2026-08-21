@@ -85,6 +85,15 @@ public:
         return false;
     }
 
+    // True iff physical WM_KEYDOWN must not be mixed with synthetic VK_PACKET
+    // alpha input after this channel has transformed the current word. This is
+    // broader than HasMultiProcessRenderer: ConPTY-backed terminal TUIs can
+    // observe the two input forms out of order even though the terminal
+    // renderer itself is not multi-process.
+    [[nodiscard]] virtual bool RequiresSyntheticAlphaLockstep() const noexcept {
+        return false;
+    }
+
     // True iff this channel needs a U+202F bait char prefix before
     // backspaces to dismiss Chromium-style autocomplete suggestions
     // (Chrome, Edge, WebView2, Excel, Outlook). Without it, BS land

@@ -2476,9 +2476,9 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     // encoded widths for correct backspace count.
     // Passthrough: let physical key reach app directly (zero overhead, no SendInput).
     // Blocked when ANY condition is true:
-    //   - hadSynthInWord_ && injector.HasMultiProcessRenderer(): Electron/Qt
-    //     multi-process architecture where physical WM_KEYDOWN and synthetic
-    //     VK_PACKET arrive out of order.
+    //   - hadSynthInWord_ && injector.RequiresSyntheticAlphaLockstep():
+    //     Electron and ConPTY-backed TUIs can reorder physical WM_KEYDOWN and
+    //     synthetic VK_PACKET even after our own synth counter has drained.
     //   - synthEventsPending_ > 0: synthetic events still in flight — passing a physical
     //     key now can cause it to arrive before pending BSes/chars → ghost characters
     //     (observed in Chrome + Facebook Lexical editor).
@@ -2489,7 +2489,8 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     // Channel proxy reads the injector separately (kept for callers outside this
     // function; not worth threading the snapshot through public API).
     auto inj = dispatcher_.GetInjector();
-    const bool electronApp = inj && inj->HasMultiProcessRenderer();
+    const bool requiresAlphaLockstep =
+        inj && inj->RequiresSyntheticAlphaLockstep();
     const bool baitChar = inj && inj->NeedsBaitCharPrefix();
     const bool skipEmpty = dispatcher_.SkipEmptyChar();
     // Sprint 2 D4: editMsgPath via SettleBudget==0 proxy (RichEditEm only
@@ -2512,7 +2513,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     //     human typing pace and well below the 30 ms wait that already
     //     guards the burst-input case.
     if (!autoCapped && currentCodeTable_.load(std::memory_order_acquire) == CodeTable::Unicode &&
-        !(dispatcher_.HadSynthInWord() && electronApp) &&
+        !(dispatcher_.HadSynthInWord() && requiresAlphaLockstep) &&
         !editMsgPath &&
         dispatcher_.SynthEventsPending() == 0 &&
         composition.size() == previousComposition_.size() + 1 &&

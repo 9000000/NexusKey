@@ -188,14 +188,11 @@ static void ClassifyWindow(HWND hwnd,
     wchar_t className[64] = {};
     GetClassNameW(hwnd, className, 64);
 
-    // 1a. Windows Terminal — modern DirectX renderer + ConPTY, handles batch input fine.
-    //     Treated as normal app (no flags set, batch dispatch, no bait).
-    if (_wcsicmp(className, L"CASCADIA_HOSTING_WINDOW_CLASS") == 0) {
-        return;  // No flags set → batch path
-    }
-
-    // 1b. Legacy console apps — outIsConsole triggers split dispatch in DispatchSendInput
-    if (_wcsicmp(className, L"ConsoleWindowClass") == 0 ||
+    // Console includes modern Windows Terminal. Cascadia's renderer accepts a
+    // SendInput batch, but ConPTY-backed TUIs such as Codex/Claude can still
+    // reorder physical WM_KEYDOWN against synthetic VK_PACKET input.
+    if (_wcsicmp(className, L"CASCADIA_HOSTING_WINDOW_CLASS") == 0 ||
+        _wcsicmp(className, L"ConsoleWindowClass") == 0 ||
         _wcsicmp(className, L"tty") == 0 ||                            // Cygwin/MSYS
         _wcsicmp(className, L"mintty") == 0 ||                         // Git Bash
         _wcsicmp(className, L"PuTTY") == 0) {

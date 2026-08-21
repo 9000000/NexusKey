@@ -29,7 +29,7 @@ namespace NextKey::Output {
 struct WindowClassification {
     bool isRichEditD2DPT  = false;  // Win11 New Notepad
     bool isElectron       = false;  // Discord / Slack / VSCode etc
-    bool isConsole        = false;  // CMD / PowerShell
+    bool isConsole        = false;  // Windows Terminal / CMD / PowerShell
     bool isChromium       = false;  // Chrome / Edge — bait-char hint
     bool useClipboard     = false;  // User configured clipboard fallback
     // Per-app "send method" override = compatibility split dispatch

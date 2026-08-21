@@ -34,8 +34,8 @@ public:
     bool NeedsBaitCharPrefix() const noexcept override {
         return needsBaitCharPrefix_;
     }
-    // HasMultiProcessRenderer() inherits the base default (false) —
-    // Win32 batched dispatch is for vanilla single-process renderers.
+    // Multi-process and alpha-lockstep traits inherit false — Win32 batched
+    // dispatch is for vanilla single-process renderers.
 
 private:
     bool needsBaitCharPrefix_;

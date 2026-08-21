@@ -24,8 +24,9 @@
 //      the swap continues executing that injector's `Replace` to
 //      completion; the swap does NOT cancel or redirect the in-flight
 //      call. The next dispatch on the same thread reads the new impl.
-//   5. Channel traits (`HasMultiProcessRenderer`, `NeedsBaitCharPrefix`,
-//      `SettleBudget`) are sourced from the currently-loaded injector,
+//   5. Channel traits (`HasMultiProcessRenderer`,
+//      `RequiresSyntheticAlphaLockstep`, `NeedsBaitCharPrefix`, `SettleBudget`)
+//      are sourced from the currently-loaded injector,
 //      not from the type of the most-recently-stored pointer — a
 //      regression here would mean HookEngine reads stale traits after a
 //      focus change.
@@ -68,6 +69,7 @@ struct FakeInjector final : IOutputInjector {
     std::wstring lastReplaceText;
 
     bool   multiProcessRenderer{false};
+    bool   syntheticAlphaLockstep{false};
     bool   needsBaitChar{false};
     std::chrono::milliseconds settleBudget{100};
 
@@ -98,6 +100,9 @@ struct FakeInjector final : IOutputInjector {
     }
     [[nodiscard]] bool HasMultiProcessRenderer() const noexcept override {
         return multiProcessRenderer;
+    }
+    [[nodiscard]] bool RequiresSyntheticAlphaLockstep() const noexcept override {
+        return syntheticAlphaLockstep;
     }
     [[nodiscard]] bool NeedsBaitCharPrefix() const noexcept override {
         return needsBaitChar;
@@ -267,16 +272,25 @@ TEST(InjectorSwitch, TraitsTrackTheActiveInjector) {
 
     auto win32 = std::make_shared<FakeInjector>("win32-batch");
     win32->multiProcessRenderer = false;
+    win32->syntheticAlphaLockstep = false;
     win32->needsBaitChar        = false;
     win32->settleBudget         = std::chrono::milliseconds(30);
 
     auto split = std::make_shared<FakeInjector>("split-electron");
     split->multiProcessRenderer = true;
+    split->syntheticAlphaLockstep = true;
     split->needsBaitChar        = false;
     split->settleBudget         = std::chrono::milliseconds(100);
 
+    auto console = std::make_shared<FakeInjector>("split-console");
+    console->multiProcessRenderer = false;
+    console->syntheticAlphaLockstep = true;
+    console->needsBaitChar        = false;
+    console->settleBudget         = std::chrono::milliseconds(100);
+
     auto chrome = std::make_shared<FakeInjector>("chrome-bait");
     chrome->multiProcessRenderer = true;
+    chrome->syntheticAlphaLockstep = true;
     chrome->needsBaitChar        = true;
     chrome->settleBudget         = std::chrono::milliseconds(60);
 
@@ -284,6 +298,7 @@ TEST(InjectorSwitch, TraitsTrackTheActiveInjector) {
     {
         auto inj = field.load(std::memory_order_acquire);
         EXPECT_FALSE(inj->HasMultiProcessRenderer());
+        EXPECT_FALSE(inj->RequiresSyntheticAlphaLockstep());
         EXPECT_FALSE(inj->NeedsBaitCharPrefix());
         EXPECT_EQ(inj->SettleBudget(), std::chrono::milliseconds(30));
     }
@@ -292,6 +307,7 @@ TEST(InjectorSwitch, TraitsTrackTheActiveInjector) {
     {
         auto inj = field.load(std::memory_order_acquire);
         EXPECT_TRUE(inj->HasMultiProcessRenderer());
+        EXPECT_TRUE(inj->RequiresSyntheticAlphaLockstep());
         EXPECT_FALSE(inj->NeedsBaitCharPrefix());
         EXPECT_EQ(inj->SettleBudget(), std::chrono::milliseconds(100));
     }
@@ -300,8 +316,18 @@ TEST(InjectorSwitch, TraitsTrackTheActiveInjector) {
     {
         auto inj = field.load(std::memory_order_acquire);
         EXPECT_TRUE(inj->HasMultiProcessRenderer());
+        EXPECT_TRUE(inj->RequiresSyntheticAlphaLockstep());
         EXPECT_TRUE(inj->NeedsBaitCharPrefix());
         EXPECT_EQ(inj->SettleBudget(), std::chrono::milliseconds(60));
+    }
+
+    field.store(console, std::memory_order_release);
+    {
+        auto inj = field.load(std::memory_order_acquire);
+        EXPECT_FALSE(inj->HasMultiProcessRenderer());
+        EXPECT_TRUE(inj->RequiresSyntheticAlphaLockstep());
+        EXPECT_FALSE(inj->NeedsBaitCharPrefix());
+        EXPECT_EQ(inj->SettleBudget(), std::chrono::milliseconds(100));
     }
 }
 

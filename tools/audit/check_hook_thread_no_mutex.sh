@@ -154,8 +154,9 @@ done
 # Sprint 2 D4 deleted: useEditMsgPath_ — replaced by HookEngine::IsSync-
 # ReplaceChannel() proxy on injector_->SettleBudget()==0.
 # Post-T3 ChannelTraits cleanup deleted: isElectronApp_ + needBaitChar_ —
-# both flags moved onto IOutputInjector (HasMultiProcessRenderer() /
-# NeedsBaitCharPrefix()) so the dispatch channel owns its own character.
+# traits moved onto IOutputInjector (HasMultiProcessRenderer() /
+# RequiresSyntheticAlphaLockstep() / NeedsBaitCharPrefix()) so the dispatch
+# channel owns its own behavior.
 ATOMIC_BOOLS="vietnameseMode_|isTsfApp_|isExcludedApp_|skipEmptyChar_|useClipboardPaste_|isOutlookApp_|macroEnabled_|macroInEnglish_|autoCaps_|autoCapsMacro_|tempOffMacroByEsc_|tempOffByAlt_"
 ATOMIC_DWORD="excludedPid_"
 ATOMIC_ENUM="currentMethod_"

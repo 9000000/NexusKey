@@ -732,7 +732,8 @@ private:
     // useEditMsgPath_ — replaced by IsSyncReplaceChannel() (SettleBudget==0
     // proxy). Post-T3 ChannelTraits cleanup deleted isElectronApp_ +
     // needBaitChar_ — both flags moved onto IOutputInjector
-    // (HasMultiProcessRenderer() / NeedsBaitCharPrefix()). Single source
+    // (HasMultiProcessRenderer() / RequiresSyntheticAlphaLockstep() /
+    // NeedsBaitCharPrefix()). Single source
     // of truth on the injector itself.
     // Wave 3 PR 3.2 — webView2PositiveCache_ moved to FocusOwner.
     // Wave 3 PR 3.3 — skipEmptyChar_, useClipboardPaste_ moved to OutputDispatcher.

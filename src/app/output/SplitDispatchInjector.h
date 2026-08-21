@@ -19,10 +19,13 @@ class SplitDispatchInjector final : public IOutputInjector {
 public:
     explicit SplitDispatchInjector(int sleepMsBetweenBatches,
                                    bool needsBaitCharPrefix = false,
-                                   bool hasMultiProcessRenderer = false) noexcept
+                                   bool hasMultiProcessRenderer = false,
+                                   bool requiresSyntheticAlphaLockstep = false) noexcept
         : sleepMs_(sleepMsBetweenBatches),
           needsBaitCharPrefix_(needsBaitCharPrefix),
-          hasMultiProcessRenderer_(hasMultiProcessRenderer) {}
+          hasMultiProcessRenderer_(hasMultiProcessRenderer),
+          requiresSyntheticAlphaLockstep_(
+              hasMultiProcessRenderer || requiresSyntheticAlphaLockstep) {}
 
     bool Replace(std::size_t bsCount, std::wstring_view text,
                  unsigned short reinjectVk = 0) noexcept override;
@@ -34,17 +37,18 @@ public:
         return std::chrono::milliseconds{100};
     }
 
-    // Channel traits — both flags are dispatch-arm hints set by the
-    // factory based on WindowClassification. Console hosts construct
-    // with both false (single-process readline ingest); Electron hosts
-    // construct with hasMultiProcessRenderer=true (Discord/Slack/VSCode
-    // multi-process renderer race) and optionally needsBaitCharPrefix=
-    // true when the renderer is Chromium (WebView2 / Tauri / Dorion).
+    // Channel traits are dispatch-arm hints set by the factory based on
+    // WindowClassification. Electron is both multi-process and lockstep;
+    // console is single-process but still lockstep because ConPTY/TUI input
+    // can reorder physical WM_KEYDOWN against synthetic VK_PACKET.
     bool NeedsBaitCharPrefix() const noexcept override {
         return needsBaitCharPrefix_;
     }
     bool HasMultiProcessRenderer() const noexcept override {
         return hasMultiProcessRenderer_;
+    }
+    bool RequiresSyntheticAlphaLockstep() const noexcept override {
+        return requiresSyntheticAlphaLockstep_;
     }
 
 private:
@@ -56,11 +60,11 @@ private:
     // bait. Without it, BS land into a still-open suggest popup and
     // get swallowed.
     bool needsBaitCharPrefix_;
-    // True for Electron / Qt-on-Chromium hosts where physical
-    // WM_KEYDOWN and synthetic VK_PACKET arrive out of order. Console
-    // hosts (CMD/PowerShell) also use split dispatch but are NOT
-    // multi-process — flag is false there.
+    // True for Electron / Qt-on-Chromium hosts. Used only by leaked-key
+    // suppression; console hosts remain false here.
     bool hasMultiProcessRenderer_;
+    // Blocks physical/synthetic alpha mixing within one transformed word.
+    bool requiresSyntheticAlphaLockstep_;
 };
 
 }  // namespace NextKey::Output

@@ -48,6 +48,8 @@ TEST(InjectorTraitsTest, Win32_HasMultiProcessRendererAlwaysFalse) {
     Win32SendInputInjector withBait(true);
     EXPECT_FALSE(noBait.HasMultiProcessRenderer());
     EXPECT_FALSE(withBait.HasMultiProcessRenderer());
+    EXPECT_FALSE(noBait.RequiresSyntheticAlphaLockstep());
+    EXPECT_FALSE(withBait.RequiresSyntheticAlphaLockstep());
 }
 
 // ─── SplitDispatchInjector ───────────────────────────────────────────
@@ -57,6 +59,7 @@ TEST(InjectorTraitsTest, Split_Defaults_BothTraitsFalse) {
     SplitDispatchInjector inj(/*sleepMsBetweenBatches=*/5);
     EXPECT_FALSE(inj.NeedsBaitCharPrefix());
     EXPECT_FALSE(inj.HasMultiProcessRenderer());
+    EXPECT_FALSE(inj.RequiresSyntheticAlphaLockstep());
 }
 
 TEST(InjectorTraitsTest, Split_BaitOnly_BaitTrueMultiProcFalse) {
@@ -64,6 +67,7 @@ TEST(InjectorTraitsTest, Split_BaitOnly_BaitTrueMultiProcFalse) {
                               /*needsBaitCharPrefix=*/true);
     EXPECT_TRUE(inj.NeedsBaitCharPrefix());
     EXPECT_FALSE(inj.HasMultiProcessRenderer());
+    EXPECT_FALSE(inj.RequiresSyntheticAlphaLockstep());
 }
 
 TEST(InjectorTraitsTest, Split_MultiProcOnly_BaitFalseMultiProcTrue) {
@@ -72,6 +76,7 @@ TEST(InjectorTraitsTest, Split_MultiProcOnly_BaitFalseMultiProcTrue) {
                               /*hasMultiProcessRenderer=*/true);
     EXPECT_FALSE(inj.NeedsBaitCharPrefix());
     EXPECT_TRUE(inj.HasMultiProcessRenderer());
+    EXPECT_TRUE(inj.RequiresSyntheticAlphaLockstep());
 }
 
 TEST(InjectorTraitsTest, Split_BothFlags_BothTraitsTrue) {
@@ -82,6 +87,7 @@ TEST(InjectorTraitsTest, Split_BothFlags_BothTraitsTrue) {
                               /*hasMultiProcessRenderer=*/true);
     EXPECT_TRUE(inj.NeedsBaitCharPrefix());
     EXPECT_TRUE(inj.HasMultiProcessRenderer());
+    EXPECT_TRUE(inj.RequiresSyntheticAlphaLockstep());
 }
 
 // ─── RichEditEmReplaceSelInjector ────────────────────────────────────
@@ -92,6 +98,7 @@ TEST(InjectorTraitsTest, RichEdit_BothTraitsFalseByDefault) {
     RichEditEmReplaceSelInjector inj;
     EXPECT_FALSE(inj.NeedsBaitCharPrefix());
     EXPECT_FALSE(inj.HasMultiProcessRenderer());
+    EXPECT_FALSE(inj.RequiresSyntheticAlphaLockstep());
 }
 
 // ─── Factory propagation ─────────────────────────────────────────────
@@ -102,6 +109,7 @@ TEST(InjectorTraitsTest, Factory_DefaultClassification_NoTraits) {
     ASSERT_NE(inj, nullptr);
     EXPECT_FALSE(inj->NeedsBaitCharPrefix());
     EXPECT_FALSE(inj->HasMultiProcessRenderer());
+    EXPECT_FALSE(inj->RequiresSyntheticAlphaLockstep());
 }
 
 TEST(InjectorTraitsTest, Factory_Chromium_BaitTrueOnWin32) {
@@ -113,6 +121,7 @@ TEST(InjectorTraitsTest, Factory_Chromium_BaitTrueOnWin32) {
         << "isChromium classification must propagate as bait-prefix trait";
     EXPECT_FALSE(inj->HasMultiProcessRenderer())
         << "vanilla Chromium browsers stay on Win32 single channel";
+    EXPECT_FALSE(inj->RequiresSyntheticAlphaLockstep());
 }
 
 TEST(InjectorTraitsTest, Factory_Electron_MultiProcTrueBaitFalseByDefault) {
@@ -124,6 +133,7 @@ TEST(InjectorTraitsTest, Factory_Electron_MultiProcTrueBaitFalseByDefault) {
         << "non-Chromium Electron variants don't need the bait prefix";
     EXPECT_TRUE(inj->HasMultiProcessRenderer())
         << "Electron classification must propagate as multi-process trait";
+    EXPECT_TRUE(inj->RequiresSyntheticAlphaLockstep());
 }
 
 TEST(InjectorTraitsTest, Factory_ElectronChromium_BothTraitsTrue) {
@@ -134,11 +144,12 @@ TEST(InjectorTraitsTest, Factory_ElectronChromium_BothTraitsTrue) {
     ASSERT_NE(inj, nullptr);
     EXPECT_TRUE(inj->NeedsBaitCharPrefix());
     EXPECT_TRUE(inj->HasMultiProcessRenderer());
+    EXPECT_TRUE(inj->RequiresSyntheticAlphaLockstep());
 }
 
-TEST(InjectorTraitsTest, Factory_Console_BothTraitsFalse) {
-    // CMD / PowerShell — split dispatch (5 ms) for ingest pacing, but
-    // single-process renderer and no Chromium suggest layer.
+TEST(InjectorTraitsTest, Factory_ConsoleIsSingleProcessButRequiresAlphaLockstep) {
+    // Console hosts are not multi-process renderers, but ConPTY/TUI input can
+    // still reorder physical WM_KEYDOWN against synthetic VK_PACKET input.
     WindowClassification c{};
     c.isConsole = true;
     auto inj = Create(c);
@@ -146,6 +157,8 @@ TEST(InjectorTraitsTest, Factory_Console_BothTraitsFalse) {
     EXPECT_FALSE(inj->NeedsBaitCharPrefix());
     EXPECT_FALSE(inj->HasMultiProcessRenderer())
         << "Console hosts use split-dispatch but are NOT multi-process renderers";
+    EXPECT_TRUE(inj->RequiresSyntheticAlphaLockstep())
+        << "Console hosts must not mix physical and synthetic alpha input mid-word";
 }
 
 TEST(InjectorTraitsTest, Factory_RichEdit_BothTraitsFalse) {
@@ -155,6 +168,7 @@ TEST(InjectorTraitsTest, Factory_RichEdit_BothTraitsFalse) {
     ASSERT_NE(inj, nullptr);
     EXPECT_FALSE(inj->NeedsBaitCharPrefix());
     EXPECT_FALSE(inj->HasMultiProcessRenderer());
+    EXPECT_FALSE(inj->RequiresSyntheticAlphaLockstep());
 }
 
 }  // namespace NextKey::Output::Test

@@ -52,14 +52,15 @@ std::shared_ptr<IOutputInjector> Create(
         // user's explicit choice wins over the auto-detected Electron/Console
         // sleeps below, but inherits their renderer traits so protections
         // aren't lost: bait follows c.isChromium (Firefox's URL-bar inline
-        // autocomplete behaves like Chromium's), and hasMultiProcessRenderer
-        // follows c.isElectron (keeps the mid-word passthrough block if the
-        // forced app happens to be Electron). The sleep (resolved in
+        // autocomplete behaves like Chromium's), hasMultiProcessRenderer
+        // follows c.isElectron, and console/Electron channels keep alpha
+        // lockstep. The sleep (resolved in
         // FocusOwner) spans the renderer / remote-session round-trip the
         // split is there to outlast.
         return std::make_shared<SplitDispatchInjector>(
             c.forcedSplitSleepMs, /*needsBaitCharPrefix=*/c.isChromium,
-            /*hasMultiProcessRenderer=*/c.isElectron);
+            /*hasMultiProcessRenderer=*/c.isElectron,
+            /*requiresSyntheticAlphaLockstep=*/c.isElectron || c.isConsole);
     }
     if (c.isRichEditD2DPT) {
         return std::make_shared<RichEditEmReplaceSelInjector>();
@@ -74,11 +75,12 @@ std::shared_ptr<IOutputInjector> Create(
             kElectronSleepMs, c.isChromium, /*hasMultiProcessRenderer=*/true);
     }
     if (c.isConsole) {
-        // Console hosts (CMD/PowerShell) never use Chromium suggest and
-        // are single-process renderers, so both traits are false here.
+        // Console hosts are not multi-process renderers, but ConPTY-backed
+        // TUIs can reorder physical WM_KEYDOWN against synthetic VK_PACKET.
         return std::make_shared<SplitDispatchInjector>(
             kConsoleSleepMs, /*needsBaitCharPrefix=*/false,
-            /*hasMultiProcessRenderer=*/false);
+            /*hasMultiProcessRenderer=*/false,
+            /*requiresSyntheticAlphaLockstep=*/true);
     }
     return std::make_shared<Win32SendInputInjector>(c.isChromium);
 }
