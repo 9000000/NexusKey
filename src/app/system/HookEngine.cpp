@@ -1503,8 +1503,15 @@ HookEngine::KeyOutcome HookEngine::RunTopGuards(DWORD vkCode) {
     }
 
     // Domain-English is an overlay, not a mutation of the user's logical V/E
-    // mode. Modifier tracking remains live so global VKey hotkeys still work.
+    // mode. Modifier-only hotkeys stay live (they dispatch from ProcessKeyUp);
+    // non-modifier bindings pass through, same as an excluded app.
     if (browserRoute_.load(std::memory_order_acquire) == BrowserRoute::ForceEnglish) {
+        // Same contract as the excluded-app returns below: a guard that skips
+        // ProcessKeyDown's post-switch bookkeeping must invalidate the
+        // modifier-alone window itself, or Ctrl+C here reads as a clean Ctrl
+        // release and fires the V/E toggle on key-up.
+        otherKeyPressed_ = true;
+        for (int i = 0; i < kModCount; ++i) modTapCount_[i] = 0;
         return KeyOutcome::Pass;
     }
 
@@ -4642,7 +4649,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     RefreshBrowserRouteOnHookThread(true, false);
     const bool effectiveTsf = IsEffectiveTsf();
     const bool shouldActivateTsfProfile = ShouldActivateTsfProfileForFocus(
-        tsfFocusActivationState_, effectiveTsf, cls->hwndOpaque);
+        tsfFocusActivationState_, effectiveTsf, cls->hwndOpaque, cls->pid);
     // Store forced-V cache flag at the SAME site as the others, BEFORE the
     // excluded/tsf early-returns below — so switching excluded↔forced-V leaves
     // the flag consistent. forcedVnPid_ feeds the toggle-lock PID check.

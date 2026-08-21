@@ -113,30 +113,38 @@ TEST(FocusApplyDecisionTest, ExhaustiveOrderingMatrixMatchesPolicy) {
 TEST(TsfFocusActivationDecisionTest, FirstTsfFocusActivatesOnce) {
     TsfFocusActivationState state{};
 
-    EXPECT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234));
-    EXPECT_FALSE(ShouldActivateTsfProfileForFocus(state, true, 0x1234));
-    EXPECT_FALSE(ShouldActivateTsfProfileForFocus(state, true, 0x1234));
+    EXPECT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234, 10));
+    EXPECT_FALSE(ShouldActivateTsfProfileForFocus(state, true, 0x1234, 10));
+    EXPECT_FALSE(ShouldActivateTsfProfileForFocus(state, true, 0x1234, 10));
 }
 
 TEST(TsfFocusActivationDecisionTest, DifferentTsfWindowReactivates) {
     TsfFocusActivationState state{};
 
-    ASSERT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234));
-    EXPECT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x5678));
-    EXPECT_FALSE(ShouldActivateTsfProfileForFocus(state, true, 0x5678));
+    ASSERT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234, 10));
+    EXPECT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x5678, 10));
+    EXPECT_FALSE(ShouldActivateTsfProfileForFocus(state, true, 0x5678, 10));
 }
 
 TEST(TsfFocusActivationDecisionTest, LeavingTsfRearmsSameWindow) {
     TsfFocusActivationState state{};
 
-    ASSERT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234));
-    EXPECT_FALSE(ShouldActivateTsfProfileForFocus(state, false, 0x9999));
-    EXPECT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234));
+    ASSERT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234, 10));
+    EXPECT_FALSE(ShouldActivateTsfProfileForFocus(state, false, 0x9999, 11));
+    EXPECT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234, 10));
+}
+
+TEST(TsfFocusActivationDecisionTest, RecycledHandleInNewProcessReactivates) {
+    TsfFocusActivationState state{};
+
+    ASSERT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234, 10));
+    EXPECT_TRUE(ShouldActivateTsfProfileForFocus(state, true, 0x1234, 11));
+    EXPECT_FALSE(ShouldActivateTsfProfileForFocus(state, true, 0x1234, 11));
 }
 
 static_assert(noexcept(DecideFocusApply(FocusApplyInputs{})));
 static_assert(noexcept(ShouldActivateTsfProfileForFocus(
-    std::declval<TsfFocusActivationState&>(), false, 0)));
+    std::declval<TsfFocusActivationState&>(), false, 0, 0)));
 // The hook hot path cost of the epoch is exactly this property. A wall-clock
 // benchmark here measured ~1 ns against a 50 ns bar — it could never fail for a
 // real regression, only for a loaded CI box, so the static_assert is the check.

@@ -33,6 +33,7 @@ struct FocusApplyInputs {
 
 struct TsfFocusActivationState {
     std::uintptr_t lastTsfHwndOpaque{0};
+    std::uint32_t lastTsfPid{0};
 };
 
 /// Pure, allocation-free and syscall-free. Equality is intentional:
@@ -49,20 +50,26 @@ DecideFocusApply(const FocusApplyInputs& in) noexcept {
     return FocusApplyDisposition::ApplyNow;
 }
 
-/// Re-assert the VKey TIP once per TSF focus target. Poll-based
-/// reclassification of the same HWND must not repeat the expensive profile
-/// activation, while leaving TSF mode rearms the same target for a later visit.
+/// Re-assert the VKey TIP once per TSF focus target. Duplicate WinEvents for
+/// one window must not repeat the expensive profile activation, while leaving
+/// TSF mode rearms the same target for a later visit.
+/// Keyed on (HWND, PID) because Windows recycles window handles — the focus
+/// classification cache pairs them for the same reason.
 [[nodiscard]] constexpr bool ShouldActivateTsfProfileForFocus(
         TsfFocusActivationState& state,
         bool isTsf,
-        std::uintptr_t hwndOpaque) noexcept {
+        std::uintptr_t hwndOpaque,
+        std::uint32_t pid) noexcept {
     if (!isTsf || hwndOpaque == 0) {
         state.lastTsfHwndOpaque = 0;
+        state.lastTsfPid = 0;
         return false;
     }
 
-    const bool shouldActivate = state.lastTsfHwndOpaque != hwndOpaque;
+    const bool shouldActivate =
+        state.lastTsfHwndOpaque != hwndOpaque || state.lastTsfPid != pid;
     state.lastTsfHwndOpaque = hwndOpaque;
+    state.lastTsfPid = pid;
     return shouldActivate;
 }
 
