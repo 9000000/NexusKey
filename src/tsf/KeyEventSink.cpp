@@ -314,6 +314,7 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     if (pEngineController_->CheckConfigEvent()) {
         RefreshQuickConvertPreservedKey();
     }
+    const bool routeToTsf = pEngineController_->RefreshKeyRouting();
     const UINT vk = static_cast<UINT>(wParam);
 
     // Drop any translated char cached by a previous OnTestKeyDown whose
@@ -330,6 +331,16 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
             pendingClaimedSpaceVk_, vk,
             static_cast<uint32_t>(static_cast<uintptr_t>(lParam)))) {
         *pfEaten = TRUE;
+        return S_OK;
+    }
+
+    // The Windows input profile is session-wide, so this DLL is loaded into
+    // passive TSF hosts even when only a small per-app list uses VKey's TSF
+    // backend. Keep those hosts a true passthrough: context inspection can
+    // request synchronous edit sessions and visibly stall shell/game keys
+    // such as Win, Alt+Tab and Win+Tab (#250).
+    if (!routeToTsf) {
+        ClearInactiveKeyState();
         return S_OK;
     }
 
@@ -594,6 +605,7 @@ IFACEMETHODIMP KeyEventSink::OnTestKeyUp(ITfContext* /*pContext*/, WPARAM wParam
         *pfEaten = TRUE;
         return S_OK;
     }
+    if (!pEngineController_->RefreshKeyRouting()) return S_OK;
     // Eat keyup for A-Z and Backspace during active composition
     // (prevents apps from seeing keyup without corresponding keydown)
     // Do NOT call WantKey() here — it has side effects (auto-cap state machine)
@@ -622,6 +634,7 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     if (pEngineController_->CheckConfigEvent()) {
         RefreshQuickConvertPreservedKey();
     }
+    const bool routeToTsf = pEngineController_->RefreshKeyRouting();
     const UINT vk = static_cast<UINT>(wParam);
 
     if (vk != pendingClaimedSpaceVk_) {
@@ -632,6 +645,11 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
             pendingClaimedSpaceVk_, vk,
             static_cast<uint32_t>(static_cast<uintptr_t>(lParam)))) {
         *pfEaten = TRUE;
+        return S_OK;
+    }
+
+    if (!routeToTsf) {
+        ClearInactiveKeyState();
         return S_OK;
     }
 
@@ -900,6 +918,7 @@ IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LP
         *pfEaten = TRUE;
         return S_OK;
     }
+    if (!pEngineController_->RefreshKeyRouting()) return S_OK;
     if (pEngineController_->IsComposing()) {
         UINT vk = static_cast<UINT>(wParam);
         *pfEaten = (vk >= 0x41 && vk <= 0x5A) || vk == VK_BACK ? TRUE : FALSE;
@@ -907,6 +926,16 @@ IFACEMETHODIMP KeyEventSink::OnKeyUp(ITfContext* /*pContext*/, WPARAM wParam, LP
         *pfEaten = FALSE;
     }
     return S_OK;
+}
+
+void KeyEventSink::ClearInactiveKeyState() noexcept {
+    lastTestedVk_ = 0;
+    lastWantKeyResult_ = false;
+    lastTranslatedChar_ = 0;
+    lastEnglishMacroObservedVk_ = 0;
+    lastMacroHandledVk_ = 0;
+    lastMacroHandledEat_ = false;
+    pEngineController_->ClearMacroTracking();
 }
 
 IFACEMETHODIMP KeyEventSink::OnPreservedKey(ITfContext* pContext, REFGUID rguid, BOOL* pfEaten) {

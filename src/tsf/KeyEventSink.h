@@ -49,6 +49,7 @@ private:
     void RefreshQuickConvertPreservedKey();
     void ClearQuickConvertPreservedKey() noexcept;
     void PublishQuickConvertCapability() noexcept;
+    void ClearInactiveKeyState() noexcept;
 
     ULONG refCount_ = 1;
     TextService* pTextService_ = nullptr;

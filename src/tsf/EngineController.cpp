@@ -247,45 +247,8 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
 }
 
 bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
-    // 0. ABI-mismatch safety gate: if this DLL's SharedState layout doesn't
-    //    match what the main EXE is writing, pass every key through. Host
-    //    process sees raw English typing until it restarts or the machine
-    //    reboots — Settings dialog + tray render a banner via TSF_ABI_MISMATCH.
-    if (!abiOk_) return false;
-
-    if (sharedState_.IsConnected()) {
-        // Read flags directly from shared memory (live, zero-copy)
-        uint32_t flags = sharedState_.ReadFlags();
-        const bool newEngineEnabled = (flags & SharedFlags::ENGINE_ENABLED) != 0;
-        if (newEngineEnabled != engineEnabled_) {
-            engineEnabled_ = newEngineEnabled;
-            ClearMacroTracking();
-        }
-        if (!engineEnabled_) return false;
-
-        // [Checkpoint: TSF_ACTIVE] Only process keys when foreground app is in TSF list
-        // EXE sets this flag on foreground change — prevents double-processing with hook
-        bool newTsfActive = (flags & SharedFlags::TSF_ACTIVE) != 0;
-        if (newTsfActive != tsfActive_) {
-            tsfActive_ = newTsfActive;
-            ClearMacroTracking();
-            TSF_LOG(L"[Checkpoint] TSF_ACTIVE: %s", tsfActive_ ? L"ON (processing keys)" : L"OFF (passthrough)");
-        }
-        if (!tsfActive_) return false;
-
-        // Detect V/E mode changes (e.g. from EXE hotkey) and refresh icon
-        bool newVietnameseMode = (flags & SharedFlags::VIETNAMESE_MODE) != 0;
-        if (newVietnameseMode != vietnameseMode_) {
-            vietnameseMode_ = newVietnameseMode;
-            ClearMacroTracking();
-            if (langBarButton_) langBarButton_->Refresh();
-        }
-
-        if (!vietnameseMode_) return false;
-    } else {
-        // SharedState not available = EXE not running → pass all keys through
-        return false;
-    }
+    if (!RefreshKeyRouting()) return false;
+    if (!vietnameseMode_) return false;
 
     // Auto-cap is now driven by ShouldAutoCapitalize() which peeks the document
     // on each A-Z keystroke — no keystroke-history state machine needed.
@@ -345,6 +308,39 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
 
     // 6. For Enter and all others, let the app handle it (we'll commit in OnTestKeyDown)
     return false;
+}
+
+bool EngineController::RefreshKeyRouting() noexcept {
+    // ABI mismatch or an absent EXE mapping means strict passthrough. This is
+    // intentionally only a shared-memory read: passive TSF hosts (Explorer,
+    // Start/Search, games) call this on the input path and must not pay for
+    // context inspection when they are not assigned to the TSF backend.
+    if (!abiOk_ || !sharedState_.IsConnected()) return false;
+
+    const uint32_t flags = sharedState_.ReadFlags();
+    const bool newEngineEnabled = (flags & SharedFlags::ENGINE_ENABLED) != 0;
+    if (newEngineEnabled != engineEnabled_) {
+        engineEnabled_ = newEngineEnabled;
+        ClearMacroTracking();
+    }
+    if (!engineEnabled_) return false;
+
+    const bool newTsfActive = (flags & SharedFlags::TSF_ACTIVE) != 0;
+    if (newTsfActive != tsfActive_) {
+        tsfActive_ = newTsfActive;
+        ClearMacroTracking();
+        TSF_LOG(L"[Checkpoint] TSF_ACTIVE: %s",
+                tsfActive_ ? L"ON (processing keys)" : L"OFF (passthrough)");
+    }
+    if (!tsfActive_) return false;
+
+    const bool newVietnameseMode = (flags & SharedFlags::VIETNAMESE_MODE) != 0;
+    if (newVietnameseMode != vietnameseMode_) {
+        vietnameseMode_ = newVietnameseMode;
+        ClearMacroTracking();
+        if (langBarButton_) langBarButton_->Refresh();
+    }
+    return true;
 }
 
 void EngineController::RequestEditSession(ITfContext* pContext, EditSession* pEditSession) {

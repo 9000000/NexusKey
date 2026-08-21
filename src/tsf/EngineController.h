@@ -114,6 +114,11 @@ public:
     /// Whether this foreground application is configured for the TSF backend.
     [[nodiscard]] bool IsTsfActive() const noexcept { return tsfActive_; }
 
+    /// Refresh the cheap SharedState routing bits used by key callbacks.
+    /// Returns false when this TIP instance must be a strict passthrough.
+    /// Unlike RefreshFlags(), this performs no process inspection or disk I/O.
+    [[nodiscard]] bool RefreshKeyRouting() noexcept;
+
     /// Quick-convert config snapshot delivered by the main process.
     [[nodiscard]] const ConvertConfig& GetConvertConfig() const noexcept {
         return convertConfig_;
