@@ -124,8 +124,9 @@ public:
 
     // ── Dispatch entry points (hook thread) ─────────────────────────
     /// Unicode-path dispatch with full retry+fallback orchestration:
-    ///   1. IsSyncReplaceChannel → RichEdit retry-loop (≤30ms catch-up),
-    ///      then fall through on exhaust.
+    ///   1. IsSyncReplaceChannel → RichEdit retry-loop (30ms retry
+    ///      budget; an in-flight synchronous attempt may overrun it), then
+    ///      fall through on exhaust.
     ///   2. ShouldUseClipboard → TryEditMessagePaste + clipboard fallback
     ///      chain (BS-adjust for reinjectVk).
     ///   3. Generic — optional reinjectVk SendInput prepend + injector

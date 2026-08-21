@@ -11,6 +11,7 @@
 #include "output/Win32SendInputInjector.h"
 
 #include <algorithm>
+#include <chrono>
 #include <vector>
 
 #define HOOK_LOG(fmt, ...) do {                                              \
@@ -448,7 +449,9 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
     // (low) position so the BS > caret guard refuses the replacement. Fix: when
     // injector reports failure, sleep briefly (hook thread holds back further
     // callbacks while sleeping — no further physical keys race in) then retry.
-    // 30 ms upper bound is well below LowLevelHooksTimeout (default 300 ms).
+    // The retry budget is 30 ms. An in-flight synchronous Replace may overrun
+    // that budget, so the loop also checks monotonic wall time after each
+    // failed attempt and never starts another retry after a slow failure.
     // reinjectVk != 0 skips this branch entirely. HandleAlphaKey only sets it
     // after reading IsSyncReplaceChannel() itself, but that predicate is
     // re-evaluated here and can flip in between (the cached child HWND is
@@ -477,6 +480,8 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
             constexpr int kAsyncRenderMaxWaitMs = 30;
             constexpr int kAsyncRenderStepMs    = 1;
             int elapsedWaitTimeMs = 0;
+            const auto retryDeadline = std::chrono::steady_clock::now()
+                + std::chrono::milliseconds{kAsyncRenderMaxWaitMs};
             auto activeInjector = injector_.load(std::memory_order_acquire);
             for (;;) {
                 bool isInjectionSuccessful = false;
@@ -495,7 +500,12 @@ void OutputDispatcher::ReplaceUnicode(size_t backspaceCount,
                     isReplaced = true;
                     break;
                 }
-                if (elapsedWaitTimeMs >= kAsyncRenderMaxWaitMs) {
+                // Keep the existing attempt-count cap, and additionally count
+                // time spent inside Replace toward the retry budget. Check only
+                // after failure: a successful synchronous edit remains valid
+                // even if the target took longer than the retry budget.
+                if (elapsedWaitTimeMs >= kAsyncRenderMaxWaitMs
+                    || std::chrono::steady_clock::now() >= retryDeadline) {
                     break;
                 }
                 Sleep(kAsyncRenderStepMs);

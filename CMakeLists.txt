@@ -939,11 +939,12 @@ if(WIN32)
         tests/SmartSwitchPersistenceTest.cpp
         tests/HeartbeatPublisherTest.cpp
         tests/core/config/ConfigSnapshotBuilderTest.cpp
-        # Sprint 2 T3 — IOutputInjector unit tests + impl sources for linkage.
-        # VKeyTests links VKeyCore (which excludes output/), so impls
-        # are pulled in directly here for the test binary.
+        # IOutputInjector unit tests + OutputDispatcher retry integration.
+        # VKeyTests links VKeyCore (which excludes app/output and app/system),
+        # so the required implementations are pulled into the test binary.
         tests/output/Win32SendInputInjectorTest.cpp
         tests/output/RichEditEmReplaceSelInjectorTest.cpp
+        tests/output/OutputDispatcherRetryBudgetTest.cpp
         tests/output/SplitDispatchInjectorTest.cpp
         tests/output/OutputInjectorFactoryTest.cpp
         tests/output/InjectorTraitsTest.cpp
@@ -953,6 +954,8 @@ if(WIN32)
         src/app/output/RichEditEmReplaceSelInjector.cpp
         src/app/output/SplitDispatchInjector.cpp
         src/app/output/OutputInjectorFactory.cpp
+        src/app/system/FocusOwner.cpp
+        src/app/system/OutputDispatcher.cpp
         src/app/system/HeartbeatPublisher.cpp
     )
 endif()
@@ -972,6 +975,7 @@ add_executable(VKeyTests EXCLUDE_FROM_ALL ${NEXTKEY_TEST_SOURCES})
 target_link_libraries(VKeyTests PRIVATE VKeyCore GTest::gtest_main)
 target_include_directories(VKeyTests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/extern/tomlplusplus
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/app
 )
 if(VKEY_USE_RUST_ENGINE)
     target_compile_definitions(VKeyTests PRIVATE VKEY_USE_RUST_ENGINE)
