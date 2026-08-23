@@ -34,8 +34,12 @@ public:
                                std::uint64_t updatedTickMs,
                                bool focused,
                                BrowserRoute route,
+                               BrowserMode mode,
                                std::string_view browserExe,
                                std::string_view hostname) noexcept;
+    /// Record an accepted V/E toggle for the focused browser context. This is
+    /// called on the hook thread and therefore uses a zero-timeout mutex try.
+    [[nodiscard]] bool PublishModeEvent(bool vietnamese) noexcept;
     /// Clear only this connection's state, so a stale native host cannot erase
     /// a newer browser profile/window that published after it.
     void ClearIfOwned(std::uint32_t ownerProcessId,

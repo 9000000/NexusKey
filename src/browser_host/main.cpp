@@ -43,6 +43,7 @@ int main() {
     QueryPerformanceCounter(&counter);
     const std::uint64_t nonce = static_cast<std::uint64_t>(counter.QuadPart)
         ^ (static_cast<std::uint64_t>(processId) << 32);
+    std::uint32_t lastModeEventSequence = 0;
 
     std::string payload;
     while (ReadFrame(payload)) {
@@ -55,7 +56,7 @@ int main() {
         bool ok = true;
         if (message.focused) {
             ok = context.Publish(processId, nonce, GetTickCount64(), true,
-                                 message.route, message.browserExe,
+                                 message.route, message.mode, message.browserExe,
                                  message.hostname);
         } else {
             // An unfocused Chrome profile must not overwrite the route most
@@ -63,7 +64,20 @@ int main() {
             // owner-conditional for exactly this multi-browser heartbeat race.
             context.ClearIfOwned(processId, nonce, GetTickCount64());
         }
-        WriteFrame(ok ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"publish\"}");
+        if (!ok) {
+            WriteFrame("{\"ok\":false,\"error\":\"publish\"}");
+            continue;
+        }
+        NextKey::BrowserContextState state{};
+        NextKey::BrowserHost::NativeModeEvent event{};
+        if (message.protocol >= 2 && context.Read(state)
+            && NextKey::BrowserHost::TryReadModeEvent(
+                state, processId, nonce, lastModeEventSequence, event)) {
+            lastModeEventSequence = event.sequence;
+            WriteFrame(NextKey::BrowserHost::SerializeModeEvent(event));
+        } else {
+            WriteFrame("{\"ok\":true}");
+        }
     }
 
     context.ClearIfOwned(processId, nonce, GetTickCount64());

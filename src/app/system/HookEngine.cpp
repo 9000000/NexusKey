@@ -4640,21 +4640,24 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     const bool wasExcludedApp = isExcludedApp_.load(std::memory_order_acquire);
     const bool wasTsfAppFlag  = isTsfApp_.load(std::memory_order_acquire);
     const bool wasForcedVnApp = isForcedVnApp_.load(std::memory_order_acquire);
+    const bool wasBrowserContextActive = browserContextActive_;
+    const bool modeBeforeBrowserRefresh =
+        vietnameseMode_.load(std::memory_order_acquire);
     const bool wasEffectiveTsf = ResolveEffectiveTsf(
         wasTsfAppFlag, wasExcludedApp, cfg->tsfApps,
         browserRoute_.load(std::memory_order_acquire));
 
     isExcludedApp_.store(cls->isExcluded, std::memory_order_release);
     isTsfApp_.store(cls->isTsf, std::memory_order_release);
+    // Store forced-V cache flag at the SAME site as the others, BEFORE the
+    // browser restore and excluded/tsf early-returns below. This also ensures
+    // an app hard-V lock wins immediately over a remembered domain mode.
+    isForcedVnApp_.store(cls->isForcedVietnamese, std::memory_order_release);
+    if (cls->isForcedVietnamese) forcedVnPid_.store(cls->pid, std::memory_order_release);
     RefreshBrowserRouteOnHookThread(true, false);
     const bool effectiveTsf = IsEffectiveTsf();
     const bool shouldActivateTsfProfile = ShouldActivateTsfProfileForFocus(
         tsfFocusActivationState_, effectiveTsf, cls->hwndOpaque, cls->pid);
-    // Store forced-V cache flag at the SAME site as the others, BEFORE the
-    // excluded/tsf early-returns below — so switching excluded↔forced-V leaves
-    // the flag consistent. forcedVnPid_ feeds the toggle-lock PID check.
-    isForcedVnApp_.store(cls->isForcedVietnamese, std::memory_order_release);
-    if (cls->isForcedVietnamese) forcedVnPid_.store(cls->pid, std::memory_order_release);
 
     HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
              cls->isTsf ? L"TSF (hook passthrough)" : L"HOOK",
@@ -4708,12 +4711,15 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // !wasForcedV: a forced-V app's mode is locked to V, never the user's
     // choice — don't persist it into appModeMap or it poisons the remembered
     // preference (the SAVE writes the forced 'true', not a real toggle).
-    if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcludedApp && !wasForcedVnApp) {
+    if (cfg->smartSwitch && !oldLastReal.empty() && !wasExcludedApp
+        && !wasForcedVnApp && !wasBrowserContextActive) {
         if (focus_.AppModeMap().size() >= kMaxSmartSwitchEntries) {
             focus_.AppModeMap().clear();
             HOOK_LOG(L"  SmartSwitch: map cap %zu hit, cleared", kMaxSmartSwitchEntries);
         }
-        const bool savedMode = vietnameseMode_.load(std::memory_order_acquire);
+        // Browser restore above may already have applied the new tab's mode;
+        // persist the mode that actually belonged to the app being left.
+        const bool savedMode = modeBeforeBrowserRefresh;
         focus_.AppModeMap()[oldLastReal] = savedMode;
         focus_.Smart().SetAppMode(oldLastReal, savedMode);
         focus_.PublishAppModesSnapshot();           // RCU publish (alloc + atomic_store)
@@ -4750,7 +4756,7 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
             HOOK_LOG(L"  ForceVN: locked Vietnamese for '%s'", focus_.LastRealExe().c_str());
             NotifyModeChange();
         }
-    } else if (cfg->smartSwitch) {
+    } else if (cfg->smartSwitch && !browserContextActive_) {
         // Smart switch restore for the new app — uses lastRealExe_ (just set
         // above to cls->exeName).
         auto it = focus_.AppModeMap().find(focus_.LastRealExe());
@@ -4883,6 +4889,26 @@ void HookEngine::ApplyToggleVNOnHookThread() {
         HOOK_LOG(L"  ToggleVN: stale forced-V cleared (fg pid=%u)", fgPid);
     }
 
+    // The extension heartbeat and the hotkey can be delivered by different
+    // Windows queues. Re-read the cheap shared snapshot here so a tray/menu
+    // toggle cannot use a stale domain hard-lock or attribute its event to the
+    // tab that was active previously.
+    RefreshBrowserRouteOnHookThread(true, true);
+
+    // A configured domain-English rule is a hard lock. ToggleVietnameseMode()
+    // eagerly flipped SharedState before posting this drain, so restore the
+    // logical base mode when the browser rule rejects that toggle.
+    if (browserContextActive_
+        && browserRoute_.load(std::memory_order_acquire) == BrowserRoute::ForceEnglish) {
+        HOOK_LOG(L"  ToggleVN: BLOCKED (browser hard-English)");
+        if (sharedStatePtr_) {
+            sharedStatePtr_->SetOrClearFlag(
+                SharedFlags::VIETNAMESE_MODE,
+                vietnameseMode_.load(std::memory_order_acquire));
+        }
+        return;
+    }
+
     // Commit pending composition (skip if CJK-suppressed — engine inactive).
     if (!focus_.LayoutSuppressed() && engine_->Count() > 0) {
         CommitComposition();
@@ -4906,6 +4932,10 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     vietnameseMode_.store(newMode, std::memory_order_release);
     NEXTKEY_LOG(L"HookEngine: mode = %s (via drain)", newMode ? L"Vietnamese" : L"English");
 
+    if (browserContextActive_ && !browserContext_.PublishModeEvent(newMode)) {
+        HOOK_LOG(L"  BrowserModeEvent: publish skipped");
+    }
+
     // Smart-switch save. Drop the pre-P2c GetForegroundWindow + GetExeNameForHwnd
     // fallback — those are Rule 11.2 forbidden on the hook thread (Toolhelp32
     // snapshot). Toggle uses activeExe_ (any focused window's exe, including
@@ -4913,7 +4943,10 @@ void HookEngine::ApplyToggleVNOnHookThread() {
     // to the app the user is interacting with even when the focus path
     // detours. If activeExe_ is empty here (startup before any focus event),
     // the next focus event sets it and the toggle takes effect on first save.
-    if (cfg->smartSwitch && !focus_.ActiveExe().empty()) {
+    // A browser-aware toggle belongs to the extension's session map. Do not
+    // also persist it as an app-level chrome.exe/firefox.exe Smart Switch
+    // entry, otherwise it would survive a browser restart.
+    if (cfg->smartSwitch && !browserContextActive_ && !focus_.ActiveExe().empty()) {
         focus_.AppModeMap()[focus_.ActiveExe()] = newMode;
         focus_.Smart().SetAppMode(focus_.ActiveExe(), newMode);
         focus_.PublishAppModesSnapshot();
@@ -5033,6 +5066,8 @@ void HookEngine::RefreshBrowserRouteOnHookThread(bool forceRead, bool notifyCall
     lastBrowserContextGeneration_ = generation;
 
     BrowserRoute next = BrowserRoute::Default;
+    BrowserMode requestedMode = BrowserMode::Default;
+    bool contextActive = false;
     BrowserContextState state{};
     if (browserContext_.Read(state)) {
         const std::wstring& activeExe = focus_.ActiveExe();
@@ -5044,15 +5079,29 @@ void HookEngine::RefreshBrowserRouteOnHookThread(bool forceRead, bool notifyCall
                 foregroundExe[i] = static_cast<char>(activeExe[i]);
             }
         }
-        if (ascii && IsBrowserContextApplicable(state, foregroundExe, GetTickCount64())) {
+        if (ascii && IsBrowserContextFocusedForExe(
+                state, foregroundExe, GetTickCount64())) {
+            contextActive = true;
             next = state.route;
+            requestedMode = ResolveBrowserModeForRestore(state);
         }
     }
 
+    browserContextActive_ = contextActive;
     const BrowserRoute previous = browserRoute_.exchange(next, std::memory_order_acq_rel);
-    if (previous == next) return;
+    const bool routeChanged = previous != next;
+    const int modeTarget = ResolveBrowserModeTarget(
+        isExcludedApp_.load(std::memory_order_acquire),
+        isForcedVnApp_.load(std::memory_order_acquire),
+        next, requestedMode);
+    const bool modeChanged = modeTarget >= 0
+        && vietnameseMode_.load(std::memory_order_acquire) != (modeTarget != 0);
+    if (!routeChanged && !modeChanged) return;
 
     if (engine_ && engine_->Count() > 0) CommitComposition();
+    if (modeChanged) {
+        vietnameseMode_.store(modeTarget != 0, std::memory_order_release);
+    }
     const bool configured = isTsfApp_.load(std::memory_order_acquire);
     const bool excluded = isExcludedApp_.load(std::memory_order_acquire);
     const bool tsfFeatureEnabled = tsfFeatureEnabled_.load(std::memory_order_acquire);
@@ -5060,10 +5109,11 @@ void HookEngine::RefreshBrowserRouteOnHookThread(bool forceRead, bool notifyCall
         configured, excluded, tsfFeatureEnabled, previous);
     const bool isEffective = ResolveEffectiveTsf(
         configured, excluded, tsfFeatureEnabled, next);
-    HOOK_LOG(L"  BrowserRoute: %u -> %u effectiveTsf=%d",
+    HOOK_LOG(L"  BrowserContext: route %u -> %u mode=%u applied=%d effectiveTsf=%d",
              static_cast<unsigned>(previous), static_cast<unsigned>(next),
+             static_cast<unsigned>(requestedMode), modeChanged ? 1 : 0,
              isEffective ? 1 : 0);
-    if (notifyCallback && tsfModeCallback_) {
+    if (routeChanged && notifyCallback && tsfModeCallback_) {
         tsfModeCallback_(isEffective, !isEffective && !excluded,
                          isEffective && !wasEffective);
     }

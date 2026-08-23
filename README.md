@@ -127,16 +127,18 @@ winget install PhatMT97.VKey.Classic
    `manifest.json`. Với Firefox, chạy `npm run build:firefox`, mở
    `about:debugging#/runtime/this-firefox`, chọn **Load Temporary Add-on** và
    chọn `dist/firefox/manifest.json`.
-4. Mở một website, bấm icon VKey Browser và chọn **Theo VKey**,
-   **Luôn gõ English** hoặc **TSF tương thích**.
+4. Mở website và dùng hotkey V/E như bình thường; extension sẽ nhớ V/E theo
+   hostname trong phiên. Bấm icon VKey Browser để đặt **Luôn gõ English
+   (hard)** hoặc **TSF tương thích (hard)** khi cần rule cố định.
 
 Công tắc **Bật điều hướng theo website** được bật mặc định. Có thể tắt để tạm
-ngừng mọi rule mà không xóa cấu hình; VKey sẽ trở về hành vi bình thường.
+ngừng cả session mode lẫn hard rule mà không xóa chúng; VKey sẽ trở về hành vi
+bình thường.
 
-Ví dụ: giữ VKey ở chế độ V, để `google.com` là **Theo VKey** và đặt `voz.vn`
-là **Luôn gõ English**. Khi chuyển qua lại hai tab, VKey tự áp dụng V/E tương
-ứng mà không thay đổi trạng thái V/E gốc. Xem hướng dẫn, giới hạn và cách xử lý
-lỗi kết nối tại [docs/BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md).
+Ví dụ: đổi `google.com` sang V và `github.com` sang E bằng hotkey. Trong phiên
+browser hiện tại, chuyển qua lại hai tab sẽ tự đổi V → E → V. Trạng thái học tự
+xóa khi browser restart; hard rule vẫn được giữ. Xem protocol, giới hạn và cách
+xử lý lỗi tại [docs/BROWSER_EXTENSION.md](docs/BROWSER_EXTENSION.md).
 
 > **Ký số (Code signing) & Bản Classic:** 
 > - Trong bản **v4.3, SignPath Foundation chỉ ký ba binary GPL-3.0 của gói Classic chính thức**: `VKeyClassic.exe`, `VKeyTSF.dll` và `VKeyWatchdog.exe`. Cả ba được tạo cùng nhau từ cấu hình Foundation riêng, với Engine Rust bị compile-out hoàn toàn và không có Sciter.

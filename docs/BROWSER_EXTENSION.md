@@ -5,18 +5,29 @@
 > Chrome Web Store or Firefox AMO. Install it only with a VKey build that
 > includes `VKeyBrowserHost.exe`.
 
-VKey can accept a per-domain route from the companion
+VKey can restore a per-domain V/E mode for the current browser session and
+accept persistent hard routes from the companion
 [VKey Browser](https://github.com/phatMT97/VKey-Browser) extension.
 
 The extension offers three routes:
 
-- **Default:** retain VKey's normal per-application behavior.
-- **English:** temporarily bypass Vietnamese processing for the focused domain
-  without changing the user's logical V/E setting.
-- **TSF compatibility:** route the domain through VKey TSF. This is intended for
+- **Remember V/E from hotkey:** after an accepted V/E toggle, the native host
+  returns only the resulting mode and active hostname. The extension remembers
+  that pair for the current browser session and restores it on tab focus.
+- **English (hard):** force English for the configured domain and block V/E
+  toggles while the rule is active.
+- **TSF compatibility (hard):** route the configured domain through VKey TSF.
+  This is intended for
   browser editors that duplicate or attach replacement text after emoji, such
   as the XenForo cases reported in issue #92. VKey's TSF application support
   must be enabled; otherwise this route safely falls back to the normal hook.
+
+Learned V/E state lives in extension `storage.session` and is cleared when the
+browser closes/restarts. Hard rules live in extension `storage.local` and remain
+until the user removes them. VKey does not write learned browser domains into
+its TOML config. While browser context routing is active, the same hotkey is not
+also persisted as a browser-wide Smart Switch entry such as `chrome.exe`; when
+the extension is paused, normal app-level Smart Switch behavior resumes.
 
 ## Yêu cầu
 
@@ -61,30 +72,29 @@ bản XPI được ký qua AMO.
 
 ## Sử dụng
 
-Extension có ba route:
+Extension có ba lựa chọn:
 
-- **Theo VKey:** dùng trạng thái và cấu hình VKey bình thường.
-- **Luôn gõ English:** tạm bỏ xử lý tiếng Việt trên tên miền, không sửa trạng
-  thái V/E gốc.
-- **TSF tương thích:** chuyển tên miền qua TSF cho editor/forum bị lỗi với hook.
+- **Tự nhớ V/E theo hotkey:** hostname chưa biết kế thừa trạng thái hiện tại.
+  Sau khi người dùng đổi V/E, extension nhớ kết quả trong phiên và khôi phục khi
+  quay lại hostname đó.
+- **Luôn gõ English (hard):** khóa E và chặn hotkey đổi V/E trên hostname.
+- **TSF tương thích (hard):** cố định TSF cho editor/forum bị lỗi với hook; V/E
+  vẫn được nhớ theo hotkey độc lập với lựa chọn engine.
 
 Công tắc **Bật điều hướng theo website** được bật mặc định và có ở cả popup lẫn
-trang quản lý tên miền. Khi tắt, extension giữ nguyên danh sách rule nhưng mọi
-hostname đều được gửi dưới route **Theo VKey**; bật lại sẽ áp dụng các rule đã
-lưu ngay lập tức.
+trang quản lý tên miền. Khi tắt, extension giữ nguyên cả session mode lẫn hard
+rule nhưng xóa context hiệu lực khỏi NexusKey; bật lại sẽ áp dụng chúng ngay.
 
 Rule được áp dụng cho hostname và các subdomain của nó. Extension theo dõi đổi
 tab, navigation và focus cửa sổ, nên không cần mở popup lại sau mỗi lần chuyển.
 
 Ví dụ:
 
-1. Để trạng thái VKey gốc là V.
-2. Trên `google.com`, chọn **Theo VKey**.
-3. Trên `voz.vn`, chọn **Luôn gõ English**.
-4. Chuyển tab Google → VOZ → Google: chế độ hiệu lực tự đổi V → E → V.
-
-**Theo VKey** không phải route ép V. Nếu trạng thái VKey gốc là E thì Google
-trong ví dụ trên vẫn là E.
+1. Trên `google.com`, nhấn hotkey để chuyển sang V.
+2. Trên `github.com`, nhấn hotkey để chuyển sang E.
+3. Chuyển tab Google → GitHub → Google: VKey tự đổi V → E → V trong phiên.
+4. Đặt `voz.vn` thành **Luôn gõ English (hard)** nếu muốn hostname đó luôn ở E
+   và hotkey không thay đổi rule.
 
 ## Xử lý lỗi kết nối
 
@@ -103,9 +113,11 @@ Nếu popup lưu rule nhưng VKey không đổi chế độ:
 ## Privacy and failure behavior
 
 Only these values cross the extension/native boundary: protocol version,
-browser executable name, focused state, effective route, and hostname. Full
-URLs, paths, query strings, page contents, and keystrokes are neither requested
-nor transmitted. The native host rejects messages over 8 KiB, unknown fields,
+browser executable name, focused state, hard route, session V/E mode, and
+hostname. After an accepted toggle, VKey returns the resulting V/E mode and the
+hostname captured with that toggle; it never returns the pressed key. Full URLs,
+paths, query strings, page contents, and keystrokes are neither requested nor
+transmitted. The native host rejects messages over 8 KiB, unknown fields,
 unsupported executable names, and non-hostname characters.
 
 The host publishes a fixed-size versioned seqlock mapping. HookEngine normally
@@ -113,8 +125,30 @@ checks one 32-bit generation value per key; JSON parsing and browser APIs stay
 outside the keyboard hook. State expires after five seconds if a browser or
 extension crashes. Blur/EOF clears only state owned by that native connection,
 so an unfocused browser's heartbeat cannot erase the currently focused
-browser's route. An app-level exclusion still has higher precedence than a
-domain route.
+browser's route/mode. An app-level hard lock still has higher precedence than a
+domain preference.
+
+## Native messaging protocol
+
+Protocol 2 separates the persistent hard `route` from the session `mode`:
+
+```json
+{"protocol":2,"browser":"chrome.exe","hostname":"example.com","route":"default","mode":"vietnamese","focused":true}
+```
+
+`route` accepts `default`, `english`, or `tsf`. `mode` accepts `default`,
+`vietnamese`, or `english`. A hard-English route wins over `mode`.
+
+An accepted V/E toggle is returned to the owning browser connection on its next
+context heartbeat:
+
+```json
+{"ok":true,"protocol":2,"event":"mode-changed","hostname":"example.com","mode":"english"}
+```
+
+The event stores the hostname captured at toggle time, so a quick tab switch
+cannot attribute it to the next tab. Protocol 1 remains accepted for older
+extensions and keeps the original route-only behavior.
 
 ## Address-bar limitation (#100)
 

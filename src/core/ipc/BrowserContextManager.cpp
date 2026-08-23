@@ -14,8 +14,25 @@
 namespace NextKey {
 
 namespace {
-constexpr wchar_t kMappingName[] = L"Local\\VKeyBrowserContext-v1";
-constexpr wchar_t kMutexName[] = L"Local\\VKeyBrowserContextWrite-v1";
+constexpr wchar_t kMappingName[] = L"Local\\VKeyBrowserContext-v2";
+constexpr wchar_t kMutexName[] = L"Local\\VKeyBrowserContextWrite-v2";
+
+#ifdef _WIN32
+void BeginSeqlockWrite(BrowserContextState* state) noexcept {
+    // If the prior writer died while holding the mutex, generation is already
+    // odd. Keep it odd for the recovery write, then the normal final increment
+    // below publishes a coherent even generation again.
+    if ((state->generation & 1u) == 0) {
+        auto* generation = reinterpret_cast<volatile LONG*>(&state->generation);
+        InterlockedIncrement(generation);
+    }
+}
+
+void EndSeqlockWrite(BrowserContextState* state) noexcept {
+    auto* generation = reinterpret_cast<volatile LONG*>(&state->generation);
+    InterlockedIncrement(generation);
+}
+#endif
 }
 
 struct BrowserContextManager::Impl {
@@ -78,7 +95,8 @@ std::uint32_t BrowserContextManager::ReadGeneration() const noexcept {
 bool BrowserContextManager::Publish(
         std::uint32_t ownerProcessId, std::uint64_t ownerNonce,
         std::uint64_t updatedTickMs, bool focused, BrowserRoute route,
-        std::string_view browserExe, std::string_view hostname) noexcept {
+        BrowserMode mode, std::string_view browserExe,
+        std::string_view hostname) noexcept {
 #ifdef _WIN32
     if (!impl_->state || !impl_->writeMutex || ownerProcessId == 0 || ownerNonce == 0
         || browserExe.empty() || browserExe.size() >= 32
@@ -88,8 +106,7 @@ bool BrowserContextManager::Publish(
     if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return false;
 
     auto* state = const_cast<BrowserContextState*>(impl_->state);
-    auto* generation = reinterpret_cast<volatile LONG*>(&state->generation);
-    InterlockedIncrement(generation);
+    BeginSeqlockWrite(state);
     state->magic = kBrowserContextMagic;
     state->version = kBrowserContextVersion;
     state->structSize = sizeof(BrowserContextState);
@@ -98,17 +115,52 @@ bool BrowserContextManager::Publish(
     state->updatedTickMs = updatedTickMs;
     state->focused = focused ? 1 : 0;
     state->route = focused ? route : BrowserRoute::Default;
+    state->mode = focused ? mode : BrowserMode::Default;
     std::memset(state->browserExe, 0, sizeof(state->browserExe));
     std::memcpy(state->browserExe, browserExe.data(), browserExe.size());
     std::memset(state->hostname, 0, sizeof(state->hostname));
     std::memcpy(state->hostname, hostname.data(), hostname.size());
     std::atomic_thread_fence(std::memory_order_release);
-    InterlockedIncrement(generation);
+    EndSeqlockWrite(state);
     ReleaseMutex(impl_->writeMutex);
     return true;
 #else
     (void)ownerProcessId; (void)ownerNonce; (void)updatedTickMs; (void)focused;
-    (void)route; (void)browserExe; (void)hostname;
+    (void)route; (void)mode; (void)browserExe; (void)hostname;
+    return false;
+#endif
+}
+
+bool BrowserContextManager::PublishModeEvent(bool vietnamese) noexcept {
+#ifdef _WIN32
+    if (!impl_->state || !impl_->writeMutex) return false;
+    // Never stall the low-level hook for a native-host heartbeat write.
+    const DWORD wait = WaitForSingleObject(impl_->writeMutex, 0);
+    if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return false;
+
+    auto* state = const_cast<BrowserContextState*>(impl_->state);
+    const bool canPublish = state->HasValidHeader() && state->focused != 0
+        && state->ownerProcessId != 0 && state->ownerNonce != 0
+        && state->hostname[0] != '\0';
+    if (canPublish) {
+        BeginSeqlockWrite(state);
+        state->modeEventSequence++;
+        if (state->modeEventSequence == 0) state->modeEventSequence = 1;
+        state->modeEventOwnerProcessId = state->ownerProcessId;
+        state->modeEventOwnerNonce = state->ownerNonce;
+        state->modeEventMode = vietnamese
+            ? BrowserMode::Vietnamese
+            : BrowserMode::English;
+        std::memset(state->modeEventHostname, 0, sizeof(state->modeEventHostname));
+        std::memcpy(state->modeEventHostname, state->hostname,
+                    sizeof(state->modeEventHostname) - 1);
+        std::atomic_thread_fence(std::memory_order_release);
+        EndSeqlockWrite(state);
+    }
+    ReleaseMutex(impl_->writeMutex);
+    return canPublish;
+#else
+    (void)vietnamese;
     return false;
 #endif
 }
@@ -122,13 +174,13 @@ void BrowserContextManager::ClearIfOwned(
     if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) return;
     auto* state = const_cast<BrowserContextState*>(impl_->state);
     if (IsBrowserContextOwnedBy(*state, ownerProcessId, ownerNonce)) {
-        auto* generation = reinterpret_cast<volatile LONG*>(&state->generation);
-        InterlockedIncrement(generation);
+        BeginSeqlockWrite(state);
         state->focused = 0;
         state->route = BrowserRoute::Default;
+        state->mode = BrowserMode::Default;
         state->updatedTickMs = updatedTickMs;
         std::atomic_thread_fence(std::memory_order_release);
-        InterlockedIncrement(generation);
+        EndSeqlockWrite(state);
     }
     ReleaseMutex(impl_->writeMutex);
 #else

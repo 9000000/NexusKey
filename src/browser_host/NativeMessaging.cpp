@@ -70,7 +70,7 @@ bool ParseNativeMessage(std::string_view json, NativeMessage& out,
         }
 
         bool haveProtocol = false, haveBrowser = false, haveHostname = false;
-        bool haveRoute = false, haveFocused = false;
+        bool haveRoute = false, haveMode = false, haveFocused = false;
         NativeMessage parsed{};
         while (true) {
             SkipSpace(json, pos);
@@ -87,7 +87,11 @@ bool ParseNativeMessage(std::string_view json, NativeMessage& out,
                 while (pos < json.size() && std::isdigit(static_cast<unsigned char>(json[pos]))) ++pos;
                 int value = 0;
                 const auto result = std::from_chars(json.data() + begin, json.data() + pos, value);
-                if (result.ec != std::errc{} || value != 1) { error = "protocol"; return false; }
+                if (result.ec != std::errc{} || (value != 1 && value != 2)) {
+                    error = "protocol";
+                    return false;
+                }
+                parsed.protocol = value;
                 haveProtocol = true;
             } else if (key == "browser") {
                 if (haveBrowser) { error = "duplicate_field"; return false; }
@@ -106,6 +110,15 @@ bool ParseNativeMessage(std::string_view json, NativeMessage& out,
                 else if (route == "tsf") parsed.route = BrowserRoute::ForceTsf;
                 else { error = "route"; return false; }
                 haveRoute = true;
+            } else if (key == "mode") {
+                if (haveMode) { error = "duplicate_field"; return false; }
+                std::string mode;
+                if (!ReadString(json, pos, mode)) { error = "mode"; return false; }
+                if (mode == "default") parsed.mode = BrowserMode::Default;
+                else if (mode == "vietnamese") parsed.mode = BrowserMode::Vietnamese;
+                else if (mode == "english") parsed.mode = BrowserMode::English;
+                else { error = "mode"; return false; }
+                haveMode = true;
             } else if (key == "focused") {
                 if (haveFocused) { error = "duplicate_field"; return false; }
                 if (ReadLiteral(json, pos, "true")) parsed.focused = true;
@@ -127,7 +140,8 @@ bool ParseNativeMessage(std::string_view json, NativeMessage& out,
         }
         SkipSpace(json, pos);
         if (pos != json.size() || !haveProtocol || !haveBrowser || !haveHostname
-            || !haveRoute || !haveFocused) {
+            || !haveRoute || !haveFocused || (parsed.protocol == 2 && !haveMode)
+            || (parsed.protocol == 1 && haveMode)) {
             error = "required_fields";
             return false;
         }
@@ -141,6 +155,34 @@ bool ParseNativeMessage(std::string_view json, NativeMessage& out,
         error = "parse_exception";
         return false;
     }
+}
+
+bool TryReadModeEvent(const BrowserContextState& state,
+                      std::uint32_t ownerProcessId,
+                      std::uint64_t ownerNonce,
+                      std::uint32_t lastSequence,
+                      NativeModeEvent& out) noexcept {
+    if (!state.HasValidHeader() || state.modeEventSequence == 0
+        || state.modeEventSequence == lastSequence
+        || state.modeEventOwnerProcessId != ownerProcessId
+        || state.modeEventOwnerNonce != ownerNonce
+        || (state.modeEventMode != BrowserMode::Vietnamese
+            && state.modeEventMode != BrowserMode::English))
+        return false;
+    const std::string_view hostname{state.modeEventHostname};
+    if (hostname.empty() || !IsSafeHostname(hostname)) return false;
+    out.sequence = state.modeEventSequence;
+    out.hostname.assign(hostname);
+    out.mode = state.modeEventMode;
+    return true;
+}
+
+std::string SerializeModeEvent(const NativeModeEvent& event) {
+    const char* mode = event.mode == BrowserMode::Vietnamese
+        ? "vietnamese"
+        : "english";
+    return "{\"ok\":true,\"protocol\":2,\"event\":\"mode-changed\",\"hostname\":\""
+        + event.hostname + "\",\"mode\":\"" + mode + "\"}";
 }
 
 } // namespace NextKey::BrowserHost

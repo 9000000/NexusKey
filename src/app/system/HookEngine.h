@@ -683,6 +683,7 @@ private:
     // the hook hot path normally reads only its 32-bit generation.
     BrowserContextManager browserContext_;
     std::atomic<BrowserRoute> browserRoute_{BrowserRoute::Default};
+    bool browserContextActive_{false}; // hook-thread owned, includes default/default
     std::uint32_t lastBrowserContextGeneration_{0}; // hook-thread owned
     // Hook-thread owned. Focus polls can classify the same HWND every 200 ms;
     // only the first application may request the expensive TIP re-activation.
