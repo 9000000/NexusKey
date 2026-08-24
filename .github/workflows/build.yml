@@ -1,5 +1,11 @@
 name: Build
 
+# Production tag publishing is fail-closed until:
+#   1. Repository variable VKEY_STANDARD_RELEASE_ENABLED is exactly "true".
+#   2. Environment vkey-standard-release requires reviewers and allows only
+#      canonical v* tags that point to the exact Main HEAD.
+#   3. VKEY_STANDARD_WINGET_TOKEN is stored only in that environment.
+
 on:
   push:
     tags:
@@ -36,16 +42,20 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
-  contents: write
-  id-token: write       # OIDC token for cosign keyless signing
-  attestations: write   # GitHub native attestation
+  contents: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
+    outputs:
+      source-sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
 
       - name: Check public/private file placement
         run: python3 tools/audit/check_public_tree.py
@@ -53,10 +63,26 @@ jobs:
       - name: Validate release tag matches the compiled version
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
+        env:
+          RELEASE_ENABLED: ${{ vars.VKEY_STANDARD_RELEASE_ENABLED }}
         run: |
+          set -euo pipefail
+          if [[ "$RELEASE_ENABLED" != "true" ]]; then
+            echo "Standard production release is locked." >&2
+            echo "Set VKEY_STANDARD_RELEASE_ENABLED=true only after protecting vkey-standard-release." >&2
+            exit 1
+          fi
           version="$(sed -n 's/^project(VKey VERSION \([^ ]*\).*/\1/p' CMakeLists.txt)"
           test -n "$version"
           test "$GITHUB_REF_NAME" = "v$version"
+          tag_sha="$(git rev-list -n 1 "refs/tags/$GITHUB_REF_NAME")"
+          main_sha="$(git rev-parse refs/remotes/origin/Main)"
+          test "$tag_sha" = "$(git rev-parse HEAD)"
+          if [[ "$tag_sha" != "$main_sha" ]]; then
+            echo "$GITHUB_REF_NAME must point to the exact Main HEAD" >&2
+            echo "tag=$tag_sha Main=$main_sha" >&2
+            exit 1
+          fi
 
       - name: Validate manual Classic options
         if: github.event_name == 'workflow_dispatch' && inputs.classic_rust && !inputs.include_classic
@@ -71,6 +97,11 @@ jobs:
       - name: Check asset provenance
         run: python3 tools/audit/check_asset_provenance.py
 
+      - name: Record immutable source SHA
+        id: source
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   # Sciter and Classic intentionally use separate build trees and artifacts.
   # Sciter opts into Rust and remains unsigned in v4.3.
   build-sciter:
@@ -81,10 +112,12 @@ jobs:
       artifact-id: ${{ steps.upload-sciter.outputs.artifact-id }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: x64
 
@@ -181,7 +214,7 @@ jobs:
 
       - name: Upload unsigned Sciter binaries
         id: upload-sciter
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unsigned-sciter-binaries
           path: unsigned-sciter-binaries/
@@ -199,10 +232,12 @@ jobs:
       artifact-id: ${{ steps.upload-classic.outputs.artifact-id }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: x64
 
@@ -291,13 +326,14 @@ jobs:
 
       - name: Upload unsigned Classic binaries
         id: upload-classic
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unsigned-classic-binaries
           path: unsigned-classic-binaries/
           retention-days: 7
 
-  package-and-release:
+  package:
+    name: Package without release-write permission
     needs: [validate, build-sciter, build-classic]
     if: >-
       always() &&
@@ -306,18 +342,20 @@ jobs:
       (needs.build-sciter.result == 'success' || needs.build-sciter.result == 'skipped') &&
       (needs.build-classic.result == 'success' || needs.build-classic.result == 'skipped')
     runs-on: windows-2022
+    outputs:
+      release-assets-artifact-id: ${{ steps.upload-release-assets.outputs.artifact-id }}
     permissions:
-      actions: write
-      attestations: write
-      contents: write
-      id-token: write
+      actions: read
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Download unsigned Sciter binaries
         if: needs.build-sciter.result == 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: unsigned-sciter-binaries
           path: sciter-binaries
@@ -327,7 +365,7 @@ jobs:
       # artifact after configuring VKEY_FOUNDATION_BUILD=ON.
       - name: Download unsigned Classic binaries
         if: needs.build-classic.result == 'success'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: unsigned-classic-binaries
           path: classic-binaries
@@ -348,7 +386,7 @@ jobs:
             # notice a condition of binary redistribution. It has to be inside
             # the archive, not only in the source repo.
             Copy-Item "THIRD_PARTY_NOTICES.txt" "dist/" -Force
-            if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
+            if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true" -or "${{ needs.build-classic.result }}" -eq "success") {
               New-Item -ItemType Directory -Force -Path upload-payload/sciter
               Copy-Item "dist/*" "upload-payload/sciter/" -Force
             }
@@ -373,25 +411,14 @@ jobs:
               Copy-Item "classic-binaries/vkey_engine.dll.sig" "dist-classic/" -Force
               Copy-Item "classic-binaries/vkey_engine.LICENSE.txt" "dist-classic/" -Force
             }
-            if ("${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true") {
-              New-Item -ItemType Directory -Force -Path upload-payload/classic
-              Copy-Item "dist-classic/*" "upload-payload/classic/" -Force
+            # Classic reaches this workflow only through workflow_dispatch.
+            # It is always an unsigned test artifact and never a release input.
+            if ("${{ needs.build-sciter.result }}" -ne "success") {
+              Copy-Item "dist-classic/*" "upload-payload/" -Force
             }
             else {
-              # Manual artifacts keep the historical flat layout. When both
-              # editions are selected, Sciter owns the same-named TSF/watchdog;
-              # Classic contributes only its edition-specific executable.
-              if ("${{ needs.build-sciter.result }}" -ne "success") {
-                Copy-Item "dist-classic/*" "upload-payload/" -Force
-              }
-              else {
-                Copy-Item "dist-classic/VKeyClassic.exe" "upload-payload/" -Force
-                if ("${{ inputs.classic_rust }}" -eq "true") {
-                  Copy-Item "dist-classic/vkey_engine.dll" "upload-payload/" -Force
-                  Copy-Item "dist-classic/vkey_engine.dll.sig" "upload-payload/" -Force
-                  Copy-Item "dist-classic/vkey_engine.LICENSE.txt" "upload-payload/" -Force
-                }
-              }
+              New-Item -ItemType Directory -Force -Path upload-payload/classic
+              Copy-Item "dist-classic/*" "upload-payload/classic/" -Force
             }
           }
 
@@ -507,15 +534,27 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && needs.build-sciter.result == 'success'
         shell: powershell
         run: |
+          $expected = @(
+            "THIRD_PARTY_NOTICES.txt",
+            "VKey.exe",
+            "VKeyBrowserHost.exe",
+            "VKeyTSF.dll",
+            "VKeyWatchdog.exe",
+            "sciter.dll"
+          ) | Sort-Object
+          $actual = @(
+            Get-ChildItem "dist" -File |
+              Select-Object -ExpandProperty Name |
+              Sort-Object
+          )
+          $directories = @(Get-ChildItem "dist" -Directory -Recurse)
+          if ($directories.Count -ne 0 -or (Compare-Object $expected $actual)) {
+            $directories.FullName | Write-Output
+            $actual | Write-Output
+            throw "Sciter release package differs from the six-file allowlist"
+          }
           Compress-Archive -Path "dist/*" -DestinationPath VKey.zip
           Copy-Item VKey.zip VKey-x64.zip -Force
-
-      - name: Zip Classic Release
-        if: startsWith(github.ref, 'refs/tags/') && needs.build-classic.result == 'success'
-        shell: powershell
-        run: |
-          Compress-Archive -Path "dist-classic/*" -DestinationPath VKeyClassic.zip
-          Copy-Item VKeyClassic.zip VKeyClassic-x64.zip -Force
 
       # --- SHA-256 checksums ---
       - name: Generate SHA-256 checksums
@@ -529,80 +568,32 @@ jobs:
             $files += "VKey.zip"
             $files += "VKey-x64.zip"
           }
-          if ("${{ needs.build-classic.result }}" -eq "success") {
-            $files += "VKeyClassic.zip"
-            $files += "VKeyClassic-x64.zip"
-          }
           $files += "vkey_engine.dll"
+          $files += "vkey_engine.dll.sig"
           foreach ($file in $files) {
             $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
             "$hash  $file" | Out-File -Encoding ascii "$file.sha256"
           }
 
-      # --- GitHub build provenance attestation ---
-      - name: Attest VKey
-        if: startsWith(github.ref, 'refs/tags/') && needs.build-sciter.result == 'success'
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: |
-            VKey.zip
-            VKey-x64.zip
-
-      - name: Attest VKey Classic
-        if: startsWith(github.ref, 'refs/tags/') && needs.build-classic.result == 'success'
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: |
-            VKeyClassic.zip
-            VKeyClassic-x64.zip
-
-      - name: Attest external engine
+      - name: Upload immutable standard-release assets
+        id: upload-release-assets
         if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/attest-build-provenance@v2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          subject-path: vkey_engine.dll
-
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          body_path: RELEASE_NOTES.md
-          files: |
+          name: standard-release-assets-${{ github.ref_name }}
+          path: |
+            RELEASE_NOTES.md
             VKey.zip
             VKey.zip.sha256
             VKey-x64.zip
             VKey-x64.zip.sha256
-            VKeyClassic.zip
-            VKeyClassic.zip.sha256
-            VKeyClassic-x64.zip
-            VKeyClassic-x64.zip.sha256
             vkey_engine.dll
             vkey_engine.dll.sha256
+            vkey_engine.dll.sig
+            vkey_engine.dll.sig.sha256
             vkey_engine.LICENSE.txt
-          fail_on_unmatched_files: false
-
-      # NOTE: winget-releaser only UPDATES an existing package — both
-      # PhatMT97.VKey and PhatMT97.VKey.Classic must be seeded once manually in
-      # microsoft/winget-pkgs (zip InstallerType + NestedInstaller) before these
-      # steps can succeed. Until then the action exits 1 (package not found).
-      - name: Submit VKey (Sciter) to WinGet
-        uses: vedantmgoyal9/winget-releaser@v2
-        if: startsWith(github.ref, 'refs/tags/') && needs.build-sciter.result == 'success'
-        with:
-          identifier: PhatMT97.VKey
-          # Release assets are .zip, not installers — the default regex
-          # (exe|msi|msix|appx) matches nothing. Match the -x64.zip release asset
-          # so Komac detects the x64 architecture.
-          installers-regex: '^VKey-x64\.zip$'
-          token: ${{ secrets.WINGET_TOKEN }}
-
-      - name: Submit VKey Classic to WinGet
-        uses: vedantmgoyal9/winget-releaser@v2
-        if: startsWith(github.ref, 'refs/tags/') && needs.build-classic.result == 'success'
-        with:
-          identifier: PhatMT97.VKey.Classic
-          installers-regex: '^VKeyClassic-x64\.zip$'
-          token: ${{ secrets.WINGET_TOKEN }}
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Select final artifact name
         id: artifact-name
@@ -630,21 +621,262 @@ jobs:
 
       - name: Upload final artifact
         id: upload-final
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ steps.artifact-name.outputs.name }}
           path: upload-payload/
 
-      - name: Delete intermediate artifacts
-        if: always() && steps.upload-final.outcome == 'success'
+
+  publish-release:
+    name: Attest and publish exact standard-release assets
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [validate, build-sciter, package]
+    runs-on: windows-2022
+    environment:
+      name: vkey-standard-release
+      url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout validated release source without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source-sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          submodules: false
+
+      - name: Revalidate tag and Main after environment approval
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          SCITER_ARTIFACT_ID: ${{ needs.build-sciter.outputs.artifact-id }}
-          CLASSIC_ARTIFACT_ID: ${{ needs.build-classic.outputs.artifact-id }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.source-sha }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          for artifact_id in "$SCITER_ARTIFACT_ID" "$CLASSIC_ARTIFACT_ID"; do
-            if [[ -n "$artifact_id" ]]; then
-              gh api --method DELETE "/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id"
-            fi
-          done
+          set -euo pipefail
+          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          source_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse refs/remotes/origin/Main)"
+          if [[ "$tag_sha" != "$EXPECTED_SHA" || "$source_sha" != "$EXPECTED_SHA" || "$main_sha" != "$EXPECTED_SHA" ]]; then
+            echo "release tag, validated source, or Main changed while waiting for approval" >&2
+            echo "tag=$tag_sha source=$source_sha Main=$main_sha expected=$EXPECTED_SHA" >&2
+            exit 1
+          fi
+
+      - name: Download exact release-assets artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.package.outputs.release-assets-artifact-id }}
+          path: ${{ runner.temp }}/release-assets
+
+      - name: Verify immutable release assets and archive contents
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "release-assets"
+          $expected = @(
+            "RELEASE_NOTES.md",
+            "VKey.zip",
+            "VKey.zip.sha256",
+            "VKey-x64.zip",
+            "VKey-x64.zip.sha256",
+            "vkey_engine.dll",
+            "vkey_engine.dll.sha256",
+            "vkey_engine.dll.sig",
+            "vkey_engine.dll.sig.sha256",
+            "vkey_engine.LICENSE.txt"
+          ) | Sort-Object
+          $actual = @(
+            Get-ChildItem $root -File |
+              Select-Object -ExpandProperty Name |
+              Sort-Object
+          )
+          $directories = @(Get-ChildItem $root -Directory -Recurse)
+          if ($directories.Count -ne 0 -or (Compare-Object $expected $actual)) {
+            $directories.FullName | Write-Output
+            $actual | Write-Output
+            throw "Standard release artifact differs from the ten-file allowlist"
+          }
+
+          foreach ($name in @(
+            "VKey.zip",
+            "VKey-x64.zip",
+            "vkey_engine.dll",
+            "vkey_engine.dll.sig"
+          )) {
+            $path = Join-Path $root $name
+            $line = (Get-Content "$path.sha256" -Raw).Trim()
+            $pattern = "^([0-9a-f]{64})  $([regex]::Escape($name))$"
+            if ($line -notmatch $pattern) {
+              throw "Malformed SHA-256 sidecar for $name"
+            }
+            $hash = (Get-FileHash $path -Algorithm SHA256).Hash.ToLower()
+            if ($hash -ne $Matches[1]) {
+              throw "SHA-256 sidecar does not match $name"
+            }
+          }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $expectedEntries = @(
+            "THIRD_PARTY_NOTICES.txt",
+            "VKey.exe",
+            "VKeyBrowserHost.exe",
+            "VKeyTSF.dll",
+            "VKeyWatchdog.exe",
+            "sciter.dll"
+          ) | Sort-Object
+          foreach ($archiveName in @("VKey.zip", "VKey-x64.zip")) {
+            $archive = [System.IO.Compression.ZipFile]::OpenRead((Join-Path $root $archiveName))
+            try {
+              $entries = @(
+                $archive.Entries |
+                  Where-Object { -not [string]::IsNullOrEmpty($_.Name) } |
+                  ForEach-Object { $_.FullName.Replace("\", "/") } |
+                  Sort-Object
+              )
+              if (Compare-Object $expectedEntries $entries) {
+                $entries | Write-Output
+                throw "$archiveName differs from the six-file package allowlist"
+              }
+            }
+            finally {
+              $archive.Dispose()
+            }
+          }
+
+      - name: Attest VKey archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/release-assets/VKey.zip
+            ${{ runner.temp }}/release-assets/VKey-x64.zip
+
+      - name: Attest external engine and detached signature
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/release-assets/vkey_engine.dll
+            ${{ runner.temp }}/release-assets/vkey_engine.dll.sig
+
+      - name: Publish without overwriting release assets
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "release-assets"
+          $releaseJson = & gh release view $env:RELEASE_TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --json tagName,isDraft 2>$null
+          $releaseExists = $LASTEXITCODE -eq 0
+          $releaseWasDraft = $false
+          if ($releaseExists) {
+            $release = $releaseJson | ConvertFrom-Json
+            if ($release.tagName -ne $env:RELEASE_TAG) {
+              throw "Existing release does not match $env:RELEASE_TAG"
+            }
+            $releaseWasDraft = [bool]$release.isDraft
+          }
+          else {
+            & gh release create $env:RELEASE_TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --verify-tag `
+              --draft `
+              --title $env:RELEASE_TAG `
+              --notes-file (Join-Path $root "RELEASE_NOTES.md")
+            if ($LASTEXITCODE -ne 0) {
+              throw "Unable to create the draft release for $env:RELEASE_TAG"
+            }
+            $releaseWasDraft = $true
+          }
+
+          $remoteAssets = @(
+            & gh release view $env:RELEASE_TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --json assets `
+              --jq '.assets[].name'
+          )
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to inspect existing release assets"
+          }
+
+          # Preflight every same-name asset before changing the Release. Reruns
+          # are idempotent only when existing bytes are identical.
+          $assets = @(
+            "VKey.zip.sha256",
+            "VKey-x64.zip.sha256",
+            "vkey_engine.dll.sha256",
+            "vkey_engine.dll.sig.sha256",
+            "vkey_engine.dll.sig",
+            "vkey_engine.LICENSE.txt",
+            "VKey.zip",
+            "VKey-x64.zip",
+            "vkey_engine.dll"
+          )
+          $missingAssets = @()
+          foreach ($asset in $assets) {
+            $localPath = Join-Path $root $asset
+            if ($remoteAssets -contains $asset) {
+              $downloadDir = Join-Path $env:RUNNER_TEMP "existing-$asset"
+              New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+              & gh release download $env:RELEASE_TAG `
+                --repo $env:GITHUB_REPOSITORY `
+                --pattern $asset `
+                --dir $downloadDir
+              if ($LASTEXITCODE -ne 0) {
+                throw "Unable to download existing release asset: $asset"
+              }
+              $remotePath = Join-Path $downloadDir $asset
+              $localHash = (Get-FileHash $localPath -Algorithm SHA256).Hash
+              $remoteHash = (Get-FileHash $remotePath -Algorithm SHA256).Hash
+              if ($localHash -ne $remoteHash) {
+                throw "Refusing to overwrite different existing release asset: $asset"
+              }
+              Write-Host "Existing $asset is byte-identical; keeping it."
+            }
+            else {
+              $missingAssets += $asset
+            }
+          }
+
+          # Verification material precedes executable/archive payloads. If the
+          # network fails, rerunning fills the missing set without overwrites.
+          foreach ($asset in $missingAssets) {
+            & gh release upload $env:RELEASE_TAG (Join-Path $root $asset) `
+              --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to upload release asset without overwrite: $asset"
+            }
+          }
+
+          if ($releaseWasDraft) {
+            & gh release edit $env:RELEASE_TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --draft=false
+            if ($LASTEXITCODE -ne 0) {
+              throw "Assets are complete but the release could not be published"
+            }
+          }
+
+  submit-sciter-winget:
+    name: Submit standard release to WinGet
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: publish-release
+    runs-on: windows-2022
+    environment:
+      name: vkey-standard-release
+      url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}
+    permissions:
+      contents: read
+    steps:
+      # winget-releaser only updates an existing package. PhatMT97.VKey must
+      # already be seeded as zip + NestedInstaller in microsoft/winget-pkgs.
+      - name: Submit VKey (Sciter) to WinGet
+        uses: vedantmgoyal9/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
+        with:
+          identifier: PhatMT97.VKey
+          installers-regex: '^VKey-x64\.zip$'
+          token: ${{ secrets.VKEY_STANDARD_WINGET_TOKEN }}

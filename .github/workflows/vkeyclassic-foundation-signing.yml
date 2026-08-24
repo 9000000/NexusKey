@@ -1,32 +1,179 @@
-name: VKeyClassic Foundation signing review
+name: VKeyClassic Foundation signing
 
-# This workflow is intentionally manual and independent from build.yml.
-# Until SignPath Foundation approves this boundary, it uses test-signing only.
+# Review is the safe default. Production remains fail-closed until all of these
+# external controls exist:
+#   1. SignPath has approved the vkeyclassic-foundation artifact configuration
+#      and the release-signing policy for this exact three-file boundary.
+#   2. Repository variable VKEYCLASSIC_SIGNING_ENABLED is exactly "true".
+#   3. Production additionally requires VKEYCLASSIC_RELEASE_ENABLED="true".
+#   4. Environment vkeyclassic-foundation-release exists, requires reviewers,
+#      and permits deployments only from Main.
+#   5. VKEYCLASSIC_SIGNPATH_API_TOKEN and VKEYCLASSIC_WINGET_TOKEN exist only as
+#      environment-scoped secrets; repo-level secrets are deliberately ignored.
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Review uses test signing; release signs and attaches Classic to an existing tag release'
+        type: choice
+        options:
+          - review
+          - release
+        default: review
+        required: true
+      release_tag:
+        description: 'Release only: exact existing tag, for example v4.3.0'
+        type: string
+        required: false
+
+run-name: >-
+  VKeyClassic ${{ inputs.operation }}
+  ${{ inputs.operation == 'release' && inputs.release_tag || github.sha }}
+
+concurrency:
+  group: >-
+    vkeyclassic-foundation-${{ inputs.operation }}-${{
+    inputs.release_tag || github.run_id }}
+  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
-  build-and-submit-vkeyclassic:
-    name: Build and submit VKeyClassic only
-    runs-on: windows-2022
+  validate:
+    name: Validate immutable source and release gate
+    runs-on: ubuntu-latest
+    outputs:
+      source-sha: ${{ steps.source.outputs.sha }}
     steps:
-      - name: Checkout public GPL-3.0 source
-        uses: actions/checkout@v4
+      - name: Validate dispatch inputs before checkout
+        shell: bash
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          OPERATION: ${{ inputs.operation }}
+          RELEASE_ENABLED: ${{ vars.VKEYCLASSIC_RELEASE_ENABLED }}
+          SIGNING_ENABLED: ${{ vars.VKEYCLASSIC_SIGNING_ENABLED }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          case "$OPERATION" in
+            review)
+              if [[ "$SIGNING_ENABLED" != "true" ]]; then
+                echo "VKeyClassic SignPath review is locked." >&2
+                echo "Protect vkeyclassic-foundation-release and set its dedicated token before enabling review." >&2
+                exit 1
+              fi
+              if [[ -n "$RELEASE_TAG" ]]; then
+                echo "release_tag must be empty for a review run" >&2
+                exit 1
+              fi
+              ;;
+            release)
+              if [[ "$SIGNING_ENABLED" != "true" ]]; then
+                echo "VKeyClassic SignPath integration is locked." >&2
+                exit 1
+              fi
+              if [[ "$RELEASE_ENABLED" != "true" ]]; then
+                echo "Production Classic release is locked." >&2
+                echo "Set VKEYCLASSIC_RELEASE_ENABLED=true only after SignPath approval and environment protection are complete." >&2
+                exit 1
+              fi
+              if [[ "$DISPATCH_REF" != "refs/heads/Main" ]]; then
+                echo "Release must be dispatched from Main, not $DISPATCH_REF" >&2
+                exit 1
+              fi
+              if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "release_tag must be a canonical vMAJOR.MINOR.PATCH tag" >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "unsupported operation: $OPERATION" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ inputs.operation == 'release' && format('refs/tags/{0}', inputs.release_tag) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
           submodules: false
+
+      - name: Bind release tag, version, commit, and existing GitHub Release
+        if: inputs.operation == 'release'
+        id: release-binding
+        shell: bash
+        env:
+          DISPATCH_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          source_sha="$(git rev-parse HEAD)"
+          if [[ "$tag_sha" != "$source_sha" ]]; then
+            echo "checked-out source $source_sha does not match $RELEASE_TAG ($tag_sha)" >&2
+            exit 1
+          fi
+          if [[ "$source_sha" != "$DISPATCH_SHA" ]]; then
+            echo "$RELEASE_TAG must point to the exact Main HEAD used to dispatch this workflow" >&2
+            echo "tag=$source_sha dispatch=$DISPATCH_SHA" >&2
+            exit 1
+          fi
+
+          version="$(sed -n 's/^project(VKey VERSION \([^ ]*\).*/\1/p' CMakeLists.txt)"
+          if [[ -z "$version" || "$RELEASE_TAG" != "v$version" ]]; then
+            echo "tag $RELEASE_TAG does not match compiled version $version" >&2
+            exit 1
+          fi
+
+          read -r actual_tag is_draft < <(
+            gh release view "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json tagName,isDraft \
+              --jq '[.tagName, (.isDraft | tostring)] | join(" ")'
+          )
+          if [[ "$actual_tag" != "$RELEASE_TAG" || "$is_draft" != "false" ]]; then
+            echo "Classic may attach only to the existing published release for $RELEASE_TAG" >&2
+            exit 1
+          fi
 
       - name: Check public/private file placement
         run: python3 tools/audit/check_public_tree.py
 
+      - name: Check tracked asset provenance
+        run: python3 tools/audit/check_asset_provenance.py
+
+      - name: Record immutable source SHA
+        id: source
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build-foundation:
+    name: Build exact three-file Foundation input
+    needs: validate
+    runs-on: windows-2022
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Checkout validated source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source-sha }}
+          persist-credentials: false
+          submodules: false
+
       - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
         with:
           arch: x64
 
@@ -40,7 +187,7 @@ jobs:
           -DVKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV=OFF
           -DVKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=OFF
 
-      - name: Verify Foundation configuration is engine-free and Sciter-free
+      - name: Verify Foundation build graph
         shell: powershell
         run: |
           $cache = Get-Content "build-foundation/CMakeCache.txt" -Raw
@@ -66,15 +213,15 @@ jobs:
             }
           }
 
-      - name: Build the three approved binaries
+      - name: Build only the three approved targets
         run: >-
           cmake --build build-foundation --config Release
           --target VKeyLite VKeyTSF VKeyWatchdog
 
-      - name: Stage exact SignPath input artifact
+      - name: Stage and inspect exact SignPath input
         shell: powershell
         run: |
-          $stage = "unsigned-vkeyclassic-foundation"
+          $stage = Join-Path $env:RUNNER_TEMP "unsigned-vkeyclassic-foundation"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
           $approved = @(
@@ -90,7 +237,11 @@ jobs:
             Copy-Item $source $stage -Force
           }
 
-          $actual = @(Get-ChildItem $stage -File | Select-Object -ExpandProperty Name | Sort-Object)
+          $actual = @(
+            Get-ChildItem $stage -File |
+              Select-Object -ExpandProperty Name |
+              Sort-Object
+          )
           $expected = @($approved | Sort-Object)
           if (Compare-Object $expected $actual) {
             $actual | Write-Output
@@ -99,6 +250,11 @@ jobs:
 
           foreach ($name in $approved) {
             $path = Join-Path $stage $name
+            $signature = Get-AuthenticodeSignature $path
+            if ($signature.Status -ne "NotSigned") {
+              throw "SignPath input must start unsigned: $path ($($signature.Status))"
+            }
+
             $imports = (& dumpbin /DEPENDENTS $path 2>&1) -join "`n"
             if ($LASTEXITCODE -ne 0) {
               $imports | Write-Output
@@ -110,29 +266,119 @@ jobs:
             }
           }
 
-      - name: Upload isolated unsigned VKeyClassic artifact
-        id: upload-vkeyclassic
-        uses: actions/upload-artifact@v4
+      - name: Upload immutable SignPath input
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unsigned-vkeyclassic-foundation
-          path: unsigned-vkeyclassic-foundation/
+          path: ${{ runner.temp }}/unsigned-vkeyclassic-foundation/
+          if-no-files-found: error
+          retention-days: 30
+
+  build-package-extras:
+    name: Build unsigned Classic package extras
+    if: inputs.operation == 'release'
+    needs: validate
+    runs-on: windows-2022
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Checkout validated source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source-sha }}
+          persist-credentials: false
+          submodules: false
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
+      - name: Configure Rust-free Classic extras tree
+        run: >-
+          cmake -S . -B build-classic-extras
+          -G "Visual Studio 17 2022" -A x64
+          -DVKEY_FOUNDATION_BUILD=OFF
+          -DVKEY_LITE_MODE=ON
+          -DVKEY_USE_RUST_ENGINE=OFF
+          -DVKEY_CLASSIC_ALLOW_RUST_ENGINE_FOR_DEV=OFF
+          -DVKEY_ALLOW_UNSIGNED_LOCAL_ENGINE=OFF
+
+      - name: Build only the browser host extra
+        run: >-
+          cmake --build build-classic-extras --config Release
+          --target VKeyBrowserHost
+
+      - name: Stage and inspect exact unsigned extra
+        shell: powershell
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP "unsigned-vkeyclassic-package-extras"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          $source = "build-classic-extras/Release/VKeyBrowserHost.exe"
+          if (-not (Test-Path $source -PathType Leaf)) {
+            throw "Classic browser host is missing: $source"
+          }
+          Copy-Item $source $stage -Force
+
+          $actual = @(
+            Get-ChildItem $stage -File |
+              Select-Object -ExpandProperty Name
+          )
+          if ($actual.Count -ne 1 -or $actual[0] -ne "VKeyBrowserHost.exe") {
+            $actual | Write-Output
+            throw "Classic extras artifact must contain only VKeyBrowserHost.exe"
+          }
+
+          $path = Join-Path $stage "VKeyBrowserHost.exe"
+          $signature = Get-AuthenticodeSignature $path
+          if ($signature.Status -ne "NotSigned") {
+            throw "Browser host is outside Foundation scope and must remain unsigned"
+          }
+          $imports = (& dumpbin /DEPENDENTS $path 2>&1) -join "`n"
+          if ($LASTEXITCODE -ne 0) {
+            $imports | Write-Output
+            throw "dumpbin failed for $path"
+          }
+          if ($imports -match "(?i)(sciter|vkey_engine)[.]dll") {
+            $imports | Write-Output
+            throw "Classic browser host imports a forbidden runtime"
+          }
+
+      - name: Upload immutable Classic extras
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unsigned-vkeyclassic-package-extras
+          path: ${{ runner.temp }}/unsigned-vkeyclassic-package-extras/
           if-no-files-found: error
           retention-days: 7
 
-      - name: Submit VKeyClassic-only review request to SignPath
+  sign-review:
+    name: Test-sign isolated review artifact
+    if: inputs.operation == 'review'
+    needs: [validate, build-foundation]
+    runs-on: windows-2022
+    environment:
+      name: vkeyclassic-foundation-release
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Submit test-signing request
         id: signpath
-        uses: signpath/github-action-submit-signing-request@v2
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
         with:
-          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          api-token: '${{ secrets.VKEYCLASSIC_SIGNPATH_API_TOKEN }}'
           organization-id: '8e66dee3-2c1d-407f-a391-0d0d3fd74913'
           project-slug: 'VKey'
           artifact-configuration-slug: 'vkeyclassic-foundation'
           signing-policy-slug: 'test-signing'
-          github-artifact-id: '${{ steps.upload-vkeyclassic.outputs.artifact-id }}'
+          github-artifact-id: '${{ needs.build-foundation.outputs.artifact-id }}'
           wait-for-completion: true
-          output-artifact-directory: 'signed-vkeyclassic-foundation'
+          output-artifact-directory: 'signed-vkeyclassic-foundation-review'
 
-      - name: Verify signed result still has the exact boundary
+      - name: Verify test-signed result remains review-only
         shell: powershell
         run: |
           $approved = @(
@@ -141,41 +387,529 @@ jobs:
             "VKeyWatchdog.exe"
           )
           $actual = @(
-            Get-ChildItem "signed-vkeyclassic-foundation" -File |
+            Get-ChildItem "signed-vkeyclassic-foundation-review" -File |
               Select-Object -ExpandProperty Name |
               Sort-Object
           )
+          $directories = @(
+            Get-ChildItem "signed-vkeyclassic-foundation-review" -Directory -Recurse
+          )
           $expected = @($approved | Sort-Object)
-          if (Compare-Object $expected $actual) {
+          if ($directories.Count -ne 0 -or (Compare-Object $expected $actual)) {
+            $directories.FullName | Write-Output
             $actual | Write-Output
-            throw "Signed result does not contain exactly the approved binaries"
+            throw "Review result does not contain exactly the approved binaries"
           }
 
           foreach ($name in $approved) {
-            $path = Join-Path "signed-vkeyclassic-foundation" $name
+            $path = Join-Path "signed-vkeyclassic-foundation-review" $name
             $signature = Get-AuthenticodeSignature $path
             if ($signature.Status -eq "NotSigned" -or -not $signature.SignerCertificate) {
-              throw "SignPath did not sign $path"
+              throw "SignPath did not test-sign $path"
+            }
+            if ($signature.SignerCertificate.Subject -match "(^|,\s*)CN=SignPath Foundation(,|$)") {
+              throw "Review unexpectedly received the production Foundation certificate"
             }
           }
 
       - name: Upload signed review artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: signed-vkeyclassic-foundation-review
-          path: signed-vkeyclassic-foundation/
+          path: signed-vkeyclassic-foundation-review/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
 
       - name: Record review links
         shell: bash
+        env:
+          SIGNPATH_REQUEST_URL: ${{ steps.signpath.outputs.signing-request-web-url }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source-sha }}
         run: |
           {
             echo "## VKeyClassic Foundation signing review"
             echo
-            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Commit: \`$SOURCE_SHA\`"
             echo "- GitHub Actions run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "- SignPath request: ${{ steps.signpath.outputs.signing-request-web-url }}"
-            echo "- Signing policy: \`test-signing\` (review only)"
+            echo "- SignPath request: $SIGNPATH_REQUEST_URL"
+            echo "- Signing policy: \`test-signing\` (cannot publish)"
             echo "- Artifact configuration: \`vkeyclassic-foundation\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  sign-production:
+    name: Production-sign isolated Foundation artifact
+    if: inputs.operation == 'release'
+    needs: [validate, build-foundation, build-package-extras]
+    runs-on: windows-2022
+    outputs:
+      signed-artifact-id: ${{ steps.upload-signed.outputs.artifact-id }}
+      signing-request-url: ${{ steps.signpath.outputs.signing-request-web-url }}
+    environment:
+      name: vkeyclassic-foundation-release
+      url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout validated release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source-sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          submodules: false
+
+      - name: Revalidate tag binding after environment approval
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          source_sha="$(git rev-parse HEAD)"
+          if [[ "$tag_sha" != "$source_sha" || "$source_sha" != "${{ needs.validate.outputs.source-sha }}" ]]; then
+            echo "release source changed while waiting for approval" >&2
+            exit 1
+          fi
+
+      - name: Setup MSVC for post-signing import checks
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
+      - name: Submit production Foundation signing request
+        id: signpath
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2
+        with:
+          api-token: '${{ secrets.VKEYCLASSIC_SIGNPATH_API_TOKEN }}'
+          organization-id: '8e66dee3-2c1d-407f-a391-0d0d3fd74913'
+          project-slug: 'VKey'
+          artifact-configuration-slug: 'vkeyclassic-foundation'
+          signing-policy-slug: 'release-signing'
+          github-artifact-id: '${{ needs.build-foundation.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'signed-vkeyclassic-foundation-release'
+
+      - name: Verify production signatures and boundary
+        shell: powershell
+        run: |
+          $approved = @(
+            "VKeyClassic.exe",
+            "VKeyTSF.dll",
+            "VKeyWatchdog.exe"
+          )
+          $root = "signed-vkeyclassic-foundation-release"
+          $actual = @(
+            Get-ChildItem $root -File |
+              Select-Object -ExpandProperty Name |
+              Sort-Object
+          )
+          $directories = @(Get-ChildItem $root -Directory -Recurse)
+          $expected = @($approved | Sort-Object)
+          if ($directories.Count -ne 0 -or (Compare-Object $expected $actual)) {
+            $directories.FullName | Write-Output
+            $actual | Write-Output
+            throw "Production result does not contain exactly the approved binaries"
+          }
+
+          foreach ($name in $approved) {
+            $path = Join-Path $root $name
+            $signature = Get-AuthenticodeSignature $path
+            if ($signature.Status -ne "Valid" -or -not $signature.SignerCertificate) {
+              throw "Foundation signature is not valid: $path ($($signature.Status))"
+            }
+            if ($signature.SignerCertificate.Subject -notmatch "(^|,\s*)CN=SignPath Foundation(,|$)") {
+              throw "Unexpected production signer for $path: $($signature.SignerCertificate.Subject)"
+            }
+            if (-not $signature.TimeStamperCertificate) {
+              throw "Production signature is missing a trusted timestamp: $path"
+            }
+
+            $imports = (& dumpbin /DEPENDENTS $path 2>&1) -join "`n"
+            if ($LASTEXITCODE -ne 0) {
+              $imports | Write-Output
+              throw "dumpbin failed for $path"
+            }
+            if ($imports -match "(?i)(sciter|vkey_engine)[.]dll") {
+              $imports | Write-Output
+              throw "Signed Foundation binary imports a forbidden runtime: $path"
+            }
+          }
+
+      - name: Upload immutable production-signed artifact
+        id: upload-signed
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signed-vkeyclassic-foundation-release-${{ inputs.release_tag }}
+          path: signed-vkeyclassic-foundation-release/
+          if-no-files-found: error
+          retention-days: 30
+
+  package-release:
+    name: Assemble and attest immutable Classic release assets
+    if: inputs.operation == 'release'
+    needs: [validate, sign-production, build-package-extras]
+    runs-on: windows-2022
+    outputs:
+      release-assets-artifact-id: ${{ steps.upload-release-assets.outputs.artifact-id }}
+    permissions:
+      actions: read
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout validated release source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source-sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          submodules: false
+
+      - name: Revalidate tag binding before publishing
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          source_sha="$(git rev-parse HEAD)"
+          if [[ "$tag_sha" != "$source_sha" || "$source_sha" != "$SOURCE_SHA" ]]; then
+            echo "release source changed before publishing" >&2
+            exit 1
+          fi
+
+      - name: Setup MSVC for final import checks
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+        with:
+          arch: x64
+
+      - name: Download exact production-signed artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.sign-production.outputs.signed-artifact-id }}
+          path: signed-vkeyclassic-foundation-release
+
+      - name: Reverify downloaded production signatures and boundary
+        shell: powershell
+        run: |
+          $approved = @(
+            "VKeyClassic.exe",
+            "VKeyTSF.dll",
+            "VKeyWatchdog.exe"
+          )
+          $root = "signed-vkeyclassic-foundation-release"
+          $actual = @(
+            Get-ChildItem $root -File |
+              Select-Object -ExpandProperty Name |
+              Sort-Object
+          )
+          $directories = @(Get-ChildItem $root -Directory -Recurse)
+          $expected = @($approved | Sort-Object)
+          if ($directories.Count -ne 0 -or (Compare-Object $expected $actual)) {
+            $directories.FullName | Write-Output
+            $actual | Write-Output
+            throw "Downloaded signed artifact differs from the approved boundary"
+          }
+
+          foreach ($name in $approved) {
+            $path = Join-Path $root $name
+            $signature = Get-AuthenticodeSignature $path
+            if ($signature.Status -ne "Valid" -or -not $signature.SignerCertificate) {
+              throw "Downloaded Foundation signature is not valid: $path ($($signature.Status))"
+            }
+            if ($signature.SignerCertificate.Subject -notmatch "(^|,\s*)CN=SignPath Foundation(,|$)") {
+              throw "Unexpected downloaded signer for $path: $($signature.SignerCertificate.Subject)"
+            }
+            if (-not $signature.TimeStamperCertificate) {
+              throw "Downloaded production signature is missing a trusted timestamp: $path"
+            }
+
+            $imports = (& dumpbin /DEPENDENTS $path 2>&1) -join "`n"
+            if ($LASTEXITCODE -ne 0) {
+              $imports | Write-Output
+              throw "dumpbin failed for $path"
+            }
+            if ($imports -match "(?i)(sciter|vkey_engine)[.]dll") {
+              $imports | Write-Output
+              throw "Downloaded Foundation binary imports a forbidden runtime: $path"
+            }
+          }
+
+      - name: Download exact Classic extras artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.build-package-extras.outputs.artifact-id }}
+          path: unsigned-vkeyclassic-package-extras
+
+      - name: Assemble allowlisted Classic package
+        shell: powershell
+        run: |
+          $extras = "unsigned-vkeyclassic-package-extras"
+          $extraFiles = @(
+            Get-ChildItem $extras -File |
+              Select-Object -ExpandProperty Name
+          )
+          $extraDirectories = @(Get-ChildItem $extras -Directory -Recurse)
+          if ($extraDirectories.Count -ne 0 -or $extraFiles.Count -ne 1 -or $extraFiles[0] -ne "VKeyBrowserHost.exe") {
+            $extraDirectories.FullName | Write-Output
+            $extraFiles | Write-Output
+            throw "Downloaded extras artifact is not the exact one-file allowlist"
+          }
+
+          $browserHost = Join-Path $extras "VKeyBrowserHost.exe"
+          $browserSignature = Get-AuthenticodeSignature $browserHost
+          if ($browserSignature.Status -ne "NotSigned") {
+            throw "Browser host is outside Foundation scope and must remain unsigned"
+          }
+
+          $dist = Join-Path $env:RUNNER_TEMP "release-package"
+          if (Test-Path $dist) {
+            throw "Refusing to reuse a pre-existing package stage: $dist"
+          }
+          New-Item -ItemType Directory -Path $dist | Out-Null
+          foreach ($name in @("VKeyClassic.exe", "VKeyTSF.dll", "VKeyWatchdog.exe")) {
+            Copy-Item (Join-Path "signed-vkeyclassic-foundation-release" $name) $dist -Force
+          }
+          Copy-Item $browserHost $dist -Force
+          Copy-Item "THIRD_PARTY_NOTICES.txt" $dist -Force
+
+          $expected = @(
+            "THIRD_PARTY_NOTICES.txt",
+            "VKeyBrowserHost.exe",
+            "VKeyClassic.exe",
+            "VKeyTSF.dll",
+            "VKeyWatchdog.exe"
+          ) | Sort-Object
+          $actual = @(
+            Get-ChildItem $dist -File |
+              Select-Object -ExpandProperty Name |
+              Sort-Object
+          )
+          if (Compare-Object $expected $actual) {
+            $actual | Write-Output
+            throw "Classic package inventory differs from the five-file allowlist"
+          }
+
+      - name: Create release archives and checksums
+        shell: powershell
+        run: |
+          $packageRoot = Join-Path $env:RUNNER_TEMP "release-package"
+          Compress-Archive -Path (Join-Path $packageRoot "*") -DestinationPath VKeyClassic.zip
+          Copy-Item VKeyClassic.zip VKeyClassic-x64.zip -Force
+          foreach ($file in @("VKeyClassic.zip", "VKeyClassic-x64.zip")) {
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+            "$hash  $file" | Out-File -Encoding ascii "$file.sha256"
+          }
+
+      - name: Upload immutable release assets for audit
+        id: upload-release-assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: VKeyClassic-release-assets-${{ inputs.release_tag }}
+          path: |
+            VKeyClassic.zip
+            VKeyClassic.zip.sha256
+            VKeyClassic-x64.zip
+            VKeyClassic-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attest Classic release archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            VKeyClassic.zip
+            VKeyClassic-x64.zip
+
+  attach-release:
+    name: Attach preverified assets to existing GitHub Release
+    if: inputs.operation == 'release'
+    needs: [validate, sign-production, package-release]
+    runs-on: windows-2022
+    environment:
+      name: vkeyclassic-foundation-release
+      url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout validated source without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.source-sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          submodules: false
+
+      - name: Revalidate tag and Main after final environment approval
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.validate.outputs.source-sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          tag_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+          source_sha="$(git rev-parse HEAD)"
+          main_sha="$(git rev-parse refs/remotes/origin/Main)"
+          if [[ "$tag_sha" != "$EXPECTED_SHA" || "$source_sha" != "$EXPECTED_SHA" || "$main_sha" != "$EXPECTED_SHA" ]]; then
+            echo "release tag, validated source, or Main changed while waiting for final approval" >&2
+            echo "tag=$tag_sha source=$source_sha Main=$main_sha expected=$EXPECTED_SHA" >&2
+            exit 1
+          fi
+
+      - name: Download exact attested release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          artifact-ids: ${{ needs.package-release.outputs.release-assets-artifact-id }}
+          path: ${{ runner.temp }}/release-assets
+
+      - name: Verify release-asset inventory and sidecars
+        shell: powershell
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "release-assets"
+          $expected = @(
+            "VKeyClassic.zip",
+            "VKeyClassic.zip.sha256",
+            "VKeyClassic-x64.zip",
+            "VKeyClassic-x64.zip.sha256"
+          ) | Sort-Object
+          $actual = @(
+            Get-ChildItem $root -File |
+              Select-Object -ExpandProperty Name |
+              Sort-Object
+          )
+          $directories = @(Get-ChildItem $root -Directory -Recurse)
+          if ($directories.Count -ne 0 -or (Compare-Object $expected $actual)) {
+            $directories.FullName | Write-Output
+            $actual | Write-Output
+            throw "Downloaded release assets differ from the four-file allowlist"
+          }
+
+          foreach ($archiveName in @("VKeyClassic.zip", "VKeyClassic-x64.zip")) {
+            $archive = Join-Path $root $archiveName
+            $sidecar = "$archive.sha256"
+            $line = (Get-Content $sidecar -Raw).Trim()
+            $expectedLine = "^([0-9a-f]{64})  $([regex]::Escape($archiveName))$"
+            if ($line -notmatch $expectedLine) {
+              throw "Malformed checksum sidecar: $sidecar"
+            }
+            $actualHash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower()
+            if ($actualHash -ne $Matches[1]) {
+              throw "Checksum sidecar does not match downloaded archive: $archiveName"
+            }
+          }
+
+      - name: Attach without creating or overwriting a release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          $releaseJson = & gh release view $env:RELEASE_TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --json tagName,isDraft
+          if ($LASTEXITCODE -ne 0) {
+            throw "The standard GitHub Release must exist before Classic publishing"
+          }
+          $release = $releaseJson | ConvertFrom-Json
+          if ($release.tagName -ne $env:RELEASE_TAG -or $release.isDraft) {
+            throw "Classic may attach only to the existing published release for $env:RELEASE_TAG"
+          }
+          $assetRoot = Join-Path $env:RUNNER_TEMP "release-assets"
+
+          $remoteAssets = @(
+            & gh release view $env:RELEASE_TAG `
+              --repo $env:GITHUB_REPOSITORY `
+              --json assets `
+              --jq '.assets[].name'
+          )
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to inspect existing release assets"
+          }
+
+          # Preflight every collision before mutating the Release. A conflicting
+          # fourth asset must not leave the first three newly uploaded.
+          $assets = @(
+            "VKeyClassic.zip.sha256",
+            "VKeyClassic-x64.zip.sha256",
+            "VKeyClassic.zip",
+            "VKeyClassic-x64.zip"
+          )
+          $missingAssets = @()
+          foreach ($asset in $assets) {
+            if ($remoteAssets -contains $asset) {
+              $downloadDir = Join-Path $env:RUNNER_TEMP "existing-$asset"
+              New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+              & gh release download $env:RELEASE_TAG `
+                --repo $env:GITHUB_REPOSITORY `
+                --pattern $asset `
+                --dir $downloadDir
+              if ($LASTEXITCODE -ne 0) {
+                throw "Unable to download existing release asset: $asset"
+              }
+              $existing = Join-Path $downloadDir $asset
+              $localPath = Join-Path $assetRoot $asset
+              $localHash = (Get-FileHash $localPath -Algorithm SHA256).Hash
+              $remoteHash = (Get-FileHash $existing -Algorithm SHA256).Hash
+              if ($localHash -ne $remoteHash) {
+                throw "Refusing to overwrite different existing release asset: $asset"
+              }
+              Write-Host "Existing $asset is byte-identical; keeping it."
+            }
+            else {
+              $missingAssets += $asset
+            }
+          }
+
+          # Checksums are deliberately uploaded before their archives. A network
+          # failure can leave a partial set, but never a new archive without its
+          # verification sidecar.
+          foreach ($asset in $missingAssets) {
+            $localPath = Join-Path $assetRoot $asset
+            & gh release upload $env:RELEASE_TAG $localPath `
+              --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to upload release asset without overwrite: $asset"
+            }
+          }
+
+      - name: Record production release links
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SIGNPATH_REQUEST_URL: ${{ needs.sign-production.outputs.signing-request-url }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source-sha }}
+        run: |
+          {
+            echo "## VKeyClassic production release"
+            echo
+            echo "- Tag: \`$RELEASE_TAG\`"
+            echo "- Commit: \`$SOURCE_SHA\`"
+            echo "- SignPath request: $SIGNPATH_REQUEST_URL"
+            echo "- Signing policy: \`release-signing\`"
+            echo "- GitHub Release: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/$RELEASE_TAG"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  submit-classic-winget:
+    name: Submit Classic release to WinGet
+    if: inputs.operation == 'release'
+    needs: attach-release
+    runs-on: windows-2022
+    environment:
+      name: vkeyclassic-foundation-release
+      url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ inputs.release_tag }}
+    permissions:
+      contents: read
+    steps:
+      - name: Submit VKey Classic to WinGet
+        uses: vedantmgoyal9/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
+        with:
+          identifier: PhatMT97.VKey.Classic
+          installers-regex: '^VKeyClassic-x64\.zip$'
+          token: ${{ secrets.VKEYCLASSIC_WINGET_TOKEN }}
