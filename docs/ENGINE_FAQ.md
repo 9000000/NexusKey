@@ -98,6 +98,16 @@ Nó **không** bảo vệ được khi máy bạn đã bị chiếm quyền ghi 
 1. Mở bảng điều khiển VKey từ khay hệ thống (System Tray).
 2. Lựa chọn **Kiểm tra chính tả nâng cao**.
 
+### Làm sao để chế độ Nâng cao luôn giữ một từ riêng của tôi?
+Sau lần đầu bật chế độ Nâng cao, mở file `user_dictionary.txt` nằm cạnh
+`config.toml`, báo lỗi tự sửa tại [GitHub Issues](https://github.com/phatMT97/VKey/issues),
+rồi thêm mỗi từ cần giữ vào một dòng và lưu file. Chọn lại **Nâng cao** (hoặc
+chuyển Nâng cao → Cơ bản → Nâng cao) để nạp lại cho cả Hook và TSF. File không
+tồn tại sẽ được VKey tạo sẵn; file trống là một danh sách hợp lệ và xóa mọi từ
+đã bảo vệ. Nếu file sai UTF-8, có dòng không hợp lệ hoặc tạm thời không đọc
+được, VKey giữ nguyên bản hợp lệ gần nhất. File này chỉ được đọc cục bộ và
+không được gửi ra ngoài.
+
 ### Làm thế nào để gỡ bỏ hoàn toàn Engine Rust?
 Mở thư mục cài đặt VKey và xóa hai file: `vkey_engine.dll` và `vkey_engine.dll.sig`.
 

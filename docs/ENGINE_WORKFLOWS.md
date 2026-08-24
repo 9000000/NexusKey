@@ -130,17 +130,22 @@ from that build does not cover the Rust engine.
 **Actions → Build → Run workflow.** Nothing to install, no token on your machine.
 
 The defaults build the Sciter edition with tests and the external engine. Sciter
-stays unsigned in v4.3. Select `include_classic` to run its independent Rust-OFF
-build; only that Classic artifact is submitted to SignPath. Untick
-`sign_binaries` for an unsigned Classic test build. For a manual maintainer test,
-`classic_rust` opts Classic into Rust, labels the uploaded artifact `DEV`, and
-forcibly bypasses SignPath. Tag builds cannot enable that development path.
+stays unsigned in v4.3. Select `include_classic` to run an independent Rust-OFF
+Classic build. Every output from this mixed workflow is deliberately unsigned;
+it never submits a SignPath request and it cannot publish a Classic release.
 
-The uploaded workflow artifact keeps `sciter/` and `classic/` in separate
-directories because their same-named `VKeyTSF.dll` files have different engine
-capabilities. A manual Sciter artifact carries `sciter.dll`, the optional engine,
-and both notice files. Official Classic never carries the Rust DLL, signature or
-license file.
+For a manual maintainer test, `classic_rust` opts Classic into Rust and labels the
+uploaded artifact `DEV`. It requires `include_classic`, is never signed, and tag
+builds cannot enable it. `include_engine` controls whether the external engine is
+copied into the final manual Sciter artifact; the Sciter compile itself always
+uses the pinned engine and therefore still requires the repository secret.
+
+A one-edition manual artifact keeps its flat layout. When both editions are
+selected, the artifact uses separate `sciter/` and `classic/` directories so each
+edition keeps its own complete TSF, watchdog, browser host, and notices. With
+`classic_rust`, the `classic/` directory also carries the pinned engine, detached
+signature, and engine license for DEV testing. Official Classic never carries
+those Rust files.
 
 For local builds the product choices are explicit:
 
@@ -157,7 +162,81 @@ Classic product and must never be submitted to SignPath or redistributed as
 `build-lite-rust/` so switching variants cannot leave a stale engine DLL beside
 the C++-only binary.
 
-## 3. Change the engine itself
+## 3. Publish an official release
+
+Release is intentionally two-stage so proprietary Sciter/Rust inputs never enter
+the SignPath Foundation boundary.
+
+### Stage A: standard Sciter release
+
+Before the first production run, create protected environment
+`vkey-standard-release`, require reviewers, allow only canonical `v*` tags, and
+store a dedicated `VKEY_STANDARD_WINGET_TOKEN` secret there. Leave repository variable
+`VKEY_STANDARD_RELEASE_ENABLED` unset until those controls are active, then set
+it to exactly `true`.
+
+Push a canonical `vMAJOR.MINOR.PATCH` tag whose version exactly matches
+`CMakeLists.txt` and whose commit is the exact current `Main` HEAD. The `Build`
+workflow validates the public tree and assets, builds Sciter with the pinned
+engine, runs tests and the tampered-engine rejection check, then publishes only:
+
+- `VKey.zip` and `VKey-x64.zip`, with SHA-256 sidecars and GitHub attestations;
+- `vkey_engine.dll`, its detached signature, both SHA-256 sidecars, and its
+  separate license notice.
+
+The engine remains outside both application ZIPs. The workflow creates the
+GitHub Release and updates the Sciter WinGet package. Build/package jobs have
+read-only repository permission; only a protected downstream job can attest and
+publish their exact artifact ID. It rechecks the tag and `Main` after approval,
+creates a draft first, publishes only after every asset is present, and refuses
+to overwrite a different existing asset. It cannot build, sign, or publish
+Classic from a tag. Depending on the environment rules, GitHub may ask again
+before the separate least-privilege WinGet job.
+
+### Stage B: protected Classic release
+
+Create GitHub environment
+`vkeyclassic-foundation-release`, require reviewers, restrict deployment to
+`Main`, and store dedicated `VKEYCLASSIC_SIGNPATH_API_TOKEN` and
+`VKEYCLASSIC_WINGET_TOKEN` secrets there. Do not reuse the repo-level secret names:
+the dedicated names prevent fallback to an unprotected repository secret. Set
+repository variable `VKEYCLASSIC_SIGNING_ENABLED=true` only after that environment
+is protected; both review and production signing then enter the environment.
+
+The safe default is **Actions → VKeyClassic Foundation signing → Run workflow →
+`review`**. It builds exactly `VKeyClassic.exe`, `VKeyTSF.dll`, and
+`VKeyWatchdog.exe`, submits only that immutable artifact to `test-signing`, and
+uploads a 30-day review artifact. The review job has no permission to modify a
+GitHub Release and still requires the protected-environment approval.
+
+After approval and after Stage A has completed, dispatch the same workflow from
+the `Main` branch with operation `release` and the exact tag. The tag must still
+point to that exact `Main` HEAD so GitHub attestation provenance, compiled source,
+and release tag all name the same commit. Leave `VKEYCLASSIC_RELEASE_ENABLED`
+unset until SignPath approves the exact `vkeyclassic-foundation` configuration
+and `release-signing` policy, then set it to exactly `true`. Production then:
+
+1. requires the enable variable and protected environment approval;
+2. rebinds the tag, compiled version, commit, and existing published Release;
+3. submits only the three-file Foundation artifact to `release-signing`;
+4. requires valid `CN=SignPath Foundation` signatures, timestamps, an exact file
+   inventory, and no Sciter/Rust imports;
+5. adds separately built, unsigned `VKeyBrowserHost.exe` plus
+   `THIRD_PARTY_NOTICES.txt` to the final Classic package;
+6. enforces the five-file package allowlist, then archives, checksums, and attests
+   both Classic ZIP names;
+7. attaches assets only to the existing tag Release and refuses to overwrite a
+   different existing asset, after rechecking the tag and `Main` following final
+   approval, then updates the Classic WinGet package.
+
+If any gate is absent, production fails before signing or publishing. A review
+artifact can never take the production branch merely by changing its filename.
+The signing job has read-only GitHub permission; a later protected job receives
+release-write permission only after downloading and rechecking immutable artifact
+IDs. Depending on the environment rules, GitHub may ask for separate approvals
+for production signing, final attachment, and the least-privilege WinGet job.
+
+## 4. Change the engine itself
 
 The engine source is in VKey-rs. To try a local build of it here, without cutting
 a release:
@@ -201,6 +280,10 @@ default local mode work again afterwards, rerun the sync command.
 | `HTTP 404 — wrong tag, or the token cannot read that repository` | tag typo, or the PAT is not scoped to VKey-rs |
 | `sha256 mismatch` / `byte length mismatch` | `engine.lock` and `engine.release` disagree; do not edit either file independently |
 | `No prebuilt engine at ...` | nothing fetched yet; §1, or build with `-DVKEY_USE_RUST_ENGINE=OFF` |
+| `Production Classic release is locked` | keep using `review`; enable production only after the SignPath policy and protected GitHub environment are ready |
+| `VKeyClassic SignPath review is locked` | configure the protected environment and its dedicated token, then set `VKEYCLASSIC_SIGNING_ENABLED=true` |
+| `Standard production release is locked` | protect `vkey-standard-release` first, then set `VKEY_STANDARD_RELEASE_ENABLED=true` |
+| `Classic may attach only to the existing published release` | finish the standard tag release first, then dispatch Classic with that exact tag |
 
 Related: [`../extern/vkey_engine/LICENSE`](../extern/vkey_engine/LICENSE) for why
 the engine is noncommercial-only.

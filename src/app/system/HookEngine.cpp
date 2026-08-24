@@ -13,6 +13,9 @@
 #include "core/engine/CodeTableConverter.h"
 #include "core/engine/CommittedTextRestore.h"
 #include "core/engine/EngineFactory.h"
+#ifdef VKEY_USE_RUST_ENGINE
+#include "core/engine/RustInputEngine.h"
+#endif
 #include "core/config/ConfigManager.h"
 #include "core/config/ConfigSnapshotBuilder.h"
 #include "core/AutoCapDecision.h"
@@ -252,7 +255,29 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     ApplyHotkeyRegistry(ConfigManager::MigrateLegacyHotkeysIfNeeded(
         ConfigManager::GetConfigPath()));
     autoCapState_ = AutoCapState::Idle;
+#ifdef VKEY_USE_RUST_ENGINE
+    if (config.spellSuggestEnabled) {
+        auto loaded = RustInputEngine::LoadUserDictionary(ConfigManager::GetConfigPath());
+        if (loaded.Succeeded()) {
+            userDictionary_ = std::move(loaded.snapshot);
+            HOOK_LOG(L"  UserDictionary: %s '%s'",
+                     loaded.created ? L"created and loaded" : L"loaded",
+                     loaded.path.c_str());
+        } else {
+            HOOK_LOG(L"  UserDictionary: load failed status=%d engineStatus=%u line=%zu path='%s'",
+                     static_cast<int>(loaded.status), loaded.engineStatus,
+                     loaded.errorLine, loaded.path.c_str());
+        }
+    }
+#endif
     engine_ = EngineFactory::Create(config);
+#ifdef VKEY_USE_RUST_ENGINE
+    if (userDictionary_ && EngineFactory::WillUseRustEngine(config)) {
+        const bool attached = static_cast<RustInputEngine*>(engine_.get())
+                                  ->SetUserDictionary(userDictionary_);
+        HOOK_LOG(L"  UserDictionary: initial attach %s", attached ? L"ok" : L"failed");
+    }
+#endif
     vietnameseMode_.store(initialVietnamese, std::memory_order_release);
 
     // Create shared memory for smart switch and load persisted English-mode apps.
@@ -862,6 +887,24 @@ void HookEngine::ReloadFromToml() {
                         state.epoch, state.GetFeatureFlags());
         }
     }
+
+#ifdef VKEY_USE_RUST_ENGINE
+    // Cold path: read UTF-8 and compile the immutable Rust snapshot on this
+    // worker/main thread. The hook thread only swaps the ready shared_ptr.
+    if (config.spellSuggestEnabled) {
+        auto loaded = RustInputEngine::LoadUserDictionary(ConfigManager::GetConfigPath());
+        if (loaded.Succeeded()) {
+            pendingUserDictionary_.store(std::move(loaded.snapshot),
+                                         std::memory_order_release);
+            HOOK_LOG(L"  UserDictionary: reload ready path='%s'", loaded.path.c_str());
+        } else {
+            // Invalid/unreadable is fail-stale: keep the last valid snapshot.
+            HOOK_LOG(L"  UserDictionary: reload rejected; retaining prior snapshot (status=%d, engineStatus=%u, line=%zu, path='%s')",
+                     static_cast<int>(loaded.status), loaded.engineStatus,
+                     loaded.errorLine, loaded.path.c_str());
+        }
+    }
+#endif
 
     // Smart-switch off→on transition: load persisted apps from TOML on this
     // worker thread (Rule §11.2 — TOML parse is forbidden on hook), then
@@ -5016,6 +5059,13 @@ void HookEngine::ApplyConfigOnHookThread() {
                  focus_.AppModeMap().size());
     }
 
+#ifdef VKEY_USE_RUST_ENGINE
+    if (auto loaded = pendingUserDictionary_.exchange(nullptr,
+                                                       std::memory_order_acq_rel)) {
+        userDictionary_ = std::move(loaded);
+    }
+#endif
+
     // Resolve target inputMethod considering per-app override (Phase 3c
     // snapshot reader). activeExe_ is hook-owned (set in
     // ApplyFocusOnHookThread); reading it here is single-threaded safe.
@@ -5033,6 +5083,14 @@ void HookEngine::ApplyConfigOnHookThread() {
     TypingConfig engineConfig = *cfg;
     engineConfig.inputMethod = targetMethod;
     engine_ = EngineFactory::Create(engineConfig);
+#ifdef VKEY_USE_RUST_ENGINE
+    if (userDictionary_ && EngineFactory::WillUseRustEngine(engineConfig)) {
+        const bool attached = static_cast<RustInputEngine*>(engine_.get())
+                                  ->SetUserDictionary(userDictionary_);
+        HOOK_LOG(L"  UserDictionary: config-boundary attach %s",
+                 attached ? L"ok" : L"failed");
+    }
+#endif
 
     HOOK_LOG(L"  ApplyConfig: engine recreated (method=%d, modernOrtho=%d, allowZwjf=%d)",
              static_cast<int>(targetMethod),

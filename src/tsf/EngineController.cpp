@@ -24,6 +24,9 @@
 #include "core/TsfEditDecision.h"
 #include "core/config/ConfigManager.h"
 #include "core/engine/EngineFactory.h"
+#ifdef VKEY_USE_RUST_ENGINE
+#include "core/engine/RustInputEngine.h"
+#endif
 
 namespace {
 
@@ -967,11 +970,19 @@ bool EngineController::CheckConfigEvent(bool allowMacroDiskRead) {
 
     uint32_t currentEpoch = sharedState_.ReadEpoch();
     if (!recoveredAbi && currentEpoch == lastEpoch_) {
+#ifdef VKEY_USE_RUST_ENGINE
+        if (userDictionaryNeedsReload_ && allowMacroDiskRead) {
+            RefreshUserDictionarySnapshot(userDictionaryGeneration_, true);
+        }
+        const bool dictionaryAttached = TryAttachUserDictionary();
+#else
+        constexpr bool dictionaryAttached = false;
+#endif
         if (allowMacroDiskRead && !macroConfigLoaded_) {
             ReloadMacros(macroGeneration_);
             return true;
         }
-        return false;
+        return dictionaryAttached;
     }
 
     SharedState state = sharedState_.Read();
@@ -1003,6 +1014,51 @@ bool EngineController::CheckConfigEvent(bool allowMacroDiskRead) {
 
     return true;
 }
+
+#ifdef VKEY_USE_RUST_ENGINE
+void EngineController::RefreshUserDictionarySnapshot(uint8_t generation,
+                                                     bool allowDiskRead) {
+    if (!userDictionaryGenerationKnown_ || userDictionaryGeneration_ != generation) {
+        userDictionaryGenerationKnown_ = true;
+        userDictionaryGeneration_ = generation;
+        userDictionaryNeedsReload_ = true;
+        pendingUserDictionary_.reset();
+    }
+    if (!config_.spellSuggestEnabled || !userDictionaryNeedsReload_ || !allowDiskRead) {
+        return;
+    }
+
+    auto loaded = RustInputEngine::LoadUserDictionary(
+        ConfigManager::GetConfigPath(g_hInstance));
+    userDictionaryNeedsReload_ = false;
+    if (loaded.Succeeded()) {
+        pendingUserDictionary_ = std::move(loaded.snapshot);
+        TSF_LOG(L"UserDictionary: %s path='%s' generation=%u",
+                loaded.created ? L"created and loaded" : L"loaded",
+                loaded.path.c_str(), static_cast<unsigned>(generation));
+    } else {
+        // Fail-stale: malformed or unreadable edits never clear a previously
+        // valid dictionary. A later config-generation bump retries.
+        TSF_LOG(L"UserDictionary: reload rejected; retaining prior snapshot (status=%d, engineStatus=%u, line=%zu, path='%s')",
+                static_cast<int>(loaded.status), loaded.engineStatus,
+                loaded.errorLine, loaded.path.c_str());
+    }
+}
+
+bool EngineController::TryAttachUserDictionary() {
+    if (!engine_ || engine_->Count() != 0 || !pendingUserDictionary_
+        || !EngineFactory::WillUseRustEngine(config_)) {
+        return false;
+    }
+    const bool attached = static_cast<RustInputEngine*>(engine_.get())
+                              ->SetUserDictionary(pendingUserDictionary_);
+    if (attached) {
+        userDictionary_ = std::move(pendingUserDictionary_);
+        TSF_LOG(L"UserDictionary: attached at word boundary");
+    }
+    return attached;
+}
+#endif
 
 void EngineController::ReloadMacros(uint8_t generation) {
     if (macroConfigLoaded_ && macroGeneration_ == generation) return;
@@ -1145,6 +1201,9 @@ void EngineController::ApplySharedState(const SharedState& state,
     config_.SetSpellCheckLevel(static_cast<SpellCheckLevel>(state.spellCheck));
     config_.optimizeLevel = optimizeLevel;
     DecodeFeatureFlags(state.GetFeatureFlags(), config_);
+#ifdef VKEY_USE_RUST_ENGINE
+    RefreshUserDictionarySnapshot(state.configGeneration, allowMacroDiskRead);
+#endif
     if (wasVietnameseMode != vietnameseMode_) ClearMacroTracking();
     if (wasMacroEnabled != config_.macroEnabled) macroConfigLoaded_ = false;
     // v3 cleanup: legacy `state.tempOffMethod` no longer decoded — TSF never
@@ -1182,6 +1241,21 @@ void EngineController::ApplySharedState(const SharedState& state,
 
     currentMethod_ = newMethod;
     engine_ = EngineFactory::Create(config_);
+#ifdef VKEY_USE_RUST_ENGINE
+    if (EngineFactory::WillUseRustEngine(config_)) {
+        const auto& snapshot = pendingUserDictionary_ ? pendingUserDictionary_
+                                                       : userDictionary_;
+        if (snapshot) {
+            const bool attached = static_cast<RustInputEngine*>(engine_.get())
+                                      ->SetUserDictionary(snapshot);
+            if (attached && pendingUserDictionary_) {
+                userDictionary_ = std::move(pendingUserDictionary_);
+            }
+            TSF_LOG(L"UserDictionary: engine-recreate attach %s",
+                    attached ? L"ok" : L"failed");
+        }
+    }
+#endif
     // This DLL can be a different build than VKey.exe (update deferred because a
     // host process held the old DLL), so it may bake a different engine.lock hash
     // than the installed vkey_engine.dll and lose the Rust engine while the EXE

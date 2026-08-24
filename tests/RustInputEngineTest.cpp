@@ -15,6 +15,11 @@
 #include <gtest/gtest.h>
 #include <vkey_engine.h>  // VKEY_ENGINE_ABI_VERSION — gates the v7-only assertions
 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+
 #include "core/engine/CommittedTextRestore.h"
 #include "core/engine/RustInputEngine.h"
 
@@ -623,6 +628,127 @@ TEST_F(RustInputEngineTest, StrokeD_AbbrevChain_PLHD_Parity) {
     for (wchar_t c : std::wstring(L"pladd")) engine.PushChar(c);
     EXPECT_EQ(engine.Peek(), L"pladd");
 }
+
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+class RustUserDictionaryFileTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        if (!RustInputEngine::LibraryAvailable()) {
+            GTEST_SKIP() << "trusted ABI-v8 vkey_engine library did not load";
+        }
+        const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+        root_ = std::filesystem::temp_directory_path()
+              / (L"vkey-user-dictionary-test-" + std::to_wstring(nonce));
+        std::filesystem::create_directories(root_);
+        configPath_ = root_ / L"config.toml";
+        dictionaryPath_ = root_ / L"user_dictionary.txt";
+    }
+
+    void TearDown() override {
+        std::error_code ignored;
+        if (!root_.empty()) std::filesystem::remove_all(root_, ignored);
+    }
+
+    void WriteDictionary(std::string_view bytes) {
+        std::ofstream output(dictionaryPath_, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(output.good());
+        output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        ASSERT_TRUE(output.good());
+    }
+
+    static TypingConfig AdvancedConfig() {
+        TypingConfig config;
+        config.inputMethod = InputMethod::Telex;
+        config.spellCheckEnabled = true;
+        config.spellSuggestEnabled = true;
+        config.autoRestoreEnabled = true;
+        return config;
+    }
+
+    static std::wstring CommitRaw(
+        const std::shared_ptr<const RustUserDictionarySnapshot>& snapshot,
+        bool* corrected = nullptr) {
+        RustInputEngine engine(AdvancedConfig());
+        EXPECT_TRUE(engine.SetUserDictionary(snapshot));
+        for (const wchar_t c : std::wstring_view(L"gnuwowif")) engine.PushChar(c);
+        std::wstring committed = engine.Commit();
+        if (corrected) *corrected = engine.LastCommitWasCorrected();
+        return committed;
+    }
+
+    std::filesystem::path root_;
+    std::filesystem::path configPath_;
+    std::filesystem::path dictionaryPath_;
+};
+
+TEST_F(RustUserDictionaryFileTest, MissingFileCreatesCommentOnlyTemplate) {
+    ASSERT_FALSE(std::filesystem::exists(dictionaryPath_));
+
+    const auto loaded = RustInputEngine::LoadUserDictionary(configPath_.wstring());
+
+    ASSERT_TRUE(loaded.Succeeded());
+    EXPECT_TRUE(loaded.created);
+    EXPECT_TRUE(std::filesystem::exists(dictionaryPath_));
+    std::ifstream input(dictionaryPath_, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+    EXPECT_NE(text.find("https://github.com/phatMT97/VKey/issues"), std::string::npos);
+}
+
+TEST_F(RustUserDictionaryFileTest, EmptyFileIsValidAndClearsProtection) {
+    WriteDictionary("gnuwowif\n");
+    const auto protectedWords = RustInputEngine::LoadUserDictionary(configPath_.wstring());
+    ASSERT_TRUE(protectedWords.Succeeded());
+    bool corrected = true;
+    EXPECT_EQ(CommitRaw(protectedWords.snapshot, &corrected), L"gnuwowif");
+    EXPECT_FALSE(corrected);
+
+    WriteDictionary("");
+    const auto empty = RustInputEngine::LoadUserDictionary(configPath_.wstring());
+    ASSERT_TRUE(empty.Succeeded());
+    EXPECT_FALSE(empty.created);
+    EXPECT_NE(CommitRaw(empty.snapshot, &corrected), L"gnuwowif");
+    EXPECT_TRUE(corrected);
+}
+
+TEST_F(RustUserDictionaryFileTest, InvalidEditLetsHostRetainLastValidSnapshot) {
+    WriteDictionary("gnuwowif\n");
+    const auto valid = RustInputEngine::LoadUserDictionary(configPath_.wstring());
+    ASSERT_TRUE(valid.Succeeded());
+
+    WriteDictionary(std::string_view("\xF0\x28\x8C\x28", 4));
+    const auto invalid = RustInputEngine::LoadUserDictionary(configPath_.wstring());
+    EXPECT_FALSE(invalid.Succeeded());
+    EXPECT_EQ(invalid.status, RustUserDictionaryLoadStatus::InvalidUtf8);
+
+    // This is the host fail-stale contract: no replacement was published, so
+    // the previous immutable snapshot remains attachable and effective.
+    bool corrected = true;
+    EXPECT_EQ(CommitRaw(valid.snapshot, &corrected), L"gnuwowif");
+    EXPECT_FALSE(corrected);
+}
+
+TEST_F(RustUserDictionaryFileTest, DecodedUtf16LimitIsReportedAsPayloadTooLarge) {
+    WriteDictionary(std::string(VKEY_USER_DICTIONARY_MAX_UTF16_UNITS + 1, 'a'));
+
+    const auto oversized = RustInputEngine::LoadUserDictionary(configPath_.wstring());
+
+    EXPECT_FALSE(oversized.Succeeded());
+    EXPECT_EQ(oversized.status, RustUserDictionaryLoadStatus::EngineRejected);
+    EXPECT_EQ(oversized.engineStatus, VKEY_USER_DICTIONARY_PAYLOAD_TOO_LARGE);
+}
+
+TEST_F(RustUserDictionaryFileTest, AttachWaitsForAnEmptyComposition) {
+    WriteDictionary("alo\n");
+    const auto loaded = RustInputEngine::LoadUserDictionary(configPath_.wstring());
+    ASSERT_TRUE(loaded.Succeeded());
+    RustInputEngine engine(AdvancedConfig());
+    engine.PushChar(L'a');
+
+    EXPECT_FALSE(engine.SetUserDictionary(loaded.snapshot));
+    EXPECT_EQ(engine.Peek(), L"a");
+}
+#endif
 
 }  // namespace
 }  // namespace NextKey

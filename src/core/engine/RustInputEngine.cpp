@@ -10,7 +10,12 @@
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <limits>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #if defined(_WIN32)
 #  define WIN32_LEAN_AND_MEAN
@@ -20,6 +25,9 @@
 #    define _GNU_SOURCE  // dladdr
 #  endif
 #  include <dlfcn.h>
+#  include <cerrno>
+#  include <fcntl.h>
+#  include <unistd.h>
 #endif
 
 namespace NextKey {
@@ -53,6 +61,13 @@ struct EngineApi {
     // ABI v7: bounded committed-word replay eligibility.
     bool (*should_replay_key_after_raw_utf16)(
         const VKeyEngine*, const uint16_t*, size_t, uint32_t) = nullptr;
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+    // ABI v8: immutable user exact-protection dictionary.
+    VKeyUserDictionary* (*user_dictionary_create_utf16)(
+        const uint16_t*, size_t, uint32_t*, size_t*) = nullptr;
+    void (*user_dictionary_destroy)(VKeyUserDictionary*) = nullptr;
+    bool (*set_user_dictionary)(VKeyEngine*, const VKeyUserDictionary*) = nullptr;
+#endif
     bool ok = false;
     std::wstring reason;  // diagnostic when !ok; empty when ok
 };
@@ -106,13 +121,27 @@ const EngineApi& Api() {
         a.should_replay_key_after_raw_utf16 =
             Resolve<decltype(a.should_replay_key_after_raw_utf16)>(
                 lib, "vkey_engine_should_replay_key_after_raw_utf16");
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+        a.user_dictionary_create_utf16 =
+            Resolve<decltype(a.user_dictionary_create_utf16)>(
+                lib, "vkey_user_dictionary_create_utf16");
+        a.user_dictionary_destroy = Resolve<decltype(a.user_dictionary_destroy)>(
+            lib, "vkey_user_dictionary_destroy");
+        a.set_user_dictionary = Resolve<decltype(a.set_user_dictionary)>(
+            lib, "vkey_engine_set_user_dictionary");
+#endif
         const bool symbolsResolved =
             a.create && a.destroy && a.reset && a.push_char && a.backspace &&
             a.peek_utf16 && a.commit_utf16 && a.count && a.abi_version && a.runtime_status &&
             a.is_english_word && a.is_tone_escaped && a.has_active_quick_consonant &&
             a.peek_raw_utf16 && a.seed_text_utf16 && a.last_commit_was_corrected &&
             a.set_custom_keymap && a.set_spell_exclusions_utf16 &&
-            (VKEY_ENGINE_ABI_VERSION < 7u || a.should_replay_key_after_raw_utf16);
+            (VKEY_ENGINE_ABI_VERSION < 7u || a.should_replay_key_after_raw_utf16)
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+            && a.user_dictionary_create_utf16 && a.user_dictionary_destroy &&
+            a.set_user_dictionary
+#endif
+            ;
         if (!symbolsResolved) {
             CloseRustEngineLibrary(lib);
             a.reason = L"vkey_engine library is missing a required exported symbol";
@@ -209,6 +238,144 @@ Utf16Text ToUtf16(std::wstring_view text) {
     return out;
 }
 
+constexpr size_t kUserDictionaryMaxUtf16Units = 65'536;
+constexpr size_t kUserDictionaryMaxUtf8Bytes = kUserDictionaryMaxUtf16Units * 3 + 3;
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+static_assert(kUserDictionaryMaxUtf16Units == VKEY_USER_DICTIONARY_MAX_UTF16_UNITS);
+#endif
+
+constexpr char kUserDictionaryTemplate[] =
+    "# VKey user dictionary - one word per line.\n"
+    "# Report wrong corrections first: https://github.com/phatMT97/VKey/issues\n"
+    "# Then add the word below, save, and select Advanced again to reload.\n";
+
+std::filesystem::path UserDictionaryPath(const std::wstring& configPath) {
+    std::filesystem::path path(configPath);
+    path.replace_filename(L"user_dictionary.txt");
+    return path;
+}
+
+bool EnsureUserDictionaryTemplate(const std::filesystem::path& path, bool& created) {
+    created = false;
+    std::error_code ec;
+    if (!path.parent_path().empty()) {
+        std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec) return false;
+    }
+
+#if defined(_WIN32)
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                              CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        return GetLastError() == ERROR_FILE_EXISTS;
+    }
+    created = true;
+    DWORD written = 0;
+    const DWORD length = static_cast<DWORD>(sizeof(kUserDictionaryTemplate) - 1);
+    const bool ok = WriteFile(file, kUserDictionaryTemplate, length, &written, nullptr) != FALSE
+                 && written == length;
+    CloseHandle(file);
+    if (!ok) {
+        DeleteFileW(path.c_str());
+        created = false;
+    }
+    return ok;
+#else
+    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644);
+    if (fd < 0) return errno == EEXIST;
+    created = true;
+    const char* cursor = kUserDictionaryTemplate;
+    size_t remaining = sizeof(kUserDictionaryTemplate) - 1;
+    bool ok = true;
+    while (remaining != 0) {
+        const ssize_t written = ::write(fd, cursor, remaining);
+        if (written <= 0) {
+            ok = false;
+            break;
+        }
+        cursor += written;
+        remaining -= static_cast<size_t>(written);
+    }
+    if (::close(fd) != 0) ok = false;
+    if (!ok) {
+        ::unlink(path.c_str());
+        created = false;
+    }
+    return ok;
+#endif
+}
+
+bool ReadBoundedFile(const std::filesystem::path& path, std::string& bytes,
+                     bool& oversized) {
+    oversized = false;
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
+    if (!input) return false;
+    const std::streampos end = input.tellg();
+    if (end < 0) return false;
+    const auto length = static_cast<unsigned long long>(end);
+    if (length > kUserDictionaryMaxUtf8Bytes) {
+        oversized = true;
+        return false;
+    }
+    bytes.resize(static_cast<size_t>(length));
+    input.seekg(0, std::ios::beg);
+    if (!bytes.empty() && !input.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))) {
+        return false;
+    }
+    return true;
+}
+
+bool DecodeUtf8(std::string_view bytes, std::vector<uint16_t>& units,
+                bool& oversized) {
+    oversized = false;
+    units.clear();
+    units.reserve((std::min)(bytes.size(), kUserDictionaryMaxUtf16Units + 1));
+    size_t i = 0;
+    while (i < bytes.size()) {
+        const auto first = static_cast<uint8_t>(bytes[i]);
+        uint32_t scalar = 0;
+        size_t width = 0;
+        if (first <= 0x7F) {
+            scalar = first;
+            width = 1;
+        } else if (first >= 0xC2 && first <= 0xDF) {
+            scalar = first & 0x1F;
+            width = 2;
+        } else if (first >= 0xE0 && first <= 0xEF) {
+            scalar = first & 0x0F;
+            width = 3;
+        } else if (first >= 0xF0 && first <= 0xF4) {
+            scalar = first & 0x07;
+            width = 4;
+        } else {
+            return false;
+        }
+        if (i + width > bytes.size()) return false;
+        for (size_t j = 1; j < width; ++j) {
+            const auto continuation = static_cast<uint8_t>(bytes[i + j]);
+            if ((continuation & 0xC0) != 0x80) return false;
+            scalar = (scalar << 6) | (continuation & 0x3F);
+        }
+        if ((width == 3 && scalar < 0x800) || (width == 4 && scalar < 0x10000)
+            || (scalar >= 0xD800 && scalar <= 0xDFFF) || scalar > 0x10FFFF) {
+            return false;
+        }
+        if (scalar <= 0xFFFF) {
+            units.push_back(static_cast<uint16_t>(scalar));
+        } else {
+            scalar -= 0x10000;
+            units.push_back(static_cast<uint16_t>(0xD800 + (scalar >> 10)));
+            units.push_back(static_cast<uint16_t>(0xDC00 + (scalar & 0x3FF)));
+        }
+        if (units.size() > kUserDictionaryMaxUtf16Units) {
+            oversized = true;
+            return false;
+        }
+        i += width;
+    }
+    return true;
+}
+
 }  // namespace
 
 bool RustInputEngine::LibraryAvailable() {
@@ -217,6 +384,91 @@ bool RustInputEngine::LibraryAvailable() {
 
 std::wstring RustInputEngine::UnavailableReason() {
     return Api().reason;
+}
+
+RustUserDictionarySnapshot::~RustUserDictionarySnapshot() {
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+    if (handle_ && Api().user_dictionary_destroy) {
+        Api().user_dictionary_destroy(static_cast<VKeyUserDictionary*>(handle_));
+    }
+#endif
+}
+
+RustUserDictionaryLoadResult RustInputEngine::LoadUserDictionary(
+    const std::wstring& configPath) {
+    RustUserDictionaryLoadResult result;
+    const std::filesystem::path path = UserDictionaryPath(configPath);
+    result.path = path.wstring();
+    try {
+        if (!EnsureUserDictionaryTemplate(path, result.created)) {
+            result.status = RustUserDictionaryLoadStatus::IoError;
+            return result;
+        }
+        std::string bytes;
+        bool oversized = false;
+        if (!ReadBoundedFile(path, bytes, oversized)) {
+            result.status = oversized ? RustUserDictionaryLoadStatus::EngineRejected
+                                      : RustUserDictionaryLoadStatus::IoError;
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+            if (oversized) {
+                result.engineStatus = VKEY_USER_DICTIONARY_PAYLOAD_TOO_LARGE;
+            }
+#endif
+            return result;
+        }
+        std::vector<uint16_t> units;
+        bool decodedOversized = false;
+        if (!DecodeUtf8(bytes, units, decodedOversized)) {
+            result.status = decodedOversized ? RustUserDictionaryLoadStatus::EngineRejected
+                                             : RustUserDictionaryLoadStatus::InvalidUtf8;
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+            if (decodedOversized) {
+                result.engineStatus = VKEY_USER_DICTIONARY_PAYLOAD_TOO_LARGE;
+            }
+#endif
+            return result;
+        }
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+        const EngineApi& api = Api();
+        if (!api.ok || !api.user_dictionary_create_utf16) {
+            result.status = RustUserDictionaryLoadStatus::EngineUnavailable;
+            return result;
+        }
+        uint32_t status = VKEY_USER_DICTIONARY_INVALID_ARGUMENT;
+        size_t errorLine = 0;
+        VKeyUserDictionary* dictionary = api.user_dictionary_create_utf16(
+            units.empty() ? nullptr : units.data(), units.size(), &status, &errorLine);
+        result.engineStatus = status;
+        result.errorLine = errorLine;
+        if (!dictionary) {
+            result.status = RustUserDictionaryLoadStatus::EngineRejected;
+            return result;
+        }
+        result.snapshot = std::shared_ptr<const RustUserDictionarySnapshot>(
+            new RustUserDictionarySnapshot(dictionary));
+        result.status = RustUserDictionaryLoadStatus::Loaded;
+#else
+        result.status = RustUserDictionaryLoadStatus::EngineUnavailable;
+#endif
+    } catch (...) {
+        result.snapshot.reset();
+        result.status = RustUserDictionaryLoadStatus::IoError;
+    }
+    return result;
+}
+
+bool RustInputEngine::SetUserDictionary(
+    const std::shared_ptr<const RustUserDictionarySnapshot>& snapshot) {
+#if VKEY_ENGINE_ABI_VERSION >= 8u
+    if (!handle_ || !Api().set_user_dictionary) return false;
+    const auto* dictionary = snapshot
+        ? static_cast<const VKeyUserDictionary*>(snapshot->handle_)
+        : nullptr;
+    return Api().set_user_dictionary(static_cast<VKeyEngine*>(handle_), dictionary);
+#else
+    (void)snapshot;
+    return false;
+#endif
 }
 
 RustInputEngine::RustInputEngine(const TypingConfig& config) {

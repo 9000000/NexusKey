@@ -76,15 +76,19 @@ Engine Rust được đóng gói dưới dạng thư viện liên kết động 
 | `vkey_engine_peek_utf16(engine, buf, cap)` | Đọc chuỗi ký tự tiếng Việt đang soạn thảo (composition). |
 | `vkey_engine_commit_utf16(engine, buf, cap)` | Chốt chuỗi ký tự ra ứng dụng đích và xóa bộ đệm engine. |
 | `vkey_engine_should_replay_key_after_raw_utf16(engine, raw, len, key)` | ABI v7: xem trước không làm thay đổi state để quyết định một phím có thể nối tiếp snapshot raw đã commit hay không. |
+| `vkey_user_dictionary_create_utf16(buf, len, status, line)` | ABI v8: kiểm tra và biên dịch toàn bộ danh sách “luôn giữ” thành snapshot bất biến. |
+| `vkey_engine_set_user_dictionary(engine, dictionary)` | ABI v8: gắn hoặc xóa snapshot tại ranh giới từ; engine giữ ownership riêng sau khi gắn thành công. |
+| `vkey_user_dictionary_destroy(dictionary)` | ABI v8: giải phóng opaque handle phía host; các engine đã gắn vẫn giữ snapshot của chúng. |
 | `vkey_engine_reset(engine)` | Xóa sạch bộ đệm gõ ngay lập tức. |
 | `vkey_engine_destroy(engine)` | Giải phóng bộ nhớ của instance engine. |
 | `vkey_engine_runtime_status()` | Kiểm tra tính hợp lệ và tên file thực thi của thư viện tại runtime. |
 
-Adapter chỉ bắt buộc symbol replay khi header dùng để build khai báo ABI từ v7.
-Artifact phát hành đang pin ABI cũ vẫn nạp và giữ hành vi fail-closed; khi phát
-hành ABI v7, `engine.lock`, header và binary phải được cập nhật cùng nhau. Build
-phát triển có thể trỏ `VKEY_ENGINE_ROOT` tới bundle ABI v7 đã đồng bộ để bật
-đường đi này trước khi release.
+Adapter bắt buộc symbol replay khi header dùng để build khai báo ABI từ v7 và
+bắt buộc ba symbol user dictionary khi header khai báo ABI từ v8. Artifact phát
+hành đang pin ABI cũ vẫn nạp và giữ hành vi fail-closed; ở mỗi lần phát hành,
+`engine.lock`, header và binary phải được cập nhật cùng nhau. Build phát triển
+có thể trỏ `VKEY_ENGINE_ROOT` tới bundle ABI v8 đã đồng bộ để kiểm thử đường đi
+mới trước khi release.
 
 ---
 

@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 /* Bump when the ABI changes; check against vkey_engine_abi_version(). */
-#define VKEY_ENGINE_ABI_VERSION 7u
+#define VKEY_ENGINE_ABI_VERSION 8u
 
 /* ABI v6 runtime-artifact identity status. */
 #define VKEY_ENGINE_RUNTIME_OK                   0u
@@ -47,6 +47,9 @@ extern "C" {
 
 /* Opaque engine handle. */
 typedef struct VKeyEngine VKeyEngine;
+
+/* Opaque immutable user-dictionary handle (ABI v8). */
+typedef struct VKeyUserDictionary VKeyUserDictionary;
 
 /* Create an engine for `method` with the `features` bitmask. Returns NULL when
  * vkey_engine_runtime_status() is not VKEY_ENGINE_RUNTIME_OK. */
@@ -224,6 +227,46 @@ bool vkey_engine_should_replay_key_after_raw_utf16(const VKeyEngine *engine,
                                                     const uint16_t *raw,
                                                     size_t raw_len,
                                                     uint32_t codepoint);
+
+/* --- ABI v8: user exact-protection dictionary ----------------------------
+ * Added in ABI 8. Present only when vkey_engine_abi_version() >= 8. */
+
+/* Construction result codes. */
+#define VKEY_USER_DICTIONARY_OK                0u
+#define VKEY_USER_DICTIONARY_INVALID_ARGUMENT  1u
+#define VKEY_USER_DICTIONARY_INVALID_UTF16     2u
+#define VKEY_USER_DICTIONARY_PAYLOAD_TOO_LARGE 3u
+#define VKEY_USER_DICTIONARY_TOO_MANY_WORDS    4u
+#define VKEY_USER_DICTIONARY_WORD_TOO_LONG     5u
+#define VKEY_USER_DICTIONARY_INVALID_WORD      6u
+
+/* Construction limits, exposed so hosts can reject oversized files before
+ * allocating or crossing the ABI. */
+#define VKEY_USER_DICTIONARY_MAX_UTF16_UNITS 65536u
+#define VKEY_USER_DICTIONARY_MAX_WORDS       1024u
+#define VKEY_USER_DICTIONARY_MAX_WORD_SCALARS  64u
+
+/* Compile newline-delimited UTF-16 text into an owning immutable dictionary.
+ * Blank lines and lines whose first non-whitespace character is '#' are
+ * ignored. A word is normalized and matched case-insensitively. Limits are
+ * 65,536 UTF-16 units total, 1,024 distinct words, and 64 Unicode scalars per
+ * word. Returns NULL on failure. `out_status` and `out_error_line` are optional;
+ * error_line is one-based for word errors and zero otherwise. The source buffer
+ * is copied during this call and may be freed immediately. */
+VKeyUserDictionary *vkey_user_dictionary_create_utf16(
+    const uint16_t *buf, size_t len, uint32_t *out_status,
+    size_t *out_error_line);
+
+/* Destroy a dictionary handle. NULL is ignored. Engines successfully attached
+ * to it retain their own immutable shared snapshot. */
+void vkey_user_dictionary_destroy(VKeyUserDictionary *dictionary);
+
+/* Replace an engine's exact-protection snapshot. Returns false and changes
+ * nothing if `engine` is NULL or has an active composition. Pass dictionary=NULL
+ * to clear at a word boundary. On success the engine keeps its own reference,
+ * so the caller may destroy `dictionary` immediately. */
+bool vkey_engine_set_user_dictionary(
+    VKeyEngine *engine, const VKeyUserDictionary *dictionary);
 
 #ifdef __cplusplus
 } /* extern "C" */

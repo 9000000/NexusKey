@@ -21,6 +21,9 @@
 #include "core/ipc/SharedStateManager.h"
 
 namespace NextKey {
+#ifdef VKEY_USE_RUST_ENGINE
+class RustUserDictionarySnapshot;
+#endif
 namespace TSF {
 
 /// Controller bridging TSF events and the Telex engine
@@ -207,6 +210,10 @@ private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
 
     void ReloadMacros(uint8_t generation);
+#ifdef VKEY_USE_RUST_ENGINE
+    void RefreshUserDictionarySnapshot(uint8_t generation, bool allowDiskRead);
+    [[nodiscard]] bool TryAttachUserDictionary();
+#endif
     void ClearMacroTrackingAfterCommit() noexcept;
     [[nodiscard]] bool IsMacroTrackingEnabled() const noexcept;
     [[nodiscard]] bool ReplacePrecedingText(ITfContext* pContext,
@@ -266,6 +273,16 @@ private:
     uint8_t macroGeneration_ = 0;
     bool macroConfigLoaded_ = false;
     bool macroCrossCommit_ = false;
+#ifdef VKEY_USE_RUST_ENGINE
+    // The TSF key path never reads/parses this file. A config generation seen
+    // there only latches `needs reload`; focus/init performs disk work. A
+    // compiled snapshot that arrives mid-word waits for an empty engine.
+    std::shared_ptr<const RustUserDictionarySnapshot> userDictionary_;
+    std::shared_ptr<const RustUserDictionarySnapshot> pendingUserDictionary_;
+    uint8_t userDictionaryGeneration_ = 0;
+    bool userDictionaryGenerationKnown_ = false;
+    bool userDictionaryNeedsReload_ = false;
+#endif
 
     // Pending Backspace revive — set by PrepareBackspaceRevive (called from OnTestKeyDown),
     // consumed by HandleKey(VK_BACK). CComPtr auto-manages ref count.

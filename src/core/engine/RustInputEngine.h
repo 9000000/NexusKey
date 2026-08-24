@@ -7,9 +7,50 @@
 #include "IInputEngine.h"
 #include "../config/TypingConfig.h"
 
+#include <cstdint>
+#include <memory>
 #include <string>
 
 namespace NextKey {
+
+/// Immutable ABI-v8 exact-protection dictionary compiled off the key path.
+/// The opaque Rust handle is shared by hosts and may be attached to any number
+/// of empty Rust engine sessions in this process.
+class RustUserDictionarySnapshot final {
+public:
+    ~RustUserDictionarySnapshot();
+
+    RustUserDictionarySnapshot(const RustUserDictionarySnapshot&) = delete;
+    RustUserDictionarySnapshot& operator=(const RustUserDictionarySnapshot&) = delete;
+
+private:
+    explicit RustUserDictionarySnapshot(void* handle) : handle_(handle) {}
+
+    void* handle_ = nullptr;  // opaque VKeyUserDictionary*
+
+    friend class RustInputEngine;
+};
+
+enum class RustUserDictionaryLoadStatus : uint8_t {
+    Loaded,
+    EngineUnavailable,
+    IoError,
+    InvalidUtf8,
+    EngineRejected,
+};
+
+struct RustUserDictionaryLoadResult {
+    std::shared_ptr<const RustUserDictionarySnapshot> snapshot;
+    std::wstring path;
+    RustUserDictionaryLoadStatus status = RustUserDictionaryLoadStatus::IoError;
+    uint32_t engineStatus = 0;
+    size_t errorLine = 0;
+    bool created = false;
+
+    [[nodiscard]] bool Succeeded() const noexcept {
+        return status == RustUserDictionaryLoadStatus::Loaded && snapshot != nullptr;
+    }
+};
 
 /// IInputEngine adapter for the trusted, runtime-loaded vkey_engine C ABI.
 class RustInputEngine : public IInputEngine {
@@ -41,6 +82,19 @@ public:
 
     /// Empty when LibraryAvailable(); otherwise a bounded diagnostic.
     [[nodiscard]] static std::wstring UnavailableReason();
+
+    /// Resolve `user_dictionary.txt` beside config.toml, creating the
+    /// comment-only template if absent, then read and compile it. Missing and
+    /// empty files both produce a valid empty snapshot. Invalid/unreadable
+    /// files return failure so callers can retain their last valid snapshot.
+    /// Cold path only: performs file I/O, UTF-8 decoding and allocation.
+    [[nodiscard]] static RustUserDictionaryLoadResult LoadUserDictionary(
+        const std::wstring& configPath);
+
+    /// Attach a precompiled immutable snapshot. Null clears protection. Returns
+    /// false without changing the engine if composition is active.
+    [[nodiscard]] bool SetUserDictionary(
+        const std::shared_ptr<const RustUserDictionarySnapshot>& snapshot);
 
 private:
     void* handle_ = nullptr;  // opaque VKeyEngine*

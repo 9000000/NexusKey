@@ -52,6 +52,9 @@ class SharedStateManager;  // Forward declaration (defined in core/ipc/SharedSta
 class HotkeyManager;       // Forward declaration
 class HookHijackDetector;        // Forward declaration (defined in app/system/HookHijackDetector.h)
 class ReinstallBurstScheduler;   // Forward declaration (defined in app/system/ReinstallBurstScheduler.h)
+#ifdef VKEY_USE_RUST_ENGINE
+class RustUserDictionarySnapshot;
+#endif
 
 /// Callback when Vietnamese/English mode changes.
 /// `sharedMode`  = logical V/E to persist into SharedState (drives the DLL,
@@ -529,6 +532,13 @@ private:
     std::atomic<std::shared_ptr<const TypingConfig>> config_{
         std::make_shared<const TypingConfig>()
     };  // Last applied config (for per-app engine recreation)
+#ifdef VKEY_USE_RUST_ENGINE
+    // Worker/main threads compile `user_dictionary.txt`; the hook thread only
+    // exchanges this immutable snapshot at an empty-word config boundary.
+    std::atomic<std::shared_ptr<const RustUserDictionarySnapshot>>
+        pendingUserDictionary_;
+    std::shared_ptr<const RustUserDictionarySnapshot> userDictionary_;
+#endif
 
     // Unified hotkey registry (cancel-composition / skip-macro / toggle-enabled).
     // RCU pattern matching config_ above: writers (main thread) call
