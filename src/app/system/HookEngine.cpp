@@ -4702,12 +4702,18 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     const bool shouldActivateTsfProfile = ShouldActivateTsfProfileForFocus(
         tsfFocusActivationState_, effectiveTsf, cls->hwndOpaque, cls->pid);
 
-    HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d)",
+    // activate_tip is in this line for #250: the reporter still saw the Start
+    // menu stall after removing StartMenuExperienceHost.exe from tsf_apps, which
+    // should make this 0 for that focus. Without it the log cannot say whether
+    // the profile re-assertion ran at all for the focus that stalled.
+    HOOK_LOG(L"  Engine: %s for '%s' (tsf_feature=%d, in_tsf_list=%d, excluded=%d, "
+             L"activate_tip=%d)",
              cls->isTsf ? L"TSF (hook passthrough)" : L"HOOK",
              cls->exeName.empty() ? L"<unknown>" : cls->exeName.c_str(),
              cfg->tsfApps ? 1 : 0,
              cls->isTsf ? 1 : 0,
-             cls->isExcluded ? 1 : 0);
+             cls->isExcluded ? 1 : 0,
+             shouldActivateTsfProfile ? 1 : 0);
 
     // SharedState TSF flag bridge — idempotent via SetOrClearFlag in main.
     if (tsfModeCallback_) {

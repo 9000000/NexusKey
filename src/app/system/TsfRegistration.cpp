@@ -13,6 +13,7 @@
 #include "core/Debug.h"
 #include "tsf/Globals.h"
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <vector>
 
@@ -392,6 +393,7 @@ bool ActivateVKeyTsfProfile() {
     // retried on every keystroke, flooding the tray message thread ("not
     // responding"). Back off: a failed activation cools down 2s, a successful
     // one 200ms (re-activation while already active is a no-op for TSF anyway).
+    // Only hr == S_OK counts as success — see the S_FALSE note at the return.
     // GetActiveProfile would itself need COM init, so a tick-based gate is the
     // cheap guard that runs before any COM call.
     static std::atomic<ULONGLONG> lastAttemptTick{0};
@@ -404,13 +406,37 @@ bool ActivateVKeyTsfProfile() {
     }
     lastAttemptTick.store(now, std::memory_order_release);
 
+    // #250 instrumentation: this per-focus re-assertion is the leading suspect
+    // for the visible Alt+Tab / Start-menu stall in TSF mode, but nothing has
+    // measured WHICH of its four stages costs the 55-90 ms seen in reporter
+    // logs — and the Start-menu symptom persisted after the reporter removed
+    // StartMenuExperienceHost.exe from tsf_apps, which this path should not
+    // even run for. Time each stage so a user-supplied debug log decides it
+    // instead of another guess. steady_clock, not GetTickCount64: the latter's
+    // 15.6 ms resolution cannot resolve stages inside a 55 ms budget.
+    // ponytail: plain per-stage timestamps, not a PerfHistogram stage — delete
+    // this block once #250 is attributed rather than growing it into telemetry.
+    const auto stageClockStart = std::chrono::steady_clock::now();
+    auto elapsedUs = [](std::chrono::steady_clock::time_point from,
+                        std::chrono::steady_clock::time_point to) {
+        return std::chrono::duration_cast<std::chrono::microseconds>(to - from).count();
+    };
+    long long registryUs = 0;
+    long long installUs = 0;
+    long long comInitUs = 0;
+    long long activateUs = 0;
+
     // Never install/activate an unregistered TIP: if the DLL registration was
     // removed externally (regsvr32 /u, failed update) while the TOML tsf_apps
     // flag stayed on, InstallLayoutOrTip below would add a phantom input-list
     // entry for a dead CLSID. Fail fast; the 2s fail cooldown keeps the
     // per-focus retries cheap (one registry read).
-    if (!IsTsfRegistered()) {
-        NEXTKEY_LOG(L"[TsfRegistration] ActivateVKeyTsfProfile skipped: TSF not registered");
+    const bool registered = IsTsfRegistered();
+    const auto afterRegistry = std::chrono::steady_clock::now();
+    registryUs = elapsedUs(stageClockStart, afterRegistry);
+    if (!registered) {
+        NEXTKEY_LOG(L"[TsfRegistration] ActivateVKeyTsfProfile skipped: TSF not "
+                    L"registered (registry read %lldus)", registryUs);
         lastResult.store(false, std::memory_order_release);
         return false;
     }
@@ -437,7 +463,10 @@ bool ActivateVKeyTsfProfile() {
             }
             ::FreeLibrary(hInput);
         }
+        installUs = elapsedUs(afterRegistry, std::chrono::steady_clock::now());
     }
+
+    const auto afterInstall = std::chrono::steady_clock::now();
 
     // RAII COM lifetime: pairs S_OK/S_FALSE with CoUninitialize and, crucially, does
     // NOT call CoUninitialize when CoInitializeEx failed (e.g. RPC_E_CHANGED_MODE when
@@ -467,8 +496,13 @@ bool ActivateVKeyTsfProfile() {
     std::unique_ptr<ITfInputProcessorProfileMgr, decltype(comRelease)>
         pProfileMgr(SUCCEEDED(hr) ? pProfileMgrRaw : nullptr, comRelease);
 
+    const auto afterComInit = std::chrono::steady_clock::now();
+    comInitUs = elapsedUs(afterInstall, afterComInit);
     if (!pProfileMgr) {
-        NEXTKEY_LOG(L"[TsfRegistration] CoCreateInstance failed for ITfInputProcessorProfileMgr (hr=0x%08X)", hr);
+        NEXTKEY_LOG(L"[TsfRegistration] CoCreateInstance failed for "
+                    L"ITfInputProcessorProfileMgr (hr=0x%08X, registry=%lldus, "
+                    L"install=%lldus, com=%lldus)",
+                    hr, registryUs, installUs, comInitUs);
         lastResult.store(false, std::memory_order_release);
         return false;
     }
@@ -490,6 +524,7 @@ bool ActivateVKeyTsfProfile() {
         nullptr,
         TF_IPPMF_FORSESSION
     );
+    activateUs = elapsedUs(afterComInit, std::chrono::steady_clock::now());
 
     if (FAILED(hr)) {
         NEXTKEY_LOG(L"[TsfRegistration] ActivateProfile failed for VKey TSF profile (hr=0x%08X)", hr);
@@ -497,14 +532,25 @@ bool ActivateVKeyTsfProfile() {
         // S_FALSE = "language profile is not enabled": the call returned without
         // selecting the TIP. Logged separately because it is indistinguishable
         // from success in the old log, which is exactly the state a #109-style
-        // report ("VKey does nothing") needs to show. Left counting as success
-        // for the throttle — no caller reads the return value.
+        // report ("VKey does nothing") needs to show.
         NEXTKEY_LOG(L"[TsfRegistration] ActivateProfile returned S_FALSE — VKey TSF "
                     L"profile is not enabled, the TIP will not receive keys");
     }
 
     // pProfileMgr (Release) then comGuard (CoUninitialize) destruct here, in that order.
-    const bool ok = SUCCEEDED(hr);
+    //
+    // S_FALSE is NOT success: the profile is not enabled and the TIP will not
+    // receive keys, so the caller is in exactly the #109 state the activation
+    // exists to repair. Counting it as success picked the 200 ms success
+    // cooldown, which re-attempted a call that cannot work five times a second
+    // and reported a dead TIP as a live one. It now takes the 2 s failure
+    // cooldown like every other non-working outcome.
+    const bool ok = (hr == S_OK);
+    NEXTKEY_LOG(L"[TsfRegistration] ActivateVKeyTsfProfile hr=0x%08X "
+                L"registry=%lldus install=%lldus com=%lldus activate=%lldus "
+                L"total=%lldus",
+                hr, registryUs, installUs, comInitUs, activateUs,
+                elapsedUs(stageClockStart, std::chrono::steady_clock::now()));
     lastResult.store(ok, std::memory_order_release);
     return ok;
 }
