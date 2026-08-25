@@ -834,6 +834,8 @@ endif()
 
 # Tests are excluded from ALL - build explicitly with --target VKeyTests
 set(NEXTKEY_TEST_SOURCES
+    tests/HotkeyManagerTest.cpp
+    src/app/system/HotkeyManager.cpp
     tests/TelexEngineTest.cpp
     tests/FormulaSegmentDecisionTest.cpp
     tests/CombinedEngineTest.cpp
