@@ -122,6 +122,10 @@ TypingEngine::TypingEngine(const TypingConfig& config)
 //-----------------------------------------------------------------------------
 
 void TypingEngine::PushChar(wchar_t keyChar) {
+    PushKey(keyChar, iswupper(keyChar) || keyChar == L'{' || keyChar == L'}');
+}
+
+void TypingEngine::PushKey(wchar_t keyChar, bool uppercase) {
     // No buffer cap: game-compatible Telex keeps V mode active while WASD-spamming
     // can exceed any fixed limit. Relies on Reset() hooks (focus, click, space, enter)
     // to bound growth in practice.
@@ -132,7 +136,8 @@ void TypingEngine::PushChar(wchar_t keyChar) {
 
     // W7.1+: build engine-rule ctx + PreClassify dispatch (QuickStartConsonant).
     const wchar_t lower = towlower(keyChar);
-    const bool isUpper = iswupper(keyChar);
+    const bool isUpper = uppercase;
+    activeKeyUppercase_ = uppercase;
 
     // Resolve any provisional oo-tone from a prior ooo→oo escape before this
     // key is classified (e.g. "chooo" + 's' + 'e': the 'e' reverts the tone so
@@ -177,10 +182,14 @@ void TypingEngine::PushChar(wchar_t keyChar) {
     // Other modes (Telex/VNI/SimpleTelex/Combined) use their own base mapping
     // via ClassifyKey; stale customKeyMap entries left over from a previous
     // UserDefined session must not silently override the base.
-    const TypingAction overrideAction =
-        (lower < 128 && config_.inputMethod == InputMethod::UserDefined)
-        ? config_.customKeyMap[static_cast<uint8_t>(lower)]
-        : TypingAction::None;
+    TypingAction overrideAction = TypingAction::None;
+    if (lower < 128 && config_.inputMethod == InputMethod::UserDefined) {
+        overrideAction = config_.customKeyMap[static_cast<uint8_t>(lower)];
+        const wchar_t canonical = CanonicalBracketKey(lower);
+        if (overrideAction == TypingAction::None && canonical != lower) {
+            overrideAction = config_.customKeyMap[static_cast<uint8_t>(canonical)];
+        }
+    }
     TypingAction action = (overrideAction != TypingAction::None)
         ? overrideAction
         : ClassifyKey(lower, IsTelexMode(), IsVniMode());
@@ -953,6 +962,7 @@ bool TypingEngine::HandleHornInsert(TypingAction action, wchar_t c) {
     CharState s;
     s.base = baseVowel;
     s.mod = Modifier::Horn;
+    s.isUpper = activeKeyUppercase_;
     s.rawIdx = rawInput_.empty() ? 0 : rawInput_.size() - 1;
     states_.push_back(s);
     return true;

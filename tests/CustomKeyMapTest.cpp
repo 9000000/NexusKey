@@ -158,6 +158,48 @@ TEST_F(CustomKeyMapTest, UserDefinedBracketInsertsHornAtWordStart) {
     EXPECT_EQ(engine2.Peek(), L"ư");
 }
 
+TEST_F(CustomKeyMapTest, UserDefinedShiftedBracketUsesBaseBindingAndUppercase) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'[')] = TypingAction::HornInsertO;
+    cfg.customKeyMap[static_cast<size_t>(L']')] = TypingAction::HornInsertU;
+
+    TypingEngine engine(cfg);
+    TypeString(engine, L"{");
+    EXPECT_EQ(engine.Peek(), L"Ơ");
+
+    TypingEngine engine2(cfg);
+    TypeString(engine2, L"}");
+    EXPECT_EQ(engine2.Peek(), L"Ư");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedShiftedBracketDoubleKeyEscapesToLiteralBrace) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'[')] = TypingAction::HornInsertO;
+    cfg.customKeyMap[static_cast<size_t>(L']')] = TypingAction::HornInsertU;
+
+    TypingEngine engine(cfg);
+    TypeString(engine, L"{{");
+    EXPECT_EQ(engine.Peek(), L"{");
+
+    TypingEngine engine2(cfg);
+    TypeString(engine2, L"}}");
+    EXPECT_EQ(engine2.Peek(), L"}");
+}
+
+TEST_F(CustomKeyMapTest, UserDefinedCapsBracketKeepsBaseLiteralOnEscape) {
+    TypingConfig cfg = MakeUserDefinedConfig();
+    cfg.customKeyMap[static_cast<size_t>(L'[')] = TypingAction::HornInsertO;
+
+    TypingEngine engine(cfg);
+    engine.PushKey(L'[', true);
+    EXPECT_EQ(engine.Peek(), L"Ơ");
+    EXPECT_EQ(engine.PeekRaw(), L"[");
+
+    engine.PushKey(L'[', true);
+    EXPECT_EQ(engine.Peek(), L"[");
+    EXPECT_EQ(engine.PeekRaw(), L"[[");
+}
+
 TEST_F(CustomKeyMapTest, UserDefinedWNoStartStillAppliesHornMidWord) {
     TypingConfig cfg = MakeUserDefinedConfig();
     cfg.customKeyMap[static_cast<size_t>(L'w')] = TypingAction::HornOrInsertUNoStart;

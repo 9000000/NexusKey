@@ -19,6 +19,15 @@ public:
     /// Push a character to the engine for processing
     virtual void PushChar(wchar_t c) = 0;
 
+    /// Push a decoded physical character with independent output-case intent.
+    /// The default preserves legacy engines; bracket-aware engines override it
+    /// so Caps Lock can request uppercase without changing `[` into `{` in raw
+    /// history and escape literals.
+    virtual void PushKey(wchar_t physicalChar, bool uppercase) {
+        (void)uppercase;
+        PushChar(physicalChar);
+    }
+
     /// Handle backspace - remove last character
     virtual void Backspace() = 0;
 

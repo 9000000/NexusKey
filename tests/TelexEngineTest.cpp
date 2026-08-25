@@ -2271,6 +2271,52 @@ TEST_F(TelexEngineTest, Bracket_Close_Inserts_Ui) {
     EXPECT_EQ(engine_->Peek(), L"ư");
 }
 
+TEST_F(TelexEngineTest, ShiftedBracketsInsertUppercaseHornVowels) {
+    TypeString(*engine_, L"{");
+    EXPECT_EQ(engine_->Peek(), L"Ơ");
+
+    engine_->Reset();
+    TypeString(*engine_, L"}");
+    EXPECT_EQ(engine_->Peek(), L"Ư");
+}
+
+TEST_F(TelexEngineTest, ShiftedBracketDoubleKeyEscapesToLiteralBrace) {
+    TypeString(*engine_, L"{{");
+    EXPECT_EQ(engine_->Peek(), L"{");
+
+    engine_->Reset();
+    TypeString(*engine_, L"}}");
+    EXPECT_EQ(engine_->Peek(), L"}");
+}
+
+TEST_F(TelexEngineTest, CapsLockBracketKeepsPhysicalRawIdentity) {
+    engine_->PushKey(L'[', true);
+    EXPECT_EQ(engine_->Peek(), L"Ơ");
+    EXPECT_EQ(engine_->PeekRaw(), L"[");
+
+    engine_->PushKey(L'[', true);
+    EXPECT_EQ(engine_->Peek(), L"[");
+    EXPECT_EQ(engine_->PeekRaw(), L"[[");
+}
+
+TEST_F(TelexEngineTest, ShiftCapsBracketCanRequestLowercaseWithoutLosingBrace) {
+    engine_->PushKey(L'{', false);
+    EXPECT_EQ(engine_->Peek(), L"ơ");
+    EXPECT_EQ(engine_->PeekRaw(), L"{");
+
+    engine_->PushKey(L'{', false);
+    EXPECT_EQ(engine_->Peek(), L"{");
+    EXPECT_EQ(engine_->PeekRaw(), L"{{");
+}
+
+TEST_F(TelexEngineTest, MixedPhysicalBracketCharactersDoNotEscapeEachOther) {
+    engine_->PushKey(L'[', true);
+    engine_->PushKey(L'{', true);
+
+    EXPECT_EQ(engine_->Peek(), L"ƠƠ");
+    EXPECT_EQ(engine_->PeekRaw(), L"[{");
+}
+
 TEST_F(TelexEngineTest, Bracket_InWord) {
     TypeString(*engine_, L"th[");
     EXPECT_EQ(engine_->Peek(), L"thơ");

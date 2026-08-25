@@ -9,6 +9,7 @@
 
 using NextKey::TypingAction;
 using NextKey::ClassifyKey;
+using NextKey::ResolveBracketKey;
 
 namespace {
 
@@ -43,7 +44,27 @@ TEST(TypingActionClassifyKey, TelexModifierKeys) {
     EXPECT_EQ(Telex(L'w'), TypingAction::HornW);
     EXPECT_EQ(Telex(L'['), TypingAction::HornInsertO);
     EXPECT_EQ(Telex(L']'), TypingAction::HornInsertU);
+    EXPECT_EQ(Telex(L'{'), TypingAction::HornInsertO);
+    EXPECT_EQ(Telex(L'}'), TypingAction::HornInsertU);
     EXPECT_EQ(Telex(L'd'), TypingAction::StrokeD);
+}
+
+TEST(TypingActionBracketCase, KeepsPhysicalCharacterSeparateFromCaseIntent) {
+    const auto plain = ResolveBracketKey(L'[', false, false);
+    EXPECT_EQ(plain.character, L'[');
+    EXPECT_FALSE(plain.uppercase);
+
+    const auto shifted = ResolveBracketKey(L'[', true, false);
+    EXPECT_EQ(shifted.character, L'{');
+    EXPECT_TRUE(shifted.uppercase);
+
+    const auto caps = ResolveBracketKey(L'[', false, true);
+    EXPECT_EQ(caps.character, L'[');
+    EXPECT_TRUE(caps.uppercase);
+
+    const auto shiftCaps = ResolveBracketKey(L'[', true, true);
+    EXPECT_EQ(shiftCaps.character, L'{');
+    EXPECT_FALSE(shiftCaps.uppercase);
 }
 
 // -- VNI tone keys --

@@ -1910,19 +1910,21 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
 
     const InputMethod method = currentMethod_.load(std::memory_order_acquire);
 
-    // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư)
+    // 6b. Bracket keys [ ] → engine modifier for Full Telex ([ → ơ, ] → ư).
+    // Preserve the OS-visible punctuation identity for raw replay/escape while
+    // carrying Shift-XOR-Caps output case independently.
     if (method == InputMethod::Telex &&
         (vkCode == VK_OEM_4 || vkCode == VK_OEM_6)) {
-        if (!cachedShift) {
-            wchar_t ch = (vkCode == VK_OEM_4) ? L'[' : L']';
-            commitState_.AppendHistory(ch);
-            std::wstring composition;
-            { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
-              engine_->PushChar(ch); composition = engine_->Peek(); }
-            HOOK_LOG(L"  bracket '%c' → Peek()='%s'", ch, composition.c_str());
-            DispatchCoordinator(vkCode, 0, composition);
-            return KeyOutcome::Eat;  // Eat the original keystroke
-        }
+        const wchar_t base = (vkCode == VK_OEM_4) ? L'[' : L']';
+        const BracketKey key = ResolveBracketKey(base, cachedShift, cachedCapsLock);
+        commitState_.AppendHistory(key.character);
+        std::wstring composition;
+        { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
+          engine_->PushKey(key.character, key.uppercase); composition = engine_->Peek(); }
+        HOOK_LOG(L"  bracket '%c' upper=%d → Peek()='%s'",
+                 key.character, key.uppercase, composition.c_str());
+        DispatchCoordinator(vkCode, 0, composition);
+        return KeyOutcome::Eat;  // Eat the original keystroke
     }
 
     // 6c. VNI/Combined/UserDefined: digit keys 0-9 → tone/modifier input (only with
@@ -1950,16 +1952,33 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
     // word start too — user feedback 2026-05-17: `[`/`]` bound to HornInsertO/U
     // produced literal `[`/`]` instead of ơ/ư at word start.
     if (method == InputMethod::UserDefined && IsOemPunctVk(vkCode)) {
-        const wchar_t ch = VkToMacroChar(vkCode);
+        wchar_t ch = VkToMacroChar(vkCode);
+        bool bracketCaseIntent = false;
+        bool uppercase = false;
         if (ch && ch < 128) {
             auto cfg = config_.load(std::memory_order_acquire);
-            const TypingAction action = cfg->customKeyMap[static_cast<uint8_t>(ch)];
+            TypingAction action = cfg->customKeyMap[static_cast<uint8_t>(ch)];
+            const wchar_t canonical = CanonicalBracketKey(ch);
+            if (action == TypingAction::None && canonical != ch) {
+                action = cfg->customKeyMap[static_cast<uint8_t>(canonical)];
+            }
             if (action != TypingAction::None &&
                 (engine_->Count() > 0 || IsInsertTypeAction(action))) {
+                if ((action == TypingAction::HornInsertO ||
+                     action == TypingAction::HornInsertU) &&
+                    (vkCode == VK_OEM_4 || vkCode == VK_OEM_6)) {
+                    const BracketKey key = ResolveBracketKey(
+                        canonical, cachedShift, cachedCapsLock);
+                    ch = key.character;
+                    uppercase = key.uppercase;
+                    bracketCaseIntent = true;
+                }
                 commitState_.AppendHistory(ch);
                 std::wstring composition;
                 { PERF_SCOPE(::NextKey::Perf::Stage::EnginePush);
-                  engine_->PushChar(ch); composition = engine_->Peek(); }
+                  if (bracketCaseIntent) engine_->PushKey(ch, uppercase);
+                  else engine_->PushChar(ch);
+                  composition = engine_->Peek(); }
                 HOOK_LOG(L"  UserDefined OEM '%c' → Peek()='%s'", ch, composition.c_str());
                 DispatchCoordinator(vkCode, 0, composition);
                 return KeyOutcome::Eat;

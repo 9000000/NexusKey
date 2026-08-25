@@ -105,6 +105,7 @@ public:
 
     // IInputEngine implementation
     void PushChar(wchar_t c) override;
+    void PushKey(wchar_t physicalChar, bool uppercase) override;
     void Backspace() override;
     [[nodiscard]] const std::wstring& Peek() const override;
     [[nodiscard]] std::wstring Commit() override;
@@ -325,6 +326,7 @@ private:
     bool spellCheckDisabled_ = false; // true when buffer is invalid syllable
     QuickConsonantState qc_;              // Quick consonant expansion state
     EscapeState escape_;                  // Replaces toneEscaped_ + dModifierEscaped_
+    bool activeKeyUppercase_ = false;     // Explicit case intent for the current PushKey call.
     wchar_t quickStartKey_ = 0;          // original key for quick start consonant (f/j/w), 0 if none
     EnglishProtectionState engProt_;     // 3-tier English protection state
     mutable std::wstring composeBuf_;    // Reusable buffer for ComposeAll() — avoids heap alloc per Peek()

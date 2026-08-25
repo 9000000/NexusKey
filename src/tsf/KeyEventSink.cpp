@@ -457,7 +457,8 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
     bool isPunctuation = IsPunctuationKey(static_cast<UINT>(wParam));
     if (isPunctuation && pEngineController_->HasEngineBuffer()) {
         bool isEngineDigit = pEngineController_->IsEngineDigitKey(static_cast<UINT>(wParam));
-        if (!isEngineDigit) {
+        bool isEngineBracket = pEngineController_->IsEngineBracketKey(static_cast<UINT>(wParam));
+        if (!isEngineDigit && !isEngineBracket) {
             wchar_t ch = VkToChar(static_cast<UINT>(wParam), lParam);
             if (Macro::IsTextProducingTrigger(vk, ch)) {
                 *pfEaten = TRUE;
@@ -794,7 +795,9 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     // Space and printable punctuation are eaten by the TIP, so expand them
     // here and include any pass-through character in the committed text.
     if (pEngineController_->HasMacroCandidate()
-        && pEngineController_->IsMacroCommitTrigger(vk)) {
+        && pEngineController_->IsMacroCommitTrigger(vk)
+        && !pEngineController_->IsEngineDigitKey(vk)
+        && !pEngineController_->IsEngineBracketKey(vk)) {
         const wchar_t triggerChar =
             (vk == lastTestedVk_ && lastTranslatedChar_ != 0)
                 ? lastTranslatedChar_
@@ -817,7 +820,8 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
     // OnTestKeyDown entirely and route keystrokes straight to OnKeyDown, so the
     // cache never gets populated. Only one ToUnicode call per keystroke either way.
     if (IsPunctuationKey(vk) && pEngineController_->HasEngineBuffer()
-        && !pEngineController_->IsEngineDigitKey(vk)) {
+        && !pEngineController_->IsEngineDigitKey(vk)
+        && !pEngineController_->IsEngineBracketKey(vk)) {
         wchar_t ch = (vk == lastTestedVk_ && lastTranslatedChar_ != 0)
                        ? lastTranslatedChar_
                        : VkToChar(vk, lParam);

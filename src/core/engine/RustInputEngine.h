@@ -62,6 +62,7 @@ public:
     RustInputEngine& operator=(const RustInputEngine&) = delete;
 
     void PushChar(wchar_t c) override;
+    void PushKey(wchar_t physicalChar, bool uppercase) override;
     void Backspace() override;
     [[nodiscard]] const std::wstring& Peek() const override { return peek_; }
     [[nodiscard]] std::wstring Commit() override;

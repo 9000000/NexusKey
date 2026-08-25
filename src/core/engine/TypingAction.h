@@ -95,6 +95,32 @@ enum class TypingAction : uint8_t {
     return false;
 }
 
+/// Canonicalize shifted bracket characters for action lookup only. The engine
+/// retains the physical scalar separately for literal escape/raw replay.
+[[nodiscard]] constexpr wchar_t CanonicalBracketKey(wchar_t key) noexcept {
+    if (key == L'{') return L'[';
+    if (key == L'}') return L']';
+    return key;
+}
+
+struct BracketKey {
+    wchar_t character;
+    bool uppercase;
+};
+
+/// Decode the OS-visible punctuation identity and Vietnamese case intent.
+/// Shift changes the physical bracket to a brace; Caps Lock never does.
+/// Output case follows the same Shift-XOR-Caps rule as alphabetic keys.
+[[nodiscard]] constexpr BracketKey ResolveBracketKey(wchar_t base,
+                                                     bool shift,
+                                                     bool capsLock) noexcept {
+    const wchar_t canonical = CanonicalBracketKey(base);
+    wchar_t physical = canonical;
+    if (shift && canonical == L'[') physical = L'{';
+    if (shift && canonical == L']') physical = L'}';
+    return {physical, shift != capsLock};
+}
+
 /// Classify a key into a TypingAction based purely on (key, mode).
 /// Pure function — no state lookup, no side effects. Returns
 /// `TypingAction::None` for keys with no IME meaning under the
@@ -110,6 +136,7 @@ enum class TypingAction : uint8_t {
 [[nodiscard]] constexpr TypingAction ClassifyKey(wchar_t lower,
                                                   bool isTelex,
                                                   bool isVni) noexcept {
+    lower = CanonicalBracketKey(lower);
     if (isTelex) {
         switch (lower) {
             case L'z': return TypingAction::ClearTone;

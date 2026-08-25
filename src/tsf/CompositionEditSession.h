@@ -525,10 +525,10 @@ class ReviveAndTypeEditSession : public EditSession {
 public:
     ReviveAndTypeEditSession(ITfContext* pContext, CompositionManager* pMgr,
                              IInputEngine* pEngine, const std::wstring& word,
-                             ITfRange* pRange, wchar_t ch,
+                             ITfRange* pRange, wchar_t ch, bool uppercase,
                              const std::wstring& rawInput = std::wstring{})
         : EditSession(pContext), pMgr_(pMgr), pEngine_(pEngine),
-          word_(word), pRange_(pRange), ch_(ch), rawInput_(rawInput) {
+          word_(word), pRange_(pRange), ch_(ch), uppercase_(uppercase), rawInput_(rawInput) {
     }
 
     IFACEMETHODIMP DoEditSession(TfEditCookie ec) override {
@@ -551,7 +551,7 @@ public:
             return S_OK;
         }
 
-        pEngine_->PushChar(ch_);
+        pEngine_->PushKey(ch_, uppercase_);
         const std::wstring& composed = pEngine_->Peek();
         if (!pMgr_->SetCompositionText(ec, composed, kReviveSetTextFlags)) {
             pEngine_->Reset();
@@ -580,6 +580,7 @@ private:
     std::wstring word_;
     CComPtr<ITfRange> pRange_;
     wchar_t ch_;
+    bool uppercase_;
     std::wstring rawInput_;
     bool revived_ = false;
 };

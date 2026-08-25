@@ -288,6 +288,12 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
         return true;
     }
 
+    // 2b. Full Telex and applicable UserDefined bracket actions. Shift is an
+    // uppercase request, not a reason to pass `{`/`}` through to the host.
+    if (IsEngineBracketKey(vkCode)) {
+        return true;
+    }
+
     // 3. VNI/Combined/UserDefined: digit keys 0-9 for tone/modifier (only with pending composition)
     if (IsEngineDigitKey(vkCode) && engineHasComp) {
         return true;
@@ -364,6 +370,54 @@ void EngineController::RequestEditSession(ITfContext* pContext, EditSession* pEd
     }
 }
 
+bool EngineController::IsEngineBracketKey(UINT vkCode) const {
+    if (vkCode != VK_OEM_4 && vkCode != VK_OEM_6) return false;
+    if (config_.inputMethod == InputMethod::Telex) return true;
+    if (config_.inputMethod != InputMethod::UserDefined) return false;
+
+    const wchar_t base = vkCode == VK_OEM_4 ? L'[' : L']';
+    const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    const bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+    const wchar_t physical = ResolveBracketKey(base, shift, capsLock).character;
+    TypingAction action = config_.customKeyMap[static_cast<uint8_t>(physical)];
+    if (action == TypingAction::None && physical != base) {
+        action = config_.customKeyMap[static_cast<uint8_t>(base)];
+    }
+    return action != TypingAction::None &&
+           (engine_->Count() > 0 || IsInsertTypeAction(action));
+}
+
+BracketKey EngineController::ResolveEngineBracketKey(UINT vkCode) const {
+    const wchar_t base = vkCode == VK_OEM_4 ? L'[' : L']';
+    const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    const bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+    return ResolveBracketKey(base, shift, capsLock);
+}
+
+bool EngineController::PushEngineKey(ITfContext* pContext, wchar_t ch, bool uppercase) {
+    engine_->PushKey(ch, uppercase);
+    const std::wstring composition = engine_->Peek();
+
+    if (!compositionMgr_.IsComposing()) {
+        auto* pSession = new StartCompositionEditSession(
+            pContext, &compositionMgr_, composition);
+        RequestEditSession(pContext, pSession);
+        pSession->Release();
+
+        if (!compositionMgr_.IsComposing()) {
+            TSF_LOG(L"PushEngineKey: composition failed to start, resetting engine");
+            engine_->Reset();
+            return false;
+        }
+    } else {
+        auto* pSession = new UpdateCompositionEditSession(
+            pContext, &compositionMgr_, composition);
+        RequestEditSession(pContext, pSession);
+        pSession->Release();
+    }
+    return true;
+}
+
 bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
     // 1. Handle Backspace (only if we have content, as decided by WantKey)
     if (vkCode == VK_BACK) {
@@ -391,13 +445,24 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         return true;  // Eat space
     }
 
-    // 3. Check if character key (A-Z)
-    if (vkCode >= 0x41 && vkCode <= 0x5A) {
+    // 3. Text-producing engine keys. Brackets share the A-Z boundary path so
+    // type-revive and sentence auto-cap apply consistently, but their physical
+    // punctuation identity remains separate from output-case intent.
+    const bool isBracket = IsEngineBracketKey(vkCode);
+    if (isBracket || (vkCode >= 0x41 && vkCode <= 0x5A)) {
         bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
         bool capsLock = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
-        bool upper = shift != capsLock;  // XOR: Shift inverts Caps Lock
-        wchar_t ch = static_cast<wchar_t>(vkCode);
-        if (!upper) ch = towlower(ch);
+        bool upper = shift != capsLock;
+        wchar_t ch = 0;
+        if (isBracket) {
+            const BracketKey key = ResolveEngineBracketKey(vkCode);
+            ch = key.character;
+            upper = key.uppercase;
+        } else {
+            ch = static_cast<wchar_t>(vkCode);
+            if (!upper) ch = towlower(ch);
+        }
+        const wchar_t rawCh = ch;
 
         // At a new-composition boundary: first try Type-revive (extend an
         // existing Vietnamese word before caret), and if that doesn't fire,
@@ -433,7 +498,7 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
                     // the revive can't escape it (#209 Shift+R: "Tẻ" + R stayed
                     // "Tẻ" under the Rust engine instead of escaping to "TeR").
                     auto* pRevive = new ReviveAndTypeEditSession(
-                        pContext, &compositionMgr_, engine_.get(), word, wordRange, ch,
+                        pContext, &compositionMgr_, engine_.get(), word, wordRange, ch, upper,
                         MatchingRawForCommittedWord(word));
                     RequestEditSession(pContext, pRevive);
                     // A refused revive (host wouldn't compose over committed text,
@@ -452,10 +517,10 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
                 }
             }
 
-            const wchar_t rawCh = ch;
             // Auto-cap if revive didn't happen
             if (config_.autoCaps && shouldAutoCap) {
-                ch = towupper(ch);
+                upper = true;
+                if (!isBracket) ch = towupper(ch);
                 wasFirstCharAutoCapped_ = true;
                 TSF_LOG(L"HandleKey: auto-cap → '%lc'", ch);
             }
@@ -463,35 +528,8 @@ bool EngineController::HandleKey(ITfContext* pContext, UINT vkCode) {
         } else {
             TrackMacroCharacter(ch);
         }
-        TSF_LOG(L"HandleKey: pushing char '%c'", ch);
-        engine_->PushChar(ch);
-        
-        std::wstring composition = engine_->Peek();
-        TSF_LOG(L"HandleKey: got composition, starting/updating");
-
-        if (!compositionMgr_.IsComposing()) {
-            // Start new composition
-            TSF_LOG(L"HandleKey: Starting new composition");
-            auto* pSession = new StartCompositionEditSession(pContext, &compositionMgr_, composition);
-            RequestEditSession(pContext, pSession);
-            pSession->Release();
-
-            // If composition failed to start, reset engine to stay in sync
-            if (!compositionMgr_.IsComposing()) {
-                TSF_LOG(L"HandleKey: Composition failed, resetting engine");
-                engine_->Reset();
-                return false;  // Let the key pass through
-            }
-        } else {
-            // Update existing composition
-            TSF_LOG(L"HandleKey: Updating composition");
-            auto* pSession = new UpdateCompositionEditSession(pContext, &compositionMgr_, composition);
-            RequestEditSession(pContext, pSession);
-            pSession->Release();
-        }
-
-        TSF_LOG(L"Key processed, composition updated");
-        return true;
+        TSF_LOG(L"HandleKey: pushing char '%c' upper=%d", ch, upper);
+        return PushEngineKey(pContext, ch, upper);
     }
 
     // 4. VNI/Combined/UserDefined: digit keys 0-9 → push to engine, update composition

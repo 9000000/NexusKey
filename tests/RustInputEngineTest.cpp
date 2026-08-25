@@ -55,6 +55,77 @@ TEST_F(RustInputEngineTest, TelexComposesAndCommits) {
     EXPECT_EQ(engine.Count(), 0u);
 }
 
+TEST_F(RustInputEngineTest, ShiftedBracketsPreserveUppercaseAndEscapeThroughFfi) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    RustInputEngine engine(config);
+
+    engine.PushChar(L'{');
+    EXPECT_EQ(engine.Peek(), L"Ơ");
+    engine.PushChar(L'{');
+    EXPECT_EQ(engine.Peek(), L"{");
+
+    engine.Reset();
+    engine.PushChar(L'}');
+    EXPECT_EQ(engine.Peek(), L"Ư");
+    engine.PushChar(L'}');
+    EXPECT_EQ(engine.Peek(), L"}");
+}
+
+TEST_F(RustInputEngineTest, BracketCaseIntentDoesNotCorruptPhysicalRawThroughFfi) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::Telex;
+    RustInputEngine engine(config);
+
+    engine.PushKey(L'[', true);
+    EXPECT_EQ(engine.Peek(), L"Ơ");
+    EXPECT_EQ(engine.PeekRaw(), L"[");
+    engine.PushKey(L'[', true);
+    EXPECT_EQ(engine.Peek(), L"[");
+    EXPECT_EQ(engine.PeekRaw(), L"[[");
+
+    engine.Reset();
+    engine.PushKey(L'{', false);
+    EXPECT_EQ(engine.Peek(), L"ơ");
+    EXPECT_EQ(engine.PeekRaw(), L"{");
+    engine.PushKey(L'{', false);
+    EXPECT_EQ(engine.Peek(), L"{");
+    EXPECT_EQ(engine.PeekRaw(), L"{{");
+}
+
+TEST_F(RustInputEngineTest, UserDefinedShiftedBracketsUseBaseBindingsThroughFfi) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::UserDefined;
+    config.customKeyMap[static_cast<uint8_t>(L'[')] = TypingAction::HornInsertO;
+    config.customKeyMap[static_cast<uint8_t>(L']')] = TypingAction::HornInsertU;
+    RustInputEngine engine(config);
+
+    engine.PushChar(L'{');
+    EXPECT_EQ(engine.Peek(), L"Ơ");
+    engine.PushChar(L'{');
+    EXPECT_EQ(engine.Peek(), L"{");
+
+    engine.Reset();
+    engine.PushChar(L'}');
+    EXPECT_EQ(engine.Peek(), L"Ư");
+    engine.PushChar(L'}');
+    EXPECT_EQ(engine.Peek(), L"}");
+}
+
+TEST_F(RustInputEngineTest, UserDefinedCapsBracketPreservesBaseLiteralThroughFfi) {
+    TypingConfig config;
+    config.inputMethod = InputMethod::UserDefined;
+    config.customKeyMap[static_cast<uint8_t>(L'[')] = TypingAction::HornInsertO;
+    RustInputEngine engine(config);
+
+    engine.PushKey(L'[', true);
+    EXPECT_EQ(engine.Peek(), L"Ơ");
+    EXPECT_EQ(engine.PeekRaw(), L"[");
+    engine.PushKey(L'[', true);
+    EXPECT_EQ(engine.Peek(), L"[");
+    EXPECT_EQ(engine.PeekRaw(), L"[[");
+}
+
 TEST_F(RustInputEngineTest, ToneEscape_UppercaseR_Issue209Comment) {
     // #209 comment (Shzr0): "TeR" → "Tẻ", second R must escape → "TeR".
     // C++ TypingEngine passes this (TelexEngineTest.Escape_ToneHoi_UppercaseR).

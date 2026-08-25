@@ -39,6 +39,10 @@ struct EngineApi {
     void (*destroy)(VKeyEngine*) = nullptr;
     void (*reset)(VKeyEngine*) = nullptr;
     void (*push_char)(VKeyEngine*, uint32_t) = nullptr;
+#if VKEY_ENGINE_ABI_VERSION >= 9u
+    // ABI v9: physical scalar and output-case intent are independent.
+    void (*push_key)(VKeyEngine*, uint32_t, bool) = nullptr;
+#endif
     void (*backspace)(VKeyEngine*) = nullptr;
     size_t (*peek_utf16)(const VKeyEngine*, uint16_t*, size_t) = nullptr;
     size_t (*commit_utf16)(VKeyEngine*, uint16_t*, size_t) = nullptr;
@@ -95,6 +99,9 @@ const EngineApi& Api() {
         a.destroy = Resolve<decltype(a.destroy)>(lib, "vkey_engine_destroy");
         a.reset = Resolve<decltype(a.reset)>(lib, "vkey_engine_reset");
         a.push_char = Resolve<decltype(a.push_char)>(lib, "vkey_engine_push_char");
+#if VKEY_ENGINE_ABI_VERSION >= 9u
+        a.push_key = Resolve<decltype(a.push_key)>(lib, "vkey_engine_push_key");
+#endif
         a.backspace = Resolve<decltype(a.backspace)>(lib, "vkey_engine_backspace");
         a.peek_utf16 = Resolve<decltype(a.peek_utf16)>(lib, "vkey_engine_peek_utf16");
         a.commit_utf16 = Resolve<decltype(a.commit_utf16)>(lib, "vkey_engine_commit_utf16");
@@ -132,6 +139,9 @@ const EngineApi& Api() {
 #endif
         const bool symbolsResolved =
             a.create && a.destroy && a.reset && a.push_char && a.backspace &&
+#if VKEY_ENGINE_ABI_VERSION >= 9u
+            a.push_key &&
+#endif
             a.peek_utf16 && a.commit_utf16 && a.count && a.abi_version && a.runtime_status &&
             a.is_english_word && a.is_tone_escaped && a.has_active_quick_consonant &&
             a.peek_raw_utf16 && a.seed_text_utf16 && a.last_commit_was_corrected &&
@@ -540,6 +550,19 @@ void RustInputEngine::PushChar(wchar_t c) {
         Api().push_char(static_cast<VKeyEngine*>(handle_), static_cast<uint32_t>(c));
     }
     Refresh();
+}
+
+void RustInputEngine::PushKey(wchar_t physicalChar, bool uppercase) {
+#if VKEY_ENGINE_ABI_VERSION >= 9u
+    if (handle_) {
+        Api().push_key(static_cast<VKeyEngine*>(handle_),
+                       static_cast<uint32_t>(physicalChar), uppercase);
+    }
+    Refresh();
+#else
+    (void)uppercase;
+    PushChar(physicalChar);
+#endif
 }
 
 void RustInputEngine::Backspace() {

@@ -18,6 +18,7 @@
 #include "core/MacroContextMatch.h"
 #include "core/config/TypingConfig.h"
 #include "core/engine/IInputEngine.h"
+#include "core/engine/TypingAction.h"
 #include "core/ipc/SharedStateManager.h"
 
 namespace NextKey {
@@ -143,6 +144,12 @@ public:
                !(GetKeyState(VK_SHIFT) & 0x8000);
     }
 
+    /// Whether a physical [`[`/`]`] key is an engine action in the active
+    /// method. Full Telex always owns both keys. UserDefined owns one when its
+    /// exact shifted character (if configured) or base bracket has an action
+    /// applicable to the current buffer.
+    [[nodiscard]] bool IsEngineBracketKey(UINT vkCode) const;
+
     /// Reset only engine buffer (for sync recovery)
     void ResetEngine() { engine_->Reset(); }
 
@@ -208,6 +215,8 @@ public:
 
 private:
     void RequestEditSession(ITfContext* pContext, EditSession* pEditSession);
+    [[nodiscard]] BracketKey ResolveEngineBracketKey(UINT vkCode) const;
+    [[nodiscard]] bool PushEngineKey(ITfContext* pContext, wchar_t ch, bool uppercase);
 
     void ReloadMacros(uint8_t generation);
 #ifdef VKEY_USE_RUST_ENGINE
