@@ -18,7 +18,7 @@
 #   4. The output injector RCU pointer is accessed only through atomic load /
 #      store operations.
 #   5. QuickSyncFromSharedState retains its lock-free hot path.
-#   6. Exactly one application keyboard-hook install exists, owned by
+#   6. Exactly one production keyboard-hook install exists under `src`, owned by
 #      HookLifecycle before its message pump.
 #   7. Automatic rehook and ghost-recovery machinery stays removed.
 #
@@ -177,10 +177,10 @@ run_keyboard_hook_scan_self_tests() {
     assert_keyboard_fixture_count() {
         label="$1"
         expected="$2"
-        actual=$(count_keyboard_hook_installs "$fixture_root/src/app")
+        actual=$(count_keyboard_hook_installs "$fixture_root/src")
         if [ "$actual" -ne "$expected" ]; then
             echo "  SELF-TEST FAIL [$label]: expected $expected install(s), found $actual"
-            scan_keyboard_hook_installs "$fixture_root/src/app" | sed 's/^/    /'
+            scan_keyboard_hook_installs "$fixture_root/src" | sed 's/^/    /'
             failures=$((failures + 1))
         else
             echo "  SELF-TEST OK   [$label]: found $actual install(s)"
@@ -230,6 +230,15 @@ run_keyboard_hook_scan_self_tests() {
         '}' \
         > "$case_file"
     assert_keyboard_fixture_count "second multiline generic call fails exact-one" 2
+
+    printf '%s\n' '// no second app-local install in this case' > "$case_file"
+    mkdir -p "$fixture_root/src/core"
+    printf '%s\n' \
+        'void InstallFromSiblingProductionTree() {' \
+        '    SetWindowsHookExW(WH_KEYBOARD_LL, KeyboardProc, nullptr, 0);' \
+        '}' \
+        > "$fixture_root/src/core/SiblingHook.cpp"
+    assert_keyboard_fixture_count "second call in sibling src subtree fails exact-one" 2
 
     rm -rf -- "$fixture_root"
     if [ "$failures" -gt 0 ]; then
@@ -490,18 +499,18 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────────
-# Check 6: Exactly one application keyboard-hook installation site
+# Check 6: Exactly one production keyboard-hook installation site
 # ────────────────────────────────────────────────────────────────────────
 # HookLifecycle owns the sole long-lived WH_KEYBOARD_LL hook.  Any second
 # install site reintroduces hook-chain ordering churn and installer-thread
 # queue contention; reinstalling the same handle at runtime is also forbidden.
 echo
-echo "Check 6: exactly one WH_KEYBOARD_LL installation site under src/app"
+echo "Check 6: exactly one WH_KEYBOARD_LL installation site under src"
 if ! run_keyboard_hook_scan_self_tests; then
     errors=$((errors + 1))
 fi
-keyboard_install_sites=$(scan_keyboard_hook_installs src/app)
-keyboard_install_count=$(count_keyboard_hook_installs src/app)
+keyboard_install_sites=$(scan_keyboard_hook_installs src)
+keyboard_install_count=$(count_keyboard_hook_installs src)
 if [ "$keyboard_install_count" -ne 1 ]; then
     echo "  FAIL: expected exactly 1 keyboard-hook installation site, found $keyboard_install_count"
     echo "$keyboard_install_sites" | sed '/^$/d; s/^/    /'
