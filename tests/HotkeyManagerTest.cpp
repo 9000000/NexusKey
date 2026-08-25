@@ -198,6 +198,23 @@ TEST(HotkeyManagerTest, InflightReboundSlotDoesNotBlockAnotherSlot) {
     EXPECT_TRUE(manager.Match(Up(kVkJ)).consume);
 }
 
+TEST(HotkeyManagerTest, InflightSlotIgnoresReboundModifierOnlyConfig) {
+    DeferredFires fires;
+    auto manager = MakeManager(fires);
+    const auto reboundSlot = manager.AddHotkey({.vk = kVkJ}, [] {});
+    const auto otherSlot = manager.AddHotkey({.alt = true}, [] {});
+    manager.FinalizeBindings();
+
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    manager.UpdateHotkey(reboundSlot, {.alt = true});
+
+    manager.Match(Down(kVkLMenu, HotkeyManager::ModifierKey::Alt));
+    manager.Match(Up(kVkLMenu, HotkeyManager::ModifierKey::Alt));
+    EXPECT_EQ(fires.slots,
+              (std::vector<HotkeyManager::SlotId>{reboundSlot, otherSlot}));
+    EXPECT_TRUE(manager.Match(Up(kVkJ)).consume);
+}
+
 TEST(HotkeyManagerTest, CallbacksRunOnlyWhenExplicitlyDispatched) {
     DeferredFires fires;
     int callbacks = 0;

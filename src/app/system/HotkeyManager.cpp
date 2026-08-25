@@ -125,6 +125,9 @@ HotkeyManager::MatchResult HotkeyManager::Match(const KeyEvent& event) noexcept 
     MatchResult result;
     if (event.modifier != ModifierKey::None && event.type == KeyEventType::Up) {
         for (SlotId slot = 0; slot < slotCount_; ++slot) {
+            // A non-modifier latch also shields this slot from a newly
+            // published modifier-only binding until its paired UP arrives.
+            if (slotState_[slot].comboKeyDown) continue;
             const HotkeyConfig config = UnpackConfig(
                 liveConfigs_[slot].load(std::memory_order_acquire));
             if (config.vk != 0 || !config.HasAny()) continue;
