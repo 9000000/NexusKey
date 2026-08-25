@@ -30,6 +30,10 @@ void PublishConvertConfig(SharedStateManager& sharedState,
     sharedState.SetOrClearFlag(SharedFlags::TSF_NATIVE_CONVERT_READY, false);
 }
 
+bool ShouldPassQuickConvertToTsf(const void* context) noexcept {
+    return static_cast<const HookEngine*>(context)->ShouldUseNativeQuickConvert();
+}
+
 }  // namespace
 
 void WireHotkeys(
@@ -40,7 +44,6 @@ void WireHotkeys(
     std::unique_ptr<QuickConvert>& quickConvert,
     HotkeyManager::SlotId& outToggleSlot,
     HotkeyManager::SlotId& outConvertSlot,
-    HINSTANCE hInstance,
     const HotkeyConfig& toggleConfig
 ) {
     // Load convert config and create QuickConvert
@@ -71,38 +74,18 @@ void WireHotkeys(
 
     // Register hotkeys (toggle V/E + quick convert).
     //
-    // Wave 3 PR 3.7 — per-callback thread-affinity declaration. See
-    // `docs/CODING_RULES/12-worker-thread-doctrine.md` §12.3 + HotkeyManager.h
-    // for the contract semantics.
-    //
-    //   Toggle V/E callback: lambda body is a single `PostMessageW` to the
-    //   tray's message window — Win32 cross-thread-safe, no shared state
-    //   writes. `runsOnAnyThread = true`.
-    //
-    //   Convert callback: `hookEngine.CommitPending()` mutates `engine_`,
-    //   which Rule 11.3 pins to the hook thread (single-writer). The
-    //   callback MUST run on the hook thread; if hookThreadId is 0 the
-    //   dispatch drops rather than execute on the wrong thread.
-    //   `runsOnAnyThread = false`.
+    // Both callbacks are always deferred through HookLifecycle's hook-thread
+    // message pump. Match() receives only the no-throw pass-through function
+    // pointer/context used to hand native Quick Convert to an active TSF host.
     HWND trayWnd = trayIcon.GetMessageWindow();
     outToggleSlot = hotkeyManager.AddHotkey(toggleConfig, [trayWnd]() {
         if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
-    }, /*runsOnAnyThread=*/true);
+    });
     // Refs to caller's globals — safe because globals outlive the callback
     outConvertSlot = hotkeyManager.AddHotkey(convertHotkeyCfg, [&hookEngine, &quickConvert]() {
         hookEngine.CommitPending();
         if (quickConvert) quickConvert->Execute();
-    }, /*runsOnAnyThread=*/false, [&hookEngine]() noexcept {
-        return hookEngine.ShouldUseNativeQuickConvert();
-    });
-
-    // Wave 3 PR 3.7 — caller must pass HookEngine's hook-thread id at
-    // Initialize time. Prereq: caller has already invoked
-    // `hookEngine.Start()` and we read the now-valid thread id directly.
-    // The old two-step `SetHookThreadId() + Initialize()` contract had a
-    // race window where the LL hook was installed before the tid was
-    // published; collapsing into one call closes that window.
-    hotkeyManager.Initialize(hInstance, hookEngine.GetHookThreadId());
+    }, {&ShouldPassQuickConvertToTsf, &hookEngine});
 }
 
 }  // namespace NextKey

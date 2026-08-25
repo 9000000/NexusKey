@@ -15,7 +15,7 @@ class SharedStateManager;
 struct HotkeyConfig;
 
 /// Wire toggle and quick-convert hotkeys. Creates QuickConvert, sets config
-/// reload callback on hookEngine, registers hotkeys, and initializes manager.
+/// reload callback on hookEngine, and registers the startup-only slots.
 /// Call once at startup after TrayIcon is created.
 ///
 /// @param quickConvert    Output: created QuickConvert instance
@@ -29,7 +29,6 @@ void WireHotkeys(
     std::unique_ptr<QuickConvert>& quickConvert,
     HotkeyManager::SlotId& outToggleSlot,
     HotkeyManager::SlotId& outConvertSlot,
-    HINSTANCE hInstance,
     const HotkeyConfig& toggleConfig
 );
 

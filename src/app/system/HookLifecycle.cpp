@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookLifecycle.h"
-#include "HotkeyManager.h"  // WM_APP_HOTKEY_FIRED + DispatchHotkeyFromHookThread
 #include "core/CrashLog.h"
 #include "core/Debug.h"
 
@@ -15,11 +14,10 @@ namespace NextKey {
         ::NextKey::Logger::Log(L"[HookLife] " fmt, ##__VA_ARGS__);             \
 } while (0)
 
-// Custom WM_APP message ids used inside this pump. WM_APP_HOTKEY_FIRED lives
-// in HotkeyManager.h (shared with HotkeyManager's LL callback that posts it).
+// Custom WM_APP message ids used only inside this lifecycle's pump.
 static constexpr UINT WM_APP_REINSTALL_HOOKS = WM_APP + 1;
 static constexpr UINT WM_APP_HOOK_COMMAND    = WM_APP + 2;
-// WM_APP + 3 = WM_APP_HOTKEY_FIRED (HotkeyManager.h).
+static constexpr UINT WM_APP_HOTKEY_FIRED    = WM_APP + 3;
 // WM_APP + 4 = ghost-key recovery from HookHijackDetector (Anti-Dorion v2).
 // wParam carries the recovered wchar_t; lParam unused. FIFO-ordered: each
 // PostThreadMessage delivers separately (no coalescing — required for the
@@ -35,13 +33,15 @@ HookLifecycle::~HookLifecycle() {
 bool HookLifecycle::Start(HINSTANCE hInstance,
                            HOOKPROC keyboardProc,
                            HOOKPROC mouseProc,
-                           DrainFn drainFn) {
+                           DrainFn drainFn,
+                           HotkeyDispatchFn hotkeyDispatchFn) {
     if (keyboardHook_) return false;  // Already running
 
     hInstance_     = hInstance;
     keyboardProc_  = keyboardProc;
     mouseProc_     = mouseProc;
     drainFn_       = std::move(drainFn);
+    hotkeyDispatchFn_ = std::move(hotkeyDispatchFn);
     ready_.store(false, std::memory_order_release);
 
     thread_ = std::thread(&HookLifecycle::ThreadProc, this);
@@ -76,12 +76,19 @@ void HookLifecycle::Stop() {
     threadId_.store(0, std::memory_order_release);
     ready_.store(false, std::memory_order_release);
     drainFn_ = nullptr;
+    hotkeyDispatchFn_ = nullptr;
     ghostKeyFn_ = nullptr;
     // #10: clear any stale wake latch / pending bits so that if this lifecycle
     // is restarted, the first cross-thread Post fires its wake instead of being
     // suppressed by a wakePosted_=true left over from a command the pump exited
     // before draining. No-op in the normal start-once flow.
     mailbox_.ResetLatch();
+}
+
+void HookLifecycle::PostHotkey(std::size_t slot) noexcept {
+    const DWORD tid = threadId_.load(std::memory_order_acquire);
+    if (tid) PostThreadMessageW(tid, WM_APP_HOTKEY_FIRED,
+                                static_cast<WPARAM>(slot), 0);
 }
 
 void HookLifecycle::PostReinstallHooks(WPARAM reason) noexcept {
@@ -149,10 +156,10 @@ void HookLifecycle::ThreadProc() {
     //    HookEngine. Drain is ALSO called from inside LowLevelKeyboardProc
     //    (step 5 barrier in HookEngine), so reaching it here means no
     //    keystroke triggered a drain between the post and this pump cycle.
-    //  • WM_APP_HOTKEY_FIRED — HotkeyManager LL callback posted slot id in
-    //    wParam (Wave 1). DispatchHotkeyFromHookThread invokes the per-slot
-    //    callback in hook-thread context, restoring the single-writer
-    //    invariant for callbacks that call hookEngine.CommitPending().
+    //  • WM_APP_HOTKEY_FIRED — HookEngine's passive matcher posted a slot id
+    //    in wParam. hotkeyDispatchFn_ invokes the per-slot callback in pump
+    //    context, restoring the single-writer invariant for callbacks that
+    //    call HookEngine::CommitPending().
     //  • WM_APP_GHOSTKEY — HookHijackDetector posted a recovered wchar_t
     //    in wParam after observing a key our LL hook didn't see (bypass
     //    by a higher LL hook, Anti-Dorion v2). Invokes ghostKeyFn_ which
@@ -234,12 +241,14 @@ void HookLifecycle::ThreadProc() {
             continue;
         }
         if (msg.message == WM_APP_HOTKEY_FIRED) {
-            try {
-                HotkeyManager::DispatchHotkeyFromHookThread(static_cast<size_t>(msg.wParam));
-            } catch (const std::exception& e) {
-                CrashLog(L"HookLifecycle::DispatchHotkey", e.what());
-            } catch (...) {
-                CrashLog(L"HookLifecycle::DispatchHotkey", "(non-std exception)");
+            if (hotkeyDispatchFn_) {
+                try {
+                    hotkeyDispatchFn_(static_cast<std::size_t>(msg.wParam));
+                } catch (const std::exception& e) {
+                    CrashLog(L"HookLifecycle::DispatchHotkey", e.what());
+                } catch (...) {
+                    CrashLog(L"HookLifecycle::DispatchHotkey", "(non-std exception)");
+                }
             }
             continue;
         }

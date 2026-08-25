@@ -66,8 +66,9 @@ class RustUserDictionarySnapshot;
 ///                 made V/E unrecoverable in TSF apps (issue #209).
 using ModeChangeCallback = std::function<void(bool sharedMode, bool displayMode)>;
 
-/// Keyboard hook engine — intercepts keystrokes, processes Vietnamese input,
-/// outputs via SendInput backspace+retype. Absorbs HotkeyManager logic.
+/// Keyboard hook engine — intercepts keystrokes, routes the passive application
+/// hotkey matcher, processes Vietnamese input, and outputs via SendInput
+/// backspace+retype.
 class HookEngine
     : public NextKey::Pipeline::IBackwardEditExecutor
     , public NextKey::Pipeline::ICommitUndoExecutor
@@ -127,8 +128,10 @@ public:
     /// (e.g., Quick Convert) so the text in the document reflects what's on screen.
     void CommitPending();
 
-    /// Set HotkeyManager for modifier reconciliation on focus switch
-    void SetHotkeyManager(HotkeyManager* manager) noexcept { hotkeyManager_ = manager; }
+    /// Attach the passive application-hotkey matcher during startup. This
+    /// wires its no-throw deferred-fire sink into HookLifecycle and also makes
+    /// it available for focus-time physical-modifier reconciliation.
+    void SetHotkeyManager(HotkeyManager* manager) noexcept;
 
     /// Set callback for mode changes (to update tray icon)
     void SetModeChangeCallback(ModeChangeCallback callback) { modeChangeCallback_ = std::move(callback); }
@@ -157,8 +160,8 @@ public:
     /// like SpellCheck-toggle calls ApplyConfigChange which bumps
     /// configGeneration and triggers QuickSync inline). Both paths reach
     /// `HotkeyManager::UpdateHotkey` from a non-hook thread; UpdateHotkey
-    /// is internally serialized by `mutationMutex_`, so cross-thread
-    /// invocation is safe. Post-PR-3.6 the hook thread bails BEFORE the
+    /// publishes one packed configuration with a lock-free atomic store, so
+    /// cross-thread invocation is safe. Post-PR-3.6 the hook thread bails BEFORE the
     /// slow body (worker-thread doctrine §12.4), so this callback can
     /// never fire on the LL hook thread.
     using HotkeyChangedCallback = std::function<void(const HotkeyConfig&)>;
@@ -204,10 +207,8 @@ public:
     /// Set SharedState pointer for direct reading (must be the global instance from main.cpp)
     void SetSharedStateReader(SharedStateManager* ptr) { sharedStatePtr_ = ptr; }
 
-    /// Wave 1 — return the dedicated hook thread id (target for PostThreadMessage).
-    /// Returns 0 before Start() completes the hook-thread handshake; callers
-    /// should query AFTER Start() returns. Used by HotkeyManager to route
-    /// matched-slot dispatch back onto the hook thread.
+    /// Return the dedicated hook thread id for diagnostics and thread-affinity
+    /// assertions. Returns 0 before Start() completes or after Stop().
     [[nodiscard]] DWORD GetHookThreadId() const noexcept { return lifecycle_.ThreadId(); }
 
     /// Doctrine §12.4 (worker-thread doctrine): the wiring `main.cpp` uses to
@@ -311,6 +312,7 @@ private:
     static LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
     static LRESULT LowLevelKeyboardProcImpl(int nCode, WPARAM wParam, LPARAM lParam);
     static LRESULT LowLevelMouseProcImpl(int nCode, WPARAM wParam, LPARAM lParam);
+    static void PostMatchedHotkey(void* context, std::size_t slot) noexcept;
 
     // Config application (shared between Start and SyncConfigFromSharedState)
     void ApplyConfig(const TypingConfig& config);
@@ -842,8 +844,9 @@ private:
     // Wave 3 PR 3.1 — dedicated hook thread + WH_KEYBOARD_LL/WH_MOUSE_LL hook
     // handles + cross-thread mailbox moved into HookLifecycle. HookEngine
     // accesses them via `lifecycle_.ThreadId()` / `lifecycle_.IsRunning()` /
-    // `lifecycle_.Mailbox()` / `lifecycle_.PostReinstallHooks()`. Drain
-    // callback registered at lifecycle_.Start() points at DrainHookCommands.
+    // `lifecycle_.Mailbox()` / `lifecycle_.PostHotkey()` /
+    // `lifecycle_.PostReinstallHooks()`. Drain and deferred-hotkey callbacks
+    // are registered together at lifecycle_.Start().
     HookLifecycle lifecycle_;
 
     // Anti-Dorion v2 (2026-05-28) — keyboard-hook hijack detector. Polls

@@ -21,6 +21,7 @@
 
 #include <Windows.h>
 #include <atomic>
+#include <cstddef>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -45,6 +46,9 @@ public:
     /// Invoked from the hook thread on WM_APP_HOOK_COMMAND wake-up. HookEngine
     /// sets this at Start() to its DrainHookCommands implementation.
     using DrainFn = std::function<void()>;
+    /// Invoked from the hook thread's message pump after a matcher fire was
+    /// posted. User callbacks never execute inside the low-level hook proc.
+    using HotkeyDispatchFn = std::function<void(std::size_t)>;
 
     HookLifecycle();
     ~HookLifecycle();
@@ -58,15 +62,15 @@ public:
     [[nodiscard]] bool Start(HINSTANCE hInstance,
                               HOOKPROC keyboardProc,
                               HOOKPROC mouseProc,
-                              DrainFn drainFn);
+                              DrainFn drainFn,
+                              HotkeyDispatchFn hotkeyDispatchFn);
 
     /// Post WM_QUIT to the hook thread, join. Hooks are unhooked from the
     /// hook thread itself (MSDN requirement: unhook on installer thread).
     void Stop();
 
     /// Hook thread id. Returns 0 before Start completes the handshake or
-    /// after Stop. Used by external code that needs to PostThreadMessage
-    /// (e.g. HotkeyManager routing matched slots back to the hook thread).
+    /// after Stop.
     [[nodiscard]] DWORD ThreadId() const noexcept {
         return threadId_.load(std::memory_order_acquire);
     }
@@ -83,6 +87,11 @@ public:
     /// call Post; the hook pump's WM_APP_HOOK_COMMAND handler invokes the
     /// drain callback. The wake-fn is wired internally at thread start.
     [[nodiscard]] HookCommandMailbox& Mailbox() noexcept { return mailbox_; }
+
+    /// Queue a matched application-hotkey slot for callback dispatch by this
+    /// lifecycle's message pump. Safe from the low-level hook callback and a
+    /// no-op before startup or after shutdown.
+    void PostHotkey(std::size_t slot) noexcept;
 
     /// Ask the hook pump to unhook + reinstall both LL hooks (Chromium /
     /// Java focus-time top-of-chain priority). Throttled internally by the
@@ -128,6 +137,7 @@ private:
 
     HookCommandMailbox mailbox_;
     DrainFn drainFn_;
+    HotkeyDispatchFn hotkeyDispatchFn_;
     GhostKeyFn ghostKeyFn_;
 };
 

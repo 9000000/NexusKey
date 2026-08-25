@@ -13,6 +13,13 @@ HotkeyManager::HotkeyManager(DeferredFireSink deferredFireSink,
     : deferredFireSink_(deferredFireSink),
       deferredFireContext_(deferredFireContext) {}
 
+void HotkeyManager::SetDeferredFireSink(DeferredFireSink sink, void* context) noexcept {
+    assert(!finalized_ && "SetDeferredFireSink must precede FinalizeBindings");
+    if (finalized_) return;
+    deferredFireSink_ = sink;
+    deferredFireContext_ = context;
+}
+
 HotkeyManager::SlotId HotkeyManager::AddHotkey(const HotkeyConfig& config,
                                                 Callback callback,
                                                 PassThrough passThrough) {

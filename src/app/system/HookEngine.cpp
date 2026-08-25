@@ -4,7 +4,7 @@
 #include "HookEngine.h"
 #include "HookHijackDetector.h"  // Anti-Dorion v2 — keyboard-hook hijack detector (safety net)
 #include "ReinstallBurstScheduler.h"  // Anti-Dorion v2 — burst reinstall (primary path)
-#include "HotkeyManager.h"  // Wave 1 — DispatchHotkeyFromHookThread
+#include "HotkeyManager.h"  // passive application-hotkey matcher
 #include "Win32CaseMapper.h"
 #include "PerfHistogram.h"  // Phase 1 — per-stage histogram (compiles to no-op when VKEY_PERF_HIST undef)
 #include "helpers/AppHelpers.h"
@@ -146,6 +146,17 @@ HookEngine::HookEngine() {
 
 HookEngine::~HookEngine() {
     Stop();
+}
+
+void HookEngine::SetHotkeyManager(HotkeyManager* manager) noexcept {
+    hotkeyManager_ = manager;
+    if (hotkeyManager_) {
+        hotkeyManager_->SetDeferredFireSink(&HookEngine::PostMatchedHotkey, this);
+    }
+}
+
+void HookEngine::PostMatchedHotkey(void* context, std::size_t slot) noexcept {
+    static_cast<HookEngine*>(context)->lifecycle_.PostHotkey(slot);
 }
 
 void HookEngine::CommitPending() {
@@ -328,11 +339,19 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     RebuildSnapshotFromToml(
         static_cast<std::uint32_t>(lastConfigGeneration_.load(std::memory_order_acquire)));
 
+    // Seal the startup-only matcher topology before the lifecycle installs
+    // the sole keyboard hook. Runtime rebinding only updates the manager's
+    // lock-free packed configurations.
+    if (hotkeyManager_) hotkeyManager_->FinalizeBindings();
+
     // Wave 3 PR 3.1: HookLifecycle owns the dedicated hook thread + LL hooks
     // + mailbox. We pass our LL callbacks (still HookEngine statics via
-    // s_instance) and a drain callback that fans out to DrainHookCommands.
+    // s_instance), a command-drain callback, and pump-owned hotkey dispatch.
     if (!lifecycle_.Start(hInstance, LowLevelKeyboardProc, LowLevelMouseProc,
-                          [this] { DrainHookCommands(); })) {
+                          [this] { DrainHookCommands(); },
+                          [this](std::size_t slot) {
+                              if (hotkeyManager_) hotkeyManager_->Dispatch(slot);
+                          })) {
         HOOK_LOG(L"FAILED to install keyboard hook (lifecycle Start returned false)");
         return false;
     }
@@ -1101,6 +1120,41 @@ LRESULT HookEngine::LowLevelKeyboardProcImpl(int nCode, WPARAM wParam, LPARAM lP
         }
 
         if (nCode == HC_ACTION && self) {
+            const bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+            const bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
+
+            // Application hotkeys share this sole dedicated keyboard hook.
+            // Match every real DOWN/UP event after VKey-tagged synthetic
+            // filtering and before sending/activity/engine work. Match() only
+            // performs bounded lock-free state matching and posts a slot id;
+            // callbacks execute later in HookLifecycle's message pump.
+            if (self->hotkeyManager_ && (isDown || isUp)) {
+                const HotkeyManager::KeyEvent event{
+                    .vk = pKey->vkCode,
+                    .type = isDown ? HotkeyManager::KeyEventType::Down
+                                   : HotkeyManager::KeyEventType::Up,
+                    .modifier = HotkeyManager::NormalizeModifier(pKey->vkCode),
+                };
+                const HotkeyManager::MatchResult result =
+                    self->hotkeyManager_->Match(event);
+                if (result.consume && result.cancelSystemMenu) {
+                    // Break Windows' Alt/Win-alone menu gesture only for a
+                    // consumed matched combo. Modifier-only release fires are
+                    // deliberately not consumed and must not inject this pair.
+                    static const WORD ctrlScan = static_cast<WORD>(
+                        MapVirtualKeyW(VK_LCONTROL, MAPVK_VK_TO_VSC));
+                    INPUT dummy[2] = {};
+                    dummy[0].type = INPUT_KEYBOARD;
+                    dummy[0].ki.wVk = VK_LCONTROL;
+                    dummy[0].ki.wScan = ctrlScan;
+                    dummy[0].ki.dwExtraInfo = VKEY_EXTRA_INFO;
+                    dummy[1] = dummy[0];
+                    dummy[1].ki.dwFlags = KEYEVENTF_KEYUP;
+                    (void)NextKey::Output::Internal::TrackedSendInput(dummy, 2);
+                }
+                if (result.consume) return 1;
+            }
+
             // Skip events while we're sending (safety backup).
             if (self->dispatcher_.IsSending()) {
                 // Issue #206: on a multi-process renderer (Electron/WebView2/RDP)
@@ -1136,9 +1190,6 @@ LRESULT HookEngine::LowLevelKeyboardProcImpl(int nCode, WPARAM wParam, LPARAM lP
             // active transition fires one workerSignalFn_ call. See plan
             // docs/plans/2026-05-27-adaptive-tick-idle-backoff.md §2.5.
             self->MarkActivity();
-
-            bool isDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
-            bool isUp = (wParam == WM_KEYUP || wParam == WM_SYSKEYUP);
 
             // Snapshot modifiers BEFORE DrainHookCommands(): draining a
             // pending focus-changed command can synchronously reach
@@ -4578,7 +4629,13 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     otherKeyPressed_ = false;
 
     if (hotkeyManager_) {
-        hotkeyManager_->ReconcileModifiers();
+        hotkeyManager_->ReconcileModifiers({
+            .ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0,
+            .shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0,
+            .alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0,
+            .win = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0
+                || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0,
+        });
     }
 
     // Per-app cached flags — single release-store pair with the hot-path

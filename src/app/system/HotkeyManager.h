@@ -69,6 +69,12 @@ public:
     HotkeyManager(HotkeyManager&&) = delete;
     HotkeyManager& operator=(HotkeyManager&&) = delete;
 
+    /// Wires the hook owner's deferred-fire target during startup. This is
+    /// intentionally a function pointer/context pair: matching remains
+    /// no-throw and platform-neutral, and no callback executes here.
+    /// Must precede FinalizeBindings().
+    void SetDeferredFireSink(DeferredFireSink sink, void* context) noexcept;
+
     /// Registers immutable callback metadata. Registration is startup-only;
     /// FinalizeBindings() freezes the slot topology for hook-thread matching.
     SlotId AddHotkey(const HotkeyConfig& config,

@@ -172,6 +172,18 @@ TEST(HotkeyManagerTest, CallbacksRunOnlyWhenExplicitlyDispatched) {
     EXPECT_EQ(callbacks, 1);
 }
 
+TEST(HotkeyManagerTest, DeferredSinkCanBeWiredBeforeBindingsAreFinalized) {
+    DeferredFires fires;
+    HotkeyManager manager;
+    const auto slot = manager.AddHotkey({.vk = kVkJ}, [] {});
+
+    manager.SetDeferredFireSink(&DeferredFires::Push, &fires);
+    manager.FinalizeBindings();
+
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    EXPECT_EQ(fires.slots, std::vector<HotkeyManager::SlotId>{slot});
+}
+
 TEST(HotkeyManagerTest, MatchedAltOrWinCombosRequestSystemMenuCancellation) {
     DeferredFires fires;
     auto manager = MakeManager(fires);

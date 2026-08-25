@@ -67,11 +67,11 @@ using namespace NextKey;
 static std::atomic<bool> g_running{true};
 static TrayIcon g_trayIcon;
 static FloatingIcon g_floatingIcon;
+static HotkeyManager g_hotkeyManager;
 static HookEngine g_hookEngine;
 static MainThreadWorker g_mainThreadWorker;  // Sprint 1 D9: drain config-change work off main thread
 static SharedStateManager g_sharedState;
 static std::unique_ptr<QuickConvert> g_quickConvert;
-static HotkeyManager g_hotkeyManager;
 static HotkeyManager::SlotId g_toggleHotkeySlot = 0;
 static HotkeyManager::SlotId g_convertHotkeySlot = 0;
 static WatchdogController g_watchdog;  // Owns heartbeat + Task Scheduler entry + VKeyWatchdog.exe lifecycle
@@ -723,9 +723,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // happens-before relation. Mirror of main.cpp.
     g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
 
-    // Wave 3 PR 3.7 — Start HookEngine BEFORE WireHotkeys so its hook thread
-    // id is live by the time WireHotkeys reads it for HotkeyManager::Initialize.
-    // Mirror of main.cpp's reorder; same race motivation.
+    // Register both application-hotkey slots before HookEngine seals the
+    // passive matcher topology and installs the sole keyboard hook.
+    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_sharedState, g_quickConvert,
+                g_toggleHotkeySlot, g_convertHotkeySlot, hotkeyConfig);
+
+    // Wire live rebinding before Start so the hook thread never races
+    // std::function assignment during startup.
+    g_hookEngine.SetHotkeyChangedCallback([](const HotkeyConfig& hk) {
+        g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
+    });
+
     if (!g_hookEngine.Start(hInstance, config, startVietnamese)) {
         timeEndPeriod(1);
         MessageBoxW(nullptr, L"Failed to install keyboard hook", L"VKey", MB_ICONERROR);
@@ -733,20 +741,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         CloseHandle(hMutex);
         return 1;
     }
-
-    // ── Hotkeys (toggle V/E + quick convert) ──
-
-    // HotkeyManager::Initialize inside WireHotkeys reads hookEngine.GetHookThreadId()
-    // — non-zero by here since Start above succeeded.
-    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_sharedState, g_quickConvert,
-                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
-
-    // Wave 3 PR 3.8 — live toggle-hotkey propagation from SharedState.
-    // Mirror of main.cpp wiring; same bug (Settings deferred TOML save)
-    // affects both binaries since SettingsDialog is shared.
-    g_hookEngine.SetHotkeyChangedCallback([](const HotkeyConfig& hk) {
-        g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
-    });
 
     // Sprint 1 D9: launch worker after HookEngine so the first Signal it
     // observes lands on a fully-initialised engine.
@@ -865,8 +859,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // ── Cleanup ──
 
-    CleanupFloatingIcon();
-    g_hotkeyManager.Uninstall();
     // Catch graceful exits that didn't go through the tray-Exit branch (e.g.
     // WM_CLOSE from the updater handover) so the watchdog skips respawn.
     // Idempotent — safe even if SignalGracefulShutdown was already called.
@@ -876,6 +868,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // before HookEngine teardown.
     g_mainThreadWorker.Stop();
     g_hookEngine.Stop();
+    // The hook thread is joined before destroying either hotkey callback
+    // target. No deferred slot can race tray/QuickConvert teardown.
+    g_quickConvert.reset();
+    CleanupFloatingIcon();
     timeEndPeriod(1);
     g_trayIcon.Destroy();
 

@@ -109,7 +109,13 @@ static void CALLBACK IconPollTimerProc(HWND, UINT, UINT_PTR, DWORD) {
 /// Ensure floating icon window exists (lazy-create on first use).
 static void EnsureFloatingIconCreated() {
     if (g_floatingIcon.IsCreated()) return;
-    (void)g_floatingIcon.Create(g_hInstance, g_hookEngine.IsVietnameseMode());
+#ifdef VKEY_HOOK_ENGINE
+    const bool vietnamese = g_hookEngine.IsVietnameseMode();
+#else
+    const bool vietnamese =
+        (g_sharedState.ReadFlags() & SharedFlags::VIETNAMESE_MODE) != 0;
+#endif
+    (void)g_floatingIcon.Create(g_hInstance, vietnamese);
 }
 
 /// Initialize floating icon overlay + config callbacks.
@@ -581,7 +587,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Share g_sharedState with HookEngine for direct reading (same process, no Open needed)
     g_hookEngine.SetSharedStateReader(&g_sharedState);
 
-    // Wire HotkeyManager to HookEngine for modifier reconciliation on focus switch
+    // Attach the passive matcher before registering its startup-only slots.
     g_hookEngine.SetHotkeyManager(&g_hotkeyManager);
 
     // Wave 3 PR 3.6 — wire the worker-signal callback BEFORE HookEngine::Start.
@@ -595,14 +601,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // doc), so wiring it pre-everything is fine.
     g_hookEngine.SetWorkerSignalFn([]() { g_mainThreadWorker.Signal(); });
 
-    // Wave 3 PR 3.7 — Start HookEngine BEFORE WireHotkeys so its hook
-    // thread id is published by the time WireHotkeys reads it for
-    // HotkeyManager::Initialize. The pre-3.7 ordering installed the
-    // HotkeyManager LL hook (inside WireHotkeys) before HookEngine
-    // spawned its thread, leaving a ~10 ms window where a hotkey match
-    // would inline-dispatch the convert callback on the LL thread and
-    // mutate engine_ off-thread (Rule 11.3 violation, hidden by the
-    // pre-3.7 unconditional inline fallback).
+    // Register both application-hotkey slots before HookEngine seals the
+    // passive matcher topology and installs the sole keyboard hook.
+    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_sharedState, g_quickConvert,
+                g_toggleHotkeySlot, g_convertHotkeySlot, hotkeyConfig);
+
+    // Live toggle-hotkey propagation must also be wired before Start so the
+    // hook thread never races std::function assignment during startup.
+    g_hookEngine.SetHotkeyChangedCallback([](const HotkeyConfig& hk) {
+        g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
+    });
+
     if (!g_hookEngine.Start(hInstance, config, startVietnamese)) {
         // MessageBox acceptable: fatal startup error, app cannot function without keyboard hook.
         // No matching StringId — using English string (language config not yet applied to UI).
@@ -611,23 +620,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
         CloseHandle(hMutex);
         return 1;
     }
-
-    // Wire hotkeys (toggle V/E + quick convert) — HotkeyManager::Initialize
-    // inside WireHotkeys reads `hookEngine.GetHookThreadId()` (now non-zero
-    // since Start succeeded above) and publishes it BEFORE installing the
-    // LL hook, so the LL callback never observes a stale 0.
-    WireHotkeys(g_hotkeyManager, g_hookEngine, g_trayIcon, g_sharedState, g_quickConvert,
-                g_toggleHotkeySlot, g_convertHotkeySlot, hInstance, hotkeyConfig);
-
-    // Wave 3 PR 3.8 — live toggle-hotkey propagation from SharedState.
-    // SettingsDialog defers the TOML save by 30s but writes the hotkey
-    // into SharedState immediately. HookEngine's QuickSync slow body
-    // detects the SharedState diff and fires this callback so the new
-    // binding reaches HotkeyManager in ~ms instead of 30s.
-    // Wired AFTER WireHotkeys so `g_toggleHotkeySlot` is valid.
-    g_hookEngine.SetHotkeyChangedCallback([](const HotkeyConfig& hk) {
-        g_hotkeyManager.UpdateHotkey(g_toggleHotkeySlot, hk);
-    });
 
     // Sprint 1 D9: launch MainThreadWorker after the hook engine is up so the
     // first config-change Signal it sees has a fully-initialised HookEngine
@@ -748,20 +740,25 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
 
     // Cleanup
     TerminateAllSubprocesses();
-    CleanupFloatingIcon();
-    g_trayIcon.Destroy();
-    g_hotkeyManager.Uninstall();
     // Sprint 1 D9: stop the worker before HookEngine — handler captures
     // g_hookEngine, so the worker thread must finish any in-flight
     // SyncConfigFromSharedState before HookEngine teardown begins.
     g_mainThreadWorker.Stop();
     g_hookEngine.Stop();
+    // The hook thread is joined before destroying either hotkey callback
+    // target. No deferred slot can race tray/QuickConvert teardown.
+    g_quickConvert.reset();
+    CleanupFloatingIcon();
+    g_trayIcon.Destroy();
     timeEndPeriod(1);
 
 #else
     // ═══════════════════════════════════════════════════════════
     // TSF Mode — SharedState IPC + DLL
     // ═══════════════════════════════════════════════════════════
+
+    constexpr int kLegacyToggleHotkeyId = 1;
+    bool legacyToggleHotkeyRegistered = false;
 
     // Initialize COM for TSF registration check
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -858,30 +855,26 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Poll SharedState flags every 250ms to sync icon V/E state
     SetTimer(g_trayIcon.GetMessageWindow(), TIMER_ID_ICON_POLL, 250, IconPollTimerProc);
 
-    // Internal Hotkey — TSF mode has toggle only (no QuickConvert).
-    //
-    // Wave 3 PR 3.7 — this branch compiles when `VKEY_HOOK_ENGINE` is NOT
-    // defined (TSF-only build, no `g_hookEngine`). HotkeyManager has no
-    // cross-thread dispatch target, so `Initialize` is called with
-    // hookThreadId=0. The toggle callback's body is a single
-    // `PostMessageW` to the tray's message window (Win32 cross-thread-safe),
-    // so `runsOnAnyThread=true` is correct — the LL callback may invoke it
-    // inline on the LL thread. Any future TSF-only hotkey that mutates
-    // shared state MUST either provide its own dispatch thread or remain
-    // `runsOnAnyThread=false` (in which case it drops silently rather
-    // than risk Rule 11.3 violation on LL thread).
+    // Legacy TSF-only builds have no HookEngine hook to feed the passive
+    // matcher. Keep this branch compileable with a narrowly scoped native
+    // fallback; the normal application targets always define
+    // VKEY_HOOK_ENGINE and use the sole HookLifecycle keyboard hook.
     auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
-    if (hotkeyOpt && hotkeyOpt->HasAny()) {
+    if (hotkeyOpt && hotkeyOpt->vk != 0) {
         HWND trayWnd = g_trayIcon.GetMessageWindow();
-        // TSF mode: single toggle slot, never rebinding — slot id intentionally discarded.
-        (void)g_hotkeyManager.AddHotkey(*hotkeyOpt, [trayWnd]() {
-            if (trayWnd) PostMessageW(trayWnd, WM_HOTKEY, 0, 0);
-        }, /*runsOnAnyThread=*/true);
-        g_hotkeyManager.Initialize(hInstance, /*hookThreadId=*/0);
-        NEXTKEY_LOG(L"Internal hotkey installed (ctrl=%d, shift=%d, alt=%d, win=%d, key=0x%02X)",
-                    hotkeyOpt->ctrl, hotkeyOpt->shift, hotkeyOpt->alt, hotkeyOpt->win, hotkeyOpt->key);
+        UINT modifiers = MOD_NOREPEAT;
+        if (hotkeyOpt->ctrl) modifiers |= MOD_CONTROL;
+        if (hotkeyOpt->shift) modifiers |= MOD_SHIFT;
+        if (hotkeyOpt->alt) modifiers |= MOD_ALT;
+        if (hotkeyOpt->win) modifiers |= MOD_WIN;
+        legacyToggleHotkeyRegistered = RegisterHotKey(
+            trayWnd, kLegacyToggleHotkeyId, modifiers, hotkeyOpt->vk) != FALSE;
+        NEXTKEY_LOG(L"Legacy toggle hotkey %ls (ctrl=%d, shift=%d, alt=%d, win=%d, vk=0x%02X)",
+                    legacyToggleHotkeyRegistered ? L"registered" : L"failed",
+                    hotkeyOpt->ctrl, hotkeyOpt->shift, hotkeyOpt->alt,
+                    hotkeyOpt->win, hotkeyOpt->vk);
     } else {
-        NEXTKEY_LOG(L"No internal hotkey configured");
+        NEXTKEY_LOG(L"No legacy RegisterHotKey-compatible toggle configured");
     }
 
     NEXTKEY_LOG(L"Tray icon created, entering message loop");
@@ -962,7 +955,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Cleanup
     CleanupFloatingIcon();
     KillTimer(g_trayIcon.GetMessageWindow(), TIMER_ID_ICON_POLL);
-    g_hotkeyManager.Uninstall();
+    if (legacyToggleHotkeyRegistered) {
+        UnregisterHotKey(g_trayIcon.GetMessageWindow(), kLegacyToggleHotkeyId);
+    }
 
     // Disable engine in SharedState so TSF stops processing
     if (sharedStateOk) {
