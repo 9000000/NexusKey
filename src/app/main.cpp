@@ -22,9 +22,6 @@
 #include "core/CrashLog.h"
 #include "core/Logger.h"
 #include "browser_host/Registration.h"
-#ifndef VKEY_HOOK_ENGINE
-#include "core/hotkey/RegisterHotKeyPlan.h"
-#endif
 
 #include "system/TsfRegistration.h"
 #include "system/StartupHelper.h"
@@ -49,7 +46,6 @@
 #include <memory>
 #include <string>
 #include <thread>
-#include <vector>
 
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "winmm.lib")
@@ -761,8 +757,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // TSF Mode — SharedState IPC + DLL
     // ═══════════════════════════════════════════════════════════
 
-    constexpr int kLegacyToggleHotkeyFirstId = 1;
-    std::vector<int> legacyToggleHotkeyIds;
+    constexpr int kLegacyToggleHotkeyId = 1;
+    bool legacyToggleHotkeyRegistered = false;
 
     // Initialize COM for TSF registration check
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -863,24 +859,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // matcher. Keep this branch compileable with a narrowly scoped native
     // fallback; the normal application targets always define
     // VKEY_HOOK_ENGINE and use the sole HookLifecycle keyboard hook.
-    const auto registrationPlan = BuildRegisterHotKeyPlan(hotkeyConfig);
-    if (!registrationPlan.empty()) {
+    auto hotkeyOpt = ConfigManager::LoadHotkeyConfig(ConfigManager::GetConfigPath());
+    if (hotkeyOpt && hotkeyOpt->vk != 0) {
         HWND trayWnd = g_trayIcon.GetMessageWindow();
-        for (std::size_t index = 0; index < registrationPlan.size(); ++index) {
-            const HotkeyConfig& chord = registrationPlan[index];
-            UINT modifiers = MOD_NOREPEAT;
-            if (chord.ctrl) modifiers |= MOD_CONTROL;
-            if (chord.shift) modifiers |= MOD_SHIFT;
-            if (chord.alt) modifiers |= MOD_ALT;
-            if (chord.win) modifiers |= MOD_WIN;
-
-            const int id = kLegacyToggleHotkeyFirstId + static_cast<int>(index);
-            if (RegisterHotKey(trayWnd, id, modifiers, chord.vk) != FALSE) {
-                legacyToggleHotkeyIds.push_back(id);
-            }
-        }
-        NEXTKEY_LOG(L"Legacy toggle hotkey registrations: %zu/%zu succeeded",
-                    legacyToggleHotkeyIds.size(), registrationPlan.size());
+        UINT modifiers = MOD_NOREPEAT;
+        if (hotkeyOpt->ctrl) modifiers |= MOD_CONTROL;
+        if (hotkeyOpt->shift) modifiers |= MOD_SHIFT;
+        if (hotkeyOpt->alt) modifiers |= MOD_ALT;
+        if (hotkeyOpt->win) modifiers |= MOD_WIN;
+        legacyToggleHotkeyRegistered = RegisterHotKey(
+            trayWnd, kLegacyToggleHotkeyId, modifiers, hotkeyOpt->vk) != FALSE;
+        NEXTKEY_LOG(L"Legacy toggle hotkey %ls (ctrl=%d, shift=%d, alt=%d, win=%d, vk=0x%02X)",
+                    legacyToggleHotkeyRegistered ? L"registered" : L"failed",
+                    hotkeyOpt->ctrl, hotkeyOpt->shift, hotkeyOpt->alt,
+                    hotkeyOpt->win, hotkeyOpt->vk);
     } else {
         NEXTKEY_LOG(L"No legacy RegisterHotKey-compatible toggle configured");
     }
@@ -963,8 +955,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR lpCmdLine, int) {
     // Cleanup
     CleanupFloatingIcon();
     KillTimer(g_trayIcon.GetMessageWindow(), TIMER_ID_ICON_POLL);
-    for (const int id : legacyToggleHotkeyIds) {
-        UnregisterHotKey(g_trayIcon.GetMessageWindow(), id);
+    if (legacyToggleHotkeyRegistered) {
+        UnregisterHotKey(g_trayIcon.GetMessageWindow(), kLegacyToggleHotkeyId);
     }
 
     // Disable engine in SharedState so TSF stops processing

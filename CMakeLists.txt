@@ -310,8 +310,6 @@ set(NEXTKEY_CORE_SOURCES
     src/core/hotkey/HotkeyRegistry.cpp
     src/core/hotkey/HotkeyLabel.h
     src/core/hotkey/HotkeyLabel.cpp
-    src/core/hotkey/RegisterHotKeyPlan.h
-    src/core/hotkey/RegisterHotKeyPlan.cpp
     src/core/ipc/SharedState.h
     src/core/ipc/SharedConstants.h
     src/core/ipc/BrowserContextState.h
@@ -830,7 +828,6 @@ endif()
 set(NEXTKEY_TEST_SOURCES
     tests/HotkeyManagerTest.cpp
     src/app/system/HotkeyManager.cpp
-    tests/RegisterHotKeyPlanTest.cpp
     tests/TelexEngineTest.cpp
     tests/FormulaSegmentDecisionTest.cpp
     tests/CombinedEngineTest.cpp
