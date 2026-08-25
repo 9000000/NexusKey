@@ -103,7 +103,10 @@ HotkeyManager::MatchResult HotkeyManager::Match(const KeyEvent& event) noexcept 
             if (config.vk == 0 || config.vk != event.vk) continue;
 
             auto& state = slotState_[slot];
-            if (state.comboKeyDown) return {.consume = true};
+            // Until its latched key is released, this slot still belongs to
+            // that in-flight binding. Ignore a newly published config here;
+            // another slot may legitimately match the current key.
+            if (state.comboKeyDown) continue;
             if (!ModifiersMatch(config)) continue;
 
             state.comboKeyDown = true;

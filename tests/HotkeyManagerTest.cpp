@@ -159,6 +159,45 @@ TEST(HotkeyManagerTest, RebindPublishesNewComboWhilePreservingInflightLatch) {
     EXPECT_EQ(fires.slots, (std::vector<HotkeyManager::SlotId>{slot, slot}));
 }
 
+TEST(HotkeyManagerTest, ReboundKeyPassesUntilInflightOldKeyIsReleased) {
+    DeferredFires fires;
+    auto manager = MakeManager(fires);
+    const auto slot = manager.AddHotkey({.ctrl = true, .vk = kVkJ}, [] {});
+    manager.FinalizeBindings();
+
+    manager.Match(Down(kVkLControl, HotkeyManager::ModifierKey::Control));
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    manager.UpdateHotkey(slot, {.ctrl = true, .vk = kVkK});
+
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    EXPECT_FALSE(manager.Match(Down(kVkK)).consume);
+    EXPECT_FALSE(manager.Match(Up(kVkK)).consume);
+    EXPECT_EQ(fires.slots, std::vector<HotkeyManager::SlotId>{slot});
+
+    EXPECT_TRUE(manager.Match(Up(kVkJ)).consume);
+    EXPECT_TRUE(manager.Match(Down(kVkK)).consume);
+    EXPECT_TRUE(manager.Match(Up(kVkK)).consume);
+    EXPECT_EQ(fires.slots, (std::vector<HotkeyManager::SlotId>{slot, slot}));
+}
+
+TEST(HotkeyManagerTest, InflightReboundSlotDoesNotBlockAnotherSlot) {
+    DeferredFires fires;
+    auto manager = MakeManager(fires);
+    const auto reboundSlot = manager.AddHotkey({.ctrl = true, .vk = kVkJ}, [] {});
+    const auto otherSlot = manager.AddHotkey({.ctrl = true, .vk = kVkK}, [] {});
+    manager.FinalizeBindings();
+
+    manager.Match(Down(kVkLControl, HotkeyManager::ModifierKey::Control));
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    manager.UpdateHotkey(reboundSlot, {.ctrl = true, .vk = kVkK});
+
+    EXPECT_TRUE(manager.Match(Down(kVkK)).consume);
+    EXPECT_EQ(fires.slots,
+              (std::vector<HotkeyManager::SlotId>{reboundSlot, otherSlot}));
+    EXPECT_TRUE(manager.Match(Up(kVkK)).consume);
+    EXPECT_TRUE(manager.Match(Up(kVkJ)).consume);
+}
+
 TEST(HotkeyManagerTest, CallbacksRunOnlyWhenExplicitlyDispatched) {
     DeferredFires fires;
     int callbacks = 0;
