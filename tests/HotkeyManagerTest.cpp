@@ -16,7 +16,11 @@ constexpr std::uint32_t kVkK = 0x4B;
 constexpr std::uint32_t kVkLControl = 0xA2;
 constexpr std::uint32_t kVkRControl = 0xA3;
 constexpr std::uint32_t kVkLShift = 0xA0;
+constexpr std::uint32_t kVkRShift = 0xA1;
 constexpr std::uint32_t kVkLMenu = 0xA4;
+constexpr std::uint32_t kVkRMenu = 0xA5;
+constexpr std::uint32_t kVkLWin = 0x5B;
+constexpr std::uint32_t kVkRWin = 0x5C;
 
 struct DeferredFires {
     std::vector<HotkeyManager::SlotId> slots;
@@ -46,6 +50,18 @@ HotkeyManager::KeyEvent Up(std::uint32_t vk,
 
 HotkeyManager MakeManager(DeferredFires& fires) {
     return HotkeyManager(&DeferredFires::Push, &fires);
+}
+
+HotkeyConfig ModifierCombo(HotkeyManager::ModifierKey modifier) {
+    HotkeyConfig config{.vk = kVkJ};
+    switch (modifier) {
+    case HotkeyManager::ModifierKey::Control: config.ctrl = true; break;
+    case HotkeyManager::ModifierKey::Shift: config.shift = true; break;
+    case HotkeyManager::ModifierKey::Alt: config.alt = true; break;
+    case HotkeyManager::ModifierKey::Win: config.win = true; break;
+    case HotkeyManager::ModifierKey::None: break;
+    }
+    return config;
 }
 
 TEST(HotkeyManagerTest, StrictComboQueuesAndConsumesPairedEvents) {
@@ -137,6 +153,7 @@ TEST(HotkeyManagerTest, RebindPublishesNewComboWhilePreservingInflightLatch) {
     manager.Match(Down(kVkLControl, HotkeyManager::ModifierKey::Control));
     EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
     manager.UpdateHotkey(slot, {.ctrl = true, .vk = kVkK});
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
     EXPECT_TRUE(manager.Match(Up(kVkJ)).consume);
     EXPECT_TRUE(manager.Match(Down(kVkK)).consume);
     EXPECT_EQ(fires.slots, (std::vector<HotkeyManager::SlotId>{slot, slot}));
@@ -160,6 +177,7 @@ TEST(HotkeyManagerTest, MatchedAltOrWinCombosRequestSystemMenuCancellation) {
     auto manager = MakeManager(fires);
     manager.AddHotkey({.alt = true, .vk = kVkJ}, [] {});
     manager.AddHotkey({.ctrl = true, .vk = kVkK}, [] {});
+    manager.AddHotkey({.win = true, .vk = kVkA}, [] {});
     manager.FinalizeBindings();
 
     manager.Match(Down(kVkLMenu, HotkeyManager::ModifierKey::Alt));
@@ -168,20 +186,42 @@ TEST(HotkeyManagerTest, MatchedAltOrWinCombosRequestSystemMenuCancellation) {
     manager.Match(Up(kVkLMenu, HotkeyManager::ModifierKey::Alt));
     manager.Match(Down(kVkLControl, HotkeyManager::ModifierKey::Control));
     EXPECT_FALSE(manager.Match(Down(kVkK)).cancelSystemMenu);
+    manager.Match(Up(kVkK));
+    manager.Match(Up(kVkLControl, HotkeyManager::ModifierKey::Control));
+    manager.Match(Down(kVkLWin, HotkeyManager::ModifierKey::Win));
+    EXPECT_TRUE(manager.Match(Down(kVkA)).cancelSystemMenu);
 }
 
-TEST(HotkeyManagerTest, NormalizedLeftAndRightModifiersMatchIdentically) {
-    DeferredFires fires;
-    auto manager = MakeManager(fires);
-    manager.AddHotkey({.ctrl = true, .vk = kVkJ}, [] {});
-    manager.FinalizeBindings();
+struct ModifierPair {
+    std::uint32_t leftVk;
+    std::uint32_t rightVk;
+    HotkeyManager::ModifierKey modifier;
+};
 
-    manager.Match(Down(kVkLControl, HotkeyManager::NormalizeModifier(kVkLControl)));
-    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
-    manager.Match(Up(kVkJ));
-    manager.Match(Up(kVkLControl, HotkeyManager::NormalizeModifier(kVkLControl)));
-    manager.Match(Down(kVkRControl, HotkeyManager::NormalizeModifier(kVkRControl)));
-    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+TEST(HotkeyManagerTest, NormalizedLeftAndRightModifiersMatchIdentically) {
+    constexpr ModifierPair pairs[] = {
+        ModifierPair{kVkLControl, kVkRControl, HotkeyManager::ModifierKey::Control},
+        ModifierPair{kVkLShift, kVkRShift, HotkeyManager::ModifierKey::Shift},
+        ModifierPair{kVkLMenu, kVkRMenu, HotkeyManager::ModifierKey::Alt},
+        ModifierPair{kVkLWin, kVkRWin, HotkeyManager::ModifierKey::Win},
+    };
+
+    for (const ModifierPair pair : pairs) {
+        SCOPED_TRACE(static_cast<int>(pair.modifier));
+        DeferredFires fires;
+        auto manager = MakeManager(fires);
+        manager.AddHotkey(ModifierCombo(pair.modifier), [] {});
+        manager.FinalizeBindings();
+
+        EXPECT_EQ(HotkeyManager::NormalizeModifier(pair.leftVk), pair.modifier);
+        EXPECT_EQ(HotkeyManager::NormalizeModifier(pair.rightVk), pair.modifier);
+        manager.Match(Down(pair.leftVk, HotkeyManager::NormalizeModifier(pair.leftVk)));
+        EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+        manager.Match(Up(kVkJ));
+        manager.Match(Up(pair.leftVk, HotkeyManager::NormalizeModifier(pair.leftVk)));
+        manager.Match(Down(pair.rightVk, HotkeyManager::NormalizeModifier(pair.rightVk)));
+        EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    }
 }
 
 }  // namespace

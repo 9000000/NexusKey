@@ -80,6 +80,16 @@ HotkeyManager::MatchResult HotkeyManager::Match(const KeyEvent& event) noexcept 
     }
 
     if (event.modifier == ModifierKey::None && event.type == KeyEventType::Down) {
+        // Repeat suppression belongs to the in-flight latch, rather than the
+        // current config. A rebind can change the live virtual key between a
+        // matched DOWN and its repeated DOWN/UP events.
+        for (SlotId slot = 0; slot < slotCount_; ++slot) {
+            const auto& state = slotState_[slot];
+            if (state.comboKeyDown && state.latchedVk == event.vk) {
+                return {.consume = true};
+            }
+        }
+
         for (SlotId slot = 0; slot < slotCount_; ++slot) {
             const HotkeyConfig config = UnpackConfig(
                 liveConfigs_[slot].load(std::memory_order_acquire));
