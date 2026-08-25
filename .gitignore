@@ -98,3 +98,4 @@ internal/
 # See extern/vkey_engine/LICENSE and tools/fetch_engine.py.
 extern/vkey_engine/lib/
 build-engine/
+.worktrees/
