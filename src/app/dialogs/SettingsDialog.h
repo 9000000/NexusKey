@@ -93,7 +93,6 @@ private:
 
     // UI helpers
     void setToggleState(const std::wstring& id, bool checked);
-    void setToggleRowEnabled(const std::wstring& id, bool enabled);
     void setDropdownValue(const std::wstring& id, int value);
     void recalcWindowSize();  // Measure DOM and resize window to fit content
     int measureMaxAdvancedContentHeight(double dpiScale);  // #226: max height across all tab panels (fixed window height)

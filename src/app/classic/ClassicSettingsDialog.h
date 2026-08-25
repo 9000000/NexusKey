@@ -96,7 +96,10 @@ private:
     // -- Layout constants (pixels at 96 DPI, scaled by Dpi()) --
     // All values are multiples of 4 for consistent visual rhythm
     static constexpr int kAdvancedWidth  = 490;
-    static constexpr int kAdvancedHeight = 440;
+    // Must clear the tallest tab column (tab 0 / column 1) plus the "Báo cáo lỗi"
+    // link, which is anchored to the tab control's bottom edge — one row too short
+    // and the link lands on top of the last button.
+    static constexpr int kAdvancedHeight = 456;
     static constexpr int kPadding       = 16;
     static constexpr int kControlHeight = 24;
     static constexpr int kComboHeight   = 24;

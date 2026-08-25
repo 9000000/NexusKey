@@ -61,34 +61,6 @@ static std::string toNarrowString(const std::wstring& wide) {
     return result;
 }
 
-static std::wstring setClassToken(std::wstring classes, const wchar_t* token, bool present) {
-    const size_t tokenLength = wcslen(token);
-    size_t pos = classes.find(token);
-    while (pos != std::wstring::npos) {
-        const bool startsToken = pos == 0 || classes[pos - 1] == L' ';
-        const size_t end = pos + tokenLength;
-        const bool endsToken = end == classes.size() || classes[end] == L' ';
-        if (startsToken && endsToken) {
-            if (present) return classes;
-            if (pos > 0) {
-                classes.erase(pos - 1, tokenLength + 1);
-            } else if (end < classes.size()) {
-                classes.erase(pos, tokenLength + 1);
-            } else {
-                classes.clear();
-            }
-            return classes;
-        }
-        pos = classes.find(token, end);
-    }
-
-    if (present) {
-        if (!classes.empty()) classes += L' ';
-        classes += token;
-    }
-    return classes;
-}
-
 // Base window dimensions (before DPI scaling)
 constexpr int BASE_WIDTH_COLLAPSED = 350;
 constexpr int BASE_HEIGHT_COLLAPSED = 460;  // Match OpenKey height
@@ -658,7 +630,7 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
     }
     else if (id == L"tsf-apps") {
         config_.tsfApps = value;
-        setToggleRowEnabled(L"hide-preedit-underline", value);
+        call_function("updateTsfChildren", sciter::value(value));
         // Register/unregister TSF DLL when toggle changes
         // Always attempt full registration (not guarded by IsTsfRegistered) because
         // a previous partial failure could leave CLSID in registry but TIP profile missing.
@@ -670,7 +642,7 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
             if (!ok || !IsTsfRegistered()) {
                 config_.tsfApps = false;
                 setToggleState(L"tsf-apps", false);
-                setToggleRowEnabled(L"hide-preedit-underline", false);
+                call_function("updateTsfChildren", sciter::value(false));
                 MessageBoxW(get_hwnd(),
                     L"Không thể đăng ký TSF.\nVui lòng chạy với quyền Administrator.",
                     L"VKey", MB_OK | MB_ICONWARNING);
@@ -693,7 +665,7 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                 if (IsTsfRegistered()) {
                     config_.tsfApps = true;
                     setToggleState(L"tsf-apps", true);
-                    setToggleRowEnabled(L"hide-preedit-underline", true);
+                    call_function("updateTsfChildren", sciter::value(true));
                     MessageBoxW(get_hwnd(), S(StringId::TSF_UNREGISTER_FAILED),
                         L"VKey", MB_OK | MB_ICONWARNING);
                     return;  // Don't save broken state
@@ -1270,23 +1242,6 @@ void SettingsDialog::setToggleState(const std::wstring& id, bool checked) {
     }
 }
 
-void SettingsDialog::setToggleRowEnabled(const std::wstring& id, bool enabled) {
-    sciter::dom::element root = get_root();
-    const std::string idStr = toNarrowString(id);
-    sciter::dom::element toggle = root.find_first(("[id='" + idStr + "']").c_str());
-    sciter::dom::element row = root.find_first(("[id='row-" + idStr + "']").c_str());
-
-    if (toggle.is_valid()) {
-        std::wstring classes = toggle.get_attribute("class");
-        toggle.set_attribute("class", setClassToken(classes, L"disabled", !enabled).c_str());
-        toggle.set_attribute("aria-disabled", enabled ? L"false" : L"true");
-    }
-    if (row.is_valid()) {
-        std::wstring classes = row.get_attribute("class");
-        row.set_attribute("class", setClassToken(classes, L"disabled", !enabled).c_str());
-    }
-}
-
 void SettingsDialog::setDropdownValue(const std::wstring& id, int value) {
     sciter::dom::element root = get_root();
     sciter::dom::element dropdown = root.find_first(("[id='" + toNarrowString(id) + "']").c_str());
@@ -1321,7 +1276,7 @@ void SettingsDialog::initializeUI() {
     config_.tsfApps = IsTsfRegistered();
     setToggleState(L"tsf-apps", config_.tsfApps);
     setToggleState(L"hide-preedit-underline", config_.hidePreeditUnderline);
-    setToggleRowEnabled(L"hide-preedit-underline", config_.tsfApps);
+    call_function("updateTsfChildren", sciter::value(config_.tsfApps));
     setDropdownValue(L"spell-check-level", static_cast<int>(config_.GetSpellCheckLevel()));
     // Sync spell check child toggles (allow-zwjf, restore-key, exclusions button)
     call_function("updateSpellCheckChildren",

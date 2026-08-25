@@ -6,7 +6,6 @@
 #include "EngineController.h"
 #include "DisplayAttribute.h"
 #include "Define.h"
-#include "core/TsfEditDecision.h"
 
 namespace NextKey {
 namespace TSF {
@@ -119,8 +118,7 @@ bool CompositionManager::BeginCompositionOnRange(
     pContext_->AddRef();
     currentText_ = currentText;
     displayAttributeApplied_ = false;
-    if (ShouldApplyPreeditDisplayAttribute(hidePreeditUnderline_)
-        && !ApplyDisplayAttribute(ec, pRange)) {
+    if (hidePreeditUnderline_ && !ApplyDisplayAttribute(ec, pRange)) {
         // Styling is best-effort for host compatibility. The text edit and
         // composition are already live, so failing the edit session here would
         // report a false insertion failure after mutating the document.
@@ -151,11 +149,11 @@ bool CompositionManager::SetCompositionText(
     }
 
     currentText_ = text;
-    if (ShouldApplyPreeditDisplayAttribute(hidePreeditUnderline_)) {
+    if (hidePreeditUnderline_) {
         if (!ApplyDisplayAttribute(ec, pRange)) {
             TSF_LOG(L"SetCompositionText: invisible display attribute unavailable");
         }
-    } else if (displayAttributeApplied_) {
+    } else {
         ClearDisplayAttribute(ec, pRange);
     }
     MoveCaretToEnd(ec);
@@ -257,6 +255,16 @@ void CompositionManager::ClearDisplayAttribute(TfEditCookie ec, ITfRange* pRange
         if (SUCCEEDED(hr)) {
             displayAttributeApplied_ = false;
             TSF_LOG(L"Cleared display attribute");
+        } else {
+            // No retry path exists: EndComposition drops displayAttributeApplied_
+            // unconditionally and nulls pContext_, and ITfComposition::EndComposition
+            // only removes GUID_PROP_COMPOSING — so a failed Clear leaves
+            // GUID_PROP_ATTRIBUTE on the range forever. Logged rather than fixed
+            // because the attribute carries no colour/underline (DisplayAttribute.h),
+            // making the stale state invisible. If this line ever shows up in a real
+            // host log, implement the fix: keep a pending-cleanup marker that outlives
+            // the composition and retry Clear from the next edit session on that context.
+            TSF_LOG(L"ClearDisplayAttribute: Clear FAILED hr=0x%08X, attribute left stale", hr);
         }
     }
 }
