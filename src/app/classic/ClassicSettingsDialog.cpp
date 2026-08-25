@@ -489,6 +489,10 @@ void ClassicSettingsDialog::CreateAdvancedControls() {
                 nextBtnW = (wcscmp(kSettings[i+1].label, L"...") == 0) ? Dpi(26) : Dpi(70);
             }
             int checkW = hasInlineNext ? colWidth - nextBtnW - Dpi(4) : colWidth;
+            if (meta.parentId != nullptr) {
+                cx += Dpi(16);
+                checkW -= Dpi(16);
+            }
             checkControls_[i] = CreateCheck(meta.label, cx, cy, checkW, Dpi(kControlHeight), meta.win32Id);
         } else if (meta.type == SettingType::Action) {
             if (isInlineAction) {
@@ -672,6 +676,7 @@ void ClassicSettingsDialog::PopulateControls() {
     }
 
     UpdateSpellCheckChildren();
+    UpdateTsfChildren();
 }
 
 void ClassicSettingsDialog::ReadControlValues() {
@@ -1049,6 +1054,7 @@ void ClassicSettingsDialog::OnCommand(WPARAM wParam, LPARAM lParam) {
                         CheckDlgButton(hwnd_, IDC_CHECK_TSF_APPS, checked ? BST_UNCHECKED : BST_CHECKED);
                         config_.tsfApps = !checked;
                     }
+                    UpdateTsfChildren();
                     // Persist immediately on BOTH success and failure paths.
                     // Reality (registry) has already changed; if a subdialog opens
                     // and triggers LoadSettings() before the deferred timer fires,
@@ -1216,15 +1222,22 @@ void ClassicSettingsDialog::UpdateSpellCheckChildren() {
     if (zwjf)       EnableWindow(zwjf, enable);
     if (restore)    EnableWindow(restore, enable);
     if (exclusions) EnableWindow(exclusions, enable);
-    }
+}
 
-    void ClassicSettingsDialog::UpdateCustomKeyMapButtonVisibility() {
+void ClassicSettingsDialog::UpdateTsfChildren() {
+    const bool tsfEnabled = IsDlgButtonChecked(hwnd_, IDC_CHECK_TSF_APPS) == BST_CHECKED;
+    if (HWND underline = GetDlgItem(hwnd_, IDC_CHECK_HIDE_PREEDIT_UNDERLINE)) {
+        EnableWindow(underline, tsfEnabled ? TRUE : FALSE);
+    }
+}
+
+void ClassicSettingsDialog::UpdateCustomKeyMapButtonVisibility() {
     int sel = ComboBox_GetCurSel(comboMethod_);
     // UserDefined is index 4
     if (btnCustomKeymap_) {
         EnableWindow(btnCustomKeymap_, sel == 4);
     }
-    }
+}
 
 // ════════════════════════════════════════════════════════════════════
 // System toggle side effects

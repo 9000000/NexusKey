@@ -44,6 +44,7 @@ struct SettingMeta {
     // Dropdown items, null-terminated parallel arrays. nullptr for non-dropdowns.
     const wchar_t* const* itemsVi = nullptr;
     const wchar_t* const* itemsEn = nullptr;
+    const wchar_t* parentId = nullptr;  // Non-null for an indented child toggle
 };
 
 // ── Dropdown item arrays (null-terminated) ─────────────────────────
@@ -68,6 +69,11 @@ inline constexpr const wchar_t* kStartupModeItemsEn[] = {
 
 #define NK_TYPING(id, field, vi, en, tip, tipE, idc, tab, col) \
     NK_SETTING(Toggle, Typing, TypingConfig, id, field, vi, en, tip, tipE, idc, tab, col, nullptr, nullptr)
+
+#define NK_TYPING_CHILD(id, field, vi, en, tip, tipE, idc, tab, col, parent) \
+    { L##id, ::NextKey::SettingType::Toggle, ::NextKey::SettingOwner::Typing, \
+      static_cast<ptrdiff_t>(offsetof(::NextKey::TypingConfig, field)),       \
+      L##vi, L##en, tip, tipE, idc, tab, col, nullptr, nullptr, L##parent }
 
 #define NK_HOTKEY(id, field, vi, en, tip, tipE, idc, tab, col) \
     NK_SETTING(Toggle, Hotkey, HotkeyConfig, id, field, vi, en, tip, tipE, idc, tab, col, nullptr, nullptr)
@@ -139,6 +145,11 @@ inline constexpr SettingMeta kSettings[] = {
               L"Listed apps use TSF engine; others use the Hook",        2210, 0, 1),
     NK_ACTION("btn-tsf-apps",         "...", "",
               nullptr, nullptr,                                          2507, 0, 1),
+    NK_TYPING_CHILD("hide-preedit-underline", hidePreeditUnderline,
+              "Tắt gạch chân preedit", "Hide preedit underline",
+              L"Không đảm bảo hoạt động 100% trên mọi ứng dụng.",
+              L"Not guaranteed to work in every application.",          2221, 0, 1,
+              "tsf-apps"),
     // ── Action buttons (grouped at bottom) ──
     NK_ACTION("btn-app-overrides",    "Cấu hình từng ứng dụng", "Per-app config",
               nullptr, nullptr,                                          2500, 0, 1),
@@ -254,6 +265,7 @@ inline constexpr SettingMeta kSettings[] = {
 
 #undef NK_SETTING
 #undef NK_TYPING
+#undef NK_TYPING_CHILD
 #undef NK_TYPING_DROPDOWN
 #undef NK_HOTKEY
 #undef NK_SYSTEM

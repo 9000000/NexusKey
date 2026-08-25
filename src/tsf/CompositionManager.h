@@ -59,6 +59,10 @@ public:
     /// Set engine controller for state synchronization
     void SetEngineController(EngineController* pEngineController) { pEngineController_ = pEngineController; }
 
+    void SetHidePreeditUnderline(bool enabled) noexcept {
+        hidePreeditUnderline_ = enabled;
+    }
+
 private:
     [[nodiscard]] bool BeginCompositionOnRange(
         ITfContext* pContext, TfEditCookie ec, ITfRange* pRange,
@@ -81,6 +85,8 @@ private:
     EngineController* pEngineController_ = nullptr; // Not owned, don't release
     std::wstring currentText_;
     TfGuidAtom displayAttributeAtom_ = TF_INVALID_GUIDATOM;
+    bool hidePreeditUnderline_ = false;
+    bool displayAttributeApplied_ = false;
     ULONG refCount_ = 1;
 };
 

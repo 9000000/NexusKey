@@ -192,6 +192,10 @@ function initializeToggles() {
                 document.body.setAttribute("data-enable-toast", newState ? "true" : "false");
             }
 
+            if (id === "tsf-apps") {
+                updateTsfChildren(newState);
+            }
+
             // Show toast message (except show-advanced)
             if (id !== "show-advanced" && typeof showToastI18n === "function") {
                 if (id === "toggle-language") {
@@ -242,11 +246,17 @@ function setToggleRowEnabled(id, enabled) {
 
     if (enabled) {
         toggle.classList.remove("disabled");
+        toggle.setAttribute("aria-disabled", "false");
         if (row) row.classList.remove("disabled");
     } else {
         toggle.classList.add("disabled");
+        toggle.setAttribute("aria-disabled", "true");
         if (row) row.classList.add("disabled");
     }
+}
+
+function updateTsfChildren(tsfEnabled) {
+    setToggleRowEnabled("hide-preedit-underline", tsfEnabled);
 }
 
 function updateUserDefinedButton() {

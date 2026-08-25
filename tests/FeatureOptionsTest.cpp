@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 #include "core/engine/TypingEngine.h"
+#include "core/config/SettingMetadata.h"
 #include "core/config/TypingConfig.h"
 #include "core/ipc/SharedState.h"
 #include "TestHelper.h"
@@ -162,6 +163,26 @@ TEST_F(FeatureFlagsTest, RoundTrip_SuggestKeepChars) {
     EXPECT_FALSE(state.GetFeatureFlags() & FeatureFlags::SUGGEST_KEEP_CHARS);
     DecodeFeatureFlags(state.GetFeatureFlags(), decoded);
     EXPECT_FALSE(decoded.suggestKeepChars);
+}
+
+TEST_F(FeatureFlagsTest, HidePreeditUnderlineDefaultsOffAndRoundTrips) {
+    TypingConfig config;
+    EXPECT_FALSE(config.hidePreeditUnderline);
+
+    config.hidePreeditUnderline = true;
+    const uint32_t flags = EncodeFeatureFlags(config);
+    EXPECT_NE(flags & FeatureFlags::HIDE_PREEDIT_UNDERLINE, 0u);
+
+    TypingConfig decoded;
+    DecodeFeatureFlags(flags, decoded);
+    EXPECT_TRUE(decoded.hidePreeditUnderline);
+}
+
+TEST(SettingMetadata, HidePreeditUnderlineIsAChildOfTsfApps) {
+    const SettingMeta* setting = FindSetting(L"hide-preedit-underline");
+    ASSERT_NE(setting, nullptr);
+    ASSERT_NE(setting->parentId, nullptr);
+    EXPECT_STREQ(setting->parentId, L"tsf-apps");
 }
 
 // ============================================================================

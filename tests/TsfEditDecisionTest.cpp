@@ -61,5 +61,10 @@ TEST(TsfEditDecision, AutoRepeatAndDifferentKeysAreNotSuppressed) {
     EXPECT_FALSE(ShouldSuppressClaimedKeyDown(/*pendingVk=*/0, vkSpace, /*lParam=*/0));
 }
 
+TEST(TsfEditDecision, PreeditAttributeRequiresExplicitOptIn) {
+    EXPECT_FALSE(ShouldApplyPreeditDisplayAttribute(false));
+    EXPECT_TRUE(ShouldApplyPreeditDisplayAttribute(true));
+}
+
 }  // namespace
 }  // namespace NextKey

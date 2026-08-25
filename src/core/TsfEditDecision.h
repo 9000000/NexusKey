@@ -7,6 +7,11 @@
 
 namespace NextKey {
 
+[[nodiscard]] constexpr bool ShouldApplyPreeditDisplayAttribute(
+    bool hidePreeditUnderline) noexcept {
+    return hidePreeditUnderline;
+}
+
 // TS_SD_READONLY / TF_SD_READONLY from textstor.h. Keep the pure decision
 // Windows-header-free so it can be covered by the cross-platform test target.
 inline constexpr uint32_t kTsfReadOnlyDocumentFlag = 0x1u;

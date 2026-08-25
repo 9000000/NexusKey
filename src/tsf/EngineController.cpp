@@ -1201,6 +1201,7 @@ void EngineController::ApplySharedState(const SharedState& state,
     config_.SetSpellCheckLevel(static_cast<SpellCheckLevel>(state.spellCheck));
     config_.optimizeLevel = optimizeLevel;
     DecodeFeatureFlags(state.GetFeatureFlags(), config_);
+    compositionMgr_.SetHidePreeditUnderline(config_.hidePreeditUnderline);
 #ifdef VKEY_USE_RUST_ENGINE
     RefreshUserDictionarySnapshot(state.configGeneration, allowMacroDiskRead);
 #endif

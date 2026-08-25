@@ -97,6 +97,7 @@ struct TypingConfig {
     bool smartSwitch = false;
     bool excludeApps = false;  // Exclude apps feature toggle
     bool tsfApps = false;      // Use TSF engine for listed apps (skip hook)
+    bool hidePreeditUnderline = false;  // Best-effort TSF preedit underline suppression
     uint8_t optimizeLevel = 0;  // 0 = off, 1 = basic, 2 = aggressive
     bool modernOrtho = true;   // Modern tone placement (oà, uý)
     bool autoCaps = false;      // Auto-capitalize first letter of sentence

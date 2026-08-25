@@ -37,6 +37,8 @@ var STRINGS = {
         "s.cjk_auto_switch_tooltip": "Switch to E when a Chinese/Japanese/Korean layout is active",
         "s.enable_tsf": "Use TSF for apps",
         "s.tsf_tooltip": "Use TSF engine instead of hook for listed apps",
+        "s.hide_preedit_underline": "Hide preedit underline",
+        "s.hide_preedit_underline_tooltip": "Not guaranteed to work in every application.",
         "s.advanced": "Advanced settings",
         "s.tab_input": "Input",
         "s.tab_macro": "Macro",

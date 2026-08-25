@@ -69,6 +69,7 @@ private:
     [[nodiscard]] bool OnTsfAppsToggle(bool wantsEnabled);
     void OnPickIconColors();
     void UpdateSpellCheckChildren();
+    void UpdateTsfChildren();
     /// Shared CBN_DROPDOWN/CBN_CLOSEUP combo-box animation suppression
     /// (dark-mode-only Win32 visual glitch workaround), used by every
     /// hand-wired combo case in OnCommand.

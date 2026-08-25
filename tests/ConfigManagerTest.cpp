@@ -124,6 +124,24 @@ TEST_F(ConfigManagerTest, SaveToFile_VNI) {
     EXPECT_TRUE(loaded->spellCheckEnabled);
 }
 
+TEST_F(ConfigManagerTest, HidePreeditUnderlineDefaultsOffAndRoundTrips) {
+    WriteTestConfig(R"(
+[features]
+tsf_apps = true
+)");
+
+    auto defaults = ConfigManager::LoadFromFile(testConfigPath_);
+    ASSERT_TRUE(defaults.has_value());
+    EXPECT_FALSE(defaults->hidePreeditUnderline);
+
+    defaults->hidePreeditUnderline = true;
+    ASSERT_TRUE(ConfigManager::SaveToFile(testConfigPath_, *defaults));
+
+    auto loaded = ConfigManager::LoadFromFile(testConfigPath_);
+    ASSERT_TRUE(loaded.has_value());
+    EXPECT_TRUE(loaded->hidePreeditUnderline);
+}
+
 TEST_F(ConfigManagerTest, SaveToFile_PreservesUISection) {
     // First save UI config
     UIConfig uiConfig;

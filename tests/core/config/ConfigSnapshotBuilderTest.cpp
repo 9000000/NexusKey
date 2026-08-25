@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
+#include <process.h>
 #include "core/config/ConfigSnapshotBuilder.h"
 #include "core/config/ConfigSnapshot.h"
 
@@ -23,9 +24,11 @@ protected:
     fs::path tmpToml_;
 
     void SetUp() override {
+        static unsigned long nextTempId = 0;
         tmpToml_ = fs::temp_directory_path() /
                    ("vkey_snap_test_" +
-                    std::to_string(::testing::UnitTest::GetInstance()->random_seed()) +
+                    std::to_string(::_getpid()) + "_" +
+                    std::to_string(nextTempId++) +
                     ".toml");
     }
     void TearDown() override { std::error_code ec; fs::remove(tmpToml_, ec); }

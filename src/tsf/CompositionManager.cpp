@@ -6,6 +6,7 @@
 #include "EngineController.h"
 #include "DisplayAttribute.h"
 #include "Define.h"
+#include "core/TsfEditDecision.h"
 
 namespace NextKey {
 namespace TSF {
@@ -33,6 +34,7 @@ IFACEMETHODIMP CompositionManager::OnCompositionTerminated(TfEditCookie /*ec*/, 
         pComposition_ = nullptr;
         pContext_ = nullptr;
         currentText_.clear();
+        displayAttributeApplied_ = false;
         ownedComposition->Release();
         if (ownedContext != nullptr) ownedContext->Release();
     }
@@ -116,7 +118,9 @@ bool CompositionManager::BeginCompositionOnRange(
     pContext_ = pContext;
     pContext_->AddRef();
     currentText_ = currentText;
-    if (!ApplyDisplayAttribute(ec, pRange)) {
+    displayAttributeApplied_ = false;
+    if (ShouldApplyPreeditDisplayAttribute(hidePreeditUnderline_)
+        && !ApplyDisplayAttribute(ec, pRange)) {
         // Styling is best-effort for host compatibility. The text edit and
         // composition are already live, so failing the edit session here would
         // report a false insertion failure after mutating the document.
@@ -147,8 +151,12 @@ bool CompositionManager::SetCompositionText(
     }
 
     currentText_ = text;
-    if (!ApplyDisplayAttribute(ec, pRange)) {
-        TSF_LOG(L"SetCompositionText: invisible display attribute unavailable");
+    if (ShouldApplyPreeditDisplayAttribute(hidePreeditUnderline_)) {
+        if (!ApplyDisplayAttribute(ec, pRange)) {
+            TSF_LOG(L"SetCompositionText: invisible display attribute unavailable");
+        }
+    } else if (displayAttributeApplied_) {
+        ClearDisplayAttribute(ec, pRange);
     }
     MoveCaretToEnd(ec);
 
@@ -171,6 +179,7 @@ void CompositionManager::EndComposition(TfEditCookie ec) {
     pComposition_ = nullptr;
     pContext_ = nullptr;
     currentText_.clear();
+    displayAttributeApplied_ = false;
 
     const HRESULT hr = ownedComposition->EndComposition(ec);
     ownedComposition->Release();
@@ -219,6 +228,7 @@ bool CompositionManager::ApplyDisplayAttribute(TfEditCookie ec, ITfRange* pRange
         return false;
     }
 
+    displayAttributeApplied_ = true;
     return true;
 }
 
@@ -234,16 +244,20 @@ void CompositionManager::TerminateComposition() {
         pContext_ = nullptr;
     }
     currentText_.clear();
+    displayAttributeApplied_ = false;
 }
 
 void CompositionManager::ClearDisplayAttribute(TfEditCookie ec, ITfRange* pRange) {
-    if (pRange == nullptr || pContext_ == nullptr) return;
+    if (!displayAttributeApplied_ || pRange == nullptr || pContext_ == nullptr) return;
 
     ITfProperty* pProperty = nullptr;
     if (SUCCEEDED(pContext_->GetProperty(GUID_PROP_ATTRIBUTE, &pProperty)) && pProperty != nullptr) {
-        pProperty->Clear(ec, pRange);
+        const HRESULT hr = pProperty->Clear(ec, pRange);
         pProperty->Release();
-        TSF_LOG(L"Cleared display attribute");
+        if (SUCCEEDED(hr)) {
+            displayAttributeApplied_ = false;
+            TSF_LOG(L"Cleared display attribute");
+        }
     }
 }
 

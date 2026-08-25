@@ -282,6 +282,8 @@ std::optional<TypingConfig> ConfigManager::LoadFromFile(const std::wstring& path
             config.smartSwitch = (*features)["smart_switch"].value_or(false);
             config.excludeApps = (*features)["exclude_apps"].value_or(false);
             config.tsfApps = (*features)["tsf_apps"].value_or(false);
+            config.hidePreeditUnderline =
+                (*features)["hide_preedit_underline"].value_or(false);
             config.optimizeLevel = static_cast<uint8_t>(
                 (*features)["optimize_level"].value_or(0)
             );
@@ -377,6 +379,7 @@ bool ConfigManager::SaveToFile(const std::wstring& path, const TypingConfig& con
         features.insert_or_assign("smart_switch", config.smartSwitch);
         features.insert_or_assign("exclude_apps", config.excludeApps);
         features.insert_or_assign("tsf_apps", config.tsfApps);
+        features.insert_or_assign("hide_preedit_underline", config.hidePreeditUnderline);
         features.insert_or_assign("optimize_level", static_cast<int64_t>(config.optimizeLevel));
         features.insert_or_assign("modern_ortho", config.modernOrtho);
         features.insert_or_assign("auto_caps", config.autoCaps);
