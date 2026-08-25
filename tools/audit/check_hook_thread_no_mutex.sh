@@ -2,7 +2,7 @@
 #
 # Sprint 1 D7 — Phase B compliance gate.
 #
-# Verifies three guarantees at the source level:
+# Verifies seven guarantees at the source level:
 #   1. The hook-thread `lock_guard<recursive_mutex>` regression-trap lines
 #      from D4 SPIKE are still commented — ≥2 in HookEngine.cpp
 #      (LowLevelKeyboardProc + LowLevelMouseProc). Wave 3 PR 3.2 moved
@@ -15,6 +15,12 @@
 #   3. All migrated atomic fields (D5 + D5.1 + D5.2 + D6) use `.load()` /
 #      `.store()` — no plain assignment or read of these fields. The atomic
 #      RCU `config_` field also obeys this rule.
+#   4. The output injector RCU pointer is accessed only through atomic load /
+#      store operations.
+#   5. QuickSyncFromSharedState retains its lock-free hot path.
+#   6. Exactly one application keyboard-hook install exists, owned by
+#      HookLifecycle before its message pump.
+#   7. Automatic rehook and ghost-recovery machinery stays removed.
 #
 # Run from repo root:
 #   bash tools/audit/check_hook_thread_no_mutex.sh
@@ -22,16 +28,221 @@
 # Exit code 0 = pass, non-zero = fail.
 #
 # Notes:
-# * This is a grep-based heuristic, not a full call-graph analysis. It catches
-#   the regression patterns that matter (someone adds a `stateMutex_` lock to
-#   a hook callback, or reverts an atomic field to plain assignment), at the
-#   cost of accepting some over-approximation in comments / format strings.
+# * This is a source-level heuristic, not a full call-graph analysis. Check 6
+#   uses a comment/literal-aware lexical scan; the remaining checks catch the
+#   named regression patterns with some accepted over-approximation.
 # * If a check produces a false positive, prefer tightening this script over
 #   weakening the source-level invariant.
 #
 # Reference: docs/plans/sprint-1-single-owner-refactor.md §B D7.
 
 set -e
+
+# Emit one `path:line:call` record for every low-level keyboard-hook install
+# found below the supplied source roots.  Check 6 and its fixture-based
+# regression tests intentionally share this scanner so the tests exercise the
+# exact production gate.
+scan_keyboard_hook_installs() {
+    python3 - "$@" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+
+SOURCE_SUFFIXES = {
+    ".c", ".cc", ".cpp", ".cxx",
+    ".h", ".hh", ".hpp", ".hxx",
+    ".inl", ".ipp",
+}
+CALL_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_])"
+    r"(?P<api>SetWindowsHookEx(?:A|W)?)"
+    r"(?![A-Za-z0-9_])\s*\(\s*"
+    r"WH_KEYBOARD_LL(?![A-Za-z0-9_])"
+)
+RAW_PREFIXES = ("u8R\"", "uR\"", "UR\"", "LR\"", "R\"")
+
+
+def source_files(roots):
+    for root_arg in roots:
+        root = Path(root_arg)
+        if root.is_file():
+            if root.suffix.lower() in SOURCE_SUFFIXES:
+                yield root
+            continue
+        if root.is_dir():
+            yield from sorted(
+                path for path in root.rglob("*")
+                if path.is_file() and path.suffix.lower() in SOURCE_SUFFIXES
+            )
+
+
+def blank_non_newlines(chars, start, end):
+    for index in range(start, end):
+        if chars[index] not in "\r\n":
+            chars[index] = " "
+
+
+def raw_literal_end(text, start):
+    if start > 0 and (text[start - 1].isalnum() or text[start - 1] == "_"):
+        return None
+    prefix = next((item for item in RAW_PREFIXES if text.startswith(item, start)), None)
+    if prefix is None:
+        return None
+    delimiter_start = start + len(prefix)
+    open_paren = text.find("(", delimiter_start, delimiter_start + 17)
+    if open_paren == -1:
+        return None
+    delimiter = text[delimiter_start:open_paren]
+    if any(char.isspace() or char in "\\()" for char in delimiter):
+        return None
+    terminator = ")" + delimiter + '"'
+    close = text.find(terminator, open_paren + 1)
+    return len(text) if close == -1 else close + len(terminator)
+
+
+def without_comments_and_literals(text):
+    chars = list(text)
+    index = 0
+    while index < len(text):
+        if text.startswith("//", index):
+            end = text.find("\n", index + 2)
+            end = len(text) if end == -1 else end
+            blank_non_newlines(chars, index, end)
+            index = end
+            continue
+        if text.startswith("/*", index):
+            close = text.find("*/", index + 2)
+            end = len(text) if close == -1 else close + 2
+            blank_non_newlines(chars, index, end)
+            index = end
+            continue
+
+        raw_end = raw_literal_end(text, index)
+        if raw_end is not None:
+            blank_non_newlines(chars, index, raw_end)
+            index = raw_end
+            continue
+
+        if text[index] in "\"'":
+            quote = text[index]
+            end = index + 1
+            while end < len(text):
+                if text[end] == "\\":
+                    end = min(end + 2, len(text))
+                    continue
+                if text[end] == quote:
+                    end += 1
+                    break
+                end += 1
+            blank_non_newlines(chars, index, end)
+            index = end
+            continue
+        index += 1
+    return "".join(chars)
+
+
+cwd = Path.cwd()
+for source_path in source_files(sys.argv[1:]):
+    text = source_path.read_text(encoding="utf-8", errors="replace")
+    clean = without_comments_and_literals(text)
+    try:
+        display_path = source_path.resolve().relative_to(cwd.resolve())
+    except ValueError:
+        display_path = source_path
+    for match in CALL_PATTERN.finditer(clean):
+        line = clean.count("\n", 0, match.start()) + 1
+        print(f"{display_path}:{line}:{match.group('api')}(WH_KEYBOARD_LL")
+PY
+}
+
+count_keyboard_hook_installs() {
+    scan_keyboard_hook_installs "$@" | awk 'NF { count += 1 } END { print count + 0 }'
+}
+
+run_keyboard_hook_scan_self_tests() {
+    local fixture_root fixture_source case_file label expected actual failures
+    fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/vkey-hook-audit.XXXXXX")
+    fixture_source="$fixture_root/src/app/system"
+    case_file="$fixture_source/Adversarial.cpp"
+    failures=0
+    mkdir -p "$fixture_source"
+
+    printf '%s\n' \
+        'void InstallInitialHook() {' \
+        '    SetWindowsHookExW(WH_KEYBOARD_LL, KeyboardProc, module, 0);' \
+        '}' \
+        > "$fixture_source/HookLifecycle.cpp"
+
+    assert_keyboard_fixture_count() {
+        label="$1"
+        expected="$2"
+        actual=$(count_keyboard_hook_installs "$fixture_root/src/app")
+        if [ "$actual" -ne "$expected" ]; then
+            echo "  SELF-TEST FAIL [$label]: expected $expected install(s), found $actual"
+            scan_keyboard_hook_installs "$fixture_root/src/app" | sed 's/^/    /'
+            failures=$((failures + 1))
+        else
+            echo "  SELF-TEST OK   [$label]: found $actual install(s)"
+        fi
+    }
+
+    assert_keyboard_fixture_count "baseline W call" 1
+
+    printf '%s\n' \
+        '// SetWindowsHookExW(WH_KEYBOARD_LL, IgnoredProc, nullptr, 0);' \
+        '/* SetWindowsHookExA(WH_KEYBOARD_LL, IgnoredProc, nullptr, 0); */' \
+        'const char* text = "SetWindowsHookEx(WH_KEYBOARD_LL, ...)";' \
+        'const char* raw = R"tag(SetWindowsHookExW(WH_KEYBOARD_LL, ...))tag";' \
+        > "$case_file"
+    assert_keyboard_fixture_count "comment and string decoys" 1
+
+    printf '%s\n' \
+        'void InstallAgain() { SetWindowsHookExW(WH_KEYBOARD_LL, KeyboardProc, nullptr, 0); }' \
+        > "$case_file"
+    assert_keyboard_fixture_count "second W call fails exact-one" 2
+
+    printf '%s\n' \
+        'void InstallAgain() { SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, nullptr, 0); }' \
+        > "$case_file"
+    assert_keyboard_fixture_count "second generic call fails exact-one" 2
+
+    printf '%s\n' \
+        'void InstallAgain() { SetWindowsHookExA(WH_KEYBOARD_LL, KeyboardProc, nullptr, 0); }' \
+        > "$case_file"
+    assert_keyboard_fixture_count "second A call fails exact-one" 2
+
+    printf '%s\n' \
+        'void InstallAgain() {' \
+        '    SetWindowsHookExW /* comment between API and call */ (WH_KEYBOARD_LL,' \
+        '        KeyboardProc, nullptr, 0);' \
+        '}' \
+        > "$case_file"
+    assert_keyboard_fixture_count "second comment-separated W call fails exact-one" 2
+
+    printf '%s\n' \
+        'void InstallAgain() {' \
+        '    SetWindowsHookEx' \
+        '    /* comment and newlines between call tokens */' \
+        '    (' \
+        '        /* hook kind */' \
+        '        WH_KEYBOARD_LL, KeyboardProc, nullptr, 0);' \
+        '}' \
+        > "$case_file"
+    assert_keyboard_fixture_count "second multiline generic call fails exact-one" 2
+
+    rm -rf -- "$fixture_root"
+    if [ "$failures" -gt 0 ]; then
+        echo "  SELF-TEST FAIL: $failures keyboard-hook scanner case(s) failed"
+        return 1
+    fi
+    echo "  SELF-TEST PASS: keyboard-hook scanner adversarial fixtures"
+}
+
+if [ "${1:-}" = "--self-test-keyboard-hook-scan" ]; then
+    run_keyboard_hook_scan_self_tests
+    exit $?
+fi
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo_root"
@@ -286,12 +497,11 @@ fi
 # queue contention; reinstalling the same handle at runtime is also forbidden.
 echo
 echo "Check 6: exactly one WH_KEYBOARD_LL installation site under src/app"
-keyboard_install_pattern='SetWindowsHookExW\s*\(\s*WH_KEYBOARD_LL\b'
-keyboard_install_sites=$(rg -n -U --glob '*.cpp' --glob '*.h' \
-    "$keyboard_install_pattern" src/app || true)
-keyboard_install_count=$(rg -U --count-matches --glob '*.cpp' --glob '*.h' \
-    "$keyboard_install_pattern" src/app 2>/dev/null \
-    | awk -F: '{ total += $NF } END { print total + 0 }')
+if ! run_keyboard_hook_scan_self_tests; then
+    errors=$((errors + 1))
+fi
+keyboard_install_sites=$(scan_keyboard_hook_installs src/app)
+keyboard_install_count=$(count_keyboard_hook_installs src/app)
 if [ "$keyboard_install_count" -ne 1 ]; then
     echo "  FAIL: expected exactly 1 keyboard-hook installation site, found $keyboard_install_count"
     echo "$keyboard_install_sites" | sed '/^$/d; s/^/    /'
