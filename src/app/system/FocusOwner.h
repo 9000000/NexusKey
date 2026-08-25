@@ -41,7 +41,6 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <mutex>
 
 namespace NextKey {
 
@@ -51,13 +50,6 @@ public:
     /// HookEngine wires this at Install() to its OnFocusChanged shim
     /// (QuickSync + Classify + Post(kFocusChanged)).
     using FocusChangedFn = std::function<void(HWND triggerHwnd)>;
-
-    /// Fired from Classify() when the focused app is Chromium/Java and we
-    /// want to re-install the LL hooks at the top of the chain. HookEngine
-    /// wires this to `lifecycle_.PostReinstallHooks(reason)`, gated on
-    /// `lifecycle_.ThreadId()` so FocusOwner doesn't need to know about
-    /// HookLifecycle.
-    using ReinstallFn = std::function<void(WPARAM reason)>;
 
     /// Per-HWND classification cache entry. PID re-validated on lookup to
     /// catch HWND reuse after a process dies. Bounded LRU eviction at
@@ -93,16 +85,14 @@ public:
     /// Install both WinEvent hooks (FOREGROUND + MINIMIZEEND). Returns
     /// true iff the FOREGROUND hook installed (MINIMIZEEND is best-effort).
     /// Sets `s_instance` for the static WinEventProc dispatch.
-    [[nodiscard]] bool Install(FocusChangedFn onFocusChanged,
-                                ReinstallFn   onReinstall);
+    [[nodiscard]] bool Install(FocusChangedFn onFocusChanged);
     /// Unhook + clear `s_instance`. Idempotent.
     void Uninstall();
 
     /// Heavy Win32 classifier: cache lookup → ClassifyWindow →
     /// GetExeNameForHwnd → (sometimes) IsWebView2App → override-map
     /// resolution. Called from main (WinEventProc) and worker (OnTickPoll).
-    /// Never accesses engine state. Posts a reinstall request via
-    /// `onReinstall_` when the focused app is Chromium/Java.
+    /// Never accesses engine state.
     [[nodiscard]] FocusClassification Classify(HWND triggerHwnd,
                                                 const ConfigContext& ctx) noexcept;
 
@@ -230,10 +220,6 @@ public:
     // ── Exe-name helper (static — pure Win32 lookup, no instance state) ─
     [[nodiscard]] static std::wstring GetExeNameForHwnd(HWND hwnd) noexcept;
 
-    // ── Dynamic hijackers registration & check (thread-safe) ────────────
-    void RegisterDynamicHijacker(const std::wstring& exeName) noexcept;
-    [[nodiscard]] bool IsDynamicHijacker(const std::wstring& exeName) const noexcept;
-
 private:
     static void CALLBACK WinEventProc(HWINEVENTHOOK hHook, DWORD event,
                                        HWND hwnd, LONG idObj, LONG idChild,
@@ -249,7 +235,6 @@ private:
     HWINEVENTHOOK focusHook_     = nullptr;  // EVENT_SYSTEM_FOREGROUND
     HWINEVENTHOOK minimizeHook_  = nullptr;  // EVENT_SYSTEM_MINIMIZEEND
     FocusChangedFn onFocusChanged_;
-    ReinstallFn    onReinstall_;
 
     std::atomic<DWORD> lastForegroundPid_{0};
     std::wstring activeExe_;     // any focus (incl. helper windows)
@@ -300,10 +285,6 @@ private:
     // shrinking map is still unbounded. On overflow we drop the whole set (worst
     // case: the next focus per exe re-scans once). Cheap and rarely hit.
     static constexpr std::size_t kMaxWebView2NegativeCache = 128;
-
-    // Thread-safe dynamic hijacker tracking
-    std::unordered_set<std::wstring> dynamicHijackers_;
-    mutable std::mutex dynamicHijackersMutex_;
 
     // Singleton for static WinEventProc dispatch (Win32 callback has no
     // userdata pointer). Mirror of HookLifecycle's per-instance approach

@@ -29,18 +29,6 @@
 
 namespace NextKey {
 
-/// `WM_APP_REINSTALL_HOOKS` wParam — labels which trigger fired the reinstall.
-/// HookEngine sends these from OnFocusChanged for Chromium / Java top-of-chain
-/// priority. Public so HookEngine can pass via PostReinstallHooks().
-inline constexpr WPARAM REINSTALL_REASON_CHROMIUM = 0;  // focus / mouse-down — 500ms throttle
-inline constexpr WPARAM REINSTALL_REASON_JAVA     = 1;  // focus → Java app    — 500ms throttle
-// Anti-Dorion v2 (2026-05-28): HookHijackDetector signals a confirmed bypass
-// (polled keydown that the hook didn't see). Detector self-cooldowns internally
-// at ~150ms, so the pump can throttle this reason more aggressively without
-// risking unhook-gap floods — fast recovery is the whole point of the
-// detector path.
-inline constexpr WPARAM REINSTALL_REASON_HIJACK   = 2;  // detector confirmed — 100ms throttle
-
 class HookLifecycle {
 public:
     /// Invoked from the hook thread on WM_APP_HOOK_COMMAND wake-up. HookEngine
@@ -93,27 +81,6 @@ public:
     /// no-op before startup or after shutdown.
     void PostHotkey(std::size_t slot) noexcept;
 
-    /// Ask the hook pump to unhook + reinstall both LL hooks (Chromium /
-    /// Java focus-time top-of-chain priority). Throttled internally by the
-    /// pump (`kMinReinstallIntervalMs` = 500ms) so a focus-event burst
-    /// doesn't produce a burst of unhook gaps.
-    void PostReinstallHooks(WPARAM reason) noexcept;
-
-    /// Ghost-key dispatch — called from the hook pump when a
-    /// WM_APP_GHOSTKEY arrives. Wraps `engine_->PushChar` etc. on the
-    /// hook thread; preserves single-writer doctrine §12 (engine state
-    /// mutated only on hook thread). The HookHijackDetector calls
-    /// PostGhostKey from its polling thread; the pump invokes this fn.
-    /// Defaults to a no-op when never set (detector disabled).
-    using GhostKeyFn = std::function<void(wchar_t)>;
-    void SetGhostKeyHandler(GhostKeyFn fn) noexcept { ghostKeyFn_ = std::move(fn); }
-
-    /// Post one recovered ghost character onto the hook thread's message
-    /// queue. FIFO-ordered (no coalescing — each call delivers separately,
-    /// unlike the mailbox's bit-OR semantics). Safe from any thread.
-    /// No-op if the thread isn't running yet.
-    void PostGhostKey(wchar_t ch) noexcept;
-
 private:
     void ThreadProc();
 
@@ -138,7 +105,6 @@ private:
     HookCommandMailbox mailbox_;
     DrainFn drainFn_;
     HotkeyDispatchFn hotkeyDispatchFn_;
-    GhostKeyFn ghostKeyFn_;
 };
 
 }  // namespace NextKey

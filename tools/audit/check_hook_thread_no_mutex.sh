@@ -279,6 +279,68 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────────
+# Check 6: Exactly one application keyboard-hook installation site
+# ────────────────────────────────────────────────────────────────────────
+# HookLifecycle owns the sole long-lived WH_KEYBOARD_LL hook.  Any second
+# install site reintroduces hook-chain ordering churn and installer-thread
+# queue contention; reinstalling the same handle at runtime is also forbidden.
+echo
+echo "Check 6: exactly one WH_KEYBOARD_LL installation site under src/app"
+keyboard_install_pattern='SetWindowsHookExW\s*\(\s*WH_KEYBOARD_LL\b'
+keyboard_install_sites=$(rg -n -U --glob '*.cpp' --glob '*.h' \
+    "$keyboard_install_pattern" src/app || true)
+keyboard_install_count=$(rg -U --count-matches --glob '*.cpp' --glob '*.h' \
+    "$keyboard_install_pattern" src/app 2>/dev/null \
+    | awk -F: '{ total += $NF } END { print total + 0 }')
+if [ "$keyboard_install_count" -ne 1 ]; then
+    echo "  FAIL: expected exactly 1 keyboard-hook installation site, found $keyboard_install_count"
+    echo "$keyboard_install_sites" | sed '/^$/d; s/^/    /'
+    errors=$((errors + 1))
+elif ! echo "$keyboard_install_sites" | grep -q '^src/app/system/HookLifecycle.cpp:'; then
+    echo "  FAIL: sole keyboard-hook installation is not owned by HookLifecycle"
+    echo "$keyboard_install_sites" | sed 's/^/    /'
+    errors=$((errors + 1))
+else
+    install_line=$(echo "$keyboard_install_sites" | head -1 | cut -d: -f2)
+    pump_line=$(grep -n 'while (GetMessageW' src/app/system/HookLifecycle.cpp \
+        | head -1 | cut -d: -f1)
+    if [ -z "$install_line" ] || [ -z "$pump_line" ] || [ "$install_line" -ge "$pump_line" ]; then
+        echo "  FAIL: HookLifecycle keyboard-hook install must occur before the message pump"
+        echo "$keyboard_install_sites" | sed 's/^/    /'
+        errors=$((errors + 1))
+    else
+        echo "  OK: sole install is HookLifecycle's initial pre-pump path"
+    fi
+fi
+
+# ────────────────────────────────────────────────────────────────────────
+# Check 7: Automatic rehook and ghost-recovery machinery stays removed
+# ────────────────────────────────────────────────────────────────────────
+# These names cover the lifecycle entry points and every former producer or
+# state owner.  The scan includes CMake so obsolete recovery components cannot
+# be silently linked back into either application target.
+echo
+echo "Check 7: no automatic rehook or ghost-recovery symbols"
+recovery_pattern='PostReinstallHooks|WM_APP_REINSTALL_HOOKS|REINSTALL_REASON_|ReinstallFn|onReinstall_|requestReinstall|lastReinstallTime|HookHijackDetector|ReinstallBurstScheduler|SetChromiumClassActive|PostGhostKey|SetGhostKeyHandler|GhostKeyFn|ghostKeyFn_|HandleGhostChar|injectGhostChar|WM_APP_GHOSTKEY|RegisterDynamicHijacker|IsDynamicHijacker|IsKnownHijackerExe|ApplyFocusOperationalProtectionOnHookThread|isChromiumClassApp_|isKnownHijackerApp_|isKnownHijacker|isJavaApp|hookFireCount_|hijackDetector_|reinstallBurstScheduler_|burstTimerQueue_'
+recovery_source_matches=$(grep -RInE --include='*.cpp' --include='*.h' \
+    "$recovery_pattern" src/app || true)
+recovery_cmake_matches=$(grep -nE "$recovery_pattern" CMakeLists.txt \
+    | sed 's|^|CMakeLists.txt:|' || true)
+recovery_matches=$(printf '%s\n%s\n' "$recovery_source_matches" "$recovery_cmake_matches" \
+    | sed '/^$/d')
+recovery_count=$(echo -n "$recovery_matches" | grep -c '^' || true)
+if [ "$recovery_count" -gt 0 ]; then
+    echo "  FAIL: found $recovery_count automatic rehook/recovery reference(s)"
+    echo "$recovery_matches" | head -40 | sed 's/^/    /'
+    if [ "$recovery_count" -gt 40 ]; then
+        echo "    ... $((recovery_count - 40)) more"
+    fi
+    errors=$((errors + 1))
+else
+    echo "  OK: recovery-only symbols absent"
+fi
+
+# ────────────────────────────────────────────────────────────────────────
 # Result
 # ────────────────────────────────────────────────────────────────────────
 echo

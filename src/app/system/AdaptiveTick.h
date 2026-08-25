@@ -7,9 +7,9 @@
 //
 // Two states only:
 //   * Active / briefly paused (idle < kIdleStopThreshMs): tick at 200 ms. The
-//     worker polls CJK layout (Win+Space), foreground PID, and the anti-Dorion
-//     detector at this cadence — so a layout switch is caught within 200 ms
-//     (the instant feel of the a8800b3f build).
+//     worker polls CJK layout (Win+Space), foreground PID, and shared state at
+//     this cadence — so a layout switch is caught within 200 ms (the instant
+//     feel of the a8800b3f build).
 //   * Deep idle (idle >= kIdleStopThreshMs): STOP (return 0). The owner maps 0
 //     to SetTickInterval(0) → the worker blocks on cv_.wait (∞), touches no
 //     pages, and Windows trims the working set (v2.1.24 idle parity). The next

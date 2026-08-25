@@ -82,8 +82,6 @@ struct FocusClassification {
     bool isQtApp{false};
     bool isVB6{false};
     bool isWebView2{false};
-    bool isJavaApp{false};
-    bool isKnownHijacker{false};
     // True only when a recognized Edit/RichEdit/Scintilla control reported
     // whole-document length 0 and caret position 0 during cold-path focus
     // classification. Unknown controls and failed/timeout probes stay false.

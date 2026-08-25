@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "FocusOwner.h"
-#include "HookLifecycle.h"  // REINSTALL_REASON_CHROMIUM / _JAVA
 #include "PerfHistogram.h"  // PERF_SCOPE
 #include "helpers/AppHelpers.h"  // ToLowerAscii, GetFocusedChildHwnd
 #include "core/AutoCapDecision.h"
@@ -46,11 +45,6 @@ static constexpr UINT kSciGetCurrentPos = 2008;
 // free for symmetry with the originals and to keep diffs small if a future
 // PR needs to reorder them.
 // ─────────────────────────────────────────────────────────────────────────
-
-/// Check if an exe name belongs to a known LL-hook hijacker (like Dorion).
-static bool IsKnownHijackerExe(const std::wstring& exeName) noexcept {
-    return !exeName.empty() && _wcsnicmp(exeName.c_str(), L"dorion", 6) == 0;
-}
 
 [[nodiscard]] static bool TrySendControlQuery(HWND control,
                                                UINT message,
@@ -249,12 +243,10 @@ FocusOwner::~FocusOwner() {
     Uninstall();
 }
 
-bool FocusOwner::Install(FocusChangedFn onFocusChanged,
-                          ReinstallFn   onReinstall) {
+bool FocusOwner::Install(FocusChangedFn onFocusChanged) {
     if (focusHook_) return true;  // already installed — idempotent
 
     onFocusChanged_ = std::move(onFocusChanged);
-    onReinstall_    = std::move(onReinstall);
     s_instance.store(this, std::memory_order_release);
 
     // Two separate hooks for exact event targeting (avoids receiving ~20
@@ -274,7 +266,6 @@ bool FocusOwner::Install(FocusChangedFn onFocusChanged,
     if (!focusHook_) {
         s_instance.store(nullptr, std::memory_order_release);
         onFocusChanged_ = nullptr;
-        onReinstall_    = nullptr;
         if (minimizeHook_) {
             UnhookWinEvent(minimizeHook_);
             minimizeHook_ = nullptr;
@@ -297,7 +288,6 @@ void FocusOwner::Uninstall() {
         s_instance.store(nullptr, std::memory_order_release);
     }
     onFocusChanged_ = nullptr;
-    onReinstall_    = nullptr;
 }
 
 void CALLBACK FocusOwner::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd,
@@ -710,13 +700,6 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
         cls.exeName = GetExeNameForHwnd(fg);
     }
 
-    // Java detection — used to trigger top-of-chain hook reinstall (jnativehook
-    // GC stalls regularly exceed LowLevelHooksTimeout and Windows drops us).
-    cls.isJavaApp =
-        cls.exeName == L"jp2launcher.exe" ||
-        cls.exeName == L"javaw.exe" ||
-        cls.exeName == L"java.exe";
-
     // Per-app excluded / TSF / encoding / method overrides — captured here
     // so ApplyFocusOnHookThread doesn't need to touch the maps OR read
     // `global{CodeTable,InputMethod}_` (both written from main; the new
@@ -785,39 +768,6 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
         }
     }
 
-    // Re-install hooks to guarantee VKey remains at the top of the hook chain.
-    // Two distinct triggers, two distinct mechanisms:
-    //   1. Chromium-based (Electron, WebView2, Browsers): they install their own
-    //      WH_KEYBOARD_LL hooks that aggressively drop synthetic injected events
-    //      (like our Backspaces) if they sit in front of us.
-    //   2. Java apps (jp2launcher / javaw / java): commonly embed jnativehook for
-    //      global hotkeys. JVM callback bridge + GC pauses regularly exceed
-    //      Windows' 300ms LowLevelHooksTimeout → Windows drops the hook chain.
-    //      Keeping VKey on top gives us first crack at each event. For
-    //      Vietnamese-eaten keys VKey returns 1 without CallNextHookEx, so a
-    //      downstream stall is irrelevant. For pass-through keys (English
-    //      mode, modifier keys) we still call CallNextHookEx, so a slow
-    //      downstream hook still blocks our callback — partial protection
-    //      only; HookSelfHealer catches the residual case.
-    // Doing this conditionally avoids unnecessary unhook/rehook overhead for
-    // normal apps. We must do this even if the PID hasn't changed — WebView2
-    // creates child windows that trigger focus events AFTER initial hook setup,
-    // and jnativehook may re-arm itself during a JVM session.
-    //
-    // Wave 3 PR 3.2 — gate moved into HookEngine's onReinstall_ lambda
-    // (it checks lifecycle_.ThreadId() and forwards to PostReinstallHooks).
-    // FocusOwner stays decoupled from HookLifecycle's runtime state.
-    //
-    // A1 (2026-06-06): Proactive focus-time reinstall runs ONLY for Java apps
-    // and known/dynamic hijackers. Plain browsers / Electron apps do not
-    // hijack hooks, so we avoid the synchronous unhook/rehook overhead on focus.
-    cls.isKnownHijacker = IsKnownHijackerExe(cls.exeName) || IsDynamicHijacker(cls.exeName);
-
-    if (onReinstall_ && (cls.isJavaApp || cls.isKnownHijacker)) {
-        const WPARAM reason = cls.isJavaApp ? REINSTALL_REASON_JAVA : REINSTALL_REASON_CHROMIUM;
-        onReinstall_(reason);
-    }
-
     return cls;
 }
 
@@ -847,19 +797,6 @@ void FocusOwner::PublishAppModesSnapshot() noexcept {
 std::shared_ptr<const std::unordered_map<std::wstring, bool>>
 FocusOwner::SnapshotAppModes() const noexcept {
     return appModesSnap_.load(std::memory_order_acquire);
-}
-
-void FocusOwner::RegisterDynamicHijacker(const std::wstring& exeName) noexcept {
-    if (exeName.empty()) return;
-    std::lock_guard<std::mutex> lock(dynamicHijackersMutex_);
-    dynamicHijackers_.insert(exeName);
-    FOCUS_LOG(L"Registered dynamic hijacker: %s", exeName.c_str());
-}
-
-bool FocusOwner::IsDynamicHijacker(const std::wstring& exeName) const noexcept {
-    if (exeName.empty()) return false;
-    std::lock_guard<std::mutex> lock(dynamicHijackersMutex_);
-    return dynamicHijackers_.count(exeName) > 0;
 }
 
 }  // namespace NextKey

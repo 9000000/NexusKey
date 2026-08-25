@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 #include "HookEngine.h"
-#include "HookHijackDetector.h"  // Anti-Dorion v2 — keyboard-hook hijack detector (safety net)
-#include "ReinstallBurstScheduler.h"  // Anti-Dorion v2 — burst reinstall (primary path)
 #include "HotkeyManager.h"  // passive application-hotkey matcher
 #include "Win32CaseMapper.h"
 #include "PerfHistogram.h"  // Phase 1 — per-stage histogram (compiles to no-op when VKEY_PERF_HIST undef)
@@ -49,13 +47,6 @@
 #include <vector>
 
 namespace NextKey {
-
-// Wave 3 PR 3.1 (2026-05-23) — WM_APP_REINSTALL_HOOKS / WM_APP_HOOK_COMMAND
-// definitions + REINSTALL_REASON_* constants moved into HookLifecycle (the
-// owner of the hook thread + LL hooks + mailbox that posts/consumes these
-// messages). HookEngine reaches the reinstall path via
-// `lifecycle_.PostReinstallHooks(REINSTALL_REASON_*)` — the reason constants
-// are exported from HookLifecycle.h.
 
 // ═══════════════════════════════════════════════════════════
 // VKEY_ASSERT_HOOK_THREAD — Phase 2d single-writer invariant.
@@ -356,16 +347,8 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         return false;
     }
 
-    // Wave 3 PR 3.2: WinEvent hook lifecycle moved into FocusOwner. Reinstall
-    // gate stays here (we know lifecycle's runtime state); FocusOwner stays
-    // decoupled from HookLifecycle.
-    if (!focus_.Install(
-            [this](HWND hwnd) { OnFocusChanged(hwnd); },
-            [this](WPARAM reason) {
-                if (lifecycle_.ThreadId()) {
-                    lifecycle_.PostReinstallHooks(reason);
-                }
-            })) {
+    // Wave 3 PR 3.2: WinEvent hook lifecycle moved into FocusOwner.
+    if (!focus_.Install([this](HWND hwnd) { OnFocusChanged(hwnd); })) {
         HOOK_LOG(L"FAILED to install WinEvent hook");
         // Don't return false — focus events are nice-to-have; LL hook still works.
     }
@@ -391,78 +374,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
         Perf::Histogram::SetEnabled(config.perfHistogramEnabled);
     }
 
-    // Anti-Dorion v2 — construct the hijack detector. No thread of its own
-    // (Pillar 2 "Nhẹ"): the detector is a stateless processor; OnTickPoll
-    // calls Poll() while a Chromium-class app is foreground. Owner retunes
-    // MainThreadWorker cadence to ~40ms during chromium-fg sessions for
-    // adequate sampling; falls back to adaptive cadence when not.
-    {
-        HookHijackDetector::Callbacks cb;
-        cb.readHookFireCount = [this]() noexcept -> uint64_t {
-            return hookFireCount_.load(std::memory_order_acquire);
-        };
-        cb.requestReinstall = [this]() noexcept {
-            HOOK_LOG(L"  HijackDet: BYPASS confirmed → reinstall (reason=hijack)");
-            // REINSTALL_REASON_HIJACK gets a tighter throttle (100ms vs
-            // 500ms for focus/mouse paths) since the detector has its own
-            // internal cooldown and only fires on confirmed bypass.
-            lifecycle_.PostReinstallHooks(REINSTALL_REASON_HIJACK);
-
-            // Dynamically register the active application as a hijacker so we
-            // proactively reinstall the hook next time it is focused.
-            const std::wstring active = focus_.ActiveExe();
-            if (!active.empty()) {
-                focus_.RegisterDynamicHijacker(active);
-            }
-        };
-        cb.injectGhostChar = [this](wchar_t ch) noexcept {
-            HOOK_LOG(L"  HijackDet: ghost-inject ch='%c'",
-                     (ch >= 32 && ch < 127) ? static_cast<char>(ch) : '?');
-            // Route via HookLifecycle's WM_APP_GHOSTKEY → HandleGhostChar
-            // on the hook thread (single-writer §12). Detector's caller
-            // thread never mutates engine state directly.
-            lifecycle_.PostGhostKey(ch);
-        };
-        cb.readKeyboardState = [](uint8_t (&state)[256]) noexcept -> bool {
-            // CRITICAL: GetKeyboardState is thread-local — only updates as the
-            // calling thread removes keyboard messages from its queue. Polling
-            // from MainThreadWorker (which doesn't process keyboard messages)
-            // would always see a stale-zero state → detector never sees drift.
-            // GetAsyncKeyState reads the kernel-global key state, thread-
-            // agnostic; 256 syscalls/poll is acceptable cold-path cost
-            // (~40ms cadence × 256 = light), and each call is nanosecond-scale.
-            for (int vk = 0; vk < 256; ++vk) {
-                const SHORT s = ::GetAsyncKeyState(vk);
-                // High bit (0x8000) = currently down. Low bit (just-pressed
-                // sentinel) is reset by the read; we don't need it.
-                state[vk] = (s & 0x8000) ? 0x80 : 0;
-            }
-            return true;
-        };
-        cb.translateVkToChar = [](uint8_t vk, const uint8_t (&stateNow)[256]) noexcept -> wchar_t {
-            // Use foreground thread's keyboard layout — most accurate for
-            // what the user is typing into. Falls back to current thread
-            // layout if the foreground HWND can't be resolved.
-            HKL hkl = nullptr;
-            if (HWND fg = ::GetForegroundWindow(); fg) {
-                const DWORD tid = ::GetWindowThreadProcessId(fg, nullptr);
-                if (tid != 0) hkl = ::GetKeyboardLayout(tid);
-            }
-            if (!hkl) hkl = ::GetKeyboardLayout(0);
-            const UINT scan = ::MapVirtualKeyExW(vk, MAPVK_VK_TO_VSC, hkl);
-            wchar_t out[8] = {};
-            const int n = ::ToUnicodeEx(vk, scan, stateNow, out,
-                                        static_cast<int>(sizeof(out) / sizeof(out[0])),
-                                        0, hkl);
-            // n>0: chars written. n==0: no translation. n<0: dead key.
-            return (n > 0) ? out[0] : wchar_t{0};
-        };
-        hijackDetector_ = std::make_unique<HookHijackDetector>(std::move(cb));
-        lifecycle_.SetGhostKeyHandler([this](wchar_t ch) noexcept {
-            HandleGhostChar(ch);
-        });
-    }
-
     // Adaptive-tick (#2): seed the activity clock to LAUNCH time. lastActivityTickMs_
     // is otherwise 0, so the FIRST worker tick computes idleMs = system uptime
     // ≥ kIdleStopThreshMs and STOPS the worker ~200ms after launch — killing the
@@ -470,82 +381,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
     // and smart-switch persistence until the first keystroke re-arms it. Seeding
     // here makes "idle" measure from launch, not boot. See AdaptiveTick.h.
     lastActivityTickMs_.store(GetTickCount64(), std::memory_order_relaxed);
-
-    // Anti-Dorion v2 PRIMARY path — staggered reinstall burst. On focus-to-
-    // chromium-class app, schedule 3 reinstalls at 300/800/1500 ms; at least
-    // one lands AFTER Dorion's own LL hook install → VKey ends up at the
-    // chain head. Scheduler uses Win32 thread-pool timers (no VKey-owned
-    // thread per Pillar 2); generation-counter cancellation handles the
-    // focus-out race. See ReinstallBurstScheduler.{h,cpp} for the contract
-    // and the 6 unit tests in tests/ReinstallBurstSchedulerTest.cpp.
-    {
-        // A4: dedicated timer queue so Stop() can block-drain in-flight burst
-        // callbacks before the scheduler dies. CreateTimerQueue can fail (NULL);
-        // we do NOT fall back to the default process queue, because Stop() can't
-        // drain that one (the default queue isn't deletable) and the generation_
-        // UAF would silently return. On failure we leave reinstallBurstScheduler_
-        // null (burst disabled) and rely on the drift-gated detector as the
-        // reactive net — see the guard around make_unique below.
-        burstTimerQueue_ = CreateTimerQueue();
-        ReinstallBurstScheduler::Callbacks bcb;
-        bcb.schedule = [this](uint32_t delayMs, std::function<void()> fire) noexcept {
-            // Heap context survives the synchronous return; the thread-pool
-            // callback fires it after `delayMs`, then self-deletes the timer
-            // handle and the context. unique_ptr handoff pattern (Rule 3):
-            // own the context while wiring up the timer, .release() on success
-            // hands ownership to Win32, the callback reclaims via unique_ptr
-            // to RAII-cleanup on scope exit. Failure path's unique_ptr
-            // destructor frees the context inline — no leak.
-            struct TimerCtx {
-                std::function<void()> fn;
-                HANDLE handle{nullptr};
-                HANDLE queue{nullptr};
-            };
-            auto ctx = std::make_unique<TimerCtx>(
-                TimerCtx{std::move(fire), nullptr, burstTimerQueue_});
-            const auto poolCallback = [](PVOID p, BOOLEAN /*timedOut*/) {
-                // RAII reclaim — owned destructor frees the context whether
-                // fn() throws or returns normally.
-                std::unique_ptr<TimerCtx> owned(static_cast<TimerCtx*>(p));
-                try { owned->fn(); }
-                catch (const std::exception& e) {
-                    CrashLog(L"ReinstallBurstScheduler.fire", e.what());
-                }
-                catch (...) {
-                    CrashLog(L"ReinstallBurstScheduler.fire", "(non-std exception)");
-                }
-                // Self-delete the timer queue entry from OUR dedicated queue
-                // (A4). NULL completion-event arg = don't wait (we ARE the
-                // callback) — safe non-blocking cleanup, and never races Stop()'s
-                // DeleteTimerQueueEx (which waits for callbacks to finish).
-                if (owned->handle) {
-                    DeleteTimerQueueTimer(owned->queue, owned->handle, nullptr);
-                }
-            };
-            if (CreateTimerQueueTimer(&ctx->handle, burstTimerQueue_, poolCallback, ctx.get(),
-                                       static_cast<DWORD>(delayMs), 0,
-                                       WT_EXECUTEDEFAULT | WT_EXECUTEONLYONCE)) {
-                // Ownership transferred to Win32 (callback reclaims).
-                (void)ctx.release();
-            } else {
-                HOOK_LOG(L"  CreateTimerQueueTimer FAILED err=%lu — burst step lost",
-                         GetLastError());
-                // ctx unique_ptr destructor frees the context — no leak.
-            }
-        };
-        bcb.postReinstall = [this](uint32_t reason) noexcept {
-            HOOK_LOG(L"  BurstReinstall: posting reinstall reason=%u", reason);
-            lifecycle_.PostReinstallHooks(static_cast<WPARAM>(reason));
-        };
-        // Only wire the scheduler if we own a dedicated, drainable queue (A4).
-        if (burstTimerQueue_) {
-            reinstallBurstScheduler_ =
-                std::make_unique<ReinstallBurstScheduler>(std::move(bcb));
-        } else {
-            HOOK_LOG(L"  CreateTimerQueue FAILED err=%lu — burst reinstall disabled "
-                     L"(detector still covers hijacks)", GetLastError());
-        }
-    }
 
     NEXTKEY_LOG(L"HookEngine started (method=%d, vietnamese=%d)",
                 static_cast<int>(currentMethod_.load(std::memory_order_acquire)),
@@ -558,30 +393,6 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
 
 void HookEngine::Stop() {
     HOOK_LOG(L"=== HookEngine::Stop ===");
-    // Anti-Dorion v2 — detector has no thread of its own (Pillar 2). Close
-    // the gate so any in-flight Poll from MainThreadWorker no-ops cleanly,
-    // then drop the pointer at scope exit. No explicit Stop() / join needed.
-    if (hijackDetector_) hijackDetector_->SetChromiumClassActive(false);
-    // Cancel any pending burst-reinstall callbacks — in-flight thread-pool
-    // timers would otherwise post WM_APP_REINSTALL_HOOKS to a hook thread
-    // that's about to exit. The generation bump makes those callbacks
-    // no-op when they fire; the timer queue cleans itself up.
-    if (reinstallBurstScheduler_) reinstallBurstScheduler_->Cancel();
-    // A4: block-drain in-flight burst timers BEFORE reinstallBurstScheduler_ is
-    // destroyed (it lives until the HookEngine dtor). DeleteTimerQueueEx with
-    // INVALID_HANDLE_VALUE waits for any executing callback to finish and cancels
-    // unfired ones — so no thread-pool callback can read the scheduler's
-    // generation_ through a dangling object at process exit. Cancel() above
-    // already neutralizes the POST; this closes the UAF on the load itself.
-    if (burstTimerQueue_) {
-        // Timers that DeleteTimerQueueEx cancels BEFORE they fire leak their heap
-        // TimerCtx (the callback that would free it never runs) — bounded to ≤3
-        // tiny contexts, reclaimed by the OS at process exit (Stop() is
-        // shutdown-only here). Not worth handle-tracking machinery; the prior
-        // behaviour was a UAF, so this is a strict improvement.
-        DeleteTimerQueueEx(burstTimerQueue_, INVALID_HANDLE_VALUE);
-        burstTimerQueue_ = nullptr;
-    }
     // Phase 1 perf histogram: final flush before we tear down so the
     // last 60s window of samples reaches disk. Idempotent.
     Perf::Histogram::Stop();
@@ -613,8 +424,7 @@ void HookEngine::Stop() {
 }
 
 // Wave 3 PR 3.1 (2026-05-23) — HookThreadProc body moved to
-// HookLifecycle::ThreadProc. Same pump structure, same WM_APP_* dispatch,
-// same throttled reinstall. HookLifecycle invokes our DrainHookCommands via
+// HookLifecycle::ThreadProc. HookLifecycle invokes our DrainHookCommands via
 // a callback registered at lifecycle_.Start().
 
 void HookEngine::ToggleVietnameseMode() noexcept {
@@ -1096,18 +906,6 @@ LRESULT HookEngine::LowLevelKeyboardProcImpl(int nCode, WPARAM wParam, LPARAM lP
     try {
         auto* pKey = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
 
-        // Anti-Dorion v2: bump hook-fire counter on every keydown the hook is
-        // invoked for — BEFORE any early-return (synthetic VKEY_EXTRA_INFO,
-        // sending_, nCode<0). HookHijackDetector's polling compares its
-        // observed GetKeyboardState up→down count vs this; counters must move
-        // in lockstep so synthetics (which also appear in GetKeyboardState as
-        // transient down state) don't cause false-positive bypass detection.
-        // Rule 11.2 compliant: single atomic fetch_add on the hot path.
-        // See docs/plans/2026-05-28-anti-dorion-detector-inject-design.md §3.
-        if (self && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)) {
-            self->hookFireCount_.fetch_add(1, std::memory_order_release);
-        }
-
         // Always track our own synthetic events regardless of nCode.
         // When nCode < 0, Windows tells us to pass the message along — but the event
         // still represents a delivered synthetic that was counted when sent.
@@ -1337,8 +1135,8 @@ LRESULT HookEngine::LowLevelMouseProcImpl(int nCode, WPARAM wParam, LPARAM lPara
                 // Deliberately NOT a full OnFocusChanged() refresh (was
                 // a68c617b, reverted): that routed every left click through
                 // focus_.Classify() — documented as too heavy for the input
-                // path (CreateToolhelp32Snapshot, hook-chain reinstall for
-                // Java/hijacker hosts) — plus an ApplyFocusOnHookThread that
+                // path (CreateToolhelp32Snapshot) — plus an
+                // ApplyFocusOnHookThread that
                 // spends two AttachThreadInput round-trips on THIS thread, the
                 // one that owns WH_MOUSE_LL. Each click queued work in front of
                 // the next click's LowLevelHooksTimeout window: system-wide
@@ -1347,22 +1145,6 @@ LRESULT HookEngine::LowLevelMouseProcImpl(int nCode, WPARAM wParam, LPARAM lPara
                 // longer arms auto-cap for its first letter until the next real
                 // foreground change.
                 self->suppressAutoCapForPasswordSafety_ = false;
-
-                // Anti-Dorion (hook-only): Chromium / Electron / Tauri hosts (e.g.
-                // Dorion) install their own WH_KEYBOARD_LL above ours and re-arm
-                // mid-session, so the focus-time reinstall (FocusOwner) goes stale
-                // and our hook stops firing — "completely can't type, no KEY log".
-                // The mouse hook keeps firing though, and the user must click the
-                // input field before typing, so a click is the natural moment to
-                // reclaim the top of the chain. Throttled (500 ms) in HookLifecycle
-                // so rapid clicks don't churn; PostReinstallHooks no-ops if the hook
-                // thread isn't running.
-                // A1: reclaim-on-click only for a known hijacker (Dorion). Plain
-                // browsers don't hijack, so clicking into Chrome shouldn't churn
-                // the hook chain.
-                if (self->isKnownHijackerApp_.load(std::memory_order_acquire)) {
-                    self->lifecycle_.PostReinstallHooks(REINSTALL_REASON_CHROMIUM);
-                }
             }
         }
     } catch (const std::exception& e) {
@@ -2685,74 +2467,6 @@ bool HookEngine::HandleVniDigitKey(DWORD vkCode) {
     return true;
 }
 
-void HookEngine::HandleGhostChar(wchar_t ch) noexcept {
-    // Anti-Dorion v2: invoked from HookLifecycle pump's WM_APP_GHOSTKEY
-    // dispatch (PostThreadMessage from HookHijackDetector's polling thread).
-    // The detector observed a physical keydown via GetKeyboardState that
-    // our LL hook didn't see (we were bypassed by Dorion's own LL hook
-    // sitting above us). The user's keystroke already reached the
-    // foreground app as raw input — we just need to advance engine state
-    // to match, so the NEXT real key through the freshly-reinstalled hook
-    // computes a correct BS+replace diff and overwrites the raw char.
-    //
-    // Crucially: NO injector output, NO SendInput here. Emitting BS+text
-    // would compound with what the app already has and corrupt the buffer.
-    // See docs/plans/2026-05-28-anti-dorion-detector-inject-design.md.
-    VKEY_ASSERT_HOOK_THREAD();
-    // Defence-in-depth (Invariant 1): focus may have flipped to a non-
-    // chromium app between the detector posting this WM_APP_GHOSTKEY and
-    // the pump draining it (race window: detector poll → post → focus
-    // event → ApplyFocus → here). Without this gate, an in-flight ghost
-    // would leak engine mutation into VKey's own dialog typing — the
-    // exact regression the reverted HookSelfHealer caused (742e16e,
-    // 2026-05-17). Drop silently when no longer in a chromium-class app.
-    if (!isChromiumClassApp_.load(std::memory_order_acquire)) {
-        HOOK_LOG(L"  HandleGhostChar: skip ch='%c' (foreground no longer chromium-class)",
-                 (ch >= 32 && ch < 127) ? static_cast<char>(ch) : '?');
-        return;
-    }
-    try {
-        // Defence-in-depth: detector filters trackable VKs and translates
-        // via ToUnicodeEx; non-ASCII / null arrivals here are programmer
-        // error or rare layout-translation oddity — silently skip.
-        if (ch == 0 || ch > 127) {
-            HOOK_LOG(L"  HandleGhostChar: skip non-ASCII ch=0x%04X",
-                     static_cast<unsigned>(ch));
-            return;
-        }
-
-        // Mirror HandleAlphaKey's defensive cleanup: stale previousComposition_
-        // from desynced earlier session can produce ghost backspaces on the
-        // next real keystroke. Same guard, same reason.
-        if (engine_->Count() == 0 && !previousComposition_.empty()) {
-            HOOK_LOG(L"  HandleGhostChar: clearing stale previousComposition_ '%s' on new word",
-                     previousComposition_.c_str());
-            previousComposition_.clear();
-            previousEncodedWidths_.clear();
-        }
-
-        commitState_.AppendHistory(ch);
-        engine_->PushChar(ch);
-        // Sync previousComposition_ to current engine state so the next real
-        // keystroke's ReplaceComposition computes BS-count against what the
-        // app actually has (which is the raw ghost char, matching engine).
-        previousComposition_ = engine_->Peek();
-
-        HOOK_LOG(L"  HandleGhostChar: ch='%c' → Peek()='%s' (count=%zu) [hook bypass recovery]",
-                 static_cast<char>(ch),
-                 previousComposition_.c_str(),
-                 engine_->Count());
-    } catch (const std::exception& e) {
-        CrashLog(L"HookEngine::HandleGhostChar", e.what());
-        // Rule 11.5: reset on exception so a corrupted engine state doesn't
-        // compound into the next real keystroke.
-        ResetComposition();
-    } catch (...) {
-        CrashLog(L"HookEngine::HandleGhostChar", "(non-std exception)");
-        ResetComposition();
-    }
-}
-
 void HookEngine::HandleBackspace() {
     VKEY_ASSERT_HOOK_THREAD();
     commitState_.AppendBackspaceMarker();
@@ -3041,15 +2755,6 @@ static HWND GetInputTarget() {
 // Clipboard paste threshold: macros longer than this use Ctrl+V instead of SendInput
 static constexpr size_t kMacroClipboardThreshold = 200;
 
-// A1 (2026-05-31): exe names known to install a competing WH_KEYBOARD_LL above
-// ours. ONLY these get the expensive anti-Dorion responses — the reinstall
-// burst, the 40ms detector tick pin, and the mouse-click reinstall. Plain
-// browsers / Electron apps do NOT hijack the hook (see the
-// only-dorion-hijacks-ll-hook decision), so paying that cost (hook churn +
-// 25 wake/sec fighting the idle-RAM trim) for them was pure waste. The drift-
-// gated HookHijackDetector still runs for ALL chromium-class apps as the
-// reactive net.
-
 // Wave 3 PR 3.2 — IsKnownElectronExe (file-scope), IsWebView2App,
 // IsTrayOrTaskbarWindow, GetExeNameForHwnd, GetExeFullPathForHwnd
 // (file-scope), and ClassifyWindow (file-scope) all moved to
@@ -3325,14 +3030,6 @@ void HookEngine::OnTickPoll() noexcept {
             // that WinEventProc has to use because it runs on main.
             const auto request = CaptureFocusClassifyRequest(nullptr);
             OnFocusChangedSyncOnWorker(request);  // classifies + posts kFocusChanged
-        }
-
-        // Anti-Dorion v2: drive the hijack detector from this same tick
-        // (Pillar 2 — no dedicated thread for the detector; owner-driven
-        // Poll). Gate is idempotent inside Poll(), but checking here lets
-        // us skip the function call entirely on non-chromium foreground.
-        if (hijackDetector_ && isChromiumClassApp_.load(std::memory_order_acquire)) {
-            hijackDetector_->Poll();
         }
 
         // TSF_TIP_ACTIVE monitoring — detect layout switches (Win+Space)
@@ -3611,32 +3308,10 @@ void HookEngine::MarkActivity() noexcept {
 // Both call sites are on the worker thread; this method is not safe to call
 // on the hook thread (tickRetuneFn_ may take MainThreadWorker's mutex).
 void HookEngine::RetuneCadenceIfNeeded() noexcept {
-    // Anti-Dorion v2 (+ A1): while a KNOWN hook-hijacker (Dorion) is foreground
-    // AND the user is recently active, pin the tick at the detector's required
-    // cadence (40ms) — the detector samples physical state at ~40ms, so backing
-    // off mid-Dorion would lose keystrokes before recovery. For every other app
-    // (incl. plain Chrome/Electron, which don't hijack) use the activity-driven
-    // adaptive cadence — no 40ms pin, so no wasted wakeups.
-    //
-    // Deep-idle STOP (2026-05-30) OVERRIDES the pin: after kIdleStopThreshMs
-    // with no input, ComputeTickInterval returns 0 (STOP) and we let the worker
-    // park even under chromium. The detector only matters while the user is
-    // typing; with no input there is nothing to protect, and a perpetual 40ms
-    // poll just keeps pages warm and blocks the working-set trim (the whole
-    // point of this change — v2.1.24 idle parity). The next keystroke
-    // (MarkActivity → Signal) resumes the cadence and re-arms the detector
-    // before that key is processed — a ≤1-2 key anti-Dorion residual on resume,
-    // the same trade the detector already makes. Below the stop threshold the
-    // chromium pin still wins (instant hijack recovery while active).
-    constexpr auto kChromiumActiveInterval = std::chrono::milliseconds(40);
     const std::uint64_t now = GetTickCount64();
     const std::uint64_t lastAct = lastActivityTickMs_.load(std::memory_order_relaxed);
     const std::uint64_t idleMs = (now > lastAct) ? (now - lastAct) : 0;
-    const auto desired =
-        (isKnownHijackerApp_.load(std::memory_order_acquire)
-         && idleMs < NextKey::kIdleStopThreshMs)
-            ? kChromiumActiveInterval
-            : NextKey::ComputeTickInterval(idleMs);
+    const auto desired = NextKey::ComputeTickInterval(idleMs);
     const auto desiredMs = static_cast<std::uint32_t>(desired.count());
     if (desiredMs != currentTickIntervalMs_.load(std::memory_order_relaxed)) {
         currentTickIntervalMs_.store(desiredMs, std::memory_order_relaxed);
@@ -4398,11 +4073,8 @@ void HookEngine::RouteFocusOnHookThread(
             return;
 
         case FocusApplyDisposition::DeferUntilBoundary:
-            // Hook protection is orthogonal to composition and must become
-            // active promptly (especially Dorion). All state that changes
-            // typing semantics remains an atomic transaction in the deferred
-            // snapshot.
-            ApplyFocusOperationalProtectionOnHookThread(*cls);
+            // All state that changes typing semantics remains an atomic
+            // transaction in the deferred snapshot.
             deferredFocusApply_ = std::move(cls);
             HOOK_LOG(L"  FocusApply: defer request=%llu input=%llu->%llu count=%zu macro=%zu",
                      static_cast<unsigned long long>(inputs.snapshotRequestSerial),
@@ -4415,7 +4087,6 @@ void HookEngine::RouteFocusOnHookThread(
         case FocusApplyDisposition::ApplyNow:
             // A current snapshot supersedes any retained older transaction.
             deferredFocusApply_.reset();
-            ApplyFocusOperationalProtectionOnHookThread(*cls);
             ApplyFocusOnHookThread(std::move(cls));
             return;
     }
@@ -4459,50 +4130,10 @@ void HookEngine::TryApplyDeferredFocusOnHookThread() {
             return;
         case FocusApplyDisposition::ApplyNow: {
             auto ready = std::move(deferredFocusApply_);
-            // Operational protection was already applied when the result was
-            // first deferred; the helper is idempotent, so re-running it also
-            // covers future code paths that may seed this slot directly.
-            ApplyFocusOperationalProtectionOnHookThread(*ready);
             HOOK_LOG(L"  FocusApply: apply deferred request=%llu at boundary",
                      static_cast<unsigned long long>(inputs.snapshotRequestSerial));
             ApplyFocusOnHookThread(std::move(ready));
             return;
-        }
-    }
-}
-
-void HookEngine::ApplyFocusOperationalProtectionOnHookThread(
-        const FocusClassification& cls) {
-    VKEY_ASSERT_HOOK_THREAD();
-
-    // This slice is deliberately independent from the typing-context
-    // transaction below. Delaying it until a long word commits would leave
-    // Dorion's competing-hook protection disabled precisely while that word is
-    // being typed. It is idempotent and changes no composition, injector,
-    // SmartSwitch, TSF, excluded-app, code-table or input-method state.
-    const bool isChromiumClass = cls.localElectronApp || cls.isBrowser;
-    const bool wasChromiumClass = isChromiumClassApp_.exchange(
-        isChromiumClass, std::memory_order_acq_rel);
-    const bool isKnownHijacker = cls.isKnownHijacker;
-    const bool wasKnownHijacker =
-        isKnownHijackerApp_.exchange(isKnownHijacker, std::memory_order_acq_rel);
-
-    if (hijackDetector_) {
-        hijackDetector_->SetChromiumClassActive(isChromiumClass);
-    }
-    if ((wasChromiumClass != isChromiumClass ||
-         wasKnownHijacker != isKnownHijacker) &&
-        workerSignalFn_) {
-        workerSignalFn_();
-    }
-
-    if (wasKnownHijacker != isKnownHijacker && reinstallBurstScheduler_) {
-        reinstallBurstScheduler_->Cancel();
-        if (isKnownHijacker) {
-            HOOK_LOG(L"  BurstReinstall: scheduling 600/1200/1800ms burst (known hijacker fg entered)");
-            reinstallBurstScheduler_->Schedule(
-                static_cast<uint32_t>(REINSTALL_REASON_CHROMIUM),
-                {600, 1200, 1800});
         }
     }
 }
