@@ -21,7 +21,7 @@ extern "C" {
 #endif
 
 /* Bump when the ABI changes; check against vkey_engine_abi_version(). */
-#define VKEY_ENGINE_ABI_VERSION 8u
+#define VKEY_ENGINE_ABI_VERSION 9u
 
 /* ABI v6 runtime-artifact identity status. */
 #define VKEY_ENGINE_RUNTIME_OK                   0u
@@ -63,6 +63,11 @@ void vkey_engine_reset(VKeyEngine *engine);
 
 /* Push one decoded key (a Unicode scalar value, e.g. an ASCII letter). */
 void vkey_engine_push_char(VKeyEngine *engine, uint32_t codepoint);
+
+/* ABI v9: push one decoded physical scalar with independent output-case
+ * intent. Hosts use this for punctuation shortcuts where Caps Lock affects
+ * Vietnamese case but must not rewrite the literal physical scalar. */
+void vkey_engine_push_key(VKeyEngine *engine, uint32_t codepoint, bool uppercase);
 
 /* Remove one rendered symbol from the composition. */
 void vkey_engine_backspace(VKeyEngine *engine);
