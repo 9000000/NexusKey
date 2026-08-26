@@ -21,6 +21,7 @@
 #include "core/CommitUndoExemption.h"
 #include "core/CommitUndoArmDecision.h"
 #include "core/DigitLedWordDecision.h"
+#include "core/DorionHookReclaimSequence.h"
 #include "core/FocusApplyDecision.h"
 #include "core/LeakedKeyDuringSendDecision.h"
 #include "core/MacroCase.h"
@@ -226,7 +227,11 @@ namespace {
 
 bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
                         bool initialVietnamese) {
-    if (lifecycle_.IsRunning()) return false;  // Already running
+    // Pump ownership survives a runtime replacement whose new hook fails to
+    // install. Reject a repeated Start before rebuilding/finalizing any state;
+    // assigning over that still-joinable lifecycle would terminate.
+    if (lifecycle_.HasOwnerThread()) return false;
+    dorionHookReclaimPolicy_.Reset();
 
     // Enable the file logger before the first HOOK_LOG so the start banner is
     // captured when the user already had the toggle on. ApplyConfig() re-asserts
@@ -342,6 +347,60 @@ bool HookEngine::Start(HINSTANCE hInstance, const TypingConfig& config,
                           [this] { DrainHookCommands(); },
                           [this](std::size_t slot) {
                               if (hotkeyManager_) hotkeyManager_->Dispatch(slot);
+                          },
+                          [this] {
+                              LASTINPUTINFO lastInput{
+                                  .cbSize = sizeof(LASTINPUTINFO),
+                              };
+                              const bool lastInputQuerySucceeded =
+                                  GetLastInputInfo(&lastInput) != FALSE;
+                              bool anyPhysicalKeyDown = false;
+                              for (int vk = 1; vk < 256; ++vk) {
+                                  if ((GetAsyncKeyState(vk) & 0x8000) != 0) {
+                                      anyPhysicalKeyDown = true;
+                                      break;
+                                  }
+                              }
+                              return IsDorionReclaimQuiet({
+                                  .lastInputQuerySucceeded =
+                                      lastInputQuerySucceeded,
+                                  .nowTickMs = GetTickCount(),
+                                  .lastInputTickMs = lastInput.dwTime,
+                                  .anyPhysicalKeyDown = anyPhysicalKeyDown,
+                                  .syntheticDispatchActive =
+                                      dispatcher_.IsSending()
+                                      || dispatcher_.SynthEventsPending() > 0,
+                                  .compositionActive =
+                                      (engine_ && engine_->Count() > 0)
+                                      || !previousComposition_.empty()
+                                      || !rawMacroBuffer_.empty(),
+                              });
+                          },
+                          [this](DorionProcessIdentity identity,
+                                 DorionKeyboardReclaimResult result) {
+                              const bool replaced =
+                                  result == DorionKeyboardReclaimResult::Replaced;
+                              // Record the terminal result before state repair;
+                              // an unexpected repair exception must not strand
+                              // this identity in the pending set.
+                              dorionHookReclaimPolicy_.Complete(
+                                  identity, replaced);
+                              if (replaced) {
+                                  // The gate proved the editing state empty;
+                                  // reset remaining FSM/latches before the new
+                                  // hook begins the next physical gesture.
+                                  ResetComposition();
+                                  ReconcileModifierStateOnHookThread();
+                                  if (hotkeyManager_) {
+                                      hotkeyManager_->ReconcileLatchedKeysAfterHookReplacement(
+                                          [](const void*, std::uint32_t vk) noexcept {
+                                              return (GetAsyncKeyState(
+                                                          static_cast<int>(vk))
+                                                      & 0x8000) != 0;
+                                          },
+                                          nullptr);
+                                  }
+                              }
                           })) {
         HOOK_LOG(L"FAILED to install keyboard hook (lifecycle Start returned false)");
         return false;
@@ -404,6 +463,7 @@ void HookEngine::Stop() {
     // can race once the thread is gone) → tear down focus state. Mirrors
     // reverse-declaration destruction order (lifecycle → dispatcher → focus).
     lifecycle_.Stop();
+    dorionHookReclaimPolicy_.Reset();
     dispatcher_.Uninstall();
     focus_.Uninstall();
 
@@ -3377,6 +3437,15 @@ void HookEngine::OnFocusChangedSyncOnWorker(
 
     if (!classified.hwndOpaque) return;  // sentinel: nothing to apply
 
+    // Process creation time is a cold Win32 query and therefore belongs on
+    // this worker, never in DrainHookCommands when it may run inside the LL
+    // callback. Query only for the exact compatibility target.
+    if (classified.exeName == L"dorion.exe") {
+        const DorionProcessIdentity identity =
+            HookLifecycle::ResolveProcessIdentity(classified.pid);
+        classified.processCreationTime = identity.creationTime;
+    }
+
     // A newer request may arrive while Classify() is doing HWND/app probes.
     // Reject here as well as on the hook thread so stale UI context is never
     // published and the mailbox avoids carrying work it already knows is old.
@@ -4084,7 +4153,39 @@ void HookEngine::RouteFocusOnHookThread(
         .hasComposition = hasComposition,
     };
 
-    switch (DecideFocusApply(inputs)) {
+    const FocusApplyDisposition disposition = DecideFocusApply(inputs);
+
+    // Hook-chain protection is independent of the typing-context transaction.
+    // Dorion can bypass this callback entirely once it is foreground, so
+    // waiting for a deferred composition boundary could make the boundary
+    // unreachable. Only a current, exact executable/PID observation may post,
+    // and the policy suppresses ordinary Alt+Tab re-entry for the same process.
+    const DorionProcessIdentity dorionIdentity{
+        cls->pid,
+        cls->processCreationTime,
+    };
+    if (disposition != FocusApplyDisposition::DropStale
+        && dorionHookReclaimPolicy_.Observe(
+            cls->exeName, dorionIdentity, true)) {
+        if (lifecycle_.RequestDorionKeyboardReclaim(dorionIdentity)) {
+            HOOK_LOG(L"  DorionHookReclaim: queued pid=%u creation=%llu request=%llu",
+                     dorionIdentity.pid,
+                     static_cast<unsigned long long>(
+                         dorionIdentity.creationTime),
+                     static_cast<unsigned long long>(cls->requestSerial));
+        } else {
+            // Posting did not transfer ownership to the pump. Re-arm so a
+            // later current snapshot or a clean restart can retry safely.
+            dorionHookReclaimPolicy_.Complete(dorionIdentity, false);
+            HOOK_LOG(L"  DorionHookReclaim: post FAILED pid=%u creation=%llu request=%llu",
+                     dorionIdentity.pid,
+                     static_cast<unsigned long long>(
+                         dorionIdentity.creationTime),
+                     static_cast<unsigned long long>(cls->requestSerial));
+        }
+    }
+
+    switch (disposition) {
         case FocusApplyDisposition::DropStale:
             HOOK_LOG(L"  FocusApply: drop stale request=%llu latest=%llu",
                      static_cast<unsigned long long>(inputs.snapshotRequestSerial),
@@ -4154,6 +4255,46 @@ void HookEngine::TryApplyDeferredFocusOnHookThread() {
             ApplyFocusOnHookThread(std::move(ready));
             return;
         }
+    }
+}
+
+void HookEngine::ReconcileModifierStateOnHookThread() noexcept {
+    VKEY_ASSERT_HOOK_THREAD();
+
+    // Snapshot once: repeated GetAsyncKeyState calls across this transaction
+    // can otherwise disagree when Alt/Win is released mid-reconciliation.
+    const bool physicalCtrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+    const bool physicalShift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    const bool physicalAlt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+    const bool physicalWin = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0
+        || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
+    const bool anyPhysicalModifier =
+        physicalCtrl || physicalShift || physicalAlt || physicalWin;
+
+    modCtrlDown_ = physicalCtrl;
+    modShiftDown_ = physicalShift;
+    modAltDown_ = physicalAlt;
+    modWinDown_ = physicalWin;
+
+    // A foreground transition is a gesture boundary. If Alt/Win/Ctrl/Shift is
+    // still held (most notably between Alt+Tab's Tab-down and Alt-up), preserve
+    // contamination so the eventual release cannot fire a modifier-alone VKey
+    // action in the new app. Once every modifier is up, stale latches are safe
+    // to clear.
+    modComboSeen_ = anyPhysicalModifier;
+    otherKeyPressed_ = anyPhysicalModifier;
+    for (int i = 0; i < kModCount; ++i) {
+        modTapCount_[i] = 0;
+        modTapLastTs_[i] = 0;
+    }
+
+    if (hotkeyManager_) {
+        hotkeyManager_->ReconcileModifiers({
+            .ctrl = physicalCtrl,
+            .shift = physicalShift,
+            .alt = physicalAlt,
+            .win = physicalWin,
+        });
     }
 }
 
@@ -4266,27 +4407,9 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     autoCapState_ = shouldArmAutoCap
         ? AutoCapState::ReadyToCapitalize
         : AutoCapState::Idle;
-    // Clear the combo latch defensively: a focus switch (Alt+Tab) can swallow a
-    // modifier-up, stranding modComboSeen_ true and suppressing the next genuine
-    // single-modifier tap until every modifier is observed up again. (#189)
-    modComboSeen_ = false;
-
-    // Reconcile our own modifier state after desktop switch / Win+L lock
-    if (modCtrlDown_ && !(GetAsyncKeyState(VK_CONTROL) & 0x8000)) modCtrlDown_ = false;
-    if (modShiftDown_ && !(GetAsyncKeyState(VK_SHIFT) & 0x8000)) modShiftDown_ = false;
-    if (modAltDown_ && !(GetAsyncKeyState(VK_MENU) & 0x8000)) modAltDown_ = false;
-    if (modWinDown_ && !(GetAsyncKeyState(VK_LWIN) & 0x8000) && !(GetAsyncKeyState(VK_RWIN) & 0x8000)) modWinDown_ = false;
-    otherKeyPressed_ = false;
-
-    if (hotkeyManager_) {
-        hotkeyManager_->ReconcileModifiers({
-            .ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0,
-            .shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0,
-            .alt = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0,
-            .win = (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0
-                || (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0,
-        });
-    }
+    // Reconcile our modifier/hotkey trackers after desktop switch / Win+L,
+    // without turning a still-held Alt+Tab chord into an Alt-alone release.
+    ReconcileModifierStateOnHookThread();
 
     // Per-app cached flags — single release-store pair with the hot-path
     // acquire-loads in ProcessKeyDown / HandleAlphaKey. Wave 3 PR 3.3:

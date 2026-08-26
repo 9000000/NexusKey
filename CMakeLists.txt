@@ -828,6 +828,9 @@ endif()
 set(NEXTKEY_TEST_SOURCES
     tests/HotkeyManagerTest.cpp
     src/app/system/HotkeyManager.cpp
+    tests/DorionHookReclaimPolicyTest.cpp
+    tests/DorionHookReclaimSequenceTest.cpp
+    tests/SingleHookReplacementTest.cpp
     tests/TelexEngineTest.cpp
     tests/FormulaSegmentDecisionTest.cpp
     tests/CombinedEngineTest.cpp

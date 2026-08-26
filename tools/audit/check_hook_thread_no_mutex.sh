@@ -18,9 +18,11 @@
 #   4. The output injector RCU pointer is accessed only through atomic load /
 #      store operations.
 #   5. QuickSyncFromSharedState retains its lock-free hot path.
-#   6. Exactly one production keyboard-hook install exists under `src`, owned by
-#      HookLifecycle before its message pump.
-#   7. Automatic rehook and ghost-recovery machinery stays removed.
+#   6. Exactly one production keyboard-hook API call exists under `src`, owned
+#      by HookLifecycle. The exact-Dorion exception is one delayed, bounded,
+#      quiet-gated replacement through that site, with one HookEngine requester.
+#   7. Generic/burst/immediate recovery and Raw Input hook-healer machinery
+#      stays removed.
 #
 # Run from repo root:
 #   bash tools/audit/check_hook_thread_no_mutex.sh
@@ -257,12 +259,16 @@ repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo_root"
 
 CPP="src/app/system/HookEngine.cpp"
+LIFECYCLE_CPP="src/app/system/HookLifecycle.cpp"
+DORION_POLICY_H="src/core/DorionHookReclaimPolicy.h"
 errors=0
 
-if [ ! -f "$CPP" ]; then
-    echo "ERROR: $CPP not found (run from repo root)"
-    exit 2
-fi
+for required_source in "$CPP" "$LIFECYCLE_CPP" "$DORION_POLICY_H"; do
+    if [ ! -f "$required_source" ]; then
+        echo "ERROR: $required_source not found (run from repo root)"
+        exit 2
+    fi
+done
 
 echo "=== Sprint 1 D7 audit: $(basename "$CPP") ==="
 echo
@@ -499,13 +505,17 @@ else
 fi
 
 # ────────────────────────────────────────────────────────────────────────
-# Check 6: Exactly one production keyboard-hook installation site
+# Check 6: One API site and one bounded, quiet-gated Dorion requester
 # ────────────────────────────────────────────────────────────────────────
-# HookLifecycle owns the sole long-lived WH_KEYBOARD_LL hook.  Any second
-# install site reintroduces hook-chain ordering churn and installer-thread
-# queue contention; reinstalling the same handle at runtime is also forbidden.
+# HookLifecycle owns the sole WH_KEYBOARD_LL installation API site. Startup and
+# the exact Dorion foreground compatibility transaction share that helper, so a
+# runtime replacement cannot add another SetWindowsHookEx call site. The narrow
+# exception must wait 1800 ms, retry only its readiness gate at 100 ms for at
+# most 30 checks, and call ReplaceSingleHook once only after the delayed ticket
+# is due and the quiet predicate accepts it. HookEngine may request it from
+# exactly one explicitly named Dorion policy branch.
 echo
-echo "Check 6: exactly one WH_KEYBOARD_LL installation site under src"
+echo "Check 6: one WH_KEYBOARD_LL API site and bounded quiet-gated Dorion reclaim"
 if ! run_keyboard_hook_scan_self_tests; then
     errors=$((errors + 1))
 fi
@@ -515,34 +525,185 @@ if [ "$keyboard_install_count" -ne 1 ]; then
     echo "  FAIL: expected exactly 1 keyboard-hook installation site, found $keyboard_install_count"
     echo "$keyboard_install_sites" | sed '/^$/d; s/^/    /'
     errors=$((errors + 1))
-elif ! echo "$keyboard_install_sites" | grep -q '^src/app/system/HookLifecycle.cpp:'; then
+elif ! echo "$keyboard_install_sites" | grep -q "^${LIFECYCLE_CPP}:"; then
     echo "  FAIL: sole keyboard-hook installation is not owned by HookLifecycle"
     echo "$keyboard_install_sites" | sed 's/^/    /'
     errors=$((errors + 1))
 else
     install_line=$(echo "$keyboard_install_sites" | head -1 | cut -d: -f2)
-    pump_line=$(grep -n 'while (GetMessageW' src/app/system/HookLifecycle.cpp \
+    pump_line=$(grep -n 'while (GetMessageW' "$LIFECYCLE_CPP" \
         | head -1 | cut -d: -f1)
     if [ -z "$install_line" ] || [ -z "$pump_line" ] || [ "$install_line" -ge "$pump_line" ]; then
         echo "  FAIL: HookLifecycle keyboard-hook install must occur before the message pump"
         echo "$keyboard_install_sites" | sed 's/^/    /'
         errors=$((errors + 1))
     else
-        echo "  OK: sole install is HookLifecycle's initial pre-pump path"
+        echo "  OK: sole install API site is owned by HookLifecycle before its pump"
     fi
 fi
 
+dorion_request_sites=$(grep -RInE --include='*.cpp' --include='*.h' \
+    'lifecycle_[[:space:]]*\.[[:space:]]*RequestDorionKeyboardReclaim[[:space:]]*\(' \
+    src || true)
+dorion_request_count=$(echo -n "$dorion_request_sites" | grep -c '^' || true)
+if [ "$dorion_request_count" -ne 1 ]; then
+    echo "  FAIL: expected exactly 1 Dorion keyboard-reclaim request, found $dorion_request_count"
+    echo "$dorion_request_sites" | sed '/^$/d; s/^/    /'
+    errors=$((errors + 1))
+elif ! echo "$dorion_request_sites" | grep -q '^src/app/system/HookEngine.cpp:'; then
+    echo "  FAIL: Dorion keyboard-reclaim request must be owned by HookEngine"
+    echo "$dorion_request_sites" | sed 's/^/    /'
+    errors=$((errors + 1))
+else
+    echo "  OK: one explicitly named Dorion requester in HookEngine"
+fi
+
+# The policy must reject every executable spelling except the canonical exact
+# lower-case basename produced by FocusOwner. Do not broaden this to Chromium,
+# Electron, Discord, or a configurable application list: that would turn the
+# compatibility exception back into generic hook recovery.
+exact_dorion_sites=$(grep -nE \
+    'exeName[[:space:]]*!=[[:space:]]*L"dorion\.exe"' \
+    "$DORION_POLICY_H" || true)
+exact_dorion_count=$(echo -n "$exact_dorion_sites" | grep -c '^' || true)
+if [ "$exact_dorion_count" -ne 1 ]; then
+    echo "  FAIL: Dorion policy must have exactly 1 exact exeName rejection, found $exact_dorion_count"
+    echo "$exact_dorion_sites" | sed '/^$/d; s/^/    /'
+    errors=$((errors + 1))
+else
+    echo "  OK: reclaim policy is restricted to exact dorion.exe"
+fi
+
+# Keep the compatibility window explicit and reviewable. Retrying this timer
+# retries only the quiet/identity gate; the hook replacement itself remains a
+# one-shot transaction.
+for dorion_bound in \
+    'kDorionInitialDelayMs[[:space:]]*=[[:space:]]*1800' \
+    'kDorionGateRetryMs[[:space:]]*=[[:space:]]*100' \
+    'kDorionMaxGateChecks[[:space:]]*=[[:space:]]*30'; do
+    bound_sites=$(grep -nE "$dorion_bound" "$LIFECYCLE_CPP" || true)
+    bound_count=$(echo -n "$bound_sites" | grep -c '^' || true)
+    if [ "$bound_count" -ne 1 ]; then
+        echo "  FAIL: expected exactly 1 bounded Dorion constant matching '$dorion_bound', found $bound_count"
+        echo "$bound_sites" | sed '/^$/d; s/^/    /'
+        errors=$((errors + 1))
+    fi
+done
+
+if grep -q 'kDorionInitialDelayMs[[:space:]]*=[[:space:]]*1800' "$LIFECYCLE_CPP" \
+        && grep -q 'kDorionGateRetryMs[[:space:]]*=[[:space:]]*100' "$LIFECYCLE_CPP" \
+        && grep -q 'kDorionMaxGateChecks[[:space:]]*=[[:space:]]*30' "$LIFECYCLE_CPP"; then
+    echo "  OK: Dorion delay/retry budget is explicit (1800 ms + 30 x 100 ms gate checks)"
+fi
+
+slot_sites=$(grep -nE '\bDorionDelayedReclaimSlots\b' "$LIFECYCLE_CPP" || true)
+slot_count=$(echo -n "$slot_sites" | grep -c '^' || true)
+quiet_policy_sites=$(grep -nE '\bIsDorionReclaimQuiet[[:space:]]*\(' "$CPP" || true)
+quiet_policy_count=$(echo -n "$quiet_policy_sites" | grep -c '^' || true)
+replacement_sites=$(grep -nE '\bReplaceSingleHook[[:space:]]*\(' "$LIFECYCLE_CPP" || true)
+replacement_count=$(echo -n "$replacement_sites" | grep -c '^' || true)
+take_due_line=$(grep -nE '\.TakeIfDue[[:space:]]*\(' "$LIFECYCLE_CPP" \
+    | head -1 | cut -d: -f1)
+quiet_gate_sites=$(grep -nE '\breclaimReady[[:space:]]*\(' "$LIFECYCLE_CPP" || true)
+quiet_gate_count=$(echo -n "$quiet_gate_sites" | grep -c '^' || true)
+quiet_gate_line=$(echo "$quiet_gate_sites" | head -1 | cut -d: -f1)
+replacement_run_sites=$(grep -nE '\brunReplacement[[:space:]]*\(' "$LIFECYCLE_CPP" || true)
+replacement_run_count=$(echo -n "$replacement_run_sites" | grep -c '^' || true)
+replacement_run_line=$(echo "$replacement_run_sites" | head -1 | cut -d: -f1)
+
+if [ "$slot_count" -ne 1 ]; then
+    echo "  FAIL: expected exactly 1 bounded DorionDelayedReclaimSlots owner, found $slot_count"
+    echo "$slot_sites" | sed '/^$/d; s/^/    /'
+    errors=$((errors + 1))
+elif [ "$quiet_policy_count" -ne 1 ]; then
+    echo "  FAIL: HookEngine must invoke IsDorionReclaimQuiet exactly once, found $quiet_policy_count"
+    echo "$quiet_policy_sites" | sed '/^$/d; s/^/    /'
+    errors=$((errors + 1))
+elif [ "$replacement_count" -ne 1 ]; then
+    echo "  FAIL: delayed Dorion path must have exactly 1 ReplaceSingleHook call, found $replacement_count"
+    echo "$replacement_sites" | sed '/^$/d; s/^/    /'
+    errors=$((errors + 1))
+elif [ "$quiet_gate_count" -ne 1 ] || [ "$replacement_run_count" -ne 1 ]; then
+    echo "  FAIL: expected exactly 1 quiet-gate call and 1 replacement-helper call"
+    echo "        (quiet=$quiet_gate_count, replacement=$replacement_run_count)"
+    errors=$((errors + 1))
+elif [ -z "$take_due_line" ] || [ -z "$quiet_gate_line" ] \
+        || [ "$take_due_line" -ge "$quiet_gate_line" ] \
+        || [ "$quiet_gate_line" -ge "$replacement_run_line" ]; then
+    echo "  FAIL: replacement helper must run after TakeIfDue and the quiet gate"
+    echo "        (due=${take_due_line:-missing}, quiet=${quiet_gate_line:-missing}, replace=${replacement_run_line:-missing})"
+    errors=$((errors + 1))
+else
+    echo "  OK: one replacement appears only after a due delayed ticket and quiet gate"
+fi
+
+# A thread timer shares the pump with unrelated TIMERPROC users. Consume only
+# timer IDs owned by the Dorion slot table; every foreign WM_TIMER must fall
+# through to the normal TranslateMessage/DispatchMessage path.
+owned_timer_guard_sites=$(grep -nE \
+    'dorionSlots\.HasTimer[[:space:]]*\([[:space:]]*timerId[[:space:]]*\)' \
+    "$LIFECYCLE_CPP" || true)
+owned_timer_guard_count=$(echo -n "$owned_timer_guard_sites" | grep -c '^' || true)
+owned_timer_guard_line=$(echo "$owned_timer_guard_sites" | head -1 | cut -d: -f1)
+dispatch_sites=$(grep -nE '\bDispatchMessageW[[:space:]]*\([[:space:]]*&msg[[:space:]]*\)' \
+    "$LIFECYCLE_CPP" || true)
+dispatch_count=$(echo -n "$dispatch_sites" | grep -c '^' || true)
+dispatch_line=$(echo "$dispatch_sites" | head -1 | cut -d: -f1)
+timer_pending_catchall=$(grep -nE \
+    'msg\.message[[:space:]]*==[[:space:]]*WM_TIMER[^;{]*HasPending' \
+    "$LIFECYCLE_CPP" || true)
+if [ "$owned_timer_guard_count" -ne 1 ] || [ "$dispatch_count" -ne 1 ] \
+        || [ -z "$owned_timer_guard_line" ] || [ -z "$take_due_line" ] \
+        || [ -z "$dispatch_line" ] \
+        || [ "$owned_timer_guard_line" -ge "$take_due_line" ] \
+        || [ "$take_due_line" -ge "$dispatch_line" ] \
+        || [ -n "$timer_pending_catchall" ]; then
+    echo "  FAIL: WM_TIMER must consume only dorionSlots.HasTimer(timerId); foreign timers must dispatch"
+    echo "        (guard=${owned_timer_guard_line:-missing}, due=${take_due_line:-missing}, dispatch=${dispatch_line:-missing})"
+    echo "$timer_pending_catchall" | sed '/^$/d; s/^/    /'
+    errors=$((errors + 1))
+else
+    echo "  OK: foreign WM_TIMER messages fall through to DispatchMessageW"
+fi
+
+gate_budget_refs=$(grep -cE '\bremainingGateChecks\b' "$LIFECYCLE_CPP" || true)
+gate_budget_refs=${gate_budget_refs:-0}
+gate_decrement=$(grep -nE \
+    '(--[[:space:]]*[^;]*remainingGateChecks|remainingGateChecks[[:space:]]*--|remainingGateChecks[[:space:]]*-[[:space:]]*1)' \
+    "$LIFECYCLE_CPP" || true)
+if [ "$gate_budget_refs" -lt 2 ] || [ -z "$gate_decrement" ]; then
+    echo "  FAIL: delayed readiness retries must consume a finite remainingGateChecks budget"
+    errors=$((errors + 1))
+else
+    echo "  OK: readiness retries consume a finite gate-check budget"
+fi
+
+# A failed runtime replacement leaves the pump thread joinable even when the
+# keyboard handle is null. HookEngine must reject a second Start before it
+# rebuilds/finalizes any state; IsRunning() alone cannot express ownership.
+owner_guard_sites=$(grep -nE \
+    'if[[:space:]]*\([[:space:]]*lifecycle_\.HasOwnerThread\(\)[[:space:]]*\)[[:space:]]*return false' \
+    src/app/system/HookEngine.cpp || true)
+owner_guard_count=$(echo -n "$owner_guard_sites" | grep -c '^' || true)
+if [ "$owner_guard_count" -ne 1 ]; then
+    echo "  FAIL: HookEngine::Start must have exactly 1 lifecycle owner-thread guard, found $owner_guard_count"
+    echo "$owner_guard_sites" | sed '/^$/d; s/^/    /'
+    errors=$((errors + 1))
+else
+    echo "  OK: HookEngine startup is guarded by lifecycle pump ownership"
+fi
+
 # ────────────────────────────────────────────────────────────────────────
-# Check 7: Automatic rehook and ghost-recovery machinery stays removed
+# Check 7: Generic, burst, immediate, and Raw Input recovery stays removed
 # ────────────────────────────────────────────────────────────────────────
 # These names cover the lifecycle entry points and every former producer or
 # state owner.  The scan includes CMake so obsolete recovery components cannot
 # be silently linked back into either application target.
 echo
-echo "Check 7: no automatic rehook or ghost-recovery symbols"
-recovery_pattern='PostReinstallHooks|WM_APP_REINSTALL_HOOKS|REINSTALL_REASON_|ReinstallFn|onReinstall_|requestReinstall|lastReinstallTime|HookHijackDetector|ReinstallBurstScheduler|SetChromiumClassActive|PostGhostKey|SetGhostKeyHandler|GhostKeyFn|ghostKeyFn_|HandleGhostChar|injectGhostChar|WM_APP_GHOSTKEY|RegisterDynamicHijacker|IsDynamicHijacker|IsKnownHijackerExe|ApplyFocusOperationalProtectionOnHookThread|isChromiumClassApp_|isKnownHijackerApp_|isKnownHijacker|isJavaApp|hookFireCount_|hijackDetector_|reinstallBurstScheduler_|burstTimerQueue_'
+echo "Check 7: no generic/burst/immediate/Raw Input hook recovery"
+recovery_pattern='PostReinstallHooks|WM_APP_REINSTALL_HOOKS|REINSTALL_REASON_|ReinstallFn|onReinstall_|requestReinstall|lastReinstallTime|HookHijackDetector|KeyboardHookHealthPolicy|KeyboardHookHealthEvidence|ReinstallBurstScheduler|SetChromiumClassActive|PostGhostKey|SetGhostKeyHandler|GhostKeyFn|ghostKeyFn_|HandleGhostChar|injectGhostChar|WM_APP_GHOSTKEY|RegisterDynamicHijacker|IsDynamicHijacker|IsKnownHijackerExe|ApplyFocusOperationalProtectionOnHookThread|isChromiumClassApp_|isKnownHijackerApp_|isKnownHijacker|isJavaApp|hookFireCount_|hijackDetector_|reinstallBurstScheduler_|burstTimerQueue_|DorionReclaimSequenceCompletion|ReplaceSingleHookWhenIdentityMatches|kDorionDelayedReclaimMs|DorionDelayedReclaimSlot([^sA-Za-z0-9_]|$)|Dorion[^[:space:]]*[Bb]urst|[Bb]urst[^[:space:]]*Dorion'
 recovery_source_matches=$(grep -RInE --include='*.cpp' --include='*.h' \
-    "$recovery_pattern" src/app || true)
+    "$recovery_pattern" src || true)
 recovery_cmake_matches=$(grep -nE "$recovery_pattern" CMakeLists.txt \
     | sed 's|^|CMakeLists.txt:|' || true)
 recovery_matches=$(printf '%s\n%s\n' "$recovery_source_matches" "$recovery_cmake_matches" \
@@ -557,6 +718,36 @@ if [ "$recovery_count" -gt 0 ]; then
     errors=$((errors + 1))
 else
     echo "  OK: recovery-only symbols absent"
+fi
+
+# A same-process Raw Input watchdog previously caused WH_KEYBOARD_LL to stop
+# reaching VKey's own windows. Keep that entire registration path out of the
+# production tree; Dorion recovery is deliberately timer/identity based.
+raw_input_pattern='RegisterRawInputDevices|RAWINPUTDEVICE|RIDEV_(INPUTSINK|NOLEGACY|REMOVE)|GetRawInputData'
+raw_input_matches=$(grep -RInE --include='*.cpp' --include='*.h' \
+    "$raw_input_pattern" src || true)
+raw_input_count=$(echo -n "$raw_input_matches" | grep -c '^' || true)
+if [ "$raw_input_count" -gt 0 ]; then
+    echo "  FAIL: found $raw_input_count Raw Input hook-healer reference(s)"
+    echo "$raw_input_matches" | head -40 | sed 's/^/    /'
+    errors=$((errors + 1))
+else
+    echo "  OK: Raw Input registration/reader path absent"
+fi
+
+# The replacement call's source-order fence above rejects a second immediate
+# call. Also reject explicitly named immediate Dorion paths so they cannot hide
+# behind a wrapper while leaving the delayed call count unchanged.
+immediate_dorion_matches=$(grep -InE \
+    '(Dorion[^[:cntrl:]]*[Ii]mmediate|[Ii]mmediate[^[:cntrl:]]*Dorion)' \
+    "$LIFECYCLE_CPP" src/app/system/HookLifecycle.h || true)
+immediate_dorion_count=$(echo -n "$immediate_dorion_matches" | grep -c '^' || true)
+if [ "$immediate_dorion_count" -gt 0 ]; then
+    echo "  FAIL: found $immediate_dorion_count immediate Dorion reclaim reference(s)"
+    echo "$immediate_dorion_matches" | sed 's/^/    /'
+    errors=$((errors + 1))
+else
+    echo "  OK: no immediate Dorion replacement path"
 fi
 
 # ────────────────────────────────────────────────────────────────────────

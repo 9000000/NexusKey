@@ -12,6 +12,7 @@
 #include "core/config/ConfigSnapshot.h"
 #include "core/hotkey/HotkeyRegistry.h"
 #include "core/AutoCapStateTransition.h"
+#include "core/DorionHookReclaimPolicy.h"
 #include "core/FocusApplyDecision.h"
 #include "core/FormulaSegmentDecision.h"
 #include "core/SmartSwitchManager.h"
@@ -833,6 +834,9 @@ private:
     std::atomic<std::uint64_t> latestFocusRequestSerial_{0};
     std::atomic<std::uint64_t> physicalInputEpoch_{0};
     std::shared_ptr<const FocusClassification> deferredFocusApply_;
+    // Hook-thread-owned. One delayed successful transaction is allowed per
+    // verified Dorion process lifetime; Alt+Tab re-entry never churns it.
+    DorionHookReclaimPolicy dorionHookReclaimPolicy_;
 
     // Adaptive-tick state (2026-05-27, plan docs/plans/2026-05-27-
     // adaptive-tick-idle-backoff.md). Both atomics are written from multiple
@@ -846,6 +850,7 @@ private:
     void DrainHookCommands();                                 // hook thread only
     void RouteFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);
     void TryApplyDeferredFocusOnHookThread();
+    void ReconcileModifierStateOnHookThread() noexcept;
     void ApplyFocusOnHookThread(std::shared_ptr<const FocusClassification> cls);
     void RefreshBrowserRouteOnHookThread(bool forceRead, bool notifyCallback);
     [[nodiscard]] bool IsEffectiveTsf() const noexcept;

@@ -38,6 +38,16 @@ struct PassThroughState {
     }
 };
 
+struct PhysicalKeyState {
+    std::uint32_t vk = 0;
+    bool down = false;
+
+    static bool IsDown(const void* context, std::uint32_t candidate) noexcept {
+        const auto& self = *static_cast<const PhysicalKeyState*>(context);
+        return candidate == self.vk && self.down;
+    }
+};
+
 HotkeyManager::KeyEvent Down(std::uint32_t vk,
                               HotkeyManager::ModifierKey modifier = HotkeyManager::ModifierKey::None) {
     return {vk, HotkeyManager::KeyEventType::Down, modifier};
@@ -142,6 +152,100 @@ TEST(HotkeyManagerTest, ModifierOnlyBindingFiresOnCleanReleaseButNotAfterAnother
     contaminated.Match(Up(kVkA));
     contaminated.Match(Up(kVkLControl, HotkeyManager::ModifierKey::Control));
     EXPECT_TRUE(contaminatedFires.slots.empty());
+}
+
+TEST(HotkeyManagerTest, FocusReconcilePreservesHeldModifierChordContamination) {
+    constexpr std::uint32_t kVkTab = 0x09;
+
+    DeferredFires fires;
+    auto manager = MakeManager(fires);
+    manager.AddHotkey({.alt = true}, [] {});
+    manager.FinalizeBindings();
+
+    manager.Match(Down(kVkLMenu, HotkeyManager::ModifierKey::Alt));
+    manager.Match(Down(kVkTab));
+
+    // Focus may change after Alt+Tab while Alt is still physically held.
+    // Reconciliation must not turn that contaminated chord into a clean
+    // modifier-alone gesture before the eventual Alt-up arrives.
+    manager.ReconcileModifiers({.alt = true});
+    manager.Match(Up(kVkTab));
+    manager.Match(Up(kVkLMenu, HotkeyManager::ModifierKey::Alt));
+
+    EXPECT_TRUE(fires.slots.empty());
+}
+
+TEST(HotkeyManagerTest, FocusReconcileContaminatesOtherwiseCleanHeldModifier) {
+    DeferredFires fires;
+    auto manager = MakeManager(fires);
+    manager.AddHotkey({.win = true}, [] {});
+    manager.FinalizeBindings();
+
+    manager.Match(Down(kVkLWin, HotkeyManager::ModifierKey::Win));
+
+    // Changing foreground is itself a gesture boundary. A Win release in the
+    // new app must not fire a Win-alone VKey binding even when no ordinary key
+    // event was observed before the focus transition.
+    manager.ReconcileModifiers({.win = true});
+    manager.Match(Up(kVkLWin, HotkeyManager::ModifierKey::Win));
+
+    EXPECT_TRUE(fires.slots.empty());
+}
+
+TEST(HotkeyManagerTest, FocusReconcileRestoresPhysicallyHeldModifierSnapshot) {
+    DeferredFires fires;
+    auto manager = MakeManager(fires);
+    const auto slot = manager.AddHotkey({.ctrl = true, .vk = kVkJ}, [] {});
+    manager.FinalizeBindings();
+
+    // The LL callback's pre-update async snapshot can temporarily erase the
+    // just-observed modifier during an in-callback focus drain. A later
+    // pump-boundary snapshot must restore the physical hold before the next
+    // ordinary key is matched.
+    manager.ReconcileModifiers({.ctrl = true});
+
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    EXPECT_EQ(fires.slots, std::vector<HotkeyManager::SlotId>{slot});
+    EXPECT_TRUE(manager.Match(Up(kVkJ)).consume);
+}
+
+TEST(HotkeyManagerTest, HookReplacementClearsLatchWhoseKeyUpWasMissed) {
+    DeferredFires fires;
+    auto manager = MakeManager(fires);
+    const auto slot = manager.AddHotkey({.vk = kVkJ}, [] {});
+    manager.FinalizeBindings();
+
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    ASSERT_EQ(fires.slots, std::vector<HotkeyManager::SlotId>{slot});
+
+    const PhysicalKeyState physical{.vk = kVkJ, .down = false};
+    manager.ReconcileLatchedKeysAfterHookReplacement(
+        &PhysicalKeyState::IsDown, &physical);
+
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    EXPECT_EQ(fires.slots,
+              (std::vector<HotkeyManager::SlotId>{slot, slot}));
+}
+
+TEST(HotkeyManagerTest, HookReplacementRetainsLatchWhileKeyIsPhysicallyHeld) {
+    DeferredFires fires;
+    auto manager = MakeManager(fires);
+    const auto slot = manager.AddHotkey({.vk = kVkJ}, [] {});
+    manager.FinalizeBindings();
+
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    ASSERT_EQ(fires.slots, std::vector<HotkeyManager::SlotId>{slot});
+
+    const PhysicalKeyState physical{.vk = kVkJ, .down = true};
+    manager.ReconcileLatchedKeysAfterHookReplacement(
+        &PhysicalKeyState::IsDown, &physical);
+
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    EXPECT_EQ(fires.slots, std::vector<HotkeyManager::SlotId>{slot});
+    EXPECT_TRUE(manager.Match(Up(kVkJ)).consume);
+    EXPECT_TRUE(manager.Match(Down(kVkJ)).consume);
+    EXPECT_EQ(fires.slots,
+              (std::vector<HotkeyManager::SlotId>{slot, slot}));
 }
 
 TEST(HotkeyManagerTest, RebindPublishesNewComboWhilePreservingInflightLatch) {

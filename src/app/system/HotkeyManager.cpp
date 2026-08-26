@@ -147,11 +147,30 @@ void HotkeyManager::Dispatch(SlotId slot) {
 }
 
 void HotkeyManager::ReconcileModifiers(const PhysicalModifierState& physical) noexcept {
-    if (!physical.ctrl) modCtrlDown_ = false;
-    if (!physical.shift) modShiftDown_ = false;
-    if (!physical.alt) modAltDown_ = false;
-    if (!physical.win) modWinDown_ = false;
-    otherKeyPressed_ = false;
+    modCtrlDown_ = physical.ctrl;
+    modShiftDown_ = physical.shift;
+    modAltDown_ = physical.alt;
+    modWinDown_ = physical.win;
+    // Preserve chord contamination while any modifier is still physically
+    // held. Focus commonly changes between Tab-down and Alt-up; clearing this
+    // latch there would turn Alt+Tab's eventual Alt-up into a false Alt-alone
+    // binding. Once every modifier is up, no in-flight modifier-only gesture
+    // remains and the stale latch can be cleared safely.
+    otherKeyPressed_ = physical.ctrl || physical.shift || physical.alt || physical.win;
+}
+
+void HotkeyManager::ReconcileLatchedKeysAfterHookReplacement(
+        PhysicalKeyDownPredicate isKeyDown,
+        const void* context) noexcept {
+    if (!finalized_ || isKeyDown == nullptr) return;
+
+    for (SlotId slot = 0; slot < slotCount_; ++slot) {
+        auto& state = slotState_[slot];
+        if (!state.comboKeyDown || isKeyDown(context, state.latchedVk)) continue;
+        state.comboKeyDown = false;
+        state.comboPassedThrough = false;
+        state.latchedVk = 0;
+    }
 }
 
 HotkeyManager::ModifierKey HotkeyManager::NormalizeModifier(std::uint32_t vk) noexcept {

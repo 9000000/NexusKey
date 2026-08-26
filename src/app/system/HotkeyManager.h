@@ -50,6 +50,8 @@ public:
     /// of the matcher path.
     using DeferredFireSink = void (*)(void* context, SlotId slot) noexcept;
     using PassThroughPredicate = bool (*)(const void* context) noexcept;
+    using PhysicalKeyDownPredicate =
+        bool (*)(const void* context, std::uint32_t vk) noexcept;
 
     struct PassThrough {
         PassThroughPredicate predicate;
@@ -97,9 +99,20 @@ public:
     /// Match().
     void Dispatch(SlotId slot);
 
-    /// Clears modifiers that the caller's physical-state snapshot reports as
-    /// released; does not query platform APIs.
+    /// Replaces the cached modifier state with the caller's physical snapshot;
+    /// does not query platform APIs. Any modifier still physically held is
+    /// marked contaminated because a focus change is a gesture boundary; this
+    /// prevents its later release from firing a modifier-alone binding while
+    /// still allowing a following ordinary-key combo to match.
     void ReconcileModifiers(const PhysicalModifierState& physical) noexcept;
+
+    /// Repair non-modifier DOWN/UP latches after the keyboard hook's brief
+    /// replacement gap. A latch is cleared only when the supplied physical
+    /// snapshot says its key is already up; held keys retain normal repeat/UP
+    /// pairing. The caller supplies the platform query to keep this portable.
+    void ReconcileLatchedKeysAfterHookReplacement(
+        PhysicalKeyDownPredicate isKeyDown,
+        const void* context) noexcept;
 
     /// Helper for adapters that consume the conventional virtual-key values.
     /// It is deliberately numeric and portable: no Windows header is needed.

@@ -61,6 +61,9 @@ namespace HookCommand {
 struct FocusClassification {
     std::uintptr_t hwndOpaque{0};
     std::uint32_t  pid{0};        // GetWindowThreadProcessId result; 0 = unknown
+    // Full nonzero GetProcessTimes creation FILETIME, populated only for the
+    // exact Dorion compatibility path on the worker. PID alone can be reused.
+    std::uint64_t  processCreationTime{0};
     std::wstring   exeName;
     // Identity of the WinEvent/tick request that started this classification.
     // The hook compares requestSerial with HookEngine's latest published
