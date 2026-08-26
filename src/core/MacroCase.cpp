@@ -136,7 +136,8 @@ MacroPlan Plan(const PlanInputs& in, const CaseMapper& mapper) {
                         plan.expansion[i + 1] == L'n') {
                         ++i;
                         newWord = true;
-                    } else if (std::iswspace(plan.expansion[i])) {
+                    } else if (std::iswspace(plan.expansion[i]) ||
+                               std::iswpunct(plan.expansion[i])) {
                         newWord = true;
                     } else {
                         if (newWord) {
