@@ -344,6 +344,20 @@ TEST(PlanAutoCapsDecisionTest, DotSeparatedExpansionPreservesDotAndFollowsTypedC
     EXPECT_EQ(f.Run().expansion, L"TP.HCM");
 }
 
+TEST(PlanAutoCapsDecisionTest, ApostrophesStayInsideWords) {
+    PlanFixture f;
+    f.table[L"ill"] = L"i'll be there";
+    f.table[L"dont"] = L"don\u2019t";
+    f.trigger = L' ';
+    f.autoCaps = true;
+
+    f.raw = L"Ill";
+    EXPECT_EQ(f.Run().expansion, L"I'll Be There");
+
+    f.raw = L"Dont";
+    EXPECT_EQ(f.Run().expansion, L"Don\u2019t");
+}
+
 TEST(PlanAutoCapsDecisionTest, FirstCharAutoCappedTransformsToLowercaseMacro) {
     PlanFixture f;
     f.table[L"omw"] = L"on my way";
