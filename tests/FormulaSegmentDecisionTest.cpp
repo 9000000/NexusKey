@@ -21,6 +21,34 @@ FormulaSegmentState Fold(std::initializer_list<FormulaKeyKind> kinds) {
     return s;
 }
 
+// ── Office host policy ─────────────────────────────────────────────────────
+TEST(FormulaSegmentDecision, Issue252_ExcelDisablesBaitForAllEditing) {
+    const auto policy = DecideOfficeAutocompleteBaitPolicy(
+        /*isExcel=*/true, /*isOutlook=*/false);
+
+    EXPECT_FALSE(policy.needsBait);
+    EXPECT_FALSE(policy.trackFormulaSegments);
+    EXPECT_FALSE(policy.allowWebView2BaitPromotion);
+}
+
+TEST(FormulaSegmentDecision, OutlookKeepsAutocompleteBait) {
+    const auto policy = DecideOfficeAutocompleteBaitPolicy(
+        /*isExcel=*/false, /*isOutlook=*/true);
+
+    EXPECT_TRUE(policy.needsBait);
+    EXPECT_FALSE(policy.trackFormulaSegments);
+    EXPECT_TRUE(policy.allowWebView2BaitPromotion);
+}
+
+TEST(FormulaSegmentDecision, NonOfficeHostAddsNoOfficePolicy) {
+    const auto policy = DecideOfficeAutocompleteBaitPolicy(
+        /*isExcel=*/false, /*isOutlook=*/false);
+
+    EXPECT_FALSE(policy.needsBait);
+    EXPECT_FALSE(policy.trackFormulaSegments);
+    EXPECT_TRUE(policy.allowWebView2BaitPromotion);
+}
+
 // ── Initial state ──────────────────────────────────────────────────────────
 TEST(FormulaSegmentDecision, InitialStateIsArmedNonFormula) {
     FormulaSegmentState s{};

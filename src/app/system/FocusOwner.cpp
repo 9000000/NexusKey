@@ -7,6 +7,7 @@
 #include "core/AutoCapDecision.h"
 #include "core/CrashLog.h"
 #include "core/Debug.h"
+#include "core/FormulaSegmentDecision.h"
 #include "core/Logger.h"
 #include "core/PerAppModeDecision.h"
 #include "core/WebView2CacheDecision.h"
@@ -655,12 +656,11 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
             } else {
                 const bool isOutlook = cls.exeName.find(L"outlook") != std::wstring::npos;
                 const bool isExcel   = cls.exeName.find(L"excel") != std::wstring::npos;
-                cls.localNeedBait = isExcel || isOutlook;
-                // Formula-segment bait suppression is Excel-only: '=' opens a
-                // formula in a spreadsheet cell, but is an ordinary character in
-                // Outlook compose / browser omnibox (where the bait must stay).
-                cls.localFormulaHost = isExcel;
-                if (!cls.localNeedBait) {
+                const auto officeBait =
+                    DecideOfficeAutocompleteBaitPolicy(isExcel, isOutlook);
+                cls.localNeedBait = officeBait.needsBait;
+                cls.localFormulaHost = officeBait.trackFormulaSegments;
+                if (!cls.localNeedBait && officeBait.allowWebView2BaitPromotion) {
                     if (!cached) {
                         std::wstring exeFullPath = GetExeFullPathForHwnd(activeHwnd);
                         isWebView2 = IsWebView2App(activeHwnd, exeFullPath);

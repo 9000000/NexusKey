@@ -19,6 +19,25 @@
 
 namespace NextKey {
 
+struct OfficeAutocompleteBaitPolicy {
+    bool needsBait = false;
+    bool trackFormulaSegments = false;
+    bool allowWebView2BaitPromotion = true;
+};
+
+// Issue #252: Excel's dropdown suggestions do not need the U+202F
+// inline-autocomplete bait, and any leaked bait corrupts formula text. Outlook
+// keeps the bait; browsers are classified separately before this policy runs.
+// An embedded Office WebView2 add-in must not promote Excel back to bait mode.
+[[nodiscard]] constexpr OfficeAutocompleteBaitPolicy
+DecideOfficeAutocompleteBaitPolicy(bool isExcel, bool isOutlook) noexcept {
+    return OfficeAutocompleteBaitPolicy{
+        /*needsBait=*/isOutlook && !isExcel,
+        /*trackFormulaSegments=*/false,
+        /*allowWebView2BaitPromotion=*/!isExcel,
+    };
+}
+
 // State carried across keystrokes (hook-thread-owned in HookEngine).
 struct FormulaSegmentState {
     bool atSegmentStart = true;  // next content key is the segment's first
