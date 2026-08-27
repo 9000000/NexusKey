@@ -52,10 +52,11 @@ namespace DigitLedVk {
 }
 
 enum class DigitLedDecision : uint8_t {
-    Continue,  // Not digit-led — caller proceeds with normal dispatch.
-    Arm,       // Caller sets `currentlyArmed = true` and passes key through.
-    Bypass,    // Currently armed, non-boundary key — caller passes key through.
-    Reset,     // Currently armed, boundary key — caller clears arm flag and passes key through.
+    Continue,         // Not digit-led — caller proceeds with normal dispatch.
+    Arm,              // Caller sets `currentlyArmed = true` and passes key through.
+    Bypass,           // Currently armed, non-boundary key — caller passes key through.
+    Reset,            // Armed boundary + empty engine: clear arm and pass through.
+    ResetAndContinue, // Stale arm + live engine: clear arm, then dispatch key normally.
 };
 
 struct DigitLedInputs {
@@ -84,8 +85,18 @@ struct DigitLedInputs {
 /// any thread.
 [[nodiscard]] constexpr DigitLedDecision DecideDigitLed(const DigitLedInputs& in) noexcept {
     if (in.currentlyArmed) {
+        // A live composition means another feature revived the previous word
+        // while the digit-led latch was still armed. In Hook mode, commit-undo
+        // can veto/consume every corrective Backspace before digit-led dispatch
+        // and revive the word during replay. A genuine digit-led run never
+        // touches the engine, so this combination is stale regardless of key
+        // class. Clear it before the current key reaches normal dispatch or raw
+        // host input can desynchronise the engine; see issue #251
+        // (`khoản 2` -> `khoảàn`).
+        if (!in.engineEmpty) return DigitLedDecision::ResetAndContinue;
+
         return IsDigitLedBoundary(in.vkCode) ? DigitLedDecision::Reset
-                                              : DigitLedDecision::Bypass;
+                                             : DigitLedDecision::Bypass;
     }
     if (in.shift) return DigitLedDecision::Continue;
     if (!in.engineEmpty) return DigitLedDecision::Continue;

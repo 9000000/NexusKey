@@ -279,6 +279,9 @@ bool EngineController::WantKey(UINT vkCode, bool /*isKeyDown*/) {
             case DigitLedDecision::Arm:    digitLedWord_ = true;  return false;
             case DigitLedDecision::Bypass:                        return false;
             case DigitLedDecision::Reset:  digitLedWord_ = false; return false;
+            case DigitLedDecision::ResetAndContinue:
+                digitLedWord_ = false;
+                break;
             case DigitLedDecision::Continue: break;
         }
     }

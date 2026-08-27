@@ -1955,6 +1955,11 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
                 digitLedWord_ = false;
                 HOOK_LOG(L"  digitLedWord: reset on vk=0x%02X", vkCode);
                 return KeyOutcome::Pass;
+            case DigitLedDecision::ResetAndContinue:
+                digitLedWord_ = false;
+                HOOK_LOG(L"  digitLedWord: reset stale latch on vk=0x%02X; continue live composition",
+                         vkCode);
+                break;
             case DigitLedDecision::Continue:
                 break;
         }

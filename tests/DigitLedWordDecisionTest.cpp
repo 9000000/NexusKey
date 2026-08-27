@@ -135,6 +135,51 @@ TEST(DigitLedWord, ArmedThenSpace_Resets) {
     EXPECT_EQ(DecideDigitLed(in), DigitLedDecision::Reset);
 }
 
+TEST(DigitLedWord, Issue251_ErasedDigitThenRevivedWordCommitsOnSpace) {
+    // Type `khoảng 2`: the word-start `2` arms literal digit-led bypass.
+    auto digit = MakeInputs(Vk::kDigit0 + 2);
+    EXPECT_EQ(DecideDigitLed(digit), DigitLedDecision::Arm);
+    bool armed = true;
+
+    // Erase `2`, the space and `g`: commit-undo Pass/Veto handles the first two
+    // Backspaces and Eat handles replay, all before digit-led dispatch. That
+    // revives `khoản` while the erased digit's latch remains.
+    const bool revivedWordMakesEngineNonEmpty = true;
+
+    // The next Space must clear the stale latch AND continue to normal dispatch
+    // so `khoản` commits. The old Reset outcome passed Space straight to Firefox;
+    // VNI `2` then edited stale engine state and rendered `khoảàn`.
+    auto space = MakeInputs(Vk::kSpace);
+    space.currentlyArmed = armed;
+    space.engineEmpty = !revivedWordMakesEngineNonEmpty;
+    EXPECT_EQ(DecideDigitLed(space), DigitLedDecision::ResetAndContinue);
+}
+
+TEST(DigitLedWord, StaleArmWithRevivedWord_AllBoundariesContinue) {
+    for (uint32_t vk : {Vk::kSpace, Vk::kReturn, Vk::kTab, Vk::kEscape,
+                        Vk::kBack, Vk::kDelete, Vk::kLeft, Vk::kUp,
+                        Vk::kRight, Vk::kDown, Vk::kHome, Vk::kEnd,
+                        Vk::kPrior, Vk::kNext}) {
+        auto in = MakeInputs(vk);
+        in.currentlyArmed = true;
+        in.engineEmpty = false;
+        EXPECT_EQ(DecideDigitLed(in), DigitLedDecision::ResetAndContinue)
+            << "vk=0x" << std::hex << vk;
+    }
+}
+
+TEST(DigitLedWord, StaleArmWithRevivedWord_ContentKeysContinue) {
+    // A stale latch must not bypass any next content key to the host while the
+    // revived word is still live in the engine.
+    for (uint32_t vk : {0x41u, Vk::kDigit0 + 2, 0xBEu}) {  // 'A', '2', '.'
+        auto in = MakeInputs(vk);
+        in.currentlyArmed = true;
+        in.engineEmpty = false;
+        EXPECT_EQ(DecideDigitLed(in), DigitLedDecision::ResetAndContinue)
+            << "vk=0x" << std::hex << vk;
+    }
+}
+
 TEST(DigitLedWord, ArmedThenEnter_Resets) {
     auto in = MakeInputs(Vk::kReturn);
     in.currentlyArmed = true;
@@ -218,7 +263,9 @@ TEST(DigitLedWord, FullWordSequence_6abcSpace) {
     // updates it per Decision returned.
     bool armed = false;
     auto step = [&armed](uint32_t vk) -> DigitLedDecision {
-        DigitLedInputs in{vk, false, !armed /*engineEmpty proxy*/, InputMethod::VNI, armed};
+        // The engine stays empty for the whole digit-led run because every key
+        // bypasses composition. `armed` is state, not an engine-content proxy.
+        DigitLedInputs in{vk, false, true, InputMethod::VNI, armed};
         auto d = DecideDigitLed(in);
         if (d == DigitLedDecision::Arm) armed = true;
         else if (d == DigitLedDecision::Reset) armed = false;
