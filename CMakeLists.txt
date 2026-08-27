@@ -832,7 +832,6 @@ set(NEXTKEY_TEST_SOURCES
     tests/DorionHookReclaimSequenceTest.cpp
     tests/SingleHookReplacementTest.cpp
     tests/TelexEngineTest.cpp
-    tests/FormulaSegmentDecisionTest.cpp
     tests/CombinedEngineTest.cpp
     tests/VniParityTest.cpp
     tests/TelexDictionaryTest.cpp

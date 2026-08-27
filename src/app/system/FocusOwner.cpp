@@ -7,7 +7,6 @@
 #include "core/AutoCapDecision.h"
 #include "core/CrashLog.h"
 #include "core/Debug.h"
-#include "core/FormulaSegmentDecision.h"
 #include "core/Logger.h"
 #include "core/PerAppModeDecision.h"
 #include "core/WebView2CacheDecision.h"
@@ -656,11 +655,11 @@ FocusClassification FocusOwner::Classify(HWND triggerHwnd,
             } else {
                 const bool isOutlook = cls.exeName.find(L"outlook") != std::wstring::npos;
                 const bool isExcel   = cls.exeName.find(L"excel") != std::wstring::npos;
-                const auto officeBait =
-                    DecideOfficeAutocompleteBaitPolicy(isExcel, isOutlook);
-                cls.localNeedBait = officeBait.needsBait;
-                cls.localFormulaHost = officeBait.trackFormulaSegments;
-                if (!cls.localNeedBait && officeBait.allowWebView2BaitPromotion) {
+                // #252: Excel formula suggestions are dropdowns; the U+202F
+                // inline-suggestion bait can leak into the cell as a tofu glyph.
+                // Keep Excel out of both Office bait and WebView2 promotion.
+                cls.localNeedBait = isOutlook;
+                if (!isExcel && !isOutlook) {
                     if (!cached) {
                         std::wstring exeFullPath = GetExeFullPathForHwnd(activeHwnd);
                         isWebView2 = IsWebView2App(activeHwnd, exeFullPath);

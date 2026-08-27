@@ -84,8 +84,7 @@ bool Win32SendInputInjector::Replace(std::size_t bsCount,
     // when the user opts into the "BS giữ chữ khi có gợi ý" setting.
     const bool emitBait = Internal::ShouldEmitBait(
         needsBaitCharPrefix_, bsCount, text,
-        suggestKeepChars_.load(std::memory_order_acquire),
-        suppressBait_.load(std::memory_order_acquire));
+        suggestKeepChars_.load(std::memory_order_acquire));
     if (emitBait) {
         if (i + 2 > kMaxBatch) return false;
         buf[i++] = MakeUnicodeChar(0x202F, /*keyup=*/false);
