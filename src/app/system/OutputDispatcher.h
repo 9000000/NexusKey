@@ -35,6 +35,7 @@
 #pragma once
 
 #include "core/config/TypingConfig.h"  // CodeTable enum
+#include "core/FocusApplyDecision.h"
 #include "output/IOutputInjector.h"
 
 #include <Windows.h>
@@ -47,6 +48,7 @@
 namespace NextKey {
 
 class FocusOwner;  // forward declaration
+struct FocusClassification;
 
 class OutputDispatcher {
 public:
@@ -75,6 +77,16 @@ public:
     /// today). Used at 4 policy-gate sites in HookEngine + here for the
     /// RichEdit retry path in ReplaceUnicode.
     [[nodiscard]] bool IsSyncReplaceChannel() const noexcept;
+
+    // Prepare on the worker; publish on the hook using the same ordering
+    // decision as the composition transaction. Neither step edits the word.
+    static void PrepareFocusOutput(FocusClassification& cls) noexcept;
+    [[nodiscard]] bool ApplyFocusOutput(const FocusClassification& cls,
+                                       FocusApplyDisposition disposition,
+                                       bool suggestKeepChars) noexcept;
+    [[nodiscard]] bool WantsGameReinject() const noexcept {
+        return wantsGameReinject_;
+    }
 
     // ── Per-app output policy (publishers — hook thread on focus change) ─
     void SetUseClipboardPaste(bool v) noexcept {
@@ -190,6 +202,7 @@ private:
     std::atomic<bool> sending_{false};
     std::atomic<bool> useClipboardPaste_{false};
     std::atomic<bool> skipEmptyChar_{false};
+    bool wantsGameReinject_{false};  // hook-thread-owned output policy
 
     DWORD lastSynthSendTime_ = 0;
     DWORD lastRealSynthTime_ = 0;

@@ -9,7 +9,8 @@
 //
 // Keep the ordering policy pure and Linux-testable. The caller owns all side
 // effects (drop the snapshot, retain it in a hook-owned deferred slot, or apply
-// the complete typing-context transaction).
+// the logical typing context). Current host output can refresh even while that
+// context waits, so a browser does not inherit the previous app's transport.
 
 #pragma once
 

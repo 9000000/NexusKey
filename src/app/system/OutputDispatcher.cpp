@@ -4,6 +4,7 @@
 #include "OutputDispatcher.h"
 
 #include "FocusOwner.h"
+#include "HookCommandMailbox.h"
 #include "PerfHistogram.h"  // PERF_SCOPE
 #include "core/Logger.h"
 #include "output/Internal.h"
@@ -146,6 +147,37 @@ void OutputDispatcher::OnSynthDispatched(int delta) noexcept {
 // ─────────────────────────────────────────────────────────────────────
 // Injector RCU
 // ─────────────────────────────────────────────────────────────────────
+void OutputDispatcher::PrepareFocusOutput(FocusClassification& cls) noexcept {
+    Output::WindowClassification c{};
+    c.isRichEditD2DPT = cls.localEditMsg;
+    c.isElectron = cls.localElectronApp;
+    c.isConsole = cls.isConsole;
+    c.isChromium = cls.localNeedBait;
+    c.useClipboard = cls.localUseClipboardInjector;
+    c.forcedSplitSleepMs = cls.localForcedSplitSleepMs;
+    c.forceEmReplaceSel = cls.localForceEmReplaceSel;
+    cls.outputInjector = Output::Create(c);
+}
+
+bool OutputDispatcher::ApplyFocusOutput(const FocusClassification& cls,
+                                       FocusApplyDisposition disposition,
+                                       bool suggestKeepChars) noexcept {
+    // A live word only delays its logical settings/reset. Its next edit is
+    // already going to the new host, which must not inherit game replay or
+    // miss the browser's autocomplete-dismiss prefix.
+    if (disposition == FocusApplyDisposition::DropStale || !cls.outputInjector) {
+        return false;
+    }
+
+    cls.outputInjector->SetSuggestKeepChars(suggestKeepChars);
+    SetSkipEmptyChar(cls.localSkipEmpty);
+    SetUseClipboardPaste(cls.localClipboard);
+    wantsGameReinject_ = cls.localGameReinject;
+    SetInjector(cls.outputInjector);
+    focus_.InvalidateFocusCache();
+    return true;
+}
+
 void OutputDispatcher::SetInjector(
         std::shared_ptr<NextKey::Output::IOutputInjector> inj) noexcept {
     injector_.store(std::move(inj), std::memory_order_release);

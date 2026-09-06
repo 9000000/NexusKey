@@ -38,6 +38,8 @@
 
 namespace NextKey {
 
+namespace Output { class IOutputInjector; }
+
 /// Bit flags for `HookCommandMailbox::Post` / `DrainBits` return value.
 /// One bit per command type — drain dispatches by mask test. Bits stay in
 /// a uint32_t for std::atomic lock-free guarantee on every supported
@@ -72,8 +74,8 @@ struct FocusClassification {
     std::uint64_t requestSerial{0};
     // Physical key-down epoch captured at request publication time. If the
     // hook has advanced this epoch while the worker was classifying, applying
-    // the typing context in the middle of a live composition must be deferred
-    // until engine_->Count() returns to zero.
+    // the logical typing context in the middle of a live composition must be
+    // deferred until the word boundary. Host output can still refresh promptly.
     std::uint64_t inputEpochAtRequest{0};
     // Classification flags — populated by ClassifyFocusedWindow.
     bool isExcluded{false};
@@ -123,6 +125,9 @@ struct FocusClassification {
     // engine from the document permanently. Games are the only place the
     // trade is worth taking.
     bool localGameReinject{false};
+    // Constructed on the worker before publication. The hook can adopt the
+    // host's transport while a live word delays the logical focus apply.
+    std::shared_ptr<Output::IOutputInjector> outputInjector;
     // RESOLVED target values for the focused app. Classify captures the
     // current global on main alongside any per-app override, so the hook
     // thread never reads `globalCodeTable_` / `globalInputMethod_`

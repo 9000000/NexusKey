@@ -6,7 +6,6 @@
 #include "Win32CaseMapper.h"
 #include "PerfHistogram.h"  // Phase 1 — per-stage histogram (compiles to no-op when VKEY_PERF_HIST undef)
 #include "helpers/AppHelpers.h"
-#include "output/OutputInjectorFactory.h"  // Sprint 2 T3 — output channel strategy
 #include "output/Internal.h"  // Sprint 2 D5 — g_synthCounterCallback bridge
 #include "core/engine/CodeTableConverter.h"
 #include "core/engine/CommittedTextRestore.h"
@@ -2505,7 +2504,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
     // Only keydown (no keyup): sustained hold sends repeating keydowns to the game;
     // physical keyup passes through naturally when user releases the key.
     //
-    // OPT-IN (per-app send method 5, `hostWantsGameReinject_`). This used to be a
+    // OPT-IN (per-app send method 5, dispatcher_.WantsGameReinject()). This used to be a
     // negative gate — on for every app that wasn't a browser/Electron/console/
     // edit-message host — which meant Notepad, Word and Windows Terminal all paid
     // for it. The cost is not just the visible flicker of painting the raw char
@@ -2524,7 +2523,7 @@ bool HookEngine::HandleAlphaKey(DWORD vkCode, bool shift, bool capsLock) {
                            composition.back() == originalCh &&
                            composition.compare(0, previousComposition_.size(), previousComposition_) == 0);
     DWORD reinjectVk = 0;
-    if (hostWantsGameReinject_ &&
+    if (dispatcher_.WantsGameReinject() &&
         !isSimpleAppend && !autoCapped && currentCodeTable_.load(std::memory_order_acquire) == CodeTable::Unicode &&
         !baitChar && !skipEmpty && !editMsgPath) {
         reinjectVk = vkCode;
@@ -3266,7 +3265,7 @@ void HookEngine::DrainGameModeToggleOnWorker() {
     // work yet":
     //   • The config snapshot only rebuilds when a later worker wake notices
     //     the generation bump — and the wake cadence backs off while idle.
-    //   • `hostWantsGameReinject_` is published by ApplyFocus, and OnTickPoll
+    //   • The game-replay output policy is published by focus apply, and OnTickPoll
     //     only re-classifies when the foreground PID *changes*. Pressing a
     //     hotkey inside a game changes nothing, so without forcing it here the
     //     new value would not land until the user alt-tabbed away and back.
@@ -3381,6 +3380,8 @@ void HookEngine::OnFocusChangedSyncOnWorker(
     classified.inputEpochAtRequest = request.inputEpochAtRequest;
 
     if (!classified.hwndOpaque) return;  // sentinel: nothing to apply
+
+    OutputDispatcher::PrepareFocusOutput(classified);
 
     // Process creation time is a cold Win32 query and therefore belongs on
     // this worker, never in DrainHookCommands when it may run inside the LL
@@ -4052,7 +4053,7 @@ void HookEngine::DrainHookCommands() {
         RouteFocusOnHookThread(lifecycle_.Mailbox().ConsumePendingFocus());
     }
     // Preserve the established focus-before-tick-before-toggle ordering. If a
-    // prior word has committed since the result was deferred, its complete
+    // prior word has committed since the result was deferred, its logical
     // typing-context transaction lands here before the next key is dispatched.
     TryApplyDeferredFocusOnHookThread();
     if (bits & HookCommand::kTickPoll)     ApplyTickPollOnHookThread();
@@ -4100,6 +4101,14 @@ void HookEngine::RouteFocusOnHookThread(
 
     const FocusApplyDisposition disposition = DecideFocusApply(inputs);
 
+    const auto cfg = config_.load(std::memory_order_acquire);
+    if (dispatcher_.ApplyFocusOutput(*cls, disposition, cfg->suggestKeepChars)) {
+        HOOK_LOG(L"  FocusOutput: request=%llu bait=%d game=%d deferred=%d",
+                 static_cast<unsigned long long>(cls->requestSerial),
+                 cls->localNeedBait ? 1 : 0, cls->localGameReinject ? 1 : 0,
+                 disposition == FocusApplyDisposition::DeferUntilBoundary ? 1 : 0);
+    }
+
     // Hook-chain protection is independent of the typing-context transaction.
     // Dorion can bypass this callback entirely once it is foreground, so
     // waiting for a deferred composition boundary could make the boundary
@@ -4138,8 +4147,8 @@ void HookEngine::RouteFocusOnHookThread(
             return;
 
         case FocusApplyDisposition::DeferUntilBoundary:
-            // All state that changes typing semantics remains an atomic
-            // transaction in the deferred snapshot.
+            // Keep the word, method, encoding and mode transaction together.
+            // Output already follows the host receiving the next replacement.
             deferredFocusApply_ = std::move(cls);
             HOOK_LOG(L"  FocusApply: defer request=%llu input=%llu->%llu count=%zu macro=%zu",
                      static_cast<unsigned long long>(inputs.snapshotRequestSerial),
@@ -4195,6 +4204,9 @@ void HookEngine::TryApplyDeferredFocusOnHookThread() {
             return;
         case FocusApplyDisposition::ApplyNow: {
             auto ready = std::move(deferredFocusApply_);
+            const auto cfg = config_.load(std::memory_order_acquire);
+            (void)dispatcher_.ApplyFocusOutput(
+                *ready, FocusApplyDisposition::ApplyNow, cfg->suggestKeepChars);
             HOOK_LOG(L"  FocusApply: apply deferred request=%llu at boundary",
                      static_cast<unsigned long long>(inputs.snapshotRequestSerial));
             ApplyFocusOnHookThread(std::move(ready));
@@ -4355,36 +4367,6 @@ void HookEngine::ApplyFocusOnHookThread(std::shared_ptr<const FocusClassificatio
     // Reconcile our modifier/hotkey trackers after desktop switch / Win+L,
     // without turning a still-held Alt+Tab chord into an Alt-alone release.
     ReconcileModifierStateOnHookThread();
-
-    // Per-app cached flags — single release-store pair with the hot-path
-    // acquire-loads in ProcessKeyDown / HandleAlphaKey. Wave 3 PR 3.3:
-    // owned by OutputDispatcher (atomic readers go through getter API).
-    dispatcher_.SetSkipEmptyChar(cls->localSkipEmpty);
-    dispatcher_.SetUseClipboardPaste(cls->localClipboard);
-    hostWantsGameReinject_ = cls->localGameReinject;
-
-    // IOutputInjector swap — RCU publish so in-flight HandleAlphaKey reads
-    // see either the old or new injector cleanly.
-    {
-        NextKey::Output::WindowClassification c{};
-        c.isRichEditD2DPT   = cls->localEditMsg;
-        c.isElectron        = cls->localElectronApp;
-        c.isConsole         = cls->isConsole;
-        c.isChromium        = cls->localNeedBait;
-        c.useClipboard      = cls->localUseClipboardInjector;
-        // Per-app "send method = compatibility split" (sendMethod 2/3). 0 when
-        // the focused app has no such override → factory keeps the Win32 path.
-        c.forcedSplitSleepMs = cls->localForcedSplitSleepMs;
-        c.forceEmReplaceSel = cls->localForceEmReplaceSel;
-        auto newInjector = NextKey::Output::Create(c);
-        // Re-apply user setting on the freshly-built injector so the new
-        // host inherits the live "BS giữ chữ khi có gợi ý" value (factory
-        // doesn't know about it). Without this, a focus change resets the
-        // suggestKeepChars flag to default false until the next ApplyConfig.
-        // Use the outer `cfg` loaded at function entry — no re-load needed.
-        newInjector->SetSuggestKeepChars(cfg->suggestKeepChars);
-        dispatcher_.SetInjector(std::move(newInjector));
-    }
 
     HOOK_LOG(L"  AppDetect: console=%d skipEmpty=%d electron=%d webview2=%d bait=%d clipboard=%d editMsg=%d useClipInj=%d splitSleepMs=%d emptyDoc=%d fresh=%d",
              cls->isConsole ? 1 : 0, cls->localSkipEmpty ? 1 : 0, cls->localElectronApp ? 1 : 0,

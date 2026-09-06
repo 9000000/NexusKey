@@ -624,10 +624,6 @@ private:
     // HandleAlphaKey re-suppresses synchronously if the new control is itself
     // a password field.
     bool suppressAutoCapForPasswordSafety_ = false;
-    // Focused app opted into the game-compat VK re-inject (per-app send
-    // method 5). Written by ApplyFocusOnHookThread and read by HandleAlphaKey;
-    // both run on the hook thread.
-    bool hostWantsGameReinject_ = false;
     // Phase 3d: legacy `excludedAppSet_` removed — readers go through
     // configSnapshot_.load()->excludedAppSet. Same migration for
     // tsfAppSet_, macroTable_, spaceMacroKeys_, appEncodingOverrides_,

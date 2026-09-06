@@ -937,6 +937,7 @@ if(WIN32)
         tests/output/Win32SendInputInjectorTest.cpp
         tests/output/RichEditEmReplaceSelInjectorTest.cpp
         tests/output/OutputDispatcherRetryBudgetTest.cpp
+        tests/output/FocusOutputTest.cpp
         tests/output/SplitDispatchInjectorTest.cpp
         tests/output/OutputInjectorFactoryTest.cpp
         tests/output/InjectorTraitsTest.cpp
