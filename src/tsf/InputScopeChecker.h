@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // Checks if a TSF context should block Vietnamese input:
-// - GUID_COMPARTMENT_KEYBOARD_DISABLED compartment
 // - Input scopes: password, PIN, email, login fields
+// Dynamic disabled/empty compartments are checked by EngineController outside
+// this cached edit session.
 //
 // Mechanism is the standard ITfInputScope API usage (GetAppProperty →
 // GetInputScopes). Blocked-scope set references VietType's EditBlocked.cpp
@@ -24,7 +25,7 @@ inline const GUID kGuidPropInputScope =
 namespace NextKey {
 namespace TSF {
 
-/// Edit session that checks if the current context blocks keyboard input.
+/// Edit session that checks the input scope of the current context.
 /// Result is written to the bool* passed at construction.
 class InputScopeCheckSession : public EditSession {
 public:
@@ -35,38 +36,16 @@ public:
         if (!pContext_ || !pBlocked_) return E_FAIL;
         *pBlocked_ = false;
 
-        // 1. Check GUID_COMPARTMENT_KEYBOARD_DISABLED
-        ITfCompartmentMgr* pCompMgr = nullptr;
-        HRESULT hr = pContext_->QueryInterface(IID_ITfCompartmentMgr, (void**)&pCompMgr);
-        if (SUCCEEDED(hr) && pCompMgr) {
-            ITfCompartment* pComp = nullptr;
-            hr = pCompMgr->GetCompartment(GUID_COMPARTMENT_KEYBOARD_DISABLED, &pComp);
-            if (SUCCEEDED(hr) && pComp) {
-                VARIANT var;
-                VariantInit(&var);
-                hr = pComp->GetValue(&var);
-                if (SUCCEEDED(hr) && var.vt == VT_I4 && var.lVal != 0) {
-                    TSF_LOG(L"InputScopeCheck: KEYBOARD_DISABLED compartment set");
-                    *pBlocked_ = true;
-                }
-                VariantClear(&var);
-                pComp->Release();
-            }
-            pCompMgr->Release();
-        }
-
-        if (*pBlocked_) return S_OK;
-
-        // 2. Check input scopes (password, PIN, email, etc.)
+        // Check input scopes (password, PIN, email, etc.)
         ITfReadOnlyProperty* pProp = nullptr;
-        hr = pContext_->GetAppProperty(kGuidPropInputScope, &pProp);
+        HRESULT hr = pContext_->GetAppProperty(kGuidPropInputScope, &pProp);
         if (FAILED(hr) || !pProp) return S_OK;
 
         // Get selection to query input scope at cursor position
         TF_SELECTION sel = {};
         ULONG fetched = 0;
         hr = pContext_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched);
-        if (FAILED(hr) || fetched == 0) {
+        if (FAILED(hr) || fetched == 0 || !sel.range) {
             pProp->Release();
             return S_OK;
         }

@@ -33,6 +33,19 @@ namespace {
 constexpr std::size_t kMaxRawMacroBuffer = 128;
 constexpr std::size_t kMacroClipboardThreshold = 200;
 
+bool IsCompartmentSet(ITfCompartmentMgr* manager, REFGUID guid) {
+    if (manager == nullptr) return false;
+    CComPtr<ITfCompartment> compartment;
+    if (FAILED(manager->GetCompartment(guid, &compartment)) || !compartment) {
+        return false;
+    }
+    CComVariant value;
+    // S_FALSE/VT_EMPTY means unset, not a disabled keyboard. RAII also clears
+    // unexpected variant types returned by a host.
+    return compartment->GetValue(&value) == S_OK
+        && value.vt == VT_I4 && value.lVal != 0;
+}
+
 class TsfCaseMapper final : public NextKey::Macro::CaseMapper {
 public:
     void Upper(wchar_t* buffer, std::size_t count) const override {
@@ -52,7 +65,14 @@ public:
 namespace NextKey {
 namespace TSF {
 
-EngineController::EngineController() {
+EngineController::EngineController(ITfThreadMgr* pThreadMgr) {
+    // Context compartments are documented for these gates; Microsoft's
+    // SampleIME also consults the thread manager. Honor either owner setting a
+    // gate, and never let an unset/false value overwrite another owner's true.
+    if (pThreadMgr != nullptr) {
+        (void)pThreadMgr->QueryInterface(
+            IID_ITfCompartmentMgr, reinterpret_cast<void**>(&threadCompartments_));
+    }
     // Try to open SharedState from main app (read-write for flag toggling)
     if (sharedState_.OpenReadWrite()) {
         // Step 1: ABI check — seqlock-protected header read. CheckConfigEvent
@@ -181,15 +201,18 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
 
     const bool contextChanged = pContext != lastContext_;
     if (contextChanged) {
-        // Input scopes are stable for the lifetime of the focused context, so
-        // keep their edit-session result cached. Document status is dynamic and
-        // is deliberately refreshed below for every key event.
+        // Cache scope inspection and compartment owners, not compartment
+        // values: disabled/empty can change without a different ITfContext.
+        contextCompartments_.Release();
         if (lastContext_) lastContext_->Release();
         lastContext_ = pContext;
         if (lastContext_) lastContext_->AddRef();
         scopeBlocked_ = false;
 
         if (pContext) {
+            (void)pContext->QueryInterface(
+                IID_ITfCompartmentMgr,
+                reinterpret_cast<void**>(&contextCompartments_));
             auto* pSession = new InputScopeCheckSession(pContext, &scopeBlocked_);
             HRESULT hrSession = S_OK;
             HRESULT hr = pContext->RequestEditSession(
@@ -205,19 +228,30 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
 
     }
 
-    bool readOnly = false;
-    bool transitory = false;
+    const bool contextDisabled = IsCompartmentSet(
+        contextCompartments_, GUID_COMPARTMENT_KEYBOARD_DISABLED);
+    const bool threadDisabled = IsCompartmentSet(
+        threadCompartments_, GUID_COMPARTMENT_KEYBOARD_DISABLED);
+    const bool contextEmpty = IsCompartmentSet(
+        contextCompartments_, GUID_COMPARTMENT_EMPTYCONTEXT);
+    const bool threadEmpty = IsCompartmentSet(
+        threadCompartments_, GUID_COMPARTMENT_EMPTYCONTEXT);
     TF_STATUS status{};
     HRESULT hrStatus = E_POINTER;
     if (pContext) {
         hrStatus = pContext->GetStatus(&status);
-        if (SUCCEEDED(hrStatus)) {
-            readOnly = IsReadOnlyTsfDocument(status.dwDynamicFlags);
-            transitory = IsTransitoryOnlyTsfDocument(status.dwStaticFlags);
-        }
+        if (FAILED(hrStatus)) status = {};
     }
+    const TsfContextInputState inputState{
+        .hasContext = pContext != nullptr,
+        .dynamicStatusFlags = status.dwDynamicFlags,
+        .staticStatusFlags = status.dwStaticFlags,
+        .keyboardDisabled = contextDisabled || threadDisabled,
+        .emptyContext = contextEmpty || threadEmpty,
+        .scopeBlocked = scopeBlocked_,
+    };
     const bool wasBlocked = contextBlocked_;
-    contextBlocked_ = scopeBlocked_ || readOnly || transitory;
+    contextBlocked_ = ShouldBlockTsfContext(inputState);
 
     // Transitions and context switches only — this runs per keystroke, and a
     // line per key buries the one thing a reader needs. Both flags and the
@@ -238,14 +272,17 @@ void EngineController::CheckContextBlocked(ITfContext* pContext) {
         verdictLogged_ = true;
         wchar_t focusClass[64] = {};
         ::GetClassNameW(::GetFocus(), focusClass, 64);
-        TSF_LOG(L"Context %ls: focus='%ls' status=0x%08lX dyn=0x%08lX static=0x%08lX",
+        TSF_LOG(L"Context %ls: focus='%ls' status=0x%08lX dyn=0x%08lX static=0x%08lX "
+                L"context_disabled=%d thread_disabled=%d context_empty=%d thread_empty=%d",
                 !contextBlocked_ ? L"open"
-                : readOnly       ? L"blocked (read-only document)"
-                : transitory     ? L"blocked (transitory — no text store, Windows "
-                                   L"would draw its own composition box)"
+                : !inputState.hasContext ? L"blocked (no context)"
+                : IsReadOnlyTsfDocument(status.dwDynamicFlags) ? L"blocked (read-only document)"
+                : inputState.keyboardDisabled ? L"blocked (keyboard disabled)"
+                : inputState.emptyContext ? L"blocked (empty context)"
                 : scopeBlocked_  ? L"blocked (password/PIN/email field)"
                                  : L"blocked",
-                focusClass, hrStatus, status.dwDynamicFlags, status.dwStaticFlags);
+                focusClass, hrStatus, status.dwDynamicFlags, status.dwStaticFlags,
+                contextDisabled, threadDisabled, contextEmpty, threadEmpty);
     }
 }
 
@@ -367,9 +404,11 @@ void EngineController::RequestEditSession(ITfContext* pContext, EditSession* pEd
     );
 
     if (FAILED(hr)) {
-        TSF_LOG(L"RequestEditSession request failed");
+        TSF_LOG(L"RequestEditSession request failed: request=0x%08X session=0x%08X",
+                hr, hrSession);
     } else if (FAILED(hrSession)) {
-        TSF_LOG(L"Edit session execution failed");
+        TSF_LOG(L"Edit session execution failed: request=0x%08X session=0x%08X",
+                hr, hrSession);
     }
 }
 

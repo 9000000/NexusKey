@@ -36,7 +36,7 @@ public:
         ExpandedPassTrigger,
     };
 
-    EngineController();
+    explicit EngineController(ITfThreadMgr* pThreadMgr);
     ~EngineController();
 
     /// Set the TSF client ID for edit sessions
@@ -195,8 +195,7 @@ public:
     /// mapping handle.
     [[nodiscard]] SharedStateManager* GetSharedStateManager() noexcept { return &sharedState_; }
 
-    /// Check if context is blocked (password, PIN, etc.) and cache result.
-    /// Call from OnTestKeyDown when context changes.
+    /// Refresh dynamic input gates on each key, caching only input scopes.
     void CheckContextBlocked(ITfContext* pContext);
 
     /// Whether current context blocks Vietnamese input
@@ -265,8 +264,10 @@ private:
     bool abiOk_ = false;
     LanguageBarButton* langBarButton_ = nullptr;  // Owned, Release'd in UninitLanguageBar
     ITfContext* lastContext_ = nullptr;   // Last seen context (AddRef'd for safe identity comparison)
+    CComPtr<ITfCompartmentMgr> contextCompartments_;
+    CComPtr<ITfCompartmentMgr> threadCompartments_;
     bool scopeBlocked_ = false;          // Cached password/PIN/email result for lastContext_
-    bool contextBlocked_ = false;        // True if scope-blocked or document is currently read-only
+    bool contextBlocked_ = false;        // Combined current TSF input gates
     bool verdictLogged_ = false;         // Context verdict already logged for this enable-session
     bool isScintillaApp_ = false;        // Cached: current app is Scintilla-based (Notepad++, etc.)
     bool digitLedWord_ = false;          // True = current word started with a digit (VNI/Combined/UserDefined) → treat whole word as English (pass through; no composition)

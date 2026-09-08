@@ -64,7 +64,7 @@ IFACEMETHODIMP TextService::Activate(ITfThreadMgr* pThreadMgr, TfClientId tfClie
     clientId_ = tfClientId;
 
     // Initialize engine controller
-    engineController_ = std::make_unique<EngineController>();
+    engineController_ = std::make_unique<EngineController>(pThreadMgr);
     engineController_->SetClientId(tfClientId);
 
     // Initialize key event sink

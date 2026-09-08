@@ -22,19 +22,27 @@ inline constexpr uint32_t kTsfReadOnlyDocumentFlag = 0x1u;
 // TS_SS_TRANSITORY / TF_SS_TRANSITORY from textstor.h.
 inline constexpr uint32_t kTsfTransitoryDocumentFlag = 0x4u;
 
-/// Windows opens its own floating composition box ("Finalize the string") when a
-/// text service composes in a context that has nowhere to render the composition
-/// — a shell list view, or a window whose focus is not a text control at all.
-/// Those contexts report TS_SS_TRANSITORY and nothing else; real text stores
-/// either pair it with another static flag or never set it, so only an exact
-/// match may block input (#242 logs: Explorer's SysListView32 static=0x4
-/// dyn=0x80000000, One Commander's WPF window static=0x4 dyn=0; against
-/// Chromium 0x4|0x8, Firefox 0x8, WPF 0x2 — Chromium sets TRANSITORY on every
-/// text store, editable ones included, so `& kTsfTransitoryDocumentFlag` would
-/// kill typing in Edge, Chrome and Electron).
-[[nodiscard]] constexpr bool IsTransitoryOnlyTsfDocument(
-    uint32_t staticStatusFlags) noexcept {
-    return staticStatusFlags == kTsfTransitoryDocumentFlag;
+struct TsfContextInputState {
+    bool hasContext = false;
+    uint32_t dynamicStatusFlags = 0;
+    uint32_t staticStatusFlags = 0;
+    bool keyboardDisabled = false;
+    bool emptyContext = false;
+    bool scopeBlocked = false;
+};
+
+/// TRANSITORY describes a short-lived document, not whether typing is allowed.
+/// In particular, a writable composition-only context may have static=0x4.
+/// Follow the explicit TSF input gates instead. EMPTYCONTEXT is a compartment
+/// flag supplied by TSF/the host, not a check for an empty document string.
+/// https://learn.microsoft.com/windows/win32/tsf/predefined-compartments
+[[nodiscard]] constexpr bool ShouldBlockTsfContext(
+    const TsfContextInputState& state) noexcept {
+    return !state.hasContext
+        || IsReadOnlyTsfDocument(state.dynamicStatusFlags)
+        || state.keyboardDisabled
+        || state.emptyContext
+        || state.scopeBlocked;
 }
 
 /// A revive range is only safe when the backward shift covered exactly the

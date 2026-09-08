@@ -313,9 +313,9 @@ public:
         TF_SELECTION sel = {};
         ULONG fetched = 0;
         HRESULT hr = pContext_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched);
-        if (FAILED(hr) || fetched != 1 || sel.range == nullptr) return S_OK;
         CComPtr<ITfRange> pSelRange;
         pSelRange.Attach(sel.range);
+        if (FAILED(hr) || fetched != 1 || !pSelRange) return S_OK;
 
         BOOL selEmpty = FALSE;
         if (FAILED(pSelRange->IsEmpty(ec, &selEmpty)) || !selEmpty) return S_OK;

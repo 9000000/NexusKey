@@ -20,18 +20,57 @@ TEST(TsfEditDecision, WritableOrLoadingDocumentAllowsComposition) {
     EXPECT_FALSE(IsReadOnlyTsfDocument(/*loadingFlag=*/0x2u));
 }
 
-// Static-flag values observed in the #242 logs and in the text stores of the
-// hosts VKey has to keep working (Chromium, Firefox, WPF).
-TEST(TsfEditDecision, TransitoryOnlyDocumentBlocksComposition) {
-    EXPECT_TRUE(IsTransitoryOnlyTsfDocument(/*explorerListView=*/0x4u));
-    EXPECT_TRUE(IsTransitoryOnlyTsfDocument(/*oneCommanderWindow=*/0x4u));
+TEST(TsfEditDecision, WritableTransitoryContextAllowsTyping) {
+    // Captured in Excel: these flags describe a usable short-lived context,
+    // not a disabled keyboard. No host name or window class enters the policy.
+    EXPECT_FALSE(ShouldBlockTsfContext({
+        .hasContext = true,
+        .dynamicStatusFlags = 0x80000000u,
+        .staticStatusFlags = kTsfTransitoryDocumentFlag,
+    }));
 }
 
-TEST(TsfEditDecision, RealTextStoresAllowComposition) {
-    EXPECT_FALSE(IsTransitoryOnlyTsfDocument(/*chromium=*/0x4u | 0x8u));
-    EXPECT_FALSE(IsTransitoryOnlyTsfDocument(/*firefox=*/0x8u));
-    EXPECT_FALSE(IsTransitoryOnlyTsfDocument(/*wpf=*/0x2u));
-    EXPECT_FALSE(IsTransitoryOnlyTsfDocument(/*noStaticFlags=*/0));
+TEST(TsfEditDecision, StaticCapabilitiesDoNotDisableTyping) {
+    // Chromium, Firefox, WPF and a host advertising no static capabilities.
+    for (const auto flags : {0x4u | 0x8u, 0x8u, 0x2u, 0u}) {
+        EXPECT_FALSE(ShouldBlockTsfContext({
+            .hasContext = true, .staticStatusFlags = flags,
+        }));
+    }
+}
+
+TEST(TsfEditDecision, MissingContextDoesNotClaimKeys) {
+    EXPECT_TRUE(ShouldBlockTsfContext({}));
+}
+
+TEST(TsfEditDecision, ReadOnlyTransitoryContextStillBlocksTyping) {
+    EXPECT_TRUE(ShouldBlockTsfContext({
+        .hasContext = true,
+        .dynamicStatusFlags = 0x80000000u | kTsfReadOnlyDocumentFlag,
+        .staticStatusFlags = kTsfTransitoryDocumentFlag,
+    }));
+}
+
+TEST(TsfEditDecision, ExplicitEmptyContextBlocksWritableDocument) {
+    EXPECT_TRUE(ShouldBlockTsfContext({
+        .hasContext = true,
+        .staticStatusFlags = kTsfTransitoryDocumentFlag,
+        .emptyContext = true,
+    }));
+}
+
+TEST(TsfEditDecision, KeyboardDisabledIsNotOverriddenByNonEmptyContext) {
+    EXPECT_TRUE(ShouldBlockTsfContext({
+        .hasContext = true, .keyboardDisabled = true, .emptyContext = false,
+    }));
+}
+
+TEST(TsfEditDecision, ProtectedInputScopeStillBlocksWritableContext) {
+    EXPECT_TRUE(ShouldBlockTsfContext({
+        .hasContext = true,
+        .staticStatusFlags = kTsfTransitoryDocumentFlag,
+        .scopeBlocked = true,
+    }));
 }
 
 TEST(TsfEditDecision, ExactBackwardShiftAcceptsWholeWordRange) {
