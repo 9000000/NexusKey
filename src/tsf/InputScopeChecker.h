@@ -46,6 +46,7 @@ public:
         ULONG fetched = 0;
         hr = pContext_->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched);
         if (FAILED(hr) || fetched == 0 || !sel.range) {
+            if (sel.range) sel.range->Release();
             pProp->Release();
             return S_OK;
         }
@@ -72,7 +73,10 @@ public:
         hr = pInputScope->GetInputScopes(&pScopes, &scopeCount);
         pInputScope->Release();
 
-        if (FAILED(hr) || !pScopes) return S_OK;
+        if (FAILED(hr) || !pScopes) {
+            CoTaskMemFree(pScopes);
+            return S_OK;
+        }
 
         for (UINT i = 0; i < scopeCount; ++i) {
             switch (pScopes[i]) {
