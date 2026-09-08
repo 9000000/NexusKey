@@ -265,5 +265,12 @@ var STRINGS = {
         "ud.act.InsertOHornUpper": "Letter \u01a0",
         "ud.act.InsertUHorn": "Letter \u01b0",
         "ud.act.InsertUHornUpper": "Letter \u01af"
+    },
+    vi: {
+        // ── Restart banner (hybrid TSF DLL update) ──
+        "update.banner.pending":    "Cập nhật chưa hoàn tất. Khởi động lại Windows để áp dụng phiên bản TSF mới.",
+        "update.banner.mismatch":   "Một vài ứng dụng đang chạy phiên bản cũ. Khởi động lại Windows để đồng bộ.",
+        "update.banner.restartNow": "Khởi động lại ngay",
+        "update.banner.later":      "Để sau"
     }
 };

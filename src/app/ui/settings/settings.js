@@ -75,12 +75,30 @@ function showUpdateBanner(state) {
     var btnRestart = document.getElementById("update-banner-restart");
     var btnLater = document.getElementById("update-banner-later");
 
-    if (text) text.textContent = (typeof t === "function") ? t(msgKey)
-                                                            : "Restart Windows to finish update.";
-    if (btnRestart) btnRestart.textContent = (typeof t === "function")
-        ? t("update.banner.restartNow") : "Restart now";
-    if (btnLater) btnLater.textContent = (typeof t === "function")
-        ? t("update.banner.later") : "Later";
+    var isVi = (typeof getLang === "function" ? getLang() : "vi") !== "en";
+    var defaultMsg = (state === 1)
+        ? (isVi ? "Cập nhật chưa hoàn tất. Khởi động lại Windows để áp dụng phiên bản TSF mới."
+                : "Update not finished. Restart Windows to apply the new TSF version.")
+        : (isVi ? "Một vài ứng dụng đang chạy phiên bản cũ. Khởi động lại Windows để đồng bộ."
+                : "Some apps still run the old version. Restart Windows to sync.");
+    var defaultRestart = isVi ? "Khởi động lại ngay" : "Restart now";
+    var defaultLater = isVi ? "Để sau" : "Later";
+
+    if (text) {
+        text.setAttribute("data-i18n", msgKey);
+        var translated = (typeof t === "function") ? t(msgKey) : null;
+        text.textContent = translated || defaultMsg;
+    }
+    if (btnRestart) {
+        btnRestart.setAttribute("data-i18n", "update.banner.restartNow");
+        var translated = (typeof t === "function") ? t("update.banner.restartNow") : null;
+        btnRestart.textContent = translated || defaultRestart;
+    }
+    if (btnLater) {
+        btnLater.setAttribute("data-i18n", "update.banner.later");
+        var translated = (typeof t === "function") ? t("update.banner.later") : null;
+        btnLater.textContent = translated || defaultLater;
+    }
 
     banner.style.display = "";
 

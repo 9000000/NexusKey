@@ -9,30 +9,51 @@ function getLang() {
 
 function t(key) {
     var lang = getLang();
-    if (lang === "vi") return null;
     var dict = window.STRINGS && window.STRINGS[lang];
-    return dict ? (dict[key] || null) : null;
+    if (dict && dict[key] !== undefined) return dict[key];
+    if (lang === "vi") {
+        var vi = window.STRINGS && window.STRINGS.vi;
+        if (vi && vi[key] !== undefined) return vi[key];
+    }
+    return null;
 }
 
 // Build STRINGS.vi from current DOM (call once before any EN override)
 function buildViDict() {
-    if (window.STRINGS.vi) return;
-    var vi = {};
+    if (!window.STRINGS) window.STRINGS = {};
+    if (!window.STRINGS.vi) window.STRINGS.vi = {};
+    if (window.STRINGS._viHarvested) return;
+    window.STRINGS._viHarvested = true;
+
+    var vi = window.STRINGS.vi;
 
     document.querySelectorAll("[data-i18n]").forEach(function (el) {
-        vi[el.getAttribute("data-i18n")] = el.textContent;
+        var key = el.getAttribute("data-i18n");
+        if (key && !vi[key]) {
+            vi[key] = el.textContent;
+        }
     });
     document.querySelectorAll("[data-i18n-ph]").forEach(function (el) {
-        vi["_ph:" + el.getAttribute("data-i18n-ph")] = el.getAttribute("placeholder") || "";
+        var key = el.getAttribute("data-i18n-ph");
+        var val = el.getAttribute("placeholder") || "";
+        if (key && !vi["_ph:" + key]) {
+            vi["_ph:" + key] = val;
+        }
     });
     document.querySelectorAll("[data-i18n-title]").forEach(function (el) {
-        vi["_title:" + el.getAttribute("data-i18n-title")] = el.getAttribute("title") || "";
+        var key = el.getAttribute("data-i18n-title");
+        var val = el.getAttribute("title") || "";
+        if (key && !vi["_title:" + key]) {
+            vi["_title:" + key] = val;
+        }
     });
     document.querySelectorAll("[data-i18n-tooltip]").forEach(function (el) {
-        vi["_tooltip:" + el.getAttribute("data-i18n-tooltip")] = el.getAttribute("data-tooltip") || "";
+        var key = el.getAttribute("data-i18n-tooltip");
+        var val = el.getAttribute("data-tooltip") || "";
+        if (key && !vi["_tooltip:" + key]) {
+            vi["_tooltip:" + key] = val;
+        }
     });
-
-    window.STRINGS.vi = vi;
 }
 
 function applyTranslations() {
