@@ -687,6 +687,23 @@ bool EngineController::CommitRawAndEnd(ITfContext* pContext) {
     return true;
 }
 
+void EngineController::EndCompositionVerbatim(ITfContext* pContext) {
+    std::wstring verbatim = engine_->Peek();
+    // CommitEditSession::DoEditSession skips SetCompositionText when
+    // CurrentTextEquals, so it degrades to a pure EndComposition (preventing
+    // #234 formatting loss) while safely repairing any Peek/composition text drift.
+    auto* pSession = new CommitEditSession(pContext, &compositionMgr_, verbatim);
+    RequestEditSession(pContext, pSession);
+    pSession->Release();
+
+    engine_->Reset();
+    digitLedWord_ = false;
+    ClearMacroTracking();
+    ResetCommitUndo();
+
+    TSF_LOG(L"EndCompositionVerbatim: verbatim='%ls'", verbatim.c_str());
+}
+
 bool EngineController::HasNonEmptySelection(ITfContext* pContext) {
     if (pContext == nullptr) return false;
     bool hasSelection = false;

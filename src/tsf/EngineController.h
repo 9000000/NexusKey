@@ -78,6 +78,10 @@ public:
     /// Resets engine state and digitLedWord_ on success.
     [[nodiscard]] bool CommitRawAndEnd(ITfContext* pContext);
 
+    /// End composition with currently displayed verbatim text (Peek) without
+    /// invoking engine commit or dictionary spell correction (e.g. on bare Esc).
+    void EndCompositionVerbatim(ITfContext* pContext);
+
     /// Whether Esc-restore-raw is enabled in current config snapshot.
     /// Cheap getter — KeyEventSink uses this to gate the VK_ESCAPE branch.
     [[nodiscard]] bool IsEscRestoreRawEnabled() const noexcept {

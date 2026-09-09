@@ -414,28 +414,30 @@ HRESULT KeyEventSink::OnTestKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPA
         return S_OK;
     }
 
-    // Esc-restore-raw: end composition with the user's raw keys (víu → virus)
-    // instead of the Vietnamese form. Committing in test phase is the right
-    // pattern for action keys (per CLAUDE.md "TSF: commit-in-test-phase allowed
-    // for action keys") — no text-insert race. The same branch in OnKeyDown
-    // handles Chromium hosts that skip OnTestKeyDown.
-    //
-    // Post-BS extension (design 2026-05-17): when engine is empty but commit-undo
-    // is Primed (user typed space then BS), restore raw from lastCommit_ cache
-    // via TryRestoreLastCommitRaw.
-    if (wParam == VK_ESCAPE && pEngineController_->IsEscRestoreRawEnabled()) {
-        if (pEngineController_->HasEngineBuffer()) {
-            if (pEngineController_->CommitRawAndEnd(pContext)) {
-                *pfEaten = TRUE;
-                return S_OK;
-            }
-        } else if (pEngineController_->IsCommitUndoPrimed()
-                   && pEngineController_->WithinUndoWindow()) {
-            if (pEngineController_->TryRestoreLastCommitRaw(pContext)) {
-                *pfEaten = TRUE;
-                return S_OK;
+    // Esc modal interrupt: two-way decision:
+    // 1. If restore-raw is enabled and can restore (live buffer or post-BS primed undo, design 2026-05-17),
+    //    restore the user's raw keys (víu → virus) and eat the key (pfEaten = TRUE).
+    // 2. Otherwise, end composition verbatim with on-screen text without dictionary
+    //    autocorrection (EndCompositionVerbatim) and pass Esc to the host (pfEaten = FALSE).
+    // Committing in test phase is the right pattern for action keys (per CLAUDE.md
+    // "TSF: commit-in-test-phase allowed for action keys") — no text-insert race.
+    // The same branch in OnKeyDown handles Chromium hosts that skip OnTestKeyDown.
+    if (wParam == VK_ESCAPE) {
+        lastTestedVk_ = 0;
+        bool restored = false;
+        if (pEngineController_->IsEscRestoreRawEnabled()) {
+            if (pEngineController_->HasEngineBuffer()) {
+                restored = pEngineController_->CommitRawAndEnd(pContext);
+            } else if (pEngineController_->IsCommitUndoPrimed()
+                       && pEngineController_->WithinUndoWindow()) {
+                restored = pEngineController_->TryRestoreLastCommitRaw(pContext);
             }
         }
+        if (!restored && pEngineController_->HasEngineBuffer()) {
+            pEngineController_->EndCompositionVerbatim(pContext);
+        }
+        *pfEaten = restored ? TRUE : FALSE;
+        return S_OK;
     }
 
     // (VK_RETURN falls through to the generic non-handled-key branch below:
@@ -770,26 +772,27 @@ HRESULT KeyEventSink::OnKeyDownImpl(ITfContext* pContext, WPARAM wParam, LPARAM 
         return S_OK;
     }
 
-    // Esc-restore-raw: end composition with raw keys (víu → virus) when enabled
-    // and buffer non-empty. Eat the key (don't pass to app). Falls through to
-    // standard ESC handling (commit Vietnamese + pass-through) when disabled
-    // or buffer empty.
-    //
-    // Post-BS extension (design 2026-05-17): same logic as OnTestKeyDown — when
-    // engine is empty but commit-undo is Primed, restore from lastCommit_ cache.
-    if (vk == VK_ESCAPE && pEngineController_->IsEscRestoreRawEnabled()) {
-        if (pEngineController_->HasEngineBuffer()) {
-            if (pEngineController_->CommitRawAndEnd(pContext)) {
-                *pfEaten = TRUE;
-                return S_OK;
-            }
-        } else if (pEngineController_->IsCommitUndoPrimed()
-                   && pEngineController_->WithinUndoWindow()) {
-            if (pEngineController_->TryRestoreLastCommitRaw(pContext)) {
-                *pfEaten = TRUE;
-                return S_OK;
+    // Esc modal interrupt: two-way decision (mirrors OnTestKeyDown):
+    // 1. If restore-raw is enabled and can restore (live buffer or post-BS primed undo),
+    //    restore raw keys (víu → virus) and eat the key (pfEaten = TRUE).
+    // 2. Otherwise, finalize composition verbatim (EndCompositionVerbatim) without
+    //    dictionary autocorrection and pass Esc through to the host app (pfEaten = FALSE).
+    if (vk == VK_ESCAPE) {
+        lastTestedVk_ = 0;
+        bool restored = false;
+        if (pEngineController_->IsEscRestoreRawEnabled()) {
+            if (pEngineController_->HasEngineBuffer()) {
+                restored = pEngineController_->CommitRawAndEnd(pContext);
+            } else if (pEngineController_->IsCommitUndoPrimed()
+                       && pEngineController_->WithinUndoWindow()) {
+                restored = pEngineController_->TryRestoreLastCommitRaw(pContext);
             }
         }
+        if (!restored && pEngineController_->HasEngineBuffer()) {
+            pEngineController_->EndCompositionVerbatim(pContext);
+        }
+        *pfEaten = restored ? TRUE : FALSE;
+        return S_OK;
     }
 
     // Space and printable punctuation are eaten by the TIP, so expand them

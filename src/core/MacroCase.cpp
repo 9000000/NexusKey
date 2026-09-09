@@ -236,6 +236,9 @@ bool ShouldTrigger(uint32_t vkCode,
                    bool triggerEnter,
                    bool triggerTab,
                    bool triggerDir) noexcept {
+    // Esc (0x1B) is a modal interrupt / cancel key, never a macro expansion delimiter.
+    // Explicitly reject early to prevent falling through to `triggerSpace || triggerEnter`.
+    if (vkCode == 0x1B) return false;
     if (!IsCommitTrigger(vkCode)) return false;
 
     if (vkCode == 0x20) return triggerSpace;

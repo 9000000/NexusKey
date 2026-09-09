@@ -610,5 +610,16 @@ TEST(MacroTriggerDecisionTest, ShouldTriggerRespectsSpaceAndEnter) {
     EXPECT_TRUE(ShouldTrigger(0x30, triggerSpace, triggerEnter, triggerTab, triggerDir));   // '0'
 }
 
+TEST(MacroTriggerDecisionTest, ShouldTriggerRejectsEscapeUnderAllTriggerConfigs) {
+    constexpr uint32_t kVkEscape = 0x1B;
+    // TC-03: Esc must never trigger macro expansion, regardless of active triggers.
+    EXPECT_FALSE(ShouldTrigger(kVkEscape, /*space=*/true,  /*enter=*/true,  /*tab=*/true,  /*dir=*/true));
+    EXPECT_FALSE(ShouldTrigger(kVkEscape, /*space=*/false, /*enter=*/false, /*tab=*/false, /*dir=*/false));
+    EXPECT_FALSE(ShouldTrigger(kVkEscape, /*space=*/true,  /*enter=*/false, /*tab=*/false, /*dir=*/false));
+    EXPECT_FALSE(ShouldTrigger(kVkEscape, /*space=*/false, /*enter=*/true,  /*tab=*/false, /*dir=*/false));
+    EXPECT_FALSE(ShouldTrigger(kVkEscape, /*space=*/false, /*enter=*/false, /*tab=*/true,  /*dir=*/false));
+    EXPECT_FALSE(ShouldTrigger(kVkEscape, /*space=*/false, /*enter=*/false, /*tab=*/false, /*dir=*/true));
+}
+
 }  // namespace
 }  // namespace NextKey::Macro

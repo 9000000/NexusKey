@@ -2059,7 +2059,24 @@ HookEngine::KeyOutcome HookEngine::DispatchKeyAction(DWORD vkCode, bool cachedSh
         if (rawMacroBuffer_.empty()) macroCrossCommit_ = false;
     }
 
-    // 8. Commit triggers: space, enter, tab, punctuation, numbers, escape, arrows
+    // 7c. Escape: modal interrupt / cancel. Finalize composition verbatim
+    // without triggering boundary autocorrection (e.g., "thuờ" mutating to "thù").
+    // If synthetic events are in flight (even when engine is already empty), eat and
+    // re-inject Esc (mirroring step 10 backspace rule) so Esc cannot overtake in-flight text.
+    if (vkCode == VK_ESCAPE) {
+        const int pending = dispatcher_.SynthEventsPending();
+        if (engine_->Count() > 0) {
+            HOOK_LOG(L"  VK_ESCAPE with active composition → ResetComposition (verbatim preserve)");
+            ResetComposition();
+        }
+        if (pending > 0) {
+            InjectKey(vkCode);
+            return KeyOutcome::Eat;
+        }
+        return KeyOutcome::Pass;
+    }
+
+    // 8. Commit triggers: space, enter, tab, punctuation, numbers, arrows
     if (IsCommitTrigger(vkCode) && engine_->Count() > 0) {
         HOOK_LOG(L"  commit trigger vk=0x%02X", vkCode);
 
