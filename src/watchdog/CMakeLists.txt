@@ -7,6 +7,7 @@ endif()
 
 add_executable(VKeyWatchdog WIN32
     main.cpp
+    VKeyWatchdog.rc
 )
 
 target_compile_definitions(VKeyWatchdog PRIVATE

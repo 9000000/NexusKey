@@ -412,6 +412,7 @@ if(WIN32 AND NOT VKEY_FOUNDATION_BUILD)
         src/browser_host/main.cpp
         src/browser_host/NativeMessaging.cpp
         src/browser_host/NativeMessaging.h
+        src/browser_host/VKeyBrowserHost.rc
     )
     target_link_libraries(VKeyBrowserHost PRIVATE VKeyCore advapi32)
 endif()
