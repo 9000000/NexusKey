@@ -674,6 +674,18 @@ void SettingsDialog::handleToggleChange(const std::wstring& id, bool value) {
                     L"VKey", MB_OK | MB_ICONINFORMATION);
             }
         }
+        // #253: tsfApps is NOT in EncodeFeatureFlags, so syncToSharedState()
+        // cannot carry it — HookEngine only ever learns it from TOML via
+        // ReloadFromToml. Leaving the write to the 30s deferred timer keeps TSF
+        // inert that whole time (log 2026-09-10: toggle ~15:15:18, reload at
+        // 15:15:35 still read tsf_feature=0, it flipped to 1 only at 15:16:18 —
+        // Edge was focused in between with no "T" and the hook handling keys).
+        // ClassicSettingsDialog.cpp already flushes here for the same reason.
+        saveSettings();
+        KillTimer(get_hwnd(), TIMER_DEFERRED_SAVE);
+        saveToToml();
+        if (onSettingsChanged_) onSettingsChanged_();
+        return;
     }
     else if (id == L"hide-preedit-underline") {
         config_.hidePreeditUnderline = value;
