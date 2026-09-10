@@ -804,7 +804,19 @@ void ClassicSettingsDialog::SaveToToml() {
         NEXTKEY_LOG(L"[ClassicSettings] Failed to save typing config");
     }
     (void)ConfigManager::SaveHotkeyConfig(path, hotkeyConfig_);
-    (void)ConfigManager::SaveSystemConfig(path, systemConfig_);
+
+    // SaveSystemConfig() writes the WHOLE [system] table. Everything in it is
+    // ours: the metadata-driven fields were just collected from their controls,
+    // and customColorV/E + floatingIconX/Y are set by this dialog's own
+    // sub-dialogs, which flush here immediately. The one exception is
+    // watchdogEnabled — toggled from the tray menu in the main process — so
+    // writing systemConfig_ straight through would silently revert that toggle
+    // whenever a Classic save lands after it. Re-read just that field.
+    SystemConfig systemToSave = systemConfig_;
+    if (auto onDisk = ConfigManager::LoadSystemConfig(path)) {
+        systemToSave.watchdogEnabled = onDisk->watchdogEnabled;
+    }
+    (void)ConfigManager::SaveSystemConfig(path, systemToSave);
 
     configDirty_ = false;
 

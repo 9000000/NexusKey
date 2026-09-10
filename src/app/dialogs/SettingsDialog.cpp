@@ -1614,8 +1614,28 @@ void SettingsDialog::saveUISettings() {
 }
 
 void SettingsDialog::saveSystemSettings() {
+    // SaveSystemConfig() writes the WHOLE [system] table, so handing it
+    // systemConfig_ reverts every field this dialog has no control for back to
+    // its construction-time value: the icon sub-dialog's (iconStyle, custom
+    // colors, tsf indicator, floating icon) and the main process's
+    // (watchdogEnabled from the tray menu, floatingIconX/Y saved at exit).
+    // WM_VKEY_ICON_SETTINGS_CHANGED only covers the first group, and only if
+    // that PostMessage lands. Merge onto a fresh snapshot instead — the mirror
+    // of what IconSettingsDialog::saveAndNotify() already does. Listing what we
+    // own (rather than what we don't) also fails safe: a new [system] field is
+    // preserved until someone deliberately adds it here.
+    SystemConfig toSave = ConfigManager::LoadSystemConfigOrDefault();
+    toSave.runAtStartup    = systemConfig_.runAtStartup;
+    toSave.runAsAdmin      = systemConfig_.runAsAdmin;
+    toSave.showOnStartup   = systemConfig_.showOnStartup;
+    toSave.desktopShortcut = systemConfig_.desktopShortcut;
+    toSave.language        = systemConfig_.language;
+    toSave.forceLightTheme = systemConfig_.forceLightTheme;
+    toSave.autoCheckUpdate = systemConfig_.autoCheckUpdate;
+    toSave.startupMode     = systemConfig_.startupMode;
+
     std::wstring path = ConfigManager::GetConfigPath();
-    if (!ConfigManager::SaveSystemConfig(path, systemConfig_)) {
+    if (!ConfigManager::SaveSystemConfig(path, toSave)) {
         OutputDebugStringW(L"VKey: Failed to save system config\n");
     }
 }
