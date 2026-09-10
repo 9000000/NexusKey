@@ -27,3 +27,5 @@ src/app/resources/tabs/tab_system.ico	microsoft/fluentui-emoji (MIT) Gear/3D/gea
 src/app/ui/about/logo.png	own — owner-generated with an image model
 src/app/ui/about/signpath.png	THIRD-PARTY TRADEMARK — SignPath logo, credits the code-signing sponsorship. Use confirmed by SignPath (owner-reported, 2026-08-03). Trademark, not a copyright license: it credits the sponsor and does not imply endorsement of VKey.
 src/app/ui/shared/signpath.png	THIRD-PARTY TRADEMARK — SignPath logo, same basis and same confirmation as src/app/ui/about/signpath.png
+src/browser_host/resources/BrowserHost.ico	own — owner-generated with an image model
+src/watchdog/resources/watchdog.ico	own — owner-generated with an image model
